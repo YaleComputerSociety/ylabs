@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 
-const listingSchema = mongoose.Schema(
+const listingSchema = new mongoose.Schema(
   {
     _id: {
       type: String,
@@ -45,3 +45,4 @@ const listingSchema = mongoose.Schema(
 );
 
 export const Listing = mongoose.model('listings', listingSchema);
+export default Listing;
