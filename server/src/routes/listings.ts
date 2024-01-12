@@ -1,10 +1,11 @@
 import express from 'express';
-import { Listing } from '../models/listingModel.js';
+import { Listing } from '../models';
+import { Request, Response, Router } from "express";
 
-const router = express.Router();
+const router = Router();
 
 // Route for getting listing by id: for testing
-router.get('/byId/:id', async (request, response) => {
+router.get('/byId/:id', async (request: Request, response: Response) => {
   try {
     const { id } = request.params;
 
@@ -22,11 +23,11 @@ fname: fname must be a substring of prof's first name for the corresponding list
 lname: lname must be a substring of prof's last name for the corresponding listing to be included
 dept: dept must contain a department mentioned in the listing for the corresponding listing to be included
 */
-router.get('/', async (request, response) => {
+router.get('/', async (request: Request, response: Response) => {
   try {
     const fname = request.query.fname === undefined ? '' : request.query.fname;
     const lname = request.query.lname === undefined ? '' : request.query.lname;
-    const dept = request.query.dept === undefined ? [] : request.query.dept.split(',');
+    const dept = request.query.dept === undefined ? [] : request.query.dept;
     console.log(dept) 
 
     if(fname === '' && lname === '' && dept.length == 0){
