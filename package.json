@@ -1,0 +1,18 @@
+{
+  "name": "cas-auth-example-express",
+  "version": "1.0.0",
+  "main": "index.js",
+  "repository": "git@github.com:yale-swe/cas-auth-example-express.git",
+  "author": "wu-json",
+  "license": "MIT",
+  "scripts": {
+    "build:client": "cd client && yarn build",
+    "build:server": "cd server && yarn build",
+    "clean:all": "rm -rf node_modules && cd server && rm -rf node_modules && cd ../client && rm -rf node_modules",
+    "install:all": "yarn && cd server && yarn && cd ../client && yarn",
+    "install:client": "cd client && yarn",
+    "install:server": "cd server && yarn",
+    "dev:client": "cd client && yarn start",
+    "dev:server": "cd server && yarn dev"
+  }
+}
