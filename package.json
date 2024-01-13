@@ -1,9 +1,9 @@
 {
-  "name": "cas-auth-example-express",
+  "name": "rdb",
   "version": "1.0.0",
   "main": "index.js",
-  "repository": "git@github.com:yale-swe/cas-auth-example-express.git",
-  "author": "wu-json",
+  "repository": "git@github.com:JulianLee123/RDB.git",
+  "author": "lee-julian",
   "license": "MIT",
   "scripts": {
     "build:client": "cd client && yarn build",
