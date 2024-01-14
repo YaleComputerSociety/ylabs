@@ -12,8 +12,6 @@ import Home from "./pages/home";
 import Login from "./pages/login";
 
 const App = () => {
-  const { isLoading, isAuthenticated } = useContext(UserContext);
-
   return (
     <Router>
       <Routes>

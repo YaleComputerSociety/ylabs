@@ -1,5 +1,5 @@
 import React, {useState} from "react";
-import ResearchAreaSelect from "../components/ResearchAreaSelect";
+import ListingsTable from "../components/ListingsTable";
 import TextField from '@mui/material/TextField';
 import Button from '@mui/material/Button';
 import Box from '@mui/material/Box';
@@ -20,46 +20,48 @@ const Home = () => {
 
     return (
         <div>
+            <h5>Buffer</h5>
             <form onSubmit={handleSubmit} noValidate>     
-            <Stack direction="row" justifyContent="space-around" alignItems="flex-start" spacing={1.5}>
-                    <Autocomplete
-                        multiple
-                        limitTags={2}
-                        id="tags-outlined"
-                        options={departmentNames}
-                        onChange={(event, newDept) => {
-                            setDepartments(newDept);
-                        }}
-                        getOptionLabel={(option) => option}
-                        sx={{width: '700px'}}
-                        renderInput={(params) => (
-                        <TextField
-                            {...params}
-                            required
-                            label="Departments"
-                            placeholder=""
+                <Stack direction="row" justifyContent="space-around" alignItems="flex-start" spacing={1.5}>
+                        <Autocomplete
+                            multiple
+                            limitTags={2}
+                            id="tags-outlined"
+                            options={departmentNames}
+                            onChange={(event, newDept) => {
+                                setDepartments(newDept);
+                            }}
+                            getOptionLabel={(option) => option}
+                            sx={{width: '700px'}}
+                            renderInput={(params) => (
+                            <TextField
+                                {...params}
+                                required
+                                label="Departments"
+                                placeholder=""
+                            />
+                            )}
                         />
-                        )}
-                    />
-                    <TextField 
-                        id="professor-search" 
-                        label="PI Last Name" 
-                        onChange={e => setLastNamePI(e.target.value)} 
-                        type="search" 
-                        sx={{width: '350px'}}/>
-                    <TextField 
-                        id="keyword-search" 
-                        label="Keyword(s) (comma-separated)" 
-                        onChange={e => setKeywords(e.target.value)} 
-                        type="search" 
-                        sx={{width: '350px'}}/>
-                    <Button
-                        type="submit"
-                        sx={{paddingTop: '15px'}}
-                    >
-                        Search</Button>
-            </Stack>
-            </form>     
+                        <TextField 
+                            id="professor-search" 
+                            label="PI Last Name" 
+                            onChange={e => setLastNamePI(e.target.value)} 
+                            type="search" 
+                            sx={{width: '350px'}}/>
+                        <TextField 
+                            id="keyword-search" 
+                            label="Keyword(s) (comma-separated)" 
+                            onChange={e => setKeywords(e.target.value)} 
+                            type="search" 
+                            sx={{width: '350px'}}/>
+                        <Button
+                            type="submit"
+                            sx={{paddingTop: '15px'}}
+                        >
+                            Search</Button>
+                </Stack>
+            </form>   
+            <ListingsTable></ListingsTable>
         </div>
     );
 };

@@ -11,4 +11,3 @@ server/src/config.ts
 server/.env
 
 client/node_modules/*
-client/
