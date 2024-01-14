@@ -27,21 +27,28 @@ router.get('/', async (request: Request, response: Response) => {
   try {
     const fname = request.query.fname === undefined ? '' : request.query.fname;
     const lname = request.query.lname === undefined ? '' : request.query.lname;
-    const dept = request.query.dept === undefined ? [] : request.query.dept;
-    console.log(dept) 
+    const keywords = request.query.keywords === undefined ? '' :  (request.query.keywords as String).replace(',', ' ').replace('  ', ' ');
+    const dept = request.query.dept === undefined || request.query.dept === '' ? [] : (request.query.dept as String).split(',');
 
-    if(fname === '' && lname === '' && dept.length == 0){
+    if(fname === '' && lname === '' && dept.length == 0 && keywords.length == 0){
       throw new Error('At least 1 query must be provided');
     } 
 
-    const listing = await Listing.find(
-      { "fname": { "$regex": fname, "$options": "i" }, 
-        "lname": { "$regex": lname, "$options": "i" },
-        "departments": { $elemMatch: { $in: dept } }}
-    );
-    console.log(fname)
+    let query = { "fname": { "$regex": fname, "$options": "i" }, 
+                  "lname": { "$regex": lname, "$options": "i" },
+                  "departments": { "$elemMatch": { "$in": dept } },
+                  "$text": { "$search": keywords, "$caseSensitive": false }};
 
-    return response.status(200).json(listing);
+    if(dept.length === 0){
+      delete query["departments"];
+    }
+    if(keywords == ''){
+      delete query["$text"];
+    }
+    
+    const listings = await Listing.find(query);
+    return response.status(200).json(listings);
+
   } catch (error) {
     console.log(error.message);
     response.status(500).send({ message: error.message });
