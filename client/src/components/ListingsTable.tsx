@@ -141,6 +141,14 @@ export default function ListingsTable(props: ListingsTableProps) {
     [order, orderBy, page, rowsPerPage, listings],
   );
 
+  const shortenDesc = (desc: string) => {
+    const shortenedDesc = desc.slice(0,Math.min(desc.length,100)) + '...'
+    if(shortenedDesc.lastIndexOf(' ') === -1){
+      return shortenedDesc
+    }
+    return shortenedDesc.slice(0,shortenedDesc.lastIndexOf(' ')) + '...'
+  }
+
   return (
     <div>
       {selectedListingId >= 0 && (
@@ -184,8 +192,8 @@ export default function ListingsTable(props: ListingsTableProps) {
                         {row.name}
                       </TableCell>
                       <TableCell align="left">{row.email}</TableCell>
-                      <TableCell align="left">{row.website}</TableCell>
-                      <TableCell align="left">{row.description}</TableCell>
+                      <TableCell align="left">{<a href={row.website}>{row.website}</a>}</TableCell>
+                      <TableCell align="left">{shortenDesc(row.description)}</TableCell>
                       <TableCell align="left">{row.lastUpdated}</TableCell>
                     </TableRow>
                   );
