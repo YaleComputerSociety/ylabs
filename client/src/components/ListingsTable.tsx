@@ -10,47 +10,8 @@ import TableRow from '@mui/material/TableRow';
 import TableSortLabel from '@mui/material/TableSortLabel';
 import Paper from '@mui/material/Paper';
 import { visuallyHidden } from '@mui/utils';
-import Button from '@mui/material/Button';
-import Typography from '@mui/material/Typography';
-import Modal from '@mui/material/Modal';
-
-interface Listing {
-  id: number;
-  departments: string;
-  email: string;
-  website: string;
-  description: string;
-  keywords: string;
-  lastUpdated: string;
-  name: string;
-}
-
-function createData(
-  id: number,
-  departments: string,
-  email: string,
-  website: string,
-  description: string,
-  keywords: string,
-  lastUpdated: string,
-  name: string,
-): Listing {
-  return {
-    id,
-    departments,
-    email,
-    website,
-    description,
-    keywords,
-    lastUpdated,
-    name
-  };
-}
-
-const sampleListings = [
-  createData(5, 'American Studies, African American Studies', 'test@yale.edu', 'www.yale.edu', 'description', 'keyword', '2017-09-29 19:27:48', 'John Doe'),
-  createData(6, 'English', 'test@yale.edu', 'www.yale.edu', 'description2', 'keyword2', '2016-09-29 19:27:48', 'Jane Doe'),
-];
+import ListingsModal from './ListingsModal';
+import {Listing} from '../types/types';
 
 function descendingComparator<T>(a: T, b: T, orderBy: keyof T) {
   if (b[orderBy] < a[orderBy]) {
@@ -82,35 +43,20 @@ interface HeadCell {
 }
 
 const headCells: readonly HeadCell[] = [
-  {
-    id: 'name',
-    label: 'Name',
-  },
-  {
-    id: 'email',
-    label: 'Email',
-  },
-  {
-    id: 'website',
-    label: 'Website',
-  },
-  {
-    id: 'description',
-    label: 'Description',
-  },
-  {
-    id: 'lastUpdated',
-    label: 'Last Updated',
-  },
+  {id: 'name', label: 'Name'},
+  {id: 'email', label: 'Email'},
+  {id: 'website', label: 'Website'},
+  {id: 'description', label: 'Description'},
+  {id: 'lastUpdated', label: 'Last Updated'},
 ];
 
-interface EnhancedTableProps {
+type ListingsTableHeadProps = {
   onRequestSort: (event: React.MouseEvent<unknown>, property: keyof Listing) => void;
   order: Order;
   orderBy: string;
 }
 
-function EnhancedTableHead(props: EnhancedTableProps) {
+function ListingsTableHead(props: ListingsTableHeadProps) {
   const { order, orderBy, onRequestSort } = props;
   const createSortHandler =
     (property: keyof Listing) => (event: React.MouseEvent<unknown>) => {
@@ -146,62 +92,18 @@ function EnhancedTableHead(props: EnhancedTableProps) {
   );
 }
 
-interface ListingModalProps {
-  listing: Listing;
-  open: boolean;
-  setOpen: (open: boolean) => void;
+type ListingsTableProps = {
+  listings: Listing[];
 }
 
-function ListingModal(props: ListingModalProps) {
-  const { listing, open, setOpen } = props;
-  const handleClose = () => setOpen(false);
-
-  return (
-    <Modal
-      open={open}
-      onClose={handleClose}
-      aria-labelledby="modal-modal-title"
-      aria-describedby="modal-modal-description"
-    >
-      <Box sx={modalStyle}>
-        <Typography id="modal-modal-title" variant="h6" component="h2">
-          Research Posting from {listing.name}
-        </Typography>
-        <Typography id="modal-modal-description" sx={{ mt: 2 }}>
-          <b> Email: </b> {listing.email} <br></br>
-          <b> Departments: </b> {listing.departments} <br></br>
-          <b> Website: </b> {listing.website} <br></br>
-          <b> Description: </b> {listing.description} <br></br>
-          <b> Keywords: </b> {listing.keywords} <br></br>
-          <b> Last Updated: </b> {listing.lastUpdated} <br></br>
-        </Typography>
-      </Box>
-    </Modal>
-  );
-}
-
-
-const modalStyle = {
-  position: 'absolute' as 'absolute',
-  top: '50%',
-  left: '50%',
-  transform: 'translate(-50%, -50%)',
-  width: 400,
-  bgcolor: 'background.paper',
-  border: '2px solid #000',
-  boxShadow: 24,
-  p: 4,
-};
-
-
-export default function EnhancedTable() {
+export default function ListingsTable(props: ListingsTableProps) {
+  const {listings} = props;
   const [order, setOrder] = React.useState<Order>('asc');
   const [orderBy, setOrderBy] = React.useState<keyof Listing>('lastUpdated');
   const [page, setPage] = React.useState(0);
   const [rowsPerPage, setRowsPerPage] = React.useState(10);
   const [modalOpen, setModalOpen] = React.useState(false);
-  const [selectedListingId, setSelectedListingId] = React.useState(0);
-  const [listings, setListings] = React.useState<Listing[]>(sampleListings);
+  const [selectedListingId, setSelectedListingId] = React.useState(-1);
 
   const handleRequestSort = (
     event: React.MouseEvent<unknown>,
@@ -228,24 +130,26 @@ export default function EnhancedTable() {
 
   // Avoid a layout jump when reaching the last page with empty rows.
   const emptyRows =
-    page > 0 ? Math.max(0, (1 + page) * rowsPerPage - sampleListings.length) : 0;
+    page > 0 ? Math.max(0, (1 + page) * rowsPerPage - listings.length) : 0;
 
   const visibleRows = React.useMemo(
     () =>
-      sampleListings.sort(getComparator(order, orderBy)).slice(
+      listings.sort(getComparator(order, orderBy)).slice(
         page * rowsPerPage,
         page * rowsPerPage + rowsPerPage,
       ),
-    [order, orderBy, page, rowsPerPage],
+    [order, orderBy, page, rowsPerPage, listings],
   );
 
   return (
     <div>
-      <ListingModal
-        listing={listings[selectedListingId]}
-        open={modalOpen}
-        setOpen={setModalOpen}
-        ></ListingModal>
+      {selectedListingId >= 0 && (
+        <ListingsModal
+          listing={listings[selectedListingId]}
+          open={modalOpen}
+          setOpen={setModalOpen}
+        ></ListingsModal>
+      )}
       <Box sx={{ width: '100%' }}>
         <Paper sx={{ width: '100%', overflow: 'hidden' }}>
         <TableContainer sx={{ maxHeight: '580px' }}>
@@ -255,7 +159,7 @@ export default function EnhancedTable() {
               aria-labelledby="sticky table"
               size='medium'
             >
-              <EnhancedTableHead
+              <ListingsTableHead
                 order={order}
                 orderBy={orderBy}
                 onRequestSort={handleRequestSort}
@@ -301,7 +205,7 @@ export default function EnhancedTable() {
           <TablePagination
             rowsPerPageOptions={[10, 25]}
             component="div"
-            count={sampleListings.length}
+            count={listings.length}
             rowsPerPage={rowsPerPage}
             page={page}
             onPageChange={handleChangePage}
