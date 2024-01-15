@@ -28,8 +28,8 @@ export default function ListingModal(props: ListingModalProps) {
           <b> Email: </b> {listing.email} <br></br>
           <b> Departments: </b> {listing.departments} <br></br>
           <b> Website: </b> <a href={listing.website}>{listing.website}</a> <br></br>
-          <b> Description: </b> {listing.description} <br></br>
-          <b> Keywords: </b> {listing.keywords} <br></br>
+          <b> Description: </b> {listing.description === '' ? 'None' : listing.description} <br></br>
+          <b> Keywords: </b> {listing.keywords === '' ? 'None' : listing.keywords} <br></br>
           <b> Last Updated: </b> {listing.lastUpdated} <br></br>
         </Typography>
       </Box>

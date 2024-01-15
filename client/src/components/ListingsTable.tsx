@@ -107,6 +107,10 @@ export default function ListingsTable(props: ListingsTableProps) {
   const [windowHeight, setWindowHeight] = React.useState(window.innerHeight);
 
   React.useEffect(() => {
+      setPage(0);
+  }, [listings]);
+
+  React.useEffect(() => {
     const handleWindowResize = () => {
       setWindowHeight(window.innerHeight);
     };
@@ -155,6 +159,9 @@ export default function ListingsTable(props: ListingsTableProps) {
   );
 
   const shortenDesc = (desc: string) => {
+    if(desc === ''){
+      return 'None'
+    }
     const shortenedDesc = desc.slice(0,Math.min(desc.length,100)) + '...'
     if(shortenedDesc.lastIndexOf(' ') === -1){
       return shortenedDesc
@@ -178,7 +185,15 @@ export default function ListingsTable(props: ListingsTableProps) {
               stickyHeader
               aria-labelledby="sticky table"
               size='medium'
+              sx={{tableLayout: "fixed"}}
             >
+              <colgroup>
+                  <col style={{width:'22.5%'}}/>
+                  <col style={{width:'22.5%'}}/>
+                  <col style={{width:'10%'}}/>
+                  <col style={{width:'27.5%'}}/>
+                  <col style={{width:'17.5%'}}/>
+              </colgroup>
               <ListingsTableHead
                 order={order}
                 orderBy={orderBy}
@@ -199,7 +214,7 @@ export default function ListingsTable(props: ListingsTableProps) {
                     >
                       <TableCell component="th" id={labelId}>{row.name}</TableCell>
                       <TableCell align="left">{row.email}</TableCell>
-                      <TableCell align="left">{<a href={row.website}>{row.website}</a>}</TableCell>
+                      <TableCell align="left">{<a href={row.website}>Link</a>}</TableCell>
                       <TableCell align="left">{shortenDesc(row.description)}</TableCell>
                       <TableCell align="left">{row.lastUpdated}</TableCell>
                     </TableRow>

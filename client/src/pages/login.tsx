@@ -40,7 +40,7 @@ const Container = styled.div`
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding-bottom: 120px;
+  padding-top: 5%;
 `;
 
 const Description = styled.div`
@@ -54,7 +54,7 @@ const Description = styled.div`
 `;
 
 const Logo = styled.img`
-  width: 300px;
+  width: 320px;
   height: 150px;
 `;
 

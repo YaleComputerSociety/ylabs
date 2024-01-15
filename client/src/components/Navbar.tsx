@@ -19,7 +19,7 @@ export default function Navbar() {
         <Toolbar>
           {isAuthenticated ? 
             <img src={RDBLogo} alt="rdb-logo" style={{width: '80px', height: '40px'}} /> : 
-            <img src={YURALogo} alt="yura-logo" style={{width: '80px', height: '20px'}}  />
+            <img src={YURALogo} alt="yura-logo" style={{width: '90px', height: '20px'}}  />
           }
           <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
           </Typography>
