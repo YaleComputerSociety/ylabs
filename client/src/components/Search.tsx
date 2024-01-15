@@ -6,6 +6,7 @@ import Stack from '@mui/material/Stack';
 import {Listing} from '../types/types';
 import {departmentNames} from '../utils/departmentNames'; 
 import axios from 'axios';
+import swal from "sweetalert";
  
 type SearchProps = {
   setListings: (listings: Listing[]) => void;
@@ -19,15 +20,19 @@ export default function Search(props: SearchProps) {
 
     const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => { 
       event.preventDefault();
-      console.log(lastNamePI, keywords, departments);
+      if(departments.length === 0){
+        swal({
+          text: "Please select at least one department.",
+          icon: "warning",
+        })
+      }
       const url = 'http://localhost:4000/listings?dept=' + departments 
                   + '&keywords=' + keywords + '&lname=' + lastNamePI
       axios.get(url).then((response) => {
-        //console.log(response.data);
         const responseListings : Listing[] = response.data.map(function(elem: any){
             return {
               id: elem._id,
-              departments: elem.departments,
+              departments: elem.departments.join('; '),
               email: elem.email,
               website: elem.website,
               description: elem.description,
@@ -36,10 +41,8 @@ export default function Search(props: SearchProps) {
               name: elem.fname + ' ' + elem.lname
             }
         })
-        console.log(url);
         setListings(responseListings);
       });
-      //setListings(sampleListings);
     }
 
     return (
