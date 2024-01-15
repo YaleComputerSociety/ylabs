@@ -1,9 +1,7 @@
-notes.txt
-backend/
 valid_departments_cpy.txt
 updates.csv
-sample_updates.json
 updates.json
+sample_updates.json
 node_modules/
 
 server/node_modules/*
@@ -11,3 +9,6 @@ server/src/config.ts
 server/.env
 
 client/node_modules/*
+
+notes.txt
+toFix.md

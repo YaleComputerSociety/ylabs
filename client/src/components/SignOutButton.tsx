@@ -8,8 +8,8 @@ const SignOutButton = () => {
   const { checkContext } = useContext(UserContext);
   return (
     <Button
-      variant="contained"
-      color="error"
+      color="inherit"
+      sx={{ paddingLeft: 1 }}
       onClick={() =>
         axios.get<{ success: boolean }>("/logout").then(({ data }) => {
           if (data.success) {
@@ -18,7 +18,7 @@ const SignOutButton = () => {
         })
       }
     >
-      Sign Out
+      Logout
     </Button>
   );
 };
