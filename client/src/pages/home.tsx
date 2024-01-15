@@ -7,9 +7,9 @@ const Home = () => {
     const [listings, setListings] = useState<Listing[]>([]);
 
     return (
-        <div>
-            <h5>Buffer</h5>
+        <div style={{marginTop: '6rem', marginLeft: '3rem', marginRight: '3rem'}}>
             <Search setListings={setListings}></Search>
+            <div style={{marginTop: '2rem'}}></div>
             {listings.length > 0 && (
                 <ListingsTable listings={listings}></ListingsTable>
             )}

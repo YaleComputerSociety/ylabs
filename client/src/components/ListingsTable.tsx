@@ -98,12 +98,25 @@ type ListingsTableProps = {
 
 export default function ListingsTable(props: ListingsTableProps) {
   const {listings} = props;
-  const [order, setOrder] = React.useState<Order>('asc');
+  const [order, setOrder] = React.useState<Order>('desc');
   const [orderBy, setOrderBy] = React.useState<keyof Listing>('lastUpdated');
   const [page, setPage] = React.useState(0);
   const [rowsPerPage, setRowsPerPage] = React.useState(10);
   const [modalOpen, setModalOpen] = React.useState(false);
   const [selectedListingId, setSelectedListingId] = React.useState(-1);
+  const [windowHeight, setWindowHeight] = React.useState(window.innerHeight);
+
+  React.useEffect(() => {
+    const handleWindowResize = () => {
+      setWindowHeight(window.innerHeight);
+    };
+
+    window.addEventListener('resize', handleWindowResize);
+
+    return () => {
+      window.removeEventListener('resize', handleWindowResize);
+    };
+  }, [windowHeight]);
 
   const handleRequestSort = (
     event: React.MouseEvent<unknown>,
@@ -160,10 +173,9 @@ export default function ListingsTable(props: ListingsTableProps) {
       )}
       <Box sx={{ width: '100%' }}>
         <Paper sx={{ width: '100%', overflow: 'hidden' }}>
-        <TableContainer sx={{ maxHeight: '580px' }}>
+        <TableContainer sx={{ maxHeight: (windowHeight - 270).toString() + 'px' }}>
             <Table 
               stickyHeader
-              sx={{ minWidth: 750 }}
               aria-labelledby="sticky table"
               size='medium'
             >
@@ -185,12 +197,7 @@ export default function ListingsTable(props: ListingsTableProps) {
                       key={row.id}
                       sx={{ cursor: 'pointer' }}
                     >
-                      <TableCell
-                        component="th"
-                        id={labelId}
-                      >
-                        {row.name}
-                      </TableCell>
+                      <TableCell component="th" id={labelId}>{row.name}</TableCell>
                       <TableCell align="left">{row.email}</TableCell>
                       <TableCell align="left">{<a href={row.website}>{row.website}</a>}</TableCell>
                       <TableCell align="left">{shortenDesc(row.description)}</TableCell>
