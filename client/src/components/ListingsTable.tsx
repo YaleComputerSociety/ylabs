@@ -44,7 +44,7 @@ interface HeadCell {
 
 const headCells: readonly HeadCell[] = [
   {id: 'name', label: 'Name'},
-  {id: 'email', label: 'Email'},
+  {id: 'departments', label: 'Departments'},
   {id: 'website', label: 'Website'},
   {id: 'description', label: 'Description'},
   {id: 'lastUpdated', label: 'Last Updated'},
@@ -188,11 +188,11 @@ export default function ListingsTable(props: ListingsTableProps) {
               sx={{tableLayout: "fixed"}}
             >
               <colgroup>
-                  <col style={{width:'22.5%'}}/>
-                  <col style={{width:'22.5%'}}/>
+                  <col style={{width:'20%'}}/>
+                  <col style={{width:'27.5%'}}/>
                   <col style={{width:'10%'}}/>
                   <col style={{width:'27.5%'}}/>
-                  <col style={{width:'17.5%'}}/>
+                  <col style={{width:'15%'}}/>
               </colgroup>
               <ListingsTableHead
                 order={order}
@@ -213,7 +213,7 @@ export default function ListingsTable(props: ListingsTableProps) {
                       sx={{ cursor: 'pointer' }}
                     >
                       <TableCell component="th" id={labelId}>{row.name}</TableCell>
-                      <TableCell align="left">{row.email}</TableCell>
+                      <TableCell style={{ whiteSpace: 'pre-line' }} align="left">{row.departments.replaceAll('; ', '\n')}</TableCell>
                       <TableCell align="left">{<a href={row.website}>Link</a>}</TableCell>
                       <TableCell align="left">{shortenDesc(row.description)}</TableCell>
                       <TableCell align="left">{row.lastUpdated}</TableCell>
