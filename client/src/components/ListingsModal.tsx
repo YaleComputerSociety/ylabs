@@ -1,3 +1,4 @@
+import * as React from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Modal from '@mui/material/Modal';
@@ -12,6 +13,19 @@ type ListingModalProps = {
 export default function ListingModal(props: ListingModalProps) {
   const { listing, open, setOpen } = props;
   const handleClose = () => setOpen(false);
+  const [windowHeight, setWindowHeight] = React.useState(window.innerHeight);
+
+  React.useEffect(() => {
+    const handleWindowResize = () => {
+      setWindowHeight(window.innerHeight);
+    };
+
+    window.addEventListener('resize', handleWindowResize);
+
+    return () => {
+      window.removeEventListener('resize', handleWindowResize);
+    };
+  }, [windowHeight]);
 
   return (
     <Modal
@@ -19,6 +33,7 @@ export default function ListingModal(props: ListingModalProps) {
       onClose={handleClose}
       aria-labelledby="modal-modal-title"
       aria-describedby="modal-modal-description"
+      sx={{overflow:'scroll', maxHeight:(windowHeight - 200).toString() + 'px', marginTop:'100px' }}
     >
       <Box sx={modalStyle}>
         <Typography id="modal-modal-title" variant="h6" component="h2">
@@ -27,7 +42,7 @@ export default function ListingModal(props: ListingModalProps) {
         <Typography id="modal-modal-description" sx={{ mt: 2 }}>
           <b> Email: </b> {listing.email} <br></br>
           <b> Departments: </b> {listing.departments} <br></br>
-          <b> Website: </b> <a href={listing.website}>{listing.website}</a> <br></br>
+          <b> Website: </b> <a target="_blank" href={listing.website}>{listing.website}</a> <br></br>
           <b> Description: </b> {listing.description === '' ? 'None' : listing.description} <br></br>
           <b> Keywords: </b> {listing.keywords === '' ? 'None' : listing.keywords} <br></br>
           <b> Last Updated: </b> {listing.lastUpdated} <br></br>
@@ -39,9 +54,9 @@ export default function ListingModal(props: ListingModalProps) {
 
 const modalStyle = {
   position: 'absolute' as 'absolute',
-  top: '50%',
+  top: '0%',
   left: '50%',
-  transform: 'translate(-50%, -50%)',
+  transform: 'translate(-50%, 0%)',
   width: '75%',
   bgcolor: 'background.paper',
   border: '2px solid #000',
