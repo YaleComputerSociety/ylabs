@@ -10,22 +10,24 @@ import swal from "sweetalert";
  
 type SearchProps = {
   setListings: (listings: Listing[]) => void;
+  setIsLoading: (listings: Boolean) => void;
 }
 
 export default function Search(props: SearchProps) {
-    const {setListings} = props;
+    const {setListings, setIsLoading} = props;
     const [lastNamePI, setLastNamePI] = useState('');
     const [keywords, setKeywords] = useState('');
     const [departments, setDepartments] = useState<string[]>([]); 
 
     const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => { 
       event.preventDefault();
-      if(departments.length === 0){
+      if(departments.length === 0 && keywords === '' && lastNamePI === ''){
         swal({
-          text: "Please select at least one department.",
+          text: "Please fill out at least one field.",
           icon: "warning",
         })
       }
+      setIsLoading(true); 
       const url = 'http://localhost:4000/listings?dept=' + departments 
                   + '&keywords=' + keywords + '&lname=' + lastNamePI
       axios.get(url).then((response) => {
@@ -42,6 +44,7 @@ export default function Search(props: SearchProps) {
             }
         })
         setListings(responseListings);
+        setIsLoading(false); 
       });
     }
 
@@ -62,7 +65,6 @@ export default function Search(props: SearchProps) {
                         renderInput={(params) => (
                         <TextField
                             {...params}
-                            required
                             label='Departments'
                             placeholder=''
                         />
