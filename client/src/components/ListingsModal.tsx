@@ -42,7 +42,7 @@ export default function ListingModal(props: ListingModalProps) {
         <Typography id="modal-modal-description" sx={{ mt: 2 }}>
           <b> Email: </b> {listing.email} <br></br>
           <b> Departments: </b> {listing.departments} <br></br>
-          <b> Website: </b> <a target="_blank" href={listing.website}>{listing.website}</a> <br></br>
+          <b> Website: </b> <a target="_blank" rel="noreferrer" href={listing.website}>{listing.website}</a> <br></br>
           <b> Description: </b> {listing.description === '' ? 'None' : listing.description} <br></br>
           <b> Keywords: </b> {listing.keywords === '' ? 'None' : listing.keywords} <br></br>
           <b> Last Updated: </b> {listing.lastUpdated} <br></br>

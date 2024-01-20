@@ -11,10 +11,12 @@ import swal from "sweetalert";
 type SearchProps = {
   setListings: (listings: Listing[]) => void;
   setIsLoading: (listings: Boolean) => void;
+  numSearches: number;
+  setNumSearches: (searches: number) => void;
 }
 
 export default function Search(props: SearchProps) {
-    const {setListings, setIsLoading} = props;
+    const {setListings, setIsLoading, numSearches, setNumSearches} = props;
     const [lastNamePI, setLastNamePI] = useState('');
     const [keywords, setKeywords] = useState('');
     const [departments, setDepartments] = useState<string[]>([]); 
@@ -44,6 +46,7 @@ export default function Search(props: SearchProps) {
             }
         })
         setListings(responseListings);
+        setNumSearches(numSearches + 1);
         setIsLoading(false); 
       });
     }

@@ -1,4 +1,4 @@
-import {useState, useEffect} from "react";
+import {useState} from "react";
 import ListingsTable from "../components/ListingsTable";
 import Search from "../components/Search";
 import styled from "styled-components";
@@ -7,16 +7,12 @@ import PulseLoader from "react-spinners/PulseLoader";
  
 const Home = () => {
     const [listings, setListings] = useState<Listing[]>([]);
-    const [numSearches, setNumSearches] = useState(-1);
+    const [numSearches, setNumSearches] = useState(0);
     const [isLoading, setIsLoading] = useState<Boolean>(false);
-
-    useEffect(() => {
-        setNumSearches(numSearches + 1)
-    }, [listings]);
 
     return (
         <div style={{marginTop: '6rem', marginLeft: '3rem', marginRight: '3rem'}}>
-            <Search setListings={setListings} setIsLoading={setIsLoading}></Search>
+            <Search setListings={setListings} setIsLoading={setIsLoading} numSearches={numSearches} setNumSearches={setNumSearches}></Search>
             <div style={{marginTop: '2rem'}}></div>
             {isLoading ? (
                 <div style={{marginTop: '17%', textAlign: 'center'}}>
@@ -24,7 +20,7 @@ const Home = () => {
                 </div>
                 ) : (listings.length > 0 ? (
                         <ListingsTable listings={listings}></ListingsTable>
-                    ) : (numSearches == 0 ? 
+                    ) : (numSearches === 0 ? 
                             <NoResultsText>Start a search using the above menu </NoResultsText> 
                             : <NoResultsText>No results match the search criteria</NoResultsText>))
             }
