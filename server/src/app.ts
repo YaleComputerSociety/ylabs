@@ -6,11 +6,11 @@ import passport from "./passport";
 import routes from "./routes";
 
 const bypassCors = isCI() || isDevelopment() || isTest();
-const allowList = new Set(["http://localhost:3000"]);
+const allowList = new Set(["http://localhost:3000", "http://rdb.onrender.com"]);
 
 const corsOptions = {
   origin: (origin: string, callback: any) => {
-    if (bypassCors || allowList.has(origin)) {
+    if (origin === undefined || bypassCors || allowList.has(origin)) {
       callback(null, true);
     } else {
       callback(new Error("Not allowed by CORS"));
@@ -30,7 +30,8 @@ const app = express()
       saveUninitialized: false,
     })
   )
-  .use(routes);
+  .use(routes)
+  .use('/', express.static('../client/build'));
 
 passport(app);
 

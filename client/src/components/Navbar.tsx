@@ -1,4 +1,3 @@
-import styled from "styled-components";
 import AppBar from '@mui/material/AppBar';
 import Box from '@mui/material/Box';
 import Toolbar from '@mui/material/Toolbar';
@@ -11,7 +10,7 @@ import { useContext } from "react";
 import UserContext from "../contexts/UserContext";
 
 export default function Navbar() {
-  const { isLoading, isAuthenticated } = useContext(UserContext);
+  const { isAuthenticated } = useContext(UserContext);
 
   return (
     <Box sx={{ flexGrow: 1}}>
