@@ -30,7 +30,7 @@ export default function Search(props: SearchProps) {
         })
       }
       setIsLoading(true); 
-      const url = 'http://localhost:4000/listings?dept=' + departments 
+      const url = process.env.REACT_APP_SERVER + '/listings?dept=' + departments 
                   + '&keywords=' + keywords + '&lname=' + lastNamePI
       axios.get(url).then((response) => {
         const responseListings : Listing[] = response.data.map(function(elem: any){

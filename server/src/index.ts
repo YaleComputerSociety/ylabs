@@ -11,7 +11,7 @@ const startApp = async () => {
   try {
     await mongoose.connect(mongoUri);
     app.listen(port, () => {
-      console.log(`Server is ready at: localhost:${port} 🐶`);
+      console.log(`Server is ready at: ${port} 🐶`);
     });
   } catch (e) {
     console.error(`Failed to start app with error 💣: ${e}`);

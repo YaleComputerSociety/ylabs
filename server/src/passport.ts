@@ -43,6 +43,8 @@ const casLogin = function (
     if (!user) {
       return next(new Error("CAS auth but no user"));
     }
+    console.log("1::");
+    console.log(user);
 
     req.logIn(user, function (err) {
       if (err) {
@@ -63,6 +65,8 @@ export default (app: express.Express) => {
   app.use(passport.session());
 
   app.get("/check", (req, res) => {
+    console.log("2::");
+    console.log(req.user);
     if (req.user) {
       res.json({ auth: true, user: req.user });
     } else {
