@@ -33,7 +33,7 @@ export const departmentNames = [
   "Ecology and Evolutionary Biology",
   "Economics",
   "Electrical Engineering",
-  "Emergency medicine",
+  "Emergency Medicine",
   "Engineering and Applied Science",
   "English",
   "Environmental Health Sciences",

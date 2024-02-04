@@ -105,6 +105,7 @@ export default function ListingsTable(props: ListingsTableProps) {
   const [modalOpen, setModalOpen] = React.useState(false);
   const [selectedListingId, setSelectedListingId] = React.useState(-1);
   const [windowHeight, setWindowHeight] = React.useState(window.innerHeight);
+  const tableRef = React.useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {
       setPage(0);
@@ -138,6 +139,7 @@ export default function ListingsTable(props: ListingsTableProps) {
 
   const handleChangePage = (event: unknown, newPage: number) => {
     setPage(newPage);
+    tableScrollToTop();
   };
 
   const handleChangeRowsPerPage = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -168,6 +170,19 @@ export default function ListingsTable(props: ListingsTableProps) {
     }
     return shortenedDesc.slice(0,shortenedDesc.lastIndexOf(' ')) + '...'
   }
+
+  const tableScrollToTop = () => {
+    if(tableRef.current !== null){
+      tableRef.current.scrollIntoView({
+        behavior: "auto",
+        block: "end"
+      });
+      /*window.scrollTo({
+        top: tableRef.current.offsetTop,
+        behavior: "smooth"
+      });*/
+    }
+  };
 
   return (
     <div>
@@ -200,6 +215,7 @@ export default function ListingsTable(props: ListingsTableProps) {
                 onRequestSort={handleRequestSort}
               />
               <TableBody>
+                <div style={{}} ref={tableRef} />
                 {visibleRows.map((row, index) => {
                   const labelId = `enhanced-table-checkbox-${index}`;
 
