@@ -28,6 +28,8 @@ export default function Search(props: SearchProps) {
           text: "Please fill out at least one field.",
           icon: "warning",
         })
+        setIsLoading(false); 
+        return;
       }
       setIsLoading(true); 
       const url = process.env.REACT_APP_SERVER + '/listings?dept=' + departments 

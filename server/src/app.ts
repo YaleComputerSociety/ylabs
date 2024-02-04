@@ -5,11 +5,12 @@ import passport from "./passport";
 import routes from "./routes";
 import cookieSession from "cookie-session";
 import dotenv from "dotenv";
+import * as path from 'path';
 
 dotenv.config();
 
 const bypassCors = isCI() || isDevelopment() || isTest();
-const allowList = new Set(["https://localhost:3000", "https://rdb.onrender.com", "https://yalerdb.onrender.com"]);
+const allowList = new Set(["http://localhost:3000", "https://rdb.onrender.com", "https://yalerdb.onrender.com"]);
 
 const corsOptions = {
   origin: (origin: string, callback: any) => {
@@ -36,6 +37,14 @@ const app = express()
   )
   .use(routes)
   .use('/', express.static('../client/build'));
+
+app.get('/login', function(req, res) {
+  res.sendFile(path.join(__dirname, '../../client/build/index.html'), function(err) {
+    if (err) {
+      res.status(500).send(err)
+    }
+  })
+})
 
 passport(app);
 

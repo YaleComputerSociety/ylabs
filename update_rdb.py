@@ -39,11 +39,14 @@ with open(csvFilePath, encoding='utf-8') as csvf:
       row['lname'] = row['name'][row['name'].find(' ') + 1:]
 
     #Split departments into a list
+    replacements = {'&':'and', 'ethnicity, race, and migration':'ethnicity, race and migration', 'obstetrics, gynecology, and reproductive sciences':'obstetrics, gynecology and reproductive sciences'}
     curr_departments = []
     for department in department_names:
       raw_department = department
       department = department.lower()
-      row['departments'] = row['departments'].lower().replace('&','and')
+      row['departments'] = row['departments'].lower()
+      for k in replacements.keys():
+        row['departments'] = row['departments'].replace(k, replacements[k])
       if row['departments'].find(department) != -1:
         curr_departments.append(raw_department)
     if len(curr_departments) == 0:

@@ -33,7 +33,7 @@ export default function ListingModal(props: ListingModalProps) {
       onClose={handleClose}
       aria-labelledby="modal-modal-title"
       aria-describedby="modal-modal-description"
-      sx={{overflow:'scroll', maxHeight:(windowHeight - 200).toString() + 'px', marginTop:'100px' }}
+      sx={{overflow:'scroll', width: '75%', left: '12.5%', maxHeight:(windowHeight - 200).toString() + 'px', marginTop:'100px' }}
     >
       <Box sx={modalStyle}>
         <Typography id="modal-modal-title" variant="h6" component="h2">
@@ -54,10 +54,6 @@ export default function ListingModal(props: ListingModalProps) {
 
 const modalStyle = {
   position: 'absolute' as 'absolute',
-  top: '0%',
-  left: '50%',
-  transform: 'translate(-50%, 0%)',
-  width: '75%',
   bgcolor: 'background.paper',
   border: '2px solid #000',
   boxShadow: 24,
