@@ -27,27 +27,27 @@ def getSite(lastName, maxSearchDuration = 3):
 def getSoup(site):
     return BeautifulSoup(site, 'html.parser')
 
-def addListings(listings, nameStr = '', numLetters = 26):
-    for c in ascii_lowercase[0:numLetters]:
+def addListings(listings, nameStr = '', startChar = 'a', endChar = 'z', display = False):
+    for c in ascii_lowercase[ascii_lowercase.index(startChar):(ascii_lowercase.index(endChar) + 1)]:
         soup = getSoup(getSite(nameStr + c))
 
         resultsText = soup.find(id = 'results-people-header').text 
 
         numResults = int(resultsText.split(' ')[0]) if resultsText.split(' ')[0].isdigit() else 1 if 'display: none' in soup.find(id = 'bps-result-region')['style'].split(';') else 0
 
-        #Temp display
-        if(numResults == 25):
-            print(f'Searching "{nameStr + c}"... Found {numResults} results')
+        if(display):
+            if(numResults == 25):
+                print(f'Searching "{nameStr + c}"... Found {numResults} results')
 
         surplusResults = numResults != 1 and 'display: block' in soup.find(id = 'bps-result-region').find('div', class_ = 'directory_results_warning')['style'].split(';')
 
         #Handle surplus results
         if(surplusResults):
-            addListings(listings, nameStr + c)
+            addListings(listings = listings, nameStr = nameStr + c)
         else:
-            listings.extend("listing" for i in range(numResults))
+            listings.extend(soup.find_all("article", class_ = "directory_item")[0:numResults])
 
-#Finds all "a" listings
-myListings = []
-addListings(myListings, numLetters = 1)
-print(len(myListings))
+def getListings(startChar = 'a', endChar = 'z', display = False):
+    listings = []
+    addListings(listings = listings, startChar = startChar, endChar = endChar, display = display)
+    return listings
