@@ -47,6 +47,7 @@ def addListings(listings, nameStr = '', numLetters = 26):
         else:
             listings.extend("listing" for i in range(numResults))
 
+#Finds all "a" listings
 myListings = []
 addListings(myListings, numLetters = 1)
 print(len(myListings))
