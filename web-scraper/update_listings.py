@@ -1,11 +1,12 @@
 import csv
+import os
 from bs4 import BeautifulSoup
 from base_scraper import getDetailedListings
 import time
 
 listings = getDetailedListings('a', 'z')
 
-with open('raw_listings.csv', 'w', newline = '') as file:
+with open('raw_listings_initial.csv', 'w', newline = '') as file:
     writer = csv.writer(file)
     fields = ['name', 'id', 'title', 'email', 'upi', 'unit', 'department', 'location', 'building', 'mailing']
 
@@ -26,3 +27,11 @@ with open('raw_listings.csv', 'w', newline = '') as file:
         mailing = soup.find('p', id = 'bps-final-mailing-addr').text
 
         writer.writerow([name, id, title, email, upi, unit, department, location, building, mailing])
+
+with open('raw_listings_initial.csv', 'r') as input, open('raw_listings.csv', 'w') as output:
+    writer = csv.writer(output)
+    for row in csv.reader(input):
+        if row[0] != "":
+            writer.writerow(row) 
+
+os.remove('raw_listings_initial.csv') 
