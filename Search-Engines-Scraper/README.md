@@ -1,6 +1,6 @@
 # search_engines  
 A Python library that queries Google, Bing, Yahoo and other search engines and collects the results from multiple search engine results pages.  
-Please note that web-scraping may be against the TOS of some search engines, and may result in a temporary ban.
+Please note that web-scraping may be against the TOS of some search engines, and may result in a temporary ban. This is written by @tasos-py
 
 ## Supported search engines  
 
