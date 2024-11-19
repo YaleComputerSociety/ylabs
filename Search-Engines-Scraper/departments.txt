@@ -1,0 +1,109 @@
+Department Name;URL
+African American Studies;https://afamstudies.yale.edu/
+African Studies;https://african.macmillan.yale.edu/
+American Studies;https://americanstudies.yale.edu/
+Anesthesiology;https://medicine.yale.edu/anesthesiology/
+Anthropology;https://anthropology.yale.edu/
+Applied Mathematics;https://applied.math.yale.edu/
+Applied Physics;https://appliedphysics.yale.edu/
+Archaeological Studies;https://archaeology.yale.edu/
+Architecture;https://www.architecture.yale.edu/
+Art;https://www.art.yale.edu/
+Astronomy;https://astronomy.yale.edu/
+Biological & Biomedical Sciences;https://medicine.yale.edu/bbs/
+Biomedical Engineering;https://seas.yale.edu/departments/biomedical-engineering
+Biostatistics;https://ysph.yale.edu/public-health-research-and-practice/department-research/biostatistics/
+Cell Biology;https://medicine.yale.edu/cellbio/
+Cellular & Molecular Physiology;https://medicine.yale.edu/physiology/
+Chemical & Environmental Engineering;https://seas.yale.edu/departments/chemical-and-environmental-engineering
+Chemistry;https://chem.yale.edu/
+Child Study Center;https://medicine.yale.edu/childstudy/
+Chronic Disease Epidemiology;https://ysph.yale.edu/public-health-research-and-practice/department-research/chronic-disease-epidemiology/
+Classics;https://classics.yale.edu/
+Cognitive Science;https://cogsci.yale.edu/
+Comparative Literature;https://complit.yale.edu/
+Comparative Medicine;https://medicine.yale.edu/compmed/
+Computational Biology & Biomedical Informatics;https://cbb.yale.edu/
+Computer Science;https://cpsc.yale.edu/
+Dermatology;https://medicine.yale.edu/dermatology/
+Early Modern Studies;https://earlymodern.yale.edu/
+Earth & Planetary Sciences;https://earth.yale.edu/
+East Asian Languages & Literatures;https://eall.yale.edu/
+East Asian Studies;https://ceas.yale.edu/
+Ecology & Evolutionary Biology;https://eeb.yale.edu/
+Economics;https://economics.yale.edu/
+Electrical & Computer Engineering;https://seas.yale.edu/departments/electrical-engineering
+Emergency Medicine;https://medicine.yale.edu/emergencymed/
+Engineering & Applied Science;https://seas.yale.edu/
+English Language & Literature;https://english.yale.edu/
+Environment;https://environment.yale.edu/
+Environmental Health Sciences;https://ysph.yale.edu/public-health-research-and-practice/department-research/environmental-health-sciences/
+Epidemiology of Microbial Diseases;https://ysph.yale.edu/public-health-research-and-practice/department-research/epidemiology-of-microbial-diseases/
+Ethics, Policy, and Economics;https://epe.yale.edu/people
+Ethnicity, Race, & Migration;https://erm.yale.edu/
+European & Russian Studies;https://europeanstudies.macmillan.yale.edu/
+Experimental Pathology;https://medicine.yale.edu/pathology/training/graduateprogram/
+Film & Media Studies;https://filmstudies.yale.edu/
+Forestry;https://environment.yale.edu/forest-school
+French;https://french.yale.edu/
+Genetics;https://medicine.yale.edu/genetics/
+German;https://german.yale.edu/
+Global Affairs;https://jackson.yale.edu/
+Health Care Management;https://ysph.yale.edu/public-health-research-and-practice/department-research/health-policy-and-management/
+Health Policy & Management;https://ysph.yale.edu/public-health-research-and-practice/department-research/health-policy-and-management/
+Hellenic Studies;https://macmillan.yale.edu/hellenic/people
+History;https://history.yale.edu/
+History of Art;https://arthistory.yale.edu/
+History of Medicine;https://medicine.yale.edu/histmed/
+History of Science & Medicine;https://hshm.yale.edu/
+Humanities;https://humanities.yale.edu/
+Immunobiology;https://medicine.yale.edu/immuno/
+Internal Medicine;https://medicine.yale.edu/intmed/
+International & Development Economics;https://economics.yale.edu/ide-ma-program
+Investigative Medicine;https://medicine.yale.edu/investigativemedicine/
+Italian Studies;https://italian.yale.edu/
+Jewish Studies;https://jewishstudies.yale.edu/
+Laboratory Medicine;https://medicine.yale.edu/labmed/
+Latin American Studies;https://clais.macmillan.yale.edu/
+Law;https://law.yale.edu/
+Linguistics;https://ling.yale.edu/
+Management;https://som.yale.edu/
+Mathematics;https://math.yale.edu/
+Mechanical Engineering & Materials Science;https://seas.yale.edu/departments/mechanical-engineering-and-materials-science
+Medieval Studies;https://medieval.yale.edu/
+Microbial Pathogenesis;https://medicine.yale.edu/micropath/
+Microbiology;https://medicine.yale.edu/bbs/tracks/microbiology/
+Modern Middle East Studies;https://cmes.macmillan.yale.edu/
+Molecular Biophysics & Biochemistry;https://mbb.yale.edu/
+Molecular, Cellular & Developmental Biology;https://mcdb.yale.edu/
+Music;https://yalemusic.yale.edu/
+Near Eastern Languages & Civilizations;https://nelc.yale.edu/
+Neurology;https://medicine.yale.edu/neurology/
+Neuroscience;https://medicine.yale.edu/neuroscience/
+Neuroscience, Interdepartmental Program;https://medicine.yale.edu/inp/
+Neurosurgery;https://medicine.yale.edu/neurosurgery/
+Nursing;https://nursing.yale.edu/
+Obstetrics, Gynecology & Reproductive Sciences;https://medicine.yale.edu/obgyn/
+Ophthalmology & Visual Science;https://medicine.yale.edu/eyes/
+Orthopaedics & Rehabilitation;https://medicine.yale.edu/ortho/
+Pathology;https://medicine.yale.edu/pathology/
+Pediatrics;https://medicine.yale.edu/pediatrics/
+Pharmacology;https://medicine.yale.edu/pharm/
+Philosophy;https://philosophy.yale.edu/
+Physics;https://physics.yale.edu/
+Political Science;https://politicalscience.yale.edu/
+Psychiatry;https://medicine.yale.edu/psychiatry/
+Psychology;https://psychology.yale.edu/
+Public Health;https://ysph.yale.edu/
+Radiology & Biomedical Imaging;https://medicine.yale.edu/diagnosticradiology/
+Religious Studies;https://religiousstudies.yale.edu/
+Slavic Languages & Literatures;https://slavic.yale.edu/
+Sociology;https://sociology.yale.edu/
+South Asian Studies;https://southasia.macmillan.yale.edu/
+Spanish & Portuguese;https://span-port.yale.edu/
+Statistics & Data Science;https://statistics.yale.edu/
+Surgery;https://medicine.yale.edu/surgery/
+Theater & Performance Studies;https://theaterstudies.yale.edu/
+Therapeutic Radiology/Radiation Oncology;https://medicine.yale.edu/therapeuticradiology/
+Urology;https://medicine.yale.edu/urology/
+Women’s, Gender, & Sexuality Studies;https://wgss.yale.edu/
