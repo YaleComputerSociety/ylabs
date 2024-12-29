@@ -1,8 +1,3 @@
-"""
-Scrapes the yale directory website in order to find information about all listed professors
-Eventually will create default RDB listings for all professors on the directory website
-"""
-
 import requests
 import time
 from selenium import webdriver
@@ -17,12 +12,12 @@ CAS_URL = "https://secure6.its.yale.edu/cas/login"
 
 driver = webdriver.Chrome()
 
-#Manual authentication function is kinda bare bones, can definitely be improved in future, but works for now
+#utilizes manual authentication that must be completed by the user in the pop-up window before proceeding (completing input in console)
 def manualAuthentication(maxSearchDuration = 3):
     driver.get(CAS_URL)
     input('Please login to CAS on the browser tab. Press enter when finished: ')
 
-    #Check authentification
+    #check authentication
     searchDuration = 0
     driver.get(DIRECTORY_URL)
 
@@ -84,12 +79,11 @@ def addListings(listings, nameStr = '', startChar = 'a', endChar = 'z', display 
 
         surplusResults = numResults != 1 and 'display: block' in soup.find(id = 'bps-result-region').find('div', class_ = 'directory_results_warning')['style'].split(';')
 
-        #Handle surplus results
+        #handle surplus results
         if(surplusResults):
             addListings(listings = listings, nameStr = nameStr + c, detailed = detailed)
         else:
             if(detailed & (numResults > 1)):
-                #articles = driver.find_elements(By.TAG_NAME, 'article')
                 results = driver.find_elements(By.CLASS_NAME, 'directory_item')
                 for result in results[0:numResults]:
                     linkText = result.find_element(By.CLASS_NAME, 'bps-result-name').text
