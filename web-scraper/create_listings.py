@@ -168,6 +168,70 @@ def classifyDepartments(inputFile, outputFile = "", verbose = False, batchSize =
     if blankOutput:
         os.remove(inputFile)
 
+def matchKeywords(inputFile, outputFile = "", verbose = False, batchSize = 50):
+    if client.collection_exists('keywords'):
+        blankOutput = outputFile == ''
+
+        if blankOutput:
+            with open(inputFile, 'r') as input, open('intermediate.csv', 'w') as output:
+                reader = csv.reader(input)
+                writer = csv.writer(output)
+
+                for row in reader:
+                    writer.writerow(row)
+                    
+            outputFile = inputFile
+            inputFile = 'intermediate.csv'
+        
+        client = QdrantClient(path = 'embeddings')
+
+        prompt_skeleton = """Title: {title}
+            Branch: {branch}
+            Department: {department}"""
+
+        llm = Llama(
+                model_path = 'INSERT MODEL PATH HERE',
+                embedding = True,
+                verbose = False
+            )
+
+        if verbose:
+            print("Beginning keyword matching")
+            start = time.time()
+            lap = time.time()
+
+            with open(inputFile, 'r') as file:
+                reader = csv.reader(file)
+                listingsLength  = sum(1 for row in reader)
+    
+        with open(inputFile, 'r') as input, open(outputFile, 'w') as output:
+            reader = csv.reader(input)
+            writer = csv.writer(output)
+
+            for index, row in enumerate(reader):
+                if verbose & (index % batchSize == 0) & (index > 0):
+                    print(f'{index} of {listingsLength}, {round(index/listingsLength*100, 2)}%; batch time: {time.time() - lap}; total time: {time.time() - start}')
+                    lap = time.time()
+                if row[0] != "name":
+                    prompt = prompt_skeleton.format(title = row[2], branch = row[5], department = row[6])
+                    prompt_vector = llm.create_embedding(prompt)['data'][0]['embedding']
+                    keywords = client.search(
+                        collection_name = 'keywords',
+                        query_vector = prompt_vector,
+                        limit = 4
+                    )
+                    writer.writerow(row + [keywords[0].payload['text']])
+                else:
+                    writer.writerow(row + ['keywords'])
+
+        if verbose:
+            print(f"Done; total time: {time.time() - start}")
+
+        if blankOutput:
+            os.remove(inputFile)
+    else:
+        print('Error: keywords embeddings collection does not currently exist. Please resolve by creating embeddings collection with generate_keywords.py before running script again')
+
 #Run the following two lines to create a new full listings csv from scratch (otherwise, only run specific functions)
 
 #Scrapes Yale directory and creates csv with acquired data
