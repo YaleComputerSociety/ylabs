@@ -1,9 +1,18 @@
 import express from "express";
 import passport from "passport";
 import { Strategy } from "passport-cas";
+import { ProfListing } from "./models/ProfListing";
 
 type User = {
   netId: string;
+  professor: boolean;
+  fname: string;
+  lname: string;
+  email: string;
+  upi: string;
+  unit: string;
+  department: string;
+  title: string;
 };
 
 passport.use(
@@ -22,6 +31,21 @@ passport.use(
 );
 
 passport.serializeUser<User>(function (user: any, done) {
+  user = user as User;
+  let professor = ProfListing.exists({ netId: user.netId });
+  user.professor = (professor == null) ? false : true;
+  if (professor) {
+    ProfListing.findOne({ id: user.netId }, function (prof: any) {
+      user.fname = prof.fname;
+      user.lname = prof.lname;
+      user.email = prof.email;
+      user.upi = prof.upi;
+      user.unit = prof.unit;
+      user.department = prof.department;
+      user.title = prof.title;
+      console.log("professor attributes: ", user);
+    });
+  }
   done(null, user.netId);
 });
 

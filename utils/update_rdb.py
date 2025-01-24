@@ -15,7 +15,7 @@ jsonFilePath = 'updates.json'
 data = []
 
 department_names = {}
-with open("valid_departments.txt", 'r') as f:
+with open("valid_departments.txt", mode='r') as f:
   department_names = [line.rstrip('\n') for line in f]
   department_names = set(department_names)
 print(department_names)
