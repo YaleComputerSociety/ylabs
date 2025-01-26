@@ -40,18 +40,6 @@ def createInitialListings(filename = 'raw_listings.csv'):
             if(name != ""):
                 writer.writerow([name, id, title, email, upi, unit, department, location, building, mailing])
 
-    #old, obsolete code (need to test before deleting)
-
-    '''
-    with open('intermediate.csv', 'r') as input, open(filename, 'w') as output:
-        writer = csv.writer(output)
-        for row in csv.reader(input):
-            if row[0] != "":
-                writer.writerow(row) 
-    
-    os.remove('intermediate.csv')
-    '''
-
 #classifies each listing under a valid department name using embeddings to fin the most relevant/correlated department name
 def classifyDepartments(inputFile, outputFile = "", verbose = False, batchSize = 50):
     #embeddings instruction taken from this rag video: https://www.youtube.com/watch?v=gigip1Pxf88&t=267s
@@ -169,6 +157,8 @@ def classifyDepartments(inputFile, outputFile = "", verbose = False, batchSize =
         os.remove(inputFile)
 
 def matchKeywords(inputFile, outputFile = "", verbose = False, batchSize = 50):
+    client = QdrantClient(path = 'embeddings')
+    
     if client.collection_exists('keywords'):
         blankOutput = outputFile == ''
 
@@ -182,8 +172,6 @@ def matchKeywords(inputFile, outputFile = "", verbose = False, batchSize = 50):
                     
             outputFile = inputFile
             inputFile = 'intermediate.csv'
-        
-        client = QdrantClient(path = 'embeddings')
 
         prompt_skeleton = """Title: {title}
             Branch: {branch}
@@ -220,7 +208,8 @@ def matchKeywords(inputFile, outputFile = "", verbose = False, batchSize = 50):
                         query_vector = prompt_vector,
                         limit = 4
                     )
-                    writer.writerow(row + [keywords[0].payload['text']])
+                    row.append([keyword.payload['text'] for keyword in keywords])
+                    writer.writerow(row)
                 else:
                     writer.writerow(row + ['keywords'])
 
@@ -232,9 +221,13 @@ def matchKeywords(inputFile, outputFile = "", verbose = False, batchSize = 50):
     else:
         print('Error: keywords embeddings collection does not currently exist. Please resolve by creating embeddings collection with generate_keywords.py before running script again')
 
-#Run the following two lines to create a new full listings csv from scratch (otherwise, only run specific functions)
+#Run the following three lines to create a new full listings csv from scratch (otherwise, only run specific functions)
 
 #Scrapes Yale directory and creates csv with acquired data
 createInitialListings(filename = 'professor_listings.csv')
 #Utilizes embeddings to match professors with deparatments (verbose set to true to show progress, as this takes longer)
 classifyDepartments(inputFile = 'professor_listings.csv', verbose = True)
+#Matches keywords for each professor listing (make sure to create keywords bank with generate_keywords.py)
+matchKeywords(inputFile = 'professor_listings.csv', verbose = True)
+
+#fix two word "one-word keywords" later, or figure out how to process them in search as one word
