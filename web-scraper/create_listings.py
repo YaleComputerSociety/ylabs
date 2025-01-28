@@ -4,6 +4,7 @@ import uuid
 import time
 from bs4 import BeautifulSoup
 from listings_scraper import getDetailedListings
+from generate_keywords import generateKeywordsTxt, createKeywordsCollection
 from llama_cpp import Llama
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams, PointStruct
@@ -70,7 +71,7 @@ def classifyDepartments(inputFile, outputFile = "", verbose = False, batchSize =
     #mxbai model from huggingface stored on computer at specified path
     #model link: https://huggingface.co/mixedbread-ai/mxbai-embed-large-v1
     llm = Llama(
-            model_path = 'INSERT MODEL PATH HERE',
+            model_path = 'MODEL PATH HERE',
             embedding = True,
             verbose = False
         )
@@ -178,7 +179,7 @@ def matchKeywords(inputFile, outputFile = "", verbose = False, batchSize = 50):
             Department: {department}"""
 
         llm = Llama(
-                model_path = 'INSERT MODEL PATH HERE',
+                model_path = 'MODEL PATH HERE',
                 embedding = True,
                 verbose = False
             )
@@ -227,6 +228,9 @@ def matchKeywords(inputFile, outputFile = "", verbose = False, batchSize = 50):
 createInitialListings(filename = 'professor_listings.csv')
 #Utilizes embeddings to match professors with deparatments (verbose set to true to show progress, as this takes longer)
 classifyDepartments(inputFile = 'professor_listings.csv', verbose = True)
+#Creates keywords bank txt file and then converts to a Qdrant collection for matching
+generateKeywordsTxt()
+createKeywordsCollection()
 #Matches keywords for each professor listing (make sure to create keywords bank with generate_keywords.py)
 matchKeywords(inputFile = 'professor_listings.csv', verbose = True)
 
