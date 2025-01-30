@@ -225,13 +225,13 @@ def matchKeywords(inputFile, outputFile = "", verbose = False, batchSize = 50):
 #Run the following three lines to create a new full listings csv from scratch (otherwise, only run specific functions)
 
 #Scrapes Yale directory and creates csv with acquired data
-createInitialListings(filename = 'professor_listings.csv')
+createInitialListings(filename = 'data/professor_listings.csv')
 #Utilizes embeddings to match professors with deparatments (verbose set to true to show progress, as this takes longer)
-classifyDepartments(inputFile = 'professor_listings.csv', verbose = True)
+classifyDepartments(inputFile = 'data/professor_listings.csv', verbose = True)
 #Creates keywords bank txt file and then converts to a Qdrant collection for matching
 generateKeywordsTxt()
 createKeywordsCollection()
 #Matches keywords for each professor listing (make sure to create keywords bank with generate_keywords.py)
-matchKeywords(inputFile = 'professor_listings.csv', verbose = True)
+matchKeywords(inputFile = 'data/professor_listings.csv', verbose = True)
 
 #fix two word "one-word keywords" later, or figure out how to process them in search as one word
