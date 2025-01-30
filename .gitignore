@@ -7,8 +7,11 @@ node_modules/
 server/node_modules/*
 server/src/config.ts
 server/.env
+client/.env
 
 client/node_modules/*
 
 notes.txt
 toFix.md
+
+.env

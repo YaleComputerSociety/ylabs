@@ -4,6 +4,11 @@ import { Request, Response, Router } from "express";
 
 const router = Router();
 
+const handleError = (response: Response, error: any) => {
+  console.error(error.message);
+  response.status(500).json({ message: error.message });
+};
+
 // Route for getting listing by id: for testing
 router.get('/byId/:id', async (request: Request, response: Response) => {
   try {
@@ -13,8 +18,7 @@ router.get('/byId/:id', async (request: Request, response: Response) => {
 
     return response.status(200).json(listing);
   } catch (error) {
-    console.log(error.message);
-    response.status(500).send({ message: error.message });
+    handleError(response, error);
   }
 });
 
@@ -50,9 +54,56 @@ router.get('/', async (request: Request, response: Response) => {
     return response.status(200).json(listings);
 
   } catch (error) {
-    console.log(error.message);
-    response.status(500).send({ message: error.message });
+    handleError(response, error);
   }
 });
 
+router.post('/add', async (request: Request, response: Response) => {
+  try {
+    const listingData = request.body; // Get the data from the request body
+    if (!listingData) {
+      throw new Error('At least one of the data should be provided');
+    }
+    const newListing = new Listing(listingData); // Create a new Listing instance
+    const savedListing = await newListing.save(); // Save the listing to the database
+    return response.status(200).json(savedListing); // Return the saved listing
+  } catch (error) {
+    handleError(response, error);
+  }
+});
+
+router.put('/update/:id', async (request: Request, response: Response) => {
+  try {
+    const { id } = request.params; // Get the ID from the request parameters
+    const updatedData = request.body; // Get the updated data from the request body
+
+    const updatedListing = await Listing.findByIdAndUpdate(id, updatedData, { new: true });
+    //Model.findByIdAndUpdate(id, update, options, callback);
+    if (!updatedListing) {
+      return response.status(404).send({ message: 'Listing not found' });
+    }
+
+    return response.status(200).json(updatedListing); // Return the updated listing
+  } catch (error) {
+    handleError(response, error);
+  }
+});
+
+router.delete('/delete/:id', async (request: Request, response: Response) => {
+  try {
+    const { id } = request.params;
+    const deletedListing = await Listing.findByIdAndDelete(id);
+    //Model.findByIdAndUpdate(id, update, options, callback);
+    if (!deletedListing) {
+      return response.status(404).send({ message: 'Listing not found' });
+    }
+
+    return response.status(200).json({ message: 'Listing deleted successfully' });
+  } catch (error) {
+    handleError(response, error); 
+  }
+});
+
+// add update delete three func CRUD
+// use postman w arbitrary query to test backend API
 export default router;
