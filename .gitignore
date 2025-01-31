@@ -51,7 +51,7 @@ client/build
 #Web scraper utility files
 web-scraper/my_paths.txt
 web-scraper/toDo.txt
-web-scraper/data/*
+web-scraper/data/
 
 #Web scraper pycache
 web-scraper/__pycache__/
