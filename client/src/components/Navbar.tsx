@@ -14,7 +14,7 @@ export default function Navbar() {
 
   return (
     <Box sx={{ flexGrow: 1}}>
-      <AppBar position="fixed" sx={{backgroundColor:'red'}}>
+      <AppBar position="fixed">
         <Toolbar>
           {isAuthenticated ? 
             <img src={RDBLogo} alt="rdb-logo" style={{width: '80px', height: '40px'}} /> : 
