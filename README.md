@@ -14,7 +14,7 @@ Run `yarn install:all` to install relevant npm packages. To launch the client, o
 
 #### For testing
 
-Run `yarn install:all & yarn build & yarn start`. Go to `http://localhost:3000` in your browser to view the application.
+Run `yarn test` or `yarn install:all && yarn build && yarn start`. Go to `http://localhost:3000` in your browser to view the application.
 
 ### Acknowledgements
 
