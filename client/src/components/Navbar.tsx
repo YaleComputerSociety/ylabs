@@ -5,6 +5,7 @@ import Typography from '@mui/material/Typography';
 import RDBLogo from "../assets/RDB.png";
 import YURALogo from "../assets/YURA.png";
 import SignOutButton from "../components/SignOutButton";
+import AboutButton from "../components/AboutButton";
 import { useContext } from "react";
 
 import UserContext from "../contexts/UserContext";
@@ -22,6 +23,7 @@ export default function Navbar() {
           }
           <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
           </Typography>
+          {isAuthenticated ? <AboutButton /> : <div />}
           {isAuthenticated ? <SignOutButton /> : <div />}
         </Toolbar>
       </AppBar>
