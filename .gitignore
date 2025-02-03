@@ -12,3 +12,11 @@ client/node_modules/*
 
 notes.txt
 toFix.md
+
+.DS_Store
+
+#Web scraper
+web-scraper/my_paths.txt
+web-scraper/toDo.txt
+web-scraper/data
+web-scraper/__pycache__
