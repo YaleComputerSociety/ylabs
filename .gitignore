@@ -1,14 +1,57 @@
-valid_departments_cpy.txt
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+#Full project utility files
 updates.csv
 updates.json
 sample_updates.json
-node_modules/
-
-server/node_modules/*
-server/src/config.ts
-server/.env
-
-client/node_modules/*
-
 notes.txt
+valid_departments_cpy.txt
 toFix.md
+
+#Ignore node modules across full project
+node_modules/
+**/node_modules/
+
+#OS-specific and IDE files
+.DS_Store
+
+#Environment files
+.env
+**/.env
+client/.env.local
+client/.env.development.local
+client/.env.test.local
+client/.env.production.local
+client/.env
+
+#Log files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+**/npm-debug.log*
+**/yarn-debug.log*
+**/yarn-error.log*
+
+#Server general
+server/src/config.ts
+
+#Server production
+server/build/
+
+#Client general
+client/.pnp
+client/.pnp.js
+
+#Client testing
+client/coverage
+
+#Client production
+client/build
+
+#Web scraper utility files
+web-scraper/my_paths.txt
+web-scraper/toDo.txt
+web-scraper/data/
+
+#Web scraper pycache
+web-scraper/__pycache__/
