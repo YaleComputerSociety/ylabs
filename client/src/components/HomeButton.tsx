@@ -1,6 +1,5 @@
 import Button from "@mui/material/Button";
 import { Link } from 'react-router-dom';
-import RDBLogo from "../assets/RDB.png";
 
 const HomeButton = () => {
     return(
@@ -8,7 +7,7 @@ const HomeButton = () => {
             component={Link}
             to="/"
         >
-            <img src={RDBLogo} alt="rdb-logo" style={{width: '80px', height: '40px'}} />
+            <img src="/assets/logos/RDB.png" alt="rdb-logo" style={{width: '80px', height: '40px'}} />
         </Button>
     );
 };

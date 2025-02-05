@@ -1,6 +1,4 @@
 import Button from "@mui/material/Button";
-import { Link } from 'react-router-dom';
-import YURALogo from "../assets/YURA.png";
 
 const YURAButton = () => {
     return(
@@ -10,7 +8,7 @@ const YURAButton = () => {
             target="_blank"
             rel="noopener noreferrer"
         >
-            <img src={YURALogo} alt="yura-logo" style={{width: '90px', height: '20px'}} />
+            <img src="/assets/logos/YURA.png" alt="yura-logo" style={{width: '90px', height: '20px'}} />
         </Button>
     );
 };

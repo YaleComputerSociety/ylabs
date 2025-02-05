@@ -2,8 +2,6 @@ import AppBar from '@mui/material/AppBar';
 import Box from '@mui/material/Box';
 import Toolbar from '@mui/material/Toolbar';
 import Typography from '@mui/material/Typography';
-import RDBLogo from "../assets/RDB.png";
-import YURALogo from "../assets/YURA.png";
 import SignOutButton from "./SignOutButton";
 import AboutButton from "./AboutButton";
 import HomeButton from "./HomeButton";

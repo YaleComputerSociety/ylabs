@@ -3,7 +3,6 @@ import styled from "styled-components";
 import { useContext } from "react";
 
 import SignInButton from "../components/SignInButton";
-import RDBLogo from "../assets/RDB.png";
 import UserContext from "../contexts/UserContext";
 import { Navigate } from "react-router-dom";
 
@@ -13,7 +12,7 @@ const Login = () => {
   return (
     <Container>
       <Description>
-        <Logo src={RDBLogo} alt="rdb-logo" />
+        <Logo src="/assets/logos/RDB.png" alt="rdb-logo" />
         <TitleText>Yale Research Database</TitleText>
         <Text>
           Search through 1400+ Yale faculty listings across 60+ fields of study. Learn about professors who share your research interests and find potential research mentors.
