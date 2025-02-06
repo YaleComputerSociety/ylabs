@@ -95,6 +95,14 @@ const currentDevelopers = [
         location: "New York, NY",
         github: "https://github.com/quntao-z",
     },
+    {
+        name: "Christian Phanhthourath",
+        position: "Developer",
+        image: "/assets/developers/ChristianPhanhthourath.jpeg",
+        location: "Marietta, GA",
+        github: "https://github.com/cphanhth",
+        linkedin: "https://linkedin.com/in/christianphanhthourath",
+    },
 ]
 
 const pastDevelopers = [
