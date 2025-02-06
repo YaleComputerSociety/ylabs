@@ -73,9 +73,11 @@ const currentDevelopers = [
     },
     {
         name: "Sebastian Gonzalez",
+        image: "/assets/developers/SebastianGonzalez.jpeg",
         position: "Developer",
         location: "Montclair, NJ",
         github: "https://github.com/Seb-G0",
+        linkedin: "https://www.linkedin.com/in/sebastian-ravi-gonzalez/",
     },
     {
         name: "Dohun Kim",
