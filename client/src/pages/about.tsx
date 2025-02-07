@@ -87,9 +87,11 @@ const currentDevelopers = [
     },
     {
         name: "Alan Zhong",
+        image: "/assets/developers/AlanZhong.jpeg",
         position: "Developer",
         location: "Basking Ridge, NJ",
         github: "https://github.com/azh248",
+        linkedin: "https://www.linkedin.com/in/azhong248/",
     },
     {
         name: "Quntao Zheng",
