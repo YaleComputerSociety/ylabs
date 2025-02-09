@@ -10,10 +10,10 @@
   "scripts": {
     "build": "tsc",
     "build:clean": "rm -rf build",
-    "dev": "NODE_ENV=dev nodemon src/index.ts",
+    "dev": "cross-env NODE_ENV=dev nodemon src/index.ts",
     "start": "node build/index.js",
-    "test": "NODE_ENV=test jest --config ./src/testUtils/jest.config.js",
-    "prod": "NODE_ENV=prod nodemon src/index.ts"
+    "test": "cross-env NODE_ENV=test jest --config ./src/testUtils/jest.config.js",
+    "prod": "cross-env NODE_ENV=prod nodemon src/index.ts"
   },
   "dependencies": {
     "cookie-session": "^2.1.0",
@@ -24,7 +24,8 @@
     "mongoose": "^8.0.4",
     "passport": "^0.5.2",
     "passport-cas": "git+https://github.com/coursetable/passport-cas#79612f1",
-    "passport-strategy": "^1.0.0"
+    "passport-strategy": "^1.0.0",
+    "server": "file:"
   },
   "devDependencies": {
     "@types/cookie-session": "^2.0.48",
