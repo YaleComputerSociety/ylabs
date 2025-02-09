@@ -82,8 +82,10 @@ const currentDevelopers = [
     {
         name: "Dohun Kim",
         position: "Developer",
+        image: "/assets/developers/DohunKim.jpeg",
         location: "Anyang-si, South Korea",
         github: "https://github.com/rlaehgnss",
+        linkedin: "https://www.linkedin.com/in/dohun-kim-848028251/",
     },
     {
         name: "Alan Zhong",
@@ -95,9 +97,11 @@ const currentDevelopers = [
     },
     {
         name: "Quntao Zheng",
+        image: "/assets/developers/QuntaoZheng.jpeg",
         position: "Developer",
         location: "New York, NY",
         github: "https://github.com/quntao-z",
+        linkedin: "https://www.linkedin.com/in/quntao-zheng/",
     },
     {
         name: "Christian Phanhthourath",
@@ -107,6 +111,13 @@ const currentDevelopers = [
         github: "https://github.com/cphanhth",
         linkedin: "https://linkedin.com/in/christianphanhthourath",
     },
+    {
+        name: "Christina Xu",
+        position: "Developer",
+        image: "/assets/developers/ChristinaXu.jpeg",
+        location: "Lincoln, Nebraska",
+        github: "https://github.com/shadaxiong",
+    }
 ]
 
 const pastDevelopers = [
