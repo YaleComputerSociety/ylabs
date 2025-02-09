@@ -73,28 +73,51 @@ const currentDevelopers = [
     },
     {
         name: "Sebastian Gonzalez",
+        image: "/assets/developers/SebastianGonzalez.jpeg",
         position: "Developer",
         location: "Montclair, NJ",
         github: "https://github.com/Seb-G0",
+        linkedin: "https://www.linkedin.com/in/sebastian-ravi-gonzalez/",
     },
     {
         name: "Dohun Kim",
         position: "Developer",
+        image: "/assets/developers/DohunKim.jpeg",
         location: "Anyang-si, South Korea",
         github: "https://github.com/rlaehgnss",
+        linkedin: "https://www.linkedin.com/in/dohun-kim-848028251/",
     },
     {
         name: "Alan Zhong",
+        image: "/assets/developers/AlanZhong.jpeg",
         position: "Developer",
         location: "Basking Ridge, NJ",
         github: "https://github.com/azh248",
+        linkedin: "https://www.linkedin.com/in/azhong248/",
     },
     {
         name: "Quntao Zheng",
+        image: "/assets/developers/QuntaoZheng.jpeg",
         position: "Developer",
         location: "New York, NY",
         github: "https://github.com/quntao-z",
+        linkedin: "https://www.linkedin.com/in/quntao-zheng/",
     },
+    {
+        name: "Christian Phanhthourath",
+        position: "Developer",
+        image: "/assets/developers/ChristianPhanhthourath.jpeg",
+        location: "Marietta, GA",
+        github: "https://github.com/cphanhth",
+        linkedin: "https://linkedin.com/in/christianphanhthourath",
+    },
+    {
+        name: "Christina Xu",
+        position: "Developer",
+        image: "/assets/developers/ChristinaXu.jpeg",
+        location: "Lincoln, Nebraska",
+        github: "https://github.com/shadaxiong",
+    }
 ]
 
 const pastDevelopers = [
