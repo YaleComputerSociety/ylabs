@@ -31,11 +31,15 @@ passport.use(
 );
 
 passport.serializeUser<User>(function (user: any, done) {
-  user = user as User;
-  let professor = ProfListing.exists({ netId: user.netId });
+  done(null, user.netId);
+});
+
+passport.deserializeUser(function (netId, done) {
+  const user: User = {} as User;
+  let professor = ProfListing.exists({ id: netId });
   user.professor = (professor == null) ? false : true;
   if (professor) {
-    ProfListing.findOne({ id: user.netId }, function (prof: any) {
+    ProfListing.find({ id: netId }).then(function (prof: any) {
       user.fname = prof.fname;
       user.lname = prof.lname;
       user.email = prof.email;
@@ -46,13 +50,7 @@ passport.serializeUser<User>(function (user: any, done) {
       console.log("professor attributes: ", user);
     });
   }
-  done(null, user.netId);
-});
-
-passport.deserializeUser(function (netId, done) {
-  done(null, {
-    netId,
-  });
+  done(null, user);
 });
 
 const casLogin = function (
