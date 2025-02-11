@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 
-const userSchema = new mongoose.Schema(
+const userBackupSchema = new mongoose.Schema(
   {
     netid: {
         type: String,
@@ -44,5 +44,5 @@ const userSchema = new mongoose.Schema(
   }
 );
 
-export const User = mongoose.model('users', userSchema);
-export default User;
+export const UserBackup = mongoose.model('user_backups', userBackupSchema);
+export default UserBackup;
