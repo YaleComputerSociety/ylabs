@@ -38,7 +38,7 @@ const app = express()
   .use(routes)
   .use('/', express.static('../client/build'));
 
-app.get('/login', function(req, res) {
+app.get(['/login', '/about'], function(req, res) {
   res.sendFile(path.join(__dirname, '../../client/build/index.html'), function(err) {
     if (err) {
       res.status(500).send(err)
