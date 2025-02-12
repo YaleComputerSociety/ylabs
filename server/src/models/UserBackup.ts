@@ -41,8 +41,10 @@ const userBackupSchema = new mongoose.Schema(
         type: [mongoose.Schema.ObjectId],
         default: [],
     }
+  },
+  {
+    timestamps: true,
   }
 );
 
 export const UserBackup = mongoose.model('user_backups', userBackupSchema);
-export default UserBackup;
