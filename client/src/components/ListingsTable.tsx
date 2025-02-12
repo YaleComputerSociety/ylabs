@@ -26,13 +26,17 @@ type ListingsCardListProps = {
 export default function ListingsCardList({ listings }: ListingsCardListProps) {
   const [order, setOrder] = React.useState<Order>('desc');
   const [orderBy, setOrderBy] = React.useState<keyof Listing>('lastUpdated');
-  const [page, setPage] = React.useState(0);
-  const [rowsPerPage, setRowsPerPage] = React.useState(10);
+  const [visibleRows, setVisibleRows] = React.useState<Listing[]>([]);
   const [modalOpen, setModalOpen] = React.useState(false);
   const [selectedListingId, setSelectedListingId] = React.useState<number | null>(null);
+  const [loading, setLoading] = React.useState(false);
+
+  const batchSize = 10; // Load 10 items at a time
+  const observerRef = React.useRef<HTMLDivElement | null>(null);
 
   React.useEffect(() => {
-    setPage(0);
+    // Initial load
+    setVisibleRows(listings.slice(0, batchSize));
   }, [listings]);
 
   const handleRequestSort = (property: keyof Listing) => {
@@ -46,26 +50,44 @@ export default function ListingsCardList({ listings }: ListingsCardListProps) {
     setModalOpen(true);
   };
 
-  const handleChangeRowsPerPage = (event: React.ChangeEvent<HTMLSelectElement>) => {
-    setRowsPerPage(parseInt(event.target.value, 10));
-    setPage(0);
+  // Load more listings when reaching the bottom
+  const loadMoreListings = React.useCallback(() => {
+    if (loading || visibleRows.length >= listings.length) return;
+    setLoading(true);
+    setTimeout(() => {
+      setVisibleRows((prev) => [
+        ...prev,
+        ...listings.slice(prev.length, prev.length + batchSize),
+      ]);
+      setLoading(false);
+    }, 500);
+  }, [loading, visibleRows, listings]);
+
+  // Intersection Observer to detect when user scrolls to the bottom
+  React.useEffect(() => {
+    if (!observerRef.current) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          loadMoreListings();
+        }
+      },
+      { threshold: 1 }
+    );
+
+    observer.observe(observerRef.current);
+
+    return () => observer.disconnect();
+  }, [loadMoreListings]);
+
+  // Scroll to top button
+  const scrollToTop = () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const totalPages = Math.ceil(listings.length / rowsPerPage);
-
-  const handlePrevPage = () => setPage((prev) => Math.max(prev - 1, 0));
-  const handleNextPage = () => setPage((prev) => Math.min(prev + 1, totalPages - 1));
-
-  const visibleRows = React.useMemo(
-    () =>
-      listings
-        .sort(getComparator(order, orderBy))
-        .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage),
-    [listings, order, orderBy, page, rowsPerPage]
-  );
-
   return (
-    <div className="flex flex-col items-center p-4">
+    <div className="flex flex-col items-center p-4 relative">
 
       {/* Modal */}
       {selectedListingId !== null && (
@@ -102,7 +124,13 @@ export default function ListingsCardList({ listings }: ListingsCardListProps) {
           >
             <div className="flex justify-between items-center">
               <h2 className="text-lg font-bold">{listing.name}</h2>
-              <span className="text-sm text-gray-500">{listing.lastUpdated}</span>
+              <span className="text-sm text-gray-500">
+                {new Date(listing.lastUpdated).toLocaleDateString('en-US', {
+                  month: '2-digit',
+                  day: '2-digit',
+                  year: 'numeric'
+                })}
+              </span>
             </div>
             <p className="text-gray-700 text-sm mt-2">{listing.departments.replaceAll('; ', ', ')}</p>
             <p className="text-gray-800 mt-2">
@@ -121,38 +149,19 @@ export default function ListingsCardList({ listings }: ListingsCardListProps) {
         ))}
       </div>
 
-      {/* Pagination */}
-      <div className="mt-6 flex items-center space-x-4">
-        <button
-          onClick={handlePrevPage}
-          disabled={page === 0}
-          className="px-4 py-2 bg-blue-500 text-white rounded disabled:bg-gray-300 disabled:cursor-not-allowed"
-        >
-          Previous
-        </button>
-        <div className="text-gray-700">
-          Page <span className="font-bold">{page + 1}</span> of {totalPages}
-        </div>
-        <button
-          onClick={handleNextPage}
-          disabled={page === totalPages - 1 || totalPages === 0}
-          className="px-4 py-2 bg-blue-500 text-white rounded disabled:bg-gray-300 disabled:cursor-not-allowed"
-        >
-          Next
-        </button>
+      {/* Infinite Scroll Trigger */}
+      <div ref={observerRef} className="h-10 w-full"></div>
 
-        <label className="ml-4 text-gray-700">
-          Rows per page:&nbsp;
-          <select
-            value={rowsPerPage}
-            onChange={handleChangeRowsPerPage}
-            className="border rounded px-2 py-1"
-          >
-            <option value={10}>10</option>
-            <option value={25}>25</option>
-          </select>
-        </label>
-      </div>
+      {/* Scroll to Top Button */}
+      <button
+        onClick={scrollToTop}
+        className="fixed bottom-6 right-6 bg-blue-500 text-white p-3 rounded-full shadow-lg hover:bg-blue-700 transition"
+      >
+        ⬆️
+      </button>
+
+      {/* Loading Indicator */}
+      {loading && <p className="text-gray-500 mt-4">Loading more listings...</p>}
     </div>
   );
 }
