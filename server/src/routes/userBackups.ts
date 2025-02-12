@@ -1,4 +1,5 @@
 import express from "express";
+import mongoose from "mongoose";
 import { UserBackup } from '../models';
 import { Request, Response, Router } from "express";
 
@@ -29,6 +30,10 @@ router.get("/", async (request: Request, response: Response) => {
 
 //Read specific user backup by ObjectId
 router.get('/byId/:id', async (request: Request, response: Response) => {
+    if (!mongoose.Types.ObjectId.isValid(request.params.id)) {
+            return response.status(400).json({ message: `Id does not conform to ObjectId format: ${request.params.id}`});
+    }
+    
     try {
         const user = await UserBackup.findById(request.params.id);
 
@@ -61,6 +66,10 @@ router.get('/byNetId/:netid', async (request: Request, response: Response) => {
 
 //Update data for a specific user backup by ObjectId
 router.put('/byId/:id', async (request: Request, response: Response) => {
+    if (!mongoose.Types.ObjectId.isValid(request.params.id)) {
+            return response.status(400).json({ message: `Id does not conform to ObjectId format: ${request.params.id}`});
+    }
+    
     try {
         const user = await UserBackup.findByIdAndUpdate(request.params.id, request.body,
             { new: true, runValidators: true }
@@ -99,6 +108,10 @@ router.put('/byNetId/:netid', async (request: Request, response: Response) => {
 
 //Delete user backup by ObjectId
 router.delete('/byId/:id', async (request: Request, response: Response) => {
+    if (!mongoose.Types.ObjectId.isValid(request.params.id)) {
+            return response.status(400).json({ message: `Id does not conform to ObjectId format: ${request.params.id}`});
+    }
+    
     try {
         const user = await UserBackup.findByIdAndDelete(request.params.id);
 
