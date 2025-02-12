@@ -35,7 +35,7 @@ export default function ListingModal(props: ListingModalProps) {
       aria-describedby="modal-modal-description"
       sx={{overflow:'scroll', width: '75%', left: '12.5%', maxHeight:(windowHeight - 200).toString() + 'px', marginTop:'100px' }}
     >
-      <Box sx={modalStyle}>
+      <Box className="bg-gray-200 shadow-md rounded-lg p-6 w-3/4 mx-auto mt-20">
         <Typography id="modal-modal-title" variant="h6" component="h2">
           Research Posting from {listing.name}
         </Typography>
