@@ -5,7 +5,7 @@
   "proxy": "https://rdb.onrender.com",
   "license": "MIT",
   "engines": {
-    "node": "16.20"
+    "node": ">=16.20"
   },
   "scripts": {
     "build": "tsc",
