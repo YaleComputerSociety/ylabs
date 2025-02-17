@@ -4,6 +4,18 @@ import { Request, Response, Router } from "express";
 
 const router = Router();
 
+//Create new listing
+router.post("/", async (request: Request, response: Response) => {
+    try {
+        const listing = new Listing(request.body);
+        await listing.save();
+        response.status(201).json({ listing: listing.toObject(), success: true });
+    } catch (error) {
+        console.log(error.message);
+        response.status(400).json({ error: error.message, success: false });
+    }
+});
+
 // Route for getting listing by id: for testing
 router.get('/byId/:id', async (request: Request, response: Response) => {
   try {

@@ -5,7 +5,7 @@ import dotenv from "dotenv";
 dotenv.config();
 
 const port = process.env.PORT || 4000;
-const mongoUri = process.env.MONGODBURL;
+const mongoUri = (process.env.MONGODBURL_TEST && (process.env.API_MODE == 'test')) ? process.env.MONGODBURL_TEST : process.env.MONGODBURL;
 
 const startApp = async () => {
   try {

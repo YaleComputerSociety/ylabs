@@ -55,3 +55,6 @@ web-scraper/data/
 
 #Web scraper pycache
 web-scraper/__pycache__/
+
+#MongoDB local backup
+backup
