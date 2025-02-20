@@ -1,10 +1,18 @@
-import express from "express";
+import express, { Request, Response, NextFunction } from "express";
 import passport from "passport";
 import { Strategy } from "passport-cas";
 
 type User = {
   netId: string;
 };
+
+declare global {
+  namespace Express {
+    interface User {
+      netId: string;
+    }
+  }
+}
 
 passport.use(
   new Strategy(
@@ -25,7 +33,7 @@ passport.serializeUser<User>(function (user: any, done) {
   done(null, user.netId);
 });
 
-passport.deserializeUser(function (netId, done) {
+passport.deserializeUser(function (netId: string, done) {
   done(null, {
     netId,
   });
@@ -76,8 +84,8 @@ export default (app: express.Express) => {
 
   app.get("/cas", casLogin);
 
-  app.get("/logout", (req, res) => {
-    req.logOut();
-    return res.json({ success: true });
+  app.get("/logout", (req: Request, res: Response) => {
+    req.logout();
+    res.redirect("/");
   });
 };

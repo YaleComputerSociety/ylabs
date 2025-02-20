@@ -1,6 +1,5 @@
-import express from 'express';
+import { Router, Request, Response } from "express";
 import { Listing } from '../models';
-import { Request, Response, Router } from "express";
 
 const router = Router();
 
@@ -11,7 +10,7 @@ router.get('/byId/:id', async (request: Request, response: Response) => {
 
     const listing = await Listing.findById(id);
 
-    return response.status(200).json(listing);
+    response.status(200).json(listing);
   } catch (error) {
     console.log(error.message);
     response.status(500).send({ message: error.message });
@@ -47,7 +46,7 @@ router.get('/', async (request: Request, response: Response) => {
     }
     
     const listings = await Listing.find(query);
-    return response.status(200).json(listings);
+    response.status(200).json(listings);
 
   } catch (error) {
     console.log(error.message);

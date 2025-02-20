@@ -21,7 +21,11 @@
     "test": "yarn install:all && yarn build && yarn start"
   },
   "dependencies": {
-    "concurrently": "^8.2.2"
-  },
-  "devDependencies": {}
+    "@types/express": "^5.0.0",
+    "axios": "^1.7.9",
+    "concurrently": "^8.2.2",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "yalies": "^2.0.0"
+  }
 }
