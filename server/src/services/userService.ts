@@ -74,12 +74,17 @@ export const deleteUser = async(id: any) => {
         if (!user) {
             throw new NotFoundError(`User not found with ObjectId: ${id}`);
         }
-        const {netid, email, isProfessor, fname, lname, departments, ownListings, favListings} = user;
+
+        const {netid, email, isProfessor, fname, lname, website, bio, departments, ownListings, favListings} = user;
+        const userBackupData = Object.fromEntries(
+            Object.entries({netid, email, isProfessor, fname, lname, website, bio, departments, ownListings, favListings})
+                .filter(([_, value]) => value !== undefined)
+        );
 
         if (await userBackupExists(netid)) {
-            await updateUserBackup(netid, {netid, email, isProfessor, fname, lname, departments, ownListings, favListings});
+            await updateUserBackup(netid, userBackupData);
         } else {
-            await createUserBackup({netid, email, isProfessor, fname, lname, departments, ownListings, favListings});
+            await createUserBackup(userBackupData);
         }
         await User.findByIdAndDelete(id);
 
@@ -89,17 +94,23 @@ export const deleteUser = async(id: any) => {
         if (!user) {
             throw new NotFoundError(`User not found with NetId: ${id}`);
         }
-        const {netid, email, isProfessor, fname, lname, departments, ownListings, favListings} = user;
+        
+        const {netid, email, isProfessor, fname, lname, website, bio, departments, ownListings, favListings} = user;
+        const userBackupData = Object.fromEntries(
+            Object.entries({netid, email, isProfessor, fname, lname, website, bio, departments, ownListings, favListings})
+                .filter(([_, value]) => value !== undefined)
+        );
 
+        let backup;
 
         if (await userBackupExists(netid)) {
-            await updateUserBackup(id, {netid, email, isProfessor, fname, lname, departments, ownListings, favListings});
+            backup = await updateUserBackup(id, userBackupData);
         } else {
-            await createUserBackup({netid, email, isProfessor, fname, lname, departments, ownListings, favListings});
+            backup = await createUserBackup(userBackupData);
         }
         await User.findOneAndDelete({ netid: { $regex: `^${id}$`, $options: 'i'} });
 
-        return user.toObject();
+        return backup;
     }
 }
 
