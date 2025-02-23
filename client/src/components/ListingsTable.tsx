@@ -40,9 +40,23 @@ export default function ListingsCardList({ listings }: ListingsCardListProps) {
   }, [listings]);
 
   const handleRequestSort = (property: keyof Listing) => {
-    const isAsc = orderBy === property && order === 'asc';
-    setOrder(isAsc ? 'desc' : 'asc');
-    setOrderBy(property);
+    setOrder((prevOrder) => {
+      const isAsc = orderBy === property && prevOrder === 'asc';
+      const newOrder = isAsc ? 'desc' : 'asc';
+      
+      // Sort the listings based on the new order
+      const sortedListings = [...visibleRows].sort((a, b) =>
+        newOrder === 'asc'
+          ? a[property] > b[property] ? 1 : -1
+          : a[property] < b[property] ? 1 : -1
+      );
+  
+      // Update states
+      setOrderBy(property);
+      setVisibleRows(sortedListings);
+  
+      return newOrder;
+    });
   };
 
   const openModalForListing = (listingId: number) => {
@@ -88,7 +102,7 @@ export default function ListingsCardList({ listings }: ListingsCardListProps) {
 
   return (
     <div className="flex flex-col items-center p-4 relative">
-
+      
       {/* Modal */}
       {selectedListingId !== null && (
         <ListingsModal
@@ -99,7 +113,7 @@ export default function ListingsCardList({ listings }: ListingsCardListProps) {
       )}
 
       {/* Sorting Buttons */}
-      <div className="mb-4 flex justify-between w-full max-w-5xl">
+      <div className="mb-4 flex justify-between w-full" style={{ maxWidth: '80%' }}>
         <button
           onClick={() => handleRequestSort('name')}
           className="px-4 py-2 bg-blue-500 text-white rounded"
@@ -115,15 +129,21 @@ export default function ListingsCardList({ listings }: ListingsCardListProps) {
       </div>
 
       {/* List of Cards (Rows) */}
-      <div className="w-full max-w-5xl">
+      <div className="w-full" style={{ maxWidth: '80%' }}>
         {visibleRows.map((listing) => (
           <div
             key={listing.id}
             onClick={() => openModalForListing(listing.id)}
             className="bg-gray-100 shadow-md rounded-lg p-4 mb-4 transition-transform hover:-translate-y-1 cursor-pointer"
           >
+            {/* Header with Name and Departments */}
             <div className="flex justify-between items-center">
-              <h2 className="text-lg font-bold">{listing.name}</h2>
+              <div className="flex items-center">
+                <h2 className="text-lg font-semibold">{listing.name}</h2>
+                <p className="text-gray-700 text-sm ml-4">
+                  {listing.departments.replaceAll('; ', ', ')}
+                </p>
+              </div>
               <span className="text-sm text-gray-500">
                 {new Date(listing.lastUpdated).toLocaleDateString('en-US', {
                   month: '2-digit',
@@ -132,22 +152,34 @@ export default function ListingsCardList({ listings }: ListingsCardListProps) {
                 })}
               </span>
             </div>
-            <p className="text-gray-700 text-sm mt-2">{listing.departments.replaceAll('; ', ', ')}</p>
-            <p className="text-gray-800 mt-2">
-              {listing.description.length > 100 ? listing.description.slice(0, 90) + ' (see more...)' : listing.description}
-            </p>
-            <a
-              href={listing.website}
-              onClick={(e) => e.stopPropagation()}
-              className="text-blue-500 underline mt-2 inline-block"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Lab Website
-            </a>
+            {/* Description and Lab Website on the same line */}
+            <div className="flex items-center justify-between mt-2">
+              <p className="text-gray-800 text-sm">
+                {listing.description.length > 100
+                  ? listing.description.slice(0, 90) + ' (see more...)'
+                  : listing.description}
+              </p>
+              <a
+                href={listing.website}
+                onClick={(e) => e.stopPropagation()}
+                className="ml-4"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <button className="p-2 bg-gray-200 rounded hover:bg-gray-300">
+                  <img
+                    src="/assets/icons/link-icon.png"
+                    alt="Lab Website"
+                    className="w-6 h-6"
+                  />
+                </button>
+              </a>
+            </div>
           </div>
         ))}
       </div>
+
+      
 
       {/* Infinite Scroll Trigger */}
       <div ref={observerRef} className="h-10 w-full"></div>
