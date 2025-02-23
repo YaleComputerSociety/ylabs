@@ -6,6 +6,7 @@ import SignOutButton from "./SignOutButton";
 import AboutButton from "./AboutButton";
 import HomeButton from "./HomeButton";
 import YURAButton from './YURAButton';
+import AccountButton from "./AccountButton"
 import { useContext } from "react";
 
 import UserContext from "../contexts/UserContext";
@@ -25,6 +26,7 @@ export default function Navbar() {
           <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
           </Typography>
           {isAuthenticated ? <AboutButton /> : <div />}
+          {isAuthenticated ? <AccountButton /> : <div />}
           {isAuthenticated ? <FeedbackButton /> : <div />}
           {isAuthenticated ? <SignOutButton /> : <div />}
         </Toolbar>
