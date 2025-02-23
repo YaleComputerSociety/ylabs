@@ -10,7 +10,7 @@ import swal from "sweetalert";
  
 type SearchProps = {
   setListings: (listings: Listing[]) => void;
-  setIsLoading: (listings: Boolean) => void;
+  setIsLoading: (isLoading: Boolean) => void;
   numSearches: number;
   setNumSearches: (searches: number) => void;
 }
