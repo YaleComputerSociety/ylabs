@@ -4,7 +4,7 @@ const About = () => {
     return (
         <div className="flex flex-col items-center p-8 min-h-screen mt-24">
             <div className="max-w-5xl text-center">
-                <h1 className="text-4xl font-bold mb-7">Welcome to RDB! 🔬</h1>
+                <h1 className="text-4xl font-bold mb-7">Welcome to Yale Labs! 🔬</h1>
                 <p className="text-lg text-gray-700 mb-10 leading-relaxed">
                     A collaboration between the{" "}
                     <a
@@ -24,9 +24,9 @@ const About = () => {
                     >
                         Yale Undergraduate Research Association
                     </a>
-                    , RDB brings students a single, 
+                    , Yale Labs brings students a single, 
                     streamlined platform to browse research opportunities at Yale! With a mix of lab listings submitted by professors and scraped 
-                    from the internet, our mission at RDB is to make finding your next lab as stress-free as possible with all the information you 
+                    from the internet, our mission at Yale Labs is to make finding your next lab as stress-free as possible with all the information you 
                     need in one place.
                 </p>
                 <a href="https://yalecomputersociety.org/" target="_blank" rel="noopener noreferrer">
