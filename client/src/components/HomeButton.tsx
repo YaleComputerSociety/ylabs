@@ -7,7 +7,7 @@ const HomeButton = () => {
             component={Link}
             to="/"
         >
-            <img src="/assets/logos/RDB.png" alt="rdb-logo" style={{width: '80px', height: '40px'}} />
+            <img src="/assets/logos/ylabs-temp.png" alt="ylabs-logo" style={{width: '65px', height: '26px'}} />
         </Button>
     );
 };
