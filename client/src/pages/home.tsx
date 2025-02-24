@@ -2,8 +2,7 @@ import {useState} from "react";
 import ListingsTable from "../components/ListingsTable";
 
 import Search from "../components/Search";
-import SearchBar from "../components/search/SearchBar";
-import FilterDropdown from "../components/search/FilterDropdown";
+import SearchHub from "../components/search/SearchHub";
 import { departmentNames } from "../utils/departmentNames";
 
 import styled from "styled-components";
@@ -14,16 +13,12 @@ import PulseLoader from "react-spinners/PulseLoader";
 
 const Home = () => {
     const [listings, setListings] = useState<Listing[]>([]);
-    const [numSearches, setNumSearches] = useState(0);
     const [isLoading, setIsLoading] = useState<Boolean>(false);
-
-    const [queryString, setQueryString] = useState<string>("");
 
     return (
         <div style={{marginTop: '6rem', marginLeft: '3rem', marginRight: '3rem'}}>
-            <SearchBar queryString={queryString} setQueryString={setQueryString}></SearchBar>
             <div className='mt-12'>
-                <FilterDropdown allDepartments={departmentNames}></FilterDropdown>
+                <SearchHub allDepartments={departmentNames} setListings={setListings} setIsLoading={setIsLoading}></SearchHub>
             </div>
             <div style={{marginTop: '2rem'}}></div>
             {isLoading ? (
@@ -32,9 +27,9 @@ const Home = () => {
                 </div>
                 ) : (listings.length > 0 ? (
                         <ListingsTable listings={listings}></ListingsTable>
-                    ) : (numSearches === 0 ? 
-                            <NoResultsText>Start a search using the above menu </NoResultsText> 
-                            : <NoResultsText>No results match the search criteria</NoResultsText>))
+                    ) : (
+                        <NoResultsText>No results match the search criteria</NoResultsText>
+                ))
             }
         </div>
     );

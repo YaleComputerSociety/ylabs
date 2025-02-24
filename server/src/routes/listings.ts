@@ -67,4 +67,14 @@ router.get('/', async (request: Request, response: Response) => {
   }
 });
 
+router.get('/all', async (request: Request, response: Response) => {
+  try {
+    const listings = await Listing.find();
+    return response.status(200).json(listings);
+  } catch (error) {
+    console.log(error.message);
+    response.status(500).send({ message: error.message });
+  }
+});
+
 export default router;
