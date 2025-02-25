@@ -36,9 +36,9 @@ passport.serializeUser<User>(function (user: any, done) {
 
 passport.deserializeUser(function (netId, done) {
   const user: User = {} as User;
-  let professor = ProfListing.exists({ id: netId });
-  user.professor = (professor == null) ? false : true;
-  if (professor) {
+  let is_professor = ProfListing.exists({ id: netId });
+  user.professor = (is_professor == null) ? false : true;
+  if (is_professor) {
     ProfListing.find({ id: netId }).then(function (prof: any) {
       user.fname = prof.fname;
       user.lname = prof.lname;
@@ -49,6 +49,10 @@ passport.deserializeUser(function (netId, done) {
       user.title = prof.title;
       console.log("professor attributes: ", user);
     });
+    localStorage.setItem("professor", "true");
+    localStorage.setItem("professorAttributes", netId.toString());
+  } else {
+    localStorage.setItem("professor", "false");
   }
   done(null, user);
 });
