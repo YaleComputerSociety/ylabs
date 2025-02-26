@@ -99,12 +99,9 @@ const SearchHub = ({ allDepartments, setListings, setIsLoading }: SearchHubProps
     const handleSearch = () => {
         let url;
 
-        if(selectedDepartments.length === 0 && queryString.trim() === ''){
-            url = process.env.REACT_APP_SERVER + '/listings/all';
-        } else {
-            const formattedQuery = queryString.trim().split(" ").join(",");
-            url = process.env.REACT_APP_SERVER + '/listings?dept=' + selectedDepartments + '&keywords=' + formattedQuery;
-        }
+        const formattedQuery = queryString.trim().split(" ").join(",");
+        url = process.env.REACT_APP_SERVER + '/listings?dept=' + selectedDepartments + '&keywords=' + formattedQuery;
+
         setIsLoading(true);
 
         axios.get(url).then((response) => {
