@@ -32,9 +32,7 @@ const app = express()
       name: 'session',
       keys: [process.env.SESSION_SECRET],
       maxAge: 365 * 24 * 60 * 60 * 1000,//1 yr
-      httpOnly: false,
-      secure: true,
-      sameSite: "none",
+      httpOnly: false
     })
   )
   .use(routes)
