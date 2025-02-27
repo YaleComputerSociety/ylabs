@@ -162,9 +162,9 @@ const SearchHub = ({ allDepartments, setListings, setIsLoading }: SearchHubProps
             </div>
 
             <div className={`mt-2 w-full bg-white rounded-lg z-10 shadow-lg border overflow-hidden transition-[max-height,border-color] duration-300 ease-in-out ${
-                    isDropdownOpen ? 'max-h-48 border-gray-300' : 'max-h-0 border-transparent'
+                    isDropdownOpen ? 'max-h-[350px] border-gray-300' : 'max-h-0 border-transparent'
                 }`}>
-                <ul className={`max-h-48 p-2 overflow-y-auto`}>
+                <ul className={`max-h-[350px] p-2 overflow-y-auto`}>
                     {filteredDepartments.length > 0 ? (
                         filteredDepartments.map((department, index) => (
                             <li
