@@ -10,7 +10,7 @@ import * as path from 'path';
 dotenv.config();
 
 const bypassCors = isCI() || isDevelopment() || isTest();
-const allowList = new Set(["http://localhost:3000", "https://rdb.onrender.com", "https://yalerdb.onrender.com"]);
+const allowList = new Set(["http://localhost:3000", "https://rdb.onrender.com", "https://yalerdb.onrender.com", "https://yalelabs.io"]);
 
 const corsOptions = {
   origin: (origin: string, callback: any) => {
