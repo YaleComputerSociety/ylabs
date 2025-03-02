@@ -31,7 +31,9 @@ const app = express()
   const host = req.hostname;
   let cookieDomain = undefined;
 
-  if (host.endsWith("yalelabs.io")) {
+  if (host === "localhost" || host.endsWith("localhost")) {
+    cookieDomain = "localhost";
+  } else if (host.endsWith("yalelabs.io")) {
     cookieDomain = ".yalelabs.io";
   } else if (host === "rdb.onrender.com") {
     cookieDomain = "rdb.onrender.com";
@@ -42,9 +44,7 @@ const app = express()
     keys: [process.env.SESSION_SECRET],
     domain: cookieDomain,
     maxAge: 365 * 24 * 60 * 60 * 1000, // 1 year
-    httpOnly: true,
-    secure: true,
-    sameSite: "none",
+    httpOnly: false,
   })(req, res, next);
 })
 .use(routes)
