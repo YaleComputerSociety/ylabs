@@ -24,21 +24,32 @@ const corsOptions = {
 };
 
 const app = express()
-  .use(cors(corsOptions))
-  .use(express.json())
-  .use(express.urlencoded({ extended: true }))
-  .use(
-    cookieSession({
-      name: 'session',
-      keys: [process.env.SESSION_SECRET],
-      maxAge: 365 * 24 * 60 * 60 * 1000,//1 yr
-      httpOnly: false,
-      secure: true,
-      sameSite: 'none'
-    })
-  )
-  .use(routes)
-  .use('/', express.static('../client/build'));
+.use(cors(corsOptions))
+.use(express.json())
+.use(express.urlencoded({ extended: true }))
+.use((req, res, next) => {
+  const host = req.hostname;
+  let cookieDomain = undefined;
+
+  if (host.endsWith("yalelabs.io")) {
+    cookieDomain = ".yalelabs.io";
+  } else if (host === "rdb.onrender.com") {
+    cookieDomain = "rdb.onrender.com";
+  }
+
+  cookieSession({
+    name: "session",
+    keys: [process.env.SESSION_SECRET],
+    domain: cookieDomain,
+    maxAge: 365 * 24 * 60 * 60 * 1000, // 1 year
+    httpOnly: true,
+    secure: true,
+    sameSite: "none",
+  })(req, res, next);
+})
+.use(routes)
+.use('/', express.static('../client/build'));
+
 
 app.get(['/login', '/about'], function(req, res) {
   res.sendFile(path.join(__dirname, '../../client/build/index.html'), function(err) {
