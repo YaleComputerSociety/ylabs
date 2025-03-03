@@ -38,7 +38,7 @@ const app = express()
     cookieDomain = url.hostname.includes("localhost") ? "localhost" : `.${url.hostname}`;
     console.log(`Cookie domain: ${cookieDomain}`)
   } else {
-    cookieDomain = ".rdb.onrender.com";
+    cookieDomain = ".yalelabs.io";
   }
 
   cookieSession({
