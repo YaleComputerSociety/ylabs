@@ -1,15 +1,11 @@
 import {useState} from "react";
 import ListingsTable from "../components/ListingsTable";
-
-import Search from "../components/Search";
 import SearchHub from "../components/search/SearchHub";
 import { departmentNames } from "../utils/departmentNames";
 
 import styled from "styled-components";
 import {Listing} from '../types/types';
 import PulseLoader from "react-spinners/PulseLoader";
-
-//<Search setListings={setListings} setIsLoading={setIsLoading} numSearches={numSearches} setNumSearches={setNumSearches}></Search>
 
 const Home = () => {
     const [listings, setListings] = useState<Listing[]>([]);
@@ -26,7 +22,7 @@ const Home = () => {
                     <PulseLoader color="#66CCFF" size={10} /> 
                 </div>
                 ) : (listings.length > 0 ? (
-                        <ListingsTable listings={listings}></ListingsTable>
+                        <ListingsTable listings={listings} sortableKeys={['lastUpdated', 'name']}></ListingsTable>
                     ) : (
                         <NoResultsText>No results match the search criteria</NoResultsText>
                 ))

@@ -4,96 +4,59 @@ import { Listing } from '../types/types';
 
 type Order = 'asc' | 'desc';
 
-function descendingComparator<T>(a: T, b: T, orderBy: keyof T) {
-  if (b[orderBy] < a[orderBy]) return -1;
-  if (b[orderBy] > a[orderBy]) return 1;
-  return 0;
-}
-
-function getComparator<Key extends keyof any>(
-  order: Order,
-  orderBy: Key
-): (a: { [key in Key]: number | string }, b: { [key in Key]: number | string }) => number {
-  return order === 'desc'
-    ? (a, b) => descendingComparator(a, b, orderBy)
-    : (a, b) => -descendingComparator(a, b, orderBy);
-}
-
 type ListingsCardListProps = {
   listings: Listing[];
+  sortableKeys: (keyof Listing)[];
 };
 
-export default function ListingsCardList({ listings }: ListingsCardListProps) {
-  const [order, setOrder] = React.useState<Order>('desc');
-  const [orderBy, setOrderBy] = React.useState<keyof Listing>('lastUpdated');
-  const [visibleRows, setVisibleRows] = React.useState<Listing[]>([]);
+export default function ListingsCardList({ listings, sortableKeys }: ListingsCardListProps) {
+  const [order, setOrder] = React.useState<Order>('asc');
+  const [orderIndex, setOrderIndex] = React.useState(0);
+  const [sortedRows, setSortedRows] = React.useState<Listing[]>([]);
   const [modalOpen, setModalOpen] = React.useState(false);
   const [selectedListingId, setSelectedListingId] = React.useState<number | null>(null);
-  const [loading, setLoading] = React.useState(false);
 
-  const batchSize = 10; // Load 10 items at a time
-  const observerRef = React.useRef<HTMLDivElement | null>(null);
+  const buttonTranslations: Record<string, string[]> = {
+    'name': ['Name', 'A-Z', 'Z-A'],
+    'lastUpdated': ['Date', 'Newest', 'Oldest']
+  }
 
   React.useEffect(() => {
-    // Initial load
-    setVisibleRows(listings.slice(0, batchSize));
-  }, [listings]);
+    const property = sortableKeys[orderIndex];
 
-  const handleRequestSort = (property: keyof Listing) => {
-    setOrder((prevOrder) => {
-      const isAsc = orderBy === property && prevOrder === 'asc';
-      const newOrder = isAsc ? 'desc' : 'asc';
-      
-      // Sort the listings based on the new order
-      const sortedListings = [...visibleRows].sort((a, b) =>
-        newOrder === 'asc'
+    // Sort the listings based on the new order
+    let sortedListings;
+
+    if(property == 'lastUpdated') {
+      sortedListings = [...listings].sort((a, b) =>
+        order === 'asc'
+          ? new Date(b.lastUpdated).getTime() - new Date(a.lastUpdated).getTime()
+          : new Date(a.lastUpdated).getTime() - new Date(b.lastUpdated).getTime()
+      );
+    } else {
+      sortedListings = [...listings].sort((a, b) =>
+        order === 'asc'
           ? a[property] > b[property] ? 1 : -1
           : a[property] < b[property] ? 1 : -1
       );
-  
-      // Update states
-      setOrderBy(property);
-      setVisibleRows(sortedListings);
-  
-      return newOrder;
-    });
-  };
+    }
+
+    // Update states
+    setSortedRows(sortedListings);
+  }, [order, orderIndex, listings]);
+
+  const handleToggleSortKey = () => {
+    setOrderIndex((prevIndex) => (prevIndex + 1) % sortableKeys.length);
+  }
+
+  const handleToggleOrder = () => {
+    setOrder((prevOrder) => prevOrder === 'asc' ? 'desc' : 'asc');
+  }
 
   const openModalForListing = (listingId: number) => {
     setSelectedListingId(listingId);
     setModalOpen(true);
   };
-
-  // Load more listings when reaching the bottom
-  const loadMoreListings = React.useCallback(() => {
-    if (loading || visibleRows.length >= listings.length) return;
-    setLoading(true);
-    setTimeout(() => {
-      setVisibleRows((prev) => [
-        ...prev,
-        ...listings.slice(prev.length, prev.length + batchSize),
-      ]);
-      setLoading(false);
-    }, 500);
-  }, [loading, visibleRows, listings]);
-
-  // Intersection Observer to detect when user scrolls to the bottom
-  React.useEffect(() => {
-    if (!observerRef.current) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting) {
-          loadMoreListings();
-        }
-      },
-      { threshold: 1 }
-    );
-
-    observer.observe(observerRef.current);
-
-    return () => observer.disconnect();
-  }, [loadMoreListings]);
 
   // Scroll to top button
   const scrollToTop = () => {
@@ -115,22 +78,22 @@ export default function ListingsCardList({ listings }: ListingsCardListProps) {
       {/* Sorting Buttons */}
       <div className="mb-4 flex justify-between w-full" style={{ maxWidth: '80%' }}>
         <button
-          onClick={() => handleRequestSort('name')}
+          onClick={handleToggleSortKey}
           className="px-4 py-2 bg-blue-500 text-white rounded"
         >
-          Sort by Name ({orderBy === 'name' ? order : 'asc'})
+          Sorting by: {buttonTranslations[sortableKeys[orderIndex]][0]}
         </button>
         <button
-          onClick={() => handleRequestSort('lastUpdated')}
+          onClick={handleToggleOrder}
           className="px-4 py-2 bg-blue-500 text-white rounded"
         >
-          Sort by Last Updated ({orderBy === 'lastUpdated' ? order : 'asc'})
+          {order === 'asc' ? buttonTranslations[sortableKeys[orderIndex]][1] : buttonTranslations[sortableKeys[orderIndex]][2]}
         </button>
       </div>
 
       {/* List of Cards (Rows) */}
       <div className="w-full" style={{ maxWidth: '80%' }}>
-        {visibleRows.map((listing) => (
+        {sortedRows.map((listing) => (
           <div
             key={listing.id}
             onClick={() => openModalForListing(listing.id)}
@@ -179,11 +142,6 @@ export default function ListingsCardList({ listings }: ListingsCardListProps) {
         ))}
       </div>
 
-      
-
-      {/* Infinite Scroll Trigger */}
-      <div ref={observerRef} className="h-10 w-full"></div>
-
       {/* Scroll to Top Button */}
       <button
         onClick={scrollToTop}
@@ -191,9 +149,6 @@ export default function ListingsCardList({ listings }: ListingsCardListProps) {
       >
         ⬆️
       </button>
-
-      {/* Loading Indicator */}
-      {loading && <p className="text-gray-500 mt-4">Loading more listings...</p>}
     </div>
   );
 }
