@@ -28,15 +28,14 @@ const app = express()
 .use(express.json())
 .use(express.urlencoded({ extended: true }))
 .use((req, res, next) => {
-  const host = req.hostname;
-  let cookieDomain = undefined;
+  let cookieDomain;
+  const origin = req.get("Origin") || req.headers.referer;
 
-  if (host === "localhost" || host.endsWith("localhost")) {
-    cookieDomain = "localhost";
-  } else if (host.endsWith("yalelabs.io")) {
-    cookieDomain = ".yalelabs.io";
-  } else if (host === "rdb.onrender.com") {
-    cookieDomain = "rdb.onrender.com";
+  if (origin) {
+    const url = new URL(origin);
+    cookieDomain = url.hostname.includes("localhost") ? "localhost" : `.${url.hostname}`;
+  } else {
+    cookieDomain = ".rdb.onrender.com";
   }
 
   cookieSession({
