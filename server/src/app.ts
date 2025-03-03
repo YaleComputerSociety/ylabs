@@ -31,9 +31,12 @@ const app = express()
   let cookieDomain;
   const origin = req.get("Origin") || req.headers.referer;
 
+  console.log(`Origin ${origin}`)
+
   if (origin) {
     const url = new URL(origin);
     cookieDomain = url.hostname.includes("localhost") ? "localhost" : `.${url.hostname}`;
+    console.log(`Cookie domain: ${cookieDomain}`)
   } else {
     cookieDomain = ".rdb.onrender.com";
   }
