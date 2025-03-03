@@ -6,6 +6,7 @@ import UserContext from "../contexts/UserContext";
 
 const SignOutButton = () => {
   const { checkContext } = useContext(UserContext);
+
   return (
     <Button
       color="inherit"
