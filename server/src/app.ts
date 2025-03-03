@@ -28,26 +28,11 @@ const app = express()
 .use(express.json())
 .use(express.urlencoded({ extended: true }))
 .use((req, res, next) => {
-  let cookieDomain;
-  const origin = req.get("Origin") || req.headers.referer;
-
-  console.log(`Origin ${origin}`)
-
-  if (origin) {
-    const url = new URL(origin);
-    cookieDomain = url.hostname.includes("localhost") ? "localhost" : `.${url.hostname}`;
-    console.log(`Cookie domain: ${cookieDomain}`)
-  } else {
-    cookieDomain = ".yalelabs.io";
-  }
-
   cookieSession({
     name: "session",
     keys: [process.env.SESSION_SECRET],
     maxAge: 365 * 24 * 60 * 60 * 1000, // 1 year
     httpOnly: false,
-    secure: true,
-    sameSite: "none"
   })(req, res, next);
 })
 .use(routes)
