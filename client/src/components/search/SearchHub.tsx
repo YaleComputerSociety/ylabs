@@ -1,7 +1,6 @@
 import React, { useState, useRef, KeyboardEvent, useEffect } from 'react';
 import {Listing} from '../../types/types';
 import axios from 'axios';
-import swal from "sweetalert";
 
 interface SearchHubProps {
     allDepartments: string[];
@@ -100,7 +99,10 @@ const SearchHub = ({ allDepartments, setListings, setIsLoading }: SearchHubProps
         let url;
 
         const formattedQuery = queryString.trim().split(" ").join(",");
-        url = process.env.REACT_APP_SERVER + '/listings?dept=' + selectedDepartments + '&keywords=' + formattedQuery;
+        const backendBaseURL = window.location.host.includes("yalelabs.io")
+            ? "https://yalelabs.io"
+            : process.env.REACT_APP_SERVER;
+        url = backendBaseURL + '/listings?dept=' + selectedDepartments + '&keywords=' + formattedQuery;
 
         setIsLoading(true);
 
