@@ -12,7 +12,7 @@ const UserContextProvider: FC = ({ children }) => {
 
   const checkContext = useCallback(() => {
     axios
-      .get<{ auth: boolean; user?: User }>("/check")
+      .get<{ auth: boolean; user?: User }>("/check", {withCredentials: true})
       .then(({ data }) => {
         if (data.auth) {
           setIsAuthenticated(true);
