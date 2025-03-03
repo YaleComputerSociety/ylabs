@@ -28,6 +28,8 @@ export default function ListingModal(props: ListingModalProps) {
     <Modal
       open={open}
       onClose={handleClose}
+      disableAutoFocus
+      disableEnforceFocus
       aria-labelledby="modal-modal-title"
       aria-describedby="modal-modal-description"
       sx={{
