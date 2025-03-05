@@ -6,7 +6,7 @@
   "author": "lee-julian",
   "license": "MIT",
   "scripts": {
-    "build": "cross-env CI=false && yarn install:all && yarn build:server && yarn build:client",
+    "build": "yarn install:all && cross-env CI=false && yarn build:server && yarn build:client",
     "build:client": "cd client && yarn build",
     "build:server": "cd server && yarn build",
     "clean:all": "rm -rf node_modules && cd server && rm -rf node_modules && cd ../client && rm -rf node_modules",
