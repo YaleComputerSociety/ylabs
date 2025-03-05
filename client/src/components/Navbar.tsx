@@ -22,6 +22,7 @@ export default function Navbar() {
             <HomeButton /> : 
             <YURAButton />
           }
+          <h1 className = 'ml-3'>Beta Release</h1>
           <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
           </Typography>
           {isAuthenticated ? <AboutButton /> : <div />}
