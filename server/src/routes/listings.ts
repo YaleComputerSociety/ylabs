@@ -5,7 +5,10 @@ import { Request, Response, Router } from "express";
 const router = Router();
 
 //Create new listing
-router.post("/", async (request: Request, response: Response) => {
+
+//Hidden for security reasons
+
+/*router.post("/", async (request: Request, response: Response) => {
     try {
         const listing = new Listing(request.body);
         await listing.save();
@@ -14,7 +17,7 @@ router.post("/", async (request: Request, response: Response) => {
         console.log(error.message);
         response.status(400).json({ error: error.message, success: false });
     }
-});
+});*/
 
 // Route for getting listing by id: for testing
 router.get('/byId/:id', async (request: Request, response: Response) => {
@@ -39,28 +42,48 @@ router.get('/', async (request: Request, response: Response) => {
   try {
     const fname = request.query.fname === undefined ? '' : request.query.fname;
     const lname = request.query.lname === undefined ? '' : request.query.lname;
-    const keywords = request.query.keywords === undefined ? '' :  (request.query.keywords as String).replace(',', ' ').replace('  ', ' ');
+    const keywords = request.query.keywords === undefined || request.query.keywords === '' ? [] :  (request.query.keywords as String).split(',');
     const dept = request.query.dept === undefined || request.query.dept === '' ? [] : (request.query.dept as String).split(',');
 
-    if(fname === '' && lname === '' && dept.length == 0 && keywords.length == 0){
+    /*if(fname === '' && lname === '' && dept.length == 0 && keywords.length == 0){
       throw new Error('At least 1 query must be provided');
-    } 
+    }*/
 
-    let query = { "fname": { "$regex": fname, "$options": "i" }, 
-                  "lname": { "$regex": lname, "$options": "i" },
-                  "departments": { "$elemMatch": { "$in": dept } },
-                  "$text": { "$search": keywords, "$caseSensitive": false }};
+    let conditions = [];
 
-    if(dept.length === 0){
-      delete query["departments"];
+    if (keywords.length > 0) {
+      const textCondition = { "$text" : { "$search": keywords.join(" "), "$caseSensitive": false } };
+      
+      conditions.push(textCondition);
     }
-    if(keywords == ''){
-      delete query["$text"];
+
+    if (dept.length > 0) {
+      conditions.push({ "departments": { "$elemMatch": { "$in": dept } } });
     }
+
+    if(typeof fname === "string" && fname.trim()) {
+      conditions.push({"fname": { "$regex": fname.trim(), "$options": "i" }})
+    }
+
+    if(typeof lname === "string" && lname.trim()) {
+      conditions.push({"lname": { "$regex": lname.trim(), "$options": "i" }})
+    }
+
+    const query = conditions.length ? { $and: conditions } : {};
     
     const listings = await Listing.find(query);
     return response.status(200).json(listings);
 
+  } catch (error) {
+    console.log(error.message);
+    response.status(500).send({ message: error.message });
+  }
+});
+
+router.get('/all', async (request: Request, response: Response) => {
+  try {
+    const listings = await Listing.find();
+    return response.status(200).json(listings);
   } catch (error) {
     console.log(error.message);
     response.status(500).send({ message: error.message });
