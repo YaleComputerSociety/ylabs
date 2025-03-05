@@ -4,7 +4,7 @@ const About = () => {
     return (
         <div className="flex flex-col items-center p-8 min-h-screen mt-24">
             <div className="max-w-5xl text-center">
-                <h1 className="text-4xl font-bold mb-7">Welcome to RDB! 🔬</h1>
+                <h1 className="text-4xl font-bold mb-7">Welcome to Yale Labs! 🔬</h1>
                 <p className="text-lg text-gray-700 mb-10 leading-relaxed">
                     A collaboration between the{" "}
                     <a
@@ -24,10 +24,27 @@ const About = () => {
                     >
                         Yale Undergraduate Research Association
                     </a>
-                    , RDB brings students a single, 
+                    , Yale Labs brings students a single, 
                     streamlined platform to browse research opportunities at Yale! With a mix of lab listings submitted by professors and scraped 
-                    from the internet, our mission at RDB is to make finding your next lab as stress-free as possible with all the information you 
+                    from the internet, our mission at Yale Labs is to make finding your next lab as stress-free as possible with all the information you 
                     need in one place.
+                </p>
+                <h1 className="text-3xl font-bold mb-7">Help us with our beta release!</h1>
+                <p className="text-lg text-gray-700 mb-10 leading-relaxed">
+                    While we are working dilligently to get more up-to-date listings on the site, 
+                    we are also working on changes to improve the browsing experience! As you look 
+                    around the site, please let us know in the{" "}
+                    <a
+                        href={"https://docs.google.com/forms/d/e/1FAIpQLSf2BE6MBulJHWXhDDp3y4Nixwe6EH0Oo9X1pTo976-KrJKv5g/viewform?usp=dialog"}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-500"
+                    >
+                        feedback form
+                    </a>
+                    {" "}if there is anything that is broken, annoying, or that you would like to see
+                    added to the site. During our full release in the spring, we will raffle off some 
+                    prizes to those who provided feedback!
                 </p>
                 <a href="https://yalecomputersociety.org/" target="_blank" rel="noopener noreferrer">
                     <img src="/assets/icons/ycs-icon.png" alt="y/cs Website" width={40} height={40} className="inline-block mx-2"/>

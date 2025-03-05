@@ -10,14 +10,15 @@
   "scripts": {
     "build": "tsc",
     "build:clean": "rm -rf build",
-    "dev": "NODE_ENV=dev nodemon src/index.ts",
+    "dev": "cross-env NODE_ENV=dev nodemon src/index.ts",
     "start": "node build/index.js",
-    "test": "NODE_ENV=test jest --config ./src/testUtils/jest.config.js",
+    "test": "cross-env NODE_ENV=test jest --config ./src/testUtils/jest.config.js",
     "prod": "NODE_ENV=prod nodemon src/index.ts"
   },
   "dependencies": {
     "cookie-session": "^2.1.0",
     "cors": "^2.8.5",
+    "cross-env": "^7.0.3",
     "dotenv": "^16.3.1",
     "express": "^4.17.3",
     "express-session": "^1.17.2",
