@@ -1,264 +1,154 @@
 import * as React from 'react';
-import Box from '@mui/material/Box';
-import Table from '@mui/material/Table';
-import TableBody from '@mui/material/TableBody';
-import TableCell from '@mui/material/TableCell';
-import TableContainer from '@mui/material/TableContainer';
-import TableHead from '@mui/material/TableHead';
-import TablePagination from '@mui/material/TablePagination';
-import TableRow from '@mui/material/TableRow';
-import TableSortLabel from '@mui/material/TableSortLabel';
-import Paper from '@mui/material/Paper';
-import { visuallyHidden } from '@mui/utils';
 import ListingsModal from './ListingsModal';
-import {Listing} from '../types/types';
-
-function descendingComparator<T>(a: T, b: T, orderBy: keyof T) {
-  if (b[orderBy] < a[orderBy]) {
-    return -1;
-  }
-  if (b[orderBy] > a[orderBy]) {
-    return 1;
-  }
-  return 0;
-}
+import { Listing } from '../types/types';
 
 type Order = 'asc' | 'desc';
 
-function getComparator<Key extends keyof any>(
-  order: Order,
-  orderBy: Key,
-): (
-  a: { [key in Key]: number | string },
-  b: { [key in Key]: number | string },
-) => number {
-  return order === 'desc'
-    ? (a, b) => descendingComparator(a, b, orderBy)
-    : (a, b) => -descendingComparator(a, b, orderBy);
-}
-
-interface HeadCell {
-  id: keyof Listing;
-  label: string;
-}
-
-const headCells: readonly HeadCell[] = [
-  {id: 'name', label: 'Name'},
-  {id: 'departments', label: 'Departments'},
-  {id: 'website', label: 'Website'},
-  {id: 'description', label: 'Description'},
-  {id: 'lastUpdated', label: 'Last Updated'},
-];
-
-type ListingsTableHeadProps = {
-  onRequestSort: (event: React.MouseEvent<unknown>, property: keyof Listing) => void;
-  order: Order;
-  orderBy: string;
-}
-
-function ListingsTableHead(props: ListingsTableHeadProps) {
-  const { order, orderBy, onRequestSort } = props;
-  const createSortHandler =
-    (property: keyof Listing) => (event: React.MouseEvent<unknown>) => {
-      onRequestSort(event, property);
-    };
-
-  return (
-    <TableHead>
-      <TableRow>
-        {headCells.map((headCell) => (
-          <TableCell
-            key={headCell.id}
-            align= 'left'
-            padding='normal'
-            sortDirection={orderBy === headCell.id ? order : false}
-          >
-            <TableSortLabel
-              active={orderBy === headCell.id}
-              direction={orderBy === headCell.id ? order : 'asc'}
-              onClick={createSortHandler(headCell.id)}
-            >
-              {headCell.label}
-              {orderBy === headCell.id ? (
-                <Box component="span" sx={visuallyHidden}>
-                  {order === 'desc' ? 'sorted descending' : 'sorted ascending'}
-                </Box>
-              ) : null}
-            </TableSortLabel>
-          </TableCell>
-        ))}
-      </TableRow>
-    </TableHead>
-  );
-}
-
-type ListingsTableProps = {
+type ListingsCardListProps = {
   listings: Listing[];
-}
+  sortableKeys: (keyof Listing)[];
+};
 
-export default function ListingsTable(props: ListingsTableProps) {
-  const {listings} = props;
-  const [order, setOrder] = React.useState<Order>('desc');
-  const [orderBy, setOrderBy] = React.useState<keyof Listing>('lastUpdated');
-  const [page, setPage] = React.useState(0);
-  const [rowsPerPage, setRowsPerPage] = React.useState(10);
+export default function ListingsCardList({ listings, sortableKeys }: ListingsCardListProps) {
+  const [order, setOrder] = React.useState<Order>('asc');
+  const [orderIndex, setOrderIndex] = React.useState(0);
+  const [sortedRows, setSortedRows] = React.useState<Listing[]>([]);
   const [modalOpen, setModalOpen] = React.useState(false);
-  const [selectedListingId, setSelectedListingId] = React.useState(-1);
-  const [windowHeight, setWindowHeight] = React.useState(window.innerHeight);
-  const tableRef = React.useRef<HTMLDivElement>(null);
+  const [selectedListingId, setSelectedListingId] = React.useState<number | null>(null);
+
+  const buttonTranslations: Record<string, string[]> = {
+    'name': ['Name', 'A-Z', 'Z-A'],
+    'lastUpdated': ['Date', 'Newest', 'Oldest']
+  }
 
   React.useEffect(() => {
-      setPage(0);
-  }, [listings]);
+    const property = sortableKeys[orderIndex];
 
-  React.useEffect(() => {
-    const handleWindowResize = () => {
-      setWindowHeight(window.innerHeight);
-    };
+    // Sort the listings based on the new order
+    let sortedListings;
 
-    window.addEventListener('resize', handleWindowResize);
+    if(property == 'lastUpdated') {
+      sortedListings = [...listings].sort((a, b) =>
+        order === 'asc'
+          ? new Date(b.lastUpdated).getTime() - new Date(a.lastUpdated).getTime()
+          : new Date(a.lastUpdated).getTime() - new Date(b.lastUpdated).getTime()
+      );
+    } else {
+      sortedListings = [...listings].sort((a, b) =>
+        order === 'asc'
+          ? a[property] > b[property] ? 1 : -1
+          : a[property] < b[property] ? 1 : -1
+      );
+    }
 
-    return () => {
-      window.removeEventListener('resize', handleWindowResize);
-    };
-  }, [windowHeight]);
+    // Update states
+    setSortedRows(sortedListings);
+  }, [order, orderIndex, listings]);
 
-  const handleRequestSort = (
-    event: React.MouseEvent<unknown>,
-    property: keyof Listing,
-  ) => {
-    const isAsc = orderBy === property && order === 'asc';
-    setOrder(isAsc ? 'desc' : 'asc');
-    setOrderBy(property);
-  };
+  const handleToggleSortKey = () => {
+    setOrderIndex((prevIndex) => (prevIndex + 1) % sortableKeys.length);
+  }
 
-  const handleClick = (event: React.MouseEvent<unknown>, id: number) => {
-    setSelectedListingId(listings.findIndex(obj => obj.id === id));
+  const handleToggleOrder = () => {
+    setOrder((prevOrder) => prevOrder === 'asc' ? 'desc' : 'asc');
+  }
+
+  const openModalForListing = (listingId: number) => {
+    setSelectedListingId(listingId);
     setModalOpen(true);
   };
 
-  const handleChangePage = (event: unknown, newPage: number) => {
-    setPage(newPage);
-    tableScrollToTop();
-  };
-
-  const handleChangeRowsPerPage = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setRowsPerPage(parseInt(event.target.value, 10));
-    setPage(0);
-  };
-
-  // Avoid a layout jump when reaching the last page with empty rows.
-  const emptyRows =
-    page > 0 ? Math.max(0, (1 + page) * rowsPerPage - listings.length) : 0;
-
-  const visibleRows = React.useMemo(
-    () =>
-      listings.sort(getComparator(order, orderBy)).slice(
-        page * rowsPerPage,
-        page * rowsPerPage + rowsPerPage,
-      ),
-    [order, orderBy, page, rowsPerPage, listings],
-  );
-
-  const shortenDesc = (desc: string) => {
-    if(desc === ''){
-      return 'None'
-    }
-    const shortenedDesc = desc.slice(0,Math.min(desc.length,100)) + '...'
-    if(shortenedDesc.lastIndexOf(' ') === -1){
-      return shortenedDesc
-    }
-    return shortenedDesc.slice(0,shortenedDesc.lastIndexOf(' ')) + '...'
-  }
-
-  const tableScrollToTop = () => {
-    if(tableRef.current !== null){
-      tableRef.current.scrollIntoView({
-        behavior: "auto",
-        block: "end"
-      });
-      /*window.scrollTo({
-        top: tableRef.current.offsetTop,
-        behavior: "smooth"
-      });*/
-    }
+  // Scroll to top button
+  const scrollToTop = () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   return (
-    <div>
-      {selectedListingId >= 0 && (
+    <div className="flex flex-col items-center p-4 relative">
+      
+      {/* Modal */}
+      {selectedListingId !== null && (
         <ListingsModal
-          listing={listings[selectedListingId]}
+          listing={listings.find((l) => l.id === selectedListingId)!}
           open={modalOpen}
           setOpen={setModalOpen}
-        ></ListingsModal>
+        />
       )}
-      <Box sx={{ width: '100%' }}>
-        <Paper sx={{ width: '100%', overflow: 'hidden' }}>
-        <TableContainer sx={{ maxHeight: (windowHeight - 270).toString() + 'px' }}>
-            <Table 
-              stickyHeader
-              aria-labelledby="sticky table"
-              size='medium'
-              sx={{tableLayout: "fixed"}}
-            >
-              <colgroup>
-                  <col style={{width:'20%'}}/>
-                  <col style={{width:'27.5%'}}/>
-                  <col style={{width:'10%'}}/>
-                  <col style={{width:'27.5%'}}/>
-                  <col style={{width:'15%'}}/>
-              </colgroup>
-              <ListingsTableHead
-                order={order}
-                orderBy={orderBy}
-                onRequestSort={handleRequestSort}
-              />
-              <TableBody>
-                <div style={{}} ref={tableRef} />
-                {visibleRows.map((row, index) => {
-                  const labelId = `enhanced-table-checkbox-${index}`;
 
-                  return (
-                    <TableRow
-                      hover
-                      onClick={(event) => handleClick(event, row.id)}
-                      role="checkbox"
-                      tabIndex={-1}
-                      key={row.id}
-                      sx={{ cursor: 'pointer' }}
-                    >
-                      <TableCell component="th" id={labelId}>{row.name}</TableCell>
-                      <TableCell style={{ whiteSpace: 'pre-line' }} align="left">{row.departments.replaceAll('; ', '\n')}</TableCell>
-                      <TableCell align="left">{<a href={row.website}>Link</a>}</TableCell>
-                      <TableCell align="left">{shortenDesc(row.description)}</TableCell>
-                      <TableCell align="left">{row.lastUpdated}</TableCell>
-                    </TableRow>
-                  );
+      {/* Sorting Buttons */}
+      <div className="mb-4 flex justify-between w-full" style={{ maxWidth: '80%' }}>
+        <button
+          onClick={handleToggleSortKey}
+          className="px-4 py-2 bg-blue-500 text-white rounded"
+        >
+          Sorting by: {buttonTranslations[sortableKeys[orderIndex]][0]}
+        </button>
+        <button
+          onClick={handleToggleOrder}
+          className="px-4 py-2 bg-blue-500 text-white rounded"
+        >
+          {order === 'asc' ? buttonTranslations[sortableKeys[orderIndex]][1] : buttonTranslations[sortableKeys[orderIndex]][2]}
+        </button>
+      </div>
+
+      {/* List of Cards (Rows) */}
+      <div className="w-full" style={{ maxWidth: '80%' }}>
+        {sortedRows.map((listing) => (
+          <div
+            key={listing.id}
+            onClick={() => openModalForListing(listing.id)}
+            className="bg-gray-100 shadow-md rounded-lg p-4 mb-4 transition-transform hover:-translate-y-1 cursor-pointer"
+          >
+            {/* Header with Name and Departments */}
+            <div className="flex justify-between items-center">
+              <div className="flex items-center">
+                <h2 className="text-lg font-semibold">{listing.name}</h2>
+                <p className="text-gray-700 text-sm ml-4">
+                  {listing.departments.replaceAll('; ', ', ')}
+                </p>
+              </div>
+              <span className="text-sm text-gray-500">
+                {new Date(listing.lastUpdated).toLocaleDateString('en-US', {
+                  month: '2-digit',
+                  day: '2-digit',
+                  year: 'numeric'
                 })}
-                {emptyRows > 0 && (
-                  <TableRow
-                    style={{
-                      height: 53 * emptyRows,
-                    }}
-                  >
-                    <TableCell colSpan={6} />
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </TableContainer>
-          <TablePagination
-            rowsPerPageOptions={[10, 25]}
-            component="div"
-            count={listings.length}
-            rowsPerPage={rowsPerPage}
-            page={page}
-            onPageChange={handleChangePage}
-            onRowsPerPageChange={handleChangeRowsPerPage}
-          />
-        </Paper>
-      </Box>
+              </span>
+            </div>
+            {/* Description and Lab Website on the same line */}
+            <div className="flex items-center justify-between mt-2">
+              <p className="text-gray-800 text-sm">
+                {listing.description.length > 100
+                  ? listing.description.slice(0, 90) + ' (see more...)'
+                  : listing.description}
+              </p>
+              <a
+                href={listing.website}
+                onClick={(e) => e.stopPropagation()}
+                className="ml-4"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <button className="p-2 bg-gray-200 rounded hover:bg-gray-300">
+                  <img
+                    src="/assets/icons/link-icon.png"
+                    alt="Lab Website"
+                    className="w-6 h-6"
+                  />
+                </button>
+              </a>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Scroll to Top Button */}
+      <button
+        onClick={scrollToTop}
+        className="fixed bottom-6 right-6 bg-blue-500 text-white p-3 rounded-full shadow-lg hover:bg-blue-700 transition"
+      >
+        ⬆️
+      </button>
     </div>
   );
 }

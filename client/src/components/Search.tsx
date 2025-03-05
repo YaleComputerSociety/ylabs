@@ -10,7 +10,7 @@ import swal from "sweetalert";
  
 type SearchProps = {
   setListings: (listings: Listing[]) => void;
-  setIsLoading: (listings: Boolean) => void;
+  setIsLoading: (isLoading: Boolean) => void;
   numSearches: number;
   setNumSearches: (searches: number) => void;
 }
@@ -32,8 +32,11 @@ export default function Search(props: SearchProps) {
         return;
       }
       setIsLoading(true); 
-      const url = process.env.REACT_APP_SERVER + '/listings?dept=' + departments 
-                  + '&keywords=' + keywords + '&lname=' + lastNamePI
+      const backendBaseURL = window.location.host.includes("yalelabs.io")
+        ? "https://yalelabs.io"
+        : process.env.REACT_APP_SERVER;
+      const url = backendBaseURL + '/listings?dept=' + departments 
+                  + '&keywords=' + keywords + '&lname=' + lastNamePI;
       axios.get(url).then((response) => {
         const responseListings : Listing[] = response.data.map(function(elem: any){
             return {
