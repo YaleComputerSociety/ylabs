@@ -162,7 +162,9 @@ export const addOwnListings = async(id: any, newListings: [mongoose.Types.Object
 export const deleteOwnListings = async(id: any, removedListings: [mongoose.Types.ObjectId]) => {
     let user = await readUser(id);
 
-    user.ownListings = user.ownListings.filter(listing => removedListings.indexOf(listing) < 0);
+    const removedListingsStrings = removedListings.map(listing => listing.toString());
+
+    user.ownListings = user.ownListings.filter(listing => removedListingsStrings.indexOf(listing.toString()) < 0);
 
     const newUser = await updateUser(id, {"ownListings": user.ownListings});
 
@@ -192,7 +194,9 @@ export const addFavListings = async(id: any, newListings: [mongoose.Types.Object
 export const deleteFavListings = async(id: any, removedListings: [mongoose.Types.ObjectId]) => {
     let user = await readUser(id);
 
-    user.favListings = user.favListings.filter(listing => removedListings.indexOf(listing) < 0);
+    const removedListingsStrings = removedListings.map(listing => listing.toString());
+
+    user.favListings = user.favListings.filter(listing => removedListingsStrings.indexOf(listing.toString()) < 0);
 
     const newUser = await updateUser(id, {"favListings": user.favListings});
 
