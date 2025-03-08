@@ -58,3 +58,6 @@ web-scraper/__pycache__/
 
 #MongoDB local backup
 backup
+
+#General
+to-do.txt
