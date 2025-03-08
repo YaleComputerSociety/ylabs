@@ -1,22 +1,30 @@
 import { NewListing } from "../models";
 import { NotFoundError, ObjectIdError } from "../utils/errors";
 import { createListingBackup } from "./listingBackupServices";
-import { readUser } from "./userService";
+import { addOwnListings, deleteOwnListings, userExists } from "./userService";
 import mongoose from "mongoose";
 
-export const createListing = async (netid: string, data: any) => {
-    data.professorIds = data.professorIds === undefined ? [] : data.professorIds;
-    data.professorNames = data.professorNames === undefined ? [] : data.professorNames;
-    data.emails = data.emails === undefined ? [] : data.emails;
-
-    const user = await readUser(netid);
-
-    if (data.professorIds.indexOf(user.netid) < 0) {data.professorIds.push(user.netid);}
-    if (data.professorNames.indexOf(`${user.fname} ${user.lname}`) < 0) {data.professorNames.push(`${user.fname} ${user.lname}`);}
-    if (data.emails.indexOf(user.email) < 0) {data.emails.push(user.email);}
-
+export const createListing = async (data: any) => {
     const listing = new NewListing(data);
+
+    // Add listing id to ownListings of all professors associated with the listing
+    const listingId = listing._id;
+    const professorIds = listing.professorIds;
+
+    // Check if userExists returns true for all professor ids before proceeding
+    for (const id of professorIds) {
+        const user = await userExists(id);
+        if (!user) {
+            throw new NotFoundError(`User not found with ObjectId: ${id}`);
+        }
+    }
+
+    for (const id of professorIds) {
+        await addOwnListings(id, [listingId]);
+    }
+
     await listing.save();
+
     return listing.toObject();
 };
 
@@ -67,12 +75,38 @@ export const listingExists = async(id: any) => {
 
 export const updateListing = async(id: any, data: any) => {
     if (mongoose.Types.ObjectId.isValid(id)) {
+        // Check if userExists returns true for all professor ids before proceeding
+        const professorIds = data.professorIds || [];
+        for (const id of professorIds) {
+            const user = await userExists(id);
+            if (!user) {
+                throw new NotFoundError(`User not found with ObjectId: ${id}`);
+            }
+        }
+
+        const oldListing = await NewListing.findById(id);
         const listing = await NewListing.findByIdAndUpdate(id, data,
             { new: true, runValidators: true}
         );
-        if (!listing) {
+
+        if (!listing || !oldListing) {
             throw new NotFoundError(`Listing not found with ObjectId: ${id}`);
         }
+
+        // Add or remove listing from ownListings of professors based on if professorIds have changed
+        const oldProfessorIds = oldListing.professorIds;
+        const newProfessorIds = listing.professorIds;
+        const addedIds = newProfessorIds.filter(id => !oldProfessorIds.includes(id));
+        const removedIds = oldProfessorIds.filter(id => !newProfessorIds.includes(id));
+        const listingId = listing._id;
+
+        for (const id of addedIds) {
+            await addOwnListings(id, [listingId]);
+        }
+        for (const id of removedIds) {
+            await deleteOwnListings(id, [listingId]);
+        }
+
         return listing.toObject();
     } else {
         throw new ObjectIdError("Did not received expected id type ObjectId");
@@ -81,6 +115,11 @@ export const updateListing = async(id: any, data: any) => {
 
 export const archiveListing = async(id: any) => {
     const listing = await updateListing(id, {"archived": true});
+    return listing;
+}
+
+export const unarchiveListing = async(id: any) => {
+    const listing = await updateListing(id, {"archived": false});
     return listing;
 }
 
@@ -99,6 +138,14 @@ export const deleteListing = async(id: any) => {
 
         const backup = await createListingBackup(listingBackupData);
         await NewListing.findByIdAndDelete(id);
+
+        // Remove listing id from ownListings of all professors associated with the listing
+        const oldListingId = listing._id;
+        const oldProfessorIds = listing.professorIds;
+
+        for (const id of oldProfessorIds) {
+            await deleteOwnListings(id, [oldListingId]);
+        }
 
         return backup;
     } else {
