@@ -1,9 +1,108 @@
-import { NewListing } from '../models';
+import { archiveListing, createListing, deleteListing, readAllListings, readListing, unarchiveListing, updateListing } from '../services/newListingsService';
 import { Request, Response, Router } from "express";
+import { NotFoundError, ObjectIdError } from "../utils/errors";
 
 const router = Router();
 
+//Add listing
+router.post("/", async (request: Request, response: Response) => {
+  try {
+    const listing = await createListing(request.body);
+    response.status(201).json({ listing });
+  } catch (error) {
+    console.log(error.message);
+    response.status(400).json({ error: error.message });
+  }
+});
 
+//Read all listings
+router.get("/", async (request: Request, response: Response) => {
+    try {
+        const listings = await readAllListings();
+        response.status(200).json({ listings });
+    } catch (error) {
+        console.log(error.message);
+        response.status(500).json({ error: error.message });
+    }
+});
+
+//Read specific listing by ObjectId
+router.get('/:id', async (request: Request, response: Response) => {
+    try {
+        const listing = await readListing(request.params.id);
+        response.status(200).json({ listing });
+    } catch (error) {
+        console.log(error.message);
+        if (error instanceof NotFoundError || error instanceof ObjectIdError) {
+            response.status(error.status).json({ error: error.message });
+        } else {
+            response.status(500).json({ error: error.message });
+        }
+    }
+});
+
+//Update listing by ObjectId
+router.put('/:id', async (request: Request, response: Response) => {
+    try {
+        const listing = await updateListing(request.params.id, request.body);
+        response.status(200).json({ listing });
+    } catch (error) {
+        console.log(error.message);
+        if (error instanceof NotFoundError || error instanceof ObjectIdError) {
+            response.status(error.status).json({ error: error.message });
+        } else {
+            response.status(500).json({ error: error.message });
+        }
+    }
+});
+
+//Archive listing by ObjectId
+router.put('/:id/archive', async (request: Request, response: Response) => {
+    try {
+        const listing = await archiveListing(request.params.id);
+        response.status(200).json({ listing });
+    } catch (error) {
+        console.log(error.message);
+        if (error instanceof NotFoundError || error instanceof ObjectIdError) {
+            response.status(error.status).json({ error: error.message });
+        } else {
+            response.status(500).json({ error: error.message });
+        }
+    }
+});
+
+//Unarchive listing by ObjectId
+router.put('/:id/unarchive', async (request: Request, response: Response) => {
+  try {
+      const listing = await unarchiveListing(request.params.id);
+      response.status(200).json({ listing });
+  } catch (error) {
+      console.log(error.message);
+      if (error instanceof NotFoundError || error instanceof ObjectIdError) {
+          response.status(error.status).json({ error: error.message });
+      } else {
+          response.status(500).json({ error: error.message });
+      }
+  }
+});
+
+//Delete listing by ObjectId
+router.delete('/:id', async (request: Request, response: Response) => {
+    try {
+        const listing = await deleteListing(request.params.id);
+        response.status(200).json({ listing });
+    } catch (error) {
+        console.log(error.message);
+        if (error instanceof NotFoundError || error instanceof ObjectIdError) {
+            response.status(error.status).json({ error: error.message });
+        } else {
+            response.status(500).json({ error: error.message });
+        }
+    }
+});
+
+//Get listings by netid
+//Get listings by search
 
 /* Route for getting relevant listings based on the queries fname, lname, and dept (all optional, at least one of the 3 must be provided)
 fname: fname must be a substring of prof's first name for the corresponding listing to be included
