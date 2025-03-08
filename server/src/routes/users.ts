@@ -1,3 +1,4 @@
+import { readListings } from '../services/newListingsService';
 import { createUser, readAllUsers, readUser, updateUser, deleteUser, addDepartments, deleteDepartments, clearDepartments, addOwnListings, deleteOwnListings, clearOwnListings, addFavListings, deleteFavListings, clearFavListings } from '../services/userService';
 import { NotFoundError } from "../utils/errors";
 import { Request, Response, Router } from "express";
@@ -25,6 +26,44 @@ router.get("/", async (request: Request, response: Response) => {
     } catch (error) {
         console.log(error.message);
         response.status(500).json({ error: error.message });
+    }
+});
+
+//Return all listings data for a specific user by ObjectId or NetId
+router.get('/:id/listings', async (request: Request, response: Response) => {
+    try {
+        const user = await readUser(request.params.id);
+        const ownListings = await readListings(user.ownListings);
+        const favListings = await readListings(user.favListings);
+        response.status(200).json({ ownListings: ownListings, favListings: favListings });
+    } catch (error) {
+        console.log(error.message);
+        if (error instanceof NotFoundError) {
+            response.status(error.status).json({ error: error.message });
+        } else {
+            response.status(500).json({ error: error.message });
+        }
+    }
+});
+
+//Return all listings data for the user currently logged in
+router.get('/listings', async (request: Request, response: Response) => {
+    try {
+        const currentUser = request.user as { netId? : string, professor? : boolean};
+        if (!currentUser) {
+            throw new Error('User not logged in');
+        }
+        const user = await readUser(currentUser.netId);
+        const ownListings = await readListings(user.ownListings);
+        const favListings = await readListings(user.favListings);
+        response.status(200).json({ ownListings: ownListings, favListings: favListings });
+    } catch (error) {
+        console.log(error.message);
+        if (error instanceof NotFoundError) {
+            response.status(error.status).json({ error: error.message });
+        } else {
+            response.status(500).json({ error: error.message });
+        }
     }
 });
 

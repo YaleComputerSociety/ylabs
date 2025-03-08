@@ -6,7 +6,7 @@ import { isAuthenticated, isProfessor } from '../utils/permissions';
 const router = Router();
 
 //Add listing
-router.post("/", isAuthenticated, isProfessor, async (request: Request, response: Response) => {
+router.post("/", async (request: Request, response: Response) => {
   try {
     const listing = await createListing(request.body);
     response.status(201).json({ listing });
@@ -17,7 +17,7 @@ router.post("/", isAuthenticated, isProfessor, async (request: Request, response
 });
 
 //Read all listings
-router.get("/", isAuthenticated, async (request: Request, response: Response) => {
+router.get("/", async (request: Request, response: Response) => {
     try {
         const listings = await readAllListings();
         response.status(200).json({ listings });
@@ -28,7 +28,7 @@ router.get("/", isAuthenticated, async (request: Request, response: Response) =>
 });
 
 //Read specific listing by ObjectId
-router.get('/:id', isAuthenticated, async (request: Request, response: Response) => {
+router.get('/:id', async (request: Request, response: Response) => {
     try {
         const listing = await readListing(request.params.id);
         response.status(200).json({ listing });
@@ -43,7 +43,7 @@ router.get('/:id', isAuthenticated, async (request: Request, response: Response)
 });
 
 //Update listing by ObjectId
-router.put('/:id', isAuthenticated, isProfessor, async (request: Request, response: Response) => {
+router.put('/:id', async (request: Request, response: Response) => {
     try {
         const listing = await updateListing(request.params.id, request.body);
         response.status(200).json({ listing });
@@ -58,7 +58,7 @@ router.put('/:id', isAuthenticated, isProfessor, async (request: Request, respon
 });
 
 //Archive listing by ObjectId
-router.put('/:id/archive', isAuthenticated, isProfessor, async (request: Request, response: Response) => {
+router.put('/:id/archive', async (request: Request, response: Response) => {
     try {
         const listing = await archiveListing(request.params.id);
         response.status(200).json({ listing });
@@ -73,7 +73,7 @@ router.put('/:id/archive', isAuthenticated, isProfessor, async (request: Request
 });
 
 //Unarchive listing by ObjectId
-router.put('/:id/unarchive', isAuthenticated, isProfessor, async (request: Request, response: Response) => {
+router.put('/:id/unarchive', async (request: Request, response: Response) => {
   try {
       const listing = await unarchiveListing(request.params.id);
       response.status(200).json({ listing });
@@ -88,7 +88,7 @@ router.put('/:id/unarchive', isAuthenticated, isProfessor, async (request: Reque
 });
 
 //Delete listing by ObjectId
-router.delete('/:id', isAuthenticated, isProfessor, async (request: Request, response: Response) => {
+router.delete('/:id', async (request: Request, response: Response) => {
     try {
         const listing = await deleteListing(request.params.id);
         response.status(200).json({ listing });

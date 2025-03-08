@@ -45,6 +45,20 @@ export const readListing = async(id: any) => {
     }
 };
 
+//Get data for multiple listings by ids, if not found, don't add to array instead of throwing error
+export const readListings = async(ids: any[]) => {
+    let listings = [];
+    for (const id of ids) {
+        if (mongoose.Types.ObjectId.isValid(id)) {
+            const listing = await NewListing.findById(id);
+            if (listing) {
+                listings.push(listing.toObject());
+            }
+        }
+    }
+    return listings;
+};
+
 export const listingExists = async(id: any) => {
     if (mongoose.Types.ObjectId.isValid(id)) {
         const listing = await NewListing.findById(id);
