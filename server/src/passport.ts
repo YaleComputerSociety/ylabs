@@ -1,10 +1,8 @@
 import express from "express";
 import passport from "passport";
 import { Strategy } from "passport-cas";
-
-type User = {
-  netId: string;
-};
+import { validateUser } from './services/userService';
+import { NotFoundError } from "./utils/errors";
 
 passport.use(
   new Strategy(
@@ -12,23 +10,46 @@ passport.use(
       version: "CAS2.0",
       ssoBaseURL: "https://secure.its.yale.edu/cas",
     },
-    function (profile, done) {
+    async function (profile, done) {
       console.log("verify user: ", profile);
-      done(null, {
-        netId: profile.user,
-      });
+      try {
+        const user = await validateUser(profile.user);
+        if (user) {
+          done(null, {
+            netId: profile.user,
+            professor: user.isProfessor,
+          });
+        } else {
+          done(null, false, { message: "User not found" });
+        }
+      } catch (error) {
+        if (error instanceof NotFoundError) {
+          done(null, false, { message: error.message });
+        }
+        done(error);
+      }
     }
   )
 );
 
-passport.serializeUser<User>(function (user: any, done) {
+passport.serializeUser(function (user: any, done) {
   done(null, user.netId);
 });
 
-passport.deserializeUser(function (netId, done) {
-  done(null, {
-    netId,
-  });
+passport.deserializeUser(async (netId, done) => {
+  try {
+    const user = await validateUser(netId);
+    if (user) {
+      done(null, {
+        netId: user.netid,
+        professor: user.isProfessor,
+      });
+    } else {
+      done(new Error('User not found'), null);
+    }
+  } catch (error) {
+    done(error, null);
+  }
 });
 
 const casLogin = function (
@@ -36,12 +57,13 @@ const casLogin = function (
   res: express.Response,
   next: express.NextFunction
 ) {
-  passport.authenticate("cas", function (err, user) {
+  passport.authenticate("cas", function (err, user, info) {
     if (err) {
       return next(err);
     }
+    //Handle prettier and add yalies here
     if (!user) {
-      return next(new Error("CAS auth but no user"));
+      return res.status(401).json({ error: info.message || "CAS auth but no user" });
     }
     console.log("1::");
     console.log(user);

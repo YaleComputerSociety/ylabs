@@ -30,6 +30,22 @@ export const readUser = async(id: any) => {
     }
 };
 
+export const validateUser = async(id: any) => {
+    if (mongoose.Types.ObjectId.isValid(id)) {
+        const user = await User.findById(id);
+        if (!user) {
+            return null;
+        }
+        return user.toObject();
+    } else {
+        const user = await User.findOne({ netid: { $regex: `^${id}$`, $options: 'i'} });
+        if (!user) {
+            return null;
+        }
+        return user.toObject();
+    }
+};
+
 export const userExists = async(id: any) => {
     if (mongoose.Types.ObjectId.isValid(id)) {
         const user = await User.findById(id);
