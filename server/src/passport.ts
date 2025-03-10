@@ -2,7 +2,7 @@ import express from "express";
 import passport from "passport";
 import { Strategy } from "passport-cas";
 import { validateUser } from './services/userService';
-import { NotFoundError } from "./utils/errors";
+import { fetchYalie } from "./services/yaliesService";
 
 passport.use(
   new Strategy(
@@ -11,21 +11,26 @@ passport.use(
       ssoBaseURL: "https://secure.its.yale.edu/cas",
     },
     async function (profile, done) {
-      console.log("verify user: ", profile);
+      //Shows user login data if uncommented: console.log("verify user: ", profile);
       try {
-        const user = await validateUser(profile.user);
+        let user = await validateUser(profile.user);
         if (user) {
           done(null, {
             netId: profile.user,
             professor: user.isProfessor,
           });
         } else {
-          done(null, false, { message: "User not found" });
+          user = await fetchYalie(profile.user);
+          if (user) {
+            done(null, {
+              netId: user.netid,
+              professor: user.isProfessor,
+            });
+          } else {
+            done(null, false, { message: "User not found" });
+          }
         }
       } catch (error) {
-        if (error instanceof NotFoundError) {
-          done(null, false, { message: error.message });
-        }
         done(error);
       }
     }
@@ -36,16 +41,24 @@ passport.serializeUser(function (user: any, done) {
   done(null, user.netId);
 });
 
-passport.deserializeUser(async (netId, done) => {
+passport.deserializeUser(async (netId: String, done) => {
   try {
-    const user = await validateUser(netId);
+    let user = await validateUser(netId);
     if (user) {
       done(null, {
         netId: user.netid,
         professor: user.isProfessor,
       });
     } else {
-      done(new Error('User not found'), null);
+      user = await fetchYalie(netId);
+      if (user) {
+        done(null, {
+          netId: user.netid,
+          professor: user.isProfessor,
+        });
+      } else {
+        done(new Error('User not found'), null);;
+      }
     }
   } catch (error) {
     done(error, null);
