@@ -95,24 +95,24 @@ const casLogin = function (
   })(req, res, next);
 };
 
-export default (app: express.Express) => {
-  app.use(passport.initialize());
-  app.use(passport.session());
+const router = express.Router();
 
-  app.get("/check", (req, res) => {
-    console.log("2::");
-    console.log(req.user);
-    if (req.user) {
-      res.json({ auth: true, user: req.user });
-    } else {
-      res.json({ auth: false });
-    }
-  });
+router.get("/check", (req, res) => {
+  console.log("2::");
+  console.log(req.user);
+  if (req.user) {
+    res.json({ auth: true, user: req.user });
+  } else {
+    res.json({ auth: false });
+  }
+});
 
-  app.get("/cas", casLogin);
+router.get("/cas", casLogin);
 
-  app.get("/logout", (req, res) => {
-    req.logOut();
-    return res.json({ success: true });
-  });
-};
+router.get("/logout", (req, res) => {
+  req.logOut();
+  return res.json({ success: true });
+});
+
+export { router as passportRoutes };
+export default passport;

@@ -35,6 +35,14 @@ const newListingSchema = new mongoose.Schema(
         type: [String],
         required: false,
     },
+    established: {
+        type: Date,
+        required: false,
+    },
+    views: {
+        type: Number,
+        default: 0,
+    },
     archived: {
         type: Boolean,
         default: false,

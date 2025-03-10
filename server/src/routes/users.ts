@@ -49,6 +49,7 @@ router.get('/:id/listings', async (request: Request, response: Response) => {
 //Return all listings data for the user currently logged in
 router.get('/listings', async (request: Request, response: Response) => {
     try {
+        console.log(request.user);
         const currentUser = request.user as { netId? : string, professor? : boolean};
         if (!currentUser) {
             throw new Error('User not logged in');

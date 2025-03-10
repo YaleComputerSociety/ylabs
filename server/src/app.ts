@@ -1,7 +1,7 @@
 import cors from "cors";
 import express from "express";
 import { isCI, isDevelopment, isTest } from "./utils/environment";
-import passport from "./passport";
+import passport, { passportRoutes } from "./passport";
 import routes from "./routes";
 import cookieSession from "cookie-session";
 import dotenv from "dotenv";
@@ -35,18 +35,19 @@ const app = express()
     httpOnly: true,
   })(req, res, next);
 })
+.use(passport.initialize())
+.use(passport.session())
+.use(passportRoutes)
 .use(routes)
 .use('/', express.static('../client/build'));
 
 
-app.get(['/login', '/about'], function(req, res) {
+app.get(['/login', '/about', '/account'], function(req, res) {
   res.sendFile(path.join(__dirname, '../../client/build/index.html'), function(err) {
     if (err) {
       res.status(500).send(err)
     }
-  })
-})
-
-passport(app);
+  });
+});
 
 export default app;
