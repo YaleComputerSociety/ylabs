@@ -4,6 +4,7 @@ import Toolbar from '@mui/material/Toolbar';
 import Typography from '@mui/material/Typography';
 import SignOutButton from "./SignOutButton";
 import AboutButton from "./AboutButton";
+import AccountButton from "./AccountButton"
 import HomeButton from "./HomeButton";
 import YURAButton from './YURAButton';
 import { useContext } from "react";
@@ -27,6 +28,7 @@ export default function Navbar() {
           </Typography>
           {isAuthenticated ? <AboutButton /> : <div />}
           {isAuthenticated ? <FeedbackButton /> : <div />}
+          {isAuthenticated ? <AccountButton /> : <div />}
           {isAuthenticated ? <SignOutButton /> : <div />}
         </Toolbar>
       </AppBar>

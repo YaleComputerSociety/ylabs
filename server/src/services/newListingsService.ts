@@ -110,11 +110,10 @@ export const updateListing = async(id: any, data: any) => {
         // Add or remove listing from ownListings of professors based on if professorIds have changed
         const oldProfessorIds = oldListing.professorIds;
         const newProfessorIds = listing.professorIds;
-        const addedIds = newProfessorIds.filter(id => !oldProfessorIds.includes(id));
         const removedIds = oldProfessorIds.filter(id => !newProfessorIds.includes(id));
         const listingId = listing._id;
 
-        for (const id of addedIds) {
+        for (const id of newProfessorIds) {
             await addOwnListings(id, [listingId]);
         }
         for (const id of removedIds) {
