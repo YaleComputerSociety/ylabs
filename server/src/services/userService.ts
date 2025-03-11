@@ -167,7 +167,7 @@ export const addOwnListings = async(id: any, newListings: [mongoose.Types.Object
     let user = await readUser(id);
 
     user.ownListings.push(...newListings);
-    user.ownListings = Array.from(new Set(user.ownListings));
+    user.ownListings = Array.from(new Set(user.ownListings.map(listing => listing.toString()))).map(listing => new mongoose.Types.ObjectId(listing));
 
     const newUser = await updateUser(id, {"ownListings": user.ownListings});
 
@@ -199,7 +199,7 @@ export const addFavListings = async(id: any, newListings: [mongoose.Types.Object
     let user = await readUser(id);
 
     user.favListings.push(...newListings);
-    user.favListings = Array.from(new Set(user.favListings));
+    user.favListings = Array.from(new Set(user.favListings.map(listing => listing.toString()))).map(listing => new mongoose.Types.ObjectId(listing));
 
     const newUser = await updateUser(id, {"favListings": user.favListings});
 

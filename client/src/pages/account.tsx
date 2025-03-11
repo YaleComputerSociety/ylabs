@@ -1,8 +1,10 @@
 import {useState, useEffect} from "react";
 import {Listing} from '../types/types'
+import ListingCard from '../components/ListingCard'
 import axios from '../utils/axios';
 
 import PulseLoader from "react-spinners/PulseLoader";
+import { ListItem } from "@mui/material";
 
 const Account = () => {
     const [ownListings, setOwnListings] = useState<Listing[]>([]);
@@ -60,13 +62,7 @@ const Account = () => {
                         <ul>
                             {ownListings.map((listing) => (
                                 <li key={listing.id} className="mb-2">
-                                    <p><strong>Name:</strong> {listing.name}</p>
-                                    <p><strong>Departments:</strong> {listing.departments}</p>
-                                    <p><strong>Email:</strong> {listing.email}</p>
-                                    <p><strong>Website:</strong> <a href={listing.website} target="_blank" rel="noopener noreferrer">{listing.website}</a></p>
-                                    <p><strong>Description:</strong> {listing.description}</p>
-                                    <p><strong>Keywords:</strong> {listing.keywords}</p>
-                                    <p><strong>Last Updated:</strong> {new Date(listing.lastUpdated).toLocaleDateString()}</p>
+                                    <ListingCard listing={listing} />
                                 </li>
                             ))}
                         </ul>
@@ -78,13 +74,7 @@ const Account = () => {
                         <ul>
                             {ownListings.map((listing) => (
                                 <li key={listing.id} className="mb-2">
-                                    <p><strong>Name:</strong> {listing.name}</p>
-                                    <p><strong>Departments:</strong> {listing.departments}</p>
-                                    <p><strong>Email:</strong> {listing.email}</p>
-                                    <p><strong>Website:</strong> <a href={listing.website} target="_blank" rel="noopener noreferrer">{listing.website}</a></p>
-                                    <p><strong>Description:</strong> {listing.description}</p>
-                                    <p><strong>Keywords:</strong> {listing.keywords}</p>
-                                    <p><strong>Last Updated:</strong> {new Date(listing.lastUpdated).toLocaleDateString()}</p>
+                                    <ListingCard listing={listing} />
                                 </li>
                             ))}
                         </ul>
