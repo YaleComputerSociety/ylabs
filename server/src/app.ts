@@ -1,7 +1,8 @@
 import cors from "cors";
 import express from "express";
 import { isCI, isDevelopment, isTest } from "./utils/environment";
-import passport from "./passport";
+import passport from "passport";
+import passportSetup from "./passport";
 import routes from "./routes";
 import cookieSession from "cookie-session";
 import dotenv from "dotenv";
@@ -35,6 +36,8 @@ const app = express()
     httpOnly: false,
   })(req, res, next);
 })
+.use(passport.initialize())
+.use(passport.session())
 .use(routes)
 .use('/', express.static('../client/build'));
 
@@ -47,6 +50,6 @@ app.get(['/login', '/about'], function(req, res) {
   })
 })
 
-passport(app);
+passportSetup(app);
 
 export default app;

@@ -60,10 +60,7 @@ const casLogin = function (
   })(req, res, next);
 };
 
-export default (app: express.Express) => {
-  app.use(passport.initialize());
-  app.use(passport.session());
-
+const passportSetup = (app: express.Express) => {
   app.get("/check", (req, res) => {
     console.log("2::");
     console.log(req.user);
@@ -81,3 +78,5 @@ export default (app: express.Express) => {
     return res.json({ success: true });
   });
 };
+
+export default passportSetup;

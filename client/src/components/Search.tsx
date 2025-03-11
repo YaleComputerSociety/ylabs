@@ -37,7 +37,7 @@ export default function Search(props: SearchProps) {
         : process.env.REACT_APP_SERVER;
       const url = backendBaseURL + '/listings?dept=' + departments 
                   + '&keywords=' + keywords + '&lname=' + lastNamePI;
-      axios.get(url).then((response) => {
+      axios.get(url, { withCredentials: true }).then((response) => {
         const responseListings : Listing[] = response.data.map(function(elem: any){
             return {
               id: elem._id,
