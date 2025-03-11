@@ -4,11 +4,11 @@ import ListingCard from '../components/ListingCard'
 import axios from '../utils/axios';
 
 import PulseLoader from "react-spinners/PulseLoader";
-import { ListItem } from "@mui/material";
 
 const Account = () => {
     const [ownListings, setOwnListings] = useState<Listing[]>([]);
     const [favListings, setFavListings] = useState<Listing[]>([]);
+    const [favListingsIds, setFavListingsIds] = useState<number[]>([]);
     const [isLoading, setIsLoading] = useState<Boolean>(false);
 
     useEffect(() => {
@@ -45,8 +45,12 @@ const Account = () => {
             })
             setOwnListings(responseOwnListings);
             setFavListings(responseFavListings);
+        });
+
+        axios.get('/users/favListingsIds', {withCredentials: true}).then((response) => {
+            setFavListingsIds(response.data.favListingsIds);
             setIsLoading(false);
-        })
+        });
     };
 
     return (
@@ -62,7 +66,7 @@ const Account = () => {
                         <ul>
                             {ownListings.map((listing) => (
                                 <li key={listing.id} className="mb-2">
-                                    <ListingCard listing={listing} />
+                                    <ListingCard listing={listing} favListingsIds={favListingsIds} reloadListings={reloadListings}/>
                                 </li>
                             ))}
                         </ul>
@@ -72,9 +76,9 @@ const Account = () => {
                     <p className="text-xl text-gray-700 mb-4">Favorite listings</p>
                     {favListings.length > 0 ? (
                         <ul>
-                            {ownListings.map((listing) => (
+                            {favListings.map((listing) => (
                                 <li key={listing.id} className="mb-2">
-                                    <ListingCard listing={listing} />
+                                    <ListingCard listing={listing} favListingsIds={favListingsIds} reloadListings={reloadListings}/>
                                 </li>
                             ))}
                         </ul>

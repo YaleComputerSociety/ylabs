@@ -5,114 +5,6 @@ import { Request, Response, Router } from "express";
 
 const router = Router();
 
-//User level routes
-
-//Create new user
-router.post("/", async (request: Request, response: Response) => {
-    try {
-        const user = await createUser(request.body);
-        response.status(201).json({ user });
-    } catch (error) {
-        console.log(error.message);
-        response.status(400).json({ error: error.message });
-    }
-});
-
-//Read all users
-router.get("/", async (request: Request, response: Response) => {
-    try {
-        const users = await readAllUsers();
-        response.status(200).json({ users });
-    } catch (error) {
-        console.log(error.message);
-        response.status(500).json({ error: error.message });
-    }
-});
-
-//Return all listings data for a specific user by ObjectId or NetId
-router.get('/:id/listings', async (request: Request, response: Response) => {
-    try {
-        const user = await readUser(request.params.id);
-        const ownListings = await readListings(user.ownListings);
-        const favListings = await readListings(user.favListings);
-        response.status(200).json({ ownListings: ownListings, favListings: favListings });
-    } catch (error) {
-        console.log(error.message);
-        if (error instanceof NotFoundError) {
-            response.status(error.status).json({ error: error.message });
-        } else {
-            response.status(500).json({ error: error.message });
-        }
-    }
-});
-
-//Return all listings data for the user currently logged in
-router.get('/listings', async (request: Request, response: Response) => {
-    try {
-        console.log(request.user);
-        const currentUser = request.user as { netId? : string, professor? : boolean};
-        if (!currentUser) {
-            throw new Error('User not logged in');
-        }
-        const user = await readUser(currentUser.netId);
-        const ownListings = await readListings(user.ownListings);
-        const favListings = await readListings(user.favListings);
-        response.status(200).json({ ownListings: ownListings, favListings: favListings });
-    } catch (error) {
-        console.log(error.message);
-        if (error instanceof NotFoundError) {
-            response.status(error.status).json({ error: error.message });
-        } else {
-            response.status(500).json({ error: error.message });
-        }
-    }
-});
-
-//Read specific user by ObjectId or NetId
-router.get('/:id', async (request: Request, response: Response) => {
-    try {
-        const user = await readUser(request.params.id);
-        response.status(200).json({ user });
-    } catch (error) {
-        console.log(error.message);
-        if (error instanceof NotFoundError) {
-            response.status(error.status).json({ error: error.message });
-        } else {
-            response.status(500).json({ error: error.message });
-        }
-    }
-});
-
-//Update data for a specific user by ObjectId or NetId
-router.put('/:id', async (request: Request, response: Response) => {
-    try {
-        const user = await updateUser(request.params.id, request.body);
-        response.status(200).json({ user });
-    } catch (error) {
-        console.log(error.message);
-        if (error instanceof NotFoundError) {
-            response.status(error.status).json({ error: error.message });
-        } else {
-            response.status(500).json({ error: error.message });
-        }
-    }
-});
-
-//Delete user by ObjectId or NetId
-router.delete('/:id', async (request: Request, response: Response) => {
-    try {
-        const user = await deleteUser(request.params.id);
-        response.status(200).json({ user });
-    } catch (error) {
-        console.log(error.message);
-        if (error instanceof NotFoundError) {
-            response.status(error.status).json({ error: error.message });
-        } else {
-            response.status(500).json({ error: error.message });
-        }
-    }
-});
-
 //Departments level routes
 
 //Add departments by ObjectId or NetId
@@ -209,10 +101,51 @@ router.delete('/:id/ownListings/all', async (request: Request, response: Respons
 
 //Fav listings level routes
 
+//Get favListings id's for current user
+router.get('/favListingsIds', async (request: Request, response: Response) => {
+    try {
+        const currentUser = request.user as { netId? : string, professor? : boolean};
+        if (!currentUser) {
+            throw new Error('User not logged in');
+        }
+        const user = await readUser(currentUser.netId);
+        response.status(200).json({ favListingsIds: user.favListings });
+    } catch (error) {
+        console.log(error.message);
+        if (error instanceof NotFoundError) {
+            response.status(error.status).json({ error: error.message });
+        } else {
+            response.status(500).json({ error: error.message });
+        }
+    }
+});
+
 //Add favListings by ObjectId or NetId
 router.put('/:id/favListings', async (request: Request, response: Response) => {
     try {
         const user = await addFavListings(request.params.id, Array.isArray(request.body.favListings) ? request.body.favListings : [request.body.favListings]);
+        response.status(200).json({ user });
+    } catch (error) {
+        console.log(error.message);
+        if (error instanceof NotFoundError) {
+            response.status(error.status).json({ error: error.message });
+        } else {
+            response.status(500).json({ error: error.message });
+        }
+    }
+});
+
+//Add favListings for the user currently logged in
+router.put('/favListings', async (request: Request, response: Response) => {
+    try {
+        const currentUser = request.user as { netId? : string, professor? : boolean};
+        if (!currentUser) {
+            throw new Error('User not logged in');
+        }
+        if (!request.body.data.favListings) {
+            throw new Error('No favListings provided');
+        }
+        const user = await addFavListings(currentUser.netId, Array.isArray(request.body.data.favListings) ? request.body.data.favListings : [request.body.data.favListings]);
         response.status(200).json({ user });
     } catch (error) {
         console.log(error.message);
@@ -239,6 +172,28 @@ router.delete('/:id/favListings', async (request: Request, response: Response) =
     }
 });
 
+//Remove favListings for the user currently logged in
+router.delete('/favListings', async (request: Request, response: Response) => {
+    try {
+        const currentUser = request.user as { netId? : string, professor? : boolean};
+        if (!currentUser) {
+            throw new Error('User not logged in');
+        }
+        if (!request.body.favListings) {
+            throw new Error('No favListings provided');
+        }
+        const user = await deleteFavListings(currentUser.netId, Array.isArray(request.body.favListings) ? request.body.favListings : [request.body.favListings]);
+        response.status(200).json({ user });
+    } catch (error) {
+        console.log(error.message);
+        if (error instanceof NotFoundError) {
+            response.status(error.status).json({ error: error.message });
+        } else {
+            response.status(500).json({ error: error.message });
+        }
+    }
+});
+
 //Clear favListings by ObjectId or NetId
 router.delete('/:id/favListings/all', async (request: Request, response: Response) => {
     try {
@@ -254,6 +209,111 @@ router.delete('/:id/favListings/all', async (request: Request, response: Respons
     }
 });
 
-//Handle login (/users/loginData/:id)
+//User level routes
+
+//Create new user
+router.post("/", async (request: Request, response: Response) => {
+    try {
+        const user = await createUser(request.body);
+        response.status(201).json({ user });
+    } catch (error) {
+        console.log(error.message);
+        response.status(400).json({ error: error.message });
+    }
+});
+
+//Read all users
+router.get("/", async (request: Request, response: Response) => {
+    try {
+        const users = await readAllUsers();
+        response.status(200).json({ users });
+    } catch (error) {
+        console.log(error.message);
+        response.status(500).json({ error: error.message });
+    }
+});
+
+//Return all listings data for a specific user by ObjectId or NetId
+router.get('/:id/listings', async (request: Request, response: Response) => {
+    try {
+        const user = await readUser(request.params.id);
+        const ownListings = await readListings(user.ownListings);
+        const favListings = await readListings(user.favListings);
+        response.status(200).json({ ownListings: ownListings, favListings: favListings });
+    } catch (error) {
+        console.log(error.message);
+        if (error instanceof NotFoundError) {
+            response.status(error.status).json({ error: error.message });
+        } else {
+            response.status(500).json({ error: error.message });
+        }
+    }
+});
+
+//Return all listings data for the user currently logged in
+router.get('/listings', async (request: Request, response: Response) => {
+    try {
+        const currentUser = request.user as { netId? : string, professor? : boolean};
+        if (!currentUser) {
+            throw new Error('User not logged in');
+        }
+        const user = await readUser(currentUser.netId);
+        const ownListings = await readListings(user.ownListings);
+        const favListings = await readListings(user.favListings);
+        response.status(200).json({ ownListings: ownListings, favListings: favListings });
+    } catch (error) {
+        console.log(error.message);
+        if (error instanceof NotFoundError) {
+            response.status(error.status).json({ error: error.message });
+        } else {
+            response.status(500).json({ error: error.message });
+        }
+    }
+});
+
+//Read specific user by ObjectId or NetId
+router.get('/:id', async (request: Request, response: Response) => {
+    try {
+        const user = await readUser(request.params.id);
+        response.status(200).json({ user });
+    } catch (error) {
+        console.log(error.message);
+        if (error instanceof NotFoundError) {
+            response.status(error.status).json({ error: error.message });
+        } else {
+            response.status(500).json({ error: error.message });
+        }
+    }
+});
+
+//Update data for a specific user by ObjectId or NetId
+router.put('/:id', async (request: Request, response: Response) => {
+    try {
+        const user = await updateUser(request.params.id, request.body);
+        response.status(200).json({ user });
+    } catch (error) {
+        console.log(error.message);
+        if (error instanceof NotFoundError) {
+            response.status(error.status).json({ error: error.message });
+        } else {
+            response.status(500).json({ error: error.message });
+        }
+    }
+});
+
+//Delete user by ObjectId or NetId
+router.delete('/:id', async (request: Request, response: Response) => {
+    try {
+        const user = await deleteUser(request.params.id);
+        response.status(200).json({ user });
+    } catch (error) {
+        console.log(error.message);
+        if (error instanceof NotFoundError) {
+            response.status(error.status).json({ error: error.message });
+        } else {
+            response.status(500).json({ error: error.message });
+        }
+    }
+});
 
 export default router;
