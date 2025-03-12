@@ -1,5 +1,5 @@
 import {useState, useEffect} from "react";
-import {Listing} from '../types/types'
+import {NewListing} from '../types/types'
 import OwnListingsCard from '../components/accounts/OwnListingsCard'
 import FavListingsCard from "../components/accounts/FavListingsCard";
 import axios from '../utils/axios';
@@ -8,8 +8,8 @@ import swal from 'sweetalert';
 import PulseLoader from "react-spinners/PulseLoader";
 
 const Account = () => {
-    const [ownListings, setOwnListings] = useState<Listing[]>([]);
-    const [favListings, setFavListings] = useState<Listing[]>([]);
+    const [ownListings, setOwnListings] = useState<NewListing[]>([]);
+    const [favListings, setFavListings] = useState<NewListing[]>([]);
     const [favListingsIds, setFavListingsIds] = useState<number[]>([]);
     const [isLoading, setIsLoading] = useState<Boolean>(false);
 
@@ -21,28 +21,44 @@ const Account = () => {
         setIsLoading(true);
 
         axios.get('/users/listings', {withCredentials: true}).then((response) => {
-            const responseOwnListings : Listing[] = response.data.ownListings.map(function(elem: any){
+            const responseOwnListings : NewListing[] = response.data.ownListings.map(function(elem: any){
                 return {
                     id: elem._id,
-                    departments: elem.departments.join('; '),
-                    email: elem.emails[0],
-                    website: elem.websites[0],
+                    professorIds: elem.professorIds,
+                    professorNames: elem.professorNames,
+                    title: elem.title,
+                    departments: elem.departments,
+                    emails: elem.emails,
+                    websites: elem.websties,
                     description: elem.description,
                     keywords: elem.keywords,
-                    lastUpdated: elem.updatedAt,
-                    name: elem.professorNames[0]
+                    established: elem.established,
+                    views: elem.views,
+                    favorites: elem.favorites,
+                    hiringStatus: elem.hiringStatus,
+                    archived: elem.archived,
+                    updatedAt: elem.updatedAt,
+                    createdAt: elem.createdAt
                 }
             })
-            const responseFavListings : Listing[] = response.data.favListings.map(function(elem: any){
+            const responseFavListings : NewListing[] = response.data.favListings.map(function(elem: any){
                 return {
                     id: elem._id,
-                    departments: elem.departments.join('; '),
-                    email: elem.emails[0],
-                    website: elem.websites[0],
+                    professorIds: elem.professorIds,
+                    professorNames: elem.professorNames,
+                    title: elem.title,
+                    departments: elem.departments,
+                    emails: elem.emails,
+                    websites: elem.websties,
                     description: elem.description,
                     keywords: elem.keywords,
-                    lastUpdated: elem.updatedAt,
-                    name: elem.professorNames[0]
+                    established: elem.established,
+                    views: elem.views,
+                    favorites: elem.favorites,
+                    hiringStatus: elem.hiringStatus,
+                    archived: elem.archived,
+                    updatedAt: elem.updatedAt,
+                    createdAt: elem.createdAt
                 }
             })
             setOwnListings(responseOwnListings);
@@ -79,7 +95,7 @@ const Account = () => {
         });
     };
 
-    const handleFavorite = (listing: Listing ,listingId: number) => {
+    const handleFavorite = (listing: NewListing ,listingId: number) => {
         const prevFavListings = favListings;
         const prevFavListingsIds = favListingsIds;
 
