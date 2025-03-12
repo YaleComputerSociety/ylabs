@@ -1,15 +1,15 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Listing } from '../types/types';
+import { NewListing } from '../types/types';
 import axios from '../utils/axios';
 
 interface ListingCardProps {
-    listing: Listing;
+    listing: NewListing;
     favListingsIds: number[];
     reloadListings: () => void;
 }
 
 const ListingCard = ({ listing, favListingsIds, reloadListings }: ListingCardProps) => {
-    const departments = listing.departments.split('; ');
+    const departments = listing.departments;
     const [visibleDepartments, setVisibleDepartments] = useState<string[]>([]);
     const [moreCount, setMoreCount] = useState(0);
     const [isFavorite, setIsFavorite] = useState(false);
@@ -129,9 +129,9 @@ const ListingCard = ({ listing, favListingsIds, reloadListings }: ListingCardPro
         >
             {/* First Column */}
             <div className="p-1 mr-6 flex-shrink-0" style={{ width: '30%'}}>
-                <p className="text-lg font-semibold mb-2" style={{ lineHeight: '1.2rem', height: '1.2rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{listing.name}</p>
+                <p className="text-lg font-semibold mb-2" style={{ lineHeight: '1.2rem', height: '1.2rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{listing.title}</p>
                 <p ref={professorsRef} className="text-sm text-gray-700 mb-2" style={{ lineHeight: '1.2rem', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
-                    <strong>Professors:</strong> {listing.name}
+                    <strong>Professors:</strong> {listing.professorNames.join(', ')}
                 </p>
                 {/* list all departments in blue bubbles*/}
                 <div ref={departmentsContainerRef} className="flex overflow-hidden" style={{ whiteSpace: 'nowrap' }}>
@@ -168,9 +168,9 @@ const ListingCard = ({ listing, favListingsIds, reloadListings }: ListingCardPro
             {/* Third Column justify right with set width and a number in top right and date in bottom right */}
             <div className="p-1 flex flex-col flex-shrink-0 items-end" style={{ width: '9rem'}}>
                 <div>
-                    {listing.website && (
+                    {listing.websites && listing.websites.length > 0 && (
                         <a
-                            href={listing.website}
+                            href={listing.websites[0]}
                             className = 'mr-1'
                             onClick={(e) => e.stopPropagation()}
                             target="_blank"
@@ -197,7 +197,7 @@ const ListingCard = ({ listing, favListingsIds, reloadListings }: ListingCardPro
                 </div>
                 <div className="flex-grow" />
                 <p className="text-sm text-gray-700" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>
-                    {new Date(listing.lastUpdated).toLocaleDateString()}
+                    {new Date(listing.updatedAt).toLocaleDateString()}
                 </p>
             </div>
         </div>
