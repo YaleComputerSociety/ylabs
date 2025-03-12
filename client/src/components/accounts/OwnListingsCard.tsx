@@ -54,7 +54,6 @@ const OwnListingsCard = ({ listing, favListingsIds, unfavoriteListing, favoriteL
     useEffect(() => {
         // Set listing as favorite based on if listing.id is in favListingsIds
         if(favListingsIds) {
-            console.log(String(listing.id), favListingsIds.map(elem => String(elem)));
             setIsFavorite(favListingsIds.includes(listing.id));
         }
     }, [favListingsIds]);
