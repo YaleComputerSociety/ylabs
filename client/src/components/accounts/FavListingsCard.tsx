@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { NewListing } from '../../types/types';
+import { departmentCategories } from '../../utils/departmentNames';
 
 interface FavListingsCardProps {
     listing: NewListing;
@@ -13,6 +14,17 @@ const FavListingsCard = ({ listing, unfavoriteListing }: FavListingsCardProps) =
     const [showTooltip, setShowTooltip] = useState(false);
     const departmentsContainerRef = useRef<HTMLDivElement>(null);
     const professorsRef = useRef<HTMLParagraphElement>(null);
+
+    const departmentColors = [
+        "bg-blue-200",
+        "bg-green-200",
+        "bg-yellow-200",
+        "bg-red-200",
+        "bg-purple-200",
+        "bg-pink-200",
+        "bg-teal-200",
+        "bg-orange-200"
+    ];
     
     // Helper function to determine bar color based on hiringStatus
     const getHiringStatusColor = () => {
@@ -138,9 +150,8 @@ const FavListingsCard = ({ listing, unfavoriteListing }: FavListingsCardProps) =
                 onMouseLeave={() => setShowTooltip(false)}
             >
                 {showTooltip && (
-                    <div className="absolute left-6 top-1/2 -translate-y-1/2 bg-gray-800 text-white text-xs rounded py-1 px-2 z-10 whitespace-nowrap">
+                    <div className="absolute top-1/2 left-4 -translate-y-1/2 bg-gray-50 border border-gray-300 text-gray-800 text-xs rounded py-1 px-2 z-10 whitespace-nowrap">
                         {getHiringStatusText()}
-                        <div className="absolute border-r-4 border-r-gray-800 border-y-transparent border-y-4 border-l-0 -left-2 top-1/2 -translate-y-1/2"></div>
                     </div>
                 )}
             </div>
@@ -156,7 +167,7 @@ const FavListingsCard = ({ listing, unfavoriteListing }: FavListingsCardProps) =
                         {visibleDepartments.map((department) => (
                             <span
                                 key={department}
-                                className="bg-blue-200 text-gray-900 text-xs rounded px-1 py-0.5 mt-2 mr-2"
+                                className={`${Object.keys(departmentCategories).includes(department) ? departmentColors[departmentCategories[department as keyof typeof departmentCategories]] : "bg-gray-200"} text-gray-900 text-xs rounded px-1 py-0.5 mt-2 mr-2`}
                                 style={{ display: 'inline-block', whiteSpace: 'nowrap' }}
                             >
                                 {department}
