@@ -23,6 +23,14 @@ const newListingSchema = new mongoose.Schema(
         required: true,
         validate: [arrayNotEmpty, 'emails cannot be empty']
     },
+    title: {
+        type: String,
+        required: true,
+    },
+    hiringStatus: {
+        type: Number,
+        default: 0,
+    },
     websites: {
         type: [String],
         required: false,
@@ -40,6 +48,10 @@ const newListingSchema = new mongoose.Schema(
         required: false,
     },
     views: {
+        type: Number,
+        default: 0,
+    },
+    favorites: {
         type: Number,
         default: 0,
     },
