@@ -130,7 +130,8 @@ const FavListingsCard = ({ listing, unfavoriteListing }: FavListingsCardProps) =
         return () => window.removeEventListener('resize', checkIfOneLine);
     }, [listing]);
 
-    const handleUnfavorite = () => {
+    const handleUnfavorite = (e: React.MouseEvent) => {
+        e.stopPropagation();
         unfavoriteListing(listing.id);
     }
 
@@ -214,13 +215,25 @@ const FavListingsCard = ({ listing, unfavoriteListing }: FavListingsCardProps) =
                                 </button>
                             </a>
                         )}
-                        <a onClick={handleUnfavorite}>
-                            <button className="p-1 rounded hover:bg-gray-200">
-                                <img
-                                    src="/assets/icons/star-full.svg"
-                                    alt="Favorite Button"
-                                    className="w-5 h-5"
-                                />
+                        <a onClick={handleUnfavorite} className="inline-block">
+                            <button 
+                                className="p-1 hover:bg-gray-200 rounded"
+                                aria-label="Remove from favorites"
+                            >
+                                <svg 
+                                    xmlns="http://www.w3.org/2000/svg" 
+                                    width="20" 
+                                    height="20" 
+                                    viewBox="0 0 24 24" 
+                                    className="transition-colors"
+                                    fill="#FFDA7B" 
+                                    stroke="#F0C04A" 
+                                    strokeWidth="1.5" 
+                                    strokeLinecap="round" 
+                                    strokeLinejoin="round"
+                                >
+                                    <path d="M12 17.75l-6.172 3.245l1.179 -6.873l-5 -4.867l6.9 -1l3.086 -6.253l3.086 6.253l6.9 1l-5 4.867l1.179 6.873z" />
+                                </svg>
                             </button>
                         </a>
                     </div>
