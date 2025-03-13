@@ -2,21 +2,19 @@ import React, { useState, useRef, useEffect } from 'react';
 import { NewListing } from '../../types/types';
 import { departmentCategories } from '../../utils/departmentNames';
 
-interface OwnListingsCardProps {
+interface ListingCardProps {
     listing: NewListing;
     favListingsIds: number[];
-    unfavoriteListing: (listingId: number) => void;
-    favoriteListing: (listing: NewListing, listingId: number) => void;
+    updateFavorite: (listing: NewListing, listingId: number, favorite: boolean) => void;
 }
 
-const OwnListingsCard = ({ listing, favListingsIds, unfavoriteListing, favoriteListing }: OwnListingsCardProps) => {
+const ListingCard = ({ listing, favListingsIds, updateFavorite }: ListingCardProps) => {
     const departments = listing.departments;
     const [visibleDepartments, setVisibleDepartments] = useState<string[]>([]);
     const [moreCount, setMoreCount] = useState(0);
     const [showTooltip, setShowTooltip] = useState(false);
     const [isFavorite, setIsFavorite] = useState(false);
     const departmentsContainerRef = useRef<HTMLDivElement>(null);
-    const professorsRef = useRef<HTMLParagraphElement>(null);
 
     const departmentColors = [
         "bg-blue-200",
@@ -32,11 +30,11 @@ const OwnListingsCard = ({ listing, favListingsIds, unfavoriteListing, favoriteL
     // Helper function to determine bar color based on hiringStatus
     const getHiringStatusColor = () => {
         if (listing.hiringStatus < 0) {
-            return "bg-red-500 hover:bg-red-600";
+            return "bg-red-500";
         } else if (listing.hiringStatus === 0) {
-            return "bg-yellow-500 hover:bg-yellow-600";
+            return "bg-yellow-500";
         } else {
-            return "bg-green-500 hover:bg-green-600";
+            return "bg-green-500";
         }
     };
     
@@ -114,39 +112,9 @@ const OwnListingsCard = ({ listing, favListingsIds, unfavoriteListing, favoriteL
         return () => window.removeEventListener('resize', calculateVisibleDepartments);
     }, []);
 
-    useEffect(() => {
-        if (!professorsRef.current) return;
-
-        const checkIfOneLine = () => {
-            const element = professorsRef.current;
-            if (!element) return;
-
-            element.style.height = '';
-            element.style.paddingTop = '0';
-
-            const lineHeight = parseFloat(getComputedStyle(element).lineHeight);
-            const height = element.scrollHeight;
-
-            if (height <= lineHeight) {
-                element.style.paddingTop = '0.6rem';
-            }
-
-            element.style.height = '2.4rem';
-        };
-
-        checkIfOneLine();
-        // Re-check on window resize
-        window.addEventListener('resize', checkIfOneLine);
-        return () => window.removeEventListener('resize', checkIfOneLine);
-    }, [listing]);
-
     const toggleFavorite = (e: React.MouseEvent) => {
         e.stopPropagation();
-        if(isFavorite) {
-            unfavoriteListing(listing.id);
-        } else {
-            favoriteListing(listing, listing.id);
-        }
+        updateFavorite(listing, listing.id, !isFavorite);
     }
 
     if (!listing) {
@@ -165,16 +133,16 @@ const OwnListingsCard = ({ listing, favListingsIds, unfavoriteListing, favoriteL
                 onMouseLeave={() => setShowTooltip(false)}
             >
                 {showTooltip && (
-                    <div className="absolute top-1/2 left-4 -translate-y-1/2 bg-gray-50 border border-gray-300 text-gray-800 text-xs rounded py-1 px-2 z-10 whitespace-nowrap">
+                    <div className={`${getHiringStatusColor()} absolute top-1/2 left-4 -translate-y-1/2 text-white text-xs rounded-full py-1 px-2 z-10 whitespace-nowrap shadow`}>
                         {getHiringStatusText()}
                     </div>
                 )}
             </div>
-            <div className="flex flex-grow p-3 cursor-pointer hover:bg-gray-100 border border-gray-300 rounded">
+            <div className="p-4 flex-grow grid grid-cols-3 md:grid-cols-12 cursor-pointer hover:bg-gray-100 border border-gray-300 rounded shadow">
                 {/* First Column */}
-                <div className="p-1 mr-6 flex-shrink-0" style={{ width: '30%'}}>
-                    <p className="text-lg font-semibold mb-2" style={{ lineHeight: '1.2rem', height: '1.2rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{listing.title}</p>
-                    <p ref={professorsRef} className="text-sm text-gray-700 mb-2" style={{ lineHeight: '1.2rem', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+                <div className="col-span-2 md:col-span-4">
+                    <p className="text-lg font-semibold mb-3" style={{ lineHeight: '1.2rem', height: '1.2rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{listing.title}</p>
+                    <p className="text-sm text-gray-700" style={{ overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical' }}>
                         <strong>Professors:</strong> {listing.professorNames.join(', ')}
                     </p>
                     {/* list all departments in blue bubbles*/}
@@ -182,7 +150,7 @@ const OwnListingsCard = ({ listing, favListingsIds, unfavoriteListing, favoriteL
                         {visibleDepartments.map((department) => (
                             <span
                                 key={department}
-                                className={`${Object.keys(departmentCategories).includes(department) ? departmentColors[departmentCategories[department as keyof typeof departmentCategories]] : "bg-gray-200"} text-gray-900 text-xs rounded px-1 py-0.5 mt-2 mr-2`}
+                                className={`${Object.keys(departmentCategories).includes(department) ? departmentColors[departmentCategories[department as keyof typeof departmentCategories]] : "bg-gray-200"} text-gray-900 text-xs rounded px-1 py-0.5 mt-3 mr-2`}
                                 style={{ display: 'inline-block', whiteSpace: 'nowrap' }}
                             >
                                 {department}
@@ -190,7 +158,7 @@ const OwnListingsCard = ({ listing, favListingsIds, unfavoriteListing, favoriteL
                         ))}
                         {moreCount > 0 && (
                             <span
-                                className="bg-gray-200 text-gray-900 text-xs rounded px-1 py-0.5 mt-2"
+                                className="bg-gray-200 text-gray-900 text-xs rounded px-1 py-0.5 mt-3"
                                 style={{ display: 'inline-block', whiteSpace: 'nowrap' }}
                             >
                                 +{moreCount} more
@@ -199,18 +167,19 @@ const OwnListingsCard = ({ listing, favListingsIds, unfavoriteListing, favoriteL
                     </div>
                 </div>
 
-                {/* Vertical Line */}
-                <div className="border-l border-gray-300 mx-4" />
+                
 
                 {/* Second Column */}
-                <div className="flex-grow p-1">
-                    <p className="text-gray-800 text-sm overflow-hidden overflow-ellipsis" style={{ display: '-webkit-box', WebkitLineClamp: 5, WebkitBoxOrient: 'vertical' }}>
+                <div className="col-span-6 hidden md:flex align-middle">
+                    {/* Vertical Line */}
+                    <div className="flex-shrink-0 border-l border-gray-300 mx-4" />
+                    <p className="flex-grow text-gray-800 text-sm overflow-hidden overflow-ellipsis" style={{ display: '-webkit-box', WebkitLineClamp: 4, WebkitBoxOrient: 'vertical' }}>
                         {listing.description}
                     </p>
                 </div>
 
-                {/* Third Column justify right with set width and a number in top right and date in bottom right */}
-                <div className="p-1 flex flex-col flex-shrink-0 items-end" style={{ width: '9rem'}}>
+                {/* Third Column */}
+                <div className="flex flex-col col-span-1 md:col-span-2 items-end">
                     <div>
                         {listing.websites && listing.websites.length > 0 && (
                             <a
@@ -261,4 +230,4 @@ const OwnListingsCard = ({ listing, favListingsIds, unfavoriteListing, favoriteL
     );
 }
 
-export default OwnListingsCard;
+export default ListingCard;
