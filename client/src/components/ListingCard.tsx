@@ -141,7 +141,8 @@ const ListingCard = ({ listing, favListingsIds, reloadListings }: ListingCardPro
         return () => window.removeEventListener('resize', checkIfOneLine);
     }, [listing]);
 
-    const toggleFavorite = () => {
+    const toggleFavorite = (e: React.MouseEvent) => {
+        e.stopPropagation();
         if(isFavorite) {
             axios.delete('/users/favListings', {withCredentials: true, data: {favListings: [listing.id]}}).then(() => {
                 reloadListings();
@@ -233,13 +234,25 @@ const ListingCard = ({ listing, favListingsIds, reloadListings }: ListingCardPro
                                 </button>
                             </a>
                         )}
-                        <a onClick={toggleFavorite}>
-                            <button className="p-1 rounded hover:bg-gray-200">
-                                <img
-                                    src={isFavorite ? "/assets/icons/star-full.svg" : "/assets/icons/star-empty.svg"}
-                                    alt="Favorite Button"
-                                    className="w-5 h-5"
-                                />
+                        <a onClick={toggleFavorite} className="inline-block">
+                            <button 
+                                className="p-1 hover:bg-gray-200 rounded"
+                                aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"}
+                            >
+                                <svg 
+                                    xmlns="http://www.w3.org/2000/svg" 
+                                    width="20" 
+                                    height="20" 
+                                    viewBox="0 0 24 24" 
+                                    className="transition-colors"
+                                    fill={isFavorite ? "#FFDA7B" : "none"} 
+                                    stroke={isFavorite ? "#F0C04A" : "currentColor"} 
+                                    strokeWidth="1.5" 
+                                    strokeLinecap="round" 
+                                    strokeLinejoin="round"
+                                >
+                                    <path d="M12 17.75l-6.172 3.245l1.179 -6.873l-5 -4.867l6.9 -1l3.086 -6.253l3.086 6.253l6.9 1l-5 4.867l1.179 6.873z" />
+                                </svg>
                             </button>
                         </a>
                     </div>
