@@ -207,7 +207,7 @@ const FavListingsCard = ({ listing, unfavoriteListing }: FavListingsCardProps) =
                             >
                                 <button className="p-1 rounded hover:bg-gray-200">
                                     <img
-                                        src="/assets/icons/link-icon.png"
+                                        src="/assets/icons/link.svg"
                                         alt="Lab Website"
                                         className="w-5 h-5"
                                     />
@@ -217,7 +217,7 @@ const FavListingsCard = ({ listing, unfavoriteListing }: FavListingsCardProps) =
                         <a onClick={handleUnfavorite}>
                             <button className="p-1 rounded hover:bg-gray-200">
                                 <img
-                                    src="/assets/icons/star-full.png"
+                                    src="/assets/icons/star-full.svg"
                                     alt="Favorite Button"
                                     className="w-5 h-5"
                                 />

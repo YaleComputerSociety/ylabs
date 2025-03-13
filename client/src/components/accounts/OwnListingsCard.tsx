@@ -221,7 +221,7 @@ const OwnListingsCard = ({ listing, favListingsIds, unfavoriteListing, favoriteL
                             >
                                 <button className="p-1 rounded hover:bg-gray-200">
                                     <img
-                                        src="/assets/icons/link-icon.png"
+                                        src="/assets/icons/link.svg"
                                         alt="Lab Website"
                                         className="w-5 h-5"
                                     />
@@ -231,7 +231,7 @@ const OwnListingsCard = ({ listing, favListingsIds, unfavoriteListing, favoriteL
                         <a onClick={toggleFavorite}>
                             <button className="p-1 rounded hover:bg-gray-200">
                                 <img
-                                    src={isFavorite ? "/assets/icons/star-full.png" : "/assets/icons/star-empty.png"}
+                                    src={isFavorite ? "/assets/icons/star-full.svg" : "/assets/icons/star-empty.svg"}
                                     alt="Favorite Button"
                                     className="w-5 h-5"
                                 />
