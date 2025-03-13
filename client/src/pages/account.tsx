@@ -2,6 +2,7 @@ import {useState, useEffect} from "react";
 import {NewListing} from '../types/types'
 import OwnListingsCard from '../components/accounts/OwnListingsCard'
 import FavListingsCard from "../components/accounts/FavListingsCard";
+import NewListingModal from "../components/accounts/NewListingModal";
 import axios from '../utils/axios';
 import swal from 'sweetalert';
 
@@ -12,6 +13,8 @@ const Account = () => {
     const [favListings, setFavListings] = useState<NewListing[]>([]);
     const [favListingsIds, setFavListingsIds] = useState<number[]>([]);
     const [isLoading, setIsLoading] = useState<Boolean>(false);
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [selectedListing, setSelectedListing] = useState<NewListing | null>(null);
 
     useEffect(() => {
         reloadListings();
@@ -71,11 +74,17 @@ const Account = () => {
         });
     };
 
-    /*
-    FOR TESTING
-    REMOVE LATER
-    */
-    const timeout = (delay: number) => new Promise(res => setTimeout(res, delay));
+    // Function to open modal with a specific listing
+    const openModal = (listing: NewListing) => {
+        setSelectedListing(listing);
+        setIsModalOpen(true);
+    };
+
+    // Function to close modal
+    const closeModal = () => {
+        setIsModalOpen(false);
+        setSelectedListing(null);
+    };
 
     const handleUnfavorite = (listingId: number) => {
         const prevFavListings = favListings;
@@ -126,8 +135,13 @@ const Account = () => {
                     {ownListings.length > 0 ? (
                         <ul>
                             {ownListings.map((listing) => (
-                                <li key={listing.id} className="mb-2">
-                                    <OwnListingsCard listing={listing} favListingsIds={favListingsIds} unfavoriteListing={handleUnfavorite} favoriteListing={handleFavorite}/>
+                                <li key={listing.id} className="mb-2" onClick={() => openModal(listing)}>
+                                    <OwnListingsCard 
+                                        listing={listing} 
+                                        favListingsIds={favListingsIds} 
+                                        unfavoriteListing={handleUnfavorite} 
+                                        favoriteListing={handleFavorite}
+                                    />
                                 </li>
                             ))}
                         </ul>
@@ -138,13 +152,28 @@ const Account = () => {
                     {favListings.length > 0 ? (
                         <ul>
                             {favListings.map((listing) => (
-                                <li key={listing.id} className="mb-2">
-                                    <FavListingsCard listing={listing} unfavoriteListing={handleUnfavorite}/>
+                                <li key={listing.id} className="mb-2" onClick={() => openModal(listing)}>
+                                    <FavListingsCard 
+                                        listing={listing} 
+                                        unfavoriteListing={handleUnfavorite}
+                                    />
                                 </li>
                             ))}
                         </ul>
                     ) : (
                         <p>No listings found.</p>
+                    )}
+                    
+                    {/* Modal */}
+                    {selectedListing && (
+                        <NewListingModal 
+                            isOpen={isModalOpen} 
+                            onClose={closeModal} 
+                            listing={selectedListing}
+                            favListingsIds={favListingsIds}
+                            unfavoriteListing={handleUnfavorite} 
+                            favoriteListing={handleFavorite}
+                        />
                     )}
                 </div>
             )}
