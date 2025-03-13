@@ -2,16 +2,15 @@ import React, { useEffect, useState } from 'react';
 import { NewListing } from '../../types/types';
 import { departmentCategories } from '../../utils/departmentNames';
 
-interface NewListingModalProps {
+interface ListingModalProps {
   isOpen: boolean;
   onClose: () => void;
   listing: NewListing;
   favListingsIds: number[];
-  unfavoriteListing: (listingId: number) => void;
-  favoriteListing: (listing: NewListing, listingId: number) => void;
+  updateFavorite: (listing: NewListing, listingId: number, favorite: boolean) => void;
 }
 
-const NewListingModal = ({ isOpen, onClose, listing, favListingsIds, unfavoriteListing, favoriteListing }: NewListingModalProps) => {
+const ListingModal = ({ isOpen, onClose, listing, favListingsIds, updateFavorite }: ListingModalProps) => {
     const [isFavorite, setIsFavorite] = useState(false);
 
     const departmentColors = [
@@ -63,11 +62,7 @@ const NewListingModal = ({ isOpen, onClose, listing, favListingsIds, unfavoriteL
 
     const toggleFavorite = (e: React.MouseEvent) => {
         e.stopPropagation();
-        if(isFavorite) {
-            unfavoriteListing(listing.id);
-        } else {
-            favoriteListing(listing, listing.id);
-        }
+        updateFavorite(listing, listing.id, !isFavorite);
     }
 
     if (!isOpen || !listing) return null;
@@ -255,4 +250,4 @@ const NewListingModal = ({ isOpen, onClose, listing, favListingsIds, unfavoriteL
     );
 };
 
-export default NewListingModal;
+export default ListingModal;
