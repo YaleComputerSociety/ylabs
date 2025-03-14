@@ -1,11 +1,13 @@
 import {useState, useEffect} from "react";
 import {NewListing} from '../types/types'
+import {createListing} from '../utils/apiCleaner';
 import ListingCard from '../components/accounts/ListingCard'
 import ListingModal from "../components/accounts/ListingModal";
 import axios from '../utils/axios';
 import swal from 'sweetalert';
 
 import PulseLoader from "react-spinners/PulseLoader";
+import { create } from "domain";
 
 const Account = () => {
     const [ownListings, setOwnListings] = useState<NewListing[]>([]);
@@ -24,44 +26,10 @@ const Account = () => {
 
         axios.get('/users/listings', {withCredentials: true}).then((response) => {
             const responseOwnListings : NewListing[] = response.data.ownListings.map(function(elem: any){
-                return {
-                    id: elem._id,
-                    professorIds: elem.professorIds,
-                    professorNames: elem.professorNames,
-                    title: elem.title,
-                    departments: elem.departments,
-                    emails: elem.emails,
-                    websites: elem.websites,
-                    description: elem.description,
-                    keywords: elem.keywords,
-                    established: elem.established,
-                    views: elem.views,
-                    favorites: elem.favorites,
-                    hiringStatus: elem.hiringStatus,
-                    archived: elem.archived,
-                    updatedAt: elem.updatedAt,
-                    createdAt: elem.createdAt
-                }
+                return createListing(elem);
             })
             const responseFavListings : NewListing[] = response.data.favListings.map(function(elem: any){
-                return {
-                    id: elem._id,
-                    professorIds: elem.professorIds,
-                    professorNames: elem.professorNames,
-                    title: elem.title,
-                    departments: elem.departments,
-                    emails: elem.emails,
-                    websites: elem.websites,
-                    description: elem.description,
-                    keywords: elem.keywords,
-                    established: elem.established,
-                    views: elem.views,
-                    favorites: elem.favorites,
-                    hiringStatus: elem.hiringStatus,
-                    archived: elem.archived,
-                    updatedAt: elem.updatedAt,
-                    createdAt: elem.createdAt
-                }
+                return createListing(elem);
             })
             setOwnListings(responseOwnListings);
             setFavListings(responseFavListings);
@@ -118,6 +86,18 @@ const Account = () => {
         }
     };
 
+    const updateListing = (newListing: NewListing) => {
+        const prevOwnListings = ownListings;
+        console.log(newListing);
+        setOwnListings((prevOwnListings) => prevOwnListings.map((listing) => listing.id === newListing.id ? newListing : listing));
+        //console.log(ownListings.map((listing) => listing.id === newListing.id))
+        //console.log(ownListings.map((listing) => listing.id), newListing.id);
+        const prevFavListings = favListings;
+        setFavListings((prevFavListings) => prevFavListings.map((listing) => listing.id === newListing.id ? newListing : listing));
+        //console.log(favListings.map((listing) => listing.id === newListing.id));
+        //console.log(favListings.map((listing) => listing.id), newListing.id);
+    };
+
     return (
         <div className="p-8 transition-all lg:mx-12 mt-[4rem]">
             {isLoading ? (
@@ -130,11 +110,14 @@ const Account = () => {
                     {ownListings.length > 0 ? (
                         <ul>
                             {ownListings.map((listing) => (
-                                <li key={listing.id} className="mb-2" onClick={() => openModal(listing)}>
+                                <li key={listing.id} className="mb-2">
                                     <ListingCard 
                                         listing={listing} 
                                         favListingsIds={favListingsIds} 
                                         updateFavorite={updateFavorite}
+                                        updateListing={updateListing}
+                                        openModal={openModal}
+                                        editable={true}
                                     />
                                 </li>
                             ))}
@@ -146,11 +129,14 @@ const Account = () => {
                     {favListings.length > 0 ? (
                         <ul>
                             {favListings.map((listing) => (
-                                <li key={listing.id} className="mb-2" onClick={() => openModal(listing)}>
+                                <li key={listing.id} className="mb-2">
                                     <ListingCard
                                         listing={listing}
                                         favListingsIds={favListingsIds}
                                         updateFavorite={updateFavorite}
+                                        updateListing={updateListing}
+                                        openModal={openModal}
+                                        editable={false}
                                     />
                                 </li>
                             ))}
