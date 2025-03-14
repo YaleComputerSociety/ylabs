@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import { readListings } from '../services/newListingsService';
 import { createUser, readAllUsers, readUser, updateUser, deleteUser, addDepartments, deleteDepartments, clearDepartments, addOwnListings, deleteOwnListings, clearOwnListings, addFavListings, deleteFavListings, clearFavListings } from '../services/userService';
 import { NotFoundError } from "../utils/errors";
@@ -260,6 +261,20 @@ router.get('/listings', async (request: Request, response: Response) => {
         const user = await readUser(currentUser.netId);
         const ownListings = await readListings(user.ownListings);
         const favListings = await readListings(user.favListings);
+
+        //Clean listings
+        let ownIds: mongoose.Types.ObjectId[] = [];
+        for (const listing of ownListings) {
+            ownIds.push(listing._id);
+        }
+
+        let favIds: mongoose.Types.ObjectId[] = [];
+        for (const listing of favListings) {
+            favIds.push(listing._id);
+        }
+
+        await updateUser(currentUser.netId, { ownListings: ownIds, favListings: favIds });
+
         response.status(200).json({ ownListings: ownListings, favListings: favListings });
     } catch (error) {
         console.log(error.message);

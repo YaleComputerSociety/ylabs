@@ -4,24 +4,37 @@ const arrayNotEmpty = (arr: any[]) => Array.isArray(arr) && arr.length > 0;
 
 const newListingSchema = new mongoose.Schema(
   {
+    ownerId: {
+        type: String,
+        required: true
+    },
+    ownerFirstName: {
+        type: String,
+        required: true
+    },
+    ownerLastName: {
+        type: String,
+        required: true
+    },
+    ownerEmail: {
+        type: String,
+        required: true
+    },
     professorIds: {
         type: [String],
-        validate: [arrayNotEmpty, 'professorIds cannot be empty']
+        default: []
     },
     professorNames: {
         type: [String],
-        required: true,
-        validate: [arrayNotEmpty, 'professorNames cannot be empty']
+        default: []
     },
     departments: {
         type: [String],
-        required: true,
-        validate: [arrayNotEmpty, 'departments cannot be empty']
+        default: []
     },
     emails: {
         type: [String],
-        required: true,
-        validate: [arrayNotEmpty, 'emails cannot be empty']
+        default: []
     },
     title: {
         type: String,
@@ -37,7 +50,7 @@ const newListingSchema = new mongoose.Schema(
     },
     description: {
         type: String,
-        required: false,
+        required: true,
     },
     keywords: {
         type: [String],

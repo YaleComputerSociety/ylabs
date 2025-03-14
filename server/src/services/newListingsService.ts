@@ -2,25 +2,26 @@ import { NewListing } from "../models";
 import { NotFoundError, ObjectIdError } from "../utils/errors";
 import { createListingBackup } from "./listingBackupServices";
 import { addOwnListings, deleteOwnListings, userExists } from "./userService";
+import { User } from "../models";
 import mongoose from "mongoose";
 
-export const createListing = async (data: any) => {
-    const listing = new NewListing(data);
+export const createListing = async (data: any, owner: any) => {
+    if (!owner.netid || !owner.email || !owner.fname || !owner.lname) {
+        throw new Error('Incomplete user data for owner');
+    }
+
+    const listing = new NewListing({...data, ownerId: owner.netid, ownerEmail: owner.email, ownerFirstName: owner.fname, ownerLastName: owner.lname});
 
     // Add listing id to ownListings of all professors associated with the listing
     const listingId = listing._id;
     const professorIds = listing.professorIds;
 
     // Check if userExists returns true for all professor ids before proceeding
-    for (const id of professorIds) {
+    for (const id of [...professorIds, owner.netid]) {
         const user = await userExists(id);
-        if (!user) {
-            throw new NotFoundError(`User not found with ObjectId: ${id}`);
+        if (user) {
+            await addOwnListings(id, [listingId]);
         }
-    }
-
-    for (const id of professorIds) {
-        await addOwnListings(id, [listingId]);
     }
 
     await listing.save();
