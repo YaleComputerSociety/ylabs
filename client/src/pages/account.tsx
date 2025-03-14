@@ -5,9 +5,7 @@ import ListingCard from '../components/accounts/ListingCard'
 import ListingModal from "../components/accounts/ListingModal";
 import axios from '../utils/axios';
 import swal from 'sweetalert';
-
 import PulseLoader from "react-spinners/PulseLoader";
-import { create } from "domain";
 
 const Account = () => {
     const [ownListings, setOwnListings] = useState<NewListing[]>([]);
@@ -21,10 +19,10 @@ const Account = () => {
         reloadListings();
     }, []);
 
-    const reloadListings = () => {
+    const reloadListings = async () => {
         setIsLoading(true);
 
-        axios.get('/users/listings', {withCredentials: true}).then((response) => {
+        await axios.get('/users/listings', {withCredentials: true}).then((response) => {
             const responseOwnListings : NewListing[] = response.data.ownListings.map(function(elem: any){
                 return createListing(elem);
             })
@@ -33,12 +31,31 @@ const Account = () => {
             })
             setOwnListings(responseOwnListings);
             setFavListings(responseFavListings);
-        });
+        }).catch((error => {
+            console.error('Error fetching listings:', error);
+            setOwnListings([]);
+            setFavListings([]);
+            setIsLoading(false);
+            swal({
+                text: "Error fetching your listings",
+                icon: "warning",
+            })
+        }));
 
-        axios.get('/users/favListingsIds', {withCredentials: true}).then((response) => {
+        await axios.get('/users/favListingsIds', {withCredentials: true}).then((response) => {
             setFavListingsIds(response.data.favListingsIds);
             setIsLoading(false);
-        });
+        }).catch((error => {
+            console.error("Error fetching user's favorite listings:", error);
+            setOwnListings([]);
+            setFavListings([]);
+            setFavListingsIds([]);
+            setIsLoading(false);
+            swal({
+                text: "Error fetching your listings",
+                icon: "warning",
+            })
+        }));
     };
 
     // Function to open modal with a specific listing
@@ -123,7 +140,7 @@ const Account = () => {
                             ))}
                         </ul>
                     ) : (
-                        <p>No listings found.</p>
+                        <p className="mb-4">No listings found.</p>
                     )}
                     <p className="text-xl text-gray-700 mb-4">Favorite listings</p>
                     {favListings.length > 0 ? (
