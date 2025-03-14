@@ -21,7 +21,6 @@ const ListingCard = ({ listing, favListingsIds, updateFavorite, updateListing, o
     const [showTooltip, setShowTooltip] = useState(false);
     const [isFavorite, setIsFavorite] = useState(favListingsIds.includes(listing.id));
     const [archived, setArchived] = useState(listing.archived);
-    const departments = listing.departments;
     const departmentsContainerRef = useRef<HTMLDivElement>(null);
 
     //Temp
@@ -92,29 +91,29 @@ const ListingCard = ({ listing, favListingsIds, updateFavorite, updateListing, o
             tempSpan.style.position = 'absolute';
             document.body.appendChild(tempSpan);
             
-            for (let i = 0; i < departments.length; i++) {
-                tempSpan.textContent = departments[i];
+            for (let i = 0; i < listing.departments.length; i++) {
+                tempSpan.textContent = listing.departments[i];
                 const width = tempSpan.getBoundingClientRect().width + 8; // 8px for margin
                 
                 if (totalWidth + width <= containerWidth) {
-                    tempVisible.push(departments[i]);
+                    tempVisible.push(listing.departments[i]);
                     totalWidth += width;
                 } else {
-                    setMoreCount(departments.length - i);
+                    setMoreCount(listing.departments.length - i);
                     break;
                 }
             }
 
-            if(tempVisible.length !== departments.length) {
+            if(tempVisible.length !== listing.departments.length) {
                 // Measure the "+x more" bubble
-                tempSpan.textContent = `+${departments.length - tempVisible.length} more`;
+                tempSpan.textContent = `+${listing.departments.length - tempVisible.length} more`;
                 const moreWidth = tempSpan.getBoundingClientRect().width + 8; // 8px for margin
 
                 // Check if the "+x more" bubble fits
                 if (totalWidth + moreWidth > containerWidth) {
                     // Remove the last department to make space for the "+x more" bubble
                     tempVisible.pop();
-                    setMoreCount(departments.length - tempVisible.length);
+                    setMoreCount(listing.departments.length - tempVisible.length);
                 }
                 }
             
@@ -126,7 +125,7 @@ const ListingCard = ({ listing, favListingsIds, updateFavorite, updateListing, o
         // Re-calculate on window resize
         window.addEventListener('resize', calculateVisibleDepartments);
         return () => window.removeEventListener('resize', calculateVisibleDepartments);
-    }, []);
+    }, [listing]);
 
     const toggleFavorite = (e: React.MouseEvent) => {
         e.stopPropagation();
@@ -324,9 +323,9 @@ const ListingCard = ({ listing, favListingsIds, updateFavorite, updateListing, o
             </div>
 
             {/* Action buttons tab */}
-            {editable && (
+            {editable && !editing && (
                 <div className="flex justify-center">
-                    <div className={`bg-white border border-gray-300 border-t-0 rounded-b-lg shadow px-3 pb-1 ${editable && editing ? "pt-2" : "pt-3"} -mt-1 inline-flex space-x-2`}>
+                    <div className={`bg-white border border-gray-300 border-t-0 rounded-b-lg shadow px-3 pb-1 pt-3 -mt-1 inline-flex space-x-2`}>
                         <button 
                             className="p-1 rounded-full hover:bg-gray-100 text-gray-600 hover:text-green-600 transition-colors"
                             onClick={handleArchive}
