@@ -3,6 +3,10 @@
 export const createListing = (listing: any) => {
     return {
         id: listing._id,
+        ownerId: listing.ownerId,
+        ownerFirstName: listing.ownerFirstName,
+        ownerLastName: listing.ownerLastName,
+        ownerEmail: listing.ownerEmail,
         professorIds: listing.professorIds,
         professorNames: listing.professorNames,
         title: listing.title,

@@ -1,6 +1,7 @@
 import { archiveListing, createListing, deleteListing, readAllListings, readListing, unarchiveListing, updateListing } from '../services/newListingsService';
 import { Request, Response, Router } from "express";
 import { NotFoundError, ObjectIdError } from "../utils/errors";
+import { readUser } from '../services/userService';
 import { isAuthenticated, isProfessor } from '../utils/permissions';
 
 const router = Router();
@@ -8,13 +9,30 @@ const router = Router();
 //Add listing
 router.post("/", async (request: Request, response: Response) => {
   try {
-    const listing = await createListing(request.body);
+    const currentUser = request.user as { netId? : string, professor? : boolean};
+    if (!currentUser) {
+        throw new Error('User not logged in');
+    }
+    const user = await readUser(currentUser.netId);
+    const listing = await createListing(request.body, user);
     response.status(201).json({ listing });
   } catch (error) {
     console.log(error.message);
     response.status(400).json({ error: error.message });
   }
 });
+
+//Add listing for user with specified netid
+router.post("/:id", async (request: Request, response: Response) => {
+    try {
+      const user = await readUser(request.params.id);
+      const listing = await createListing(request.body, user);
+      response.status(201).json({ listing });
+    } catch (error) {
+      console.log(error.message);
+      response.status(400).json({ error: error.message });
+    }
+  });
 
 //Read all listings
 router.get("/", async (request: Request, response: Response) => {
