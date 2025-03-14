@@ -104,15 +104,8 @@ const Account = () => {
     };
 
     const updateListing = (newListing: NewListing) => {
-        const prevOwnListings = ownListings;
-        console.log(newListing);
         setOwnListings((prevOwnListings) => prevOwnListings.map((listing) => listing.id === newListing.id ? newListing : listing));
-        //console.log(ownListings.map((listing) => listing.id === newListing.id))
-        //console.log(ownListings.map((listing) => listing.id), newListing.id);
-        const prevFavListings = favListings;
         setFavListings((prevFavListings) => prevFavListings.map((listing) => listing.id === newListing.id ? newListing : listing));
-        //console.log(favListings.map((listing) => listing.id === newListing.id));
-        //console.log(favListings.map((listing) => listing.id), newListing.id);
     };
 
     return (
