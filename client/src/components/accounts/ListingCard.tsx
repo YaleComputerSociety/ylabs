@@ -66,7 +66,6 @@ const ListingCard = ({ listing, favListingsIds, updateFavorite, updateListing, o
     useEffect(() => {
         // Set listing as archived based on listing.archived
         setArchived(listing.archived);
-        console.log(listing.archived);
     }, [listing]);
 
     useEffect(() => {
@@ -132,6 +131,20 @@ const ListingCard = ({ listing, favListingsIds, updateFavorite, updateListing, o
 
     const handleDelete = (e: React.MouseEvent) => {
         e.stopPropagation();
+        
+        swal({
+            title: "Delete Listing",
+            text: "Are you sure you want to delete this listing? This action cannot be undone",
+            icon: "warning",
+            buttons: ["Cancel", "Delete"],
+            dangerMode: true,
+        })
+        .then((willDelete) => {
+            if (willDelete) {
+                console.log("deleted");
+                //Api call here later
+            }
+        });
     }
 
     const handleArchive = (e: React.MouseEvent) => {
