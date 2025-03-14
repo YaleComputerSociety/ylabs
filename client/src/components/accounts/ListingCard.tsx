@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { NewListing } from '../../types/types';
+import ListingForm from './ListingForm';
 import { departmentCategories } from '../../utils/departmentNames';
 import { createListing } from '../../utils/apiCleaner';
 import axios from "../../utils/axios";
@@ -22,6 +23,9 @@ const ListingCard = ({ listing, favListingsIds, updateFavorite, updateListing, o
     const [archived, setArchived] = useState(listing.archived);
     const departments = listing.departments;
     const departmentsContainerRef = useRef<HTMLDivElement>(null);
+
+    //Temp
+    const [editing, setEditing] = useState(false);
 
     const departmentColors = [
         "bg-blue-200",
@@ -183,6 +187,7 @@ const ListingCard = ({ listing, favListingsIds, updateFavorite, updateListing, o
 
     const handleEdit = (e: React.MouseEvent) => {
         e.stopPropagation();
+        setEditing(true);
     }
 
     const handleListingClick = () => {
@@ -197,7 +202,7 @@ const ListingCard = ({ listing, favListingsIds, updateFavorite, updateListing, o
         <div className="mb-4 relative">
             <div
                 key={listing.id}
-                className="flex relative"
+                className="flex relative z-10"
             >
                 <div 
                     className={`${getHiringStatusColor()} cursor-pointer rounded-l flex-shrink-0 my-2 relative ${archived ? "opacity-50" : ""}`} 
@@ -298,63 +303,82 @@ const ListingCard = ({ listing, favListingsIds, updateFavorite, updateListing, o
                     </div>
                 </div>
             </div>
-            
+
+            <div 
+                className={`transform transition-all duration-700 overflow-hidden ${
+                    editable && editing 
+                    ? "translate-y-0 max-h-[4000px]" 
+                    : "-translate-y-5 max-h-0"
+                } pl-2 pr-0.5 -mt-1`}
+            >
+                {editable && editing && (
+                    <ListingForm 
+                    listing={listing} 
+                    onCancel={() => setEditing(false)}
+                    onSave={(updatedListing) => {
+                        updateListing(updatedListing); // Call the updateListing prop
+                        setEditing(false);
+                    }} 
+                    />
+                )}
+            </div>
+
             {/* Action buttons tab */}
             {editable && (
                 <div className="flex justify-center">
-                <div className="bg-white border border-gray-300 border-t-0 rounded-b-lg shadow px-3 pb-1 pt-2 -mt-1 inline-flex space-x-2">
-                    <button 
-                        className="p-1 rounded-full hover:bg-gray-100 text-gray-600 hover:text-green-600 transition-colors"
-                        onClick={handleArchive}
-                        title={archived ? "Unarchive listing" : "Archive listing"}
-                        aria-label={archived ? "Unarchive listing" : "Archive listing"}
-                    >
-                        {archived ? (
-                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className = "opacity-50">
+                    <div className={`bg-white border border-gray-300 border-t-0 rounded-b-lg shadow px-3 pb-1 ${editable && editing ? "pt-2" : "pt-3"} -mt-1 inline-flex space-x-2`}>
+                        <button 
+                            className="p-1 rounded-full hover:bg-gray-100 text-gray-600 hover:text-green-600 transition-colors"
+                            onClick={handleArchive}
+                            title={archived ? "Unarchive listing" : "Archive listing"}
+                            aria-label={archived ? "Unarchive listing" : "Archive listing"}
+                        >
+                            {archived ? (
+                                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className = "opacity-50">
+                                    <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                                    <path d="M10.585 10.587a2 2 0 0 0 2.829 2.828" />
+                                    <path d="M16.681 16.673a8.717 8.717 0 0 1 -4.681 1.327c-3.6 0 -6.6 -2 -9 -6c1.272 -2.12 2.712 -3.678 4.32 -4.674m2.86 -1.146a9.055 9.055 0 0 1 1.82 -.18c3.6 0 6.6 2 9 6c-.666 1.11 -1.379 2.067 -2.138 2.87" />
+                                    <path d="M3 3l18 18" />
+                                </svg>
+                            ) : (
+                                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                                    <path d="M10 12a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" />
+                                    <path d="M21 12c-2.4 4 -5.4 6 -9 6c-3.6 0 -6.6 -2 -9 -6c2.4 -4 5.4 -6 9 -6c3.6 0 6.6 2 9 6" />
+                                </svg>
+                            )}
+                        </button>
+                        
+                        <button 
+                            className="p-1 rounded-full hover:bg-gray-100 text-gray-600 hover:text-blue-600 transition-colors"
+                            onClick={handleEdit}
+                            title="Edit listing"
+                            aria-label="Edit listing"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`${archived ? "opacity-50" : ""}`}>
                                 <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-                                <path d="M10.585 10.587a2 2 0 0 0 2.829 2.828" />
-                                <path d="M16.681 16.673a8.717 8.717 0 0 1 -4.681 1.327c-3.6 0 -6.6 -2 -9 -6c1.272 -2.12 2.712 -3.678 4.32 -4.674m2.86 -1.146a9.055 9.055 0 0 1 1.82 -.18c3.6 0 6.6 2 9 6c-.666 1.11 -1.379 2.067 -2.138 2.87" />
-                                <path d="M3 3l18 18" />
+                                <path d="M4 20h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4" />
+                                <path d="M13.5 6.5l4 4" />
                             </svg>
-                        ) : (
-                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        </button>
+                        
+                        <button 
+                            className="p-1 rounded-full hover:bg-gray-100 text-gray-600 hover:text-red-600 transition-colors"
+                            onClick={handleDelete}
+                            title="Delete listing"
+                            aria-label="Delete listing"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`${archived ? "opacity-50" : ""}`}>
                                 <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-                                <path d="M10 12a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" />
-                                <path d="M21 12c-2.4 4 -5.4 6 -9 6c-3.6 0 -6.6 -2 -9 -6c2.4 -4 5.4 -6 9 -6c3.6 0 6.6 2 9 6" />
+                                <path d="M4 7l16 0" />
+                                <path d="M10 11l0 6" />
+                                <path d="M14 11l0 6" />
+                                <path d="M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2 -2l1 -12" />
+                                <path d="M9 7v-3a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v3" />
                             </svg>
-                        )}
-                    </button>
-                    
-                    <button 
-                        className="p-1 rounded-full hover:bg-gray-100 text-gray-600 hover:text-blue-600 transition-colors"
-                        onClick={handleEdit}
-                        title="Edit listing"
-                        aria-label="Edit listing"
-                    >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`${archived ? "opacity-50" : ""}`}>
-                            <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-                            <path d="M4 20h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4" />
-                            <path d="M13.5 6.5l4 4" />
-                        </svg>
-                    </button>
-                    
-                    <button 
-                        className="p-1 rounded-full hover:bg-gray-100 text-gray-600 hover:text-red-600 transition-colors"
-                        onClick={handleDelete}
-                        title="Delete listing"
-                        aria-label="Delete listing"
-                    >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`${archived ? "opacity-50" : ""}`}>
-                            <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-                            <path d="M4 7l16 0" />
-                            <path d="M10 11l0 6" />
-                            <path d="M14 11l0 6" />
-                            <path d="M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2 -2l1 -12" />
-                            <path d="M9 7v-3a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v3" />
-                        </svg>
-                    </button>
+                        </button>
+                    </div>
                 </div>
-            </div>
             )}
         </div>
     );
