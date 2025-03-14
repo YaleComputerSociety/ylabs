@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { NewListing } from '../../types/types';
-import ListingForm from './NewListingForm';
+import ListingForm from './ListingForm';
 import { departmentCategories } from '../../utils/departmentNames';
 import { createListing } from '../../utils/apiCleaner';
 import axios from "../../utils/axios";
