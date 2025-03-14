@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, KeyboardEvent } from 'react';
 import { NewListing } from '../../types/types';
 import { departmentCategories, departmentNames } from '../../utils/departmentNames';
+import swal from "sweetalert";
 
 interface ListingFormProps {
   listing: NewListing;
@@ -41,6 +42,16 @@ const ListingForm = ({ listing, onCancel, onSave }: ListingFormProps) => {
   const hiringRef = useRef<HTMLDivElement>(null);
   const hiringInputRef = useRef<HTMLInputElement>(null);
 
+  // Add these to the component's state variables
+  const [errors, setErrors] = useState<{
+    title?: string;
+    description?: string;
+    established?: string;
+    professorNames?: string;
+    emails?: string;
+    websites?: string;
+  }>({});
+
   // Initialize available departments (removing already selected ones)
   useEffect(() => {
     setAvailableDepartments(
@@ -60,6 +71,74 @@ const ListingForm = ({ listing, onCancel, onSave }: ListingFormProps) => {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  // Add validation utility functions
+  const validateTitle = (value: string): string | undefined => {
+    return value.trim() ? undefined : "Title is required";
+  };
+
+  const validateDescription = (value: string): string | undefined => {
+    return value.trim() ? undefined : "Description is required";
+  };
+
+  const validateEstablished = (value: string): string | undefined => {
+    if (!value) return undefined; // Not required
+    
+    const year = parseInt(value, 10);
+    const currentYear = new Date().getFullYear();
+    
+    if (isNaN(year) || !Number.isInteger(year)) {
+      return "Year must be a valid integer";
+    }
+    
+    if (year < 1701) {
+      return `Yale wasn't established until 1701!`;
+    }
+
+    if (year > currentYear) {
+        return `Year cannot be in the future`;
+    }
+
+    if (value.trim().includes(" ")) {
+        return `Year cannot include spaces`;
+    }
+
+    if (year.toString() != value.trim()) {
+        return `Year cannot include non-numeric characters`;
+    }
+    
+    return undefined;
+  };
+
+  const validateProfessors = (professors: string[]): string | undefined => {
+    return professors.length > 0 ? undefined : "At least one professor is required";
+  };
+
+  const validateEmails = (emails: string[]): string | undefined => {
+    if (emails.length === 0) {
+      return "At least one email is required";
+    }
+    
+    for (const email of emails) {
+      if (!email.includes('@') || !email.includes('.') || email.includes(' ')) {
+        return `Invalid email format: ${email}`;
+      }
+    }
+    
+    return undefined;
+  };
+
+  const validateWebsites = (websites: string[]): string | undefined => {
+    if (websites.length === 0) return undefined; // Not required
+    
+    for (const website of websites) {
+      if (!website.includes('.') || website.includes(' ')) {
+        return `Invalid website format: ${website}`;
+      }
+    }
+    
+    return undefined;
+  };
 
   // Add this function to handle hiring status selection
   const handleHiringSelect = (value: number) => {
@@ -115,14 +194,35 @@ const ListingForm = ({ listing, onCancel, onSave }: ListingFormProps) => {
     e: React.KeyboardEvent<HTMLInputElement>,
     array: string[],
     setArray: React.Dispatch<React.SetStateAction<string[]>>,
-    inputRef: React.RefObject<HTMLInputElement>
+    inputRef: React.RefObject<HTMLInputElement>,
+    type?: 'professor' | 'email' | 'website' | 'keyword'
   ) => {
     if (e.key === 'Enter' && inputRef.current && inputRef.current.value.trim()) {
       e.preventDefault();
       const newValue = inputRef.current.value.trim();
+      
+      // Validate based on type
+      if (type === 'email' && (!newValue.includes('@') || !newValue.includes('.') || newValue.includes(' '))) {
+        setErrors(prev => ({ ...prev, emails: `Invalid email format: ${newValue}` }));
+        return;
+      } else if (type === 'website' && (!newValue.includes('.') || newValue.includes(' '))) {
+        setErrors(prev => ({ ...prev, websites: `Invalid website format: ${newValue}` }));
+        return;
+      }
+      
       if (!array.includes(newValue)) {
-        setArray([...array, newValue]);
+        const newArray = [...array, newValue];
+        setArray(newArray);
         inputRef.current.value = '';
+        
+        // Clear errors if we've fixed the issue
+        if (type === 'professor') {
+          setErrors(prev => ({ ...prev, professorNames: validateProfessors(newArray) }));
+        } else if (type === 'email') {
+          setErrors(prev => ({ ...prev, emails: validateEmails(newArray) }));
+        } else if (type === 'website') {
+          setErrors(prev => ({ ...prev, websites: validateWebsites(newArray) }));
+        }
       }
     }
   };
@@ -130,7 +230,8 @@ const ListingForm = ({ listing, onCancel, onSave }: ListingFormProps) => {
   const removeArrayItem = (
     index: number,
     array: string[],
-    setArray: React.Dispatch<React.SetStateAction<string[]>>
+    setArray: React.Dispatch<React.SetStateAction<string[]>>,
+    type?: 'professor' | 'email' | 'website'
   ) => {
     const newArray = [...array];
     const removedItem = newArray.splice(index, 1)[0];
@@ -140,8 +241,17 @@ const ListingForm = ({ listing, onCancel, onSave }: ListingFormProps) => {
     if (array === departments) {
       setAvailableDepartments(prev => [...prev, removedItem].sort());
     }
+    
+    // Check validation after removal
+    if (type === 'professor') {
+      setErrors(prev => ({ ...prev, professorNames: validateProfessors(newArray) }));
+    } else if (type === 'email') {
+      setErrors(prev => ({ ...prev, emails: validateEmails(newArray) }));
+    } else if (type === 'website') {
+      setErrors(prev => ({ ...prev, websites: validateWebsites(newArray) }));
+    }
   };
-  
+
   // Department dropdown handling
   const handleDepartmentSelect = (department: string) => {
     if (!departments.includes(department)) {
@@ -201,24 +311,55 @@ const ListingForm = ({ listing, onCancel, onSave }: ListingFormProps) => {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
-    const updatedListing: NewListing = {
-      ...listing,
-      title,
-      professorNames,
-      departments,
-      emails,
-      websites,
-      description,
-      keywords,
-      established,
-      hiringStatus,
-      archived
+    // Validate all required fields
+    const validationErrors = {
+      title: validateTitle(title),
+      description: validateDescription(description),
+      established: validateEstablished(established),
+      professorNames: validateProfessors(professorNames),
+      emails: validateEmails(emails),
+      websites: validateWebsites(websites)
     };
     
-    console.log('Updated Listing:', updatedListing);
+    // Filter out undefined errors
+    const filteredErrors = Object.fromEntries(
+      Object.entries(validationErrors).filter(([_, value]) => value !== undefined)
+    );
     
-    if (onSave) {
-      onSave(updatedListing);
+    // Update error state
+    setErrors(filteredErrors);
+    
+    // Only proceed if no errors
+    if (Object.keys(filteredErrors).length === 0) {
+      const updatedListing: NewListing = {
+        ...listing,
+        title,
+        professorNames,
+        departments,
+        emails,
+        websites,
+        description,
+        keywords,
+        established,
+        hiringStatus,
+        archived
+      };
+      
+      console.log('Updated Listing:', updatedListing);
+      
+      // Show confirmation dialog before saving
+      swal({
+        title: "Submit Form",
+        text: "Are you sure you want to save these changes?",
+        icon: "info",
+        buttons: ["Cancel", "Save"],
+      }).then((willSave) => {
+        if (willSave && onSave) {
+          onSave(updatedListing);
+        }
+      });
+    } else {
+      console.log('Validation errors:', filteredErrors);
     }
   };
 
@@ -252,9 +393,17 @@ const ListingForm = ({ listing, onCancel, onSave }: ListingFormProps) => {
     dept.toLowerCase().includes(deptSearchTerm.toLowerCase())
   );
 
+  // Simple error display component
+  const ErrorMessage = ({ error }: { error?: string }) => {
+    if (!error) return null;
+    return <div className="text-red-500 text-xs mt-1">{error}</div>;
+  };
+
   return (
     <div className="border border-gray-300 border-t-0 bg-white p-6 rounded-b-lg shadow-md relative">
-      <form onSubmit={handleSubmit}>
+      <form 
+        onSubmit={handleSubmit}
+      >
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-16">
           {/* Left column - Non-array fields */}
           <div className="col-span-1">
@@ -267,11 +416,16 @@ const ListingForm = ({ listing, onCancel, onSave }: ListingFormProps) => {
                 id="title"
                 type="text"
                 value={title}
-                onChange={(e) => setTitle(e.target.value)}
+                onChange={(e) => {
+                  setTitle(e.target.value);
+                  if (errors.title) {
+                    setErrors(prev => ({ ...prev, title: validateTitle(e.target.value) }));
+                  }
+                }}
                 placeholder="Add title"
-                className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline whitespace-nowrap overflow-x-auto"
-                required
+                className={`shadow appearance-none border ${errors.title ? 'border-red-500' : ''} rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline whitespace-nowrap overflow-x-auto`}
               />
+              <ErrorMessage error={errors.title} />
             </div>
 
             {/* Description */}
@@ -286,8 +440,8 @@ const ListingForm = ({ listing, onCancel, onSave }: ListingFormProps) => {
                 placeholder="Add description"
                 className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline overflow-x-auto"
                 rows={10}
-                required
               />
+              <ErrorMessage error={errors.description} />
             </div>
             
             {/* Established */}
@@ -299,10 +453,16 @@ const ListingForm = ({ listing, onCancel, onSave }: ListingFormProps) => {
                 id="established"
                 type="text"
                 value={established}
-                onChange={(e) => setEstablished(e.target.value)}
+                onChange={(e) => {
+                  setEstablished(e.target.value);
+                  if (errors.established) {
+                    setErrors(prev => ({ ...prev, established: validateEstablished(e.target.value) }));
+                  }
+                }}
                 placeholder="e.g. 2006"
-                className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline overflow-x-auto"
+                className={`shadow appearance-none border ${errors.established ? 'border-red-500' : ''} rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline overflow-x-auto`}
               />
+              <ErrorMessage error={errors.established} />
             </div>
           </div>
           
@@ -327,7 +487,7 @@ const ListingForm = ({ listing, onCancel, onSave }: ListingFormProps) => {
                         </span>
                         <button 
                           type="button" 
-                          onClick={() => removeArrayItem(index, professorNames, setProfessorNames)}
+                          onClick={() => removeArrayItem(index, professorNames, setProfessorNames, 'professor')}
                           className="ml-2 text-blue-500 hover:text-blue-700"
                         >
                           ×
@@ -341,10 +501,11 @@ const ListingForm = ({ listing, onCancel, onSave }: ListingFormProps) => {
                       ref={professorInputRef}
                       placeholder="Add professor"
                       className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      onKeyDown={(e) => handleArrayInput(e, professorNames, setProfessorNames, professorInputRef)}
+                      onKeyDown={(e) => handleArrayInput(e, professorNames, setProfessorNames, professorInputRef, 'professor')}
                     />
                   </div>
                   <div className="text-xs text-gray-500 mt-1">Press Enter to add</div>
+                  <ErrorMessage error={errors.professorNames} />
                 </div>
 
                 {/* Contact Info */}
@@ -363,7 +524,7 @@ const ListingForm = ({ listing, onCancel, onSave }: ListingFormProps) => {
                         </span>
                         <button 
                           type="button" 
-                          onClick={() => removeArrayItem(index, emails, setEmails)}
+                          onClick={() => removeArrayItem(index, emails, setEmails, 'email')}
                           className="ml-2 text-green-500 hover:text-green-700"
                         >
                           ×
@@ -377,10 +538,11 @@ const ListingForm = ({ listing, onCancel, onSave }: ListingFormProps) => {
                       ref={emailInputRef}
                       placeholder="Add email"
                       className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      onKeyDown={(e) => handleArrayInput(e, emails, setEmails, emailInputRef)}
+                      onKeyDown={(e) => handleArrayInput(e, emails, setEmails, emailInputRef, 'email')}
                     />
                   </div>
                   <div className="text-xs text-gray-500 mt-1">Press Enter to add</div>
+                  <ErrorMessage error={errors.emails} />
                 </div>
 
                 {/* Hiring Status - Custom Dropdown */}
@@ -604,7 +766,7 @@ const ListingForm = ({ listing, onCancel, onSave }: ListingFormProps) => {
                         </span>
                         <button 
                           type="button" 
-                          onClick={() => removeArrayItem(index, websites, setWebsites)}
+                          onClick={() => removeArrayItem(index, websites, setWebsites, 'website')}
                           className="ml-2 text-yellow-500 hover:text-yellow-700"
                         >
                           ×
@@ -618,10 +780,11 @@ const ListingForm = ({ listing, onCancel, onSave }: ListingFormProps) => {
                       ref={websiteInputRef}
                       placeholder="Add website URL"
                       className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      onKeyDown={(e) => handleArrayInput(e, websites, setWebsites, websiteInputRef)}
+                      onKeyDown={(e) => handleArrayInput(e, websites, setWebsites, websiteInputRef, 'website')}
                     />
                   </div>
                   <div className="text-xs text-gray-500 mt-1">Press Enter to add</div>
+                  <ErrorMessage error={errors.websites} />
                 </div>
 
                 {/* Keywords */}
