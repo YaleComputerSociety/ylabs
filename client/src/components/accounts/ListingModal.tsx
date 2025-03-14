@@ -11,7 +11,7 @@ interface ListingModalProps {
 }
 
 const ListingModal = ({ isOpen, onClose, listing, favListingsIds, updateFavorite }: ListingModalProps) => {
-    const [isFavorite, setIsFavorite] = useState(false);
+    const [isFavorite, setIsFavorite] = useState(favListingsIds.includes(listing.id));
 
     const departmentColors = [
         "bg-blue-200",
