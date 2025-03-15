@@ -13,11 +13,32 @@ const Account = () => {
     const [favListingsIds, setFavListingsIds] = useState<number[]>([]);
     const [isLoading, setIsLoading] = useState<Boolean>(false);
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [isEditing, setIsEditing] = useState(false);
     const [selectedListing, setSelectedListing] = useState<NewListing | null>(null);
 
     useEffect(() => {
         reloadListings();
     }, []);
+
+    // Warning before navigating away from Y/Labs
+    useEffect(() => {
+        const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+            if (isEditing) {
+                const message = "You have unsaved changes that will be lost if you leave this page.";
+                e.preventDefault();
+                (e as any).returnValue = message;
+                return message;
+            }
+        };
+
+        if (isEditing) {
+            window.addEventListener('beforeunload', handleBeforeUnload);
+        }
+        
+        return () => {
+            window.removeEventListener('beforeunload', handleBeforeUnload);
+        };
+    }, [isEditing]);
 
     const reloadListings = async () => {
         setIsLoading(true);
@@ -155,6 +176,8 @@ const Account = () => {
                                         updateListing={updateListing}
                                         postListing={postListing}
                                         openModal={openModal}
+                                        globalEditing={isEditing}
+                                        setGlobalEditing={setIsEditing}
                                         editable={true}
                                         reloadListings={reloadListings}
                                     />
@@ -176,6 +199,8 @@ const Account = () => {
                                         updateListing={updateListing}
                                         postListing={postListing}
                                         openModal={openModal}
+                                        globalEditing={isEditing}
+                                        setGlobalEditing={setIsEditing}
                                         editable={false}
                                         reloadListings={reloadListings}
                                     />

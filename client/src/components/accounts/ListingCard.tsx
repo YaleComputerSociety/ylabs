@@ -13,11 +13,13 @@ interface ListingCardProps {
     updateListing: (newListing: NewListing) => void;
     postListing: (newListing: NewListing) => void;
     openModal: (listing: NewListing) => void;
+    globalEditing: boolean;
+    setGlobalEditing: (editing: boolean) => void;
     editable: boolean;
     reloadListings: () => void;
 }
 
-const ListingCard = ({ listing, favListingsIds, updateFavorite, updateListing, postListing, openModal, editable, reloadListings }: ListingCardProps) => {
+const ListingCard = ({ listing, favListingsIds, updateFavorite, updateListing, postListing, openModal, globalEditing, setGlobalEditing, editable, reloadListings }: ListingCardProps) => {
     const [visibleDepartments, setVisibleDepartments] = useState<string[]>([]);
     const [moreCount, setMoreCount] = useState(0);
     const [showTooltip, setShowTooltip] = useState(false);
@@ -209,6 +211,7 @@ const ListingCard = ({ listing, favListingsIds, updateFavorite, updateListing, p
     const handleEdit = (e: React.MouseEvent) => {
         e.stopPropagation();
         setEditing(true);
+        setGlobalEditing(true);
     }
 
     const handleListingClick = () => {
@@ -347,10 +350,14 @@ const ListingCard = ({ listing, favListingsIds, updateFavorite, updateListing, p
                         }
                         updateListing(updatedListing);
                     }}
-                    onCancel={() => setEditing(false)}
+                    onCancel={() => {
+                        setEditing(false)
+                        setGlobalEditing(false);
+                    }}
                     onSave={(updatedListing) => {
                         postListing(updatedListing); // Call the postListing prop
                         setEditing(false);
+                        setGlobalEditing(false);
                     }} 
                     />
                 )}
@@ -383,12 +390,21 @@ const ListingCard = ({ listing, favListingsIds, updateFavorite, updateListing, p
                         </button>
                         
                         <button 
-                            className="p-1 rounded-full hover:bg-gray-100 text-gray-600 hover:text-blue-600 transition-colors"
-                            onClick={handleEdit}
-                            title="Edit listing"
-                            aria-label="Edit listing"
+                            className={`p-1 rounded-full ${globalEditing 
+                                ? "text-gray-400 cursor-not-allowed" 
+                                : "hover:bg-gray-100 text-gray-600 hover:text-blue-600 transition-colors"
+                            }`}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                if (!globalEditing) {
+                                    handleEdit(e);
+                                }
+                            }}
+                            title={globalEditing ? "Must close current editor" : "Edit listing"}
+                            aria-label={globalEditing ? "Editing disabled" : "Edit listing"}
+                            disabled={globalEditing}
                         >
-                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`${archived ? "opacity-50" : ""}`}>
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`${archived || globalEditing ? "opacity-50" : ""}`}>
                                 <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
                                 <path d="M4 20h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4" />
                                 <path d="M13.5 6.5l4 4" />

@@ -67,6 +67,9 @@ const DepartmentInput = ({
           deptInputRef.current.blur();
         }
         break;
+      case 'Tab':
+        setIsDeptDropdownOpen(false);
+        break;
     }
   };
 
@@ -75,18 +78,18 @@ const DepartmentInput = ({
     if (Object.keys(departmentCategories).includes(department)) {
       const category = departmentCategories[department as keyof typeof departmentCategories];
       switch (category) {
-        case 0: return "bg-blue-100 text-blue-800"; // Humanities
-        case 1: return "bg-green-100 text-green-800"; // Social Sciences
-        case 2: return "bg-yellow-100 text-yellow-800"; // Physical Sciences & Mathematics
-        case 3: return "bg-purple-100 text-purple-800"; // Life Sciences
-        case 4: return "bg-red-100 text-red-800"; // Engineering & Computer Science
-        case 5: return "bg-pink-100 text-pink-800"; // Medical & Health Sciences
-        case 6: return "bg-indigo-100 text-indigo-800"; // Languages & Cultural Studies
-        case 7: return "bg-teal-100 text-teal-800"; // Professional & Applied Fields
-        default: return "bg-gray-100 text-gray-800";
+        case 0: return "bg-blue-200"; // Humanities
+        case 1: return "bg-green-200"; // Social Sciences
+        case 2: return "bg-yellow-200"; // Physical Sciences & Mathematics
+        case 3: return "bg-red-200"; // Life Sciences
+        case 4: return "bg-purple-200"; // Engineering & Computer Science
+        case 5: return "bg-pink-200"; // Medical & Health Sciences
+        case 6: return "bg-teal-200"; // Languages & Cultural Studies
+        case 7: return "bg-orange-200"; // Professional & Applied Fields
+        default: return "bg-gray-100";
       }
     }
-    return "bg-gray-100 text-gray-800";
+    return "bg-gray-100";
   };
 
   return (
@@ -94,11 +97,11 @@ const DepartmentInput = ({
       <label className="block text-gray-700 text-sm font-bold mb-2">
         Departments
       </label>
-      <div className="flex flex-wrap gap-2 mb-2 overflow-x-auto">
+      <div className="flex flex-wrap gap-2 mb-2 overflow-x-auto">``
         {departments.map((department, index) => (
           <span 
             key={index} 
-            className={`${getDepartmentColor(department)} px-2 py-1 rounded text-sm flex items-center`}
+            className={`${getDepartmentColor(department)} text-gray-900 px-2 py-1 rounded text-sm flex items-center`}
           >
             <span className="whitespace-nowrap">
               {department}
