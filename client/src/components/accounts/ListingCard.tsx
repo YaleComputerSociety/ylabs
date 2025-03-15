@@ -313,6 +313,17 @@ const ListingCard = ({ listing, favListingsIds, updateFavorite, updateListing, o
                 {editable && editing && (
                     <ListingForm 
                     listing={listing} 
+                    onLoad={(updatedListing, success) => {
+                        if(!success) {
+                            setEditing(false);
+                            swal({
+                                text: "Unable to fetch most recent listing",
+                                icon: "warning",
+                            })
+                            return;
+                        }
+                        updateListing(updatedListing);
+                    }}
                     onCancel={() => setEditing(false)}
                     onSave={(updatedListing) => {
                         updateListing(updatedListing); // Call the updateListing prop
