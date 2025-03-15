@@ -1,5 +1,5 @@
 import { NewListing } from "../models";
-import { NotFoundError, ObjectIdError } from "../utils/errors";
+import { IncorrectPermissionsError, NotFoundError, ObjectIdError } from "../utils/errors";
 import { createListingBackup } from "./listingBackupServices";
 import { addOwnListings, deleteOwnListings, userExists } from "./userService";
 import { User } from "../models";
@@ -88,18 +88,19 @@ export const listingExists = async(id: any) => {
     }
 };*/
 
-export const updateListing = async(id: any, data: any) => {
+export const updateListing = async(id: any, userId: string, data: any) => {
     if (mongoose.Types.ObjectId.isValid(id)) {
-        // Check if userExists returns true for all professor ids before proceeding
-        const professorIds = data.professorIds || [];
-        for (const id of professorIds) {
-            const user = await userExists(id);
-            if (!user) {
-                throw new NotFoundError(`User not found with ObjectId: ${id}`);
-            }
+        // Filter professorIds to only include valid entries
+        if (data.professorIds) {
+            data.professorIds = await data.professorIds.filter(async(id: string) => await userExists(id));
         }
 
         const oldListing = await NewListing.findById(id);
+
+        if (!oldListing.professorIds.includes(userId) && oldListing.ownerId !== userId) {
+            throw new IncorrectPermissionsError(`User with id ${userId} does not have permission to update listing with id ${id}`);
+        }
+
         const listing = await NewListing.findByIdAndUpdate(id, data,
             { new: true, runValidators: true}
         );
@@ -127,13 +128,13 @@ export const updateListing = async(id: any, data: any) => {
     }
 };
 
-export const archiveListing = async(id: any) => {
-    const listing = await updateListing(id, {"archived": true});
+export const archiveListing = async(id: any, userId: string) => {
+    const listing = await updateListing(id, userId, {"archived": true});
     return listing;
 }
 
-export const unarchiveListing = async(id: any) => {
-    const listing = await updateListing(id, {"archived": false});
+export const unarchiveListing = async(id: any, userId: string) => {
+    const listing = await updateListing(id, userId, {"archived": false});
     return listing;
 }
 

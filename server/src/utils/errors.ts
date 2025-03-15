@@ -17,3 +17,13 @@ export class ObjectIdError extends Error {
         Object.setPrototypeOf(this, ObjectIdError.prototype);
     }
 }
+
+export class IncorrectPermissionsError extends Error {
+    status: number
+
+    constructor(message: string) {
+        super(message);
+        this.status = 403;
+        Object.setPrototypeOf(this, IncorrectPermissionsError.prototype);
+    }
+}

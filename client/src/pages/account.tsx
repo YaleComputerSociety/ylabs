@@ -86,6 +86,7 @@ const Account = () => {
                     text: "Unable to favorite listing",
                     icon: "warning",
                 })
+                reloadListings();
             });
         } else {
             setFavListings(prevFavListings.filter((listing) => listing.id !== listingId));
@@ -99,6 +100,7 @@ const Account = () => {
                     text: "Unable to unfavorite listing",
                     icon: "warning",
                 })
+                reloadListings();
             });
         }
     };
@@ -107,6 +109,31 @@ const Account = () => {
         setOwnListings((prevOwnListings) => prevOwnListings.map((listing) => listing.id === newListing.id ? newListing : listing));
         setFavListings((prevFavListings) => prevFavListings.map((listing) => listing.id === newListing.id ? newListing : listing));
     };
+
+    const postListing = async (newListing: NewListing) => {
+        setIsLoading(true);
+        console.log(newListing);
+        axios.put(`/newListings/${newListing.id}`, {withCredentials: true, data: newListing}).then((response) => {
+            console.log(response.data)
+            reloadListings();
+        }).catch((error) => {
+            console.error('Error saving listing:', error);
+            
+            if(error.response.data.incorrectPermissions) {
+                swal({
+                    text: "You no longer have permission to edit this listing",
+                    icon: "warning",
+                })
+                reloadListings();
+            } else {
+                swal({
+                    text: "Unable to update listing",
+                    icon: "warning",
+                })
+                reloadListings();
+            }
+        });
+    }
 
     return (
         <div className="p-8 transition-all lg:mx-12 mt-[4rem]">
@@ -126,8 +153,10 @@ const Account = () => {
                                         favListingsIds={favListingsIds} 
                                         updateFavorite={updateFavorite}
                                         updateListing={updateListing}
+                                        postListing={postListing}
                                         openModal={openModal}
                                         editable={true}
+                                        reloadListings={reloadListings}
                                     />
                                 </li>
                             ))}
@@ -145,8 +174,10 @@ const Account = () => {
                                         favListingsIds={favListingsIds}
                                         updateFavorite={updateFavorite}
                                         updateListing={updateListing}
+                                        postListing={postListing}
                                         openModal={openModal}
                                         editable={false}
+                                        reloadListings={reloadListings}
                                     />
                                 </li>
                             ))}

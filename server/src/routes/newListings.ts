@@ -1,6 +1,6 @@
 import { archiveListing, createListing, deleteListing, readAllListings, readListing, unarchiveListing, updateListing } from '../services/newListingsService';
 import { Request, Response, Router } from "express";
-import { NotFoundError, ObjectIdError } from "../utils/errors";
+import { IncorrectPermissionsError, NotFoundError, ObjectIdError } from "../utils/errors";
 import { readUser } from '../services/userService';
 import { isAuthenticated, isProfessor } from '../utils/permissions';
 
@@ -14,7 +14,7 @@ router.post("/", async (request: Request, response: Response) => {
         throw new Error('User not logged in');
     }
     const user = await readUser(currentUser.netId);
-    const listing = await createListing(request.body, user);
+    const listing = await createListing(request.body.data, user);
     response.status(201).json({ listing });
   } catch (error) {
     console.log(error.message);
@@ -60,15 +60,84 @@ router.get('/:id', async (request: Request, response: Response) => {
     }
 });
 
-//Update listing by ObjectId
+//Updates for current user
+
+//Update listing by ObjectId (current user)
 router.put('/:id', async (request: Request, response: Response) => {
     try {
-        const listing = await updateListing(request.params.id, request.body);
+        const currentUser = request.user as { netId? : string, professor? : boolean};
+        if (!currentUser) {
+            throw new Error('User not logged in');
+        }
+        const listing = await updateListing(request.params.id, currentUser.netId, request.body.data);
         response.status(200).json({ listing });
     } catch (error) {
         console.log(error.message);
         if (error instanceof NotFoundError || error instanceof ObjectIdError) {
             response.status(error.status).json({ error: error.message });
+        } else if (error instanceof IncorrectPermissionsError) {
+            response.status(error.status).json({ error: error.message, incorrectPermissions: true });
+        } else {
+            response.status(500).json({ error: error.message });
+        }
+    }
+});
+
+//Archive listing by ObjectId (current user)
+router.put('/:id/archive', async (request: Request, response: Response) => {
+    try {
+        const currentUser = request.user as { netId? : string, professor? : boolean};
+        if (!currentUser) {
+            throw new Error('User not logged in');
+        }
+        const listing = await archiveListing(request.params.id, currentUser.netId);
+        response.status(200).json({ listing });
+    } catch (error) {
+        console.log(error.message);
+        if (error instanceof NotFoundError || error instanceof ObjectIdError) {
+            response.status(error.status).json({ error: error.message });
+        } else if (error instanceof IncorrectPermissionsError) {
+            response.status(error.status).json({ error: error.message, incorrectPermissions: true });
+        } else {
+            response.status(500).json({ error: error.message });
+        }
+    }
+});
+
+//Unarchive listing by ObjectId (current user)
+router.put('/:id/unarchive', async (request: Request, response: Response) => {
+  try {
+    const currentUser = request.user as { netId? : string, professor? : boolean};
+        if (!currentUser) {
+            throw new Error('User not logged in');
+        }
+      const listing = await unarchiveListing(request.params.id, currentUser.netId);
+      response.status(200).json({ listing });
+  } catch (error) {
+    console.log(error.message);
+    if (error instanceof NotFoundError || error instanceof ObjectIdError) {
+        response.status(error.status).json({ error: error.message });
+    } else if (error instanceof IncorrectPermissionsError) {
+        response.status(error.status).json({ error: error.message, incorrectPermissions: true });
+    } else {
+        response.status(500).json({ error: error.message });
+    }
+  }
+});
+
+//Updates for specific user
+
+//Update listing by ObjectId (specific user)
+router.put('/asUser/:netid/:id', async (request: Request, response: Response) => {
+    try {
+        const listing = await updateListing(request.params.id, request.params.netid, request.body);
+        response.status(200).json({ listing });
+    } catch (error) {
+        console.log(error.message);
+        if (error instanceof NotFoundError || error instanceof ObjectIdError) {
+            response.status(error.status).json({ error: error.message });
+        } else if (error instanceof IncorrectPermissionsError) {
+            response.status(error.status).json({ error: error.message, incorrectPermissions: true });
         } else {
             response.status(500).json({ error: error.message });
         }
@@ -76,14 +145,16 @@ router.put('/:id', async (request: Request, response: Response) => {
 });
 
 //Archive listing by ObjectId
-router.put('/:id/archive', async (request: Request, response: Response) => {
+router.put('/asUser/:netid/:id/archive', async (request: Request, response: Response) => {
     try {
-        const listing = await archiveListing(request.params.id);
+        const listing = await archiveListing(request.params.id, request.params.netid);
         response.status(200).json({ listing });
     } catch (error) {
         console.log(error.message);
         if (error instanceof NotFoundError || error instanceof ObjectIdError) {
             response.status(error.status).json({ error: error.message });
+        } else if (error instanceof IncorrectPermissionsError) {
+            response.status(error.status).json({ error: error.message, incorrectPermissions: true });
         } else {
             response.status(500).json({ error: error.message });
         }
@@ -91,17 +162,19 @@ router.put('/:id/archive', async (request: Request, response: Response) => {
 });
 
 //Unarchive listing by ObjectId
-router.put('/:id/unarchive', async (request: Request, response: Response) => {
+router.put('/asUser/:netid/:id/unarchive', async (request: Request, response: Response) => {
   try {
-      const listing = await unarchiveListing(request.params.id);
+      const listing = await unarchiveListing(request.params.id, request.params.netid);
       response.status(200).json({ listing });
   } catch (error) {
-      console.log(error.message);
-      if (error instanceof NotFoundError || error instanceof ObjectIdError) {
-          response.status(error.status).json({ error: error.message });
-      } else {
-          response.status(500).json({ error: error.message });
-      }
+    console.log(error.message);
+    if (error instanceof NotFoundError || error instanceof ObjectIdError) {
+        response.status(error.status).json({ error: error.message });
+    } else if (error instanceof IncorrectPermissionsError) {
+        response.status(error.status).json({ error: error.message, incorrectPermissions: true });
+    } else {
+        response.status(500).json({ error: error.message });
+    }
   }
 });
 

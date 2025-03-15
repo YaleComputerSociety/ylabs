@@ -11,11 +11,13 @@ interface ListingCardProps {
     favListingsIds: number[];
     updateFavorite: (listing: NewListing, listingId: number, favorite: boolean) => void;
     updateListing: (newListing: NewListing) => void;
+    postListing: (newListing: NewListing) => void;
     openModal: (listing: NewListing) => void;
     editable: boolean;
+    reloadListings: () => void;
 }
 
-const ListingCard = ({ listing, favListingsIds, updateFavorite, updateListing, openModal, editable }: ListingCardProps) => {
+const ListingCard = ({ listing, favListingsIds, updateFavorite, updateListing, postListing, openModal, editable, reloadListings }: ListingCardProps) => {
     const [visibleDepartments, setVisibleDepartments] = useState<string[]>([]);
     const [moreCount, setMoreCount] = useState(0);
     const [showTooltip, setShowTooltip] = useState(false);
@@ -162,10 +164,20 @@ const ListingCard = ({ listing, favListingsIds, updateFavorite, updateListing, o
             }).catch((error) => {
                 setArchived(true);
                 console.error('Error archiving listing:', error);
-                swal({
-                    text: "Unable to archive listing",
-                    icon: "warning",
-                })
+
+                if(error.response.data.incorrectPermissions) {
+                    swal({
+                        text: "You no longer have permission to unarchive this listing",
+                        icon: "warning",
+                    })
+                    reloadListings();
+                } else {
+                    swal({
+                        text: "Unable to unarchive listing",
+                        icon: "warning",
+                    })
+                    reloadListings();
+                }
             })
         } else {
             setArchived(true);
@@ -176,10 +188,20 @@ const ListingCard = ({ listing, favListingsIds, updateFavorite, updateListing, o
             }).catch((error) => {
                 setArchived(false);
                 console.error('Error archiving listing:', error);
-                swal({
-                    text: "Unable to unarchive listing",
-                    icon: "warning",
-                })
+                
+                if(error.response.data.incorrectPermissions) {
+                    swal({
+                        text: "You no longer have permission to archive this listing",
+                        icon: "warning",
+                    })
+                    reloadListings();
+                } else {
+                    swal({
+                        text: "Unable to archive listing",
+                        icon: "warning",
+                    })
+                    reloadListings();
+                }
             })
         }
     }
@@ -320,13 +342,14 @@ const ListingCard = ({ listing, favListingsIds, updateFavorite, updateListing, o
                                 text: "Unable to fetch most recent listing",
                                 icon: "warning",
                             })
+                            reloadListings();
                             return;
                         }
                         updateListing(updatedListing);
                     }}
                     onCancel={() => setEditing(false)}
                     onSave={(updatedListing) => {
-                        updateListing(updatedListing); // Call the updateListing prop
+                        postListing(updatedListing); // Call the postListing prop
                         setEditing(false);
                     }} 
                     />
