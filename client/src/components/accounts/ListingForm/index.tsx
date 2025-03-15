@@ -21,9 +21,11 @@ const ListingForm = ({ listing, onCancel, onSave }: ListingFormProps) => {
   // Form state
   const [title, setTitle] = useState(listing.title);
   const [professorNames, setProfessorNames] = useState<string[]>([...listing.professorNames]);
+  const ownerName = `${listing.ownerFirstName} ${listing.ownerLastName}`;
   const [departments, setDepartments] = useState<string[]>([...listing.departments]);
   const [availableDepartments, setAvailableDepartments] = useState<string[]>([]);
   const [emails, setEmails] = useState<string[]>([...listing.emails]);
+  const ownerEmail = listing.ownerEmail;
   const [websites, setWebsites] = useState<string[]>(listing.websites ? [...listing.websites] : []);
   const [description, setDescription] = useState(listing.description);
   const [keywords, setKeywords] = useState<string[]>(listing.keywords ? [...listing.keywords] : []);
@@ -56,8 +58,8 @@ const ListingForm = ({ listing, onCancel, onSave }: ListingFormProps) => {
       title: validateTitle(title),
       description: validateDescription(description),
       established: validateEstablished(established),
-      professorNames: validateProfessors(professorNames),
-      emails: validateEmails(emails),
+      professorNames: validateProfessors([ownerName, ...professorNames]),
+      emails: validateEmails([ownerEmail, ...emails]),
       websites: validateWebsites(websites)
     };
     
@@ -173,6 +175,7 @@ const ListingForm = ({ listing, onCancel, onSave }: ListingFormProps) => {
                   textColor="text-blue-800"
                   buttonColor="text-blue-500 hover:text-blue-700"
                   error={errors.professorNames}
+                  permanentValue={ownerName}
                   onValidate={(newArray) => setErrors(prev => ({ 
                     ...prev, 
                     professorNames: validateProfessors(newArray) 
@@ -188,6 +191,7 @@ const ListingForm = ({ listing, onCancel, onSave }: ListingFormProps) => {
                   textColor="text-green-800"
                   buttonColor="text-green-500 hover:text-green-700"
                   error={errors.emails}
+                  permanentValue={ownerEmail}
                   type="email"
                   onValidate={(newArray) => setErrors(prev => ({ 
                     ...prev, 
