@@ -183,6 +183,7 @@ router.delete('/favListings', async (request: Request, response: Response) => {
         if (!request.body.favListings) {
             throw new Error('No favListings provided');
         }
+        console.log(request.body);
         const user = await deleteFavListings(currentUser.netId, Array.isArray(request.body.favListings) ? request.body.favListings : [request.body.favListings]);
         response.status(200).json({ user });
     } catch (error) {

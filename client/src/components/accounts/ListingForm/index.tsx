@@ -122,10 +122,7 @@ const ListingForm = ({ listing, onLoad, onCancel, onSave }: ListingFormProps) =>
         keywords,
         established,
         hiringStatus,
-        archived,
-        ownerEmail,
-        ownerFirstName: ownerName.split(' ')[0],
-        ownerLastName: ownerName.split(' ')[1],
+        archived
       };
       
       // Show confirmation dialog before saving
