@@ -129,7 +129,7 @@ const ListingModal = ({ isOpen, onClose, listing, favListingsIds, updateFavorite
                 <section className="mb-6">
                     <h3 className="text-lg font-semibold mb-2">Professors</h3>
                     <div className="space-y-2">
-                    {listing.professorNames.map((name, index) => (
+                    {[`${listing.ownerFirstName} ${listing.ownerLastName}`, ...listing.professorNames].map((name, index) => (
                         <div key={index} className="flex items-center">
                         <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center mr-2">
                             {name.charAt(0).toUpperCase()}
@@ -164,7 +164,7 @@ const ListingModal = ({ isOpen, onClose, listing, favListingsIds, updateFavorite
                     <div className="mb-4">
                     <h4 className="text-md font-medium">Emails</h4>
                     <ul className="mt-1 space-y-1">
-                        {listing.emails.map((email, index) => (
+                        {[listing.ownerEmail, ...listing.emails].map((email, index) => (
                         <li key={index}>
                             <a href={`mailto:${email}`} className="text-blue-600 hover:underline">
                             {email}
