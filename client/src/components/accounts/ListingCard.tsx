@@ -220,7 +220,7 @@ const ListingCard = ({ listing, favListingsIds, updateFavorite, updateListing, o
                     <div className="col-span-2 md:col-span-4">
                         <p className={`text-lg font-semibold mb-3 ${archived ? "opacity-50" : ""}`} style={{ lineHeight: '1.2rem', height: '1.2rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{listing.title}</p>
                         <p className={`text-sm text-gray-700 ${archived ? "opacity-50" : ""}`} style={{ overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical' }}>
-                            <strong>Professors:</strong> {listing.professorNames.join(', ')}
+                            <strong>Professors:</strong> {[`${listing.ownerFirstName} ${listing.ownerLastName}`, ...listing.professorNames].join(', ')}
                         </p>
                         {/* list all departments in blue bubbles*/}
                         <div ref={departmentsContainerRef} className="flex overflow-hidden" style={{ whiteSpace: 'nowrap' }}>
