@@ -1,7 +1,7 @@
 import express from "express";
 import passport from "passport";
 import { Strategy } from "passport-cas";
-import { validateUser } from './services/userService';
+import { validateUser, createUser } from './services/userService';
 import { fetchYalie } from "./services/yaliesService";
 
 passport.use(
@@ -17,17 +17,31 @@ passport.use(
         if (user) {
           done(null, {
             netId: profile.user,
-            professor: user.isProfessor,
+            userType: user.userType,
+            userConfirmed: user.userConfirmed,
           });
         } else {
           user = await fetchYalie(profile.user);
           if (user) {
             done(null, {
               netId: user.netid,
-              professor: user.isProfessor,
+              userType: user.userType,
+              userConfirmed: user.userConfirmed,
             });
           } else {
-            done(null, false, { message: "User not found" });
+            user = await createUser(
+              {
+                netid: profile.user,
+                fname: "NA",
+                lname: "NA",
+                email: "NA",
+              }
+            )
+            done(null, {
+              netId:user.netid,
+              userType: user.userType,
+              userConfirmed: user.userConfirmed,
+            });
           }
         }
       } catch (error) {
@@ -47,17 +61,31 @@ passport.deserializeUser(async (netId: String, done) => {
     if (user) {
       done(null, {
         netId: user.netid,
-        professor: user.isProfessor,
+        userType: user.userType,
+        userConfirmed: user.userConfirmed,
       });
     } else {
       user = await fetchYalie(netId);
       if (user) {
         done(null, {
           netId: user.netid,
-          professor: user.isProfessor,
+          userType: user.userType,
+          userConfirmed: user.userConfirmed,
         });
       } else {
-        done(new Error('User not found'), null);;
+        user = await createUser(
+          {
+            netid: netId,
+            fname: "NA",
+            lname: "NA",
+            email: "NA",
+          }
+        )
+        done(null, {
+          netId: user.netid,
+          userType: user.userType,
+          userConfirmed: user.userConfirmed,
+        });
       }
     }
   } catch (error) {

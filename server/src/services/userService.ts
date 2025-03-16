@@ -91,9 +91,9 @@ export const deleteUser = async(id: any) => {
             throw new NotFoundError(`User not found with ObjectId: ${id}`);
         }
 
-        const {netid, email, isProfessor, fname, lname, website, bio, departments, ownListings, favListings} = user;
+        const {netid, email, userType, userConfirmed, fname, lname, website, bio, departments, ownListings, favListings} = user;
         const userBackupData = Object.fromEntries(
-            Object.entries({netid, email, isProfessor, fname, lname, website, bio, departments, ownListings, favListings})
+            Object.entries({netid, email, userType, userConfirmed, fname, lname, website, bio, departments, ownListings, favListings})
                 .filter(([_, value]) => value !== undefined)
         );
 
@@ -111,9 +111,9 @@ export const deleteUser = async(id: any) => {
             throw new NotFoundError(`User not found with NetId: ${id}`);
         }
         
-        const {netid, email, isProfessor, fname, lname, website, bio, departments, ownListings, favListings} = user;
+        const {netid, email, userType, userConfirmed, fname, lname, website, bio, departments, ownListings, favListings} = user;
         const userBackupData = Object.fromEntries(
-            Object.entries({netid, email, isProfessor, fname, lname, website, bio, departments, ownListings, favListings})
+            Object.entries({netid, email, userType, userConfirmed, fname, lname, website, bio, departments, ownListings, favListings})
                 .filter(([_, value]) => value !== undefined)
         );
 

@@ -44,9 +44,17 @@ export const fetchYalie = async (netid: String) => {
       const yalie = yaliesData[0];
   
       // Validate required fields before saving
-      if (!yalie.first_name || !yalie.last_name || !yalie.email || !yalie.year || !yalie.major) {
+      if (!yalie.first_name || !yalie.last_name || !yalie.email || !yalie.year || !yalie.school_code) {
         console.log(`Missing required fields from Yalies API response for netid: ${netid}`);
         return null;
+      }
+
+      let userType;
+
+      if(yalie.school_code === "YC") {
+        userType = "undergraduate";
+      } else {
+        userType = "graduate";
       }
   
       // Create formatted user object
@@ -57,7 +65,9 @@ export const fetchYalie = async (netid: String) => {
         email: yalie.email,
         college: yalie.college || "",
         year: yalie.year,
-        major: Array.isArray(yalie.major) ? yalie.major : [yalie.major], // Ensure it's an array
+        userType: userType,
+        userConfirmed: true,
+        major: (yalie.major && Array.isArray(yalie.major) ? yalie.major : [yalie.major]) || [], // Ensure it's an array
       };
   
       // Save user to MongoDB

@@ -2,7 +2,7 @@ import { archiveListing, createListing, deleteListing, readAllListings, readList
 import { Request, Response, Router } from "express";
 import { IncorrectPermissionsError, NotFoundError, ObjectIdError } from "../utils/errors";
 import { readUser } from '../services/userService';
-import { isAuthenticated, isProfessor } from '../utils/permissions';
+import { isAuthenticated, isTrustworthy } from '../utils/permissions';
 
 const router = Router();
 

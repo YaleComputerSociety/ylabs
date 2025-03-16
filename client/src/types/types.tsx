@@ -23,27 +23,10 @@ export type NewListing = {
   createdAt: string;
 };
 
-export type CreatedListing = {
-  id?: number;
-  ownerId?: string;
-  ownerFirstName?: string;
-  ownerLastName?: string;
-  ownerEmail?: string;
-  professorIds?: string[];
-  professorNames?: string[];
-  title: string;
-  departments: string[];
-  emails?: string[];
-  websites?: string[];
-  description?: string;
-  keywords?: string[];
-  established?: string;
-  views?: number;
-  favorites?: number;
-  hiringStatus?: number;
-  archived?: boolean;
-  updatedAt?: string;
-  createdAt?: string;
+export type UserData = {
+  netId: string;
+  userType: string;
+  userConfirmed: boolean;
 }
 
 export type Listing = {

@@ -1,7 +1,8 @@
 import { NewListing } from "../models";
 import { IncorrectPermissionsError, NotFoundError, ObjectIdError } from "../utils/errors";
 import { createListingBackup } from "./listingBackupServices";
-import { addOwnListings, deleteOwnListings, userExists } from "./userService";
+import { addOwnListings, deleteOwnListings, userExists, createUser } from "./userService";
+import { fetchYalie } from "./yaliesService";
 import { User } from "../models";
 import mongoose from "mongoose";
 
@@ -16,12 +17,22 @@ export const createListing = async (data: any, owner: any) => {
     const listingId = listing._id;
     const professorIds = listing.professorIds;
 
-    // Check if userExists returns true for all professor ids before proceeding
     for (const id of [...professorIds, owner.netid]) {
-        const user = await userExists(id);
-        if (user) {
-            await addOwnListings(id, [listingId]);
+        const exists = await userExists(id);
+        
+        if (!exists) {
+            let user = await fetchYalie(id);
+            if (!user) {
+                user = await createUser({
+                    netid: id,
+                    fname: "NA",
+                    lname: "NA",
+                    email: "NA",
+                });
+            }
         }
+
+        await addOwnListings(id, [listingId]);
     }
 
     await listing.save();
@@ -90,12 +101,26 @@ export const listingExists = async(id: any) => {
 
 export const updateListing = async(id: any, userId: string, data: any) => {
     if (mongoose.Types.ObjectId.isValid(id)) {
-        // Filter professorIds to only include valid entries
-        if (data.professorIds) {
-            data.professorIds = await data.professorIds.filter(async(id: string) => await userExists(id));
-        }
-
         const oldListing = await NewListing.findById(id);
+
+        // Create needed users
+        if (data.professorIds) {
+            for (const id of [...data.professorIds]) {
+                const exists = await userExists(id);
+                
+                if (!exists) {
+                    let user = await fetchYalie(id);
+                    if (!user) {
+                        user = await createUser({
+                            netid: id,
+                            fname: "NA",
+                            lname: "NA",
+                            email: "NA",
+                        });
+                    }
+                }
+            }
+        }
 
         if (!oldListing.professorIds.includes(userId) && oldListing.ownerId !== userId) {
             throw new IncorrectPermissionsError(`User with id ${userId} does not have permission to update listing with id ${id}`);
@@ -112,7 +137,7 @@ export const updateListing = async(id: any, userId: string, data: any) => {
         // Add or remove listing from ownListings of professors based on if professorIds have changed
         const oldProfessorIds = oldListing.professorIds;
         const newProfessorIds = listing.professorIds;
-        const removedIds = oldProfessorIds.filter(id => !newProfessorIds.includes(id));
+        const removedIds = oldProfessorIds.filter(id => !newProfessorIds.includes(id) && id !== listing.ownerId);
         const listingId = listing._id;
 
         for (const id of newProfessorIds) {
@@ -159,7 +184,9 @@ export const deleteListing = async(id: any) => {
         const oldProfessorIds = listing.professorIds;
 
         for (const id of oldProfessorIds) {
-            await deleteOwnListings(id, [oldListingId]);
+            if (userExists(id)) {
+                await deleteOwnListings(id, [oldListingId]);
+            }
         }
 
         return backup;
