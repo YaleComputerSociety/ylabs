@@ -11,7 +11,12 @@ const userSchema = new mongoose.Schema(
         type: String,
         required: true,
     },
-    isProfessor: {
+    userType: {
+        type: String,
+        enum: ['undergraduate', 'graduate', 'professor', 'faculty', 'unknown', 'admin'],
+        default: 'unknown',
+    },
+    userConfirmed: {
         type: Boolean,
         default: false,
     },
