@@ -105,7 +105,7 @@ router.delete('/:id/ownListings/all', async (request: Request, response: Respons
 //Get favListings id's for current user
 router.get('/favListingsIds', async (request: Request, response: Response) => {
     try {
-        const currentUser = request.user as { netId? : string, professor? : boolean};
+        const currentUser = request.user as { netId? : string, userType: string, userConfirmed: boolean};
         if (!currentUser) {
             throw new Error('User not logged in');
         }
@@ -139,7 +139,7 @@ router.put('/:id/favListings', async (request: Request, response: Response) => {
 //Add favListings for the user currently logged in
 router.put('/favListings', async (request: Request, response: Response) => {
     try {
-        const currentUser = request.user as { netId? : string, professor? : boolean};
+        const currentUser = request.user as { netId? : string, userType: string, userConfirmed: boolean};
         if (!currentUser) {
             throw new Error('User not logged in');
         }
@@ -176,7 +176,7 @@ router.delete('/:id/favListings', async (request: Request, response: Response) =
 //Remove favListings for the user currently logged in
 router.delete('/favListings', async (request: Request, response: Response) => {
     try {
-        const currentUser = request.user as { netId? : string, professor? : boolean};
+        const currentUser = request.user as { netId? : string, userType: string, userConfirmed: boolean};
         if (!currentUser) {
             throw new Error('User not logged in');
         }
@@ -252,10 +252,10 @@ router.get('/:id/listings', async (request: Request, response: Response) => {
     }
 });
 
-//Return all listings data for the user currently logged in
+//Return all listings data for the user currently logged in (for reload on accounts page, so also returns relevant user data)
 router.get('/listings', async (request: Request, response: Response) => {
     try {
-        const currentUser = request.user as { netId? : string, professor? : boolean};
+        const currentUser = request.user as { netId? : string, userType: string, userConfirmed: boolean};
         if (!currentUser) {
             throw new Error('User not logged in');
         }
@@ -263,7 +263,7 @@ router.get('/listings', async (request: Request, response: Response) => {
         const ownListings = await readListings(user.ownListings);
         const favListings = await readListings(user.favListings);
 
-        //Clean listings
+        //Clean listings to remove those that no longer exist
         let ownIds: mongoose.Types.ObjectId[] = [];
         for (const listing of ownListings) {
             ownIds.push(listing._id);
