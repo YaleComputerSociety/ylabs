@@ -23,6 +23,12 @@ export type NewListing = {
   createdAt: string;
 };
 
+export type User = {
+  netId: string;
+  userType: string;
+  userConfirmed: boolean;
+}
+
 export type UserData = {
   netId: string;
   userType: string;

@@ -15,7 +15,7 @@ export const createListing = (listing: any) => {
         websites: listing.websites,
         description: listing.description,
         keywords: listing.keywords,
-        established: listing.established,
+        established: listing.established ? listing.established.toString() : undefined,
         views: listing.views,
         favorites: listing.favorites,
         hiringStatus: listing.hiringStatus,

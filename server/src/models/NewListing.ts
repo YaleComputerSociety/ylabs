@@ -57,7 +57,7 @@ const newListingSchema = new mongoose.Schema(
         required: false,
     },
     established: {
-        type: Date,
+        type: Number,
         required: false,
     },
     views: {

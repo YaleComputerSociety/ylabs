@@ -3,9 +3,13 @@ import {NewListing} from '../types/types'
 import {createListing} from '../utils/apiCleaner';
 import ListingCard from '../components/accounts/ListingCard'
 import ListingModal from "../components/accounts/ListingModal";
+import createButton from "../components/accounts/CreateButton";
 import axios from '../utils/axios';
 import swal from 'sweetalert';
 import PulseLoader from "react-spinners/PulseLoader";
+import { useContext } from "react";
+import UserContext from "../contexts/UserContext";
+import CreateButton from "../components/accounts/CreateButton";
 
 const Account = () => {
     const [ownListings, setOwnListings] = useState<NewListing[]>([]);
@@ -15,6 +19,7 @@ const Account = () => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isEditing, setIsEditing] = useState(false);
     const [selectedListing, setSelectedListing] = useState<NewListing | null>(null);
+    const {user} = useContext(UserContext);
 
     useEffect(() => {
         reloadListings();
@@ -133,9 +138,7 @@ const Account = () => {
 
     const postListing = async (newListing: NewListing) => {
         setIsLoading(true);
-        console.log(newListing);
         axios.put(`/newListings/${newListing.id}`, {withCredentials: true, data: newListing}).then((response) => {
-            console.log(response.data)
             reloadListings();
         }).catch((error) => {
             console.error('Error saving listing:', error);
@@ -155,6 +158,10 @@ const Account = () => {
             }
         });
     }
+
+    const onCreate = () => {
+        console.log("Create listing");
+    };
 
     return (
         <div className="p-8 transition-all lg:mx-12 mt-[4rem]">
@@ -186,6 +193,11 @@ const Account = () => {
                         </ul>
                     ) : (
                         <p className="mb-4">No listings found.</p>
+                    )}
+                    {user && (user.userType === "professor" || user.userType === "faculty" || user.userType === "admin") && (
+                        <div className="mt-8 flex justify-center align-center mb-4">
+                            <CreateButton globalEditing={isEditing} handleCreate={onCreate}/>
+                        </div>
                     )}
                     <p className="text-xl text-gray-700 mb-4">Favorite listings</p>
                     {favListings.length > 0 ? (
