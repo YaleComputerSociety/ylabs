@@ -56,6 +56,7 @@ const DepartmentInput = ({
         e.preventDefault();
         if (focusedDeptIndex >= 0 && focusedDeptIndex < filteredDepartments.length) {
           onAddDepartment(filteredDepartments[focusedDeptIndex]);
+          setDeptSearchTerm('');
           setFocusedDeptIndex(-1);
         }
         break;
@@ -97,7 +98,7 @@ const DepartmentInput = ({
       <label className="block text-gray-700 text-sm font-bold mb-2">
         Departments
       </label>
-      <div className="flex flex-wrap gap-2 mb-2 overflow-x-auto">``
+      <div className="flex flex-wrap gap-2 mb-2 overflow-x-auto">
         {departments.map((department, index) => (
           <span 
             key={index} 
@@ -161,7 +162,10 @@ const DepartmentInput = ({
                 filteredDepartments.map((dept, index) => (
                   <li
                     key={index}
-                    onClick={() => onAddDepartment(dept)}
+                    onClick={() => {
+                      onAddDepartment(dept)
+                      setDeptSearchTerm('');
+                    }}
                     className={`p-2 cursor-pointer ${
                       focusedDeptIndex === index ? 'bg-blue-100' : 'hover:bg-gray-100'
                     }`}
