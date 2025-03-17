@@ -116,21 +116,32 @@ export const updateListing = async(id: any, userId: string, data: any) => {
     if (mongoose.Types.ObjectId.isValid(id)) {
         const oldListing = await NewListing.findById(id);
 
-        // Create needed users
+        if (!oldListing) {
+            throw new NotFoundError(`Listing not found with ObjectId: ${id}`);
+        }
+
+        let toUpdate = [...oldListing.professorIds, oldListing.ownerId];
+
         if (data.professorIds) {
-            for (const id of [...data.professorIds]) {
-                const exists = await userExists(id);
-                
-                if (!exists) {
-                    let user = await fetchYalie(id);
-                    if (!user) {
-                        user = await createUser({
-                            netid: id,
-                            fname: "NA",
-                            lname: "NA",
-                            email: "NA",
-                        });
-                    }
+            toUpdate = [...toUpdate, ...data.professorIds];
+        }
+        if(data.ownerId) {
+            toUpdate.push(data.ownerId);
+        }
+
+        // Create needed users
+        for (const id of toUpdate) {
+            const exists = await userExists(id);
+            
+            if (!exists) {
+                let user = await fetchYalie(id);
+                if (!user) {
+                    user = await createUser({
+                        netid: id,
+                        fname: "NA",
+                        lname: "NA",
+                        email: "NA",
+                    });
                 }
             }
         }
