@@ -254,22 +254,30 @@ const ListingCard = ({ listing, favListingsIds, updateFavorite, updateListing, p
                         </p>
                         {/* list all departments in blue bubbles*/}
                         <div ref={departmentsContainerRef} className="flex overflow-hidden" style={{ whiteSpace: 'nowrap' }}>
-                            {visibleDepartments.map((department) => (
-                                <span
-                                    key={department}
-                                    className={`${Object.keys(departmentCategories).includes(department) ? departmentColors[departmentCategories[department as keyof typeof departmentCategories]] : "bg-gray-200"} text-gray-900 text-xs rounded px-1 py-0.5 mt-3 mr-2 ${archived ? "opacity-50" : ""}`}
-                                    style={{ display: 'inline-block', whiteSpace: 'nowrap' }}
-                                >
-                                    {department}
-                                </span>
-                            ))}
-                            {moreCount > 0 && (
-                                <span
-                                    className={`bg-gray-200 text-gray-900 text-xs rounded px-1 py-0.5 mt-3 ${archived ? "opacity-50" : ""}`}
-                                    style={{ display: 'inline-block', whiteSpace: 'nowrap' }}
-                                >
-                                    +{moreCount} more
-                                </span>
+                            {visibleDepartments.length > 0 ? (
+                                <>
+                                    {visibleDepartments.map((department) => (
+                                        <span
+                                            key={department}
+                                            className={`${Object.keys(departmentCategories).includes(department) ? departmentColors[departmentCategories[department as keyof typeof departmentCategories]] : "bg-gray-200"} text-gray-900 text-xs rounded px-1 py-0.5 mt-3 mr-2 ${archived ? "opacity-50" : ""}`}
+                                            style={{ display: 'inline-block', whiteSpace: 'nowrap' }}
+                                        >
+                                            {department}
+                                        </span>
+                                    ))}
+                                    {moreCount > 0 && (
+                                        <span
+                                            className={`bg-gray-200 text-gray-900 text-xs rounded px-1 py-0.5 mt-3 ${archived ? "opacity-50" : ""}`}
+                                            style={{ display: 'inline-block', whiteSpace: 'nowrap' }}
+                                        >
+                                            +{moreCount} more
+                                        </span>
+                                    )}
+                                </>
+                            ) : (
+                                <div className="h-6 mt-3">
+                                    {/* Placeholder to maintain constant height */}
+                                </div>
                             )}
                         </div>
                     </div>

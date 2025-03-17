@@ -159,7 +159,7 @@ export const deleteUser = async(id: any) => {
 export const addDepartments = async(id: any, newDepartments: [string]) => {
     let user = await readUser(id);
 
-    user.departments.push(...newDepartments);
+    user.departments.unshift(...newDepartments);
     user.departments = Array.from(new Set(user.departments));
 
     const newUser = await updateUser(id, {"departments": user.departments});
@@ -189,7 +189,7 @@ export const clearDepartments = async(id: any) => {
 export const addOwnListings = async(id: any, newListings: [mongoose.Types.ObjectId]) => {
     let user = await readUser(id);
 
-    user.ownListings.push(...newListings);
+    user.ownListings.unshift(...newListings);
     user.ownListings = Array.from(new Set(user.ownListings.map(listing => listing.toString()))).map(listing => new mongoose.Types.ObjectId(listing));
 
     const newUser = await updateUser(id, {"ownListings": user.ownListings});
@@ -221,7 +221,7 @@ export const clearOwnListings = async(id: any) => {
 export const addFavListings = async(id: any, newListings: [mongoose.Types.ObjectId]) => {
     let user = await readUser(id);
 
-    user.favListings.push(...newListings);
+    user.favListings.unshift(...newListings);
     user.favListings = Array.from(new Set(user.favListings.map(listing => listing.toString()))).map(listing => new mongoose.Types.ObjectId(listing));
 
     const newUser = await updateUser(id, {"favListings": user.favListings});

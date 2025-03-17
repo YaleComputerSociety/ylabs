@@ -121,6 +121,13 @@ const SearchHub = ({ allDepartments, setListings, setIsLoading }: SearchHubProps
             })
             setListings(responseListings);
             setIsLoading(false); 
+        }).catch((error) => {
+            console.error('Error loading listings:', error);
+            swal({
+                text: "Unable to load listings. Please try again later.",
+                icon: "warning",
+            })
+            setIsLoading(false);
         });
     }
 
