@@ -3,6 +3,8 @@ import { BrowserRouter as Router, Routes, Route, } from 'react-router-dom'
 import Home from "./pages/home";
 import Login from "./pages/login";
 import About from "./pages/about";
+import Account from "./pages/account";
+import Unknown from "./pages/unknown";
 import Navbar from "./components/Navbar";
 
 const App = () => {
@@ -10,9 +12,11 @@ const App = () => {
     <Router>
       <Navbar/>
       <Routes>
-          <Route path="/" element={<PrivateRoute Component={Home} />} />
-          <Route path="/about" element={<PrivateRoute Component={About} />} />
+          <Route path="/" element={<PrivateRoute Component={Home} unknownBlocked={true}/>} />
+          <Route path="/about" element={<PrivateRoute Component={About} unknownBlocked={true}/>} />
+          <Route path="/account" element={<PrivateRoute Component={Account} unknownBlocked={true}/>} />
           <Route path="/login" element={<Login />} />
+          <Route path="/unknown" element={<PrivateRoute Component={Unknown} knownBlocked={true}/>} />
       </Routes>
   </Router>
   );

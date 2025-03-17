@@ -3,7 +3,7 @@ import swal from "sweetalert";
 
 import axios from "../utils/axios";
 import UserContext from "../contexts/UserContext";
-import { User } from "../types";
+import { User } from "../types/types";
 
 const UserContextProvider: FC = ({ children }) => {
   const [isLoading, setIsLoading] = useState<boolean>(true);

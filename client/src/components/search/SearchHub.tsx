@@ -1,6 +1,7 @@
 import React, { useState, useRef, KeyboardEvent, useEffect } from 'react';
 import {Listing} from '../../types/types';
 import axios from 'axios';
+import swal from 'sweetalert';
 
 interface SearchHubProps {
     allDepartments: string[];
@@ -109,18 +110,25 @@ const SearchHub = ({ allDepartments, setListings, setIsLoading }: SearchHubProps
         axios.get(url).then((response) => {
             const responseListings : Listing[] = response.data.map(function(elem: any){
                 return {
-                id: elem._id,
-                departments: elem.departments.join('; '),
-                email: elem.email,
-                website: elem.website,
-                description: elem.description,
-                keywords: elem.keywords,
-                lastUpdated: elem.last_updated,
-                name: elem.fname + ' ' + elem.lname
+                    id: elem._id,
+                    departments: elem.departments.join('; '),
+                    email: elem.email,
+                    website: elem.website,
+                    description: elem.description,
+                    keywords: elem.keywords,
+                    lastUpdated: elem.last_updated,
+                    name: elem.fname + ' ' + elem.lname
                 }
             })
             setListings(responseListings);
             setIsLoading(false); 
+        }).catch((error) => {
+            console.error('Error loading listings:', error);
+            swal({
+                text: "Unable to load listings. Please try again later.",
+                icon: "warning",
+            })
+            setIsLoading(false);
         });
     }
 

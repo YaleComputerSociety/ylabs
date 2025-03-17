@@ -12,6 +12,11 @@ const startApp = async () => {
     await mongoose.connect(mongoUri);
     app.listen(port, () => {
       console.log(`Server is ready at: ${port} 🐶`);
+      if (process.env.MONGODBURL_TEST && (process.env.API_MODE == 'test')) {
+        console.log("Using test MongoDB database 🔬")
+      } else {
+        console.log("Using production MongoDB database 🚀")
+      }
     });
   } catch (e) {
     console.error(`Failed to start app with error 💣: ${e}`);

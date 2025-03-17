@@ -1,7 +1,7 @@
 import {useState} from "react";
 import ListingsTable from "../components/ListingsTable";
 import SearchHub from "../components/search/SearchHub";
-import { departmentNames } from "../utils/departmentNames";
+import { departmentCategories } from "../utils/departmentNames";
 
 import styled from "styled-components";
 import {Listing} from '../types/types';
@@ -11,10 +11,12 @@ const Home = () => {
     const [listings, setListings] = useState<Listing[]>([]);
     const [isLoading, setIsLoading] = useState<Boolean>(false);
 
+    const departmentKeys = Object.keys(departmentCategories).sort((a, b) => a.localeCompare(b));
+
     return (
         <div style={{marginTop: '6rem', marginLeft: '3rem', marginRight: '3rem'}}>
             <div className='mt-12'>
-                <SearchHub allDepartments={departmentNames} setListings={setListings} setIsLoading={setIsLoading}></SearchHub>
+                <SearchHub allDepartments={departmentKeys} setListings={setListings} setIsLoading={setIsLoading}></SearchHub>
             </div>
             <div style={{marginTop: '2rem'}}></div>
             {isLoading ? (
