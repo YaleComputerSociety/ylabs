@@ -1,6 +1,7 @@
 import { User } from "../models";
 import { NotFoundError } from "../utils/errors";
 import { createUserBackup, updateUserBackup, userBackupExists } from "./userBackupService";
+import { readListing, confirmListing, unconfirmListing } from "./newListingsService";
 import mongoose from "mongoose";
 
 export const createUser = async (userData: any) => {
@@ -82,6 +83,28 @@ export const updateUser = async(id: any, data: any) => {
         }
         return user.toObject();
     }
+};
+
+export const confirmUser = async(id: any) => {
+    const user = await updateUser(id, { userConfirmed: true });
+    for (const id of user.ownListings) {
+        const listing = await readListing(id);
+        if (listing && listing.ownerId === user.netid) {
+            await confirmListing(id, user.netid);
+        }
+    }
+    return user;
+};
+
+export const unconfirmUser = async(id: any) => {
+    const user = await updateUser(id, { userConfirmed: false });
+    for (const id of user.ownListings) {
+        const listing = await readListing(id);
+        if (listing && listing.ownerId === user.netid) {
+            await unconfirmListing(id, user.netid);
+        }
+    }
+    return user;
 };
 
 export const deleteUser = async(id: any) => {

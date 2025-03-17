@@ -11,7 +11,7 @@ export const createListing = async (data: any, owner: any) => {
         throw new Error('Incomplete user data for owner');
     }
 
-    const listing = new NewListing({...data, ownerId: owner.netid, ownerEmail: owner.email, ownerFirstName: owner.fname, ownerLastName: owner.lname});
+    const listing = new NewListing({...data, ownerId: owner.netid, ownerEmail: owner.email, ownerFirstName: owner.fname, ownerLastName: owner.lname, confirmed: owner.userConfirmed});
 
     // Add listing id to ownListings of all professors associated with the listing
     const listingId = listing._id;
@@ -65,7 +65,8 @@ export const getSkeletonListing = async(userId: string) => {
         ownerId: userId,
         ownerFirstName: user.fname,
         ownerLastName: user.lname,
-        ownerEmail: user.email
+        ownerEmail: user.email,
+        confirmed: user.userConfirmed,
     }
 }
 
@@ -172,6 +173,16 @@ export const archiveListing = async(id: any, userId: string) => {
 
 export const unarchiveListing = async(id: any, userId: string) => {
     const listing = await updateListing(id, userId, {"archived": false});
+    return listing;
+}
+
+export const confirmListing = async(id: any, userId: string) => {
+    const listing = await updateListing(id, userId, {"confirmed": true});
+    return listing;
+}
+
+export const unconfirmListing = async(id: any, userId: string) => {
+    const listing = await updateListing(id, userId, {"confirmed": false});
     return listing;
 }
 
