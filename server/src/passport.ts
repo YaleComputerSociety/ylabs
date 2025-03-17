@@ -1,10 +1,8 @@
 import express from "express";
 import passport from "passport";
 import { Strategy } from "passport-cas";
-
-type User = {
-  netId: string;
-};
+import { validateUser, createUser } from './services/userService';
+import { fetchYalie } from "./services/yaliesService";
 
 passport.use(
   new Strategy(
@@ -12,23 +10,87 @@ passport.use(
       version: "CAS2.0",
       ssoBaseURL: "https://secure.its.yale.edu/cas",
     },
-    function (profile, done) {
-      console.log("verify user: ", profile);
-      done(null, {
-        netId: profile.user,
-      });
+    async function (profile, done) {
+      //Shows user login data if uncommented: console.log("verify user: ", profile);
+      try {
+        let user = await validateUser(profile.user);
+        if (user) {
+          done(null, {
+            netId: profile.user,
+            userType: user.userType,
+            userConfirmed: user.userConfirmed,
+          });
+        } else {
+          user = await fetchYalie(profile.user);
+          if (user) {
+            done(null, {
+              netId: user.netid,
+              userType: user.userType,
+              userConfirmed: user.userConfirmed,
+            });
+          } else {
+            user = await createUser(
+              {
+                netid: profile.user,
+                fname: "NA",
+                lname: "NA",
+                email: "NA",
+              }
+            )
+            done(null, {
+              netId:user.netid,
+              userType: user.userType,
+              userConfirmed: user.userConfirmed,
+            });
+          }
+        }
+      } catch (error) {
+        done(error);
+      }
     }
   )
 );
 
-passport.serializeUser<User>(function (user: any, done) {
+passport.serializeUser(function (user: any, done) {
   done(null, user.netId);
 });
 
-passport.deserializeUser(function (netId, done) {
-  done(null, {
-    netId,
-  });
+passport.deserializeUser(async (netId: String, done) => {
+  try {
+    let user = await validateUser(netId);
+    if (user) {
+      done(null, {
+        netId: user.netid,
+        userType: user.userType,
+        userConfirmed: user.userConfirmed,
+      });
+    } else {
+      user = await fetchYalie(netId);
+      if (user) {
+        done(null, {
+          netId: user.netid,
+          userType: user.userType,
+          userConfirmed: user.userConfirmed,
+        });
+      } else {
+        user = await createUser(
+          {
+            netid: netId,
+            fname: "NA",
+            lname: "NA",
+            email: "NA",
+          }
+        )
+        done(null, {
+          netId: user.netid,
+          userType: user.userType,
+          userConfirmed: user.userConfirmed,
+        });
+      }
+    }
+  } catch (error) {
+    done(error, null);
+  }
 });
 
 const casLogin = function (
@@ -36,12 +98,13 @@ const casLogin = function (
   res: express.Response,
   next: express.NextFunction
 ) {
-  passport.authenticate("cas", function (err, user) {
+  passport.authenticate("cas", function (err, user, info) {
     if (err) {
       return next(err);
     }
+    //Handle prettier and add yalies here
     if (!user) {
-      return next(new Error("CAS auth but no user"));
+      return res.status(401).json({ error: info.message || "CAS auth but no user" });
     }
     console.log("1::");
     console.log(user);
@@ -60,24 +123,24 @@ const casLogin = function (
   })(req, res, next);
 };
 
-export default (app: express.Express) => {
-  app.use(passport.initialize());
-  app.use(passport.session());
+const router = express.Router();
 
-  app.get("/check", (req, res) => {
-    console.log("2::");
-    console.log(req.user);
-    if (req.user) {
-      res.json({ auth: true, user: req.user });
-    } else {
-      res.json({ auth: false });
-    }
-  });
+router.get("/check", (req, res) => {
+  console.log("2::");
+  console.log(req.user);
+  if (req.user) {
+    res.json({ auth: true, user: req.user });
+  } else {
+    res.json({ auth: false });
+  }
+});
 
-  app.get("/cas", casLogin);
+router.get("/cas", casLogin);
 
-  app.get("/logout", (req, res) => {
-    req.logOut();
-    return res.json({ success: true });
-  });
-};
+router.get("/logout", (req, res) => {
+  req.logOut();
+  return res.json({ success: true });
+});
+
+export { router as passportRoutes };
+export default passport;
