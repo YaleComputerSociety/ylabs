@@ -13,7 +13,7 @@ const API_KEY = process.env.YALIES_API_KEY;
   * - First, check the database for cached data.
   * - If not found, fetch from Yalies API, validate required fields, store it in the database, and return it.
 */
-export const fetchYalie = async (netid: String) => {
+export const fetchYalie = async (netid: any) => {
     try {
       // Check if the user already exists in MongoDB
       let user = await validateUser(netid);

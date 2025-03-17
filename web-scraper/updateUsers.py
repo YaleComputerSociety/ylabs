@@ -33,7 +33,8 @@ def addUsers(filename, serverURL, verbose = False, batchSize = 50):
                         user = {
                             "netid": netid,
                             "email": email,
-                            "isProfessor": True,
+                            "userType": "professor",
+                            "userConfirmed": True,
                             "fname": fname,
                             "lname": lname,
                             "departments": departments
@@ -41,7 +42,7 @@ def addUsers(filename, serverURL, verbose = False, batchSize = 50):
 
                         response = requests.post(serverURL, json = user)
                         
-                        if(response.status_code != 200):
+                        if(response.status_code != 200 and response.status_code != 201):
                              print(f"Error in posting users: {response.text}")
                              if(input("Continue? ").lower() != "y"):
                                 break
