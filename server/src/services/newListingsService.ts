@@ -148,16 +148,15 @@ export const updateListing = async(id: any, userId: string, data: any) => {
         }
 
         // Add or remove listing from ownListings of professors based on if professorIds have changed
-        const oldProfessorIds = oldListing.professorIds;
-        const newProfessorIds = listing.professorIds;
-        const removedIds = oldProfessorIds.filter(id => !newProfessorIds.includes(id) && id !== listing.ownerId);
+        const oldProfessorIds = [...oldListing.professorIds, oldListing.ownerId];
+        const newProfessorIds = [...listing.professorIds, listing.ownerId];
         const listingId = listing._id;
 
+        for (const id of oldProfessorIds) {
+            await deleteOwnListings(id, [listingId]);
+        }
         for (const id of newProfessorIds) {
             await addOwnListings(id, [listingId]);
-        }
-        for (const id of removedIds) {
-            await deleteOwnListings(id, [listingId]);
         }
 
         return listing.toObject();
