@@ -1,6 +1,7 @@
 import React, { useState, useRef, KeyboardEvent, useEffect } from 'react';
 import {Listing} from '../../types/types';
 import axios from 'axios';
+import swal from 'sweetalert';
 
 interface SearchHubProps {
     allDepartments: string[];
