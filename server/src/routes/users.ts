@@ -349,6 +349,34 @@ router.put('/:id', async (request: Request, response: Response) => {
     }
 });
 
+//Update data for user currently logged in
+router.put('/', async (request: Request, response: Response) => {
+    try {
+        const currentUser = request.user as { netId? : string, userType: string, userConfirmed: boolean};
+        if (!currentUser) {
+            throw new Error('User not logged in');
+        }
+
+        if(request.body.data.userConfirmed !== undefined) {
+            if(request.body.data.userConfirmed) {
+                await confirmUser(currentUser.netId);
+            } else {
+                await unconfirmUser(currentUser.netId);
+            }
+        }
+
+        const user = await updateUser(currentUser.netId, request.body.data);
+        response.status(200).json({ user });
+    } catch (error) {
+        console.log(error.message);
+        if (error instanceof NotFoundError) {
+            response.status(error.status).json({ error: error.message });
+        } else {
+            response.status(500).json({ error: error.message });
+        }
+    }
+});
+
 //Delete user by ObjectId or NetId
 router.delete('/:id', async (request: Request, response: Response) => {
     try {
