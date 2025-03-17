@@ -5,6 +5,8 @@ import { departmentCategories } from '../../utils/departmentNames';
 import { createListing } from '../../utils/apiCleaner';
 import axios from "../../utils/axios";
 import swal from "sweetalert";
+import { useContext } from "react";
+import UserContext from "../../contexts/UserContext";
 
 interface ListingCardProps {
     listing: NewListing;
@@ -14,6 +16,7 @@ interface ListingCardProps {
     postListing: (newListing: NewListing) => void;
     postNewListing: (newListing: NewListing) => void;
     clearCreatedListing: () => void;
+    deleteListing: (listing: NewListing) => void;
     openModal: (listing: NewListing) => void;
     globalEditing: boolean;
     setGlobalEditing: (editing: boolean) => void;
@@ -21,7 +24,7 @@ interface ListingCardProps {
     reloadListings: () => void;
 }
 
-const ListingCard = ({ listing, favListingsIds, updateFavorite, updateListing, postListing, postNewListing, clearCreatedListing, openModal, globalEditing, setGlobalEditing, editable, reloadListings }: ListingCardProps) => {
+const ListingCard = ({ listing, favListingsIds, updateFavorite, updateListing, postListing, postNewListing, clearCreatedListing, deleteListing, openModal, globalEditing, setGlobalEditing, editable, reloadListings }: ListingCardProps) => {
     const [visibleDepartments, setVisibleDepartments] = useState<string[]>([]);
     const [moreCount, setMoreCount] = useState(0);
     const [showTooltip, setShowTooltip] = useState(false);
@@ -30,6 +33,8 @@ const ListingCard = ({ listing, favListingsIds, updateFavorite, updateListing, p
     const departmentsContainerRef = useRef<HTMLDivElement>(null);
     const isCreated = listing.id === "create";
     const [editing, setEditing] = useState(isCreated);
+    const {user} = useContext(UserContext);
+    const canDelete = user && (user.netId === listing.ownerId)
 
     const departmentColors = [
         "bg-blue-200",
@@ -149,8 +154,7 @@ const ListingCard = ({ listing, favListingsIds, updateFavorite, updateListing, p
         })
         .then((willDelete) => {
             if (willDelete) {
-                console.log("deleted");
-                //Api call here later
+                deleteListing(listing);
             }
         });
     }
@@ -429,10 +433,18 @@ const ListingCard = ({ listing, favListingsIds, updateFavorite, updateListing, p
                         </button>
                         
                         <button 
-                            className="p-1 rounded-full hover:bg-gray-100 text-gray-600 hover:text-red-600 transition-colors"
-                            onClick={handleDelete}
-                            title="Delete listing"
-                            aria-label="Delete listing"
+                            className={`p-1 rounded-full ${canDelete
+                                ? "hover:bg-gray-100 text-gray-600 hover:text-red-600 transition-colors"
+                                : "text-gray-400 cursor-not-allowed"}`}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                if (canDelete) {
+                                    handleDelete(e);
+                                }
+                            }}
+                            title={canDelete ? "Delete listing" : "Only owner can delete"}
+                            aria-label={canDelete ? "Delete listing" : "Only owner can delete"}
+                            disabled = {!canDelete}
                         >
                             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`${archived ? "opacity-50" : ""}`}>
                                 <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
