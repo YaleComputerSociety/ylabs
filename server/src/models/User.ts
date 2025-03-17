@@ -11,7 +11,12 @@ const userSchema = new mongoose.Schema(
         type: String,
         required: true,
     },
-    isProfessor: {
+    userType: {
+        type: String,
+        enum: ['undergraduate', 'graduate', 'professor', 'faculty', 'unknown', 'admin'],
+        default: 'unknown',
+    },
+    userConfirmed: {
         type: Boolean,
         default: false,
     },
@@ -32,6 +37,22 @@ const userSchema = new mongoose.Schema(
     departments: {
         type: [String],
         default: [],
+    },
+    college: {
+        type: String,
+        required: false,
+    },
+    year: {
+        type: String,
+        required: false,
+    },
+    major: {
+        type: [String],
+        default: [],
+    },
+    phone: {
+        type: String,
+        required: false,
     },
     ownListings: {
         type: [mongoose.Schema.ObjectId],
