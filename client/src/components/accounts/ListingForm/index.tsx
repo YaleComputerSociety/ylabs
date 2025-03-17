@@ -16,12 +16,14 @@ import { createListing } from '../../../utils/apiCleaner';
          
 interface ListingFormProps {
   listing: NewListing;
+  isCreated: boolean;
   onLoad: (updatedListing: NewListing, success: boolean) => void;
   onCancel?: () => void;
   onSave?: (updatedListing: NewListing) => void;
+  onCreate?: (newListing: NewListing) => void;
 }
 
-const ListingForm = ({ listing, onLoad, onCancel, onSave }: ListingFormProps) => {
+const ListingForm = ({ listing, isCreated, onLoad, onCancel, onSave, onCreate }: ListingFormProps) => {
   // Form state
   const [title, setTitle] = useState(listing.title);
   const [professorNames, setProfessorNames] = useState<string[]>([...listing.professorNames]);
@@ -50,42 +52,50 @@ const ListingForm = ({ listing, onLoad, onCancel, onSave }: ListingFormProps) =>
 
   // Get most recent listing and initialize available departments
   useEffect(() => {
-    setLoading(true);
+    if (!isCreated) {
+      setLoading(true);
 
-    axios.get(`/newListings/${listing.id}`, { withCredentials: true }).then((response) => {
-      if(!response.data.listing) {
-        console.error(`Response, but no listing ${listing.id}:`, response.data);
+      axios.get(`/newListings/${listing.id}`, { withCredentials: true }).then((response) => {
+        if(!response.data.listing) {
+          console.error(`Response, but no listing ${listing.id}:`, response.data);
+          onLoad(listing, false);
+          return;
+        }
+
+        const newListing = createListing(response.data.listing);
+        
+        // Update state with new listing data
+        setTitle(newListing.title);
+        setProfessorNames([...newListing.professorNames]);
+        setOwnerName(`${newListing.ownerFirstName} ${newListing.ownerLastName}`);
+        setDepartments([...newListing.departments]);
+        setEmails([...newListing.emails]);
+        setOwnerEmail(newListing.ownerEmail);
+        setWebsites(newListing.websites ? [...newListing.websites] : []);
+        setDescription(newListing.description);
+        setKeywords(newListing.keywords ? [...newListing.keywords] : []);
+        setEstablished(newListing.established || '');
+        setHiringStatus(newListing.hiringStatus);
+        setArchived(newListing.archived);
+
+        onLoad(newListing, true);
+
+        setAvailableDepartments(
+          departmentNames.filter(dept => !departments.includes(dept)).sort()
+        );
+
+        setLoading(false);
+      }).catch((error) => {
+        console.error(`Error fetching most recent listing ${listing.id}:`, error);
         onLoad(listing, false);
-        return;
-      }
-
-      const newListing = createListing(response.data.listing);
-      
-      // Update state with new listing data
-      setTitle(newListing.title);
-      setProfessorNames([...newListing.professorNames]);
-      setOwnerName(`${newListing.ownerFirstName} ${newListing.ownerLastName}`);
-      setDepartments([...newListing.departments]);
-      setEmails([...newListing.emails]);
-      setOwnerEmail(newListing.ownerEmail);
-      setWebsites(newListing.websites ? [...newListing.websites] : []);
-      setDescription(newListing.description);
-      setKeywords(newListing.keywords ? [...newListing.keywords] : []);
-      setEstablished(newListing.established || '');
-      setHiringStatus(newListing.hiringStatus);
-      setArchived(newListing.archived);
-
-      onLoad(newListing, true);
-      
+      });
+    } else {
       setAvailableDepartments(
         departmentNames.filter(dept => !departments.includes(dept)).sort()
       );
 
       setLoading(false);
-    }).catch((error) => {
-      console.error(`Error fetching most recent listing ${listing.id}:`, error);
-      onLoad(listing, false);
-    })
+    }
   }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -126,18 +136,51 @@ const ListingForm = ({ listing, onLoad, onCancel, onSave }: ListingFormProps) =>
       };
       
       // Show confirmation dialog before saving
+      if (isCreated) {
+        swal({
+          title: "Create Listing",
+          text: "Are you sure you want to create this listing?",
+          icon: "info",
+          buttons: ["Cancel", "Create"],
+        }).then((willSave) => {
+          if (willSave && onCreate) {
+            onCreate(updatedListing);
+          }
+        });
+      } else {
+        swal({
+          title: "Submit Form",
+          text: "Are you sure you want to save these changes?",
+          icon: "info",
+          buttons: ["Cancel", "Save"],
+        }).then((willSave) => {
+          if (willSave && onSave) {
+            onSave(updatedListing);
+          }
+        });
+      }
+    } else {
+      console.log('Validation errors:', filteredErrors);
+    }
+  };
+
+  const handleCancel = () => {
+    if (isCreated) {
       swal({
-        title: "Submit Form",
-        text: "Are you sure you want to save these changes?",
-        icon: "info",
-        buttons: ["Cancel", "Save"],
-      }).then((willSave) => {
-        if (willSave && onSave) {
-          onSave(updatedListing);
+        title: "Delete Listing",
+        text: "Are you sure you want to delete this listing? This action cannot be undone",
+        icon: "warning",
+        buttons: ["Cancel", "Delete"],
+        dangerMode: true,
+      }).then((willCancel) => {
+        if (willCancel && onCancel) {
+          onCancel();
         }
       });
     } else {
-      console.log('Validation errors:', filteredErrors);
+      if (onCancel) {
+        onCancel();
+      }
     }
   };
 
@@ -304,16 +347,16 @@ const ListingForm = ({ listing, onLoad, onCancel, onSave }: ListingFormProps) =>
           <div className="absolute bottom-6 right-6 flex space-x-3 bg-white py-2 px-1">
             <button
               type="button"
-              onClick={onCancel}
-              className="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline"
+              onClick={handleCancel}
+              className={`${isCreated ? "bg-red-500 hover:bg-red-700 text-white" : "bg-gray-300 hover:bg-gray-400 text-gray-800"} font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline`}
             >
-              Cancel
+              {isCreated ? "Delete" : "Cancel"}
             </button>
             <button
               type="submit"
-              className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline"
+              className={`${isCreated ? "bg-green-500 hover:bg-green-700" : "bg-blue-500 hover:bg-blue-700"} text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline`}
             >
-              Save
+              {isCreated ? "Create" : "Save"}
             </button>
           </div>
         </form>

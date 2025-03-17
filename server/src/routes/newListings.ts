@@ -1,4 +1,4 @@
-import { archiveListing, createListing, deleteListing, readAllListings, readListing, unarchiveListing, updateListing } from '../services/newListingsService';
+import { archiveListing, createListing, deleteListing, readAllListings, readListing, unarchiveListing, updateListing, getSkeletonListing } from '../services/newListingsService';
 import { Request, Response, Router } from "express";
 import { IncorrectPermissionsError, NotFoundError, ObjectIdError } from "../utils/errors";
 import { readUser } from '../services/userService';
@@ -33,6 +33,21 @@ router.post("/:id", async (request: Request, response: Response) => {
       response.status(400).json({ error: error.message });
     }
   });
+
+//Get a skeleton listing for the current user
+router.get('/skeleton', async (request: Request, response: Response) => {
+    try {
+        const currentUser = request.user as { netId? : string, professor? : boolean};
+        if (!currentUser) {
+            throw new Error('User not logged in');
+        }
+        const listing = await getSkeletonListing(currentUser.netId);
+        response.status(201).json({ listing });
+    } catch (error) {
+        console.log(error.message);
+        response.status(400).json({ error: error.message})
+    }
+});
 
 //Read all listings
 router.get("/", async (request: Request, response: Response) => {

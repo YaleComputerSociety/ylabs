@@ -14,10 +14,11 @@ import CreateButton from "../components/accounts/CreateButton";
 const Account = () => {
     const [ownListings, setOwnListings] = useState<NewListing[]>([]);
     const [favListings, setFavListings] = useState<NewListing[]>([]);
-    const [favListingsIds, setFavListingsIds] = useState<number[]>([]);
+    const [favListingsIds, setFavListingsIds] = useState<string[]>([]);
     const [isLoading, setIsLoading] = useState<Boolean>(false);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isEditing, setIsEditing] = useState(false);
+    const [isCreating, setIsCreating] = useState(false);
     const [selectedListing, setSelectedListing] = useState<NewListing | null>(null);
     const {user} = useContext(UserContext);
 
@@ -68,7 +69,7 @@ const Account = () => {
             })
         }));
 
-        await axios.get('/users/favListingsIds', {withCredentials: true}).then((response) => {
+        axios.get('/users/favListingsIds', {withCredentials: true}).then((response) => {
             setFavListingsIds(response.data.favListingsIds);
             setIsLoading(false);
         }).catch((error => {
@@ -96,7 +97,7 @@ const Account = () => {
         setSelectedListing(null);
     };
 
-    const updateFavorite = (listing: NewListing, listingId: number, favorite: boolean) => {
+    const updateFavorite = (listing: NewListing, listingId: string, favorite: boolean) => {
         const prevFavListings = favListings;
         const prevFavListingsIds = favListingsIds;
         
@@ -159,8 +160,47 @@ const Account = () => {
         });
     }
 
+    const postNewListing = (listing: NewListing) => {
+        axios.post('/newListings', {withCredentials: true, data: listing}).then((response) => {
+            reloadListings();
+            setIsEditing(false);
+            setIsCreating(false);
+        }).catch((error) => {
+            console.error('Error posting new listing:', error);
+            swal({
+                text: "Unable to create listing",
+                icon: "warning",
+            })
+
+            reloadListings();
+            setIsEditing(false);
+            setIsCreating(false);
+        });
+    }
+
+    const clearCreatedListing = () => {
+        setOwnListings((prevOwnListings) => prevOwnListings.filter((listing) => listing.id !== "create"));
+        setIsEditing(false);
+        setIsCreating(false);
+    }
+
     const onCreate = () => {
-        console.log("Create listing");
+        axios.get('/newListings/skeleton', {withCredentials: true}).then((response) => {
+            const skeletonListing = createListing(response.data.listing);
+
+            setOwnListings((prevOwnListings) => [...prevOwnListings, skeletonListing]);
+            
+            setIsEditing(true);
+            setIsCreating(true);
+            setIsLoading(false);
+        }).catch((error => {
+            console.error("Error fetching skeleton listing:", error);
+            setIsLoading(false);
+            swal({
+                text: "Unable to create listing",
+                icon: "warning",
+            })
+        }));
     };
 
     return (
@@ -182,6 +222,8 @@ const Account = () => {
                                         updateFavorite={updateFavorite}
                                         updateListing={updateListing}
                                         postListing={postListing}
+                                        postNewListing={postNewListing}
+                                        clearCreatedListing={clearCreatedListing}
                                         openModal={openModal}
                                         globalEditing={isEditing}
                                         setGlobalEditing={setIsEditing}
@@ -194,7 +236,7 @@ const Account = () => {
                     ) : (
                         <p className="mb-4">No listings found.</p>
                     )}
-                    {user && (user.userType === "professor" || user.userType === "faculty" || user.userType === "admin") && (
+                    {user && (user.userType === "professor" || user.userType === "faculty" || user.userType === "admin") && !isCreating && (
                         <div className="mt-8 flex justify-center align-center mb-4">
                             <CreateButton globalEditing={isEditing} handleCreate={onCreate}/>
                         </div>
@@ -210,6 +252,8 @@ const Account = () => {
                                         updateFavorite={updateFavorite}
                                         updateListing={updateListing}
                                         postListing={postListing}
+                                        postNewListing={postNewListing}
+                                        clearCreatedListing={clearCreatedListing}
                                         openModal={openModal}
                                         globalEditing={isEditing}
                                         setGlobalEditing={setIsEditing}

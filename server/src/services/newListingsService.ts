@@ -1,7 +1,7 @@
 import { NewListing } from "../models";
 import { IncorrectPermissionsError, NotFoundError, ObjectIdError } from "../utils/errors";
 import { createListingBackup } from "./listingBackupServices";
-import { addOwnListings, deleteOwnListings, userExists, createUser } from "./userService";
+import { addOwnListings, deleteOwnListings, userExists, createUser, readUser } from "./userService";
 import { fetchYalie } from "./yaliesService";
 import { User } from "../models";
 import mongoose from "mongoose";
@@ -56,6 +56,18 @@ export const readListing = async(id: any) => {
         throw new ObjectIdError("Did not received expected id type ObjectId");
     }
 };
+
+//Generate and return a skeleton listing for the given user
+export const getSkeletonListing = async(userId: string) => {
+    const user = await readUser(userId);
+    return {
+        _id: "create",
+        ownerId: userId,
+        ownerFirstName: user.fname,
+        ownerLastName: user.lname,
+        ownerEmail: user.email
+    }
+}
 
 //Get data for multiple listings by ids, if not found, don't add to array instead of throwing error
 export const readListings = async(ids: any[]) => {

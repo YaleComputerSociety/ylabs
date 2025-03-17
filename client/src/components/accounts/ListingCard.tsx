@@ -8,10 +8,12 @@ import swal from "sweetalert";
 
 interface ListingCardProps {
     listing: NewListing;
-    favListingsIds: number[];
-    updateFavorite: (listing: NewListing, listingId: number, favorite: boolean) => void;
+    favListingsIds: string[];
+    updateFavorite: (listing: NewListing, listingId: string, favorite: boolean) => void;
     updateListing: (newListing: NewListing) => void;
     postListing: (newListing: NewListing) => void;
+    postNewListing: (newListing: NewListing) => void;
+    clearCreatedListing: () => void;
     openModal: (listing: NewListing) => void;
     globalEditing: boolean;
     setGlobalEditing: (editing: boolean) => void;
@@ -19,16 +21,15 @@ interface ListingCardProps {
     reloadListings: () => void;
 }
 
-const ListingCard = ({ listing, favListingsIds, updateFavorite, updateListing, postListing, openModal, globalEditing, setGlobalEditing, editable, reloadListings }: ListingCardProps) => {
+const ListingCard = ({ listing, favListingsIds, updateFavorite, updateListing, postListing, postNewListing, clearCreatedListing, openModal, globalEditing, setGlobalEditing, editable, reloadListings }: ListingCardProps) => {
     const [visibleDepartments, setVisibleDepartments] = useState<string[]>([]);
     const [moreCount, setMoreCount] = useState(0);
     const [showTooltip, setShowTooltip] = useState(false);
     const [isFavorite, setIsFavorite] = useState(favListingsIds.includes(listing.id));
     const [archived, setArchived] = useState(listing.archived);
     const departmentsContainerRef = useRef<HTMLDivElement>(null);
-
-    //Temp
-    const [editing, setEditing] = useState(false);
+    const isCreated = listing.id === "create";
+    const [editing, setEditing] = useState(isCreated);
 
     const departmentColors = [
         "bg-blue-200",
@@ -298,27 +299,29 @@ const ListingCard = ({ listing, favListingsIds, updateFavorite, updateListing, p
                                     </button>
                                 </a>
                             )}
-                            <a onClick={toggleFavorite} className="inline-block">
-                                <button 
-                                    className="p-1 hover:bg-gray-200 rounded-full"
-                                    aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"}
-                                >
-                                    <svg 
-                                        xmlns="http://www.w3.org/2000/svg" 
-                                        width="20" 
-                                        height="20" 
-                                        viewBox="0 0 24 24" 
-                                        className={`transition-colors ${archived ? "opacity-50" : ""}`}
-                                        fill={isFavorite ? "#FFDA7B" : "none"} 
-                                        stroke={isFavorite ? "#F0C04A" : "currentColor"} 
-                                        strokeWidth="1.5" 
-                                        strokeLinecap="round" 
-                                        strokeLinejoin="round"
+                            {!isCreated && (
+                                <a onClick={toggleFavorite} className="inline-block">
+                                    <button 
+                                        className="p-1 hover:bg-gray-200 rounded-full"
+                                        aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"}
                                     >
-                                        <path d="M12 17.75l-6.172 3.245l1.179 -6.873l-5 -4.867l6.9 -1l3.086 -6.253l3.086 6.253l6.9 1l-5 4.867l1.179 6.873z" />
-                                    </svg>
-                                </button>
-                            </a>
+                                        <svg 
+                                            xmlns="http://www.w3.org/2000/svg" 
+                                            width="20" 
+                                            height="20" 
+                                            viewBox="0 0 24 24" 
+                                            className={`transition-colors ${archived ? "opacity-50" : ""}`}
+                                            fill={isFavorite ? "#FFDA7B" : "none"} 
+                                            stroke={isFavorite ? "#F0C04A" : "currentColor"} 
+                                            strokeWidth="1.5" 
+                                            strokeLinecap="round" 
+                                            strokeLinejoin="round"
+                                        >
+                                            <path d="M12 17.75l-6.172 3.245l1.179 -6.873l-5 -4.867l6.9 -1l3.086 -6.253l3.086 6.253l6.9 1l-5 4.867l1.179 6.873z" />
+                                        </svg>
+                                    </button>
+                                </a>
+                            )}
                         </div>
                         <div className="flex-grow" />
                         <p className={`text-sm text-gray-700 ${archived ? "opacity-50" : ""}`} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>
@@ -337,28 +340,42 @@ const ListingCard = ({ listing, favListingsIds, updateFavorite, updateListing, p
             >
                 {editable && editing && (
                     <ListingForm 
-                    listing={listing} 
-                    onLoad={(updatedListing, success) => {
-                        if(!success) {
+                        listing={listing}
+                        isCreated={isCreated} 
+                        onLoad={(updatedListing, success) => {
+                            if(!success) {
+                                setEditing(false);
+                                swal({
+                                    text: "Unable to fetch most recent listing",
+                                    icon: "warning",
+                                })
+                                reloadListings();
+                                return;
+                            }
+                            updateListing(updatedListing);
+                        }}
+                        onCancel={() => {
+                            if(isCreated) {
+
+                                setEditing(false);
+                                clearCreatedListing();
+                            } else {
+                                setEditing(false)
+                                setGlobalEditing(false);
+                            }
+                        }}
+                        onSave={(updatedListing) => {
+                            postListing(updatedListing); // Call the postListing prop
                             setEditing(false);
-                            swal({
-                                text: "Unable to fetch most recent listing",
-                                icon: "warning",
-                            })
-                            reloadListings();
-                            return;
+                            setGlobalEditing(false);
+                        }} 
+                        onCreate={
+                            (newListing) => {
+                                postNewListing(newListing);
+                                setEditing(false);
+                                setGlobalEditing(false);
+                            }
                         }
-                        updateListing(updatedListing);
-                    }}
-                    onCancel={() => {
-                        setEditing(false)
-                        setGlobalEditing(false);
-                    }}
-                    onSave={(updatedListing) => {
-                        postListing(updatedListing); // Call the postListing prop
-                        setEditing(false);
-                        setGlobalEditing(false);
-                    }} 
                     />
                 )}
             </div>

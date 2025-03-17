@@ -37,7 +37,7 @@ const HiringStatus = ({
                     prev < hiringOptions.length - 1 ? prev + 1 : prev
                 );
                 break;
-            case 'ArowUp':
+            case 'ArrowUp':
                 e.preventDefault();
                 setFocusedHiringIndex(prev =>
                     prev > 0 ? prev - 1 : 0
@@ -109,36 +109,36 @@ const HiringStatus = ({
                         </svg>
                     </div>
                 </div>
-            </div>
 
-            {/* Dropdown */}
-            {isHiringDropdownOpen && (
-                <div
-                    className="absolute w-full bg-white rounded-lg z-10 shadow-lg border overflow-hidden mt-1 max-h-[350px] border-gray-300"
-                    tabIndex={-1}
-                >
-                    <ul className="max-h-[350px] overflow-y-auto" tabIndex={-1}>
-                        {hiringOptions.map((option, index) => (
-                            <li
-                                key={index}
-                                onClick={() => handleHiringSelect(option.value)}
-                                className={`p-2 cursor-pointer flex items-center justify-between ${
-                                    focusedHiringIndex === index ? 'bg-blue-100' : 'hover:bg-gray-100'
-                                }`}
-                                tabIndex={-1}
-                                onMouseDown={(e) => e.preventDefault()}
-                            >
-                                <span>{option.label}</span>
-                                {hiringStatus === option.value && (
-                                    <svg className="h-4 w-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
-                                    </svg>
-                                )}
-                            </li>
-                        ))}
-                    </ul>
-                </div>
-            )}
+                {/* Dropdown - Moved inside the relative container */}
+                {isHiringDropdownOpen && (
+                    <div
+                        className="absolute left-0 right-0 bg-white rounded-lg z-10 shadow-lg border overflow-hidden mt-1 max-h-[350px] border-gray-300"
+                        tabIndex={-1}
+                    >
+                        <ul className="max-h-[350px] overflow-y-auto" tabIndex={-1}>
+                            {hiringOptions.map((option, index) => (
+                                <li
+                                    key={index}
+                                    onClick={() => handleHiringSelect(option.value)}
+                                    className={`p-2 cursor-pointer flex items-center justify-between ${
+                                        focusedHiringIndex === index ? 'bg-blue-100' : 'hover:bg-gray-100'
+                                    }`}
+                                    tabIndex={-1}
+                                    onMouseDown={(e) => e.preventDefault()}
+                                >
+                                    <span>{option.label}</span>
+                                    {hiringStatus === option.value && (
+                                        <svg className="h-4 w-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
+                                        </svg>
+                                    )}
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                )}
+            </div>
         </div>
     );
 };
