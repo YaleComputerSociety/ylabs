@@ -66,9 +66,10 @@ router.get("/", async (request: Request, response: Response) => {
         response.status(500).json({ error: error.message });
     }
 });
+*/
 
 //Read specific listing by ObjectId
-router.get('/:id', async (request: Request, response: Response) => {
+router.get('/:id', isAuthenticated, async (request: Request, response: Response) => {
     try {
         const listing = await readListing(request.params.id);
         response.status(200).json({ listing });
@@ -81,7 +82,6 @@ router.get('/:id', async (request: Request, response: Response) => {
         }
     }
 });
-*/
 
 //Updates for current user
 
