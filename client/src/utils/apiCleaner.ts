@@ -25,6 +25,7 @@ export const createListing = (listing: any) => {
         hiringStatus: listing.hiringStatus || 0,
         archived: listing.archived || false,
         updatedAt: listing.updatedAt || currentDate.toISOString(),
-        createdAt: listing.createdAt || currentDate.toISOString()
+        createdAt: listing.createdAt || currentDate.toISOString(),
+        confirmed: listing.confirmed || true,
     }
 }

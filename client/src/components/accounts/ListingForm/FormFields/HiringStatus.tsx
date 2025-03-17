@@ -77,7 +77,7 @@ const HiringStatus = ({
                         readOnly
                         value={
                             hiringStatus === -1 ? "Lab not seeking applicants" :
-                            hiringStatus === 0 ? "Lab seeking applicants" :
+                            hiringStatus === 0 ? "Lab open to applicants" :
                             "Lab seeking applicants"
                         }
                         onClick={() => {

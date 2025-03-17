@@ -21,6 +21,7 @@ export type NewListing = {
   archived: boolean;
   updatedAt: string;
   createdAt: string;
+  confirmed: boolean;
 };
 
 export type User = {

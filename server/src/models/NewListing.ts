@@ -71,6 +71,10 @@ const newListingSchema = new mongoose.Schema(
     archived: {
         type: Boolean,
         default: false,
+    },
+    confirmed: {
+        type: Boolean,
+        default: true,
     }
   },
   {

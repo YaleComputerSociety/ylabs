@@ -1,10 +1,42 @@
 import mongoose from 'mongoose';
 import { readListings } from '../services/newListingsService';
-import { createUser, readAllUsers, readUser, updateUser, deleteUser, addDepartments, deleteDepartments, clearDepartments, addOwnListings, deleteOwnListings, clearOwnListings, addFavListings, deleteFavListings, clearFavListings } from '../services/userService';
+import { createUser, readAllUsers, readUser, updateUser, deleteUser, addDepartments, deleteDepartments, clearDepartments, addOwnListings, deleteOwnListings, clearOwnListings, addFavListings, deleteFavListings, clearFavListings, confirmUser, unconfirmUser } from '../services/userService';
 import { NotFoundError } from "../utils/errors";
 import { Request, Response, Router } from "express";
 
 const router = Router();
+
+//User confirmation routes
+
+//Confirm user and update listings
+router.put('/:id/confirm', async (request: Request, response: Response) => {
+    try {
+        const user = await confirmUser(request.params.id);
+        response.status(200).json({ user });
+    } catch (error) {
+        console.log(error.message);
+        if (error instanceof NotFoundError) {
+            response.status(error.status).json({ error: error.message });
+        } else {
+            response.status(500).json({ error: error.message });
+        }
+    }
+});
+
+//Unconfirm user and update listings
+router.put('/:id/unconfirm', async (request: Request, response: Response) => {
+    try {
+        const user = await unconfirmUser(request.params.id);
+        response.status(200).json({ user });
+    } catch (error) {
+        console.log(error.message);
+        if (error instanceof NotFoundError) {
+            response.status(error.status).json({ error: error.message });
+        } else {
+            response.status(500).json({ error: error.message });
+        }
+    }
+});
 
 //Departments level routes
 
