@@ -3,9 +3,11 @@ import { readListings } from '../services/newListingsService';
 import { createUser, readAllUsers, readUser, updateUser, deleteUser, addDepartments, deleteDepartments, clearDepartments, addOwnListings, deleteOwnListings, clearOwnListings, addFavListings, deleteFavListings, clearFavListings, confirmUser, unconfirmUser } from '../services/userService';
 import { NotFoundError } from "../utils/errors";
 import { Request, Response, Router } from "express";
+import { isAuthenticated } from '../utils/permissions';
 
 const router = Router();
 
+/*
 //User confirmation routes
 
 //Confirm user and update listings
@@ -130,12 +132,12 @@ router.delete('/:id/ownListings/all', async (request: Request, response: Respons
             response.status(500).json({ error: error.message });
         }
     }
-});
+});*/
 
 //Fav listings level routes
 
 //Get favListings id's for current user
-router.get('/favListingsIds', async (request: Request, response: Response) => {
+router.get('/favListingsIds', isAuthenticated, async (request: Request, response: Response) => {
     try {
         const currentUser = request.user as { netId? : string, userType: string, userConfirmed: boolean};
         if (!currentUser) {
@@ -153,6 +155,7 @@ router.get('/favListingsIds', async (request: Request, response: Response) => {
     }
 });
 
+/*
 //Add favListings by ObjectId or NetId
 router.put('/:id/favListings', async (request: Request, response: Response) => {
     try {
@@ -166,10 +169,10 @@ router.put('/:id/favListings', async (request: Request, response: Response) => {
             response.status(500).json({ error: error.message });
         }
     }
-});
+});*/
 
 //Add favListings for the user currently logged in
-router.put('/favListings', async (request: Request, response: Response) => {
+router.put('/favListings', isAuthenticated, async (request: Request, response: Response) => {
     try {
         const currentUser = request.user as { netId? : string, userType: string, userConfirmed: boolean};
         if (!currentUser) {
@@ -190,6 +193,7 @@ router.put('/favListings', async (request: Request, response: Response) => {
     }
 });
 
+/*
 //Remove favListings by ObjectId or NetId
 router.delete('/:id/favListings', async (request: Request, response: Response) => {
     try {
@@ -203,10 +207,10 @@ router.delete('/:id/favListings', async (request: Request, response: Response) =
             response.status(500).json({ error: error.message });
         }
     }
-});
+});*/
 
 //Remove favListings for the user currently logged in
-router.delete('/favListings', async (request: Request, response: Response) => {
+router.delete('/favListings', isAuthenticated, async (request: Request, response: Response) => {
     try {
         const currentUser = request.user as { netId? : string, userType: string, userConfirmed: boolean};
         if (!currentUser) {
@@ -228,6 +232,7 @@ router.delete('/favListings', async (request: Request, response: Response) => {
     }
 });
 
+/*
 //Clear favListings by ObjectId or NetId
 router.delete('/:id/favListings/all', async (request: Request, response: Response) => {
     try {
@@ -241,10 +246,11 @@ router.delete('/:id/favListings/all', async (request: Request, response: Respons
             response.status(500).json({ error: error.message });
         }
     }
-});
+});*/
 
 //User level routes
 
+/*
 //Create new user
 router.post("/", async (request: Request, response: Response) => {
     try {
@@ -282,10 +288,10 @@ router.get('/:id/listings', async (request: Request, response: Response) => {
             response.status(500).json({ error: error.message });
         }
     }
-});
+});*/
 
 //Return all listings data for the user currently logged in (for reload on accounts page, so also returns relevant user data)
-router.get('/listings', async (request: Request, response: Response) => {
+router.get('/listings', isAuthenticated, async (request: Request, response: Response) => {
     try {
         const currentUser = request.user as { netId? : string, userType: string, userConfirmed: boolean};
         if (!currentUser) {
@@ -319,6 +325,7 @@ router.get('/listings', async (request: Request, response: Response) => {
     }
 });
 
+/*
 //Read specific user by ObjectId or NetId
 router.get('/:id', async (request: Request, response: Response) => {
     try {
@@ -347,10 +354,10 @@ router.put('/:id', async (request: Request, response: Response) => {
             response.status(500).json({ error: error.message });
         }
     }
-});
+});*/
 
 //Update data for user currently logged in
-router.put('/', async (request: Request, response: Response) => {
+router.put('/', isAuthenticated, async (request: Request, response: Response) => {
     try {
         const currentUser = request.user as { netId? : string, userType: string, userConfirmed: boolean};
         if (!currentUser) {
@@ -377,6 +384,7 @@ router.put('/', async (request: Request, response: Response) => {
     }
 });
 
+/*
 //Delete user by ObjectId or NetId
 router.delete('/:id', async (request: Request, response: Response) => {
     try {
@@ -391,5 +399,6 @@ router.delete('/:id', async (request: Request, response: Response) => {
         }
     }
 });
+*/
 
 export default router;
