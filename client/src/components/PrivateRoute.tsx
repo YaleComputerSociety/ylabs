@@ -2,10 +2,20 @@ import { Navigate } from 'react-router-dom';
 import { useContext, FunctionComponent } from 'react';
 import UserContext from '../contexts/UserContext';
 
-const PrivateRoute = ({ Component }: { Component: FunctionComponent}) => {
+interface PrivateRouteProps {
+  Component: FunctionComponent;
+  unknownBlocked?: boolean;
+  knownBlocked?: boolean;
+}
+
+const PrivateRoute = ({ Component, unknownBlocked, knownBlocked } : PrivateRouteProps) => {
  
-  const { isAuthenticated } = useContext(UserContext);
- 
-  return isAuthenticated ? <Component /> : <Navigate to='/login' />;
+  const { user } = useContext(UserContext);
+
+  return user ? 
+    unknownBlocked && user.userType === "unknown" ? 
+      <Navigate to='/unknown' /> : knownBlocked && user.userType !== "unknown" ?
+        <Navigate to='/' /> : <Component />
+      : <Navigate to='/login' />;
 };
 export default PrivateRoute;
