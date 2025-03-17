@@ -242,7 +242,7 @@ const ListingModal = ({ isOpen, onClose, listing, favListingsIds, updateFavorite
                 {listing.archived && (
                     <div className="mt-6 p-3 bg-red-100 text-red-700 rounded-lg">
                     <div className="font-semibold">This listing is archived</div>
-                    <div className="text-sm">Archived listings are not visible to regular users.</div>
+                    <div className="text-sm">Archived listings are not visible in search results or as favorites.</div>
                     </div>
                 )}
                 </div>
