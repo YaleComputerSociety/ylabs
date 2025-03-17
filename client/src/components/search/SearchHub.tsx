@@ -107,7 +107,7 @@ const SearchHub = ({ allDepartments, setListings, setIsLoading }: SearchHubProps
 
         setIsLoading(true);
 
-        axios.get(url).then((response) => {
+        axios.get(url, {withCredentials: true}).then((response) => {
             const responseListings : Listing[] = response.data.map(function(elem: any){
                 return {
                     id: elem._id,
