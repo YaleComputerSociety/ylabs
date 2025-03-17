@@ -8,11 +8,7 @@ const router = Router();
 
 router.use("/newListings", NewListingsRoutes);
 router.use("/listings", ListingsRoutes);
-
-//User routes hidden for security reasons
-
-/*
 router.use("/users", UsersRoutes);
-router.use("/userBackups", UserBackupsRoutes);*/
+router.use("/userBackups", UserBackupsRoutes);
 
 export default router;
