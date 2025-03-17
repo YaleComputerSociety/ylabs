@@ -6,11 +6,12 @@ interface ListingModalProps {
   isOpen: boolean;
   onClose: () => void;
   listing: NewListing;
-  favListingsIds: number[];
-  updateFavorite: (listing: NewListing, listingId: number, favorite: boolean) => void;
+  favListingsIds: string[];
+  updateFavorite: (listing: NewListing, listingId: string, favorite: boolean) => void;
 }
 
 const ListingModal = ({ isOpen, onClose, listing, favListingsIds, updateFavorite }: ListingModalProps) => {
+    const [isCreated, setIsCreating] = useState(listing.id === "create");
     const [isFavorite, setIsFavorite] = useState(favListingsIds.includes(listing.id));
 
     const departmentColors = [
@@ -81,25 +82,27 @@ const ListingModal = ({ isOpen, onClose, listing, favListingsIds, updateFavorite
             {/* Utility buttons */}
             <div className="absolute top-4 right-4">
                 {/* Favorite button */}
-                <a onClick={toggleFavorite} className="inline-block">
-                    <button 
-                        className="p-1 hover:bg-gray-100 rounded-full mr-2"
-                        aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"}
-                    >
-                        <svg 
-                            xmlns="http://www.w3.org/2000/svg" 
-                            viewBox="0 0 24 24" 
-                            className="transition-colors h-6 w-6"
-                            fill={isFavorite ? "#FFDA7B" : "none"} 
-                            stroke={isFavorite ? "#F0C04A" : "currentColor"} 
-                            strokeWidth="1.5" 
-                            strokeLinecap="round" 
-                            strokeLinejoin="round"
+                {!isCreated && (
+                    <a onClick={toggleFavorite} className="inline-block">
+                        <button 
+                            className="p-1 hover:bg-gray-100 rounded-full mr-2"
+                            aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"}
                         >
-                            <path d="M12 17.75l-6.172 3.245l1.179 -6.873l-5 -4.867l6.9 -1l3.086 -6.253l3.086 6.253l6.9 1l-5 4.867l1.179 6.873z" />
-                        </svg>
-                    </button>
-                </a>
+                            <svg 
+                                xmlns="http://www.w3.org/2000/svg" 
+                                viewBox="0 0 24 24" 
+                                className="transition-colors h-6 w-6"
+                                fill={isFavorite ? "#FFDA7B" : "none"} 
+                                stroke={isFavorite ? "#F0C04A" : "currentColor"} 
+                                strokeWidth="1.5" 
+                                strokeLinecap="round" 
+                                strokeLinejoin="round"
+                            >
+                                <path d="M12 17.75l-6.172 3.245l1.179 -6.873l-5 -4.867l6.9 -1l3.086 -6.253l3.086 6.253l6.9 1l-5 4.867l1.179 6.873z" />
+                            </svg>
+                        </button>
+                    </a>
+                )}
                 {/* Close button */}
                 <button 
                     onClick={onClose} 

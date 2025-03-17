@@ -1,7 +1,7 @@
 //Listings
 
 export type NewListing = {
-  id: number;
+  id: string;
   ownerId: string;
   ownerFirstName: string;
   ownerLastName: string;
