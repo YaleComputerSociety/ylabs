@@ -4,7 +4,7 @@
 import type { LabScholarlyLink } from './labDetail';
 
 export type NewListing = {
-  id: number;
+  id: string;
   ownerId: string;
   ownerFirstName: string;
   ownerLastName: string;
