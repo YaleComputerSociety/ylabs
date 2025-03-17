@@ -19,7 +19,7 @@ const router = Router();
         console.log(error.message);
         response.status(400).json({ error: error.message, success: false });
     }
-});*/
+});
 
 // Route for getting listing by id: for testing
 router.get('/byId/:id', async (request: Request, response: Response) => {
