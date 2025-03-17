@@ -102,8 +102,8 @@ const Account = () => {
         const prevFavListingsIds = favListingsIds;
         
         if(favorite) {
-            setFavListings([...prevFavListings, listing]);
-            setFavListingsIds([...prevFavListingsIds, listingId]);
+            setFavListings([listing, ...prevFavListings]);
+            setFavListingsIds([listingId, ...prevFavListingsIds]);
     
             axios.put('/users/favListings', {withCredentials: true, data: {favListings: [listing.id]}}).catch((error) => {
                 setFavListings(prevFavListings);
