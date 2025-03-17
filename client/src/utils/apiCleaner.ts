@@ -26,6 +26,6 @@ export const createListing = (listing: any) => {
         archived: listing.archived || false,
         updatedAt: listing.updatedAt || currentDate.toISOString(),
         createdAt: listing.createdAt || currentDate.toISOString(),
-        confirmed: listing.confirmed || true,
+        confirmed: listing.confirmed === undefined ? true : listing.confirmed,
     }
 }
