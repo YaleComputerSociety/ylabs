@@ -161,9 +161,11 @@ const Account = () => {
     }
 
     const postNewListing = (listing: NewListing) => {
+        setIsLoading(true);
         axios.post('/newListings', {withCredentials: true, data: listing}).then((response) => {
             reloadListings();
             setIsEditing(false);
+            setIsLoading(false);
             setIsCreating(false);
         }).catch((error) => {
             console.error('Error posting new listing:', error);
@@ -174,15 +176,33 @@ const Account = () => {
 
             reloadListings();
             setIsEditing(false);
+            setIsLoading(false);
             setIsCreating(false);
         });
-    }
+    };
 
     const clearCreatedListing = () => {
         setOwnListings((prevOwnListings) => prevOwnListings.filter((listing) => listing.id !== "create"));
         setIsEditing(false);
         setIsCreating(false);
-    }
+    };
+
+    const deleteListing = (listing: NewListing) => {
+        setIsLoading(true);
+        axios.delete(`/newListings/${listing.id}`, {withCredentials: true}).then((response) => {
+            reloadListings();
+            setIsLoading(false);
+        }).catch((error) => {
+            console.error('Error deleting listing:', error);
+            swal({
+                text: "Unable to delete listing",
+                icon: "warning",
+            })
+
+            reloadListings();
+            setIsLoading(false);
+        });
+    };
 
     const onCreate = () => {
         axios.get('/newListings/skeleton', {withCredentials: true}).then((response) => {
@@ -192,10 +212,8 @@ const Account = () => {
             
             setIsEditing(true);
             setIsCreating(true);
-            setIsLoading(false);
         }).catch((error => {
             console.error("Error fetching skeleton listing:", error);
-            setIsLoading(false);
             swal({
                 text: "Unable to create listing",
                 icon: "warning",
@@ -224,6 +242,7 @@ const Account = () => {
                                         postListing={postListing}
                                         postNewListing={postNewListing}
                                         clearCreatedListing={clearCreatedListing}
+                                        deleteListing={deleteListing}
                                         openModal={openModal}
                                         globalEditing={isEditing}
                                         setGlobalEditing={setIsEditing}
@@ -254,6 +273,7 @@ const Account = () => {
                                         postListing={postListing}
                                         postNewListing={postNewListing}
                                         clearCreatedListing={clearCreatedListing}
+                                        deleteListing={deleteListing}
                                         openModal={openModal}
                                         globalEditing={isEditing}
                                         setGlobalEditing={setIsEditing}

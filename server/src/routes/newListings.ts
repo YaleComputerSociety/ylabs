@@ -9,10 +9,14 @@ const router = Router();
 //Add listing
 router.post("/", async (request: Request, response: Response) => {
   try {
-    const currentUser = request.user as { netId? : string, professor? : boolean};
+    const currentUser = request.user as { netId? : string, userType: string, userConfirmed: boolean};
     if (!currentUser) {
         throw new Error('User not logged in');
     }
+    if (!(currentUser.userType === 'admin' || currentUser.userType === 'professor' || currentUser.userType === 'faculty')) {
+        throw new Error('User does not have permission to create listings');
+    }
+
     const user = await readUser(currentUser.netId);
     const listing = await createListing(request.body.data, user);
     response.status(201).json({ listing });
@@ -37,7 +41,7 @@ router.post("/:id", async (request: Request, response: Response) => {
 //Get a skeleton listing for the current user
 router.get('/skeleton', async (request: Request, response: Response) => {
     try {
-        const currentUser = request.user as { netId? : string, professor? : boolean};
+        const currentUser = request.user as { netId? : string, userType: string, userConfirmed: boolean};
         if (!currentUser) {
             throw new Error('User not logged in');
         }
@@ -80,7 +84,7 @@ router.get('/:id', async (request: Request, response: Response) => {
 //Update listing by ObjectId (current user)
 router.put('/:id', async (request: Request, response: Response) => {
     try {
-        const currentUser = request.user as { netId? : string, professor? : boolean};
+        const currentUser = request.user as { netId? : string, userType: string, userConfirmed: boolean};
         if (!currentUser) {
             throw new Error('User not logged in');
         }
@@ -101,7 +105,7 @@ router.put('/:id', async (request: Request, response: Response) => {
 //Archive listing by ObjectId (current user)
 router.put('/:id/archive', async (request: Request, response: Response) => {
     try {
-        const currentUser = request.user as { netId? : string, professor? : boolean};
+        const currentUser = request.user as { netId? : string, userType: string, userConfirmed: boolean};
         if (!currentUser) {
             throw new Error('User not logged in');
         }
@@ -122,12 +126,12 @@ router.put('/:id/archive', async (request: Request, response: Response) => {
 //Unarchive listing by ObjectId (current user)
 router.put('/:id/unarchive', async (request: Request, response: Response) => {
   try {
-    const currentUser = request.user as { netId? : string, professor? : boolean};
-        if (!currentUser) {
-            throw new Error('User not logged in');
-        }
-      const listing = await unarchiveListing(request.params.id, currentUser.netId);
-      response.status(200).json({ listing });
+    const currentUser = request.user as { netId? : string, userType: string, userConfirmed: boolean};
+    if (!currentUser) {
+        throw new Error('User not logged in');
+    }
+    const listing = await unarchiveListing(request.params.id, currentUser.netId);
+    response.status(200).json({ listing });
   } catch (error) {
     console.log(error.message);
     if (error instanceof NotFoundError || error instanceof ObjectIdError) {
@@ -193,11 +197,40 @@ router.put('/asUser/:netid/:id/unarchive', async (request: Request, response: Re
   }
 });
 
-//Delete listing by ObjectId
+//Delete listing by ObjectId as another user
+router.delete('/asUser/:netid/:id', async (request: Request, response: Response) => {
+    try {
+        const currentListing = await readListing(request.params.id);
+        if (request.params.netid !== currentListing.ownerId) {
+            throw new IncorrectPermissionsError(`User with id ${request.params.netid} does not have permission to delete listing with id ${request.params.id}`);
+        }
+
+        const deletedListing = await deleteListing(request.params.id);
+        response.status(200).json({ deletedListing });
+    } catch (error) {
+        console.log(error.message);
+        if (error instanceof NotFoundError || error instanceof ObjectIdError) {
+            response.status(error.status).json({ error: error.message });
+        } else {
+            response.status(500).json({ error: error.message });
+        }
+    }
+});
+
+//Delete listing by ObjectId for current user
 router.delete('/:id', async (request: Request, response: Response) => {
     try {
-        const listing = await deleteListing(request.params.id);
-        response.status(200).json({ listing });
+        const currentUser = request.user as { netId? : string, userType: string, userConfirmed: boolean};
+        if (!currentUser) {
+            throw new Error('User not logged in');
+        }
+        const currentListing = await readListing(request.params.id);
+        if (currentUser.netId !== currentListing.ownerId) {
+            throw new IncorrectPermissionsError(`User with id ${currentUser.netId} does not have permission to delete listing with id ${request.params.id}`);
+        }
+
+        const deletedListing = await deleteListing(request.params.id);
+        response.status(200).json({ deletedListing });
     } catch (error) {
         console.log(error.message);
         if (error instanceof NotFoundError || error instanceof ObjectIdError) {
