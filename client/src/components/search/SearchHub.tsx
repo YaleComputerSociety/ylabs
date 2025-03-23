@@ -1,15 +1,20 @@
 import React, { useState, useRef, KeyboardEvent, useEffect } from 'react';
-import {Listing} from '../../types/types';
+import {NewListing} from '../../types/types';
 import axios from 'axios';
 import swal from 'sweetalert';
+import { createListing } from '../../utils/apiCleaner';
 
 interface SearchHubProps {
     allDepartments: string[];
-    setListings: React.Dispatch<React.SetStateAction<Listing[]>>
+    setListings: React.Dispatch<React.SetStateAction<NewListing[]>>
     setIsLoading: React.Dispatch<React.SetStateAction<Boolean>>
+    sortBy: string;
+    sortOrder: number;
+    page: number;
+    pageSize: number;
 }
 
-const SearchHub = ({ allDepartments, setListings, setIsLoading }: SearchHubProps) => {
+const SearchHub = ({ allDepartments, setListings, setIsLoading, sortBy, sortOrder, page, pageSize }: SearchHubProps) => {
     const [selectedDepartments, setSelectedDepartments] = useState<string[]>([]);
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState("");
@@ -36,8 +41,18 @@ const SearchHub = ({ allDepartments, setListings, setIsLoading }: SearchHubProps
     }, []);
 
     useEffect(() => {
+        const debounceTimeout = setTimeout(() => {
+            handleSearch();
+        }, 500);
+
+        return () => {
+            clearTimeout(debounceTimeout);
+        };
+    }, [queryString])
+
+    useEffect(() => {
         handleSearch();
-    }, [selectedDepartments, queryString])
+    }, [selectedDepartments])
 
     const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
         if (e.key === "Enter" || e.key === "Escape") {
@@ -99,26 +114,23 @@ const SearchHub = ({ allDepartments, setListings, setIsLoading }: SearchHubProps
     const handleSearch = () => {
         let url;
 
-        const formattedQuery = queryString.trim().split(" ").join(",");
+        const formattedQuery = queryString.trim();
+        const formattedDepartments = selectedDepartments.join(',');
         const backendBaseURL = window.location.host.includes("yalelabs.io")
             ? "https://yalelabs.io"
             : process.env.REACT_APP_SERVER;
-        url = backendBaseURL + '/listings?dept=' + selectedDepartments + '&keywords=' + formattedQuery;
+
+        url = backendBaseURL + `/newListings/search?query=${formattedQuery}&sortBy=${sortBy}&sortOrder=${sortOrder}&page=${page}&pageSize=${pageSize}`;
+
+        if (formattedDepartments) {
+            url += `&departments=${formattedDepartments}`;
+        }
 
         setIsLoading(true);
 
         axios.get(url).then((response) => {
-            const responseListings : Listing[] = response.data.map(function(elem: any){
-                return {
-                    id: elem._id,
-                    departments: elem.departments.join('; '),
-                    email: elem.email,
-                    website: elem.website,
-                    description: elem.description,
-                    keywords: elem.keywords,
-                    lastUpdated: elem.last_updated,
-                    name: elem.fname + ' ' + elem.lname
-                }
+            const responseListings : NewListing[] = response.data.results.map(function(elem: any){
+                return createListing(elem);
             })
             setListings(responseListings);
             setIsLoading(false); 

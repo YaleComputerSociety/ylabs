@@ -1,37 +1,38 @@
 import * as React from 'react';
-import ListingsModal from './ListingsModal';
-import { Listing } from '../types/types';
+import ListingsModal from './accounts/ListingModal';
+import ListingCard from './accounts/ListingCard';
+import { NewListing } from '../types/types';
 
 type Order = 'asc' | 'desc';
 
 type ListingsCardListProps = {
-  listings: Listing[];
-  sortableKeys: (keyof Listing)[];
+  listings: NewListing[];
+  sortableKeys: (keyof NewListing)[];
 };
 
 export default function ListingsCardList({ listings, sortableKeys }: ListingsCardListProps) {
   const [order, setOrder] = React.useState<Order>('asc');
   const [orderIndex, setOrderIndex] = React.useState(0);
-  const [sortedRows, setSortedRows] = React.useState<Listing[]>([]);
+  const [sortedRows, setSortedRows] = React.useState<NewListing[]>([]);
   const [modalOpen, setModalOpen] = React.useState(false);
-  const [selectedListingId, setSelectedListingId] = React.useState<number | null>(null);
+  const [selectedListingId, setSelectedListingId] = React.useState<string | null>(null);
 
   const buttonTranslations: Record<string, string[]> = {
     'name': ['Name', 'A-Z', 'Z-A'],
     'lastUpdated': ['Date', 'Newest', 'Oldest']
   }
 
-  React.useEffect(() => {
+  /*React.useEffect(() => {
     const property = sortableKeys[orderIndex];
 
     // Sort the listings based on the new order
     let sortedListings;
 
-    if(property == 'lastUpdated') {
+    if(property == 'updatedAt') {
       sortedListings = [...listings].sort((a, b) =>
         order === 'asc'
-          ? new Date(b.lastUpdated).getTime() - new Date(a.lastUpdated).getTime()
-          : new Date(a.lastUpdated).getTime() - new Date(b.lastUpdated).getTime()
+          ? new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+          : new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime()
       );
     } else {
       sortedListings = [...listings].sort((a, b) =>
@@ -43,7 +44,7 @@ export default function ListingsCardList({ listings, sortableKeys }: ListingsCar
 
     // Update states
     setSortedRows(sortedListings);
-  }, [order, orderIndex, listings]);
+  }, [order, orderIndex, listings]);*/
 
   const handleToggleSortKey = () => {
     setOrderIndex((prevIndex) => (prevIndex + 1) % sortableKeys.length);
@@ -53,8 +54,8 @@ export default function ListingsCardList({ listings, sortableKeys }: ListingsCar
     setOrder((prevOrder) => prevOrder === 'asc' ? 'desc' : 'asc');
   }
 
-  const openModalForListing = (listingId: number) => {
-    setSelectedListingId(listingId);
+  const openModalForListing = (listing: NewListing) => {
+    setSelectedListingId(listing.id);
     setModalOpen(true);
   };
 
@@ -70,8 +71,10 @@ export default function ListingsCardList({ listings, sortableKeys }: ListingsCar
       {selectedListingId !== null && (
         <ListingsModal
           listing={listings.find((l) => l.id === selectedListingId)!}
-          open={modalOpen}
-          setOpen={setModalOpen}
+          onClose={() => {setModalOpen(false)}}
+          isOpen={modalOpen}
+          favListingsIds={[]}
+          updateFavorite={() => {console.log('Favorite')}}
         />
       )}
 
@@ -93,52 +96,23 @@ export default function ListingsCardList({ listings, sortableKeys }: ListingsCar
 
       {/* List of Cards (Rows) */}
       <div className="w-full" style={{ maxWidth: '80%' }}>
-        {sortedRows.map((listing) => (
-          <div
+        {listings.map((listing) => (
+          <ListingCard
             key={listing.id}
-            onClick={() => openModalForListing(listing.id)}
-            className="bg-gray-100 shadow-md rounded-lg p-4 mb-4 transition-transform hover:-translate-y-1 cursor-pointer"
-          >
-            {/* Header with Name and Departments */}
-            <div className="flex justify-between items-center">
-              <div className="flex items-center">
-                <h2 className="text-lg font-semibold">{listing.name}</h2>
-                <p className="text-gray-700 text-sm ml-4">
-                  {listing.departments.replaceAll('; ', ', ')}
-                </p>
-              </div>
-              <span className="text-sm text-gray-500">
-                {new Date(listing.lastUpdated).toLocaleDateString('en-US', {
-                  month: '2-digit',
-                  day: '2-digit',
-                  year: 'numeric'
-                })}
-              </span>
-            </div>
-            {/* Description and Lab Website on the same line */}
-            <div className="flex items-center justify-between mt-2">
-              <p className="text-gray-800 text-sm">
-                {listing.description.length > 100
-                  ? listing.description.slice(0, 90) + ' (see more...)'
-                  : listing.description}
-              </p>
-              <a
-                href={listing.website}
-                onClick={(e) => e.stopPropagation()}
-                className="ml-4"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                <button className="p-2 bg-gray-200 rounded hover:bg-gray-300">
-                  <img
-                    src="/assets/icons/link-icon.png"
-                    alt="Lab Website"
-                    className="w-6 h-6"
-                  />
-                </button>
-              </a>
-            </div>
-          </div>
+            favListingsIds={[]}
+            listing={listing}
+            updateFavorite={() => {console.log('Favorite')}}
+            updateListing={() => {console.log('Update')}}
+            postListing={() => {console.log('Post')}}
+            postNewListing={() => {console.log('Post New')}}
+            clearCreatedListing={() => {console.log('Clear')}}
+            deleteListing={() => {console.log('Delete')}}
+            openModal={openModalForListing}
+            globalEditing={false}
+            setGlobalEditing={() => {console.log('Set')}}
+            editable={false}
+            reloadListings={() => {console.log('Reload')}}
+          />
         ))}
       </div>
 
