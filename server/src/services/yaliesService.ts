@@ -1,6 +1,5 @@
 import axios from "axios";
 import dotenv from "dotenv";
-import { User } from "../models/User";
 import { createUser, validateUser } from "./userService";
 
 dotenv.config();
@@ -16,15 +15,18 @@ const API_KEY = process.env.YALIES_API_KEY;
 export const fetchYalie = async (netid: any) => {
     try {
       // Check if the user already exists in MongoDB
+      console.log('Yalies: validating user');
       let user = await validateUser(netid);
       if (user) {
         return user;
       }
+      console.log('Yalies: done validating user');
   
       // Fetch user from Yalies API
       let yaliesResponse;
 
       try {
+        console.log('Yalies: making post request')
         yaliesResponse = await axios.post(
             YALIES_API_URL,
             { filters: { netid: [netid] } },
@@ -34,6 +36,7 @@ export const fetchYalie = async (netid: any) => {
         console.error("Error fetching from Yalies API:", error.message);
         return null;
       }
+      console.log('Yalies: done making post request');
       const yaliesData = yaliesResponse.data;
   
       if (!yaliesData || yaliesData.length === 0) {
@@ -70,8 +73,10 @@ export const fetchYalie = async (netid: any) => {
         major: (yalie.major && Array.isArray(yalie.major) ? yalie.major : [yalie.major]) || [], // Ensure it's an array
       };
   
+      console.log('Yalies: saving user to mongoDB');
       // Save user to MongoDB
       user = await createUser(userData);
+      console.log('Yalies: user saved, returning user');
   
       return user;
     } catch (error) {
