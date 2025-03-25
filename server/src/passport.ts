@@ -123,6 +123,16 @@ const casLogin = function (
     console.log("Top of authenticate function")
     if (err) {
       console.log("Error in authenticate function")
+      try {
+        console.error("Authentication error details: ", {
+          message: err.messsage,
+          stack: err.stack,
+          name: err.name,
+          fullError: JSON.stringify(err, Object.getOwnPropertyNames(err))
+        });
+      } catch (e) {
+        console.error("Error serializing error object: ", e);
+      }
       return next(err);
     }
     //Handle prettier and add yalies here
