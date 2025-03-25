@@ -1,50 +1,43 @@
 import * as React from 'react';
-import ListingsModal from './accounts/ListingModal';
-import ListingCard from './accounts/ListingCard';
-import { NewListing } from '../types/types';
+import ListingsModal from '../accounts/ListingModal';
+import ListingCard from './ListingCard';
+import { NewListing } from '../../types/types';
 
 type Order = 'asc' | 'desc';
 
 type ListingsCardListProps = {
   listings: NewListing[];
-  sortableKeys: (keyof NewListing)[];
+  sortableKeys: string[];
+  setSortBy: (sortBy: string) => void;
+  setSortOrder: (sortOrder: number) => void;
 };
 
-export default function ListingsCardList({ listings, sortableKeys }: ListingsCardListProps) {
+//Add favlistingid's
+//Add favorite functionality
+//Make sorting fetch a new search
+//Add back in the bottom sensor
+
+export default function ListingsCardList({ listings, sortableKeys, setSortBy, setSortOrder }: ListingsCardListProps) {
   const [order, setOrder] = React.useState<Order>('asc');
   const [orderIndex, setOrderIndex] = React.useState(0);
-  const [sortedRows, setSortedRows] = React.useState<NewListing[]>([]);
   const [modalOpen, setModalOpen] = React.useState(false);
   const [selectedListingId, setSelectedListingId] = React.useState<string | null>(null);
 
   const buttonTranslations: Record<string, string[]> = {
-    'name': ['Name', 'A-Z', 'Z-A'],
-    'lastUpdated': ['Date', 'Newest', 'Oldest']
+    'default': ['Best Match', '', ''],
+    'updatedAt': ['Last Updated', 'Newest', 'Oldest'],
+    'ownerLastName': ['Last Name', 'A-Z', 'Z-A'],
+    'ownerFirstName': ['First Name', 'A-Z', 'Z-A'],
+    'title': ['Lab Title', 'A-Z', 'Z-A']
   }
 
-  /*React.useEffect(() => {
-    const property = sortableKeys[orderIndex];
+  React.useEffect(() => {
+    setSortOrder(order === 'asc' ? 1 : -1);
+  }, [order])
 
-    // Sort the listings based on the new order
-    let sortedListings;
-
-    if(property == 'updatedAt') {
-      sortedListings = [...listings].sort((a, b) =>
-        order === 'asc'
-          ? new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-          : new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime()
-      );
-    } else {
-      sortedListings = [...listings].sort((a, b) =>
-        order === 'asc'
-          ? a[property] > b[property] ? 1 : -1
-          : a[property] < b[property] ? 1 : -1
-      );
-    }
-
-    // Update states
-    setSortedRows(sortedListings);
-  }, [order, orderIndex, listings]);*/
+  React.useEffect(() => {
+    setSortBy(sortableKeys[orderIndex]);
+  }, [orderIndex])
 
   const handleToggleSortKey = () => {
     setOrderIndex((prevIndex) => (prevIndex + 1) % sortableKeys.length);
@@ -84,14 +77,16 @@ export default function ListingsCardList({ listings, sortableKeys }: ListingsCar
           onClick={handleToggleSortKey}
           className="px-4 py-2 bg-blue-500 text-white rounded"
         >
-          Sorting by: {buttonTranslations[sortableKeys[orderIndex]][0]}
+          Sort: {buttonTranslations[sortableKeys[orderIndex]][0]}
         </button>
-        <button
-          onClick={handleToggleOrder}
-          className="px-4 py-2 bg-blue-500 text-white rounded"
-        >
-          {order === 'asc' ? buttonTranslations[sortableKeys[orderIndex]][1] : buttonTranslations[sortableKeys[orderIndex]][2]}
-        </button>
+        {sortableKeys[orderIndex] !== 'default' && (
+          <button
+            onClick={handleToggleOrder}
+            className="px-4 py-2 bg-blue-500 text-white rounded"
+          >
+            {order === 'asc' ? buttonTranslations[sortableKeys[orderIndex]][1] : buttonTranslations[sortableKeys[orderIndex]][2]}
+          </button>
+        )}
       </div>
 
       {/* List of Cards (Rows) */}
@@ -102,16 +97,7 @@ export default function ListingsCardList({ listings, sortableKeys }: ListingsCar
             favListingsIds={[]}
             listing={listing}
             updateFavorite={() => {console.log('Favorite')}}
-            updateListing={() => {console.log('Update')}}
-            postListing={() => {console.log('Post')}}
-            postNewListing={() => {console.log('Post New')}}
-            clearCreatedListing={() => {console.log('Clear')}}
-            deleteListing={() => {console.log('Delete')}}
             openModal={openModalForListing}
-            globalEditing={false}
-            setGlobalEditing={() => {console.log('Set')}}
-            editable={false}
-            reloadListings={() => {console.log('Reload')}}
           />
         ))}
       </div>
