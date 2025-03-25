@@ -13,15 +13,7 @@ const API_KEY = process.env.YALIES_API_KEY;
   * - If not found, fetch from Yalies API, validate required fields, store it in the database, and return it.
 */
 export const fetchYalie = async (netid: any) => {
-    try {
-      // Check if the user already exists in MongoDB
-      console.log('Yalies: validating user');
-      let user = await validateUser(netid);
-      if (user) {
-        return user;
-      }
-      console.log('Yalies: done validating user');
-  
+    try {  
       // Fetch user from Yalies API
       let yaliesResponse;
 
@@ -31,7 +23,7 @@ export const fetchYalie = async (netid: any) => {
             YALIES_API_URL,
             { filters: { netid: [netid] } },
             { headers: { Authorization: `Bearer ${API_KEY}` } }
-        );
+        );   
       } catch (error) {
         console.error("Error fetching from Yalies API:", error.message);
         return null;
@@ -74,6 +66,15 @@ export const fetchYalie = async (netid: any) => {
       };
   
       console.log('Yalies: saving user to mongoDB');
+
+      // Check if the user already exists in MongoDB
+      console.log('Yalies: validating user');
+      let user = await validateUser(netid);
+      if (user) {
+        return user;
+      }
+      console.log('Yalies: done validating user');
+
       // Save user to MongoDB
       user = await createUser(userData);
       console.log('Yalies: user saved, returning user');
