@@ -52,7 +52,7 @@ const SearchHub = ({ allDepartments, setListings, setIsLoading, sortBy, sortOrde
 
     useEffect(() => {
         handleSearch();
-    }, [selectedDepartments])
+    }, [selectedDepartments, sortBy, sortOrder])
 
     const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
         if (e.key === "Enter" || e.key === "Escape") {
@@ -120,7 +120,11 @@ const SearchHub = ({ allDepartments, setListings, setIsLoading, sortBy, sortOrde
             ? "https://yalelabs.io"
             : process.env.REACT_APP_SERVER;
 
-        url = backendBaseURL + `/newListings/search?query=${formattedQuery}&sortBy=${sortBy}&sortOrder=${sortOrder}&page=${page}&pageSize=${pageSize}`;
+        if (sortBy === 'default') {
+            url = backendBaseURL + `/newListings/search?query=${formattedQuery}&page=${page}&pageSize=${pageSize}`;
+        } else {
+            url = backendBaseURL + `/newListings/search?query=${formattedQuery}&sortBy=${sortBy}&sortOrder=${sortOrder}&page=${page}&pageSize=${pageSize}`;
+        }
 
         if (formattedDepartments) {
             url += `&departments=${formattedDepartments}`;

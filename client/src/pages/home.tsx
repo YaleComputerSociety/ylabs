@@ -5,7 +5,6 @@ import { departmentCategories } from "../utils/departmentNames";
 
 import styled from "styled-components";
 import {NewListing} from '../types/types';
-import PulseLoader from "react-spinners/PulseLoader";
 
 // Remove all archived from search results on backend
 
@@ -26,16 +25,11 @@ const Home = () => {
                 <SearchHub allDepartments={departmentKeys} setListings={setListings} setIsLoading={setIsLoading} sortBy={sortBy} sortOrder={sortOrder} page={1} pageSize={20}></SearchHub>
             </div>
             <div style={{marginTop: '2rem'}}></div>
-            {isLoading ? (
-                <div style={{marginTop: '17%', textAlign: 'center'}}>
-                    <PulseLoader color="#66CCFF" size={10} /> 
-                </div>
-                ) : (listings.length > 0 ? (
-                        <ListingsCardList listings={listings} sortableKeys={sortableKeys} setSortBy={setSortBy} setSortOrder={setSortOrder} ></ListingsCardList>
+            {listings.length > 0 ? (
+                        <ListingsCardList loading={isLoading} listings={listings} sortableKeys={sortableKeys} setSortBy={setSortBy} setSortOrder={setSortOrder} ></ListingsCardList>
                     ) : (
                         <NoResultsText>No results match the search criteria</NoResultsText>
-                ))
-            }
+            )}
         </div>
     );
 };

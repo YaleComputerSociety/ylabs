@@ -11,9 +11,9 @@ const router = Router();
 router.get('/search', async (request: Request, response: Response) => {
     try {
       const { query, sortBy, sortOrder, departments, page = 1, pageSize = 10 } = request.query;
-  
-      const order = sortOrder === "1" ? 1 : -1;
-  
+      
+      const order = sortOrder === "1" ? -1 : 1;
+
       const pipeline: mongoose.PipelineStage[] = [];
   
       if (query) {

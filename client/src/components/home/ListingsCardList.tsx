@@ -1,11 +1,13 @@
 import * as React from 'react';
 import ListingsModal from '../accounts/ListingModal';
 import ListingCard from './ListingCard';
+import PulseLoader from "react-spinners/PulseLoader";
 import { NewListing } from '../../types/types';
 
 type Order = 'asc' | 'desc';
 
 type ListingsCardListProps = {
+  loading: Boolean;
   listings: NewListing[];
   sortableKeys: string[];
   setSortBy: (sortBy: string) => void;
@@ -17,7 +19,7 @@ type ListingsCardListProps = {
 //Make sorting fetch a new search
 //Add back in the bottom sensor
 
-export default function ListingsCardList({ listings, sortableKeys, setSortBy, setSortOrder }: ListingsCardListProps) {
+export default function ListingsCardList({ loading, listings, sortableKeys, setSortBy, setSortOrder }: ListingsCardListProps) {
   const [order, setOrder] = React.useState<Order>('asc');
   const [orderIndex, setOrderIndex] = React.useState(0);
   const [modalOpen, setModalOpen] = React.useState(false);
@@ -61,27 +63,38 @@ export default function ListingsCardList({ listings, sortableKeys, setSortBy, se
     <div className="flex flex-col items-center p-4 relative">
       
       {/* Modal */}
-      {selectedListingId !== null && (
-        <ListingsModal
-          listing={listings.find((l) => l.id === selectedListingId)!}
-          onClose={() => {setModalOpen(false)}}
-          isOpen={modalOpen}
-          favListingsIds={[]}
-          updateFavorite={() => {console.log('Favorite')}}
-        />
+        {!loading && selectedListingId !== null && (
+            <ListingsModal
+              listing={listings.find((l) => l.id === selectedListingId)!}
+              onClose={() => {
+                setModalOpen(false);
+                setSelectedListingId(null);
+              }}
+              isOpen={modalOpen}
+              favListingsIds={[]}
+              updateFavorite={() => {console.log('Favorite')}}
+            />
       )}
 
       {/* Sorting Buttons */}
       <div className="mb-4 flex justify-between w-full" style={{ maxWidth: '80%' }}>
         <button
-          onClick={handleToggleSortKey}
+          onClick={() => {
+            if (!loading) {
+              handleToggleSortKey();
+            }
+          }}
           className="px-4 py-2 bg-blue-500 text-white rounded"
         >
           Sort: {buttonTranslations[sortableKeys[orderIndex]][0]}
         </button>
         {sortableKeys[orderIndex] !== 'default' && (
           <button
-            onClick={handleToggleOrder}
+            onClick={() => {
+              if (!loading) {
+                handleToggleOrder();
+              }
+            }}
             className="px-4 py-2 bg-blue-500 text-white rounded"
           >
             {order === 'asc' ? buttonTranslations[sortableKeys[orderIndex]][1] : buttonTranslations[sortableKeys[orderIndex]][2]}
@@ -89,22 +102,33 @@ export default function ListingsCardList({ listings, sortableKeys, setSortBy, se
         )}
       </div>
 
-      {/* List of Cards (Rows) */}
-      <div className="w-full" style={{ maxWidth: '80%' }}>
-        {listings.map((listing) => (
-          <ListingCard
-            key={listing.id}
-            favListingsIds={[]}
-            listing={listing}
-            updateFavorite={() => {console.log('Favorite')}}
-            openModal={openModalForListing}
-          />
-        ))}
-      </div>
+      
+      {/* List of Cards (Rows) or Pulse Loader */}
+      {loading ? (
+        <div style={{marginTop: '17%', textAlign: 'center'}}>
+            <PulseLoader color="#66CCFF" size={10} /> 
+        </div>
+      ) : (
+        <div className="w-full" style={{ maxWidth: '80%' }}>
+          {listings.map((listing) => (
+            <ListingCard
+              key={listing.id}
+              favListingsIds={[]}
+              listing={listing}
+              updateFavorite={() => {console.log('Favorite')}}
+              openModal={openModalForListing}
+            />
+          ))}
+        </div>
+      )}
 
       {/* Scroll to Top Button */}
       <button
-        onClick={scrollToTop}
+        onClick={() => {
+          if (!loading) {
+            scrollToTop();
+          }
+        }}
         className="fixed bottom-6 right-6 bg-blue-500 text-white p-3 rounded-full shadow-lg hover:bg-blue-700 transition"
       >
         ⬆️
