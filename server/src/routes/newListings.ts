@@ -12,7 +12,8 @@ router.get('/search', async (request: Request, response: Response) => {
     try {
       const { query, sortBy, sortOrder, departments, page = 1, pageSize = 10 } = request.query;
       
-      const order = sortOrder === "1" ? -1 : 1;
+      const multiplier = (sortBy === "updatedAt" || sortBy === "createdAt") ? -1 : 1;
+      const order = (sortBy === "updatedAt" || sortBy === "createdAt") ? sortOrder === "1" ? -1: 1 : sortOrder === "1" ? 1: -1;
 
       const pipeline: mongoose.PipelineStage[] = [];
   
