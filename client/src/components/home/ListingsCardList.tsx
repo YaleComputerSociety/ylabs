@@ -8,6 +8,8 @@ type Order = 'asc' | 'desc';
 
 type ListingsCardListProps = {
   loading: Boolean;
+  searchExhausted: Boolean;
+  setPage: React.Dispatch<React.SetStateAction<number>>;
   listings: NewListing[];
   sortableKeys: string[];
   setSortBy: (sortBy: string) => void;
@@ -16,16 +18,39 @@ type ListingsCardListProps = {
   updateFavorite: (listingId: string, favorite: boolean) => void;
 };
 
-//Add favlistingid's
-//Add favorite functionality
-//Make sorting fetch a new search
-//Add back in the bottom sensor
-
-export default function ListingsCardList({ loading, listings, sortableKeys, setSortBy, setSortOrder, favListingsIds, updateFavorite }: ListingsCardListProps) {
+export default function ListingsCardList({ loading, searchExhausted, setPage, listings, sortableKeys, setSortBy, setSortOrder, favListingsIds, updateFavorite }: ListingsCardListProps) {
   const [order, setOrder] = React.useState<Order>('asc');
   const [orderIndex, setOrderIndex] = React.useState(0);
   const [modalOpen, setModalOpen] = React.useState(false);
   const [selectedListingId, setSelectedListingId] = React.useState<string | null>(null);
+
+  // Reference for results bottom detector
+  const bottomObserverRef = React.useRef<HTMLDivElement>(null);
+  
+  // Set up intersection observer for infinite scrolling
+  React.useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const [entry] = entries;
+        // If bottom element is visible, loading is false, and we haven't exhausted search results
+        if (entry.isIntersecting && !loading && !searchExhausted) {
+          setPage(prevPage => prevPage + 1);
+        }
+      },
+      { threshold: 1.0 }
+    );
+    
+    const currentObserver = bottomObserverRef.current;
+    if (currentObserver) {
+      observer.observe(currentObserver);
+    }
+    
+    return () => {
+      if (currentObserver) {
+        observer.unobserve(currentObserver);
+      }
+    };
+  }, [loading, searchExhausted, setPage]);
 
   const buttonTranslations: Record<string, string[]> = {
     'default': ['Best Match', '', ''],
@@ -105,22 +130,30 @@ export default function ListingsCardList({ loading, listings, sortableKeys, setS
       </div>
 
       
-      {/* List of Cards (Rows) or Pulse Loader */}
-      {loading ? (
-        <div style={{marginTop: '17%', textAlign: 'center'}}>
-            <PulseLoader color="#66CCFF" size={10} /> 
-        </div>
-      ) : (
-        <div className="w-full" style={{ maxWidth: '80%' }}>
-          {listings.map((listing) => (
-            <ListingCard
-              key={listing.id}
-              favListingsIds={favListingsIds}
-              listing={listing}
-              updateFavorite={updateFavorite}
-              openModal={openModalForListing}
-            />
-          ))}
+      {/* List of Cards (Rows) with Pulse Loader conditionally below*/}
+      <div className="w-full" style={{ maxWidth: '80%' }}>
+        {listings.map((listing) => (
+          <ListingCard
+            key={listing.id}
+            favListingsIds={favListingsIds}
+            listing={listing}
+            updateFavorite={updateFavorite}
+            openModal={openModalForListing}
+          />
+        ))}
+        
+        {/* Detects bottom of the list */}
+        {!searchExhausted && (
+          <div 
+            ref={bottomObserverRef}
+            className="h-10 w-full"
+          />
+        )}
+      </div>
+
+      {loading && (
+        <div className="flex justify-center items-center mt-4">
+          <PulseLoader color="#3b82f6" size={15} />
         </div>
       )}
 

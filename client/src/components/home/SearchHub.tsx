@@ -6,15 +6,17 @@ import { createListing } from '../../utils/apiCleaner';
 
 interface SearchHubProps {
     allDepartments: string[];
-    setListings: React.Dispatch<React.SetStateAction<NewListing[]>>
+    resetListings: (newListings: NewListing[]) => void;
+    addListings: (newListings: NewListing[]) => void;
     setIsLoading: React.Dispatch<React.SetStateAction<Boolean>>
     sortBy: string;
     sortOrder: number;
-    page: number;
+    page: number
+    setPage: React.Dispatch<React.SetStateAction<number>>
     pageSize: number;
 }
 
-const SearchHub = ({ allDepartments, setListings, setIsLoading, sortBy, sortOrder, page, pageSize }: SearchHubProps) => {
+const SearchHub = ({ allDepartments, resetListings, addListings, setIsLoading, sortBy, sortOrder, page, setPage, pageSize }: SearchHubProps) => {
     const [selectedDepartments, setSelectedDepartments] = useState<string[]>([]);
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState("");
@@ -38,7 +40,8 @@ const SearchHub = ({ allDepartments, setListings, setIsLoading, sortBy, sortOrde
 
         document.addEventListener('mousedown', handleClickOutside);
 
-        handleSearch();
+        setPage(1);
+        handleSearch(1);
 
         return () => {
             document.removeEventListener('mousedown', handleClickOutside);
@@ -48,7 +51,8 @@ const SearchHub = ({ allDepartments, setListings, setIsLoading, sortBy, sortOrde
     useEffect(() => {
         const debounceTimeout = setTimeout(() => {
             if (queryStringLoaded) {
-                handleSearch();
+                setPage(1);
+                handleSearch(1);
             }
             setQueryStringLoaded(true);
         }, 500);
@@ -60,10 +64,17 @@ const SearchHub = ({ allDepartments, setListings, setIsLoading, sortBy, sortOrde
 
     useEffect(() => {
         if (departmentsLoaded) {
-            handleSearch();
+            setPage(1);
+            handleSearch(1);
         }
         setDepartmentsLoaded(true);
     }, [selectedDepartments, sortBy, sortOrder])
+
+    useEffect(() => {
+        if(page > 1) {
+            handleSearch(page);
+        }
+    }, [page])
 
     const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
         if (e.key === "Enter" || e.key === "Escape") {
@@ -122,7 +133,7 @@ const SearchHub = ({ allDepartments, setListings, setIsLoading, sortBy, sortOrde
         setSearchTerm("");
     };
 
-    const handleSearch = () => {
+    const handleSearch = (page: Number) => {
         let url;
 
         const formattedQuery = queryString.trim();
@@ -147,7 +158,13 @@ const SearchHub = ({ allDepartments, setListings, setIsLoading, sortBy, sortOrde
             const responseListings : NewListing[] = response.data.results.map(function(elem: any){
                 return createListing(elem);
             })
-            setListings(responseListings);
+
+            if (page == 1) {
+                resetListings(responseListings);
+            } else {
+                addListings(responseListings);
+            }
+            
             setIsLoading(false); 
         }).catch((error) => {
             console.error('Error loading listings:', error);

@@ -11,8 +11,7 @@ const router = Router();
 router.get('/search', async (request: Request, response: Response) => {
     try {
       const { query, sortBy, sortOrder, departments, page = 1, pageSize = 10 } = request.query;
-      
-      const multiplier = (sortBy === "updatedAt" || sortBy === "createdAt") ? -1 : 1;
+
       const order = (sortBy === "updatedAt" || sortBy === "createdAt") ? sortOrder === "1" ? -1: 1 : sortOrder === "1" ? 1: -1;
 
       const pipeline: mongoose.PipelineStage[] = [];
@@ -39,7 +38,7 @@ router.get('/search', async (request: Request, response: Response) => {
 
       if (departments) {
         const departmentList = (departments as string).split(',');
-        
+        ``
         pipeline.push({
             $match: {
                 departments: { $in: departmentList },
@@ -56,7 +55,7 @@ router.get('/search', async (request: Request, response: Response) => {
       })
   
       pipeline.push({
-          $sort: sortBy ? { [sortBy as string]: order } : { searchScore: -1 },
+          $sort: sortBy ? { [sortBy as string]: order, _id: 1 } : { searchScore: -1, updatedAt: -1, _id: 1 },
       });
   
       pipeline.push(
@@ -65,7 +64,7 @@ router.get('/search', async (request: Request, response: Response) => {
       );
   
       const results = await NewListing.aggregate(pipeline);
-  
+
       response.json({ results, page: Number(page), pageSize: Number(pageSize) });
     } catch (error) {
       console.error("Error executing search:", error);

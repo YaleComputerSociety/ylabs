@@ -14,6 +14,9 @@ import swal from "sweetalert";
 const Home = () => {
     const [listings, setListings] = useState<NewListing[]>([]);
     const [isLoading, setIsLoading] = useState<Boolean>(false);
+    const [searchExhausted, setSearchExhausted] = useState<Boolean>(false);
+    const [page, setPage] = useState<number>(1);
+    const pageSize = 20;
 
     const sortableKeys = ['default', 'updatedAt', 'ownerLastName', 'ownerFirstName', 'title']
 
@@ -40,6 +43,16 @@ const Home = () => {
     useEffect(() => {
         reloadFavorites();
     }, []);
+
+    const addListings = (newListings: NewListing[]) => {
+        setListings((oldListings) => [...oldListings, ...newListings]);
+        setSearchExhausted(newListings.length < pageSize);
+    };
+
+    const resetListings = (newListings: NewListing[]) => {
+        setListings(newListings);
+        setSearchExhausted(newListings.length < pageSize);
+    };
 
     const updateFavorite = (listingId: string, favorite: boolean) => {
         const prevFavListingsIds = favListingsIds;
@@ -74,11 +87,11 @@ const Home = () => {
     return (
         <div style={{marginTop: '6rem', marginLeft: '3rem', marginRight: '3rem'}}>
             <div className='mt-12'>
-                <SearchHub allDepartments={departmentKeys} setListings={setListings} setIsLoading={setIsLoading} sortBy={sortBy} sortOrder={sortOrder} page={1} pageSize={20}></SearchHub>
+                <SearchHub allDepartments={departmentKeys} resetListings={resetListings} addListings={addListings} setIsLoading={setIsLoading} sortBy={sortBy} sortOrder={sortOrder} page={page} setPage={setPage} pageSize={pageSize}></SearchHub>
             </div>
             <div style={{marginTop: '2rem'}}></div>
             {listings.length > 0 ? (
-                        <ListingsCardList loading={isLoading} listings={listings} sortableKeys={sortableKeys} setSortBy={setSortBy} setSortOrder={setSortOrder} favListingsIds={favListingsIds} updateFavorite={updateFavorite} ></ListingsCardList>
+                        <ListingsCardList loading={isLoading} searchExhausted={searchExhausted} setPage={setPage} listings={listings} sortableKeys={sortableKeys} setSortBy={setSortBy} setSortOrder={setSortOrder} favListingsIds={favListingsIds} updateFavorite={updateFavorite} ></ListingsCardList>
                     ) : (
                         <NoResultsText>No results match the search criteria</NoResultsText>
             )}
