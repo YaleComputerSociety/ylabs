@@ -46,6 +46,14 @@ router.get('/search', async (request: Request, response: Response) => {
             },
         });
       }
+
+      // Filter out archived and unconfirmed listings
+      pipeline.push({
+            $match: {
+                archived: false,
+                confirmed: true
+            },
+      })
   
       pipeline.push({
           $sort: sortBy ? { [sortBy as string]: order } : { searchScore: -1 },
