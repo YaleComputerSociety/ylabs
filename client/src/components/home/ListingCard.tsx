@@ -9,7 +9,7 @@ import UserContext from "../../contexts/UserContext";
 interface ListingCardProps {
     listing: NewListing;
     favListingsIds: string[];
-    updateFavorite: (listing: NewListing, listingId: string, favorite: boolean) => void;
+    updateFavorite: (listingId: string, favorite: boolean) => void;
     openModal: (listing: NewListing) => void;
 }
 
@@ -119,7 +119,7 @@ const ListingCard = ({ listing, favListingsIds, updateFavorite, openModal }: Lis
 
     const toggleFavorite = (e: React.MouseEvent) => {
         e.stopPropagation();
-        updateFavorite(listing, listing.id, !isFavorite);
+        updateFavorite(listing.id, !isFavorite);
     }
 
     const handleListingClick = () => {

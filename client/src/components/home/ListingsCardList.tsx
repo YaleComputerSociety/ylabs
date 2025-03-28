@@ -1,5 +1,5 @@
 import * as React from 'react';
-import ListingsModal from '../accounts/ListingModal';
+import ListingsModal from '../home/ListingModal';
 import ListingCard from './ListingCard';
 import PulseLoader from "react-spinners/PulseLoader";
 import { NewListing } from '../../types/types';
@@ -12,6 +12,8 @@ type ListingsCardListProps = {
   sortableKeys: string[];
   setSortBy: (sortBy: string) => void;
   setSortOrder: (sortOrder: number) => void;
+  favListingsIds: string[];
+  updateFavorite: (listingId: string, favorite: boolean) => void;
 };
 
 //Add favlistingid's
@@ -19,7 +21,7 @@ type ListingsCardListProps = {
 //Make sorting fetch a new search
 //Add back in the bottom sensor
 
-export default function ListingsCardList({ loading, listings, sortableKeys, setSortBy, setSortOrder }: ListingsCardListProps) {
+export default function ListingsCardList({ loading, listings, sortableKeys, setSortBy, setSortOrder, favListingsIds, updateFavorite }: ListingsCardListProps) {
   const [order, setOrder] = React.useState<Order>('asc');
   const [orderIndex, setOrderIndex] = React.useState(0);
   const [modalOpen, setModalOpen] = React.useState(false);
@@ -71,8 +73,8 @@ export default function ListingsCardList({ loading, listings, sortableKeys, setS
                 setSelectedListingId(null);
               }}
               isOpen={modalOpen}
-              favListingsIds={[]}
-              updateFavorite={() => {console.log('Favorite')}}
+              favListingsIds={favListingsIds}
+              updateFavorite={updateFavorite}
             />
       )}
 
@@ -113,9 +115,9 @@ export default function ListingsCardList({ loading, listings, sortableKeys, setS
           {listings.map((listing) => (
             <ListingCard
               key={listing.id}
-              favListingsIds={[]}
+              favListingsIds={favListingsIds}
               listing={listing}
-              updateFavorite={() => {console.log('Favorite')}}
+              updateFavorite={updateFavorite}
               openModal={openModalForListing}
             />
           ))}

@@ -25,6 +25,9 @@ const SearchHub = ({ allDepartments, setListings, setIsLoading, sortBy, sortOrde
     const dropdownButtonRef = useRef<HTMLButtonElement | null>(null);
     const searchRef = useRef<HTMLInputElement | null>(null);
 
+    const [queryStringLoaded, setQueryStringLoaded] = useState(false);
+    const [departmentsLoaded, setDepartmentsLoaded] = useState(false);
+
     useEffect(() => {
         const handleClickOutside = (e: MouseEvent) => {
             if(dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
@@ -35,6 +38,8 @@ const SearchHub = ({ allDepartments, setListings, setIsLoading, sortBy, sortOrde
 
         document.addEventListener('mousedown', handleClickOutside);
 
+        handleSearch();
+
         return () => {
             document.removeEventListener('mousedown', handleClickOutside);
         };
@@ -42,7 +47,10 @@ const SearchHub = ({ allDepartments, setListings, setIsLoading, sortBy, sortOrde
 
     useEffect(() => {
         const debounceTimeout = setTimeout(() => {
-            handleSearch();
+            if (queryStringLoaded) {
+                handleSearch();
+            }
+            setQueryStringLoaded(true);
         }, 500);
 
         return () => {
@@ -51,7 +59,10 @@ const SearchHub = ({ allDepartments, setListings, setIsLoading, sortBy, sortOrde
     }, [queryString])
 
     useEffect(() => {
-        handleSearch();
+        if (departmentsLoaded) {
+            handleSearch();
+        }
+        setDepartmentsLoaded(true);
     }, [selectedDepartments, sortBy, sortOrder])
 
     const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
