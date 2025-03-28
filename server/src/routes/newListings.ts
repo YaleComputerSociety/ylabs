@@ -8,7 +8,7 @@ import { isAuthenticated, isTrustworthy } from '../utils/permissions';
 
 const router = Router();
 
-router.get('/search', async (request: Request, response: Response) => {
+router.get('/search', isAuthenticated, async (request: Request, response: Response) => {
     try {
       const { query, sortBy, sortOrder, departments, page = 1, pageSize = 10 } = request.query;
 
