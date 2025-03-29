@@ -154,7 +154,7 @@ const SearchHub = ({ allDepartments, resetListings, addListings, setIsLoading, s
 
         setIsLoading(true);
 
-        axios.get(url).then((response) => {
+        axios.get(url, {withCredentials: true}).then((response) => {
             const responseListings : NewListing[] = response.data.results.map(function(elem: any){
                 return createListing(elem);
             })
@@ -164,7 +164,7 @@ const SearchHub = ({ allDepartments, resetListings, addListings, setIsLoading, s
             } else {
                 addListings(responseListings);
             }
-            
+
             setIsLoading(false); 
         }).catch((error) => {
             console.error('Error loading listings:', error);
