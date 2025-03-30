@@ -1,14 +1,15 @@
 import Button from "@mui/material/Button";
 
 const YURAButton = () => {
+    const handleReload = () => {
+        window.location.reload();
+    };
+
     return(
         <Button
-            component="a"
-            href="https://www.yura.yale.edu/"
-            target="_blank"
-            rel="noopener noreferrer"
+            onClick={handleReload}
         >
-            <img src="/assets/logos/YURA.png" alt="yura-logo" style={{width: '90px', height: '20px'}} />
+            <img src="/assets/logos/ylabs-temp.png" alt="ylab-logo" style={{width: '65px', height: '26px'}} />
         </Button>
     );
 };
