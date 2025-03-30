@@ -275,8 +275,13 @@ const ListingCard = ({ listing, favListingsIds, updateFavorite, updateListing, p
                                     )}
                                 </>
                             ) : (
-                                <div className="h-6 mt-3">
-                                    {/* Placeholder to maintain constant height */}
+                                <div className="mt-3 flex">
+                                    <span
+                                        className={`invisible bg-gray-200 text-gray-900 text-xs rounded px-1 py-0.5 mr-2 ${archived ? "opacity-50" : ""}`}
+                                        style={{ display: 'inline-block' }}
+                                    >
+                                        placeholder
+                                    </span>
                                 </div>
                             )}
                         </div>
