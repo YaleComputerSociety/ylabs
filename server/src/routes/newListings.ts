@@ -2,9 +2,75 @@ import { archiveListing, createListing, deleteListing, readAllListings, readList
 import { Request, Response, Router } from "express";
 import { IncorrectPermissionsError, NotFoundError, ObjectIdError } from "../utils/errors";
 import { readUser } from '../services/userService';
+import { NewListing } from '../models';
+import mongoose from 'mongoose';
 import { isAuthenticated, isTrustworthy } from '../utils/permissions';
 
 const router = Router();
+
+router.get('/search', isAuthenticated, async (request: Request, response: Response) => {
+    try {
+      const { query, sortBy, sortOrder, departments, page = 1, pageSize = 10 } = request.query;
+
+      const order = (sortBy === "updatedAt" || sortBy === "createdAt") ? sortOrder === "1" ? -1: 1 : sortOrder === "1" ? 1: -1;
+
+      const pipeline: mongoose.PipelineStage[] = [];
+  
+      if (query) {
+          pipeline.push({
+              $search: {
+                  index: 'default',
+                  text: {
+                      query: query as string,
+                      path: {
+                          wildcard: '*'
+                      },
+                  },
+              },
+          });
+  
+          pipeline.push({
+              $set: {
+                  searchScore: { $meta: 'searchScore' },
+              },
+          });
+      }
+
+      if (departments) {
+        const departmentList = (departments as string).split(',');
+        ``
+        pipeline.push({
+            $match: {
+                departments: { $in: departmentList },
+            },
+        });
+      }
+
+      // Filter out archived and unconfirmed listings
+      pipeline.push({
+            $match: {
+                archived: false,
+                confirmed: true
+            },
+      })
+  
+      pipeline.push({
+          $sort: sortBy ? { [sortBy as string]: order, _id: 1 } : { searchScore: -1, updatedAt: -1, _id: 1 },
+      });
+  
+      pipeline.push(
+          { $skip: (Number(page) - 1) * Number(pageSize) },
+          { $limit: Number(pageSize) }
+      );
+  
+      const results = await NewListing.aggregate(pipeline);
+
+      response.json({ results, page: Number(page), pageSize: Number(pageSize) });
+    } catch (error) {
+      console.error("Error executing search:", error);
+      response.status(500).json({ error: "Internal server error" });
+    }
+  });
 
 //Add listing
 router.post("/", isAuthenticated, async (request: Request, response: Response) => {
@@ -247,48 +313,5 @@ router.delete('/:id', isAuthenticated, async (request: Request, response: Respon
     }
 });
 
-//Get listings by netid
-//Get listings by search
-
-/* Route for getting relevant listings based on the queries fname, lname, and dept (all optional, at least one of the 3 must be provided)
-fname: fname must be a substring of prof's first name for the corresponding listing to be included
-lname: lname must be a substring of prof's last name for the corresponding listing to be included
-dept: dept must contain a department mentioned in the listing for the corresponding listing to be included
-*/
-
-//Need to update this route later for proper search behavior
-
-/*router.get('/', async (request: Request, response: Response) => {
-  try {
-    const fname = request.query.fname === undefined ? '' : request.query.fname;
-    const lname = request.query.lname === undefined ? '' : request.query.lname;
-    const keywords = request.query.keywords === undefined ? '' :  (request.query.keywords as String).replace(',', ' ').replace('  ', ' ');
-    const dept = request.query.dept === undefined || request.query.dept === '' ? [] : (request.query.dept as String).split(',');
-
-    if(fname === '' && lname === '' && dept.length == 0 && keywords.length == 0){
-      throw new Error('At least 1 query must be provided');
-    } 
-
-    let query = { "fname": { "$regex": fname, "$options": "i" }, 
-                  "lname": { "$regex": lname, "$options": "i" },
-                  "departments": { "$elemMatch": { "$in": dept } },
-                  "$text": { "$search": keywords, "$caseSensitive": false }};
-
-    if(dept.length === 0){
-      delete query["departments"];
-    }
-    if(keywords == ''){
-      delete query["$text"];
-    }
-    
-    const listings = await Listing.find(query);
-    return response.status(200).json(listings);
-
-  } catch (error) {
-    console.log(error.message);
-    response.status(500).send({ message: error.message });
-  }
-});
-*/
 
 export default router;
