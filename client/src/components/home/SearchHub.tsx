@@ -1,15 +1,22 @@
 import React, { useState, useRef, KeyboardEvent, useEffect } from 'react';
-import {Listing} from '../../types/types';
+import {NewListing} from '../../types/types';
 import axios from 'axios';
 import swal from 'sweetalert';
+import { createListing } from '../../utils/apiCleaner';
 
 interface SearchHubProps {
     allDepartments: string[];
-    setListings: React.Dispatch<React.SetStateAction<Listing[]>>
+    resetListings: (newListings: NewListing[]) => void;
+    addListings: (newListings: NewListing[]) => void;
     setIsLoading: React.Dispatch<React.SetStateAction<Boolean>>
+    sortBy: string;
+    sortOrder: number;
+    page: number
+    setPage: React.Dispatch<React.SetStateAction<number>>
+    pageSize: number;
 }
 
-const SearchHub = ({ allDepartments, setListings, setIsLoading }: SearchHubProps) => {
+const SearchHub = ({ allDepartments, resetListings, addListings, setIsLoading, sortBy, sortOrder, page, setPage, pageSize }: SearchHubProps) => {
     const [selectedDepartments, setSelectedDepartments] = useState<string[]>([]);
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState("");
@@ -19,6 +26,9 @@ const SearchHub = ({ allDepartments, setListings, setIsLoading }: SearchHubProps
     const dropdownInputRef = useRef<HTMLInputElement | null>(null);
     const dropdownButtonRef = useRef<HTMLButtonElement | null>(null);
     const searchRef = useRef<HTMLInputElement | null>(null);
+
+    const [queryStringLoaded, setQueryStringLoaded] = useState(false);
+    const [departmentsLoaded, setDepartmentsLoaded] = useState(false);
 
     useEffect(() => {
         const handleClickOutside = (e: MouseEvent) => {
@@ -30,14 +40,41 @@ const SearchHub = ({ allDepartments, setListings, setIsLoading }: SearchHubProps
 
         document.addEventListener('mousedown', handleClickOutside);
 
+        setPage(1);
+        handleSearch(1);
+
         return () => {
             document.removeEventListener('mousedown', handleClickOutside);
         };
     }, []);
 
     useEffect(() => {
-        handleSearch();
-    }, [selectedDepartments, queryString])
+        const debounceTimeout = setTimeout(() => {
+            if (queryStringLoaded) {
+                setPage(1);
+                handleSearch(1);
+            }
+            setQueryStringLoaded(true);
+        }, 500);
+
+        return () => {
+            clearTimeout(debounceTimeout);
+        };
+    }, [queryString])
+
+    useEffect(() => {
+        if (departmentsLoaded) {
+            setPage(1);
+            handleSearch(1);
+        }
+        setDepartmentsLoaded(true);
+    }, [selectedDepartments, sortBy, sortOrder])
+
+    useEffect(() => {
+        if(page > 1) {
+            handleSearch(page);
+        }
+    }, [page])
 
     const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
         if (e.key === "Enter" || e.key === "Escape") {
@@ -96,31 +133,38 @@ const SearchHub = ({ allDepartments, setListings, setIsLoading }: SearchHubProps
         setSearchTerm("");
     };
 
-    const handleSearch = () => {
+    const handleSearch = (page: Number) => {
         let url;
 
-        const formattedQuery = queryString.trim().split(" ").join(",");
+        const formattedQuery = queryString.trim();
+        const formattedDepartments = selectedDepartments.join(',');
         const backendBaseURL = window.location.host.includes("yalelabs.io")
             ? "https://yalelabs.io"
             : process.env.REACT_APP_SERVER;
-        url = backendBaseURL + '/listings?dept=' + selectedDepartments + '&keywords=' + formattedQuery;
+
+        if (sortBy === 'default') {
+            url = backendBaseURL + `/newListings/search?query=${formattedQuery}&page=${page}&pageSize=${pageSize}`;
+        } else {
+            url = backendBaseURL + `/newListings/search?query=${formattedQuery}&sortBy=${sortBy}&sortOrder=${sortOrder}&page=${page}&pageSize=${pageSize}`;
+        }
+
+        if (formattedDepartments) {
+            url += `&departments=${formattedDepartments}`;
+        }
 
         setIsLoading(true);
 
-        axios.get(url).then((response) => {
-            const responseListings : Listing[] = response.data.map(function(elem: any){
-                return {
-                    id: elem._id,
-                    departments: elem.departments.join('; '),
-                    email: elem.email,
-                    website: elem.website,
-                    description: elem.description,
-                    keywords: elem.keywords,
-                    lastUpdated: elem.last_updated,
-                    name: elem.fname + ' ' + elem.lname
-                }
+        axios.get(url, {withCredentials: true}).then((response) => {
+            const responseListings : NewListing[] = response.data.results.map(function(elem: any){
+                return createListing(elem);
             })
-            setListings(responseListings);
+
+            if (page == 1) {
+                resetListings(responseListings);
+            } else {
+                addListings(responseListings);
+            }
+
             setIsLoading(false); 
         }).catch((error) => {
             console.error('Error loading listings:', error);
