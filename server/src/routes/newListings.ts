@@ -73,7 +73,7 @@ router.get('/search', isAuthenticated, async (request: Request, response: Respon
   });
 
 //Add listing
-router.post("/", async (request: Request, response: Response) => {
+router.post("/", isAuthenticated, async (request: Request, response: Response) => {
   try {
     const currentUser = request.user as { netId? : string, userType: string, userConfirmed: boolean};
     if (!currentUser) {
@@ -92,6 +92,7 @@ router.post("/", async (request: Request, response: Response) => {
   }
 });
 
+/*
 //Add listing for user with specified netid
 router.post("/:id", async (request: Request, response: Response) => {
     try {
@@ -103,9 +104,10 @@ router.post("/:id", async (request: Request, response: Response) => {
       response.status(400).json({ error: error.message });
     }
   });
+*/
 
 //Get a skeleton listing for the current user
-router.get('/skeleton', async (request: Request, response: Response) => {
+router.get('/skeleton', isAuthenticated, async (request: Request, response: Response) => {
     try {
         const currentUser = request.user as { netId? : string, userType: string, userConfirmed: boolean};
         if (!currentUser) {
@@ -119,6 +121,7 @@ router.get('/skeleton', async (request: Request, response: Response) => {
     }
 });
 
+/*
 //Read all listings
 router.get("/", async (request: Request, response: Response) => {
     try {
@@ -129,9 +132,10 @@ router.get("/", async (request: Request, response: Response) => {
         response.status(500).json({ error: error.message });
     }
 });
+*/
 
 //Read specific listing by ObjectId
-router.get('/:id', async (request: Request, response: Response) => {
+router.get('/:id', isAuthenticated, async (request: Request, response: Response) => {
     try {
         const listing = await readListing(request.params.id);
         response.status(200).json({ listing });
@@ -148,7 +152,7 @@ router.get('/:id', async (request: Request, response: Response) => {
 //Updates for current user
 
 //Update listing by ObjectId (current user)
-router.put('/:id', async (request: Request, response: Response) => {
+router.put('/:id', isAuthenticated, async (request: Request, response: Response) => {
     try {
         const currentUser = request.user as { netId? : string, userType: string, userConfirmed: boolean};
         if (!currentUser) {
@@ -169,7 +173,7 @@ router.put('/:id', async (request: Request, response: Response) => {
 });
 
 //Archive listing by ObjectId (current user)
-router.put('/:id/archive', async (request: Request, response: Response) => {
+router.put('/:id/archive', isAuthenticated, async (request: Request, response: Response) => {
     try {
         const currentUser = request.user as { netId? : string, userType: string, userConfirmed: boolean};
         if (!currentUser) {
@@ -190,7 +194,7 @@ router.put('/:id/archive', async (request: Request, response: Response) => {
 });
 
 //Unarchive listing by ObjectId (current user)
-router.put('/:id/unarchive', async (request: Request, response: Response) => {
+router.put('/:id/unarchive', isAuthenticated, async (request: Request, response: Response) => {
   try {
     const currentUser = request.user as { netId? : string, userType: string, userConfirmed: boolean};
     if (!currentUser) {
@@ -212,6 +216,7 @@ router.put('/:id/unarchive', async (request: Request, response: Response) => {
 
 //Updates for specific user
 
+/*
 //Update listing by ObjectId (specific user)
 router.put('/asUser/:netid/:id', async (request: Request, response: Response) => {
     try {
@@ -282,9 +287,10 @@ router.delete('/asUser/:netid/:id', async (request: Request, response: Response)
         }
     }
 });
+*/
 
 //Delete listing by ObjectId for current user
-router.delete('/:id', async (request: Request, response: Response) => {
+router.delete('/:id', isAuthenticated, async (request: Request, response: Response) => {
     try {
         const currentUser = request.user as { netId? : string, userType: string, userConfirmed: boolean};
         if (!currentUser) {

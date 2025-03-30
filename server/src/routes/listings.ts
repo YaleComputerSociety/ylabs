@@ -1,11 +1,16 @@
 import express from 'express';
 import { Listing } from '../models';
 import { Request, Response, Router } from "express";
+import { isAuthenticated } from '../utils/permissions';
 
 const router = Router();
 
+/*
 //Create new listing
-router.post("/", async (request: Request, response: Response) => {
+
+//Hidden for security reasons
+
+/*router.post("/", async (request: Request, response: Response) => {
     try {
         const listing = new Listing(request.body);
         await listing.save();
@@ -29,13 +34,14 @@ router.get('/byId/:id', async (request: Request, response: Response) => {
     response.status(500).send({ message: error.message });
   }
 });
+*/
 
 /* Route for getting relevant listings based on the queries fname, lname, and dept (all optional, at least one of the 3 must be provided)
 fname: fname must be a substring of prof's first name for the corresponding listing to be included
 lname: lname must be a substring of prof's last name for the corresponding listing to be included
 dept: dept must contain a department mentioned in the listing for the corresponding listing to be included
 */
-router.get('/', async (request: Request, response: Response) => {
+router.get('/', isAuthenticated, async (request: Request, response: Response) => {
   try {
     const fname = request.query.fname === undefined ? '' : request.query.fname;
     const lname = request.query.lname === undefined ? '' : request.query.lname;
@@ -77,7 +83,7 @@ router.get('/', async (request: Request, response: Response) => {
   }
 });
 
-router.get('/all', async (request: Request, response: Response) => {
+router.get('/all', isAuthenticated, async (request: Request, response: Response) => {
   try {
     const listings = await Listing.find();
     return response.status(200).json(listings);

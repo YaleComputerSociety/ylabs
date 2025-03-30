@@ -4,6 +4,7 @@ import { Request, Response, Router } from "express";
 
 const router = Router();
 
+/*
 //Create new user backup
 router.post("/", async (request: Request, response: Response) => {
     try {
@@ -69,6 +70,6 @@ router.delete('/:id', async (request: Request, response: Response) => {
             response.status(500).json({ error: error.message });
         }
     }
-});
+});*/
 
 export default router;
