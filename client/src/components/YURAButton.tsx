@@ -8,7 +8,7 @@ const YURAButton = () => {
             target="_blank"
             rel="noopener noreferrer"
         >
-            <img src="/assets/logos/YURA.png" alt="yura-logo" style={{width: '90px', height: '20px'}} />
+            <img src="/assets/logos/ylabs-temp.png" alt="ylab-logo" style={{width: '65px', height: '26px'}} />
         </Button>
     );
 };
