@@ -22,13 +22,14 @@ const UserContextProvider: FC = ({ children }) => {
           setUser(undefined);
         }
       })
-      .catch(() =>
-        swal({
-          text: "Something went wrong while trying to fetch your auth status.",
-          icon: "warning",
-        })
-      );
-    setIsLoading(false);
+      .catch((error) => {
+        console.error("Auth check failed:", error);
+        setIsAuthenticated(false);
+        setUser(undefined);
+      })
+      .finally(() => {
+        setIsLoading(false);
+      });
   }, []);
 
   useEffect(() => {
