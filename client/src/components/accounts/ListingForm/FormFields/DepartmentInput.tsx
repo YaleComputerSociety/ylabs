@@ -154,7 +154,7 @@ const DepartmentInput = ({
 
         {isDeptDropdownOpen && (
           <div 
-            className="absolute w-full bg-white rounded-lg z-10 shadow-lg border overflow-hidden mt-1 max-h-[350px] border-gray-300"
+            className="absolute w-full bg-white rounded-lg z-10 shadow-lg border overflow-hidden mt-1 max-h-[300px] md:max-h-[350px] border-gray-300"
             tabIndex={-1}
           >
             <ul className="max-h-[350px] p-1 overflow-y-auto" tabIndex={-1}>

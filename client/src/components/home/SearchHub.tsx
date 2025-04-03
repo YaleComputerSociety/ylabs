@@ -178,8 +178,20 @@ const SearchHub = ({ allDepartments, resetListings, addListings, setIsLoading, s
 
     return (
         <div className="relative" ref={dropdownRef}>
-            <div className="flex gap-4 h-11">
-                <div className={`w-100 rounded-lg flex items-center transition-all duration-300 ease-in-out ${
+            <div className="flex-col flex md:flex-row gap-4">
+                <div className="md:flex-1 h-11">
+                    <input
+                        ref = {searchRef}
+                        type="text"
+                        value={queryString}
+                        onChange={(e) => setQueryString(e.target.value)}
+                        onKeyDown={handleKeyDown}
+                        onFocus={closeDropdown}
+                        placeholder="Search by keywords, professor name..."
+                        className="px-4 py-2 w-full border rounded-lg text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-text h-full"
+                    />
+                </div>
+                <div className={`w-full md:w-[45%] rounded-lg flex items-center h-11 ${
                             isDropdownOpen ? 'ring-2 ring-blue-500' : '' 
                         }`}>
                     <input
@@ -200,18 +212,6 @@ const SearchHub = ({ allDepartments, resetListings, addListings, setIsLoading, s
                     >
                         <span className="text-sm">&#9660;</span> {/* Down arrow for the dropdown */}
                     </button>
-                </div>
-                <div className="flex-1">
-                    <input
-                        ref = {searchRef}
-                        type="text"
-                        value={queryString}
-                        onChange={(e) => setQueryString(e.target.value)}
-                        onKeyDown={handleKeyDown}
-                        onFocus={closeDropdown}
-                        placeholder="Search by keywords, professor name..."
-                        className="px-4 py-2 w-full border rounded-lg text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-text h-full"
-                    />
                 </div>
             </div>
 

@@ -87,7 +87,7 @@ export default function ListingsCardList({ loading, searchExhausted, setPage, li
   };
 
   return (
-    <div className="flex flex-col items-center p-4 relative">
+    <div className="flex flex-col py-4 items-center relative lg:mx-12">
       
       {/* Modal */}
         {!loading && selectedListingId !== null && (
@@ -104,7 +104,7 @@ export default function ListingsCardList({ loading, searchExhausted, setPage, li
       )}
 
       {/* Sorting Buttons */}
-      <div className="mb-4 flex justify-between w-full" style={{ maxWidth: '80%' }}>
+      <div className="mb-4 flex justify-between w-full">
         <button
           onClick={() => {
             if (!loading) {
@@ -131,7 +131,7 @@ export default function ListingsCardList({ loading, searchExhausted, setPage, li
 
       
       {/* List of Cards (Rows) with Pulse Loader conditionally below*/}
-      <div className="w-full" style={{ maxWidth: '80%' }}>
+      <div className="w-full">
         {listings.map((listing) => (
           <ListingCard
             key={listing.id}
@@ -164,7 +164,7 @@ export default function ListingsCardList({ loading, searchExhausted, setPage, li
             scrollToTop();
           }
         }}
-        className="fixed bottom-6 right-6 bg-blue-500 text-white p-3 rounded-full shadow-lg hover:bg-blue-700 transition"
+        className="fixed bottom-4 right-4 lg:bottom-6 lg:right-6 bg-blue-500 text-white p-3 rounded-full shadow-lg hover:bg-blue-700 transition z-10"
       >
         ⬆️
       </button>
