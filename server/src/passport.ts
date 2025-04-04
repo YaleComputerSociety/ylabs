@@ -7,12 +7,13 @@ import { fetchYalie } from "./services/yaliesService";
 passport.use(
   new Strategy(
     {
-      version: "CAS2.0",
+      version: "CAS1.0",
       ssoBaseURL: "https://secure.its.yale.edu/cas",
     },
     async function (profile, done) {
       console.log('User logged in from CAS');
       console.log("User profile: ", profile);
+
       try {
         console.log('Validating user');
         let user = await validateUser(profile.user);
@@ -120,7 +121,6 @@ const casLogin = function (
   next: express.NextFunction
 ) {
   passport.authenticate("cas", function (err, user, info) {
-    console.log("Top of authenticate function")
     if (err) {
       console.log("Error in authenticate function")
       try {
@@ -133,9 +133,14 @@ const casLogin = function (
       } catch (e) {
         console.error("Error serializing error object: ", e);
       }
-      return next(err);
+      
+      if (req.query && req.query.error) {
+        return res.redirect(req.query.error as string);
+      }
+
+      return res.status(401).json({ error: "Error in authentication" });
     }
-    //Handle prettier and add yalies here
+
     if (!user) {
       console.log("CAS auth but no user");
       return res.status(401).json({ error: info.message || "CAS auth but no user" });
