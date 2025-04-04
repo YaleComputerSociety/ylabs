@@ -1,20 +1,48 @@
 import PulseLoader from "react-spinners/PulseLoader";
 import styled from "styled-components";
-import { useContext } from "react";
+import { useContext, useEffect, useState } from "react";
 
 import SignInButton from "../components/SignInButton";
 import UserContext from "../contexts/UserContext";
-import { Navigate } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
 
 const Login = () => {
-  const { isLoading, isAuthenticated } = useContext(UserContext);
+  const { isLoading, isAuthenticated, user } = useContext(UserContext);
+  const [initialLogin, setInitialLogin] = useState(true);
+  const location = useLocation();
+
+  // Reset initial login state when component mounts
+  useEffect(() => {
+    setInitialLogin(true);
+  }, []);
+
+  // Store the current path when not authenticated
+  useEffect(() => {
+    if (!isAuthenticated && location.pathname !== '/login') {
+      sessionStorage.setItem('lastPath', location.pathname);
+    }
+  }, [isAuthenticated, location]);
+
+  // Determine redirect path based on user type and whether it's an initial login
+  const getRedirectPath = () => {
+    if (initialLogin && user?.userType === 'professor') {
+      return '/account';
+    }
+    // If there's a stored path from before login, use that
+    const storedPath = sessionStorage.getItem('lastPath');
+    if (storedPath && storedPath !== '/login') {
+      sessionStorage.removeItem('lastPath');
+      return storedPath;
+    }
+    return '/';
+  };
 
   return (
     <Container>
       <Description>
-        <Logo src="/assets/logos/ylabs-temp-blue.png" alt="ylabs-logo" style={{width: '320px', height: '128px'}}/>
-        <TitleText className="mt-12">A Yale Research Database</TitleText>
-        <Text className="mt-2">
+        <Logo src="/assets/logos/RDB.png" alt="rdb-logo" />
+        <TitleText>Yale Research Database</TitleText>
+        <Text>
           Search through 1400+ Yale faculty listings across 60+ fields of study. Learn about professors who share your research interests and find potential research mentors.
         </Text>
       </Description>
@@ -22,7 +50,7 @@ const Login = () => {
         {isLoading ? (
           <PulseLoader color="#66CCFF" size={10} />
         ) : isAuthenticated ? (
-          <Navigate to="/" />
+          <Navigate to={getRedirectPath()} replace />
         ) : (
           <>
             <SignInButton />
