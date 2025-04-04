@@ -11,6 +11,7 @@ const UserContextProvider: FC = ({ children }) => {
   const [user, setUser] = useState<User>();
 
   const checkContext = useCallback(() => {
+    setIsLoading(true);
     axios
       .get<{ auth: boolean; user?: User }>("/check", {withCredentials: true})
       .then(({ data }) => {
@@ -21,14 +22,18 @@ const UserContextProvider: FC = ({ children }) => {
           setIsAuthenticated(false);
           setUser(undefined);
         }
+        setIsLoading(false);
       })
-      .catch(() =>
+      .catch((error) => {
+        console.error("Auth check error:", error);
+        setIsAuthenticated(false);
+        setUser(undefined);
+        setIsLoading(false);
         swal({
           text: "Something went wrong while trying to fetch your auth status.",
           icon: "warning",
-        })
-      );
-    setIsLoading(false);
+        });
+      });
   }, []);
 
   useEffect(() => {

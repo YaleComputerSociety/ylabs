@@ -25,7 +25,7 @@ const Login = () => {
 
   // Determine redirect path based on user type and whether it's an initial login
   const getRedirectPath = () => {
-    if (initialLogin && user?.userType === 'professor') {
+    if (user?.userType === 'professor') {
       return '/account';
     }
     // If there's a stored path from before login, use that
