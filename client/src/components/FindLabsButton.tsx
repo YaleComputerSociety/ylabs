@@ -1,17 +1,17 @@
 import Button from "@mui/material/Button";
 import { Link } from 'react-router-dom';
 
-const AccountButton = () => {
+const FindLabsButton = () => {
     return(
         <Button 
             color="inherit"
             component={Link}
-            to="/account"
+            to="/"
             sx={{ paddingLeft: 1 }}
         >
-            My Labs
+            Find Labs
         </Button>
     );
 };
 
-export default AccountButton;
+export default FindLabsButton;

@@ -85,11 +85,11 @@ const Home = () => {
     };
 
     return (
-        <div style={{marginTop: '6rem', marginLeft: '3rem', marginRight: '3rem'}}>
+        <div className="mx-6 lg:mx-12 mt-24">
             <div className='mt-12'>
                 <SearchHub allDepartments={departmentKeys} resetListings={resetListings} addListings={addListings} setIsLoading={setIsLoading} sortBy={sortBy} sortOrder={sortOrder} page={page} setPage={setPage} pageSize={pageSize}></SearchHub>
             </div>
-            <div style={{marginTop: '2rem'}}></div>
+            <div className='mt-6'></div>
             {listings.length > 0 ? (
                         <ListingsCardList loading={isLoading} searchExhausted={searchExhausted} setPage={setPage} listings={listings} sortableKeys={sortableKeys} setSortBy={setSortBy} setSortOrder={setSortOrder} favListingsIds={favListingsIds} updateFavorite={updateFavorite} ></ListingsCardList>
                     ) : (
