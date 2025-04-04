@@ -8,7 +8,7 @@ const SignInButton = () => {
   return (
     <Button
       variant="contained"
-      href={backendBaseURL + `/cas?redirect=${window.location.origin}`}
+      href={backendBaseURL + `/cas?redirect=${window.location.origin}/login`}
     >
       Sign in With Yale CAS
     </Button>
