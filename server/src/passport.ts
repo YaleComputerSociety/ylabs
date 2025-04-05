@@ -119,6 +119,9 @@ const casLogin = function (
   res: express.Response,
   next: express.NextFunction
 ) {
+  console.log('CAS LOGIN: Request query params:', req.query);
+  console.log('CAS LOGIN: Redirect param specifically:', req.query.redirect);
+  
   passport.authenticate("cas", function (err, user, info) {
     console.log("Top of authenticate function")
     if (err) {
@@ -153,8 +156,23 @@ const casLogin = function (
       }
 
       if (req.query.redirect) {
-        console.log("Custom redirecting user");
-        return res.redirect(req.query.redirect as string);
+        console.log("Custom redirecting user to:", req.query.redirect);
+        
+        // Try to parse the URL to make sure it's valid
+        try {
+          const redirectUrl = new URL(req.query.redirect as string);
+          console.log("Parsed redirect URL:", {
+            href: redirectUrl.href,
+            origin: redirectUrl.origin,
+            pathname: redirectUrl.pathname
+          });
+          
+          return res.redirect(req.query.redirect as string);
+        } catch (error) {
+          console.error("Error parsing redirect URL:", error);
+          console.log("Falling back to default redirect");
+          return res.redirect("/check");
+        }
       }
 
       console.log("Default redirecting user");
