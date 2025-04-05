@@ -91,7 +91,7 @@ const Home = () => {
             </div>
             <div className='mt-6'></div>
             {listings.length > 0 ? (
-                        <ListingsCardList loading={isLoading} searchExhausted={searchExhausted} setPage={setPage} listings={listings} sortableKeys={sortableKeys} setSortBy={setSortBy} setSortOrder={setSortOrder} favListingsIds={favListingsIds} updateFavorite={updateFavorite} ></ListingsCardList>
+                        <ListingsCardList loading={isLoading} searchExhausted={searchExhausted} setPage={setPage} listings={listings} sortableKeys={sortableKeys} sortBy={sortBy} setSortBy={setSortBy} setSortOrder={setSortOrder} favListingsIds={favListingsIds} updateFavorite={updateFavorite} ></ListingsCardList>
                     ) : (
                         <NoResultsText>No results match the search criteria</NoResultsText>
             )}
