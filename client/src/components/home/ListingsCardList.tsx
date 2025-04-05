@@ -80,7 +80,7 @@ export default function ListingsCardList({ loading, searchExhausted, setPage, li
   };
 
   return (
-    <div className="flex flex-col py-4 items-center relative transition-all lg:mx-12">
+    <div className="flex flex-col items-center relative">
       
       {/* Modal */}
         {!loading && selectedListingId !== null && (
