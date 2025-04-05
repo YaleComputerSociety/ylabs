@@ -22,9 +22,9 @@ const Login = () => {
   return (
     <Container>
       <Description>
-        <Logo src="/assets/logos/RDB.png" alt="rdb-logo" />
-        <TitleText>Yale Research Database</TitleText>
-        <Text>
+        <Logo src="/assets/logos/ylabs-temp-blue.png" alt="ylabs-logo" style={{width: '320px', height: '128px'}}/>
+        <TitleText className="mt-12">A Yale Research Database</TitleText>
+        <Text className="mt-2">
           Search through 1400+ Yale faculty listings across 60+ fields of study. Learn about professors who share your research interests and find potential research mentors.
         </Text>
       </Description>
@@ -42,44 +42,83 @@ const Login = () => {
 };
 
 const Container = styled.div`
-  width: 100vw;
+  width: 100%;
   background: #ffffff;
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding-top: 5%;
+  padding: 5% 20px;
+  box-sizing: border-box;
 `;
 
 const Description = styled.div`
-  width: 600px;
-  margin-top: 100px;
+  width: 100%;
+  max-width: 600px;
+  margin-top: 120px;
   display: flex;
   align-items: center;
   flex-direction: column;
   justify-content: top;
   text-align: center;
+  
+  @media (max-width: 768px) {
+    padding: 0 15px;
+  }
 `;
 
 const Logo = styled.img`
   width: 320px;
-  height: 150px;
+  height: auto;
+  max-width: 90%;
+  
+  @media (max-width: 768px) {
+    width: 250px;
+  }
+  
+  @media (max-width: 480px) {
+    width: 200px;
+  }
 `;
 
 const TitleText = styled.h1`
   color: #000000;
+  font-size: 32px;
+  
+  @media (max-width: 768px) {
+    font-size: 28px;
+    margin-top: 20px !important;
+  }
+  
+  @media (max-width: 480px) {
+    font-size: 24px;
+  }
 `;
 
 const Text = styled.p`
   color: #000000;
   font-size: 20px;
+  
+  @media (max-width: 768px) {
+    font-size: 18px;
+  }
+  
+  @media (max-width: 480px) {
+    font-size: 16px;
+  }
 `;
 
 const AuthContainer = styled.div`
   margin-top: 30px;
-  width: 600px;
+  width: 100%;
+  max-width: 600px;
+  display: flex;
   align-items: center;
   flex-direction: column;
   text-align: center;
+  
+  @media (max-width: 768px) {
+    margin-top: 20px;
+  }
 `;
 
 export default Login;
