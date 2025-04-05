@@ -80,6 +80,14 @@ const ListingModal = ({ isOpen, onClose, listing, favListingsIds, updateFavorite
         updateFavorite(listing, listing.id, !isFavorite);
     }
 
+    const ensureHttpPrefix = (url: string): string => {
+        if (!url) return '';
+        if (url.startsWith('http://') || url.startsWith('https://')) {
+          return url;
+        }
+        return `https://${url}`;
+    };
+
     if (!isOpen || !listing) return null;
 
     return (
@@ -198,7 +206,7 @@ const ListingModal = ({ isOpen, onClose, listing, favListingsIds, updateFavorite
                         {listing.websites.map((website, index) => (
                             <li key={index} className="truncate">
                             <a 
-                                href={website} 
+                                href={ensureHttpPrefix(website)} 
                                 target="_blank" 
                                 rel="noopener noreferrer" 
                                 className="text-blue-600 hover:underline"

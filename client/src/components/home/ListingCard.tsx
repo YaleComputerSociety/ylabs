@@ -139,6 +139,14 @@ const ListingCard = ({ listing, favListingsIds, updateFavorite, openModal }: Lis
         openModal(listing);
     }
 
+    const ensureHttpPrefix = (url: string): string => {
+        if (!url) return '';
+        if (url.startsWith('http://') || url.startsWith('https://')) {
+          return url;
+        }
+        return `https://${url}`;
+    };
+
     if (!listing) {
         return null;
     }
@@ -217,7 +225,7 @@ const ListingCard = ({ listing, favListingsIds, updateFavorite, openModal }: Lis
                         <div>
                             {listing.websites && listing.websites.length > 0 && (
                                 <a
-                                    href={listing.websites[0]}
+                                    href={ensureHttpPrefix(listing.websites[0])}
                                     className = 'mr-1'
                                     onClick={(e) => e.stopPropagation()}
                                     target="_blank"
