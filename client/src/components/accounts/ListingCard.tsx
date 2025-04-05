@@ -139,6 +139,10 @@ const ListingCard = ({ listing, favListingsIds, updateFavorite, updateListing, p
 
     const toggleFavorite = (e: React.MouseEvent) => {
         e.stopPropagation();
+        listing.favorites = isFavorite ? listing.favorites - 1 : listing.favorites + 1;
+        if (listing.favorites < 0) {
+            listing.favorites = 0;
+        }
         updateFavorite(listing, listing.id, !isFavorite);
     }
 
