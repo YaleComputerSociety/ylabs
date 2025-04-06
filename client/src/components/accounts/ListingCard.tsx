@@ -454,17 +454,17 @@ const ListingCard = ({
                         </button>
                         
                         <button 
-                            className={`p-1 rounded-full ${canDelete
+                            className={`p-1 rounded-full ${canDelete && !globalEditing
                                 ? "hover:bg-gray-100 text-gray-600 hover:text-red-600 transition-colors"
                                 : "text-gray-400 cursor-not-allowed"}`}
                             onClick={(e) => {
                                 e.stopPropagation();
-                                if (canDelete) {
+                                if (canDelete && !globalEditing) {
                                     handleDelete(e);
                                 }
                             }}
-                            title={canDelete ? "Delete listing" : "Only owner can delete"}
-                            aria-label={canDelete ? "Delete listing" : "Only owner can delete"}
+                            title={canDelete ? globalEditing ? "Must close current editor" : "Delete listing" : "Only owner can delete"}
+                            aria-label={canDelete ? globalEditing ? "Must close current editor" : "Delete listing" : "Only owner can delete"}
                             disabled={!canDelete}
                         >
                             <svg xmlns="http://www.w3.org/2000/svg"
@@ -476,7 +476,7 @@ const ListingCard = ({
                                  strokeWidth="2"
                                  strokeLinecap="round"
                                  strokeLinejoin="round"
-                                 className={`${archived ? "opacity-50" : ""}`}>
+                                 className={`${archived || globalEditing ? "opacity-50" : ""}`}>
                                 <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
                                 <path d="M4 7l16 0"/>
                                 <path d="M10 11l0 6"/>
