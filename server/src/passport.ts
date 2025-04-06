@@ -158,8 +158,16 @@ const casLogin = function (
       }
 
       if (req.query.redirect) {
-        console.log("Custom redirecting user");
-        return res.redirect(req.query.redirect as string);
+        // Try to parse the URL to make sure it's valid
+        try {
+          const redirectUrl = new URL(req.query.redirect as string);
+          
+          return res.redirect(req.query.redirect as string);
+        } catch (error) {
+          console.error("Error parsing redirect URL:", error);
+          console.log("Falling back to default redirect");
+          return res.redirect("/check");
+        }
       }
 
       console.log("Default redirecting user");
