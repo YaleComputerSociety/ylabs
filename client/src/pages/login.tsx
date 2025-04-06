@@ -22,7 +22,7 @@ const Login = () => {
   return (
     <Container>
       <Description>
-        <Logo src="/assets/logos/ylabs-temp-blue.png" alt="ylabs-logo" style={{width: '320px', height: '128px'}}/>
+        <Logo src="/assets/logos/ylabs-temp-blue.png" alt="ylabs-logo" />
         <TitleText className="mt-12">A Yale Research Database</TitleText>
         <Text className="mt-2">
           Search through 1400+ Yale faculty listings across 60+ fields of study. Learn about professors who share your research interests and find potential research mentors.

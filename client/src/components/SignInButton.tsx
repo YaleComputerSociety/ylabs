@@ -29,7 +29,7 @@ const SignInButton = () => {
     }
   }, []);
   
-  const finalUrl = backendBaseURL + `/cas?redirect=${redirectUrl}`;
+  const finalUrl = backendBaseURL + `/cas?redirect=${redirectUrl}&error=${window.location.origin}/login-error`;
   
   return (
     <Button
