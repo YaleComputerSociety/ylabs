@@ -18,6 +18,7 @@ const ListingCard = ({ listing, favListingsIds, updateFavorite, openModal }: Lis
     const [moreCount, setMoreCount] = useState(0);
     const [showTooltip, setShowTooltip] = useState(false);
     const [isFavorite, setIsFavorite] = useState(favListingsIds.includes(listing.id));
+    const [viewed, setViewed] = useState(false);
     const departmentsContainerRef = useRef<HTMLDivElement>(null);
     const {user} = useContext(UserContext);
 
@@ -119,12 +120,32 @@ const ListingCard = ({ listing, favListingsIds, updateFavorite, openModal }: Lis
 
     const toggleFavorite = (e: React.MouseEvent) => {
         e.stopPropagation();
+        listing.favorites = isFavorite ? listing.favorites - 1 : listing.favorites + 1;
+        if (listing.favorites < 0) {
+            listing.favorites = 0;
+        }
         updateFavorite(listing.id, !isFavorite);
     }
 
     const handleListingClick = () => {
+        if (!viewed) {
+            axios.put(`newListings/${listing.id}/addView`, {withCredentials: true}).catch((error) => {
+                console.log('Could not add view for listing');
+                listing.views = listing.views - 1;
+            })
+            listing.views = listing.views + 1;
+            setViewed(true);
+        }
         openModal(listing);
     }
+
+    const ensureHttpPrefix = (url: string): string => {
+        if (!url) return '';
+        if (url.startsWith('http://') || url.startsWith('https://')) {
+          return url;
+        }
+        return `https://${url}`;
+    };
 
     if (!listing) {
         return null;
@@ -204,7 +225,7 @@ const ListingCard = ({ listing, favListingsIds, updateFavorite, openModal }: Lis
                         <div>
                             {listing.websites && listing.websites.length > 0 && (
                                 <a
-                                    href={listing.websites[0]}
+                                    href={ensureHttpPrefix(listing.websites[0])}
                                     className = 'mr-1'
                                     onClick={(e) => e.stopPropagation()}
                                     target="_blank"
