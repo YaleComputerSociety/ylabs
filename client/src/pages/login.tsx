@@ -7,7 +7,17 @@ import UserContext from "../contexts/UserContext";
 import { Navigate } from "react-router-dom";
 
 const Login = () => {
-  const { isLoading, isAuthenticated } = useContext(UserContext);
+  const { isLoading, isAuthenticated, user } = useContext(UserContext);
+
+  // Determine redirect path based on user type
+  const getRedirectPath = () => {
+    // Professors go to account page
+    if (user?.userType === 'professor') {
+      return '/account';
+    }
+    // All other users go to home page
+    return '/';
+  };
 
   return (
     <Container>
@@ -22,11 +32,9 @@ const Login = () => {
         {isLoading ? (
           <PulseLoader color="#66CCFF" size={10} />
         ) : isAuthenticated ? (
-          <Navigate to="/" />
+          <Navigate to={getRedirectPath()} replace />
         ) : (
-          <>
-            <SignInButton />
-          </>
+          <SignInButton />
         )}
       </AuthContainer>
     </Container>
