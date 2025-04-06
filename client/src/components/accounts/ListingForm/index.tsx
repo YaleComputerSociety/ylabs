@@ -54,16 +54,13 @@ const ListingForm = ({ listing, isCreated, onLoad, onCancel, onSave, onCreate }:
   useEffect(() => {
     if (!isCreated) {
       setLoading(true);
-
       axios.get(`/newListings/${listing.id}`, { withCredentials: true }).then((response) => {
-        if(!response.data.listing) {
+        if (!response.data.listing) {
           console.error(`Response, but no listing ${listing.id}:`, response.data);
           onLoad(listing, false);
           return;
         }
-
         const newListing = createListing(response.data.listing);
-        
         // Update state with new listing data
         setTitle(newListing.title);
         setProfessorNames([...newListing.professorNames]);
@@ -81,9 +78,8 @@ const ListingForm = ({ listing, isCreated, onLoad, onCancel, onSave, onCreate }:
         onLoad(newListing, true);
 
         setAvailableDepartments(
-          departmentNames.filter(dept => !departments.includes(dept)).sort()
+          departmentNames.filter(dept => !newListing.departments.includes(dept)).sort()
         );
-
         setLoading(false);
       }).catch((error) => {
         console.error(`Error fetching most recent listing ${listing.id}:`, error);
@@ -93,10 +89,27 @@ const ListingForm = ({ listing, isCreated, onLoad, onCancel, onSave, onCreate }:
       setAvailableDepartments(
         departmentNames.filter(dept => !departments.includes(dept)).sort()
       );
-
       setLoading(false);
     }
   }, []);
+
+  // Live update preview when editing or creating a listing
+  useEffect(() => {
+    const updatedListing: NewListing = {
+      ...listing,
+      title,
+      professorNames,
+      departments,
+      emails,
+      websites,
+      description,
+      keywords,
+      established,
+      hiringStatus,
+      archived
+    };
+    onLoad(updatedListing, true);
+  }, [title, professorNames, departments, emails, websites, description, keywords, established, hiringStatus, archived]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -164,25 +177,46 @@ const ListingForm = ({ listing, isCreated, onLoad, onCancel, onSave, onCreate }:
     }
   };
 
-  const handleCancel = () => {
-    if (isCreated) {
-      swal({
-        title: "Delete Listing",
-        text: "Are you sure you want to delete this listing? This action cannot be undone",
-        icon: "warning",
-        buttons: ["Cancel", "Delete"],
-        dangerMode: true,
-      }).then((willCancel) => {
-        if (willCancel && onCancel) {
-          onCancel();
-        }
-      });
-    } else {
-      if (onCancel) {
+
+const handleCancel = () => {
+  console.log("CANCELLED LOL")
+  if (isCreated) {
+    swal({
+      title: "Delete Listing",
+      text: "Are you sure you want to delete this listing? This action cannot be undone",
+      icon: "warning",
+      buttons: ["Cancel", "Delete"],
+      dangerMode: true,
+    }).then((willCancel) => {
+      if (willCancel && onCancel) {
         onCancel();
       }
+    });
+  } else {
+    // Clone the original listing to force a new reference
+    const originalListing = { ...listing };
+    // Reset local state to the official listing values
+    setTitle(originalListing.title);
+    setProfessorNames([...originalListing.professorNames]);
+    setOwnerName(`${originalListing.ownerFirstName} ${originalListing.ownerLastName}`);
+    setDepartments([...originalListing.departments]);
+    setEmails([...originalListing.emails]);
+    setOwnerEmail(originalListing.ownerEmail);
+    setWebsites(originalListing.websites ? [...originalListing.websites] : []);
+    setDescription(originalListing.description);
+    setKeywords(originalListing.keywords ? [...originalListing.keywords] : []);
+    setEstablished(originalListing.established || '');
+    setHiringStatus(originalListing.hiringStatus);
+    setArchived(originalListing.archived);
+
+    // Force the parent to update the preview by providing a new object reference.
+    onLoad({ ...originalListing }, true);
+
+    if (onCancel) {
+      onCancel();
     }
-  };
+  }
+};
 
   // Handle adding/removing departments
   const handleAddDepartment = (department: string) => {
