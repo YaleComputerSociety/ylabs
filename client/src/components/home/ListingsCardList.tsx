@@ -1,6 +1,7 @@
 import * as React from 'react';
 import ListingsModal from '../home/ListingModal';
 import ListingCard from './ListingCard';
+import SortDropdown from './SortDropdown';
 import PulseLoader from "react-spinners/PulseLoader";
 import { NewListing } from '../../types/types';
 
@@ -12,15 +13,15 @@ type ListingsCardListProps = {
   setPage: React.Dispatch<React.SetStateAction<number>>;
   listings: NewListing[];
   sortableKeys: string[];
+  sortBy: string;
   setSortBy: (sortBy: string) => void;
   setSortOrder: (sortOrder: number) => void;
   favListingsIds: string[];
   updateFavorite: (listingId: string, favorite: boolean) => void;
 };
 
-export default function ListingsCardList({ loading, searchExhausted, setPage, listings, sortableKeys, setSortBy, setSortOrder, favListingsIds, updateFavorite }: ListingsCardListProps) {
+export default function ListingsCardList({ loading, searchExhausted, setPage, listings, sortableKeys, sortBy, setSortBy, setSortOrder, favListingsIds, updateFavorite }: ListingsCardListProps) {
   const [order, setOrder] = React.useState<Order>('asc');
-  const [orderIndex, setOrderIndex] = React.useState(0);
   const [modalOpen, setModalOpen] = React.useState(false);
   const [selectedListingId, setSelectedListingId] = React.useState<string | null>(null);
 
@@ -52,25 +53,17 @@ export default function ListingsCardList({ loading, searchExhausted, setPage, li
     };
   }, [loading, searchExhausted, setPage]);
 
-  const buttonTranslations: Record<string, string[]> = {
-    'default': ['Best Match', '', ''],
-    'updatedAt': ['Last Updated', 'Newest', 'Oldest'],
-    'ownerLastName': ['Last Name', 'A-Z', 'Z-A'],
-    'ownerFirstName': ['First Name', 'A-Z', 'Z-A'],
-    'title': ['Lab Title', 'A-Z', 'Z-A']
-  }
+  const buttonTranslations = [
+    {value: 'default', label: 'Sort by: Best Match'},
+    {value: 'updatedAt', label: 'Sort by: Last Updated'},
+    {value: 'ownerLastName', label: 'Sort by: Last Name'},
+    {value: 'ownerFirstName', label: 'Sort by: First Name'},
+    {value: 'title', label: 'Sort by: Lab Title'}
+  ];
 
   React.useEffect(() => {
     setSortOrder(order === 'asc' ? 1 : -1);
   }, [order])
-
-  React.useEffect(() => {
-    setSortBy(sortableKeys[orderIndex]);
-  }, [orderIndex])
-
-  const handleToggleSortKey = () => {
-    setOrderIndex((prevIndex) => (prevIndex + 1) % sortableKeys.length);
-  }
 
   const handleToggleOrder = () => {
     setOrder((prevOrder) => prevOrder === 'asc' ? 'desc' : 'asc');
@@ -87,7 +80,7 @@ export default function ListingsCardList({ loading, searchExhausted, setPage, li
   };
 
   return (
-    <div className="flex flex-col py-4 items-center relative transition-all lg:mx-12">
+    <div className="flex flex-col items-center relative">
       
       {/* Modal */}
         {!loading && selectedListingId !== null && (
@@ -105,26 +98,30 @@ export default function ListingsCardList({ loading, searchExhausted, setPage, li
 
       {/* Sorting Buttons */}
       <div className="mb-4 flex justify-between w-full">
-        <button
-          onClick={() => {
-            if (!loading) {
-              handleToggleSortKey();
-            }
-          }}
-          className="px-4 py-2 bg-blue-500 text-white rounded"
-        >
-          Sort: {buttonTranslations[sortableKeys[orderIndex]][0]}
-        </button>
-        {sortableKeys[orderIndex] !== 'default' && (
+        <SortDropdown sortBy={sortBy} setSortBy={setSortBy} sortOptions={buttonTranslations} />
+        {sortBy !== 'default' && (
           <button
             onClick={() => {
               if (!loading) {
                 handleToggleOrder();
               }
             }}
-            className="px-4 py-2 bg-blue-500 text-white rounded"
+            className="p-2 flex items-center justify-center"
+            aria-label={order === 'asc' ? "Sort ascending" : "Sort descending"}
           >
-            {order === 'asc' ? buttonTranslations[sortableKeys[orderIndex]][1] : buttonTranslations[sortableKeys[orderIndex]][2]}
+            <svg 
+              width="20" 
+              height="20" 
+              viewBox="0 0 24 24" 
+              fill="none" 
+              xmlns="http://www.w3.org/2000/svg"
+              className={`transition-transform duration-300 ease-in-out transform ${order === 'asc' ? 'rotate-0' : 'rotate-180'}`}
+            >
+              <path 
+                d="M12 5l7 7-1.41 1.41L13 8.83V19h-2V8.83L6.41 13.41 5 12l7-7z" 
+                fill="currentColor" 
+              />
+            </svg>
           </button>
         )}
       </div>
