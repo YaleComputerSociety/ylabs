@@ -85,13 +85,13 @@ const Home = () => {
     };
 
     return (
-        <div className="mx-6 lg:mx-12 mt-24">
+        <div className="mx-6 lg:mx-20 mt-24 transition-all lg:mx-12">
             <div className='mt-12'>
                 <SearchHub allDepartments={departmentKeys} resetListings={resetListings} addListings={addListings} setIsLoading={setIsLoading} sortBy={sortBy} sortOrder={sortOrder} page={page} setPage={setPage} pageSize={pageSize}></SearchHub>
             </div>
-            <div className='mt-6'></div>
+            <div className='mt-4 md:mt-10'></div>
             {listings.length > 0 ? (
-                        <ListingsCardList loading={isLoading} searchExhausted={searchExhausted} setPage={setPage} listings={listings} sortableKeys={sortableKeys} setSortBy={setSortBy} setSortOrder={setSortOrder} favListingsIds={favListingsIds} updateFavorite={updateFavorite} ></ListingsCardList>
+                        <ListingsCardList loading={isLoading} searchExhausted={searchExhausted} setPage={setPage} listings={listings} sortableKeys={sortableKeys} sortBy={sortBy} setSortBy={setSortBy} setSortOrder={setSortOrder} favListingsIds={favListingsIds} updateFavorite={updateFavorite} ></ListingsCardList>
                     ) : (
                         <NoResultsText>No results match the search criteria</NoResultsText>
             )}

@@ -1,4 +1,4 @@
-import { archiveListing, createListing, deleteListing, readAllListings, readListing, unarchiveListing, updateListing, getSkeletonListing } from '../services/newListingsService';
+import { archiveListing, createListing, deleteListing, readAllListings, readListing, unarchiveListing, updateListing, getSkeletonListing, addView } from '../services/newListingsService';
 import { Request, Response, Router } from "express";
 import { IncorrectPermissionsError, NotFoundError, ObjectIdError } from "../utils/errors";
 import { readUser } from '../services/userService';
@@ -212,6 +212,28 @@ router.put('/:id/unarchive', isAuthenticated, async (request: Request, response:
         response.status(500).json({ error: error.message });
     }
   }
+});
+
+//Add view by ObjectId (current user)
+router.put('/:id/addView', isAuthenticated, async (request: Request, response: Response) => {
+    try {
+        const currentUser = request.user as { netId? : string, userType: string, userConfirmed: boolean};
+        if (!currentUser) {
+            throw new Error('User not logged in');
+        }
+
+        const listing = await addView(request.params.id, currentUser.netId);
+        response.status(200).json({ listing });
+    } catch (error) {
+        console.log(error.message);
+        if (error instanceof NotFoundError || error instanceof ObjectIdError) {
+            response.status(error.status).json({ error: error.message });
+        } else if (error instanceof IncorrectPermissionsError) {
+            response.status(error.status).json({ error: error.message, incorrectPermissions: true });
+        } else {
+            response.status(500).json({ error: error.message });
+        }
+    }
 });
 
 //Updates for specific user

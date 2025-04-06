@@ -144,6 +144,10 @@ const ListingCard = ({
 
     const toggleFavorite = (e: React.MouseEvent) => {
         e.stopPropagation();
+        listing.favorites = isFavorite ? listing.favorites - 1 : listing.favorites + 1;
+        if (listing.favorites < 0) {
+            listing.favorites = 0;
+        }
         updateFavorite(listing, listing.id, !isFavorite);
     };
 
@@ -215,6 +219,14 @@ const ListingCard = ({
 
     const handleListingClick = () => {
         openModal(listing);
+    };
+
+    const ensureHttpPrefix = (url: string): string => {
+        if (!url) return '';
+        if (url.startsWith('http://') || url.startsWith('https://')) {
+          return url;
+        }
+        return `https://${url}`;
     };
 
     if (!listing) {
@@ -295,7 +307,7 @@ const ListingCard = ({
                         <div>
                             {listing.websites && listing.websites.length > 0 && (
                                 <a
-                                    href={listing.websites[0]}
+                                    href={ensureHttpPrefix(listing.websites[0])}
                                     className='mr-1'
                                     onClick={(e) => e.stopPropagation()}
                                     target="_blank"
