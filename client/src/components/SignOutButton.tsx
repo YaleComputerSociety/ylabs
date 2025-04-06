@@ -13,8 +13,6 @@ const SignOutButton = () => {
     
     // Skip saving login page
     if (currentPath !== '/login') {
-      console.log('Saving path before logout:', currentPath);
-      
       // Save the full URL including origin, as that's what the redirect param expects
       const returnUrl = window.location.origin + currentPath;
       localStorage.setItem('logoutReturnPath', returnUrl);
@@ -23,7 +21,6 @@ const SignOutButton = () => {
     // Perform logout
     axios.get<{ success: boolean }>("/logout").then(({ data }) => {
       if (data.success) {
-        console.log('LOGOUT: Logout successful, checking context');
         checkContext();
       } else {
         console.log('LOGOUT: Logout failed');
