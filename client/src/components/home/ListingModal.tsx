@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useContext } from 'react';
 import { NewListing } from '../../types/types';
 import { departmentCategories } from '../../utils/departmentNames';
+import UserContext from '../../contexts/UserContext';
 
 interface ListingModalProps {
   isOpen: boolean;
@@ -13,6 +14,8 @@ interface ListingModalProps {
 const ListingModal = ({ isOpen, onClose, listing, favListingsIds, updateFavorite }: ListingModalProps) => {
     const [isCreated, setIsCreating] = useState(listing.id === "create");
     const [isFavorite, setIsFavorite] = useState(favListingsIds.includes(listing.id));
+    const [restrictedStats, setRestrictedStats] = useState(true);
+    const {user} = useContext(UserContext);
 
     const departmentColors = [
         "bg-blue-200",
@@ -61,10 +64,29 @@ const ListingModal = ({ isOpen, onClose, listing, favListingsIds, updateFavorite
         }
     }, [favListingsIds]);
 
+    useEffect(() => {
+        //Check if the user type allows them to view the views/favorites
+        if (user && user.userConfirmed && (["admin", "professor", "faculty"].includes(user.userType))) {
+            setRestrictedStats(false);
+        }
+    }, []);
+
     const toggleFavorite = (e: React.MouseEvent) => {
         e.stopPropagation();
+        listing.favorites = isFavorite ? listing.favorites - 1 : listing.favorites + 1;
+        if (listing.favorites < 0) {
+            listing.favorites = 0;
+        }
         updateFavorite(listing.id, !isFavorite);
     }
+
+    const ensureHttpPrefix = (url: string): string => {
+        if (!url) return '';
+        if (url.startsWith('http://') || url.startsWith('https://')) {
+          return url;
+        }
+        return `https://${url}`;
+    };
 
     if (!isOpen || !listing) return null;
 
@@ -184,7 +206,7 @@ const ListingModal = ({ isOpen, onClose, listing, favListingsIds, updateFavorite
                         {listing.websites.map((website, index) => (
                             <li key={index} className="truncate">
                             <a 
-                                href={website} 
+                                href={ensureHttpPrefix(website)} 
                                 target="_blank" 
                                 rel="noopener noreferrer" 
                                 className="text-blue-600 hover:underline"
@@ -202,14 +224,18 @@ const ListingModal = ({ isOpen, onClose, listing, favListingsIds, updateFavorite
                 <section>
                     <h3 className="text-lg font-semibold mb-2">Stats</h3>
                     <div className="space-y-2 text-sm">
-                    <div className="flex justify-between">
-                        <span>Views:</span>
-                        <span className="font-medium">{listing.views}</span>
-                    </div>
-                    <div className="flex justify-between">
-                        <span>Favorites:</span>
-                        <span className="font-medium">{listing.favorites}</span>
-                    </div>
+                    {!restrictedStats && (
+                        <>
+                            <div className="flex justify-between">
+                                <span>Views:</span>
+                                <span className="font-medium">{listing.views}</span>
+                            </div>
+                            <div className="flex justify-between">
+                                <span>Favorites:</span>
+                                <span className="font-medium">{listing.favorites}</span>
+                            </div>
+                        </>
+                    )}
                     {listing.established && (
                         <div className="flex justify-between">
                         <span>Lab Established:</span>

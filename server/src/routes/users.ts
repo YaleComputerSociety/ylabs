@@ -7,9 +7,10 @@ import { isAuthenticated } from '../utils/permissions';
 
 const router = Router();
 
-/*
+
 //User confirmation routes
 
+/*
 //Confirm user and update listings
 router.put('/:id/confirm', async (request: Request, response: Response) => {
     try {

@@ -20,6 +20,7 @@ const App = () => {
           <Route path="/login" element={<Login />} />
           <Route path="/login-error" element={<UnprivateRoute Component={LoginError} />} />
           <Route path="/unknown" element={<PrivateRoute Component={Unknown} knownBlocked={true}/>} />
+          <Route path="/*" element={<PrivateRoute Component={Home} unknownBlocked={true}/>} />
       </Routes>
   </Router>
   );
