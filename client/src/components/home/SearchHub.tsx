@@ -3,6 +3,7 @@ import {NewListing} from '../../types/types';
 import axios from 'axios';
 import swal from 'sweetalert';
 import { createListing } from '../../utils/apiCleaner';
+import { departmentCategories } from '../../utils/departmentNames';
 
 interface SearchHubProps {
     allDepartments: string[];
@@ -21,6 +22,7 @@ const SearchHub = ({ allDepartments, resetListings, addListings, setIsLoading, s
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState("");
     const [queryString, setQueryString] = useState("");
+    const [focusedDepartmentIndex, setFocusedDepartmentIndex] = useState(-1);
     
     const dropdownRef = useRef<HTMLInputElement | null>(null);
     const dropdownInputRef = useRef<HTMLInputElement | null>(null);
@@ -77,17 +79,38 @@ const SearchHub = ({ allDepartments, resetListings, addListings, setIsLoading, s
     }, [page])
 
     const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-        if (e.key === "Enter" || e.key === "Escape") {
-            e.preventDefault();
-
-            setTimeout(() => {
-                searchRef.current?.blur();
-                dropdownRef.current?.blur();
-                dropdownInputRef.current?.blur();
-                dropdownButtonRef.current?.blur();
+        switch(e.key) {
+            case "ArrowDown":
+                e.preventDefault();
+                setFocusedDepartmentIndex(prev => 
+                    prev < filteredDepartments.length - 1 ? prev + 1 : prev
+                );
+                break;
+            case "ArrowUp":
+                e.preventDefault();
+                setFocusedDepartmentIndex(prev => prev > 0 ? prev - 1 : 0);
+                break;
+            case "Enter":
+                e.preventDefault();
+                // If department is selected in dropdown
+                if (focusedDepartmentIndex >= 0 && focusedDepartmentIndex < filteredDepartments.length) {
+                    handleDepartmentSelect(filteredDepartments[focusedDepartmentIndex]);
+                    setSearchTerm("");
+                    setFocusedDepartmentIndex(-1);
+                } else {
+                    // Close dropdown and reset search
+                    setIsDropdownOpen(false);
+                    setSearchTerm("");
+                    searchRef.current?.blur();
+                    dropdownInputRef.current?.blur();
+                }
+                break;
+            case "Escape":
+                e.preventDefault();
                 setIsDropdownOpen(false);
                 setSearchTerm("");
-            }, 0);
+                dropdownInputRef.current?.blur();
+                break;
         }
     };
 
@@ -176,75 +199,134 @@ const SearchHub = ({ allDepartments, resetListings, addListings, setIsLoading, s
         });
     }
 
+    const getDepartmentColor = (department: string) => {
+        if (Object.keys(departmentCategories).includes(department)) {
+            const category = departmentCategories[department as keyof typeof departmentCategories];
+            switch (category) {
+                case 0: return "bg-blue-200 text-gray-900"; // Humanities
+                case 1: return "bg-green-200 text-gray-900"; // Social Sciences
+                case 2: return "bg-yellow-200 text-gray-900"; // Physical Sciences & Mathematics
+                case 3: return "bg-red-200 text-gray-900"; // Life Sciences
+                case 4: return "bg-purple-200 text-gray-900"; // Engineering & Computer Science
+                case 5: return "bg-pink-200 text-gray-900"; // Medical & Health Sciences
+                case 6: return "bg-teal-200 text-gray-900"; // Languages & Cultural Studies
+                case 7: return "bg-orange-200 text-gray-900"; // Professional & Applied Fields
+                default: return "bg-gray-100 text-gray-900";
+            }
+        }
+        return "bg-gray-100 text-gray-900";
+    };
+
+    const handleRemoveAllDepartments = () => {
+        setSelectedDepartments([]);
+    };
+
     return (
-        <div className="relative" ref={dropdownRef}>
+        <div className="relative">
             <div className="flex-col flex md:flex-row gap-4">
-                <div className="md:flex-1 h-11">
+                <div className="md:flex-1">
                     <input
                         ref = {searchRef}
                         type="text"
                         value={queryString}
                         onChange={(e) => setQueryString(e.target.value)}
-                        onKeyDown={handleKeyDown}
+                        onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === "Escape") {
+                                e.preventDefault();
+                                searchRef.current?.blur();
+                            }
+                        }}
                         onFocus={closeDropdown}
                         placeholder="Search by keywords, professor name..."
-                        className="px-4 py-2 w-full border rounded-lg text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-text h-full"
+                        className="px-4 py-2 w-full border rounded text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-text h-11"
                     />
                 </div>
-                <div className={`w-full md:w-[45%] rounded-lg flex items-center h-11 ${
-                            isDropdownOpen ? 'ring-2 ring-blue-500' : '' 
-                        }`}>
-                    <input
-                        ref = {dropdownInputRef}
-                        type="text"
-                        value={searchTerm}
-                        onClick={openDropdown}
-                        onChange={handleSearchChange}
-                        onKeyDown={handleKeyDown}
-                        className={`border px-4 py-2 rounded-l-lg text-gray-700 outline-none w-full cursor-pointer h-full`}
-                        placeholder="Departments... "
-                    />
-                    <button
-                        onClick={toggleDropdown}
-                        onKeyDown={handleButtonKeyDown}
-                        ref = {dropdownButtonRef}
-                        className={`bg-gray-300 text-gray-700 px-3 py-2 rounded-r-lg flex items-center justify-center cursor-pointer hover:bg-gray-400 h-full`}
-                    >
-                        <span className="text-sm">&#9660;</span> {/* Down arrow for the dropdown */}
-                    </button>
-                </div>
-            </div>
-
-            <div className={`mt-2 w-full bg-white rounded-lg z-10 shadow-lg border overflow-hidden transition-[max-height,border-color] duration-300 ease-in-out ${
-                    isDropdownOpen ? 'max-h-[350px] border-gray-300' : 'max-h-0 border-transparent'
-                }`}>
-                <ul className={`max-h-[350px] p-2 overflow-y-auto`}>
-                    {filteredDepartments.length > 0 ? (
-                        filteredDepartments.map((department, index) => (
-                            <li
-                                key={index}
-                                onClick={() => handleDepartmentSelect(department)}
-                                className="p-2 cursor-pointer hover:bg-gray-200"
-                            >
-                                {department}
-                            </li>
-                        ))
-                    ) : (
-                        <li className="p-2 text-gray-500">No departments found</li>
+                <div className="relative w-full md:w-[45%]" ref={dropdownRef}>
+                    <div className="relative h-11">
+                        <input
+                            ref={dropdownInputRef}
+                            type="text"
+                            value={searchTerm}
+                            onClick={() => setIsDropdownOpen(true)}
+                            onChange={handleSearchChange}
+                            onKeyDown={handleKeyDown}
+                            onFocus={() => setIsDropdownOpen(true)}
+                            className="appearance-none border rounded w-full h-full px-3 pr-10 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                            placeholder="Filter by department"
+                        />
+                        <div
+                            className="absolute inset-y-0 right-0 flex items-center px-2 text-gray-700 cursor-pointer"
+                            onClick={toggleDropdown}
+                        >
+                            <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
+                                <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" />
+                            </svg>
+                        </div>
+                    </div>
+                    
+                    {isDropdownOpen && (
+                        <div className="absolute left-0 right-0 bg-white rounded-lg z-50 shadow-lg border overflow-hidden mt-1 max-h-[300px] md:max-h-[350px] border-gray-300">
+                            <ul className="max-h-[350px] p-1 overflow-y-auto">
+                                {filteredDepartments.length > 0 ? (
+                                    filteredDepartments.map((department, index) => (
+                                        <li
+                                            key={index}
+                                            onClick={() => {
+                                                handleDepartmentSelect(department);
+                                                setSearchTerm("");
+                                            }}
+                                            className={`p-2 cursor-pointer ${
+                                                focusedDepartmentIndex === index ? 'bg-blue-100' : 'hover:bg-gray-100'
+                                            }`}
+                                            onMouseDown={(e) => e.preventDefault()}
+                                        >
+                                            {department}
+                                        </li>
+                                    ))
+                                ) : (
+                                    <li className="p-2 text-gray-500">No departments found</li>
+                                )}
+                            </ul>
+                        </div>
                     )}
-                </ul>
+                </div>
             </div>
             
-            <div className={`flex flex-wrap gap-2 mt-2 transition-all duration-300 ease-in-out`}>
+            <div className="flex flex-wrap gap-2 mt-4 w-full">
+                <span 
+                    className={'border text-gray-700 px-2 py-1 rounded text-sm flex items-center'}
+                >
+                    Filters:
+                </span>
                 {selectedDepartments.map((department, index) => (
-                    <div
-                        key={index}
-                        className="flex items-center px-3 p-1 bg-blue-500 text-white rounded-full cursor-pointer"
-                        onClick={() => handleDepartmentRemove(department)}
+                    <span 
+                        key={index} 
+                        className={`${getDepartmentColor(department)} px-2 py-1 rounded text-sm flex items-center`}
                     >
-                        {department} <span className="ml-2 text-xs">&times;</span>
-                    </div>
+                        <span className="whitespace-nowrap">
+                            {department}
+                        </span>
+                        <button 
+                            type="button" 
+                            onClick={() => handleDepartmentRemove(department)}
+                            className="ml-2 text-gray-500 hover:text-gray-700"
+                        >
+                            ×
+                        </button>
+                    </span>
                 ))}
+                
+                {/* Remove All button - only shows when 2+ departments are selected */}
+                {selectedDepartments.length >= 2 && (
+                    <button
+                        onClick={handleRemoveAllDepartments}
+                        className="bg-red-500 hover:bg-red-600 rounded px-2 py-1 rounded text-sm flex items-center transition-colors"
+                    >
+                        <span className="whitespace-nowrap text-white">
+                            Remove All
+                        </span>
+                    </button>
+                )}
             </div>
         </div>
     );

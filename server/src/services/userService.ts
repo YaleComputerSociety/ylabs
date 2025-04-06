@@ -1,7 +1,7 @@
 import { User } from "../models";
 import { NotFoundError } from "../utils/errors";
 import { createUserBackup, updateUserBackup, userBackupExists } from "./userBackupService";
-import { readListing, confirmListing, unconfirmListing } from "./newListingsService";
+import { readListing, confirmListing, unconfirmListing, addFavorite, removeFavorite } from "./newListingsService";
 import mongoose from "mongoose";
 
 export const createUser = async (userData: any) => {
@@ -226,6 +226,10 @@ export const addFavListings = async(id: any, newListings: [mongoose.Types.Object
 
     const newUser = await updateUser(id, {"favListings": user.favListings});
 
+    for (const listingId of newListings) {
+        await addFavorite(listingId.toString(), id);
+    }
+
     return newUser;
 };
 
@@ -238,6 +242,10 @@ export const deleteFavListings = async(id: any, removedListings: [mongoose.Types
     user.favListings = user.favListings.filter(listing => removedListingsStrings.indexOf(listing.toString()) < 0);
 
     const newUser = await updateUser(id, {"favListings": user.favListings});
+
+    for (const listingId of removedListings) {
+        await removeFavorite(listingId.toString(), id);
+    }
 
     return newUser;
 };

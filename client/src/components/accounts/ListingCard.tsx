@@ -24,7 +24,21 @@ interface ListingCardProps {
     reloadListings: () => void;
 }
 
-const ListingCard = ({ listing, favListingsIds, updateFavorite, updateListing, postListing, postNewListing, clearCreatedListing, deleteListing, openModal, globalEditing, setGlobalEditing, editable, reloadListings }: ListingCardProps) => {
+const ListingCard = ({ 
+  listing, 
+  favListingsIds, 
+  updateFavorite, 
+  updateListing, 
+  postListing, 
+  postNewListing, 
+  clearCreatedListing, 
+  deleteListing, 
+  openModal, 
+  globalEditing, 
+  setGlobalEditing, 
+  editable, 
+  reloadListings 
+}: ListingCardProps) => {
     const [visibleDepartments, setVisibleDepartments] = useState<string[]>([]);
     const [moreCount, setMoreCount] = useState(0);
     const [showTooltip, setShowTooltip] = useState(false);
@@ -33,8 +47,11 @@ const ListingCard = ({ listing, favListingsIds, updateFavorite, updateListing, p
     const departmentsContainerRef = useRef<HTMLDivElement>(null);
     const isCreated = listing.id === "create";
     const [editing, setEditing] = useState(isCreated);
-    const {user} = useContext(UserContext);
-    const canDelete = user && (user.netId === listing.ownerId)
+    const { user } = useContext(UserContext);
+    const canDelete = user && (user.netId === listing.ownerId);
+
+    // Store the original listing before editing begins.
+    const originalListingRef = useRef<NewListing | null>(null);
 
     const departmentColors = [
         "bg-blue-200",
@@ -70,31 +87,25 @@ const ListingCard = ({ listing, favListingsIds, updateFavorite, updateListing, p
     };
 
     useEffect(() => {
-        // Set listing as favorite based on if listing.id is in favListingsIds
-        if(favListingsIds) {
+        if (favListingsIds) {
             setIsFavorite(favListingsIds.includes(listing.id));
         }
     }, [favListingsIds]);
 
     useEffect(() => {
-        // Set listing as archived based on listing.archived
         setArchived(listing.archived);
     }, [listing]);
 
     useEffect(() => {
         if (!departmentsContainerRef.current) return;
-        
         const calculateVisibleDepartments = () => {
             const container = departmentsContainerRef.current;
             if (!container) return;
-            
             const containerWidth = container.clientWidth;
             let totalWidth = 0;
             const tempVisible: string[] = [];
-
             setMoreCount(0);
             
-            // Create a temporary span to measure each department's width
             const tempSpan = document.createElement('span');
             tempSpan.className = "bg-blue-200 text-gray-900 text-xs rounded px-1 py-0.5 mt-2 mr-2";
             tempSpan.style.visibility = 'hidden';
@@ -103,8 +114,7 @@ const ListingCard = ({ listing, favListingsIds, updateFavorite, updateListing, p
             
             for (let i = 0; i < listing.departments.length; i++) {
                 tempSpan.textContent = listing.departments[i];
-                const width = tempSpan.getBoundingClientRect().width + 8; // 8px for margin
-                
+                const width = tempSpan.getBoundingClientRect().width + 8;
                 if (totalWidth + width <= containerWidth) {
                     tempVisible.push(listing.departments[i]);
                     totalWidth += width;
@@ -114,114 +124,110 @@ const ListingCard = ({ listing, favListingsIds, updateFavorite, updateListing, p
                 }
             }
 
-            if(tempVisible.length !== listing.departments.length) {
-                // Measure the "+x more" bubble
+            if (tempVisible.length !== listing.departments.length) {
                 tempSpan.textContent = `+${listing.departments.length - tempVisible.length} more`;
-                const moreWidth = tempSpan.getBoundingClientRect().width + 8; // 8px for margin
-
-                // Check if the "+x more" bubble fits
+                const moreWidth = tempSpan.getBoundingClientRect().width + 8;
                 if (totalWidth + moreWidth > containerWidth) {
-                    // Remove the last department to make space for the "+x more" bubble
                     tempVisible.pop();
                     setMoreCount(listing.departments.length - tempVisible.length);
                 }
-                }
+            }
             
             document.body.removeChild(tempSpan);
             setVisibleDepartments(tempVisible);
         };
         
         calculateVisibleDepartments();
-        // Re-calculate on window resize
         window.addEventListener('resize', calculateVisibleDepartments);
         return () => window.removeEventListener('resize', calculateVisibleDepartments);
     }, [listing]);
 
     const toggleFavorite = (e: React.MouseEvent) => {
         e.stopPropagation();
+        listing.favorites = isFavorite ? listing.favorites - 1 : listing.favorites + 1;
+        if (listing.favorites < 0) {
+            listing.favorites = 0;
+        }
         updateFavorite(listing, listing.id, !isFavorite);
-    }
+    };
 
     const handleDelete = (e: React.MouseEvent) => {
         e.stopPropagation();
-        
         swal({
             title: "Delete Listing",
             text: "Are you sure you want to delete this listing? This action cannot be undone",
             icon: "warning",
             buttons: ["Cancel", "Delete"],
             dangerMode: true,
-        })
-        .then((willDelete) => {
+        }).then((willDelete) => {
             if (willDelete) {
                 deleteListing(listing);
             }
         });
-    }
+    };
 
     const handleArchive = (e: React.MouseEvent) => {
         e.stopPropagation();
-        
-        if(archived) {
+        if (archived) {
             setArchived(false);
-            axios.put(`/newListings/${listing.id}/unarchive`, {withCredentials: true}).then((response) => {
-                const responseListing = response.data.listing;
-                const newListing = createListing(responseListing);
-                updateListing(newListing);
-            }).catch((error) => {
-                setArchived(true);
-                console.error('Error archiving listing:', error);
-
-                if(error.response.data.incorrectPermissions) {
-                    swal({
-                        text: "You no longer have permission to unarchive this listing",
-                        icon: "warning",
-                    })
-                    reloadListings();
-                } else {
-                    swal({
-                        text: "Unable to unarchive listing",
-                        icon: "warning",
-                    })
-                    reloadListings();
-                }
-            })
+            axios.put(`/newListings/${listing.id}/unarchive`, { withCredentials: true })
+                .then((response) => {
+                    const responseListing = response.data.listing;
+                    const newListing = createListing(responseListing);
+                    updateListing(newListing);
+                })
+                .catch((error) => {
+                    setArchived(true);
+                    console.error('Error unarchiving listing:', error);
+                    if (error.response.data.incorrectPermissions) {
+                        swal({ text: "You no longer have permission to unarchive this listing", icon: "warning" });
+                        reloadListings();
+                    } else {
+                        swal({ text: "Unable to unarchive listing", icon: "warning" });
+                        reloadListings();
+                    }
+                });
         } else {
             setArchived(true);
-            axios.put(`/newListings/${listing.id}/archive`, {withCredentials: true}).then((response) => {
-                const responseListing = response.data.listing;
-                const newListing = createListing(responseListing)
-                updateListing(newListing);
-            }).catch((error) => {
-                setArchived(false);
-                console.error('Error archiving listing:', error);
-                
-                if(error.response.data.incorrectPermissions) {
-                    swal({
-                        text: "You no longer have permission to archive this listing",
-                        icon: "warning",
-                    })
-                    reloadListings();
-                } else {
-                    swal({
-                        text: "Unable to archive listing",
-                        icon: "warning",
-                    })
-                    reloadListings();
-                }
-            })
+            axios.put(`/newListings/${listing.id}/archive`, { withCredentials: true })
+                .then((response) => {
+                    const responseListing = response.data.listing;
+                    const newListing = createListing(responseListing);
+                    updateListing(newListing);
+                })
+                .catch((error) => {
+                    setArchived(false);
+                    console.error('Error archiving listing:', error);
+                    if (error.response.data.incorrectPermissions) {
+                        swal({ text: "You no longer have permission to archive this listing", icon: "warning" });
+                        reloadListings();
+                    } else {
+                        swal({ text: "Unable to archive listing", icon: "warning" });
+                        reloadListings();
+                    }
+                });
         }
-    }
+    };
 
+    // When Edit is clicked, store the original listing before changes.
     const handleEdit = (e: React.MouseEvent) => {
         e.stopPropagation();
+        originalListingRef.current = listing;
         setEditing(true);
         setGlobalEditing(true);
-    }
+    };
 
     const handleListingClick = () => {
         openModal(listing);
-    }
+    };
+
+    const ensureHttpPrefix = (url: string): string => {
+        if (!url) return '';
+        if (url.startsWith('http://') || url.startsWith('https://')) {
+          return url;
+        }
+        return `https://${url}`;
+    };
 
     if (!listing) {
         return null;
@@ -229,12 +235,9 @@ const ListingCard = ({ listing, favListingsIds, updateFavorite, updateListing, p
 
     return (
         <div className="mb-4 relative">
-            <div
-                key={listing.id}
-                className="flex relative z-10"
-            >
-                <div 
-                    className={`${getHiringStatusColor()} cursor-pointer rounded-l flex-shrink-0 my-2 relative ${archived ? "opacity-50" : ""}`} 
+            <div key={listing.id} className="flex relative z-10">
+                <div
+                    className={`${getHiringStatusColor()} cursor-pointer rounded-l flex-shrink-0 my-2 relative ${archived ? "opacity-50" : ""}`}
                     style={{ width: '6px' }}
                     onMouseEnter={() => setShowTooltip(true)}
                     onMouseLeave={() => setShowTooltip(false)}
@@ -248,18 +251,23 @@ const ListingCard = ({ listing, favListingsIds, updateFavorite, updateListing, p
                 <div className="p-4 flex-grow grid grid-cols-3 md:grid-cols-12 cursor-pointer bg-white hover:bg-gray-100 border border-gray-300 rounded shadow" onClick={handleListingClick}>
                     {/* First Column */}
                     <div className="col-span-2 md:col-span-4">
-                        <p className={`text-lg font-semibold mb-3 ${archived ? "opacity-50" : ""}`} style={{ lineHeight: '1.2rem', height: '1.2rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{listing.title}</p>
-                        <p className={`text-sm text-gray-700 ${archived ? "opacity-50" : ""}`} style={{ overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical' }}>
+                        <p className={`text-lg font-semibold mb-3 ${archived ? "opacity-50" : ""}`}
+                           style={{ lineHeight: '1.2rem', height: '1.2rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {listing.title}
+                        </p>
+                        <p className={`text-sm text-gray-700 ${archived ? "opacity-50" : ""}`}
+                           style={{ overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical' }}>
                             <strong>Professors:</strong> {[`${listing.ownerFirstName} ${listing.ownerLastName}`, ...listing.professorNames].join(', ')}
                         </p>
-                        {/* list all departments in blue bubbles*/}
                         <div ref={departmentsContainerRef} className="flex overflow-hidden" style={{ whiteSpace: 'nowrap' }}>
                             {visibleDepartments.length > 0 ? (
                                 <>
                                     {visibleDepartments.map((department) => (
                                         <span
                                             key={department}
-                                            className={`${Object.keys(departmentCategories).includes(department) ? departmentColors[departmentCategories[department as keyof typeof departmentCategories]] : "bg-gray-200"} text-gray-900 text-xs rounded px-1 py-0.5 mt-3 mr-2 ${archived ? "opacity-50" : ""}`}
+                                            className={`${Object.keys(departmentCategories).includes(department)
+                                                ? departmentColors[departmentCategories[department as keyof typeof departmentCategories]]
+                                                : "bg-gray-200"} text-gray-900 text-xs rounded px-1 py-0.5 mt-3 mr-2 ${archived ? "opacity-50" : ""}`}
                                             style={{ display: 'inline-block', whiteSpace: 'nowrap' }}
                                         >
                                             {department}
@@ -286,23 +294,21 @@ const ListingCard = ({ listing, favListingsIds, updateFavorite, updateListing, p
                             )}
                         </div>
                     </div>
-
                     {/* Second Column */}
                     <div className="col-span-6 hidden md:flex align-middle">
-                        {/* Vertical Line */}
                         <div className={`flex-shrink-0 border-l border-gray-300 mx-4 ${archived ? "opacity-50" : ""}`} />
-                        <p className={`flex-grow text-gray-800 text-sm overflow-hidden overflow-ellipsis ${archived ? "opacity-50" : ""}`} style={{ display: '-webkit-box', WebkitLineClamp: 4, WebkitBoxOrient: 'vertical' }}>
+                        <p className={`flex-grow text-gray-800 text-sm overflow-hidden overflow-ellipsis ${archived ? "opacity-50" : ""}`}
+                           style={{ display: '-webkit-box', WebkitLineClamp: 4, WebkitBoxOrient: 'vertical' }}>
                             {listing.description}
                         </p>
                     </div>
-
                     {/* Third Column */}
                     <div className="flex flex-col col-span-1 md:col-span-2 items-end">
                         <div>
                             {listing.websites && listing.websites.length > 0 && (
                                 <a
-                                    href={listing.websites[0]}
-                                    className = 'mr-1'
+                                    href={ensureHttpPrefix(listing.websites[0])}
+                                    className='mr-1'
                                     onClick={(e) => e.stopPropagation()}
                                     target="_blank"
                                     rel="noopener noreferrer"
@@ -318,89 +324,78 @@ const ListingCard = ({ listing, favListingsIds, updateFavorite, updateListing, p
                             )}
                             {!isCreated && (
                                 <a onClick={toggleFavorite} className="inline-block">
-                                    <button 
-                                        className="p-1 hover:bg-gray-200 rounded-full"
-                                        aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"}
-                                    >
-                                        <svg 
-                                            xmlns="http://www.w3.org/2000/svg" 
-                                            width="20" 
-                                            height="20" 
-                                            viewBox="0 0 24 24" 
-                                            className={`transition-colors ${archived ? "opacity-50" : ""}`}
-                                            fill={isFavorite ? "#FFDA7B" : "none"} 
-                                            stroke={isFavorite ? "#F0C04A" : "currentColor"} 
-                                            strokeWidth="1.5" 
-                                            strokeLinecap="round" 
-                                            strokeLinejoin="round"
-                                        >
-                                            <path d="M12 17.75l-6.172 3.245l1.179 -6.873l-5 -4.867l6.9 -1l3.086 -6.253l3.086 6.253l6.9 1l-5 4.867l1.179 6.873z" />
+                                    <button className="p-1 hover:bg-gray-200 rounded-full"
+                                            aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"}>
+                                        <svg xmlns="http://www.w3.org/2000/svg"
+                                             width="20"
+                                             height="20"
+                                             viewBox="0 0 24 24"
+                                             className={`transition-colors ${archived ? "opacity-50" : ""}`}
+                                             fill={isFavorite ? "#FFDA7B" : "none"}
+                                             stroke={isFavorite ? "#F0C04A" : "currentColor"}
+                                             strokeWidth="1.5"
+                                             strokeLinecap="round"
+                                             strokeLinejoin="round">
+                                            <path d="M12 17.75l-6.172 3.245l1.179-6.873l-5-4.867l6.9-1l3.086-6.253l3.086 6.253l6.9 1l-5 4.867l1.179 6.873z" />
                                         </svg>
                                     </button>
                                 </a>
                             )}
                         </div>
                         <div className="flex-grow" />
-                        <p className={`text-sm text-gray-700 ${archived ? "opacity-50" : ""}`} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>
+                        <p className={`text-sm text-gray-700 ${archived ? "opacity-50" : ""}`}
+                           style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>
                             {new Date(listing.updatedAt).toLocaleDateString()}
                         </p>
                     </div>
                 </div>
             </div>
-
-            <div 
-                className={`transform transition-all duration-700 overflow-hidden ${
-                    editable && editing 
-                    ? "translate-y-0 max-h-[4000px]" 
-                    : "-translate-y-5 max-h-0"
-                } pl-2 pr-0.5 -mt-1`}
-            >
+            <div className={`transform transition-all duration-700 overflow-hidden ${editable && editing ? "translate-y-0 max-h-[4000px]" : "-translate-y-5 max-h-0"} pl-2 pr-0.5 -mt-1`}>
                 {editable && editing && (
                     <ListingForm 
                         listing={listing}
                         isCreated={isCreated} 
                         onLoad={(updatedListing, success) => {
-                            if(!success) {
+                            if (!success) {
                                 setEditing(false);
                                 swal({
                                     text: "Unable to fetch most recent listing",
                                     icon: "warning",
-                                })
+                                });
                                 reloadListings();
                                 return;
                             }
                             updateListing(updatedListing);
                         }}
                         onCancel={() => {
-                            if(isCreated) {
-
+                            // On cancel, reset the preview to the original listing.
+                            if (isCreated) {
                                 setEditing(false);
                                 clearCreatedListing();
                             } else {
-                                setEditing(false)
+                                if (originalListingRef.current) {
+                                    updateListing({ ...originalListingRef.current });
+                                }
+                                setEditing(false);
                                 setGlobalEditing(false);
                             }
                         }}
                         onSave={(updatedListing) => {
-                            postListing(updatedListing); // Call the postListing prop
+                            postListing(updatedListing);
                             setEditing(false);
                             setGlobalEditing(false);
                         }} 
-                        onCreate={
-                            (newListing) => {
-                                postNewListing(newListing);
-                                setEditing(false);
-                                setGlobalEditing(false);
-                            }
-                        }
+                        onCreate={(newListing) => {
+                            postNewListing(newListing);
+                            setEditing(false);
+                            setGlobalEditing(false);
+                        }}
                     />
                 )}
             </div>
-
-            {/* Action buttons tab */}
             {editable && !editing && (
                 <div className="flex justify-center">
-                    <div className={`bg-white border border-gray-300 border-t-0 rounded-b-lg shadow px-3 pb-1 pt-3 -mt-1 inline-flex space-x-2`}>
+                    <div className="bg-white border border-gray-300 border-t-0 rounded-b-lg shadow px-3 pb-1 pt-3 -mt-1 inline-flex space-x-2">
                         <button 
                             className="p-1 rounded-full hover:bg-gray-100 text-gray-600 hover:text-green-600 transition-colors"
                             onClick={handleArchive}
@@ -408,17 +403,34 @@ const ListingCard = ({ listing, favListingsIds, updateFavorite, updateListing, p
                             aria-label={archived ? "Unarchive listing" : "Archive listing"}
                         >
                             {archived ? (
-                                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className = "opacity-50">
+                                <svg xmlns="http://www.w3.org/2000/svg"
+                                     width="18"
+                                     height="18"
+                                     viewBox="0 0 24 24"
+                                     fill="none"
+                                     stroke="currentColor"
+                                     strokeWidth="2"
+                                     strokeLinecap="round"
+                                     strokeLinejoin="round"
+                                     className="opacity-50">
                                     <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-                                    <path d="M10.585 10.587a2 2 0 0 0 2.829 2.828" />
-                                    <path d="M16.681 16.673a8.717 8.717 0 0 1 -4.681 1.327c-3.6 0 -6.6 -2 -9 -6c1.272 -2.12 2.712 -3.678 4.32 -4.674m2.86 -1.146a9.055 9.055 0 0 1 1.82 -.18c3.6 0 6.6 2 9 6c-.666 1.11 -1.379 2.067 -2.138 2.87" />
-                                    <path d="M3 3l18 18" />
+                                    <path d="M10.585 10.587a2 2 0 0 0 2.829 2.828"/>
+                                    <path d="M16.681 16.673a8.717 8.717 0 0 1 -4.681 1.327c-3.6 0 -6.6 -2 -9 -6c1.272 -2.12 2.712 -3.678 4.32 -4.674m2.86 -1.146a9.055 9.055 0 0 1 1.82 -.18c3.6 0 6.6 2 9 6c-.666 1.11 -1.379 2.067 -2.138 2.87"/>
+                                    <path d="M3 3l18 18"/>
                                 </svg>
                             ) : (
-                                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <svg xmlns="http://www.w3.org/2000/svg"
+                                     width="18"
+                                     height="18"
+                                     viewBox="0 0 24 24"
+                                     fill="none"
+                                     stroke="currentColor"
+                                     strokeWidth="2"
+                                     strokeLinecap="round"
+                                     strokeLinejoin="round">
                                     <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-                                    <path d="M10 12a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" />
-                                    <path d="M21 12c-2.4 4 -5.4 6 -9 6c-3.6 0 -6.6 -2 -9 -6c2.4 -4 5.4 -6 9 -6c3.6 0 6.6 2 9 6" />
+                                    <path d="M10 12a2 2 0 1 0 4 0a2 2 0 0 0 -4 0"/>
+                                    <path d="M21 12c-2.4 4 -5.4 6 -9 6c-3.6 0 -6.6 -2 -9 -6c2.4 -4 5.4 -6 9 -6c3.6 0 6.6 2 9 6"/>
                                 </svg>
                             )}
                         </button>
@@ -426,8 +438,7 @@ const ListingCard = ({ listing, favListingsIds, updateFavorite, updateListing, p
                         <button 
                             className={`p-1 rounded-full ${globalEditing 
                                 ? "text-gray-400 cursor-not-allowed" 
-                                : "hover:bg-gray-100 text-gray-600 hover:text-blue-600 transition-colors"
-                            }`}
+                                : "hover:bg-gray-100 text-gray-600 hover:text-blue-600 transition-colors"}`}
                             onClick={(e) => {
                                 e.stopPropagation();
                                 if (!globalEditing) {
@@ -438,34 +449,52 @@ const ListingCard = ({ listing, favListingsIds, updateFavorite, updateListing, p
                             aria-label={globalEditing ? "Editing disabled" : "Edit listing"}
                             disabled={globalEditing}
                         >
-                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`${archived || globalEditing ? "opacity-50" : ""}`}>
+                            <svg xmlns="http://www.w3.org/2000/svg"
+                                 width="18"
+                                 height="18"
+                                 viewBox="0 0 24 24"
+                                 fill="none"
+                                 stroke="currentColor"
+                                 strokeWidth="2"
+                                 strokeLinecap="round"
+                                 strokeLinejoin="round"
+                                 className={`${archived || globalEditing ? "opacity-50" : ""}`}>
                                 <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-                                <path d="M4 20h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4" />
-                                <path d="M13.5 6.5l4 4" />
+                                <path d="M4 20h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4"/>
+                                <path d="M13.5 6.5l4 4"/>
                             </svg>
                         </button>
                         
                         <button 
-                            className={`p-1 rounded-full ${canDelete
+                            className={`p-1 rounded-full ${canDelete && !globalEditing
                                 ? "hover:bg-gray-100 text-gray-600 hover:text-red-600 transition-colors"
                                 : "text-gray-400 cursor-not-allowed"}`}
                             onClick={(e) => {
                                 e.stopPropagation();
-                                if (canDelete) {
+                                if (canDelete && !globalEditing) {
                                     handleDelete(e);
                                 }
                             }}
-                            title={canDelete ? "Delete listing" : "Only owner can delete"}
-                            aria-label={canDelete ? "Delete listing" : "Only owner can delete"}
-                            disabled = {!canDelete}
+                            title={canDelete ? globalEditing ? "Must close current editor" : "Delete listing" : "Only owner can delete"}
+                            aria-label={canDelete ? globalEditing ? "Must close current editor" : "Delete listing" : "Only owner can delete"}
+                            disabled={!canDelete}
                         >
-                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`${archived ? "opacity-50" : ""}`}>
+                            <svg xmlns="http://www.w3.org/2000/svg"
+                                 width="18"
+                                 height="18"
+                                 viewBox="0 0 24 24"
+                                 fill="none"
+                                 stroke="currentColor"
+                                 strokeWidth="2"
+                                 strokeLinecap="round"
+                                 strokeLinejoin="round"
+                                 className={`${archived || globalEditing ? "opacity-50" : ""}`}>
                                 <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-                                <path d="M4 7l16 0" />
-                                <path d="M10 11l0 6" />
-                                <path d="M14 11l0 6" />
-                                <path d="M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2 -2l1 -12" />
-                                <path d="M9 7v-3a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v3" />
+                                <path d="M4 7l16 0"/>
+                                <path d="M10 11l0 6"/>
+                                <path d="M14 11l0 6"/>
+                                <path d="M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2 -2l1 -12"/>
+                                <path d="M9 7v-3a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v3"/>
                             </svg>
                         </button>
                     </div>
@@ -473,6 +502,6 @@ const ListingCard = ({ listing, favListingsIds, updateFavorite, updateListing, p
             )}
         </div>
     );
-}
+};
 
 export default ListingCard;
