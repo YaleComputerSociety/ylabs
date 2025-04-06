@@ -112,7 +112,7 @@ export const listingExists = async(id: any) => {
     }
 };*/
 
-export const updateListing = async(id: any, userId: string, data: any) => {
+export const updateListing = async(id: any, userId: string, data: any, noAuth: boolean = false, useTimestamps: boolean = true) => {
     if (mongoose.Types.ObjectId.isValid(id)) {
         const oldListing = await NewListing.findById(id);
 
@@ -146,12 +146,12 @@ export const updateListing = async(id: any, userId: string, data: any) => {
             }
         }
 
-        if (!oldListing.professorIds.includes(userId) && oldListing.ownerId !== userId) {
+        if (!noAuth && (!oldListing.professorIds.includes(userId) && oldListing.ownerId !== userId)) {
             throw new IncorrectPermissionsError(`User with id ${userId} does not have permission to update listing with id ${id}`);
         }
 
         const listing = await NewListing.findByIdAndUpdate(id, data,
-            { new: true, runValidators: true}
+            { new: true, runValidators: true, timestamps: useTimestamps }
         );
 
         if (!listing || !oldListing) {
@@ -193,6 +193,43 @@ export const confirmListing = async(id: any, userId: string) => {
 
 export const unconfirmListing = async(id: any, userId: string) => {
     const listing = await updateListing(id, userId, {"confirmed": false});
+    return listing;
+}
+
+export const addView = async(id: any, userId: string) => {
+    const oldListing = await readListing(id);
+    if (!oldListing) {
+        throw new NotFoundError(`Listing not found with ObjectId: ${id}`);
+    }
+
+    const oldViews = oldListing.views as number || 0;
+
+    const listing = await updateListing(id, userId, {"views": oldViews + 1}, true, false);
+    return listing;
+}
+
+export const addFavorite = async(id: any, userId: string) => {
+    const oldListing = await readListing(id);
+    if (!oldListing) {
+        throw new NotFoundError(`Listing not found with ObjectId: ${id}`);
+    }
+
+    const oldFavorites = oldListing.favorites as number || 0;
+
+    const listing = await updateListing(id, userId, {"favorites": oldFavorites + 1}, true, false);
+    return listing;
+}
+
+export const removeFavorite = async(id: any, userId: string) => {
+    const oldListing = await readListing(id);
+    if (!oldListing) {
+        throw new NotFoundError(`Listing not found with ObjectId: ${id}`);
+    }
+
+    const oldFavorites = oldListing.favorites as number || 0;
+    const newFavorites = oldFavorites <= 0 ? 0 : oldFavorites - 1;
+
+    const listing = await updateListing(id, userId, {"favorites": newFavorites}, true, false);
     return listing;
 }
 
