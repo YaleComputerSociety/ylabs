@@ -10,6 +10,7 @@ import PulseLoader from "react-spinners/PulseLoader";
 import { useContext } from "react";
 import UserContext from "../contexts/UserContext";
 import CreateButton from "../components/accounts/CreateButton";
+import Footer from '../components/Footer'
 
 const Account = () => {
     const [ownListings, setOwnListings] = useState<NewListing[]>([]);
@@ -310,6 +311,7 @@ const Account = () => {
                     )}
                 </div>
             )}
+            <Footer />
         </div>
     );
 };

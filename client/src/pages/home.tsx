@@ -8,6 +8,7 @@ import styled from "styled-components";
 import {NewListing} from '../types/types';
 
 import swal from "sweetalert";
+import Footer from '../components/Footer'
 
 // Remove all archived from search results on backend
 
@@ -95,12 +96,12 @@ const Home = () => {
                     ) : (
                         <NoResultsText>No results match the search criteria</NoResultsText>
             )}
+            <Footer />
         </div>
     );
 };
 
 export default Home;
-
 const NoResultsText = styled.h4`
   color: #838383;
   text-align: center;
