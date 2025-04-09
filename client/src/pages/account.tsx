@@ -10,6 +10,7 @@ import PulseLoader from "react-spinners/PulseLoader";
 import { useContext } from "react";
 import UserContext from "../contexts/UserContext";
 import CreateButton from "../components/accounts/CreateButton";
+import YoutubeVideo from "../components/accounts/YoutubeVideo";
 
 const Account = () => {
     const [ownListings, setOwnListings] = useState<NewListing[]>([]);
@@ -296,6 +297,16 @@ const Account = () => {
                         </ul>
                     ) : (
                         <p>No listings found.</p>
+                    )}
+
+                    {user && (user.userType === "professor" || user.userType === "faculty" || user.userType === "admin") && (
+                        <>
+                            <hr className="mt-28 border-t border-gray-300" />
+                            <p className="text-xl mt-8 text-gray-700 text-center mb-8">Learn y/labs!</p>
+                            <div className="mt-4 flex align-center justify-center mb-4">
+                                <YoutubeVideo />
+                            </div>
+                        </>
                     )}
                     
                     {/* Modal */}
