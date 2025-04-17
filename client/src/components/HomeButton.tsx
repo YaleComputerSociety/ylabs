@@ -5,7 +5,6 @@ const HomeButton = () => {
     const location = useLocation();
     
     const handleClick = (event: React.MouseEvent) => {
-        // If already on the home page, reload the page
         if (location.pathname === '/') {
             event.preventDefault();
             window.location.reload();

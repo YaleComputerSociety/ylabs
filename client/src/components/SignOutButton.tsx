@@ -33,8 +33,7 @@ const SignOutButton = () => {
   return (
     <Button
       color="inherit"
-      sx={{ 
-        paddingLeft: 1,
+      sx={{
         textTransform: 'none',
         color: '#3874CB',
         fontFamily: 'Inter',

@@ -7,8 +7,7 @@ const DrawerHomeButton = () => {
             color="inherit"
             component={Link}
             to="/"
-            sx={{ 
-                paddingLeft: 1,
+            sx={{
                 textTransform: 'none',
                 color: '#000000',
                 fontFamily: 'Inter',

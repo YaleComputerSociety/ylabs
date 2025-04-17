@@ -8,8 +8,7 @@ const FeedbackButton = () => {
             target="_blank"
             rel="noopener noreferrer"
             color="inherit"
-            sx={{ 
-                paddingLeft: 1,
+            sx={{
                 textTransform: 'none',
                 color: '#000000',
                 fontFamily: 'Inter',

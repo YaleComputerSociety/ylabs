@@ -139,7 +139,7 @@ const SearchHub = ({ allDepartments, resetListings, addListings, setIsLoading, s
     };
 
     const filteredDepartments = allDepartments.filter((department) => 
-        department.toLowerCase().startsWith(searchTerm.toLowerCase()) && selectedDepartments.indexOf(department) < 0
+        department.toLowerCase().includes(searchTerm.toLowerCase()) && selectedDepartments.indexOf(department) < 0
     );
 
     const toggleDropdown = () => {
@@ -246,13 +246,11 @@ const SearchHub = ({ allDepartments, resetListings, addListings, setIsLoading, s
                         <input
                             ref={dropdownInputRef}
                             type="text"
-                            value={searchTerm}
+                            readOnly
+                            value="Filter by department"
                             onClick={() => setIsDropdownOpen(true)}
-                            onChange={handleSearchChange}
-                            onKeyDown={handleKeyDown}
                             onFocus={() => setIsDropdownOpen(true)}
                             className="appearance-none border rounded w-full h-full px-3 pr-10 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
-                            placeholder="Filter by department"
                         />
                         <div
                             className="absolute inset-y-0 right-0 flex items-center px-2 text-gray-700 cursor-pointer"
@@ -265,8 +263,21 @@ const SearchHub = ({ allDepartments, resetListings, addListings, setIsLoading, s
                     </div>
                     
                     {isDropdownOpen && (
-                        <div className="absolute left-0 right-0 bg-white rounded-lg z-50 shadow-lg border overflow-hidden mt-1 max-h-[300px] md:max-h-[350px] border-gray-300">
-                            <ul className="max-h-[350px] p-1 overflow-y-auto">
+                        <div className="absolute left-0 right-0 bg-white rounded-lg z-50 shadow-lg border overflow-hidden mt-1 max-h-[350px] border-gray-300">
+                            {/* Search input within dropdown */}
+                            <div className="p-2 border-b">
+                                <input
+                                    type="text"
+                                    value={searchTerm}
+                                    onChange={handleSearchChange}
+                                    onKeyDown={handleKeyDown}
+                                    placeholder="Search departments..."
+                                    className="w-full px-3 py-2 border rounded text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    autoFocus
+                                />
+                            </div>
+                            
+                            <ul className="max-h-[300px] p-1 overflow-y-auto">
                                 {filteredDepartments.length > 0 ? (
                                     filteredDepartments.map((department, index) => (
                                         <li
@@ -292,42 +303,44 @@ const SearchHub = ({ allDepartments, resetListings, addListings, setIsLoading, s
                 </div>
             </div>
             
-            <div className="flex flex-wrap gap-2 mt-4 w-full">
-                <span 
-                    className={'border text-gray-700 px-2 py-1 rounded text-sm flex items-center'}
-                >
-                    Filters:
-                </span>
-                {selectedDepartments.map((department, index) => (
+            {selectedDepartments.length > 0 && (
+                <div className="flex flex-wrap gap-2 mt-4 w-full">
                     <span 
-                        key={index} 
-                        className={`${getDepartmentColor(department)} px-2 py-1 rounded text-sm flex items-center`}
+                        className={'border text-gray-700 px-2 py-1 rounded text-sm flex items-center'}
                     >
-                        <span className="whitespace-nowrap">
-                            {department}
-                        </span>
-                        <button 
-                            type="button" 
-                            onClick={() => handleDepartmentRemove(department)}
-                            className="ml-2 text-gray-500 hover:text-gray-700"
-                        >
-                            ×
-                        </button>
+                        Filters:
                     </span>
-                ))}
-                
-                {/* Remove All button - only shows when 2+ departments are selected */}
-                {selectedDepartments.length >= 2 && (
-                    <button
-                        onClick={handleRemoveAllDepartments}
-                        className="bg-red-500 hover:bg-red-600 rounded px-2 py-1 rounded text-sm flex items-center transition-colors"
-                    >
-                        <span className="whitespace-nowrap text-white">
-                            Remove All
+                    {selectedDepartments.map((department, index) => (
+                        <span 
+                            key={index} 
+                            className={`${getDepartmentColor(department)} px-2 py-1 rounded text-sm flex items-center`}
+                        >
+                            <span className="whitespace-nowrap">
+                                {department}
+                            </span>
+                            <button 
+                                type="button" 
+                                onClick={() => handleDepartmentRemove(department)}
+                                className="ml-2 text-gray-500 hover:text-gray-700"
+                            >
+                                ×
+                            </button>
                         </span>
-                    </button>
-                )}
-            </div>
+                    ))}
+                    
+                    {/* Remove All button - only shows when 2+ departments are selected */}
+                    {selectedDepartments.length >= 2 && (
+                        <button
+                            onClick={handleRemoveAllDepartments}
+                            className="bg-red-500 hover:bg-red-600 rounded px-2 py-1 rounded text-sm flex items-center transition-colors"
+                        >
+                            <span className="whitespace-nowrap text-white">
+                                Remove All
+                            </span>
+                        </button>
+                    )}
+                </div>
+            )}
         </div>
     );
 };

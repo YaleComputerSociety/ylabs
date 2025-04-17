@@ -161,9 +161,23 @@ export default function ListingsCardList({ loading, searchExhausted, setPage, li
             scrollToTop();
           }
         }}
-        className="fixed bottom-4 right-4 lg:bottom-6 lg:right-6 bg-blue-500 text-white p-3 rounded-full shadow-lg hover:bg-blue-700 transition z-10"
+        className="fixed bottom-4 right-4 lg:bottom-6 lg:right-6 bg-blue-500 text-white p-0.5 rounded-full shadow-[0_3.5px_3px_rgba(0,0,0,0.3)] transition-all duration-200 z-10 group"
+        aria-label="Scroll to top"
       >
-        ⬆️
+        <svg 
+          xmlns="http://www.w3.org/2000/svg" 
+          width="35" 
+          height="35" 
+          viewBox="0 0 24 24" 
+          fill="none" 
+          stroke="white" 
+          strokeWidth="2" 
+          strokeLinecap="round" 
+          strokeLinejoin="round"
+          className="transition-opacity duration-200 opacity-70 group-hover:opacity-100"
+        >
+          <polyline points="18 15 12 7.5 6 15"></polyline>
+        </svg>
       </button>
     </div>
   );
