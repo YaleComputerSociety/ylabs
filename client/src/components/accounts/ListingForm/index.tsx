@@ -11,8 +11,10 @@ import ArrayInput from './FormFields/ArrayInput';
 import DepartmentInput from './FormFields/DepartmentInput';
 import HiringStatus from './FormFields/HiringStatus';
 import { validateTitle, validateDescription, validateEstablished, 
-         validateProfessors, validateEmails, validateWebsites } from './utils/validation';
+         validateProfessors, validateEmails, validateWebsites, validateProfessorIds } from './utils/validation';
 import { createListing } from '../../../utils/apiCleaner';
+import { useContext } from "react";
+import UserContext from "../../../contexts/UserContext";
          
 interface ListingFormProps {
   listing: NewListing;
@@ -30,6 +32,7 @@ const ListingForm = ({ listing, isCreated, onLoad, onCancel, onSave, onCreate }:
   const [ownerName, setOwnerName] = useState<string>(`${listing.ownerFirstName} ${listing.ownerLastName}`);
   const [departments, setDepartments] = useState<string[]>([...listing.departments]);
   const [availableDepartments, setAvailableDepartments] = useState<string[]>([]);
+  const [professorIds, setProfessorIds] = useState<string[]>([...listing.professorIds]);
   const [emails, setEmails] = useState<string[]>([...listing.emails]);
   const [ownerEmail, setOwnerEmail] = useState<string>(listing.ownerEmail);
   const [websites, setWebsites] = useState<string[]>(listing.websites ? [...listing.websites] : []);
@@ -39,12 +42,16 @@ const ListingForm = ({ listing, isCreated, onLoad, onCancel, onSave, onCreate }:
   const [hiringStatus, setHiringStatus] = useState(listing.hiringStatus);
   const [archived, setArchived] = useState(listing.archived);
   const [loading, setLoading] = useState(true);
+
+  const { user } = useContext(UserContext);
+  const isOwner = user && (user.netId === listing.ownerId);
   
   // Form errors
   const [errors, setErrors] = useState<{
     title?: string;
     description?: string;
     established?: string;
+    professorIds?: string;
     professorNames?: string;
     emails?: string;
     websites?: string;
@@ -120,6 +127,7 @@ const ListingForm = ({ listing, isCreated, onLoad, onCancel, onSave, onCreate }:
       description: validateDescription(description),
       established: validateEstablished(established),
       professorNames: validateProfessors([ownerName, ...professorNames]),
+      professorIds: validateProfessorIds(professorIds),
       emails: validateEmails([ownerEmail, ...emails]),
       websites: validateWebsites(websites)
     };
@@ -137,6 +145,7 @@ const ListingForm = ({ listing, isCreated, onLoad, onCancel, onSave, onCreate }:
       const updatedListing: NewListing = {
         ...listing,
         title,
+        professorIds,
         professorNames,
         departments,
         emails,
@@ -179,7 +188,6 @@ const ListingForm = ({ listing, isCreated, onLoad, onCancel, onSave, onCreate }:
 
 
 const handleCancel = () => {
-  console.log("CANCELLED LOL")
   if (isCreated) {
     swal({
       title: "Delete Listing",
@@ -244,7 +252,7 @@ const handleCancel = () => {
             <div className="col-span-1">
               <TextInput
                 id="title"
-                label="Listing Title"
+                label="⭐ Listing Title"
                 value={title}
                 onChange={setTitle}
                 placeholder="Add title"
@@ -258,7 +266,7 @@ const handleCancel = () => {
 
               <TextArea
                 id="description"
-                label="Description"
+                label="⭐ Description"
                 value={description}
                 onChange={setDescription}
                 placeholder="Add description"
@@ -286,6 +294,29 @@ const handleCancel = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* Left array column */}
                 <div>
+                  <HiringStatus
+                    hiringStatus={hiringStatus}
+                    setHiringStatus={setHiringStatus}
+                  />
+
+                  {isOwner && (
+                    <ArrayInput
+                      label="Co-Editors"
+                      items={professorIds}
+                      setItems={setProfessorIds}
+                      placeholder="Add netid"
+                      bgColor="bg-green-100"
+                      textColor="text-green-800"
+                      buttonColor="text-green-500 hover:text-green-700"
+                      error={errors.professorIds}
+                      onValidate={(newArray) => setErrors(prev => ({ 
+                        ...prev, 
+                        professorIds: validateProfessorIds(newArray) 
+                      }))}
+                      infoText="Allow others in your lab to update this listing"
+                    />
+                  )}
+
                   <ArrayInput
                     label="Professors"
                     items={professorNames}
@@ -317,11 +348,6 @@ const handleCancel = () => {
                       ...prev, 
                       emails: validateEmails(newArray) 
                     }))}
-                  />
-
-                  <HiringStatus
-                    hiringStatus={hiringStatus}
-                    setHiringStatus={setHiringStatus}
                   />
 
                   <div className="mb-6 flex items-center">
