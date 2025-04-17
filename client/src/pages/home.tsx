@@ -21,7 +21,14 @@ const Home = () => {
     const sortableKeys = ['default', 'updatedAt', 'ownerLastName', 'ownerFirstName', 'title']
 
     const [sortBy, setSortBy] = useState<string>(sortableKeys[0]);
-    const [sortOrder, setSortOrder] = useState<number>(-1);
+    const [sortOrder, setSortOrder] = useState<number>(1);
+    const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+
+    const handleToggleSortDirection = () => {
+        const newDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+        setSortDirection(newDirection);
+        setSortOrder(newDirection === 'asc' ? 1 : -1);
+    };
 
     const [favListingsIds, setFavListingsIds] = useState<string[]>([]);
 
@@ -85,15 +92,43 @@ const Home = () => {
     };
 
     return (
-        <div className="mx-6 lg:mx-20 mt-24 transition-all lg:mx-12">
+        <div className="mx-auto max-w-[1300px] px-6 mt-24 w-full">
             <div className='mt-12'>
-                <SearchHub allDepartments={departmentKeys} resetListings={resetListings} addListings={addListings} setIsLoading={setIsLoading} sortBy={sortBy} sortOrder={sortOrder} page={page} setPage={setPage} pageSize={pageSize}></SearchHub>
+                <SearchHub 
+                    allDepartments={departmentKeys} 
+                    resetListings={resetListings} 
+                    addListings={addListings} 
+                    setIsLoading={setIsLoading} 
+                    sortBy={sortBy} 
+                    sortOrder={sortOrder} 
+                    setSortBy={setSortBy}
+                    setSortOrder={setSortOrder}
+                    sortDirection={sortDirection}
+                    onToggleSortDirection={handleToggleSortDirection}
+                    sortableKeys={sortableKeys}
+                    page={page} 
+                    setPage={setPage} 
+                    pageSize={pageSize}
+                />
             </div>
             <div className='mt-4 md:mt-10'></div>
             {listings.length > 0 ? (
-                        <ListingsCardList loading={isLoading} searchExhausted={searchExhausted} setPage={setPage} listings={listings} sortableKeys={sortableKeys} sortBy={sortBy} setSortBy={setSortBy} setSortOrder={setSortOrder} favListingsIds={favListingsIds} updateFavorite={updateFavorite} ></ListingsCardList>
-                    ) : (
-                        <NoResultsText>No results match the search criteria</NoResultsText>
+                <ListingsCardList 
+                    loading={isLoading} 
+                    searchExhausted={searchExhausted} 
+                    setPage={setPage} 
+                    listings={listings} 
+                    sortableKeys={sortableKeys} 
+                    sortBy={sortBy} 
+                    setSortBy={setSortBy} 
+                    setSortOrder={setSortOrder}
+                    sortDirection={sortDirection}
+                    onToggleSortDirection={handleToggleSortDirection}
+                    favListingsIds={favListingsIds} 
+                    updateFavorite={updateFavorite} 
+                />
+            ) : (
+                <NoResultsText>No results match the search criteria</NoResultsText>
             )}
         </div>
     );

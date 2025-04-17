@@ -152,7 +152,7 @@ const ListingModal = ({ isOpen, onClose, listing, favListingsIds, updateFavorite
             {/* Header */}
             <div className="mb-6 pr-20">
                 <div className="flex flex-col md:flex-row md:items-center gap-2">
-                    <h2 className="text-2xl font-bold">{listing.title}</h2>
+                    <h2 className="text-2xl font-bold md:max-w-[400px] lg:max-w-[600px]">{listing.title}</h2>
                     <span className={`${getHiringStatusColor()} mt-2 md:mt-0 md:ml-2 text-white text-xs px-2 py-1 rounded-full inline-block w-fit`}>
                         {getHiringStatusText()}
                     </span>
