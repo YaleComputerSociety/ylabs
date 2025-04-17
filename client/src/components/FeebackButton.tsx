@@ -8,7 +8,14 @@ const FeedbackButton = () => {
             target="_blank"
             rel="noopener noreferrer"
             color="inherit"
-            sx={{ paddingLeft: 1 }}
+            sx={{ 
+                paddingLeft: 1,
+                textTransform: 'none',
+                color: '#000000',
+                fontFamily: 'Inter',
+                fontWeight: 450,
+                fontSize: '14px'
+             }}
         >
             Feedback
         </Button>

@@ -33,7 +33,15 @@ const SignOutButton = () => {
   return (
     <Button
       color="inherit"
-      sx={{ paddingLeft: 1 }}
+      sx={{ 
+        paddingLeft: 1,
+        textTransform: 'none',
+        color: '#3874CB',
+        fontFamily: 'Inter',
+        fontWeight: 450,
+        fontSize: '14px',
+        textDecoration: 'underline'
+      }}
       onClick={handleLogout}
     >
       Logout

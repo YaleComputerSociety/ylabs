@@ -18,7 +18,8 @@ const HomeButton = () => {
             to="/"
             onClick={handleClick}
         >
-            <img src="/assets/logos/ylabs-temp.png" alt="ylabs-logo" style={{width: '65px', height: '26px'}} />
+            <img src="/assets/logos/paperclip.png" alt="ylabs-logo" className="mr-2" style={{width: '31.65px', height: '27px'}} />
+            <img src="/assets/logos/ylabs-blue.png" alt="ylabs-logo" style={{width: '65.17px', height: '27px'}} />
         </Button>
     );
 };
