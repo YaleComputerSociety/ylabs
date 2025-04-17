@@ -14,6 +14,7 @@ const AboutButton = () => {
                 fontWeight: 450,
                 fontSize: '14px'
              }}
+             disableRipple={true}
         >
             About
         </Button>

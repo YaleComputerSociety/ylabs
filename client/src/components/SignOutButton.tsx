@@ -42,6 +42,7 @@ const SignOutButton = () => {
         textDecoration: 'underline'
       }}
       onClick={handleLogout}
+      disableRipple={true}
     >
       Logout
     </Button>

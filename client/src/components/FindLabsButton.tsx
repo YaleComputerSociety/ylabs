@@ -14,6 +14,7 @@ const FindLabsButton = () => {
                 fontWeight: 450,
                 fontSize: '14px'
              }}
+             disableRipple={true}
         >
             Find Labs
         </Button>

@@ -14,6 +14,7 @@ const AccountButton = () => {
                 fontWeight: 450,
                 fontSize: '14px'
              }}
+             disableRipple={true}
         >
             My Labs
         </Button>
