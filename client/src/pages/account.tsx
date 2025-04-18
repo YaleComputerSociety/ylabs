@@ -306,16 +306,6 @@ const Account = () => {
                             </div>
                         </>
                     )}
-
-                    {user && (user.userType === "professor" || user.userType === "faculty" || user.userType === "admin") && (
-                        <>
-                            <hr className="mt-28 border-t border-gray-300" />
-                            <p className="text-xl mt-8 text-gray-700 text-center mb-8">Learn y/labs!</p>
-                            <div className="mt-4 flex align-center justify-center mb-4">
-                                <YoutubeVideo />
-                            </div>
-                        </>
-                    )}
                     
                     {/* Modal */}
                     {selectedListing && (
