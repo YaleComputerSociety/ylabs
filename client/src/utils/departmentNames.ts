@@ -12,6 +12,7 @@ export const departmentNames = [
   "Astronomy",
   "Biological and Biomedical Sciences",
   "Biomedical Engineering",
+  "Biomedical Informatics & Data Science",
   "Biostatistics",
   "Cell Biology",
   "Cellular and Molecular Physiology",
@@ -180,6 +181,7 @@ export const departmentCategories = {
   // Group 4: Engineering & Computer Science
   "Applied Physics": 4,
   "Biomedical Engineering": 4,
+  "Biomedical Informatics & Data Science": 4,
   "Chemical and Environmental Engineering": 4,
   "Computer Science": 4,
   "Electrical Engineering": 4,

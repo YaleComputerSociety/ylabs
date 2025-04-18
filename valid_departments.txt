@@ -11,6 +11,7 @@ Art
 Astronomy
 Biological and Biomedical Sciences
 Biomedical Engineering
+Biomedical Informatics & Data Science
 Biostatistics
 Cell Biology
 Cellular and Molecular Physiology

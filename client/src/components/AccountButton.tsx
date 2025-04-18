@@ -7,7 +7,14 @@ const AccountButton = () => {
             color="inherit"
             component={Link}
             to="/account"
-            sx={{ paddingLeft: 1 }}
+            sx={{
+                textTransform: 'none',
+                color: '#000000',
+                fontFamily: 'Inter',
+                fontWeight: 450,
+                fontSize: '14px'
+             }}
+             disableRipple={true}
         >
             My Labs
         </Button>
