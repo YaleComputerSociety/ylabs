@@ -13,6 +13,7 @@ interface ArrayInputProps {
     type?: string;
     permanentValue?: string;
     onValidate?: (newArray: string[]) => void;
+    infoText?: string;
 }
 
 const ArrayInput = ({
@@ -26,7 +27,8 @@ const ArrayInput = ({
     error,
     type = "text",
     permanentValue,
-    onValidate
+    onValidate,
+    infoText
 }: ArrayInputProps) => {
     const inputRef = useRef<HTMLInputElement>(null);
     const [showTooltip, setShowTooltip] = useState(false);
@@ -133,6 +135,11 @@ const ArrayInput = ({
             <label className="block text-gray-700 text-sm font-bold mb-2">
                 {label}
             </label>
+            {infoText && (
+                <div className="text-xs text-gray-500 mb-2">
+                    {infoText}
+                </div>
+            )}
             <div className="flex flex-wrap gap-2 mb-2 overflow-x-auto">
                 {renderItems()}
             </div>

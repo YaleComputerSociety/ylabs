@@ -64,3 +64,23 @@ export const validateWebsites = (websites: string[]): string | undefined => {
   
   return undefined;
 };
+
+export const validateProfessorIds = (professorIds: string[]): string | undefined => {
+  if (professorIds.length > 3) {
+    return "Maximum of 3 collaborators allowed"
+  }
+  
+  const uniqueIds = new Set(professorIds);
+  if (uniqueIds.size !== professorIds.length) {
+    return "Please remove duplicate collaborators";
+  }
+
+  //must be alphanumeric (no spaces, apostrophes, etc)
+  for (const id of professorIds) {
+    if (!/^[a-zA-Z0-9]+$/.test(id)) {
+      return `Invalid format for collaborator netid: ${id}`;
+    }
+  }
+
+  return undefined;
+};
