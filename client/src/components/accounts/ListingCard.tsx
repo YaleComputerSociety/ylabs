@@ -235,9 +235,9 @@ const ListingCard = ({
 
     return (
         <div className="mb-4 relative">
-            <div key={listing.id} className="flex relative z-10">
+            <div key={listing.id} className="flex relative z-10 rounded-md shadow">
                 <div
-                    className={`${getHiringStatusColor()} cursor-pointer rounded-l flex-shrink-0 my-2 relative ${archived ? "opacity-50" : ""}`}
+                    className={`${getHiringStatusColor()} cursor-pointer rounded-l flex-shrink-0 relative ${archived ? "opacity-50" : ""}`}
                     style={{ width: '6px' }}
                     onMouseEnter={() => setShowTooltip(true)}
                     onMouseLeave={() => setShowTooltip(false)}
@@ -248,7 +248,7 @@ const ListingCard = ({
                         </div>
                     )}
                 </div>
-                <div className="p-4 flex-grow grid grid-cols-3 md:grid-cols-12 cursor-pointer bg-white hover:bg-gray-100 border border-gray-300 rounded shadow" onClick={handleListingClick}>
+                <div className="p-4 flex-grow grid grid-cols-3 md:grid-cols-12 cursor-pointer bg-white hover:bg-gray-100 border border-gray-300 rounded-r" onClick={handleListingClick}>
                     {/* First Column */}
                     <div className="col-span-2 md:col-span-4">
                         <p className={`text-lg font-semibold mb-3 ${archived ? "opacity-50" : ""}`}
@@ -315,7 +315,7 @@ const ListingCard = ({
                                 >
                                     <button className="p-1 rounded-full hover:bg-gray-200">
                                         <img
-                                            src="/assets/icons/link.svg"
+                                            src="/assets/icons/new-link.png"
                                             alt="Lab Website"
                                             className={`w-5 h-5 ${archived ? "opacity-50" : ""}`}
                                         />
@@ -343,6 +343,9 @@ const ListingCard = ({
                             )}
                         </div>
                         <div className="flex-grow" />
+                        <p className={`text-[8px] mb-0.5 text-gray-700`} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>
+                            Last Update
+                        </p>
                         <p className={`text-sm text-gray-700 ${archived ? "opacity-50" : ""}`}
                            style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>
                             {new Date(listing.updatedAt).toLocaleDateString()}

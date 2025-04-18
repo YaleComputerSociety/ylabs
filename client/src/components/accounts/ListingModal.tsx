@@ -71,6 +71,18 @@ const ListingModal = ({ isOpen, onClose, listing, favListingsIds, updateFavorite
         }
     }, []);
 
+    useEffect(() => {
+        if (isOpen) {
+            // Disable scrolling on body
+            document.body.style.overflow = 'hidden';
+        }
+        
+        // Cleanup function to re-enable scrolling when modal closes
+        return () => {
+            document.body.style.overflow = 'auto';
+        };
+    }, [isOpen]);
+
     const toggleFavorite = (e: React.MouseEvent) => {
         e.stopPropagation();
         listing.favorites = isFavorite ? listing.favorites - 1 : listing.favorites + 1;
@@ -92,10 +104,10 @@ const ListingModal = ({ isOpen, onClose, listing, favListingsIds, updateFavorite
 
     return (
         <div 
-        className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center overflow-y-auto p-4 pt-20" 
+        className="fixed inset-0 bg-black/65 z-50 flex items-center justify-center overflow-y-auto p-4 pt-24" 
         onClick={handleBackdropClick}
         >
-        <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             {/* Top status bar */}
             <div className={`${getHiringStatusColor()} h-2 w-full rounded-t-lg`}></div>
             
@@ -140,7 +152,7 @@ const ListingModal = ({ isOpen, onClose, listing, favListingsIds, updateFavorite
             {/* Header */}
             <div className="mb-6 pr-20">
                 <div className="flex flex-col md:flex-row md:items-center gap-2">
-                    <h2 className="text-2xl font-bold">{listing.title}</h2>
+                    <h2 className="text-2xl font-bold md:max-w-[400px] lg:max-w-[600px]">{listing.title}</h2>
                     <span className={`${getHiringStatusColor()} mt-2 md:mt-0 md:ml-2 text-white text-xs px-2 py-1 rounded-full inline-block w-fit`}>
                         {getHiringStatusText()}
                     </span>
