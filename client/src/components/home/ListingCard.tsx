@@ -155,10 +155,10 @@ const ListingCard = ({ listing, favListingsIds, updateFavorite, openModal }: Lis
         <div className="mb-4 relative">
             <div
                 key={listing.id}
-                className="flex relative z-10"
+                className="flex relative z-10 rounded-md shadow"
             >
                 <div 
-                    className={`${getHiringStatusColor()} cursor-pointer rounded-l flex-shrink-0 my-2 relative`} 
+                    className={`${getHiringStatusColor()} cursor-pointer rounded-l flex-shrink-0 relative`} 
                     style={{ width: '6px' }}
                     onMouseEnter={() => setShowTooltip(true)}
                     onMouseLeave={() => setShowTooltip(false)}
@@ -169,12 +169,12 @@ const ListingCard = ({ listing, favListingsIds, updateFavorite, openModal }: Lis
                         </div>
                     )}
                 </div>
-                <div className="p-4 flex-grow grid grid-cols-3 md:grid-cols-12 cursor-pointer bg-white hover:bg-gray-100 border border-gray-300 rounded shadow" onClick={handleListingClick}>
+                <div className="p-4 flex-grow grid grid-cols-3 md:grid-cols-12 cursor-pointer bg-white hover:bg-gray-100 border border-gray-300 rounded-r" onClick={handleListingClick}>
                     {/* First Column */}
                     <div className="col-span-2 md:col-span-4">
                         <p className={`text-lg font-semibold mb-3`} style={{ lineHeight: '1.2rem', height: '1.2rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{listing.title}</p>
                         <p className={`text-sm text-gray-700`} style={{ overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical' }}>
-                            <strong>Professors:</strong> {[`${listing.ownerFirstName} ${listing.ownerLastName}`, ...listing.professorNames].join(', ')}
+                            Professors: {[`${listing.ownerFirstName} ${listing.ownerLastName}`, ...listing.professorNames].join(', ')}
                         </p>
                         {/* list all departments in blue bubbles*/}
                         <div ref={departmentsContainerRef} className="flex overflow-hidden" style={{ whiteSpace: 'nowrap' }}>
@@ -233,7 +233,7 @@ const ListingCard = ({ listing, favListingsIds, updateFavorite, openModal }: Lis
                                 >
                                     <button className="p-1 rounded-full hover:bg-gray-200">
                                         <img
-                                            src="/assets/icons/link.svg"
+                                            src="/assets/icons/new-link.png"
                                             alt="Lab Website"
                                             className={`w-5 h-5`}
                                         />
@@ -263,6 +263,9 @@ const ListingCard = ({ listing, favListingsIds, updateFavorite, openModal }: Lis
                             </a>
                         </div>
                         <div className="flex-grow" />
+                        <p className={`text-[8px] mb-0.5 text-gray-700`} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>
+                            Last Update
+                        </p>
                         <p className={`text-sm text-gray-700`} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>
                             {new Date(listing.updatedAt).toLocaleDateString()}
                         </p>

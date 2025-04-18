@@ -4,12 +4,14 @@ interface SortDropdownProps {
     sortBy: string;
     setSortBy: (sortBy: string) => void;
     sortOptions: {value: string, label: string}[];
+    searchHub: boolean; // Add optional className prop
 }
 
 const SortDropdown = ({
     sortBy,
     setSortBy,
-    sortOptions
+    sortOptions,
+    searchHub
 }: SortDropdownProps) => {
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const [focusedIndex, setFocusedIndex] = useState(-1);
@@ -59,10 +61,10 @@ const SortDropdown = ({
     };
 
     return (
-        <div ref={outerRef}>
+        <div ref={outerRef} className={'relative'}>
             {/* Button/display */}
             <div className="relative">
-                <div className="relative">
+                <div className={`relative ${searchHub && 'h-11'}`}>
                     <input
                         ref={inputRef}
                         type="text"
@@ -80,7 +82,7 @@ const SortDropdown = ({
                                 }
                             }, 100)
                         }}
-                        className="appearance-none border rounded w-full py-2 px-3 pr-10 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                        className={`appearance-none border rounded w-full ${searchHub ? 'h-full': 'py-2'} px-3 pr-10 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer`}
                     />
                     <div
                         className="absolute inset-y-0 right-0 flex items-center px-2 text-gray-700 cursor-pointer"

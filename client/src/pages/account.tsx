@@ -227,7 +227,7 @@ const Account = () => {
     };
 
     return (
-        <div className="p-8 transition-all lg:mx-12 mt-[4rem]">
+        <div className="mx-auto max-w-[1300px] px-6 mt-24 w-full">
             {isLoading ? (
                 <div style={{marginTop: '17%', textAlign: 'center'}}>
                     <PulseLoader color="#66CCFF" size={10} /> 
@@ -242,7 +242,7 @@ const Account = () => {
                         </div>
                     )}
                     <p className="text-xl text-gray-700 mb-4">Your listings</p>
-                    {ownListings.length > 0 ? (
+                    {ownListings.length > 0 && (
                         <ul>
                             {ownListings.map((listing) => (
                                 <li key={listing.id} className="mb-2">
@@ -264,11 +264,9 @@ const Account = () => {
                                 </li>
                             ))}
                         </ul>
-                    ) : (
-                        <p className="mb-4">No listings found.</p>
                     )}
                     {user && (user.userType === "professor" || user.userType === "faculty" || user.userType === "admin") && !isCreating && (
-                        <div className="mt-8 flex justify-center align-center mb-4">
+                        <div className="my-8 flex justify-center align-center">
                             <CreateButton globalEditing={isEditing} handleCreate={onCreate}/>
                         </div>
                     )}
@@ -296,7 +294,17 @@ const Account = () => {
                             ))}
                         </ul>
                     ) : (
-                        <p>No listings found.</p>
+                        <p className="my-4 flex align-center">No listings found.</p>
+                    )}
+
+                    {user && (user.userType === "professor" || user.userType === "faculty" || user.userType === "admin") && (
+                        <>
+                            
+                            <h1 className="text-4xl mt-24 font-bold text-center mb-7">Learn y/labs!</h1>
+                            <div className="mt-4 flex align-center justify-center mb-4">
+                                <YoutubeVideo />
+                            </div>
+                        </>
                     )}
 
                     {user && (user.userType === "professor" || user.userType === "faculty" || user.userType === "admin") && (

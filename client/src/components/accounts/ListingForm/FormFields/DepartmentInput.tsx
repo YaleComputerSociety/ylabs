@@ -96,8 +96,19 @@ const DepartmentInput = ({
   return (
     <div className="mb-4" ref={deptDropdownRef}>
       <label className="block text-gray-700 text-sm font-bold mb-2">
-        Departments
+        ⭐ Departments
       </label>
+      <div className="text-xs text-gray-500 mb-2">
+        Don't see your department? Let us know{" "}
+        <a
+            href={"https://docs.google.com/forms/d/e/1FAIpQLSf2BE6MBulJHWXhDDp3y4Nixwe6EH0Oo9X1pTo976-KrJKv5g/viewform"}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-blue-500"
+        >
+            here
+        </a>
+      </div>
       <div className="flex flex-wrap gap-2 mb-2 overflow-x-auto">
         {departments.map((department, index) => (
           <span 
