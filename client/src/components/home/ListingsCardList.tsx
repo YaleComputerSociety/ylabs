@@ -5,8 +5,6 @@ import SortDropdown from './SortDropdown';
 import PulseLoader from "react-spinners/PulseLoader";
 import { NewListing } from '../../types/types';
 
-type Order = 'asc' | 'desc';
-
 type ListingsCardListProps = {
   loading: Boolean;
   searchExhausted: Boolean;
@@ -16,12 +14,26 @@ type ListingsCardListProps = {
   sortBy: string;
   setSortBy: (sortBy: string) => void;
   setSortOrder: (sortOrder: number) => void;
+  sortDirection: 'asc' | 'desc';
+  onToggleSortDirection: () => void;
   favListingsIds: string[];
   updateFavorite: (listingId: string, favorite: boolean) => void;
 };
 
-export default function ListingsCardList({ loading, searchExhausted, setPage, listings, sortableKeys, sortBy, setSortBy, setSortOrder, favListingsIds, updateFavorite }: ListingsCardListProps) {
-  const [order, setOrder] = React.useState<Order>('asc');
+export default function ListingsCardList({ 
+  loading, 
+  searchExhausted, 
+  setPage, 
+  listings, 
+  sortableKeys, 
+  sortBy, 
+  setSortBy, 
+  setSortOrder, 
+  sortDirection,
+  onToggleSortDirection,
+  favListingsIds, 
+  updateFavorite 
+}: ListingsCardListProps) {
   const [modalOpen, setModalOpen] = React.useState(false);
   const [selectedListingId, setSelectedListingId] = React.useState<string | null>(null);
 
@@ -61,14 +73,6 @@ export default function ListingsCardList({ loading, searchExhausted, setPage, li
     {value: 'title', label: 'Sort by: Lab Title'}
   ];
 
-  React.useEffect(() => {
-    setSortOrder(order === 'asc' ? 1 : -1);
-  }, [order])
-
-  const handleToggleOrder = () => {
-    setOrder((prevOrder) => prevOrder === 'asc' ? 'desc' : 'asc');
-  }
-
   const openModalForListing = (listing: NewListing) => {
     setSelectedListingId(listing.id);
     setModalOpen(true);
@@ -96,18 +100,18 @@ export default function ListingsCardList({ loading, searchExhausted, setPage, li
             />
       )}
 
-      {/* Sorting Buttons */}
-      <div className="mb-4 flex justify-between w-full">
-        <SortDropdown sortBy={sortBy} setSortBy={setSortBy} sortOptions={buttonTranslations} />
+      {/* Sorting Buttons - Only visible on small screens */}
+      <div className="mb-4 flex justify-between w-full md:hidden">
+        <SortDropdown sortBy={sortBy} setSortBy={setSortBy} sortOptions={buttonTranslations} searchHub={false} />
         {sortBy !== 'default' && (
           <button
             onClick={() => {
               if (!loading) {
-                handleToggleOrder();
+                onToggleSortDirection(); // Use the shared handler
               }
             }}
             className="p-2 flex items-center justify-center"
-            aria-label={order === 'asc' ? "Sort ascending" : "Sort descending"}
+            aria-label={sortDirection === 'asc' ? "Sort ascending" : "Sort descending"}
           >
             <svg 
               width="20" 
@@ -115,7 +119,7 @@ export default function ListingsCardList({ loading, searchExhausted, setPage, li
               viewBox="0 0 24 24" 
               fill="none" 
               xmlns="http://www.w3.org/2000/svg"
-              className={`transition-transform duration-300 ease-in-out transform ${order === 'asc' ? 'rotate-0' : 'rotate-180'}`}
+              className={`transition-transform duration-300 ease-in-out transform ${sortDirection === 'asc' ? 'rotate-0' : 'rotate-180'}`}
             >
               <path 
                 d="M12 5l7 7-1.41 1.41L13 8.83V19h-2V8.83L6.41 13.41 5 12l7-7z" 
@@ -125,7 +129,6 @@ export default function ListingsCardList({ loading, searchExhausted, setPage, li
           </button>
         )}
       </div>
-
       
       {/* List of Cards (Rows) with Pulse Loader conditionally below*/}
       <div className="w-full">
@@ -161,9 +164,23 @@ export default function ListingsCardList({ loading, searchExhausted, setPage, li
             scrollToTop();
           }
         }}
-        className="fixed bottom-4 right-4 lg:bottom-6 lg:right-6 bg-blue-500 text-white p-3 rounded-full shadow-lg hover:bg-blue-700 transition z-10"
+        className="fixed bottom-4 right-4 lg:bottom-6 lg:right-6 bg-blue-500 text-white p-0.5 rounded-full shadow-[0_3.5px_3px_rgba(0,0,0,0.3)] transition-all duration-200 z-10 group"
+        aria-label="Scroll to top"
       >
-        ⬆️
+        <svg 
+          xmlns="http://www.w3.org/2000/svg" 
+          width="35" 
+          height="35" 
+          viewBox="0 0 24 24" 
+          fill="none" 
+          stroke="white" 
+          strokeWidth="2" 
+          strokeLinecap="round" 
+          strokeLinejoin="round"
+          className="transition-opacity duration-200 opacity-70 group-hover:opacity-100"
+        >
+          <polyline points="18 15 12 7.5 6 15"></polyline>
+        </svg>
       </button>
     </div>
   );

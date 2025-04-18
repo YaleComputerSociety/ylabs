@@ -22,7 +22,18 @@ const Login = () => {
   return (
     <Container>
       <Description>
-        <Logo src="/assets/logos/ylabs-temp-blue.png" alt="ylabs-logo" />
+        <div className='flex items-center'>
+          <img 
+            src="/assets/logos/paperclip.png" 
+            alt="ylabs-logo" 
+            className="mr-2 w-[3.5rem] h-[3rem] md:w-[6.33rem] md:h-[5.4rem] sm:w-[4.5rem] sm:h-[4rem] " 
+          />
+          <img 
+            src="/assets/logos/ylabs-blue.png" 
+            alt="ylabs-logo" 
+            className="w-[7rem] h-[3rem] md:w-[13.03rem] md:h-[5.4rem] sm:w-[9rem] sm:h-[4rem]" 
+          />
+        </div>
         <TitleText className="mt-12">A Yale Research Database</TitleText>
         <Text className="mt-2">
           Search through 1400+ Yale faculty listings across 60+ fields of study. Learn about professors who share your research interests and find potential research mentors.
