@@ -1,7 +1,7 @@
 //Cleans api response listing format to the listing type
 
 export const createListing = (listing: any) => {
-    const titleDefault = listing._id === "create" ? "New Listing" : "";
+    const titleDefault = listing._id === "create" ? "* Your Lab's Name (or Professor's Name) *" : "";
     const descriptionDefault = listing._id === "create" ? "This is your new listing! Please edit the details and click save to post it. If you click cancel, this listing will be deleted." : "";
     const currentDate = new Date();
 
