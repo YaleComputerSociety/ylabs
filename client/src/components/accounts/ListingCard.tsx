@@ -257,7 +257,7 @@ const ListingCard = ({
                         </p>
                         <p className={`text-sm text-gray-700 ${archived ? "opacity-50" : ""}`}
                            style={{ overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical' }}>
-                            <strong>Professors:</strong> {[`${listing.ownerFirstName} ${listing.ownerLastName}`, ...listing.professorNames].join(', ')}
+                            Professors: {[`${listing.ownerFirstName} ${listing.ownerLastName}`, ...listing.professorNames].join(', ')}
                         </p>
                         <div ref={departmentsContainerRef} className="flex overflow-hidden" style={{ whiteSpace: 'nowrap' }}>
                             {visibleDepartments.length > 0 ? (
