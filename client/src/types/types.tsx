@@ -58,3 +58,14 @@ export type Developer = {
   linkedin?: string;
   github?:string;
 }
+
+interface ImportMeta {
+  readonly env: {
+    readonly VITE_APP_TITLE: string;
+    readonly MODE: string;
+    readonly BASE_URL: string;
+    readonly PROD: boolean;
+    readonly DEV: boolean;
+    [key: string]: string | boolean | undefined;
+  };
+}
