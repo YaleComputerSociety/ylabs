@@ -12,7 +12,7 @@ const DeveloperCard = ({ developer }: DeveloperCardProps) => {
     return(
         <div>
             <img 
-                src={developer.image ? developer.image : "assets/developers/no-user.png"}
+                src={developer.image ? developer.image : "/assets/developers/no-user.png"}
                 alt={`${developer.name} Profile Picture`}
                 className="aspect-square object-cover w-full rounded-lg mb-2"
                 width={500}
