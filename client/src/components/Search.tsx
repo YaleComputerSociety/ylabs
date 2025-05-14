@@ -34,7 +34,7 @@ export default function Search(props: SearchProps) {
       setIsLoading(true); 
       const backendBaseURL = window.location.host.includes("yalelabs.io")
         ? "https://yalelabs.io"
-        : process.env.REACT_APP_SERVER;
+        : import.meta.env.VITE_APP_SERVER;
       const url = backendBaseURL + '/listings?dept=' + departments 
                   + '&keywords=' + keywords + '&lname=' + lastNamePI;
       axios.get(url).then((response) => {
