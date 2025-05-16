@@ -13,10 +13,10 @@
     "install:all": "yarn && cd server && yarn && cd ../client && yarn",
     "install:client": "cd client && yarn",
     "install:server": "cd server && yarn",
-    "dev:client": "cd client && yarn start",
+    "dev:client": "cd client && yarn dev",
     "dev:server": "cd server && yarn dev",
     "start": "concurrently \"yarn start:client\" \"yarn start:server\"",
-    "start:client": "cd client && yarn start",
+    "start:client": "cd client && yarn dev",
     "start:server": "cd server && yarn start",
     "test": "yarn install:all && yarn build && yarn start"
   },
@@ -26,5 +26,8 @@
     "cross-env": "^7.0.3",
     "env": "^0.0.2"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "@types/react": "^19.1.4",
+    "@types/react-dom": "^19.1.4"
+  }
 }
