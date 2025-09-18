@@ -12,7 +12,11 @@ export const departmentNames = [
   "Astronomy",
   "Biological and Biomedical Sciences",
   "Biomedical Engineering",
+<<<<<<< HEAD
   "Biomedical Informatics & Data Science",
+=======
+  "Biomedical Informatics and Data Science",
+>>>>>>> main
   "Biostatistics",
   "Cell Biology",
   "Cellular and Molecular Physiology",
@@ -27,6 +31,7 @@ export const departmentNames = [
   "Computational Biology and Bioinformatics",
   "Computer Science",
   "Dermatology",
+  "Digital Ethics Center",
   "Early Modern Studies",
   "Earth and Planetary Sciences",
   "East Asian Languages and Literatures",
@@ -124,6 +129,7 @@ export const departmentCategories = {
   "Early Modern Studies": 0,
   "English": 0,
   "Ethics, Politics and Economics": 0,
+  "Digital Ethics Center": 0,
   "Film and Media Studies": 0,
   "History": 0,
   "History of Art": 0,
@@ -181,7 +187,11 @@ export const departmentCategories = {
   // Group 4: Engineering & Computer Science
   "Applied Physics": 4,
   "Biomedical Engineering": 4,
+<<<<<<< HEAD
   "Biomedical Informatics & Data Science": 4,
+=======
+  "Biomedical Informatics and Data Science": 4,
+>>>>>>> main
   "Chemical and Environmental Engineering": 4,
   "Computer Science": 4,
   "Electrical Engineering": 4,
