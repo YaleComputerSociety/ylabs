@@ -12,11 +12,7 @@ export const departmentNames = [
   "Astronomy",
   "Biological and Biomedical Sciences",
   "Biomedical Engineering",
-<<<<<<< HEAD
-  "Biomedical Informatics & Data Science",
-=======
   "Biomedical Informatics and Data Science",
->>>>>>> main
   "Biostatistics",
   "Cell Biology",
   "Cellular and Molecular Physiology",
@@ -187,11 +183,7 @@ export const departmentCategories = {
   // Group 4: Engineering & Computer Science
   "Applied Physics": 4,
   "Biomedical Engineering": 4,
-<<<<<<< HEAD
-  "Biomedical Informatics & Data Science": 4,
-=======
   "Biomedical Informatics and Data Science": 4,
->>>>>>> main
   "Chemical and Environmental Engineering": 4,
   "Computer Science": 4,
   "Electrical Engineering": 4,
