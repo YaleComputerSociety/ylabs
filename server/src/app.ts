@@ -39,11 +39,11 @@ const app = express()
 .use(passport.session())
 .use(passportRoutes)
 .use(routes)
-.use('/', express.static('../client/build'));
+.use('/', express.static('../client/dist'));
 
 
 app.get(['/login', '/about', '/account', '/login-error'], function(req, res) {
-  res.sendFile(path.join(__dirname, '../../client/build/index.html'), function(err) {
+  res.sendFile(path.join(__dirname, '../../client/dist/index.html'), function(err) {
     if (err) {
       res.status(500).send(err)
     }
