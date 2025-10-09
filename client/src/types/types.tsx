@@ -22,6 +22,11 @@ export type Listing = {
   updatedAt: string;
   createdAt: string;
   confirmed: boolean;
+  applicationsEnabled: boolean;
+  applicationQuestions: Array<{
+    question: string;
+    required: boolean;
+  }>;
 };
 
 export type User = {
@@ -34,6 +39,7 @@ export type UserData = {
   netId: string;
   userType: string;
   userConfirmed: boolean;
+  resumeUrl?: string;
 }
 
 
@@ -47,6 +53,45 @@ export type Developer = {
   website?: string;
   linkedin?: string;
   github?:string;
+}
+
+// Applications
+export type Application = {
+  _id: string;
+  listingId: string;
+  studentId: string;
+  studentName: string;
+  studentEmail: string;
+  studentNetId: string;
+  resumeUrl?: string;
+  coverLetter?: string;
+  customQuestions: Array<{
+    question: string;
+    answer: string;
+  }>;
+  status: 'pending' | 'accepted' | 'rejected';
+  professorNotes?: string;
+  appliedAt: string;
+  updatedAt: string;
+  listing?: {
+    title: string;
+    ownerFirstName: string;
+    ownerLastName: string;
+    departments: string[];
+  };
+  student?: {
+    fname: string;
+    lname: string;
+    email: string;
+    netid: string;
+  };
+}
+
+export type ApplicationStats = {
+  total: number;
+  pending: number;
+  accepted: number;
+  rejected: number;
 }
 
 interface ImportMeta {

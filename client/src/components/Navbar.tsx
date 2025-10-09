@@ -16,6 +16,7 @@ import HomeButton from "./HomeButton";
 import DrawerHomeButton from './DrawerHomeButton';
 import FindLabsButton from './FindLabsButton';
 import YURAButton from './YURAButton';
+import ApplicationsButton from './ApplicationsButton';
 import { useContext } from "react";
 import UserContext from "../contexts/UserContext";
 import FeedbackButton from './FeebackButton';
@@ -70,6 +71,7 @@ export default function Navbar() {
           {isAuthenticated ? (
             <>
               <ListItem sx={listItemStyle}><DrawerHomeButton /></ListItem>
+              <ListItem sx={listItemStyle}><ApplicationsButton /></ListItem>
               <ListItem sx={listItemStyle}><AccountButton /></ListItem>
               <ListItem sx={listItemStyle}><AboutButton /></ListItem>
               <ListItem sx={listItemStyle}><FeedbackButton /></ListItem>
@@ -112,6 +114,7 @@ export default function Navbar() {
                   display: { xs: 'none', md: 'flex' },
                   gap: '14px'
                 }}>
+                  <ApplicationsButton />
                   <AccountButton />
                   <AboutButton />
                   <SignOutButton />

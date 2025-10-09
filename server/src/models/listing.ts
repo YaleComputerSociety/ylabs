@@ -75,7 +75,18 @@ const listingSchema = new mongoose.Schema(
     confirmed: {
         type: Boolean,
         default: true,
-    }
+    },
+    applicationsEnabled: {
+        type: Boolean,
+        default: false,
+    },
+    applicationQuestions: [{
+        question: String,
+        required: {
+            type: Boolean,
+            default: false
+        }
+    }]
   },
   {
     timestamps: true,

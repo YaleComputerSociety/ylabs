@@ -2,6 +2,7 @@ import React, { useEffect, useState, useContext } from 'react';
 import { Listing } from '../../types/types';
 import { departmentCategories } from '../../utils/departmentNames';
 import UserContext from '../../contexts/UserContext';
+import ApplicationModal from '../ApplicationModal';
 
 interface ListingModalProps {
   isOpen: boolean;
@@ -15,6 +16,7 @@ const ListingModal = ({ isOpen, onClose, listing, favListingsIds, updateFavorite
     const [isCreated, setIsCreating] = useState(listing.id === "create");
     const [isFavorite, setIsFavorite] = useState(favListingsIds.includes(listing.id));
     const [restrictedStats, setRestrictedStats] = useState(true);
+    const [showApplicationModal, setShowApplicationModal] = useState(false);
     const {user} = useContext(UserContext);
 
     const departmentColors = [
@@ -103,6 +105,7 @@ const ListingModal = ({ isOpen, onClose, listing, favListingsIds, updateFavorite
     if (!isOpen || !listing) return null;
 
     return (
+        <>
         <div 
         className="fixed inset-0 bg-black/65 z-50 flex items-center justify-center overflow-y-auto p-4 pt-24" 
         onClick={handleBackdropClick}
@@ -283,11 +286,31 @@ const ListingModal = ({ isOpen, onClose, listing, favListingsIds, updateFavorite
                     <div className="text-sm">Archived listings are not visible in search results or as favorites.</div>
                     </div>
                 )}
+
+                {/* Apply Button for Students */}
+                {!isCreated && user && ['undergraduate', 'graduate'].includes(user.userType) && listing.applicationsEnabled && (
+                    <div className="mt-6">
+                        <button
+                            onClick={() => setShowApplicationModal(true)}
+                            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg focus:outline-none focus:shadow-outline transition-colors"
+                        >
+                            Apply to this Lab
+                        </button>
+                    </div>
+                )}
                 </div>
             </div>
             </div>
         </div>
         </div>
+
+        {/* Application Modal */}
+        <ApplicationModal
+            isOpen={showApplicationModal}
+            onClose={() => setShowApplicationModal(false)}
+            listing={listing}
+        />
+        </>
     );
 };
 
