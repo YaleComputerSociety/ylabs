@@ -11,6 +11,9 @@ import { useContext } from "react";
 import UserContext from "../contexts/UserContext";
 import CreateButton from "../components/accounts/CreateButton";
 import YoutubeVideo from "../components/accounts/YoutubeVideo";
+import ApplicationTracker from "../components/ApplicationTracker";
+import ProfessorDashboard from "../components/ProfessorDashboard";
+import ResumeUpload from "../components/ResumeUpload";
 
 const Account = () => {
     const [ownListings, setOwnListings] = useState<NewListing[]>([]);
@@ -144,7 +147,7 @@ const Account = () => {
 
     const postListing = async (newListing: NewListing) => {
         setIsLoading(true);
-        axios.put(`/newListings/${newListing.id}`, {withCredentials: true, data: newListing}).then((response) => {
+        axios.put(`/newListings/${newListing.id}`, { data: newListing }).then((response) => {
             reloadListings();
         }).catch((error) => {
             console.error('Error saving listing:', error);
@@ -167,7 +170,7 @@ const Account = () => {
 
     const postNewListing = (listing: NewListing) => {
         setIsLoading(true);
-        axios.post('/newListings', {withCredentials: true, data: listing}).then((response) => {
+        axios.post('/newListings', { data: listing }).then((response) => {
             reloadListings();
             setIsEditing(false);
             setIsLoading(false);
@@ -305,6 +308,24 @@ const Account = () => {
                                 <YoutubeVideo />
                             </div>
                         </>
+                    )}
+
+                    {/* Student Resume Upload */}
+                    {user && ['undergraduate', 'graduate'].includes(user.userType) && (
+                        <>
+                            <div className="mt-12 mb-8">
+                                <h2 className="text-2xl font-bold text-gray-800 mb-6">Resume Management</h2>
+                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                    <ResumeUpload />
+                                </div>
+                            </div>
+                        </>
+                    )}
+
+                    {user && (user.userType === 'professor' || user.userType === 'faculty' || user.userType === 'admin') && (
+                        <div className="mt-12">
+                            <ProfessorDashboard />
+                        </div>
                     )}
                     
                     {/* Modal */}

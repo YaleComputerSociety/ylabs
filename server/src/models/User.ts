@@ -61,6 +61,10 @@ const userSchema = new mongoose.Schema(
     favListings: {
         type: [mongoose.Schema.ObjectId],
         default: [],
+    },
+    resumeUrl: {
+        type: String,
+        required: false,
     }
   },
   {

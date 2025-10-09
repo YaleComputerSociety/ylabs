@@ -39,6 +39,7 @@ const app = express()
 .use(passport.session())
 .use(passportRoutes)
 .use(routes)
+.use('/uploads', express.static(path.join(__dirname, '../uploads')))
 .use('/', express.static('../client/dist'));
 
 
