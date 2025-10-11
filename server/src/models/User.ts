@@ -61,6 +61,19 @@ const userSchema = new mongoose.Schema(
     favListings: {
         type: [mongoose.Schema.ObjectId],
         default: [],
+    },
+    
+    lastLogin: {
+        type: Date,
+        index: true
+    },
+    loginCount: {
+        type: Number,
+        default: 0
+    },
+    lastActive: {
+        type: Date,
+        index: true
     }
   },
   {

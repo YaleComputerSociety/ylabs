@@ -5,6 +5,8 @@ import { readUser } from '../services/userService';
 import { NewListing } from '../models';
 import mongoose from 'mongoose';
 import { isAuthenticated, isTrustworthy } from '../utils/permissions';
+import { logEvent } from '../services/analyticsService';
+import { AnalyticsEventType } from '../models';
 
 const router = Router();
 
@@ -38,7 +40,7 @@ router.get('/search', isAuthenticated, async (request: Request, response: Respon
 
       if (departments) {
         const departmentList = (departments as string).split(',');
-        ``
+        
         pipeline.push({
             $match: {
                 departments: { $in: departmentList },
@@ -65,6 +67,18 @@ router.get('/search', isAuthenticated, async (request: Request, response: Respon
   
       const results = await NewListing.aggregate(pipeline);
 
+      // Log search event
+      const currentUser = request.user as { netId?: string, userType: string };
+      if (currentUser?.netId) {
+        logEvent({
+          eventType: AnalyticsEventType.SEARCH,
+          netid: currentUser.netId,
+          userType: currentUser.userType,
+          searchQuery: query as string || '',
+          searchDepartments: departments ? (departments as string).split(',') : []
+        });
+      }
+
       response.json({ results, page: Number(page), pageSize: Number(pageSize) });
     } catch (error) {
       console.error("Error executing search:", error);
@@ -85,26 +99,21 @@ router.post("/", isAuthenticated, async (request: Request, response: Response) =
 
     const user = await readUser(currentUser.netId);
     const listing = await createListing(request.body.data, user);
+
+    // Log listing creation
+    logEvent({
+      eventType: AnalyticsEventType.LISTING_CREATE,
+      netid: currentUser.netId,
+      userType: currentUser.userType,
+      listingId: listing._id.toString()
+    });
+
     response.status(201).json({ listing });
   } catch (error) {
     console.log(error.message);
     response.status(400).json({ error: error.message });
   }
 });
-
-/*
-//Add listing for user with specified netid
-router.post("/:id", async (request: Request, response: Response) => {
-    try {
-      const user = await readUser(request.params.id);
-      const listing = await createListing(request.body, user);
-      response.status(201).json({ listing });
-    } catch (error) {
-      console.log(error.message);
-      response.status(400).json({ error: error.message });
-    }
-  });
-*/
 
 //Get a skeleton listing for the current user
 router.get('/skeleton', isAuthenticated, async (request: Request, response: Response) => {
@@ -121,19 +130,6 @@ router.get('/skeleton', isAuthenticated, async (request: Request, response: Resp
     }
 });
 
-/*
-//Read all listings
-router.get("/", async (request: Request, response: Response) => {
-    try {
-        const listings = await readAllListings();
-        response.status(200).json({ listings });
-    } catch (error) {
-        console.log(error.message);
-        response.status(500).json({ error: error.message });
-    }
-});
-*/
-
 //Read specific listing by ObjectId
 router.get('/:id', isAuthenticated, async (request: Request, response: Response) => {
     try {
@@ -149,8 +145,6 @@ router.get('/:id', isAuthenticated, async (request: Request, response: Response)
     }
 });
 
-//Updates for current user
-
 //Update listing by ObjectId (current user)
 router.put('/:id', isAuthenticated, async (request: Request, response: Response) => {
     try {
@@ -159,6 +153,15 @@ router.put('/:id', isAuthenticated, async (request: Request, response: Response)
             throw new Error('User not logged in');
         }
         const listing = await updateListing(request.params.id, currentUser.netId, request.body.data);
+
+        // Log listing update
+        logEvent({
+          eventType: AnalyticsEventType.LISTING_UPDATE,
+          netid: currentUser.netId,
+          userType: currentUser.userType,
+          listingId: request.params.id
+        });
+
         response.status(200).json({ listing });
     } catch (error) {
         console.log(error.message);
@@ -180,6 +183,15 @@ router.put('/:id/archive', isAuthenticated, async (request: Request, response: R
             throw new Error('User not logged in');
         }
         const listing = await archiveListing(request.params.id, currentUser.netId);
+
+        // Log listing archive
+        logEvent({
+          eventType: AnalyticsEventType.LISTING_ARCHIVE,
+          netid: currentUser.netId,
+          userType: currentUser.userType,
+          listingId: request.params.id
+        });
+
         response.status(200).json({ listing });
     } catch (error) {
         console.log(error.message);
@@ -201,6 +213,15 @@ router.put('/:id/unarchive', isAuthenticated, async (request: Request, response:
         throw new Error('User not logged in');
     }
     const listing = await unarchiveListing(request.params.id, currentUser.netId);
+
+    // Log listing unarchive
+    logEvent({
+      eventType: AnalyticsEventType.LISTING_UNARCHIVE,
+      netid: currentUser.netId,
+      userType: currentUser.userType,
+      listingId: request.params.id
+    });
+
     response.status(200).json({ listing });
   } catch (error) {
     console.log(error.message);
@@ -223,6 +244,15 @@ router.put('/:id/addView', isAuthenticated, async (request: Request, response: R
         }
 
         const listing = await addView(request.params.id, currentUser.netId);
+
+        // Log listing view event
+        logEvent({
+          eventType: AnalyticsEventType.LISTING_VIEW,
+          netid: currentUser.netId,
+          userType: currentUser.userType,
+          listingId: request.params.id
+        });
+
         response.status(200).json({ listing });
     } catch (error) {
         console.log(error.message);
@@ -236,104 +266,25 @@ router.put('/:id/addView', isAuthenticated, async (request: Request, response: R
     }
 });
 
-//Updates for specific user
-
-/*
-//Update listing by ObjectId (specific user)
-router.put('/asUser/:netid/:id', async (request: Request, response: Response) => {
-    try {
-        const listing = await updateListing(request.params.id, request.params.netid, request.body);
-        response.status(200).json({ listing });
-    } catch (error) {
-        console.log(error.message);
-        if (error instanceof NotFoundError || error instanceof ObjectIdError) {
-            response.status(error.status).json({ error: error.message });
-        } else if (error instanceof IncorrectPermissionsError) {
-            response.status(error.status).json({ error: error.message, incorrectPermissions: true });
-        } else {
-            response.status(500).json({ error: error.message });
-        }
-    }
-});
-
-//Archive listing by ObjectId
-router.put('/asUser/:netid/:id/archive', async (request: Request, response: Response) => {
-    try {
-        const listing = await archiveListing(request.params.id, request.params.netid);
-        response.status(200).json({ listing });
-    } catch (error) {
-        console.log(error.message);
-        if (error instanceof NotFoundError || error instanceof ObjectIdError) {
-            response.status(error.status).json({ error: error.message });
-        } else if (error instanceof IncorrectPermissionsError) {
-            response.status(error.status).json({ error: error.message, incorrectPermissions: true });
-        } else {
-            response.status(500).json({ error: error.message });
-        }
-    }
-});
-
-//Unarchive listing by ObjectId
-router.put('/asUser/:netid/:id/unarchive', async (request: Request, response: Response) => {
-  try {
-      const listing = await unarchiveListing(request.params.id, request.params.netid);
-      response.status(200).json({ listing });
-  } catch (error) {
-    console.log(error.message);
-    if (error instanceof NotFoundError || error instanceof ObjectIdError) {
-        response.status(error.status).json({ error: error.message });
-    } else if (error instanceof IncorrectPermissionsError) {
-        response.status(error.status).json({ error: error.message, incorrectPermissions: true });
-    } else {
-        response.status(500).json({ error: error.message });
-    }
-  }
-});
-
-//Delete listing by ObjectId as another user
-router.delete('/asUser/:netid/:id', async (request: Request, response: Response) => {
-    try {
-        const currentListing = await readListing(request.params.id);
-        if (request.params.netid !== currentListing.ownerId) {
-            throw new IncorrectPermissionsError(`User with id ${request.params.netid} does not have permission to delete listing with id ${request.params.id}`);
-        }
-
-        const deletedListing = await deleteListing(request.params.id);
-        response.status(200).json({ deletedListing });
-    } catch (error) {
-        console.log(error.message);
-        if (error instanceof NotFoundError || error instanceof ObjectIdError) {
-            response.status(error.status).json({ error: error.message });
-        } else {
-            response.status(500).json({ error: error.message });
-        }
-    }
-});
-*/
-
-//Delete listing by ObjectId for current user
+//Delete listing by ObjectId (current user)
 router.delete('/:id', isAuthenticated, async (request: Request, response: Response) => {
     try {
         const currentUser = request.user as { netId? : string, userType: string, userConfirmed: boolean};
         if (!currentUser) {
             throw new Error('User not logged in');
         }
-        const currentListing = await readListing(request.params.id);
-        if (currentUser.netId !== currentListing.ownerId) {
-            throw new IncorrectPermissionsError(`User with id ${currentUser.netId} does not have permission to delete listing with id ${request.params.id}`);
-        }
-
-        const deletedListing = await deleteListing(request.params.id);
-        response.status(200).json({ deletedListing });
+        const listing = await deleteListing(request.params.id);
+        response.status(200).json({ listing });
     } catch (error) {
         console.log(error.message);
         if (error instanceof NotFoundError || error instanceof ObjectIdError) {
             response.status(error.status).json({ error: error.message });
+        } else if (error instanceof IncorrectPermissionsError) {
+            response.status(error.status).json({ error: error.message, incorrectPermissions: true });
         } else {
             response.status(500).json({ error: error.message });
         }
     }
 });
-
 
 export default router;

@@ -42,7 +42,7 @@ const app = express()
 .use('/', express.static('../client/dist'));
 
 
-app.get(['/login', '/about', '/account', '/login-error'], function(req, res) {
+app.get(['/login', '/about', '/account', '/analytics', '/login-error'], function(req, res) {
   res.sendFile(path.join(__dirname, '../../client/dist/index.html'), function(err) {
     if (err) {
       res.status(500).send(err)

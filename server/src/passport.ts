@@ -1,8 +1,10 @@
 import express from "express";
 import passport from "passport";
 import { Strategy } from "passport-cas";
-import { validateUser, createUser } from './services/userService';
+import { validateUser, createUser, readUser, userExists} from './services/userService';
 import { fetchYalie } from "./services/yaliesService";
+import { logEvent } from "./services/analyticsService";
+import { AnalyticsEventType } from "./models";
 
 passport.use(
   new Strategy(
@@ -115,16 +117,14 @@ passport.deserializeUser(async (netId: String, done) => {
   }
 });
 
-const casLogin = function (
-  req: express.Request,
-  res: express.Response,
-  next: express.NextFunction
-) {
-  passport.authenticate("cas", function (err, user, info) {
+const casLogin = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  passport.authenticate("cas", async function (err: any, user: any, info: any) {
     if (err) {
-      console.log("Error in authenticate function")
+      console.log("Error during CAS authentication");
+      console.error("Error details:", err);
+      
       try {
-        console.error("Authentication error details: ", {
+        console.error("Serialized error:", {
           message: err.messsage,
           stack: err.stack,
           name: err.name,
@@ -150,11 +150,26 @@ const casLogin = function (
     console.log(user);
 
     console.log("Logging in user: ", user);
-    req.logIn(user, function (err) {
+    req.logIn(user, async function (err) {
       console.log("Post login");
       if (err) {
         console.log("Error logging in");
         return next(err);
+      }
+
+      // Log login event to analytics
+      try {
+        await logEvent({
+          eventType: AnalyticsEventType.LOGIN,
+          netid: user.netid,
+          userType: user.userType || 'unknown',
+          metadata: {
+            timestamp: new Date()
+          }
+        });
+      } catch (analyticsError) {
+        console.error("Error logging analytics event:", analyticsError);
+        // Don't fail the login if analytics fails
       }
 
       if (req.query.redirect) {
@@ -191,8 +206,27 @@ router.get("/check", (req, res) => {
 
 router.get("/cas", casLogin);
 
-router.get("/logout", (req, res) => {
+router.get("/logout", async (req, res) => {
   console.log("Logging out user");
+  
+  // Log logout event to analytics
+  if (req.user) {
+    const user = req.user as any;
+    try {
+      await logEvent({
+        eventType: AnalyticsEventType.LOGOUT,
+        netid: user.netid,
+        userType: user.userType || 'unknown',
+        metadata: {
+          timestamp: new Date()
+        }
+      });
+    } catch (analyticsError) {
+      console.error("Error logging analytics event:", analyticsError);
+      // Don't fail the logout if analytics fails
+    }
+  }
+  
   req.logOut();
   return res.json({ success: true });
 });
