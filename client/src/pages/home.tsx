@@ -5,14 +5,14 @@ import { departmentCategories } from "../utils/departmentNames";
 import axios from "../utils/axios";
 
 import styled from "styled-components";
-import {NewListing} from '../types/types';
+import {Listing} from '../types/types';
 
 import swal from "sweetalert";
 
 // Remove all archived from search results on backend
 
 const Home = () => {
-    const [listings, setListings] = useState<NewListing[]>([]);
+    const [listings, setListings] = useState<Listing[]>([]);
     const [isLoading, setIsLoading] = useState<Boolean>(false);
     const [searchExhausted, setSearchExhausted] = useState<Boolean>(false);
     const [page, setPage] = useState<number>(1);
@@ -51,14 +51,14 @@ const Home = () => {
         reloadFavorites();
     }, []);
 
-    const addListings = (newListings: NewListing[]) => {
-        setListings((oldListings) => [...oldListings, ...newListings]);
-        setSearchExhausted(newListings.length < pageSize);
+    const addListings = (listings: Listing[]) => {
+        setListings((oldListings) => [...oldListings, ...listings]);
+        setSearchExhausted(listings.length < pageSize);
     };
 
-    const resetListings = (newListings: NewListing[]) => {
-        setListings(newListings);
-        setSearchExhausted(newListings.length < pageSize);
+    const resetListings = (listings: Listing[]) => {
+        setListings(listings);
+        setSearchExhausted(listings.length < pageSize);
     };
 
     const updateFavorite = (listingId: string, favorite: boolean) => {

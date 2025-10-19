@@ -1,5 +1,5 @@
 import React, { useState, useRef, KeyboardEvent, useEffect } from 'react';
-import { NewListing } from '../../types/types';
+import { Listing } from '../../types/types';
 import axios from 'axios';
 import swal from 'sweetalert';
 import { createListing } from '../../utils/apiCleaner';
@@ -8,8 +8,8 @@ import SortDropdown from './SortDropdown';
 
 interface SearchHubProps {
     allDepartments: string[];
-    resetListings: (newListings: NewListing[]) => void;
-    addListings: (newListings: NewListing[]) => void;
+    resetListings: (listings: Listing[]) => void;
+    addListings: (listings: Listing[]) => void;
     setIsLoading: React.Dispatch<React.SetStateAction<Boolean>>;
     sortBy: string;
     sortOrder: number;
@@ -203,11 +203,11 @@ const SearchHub = ({
         if (sortBy === 'default') {
             url =
                 backendBaseURL +
-                `/newListings/search?query=${formattedQuery}&page=${page}&pageSize=${pageSize}`;
+                `/listings/search?query=${formattedQuery}&page=${page}&pageSize=${pageSize}`;
         } else {
             url =
                 backendBaseURL +
-                `/newListings/search?query=${formattedQuery}&sortBy=${sortBy}&sortOrder=${sortOrder}&page=${page}&pageSize=${pageSize}`;
+                `/listings/search?query=${formattedQuery}&sortBy=${sortBy}&sortOrder=${sortOrder}&page=${page}&pageSize=${pageSize}`;
         }
 
         if (formattedDepartments) {
@@ -219,7 +219,7 @@ const SearchHub = ({
         axios
             .get(url, { withCredentials: true })
             .then((response) => {
-                const responseListings: NewListing[] = response.data.results.map(function (
+                const responseListings: Listing[] = response.data.results.map(function (
                     elem: any
                 ) {
                     return createListing(elem);
