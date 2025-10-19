@@ -1,9 +1,7 @@
-import { NewListing } from "../models";
+import { Listing } from "../models";
 import { IncorrectPermissionsError, NotFoundError, ObjectIdError } from "../utils/errors";
-import { createListingBackup } from "./listingBackupServices";
 import { addOwnListings, deleteOwnListings, userExists, createUser, readUser } from "./userService";
 import { fetchYalie } from "./yaliesService";
-import { User } from "../models";
 import mongoose from "mongoose";
 
 export const createListing = async (data: any, owner: any) => {
@@ -11,7 +9,7 @@ export const createListing = async (data: any, owner: any) => {
         throw new Error('Incomplete user data for owner');
     }
 
-    const listing = new NewListing({...data, ownerId: owner.netid, ownerEmail: owner.email, ownerFirstName: owner.fname, ownerLastName: owner.lname, confirmed: owner.userConfirmed});
+    const listing = new Listing({...data, ownerId: owner.netid, ownerEmail: owner.email, ownerFirstName: owner.fname, ownerLastName: owner.lname, confirmed: owner.userConfirmed});
 
     // Add listing id to ownListings of all professors associated with the listing
     const listingId = listing._id;
@@ -41,13 +39,13 @@ export const createListing = async (data: any, owner: any) => {
 };
 
 export const readAllListings = async () => {
-    const listings = await NewListing.find();
+    const listings = await Listing.find();
     return listings.map(listing => listing.toObject());
 };
 
 export const readListing = async(id: any) => {
     if (mongoose.Types.ObjectId.isValid(id)) {
-        const listing = await NewListing.findById(id);
+        const listing = await Listing.findById(id);
         if (!listing) {
             throw new NotFoundError(`Listing not found with ObjectId: ${id}`);
         }
@@ -75,7 +73,7 @@ export const readListings = async(ids: any[]) => {
     let listings = [];
     for (const id of ids) {
         if (mongoose.Types.ObjectId.isValid(id)) {
-            const listing = await NewListing.findById(id);
+            const listing = await Listing.findById(id);
             if (listing) {
                 listings.push(listing.toObject());
             }
@@ -86,7 +84,7 @@ export const readListings = async(ids: any[]) => {
 
 export const listingExists = async(id: any) => {
     if (mongoose.Types.ObjectId.isValid(id)) {
-        const listing = await NewListing.findById(id);
+        const listing = await Listing.findById(id);
         if (!listing) {
             return false;
         }
@@ -114,7 +112,7 @@ export const listingExists = async(id: any) => {
 
 export const updateListing = async(id: any, userId: string, data: any, noAuth: boolean = false, useTimestamps: boolean = true) => {
     if (mongoose.Types.ObjectId.isValid(id)) {
-        const oldListing = await NewListing.findById(id);
+        const oldListing = await Listing.findById(id);
 
         if (!oldListing) {
             throw new NotFoundError(`Listing not found with ObjectId: ${id}`);
@@ -150,7 +148,7 @@ export const updateListing = async(id: any, userId: string, data: any, noAuth: b
             throw new IncorrectPermissionsError(`User with id ${userId} does not have permission to update listing with id ${id}`);
         }
 
-        const listing = await NewListing.findByIdAndUpdate(id, data,
+        const listing = await Listing.findByIdAndUpdate(id, data,
             { new: true, runValidators: true, timestamps: useTimestamps }
         );
 
@@ -235,19 +233,13 @@ export const removeFavorite = async(id: any, userId: string) => {
 
 export const deleteListing = async(id: any) => {
     if (mongoose.Types.ObjectId.isValid(id)) {
-        const listing = await NewListing.findById(id);
+        const listing = await Listing.findById(id);
         if (!listing) {
             throw new NotFoundError(`Listing not found with ObjectId: ${id}`);
         }
 
         const {professorIds, professorNames, departments, emails, websites, description, keywords} = listing;
-        const listingBackupData = Object.fromEntries(
-            Object.entries({professorIds, professorNames, departments, emails, websites, description, keywords})
-                .filter(([_, value]) => value !== undefined)
-        );
-
-        const backup = await createListingBackup(listingBackupData);
-        await NewListing.findByIdAndDelete(id);
+        await Listing.findByIdAndDelete(id);
 
         // Remove listing id from ownListings of all professors associated with the listing
         const oldListingId = listing._id;
@@ -258,8 +250,6 @@ export const deleteListing = async(id: any) => {
                 await deleteOwnListings(id, [oldListingId]);
             }
         }
-
-        return backup;
     } else {
         throw new ObjectIdError("Did not received expected id type ObjectId");
     }
