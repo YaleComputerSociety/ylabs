@@ -26,6 +26,7 @@
     "express-session": "^1.17.2",
     "mongoose": "^8.0.4",
     "multer": "^2.0.2",
+    "node-fetch": "^3.3.2",
     "nodemailer": "^7.0.9",
     "passport": "^0.5.2",
     "passport-cas": "git+https://github.com/coursetable/passport-cas#79612f1",

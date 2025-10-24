@@ -196,14 +196,6 @@ const StudentApplications = () => {
                   </div>
                 )}
 
-                {application.professorNotes && (
-                  <div>
-                    <h4 className="text-sm font-medium text-gray-700 mb-1">Professor Notes</h4>
-                    <p className="text-sm text-gray-600 whitespace-pre-wrap">
-                      {application.professorNotes}
-                    </p>
-                  </div>
-                )}
               </div>
             </div>
           ))}

@@ -84,11 +84,10 @@ const ProfessorDashboard = () => {
     }
   };
 
-  const updateApplicationStatus = async (applicationId: string, status: string, notes?: string) => {
+  const updateApplicationStatus = async (applicationId: string, status: string) => {
     try {
       const response = await axios.put(`/applications/${applicationId}/status`, {
-        status,
-        professorNotes: notes
+        status
       }, {
         withCredentials: true
       });
@@ -96,7 +95,7 @@ const ProfessorDashboard = () => {
       // Update local state
       setApplications(prev => prev.map(app => 
         app._id === applicationId 
-          ? { ...app, status, professorNotes: notes, updatedAt: new Date().toISOString() }
+          ? { ...app, status, updatedAt: new Date().toISOString() }
           : app
       ));
 
@@ -358,30 +357,6 @@ const ProfessorDashboard = () => {
                           </div>
                         )}
 
-                        {/* Professor Notes */}
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Professor Notes
-                          </label>
-                          <textarea
-                            value={application.professorNotes || ''}
-                            onChange={(e) => {
-                              // Update local state immediately for better UX
-                              setApplications(prev => prev.map(app => 
-                                app._id === application._id 
-                                  ? { ...app, professorNotes: e.target.value }
-                                  : app
-                              ));
-                            }}
-                            onBlur={(e) => {
-                              // Save notes when user finishes editing
-                              updateApplicationStatus(application._id, application.status, e.target.value);
-                            }}
-                            rows={2}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            placeholder="Add notes about this application..."
-                          />
-                        </div>
                       </div>
                     </div>
                   ))}

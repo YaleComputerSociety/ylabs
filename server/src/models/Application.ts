@@ -45,10 +45,6 @@ const applicationSchema = new mongoose.Schema(
       enum: ['pending', 'accepted', 'rejected'],
       default: 'pending'
     },
-    professorNotes: {
-      type: String,
-      required: false,
-    },
     appliedAt: {
       type: Date,
       default: Date.now

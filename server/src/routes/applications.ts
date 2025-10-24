@@ -200,7 +200,7 @@ router.post('/submit', upload.single('resume'), async (req, res) => {
 router.put('/:applicationId/status', async (req, res) => {
   try {
     const { applicationId } = req.params;
-    const { status, professorNotes } = req.body;
+    const { status } = req.body;
 
     if (!['pending', 'accepted', 'rejected'].includes(status)) {
       return res.status(400).json({ error: 'Invalid status' });
@@ -210,7 +210,6 @@ router.put('/:applicationId/status', async (req, res) => {
       applicationId,
       { 
         status, 
-        professorNotes: professorNotes || '',
         updatedAt: new Date()
       },
       { new: true }
