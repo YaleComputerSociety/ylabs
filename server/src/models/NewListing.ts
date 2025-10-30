@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 
 const arrayNotEmpty = (arr: any[]) => Array.isArray(arr) && arr.length > 0;
 
-const listingSchema = new mongoose.Schema(
+const newListingSchema = new mongoose.Schema(
   {
     ownerId: {
         type: String,
@@ -82,4 +82,4 @@ const listingSchema = new mongoose.Schema(
   }
 );
 
-export const Listing = mongoose.model('listings', listingSchema);
+export const NewListing = mongoose.model('newListings', newListingSchema);

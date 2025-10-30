@@ -1,34 +1,96 @@
-import { Router } from "express";
-import { isAuthenticated, canCreateListing, validateObjectId, validatePagination } from '../middleware';
-import * as listingController from '../controllers/listingController';
+import express from 'express';
+import { Listing } from '../models';
+import { Request, Response, Router } from "express";
+import { isAuthenticated } from '../utils/permissions';
 
 const router = Router();
 
-// Search listings
-router.get('/search', isAuthenticated, validatePagination, listingController.searchListings);
+/*
+//Create new listing
 
-// Create listing
-router.post("/", isAuthenticated, canCreateListing, listingController.createListingForCurrentUser);
+//Hidden for security reasons
 
-// Get skeleton listing
-router.get('/skeleton', isAuthenticated, listingController.getSkeletonListingForCurrentUser);
+/*router.post("/", async (request: Request, response: Response) => {
+    try {
+        const listing = new Listing(request.body);
+        await listing.save();
+        response.status(201).json({ listing: listing.toObject(), success: true });
+    } catch (error) {
+        console.log(error.message);
+        response.status(400).json({ error: error.message, success: false });
+    }
+});
 
-// Read specific listing
-router.get('/:id', isAuthenticated, validateObjectId('id'), listingController.getListingById);
+// Route for getting listing by id: for testing
+router.get('/byId/:id', async (request: Request, response: Response) => {
+  try {
+    const { id } = request.params;
 
-// Update listing
-router.put('/:id', isAuthenticated, validateObjectId('id'), listingController.updateListingForCurrentUser);
+    const listing = await Listing.findById(id);
 
-// Archive listing
-router.put('/:id/archive', isAuthenticated, validateObjectId('id'), listingController.archiveListingForCurrentUser);
+    return response.status(200).json(listing);
+  } catch (error) {
+    console.log(error.message);
+    response.status(500).send({ message: error.message });
+  }
+});
+*/
 
-// Unarchive listing
-router.put('/:id/unarchive', isAuthenticated, validateObjectId('id'), listingController.unarchiveListingForCurrentUser);
+/* Route for getting relevant listings based on the queries fname, lname, and dept (all optional, at least one of the 3 must be provided)
+fname: fname must be a substring of prof's first name for the corresponding listing to be included
+lname: lname must be a substring of prof's last name for the corresponding listing to be included
+dept: dept must contain a department mentioned in the listing for the corresponding listing to be included
+*/
+router.get('/', isAuthenticated, async (request: Request, response: Response) => {
+  try {
+    const fname = request.query.fname === undefined ? '' : request.query.fname;
+    const lname = request.query.lname === undefined ? '' : request.query.lname;
+    const keywords = request.query.keywords === undefined || request.query.keywords === '' ? [] :  (request.query.keywords as String).split(',');
+    const dept = request.query.dept === undefined || request.query.dept === '' ? [] : (request.query.dept as String).split(',');
 
-// Add view to listing
-router.put('/:id/addView', isAuthenticated, validateObjectId('id'), listingController.addViewToListing);
+    /*if(fname === '' && lname === '' && dept.length == 0 && keywords.length == 0){
+      throw new Error('At least 1 query must be provided');
+    }*/
 
-// Delete listing
-router.delete('/:id', isAuthenticated, validateObjectId('id'), listingController.deleteListingForCurrentUser);
+    let conditions = [];
+
+    if (keywords.length > 0) {
+      const textCondition = { "$text" : { "$search": keywords.join(" "), "$caseSensitive": false } };
+      
+      conditions.push(textCondition);
+    }
+
+    if (dept.length > 0) {
+      conditions.push({ "departments": { "$elemMatch": { "$in": dept } } });
+    }
+
+    if(typeof fname === "string" && fname.trim()) {
+      conditions.push({"fname": { "$regex": fname.trim(), "$options": "i" }})
+    }
+
+    if(typeof lname === "string" && lname.trim()) {
+      conditions.push({"lname": { "$regex": lname.trim(), "$options": "i" }})
+    }
+
+    const query = conditions.length ? { $and: conditions } : {};
+    
+    const listings = await Listing.find(query);
+    return response.status(200).json(listings);
+
+  } catch (error) {
+    console.log(error.message);
+    response.status(500).send({ message: error.message });
+  }
+});
+
+router.get('/all', isAuthenticated, async (request: Request, response: Response) => {
+  try {
+    const listings = await Listing.find();
+    return response.status(200).json(listings);
+  } catch (error) {
+    console.log(error.message);
+    response.status(500).send({ message: error.message });
+  }
+});
 
 export default router;

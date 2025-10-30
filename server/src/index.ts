@@ -15,7 +15,6 @@ const startApp = async () => {
       if (process.env.MONGODBURL_TEST && (process.env.API_MODE == 'test')) {
         console.log("Using test MongoDB database 🔬")
       } else {
-        console.log(mongoUri)
         console.log("Using production MongoDB database 🚀")
       }
     });
