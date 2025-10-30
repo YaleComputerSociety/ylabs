@@ -3,13 +3,13 @@ import ListingsModal from '../home/ListingModal';
 import ListingCard from './ListingCard';
 import SortDropdown from './SortDropdown';
 import PulseLoader from "react-spinners/PulseLoader";
-import { NewListing } from '../../types/types';
+import { Listing } from '../../types/types';
 
 type ListingsCardListProps = {
   loading: Boolean;
   searchExhausted: Boolean;
   setPage: React.Dispatch<React.SetStateAction<number>>;
-  listings: NewListing[];
+  listings: Listing[];
   sortableKeys: string[];
   sortBy: string;
   setSortBy: (sortBy: string) => void;
@@ -73,7 +73,7 @@ export default function ListingsCardList({
     {value: 'title', label: 'Sort by: Lab Title'}
   ];
 
-  const openModalForListing = (listing: NewListing) => {
+  const openModalForListing = (listing: Listing) => {
     setSelectedListingId(listing.id);
     setModalOpen(true);
   };

@@ -1,7 +1,6 @@
 import { User } from "../models";
 import { NotFoundError } from "../utils/errors";
-import { createUserBackup, updateUserBackup, userBackupExists } from "./userBackupService";
-import { readListing, confirmListing, unconfirmListing, addFavorite, removeFavorite } from "./newListingsService";
+import { readListing, confirmListing, unconfirmListing, addFavorite, removeFavorite } from "./listingService";
 import mongoose from "mongoose";
 
 export const createUser = async (userData: any) => {
@@ -12,7 +11,7 @@ export const createUser = async (userData: any) => {
 
 export const readAllUsers = async () => {
     const users = await User.find();
-    return users.map(user => user.toObject());
+    return users.map((user: any) => user.toObject());
 };
 
 export const readUser = async(id: any) => {
@@ -114,17 +113,6 @@ export const deleteUser = async(id: any) => {
             throw new NotFoundError(`User not found with ObjectId: ${id}`);
         }
 
-        const {netid, email, userType, userConfirmed, fname, lname, website, bio, departments, ownListings, favListings} = user;
-        const userBackupData = Object.fromEntries(
-            Object.entries({netid, email, userType, userConfirmed, fname, lname, website, bio, departments, ownListings, favListings})
-                .filter(([_, value]) => value !== undefined)
-        );
-
-        if (await userBackupExists(netid)) {
-            await updateUserBackup(netid, userBackupData);
-        } else {
-            await createUserBackup(userBackupData);
-        }
         await User.findByIdAndDelete(id);
 
         return user.toObject();
@@ -133,23 +121,7 @@ export const deleteUser = async(id: any) => {
         if (!user) {
             throw new NotFoundError(`User not found with NetId: ${id}`);
         }
-        
-        const {netid, email, userType, userConfirmed, fname, lname, website, bio, departments, ownListings, favListings} = user;
-        const userBackupData = Object.fromEntries(
-            Object.entries({netid, email, userType, userConfirmed, fname, lname, website, bio, departments, ownListings, favListings})
-                .filter(([_, value]) => value !== undefined)
-        );
-
-        let backup;
-
-        if (await userBackupExists(netid)) {
-            backup = await updateUserBackup(id, userBackupData);
-        } else {
-            backup = await createUserBackup(userBackupData);
-        }
         await User.findOneAndDelete({ netid: { $regex: `^${id}$`, $options: 'i'} });
-
-        return backup;
     }
 }
 
@@ -171,7 +143,8 @@ export const addDepartments = async(id: any, newDepartments: [string]) => {
 export const deleteDepartments = async(id: any, removedDepartments: [string]) => {
     let user = await readUser(id);
 
-    user.departments = user.departments.filter(department => removedDepartments.indexOf(department) < 0);
+    user.departments = user.departments.filter((department: string) => 
+        removedDepartments.indexOf(department) < 0);
 
     const newUser = await updateUser(id, {"departments": user.departments});
 
@@ -186,11 +159,12 @@ export const clearDepartments = async(id: any) => {
 };
 
 //Add own listings
-export const addOwnListings = async(id: any, newListings: [mongoose.Types.ObjectId]) => {
+export const addOwnListings = async(id: any, Listings: [mongoose.Types.ObjectId]) => {
     let user = await readUser(id);
 
-    user.ownListings.unshift(...newListings);
-    user.ownListings = Array.from(new Set(user.ownListings.map(listing => listing.toString()))).map(listing => new mongoose.Types.ObjectId(listing));
+    user.ownListings.unshift(...Listings);
+user.ownListings = Array.from(new Set(user.ownListings.map((listing: any) => listing.toString())))
+    .map(listing => new mongoose.Types.ObjectId(listing as string));
 
     const newUser = await updateUser(id, {"ownListings": user.ownListings});
 
@@ -203,7 +177,7 @@ export const deleteOwnListings = async(id: any, removedListings: [mongoose.Types
 
     const removedListingsStrings = removedListings.map(listing => listing.toString());
 
-    user.ownListings = user.ownListings.filter(listing => removedListingsStrings.indexOf(listing.toString()) < 0);
+    user.ownListings = user.ownListings.filter((listing: any) => removedListingsStrings.indexOf(listing.toString()) < 0);
 
     const newUser = await updateUser(id, {"ownListings": user.ownListings});
 
@@ -218,15 +192,15 @@ export const clearOwnListings = async(id: any) => {
 };
 
 //Add fav listings
-export const addFavListings = async(id: any, newListings: [mongoose.Types.ObjectId]) => {
+export const addFavListings = async(id: any, Listings: [mongoose.Types.ObjectId]) => {
     let user = await readUser(id);
 
-    user.favListings.unshift(...newListings);
-    user.favListings = Array.from(new Set(user.favListings.map(listing => listing.toString()))).map(listing => new mongoose.Types.ObjectId(listing));
+    user.favListings.unshift(...Listings);
+    user.favListings = Array.from(new Set(user.favListings.map((listing: any) => listing.toString()))).map(listing => new mongoose.Types.ObjectId(listing));
 
     const newUser = await updateUser(id, {"favListings": user.favListings});
 
-    for (const listingId of newListings) {
+    for (const listingId of Listings) {
         await addFavorite(listingId.toString(), id);
     }
 
@@ -239,7 +213,7 @@ export const deleteFavListings = async(id: any, removedListings: [mongoose.Types
 
     const removedListingsStrings = removedListings.map(listing => listing.toString());
 
-    user.favListings = user.favListings.filter(listing => removedListingsStrings.indexOf(listing.toString()) < 0);
+    user.favListings = user.favListings.filter((listing: any) => removedListingsStrings.indexOf(listing.toString()) < 0);
 
     const newUser = await updateUser(id, {"favListings": user.favListings});
 

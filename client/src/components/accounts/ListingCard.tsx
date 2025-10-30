@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { NewListing } from '../../types/types';
+import { Listing } from '../../types/types';
 import ListingForm from './ListingForm';
 import { departmentCategories } from '../../utils/departmentNames';
 import { createListing } from '../../utils/apiCleaner';
@@ -9,15 +9,14 @@ import { useContext } from "react";
 import UserContext from "../../contexts/UserContext";
 
 interface ListingCardProps {
-    listing: NewListing;
+    listing: Listing;
     favListingsIds: string[];
-    updateFavorite: (listing: NewListing, listingId: string, favorite: boolean) => void;
-    updateListing: (newListing: NewListing) => void;
-    postListing: (newListing: NewListing) => void;
-    postNewListing: (newListing: NewListing) => void;
+    updateFavorite: (listing: Listing, listingId: string, favorite: boolean) => void;
+    updateListing: (listing: Listing) => void;
+    postListing: (listing: Listing) => void;
     clearCreatedListing: () => void;
-    deleteListing: (listing: NewListing) => void;
-    openModal: (listing: NewListing) => void;
+    deleteListing: (listing: Listing) => void;
+    openModal: (listing: Listing) => void;
     globalEditing: boolean;
     setGlobalEditing: (editing: boolean) => void;
     editable: boolean;
@@ -30,7 +29,6 @@ const ListingCard = ({
   updateFavorite, 
   updateListing, 
   postListing, 
-  postNewListing, 
   clearCreatedListing, 
   deleteListing, 
   openModal, 
@@ -51,7 +49,7 @@ const ListingCard = ({
     const canDelete = user && (user.netId === listing.ownerId);
 
     // Store the original listing before editing begins.
-    const originalListingRef = useRef<NewListing | null>(null);
+    const originalListingRef = useRef<Listing | null>(null);
 
     const departmentColors = [
         "bg-blue-200",
@@ -170,11 +168,11 @@ const ListingCard = ({
         e.stopPropagation();
         if (archived) {
             setArchived(false);
-            axios.put(`/newListings/${listing.id}/unarchive`, { withCredentials: true })
+            axios.put(`/listings/${listing.id}/unarchive`, { withCredentials: true })
                 .then((response) => {
                     const responseListing = response.data.listing;
-                    const newListing = createListing(responseListing);
-                    updateListing(newListing);
+                    const listing = createListing(responseListing);
+                    updateListing(listing);
                 })
                 .catch((error) => {
                     setArchived(true);
@@ -189,11 +187,11 @@ const ListingCard = ({
                 });
         } else {
             setArchived(true);
-            axios.put(`/newListings/${listing.id}/archive`, { withCredentials: true })
+            axios.put(`/listings/${listing.id}/archive`, { withCredentials: true })
                 .then((response) => {
                     const responseListing = response.data.listing;
-                    const newListing = createListing(responseListing);
-                    updateListing(newListing);
+                    const listing = createListing(responseListing);
+                    updateListing(listing);
                 })
                 .catch((error) => {
                     setArchived(false);
@@ -388,8 +386,8 @@ const ListingCard = ({
                             setEditing(false);
                             setGlobalEditing(false);
                         }} 
-                        onCreate={(newListing) => {
-                            postNewListing(newListing);
+                        onCreate={(listing) => {
+                            postListing(listing);
                             setEditing(false);
                             setGlobalEditing(false);
                         }}
