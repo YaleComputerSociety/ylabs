@@ -1,5 +1,5 @@
 import {useState, useEffect} from "react";
-import {Listing} from '../types/types'
+import {NewListing} from '../types/types'
 import {createListing} from '../utils/apiCleaner';
 import ListingCard from '../components/accounts/ListingCard'
 import ListingModal from "../components/accounts/ListingModal";
@@ -13,14 +13,14 @@ import CreateButton from "../components/accounts/CreateButton";
 import YoutubeVideo from "../components/accounts/YoutubeVideo";
 
 const Account = () => {
-    const [ownListings, setOwnListings] = useState<Listing[]>([]);
-    const [favListings, setFavListings] = useState<Listing[]>([]);
+    const [ownListings, setOwnListings] = useState<NewListing[]>([]);
+    const [favListings, setFavListings] = useState<NewListing[]>([]);
     const [favListingsIds, setFavListingsIds] = useState<string[]>([]);
     const [isLoading, setIsLoading] = useState<Boolean>(false);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isEditing, setIsEditing] = useState(false);
     const [isCreating, setIsCreating] = useState(false);
-    const [selectedListing, setSelectedListing] = useState<Listing | null>(null);
+    const [selectedListing, setSelectedListing] = useState<NewListing | null>(null);
     const {user} = useContext(UserContext);
 
     useEffect(() => {
@@ -51,10 +51,10 @@ const Account = () => {
         setIsLoading(true);
 
         await axios.get('/users/listings', {withCredentials: true}).then((response) => {
-            const responseOwnListings : Listing[] = response.data.ownListings.map(function(elem: any){
+            const responseOwnListings : NewListing[] = response.data.ownListings.map(function(elem: any){
                 return createListing(elem);
             })
-            const responseFavListings : Listing[] = response.data.favListings.map(function(elem: any){
+            const responseFavListings : NewListing[] = response.data.favListings.map(function(elem: any){
                 return createListing(elem);
             })
             setOwnListings(responseOwnListings);
@@ -87,7 +87,7 @@ const Account = () => {
     };
 
     // Function to open modal with a specific listing
-    const openModal = (listing: Listing) => {
+    const openModal = (listing: NewListing) => {
         setSelectedListing(listing);
         setIsModalOpen(true);
     };
@@ -98,7 +98,7 @@ const Account = () => {
         setSelectedListing(null);
     };
 
-    const updateFavorite = (listing: Listing, listingId: string, favorite: boolean) => {
+    const updateFavorite = (listing: NewListing, listingId: string, favorite: boolean) => {
         const prevFavListings = favListings;
         const prevFavListingsIds = favListingsIds;
         
@@ -133,18 +133,41 @@ const Account = () => {
         }
     };
 
-    const updateListing = (listing: Listing) => {
-        setOwnListings((prevOwnListings) => prevOwnListings.map((listing) => listing.id === listing.id ? listing : listing));
-        setFavListings((prevFavListings) => prevFavListings.map((listing) => listing.id === listing.id ? listing : listing));
+    const updateListing = (newListing: NewListing) => {
+        setOwnListings((prevOwnListings) => prevOwnListings.map((listing) => listing.id === newListing.id ? newListing : listing));
+        setFavListings((prevFavListings) => prevFavListings.map((listing) => listing.id === newListing.id ? newListing : listing));
     };
 
-    const filterHiddenListings = (listings: Listing[]) => {
+    const filterHiddenListings = (listings: NewListing[]) => {
         return listings.filter((listing) => listing.confirmed && !listing.archived);
     }
 
-    const postListing = (listing: Listing) => {
+    const postListing = async (newListing: NewListing) => {
         setIsLoading(true);
-        axios.post('/listings', {withCredentials: true, data: listing}).then((response) => {
+        axios.put(`/newListings/${newListing.id}`, {withCredentials: true, data: newListing}).then((response) => {
+            reloadListings();
+        }).catch((error) => {
+            console.error('Error saving listing:', error);
+            
+            if(error.response.data.incorrectPermissions) {
+                swal({
+                    text: "You no longer have permission to edit this listing",
+                    icon: "warning",
+                })
+                reloadListings();
+            } else {
+                swal({
+                    text: "Unable to update listing",
+                    icon: "warning",
+                })
+                reloadListings();
+            }
+        });
+    }
+
+    const postNewListing = (listing: NewListing) => {
+        setIsLoading(true);
+        axios.post('/newListings', {withCredentials: true, data: listing}).then((response) => {
             reloadListings();
             setIsEditing(false);
             setIsLoading(false);
@@ -169,9 +192,9 @@ const Account = () => {
         setIsCreating(false);
     };
 
-    const deleteListing = (listing: Listing) => {
+    const deleteListing = (listing: NewListing) => {
         setIsLoading(true);
-        axios.delete(`/listings/${listing.id}`, {withCredentials: true}).then((response) => {
+        axios.delete(`/newListings/${listing.id}`, {withCredentials: true}).then((response) => {
             reloadListings();
             setIsLoading(false);
         }).catch((error) => {
@@ -187,7 +210,7 @@ const Account = () => {
     };
 
     const onCreate = () => {
-        axios.get('/listings/skeleton', {withCredentials: true}).then((response) => {
+        axios.get('/newListings/skeleton', {withCredentials: true}).then((response) => {
             const skeletonListing = createListing(response.data.listing);
 
             setOwnListings((prevOwnListings) => [...prevOwnListings, skeletonListing]);
@@ -229,6 +252,7 @@ const Account = () => {
                                         updateFavorite={updateFavorite}
                                         updateListing={updateListing}
                                         postListing={postListing}
+                                        postNewListing={postNewListing}
                                         clearCreatedListing={clearCreatedListing}
                                         deleteListing={deleteListing}
                                         openModal={openModal}
@@ -257,6 +281,7 @@ const Account = () => {
                                         updateFavorite={updateFavorite}
                                         updateListing={updateListing}
                                         postListing={postListing}
+                                        postNewListing={postNewListing}
                                         clearCreatedListing={clearCreatedListing}
                                         deleteListing={deleteListing}
                                         openModal={openModal}

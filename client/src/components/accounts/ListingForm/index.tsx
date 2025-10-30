@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Listing } from '../../../types/types';
+import { NewListing } from '../../../types/types';
 import { departmentNames } from '../../../utils/departmentNames';
 import swal from "sweetalert";
 import axios from '../../../utils/axios';
@@ -17,12 +17,12 @@ import { useContext } from "react";
 import UserContext from "../../../contexts/UserContext";
          
 interface ListingFormProps {
-  listing: Listing;
+  listing: NewListing;
   isCreated: boolean;
-  onLoad: (updatedListing: Listing, success: boolean) => void;
+  onLoad: (updatedListing: NewListing, success: boolean) => void;
   onCancel?: () => void;
-  onSave?: (updatedListing: Listing) => void;
-  onCreate?: (listing: Listing) => void;
+  onSave?: (updatedListing: NewListing) => void;
+  onCreate?: (newListing: NewListing) => void;
 }
 
 const ListingForm = ({ listing, isCreated, onLoad, onCancel, onSave, onCreate }: ListingFormProps) => {
@@ -61,31 +61,31 @@ const ListingForm = ({ listing, isCreated, onLoad, onCancel, onSave, onCreate }:
   useEffect(() => {
     if (!isCreated) {
       setLoading(true);
-      axios.get(`/listings/${listing.id}`, { withCredentials: true }).then((response) => {
+      axios.get(`/newListings/${listing.id}`, { withCredentials: true }).then((response) => {
         if (!response.data.listing) {
           console.error(`Response, but no listing ${listing.id}:`, response.data);
           onLoad(listing, false);
           return;
         }
-        const listing = createListing(response.data.listing);
+        const newListing = createListing(response.data.listing);
         // Update state with new listing data
-        setTitle(listing.title);
-        setProfessorNames([...listing.professorNames]);
-        setOwnerName(`${listing.ownerFirstName} ${listing.ownerLastName}`);
-        setDepartments([...listing.departments]);
-        setEmails([...listing.emails]);
-        setOwnerEmail(listing.ownerEmail);
-        setWebsites(listing.websites ? [...listing.websites] : []);
-        setDescription(listing.description);
-        setKeywords(listing.keywords ? [...listing.keywords] : []);
-        setEstablished(listing.established || '');
-        setHiringStatus(listing.hiringStatus);
-        setArchived(listing.archived);
+        setTitle(newListing.title);
+        setProfessorNames([...newListing.professorNames]);
+        setOwnerName(`${newListing.ownerFirstName} ${newListing.ownerLastName}`);
+        setDepartments([...newListing.departments]);
+        setEmails([...newListing.emails]);
+        setOwnerEmail(newListing.ownerEmail);
+        setWebsites(newListing.websites ? [...newListing.websites] : []);
+        setDescription(newListing.description);
+        setKeywords(newListing.keywords ? [...newListing.keywords] : []);
+        setEstablished(newListing.established || '');
+        setHiringStatus(newListing.hiringStatus);
+        setArchived(newListing.archived);
 
-        onLoad(listing, true);
+        onLoad(newListing, true);
 
         setAvailableDepartments(
-          departmentNames.filter(dept => !listing.departments.includes(dept)).sort()
+          departmentNames.filter(dept => !newListing.departments.includes(dept)).sort()
         );
         setLoading(false);
       }).catch((error) => {
@@ -102,7 +102,7 @@ const ListingForm = ({ listing, isCreated, onLoad, onCancel, onSave, onCreate }:
 
   // Live update preview when editing or creating a listing
   useEffect(() => {
-    const updatedListing: Listing = {
+    const updatedListing: NewListing = {
       ...listing,
       title,
       professorNames,
@@ -142,7 +142,7 @@ const ListingForm = ({ listing, isCreated, onLoad, onCancel, onSave, onCreate }:
     
     // Only proceed if no errors
     if (Object.keys(filteredErrors).length === 0) {
-      const updatedListing: Listing = {
+      const updatedListing: NewListing = {
         ...listing,
         title,
         professorIds,

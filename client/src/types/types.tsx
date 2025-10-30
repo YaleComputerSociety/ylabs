@@ -1,6 +1,6 @@
 //Listings
 
-export type Listing = {
+export type NewListing = {
   id: string;
   ownerId: string;
   ownerFirstName: string;
@@ -36,6 +36,16 @@ export type UserData = {
   userConfirmed: boolean;
 }
 
+export type Listing = {
+  id: number;
+  departments: string;
+  email: string;
+  website: string;
+  description: string;
+  keywords: string;
+  lastUpdated: string;
+  name: string;
+};
 
 //Developer
 

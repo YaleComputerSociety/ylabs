@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Listing } from '../../types/types';
+import { NewListing } from '../../types/types';
 import { departmentCategories } from '../../utils/departmentNames';
 import axios from "../../utils/axios";
 import swal from "sweetalert";
@@ -7,10 +7,10 @@ import { useContext } from "react";
 import UserContext from "../../contexts/UserContext";
 
 interface ListingCardProps {
-    listing: Listing;
+    listing: NewListing;
     favListingsIds: string[];
     updateFavorite: (listingId: string, favorite: boolean) => void;
-    openModal: (listing: Listing) => void;
+    openModal: (listing: NewListing) => void;
 }
 
 const ListingCard = ({ listing, favListingsIds, updateFavorite, openModal }: ListingCardProps) => {
@@ -129,7 +129,7 @@ const ListingCard = ({ listing, favListingsIds, updateFavorite, openModal }: Lis
 
     const handleListingClick = () => {
         if (!viewed) {
-            axios.put(`listings/${listing.id}/addView`, {withCredentials: true}).catch((error) => {
+            axios.put(`newListings/${listing.id}/addView`, {withCredentials: true}).catch((error) => {
                 console.log('Could not add view for listing');
                 listing.views = listing.views - 1;
             })

@@ -1,20 +1,13 @@
 {
   "compilerOptions": {
-    "target": "es2017",
     "module": "commonjs",
-    "moduleResolution": "node",
-    "lib": ["es2017"],
     "noImplicitAny": true,
     "removeComments": true,
     "preserveConstEnums": true,
     "sourceMap": true,
     "esModuleInterop": true,
-    "resolveJsonModule": true,
-    "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
     "outDir": "build",
     "types": ["node"]
   },
-  "include": ["src/**/*"],
   "exclude": ["node_modules/**/*", "build/**/*"]
 }
