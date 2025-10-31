@@ -201,9 +201,9 @@ const SearchHub = ({
         const formattedDepartments = selectedDepartments.join(',');
 
         if (sortBy === 'default') {
-            url = `/newListings/search?query=${formattedQuery}&page=${page}&pageSize=${pageSize}`;
+            url = `/listings/search?query=${formattedQuery}&page=${page}&pageSize=${pageSize}`;
         } else {
-            url = `/newListings/search?query=${formattedQuery}&sortBy=${sortBy}&sortOrder=${sortOrder}&page=${page}&pageSize=${pageSize}`;
+            url = `/listings/search?query=${formattedQuery}&sortBy=${sortBy}&sortOrder=${sortOrder}&page=${page}&pageSize=${pageSize}`;
         }
 
         if (formattedDepartments) {

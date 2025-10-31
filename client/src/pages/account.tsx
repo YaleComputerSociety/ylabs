@@ -11,8 +11,6 @@ import { useContext } from "react";
 import UserContext from "../contexts/UserContext";
 import CreateButton from "../components/accounts/CreateButton";
 import YoutubeVideo from "../components/accounts/YoutubeVideo";
-import ApplicationTracker from "../components/ApplicationTracker";
-import ProfessorDashboard from "../components/ProfessorDashboard";
 import ResumeUpload from "../components/ResumeUpload";
 
 const Account = () => {
@@ -147,7 +145,7 @@ const Account = () => {
 
     const postListing = (listing: Listing) => {
         setIsLoading(true);
-        axios.put(`/newListings/${newListing.id}`, { data: newListing }).then((response) => {
+        axios.put(`/listings/${newListing.id}`, { data: newListing }).then((response) => {
             reloadListings();
         }).catch((error) => {
             console.error('Error saving listing:', error);
@@ -170,7 +168,7 @@ const Account = () => {
 
     const postNewListing = (listing: NewListing) => {
         setIsLoading(true);
-        axios.post('/newListings', { data: listing }).then((response) => {
+        axios.post('/listings', { data: listing }).then((response) => {
             reloadListings();
             setIsEditing(false);
             setIsLoading(false);
@@ -322,7 +320,7 @@ const Account = () => {
 
                     {user && (user.userType === 'professor' || user.userType === 'faculty' || user.userType === 'admin') && (
                         <div className="mt-12">
-                            <ProfessorDashboard />
+                            {null}
                         </div>
                     )}
                     

@@ -128,7 +128,7 @@ const ListingForm = ({ listing, isCreated, onLoad, onCancel, onSave, onCreate }:
   useEffect(() => {
     if (!isCreated && listing.id !== "create" && applicationsEnabled !== listing.applicationsEnabled) {
       const updatedListing = { ...listing, applicationsEnabled };
-      axios.put(`/newListings/${listing.id}`, { data: updatedListing })
+      axios.put(`/listings/${listing.id}`, { data: updatedListing })
         .then(response => {
           console.log('Applications enabled status saved:', response.data.listing.applicationsEnabled);
           onLoad(createListing(response.data.listing), true); // Update parent state

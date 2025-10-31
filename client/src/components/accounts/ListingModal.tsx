@@ -315,7 +315,6 @@ const ListingModal = ({ isOpen, onClose, listing, favListingsIds, updateFavorite
             listing={listing}
             onApplicationSubmitted={(application) => {
                 console.log('Application submitted:', application);
-                // You could add additional logic here, like updating a local state
             }}
         />
         </>

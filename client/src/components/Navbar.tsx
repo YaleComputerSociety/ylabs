@@ -37,9 +37,10 @@ const HamburgerIcon = () => (
 );
 
 export default function Navbar() {
-  const { isAuthenticated } = useContext(UserContext);
+  const { isAuthenticated, user } = useContext(UserContext);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const isMobile = useMediaQuery(`(max-width:${MOBILE_BREAKPOINT})`);
+  const isStudent = user && ['undergraduate', 'graduate'].includes(user.userType);
 
   const toggleDrawer = (open: boolean) => (event: React.KeyboardEvent | React.MouseEvent) => {
     if (
@@ -68,10 +69,10 @@ export default function Navbar() {
         onKeyDown={toggleDrawer(false)}
       >
         <List>
-          {isAuthenticated ? (
+            {isAuthenticated ? (
             <>
               <ListItem sx={listItemStyle}><DrawerHomeButton /></ListItem>
-              <ListItem sx={listItemStyle}><ApplicationsButton /></ListItem>
+              {isStudent && <ListItem sx={listItemStyle}><ApplicationsButton /></ListItem>}
               <ListItem sx={listItemStyle}><AccountButton /></ListItem>
               <ListItem sx={listItemStyle}><AboutButton /></ListItem>
               <ListItem sx={listItemStyle}><FeedbackButton /></ListItem>
@@ -114,7 +115,7 @@ export default function Navbar() {
                   display: { xs: 'none', md: 'flex' },
                   gap: '14px'
                 }}>
-                  <ApplicationsButton />
+                  {isStudent && <ApplicationsButton />}
                   <AccountButton />
                   <AboutButton />
                   <SignOutButton />

@@ -1,12 +1,12 @@
 import express from 'express';
 import { Application } from '../models';
-import { NewListing } from '../models';
+import { Listing } from '../models';
 import { User } from '../models';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import nodemailer from 'nodemailer';
-import { isAuthenticated } from '../utils/permissions';
+import { isAuthenticated } from '../middleware/auth';
 
 const router = express.Router();
 
@@ -100,7 +100,7 @@ router.post('/submit', upload.single('resume'), async (req, res) => {
     } = req.body;
 
     // Check if listing exists and applications are enabled
-    const listing = await NewListing.findById(listingId);
+    const listing = await Listing.findById(listingId);
     if (!listing) {
       return res.status(404).json({ error: 'Listing not found' });
     }
