@@ -8,7 +8,7 @@ passport.use(
   new Strategy(
     {
       version: "CAS1.0",
-      ssoBaseURL: "https://secure.its.yale.edu/cas",
+      ssoBaseURL: process.env.SSOBASEURL,
     },
     async function (profile, done) {
       console.log('User logged in from CAS');
@@ -196,6 +196,33 @@ router.get("/logout", (req, res) => {
   req.logOut();
   return res.json({ success: true });
 });
+
+if (process.env.NODE_ENV === 'development') {
+  router.get("/dev-login", async (req, res) => {
+    const testUser = {
+      netId: "test123",
+      userType: "student", // or whatever default you want: "admin", "faculty", etc.
+      userConfirmed: true,
+    };
+    
+    try {
+      console.log('Dev login with hardcoded user:', testUser);
+      
+      req.logIn(testUser, (err) => {
+        if (err) {
+          console.error("Dev login error:", err);
+          return res.status(500).json({ error: err.message });
+        }
+        const redirectUrl = (req.query.redirect as string) || "http://localhost:3000";
+        console.log('Redirecting to:', redirectUrl);
+        res.redirect(redirectUrl);
+      });
+    } catch (error) {
+      console.error("Dev login error:", error);
+      res.status(500).json({ error: "Dev login failed" });
+    }
+  });
+}
 
 export { router as passportRoutes };
 export default passport;
