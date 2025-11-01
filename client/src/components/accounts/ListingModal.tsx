@@ -2,6 +2,7 @@ import React, { useEffect, useState, useContext } from 'react';
 import { Listing } from '../../types/types';
 import { departmentCategories } from '../../utils/departmentNames';
 import UserContext from "../../contexts/UserContext";
+import ApplicationModal from '../ApplicationModal';
 
 interface ListingModalProps {
   isOpen: boolean;
@@ -15,6 +16,7 @@ const ListingModal = ({ isOpen, onClose, listing, favListingsIds, updateFavorite
     const [isCreated, setIsCreating] = useState(listing.id === "create");
     const [isFavorite, setIsFavorite] = useState(favListingsIds.includes(listing.id));
     const [restrictedStats, setRestrictedStats] = useState(true);
+    const [showApplicationModal, setShowApplicationModal] = useState(false);
     const {user} = useContext(UserContext);
 
     const departmentColors = [
@@ -103,6 +105,7 @@ const ListingModal = ({ isOpen, onClose, listing, favListingsIds, updateFavorite
     if (!isOpen || !listing) return null;
 
     return (
+        <>
         <div 
         className="fixed inset-0 bg-black/65 z-50 flex items-center justify-center overflow-y-auto p-4 pt-24" 
         onClick={handleBackdropClick}
@@ -276,6 +279,22 @@ const ListingModal = ({ isOpen, onClose, listing, favListingsIds, updateFavorite
                     </div>
                 </section>
                 
+                {/* Application Section */}
+                {listing.applicationsEnabled && !isCreated && user && ['undergraduate', 'graduate'].includes(user.userType) && (
+                    <div className="mt-6 p-4 bg-green-50 border border-green-200 rounded-lg">
+                        <h3 className="text-lg font-semibold text-green-800 mb-2">Apply to this Lab</h3>
+                        <p className="text-green-700 text-sm mb-3">
+                            This lab is accepting applications from students.
+                        </p>
+                        <button
+                            onClick={() => setShowApplicationModal(true)}
+                            className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline"
+                        >
+                            Apply Now
+                        </button>
+                    </div>
+                )}
+                
                 {/* Archive status */}
                 {listing.archived && (
                     <div className="mt-6 p-3 bg-red-100 text-red-700 rounded-lg">
@@ -288,6 +307,17 @@ const ListingModal = ({ isOpen, onClose, listing, favListingsIds, updateFavorite
             </div>
         </div>
         </div>
+
+        {/* Application Modal */}
+        <ApplicationModal
+            isOpen={showApplicationModal}
+            onClose={() => setShowApplicationModal(false)}
+            listing={listing}
+            onApplicationSubmitted={(application) => {
+                console.log('Application submitted:', application);
+            }}
+        />
+        </>
     );
 };
 

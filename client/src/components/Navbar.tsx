@@ -16,6 +16,7 @@ import HomeButton from "./HomeButton";
 import DrawerHomeButton from './DrawerHomeButton';
 import FindLabsButton from './FindLabsButton';
 import YURAButton from './YURAButton';
+import ApplicationsButton from './ApplicationsButton';
 import { useContext } from "react";
 import UserContext from "../contexts/UserContext";
 import FeedbackButton from './FeebackButton';
@@ -36,9 +37,10 @@ const HamburgerIcon = () => (
 );
 
 export default function Navbar() {
-  const { isAuthenticated } = useContext(UserContext);
+  const { isAuthenticated, user } = useContext(UserContext);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const isMobile = useMediaQuery(`(max-width:${MOBILE_BREAKPOINT})`);
+  const isStudent = user && ['undergraduate', 'graduate'].includes(user.userType);
 
   const toggleDrawer = (open: boolean) => (event: React.KeyboardEvent | React.MouseEvent) => {
     if (
@@ -67,9 +69,10 @@ export default function Navbar() {
         onKeyDown={toggleDrawer(false)}
       >
         <List>
-          {isAuthenticated ? (
+            {isAuthenticated ? (
             <>
               <ListItem sx={listItemStyle}><DrawerHomeButton /></ListItem>
+              {isStudent && <ListItem sx={listItemStyle}><ApplicationsButton /></ListItem>}
               <ListItem sx={listItemStyle}><AccountButton /></ListItem>
               <ListItem sx={listItemStyle}><AboutButton /></ListItem>
               <ListItem sx={listItemStyle}><FeedbackButton /></ListItem>
@@ -112,6 +115,7 @@ export default function Navbar() {
                   display: { xs: 'none', md: 'flex' },
                   gap: '14px'
                 }}>
+                  {isStudent && <ApplicationsButton />}
                   <AccountButton />
                   <AboutButton />
                   <SignOutButton />

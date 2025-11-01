@@ -1,6 +1,6 @@
 import React, { useState, useRef, KeyboardEvent, useEffect } from 'react';
-import { Listing } from '../../types/types';
-import axios from 'axios';
+import { NewListing } from '../../types/types';
+import axios from '../../utils/axios';
 import swal from 'sweetalert';
 import { createListing } from '../../utils/apiCleaner';
 import { departmentCategories } from '../../utils/departmentNames';
@@ -72,12 +72,15 @@ const SearchHub = ({
 
         document.addEventListener('mousedown', handleClickOutside);
 
-        setPage(1);
-        handleSearch(1);
-
         return () => {
             document.removeEventListener('mousedown', handleClickOutside);
         };
+    }, []);
+
+    // Initial search on mount
+    useEffect(() => {
+        setPage(1);
+        handleSearch(1);
     }, []);
 
     useEffect(() => {
@@ -196,18 +199,11 @@ const SearchHub = ({
 
         const formattedQuery = queryString.trim();
         const formattedDepartments = selectedDepartments.join(',');
-        const backendBaseURL = window.location.host.includes('yalelabs.io')
-            ? 'https://yalelabs.io'
-            : import.meta.env.VITE_APP_SERVER;
 
         if (sortBy === 'default') {
-            url =
-                backendBaseURL +
-                `/listings/search?query=${formattedQuery}&page=${page}&pageSize=${pageSize}`;
+            url = `/listings/search?query=${formattedQuery}&page=${page}&pageSize=${pageSize}`;
         } else {
-            url =
-                backendBaseURL +
-                `/listings/search?query=${formattedQuery}&sortBy=${sortBy}&sortOrder=${sortOrder}&page=${page}&pageSize=${pageSize}`;
+            url = `/listings/search?query=${formattedQuery}&sortBy=${sortBy}&sortOrder=${sortOrder}&page=${page}&pageSize=${pageSize}`;
         }
 
         if (formattedDepartments) {
@@ -219,7 +215,8 @@ const SearchHub = ({
         axios
             .get(url, { withCredentials: true })
             .then((response) => {
-                const responseListings: Listing[] = response.data.results.map(function (
+                const results = response.data.results || [];
+                const responseListings: NewListing[] = results.map(function (
                     elem: any
                 ) {
                     return createListing(elem);

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 const SignInButton = () => {
   const backendBaseURL = window.location.host.includes("yalelabs.io")
     ? "https://yalelabs.io"
-    : import.meta.env.VITE_APP_SERVER;
+    : (import.meta.env.VITE_APP_SERVER || "http://localhost:4000");
   
   const [redirectUrl, setRedirectUrl] = useState(window.location.origin);
   

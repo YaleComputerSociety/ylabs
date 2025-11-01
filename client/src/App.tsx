@@ -1,3 +1,4 @@
+import StudentApplications from "./components/StudentApplications";
 import PrivateRoute from "./components/PrivateRoute";
 import UnprivateRoute from "./components/UnprivateRoute";
 import { BrowserRouter as Router, Routes, Route, } from 'react-router-dom'
@@ -14,12 +15,13 @@ const App = () => {
     <Router>
       <Navbar/>
       <Routes>
-          <Route path="/" element={<PrivateRoute Component={Home} unknownBlocked={true}/>} />
-          <Route path="/about" element={<PrivateRoute Component={About} unknownBlocked={true}/>} />
-          <Route path="/account" element={<PrivateRoute Component={Account} unknownBlocked={true}/>} />
           <Route path="/login" element={<Login />} />
           <Route path="/login-error" element={<UnprivateRoute Component={LoginError} />} />
           <Route path="/unknown" element={<PrivateRoute Component={Unknown} knownBlocked={true}/>} />
+          <Route path="/about" element={<PrivateRoute Component={About} unknownBlocked={true}/>} />
+          <Route path="/account" element={<PrivateRoute Component={Account} unknownBlocked={true}/>} />
+          <Route path="/applications" element={<PrivateRoute Component={StudentApplications} unknownBlocked={true}/>} />
+          <Route path="/" element={<PrivateRoute Component={Home} unknownBlocked={true}/>} />
           <Route path="/*" element={<PrivateRoute Component={Home} unknownBlocked={true}/>} />
       </Routes>
   </Router>

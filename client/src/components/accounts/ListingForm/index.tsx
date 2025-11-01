@@ -41,6 +41,8 @@ const ListingForm = ({ listing, isCreated, onLoad, onCancel, onSave, onCreate }:
   const [established, setEstablished] = useState(listing.established || '');
   const [hiringStatus, setHiringStatus] = useState(listing.hiringStatus);
   const [archived, setArchived] = useState(listing.archived);
+  const [applicationsEnabled, setApplicationsEnabled] = useState(listing.applicationsEnabled || false);
+  const [applicationQuestions, setApplicationQuestions] = useState<Array<{question: string, required: boolean}>>(listing.applicationQuestions || []);
   const [loading, setLoading] = useState(true);
 
   const { user } = useContext(UserContext);
@@ -69,18 +71,20 @@ const ListingForm = ({ listing, isCreated, onLoad, onCancel, onSave, onCreate }:
         }
         const listing = createListing(response.data.listing);
         // Update state with new listing data
-        setTitle(listing.title);
-        setProfessorNames([...listing.professorNames]);
-        setOwnerName(`${listing.ownerFirstName} ${listing.ownerLastName}`);
-        setDepartments([...listing.departments]);
-        setEmails([...listing.emails]);
-        setOwnerEmail(listing.ownerEmail);
-        setWebsites(listing.websites ? [...listing.websites] : []);
-        setDescription(listing.description);
-        setKeywords(listing.keywords ? [...listing.keywords] : []);
-        setEstablished(listing.established || '');
-        setHiringStatus(listing.hiringStatus);
-        setArchived(listing.archived);
+        setTitle(newListing.title);
+        setProfessorNames([...newListing.professorNames]);
+        setOwnerName(`${newListing.ownerFirstName} ${newListing.ownerLastName}`);
+        setDepartments([...newListing.departments]);
+        setEmails([...newListing.emails]);
+        setOwnerEmail(newListing.ownerEmail);
+        setWebsites(newListing.websites ? [...newListing.websites] : []);
+        setDescription(newListing.description);
+        setKeywords(newListing.keywords ? [...newListing.keywords] : []);
+        setEstablished(newListing.established || '');
+        setHiringStatus(newListing.hiringStatus);
+        setArchived(newListing.archived);
+        setApplicationsEnabled(newListing.applicationsEnabled || false);
+        setApplicationQuestions(newListing.applicationQuestions || []);
 
         onLoad(listing, true);
 
@@ -113,10 +117,29 @@ const ListingForm = ({ listing, isCreated, onLoad, onCancel, onSave, onCreate }:
       keywords,
       established,
       hiringStatus,
-      archived
+      archived,
+      applicationsEnabled,
+      applicationQuestions
     };
     onLoad(updatedListing, true);
-  }, [title, professorNames, departments, emails, websites, description, keywords, established, hiringStatus, archived]);
+  }, [title, professorNames, departments, emails, websites, description, keywords, established, hiringStatus, archived, applicationsEnabled, applicationQuestions]);
+
+  // Autosave for applicationsEnabled
+  useEffect(() => {
+    if (!isCreated && listing.id !== "create" && applicationsEnabled !== listing.applicationsEnabled) {
+      const updatedListing = { ...listing, applicationsEnabled };
+      axios.put(`/listings/${listing.id}`, { data: updatedListing })
+        .then(response => {
+          console.log('Applications enabled status saved:', response.data.listing.applicationsEnabled);
+          onLoad(createListing(response.data.listing), true); // Update parent state
+        })
+        .catch(error => {
+          console.error('Error saving applications enabled status:', error);
+          swal('Error', 'Failed to update application status', 'error');
+          setApplicationsEnabled(listing.applicationsEnabled || false); // Revert on error
+        });
+    }
+  }, [applicationsEnabled]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -152,10 +175,12 @@ const ListingForm = ({ listing, isCreated, onLoad, onCancel, onSave, onCreate }:
         websites,
         description,
         keywords,
-        established,
-        hiringStatus,
-        archived
-      };
+      established,
+      hiringStatus,
+      archived,
+      applicationsEnabled,
+      applicationQuestions
+    };
       
       // Show confirmation dialog before saving
       if (isCreated) {
@@ -189,17 +214,9 @@ const ListingForm = ({ listing, isCreated, onLoad, onCancel, onSave, onCreate }:
 
 const handleCancel = () => {
   if (isCreated) {
-    swal({
-      title: "Delete Listing",
-      text: "Are you sure you want to delete this listing? This action cannot be undone",
-      icon: "warning",
-      buttons: ["Cancel", "Delete"],
-      dangerMode: true,
-    }).then((willCancel) => {
-      if (willCancel && onCancel) {
-        onCancel();
-      }
-    });
+    if (onCancel) {
+      onCancel();
+    }
   } else {
     // Clone the original listing to force a new reference
     const originalListing = { ...listing };
@@ -216,6 +233,8 @@ const handleCancel = () => {
     setEstablished(originalListing.established || '');
     setHiringStatus(originalListing.hiringStatus);
     setArchived(originalListing.archived);
+    setApplicationsEnabled(originalListing.applicationsEnabled || false);
+    setApplicationQuestions(originalListing.applicationQuestions || []);
 
     // Force the parent to update the preview by providing a new object reference.
     onLoad({ ...originalListing }, true);
@@ -402,21 +421,130 @@ const handleCancel = () => {
               </div>
             </div>
           </div>
+
+          {/* Application Settings - Full Width Bottom Section */}
+          <div className="mt-8 p-6 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-200">
+            <div className="flex items-center mb-6">
+              <div className="flex items-center">
+                <input
+                  id="applicationsEnabled"
+                  type="checkbox"
+                  checked={applicationsEnabled}
+                  onChange={(e) => setApplicationsEnabled(e.target.checked)}
+                  className="mr-3 h-5 w-5 text-blue-600 focus:ring-blue-500 cursor-pointer rounded"
+                />
+                <label className="text-gray-800 text-lg font-semibold cursor-pointer flex items-center" htmlFor="applicationsEnabled">
+                  <svg className="w-6 h-6 mr-3 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  Enable student applications
+                </label>
+              </div>
+            </div>
+            
+            {applicationsEnabled && (
+              <div className="space-y-6">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-gray-800 text-lg font-semibold">
+                    Application Questions
+                  </h3>
+                  <span className="text-sm text-gray-600 bg-white px-3 py-1 rounded-full border">
+                    {applicationQuestions.length} question{applicationQuestions.length !== 1 ? 's' : ''}
+                  </span>
+                </div>
+                
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  {applicationQuestions.map((question, index) => (
+                    <div key={index} className="bg-white p-5 rounded-lg border border-gray-200 shadow-sm">
+                      <div className="space-y-3">
+                        <div>
+                          <input
+                            type="text"
+                            value={question.question}
+                            onChange={(e) => {
+                              const newQuestions = [...applicationQuestions];
+                              newQuestions[index].question = e.target.value;
+                              setApplicationQuestions(newQuestions);
+                            }}
+                            placeholder="What would you like to ask applicants?"
+                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                          />
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <label className="flex items-center text-sm text-gray-600">
+                            <input
+                              type="checkbox"
+                              checked={question.required}
+                              onChange={(e) => {
+                                const newQuestions = [...applicationQuestions];
+                                newQuestions[index].required = e.target.checked;
+                                setApplicationQuestions(newQuestions);
+                              }}
+                              className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500"
+                            />
+                            Required question
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const newQuestions = applicationQuestions.filter((_, i) => i !== index);
+                              setApplicationQuestions(newQuestions);
+                            }}
+                            className="p-2 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors"
+                            title="Remove question"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setApplicationQuestions([...applicationQuestions, { question: '', required: false }]);
+                    }}
+                    className="bg-white p-5 border-2 border-dashed border-blue-300 rounded-lg text-blue-600 hover:border-blue-400 hover:bg-blue-50 transition-colors flex items-center justify-center space-x-3 h-full min-h-[120px]"
+                  >
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                    </svg>
+                    <span className="font-medium">Add Question</span>
+                  </button>
+                </div>
+                
+                <div className="bg-blue-100 border border-blue-200 rounded-lg p-4">
+                  <div className="flex items-start space-x-3">
+                    <svg className="w-6 h-6 text-blue-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <div className="text-sm text-blue-800">
+                      <p className="font-semibold mb-2">How it works:</p>
+                      <p>Students will see these questions when they apply to your lab. Required questions must be answered before they can submit their application. You can add as many questions as needed to gather the information you want from applicants.</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
           
           {/* Form Actions */}
-          <div className="absolute bottom-6 right-6 flex space-x-3 bg-white py-2 px-1">
+          <div className="mt-6 flex justify-end space-x-3">
             <button
               type="button"
               onClick={handleCancel}
-              className={`${isCreated ? "bg-red-500 hover:bg-red-700 text-white" : "bg-gray-300 hover:bg-gray-400 text-gray-800"} font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline`}
+              className={`bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline`}
             >
-              {isCreated ? "Delete" : "Cancel"}
+              Cancel
             </button>
             <button
               type="submit"
-              className={`${isCreated ? "bg-green-500 hover:bg-green-700" : "bg-blue-500 hover:bg-blue-700"} text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline`}
+              className={`bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline`}
             >
-              {isCreated ? "Create" : "Save"}
+              Save
             </button>
           </div>
         </form>
