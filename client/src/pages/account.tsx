@@ -12,6 +12,7 @@ import UserContext from "../contexts/UserContext";
 import CreateButton from "../components/accounts/CreateButton";
 import YoutubeVideo from "../components/accounts/YoutubeVideo";
 import ResumeUpload from "../components/ResumeUpload";
+import ProfessorDashboard from "../components/ProfessorDashboard";
 
 const Account = () => {
     const [ownListings, setOwnListings] = useState<Listing[]>([]);
@@ -319,8 +320,9 @@ const Account = () => {
                     )}
 
                     {user && (user.userType === 'professor' || user.userType === 'faculty' || user.userType === 'admin') && (
-                        <div className="mt-12">
-                            {null}
+                        <div className="mt-12 mb-8">
+                            <h2 className="text-2xl font-bold text-gray-800 mb-6">Application Management</h2>
+                            <ProfessorDashboard />
                         </div>
                     )}
                     

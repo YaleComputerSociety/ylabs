@@ -197,7 +197,7 @@ router.post('/submit', upload.single('resume'), async (req, res) => {
 });
 
 // Update application status (professor action)
-router.put('/:applicationId/status', async (req, res) => {
+router.put('/:applicationId/status', isAuthenticated, async (req, res) => {
   try {
     const { applicationId } = req.params;
     const { status } = req.body;
