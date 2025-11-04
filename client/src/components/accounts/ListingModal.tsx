@@ -1,14 +1,14 @@
 import React, { useEffect, useState, useContext } from 'react';
-import { Listing } from '../../types/types';
+import { NewListing } from '../../types/types';
 import { departmentCategories } from '../../utils/departmentNames';
 import UserContext from "../../contexts/UserContext";
 
 interface ListingModalProps {
   isOpen: boolean;
   onClose: () => void;
-  listing: Listing;
+  listing: NewListing;
   favListingsIds: string[];
-  updateFavorite: (listing: Listing, listingId: string, favorite: boolean) => void;
+  updateFavorite: (listing: NewListing, listingId: string, favorite: boolean) => void;
 }
 
 const ListingModal = ({ isOpen, onClose, listing, favListingsIds, updateFavorite }: ListingModalProps) => {
