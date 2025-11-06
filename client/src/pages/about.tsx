@@ -54,6 +54,12 @@ const About = () => {
                 <a href="https://github.com/YaleComputerSociety/ylabs" target="_blank" rel="noopener noreferrer">
                     <img src="/assets/icons/github-icon.png" alt="RDB Github" width={40} height={40} className="inline-block mx-2"/>
                 </a>
+                <a href="https://www.hudsonrivertrading.com/" target="_blank" rel="noopener noreferrer">
+                    <img src="/assets/logos/HudsonRiverTrading.png" alt="Hudson River Trading" width={40} height={40} className="inline-block mx-2"/>
+                </a>
+                <a href="https://www.minimax.com/" target="_blank" rel="noopener noreferrer">
+                    <img src="/assets/logos/MiniMax.png" alt="MiniMax" width={40} height={40} className="inline-block mx-2"/>
+                </a>
             </div>
             <div className="max-w-6xl text-center mt-16">
                 <h2 className="text-3xl font-bold mb-10">Meet our team</h2>
@@ -133,6 +139,30 @@ const currentDevelopers = [
         image: "/assets/developers/ChristinaXu.jpeg",
         location: "Lincoln, Nebraska",
         github: "https://github.com/shadaxiong",
+    },
+    {
+        name: "Chloe Wu",
+        position: "Developer",
+        image: "/assets/developers/Chloe Wu.JPG",
+        location: "",
+    },
+    {
+        name: "David Sadka",
+        position: "Developer",
+        image: "/assets/developers/David Sadka.png",
+        location: "",
+    },
+    {
+        name: "Peter Yu",
+        position: "Developer",
+        image: "/assets/developers/Peter Yu.png",
+        location: "",
+    },
+    {
+        name: "Tanav Prabhu",
+        position: "Developer",
+        image: "/assets/developers/Tanav Prabhu.jpg",
+        location: "",
     }
 ]
 
