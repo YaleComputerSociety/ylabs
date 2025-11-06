@@ -8,20 +8,26 @@ import Account from "./pages/account";
 import Unknown from "./pages/unknown";
 import LoginError from "./pages/loginError";
 import Navbar from "./components/Navbar";
+import Footer from "./components/Footer";
 
 const App = () => {
   return (
     <Router>
-      <Navbar/>
-      <Routes>
-          <Route path="/" element={<PrivateRoute Component={Home} unknownBlocked={true}/>} />
-          <Route path="/about" element={<PrivateRoute Component={About} unknownBlocked={true}/>} />
-          <Route path="/account" element={<PrivateRoute Component={Account} unknownBlocked={true}/>} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/login-error" element={<UnprivateRoute Component={LoginError} />} />
-          <Route path="/unknown" element={<PrivateRoute Component={Unknown} knownBlocked={true}/>} />
-          <Route path="/*" element={<PrivateRoute Component={Home} unknownBlocked={true}/>} />
-      </Routes>
+      <div className="flex flex-col min-h-screen">
+        <Navbar/>
+        <main className="flex-grow">
+          <Routes>
+              <Route path="/" element={<PrivateRoute Component={Home} unknownBlocked={true}/>} />
+              <Route path="/about" element={<PrivateRoute Component={About} unknownBlocked={true}/>} />
+              <Route path="/account" element={<PrivateRoute Component={Account} unknownBlocked={true}/>} />
+              <Route path="/login" element={<Login />} />
+              <Route path="/login-error" element={<UnprivateRoute Component={LoginError} />} />
+              <Route path="/unknown" element={<PrivateRoute Component={Unknown} knownBlocked={true}/>} />
+              <Route path="/*" element={<PrivateRoute Component={Home} unknownBlocked={true}/>} />
+          </Routes>
+        </main>
+        <Footer />
+      </div>
   </Router>
   );
 };
