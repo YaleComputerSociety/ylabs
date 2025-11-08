@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 export enum AnalyticsEventType {
     LOGIN = 'login',
     LOGOUT = 'logout',
+    VISITOR = 'visitor',
     LISTING_VIEW = 'listing_view',
     LISTING_FAVORITE = 'listing_favorite',
     LISTING_UNFAVORITE = 'listing_unfavorite',

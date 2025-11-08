@@ -64,7 +64,7 @@ export const getAnalytics = async () => {
     const visitorStats = await AnalyticsEvent.aggregate([
         {
             $match: {
-                eventType: AnalyticsEventType.LOGIN
+                eventType: { $in: [AnalyticsEventType.LOGIN, AnalyticsEventType.VISITOR] }
             }
         },
         {

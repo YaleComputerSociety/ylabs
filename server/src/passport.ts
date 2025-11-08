@@ -159,7 +159,6 @@ const casLogin = function (
         return next(err);
       }
 
-      // ===== LOG LOGIN EVENT TO ANALYTICS =====
       try {
         await logEvent({
           eventType: AnalyticsEventType.LOGIN,
@@ -175,7 +174,6 @@ const casLogin = function (
         console.error("Error logging analytics event:", analyticsError);
         // Don't fail the login if analytics fails
       }
-      // ===== END ANALYTICS LOGGING =====
 
       if (req.query.redirect) {
         // Try to parse the URL to make sure it's valid
@@ -197,6 +195,28 @@ const casLogin = function (
 };
 
 const router = express.Router();
+
+router.use(async (req, res, next) => {
+  if (req.isAuthenticated() && !req.session.visitorLogged) {
+    const user = req.user as any;
+    try {
+      await logEvent({
+        eventType: AnalyticsEventType.VISITOR,
+        netid: user.netId,
+        userType: user.userType || 'unknown',
+        metadata: {
+          timestamp: new Date(),
+          loginMethod: 'cookie'
+        }
+      });
+      console.log('🍪 Visitor event logged to analytics (cookie login)');
+      req.session.visitorLogged = true;
+    } catch (analyticsError) {
+      console.error("Error logging visitor analytics event:", analyticsError);
+    }
+  }
+  next();
+});
 
 router.get("/check", (req, res) => {
   console.log("Checking user");
