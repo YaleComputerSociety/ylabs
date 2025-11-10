@@ -263,10 +263,19 @@ router.get("/logout", async (req, res) => {
   const casLogoutUrl = process.env.SSOBASEURL + '/logout';
   
   // Determine the service URL based on environment
-  const isProduction = req.get('host')?.includes('yalelabs.io');
-  const serviceUrl = isProduction 
-    ? "https://yalelabs.io/login"
-    : "http://localhost:3000/login";
+  const host = req.get('host') || '';
+  let serviceUrl;
+  
+  if (host.includes('yalelabs.io')) {
+    // Production
+    serviceUrl = "https://yalelabs.io/login";
+  } else if (host.includes('onrender.com')) {
+    // Render dev environment
+    serviceUrl = `https://${host}/login`;
+  } else {
+    // Local development
+    serviceUrl = "http://localhost:3000/login";
+  }
   
   // Redirect to CAS logout with service parameter
   const fullLogoutUrl = `${casLogoutUrl}?service=${encodeURIComponent(serviceUrl)}`;
