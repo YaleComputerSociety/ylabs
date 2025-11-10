@@ -398,7 +398,7 @@ export const getAnalytics = async () => {
                     {
                         $project: {
                             _id: 0,
-                            netid: "$_id.netid",
+                            userId: "$_id.netid",
                             userType: "$_id.userType",
                             eventCount: 1
                         }
