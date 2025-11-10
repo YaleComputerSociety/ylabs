@@ -11,6 +11,7 @@ import LoginError from "./pages/loginError";
 import Navbar from "./components/Navbar";
 import Footer from "./components/Footer";
 import Analytics from "./pages/analytics";
+import NotFound from "./pages/notFound";
 
 const App = () => {
   return (
