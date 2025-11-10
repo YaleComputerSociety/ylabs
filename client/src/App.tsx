@@ -11,6 +11,7 @@ import LoginError from "./pages/loginError";
 import Navbar from "./components/Navbar";
 import Footer from "./components/Footer";
 import Analytics from "./pages/analytics";
+import NotFound from "./pages/notFound";
 
 const App = () => {
   return (
@@ -26,7 +27,7 @@ const App = () => {
           <Route path="/login" element={<Login />} />
           <Route path="/login-error" element={<UnprivateRoute Component={LoginError} />} />
           <Route path="/unknown" element={<PrivateRoute Component={Unknown} knownBlocked={true}/>} />
-          <Route path="/*" element={<PrivateRoute Component={Home} unknownBlocked={true}/>} />
+          <Route path="*" element={<NotFound />} />
           </Routes>
         </main>
         <Footer />

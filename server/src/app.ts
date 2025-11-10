@@ -37,8 +37,8 @@ const app = express()
 })
 .use(passport.initialize())
 .use(passport.session())
-.use(passportRoutes)
-.use(routes);
+.use('/api', passportRoutes)
+.use('/api', routes);
 
 // Serve static files from the React app AFTER all API routes
 app.use(express.static(path.join(__dirname, '../../client/dist')));
