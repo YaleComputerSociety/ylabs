@@ -33,6 +33,8 @@ const app = express()
     keys: [process.env.SESSION_SECRET],
     maxAge: 365 * 24 * 60 * 60 * 1000, // 1 year
     httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
   })(req, res, next);
 })
 .use(passport.initialize())
