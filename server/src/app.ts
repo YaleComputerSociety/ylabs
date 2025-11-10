@@ -38,16 +38,15 @@ const app = express()
 .use(passport.initialize())
 .use(passport.session())
 .use(passportRoutes)
-.use(routes)
-.use('/', express.static('../client/dist'));
+.use(routes);
 
+// Serve static files from the React app AFTER all API routes
+app.use(express.static(path.join(__dirname, '../../client/dist')));
 
-app.get(['/login', '/about', '/account', '/analytics', '/login-error'], function(req, res) {
-  res.sendFile(path.join(__dirname, '../../client/dist/index.html'), function(err) {
-    if (err) {
-      res.status(500).send(err)
-    }
-  });
+// Catch-all handler: for any request that doesn't match an API route,
+// send back the React app's index.html file
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, '../../client/dist/index.html'));
 });
 
 export default app;
