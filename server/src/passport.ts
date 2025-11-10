@@ -240,7 +240,7 @@ router.get("/logout", async (req, res) => {
     try {
       await logEvent({
         eventType: AnalyticsEventType.LOGOUT,
-        netid: user.netId,  // Note: user.netId (capital I) from session
+        netid: user.netId,
         userType: user.userType || 'unknown',
         metadata: {
           timestamp: new Date()
@@ -249,13 +249,30 @@ router.get("/logout", async (req, res) => {
       console.log('Logout event logged to analytics');
     } catch (analyticsError) {
       console.error("Error logging analytics event:", analyticsError);
-      // Don't fail the logout if analytics fails
     }
   }
   // ===== END ANALYTICS LOGGING =====
   
+  // Call logOut without a callback (it's now synchronous)
   req.logOut();
-  return res.json({ success: true });
+  
+  // Clear the session
+  req.session = null;
+  
+  // Construct CAS logout URL
+  const casLogoutUrl = process.env.SSOBASEURL + '/logout';
+  
+  // Determine the service URL based on environment
+  const isProduction = req.get('host')?.includes('yalelabs.io');
+  const serviceUrl = isProduction 
+    ? "https://yalelabs.io/login"
+    : "http://localhost:3000/login";
+  
+  // Redirect to CAS logout with service parameter
+  const fullLogoutUrl = `${casLogoutUrl}?service=${encodeURIComponent(serviceUrl)}`;
+  
+  console.log('Redirecting to CAS logout:', fullLogoutUrl);
+  return res.redirect(fullLogoutUrl);
 });
 
 if (process.env.NODE_ENV === 'development') {
