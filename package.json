@@ -21,19 +21,19 @@
     "test": "yarn install:all && yarn build && yarn start"
   },
   "dependencies": {
-    "concurrently": "^9.2.1",
-    "cross": "^1.0.0",
-    "cross-env": "^10.1.0",
-    "env": "^0.0.2",
     "axios": "^1.6.0",
+    "concurrently": "^9.2.1",
     "cookie-session": "^2.1.0",
     "cors": "^2.8.5",
+    "cross": "^1.0.0",
+    "cross-env": "^10.1.0",
     "dotenv": "^16.3.1",
+    "env": "^0.0.2",
     "express": "^4.17.3",
     "express-session": "^1.17.2",
     "mongoose": "^8.0.4",
     "passport": "^0.5.2",
-    "passport-cas": "git+https://github.com/coursetable/passport-cas#79612f1",
+    "passport-cas": "git+https://github.com/coursetable/passport-cas#79612f1fb25fea7d62a7c38701494411cf560201",
     "passport-strategy": "^1.0.0"
   },
   "devDependencies": {
