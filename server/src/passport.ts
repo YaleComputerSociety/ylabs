@@ -3,6 +3,8 @@ import passport from "passport";
 import { Strategy } from "passport-cas";
 import { validateUser, createUser } from './services/userService';
 import { fetchYalie } from "./services/yaliesService";
+import { logEvent } from "./services/analyticsService";
+import { AnalyticsEventType } from "./models";
 
 passport.use(
   new Strategy(
@@ -48,7 +50,7 @@ passport.use(
             )
             console.log('Default user created, sending user');
             done(null, {
-              netId:user.netid,
+              netId: user.netid,
               userType: user.userType,
               userConfirmed: user.userConfirmed,
             });
@@ -150,11 +152,27 @@ const casLogin = function (
     console.log(user);
 
     console.log("Logging in user: ", user);
-    req.logIn(user, function (err) {
+    req.logIn(user, async function (err) {
       console.log("Post login");
       if (err) {
         console.log("Error logging in");
         return next(err);
+      }
+
+      try {
+        await logEvent({
+          eventType: AnalyticsEventType.LOGIN,
+          netid: user.netId,  // Note: user.netId (capital I) from session
+          userType: user.userType || 'unknown',
+          metadata: {
+            timestamp: new Date(),
+            loginMethod: 'CAS'
+          }
+        });
+        console.log('Login event logged to analytics');
+      } catch (analyticsError) {
+        console.error("Error logging analytics event:", analyticsError);
+        // Don't fail the login if analytics fails
       }
 
       if (req.query.redirect) {
@@ -178,6 +196,28 @@ const casLogin = function (
 
 const router = express.Router();
 
+router.use(async (req, res, next) => {
+  if (req.isAuthenticated() && !req.session.visitorLogged) {
+    const user = req.user as any;
+    try {
+      await logEvent({
+        eventType: AnalyticsEventType.VISITOR,
+        netid: user.netId,
+        userType: user.userType || 'unknown',
+        metadata: {
+          timestamp: new Date(),
+          loginMethod: 'cookie'
+        }
+      });
+      console.log('🍪 Visitor event logged to analytics (cookie login)');
+      req.session.visitorLogged = true;
+    } catch (analyticsError) {
+      console.error("Error logging visitor analytics event:", analyticsError);
+    }
+  }
+  next();
+});
+
 router.get("/check", (req, res) => {
   console.log("Checking user");
   console.log("2::");
@@ -191,8 +231,29 @@ router.get("/check", (req, res) => {
 
 router.get("/cas", casLogin);
 
-router.get("/logout", (req, res) => {
+router.get("/logout", async (req, res) => {
   console.log("Logging out user");
+  
+  // ===== LOG LOGOUT EVENT TO ANALYTICS =====
+  if (req.user) {
+    const user = req.user as any;
+    try {
+      await logEvent({
+        eventType: AnalyticsEventType.LOGOUT,
+        netid: user.netId,  // Note: user.netId (capital I) from session
+        userType: user.userType || 'unknown',
+        metadata: {
+          timestamp: new Date()
+        }
+      });
+      console.log('Logout event logged to analytics');
+    } catch (analyticsError) {
+      console.error("Error logging analytics event:", analyticsError);
+      // Don't fail the logout if analytics fails
+    }
+  }
+  // ===== END ANALYTICS LOGGING =====
+  
   req.logOut();
   return res.json({ success: true });
 });
@@ -208,16 +269,33 @@ if (process.env.NODE_ENV === 'development') {
     try {
       console.log('Dev login with hardcoded user:', testUser);
       
-      req.logIn(testUser, (err) => {
+      req.logIn(testUser, async (err) => {
         if (err) {
           console.error("Dev login error:", err);
           return res.status(500).json({ error: err.message });
         }
+
+        try {
+          await logEvent({
+            eventType: AnalyticsEventType.LOGIN,
+            netid: testUser.netId,
+            userType: testUser.userType || 'unknown',
+            metadata: {
+              timestamp: new Date(),
+              loginMethod: 'dev-login'
+            }
+          });
+          console.log('Dev login event logged to analytics');
+        } catch (analyticsError) {
+          console.error("Error logging dev login analytics event:", analyticsError);
+          // Don't fail the login if analytics fails
+        }
+
         const redirectUrl = (req.query.redirect as string) || "http://localhost:3000";
         console.log('Redirecting to:', redirectUrl);
         res.redirect(redirectUrl);
       });
-    } catch (error) {
+    } catch (error) {    
       console.error("Dev login error:", error);
       res.status(500).json({ error: "Dev login failed" });
     }

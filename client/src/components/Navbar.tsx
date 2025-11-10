@@ -16,6 +16,7 @@ import HomeButton from "./HomeButton";
 import DrawerHomeButton from './DrawerHomeButton';
 import FindLabsButton from './FindLabsButton';
 import YURAButton from './YURAButton';
+import AnalyticsButton from './AnalyticsButton';
 import { useContext } from "react";
 import UserContext from "../contexts/UserContext";
 import FeedbackButton from './FeebackButton';
@@ -36,9 +37,11 @@ const HamburgerIcon = () => (
 );
 
 export default function Navbar() {
-  const { isAuthenticated } = useContext(UserContext);
+  const { isAuthenticated, user } = useContext(UserContext);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const isMobile = useMediaQuery(`(max-width:${MOBILE_BREAKPOINT})`);
+
+  const isAdmin = user?.userType === 'admin';
 
   const toggleDrawer = (open: boolean) => (event: React.KeyboardEvent | React.MouseEvent) => {
     if (
@@ -72,6 +75,7 @@ export default function Navbar() {
               <ListItem sx={listItemStyle}><DrawerHomeButton /></ListItem>
               <ListItem sx={listItemStyle}><AccountButton /></ListItem>
               <ListItem sx={listItemStyle}><AboutButton /></ListItem>
+              {isAdmin && <ListItem sx={listItemStyle}><AnalyticsButton /></ListItem>}
               <ListItem sx={listItemStyle}><FeedbackButton /></ListItem>
               <ListItem sx={listItemStyle}><SignOutButton /></ListItem>
             </>
@@ -112,6 +116,7 @@ export default function Navbar() {
                   display: { xs: 'none', md: 'flex' },
                   gap: '14px'
                 }}>
+                  {isAdmin && <AnalyticsButton />}
                   <AccountButton />
                   <AboutButton />
                   <SignOutButton />
