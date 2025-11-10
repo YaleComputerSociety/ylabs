@@ -31,7 +31,7 @@
     "@types/cookie-session": "^2.0.48",
     "@types/cors": "^2.8.12",
     "@types/express-session": "^1.17.4",
-    "@types/node": "^17.0.21",
+    "@types/node": "20",
     "@types/passport": "^1.0.7",
     "@types/passport-strategy": "^0.2.35",
     "nodemon": "^2.0.15",

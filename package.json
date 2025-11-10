@@ -21,13 +21,13 @@
     "test": "yarn install:all && yarn build && yarn start"
   },
   "dependencies": {
-    "concurrently": "^8.2.2",
+    "concurrently": "^9.2.1",
     "cross": "^1.0.0",
-    "cross-env": "^7.0.3",
+    "cross-env": "^10.1.0",
     "env": "^0.0.2"
   },
   "devDependencies": {
-    "@types/react": "^19.1.4",
-    "@types/react-dom": "^19.1.4"
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2"
   }
 }
