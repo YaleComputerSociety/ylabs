@@ -1,4 +1,4 @@
-import { AnalyticsEvent, AnalyticsEventType } from "../models/Analytics";
+import { AnalyticsEvent, AnalyticsEventType } from "../models/analytics";
 import { User, Listing } from "../models";
 import mongoose from "mongoose";
 
