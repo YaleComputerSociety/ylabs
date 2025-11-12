@@ -13,21 +13,12 @@ const SignOutButton = () => {
     
     // Skip saving login page
     if (currentPath !== '/login') {
-      // Save the full URL including origin, as that's what the redirect param expects
       const returnUrl = window.location.origin + currentPath;
       localStorage.setItem('logoutReturnPath', returnUrl);
     }
     
-    // Perform logout
-    axios.get<{ success: boolean }>("/logout").then(({ data }) => {
-      if (data.success) {
-        checkContext();
-      } else {
-        console.log('LOGOUT: Logout failed');
-      }
-    }).catch(error => {
-      console.error('LOGOUT: Error during logout:', error);
-    });
+    // Redirect to logout endpoint (which will redirect to CAS logout)
+    window.location.href = axios.defaults.baseURL + "/logout";
   };
 
   return (
