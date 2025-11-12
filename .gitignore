@@ -60,4 +60,6 @@ web-scraper/__pycache__/
 backup
 
 #General utility files
-to-do.txt
+to-do.txtnode_modules/
+server/node_modules/
+client/node_modules/

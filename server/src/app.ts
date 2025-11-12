@@ -24,30 +24,30 @@ const corsOptions = {
 };
 
 const app = express()
+.set('trust proxy', 1)  // trust first proxy
 .use(cors(corsOptions))
 .use(express.json())
 .use(express.urlencoded({ extended: true }))
-.use((req, res, next) => {
-  cookieSession({
-    name: "session",
-    keys: [process.env.SESSION_SECRET],
-    maxAge: 365 * 24 * 60 * 60 * 1000, // 1 year
-    httpOnly: true,
-  })(req, res, next);
-})
+.use(cookieSession({
+  name: "session",
+  keys: [process.env.SESSION_SECRET],
+  maxAge: 365 * 24 * 60 * 60 * 1000,
+  httpOnly: true,
+  secure: process.env.NODE_ENV === 'production',
+  sameSite: 'lax'
+}))
 .use(passport.initialize())
 .use(passport.session())
-.use(passportRoutes)
-.use(routes)
-.use('/', express.static('../client/dist'));
+.use('/api', passportRoutes)
+.use('/api', routes);
 
+// Serve static files from the React app AFTER all API routes
+app.use(express.static(path.join(__dirname, '../../client/dist')));
 
-app.get(['/login', '/about', '/account', '/login-error'], function(req, res) {
-  res.sendFile(path.join(__dirname, '../../client/dist/index.html'), function(err) {
-    if (err) {
-      res.status(500).send(err)
-    }
-  });
+// Catch-all handler: for any request that doesn't match an API route,
+// send back the React app's index.html file
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, '../../client/dist/index.html'));
 });
 
 export default app;

@@ -16,6 +16,7 @@
     "prod": "NODE_ENV=prod nodemon src/index.ts"
   },
   "dependencies": {
+    "axios": "^1.13.2",
     "cookie-session": "^2.1.0",
     "cors": "^2.8.5",
     "cross-env": "^7.0.3",
@@ -30,12 +31,13 @@
   "devDependencies": {
     "@types/cookie-session": "^2.0.48",
     "@types/cors": "^2.8.12",
+    "@types/express": "4.17.13",
     "@types/express-session": "^1.17.4",
     "@types/node": "20",
     "@types/passport": "^1.0.7",
     "@types/passport-strategy": "^0.2.35",
     "nodemon": "^2.0.15",
     "ts-node": "^10.5.0",
-    "typescript": "^4.5.5"
+    "typescript": "^5.3.0"
   }
 }

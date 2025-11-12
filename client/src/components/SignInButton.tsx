@@ -29,7 +29,8 @@ const SignInButton = () => {
     }
   }, []);
   
-  const finalUrl = backendBaseURL + `/cas?redirect=${redirectUrl}&error=${window.location.origin}/login-error`;
+  const finalUrl = backendBaseURL + `/api/cas?redirect=${redirectUrl}&error=${window.location.origin}/login-error`;
+  console.log('Sign-in redirect URL:', finalUrl);
   
   return (
     <Button
