@@ -25,7 +25,7 @@ const logSearchEvent = async (req: Request, res: Response, next: NextFunction) =
         searchDepartments: departments ? (departments as string).split(',') : []
       }).catch(err => console.error('Error logging search event:', err));
     }
-  
+  }
   next();
 };
 
