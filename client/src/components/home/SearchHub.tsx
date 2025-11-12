@@ -197,8 +197,8 @@ const SearchHub = ({
         const formattedQuery = queryString.trim();
         const formattedDepartments = selectedDepartments.join(',');
         const backendBaseURL = window.location.host.includes('yalelabs.io')
-            ? 'https://yalelabs.io'
-            : import.meta.env.VITE_APP_SERVER;
+            ? 'https://yalelabs.io/api'
+            : import.meta.env.VITE_APP_SERVER + "/api";
 
         if (sortBy === 'default') {
             url =
