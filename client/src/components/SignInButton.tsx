@@ -6,30 +6,26 @@ const SignInButton = () => {
     ? "https://yalelabs.io"
     : import.meta.env.VITE_APP_SERVER;
   
-  const [redirectUrl, setRedirectUrl] = useState(window.location.origin);
+  const [redirectParam, setRedirectParam] = useState('');
   
   useEffect(() => {
     // Check if there's a saved return path from logout
     const savedPath = localStorage.getItem('logoutReturnPath');
     
     if (savedPath) {
-      // Make sure the saved path is a valid URL
       try {
-        // Parse it to make sure it's valid
         const url = new URL(savedPath);
-        setRedirectUrl(savedPath);
+        setRedirectParam(`?redirect=${encodeURIComponent(savedPath)}`);
       } catch (error) {
-        // If it's not a full URL, try to construct one
         const fixedUrl = window.location.origin + (savedPath.startsWith('/') ? savedPath : '/' + savedPath);
-        setRedirectUrl(fixedUrl);
+        setRedirectParam(`?redirect=${encodeURIComponent(fixedUrl)}`);
       }
       
-      // Clear it so it's only used once
       localStorage.removeItem('logoutReturnPath');
     }
   }, []);
-  
-  const finalUrl = backendBaseURL + `/api/cas?redirect=${redirectUrl}&error=${window.location.origin}/login-error`;
+
+  const finalUrl = `${backendBaseURL}/api/cas${redirectParam}`;
   console.log('Sign-in redirect URL:', finalUrl);
   
   return (

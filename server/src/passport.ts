@@ -258,8 +258,10 @@ router.get("/logout", async (req, res) => {
   req.logOut();
   
   // Clear the session
-  req.session = null;
-  return res.redirect('/login')
+  const casLogoutUrl = `${process.env.SSOBASEURL}/logout`;
+  const serviceUrl = `${process.env.SERVER_BASE_URL}/login`;
+
+  return res.redirect(`${casLogoutUrl}?service=${encodeURIComponent(serviceUrl)}`);
   
   // -----------------------------------------
   // IF WE WANT TO FORCE LOGOUT CAS TOO
