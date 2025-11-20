@@ -9,13 +9,7 @@ const Footer = () => {
                     <a href="https://www.minimax.com/" target="_blank" rel="noopener noreferrer">
                         <img src="/assets/logos/MiniMax.png" alt="MiniMax" width={40} height={40} className="hover:opacity-80 transition-opacity"/>
                     </a>
-                    <a href="https://github.com/YaleComputerSociety/ylabs" target="_blank" rel="noopener noreferrer">
-                        <img src="/assets/icons/github-icon.png" alt="GitHub" width={40} height={40} className="hover:opacity-80 transition-opacity"/>
-                    </a>
                 </div>
-                <p className="text-sm text-gray-600 text-center">
-                    © {new Date().getFullYear()} Yale Labs. All rights reserved.
-                </p>
             </div>
         </footer>
     );
