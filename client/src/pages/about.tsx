@@ -137,32 +137,34 @@ const currentDevelopers = [
         name: "Christina Xu",
         position: "Developer",
         image: "/assets/developers/ChristinaXu.jpeg",
-        location: "Lincoln, Nebraska",
+        location: "Lincoln, NE",
         github: "https://github.com/shadaxiong",
     },
     {
         name: "Chloe Wu",
         position: "Developer",
         image: "/assets/developers/Chloe Wu.JPG",
-        location: "",
+        location: "Corona, CA",
     },
     {
         name: "David Sadka",
         position: "Developer",
         image: "/assets/developers/David Sadka.png",
-        location: "",
+        location: "Brookline, MA",
     },
     {
         name: "Peter Yu",
         position: "Developer",
         image: "/assets/developers/Peter Yu.png",
-        location: "",
+        location: "Choudrant, LA",
+        linkedin: "https://www.linkedin.com/in/peter-yu-395b641b4?utm_source=share_via&utm_content=profile&utm_medium=member_ios",
     },
     {
         name: "Tanav Prabhu",
         position: "Developer",
         image: "/assets/developers/Tanav Prabhu.jpg",
-        location: "",
+        location: "Milton, GA",
+        linkedin: "https://www.linkedin.com/in/tanavprabhu?utm_source=share_via&utm_content=profile&utm_medium=member_ios",
     }
 ]
 
