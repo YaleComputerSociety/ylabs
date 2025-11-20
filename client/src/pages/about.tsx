@@ -137,7 +137,7 @@ const currentDevelopers = [
         name: "Christina Xu",
         position: "Developer",
         image: "/assets/developers/ChristinaXu.jpeg",
-        location: "Lincoln, NE",
+        location: "Lincoln, Nebraska",
         github: "https://github.com/shadaxiong",
     },
     {
