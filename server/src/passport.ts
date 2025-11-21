@@ -219,7 +219,7 @@ router.use(async (req, res, next) => {
   next();
 });
 
-router.get("/api/check", (req, res) => {
+router.get("/check", (req, res) => {
   console.log("Checking user");
   console.log("2::");
   console.log(req.user);
