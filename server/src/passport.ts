@@ -185,12 +185,12 @@ const casLogin = function (
         } catch (error) {
           console.error("Error parsing redirect URL:", error);
           console.log("Falling back to default redirect");
-          return res.redirect("/check");
+          return res.redirect("/api/check");
         }
       }
 
       console.log("Default redirecting user");
-      return res.redirect("/check");
+      return res.redirect("/api/check");
     });
   })(req, res, next);
 };
@@ -219,7 +219,7 @@ router.use(async (req, res, next) => {
   next();
 });
 
-router.get("/check", (req, res) => {
+router.get("/api/check", (req, res) => {
   console.log("Checking user");
   console.log("2::");
   console.log(req.user);
