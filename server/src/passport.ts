@@ -185,12 +185,12 @@ const casLogin = function (
         } catch (error) {
           console.error("Error parsing redirect URL:", error);
           console.log("Falling back to default redirect");
-          return res.redirect("/api/check");
+          return res.redirect("/");
         }
       }
 
       console.log("Default redirecting user");
-      return res.redirect("/api/check");
+      return res.redirect("/");
     });
   })(req, res, next);
 };
