@@ -92,7 +92,7 @@ const Home = () => {
     };
 
     return (
-        <div className="mx-auto max-w-[1300px] px-6 mt-24 w-full">
+        <div className="mx-auto max-w-[1300px] px-6 mt-24 w-full min-h-[calc(100vh-12rem)]">
             <div className='mt-12'>
                 <SearchHub 
                     allDepartments={departmentKeys} 
