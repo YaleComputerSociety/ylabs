@@ -47,6 +47,20 @@ interface AnalyticsData {
         avgFavorites: number;
         viewsByDepartment: Array<{ department: string; totalViews: number; listingCount: number; avgViews: number }>;
     };
+    emails: {
+        totalEmails: number;
+        emailsLast7Days: number;
+        emailsToday: number;
+        emailsLast30Days: number;
+        topProfessors: Array<{
+            professorEmail: string;
+            emailCount: number;
+        }>;
+        topUndergrads: Array<{
+            netid: string;
+            emailCount: number;
+        }>;
+    };
     listings: {
         overview: {
             total: number;
@@ -146,20 +160,20 @@ const Analytics = () => {
                 <h2 className="text-2xl font-bold mb-4 text-gray-800 border-b-2 border-blue-600 pb-2">
                     Visitor Statistics
                 </h2>
-                
+
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-                    <StatCard 
-                        title="Total Visitors (Lifetime)" 
+                    <StatCard
+                        title="Total Visitors (Lifetime)"
                         value={data.visitors.lifetime.total}
                         subtitle="Unique users who've logged in"
                     />
-                    <StatCard 
-                        title="Visitors (Last 7 Days)" 
+                    <StatCard
+                        title="Visitors (Last 7 Days)"
                         value={data.visitors.last7Days.total}
                         subtitle="Active in past week"
                     />
-                    <StatCard 
-                        title="Visitors Today" 
+                    <StatCard
+                        title="Visitors Today"
                         value={data.visitors.today.total}
                         subtitle="Logged in today"
                     />
@@ -167,18 +181,18 @@ const Analytics = () => {
 
                 {/* Login Frequency */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-                    <StatCard 
-                        title="Total Login Events" 
+                    <StatCard
+                        title="Total Login Events"
                         value={data.visitors.loginFrequency.totalLogins}
                         subtitle="All-time login count"
                     />
-                    <StatCard 
-                        title="Logins (Last 7 Days)" 
+                    <StatCard
+                        title="Logins (Last 7 Days)"
                         value={data.visitors.loginFrequency.loginsLast7Days}
                         subtitle="Total logins this week"
                     />
-                    <StatCard 
-                        title="Logins Today" 
+                    <StatCard
+                        title="Logins Today"
                         value={data.visitors.loginFrequency.loginsToday}
                         subtitle="Login events today"
                     />
@@ -237,18 +251,18 @@ const Analytics = () => {
                 </h2>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-                    <StatCard 
-                        title="Total Searches" 
+                    <StatCard
+                        title="Total Searches"
                         value={data.engagement.search.totalSearches}
                         subtitle="All-time search queries"
                     />
-                    <StatCard 
-                        title="Searches (Last 7 Days)" 
+                    <StatCard
+                        title="Searches (Last 7 Days)"
                         value={data.engagement.search.searchesLast7Days}
                         subtitle="Recent searches"
                     />
-                    <StatCard 
-                        title="Searches Today" 
+                    <StatCard
+                        title="Searches Today"
                         value={data.engagement.search.searchesToday}
                         subtitle="Searches today"
                     />
@@ -271,18 +285,18 @@ const Analytics = () => {
 
                 {/* View Stats from Events */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-                    <StatCard 
-                        title="Total View Events" 
+                    <StatCard
+                        title="Total View Events"
                         value={data.engagement.views.totalViews}
                         subtitle="Listing views tracked"
                     />
-                    <StatCard 
-                        title="Views (Last 7 Days)" 
+                    <StatCard
+                        title="Views (Last 7 Days)"
                         value={data.engagement.views.viewsLast7Days}
                         subtitle="Recent views"
                     />
-                    <StatCard 
-                        title="Views Today" 
+                    <StatCard
+                        title="Views Today"
                         value={data.engagement.views.viewsToday}
                         subtitle="Views today"
                     />
@@ -290,17 +304,113 @@ const Analytics = () => {
 
                 {/* Active Users */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <StatCard 
-                        title="Active Users (Last 7 Days)" 
+                    <StatCard
+                        title="Active Users (Last 7 Days)"
                         value={data.engagement.userActivity.activeUsers}
                         subtitle="Users with activity"
                     />
-                    <StatCard 
-                        title="Avg Events Per User" 
+                    <StatCard
+                        title="Avg Events Per User"
                         value={data.engagement.userActivity.avgEventsPerUser.toFixed(1)}
                         subtitle="Last 7 days"
                     />
                 </div>
+            </section>
+
+            {/* Email Analytics */}
+            <section className="mb-10">
+                <h2 className="text-2xl font-bold mb-4 text-gray-800 border-b-2 border-blue-600 pb-2">
+                    Email Analytics
+                </h2>
+
+                {/* Email Totals */}
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
+                    <StatCard
+                        title="Total Emails Sent"
+                        value={data.emails.totalEmails}
+                        subtitle="All-time email count"
+                    />
+                    <StatCard
+                        title="Emails (Last 30 Days)"
+                        value={data.emails.emailsLast30Days}
+                        subtitle="Past month"
+                    />
+                    <StatCard
+                        title="Emails (Last 7 Days)"
+                        value={data.emails.emailsLast7Days}
+                        subtitle="Past week"
+                    />
+                    <StatCard
+                        title="Emails Today"
+                        value={data.emails.emailsToday}
+                        subtitle="Today"
+                    />
+                </div>
+
+                {/* Top Professors */}
+                {data.emails.topProfessors.length > 0 && (
+                    <div className="bg-white rounded-lg shadow-md p-6 border border-gray-200 mb-6">
+                        <h3 className="text-lg font-semibold text-gray-700 mb-4">
+                            Top 10 Professors by Emails Received
+                        </h3>
+                        <div className="overflow-x-auto">
+                            <table className="min-w-full">
+                                <thead>
+                                    <tr className="border-b">
+                                        <th className="py-2 px-4 text-left text-sm font-semibold text-gray-700">Rank</th>
+                                        <th className="py-2 px-4 text-left text-sm font-semibold text-gray-700">Professor Email</th>
+                                        <th className="py-2 px-4 text-right text-sm font-semibold text-gray-700">Emails Received</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {data.emails.topProfessors.map((prof, index) => (
+                                        <tr key={prof.professorEmail} className="border-b hover:bg-gray-50">
+                                            <td className="py-3 px-4 text-gray-600">#{index + 1}</td>
+                                            <td className="py-3 px-4 text-gray-800">{prof.professorEmail}</td>
+                                            <td className="py-3 px-4 text-right font-medium text-blue-600">{prof.emailCount}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                )}
+
+                {/* Top Undergrads */}
+                {data.emails.topUndergrads.length > 0 && (
+                    <div className="bg-white rounded-lg shadow-md p-6 border border-gray-200">
+                        <h3 className="text-lg font-semibold text-gray-700 mb-4">
+                            Top 10 Undergraduates by Emails Sent
+                        </h3>
+                        <div className="overflow-x-auto">
+                            <table className="min-w-full">
+                                <thead>
+                                    <tr className="border-b">
+                                        <th className="py-2 px-4 text-left text-sm font-semibold text-gray-700">Rank</th>
+                                        <th className="py-2 px-4 text-left text-sm font-semibold text-gray-700">NetID</th>
+                                        <th className="py-2 px-4 text-right text-sm font-semibold text-gray-700">Emails Sent</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {data.emails.topUndergrads.map((student, index) => (
+                                        <tr key={student.netid} className="border-b hover:bg-gray-50">
+                                            <td className="py-3 px-4 text-gray-600">#{index + 1}</td>
+                                            <td className="py-3 px-4 text-gray-800">{student.netid}</td>
+                                            <td className="py-3 px-4 text-right font-medium text-blue-600">{student.emailCount}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                )}
+
+                {/* No emails message */}
+                {data.emails.totalEmails === 0 && (
+                    <div className="bg-white rounded-lg shadow-md p-6 border border-gray-200">
+                        <p className="text-gray-500 text-center">No emails sent yet</p>
+                    </div>
+                )}
             </section>
 
             {/* Most Active Users */}
@@ -381,18 +491,18 @@ const Analytics = () => {
                     <StatCard title="Unconfirmed Listings" value={data.listings.overview.unconfirmed} />
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <StatCard 
-                        title="New Listings (Last 7 Days)" 
+                    <StatCard
+                        title="New Listings (Last 7 Days)"
                         value={data.listings.newListingsLast7Days}
                         subtitle="Created in past week"
                     />
-                    <StatCard 
-                        title="New Listings Today" 
+                    <StatCard
+                        title="New Listings Today"
                         value={data.listings.newListingsToday}
                         subtitle="Created today"
                     />
-                    <StatCard 
-                        title="Listings with 0 Views" 
+                    <StatCard
+                        title="Listings with 0 Views"
                         value={data.listings.listingsWithZeroViews}
                         subtitle="May need attention"
                     />

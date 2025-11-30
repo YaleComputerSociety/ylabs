@@ -13,6 +13,7 @@ export enum AnalyticsEventType {
     LISTING_ARCHIVE = 'listing_archive',
     LISTING_UNARCHIVE = 'listing_unarchive',
     PROFILE_UPDATE = 'profile_update',
+    EMAIL_SENT = 'email_sent',  // NEW
 }
 
 const analyticsEventSchema = new mongoose.Schema({

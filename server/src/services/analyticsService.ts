@@ -5,7 +5,7 @@ import mongoose from "mongoose";
 
 export interface LogEventParams {
     eventType: AnalyticsEventType;
-    netid: string;           
+    netid: string;
     userType: string;
     listingId?: string;
     searchQuery?: string;
@@ -60,7 +60,7 @@ export const getAnalytics = async () => {
     const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
-    
+
     const visitorStats = await AnalyticsEvent.aggregate([
         {
             $match: {
@@ -408,6 +408,86 @@ export const getAnalytics = async () => {
         }
     ]);
 
+
+    const emailStats = await AnalyticsEvent.aggregate([
+        {
+            $facet: {
+                // Email totals
+                emailTotals: [
+                    {
+                        $match: {
+                            eventType: AnalyticsEventType.EMAIL_SENT
+                        }
+                    },
+                    {
+                        $group: {
+                            _id: null,
+                            totalEmails: { $sum: 1 },
+                            emailsLast7Days: {
+                                $sum: { $cond: [{ $gte: ["$timestamp", sevenDaysAgo] }, 1, 0] }
+                            },
+                            emailsToday: {
+                                $sum: { $cond: [{ $gte: ["$timestamp", today] }, 1, 0] }
+                            },
+                            emailsLast30Days: {
+                                $sum: { $cond: [{ $gte: ["$timestamp", thirtyDaysAgo] }, 1, 0] }
+                            }
+                        }
+                    }
+                ],
+                // Top 10 professors receiving emails
+                topProfessors: [
+                    {
+                        $match: {
+                            eventType: AnalyticsEventType.EMAIL_SENT,
+                            "metadata.professorEmail": { $exists: true }
+                        }
+                    },
+                    {
+                        $group: {
+                            _id: "$metadata.professorEmail",
+                            emailCount: { $sum: 1 }
+                        }
+                    },
+                    { $sort: { emailCount: -1 } },
+                    { $limit: 10 },
+                    {
+                        $project: {
+                            _id: 0,
+                            professorEmail: "$_id",
+                            emailCount: 1
+                        }
+                    }
+                ],
+                // Top 10 students sending emails (undergrads only)
+                topUndergrads: [
+                    {
+                        $match: {
+                            eventType: AnalyticsEventType.EMAIL_SENT,
+                            userType: "undergraduate",
+                            netid: { $exists: true }
+                        }
+                    },
+                    {
+                        $group: {
+                            _id: "$netid",
+                            emailCount: { $sum: 1 }
+                        }
+                    },
+                    { $sort: { emailCount: -1 } },
+                    { $limit: 10 },
+                    {
+                        $project: {
+                            _id: 0,
+                            netid: "$_id",
+                            emailCount: 1
+                        }
+                    }
+                ]
+            }
+        }
+    ]);
+
     // ==================== LISTING ANALYTICS - from db ====================
 
     const listingStats = await Listing.aggregate([
@@ -679,6 +759,14 @@ export const getAnalytics = async () => {
             avgViews: listings.viewsAndFavorites[0]?.avgViews || 0,
             avgFavorites: listings.viewsAndFavorites[0]?.avgFavorites || 0,
             viewsByDepartment: listings.viewsByDepartment || []
+        },
+        emails: { 
+            totalEmails: emailStats[0]?.emailTotals[0]?.totalEmails || 0,
+            emailsLast7Days: emailStats[0]?.emailTotals[0]?.emailsLast7Days || 0,
+            emailsToday: emailStats[0]?.emailTotals[0]?.emailsToday || 0,
+            emailsLast30Days: emailStats[0]?.emailTotals[0]?.emailsLast30Days || 0,
+            topProfessors: emailStats[0]?.topProfessors || [],
+            topUndergrads: emailStats[0]?.topUndergrads || []
         },
         listings: {
             overview: listings.overview[0] || { total: 0, active: 0, archived: 0, unconfirmed: 0 },
