@@ -24,6 +24,7 @@
     "express": "^4.17.3",
     "express-session": "^1.17.2",
     "mongoose": "^8.0.4",
+    "openai": "^6.10.0",
     "passport": "^0.5.2",
     "passport-cas": "git+https://github.com/coursetable/passport-cas#79612f1",
     "passport-strategy": "^1.0.0"
