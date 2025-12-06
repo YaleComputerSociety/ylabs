@@ -3,21 +3,38 @@ import { IncorrectPermissionsError, NotFoundError, ObjectIdError } from "../util
 import { addOwnListings, deleteOwnListings, userExists, createUser, readUser } from "./userService";
 import { fetchYalie } from "./yaliesService";
 import mongoose from "mongoose";
+import { generateListingEmbedding } from "./embeddingService";
 
 export const createListing = async (data: any, owner: any) => {
     if (!owner.netid || !owner.email || !owner.fname || !owner.lname) {
         throw new Error('Incomplete user data for owner');
     }
 
-    const listing = new Listing({...data, ownerId: owner.netid, ownerEmail: owner.email, ownerFirstName: owner.fname, ownerLastName: owner.lname, confirmed: owner.userConfirmed});
+    let embedding;
+    try {
+        if (data.title && data.description) {
+            embedding = await generateListingEmbedding(data.title, data.description);
+        }
+    } catch (error) {
+        console.error('Failed to generate embedding for new listing:', error);
+    }
 
-    // Add listing id to ownListings of all professors associated with the listing
+    const listing = new Listing({
+        ...data,
+        ownerId: owner.netid,
+        ownerEmail: owner.email,
+        ownerFirstName: owner.fname,
+        ownerLastName: owner.lname,
+        confirmed: owner.userConfirmed,
+        ...(embedding && { embedding })
+    });
+
     const listingId = listing._id;
     const professorIds = listing.professorIds;
 
     for (const id of [...professorIds, owner.netid]) {
         const exists = await userExists(id);
-        
+
         if (!exists) {
             let user = await fetchYalie(id);
             if (!user) {
@@ -146,6 +163,17 @@ export const updateListing = async(id: any, userId: string, data: any, noAuth: b
 
         if (!noAuth && (!oldListing.professorIds.includes(userId) && oldListing.ownerId !== userId)) {
             throw new IncorrectPermissionsError(`User with id ${userId} does not have permission to update listing with id ${id}`);
+        }
+
+        if (data.title || data.description) {
+            try {
+                const newTitle = data.title || oldListing.title;
+                const newDescription = data.description || oldListing.description;
+                const embedding = await generateListingEmbedding(newTitle, newDescription);
+                data.embedding = embedding;
+            } catch (error) {
+                console.error('Failed to regenerate embedding for updated listing:', error);
+            }
         }
 
         const listing = await Listing.findByIdAndUpdate(id, data,
