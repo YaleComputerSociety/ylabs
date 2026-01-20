@@ -134,8 +134,8 @@ const Account = () => {
     };
 
     const updateListing = (listing: Listing) => {
-        setOwnListings((prevOwnListings) => prevOwnListings.map((listing) => listing.id === listing.id ? listing : listing));
-        setFavListings((prevFavListings) => prevFavListings.map((listing) => listing.id === listing.id ? listing : listing));
+        setOwnListings((prevOwnListings) => prevOwnListings.map((l) => l.id === listing.id ? listing : l));
+        setFavListings((prevFavListings) => prevFavListings.map((l) => l.id === listing.id ? listing : l));
     };
 
     const filterHiddenListings = (listings: Listing[]) => {
@@ -144,15 +144,22 @@ const Account = () => {
 
     const postListing = (listing: Listing) => {
         setIsLoading(true);
-        axios.post('/listings', {withCredentials: true, data: listing}).then((response) => {
+
+        // Use PUT for updating existing listings, POST for creating new ones
+        const isNewListing = listing.id === "create";
+        const request = isNewListing
+            ? axios.post('/listings', {withCredentials: true, data: listing})
+            : axios.put(`/listings/${listing.id}`, {withCredentials: true, data: listing});
+
+        request.then((response) => {
             reloadListings();
             setIsEditing(false);
             setIsLoading(false);
             setIsCreating(false);
         }).catch((error) => {
-            console.error('Error posting new listing:', error);
+            console.error(isNewListing ? 'Error creating listing:' : 'Error updating listing:', error);
             swal({
-                text: "Unable to create listing",
+                text: isNewListing ? "Unable to create listing" : "Unable to update listing",
                 icon: "warning",
             })
 
