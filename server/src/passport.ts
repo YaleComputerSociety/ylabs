@@ -259,9 +259,20 @@ router.get("/logout", async (req, res) => {
   
   // Clear the session
   const casLogoutUrl = `${process.env.SSOBASEURL}/logout`;
-  const serviceUrl = `${process.env.SERVER_BASE_URL}/login`;
 
-  return res.redirect(`${casLogoutUrl}?service=${encodeURIComponent(serviceUrl)}`);
+  // Determine the service URL based on environment
+  let serviceUrl;
+
+  if (process.env.NODE_ENV === 'development') {
+    // In development, redirect to the client on port 3000
+    serviceUrl = "http://localhost:3000/login";
+  } else {
+    // In production, use the server base URL (which serves the client)
+    serviceUrl = `${process.env.SERVER_BASE_URL}/login`;
+  }
+
+  const fullLogoutUrl = `${casLogoutUrl}?service=${encodeURIComponent(serviceUrl)}`;
+  return res.redirect(fullLogoutUrl);
   
   // -----------------------------------------
   // IF WE WANT TO FORCE LOGOUT CAS TOO

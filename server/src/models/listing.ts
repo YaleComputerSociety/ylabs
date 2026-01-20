@@ -75,6 +75,11 @@ const listingSchema = new mongoose.Schema(
     confirmed: {
         type: Boolean,
         default: true,
+    },
+    embedding: {
+        type: [Number],
+        required: false,
+        select: false
     }
   },
   {
