@@ -56,7 +56,6 @@ Health Policy and Management
 Hellenic Studies
 History
 History of Art
-History of Medicine
 History of Science and Medicine
 Humanities
 Immunobiology
@@ -69,7 +68,6 @@ Laboratory Medicine
 Latin American Studies
 Law
 Linguistics
-MCDB
 Management
 Mathematics
 Mechanical Engineering and Materials Science
