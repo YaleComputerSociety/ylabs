@@ -3,7 +3,9 @@
     "target": "es2017",
     "module": "commonjs",
     "moduleResolution": "node",
-    "lib": ["es2017"],
+    "lib": [
+      "es2017"
+    ],
     "noImplicitAny": true,
     "removeComments": true,
     "preserveConstEnums": true,
@@ -13,8 +15,16 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "outDir": "build",
-    "types": ["node"]
+    "typeRoots": [
+      "./src/types",
+      "./node_modules/@types"
+    ]
   },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules/**/*", "build/**/*"]
+  "include": [
+    "src/**/*"
+  ],
+  "exclude": [
+    "node_modules/**/*",
+    "build/**/*"
+  ]
 }

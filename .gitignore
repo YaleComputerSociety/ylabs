@@ -47,6 +47,7 @@ client/coverage
 
 #Client production
 client/build
+client/dist
 
 #Web scraper utility files
 web-scraper/my_paths.txt
