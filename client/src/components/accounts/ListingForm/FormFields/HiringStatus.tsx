@@ -16,10 +16,15 @@ const HiringStatus = ({
     const hiringInputRef = useRef<HTMLInputElement>(null);
 
     const hiringOptions = [
-        { value: -1, label: "Lab not seeking applicants" },
-        { value: 0, label: "Lab open to applicants" },
-        { value: 1, label: "Lab seeking applicants" }
+        { value: 0, label: "Open to Applicants" },
+        { value: -1, label: "Not Open to Applicants" }
     ];
+
+    // Get display label for current status (handles legacy "seeking" value)
+    const getCurrentStatusLabel = () => {
+        if (hiringStatus >= 0) return "Open to Applicants";
+        return "Not Open to Applicants";
+    };
 
     const handleHiringSelect = (value: number) => {
         setHiringStatus(value);
@@ -65,7 +70,7 @@ const HiringStatus = ({
     return (
         <div className="mb-4" ref={hiringRef}>
             <label className="block text-gray-700 text-sm font-bold mb-2">
-                ⭐ Hiring Status
+                Status
             </label>
 
             {/* Button/display */}
@@ -75,11 +80,7 @@ const HiringStatus = ({
                         ref={hiringInputRef}
                         type="text"
                         readOnly
-                        value={
-                            hiringStatus === -1 ? "Lab not seeking applicants" :
-                            hiringStatus === 0 ? "Lab open to applicants" :
-                            "Lab seeking applicants"
-                        }
+                        value={getCurrentStatusLabel()}
                         onClick={() => {
                             setIsHiringDropdownOpen(true);
                         }}
@@ -128,7 +129,7 @@ const HiringStatus = ({
                                     onMouseDown={(e) => e.preventDefault()}
                                 >
                                     <span>{option.label}</span>
-                                    {hiringStatus === option.value && (
+                                    {((option.value === 0 && hiringStatus >= 0) || (option.value === -1 && hiringStatus < 0)) && (
                                         <svg className="h-4 w-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
                                         </svg>

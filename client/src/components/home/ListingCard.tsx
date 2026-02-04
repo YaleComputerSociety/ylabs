@@ -1,10 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Listing } from '../../types/types';
-import { departmentCategories } from '../../utils/departmentNames';
+import { getDepartmentAbbreviation } from '../../utils/departmentNames';
 import axios from "../../utils/axios";
-import swal from "sweetalert";
 import { useContext } from "react";
 import UserContext from "../../contexts/UserContext";
+import ConfigContext from "../../contexts/ConfigContext";
 
 interface ListingCardProps {
     listing: Listing;
@@ -14,46 +14,19 @@ interface ListingCardProps {
 }
 
 const ListingCard = ({ listing, favListingsIds, updateFavorite, openModal }: ListingCardProps) => {
-    const [visibleDepartments, setVisibleDepartments] = useState<string[]>([]);
+    const [visibleResearchAreas, setVisibleResearchAreas] = useState<string[]>([]);
     const [moreCount, setMoreCount] = useState(0);
-    const [showTooltip, setShowTooltip] = useState(false);
     const [isFavorite, setIsFavorite] = useState(favListingsIds.includes(listing.id));
     const [viewed, setViewed] = useState(false);
-    const departmentsContainerRef = useRef<HTMLDivElement>(null);
+    const researchAreasContainerRef = useRef<HTMLDivElement>(null);
     const {user} = useContext(UserContext);
+    const { getColorForResearchArea } = useContext(ConfigContext);
 
-    const departmentColors = [
-        "bg-blue-200",
-        "bg-green-200",
-        "bg-yellow-200",
-        "bg-red-200",
-        "bg-purple-200",
-        "bg-pink-200",
-        "bg-teal-200",
-        "bg-orange-200"
-    ];
+    // Get research areas (fallback to keywords for backwards compatibility)
+    const researchAreas = listing.researchAreas?.length > 0 ? listing.researchAreas : (listing.keywords || []);
 
-    // Helper function to determine bar color based on hiringStatus
-    const getHiringStatusColor = () => {
-        if (listing.hiringStatus < 0) {
-            return "bg-red-500";
-        } else if (listing.hiringStatus === 0) {
-            return "bg-yellow-500";
-        } else {
-            return "bg-green-500";
-        }
-    };
-    
-    // Helper function to get tooltip text based on hiring status
-    const getHiringStatusText = () => {
-        if (listing.hiringStatus < 0) {
-            return "Lab not seeking applicants";
-        } else if (listing.hiringStatus === 0) {
-            return "Lab open to applicants";
-        } else {
-            return "Lab seeking applicants";
-        }
-    };
+    // Helper function to check if lab is open (hiringStatus >= 0 means open)
+    const isOpen = listing.hiringStatus >= 0;
 
     useEffect(() => {
         // Set listing as favorite based on if listing.id is in favListingsIds
@@ -63,60 +36,60 @@ const ListingCard = ({ listing, favListingsIds, updateFavorite, openModal }: Lis
     }, [favListingsIds]);
 
     useEffect(() => {
-        if (!departmentsContainerRef.current) return;
-        
-        const calculateVisibleDepartments = () => {
-            const container = departmentsContainerRef.current;
+        if (!researchAreasContainerRef.current) return;
+
+        const calculateVisibleResearchAreas = () => {
+            const container = researchAreasContainerRef.current;
             if (!container) return;
-            
+
             const containerWidth = container.clientWidth;
             let totalWidth = 0;
             const tempVisible: string[] = [];
 
             setMoreCount(0);
-            
-            // Create a temporary span to measure each department's width
+
+            // Create a temporary span to measure each research area's width
             const tempSpan = document.createElement('span');
             tempSpan.className = "bg-blue-200 text-gray-900 text-xs rounded px-1 py-0.5 mt-2 mr-2";
             tempSpan.style.visibility = 'hidden';
             tempSpan.style.position = 'absolute';
             document.body.appendChild(tempSpan);
-            
-            for (let i = 0; i < listing.departments.length; i++) {
-                tempSpan.textContent = listing.departments[i];
+
+            for (let i = 0; i < researchAreas.length; i++) {
+                tempSpan.textContent = researchAreas[i];
                 const width = tempSpan.getBoundingClientRect().width + 8; // 8px for margin
-                
+
                 if (totalWidth + width <= containerWidth) {
-                    tempVisible.push(listing.departments[i]);
+                    tempVisible.push(researchAreas[i]);
                     totalWidth += width;
                 } else {
-                    setMoreCount(listing.departments.length - i);
+                    setMoreCount(researchAreas.length - i);
                     break;
                 }
             }
 
-            if(tempVisible.length !== listing.departments.length) {
+            if(tempVisible.length !== researchAreas.length) {
                 // Measure the "+x more" bubble
-                tempSpan.textContent = `+${listing.departments.length - tempVisible.length} more`;
+                tempSpan.textContent = `+${researchAreas.length - tempVisible.length} more`;
                 const moreWidth = tempSpan.getBoundingClientRect().width + 8; // 8px for margin
 
                 // Check if the "+x more" bubble fits
                 if (totalWidth + moreWidth > containerWidth) {
-                    // Remove the last department to make space for the "+x more" bubble
+                    // Remove the last item to make space for the "+x more" bubble
                     tempVisible.pop();
-                    setMoreCount(listing.departments.length - tempVisible.length);
+                    setMoreCount(researchAreas.length - tempVisible.length);
                 }
-                }
-            
+            }
+
             document.body.removeChild(tempSpan);
-            setVisibleDepartments(tempVisible);
+            setVisibleResearchAreas(tempVisible);
         };
-        
-        calculateVisibleDepartments();
+
+        calculateVisibleResearchAreas();
         // Re-calculate on window resize
-        window.addEventListener('resize', calculateVisibleDepartments);
-        return () => window.removeEventListener('resize', calculateVisibleDepartments);
-    }, [listing]);
+        window.addEventListener('resize', calculateVisibleResearchAreas);
+        return () => window.removeEventListener('resize', calculateVisibleResearchAreas);
+    }, [listing, researchAreas]);
 
     const toggleFavorite = (e: React.MouseEvent) => {
         e.stopPropagation();
@@ -157,38 +130,43 @@ const ListingCard = ({ listing, favListingsIds, updateFavorite, openModal }: Lis
                 key={listing.id}
                 className="flex relative z-10 rounded-md shadow"
             >
-                <div 
-                    className={`${getHiringStatusColor()} cursor-pointer rounded-l flex-shrink-0 relative`} 
-                    style={{ width: '6px' }}
-                    onMouseEnter={() => setShowTooltip(true)}
-                    onMouseLeave={() => setShowTooltip(false)}
+                <div
+                    className="group/card p-4 flex-grow grid grid-cols-3 md:grid-cols-12 cursor-pointer border border-gray-300 hover:border-[#257fce] rounded-md transition-all duration-200"
+                    style={{ background: 'linear-gradient(135deg, #ffffff 0%, #fefefe 100%)' }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = 'linear-gradient(135deg, #f8fafe 0%, #f4f6fb 100%)'}
+                    onMouseLeave={(e) => e.currentTarget.style.background = 'linear-gradient(135deg, #ffffff 0%, #fefefe 100%)'}
+                    onClick={handleListingClick}
                 >
-                    {showTooltip && (
-                        <div className={`${getHiringStatusColor()} absolute top-1/2 left-4 -translate-y-1/2 text-white text-xs rounded-full py-1 px-2 z-10 whitespace-nowrap shadow`}>
-                            {getHiringStatusText()}
-                        </div>
-                    )}
-                </div>
-                <div className="p-4 flex-grow grid grid-cols-3 md:grid-cols-12 cursor-pointer bg-white hover:bg-gray-100 border border-gray-300 rounded-r" onClick={handleListingClick}>
                     {/* First Column */}
                     <div className="col-span-2 md:col-span-4">
+                        <span
+                            className="text-sm font-semibold block"
+                            style={{ color: '#0056A4', fontFamily: 'Geist, sans-serif', height: '1.25rem', lineHeight: '1.25rem' }}
+                        >
+                            {listing.departments && listing.departments.length > 0
+                                ? listing.departments.slice(0, 3).map(dept => getDepartmentAbbreviation(dept)).join(' | ')
+                                : '\u00A0'}
+                        </span>
                         <p className={`text-lg font-semibold mb-3`} style={{ lineHeight: '1.2rem', height: '1.2rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{listing.title}</p>
                         <p className={`text-sm text-gray-700`} style={{ overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical' }}>
                             Professors: {[`${listing.ownerFirstName} ${listing.ownerLastName}`, ...listing.professorNames].join(', ')}
                         </p>
-                        {/* list all departments in blue bubbles*/}
-                        <div ref={departmentsContainerRef} className="flex overflow-hidden" style={{ whiteSpace: 'nowrap' }}>
-                            {visibleDepartments.length > 0 ? (
+                        {/* list all research areas with colored bubbles */}
+                        <div ref={researchAreasContainerRef} className="flex overflow-hidden" style={{ whiteSpace: 'nowrap' }}>
+                            {visibleResearchAreas.length > 0 ? (
                                 <>
-                                    {visibleDepartments.map((department) => (
-                                        <span
-                                            key={department}
-                                            className={`${Object.keys(departmentCategories).includes(department) ? departmentColors[departmentCategories[department as keyof typeof departmentCategories]] : "bg-gray-200"} text-gray-900 text-xs rounded px-1 py-0.5 mt-3 mr-2`}
-                                            style={{ display: 'inline-block', whiteSpace: 'nowrap' }}
-                                        >
-                                            {department}
-                                        </span>
-                                    ))}
+                                    {visibleResearchAreas.map((area: string) => {
+                                        const colors = getColorForResearchArea(area);
+                                        return (
+                                            <span
+                                                key={area}
+                                                className={`${colors.bg} ${colors.text} text-xs rounded px-1 py-0.5 mt-3 mr-2`}
+                                                style={{ display: 'inline-block', whiteSpace: 'nowrap' }}
+                                            >
+                                                {area}
+                                            </span>
+                                        );
+                                    })}
                                     {moreCount > 0 && (
                                         <span
                                             className={`bg-gray-200 text-gray-900 text-xs rounded px-1 py-0.5 mt-3`}
@@ -215,59 +193,148 @@ const ListingCard = ({ listing, favListingsIds, updateFavorite, openModal }: Lis
                     <div className="col-span-6 hidden md:flex align-middle">
                         {/* Vertical Line */}
                         <div className={`flex-shrink-0 border-l border-gray-300 mx-4`} />
-                        <p className={`flex-grow text-gray-800 text-sm overflow-hidden overflow-ellipsis`} style={{ display: '-webkit-box', WebkitLineClamp: 4, WebkitBoxOrient: 'vertical' }}>
-                            {listing.description}
-                        </p>
+                        <div className="flex-grow overflow-hidden">
+                            <p className={`text-gray-800 text-sm`} style={{ display: '-webkit-box', WebkitLineClamp: 4, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                                {listing.description}
+                            </p>
+                        </div>
                     </div>
 
                     {/* Third Column */}
                     <div className="flex flex-col col-span-1 md:col-span-2 items-end">
-                        <div>
-                            {listing.websites && listing.websites.length > 0 && (
-                                <a
-                                    href={ensureHttpPrefix(listing.websites[0])}
-                                    className = 'mr-1'
-                                    onClick={(e) => e.stopPropagation()}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                >
-                                    <button className="p-1 rounded-full hover:bg-gray-200">
-                                        <img
-                                            src="/assets/icons/new-link.png"
-                                            alt="Lab Website"
-                                            className={`w-5 h-5`}
-                                        />
+                        <div className="flex items-start">
+                            {listing.applicantDescription && listing.applicantDescription.trim() !== '' && (
+                                <div className="relative group mr-1">
+                                    <svg
+                                        xmlns="http://www.w3.org/2000/svg"
+                                        width="20"
+                                        height="20"
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="#6B7280"
+                                        strokeWidth="2"
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        className="mt-0.5"
+                                    >
+                                        <path d="M14 3v4a1 1 0 0 0 1 1h4" />
+                                        <path d="M17 21h-10a2 2 0 0 1 -2 -2v-14a2 2 0 0 1 2 -2h7l5 5v11a2 2 0 0 1 -2 2z" />
+                                        <path d="M9 17h6" />
+                                        <path d="M9 13h6" />
+                                    </svg>
+                                    <span className="absolute -top-8 left-1/2 -translate-x-1/2 px-2 py-1 bg-gray-800/75 text-white text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20">
+                                        Has Applicant Prerequisites
+                                    </span>
+                                </div>
+                            )}
+                            <span
+                                className={`text-xs px-2 py-1 rounded ${
+                                    isOpen
+                                        ? "bg-green-500/20 text-green-700"
+                                        : "bg-red-500/20 text-red-700"
+                                }`}
+                            >
+                                {isOpen ? "Open" : "Not Open"}
+                            </span>
+                            <div className="flex flex-col items-end -ml-2">
+                                <a onClick={toggleFavorite} className="inline-block relative group">
+                                    <span className="absolute -top-8 left-1/2 -translate-x-1/2 px-2 py-1 bg-gray-800/65 text-white text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                                        {isFavorite ? "Remove from Favorites" : "Add to Favorites"}
+                                    </span>
+                                    <button
+                                        className="p-1 rounded-full"
+                                        aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"}
+                                    >
+                                        <svg
+                                            xmlns="http://www.w3.org/2000/svg"
+                                            width="20"
+                                            height="20"
+                                            viewBox="0 0 24 24"
+                                            className="transition-colors"
+                                            fill="none"
+                                            stroke="#5B646F"
+                                            strokeWidth="2"
+                                            strokeLinecap="round"
+                                            strokeLinejoin="round"
+                                            style={{ stroke: '#5B646F' }}
+                                            onMouseEnter={(e) => e.currentTarget.style.stroke = '#0055A4'}
+                                            onMouseLeave={(e) => e.currentTarget.style.stroke = '#5B646F'}
+                                        >
+                                            {isFavorite ? (
+                                                <path d="M5 12h14" />
+                                            ) : (
+                                                <>
+                                                    <path d="M12 5v14" />
+                                                    <path d="M5 12h14" />
+                                                </>
+                                            )}
+                                        </svg>
                                     </button>
                                 </a>
-                            )}
-                            <a onClick={toggleFavorite} className="inline-block">
-                                <button 
-                                    className="p-1 hover:bg-gray-200 rounded-full"
-                                    aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"}
-                                >
-                                    <svg 
-                                        xmlns="http://www.w3.org/2000/svg" 
-                                        width="20" 
-                                        height="20" 
-                                        viewBox="0 0 24 24" 
-                                        className={`transition-colors`}
-                                        fill={isFavorite ? "#FFDA7B" : "none"} 
-                                        stroke={isFavorite ? "#F0C04A" : "currentColor"} 
-                                        strokeWidth="1.5" 
-                                        strokeLinecap="round" 
-                                        strokeLinejoin="round"
+                                <div className="flex items-center opacity-0 group-hover/card:opacity-100 transition-opacity">
+                                    <a
+                                        href={listing.websites && listing.websites.length > 0 ? ensureHttpPrefix(listing.websites[0]) : undefined}
+                                        className={listing.websites && listing.websites.length > 0 ? "" : "pointer-events-none invisible"}
+                                        onClick={(e) => e.stopPropagation()}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
                                     >
-                                        <path d="M12 17.75l-6.172 3.245l1.179 -6.873l-5 -4.867l6.9 -1l3.086 -6.253l3.086 6.253l6.9 1l-5 4.867l1.179 6.873z" />
-                                    </svg>
-                                </button>
-                            </a>
+                                        <button className="p-1 rounded-full">
+                                            <svg
+                                                xmlns="http://www.w3.org/2000/svg"
+                                                width="16"
+                                                height="16"
+                                                viewBox="0 0 24 24"
+                                                fill="none"
+                                                stroke="#000000"
+                                                strokeWidth="2"
+                                                strokeLinecap="round"
+                                                strokeLinejoin="round"
+                                                className="transition-colors"
+                                                style={{ stroke: '#000000' }}
+                                                onMouseEnter={(e) => e.currentTarget.style.stroke = '#0055A4'}
+                                                onMouseLeave={(e) => e.currentTarget.style.stroke = '#000000'}
+                                            >
+                                                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                                                <polyline points="15 3 21 3 21 9" />
+                                                <line x1="10" y1="14" x2="21" y2="3" />
+                                            </svg>
+                                        </button>
+                                    </a>
+                                    <a
+                                        href={`mailto:${listing.ownerEmail}`}
+                                        onClick={(e) => e.stopPropagation()}
+                                    >
+                                        <button className="p-1 rounded-full">
+                                            <svg
+                                                xmlns="http://www.w3.org/2000/svg"
+                                                width="16"
+                                                height="16"
+                                                viewBox="0 0 24 24"
+                                                fill="none"
+                                                stroke="#000000"
+                                                strokeWidth="2"
+                                                strokeLinecap="round"
+                                                strokeLinejoin="round"
+                                                className="transition-colors"
+                                                style={{ stroke: '#000000' }}
+                                                onMouseEnter={(e) => e.currentTarget.style.stroke = '#0055A4'}
+                                                onMouseLeave={(e) => e.currentTarget.style.stroke = '#000000'}
+                                            >
+                                                <rect x="2" y="4" width="20" height="16" rx="2" />
+                                                <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
+                                            </svg>
+                                        </button>
+                                    </a>
+                                </div>
+                            </div>
                         </div>
                         <div className="flex-grow" />
                         <p className={`text-[8px] mb-0.5 text-gray-700`} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>
-                            Last Update
+                            Date Added
                         </p>
                         <p className={`text-sm text-gray-700`} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>
-                            {new Date(listing.updatedAt).toLocaleDateString()}
+                            {new Date(listing.createdAt).toLocaleDateString()}
                         </p>
                     </div>
                 </div>
