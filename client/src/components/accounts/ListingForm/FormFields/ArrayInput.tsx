@@ -135,14 +135,6 @@ const ArrayInput = ({
             <label className="block text-gray-700 text-sm font-bold mb-2">
                 {label}
             </label>
-            {infoText && (
-                <div className="text-xs text-gray-500 mb-2">
-                    {infoText}
-                </div>
-            )}
-            <div className="flex flex-wrap gap-2 mb-2 overflow-x-auto">
-                {renderItems()}
-            </div>
             <div className="flex">
                 <input
                     type={type}
@@ -153,6 +145,16 @@ const ArrayInput = ({
                 />
             </div>
             <div className="text-xs text-gray-500 mt-1">Press Enter to add</div>
+            {(permanentValue || items.length > 0) && (
+                <div className="flex flex-wrap gap-2 mt-2 overflow-x-auto">
+                    {renderItems()}
+                </div>
+            )}
+            {infoText && (
+                <div className="text-xs text-gray-500 mt-1">
+                    {infoText}
+                </div>
+            )}
             <ErrorMessage error={error} />
         </div>
   );
