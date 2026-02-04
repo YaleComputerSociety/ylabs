@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useContext, useMemo } from 'react';
 import { Listing } from '../../../types/types';
-import { departmentNames } from '../../../utils/departmentNames';
+import { useConfig } from '../../../hooks/useConfig';
 import swal from "sweetalert";
 import axios from '../../../utils/axios';
 import PulseLoader from "react-spinners/PulseLoader";
@@ -10,10 +10,10 @@ import TextArea from './FormFields/TextArea';
 import ArrayInput from './FormFields/ArrayInput';
 import DepartmentInput from './FormFields/DepartmentInput';
 import HiringStatus from './FormFields/HiringStatus';
-import { validateTitle, validateDescription, validateEstablished, 
-         validateProfessors, validateEmails, validateWebsites, validateProfessorIds } from './utils/validation';
+import ResearchAreaInput from './FormFields/ResearchAreaInput';
+import { validateTitle, validateDescription, validateEstablished,
+         validateProfessors, validateEmails, validateWebsites, validateProfessorIds, validateDepartments } from './utils/validation';
 import { createListing } from '../../../utils/apiCleaner';
-import { useContext } from "react";
 import UserContext from "../../../contexts/UserContext";
          
 interface ListingFormProps {
@@ -26,6 +26,10 @@ interface ListingFormProps {
 }
 
 const ListingForm = ({ listing, isCreated, onLoad, onCancel, onSave, onCreate }: ListingFormProps) => {
+  // Get department options from config context
+  const { departments: allDepartmentsConfig } = useConfig();
+  const departmentNames = useMemo(() => allDepartmentsConfig.map(d => d.displayName), [allDepartmentsConfig]);
+
   // Form state
   const [title, setTitle] = useState(listing.title);
   const [professorNames, setProfessorNames] = useState<string[]>([...listing.professorNames]);
@@ -37,7 +41,8 @@ const ListingForm = ({ listing, isCreated, onLoad, onCancel, onSave, onCreate }:
   const [ownerEmail, setOwnerEmail] = useState<string>(listing.ownerEmail);
   const [websites, setWebsites] = useState<string[]>(listing.websites ? [...listing.websites] : []);
   const [description, setDescription] = useState(listing.description);
-  const [keywords, setKeywords] = useState<string[]>(listing.keywords ? [...listing.keywords] : []);
+  const [applicantDescription, setApplicantDescription] = useState(listing.applicantDescription || '');
+  const [researchAreas, setResearchAreas] = useState<string[]>(listing.researchAreas ? [...listing.researchAreas] : (listing.keywords ? [...listing.keywords] : []));
   const [established, setEstablished] = useState(listing.established || '');
   const [hiringStatus, setHiringStatus] = useState(listing.hiringStatus);
   const [archived, setArchived] = useState(listing.archived);
@@ -55,6 +60,7 @@ const ListingForm = ({ listing, isCreated, onLoad, onCancel, onSave, onCreate }:
     professorNames?: string;
     emails?: string;
     websites?: string;
+    departments?: string;
   }>({});
 
   // Get most recent listing and initialize available departments
@@ -77,7 +83,8 @@ const ListingForm = ({ listing, isCreated, onLoad, onCancel, onSave, onCreate }:
         setOwnerEmail(listing.ownerEmail);
         setWebsites(listing.websites ? [...listing.websites] : []);
         setDescription(listing.description);
-        setKeywords(listing.keywords ? [...listing.keywords] : []);
+        setApplicantDescription(listing.applicantDescription || '');
+        setResearchAreas(listing.researchAreas ? [...listing.researchAreas] : (listing.keywords ? [...listing.keywords] : []));
         setEstablished(listing.established || '');
         setHiringStatus(listing.hiringStatus);
         setArchived(listing.archived);
@@ -110,13 +117,15 @@ const ListingForm = ({ listing, isCreated, onLoad, onCancel, onSave, onCreate }:
       emails,
       websites,
       description,
-      keywords,
+      applicantDescription,
+      keywords: researchAreas,
+      researchAreas,
       established,
       hiringStatus,
       archived
     };
     onLoad(updatedListing, true);
-  }, [title, professorNames, departments, emails, websites, description, keywords, established, hiringStatus, archived]);
+  }, [title, professorNames, departments, emails, websites, description, applicantDescription, researchAreas, established, hiringStatus, archived]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -129,7 +138,8 @@ const ListingForm = ({ listing, isCreated, onLoad, onCancel, onSave, onCreate }:
       professorNames: validateProfessors([ownerName, ...professorNames]),
       professorIds: validateProfessorIds(professorIds),
       emails: validateEmails([ownerEmail, ...emails]),
-      websites: validateWebsites(websites)
+      websites: validateWebsites(websites),
+      departments: validateDepartments(departments)
     };
     
     // Filter out undefined errors
@@ -151,7 +161,9 @@ const ListingForm = ({ listing, isCreated, onLoad, onCancel, onSave, onCreate }:
         emails,
         websites,
         description,
-        keywords,
+        applicantDescription,
+        keywords: researchAreas,
+        researchAreas,
         established,
         hiringStatus,
         archived
@@ -212,7 +224,8 @@ const handleCancel = () => {
     setOwnerEmail(originalListing.ownerEmail);
     setWebsites(originalListing.websites ? [...originalListing.websites] : []);
     setDescription(originalListing.description);
-    setKeywords(originalListing.keywords ? [...originalListing.keywords] : []);
+    setApplicantDescription(originalListing.applicantDescription || '');
+    setResearchAreas(originalListing.researchAreas ? [...originalListing.researchAreas] : (originalListing.keywords ? [...originalListing.keywords] : []));
     setEstablished(originalListing.established || '');
     setHiringStatus(originalListing.hiringStatus);
     setArchived(originalListing.archived);
@@ -247,33 +260,146 @@ const handleCancel = () => {
         </div>
       ) : (
         <form onSubmit={handleSubmit}>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-16">
-            {/* Left column - Non-array fields */}
-            <div className="col-span-1">
-              <TextInput
-                id="title"
-                label="⭐ Listing Title"
-                value={title}
-                onChange={setTitle}
-                placeholder="Add title"
-                error={errors.title}
-                onValidate={(value) => {
-                  if (errors.title) {
-                    setErrors(prev => ({ ...prev, title: validateTitle(value) }));
-                  }
-                }}
-              />
+          {/* Row 1: Listing Title, Status, Department Affiliation */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <TextInput
+              id="title"
+              label="Listing Title"
+              value={title}
+              onChange={setTitle}
+              placeholder="Your Lab's Name (or Professor's Name)"
+              error={errors.title}
+              required
+              onValidate={(value) => {
+                if (errors.title) {
+                  setErrors(prev => ({ ...prev, title: validateTitle(value) }));
+                }
+              }}
+            />
 
-              <TextArea
-                id="description"
-                label="⭐ Description"
-                value={description}
-                onChange={setDescription}
-                placeholder="Add description"
-                rows={10}
-                error={errors.description}
-              />
-              
+            <HiringStatus
+              hiringStatus={hiringStatus}
+              setHiringStatus={setHiringStatus}
+            />
+
+            <DepartmentInput
+              departments={departments}
+              availableDepartments={availableDepartments}
+              onAddDepartment={handleAddDepartment}
+              onRemoveDepartment={handleRemoveDepartment}
+              required
+              error={errors.departments}
+            />
+          </div>
+
+          {/* Row 2: Research Description and Applicant Prerequisites side by side */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <TextArea
+              id="description"
+              label="Research Description"
+              value={description}
+              onChange={setDescription}
+              placeholder="Describe your research in (3-4 sentences)"
+              rows={6}
+              error={errors.description}
+              required
+            />
+
+            <TextArea
+              id="applicantDescription"
+              label="Applicant Prerequisites"
+              value={applicantDescription}
+              onChange={setApplicantDescription}
+              placeholder="Describe what you want in an applicant (1-2 sentences)"
+              rows={6}
+            />
+          </div>
+
+          {/* Row 3: Professors and Research Website */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <ArrayInput
+              label="Professors"
+              items={professorNames}
+              setItems={setProfessorNames}
+              placeholder="Add professor"
+              bgColor="bg-blue-100"
+              textColor="text-blue-800"
+              buttonColor="text-blue-500 hover:text-blue-700"
+              error={errors.professorNames}
+              permanentValue={ownerName}
+              onValidate={(newArray) => setErrors(prev => ({
+                ...prev,
+                professorNames: validateProfessors(newArray)
+              }))}
+            />
+
+            <ArrayInput
+              label="Research Website"
+              items={websites}
+              setItems={setWebsites}
+              placeholder="Add website URL"
+              bgColor="bg-yellow-100"
+              textColor="text-yellow-800"
+              buttonColor="text-yellow-500 hover:text-yellow-700"
+              error={errors.websites}
+              type="url"
+              onValidate={(newArray) => setErrors(prev => ({
+                ...prev,
+                websites: validateWebsites(newArray)
+              }))}
+            />
+          </div>
+
+          {/* Row 4: Professor Emails and Research Area */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <ArrayInput
+              label="Professor Emails"
+              items={emails}
+              setItems={setEmails}
+              placeholder="Add email"
+              bgColor="bg-green-100"
+              textColor="text-green-800"
+              buttonColor="text-green-500 hover:text-green-700"
+              error={errors.emails}
+              permanentValue={ownerEmail}
+              type="email"
+              onValidate={(newArray) => setErrors(prev => ({
+                ...prev,
+                emails: validateEmails(newArray)
+              }))}
+            />
+
+            <ResearchAreaInput
+              researchAreas={researchAreas}
+              onAddResearchArea={(area) => setResearchAreas(prev => [...prev, area])}
+              onRemoveResearchArea={(index) => setResearchAreas(prev => prev.filter((_, i) => i !== index))}
+            />
+          </div>
+
+          {/* Advanced Options */}
+          <details className="mb-16">
+            <summary className="cursor-pointer text-sm font-medium text-gray-600 hover:text-gray-800 py-2 select-none">
+              Advanced Options
+            </summary>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
+              {isOwner && (
+                <ArrayInput
+                  label="Co-Editors"
+                  items={professorIds}
+                  setItems={setProfessorIds}
+                  placeholder="Add netid"
+                  bgColor="bg-green-100"
+                  textColor="text-green-800"
+                  buttonColor="text-green-500 hover:text-green-700"
+                  error={errors.professorIds}
+                  onValidate={(newArray) => setErrors(prev => ({
+                    ...prev,
+                    professorIds: validateProfessorIds(newArray)
+                  }))}
+                  infoText="Allow others in your lab to update this listing"
+                />
+              )}
+
               <TextInput
                 id="established"
                 label="Lab Established Year"
@@ -287,136 +413,43 @@ const handleCancel = () => {
                   }
                 }}
               />
-            </div>
-            
-            {/* Right columns - Array fields */}
-            <div className="col-span-1 md:col-span-2">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Left array column */}
-                <div>
-                  <HiringStatus
-                    hiringStatus={hiringStatus}
-                    setHiringStatus={setHiringStatus}
-                  />
 
-                  {isOwner && (
-                    <ArrayInput
-                      label="Co-Editors"
-                      items={professorIds}
-                      setItems={setProfessorIds}
-                      placeholder="Add netid"
-                      bgColor="bg-green-100"
-                      textColor="text-green-800"
-                      buttonColor="text-green-500 hover:text-green-700"
-                      error={errors.professorIds}
-                      onValidate={(newArray) => setErrors(prev => ({ 
-                        ...prev, 
-                        professorIds: validateProfessorIds(newArray) 
-                      }))}
-                      infoText="Allow others in your lab to update this listing"
-                    />
-                  )}
-
-                  <ArrayInput
-                    label="Professors"
-                    items={professorNames}
-                    setItems={setProfessorNames}
-                    placeholder="Add professor"
-                    bgColor="bg-blue-100"
-                    textColor="text-blue-800"
-                    buttonColor="text-blue-500 hover:text-blue-700"
-                    error={errors.professorNames}
-                    permanentValue={ownerName}
-                    onValidate={(newArray) => setErrors(prev => ({ 
-                      ...prev, 
-                      professorNames: validateProfessors(newArray) 
-                    }))}
-                  />
-
-                  <ArrayInput
-                    label="Emails"
-                    items={emails}
-                    setItems={setEmails}
-                    placeholder="Add email"
-                    bgColor="bg-green-100"
-                    textColor="text-green-800"
-                    buttonColor="text-green-500 hover:text-green-700"
-                    error={errors.emails}
-                    permanentValue={ownerEmail}
-                    type="email"
-                    onValidate={(newArray) => setErrors(prev => ({ 
-                      ...prev, 
-                      emails: validateEmails(newArray) 
-                    }))}
-                  />
-
-                  <div className="mb-6 flex items-center">
-                    <input
-                      id="archived"
-                      type="checkbox"
-                      checked={archived}
-                      onChange={(e) => setArchived(e.target.checked)}
-                      className="mr-3 h-4 w-4 text-blue-500 focus:ring-blue-400 cursor-pointer"
-                    />
-                    <label className="text-gray-700 text-sm font-bold cursor-pointer" htmlFor="archived">
-                      Archive this listing
-                    </label>
-                  </div>
-                </div>
-
-                {/* Right array column */}
-                <div>
-                  <DepartmentInput
-                    departments={departments}
-                    availableDepartments={availableDepartments}
-                    onAddDepartment={handleAddDepartment}
-                    onRemoveDepartment={handleRemoveDepartment}
-                  />
-                  
-                  <ArrayInput
-                    label="Websites"
-                    items={websites}
-                    setItems={setWebsites}
-                    placeholder="Add website URL"
-                    bgColor="bg-yellow-100"
-                    textColor="text-yellow-800"
-                    buttonColor="text-yellow-500 hover:text-yellow-700"
-                    error={errors.websites}
-                    type="url"
-                    onValidate={(newArray) => setErrors(prev => ({ 
-                      ...prev, 
-                      websites: validateWebsites(newArray) 
-                    }))}
-                  />
-
-                  <ArrayInput
-                    label="Keywords (for search)"
-                    items={keywords}
-                    setItems={setKeywords}
-                    placeholder="Add keyword"
-                    bgColor="bg-gray-100"
-                    textColor="text-gray-800"
-                    buttonColor="text-gray-500 hover:text-gray-700"
-                  />
-                </div>
+              <div className="flex items-center">
+                <input
+                  id="archived"
+                  type="checkbox"
+                  checked={archived}
+                  onChange={(e) => setArchived(e.target.checked)}
+                  className="mr-3 h-4 w-4 text-blue-500 focus:ring-blue-400 cursor-pointer"
+                />
+                <label className="text-gray-700 text-sm font-bold cursor-pointer" htmlFor="archived">
+                  Archive this listing
+                </label>
               </div>
             </div>
-          </div>
+          </details>
           
           {/* Form Actions */}
           <div className="absolute bottom-6 right-6 flex space-x-3 bg-white py-2 px-1">
             <button
               type="button"
               onClick={handleCancel}
-              className={`${isCreated ? "bg-red-500 hover:bg-red-700 text-white" : "bg-gray-300 hover:bg-gray-400 text-gray-800"} font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline`}
+              className={`py-2 px-4 rounded-md text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 ${
+                isCreated
+                  ? "border border-gray-300 text-gray-600 hover:bg-gray-50 focus:ring-gray-300"
+                  : "border border-gray-300 text-gray-600 hover:bg-gray-50 focus:ring-gray-300"
+              }`}
             >
-              {isCreated ? "Delete" : "Cancel"}
+              {isCreated ? "Discard" : "Cancel"}
             </button>
             <button
               type="submit"
-              className={`${isCreated ? "bg-green-500 hover:bg-green-700" : "bg-blue-500 hover:bg-blue-700"} text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline`}
+              className="py-2 px-4 rounded-md text-sm font-medium text-white transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-600"
+              style={{ backgroundColor: 'rgba(0, 85, 164, 0.85)' }}
+              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(0, 85, 164, 1)'}
+              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'rgba(0, 85, 164, 0.85)'}
             >
-              {isCreated ? "Create" : "Save"}
+              {isCreated ? "Create Listing" : "Save Changes"}
             </button>
           </div>
         </form>

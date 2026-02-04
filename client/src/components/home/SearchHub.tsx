@@ -3,7 +3,7 @@ import { Listing } from '../../types/types';
 import axios from 'axios';
 import swal from 'sweetalert';
 import { createListing } from '../../utils/apiCleaner';
-import { departmentCategories } from '../../utils/departmentNames';
+import { useConfig } from '../../hooks/useConfig';
 import SortDropdown from './SortDropdown';
 
 interface SearchHubProps {
@@ -39,6 +39,7 @@ const SearchHub = ({
     sortDirection,
     onToggleSortDirection,
 }: SearchHubProps) => {
+    const { getDepartmentColor: getColor } = useConfig();
     // Add this definition for buttonTranslations
     const buttonTranslations = [
         { value: 'default', label: 'Sort by: Best Match' },
@@ -244,31 +245,7 @@ const SearchHub = ({
     };
 
     const getDepartmentColor = (department: string) => {
-        if (Object.keys(departmentCategories).includes(department)) {
-            const category =
-                departmentCategories[department as keyof typeof departmentCategories];
-            switch (category) {
-                case 0:
-                    return 'bg-blue-200 text-gray-900';
-                case 1:
-                    return 'bg-green-200 text-gray-900';
-                case 2:
-                    return 'bg-yellow-200 text-gray-900';
-                case 3:
-                    return 'bg-red-200 text-gray-900';
-                case 4:
-                    return 'bg-purple-200 text-gray-900';
-                case 5:
-                    return 'bg-pink-200 text-gray-900';
-                case 6:
-                    return 'bg-teal-200 text-gray-900';
-                case 7:
-                    return 'bg-orange-200 text-gray-900';
-                default:
-                    return 'bg-gray-100 text-gray-900';
-            }
-        }
-        return 'bg-gray-100 text-gray-900';
+        return `${getColor(department)} text-gray-900`;
     };
 
     const handleRemoveAllDepartments = () => {

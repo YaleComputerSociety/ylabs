@@ -12,13 +12,19 @@ import Navbar from "./components/Navbar";
 import Footer from "./components/Footer";
 import Analytics from "./pages/analytics";
 import NotFound from "./pages/notFound";
+import ConfigContextProvider from "./providers/ConfigContextProvider";
+import SearchContextProvider from "./providers/SearchContextProvider";
 
 const App = () => {
   return (
     <Router>
-      <div className="flex flex-col min-h-screen">
-        <Navbar/>
-        <main className="flex-grow">
+      <ConfigContextProvider>
+        <SearchContextProvider>
+          <div className="flex flex-col min-h-screen">
+          <div className="flex-shrink-0 flex-grow-0">
+            <Navbar/>
+          </div>
+          <main className="flex-grow">
           <Routes>
           <Route path="/" element={<PrivateRoute Component={Home} unknownBlocked={true}/>} />
           <Route path="/about" element={<PrivateRoute Component={About} unknownBlocked={true}/>} />
@@ -29,10 +35,12 @@ const App = () => {
           <Route path="/unknown" element={<PrivateRoute Component={Unknown} knownBlocked={true}/>} />
           <Route path="*" element={<NotFound />} />
           </Routes>
-        </main>
-        <Footer />
-      </div>
-  </Router>
+          </main>
+          <Footer />
+          </div>
+        </SearchContextProvider>
+      </ConfigContextProvider>
+    </Router>
   );
 };
 

@@ -26,11 +26,14 @@ const SignOutButton = () => {
       color="inherit"
       sx={{
         textTransform: 'none',
-        color: '#3874CB',
+        color: '#000000',
         fontFamily: 'Inter',
         fontWeight: 450,
         fontSize: '14px',
-        textDecoration: 'underline'
+        '&:hover': {
+          backgroundColor: 'transparent',
+          color: '#1876D1'
+        }
       }}
       onClick={handleLogout}
       disableRipple={true}

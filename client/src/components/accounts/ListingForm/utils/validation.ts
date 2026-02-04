@@ -65,6 +65,10 @@ export const validateWebsites = (websites: string[]): string | undefined => {
   return undefined;
 };
 
+export const validateDepartments = (departments: string[]): string | undefined => {
+  return departments.length > 0 ? undefined : "At least one department is required";
+};
+
 export const validateProfessorIds = (professorIds: string[]): string | undefined => {
   if (professorIds.length > 3) {
     return "Maximum of 3 collaborators allowed"

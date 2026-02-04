@@ -52,6 +52,16 @@ const listingSchema = new mongoose.Schema(
         type: String,
         required: true,
     },
+    applicantDescription: {
+        type: String,
+        required: false,
+        default: '',
+    },
+    researchAreas: {
+        type: [String],
+        required: false,
+    },
+    // Legacy field - kept for backwards compatibility during migration
     keywords: {
         type: [String],
         required: false,
@@ -88,3 +98,6 @@ const listingSchema = new mongoose.Schema(
 );
 
 export const Listing = mongoose.model('listings', listingSchema);
+
+// Export schema for use with different connections (e.g., ProductionMigration mode)
+export { listingSchema };

@@ -17,6 +17,12 @@ const HomeButton = () => {
             to="/"
             onClick={handleClick}
             disableRipple={true}
+            sx={{
+                '&:hover': { backgroundColor: 'transparent' },
+                minWidth: 'auto',
+                padding: '6px 0px 6px 0px',
+                marginLeft: '-8px'
+            }}
         >
             <img src="/assets/logos/paperclip.png" alt="ylabs-logo" className="mr-2" style={{width: '31.65px', height: '27px'}} />
             <img src="/assets/logos/ylabs-blue.png" alt="ylabs-logo" style={{width: '65.17px', height: '27px'}} />

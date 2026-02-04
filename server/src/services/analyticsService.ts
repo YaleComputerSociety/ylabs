@@ -1,6 +1,7 @@
 import { AnalyticsEvent, AnalyticsEventType } from "../models/analytics";
-import { User, Listing } from "../models";
+import { User } from "../models";
 import mongoose from "mongoose";
+import { getListingModel } from "../db/connections";
 
 
 export interface LogEventParams {
@@ -410,7 +411,7 @@ export const getAnalytics = async () => {
 
     // ==================== LISTING ANALYTICS - from db ====================
 
-    const listingStats = await Listing.aggregate([
+    const listingStats = await getListingModel().aggregate([
         {
             $facet: {
                 overview: [
@@ -633,7 +634,7 @@ export const getAnalytics = async () => {
     const users = userStats[0];
 
     const trendingListingIds = engagement.trendingListings.map((t: any) => t.listingId);
-    const trendingListingsData = await Listing.find({ _id: { $in: trendingListingIds } }).lean();
+    const trendingListingsData = await getListingModel().find({ _id: { $in: trendingListingIds } }).lean();
     const enrichedTrending = engagement.trendingListings.map((t: any) => {
         const listing = trendingListingsData.find((l: any) => l._id.toString() === t.listingId.toString());
         return {

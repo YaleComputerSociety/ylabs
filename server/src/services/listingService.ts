@@ -1,26 +1,36 @@
-import { Listing } from "../models";
 import { IncorrectPermissionsError, NotFoundError, ObjectIdError } from "../utils/errors";
 import { addOwnListings, deleteOwnListings, userExists, createUser, readUser } from "./userService";
 import { fetchYalie } from "./yaliesService";
 import mongoose from "mongoose";
 import { generateListingEmbedding } from "./embeddingService";
+import { getListingModel } from "../db/connections";
+import { processListingTitle, isCustomTitle, generateSmartTitle } from "../utils/smartTitle";
 
 export const createListing = async (data: any, owner: any) => {
     if (!owner.netid || !owner.email || !owner.fname || !owner.lname) {
         throw new Error('Incomplete user data for owner');
     }
 
+    // Process title: generate smart title if needed, preserve custom titles
+    const processedTitle = await processListingTitle(
+        data.title,
+        owner.fname,
+        owner.lname,
+        data.departments || [],
+    );
+
     let embedding;
     try {
-        if (data.title && data.description) {
-            embedding = await generateListingEmbedding(data.title, data.description);
+        if (processedTitle && data.description) {
+            embedding = await generateListingEmbedding(processedTitle, data.description);
         }
     } catch (error) {
         console.error('Failed to generate embedding for new listing:', error);
     }
 
-    const listing = new Listing({
+    const listing = new (getListingModel())({
         ...data,
+        title: processedTitle,
         ownerId: owner.netid,
         ownerEmail: owner.email,
         ownerFirstName: owner.fname,
@@ -56,13 +66,13 @@ export const createListing = async (data: any, owner: any) => {
 };
 
 export const readAllListings = async () => {
-    const listings = await Listing.find();
+    const listings = await getListingModel().find();
     return listings.map(listing => listing.toObject());
 };
 
 export const readListing = async(id: any) => {
     if (mongoose.Types.ObjectId.isValid(id)) {
-        const listing = await Listing.findById(id);
+        const listing = await getListingModel().findById(id);
         if (!listing) {
             throw new NotFoundError(`Listing not found with ObjectId: ${id}`);
         }
@@ -90,7 +100,7 @@ export const readListings = async(ids: any[]) => {
     let listings = [];
     for (const id of ids) {
         if (mongoose.Types.ObjectId.isValid(id)) {
-            const listing = await Listing.findById(id);
+            const listing = await getListingModel().findById(id);
             if (listing) {
                 listings.push(listing.toObject());
             }
@@ -101,7 +111,7 @@ export const readListings = async(ids: any[]) => {
 
 export const listingExists = async(id: any) => {
     if (mongoose.Types.ObjectId.isValid(id)) {
-        const listing = await Listing.findById(id);
+        const listing = await getListingModel().findById(id);
         if (!listing) {
             return false;
         }
@@ -129,7 +139,7 @@ export const listingExists = async(id: any) => {
 
 export const updateListing = async(id: any, userId: string, data: any, noAuth: boolean = false, useTimestamps: boolean = true) => {
     if (mongoose.Types.ObjectId.isValid(id)) {
-        const oldListing = await Listing.findById(id);
+        const oldListing = await getListingModel().findById(id);
 
         if (!oldListing) {
             throw new NotFoundError(`Listing not found with ObjectId: ${id}`);
@@ -165,6 +175,19 @@ export const updateListing = async(id: any, userId: string, data: any, noAuth: b
             throw new IncorrectPermissionsError(`User with id ${userId} does not have permission to update listing with id ${id}`);
         }
 
+        // Smart title regeneration: if departments are updated, check if we should regenerate title
+        if (data.departments && data.departments.length > 0) {
+            const currentTitle = data.title || oldListing.title;
+            const ownerFirstName = oldListing.ownerFirstName;
+            const ownerLastName = oldListing.ownerLastName;
+
+            // Only regenerate if current title is not custom
+            if (!isCustomTitle(currentTitle, ownerFirstName, ownerLastName)) {
+                const smartTitleResult = await generateSmartTitle(ownerLastName, data.departments);
+                data.title = smartTitleResult.title;
+            }
+        }
+
         if (data.title || data.description) {
             try {
                 const newTitle = data.title || oldListing.title;
@@ -176,7 +199,7 @@ export const updateListing = async(id: any, userId: string, data: any, noAuth: b
             }
         }
 
-        const listing = await Listing.findByIdAndUpdate(id, data,
+        const listing = await getListingModel().findByIdAndUpdate(id, data,
             { new: true, runValidators: true, timestamps: useTimestamps }
         );
 
@@ -261,13 +284,13 @@ export const removeFavorite = async(id: any, userId: string) => {
 
 export const deleteListing = async(id: any) => {
     if (mongoose.Types.ObjectId.isValid(id)) {
-        const listing = await Listing.findById(id);
+        const listing = await getListingModel().findById(id);
         if (!listing) {
             throw new NotFoundError(`Listing not found with ObjectId: ${id}`);
         }
 
         const {professorIds, professorNames, departments, emails, websites, description, keywords} = listing;
-        await Listing.findByIdAndDelete(id);
+        await getListingModel().findByIdAndDelete(id);
 
         // Remove listing id from ownListings of all professors associated with the listing
         const oldListingId = listing._id;

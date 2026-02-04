@@ -1,0 +1,33 @@
+{
+  "name": "data-migration",
+  "version": "1.0.0",
+  "description": "Database seeding scripts for YLabs",
+  "scripts": {
+    "seed:research-areas": "npx ts-node --transpile-only seedResearchAreas.ts",
+    "seed:departments": "npx ts-node --transpile-only seedDepartments.ts",
+    "seed:all": "npx ts-node --transpile-only seedResearchAreas.ts both && npx ts-node --transpile-only seedDepartments.ts both",
+    "seed:dev": "npx ts-node --transpile-only seedResearchAreas.ts dev && npx ts-node --transpile-only seedDepartments.ts dev",
+    "seed:prod": "npx ts-node --transpile-only seedResearchAreas.ts prod && npx ts-node --transpile-only seedDepartments.ts prod",
+    "migrate:listings": "npx ts-node --transpile-only MigrateListings.ts",
+    "migrate:users": "npx ts-node --transpile-only MigrateUsers.ts",
+    "migrate:all": "npx ts-node --transpile-only MigrateListings.ts && npx ts-node --transpile-only MigrateUsers.ts",
+    "migrate:departments": "npx ts-node --transpile-only MigrateDepartments.ts",
+    "migrate:departments:live": "npx ts-node --transpile-only MigrateDepartments.ts --live",
+    "migrate:smart-titles": "npx ts-node --transpile-only migrateSmartTitles.ts",
+    "migrate:smart-titles:live": "npx ts-node --transpile-only migrateSmartTitles.ts --live",
+    "generate:keywords": "npx ts-node --transpile-only generateKeywords.ts",
+    "generate:keywords:live": "npx ts-node --transpile-only generateKeywords.ts --live",
+    "generate:keywords:force": "npx ts-node --transpile-only generateKeywords.ts --live-force",
+    "generate:keywords:classify": "npx ts-node --transpile-only generateKeywords.ts --classify"
+  },
+  "dependencies": {
+    "dotenv": "^16.3.1",
+    "mongoose": "^8.0.4",
+    "openai": "^6.17.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  }
+}

@@ -9,6 +9,7 @@ interface TextAreaProps {
     rows?: number;
     error?: string;
     onValidate?: (value: string) => void;
+    required?: boolean;
 }
 
 const TextArea = ({
@@ -19,12 +20,14 @@ const TextArea = ({
     placeholder,
     rows = 10,
     error,
-    onValidate
+    onValidate,
+    required = false
 }: TextAreaProps) => {
     return (
         <div className="mb-4">
             <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="description">
                 {label}
+                {required && <span className="text-red-500 ml-1">*</span>}
             </label>
             <textarea
                 id={id}

@@ -16,7 +16,7 @@ const Account = () => {
     const [ownListings, setOwnListings] = useState<Listing[]>([]);
     const [favListings, setFavListings] = useState<Listing[]>([]);
     const [favListingsIds, setFavListingsIds] = useState<string[]>([]);
-    const [isLoading, setIsLoading] = useState<Boolean>(false);
+    const [isLoading, setIsLoading] = useState<Boolean>(true);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isEditing, setIsEditing] = useState(false);
     const [isCreating, setIsCreating] = useState(false);
@@ -211,10 +211,10 @@ const Account = () => {
     };
 
     return (
-        <div className="mx-auto max-w-[1300px] px-6 mt-24 w-full">
+        <div className="mx-auto max-w-[1300px] px-6 pt-20 w-full">
             {isLoading ? (
-                <div style={{marginTop: '17%', textAlign: 'center'}}>
-                    <PulseLoader color="#66CCFF" size={10} /> 
+                <div className="flex justify-center pt-12">
+                    <PulseLoader color="#66CCFF" size={10} />
                 </div>
             ) : (
                 <div>
@@ -225,35 +225,39 @@ const Account = () => {
                             </div>
                         </div>
                     )}
-                    <p className="text-xl text-gray-700 mb-4">Your listings</p>
-                    {ownListings.length > 0 && (
-                        <ul>
-                            {ownListings.map((listing) => (
-                                <li key={listing.id} className="mb-2">
-                                    <ListingCard 
-                                        listing={listing} 
-                                        favListingsIds={favListingsIds} 
-                                        updateFavorite={updateFavorite}
-                                        updateListing={updateListing}
-                                        postListing={postListing}
-                                        clearCreatedListing={clearCreatedListing}
-                                        deleteListing={deleteListing}
-                                        openModal={openModal}
-                                        globalEditing={isEditing}
-                                        setGlobalEditing={setIsEditing}
-                                        editable={true}
-                                        reloadListings={reloadListings}
-                                    />
-                                </li>
-                            ))}
-                        </ul>
+                    {user && (user.userType === "professor" || user.userType === "faculty" || user.userType === "admin") && (
+                        <>
+                            <h2 className="text-2xl font-bold text-gray-800 text-center mb-6 pb-2">Your Listings</h2>
+                            {ownListings.length > 0 && (
+                                <ul>
+                                    {ownListings.map((listing) => (
+                                        <li key={listing.id} className="mb-2">
+                                            <ListingCard
+                                                listing={listing}
+                                                favListingsIds={favListingsIds}
+                                                updateFavorite={updateFavorite}
+                                                updateListing={updateListing}
+                                                postListing={postListing}
+                                                clearCreatedListing={clearCreatedListing}
+                                                deleteListing={deleteListing}
+                                                openModal={openModal}
+                                                globalEditing={isEditing}
+                                                setGlobalEditing={setIsEditing}
+                                                editable={true}
+                                                reloadListings={reloadListings}
+                                            />
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
+                            {!isCreating && (
+                                <div className={`flex justify-center align-center ${ownListings.length > 0 ? "mb-6 mt-4" : "my-10"}`}>
+                                    <CreateButton globalEditing={isEditing} handleCreate={onCreate}/>
+                                </div>
+                            )}
+                        </>
                     )}
-                    {user && (user.userType === "professor" || user.userType === "faculty" || user.userType === "admin") && !isCreating && (
-                        <div className="my-8 flex justify-center align-center">
-                            <CreateButton globalEditing={isEditing} handleCreate={onCreate}/>
-                        </div>
-                    )}
-                    <p className="text-xl text-gray-700 mb-4">Favorite listings</p>
+                    <h2 className="text-2xl font-bold text-gray-800 text-center mb-6 pb-2">Favorite Listings</h2>
                     {filterHiddenListings(favListings).length > 0 ? (
                         <ul>
                             {filterHiddenListings(favListings).map((listing) => (
@@ -276,7 +280,7 @@ const Account = () => {
                             ))}
                         </ul>
                     ) : (
-                        <p className="my-4 flex align-center">No listings found.</p>
+                        <p className="my-4 text-center">No listings found.</p>
                     )}
 
                     {user && (user.userType === "professor" || user.userType === "faculty" || user.userType === "admin") && (

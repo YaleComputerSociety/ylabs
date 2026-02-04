@@ -1,0 +1,99 @@
+African Studies:AFST
+American Studies:AMST
+Anesthesiology:ANES
+Anthropology:ANTH
+Applied Mathematics:AMTH
+Applied Physics:APHY
+Archaeological Studies:ARCG
+Architecture:ARCH
+Art:ART
+Astronomy:ASTR
+Biological & Biomedical Sciences:BIOL
+Biomedical Engineering:BENG
+Biomedical Informatics and Data Science:BIDS
+Biostatistics:BIS
+Black Studies:AFAM
+Cell Biology:CBIO
+Cellular & Molecular Physiology:C&MP
+Chemical & Environmental Engineering:CEE
+Chemistry:CHEM
+Child Study Center:CHLD
+Chronic Disease Epidemiology:CDE
+Classics:CLSS
+Cognitive Science:CGSC
+Comparative Literature:CPLT
+Comparative Medicine:CPMD
+Computational Biology & Biomedical Informatics:CB&B
+Computer Science:CPSC
+Dermatology:DERM
+Early Modern Studies:EMST
+Earth & Planetary Sciences:EPS
+East Asian Languages & Literatures:EALL
+East Asian Studies:EAST
+Ecology & Evolutionary Biology:EEB
+Economics:ECON
+Electrical & Computer Engineering:ECE
+Emergency Medicine:EM
+Engineering & Applied Science:ENAS
+English Language & Literature:ENGL
+Environment:EVST
+Environmental Health Sciences:EHS
+Epidemiology of Microbial Diseases:EMD
+Ethnicity, Race, & Migration:ER&M
+European & Russian Studies:RSEE
+Experimental Pathology:EXPA
+Film & Media Studies:FILM
+Forestry:F&ES
+French:FREN
+Genetics:GENE
+German:GMAN
+Global Affairs:GLBL
+Health Care Management:HCM
+Health Policy & Management:HPM
+History:HIST
+History of Art:HSAR
+History of Science & Medicine:HSHM
+Humanities:HUMS
+Immunobiology:IBIO
+Internal Medicine:INMD
+Investigative Medicine:IMED
+Italian Studies:ITAL
+Jewish Studies:JDST
+Latin American Studies:LAST
+Law:LAW
+Linguistics:LING
+Management:MGT
+Mathematics:MATH
+Mechanical Engineering & Materials Science:MENG
+Medieval Studies:MDVL
+Microbiology:MBIO
+Modern Middle East Studies:MMES
+Molecular Biophysics & Biochemistry:MB&B
+Molecular, Cellular & Developmental Biology:MCDB
+Music:MUSI
+Near Eastern Languages & Civilizations:NELC
+Neurology:NRLG
+Neuroscience:NSCI
+Nursing:NURS
+Obstetrics, Gynecology & Reproductive Sciences:OBGN
+Ophthalmology & Visual Science:OPVS
+Orthopaedics & Rehabilitation:OPRH
+Pathology:PATH
+Pediatrics:PEDT
+Pharmacology:PHAR
+Philosophy:PHIL
+Physics:PHYS
+Political Science:PLSC
+Psychiatry:PSYT
+Psychology:PSYC
+Public Health:EPH
+Religious Studies:RLST
+Slavic Languages & Literatures:SLAV
+Sociology:SOCY
+South Asian Studies:SAST
+Spanish & Portuguese:SPAN/PORT
+Statistics & Data Science:S&DS
+Surgery:SURG
+Theater, Dance, & Performance Studies:TDPS
+Therapeutic Radiology/Radiation Oncology:TRAD
+Women's, Gender, & Sexuality Studies:WGSS

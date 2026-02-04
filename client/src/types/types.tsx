@@ -13,7 +13,9 @@ export type Listing = {
   emails: string[];
   websites: string[];
   description: string;
+  applicantDescription: string;
   keywords: string[];
+  researchAreas: string[];
   established: string;
   views: number;
   favorites: number;

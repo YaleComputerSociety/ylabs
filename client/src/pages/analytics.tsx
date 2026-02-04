@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import axios from "../utils/axios";
 import swal from "sweetalert";
+import AdminPanel from "../components/admin/AdminPanel";
 
 interface AnalyticsData {
     visitors: {
@@ -107,10 +108,13 @@ const Analytics = () => {
     }
 
     const StatCard = ({ title, value, subtitle }: { title: string; value: number | string; subtitle?: string }) => (
-        <div className="bg-white rounded-lg shadow-md p-6 border border-gray-200">
-            <h3 className="text-sm font-medium text-gray-600 mb-2">{title}</h3>
-            <p className="text-3xl font-bold text-gray-900">{value}</p>
-            {subtitle && <p className="text-sm text-gray-500 mt-1">{subtitle}</p>}
+        <div className="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden">
+            <div className="h-0.5" style={{ background: 'linear-gradient(90deg, #0055A4 0%, #3b82f6 60%, #93c5fd 100%)', opacity: 0.5 }} />
+            <div className="p-6">
+                <h3 className="text-sm font-medium text-gray-600 mb-2">{title}</h3>
+                <p className="text-3xl font-bold text-gray-900">{value}</p>
+                {subtitle && <p className="text-sm text-gray-500 mt-1">{subtitle}</p>}
+            </div>
         </div>
     );
 
@@ -127,7 +131,7 @@ const Analytics = () => {
     };
 
     return (
-        <div className="container mx-auto px-4 py-8 max-w-7xl pt-24">
+        <div className="container mx-auto px-4 py-8 max-w-7xl pt-32">
             <div className="flex justify-between items-center mb-8">
                 <h1 className="text-4xl font-bold">Analytics Dashboard</h1>
                 <div className="text-right">
@@ -603,6 +607,9 @@ const Analytics = () => {
                     </div>
                 </div>
             </section>
+
+            {/* Admin Controls */}
+            <AdminPanel />
         </div>
     );
 };
