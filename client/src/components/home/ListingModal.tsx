@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useContext } from 'react';
 import { Listing } from '../../types/types';
-import { departmentCategories } from '../../utils/departmentNames';
 import UserContext from '../../contexts/UserContext';
+import ConfigContext from '../../contexts/ConfigContext';
+import { getDepartmentAbbreviation } from '../../utils/departmentNames';
 
 interface ListingModalProps {
   isOpen: boolean;
@@ -12,42 +13,21 @@ interface ListingModalProps {
 }
 
 const ListingModal = ({ isOpen, onClose, listing, favListingsIds, updateFavorite }: ListingModalProps) => {
-    const [isCreated, setIsCreating] = useState(listing.id === "create");
+    const [isCreated] = useState(listing.id === "create");
     const [isFavorite, setIsFavorite] = useState(favListingsIds.includes(listing.id));
     const [restrictedStats, setRestrictedStats] = useState(true);
     const {user} = useContext(UserContext);
+    const { getDepartmentByAbbr, getColorForResearchArea } = useContext(ConfigContext);
 
-    const departmentColors = [
-        "bg-blue-200",
-        "bg-green-200",
-        "bg-yellow-200",
-        "bg-red-200",
-        "bg-purple-200",
-        "bg-pink-200",
-        "bg-teal-200",
-        "bg-orange-200"
-    ];
-    
-    // Helper function to determine bar color based on hiringStatus
-    const getHiringStatusColor = () => {
-        if (listing.hiringStatus < 0) {
-        return "bg-red-500";
-        } else if (listing.hiringStatus === 0) {
-        return "bg-yellow-500";
-        } else {
-        return "bg-green-500";
-        }
-    };
-    
+    // Get research areas (fallback to keywords for backwards compatibility)
+    const researchAreas = listing.researchAreas?.length > 0 ? listing.researchAreas : (listing.keywords || []);
+
+    // Helper function to check if lab is open (hiringStatus >= 0 means open)
+    const isLabOpen = listing.hiringStatus >= 0;
+
     // Helper function to get text based on hiring status
     const getHiringStatusText = () => {
-        if (listing.hiringStatus < 0) {
-        return "Lab not seeking applicants";
-        } else if (listing.hiringStatus === 0) {
-        return "Lab open to applicants";
-        } else {
-        return "Lab seeking applicants";
-        }
+        return isLabOpen ? "Open" : "Not Open";
     };
 
     // Close modal when clicking outside
@@ -104,42 +84,110 @@ const ListingModal = ({ isOpen, onClose, listing, favListingsIds, updateFavorite
 
     return (
         <div 
-        className="fixed inset-0 bg-black/65 z-50 flex items-center justify-center overflow-y-auto p-4 pt-24" 
+        className="fixed inset-0 bg-black/65 z-[1200] flex items-center justify-center overflow-y-auto p-4 pt-24" 
         onClick={handleBackdropClick}
         >
-        <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            {/* Top status bar */}
-            <div className={`${getHiringStatusColor()} h-2 w-full rounded-t-lg`}></div>
-            
-            <div className="p-6 relative">
+        <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl h-[80vh] flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            <div className="h-1 w-full flex-shrink-0" style={{ background: 'linear-gradient(90deg, #0055A4 0%, #3b82f6 50%, #93c5fd 100%)', opacity: 0.85 }} />
+            <div className="p-6 relative overflow-y-auto flex-1">
 
             {/* Utility buttons */}
-            <div className="absolute top-4 right-4">
-                {/* Favorite button */}
+            <div className="absolute top-4 right-4 flex items-center">
+                {/* Link, Mail, and Favorite buttons */}
                 {!isCreated && (
-                    <a onClick={toggleFavorite} className="inline-block">
-                        <button 
-                            className="p-1 hover:bg-gray-100 rounded-full mr-2"
-                            aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"}
-                        >
-                            <svg 
-                                xmlns="http://www.w3.org/2000/svg" 
-                                viewBox="0 0 24 24" 
-                                className="transition-colors h-6 w-6"
-                                fill={isFavorite ? "#FFDA7B" : "none"} 
-                                stroke={isFavorite ? "#F0C04A" : "currentColor"} 
-                                strokeWidth="1.5" 
-                                strokeLinecap="round" 
-                                strokeLinejoin="round"
+                    <>
+                        {listing.websites && listing.websites.length > 0 && (
+                            <a
+                                href={ensureHttpPrefix(listing.websites[0])}
+                                onClick={(e) => e.stopPropagation()}
+                                target="_blank"
+                                rel="noopener noreferrer"
                             >
-                                <path d="M12 17.75l-6.172 3.245l1.179 -6.873l-5 -4.867l6.9 -1l3.086 -6.253l3.086 6.253l6.9 1l-5 4.867l1.179 6.873z" />
-                            </svg>
-                        </button>
-                    </a>
+                                <button className="p-1 rounded-full mr-1">
+                                    <svg
+                                        xmlns="http://www.w3.org/2000/svg"
+                                        width="20"
+                                        height="20"
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="#000000"
+                                        strokeWidth="2"
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        className="transition-colors"
+                                        style={{ stroke: '#000000' }}
+                                        onMouseEnter={(e) => e.currentTarget.style.stroke = '#0055A4'}
+                                        onMouseLeave={(e) => e.currentTarget.style.stroke = '#000000'}
+                                    >
+                                        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                                        <polyline points="15 3 21 3 21 9" />
+                                        <line x1="10" y1="14" x2="21" y2="3" />
+                                    </svg>
+                                </button>
+                            </a>
+                        )}
+                        <a
+                            href={`mailto:${listing.ownerEmail}`}
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <button className="p-1 rounded-full mr-1">
+                                <svg
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    width="20"
+                                    height="20"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="#000000"
+                                    strokeWidth="2"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    className="transition-colors"
+                                    style={{ stroke: '#000000' }}
+                                    onMouseEnter={(e) => e.currentTarget.style.stroke = '#0055A4'}
+                                    onMouseLeave={(e) => e.currentTarget.style.stroke = '#000000'}
+                                >
+                                    <rect x="2" y="4" width="20" height="16" rx="2" />
+                                    <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
+                                </svg>
+                            </button>
+                        </a>
+                        <a onClick={toggleFavorite} className="inline-block relative group mr-2">
+                            <button
+                                className="p-1 rounded-full"
+                                aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"}
+                            >
+                                <svg
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    viewBox="0 0 24 24"
+                                    className="transition-colors h-6 w-6"
+                                    fill="none"
+                                    stroke="#5B646F"
+                                    strokeWidth="2"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    style={{ stroke: '#5B646F' }}
+                                    onMouseEnter={(e) => e.currentTarget.style.stroke = '#0055A4'}
+                                    onMouseLeave={(e) => e.currentTarget.style.stroke = '#5B646F'}
+                                >
+                                    {isFavorite ? (
+                                        <path d="M5 12h14" />
+                                    ) : (
+                                        <>
+                                            <path d="M12 5v14" />
+                                            <path d="M5 12h14" />
+                                        </>
+                                    )}
+                                </svg>
+                            </button>
+                            <span className="absolute top-full left-1/2 -translate-x-1/2 mt-1 px-2 py-1 bg-gray-800/65 text-white text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50">
+                                {isFavorite ? "Remove from Favorites" : "Add to Favorites"}
+                            </span>
+                        </a>
+                    </>
                 )}
                 {/* Close button */}
-                <button 
-                    onClick={onClose} 
+                <button
+                    onClick={onClose}
                     className="p-1 rounded-full hover:bg-gray-100"
                     aria-label="Close"
                 >
@@ -153,7 +201,9 @@ const ListingModal = ({ isOpen, onClose, listing, favListingsIds, updateFavorite
             <div className="mb-6 pr-20">
                 <div className="flex flex-col md:flex-row md:items-center gap-2">
                     <h2 className="text-2xl font-bold md:max-w-[400px] lg:max-w-[600px]">{listing.title}</h2>
-                    <span className={`${getHiringStatusColor()} mt-2 md:mt-0 md:ml-2 text-white text-xs px-2 py-1 rounded-full inline-block w-fit`}>
+                    <span className={`mt-2 md:mt-0 md:ml-2 text-xs px-2 py-1 rounded-full inline-block w-fit ${
+                        isLabOpen ? "bg-green-500/20 text-green-700" : "bg-red-500/20 text-red-700"
+                    }`}>
                         {getHiringStatusText()}
                     </span>
                 </div>
@@ -177,22 +227,45 @@ const ListingModal = ({ isOpen, onClose, listing, favListingsIds, updateFavorite
                     </div>
                 </section>
 
-                {/* Departments */}
+                {/* Research Areas */}
+                {researchAreas.length > 0 && (
                 <section className="mb-6">
-                    <h3 className="text-lg font-semibold mb-2">Departments</h3>
+                    <h3 className="text-lg font-semibold mb-2">Research Areas</h3>
                     <div className="flex flex-wrap gap-2">
-                    {listing.departments.map((department) => (
-                        <span
-                        key={department}
-                        className={`${Object.keys(departmentCategories).includes(department) ? 
-                            departmentColors[departmentCategories[department as keyof typeof departmentCategories]] : 
-                            "bg-gray-200"} text-gray-900 text-xs rounded px-2 py-1`}
-                        >
-                        {department}
-                        </span>
-                    ))}
+                    {researchAreas.map((area: string) => {
+                        const colors = getColorForResearchArea(area);
+                        return (
+                            <span
+                                key={area}
+                                className={`${colors.bg} ${colors.text} text-xs rounded px-2 py-1`}
+                            >
+                                {area}
+                            </span>
+                        );
+                    })}
                     </div>
                 </section>
+                )}
+
+                {/* Departments */}
+                {listing.departments && listing.departments.length > 0 && (
+                <section className="mb-6">
+                    <h3 className="text-lg font-semibold mb-2">Departments</h3>
+                    <ul className="space-y-1 text-sm text-gray-700">
+                    {listing.departments.map((dept: string) => {
+                        const abbr = getDepartmentAbbreviation(dept);
+                        const deptConfig = getDepartmentByAbbr(abbr);
+                        const fullName = deptConfig?.displayName || dept;
+                        return (
+                            <li key={dept} className="flex items-start">
+                                <span className="text-gray-400 mr-2">•</span>
+                                <span>{fullName}</span>
+                            </li>
+                        );
+                    })}
+                    </ul>
+                </section>
+                )}
 
                 {/* Contact Information */}
                 <section className="mb-6">
@@ -268,13 +341,23 @@ const ListingModal = ({ isOpen, onClose, listing, favListingsIds, updateFavorite
 
                 {/* Right column - Description and Keywords */}
                 <div className="col-span-1 md:col-span-2">
-                {/* Description */}
+                {/* Research Description */}
                 <section className="mb-6">
-                    <h3 className="text-lg font-semibold mb-2">About</h3>
+                    <h3 className="text-lg font-semibold mb-2">Research Description</h3>
                     <div className="whitespace-pre-wrap">
                     {listing.description}
                     </div>
                 </section>
+
+                {/* Applicant Description */}
+                {listing.applicantDescription && listing.applicantDescription.trim() !== '' && (
+                <section className="mb-6">
+                    <h3 className="text-lg font-semibold mb-2">Applicant Prerequisites</h3>
+                    <div className="whitespace-pre-wrap">
+                    {listing.applicantDescription}
+                    </div>
+                </section>
+                )}
                 
                 {/* Archive status */}
                 {listing.archived && (

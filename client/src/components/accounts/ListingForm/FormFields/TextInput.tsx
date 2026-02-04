@@ -8,21 +8,24 @@ interface TextInputProps {
     placeholder?: string;
     error?: string;
     onValidate?: (value: string) => void;
+    required?: boolean;
 }
 
-const TextInput = ({ 
-    id, 
-    label, 
-    value, 
-    onChange, 
-    placeholder, 
-    error, 
-    onValidate 
+const TextInput = ({
+    id,
+    label,
+    value,
+    onChange,
+    placeholder,
+    error,
+    onValidate,
+    required = false
 }: TextInputProps) => {
     return (
         <div className="mb-4">
             <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor={id}>
                 {label}
+                {required && <span className="text-red-500 ml-1">*</span>}
             </label>
             <input
                 id={id}

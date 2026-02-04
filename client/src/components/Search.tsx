@@ -4,7 +4,7 @@ import Button from '@mui/material/Button';
 import Autocomplete from '@mui/material/Autocomplete';
 import Stack from '@mui/material/Stack';
 import {Listing} from '../types/types';
-import {departmentNames} from '../utils/departmentNames'; 
+import { useConfig } from '../hooks/useConfig';
 import axios from 'axios';
 import swal from "sweetalert";
  
@@ -17,13 +17,16 @@ type SearchProps = {
 
 export default function Search(props: SearchProps) {
     const {setListings, setIsLoading, numSearches, setNumSearches} = props;
+    const { departments: allDepartments } = useConfig();
+    const departmentOptions = allDepartments.map(d => d.displayName);
+
     const [lastNamePI, setLastNamePI] = useState('');
     const [keywords, setKeywords] = useState('');
-    const [departments, setDepartments] = useState<string[]>([]); 
+    const [selectedDepartments, setSelectedDepartments] = useState<string[]>([]); 
 
     const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => { 
       event.preventDefault();
-      if(departments.length === 0 && keywords === '' && lastNamePI === ''){
+      if(selectedDepartments.length === 0 && keywords === '' && lastNamePI === ''){
         swal({
           text: "Please fill out at least one field.",
           icon: "warning",
@@ -35,7 +38,7 @@ export default function Search(props: SearchProps) {
       const backendBaseURL = window.location.host.includes("yalelabs.io")
         ? "https://yalelabs.io/api"
         : import.meta.env.VITE_APP_SERVER + "/api";
-      const url = backendBaseURL + '/listings?dept=' + departments 
+      const url = backendBaseURL + '/listings?dept=' + selectedDepartments 
                   + '&keywords=' + keywords + '&lname=' + lastNamePI;
       axios.get(url).then((response) => {
         const responseListings : Listing[] = response.data.map(function(elem: any){
@@ -64,11 +67,11 @@ export default function Search(props: SearchProps) {
                         multiple
                         limitTags={2}
                         id='tags-outlined'
-                        options={departmentNames}
-                        onChange={(event, newDept) => {
-                            setDepartments(newDept);
+                        options={departmentOptions}
+                        onChange={(_, newDept) => {
+                            setSelectedDepartments(newDept);
                         }}
-                        getOptionLabel={(option) => option}
+                        getOptionLabel={(option: string) => option}
                         sx={{width: '700px'}}
                         renderInput={(params) => (
                         <TextField
