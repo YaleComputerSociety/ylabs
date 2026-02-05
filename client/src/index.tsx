@@ -5,6 +5,7 @@ import "./index.css";
 import App from "./App";
 import reportWebVitals from "./reportWebVitals";
 import UserContextProvider from "./providers/UserContextProvider";
+import SearchContextProvider from "./providers/SearchContextProvider";
 
 const container = document.getElementById("root");
 
@@ -17,7 +18,9 @@ const root = createRoot(container);
 root.render(
   <React.StrictMode>
     <UserContextProvider>
-      <App />
+      <SearchContextProvider>
+        <App />
+      </SearchContextProvider>
     </UserContextProvider>
   </React.StrictMode>
 );
