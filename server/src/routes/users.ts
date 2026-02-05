@@ -109,6 +109,20 @@ router.delete('/favListings', isAuthenticated, logFavoriteEvent(false), userCont
 // Favorite listings routes (for specific user - Admin only - COMMENTED)
 // router.delete('/:id/favListings/all', isAuthenticated, isAdmin, validateObjectId('id'), userController.clearFavListings);
 
+// ==================== FAV FELLOWSHIPS ROUTES ====================
+
+// Get favFellowships id's for current user
+router.get('/favFellowshipIds', isAuthenticated, userController.getFavFellowshipIds);
+
+// Get favFellowships full data for current user
+router.get('/favFellowships', isAuthenticated, userController.getFavFellowships);
+
+// Add favFellowships for the user currently logged in
+router.put('/favFellowships', isAuthenticated, userController.addFavFellowships);
+
+// Remove favFellowships for the user currently logged in
+router.delete('/favFellowships', isAuthenticated, userController.removeFavFellowships);
+
 // ==================== USER CRUD ROUTES (ADMIN - COMMENTED) ====================
 
 // Create new user

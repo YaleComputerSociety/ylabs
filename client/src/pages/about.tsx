@@ -2,7 +2,7 @@ import DeveloperCard from "../components/DeveloperCard";
 
 const About = () => {
     return (
-        <div className="flex flex-col items-center p-8 min-h-screen mt-24">
+        <div className="flex flex-col items-center p-8 min-h-screen">
             <div className="max-w-5xl text-center">
                 <h1 className="text-4xl font-bold mb-7">Welcome to Yale Labs! 🔬</h1>
                 <p className="text-lg text-gray-700 mb-10 leading-relaxed">

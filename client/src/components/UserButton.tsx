@@ -12,6 +12,7 @@ const UserButton = () => {
     const open = Boolean(anchorEl);
     const location = useLocation();
     const { user } = useContext(UserContext);
+    const isAdmin = user?.userType === 'admin';
 
     // Get user initials from netId (e.g., "srg56" -> "SG")
     // First letter is first name initial, last letter before numbers is last name initial
@@ -110,6 +111,17 @@ const UserButton = () => {
                     }
                 }}
             >
+                {isAdmin && (
+                    <MenuItem
+                        component={Link}
+                        to="/analytics"
+                        onClick={handleClose}
+                        sx={menuItemStyle}
+                        disableRipple
+                    >
+                        Analytics
+                    </MenuItem>
+                )}
                 <MenuItem
                     component={Link}
                     to="/about"

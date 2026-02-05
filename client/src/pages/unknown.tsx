@@ -141,7 +141,7 @@ const Unknown = () => {
     };
 
     return (
-        <div className="fixed inset-0 flex items-center justify-center bg-gray-50 p-4">
+        <div className="flex items-center justify-center bg-gray-50 p-4 min-h-full">
             <div className="w-full max-w-md bg-white rounded-lg shadow-lg p-6">
                 <div className="mb-6">
                     <h2 className="text-xl font-bold text-gray-800 mb-2">Welcome to y/labs!</h2>

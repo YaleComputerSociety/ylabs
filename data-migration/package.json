@@ -18,9 +18,11 @@
     "generate:keywords": "npx ts-node --transpile-only generateKeywords.ts",
     "generate:keywords:live": "npx ts-node --transpile-only generateKeywords.ts --live",
     "generate:keywords:force": "npx ts-node --transpile-only generateKeywords.ts --live-force",
-    "generate:keywords:classify": "npx ts-node --transpile-only generateKeywords.ts --classify"
+    "generate:keywords:classify": "npx ts-node --transpile-only generateKeywords.ts --classify",
+    "import:fellowships": "npx ts-node --transpile-only importFellowships.ts"
   },
   "dependencies": {
+    "csv-parse": "^5.5.3",
     "dotenv": "^16.3.1",
     "mongoose": "^8.0.4",
     "openai": "^6.17.0"

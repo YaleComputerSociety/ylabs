@@ -1,5 +1,5 @@
 import { FC, useState, useEffect, useCallback, useMemo, ReactNode } from "react";
-import axios from "axios";
+import axios from "../utils/axios";
 import swal from "sweetalert";
 
 import SearchContext, { FilterMode } from "../contexts/SearchContext";
@@ -87,12 +87,8 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
   const handleSearch = useCallback((searchPage: number) => {
     const formattedQuery = queryString.trim();
 
-    const backendBaseURL = window.location.host.includes('yalelabs.io')
-      ? 'https://yalelabs.io/api'
-      : import.meta.env.VITE_APP_SERVER + "/api";
-
     // Build URL with base params
-    let url = backendBaseURL + `/listings/search?query=${encodeURIComponent(formattedQuery)}&page=${searchPage}&pageSize=${pageSize}`;
+    let url = `/listings/search?query=${encodeURIComponent(formattedQuery)}&page=${searchPage}&pageSize=${pageSize}`;
 
     // Add sort params if not default
     if (sortBy !== 'default') {
@@ -122,7 +118,7 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
     setIsLoading(true);
 
     axios
-      .get(url, { withCredentials: true })
+      .get(url)
       .then((response) => {
         const responseListings: Listing[] = response.data.results.map(function (
           elem: any

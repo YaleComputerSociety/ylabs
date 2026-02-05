@@ -159,23 +159,14 @@ const ListingModal = ({ isOpen, onClose, listing, favListingsIds, updateFavorite
                                     xmlns="http://www.w3.org/2000/svg"
                                     viewBox="0 0 24 24"
                                     className="transition-colors h-6 w-6"
-                                    fill="none"
+                                    fill={isFavorite ? "#0055A4" : "none"}
                                     stroke="#5B646F"
                                     strokeWidth="2"
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    style={{ stroke: '#5B646F' }}
-                                    onMouseEnter={(e) => e.currentTarget.style.stroke = '#0055A4'}
-                                    onMouseLeave={(e) => e.currentTarget.style.stroke = '#5B646F'}
+                                    style={{ stroke: isFavorite ? '#0055A4' : '#5B646F' }}
+                                    onMouseEnter={(e) => { e.currentTarget.style.stroke = '#0055A4'; if (!isFavorite) e.currentTarget.style.fill = 'none'; }}
+                                    onMouseLeave={(e) => { e.currentTarget.style.stroke = isFavorite ? '#0055A4' : '#5B646F'; e.currentTarget.style.fill = isFavorite ? '#0055A4' : 'none'; }}
                                 >
-                                    {isFavorite ? (
-                                        <path d="M5 12h14" />
-                                    ) : (
-                                        <>
-                                            <path d="M12 5v14" />
-                                            <path d="M5 12h14" />
-                                        </>
-                                    )}
+                                    <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
                                 </svg>
                             </button>
                             <span className="absolute top-full left-1/2 -translate-x-1/2 mt-1 px-2 py-1 bg-gray-800/65 text-white text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50">

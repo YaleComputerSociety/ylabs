@@ -30,7 +30,7 @@ const AccountButton = () => {
              }}
              disableRipple={true}
         >
-            My Labs
+            Dashboard
         </Button>
     );
 };

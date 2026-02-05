@@ -1,9 +1,10 @@
 import { useState } from "react";
 import AdminListingsTable from "./AdminListingsTable";
+import AdminFellowshipsTable from "./AdminFellowshipsTable";
 import AdminResearchAreas from "./AdminResearchAreas";
 import AdminDepartments from "./AdminDepartments";
 
-const TABS = ["Listings", "Research Areas", "Departments"] as const;
+const TABS = ["Listings", "Fellowships", "Research Areas", "Departments"] as const;
 type Tab = (typeof TABS)[number];
 
 const AdminPanel = () => {
@@ -37,6 +38,7 @@ const AdminPanel = () => {
       </div>
 
       {activeTab === "Listings" && <AdminListingsTable />}
+      {activeTab === "Fellowships" && <AdminFellowshipsTable />}
       {activeTab === "Research Areas" && <AdminResearchAreas />}
       {activeTab === "Departments" && <AdminDepartments />}
     </section>

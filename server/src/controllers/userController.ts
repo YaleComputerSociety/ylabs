@@ -1,11 +1,12 @@
 import { Request, Response } from "express";
 import mongoose from 'mongoose';
 import { readListings } from '../services/listingService';
-import { 
+import { readFellowships } from '../services/fellowshipService';
+import {
   createUser as createUserService,
   readAllUsers,
-  readUser, 
-  updateUser, 
+  readUser,
+  updateUser,
   deleteUser as deleteUserService,
   addDepartments as addDepartmentsService,
   deleteDepartments as deleteDepartmentsService,
@@ -13,9 +14,11 @@ import {
   addOwnListings as addOwnListingsService,
   deleteOwnListings as deleteOwnListingsService,
   clearOwnListings as clearOwnListingsService,
-  addFavListings as addFavListingsService, 
+  addFavListings as addFavListingsService,
   deleteFavListings as deleteFavListingsService,
   clearFavListings as clearFavListingsService,
+  addFavFellowships as addFavFellowshipsService,
+  deleteFavFellowships as deleteFavFellowshipsService,
   confirmUser,
   unconfirmUser
 } from '../services/userService';
@@ -215,6 +218,86 @@ export const removeFavListings = async (request: Request, response: Response) =>
 //     throw error;
 //   }
 // };
+
+// ==================== FAV FELLOWSHIPS ROUTES ====================
+
+// Get favFellowships id's for current user
+export const getFavFellowshipIds = async (request: Request, response: Response) => {
+  try {
+    const currentUser = request.user as { netId?: string, userType: string, userConfirmed: boolean };
+
+    const user = await readUser(currentUser.netId);
+    response.status(200).json({ favFellowshipIds: user.favFellowships || [] });
+  } catch (error) {
+    throw error;
+  }
+};
+
+// Get favFellowships full data for current user
+export const getFavFellowships = async (request: Request, response: Response) => {
+  try {
+    const currentUser = request.user as { netId?: string, userType: string, userConfirmed: boolean };
+
+    const user = await readUser(currentUser.netId);
+    const favFellowships = await readFellowships(user.favFellowships || []);
+
+    // Clean fellowships to remove those that no longer exist
+    let validIds: mongoose.Types.ObjectId[] = [];
+    for (const fellowship of favFellowships) {
+      validIds.push(fellowship._id);
+    }
+
+    await updateUser(currentUser.netId, { favFellowships: validIds });
+
+    response.status(200).json({ favFellowships });
+  } catch (error) {
+    throw error;
+  }
+};
+
+// Add favFellowships for the user currently logged in
+export const addFavFellowships = async (request: Request, response: Response) => {
+  try {
+    const currentUser = request.user as { netId?: string, userType: string, userConfirmed: boolean };
+
+    if (!request.body.data?.favFellowships) {
+      const error: any = new Error('No favFellowships provided');
+      error.status = 400;
+      throw error;
+    }
+
+    const favFellowshipsArray = Array.isArray(request.body.data.favFellowships)
+      ? request.body.data.favFellowships
+      : [request.body.data.favFellowships];
+
+    const user = await addFavFellowshipsService(currentUser.netId, favFellowshipsArray);
+    response.status(200).json({ user });
+  } catch (error) {
+    throw error;
+  }
+};
+
+// Remove favFellowships for the user currently logged in
+export const removeFavFellowships = async (request: Request, response: Response) => {
+  try {
+    const currentUser = request.user as { netId?: string, userType: string, userConfirmed: boolean };
+
+    if (!request.body.favFellowships) {
+      const error: any = new Error('No favFellowships provided');
+      error.status = 400;
+      throw error;
+    }
+
+    const favFellowshipsArray = Array.isArray(request.body.favFellowships)
+      ? request.body.favFellowships
+      : [request.body.favFellowships];
+
+    const user = await deleteFavFellowshipsService(currentUser.netId, favFellowshipsArray);
+    response.status(200).json({ user });
+  } catch (error) {
+    throw error;
+  }
+};
 
 // ==================== USER CRUD ROUTES (ADMIN - COMMENTED) ====================
 

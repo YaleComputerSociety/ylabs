@@ -1,8 +1,8 @@
 import { useContext, useRef } from 'react';
-import SearchContext from '../../contexts/SearchContext';
+import FellowshipSearchContext from '../../contexts/FellowshipSearchContext';
 
-const NavbarSearchBar = () => {
-  const { queryString, setQueryString } = useContext(SearchContext);
+const NavbarFellowshipSearchBar = () => {
+  const { queryString, setQueryString } = useContext(FellowshipSearchContext);
   const searchRef = useRef<HTMLInputElement | null>(null);
 
   return (
@@ -17,10 +17,10 @@ const NavbarSearchBar = () => {
           searchRef.current?.blur();
         }
       }}
-      placeholder="Search labs..."
+      placeholder="Search fellowships..."
       className="h-9 px-3 flex-1 min-w-[200px] border border-gray-300 rounded-md text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
     />
   );
 };
 
-export default NavbarSearchBar;
+export default NavbarFellowshipSearchBar;

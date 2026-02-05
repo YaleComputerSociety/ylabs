@@ -2,8 +2,9 @@
 @tailwind components;
 @tailwind utilities;
 
-html {
-  overflow-y: scroll;
+html, body, #root {
+  height: 100%;
+  overflow: hidden;
 }
 
 body {

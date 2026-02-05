@@ -6,6 +6,13 @@ import { getListingModel } from "../db/connections";
 import { ResearchArea, ResearchField, fieldColorKeys } from "../models/researchArea";
 import { Department, DepartmentCategory, categoryColorKeys } from "../models/department";
 import { invalidateConfigCache } from "../services/configService";
+import { Fellowship } from "../models/fellowship";
+import {
+  updateFellowship,
+  deleteFellowship,
+  archiveFellowship,
+  unarchiveFellowship,
+} from "../services/fellowshipService";
 
 const router = Router();
 
@@ -400,6 +407,109 @@ router.post("/check-urls", async (req: Request, res: Response) => {
   } catch (error) {
     console.error("Admin: Error checking URLs:", error);
     res.status(500).json({ error: "Failed to check URLs" });
+  }
+});
+
+// ==================== FELLOWSHIPS ====================
+
+// GET /admin/fellowships — fetch all fellowships with sorting, search, pagination, filters
+router.get("/fellowships", async (req: Request, res: Response) => {
+  try {
+    const {
+      search,
+      sortBy = "createdAt",
+      sortOrder = "desc",
+      page = "1",
+      pageSize = "25",
+      archived,
+    } = req.query;
+
+    const filter: any = {};
+
+    if (archived === "true") filter.archived = true;
+    else if (archived === "false") filter.archived = false;
+
+    if (search && (search as string).trim()) {
+      const searchRegex = { $regex: (search as string).trim(), $options: "i" };
+      filter.$or = [
+        { title: searchRegex },
+        { summary: searchRegex },
+        { description: searchRegex },
+        { contactEmail: searchRegex },
+      ];
+    }
+
+    const pageNum = Math.max(1, parseInt(page as string, 10) || 1);
+    const pageSizeNum = Math.min(100, Math.max(1, parseInt(pageSize as string, 10) || 25));
+
+    const sort: any = {};
+    const order = sortOrder === "asc" ? 1 : -1;
+    sort[sortBy as string] = order;
+    sort._id = 1;
+
+    const [fellowships, total] = await Promise.all([
+      Fellowship.find(filter)
+        .sort(sort)
+        .skip((pageNum - 1) * pageSizeNum)
+        .limit(pageSizeNum)
+        .lean(),
+      Fellowship.countDocuments(filter),
+    ]);
+
+    res.json({
+      fellowships,
+      total,
+      page: pageNum,
+      pageSize: pageSizeNum,
+      totalPages: Math.ceil(total / pageSizeNum),
+    });
+  } catch (error) {
+    console.error("Admin: Error fetching fellowships:", error);
+    res.status(500).json({ error: "Failed to fetch fellowships" });
+  }
+});
+
+// PUT /admin/fellowships/:id — update a fellowship
+router.put("/fellowships/:id", validateObjectId("id"), async (req: Request, res: Response) => {
+  try {
+    const fellowship = await updateFellowship(req.params.id, req.body.data);
+    res.json({ fellowship });
+  } catch (error) {
+    console.error("Admin: Error updating fellowship:", error);
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// PUT /admin/fellowships/:id/archive — archive a fellowship
+router.put("/fellowships/:id/archive", validateObjectId("id"), async (req: Request, res: Response) => {
+  try {
+    const fellowship = await archiveFellowship(req.params.id);
+    res.json({ fellowship });
+  } catch (error) {
+    console.error("Admin: Error archiving fellowship:", error);
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// PUT /admin/fellowships/:id/unarchive — unarchive a fellowship
+router.put("/fellowships/:id/unarchive", validateObjectId("id"), async (req: Request, res: Response) => {
+  try {
+    const fellowship = await unarchiveFellowship(req.params.id);
+    res.json({ fellowship });
+  } catch (error) {
+    console.error("Admin: Error unarchiving fellowship:", error);
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// DELETE /admin/fellowships/:id — delete a fellowship
+router.delete("/fellowships/:id", validateObjectId("id"), async (req: Request, res: Response) => {
+  try {
+    await deleteFellowship(req.params.id);
+    res.json({ message: "Fellowship deleted" });
+  } catch (error) {
+    console.error("Admin: Error deleting fellowship:", error);
+    res.status(400).json({ error: error.message });
   }
 });
 

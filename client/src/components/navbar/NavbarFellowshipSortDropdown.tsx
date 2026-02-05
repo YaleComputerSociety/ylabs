@@ -1,8 +1,8 @@
 import { useContext, useRef, useState } from 'react';
-import SearchContext from '../../contexts/SearchContext';
+import FellowshipSearchContext from '../../contexts/FellowshipSearchContext';
 
-const NavbarSortDropdown = () => {
-  const { sortBy, setSortBy, sortDirection, onToggleSortDirection } = useContext(SearchContext);
+const NavbarFellowshipSortDropdown = () => {
+  const { sortBy, setSortBy, sortDirection, onToggleSortDirection } = useContext(FellowshipSearchContext);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [focusedIndex, setFocusedIndex] = useState(-1);
 
@@ -10,11 +10,10 @@ const NavbarSortDropdown = () => {
   const buttonRef = useRef<HTMLButtonElement>(null);
 
   const sortOptions = [
-    { value: 'default', label: 'Best Match' },
-    { value: 'updatedAt', label: 'Last Updated' },
-    { value: 'ownerLastName', label: 'Last Name' },
-    { value: 'ownerFirstName', label: 'First Name' },
-    { value: 'title', label: 'Lab Title' }
+    { value: 'default', label: 'Default' },
+    { value: 'deadline', label: 'Deadline' },
+    { value: 'updatedAt', label: 'Updated' },
+    { value: 'title', label: 'Title' }
   ];
 
   const handleSelect = (value: string) => {
@@ -68,7 +67,7 @@ const NavbarSortDropdown = () => {
               }
             }, 100);
           }}
-          className="flex items-center justify-between h-full px-3 min-w-[150px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-inset whitespace-nowrap"
+          className="flex items-center justify-between h-full px-3 min-w-[130px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-inset whitespace-nowrap"
           style={{ color: '#374151' }}
         >
           <span className="text-gray-500 mr-1">Sort:</span>
@@ -149,4 +148,4 @@ const NavbarSortDropdown = () => {
   );
 };
 
-export default NavbarSortDropdown;
+export default NavbarFellowshipSortDropdown;

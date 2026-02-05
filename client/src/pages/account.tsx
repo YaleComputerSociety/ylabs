@@ -1,9 +1,10 @@
 import {useState, useEffect} from "react";
-import {Listing} from '../types/types'
+import {Listing, Fellowship} from '../types/types'
 import {createListing} from '../utils/apiCleaner';
 import ListingCard from '../components/accounts/ListingCard'
 import ListingModal from "../components/accounts/ListingModal";
-import createButton from "../components/accounts/CreateButton";
+import FellowshipCard from "../components/fellowship/FellowshipCard";
+import FellowshipModal from "../components/fellowship/FellowshipModal";
 import axios from '../utils/axios';
 import swal from 'sweetalert';
 import PulseLoader from "react-spinners/PulseLoader";
@@ -12,16 +13,59 @@ import UserContext from "../contexts/UserContext";
 import CreateButton from "../components/accounts/CreateButton";
 import YoutubeVideo from "../components/accounts/YoutubeVideo";
 
+// Transform API response to Fellowship type (same as FellowshipSearchContextProvider)
+function createFellowship(data: any): Fellowship {
+    return {
+        id: data._id || data.id,
+        title: data.title || '',
+        competitionType: data.competitionType || '',
+        summary: data.summary || '',
+        description: data.description || '',
+        applicationInformation: data.applicationInformation || '',
+        eligibility: data.eligibility || '',
+        restrictionsToUseOfAward: data.restrictionsToUseOfAward || '',
+        additionalInformation: data.additionalInformation || '',
+        links: data.links || [],
+        applicationLink: data.applicationLink || '',
+        isAcceptingApplications: data.isAcceptingApplications || false,
+        applicationOpenDate: data.applicationOpenDate || null,
+        deadline: data.deadline || null,
+        contactName: data.contactName || '',
+        contactEmail: data.contactEmail || '',
+        contactPhone: data.contactPhone || '',
+        contactOffice: data.contactOffice || '',
+        yearOfStudy: data.yearOfStudy || [],
+        termOfAward: data.termOfAward || [],
+        purpose: data.purpose || [],
+        globalRegions: data.globalRegions || [],
+        citizenshipStatus: data.citizenshipStatus || [],
+        archived: data.archived || false,
+        views: data.views || 0,
+        favorites: data.favorites || 0,
+        updatedAt: data.updatedAt || '',
+        createdAt: data.createdAt || '',
+    };
+}
+
 const Account = () => {
     const [ownListings, setOwnListings] = useState<Listing[]>([]);
     const [favListings, setFavListings] = useState<Listing[]>([]);
     const [favListingsIds, setFavListingsIds] = useState<string[]>([]);
+    const [favFellowships, setFavFellowships] = useState<Fellowship[]>([]);
+    const [favFellowshipIds, setFavFellowshipIds] = useState<string[]>([]);
     const [isLoading, setIsLoading] = useState<Boolean>(true);
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [isFellowshipModalOpen, setIsFellowshipModalOpen] = useState(false);
     const [isEditing, setIsEditing] = useState(false);
     const [isCreating, setIsCreating] = useState(false);
     const [selectedListing, setSelectedListing] = useState<Listing | null>(null);
+    const [selectedFellowship, setSelectedFellowship] = useState<Fellowship | null>(null);
     const {user} = useContext(UserContext);
+
+    // Scroll to top on page load
+    useEffect(() => {
+        window.scrollTo(0, 0);
+    }, []);
 
     useEffect(() => {
         reloadListings();
@@ -84,6 +128,18 @@ const Account = () => {
                 icon: "warning",
             })
         }));
+
+        // Fetch favorite fellowships (full data) from user endpoint
+        axios.get('/users/favFellowships').then((response) => {
+            const rawFellowships = response.data.favFellowships || [];
+            const fellowships: Fellowship[] = rawFellowships.map((f: any) => createFellowship(f));
+            setFavFellowships(fellowships);
+            setFavFellowshipIds(fellowships.map((f) => f.id));
+        }).catch((error) => {
+            console.error("Error fetching user's favorite fellowships:", error);
+            setFavFellowshipIds([]);
+            setFavFellowships([]);
+        });
     };
 
     // Function to open modal with a specific listing
@@ -131,6 +187,42 @@ const Account = () => {
                 reloadListings();
             });
         }
+    };
+
+    const updateFellowshipFavorite = (fellowshipId: string, favorite: boolean) => {
+        const prevFavFellowships = favFellowships;
+        const prevFavFellowshipIds = favFellowshipIds;
+
+        if (favorite) {
+            setFavFellowshipIds([fellowshipId, ...prevFavFellowshipIds]);
+            axios.put('/users/favFellowships', { withCredentials: true, data: { favFellowships: [fellowshipId] } }).catch((error) => {
+                setFavFellowships(prevFavFellowships);
+                setFavFellowshipIds(prevFavFellowshipIds);
+                console.error('Error favoriting fellowship:', error);
+                swal({ text: "Unable to favorite fellowship", icon: "warning" });
+                reloadListings();
+            });
+        } else {
+            setFavFellowships(prevFavFellowships.filter((f) => (f.id || (f as any)._id) !== fellowshipId));
+            setFavFellowshipIds(prevFavFellowshipIds.filter((id) => id !== fellowshipId));
+            axios.delete('/users/favFellowships', { withCredentials: true, data: { favFellowships: [fellowshipId] } }).catch((error) => {
+                setFavFellowships(prevFavFellowships);
+                setFavFellowshipIds(prevFavFellowshipIds);
+                console.error('Error unfavoriting fellowship:', error);
+                swal({ text: "Unable to unfavorite fellowship", icon: "warning" });
+                reloadListings();
+            });
+        }
+    };
+
+    const openFellowshipModal = (fellowship: Fellowship) => {
+        setSelectedFellowship(fellowship);
+        setIsFellowshipModalOpen(true);
+    };
+
+    const closeFellowshipModal = () => {
+        setIsFellowshipModalOpen(false);
+        setSelectedFellowship(null);
     };
 
     const updateListing = (listing: Listing) => {
@@ -211,7 +303,7 @@ const Account = () => {
     };
 
     return (
-        <div className="mx-auto max-w-[1300px] px-6 pt-20 w-full">
+        <div className="mx-auto max-w-[1300px] px-6 pt-6 w-full">
             {isLoading ? (
                 <div className="flex justify-center pt-12">
                     <PulseLoader color="#66CCFF" size={10} />
@@ -283,9 +375,27 @@ const Account = () => {
                         <p className="my-4 text-center">No listings found.</p>
                     )}
 
+                    <h2 className="text-2xl font-bold text-gray-800 text-center mb-6 mt-10 pb-2">Favorite Fellowships</h2>
+                    {favFellowships.length > 0 ? (
+                        <ul>
+                            {favFellowships.map((fellowship) => (
+                                <li key={fellowship.id}>
+                                    <FellowshipCard
+                                        fellowship={fellowship}
+                                        favFellowshipIds={favFellowshipIds}
+                                        updateFavorite={updateFellowshipFavorite}
+                                        openModal={openFellowshipModal}
+                                    />
+                                </li>
+                            ))}
+                        </ul>
+                    ) : (
+                        <p className="my-4 text-center">No fellowships found.</p>
+                    )}
+
                     {user && (user.userType === "professor" || user.userType === "faculty" || user.userType === "admin") && (
                         <>
-                            
+
                             <h1 className="text-4xl mt-24 font-bold text-center mb-7">Learn y/labs!</h1>
                             <div className="mt-4 flex align-center justify-center mb-4">
                                 <YoutubeVideo />
@@ -293,14 +403,30 @@ const Account = () => {
                         </>
                     )}
                     
-                    {/* Modal */}
+                    {/* Listing Modal */}
                     {selectedListing && (
-                        <ListingModal 
-                            isOpen={isModalOpen} 
-                            onClose={closeModal} 
+                        <ListingModal
+                            isOpen={isModalOpen}
+                            onClose={closeModal}
                             listing={selectedListing}
                             favListingsIds={favListingsIds}
                             updateFavorite={updateFavorite}
+                        />
+                    )}
+
+                    {/* Fellowship Modal */}
+                    {selectedFellowship && (
+                        <FellowshipModal
+                            fellowship={selectedFellowship}
+                            isOpen={isFellowshipModalOpen}
+                            onClose={closeFellowshipModal}
+                            isFavorite={favFellowshipIds.includes(selectedFellowship.id)}
+                            toggleFavorite={() => {
+                                updateFellowshipFavorite(
+                                    selectedFellowship.id,
+                                    !favFellowshipIds.includes(selectedFellowship.id)
+                                );
+                            }}
                         />
                     )}
                 </div>

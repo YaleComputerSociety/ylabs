@@ -65,7 +65,7 @@ const Container = styled.div`
 const Description = styled.div`
   width: 100%;
   max-width: 600px;
-  margin-top: 120px;
+  margin-top: 60px;
   display: flex;
   align-items: center;
   flex-direction: column;

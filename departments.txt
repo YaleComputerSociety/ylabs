@@ -86,7 +86,7 @@ Physics:PHYS
 Political Science:PLSC
 Psychiatry:PSYT
 Psychology:PSYC
-Public Health:EPH
+Public Health:YSPH
 Religious Studies:RLST
 Slavic Languages & Literatures:SLAV
 Sociology:SOCY

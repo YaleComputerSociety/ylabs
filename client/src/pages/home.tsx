@@ -20,10 +20,16 @@ const Home = () => {
         sortDirection,
         onToggleSortDirection,
         refreshListings,
-        filterBarHeight,
+        setQueryString,
     } = useContext(SearchContext);
 
     const [favListingsIds, setFavListingsIds] = useState<string[]>([]);
+
+    // Scroll to top and clear search query on page load
+    useEffect(() => {
+        window.scrollTo(0, 0);
+        setQueryString('');
+    }, []);
 
     const reloadFavorites = async () => {
         axios.get('/users/favListingsIds', {withCredentials: true}).then((response) => {
@@ -73,13 +79,9 @@ const Home = () => {
         }
     };
 
-    // Calculate top margin: navbar (64px) + filter bar height + base spacing (32px)
-    const topMargin = 64 + filterBarHeight + 32;
-
     return (
         <div
             className="mx-auto max-w-[1300px] px-6 w-full min-h-[calc(100vh-12rem)]"
-            style={{ marginTop: `${topMargin}px` }}
         >
             <div className='mt-4 md:mt-8'></div>
             {listings.length > 0 || isLoading ? (

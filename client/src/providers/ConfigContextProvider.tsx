@@ -1,5 +1,5 @@
 import { FC, useState, useEffect, useCallback, useMemo, ReactNode } from "react";
-import axios from "axios";
+import axios from "../utils/axios";
 import ConfigContext, {
   ConfigContextType,
   ResearchAreaConfig,
@@ -55,19 +55,29 @@ const ConfigContextProvider: FC<ConfigContextProviderProps> = ({ children }) => 
       setIsLoading(true);
       setError(null);
 
-      const backendBaseURL = window.location.host.includes('yalelabs.io')
-        ? 'https://yalelabs.io/api'
-        : import.meta.env.VITE_APP_SERVER + "/api";
-
-      const response = await axios.get(`${backendBaseURL}/config`);
+      const response = await axios.get('/config');
       const data = response.data;
 
-      setResearchAreas(data.researchAreas.areas);
-      setResearchFields(data.researchAreas.fields);
-      setFieldOrder(data.researchAreas.fieldOrder);
+      // Safely extract data with fallbacks
+      const areas = data?.researchAreas?.areas || [];
+      const fields = data?.researchAreas?.fields || [];
+      const fieldOrderData = data?.researchAreas?.fieldOrder || [];
+      const deptList = data?.departments?.list || [];
+      const deptCategories = data?.departments?.categories || [];
 
-      setDepartments(data.departments.list);
-      setDepartmentCategories(data.departments.categories);
+      setResearchAreas(areas);
+      setResearchFields(fields);
+      setFieldOrder(fieldOrderData);
+      setDepartments(deptList);
+      setDepartmentCategories(deptCategories);
+
+      if (areas.length === 0 || deptList.length === 0) {
+        console.warn('Config loaded but data may be incomplete:', {
+          researchAreas: areas.length,
+          departments: deptList.length,
+          rawResponse: data
+        });
+      }
 
       setIsLoaded(true);
     } catch (err) {

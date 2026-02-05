@@ -1,7 +1,9 @@
 import React, { useEffect, useState, useContext } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Listing } from '../../types/types';
 import UserContext from '../../contexts/UserContext';
 import ConfigContext from '../../contexts/ConfigContext';
+import SearchContext from '../../contexts/SearchContext';
 import { getDepartmentAbbreviation } from '../../utils/departmentNames';
 
 interface ListingModalProps {
@@ -13,14 +15,41 @@ interface ListingModalProps {
 }
 
 const ListingModal = ({ isOpen, onClose, listing, favListingsIds, updateFavorite }: ListingModalProps) => {
+    const navigate = useNavigate();
     const [isCreated] = useState(listing.id === "create");
     const [isFavorite, setIsFavorite] = useState(favListingsIds.includes(listing.id));
     const [restrictedStats, setRestrictedStats] = useState(true);
     const {user} = useContext(UserContext);
     const { getDepartmentByAbbr, getColorForResearchArea } = useContext(ConfigContext);
+    const {
+        setSelectedDepartments,
+        setSelectedResearchAreas,
+        setSelectedListingResearchAreas,
+        setQueryString,
+    } = useContext(SearchContext);
 
     // Get research areas (fallback to keywords for backwards compatibility)
     const researchAreas = listing.researchAreas?.length > 0 ? listing.researchAreas : (listing.keywords || []);
+
+    // Handle clicking on a research area filter
+    const handleResearchAreaClick = (area: string) => {
+        setQueryString('');
+        setSelectedDepartments([]);
+        setSelectedResearchAreas([]);
+        setSelectedListingResearchAreas([area]);
+        onClose();
+        navigate('/');
+    };
+
+    // Handle clicking on a department filter
+    const handleDepartmentClick = (dept: string) => {
+        setQueryString('');
+        setSelectedDepartments([dept]);
+        setSelectedResearchAreas([]);
+        setSelectedListingResearchAreas([]);
+        onClose();
+        navigate('/');
+    };
 
     // Helper function to check if lab is open (hiringStatus >= 0 means open)
     const isLabOpen = listing.hiringStatus >= 0;
@@ -160,23 +189,14 @@ const ListingModal = ({ isOpen, onClose, listing, favListingsIds, updateFavorite
                                     xmlns="http://www.w3.org/2000/svg"
                                     viewBox="0 0 24 24"
                                     className="transition-colors h-6 w-6"
-                                    fill="none"
+                                    fill={isFavorite ? "#0055A4" : "none"}
                                     stroke="#5B646F"
                                     strokeWidth="2"
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    style={{ stroke: '#5B646F' }}
-                                    onMouseEnter={(e) => e.currentTarget.style.stroke = '#0055A4'}
-                                    onMouseLeave={(e) => e.currentTarget.style.stroke = '#5B646F'}
+                                    style={{ stroke: isFavorite ? '#0055A4' : '#5B646F' }}
+                                    onMouseEnter={(e) => { e.currentTarget.style.stroke = '#0055A4'; if (!isFavorite) e.currentTarget.style.fill = 'none'; }}
+                                    onMouseLeave={(e) => { e.currentTarget.style.stroke = isFavorite ? '#0055A4' : '#5B646F'; e.currentTarget.style.fill = isFavorite ? '#0055A4' : 'none'; }}
                                 >
-                                    {isFavorite ? (
-                                        <path d="M5 12h14" />
-                                    ) : (
-                                        <>
-                                            <path d="M12 5v14" />
-                                            <path d="M5 12h14" />
-                                        </>
-                                    )}
+                                    <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
                                 </svg>
                             </button>
                             <span className="absolute top-full left-1/2 -translate-x-1/2 mt-1 px-2 py-1 bg-gray-800/65 text-white text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50">
@@ -231,16 +251,18 @@ const ListingModal = ({ isOpen, onClose, listing, favListingsIds, updateFavorite
                 {researchAreas.length > 0 && (
                 <section className="mb-6">
                     <h3 className="text-lg font-semibold mb-2">Research Areas</h3>
+                    <p className="text-xs text-gray-500 mb-2">Click to search for similar listings</p>
                     <div className="flex flex-wrap gap-2">
                     {researchAreas.map((area: string) => {
                         const colors = getColorForResearchArea(area);
                         return (
-                            <span
+                            <button
                                 key={area}
-                                className={`${colors.bg} ${colors.text} text-xs rounded px-2 py-1`}
+                                onClick={() => handleResearchAreaClick(area)}
+                                className={`${colors.bg} ${colors.text} text-xs rounded px-2 py-1 hover:ring-2 hover:ring-offset-1 cursor-pointer transition-all`}
                             >
                                 {area}
-                            </span>
+                            </button>
                         );
                     })}
                     </div>
@@ -251,19 +273,22 @@ const ListingModal = ({ isOpen, onClose, listing, favListingsIds, updateFavorite
                 {listing.departments && listing.departments.length > 0 && (
                 <section className="mb-6">
                     <h3 className="text-lg font-semibold mb-2">Departments</h3>
-                    <ul className="space-y-1 text-sm text-gray-700">
+                    <div className="flex flex-wrap gap-2">
                     {listing.departments.map((dept: string) => {
                         const abbr = getDepartmentAbbreviation(dept);
                         const deptConfig = getDepartmentByAbbr(abbr);
                         const fullName = deptConfig?.displayName || dept;
                         return (
-                            <li key={dept} className="flex items-start">
-                                <span className="text-gray-400 mr-2">•</span>
-                                <span>{fullName}</span>
-                            </li>
+                            <button
+                                key={dept}
+                                onClick={() => handleDepartmentClick(fullName)}
+                                className="bg-gray-100 text-gray-700 text-xs rounded px-2 py-1 hover:bg-gray-200 hover:ring-2 hover:ring-gray-300 cursor-pointer transition-all"
+                            >
+                                {fullName}
+                            </button>
                         );
                     })}
-                    </ul>
+                    </div>
                 </section>
                 )}
 

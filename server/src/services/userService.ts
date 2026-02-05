@@ -1,6 +1,7 @@
 import { User } from "../models";
 import { NotFoundError } from "../utils/errors";
 import { readListing, confirmListing, unconfirmListing, addFavorite, removeFavorite } from "./listingService";
+import { addFavorite as addFellowshipFavorite, removeFavorite as removeFellowshipFavorite } from "./fellowshipService";
 import mongoose from "mongoose";
 
 export const createUser = async (userData: any) => {
@@ -227,6 +228,46 @@ export const deleteFavListings = async(id: any, removedListings: [mongoose.Types
 //Clear fav listings
 export const clearFavListings = async(id: any) => {
     const newUser = await updateUser(id, {"favListings": []});
+
+    return newUser;
+};
+
+//Add fav fellowships
+export const addFavFellowships = async(id: any, fellowships: [mongoose.Types.ObjectId]) => {
+    let user = await readUser(id);
+
+    user.favFellowships.unshift(...fellowships);
+    user.favFellowships = Array.from(new Set(user.favFellowships.map((f: any) => f.toString()))).map((f: string) => new mongoose.Types.ObjectId(f));
+
+    const newUser = await updateUser(id, {"favFellowships": user.favFellowships});
+
+    for (const fellowshipId of fellowships) {
+        await addFellowshipFavorite(fellowshipId.toString());
+    }
+
+    return newUser;
+};
+
+//Remove fav fellowships
+export const deleteFavFellowships = async(id: any, removedFellowships: [mongoose.Types.ObjectId]) => {
+    let user = await readUser(id);
+
+    const removedFellowshipsStrings = removedFellowships.map(f => f.toString());
+
+    user.favFellowships = user.favFellowships.filter((f: any) => removedFellowshipsStrings.indexOf(f.toString()) < 0);
+
+    const newUser = await updateUser(id, {"favFellowships": user.favFellowships});
+
+    for (const fellowshipId of removedFellowships) {
+        await removeFellowshipFavorite(fellowshipId.toString());
+    }
+
+    return newUser;
+};
+
+//Clear fav fellowships
+export const clearFavFellowships = async(id: any) => {
+    const newUser = await updateUser(id, {"favFellowships": []});
 
     return newUser;
 };

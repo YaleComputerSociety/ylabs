@@ -62,7 +62,11 @@ const userSchema = new mongoose.Schema(
         type: [mongoose.Schema.ObjectId],
         default: [],
     },
-    
+    favFellowships: {
+        type: [mongoose.Schema.ObjectId],
+        default: [],
+    },
+
     lastLogin: {
         type: Date,
         index: true

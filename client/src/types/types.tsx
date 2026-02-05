@@ -26,6 +26,52 @@ export type Listing = {
   confirmed: boolean;
 };
 
+// Fellowships
+
+export type FellowshipLink = {
+  label: string;
+  url: string;
+};
+
+export type Fellowship = {
+  id: string;
+  title: string;
+  competitionType: string;
+  summary: string;
+  description: string;
+  applicationInformation: string;
+  eligibility: string;
+  restrictionsToUseOfAward: string;
+  additionalInformation: string;
+  links: FellowshipLink[];
+  applicationLink: string;
+  isAcceptingApplications: boolean;
+  applicationOpenDate: string | null;
+  deadline: string | null;
+  contactName: string;
+  contactEmail: string;
+  contactPhone: string;
+  contactOffice: string;
+  yearOfStudy: string[];
+  termOfAward: string[];
+  purpose: string[];
+  globalRegions: string[];
+  citizenshipStatus: string[];
+  archived: boolean;
+  views: number;
+  favorites: number;
+  updatedAt: string;
+  createdAt: string;
+};
+
+export type FellowshipFilterOptions = {
+  yearOfStudy: string[];
+  termOfAward: string[];
+  purpose: string[];
+  globalRegions: string[];
+  citizenshipStatus: string[];
+};
+
 export type User = {
   netId: string;
   userType: string;
