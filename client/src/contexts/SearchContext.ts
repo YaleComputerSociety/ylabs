@@ -40,6 +40,7 @@ export interface SearchContextType {
   listings: Listing[];
   isLoading: boolean;
   searchExhausted: boolean;
+  totalCount: number;
 
   // Pagination
   page: number;
@@ -64,6 +65,10 @@ export interface SearchContextType {
   // Filter bar height for dynamic layout
   filterBarHeight: number;
   setFilterBarHeight: (height: number) => void;
+
+  // Quick filter state (client-side filters like "Open Only", "Recently Added")
+  quickFilter: string | null;
+  setQuickFilter: (filter: string | null) => void;
 }
 
 export const defaultSearchContext: SearchContextType = {
@@ -90,6 +95,7 @@ export const defaultSearchContext: SearchContextType = {
   listings: [],
   isLoading: false,
   searchExhausted: false,
+  totalCount: 0,
   page: 1,
   setPage: () => {},
   pageSize: 20,
@@ -100,6 +106,8 @@ export const defaultSearchContext: SearchContextType = {
   refreshListings: () => {},
   filterBarHeight: 0,
   setFilterBarHeight: () => {},
+  quickFilter: null,
+  setQuickFilter: () => {},
 };
 
 export default createContext<SearchContextType>(defaultSearchContext);

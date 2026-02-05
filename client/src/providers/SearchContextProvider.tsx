@@ -66,12 +66,16 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
   const [listings, setListings] = useState<Listing[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [searchExhausted, setSearchExhausted] = useState<boolean>(false);
+  const [totalCount, setTotalCount] = useState<number>(0);
 
   // Pagination
   const [page, setPage] = useState<number>(1);
 
   // Filter bar height for dynamic layout
   const [filterBarHeight, setFilterBarHeight] = useState<number>(0);
+
+  // Quick filter state (client-side filters like "Open Only", "Recently Added")
+  const [quickFilter, setQuickFilter] = useState<string | null>(null);
 
   // Track if initial load happened
   const [queryStringLoaded, setQueryStringLoaded] = useState(false);
@@ -130,6 +134,9 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
           setListings(responseListings);
         } else {
           setListings((oldListings) => [...oldListings, ...responseListings]);
+        }
+        if (response.data.totalCount !== undefined) {
+          setTotalCount(response.data.totalCount);
         }
         setSearchExhausted(responseListings.length < pageSize);
         setIsLoading(false);
@@ -221,6 +228,7 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
         listings,
         isLoading,
         searchExhausted,
+        totalCount,
         page,
         setPage,
         pageSize,
@@ -230,6 +238,8 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
         refreshListings,
         filterBarHeight,
         setFilterBarHeight,
+        quickFilter,
+        setQuickFilter,
       }}
     >
       {children}

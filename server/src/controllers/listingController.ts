@@ -197,13 +197,19 @@ export const searchListings = async (request: Request, response: Response) => {
           : { createdAt: -1, _id: 1 }
       });
 
+      // Run count in parallel with paginated results
+      const countPromise = getListingModel().countDocuments(matchStage);
+
       pipeline.push(
         { $skip: (Number(page) - 1) * Number(pageSize) },
         { $limit: Number(pageSize) }
       );
 
-      const results = await getListingModel().aggregate(pipeline);
-      return response.json({ results, page: Number(page), pageSize: Number(pageSize) });
+      const [results, totalCount] = await Promise.all([
+        getListingModel().aggregate(pipeline),
+        countPromise
+      ]);
+      return response.json({ results, totalCount, page: Number(page), pageSize: Number(pageSize) });
     }
 
     const queryEmbedding = await generateEmbedding(query as string);
@@ -237,12 +243,18 @@ export const searchListings = async (request: Request, response: Response) => {
         : { searchScore: -1, createdAt: -1, _id: 1 }
     });
 
+    // Count total matching filter criteria (parallel with results)
+    const countPromise = getListingModel().countDocuments(matchStage);
+
     pipeline.push(
       { $skip: (Number(page) - 1) * Number(pageSize) },
       { $limit: Number(pageSize) }
     );
 
-    const results = await getListingModel().aggregate(pipeline);
+    const [results, totalCount] = await Promise.all([
+      getListingModel().aggregate(pipeline),
+      countPromise
+    ]);
 
     if (results.length === 0) {
       console.log('⚠️ Semantic search returned 0 results. Falling back to keyword search...');
@@ -251,7 +263,7 @@ export const searchListings = async (request: Request, response: Response) => {
 
     const resultsWithoutEmbedding = results.map(({ embedding, ...rest }) => rest);
 
-    response.json({ results: resultsWithoutEmbedding, page: Number(page), pageSize: Number(pageSize) });
+    response.json({ results: resultsWithoutEmbedding, totalCount, page: Number(page), pageSize: Number(pageSize) });
 
   } catch (error) {
     console.error("Semantic search failed, falling back to keyword search:", error);
@@ -315,15 +327,21 @@ export const searchListings = async (request: Request, response: Response) => {
           : { searchScore: -1, createdAt: -1, _id: 1 },
       });
 
+      // Count total matching filter criteria (parallel with results)
+      const countPromise = getListingModel().countDocuments(matchStage);
+
       pipeline.push(
         { $skip: (Number(page) - 1) * Number(pageSize) },
         { $limit: Number(pageSize) }
       );
 
-      const results = await getListingModel().aggregate(pipeline);
+      const [results, totalCount] = await Promise.all([
+        getListingModel().aggregate(pipeline),
+        countPromise
+      ]);
 
       console.log(`Fallback keyword search returned ${results.length} results`);
-      response.json({ results, page: Number(page), pageSize: Number(pageSize) });
+      response.json({ results, totalCount, page: Number(page), pageSize: Number(pageSize) });
 
     } catch (fallbackError) {
       console.error("Keyword search fallback also failed:", fallbackError);
