@@ -101,7 +101,7 @@ const ActiveFiltersBar = () => {
   const totalFilters = selectedDepartments.length + selectedResearchAreas.length + selectedListingResearchAreas.length;
 
   return (
-    <div ref={barRef} className="fixed top-[64px] left-0 right-0 bg-white border-b border-gray-200 shadow-sm z-[1099] px-4 py-2">
+    <div ref={barRef} className="bg-white border-b border-gray-200 shadow-sm px-4 py-2">
       <div className="mx-auto max-w-[1300px] flex flex-wrap items-center gap-2">
         <span className="text-sm text-gray-600 font-medium">Filters:</span>
         {selectedResearchAreas.map((area) => (
