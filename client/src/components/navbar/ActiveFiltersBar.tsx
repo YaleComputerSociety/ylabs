@@ -3,6 +3,30 @@ import SearchContext from '../../contexts/SearchContext';
 import { useConfig } from '../../hooks/useConfig';
 import { getColorForResearchArea } from '../../utils/researchAreas';
 
+// Quick filter option definitions for listings
+const listingQuickFilters = [
+  {
+    label: 'Open Only',
+    value: 'open',
+    icon: (
+      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+        <polyline points="22 4 12 14.01 9 11.01" />
+      </svg>
+    ),
+  },
+  {
+    label: 'Recently Added',
+    value: 'recent',
+    icon: (
+      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="10" />
+        <polyline points="12 6 12 12 16 14" />
+      </svg>
+    ),
+  },
+];
+
 const ActiveFiltersBar = () => {
   const {
     selectedDepartments,
@@ -11,22 +35,22 @@ const ActiveFiltersBar = () => {
     setSelectedResearchAreas,
     selectedListingResearchAreas,
     setSelectedListingResearchAreas,
-    setFilterBarHeight
+    setFilterBarHeight,
+    quickFilter,
+    setQuickFilter,
+    totalCount,
+    isLoading,
   } = useContext(SearchContext);
 
   const { getDepartmentColor: getColorFromConfig } = useConfig();
 
   const barRef = useRef<HTMLDivElement>(null);
 
-  const hasFilters = selectedDepartments.length > 0 || selectedResearchAreas.length > 0 || selectedListingResearchAreas.length > 0;
+  const hasAdvancedFilters = selectedDepartments.length > 0 || selectedResearchAreas.length > 0 || selectedListingResearchAreas.length > 0;
+  const hasAnyFilter = hasAdvancedFilters || quickFilter !== null;
 
   // Measure and report filter bar height
   useEffect(() => {
-    if (!hasFilters) {
-      setFilterBarHeight(0);
-      return;
-    }
-
     const updateHeight = () => {
       if (barRef.current) {
         setFilterBarHeight(barRef.current.offsetHeight);
@@ -44,11 +68,7 @@ const ActiveFiltersBar = () => {
       resizeObserver.disconnect();
       setFilterBarHeight(0);
     };
-  }, [hasFilters, setFilterBarHeight, selectedDepartments, selectedResearchAreas, selectedListingResearchAreas]);
-
-  if (!hasFilters) {
-    return null;
-  }
+  }, [setFilterBarHeight, hasAdvancedFilters, quickFilter, selectedDepartments, selectedResearchAreas, selectedListingResearchAreas]);
 
   const getDepartmentColor = (department: string) => {
     return `${getColorFromConfig(department)} text-gray-900`;
@@ -66,14 +86,14 @@ const ActiveFiltersBar = () => {
     setSelectedListingResearchAreas((prev) => prev.filter((a) => a !== area));
   };
 
-  const handleRemoveAll = () => {
+  const handleClearAll = () => {
     setSelectedDepartments([]);
     setSelectedResearchAreas([]);
     setSelectedListingResearchAreas([]);
+    setQuickFilter(null);
   };
 
   const getResearchAreaColor = (area: string) => {
-    // Colors aligned with research field colors in researchAreas.ts
     switch (area) {
       case 'Computing & AI':
         return 'bg-blue-200 text-gray-900';
@@ -98,70 +118,113 @@ const ActiveFiltersBar = () => {
     }
   };
 
-  const totalFilters = selectedDepartments.length + selectedResearchAreas.length + selectedListingResearchAreas.length;
-
   return (
-    <div ref={barRef} className="bg-white border-b border-gray-200 shadow-sm px-4 py-2">
-      <div className="mx-auto max-w-[1300px] flex flex-wrap items-center gap-2">
-        <span className="text-sm text-gray-600 font-medium">Filters:</span>
-        {selectedResearchAreas.map((area) => (
-          <span
-            key={`area-${area}`}
-            className={`${getResearchAreaColor(area)} px-2 py-1 rounded text-sm flex items-center border border-gray-300`}
-          >
-            <span className="whitespace-nowrap">{area}</span>
-            <button
-              type="button"
-              onClick={() => handleRemoveResearchArea(area)}
-              className="ml-2 text-gray-500 hover:text-gray-700"
-            >
-              x
-            </button>
-          </span>
-        ))}
-        {selectedDepartments.map((department) => (
-          <span
-            key={`dept-${department}`}
-            className={`${getDepartmentColor(department)} px-2 py-1 rounded text-sm flex items-center`}
-          >
-            <span className="whitespace-nowrap">{department}</span>
-            <button
-              type="button"
-              onClick={() => handleRemoveDepartment(department)}
-              className="ml-2 text-gray-500 hover:text-gray-700"
-            >
-              x
-            </button>
-          </span>
-        ))}
-        {selectedListingResearchAreas.map((area) => {
-          const colors = getColorForResearchArea(area);
-          return (
-            <span
-              key={`listing-area-${area}`}
-              className={`${colors.bg} ${colors.text} px-2 py-1 rounded text-sm flex items-center`}
-            >
-              <span className="whitespace-nowrap">{area}</span>
-              <button
-                type="button"
-                onClick={() => handleRemoveListingResearchArea(area)}
-                className="ml-2 text-gray-500 hover:text-gray-700"
-              >
-                x
-              </button>
+    <div ref={barRef} className="bg-white border-b border-gray-100">
+      <div className="mx-auto max-w-[1300px] px-6">
+        {/* Quick filters + result count */}
+        <div className="flex items-center justify-between py-2 gap-3">
+          <div className="flex items-center gap-2 flex-wrap">
+            {listingQuickFilters.map((option) => {
+              const isActive = quickFilter === option.value;
+              return (
+                <button
+                  key={option.value}
+                  onClick={() => setQuickFilter(isActive ? null : option.value)}
+                  className={`
+                    inline-flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-full
+                    transition-all duration-200 border cursor-pointer
+                    ${isActive
+                      ? 'bg-blue-50 text-blue-700 border-blue-200'
+                      : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300 hover:text-gray-700'
+                    }
+                  `}
+                >
+                  {option.icon}
+                  {option.label}
+                  {isActive && (
+                    <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <line x1="18" y1="6" x2="6" y2="18" />
+                      <line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {isLoading && (
+              <div className="w-3 h-3 border-2 border-blue-200 border-t-blue-500 rounded-full animate-spin" />
+            )}
+            <span className="text-xs text-gray-400 whitespace-nowrap">
+              {totalCount} {totalCount === 1 ? 'result' : 'results'}
             </span>
-          );
-        })}
-        {totalFilters >= 2 && (
-          <button
-            onClick={handleRemoveAll}
-            className="text-gray-500 hover:text-gray-700 text-sm transition-colors flex items-center gap-1"
-          >
-            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-            Clear all
-          </button>
+          </div>
+        </div>
+
+        {/* Advanced filters row + unified clear all */}
+        {hasAdvancedFilters && (
+          <div className="flex flex-wrap items-center gap-2 pb-2 pt-1.5 border-t border-gray-100">
+            {selectedResearchAreas.map((area) => (
+              <span
+                key={`area-${area}`}
+                className={`${getResearchAreaColor(area)} px-2 py-0.5 rounded text-xs flex items-center border border-gray-300`}
+              >
+                <span className="whitespace-nowrap">{area}</span>
+                <button
+                  type="button"
+                  onClick={() => handleRemoveResearchArea(area)}
+                  className="ml-1.5 text-gray-500 hover:text-gray-700"
+                >
+                  x
+                </button>
+              </span>
+            ))}
+            {selectedDepartments.map((department) => (
+              <span
+                key={`dept-${department}`}
+                className={`${getDepartmentColor(department)} px-2 py-0.5 rounded text-xs flex items-center`}
+              >
+                <span className="whitespace-nowrap">{department}</span>
+                <button
+                  type="button"
+                  onClick={() => handleRemoveDepartment(department)}
+                  className="ml-1.5 text-gray-500 hover:text-gray-700"
+                >
+                  x
+                </button>
+              </span>
+            ))}
+            {selectedListingResearchAreas.map((area) => {
+              const colors = getColorForResearchArea(area);
+              return (
+                <span
+                  key={`listing-area-${area}`}
+                  className={`${colors.bg} ${colors.text} px-2 py-0.5 rounded text-xs flex items-center`}
+                >
+                  <span className="whitespace-nowrap">{area}</span>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveListingResearchArea(area)}
+                    className="ml-1.5 text-gray-500 hover:text-gray-700"
+                  >
+                    x
+                  </button>
+                </span>
+              );
+            })}
+            {/* Unified clear all — clears advanced filters and quick filter */}
+            {hasAnyFilter && (
+              <button
+                onClick={handleClearAll}
+                className="text-gray-400 hover:text-gray-600 text-xs transition-colors flex items-center gap-1"
+              >
+                <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+                Clear all
+              </button>
+            )}
+          </div>
         )}
       </div>
     </div>

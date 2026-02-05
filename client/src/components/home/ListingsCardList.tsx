@@ -4,7 +4,7 @@ import ListingCard from './ListingCard';
 import SortDropdown from './SortDropdown';
 import PulseLoader from "react-spinners/PulseLoader";
 import { Listing } from '../../types/types';
-import QuickFilters, { QuickFilterOption } from '../shared/QuickFilters';
+import SearchContext from '../../contexts/SearchContext';
 
 type ListingsCardListProps = {
   loading: Boolean;
@@ -21,62 +21,13 @@ type ListingsCardListProps = {
   updateFavorite: (listingId: string, favorite: boolean) => void;
 };
 
-// Section Header Component
-const SectionHeader = ({ title, count, icon }: { title: string; count: number; icon: React.ReactNode }) => (
-  <div className="flex items-center gap-2 mb-3 mt-6 first:mt-0">
-    <div className="flex items-center gap-2 text-gray-700">
-      {icon}
-      <h2 className="text-sm font-semibold">{title}</h2>
-    </div>
-    <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
-      {count}
-    </span>
-  </div>
-);
-
-// Quick filter options for listings
-const listingQuickFilters: QuickFilterOption[] = [
-  {
-    label: 'Open Only',
-    value: 'open',
-    icon: (
-      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-        <polyline points="22 4 12 14.01 9 11.01" />
-      </svg>
-    ),
-  },
-  {
-    label: 'Recently Added',
-    value: 'recent',
-    icon: (
-      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="12" cy="12" r="10" />
-        <polyline points="12 6 12 12 16 14" />
-      </svg>
-    ),
-  },
-  {
-    label: 'Has Prerequisites',
-    value: 'prerequisites',
-    icon: (
-      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M14 3v4a1 1 0 0 0 1 1h4" />
-        <path d="M17 21h-10a2 2 0 0 1 -2 -2v-14a2 2 0 0 1 2 -2h7l5 5v11a2 2 0 0 1 -2 2z" />
-      </svg>
-    ),
-  },
-];
-
 export default function ListingsCardList({
   loading,
   searchExhausted,
   setPage,
   listings,
-  sortableKeys,
   sortBy,
   setSortBy,
-  setSortOrder,
   sortDirection,
   onToggleSortDirection,
   favListingsIds,
@@ -84,35 +35,80 @@ export default function ListingsCardList({
 }: ListingsCardListProps) {
   const [modalOpen, setModalOpen] = React.useState(false);
   const [selectedListingId, setSelectedListingId] = React.useState<string | null>(null);
-  const [quickFilter, setQuickFilter] = React.useState<string | null>(null);
+  const { quickFilter, setQuickFilter } = React.useContext(SearchContext);
 
-  // Reference for results bottom detector
   const bottomObserverRef = React.useRef<HTMLDivElement>(null);
+  const isFetchingRef = React.useRef(false);
 
-  // Set up intersection observer for infinite scrolling
-  React.useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const [entry] = entries;
-        // If bottom element is visible, loading is false, and we haven't exhausted search results
-        if (entry.isIntersecting && !loading && !searchExhausted) {
-          setPage(prevPage => prevPage + 1);
-        }
-      },
-      { threshold: 1.0 }
-    );
+  // Apply quick filters
+  const getFilteredListings = () => {
+    let filtered = listings;
 
-    const currentObserver = bottomObserverRef.current;
-    if (currentObserver) {
-      observer.observe(currentObserver);
+    if (quickFilter === 'open') {
+      filtered = filtered.filter(l => l.hiringStatus >= 0);
+    } else if (quickFilter === 'recent') {
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      filtered = filtered.filter(l => new Date(l.createdAt) >= thirtyDaysAgo);
     }
 
-    return () => {
-      if (currentObserver) {
-        observer.unobserve(currentObserver);
-      }
-    };
-  }, [loading, searchExhausted, setPage]);
+    return filtered;
+  };
+
+  const filteredListings = getFilteredListings();
+
+  // ── Robust infinite scroll ──────────────────────────────────────────────
+  // Observer setup: only recreated when searchExhausted changes.
+  // Uses a fetch lock ref instead of depending on `loading`, so the observer
+  // stays stable and doesn't cascade re-creation on every load cycle.
+  // rootMargin pre-fetches 400px before the sentinel is visible for smooth UX.
+  React.useEffect(() => {
+    if (searchExhausted) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && !isFetchingRef.current) {
+          isFetchingRef.current = true;
+          setPage(prev => prev + 1);
+        }
+      },
+      { threshold: 0, rootMargin: '1000px' }
+    );
+
+    const el = bottomObserverRef.current;
+    if (el) observer.observe(el);
+
+    return () => observer.disconnect();
+  }, [searchExhausted, setPage]);
+
+  // Post-load continuation: after each fetch completes, check if the sentinel
+  // is still in the loadable zone. This handles quick-filter scenarios where
+  // the filtered list is short and the sentinel is immediately visible without
+  // needing the observer to re-fire. Also runs when filteredListings.length
+  // changes (e.g. quick filter toggled) so we start loading if needed.
+  React.useEffect(() => {
+    if (loading || searchExhausted) return;
+
+    // Guard: if a quick filter is active and produces 0 results from a large
+    // dataset, stop trying to load more — prevents infinite reload loops
+    // (e.g. "Recently Added" when nothing was added in the last 30 days).
+    if (quickFilter && filteredListings.length === 0 && listings.length >= 60) {
+      return;
+    }
+
+    // Release the lock so the observer or this check can trigger the next page
+    isFetchingRef.current = false;
+
+    const el = bottomObserverRef.current;
+    if (!el) return;
+
+    // getBoundingClientRect forces a synchronous layout so the position is accurate
+    const rect = el.getBoundingClientRect();
+    if (rect.top < window.innerHeight + 1000) {
+      isFetchingRef.current = true;
+      setPage(prev => prev + 1);
+    }
+  }, [loading, searchExhausted, setPage, filteredListings.length, quickFilter, listings.length]);
 
   const buttonTranslations = [
     {value: 'default', label: 'Sort by: Best Match'},
@@ -127,61 +123,24 @@ export default function ListingsCardList({
     setModalOpen(true);
   };
 
-  // Apply quick filters
-  const getFilteredListings = () => {
-    let filtered = listings;
-
-    if (quickFilter === 'open') {
-      filtered = filtered.filter(l => l.hiringStatus >= 0);
-    } else if (quickFilter === 'recent') {
-      // Show listings from the last 30 days
-      const thirtyDaysAgo = new Date();
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-      filtered = filtered.filter(l => new Date(l.createdAt) >= thirtyDaysAgo);
-    } else if (quickFilter === 'prerequisites') {
-      filtered = filtered.filter(l => l.applicantDescription && l.applicantDescription.trim() !== '');
-    }
-
-    return filtered;
-  };
-
-  const filteredListings = getFilteredListings();
-
-  // Separate listings into open and not open (for section display)
-  const openListings = filteredListings.filter(l => l.hiringStatus >= 0);
-  const closedListings = filteredListings.filter(l => l.hiringStatus < 0);
-
-  // Check if we're using a custom sort (not default/best match)
-  const isCustomSort = sortBy !== 'default';
-
-  // Don't show sections when quick filter is applied (already filtered)
-  const showSections = !isCustomSort && !quickFilter;
+  // Only show loader when loading more (not when list is empty)
+  const showLoader = loading && filteredListings.length > 0;
 
   return (
     <div className="flex flex-col items-center relative pb-4">
-
       {/* Modal */}
-        {!loading && selectedListingId !== null && (
-            <ListingsModal
-              listing={listings.find((l) => l.id === selectedListingId)!}
-              onClose={() => {
-                setModalOpen(false);
-                setSelectedListingId(null);
-              }}
-              isOpen={modalOpen}
-              favListingsIds={favListingsIds}
-              updateFavorite={updateFavorite}
-            />
-      )}
-
-      {/* Quick Filters */}
-      <div className="w-full">
-        <QuickFilters
-          options={listingQuickFilters}
-          activeFilter={quickFilter}
-          onFilterChange={setQuickFilter}
+      {selectedListingId !== null && (
+        <ListingsModal
+          listing={listings.find((l) => l.id === selectedListingId)!}
+          onClose={() => {
+            setModalOpen(false);
+            setSelectedListingId(null);
+          }}
+          isOpen={modalOpen}
+          favListingsIds={favListingsIds}
+          updateFavorite={updateFavorite}
         />
-      </div>
+      )}
 
       {/* Sorting Buttons - Only visible on small screens */}
       <div className="mb-4 flex justify-between w-full md:hidden">
@@ -213,92 +172,35 @@ export default function ListingsCardList({
         )}
       </div>
 
-      {/* Results count when filtered */}
-      {quickFilter && (
-        <div className="w-full mb-3">
-          <p className="text-sm text-gray-600">
-            Showing {filteredListings.length} of {listings.length} listings
-          </p>
-        </div>
-      )}
-
-      {/* List of Cards with Sections */}
+      {/* Grid of Cards */}
       <div className="w-full">
         {filteredListings.length === 0 && !loading ? (
           <div className="text-center py-8 text-gray-500">
             <p>No listings match the current filter</p>
-            <button
-              onClick={() => setQuickFilter(null)}
-              className="mt-2 text-blue-600 hover:underline text-sm"
-            >
-              Clear filter
-            </button>
+            {quickFilter && (
+              <button
+                onClick={() => setQuickFilter(null)}
+                className="mt-2 text-blue-600 hover:underline text-sm"
+              >
+                Clear filter
+              </button>
+            )}
           </div>
-        ) : showSections ? (
-          <>
-            {/* Open Positions Section */}
-            {openListings.length > 0 && (
-              <>
-                <SectionHeader
-                  title="Accepting Applications"
-                  count={openListings.length}
-                  icon={
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-green-600">
-                      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-                      <polyline points="22 4 12 14.01 9 11.01" />
-                    </svg>
-                  }
-                />
-                {openListings.map((listing) => (
-                  <ListingCard
-                    key={listing.id}
-                    favListingsIds={favListingsIds}
-                    listing={listing}
-                    updateFavorite={updateFavorite}
-                    openModal={openModalForListing}
-                  />
-                ))}
-              </>
-            )}
-
-            {/* Not Hiring Section */}
-            {closedListings.length > 0 && (
-              <>
-                <SectionHeader
-                  title="Not Currently Hiring"
-                  count={closedListings.length}
-                  icon={
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-gray-400">
-                      <circle cx="12" cy="12" r="10" />
-                      <line x1="4.93" y1="4.93" x2="19.07" y2="19.07" />
-                    </svg>
-                  }
-                />
-                {closedListings.map((listing) => (
-                  <ListingCard
-                    key={listing.id}
-                    favListingsIds={favListingsIds}
-                    listing={listing}
-                    updateFavorite={updateFavorite}
-                    openModal={openModalForListing}
-                  />
-                ))}
-              </>
-            )}
-          </>
         ) : (
-          filteredListings.map((listing) => (
-            <ListingCard
-              key={listing.id}
-              favListingsIds={favListingsIds}
-              listing={listing}
-              updateFavorite={updateFavorite}
-              openModal={openModalForListing}
-            />
-          ))
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {filteredListings.map((listing) => (
+              <ListingCard
+                key={listing.id}
+                favListingsIds={favListingsIds}
+                listing={listing}
+                updateFavorite={updateFavorite}
+                openModal={openModalForListing}
+              />
+            ))}
+          </div>
         )}
 
-        {/* Detects bottom of the list */}
+        {/* Sentinel for infinite scroll — always rendered when more data exists */}
         {!searchExhausted && (
           <div
             ref={bottomObserverRef}
@@ -307,7 +209,7 @@ export default function ListingsCardList({
         )}
       </div>
 
-      {loading && (
+      {showLoader && (
         <div className="flex justify-center items-center mt-4">
           <PulseLoader color="#3b82f6" size={15} />
         </div>
