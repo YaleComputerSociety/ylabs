@@ -16,18 +16,22 @@ import NotFound from "./pages/notFound";
 import ConfigContextProvider from "./providers/ConfigContextProvider";
 import SearchContextProvider from "./providers/SearchContextProvider";
 import FellowshipSearchContextProvider from "./providers/FellowshipSearchContextProvider";
+import UIContextProvider from "./providers/UIContextProvider";
+import ScrollToTop from "./components/shared/ScrollToTop";
 
 const App = () => {
   return (
     <Router>
+      <ScrollToTop />
       <ConfigContextProvider>
         <SearchContextProvider>
           <FellowshipSearchContextProvider>
+          <UIContextProvider>
           <div className="flex flex-col h-full overflow-hidden">
           <div className="flex-shrink-0 flex-grow-0">
             <Navbar/>
           </div>
-          <div className="flex-grow overflow-y-auto flex flex-col">
+          <div className="flex-grow overflow-y-auto flex flex-col" data-scroll-container>
           <main className="flex-grow">
           <Routes>
           <Route path="/" element={<PrivateRoute Component={Home} unknownBlocked={true}/>} />
@@ -44,6 +48,7 @@ const App = () => {
           <Footer />
           </div>
           </div>
+          </UIContextProvider>
           </FellowshipSearchContextProvider>
         </SearchContextProvider>
       </ConfigContextProvider>

@@ -1,51 +1,16 @@
-import {useState, useEffect} from "react";
-import {Listing, Fellowship} from '../types/types'
-import {createListing} from '../utils/apiCleaner';
-import ListingCard from '../components/accounts/ListingCard'
-import ListingModal from "../components/accounts/ListingModal";
-import FellowshipCard from "../components/fellowship/FellowshipCard";
+import { useState, useEffect, useContext } from "react";
+import { Listing, Fellowship } from '../types/types';
+import { createListing } from '../utils/apiCleaner';
+import { createFellowship } from '../utils/createFellowship';
+import ListingCard from '../components/accounts/ListingCard';
+import ListingDetailModal from "../components/shared/ListingDetailModal";
 import FellowshipModal from "../components/fellowship/FellowshipModal";
+import LoadingSpinner from "../components/shared/LoadingSpinner";
 import axios from '../utils/axios';
 import swal from 'sweetalert';
-import PulseLoader from "react-spinners/PulseLoader";
-import { useContext } from "react";
 import UserContext from "../contexts/UserContext";
 import CreateButton from "../components/accounts/CreateButton";
 import YoutubeVideo from "../components/accounts/YoutubeVideo";
-
-// Transform API response to Fellowship type (same as FellowshipSearchContextProvider)
-function createFellowship(data: any): Fellowship {
-    return {
-        id: data._id || data.id,
-        title: data.title || '',
-        competitionType: data.competitionType || '',
-        summary: data.summary || '',
-        description: data.description || '',
-        applicationInformation: data.applicationInformation || '',
-        eligibility: data.eligibility || '',
-        restrictionsToUseOfAward: data.restrictionsToUseOfAward || '',
-        additionalInformation: data.additionalInformation || '',
-        links: data.links || [],
-        applicationLink: data.applicationLink || '',
-        isAcceptingApplications: data.isAcceptingApplications || false,
-        applicationOpenDate: data.applicationOpenDate || null,
-        deadline: data.deadline || null,
-        contactName: data.contactName || '',
-        contactEmail: data.contactEmail || '',
-        contactPhone: data.contactPhone || '',
-        contactOffice: data.contactOffice || '',
-        yearOfStudy: data.yearOfStudy || [],
-        termOfAward: data.termOfAward || [],
-        purpose: data.purpose || [],
-        globalRegions: data.globalRegions || [],
-        citizenshipStatus: data.citizenshipStatus || [],
-        archived: data.archived || false,
-        views: data.views || 0,
-        favorites: data.favorites || 0,
-        updatedAt: data.updatedAt || '',
-        createdAt: data.createdAt || '',
-    };
-}
 
 const Account = () => {
     const [ownListings, setOwnListings] = useState<Listing[]>([]);
@@ -60,12 +25,7 @@ const Account = () => {
     const [isCreating, setIsCreating] = useState(false);
     const [selectedListing, setSelectedListing] = useState<Listing | null>(null);
     const [selectedFellowship, setSelectedFellowship] = useState<Fellowship | null>(null);
-    const {user} = useContext(UserContext);
-
-    // Scroll to top on page load
-    useEffect(() => {
-        window.scrollTo(0, 0);
-    }, []);
+    const { user } = useContext(UserContext);
 
     useEffect(() => {
         reloadListings();
@@ -85,7 +45,7 @@ const Account = () => {
         if (isEditing) {
             window.addEventListener('beforeunload', handleBeforeUnload);
         }
-        
+
         return () => {
             window.removeEventListener('beforeunload', handleBeforeUnload);
         };
@@ -94,42 +54,36 @@ const Account = () => {
     const reloadListings = async () => {
         setIsLoading(true);
 
-        await axios.get('/users/listings', {withCredentials: true}).then((response) => {
-            const responseOwnListings : Listing[] = response.data.ownListings.map(function(elem: any){
+        await axios.get('/users/listings', { withCredentials: true }).then((response) => {
+            const responseOwnListings: Listing[] = response.data.ownListings.map(function(elem: any) {
                 return createListing(elem);
-            })
-            const responseFavListings : Listing[] = response.data.favListings.map(function(elem: any){
+            });
+            const responseFavListings: Listing[] = response.data.favListings.map(function(elem: any) {
                 return createListing(elem);
-            })
+            });
             setOwnListings(responseOwnListings);
             setFavListings(responseFavListings);
-        }).catch((error => {
+        }).catch((error) => {
             console.error('Error fetching listings:', error);
             setOwnListings([]);
             setFavListings([]);
             setIsLoading(false);
-            swal({
-                text: "Error fetching your listings",
-                icon: "warning",
-            })
-        }));
+            swal({ text: "Error fetching your listings", icon: "warning" });
+        });
 
-        axios.get('/users/favListingsIds', {withCredentials: true}).then((response) => {
+        axios.get('/users/favListingsIds', { withCredentials: true }).then((response) => {
             setFavListingsIds(response.data.favListingsIds);
             setIsLoading(false);
-        }).catch((error => {
+        }).catch((error) => {
             console.error("Error fetching user's favorite listings:", error);
             setOwnListings([]);
             setFavListings([]);
             setFavListingsIds([]);
             setIsLoading(false);
-            swal({
-                text: "Error fetching your listings",
-                icon: "warning",
-            })
-        }));
+            swal({ text: "Error fetching your listings", icon: "warning" });
+        });
 
-        // Fetch favorite fellowships (full data) from user endpoint
+        // Fetch favorite fellowships
         axios.get('/users/favFellowships').then((response) => {
             const rawFellowships = response.data.favFellowships || [];
             const fellowships: Fellowship[] = rawFellowships.map((f: any) => createFellowship(f));
@@ -142,13 +96,11 @@ const Account = () => {
         });
     };
 
-    // Function to open modal with a specific listing
     const openModal = (listing: Listing) => {
         setSelectedListing(listing);
         setIsModalOpen(true);
     };
 
-    // Function to close modal
     const closeModal = () => {
         setIsModalOpen(false);
         setSelectedListing(null);
@@ -157,33 +109,25 @@ const Account = () => {
     const updateFavorite = (listing: Listing, listingId: string, favorite: boolean) => {
         const prevFavListings = favListings;
         const prevFavListingsIds = favListingsIds;
-        
-        if(favorite) {
+
+        if (favorite) {
             setFavListings([listing, ...prevFavListings]);
             setFavListingsIds([listingId, ...prevFavListingsIds]);
-    
-            axios.put('/users/favListings', {withCredentials: true, data: {favListings: [listing.id]}}).catch((error) => {
+            axios.put('/users/favListings', { withCredentials: true, data: { favListings: [listing.id] } }).catch((error) => {
                 setFavListings(prevFavListings);
                 setFavListingsIds(prevFavListingsIds);
                 console.error('Error favoriting listing:', error);
-                swal({
-                    text: "Unable to favorite listing",
-                    icon: "warning",
-                })
+                swal({ text: "Unable to favorite listing", icon: "warning" });
                 reloadListings();
             });
         } else {
             setFavListings(prevFavListings.filter((listing) => listing.id !== listingId));
             setFavListingsIds(prevFavListingsIds.filter((id) => id !== listingId));
-    
-            axios.delete('/users/favListings', {withCredentials: true, data: {favListings: [listingId]}}).catch((error) => {
+            axios.delete('/users/favListings', { withCredentials: true, data: { favListings: [listingId] } }).catch((error) => {
                 setFavListings(prevFavListings);
                 setFavListingsIds(prevFavListingsIds);
                 console.error('Error unfavoriting listing:', error);
-                swal({
-                    text: "Unable to unfavorite listing",
-                    icon: "warning",
-                })
+                swal({ text: "Unable to unfavorite listing", icon: "warning" });
                 reloadListings();
             });
         }
@@ -232,29 +176,23 @@ const Account = () => {
 
     const filterHiddenListings = (listings: Listing[]) => {
         return listings.filter((listing) => listing.confirmed && !listing.archived);
-    }
+    };
 
     const postListing = (listing: Listing) => {
         setIsLoading(true);
-
-        // Use PUT for updating existing listings, POST for creating new ones
         const isNewListing = listing.id === "create";
         const request = isNewListing
-            ? axios.post('/listings', {withCredentials: true, data: listing})
-            : axios.put(`/listings/${listing.id}`, {withCredentials: true, data: listing});
+            ? axios.post('/listings', { withCredentials: true, data: listing })
+            : axios.put(`/listings/${listing.id}`, { withCredentials: true, data: listing });
 
-        request.then((response) => {
+        request.then(() => {
             reloadListings();
             setIsEditing(false);
             setIsLoading(false);
             setIsCreating(false);
         }).catch((error) => {
             console.error(isNewListing ? 'Error creating listing:' : 'Error updating listing:', error);
-            swal({
-                text: isNewListing ? "Unable to create listing" : "Unable to update listing",
-                icon: "warning",
-            })
-
+            swal({ text: isNewListing ? "Unable to create listing" : "Unable to update listing", icon: "warning" });
             reloadListings();
             setIsEditing(false);
             setIsLoading(false);
@@ -270,43 +208,34 @@ const Account = () => {
 
     const deleteListing = (listing: Listing) => {
         setIsLoading(true);
-        axios.delete(`/listings/${listing.id}`, {withCredentials: true}).then((response) => {
+        axios.delete(`/listings/${listing.id}`, { withCredentials: true }).then(() => {
             reloadListings();
             setIsLoading(false);
         }).catch((error) => {
             console.error('Error deleting listing:', error);
-            swal({
-                text: "Unable to delete listing",
-                icon: "warning",
-            })
-
+            swal({ text: "Unable to delete listing", icon: "warning" });
             reloadListings();
             setIsLoading(false);
         });
     };
 
     const onCreate = () => {
-        axios.get('/listings/skeleton', {withCredentials: true}).then((response) => {
+        axios.get('/listings/skeleton', { withCredentials: true }).then((response) => {
             const skeletonListing = createListing(response.data.listing);
-
             setOwnListings((prevOwnListings) => [...prevOwnListings, skeletonListing]);
-            
             setIsEditing(true);
             setIsCreating(true);
-        }).catch((error => {
+        }).catch((error) => {
             console.error("Error fetching skeleton listing:", error);
-            swal({
-                text: "Unable to create listing",
-                icon: "warning",
-            })
-        }));
+            swal({ text: "Unable to create listing", icon: "warning" });
+        });
     };
 
     return (
         <div className="mx-auto max-w-[1300px] px-6 pt-6 w-full">
             {isLoading ? (
                 <div className="flex justify-center pt-12">
-                    <PulseLoader color="#66CCFF" size={10} />
+                    <LoadingSpinner size="lg" />
                 </div>
             ) : (
                 <div>
@@ -344,7 +273,7 @@ const Account = () => {
                             )}
                             {!isCreating && (
                                 <div className={`flex justify-center align-center ${ownListings.length > 0 ? "mb-6 mt-4" : "my-10"}`}>
-                                    <CreateButton globalEditing={isEditing} handleCreate={onCreate}/>
+                                    <CreateButton globalEditing={isEditing} handleCreate={onCreate} />
                                 </div>
                             )}
                         </>
@@ -379,13 +308,11 @@ const Account = () => {
                     {favFellowships.length > 0 ? (
                         <ul>
                             {favFellowships.map((fellowship) => (
-                                <li key={fellowship.id}>
-                                    <FellowshipCard
-                                        fellowship={fellowship}
-                                        favFellowshipIds={favFellowshipIds}
-                                        updateFavorite={updateFellowshipFavorite}
-                                        openModal={openFellowshipModal}
-                                    />
+                                <li key={fellowship.id} className="mb-2 cursor-pointer" onClick={() => openFellowshipModal(fellowship)}>
+                                    <div className="bg-white rounded-md border border-gray-200 hover:border-blue-400 hover:shadow-sm transition-all p-4">
+                                        <h3 className="text-sm font-semibold text-gray-900">{fellowship.title}</h3>
+                                        <p className="text-xs text-gray-500 mt-1 line-clamp-2">{fellowship.summary || fellowship.description}</p>
+                                    </div>
                                 </li>
                             ))}
                         </ul>
@@ -395,22 +322,24 @@ const Account = () => {
 
                     {user && (user.userType === "professor" || user.userType === "faculty" || user.userType === "admin") && (
                         <>
-
                             <h1 className="text-4xl mt-24 font-bold text-center mb-7">Learn y/labs!</h1>
                             <div className="mt-4 flex align-center justify-center mb-4">
                                 <YoutubeVideo />
                             </div>
                         </>
                     )}
-                    
+
                     {/* Listing Modal */}
                     {selectedListing && (
-                        <ListingModal
+                        <ListingDetailModal
                             isOpen={isModalOpen}
                             onClose={closeModal}
                             listing={selectedListing}
-                            favListingsIds={favListingsIds}
-                            updateFavorite={updateFavorite}
+                            isFavorite={favListingsIds.includes(selectedListing.id)}
+                            onToggleFavorite={(e) => {
+                                e.stopPropagation();
+                                updateFavorite(selectedListing, selectedListing.id, !favListingsIds.includes(selectedListing.id));
+                            }}
                         />
                     )}
 

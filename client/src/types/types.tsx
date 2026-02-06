@@ -78,12 +78,6 @@ export type User = {
   userConfirmed: boolean;
 }
 
-export type UserData = {
-  netId: string;
-  userType: string;
-  userConfirmed: boolean;
-}
-
 
 //Developer
 

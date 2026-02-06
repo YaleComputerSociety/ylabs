@@ -16,27 +16,3 @@ export const getDepartmentAbbreviation = (department: string): string => {
   return department.replace(/[^a-zA-Z]/g, '').substring(0, 4).toUpperCase();
 };
 
-/**
- * Extract just the department name (without abbreviation prefix).
- * Handles "ABBR - Name" format.
- */
-export const getDepartmentName = (department: string): string => {
-  // Check if department is in "ABBR - Name" format
-  const match = department.match(/^[A-Z&/]+\s*-\s*(.+)$/);
-  if (match) {
-    return match[1];
-  }
-  return department;
-};
-
-// Static list of department category names (for reference/typing)
-export const researchAreaCategories = [
-  "Biological Sciences",
-  "Engineering",
-  "Health & Medicine",
-  "Humanities",
-  "Physical Sciences",
-  "Social Sciences",
-] as const;
-
-export type ResearchAreaCategory = typeof researchAreaCategories[number];

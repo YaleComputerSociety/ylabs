@@ -2,6 +2,7 @@ import React, { useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Fellowship } from '../../types/types';
 import FellowshipSearchContext from '../../contexts/FellowshipSearchContext';
+import { ensureHttpPrefix } from '../../utils/url';
 
 interface FellowshipModalProps {
     fellowship: Fellowship;
@@ -113,14 +114,6 @@ const FellowshipModal = ({ fellowship, isOpen, onClose, isFavorite, toggleFavori
 
         onClose();
         navigate('/fellowships');
-    };
-
-    const ensureHttpPrefix = (url: string): string => {
-        if (!url) return '';
-        if (url.startsWith('http://') || url.startsWith('https://')) {
-            return url;
-        }
-        return `https://${url}`;
     };
 
     const formatDate = (dateStr: string | null) => {

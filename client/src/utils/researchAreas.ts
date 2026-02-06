@@ -1,7 +1,7 @@
 // Research Areas organized by field with colors
 // Each field has a unique color for visual identification
 
-export enum ResearchField {
+enum ResearchField {
   COMPUTING_AI = "Computing & Artificial Intelligence",
   LIFE_SCIENCES = "Life Sciences & Biology",
   PHYSICAL_SCIENCES = "Physical Sciences & Engineering",
@@ -14,7 +14,7 @@ export enum ResearchField {
 }
 
 // Color mappings for each field
-export const fieldColors: Record<ResearchField, { bg: string; text: string; border: string }> = {
+const fieldColors: Record<ResearchField, { bg: string; text: string; border: string }> = {
   [ResearchField.COMPUTING_AI]: { bg: "bg-blue-200", text: "text-blue-800", border: "border-blue-300" },
   [ResearchField.LIFE_SCIENCES]: { bg: "bg-green-200", text: "text-green-800", border: "border-green-300" },
   [ResearchField.PHYSICAL_SCIENCES]: { bg: "bg-yellow-200", text: "text-yellow-800", border: "border-yellow-300" },
@@ -26,26 +26,13 @@ export const fieldColors: Record<ResearchField, { bg: string; text: string; bord
   [ResearchField.MATHEMATICS]: { bg: "bg-indigo-200", text: "text-indigo-800", border: "border-indigo-300" }
 };
 
-// Field display order for selection UI
-export const fieldOrder: ResearchField[] = [
-  ResearchField.COMPUTING_AI,
-  ResearchField.LIFE_SCIENCES,
-  ResearchField.PHYSICAL_SCIENCES,
-  ResearchField.HEALTH_MEDICINE,
-  ResearchField.SOCIAL_SCIENCES,
-  ResearchField.HUMANITIES_ARTS,
-  ResearchField.ENVIRONMENTAL,
-  ResearchField.ECONOMICS,
-  ResearchField.MATHEMATICS
-];
-
-export interface ResearchArea {
+interface ResearchArea {
   name: string;
   field: ResearchField;
 }
 
 // Default research areas - 500+ phrases organized by field
-export const defaultResearchAreas: ResearchArea[] = [
+const defaultResearchAreas: ResearchArea[] = [
   // ============================================
   // COMPUTING & ARTIFICIAL INTELLIGENCE (80+)
   // ============================================
@@ -723,18 +710,10 @@ export const defaultResearchAreas: ResearchArea[] = [
 ];
 
 // Helper functions
-export function getResearchAreaByName(name: string): ResearchArea | undefined {
+function getResearchAreaByName(name: string): ResearchArea | undefined {
   return defaultResearchAreas.find(
     area => area.name.toLowerCase() === name.toLowerCase()
   );
-}
-
-export function getResearchAreasByField(field: ResearchField): ResearchArea[] {
-  return defaultResearchAreas.filter(area => area.field === field);
-}
-
-export function getFieldColor(field: ResearchField): { bg: string; text: string; border: string } {
-  return fieldColors[field];
 }
 
 export function getColorForResearchArea(name: string, customAreas?: ResearchArea[]): { bg: string; text: string; border: string } {
@@ -758,25 +737,3 @@ export function getColorForResearchArea(name: string, customAreas?: ResearchArea
   return { bg: "bg-gray-200", text: "text-gray-800", border: "border-gray-300" };
 }
 
-export function searchResearchAreas(query: string, customAreas?: ResearchArea[]): ResearchArea[] {
-  const normalizedQuery = query.toLowerCase().trim();
-  if (!normalizedQuery) return [];
-
-  const allAreas = customAreas
-    ? [...defaultResearchAreas, ...customAreas]
-    : defaultResearchAreas;
-
-  return allAreas.filter(area =>
-    area.name.toLowerCase().includes(normalizedQuery)
-  );
-}
-
-export function isResearchAreaInList(name: string, customAreas?: ResearchArea[]): boolean {
-  const allAreas = customAreas
-    ? [...defaultResearchAreas, ...customAreas]
-    : defaultResearchAreas;
-
-  return allAreas.some(
-    area => area.name.toLowerCase() === name.toLowerCase()
-  );
-}
