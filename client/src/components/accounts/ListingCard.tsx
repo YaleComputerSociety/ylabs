@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Listing } from '../../types/types';
 import ListingForm from './ListingForm';
 import { getDepartmentAbbreviation } from '../../utils/departmentNames';
+import { ensureHttpPrefix } from '../../utils/url';
 import { createListing } from '../../utils/apiCleaner';
 import axios from "../../utils/axios";
 import swal from "sweetalert";
@@ -191,14 +192,6 @@ const ListingCard = ({
 
     const handleListingClick = () => {
         openModal(listing);
-    };
-
-    const ensureHttpPrefix = (url: string): string => {
-        if (!url) return '';
-        if (url.startsWith('http://') || url.startsWith('https://')) {
-          return url;
-        }
-        return `https://${url}`;
     };
 
     if (!listing) {
