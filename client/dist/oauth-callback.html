@@ -1,0 +1,12 @@
+<!DOCTYPE html>
+<html><body>
+<script>
+  var hash = window.location.hash.substring(1);
+  var params = new URLSearchParams(hash);
+  var token = params.get('access_token');
+  if (window.opener) {
+    window.opener.postMessage({ type: 'google-oauth-token', token: token }, window.location.origin);
+  }
+  window.close();
+</script>
+</body></html>
