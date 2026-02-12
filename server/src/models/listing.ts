@@ -44,6 +44,14 @@ const listingSchema = new mongoose.Schema(
       type: String,
       required: false,
     },
+    ownerTitle: {
+        type: String,
+        required: false,
+    },
+    ownerPrimaryDepartment: {
+        type: String,
+        required: false,
+    },
     professorIds: {
       type: [String],
       default: [],
@@ -134,6 +142,10 @@ const listingSchema = new mongoose.Schema(
     archivedAt: {
       type: Date,
       required: false,
+    },
+    audited: {
+        type: Boolean,
+        default: false,
     },
     embedding: {
       type: [Number],
