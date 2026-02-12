@@ -23,8 +23,8 @@ interface AdminListing {
   favorites: number;
   archived: boolean;
   confirmed: boolean;
+  audited: boolean;
   createdAt: string;
-  updatedAt: string;
 }
 
 type SortField =
@@ -34,7 +34,6 @@ type SortField =
   | "views"
   | "favorites"
   | "createdAt"
-  | "updatedAt"
   | "hiringStatus"
   | "redFlags";
 
@@ -46,8 +45,7 @@ const TABLE_COLUMNS: { value: SortField; label: string }[] = [
   { value: "views", label: "Views" },
   { value: "favorites", label: "Favs" },
   { value: "hiringStatus", label: "Status" },
-  { value: "createdAt", label: "Created" },
-  { value: "updatedAt", label: "Updated" },
+  { value: "createdAt", label: "Added" },
 ];
 
 // All sort options including special computed ones
@@ -72,6 +70,7 @@ const AdminListingsTable = () => {
   const [pageSize, setPageSize] = useState(25);
   const [archivedFilter, setArchivedFilter] = useState<string>("");
   const [confirmedFilter, setConfirmedFilter] = useState<string>("");
+  const [auditedFilter, setAuditedFilter] = useState<string>("");
 
   // Edit modal
   const [editingListing, setEditingListing] = useState<AdminListing | null>(null);
@@ -92,6 +91,7 @@ const AdminListingsTable = () => {
       };
       if (archivedFilter) params.archived = archivedFilter;
       if (confirmedFilter) params.confirmed = confirmedFilter;
+      if (auditedFilter) params.audited = auditedFilter;
 
       const response = await axios.get("/admin/listings", { params, withCredentials: true });
       setListings(response.data.listings);
@@ -103,7 +103,7 @@ const AdminListingsTable = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [search, sortBy, sortOrder, page, pageSize, archivedFilter, confirmedFilter]);
+  }, [search, sortBy, sortOrder, page, pageSize, archivedFilter, confirmedFilter, auditedFilter]);
 
   useEffect(() => {
     const debounce = setTimeout(() => {
@@ -227,6 +227,22 @@ const AdminListingsTable = () => {
           </div>
 
           <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Audited</label>
+            <select
+              value={auditedFilter}
+              onChange={(e) => {
+                setAuditedFilter(e.target.value);
+                setPage(1);
+              }}
+              className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">All</option>
+              <option value="true">Audited</option>
+              <option value="false">Not Audited</option>
+            </select>
+          </div>
+
+          <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Sort By</label>
             <div className="flex gap-1">
               <select
@@ -303,6 +319,7 @@ const AdminListingsTable = () => {
                 <th className="text-left py-3 px-2 font-semibold text-gray-700 whitespace-nowrap text-xs">Depts</th>
                 <th className="text-center py-3 px-2 font-semibold text-gray-700 whitespace-nowrap text-xs">Arch</th>
                 <th className="text-center py-3 px-2 font-semibold text-gray-700 whitespace-nowrap text-xs">Conf</th>
+                <th className="text-center py-3 px-2 font-semibold text-gray-700 whitespace-nowrap text-xs">Audit</th>
                 <th className="text-center py-3 px-2 font-semibold text-gray-700 whitespace-nowrap text-xs">URLs</th>
                 <th className="text-center py-3 px-2 font-semibold text-gray-700 whitespace-nowrap text-xs">Actions</th>
               </tr>
@@ -351,9 +368,6 @@ const AdminListingsTable = () => {
                     <td className={`py-1.5 px-2 whitespace-nowrap text-xs ${isOld ? "text-red-600 font-medium" : "text-gray-500"}`}>
                       {new Date(listing.createdAt).toLocaleDateString()}
                     </td>
-                    <td className="py-1.5 px-2 whitespace-nowrap text-xs text-gray-500">
-                      {new Date(listing.updatedAt).toLocaleDateString()}
-                    </td>
                     <td className="py-1.5 px-2 max-w-[100px]">
                       {noDepts ? (
                         <span className="text-red-600 text-xs font-medium">None!</span>
@@ -382,6 +396,13 @@ const AdminListingsTable = () => {
                         <span className="text-gray-400 text-[10px]">Yes</span>
                       ) : (
                         <span className="text-orange-700 bg-orange-100 px-1.5 py-0.5 rounded text-[10px] font-medium">No</span>
+                      )}
+                    </td>
+                    <td className="py-1.5 px-2 text-center">
+                      {listing.audited ? (
+                        <span className="text-green-700 bg-green-100 px-1.5 py-0.5 rounded text-[10px] font-medium">✓</span>
+                      ) : (
+                        <span className="text-gray-400 text-[10px]">—</span>
                       )}
                     </td>
                     <td className="py-1.5 px-2 text-center">

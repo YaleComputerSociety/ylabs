@@ -35,6 +35,8 @@ export const createListing = async (data: any, owner: any) => {
         ownerEmail: owner.email,
         ownerFirstName: owner.fname,
         ownerLastName: owner.lname,
+        ownerTitle: owner.title || '',
+        ownerPrimaryDepartment: owner.primary_department || '',
         confirmed: owner.userConfirmed,
         ...(embedding && { embedding })
     });

@@ -12,7 +12,7 @@ const NavbarFellowshipSortDropdown = () => {
   const sortOptions = [
     { value: 'default', label: 'Default' },
     { value: 'deadline', label: 'Deadline' },
-    { value: 'updatedAt', label: 'Updated' },
+    { value: 'createdAt', label: 'Date Added' },
     { value: 'title', label: 'Title' }
   ];
 

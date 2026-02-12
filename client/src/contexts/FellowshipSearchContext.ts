@@ -46,6 +46,10 @@ export interface FellowshipSearchContextType {
   // Refresh function
   refreshFellowships: () => void;
 
+  // Quick filter
+  quickFilter: 'open' | 'closingSoon' | 'recent' | null;
+  setQuickFilter: (filter: 'open' | 'closingSoon' | 'recent' | null) => void;
+
   // Filter bar height for dynamic layout
   filterBarHeight: number;
   setFilterBarHeight: (height: number) => void;
@@ -86,6 +90,8 @@ export const defaultFellowshipSearchContext: FellowshipSearchContextType = {
   },
   sortableKeys: [],
   refreshFellowships: () => {},
+  quickFilter: null,
+  setQuickFilter: () => {},
   filterBarHeight: 0,
   setFilterBarHeight: () => {},
 };

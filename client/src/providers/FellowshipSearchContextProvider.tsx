@@ -12,8 +12,8 @@ interface FellowshipSearchContextProviderProps {
 }
 
 const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> = ({ children }) => {
-  const pageSize = 20;
-  const sortableKeys = ['default', 'updatedAt', 'deadline', 'title'];
+  const pageSize = 500; // Load all at once — fewer than 200 fellowships
+  const sortableKeys = ['default', 'createdAt', 'deadline', 'title'];
 
   const location = useLocation();
   const isActive = location.pathname === '/fellowships';
@@ -50,6 +50,9 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
     globalRegions: [],
     citizenshipStatus: [],
   });
+
+  // Quick filter (for Navbar)
+  const [quickFilter, setQuickFilter] = useState<'open' | 'closingSoon' | 'recent' | null>(null);
 
   // Filter bar height for dynamic layout
   const [filterBarHeight, setFilterBarHeight] = useState<number>(0);
@@ -239,6 +242,8 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
         filterOptions,
         sortableKeys,
         refreshFellowships,
+        quickFilter,
+        setQuickFilter,
         filterBarHeight,
         setFilterBarHeight,
       }}

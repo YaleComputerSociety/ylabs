@@ -11,10 +11,10 @@ interface BrowseGridProps {
   onToggleFavorite: (id: string, e: React.MouseEvent) => void;
   onOpenModal: (item: BrowsableItem) => void;
   onAdminEdit?: (item: BrowsableItem) => void;
-  // Infinite scroll
-  sentinelRef: React.RefObject<HTMLDivElement | null>;
+  // Infinite scroll (optional — omit for single-page-load views)
+  sentinelRef?: React.RefObject<HTMLDivElement | null>;
   isLoading: boolean;
-  searchExhausted: boolean;
+  searchExhausted?: boolean;
   // Quick filter empty state
   quickFilter?: string | null;
   onClearQuickFilter?: () => void;
@@ -86,7 +86,7 @@ const BrowseGrid = ({
         )}
 
         {/* Sentinel for infinite scroll */}
-        {!searchExhausted && (
+        {sentinelRef && !searchExhausted && (
           <div ref={sentinelRef} className="h-10 w-full" />
         )}
       </div>

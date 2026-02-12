@@ -6,6 +6,8 @@ export type Listing = {
   ownerFirstName: string;
   ownerLastName: string;
   ownerEmail: string;
+  ownerTitle?: string;
+  ownerPrimaryDepartment?: string;
   professorIds: string[];
   professorNames: string[];
   title: string;
@@ -24,6 +26,7 @@ export type Listing = {
   updatedAt: string;
   createdAt: string;
   confirmed: boolean;
+  audited: boolean;
 };
 
 // Fellowships
@@ -45,6 +48,7 @@ export type Fellowship = {
   additionalInformation: string;
   links: FellowshipLink[];
   applicationLink: string;
+  awardAmount: string;
   isAcceptingApplications: boolean;
   applicationOpenDate: string | null;
   deadline: string | null;
@@ -58,11 +62,14 @@ export type Fellowship = {
   globalRegions: string[];
   citizenshipStatus: string[];
   archived: boolean;
+  audited: boolean;
   views: number;
   favorites: number;
   updatedAt: string;
   createdAt: string;
 };
+
+export type FellowshipStage = 'not_applied' | 'applied';
 
 export type FellowshipFilterOptions = {
   yearOfStudy: string[];

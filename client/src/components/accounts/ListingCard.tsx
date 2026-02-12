@@ -384,11 +384,11 @@ const ListingCard = ({
                         </div>
                         <div className="flex-grow" />
                         <p className={`text-[8px] mb-0.5 text-gray-700`} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>
-                            Last Update
+                            Date Added
                         </p>
                         <p className={`text-sm text-gray-700 ${archived ? "opacity-50" : ""}`}
                            style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>
-                            {new Date(listing.updatedAt).toLocaleDateString()}
+                            {new Date(listing.createdAt).toLocaleDateString()}
                         </p>
                     </div>
                 </div>

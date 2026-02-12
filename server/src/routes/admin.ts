@@ -32,6 +32,7 @@ router.get("/listings", async (req: Request, res: Response) => {
       pageSize = "25",
       archived,
       confirmed,
+      audited,
     } = req.query;
 
     const filter: any = {};
@@ -41,6 +42,9 @@ router.get("/listings", async (req: Request, res: Response) => {
 
     if (confirmed === "true") filter.confirmed = true;
     else if (confirmed === "false") filter.confirmed = false;
+
+    if (audited === "true") filter.audited = true;
+    else if (audited === "false") filter.audited = { $ne: true };
 
     if (search && (search as string).trim()) {
       const searchRegex = { $regex: (search as string).trim(), $options: "i" };
@@ -422,12 +426,16 @@ router.get("/fellowships", async (req: Request, res: Response) => {
       page = "1",
       pageSize = "25",
       archived,
+      audited,
     } = req.query;
 
     const filter: any = {};
 
     if (archived === "true") filter.archived = true;
     else if (archived === "false") filter.archived = false;
+
+    if (audited === "true") filter.audited = true;
+    else if (audited === "false") filter.audited = { $ne: true };
 
     if (search && (search as string).trim()) {
       const searchRegex = { $regex: (search as string).trim(), $options: "i" };

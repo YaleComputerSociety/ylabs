@@ -19,6 +19,7 @@ interface AdminFellowship {
   additionalInformation: string;
   links: FellowshipLink[];
   applicationLink: string;
+  awardAmount: string;
   isAcceptingApplications: boolean;
   applicationOpenDate: string | null;
   deadline: string | null;
@@ -32,10 +33,10 @@ interface AdminFellowship {
   globalRegions: string[];
   citizenshipStatus: string[];
   archived: boolean;
+  audited: boolean;
   views: number;
   favorites: number;
   createdAt: string;
-  updatedAt: string;
 }
 
 type SortField =
@@ -44,15 +45,14 @@ type SortField =
   | "views"
   | "favorites"
   | "createdAt"
-  | "updatedAt";
+;
 
 const TABLE_COLUMNS: { value: SortField; label: string }[] = [
   { value: "title", label: "Title" },
   { value: "deadline", label: "Deadline" },
   { value: "views", label: "Views" },
   { value: "favorites", label: "Favs" },
-  { value: "createdAt", label: "Created" },
-  { value: "updatedAt", label: "Updated" },
+  { value: "createdAt", label: "Added" },
 ];
 
 const PAGE_SIZES = [10, 25, 50, 100];
@@ -70,6 +70,7 @@ const AdminFellowshipsTable = () => {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
   const [archivedFilter, setArchivedFilter] = useState<string>("");
+  const [auditedFilter, setAuditedFilter] = useState<string>("");
 
   // Edit modal state
   const [editingFellowship, setEditingFellowship] = useState<AdminFellowship | null>(null);
@@ -85,6 +86,7 @@ const AdminFellowshipsTable = () => {
         pageSize,
       };
       if (archivedFilter) params.archived = archivedFilter;
+      if (auditedFilter) params.audited = auditedFilter;
 
       const response = await axios.get("/admin/fellowships", { params, withCredentials: true });
       setFellowships(response.data.fellowships);
@@ -96,7 +98,7 @@ const AdminFellowshipsTable = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [search, sortBy, sortOrder, page, pageSize, archivedFilter]);
+  }, [search, sortBy, sortOrder, page, pageSize, archivedFilter, auditedFilter]);
 
   useEffect(() => {
     const debounce = setTimeout(() => {
@@ -200,6 +202,19 @@ const AdminFellowshipsTable = () => {
         </select>
 
         <select
+          value={auditedFilter}
+          onChange={(e) => {
+            setAuditedFilter(e.target.value);
+            setPage(1);
+          }}
+          className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="">All (Audit)</option>
+          <option value="true">Audited</option>
+          <option value="false">Not Audited</option>
+        </select>
+
+        <select
           value={pageSize}
           onChange={(e) => {
             setPageSize(Number(e.target.value));
@@ -238,6 +253,9 @@ const AdminFellowshipsTable = () => {
                   </div>
                 </th>
               ))}
+              <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Audit
+              </th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Actions
               </th>
@@ -246,13 +264,13 @@ const AdminFellowshipsTable = () => {
           <tbody className="bg-white divide-y divide-gray-200">
             {isLoading ? (
               <tr>
-                <td colSpan={TABLE_COLUMNS.length + 1} className="px-4 py-8 text-center text-gray-500">
+                <td colSpan={TABLE_COLUMNS.length + 2} className="px-4 py-8 text-center text-gray-500">
                   Loading...
                 </td>
               </tr>
             ) : fellowships.length === 0 ? (
               <tr>
-                <td colSpan={TABLE_COLUMNS.length + 1} className="px-4 py-8 text-center text-gray-500">
+                <td colSpan={TABLE_COLUMNS.length + 2} className="px-4 py-8 text-center text-gray-500">
                   No fellowships found
                 </td>
               </tr>
@@ -280,8 +298,12 @@ const AdminFellowshipsTable = () => {
                   <td className="px-4 py-3 text-sm text-gray-500">
                     {formatDate(fellowship.createdAt)}
                   </td>
-                  <td className="px-4 py-3 text-sm text-gray-500">
-                    {formatDate(fellowship.updatedAt)}
+                  <td className="px-4 py-3 text-center">
+                    {fellowship.audited ? (
+                      <span className="text-green-700 bg-green-100 px-1.5 py-0.5 rounded text-xs font-medium">✓</span>
+                    ) : (
+                      <span className="text-gray-400 text-xs">—</span>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-sm">
                     <div className="flex gap-2">
@@ -527,6 +549,7 @@ const FellowshipEditModal = ({
   const [additionalInformation, setAdditionalInformation] = useState(fellowship.additionalInformation || "");
   const [links, setLinks] = useState<FellowshipLink[]>([...(fellowship.links || [])]);
   const [applicationLink, setApplicationLink] = useState(fellowship.applicationLink);
+  const [awardAmount, setAwardAmount] = useState(fellowship.awardAmount || "");
   const [contactName, setContactName] = useState(fellowship.contactName || "");
   const [contactEmail, setContactEmail] = useState(fellowship.contactEmail);
   const [contactPhone, setContactPhone] = useState(fellowship.contactPhone || "");
@@ -557,6 +580,7 @@ const FellowshipEditModal = ({
       additionalInformation,
       links,
       applicationLink,
+      awardAmount,
       contactName,
       contactEmail,
       contactPhone,
@@ -620,6 +644,10 @@ const FellowshipEditModal = ({
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Application Link</label>
             <input value={applicationLink} onChange={(e) => setApplicationLink(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Award Amount</label>
+            <input value={awardAmount} onChange={(e) => setAwardAmount(e.target.value)} placeholder="e.g. $5,000" className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
           </div>
 
           {/* Links */}

@@ -54,6 +54,34 @@ const userSchema = new mongoose.Schema(
         type: String,
         required: false,
     },
+    title: {
+        type: String,
+        required: false,
+    },
+    unit: {
+        type: String,
+        required: false,
+    },
+    upi: {
+        type: String,
+        required: false,
+    },
+    physical_location: {
+        type: String,
+        required: false,
+    },
+    building_desk: {
+        type: String,
+        required: false,
+    },
+    mailing_address: {
+        type: String,
+        required: false,
+    },
+    primary_department: {
+        type: String,
+        required: false,
+    },
     ownListings: {
         type: [mongoose.Schema.ObjectId],
         default: [],

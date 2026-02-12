@@ -11,7 +11,7 @@ const NavbarSortDropdown = () => {
 
   const sortOptions = [
     { value: 'default', label: 'Best Match' },
-    { value: 'updatedAt', label: 'Last Updated' },
+    { value: 'createdAt', label: 'Date Added' },
     { value: 'ownerLastName', label: 'Last Name' },
     { value: 'ownerFirstName', label: 'First Name' },
     { value: 'title', label: 'Lab Title' }

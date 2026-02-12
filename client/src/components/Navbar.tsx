@@ -141,6 +141,66 @@ const listingQuickFilters: QuickFilterDef[] = [
       </svg>
     ),
   },
+  {
+    label: 'YSM',
+    value: 'ysm',
+    icon: (
+      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3 21h18" /><path d="M5 21V7l7-4 7 4v14" /><path d="M9 21v-4h6v4" />
+      </svg>
+    ),
+  },
+  {
+    label: 'YSPH',
+    value: 'ysph',
+    icon: (
+      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3 21h18" /><path d="M5 21V7l7-4 7 4v14" /><path d="M9 21v-4h6v4" />
+      </svg>
+    ),
+  },
+  {
+    label: 'YC',
+    value: 'yc',
+    icon: (
+      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3 21h18" /><path d="M5 21V7l7-4 7 4v14" /><path d="M9 21v-4h6v4" />
+      </svg>
+    ),
+  },
+];
+
+// Quick filter definitions for fellowships
+const fellowshipQuickFilters: QuickFilterDef[] = [
+  {
+    label: 'Open Only',
+    value: 'open',
+    icon: (
+      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+        <polyline points="22 4 12 14.01 9 11.01" />
+      </svg>
+    ),
+  },
+  {
+    label: 'Closing Soon',
+    value: 'closingSoon',
+    icon: (
+      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="10" />
+        <polyline points="12 6 12 12 16 14" />
+      </svg>
+    ),
+  },
+  {
+    label: 'Recently Added',
+    value: 'recent',
+    icon: (
+      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
+      </svg>
+    ),
+  },
 ];
 
 export default function Navbar() {
@@ -179,6 +239,8 @@ export default function Navbar() {
     selectedRegions, setSelectedRegions,
     selectedCitizenship, setSelectedCitizenship,
     setFilterBarHeight: setFellowshipFilterBarHeight,
+    quickFilter: fellowshipQuickFilter, setQuickFilter: setFellowshipQuickFilter,
+    fellowships: fellowshipResults, isLoading: fellowshipLoading, total: fellowshipTotal,
   } = useContext(FellowshipSearchContext);
 
   const { getDepartmentColor: getColorFromConfig } = useConfig();
@@ -350,21 +412,21 @@ export default function Navbar() {
             }}>
               <Box sx={{ display: 'flex', gap: 0, alignItems: 'center' }}>
                 <Button component={Link} to="/" disableRipple sx={{
-                  textTransform: 'none', fontWeight: isHomePage ? 600 : 400,
+                  textTransform: 'none', fontSize: '0.875rem', fontWeight: isHomePage ? 600 : 400,
                   color: isHomePage ? '#0055A4' : '#666',
                   borderBottom: isHomePage ? '2px solid #0055A4' : '2px solid transparent',
                   borderRadius: 0, px: 1.5, py: 0.5, minWidth: 'auto',
                   '&:hover': { backgroundColor: 'transparent', color: '#0055A4' }
                 }}>Find Labs</Button>
                 <Button component={Link} to="/fellowships" disableRipple sx={{
-                  textTransform: 'none', fontWeight: isFellowshipsPage ? 600 : 400,
+                  textTransform: 'none', fontSize: '0.875rem', fontWeight: isFellowshipsPage ? 600 : 400,
                   color: isFellowshipsPage ? '#0055A4' : '#666',
                   borderBottom: isFellowshipsPage ? '2px solid #0055A4' : '2px solid transparent',
                   borderRadius: 0, px: 1.5, py: 0.5, minWidth: 'auto',
                   '&:hover': { backgroundColor: 'transparent', color: '#0055A4' }
                 }}>Find Fellowships</Button>
                 <Button component={Link} to="/account" disableRipple sx={{
-                  textTransform: 'none', fontWeight: isAccountPage ? 600 : 400,
+                  textTransform: 'none', fontSize: '0.875rem', fontWeight: isAccountPage ? 600 : 400,
                   color: isAccountPage ? '#0055A4' : '#666',
                   borderBottom: isAccountPage ? '2px solid #0055A4' : '2px solid transparent',
                   borderRadius: 0, px: 1.5, py: 0.5, minWidth: 'auto',
@@ -391,7 +453,7 @@ export default function Navbar() {
 
             {/* Desktop fellowship search controls - only on fellowships page */}
             {isAuthenticated && isFellowshipsPage && (
-              <Box sx={{ display: { xs: 'none', md: 'flex' }, gap: '10px', ml: 1, mr: '380px', alignItems: 'center', flexShrink: 1, overflow: 'visible' }}>
+              <Box sx={{ display: { xs: 'none', md: 'flex' }, gap: '12px', ml: 1, mr: '380px', alignItems: 'center', flexShrink: 1, overflow: 'visible' }}>
                 <NavbarFellowshipSearchBar />
                 <CombinedFilterDropdown tabs={fellowshipFilterTabs} />
                 <NavbarFellowshipSortDropdown />
@@ -402,7 +464,7 @@ export default function Navbar() {
             {isAuthenticated && (
               <>
                 <Box sx={{ display: 'flex', gap: '8px', alignItems: 'center', ml: 'auto' }}>
-                  {((isHomePage && isMobile) || (isFellowshipsPage && showFellowshipMobilePanel)) && (
+                  {((isHomePage || isFellowshipsPage) && isMobile) && (
                     <IconButton
                       size="small"
                       color="inherit"
@@ -451,7 +513,7 @@ export default function Navbar() {
         )}
 
         {/* Mobile fellowship search panel */}
-        {isAuthenticated && isFellowshipsPage && showFellowshipMobilePanel && (
+        {isAuthenticated && isFellowshipsPage && isMobile && (
           <Collapse in={mobileFellowshipSearchOpen}>
             <Box sx={{ bgcolor: 'white', boxShadow: '0px 2px 4px rgba(0, 0, 0, 0.1)', p: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
               <NavbarFellowshipSearchBar />
@@ -483,8 +545,13 @@ export default function Navbar() {
         )}
 
         {/* Active fellowship filters bar - only on fellowships page */}
-        {isAuthenticated && isFellowshipsPage && fellowshipChips.length > 0 && (
+        {isAuthenticated && isFellowshipsPage && (
           <ActiveFilters
+            quickFilters={fellowshipQuickFilters}
+            activeQuickFilter={fellowshipQuickFilter}
+            onQuickFilterChange={setFellowshipQuickFilter}
+            totalCount={fellowshipTotal}
+            isLoading={fellowshipLoading}
             chips={fellowshipChips}
             onClearAll={() => {
               setSelectedYearOfStudy([]);
@@ -492,6 +559,7 @@ export default function Navbar() {
               setSelectedPurpose([]);
               setSelectedRegions([]);
               setSelectedCitizenship([]);
+              setFellowshipQuickFilter(null);
             }}
             onHeightChange={setFellowshipFilterBarHeight}
           />

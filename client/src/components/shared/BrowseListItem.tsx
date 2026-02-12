@@ -34,10 +34,24 @@ const BrowseListItem = React.memo(({ item, isFavorite, onToggleFavorite, onOpenM
     onOpenModal();
   };
 
-  // Get department abbreviation(s) for listings
-  const deptLabel = item.type === 'listing' && item.data.departments?.length > 0
-    ? item.data.departments.slice(0, 3).map(d => getDepartmentAbbreviation(d)).join(' | ')
-    : null;
+  // Put ownerPrimaryDepartment first in department list
+  const deptLabel = item.type === 'listing' ? (() => {
+    const departments = [...(item.data.departments || [])];
+    const primary = item.data.ownerPrimaryDepartment;
+    if (departments.length === 0) {
+      return primary ? getDepartmentAbbreviation(primary) : null;
+    }
+    if (primary && departments.length > 1) {
+      const idx = departments.findIndex(d => d === primary || getDepartmentAbbreviation(d) === getDepartmentAbbreviation(primary));
+      if (idx > 0) {
+        departments.splice(idx, 1);
+        departments.unshift(primary);
+      } else if (idx === -1) {
+        departments.unshift(primary);
+      }
+    }
+    return departments.slice(0, 3).map(d => getDepartmentAbbreviation(d)).join(' | ');
+  })() : null;
 
   // Subtitle line
   const subtitle = getItemSubtitle(item);
@@ -110,7 +124,7 @@ const BrowseListItem = React.memo(({ item, isFavorite, onToggleFavorite, onOpenM
             <StatusBadge isOpen={open} />
           </div>
           <div className="flex items-center gap-1">
-            {isAdmin && item.type === 'listing' && onAdminEdit && (
+            {isAdmin && onAdminEdit && (
               <button
                 onClick={(e) => { e.stopPropagation(); onAdminEdit(); }}
                 className="p-1 rounded-full text-gray-300 hover:text-blue-600 transition-colors"
@@ -125,7 +139,7 @@ const BrowseListItem = React.memo(({ item, isFavorite, onToggleFavorite, onOpenM
             <FavoriteButton isFavorite={isFavorite} onToggle={onToggleFavorite} />
           </div>
           <p className="text-[10px] text-gray-400 hidden md:block">
-            Updated {new Date(item.data.updatedAt).toLocaleDateString()}
+            Added {new Date(item.data.createdAt).toLocaleDateString()}
           </p>
         </div>
       </div>

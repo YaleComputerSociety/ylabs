@@ -10,6 +10,7 @@ interface AdminListing {
   ownerFirstName: string;
   ownerLastName: string;
   ownerEmail: string;
+  ownerTitle?: string;
   departments: string[];
   description: string;
   websites: string[];
@@ -31,11 +32,13 @@ interface Props {
   listing: AdminListing;
   onClose: () => void;
   onSave: () => void;
+  onDelete?: () => void;
 }
 
-const AdminListingEditModal = ({ listing, onClose, onSave }: Props) => {
+const AdminListingEditModal = ({ listing, onClose, onSave, onDelete }: Props) => {
   const config = useConfig();
 
+  const [ownerTitle, setOwnerTitle] = useState(listing.ownerTitle || "");
   const [title, setTitle] = useState(listing.title || "");
   const [description, setDescription] = useState(listing.description || "");
   const [applicantDescription, setApplicantDescription] = useState(listing.applicantDescription || "");
@@ -48,6 +51,7 @@ const AdminListingEditModal = ({ listing, onClose, onSave }: Props) => {
   const [hiringStatus, setHiringStatus] = useState(listing.hiringStatus >= 0 ? 0 : -1);
   const [archived, setArchived] = useState(listing.archived);
   const [confirmed, setConfirmed] = useState(listing.confirmed);
+  const [audited, setAudited] = useState(listing.audited ?? false);
   const [resetCreatedAt, setResetCreatedAt] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -103,6 +107,7 @@ const AdminListingEditModal = ({ listing, onClose, onSave }: Props) => {
         `/admin/listings/${listing._id}`,
         {
           data: {
+            ownerTitle,
             title,
             description,
             applicantDescription,
@@ -115,6 +120,7 @@ const AdminListingEditModal = ({ listing, onClose, onSave }: Props) => {
             hiringStatus,
             archived,
             confirmed,
+            audited,
           },
           resetCreatedAt,
         },
@@ -238,7 +244,7 @@ const AdminListingEditModal = ({ listing, onClose, onSave }: Props) => {
           <div>
             <h3 className="text-lg font-bold text-gray-900">Edit Listing</h3>
             <p className="text-xs text-gray-500">
-              ID: {listing._id} | Owner: {listing.ownerId}
+              ID: {listing._id} | Owner: {listing.ownerFirstName} {listing.ownerLastName} ({listing.ownerId})
             </p>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">
@@ -251,6 +257,18 @@ const AdminListingEditModal = ({ listing, onClose, onSave }: Props) => {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Left column */}
             <div>
+              <div className="mb-3">
+                <label className="block text-xs font-semibold text-gray-600 mb-1">
+                  Professor Title
+                </label>
+                <input
+                  value={ownerTitle}
+                  onChange={(e) => setOwnerTitle(e.target.value)}
+                  placeholder="e.g. Professor of Sociology"
+                  className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+
               <div className="mb-3">
                 <label className="block text-xs font-semibold text-gray-600 mb-1">
                   Title <span className="text-red-500">*</span>
@@ -319,6 +337,15 @@ const AdminListingEditModal = ({ listing, onClose, onSave }: Props) => {
                     className="rounded"
                   />
                   Confirmed
+                </label>
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={audited}
+                    onChange={(e) => setAudited(e.target.checked)}
+                    className="rounded"
+                  />
+                  Audited
                 </label>
               </div>
 
@@ -496,20 +523,45 @@ const AdminListingEditModal = ({ listing, onClose, onSave }: Props) => {
         </div>
 
         {/* Footer */}
-        <div className="flex justify-end gap-3 px-6 py-4 border-t bg-gray-50 rounded-b-lg">
+        <div className="flex justify-between px-6 py-4 border-t bg-gray-50 rounded-b-lg">
           <button
-            onClick={onClose}
-            className="px-4 py-2 text-sm border border-gray-300 rounded-md hover:bg-gray-100 transition-colors"
+            onClick={async () => {
+              const confirmed = await swal({
+                title: "Delete Listing",
+                text: `Permanently delete "${listing.title}"? This cannot be undone.`,
+                icon: "warning",
+                buttons: ["Cancel", "Delete"],
+                dangerMode: true,
+              });
+              if (!confirmed) return;
+              try {
+                await axios.delete(`/admin/listings/${listing._id}`, { withCredentials: true });
+                swal({ text: "Listing deleted", icon: "success", timer: 1500 });
+                if (onDelete) onDelete();
+                else onSave();
+              } catch (error: any) {
+                swal({ text: error.response?.data?.error || "Failed to delete", icon: "error" });
+              }
+            }}
+            className="px-4 py-2 text-sm text-red-600 border border-red-200 rounded-md hover:bg-red-50 transition-colors"
           >
-            Cancel
+            Delete Listing
           </button>
-          <button
-            onClick={handleSave}
-            disabled={isSaving}
-            className="px-4 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 transition-colors"
-          >
-            {isSaving ? "Saving..." : "Save Changes"}
-          </button>
+          <div className="flex gap-3">
+            <button
+              onClick={onClose}
+              className="px-4 py-2 text-sm border border-gray-300 rounded-md hover:bg-gray-100 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={isSaving}
+              className="px-4 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 transition-colors"
+            >
+              {isSaving ? "Saving..." : "Save Changes"}
+            </button>
+          </div>
         </div>
       </div>
     </div>

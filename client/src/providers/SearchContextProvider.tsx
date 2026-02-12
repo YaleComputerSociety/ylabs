@@ -13,7 +13,7 @@ interface SearchContextProviderProps {
 
 const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => {
   const pageSize = 20;
-  const sortableKeys = ['default', 'updatedAt', 'ownerLastName', 'ownerFirstName', 'title'];
+  const sortableKeys = ['default', 'createdAt', 'ownerLastName', 'ownerFirstName', 'title'];
 
   // Get config data from ConfigContext
   const {

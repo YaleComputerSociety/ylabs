@@ -46,6 +46,10 @@ const fellowshipSchema = new mongoose.Schema(
       type: String,
       default: '',
     },
+    awardAmount: {
+      type: String,
+      default: '',
+    },
 
     // Status
     isAcceptingApplications: {
@@ -105,6 +109,10 @@ const fellowshipSchema = new mongoose.Schema(
 
     // Engagement
     archived: {
+      type: Boolean,
+      default: false,
+    },
+    audited: {
       type: Boolean,
       default: false,
     },

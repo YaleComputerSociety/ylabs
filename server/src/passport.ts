@@ -1,10 +1,111 @@
 import express from "express";
 import passport from "passport";
 import { Strategy } from "passport-cas";
-import { validateUser, createUser } from './services/userService';
+import { validateUser, createUser, updateUser } from './services/userService';
 import { fetchYalie } from "./services/yaliesService";
+import { fetchFromDirectory, isFacultyTitle } from "./services/directoryService";
 import { logEvent } from "./services/analyticsService";
 import { AnalyticsEventType } from "./models";
+
+const STALE_THRESHOLD_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+
+/**
+ * Build an update object from directory data (only non-empty fields).
+ */
+function buildDirectoryUpdate(dirPerson: NonNullable<Awaited<ReturnType<typeof fetchFromDirectory>>>) {
+  const update: Record<string, any> = {};
+  if (dirPerson.firstName) update.fname = dirPerson.firstName;
+  if (dirPerson.lastName) update.lname = dirPerson.lastName;
+  if (dirPerson.email) update.email = dirPerson.email;
+  if (dirPerson.department) update.departments = [dirPerson.department];
+  if (dirPerson.title) update.title = dirPerson.title;
+  if (dirPerson.phone) update.phone = dirPerson.phone;
+  if (dirPerson.upi) update.upi = dirPerson.upi;
+  if (dirPerson.unit) update.unit = dirPerson.unit;
+  if (dirPerson.physical_location) update.physical_location = dirPerson.physical_location;
+  if (dirPerson.building_desk) update.building_desk = dirPerson.building_desk;
+  if (dirPerson.mailing_address) update.mailing_address = dirPerson.mailing_address;
+  return update;
+}
+
+/**
+ * Shared helper: find or create a user by netid.
+ * 1. Check if user already exists in DB (refresh from directory if stale)
+ * 2. Try Yalies API (undergrad/grad detection)
+ * 3. If Yalies fails, try Yale Directory (faculty detection)
+ * 4. Fallback: create a default user
+ */
+async function findOrCreateUser(netid: string) {
+  // Step 1: Check existing user
+  let user = await validateUser(netid);
+  if (user) {
+    // Refresh directory data if stale (>30 days since last update)
+    const updatedAt = user.updatedAt ? new Date(user.updatedAt).getTime() : 0;
+    const isStale = Date.now() - updatedAt > STALE_THRESHOLD_MS;
+
+    if (isStale) {
+      console.log(`findOrCreateUser: refreshing stale data for ${netid} (last updated: ${user.updatedAt || 'never'})`);
+      try {
+        const dirPerson = await fetchFromDirectory(netid, 'netid');
+        if (dirPerson && dirPerson.name) {
+          const dirUpdate = buildDirectoryUpdate(dirPerson);
+          // Detect faculty status if user was 'unknown'
+          if (user.userType === 'unknown' && isFacultyTitle(dirPerson.title)) {
+            dirUpdate.userType = 'professor';
+            dirUpdate.userConfirmed = true;
+          }
+          user = await updateUser(netid, dirUpdate);
+          console.log(`findOrCreateUser: refreshed directory data for ${netid}`);
+        }
+      } catch (err) {
+        console.log(`findOrCreateUser: directory refresh failed for ${netid}, using cached data`);
+      }
+    } else {
+      console.log(`findOrCreateUser: existing user ${netid} (fresh)`);
+    }
+    return user;
+  }
+
+  // Step 2: Try Yalies API
+  console.log(`findOrCreateUser: trying Yalies API for ${netid}`);
+  user = await fetchYalie(netid);
+  if (user) {
+    console.log(`findOrCreateUser: Yalies success for ${netid}, type=${user.userType}`);
+    return user;
+  }
+
+  // Step 3: Try Yale Directory
+  console.log(`findOrCreateUser: Yalies failed, trying Yale Directory for ${netid}`);
+  const dirPerson = await fetchFromDirectory(netid, 'netid');
+  if (dirPerson && dirPerson.name) {
+    console.log(`findOrCreateUser: Directory found ${dirPerson.name}, title="${dirPerson.title}"`);
+
+    const userType = isFacultyTitle(dirPerson.title) ? 'professor' : 'unknown';
+    const dirFields = buildDirectoryUpdate(dirPerson);
+    user = await createUser({
+      netid,
+      fname: dirPerson.firstName || dirPerson.name.split(' ')[0] || 'NA',
+      lname: dirPerson.lastName || dirPerson.name.split(' ').slice(1).join(' ') || 'NA',
+      email: dirPerson.email || `${netid}@yale.edu`,
+      departments: dirPerson.department ? [dirPerson.department] : [],
+      userType,
+      userConfirmed: userType === 'professor',
+      ...dirFields,
+    });
+    console.log(`findOrCreateUser: Directory user created, type=${userType}`);
+    return user;
+  }
+
+  // Step 4: Fallback — create default user
+  console.log(`findOrCreateUser: Directory also failed, creating default user for ${netid}`);
+  user = await createUser({
+    netid,
+    fname: "NA",
+    lname: "NA",
+    email: "NA",
+  });
+  return user;
+}
 
 passport.use(
   new Strategy(
@@ -18,45 +119,12 @@ passport.use(
       console.log("User profile: ", profile);
 
       try {
-        console.log('Validating user');
-        let user = await validateUser(profile.user);
-        console.log('Done validating user');
-        if (user) {
-          console.log('User already exists');
-          done(null, {
-            netId: profile.user,
-            userType: user.userType,
-            userConfirmed: user.userConfirmed,
-          });
-        } else {
-          console.log('User does not exist, fetching yalies');
-          user = await fetchYalie(profile.user);
-          console.log('Done fetching yalies');
-          if (user) {
-            console.log('Yalies fetch a success, sending user');
-            done(null, {
-              netId: user.netid,
-              userType: user.userType,
-              userConfirmed: user.userConfirmed,
-            });
-          } else {
-            console.log('Yalies fetch no result, creating default user');
-            user = await createUser(
-              {
-                netid: profile.user,
-                fname: "NA",
-                lname: "NA",
-                email: "NA",
-              }
-            )
-            console.log('Default user created, sending user');
-            done(null, {
-              netId: user.netid,
-              userType: user.userType,
-              userConfirmed: user.userConfirmed,
-            });
-          }
-        }
+        const user = await findOrCreateUser(profile.user);
+        done(null, {
+          netId: user.netid || profile.user,
+          userType: user.userType,
+          userConfirmed: user.userConfirmed,
+        });
       } catch (error) {
         console.log('Error in CAS login');
         done(error);
@@ -73,47 +141,14 @@ passport.serializeUser(function (user: any, done) {
 passport.deserializeUser(async (netId: String, done) => {
   try {
     console.log('Deserializing user');
-    console.log('Deserialize: Validating user');
-    let user = await validateUser(netId);
-    console.log('Deserialize: Done validating user');
-    if (user) {
-      console.log('Deserialize: User already exists');
-      done(null, {
-        netId: user.netid,
-        userType: user.userType,
-        userConfirmed: user.userConfirmed,
-      });
-    } else {
-      console.log('Deserialize: User does not exist, fetching yalies');
-      user = await fetchYalie(netId);
-      console.log('Deserialize: Done fetching yalies');
-      if (user) {
-        console.log('Deserialize: Yalies fetch a success, sending user');
-        done(null, {
-          netId: user.netid,
-          userType: user.userType,
-          userConfirmed: user.userConfirmed,
-        });
-      } else {
-        console.log('Deserialize: Yalies fetch no result, creating default user');
-        user = await createUser(
-          {
-            netid: netId,
-            fname: "NA",
-            lname: "NA",
-            email: "NA",
-          }
-        )
-        console.log('Deserialize: Default user created, sending user');
-        done(null, {
-          netId: user.netid,
-          userType: user.userType,
-          userConfirmed: user.userConfirmed,
-        });
-      }
-    }
+    const user = await findOrCreateUser(netId as string);
+    done(null, {
+      netId: user.netid || netId,
+      userType: user.userType,
+      userConfirmed: user.userConfirmed,
+    });
   } catch (error) {
-    console.log('Deserialize: Error in CAS login');
+    console.log('Deserialize: Error');
     done(error, null);
   }
 });
@@ -190,7 +225,10 @@ const casLogin = function (
       }
 
       console.log("Default redirecting user");
-      return res.redirect("/");
+      const defaultRedirect = process.env.NODE_ENV === 'development'
+        ? 'http://localhost:3000'
+        : '/';
+      return res.redirect(defaultRedirect);
     });
   })(req, res, next);
 };

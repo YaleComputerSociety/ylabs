@@ -11,6 +11,8 @@ export const createListing = (listing: any) => {
         ownerFirstName: listing.ownerFirstName,
         ownerLastName: listing.ownerLastName,
         ownerEmail: listing.ownerEmail,
+        ownerTitle: listing.ownerTitle || '',
+        ownerPrimaryDepartment: listing.ownerPrimaryDepartment || '',
         professorIds: listing.professorIds || [],
         professorNames: listing.professorNames || [],
         title: listing.title || titleDefault,

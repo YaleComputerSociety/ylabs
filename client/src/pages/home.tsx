@@ -9,6 +9,7 @@ import { BrowsableItem } from "../types/browsable";
 import { Listing } from "../types/types";
 import axios from "../utils/axios";
 import swal from "sweetalert";
+import { getInstitutionAffiliation } from "../utils/institutionAffiliation";
 
 const Home = () => {
     const {
@@ -62,6 +63,15 @@ const Home = () => {
             const thirtyDaysAgo = new Date();
             thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
             return listings.filter(l => new Date(l.createdAt) >= thirtyDaysAgo);
+        }
+        if (quickFilter === 'ysm') {
+            return listings.filter(l => getInstitutionAffiliation(l.departments || []) === 'YSM');
+        }
+        if (quickFilter === 'ysph') {
+            return listings.filter(l => getInstitutionAffiliation(l.departments || []) === 'YSPH');
+        }
+        if (quickFilter === 'yc') {
+            return listings.filter(l => getInstitutionAffiliation(l.departments || []) === 'YC');
         }
         return listings;
     }, [listings, quickFilter]);

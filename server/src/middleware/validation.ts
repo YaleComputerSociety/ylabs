@@ -59,8 +59,8 @@ export const validatePagination = (req: Request, res: Response, next: NextFuncti
     return res.status(400).json({ error: 'Invalid page number (must be >= 1)' });
   }
   
-  if (pageSize && (isNaN(Number(pageSize)) || Number(pageSize) < 1 || Number(pageSize) > 100)) {
-    return res.status(400).json({ error: 'Invalid page size (must be between 1 and 100)' });
+  if (pageSize && (isNaN(Number(pageSize)) || Number(pageSize) < 1 || Number(pageSize) > 500)) {
+    return res.status(400).json({ error: 'Invalid page size (must be between 1 and 500)' });
   }
   
   next();
