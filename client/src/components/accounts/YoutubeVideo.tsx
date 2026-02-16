@@ -1,3 +1,6 @@
+/**
+ * Embedded YouTube video player component.
+ */
 function YoutubeVideo() {
     return (
         <div >

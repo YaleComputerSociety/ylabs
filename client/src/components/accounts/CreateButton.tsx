@@ -1,3 +1,6 @@
+/**
+ * Button to create a new listing or fellowship.
+ */
 interface CreateButtonProps {
     globalEditing: boolean;
     handleCreate: () => void;

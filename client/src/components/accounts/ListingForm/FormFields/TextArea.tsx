@@ -1,3 +1,6 @@
+/**
+ * Reusable textarea form field.
+ */
 import ErrorMessage from './ErrorMessage';
 
 interface TextAreaProps {

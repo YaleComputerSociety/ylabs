@@ -1,3 +1,6 @@
+/**
+ * Home navigation button used inside the mobile drawer menu.
+ */
 import Button from "@mui/material/Button";
 import { Link } from 'react-router-dom';
 
