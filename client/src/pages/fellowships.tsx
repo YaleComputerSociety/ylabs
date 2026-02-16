@@ -1,3 +1,6 @@
+/**
+ * Fellowships browse page with search, filters, and grid/list view.
+ */
 import { useState, useEffect, useContext, useMemo } from "react";
 import FellowshipModal from "../components/fellowship/FellowshipModal";
 import AdminFellowshipEditModal from "../components/admin/AdminFellowshipEditModal";
@@ -67,7 +70,6 @@ const Fellowships = () => {
         reloadFavorites();
     }, []);
 
-    // Categorize fellowships into 3 groups
     const { closingSoon, open, closed } = useMemo(() => {
         const now = new Date();
         const groups = { closingSoon: [] as Fellowship[], open: [] as Fellowship[], closed: [] as Fellowship[] };
@@ -75,7 +77,6 @@ const Fellowships = () => {
             const cat = categorizeFellowship(f, now);
             groups[cat].push(f);
         }
-        // Sort closing soon by deadline (nearest first)
         groups.closingSoon.sort((a, b) => {
             const da = a.deadline ? new Date(a.deadline).getTime() : Infinity;
             const db = b.deadline ? new Date(b.deadline).getTime() : Infinity;
@@ -87,7 +88,6 @@ const Fellowships = () => {
     const toBrowsable = (fs: Fellowship[]): BrowsableItem[] =>
         fs.map((f) => ({ type: 'fellowship' as const, data: f }));
 
-    // Apply "recently added" filter if active
     const recentFilter = (fs: Fellowship[]) => {
         if (quickFilter !== 'recent') return fs;
         const thirtyDaysAgo = new Date();
@@ -99,10 +99,9 @@ const Fellowships = () => {
     const openItems = useMemo(() => toBrowsable(recentFilter(open)), [open, quickFilter]);
     const closedItems = useMemo(() => toBrowsable(recentFilter(closed)), [closed, quickFilter]);
 
-    // Determine which sections are visible based on quick filter
     const showSection = (section: 'closingSoon' | 'open' | 'closed') => {
         if (quickFilter === null || quickFilter === 'recent') return true;
-        if (quickFilter === 'open') return section !== 'closed'; // "Open Only" shows closingSoon + open
+        if (quickFilter === 'open') return section !== 'closed';
         if (quickFilter === 'closingSoon') return section === 'closingSoon';
         return false;
     };
@@ -147,7 +146,6 @@ const Fellowships = () => {
 
     return (
         <div className="mx-auto max-w-[1300px] px-6 w-full min-h-[calc(100vh-12rem)]">
-            {/* Header */}
             <div className="mb-4 mt-6 text-center">
                 <p className="text-sm text-gray-600">
                     Looking for non-research fellowships?{' '}
@@ -170,7 +168,6 @@ const Fellowships = () => {
                 </div>
             ) : (
                 <>
-                    {/* Closing Soon */}
                     {showSection('closingSoon') && closingSoonItems.length > 0 && (
                         <>
                             <SectionHeader title="Closing Soon" count={closingSoonItems.length} color="bg-amber-500" />
@@ -186,7 +183,6 @@ const Fellowships = () => {
                         </>
                     )}
 
-                    {/* Open */}
                     {showSection('open') && openItems.length > 0 && (
                         <>
                             <SectionHeader title="Open" count={openItems.length} color="bg-green-500" />
@@ -202,7 +198,6 @@ const Fellowships = () => {
                         </>
                     )}
 
-                    {/* Closed */}
                     {showSection('closed') && closedItems.length > 0 && (
                         <>
                             <SectionHeader title="Closed" count={closedItems.length} color="bg-gray-400" />
@@ -220,7 +215,6 @@ const Fellowships = () => {
                 </>
             )}
 
-            {/* Fellowship detail modal */}
             {selectedFellowship && (
                 <FellowshipModal
                     fellowship={selectedFellowship}
@@ -233,7 +227,6 @@ const Fellowships = () => {
                 />
             )}
 
-            {/* Admin edit modal */}
             {adminEditFellowship && (
                 <AdminFellowshipEditModal
                     fellowship={adminEditFellowship}

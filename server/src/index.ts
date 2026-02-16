@@ -1,3 +1,6 @@
+/**
+ * Server entry point — connects to MongoDB and starts the Express server.
+ */
 import app from "./app";
 import dotenv from "dotenv";
 import { initializeConnections, getApiMode } from "./db/connections";
@@ -8,7 +11,6 @@ const port = process.env.PORT || 4000;
 
 const startApp = async () => {
   try {
-    // Initialize database connections based on API_MODE
     await initializeConnections();
 
     const mode = getApiMode();

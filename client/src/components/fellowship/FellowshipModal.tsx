@@ -1,3 +1,6 @@
+/**
+ * Detail modal for viewing full fellowship information.
+ */
 import React, { useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Fellowship } from '../../types/types';
@@ -13,7 +16,6 @@ interface FellowshipModalProps {
     toggleFavorite: () => void;
 }
 
-// Render text that may contain markdown-style links: [label](url)
 const RichText = ({ text }: { text: string }) => {
     const linkRegex = /\[([^\]]+)\]\s*\(([^)]+)\)/g;
     const elements: React.ReactNode[] = [];
@@ -126,13 +128,11 @@ const FellowshipModal = ({ fellowship, isOpen, onClose, isFavorite, toggleFavori
                 className="bg-white rounded-xl shadow-2xl w-full max-w-4xl h-[85vh] flex flex-col overflow-hidden"
                 onClick={(e) => e.stopPropagation()}
             >
-                {/* Header bar */}
                 <div className="flex-shrink-0 border-b border-gray-100">
                     <div className="h-1 w-full" style={{ background: 'linear-gradient(90deg, #0055A4 0%, #3b82f6 50%, #93c5fd 100%)' }} />
                     <div className="px-6 py-5">
                         <div className="flex items-start justify-between gap-4">
                             <div className="flex-1 min-w-0">
-                                {/* Badges */}
                                 <div className="flex flex-wrap items-center gap-2 mb-2">
                                     {fellowship.competitionType && (
                                         <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 font-medium">
@@ -148,13 +148,11 @@ const FellowshipModal = ({ fellowship, isOpen, onClose, isFavorite, toggleFavori
                                     </span>
                                 </div>
 
-                                {/* Title */}
                                 <h2 className="text-xl font-bold text-gray-900 leading-tight">
                                     {fellowship.title}
                                 </h2>
                             </div>
 
-                            {/* Action buttons */}
                             <div className="flex items-center gap-1 flex-shrink-0">
                                 {fellowship.applicationLink && (
                                     <a
@@ -202,13 +200,10 @@ const FellowshipModal = ({ fellowship, isOpen, onClose, isFavorite, toggleFavori
                     </div>
                 </div>
 
-                {/* Body */}
                 <div className="flex-1 overflow-y-auto">
                     <div className="p-6">
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                            {/* Sidebar */}
                             <div className="col-span-1 space-y-6">
-                                {/* Award Amount */}
                                 {fellowship.awardAmount && (
                                     <section>
                                         <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Award Amount</h3>
@@ -218,7 +213,6 @@ const FellowshipModal = ({ fellowship, isOpen, onClose, isFavorite, toggleFavori
                                     </section>
                                 )}
 
-                                {/* Key Dates */}
                                 <section>
                                     <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Key Dates</h3>
                                     <div className="bg-blue-50 rounded-lg p-3 space-y-3">
@@ -237,7 +231,6 @@ const FellowshipModal = ({ fellowship, isOpen, onClose, isFavorite, toggleFavori
                                     </div>
                                 </section>
 
-                                {/* Contact */}
                                 {hasContactInfo && (
                                     <section>
                                         <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Contact</h3>
@@ -264,7 +257,6 @@ const FellowshipModal = ({ fellowship, isOpen, onClose, isFavorite, toggleFavori
                                     </section>
                                 )}
 
-                                {/* Links */}
                                 {fellowship.links && fellowship.links.length > 0 && (
                                     <section>
                                         <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Links</h3>
@@ -289,7 +281,6 @@ const FellowshipModal = ({ fellowship, isOpen, onClose, isFavorite, toggleFavori
                                     </section>
                                 )}
 
-                                {/* Eligibility Filters */}
                                 <section>
                                     <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Eligibility Filters</h3>
                                     <p className="text-xs text-gray-400 mb-3">Click to find similar fellowships</p>
@@ -363,9 +354,7 @@ const FellowshipModal = ({ fellowship, isOpen, onClose, isFavorite, toggleFavori
                                 </section>
                             </div>
 
-                            {/* Main content */}
                             <div className="col-span-1 md:col-span-2 space-y-6">
-                                {/* Summary */}
                                 {fellowship.summary && (
                                     <section>
                                         <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Brief Description</h3>
@@ -373,7 +362,6 @@ const FellowshipModal = ({ fellowship, isOpen, onClose, isFavorite, toggleFavori
                                     </section>
                                 )}
 
-                                {/* Full Description */}
                                 {fellowship.description && fellowship.description !== fellowship.summary && (
                                     <section>
                                         <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Full Description</h3>
@@ -381,7 +369,6 @@ const FellowshipModal = ({ fellowship, isOpen, onClose, isFavorite, toggleFavori
                                     </section>
                                 )}
 
-                                {/* Application Information */}
                                 {fellowship.applicationInformation && (
                                     <section>
                                         <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Application Information</h3>
@@ -389,7 +376,6 @@ const FellowshipModal = ({ fellowship, isOpen, onClose, isFavorite, toggleFavori
                                     </section>
                                 )}
 
-                                {/* Eligibility */}
                                 {fellowship.eligibility && (
                                     <section>
                                         <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Eligibility Requirements</h3>
@@ -397,7 +383,6 @@ const FellowshipModal = ({ fellowship, isOpen, onClose, isFavorite, toggleFavori
                                     </section>
                                 )}
 
-                                {/* Restrictions */}
                                 {fellowship.restrictionsToUseOfAward && (
                                     <section>
                                         <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Restrictions to Use of Award</h3>
@@ -405,7 +390,6 @@ const FellowshipModal = ({ fellowship, isOpen, onClose, isFavorite, toggleFavori
                                     </section>
                                 )}
 
-                                {/* Additional Information */}
                                 {fellowship.additionalInformation && (
                                     <section>
                                         <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Additional Information</h3>
@@ -413,7 +397,6 @@ const FellowshipModal = ({ fellowship, isOpen, onClose, isFavorite, toggleFavori
                                     </section>
                                 )}
 
-                                {/* Apply Now */}
                                 {fellowship.applicationLink && (
                                     <div className="pt-4 border-t border-gray-100">
                                         <a

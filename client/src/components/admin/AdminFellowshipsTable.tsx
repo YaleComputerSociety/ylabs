@@ -1,3 +1,6 @@
+/**
+ * Admin panel table for managing fellowships.
+ */
 import { useState, useEffect, useCallback } from "react";
 import axios from "../../utils/axios";
 import swal from "sweetalert";
@@ -63,7 +66,6 @@ const AdminFellowshipsTable = () => {
   const [totalPages, setTotalPages] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Controls
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState<SortField>("createdAt");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
@@ -72,7 +74,6 @@ const AdminFellowshipsTable = () => {
   const [archivedFilter, setArchivedFilter] = useState<string>("");
   const [auditedFilter, setAuditedFilter] = useState<string>("");
 
-  // Edit modal state
   const [editingFellowship, setEditingFellowship] = useState<AdminFellowship | null>(null);
 
   const fetchFellowships = useCallback(async () => {
@@ -175,7 +176,6 @@ const AdminFellowshipsTable = () => {
 
   return (
     <div className="space-y-4">
-      {/* Controls */}
       <div className="flex flex-wrap gap-4 items-center">
         <input
           type="text"
@@ -234,7 +234,6 @@ const AdminFellowshipsTable = () => {
         </span>
       </div>
 
-      {/* Table */}
       <div className="overflow-x-auto border rounded-lg">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
@@ -334,7 +333,6 @@ const AdminFellowshipsTable = () => {
         </table>
       </div>
 
-      {/* Pagination */}
       {totalPages > 1 && (
         <div className="flex items-center justify-between">
           <div className="text-sm text-gray-500">
@@ -359,7 +357,6 @@ const AdminFellowshipsTable = () => {
         </div>
       )}
 
-      {/* Edit Modal */}
       {editingFellowship && (
         <FellowshipEditModal
           fellowship={editingFellowship}
@@ -371,7 +368,6 @@ const AdminFellowshipsTable = () => {
   );
 };
 
-// Reusable tag input for array fields
 const ArrayFieldEditor = ({
   label,
   values,
@@ -443,7 +439,6 @@ const ArrayFieldEditor = ({
   );
 };
 
-// Editor for the links array field
 const LinksEditor = ({
   links,
   onChange,
@@ -519,17 +514,14 @@ const LinksEditor = ({
   );
 };
 
-// Helper to format datetime-local value from ISO string
 const toDatetimeLocal = (dateStr: string | null): string => {
   if (!dateStr) return "";
   const d = new Date(dateStr);
   if (isNaN(d.getTime())) return "";
-  // Format as YYYY-MM-DDTHH:MM
   const pad = (n: number) => n.toString().padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 };
 
-// Edit modal with all fellowship fields
 const FellowshipEditModal = ({
   fellowship,
   onSave,
@@ -601,7 +593,6 @@ const FellowshipEditModal = ({
       <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto p-6">
         <h3 className="text-lg font-semibold mb-4">Edit Fellowship</h3>
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Core fields */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
             <input value={title} onChange={(e) => setTitle(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
@@ -650,12 +641,10 @@ const FellowshipEditModal = ({
             <input value={awardAmount} onChange={(e) => setAwardAmount(e.target.value)} placeholder="e.g. $5,000" className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
           </div>
 
-          {/* Links */}
           <div className="border-t pt-4 mt-4">
             <LinksEditor links={links} onChange={setLinks} />
           </div>
 
-          {/* Contact Information */}
           <div className="border-t pt-4 mt-4">
             <h4 className="text-sm font-semibold text-gray-800 mb-3">Contact Information</h4>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -678,7 +667,6 @@ const FellowshipEditModal = ({
             </div>
           </div>
 
-          {/* Status & dates */}
           <div className="border-t pt-4 mt-4">
             <h4 className="text-sm font-semibold text-gray-800 mb-3">Status & Dates</h4>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -714,7 +702,6 @@ const FellowshipEditModal = ({
             </div>
           </div>
 
-          {/* Array fields */}
           <div className="border-t pt-4 mt-4">
             <h4 className="text-sm font-semibold text-gray-800 mb-3">Categories & Filters</h4>
             <div className="space-y-4">

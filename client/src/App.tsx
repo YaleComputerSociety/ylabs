@@ -1,3 +1,6 @@
+/**
+ * Root application component with route definitions.
+ */
 import PrivateRoute from "./components/PrivateRoute";
 import UnprivateRoute from "./components/UnprivateRoute";
 import AdminRoute from "./components/AdminRoute";
@@ -7,6 +10,7 @@ import Fellowships from "./pages/fellowships";
 import Login from "./pages/login";
 import About from "./pages/about";
 import Account from "./pages/account";
+import Profile from "./pages/profile";
 import Unknown from "./pages/unknown";
 import LoginError from "./pages/loginError";
 import Navbar from "./components/Navbar";
@@ -38,6 +42,7 @@ const App = () => {
           <Route path="/fellowships" element={<PrivateRoute Component={Fellowships} unknownBlocked={true}/>} />
           <Route path="/about" element={<PrivateRoute Component={About} unknownBlocked={true}/>} />
           <Route path="/account" element={<PrivateRoute Component={Account} unknownBlocked={true}/>} />
+          <Route path="/profile/:netid" element={<PrivateRoute Component={Profile} unknownBlocked={true}/>} />
           <Route path="/analytics" element={<AdminRoute Component={Analytics}/>} />
           <Route path="/login" element={<Login />} />
           <Route path="/login-error" element={<UnprivateRoute Component={LoginError} />} />

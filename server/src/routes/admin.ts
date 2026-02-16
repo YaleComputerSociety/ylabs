@@ -1,3 +1,6 @@
+/**
+ * Admin-only routes for managing listings, fellowships, users, and profiles.
+ */
 import { Router, Request, Response } from "express";
 import mongoose from "mongoose";
 import { isAuthenticated, isAdmin, validateObjectId } from "../middleware";
@@ -7,21 +10,22 @@ import { ResearchArea, ResearchField, fieldColorKeys } from "../models/researchA
 import { Department, DepartmentCategory, categoryColorKeys } from "../models/department";
 import { invalidateConfigCache } from "../services/configService";
 import { Fellowship } from "../models/fellowship";
+import { User } from "../models/user";
 import {
   updateFellowship,
   deleteFellowship,
   archiveFellowship,
   unarchiveFellowship,
 } from "../services/fellowshipService";
+import {
+  adminUpdateProfile,
+  cascadeDepartmentsToListings,
+} from "../services/profileService";
 
 const router = Router();
 
-// All admin routes require authentication + admin role
 router.use(isAuthenticated, isAdmin);
 
-// ==================== LISTINGS ====================
-
-// GET /admin/listings — fetch all listings with sorting, search, pagination, filters
 router.get("/listings", async (req: Request, res: Response) => {
   try {
     const {
@@ -60,12 +64,10 @@ router.get("/listings", async (req: Request, res: Response) => {
     const pageNum = Math.max(1, parseInt(page as string, 10) || 1);
     const pageSizeNum = Math.min(100, Math.max(1, parseInt(pageSize as string, 10) || 25));
 
-    // Build sort object
     let sort: any = {};
     const order = sortOrder === "asc" ? 1 : -1;
 
     if (sortBy === "descriptionLength") {
-      // Special case: sort by computed field
       const pipeline: any[] = [
         { $match: filter },
         {
@@ -100,8 +102,6 @@ router.get("/listings", async (req: Request, res: Response) => {
     }
 
     if (sortBy === "redFlags") {
-      // Sort by computed red flag score
-      // Higher score = more red flags
       const twoYearsAgo = new Date();
       twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2);
 
@@ -111,17 +111,11 @@ router.get("/listings", async (req: Request, res: Response) => {
           $addFields: {
             redFlagScore: {
               $add: [
-                // No departments: +10
                 { $cond: [{ $or: [{ $eq: [{ $size: { $ifNull: ["$departments", []] } }, 0] }, { $eq: ["$departments", null] }] }, 10, 0] },
-                // No views: +5
                 { $cond: [{ $eq: [{ $ifNull: ["$views", 0] }, 0] }, 5, 0] },
-                // Low views (1-5): +2
                 { $cond: [{ $and: [{ $gt: [{ $ifNull: ["$views", 0] }, 0] }, { $lte: [{ $ifNull: ["$views", 0] }, 5] }] }, 2, 0] },
-                // Old listing (>2 years): +5
                 { $cond: [{ $lt: ["$createdAt", twoYearsAgo] }, 5, 0] },
-                // No research areas: +3
                 { $cond: [{ $or: [{ $eq: [{ $size: { $ifNull: ["$researchAreas", []] } }, 0] }, { $eq: ["$researchAreas", null] }] }, 3, 0] },
-                // Short description (<100 chars): +2
                 {
                   $cond: [
                     { $lt: [{ $strLenCP: { $ifNull: ["$description", ""] } }, 100] },
@@ -180,7 +174,6 @@ router.get("/listings", async (req: Request, res: Response) => {
   }
 });
 
-// PUT /admin/listings/:id — update any listing (admin bypass)
 router.put("/listings/:id", validateObjectId("id"), async (req: Request, res: Response) => {
   try {
     const currentUser = req.user as { netId?: string };
@@ -188,12 +181,10 @@ router.put("/listings/:id", validateObjectId("id"), async (req: Request, res: Re
 
     let listing = await updateListing(req.params.id, currentUser.netId, data, true);
 
-    // If resetCreatedAt is true, update the createdAt to same month/day but in 2025
     if (resetCreatedAt && listing) {
       const originalDate = new Date(listing.createdAt);
       const newCreatedAt = new Date(2025, originalDate.getMonth(), originalDate.getDate());
 
-      // Use raw MongoDB driver to bypass Mongoose's immutable constraint on createdAt
       await getListingModel().collection.updateOne(
         { _id: new mongoose.Types.ObjectId(req.params.id) },
         { $set: { createdAt: newCreatedAt } }
@@ -208,7 +199,6 @@ router.put("/listings/:id", validateObjectId("id"), async (req: Request, res: Re
   }
 });
 
-// DELETE /admin/listings/:id — delete any listing
 router.delete("/listings/:id", validateObjectId("id"), async (req: Request, res: Response) => {
   try {
     await deleteListing(req.params.id);
@@ -219,9 +209,6 @@ router.delete("/listings/:id", validateObjectId("id"), async (req: Request, res:
   }
 });
 
-// ==================== RESEARCH AREAS ====================
-
-// GET /admin/research-areas — get all research areas
 router.get("/research-areas", async (_req: Request, res: Response) => {
   try {
     const areas = await ResearchArea.find().sort({ name: 1 }).lean();
@@ -232,7 +219,6 @@ router.get("/research-areas", async (_req: Request, res: Response) => {
   }
 });
 
-// PUT /admin/research-areas/:id — update a research area
 router.put("/research-areas/:id", validateObjectId("id"), async (req: Request, res: Response) => {
   try {
     const { name, field } = req.body;
@@ -264,7 +250,6 @@ router.put("/research-areas/:id", validateObjectId("id"), async (req: Request, r
   }
 });
 
-// DELETE /admin/research-areas/:id — delete a research area
 router.delete("/research-areas/:id", validateObjectId("id"), async (req: Request, res: Response) => {
   try {
     const area = await ResearchArea.findByIdAndDelete(req.params.id);
@@ -280,9 +265,6 @@ router.delete("/research-areas/:id", validateObjectId("id"), async (req: Request
   }
 });
 
-// ==================== DEPARTMENTS ====================
-
-// GET /admin/departments — get all departments
 router.get("/departments", async (_req: Request, res: Response) => {
   try {
     const departments = await Department.find().sort({ abbreviation: 1 }).lean();
@@ -293,7 +275,6 @@ router.get("/departments", async (_req: Request, res: Response) => {
   }
 });
 
-// POST /admin/departments — create a new department
 router.post("/departments", async (req: Request, res: Response) => {
   try {
     const { abbreviation, name, displayName, categories, primaryCategory } = req.body;
@@ -322,7 +303,6 @@ router.post("/departments", async (req: Request, res: Response) => {
   }
 });
 
-// PUT /admin/departments/:id — update a department
 router.put("/departments/:id", validateObjectId("id"), async (req: Request, res: Response) => {
   try {
     const { abbreviation, name, displayName, categories, primaryCategory, isActive } = req.body;
@@ -355,7 +335,6 @@ router.put("/departments/:id", validateObjectId("id"), async (req: Request, res:
   }
 });
 
-// DELETE /admin/departments/:id — delete a department
 router.delete("/departments/:id", validateObjectId("id"), async (req: Request, res: Response) => {
   try {
     const dept = await Department.findByIdAndDelete(req.params.id);
@@ -371,9 +350,6 @@ router.delete("/departments/:id", validateObjectId("id"), async (req: Request, r
   }
 });
 
-// ==================== URL CHECKING ====================
-
-// POST /admin/check-urls — check reachability of URLs
 router.post("/check-urls", async (req: Request, res: Response) => {
   try {
     const { urls } = req.body;
@@ -386,7 +362,7 @@ router.post("/check-urls", async (req: Request, res: Response) => {
       urls.map(async (url: string) => {
         try {
           let normalizedUrl = url;
-          if (!/^https?:\/\//i.test(normalizedUrl)) {
+          if (!/^https?:\/\//.test(normalizedUrl)) {
             normalizedUrl = "https://" + normalizedUrl;
           }
 
@@ -414,9 +390,133 @@ router.post("/check-urls", async (req: Request, res: Response) => {
   }
 });
 
-// ==================== FELLOWSHIPS ====================
+router.get("/profiles", async (req: Request, res: Response) => {
+  try {
+    const {
+      search,
+      sortBy = "lname",
+      sortOrder = "asc",
+      page = "1",
+      pageSize = "25",
+      profileVerified,
+      hasListings,
+    } = req.query;
 
-// GET /admin/fellowships — fetch all fellowships with sorting, search, pagination, filters
+    const filter: any = {
+      userType: { $in: ["professor", "faculty"] },
+    };
+
+    if (profileVerified === "true") filter.profileVerified = true;
+    else if (profileVerified === "false")
+      filter.profileVerified = { $ne: true };
+
+    if (hasListings === "true")
+      filter.ownListings = { $exists: true, $not: { $size: 0 } };
+    else if (hasListings === "false")
+      filter.$or = [
+        { ownListings: { $exists: false } },
+        { ownListings: { $size: 0 } },
+      ];
+
+    if (search && (search as string).trim()) {
+      const searchRegex = {
+        $regex: (search as string).trim(),
+        $options: "i",
+      };
+      const searchOr = [
+        { fname: searchRegex },
+        { lname: searchRegex },
+        { netid: searchRegex },
+        { email: searchRegex },
+        { primary_department: searchRegex },
+      ];
+      if (filter.$or) {
+        filter.$and = [{ $or: filter.$or }, { $or: searchOr }];
+        delete filter.$or;
+      } else {
+        filter.$or = searchOr;
+      }
+    }
+
+    const pageNum = Math.max(
+      1,
+      parseInt(page as string, 10) || 1
+    );
+    const pageSizeNum = Math.min(
+      100,
+      Math.max(1, parseInt(pageSize as string, 10) || 25)
+    );
+
+    const sort: any = {};
+    const order = sortOrder === "asc" ? 1 : -1;
+    sort[sortBy as string] = order;
+    sort._id = 1;
+
+    const [profiles, total] = await Promise.all([
+      User.find(filter)
+        .select("-publications")
+        .sort(sort)
+        .skip((pageNum - 1) * pageSizeNum)
+        .limit(pageSizeNum)
+        .lean(),
+      User.countDocuments(filter),
+    ]);
+
+    res.json({
+      profiles,
+      total,
+      page: pageNum,
+      pageSize: pageSizeNum,
+      totalPages: Math.ceil(total / pageSizeNum),
+    });
+  } catch (error: any) {
+    console.error("Admin: Error fetching profiles:", error);
+    res.status(500).json({ error: "Failed to fetch profiles" });
+  }
+});
+
+router.get("/profiles/:netid", async (req: Request, res: Response) => {
+  try {
+    const user = await User.findOne({ netid: req.params.netid })
+      .select("+publications")
+      .lean();
+
+    if (!user) {
+      return res.status(404).json({ error: "Profile not found" });
+    }
+
+    res.json({ profile: user });
+  } catch (error: any) {
+    console.error("Admin: Error fetching profile:", error);
+    res.status(500).json({ error: "Failed to fetch profile" });
+  }
+});
+
+router.put("/profiles/:netid", async (req: Request, res: Response) => {
+  try {
+    const { data } = req.body;
+    const profile = await adminUpdateProfile(req.params.netid, data || req.body);
+
+    if (!profile) {
+      return res.status(404).json({ error: "Profile not found" });
+    }
+
+    if (
+      data?.primary_department !== undefined ||
+      data?.secondary_departments !== undefined ||
+      req.body.primary_department !== undefined ||
+      req.body.secondary_departments !== undefined
+    ) {
+      await cascadeDepartmentsToListings(req.params.netid);
+    }
+
+    res.json({ profile });
+  } catch (error: any) {
+    console.error("Admin: Error updating profile:", error);
+    res.status(400).json({ error: error.message });
+  }
+});
+
 router.get("/fellowships", async (req: Request, res: Response) => {
   try {
     const {
@@ -477,7 +577,6 @@ router.get("/fellowships", async (req: Request, res: Response) => {
   }
 });
 
-// PUT /admin/fellowships/:id — update a fellowship
 router.put("/fellowships/:id", validateObjectId("id"), async (req: Request, res: Response) => {
   try {
     const fellowship = await updateFellowship(req.params.id, req.body.data);
@@ -488,7 +587,6 @@ router.put("/fellowships/:id", validateObjectId("id"), async (req: Request, res:
   }
 });
 
-// PUT /admin/fellowships/:id/archive — archive a fellowship
 router.put("/fellowships/:id/archive", validateObjectId("id"), async (req: Request, res: Response) => {
   try {
     const fellowship = await archiveFellowship(req.params.id);
@@ -499,7 +597,6 @@ router.put("/fellowships/:id/archive", validateObjectId("id"), async (req: Reque
   }
 });
 
-// PUT /admin/fellowships/:id/unarchive — unarchive a fellowship
 router.put("/fellowships/:id/unarchive", validateObjectId("id"), async (req: Request, res: Response) => {
   try {
     const fellowship = await unarchiveFellowship(req.params.id);
@@ -510,7 +607,6 @@ router.put("/fellowships/:id/unarchive", validateObjectId("id"), async (req: Req
   }
 });
 
-// DELETE /admin/fellowships/:id — delete a fellowship
 router.delete("/fellowships/:id", validateObjectId("id"), async (req: Request, res: Response) => {
   try {
     await deleteFellowship(req.params.id);

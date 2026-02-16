@@ -1,3 +1,6 @@
+/**
+ * Controller handlers for fellowship CRUD routes.
+ */
 import { Request, Response } from "express";
 import {
   readFellowship,
@@ -8,7 +11,6 @@ import {
   removeFavorite,
 } from '../services/fellowshipService';
 
-// Search fellowships with filters
 export const searchFellowshipsController = async (request: Request, response: Response) => {
   try {
     const {
@@ -24,10 +26,8 @@ export const searchFellowshipsController = async (request: Request, response: Re
       citizenshipStatus,
     } = request.query;
 
-    // Parse array filters (comma-separated or pipe-separated)
     const parseFilter = (filter: string | undefined): string[] => {
       if (!filter) return [];
-      // Support both comma and pipe separators
       return filter.split(/[,|]/).map(s => s.trim()).filter(Boolean);
     };
 
@@ -57,7 +57,6 @@ export const searchFellowshipsController = async (request: Request, response: Re
   }
 };
 
-// Get a single fellowship by ID
 export const getFellowshipById = async (request: Request, response: Response) => {
   try {
     const fellowship = await readFellowship(request.params.id);
@@ -71,7 +70,6 @@ export const getFellowshipById = async (request: Request, response: Response) =>
   }
 };
 
-// Get filter options for dropdowns
 export const getFellowshipFilterOptions = async (request: Request, response: Response) => {
   try {
     const options = await getFilterOptions();
@@ -81,7 +79,6 @@ export const getFellowshipFilterOptions = async (request: Request, response: Res
   }
 };
 
-// Add a view to a fellowship
 export const addViewToFellowship = async (request: Request, response: Response) => {
   try {
     const fellowship = await addView(request.params.id);
@@ -95,7 +92,6 @@ export const addViewToFellowship = async (request: Request, response: Response) 
   }
 };
 
-// Add a favorite to a fellowship
 export const addFavoriteToFellowship = async (request: Request, response: Response) => {
   try {
     const fellowship = await addFavorite(request.params.id);
@@ -109,7 +105,6 @@ export const addFavoriteToFellowship = async (request: Request, response: Respon
   }
 };
 
-// Remove a favorite from a fellowship
 export const removeFavoriteFromFellowship = async (request: Request, response: Response) => {
   try {
     const fellowship = await removeFavorite(request.params.id);

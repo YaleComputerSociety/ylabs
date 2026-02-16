@@ -1,8 +1,10 @@
+/**
+ * Analytics event logging and aggregation service.
+ */
 import { AnalyticsEvent, AnalyticsEventType } from "../models/analytics";
 import { User } from "../models";
 import mongoose from "mongoose";
 import { getListingModel } from "../db/connections";
-
 
 export interface LogEventParams {
     eventType: AnalyticsEventType;
@@ -16,7 +18,6 @@ export interface LogEventParams {
 
 export const logEvent = async (params: LogEventParams): Promise<void> => {
     try {
-        // Insert event into analytics collection
         await AnalyticsEvent.create({
             eventType: params.eventType,
             netid: params.netid,
@@ -28,20 +29,16 @@ export const logEvent = async (params: LogEventParams): Promise<void> => {
             timestamp: new Date()
         });
 
-        // Update denormalized metrics on User model
         const now = new Date();
         const updateFields: any = {
             lastActive: now
         };
 
-        // Special handling for login events
         if (params.eventType === AnalyticsEventType.LOGIN) {
             updateFields.lastLogin = now;
             updateFields.$inc = { loginCount: 1 };
         }
 
-        // Update user (non-blocking, don't await)
-        // If this fails, event is still logged successfully
         User.findOneAndUpdate(
             { netid: params.netid },
             updateFields
@@ -51,7 +48,6 @@ export const logEvent = async (params: LogEventParams): Promise<void> => {
 
     } catch (error) {
         console.error('Error logging analytics event:', error);
-        // Don't throw - we don't want analytics failures to break the app
     }
 };
 
@@ -61,7 +57,6 @@ export const getAnalytics = async () => {
     const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
-    
     const visitorStats = await AnalyticsEvent.aggregate([
         {
             $match: {
@@ -70,7 +65,6 @@ export const getAnalytics = async () => {
         },
         {
             $facet: {
-                // Unique visitors lifetime
                 lifetimeVisitors: [
                     {
                         $group: {
@@ -85,7 +79,6 @@ export const getAnalytics = async () => {
                         }
                     }
                 ],
-                // Unique visitors lifetime by type
                 lifetimeVisitorsByType: [
                     {
                         $group: {
@@ -106,7 +99,6 @@ export const getAnalytics = async () => {
                         }
                     }
                 ],
-                // Unique visitors last 7 days
                 last7DaysVisitors: [
                     {
                         $match: {
@@ -126,7 +118,6 @@ export const getAnalytics = async () => {
                         }
                     }
                 ],
-                // Unique visitors last 7 days by type
                 last7DaysVisitorsByType: [
                     {
                         $match: {
@@ -152,7 +143,6 @@ export const getAnalytics = async () => {
                         }
                     }
                 ],
-                // Unique visitors today
                 todayVisitors: [
                     {
                         $match: {
@@ -172,7 +162,6 @@ export const getAnalytics = async () => {
                         }
                     }
                 ],
-                // Unique visitors today by type
                 todayVisitorsByType: [
                     {
                         $match: {
@@ -198,7 +187,6 @@ export const getAnalytics = async () => {
                         }
                     }
                 ],
-                // Total login events (shows frequency)
                 totalLogins: [
                     {
                         $group: {
@@ -207,7 +195,6 @@ export const getAnalytics = async () => {
                         }
                     }
                 ],
-                // Login frequency last 7 days
                 loginsLast7Days: [
                     {
                         $match: {
@@ -221,7 +208,6 @@ export const getAnalytics = async () => {
                         }
                     }
                 ],
-                // Logins today
                 loginsToday: [
                     {
                         $match: {
@@ -239,12 +225,9 @@ export const getAnalytics = async () => {
         }
     ]);
 
-    // ==================== ENGAGEMENT ANALYTICS (from events) ====================
-
     const engagementStats = await AnalyticsEvent.aggregate([
         {
             $facet: {
-                // Search activity
                 searchStats: [
                     {
                         $match: {
@@ -264,7 +247,6 @@ export const getAnalytics = async () => {
                         }
                     }
                 ],
-                // Most searched terms (last 30 days)
                 topSearchQueries: [
                     {
                         $match: {
@@ -289,7 +271,6 @@ export const getAnalytics = async () => {
                         }
                     }
                 ],
-                // Listing view activity
                 viewStats: [
                     {
                         $match: {
@@ -309,7 +290,6 @@ export const getAnalytics = async () => {
                         }
                     }
                 ],
-                // Favorite activity
                 favoriteStats: [
                     {
                         $match: {
@@ -334,7 +314,6 @@ export const getAnalytics = async () => {
                         }
                     }
                 ],
-                // Most viewed listings (last 30 days from events)
                 trendingListings: [
                     {
                         $match: {
@@ -360,7 +339,6 @@ export const getAnalytics = async () => {
                     { $sort: { views: -1 } },
                     { $limit: 10 }
                 ],
-                // User activity stats
                 userActivityStats: [
                     {
                         $match: {
@@ -381,7 +359,6 @@ export const getAnalytics = async () => {
                         }
                     }
                 ],
-                // Most active users (last 30 days)
                 mostActiveUsers: [
                     {
                         $match: {
@@ -408,8 +385,6 @@ export const getAnalytics = async () => {
             }
         }
     ]);
-
-    // ==================== LISTING ANALYTICS - from db ====================
 
     const listingStats = await getListingModel().aggregate([
         {
@@ -557,8 +532,6 @@ export const getAnalytics = async () => {
         }
     ]);
 
-    // ==================== USER ANALYTICS - from db ====================
-
     const userStats = await User.aggregate([
         {
             $facet: {
@@ -626,8 +599,6 @@ export const getAnalytics = async () => {
         }
     ]);
 
-    // ==================== FORMAT AND RETURN ====================
-
     const visitors = visitorStats[0];
     const engagement = engagementStats[0];
     const listings = listingStats[0];
@@ -674,7 +645,6 @@ export const getAnalytics = async () => {
             trendingListings: enrichedTrending || [],
             userActivity: engagement.userActivityStats[0] || { activeUsers: 0, avgEventsPerUser: 0 },
             mostActiveUsers: engagement.mostActiveUsers || [],
-            // From listing counters
             totalViewsFromCounters: listings.viewsAndFavorites[0]?.totalViews || 0,
             totalFavoritesFromCounters: listings.viewsAndFavorites[0]?.totalFavorites || 0,
             avgViews: listings.viewsAndFavorites[0]?.avgViews || 0,

@@ -1,3 +1,6 @@
+/**
+ * Login page with Yale CAS authentication redirect.
+ */
 import PulseLoader from "react-spinners/PulseLoader";
 import styled from "styled-components";
 import { useContext } from "react";
@@ -9,13 +12,10 @@ import { Navigate } from "react-router-dom";
 const Login = () => {
   const { isLoading, isAuthenticated, user } = useContext(UserContext);
 
-  // Determine redirect path based on user type
   const getRedirectPath = () => {
-    // Professors go to account page
     if (user?.userType === 'professor') {
       return '/account';
     }
-    // All other users go to home page
     return '/';
   };
 

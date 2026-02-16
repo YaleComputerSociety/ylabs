@@ -1,3 +1,6 @@
+/**
+ * Site footer displaying sponsor logos.
+ */
 const Footer = () => {
     return (
         <footer className="bg-white border-t border-gray-200 py-6 mt-auto">

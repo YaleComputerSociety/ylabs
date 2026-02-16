@@ -1,3 +1,6 @@
+/**
+ * Express application setup with middleware, routes, and CORS configuration.
+ */
 import cors from "cors";
 import express from "express";
 import { isCI, isDevelopment, isTest } from "./utils/environment";
@@ -24,7 +27,7 @@ const corsOptions = {
 };
 
 const app = express()
-.set('trust proxy', 1)  // trust first proxy
+.set('trust proxy', 1)
 .use(cors(corsOptions))
 .use(express.json())
 .use(express.urlencoded({ extended: true }))
@@ -41,15 +44,10 @@ const app = express()
 .use('/api', passportRoutes)
 .use('/api', routes);
 
-// Serve static files from the React app AFTER all API routes
 app.use(express.static(path.join(__dirname, '../../client/dist')));
 
-// Catch-all handler: for any request that doesn't match an API route,
-// send back the React app's index.html file
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, '../../client/dist/index.html'));
 });
 
 export default app;
-
-// --- IGNORE ---

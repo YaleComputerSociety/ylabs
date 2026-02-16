@@ -1,3 +1,6 @@
+/**
+ * Kanban board for tracking lab application stages.
+ */
 import React, { useState } from 'react';
 import BrowseCard from './BrowseCard';
 import { Listing } from '../../types/types';
@@ -78,13 +81,11 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
           onDragLeave={handleDragLeave}
           onDrop={(e) => handleDrop(e, col.key)}
         >
-          {/* Column header */}
           <div className={`px-3 py-2 rounded-t-md ${col.headerBg} flex items-center justify-between`}>
             <span className="text-sm font-semibold">{col.label}</span>
             <span className="text-xs opacity-70">{col.listings.length}</span>
           </div>
 
-          {/* Cards */}
           <div className="flex-1 p-2 space-y-2 overflow-y-auto max-h-[60vh]">
             {col.listings.length === 0 ? (
               <div className="flex items-center justify-center h-20 text-xs text-gray-400 italic">

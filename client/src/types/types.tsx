@@ -1,4 +1,6 @@
-//Listings
+/**
+ * Core TypeScript interfaces for listings, fellowships, and user profiles.
+ */
 
 export type Listing = {
   id: string;
@@ -28,8 +30,6 @@ export type Listing = {
   confirmed: boolean;
   audited: boolean;
 };
-
-// Fellowships
 
 export type FellowshipLink = {
   label: string;
@@ -83,10 +83,43 @@ export type User = {
   netId: string;
   userType: string;
   userConfirmed: boolean;
+  profileVerified?: boolean;
 }
 
+export type Publication = {
+  title: string;
+  doi?: string;
+  year?: number;
+  venue?: string;
+  cited_by_count?: number;
+  open_access_url?: string;
+  source?: string;
+};
 
-//Developer
+export type FacultyProfile = {
+  netid: string;
+  fname: string;
+  lname: string;
+  email: string;
+  title?: string;
+  bio?: string;
+  phone?: string;
+  primary_department?: string;
+  secondary_departments: string[];
+  departments: string[];
+  physical_location?: string;
+  building_desk?: string;
+  image_url?: string;
+  h_index?: number;
+  orcid?: string;
+  openalex_id?: string;
+  profile_urls: Record<string, string>;
+  publications: Publication[];
+  research_interests: string[];
+  topics: string[];
+  profileVerified: boolean;
+  ownListings: string[];
+}
 
 export type Developer = {
   name: string;

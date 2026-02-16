@@ -1,11 +1,12 @@
+/**
+ * MongoDB connection management and model initialization.
+ */
 import mongoose, { Connection } from 'mongoose';
 import { listingSchema } from '../models/listing';
 
-// Connection instances
 let productionConnection: Connection | null = null;
 let migrationConnection: Connection | null = null;
 
-// Listing model that may use a different connection in ProductionMigration mode
 let MigrationListing: mongoose.Model<any> | null = null;
 
 export type ApiMode = 'test' | 'production' | 'productionMigration';
@@ -31,16 +32,13 @@ export async function initializeConnections(): Promise<void> {
       throw new Error('MONGODBURL_MIGRATION is required for ProductionMigration mode');
     }
 
-    // Connect default mongoose to Production (for users, departments, etc.)
     await mongoose.connect(prodUrl);
     productionConnection = mongoose.connection;
     console.log('Connected to Production database (default) 🚀');
 
-    // Create separate connection for ProductionMigration listings
     migrationConnection = await mongoose.createConnection(migrationUrl).asPromise();
     console.log('Connected to ProductionMigration database (listings) 🔄');
 
-    // Create Listing model on the migration connection
     MigrationListing = migrationConnection.model('listings', listingSchema);
   } else if (mode === 'test') {
     const testUrl = process.env.MONGODBURL_TEST;
@@ -50,7 +48,6 @@ export async function initializeConnections(): Promise<void> {
     await mongoose.connect(testUrl);
     console.log('Connected to Test database 🔬');
   } else {
-    // Production mode
     const prodUrl = process.env.MONGODBURL;
     if (!prodUrl) {
       throw new Error('MONGODBURL is required');
@@ -72,7 +69,6 @@ export function getListingModel(): mongoose.Model<any> {
     return MigrationListing;
   }
 
-  // Return the default Listing model (uses default mongoose connection)
   const { Listing } = require('../models/listing');
   return Listing;
 }

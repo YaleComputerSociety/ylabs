@@ -1,3 +1,6 @@
+/**
+ * React context for UI preferences (view mode, sidebar state).
+ */
 import { createContext } from 'react';
 
 export type ViewMode = 'card' | 'list';

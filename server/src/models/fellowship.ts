@@ -1,8 +1,10 @@
+/**
+ * Mongoose schema and model for fellowship/funding opportunity records.
+ */
 import mongoose from 'mongoose';
 
 const fellowshipSchema = new mongoose.Schema(
   {
-    // Core Information
     title: {
       type: String,
       required: true,
@@ -50,14 +52,10 @@ const fellowshipSchema = new mongoose.Schema(
       type: String,
       default: '',
     },
-
-    // Status
     isAcceptingApplications: {
       type: Boolean,
       default: false,
     },
-
-    // Dates
     applicationOpenDate: {
       type: Date,
       required: false,
@@ -66,8 +64,6 @@ const fellowshipSchema = new mongoose.Schema(
       type: Date,
       required: false,
     },
-
-    // Contact
     contactName: {
       type: String,
       default: '',
@@ -84,8 +80,6 @@ const fellowshipSchema = new mongoose.Schema(
       type: String,
       default: '',
     },
-
-    // Search Filters (arrays for multi-select values)
     yearOfStudy: {
       type: [String],
       default: [],
@@ -106,8 +100,6 @@ const fellowshipSchema = new mongoose.Schema(
       type: [String],
       default: [],
     },
-
-    // Engagement
     archived: {
       type: Boolean,
       default: false,
@@ -130,7 +122,6 @@ const fellowshipSchema = new mongoose.Schema(
   }
 );
 
-// Add text index for search
 fellowshipSchema.index({
   title: 'text',
   summary: 'text',
@@ -141,7 +132,6 @@ fellowshipSchema.index({
   additionalInformation: 'text',
 });
 
-// Add indexes for filter fields
 fellowshipSchema.index({ yearOfStudy: 1 });
 fellowshipSchema.index({ termOfAward: 1 });
 fellowshipSchema.index({ purpose: 1 });
@@ -152,5 +142,4 @@ fellowshipSchema.index({ deadline: 1 });
 
 export const Fellowship = mongoose.model('fellowships', fellowshipSchema);
 
-// Export schema for use with different connections
 export { fellowshipSchema };

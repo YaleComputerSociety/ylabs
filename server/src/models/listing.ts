@@ -1,3 +1,6 @@
+/**
+ * Mongoose schema and model for research lab listing records.
+ */
 import mongoose from 'mongoose';
 
 const arrayNotEmpty = (arr: any[]) => Array.isArray(arr) && arr.length > 0;
@@ -69,7 +72,6 @@ const listingSchema = new mongoose.Schema(
         type: [String],
         required: false,
     },
-    // Legacy field - kept for backwards compatibility during migration
     keywords: {
         type: [String],
         required: false,
@@ -111,5 +113,4 @@ const listingSchema = new mongoose.Schema(
 
 export const Listing = mongoose.model('listings', listingSchema);
 
-// Export schema for use with different connections (e.g., ProductionMigration mode)
 export { listingSchema };

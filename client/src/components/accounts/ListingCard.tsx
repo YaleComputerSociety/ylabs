@@ -1,3 +1,6 @@
+/**
+ * Dashboard card for owned listings with edit and archive controls.
+ */
 import React, { useState, useRef, useEffect } from 'react';
 import { Listing } from '../../types/types';
 import ListingForm from './ListingForm';
@@ -50,13 +53,10 @@ const ListingCard = ({
     const { getColorForResearchArea } = useContext(ConfigContext);
     const canDelete = user && (user.netId === listing.ownerId);
 
-    // Store the original listing before editing begins.
     const originalListingRef = useRef<Listing | null>(null);
 
-    // Get research areas (fallback to keywords for backwards compatibility)
     const researchAreas = listing.researchAreas?.length > 0 ? listing.researchAreas : (listing.keywords || []);
 
-    // Helper function to check if lab is open (hiringStatus >= 0 means open)
     const isOpen = listing.hiringStatus >= 0;
 
     useEffect(() => {
@@ -182,7 +182,6 @@ const ListingCard = ({
         }
     };
 
-    // When Edit is clicked, store the original listing before changes.
     const handleEdit = (e: React.MouseEvent) => {
         e.stopPropagation();
         originalListingRef.current = listing;
@@ -202,7 +201,6 @@ const ListingCard = ({
         <div className="mb-4 relative">
             <div key={listing.id} className="flex relative z-10 rounded-md shadow">
                 <div className="group/card p-4 flex-grow grid grid-cols-3 md:grid-cols-12 cursor-pointer bg-white hover:bg-gray-50 border border-gray-300 hover:border-[#257fce] rounded-md transition-colors" onClick={handleListingClick}>
-                    {/* First Column */}
                     <div className="col-span-2 md:col-span-4">
                         <span
                             className={`text-sm font-semibold block ${archived ? "opacity-50" : ""}`}
@@ -256,7 +254,6 @@ const ListingCard = ({
                             )}
                         </div>
                     </div>
-                    {/* Second Column */}
                     <div className="col-span-6 hidden md:flex align-middle">
                         <div className={`flex-shrink-0 border-l border-gray-300 mx-4 ${archived ? "opacity-50" : ""}`} />
                         <p className={`flex-grow text-gray-800 text-sm ${archived ? "opacity-50" : ""}`}
@@ -264,7 +261,6 @@ const ListingCard = ({
                             {listing.description}
                         </p>
                     </div>
-                    {/* Third Column */}
                     <div className="flex flex-col col-span-1 md:col-span-2 items-end">
                         <div className="flex items-start">
                             {listing.applicantDescription && listing.applicantDescription.trim() !== '' && (
@@ -411,7 +407,6 @@ const ListingCard = ({
                             updateListing(updatedListing);
                         }}
                         onCancel={() => {
-                            // On cancel, reset the preview to the original listing.
                             if (isCreated) {
                                 setEditing(false);
                                 clearCreatedListing();

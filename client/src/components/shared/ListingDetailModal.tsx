@@ -1,4 +1,8 @@
+/**
+ * Detail modal for viewing full listing information.
+ */
 import React, { useEffect, useState, useContext } from 'react';
+import { Link } from 'react-router-dom';
 import { Listing } from '../../types/types';
 import UserContext from '../../contexts/UserContext';
 import ConfigContext from '../../contexts/ConfigContext';
@@ -57,13 +61,11 @@ const ListingDetailModal = ({
       onClick={handleBackdropClick}
     >
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl h-[85vh] flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
-        {/* Header bar */}
         <div className="flex-shrink-0 border-b border-gray-100">
           <div className="h-1 w-full" style={{ background: 'linear-gradient(90deg, #0055A4 0%, #3b82f6 50%, #93c5fd 100%)' }} />
           <div className="px-6 py-5">
             <div className="flex items-start justify-between gap-4">
               <div className="flex-1 min-w-0">
-                {/* Department + Institution */}
                 <div className="flex flex-wrap items-center gap-2 mb-2">
                   {listing.departments && listing.departments.length > 0 && (
                     <span className="text-sm font-semibold text-blue-700">
@@ -93,19 +95,15 @@ const ListingDetailModal = ({
                   </span>
                 </div>
 
-                {/* Professor name */}
                 <h2 className="text-xl font-bold text-gray-900 leading-tight">
                   {professorName}
                 </h2>
-                {/* Professor academic title */}
                 {listing.ownerTitle && (
                   <p className="text-sm text-gray-500 mt-0.5">{listing.ownerTitle}</p>
                 )}
-                {/* Lab title */}
                 <p className="text-base text-gray-600 mt-0.5">{listing.title}</p>
               </div>
 
-              {/* Action buttons */}
               <div className="flex items-center gap-1 flex-shrink-0">
                 {!isCreated && (
                   <>
@@ -141,28 +139,40 @@ const ListingDetailModal = ({
           </div>
         </div>
 
-        {/* Body */}
         <div className="flex-1 overflow-y-auto">
           <div className="p-6">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-              {/* Sidebar */}
               <div className="col-span-1 space-y-6">
-                {/* Professors */}
                 <section>
                   <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Investigators</h3>
                   <div className="space-y-2.5">
-                    {[professorName, ...listing.professorNames].map((name, i) => (
+                    {[
+                      { name: professorName, netid: listing.ownerId },
+                      ...(listing.professorNames || []).map((name, i) => ({
+                        name,
+                        netid: listing.professorIds?.[i] || null,
+                      })),
+                    ].map(({ name, netid }, i) => (
                       <div key={i} className="flex items-center gap-2.5">
                         <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-100 to-blue-200 flex items-center justify-center text-blue-700 font-semibold text-sm flex-shrink-0">
                           {name.charAt(0).toUpperCase()}
                         </div>
-                        <span className="text-sm text-gray-800 font-medium">{name}</span>
+                        {netid ? (
+                          <Link
+                            to={`/profile/${netid}`}
+                            onClick={onClose}
+                            className="text-sm text-blue-600 hover:text-blue-800 hover:underline font-medium"
+                          >
+                            {name}
+                          </Link>
+                        ) : (
+                          <span className="text-sm text-gray-800 font-medium">{name}</span>
+                        )}
                       </div>
                     ))}
                   </div>
                 </section>
 
-                {/* Research Areas */}
                 {researchAreas.length > 0 && (
                   <section>
                     <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Research Areas</h3>
@@ -189,7 +199,6 @@ const ListingDetailModal = ({
                   </section>
                 )}
 
-                {/* Departments */}
                 {listing.departments && listing.departments.length > 0 && (
                   <section>
                     <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Departments</h3>
@@ -228,7 +237,6 @@ const ListingDetailModal = ({
                   </section>
                 )}
 
-                {/* Contact */}
                 <section>
                   <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Contact</h3>
                   <div className="space-y-2">
@@ -254,7 +262,6 @@ const ListingDetailModal = ({
                   </div>
                 </section>
 
-                {/* Stats */}
                 <section>
                   <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Details</h3>
                   <div className="space-y-1.5 text-sm">
@@ -272,7 +279,6 @@ const ListingDetailModal = ({
                 </section>
               </div>
 
-              {/* Main content */}
               <div className="col-span-1 md:col-span-2 space-y-6">
                 <section>
                   <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Research Description</h3>

@@ -1,5 +1,6 @@
-// Research Areas organized by field with colors
-// Each field has a unique color for visual identification
+/**
+ * Research area color mapping utilities.
+ */
 
 enum ResearchField {
   COMPUTING_AI = "Computing & Artificial Intelligence",
@@ -13,7 +14,6 @@ enum ResearchField {
   MATHEMATICS = "Mathematics"
 }
 
-// Color mappings for each field
 const fieldColors: Record<ResearchField, { bg: string; text: string; border: string }> = {
   [ResearchField.COMPUTING_AI]: { bg: "bg-blue-200", text: "text-blue-800", border: "border-blue-300" },
   [ResearchField.LIFE_SCIENCES]: { bg: "bg-green-200", text: "text-green-800", border: "border-green-300" },
@@ -31,11 +31,7 @@ interface ResearchArea {
   field: ResearchField;
 }
 
-// Default research areas - 500+ phrases organized by field
 const defaultResearchAreas: ResearchArea[] = [
-  // ============================================
-  // COMPUTING & ARTIFICIAL INTELLIGENCE (80+)
-  // ============================================
   { name: "Artificial Intelligence", field: ResearchField.COMPUTING_AI },
   { name: "Machine Learning", field: ResearchField.COMPUTING_AI },
   { name: "Deep Learning", field: ResearchField.COMPUTING_AI },
@@ -121,9 +117,6 @@ const defaultResearchAreas: ResearchArea[] = [
   { name: "Software Verification", field: ResearchField.COMPUTING_AI },
   { name: "Program Analysis", field: ResearchField.COMPUTING_AI },
 
-  // ============================================
-  // MATHEMATICS (60+)
-  // ============================================
   { name: "Pure Mathematics", field: ResearchField.MATHEMATICS },
   { name: "Applied Mathematics", field: ResearchField.MATHEMATICS },
   { name: "Set Theory", field: ResearchField.MATHEMATICS },
@@ -190,9 +183,6 @@ const defaultResearchAreas: ResearchArea[] = [
   { name: "Variational Analysis", field: ResearchField.MATHEMATICS },
   { name: "Calculus of Variations", field: ResearchField.MATHEMATICS },
 
-  // ============================================
-  // LIFE SCIENCES & BIOLOGY (80+)
-  // ============================================
   { name: "Genetics", field: ResearchField.LIFE_SCIENCES },
   { name: "Genomics", field: ResearchField.LIFE_SCIENCES },
   { name: "Proteomics", field: ResearchField.LIFE_SCIENCES },
@@ -278,9 +268,6 @@ const defaultResearchAreas: ResearchArea[] = [
   { name: "MicroRNA", field: ResearchField.LIFE_SCIENCES },
   { name: "Single-Cell Analysis", field: ResearchField.LIFE_SCIENCES },
 
-  // ============================================
-  // PHYSICAL SCIENCES & ENGINEERING (80+)
-  // ============================================
   { name: "Physics", field: ResearchField.PHYSICAL_SCIENCES },
   { name: "Quantum Physics", field: ResearchField.PHYSICAL_SCIENCES },
   { name: "Quantum Mechanics", field: ResearchField.PHYSICAL_SCIENCES },
@@ -367,9 +354,6 @@ const defaultResearchAreas: ResearchArea[] = [
   { name: "3D Printing", field: ResearchField.PHYSICAL_SCIENCES },
   { name: "Precision Engineering", field: ResearchField.PHYSICAL_SCIENCES },
 
-  // ============================================
-  // HEALTH & MEDICINE (80+)
-  // ============================================
   { name: "Medicine", field: ResearchField.HEALTH_MEDICINE },
   { name: "Clinical Medicine", field: ResearchField.HEALTH_MEDICINE },
   { name: "Internal Medicine", field: ResearchField.HEALTH_MEDICINE },
@@ -456,9 +440,6 @@ const defaultResearchAreas: ResearchArea[] = [
   { name: "Emergency Medicine", field: ResearchField.HEALTH_MEDICINE },
   { name: "Critical Care", field: ResearchField.HEALTH_MEDICINE },
 
-  // ============================================
-  // SOCIAL SCIENCES (70+)
-  // ============================================
   { name: "Sociology", field: ResearchField.SOCIAL_SCIENCES },
   { name: "Social Psychology", field: ResearchField.SOCIAL_SCIENCES },
   { name: "Cognitive Psychology", field: ResearchField.SOCIAL_SCIENCES },
@@ -532,9 +513,6 @@ const defaultResearchAreas: ResearchArea[] = [
   { name: "Survey Research", field: ResearchField.SOCIAL_SCIENCES },
   { name: "Experimental Design", field: ResearchField.SOCIAL_SCIENCES },
 
-  // ============================================
-  // HUMANITIES & ARTS (60+)
-  // ============================================
   { name: "History", field: ResearchField.HUMANITIES_ARTS },
   { name: "Ancient History", field: ResearchField.HUMANITIES_ARTS },
   { name: "Medieval History", field: ResearchField.HUMANITIES_ARTS },
@@ -597,9 +575,6 @@ const defaultResearchAreas: ResearchArea[] = [
   { name: "Digital Humanities", field: ResearchField.HUMANITIES_ARTS },
   { name: "Book History", field: ResearchField.HUMANITIES_ARTS },
 
-  // ============================================
-  // ENVIRONMENTAL SCIENCES (50+)
-  // ============================================
   { name: "Environmental Science", field: ResearchField.ENVIRONMENTAL },
   { name: "Climate Science", field: ResearchField.ENVIRONMENTAL },
   { name: "Climate Change", field: ResearchField.ENVIRONMENTAL },
@@ -654,9 +629,6 @@ const defaultResearchAreas: ResearchArea[] = [
   { name: "Food Science", field: ResearchField.ENVIRONMENTAL },
   { name: "Food Security", field: ResearchField.ENVIRONMENTAL },
 
-  // ============================================
-  // ECONOMICS (50+)
-  // ============================================
   { name: "Economics", field: ResearchField.ECONOMICS },
   { name: "Microeconomics", field: ResearchField.ECONOMICS },
   { name: "Macroeconomics", field: ResearchField.ECONOMICS },
@@ -709,7 +681,6 @@ const defaultResearchAreas: ResearchArea[] = [
   { name: "Information Economics", field: ResearchField.ECONOMICS }
 ];
 
-// Helper functions
 function getResearchAreaByName(name: string): ResearchArea | undefined {
   return defaultResearchAreas.find(
     area => area.name.toLowerCase() === name.toLowerCase()
@@ -717,13 +688,11 @@ function getResearchAreaByName(name: string): ResearchArea | undefined {
 }
 
 export function getColorForResearchArea(name: string, customAreas?: ResearchArea[]): { bg: string; text: string; border: string } {
-  // First check default areas
   const defaultArea = getResearchAreaByName(name);
   if (defaultArea) {
     return fieldColors[defaultArea.field];
   }
 
-  // Then check custom areas if provided
   if (customAreas) {
     const customArea = customAreas.find(
       area => area.name.toLowerCase() === name.toLowerCase()
@@ -733,7 +702,5 @@ export function getColorForResearchArea(name: string, customAreas?: ResearchArea
     }
   }
 
-  // Default to gray if not found
   return { bg: "bg-gray-200", text: "text-gray-800", border: "border-gray-300" };
 }
-

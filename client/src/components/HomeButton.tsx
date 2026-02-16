@@ -1,3 +1,6 @@
+/**
+ * Logo home button that navigates to the root page and reloads if already there.
+ */
 import Button from "@mui/material/Button";
 import { Link, useLocation } from 'react-router-dom';
 

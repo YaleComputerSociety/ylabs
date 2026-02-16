@@ -1,3 +1,6 @@
+/**
+ * Sign out button triggering CAS logout.
+ */
 import Button from "@mui/material/Button";
 import { useContext } from "react";
 
@@ -8,16 +11,13 @@ const SignOutButton = () => {
   const { checkContext } = useContext(UserContext);
 
   const handleLogout = () => {
-    // Save the current path to localStorage
     const currentPath = window.location.pathname;
     
-    // Skip saving login page
     if (currentPath !== '/login') {
       const returnUrl = window.location.origin + currentPath;
       localStorage.setItem('logoutReturnPath', returnUrl);
     }
     
-    // Redirect to logout endpoint (which will redirect to CAS logout)
     window.location.href = axios.defaults.baseURL + "/logout";
   };
 

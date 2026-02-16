@@ -1,3 +1,6 @@
+/**
+ * Dynamic array input for adding multiple string values.
+ */
 import React, { useRef, useState } from 'react';
 import ErrorMessage from './ErrorMessage';
 
@@ -38,13 +41,11 @@ const ArrayInput = ({
             e.preventDefault();
             const newValue = inputRef.current.value.trim();
             
-            // Skip if the item already exists
             if (!items.includes(newValue) && (!permanentValue || newValue !== permanentValue)) {
                 const newArray = [...items, newValue];
                 setItems(newArray);
                 inputRef.current.value = '';
                 
-                // Validate the new array if needed
                 if (onValidate) {
                     if (permanentValue) {
                         onValidate([...newArray, permanentValue]);
@@ -61,7 +62,6 @@ const ArrayInput = ({
         newArray.splice(index, 1);
         setItems(newArray);
     
-        // Validate the new array if needed
         if (onValidate) {
             if (permanentValue) {
                 onValidate([...newArray, permanentValue]);
@@ -71,9 +71,7 @@ const ArrayInput = ({
         }
     };
 
-    // Render items to display - if permanentValue is provided, render it separately
     const renderItems = () => {
-        // First render permanentValue if it exists
         const elements = [];
         
         if (permanentValue) {
@@ -103,9 +101,7 @@ const ArrayInput = ({
             );
         }
         
-        // Then render the rest of the items
         items.forEach((item, index) => {
-            // Skip if this item is the permanent value
             if (permanentValue === item) return;
             
             elements.push(

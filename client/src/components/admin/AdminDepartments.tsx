@@ -1,3 +1,6 @@
+/**
+ * Admin panel tab for managing departments.
+ */
 import { useState, useEffect } from "react";
 import axios from "../../utils/axios";
 import swal from "sweetalert";
@@ -42,12 +45,10 @@ const AdminDepartments = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState("");
 
-  // Add new
   const [newAbbr, setNewAbbr] = useState("");
   const [newName, setNewName] = useState("");
   const [newCategory, setNewCategory] = useState(DEPARTMENT_CATEGORIES[0]);
 
-  // Editing
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editAbbr, setEditAbbr] = useState("");
   const [editName, setEditName] = useState("");
@@ -162,7 +163,6 @@ const AdminDepartments = () => {
 
   return (
     <div>
-      {/* Add new */}
       <div className="bg-white rounded-lg shadow-md p-4 border border-gray-200 mb-4">
         <h3 className="text-sm font-semibold text-gray-700 mb-3">Add New Department</h3>
         <div className="flex flex-wrap gap-2 items-end">
@@ -210,7 +210,6 @@ const AdminDepartments = () => {
         </div>
       </div>
 
-      {/* Search */}
       <div className="mb-3">
         <input
           value={search}
@@ -221,7 +220,6 @@ const AdminDepartments = () => {
         <div className="text-xs text-gray-400 mt-1">{filtered.length} departments</div>
       </div>
 
-      {/* Table */}
       <div className="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm">

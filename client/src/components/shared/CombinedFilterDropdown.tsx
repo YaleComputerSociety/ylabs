@@ -1,3 +1,6 @@
+/**
+ * Multi-category filter dropdown for browse pages.
+ */
 import { useState, useRef, useEffect } from 'react';
 import { FilterMode } from '../../contexts/SearchContext';
 import VennDiagramToggle from '../navbar/VennDiagramToggle';
@@ -49,7 +52,6 @@ const CombinedFilterDropdown = ({ tabs }: CombinedFilterDropdownProps) => {
       ? tab.options.filter((o) => o.toLowerCase().includes(search))
       : tab.options;
 
-    // Pin selected items to top
     const sorted = [
       ...tab.selected.filter((s) => filtered.includes(s)),
       ...filtered.filter((o) => !tab.selected.includes(o)),
@@ -85,7 +87,6 @@ const CombinedFilterDropdown = ({ tabs }: CombinedFilterDropdownProps) => {
 
       {isOpen && (
         <div className="absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden z-50 w-[340px]">
-          {/* Tab Navigation */}
           <div className="flex border-b border-gray-200 bg-gray-50 overflow-x-auto">
             {tabs.map((tab) => (
               <button
@@ -109,16 +110,13 @@ const CombinedFilterDropdown = ({ tabs }: CombinedFilterDropdownProps) => {
             ))}
           </div>
 
-          {/* Tab Content */}
           <div className="p-3">
-            {/* VennDiagram toggle if the tab supports it */}
             {activeTab.filterMode && activeTab.setFilterMode && activeTab.selected.length >= 2 && (
               <div className="mb-3">
                 <VennDiagramToggle mode={activeTab.filterMode} setMode={activeTab.setFilterMode} />
               </div>
             )}
 
-            {/* Search input for searchable tabs */}
             {activeTab.searchable && (
               <input
                 type="text"
@@ -129,7 +127,6 @@ const CombinedFilterDropdown = ({ tabs }: CombinedFilterDropdownProps) => {
               />
             )}
 
-            {/* Clear selected button for tabs with many selections */}
             {activeTab.selected.length > 0 && activeTab.searchable && (
               <button
                 onClick={() => activeTab.setSelected([])}
@@ -140,7 +137,6 @@ const CombinedFilterDropdown = ({ tabs }: CombinedFilterDropdownProps) => {
               </button>
             )}
 
-            {/* Options list */}
             <ul className="space-y-1 max-h-[220px] overflow-y-auto">
               {getFilteredOptions(activeTab).map((option) => {
                 const isSelected = activeTab.selected.includes(option);
@@ -191,7 +187,6 @@ const CombinedFilterDropdown = ({ tabs }: CombinedFilterDropdownProps) => {
             </ul>
           </div>
 
-          {/* Footer */}
           {totalFilters > 0 && (
             <div className="border-t border-gray-200 px-3 py-2 bg-gray-50">
               <button

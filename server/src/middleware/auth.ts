@@ -1,3 +1,6 @@
+/**
+ * Authentication guards and role-based access control middleware.
+ */
 import express from "express";
 
 /**
@@ -23,20 +26,25 @@ export const isTrustworthy = (req: express.Request, res: express.Response, next:
 };
 
 /**
- * Middleware to check if user has permission to create listings
+ * Middleware to check if user has permission to create listings.
+ * Requires professor/faculty/admin type AND profileVerified (admins bypass verification).
  */
 export const canCreateListing = (req: express.Request, res: express.Response, next: express.NextFunction) => {
-  const currentUser = req.user as { netId?: string, userType?: string, userConfirmed?: boolean };
-  
+  const currentUser = req.user as { netId?: string, userType?: string, userConfirmed?: boolean, profileVerified?: boolean };
+
   if (!currentUser) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
-  
+
   const allowedTypes = ['admin', 'professor', 'faculty'];
   if (!allowedTypes.includes(currentUser.userType)) {
     return res.status(403).json({ error: 'User does not have permission to create listings' });
   }
-  
+
+  if (currentUser.userType !== 'admin' && !currentUser.profileVerified) {
+    return res.status(403).json({ error: 'You must verify your profile before creating listings. Go to your account page to review and verify your profile.' });
+  }
+
   next();
 };
 
@@ -67,7 +75,7 @@ export const isProfessor = (req: express.Request, res: express.Response, next: e
     return res.status(401).json({ error: 'Unauthorized' });
   }
   
-  if (currentUser.userType !== 'professor' && currentUser.userType !== 'admin') {
+  if (currentUser.userType !== 'professor' && currentUser.userType !== 'faculty' && currentUser.userType !== 'admin') {
     return res.status(403).json({ error: 'Professor privileges required' });
   }
   

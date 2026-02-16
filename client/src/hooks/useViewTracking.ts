@@ -1,3 +1,6 @@
+/**
+ * Custom hook for tracking listing and fellowship view counts.
+ */
 import { useRef, useCallback } from 'react';
 import axios from '../utils/axios';
 

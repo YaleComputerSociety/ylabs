@@ -1,3 +1,6 @@
+/**
+ * Web vitals performance reporting.
+ */
 import { ReportHandler } from 'web-vitals';
 
 const reportWebVitals = (onPerfEntry?: ReportHandler) => {

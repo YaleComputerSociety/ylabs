@@ -41,12 +41,10 @@ function getAccessToken(clientId: string): Promise<string> {
 
         window.addEventListener('message', handleMessage);
 
-        // Detect if popup is closed without completing auth
         const checkClosed = setInterval(() => {
             if (popup.closed) {
                 clearInterval(checkClosed);
                 window.removeEventListener('message', handleMessage);
-                // Only reject if we haven't resolved yet
                 if (!cachedToken) {
                     reject(new Error('Google sign-in was cancelled'));
                 }
@@ -65,7 +63,6 @@ export async function exportToGoogleSheets(
 
     const token = await getAccessToken(clientId);
 
-    // Build cell data for the Sheets API
     const headerRow = {
         values: headers.map(h => ({
             userEnteredValue: { stringValue: h },
@@ -99,7 +96,6 @@ export async function exportToGoogleSheets(
 
     if (!response.ok) {
         const err = await response.json().catch(() => ({}));
-        // Token expired — clear cache and retry once
         if (response.status === 401) {
             cachedToken = null;
             throw new Error('Token expired — please try again');

@@ -1,3 +1,6 @@
+/**
+ * About page displaying project information, sponsors, and developer team members.
+ */
 import DeveloperCard from "../components/DeveloperCard";
 
 const About = () => {

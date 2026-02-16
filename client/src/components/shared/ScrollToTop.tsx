@@ -1,3 +1,6 @@
+/**
+ * Scroll-to-top button that appears on page scroll.
+ */
 import { useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 

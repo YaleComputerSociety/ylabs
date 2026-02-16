@@ -1,3 +1,6 @@
+/**
+ * Provider component managing UI preferences with localStorage persistence.
+ */
 import { FC, useState, ReactNode } from 'react';
 import UIContext, { ViewMode } from '../contexts/UIContext';
 

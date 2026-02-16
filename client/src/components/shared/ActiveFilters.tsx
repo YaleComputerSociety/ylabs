@@ -1,3 +1,6 @@
+/**
+ * Active filter chips display with remove functionality.
+ */
 import React, { useRef, useEffect } from 'react';
 
 export interface QuickFilterDef {
@@ -14,17 +17,13 @@ export interface ActiveFilterChip {
 }
 
 interface ActiveFiltersProps {
-  // Quick filter row
   quickFilters?: QuickFilterDef[];
   activeQuickFilter?: string | null;
   onQuickFilterChange?: (value: string | null) => void;
-  // Result count
   totalCount?: number;
   isLoading?: boolean;
-  // Active filter chips
   chips: ActiveFilterChip[];
   onClearAll: () => void;
-  // Height reporting for layout
   onHeightChange?: (height: number) => void;
 }
 
@@ -64,7 +63,6 @@ const ActiveFilters = ({
   return (
     <div ref={barRef} className="bg-white border-b border-gray-100">
       <div className="mx-auto max-w-[1300px] px-6">
-        {/* Quick filters + result count */}
         <div className="flex items-center justify-between py-2 gap-3">
           <div className="flex items-center gap-2 flex-wrap">
             {hasQuickFilters && onQuickFilterChange && quickFilters!.map((option) => {
@@ -106,7 +104,6 @@ const ActiveFilters = ({
           )}
         </div>
 
-        {/* Active filter chips + clear all */}
         {hasChips && (
           <div className="flex flex-wrap items-center gap-2 pb-2 pt-1.5 border-t border-gray-100">
             {chips.map((chip) => (

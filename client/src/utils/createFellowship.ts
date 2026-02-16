@@ -1,3 +1,6 @@
+/**
+ * Fellowship creation API helper.
+ */
 import { Fellowship } from '../types/types';
 
 export function createFellowship(data: any): Fellowship {

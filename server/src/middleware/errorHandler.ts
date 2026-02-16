@@ -1,3 +1,6 @@
+/**
+ * Global error handling middleware for Express.
+ */
 import { Request, Response, NextFunction } from 'express';
 import { NotFoundError, ObjectIdError, IncorrectPermissionsError } from '../utils/errors';
 
@@ -14,7 +17,6 @@ export const errorHandler = (
   console.error('Error:', error.message);
   console.error('Stack:', error.stack);
 
-  // Handle custom errors
   if (error instanceof NotFoundError) {
     return res.status(error.status).json({ error: error.message });
   }
@@ -30,7 +32,6 @@ export const errorHandler = (
     });
   }
 
-  // Handle Mongoose validation errors
   if (error.name === 'ValidationError') {
     return res.status(400).json({ 
       error: 'Validation error',
@@ -38,17 +39,14 @@ export const errorHandler = (
     });
   }
 
-  // Handle Mongoose cast errors (invalid ObjectId format)
   if (error.name === 'CastError') {
     return res.status(400).json({ error: 'Invalid ID format' });
   }
 
-  // Handle duplicate key errors
   if (error.name === 'MongoServerError' && (error as any).code === 11000) {
     return res.status(409).json({ error: 'Duplicate key error' });
   }
 
-  // Default to 500 server error
   res.status(500).json({ 
     error: 'Internal server error',
     message: process.env.NODE_ENV === 'development' ? error.message : undefined

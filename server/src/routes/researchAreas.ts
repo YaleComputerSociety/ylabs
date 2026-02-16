@@ -1,3 +1,6 @@
+/**
+ * Express routes for research area CRUD operations.
+ */
 import { Router, Request, Response } from "express";
 import { isAuthenticated } from '../middleware';
 import { ResearchArea, ResearchField, fieldColorKeys } from '../models/researchArea';
@@ -5,7 +8,6 @@ import { invalidateConfigCache } from '../services/configService';
 
 const router = Router();
 
-// Get all user-added research areas (not the defaults - those are in frontend)
 router.get('/', isAuthenticated, async (req: Request, res: Response) => {
   try {
     const customAreas = await ResearchArea.find({ isDefault: false })
@@ -20,13 +22,11 @@ router.get('/', isAuthenticated, async (req: Request, res: Response) => {
   }
 });
 
-// Add a new research area
 router.post('/', isAuthenticated, async (req: Request, res: Response) => {
   try {
     const { name, field } = req.body;
     const currentUser = req.user as { netId?: string };
 
-    // Validation
     if (!name || typeof name !== 'string' || name.trim().length === 0) {
       return res.status(400).json({ message: 'Research area name is required' });
     }
@@ -40,7 +40,6 @@ router.post('/', isAuthenticated, async (req: Request, res: Response) => {
 
     const trimmedName = name.trim();
 
-    // Check if already exists (case-insensitive)
     const existing = await ResearchArea.findOne({
       name: { $regex: new RegExp(`^${trimmedName}$`, 'i') }
     });
@@ -52,7 +51,6 @@ router.post('/', isAuthenticated, async (req: Request, res: Response) => {
       });
     }
 
-    // Create new research area
     const newArea = new ResearchArea({
       name: trimmedName,
       field: field,
@@ -63,7 +61,6 @@ router.post('/', isAuthenticated, async (req: Request, res: Response) => {
 
     await newArea.save();
 
-    // Invalidate config cache so new area appears in /api/config
     invalidateConfigCache();
 
     res.status(201).json({
@@ -76,7 +73,6 @@ router.post('/', isAuthenticated, async (req: Request, res: Response) => {
   }
 });
 
-// Search research areas (for autocomplete)
 router.get('/search', isAuthenticated, async (req: Request, res: Response) => {
   try {
     const { query } = req.query;

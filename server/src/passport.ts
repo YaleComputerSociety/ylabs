@@ -1,3 +1,6 @@
+/**
+ * Passport.js configuration for Yale CAS authentication.
+ */
 import express from "express";
 import passport from "passport";
 import { Strategy } from "passport-cas";
@@ -7,7 +10,7 @@ import { fetchFromDirectory, isFacultyTitle } from "./services/directoryService"
 import { logEvent } from "./services/analyticsService";
 import { AnalyticsEventType } from "./models";
 
-const STALE_THRESHOLD_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+const STALE_THRESHOLD_MS = 30 * 24 * 60 * 60 * 1000;
 
 /**
  * Build an update object from directory data (only non-empty fields).
@@ -36,10 +39,8 @@ function buildDirectoryUpdate(dirPerson: NonNullable<Awaited<ReturnType<typeof f
  * 4. Fallback: create a default user
  */
 async function findOrCreateUser(netid: string) {
-  // Step 1: Check existing user
   let user = await validateUser(netid);
   if (user) {
-    // Refresh directory data if stale (>30 days since last update)
     const updatedAt = user.updatedAt ? new Date(user.updatedAt).getTime() : 0;
     const isStale = Date.now() - updatedAt > STALE_THRESHOLD_MS;
 
@@ -49,7 +50,6 @@ async function findOrCreateUser(netid: string) {
         const dirPerson = await fetchFromDirectory(netid, 'netid');
         if (dirPerson && dirPerson.name) {
           const dirUpdate = buildDirectoryUpdate(dirPerson);
-          // Detect faculty status if user was 'unknown'
           if (user.userType === 'unknown' && isFacultyTitle(dirPerson.title)) {
             dirUpdate.userType = 'professor';
             dirUpdate.userConfirmed = true;
@@ -66,7 +66,6 @@ async function findOrCreateUser(netid: string) {
     return user;
   }
 
-  // Step 2: Try Yalies API
   console.log(`findOrCreateUser: trying Yalies API for ${netid}`);
   user = await fetchYalie(netid);
   if (user) {
@@ -74,7 +73,6 @@ async function findOrCreateUser(netid: string) {
     return user;
   }
 
-  // Step 3: Try Yale Directory
   console.log(`findOrCreateUser: Yalies failed, trying Yale Directory for ${netid}`);
   const dirPerson = await fetchFromDirectory(netid, 'netid');
   if (dirPerson && dirPerson.name) {
@@ -96,7 +94,6 @@ async function findOrCreateUser(netid: string) {
     return user;
   }
 
-  // Step 4: Fallback — create default user
   console.log(`findOrCreateUser: Directory also failed, creating default user for ${netid}`);
   user = await createUser({
     netid,
@@ -124,6 +121,7 @@ passport.use(
           netId: user.netid || profile.user,
           userType: user.userType,
           userConfirmed: user.userConfirmed,
+          profileVerified: user.profileVerified || false,
         });
       } catch (error) {
         console.log('Error in CAS login');
@@ -146,6 +144,7 @@ passport.deserializeUser(async (netId: String, done) => {
       netId: user.netid || netId,
       userType: user.userType,
       userConfirmed: user.userConfirmed,
+      profileVerified: user.profileVerified || false,
     });
   } catch (error) {
     console.log('Deserialize: Error');
@@ -198,7 +197,7 @@ const casLogin = function (
       try {
         await logEvent({
           eventType: AnalyticsEventType.LOGIN,
-          netid: user.netId,  // Note: user.netId (capital I) from session
+          netid: user.netId,
           userType: user.userType || 'unknown',
           metadata: {
             timestamp: new Date(),
@@ -208,11 +207,9 @@ const casLogin = function (
         console.log('Login event logged to analytics');
       } catch (analyticsError) {
         console.error("Error logging analytics event:", analyticsError);
-        // Don't fail the login if analytics fails
       }
 
       if (req.query.redirect) {
-        // Try to parse the URL to make sure it's valid
         try {
           const redirectUrl = new URL(req.query.redirect as string);
           
@@ -273,7 +270,6 @@ router.get("/cas", casLogin);
 router.get("/logout", async (req, res) => {
   console.log("Logging out user");
   
-  // ===== LOG LOGOUT EVENT TO ANALYTICS =====
   if (req.user) {
     const user = req.user as any;
     try {
@@ -290,61 +286,29 @@ router.get("/logout", async (req, res) => {
       console.error("Error logging analytics event:", analyticsError);
     }
   }
-  // ===== END ANALYTICS LOGGING =====
   
-  // Call logOut without a callback (it's now synchronous)
   req.logOut();
   
-  // Clear the session
   const casLogoutUrl = `${process.env.SSOBASEURL}/logout`;
 
-  // Determine the service URL based on environment
   let serviceUrl;
 
   if (process.env.NODE_ENV === 'development') {
-    // In development, redirect to the client on port 3000
     serviceUrl = "http://localhost:3000/login";
   } else {
-    // In production, use the server base URL (which serves the client)
     serviceUrl = `${process.env.SERVER_BASE_URL}/login`;
   }
 
   const fullLogoutUrl = `${casLogoutUrl}?service=${encodeURIComponent(serviceUrl)}`;
   return res.redirect(fullLogoutUrl);
   
-  // -----------------------------------------
-  // IF WE WANT TO FORCE LOGOUT CAS TOO
-  // -----------------------------------------
-
-  // Construct CAS logout URL
-  // const casLogoutUrl = process.env.SSOBASEURL + '/logout';
-
-  // Determine the service URL based on environment
-  // const host = req.get('host') || '';
-  // let serviceUrl;  
-  // if (host.includes('yalelabs.io')) {
-  //   // Production
-  //   serviceUrl = "https://yalelabs.io/login";
-  // } else if (host.includes('onrender.com')) {
-  //   // Render dev environment
-  //   serviceUrl = `https://${host}/login`;
-  // } else {
-  //   // Local development
-  //   serviceUrl = "http://localhost:3000/login";
-  // }
-  
-  // Redirect to CAS logout with service parameter
-  // const fullLogoutUrl = `${casLogoutUrl}?service=${encodeURIComponent(serviceUrl)}`;
-  
-  // console.log('Redirecting to CAS logout:', fullLogoutUrl);
-  // return res.redirect(fullLogoutUrl);
 });
 
 if (process.env.NODE_ENV === 'development') {
   router.get("/dev-login", async (req, res) => {
     const testUser = {
       netId: "test123",
-      userType: "student", // or whatever default you want: "admin", "faculty", etc.
+      userType: "student",
       userConfirmed: true,
     };
     
@@ -370,7 +334,6 @@ if (process.env.NODE_ENV === 'development') {
           console.log('Dev login event logged to analytics');
         } catch (analyticsError) {
           console.error("Error logging dev login analytics event:", analyticsError);
-          // Don't fail the login if analytics fails
         }
 
         const redirectUrl = (req.query.redirect as string) || "http://localhost:3000";

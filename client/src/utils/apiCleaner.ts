@@ -1,4 +1,6 @@
-//Cleans api response listing format to the listing type
+/**
+ * API response transformation utilities for listings.
+ */
 
 export const createListing = (listing: any) => {
     const titleDefault = "";

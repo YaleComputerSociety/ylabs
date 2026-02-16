@@ -1,3 +1,6 @@
+/**
+ * Kanban board for tracking fellowship application stages.
+ */
 import React, { useState } from 'react';
 import BrowseCard from './BrowseCard';
 import { Fellowship, FellowshipStage } from '../../types/types';

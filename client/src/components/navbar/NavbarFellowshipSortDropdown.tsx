@@ -1,3 +1,6 @@
+/**
+ * Sort dropdown for fellowship browse page.
+ */
 import { useContext, useRef, useState } from 'react';
 import FellowshipSearchContext from '../../contexts/FellowshipSearchContext';
 

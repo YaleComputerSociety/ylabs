@@ -1,3 +1,6 @@
+/**
+ * Sort dropdown for listings browse page.
+ */
 import { useContext, useRef, useState } from 'react';
 import SearchContext from '../../contexts/SearchContext';
 

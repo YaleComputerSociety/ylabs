@@ -1,3 +1,6 @@
+/**
+ * Navigation button for the About page with active-state highlighting.
+ */
 import Button from "@mui/material/Button";
 import { Link, useLocation } from 'react-router-dom';
 

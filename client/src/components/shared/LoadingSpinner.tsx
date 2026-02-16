@@ -1,3 +1,6 @@
+/**
+ * Reusable loading spinner component.
+ */
 import PulseLoader from 'react-spinners/PulseLoader';
 
 interface LoadingSpinnerProps {

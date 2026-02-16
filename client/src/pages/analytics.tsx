@@ -1,3 +1,6 @@
+/**
+ * Analytics dashboard page for admin usage statistics.
+ */
 import { useState, useEffect } from "react";
 import axios from "../utils/axios";
 import swal from "sweetalert";
@@ -145,7 +148,6 @@ const Analytics = () => {
                 </div>
             </div>
 
-            {/* Visitor Statistics */}
             <section className="mb-10">
                 <h2 className="text-2xl font-bold mb-4 text-gray-800 border-b-2 border-blue-600 pb-2">
                     Visitor Statistics
@@ -169,7 +171,6 @@ const Analytics = () => {
                     />
                 </div>
 
-                {/* Login Frequency */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
                     <StatCard 
                         title="Total Login Events" 
@@ -189,7 +190,6 @@ const Analytics = () => {
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    {/* Lifetime by Type */}
                     <div className="bg-white rounded-lg shadow-md p-6 border border-gray-200">
                         <h3 className="text-sm font-semibold text-gray-700 mb-3">Lifetime Visitors by Type</h3>
                         <div className="space-y-2">
@@ -202,7 +202,6 @@ const Analytics = () => {
                         </div>
                     </div>
 
-                    {/* Last 7 Days by Type */}
                     <div className="bg-white rounded-lg shadow-md p-6 border border-gray-200">
                         <h3 className="text-sm font-semibold text-gray-700 mb-3">Last 7 Days by Type</h3>
                         <div className="space-y-2">
@@ -215,7 +214,6 @@ const Analytics = () => {
                         </div>
                     </div>
 
-                    {/* Today by Type */}
                     <div className="bg-white rounded-lg shadow-md p-6 border border-gray-200">
                         <h3 className="text-sm font-semibold text-gray-700 mb-3">Today by Type</h3>
                         <div className="space-y-2">
@@ -234,7 +232,6 @@ const Analytics = () => {
                 </div>
             </section>
 
-            {/* User Engagement */}
             <section className="mb-10">
                 <h2 className="text-2xl font-bold mb-4 text-gray-800 border-b-2 border-blue-600 pb-2">
                     User Engagement
@@ -258,7 +255,6 @@ const Analytics = () => {
                     />
                 </div>
 
-                {/* Top Search Queries */}
                 {data.engagement.topSearchQueries.length > 0 && (
                     <div className="bg-white rounded-lg shadow-md p-6 border border-gray-200 mb-6">
                         <h3 className="text-lg font-semibold text-gray-700 mb-4">Top Search Queries (Last 30 Days)</h3>
@@ -273,7 +269,6 @@ const Analytics = () => {
                     </div>
                 )}
 
-                {/* View Stats from Events */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
                     <StatCard 
                         title="Total View Events" 
@@ -292,7 +287,6 @@ const Analytics = () => {
                     />
                 </div>
 
-                {/* Active Users */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <StatCard 
                         title="Active Users (Last 7 Days)" 
@@ -307,7 +301,6 @@ const Analytics = () => {
                 </div>
             </section>
 
-            {/* Most Active Users */}
             {data.engagement.mostActiveUsers.length > 0 && (
                 <section className="mb-10">
                     <h2 className="text-2xl font-bold mb-4 text-gray-800 border-b-2 border-blue-600 pb-2">
@@ -338,7 +331,6 @@ const Analytics = () => {
                 </section>
             )}
 
-            {/* Trending Listings (from events) */}
             {data.engagement.trendingListings.length > 0 && (
                 <section className="mb-10">
                     <h2 className="text-2xl font-bold mb-4 text-gray-800 border-b-2 border-blue-600 pb-2">
@@ -373,7 +365,6 @@ const Analytics = () => {
                 </section>
             )}
 
-            {/* Listings Overview */}
             <section className="mb-10">
                 <h2 className="text-2xl font-bold mb-4 text-gray-800 border-b-2 border-blue-600 pb-2">
                     Listings Overview
@@ -403,7 +394,6 @@ const Analytics = () => {
                 </div>
             </section>
 
-            {/* Engagement Metrics (from counters) */}
             <section className="mb-10">
                 <h2 className="text-2xl font-bold mb-4 text-gray-800 border-b-2 border-blue-600 pb-2">
                     Cumulative Engagement Metrics
@@ -416,7 +406,6 @@ const Analytics = () => {
                 </div>
             </section>
 
-            {/* Views by Department */}
             <section className="mb-10">
                 <h2 className="text-2xl font-bold mb-4 text-gray-800 border-b-2 border-blue-600 pb-2">
                     Views by Department
@@ -447,7 +436,6 @@ const Analytics = () => {
                 </div>
             </section>
 
-            {/* Listings by Department */}
             <section className="mb-10">
                 <h2 className="text-2xl font-bold mb-4 text-gray-800 border-b-2 border-blue-600 pb-2">
                     Listings by Department
@@ -474,7 +462,6 @@ const Analytics = () => {
                 </div>
             </section>
 
-            {/* Listings by Professor */}
             <section className="mb-10">
                 <h2 className="text-2xl font-bold mb-4 text-gray-800 border-b-2 border-blue-600 pb-2">
                     Top Professors by Listings
@@ -503,7 +490,6 @@ const Analytics = () => {
                 </div>
             </section>
 
-            {/* Top Viewed Listings */}
             <section className="mb-10">
                 <h2 className="text-2xl font-bold mb-4 text-gray-800 border-b-2 border-blue-600 pb-2">
                     Top 10 Most Viewed Listings (All-Time)
@@ -534,7 +520,6 @@ const Analytics = () => {
                 </div>
             </section>
 
-            {/* Top Favorited Listings */}
             <section className="mb-10">
                 <h2 className="text-2xl font-bold mb-4 text-gray-800 border-b-2 border-blue-600 pb-2">
                     Top 10 Most Favorited Listings
@@ -565,7 +550,6 @@ const Analytics = () => {
                 </div>
             </section>
 
-            {/* User Statistics */}
             <section className="mb-10">
                 <h2 className="text-2xl font-bold mb-4 text-gray-800 border-b-2 border-blue-600 pb-2">
                     User Statistics
@@ -608,7 +592,6 @@ const Analytics = () => {
                 </div>
             </section>
 
-            {/* Admin Controls */}
             <AdminPanel />
         </div>
     );

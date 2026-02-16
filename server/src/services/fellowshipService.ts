@@ -1,15 +1,17 @@
+/**
+ * Service layer for fellowship CRUD, search, and filter operations.
+ */
 import { NotFoundError, ObjectIdError } from "../utils/errors";
 import mongoose from "mongoose";
 import { Fellowship } from "../models/fellowship";
+import * as itemOps from './itemOperations';
 
-// Create a new fellowship
 export const createFellowship = async (data: any) => {
     const fellowship = new Fellowship(data);
     await fellowship.save();
     return fellowship.toObject();
 };
 
-// Read a single fellowship by ID
 export const readFellowship = async (id: any) => {
     if (mongoose.Types.ObjectId.isValid(id)) {
         const fellowship = await Fellowship.findById(id);
@@ -22,7 +24,6 @@ export const readFellowship = async (id: any) => {
     }
 };
 
-// Read multiple fellowships by IDs
 export const readFellowships = async (ids: any[]) => {
     let fellowships = [];
     for (const id of ids) {
@@ -36,13 +37,11 @@ export const readFellowships = async (ids: any[]) => {
     return fellowships;
 };
 
-// Read all fellowships
 export const readAllFellowships = async () => {
     const fellowships = await Fellowship.find({ archived: false });
     return fellowships.map(fellowship => fellowship.toObject());
 };
 
-// Check if fellowship exists
 export const fellowshipExists = async (id: any) => {
     if (mongoose.Types.ObjectId.isValid(id)) {
         const fellowship = await Fellowship.findById(id);
@@ -52,7 +51,6 @@ export const fellowshipExists = async (id: any) => {
     }
 };
 
-// Update a fellowship
 export const updateFellowship = async (id: any, data: any) => {
     if (mongoose.Types.ObjectId.isValid(id)) {
         const fellowship = await Fellowship.findByIdAndUpdate(
@@ -71,39 +69,26 @@ export const updateFellowship = async (id: any, data: any) => {
     }
 };
 
-// Archive a fellowship
 export const archiveFellowship = async (id: any) => {
     return await updateFellowship(id, { archived: true });
 };
 
-// Unarchive a fellowship
 export const unarchiveFellowship = async (id: any) => {
     return await updateFellowship(id, { archived: false });
 };
 
-// Add a view to a fellowship
 export const addView = async (id: any) => {
-    const fellowship = await readFellowship(id);
-    const oldViews = fellowship.views as number || 0;
-    return await updateFellowship(id, { views: oldViews + 1 });
+    return itemOps.addView(Fellowship, id);
 };
 
-// Add a favorite to a fellowship
 export const addFavorite = async (id: any) => {
-    const fellowship = await readFellowship(id);
-    const oldFavorites = fellowship.favorites as number || 0;
-    return await updateFellowship(id, { favorites: oldFavorites + 1 });
+    return itemOps.addFavorite(Fellowship, id);
 };
 
-// Remove a favorite from a fellowship
 export const removeFavorite = async (id: any) => {
-    const fellowship = await readFellowship(id);
-    const oldFavorites = fellowship.favorites as number || 0;
-    const newFavorites = oldFavorites <= 0 ? 0 : oldFavorites - 1;
-    return await updateFellowship(id, { favorites: newFavorites });
+    return itemOps.removeFavorite(Fellowship, id);
 };
 
-// Delete a fellowship
 export const deleteFellowship = async (id: any) => {
     if (mongoose.Types.ObjectId.isValid(id)) {
         const fellowship = await Fellowship.findById(id);
@@ -116,7 +101,6 @@ export const deleteFellowship = async (id: any) => {
     }
 };
 
-// Search fellowships with filters
 export const searchFellowships = async (params: {
     query?: string;
     page?: number;
@@ -142,15 +126,12 @@ export const searchFellowships = async (params: {
         citizenshipStatus = [],
     } = params;
 
-    // Build filter query
     const filter: any = { archived: false };
 
-    // Text search
     if (query && query.trim()) {
         filter.$text = { $search: query };
     }
 
-    // Array filters - use $in for OR matching within each filter
     if (yearOfStudy.length > 0) {
         filter.yearOfStudy = { $in: yearOfStudy };
     }
@@ -167,18 +148,14 @@ export const searchFellowships = async (params: {
         filter.citizenshipStatus = { $in: citizenshipStatus };
     }
 
-    // Build sort options
     const sortOptions: any = {};
     if (query && query.trim()) {
-        // If searching, sort by text score first
         sortOptions.score = { $meta: 'textScore' };
     }
     sortOptions[sortBy] = sortOrder;
 
-    // Calculate pagination
     const skip = (page - 1) * pageSize;
 
-    // Execute query
     let fellowshipsQuery = Fellowship.find(filter);
 
     if (query && query.trim()) {
@@ -203,7 +180,6 @@ export const searchFellowships = async (params: {
     };
 };
 
-// Get distinct filter values (for populating filter dropdowns)
 export const getFilterOptions = async () => {
     const [
         yearOfStudyOptions,
@@ -228,7 +204,6 @@ export const getFilterOptions = async () => {
     };
 };
 
-// Bulk create fellowships (for import)
 export const bulkCreateFellowships = async (fellowships: any[]) => {
     const result = await Fellowship.insertMany(fellowships);
     return result.map(f => f.toObject());

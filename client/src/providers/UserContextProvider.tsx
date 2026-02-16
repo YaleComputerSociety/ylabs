@@ -1,3 +1,6 @@
+/**
+ * Provider component managing user authentication and session state.
+ */
 import { FC, useCallback, useEffect, useState } from "react";
 import swal from "sweetalert";
 

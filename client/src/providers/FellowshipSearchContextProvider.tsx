@@ -1,3 +1,6 @@
+/**
+ * Provider component managing fellowship search state and API calls.
+ */
 import { FC, useState, useEffect, useCallback, ReactNode } from "react";
 import { useLocation } from "react-router-dom";
 import axios from "../utils/axios";
@@ -12,37 +15,31 @@ interface FellowshipSearchContextProviderProps {
 }
 
 const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> = ({ children }) => {
-  const pageSize = 500; // Load all at once — fewer than 200 fellowships
+  const pageSize = 500;
   const sortableKeys = ['default', 'createdAt', 'deadline', 'title'];
 
   const location = useLocation();
   const isActive = location.pathname === '/fellowships';
 
-  // Query state
   const [queryString, setQueryString] = useState<string>('');
 
-  // Filter state
   const [selectedYearOfStudy, setSelectedYearOfStudy] = useState<string[]>([]);
   const [selectedTermOfAward, setSelectedTermOfAward] = useState<string[]>([]);
   const [selectedPurpose, setSelectedPurpose] = useState<string[]>([]);
   const [selectedRegions, setSelectedRegions] = useState<string[]>([]);
   const [selectedCitizenship, setSelectedCitizenship] = useState<string[]>([]);
 
-  // Sort state
   const [sortBy, setSortBy] = useState<string>(sortableKeys[0]);
   const [sortOrder, setSortOrder] = useState<number>(-1);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
 
-  // Results
   const [fellowships, setFellowships] = useState<Fellowship[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [searchExhausted, setSearchExhausted] = useState<boolean>(false);
   const [total, setTotal] = useState<number>(0);
 
-  // Pagination
   const [page, setPage] = useState<number>(1);
 
-  // Filter options from backend
   const [filterOptions, setFilterOptions] = useState<FellowshipFilterOptions>({
     yearOfStudy: [],
     termOfAward: [],
@@ -51,13 +48,10 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
     citizenshipStatus: [],
   });
 
-  // Quick filter (for Navbar)
   const [quickFilter, setQuickFilter] = useState<'open' | 'closingSoon' | 'recent' | null>(null);
 
-  // Filter bar height for dynamic layout
   const [filterBarHeight, setFilterBarHeight] = useState<number>(0);
 
-  // Track if initial load happened
   const [queryStringLoaded, setQueryStringLoaded] = useState(false);
   const [filtersLoaded, setFiltersLoaded] = useState(false);
   const [initialSearchDone, setInitialSearchDone] = useState(false);
@@ -69,7 +63,6 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
     setSortOrder(newDirection === 'asc' ? 1 : -1);
   }, [sortDirection]);
 
-  // Reset loading flags when navigating away so next visit triggers fresh load
   useEffect(() => {
     if (!isActive) {
       setInitialSearchDone(false);
@@ -79,7 +72,6 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
     }
   }, [isActive]);
 
-  // Load filter options from backend
   useEffect(() => {
     if (!isActive) return;
 
@@ -97,22 +89,19 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
       })
       .catch((error) => {
         console.error('Error loading fellowship filter options:', error);
-        setFilterOptionsLoaded(true); // Continue anyway
+        setFilterOptionsLoaded(true);
       });
   }, [isActive]);
 
   const handleSearch = useCallback((searchPage: number) => {
     const formattedQuery = queryString.trim();
 
-    // Build URL with base params
     let url = `/fellowships/search?query=${encodeURIComponent(formattedQuery)}&page=${searchPage}&pageSize=${pageSize}`;
 
-    // Add sort params if not default
     if (sortBy !== 'default') {
       url += `&sortBy=${sortBy}&sortOrder=${sortOrder}`;
     }
 
-    // Add filter params
     if (selectedYearOfStudy.length > 0) {
       url += `&yearOfStudy=${encodeURIComponent(selectedYearOfStudy.join(','))}`;
     }
@@ -157,13 +146,11 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
       });
   }, [queryString, selectedYearOfStudy, selectedTermOfAward, selectedPurpose, selectedRegions, selectedCitizenship, sortBy, sortOrder, pageSize]);
 
-  // Refresh fellowships - can be called to force a fresh fetch
   const refreshFellowships = useCallback(() => {
     setPage(1);
     handleSearch(1);
   }, [handleSearch]);
 
-  // Initial search when filter options are loaded
   useEffect(() => {
     if (!isActive) return;
     if (filterOptionsLoaded && !initialSearchDone) {
@@ -173,7 +160,6 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
     }
   }, [filterOptionsLoaded, initialSearchDone, handleSearch, isActive]);
 
-  // Debounced search on query string change
   useEffect(() => {
     if (!isActive) return;
     if (!filterOptionsLoaded) return;
@@ -191,7 +177,6 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
     };
   }, [queryString, filterOptionsLoaded, isActive]);
 
-  // Immediate search on filter/sort change
   useEffect(() => {
     if (!isActive) return;
     if (!filterOptionsLoaded) return;
@@ -203,7 +188,6 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
     setFiltersLoaded(true);
   }, [selectedYearOfStudy, selectedTermOfAward, selectedPurpose, selectedRegions, selectedCitizenship, sortBy, sortOrder, filterOptionsLoaded, isActive]);
 
-  // Pagination - load more
   useEffect(() => {
     if (!isActive) return;
     if (page > 1 && filterOptionsLoaded) {

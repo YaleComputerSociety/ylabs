@@ -1,3 +1,6 @@
+/**
+ * Listing creation and edit form with all fields.
+ */
 import React, { useState, useEffect, useContext, useMemo } from 'react';
 import { Listing } from '../../../types/types';
 import { useConfig } from '../../../hooks/useConfig';
@@ -15,7 +18,7 @@ import { validateTitle, validateDescription, validateEstablished,
          validateProfessors, validateEmails, validateWebsites, validateProfessorIds, validateDepartments } from './utils/validation';
 import { createListing } from '../../../utils/apiCleaner';
 import UserContext from "../../../contexts/UserContext";
-         
+
 interface ListingFormProps {
   listing: Listing;
   isCreated: boolean;
@@ -26,11 +29,9 @@ interface ListingFormProps {
 }
 
 const ListingForm = ({ listing, isCreated, onLoad, onCancel, onSave, onCreate }: ListingFormProps) => {
-  // Get department options from config context
   const { departments: allDepartmentsConfig } = useConfig();
   const departmentNames = useMemo(() => allDepartmentsConfig.map(d => d.displayName), [allDepartmentsConfig]);
 
-  // Form state
   const [title, setTitle] = useState(listing.title);
   const [professorNames, setProfessorNames] = useState<string[]>([...listing.professorNames]);
   const [ownerName, setOwnerName] = useState<string>(`${listing.ownerFirstName} ${listing.ownerLastName}`);
@@ -50,8 +51,7 @@ const ListingForm = ({ listing, isCreated, onLoad, onCancel, onSave, onCreate }:
 
   const { user } = useContext(UserContext);
   const isOwner = user && (user.netId === listing.ownerId);
-  
-  // Form errors
+
   const [errors, setErrors] = useState<{
     title?: string;
     description?: string;
@@ -63,7 +63,6 @@ const ListingForm = ({ listing, isCreated, onLoad, onCancel, onSave, onCreate }:
     departments?: string;
   }>({});
 
-  // Get most recent listing and initialize available departments
   useEffect(() => {
     if (!isCreated) {
       setLoading(true);
@@ -74,7 +73,6 @@ const ListingForm = ({ listing, isCreated, onLoad, onCancel, onSave, onCreate }:
           return;
         }
         const listing = createListing(response.data.listing);
-        // Update state with new listing data
         setTitle(listing.title);
         setProfessorNames([...listing.professorNames]);
         setOwnerName(`${listing.ownerFirstName} ${listing.ownerLastName}`);
@@ -107,7 +105,6 @@ const ListingForm = ({ listing, isCreated, onLoad, onCancel, onSave, onCreate }:
     }
   }, []);
 
-  // Live update preview when editing or creating a listing
   useEffect(() => {
     const updatedListing: Listing = {
       ...listing,
@@ -129,8 +126,7 @@ const ListingForm = ({ listing, isCreated, onLoad, onCancel, onSave, onCreate }:
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
-    // Validate all required fields
+
     const validationErrors = {
       title: validateTitle(title),
       description: validateDescription(description),
@@ -141,16 +137,13 @@ const ListingForm = ({ listing, isCreated, onLoad, onCancel, onSave, onCreate }:
       websites: validateWebsites(websites),
       departments: validateDepartments(departments)
     };
-    
-    // Filter out undefined errors
+
     const filteredErrors = Object.fromEntries(
       Object.entries(validationErrors).filter(([_, value]) => value !== undefined)
     );
-    
-    // Update error state
+
     setErrors(filteredErrors);
-    
-    // Only proceed if no errors
+
     if (Object.keys(filteredErrors).length === 0) {
       const updatedListing: Listing = {
         ...listing,
@@ -168,8 +161,7 @@ const ListingForm = ({ listing, isCreated, onLoad, onCancel, onSave, onCreate }:
         hiringStatus,
         archived
       };
-      
-      // Show confirmation dialog before saving
+
       if (isCreated) {
         swal({
           title: "Create Listing",
@@ -198,7 +190,6 @@ const ListingForm = ({ listing, isCreated, onLoad, onCancel, onSave, onCreate }:
     }
   };
 
-
 const handleCancel = () => {
   if (isCreated) {
     swal({
@@ -213,9 +204,7 @@ const handleCancel = () => {
       }
     });
   } else {
-    // Clone the original listing to force a new reference
     const originalListing = { ...listing };
-    // Reset local state to the official listing values
     setTitle(originalListing.title);
     setProfessorNames([...originalListing.professorNames]);
     setOwnerName(`${originalListing.ownerFirstName} ${originalListing.ownerLastName}`);
@@ -230,7 +219,6 @@ const handleCancel = () => {
     setHiringStatus(originalListing.hiringStatus);
     setArchived(originalListing.archived);
 
-    // Force the parent to update the preview by providing a new object reference.
     onLoad({ ...originalListing }, true);
 
     if (onCancel) {
@@ -239,7 +227,6 @@ const handleCancel = () => {
   }
 };
 
-  // Handle adding/removing departments
   const handleAddDepartment = (department: string) => {
     setDepartments(prev => [...prev, department]);
     setAvailableDepartments(prev => prev.filter(dept => dept !== department).sort());
@@ -260,8 +247,7 @@ const handleCancel = () => {
         </div>
       ) : (
         <form onSubmit={handleSubmit}>
-          {/* Row 1: Listing Title, Status, Department Affiliation */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <TextInput
               id="title"
               label="Listing Title"
@@ -281,18 +267,8 @@ const handleCancel = () => {
               hiringStatus={hiringStatus}
               setHiringStatus={setHiringStatus}
             />
-
-            <DepartmentInput
-              departments={departments}
-              availableDepartments={availableDepartments}
-              onAddDepartment={handleAddDepartment}
-              onRemoveDepartment={handleRemoveDepartment}
-              required
-              error={errors.departments}
-            />
           </div>
 
-          {/* Row 2: Research Description and Applicant Prerequisites side by side */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <TextArea
               id="description"
@@ -315,7 +291,6 @@ const handleCancel = () => {
             />
           </div>
 
-          {/* Row 3: Professors and Research Website */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <ArrayInput
               label="Professors"
@@ -350,7 +325,6 @@ const handleCancel = () => {
             />
           </div>
 
-          {/* Row 4: Professor Emails and Research Area */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <ArrayInput
               label="Professor Emails"
@@ -376,12 +350,20 @@ const handleCancel = () => {
             />
           </div>
 
-          {/* Advanced Options */}
           <details className="mb-16">
             <summary className="cursor-pointer text-sm font-medium text-gray-600 hover:text-gray-800 py-2 select-none">
               Advanced Options
             </summary>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
+              <DepartmentInput
+                departments={departments}
+                availableDepartments={availableDepartments}
+                onAddDepartment={handleAddDepartment}
+                onRemoveDepartment={handleRemoveDepartment}
+                required
+                error={errors.departments}
+              />
+
               {isOwner && (
                 <ArrayInput
                   label="Co-Editors"
@@ -428,8 +410,7 @@ const handleCancel = () => {
               </div>
             </div>
           </details>
-          
-          {/* Form Actions */}
+
           <div className="absolute bottom-6 right-6 flex space-x-3 bg-white py-2 px-1">
             <button
               type="button"

@@ -1,3 +1,6 @@
+/**
+ * Button that links to the external Google Forms feedback form.
+ */
 import Button from "@mui/material/Button";
 
 const FeedbackButton = () => {

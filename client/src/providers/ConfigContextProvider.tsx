@@ -1,3 +1,6 @@
+/**
+ * Provider component loading and caching application configuration.
+ */
 import { FC, useState, useEffect, useCallback, useMemo, ReactNode } from "react";
 import axios from "../utils/axios";
 import ConfigContext, {
@@ -7,7 +10,6 @@ import ConfigContext, {
   DepartmentConfig
 } from "../contexts/ConfigContext";
 
-// Color mappings (kept in frontend for Tailwind classes)
 const colorKeyToTailwind: Record<string, { bg: string; text: string; border: string }> = {
   blue: { bg: "bg-blue-200", text: "text-blue-800", border: "border-blue-300" },
   green: { bg: "bg-green-200", text: "text-green-800", border: "border-green-300" },
@@ -21,17 +23,16 @@ const colorKeyToTailwind: Record<string, { bg: string; text: string; border: str
   gray: { bg: "bg-gray-200", text: "text-gray-800", border: "border-gray-300" }
 };
 
-// Aligned with Research Field colors in researchAreas.ts
 const departmentColorKeyToTailwind: Record<number, string> = {
-  0: "bg-blue-200",    // Computing & AI
-  1: "bg-green-200",   // Life Sciences
-  2: "bg-yellow-200",  // Physical Sciences & Engineering
-  3: "bg-red-200",     // Health & Medicine
-  4: "bg-purple-200",  // Social Sciences
-  5: "bg-pink-200",    // Humanities & Arts
-  6: "bg-teal-200",    // Environmental Sciences
-  7: "bg-orange-200",  // Economics
-  8: "bg-indigo-200"   // Mathematics
+  0: "bg-blue-200",
+  1: "bg-green-200",
+  2: "bg-yellow-200",
+  3: "bg-red-200",
+  4: "bg-purple-200",
+  5: "bg-pink-200",
+  6: "bg-teal-200",
+  7: "bg-orange-200",
+  8: "bg-indigo-200"
 };
 
 interface ConfigContextProviderProps {
@@ -58,7 +59,6 @@ const ConfigContextProvider: FC<ConfigContextProviderProps> = ({ children }) => 
       const response = await axios.get('/config');
       const data = response.data;
 
-      // Safely extract data with fallbacks
       const areas = data?.researchAreas?.areas || [];
       const fields = data?.researchAreas?.fields || [];
       const fieldOrderData = data?.researchAreas?.fieldOrder || [];
@@ -92,7 +92,6 @@ const ConfigContextProvider: FC<ConfigContextProviderProps> = ({ children }) => 
     fetchConfig();
   }, [fetchConfig]);
 
-  // Create lookup maps for efficient access
   const researchAreaMap = useMemo(() => {
     const map = new Map<string, ResearchAreaConfig>();
     researchAreas.forEach(area => map.set(area.name.toLowerCase(), area));
@@ -111,7 +110,6 @@ const ConfigContextProvider: FC<ConfigContextProviderProps> = ({ children }) => 
     return map;
   }, [departments]);
 
-  // Helper methods
   const getResearchAreaByName = useCallback((name: string): ResearchAreaConfig | undefined => {
     return researchAreaMap.get(name.toLowerCase());
   }, [researchAreaMap]);
@@ -133,7 +131,6 @@ const ConfigContextProvider: FC<ConfigContextProviderProps> = ({ children }) => 
   }, [departmentNameMap]);
 
   const getDepartmentColor = useCallback((dept: string): string => {
-    // Handle "ABBR - Name" format
     const match = dept.match(/^([A-Z&/]+)\s*-/);
     const abbr = match ? match[1] : null;
 
@@ -144,7 +141,6 @@ const ConfigContextProvider: FC<ConfigContextProviderProps> = ({ children }) => 
       }
     }
 
-    // Try finding by name
     const byName = departmentNameMap.get(dept.toLowerCase());
     if (byName) {
       return departmentColorKeyToTailwind[byName.colorKey] || "bg-gray-100";

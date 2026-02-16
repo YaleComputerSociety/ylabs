@@ -1,3 +1,6 @@
+/**
+ * User avatar button in the navigation bar.
+ */
 import { useState, useContext } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import Box from '@mui/material/Box';
@@ -14,12 +17,9 @@ const UserButton = () => {
     const { user } = useContext(UserContext);
     const isAdmin = user?.userType === 'admin';
 
-    // Get user initials from netId (e.g., "srg56" -> "SG")
-    // First letter is first name initial, last letter before numbers is last name initial
     const getInitials = () => {
         if (user?.netId && user.netId.length > 0) {
             const first = user.netId.charAt(0).toUpperCase();
-            // Find the last letter before numbers
             const lettersOnly = user.netId.replace(/[0-9]/g, '');
             const last = lettersOnly.length > 0
                 ? lettersOnly.charAt(lettersOnly.length - 1).toUpperCase()

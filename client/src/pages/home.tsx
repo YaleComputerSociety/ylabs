@@ -1,3 +1,6 @@
+/**
+ * Main listings browse page with search, filters, and grid/list view.
+ */
 import { useState, useEffect, useContext, useMemo } from "react";
 import SearchContext from "../contexts/SearchContext";
 import UserContext from "../contexts/UserContext";
@@ -34,7 +37,6 @@ const Home = () => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [adminEditListing, setAdminEditListing] = useState<Listing | null>(null);
 
-    // Clear search query on page load
     useEffect(() => {
         setQueryString('');
     }, []);
@@ -54,7 +56,6 @@ const Home = () => {
         reloadFavorites();
     }, []);
 
-    // Apply quick filters (previously in ListingsCardList)
     const filteredListings = useMemo(() => {
         if (quickFilter === 'open') {
             return listings.filter(l => l.hiringStatus >= 0);
@@ -76,13 +77,11 @@ const Home = () => {
         return listings;
     }, [listings, quickFilter]);
 
-    // Wrap as BrowsableItems
     const items: BrowsableItem[] = useMemo(() =>
         filteredListings.map((l) => ({ type: 'listing' as const, data: l })),
         [filteredListings]
     );
 
-    // Infinite scroll
     const sentinelRef = useInfiniteScroll({
         searchExhausted,
         isLoading,
@@ -132,7 +131,6 @@ const Home = () => {
         }
     };
 
-    // Navigate to filtered search from modal
     const handleNavigateToResearchArea = (area: string) => {
         setQueryString('');
         setSelectedDepartments([]);
@@ -166,7 +164,6 @@ const Home = () => {
                 emptyMessage="No results match the search criteria"
             />
 
-            {/* Listing detail modal */}
             {selectedListing && (
                 <ListingDetailModal
                     isOpen={isModalOpen}
@@ -182,7 +179,6 @@ const Home = () => {
                 />
             )}
 
-            {/* Admin edit modal */}
             {adminEditListing && (
                 <AdminListingEditModal
                     listing={{ ...adminEditListing, _id: adminEditListing.id } as any}

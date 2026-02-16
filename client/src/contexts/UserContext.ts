@@ -1,3 +1,6 @@
+/**
+ * React context for current user authentication state.
+ */
 import { createContext } from "react";
 
 import { User } from "../types/types";

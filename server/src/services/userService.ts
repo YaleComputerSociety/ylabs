@@ -1,3 +1,6 @@
+/**
+ * Service layer for user account CRUD and favorites management.
+ */
 import { User } from "../models";
 import { NotFoundError } from "../utils/errors";
 import { readListing, confirmListing, unconfirmListing, addFavorite, removeFavorite } from "./listingService";
@@ -126,9 +129,6 @@ export const deleteUser = async(id: any) => {
     }
 }
 
-//List data routes
-
-//Add departments
 export const addDepartments = async(id: any, newDepartments: [string]) => {
     let user = await readUser(id);
 
@@ -140,7 +140,6 @@ export const addDepartments = async(id: any, newDepartments: [string]) => {
     return newUser;
 };
 
-//Remove departments
 export const deleteDepartments = async(id: any, removedDepartments: [string]) => {
     let user = await readUser(id);
 
@@ -152,14 +151,12 @@ export const deleteDepartments = async(id: any, removedDepartments: [string]) =>
     return newUser;
 };
 
-//Clear departments
 export const clearDepartments = async(id: any) => {
     const newUser = await updateUser(id, {"departments": []});
 
     return newUser;
 };
 
-//Add own listings
 export const addOwnListings = async(id: any, Listings: [mongoose.Types.ObjectId]) => {
     let user = await readUser(id);
 
@@ -172,7 +169,6 @@ user.ownListings = Array.from(new Set(user.ownListings.map((listing: any) => lis
     return newUser;
 };
 
-//Remove own listings
 export const deleteOwnListings = async(id: any, removedListings: [mongoose.Types.ObjectId]) => {
     let user = await readUser(id);
 
@@ -185,14 +181,12 @@ export const deleteOwnListings = async(id: any, removedListings: [mongoose.Types
     return newUser;
 };
 
-//Clear own listings
 export const clearOwnListings = async(id: any) => {
     const newUser = await updateUser(id, {"ownListings": []});
 
     return newUser;
 };
 
-//Add fav listings
 export const addFavListings = async(id: any, Listings: [mongoose.Types.ObjectId]) => {
     let user = await readUser(id);
 
@@ -208,7 +202,6 @@ export const addFavListings = async(id: any, Listings: [mongoose.Types.ObjectId]
     return newUser;
 };
 
-//Remove fav listings
 export const deleteFavListings = async(id: any, removedListings: [mongoose.Types.ObjectId]) => {
     let user = await readUser(id);
 
@@ -225,14 +218,12 @@ export const deleteFavListings = async(id: any, removedListings: [mongoose.Types
     return newUser;
 };
 
-//Clear fav listings
 export const clearFavListings = async(id: any) => {
     const newUser = await updateUser(id, {"favListings": []});
 
     return newUser;
 };
 
-//Add fav fellowships
 export const addFavFellowships = async(id: any, fellowships: [mongoose.Types.ObjectId]) => {
     let user = await readUser(id);
 
@@ -248,7 +239,6 @@ export const addFavFellowships = async(id: any, fellowships: [mongoose.Types.Obj
     return newUser;
 };
 
-//Remove fav fellowships
 export const deleteFavFellowships = async(id: any, removedFellowships: [mongoose.Types.ObjectId]) => {
     let user = await readUser(id);
 
@@ -265,7 +255,6 @@ export const deleteFavFellowships = async(id: any, removedFellowships: [mongoose
     return newUser;
 };
 
-//Clear fav fellowships
 export const clearFavFellowships = async(id: any) => {
     const newUser = await updateUser(id, {"favFellowships": []});
 

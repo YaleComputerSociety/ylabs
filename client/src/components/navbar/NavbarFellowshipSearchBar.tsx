@@ -1,3 +1,6 @@
+/**
+ * Search bar component in the navbar for fellowships.
+ */
 import { useContext, useRef } from 'react';
 import FellowshipSearchContext from '../../contexts/FellowshipSearchContext';
 

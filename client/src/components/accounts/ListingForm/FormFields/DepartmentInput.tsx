@@ -1,3 +1,6 @@
+/**
+ * Multi-select department autocomplete dropdown with chips.
+ */
 import React, { useState, useRef, useEffect } from 'react';
 import { useConfig } from '../../../../hooks/useConfig';
 
@@ -8,6 +11,7 @@ interface DepartmentInputProps {
   onRemoveDepartment: (index: number) => void;
   required?: boolean;
   error?: string;
+  label?: string;
 }
 
 const DepartmentInput = ({
@@ -16,7 +20,8 @@ const DepartmentInput = ({
   onAddDepartment,
   onRemoveDepartment,
   required = false,
-  error
+  error,
+  label = 'Department Affiliation'
 }: DepartmentInputProps) => {
   const [isDeptDropdownOpen, setIsDeptDropdownOpen] = useState(false);
   const [deptSearchTerm, setDeptSearchTerm] = useState('');
@@ -27,12 +32,10 @@ const DepartmentInput = ({
   const deptDropdownRef = useRef<HTMLDivElement>(null);
   const deptInputRef = useRef<HTMLInputElement>(null);
 
-  // Filter departments based on search term
   const filteredDepartments = availableDepartments.filter(dept =>
     dept.toLowerCase().includes(deptSearchTerm.toLowerCase())
   );
 
-  // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (deptDropdownRef.current && !deptDropdownRef.current.contains(e.target as Node)) {
@@ -45,7 +48,6 @@ const DepartmentInput = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Handle keyboard navigation
   const handleDeptInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     switch (e.key) {
       case 'ArrowDown':
@@ -80,12 +82,11 @@ const DepartmentInput = ({
     }
   };
 
-  // Show loading state if config not ready
   if (configLoading) {
     return (
       <div className="mb-4">
         <label className="block text-gray-700 text-sm font-bold mb-2">
-          Department Affiliation
+          {label}
           {required && <span className="text-red-500 ml-1">*</span>}
         </label>
         <div className="animate-pulse bg-gray-200 h-10 rounded"></div>
@@ -96,7 +97,7 @@ const DepartmentInput = ({
   return (
     <div className="mb-4" ref={deptDropdownRef}>
       <label className="block text-gray-700 text-sm font-bold mb-2">
-        Department Affiliation
+        {label}
         {required && <span className="text-red-500 ml-1">*</span>}
       </label>
       <div className="relative">
@@ -147,7 +148,6 @@ const DepartmentInput = ({
             className="absolute w-full bg-white rounded-lg z-10 shadow-lg border overflow-hidden mt-1 border-gray-300"
             tabIndex={-1}
           >
-            {/* Selected departments inside dropdown */}
             {departments.length > 0 && (
               <div className="flex flex-wrap gap-2 p-2 border-b border-gray-200 bg-gray-50">
                 {departments.map((department, index) => (

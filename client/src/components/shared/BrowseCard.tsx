@@ -1,3 +1,6 @@
+/**
+ * Card view component for browsable listings and fellowships.
+ */
 import React, { useContext } from 'react';
 import { BrowsableItem, getItemTags, getItemSubtitleColor, getDaysUntilDeadline } from '../../types/browsable';
 import FavoriteButton from './FavoriteButton';
@@ -32,13 +35,11 @@ const BrowseCard = React.memo(({ item, isFavorite, onToggleFavorite, onOpenModal
     onOpenModal();
   };
 
-  // Listing-specific computed values
   const isListing = item.type === 'listing';
   const professorName = isListing
     ? `${item.data.ownerFirstName} ${item.data.ownerLastName}`
     : null;
 
-  // Put ownerPrimaryDepartment first in department list
   const deptLabel = isListing ? (() => {
     const departments = [...(item.data.departments || [])];
     const primary = item.data.ownerPrimaryDepartment;
@@ -57,7 +58,6 @@ const BrowseCard = React.memo(({ item, isFavorite, onToggleFavorite, onOpenModal
     return departments.map(d => getDepartmentAbbreviation(d)).join(' | ');
   })() : null;
 
-  // Fellowship subtitle
   const fellowshipSubtitle = !isListing ? (() => {
     const { deadline } = item.data;
     if (!deadline) return 'No deadline';
@@ -72,7 +72,6 @@ const BrowseCard = React.memo(({ item, isFavorite, onToggleFavorite, onOpenModal
       className="group relative bg-white rounded-lg border border-gray-200 hover:border-blue-400 hover:shadow-md transition-all duration-200 cursor-pointer overflow-hidden h-full flex flex-col"
       onClick={handleClick}
     >
-      {/* Urgent Banner for fellowships */}
       {showUrgentBanner && (
         <div className="bg-amber-50 border-b border-amber-200 px-3 py-1.5">
           <p className="text-sm font-medium text-amber-700">
@@ -82,7 +81,6 @@ const BrowseCard = React.memo(({ item, isFavorite, onToggleFavorite, onOpenModal
       )}
 
       <div className="p-5 flex-1 flex flex-col">
-        {/* Top Row: Actions - absolute positioned to avoid taking space */}
         <div className="absolute top-2 right-2 flex items-center gap-1 z-10">
           {hasPrerequisites && (
             <div className="relative group/tip">
@@ -129,32 +127,26 @@ const BrowseCard = React.memo(({ item, isFavorite, onToggleFavorite, onOpenModal
 
         {isListing ? (
           <>
-            {/* Departments in blue */}
             {deptLabel && (
               <p className="text-sm font-semibold text-blue-700 mb-1 truncate">
                 {deptLabel}
               </p>
             )}
 
-            {/* Professor Name (priority) */}
             <h3 className="text-base font-bold text-gray-900 leading-tight">
               {professorName}
             </h3>
 
-            {/* Lab / Listing Title */}
             <p className="text-sm text-gray-600 mb-2 line-clamp-2 leading-snug">
               {item.data.title}
             </p>
 
-            {/* Divider */}
             {tags.length > 0 && (
               <div className="border-t border-gray-100 my-2" />
             )}
 
-            {/* Spacer */}
             <div className="flex-1" />
 
-            {/* Keywords / Research Areas */}
             {tags.length > 0 && (
               <div className="flex flex-wrap gap-1">
                 {tags.slice(0, 3).map((tag) => (
@@ -175,20 +167,16 @@ const BrowseCard = React.memo(({ item, isFavorite, onToggleFavorite, onOpenModal
           </>
         ) : (
           <>
-            {/* Fellowship card layout */}
             <h3 className="text-base font-bold text-gray-900 mb-1 line-clamp-2 leading-tight">
               {item.data.title}
             </h3>
 
-            {/* Subtitle (deadline info) */}
             <p className={`text-sm mb-2 ${subtitleColor}`}>
               {fellowshipSubtitle}
             </p>
 
-            {/* Spacer */}
             <div className="flex-1" />
 
-            {/* Tags - Show max 3 */}
             {tags.length > 0 && (
               <div className="flex flex-wrap gap-1">
                 {tags.slice(0, 3).map((tag) => (

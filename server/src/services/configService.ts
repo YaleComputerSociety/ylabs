@@ -1,10 +1,12 @@
+/**
+ * Configuration service providing departments and research areas with caching.
+ */
 import { ResearchArea, ResearchField, fieldColorKeys } from '../models/researchArea';
 import { Department, DepartmentCategory } from '../models/department';
 
-// Cache for config data (refreshed every 5 minutes)
 let configCache: ConfigData | null = null;
 let cacheTimestamp: number = 0;
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const CACHE_TTL = 5 * 60 * 1000;
 
 export interface ConfigData {
   researchAreas: {
@@ -37,18 +39,15 @@ export interface ConfigData {
 export const getConfig = async (forceRefresh: boolean = false): Promise<ConfigData> => {
   const now = Date.now();
 
-  // Return cached data if valid
   if (!forceRefresh && configCache && (now - cacheTimestamp) < CACHE_TTL) {
     return configCache;
   }
 
-  // Fetch fresh data
   const [researchAreas, departments] = await Promise.all([
     ResearchArea.find().select('name field colorKey isDefault').lean(),
     Department.find({ isActive: true }).select('-__v -createdAt -updatedAt').lean()
   ]);
 
-  // Build field list with color keys
   const fields = Object.values(ResearchField).map(field => ({
     name: field,
     colorKey: fieldColorKeys[field]
@@ -79,7 +78,6 @@ export const getConfig = async (forceRefresh: boolean = false): Promise<ConfigDa
     timestamp: new Date().toISOString()
   };
 
-  // Update cache
   configCache = config;
   cacheTimestamp = now;
 

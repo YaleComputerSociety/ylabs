@@ -1,3 +1,6 @@
+/**
+ * Configured Axios instance with base URL and credentials.
+ */
 import axios from "axios";
 
 const backendBaseURL = window.location.host.includes("yalelabs.io")

@@ -1,3 +1,6 @@
+/**
+ * Admin modal for editing fellowship details.
+ */
 import { useState, useEffect, KeyboardEvent } from "react";
 import { Fellowship } from "../../types/types";
 import axios from "../../utils/axios";
@@ -149,7 +152,6 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl mx-4">
-        {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b">
           <div>
             <h3 className="text-lg font-bold text-gray-900">Edit Fellowship</h3>
@@ -160,10 +162,8 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
           </button>
         </div>
 
-        {/* Body */}
         <div className="px-6 py-4 max-h-[70vh] overflow-y-auto">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Left column */}
             <div>
               <div className="mb-3">
                 <label className="block text-xs font-semibold text-gray-600 mb-1">
@@ -217,7 +217,6 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
               </div>
             </div>
 
-            {/* Right column */}
             <div>
               <div className="mb-3">
                 <label className="block text-xs font-semibold text-gray-600 mb-1">Accepting Applications</label>
@@ -313,7 +312,6 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
             </div>
           </div>
 
-          {/* Categories & Filters */}
           <div className="border-t pt-3 mt-3">
             <h4 className="text-xs font-bold text-gray-700 mb-2">Categories & Filters</h4>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4">
@@ -326,7 +324,6 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
           </div>
         </div>
 
-        {/* Footer */}
         <div className="flex justify-between px-6 py-4 border-t bg-gray-50 rounded-b-lg">
           <button
             onClick={async () => {

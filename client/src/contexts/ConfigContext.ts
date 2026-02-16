@@ -1,3 +1,6 @@
+/**
+ * React context for application configuration (departments, research areas).
+ */
 import { createContext } from "react";
 
 export interface ResearchAreaConfig {
@@ -22,21 +25,17 @@ export interface DepartmentConfig {
 }
 
 export interface ConfigContextType {
-  // Loading state
   isLoading: boolean;
   isLoaded: boolean;
   error: string | null;
 
-  // Research Areas
   researchAreas: ResearchAreaConfig[];
   researchFields: FieldConfig[];
   fieldOrder: string[];
 
-  // Departments
   departments: DepartmentConfig[];
   departmentCategories: string[];
 
-  // Helper methods
   getResearchAreaByName: (name: string) => ResearchAreaConfig | undefined;
   getColorForResearchArea: (name: string) => { bg: string; text: string; border: string };
   getDepartmentByAbbr: (abbr: string) => DepartmentConfig | undefined;
@@ -44,7 +43,6 @@ export interface ConfigContextType {
   getDepartmentColor: (dept: string) => string;
   getDepartmentsByCategory: (category: string) => DepartmentConfig[];
 
-  // Refresh function
   refreshConfig: () => Promise<void>;
 }
 

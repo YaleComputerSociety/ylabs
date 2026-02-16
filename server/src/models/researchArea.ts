@@ -1,6 +1,8 @@
+/**
+ * Mongoose schema and model for research areas with field-based color mapping.
+ */
 import mongoose from 'mongoose';
 
-// Research fields enum - must match frontend
 export enum ResearchField {
   COMPUTING_AI = "Computing & Artificial Intelligence",
   LIFE_SCIENCES = "Life Sciences & Biology",
@@ -13,7 +15,6 @@ export enum ResearchField {
   MATHEMATICS = "Mathematics"
 }
 
-// Field to colorKey mapping (for frontend Tailwind classes)
 export const fieldColorKeys: Record<ResearchField, string> = {
   [ResearchField.COMPUTING_AI]: "blue",
   [ResearchField.LIFE_SCIENCES]: "green",
@@ -47,11 +48,11 @@ const researchAreaSchema = new mongoose.Schema(
     },
     addedBy: {
       type: String,
-      required: false // NetID of user who added it, null for default areas
+      required: false
     },
     isDefault: {
       type: Boolean,
-      default: false // true for pre-populated areas, false for user-added
+      default: false
     }
   },
   {
@@ -59,7 +60,6 @@ const researchAreaSchema = new mongoose.Schema(
   }
 );
 
-// Index for faster searches
 researchAreaSchema.index({ name: 'text' });
 researchAreaSchema.index({ field: 1 });
 

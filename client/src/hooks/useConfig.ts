@@ -1,3 +1,6 @@
+/**
+ * Custom hook for accessing application configuration context.
+ */
 import { useContext } from 'react';
 import ConfigContext from '../contexts/ConfigContext';
 

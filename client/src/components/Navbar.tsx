@@ -1,3 +1,6 @@
+/**
+ * Main navigation bar with search, filters, and user controls.
+ */
 import { useState, useContext } from 'react';
 import { useLocation, Link } from 'react-router-dom';
 import AppBar from '@mui/material/AppBar';
@@ -88,7 +91,6 @@ const ViewToggle = () => {
   );
 };
 
-// Academic discipline color mapping
 const getAcademicDisciplineColor = (area: string): { bg: string; text: string } => {
   switch (area) {
     case 'Computing & AI': return { bg: 'bg-blue-200', text: 'text-blue-800' };
@@ -119,7 +121,6 @@ const getResearchAreaChipColor = (area: string) => {
   return m[area] || 'bg-gray-100 text-gray-900';
 };
 
-// Quick filter definitions for listings
 const listingQuickFilters: QuickFilterDef[] = [
   {
     label: 'Open Only',
@@ -170,7 +171,6 @@ const listingQuickFilters: QuickFilterDef[] = [
   },
 ];
 
-// Quick filter definitions for fellowships
 const fellowshipQuickFilters: QuickFilterDef[] = [
   {
     label: 'Open Only',
@@ -217,7 +217,6 @@ export default function Navbar() {
   const isFellowshipsPage = location.pathname === '/fellowships';
   const isAccountPage = location.pathname === '/account';
 
-  // Listing search context
   const {
     selectedDepartments, setSelectedDepartments, allDepartments,
     departmentsFilterMode, setDepartmentsFilterMode,
@@ -230,7 +229,6 @@ export default function Navbar() {
     setFilterBarHeight,
   } = useContext(SearchContext);
 
-  // Fellowship search context
   const {
     filterOptions: fellowshipFilterOptions,
     selectedYearOfStudy, setSelectedYearOfStudy,
@@ -245,7 +243,6 @@ export default function Navbar() {
 
   const { getDepartmentColor: getColorFromConfig } = useConfig();
 
-  // Listing filter tabs for CombinedFilterDropdown
   const listingFilterTabs: FilterTabConfig[] = [
     {
       key: 'departments', label: 'Departments',
@@ -265,7 +262,6 @@ export default function Navbar() {
     },
   ];
 
-  // Fellowship filter tabs for CombinedFilterDropdown
   const fellowshipFilterTabs: FilterTabConfig[] = [
     { key: 'year', label: 'Year', options: fellowshipFilterOptions.yearOfStudy, selected: selectedYearOfStudy, setSelected: setSelectedYearOfStudy },
     { key: 'term', label: 'Term', options: fellowshipFilterOptions.termOfAward, selected: selectedTermOfAward, setSelected: setSelectedTermOfAward },
@@ -274,7 +270,6 @@ export default function Navbar() {
     { key: 'citizenship', label: 'Citizenship', options: fellowshipFilterOptions.citizenshipStatus, selected: selectedCitizenship, setSelected: setSelectedCitizenship },
   ];
 
-  // Active filter chips for listing page
   const listingChips: ActiveFilterChip[] = [
     ...selectedResearchAreas.map((area) => ({
       key: `area-${area}`, label: area,
@@ -296,7 +291,6 @@ export default function Navbar() {
     }),
   ];
 
-  // Active filter chips for fellowship page
   const fellowshipFilterGroups = [
     { label: 'Year', values: selectedYearOfStudy, clear: () => setSelectedYearOfStudy([]) },
     { label: 'Term', values: selectedTermOfAward, clear: () => setSelectedTermOfAward([]) },
@@ -398,7 +392,6 @@ export default function Navbar() {
             borderBottom: '1px solid rgba(0, 0, 0, 0.06)'
           }}
         >
-          {/* Buttons positioned to hug the right side of the website */}
           {isAuthenticated && !isMobile && (
             <Box sx={{
               position: 'absolute',
@@ -441,7 +434,6 @@ export default function Navbar() {
               {isAuthenticated ? <HomeButton /> : <YURAButton />}
             </Box>
 
-            {/* Desktop search controls - only on home page */}
             {isAuthenticated && isHomePage && (
               <Box sx={{ display: { xs: 'none', md: 'flex' }, gap: '12px', ml: 1, mr: '380px', alignItems: 'center', flexShrink: 1, overflow: 'visible' }}>
                 <NavbarSearchBar />
@@ -451,7 +443,6 @@ export default function Navbar() {
               </Box>
             )}
 
-            {/* Desktop fellowship search controls - only on fellowships page */}
             {isAuthenticated && isFellowshipsPage && (
               <Box sx={{ display: { xs: 'none', md: 'flex' }, gap: '12px', ml: 1, mr: '380px', alignItems: 'center', flexShrink: 1, overflow: 'visible' }}>
                 <NavbarFellowshipSearchBar />
@@ -499,7 +490,6 @@ export default function Navbar() {
           </Toolbar>
         </AppBar>
 
-        {/* Mobile search panel */}
         {isAuthenticated && isHomePage && isMobile && (
           <Collapse in={mobileSearchOpen}>
             <Box sx={{ bgcolor: 'white', boxShadow: '0px 2px 4px rgba(0, 0, 0, 0.1)', p: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -512,7 +502,6 @@ export default function Navbar() {
           </Collapse>
         )}
 
-        {/* Mobile fellowship search panel */}
         {isAuthenticated && isFellowshipsPage && isMobile && (
           <Collapse in={mobileFellowshipSearchOpen}>
             <Box sx={{ bgcolor: 'white', boxShadow: '0px 2px 4px rgba(0, 0, 0, 0.1)', p: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -525,7 +514,6 @@ export default function Navbar() {
           </Collapse>
         )}
 
-        {/* Active filters bar - only on home page */}
         {isAuthenticated && isHomePage && (
           <ActiveFilters
             quickFilters={listingQuickFilters}
@@ -544,7 +532,6 @@ export default function Navbar() {
           />
         )}
 
-        {/* Active fellowship filters bar - only on fellowships page */}
         {isAuthenticated && isFellowshipsPage && (
           <ActiveFilters
             quickFilters={fellowshipQuickFilters}

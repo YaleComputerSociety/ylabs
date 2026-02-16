@@ -8,7 +8,6 @@ import { updateListing, readAllListings } from "../services/listingService";
 
 const router = Router();
 
-// POST /seed/users — create or update a user by netid
 router.post("/users", async (req: Request, res: Response) => {
   try {
     const { netid } = req.body;
@@ -16,16 +15,13 @@ router.post("/users", async (req: Request, res: Response) => {
       return res.status(400).json({ error: "netid is required" });
     }
 
-    // Check if user exists
     const existing = await validateUser(netid);
     if (existing) {
-      // Update existing user with new data (don't overwrite favorites, ownListings, etc.)
       const { favListings, favFellowships, ownListings, ...safeData } = req.body;
       const updated = await updateUser(netid, safeData);
       return res.json({ action: "updated", user: updated });
     }
 
-    // Create new user
     const user = await createUser(req.body);
     res.status(201).json({ action: "created", user });
   } catch (error: any) {
@@ -34,7 +30,6 @@ router.post("/users", async (req: Request, res: Response) => {
   }
 });
 
-// PUT /seed/users/:netid — update a user by netid
 router.put("/users/:netid", async (req: Request, res: Response) => {
   try {
     const existing = await validateUser(req.params.netid);
@@ -51,7 +46,6 @@ router.put("/users/:netid", async (req: Request, res: Response) => {
   }
 });
 
-// GET /seed/listings — get all listings (for department matching)
 router.get("/listings", async (req: Request, res: Response) => {
   try {
     const listings = await readAllListings();
@@ -62,7 +56,6 @@ router.get("/listings", async (req: Request, res: Response) => {
   }
 });
 
-// PUT /seed/listings/:id — update a listing's departments
 router.put("/listings/:id", async (req: Request, res: Response) => {
   try {
     const { departments } = req.body;

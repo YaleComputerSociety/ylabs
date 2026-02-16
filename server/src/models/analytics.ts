@@ -1,3 +1,6 @@
+/**
+ * Mongoose schema and model for analytics events tracking user activity.
+ */
 import mongoose from "mongoose";
 
 export enum AnalyticsEventType {
@@ -33,7 +36,6 @@ const analyticsEventSchema = new mongoose.Schema({
         required: true,
         index: true
     },
-    // Optional fields depending on event type
     listingId: {
         type: mongoose.Schema.Types.ObjectId,
         index: true
@@ -46,7 +48,6 @@ const analyticsEventSchema = new mongoose.Schema({
     },
     metadata: {
         type: mongoose.Schema.Types.Mixed,
-        // Can store any additional event-specific data for future implementations
     },
     timestamp: {
         type: Date,

@@ -1,3 +1,6 @@
+/**
+ * Form validation utilities for listing fields.
+ */
 export const validateTitle = (value: string): string | undefined => {
   return value.trim() ? undefined : "Title is required";
 };
@@ -7,7 +10,7 @@ export const validateDescription = (value: string): string | undefined => {
 };
 
 export const validateEstablished = (value: string): string | undefined => {
-  if (!value) return undefined; // Not required
+  if (!value) return undefined;
   
   const year = parseInt(value, 10);
   const currentYear = new Date().getFullYear();
@@ -54,7 +57,7 @@ export const validateEmails = (emails: string[]): string | undefined => {
 };
 
 export const validateWebsites = (websites: string[]): string | undefined => {
-  if (websites.length === 0) return undefined; // Not required
+  if (websites.length === 0) return undefined;
   
   for (const website of websites) {
     if (!website.includes('.') || website.includes(' ')) {
@@ -79,7 +82,6 @@ export const validateProfessorIds = (professorIds: string[]): string | undefined
     return "Please remove duplicate collaborators";
   }
 
-  //must be alphanumeric (no spaces, apostrophes, etc)
   for (const id of professorIds) {
     if (!/^[a-zA-Z0-9]+$/.test(id)) {
       return `Invalid format for collaborator netid: ${id}`;

@@ -1,3 +1,6 @@
+/**
+ * Status indicator badge for listing confirmation state.
+ */
 import React from 'react';
 
 interface StatusBadgeProps {

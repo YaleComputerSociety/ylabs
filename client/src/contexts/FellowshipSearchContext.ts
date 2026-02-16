@@ -1,12 +1,13 @@
+/**
+ * React context for fellowship search, filter, and sort state.
+ */
 import { createContext } from "react";
 import { Fellowship, FellowshipFilterOptions } from "../types/types";
 
 export interface FellowshipSearchContextType {
-  // Query state
   queryString: string;
   setQueryString: (query: string) => void;
 
-  // Filter state
   selectedYearOfStudy: string[];
   setSelectedYearOfStudy: React.Dispatch<React.SetStateAction<string[]>>;
   selectedTermOfAward: string[];
@@ -18,7 +19,6 @@ export interface FellowshipSearchContextType {
   selectedCitizenship: string[];
   setSelectedCitizenship: React.Dispatch<React.SetStateAction<string[]>>;
 
-  // Sort state
   sortBy: string;
   setSortBy: (sortBy: string) => void;
   sortOrder: number;
@@ -26,31 +26,24 @@ export interface FellowshipSearchContextType {
   sortDirection: 'asc' | 'desc';
   onToggleSortDirection: () => void;
 
-  // Results
   fellowships: Fellowship[];
   isLoading: boolean;
   searchExhausted: boolean;
 
-  // Pagination
   page: number;
   setPage: React.Dispatch<React.SetStateAction<number>>;
   pageSize: number;
   total: number;
 
-  // Filter options (loaded from backend)
   filterOptions: FellowshipFilterOptions;
 
-  // Sortable keys
   sortableKeys: string[];
 
-  // Refresh function
   refreshFellowships: () => void;
 
-  // Quick filter
   quickFilter: 'open' | 'closingSoon' | 'recent' | null;
   setQuickFilter: (filter: 'open' | 'closingSoon' | 'recent' | null) => void;
 
-  // Filter bar height for dynamic layout
   filterBarHeight: number;
   setFilterBarHeight: (height: number) => void;
 }

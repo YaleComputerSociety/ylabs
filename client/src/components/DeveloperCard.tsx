@@ -1,3 +1,6 @@
+/**
+ * Displays a developer profile card with photo, name, position, and social links.
+ */
 import { Developer } from "../types/types";
 
 interface DeveloperCardProps {

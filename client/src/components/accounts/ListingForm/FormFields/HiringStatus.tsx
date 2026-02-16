@@ -1,3 +1,6 @@
+/**
+ * Hiring status toggle for listing forms.
+ */
 import React, { useRef, useState } from 'react';
 
 interface HiringStatusProps {
@@ -20,7 +23,6 @@ const HiringStatus = ({
         { value: -1, label: "Not Open to Applicants" }
     ];
 
-    // Get display label for current status (handles legacy "seeking" value)
     const getCurrentStatusLabel = () => {
         if (hiringStatus >= 0) return "Open to Applicants";
         return "Not Open to Applicants";
@@ -73,7 +75,6 @@ const HiringStatus = ({
                 Status
             </label>
 
-            {/* Button/display */}
             <div className="relative">
                 <div className="relative">
                     <input
@@ -111,7 +112,6 @@ const HiringStatus = ({
                     </div>
                 </div>
 
-                {/* Dropdown - Moved inside the relative container */}
                 {isHiringDropdownOpen && (
                     <div
                         className="absolute left-0 right-0 bg-white rounded-lg z-10 shadow-lg border overflow-hidden mt-1 max-h-[350px] border-gray-300"

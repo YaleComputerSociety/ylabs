@@ -1,3 +1,6 @@
+/**
+ * Account dashboard page for managing own listings, favorites, and fellowship tracking.
+ */
 import { useState, useEffect, useContext, useMemo, useRef } from "react";
 import { Listing, Fellowship, FellowshipStage } from '../types/types';
 import { BrowsableItem } from '../types/browsable';
@@ -14,6 +17,7 @@ import swal from 'sweetalert';
 import { exportToGoogleSheets as createGoogleSheet } from '../utils/googleSheets';
 import UserContext from "../contexts/UserContext";
 import CreateButton from "../components/accounts/CreateButton";
+import ProfileEditor from "../components/accounts/ProfileEditor";
 import { getDepartmentAbbreviation } from "../utils/departmentNames";
 import KanbanBoard, { LabStage } from "../components/shared/KanbanBoard";
 import FellowshipKanbanBoard from "../components/shared/FellowshipKanbanBoard";
@@ -36,14 +40,11 @@ const Account = () => {
     const [selectedFellowship, setSelectedFellowship] = useState<Fellowship | null>(null);
     const { user } = useContext(UserContext);
 
-    // Dashboard features — lab stage tracking (kanban)
     const [labStage, setLabStage] = useState<Record<string, LabStage>>(() => {
         try {
-            // Try new format first
             const saved = localStorage.getItem('ylabs-lab-stages');
             if (saved) return JSON.parse(saved);
 
-            // Migrate from old emailed-labs format
             const oldSaved = localStorage.getItem('ylabs-emailed-labs');
             if (oldSaved) {
                 const oldSet: string[] = JSON.parse(oldSaved);
@@ -57,7 +58,6 @@ const Account = () => {
         } catch { return {}; }
     });
 
-    // Helper: check if a lab has been emailed (backward compat for status filter)
     const emailedLabs = useMemo(() => {
         const s = new Set<string>();
         for (const [id, stage] of Object.entries(labStage)) {
@@ -75,7 +75,6 @@ const Account = () => {
     });
     const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
 
-    // Fellowship stage tracking (kanban)
     const [fellowshipStage, setFellowshipStage] = useState<Record<string, FellowshipStage>>(() => {
         try {
             const saved = localStorage.getItem('ylabs-fellowship-stages');
@@ -99,17 +98,14 @@ const Account = () => {
     const [dashboardView, setDashboardView] = useState<'list' | 'card'>('list');
     const [adminViewMode, setAdminViewMode] = useState<'student' | 'professor'>('student');
 
-    // Determine effective dashboard mode
     const isAdmin = user?.userType === 'admin';
     const isProfessorUser = user?.userType === 'professor' || user?.userType === 'faculty';
     const showProfView = isAdmin ? adminViewMode === 'professor' : isProfessorUser;
 
-    // Persist lab stages
     useEffect(() => {
         localStorage.setItem('ylabs-lab-stages', JSON.stringify(labStage));
     }, [labStage]);
 
-    // Close export menu on outside click
     useEffect(() => {
         if (!showExportMenu) return;
         const handler = (e: MouseEvent) => {
@@ -121,22 +117,18 @@ const Account = () => {
         return () => document.removeEventListener('mousedown', handler);
     }, [showExportMenu]);
 
-    // Persist notes
     useEffect(() => {
         localStorage.setItem('ylabs-lab-notes', JSON.stringify(labNotes));
     }, [labNotes]);
 
-    // Persist fellowship stages
     useEffect(() => {
         localStorage.setItem('ylabs-fellowship-stages', JSON.stringify(fellowshipStage));
     }, [fellowshipStage]);
 
-    // Persist fellowship notes
     useEffect(() => {
         localStorage.setItem('ylabs-fellowship-notes', JSON.stringify(fellowshipNotes));
     }, [fellowshipNotes]);
 
-    // Close fellowship export menu on outside click
     useEffect(() => {
         if (!showFellowshipExportMenu) return;
         const handler = (e: MouseEvent) => {
@@ -152,7 +144,6 @@ const Account = () => {
         reloadListings();
     }, []);
 
-    // Warning before navigating away from Y/Labs
     useEffect(() => {
         const handleBeforeUnload = (e: BeforeUnloadEvent) => {
             if (isEditing) {
@@ -204,7 +195,6 @@ const Account = () => {
             swal({ text: "Error fetching your listings", icon: "warning" });
         });
 
-        // Fetch favorite fellowships
         axios.get('/users/favFellowships').then((response) => {
             const rawFellowships = response.data.favFellowships || [];
             const fellowships: Fellowship[] = rawFellowships.map((f: any) => createFellowship(f));
@@ -352,7 +342,6 @@ const Account = () => {
         });
     };
 
-    // Collect unique departments for filter chips
     const availableDepts = useMemo(() => {
         const deptSet = new Set<string>();
         for (const l of filterHiddenListings(favListings)) {
@@ -363,18 +352,15 @@ const Account = () => {
         return Array.from(deptSet).sort();
     }, [favListings]);
 
-    // Sort & filter favorite listings
     const sortedFavListings = useMemo(() => {
         let visible = filterHiddenListings(favListings);
 
-        // Apply department filter
         if (deptFilter) {
             visible = visible.filter(l =>
                 l.departments?.some(d => getDepartmentAbbreviation(d) === deptFilter)
             );
         }
 
-        // Apply status filter
         if (statusFilter === 'open') {
             visible = visible.filter(l => l.hiringStatus >= 0);
         } else if (statusFilter === 'closed') {
@@ -405,7 +391,6 @@ const Account = () => {
         return sorted;
     }, [favListings, favSortKey, favSortAsc, deptFilter, statusFilter, emailedLabs]);
 
-    // Export to CSV
     const exportToCSV = () => {
         const visible = filterHiddenListings(favListings);
         if (visible.length === 0) {
@@ -438,7 +423,6 @@ const Account = () => {
         URL.revokeObjectURL(url);
     };
 
-    // Export to Google Sheets via Sheets API
     const exportToGoogleSheets = async () => {
         const visible = filterHiddenListings(favListings);
         if (visible.length === 0) {
@@ -468,7 +452,6 @@ const Account = () => {
             swal({ text: "Google Sheet created!", icon: "success", timer: 2000 });
         } catch (err) {
             console.error('Google Sheets export failed:', err);
-            // Fall back to CSV download
             exportToCSV();
             swal({ text: "Could not create Google Sheet. CSV downloaded instead.", icon: "info" });
         }
@@ -511,7 +494,6 @@ const Account = () => {
         });
     };
 
-    // Fellowship export to CSV
     const exportFellowshipsToCSV = () => {
         if (favFellowships.length === 0) {
             swal({ text: "No fellowships to export", icon: "info" });
@@ -543,7 +525,6 @@ const Account = () => {
         URL.revokeObjectURL(url);
     };
 
-    // Fellowship export to Google Sheets
     const exportFellowshipsToGoogleSheets = async () => {
         if (favFellowships.length === 0) {
             swal({ text: "No fellowships to export", icon: "info" });
@@ -602,11 +583,9 @@ const Account = () => {
         </button>
     );
 
-    // Convert to BrowsableItem for card/list views
     const listingToBrowsable = (l: Listing): BrowsableItem => ({ type: 'listing', data: l });
     const fellowshipToBrowsable = (f: Fellowship): BrowsableItem => ({ type: 'fellowship', data: f });
 
-    // View toggle button component
     const ViewToggle = () => (
         <div className="flex items-center border border-gray-200 rounded-md overflow-hidden">
             <button
@@ -640,7 +619,6 @@ const Account = () => {
                 </div>
             ) : (
                 <div>
-                    {/* Admin view mode toggle */}
                     {isAdmin && (
                         <div className="flex justify-center mb-6">
                             <div className="inline-flex border border-gray-200 rounded-lg overflow-hidden">
@@ -675,42 +653,54 @@ const Account = () => {
                             </div>
                         </div>
                     )}
+                    {showProfView && user && (
+                        <ProfileEditor netid={user.netId} />
+                    )}
+
                     {user && (user.userType === "professor" || user.userType === "faculty" || user.userType === "admin") && (
                         <>
                             <h2 className="text-2xl font-bold text-gray-800 text-center mb-6 pb-2">Your Listings</h2>
-                            {ownListings.length > 0 && (
-                                <ul>
-                                    {ownListings.map((listing) => (
-                                        <li key={listing.id} className="mb-2">
-                                            <ListingCard
-                                                listing={listing}
-                                                favListingsIds={favListingsIds}
-                                                updateFavorite={updateFavorite}
-                                                updateListing={updateListing}
-                                                postListing={postListing}
-                                                clearCreatedListing={clearCreatedListing}
-                                                deleteListing={deleteListing}
-                                                openModal={openModal}
-                                                globalEditing={isEditing}
-                                                setGlobalEditing={setIsEditing}
-                                                editable={true}
-                                                reloadListings={reloadListings}
-                                            />
-                                        </li>
-                                    ))}
-                                </ul>
-                            )}
-                            {!isCreating && (
-                                <div className={`flex justify-center align-center ${ownListings.length > 0 ? "mb-6 mt-4" : "my-10"}`}>
-                                    <CreateButton globalEditing={isEditing} handleCreate={onCreate} />
+                            {!user.profileVerified && user.userType !== "admin" ? (
+                                <div className="p-4 bg-gray-50 border border-gray-200 rounded-lg text-center my-6">
+                                    <p className="text-sm text-gray-600">
+                                        Verify your profile above to create and manage listings.
+                                    </p>
                                 </div>
+                            ) : (
+                                <>
+                                    {ownListings.length > 0 && (
+                                        <ul>
+                                            {ownListings.map((listing) => (
+                                                <li key={listing.id} className="mb-2">
+                                                    <ListingCard
+                                                        listing={listing}
+                                                        favListingsIds={favListingsIds}
+                                                        updateFavorite={updateFavorite}
+                                                        updateListing={updateListing}
+                                                        postListing={postListing}
+                                                        clearCreatedListing={clearCreatedListing}
+                                                        deleteListing={deleteListing}
+                                                        openModal={openModal}
+                                                        globalEditing={isEditing}
+                                                        setGlobalEditing={setIsEditing}
+                                                        editable={true}
+                                                        reloadListings={reloadListings}
+                                                    />
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    )}
+                                    {!isCreating && (
+                                        <div className={`flex justify-center align-center ${ownListings.length > 0 ? "mb-6 mt-4" : "my-10"}`}>
+                                            <CreateButton globalEditing={isEditing} handleCreate={onCreate} />
+                                        </div>
+                                    )}
+                                </>
                             )}
                         </>
                     )}
 
-                    {/* Favorite Listings */}
                     {showProfView ? (
-                        /* ====== PROFESSOR VIEW: Simplified favorites ====== */
                         <>
                             <div className="flex items-center justify-between mb-4">
                                 <h2 className="text-2xl font-bold text-gray-800">Favorite Listings</h2>
@@ -791,7 +781,6 @@ const Account = () => {
                             )}
                         </>
                     ) : (
-                        /* ====== STUDENT VIEW: Full dashboard with sort, filter, export, notes, emailed ====== */
                         <>
                             <div className="flex items-center justify-between mb-2">
                                 <h2 className="text-2xl font-bold text-gray-800">Favorite Listings</h2>
@@ -846,7 +835,6 @@ const Account = () => {
                                 )}
                             </div>
 
-                            {/* Quick Filters */}
                             {filterHiddenListings(favListings).length > 0 && (
                                 <div className="flex flex-wrap items-center gap-2 mb-4">
                                     <span className="text-xs text-gray-400">Filter:</span>
@@ -979,7 +967,6 @@ const Account = () => {
                                 <p className="my-4 text-center">No listings found.</p>
                             )}
 
-                            {/* Favorite Fellowships - Student Dashboard */}
                             <div className="flex items-center justify-between mb-2 mt-10">
                                 <h2 className="text-2xl font-bold text-gray-800">Favorite Fellowships</h2>
                                 {favFellowships.length > 0 && (
@@ -1111,7 +1098,6 @@ const Account = () => {
                         </>
                     )}
 
-                    {/* Listing Modal */}
                     {selectedListing && (
                         <ListingDetailModal
                             isOpen={isModalOpen}
@@ -1125,7 +1111,6 @@ const Account = () => {
                         />
                     )}
 
-                    {/* Fellowship Modal */}
                     {selectedFellowship && (
                         <FellowshipModal
                             fellowship={selectedFellowship}

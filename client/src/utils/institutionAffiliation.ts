@@ -1,6 +1,8 @@
+/**
+ * Institution affiliation detection (YSM, YSPH, YC) from department names.
+ */
 import facultyDepartments from './facultyDepartments.json';
 
-// YSM departments (Yale School of Medicine)
 const YSM_KEYWORDS = [
   'medicine', 'surgery', 'pathology', 'radiology', 'anesthesiology',
   'dermatology', 'neurology', 'neurosurgery', 'ophthalmology', 'orthopedics',
@@ -11,7 +13,6 @@ const YSM_KEYWORDS = [
   'comparative medicine', 'cellular', 'molecular', 'ysm',
 ];
 
-// YSPH departments (Yale School of Public Health)
 const YSPH_KEYWORDS = [
   'public health', 'epidemiology', 'biostatistics', 'environmental health',
   'health policy', 'chronic disease', 'social and behavioral', 'ysph',
@@ -23,12 +24,10 @@ const YSPH_KEYWORDS = [
  * Returns null if not found.
  */
 export function getFacultyPrimaryDepartment(fullName: string): string | null {
-  // Try exact match first
   if (facultyDepartments[fullName as keyof typeof facultyDepartments]) {
     return facultyDepartments[fullName as keyof typeof facultyDepartments];
   }
 
-  // Try case-insensitive match
   const nameLower = fullName.toLowerCase().trim();
   for (const [key, dept] of Object.entries(facultyDepartments)) {
     if (key.toLowerCase().trim() === nameLower) {
@@ -48,12 +47,10 @@ export function getInstitutionAffiliation(departments: string[]): string {
 
   const deptStr = departments.join(' ').toLowerCase();
 
-  // Check YSPH first (more specific)
   if (YSPH_KEYWORDS.some(kw => deptStr.includes(kw))) {
     return 'YSPH';
   }
 
-  // Check YSM
   if (YSM_KEYWORDS.some(kw => deptStr.includes(kw))) {
     return 'YSM';
   }

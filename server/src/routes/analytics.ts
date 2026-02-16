@@ -1,12 +1,13 @@
+/**
+ * Express routes for analytics event tracking and dashboard data.
+ */
 import { Request, Response, Router } from "express";
 import { isAuthenticated, isAdmin } from '../utils/permissions';
 import { getAnalytics } from '../services/analyticsService';
 import { AnalyticsEvent, AnalyticsEventType } from '../models/analytics';
 
-
 const router = Router();
 
-// Get all analytics data (admin only)
 router.get('/', isAuthenticated, isAdmin, async (request: Request, response: Response) => {
     try {
         const analytics = await getAnalytics();

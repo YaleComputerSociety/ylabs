@@ -1,9 +1,11 @@
+/**
+ * OpenAI embedding generation for listing similarity search.
+ */
 import OpenAI from 'openai';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
-
 
 export async function generateEmbedding(text: string): Promise<number[]> {
   try {
@@ -25,7 +27,6 @@ export async function generateEmbedding(text: string): Promise<number[]> {
 export function formatListingForEmbedding(title: string, description: string): string {
   return `${title}. ${description}`;
 }
-
 
 export async function generateListingEmbedding(
   title: string,

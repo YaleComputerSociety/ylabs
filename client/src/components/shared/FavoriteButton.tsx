@@ -1,3 +1,6 @@
+/**
+ * Favorite/unfavorite toggle button for listings and fellowships.
+ */
 import React from 'react';
 
 interface FavoriteButtonProps {

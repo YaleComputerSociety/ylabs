@@ -1,3 +1,6 @@
+/**
+ * Sign in button redirecting to Yale CAS.
+ */
 import Button from "@mui/material/Button";
 import { useEffect, useState } from "react";
 
@@ -9,7 +12,6 @@ const SignInButton = () => {
   const [redirectParam, setRedirectParam] = useState('');
   
   useEffect(() => {
-    // Check if there's a saved return path from logout
     const savedPath = localStorage.getItem('logoutReturnPath');
     
     if (savedPath) {

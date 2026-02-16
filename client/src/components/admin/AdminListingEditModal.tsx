@@ -1,3 +1,6 @@
+/**
+ * Admin modal for editing listing details.
+ */
 import { useState, useEffect } from "react";
 import axios from "../../utils/axios";
 import swal from "sweetalert";
@@ -55,21 +58,17 @@ const AdminListingEditModal = ({ listing, onClose, onSave, onDelete }: Props) =>
   const [resetCreatedAt, setResetCreatedAt] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
-  // Calculate what the new createdAt would be (same month/day but 2025)
   const getResetDate = () => {
     const original = new Date(listing.createdAt);
     return new Date(2025, original.getMonth(), original.getDate());
   };
 
-  // Department search
   const [deptSearch, setDeptSearch] = useState("");
   const [showDeptDropdown, setShowDeptDropdown] = useState(false);
 
-  // Research area search
   const [raSearch, setRaSearch] = useState("");
   const [showRaDropdown, setShowRaDropdown] = useState(false);
 
-  // Array input temps
   const [newProfName, setNewProfName] = useState("");
   const [newProfId, setNewProfId] = useState("");
   const [newEmail, setNewEmail] = useState("");
@@ -239,7 +238,6 @@ const AdminListingEditModal = ({ listing, onClose, onSave, onDelete }: Props) =>
       }}
     >
       <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl mx-4">
-        {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b">
           <div>
             <h3 className="text-lg font-bold text-gray-900">Edit Listing</h3>
@@ -252,10 +250,8 @@ const AdminListingEditModal = ({ listing, onClose, onSave, onDelete }: Props) =>
           </button>
         </div>
 
-        {/* Body */}
         <div className="px-6 py-4 max-h-[70vh] overflow-y-auto">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Left column */}
             <div>
               <div className="mb-3">
                 <label className="block text-xs font-semibold text-gray-600 mb-1">
@@ -305,7 +301,6 @@ const AdminListingEditModal = ({ listing, onClose, onSave, onDelete }: Props) =>
                 />
               </div>
 
-              {/* Hiring Status */}
               <div className="mb-3">
                 <label className="block text-xs font-semibold text-gray-600 mb-1">Hiring Status</label>
                 <select
@@ -318,7 +313,6 @@ const AdminListingEditModal = ({ listing, onClose, onSave, onDelete }: Props) =>
                 </select>
               </div>
 
-              {/* Status toggles */}
               <div className="flex gap-6 mb-3">
                 <label className="flex items-center gap-2 text-sm">
                   <input
@@ -349,7 +343,6 @@ const AdminListingEditModal = ({ listing, onClose, onSave, onDelete }: Props) =>
                 </label>
               </div>
 
-              {/* Reset Created Date */}
               <div className="mb-3 p-3 bg-yellow-50 border border-yellow-200 rounded">
                 <label className="flex items-center gap-2 text-sm">
                   <input
@@ -370,9 +363,7 @@ const AdminListingEditModal = ({ listing, onClose, onSave, onDelete }: Props) =>
               </div>
             </div>
 
-            {/* Right column */}
             <div>
-              {/* Departments */}
               <div className="mb-3 relative">
                 <label className="block text-xs font-semibold text-gray-600 mb-1">Departments</label>
                 <div className="flex flex-wrap gap-1 mb-1">
@@ -426,7 +417,6 @@ const AdminListingEditModal = ({ listing, onClose, onSave, onDelete }: Props) =>
                 )}
               </div>
 
-              {/* Research Areas */}
               <div className="mb-3 relative">
                 <label className="block text-xs font-semibold text-gray-600 mb-1">Research Areas</label>
                 <div className="flex flex-wrap gap-1 mb-1">
@@ -522,7 +512,6 @@ const AdminListingEditModal = ({ listing, onClose, onSave, onDelete }: Props) =>
           </div>
         </div>
 
-        {/* Footer */}
         <div className="flex justify-between px-6 py-4 border-t bg-gray-50 rounded-b-lg">
           <button
             onClick={async () => {

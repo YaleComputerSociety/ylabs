@@ -1,3 +1,6 @@
+/**
+ * Route guard that redirects authenticated users to home, rendering the component only for guests.
+ */
 import { Navigate } from 'react-router-dom';
 import { useContext, FunctionComponent } from 'react';
 import UserContext from '../contexts/UserContext';

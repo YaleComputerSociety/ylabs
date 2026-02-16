@@ -1,10 +1,14 @@
+/**
+ * Admin dashboard with tabs for listings, fellowships, users, and config.
+ */
 import { useState } from "react";
 import AdminListingsTable from "./AdminListingsTable";
 import AdminFellowshipsTable from "./AdminFellowshipsTable";
 import AdminResearchAreas from "./AdminResearchAreas";
 import AdminDepartments from "./AdminDepartments";
+import AdminFacultyProfilesTable from "./AdminFacultyProfilesTable";
 
-const TABS = ["Listings", "Fellowships", "Research Areas", "Departments"] as const;
+const TABS = ["Listings", "Fellowships", "Research Areas", "Departments", "Faculty Profiles"] as const;
 type Tab = (typeof TABS)[number];
 
 const AdminPanel = () => {
@@ -41,6 +45,7 @@ const AdminPanel = () => {
       {activeTab === "Fellowships" && <AdminFellowshipsTable />}
       {activeTab === "Research Areas" && <AdminResearchAreas />}
       {activeTab === "Departments" && <AdminDepartments />}
+      {activeTab === "Faculty Profiles" && <AdminFacultyProfilesTable />}
     </section>
   );
 };

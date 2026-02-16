@@ -1,9 +1,11 @@
+/**
+ * Fallback page for unknown user types.
+ */
 import React, { useState, useRef } from 'react';
 import axios from '../utils/axios';
 import swal from 'sweetalert';
 
 const Unknown = () => {
-    // Form state
     const [firstName, setFirstName] = useState('');
     const [lastName, setLastName] = useState('');
     const [email, setEmail] = useState('');
@@ -11,11 +13,9 @@ const Unknown = () => {
     const [isUserTypeDropdownOpen, setIsUserTypeDropdownOpen] = useState(false);
     const [focusedUserTypeIndex, setFocusedUserTypeIndex] = useState(-1);
     
-    // Refs
     const userTypeRef = useRef<HTMLDivElement>(null);
     const userTypeInputRef = useRef<HTMLInputElement>(null);
     
-    // Form errors
     const [errors, setErrors] = useState<{
         firstName?: string;
         lastName?: string;
@@ -23,7 +23,6 @@ const Unknown = () => {
         userType?: string;
     }>({});
 
-    // User type options
     const userTypeOptions = [
         { value: 'undergraduate', label: "Undergraduate Student" },
         { value: 'graduate', label: "Graduate Student" },
@@ -31,7 +30,6 @@ const Unknown = () => {
         { value: 'faculty', label: "Faculty" }
     ];
 
-    // Validation functions
     const validateFirstName = (value: string): string | undefined => {
         return value.trim() ? undefined : "First name is required";
     };
@@ -54,7 +52,6 @@ const Unknown = () => {
         return value.trim() ? undefined : "User type is required";
     };
 
-    // Handle selecting a user type
     const handleUserTypeSelect = (value: string) => {
         setUserType(value);
         setIsUserTypeDropdownOpen(false);
@@ -64,7 +61,6 @@ const Unknown = () => {
         setErrors(prev => ({ ...prev, userType: validateUserType(value) }));
     };
 
-    // Handle keyboard navigation for user type dropdown
     const handleUserTypeInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
         switch(e.key) {
             case 'ArrowDown':
@@ -98,11 +94,9 @@ const Unknown = () => {
         }
     };
 
-    // Handle form submission
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         
-        // Validate all fields
         const validationErrors = {
             firstName: validateFirstName(firstName),
             lastName: validateLastName(lastName),
@@ -110,15 +104,12 @@ const Unknown = () => {
             userType: validateUserType(userType)
         };
         
-        // Filter out undefined errors
         const filteredErrors = Object.fromEntries(
             Object.entries(validationErrors).filter(([_, value]) => value !== undefined)
         );
         
-        // Update error state
         setErrors(filteredErrors);
         
-        // Only proceed if no errors
         if (Object.keys(filteredErrors).length === 0) {
             console.log('Submitting user information:', { firstName, lastName, email, userType });
 
@@ -133,7 +124,6 @@ const Unknown = () => {
         }
     };
 
-    // Error message component
     const ErrorMessage = ({ error }: { error?: string }) => {
         return error ? (
             <p className="text-red-500 text-xs italic mt-1">{error}</p>
@@ -158,7 +148,6 @@ const Unknown = () => {
                 </div>
 
                 <form onSubmit={handleSubmit}>
-                    {/* First Name */}
                     <div className="mb-4">
                         <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="firstName">
                             First Name
@@ -178,7 +167,6 @@ const Unknown = () => {
                         <ErrorMessage error={errors.firstName} />
                     </div>
 
-                    {/* Last Name */}
                     <div className="mb-4">
                         <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="lastName">
                             Last Name
@@ -198,7 +186,6 @@ const Unknown = () => {
                         <ErrorMessage error={errors.lastName} />
                     </div>
 
-                    {/* Email */}
                     <div className="mb-4">
                         <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="email">
                             Email
@@ -218,7 +205,6 @@ const Unknown = () => {
                         <ErrorMessage error={errors.email} />
                     </div>
 
-                    {/* User Type */}
                     <div className="mb-6" ref={userTypeRef}>
                         <label className="block text-gray-700 text-sm font-bold mb-2">
                             User Type
@@ -260,7 +246,6 @@ const Unknown = () => {
                                 </div>
                             </div>
 
-                            {/* User Type Dropdown */}
                             {isUserTypeDropdownOpen && (
                                 <div
                                     className="absolute left-0 right-0 bg-white rounded-lg z-10 shadow-lg border overflow-hidden mt-1 max-h-[200px] border-gray-300"
@@ -292,7 +277,6 @@ const Unknown = () => {
                         <ErrorMessage error={errors.userType} />
                     </div>
 
-                    {/* Submit Button */}
                     <div className="flex justify-end">
                         <button
                             type="submit"

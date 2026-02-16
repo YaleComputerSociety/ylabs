@@ -1,3 +1,6 @@
+/**
+ * Grid/list layout switcher for browse pages.
+ */
 import React, { useContext } from 'react';
 import { BrowsableItem } from '../../types/browsable';
 import BrowseCard from './BrowseCard';
@@ -11,14 +14,11 @@ interface BrowseGridProps {
   onToggleFavorite: (id: string, e: React.MouseEvent) => void;
   onOpenModal: (item: BrowsableItem) => void;
   onAdminEdit?: (item: BrowsableItem) => void;
-  // Infinite scroll (optional — omit for single-page-load views)
   sentinelRef?: React.RefObject<HTMLDivElement | null>;
   isLoading: boolean;
   searchExhausted?: boolean;
-  // Quick filter empty state
   quickFilter?: string | null;
   onClearQuickFilter?: () => void;
-  // No results message
   emptyMessage?: string;
 }
 
@@ -85,7 +85,6 @@ const BrowseGrid = ({
           </div>
         )}
 
-        {/* Sentinel for infinite scroll */}
         {sentinelRef && !searchExhausted && (
           <div ref={sentinelRef} className="h-10 w-full" />
         )}

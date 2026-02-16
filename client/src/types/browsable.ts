@@ -1,3 +1,6 @@
+/**
+ * Shared types and helpers for browsable listings and fellowships.
+ */
 import { Listing, Fellowship } from './types';
 import { getDepartmentAbbreviation } from '../utils/departmentNames';
 

@@ -1,3 +1,6 @@
+/**
+ * Login error page displayed on authentication failure.
+ */
 import swal from 'sweetalert';
 import {useEffect, useState} from 'react';
 

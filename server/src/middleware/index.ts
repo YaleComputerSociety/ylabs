@@ -1,4 +1,6 @@
-// Auth middleware
+/**
+ * Authentication and authorization middleware exports.
+ */
 export { 
   isAuthenticated, 
   isTrustworthy, 
@@ -8,7 +10,6 @@ export {
   isConfirmed
 } from './auth';
 
-// Validation middleware
 export { 
   validateObjectId, 
   requireBody,
@@ -18,10 +19,8 @@ export {
   validateQuery
 } from './validation';
 
-// Error handling middleware
 export {
   errorHandler,
   notFoundHandler,
   asyncHandler
 } from './errorHandler';
-

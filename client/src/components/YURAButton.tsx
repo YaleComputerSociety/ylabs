@@ -1,3 +1,6 @@
+/**
+ * Logo button for unauthenticated users that reloads the page on click.
+ */
 import Button from "@mui/material/Button";
 
 const YURAButton = () => {

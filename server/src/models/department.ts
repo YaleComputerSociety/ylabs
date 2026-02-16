@@ -1,6 +1,8 @@
+/**
+ * Mongoose schema and model for academic departments with category-based color mapping.
+ */
 import mongoose from 'mongoose';
 
-// Department categories enum - aligned with Research Fields for consistent colors
 export enum DepartmentCategory {
   COMPUTING_AI = "Computing & AI",
   LIFE_SCIENCES = "Life Sciences",
@@ -13,17 +15,16 @@ export enum DepartmentCategory {
   MATHEMATICS = "Mathematics"
 }
 
-// Category to colorKey mapping (aligned with Research Field colors in researchAreas.ts)
 export const categoryColorKeys: Record<DepartmentCategory, number> = {
-  [DepartmentCategory.COMPUTING_AI]: 0,        // blue
-  [DepartmentCategory.LIFE_SCIENCES]: 1,       // green
-  [DepartmentCategory.PHYSICAL_SCIENCES]: 2,   // yellow
-  [DepartmentCategory.HEALTH_MEDICINE]: 3,     // red
-  [DepartmentCategory.SOCIAL_SCIENCES]: 4,     // purple
-  [DepartmentCategory.HUMANITIES_ARTS]: 5,     // pink
-  [DepartmentCategory.ENVIRONMENTAL]: 6,       // teal
-  [DepartmentCategory.ECONOMICS]: 7,           // orange
-  [DepartmentCategory.MATHEMATICS]: 8          // indigo
+  [DepartmentCategory.COMPUTING_AI]: 0,
+  [DepartmentCategory.LIFE_SCIENCES]: 1,
+  [DepartmentCategory.PHYSICAL_SCIENCES]: 2,
+  [DepartmentCategory.HEALTH_MEDICINE]: 3,
+  [DepartmentCategory.SOCIAL_SCIENCES]: 4,
+  [DepartmentCategory.HUMANITIES_ARTS]: 5,
+  [DepartmentCategory.ENVIRONMENTAL]: 6,
+  [DepartmentCategory.ECONOMICS]: 7,
+  [DepartmentCategory.MATHEMATICS]: 8
 };
 
 const departmentSchema = new mongoose.Schema(
@@ -40,7 +41,7 @@ const departmentSchema = new mongoose.Schema(
       trim: true
     },
     displayName: {
-      type: String,  // "CPSC - Computer Science" format
+      type: String,
       required: true,
       trim: true
     },
@@ -55,7 +56,7 @@ const departmentSchema = new mongoose.Schema(
       enum: Object.values(DepartmentCategory)
     },
     colorKey: {
-      type: Number,  // 0-8 for frontend color mapping
+      type: Number,
       required: true
     },
     isActive: {
@@ -68,7 +69,6 @@ const departmentSchema = new mongoose.Schema(
   }
 );
 
-// Indexes for faster lookups
 departmentSchema.index({ abbreviation: 1 });
 departmentSchema.index({ name: 'text', abbreviation: 'text' });
 departmentSchema.index({ primaryCategory: 1 });

@@ -1,3 +1,6 @@
+/**
+ * Search bar component in the navbar for listings.
+ */
 import { useContext, useRef } from 'react';
 import SearchContext from '../../contexts/SearchContext';
 

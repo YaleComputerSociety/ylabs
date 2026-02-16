@@ -1,3 +1,6 @@
+/**
+ * Admin panel tab for managing research areas.
+ */
 import { useState, useEffect } from "react";
 import axios from "../../utils/axios";
 import swal from "sweetalert";
@@ -40,11 +43,9 @@ const AdminResearchAreas = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState("");
 
-  // Add new
   const [newName, setNewName] = useState("");
   const [newField, setNewField] = useState(RESEARCH_FIELDS[0]);
 
-  // Editing
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [editField, setEditField] = useState("");
@@ -140,7 +141,6 @@ const AdminResearchAreas = () => {
 
   return (
     <div>
-      {/* Add new */}
       <div className="bg-white rounded-lg shadow-md p-4 border border-gray-200 mb-4">
         <h3 className="text-sm font-semibold text-gray-700 mb-3">Add New Research Area</h3>
         <div className="flex flex-wrap gap-2 items-end">
@@ -179,7 +179,6 @@ const AdminResearchAreas = () => {
         </div>
       </div>
 
-      {/* Search */}
       <div className="mb-3">
         <input
           value={search}
@@ -190,7 +189,6 @@ const AdminResearchAreas = () => {
         <div className="text-xs text-gray-400 mt-1">{filtered.length} research areas</div>
       </div>
 
-      {/* Table */}
       <div className="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm">

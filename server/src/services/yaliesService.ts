@@ -1,3 +1,6 @@
+/**
+ * Yalies.io API integration for student and faculty data.
+ */
 import axios from "axios";
 import dotenv from "dotenv";
 import { createUser, validateUser } from "./userService";
@@ -14,7 +17,6 @@ const API_KEY = process.env.YALIES_API_KEY;
 */
 export const fetchYalie = async (netid: any) => {
     try {  
-      // Fetch user from Yalies API
       let yaliesResponse;
 
       try {
@@ -38,7 +40,6 @@ export const fetchYalie = async (netid: any) => {
   
       const yalie = yaliesData[0];
   
-      // Validate required fields before saving
       if (!yalie.first_name || !yalie.last_name || !yalie.email || !yalie.year || !yalie.school_code) {
         console.log(`Missing required fields from Yalies API response for netid: ${netid}`);
         return null;
@@ -52,7 +53,6 @@ export const fetchYalie = async (netid: any) => {
         userType = "graduate";
       }
   
-      // Create formatted user object
       const userData = {
         netid: yalie.netid,
         fname: yalie.first_name || "",
@@ -62,12 +62,11 @@ export const fetchYalie = async (netid: any) => {
         year: yalie.year,
         userType: userType,
         userConfirmed: true,
-        major: (yalie.major && Array.isArray(yalie.major) ? yalie.major : [yalie.major]) || [], // Ensure it's an array
+        major: (yalie.major && Array.isArray(yalie.major) ? yalie.major : [yalie.major]) || [],
       };
   
       console.log('Yalies: saving user to mongoDB');
 
-      // Check if the user already exists in MongoDB
       console.log('Yalies: validating user');
       let user = await validateUser(netid);
       if (user) {
@@ -75,7 +74,6 @@ export const fetchYalie = async (netid: any) => {
       }
       console.log('Yalies: done validating user');
 
-      // Save user to MongoDB
       user = await createUser(userData);
       console.log('Yalies: user saved, returning user');
   

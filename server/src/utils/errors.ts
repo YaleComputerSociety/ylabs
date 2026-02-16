@@ -1,3 +1,6 @@
+/**
+ * Custom error classes for API error handling.
+ */
 export class NotFoundError extends Error {
     status: number;
 

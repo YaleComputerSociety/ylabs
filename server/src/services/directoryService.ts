@@ -1,3 +1,6 @@
+/**
+ * Yale directory API integration for faculty data lookup.
+ */
 import axios from "axios";
 
 const DIRECTORY_URL = "https://directory.yale.edu/api/people";
@@ -39,8 +42,6 @@ export function isFacultyTitle(title: string): boolean {
  */
 export async function fetchFromDirectory(query: string, searchType: 'netid' | 'name' = 'netid'): Promise<DirectoryPerson | null> {
   try {
-    // The Yale Directory has a public-facing search.
-    // We try the API endpoint first; if that doesn't work, fall back to scraping.
     const response = await axios.get(DIRECTORY_URL, {
       params: { search: query, searchType },
       timeout: 8000,
@@ -52,12 +53,10 @@ export async function fetchFromDirectory(query: string, searchType: 'netid' | 'n
 
     const data = response.data;
 
-    // Handle various response shapes
     let person: any = null;
     if (Array.isArray(data) && data.length > 0) {
       person = data[0];
     } else if (data && typeof data === 'object' && !Array.isArray(data)) {
-      // Single object response
       if (data.name || data.first_name || data.netid) {
         person = data;
       } else if (data.results && Array.isArray(data.results) && data.results.length > 0) {
@@ -82,8 +81,6 @@ export async function fetchFromDirectory(query: string, searchType: 'netid' | 'n
       mailing_address: person.mailing_address || person.postal_address || '',
     };
   } catch (error: any) {
-    // The public API may not be available or may return 404.
-    // This is expected — we handle it gracefully.
     if (error.response?.status !== 404) {
       console.log(`Directory lookup for "${query}" failed: ${error.message}`);
     }
@@ -109,7 +106,6 @@ export async function fetchFromDirectoryHTML(name: string): Promise<DirectoryPer
     const html = response.data;
     if (typeof html !== 'string') return null;
 
-    // Basic regex extraction from HTML
     const emailMatch = html.match(/([\w.-]+@yale\.edu)/);
     const titleMatch = html.match(/(?:Professor|Lecturer|Instructor|Research Scientist)[^\n<]*/i);
     const deptMatch = html.match(/(?:Department|Organization)[:\s]*([^<\n]+)/i);

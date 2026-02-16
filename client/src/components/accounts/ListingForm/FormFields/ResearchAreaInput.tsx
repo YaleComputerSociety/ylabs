@@ -1,3 +1,6 @@
+/**
+ * Multi-select research area autocomplete with add-new modal.
+ */
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import ReactDOM from 'react-dom';
 import axios from 'axios';
@@ -18,7 +21,6 @@ interface FieldSelectorModalProps {
   onSelectField: (field: string) => void;
 }
 
-// Color mappings for modal display
 const colorKeyToTailwind: Record<string, { bg: string; text: string; border: string }> = {
   blue: { bg: "bg-blue-200", text: "text-blue-800", border: "border-blue-300" },
   green: { bg: "bg-green-200", text: "text-green-800", border: "border-green-300" },
@@ -32,7 +34,6 @@ const colorKeyToTailwind: Record<string, { bg: string; text: string; border: str
   gray: { bg: "bg-gray-200", text: "text-gray-800", border: "border-gray-300" }
 };
 
-// Modal component for selecting a field when adding new research area
 const FieldSelectorModal = ({ isOpen, newAreaName, fields, onClose, onSelectField }: FieldSelectorModalProps) => {
   if (!isOpen) return null;
 
@@ -97,7 +98,6 @@ const ResearchAreaInput = ({
   const dropdownRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Get config data
   const {
     researchAreas: allConfigAreas,
     researchFields,
@@ -106,12 +106,10 @@ const ResearchAreaInput = ({
     isLoading: configLoading
   } = useConfig();
 
-  // Create a set of existing area names for quick lookup
   const existingAreaNames = useMemo(() => {
     return new Set(allConfigAreas.map(a => a.name.toLowerCase()));
   }, [allConfigAreas]);
 
-  // Filter research areas based on search term and exclude already selected
   const filteredAreas = useMemo(() => {
     if (!searchTerm.trim()) return [];
     return allConfigAreas.filter(area =>
@@ -120,12 +118,10 @@ const ResearchAreaInput = ({
     );
   }, [searchTerm, allConfigAreas, researchAreas]);
 
-  // Check if search term is a new area (not in any list)
   const isNewArea = searchTerm.trim().length > 0 &&
     !existingAreaNames.has(searchTerm.trim().toLowerCase()) &&
     !researchAreas.some(selected => selected.toLowerCase() === searchTerm.trim().toLowerCase());
 
-  // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
@@ -138,7 +134,6 @@ const ResearchAreaInput = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Handle keyboard navigation
   const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     const totalItems = filteredAreas.length + (isNewArea ? 1 : 0);
 
@@ -155,14 +150,11 @@ const ResearchAreaInput = ({
         e.preventDefault();
         if (focusedIndex >= 0) {
           if (focusedIndex < filteredAreas.length) {
-            // Select existing area
             handleSelectArea(filteredAreas[focusedIndex].name);
           } else if (isNewArea) {
-            // Open modal for new area
             handleAddNewArea();
           }
         } else if (isNewArea && filteredAreas.length === 0) {
-          // If no results and it's a new area, open modal
           handleAddNewArea();
         }
         break;
@@ -195,21 +187,17 @@ const ResearchAreaInput = ({
   const handleFieldSelect = async (fieldName: string) => {
     setIsLoading(true);
     try {
-      // Save to backend
       const response = await axios.post('/api/research-areas', {
         name: pendingNewArea,
         field: fieldName
       });
 
       if (response.data.researchArea) {
-        // Refresh config to get the new area
         await refreshConfig();
-        // Add to the listing
         onAddResearchArea(pendingNewArea);
       }
     } catch (error: any) {
       if (error.response?.status === 409) {
-        // Already exists, just add it to the listing
         onAddResearchArea(pendingNewArea);
       } else {
         console.error('Error adding research area:', error);
@@ -225,7 +213,6 @@ const ResearchAreaInput = ({
     }
   };
 
-  // Show loading state if config not ready
   if (configLoading) {
     return (
       <div className="mb-4">
@@ -242,7 +229,6 @@ const ResearchAreaInput = ({
       <label className="block text-gray-700 text-sm font-bold mb-2">
         Research Areas
       </label>
-      {/* Search input */}
       <div className="relative">
         <div className="relative">
           <input
@@ -284,7 +270,6 @@ const ResearchAreaInput = ({
           </div>
         </div>
 
-        {/* Dropdown */}
         {isDropdownOpen && searchTerm.trim() && (
           <div
             className="absolute w-full bg-white rounded-lg z-10 shadow-lg border overflow-hidden mt-1 max-h-[300px] md:max-h-[350px] border-gray-300"
@@ -313,7 +298,6 @@ const ResearchAreaInput = ({
                 })
               ) : null}
 
-              {/* Add new area option */}
               {isNewArea && (
                 <li
                   onClick={handleAddNewArea}
@@ -346,7 +330,6 @@ const ResearchAreaInput = ({
         Type to search or add new research areas
       </div>
 
-      {/* Selected research areas */}
       {researchAreas.length > 0 && (
         <div className="flex flex-wrap gap-2 mt-2 overflow-x-auto">
           {researchAreas.map((area, index) => {
@@ -372,7 +355,6 @@ const ResearchAreaInput = ({
 
       {error && <p className="text-red-500 text-xs mt-1">{error}</p>}
 
-      {/* Field selector modal - portaled to body to escape overflow/transform clipping */}
       {ReactDOM.createPortal(
         <FieldSelectorModal
           isOpen={isModalOpen}
@@ -387,7 +369,6 @@ const ResearchAreaInput = ({
         document.body
       )}
 
-      {/* Loading overlay - portaled to body to escape overflow/transform clipping */}
       {isLoading && ReactDOM.createPortal(
         <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-[9999]">
           <div className="bg-white rounded-lg p-4 shadow-xl">

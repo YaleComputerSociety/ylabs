@@ -1,3 +1,6 @@
+/**
+ * Admin panel table for managing listings.
+ */
 import { useState, useEffect, useCallback } from "react";
 import axios from "../../utils/axios";
 import swal from "sweetalert";
@@ -37,7 +40,6 @@ type SortField =
   | "hiringStatus"
   | "redFlags";
 
-// Column headers that appear in the table (must match data cells)
 const TABLE_COLUMNS: { value: SortField; label: string }[] = [
   { value: "title", label: "Title" },
   { value: "ownerLastName", label: "Owner" },
@@ -48,7 +50,6 @@ const TABLE_COLUMNS: { value: SortField; label: string }[] = [
   { value: "createdAt", label: "Added" },
 ];
 
-// All sort options including special computed ones
 const SORT_OPTIONS: { value: SortField; label: string }[] = [
   { value: "redFlags", label: "Red Flags (Issues)" },
   ...TABLE_COLUMNS,
@@ -62,7 +63,6 @@ const AdminListingsTable = () => {
   const [totalPages, setTotalPages] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Controls
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState<SortField>("createdAt");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
@@ -72,10 +72,8 @@ const AdminListingsTable = () => {
   const [confirmedFilter, setConfirmedFilter] = useState<string>("");
   const [auditedFilter, setAuditedFilter] = useState<string>("");
 
-  // Edit modal
   const [editingListing, setEditingListing] = useState<AdminListing | null>(null);
 
-  // URL check results
   const [urlResults, setUrlResults] = useState<Record<string, { url: string; reachable: boolean; error?: string }[]>>({});
   const [checkingUrls, setCheckingUrls] = useState<string | null>(null);
 
@@ -177,7 +175,6 @@ const AdminListingsTable = () => {
 
   return (
     <div>
-      {/* Controls */}
       <div className="bg-white rounded-lg shadow-md p-4 border border-gray-200 mb-4">
         <div className="flex flex-wrap gap-3 items-end">
           <div className="flex-1 min-w-[200px]">
@@ -300,7 +297,6 @@ const AdminListingsTable = () => {
         </div>
       </div>
 
-      {/* Table */}
       <div className="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm">
@@ -443,7 +439,6 @@ const AdminListingsTable = () => {
         </div>
       </div>
 
-      {/* Pagination */}
       {totalPages > 1 && (
         <div className="flex items-center justify-between mt-4">
           <div className="text-sm text-gray-500">
@@ -482,7 +477,6 @@ const AdminListingsTable = () => {
         </div>
       )}
 
-      {/* Edit Modal */}
       {editingListing && (
         <AdminListingEditModal
           listing={editingListing}

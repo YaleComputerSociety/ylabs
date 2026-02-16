@@ -1,3 +1,6 @@
+/**
+ * List view row component for browsable listings and fellowships.
+ */
 import React, { useContext } from 'react';
 import { BrowsableItem, isItemOpen, getItemTags, getItemSubtitle, getItemSubtitleColor, getDaysUntilDeadline } from '../../types/browsable';
 import StatusBadge from './StatusBadge';
@@ -34,7 +37,6 @@ const BrowseListItem = React.memo(({ item, isFavorite, onToggleFavorite, onOpenM
     onOpenModal();
   };
 
-  // Put ownerPrimaryDepartment first in department list
   const deptLabel = item.type === 'listing' ? (() => {
     const departments = [...(item.data.departments || [])];
     const primary = item.data.ownerPrimaryDepartment;
@@ -53,7 +55,6 @@ const BrowseListItem = React.memo(({ item, isFavorite, onToggleFavorite, onOpenM
     return departments.slice(0, 3).map(d => getDepartmentAbbreviation(d)).join(' | ');
   })() : null;
 
-  // Subtitle line
   const subtitle = getItemSubtitle(item);
   const subtitleColor = getItemSubtitleColor(item);
 
@@ -63,7 +64,6 @@ const BrowseListItem = React.memo(({ item, isFavorite, onToggleFavorite, onOpenM
       onClick={handleClick}
     >
       <div className="p-4 grid grid-cols-12 gap-4 items-start">
-        {/* Column 1: Title, subtitle, tags */}
         <div className="col-span-12 md:col-span-4">
           {deptLabel && (
             <span className="text-xs font-semibold text-blue-700 block mb-0.5 truncate">
@@ -98,14 +98,12 @@ const BrowseListItem = React.memo(({ item, isFavorite, onToggleFavorite, onOpenM
           )}
         </div>
 
-        {/* Column 2: Description excerpt */}
         <div className="col-span-6 hidden md:block">
           <p className="text-sm text-gray-600 line-clamp-3">
             {item.data.description}
           </p>
         </div>
 
-        {/* Column 3: Status + actions */}
         <div className="col-span-12 md:col-span-2 flex md:flex-col items-center md:items-end gap-2">
           <div className="flex items-center gap-1">
             {hasPrerequisites && (
