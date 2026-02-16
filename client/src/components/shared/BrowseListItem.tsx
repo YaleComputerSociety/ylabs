@@ -58,9 +58,11 @@ const BrowseListItem = React.memo(({ item, isFavorite, onToggleFavorite, onOpenM
   const subtitle = getItemSubtitle(item);
   const subtitleColor = getItemSubtitleColor(item);
 
+  const isAudited = isAdmin && item.data.audited;
+
   return (
     <div
-      className="group bg-white rounded-md border border-gray-200 hover:border-blue-400 hover:shadow-sm transition-all duration-200 cursor-pointer"
+      className={`group bg-white rounded-md border ${isAudited ? 'border-green-400 ring-1 ring-green-200' : 'border-gray-200'} hover:border-blue-400 hover:shadow-sm transition-all duration-200 cursor-pointer`}
       onClick={handleClick}
     >
       <div className="p-4 grid grid-cols-12 gap-4 items-start">

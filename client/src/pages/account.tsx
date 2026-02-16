@@ -657,7 +657,7 @@ const Account = () => {
                         <ProfileEditor netid={user.netId} />
                     )}
 
-                    {user && (user.userType === "professor" || user.userType === "faculty" || user.userType === "admin") && (
+                    {user && showProfView && (
                         <>
                             <h2 className="text-2xl font-bold text-gray-800 text-center mb-6 pb-2">Your Listings</h2>
                             {!user.profileVerified && user.userType !== "admin" ? (

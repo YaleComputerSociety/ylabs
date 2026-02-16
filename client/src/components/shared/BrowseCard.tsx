@@ -67,9 +67,11 @@ const BrowseCard = React.memo(({ item, isFavorite, onToggleFavorite, onOpenModal
   })() : null;
   const subtitleColor = getItemSubtitleColor(item);
 
+  const isAudited = isAdmin && item.data.audited;
+
   return (
     <div
-      className="group relative bg-white rounded-lg border border-gray-200 hover:border-blue-400 hover:shadow-md transition-all duration-200 cursor-pointer overflow-hidden h-full flex flex-col"
+      className={`group relative bg-white rounded-lg border ${isAudited ? 'border-green-400 ring-1 ring-green-200' : 'border-gray-200'} hover:border-blue-400 hover:shadow-md transition-all duration-200 cursor-pointer overflow-hidden h-full flex flex-col`}
       onClick={handleClick}
     >
       {showUrgentBanner && (

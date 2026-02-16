@@ -558,6 +558,8 @@ const FellowshipEditModal = ({
   const [purpose, setPurpose] = useState<string[]>([...fellowship.purpose]);
   const [globalRegions, setGlobalRegions] = useState<string[]>([...fellowship.globalRegions]);
   const [citizenshipStatus, setCitizenshipStatus] = useState<string[]>([...fellowship.citizenshipStatus]);
+  const [audited, setAudited] = useState(fellowship.audited ?? false);
+  const [archived, setArchived] = useState(fellowship.archived ?? false);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -585,6 +587,8 @@ const FellowshipEditModal = ({
       purpose,
       globalRegions,
       citizenshipStatus,
+      audited,
+      archived,
     });
   };
 
@@ -699,6 +703,30 @@ const FellowshipEditModal = ({
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                 />
               </div>
+            </div>
+          </div>
+
+          <div className="border-t pt-4 mt-4">
+            <h4 className="text-sm font-semibold text-gray-800 mb-3">Admin Flags</h4>
+            <div className="flex gap-6">
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={archived}
+                  onChange={(e) => setArchived(e.target.checked)}
+                  className="rounded"
+                />
+                Archived
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={audited}
+                  onChange={(e) => setAudited(e.target.checked)}
+                  className="rounded"
+                />
+                Audited
+              </label>
             </div>
           </div>
 
