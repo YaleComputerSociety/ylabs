@@ -1,3 +1,6 @@
+/**
+ * Permission checking utilities for user authorization.
+ */
 import express from "express";
 
 const isAuthenticated = (req: express.Request, res: express.Response, next: express.NextFunction) => {

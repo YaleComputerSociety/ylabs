@@ -1,3 +1,6 @@
+/**
+ * Reusable text input form field.
+ */
 import ErrorMessage from './ErrorMessage';
 
 interface TextInputProps {
