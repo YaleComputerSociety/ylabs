@@ -192,7 +192,7 @@ export const searchListings = async (request: Request, response: Response) => {
       return response.json({ results, totalCount, page: Number(page), pageSize: Number(pageSize) });
     }
 
-    const queryEmbedding = await generateEmbedding(query as string);
+    const queryEmbedding = await generateEmbedding(query as string, { useCache: true });
     const pipeline: mongoose.PipelineStage[] = [];
 
     pipeline.push({
