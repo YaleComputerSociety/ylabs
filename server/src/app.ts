@@ -25,7 +25,7 @@ const getRateLimitKey = (req: express.Request): string => {
   return `ip:${ipKeyGenerator(req.ip || '')}`;
 };
 
-// General rate limiter: 200 requests per 15 minutes per IP
+// General rate limiter: 200 requests per 15 minutes per user (falls back to IP for unauthenticated requests)
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 200,
