@@ -100,8 +100,18 @@ const app = express()
 .use('/api', apiLimiter)
 .use('/api/listings/search', listingSearchLimiter)
 .use('/api/fellowships/search', fellowshipSearchLimiter)
-.use('/api/listings', writeLimiter)
-.use('/api/fellowships', writeLimiter)
+.use('/api/listings', (req, res, next) => {
+  if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') {
+    return next();
+  }
+  return writeLimiter(req, res, next);
+})
+.use('/api/fellowships', (req, res, next) => {
+  if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') {
+    return next();
+  }
+  return writeLimiter(req, res, next);
+})
 .use('/api', passportRoutes)
 .use('/api', routes);
 
