@@ -8,7 +8,19 @@ const openai = new OpenAI({
 });
 
 const EMBEDDING_CACHE_TTL_MS = 10 * 60 * 1000;
+const EMBEDDING_CACHE_MAX_SIZE = 500;
+const EMBEDDING_CACHE_SWEEP_INTERVAL_MS = 5 * 60 * 1000;
 const embeddingCache = new Map<string, { embedding: number[]; expiresAt: number }>();
+
+// Periodically purge expired entries so the cache doesn't retain stale data indefinitely.
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, value] of embeddingCache) {
+    if (value.expiresAt <= now) {
+      embeddingCache.delete(key);
+    }
+  }
+}, EMBEDDING_CACHE_SWEEP_INTERVAL_MS).unref();
 
 interface GenerateEmbeddingOptions {
   useCache?: boolean;
@@ -28,10 +40,20 @@ const getCachedEmbedding = (key: string): number[] | null => {
     return null;
   }
 
+  // Re-insert to mark as most recently used.
+  embeddingCache.delete(key);
+  embeddingCache.set(key, cached);
   return cached.embedding;
 };
 
 const setCachedEmbedding = (key: string, embedding: number[]) => {
+  // Evict the least recently used (oldest) entry when at capacity.
+  if (embeddingCache.size >= EMBEDDING_CACHE_MAX_SIZE && !embeddingCache.has(key)) {
+    const oldestKey = embeddingCache.keys().next().value;
+    if (oldestKey !== undefined) {
+      embeddingCache.delete(oldestKey);
+    }
+  }
   embeddingCache.set(key, {
     embedding,
     expiresAt: Date.now() + EMBEDDING_CACHE_TTL_MS,
