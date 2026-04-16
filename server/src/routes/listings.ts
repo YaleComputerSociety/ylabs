@@ -2,10 +2,10 @@
  * Express routes for listing browsing, search, and CRUD.
  */
 import { Router, Request, Response, NextFunction } from "express";
-import { isAuthenticated, canCreateListing, validateObjectId, validatePagination } from '../middleware';
+import { isAuthenticated, canCreateListing, validateObjectId, validatePagination } from '../middleware/index';
 import * as listingController from '../controllers/listingController';
 import { logEvent } from '../services/analyticsService';
-import { AnalyticsEventType } from '../models';
+import { AnalyticsEventType } from '../models/index';
 
 const router = Router();
 

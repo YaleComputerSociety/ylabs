@@ -48,14 +48,14 @@ export const getConfig = async (forceRefresh: boolean = false): Promise<ConfigDa
     Department.find({ isActive: true }).select('-__v -createdAt -updatedAt').lean()
   ]);
 
-  const fields = Object.values(ResearchField).map(field => ({
-    name: field,
+  const fields: Array<{ name: string; colorKey: string }> = Object.values(ResearchField).map(field => ({
+    name: field as string,
     colorKey: fieldColorKeys[field]
   }));
 
   const config: ConfigData = {
     researchAreas: {
-      areas: researchAreas.map(area => ({
+      areas: researchAreas.map((area: any) => ({
         name: area.name,
         field: area.field,
         colorKey: area.colorKey || fieldColorKeys[area.field as ResearchField] || 'gray',
@@ -65,7 +65,7 @@ export const getConfig = async (forceRefresh: boolean = false): Promise<ConfigDa
       fieldOrder: Object.values(ResearchField)
     },
     departments: {
-      list: departments.map(dept => ({
+      list: departments.map((dept: any) => ({
         abbreviation: dept.abbreviation,
         name: dept.name,
         displayName: dept.displayName,

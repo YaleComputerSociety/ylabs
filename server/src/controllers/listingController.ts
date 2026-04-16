@@ -84,8 +84,8 @@ const buildRobustFilterMatch = async (params: {
 
     for (const discipline of disciplineList) {
       departmentsByDiscipline[discipline] = config.departments.list
-        .filter(dept => dept.categories.includes(discipline) || dept.primaryCategory === discipline)
-        .map(dept => dept.displayName);
+        .filter((dept: any) => dept.categories.includes(discipline) || dept.primaryCategory === discipline)
+        .map((dept: any) => dept.displayName);
     }
 
     if (academicDisciplinesMode === 'intersection') {
@@ -206,20 +206,20 @@ export const createListingForCurrentUser = async (request: Request, response: Re
     const listing = await createListing(request.body.data, user);
     response.status(201).json({ listing });
   } catch (error) {
-    console.log(error.message);
-    response.status(400).json({ error: error.message });
+    console.log((error as Error).message);
+    response.status(400).json({ error: (error as Error).message });
   }
 };
 
 export const getSkeletonListingForCurrentUser = async (request: Request, response: Response) => {
   try {
     const currentUser = request.user as { netId?: string, userType: string, userConfirmed: boolean };
-    
-    const listing = await getSkeletonListing(currentUser.netId);
+
+    const listing = await getSkeletonListing(currentUser.netId!);
     response.status(201).json({ listing });
   } catch (error) {
-    console.log(error.message);
-    response.status(400).json({ error: error.message });
+    console.log((error as Error).message);
+    response.status(400).json({ error: (error as Error).message });
   }
 };
 
@@ -236,7 +236,7 @@ export const updateListingForCurrentUser = async (request: Request, response: Re
   try {
     const currentUser = request.user as { netId?: string, userType: string, userConfirmed: boolean };
     
-    const listing = await updateListing(request.params.id, currentUser.netId, request.body.data);
+    const listing = await updateListing(request.params.id, currentUser.netId!, request.body.data);
     response.status(200).json({ listing });
   } catch (error) {
     throw error;
@@ -247,7 +247,7 @@ export const archiveListingForCurrentUser = async (request: Request, response: R
   try {
     const currentUser = request.user as { netId?: string, userType: string, userConfirmed: boolean };
     
-    const listing = await archiveListing(request.params.id, currentUser.netId);
+    const listing = await archiveListing(request.params.id, currentUser.netId!);
     response.status(200).json({ listing });
   } catch (error) {
     throw error;
@@ -258,7 +258,7 @@ export const unarchiveListingForCurrentUser = async (request: Request, response:
   try {
     const currentUser = request.user as { netId?: string, userType: string, userConfirmed: boolean };
     
-    const listing = await unarchiveListing(request.params.id, currentUser.netId);
+    const listing = await unarchiveListing(request.params.id, currentUser.netId!);
     response.status(200).json({ listing });
   } catch (error) {
     throw error;
@@ -269,7 +269,7 @@ export const addViewToListing = async (request: Request, response: Response) => 
   try {
     const currentUser = request.user as { netId?: string, userType: string, userConfirmed: boolean };
 
-    const listing = await addView(request.params.id, currentUser.netId);
+    const listing = await addView(request.params.id, currentUser.netId!);
     response.status(200).json({ listing });
   } catch (error) {
     throw error;

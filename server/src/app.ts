@@ -7,7 +7,7 @@ import rateLimit from "express-rate-limit";
 import { ipKeyGenerator } from "express-rate-limit";
 import { isCI, isDevelopment, isTest } from "./utils/environment";
 import passport, { passportRoutes } from "./passport";
-import routes from "./routes";
+import routes from "./routes/index";
 import cookieSession from "cookie-session";
 import dotenv from "dotenv";
 import * as path from 'path';
@@ -53,7 +53,7 @@ const writeLimiter = rateLimit({
 const allowList = new Set(["http://localhost:3000", "https://yalelabs.onrender.com", "https://ylabs-gr4v.onrender.com", "https://yalelabs.io", "https://www.yalelabs.io"]);
 
 const corsOptions = {
-  origin: (origin: string, callback: any) => {
+  origin: (origin: string | undefined, callback: any) => {
     if (origin === undefined || bypassCors || allowList.has(origin)) {
       callback(null, true);
     } else {
@@ -70,7 +70,7 @@ const app = express()
 .use(express.urlencoded({ extended: true }))
 .use(cookieSession({
   name: "session",
-  keys: [process.env.SESSION_SECRET],
+  keys: [process.env.SESSION_SECRET ?? ''],
   maxAge: 365 * 24 * 60 * 60 * 1000,
   httpOnly: true,
   secure: process.env.NODE_ENV === 'production',

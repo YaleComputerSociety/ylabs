@@ -8,7 +8,7 @@ import { validateUser, createUser, updateUser } from './services/userService';
 import { fetchYalie } from "./services/yaliesService";
 import { fetchFromDirectory, isFacultyTitle } from "./services/directoryService";
 import { logEvent } from "./services/analyticsService";
-import { AnalyticsEventType } from "./models";
+import { AnalyticsEventType } from "./models/index";
 
 const STALE_THRESHOLD_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -108,8 +108,8 @@ passport.use(
   new Strategy(
     {
       version: "CAS1.0",
-      ssoBaseURL: process.env.SSOBASEURL,
-      serverBaseURL: process.env.SERVER_BASE_URL,
+      ssoBaseURL: process.env.SSOBASEURL ?? '',
+      serverBaseURL: process.env.SERVER_BASE_URL ?? '',
     },
     async function (profile, done) {
       console.log('User logged in from CAS');
@@ -233,7 +233,7 @@ const casLogin = function (
 const router = express.Router();
 
 router.use(async (req, res, next) => {
-  if (req.isAuthenticated() && !req.session.visitorLogged) {
+  if (req.isAuthenticated() && !req.session!.visitorLogged) {
     const user = req.user as any;
     try {
       await logEvent({
@@ -246,7 +246,7 @@ router.use(async (req, res, next) => {
         }
       });
       console.log('🍪 Visitor event logged to analytics (cookie login)');
-      req.session.visitorLogged = true;
+      req.session!.visitorLogged = true;
     } catch (analyticsError) {
       console.error("Error logging visitor analytics event:", analyticsError);
     }

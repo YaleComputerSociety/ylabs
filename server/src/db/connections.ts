@@ -2,7 +2,7 @@
  * MongoDB connection management and model initialization.
  */
 import mongoose, { Connection } from 'mongoose';
-import { listingSchema } from '../models/listing';
+import { listingSchema, Listing } from '../models/listing';
 
 let productionConnection: Connection | null = null;
 let migrationConnection: Connection | null = null;
@@ -59,7 +59,6 @@ export function getListingModel(): mongoose.Model<any> {
     return MigrationListing;
   }
 
-  const { Listing } = require('../models/listing');
   return Listing;
 }
 

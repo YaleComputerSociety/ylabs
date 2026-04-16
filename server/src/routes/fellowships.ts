@@ -2,7 +2,7 @@
  * Express routes for fellowship browsing, search, and CRUD.
  */
 import { Router } from "express";
-import { isAuthenticated, validateObjectId, validatePagination } from '../middleware';
+import { isAuthenticated, validateObjectId, validatePagination } from '../middleware/index';
 import * as fellowshipController from '../controllers/fellowshipController';
 
 const router = Router();

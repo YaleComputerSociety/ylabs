@@ -83,7 +83,7 @@ export const createListing = async (data: any, owner: any) => {
 
 export const readAllListings = async () => {
     const listings = await getListingModel().find();
-    return listings.map(listing => listing.toObject());
+    return listings.map((listing: any) => listing.toObject());
 };
 
 export const readListing = async(id: any) => {
@@ -281,7 +281,7 @@ export const deleteListing = async(id: any) => {
         const oldProfessorIds = listing.professorIds;
 
         for (const id of oldProfessorIds) {
-            if (userExists(id)) {
+            if (await userExists(id)) {
                 await deleteOwnListings(id, [oldListingId]);
             }
         }

@@ -2,10 +2,10 @@
  * User routes for favorites, fellowships, listings, and profile updates.
  */
 import { Router, Request, Response, NextFunction } from "express";
-import { isAuthenticated } from '../middleware';
+import { isAuthenticated } from '../middleware/index';
 import * as userController from '../controllers/userController';
 import { logEvent } from '../services/analyticsService';
-import { AnalyticsEventType } from '../models';
+import { AnalyticsEventType } from '../models/index';
 
 const router = Router();
 

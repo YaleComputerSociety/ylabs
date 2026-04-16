@@ -3,7 +3,7 @@
  */
 import { Router, Request, Response } from "express";
 import { getConfig, invalidateConfigCache } from '../services/configService';
-import { isAuthenticated } from '../middleware';
+import { isAuthenticated } from '../middleware/index';
 
 const router = Router();
 

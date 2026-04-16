@@ -14,7 +14,7 @@ router.get('/', isAuthenticated, isAdmin, async (request: Request, response: Res
         response.status(200).json(analytics);
     } catch (error) {
         console.error('Error fetching analytics:', error);
-        response.status(500).json({ error: error.message });
+        response.status(500).json({ error: (error as Error).message });
     }
 });
 
