@@ -17,10 +17,9 @@ const startApp = async () => {
 
     app.listen(port, () => {
       console.log(`Server is ready at: ${port} 🐶`);
-      console.log(`API_MODE: ${mode}`);
 
       if (mode === 'productionMigration') {
-        console.log('Mode: ProductionMigration - Listings from ProductionMigration, everything else from Production');
+        console.log('Mode: ProductionMigration - Listings from migration DB, everything else from primary');
       }
     });
   } catch (e) {

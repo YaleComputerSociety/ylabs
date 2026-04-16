@@ -5,7 +5,7 @@ import { IncorrectPermissionsError, NotFoundError, ObjectIdError } from "../util
 import { addOwnListings, deleteOwnListings, userExists, createUser, readUser } from "./userService";
 import { fetchYalie } from "./yaliesService";
 import mongoose from "mongoose";
-import { generateListingEmbedding } from "./embeddingService";
+import { getMeiliIndex } from "../utils/meiliClient";
 import { getListingModel } from "../db/connections";
 import { processListingTitle, isCustomTitle, generateSmartTitle } from "../utils/smartTitle";
 import * as itemOps from './itemOperations';
@@ -21,15 +21,6 @@ export const createListing = async (data: any, owner: any) => {
         owner.lname,
         data.departments || [],
     );
-
-    let embedding;
-    try {
-        if (processedTitle && data.description) {
-            embedding = await generateListingEmbedding(processedTitle, data.description);
-        }
-    } catch (error) {
-        console.error('Failed to generate embedding for new listing:', error);
-    }
 
     const ownerDepts = [
         owner.primary_department,
@@ -51,7 +42,6 @@ export const createListing = async (data: any, owner: any) => {
         researchAreas: ownerResearchAreas.length > 0 ? ownerResearchAreas : (data.researchAreas || data.keywords || []),
         keywords: ownerResearchAreas.length > 0 ? ownerResearchAreas : (data.keywords || data.researchAreas || []),
         confirmed: owner.userConfirmed,
-        ...(embedding && { embedding })
     });
 
     const listingId = listing._id;
@@ -76,6 +66,17 @@ export const createListing = async (data: any, owner: any) => {
     }
 
     await listing.save();
+
+    try {
+        const doc = listing.toObject();
+        const meiliDoc = { ...doc, id: doc._id.toString() };
+        delete meiliDoc._id;
+        delete meiliDoc.__v;
+        const index = await getMeiliIndex('listings');
+        await index.addDocuments([meiliDoc]);
+    } catch (error) {
+        console.error('Failed to sync new listing to Meilisearch:', error);
+    }
 
     return listing.toObject();
 };
@@ -191,17 +192,6 @@ export const updateListing = async(id: any, userId: string, data: any, noAuth: b
             }
         }
 
-        if (data.title || data.description) {
-            try {
-                const newTitle = data.title || oldListing.title;
-                const newDescription = data.description || oldListing.description;
-                const embedding = await generateListingEmbedding(newTitle, newDescription);
-                data.embedding = embedding;
-            } catch (error) {
-                console.error('Failed to regenerate embedding for updated listing:', error);
-            }
-        }
-
         const listing = await getListingModel().findByIdAndUpdate(id, data,
             { new: true, runValidators: true, timestamps: useTimestamps }
         );
@@ -219,6 +209,17 @@ export const updateListing = async(id: any, userId: string, data: any, noAuth: b
         }
         for (const id of newProfessorIds) {
             await addOwnListings(id, [listingId]);
+        }
+
+        try {
+            const doc = listing.toObject();
+            const meiliDoc = { ...doc, id: doc._id.toString() };
+            delete meiliDoc._id;
+            delete meiliDoc.__v;
+            const index = await getMeiliIndex('listings');
+            await index.updateDocuments([meiliDoc]);
+        } catch (error) {
+            console.error('Failed to sync updated listing to Meilisearch:', error);
         }
 
         return listing.toObject();
@@ -268,6 +269,13 @@ export const deleteListing = async(id: any) => {
 
         const {professorIds, professorNames, departments, emails, websites, description, keywords} = listing;
         await getListingModel().findByIdAndDelete(id);
+
+        try {
+            const index = await getMeiliIndex('listings');
+            await index.deleteDocument(id.toString());
+        } catch (error) {
+            console.error('Failed to delete listing from Meilisearch:', error);
+        }
 
         const oldListingId = listing._id;
         const oldProfessorIds = listing.professorIds;

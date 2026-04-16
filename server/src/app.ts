@@ -3,17 +3,54 @@
  */
 import cors from "cors";
 import express from "express";
+import rateLimit from "express-rate-limit";
+import { ipKeyGenerator } from "express-rate-limit";
 import { isCI, isDevelopment, isTest } from "./utils/environment";
 import passport, { passportRoutes } from "./passport";
 import routes from "./routes";
 import cookieSession from "cookie-session";
 import dotenv from "dotenv";
 import * as path from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 dotenv.config();
 
 const bypassCors = isCI() || isDevelopment() || isTest();
-const allowList = new Set(["http://localhost:3000", "https://yalelabs.onrender.com", "https://ylabs-dev.onrender.com", "https://yalelabs.io", "https://www.yalelabs.io"]);
+
+const getRateLimitKey = (req: express.Request): string => {
+  const user = req.user as { netId?: string } | undefined;
+  if (user?.netId) {
+    return `user:${user.netId}`;
+  }
+
+  return `ip:${ipKeyGenerator(req.ip || '')}`;
+};
+
+// General rate limiter: 200 requests per 15 minutes per user (falls back to IP for unauthenticated requests)
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 200,
+  keyGenerator: getRateLimitKey,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests, please try again later.' },
+  skip: () => isCI() || isDevelopment() || isTest(),
+});
+
+// Write limiter for listing/fellowship mutations
+const writeLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 50,
+  keyGenerator: getRateLimitKey,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many write requests, please try again later.' },
+  skip: () => isCI() || isDevelopment() || isTest(),
+});
+
+const allowList = new Set(["http://localhost:3000", "https://yalelabs.onrender.com", "https://ylabs-gr4v.onrender.com", "https://yalelabs.io", "https://www.yalelabs.io"]);
 
 const corsOptions = {
   origin: (origin: string, callback: any) => {
@@ -41,6 +78,19 @@ const app = express()
 }))
 .use(passport.initialize())
 .use(passport.session())
+.use('/api', apiLimiter)
+.use('/api/listings', (req, res, next) => {
+  if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') {
+    return next();
+  }
+  return writeLimiter(req, res, next);
+})
+.use('/api/fellowships', (req, res, next) => {
+  if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') {
+    return next();
+  }
+  return writeLimiter(req, res, next);
+})
 .use('/api', passportRoutes)
 .use('/api', routes);
 

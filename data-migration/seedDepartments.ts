@@ -204,31 +204,14 @@ async function seedDepartments(dbUrl: string, dbName: string) {
 
 // Main execution
 async function main() {
-  const args = process.argv.slice(2);
-  const target = args[0] || 'both';
-
-  const prodUrl = process.env.MONGODBURL;
-  const devUrl = process.env.MONGODBURL_TEST;
+  const url = process.env.MONGODBURL;
+  if (!url) {
+    console.error('ERROR: MONGODBURL not set in environment');
+    process.exit(1);
+  }
 
   console.log('=== Departments Seeding Script ===');
-  console.log(`Target: ${target}`);
-
-  if (target === 'dev' || target === 'both') {
-    if (!devUrl) {
-      console.error('ERROR: MONGODBURL_TEST not set in environment');
-      process.exit(1);
-    }
-    await seedDepartments(devUrl, 'Development');
-  }
-
-  if (target === 'prod' || target === 'both') {
-    if (!prodUrl) {
-      console.error('ERROR: MONGODBURL not set in environment');
-      process.exit(1);
-    }
-    await seedDepartments(prodUrl, 'Production');
-  }
-
+  await seedDepartments(url, 'Database');
   console.log('=== Departments Seeding Complete ===\n');
 }
 

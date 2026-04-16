@@ -15,7 +15,7 @@ import {
 } from '../services/listingService';
 import { readUser } from '../services/userService';
 import { getListingModel } from "../db/connections";
-import { generateEmbedding } from '../services/embeddingService';
+import { getMeiliIndex } from '../utils/meiliClient';
 import { getConfig } from '../services/configService';
 
 /**
@@ -50,10 +50,7 @@ const buildRobustFilterMatch = async (params: {
     researchAreasMode
   } = params;
 
-  const baseMatch: any = {
-    archived: false,
-    confirmed: true
-  };
+  const filters: string[] = ['archived = false', 'confirmed = true'];
 
   const departmentList = departments ? departments.split('||').filter(d => d.trim()) : [];
   const disciplineList = academicDisciplines ? academicDisciplines.split('||').filter(d => d.trim()) : [];
@@ -61,7 +58,7 @@ const buildRobustFilterMatch = async (params: {
 
   const hasFilters = departmentList.length > 0 || disciplineList.length > 0 || researchAreaList.length > 0;
   if (!hasFilters) {
-    return baseMatch;
+    return filters.join(' AND ');
   }
 
   const useAndBetweenFilters =
@@ -69,13 +66,15 @@ const buildRobustFilterMatch = async (params: {
     (disciplineList.length > 0 && academicDisciplinesMode === 'intersection') ||
     (researchAreaList.length > 0 && researchAreasMode === 'intersection');
 
-  const filterConditions: any[] = [];
+  const filterConditions: string[] = [];
 
   if (departmentList.length > 0) {
     if (departmentsMode === 'intersection') {
-      filterConditions.push({ departments: { $all: departmentList } });
+      const condition = departmentList.map(d => `departments = "${d}"`).join(' AND ');
+      filterConditions.push(`(${condition})`);
     } else {
-      filterConditions.push({ departments: { $in: departmentList } });
+      const condition = departmentList.map(d => `departments = "${d}"`).join(' OR ');
+      filterConditions.push(`(${condition})`);
     }
   }
 
@@ -94,48 +93,40 @@ const buildRobustFilterMatch = async (params: {
         .map(discipline => {
           const depts = departmentsByDiscipline[discipline] || [];
           if (depts.length === 0) return null;
-          return { departments: { $in: depts } };
+          return `(${depts.map(d => `departments = "${d}"`).join(' OR ')})`;
         })
         .filter(Boolean);
 
       if (disciplineConditions.length > 0) {
-        if (disciplineConditions.length === 1) {
-          filterConditions.push(disciplineConditions[0]);
-        } else {
-          filterConditions.push({ $and: disciplineConditions });
-        }
+        filterConditions.push(`(${disciplineConditions.join(' AND ')})`);
       }
     } else {
       const allDisciplineDepts = [...new Set(
         disciplineList.flatMap(discipline => departmentsByDiscipline[discipline] || [])
       )];
       if (allDisciplineDepts.length > 0) {
-        filterConditions.push({ departments: { $in: allDisciplineDepts } });
+        const condition = allDisciplineDepts.map(d => `departments = "${d}"`).join(' OR ');
+        filterConditions.push(`(${condition})`);
       }
     }
   }
 
   if (researchAreaList.length > 0) {
     if (researchAreasMode === 'intersection') {
-      filterConditions.push({ researchAreas: { $all: researchAreaList } });
+      const condition = researchAreaList.map(r => `researchAreas = "${r}"`).join(' AND ');
+      filterConditions.push(`(${condition})`);
     } else {
-      filterConditions.push({ researchAreas: { $in: researchAreaList } });
+      const condition = researchAreaList.map(r => `researchAreas = "${r}"`).join(' OR ');
+      filterConditions.push(`(${condition})`);
     }
   }
 
-  if (filterConditions.length === 0) {
-    return baseMatch;
+  if (filterConditions.length > 0) {
+    const combinedConditions = filterConditions.join(useAndBetweenFilters ? ' AND ' : ' OR ');
+    filters.push(`(${combinedConditions})`);
   }
 
-  if (filterConditions.length === 1) {
-    return { ...baseMatch, ...filterConditions[0] };
-  }
-
-  if (useAndBetweenFilters) {
-    return { ...baseMatch, $and: filterConditions };
-  } else {
-    return { ...baseMatch, $or: filterConditions };
-  }
+  return filters.join(' AND ');
 };
 
 export const searchListings = async (request: Request, response: Response) => {
@@ -154,7 +145,7 @@ export const searchListings = async (request: Request, response: Response) => {
       pageSize = 10
     } = request.query;
 
-    const matchStage = await buildRobustFilterMatch({
+    const filterString = await buildRobustFilterMatch({
       departments: departments as string,
       departmentsMode: departmentsMode as string,
       academicDisciplines: academicDisciplines as string,
@@ -163,167 +154,47 @@ export const searchListings = async (request: Request, response: Response) => {
       researchAreasMode: researchAreasMode as string
     });
 
-    if (!query || (query as string).trim() === '') {
-      const pipeline: mongoose.PipelineStage[] = [];
+    const limit = Number(pageSize);
+    const offset = (Number(page) - 1) * limit;
 
-      pipeline.push({ $match: matchStage });
-
-      const order = (sortBy === "updatedAt" || sortBy === "createdAt")
-        ? sortOrder === "1" ? -1 : 1
-        : sortOrder === "1" ? 1 : -1;
-
-      pipeline.push({
-        $sort: sortBy
-          ? { [sortBy as string]: order, _id: 1 }
-          : { createdAt: -1, _id: 1 }
-      });
-
-      const countPromise = getListingModel().countDocuments(matchStage);
-
-      pipeline.push(
-        { $skip: (Number(page) - 1) * Number(pageSize) },
-        { $limit: Number(pageSize) }
-      );
-
-      const [results, totalCount] = await Promise.all([
-        getListingModel().aggregate(pipeline),
-        countPromise
-      ]);
-      return response.json({ results, totalCount, page: Number(page), pageSize: Number(pageSize) });
+    const sortConfig = [];
+    if (sortBy) {
+        const order = sortOrder === "1" ? "asc" : "desc";
+        sortConfig.push(`${sortBy}:${order}`);
+    } else if (!query || (query as string).trim() === '') {
+        // Just recent if no query
+        sortConfig.push(`createdAt:desc`);
     }
 
-    const queryEmbedding = await generateEmbedding(query as string);
-    const pipeline: mongoose.PipelineStage[] = [];
-
-    pipeline.push({
-      $vectorSearch: {
-        index: 'vector_index',
-        path: 'embedding',
-        queryVector: queryEmbedding,
-        numCandidates: 100,
-        limit: 100
-      }
-    } as any);
-
-    pipeline.push({
-      $addFields: {
-        searchScore: { $meta: 'vectorSearchScore' }
-      }
-    });
-
-    pipeline.push({ $match: matchStage });
-
-    const order = (sortBy === "updatedAt" || sortBy === "createdAt")
-      ? sortOrder === "1" ? -1 : 1
-      : sortOrder === "1" ? 1 : -1;
-
-    pipeline.push({
-      $sort: sortBy
-        ? { [sortBy as string]: order, _id: 1 }
-        : { searchScore: -1, createdAt: -1, _id: 1 }
-    });
-
-    const countPromise = getListingModel().countDocuments(matchStage);
-
-    pipeline.push(
-      { $skip: (Number(page) - 1) * Number(pageSize) },
-      { $limit: Number(pageSize) }
-    );
-
-    const [results, totalCount] = await Promise.all([
-      getListingModel().aggregate(pipeline),
-      countPromise
-    ]);
-
-    if (results.length === 0) {
-      console.log('⚠️ Semantic search returned 0 results. Falling back to keyword search...');
-      throw new Error('No semantic results - triggering fallback');
+    const searchParams: any = {
+        filter: filterString,
+        limit,
+        offset,
+    };
+    
+    if (sortConfig.length > 0) {
+        searchParams.sort = sortConfig;
     }
 
-    const resultsWithoutEmbedding = results.map(({ embedding, ...rest }) => rest);
+    // Use hybrid search if we have a query
+    if (query && (query as string).trim() !== '') {
+        searchParams.hybrid = {
+            semanticRatio: 0.8,
+            embedder: 'default'
+        };
+    }
 
-    response.json({ results: resultsWithoutEmbedding, totalCount, page: Number(page), pageSize: Number(pageSize) });
+    const index = await getMeiliIndex('listings');
+    const { hits, estimatedTotalHits } = await index.search(query as string || "", searchParams);
+
+    // Map `id` back to `_id` for frontend backward compatibility
+    const results = hits.map((hit: any) => ({ ...hit, _id: hit.id }));
+
+    return response.json({ results, totalCount: estimatedTotalHits, page: Number(page), pageSize: Number(pageSize) });
 
   } catch (error) {
-    console.error("Semantic search failed, falling back to keyword search:", error);
-
-    try {
-      const {
-        query,
-        sortBy,
-        sortOrder,
-        departments,
-        academicDisciplines,
-        researchAreas,
-        departmentsMode = 'union',
-        academicDisciplinesMode = 'union',
-        researchAreasMode = 'union',
-        page = 1,
-        pageSize = 10
-      } = request.query;
-
-      const matchStage = await buildRobustFilterMatch({
-        departments: departments as string,
-        departmentsMode: departmentsMode as string,
-        academicDisciplines: academicDisciplines as string,
-        academicDisciplinesMode: academicDisciplinesMode as string,
-        researchAreas: researchAreas as string,
-        researchAreasMode: researchAreasMode as string
-      });
-
-      const pipeline: mongoose.PipelineStage[] = [];
-
-      if (query) {
-        pipeline.push({
-          $search: {
-            index: 'default',
-            text: {
-              query: query as string,
-              path: {
-                wildcard: '*'
-              }
-            },
-          },
-        });
-
-        pipeline.push({
-          $set: {
-            searchScore: { $meta: 'searchScore' },
-          },
-        });
-      }
-
-      pipeline.push({ $match: matchStage });
-
-      const order = (sortBy === "updatedAt" || sortBy === "createdAt")
-        ? sortOrder === "1" ? -1 : 1
-        : sortOrder === "1" ? 1 : -1;
-
-      pipeline.push({
-        $sort: sortBy
-          ? { [sortBy as string]: order, _id: 1 }
-          : { searchScore: -1, createdAt: -1, _id: 1 },
-      });
-
-      const countPromise = getListingModel().countDocuments(matchStage);
-
-      pipeline.push(
-        { $skip: (Number(page) - 1) * Number(pageSize) },
-        { $limit: Number(pageSize) }
-      );
-
-      const [results, totalCount] = await Promise.all([
-        getListingModel().aggregate(pipeline),
-        countPromise
-      ]);
-
-      console.log(`Fallback keyword search returned ${results.length} results`);
-      response.json({ results, totalCount, page: Number(page), pageSize: Number(pageSize) });
-
-    } catch (fallbackError) {
-      console.error("Keyword search fallback also failed:", fallbackError);
-      response.status(500).json({ error: "Search failed" });
-    }
+    console.error("Meilisearch search failed:", error);
+    return response.status(500).json({ error: "Search failed" });
   }
 };
 
