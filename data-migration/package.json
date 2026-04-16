@@ -24,6 +24,7 @@
   "dependencies": {
     "csv-parse": "^5.5.3",
     "dotenv": "^16.3.1",
+    "meilisearch": "^0.57.0",
     "mongoose": "^8.0.4",
     "openai": "^6.17.0"
   },

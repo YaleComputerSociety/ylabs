@@ -11,6 +11,9 @@ import routes from "./routes";
 import cookieSession from "cookie-session";
 import dotenv from "dotenv";
 import * as path from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 dotenv.config();
 
@@ -36,28 +39,6 @@ const apiLimiter = rateLimit({
   skip: () => isCI() || isDevelopment() || isTest(),
 });
 
-// Listing search limiter (OpenAI embedding cost path)
-const listingSearchLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 120,
-  keyGenerator: getRateLimitKey,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Too many listing search requests, please try again later.' },
-  skip: () => isCI() || isDevelopment() || isTest(),
-});
-
-// Fellowship search limiter (non-OpenAI path)
-const fellowshipSearchLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 200,
-  keyGenerator: getRateLimitKey,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Too many fellowship search requests, please try again later.' },
-  skip: () => isCI() || isDevelopment() || isTest(),
-});
-
 // Write limiter for listing/fellowship mutations
 const writeLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -69,7 +50,7 @@ const writeLimiter = rateLimit({
   skip: () => isCI() || isDevelopment() || isTest(),
 });
 
-const allowList = new Set(["http://localhost:3000", "https://yalelabs.onrender.com", "https://ylabs-dev.onrender.com", "https://yalelabs.io", "https://www.yalelabs.io"]);
+const allowList = new Set(["http://localhost:3000", "https://yalelabs.onrender.com", "https://ylabs-gr4v.onrender.com", "https://yalelabs.io", "https://www.yalelabs.io"]);
 
 const corsOptions = {
   origin: (origin: string, callback: any) => {
@@ -98,8 +79,6 @@ const app = express()
 .use(passport.initialize())
 .use(passport.session())
 .use('/api', apiLimiter)
-.use('/api/listings/search', listingSearchLimiter)
-.use('/api/fellowships/search', fellowshipSearchLimiter)
 .use('/api/listings', (req, res, next) => {
   if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') {
     return next();
