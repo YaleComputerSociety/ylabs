@@ -59,7 +59,7 @@ router.get("/listings", async (req: Request, res: Response) => {
 router.put("/listings/:id", async (req: Request, res: Response) => {
   try {
     const { departments } = req.body;
-    const listing = await updateListing(req.params.id, undefined, { departments }, true);
+    const listing = await updateListing(req.params.id, '' as string, { departments }, true);
     res.json({ listing });
   } catch (error: any) {
     console.error("Seed: Error updating listing:", error);

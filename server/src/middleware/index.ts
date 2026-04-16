@@ -10,8 +10,8 @@ export {
   isConfirmed
 } from './auth';
 
-export { 
-  validateObjectId, 
+export {
+  validateObjectId,
   requireBody,
   requireFields,
   validatePagination,

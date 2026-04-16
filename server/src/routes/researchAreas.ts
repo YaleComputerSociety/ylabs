@@ -2,7 +2,7 @@
  * Express routes for research area CRUD operations.
  */
 import { Router, Request, Response } from "express";
-import { isAuthenticated } from '../middleware';
+import { isAuthenticated } from '../middleware/index';
 import { ResearchArea, ResearchField, fieldColorKeys } from '../models/researchArea';
 import { invalidateConfigCache } from '../services/configService';
 

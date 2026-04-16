@@ -2,7 +2,7 @@
  * Express routes for faculty profile viewing and self-editing.
  */
 import { Router } from "express";
-import { isAuthenticated, isProfessor } from "../middleware";
+import { isAuthenticated, isProfessor } from "../middleware/index";
 import {
   getProfile,
   getPublications,

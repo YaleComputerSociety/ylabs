@@ -3,7 +3,7 @@
  */
 import { Router, Request, Response } from "express";
 import mongoose from "mongoose";
-import { isAuthenticated, isAdmin, validateObjectId } from "../middleware";
+import { isAuthenticated, isAdmin, validateObjectId } from "../middleware/index";
 import { updateListing, deleteListing, readAllListings } from "../services/listingService";
 import { getListingModel } from "../db/connections";
 import { ResearchArea, ResearchField, fieldColorKeys } from "../models/researchArea";
@@ -179,7 +179,7 @@ router.put("/listings/:id", validateObjectId("id"), async (req: Request, res: Re
     const currentUser = req.user as { netId?: string };
     const { data, resetCreatedAt } = req.body;
 
-    let listing = await updateListing(req.params.id, currentUser.netId, data, true);
+    let listing = await updateListing(req.params.id, currentUser.netId as string, data, true);
 
     if (resetCreatedAt && listing) {
       const originalDate = new Date(listing.createdAt);
@@ -195,7 +195,7 @@ router.put("/listings/:id", validateObjectId("id"), async (req: Request, res: Re
     res.json({ listing });
   } catch (error) {
     console.error("Admin: Error updating listing:", error);
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: (error as Error).message });
   }
 });
 
@@ -205,7 +205,7 @@ router.delete("/listings/:id", validateObjectId("id"), async (req: Request, res:
     res.json({ message: "Listing deleted" });
   } catch (error) {
     console.error("Admin: Error deleting listing:", error);
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: (error as Error).message });
   }
 });
 
@@ -246,7 +246,7 @@ router.put("/research-areas/:id", validateObjectId("id"), async (req: Request, r
     res.json({ researchArea: area });
   } catch (error) {
     console.error("Admin: Error updating research area:", error);
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: (error as Error).message });
   }
 });
 
@@ -261,7 +261,7 @@ router.delete("/research-areas/:id", validateObjectId("id"), async (req: Request
     res.json({ message: "Research area deleted" });
   } catch (error) {
     console.error("Admin: Error deleting research area:", error);
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: (error as Error).message });
   }
 });
 
@@ -299,7 +299,7 @@ router.post("/departments", async (req: Request, res: Response) => {
     res.status(201).json({ department: dept });
   } catch (error) {
     console.error("Admin: Error creating department:", error);
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: (error as Error).message });
   }
 });
 
@@ -331,7 +331,7 @@ router.put("/departments/:id", validateObjectId("id"), async (req: Request, res:
     res.json({ department: dept });
   } catch (error) {
     console.error("Admin: Error updating department:", error);
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: (error as Error).message });
   }
 });
 
@@ -346,7 +346,7 @@ router.delete("/departments/:id", validateObjectId("id"), async (req: Request, r
     res.json({ message: "Department deleted" });
   } catch (error) {
     console.error("Admin: Error deleting department:", error);
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: (error as Error).message });
   }
 });
 
@@ -583,7 +583,7 @@ router.put("/fellowships/:id", validateObjectId("id"), async (req: Request, res:
     res.json({ fellowship });
   } catch (error) {
     console.error("Admin: Error updating fellowship:", error);
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: (error as Error).message });
   }
 });
 
@@ -593,7 +593,7 @@ router.put("/fellowships/:id/archive", validateObjectId("id"), async (req: Reque
     res.json({ fellowship });
   } catch (error) {
     console.error("Admin: Error archiving fellowship:", error);
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: (error as Error).message });
   }
 });
 
@@ -603,7 +603,7 @@ router.put("/fellowships/:id/unarchive", validateObjectId("id"), async (req: Req
     res.json({ fellowship });
   } catch (error) {
     console.error("Admin: Error unarchiving fellowship:", error);
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: (error as Error).message });
   }
 });
 
@@ -613,7 +613,7 @@ router.delete("/fellowships/:id", validateObjectId("id"), async (req: Request, r
     res.json({ message: "Fellowship deleted" });
   } catch (error) {
     console.error("Admin: Error deleting fellowship:", error);
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: (error as Error).message });
   }
 });
 

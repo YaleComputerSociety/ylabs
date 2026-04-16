@@ -1,7 +1,7 @@
 /**
  * Service layer for user account CRUD and favorites management.
  */
-import { User } from "../models";
+import { User } from "../models/index";
 import { NotFoundError } from "../utils/errors";
 import { readListing, confirmListing, unconfirmListing, addFavorite, removeFavorite } from "./listingService";
 import { addFavorite as addFellowshipFavorite, removeFavorite as removeFellowshipFavorite } from "./fellowshipService";
@@ -191,7 +191,7 @@ export const addFavListings = async(id: any, Listings: [mongoose.Types.ObjectId]
     let user = await readUser(id);
 
     user.favListings.unshift(...Listings);
-    user.favListings = Array.from(new Set(user.favListings.map((listing: any) => listing.toString()))).map(listing => new mongoose.Types.ObjectId(listing));
+    user.favListings = Array.from(new Set(user.favListings.map((listing: any) => listing.toString()))).map((listing: string) => new mongoose.Types.ObjectId(listing));
 
     const newUser = await updateUser(id, {"favListings": user.favListings});
 
@@ -228,7 +228,7 @@ export const addFavFellowships = async(id: any, fellowships: [mongoose.Types.Obj
     let user = await readUser(id);
 
     user.favFellowships.unshift(...fellowships);
-    user.favFellowships = Array.from(new Set(user.favFellowships.map((f: any) => f.toString()))).map((f: string) => new mongoose.Types.ObjectId(f));
+    user.favFellowships = (Array.from(new Set(user.favFellowships.map((f: any) => f.toString()))).map((f: string) => new mongoose.Types.ObjectId(f))) as mongoose.Types.ObjectId[];
 
     const newUser = await updateUser(id, {"favFellowships": user.favFellowships});
 

@@ -9,12 +9,12 @@
     "node": ">=20.9.0"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsup",
     "build:clean": "rm -rf build",
-    "dev": "cross-env NODE_ENV=development nodemon --watch src --ext ts,json --exec tsx src/index.ts",
+    "dev": "cross-env NODE_ENV=development tsx watch src/index.ts",
     "start": "node build/index.js",
     "test": "cross-env NODE_ENV=test jest --config ./src/testUtils/jest.config.js",
-    "prod": "cross-env NODE_ENV=prod nodemon --watch src --ext ts,json --exec tsx src/index.ts"
+    "prod": "cross-env NODE_ENV=prod tsx watch src/index.ts"
   },
   "dependencies": {
     "axios": "^1.13.2",
@@ -41,6 +41,7 @@
     "@types/passport-strategy": "^0.2.35",
     "nodemon": "^2.0.15",
     "ts-node": "^10.9.2",
+    "tsup": "^8.5.1",
     "tsx": "^4.21.0",
     "typescript": "^5.3.0"
   }

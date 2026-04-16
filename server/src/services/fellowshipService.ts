@@ -39,7 +39,7 @@ export const readFellowships = async (ids: any[]) => {
 
 export const readAllFellowships = async () => {
     const fellowships = await Fellowship.find({ archived: false });
-    return fellowships.map(fellowship => fellowship.toObject());
+    return fellowships.map((fellowship: any) => fellowship.toObject());
 };
 
 export const fellowshipExists = async (id: any) => {
@@ -206,5 +206,5 @@ export const getFilterOptions = async () => {
 
 export const bulkCreateFellowships = async (fellowships: any[]) => {
     const result = await Fellowship.insertMany(fellowships);
-    return result.map(f => f.toObject());
+    return result.map((f: any) => f.toObject());
 };

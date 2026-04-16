@@ -37,7 +37,7 @@ export const canCreateListing = (req: express.Request, res: express.Response, ne
   }
 
   const allowedTypes = ['admin', 'professor', 'faculty'];
-  if (!allowedTypes.includes(currentUser.userType)) {
+  if (!allowedTypes.includes(currentUser.userType ?? '')) {
     return res.status(403).json({ error: 'User does not have permission to create listings' });
   }
 

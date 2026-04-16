@@ -2,7 +2,7 @@
  * Analytics event logging and aggregation service.
  */
 import { AnalyticsEvent, AnalyticsEventType } from "../models/analytics";
-import { User } from "../models";
+import { User } from "../models/index";
 import mongoose from "mongoose";
 import { getListingModel } from "../db/connections";
 
@@ -42,7 +42,7 @@ export const logEvent = async (params: LogEventParams): Promise<void> => {
         User.findOneAndUpdate(
             { netid: params.netid },
             updateFields
-        ).catch(err => {
+        ).catch((err: any) => {
             console.error('Error updating user metrics:', err);
         });
 

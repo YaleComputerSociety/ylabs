@@ -27,7 +27,7 @@ export const fetchYalie = async (netid: any) => {
             { headers: { Authorization: `Bearer ${API_KEY}` } }
         );   
       } catch (error) {
-        console.error("Error fetching from Yalies API:", error.message);
+        console.error("Error fetching from Yalies API:", (error as Error).message);
         return null;
       }
       console.log('Yalies: done making post request');
@@ -79,7 +79,7 @@ export const fetchYalie = async (netid: any) => {
   
       return user;
     } catch (error) {
-      console.error("Error fetching user:", error.message);
+      console.error("Error fetching user:", (error as Error).message);
       return null;
     }
   };
