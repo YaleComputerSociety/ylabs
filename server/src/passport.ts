@@ -13,6 +13,26 @@ import { AnalyticsEventType } from "./models/index";
 const STALE_THRESHOLD_MS = 30 * 24 * 60 * 60 * 1000;
 
 /**
+ * Resolve a caller-supplied redirect to a safe same-origin target.
+ * Accepts only relative paths ("/foo") or absolute URLs whose host matches
+ * SERVER_BASE_URL. Anything else returns null.
+ */
+function safeRedirectTarget(raw: unknown): string | null {
+  if (typeof raw !== 'string' || raw.length === 0) return null;
+  if (raw.startsWith('/') && !raw.startsWith('//')) return raw;
+  try {
+    const base = process.env.SERVER_BASE_URL ?? '';
+    if (!base) return null;
+    const baseHost = new URL(base).host;
+    const target = new URL(raw);
+    if (target.host === baseHost) return target.toString();
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+/**
  * Build an update object from directory data (only non-empty fields).
  */
 function buildDirectoryUpdate(dirPerson: NonNullable<Awaited<ReturnType<typeof fetchFromDirectory>>>) {
@@ -112,9 +132,6 @@ passport.use(
       serverBaseURL: process.env.SERVER_BASE_URL ?? '',
     },
     async function (profile, done) {
-      console.log('User logged in from CAS');
-      console.log("User profile: ", profile);
-
       try {
         const user = await findOrCreateUser(profile.user);
         done(null, {
@@ -171,8 +188,9 @@ const casLogin = function (
         console.error("Error serializing error object: ", e);
       }
       
-      if (req.query && req.query.error) {
-        return res.redirect(req.query.error as string);
+      const errorRedirect = safeRedirectTarget(req.query?.error);
+      if (errorRedirect) {
+        return res.redirect(errorRedirect);
       }
 
       return res.status(401).json({ error: "Error in authentication" });
@@ -183,14 +201,9 @@ const casLogin = function (
       return res.status(401).json({ error: info.message || "CAS auth but no user" });
     }
 
-    console.log("1::");
-    console.log(user);
-
-    console.log("Logging in user: ", user);
     req.logIn(user, async function (err) {
-      console.log("Post login");
       if (err) {
-        console.log("Error logging in");
+        console.error("CAS login failed for netid:", user?.netId);
         return next(err);
       }
 
@@ -209,19 +222,11 @@ const casLogin = function (
         console.error("Error logging analytics event:", analyticsError);
       }
 
-      if (req.query.redirect) {
-        try {
-          const redirectUrl = new URL(req.query.redirect as string);
-          
-          return res.redirect(req.query.redirect as string);
-        } catch (error) {
-          console.error("Error parsing redirect URL:", error);
-          console.log("Falling back to default redirect");
-          return res.redirect("/");
-        }
+      const safeTarget = safeRedirectTarget(req.query?.redirect);
+      if (safeTarget) {
+        return res.redirect(safeTarget);
       }
 
-      console.log("Default redirecting user");
       const defaultRedirect = process.env.NODE_ENV === 'development'
         ? 'http://localhost:3000'
         : '/';
@@ -255,9 +260,6 @@ router.use(async (req, res, next) => {
 });
 
 router.get("/check", (req, res) => {
-  console.log("Checking user");
-  console.log("2::");
-  console.log(req.user);
   if (req.user) {
     res.json({ auth: true, user: req.user });
   } else {
@@ -336,8 +338,7 @@ if (process.env.NODE_ENV === 'development') {
           console.error("Error logging dev login analytics event:", analyticsError);
         }
 
-        const redirectUrl = (req.query.redirect as string) || "http://localhost:3000";
-        console.log('Redirecting to:', redirectUrl);
+        const redirectUrl = safeRedirectTarget(req.query?.redirect) ?? "http://localhost:3000";
         res.redirect(redirectUrl);
       });
     } catch (error) {    

@@ -5,7 +5,7 @@ import React, { useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Fellowship } from '../../types/types';
 import FellowshipSearchContext from '../../contexts/FellowshipSearchContext';
-import { ensureHttpPrefix } from '../../utils/url';
+import { ensureHttpPrefix, safeUrl } from '../../utils/url';
 import FavoriteButton from '../shared/FavoriteButton';
 
 interface FellowshipModalProps {
@@ -30,17 +30,24 @@ const RichText = ({ text }: { text: string }) => {
                 </React.Fragment>
             );
         }
-        elements.push(
-            <a
-                key={`l${match.index}`}
-                href={match[2].trim()}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-blue-600 hover:underline"
-            >
-                {match[1]}
-            </a>
-        );
+        const linkHref = safeUrl(match[2]);
+        if (linkHref) {
+            elements.push(
+                <a
+                    key={`l${match.index}`}
+                    href={linkHref}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:underline"
+                >
+                    {match[1]}
+                </a>
+            );
+        } else {
+            elements.push(
+                <React.Fragment key={`l${match.index}`}>{match[1]}</React.Fragment>
+            );
+        }
         lastIndex = match.index + match[0].length;
     }
 

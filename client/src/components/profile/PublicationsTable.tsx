@@ -4,6 +4,7 @@
 import { useState, useEffect } from 'react';
 import { Publication } from '../../types/types';
 import axios from '../../utils/axios';
+import { safeUrl } from '../../utils/url';
 
 interface PublicationsTableProps {
   netid: string;
@@ -119,9 +120,9 @@ const PublicationsTable = ({ netid }: PublicationsTableProps) => {
                         </svg>
                       </a>
                     )}
-                    {pub.open_access_url && !pub.doi && (
+                    {pub.open_access_url && !pub.doi && safeUrl(pub.open_access_url) && (
                       <a
-                        href={pub.open_access_url}
+                        href={safeUrl(pub.open_access_url)}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="flex-shrink-0 text-green-500 hover:text-green-700"

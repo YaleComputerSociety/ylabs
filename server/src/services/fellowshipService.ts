@@ -51,11 +51,51 @@ export const fellowshipExists = async (id: any) => {
     }
 };
 
+const FELLOWSHIP_ADMIN_UPDATABLE_FIELDS = [
+    'title',
+    'competitionType',
+    'summary',
+    'description',
+    'applicationInformation',
+    'eligibility',
+    'restrictionsToUseOfAward',
+    'additionalInformation',
+    'links',
+    'applicationLink',
+    'awardAmount',
+    'isAcceptingApplications',
+    'applicationOpenDate',
+    'deadline',
+    'contactName',
+    'contactEmail',
+    'contactPhone',
+    'contactOffice',
+    'yearOfStudy',
+    'termOfAward',
+    'purpose',
+    'globalRegions',
+    'citizenshipStatus',
+    'archived',
+    'audited',
+] as const;
+
+const filterFellowshipUpdate = (data: any): Record<string, any> => {
+    const update: Record<string, any> = {};
+    if (!data || typeof data !== 'object') return update;
+    for (const field of FELLOWSHIP_ADMIN_UPDATABLE_FIELDS) {
+        if (data[field] !== undefined) {
+            update[field] = data[field];
+        }
+    }
+    return update;
+};
+
 export const updateFellowship = async (id: any, data: any) => {
     if (mongoose.Types.ObjectId.isValid(id)) {
+        const safeData = filterFellowshipUpdate(data);
         const fellowship = await Fellowship.findByIdAndUpdate(
             id,
-            data,
+            safeData,
             { new: true, runValidators: true }
         );
 

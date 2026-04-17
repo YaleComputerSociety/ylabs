@@ -1,7 +1,7 @@
 /**
  * Controller for user operations: favorites, listings, and profile updates.
  */
-import { Request, Response } from "express";
+import { Request, Response, NextFunction } from "express";
 import mongoose from 'mongoose';
 import { readListings } from '../services/listingService';
 import { readFellowships } from '../services/fellowshipService';
@@ -12,8 +12,6 @@ import {
   deleteFavListings as deleteFavListingsService,
   addFavFellowships as addFavFellowshipsService,
   deleteFavFellowships as deleteFavFellowshipsService,
-  confirmUser,
-  unconfirmUser
 } from '../services/userService';
 
 export const getFavListingsIds = async (request: Request, response: Response) => {
@@ -162,21 +160,54 @@ export const getUserListings = async (request: Request, response: Response) => {
   }
 };
 
-export const updateCurrentUser = async (request: Request, response: Response) => {
+const SELF_UPDATABLE_FIELDS = [
+  'fname',
+  'lname',
+  'email',
+  'bio',
+  'website',
+  'image_url',
+  'phone',
+  'college',
+  'year',
+  'major',
+  'title',
+  'physical_location',
+  'building_desk',
+  'mailing_address',
+  'primary_department',
+  'secondary_departments',
+  'departments',
+  'research_interests',
+  'topics',
+  'profile_urls',
+] as const;
+
+const ALLOWED_SELF_USER_TYPES = new Set(['undergraduate', 'graduate', 'professor', 'faculty']);
+
+export const updateCurrentUser = async (request: Request, response: Response, next: NextFunction) => {
   try {
     const currentUser = request.user as { netId?: string, userType: string, userConfirmed: boolean };
+    const payload = request.body?.data ?? {};
 
-    if (request.body.data.userConfirmed !== undefined) {
-      if (request.body.data.userConfirmed) {
-        await confirmUser(currentUser.netId);
-      } else {
-        await unconfirmUser(currentUser.netId);
+    const update: Record<string, any> = {};
+    for (const field of SELF_UPDATABLE_FIELDS) {
+      if (payload[field] !== undefined) {
+        update[field] = payload[field];
       }
     }
 
-    const user = await updateUser(currentUser.netId, request.body.data);
+    if (payload.userType !== undefined && currentUser.userType === 'unknown') {
+      if (!ALLOWED_SELF_USER_TYPES.has(payload.userType)) {
+        response.status(400).json({ error: 'Invalid userType' });
+        return;
+      }
+      update.userType = payload.userType;
+    }
+
+    const user = await updateUser(currentUser.netId, update);
     response.status(200).json({ user });
   } catch (error) {
-    throw error;
+    next(error);
   }
 };

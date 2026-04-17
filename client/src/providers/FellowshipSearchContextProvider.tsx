@@ -1,12 +1,13 @@
 /**
  * Provider component managing fellowship search state and API calls.
  */
-import { FC, useState, useEffect, useCallback, ReactNode } from "react";
+import { FC, useState, useEffect, useCallback, useContext, ReactNode } from "react";
 import { useLocation } from "react-router-dom";
 import axios from "../utils/axios";
 import swal from "sweetalert";
 
 import FellowshipSearchContext from "../contexts/FellowshipSearchContext";
+import UserContext from "../contexts/UserContext";
 import { Fellowship, FellowshipFilterOptions } from "../types/types";
 import { createFellowship } from "../utils/createFellowship";
 
@@ -20,6 +21,9 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
 
   const location = useLocation();
   const isActive = location.pathname === '/fellowships';
+
+  const { isAuthenticated, isLoading: authLoading } = useContext(UserContext);
+  const authReady = !authLoading && isAuthenticated;
 
   const [queryString, setQueryString] = useState<string>('');
 
@@ -74,6 +78,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
 
   useEffect(() => {
     if (!isActive) return;
+    if (!authReady) return;
 
     axios
       .get('/fellowships/filters')
@@ -91,7 +96,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
         console.error('Error loading fellowship filter options:', error);
         setFilterOptionsLoaded(true);
       });
-  }, [isActive]);
+  }, [isActive, authReady]);
 
   const handleSearch = useCallback((searchPage: number) => {
     const formattedQuery = queryString.trim();
@@ -138,10 +143,12 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
       })
       .catch((error) => {
         console.error('Error loading fellowships:', error);
-        swal({
-          text: 'Unable to load fellowships. Please try again later.',
-          icon: 'warning',
-        });
+        if (error?.response?.status !== 401) {
+          swal({
+            text: 'Unable to load fellowships. Please try again later.',
+            icon: 'warning',
+          });
+        }
         setIsLoading(false);
       });
   }, [queryString, selectedYearOfStudy, selectedTermOfAward, selectedPurpose, selectedRegions, selectedCitizenship, sortBy, sortOrder, pageSize]);
@@ -153,12 +160,13 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
 
   useEffect(() => {
     if (!isActive) return;
+    if (!authReady) return;
     if (filterOptionsLoaded && !initialSearchDone) {
       setPage(1);
       handleSearch(1);
       setInitialSearchDone(true);
     }
-  }, [filterOptionsLoaded, initialSearchDone, handleSearch, isActive]);
+  }, [filterOptionsLoaded, initialSearchDone, handleSearch, isActive, authReady]);
 
   useEffect(() => {
     if (!isActive) return;

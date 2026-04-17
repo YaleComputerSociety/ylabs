@@ -5,6 +5,7 @@ import { Router, Request, Response } from "express";
 import { isAuthenticated } from '../middleware/index';
 import { ResearchArea, ResearchField, fieldColorKeys } from '../models/researchArea';
 import { invalidateConfigCache } from '../services/configService';
+import { escapeRegex, buildSafeSearchRegex } from '../utils/regex';
 
 const router = Router();
 
@@ -41,7 +42,7 @@ router.post('/', isAuthenticated, async (req: Request, res: Response) => {
     const trimmedName = name.trim();
 
     const existing = await ResearchArea.findOne({
-      name: { $regex: new RegExp(`^${trimmedName}$`, 'i') }
+      name: { $regex: new RegExp(`^${escapeRegex(trimmedName)}$`, 'i') }
     });
 
     if (existing) {
@@ -82,7 +83,7 @@ router.get('/search', isAuthenticated, async (req: Request, res: Response) => {
     }
 
     const customAreas = await ResearchArea.find({
-      name: { $regex: query, $options: 'i' },
+      name: buildSafeSearchRegex(query),
       isDefault: false
     })
       .select('name field')

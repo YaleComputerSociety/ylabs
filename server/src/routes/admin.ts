@@ -3,7 +3,9 @@
  */
 import { Router, Request, Response } from "express";
 import mongoose from "mongoose";
-import { isAuthenticated, isAdmin, validateObjectId } from "../middleware/index";
+import dns from "dns/promises";
+import net from "net";
+import { isAuthenticated, isAdmin, validateObjectId, validateNetid } from "../middleware/index";
 import { updateListing, deleteListing, readAllListings } from "../services/listingService";
 import { getListingModel } from "../db/connections";
 import { ResearchArea, ResearchField, fieldColorKeys } from "../models/researchArea";
@@ -21,6 +23,7 @@ import {
   adminUpdateProfile,
   cascadeDepartmentsToListings,
 } from "../services/profileService";
+import { buildSafeSearchRegex } from "../utils/regex";
 
 const router = Router();
 
@@ -51,7 +54,7 @@ router.get("/listings", async (req: Request, res: Response) => {
     else if (audited === "false") filter.audited = { $ne: true };
 
     if (search && (search as string).trim()) {
-      const searchRegex = { $regex: (search as string).trim(), $options: "i" };
+      const searchRegex = buildSafeSearchRegex((search as string).trim());
       filter.$or = [
         { title: searchRegex },
         { ownerFirstName: searchRegex },
@@ -195,7 +198,7 @@ router.put("/listings/:id", validateObjectId("id"), async (req: Request, res: Re
     res.json({ listing });
   } catch (error) {
     console.error("Admin: Error updating listing:", error);
-    res.status(400).json({ error: (error as Error).message });
+    res.status(400).json({ error: "Request failed" });
   }
 });
 
@@ -205,7 +208,7 @@ router.delete("/listings/:id", validateObjectId("id"), async (req: Request, res:
     res.json({ message: "Listing deleted" });
   } catch (error) {
     console.error("Admin: Error deleting listing:", error);
-    res.status(400).json({ error: (error as Error).message });
+    res.status(400).json({ error: "Request failed" });
   }
 });
 
@@ -246,7 +249,7 @@ router.put("/research-areas/:id", validateObjectId("id"), async (req: Request, r
     res.json({ researchArea: area });
   } catch (error) {
     console.error("Admin: Error updating research area:", error);
-    res.status(400).json({ error: (error as Error).message });
+    res.status(400).json({ error: "Request failed" });
   }
 });
 
@@ -261,7 +264,7 @@ router.delete("/research-areas/:id", validateObjectId("id"), async (req: Request
     res.json({ message: "Research area deleted" });
   } catch (error) {
     console.error("Admin: Error deleting research area:", error);
-    res.status(400).json({ error: (error as Error).message });
+    res.status(400).json({ error: "Request failed" });
   }
 });
 
@@ -299,7 +302,7 @@ router.post("/departments", async (req: Request, res: Response) => {
     res.status(201).json({ department: dept });
   } catch (error) {
     console.error("Admin: Error creating department:", error);
-    res.status(400).json({ error: (error as Error).message });
+    res.status(400).json({ error: "Request failed" });
   }
 });
 
@@ -331,7 +334,7 @@ router.put("/departments/:id", validateObjectId("id"), async (req: Request, res:
     res.json({ department: dept });
   } catch (error) {
     console.error("Admin: Error updating department:", error);
-    res.status(400).json({ error: (error as Error).message });
+    res.status(400).json({ error: "Request failed" });
   }
 });
 
@@ -346,9 +349,43 @@ router.delete("/departments/:id", validateObjectId("id"), async (req: Request, r
     res.json({ message: "Department deleted" });
   } catch (error) {
     console.error("Admin: Error deleting department:", error);
-    res.status(400).json({ error: (error as Error).message });
+    res.status(400).json({ error: "Request failed" });
   }
 });
+
+const isPrivateAddress = (addr: string): boolean => {
+  const family = net.isIP(addr);
+  if (family === 0) return true;
+  if (family === 4) {
+    const parts = addr.split('.').map(Number);
+    const [a, b] = parts;
+    if (a === 10) return true;
+    if (a === 127) return true;
+    if (a === 0) return true;
+    if (a === 169 && b === 254) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    if (a === 192 && b === 168) return true;
+    if (a >= 224) return true;
+    return false;
+  }
+  const lower = addr.toLowerCase();
+  if (lower === '::1' || lower === '::') return true;
+  if (lower.startsWith('fc') || lower.startsWith('fd')) return true;
+  if (lower.startsWith('fe80:')) return true;
+  if (lower.startsWith('::ffff:')) return isPrivateAddress(lower.slice(7));
+  return false;
+};
+
+const isPublicHostname = async (hostname: string): Promise<boolean> => {
+  if (net.isIP(hostname)) return !isPrivateAddress(hostname);
+  try {
+    const records = await dns.lookup(hostname, { all: true });
+    if (records.length === 0) return false;
+    return records.every((r) => !isPrivateAddress(r.address));
+  } catch {
+    return false;
+  }
+};
 
 router.post("/check-urls", async (req: Request, res: Response) => {
   try {
@@ -366,13 +403,28 @@ router.post("/check-urls", async (req: Request, res: Response) => {
             normalizedUrl = "https://" + normalizedUrl;
           }
 
+          let parsed: URL;
+          try {
+            parsed = new URL(normalizedUrl);
+          } catch {
+            return { url, status: 0, reachable: false, error: "Invalid URL" };
+          }
+
+          if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+            return { url, status: 0, reachable: false, error: "Unsupported scheme" };
+          }
+
+          if (!(await isPublicHostname(parsed.hostname))) {
+            return { url, status: 0, reachable: false, error: "Blocked host" };
+          }
+
           const controller = new AbortController();
           const timeout = setTimeout(() => controller.abort(), 10000);
 
-          const response = await fetch(normalizedUrl, {
+          const response = await fetch(parsed.toString(), {
             method: "HEAD",
             signal: controller.signal,
-            redirect: "follow",
+            redirect: "manual",
           });
 
           clearTimeout(timeout);
@@ -419,10 +471,7 @@ router.get("/profiles", async (req: Request, res: Response) => {
       ];
 
     if (search && (search as string).trim()) {
-      const searchRegex = {
-        $regex: (search as string).trim(),
-        $options: "i",
-      };
+      const searchRegex = buildSafeSearchRegex((search as string).trim());
       const searchOr = [
         { fname: searchRegex },
         { lname: searchRegex },
@@ -475,7 +524,7 @@ router.get("/profiles", async (req: Request, res: Response) => {
   }
 });
 
-router.get("/profiles/:netid", async (req: Request, res: Response) => {
+router.get("/profiles/:netid", validateNetid("netid"), async (req: Request, res: Response) => {
   try {
     const user = await User.findOne({ netid: req.params.netid })
       .select("+publications")
@@ -492,20 +541,22 @@ router.get("/profiles/:netid", async (req: Request, res: Response) => {
   }
 });
 
-router.put("/profiles/:netid", async (req: Request, res: Response) => {
+router.put("/profiles/:netid", validateNetid("netid"), async (req: Request, res: Response) => {
   try {
-    const { data } = req.body;
-    const profile = await adminUpdateProfile(req.params.netid, data || req.body);
+    const data = req.body?.data;
+    if (!data || typeof data !== "object") {
+      return res.status(400).json({ error: "Missing data payload" });
+    }
+
+    const profile = await adminUpdateProfile(req.params.netid, data);
 
     if (!profile) {
       return res.status(404).json({ error: "Profile not found" });
     }
 
     if (
-      data?.primary_department !== undefined ||
-      data?.secondary_departments !== undefined ||
-      req.body.primary_department !== undefined ||
-      req.body.secondary_departments !== undefined
+      data.primary_department !== undefined ||
+      data.secondary_departments !== undefined
     ) {
       await cascadeDepartmentsToListings(req.params.netid);
     }
@@ -513,7 +564,7 @@ router.put("/profiles/:netid", async (req: Request, res: Response) => {
     res.json({ profile });
   } catch (error: any) {
     console.error("Admin: Error updating profile:", error);
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: "Request failed" });
   }
 });
 
@@ -538,7 +589,7 @@ router.get("/fellowships", async (req: Request, res: Response) => {
     else if (audited === "false") filter.audited = { $ne: true };
 
     if (search && (search as string).trim()) {
-      const searchRegex = { $regex: (search as string).trim(), $options: "i" };
+      const searchRegex = buildSafeSearchRegex((search as string).trim());
       filter.$or = [
         { title: searchRegex },
         { summary: searchRegex },
@@ -583,7 +634,7 @@ router.put("/fellowships/:id", validateObjectId("id"), async (req: Request, res:
     res.json({ fellowship });
   } catch (error) {
     console.error("Admin: Error updating fellowship:", error);
-    res.status(400).json({ error: (error as Error).message });
+    res.status(400).json({ error: "Request failed" });
   }
 });
 
@@ -593,7 +644,7 @@ router.put("/fellowships/:id/archive", validateObjectId("id"), async (req: Reque
     res.json({ fellowship });
   } catch (error) {
     console.error("Admin: Error archiving fellowship:", error);
-    res.status(400).json({ error: (error as Error).message });
+    res.status(400).json({ error: "Request failed" });
   }
 });
 
@@ -603,7 +654,7 @@ router.put("/fellowships/:id/unarchive", validateObjectId("id"), async (req: Req
     res.json({ fellowship });
   } catch (error) {
     console.error("Admin: Error unarchiving fellowship:", error);
-    res.status(400).json({ error: (error as Error).message });
+    res.status(400).json({ error: "Request failed" });
   }
 });
 
@@ -613,7 +664,7 @@ router.delete("/fellowships/:id", validateObjectId("id"), async (req: Request, r
     res.json({ message: "Fellowship deleted" });
   } catch (error) {
     console.error("Admin: Error deleting fellowship:", error);
-    res.status(400).json({ error: (error as Error).message });
+    res.status(400).json({ error: "Request failed" });
   }
 });
 

@@ -1,11 +1,12 @@
 /**
  * Provider component managing listing search state and API calls.
  */
-import { FC, useState, useEffect, useCallback, useMemo, ReactNode } from "react";
+import { FC, useState, useEffect, useCallback, useMemo, useContext, ReactNode } from "react";
 import axios from "../utils/axios";
 import swal from "sweetalert";
 
 import SearchContext, { FilterMode } from "../contexts/SearchContext";
+import UserContext from "../contexts/UserContext";
 import { Listing } from "../types/types";
 import { createListing } from "../utils/apiCleaner";
 import { useConfig } from "../hooks/useConfig";
@@ -17,6 +18,8 @@ interface SearchContextProviderProps {
 const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => {
   const pageSize = 20;
   const sortableKeys = ['default', 'createdAt', 'ownerLastName', 'ownerFirstName', 'title'];
+
+  const { isAuthenticated, isLoading: authLoading } = useContext(UserContext);
 
   const {
     departments,
@@ -126,10 +129,12 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
       })
       .catch((error) => {
         console.error('Error loading listings:', error);
-        swal({
-          text: 'Unable to load listings. Please try again later.',
-          icon: 'warning',
-        });
+        if (error?.response?.status !== 401) {
+          swal({
+            text: 'Unable to load listings. Please try again later.',
+            icon: 'warning',
+          });
+        }
         setIsLoading(false);
       });
   }, [queryString, selectedDepartments, selectedResearchAreas, selectedListingResearchAreas, departmentsFilterMode, researchAreasFilterMode, listingResearchAreasFilterMode, sortBy, sortOrder, pageSize]);
@@ -140,12 +145,12 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
   }, [handleSearch]);
 
   useEffect(() => {
-    if (configLoaded && !initialSearchDone) {
+    if (configLoaded && !authLoading && isAuthenticated && !initialSearchDone) {
       setPage(1);
       handleSearch(1);
       setInitialSearchDone(true);
     }
-  }, [configLoaded, initialSearchDone, handleSearch]);
+  }, [configLoaded, authLoading, isAuthenticated, initialSearchDone, handleSearch]);
 
   useEffect(() => {
     if (!configLoaded) return;

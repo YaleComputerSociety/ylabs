@@ -2,6 +2,7 @@
  * Profile header with name, department, contact, and metrics.
  */
 import { FacultyProfile } from '../../types/types';
+import { safeUrl } from '../../utils/url';
 
 interface ProfileHeaderProps {
   profile: FacultyProfile;
@@ -96,17 +97,21 @@ const ProfileHeader = ({ profile, onTabChange }: ProfileHeaderProps) => {
           {profile.profile_urls &&
             Object.entries(profile.profile_urls)
               .filter(([key]) => key !== 'orcid')
-              .map(([key, url]) => (
-                <a
-                  key={key}
-                  href={url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-xs px-2 py-1 rounded-full bg-gray-50 text-gray-600 font-medium hover:bg-gray-100 transition-colors capitalize"
-                >
-                  {key.replace(/_/g, ' ')}
-                </a>
-              ))}
+              .map(([key, url]) => {
+                const href = safeUrl(url);
+                if (!href) return null;
+                return (
+                  <a
+                    key={key}
+                    href={href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs px-2 py-1 rounded-full bg-gray-50 text-gray-600 font-medium hover:bg-gray-100 transition-colors capitalize"
+                  >
+                    {key.replace(/_/g, ' ')}
+                  </a>
+                );
+              })}
         </div>
       </div>
     </div>

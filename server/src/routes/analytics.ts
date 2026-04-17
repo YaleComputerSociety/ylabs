@@ -2,7 +2,7 @@
  * Express routes for analytics event tracking and dashboard data.
  */
 import { Request, Response, Router } from "express";
-import { isAuthenticated, isAdmin } from '../utils/permissions';
+import { isAuthenticated, isAdmin } from '../middleware/auth';
 import { getAnalytics } from '../services/analyticsService';
 import { AnalyticsEvent, AnalyticsEventType } from '../models/analytics';
 
@@ -14,7 +14,7 @@ router.get('/', isAuthenticated, isAdmin, async (request: Request, response: Res
         response.status(200).json(analytics);
     } catch (error) {
         console.error('Error fetching analytics:', error);
-        response.status(500).json({ error: (error as Error).message });
+        response.status(500).json({ error: "Failed to fetch analytics" });
     }
 });
 

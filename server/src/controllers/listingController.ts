@@ -1,7 +1,7 @@
 /**
  * Controller handlers for listing CRUD routes.
  */
-import { Request, Response } from "express";
+import { Request, Response, NextFunction } from "express";
 import mongoose from 'mongoose';
 import {
   archiveListing,
@@ -33,6 +33,9 @@ import { getConfig } from '../services/configService';
  * - OR mode: listing has a department from ANY selected discipline
  * - AND mode: listing has at least one department from EACH selected discipline
  */
+const escapeMeiliFilterValue = (value: string): string =>
+  value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+
 const buildRobustFilterMatch = async (params: {
   departments?: string;
   departmentsMode: string;
@@ -70,10 +73,10 @@ const buildRobustFilterMatch = async (params: {
 
   if (departmentList.length > 0) {
     if (departmentsMode === 'intersection') {
-      const condition = departmentList.map(d => `departments = "${d}"`).join(' AND ');
+      const condition = departmentList.map(d => `departments = "${escapeMeiliFilterValue(d)}"`).join(' AND ');
       filterConditions.push(`(${condition})`);
     } else {
-      const condition = departmentList.map(d => `departments = "${d}"`).join(' OR ');
+      const condition = departmentList.map(d => `departments = "${escapeMeiliFilterValue(d)}"`).join(' OR ');
       filterConditions.push(`(${condition})`);
     }
   }
@@ -93,7 +96,7 @@ const buildRobustFilterMatch = async (params: {
         .map(discipline => {
           const depts = departmentsByDiscipline[discipline] || [];
           if (depts.length === 0) return null;
-          return `(${depts.map(d => `departments = "${d}"`).join(' OR ')})`;
+          return `(${depts.map(d => `departments = "${escapeMeiliFilterValue(d)}"`).join(' OR ')})`;
         })
         .filter(Boolean);
 
@@ -105,7 +108,7 @@ const buildRobustFilterMatch = async (params: {
         disciplineList.flatMap(discipline => departmentsByDiscipline[discipline] || [])
       )];
       if (allDisciplineDepts.length > 0) {
-        const condition = allDisciplineDepts.map(d => `departments = "${d}"`).join(' OR ');
+        const condition = allDisciplineDepts.map(d => `departments = "${escapeMeiliFilterValue(d)}"`).join(' OR ');
         filterConditions.push(`(${condition})`);
       }
     }
@@ -113,10 +116,10 @@ const buildRobustFilterMatch = async (params: {
 
   if (researchAreaList.length > 0) {
     if (researchAreasMode === 'intersection') {
-      const condition = researchAreaList.map(r => `researchAreas = "${r}"`).join(' AND ');
+      const condition = researchAreaList.map(r => `researchAreas = "${escapeMeiliFilterValue(r)}"`).join(' AND ');
       filterConditions.push(`(${condition})`);
     } else {
-      const condition = researchAreaList.map(r => `researchAreas = "${r}"`).join(' OR ');
+      const condition = researchAreaList.map(r => `researchAreas = "${escapeMeiliFilterValue(r)}"`).join(' OR ');
       filterConditions.push(`(${condition})`);
     }
   }
@@ -232,14 +235,41 @@ export const getListingById = async (request: Request, response: Response) => {
   }
 };
 
-export const updateListingForCurrentUser = async (request: Request, response: Response) => {
+const LISTING_SELF_UPDATABLE_FIELDS = [
+  'title',
+  'hiringStatus',
+  'websites',
+  'description',
+  'applicantDescription',
+  'researchAreas',
+  'keywords',
+  'established',
+  'departments',
+  'emails',
+  'professorIds',
+  'professorNames',
+] as const;
+
+const filterListingUpdate = (data: any): Record<string, any> => {
+  const update: Record<string, any> = {};
+  if (!data || typeof data !== 'object') return update;
+  for (const field of LISTING_SELF_UPDATABLE_FIELDS) {
+    if (data[field] !== undefined) {
+      update[field] = data[field];
+    }
+  }
+  return update;
+};
+
+export const updateListingForCurrentUser = async (request: Request, response: Response, next: NextFunction) => {
   try {
     const currentUser = request.user as { netId?: string, userType: string, userConfirmed: boolean };
-    
-    const listing = await updateListing(request.params.id, currentUser.netId!, request.body.data);
+
+    const safeData = filterListingUpdate(request.body?.data);
+    const listing = await updateListing(request.params.id, currentUser.netId!, safeData);
     response.status(200).json({ listing });
   } catch (error) {
-    throw error;
+    next(error);
   }
 };
 
