@@ -1,7 +1,10 @@
 /**
  * Listing creation and edit form with all fields.
+ *
+ * Form state lives in reducers/listingFormReducer.ts; this component owns
+ * rendering, validation calls, and the one-shot fetch.
  */
-import React, { useState, useEffect, useContext, useMemo } from 'react';
+import React, { useEffect, useContext, useMemo, useReducer, useCallback } from 'react';
 import { Listing } from '../../../types/types';
 import { useConfig } from '../../../hooks/useConfig';
 import swal from "sweetalert";
@@ -18,6 +21,11 @@ import { validateTitle, validateDescription, validateEstablished,
          validateProfessors, validateEmails, validateWebsites, validateProfessorIds, validateDepartments } from './utils/validation';
 import { createListing } from '../../../utils/apiCleaner';
 import UserContext from "../../../contexts/UserContext";
+import {
+  ListingFormErrors,
+  createInitialListingFormState,
+  listingFormReducer,
+} from '../../../reducers/listingFormReducer';
 
 interface ListingFormProps {
   listing: Listing;
@@ -32,76 +40,121 @@ const ListingForm = ({ listing, isCreated, onLoad, onCancel, onSave, onCreate }:
   const { departments: allDepartmentsConfig } = useConfig();
   const departmentNames = useMemo(() => allDepartmentsConfig.map(d => d.displayName), [allDepartmentsConfig]);
 
-  const [title, setTitle] = useState(listing.title);
-  const [professorNames, setProfessorNames] = useState<string[]>([...listing.professorNames]);
-  const [ownerName, setOwnerName] = useState<string>(`${listing.ownerFirstName} ${listing.ownerLastName}`);
-  const [departments, setDepartments] = useState<string[]>([...listing.departments]);
-  const [availableDepartments, setAvailableDepartments] = useState<string[]>([]);
-  const [professorIds, setProfessorIds] = useState<string[]>([...listing.professorIds]);
-  const [emails, setEmails] = useState<string[]>([...listing.emails]);
-  const [ownerEmail, setOwnerEmail] = useState<string>(listing.ownerEmail);
-  const [websites, setWebsites] = useState<string[]>(listing.websites ? [...listing.websites] : []);
-  const [description, setDescription] = useState(listing.description);
-  const [applicantDescription, setApplicantDescription] = useState(listing.applicantDescription || '');
-  const [researchAreas, setResearchAreas] = useState<string[]>(listing.researchAreas ? [...listing.researchAreas] : (listing.keywords ? [...listing.keywords] : []));
-  const [established, setEstablished] = useState(listing.established || '');
-  const [hiringStatus, setHiringStatus] = useState(listing.hiringStatus);
-  const [archived, setArchived] = useState(listing.archived);
-  const [loading, setLoading] = useState(true);
+  const [state, dispatch] = useReducer(
+    listingFormReducer,
+    listing,
+    createInitialListingFormState
+  );
+
+  const {
+    title,
+    professorNames,
+    ownerName,
+    departments,
+    availableDepartments,
+    professorIds,
+    emails,
+    ownerEmail,
+    websites,
+    description,
+    applicantDescription,
+    researchAreas,
+    established,
+    hiringStatus,
+    archived,
+    loading,
+    errors,
+  } = state;
 
   const { user } = useContext(UserContext);
   const isOwner = user && (user.netId === listing.ownerId);
 
-  const [errors, setErrors] = useState<{
-    title?: string;
-    description?: string;
-    established?: string;
-    professorIds?: string;
-    professorNames?: string;
-    emails?: string;
-    websites?: string;
-    departments?: string;
-  }>({});
+  // Setters shaped like Dispatch<SetStateAction<T>> so existing child components
+  // (ArrayInput, HiringStatus, etc.) can remain unchanged.
+  const setTitle = useCallback((value: string) => {
+    dispatch({ type: 'SET_TITLE', payload: value });
+  }, []);
+
+  const setProfessorNames = useCallback(
+    (value: React.SetStateAction<string[]>) => {
+      dispatch({ type: 'SET_PROFESSOR_NAMES', payload: value });
+    },
+    []
+  ) as React.Dispatch<React.SetStateAction<string[]>>;
+
+  const setProfessorIds = useCallback(
+    (value: React.SetStateAction<string[]>) => {
+      dispatch({ type: 'SET_PROFESSOR_IDS', payload: value });
+    },
+    []
+  ) as React.Dispatch<React.SetStateAction<string[]>>;
+
+  const setEmails = useCallback(
+    (value: React.SetStateAction<string[]>) => {
+      dispatch({ type: 'SET_EMAILS', payload: value });
+    },
+    []
+  ) as React.Dispatch<React.SetStateAction<string[]>>;
+
+  const setWebsites = useCallback(
+    (value: React.SetStateAction<string[]>) => {
+      dispatch({ type: 'SET_WEBSITES', payload: value });
+    },
+    []
+  ) as React.Dispatch<React.SetStateAction<string[]>>;
+
+  const setDescription = useCallback((value: string) => {
+    dispatch({ type: 'SET_DESCRIPTION', payload: value });
+  }, []);
+
+  const setApplicantDescription = useCallback((value: string) => {
+    dispatch({ type: 'SET_APPLICANT_DESCRIPTION', payload: value });
+  }, []);
+
+  const setEstablished = useCallback((value: string) => {
+    dispatch({ type: 'SET_ESTABLISHED', payload: value });
+  }, []);
+
+  const setHiringStatus = useCallback(
+    (value: React.SetStateAction<number>) => {
+      dispatch({ type: 'SET_HIRING_STATUS', payload: value });
+    },
+    []
+  ) as React.Dispatch<React.SetStateAction<number>>;
+
+  const updateError = useCallback((field: keyof ListingFormErrors, value: string | undefined) => {
+    dispatch({ type: 'UPDATE_ERROR', field, value });
+  }, []);
 
   useEffect(() => {
     if (!isCreated) {
-      setLoading(true);
+      dispatch({ type: 'SET_LOADING', payload: true });
       axios.get(`/listings/${listing.id}`, { withCredentials: true }).then((response) => {
         if (!response.data.listing) {
           console.error(`Response, but no listing ${listing.id}:`, response.data);
           onLoad(listing, false);
           return;
         }
-        const listing = createListing(response.data.listing);
-        setTitle(listing.title);
-        setProfessorNames([...listing.professorNames]);
-        setOwnerName(`${listing.ownerFirstName} ${listing.ownerLastName}`);
-        setDepartments([...listing.departments]);
-        setEmails([...listing.emails]);
-        setOwnerEmail(listing.ownerEmail);
-        setWebsites(listing.websites ? [...listing.websites] : []);
-        setDescription(listing.description);
-        setApplicantDescription(listing.applicantDescription || '');
-        setResearchAreas(listing.researchAreas ? [...listing.researchAreas] : (listing.keywords ? [...listing.keywords] : []));
-        setEstablished(listing.established || '');
-        setHiringStatus(listing.hiringStatus);
-        setArchived(listing.archived);
-
-        onLoad(listing, true);
-
-        setAvailableDepartments(
-          departmentNames.filter(dept => !listing.departments.includes(dept)).sort()
-        );
-        setLoading(false);
+        const fetched = createListing(response.data.listing);
+        const nextAvailable = departmentNames
+          .filter(dept => !fetched.departments.includes(dept))
+          .sort();
+        dispatch({
+          type: 'HYDRATE',
+          listing: fetched,
+          availableDepartments: nextAvailable,
+        });
+        onLoad(fetched, true);
       }).catch((error) => {
         console.error(`Error fetching most recent listing ${listing.id}:`, error);
         onLoad(listing, false);
       });
     } else {
-      setAvailableDepartments(
-        departmentNames.filter(dept => !departments.includes(dept)).sort()
-      );
-      setLoading(false);
+      dispatch({
+        type: 'SET_AVAILABLE_DEPARTMENTS',
+        payload: departmentNames.filter(dept => !departments.includes(dept)).sort(),
+      });
+      dispatch({ type: 'SET_LOADING', payload: false });
     }
   }, []);
 
@@ -124,6 +177,13 @@ const ListingForm = ({ listing, isCreated, onLoad, onCancel, onSave, onCreate }:
     onLoad(updatedListing, true);
   }, [title, professorNames, departments, emails, websites, description, applicantDescription, researchAreas, established, hiringStatus, archived]);
 
+  const setResearchAreas = useCallback(
+    (value: React.SetStateAction<string[]>) => {
+      dispatch({ type: 'SET_RESEARCH_AREAS', payload: value });
+    },
+    []
+  );
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -138,11 +198,11 @@ const ListingForm = ({ listing, isCreated, onLoad, onCancel, onSave, onCreate }:
       departments: validateDepartments(departments)
     };
 
-    const filteredErrors = Object.fromEntries(
+    const filteredErrors: ListingFormErrors = Object.fromEntries(
       Object.entries(validationErrors).filter(([_, value]) => value !== undefined)
     );
 
-    setErrors(filteredErrors);
+    dispatch({ type: 'SET_ERRORS', payload: filteredErrors });
 
     if (Object.keys(filteredErrors).length === 0) {
       const updatedListing: Listing = {
@@ -204,23 +264,8 @@ const handleCancel = () => {
       }
     });
   } else {
-    const originalListing = { ...listing };
-    setTitle(originalListing.title);
-    setProfessorNames([...originalListing.professorNames]);
-    setOwnerName(`${originalListing.ownerFirstName} ${originalListing.ownerLastName}`);
-    setDepartments([...originalListing.departments]);
-    setEmails([...originalListing.emails]);
-    setOwnerEmail(originalListing.ownerEmail);
-    setWebsites(originalListing.websites ? [...originalListing.websites] : []);
-    setDescription(originalListing.description);
-    setApplicantDescription(originalListing.applicantDescription || '');
-    setResearchAreas(originalListing.researchAreas ? [...originalListing.researchAreas] : (originalListing.keywords ? [...originalListing.keywords] : []));
-    setEstablished(originalListing.established || '');
-    setHiringStatus(originalListing.hiringStatus);
-    setArchived(originalListing.archived);
-
-    onLoad({ ...originalListing }, true);
-
+    dispatch({ type: 'RESET_FROM_LISTING', listing });
+    onLoad({ ...listing }, true);
     if (onCancel) {
       onCancel();
     }
@@ -228,15 +273,11 @@ const handleCancel = () => {
 };
 
   const handleAddDepartment = (department: string) => {
-    setDepartments(prev => [...prev, department]);
-    setAvailableDepartments(prev => prev.filter(dept => dept !== department).sort());
+    dispatch({ type: 'ADD_DEPARTMENT', department });
   };
 
   const handleRemoveDepartment = (index: number) => {
-    const newDepartments = [...departments];
-    const removedDept = newDepartments.splice(index, 1)[0];
-    setDepartments(newDepartments);
-    setAvailableDepartments(prev => [...prev, removedDept].sort());
+    dispatch({ type: 'REMOVE_DEPARTMENT', index });
   };
 
   return (
@@ -258,7 +299,7 @@ const handleCancel = () => {
               required
               onValidate={(value) => {
                 if (errors.title) {
-                  setErrors(prev => ({ ...prev, title: validateTitle(value) }));
+                  updateError('title', validateTitle(value));
                 }
               }}
             />
@@ -302,10 +343,7 @@ const handleCancel = () => {
               buttonColor="text-blue-500 hover:text-blue-700"
               error={errors.professorNames}
               permanentValue={ownerName}
-              onValidate={(newArray) => setErrors(prev => ({
-                ...prev,
-                professorNames: validateProfessors(newArray)
-              }))}
+              onValidate={(newArray) => updateError('professorNames', validateProfessors(newArray))}
             />
 
             <ArrayInput
@@ -318,10 +356,7 @@ const handleCancel = () => {
               buttonColor="text-yellow-500 hover:text-yellow-700"
               error={errors.websites}
               type="url"
-              onValidate={(newArray) => setErrors(prev => ({
-                ...prev,
-                websites: validateWebsites(newArray)
-              }))}
+              onValidate={(newArray) => updateError('websites', validateWebsites(newArray))}
             />
           </div>
 
@@ -337,16 +372,13 @@ const handleCancel = () => {
               error={errors.emails}
               permanentValue={ownerEmail}
               type="email"
-              onValidate={(newArray) => setErrors(prev => ({
-                ...prev,
-                emails: validateEmails(newArray)
-              }))}
+              onValidate={(newArray) => updateError('emails', validateEmails(newArray))}
             />
 
             <ResearchAreaInput
               researchAreas={researchAreas}
-              onAddResearchArea={(area) => setResearchAreas(prev => [...prev, area])}
-              onRemoveResearchArea={(index) => setResearchAreas(prev => prev.filter((_, i) => i !== index))}
+              onAddResearchArea={(area) => setResearchAreas((prev) => [...prev, area])}
+              onRemoveResearchArea={(index) => setResearchAreas((prev) => prev.filter((_, i) => i !== index))}
             />
           </div>
 
@@ -374,10 +406,7 @@ const handleCancel = () => {
                   textColor="text-green-800"
                   buttonColor="text-green-500 hover:text-green-700"
                   error={errors.professorIds}
-                  onValidate={(newArray) => setErrors(prev => ({
-                    ...prev,
-                    professorIds: validateProfessorIds(newArray)
-                  }))}
+                  onValidate={(newArray) => updateError('professorIds', validateProfessorIds(newArray))}
                   infoText="Allow others in your lab to update this listing"
                 />
               )}
@@ -391,7 +420,7 @@ const handleCancel = () => {
                 error={errors.established}
                 onValidate={(value) => {
                   if (errors.established) {
-                    setErrors(prev => ({ ...prev, established: validateEstablished(value) }));
+                    updateError('established', validateEstablished(value));
                   }
                 }}
               />
@@ -401,7 +430,7 @@ const handleCancel = () => {
                   id="archived"
                   type="checkbox"
                   checked={archived}
-                  onChange={(e) => setArchived(e.target.checked)}
+                  onChange={(e) => dispatch({ type: 'SET_ARCHIVED', payload: e.target.checked })}
                   className="mr-3 h-4 w-4 text-blue-500 focus:ring-blue-400 cursor-pointer"
                 />
                 <label className="text-gray-700 text-sm font-bold cursor-pointer" htmlFor="archived">
