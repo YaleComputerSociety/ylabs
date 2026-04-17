@@ -15,13 +15,10 @@ interface CourseTableCourse {
   professor_names: string[];
 }
 
-const cache = new Map<
-  string,
-  { data: CourseTableCourse[]; timestamp: number }
->();
+const cache = new Map<string, { data: CourseTableCourse[]; timestamp: number }>();
 const CACHE_TTL = 60 * 60 * 1000;
 
-const COURSETABLE_API = "https://coursetable.com/api/catalog/public";
+const COURSETABLE_API = 'https://coursetable.com/api/catalog/public';
 
 /**
  * Get recent season codes (last 3 semesters).
@@ -52,9 +49,9 @@ function getRecentSeasonCodes(): string[] {
  * Returns null if the API is unreachable or no data is found.
  */
 export async function fetchCourseTableData(
-  professorName: string
+  professorName: string,
 ): Promise<CourseTableCourse[] | null> {
-  if (!professorName || professorName === "NA NA") return null;
+  if (!professorName || professorName === 'NA NA') return null;
 
   const cacheKey = professorName.toLowerCase();
   const cached = cache.get(cacheKey);
@@ -72,7 +69,7 @@ export async function fetchCourseTableData(
 
       const response = await fetch(`${COURSETABLE_API}/${season}`, {
         signal: controller.signal,
-        headers: { Accept: "application/json" },
+        headers: { Accept: 'application/json' },
       });
 
       clearTimeout(timeout);
@@ -83,13 +80,13 @@ export async function fetchCourseTableData(
 
       if (!Array.isArray(data)) continue;
 
-      const nameParts = professorName.toLowerCase().split(" ");
+      const nameParts = professorName.toLowerCase().split(' ');
       const lastName = nameParts[nameParts.length - 1];
 
       for (const course of data) {
         const profs = course.course_professors || [];
         const match = profs.some((p: any) => {
-          const pName = (p.professor_name || "").toLowerCase();
+          const pName = (p.professor_name || '').toLowerCase();
           return pName.includes(lastName);
         });
 
@@ -98,28 +95,23 @@ export async function fetchCourseTableData(
           const courseCode =
             listings.length > 0
               ? `${listings[0].subject} ${listings[0].number}`
-              : course.course_code || "";
+              : course.course_code || '';
 
           allCourses.push({
             course_code: courseCode,
-            title: course.title || "",
+            title: course.title || '',
             season_code: season,
-            description: course.description || "",
+            description: course.description || '',
             credits: course.credits,
-            areas: course.areas ? course.areas.split("") : [],
-            skills: course.skills ? course.skills.split("") : [],
-            professor_names: profs.map(
-              (p: any) => p.professor_name || ""
-            ),
+            areas: course.areas ? course.areas.split('') : [],
+            skills: course.skills ? course.skills.split('') : [],
+            professor_names: profs.map((p: any) => p.professor_name || ''),
           });
         }
       }
     } catch (err: any) {
-      if (err.name !== "AbortError") {
-        console.error(
-          `CourseTable: Failed to fetch season ${season}:`,
-          err.message
-        );
+      if (err.name !== 'AbortError') {
+        console.error(`CourseTable: Failed to fetch season ${season}:`, err.message);
       }
     }
   }

@@ -24,7 +24,9 @@ const Profile = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const tabParam = searchParams.get('tab') as Tab | null;
-  const [activeTab, setActiveTab] = useState<Tab>(tabParam && VALID_TABS.includes(tabParam) ? tabParam : 'bio');
+  const [activeTab, setActiveTab] = useState<Tab>(
+    tabParam && VALID_TABS.includes(tabParam) ? tabParam : 'bio',
+  );
   const [coursesAvailable, setCoursesAvailable] = useState<boolean | null>(null);
   const [showAdminEdit, setShowAdminEdit] = useState(false);
 
@@ -72,9 +74,7 @@ const Profile = () => {
   if (error || !profile) {
     return (
       <div className="max-w-5xl mx-auto px-4 py-16 text-center">
-        <h2 className="text-xl font-semibold text-gray-800">
-          {error || 'Profile not found'}
-        </h2>
+        <h2 className="text-xl font-semibold text-gray-800">{error || 'Profile not found'}</h2>
         <p className="text-gray-500 mt-2">
           The faculty member you're looking for may not have a profile yet.
         </p>
@@ -105,7 +105,8 @@ const Profile = () => {
               Your profile has been auto-populated from Yale directories and academic databases.
             </p>
             <p className="text-xs text-amber-600 mt-0.5">
-              Please review and edit your information, then confirm verification to start posting listings.
+              Please review and edit your information, then confirm verification to start posting
+              listings.
             </p>
           </div>
           <button
@@ -157,15 +158,10 @@ const Profile = () => {
           />
         )}
 
-        {activeTab === 'listings' && netid && (
-          <ProfileListings netid={netid} />
-        )}
+        {activeTab === 'listings' && netid && <ProfileListings netid={netid} />}
 
         {activeTab === 'courses' && netid && (
-          <CourseTableSection
-            netid={netid}
-            onAvailabilityChange={setCoursesAvailable}
-          />
+          <CourseTableSection netid={netid} onAvailabilityChange={setCoursesAvailable} />
         )}
       </div>
 

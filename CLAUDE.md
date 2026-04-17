@@ -297,12 +297,9 @@ User → Yale CAS SSO → passport.ts findOrCreateUser
 | Issue | Location | Status |
 |-------|----------|--------|
 | `account.tsx` is ~65KB | `client/src/pages/account.tsx` | Deferred — splitting into ListingEditor, ProfileEditor, FavoritesManager is planned |
-| `utils/permissions.ts` duplicates `middleware/auth.ts` | `server/src/utils/permissions.ts` | Legacy, should be deleted |
-| `isDevelopment()` checks `"dev"` but `NODE_ENV` is typically `"development"` | `server/src/utils/environment.ts` | Mismatch exists; rate limiters and CORS bypass depend on this |
-| `facultyDepartments.json` is 588KB, bundled with client | `client/src/utils/facultyDepartments.json` | Deferred — should be lazy-loaded or served from API |
 | Non-atomic view/favorite counters | `server/src/services/itemOperations.ts` | Uses read-then-update instead of `$inc`; race condition under load |
 | No server-side tests | `server/` | No test framework configured server-side. Client uses Vitest; reducer modules in `client/src/reducers/` are covered. |
-| No ESLint/Prettier | Entire codebase | No linting enforcement |
+| ESLint/Prettier configured but not in CI | `eslint.config.js`, `.prettierrc` | Flat-config ESLint + Prettier set up at repo root. Currently reports ~15 errors / ~55 warnings across the codebase; not wired to CI until pre-existing violations are triaged. Run `yarn lint`, `yarn lint:fix`, `yarn format`. |
 | Console-only logging | Server | No structured logging (Winston/Pino) |
 
 ## Adding a New Endpoint

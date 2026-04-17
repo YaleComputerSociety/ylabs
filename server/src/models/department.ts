@@ -4,15 +4,15 @@
 import mongoose from 'mongoose';
 
 export enum DepartmentCategory {
-  COMPUTING_AI = "Computing & AI",
-  LIFE_SCIENCES = "Life Sciences",
-  PHYSICAL_SCIENCES = "Physical Sciences & Engineering",
-  HEALTH_MEDICINE = "Health & Medicine",
-  SOCIAL_SCIENCES = "Social Sciences",
-  HUMANITIES_ARTS = "Humanities & Arts",
-  ENVIRONMENTAL = "Environmental Sciences",
-  ECONOMICS = "Economics",
-  MATHEMATICS = "Mathematics"
+  COMPUTING_AI = 'Computing & AI',
+  LIFE_SCIENCES = 'Life Sciences',
+  PHYSICAL_SCIENCES = 'Physical Sciences & Engineering',
+  HEALTH_MEDICINE = 'Health & Medicine',
+  SOCIAL_SCIENCES = 'Social Sciences',
+  HUMANITIES_ARTS = 'Humanities & Arts',
+  ENVIRONMENTAL = 'Environmental Sciences',
+  ECONOMICS = 'Economics',
+  MATHEMATICS = 'Mathematics',
 }
 
 export const categoryColorKeys: Record<DepartmentCategory, number> = {
@@ -24,7 +24,7 @@ export const categoryColorKeys: Record<DepartmentCategory, number> = {
   [DepartmentCategory.HUMANITIES_ARTS]: 5,
   [DepartmentCategory.ENVIRONMENTAL]: 6,
   [DepartmentCategory.ECONOMICS]: 7,
-  [DepartmentCategory.MATHEMATICS]: 8
+  [DepartmentCategory.MATHEMATICS]: 8,
 };
 
 const departmentSchema = new mongoose.Schema(
@@ -33,40 +33,40 @@ const departmentSchema = new mongoose.Schema(
       type: String,
       required: true,
       unique: true,
-      trim: true
+      trim: true,
     },
     name: {
       type: String,
       required: true,
-      trim: true
+      trim: true,
     },
     displayName: {
       type: String,
       required: true,
-      trim: true
+      trim: true,
     },
     categories: {
       type: [String],
       required: true,
-      enum: Object.values(DepartmentCategory)
+      enum: Object.values(DepartmentCategory),
     },
     primaryCategory: {
       type: String,
       required: true,
-      enum: Object.values(DepartmentCategory)
+      enum: Object.values(DepartmentCategory),
     },
     colorKey: {
       type: Number,
-      required: true
+      required: true,
     },
     isActive: {
       type: Boolean,
-      default: true
-    }
+      default: true,
+    },
   },
   {
-    timestamps: true
-  }
+    timestamps: true,
+  },
 );
 
 departmentSchema.index({ abbreviation: 1 });

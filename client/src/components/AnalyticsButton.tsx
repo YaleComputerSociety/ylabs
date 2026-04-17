@@ -1,7 +1,7 @@
 /**
  * Navigation button for the Analytics page with active-state highlighting.
  */
-import Button from "@mui/material/Button";
+import Button from '@mui/material/Button';
 import { Link, useLocation } from 'react-router-dom';
 
 export default function AnalyticsButton() {
@@ -28,8 +28,8 @@ export default function AnalyticsButton() {
         fontSize: '14px',
         '&:hover': {
           backgroundColor: 'transparent',
-          color: '#1876D1'
-        }
+          color: '#1876D1',
+        },
       }}
       disableRipple={true}
     >

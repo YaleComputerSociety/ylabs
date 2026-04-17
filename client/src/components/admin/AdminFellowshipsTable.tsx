@@ -1,13 +1,17 @@
 /**
  * Admin panel table for managing fellowships.
  */
-import { useState, useEffect, useCallback, useReducer } from "react";
-import axios from "../../utils/axios";
-import swal from "sweetalert";
+import { useState, useEffect, useCallback, useReducer } from 'react';
+import axios from '../../utils/axios';
+import swal from 'sweetalert';
 import {
   adminFellowshipsTableReducer,
   createInitialAdminFellowshipsTableState,
-} from "../../reducers/adminFellowshipsTableReducer";
+} from '../../reducers/adminFellowshipsTableReducer';
+import {
+  adminFellowshipFormReducer,
+  createInitialAdminFellowshipFormState,
+} from '../../reducers/adminFellowshipFormReducer';
 
 interface FellowshipLink {
   label: string;
@@ -46,20 +50,14 @@ interface AdminFellowship {
   createdAt: string;
 }
 
-type SortField =
-  | "title"
-  | "deadline"
-  | "views"
-  | "favorites"
-  | "createdAt"
-;
+type SortField = 'title' | 'deadline' | 'views' | 'favorites' | 'createdAt';
 
 const TABLE_COLUMNS: { value: SortField; label: string }[] = [
-  { value: "title", label: "Title" },
-  { value: "deadline", label: "Deadline" },
-  { value: "views", label: "Views" },
-  { value: "favorites", label: "Favs" },
-  { value: "createdAt", label: "Added" },
+  { value: 'title', label: 'Title' },
+  { value: 'deadline', label: 'Deadline' },
+  { value: 'views', label: 'Views' },
+  { value: 'favorites', label: 'Favs' },
+  { value: 'createdAt', label: 'Added' },
 ];
 
 const PAGE_SIZES = [10, 25, 50, 100];
@@ -68,10 +66,10 @@ const AdminFellowshipsTable = () => {
   const [state, dispatch] = useReducer(
     adminFellowshipsTableReducer<AdminFellowship>,
     undefined,
-    () => createInitialAdminFellowshipsTableState<AdminFellowship>()
+    () => createInitialAdminFellowshipsTableState<AdminFellowship>(),
   );
   const {
-    fellowships,
+    items: fellowships,
     total,
     totalPages,
     isLoading,
@@ -80,10 +78,11 @@ const AdminFellowshipsTable = () => {
     sortOrder,
     page,
     pageSize,
-    archivedFilter,
-    auditedFilter,
-    editingFellowship,
+    filters,
+    editing: editingFellowship,
   } = state;
+  const archivedFilter = filters.archived;
+  const auditedFilter = filters.audited;
 
   const fetchFellowships = useCallback(async () => {
     dispatch({ type: 'FETCH_START' });
@@ -98,35 +97,36 @@ const AdminFellowshipsTable = () => {
       if (archivedFilter) params.archived = archivedFilter;
       if (auditedFilter) params.audited = auditedFilter;
 
-      const response = await axios.get("/admin/fellowships", { params, withCredentials: true });
+      const response = await axios.get('/admin/fellowships', { params, withCredentials: true });
       dispatch({
         type: 'FETCH_SUCCESS',
-        payload: {
-          fellowships: response.data.fellowships,
-          total: response.data.total,
-          totalPages: response.data.totalPages,
-        },
+        items: response.data.fellowships,
+        total: response.data.total,
+        totalPages: response.data.totalPages,
       });
     } catch (error) {
-      console.error("Error fetching admin fellowships:", error);
-      swal({ text: "Failed to fetch fellowships", icon: "error" });
+      console.error('Error fetching admin fellowships:', error);
+      swal({ text: 'Failed to fetch fellowships', icon: 'error' });
       dispatch({ type: 'FETCH_FAILURE' });
     }
   }, [search, sortBy, sortOrder, page, pageSize, archivedFilter, auditedFilter]);
 
   useEffect(() => {
-    const debounce = setTimeout(() => {
-      fetchFellowships();
-    }, search ? 400 : 0);
+    const debounce = setTimeout(
+      () => {
+        fetchFellowships();
+      },
+      search ? 400 : 0,
+    );
     return () => clearTimeout(debounce);
   }, [fetchFellowships]);
 
   const handleDelete = async (fellowship: AdminFellowship) => {
     const confirmed = await swal({
-      title: "Delete Fellowship",
+      title: 'Delete Fellowship',
       text: `Are you sure you want to permanently delete "${fellowship.title}"? This cannot be undone.`,
-      icon: "warning",
-      buttons: ["Cancel", "Delete"],
+      icon: 'warning',
+      buttons: ['Cancel', 'Delete'],
       dangerMode: true,
     });
 
@@ -134,23 +134,27 @@ const AdminFellowshipsTable = () => {
 
     try {
       await axios.delete(`/admin/fellowships/${fellowship._id}`, { withCredentials: true });
-      swal({ text: "Fellowship deleted", icon: "success", timer: 1500 });
+      swal({ text: 'Fellowship deleted', icon: 'success', timer: 1500 });
       fetchFellowships();
     } catch (error) {
-      console.error("Error deleting fellowship:", error);
-      swal({ text: "Failed to delete fellowship", icon: "error" });
+      console.error('Error deleting fellowship:', error);
+      swal({ text: 'Failed to delete fellowship', icon: 'error' });
     }
   };
 
   const handleArchive = async (fellowship: AdminFellowship) => {
-    const action = fellowship.archived ? "unarchive" : "archive";
+    const action = fellowship.archived ? 'unarchive' : 'archive';
     try {
-      await axios.put(`/admin/fellowships/${fellowship._id}/${action}`, {}, { withCredentials: true });
-      swal({ text: `Fellowship ${action}d`, icon: "success", timer: 1500 });
+      await axios.put(
+        `/admin/fellowships/${fellowship._id}/${action}`,
+        {},
+        { withCredentials: true },
+      );
+      swal({ text: `Fellowship ${action}d`, icon: 'success', timer: 1500 });
       fetchFellowships();
     } catch (error) {
       console.error(`Error ${action}ing fellowship:`, error);
-      swal({ text: `Failed to ${action} fellowship`, icon: "error" });
+      swal({ text: `Failed to ${action} fellowship`, icon: 'error' });
     }
   };
 
@@ -161,19 +165,19 @@ const AdminFellowshipsTable = () => {
       await axios.put(
         `/admin/fellowships/${editingFellowship._id}`,
         { data: updatedData },
-        { withCredentials: true }
+        { withCredentials: true },
       );
-      swal({ text: "Fellowship updated", icon: "success", timer: 1500 });
+      swal({ text: 'Fellowship updated', icon: 'success', timer: 1500 });
       dispatch({ type: 'CLOSE_EDIT' });
       fetchFellowships();
     } catch (error) {
-      console.error("Error updating fellowship:", error);
-      swal({ text: "Failed to update fellowship", icon: "error" });
+      console.error('Error updating fellowship:', error);
+      swal({ text: 'Failed to update fellowship', icon: 'error' });
     }
   };
 
   const formatDate = (dateStr: string | null) => {
-    if (!dateStr) return "N/A";
+    if (!dateStr) return 'N/A';
     return new Date(dateStr).toLocaleDateString();
   };
 
@@ -194,7 +198,9 @@ const AdminFellowshipsTable = () => {
 
         <select
           value={archivedFilter}
-          onChange={(e) => dispatch({ type: 'SET_ARCHIVED_FILTER', payload: e.target.value })}
+          onChange={(e) =>
+            dispatch({ type: 'SET_FILTER', filter: 'archived', value: e.target.value })
+          }
           className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
           <option value="">All</option>
@@ -204,7 +210,9 @@ const AdminFellowshipsTable = () => {
 
         <select
           value={auditedFilter}
-          onChange={(e) => dispatch({ type: 'SET_AUDITED_FILTER', payload: e.target.value })}
+          onChange={(e) =>
+            dispatch({ type: 'SET_FILTER', filter: 'audited', value: e.target.value })
+          }
           className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
           <option value="">All (Audit)</option>
@@ -225,7 +233,7 @@ const AdminFellowshipsTable = () => {
         </select>
 
         <span className="text-sm text-gray-500">
-          {total} fellowship{total !== 1 ? "s" : ""} total
+          {total} fellowship{total !== 1 ? 's' : ''} total
         </span>
       </div>
 
@@ -241,9 +249,7 @@ const AdminFellowshipsTable = () => {
                 >
                   <div className="flex items-center gap-1">
                     {col.label}
-                    {sortBy === col.value && (
-                      <span>{sortOrder === "asc" ? "↑" : "↓"}</span>
-                    )}
+                    {sortBy === col.value && <span>{sortOrder === 'asc' ? '↑' : '↓'}</span>}
                   </div>
                 </th>
               ))}
@@ -258,13 +264,19 @@ const AdminFellowshipsTable = () => {
           <tbody className="bg-white divide-y divide-gray-200">
             {isLoading ? (
               <tr>
-                <td colSpan={TABLE_COLUMNS.length + 2} className="px-4 py-8 text-center text-gray-500">
+                <td
+                  colSpan={TABLE_COLUMNS.length + 2}
+                  className="px-4 py-8 text-center text-gray-500"
+                >
                   Loading...
                 </td>
               </tr>
             ) : fellowships.length === 0 ? (
               <tr>
-                <td colSpan={TABLE_COLUMNS.length + 2} className="px-4 py-8 text-center text-gray-500">
+                <td
+                  colSpan={TABLE_COLUMNS.length + 2}
+                  className="px-4 py-8 text-center text-gray-500"
+                >
                   No fellowships found
                 </td>
               </tr>
@@ -272,11 +284,14 @@ const AdminFellowshipsTable = () => {
               fellowships.map((fellowship) => (
                 <tr
                   key={fellowship._id}
-                  className={`hover:bg-gray-50 ${fellowship.archived ? "opacity-50" : ""}`}
+                  className={`hover:bg-gray-50 ${fellowship.archived ? 'opacity-50' : ''}`}
                 >
                   <td className="px-4 py-3">
                     <div className="max-w-xs">
-                      <p className="text-sm font-medium text-gray-900 truncate" title={fellowship.title}>
+                      <p
+                        className="text-sm font-medium text-gray-900 truncate"
+                        title={fellowship.title}
+                      >
                         {fellowship.title}
                       </p>
                       {fellowship.archived && (
@@ -294,7 +309,9 @@ const AdminFellowshipsTable = () => {
                   </td>
                   <td className="px-4 py-3 text-center">
                     {fellowship.audited ? (
-                      <span className="text-green-700 bg-green-100 px-1.5 py-0.5 rounded text-xs font-medium">✓</span>
+                      <span className="text-green-700 bg-green-100 px-1.5 py-0.5 rounded text-xs font-medium">
+                        ✓
+                      </span>
                     ) : (
                       <span className="text-gray-400 text-xs">—</span>
                     )}
@@ -302,7 +319,7 @@ const AdminFellowshipsTable = () => {
                   <td className="px-4 py-3 text-sm">
                     <div className="flex gap-2">
                       <button
-                        onClick={() => dispatch({ type: 'OPEN_EDIT', fellowship })}
+                        onClick={() => dispatch({ type: 'OPEN_EDIT', item: fellowship })}
                         className="text-blue-600 hover:text-blue-800"
                       >
                         Edit
@@ -311,7 +328,7 @@ const AdminFellowshipsTable = () => {
                         onClick={() => handleArchive(fellowship)}
                         className="text-yellow-600 hover:text-yellow-800"
                       >
-                        {fellowship.archived ? "Unarchive" : "Archive"}
+                        {fellowship.archived ? 'Unarchive' : 'Archive'}
                       </button>
                       <button
                         onClick={() => handleDelete(fellowship)}
@@ -342,7 +359,9 @@ const AdminFellowshipsTable = () => {
               Previous
             </button>
             <button
-              onClick={() => dispatch({ type: 'SET_PAGE', payload: Math.min(totalPages, page + 1) })}
+              onClick={() =>
+                dispatch({ type: 'SET_PAGE', payload: Math.min(totalPages, page + 1) })
+              }
               disabled={page === totalPages}
               className="px-3 py-1 border rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
             >
@@ -374,13 +393,13 @@ const ArrayFieldEditor = ({
   onChange: (values: string[]) => void;
   placeholder?: string;
 }) => {
-  const [inputValue, setInputValue] = useState("");
+  const [inputValue, setInputValue] = useState('');
 
   const handleAdd = () => {
     const trimmed = inputValue.trim();
     if (trimmed && !values.includes(trimmed)) {
       onChange([...values, trimmed]);
-      setInputValue("");
+      setInputValue('');
     }
   };
 
@@ -414,7 +433,7 @@ const ArrayFieldEditor = ({
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter") {
+            if (e.key === 'Enter') {
               e.preventDefault();
               handleAdd();
             }
@@ -441,15 +460,15 @@ const LinksEditor = ({
   links: FellowshipLink[];
   onChange: (links: FellowshipLink[]) => void;
 }) => {
-  const [newLabel, setNewLabel] = useState("");
-  const [newUrl, setNewUrl] = useState("");
+  const [newLabel, setNewLabel] = useState('');
+  const [newUrl, setNewUrl] = useState('');
 
   const handleAdd = () => {
     const trimmedUrl = newUrl.trim();
     if (!trimmedUrl) return;
     onChange([...links, { label: newLabel.trim() || trimmedUrl, url: trimmedUrl }]);
-    setNewLabel("");
-    setNewUrl("");
+    setNewLabel('');
+    setNewUrl('');
   };
 
   const handleRemove = (index: number) => {
@@ -458,11 +477,16 @@ const LinksEditor = ({
 
   return (
     <div>
-      <label className="block text-sm font-medium text-gray-700 mb-1">Links to Additional Information</label>
+      <label className="block text-sm font-medium text-gray-700 mb-1">
+        Links to Additional Information
+      </label>
       {links.length > 0 && (
         <div className="space-y-1.5 mb-2">
           {links.map((link, i) => (
-            <div key={i} className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded px-2 py-1 text-sm">
+            <div
+              key={i}
+              className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded px-2 py-1 text-sm"
+            >
               <span className="font-medium text-blue-800 truncate">{link.label}</span>
               <span className="text-blue-400 truncate flex-shrink min-w-0">{link.url}</span>
               <button
@@ -489,7 +513,7 @@ const LinksEditor = ({
           value={newUrl}
           onChange={(e) => setNewUrl(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter") {
+            if (e.key === 'Enter') {
               e.preventDefault();
               handleAdd();
             }
@@ -509,14 +533,6 @@ const LinksEditor = ({
   );
 };
 
-const toDatetimeLocal = (dateStr: string | null): string => {
-  if (!dateStr) return "";
-  const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return "";
-  const pad = (n: number) => n.toString().padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-};
-
 const FellowshipEditModal = ({
   fellowship,
   onSave,
@@ -526,35 +542,38 @@ const FellowshipEditModal = ({
   onSave: (data: Partial<AdminFellowship>) => void;
   onClose: () => void;
 }) => {
-  const [title, setTitle] = useState(fellowship.title);
-  const [competitionType, setCompetitionType] = useState(fellowship.competitionType || "");
-  const [summary, setSummary] = useState(fellowship.summary);
-  const [description, setDescription] = useState(fellowship.description);
-  const [applicationInformation, setApplicationInformation] = useState(fellowship.applicationInformation || "");
-  const [eligibility, setEligibility] = useState(fellowship.eligibility);
-  const [restrictionsToUseOfAward, setRestrictionsToUseOfAward] = useState(fellowship.restrictionsToUseOfAward || "");
-  const [additionalInformation, setAdditionalInformation] = useState(fellowship.additionalInformation || "");
-  const [links, setLinks] = useState<FellowshipLink[]>([...(fellowship.links || [])]);
-  const [applicationLink, setApplicationLink] = useState(fellowship.applicationLink);
-  const [awardAmount, setAwardAmount] = useState(fellowship.awardAmount || "");
-  const [contactName, setContactName] = useState(fellowship.contactName || "");
-  const [contactEmail, setContactEmail] = useState(fellowship.contactEmail);
-  const [contactPhone, setContactPhone] = useState(fellowship.contactPhone || "");
-  const [contactOffice, setContactOffice] = useState(fellowship.contactOffice || "");
-  const [isAcceptingApplications, setIsAcceptingApplications] = useState(fellowship.isAcceptingApplications);
-  const [applicationOpenDate, setApplicationOpenDate] = useState(
-    toDatetimeLocal(fellowship.applicationOpenDate)
+  const [formState, formDispatch] = useReducer(
+    adminFellowshipFormReducer,
+    fellowship,
+    createInitialAdminFellowshipFormState,
   );
-  const [deadline, setDeadline] = useState(
-    toDatetimeLocal(fellowship.deadline)
-  );
-  const [yearOfStudy, setYearOfStudy] = useState<string[]>([...fellowship.yearOfStudy]);
-  const [termOfAward, setTermOfAward] = useState<string[]>([...fellowship.termOfAward]);
-  const [purpose, setPurpose] = useState<string[]>([...fellowship.purpose]);
-  const [globalRegions, setGlobalRegions] = useState<string[]>([...fellowship.globalRegions]);
-  const [citizenshipStatus, setCitizenshipStatus] = useState<string[]>([...fellowship.citizenshipStatus]);
-  const [audited, setAudited] = useState(fellowship.audited ?? false);
-  const [archived, setArchived] = useState(fellowship.archived ?? false);
+  const {
+    title,
+    competitionType,
+    summary,
+    description,
+    applicationInformation,
+    eligibility,
+    restrictionsToUseOfAward,
+    additionalInformation,
+    links,
+    applicationLink,
+    awardAmount,
+    contactName,
+    contactEmail,
+    contactPhone,
+    contactOffice,
+    isAcceptingApplications,
+    applicationOpenDate,
+    deadline,
+    yearOfStudy,
+    termOfAward,
+    purpose,
+    globalRegions,
+    citizenshipStatus,
+    audited,
+    archived,
+  } = formState;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -594,54 +613,127 @@ const FellowshipEditModal = ({
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
-            <input value={title} onChange={(e) => setTitle(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+            <input
+              value={title}
+              onChange={(e) => formDispatch({ type: 'SET_TITLE', payload: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+            />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Competition Type</label>
-            <input value={competitionType} onChange={(e) => setCompetitionType(e.target.value)} placeholder="e.g. Application/Funded Research" className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+            <input
+              value={competitionType}
+              onChange={(e) =>
+                formDispatch({ type: 'SET_COMPETITION_TYPE', payload: e.target.value })
+              }
+              placeholder="e.g. Application/Funded Research"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+            />
           </div>
 
           <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
             <p className="text-xs text-gray-500 mb-1">
-              <strong>Tip:</strong> To add a clickable link inside any text field, use the format: <code className="bg-gray-200 px-1 rounded">[link text](https://url)</code>
+              <strong>Tip:</strong> To add a clickable link inside any text field, use the format:{' '}
+              <code className="bg-gray-200 px-1 rounded">[link text](https://url)</code>
             </p>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Brief Description</label>
-            <textarea value={summary} onChange={(e) => setSummary(e.target.value)} rows={3} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Brief Description
+            </label>
+            <textarea
+              value={summary}
+              onChange={(e) => formDispatch({ type: 'SET_SUMMARY', payload: e.target.value })}
+              rows={3}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+            />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Full Description</label>
-            <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={6} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+            <textarea
+              value={description}
+              onChange={(e) => formDispatch({ type: 'SET_DESCRIPTION', payload: e.target.value })}
+              rows={6}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+            />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Application Information</label>
-            <textarea value={applicationInformation} onChange={(e) => setApplicationInformation(e.target.value)} rows={4} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="How to apply, required documents, etc." />
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Application Information
+            </label>
+            <textarea
+              value={applicationInformation}
+              onChange={(e) =>
+                formDispatch({ type: 'SET_APPLICATION_INFORMATION', payload: e.target.value })
+              }
+              rows={4}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              placeholder="How to apply, required documents, etc."
+            />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Special Eligibility Requirements</label>
-            <textarea value={eligibility} onChange={(e) => setEligibility(e.target.value)} rows={3} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Special Eligibility Requirements
+            </label>
+            <textarea
+              value={eligibility}
+              onChange={(e) => formDispatch({ type: 'SET_ELIGIBILITY', payload: e.target.value })}
+              rows={3}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+            />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Restrictions to Use of Award</label>
-            <textarea value={restrictionsToUseOfAward} onChange={(e) => setRestrictionsToUseOfAward(e.target.value)} rows={3} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Any restrictions on how funds can be used..." />
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Restrictions to Use of Award
+            </label>
+            <textarea
+              value={restrictionsToUseOfAward}
+              onChange={(e) => formDispatch({ type: 'SET_RESTRICTIONS', payload: e.target.value })}
+              rows={3}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              placeholder="Any restrictions on how funds can be used..."
+            />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Additional Information</label>
-            <textarea value={additionalInformation} onChange={(e) => setAdditionalInformation(e.target.value)} rows={4} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Any other relevant details..." />
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Additional Information
+            </label>
+            <textarea
+              value={additionalInformation}
+              onChange={(e) =>
+                formDispatch({ type: 'SET_ADDITIONAL_INFORMATION', payload: e.target.value })
+              }
+              rows={4}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              placeholder="Any other relevant details..."
+            />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Application Link</label>
-            <input value={applicationLink} onChange={(e) => setApplicationLink(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+            <input
+              value={applicationLink}
+              onChange={(e) =>
+                formDispatch({ type: 'SET_APPLICATION_LINK', payload: e.target.value })
+              }
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+            />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Award Amount</label>
-            <input value={awardAmount} onChange={(e) => setAwardAmount(e.target.value)} placeholder="e.g. $5,000" className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+            <input
+              value={awardAmount}
+              onChange={(e) => formDispatch({ type: 'SET_AWARD_AMOUNT', payload: e.target.value })}
+              placeholder="e.g. $5,000"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+            />
           </div>
 
           <div className="border-t pt-4 mt-4">
-            <LinksEditor links={links} onChange={setLinks} />
+            <LinksEditor
+              links={links}
+              onChange={(v) => formDispatch({ type: 'SET_LINKS', payload: v })}
+            />
           </div>
 
           <div className="border-t pt-4 mt-4">
@@ -649,19 +741,52 @@ const FellowshipEditModal = ({
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Contact Name</label>
-                <input value={contactName} onChange={(e) => setContactName(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="e.g. John Smith" />
+                <input
+                  value={contactName}
+                  onChange={(e) =>
+                    formDispatch({ type: 'SET_CONTACT_NAME', payload: e.target.value })
+                  }
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  placeholder="e.g. John Smith"
+                />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Contact Email</label>
-                <input value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Contact Email
+                </label>
+                <input
+                  value={contactEmail}
+                  onChange={(e) =>
+                    formDispatch({ type: 'SET_CONTACT_EMAIL', payload: e.target.value })
+                  }
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Contact Phone</label>
-                <input value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="e.g. (203) 432-1234" />
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Contact Phone
+                </label>
+                <input
+                  value={contactPhone}
+                  onChange={(e) =>
+                    formDispatch({ type: 'SET_CONTACT_PHONE', payload: e.target.value })
+                  }
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  placeholder="e.g. (203) 432-1234"
+                />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Contact Office</label>
-                <input value={contactOffice} onChange={(e) => setContactOffice(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="e.g. 55 Whitney Ave, Room 200" />
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Contact Office
+                </label>
+                <input
+                  value={contactOffice}
+                  onChange={(e) =>
+                    formDispatch({ type: 'SET_CONTACT_OFFICE', payload: e.target.value })
+                  }
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  placeholder="e.g. 55 Whitney Ave, Room 200"
+                />
               </div>
             </div>
           </div>
@@ -670,10 +795,17 @@ const FellowshipEditModal = ({
             <h4 className="text-sm font-semibold text-gray-800 mb-3">Status & Dates</h4>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Accepting Applications</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Accepting Applications
+                </label>
                 <select
-                  value={isAcceptingApplications ? "true" : "false"}
-                  onChange={(e) => setIsAcceptingApplications(e.target.value === "true")}
+                  value={isAcceptingApplications ? 'true' : 'false'}
+                  onChange={(e) =>
+                    formDispatch({
+                      type: 'SET_IS_ACCEPTING_APPLICATIONS',
+                      payload: e.target.value === 'true',
+                    })
+                  }
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                 >
                   <option value="true">Yes</option>
@@ -681,20 +813,26 @@ const FellowshipEditModal = ({
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Application Open Date & Time</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Application Open Date & Time
+                </label>
                 <input
                   type="datetime-local"
                   value={applicationOpenDate}
-                  onChange={(e) => setApplicationOpenDate(e.target.value)}
+                  onChange={(e) =>
+                    formDispatch({ type: 'SET_APPLICATION_OPEN_DATE', payload: e.target.value })
+                  }
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Deadline Date & Time</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Deadline Date & Time
+                </label>
                 <input
                   type="datetime-local"
                   value={deadline}
-                  onChange={(e) => setDeadline(e.target.value)}
+                  onChange={(e) => formDispatch({ type: 'SET_DEADLINE', payload: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                 />
               </div>
@@ -708,7 +846,9 @@ const FellowshipEditModal = ({
                 <input
                   type="checkbox"
                   checked={archived}
-                  onChange={(e) => setArchived(e.target.checked)}
+                  onChange={(e) =>
+                    formDispatch({ type: 'SET_ARCHIVED', payload: e.target.checked })
+                  }
                   className="rounded"
                 />
                 Archived
@@ -717,7 +857,7 @@ const FellowshipEditModal = ({
                 <input
                   type="checkbox"
                   checked={audited}
-                  onChange={(e) => setAudited(e.target.checked)}
+                  onChange={(e) => formDispatch({ type: 'SET_AUDITED', payload: e.target.checked })}
                   className="rounded"
                 />
                 Audited
@@ -728,11 +868,36 @@ const FellowshipEditModal = ({
           <div className="border-t pt-4 mt-4">
             <h4 className="text-sm font-semibold text-gray-800 mb-3">Categories & Filters</h4>
             <div className="space-y-4">
-              <ArrayFieldEditor label="Year of Study" values={yearOfStudy} onChange={setYearOfStudy} placeholder="e.g. Freshman, Sophomore..." />
-              <ArrayFieldEditor label="Term of Award" values={termOfAward} onChange={setTermOfAward} placeholder="e.g. Fall, Spring, Summer..." />
-              <ArrayFieldEditor label="Purpose" values={purpose} onChange={setPurpose} placeholder="e.g. Research, Study Abroad..." />
-              <ArrayFieldEditor label="Global Regions" values={globalRegions} onChange={setGlobalRegions} placeholder="e.g. North America, Europe..." />
-              <ArrayFieldEditor label="Citizenship Status" values={citizenshipStatus} onChange={setCitizenshipStatus} placeholder="e.g. US Citizen, International..." />
+              <ArrayFieldEditor
+                label="Year of Study"
+                values={yearOfStudy}
+                onChange={(v) => formDispatch({ type: 'SET_YEAR_OF_STUDY', payload: v })}
+                placeholder="e.g. Freshman, Sophomore..."
+              />
+              <ArrayFieldEditor
+                label="Term of Award"
+                values={termOfAward}
+                onChange={(v) => formDispatch({ type: 'SET_TERM_OF_AWARD', payload: v })}
+                placeholder="e.g. Fall, Spring, Summer..."
+              />
+              <ArrayFieldEditor
+                label="Purpose"
+                values={purpose}
+                onChange={(v) => formDispatch({ type: 'SET_PURPOSE', payload: v })}
+                placeholder="e.g. Research, Study Abroad..."
+              />
+              <ArrayFieldEditor
+                label="Global Regions"
+                values={globalRegions}
+                onChange={(v) => formDispatch({ type: 'SET_GLOBAL_REGIONS', payload: v })}
+                placeholder="e.g. North America, Europe..."
+              />
+              <ArrayFieldEditor
+                label="Citizenship Status"
+                values={citizenshipStatus}
+                onChange={(v) => formDispatch({ type: 'SET_CITIZENSHIP_STATUS', payload: v })}
+                placeholder="e.g. US Citizen, International..."
+              />
             </div>
           </div>
 

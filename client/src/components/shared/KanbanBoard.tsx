@@ -9,10 +9,30 @@ import { BrowsableItem } from '../../types/browsable';
 export type LabStage = 'not_emailed' | 'emailed' | 'responded' | 'interview';
 
 const COLUMNS: { key: LabStage; label: string; color: string; headerBg: string }[] = [
-  { key: 'not_emailed', label: 'Not Emailed', color: 'border-gray-300', headerBg: 'bg-gray-100 text-gray-700' },
-  { key: 'emailed', label: 'Emailed', color: 'border-blue-300', headerBg: 'bg-blue-50 text-blue-700' },
-  { key: 'responded', label: 'Responded', color: 'border-amber-300', headerBg: 'bg-amber-50 text-amber-700' },
-  { key: 'interview', label: 'Interview', color: 'border-green-300', headerBg: 'bg-green-50 text-green-700' },
+  {
+    key: 'not_emailed',
+    label: 'Not Emailed',
+    color: 'border-gray-300',
+    headerBg: 'bg-gray-100 text-gray-700',
+  },
+  {
+    key: 'emailed',
+    label: 'Emailed',
+    color: 'border-blue-300',
+    headerBg: 'bg-blue-50 text-blue-700',
+  },
+  {
+    key: 'responded',
+    label: 'Responded',
+    color: 'border-amber-300',
+    headerBg: 'bg-amber-50 text-amber-700',
+  },
+  {
+    key: 'interview',
+    label: 'Interview',
+    color: 'border-green-300',
+    headerBg: 'bg-green-50 text-green-700',
+  },
 ];
 
 interface KanbanBoardProps {
@@ -36,9 +56,9 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
 
   const getStage = (id: string): LabStage => labStage[id] || 'not_emailed';
 
-  const columnItems = COLUMNS.map(col => ({
+  const columnItems = COLUMNS.map((col) => ({
     ...col,
-    listings: items.filter(item => getStage(item.id) === col.key),
+    listings: items.filter((item) => getStage(item.id) === col.key),
   }));
 
   const handleDragStart = (e: React.DragEvent, listingId: string) => {
@@ -69,19 +89,19 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-      {columnItems.map(col => (
+      {columnItems.map((col) => (
         <div
           key={col.key}
           className={`flex flex-col rounded-lg border-2 transition-colors min-h-[200px] ${
-            dragOverColumn === col.key
-              ? `${col.color} bg-gray-50`
-              : 'border-gray-200 bg-white'
+            dragOverColumn === col.key ? `${col.color} bg-gray-50` : 'border-gray-200 bg-white'
           }`}
           onDragOver={(e) => handleDragOver(e, col.key)}
           onDragLeave={handleDragLeave}
           onDrop={(e) => handleDrop(e, col.key)}
         >
-          <div className={`px-3 py-2 rounded-t-md ${col.headerBg} flex items-center justify-between`}>
+          <div
+            className={`px-3 py-2 rounded-t-md ${col.headerBg} flex items-center justify-between`}
+          >
             <span className="text-sm font-semibold">{col.label}</span>
             <span className="text-xs opacity-70">{col.listings.length}</span>
           </div>
@@ -92,7 +112,7 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
                 Drag listings here
               </div>
             ) : (
-              col.listings.map(listing => (
+              col.listings.map((listing) => (
                 <div
                   key={listing.id}
                   draggable

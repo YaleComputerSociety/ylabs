@@ -15,11 +15,7 @@ const LoadingSpinner = ({ size = 'md', inline = false }: LoadingSpinnerProps) =>
 
   if (inline) return loader;
 
-  return (
-    <div className="flex justify-center items-center py-4">
-      {loader}
-    </div>
-  );
+  return <div className="flex justify-center items-center py-4">{loader}</div>;
 };
 
 export default LoadingSpinner;

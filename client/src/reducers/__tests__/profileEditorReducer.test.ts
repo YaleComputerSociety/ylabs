@@ -1,10 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { FacultyProfile } from '../../types/types';
-import {
-  createInitialProfileEditorState,
-  profileEditorReducer,
-} from '../profileEditorReducer';
+import { createInitialProfileEditorState, profileEditorReducer } from '../profileEditorReducer';
 
 const makeProfile = (overrides: Partial<FacultyProfile> = {}): FacultyProfile =>
   ({
@@ -23,7 +20,7 @@ const makeProfile = (overrides: Partial<FacultyProfile> = {}): FacultyProfile =>
     image_url: 'https://example.com/avatar.png',
     profileVerified: true,
     ...overrides,
-  } as unknown as FacultyProfile);
+  }) as unknown as FacultyProfile;
 
 describe('profileEditorReducer', () => {
   it('initial state is loading with nothing populated', () => {

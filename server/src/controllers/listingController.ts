@@ -1,8 +1,7 @@
 /**
  * Controller handlers for listing CRUD routes.
  */
-import { Request, Response, NextFunction } from "express";
-import mongoose from 'mongoose';
+import { Request, Response, NextFunction } from 'express';
 import {
   archiveListing,
   createListing,
@@ -11,10 +10,9 @@ import {
   unarchiveListing,
   updateListing,
   getSkeletonListing,
-  addView
+  addView,
 } from '../services/listingService';
 import { readUser } from '../services/userService';
-import { getListingModel } from "../db/connections";
 import { getMeiliIndex } from '../utils/meiliClient';
 import { getConfig } from '../services/configService';
 
@@ -50,16 +48,19 @@ const buildRobustFilterMatch = async (params: {
     academicDisciplines,
     academicDisciplinesMode,
     researchAreas,
-    researchAreasMode
+    researchAreasMode,
   } = params;
 
   const filters: string[] = ['archived = false', 'confirmed = true'];
 
-  const departmentList = departments ? departments.split('||').filter(d => d.trim()) : [];
-  const disciplineList = academicDisciplines ? academicDisciplines.split('||').filter(d => d.trim()) : [];
-  const researchAreaList = researchAreas ? researchAreas.split(',').filter(r => r.trim()) : [];
+  const departmentList = departments ? departments.split('||').filter((d) => d.trim()) : [];
+  const disciplineList = academicDisciplines
+    ? academicDisciplines.split('||').filter((d) => d.trim())
+    : [];
+  const researchAreaList = researchAreas ? researchAreas.split(',').filter((r) => r.trim()) : [];
 
-  const hasFilters = departmentList.length > 0 || disciplineList.length > 0 || researchAreaList.length > 0;
+  const hasFilters =
+    departmentList.length > 0 || disciplineList.length > 0 || researchAreaList.length > 0;
   if (!hasFilters) {
     return filters.join(' AND ');
   }
@@ -73,10 +74,14 @@ const buildRobustFilterMatch = async (params: {
 
   if (departmentList.length > 0) {
     if (departmentsMode === 'intersection') {
-      const condition = departmentList.map(d => `departments = "${escapeMeiliFilterValue(d)}"`).join(' AND ');
+      const condition = departmentList
+        .map((d) => `departments = "${escapeMeiliFilterValue(d)}"`)
+        .join(' AND ');
       filterConditions.push(`(${condition})`);
     } else {
-      const condition = departmentList.map(d => `departments = "${escapeMeiliFilterValue(d)}"`).join(' OR ');
+      const condition = departmentList
+        .map((d) => `departments = "${escapeMeiliFilterValue(d)}"`)
+        .join(' OR ');
       filterConditions.push(`(${condition})`);
     }
   }
@@ -87,16 +92,19 @@ const buildRobustFilterMatch = async (params: {
 
     for (const discipline of disciplineList) {
       departmentsByDiscipline[discipline] = config.departments.list
-        .filter((dept: any) => dept.categories.includes(discipline) || dept.primaryCategory === discipline)
+        .filter(
+          (dept: any) =>
+            dept.categories.includes(discipline) || dept.primaryCategory === discipline,
+        )
         .map((dept: any) => dept.displayName);
     }
 
     if (academicDisciplinesMode === 'intersection') {
       const disciplineConditions = disciplineList
-        .map(discipline => {
+        .map((discipline) => {
           const depts = departmentsByDiscipline[discipline] || [];
           if (depts.length === 0) return null;
-          return `(${depts.map(d => `departments = "${escapeMeiliFilterValue(d)}"`).join(' OR ')})`;
+          return `(${depts.map((d) => `departments = "${escapeMeiliFilterValue(d)}"`).join(' OR ')})`;
         })
         .filter(Boolean);
 
@@ -104,11 +112,15 @@ const buildRobustFilterMatch = async (params: {
         filterConditions.push(`(${disciplineConditions.join(' AND ')})`);
       }
     } else {
-      const allDisciplineDepts = [...new Set(
-        disciplineList.flatMap(discipline => departmentsByDiscipline[discipline] || [])
-      )];
+      const allDisciplineDepts = [
+        ...new Set(
+          disciplineList.flatMap((discipline) => departmentsByDiscipline[discipline] || []),
+        ),
+      ];
       if (allDisciplineDepts.length > 0) {
-        const condition = allDisciplineDepts.map(d => `departments = "${escapeMeiliFilterValue(d)}"`).join(' OR ');
+        const condition = allDisciplineDepts
+          .map((d) => `departments = "${escapeMeiliFilterValue(d)}"`)
+          .join(' OR ');
         filterConditions.push(`(${condition})`);
       }
     }
@@ -116,10 +128,14 @@ const buildRobustFilterMatch = async (params: {
 
   if (researchAreaList.length > 0) {
     if (researchAreasMode === 'intersection') {
-      const condition = researchAreaList.map(r => `researchAreas = "${escapeMeiliFilterValue(r)}"`).join(' AND ');
+      const condition = researchAreaList
+        .map((r) => `researchAreas = "${escapeMeiliFilterValue(r)}"`)
+        .join(' AND ');
       filterConditions.push(`(${condition})`);
     } else {
-      const condition = researchAreaList.map(r => `researchAreas = "${escapeMeiliFilterValue(r)}"`).join(' OR ');
+      const condition = researchAreaList
+        .map((r) => `researchAreas = "${escapeMeiliFilterValue(r)}"`)
+        .join(' OR ');
       filterConditions.push(`(${condition})`);
     }
   }
@@ -145,7 +161,7 @@ export const searchListings = async (request: Request, response: Response) => {
       academicDisciplinesMode = 'union',
       researchAreasMode = 'union',
       page = 1,
-      pageSize = 10
+      pageSize = 10,
     } = request.query;
 
     const filterString = await buildRobustFilterMatch({
@@ -154,7 +170,7 @@ export const searchListings = async (request: Request, response: Response) => {
       academicDisciplines: academicDisciplines as string,
       academicDisciplinesMode: academicDisciplinesMode as string,
       researchAreas: researchAreas as string,
-      researchAreasMode: researchAreasMode as string
+      researchAreasMode: researchAreasMode as string,
     });
 
     const limit = Number(pageSize);
@@ -162,49 +178,57 @@ export const searchListings = async (request: Request, response: Response) => {
 
     const sortConfig = [];
     if (sortBy) {
-        const order = sortOrder === "1" ? "asc" : "desc";
-        sortConfig.push(`${sortBy}:${order}`);
+      const order = sortOrder === '1' ? 'asc' : 'desc';
+      sortConfig.push(`${sortBy}:${order}`);
     } else if (!query || (query as string).trim() === '') {
-        // Just recent if no query
-        sortConfig.push(`createdAt:desc`);
+      // Just recent if no query
+      sortConfig.push(`createdAt:desc`);
     }
 
     const searchParams: any = {
-        filter: filterString,
-        limit,
-        offset,
+      filter: filterString,
+      limit,
+      offset,
     };
-    
+
     if (sortConfig.length > 0) {
-        searchParams.sort = sortConfig;
+      searchParams.sort = sortConfig;
     }
 
     // Use hybrid search if we have a query
     if (query && (query as string).trim() !== '') {
-        searchParams.hybrid = {
-            semanticRatio: 0.8,
-            embedder: 'default'
-        };
+      searchParams.hybrid = {
+        semanticRatio: 0.8,
+        embedder: 'default',
+      };
     }
 
     const index = await getMeiliIndex('listings');
-    const { hits, estimatedTotalHits } = await index.search(query as string || "", searchParams);
+    const { hits, estimatedTotalHits } = await index.search((query as string) || '', searchParams);
 
     // Map `id` back to `_id` for frontend backward compatibility
     const results = hits.map((hit: any) => ({ ...hit, _id: hit.id }));
 
-    return response.json({ results, totalCount: estimatedTotalHits, page: Number(page), pageSize: Number(pageSize) });
-
+    return response.json({
+      results,
+      totalCount: estimatedTotalHits,
+      page: Number(page),
+      pageSize: Number(pageSize),
+    });
   } catch (error) {
-    console.error("Meilisearch search failed:", error);
-    return response.status(500).json({ error: "Search failed" });
+    console.error('Meilisearch search failed:', error);
+    return response.status(500).json({ error: 'Search failed' });
   }
 };
 
 export const createListingForCurrentUser = async (request: Request, response: Response) => {
   try {
-    const currentUser = request.user as { netId?: string, userType: string, userConfirmed: boolean };
-    
+    const currentUser = request.user as {
+      netId?: string;
+      userType: string;
+      userConfirmed: boolean;
+    };
+
     const user = await readUser(currentUser.netId);
     const listing = await createListing(request.body.data, user);
     response.status(201).json({ listing });
@@ -216,7 +240,11 @@ export const createListingForCurrentUser = async (request: Request, response: Re
 
 export const getSkeletonListingForCurrentUser = async (request: Request, response: Response) => {
   try {
-    const currentUser = request.user as { netId?: string, userType: string, userConfirmed: boolean };
+    const currentUser = request.user as {
+      netId?: string;
+      userType: string;
+      userConfirmed: boolean;
+    };
 
     const listing = await getSkeletonListing(currentUser.netId!);
     response.status(201).json({ listing });
@@ -227,12 +255,8 @@ export const getSkeletonListingForCurrentUser = async (request: Request, respons
 };
 
 export const getListingById = async (request: Request, response: Response) => {
-  try {
-    const listing = await readListing(request.params.id);
-    response.status(200).json({ listing });
-  } catch (error) {
-    throw error;
-  }
+  const listing = await readListing(request.params.id);
+  response.status(200).json({ listing });
 };
 
 const LISTING_SELF_UPDATABLE_FIELDS = [
@@ -261,9 +285,17 @@ const filterListingUpdate = (data: any): Record<string, any> => {
   return update;
 };
 
-export const updateListingForCurrentUser = async (request: Request, response: Response, next: NextFunction) => {
+export const updateListingForCurrentUser = async (
+  request: Request,
+  response: Response,
+  next: NextFunction,
+) => {
   try {
-    const currentUser = request.user as { netId?: string, userType: string, userConfirmed: boolean };
+    const currentUser = request.user as {
+      netId?: string;
+      userType: string;
+      userConfirmed: boolean;
+    };
 
     const safeData = filterListingUpdate(request.body?.data);
     const listing = await updateListing(request.params.id, currentUser.netId!, safeData);
@@ -274,52 +306,38 @@ export const updateListingForCurrentUser = async (request: Request, response: Re
 };
 
 export const archiveListingForCurrentUser = async (request: Request, response: Response) => {
-  try {
-    const currentUser = request.user as { netId?: string, userType: string, userConfirmed: boolean };
-    
-    const listing = await archiveListing(request.params.id, currentUser.netId!);
-    response.status(200).json({ listing });
-  } catch (error) {
-    throw error;
-  }
+  const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
+
+  const listing = await archiveListing(request.params.id, currentUser.netId!);
+  response.status(200).json({ listing });
 };
 
 export const unarchiveListingForCurrentUser = async (request: Request, response: Response) => {
-  try {
-    const currentUser = request.user as { netId?: string, userType: string, userConfirmed: boolean };
-    
-    const listing = await unarchiveListing(request.params.id, currentUser.netId!);
-    response.status(200).json({ listing });
-  } catch (error) {
-    throw error;
-  }
+  const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
+
+  const listing = await unarchiveListing(request.params.id, currentUser.netId!);
+  response.status(200).json({ listing });
 };
 
 export const addViewToListing = async (request: Request, response: Response) => {
-  try {
-    const currentUser = request.user as { netId?: string, userType: string, userConfirmed: boolean };
+  const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
 
-    const listing = await addView(request.params.id, currentUser.netId!);
-    response.status(200).json({ listing });
-  } catch (error) {
-    throw error;
-  }
+  const listing = await addView(request.params.id, currentUser.netId!);
+  response.status(200).json({ listing });
 };
 
 export const deleteListingForCurrentUser = async (request: Request, response: Response) => {
-  try {
-    const currentUser = request.user as { netId?: string, userType: string, userConfirmed: boolean };
-    
-    const currentListing = await readListing(request.params.id);
-    if (currentUser.netId !== currentListing.ownerId) {
-      const error: any = new Error(`User with id ${currentUser.netId} does not have permission to delete listing with id ${request.params.id}`);
-      error.status = 403;
-      throw error;
-    }
+  const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
 
-    const deletedListing = await deleteListing(request.params.id);
-    response.status(200).json({ deletedListing });
-  } catch (error) {
+  const currentListing = await readListing(request.params.id);
+  if (currentUser.netId !== currentListing.ownerId) {
+    const error: any = new Error(
+      `User with id ${currentUser.netId} does not have permission to delete listing with id ${request.params.id}`,
+    );
+    error.status = 403;
     throw error;
   }
+
+  const deletedListing = await deleteListing(request.params.id);
+  response.status(200).json({ deletedListing });
 };

@@ -13,164 +13,164 @@ const publicationSchema = new mongoose.Schema(
     open_access_url: { type: String },
     source: { type: String },
   },
-  { _id: false }
+  { _id: false },
 );
 
 const userSchema = new mongoose.Schema(
   {
     netid: {
-        type: String,
-        required: true,
-        unique: true
+      type: String,
+      required: true,
+      unique: true,
     },
     email: {
-        type: String,
-        required: true,
+      type: String,
+      required: true,
     },
     userType: {
-        type: String,
-        enum: ['undergraduate', 'graduate', 'professor', 'faculty', 'unknown', 'admin'],
-        default: 'unknown',
+      type: String,
+      enum: ['undergraduate', 'graduate', 'professor', 'faculty', 'unknown', 'admin'],
+      default: 'unknown',
     },
     userConfirmed: {
-        type: Boolean,
-        default: false,
+      type: Boolean,
+      default: false,
     },
     fname: {
-        type: String,
-        required: true,
+      type: String,
+      required: true,
     },
     lname: {
-        type: String,
-        required: true,
+      type: String,
+      required: true,
     },
     website: {
-        type: String,
+      type: String,
     },
     bio: {
-        type: String,
+      type: String,
     },
     departments: {
-        type: [String],
-        default: [],
+      type: [String],
+      default: [],
     },
     college: {
-        type: String,
-        required: false,
+      type: String,
+      required: false,
     },
     year: {
-        type: String,
-        required: false,
+      type: String,
+      required: false,
     },
     major: {
-        type: [String],
-        default: [],
+      type: [String],
+      default: [],
     },
     phone: {
-        type: String,
-        required: false,
+      type: String,
+      required: false,
     },
     title: {
-        type: String,
-        required: false,
+      type: String,
+      required: false,
     },
     unit: {
-        type: String,
-        required: false,
+      type: String,
+      required: false,
     },
     upi: {
-        type: String,
-        required: false,
+      type: String,
+      required: false,
     },
     physical_location: {
-        type: String,
-        required: false,
+      type: String,
+      required: false,
     },
     building_desk: {
-        type: String,
-        required: false,
+      type: String,
+      required: false,
     },
     mailing_address: {
-        type: String,
-        required: false,
+      type: String,
+      required: false,
     },
     primary_department: {
-        type: String,
-        required: false,
+      type: String,
+      required: false,
     },
     ownListings: {
-        type: [mongoose.Schema.ObjectId],
-        default: [],
+      type: [mongoose.Schema.ObjectId],
+      default: [],
     },
     favListings: {
-        type: [mongoose.Schema.ObjectId],
-        default: [],
+      type: [mongoose.Schema.ObjectId],
+      default: [],
     },
     favFellowships: {
-        type: [mongoose.Schema.ObjectId],
-        default: [],
+      type: [mongoose.Schema.ObjectId],
+      default: [],
     },
     publications: {
-        type: [publicationSchema],
-        default: [],
-        select: false,
+      type: [publicationSchema],
+      default: [],
+      select: false,
     },
     h_index: {
-        type: Number,
-        required: false,
+      type: Number,
+      required: false,
     },
     orcid: {
-        type: String,
-        required: false,
+      type: String,
+      required: false,
     },
     openalex_id: {
-        type: String,
-        required: false,
+      type: String,
+      required: false,
     },
     image_url: {
-        type: String,
-        required: false,
+      type: String,
+      required: false,
     },
     secondary_departments: {
-        type: [String],
-        default: [],
+      type: [String],
+      default: [],
     },
     research_interests: {
-        type: [String],
-        default: [],
+      type: [String],
+      default: [],
     },
     topics: {
-        type: [String],
-        default: [],
+      type: [String],
+      default: [],
     },
     profile_urls: {
-        type: mongoose.Schema.Types.Mixed,
-        default: {},
+      type: mongoose.Schema.Types.Mixed,
+      default: {},
     },
     profileVerified: {
-        type: Boolean,
-        default: false,
+      type: Boolean,
+      default: false,
     },
     data_sources: {
-        type: [String],
-        default: [],
+      type: [String],
+      default: [],
     },
     lastLogin: {
-        type: Date,
-        index: true
+      type: Date,
+      index: true,
     },
     loginCount: {
-        type: Number,
-        default: 0
+      type: Number,
+      default: 0,
     },
     lastActive: {
-        type: Date,
-        index: true
-    }
+      type: Date,
+      index: true,
+    },
   },
   {
     timestamps: true,
-  }
+  },
 );
 
 userSchema.index({ userType: 1, profileVerified: 1 });

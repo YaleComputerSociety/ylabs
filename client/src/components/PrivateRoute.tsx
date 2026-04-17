@@ -11,7 +11,7 @@ interface PrivateRouteProps {
   knownBlocked?: boolean;
 }
 
-const PrivateRoute = ({ Component, unknownBlocked, knownBlocked } : PrivateRouteProps) => {
+const PrivateRoute = ({ Component, unknownBlocked, knownBlocked }: PrivateRouteProps) => {
   const { user, isLoading, isAuthenticated } = useContext(UserContext);
 
   if (isLoading) {
@@ -19,15 +19,15 @@ const PrivateRoute = ({ Component, unknownBlocked, knownBlocked } : PrivateRoute
   }
 
   if (!isAuthenticated) {
-    return <Navigate to='/login' />;
+    return <Navigate to="/login" />;
   }
 
   if (user) {
-    if (unknownBlocked && user.userType === "unknown") {
-      return <Navigate to='/unknown' />;
+    if (unknownBlocked && user.userType === 'unknown') {
+      return <Navigate to="/unknown" />;
     }
-    if (knownBlocked && user.userType !== "unknown") {
-      return <Navigate to='/' />;
+    if (knownBlocked && user.userType !== 'unknown') {
+      return <Navigate to="/" />;
     }
   }
 

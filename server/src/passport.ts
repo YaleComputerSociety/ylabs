@@ -1,14 +1,14 @@
 /**
  * Passport.js configuration for Yale CAS authentication.
  */
-import express from "express";
-import passport from "passport";
-import { Strategy } from "passport-cas";
+import express from 'express';
+import passport from 'passport';
+import { Strategy } from 'passport-cas';
 import { validateUser, createUser, updateUser } from './services/userService';
-import { fetchYalie } from "./services/yaliesService";
-import { fetchFromDirectory, isFacultyTitle } from "./services/directoryService";
-import { logEvent } from "./services/analyticsService";
-import { AnalyticsEventType } from "./models/index";
+import { fetchYalie } from './services/yaliesService';
+import { fetchFromDirectory, isFacultyTitle } from './services/directoryService';
+import { logEvent } from './services/analyticsService';
+import { AnalyticsEventType } from './models/index';
 
 const STALE_THRESHOLD_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -35,7 +35,9 @@ function safeRedirectTarget(raw: unknown): string | null {
 /**
  * Build an update object from directory data (only non-empty fields).
  */
-function buildDirectoryUpdate(dirPerson: NonNullable<Awaited<ReturnType<typeof fetchFromDirectory>>>) {
+function buildDirectoryUpdate(
+  dirPerson: NonNullable<Awaited<ReturnType<typeof fetchFromDirectory>>>,
+) {
   const update: Record<string, any> = {};
   if (dirPerson.firstName) update.fname = dirPerson.firstName;
   if (dirPerson.lastName) update.lname = dirPerson.lastName;
@@ -65,7 +67,9 @@ async function findOrCreateUser(netid: string) {
     const isStale = Date.now() - updatedAt > STALE_THRESHOLD_MS;
 
     if (isStale) {
-      console.log(`findOrCreateUser: refreshing stale data for ${netid} (last updated: ${user.updatedAt || 'never'})`);
+      console.log(
+        `findOrCreateUser: refreshing stale data for ${netid} (last updated: ${user.updatedAt || 'never'})`,
+      );
       try {
         const dirPerson = await fetchFromDirectory(netid, 'netid');
         if (dirPerson && dirPerson.name) {
@@ -77,7 +81,7 @@ async function findOrCreateUser(netid: string) {
           user = await updateUser(netid, dirUpdate);
           console.log(`findOrCreateUser: refreshed directory data for ${netid}`);
         }
-      } catch (err) {
+      } catch {
         console.log(`findOrCreateUser: directory refresh failed for ${netid}, using cached data`);
       }
     } else {
@@ -117,9 +121,9 @@ async function findOrCreateUser(netid: string) {
   console.log(`findOrCreateUser: Directory also failed, creating default user for ${netid}`);
   user = await createUser({
     netid,
-    fname: "NA",
-    lname: "NA",
-    email: "NA",
+    fname: 'NA',
+    lname: 'NA',
+    email: 'NA',
   });
   return user;
 }
@@ -127,7 +131,7 @@ async function findOrCreateUser(netid: string) {
 passport.use(
   new Strategy(
     {
-      version: "CAS1.0",
+      version: 'CAS1.0',
       ssoBaseURL: process.env.SSOBASEURL ?? '',
       serverBaseURL: process.env.SERVER_BASE_URL ?? '',
     },
@@ -144,8 +148,8 @@ passport.use(
         console.log('Error in CAS login');
         done(error);
       }
-    }
-  )
+    },
+  ),
 );
 
 passport.serializeUser(function (user: any, done) {
@@ -153,7 +157,7 @@ passport.serializeUser(function (user: any, done) {
   done(null, user.netId);
 });
 
-passport.deserializeUser(async (netId: String, done) => {
+passport.deserializeUser(async (netId: string, done) => {
   try {
     console.log('Deserializing user');
     const user = await findOrCreateUser(netId as string);
@@ -172,38 +176,38 @@ passport.deserializeUser(async (netId: String, done) => {
 const casLogin = function (
   req: express.Request,
   res: express.Response,
-  next: express.NextFunction
+  next: express.NextFunction,
 ) {
-  passport.authenticate("cas", function (err, user, info) {
+  passport.authenticate('cas', function (err, user, info) {
     if (err) {
-      console.log("Error in authenticate function")
+      console.log('Error in authenticate function');
       try {
-        console.error("Authentication error details: ", {
+        console.error('Authentication error details: ', {
           message: err.messsage,
           stack: err.stack,
           name: err.name,
-          fullError: JSON.stringify(err, Object.getOwnPropertyNames(err))
+          fullError: JSON.stringify(err, Object.getOwnPropertyNames(err)),
         });
       } catch (e) {
-        console.error("Error serializing error object: ", e);
+        console.error('Error serializing error object: ', e);
       }
-      
+
       const errorRedirect = safeRedirectTarget(req.query?.error);
       if (errorRedirect) {
         return res.redirect(errorRedirect);
       }
 
-      return res.status(401).json({ error: "Error in authentication" });
+      return res.status(401).json({ error: 'Error in authentication' });
     }
 
     if (!user) {
-      console.log("CAS auth but no user");
-      return res.status(401).json({ error: info.message || "CAS auth but no user" });
+      console.log('CAS auth but no user');
+      return res.status(401).json({ error: info.message || 'CAS auth but no user' });
     }
 
     req.logIn(user, async function (err) {
       if (err) {
-        console.error("CAS login failed for netid:", user?.netId);
+        console.error('CAS login failed for netid:', user?.netId);
         return next(err);
       }
 
@@ -214,12 +218,12 @@ const casLogin = function (
           userType: user.userType || 'unknown',
           metadata: {
             timestamp: new Date(),
-            loginMethod: 'CAS'
-          }
+            loginMethod: 'CAS',
+          },
         });
         console.log('Login event logged to analytics');
       } catch (analyticsError) {
-        console.error("Error logging analytics event:", analyticsError);
+        console.error('Error logging analytics event:', analyticsError);
       }
 
       const safeTarget = safeRedirectTarget(req.query?.redirect);
@@ -227,9 +231,8 @@ const casLogin = function (
         return res.redirect(safeTarget);
       }
 
-      const defaultRedirect = process.env.NODE_ENV === 'development'
-        ? 'http://localhost:3000'
-        : '/';
+      const defaultRedirect =
+        process.env.NODE_ENV === 'development' ? 'http://localhost:3000' : '/';
       return res.redirect(defaultRedirect);
     });
   })(req, res, next);
@@ -247,19 +250,19 @@ router.use(async (req, res, next) => {
         userType: user.userType || 'unknown',
         metadata: {
           timestamp: new Date(),
-          loginMethod: 'cookie'
-        }
+          loginMethod: 'cookie',
+        },
       });
       console.log('🍪 Visitor event logged to analytics (cookie login)');
       req.session!.visitorLogged = true;
     } catch (analyticsError) {
-      console.error("Error logging visitor analytics event:", analyticsError);
+      console.error('Error logging visitor analytics event:', analyticsError);
     }
   }
   next();
 });
 
-router.get("/check", (req, res) => {
+router.get('/check', (req, res) => {
   if (req.user) {
     res.json({ auth: true, user: req.user });
   } else {
@@ -267,11 +270,11 @@ router.get("/check", (req, res) => {
   }
 });
 
-router.get("/cas", casLogin);
+router.get('/cas', casLogin);
 
-router.get("/logout", async (req, res) => {
-  console.log("Logging out user");
-  
+router.get('/logout', async (req, res) => {
+  console.log('Logging out user');
+
   if (req.user) {
     const user = req.user as any;
     try {
@@ -280,46 +283,45 @@ router.get("/logout", async (req, res) => {
         netid: user.netId,
         userType: user.userType || 'unknown',
         metadata: {
-          timestamp: new Date()
-        }
+          timestamp: new Date(),
+        },
       });
       console.log('Logout event logged to analytics');
     } catch (analyticsError) {
-      console.error("Error logging analytics event:", analyticsError);
+      console.error('Error logging analytics event:', analyticsError);
     }
   }
-  
+
   req.logOut();
-  
+
   const casLogoutUrl = `${process.env.SSOBASEURL}/logout`;
 
   let serviceUrl;
 
   if (process.env.NODE_ENV === 'development') {
-    serviceUrl = "http://localhost:3000/login";
+    serviceUrl = 'http://localhost:3000/login';
   } else {
     serviceUrl = `${process.env.SERVER_BASE_URL}/login`;
   }
 
   const fullLogoutUrl = `${casLogoutUrl}?service=${encodeURIComponent(serviceUrl)}`;
   return res.redirect(fullLogoutUrl);
-  
 });
 
 if (process.env.NODE_ENV === 'development') {
-  router.get("/dev-login", async (req, res) => {
+  router.get('/dev-login', async (req, res) => {
     const testUser = {
-      netId: "test123",
-      userType: "student",
+      netId: 'test123',
+      userType: 'student',
       userConfirmed: true,
     };
-    
+
     try {
       console.log('Dev login with hardcoded user:', testUser);
-      
+
       req.logIn(testUser, async (err) => {
         if (err) {
-          console.error("Dev login error:", err);
+          console.error('Dev login error:', err);
           return res.status(500).json({ error: err.message });
         }
 
@@ -330,20 +332,20 @@ if (process.env.NODE_ENV === 'development') {
             userType: testUser.userType || 'unknown',
             metadata: {
               timestamp: new Date(),
-              loginMethod: 'dev-login'
-            }
+              loginMethod: 'dev-login',
+            },
           });
           console.log('Dev login event logged to analytics');
         } catch (analyticsError) {
-          console.error("Error logging dev login analytics event:", analyticsError);
+          console.error('Error logging dev login analytics event:', analyticsError);
         }
 
-        const redirectUrl = safeRedirectTarget(req.query?.redirect) ?? "http://localhost:3000";
+        const redirectUrl = safeRedirectTarget(req.query?.redirect) ?? 'http://localhost:3000';
         res.redirect(redirectUrl);
       });
-    } catch (error) {    
-      console.error("Dev login error:", error);
-      res.status(500).json({ error: "Dev login failed" });
+    } catch (error) {
+      console.error('Dev login error:', error);
+      res.status(500).json({ error: 'Dev login failed' });
     }
   });
 }

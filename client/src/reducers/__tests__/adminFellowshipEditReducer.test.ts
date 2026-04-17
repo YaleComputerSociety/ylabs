@@ -53,7 +53,7 @@ describe('adminFellowshipEditReducer', () => {
 
     it('serializes deadline ISO to datetime-local format when present', () => {
       const state = createInitialAdminFellowshipEditState(
-        makeFellowship({ deadline: '2026-04-01T12:00:00.000Z' })
+        makeFellowship({ deadline: '2026-04-01T12:00:00.000Z' }),
       );
       // "YYYY-MM-DDTHH:mm"
       expect(state.deadline).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
@@ -61,7 +61,7 @@ describe('adminFellowshipEditReducer', () => {
 
     it('leaves date strings empty when source fields are null', () => {
       const state = createInitialAdminFellowshipEditState(
-        makeFellowship({ deadline: null, applicationOpenDate: null })
+        makeFellowship({ deadline: null, applicationOpenDate: null }),
       );
       expect(state.deadline).toBe('');
       expect(state.applicationOpenDate).toBe('');
@@ -87,7 +87,7 @@ describe('adminFellowshipEditReducer', () => {
 
     it('SET_IS_ACCEPTING_APPLICATIONS toggles the flag', () => {
       const state = createInitialAdminFellowshipEditState(
-        makeFellowship({ isAcceptingApplications: true })
+        makeFellowship({ isAcceptingApplications: true }),
       );
       const next = adminFellowshipEditReducer(state, {
         type: 'SET_IS_ACCEPTING_APPLICATIONS',
@@ -114,9 +114,7 @@ describe('adminFellowshipEditReducer', () => {
 
   describe('array setters', () => {
     it('SET_PURPOSE replaces the array', () => {
-      const state = createInitialAdminFellowshipEditState(
-        makeFellowship({ purpose: ['Old'] })
-      );
+      const state = createInitialAdminFellowshipEditState(makeFellowship({ purpose: ['Old'] }));
       const next = adminFellowshipEditReducer(state, {
         type: 'SET_PURPOSE',
         payload: ['Research', 'Study Abroad'],
@@ -126,7 +124,7 @@ describe('adminFellowshipEditReducer', () => {
 
     it('SET_CITIZENSHIP_STATUS accepts empty array to clear', () => {
       const state = createInitialAdminFellowshipEditState(
-        makeFellowship({ citizenshipStatus: ['US Citizen'] })
+        makeFellowship({ citizenshipStatus: ['US Citizen'] }),
       );
       const next = adminFellowshipEditReducer(state, {
         type: 'SET_CITIZENSHIP_STATUS',

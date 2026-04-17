@@ -11,11 +11,7 @@ interface UIContextProviderProps {
 const UIContextProvider: FC<UIContextProviderProps> = ({ children }) => {
   const [viewMode, setViewMode] = useState<ViewMode>('card');
 
-  return (
-    <UIContext.Provider value={{ viewMode, setViewMode }}>
-      {children}
-    </UIContext.Provider>
-  );
+  return <UIContext.Provider value={{ viewMode, setViewMode }}>{children}</UIContext.Provider>;
 };
 
 export default UIContextProvider;

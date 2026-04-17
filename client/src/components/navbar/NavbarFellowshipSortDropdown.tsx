@@ -5,7 +5,8 @@ import { useContext, useRef, useState } from 'react';
 import FellowshipSearchContext from '../../contexts/FellowshipSearchContext';
 
 const NavbarFellowshipSortDropdown = () => {
-  const { sortBy, setSortBy, sortDirection, onToggleSortDirection } = useContext(FellowshipSearchContext);
+  const { sortBy, setSortBy, sortDirection, onToggleSortDirection } =
+    useContext(FellowshipSearchContext);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [focusedIndex, setFocusedIndex] = useState(-1);
 
@@ -16,7 +17,7 @@ const NavbarFellowshipSortDropdown = () => {
     { value: 'default', label: 'Default' },
     { value: 'deadline', label: 'Deadline' },
     { value: 'createdAt', label: 'Date Added' },
-    { value: 'title', label: 'Title' }
+    { value: 'title', label: 'Title' },
   ];
 
   const handleSelect = (value: string) => {
@@ -31,9 +32,7 @@ const NavbarFellowshipSortDropdown = () => {
         if (!isDropdownOpen) {
           setIsDropdownOpen(true);
         } else {
-          setFocusedIndex((prev) =>
-            prev < sortOptions.length - 1 ? prev + 1 : prev
-          );
+          setFocusedIndex((prev) => (prev < sortOptions.length - 1 ? prev + 1 : prev));
         }
         break;
       case 'ArrowUp':

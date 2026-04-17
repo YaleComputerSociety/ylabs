@@ -1,8 +1,8 @@
 /**
  * Faculty profile service for self-editing, verification, and department cascading.
  */
-import { User } from "../models/user";
-import { getListingModel } from "../db/connections";
+import { User } from '../models/user';
+import { getListingModel } from '../db/connections';
 
 /**
  * Cascade a professor's department data to all their listings.
@@ -18,26 +18,21 @@ export const cascadeDepartmentsToListings = async (netid: string) => {
     ...((user as any).secondary_departments || []),
   ].filter(Boolean);
 
-  const ownedListings = await getListingModel()
-    .find({ ownerId: netid })
-    .lean();
+  const ownedListings = await getListingModel().find({ ownerId: netid }).lean();
 
   for (const listing of ownedListings) {
-    const coPIIds = (listing.professorIds || []).filter(
-      (id: string) => id !== netid
-    );
+    const coPIIds = (listing.professorIds || []).filter((id: string) => id !== netid);
 
     let finalDepts: string[];
 
     if (coPIIds.length > 0) {
       const coPIs = await User.find({ netid: { $in: coPIIds } })
-        .select("primary_department secondary_departments")
+        .select('primary_department secondary_departments')
         .lean();
 
       const allDepts = new Set<string>(userDepts);
       for (const pi of coPIs) {
-        if ((pi as any).primary_department)
-          allDepts.add((pi as any).primary_department);
+        if ((pi as any).primary_department) allDepts.add((pi as any).primary_department);
         for (const d of (pi as any).secondary_departments || []) {
           allDepts.add(d);
         }
@@ -49,8 +44,8 @@ export const cascadeDepartmentsToListings = async (netid: string) => {
 
     await getListingModel().findByIdAndUpdate(listing._id, {
       departments: finalDepts,
-      ownerPrimaryDepartment: (user as any).primary_department || "",
-      ownerTitle: (user as any).title || "",
+      ownerPrimaryDepartment: (user as any).primary_department || '',
+      ownerTitle: (user as any).title || '',
     });
   }
 
@@ -59,14 +54,11 @@ export const cascadeDepartmentsToListings = async (netid: string) => {
     .lean();
 
   for (const listing of coPIListings) {
-    const allPIIds = [
-      listing.ownerId,
-      ...(listing.professorIds || []),
-    ];
+    const allPIIds = [listing.ownerId, ...(listing.professorIds || [])];
     const uniqueIds = [...new Set(allPIIds)];
 
     const allPIs = await User.find({ netid: { $in: uniqueIds } })
-      .select("primary_department secondary_departments")
+      .select('primary_department secondary_departments')
       .lean();
 
     const owner = allPIs.find((p: any) => p.netid === listing.ownerId);
@@ -76,8 +68,7 @@ export const cascadeDepartmentsToListings = async (netid: string) => {
     if (ownerPrimary) allDepts.add(ownerPrimary);
 
     for (const pi of allPIs) {
-      if ((pi as any).primary_department)
-        allDepts.add((pi as any).primary_department);
+      if ((pi as any).primary_department) allDepts.add((pi as any).primary_department);
       for (const d of (pi as any).secondary_departments || []) {
         allDepts.add(d);
       }
@@ -92,13 +83,10 @@ export const cascadeDepartmentsToListings = async (netid: string) => {
 /**
  * Get a faculty profile by netid, optionally including publications.
  */
-export const getProfileByNetid = async (
-  netid: string,
-  includePublications = false
-) => {
+export const getProfileByNetid = async (netid: string, includePublications = false) => {
   let query = User.findOne({ netid });
   if (includePublications) {
-    query = query.select("+publications");
+    query = query.select('+publications');
   }
   const user = await query.lean();
   return user;
@@ -109,14 +97,14 @@ export const getProfileByNetid = async (
  * Returns the updated user.
  */
 const ALLOWED_SELF_UPDATE_FIELDS = [
-  "bio",
-  "primary_department",
-  "secondary_departments",
-  "research_interests",
-  "topics",
-  "image_url",
-  "profile_urls",
-  "website",
+  'bio',
+  'primary_department',
+  'secondary_departments',
+  'research_interests',
+  'topics',
+  'image_url',
+  'profile_urls',
+  'website',
 ];
 
 export const updateOwnProfile = async (netid: string, data: any) => {
@@ -128,17 +116,10 @@ export const updateOwnProfile = async (netid: string, data: any) => {
     }
   }
 
-  if (
-    update.primary_department !== undefined ||
-    update.secondary_departments !== undefined
-  ) {
+  if (update.primary_department !== undefined || update.secondary_departments !== undefined) {
     const current = await User.findOne({ netid }).lean();
-    const primary =
-      update.primary_department ?? (current as any)?.primary_department ?? "";
-    const secondary =
-      update.secondary_departments ??
-      (current as any)?.secondary_departments ??
-      [];
+    const primary = update.primary_department ?? (current as any)?.primary_department ?? '';
+    const secondary = update.secondary_departments ?? (current as any)?.secondary_departments ?? [];
     update.departments = [primary, ...secondary].filter(Boolean);
   }
 
@@ -155,16 +136,16 @@ export const updateOwnProfile = async (netid: string, data: any) => {
  */
 const ADMIN_UPDATE_FIELDS = [
   ...ALLOWED_SELF_UPDATE_FIELDS,
-  "fname",
-  "lname",
-  "email",
-  "title",
-  "h_index",
-  "orcid",
-  "openalex_id",
-  "profileVerified",
-  "userType",
-  "userConfirmed",
+  'fname',
+  'lname',
+  'email',
+  'title',
+  'h_index',
+  'orcid',
+  'openalex_id',
+  'profileVerified',
+  'userType',
+  'userConfirmed',
 ];
 
 export const adminUpdateProfile = async (netid: string, data: any) => {
@@ -176,17 +157,10 @@ export const adminUpdateProfile = async (netid: string, data: any) => {
     }
   }
 
-  if (
-    update.primary_department !== undefined ||
-    update.secondary_departments !== undefined
-  ) {
+  if (update.primary_department !== undefined || update.secondary_departments !== undefined) {
     const current = await User.findOne({ netid }).lean();
-    const primary =
-      update.primary_department ?? (current as any)?.primary_department ?? "";
-    const secondary =
-      update.secondary_departments ??
-      (current as any)?.secondary_departments ??
-      [];
+    const primary = update.primary_department ?? (current as any)?.primary_department ?? '';
+    const secondary = update.secondary_departments ?? (current as any)?.secondary_departments ?? [];
     update.departments = [primary, ...secondary].filter(Boolean);
   }
 
@@ -198,7 +172,7 @@ export const adminUpdateProfile = async (netid: string, data: any) => {
     new: true,
     runValidators: true,
   })
-    .select("+publications")
+    .select('+publications')
     .lean();
 
   return user;

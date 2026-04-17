@@ -4,14 +4,14 @@
  * Form/UI state lives in reducers/adminListingEditReducer.ts.
  * This component owns the save/delete side effects and the body-scroll lock.
  */
-import { useEffect, useReducer, useCallback } from "react";
-import axios from "../../utils/axios";
-import swal from "sweetalert";
-import { useConfig } from "../../hooks/useConfig";
+import { useEffect, useReducer, useCallback } from 'react';
+import axios from '../../utils/axios';
+import swal from 'sweetalert';
+import { useConfig } from '../../hooks/useConfig';
 import {
   adminListingEditReducer,
   createInitialAdminListingEditState,
-} from "../../reducers/adminListingEditReducer";
+} from '../../reducers/adminListingEditReducer';
 
 interface AdminListing {
   _id: string;
@@ -51,7 +51,7 @@ const AdminListingEditModal = ({ listing, onClose, onSave, onDelete }: Props) =>
   const [state, dispatch] = useReducer(
     adminListingEditReducer,
     listing,
-    createInitialAdminListingEditState
+    createInitialAdminListingEditState,
   );
 
   const {
@@ -87,27 +87,27 @@ const AdminListingEditModal = ({ listing, onClose, onSave, onDelete }: Props) =>
   };
 
   useEffect(() => {
-    document.body.style.overflow = "hidden";
+    document.body.style.overflow = 'hidden';
     return () => {
-      document.body.style.overflow = "";
+      document.body.style.overflow = '';
     };
   }, []);
 
   const handleSave = async () => {
     if (!title.trim()) {
-      swal({ text: "Title is required", icon: "warning" });
+      swal({ text: 'Title is required', icon: 'warning' });
       return;
     }
     if (!description.trim()) {
-      swal({ text: "Description is required", icon: "warning" });
+      swal({ text: 'Description is required', icon: 'warning' });
       return;
     }
 
     const confirmSave = await swal({
-      title: "Save Changes",
-      text: "Are you sure you want to update this listing?",
-      icon: "info",
-      buttons: ["Cancel", "Save"],
+      title: 'Save Changes',
+      text: 'Are you sure you want to update this listing?',
+      icon: 'info',
+      buttons: ['Cancel', 'Save'],
     });
 
     if (!confirmSave) return;
@@ -135,13 +135,13 @@ const AdminListingEditModal = ({ listing, onClose, onSave, onDelete }: Props) =>
           },
           resetCreatedAt,
         },
-        { withCredentials: true }
+        { withCredentials: true },
       );
-      swal({ text: "Listing updated", icon: "success", timer: 1500 });
+      swal({ text: 'Listing updated', icon: 'success', timer: 1500 });
       onSave();
     } catch (error: any) {
-      console.error("Error updating listing:", error);
-      swal({ text: error.response?.data?.error || "Failed to update listing", icon: "error" });
+      console.error('Error updating listing:', error);
+      swal({ text: error.response?.data?.error || 'Failed to update listing', icon: 'error' });
     } finally {
       dispatch({ type: 'SET_SAVING', payload: false });
     }
@@ -153,32 +153,30 @@ const AdminListingEditModal = ({ listing, onClose, onSave, onDelete }: Props) =>
       deptSearch
         ? d.displayName.toLowerCase().includes(deptSearch.toLowerCase()) ||
           d.abbreviation.toLowerCase().includes(deptSearch.toLowerCase())
-        : true
+        : true,
     );
 
   const availableResearchAreas = config.researchAreas
     .filter((a) => !researchAreas.includes(a.name))
-    .filter((a) =>
-      raSearch ? a.name.toLowerCase().includes(raSearch.toLowerCase()) : true
-    );
+    .filter((a) => (raSearch ? a.name.toLowerCase().includes(raSearch.toLowerCase()) : true));
 
   const addToArray = (
     arr: string[],
     setArr: React.Dispatch<React.SetStateAction<string[]>>,
     value: string,
-    setInput: React.Dispatch<React.SetStateAction<string>>
+    setInput: React.Dispatch<React.SetStateAction<string>>,
   ) => {
     const v = value.trim();
     if (v && !arr.includes(v)) {
       setArr([...arr, v]);
-      setInput("");
+      setInput('');
     }
   };
 
   const removeFromArray = (
     arr: string[],
     setArr: React.Dispatch<React.SetStateAction<string[]>>,
-    index: number
+    index: number,
   ) => {
     setArr(arr.filter((_, i) => i !== index));
   };
@@ -187,61 +185,63 @@ const AdminListingEditModal = ({ listing, onClose, onSave, onDelete }: Props) =>
   const setProfessorNames = useCallback(
     (value: React.SetStateAction<string[]>) =>
       dispatch({ type: 'SET_PROFESSOR_NAMES', payload: value }),
-    []
+    [],
   ) as React.Dispatch<React.SetStateAction<string[]>>;
   const setProfessorIds = useCallback(
     (value: React.SetStateAction<string[]>) =>
       dispatch({ type: 'SET_PROFESSOR_IDS', payload: value }),
-    []
+    [],
   ) as React.Dispatch<React.SetStateAction<string[]>>;
   const setEmails = useCallback(
-    (value: React.SetStateAction<string[]>) =>
-      dispatch({ type: 'SET_EMAILS', payload: value }),
-    []
+    (value: React.SetStateAction<string[]>) => dispatch({ type: 'SET_EMAILS', payload: value }),
+    [],
   ) as React.Dispatch<React.SetStateAction<string[]>>;
   const setWebsites = useCallback(
-    (value: React.SetStateAction<string[]>) =>
-      dispatch({ type: 'SET_WEBSITES', payload: value }),
-    []
+    (value: React.SetStateAction<string[]>) => dispatch({ type: 'SET_WEBSITES', payload: value }),
+    [],
   ) as React.Dispatch<React.SetStateAction<string[]>>;
   const setDepartments = useCallback(
     (value: React.SetStateAction<string[]>) =>
       dispatch({ type: 'SET_DEPARTMENTS', payload: value }),
-    []
+    [],
   ) as React.Dispatch<React.SetStateAction<string[]>>;
   const setResearchAreas = useCallback(
     (value: React.SetStateAction<string[]>) =>
       dispatch({ type: 'SET_RESEARCH_AREAS', payload: value }),
-    []
+    [],
   ) as React.Dispatch<React.SetStateAction<string[]>>;
 
   const setNewProfName = useCallback(
     (value: React.SetStateAction<string>) => {
-      const next = typeof value === 'function' ? (value as (prev: string) => string)(newProfName) : value;
+      const next =
+        typeof value === 'function' ? (value as (prev: string) => string)(newProfName) : value;
       dispatch({ type: 'SET_NEW_PROF_NAME', payload: next });
     },
-    [newProfName]
+    [newProfName],
   ) as React.Dispatch<React.SetStateAction<string>>;
   const setNewProfId = useCallback(
     (value: React.SetStateAction<string>) => {
-      const next = typeof value === 'function' ? (value as (prev: string) => string)(newProfId) : value;
+      const next =
+        typeof value === 'function' ? (value as (prev: string) => string)(newProfId) : value;
       dispatch({ type: 'SET_NEW_PROF_ID', payload: next });
     },
-    [newProfId]
+    [newProfId],
   ) as React.Dispatch<React.SetStateAction<string>>;
   const setNewEmail = useCallback(
     (value: React.SetStateAction<string>) => {
-      const next = typeof value === 'function' ? (value as (prev: string) => string)(newEmail) : value;
+      const next =
+        typeof value === 'function' ? (value as (prev: string) => string)(newEmail) : value;
       dispatch({ type: 'SET_NEW_EMAIL', payload: next });
     },
-    [newEmail]
+    [newEmail],
   ) as React.Dispatch<React.SetStateAction<string>>;
   const setNewWebsite = useCallback(
     (value: React.SetStateAction<string>) => {
-      const next = typeof value === 'function' ? (value as (prev: string) => string)(newWebsite) : value;
+      const next =
+        typeof value === 'function' ? (value as (prev: string) => string)(newWebsite) : value;
       dispatch({ type: 'SET_NEW_WEBSITE', payload: next });
     },
-    [newWebsite]
+    [newWebsite],
   ) as React.Dispatch<React.SetStateAction<string>>;
 
   const ArrayField = ({
@@ -251,7 +251,7 @@ const AdminListingEditModal = ({ listing, onClose, onSave, onDelete }: Props) =>
     newValue,
     setNewValue,
     placeholder,
-    type = "text",
+    type = 'text',
   }: {
     label: string;
     items: string[];
@@ -285,7 +285,7 @@ const AdminListingEditModal = ({ listing, onClose, onSave, onDelete }: Props) =>
           value={newValue}
           onChange={(e) => setNewValue(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter") {
+            if (e.key === 'Enter') {
               e.preventDefault();
               addToArray(items, setItems, newValue, setNewValue);
             }
@@ -315,10 +315,14 @@ const AdminListingEditModal = ({ listing, onClose, onSave, onDelete }: Props) =>
           <div>
             <h3 className="text-lg font-bold text-gray-900">Edit Listing</h3>
             <p className="text-xs text-gray-500">
-              ID: {listing._id} | Owner: {listing.ownerFirstName} {listing.ownerLastName} ({listing.ownerId})
+              ID: {listing._id} | Owner: {listing.ownerFirstName} {listing.ownerLastName} (
+              {listing.ownerId})
             </p>
           </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600 text-2xl leading-none"
+          >
             &times;
           </button>
         </div>
@@ -368,17 +372,23 @@ const AdminListingEditModal = ({ listing, onClose, onSave, onDelete }: Props) =>
                 </label>
                 <textarea
                   value={applicantDescription}
-                  onChange={(e) => dispatch({ type: 'SET_APPLICANT_DESCRIPTION', payload: e.target.value })}
+                  onChange={(e) =>
+                    dispatch({ type: 'SET_APPLICANT_DESCRIPTION', payload: e.target.value })
+                  }
                   rows={3}
                   className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
               </div>
 
               <div className="mb-3">
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Hiring Status</label>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">
+                  Hiring Status
+                </label>
                 <select
                   value={hiringStatus}
-                  onChange={(e) => dispatch({ type: 'SET_HIRING_STATUS', payload: Number(e.target.value) })}
+                  onChange={(e) =>
+                    dispatch({ type: 'SET_HIRING_STATUS', payload: Number(e.target.value) })
+                  }
                   className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
                 >
                   <option value={0}>Open to Applicants</option>
@@ -421,16 +431,17 @@ const AdminListingEditModal = ({ listing, onClose, onSave, onDelete }: Props) =>
                   <input
                     type="checkbox"
                     checked={resetCreatedAt}
-                    onChange={(e) => dispatch({ type: 'SET_RESET_CREATED_AT', payload: e.target.checked })}
+                    onChange={(e) =>
+                      dispatch({ type: 'SET_RESET_CREATED_AT', payload: e.target.checked })
+                    }
                     className="rounded"
                   />
-                  <span>
-                    Reset "Created At" to 2025
-                  </span>
+                  <span>Reset "Created At" to 2025</span>
                 </label>
                 {resetCreatedAt && (
                   <p className="text-xs text-yellow-700 mt-1 ml-6">
-                    {new Date(listing.createdAt).toLocaleDateString()} → {getResetDate().toLocaleDateString()}
+                    {new Date(listing.createdAt).toLocaleDateString()} →{' '}
+                    {getResetDate().toLocaleDateString()}
                   </p>
                 )}
               </div>
@@ -438,14 +449,16 @@ const AdminListingEditModal = ({ listing, onClose, onSave, onDelete }: Props) =>
 
             <div>
               <div className="mb-3 relative">
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Departments</label>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">
+                  Departments
+                </label>
                 <div className="flex flex-wrap gap-1 mb-1">
                   {departments.map((dept, i) => (
                     <span
                       key={i}
                       className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded text-xs flex items-center gap-1"
                     >
-                      {dept.split(" - ")[0]}
+                      {dept.split(' - ')[0]}
                       <button
                         onClick={() => removeFromArray(departments, setDepartments, i)}
                         className="text-blue-500 hover:text-blue-700"
@@ -467,7 +480,9 @@ const AdminListingEditModal = ({ listing, onClose, onSave, onDelete }: Props) =>
                     {filteredDepts.slice(0, 20).map((dept) => (
                       <button
                         key={dept.abbreviation}
-                        onClick={() => dispatch({ type: 'ADD_DEPARTMENT', payload: dept.displayName })}
+                        onClick={() =>
+                          dispatch({ type: 'ADD_DEPARTMENT', payload: dept.displayName })
+                        }
                         className="block w-full text-left px-3 py-1.5 text-sm hover:bg-blue-50"
                       >
                         {dept.displayName}
@@ -484,7 +499,9 @@ const AdminListingEditModal = ({ listing, onClose, onSave, onDelete }: Props) =>
               </div>
 
               <div className="mb-3 relative">
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Research Areas</label>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">
+                  Research Areas
+                </label>
                 <div className="flex flex-wrap gap-1 mb-1">
                   {researchAreas.map((ra, i) => (
                     <span
@@ -575,20 +592,20 @@ const AdminListingEditModal = ({ listing, onClose, onSave, onDelete }: Props) =>
           <button
             onClick={async () => {
               const confirmed = await swal({
-                title: "Delete Listing",
+                title: 'Delete Listing',
                 text: `Permanently delete "${listing.title}"? This cannot be undone.`,
-                icon: "warning",
-                buttons: ["Cancel", "Delete"],
+                icon: 'warning',
+                buttons: ['Cancel', 'Delete'],
                 dangerMode: true,
               });
               if (!confirmed) return;
               try {
                 await axios.delete(`/admin/listings/${listing._id}`, { withCredentials: true });
-                swal({ text: "Listing deleted", icon: "success", timer: 1500 });
+                swal({ text: 'Listing deleted', icon: 'success', timer: 1500 });
                 if (onDelete) onDelete();
                 else onSave();
               } catch (error: any) {
-                swal({ text: error.response?.data?.error || "Failed to delete", icon: "error" });
+                swal({ text: error.response?.data?.error || 'Failed to delete', icon: 'error' });
               }
             }}
             className="px-4 py-2 text-sm text-red-600 border border-red-200 rounded-md hover:bg-red-50 transition-colors"
@@ -607,7 +624,7 @@ const AdminListingEditModal = ({ listing, onClose, onSave, onDelete }: Props) =>
               disabled={isSaving}
               className="px-4 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 transition-colors"
             >
-              {isSaving ? "Saving..." : "Save Changes"}
+              {isSaving ? 'Saving...' : 'Save Changes'}
             </button>
           </div>
         </div>

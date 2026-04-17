@@ -32,7 +32,9 @@ async function cleanDepartments() {
       { primary_department: { $exists: true, $ne: '' } },
       { secondary_departments: { $exists: true, $not: { $size: 0 } } },
     ],
-  }).select('netid primary_department secondary_departments departments').lean();
+  })
+    .select('netid primary_department secondary_departments departments')
+    .lean();
 
   console.log(`Checking ${users.length} faculty profiles...`);
 
@@ -61,8 +63,14 @@ async function cleanDepartments() {
     }
 
     if (changed) {
-      const primary = updates.primary_department !== undefined ? updates.primary_department : u.primary_department;
-      const secondary = updates.secondary_departments !== undefined ? updates.secondary_departments : (u.secondary_departments || []);
+      const primary =
+        updates.primary_department !== undefined
+          ? updates.primary_department
+          : u.primary_department;
+      const secondary =
+        updates.secondary_departments !== undefined
+          ? updates.secondary_departments
+          : u.secondary_departments || [];
       updates.departments = [primary, ...secondary].filter(Boolean);
 
       await User.updateOne({ _id: u._id }, { $set: updates });
@@ -77,7 +85,7 @@ async function cleanDepartments() {
 
   const resetResult = await User.updateMany(
     { profileVerified: true },
-    { $set: { profileVerified: false } }
+    { $set: { profileVerified: false } },
   );
   console.log(`\n=== Profile Verification Reset ===`);
   console.log(`Profiles reset to unverified: ${resetResult.modifiedCount}`);
@@ -86,7 +94,7 @@ async function cleanDepartments() {
   console.log('\nDone.');
 }
 
-cleanDepartments().catch(err => {
+cleanDepartments().catch((err) => {
   console.error('Fatal error:', err);
   process.exit(1);
 });

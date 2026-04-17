@@ -1,10 +1,14 @@
 /**
  * Admin panel table for managing listings.
  */
-import { useState, useEffect, useCallback } from "react";
-import axios from "../../utils/axios";
-import swal from "sweetalert";
-import AdminListingEditModal from "./AdminListingEditModal";
+import { useEffect, useCallback, useReducer } from 'react';
+import axios from '../../utils/axios';
+import swal from 'sweetalert';
+import AdminListingEditModal from './AdminListingEditModal';
+import {
+  adminListingsTableReducer,
+  createInitialAdminListingsTableState,
+} from '../../reducers/adminListingsTableReducer';
 
 interface AdminListing {
   _id: string;
@@ -31,54 +35,57 @@ interface AdminListing {
 }
 
 type SortField =
-  | "title"
-  | "ownerLastName"
-  | "descriptionLength"
-  | "views"
-  | "favorites"
-  | "createdAt"
-  | "hiringStatus"
-  | "redFlags";
+  | 'title'
+  | 'ownerLastName'
+  | 'descriptionLength'
+  | 'views'
+  | 'favorites'
+  | 'createdAt'
+  | 'hiringStatus'
+  | 'redFlags';
 
 const TABLE_COLUMNS: { value: SortField; label: string }[] = [
-  { value: "title", label: "Title" },
-  { value: "ownerLastName", label: "Owner" },
-  { value: "descriptionLength", label: "Desc Len" },
-  { value: "views", label: "Views" },
-  { value: "favorites", label: "Favs" },
-  { value: "hiringStatus", label: "Status" },
-  { value: "createdAt", label: "Added" },
+  { value: 'title', label: 'Title' },
+  { value: 'ownerLastName', label: 'Owner' },
+  { value: 'descriptionLength', label: 'Desc Len' },
+  { value: 'views', label: 'Views' },
+  { value: 'favorites', label: 'Favs' },
+  { value: 'hiringStatus', label: 'Status' },
+  { value: 'createdAt', label: 'Added' },
 ];
 
 const SORT_OPTIONS: { value: SortField; label: string }[] = [
-  { value: "redFlags", label: "Red Flags (Issues)" },
+  { value: 'redFlags', label: 'Red Flags (Issues)' },
   ...TABLE_COLUMNS,
 ];
 
 const PAGE_SIZES = [10, 25, 50, 100];
 
 const AdminListingsTable = () => {
-  const [listings, setListings] = useState<AdminListing[]>([]);
-  const [total, setTotal] = useState(0);
-  const [totalPages, setTotalPages] = useState(0);
-  const [isLoading, setIsLoading] = useState(true);
-
-  const [search, setSearch] = useState("");
-  const [sortBy, setSortBy] = useState<SortField>("createdAt");
-  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
-  const [archivedFilter, setArchivedFilter] = useState<string>("");
-  const [confirmedFilter, setConfirmedFilter] = useState<string>("");
-  const [auditedFilter, setAuditedFilter] = useState<string>("");
-
-  const [editingListing, setEditingListing] = useState<AdminListing | null>(null);
-
-  const [urlResults, setUrlResults] = useState<Record<string, { url: string; reachable: boolean; error?: string }[]>>({});
-  const [checkingUrls, setCheckingUrls] = useState<string | null>(null);
+  const [state, dispatch] = useReducer(adminListingsTableReducer<AdminListing>, undefined, () =>
+    createInitialAdminListingsTableState<AdminListing>(),
+  );
+  const {
+    items: listings,
+    total,
+    totalPages,
+    isLoading,
+    search,
+    sortBy,
+    sortOrder,
+    page,
+    pageSize,
+    filters,
+    editing: editingListing,
+    urlResults: _urlResults,
+    checkingUrls,
+  } = state;
+  const archivedFilter = filters.archived;
+  const confirmedFilter = filters.confirmed;
+  const auditedFilter = filters.audited;
 
   const fetchListings = useCallback(async () => {
-    setIsLoading(true);
+    dispatch({ type: 'FETCH_START' });
     try {
       const params: any = {
         search: search.trim(),
@@ -91,31 +98,36 @@ const AdminListingsTable = () => {
       if (confirmedFilter) params.confirmed = confirmedFilter;
       if (auditedFilter) params.audited = auditedFilter;
 
-      const response = await axios.get("/admin/listings", { params, withCredentials: true });
-      setListings(response.data.listings);
-      setTotal(response.data.total);
-      setTotalPages(response.data.totalPages);
+      const response = await axios.get('/admin/listings', { params, withCredentials: true });
+      dispatch({
+        type: 'FETCH_SUCCESS',
+        items: response.data.listings,
+        total: response.data.total,
+        totalPages: response.data.totalPages,
+      });
     } catch (error) {
-      console.error("Error fetching admin listings:", error);
-      swal({ text: "Failed to fetch listings", icon: "error" });
-    } finally {
-      setIsLoading(false);
+      console.error('Error fetching admin listings:', error);
+      swal({ text: 'Failed to fetch listings', icon: 'error' });
+      dispatch({ type: 'FETCH_FAILURE' });
     }
   }, [search, sortBy, sortOrder, page, pageSize, archivedFilter, confirmedFilter, auditedFilter]);
 
   useEffect(() => {
-    const debounce = setTimeout(() => {
-      fetchListings();
-    }, search ? 400 : 0);
+    const debounce = setTimeout(
+      () => {
+        fetchListings();
+      },
+      search ? 400 : 0,
+    );
     return () => clearTimeout(debounce);
   }, [fetchListings]);
 
   const handleDelete = async (listing: AdminListing) => {
     const confirmed = await swal({
-      title: "Delete Listing",
+      title: 'Delete Listing',
       text: `Are you sure you want to permanently delete "${listing.title}"? This cannot be undone.`,
-      icon: "warning",
-      buttons: ["Cancel", "Delete"],
+      icon: 'warning',
+      buttons: ['Cancel', 'Delete'],
       dangerMode: true,
     });
 
@@ -123,54 +135,51 @@ const AdminListingsTable = () => {
 
     try {
       await axios.delete(`/admin/listings/${listing._id}`, { withCredentials: true });
-      swal({ text: "Listing deleted", icon: "success", timer: 1500 });
+      swal({ text: 'Listing deleted', icon: 'success', timer: 1500 });
       fetchListings();
     } catch (error) {
-      console.error("Error deleting listing:", error);
-      swal({ text: "Failed to delete listing", icon: "error" });
+      console.error('Error deleting listing:', error);
+      swal({ text: 'Failed to delete listing', icon: 'error' });
     }
   };
 
   const handleCheckUrls = async (listing: AdminListing) => {
     if (!listing.websites || listing.websites.length === 0) {
-      swal({ text: "No URLs to check for this listing", icon: "info" });
+      swal({ text: 'No URLs to check for this listing', icon: 'info' });
       return;
     }
 
-    setCheckingUrls(listing._id);
+    dispatch({ type: 'URL_CHECK_START', listingId: listing._id });
     try {
       const response = await axios.post(
-        "/admin/check-urls",
+        '/admin/check-urls',
         { urls: listing.websites },
-        { withCredentials: true }
+        { withCredentials: true },
       );
-      setUrlResults((prev) => ({ ...prev, [listing._id]: response.data.results }));
+      dispatch({
+        type: 'URL_CHECK_SUCCESS',
+        listingId: listing._id,
+        results: response.data.results,
+      });
     } catch (error) {
-      console.error("Error checking URLs:", error);
-      swal({ text: "Failed to check URLs", icon: "error" });
-    } finally {
-      setCheckingUrls(null);
+      console.error('Error checking URLs:', error);
+      swal({ text: 'Failed to check URLs', icon: 'error' });
+      dispatch({ type: 'URL_CHECK_FAILURE' });
     }
   };
 
   const handleEditSave = () => {
-    setEditingListing(null);
+    dispatch({ type: 'CLOSE_EDIT' });
     fetchListings();
   };
 
   const handleSort = (field: SortField) => {
-    if (sortBy === field) {
-      setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"));
-    } else {
-      setSortBy(field);
-      setSortOrder("desc");
-    }
-    setPage(1);
+    dispatch({ type: 'TOGGLE_SORT', field });
   };
 
   const SortIcon = ({ field }: { field: SortField }) => {
-    if (sortBy !== field) return <span className="text-gray-300 ml-1">{"\u2195"}</span>;
-    return <span className="text-blue-600 ml-1">{sortOrder === "asc" ? "\u25B2" : "\u25BC"}</span>;
+    if (sortBy !== field) return <span className="text-gray-300 ml-1">{'\u2195'}</span>;
+    return <span className="text-blue-600 ml-1">{sortOrder === 'asc' ? '\u25B2' : '\u25BC'}</span>;
   };
 
   return (
@@ -182,10 +191,7 @@ const AdminListingsTable = () => {
             <input
               type="text"
               value={search}
-              onChange={(e) => {
-                setSearch(e.target.value);
-                setPage(1);
-              }}
+              onChange={(e) => dispatch({ type: 'SET_SEARCH', payload: e.target.value })}
               placeholder="Search by title, owner, description..."
               className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
@@ -195,10 +201,9 @@ const AdminListingsTable = () => {
             <label className="block text-xs font-medium text-gray-600 mb-1">Archived</label>
             <select
               value={archivedFilter}
-              onChange={(e) => {
-                setArchivedFilter(e.target.value);
-                setPage(1);
-              }}
+              onChange={(e) =>
+                dispatch({ type: 'SET_FILTER', filter: 'archived', value: e.target.value })
+              }
               className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="">All</option>
@@ -211,10 +216,9 @@ const AdminListingsTable = () => {
             <label className="block text-xs font-medium text-gray-600 mb-1">Confirmed</label>
             <select
               value={confirmedFilter}
-              onChange={(e) => {
-                setConfirmedFilter(e.target.value);
-                setPage(1);
-              }}
+              onChange={(e) =>
+                dispatch({ type: 'SET_FILTER', filter: 'confirmed', value: e.target.value })
+              }
               className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="">All</option>
@@ -227,10 +231,9 @@ const AdminListingsTable = () => {
             <label className="block text-xs font-medium text-gray-600 mb-1">Audited</label>
             <select
               value={auditedFilter}
-              onChange={(e) => {
-                setAuditedFilter(e.target.value);
-                setPage(1);
-              }}
+              onChange={(e) =>
+                dispatch({ type: 'SET_FILTER', filter: 'audited', value: e.target.value })
+              }
               className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="">All</option>
@@ -244,12 +247,11 @@ const AdminListingsTable = () => {
             <div className="flex gap-1">
               <select
                 value={sortBy}
-                onChange={(e) => {
-                  setSortBy(e.target.value as SortField);
-                  setPage(1);
-                }}
+                onChange={(e) =>
+                  dispatch({ type: 'SET_SORT_BY', field: e.target.value as SortField })
+                }
                 className={`border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                  sortBy === "redFlags" ? "border-red-400 bg-red-50" : "border-gray-300"
+                  sortBy === 'redFlags' ? 'border-red-400 bg-red-50' : 'border-gray-300'
                 }`}
               >
                 {SORT_OPTIONS.map((opt) => (
@@ -259,11 +261,11 @@ const AdminListingsTable = () => {
                 ))}
               </select>
               <button
-                onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
+                onClick={() => dispatch({ type: 'TOGGLE_SORT_ORDER' })}
                 className="border border-gray-300 rounded-md px-2 py-2 text-sm hover:bg-gray-50"
-                title={sortOrder === "asc" ? "Ascending" : "Descending"}
+                title={sortOrder === 'asc' ? 'Ascending' : 'Descending'}
               >
-                {sortOrder === "asc" ? "↑" : "↓"}
+                {sortOrder === 'asc' ? '↑' : '↓'}
               </button>
             </div>
           </div>
@@ -272,10 +274,7 @@ const AdminListingsTable = () => {
             <label className="block text-xs font-medium text-gray-600 mb-1">Per Page</label>
             <select
               value={pageSize}
-              onChange={(e) => {
-                setPageSize(Number(e.target.value));
-                setPage(1);
-              }}
+              onChange={(e) => dispatch({ type: 'SET_PAGE_SIZE', payload: Number(e.target.value) })}
               className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               {PAGE_SIZES.map((s) => (
@@ -288,8 +287,8 @@ const AdminListingsTable = () => {
         </div>
 
         <div className="mt-2 text-sm text-gray-500">
-          {total} listing{total !== 1 ? "s" : ""} total
-          {sortBy === "redFlags" && (
+          {total} listing{total !== 1 ? 's' : ''} total
+          {sortBy === 'redFlags' && (
             <span className="ml-2 text-red-600 font-medium">
               • Sorted by red flags (no dept, no views, old, etc.)
             </span>
@@ -312,12 +311,24 @@ const AdminListingsTable = () => {
                     <SortIcon field={col.value} />
                   </th>
                 ))}
-                <th className="text-left py-3 px-2 font-semibold text-gray-700 whitespace-nowrap text-xs">Depts</th>
-                <th className="text-center py-3 px-2 font-semibold text-gray-700 whitespace-nowrap text-xs">Arch</th>
-                <th className="text-center py-3 px-2 font-semibold text-gray-700 whitespace-nowrap text-xs">Conf</th>
-                <th className="text-center py-3 px-2 font-semibold text-gray-700 whitespace-nowrap text-xs">Audit</th>
-                <th className="text-center py-3 px-2 font-semibold text-gray-700 whitespace-nowrap text-xs">URLs</th>
-                <th className="text-center py-3 px-2 font-semibold text-gray-700 whitespace-nowrap text-xs">Actions</th>
+                <th className="text-left py-3 px-2 font-semibold text-gray-700 whitespace-nowrap text-xs">
+                  Depts
+                </th>
+                <th className="text-center py-3 px-2 font-semibold text-gray-700 whitespace-nowrap text-xs">
+                  Arch
+                </th>
+                <th className="text-center py-3 px-2 font-semibold text-gray-700 whitespace-nowrap text-xs">
+                  Conf
+                </th>
+                <th className="text-center py-3 px-2 font-semibold text-gray-700 whitespace-nowrap text-xs">
+                  Audit
+                </th>
+                <th className="text-center py-3 px-2 font-semibold text-gray-700 whitespace-nowrap text-xs">
+                  URLs
+                </th>
+                <th className="text-center py-3 px-2 font-semibold text-gray-700 whitespace-nowrap text-xs">
+                  Actions
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -335,102 +346,131 @@ const AdminListingsTable = () => {
                 </tr>
               ) : (
                 listings.map((listing) => {
-                  const isOld = new Date(listing.createdAt) < new Date(Date.now() - 2 * 365 * 24 * 60 * 60 * 1000);
+                  const isOld =
+                    new Date(listing.createdAt) <
+                    new Date(Date.now() - 2 * 365 * 24 * 60 * 60 * 1000);
                   const noDepts = !listing.departments || listing.departments.length === 0;
                   const noViews = listing.views === 0;
                   const hasRedFlags = isOld || noDepts || noViews;
 
                   return (
-                  <tr key={listing._id} className={`border-b hover:bg-gray-50 ${hasRedFlags ? "bg-red-50/50" : ""}`}>
-                    <td className="py-1.5 px-2 max-w-[180px] truncate text-xs" title={listing.title}>
-                      {listing.title}
-                    </td>
-                    <td className="py-1.5 px-2 whitespace-nowrap text-xs">
-                      {listing.ownerFirstName} {listing.ownerLastName}
-                      <div className="text-[10px] text-gray-400">{listing.ownerId}</div>
-                    </td>
-                    <td className="py-1.5 px-2 text-right text-xs">{listing.description?.length || 0}</td>
-                    <td className={`py-1.5 px-2 text-right text-xs ${noViews ? "text-red-600 font-medium" : ""}`}>
-                      {listing.views}
-                    </td>
-                    <td className="py-1.5 px-2 text-right text-xs">{listing.favorites}</td>
-                    <td className="py-1.5 px-2 whitespace-nowrap">
-                      {listing.hiringStatus >= 0 ? (
-                        <span className="text-green-700 bg-green-100 px-1.5 py-0.5 rounded text-[10px] font-medium">Open</span>
-                      ) : (
-                        <span className="text-red-700 bg-red-100 px-1.5 py-0.5 rounded text-[10px] font-medium">Closed</span>
-                      )}
-                    </td>
-                    <td className={`py-1.5 px-2 whitespace-nowrap text-xs ${isOld ? "text-red-600 font-medium" : "text-gray-500"}`}>
-                      {new Date(listing.createdAt).toLocaleDateString()}
-                    </td>
-                    <td className="py-1.5 px-2 max-w-[100px]">
-                      {noDepts ? (
-                        <span className="text-red-600 text-xs font-medium">None!</span>
-                      ) : (
-                        <div className="flex flex-wrap gap-0.5">
-                          {listing.departments?.slice(0, 2).map((d) => (
-                            <span key={d} className="text-[10px] bg-blue-100 text-blue-800 px-1 py-0.5 rounded">
-                              {d.split(" - ")[0]}
-                            </span>
-                          ))}
-                          {listing.departments?.length > 2 && (
-                            <span className="text-[10px] text-gray-400">+{listing.departments.length - 2}</span>
-                          )}
+                    <tr
+                      key={listing._id}
+                      className={`border-b hover:bg-gray-50 ${hasRedFlags ? 'bg-red-50/50' : ''}`}
+                    >
+                      <td
+                        className="py-1.5 px-2 max-w-[180px] truncate text-xs"
+                        title={listing.title}
+                      >
+                        {listing.title}
+                      </td>
+                      <td className="py-1.5 px-2 whitespace-nowrap text-xs">
+                        {listing.ownerFirstName} {listing.ownerLastName}
+                        <div className="text-[10px] text-gray-400">{listing.ownerId}</div>
+                      </td>
+                      <td className="py-1.5 px-2 text-right text-xs">
+                        {listing.description?.length || 0}
+                      </td>
+                      <td
+                        className={`py-1.5 px-2 text-right text-xs ${noViews ? 'text-red-600 font-medium' : ''}`}
+                      >
+                        {listing.views}
+                      </td>
+                      <td className="py-1.5 px-2 text-right text-xs">{listing.favorites}</td>
+                      <td className="py-1.5 px-2 whitespace-nowrap">
+                        {listing.hiringStatus >= 0 ? (
+                          <span className="text-green-700 bg-green-100 px-1.5 py-0.5 rounded text-[10px] font-medium">
+                            Open
+                          </span>
+                        ) : (
+                          <span className="text-red-700 bg-red-100 px-1.5 py-0.5 rounded text-[10px] font-medium">
+                            Closed
+                          </span>
+                        )}
+                      </td>
+                      <td
+                        className={`py-1.5 px-2 whitespace-nowrap text-xs ${isOld ? 'text-red-600 font-medium' : 'text-gray-500'}`}
+                      >
+                        {new Date(listing.createdAt).toLocaleDateString()}
+                      </td>
+                      <td className="py-1.5 px-2 max-w-[100px]">
+                        {noDepts ? (
+                          <span className="text-red-600 text-xs font-medium">None!</span>
+                        ) : (
+                          <div className="flex flex-wrap gap-0.5">
+                            {listing.departments?.slice(0, 2).map((d) => (
+                              <span
+                                key={d}
+                                className="text-[10px] bg-blue-100 text-blue-800 px-1 py-0.5 rounded"
+                              >
+                                {d.split(' - ')[0]}
+                              </span>
+                            ))}
+                            {listing.departments?.length > 2 && (
+                              <span className="text-[10px] text-gray-400">
+                                +{listing.departments.length - 2}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </td>
+                      <td className="py-1.5 px-2 text-center">
+                        {listing.archived ? (
+                          <span className="text-yellow-700 bg-yellow-100 px-1.5 py-0.5 rounded text-[10px] font-medium">
+                            Yes
+                          </span>
+                        ) : (
+                          <span className="text-gray-400 text-[10px]">No</span>
+                        )}
+                      </td>
+                      <td className="py-1.5 px-2 text-center">
+                        {listing.confirmed ? (
+                          <span className="text-gray-400 text-[10px]">Yes</span>
+                        ) : (
+                          <span className="text-orange-700 bg-orange-100 px-1.5 py-0.5 rounded text-[10px] font-medium">
+                            No
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-1.5 px-2 text-center">
+                        {listing.audited ? (
+                          <span className="text-green-700 bg-green-100 px-1.5 py-0.5 rounded text-[10px] font-medium">
+                            ✓
+                          </span>
+                        ) : (
+                          <span className="text-gray-400 text-[10px]">—</span>
+                        )}
+                      </td>
+                      <td className="py-1.5 px-2 text-center">
+                        {listing.websites?.length > 0 ? (
+                          <button
+                            onClick={() => handleCheckUrls(listing)}
+                            disabled={checkingUrls === listing._id}
+                            className="text-[10px] text-blue-600 hover:text-blue-800 underline disabled:opacity-50"
+                          >
+                            {checkingUrls === listing._id ? '...' : listing.websites.length}
+                          </button>
+                        ) : (
+                          <span className="text-[10px] text-gray-300">--</span>
+                        )}
+                      </td>
+                      <td className="py-1.5 px-2">
+                        <div className="flex gap-1 justify-center">
+                          <button
+                            onClick={() => dispatch({ type: 'OPEN_EDIT', item: listing })}
+                            className="text-[10px] bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700 transition-colors"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => handleDelete(listing)}
+                            className="text-[10px] bg-red-600 text-white px-2 py-1 rounded hover:bg-red-700 transition-colors"
+                          >
+                            Del
+                          </button>
                         </div>
-                      )}
-                    </td>
-                    <td className="py-1.5 px-2 text-center">
-                      {listing.archived ? (
-                        <span className="text-yellow-700 bg-yellow-100 px-1.5 py-0.5 rounded text-[10px] font-medium">Yes</span>
-                      ) : (
-                        <span className="text-gray-400 text-[10px]">No</span>
-                      )}
-                    </td>
-                    <td className="py-1.5 px-2 text-center">
-                      {listing.confirmed ? (
-                        <span className="text-gray-400 text-[10px]">Yes</span>
-                      ) : (
-                        <span className="text-orange-700 bg-orange-100 px-1.5 py-0.5 rounded text-[10px] font-medium">No</span>
-                      )}
-                    </td>
-                    <td className="py-1.5 px-2 text-center">
-                      {listing.audited ? (
-                        <span className="text-green-700 bg-green-100 px-1.5 py-0.5 rounded text-[10px] font-medium">✓</span>
-                      ) : (
-                        <span className="text-gray-400 text-[10px]">—</span>
-                      )}
-                    </td>
-                    <td className="py-1.5 px-2 text-center">
-                      {listing.websites?.length > 0 ? (
-                        <button
-                          onClick={() => handleCheckUrls(listing)}
-                          disabled={checkingUrls === listing._id}
-                          className="text-[10px] text-blue-600 hover:text-blue-800 underline disabled:opacity-50"
-                        >
-                          {checkingUrls === listing._id ? "..." : listing.websites.length}
-                        </button>
-                      ) : (
-                        <span className="text-[10px] text-gray-300">--</span>
-                      )}
-                    </td>
-                    <td className="py-1.5 px-2">
-                      <div className="flex gap-1 justify-center">
-                        <button
-                          onClick={() => setEditingListing(listing)}
-                          className="text-[10px] bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700 transition-colors"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          onClick={() => handleDelete(listing)}
-                          className="text-[10px] bg-red-600 text-white px-2 py-1 rounded hover:bg-red-700 transition-colors"
-                        >
-                          Del
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
+                      </td>
+                    </tr>
                   );
                 })
               )}
@@ -446,28 +486,30 @@ const AdminListingsTable = () => {
           </div>
           <div className="flex gap-2">
             <button
-              onClick={() => setPage(1)}
+              onClick={() => dispatch({ type: 'SET_PAGE', payload: 1 })}
               disabled={page === 1}
               className="px-3 py-1.5 text-sm border rounded hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               First
             </button>
             <button
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              onClick={() => dispatch({ type: 'SET_PAGE', payload: Math.max(1, page - 1) })}
               disabled={page === 1}
               className="px-3 py-1.5 text-sm border rounded hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               Prev
             </button>
             <button
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              onClick={() =>
+                dispatch({ type: 'SET_PAGE', payload: Math.min(totalPages, page + 1) })
+              }
               disabled={page === totalPages}
               className="px-3 py-1.5 text-sm border rounded hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               Next
             </button>
             <button
-              onClick={() => setPage(totalPages)}
+              onClick={() => dispatch({ type: 'SET_PAGE', payload: totalPages })}
               disabled={page === totalPages}
               className="px-3 py-1.5 text-sm border rounded hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
             >
@@ -480,7 +522,7 @@ const AdminListingsTable = () => {
       {editingListing && (
         <AdminListingEditModal
           listing={editingListing}
-          onClose={() => setEditingListing(null)}
+          onClose={() => dispatch({ type: 'CLOSE_EDIT' })}
           onSave={handleEditSave}
         />
       )}

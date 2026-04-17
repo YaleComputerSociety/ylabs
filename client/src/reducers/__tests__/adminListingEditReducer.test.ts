@@ -34,18 +34,18 @@ describe('adminListingEditReducer', () => {
 
     it('normalizes hiringStatus: >=0 becomes 0', () => {
       expect(
-        createInitialAdminListingEditState({ ...baseListing, hiringStatus: 5 }).hiringStatus
+        createInitialAdminListingEditState({ ...baseListing, hiringStatus: 5 }).hiringStatus,
       ).toBe(0);
     });
 
     it('normalizes hiringStatus: negative becomes -1', () => {
       expect(
-        createInitialAdminListingEditState({ ...baseListing, hiringStatus: -3 }).hiringStatus
+        createInitialAdminListingEditState({ ...baseListing, hiringStatus: -3 }).hiringStatus,
       ).toBe(-1);
     });
 
     it('defaults missing audited to false', () => {
-      const { audited, ...rest } = baseListing;
+      const { audited: _audited, ...rest } = baseListing;
       expect(createInitialAdminListingEditState(rest).audited).toBe(false);
     });
 
@@ -111,10 +111,10 @@ describe('adminListingEditReducer', () => {
     });
 
     it('ADD_DEPARTMENT appends and closes the dropdown', () => {
-      const state = adminListingEditReducer(
-        createInitialAdminListingEditState(baseListing),
-        { type: 'SET_DEPT_SEARCH', payload: 'phys' }
-      );
+      const state = adminListingEditReducer(createInitialAdminListingEditState(baseListing), {
+        type: 'SET_DEPT_SEARCH',
+        payload: 'phys',
+      });
       const next = adminListingEditReducer(state, {
         type: 'ADD_DEPARTMENT',
         payload: 'Physics',

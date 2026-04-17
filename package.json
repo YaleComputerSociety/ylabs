@@ -18,7 +18,12 @@
     "start": "concurrently \"yarn start:client\" \"yarn start:server\"",
     "start:client": "cd client && yarn dev",
     "start:server": "cd server && yarn start",
-    "test": "yarn install:all && yarn build && yarn start"
+    "test": "yarn install:all && yarn build && yarn start",
+    "test:ci": "yarn --cwd client test:ci",
+    "lint": "eslint \"client/src/**/*.{ts,tsx}\" \"server/src/**/*.ts\"",
+    "lint:fix": "eslint --fix \"client/src/**/*.{ts,tsx}\" \"server/src/**/*.ts\"",
+    "format": "prettier --write \"client/src/**/*.{ts,tsx,css}\" \"server/src/**/*.ts\"",
+    "format:check": "prettier --check \"client/src/**/*.{ts,tsx,css}\" \"server/src/**/*.ts\""
   },
   "dependencies": {
     "axios": "^1.6.0",
@@ -38,7 +43,15 @@
   },
   "devDependencies": {
     "@types/react": "^19.2.2",
-    "@types/react-dom": "^19.2.2"
+    "@types/react-dom": "^19.2.2",
+    "eslint": "^9.18.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-react": "^7.37.4",
+    "eslint-plugin-react-hooks": "^5.1.0",
+    "globals": "^15.14.0",
+    "prettier": "^3.4.2",
+    "typescript": "^5.3.0",
+    "typescript-eslint": "^8.20.0"
   },
   "packageManager": "yarn@4.6.0+sha512.5383cc12567a95f1d668fbe762dfe0075c595b4bfff433be478dbbe24e05251a8e8c3eb992a986667c1d53b6c3a9c85b8398c35a960587fbd9fa3a0915406728"
 }

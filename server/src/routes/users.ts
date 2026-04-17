@@ -1,7 +1,7 @@
 /**
  * User routes for favorites, fellowships, listings, and profile updates.
  */
-import { Router, Request, Response, NextFunction } from "express";
+import { Router, Request, Response, NextFunction } from 'express';
 import { isAuthenticated } from '../middleware/index';
 import * as userController from '../controllers/userController';
 import { logEvent } from '../services/analyticsService';
@@ -13,9 +13,9 @@ const logFavoriteEvent = (isFavorite: boolean) => {
   return async (req: Request, res: Response, next: NextFunction) => {
     const originalSend = res.send.bind(res);
 
-    res.send = function(data: any) {
+    res.send = function (data: any) {
       if (res.statusCode >= 200 && res.statusCode < 300) {
-        const currentUser = req.user as { netId?: string, userType: string };
+        const currentUser = req.user as { netId?: string; userType: string };
         if (currentUser?.netId && req.body.favListings) {
           const listings = Array.isArray(req.body.favListings)
             ? req.body.favListings
@@ -23,11 +23,13 @@ const logFavoriteEvent = (isFavorite: boolean) => {
 
           listings.forEach((listingId: string) => {
             logEvent({
-              eventType: isFavorite ? AnalyticsEventType.LISTING_FAVORITE : AnalyticsEventType.LISTING_UNFAVORITE,
+              eventType: isFavorite
+                ? AnalyticsEventType.LISTING_FAVORITE
+                : AnalyticsEventType.LISTING_UNFAVORITE,
               netid: currentUser.netId!,
               userType: currentUser.userType,
-              listingId: listingId
-            }).catch(err => console.error('Error logging favorite event:', err));
+              listingId: listingId,
+            }).catch((err) => console.error('Error logging favorite event:', err));
           });
         }
       }
@@ -42,18 +44,18 @@ const logFavoriteEvent = (isFavorite: boolean) => {
 const logProfileUpdateEvent = async (req: Request, res: Response, next: NextFunction) => {
   const originalSend = res.send.bind(res);
 
-  res.send = function(data: any) {
+  res.send = function (data: any) {
     if (res.statusCode >= 200 && res.statusCode < 300) {
-      const currentUser = req.user as { netId?: string, userType: string };
+      const currentUser = req.user as { netId?: string; userType: string };
       if (currentUser?.netId && req.body && Object.keys(req.body).length > 0) {
         logEvent({
           eventType: AnalyticsEventType.PROFILE_UPDATE,
           netid: currentUser.netId,
           userType: currentUser.userType,
           metadata: {
-            fields: Object.keys(req.body)
-          }
-        }).catch(err => console.error('Error logging profile update event:', err));
+            fields: Object.keys(req.body),
+          },
+        }).catch((err) => console.error('Error logging profile update event:', err));
       }
     }
 
@@ -65,7 +67,12 @@ const logProfileUpdateEvent = async (req: Request, res: Response, next: NextFunc
 
 router.get('/favListingsIds', isAuthenticated, userController.getFavListingsIds);
 router.put('/favListings', isAuthenticated, logFavoriteEvent(true), userController.addFavListings);
-router.delete('/favListings', isAuthenticated, logFavoriteEvent(false), userController.removeFavListings);
+router.delete(
+  '/favListings',
+  isAuthenticated,
+  logFavoriteEvent(false),
+  userController.removeFavListings,
+);
 
 router.get('/favFellowshipIds', isAuthenticated, userController.getFavFellowshipIds);
 router.get('/favFellowships', isAuthenticated, userController.getFavFellowships);

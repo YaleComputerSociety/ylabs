@@ -1,15 +1,15 @@
 /**
  * Controller handlers for faculty profile routes.
  */
-import { Request, Response } from "express";
-import { User } from "../models/user";
-import { getListingModel } from "../db/connections";
+import { Request, Response } from 'express';
+import { User } from '../models/user';
+import { getListingModel } from '../db/connections';
 import {
   getProfileByNetid,
   updateOwnProfile,
   cascadeDepartmentsToListings,
-} from "../services/profileService";
-import { fetchCourseTableData } from "../services/courseTableService";
+} from '../services/profileService';
+import { fetchCourseTableData } from '../services/courseTableService';
 
 /**
  * GET /profiles/:netid — public profile (any authenticated user)
@@ -20,13 +20,13 @@ export const getProfile = async (req: Request, res: Response) => {
     const profile = await getProfileByNetid(netid, false);
 
     if (!profile) {
-      return res.status(404).json({ error: "Profile not found" });
+      return res.status(404).json({ error: 'Profile not found' });
     }
 
     res.json({ profile });
   } catch (error: any) {
-    console.error("Profile: Error fetching profile:", error);
-    res.status(500).json({ error: "Failed to fetch profile" });
+    console.error('Profile: Error fetching profile:', error);
+    res.status(500).json({ error: 'Failed to fetch profile' });
   }
 };
 
@@ -37,19 +37,16 @@ export const getPublications = async (req: Request, res: Response) => {
   try {
     const { netid } = req.params;
     const page = Math.max(1, parseInt(req.query.page as string, 10) || 1);
-    const pageSize = Math.min(
-      100,
-      Math.max(1, parseInt(req.query.pageSize as string, 10) || 20)
-    );
-    const sortBy = (req.query.sortBy as string) || "year";
-    const sortOrder = req.query.sortOrder === "asc" ? 1 : -1;
+    const pageSize = Math.min(100, Math.max(1, parseInt(req.query.pageSize as string, 10) || 20));
+    const sortBy = (req.query.sortBy as string) || 'year';
+    const sortOrder = req.query.sortOrder === 'asc' ? 1 : -1;
 
-    const user = await User.findOne({ netid }).select("+publications").lean();
+    const user = await User.findOne({ netid }).select('+publications').lean();
     if (!user) {
-      return res.status(404).json({ error: "Profile not found" });
+      return res.status(404).json({ error: 'Profile not found' });
     }
 
-    let pubs = (user as any).publications || [];
+    const pubs = (user as any).publications || [];
 
     pubs.sort((a: any, b: any) => {
       const aVal = a[sortBy] ?? 0;
@@ -71,8 +68,8 @@ export const getPublications = async (req: Request, res: Response) => {
       totalPages: Math.ceil(total / pageSize),
     });
   } catch (error: any) {
-    console.error("Profile: Error fetching publications:", error);
-    res.status(500).json({ error: "Failed to fetch publications" });
+    console.error('Profile: Error fetching publications:', error);
+    res.status(500).json({ error: 'Failed to fetch publications' });
   }
 };
 
@@ -88,14 +85,14 @@ export const getProfileListings = async (req: Request, res: Response) => {
         $or: [{ ownerId: netid }, { professorIds: netid }],
         archived: false,
       })
-      .select("-embedding")
+      .select('-embedding')
       .sort({ createdAt: -1 })
       .lean();
 
     res.json({ listings });
   } catch (error: any) {
-    console.error("Profile: Error fetching listings:", error);
-    res.status(500).json({ error: "Failed to fetch listings" });
+    console.error('Profile: Error fetching listings:', error);
+    res.status(500).json({ error: 'Failed to fetch listings' });
   }
 };
 
@@ -106,12 +103,10 @@ export const getProfileCourses = async (req: Request, res: Response) => {
   try {
     const { netid } = req.params;
 
-    const user = await User.findOne({ netid })
-      .select("fname lname")
-      .lean();
+    const user = await User.findOne({ netid }).select('fname lname').lean();
 
     if (!user) {
-      return res.status(404).json({ error: "Profile not found" });
+      return res.status(404).json({ error: 'Profile not found' });
     }
 
     const professorName = `${(user as any).fname} ${(user as any).lname}`;
@@ -123,7 +118,7 @@ export const getProfileCourses = async (req: Request, res: Response) => {
 
     res.json({ courses, available: true });
   } catch (error: any) {
-    console.error("Profile: Error fetching courses:", error);
+    console.error('Profile: Error fetching courses:', error);
     res.json({ courses: [], available: false });
   }
 };
@@ -137,19 +132,16 @@ export const updateProfile = async (req: Request, res: Response) => {
     const updated = await updateOwnProfile(currentUser.netId, req.body);
 
     if (!updated) {
-      return res.status(404).json({ error: "Profile not found" });
+      return res.status(404).json({ error: 'Profile not found' });
     }
 
-    if (
-      req.body.primary_department !== undefined ||
-      req.body.secondary_departments !== undefined
-    ) {
+    if (req.body.primary_department !== undefined || req.body.secondary_departments !== undefined) {
       await cascadeDepartmentsToListings(currentUser.netId);
     }
 
     res.json({ profile: updated });
   } catch (error: any) {
-    console.error("Profile: Error updating profile:", error);
+    console.error('Profile: Error updating profile:', error);
     res.status(400).json({ error: error.message });
   }
 };
@@ -164,26 +156,28 @@ export const verifyProfile = async (req: Request, res: Response) => {
 
     const existing = await User.findOne({ netid: currentUser.netId }).lean();
     if (!existing) {
-      return res.status(404).json({ error: "Profile not found" });
+      return res.status(404).json({ error: 'Profile not found' });
     }
 
     const profile = existing as any;
     if (!profile.primary_department?.trim()) {
-      return res.status(400).json({ error: "Primary department is required for verification." });
+      return res.status(400).json({ error: 'Primary department is required for verification.' });
     }
     if (!profile.research_interests?.length) {
-      return res.status(400).json({ error: "At least one research interest is required for verification." });
+      return res
+        .status(400)
+        .json({ error: 'At least one research interest is required for verification.' });
     }
 
     const user = await User.findOneAndUpdate(
       { netid: currentUser.netId },
       { profileVerified: true },
-      { new: true }
+      { new: true },
     ).lean();
 
     res.json({ profile: user });
   } catch (error: any) {
-    console.error("Profile: Error verifying profile:", error);
+    console.error('Profile: Error verifying profile:', error);
     res.status(400).json({ error: error.message });
   }
 };

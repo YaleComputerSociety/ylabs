@@ -10,9 +10,8 @@ export function useViewTracking(entityType: 'listing' | 'fellowship', entityId: 
   const trackView = useCallback(() => {
     if (viewedRef.current) return;
     viewedRef.current = true;
-    const endpoint = entityType === 'listing'
-      ? `listings/${entityId}/addView`
-      : `fellowships/${entityId}/addView`;
+    const endpoint =
+      entityType === 'listing' ? `listings/${entityId}/addView` : `fellowships/${entityId}/addView`;
     axios.put(endpoint, { withCredentials: true }).catch(() => {});
   }, [entityType, entityId]);
 

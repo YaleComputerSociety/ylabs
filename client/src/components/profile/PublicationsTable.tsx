@@ -66,7 +66,9 @@ const PublicationsTable = ({ netid }: PublicationsTableProps) => {
 
   return (
     <div>
-      <p className="text-sm text-gray-500 mb-3">{total} publication{total !== 1 ? 's' : ''}</p>
+      <p className="text-sm text-gray-500 mb-3">
+        {total} publication{total !== 1 ? 's' : ''}
+      </p>
 
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
@@ -113,7 +115,17 @@ const PublicationsTable = ({ netid }: PublicationsTableProps) => {
                         className="flex-shrink-0 text-blue-500 hover:text-blue-700"
                         title="Open DOI"
                       >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          width="12"
+                          height="12"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
                           <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
                           <polyline points="15 3 21 3 21 9" />
                           <line x1="10" y1="14" x2="21" y2="3" />
@@ -128,7 +140,17 @@ const PublicationsTable = ({ netid }: PublicationsTableProps) => {
                         className="flex-shrink-0 text-green-500 hover:text-green-700"
                         title="Open Access"
                       >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          width="12"
+                          height="12"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
                           <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
                           <polyline points="15 3 21 3 21 9" />
                           <line x1="10" y1="14" x2="21" y2="3" />
@@ -137,7 +159,9 @@ const PublicationsTable = ({ netid }: PublicationsTableProps) => {
                     )}
                   </div>
                 </td>
-                <td className="py-2 px-2 text-gray-500 max-w-[200px] truncate">{pub.venue || '—'}</td>
+                <td className="py-2 px-2 text-gray-500 max-w-[200px] truncate">
+                  {pub.venue || '—'}
+                </td>
                 <td className="py-2 px-2 text-right text-gray-500">{pub.cited_by_count ?? 0}</td>
               </tr>
             ))}

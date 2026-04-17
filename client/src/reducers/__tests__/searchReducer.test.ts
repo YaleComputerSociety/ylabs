@@ -1,11 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { Listing } from '../../types/types';
-import {
-  SearchState,
-  createInitialSearchState,
-  searchReducer,
-} from '../searchReducer';
+import { SearchState, createInitialSearchState, searchReducer } from '../searchReducer';
 
 const makeListing = (overrides: Partial<Listing> = {}): Listing => ({
   id: 'id-1',

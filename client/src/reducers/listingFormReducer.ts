@@ -98,7 +98,7 @@ export const createInitialListingFormState = (listing: Listing): ListingFormStat
 
 export function listingFormReducer(
   state: ListingFormState,
-  action: ListingFormAction
+  action: ListingFormAction,
 ): ListingFormState {
   switch (action.type) {
     case 'SET_TITLE':

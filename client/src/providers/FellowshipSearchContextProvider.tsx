@@ -4,26 +4,28 @@
  * State transitions live in reducers/fellowshipSearchReducer.ts; this component
  * owns side effects and maps reducer state/dispatch onto the context API.
  */
-import { FC, useEffect, useCallback, useContext, useReducer, useRef, ReactNode } from "react";
-import { useLocation } from "react-router-dom";
-import axios from "../utils/axios";
-import swal from "sweetalert";
+import { FC, useEffect, useCallback, useContext, useReducer, useRef, ReactNode } from 'react';
+import { useLocation } from 'react-router-dom';
+import axios from '../utils/axios';
+import swal from 'sweetalert';
 
-import FellowshipSearchContext from "../contexts/FellowshipSearchContext";
-import UserContext from "../contexts/UserContext";
-import { Fellowship } from "../types/types";
-import { createFellowship } from "../utils/createFellowship";
+import FellowshipSearchContext from '../contexts/FellowshipSearchContext';
+import UserContext from '../contexts/UserContext';
+import { Fellowship } from '../types/types';
+import { createFellowship } from '../utils/createFellowship';
 import {
   fellowshipSearchReducer,
   createInitialFellowshipSearchState,
   FellowshipQuickFilter,
-} from "../reducers/fellowshipSearchReducer";
+} from '../reducers/fellowshipSearchReducer';
 
 interface FellowshipSearchContextProviderProps {
   children: ReactNode;
 }
 
-const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> = ({ children }) => {
+const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> = ({
+  children,
+}) => {
   const pageSize = 500;
   const sortableKeys = ['default', 'createdAt', 'deadline', 'title'];
 
@@ -33,10 +35,8 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
   const { isAuthenticated, isLoading: authLoading } = useContext(UserContext);
   const authReady = !authLoading && isAuthenticated;
 
-  const [state, dispatch] = useReducer(
-    fellowshipSearchReducer,
-    undefined,
-    () => createInitialFellowshipSearchState({ sortBy: sortableKeys[0] })
+  const [state, dispatch] = useReducer(fellowshipSearchReducer, undefined, () =>
+    createInitialFellowshipSearchState({ sortBy: sortableKeys[0] }),
   );
 
   const {
@@ -67,40 +67,25 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
     dispatch({ type: 'SET_QUERY_STRING', payload: value });
   }, []);
 
-  const setSelectedYearOfStudy = useCallback(
-    (value: React.SetStateAction<string[]>) => {
-      dispatch({ type: 'SET_SELECTED_YEAR_OF_STUDY', payload: value });
-    },
-    []
-  ) as React.Dispatch<React.SetStateAction<string[]>>;
+  const setSelectedYearOfStudy = useCallback((value: React.SetStateAction<string[]>) => {
+    dispatch({ type: 'SET_SELECTED_YEAR_OF_STUDY', payload: value });
+  }, []) as React.Dispatch<React.SetStateAction<string[]>>;
 
-  const setSelectedTermOfAward = useCallback(
-    (value: React.SetStateAction<string[]>) => {
-      dispatch({ type: 'SET_SELECTED_TERM_OF_AWARD', payload: value });
-    },
-    []
-  ) as React.Dispatch<React.SetStateAction<string[]>>;
+  const setSelectedTermOfAward = useCallback((value: React.SetStateAction<string[]>) => {
+    dispatch({ type: 'SET_SELECTED_TERM_OF_AWARD', payload: value });
+  }, []) as React.Dispatch<React.SetStateAction<string[]>>;
 
-  const setSelectedPurpose = useCallback(
-    (value: React.SetStateAction<string[]>) => {
-      dispatch({ type: 'SET_SELECTED_PURPOSE', payload: value });
-    },
-    []
-  ) as React.Dispatch<React.SetStateAction<string[]>>;
+  const setSelectedPurpose = useCallback((value: React.SetStateAction<string[]>) => {
+    dispatch({ type: 'SET_SELECTED_PURPOSE', payload: value });
+  }, []) as React.Dispatch<React.SetStateAction<string[]>>;
 
-  const setSelectedRegions = useCallback(
-    (value: React.SetStateAction<string[]>) => {
-      dispatch({ type: 'SET_SELECTED_REGIONS', payload: value });
-    },
-    []
-  ) as React.Dispatch<React.SetStateAction<string[]>>;
+  const setSelectedRegions = useCallback((value: React.SetStateAction<string[]>) => {
+    dispatch({ type: 'SET_SELECTED_REGIONS', payload: value });
+  }, []) as React.Dispatch<React.SetStateAction<string[]>>;
 
-  const setSelectedCitizenship = useCallback(
-    (value: React.SetStateAction<string[]>) => {
-      dispatch({ type: 'SET_SELECTED_CITIZENSHIP', payload: value });
-    },
-    []
-  ) as React.Dispatch<React.SetStateAction<string[]>>;
+  const setSelectedCitizenship = useCallback((value: React.SetStateAction<string[]>) => {
+    dispatch({ type: 'SET_SELECTED_CITIZENSHIP', payload: value });
+  }, []) as React.Dispatch<React.SetStateAction<string[]>>;
 
   const setSortBy = useCallback((value: string) => {
     dispatch({ type: 'SET_SORT_BY', payload: value });
@@ -110,12 +95,9 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
     dispatch({ type: 'SET_SORT_ORDER', payload: value });
   }, []);
 
-  const setPage = useCallback(
-    (value: React.SetStateAction<number>) => {
-      dispatch({ type: 'SET_PAGE', payload: value });
-    },
-    []
-  ) as React.Dispatch<React.SetStateAction<number>>;
+  const setPage = useCallback((value: React.SetStateAction<number>) => {
+    dispatch({ type: 'SET_PAGE', payload: value });
+  }, []) as React.Dispatch<React.SetStateAction<number>>;
 
   const setQuickFilter = useCallback((value: FellowshipQuickFilter) => {
     dispatch({ type: 'SET_QUICK_FILTER', payload: value });
@@ -181,62 +163,65 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
       });
   }, [isActive, authReady]);
 
-  const handleSearch = useCallback((searchPage: number) => {
-    const f = filtersRef.current;
-    const formattedQuery = f.queryString.trim();
+  const handleSearch = useCallback(
+    (searchPage: number) => {
+      const f = filtersRef.current;
+      const formattedQuery = f.queryString.trim();
 
-    let url = `/fellowships/search?query=${encodeURIComponent(formattedQuery)}&page=${searchPage}&pageSize=${pageSize}`;
+      let url = `/fellowships/search?query=${encodeURIComponent(formattedQuery)}&page=${searchPage}&pageSize=${pageSize}`;
 
-    if (f.sortBy !== 'default') {
-      url += `&sortBy=${f.sortBy}&sortOrder=${f.sortOrder}`;
-    }
+      if (f.sortBy !== 'default') {
+        url += `&sortBy=${f.sortBy}&sortOrder=${f.sortOrder}`;
+      }
 
-    if (f.selectedYearOfStudy.length > 0) {
-      url += `&yearOfStudy=${encodeURIComponent(f.selectedYearOfStudy.join(','))}`;
-    }
-    if (f.selectedTermOfAward.length > 0) {
-      url += `&termOfAward=${encodeURIComponent(f.selectedTermOfAward.join(','))}`;
-    }
-    if (f.selectedPurpose.length > 0) {
-      url += `&purpose=${encodeURIComponent(f.selectedPurpose.join(','))}`;
-    }
-    if (f.selectedRegions.length > 0) {
-      url += `&globalRegions=${encodeURIComponent(f.selectedRegions.join(','))}`;
-    }
-    if (f.selectedCitizenship.length > 0) {
-      url += `&citizenshipStatus=${encodeURIComponent(f.selectedCitizenship.join(','))}`;
-    }
+      if (f.selectedYearOfStudy.length > 0) {
+        url += `&yearOfStudy=${encodeURIComponent(f.selectedYearOfStudy.join(','))}`;
+      }
+      if (f.selectedTermOfAward.length > 0) {
+        url += `&termOfAward=${encodeURIComponent(f.selectedTermOfAward.join(','))}`;
+      }
+      if (f.selectedPurpose.length > 0) {
+        url += `&purpose=${encodeURIComponent(f.selectedPurpose.join(','))}`;
+      }
+      if (f.selectedRegions.length > 0) {
+        url += `&globalRegions=${encodeURIComponent(f.selectedRegions.join(','))}`;
+      }
+      if (f.selectedCitizenship.length > 0) {
+        url += `&citizenshipStatus=${encodeURIComponent(f.selectedCitizenship.join(','))}`;
+      }
 
-    dispatch({ type: 'SEARCH_REQUEST' });
+      dispatch({ type: 'SEARCH_REQUEST' });
 
-    axios
-      .get(url)
-      .then((response) => {
-        const responseFellowships: Fellowship[] = response.data.results.map(
-          (elem: any) => createFellowship(elem)
-        );
+      axios
+        .get(url)
+        .then((response) => {
+          const responseFellowships: Fellowship[] = response.data.results.map((elem: any) =>
+            createFellowship(elem),
+          );
 
-        dispatch({
-          type: 'SEARCH_SUCCESS',
-          payload: {
-            fellowships: responseFellowships,
-            total: response.data.total,
-            pageSize,
-            append: searchPage !== 1,
-          },
-        });
-      })
-      .catch((error) => {
-        console.error('Error loading fellowships:', error);
-        if (error?.response?.status !== 401) {
-          swal({
-            text: 'Unable to load fellowships. Please try again later.',
-            icon: 'warning',
+          dispatch({
+            type: 'SEARCH_SUCCESS',
+            payload: {
+              fellowships: responseFellowships,
+              total: response.data.total,
+              pageSize,
+              append: searchPage !== 1,
+            },
           });
-        }
-        dispatch({ type: 'SEARCH_FAILURE' });
-      });
-  }, [pageSize]);
+        })
+        .catch((error) => {
+          console.error('Error loading fellowships:', error);
+          if (error?.response?.status !== 401) {
+            swal({
+              text: 'Unable to load fellowships. Please try again later.',
+              icon: 'warning',
+            });
+          }
+          dispatch({ type: 'SEARCH_FAILURE' });
+        });
+    },
+    [pageSize],
+  );
 
   const refreshFellowships = useCallback(() => {
     dispatch({ type: 'SET_PAGE', payload: 1 });
@@ -279,7 +264,17 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
       handleSearch(1);
     }
     dispatch({ type: 'MARK_FILTERS_LOADED' });
-  }, [selectedYearOfStudy, selectedTermOfAward, selectedPurpose, selectedRegions, selectedCitizenship, sortBy, sortOrder, filterOptionsLoaded, isActive]);
+  }, [
+    selectedYearOfStudy,
+    selectedTermOfAward,
+    selectedPurpose,
+    selectedRegions,
+    selectedCitizenship,
+    sortBy,
+    sortOrder,
+    filterOptionsLoaded,
+    isActive,
+  ]);
 
   useEffect(() => {
     if (!isActive) return;

@@ -21,7 +21,7 @@ const DepartmentInput = ({
   onRemoveDepartment,
   required = false,
   error,
-  label = 'Department Affiliation'
+  label = 'Department Affiliation',
 }: DepartmentInputProps) => {
   const [isDeptDropdownOpen, setIsDeptDropdownOpen] = useState(false);
   const [deptSearchTerm, setDeptSearchTerm] = useState('');
@@ -32,8 +32,8 @@ const DepartmentInput = ({
   const deptDropdownRef = useRef<HTMLDivElement>(null);
   const deptInputRef = useRef<HTMLInputElement>(null);
 
-  const filteredDepartments = availableDepartments.filter(dept =>
-    dept.toLowerCase().includes(deptSearchTerm.toLowerCase())
+  const filteredDepartments = availableDepartments.filter((dept) =>
+    dept.toLowerCase().includes(deptSearchTerm.toLowerCase()),
   );
 
   useEffect(() => {
@@ -52,13 +52,11 @@ const DepartmentInput = ({
     switch (e.key) {
       case 'ArrowDown':
         e.preventDefault();
-        setFocusedDeptIndex(prev =>
-          prev < filteredDepartments.length - 1 ? prev + 1 : prev
-        );
+        setFocusedDeptIndex((prev) => (prev < filteredDepartments.length - 1 ? prev + 1 : prev));
         break;
       case 'ArrowUp':
         e.preventDefault();
-        setFocusedDeptIndex(prev => prev > 0 ? prev - 1 : 0);
+        setFocusedDeptIndex((prev) => (prev > 0 ? prev - 1 : 0));
         break;
       case 'Enter':
         e.preventDefault();
@@ -105,7 +103,13 @@ const DepartmentInput = ({
           <input
             ref={deptInputRef}
             type="text"
-            value={isDeptDropdownOpen ? deptSearchTerm : (departments.length > 0 ? departments.join(', ') : '')}
+            value={
+              isDeptDropdownOpen
+                ? deptSearchTerm
+                : departments.length > 0
+                  ? departments.join(', ')
+                  : ''
+            }
             onClick={() => {
               setDeptSearchTerm('');
               setIsDeptDropdownOpen(true);
@@ -137,7 +141,11 @@ const DepartmentInput = ({
               }
             }}
           >
-            <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
+            <svg
+              className="fill-current h-4 w-4"
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 20 20"
+            >
               <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" />
             </svg>
           </div>
@@ -155,9 +163,7 @@ const DepartmentInput = ({
                     key={index}
                     className={`${getDepartmentColor(department)} text-gray-900 px-2 py-1 rounded text-sm flex items-center`}
                   >
-                    <span className="whitespace-nowrap">
-                      {department}
-                    </span>
+                    <span className="whitespace-nowrap">{department}</span>
                     <button
                       type="button"
                       onMouseDown={(e) => e.preventDefault()}
@@ -176,7 +182,7 @@ const DepartmentInput = ({
                   <li
                     key={index}
                     onClick={() => {
-                      onAddDepartment(dept)
+                      onAddDepartment(dept);
                       setDeptSearchTerm('');
                     }}
                     className={`p-2 cursor-pointer ${
@@ -189,21 +195,25 @@ const DepartmentInput = ({
                   </li>
                 ))
               ) : (
-                <li className="p-2 text-gray-500" tabIndex={-1}>No departments found</li>
+                <li className="p-2 text-gray-500" tabIndex={-1}>
+                  No departments found
+                </li>
               )}
             </ul>
           </div>
         )}
       </div>
       <div className="text-xs text-gray-500 mt-1">
-        Don't see your department? Let us know{" "}
+        Don't see your department? Let us know{' '}
         <a
-            href={"https://docs.google.com/forms/d/e/1FAIpQLSf2BE6MBulJHWXhDDp3y4Nixwe6EH0Oo9X1pTo976-KrJKv5g/viewform"}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-blue-500"
+          href={
+            'https://docs.google.com/forms/d/e/1FAIpQLSf2BE6MBulJHWXhDDp3y4Nixwe6EH0Oo9X1pTo976-KrJKv5g/viewform'
+          }
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-blue-500"
         >
-            here
+          here
         </a>
       </div>
       {error && <p className="text-red-500 text-xs mt-1">{error}</p>}

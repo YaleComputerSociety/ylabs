@@ -20,10 +20,8 @@ interface ProfileEditorProps {
 }
 
 const ProfileEditor = ({ netid }: ProfileEditorProps) => {
-  const [state, dispatch] = useReducer(
-    profileEditorReducer,
-    undefined,
-    () => createInitialProfileEditorState()
+  const [state, dispatch] = useReducer(profileEditorReducer, undefined, () =>
+    createInitialProfileEditorState(),
   );
   const {
     profile,
@@ -43,23 +41,27 @@ const ProfileEditor = ({ netid }: ProfileEditorProps) => {
   } = state;
 
   const { departments: allDepartmentsConfig, isLoading: configLoading } = useConfig();
-  const departmentNames = useMemo(() => allDepartmentsConfig.map(d => d.displayName), [allDepartmentsConfig]);
+  const departmentNames = useMemo(
+    () => allDepartmentsConfig.map((d) => d.displayName),
+    [allDepartmentsConfig],
+  );
 
   const primaryDropdownRef = useRef<HTMLDivElement>(null);
   const primaryInputRef = useRef<HTMLInputElement>(null);
 
   const filteredPrimaryDepts = useMemo(() => {
     const search = isPrimaryDropdownOpen ? primaryDeptSearch : '';
-    return departmentNames.filter(dept =>
-      dept.toLowerCase().includes(search.toLowerCase()) &&
-      dept !== primaryDept &&
-      !secondaryDepts.includes(dept)
+    return departmentNames.filter(
+      (dept) =>
+        dept.toLowerCase().includes(search.toLowerCase()) &&
+        dept !== primaryDept &&
+        !secondaryDepts.includes(dept),
     );
   }, [departmentNames, primaryDeptSearch, primaryDept, secondaryDepts, isPrimaryDropdownOpen]);
 
   const availableSecondaryDepts = useMemo(() => {
     return departmentNames
-      .filter(dept => dept !== primaryDept && !secondaryDepts.includes(dept))
+      .filter((dept) => dept !== primaryDept && !secondaryDepts.includes(dept))
       .sort();
   }, [departmentNames, primaryDept, secondaryDepts]);
 
@@ -112,7 +114,11 @@ const ProfileEditor = ({ netid }: ProfileEditorProps) => {
 
       if (isUnverified) {
         const verifyRes = await axios.put('/profiles/me/verify');
-        const updatedProfile: FacultyProfile = { ...(profile as FacultyProfile), ...verifyRes.data.profile, profileVerified: true };
+        const updatedProfile: FacultyProfile = {
+          ...(profile as FacultyProfile),
+          ...verifyRes.data.profile,
+          profileVerified: true,
+        };
         dispatch({
           type: 'SAVE_SUCCESS',
           profile: updatedProfile,
@@ -120,11 +126,17 @@ const ProfileEditor = ({ netid }: ProfileEditorProps) => {
         });
       } else {
         const res = await axios.put('/profiles/me', data);
-        const updatedProfile: FacultyProfile = { ...(profile as FacultyProfile), ...res.data.profile };
+        const updatedProfile: FacultyProfile = {
+          ...(profile as FacultyProfile),
+          ...res.data.profile,
+        };
         dispatch({
           type: 'SAVE_SUCCESS',
           profile: updatedProfile,
-          message: { type: 'success', text: 'Profile updated. Department changes have been applied to your listings.' },
+          message: {
+            type: 'success',
+            text: 'Profile updated. Department changes have been applied to your listings.',
+          },
         });
       }
     } catch (err: any) {
@@ -135,19 +147,13 @@ const ProfileEditor = ({ netid }: ProfileEditorProps) => {
     }
   };
 
-  const setSecondaryDepts = useCallback(
-    (value: React.SetStateAction<string[]>) => {
-      dispatch({ type: 'SET_SECONDARY_DEPTS', payload: value });
-    },
-    []
-  );
+  const setSecondaryDepts = useCallback((value: React.SetStateAction<string[]>) => {
+    dispatch({ type: 'SET_SECONDARY_DEPTS', payload: value });
+  }, []);
 
-  const setResearchInterests = useCallback(
-    (value: React.SetStateAction<string[]>) => {
-      dispatch({ type: 'SET_RESEARCH_INTERESTS', payload: value });
-    },
-    []
-  );
+  const setResearchInterests = useCallback((value: React.SetStateAction<string[]>) => {
+    dispatch({ type: 'SET_RESEARCH_INTERESTS', payload: value });
+  }, []);
 
   const handlePrimaryKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     switch (e.key) {
@@ -196,17 +202,20 @@ const ProfileEditor = ({ netid }: ProfileEditorProps) => {
   if (!profile) return null;
 
   const fullName = `${profile.fname} ${profile.lname}`;
-  const initials = `${profile.fname?.charAt(0) || ''}${profile.lname?.charAt(0) || ''}`.toUpperCase();
+  const initials =
+    `${profile.fname?.charAt(0) || ''}${profile.lname?.charAt(0) || ''}`.toUpperCase();
 
   return (
     <section className="mb-8">
       {isUnverified && (
         <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg mb-6">
           <p className="text-sm font-medium text-amber-800">
-            Your faculty profile has been auto-populated from Yale directories and academic databases.
+            Your faculty profile has been auto-populated from Yale directories and academic
+            databases.
           </p>
           <p className="text-xs text-amber-600 mt-0.5">
-            Please review your information below. A primary department and at least one research interest are required to save and verify your profile.
+            Please review your information below. A primary department and at least one research
+            interest are required to save and verify your profile.
           </p>
         </div>
       )}
@@ -215,7 +224,11 @@ const ProfileEditor = ({ netid }: ProfileEditorProps) => {
         <div className="flex items-start justify-between mb-4">
           <div className="flex items-center gap-4">
             {profile.image_url ? (
-              <img src={profile.image_url} alt={fullName} className="w-16 h-16 rounded-xl object-cover" />
+              <img
+                src={profile.image_url}
+                alt={fullName}
+                className="w-16 h-16 rounded-xl object-cover"
+              />
             ) : (
               <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-blue-100 to-blue-200 flex items-center justify-center">
                 <span className="text-xl font-bold text-blue-700">{initials}</span>
@@ -224,7 +237,10 @@ const ProfileEditor = ({ netid }: ProfileEditorProps) => {
             <div>
               <h3 className="text-lg font-bold text-gray-900">{fullName}</h3>
               {profile.title && <p className="text-sm text-gray-500">{profile.title}</p>}
-              <a href={`/profile/${netid}`} className="text-xs text-blue-600 hover:underline mt-0.5 inline-block">
+              <a
+                href={`/profile/${netid}`}
+                className="text-xs text-blue-600 hover:underline mt-0.5 inline-block"
+              >
                 View full profile
               </a>
             </div>
@@ -254,7 +270,9 @@ const ProfileEditor = ({ netid }: ProfileEditorProps) => {
         {validationErrors.length > 0 && (
           <div className="p-3 rounded-lg mb-4 text-sm bg-red-50 text-red-700 border border-red-200">
             <ul className="list-disc list-inside space-y-0.5">
-              {validationErrors.map((err, i) => <li key={i}>{err}</li>)}
+              {validationErrors.map((err, i) => (
+                <li key={i}>{err}</li>
+              ))}
             </ul>
           </div>
         )}
@@ -282,7 +300,9 @@ const ProfileEditor = ({ netid }: ProfileEditorProps) => {
                     type="text"
                     value={isPrimaryDropdownOpen ? primaryDeptSearch : primaryDept}
                     onClick={() => dispatch({ type: 'OPEN_PRIMARY_DROPDOWN' })}
-                    onChange={(e) => dispatch({ type: 'SET_PRIMARY_DEPT_SEARCH', payload: e.target.value })}
+                    onChange={(e) =>
+                      dispatch({ type: 'SET_PRIMARY_DEPT_SEARCH', payload: e.target.value })
+                    }
                     onKeyDown={handlePrimaryKeyDown}
                     onFocus={() => dispatch({ type: 'OPEN_PRIMARY_DROPDOWN' })}
                     readOnly={!isPrimaryDropdownOpen}
@@ -302,7 +322,11 @@ const ProfileEditor = ({ netid }: ProfileEditorProps) => {
                       }
                     }}
                   >
-                    <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
+                    <svg
+                      className="fill-current h-4 w-4"
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 20 20"
+                    >
                       <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" />
                     </svg>
                   </div>
@@ -330,7 +354,9 @@ const ProfileEditor = ({ netid }: ProfileEditorProps) => {
                           filteredPrimaryDepts.map((dept, index) => (
                             <li
                               key={index}
-                              onClick={() => dispatch({ type: 'SELECT_PRIMARY_DEPT', payload: dept })}
+                              onClick={() =>
+                                dispatch({ type: 'SELECT_PRIMARY_DEPT', payload: dept })
+                              }
                               className={`p-2 cursor-pointer text-sm ${
                                 focusedPrimaryIndex === index ? 'bg-blue-100' : 'hover:bg-gray-100'
                               }`}
@@ -349,7 +375,9 @@ const ProfileEditor = ({ netid }: ProfileEditorProps) => {
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Profile Image URL</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  Profile Image URL
+                </label>
                 <input
                   type="text"
                   value={imageUrl}
@@ -364,7 +392,9 @@ const ProfileEditor = ({ netid }: ProfileEditorProps) => {
               departments={secondaryDepts}
               availableDepartments={availableSecondaryDepts}
               onAddDepartment={(dept) => setSecondaryDepts((prev) => [...prev, dept])}
-              onRemoveDepartment={(index) => setSecondaryDepts((prev) => prev.filter((_, i) => i !== index))}
+              onRemoveDepartment={(index) =>
+                setSecondaryDepts((prev) => prev.filter((_, i) => i !== index))
+              }
             />
 
             <div>
@@ -374,7 +404,9 @@ const ProfileEditor = ({ netid }: ProfileEditorProps) => {
               <ResearchAreaInput
                 researchAreas={researchInterests}
                 onAddResearchArea={(area) => setResearchInterests((prev) => [...prev, area])}
-                onRemoveResearchArea={(index) => setResearchInterests((prev) => prev.filter((_, i) => i !== index))}
+                onRemoveResearchArea={(index) =>
+                  setResearchInterests((prev) => prev.filter((_, i) => i !== index))
+                }
               />
             </div>
 
@@ -401,17 +433,23 @@ const ProfileEditor = ({ netid }: ProfileEditorProps) => {
         ) : (
           <div className="mt-2 space-y-2 text-sm text-gray-600">
             {profile.primary_department && (
-              <p><span className="font-medium text-gray-700">Department:</span> {profile.primary_department}</p>
+              <p>
+                <span className="font-medium text-gray-700">Department:</span>{' '}
+                {profile.primary_department}
+              </p>
             )}
             {profile.secondary_departments?.length > 0 && (
-              <p><span className="font-medium text-gray-700">Joint Appointments:</span> {profile.secondary_departments.join(', ')}</p>
+              <p>
+                <span className="font-medium text-gray-700">Joint Appointments:</span>{' '}
+                {profile.secondary_departments.join(', ')}
+              </p>
             )}
             {profile.email && (
-              <p><span className="font-medium text-gray-700">Email:</span> {profile.email}</p>
+              <p>
+                <span className="font-medium text-gray-700">Email:</span> {profile.email}
+              </p>
             )}
-            {profile.bio && (
-              <p className="line-clamp-3">{profile.bio}</p>
-            )}
+            {profile.bio && <p className="line-clamp-3">{profile.bio}</p>}
           </div>
         )}
       </div>

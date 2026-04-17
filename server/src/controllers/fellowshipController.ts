@@ -1,7 +1,7 @@
 /**
  * Controller handlers for fellowship CRUD routes.
  */
-import { Request, Response } from "express";
+import { Request, Response } from 'express';
 import {
   readFellowship,
   searchFellowships,
@@ -28,7 +28,10 @@ export const searchFellowshipsController = async (request: Request, response: Re
 
     const parseFilter = (filter: string | undefined): string[] => {
       if (!filter) return [];
-      return filter.split(/[,|]/).map(s => s.trim()).filter(Boolean);
+      return filter
+        .split(/[,|]/)
+        .map((s) => s.trim())
+        .filter(Boolean);
     };
 
     const result = await searchFellowships({
@@ -52,8 +55,8 @@ export const searchFellowshipsController = async (request: Request, response: Re
       totalPages: result.totalPages,
     });
   } catch (error) {
-    console.error("Fellowship search failed:", error);
-    response.status(500).json({ error: "Search failed" });
+    console.error('Fellowship search failed:', error);
+    response.status(500).json({ error: 'Search failed' });
   }
 };
 

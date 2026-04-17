@@ -9,10 +9,9 @@ interface UnprivateRouteProps {
   Component: FunctionComponent;
 }
 
-const UnprivateRoute = ({ Component } : UnprivateRouteProps) => {
- 
+const UnprivateRoute = ({ Component }: UnprivateRouteProps) => {
   const { user } = useContext(UserContext);
 
-  return user ? <Navigate to='/' /> : <Component />;
+  return user ? <Navigate to="/" /> : <Component />;
 };
 export default UnprivateRoute;

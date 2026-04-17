@@ -1,50 +1,55 @@
 /**
  * Shared view and favorite operations for listings and fellowships.
+ * Uses atomic $inc to avoid lost-update races under concurrent writes.
  */
 import mongoose, { Model } from 'mongoose';
 import { NotFoundError, ObjectIdError } from '../utils/errors';
 
-const findItem = async (model: Model<any>, id: any) => {
+const assertValidId = (id: any) => {
   if (!mongoose.Types.ObjectId.isValid(id)) {
     throw new ObjectIdError('Did not receive expected id type ObjectId');
   }
-  const item = await model.findById(id);
-  if (!item) {
-    throw new NotFoundError(`Item not found with ObjectId: ${id}`);
-  }
-  return item;
 };
 
 export const addView = async (model: Model<any>, id: any) => {
-  const item = await findItem(model, id);
-  const views = (item.views as number) || 0;
+  assertValidId(id);
   const updated = await model.findByIdAndUpdate(
     id,
-    { views: views + 1 },
-    { new: true, timestamps: false }
+    { $inc: { views: 1 } },
+    { new: true, timestamps: false },
   );
-  return updated!.toObject();
+  if (!updated) {
+    throw new NotFoundError(`Item not found with ObjectId: ${id}`);
+  }
+  return updated.toObject();
 };
 
 export const addFavorite = async (model: Model<any>, id: any) => {
-  const item = await findItem(model, id);
-  const favorites = (item.favorites as number) || 0;
+  assertValidId(id);
   const updated = await model.findByIdAndUpdate(
     id,
-    { favorites: favorites + 1 },
-    { new: true, timestamps: false }
+    { $inc: { favorites: 1 } },
+    { new: true, timestamps: false },
   );
-  return updated!.toObject();
+  if (!updated) {
+    throw new NotFoundError(`Item not found with ObjectId: ${id}`);
+  }
+  return updated.toObject();
 };
 
 export const removeFavorite = async (model: Model<any>, id: any) => {
-  const item = await findItem(model, id);
-  const favorites = (item.favorites as number) || 0;
-  const newFavorites = favorites <= 0 ? 0 : favorites - 1;
-  const updated = await model.findByIdAndUpdate(
-    id,
-    { favorites: newFavorites },
-    { new: true, timestamps: false }
+  assertValidId(id);
+  // Atomic decrement guarded so favorites never drops below 0.
+  const updated = await model.findOneAndUpdate(
+    { _id: id, favorites: { $gt: 0 } },
+    { $inc: { favorites: -1 } },
+    { new: true, timestamps: false },
   );
-  return updated!.toObject();
+  if (updated) return updated.toObject();
+  // Filter didn't match: either missing, or already at 0. Distinguish.
+  const existing = await model.findById(id);
+  if (!existing) {
+    throw new NotFoundError(`Item not found with ObjectId: ${id}`);
+  }
+  return existing.toObject();
 };

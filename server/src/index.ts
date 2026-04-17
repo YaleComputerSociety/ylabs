@@ -1,9 +1,9 @@
 /**
  * Server entry point — connects to MongoDB and starts the Express server.
  */
-import app from "./app";
-import dotenv from "dotenv";
-import { initializeConnections, getApiMode } from "./db/connections";
+import app from './app';
+import dotenv from 'dotenv';
+import { initializeConnections, getApiMode } from './db/connections';
 
 dotenv.config();
 
@@ -19,7 +19,9 @@ const startApp = async () => {
       console.log(`Server is ready at: ${port} 🐶`);
 
       if (mode === 'productionMigration') {
-        console.log('Mode: ProductionMigration - Listings from migration DB, everything else from primary');
+        console.log(
+          'Mode: ProductionMigration - Listings from migration DB, everything else from primary',
+        );
       }
     });
   } catch (e) {
@@ -27,4 +29,4 @@ const startApp = async () => {
   }
 };
 
-startApp();
+void startApp();

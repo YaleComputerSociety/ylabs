@@ -60,7 +60,7 @@ const resolve = <T>(payload: T | ((prev: T) => T), prev: T): T =>
   typeof payload === 'function' ? (payload as (prev: T) => T)(prev) : payload;
 
 export const createInitialProfileEditorState = (
-  overrides: Partial<ProfileEditorState> = {}
+  overrides: Partial<ProfileEditorState> = {},
 ): ProfileEditorState => ({
   profile: null,
   loading: true,
@@ -84,8 +84,11 @@ export const createInitialProfileEditorState = (
  * cancel-edit so we don't duplicate "copy profile fields into form state".
  */
 const hydrateFromProfile = (
-  profile: FacultyProfile
-): Pick<ProfileEditorState, 'bio' | 'primaryDept' | 'secondaryDepts' | 'researchInterests' | 'imageUrl'> => ({
+  profile: FacultyProfile,
+): Pick<
+  ProfileEditorState,
+  'bio' | 'primaryDept' | 'secondaryDepts' | 'researchInterests' | 'imageUrl'
+> => ({
   bio: profile.bio || '',
   primaryDept: profile.primary_department || '',
   secondaryDepts: profile.secondary_departments || [],
@@ -95,7 +98,7 @@ const hydrateFromProfile = (
 
 export function profileEditorReducer(
   state: ProfileEditorState,
-  action: ProfileEditorAction
+  action: ProfileEditorAction,
 ): ProfileEditorState {
   switch (action.type) {
     case 'SET_BIO':

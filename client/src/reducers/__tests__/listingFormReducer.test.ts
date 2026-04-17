@@ -1,10 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { Listing } from '../../types/types';
-import {
-  createInitialListingFormState,
-  listingFormReducer,
-} from '../listingFormReducer';
+import { createInitialListingFormState, listingFormReducer } from '../listingFormReducer';
 
 const makeListing = (overrides: Partial<Listing> = {}): Listing => ({
   id: 'id-1',
@@ -144,7 +141,7 @@ describe('listingFormReducer', () => {
 
     it('REMOVE_DEPARTMENT moves a dept back into available, keeping order sorted', () => {
       const base = createInitialListingFormState(
-        makeListing({ departments: ['Biology', 'Chemistry', 'Physics'] })
+        makeListing({ departments: ['Biology', 'Chemistry', 'Physics'] }),
       );
       const withAvailable = listingFormReducer(base, {
         type: 'SET_AVAILABLE_DEPARTMENTS',
@@ -179,7 +176,7 @@ describe('listingFormReducer', () => {
       const initial = createInitialListingFormState(listing);
       const edited = listingFormReducer(
         listingFormReducer(initial, { type: 'SET_TITLE', payload: 'Edited' }),
-        { type: 'SET_AVAILABLE_DEPARTMENTS', payload: ['Keep', 'Me'] }
+        { type: 'SET_AVAILABLE_DEPARTMENTS', payload: ['Keep', 'Me'] },
       );
       const reset = listingFormReducer(edited, { type: 'RESET_FROM_LISTING', listing });
       expect(reset.title).toBe('Original');

@@ -34,10 +34,22 @@ export type SearchAction =
   | { type: 'SET_QUERY_STRING'; payload: string }
   | { type: 'SET_SELECTED_DEPARTMENTS'; payload: string[] | ((prev: string[]) => string[]) }
   | { type: 'SET_SELECTED_RESEARCH_AREAS'; payload: string[] | ((prev: string[]) => string[]) }
-  | { type: 'SET_SELECTED_LISTING_RESEARCH_AREAS'; payload: string[] | ((prev: string[]) => string[]) }
-  | { type: 'SET_DEPARTMENTS_FILTER_MODE'; payload: FilterMode | ((prev: FilterMode) => FilterMode) }
-  | { type: 'SET_RESEARCH_AREAS_FILTER_MODE'; payload: FilterMode | ((prev: FilterMode) => FilterMode) }
-  | { type: 'SET_LISTING_RESEARCH_AREAS_FILTER_MODE'; payload: FilterMode | ((prev: FilterMode) => FilterMode) }
+  | {
+      type: 'SET_SELECTED_LISTING_RESEARCH_AREAS';
+      payload: string[] | ((prev: string[]) => string[]);
+    }
+  | {
+      type: 'SET_DEPARTMENTS_FILTER_MODE';
+      payload: FilterMode | ((prev: FilterMode) => FilterMode);
+    }
+  | {
+      type: 'SET_RESEARCH_AREAS_FILTER_MODE';
+      payload: FilterMode | ((prev: FilterMode) => FilterMode);
+    }
+  | {
+      type: 'SET_LISTING_RESEARCH_AREAS_FILTER_MODE';
+      payload: FilterMode | ((prev: FilterMode) => FilterMode);
+    }
   | { type: 'SET_SORT_BY'; payload: string }
   | { type: 'SET_SORT_ORDER'; payload: number }
   | { type: 'TOGGLE_SORT_DIRECTION' }
@@ -54,9 +66,7 @@ export type SearchAction =
   | { type: 'MARK_DEPARTMENTS_LOADED' }
   | { type: 'MARK_INITIAL_SEARCH_DONE' };
 
-export const createInitialSearchState = (
-  overrides: Partial<SearchState> = {}
-): SearchState => ({
+export const createInitialSearchState = (overrides: Partial<SearchState> = {}): SearchState => ({
   queryString: '',
   selectedDepartments: [],
   selectedResearchAreas: [],
@@ -100,10 +110,7 @@ export function searchReducer(state: SearchState, action: SearchAction): SearchS
     case 'SET_SELECTED_LISTING_RESEARCH_AREAS':
       return {
         ...state,
-        selectedListingResearchAreas: resolve(
-          action.payload,
-          state.selectedListingResearchAreas
-        ),
+        selectedListingResearchAreas: resolve(action.payload, state.selectedListingResearchAreas),
       };
 
     case 'SET_DEPARTMENTS_FILTER_MODE':
@@ -123,7 +130,7 @@ export function searchReducer(state: SearchState, action: SearchAction): SearchS
         ...state,
         listingResearchAreasFilterMode: resolve(
           action.payload,
-          state.listingResearchAreasFilterMode
+          state.listingResearchAreasFilterMode,
         ),
       };
 

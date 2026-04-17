@@ -38,10 +38,12 @@ const fellowshipSchema = new mongoose.Schema(
       default: '',
     },
     links: {
-      type: [{
-        label: { type: String, default: '' },
-        url: { type: String, default: '' },
-      }],
+      type: [
+        {
+          label: { type: String, default: '' },
+          url: { type: String, default: '' },
+        },
+      ],
       default: [],
     },
     applicationLink: {
@@ -119,7 +121,7 @@ const fellowshipSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-  }
+  },
 );
 
 fellowshipSchema.index({

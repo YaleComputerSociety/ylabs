@@ -9,7 +9,7 @@ interface AdminRouteProps {
   Component: FunctionComponent;
 }
 
-const AdminRoute = ({ Component } : AdminRouteProps) => {
+const AdminRoute = ({ Component }: AdminRouteProps) => {
   const { user, isLoading, isAuthenticated } = useContext(UserContext);
 
   if (isLoading) {
@@ -17,15 +17,15 @@ const AdminRoute = ({ Component } : AdminRouteProps) => {
   }
 
   if (!isAuthenticated) {
-    return <Navigate to='/login' />;
+    return <Navigate to="/login" />;
   }
 
-  if (user && user.userType === "unknown") {
-    return <Navigate to='/unknown' />;
+  if (user && user.userType === 'unknown') {
+    return <Navigate to="/unknown" />;
   }
 
-  if (user && user.userType !== "admin") {
-    return <Navigate to='/' />;
+  if (user && user.userType !== 'admin') {
+    return <Navigate to="/" />;
   }
 
   return <Component />;

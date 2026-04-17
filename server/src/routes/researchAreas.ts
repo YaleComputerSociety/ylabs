@@ -1,7 +1,7 @@
 /**
  * Express routes for research area CRUD operations.
  */
-import { Router, Request, Response } from "express";
+import { Router, Request, Response } from 'express';
 import { isAuthenticated } from '../middleware/index';
 import { ResearchArea, ResearchField, fieldColorKeys } from '../models/researchArea';
 import { invalidateConfigCache } from '../services/configService';
@@ -35,20 +35,20 @@ router.post('/', isAuthenticated, async (req: Request, res: Response) => {
     if (!field || !Object.values(ResearchField).includes(field)) {
       return res.status(400).json({
         message: 'Valid field is required',
-        validFields: Object.values(ResearchField)
+        validFields: Object.values(ResearchField),
       });
     }
 
     const trimmedName = name.trim();
 
     const existing = await ResearchArea.findOne({
-      name: { $regex: new RegExp(`^${escapeRegex(trimmedName)}$`, 'i') }
+      name: { $regex: new RegExp(`^${escapeRegex(trimmedName)}$`, 'i') },
     });
 
     if (existing) {
       return res.status(409).json({
         message: 'Research area already exists',
-        researchArea: { name: existing.name, field: existing.field }
+        researchArea: { name: existing.name, field: existing.field },
       });
     }
 
@@ -57,7 +57,7 @@ router.post('/', isAuthenticated, async (req: Request, res: Response) => {
       field: field,
       colorKey: fieldColorKeys[field as ResearchField] || 'gray',
       addedBy: currentUser?.netId || 'anonymous',
-      isDefault: false
+      isDefault: false,
     });
 
     await newArea.save();
@@ -66,7 +66,7 @@ router.post('/', isAuthenticated, async (req: Request, res: Response) => {
 
     res.status(201).json({
       message: 'Research area added successfully',
-      researchArea: { name: newArea.name, field: newArea.field }
+      researchArea: { name: newArea.name, field: newArea.field },
     });
   } catch (error) {
     console.error('Error adding research area:', error);
@@ -84,7 +84,7 @@ router.get('/search', isAuthenticated, async (req: Request, res: Response) => {
 
     const customAreas = await ResearchArea.find({
       name: buildSafeSearchRegex(query),
-      isDefault: false
+      isDefault: false,
     })
       .select('name field')
       .limit(20)

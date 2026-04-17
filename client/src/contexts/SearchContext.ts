@@ -1,8 +1,8 @@
 /**
  * React context for listing search, filter, and sort state.
  */
-import { createContext } from "react";
-import { Listing } from "../types/types";
+import { createContext } from 'react';
+import { Listing } from '../types/types';
 
 export type FilterMode = 'intersection' | 'union';
 

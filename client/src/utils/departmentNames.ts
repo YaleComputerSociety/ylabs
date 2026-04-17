@@ -12,5 +12,8 @@ export const getDepartmentAbbreviation = (department: string): string => {
     return match[1];
   }
 
-  return department.replace(/[^a-zA-Z]/g, '').substring(0, 4).toUpperCase();
+  return department
+    .replace(/[^a-zA-Z]/g, '')
+    .substring(0, 4)
+    .toUpperCase();
 };

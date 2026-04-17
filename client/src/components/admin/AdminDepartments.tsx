@@ -1,32 +1,38 @@
 /**
  * Admin panel tab for managing departments.
  */
-import { useState, useEffect } from "react";
-import axios from "../../utils/axios";
-import swal from "sweetalert";
+import { useReducer, useEffect } from 'react';
+import axios from '../../utils/axios';
+import swal from 'sweetalert';
+import {
+  inlineCrudReducer,
+  createInitialInlineCrudState,
+  InlineCrudState,
+  InlineCrudAction,
+} from '../../reducers/inlineCrudReducer';
 
 const DEPARTMENT_CATEGORIES = [
-  "Computing & AI",
-  "Life Sciences",
-  "Physical Sciences & Engineering",
-  "Health & Medicine",
-  "Social Sciences",
-  "Humanities & Arts",
-  "Environmental Sciences",
-  "Economics",
-  "Mathematics",
+  'Computing & AI',
+  'Life Sciences',
+  'Physical Sciences & Engineering',
+  'Health & Medicine',
+  'Social Sciences',
+  'Humanities & Arts',
+  'Environmental Sciences',
+  'Economics',
+  'Mathematics',
 ];
 
 const CATEGORY_COLORS: Record<string, string> = {
-  "Computing & AI": "bg-blue-100 text-blue-800",
-  "Life Sciences": "bg-green-100 text-green-800",
-  "Physical Sciences & Engineering": "bg-yellow-100 text-yellow-800",
-  "Health & Medicine": "bg-red-100 text-red-800",
-  "Social Sciences": "bg-purple-100 text-purple-800",
-  "Humanities & Arts": "bg-pink-100 text-pink-800",
-  "Environmental Sciences": "bg-teal-100 text-teal-800",
-  "Economics": "bg-orange-100 text-orange-800",
-  "Mathematics": "bg-indigo-100 text-indigo-800",
+  'Computing & AI': 'bg-blue-100 text-blue-800',
+  'Life Sciences': 'bg-green-100 text-green-800',
+  'Physical Sciences & Engineering': 'bg-yellow-100 text-yellow-800',
+  'Health & Medicine': 'bg-red-100 text-red-800',
+  'Social Sciences': 'bg-purple-100 text-purple-800',
+  'Humanities & Arts': 'bg-pink-100 text-pink-800',
+  'Environmental Sciences': 'bg-teal-100 text-teal-800',
+  Economics: 'bg-orange-100 text-orange-800',
+  Mathematics: 'bg-indigo-100 text-indigo-800',
 };
 
 interface DepartmentDoc {
@@ -40,31 +46,54 @@ interface DepartmentDoc {
   isActive: boolean;
 }
 
+interface NewDraft {
+  abbr: string;
+  name: string;
+  category: string;
+}
+
+interface EditDraft {
+  abbr: string;
+  name: string;
+  category: string;
+  active: boolean;
+}
+
+const INITIAL_NEW_DRAFT: NewDraft = {
+  abbr: '',
+  name: '',
+  category: DEPARTMENT_CATEGORIES[0],
+};
+
 const AdminDepartments = () => {
-  const [departments, setDepartments] = useState<DepartmentDoc[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [search, setSearch] = useState("");
+  const [state, dispatch] = useReducer<
+    React.Reducer<
+      InlineCrudState<DepartmentDoc, NewDraft, EditDraft>,
+      InlineCrudAction<DepartmentDoc, NewDraft, EditDraft>
+    >
+  >(
+    inlineCrudReducer,
+    createInitialInlineCrudState<DepartmentDoc, NewDraft, EditDraft>(INITIAL_NEW_DRAFT),
+  );
 
-  const [newAbbr, setNewAbbr] = useState("");
-  const [newName, setNewName] = useState("");
-  const [newCategory, setNewCategory] = useState(DEPARTMENT_CATEGORIES[0]);
-
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editAbbr, setEditAbbr] = useState("");
-  const [editName, setEditName] = useState("");
-  const [editCategory, setEditCategory] = useState("");
-  const [editActive, setEditActive] = useState(true);
+  const {
+    items: departments,
+    isLoading,
+    search,
+    newDraft,
+    editingId,
+    editDraft,
+  } = state;
 
   const fetchDepartments = async () => {
-    setIsLoading(true);
+    dispatch({ type: 'FETCH_START' });
     try {
-      const response = await axios.get("/admin/departments", { withCredentials: true });
-      setDepartments(response.data.departments);
+      const response = await axios.get('/admin/departments', { withCredentials: true });
+      dispatch({ type: 'FETCH_SUCCESS', items: response.data.departments });
     } catch (error) {
-      console.error("Error fetching departments:", error);
-      swal({ text: "Failed to fetch departments", icon: "error" });
-    } finally {
-      setIsLoading(false);
+      console.error('Error fetching departments:', error);
+      dispatch({ type: 'FETCH_FAILURE' });
+      swal({ text: 'Failed to fetch departments', icon: 'error' });
     }
   };
 
@@ -73,34 +102,33 @@ const AdminDepartments = () => {
   }, []);
 
   const handleAdd = async () => {
-    if (!newAbbr.trim() || !newName.trim()) {
-      swal({ text: "Abbreviation and name are required", icon: "warning" });
+    if (!newDraft.abbr.trim() || !newDraft.name.trim()) {
+      swal({ text: 'Abbreviation and name are required', icon: 'warning' });
       return;
     }
 
     try {
       await axios.post(
-        "/admin/departments",
+        '/admin/departments',
         {
-          abbreviation: newAbbr.trim().toUpperCase(),
-          name: newName.trim(),
-          primaryCategory: newCategory,
-          categories: [newCategory],
+          abbreviation: newDraft.abbr.trim().toUpperCase(),
+          name: newDraft.name.trim(),
+          primaryCategory: newDraft.category,
+          categories: [newDraft.category],
         },
-        { withCredentials: true }
+        { withCredentials: true },
       );
-      setNewAbbr("");
-      setNewName("");
+      dispatch({ type: 'RESET_NEW_DRAFT', initial: INITIAL_NEW_DRAFT });
       fetchDepartments();
-      swal({ text: "Department added", icon: "success", timer: 1500 });
+      swal({ text: 'Department added', icon: 'success', timer: 1500 });
     } catch (error: any) {
-      swal({ text: error.response?.data?.error || "Failed to add department", icon: "error" });
+      swal({ text: error.response?.data?.error || 'Failed to add department', icon: 'error' });
     }
   };
 
   const handleUpdate = async (id: string) => {
-    if (!editAbbr.trim() || !editName.trim()) {
-      swal({ text: "Abbreviation and name are required", icon: "warning" });
+    if (!editDraft || !editDraft.abbr.trim() || !editDraft.name.trim()) {
+      swal({ text: 'Abbreviation and name are required', icon: 'warning' });
       return;
     }
 
@@ -108,29 +136,29 @@ const AdminDepartments = () => {
       await axios.put(
         `/admin/departments/${id}`,
         {
-          abbreviation: editAbbr.trim().toUpperCase(),
-          name: editName.trim(),
-          displayName: `${editAbbr.trim().toUpperCase()} - ${editName.trim()}`,
-          primaryCategory: editCategory,
-          categories: [editCategory],
-          isActive: editActive,
+          abbreviation: editDraft.abbr.trim().toUpperCase(),
+          name: editDraft.name.trim(),
+          displayName: `${editDraft.abbr.trim().toUpperCase()} - ${editDraft.name.trim()}`,
+          primaryCategory: editDraft.category,
+          categories: [editDraft.category],
+          isActive: editDraft.active,
         },
-        { withCredentials: true }
+        { withCredentials: true },
       );
-      setEditingId(null);
+      dispatch({ type: 'CANCEL_EDIT' });
       fetchDepartments();
-      swal({ text: "Department updated", icon: "success", timer: 1500 });
+      swal({ text: 'Department updated', icon: 'success', timer: 1500 });
     } catch (error: any) {
-      swal({ text: error.response?.data?.error || "Failed to update department", icon: "error" });
+      swal({ text: error.response?.data?.error || 'Failed to update department', icon: 'error' });
     }
   };
 
   const handleDelete = async (dept: DepartmentDoc) => {
     const confirmed = await swal({
-      title: "Delete Department",
+      title: 'Delete Department',
       text: `Delete "${dept.displayName}"? This cannot be undone. Listings referencing this department will NOT be automatically updated.`,
-      icon: "warning",
-      buttons: ["Cancel", "Delete"],
+      icon: 'warning',
+      buttons: ['Cancel', 'Delete'],
       dangerMode: true,
     });
 
@@ -139,18 +167,23 @@ const AdminDepartments = () => {
     try {
       await axios.delete(`/admin/departments/${dept._id}`, { withCredentials: true });
       fetchDepartments();
-      swal({ text: "Department deleted", icon: "success", timer: 1500 });
-    } catch (error) {
-      swal({ text: "Failed to delete department", icon: "error" });
+      swal({ text: 'Department deleted', icon: 'success', timer: 1500 });
+    } catch {
+      swal({ text: 'Failed to delete department', icon: 'error' });
     }
   };
 
   const startEdit = (dept: DepartmentDoc) => {
-    setEditingId(dept._id);
-    setEditAbbr(dept.abbreviation);
-    setEditName(dept.name);
-    setEditCategory(dept.primaryCategory);
-    setEditActive(dept.isActive);
+    dispatch({
+      type: 'START_EDIT',
+      id: dept._id,
+      draft: {
+        abbr: dept.abbreviation,
+        name: dept.name,
+        category: dept.primaryCategory,
+        active: dept.isActive,
+      },
+    });
   };
 
   const filtered = departments.filter(
@@ -158,7 +191,7 @@ const AdminDepartments = () => {
       d.abbreviation.toLowerCase().includes(search.toLowerCase()) ||
       d.name.toLowerCase().includes(search.toLowerCase()) ||
       d.displayName.toLowerCase().includes(search.toLowerCase()) ||
-      d.primaryCategory.toLowerCase().includes(search.toLowerCase())
+      d.primaryCategory.toLowerCase().includes(search.toLowerCase()),
   );
 
   return (
@@ -169,8 +202,8 @@ const AdminDepartments = () => {
           <div className="w-28">
             <label className="block text-xs text-gray-500 mb-1">Abbreviation</label>
             <input
-              value={newAbbr}
-              onChange={(e) => setNewAbbr(e.target.value)}
+              value={newDraft.abbr}
+              onChange={(e) => dispatch({ type: 'SET_NEW_DRAFT', payload: { abbr: e.target.value } })}
               placeholder="e.g. CPSC"
               className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase"
             />
@@ -178,20 +211,20 @@ const AdminDepartments = () => {
           <div className="flex-1 min-w-[200px]">
             <label className="block text-xs text-gray-500 mb-1">Full Name</label>
             <input
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
+              value={newDraft.name}
+              onChange={(e) => dispatch({ type: 'SET_NEW_DRAFT', payload: { name: e.target.value } })}
               placeholder="e.g. Computer Science"
               className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               onKeyDown={(e) => {
-                if (e.key === "Enter") handleAdd();
+                if (e.key === 'Enter') handleAdd();
               }}
             />
           </div>
           <div className="min-w-[200px]">
             <label className="block text-xs text-gray-500 mb-1">Category</label>
             <select
-              value={newCategory}
-              onChange={(e) => setNewCategory(e.target.value)}
+              value={newDraft.category}
+              onChange={(e) => dispatch({ type: 'SET_NEW_DRAFT', payload: { category: e.target.value } })}
               className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               {DEPARTMENT_CATEGORIES.map((c) => (
@@ -213,7 +246,7 @@ const AdminDepartments = () => {
       <div className="mb-3">
         <input
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(e) => dispatch({ type: 'SET_SEARCH', payload: e.target.value })}
           placeholder="Filter departments..."
           className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
@@ -250,10 +283,12 @@ const AdminDepartments = () => {
                 filtered.map((dept) => (
                   <tr key={dept._id} className="border-b hover:bg-gray-50">
                     <td className="py-2 px-4">
-                      {editingId === dept._id ? (
+                      {editingId === dept._id && editDraft ? (
                         <input
-                          value={editAbbr}
-                          onChange={(e) => setEditAbbr(e.target.value)}
+                          value={editDraft.abbr}
+                          onChange={(e) =>
+                            dispatch({ type: 'SET_EDIT_DRAFT', payload: { abbr: e.target.value } })
+                          }
                           className="border border-gray-300 rounded px-2 py-1 text-sm w-20 uppercase focus:outline-none focus:ring-1 focus:ring-blue-500"
                           autoFocus
                         />
@@ -262,14 +297,16 @@ const AdminDepartments = () => {
                       )}
                     </td>
                     <td className="py-2 px-4">
-                      {editingId === dept._id ? (
+                      {editingId === dept._id && editDraft ? (
                         <input
-                          value={editName}
-                          onChange={(e) => setEditName(e.target.value)}
+                          value={editDraft.name}
+                          onChange={(e) =>
+                            dispatch({ type: 'SET_EDIT_DRAFT', payload: { name: e.target.value } })
+                          }
                           className="border border-gray-300 rounded px-2 py-1 text-sm w-full focus:outline-none focus:ring-1 focus:ring-blue-500"
                           onKeyDown={(e) => {
-                            if (e.key === "Enter") handleUpdate(dept._id);
-                            if (e.key === "Escape") setEditingId(null);
+                            if (e.key === 'Enter') handleUpdate(dept._id);
+                            if (e.key === 'Escape') dispatch({ type: 'CANCEL_EDIT' });
                           }}
                         />
                       ) : (
@@ -278,10 +315,15 @@ const AdminDepartments = () => {
                     </td>
                     <td className="py-2 px-4 text-xs text-gray-500">{dept.displayName}</td>
                     <td className="py-2 px-4">
-                      {editingId === dept._id ? (
+                      {editingId === dept._id && editDraft ? (
                         <select
-                          value={editCategory}
-                          onChange={(e) => setEditCategory(e.target.value)}
+                          value={editDraft.category}
+                          onChange={(e) =>
+                            dispatch({
+                              type: 'SET_EDIT_DRAFT',
+                              payload: { category: e.target.value },
+                            })
+                          }
                           className="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
                         >
                           {DEPARTMENT_CATEGORIES.map((c) => (
@@ -293,7 +335,7 @@ const AdminDepartments = () => {
                       ) : (
                         <span
                           className={`px-2 py-0.5 rounded text-xs font-medium ${
-                            CATEGORY_COLORS[dept.primaryCategory] || "bg-gray-100 text-gray-700"
+                            CATEGORY_COLORS[dept.primaryCategory] || 'bg-gray-100 text-gray-700'
                           }`}
                         >
                           {dept.primaryCategory}
@@ -301,15 +343,20 @@ const AdminDepartments = () => {
                       )}
                     </td>
                     <td className="py-2 px-4 text-center">
-                      {editingId === dept._id ? (
+                      {editingId === dept._id && editDraft ? (
                         <label className="flex items-center justify-center gap-1">
                           <input
                             type="checkbox"
-                            checked={editActive}
-                            onChange={(e) => setEditActive(e.target.checked)}
+                            checked={editDraft.active}
+                            onChange={(e) =>
+                              dispatch({
+                                type: 'SET_EDIT_DRAFT',
+                                payload: { active: e.target.checked },
+                              })
+                            }
                             className="rounded"
                           />
-                          <span className="text-xs">{editActive ? "Yes" : "No"}</span>
+                          <span className="text-xs">{editDraft.active ? 'Yes' : 'No'}</span>
                         </label>
                       ) : dept.isActive ? (
                         <span className="text-green-600 text-xs font-medium">Yes</span>
@@ -328,7 +375,7 @@ const AdminDepartments = () => {
                               Save
                             </button>
                             <button
-                              onClick={() => setEditingId(null)}
+                              onClick={() => dispatch({ type: 'CANCEL_EDIT' })}
                               className="text-xs bg-gray-300 text-gray-700 px-2 py-1 rounded hover:bg-gray-400"
                             >
                               Cancel

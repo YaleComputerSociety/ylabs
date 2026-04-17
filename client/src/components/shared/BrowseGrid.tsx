@@ -85,9 +85,7 @@ const BrowseGrid = ({
           </div>
         )}
 
-        {sentinelRef && !searchExhausted && (
-          <div ref={sentinelRef} className="h-10 w-full" />
-        )}
+        {sentinelRef && !searchExhausted && <div ref={sentinelRef} className="h-10 w-full" />}
       </div>
 
       {showLoader && <LoadingSpinner size="lg" />}

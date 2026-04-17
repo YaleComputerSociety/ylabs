@@ -63,7 +63,7 @@ const toInputDateString = (iso: string | null | undefined): string => {
 };
 
 export const createInitialAdminFellowshipEditState = (
-  fellowship: Fellowship
+  fellowship: Fellowship,
 ): AdminFellowshipEditState => ({
   title: fellowship.title || '',
   summary: fellowship.summary || '',
@@ -89,7 +89,7 @@ export const createInitialAdminFellowshipEditState = (
 
 export function adminFellowshipEditReducer(
   state: AdminFellowshipEditState,
-  action: AdminFellowshipEditAction
+  action: AdminFellowshipEditAction,
 ): AdminFellowshipEditState {
   switch (action.type) {
     case 'SET_TITLE':

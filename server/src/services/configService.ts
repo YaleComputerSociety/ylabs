@@ -39,19 +39,21 @@ export interface ConfigData {
 export const getConfig = async (forceRefresh: boolean = false): Promise<ConfigData> => {
   const now = Date.now();
 
-  if (!forceRefresh && configCache && (now - cacheTimestamp) < CACHE_TTL) {
+  if (!forceRefresh && configCache && now - cacheTimestamp < CACHE_TTL) {
     return configCache;
   }
 
   const [researchAreas, departments] = await Promise.all([
     ResearchArea.find().select('name field colorKey isDefault').lean(),
-    Department.find({ isActive: true }).select('-__v -createdAt -updatedAt').lean()
+    Department.find({ isActive: true }).select('-__v -createdAt -updatedAt').lean(),
   ]);
 
-  const fields: Array<{ name: string; colorKey: string }> = Object.values(ResearchField).map(field => ({
-    name: field as string,
-    colorKey: fieldColorKeys[field]
-  }));
+  const fields: Array<{ name: string; colorKey: string }> = Object.values(ResearchField).map(
+    (field) => ({
+      name: field as string,
+      colorKey: fieldColorKeys[field],
+    }),
+  );
 
   const config: ConfigData = {
     researchAreas: {
@@ -59,10 +61,10 @@ export const getConfig = async (forceRefresh: boolean = false): Promise<ConfigDa
         name: area.name,
         field: area.field,
         colorKey: area.colorKey || fieldColorKeys[area.field as ResearchField] || 'gray',
-        isDefault: area.isDefault || false
+        isDefault: area.isDefault || false,
       })),
       fields,
-      fieldOrder: Object.values(ResearchField)
+      fieldOrder: Object.values(ResearchField),
     },
     departments: {
       list: departments.map((dept: any) => ({
@@ -71,11 +73,11 @@ export const getConfig = async (forceRefresh: boolean = false): Promise<ConfigDa
         displayName: dept.displayName,
         categories: dept.categories,
         primaryCategory: dept.primaryCategory,
-        colorKey: dept.colorKey
+        colorKey: dept.colorKey,
       })),
-      categories: Object.values(DepartmentCategory)
+      categories: Object.values(DepartmentCategory),
     },
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
   };
 
   configCache = config;

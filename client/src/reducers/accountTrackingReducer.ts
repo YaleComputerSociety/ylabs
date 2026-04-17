@@ -32,7 +32,7 @@ export type AccountTrackingAction =
   | { type: 'HYDRATE'; payload: Partial<AccountTrackingState> };
 
 export const createInitialAccountTrackingState = (
-  overrides: Partial<AccountTrackingState> = {}
+  overrides: Partial<AccountTrackingState> = {},
 ): AccountTrackingState => ({
   labStage: {},
   labNotes: {},
@@ -51,7 +51,7 @@ const withoutKey = <V>(obj: Record<string, V>, key: string): Record<string, V> =
 
 export function accountTrackingReducer(
   state: AccountTrackingState,
-  action: AccountTrackingAction
+  action: AccountTrackingAction,
 ): AccountTrackingState {
   switch (action.type) {
     case 'TOGGLE_EMAILED_LISTING': {
@@ -116,9 +116,7 @@ export function accountTrackingReducer(
       return {
         ...state,
         editingFellowshipNoteId:
-          state.editingFellowshipNoteId === action.fellowshipId
-            ? null
-            : action.fellowshipId,
+          state.editingFellowshipNoteId === action.fellowshipId ? null : action.fellowshipId,
       };
 
     case 'HYDRATE':
@@ -135,7 +133,7 @@ export function accountTrackingReducer(
  * per-listing `ylabs-lab-stages` map. Exported for reuse and unit-testing.
  */
 export const loadAccountTrackingFromStorage = (
-  storage: Pick<Storage, 'getItem' | 'removeItem'>
+  storage: Pick<Storage, 'getItem' | 'removeItem'>,
 ): AccountTrackingState => {
   const parse = <T>(key: string, fallback: T): T => {
     try {

@@ -4,11 +4,7 @@
  * Models the fetch lifecycle (idle → loading → loaded/error) so the provider's
  * state transitions can be unit-tested without mounting React or mocking axios.
  */
-import {
-  DepartmentConfig,
-  FieldConfig,
-  ResearchAreaConfig,
-} from '../contexts/ConfigContext';
+import { DepartmentConfig, FieldConfig, ResearchAreaConfig } from '../contexts/ConfigContext';
 
 export interface ConfigState {
   isLoading: boolean;
@@ -34,9 +30,7 @@ export type ConfigAction =
   | { type: 'FETCH_SUCCESS'; payload: ConfigPayload }
   | { type: 'FETCH_FAILURE'; payload: string };
 
-export const createInitialConfigState = (
-  overrides: Partial<ConfigState> = {}
-): ConfigState => ({
+export const createInitialConfigState = (overrides: Partial<ConfigState> = {}): ConfigState => ({
   isLoading: true,
   isLoaded: false,
   error: null,

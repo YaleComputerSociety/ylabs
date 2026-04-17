@@ -96,7 +96,10 @@ function splitConcatenatedDepartments(dept: string): string[] {
   if (!dept) return [];
 
   if (dept.includes('#N#')) {
-    return dept.split('#N#').map(d => d.trim()).filter(Boolean);
+    return dept
+      .split('#N#')
+      .map((d) => d.trim())
+      .filter(Boolean);
   }
 
   if (dept.length < 50) return [dept];
@@ -159,13 +162,6 @@ function cleanSecondaryDepartments(depts: string[]): string[] {
   return unique;
 }
 
-/** Extract just the building name from "Building, Room 123" */
-function cleanBuildingDesk(buildingDesk: string): string {
-  if (!buildingDesk) return '';
-  const parts = buildingDesk.split(',');
-  return parts[0].trim();
-}
-
 interface RawFacultyEntry {
   netid: string;
   name: string;
@@ -204,7 +200,9 @@ async function importFaculty() {
     process.exit(1);
   }
 
-  const jsonPath = process.argv[2] || path.resolve(__dirname, '../../../yale-faculty-enricher/enriched_faculty.json');
+  const jsonPath =
+    process.argv[2] ||
+    path.resolve(__dirname, '../../../yale-faculty-enricher/enriched_faculty.json');
 
   if (!fs.existsSync(jsonPath)) {
     console.error(`Error: File not found: ${jsonPath}`);
@@ -253,7 +251,7 @@ async function importFaculty() {
         openalex_id: entry.openalex_id || undefined,
         h_index: entry.h_index || undefined,
         profile_urls: entry.profile_urls || {},
-        publications: (entry.publications || []).map(p => ({
+        publications: (entry.publications || []).map((p) => ({
           title: p.title,
           doi: p.doi || undefined,
           year: p.year,
@@ -312,7 +310,9 @@ async function importFaculty() {
 
     const processed = Math.min(i + BATCH_SIZE, raw.length);
     if (processed % 2000 === 0 || processed === raw.length) {
-      console.log(`Progress: ${processed} / ${raw.length} (created: ${created}, updated: ${updated}, skipped: ${skipped}, errors: ${errors})`);
+      console.log(
+        `Progress: ${processed} / ${raw.length} (created: ${created}, updated: ${updated}, skipped: ${skipped}, errors: ${errors})`,
+      );
     }
   }
 
@@ -325,8 +325,12 @@ async function importFaculty() {
 
   console.log('\n=== Verification ===');
   const sphdptCount = await User.countDocuments({ primary_department: /^SPHDPT/i });
-  const otherDeptCount = await User.countDocuments({ secondary_departments: 'Other Departments & Organizations' });
-  const divnityCount = await User.countDocuments({ $or: [{ primary_department: /Divnity/i }, { secondary_departments: /Divnity/i }] });
+  const otherDeptCount = await User.countDocuments({
+    secondary_departments: 'Other Departments & Organizations',
+  });
+  const divnityCount = await User.countDocuments({
+    $or: [{ primary_department: /Divnity/i }, { secondary_departments: /Divnity/i }],
+  });
 
   console.log(`Entries with SPHDPT prefix remaining: ${sphdptCount} (should be 0)`);
   console.log(`Entries with "Other Departments & Organizations": ${otherDeptCount} (should be 0)`);
@@ -336,7 +340,7 @@ async function importFaculty() {
   console.log('Done.');
 }
 
-importFaculty().catch(err => {
+importFaculty().catch((err) => {
   console.error('Fatal error:', err);
   process.exit(1);
 });

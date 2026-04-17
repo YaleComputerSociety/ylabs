@@ -64,7 +64,7 @@ export type FellowshipSearchAction =
   | { type: 'RESET_LIFECYCLE_FLAGS' };
 
 export const createInitialFellowshipSearchState = (
-  overrides: Partial<FellowshipSearchState> = {}
+  overrides: Partial<FellowshipSearchState> = {},
 ): FellowshipSearchState => ({
   queryString: '',
   selectedYearOfStudy: [],
@@ -101,7 +101,7 @@ const resolve = <T>(payload: T | ((prev: T) => T), prev: T): T =>
 
 export function fellowshipSearchReducer(
   state: FellowshipSearchState,
-  action: FellowshipSearchAction
+  action: FellowshipSearchAction,
 ): FellowshipSearchState {
   switch (action.type) {
     case 'SET_QUERY_STRING':

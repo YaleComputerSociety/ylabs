@@ -24,7 +24,13 @@ const VennDiagramToggle = ({ mode, setMode, compact = false }: VennDiagramToggle
           }`}
           title="Any (OR) - Match any of the selected items"
         >
-          <svg width="14" height="12" viewBox="0 0 24 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <svg
+            width="14"
+            height="12"
+            viewBox="0 0 24 16"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+          >
             <circle
               cx="8"
               cy="8"
@@ -55,7 +61,13 @@ const VennDiagramToggle = ({ mode, setMode, compact = false }: VennDiagramToggle
           }`}
           title="All (AND) - Match all of the selected items"
         >
-          <svg width="14" height="12" viewBox="0 0 24 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <svg
+            width="14"
+            height="12"
+            viewBox="0 0 24 16"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+          >
             <circle
               cx="8"
               cy="8"

@@ -7,8 +7,18 @@ import { Fellowship, FellowshipStage } from '../../types/types';
 import { BrowsableItem } from '../../types/browsable';
 
 const COLUMNS: { key: FellowshipStage; label: string; color: string; headerBg: string }[] = [
-  { key: 'not_applied', label: 'Not Applied', color: 'border-gray-300', headerBg: 'bg-gray-100 text-gray-700' },
-  { key: 'applied', label: 'Applied', color: 'border-green-300', headerBg: 'bg-green-50 text-green-700' },
+  {
+    key: 'not_applied',
+    label: 'Not Applied',
+    color: 'border-gray-300',
+    headerBg: 'bg-gray-100 text-gray-700',
+  },
+  {
+    key: 'applied',
+    label: 'Applied',
+    color: 'border-green-300',
+    headerBg: 'bg-green-50 text-green-700',
+  },
 ];
 
 interface FellowshipKanbanBoardProps {
@@ -32,9 +42,9 @@ const FellowshipKanbanBoard: React.FC<FellowshipKanbanBoardProps> = ({
 
   const getStage = (id: string): FellowshipStage => fellowshipStage[id] || 'not_applied';
 
-  const columnItems = COLUMNS.map(col => ({
+  const columnItems = COLUMNS.map((col) => ({
     ...col,
-    fellowships: items.filter(item => getStage(item.id) === col.key),
+    fellowships: items.filter((item) => getStage(item.id) === col.key),
   }));
 
   const handleDragStart = (e: React.DragEvent, id: string) => {
@@ -65,19 +75,19 @@ const FellowshipKanbanBoard: React.FC<FellowshipKanbanBoardProps> = ({
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-      {columnItems.map(col => (
+      {columnItems.map((col) => (
         <div
           key={col.key}
           className={`flex flex-col rounded-lg border-2 transition-colors min-h-[200px] ${
-            dragOverColumn === col.key
-              ? `${col.color} bg-gray-50`
-              : 'border-gray-200 bg-white'
+            dragOverColumn === col.key ? `${col.color} bg-gray-50` : 'border-gray-200 bg-white'
           }`}
           onDragOver={(e) => handleDragOver(e, col.key)}
           onDragLeave={handleDragLeave}
           onDrop={(e) => handleDrop(e, col.key)}
         >
-          <div className={`px-3 py-2 rounded-t-md ${col.headerBg} flex items-center justify-between`}>
+          <div
+            className={`px-3 py-2 rounded-t-md ${col.headerBg} flex items-center justify-between`}
+          >
             <span className="text-sm font-semibold">{col.label}</span>
             <span className="text-xs opacity-70">{col.fellowships.length}</span>
           </div>
@@ -88,7 +98,7 @@ const FellowshipKanbanBoard: React.FC<FellowshipKanbanBoardProps> = ({
                 Drag fellowships here
               </div>
             ) : (
-              col.fellowships.map(fellowship => (
+              col.fellowships.map((fellowship) => (
                 <div
                   key={fellowship.id}
                   draggable

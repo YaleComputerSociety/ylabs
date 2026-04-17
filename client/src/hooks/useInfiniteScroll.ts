@@ -35,7 +35,7 @@ export function useInfiniteScroll({
           setPage((prev) => prev + 1);
         }
       },
-      { threshold: 0, rootMargin }
+      { threshold: 0, rootMargin },
     );
 
     const el = sentinelRef.current;

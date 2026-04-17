@@ -1,9 +1,12 @@
 /**
  * Admin modal for editing faculty profile fields.
  */
-import { useState, useEffect } from "react";
-import axios from "../../utils/axios";
-import { Publication } from "../../types/types";
+import { useEffect, useReducer } from 'react';
+import axios from '../../utils/axios';
+import {
+  adminProfileEditReducer,
+  createInitialAdminProfileEditState,
+} from '../../reducers/adminProfileEditReducer';
 
 interface AdminProfile {
   _id: string;
@@ -26,77 +29,53 @@ interface AdminProfile {
   userConfirmed: boolean;
 }
 
-interface FullProfile extends AdminProfile {
-  publications?: Publication[];
-  topics?: string[];
-  profile_urls?: Record<string, string>;
-}
-
 interface AdminProfileEditModalProps {
   profile: AdminProfile;
   onClose: () => void;
   onSaved: () => void;
 }
 
-const AdminProfileEditModal = ({
-  profile,
-  onClose,
-  onSaved,
-}: AdminProfileEditModalProps) => {
-  const [full, setFull] = useState<FullProfile | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-
-  const [fname, setFname] = useState(profile.fname);
-  const [lname, setLname] = useState(profile.lname);
-  const [email, setEmail] = useState(profile.email);
-  const [title, setTitle] = useState(profile.title || "");
-  const [bio, setBio] = useState(profile.bio || "");
-  const [phone, setPhone] = useState(profile.phone || "");
-  const [primaryDept, setPrimaryDept] = useState(profile.primary_department || "");
-  const [secondaryDepts, setSecondaryDepts] = useState(
-    (profile.secondary_departments || []).join(", ")
+const AdminProfileEditModal = ({ profile, onClose, onSaved }: AdminProfileEditModalProps) => {
+  const [state, dispatch] = useReducer(
+    adminProfileEditReducer,
+    profile,
+    createInitialAdminProfileEditState,
   );
-  const [researchInterests, setResearchInterests] = useState(
-    (profile.research_interests || []).join(", ")
-  );
-  const [hIndex, setHIndex] = useState(profile.h_index?.toString() || "");
-  const [orcid, setOrcid] = useState(profile.orcid || "");
-  const [imageUrl, setImageUrl] = useState(profile.image_url || "");
-  const [profileVerified, setProfileVerified] = useState(
-    profile.profileVerified || false
-  );
-  const [userType, setUserType] = useState(profile.userType);
-  const [userConfirmed, setUserConfirmed] = useState(profile.userConfirmed);
+  const {
+    full,
+    loading,
+    saving,
+    fname,
+    lname,
+    email,
+    title,
+    bio,
+    phone,
+    primaryDept,
+    secondaryDepts,
+    researchInterests,
+    hIndex,
+    orcid,
+    imageUrl,
+    profileVerified,
+    userType,
+    userConfirmed,
+  } = state;
 
   useEffect(() => {
     axios
       .get(`/admin/profiles/${profile.netid}`)
       .then((res) => {
-        const p = res.data.profile;
-        setFull(p);
-        setFname(p.fname || "");
-        setLname(p.lname || "");
-        setEmail(p.email || "");
-        setTitle(p.title || "");
-        setBio(p.bio || "");
-        setPhone(p.phone || "");
-        setPrimaryDept(p.primary_department || "");
-        setSecondaryDepts((p.secondary_departments || []).join(", "));
-        setResearchInterests((p.research_interests || []).join(", "));
-        setHIndex(p.h_index?.toString() || "");
-        setOrcid(p.orcid || "");
-        setImageUrl(p.image_url || "");
-        setProfileVerified(p.profileVerified || false);
-        setUserType(p.userType || "professor");
-        setUserConfirmed(p.userConfirmed || false);
+        dispatch({ type: 'FETCH_SUCCESS', profile: res.data.profile });
       })
-      .catch(console.error)
-      .finally(() => setLoading(false));
+      .catch((err) => {
+        console.error(err);
+        dispatch({ type: 'FETCH_FAILURE' });
+      });
   }, [profile.netid]);
 
   const handleSave = async () => {
-    setSaving(true);
+    dispatch({ type: 'SAVE_START' });
     try {
       await axios.put(`/admin/profiles/${profile.netid}`, {
         data: {
@@ -108,11 +87,11 @@ const AdminProfileEditModal = ({
           phone: phone.trim(),
           primary_department: primaryDept.trim(),
           secondary_departments: secondaryDepts
-            .split(",")
+            .split(',')
             .map((d) => d.trim())
             .filter(Boolean),
           research_interests: researchInterests
-            .split(",")
+            .split(',')
             .map((d) => d.trim())
             .filter(Boolean),
           h_index: hIndex ? parseInt(hIndex, 10) : undefined,
@@ -125,10 +104,10 @@ const AdminProfileEditModal = ({
       });
       onSaved();
     } catch (err: any) {
-      console.error("Error saving profile:", err);
-      alert(err.response?.data?.error || "Failed to save");
+      console.error('Error saving profile:', err);
+      alert(err.response?.data?.error || 'Failed to save');
     } finally {
-      setSaving(false);
+      dispatch({ type: 'SAVE_END' });
     }
   };
 
@@ -156,12 +135,7 @@ const AdminProfileEditModal = ({
             onClick={onClose}
             className="p-2 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600"
           >
-            <svg
-              className="h-5 w-5"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
+            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path
                 strokeLinecap="round"
                 strokeLinejoin="round"
@@ -181,24 +155,20 @@ const AdminProfileEditModal = ({
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">
-                    First Name
-                  </label>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">First Name</label>
                   <input
                     type="text"
                     value={fname}
-                    onChange={(e) => setFname(e.target.value)}
+                    onChange={(e) => dispatch({ type: 'SET_FNAME', payload: e.target.value })}
                     className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">
-                    Last Name
-                  </label>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Last Name</label>
                   <input
                     type="text"
                     value={lname}
-                    onChange={(e) => setLname(e.target.value)}
+                    onChange={(e) => dispatch({ type: 'SET_LNAME', payload: e.target.value })}
                     className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
@@ -206,48 +176,40 @@ const AdminProfileEditModal = ({
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">
-                    Email
-                  </label>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Email</label>
                   <input
                     type="email"
                     value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    onChange={(e) => dispatch({ type: 'SET_EMAIL', payload: e.target.value })}
                     className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">
-                    Phone
-                  </label>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Phone</label>
                   <input
                     type="text"
                     value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
+                    onChange={(e) => dispatch({ type: 'SET_PHONE', payload: e.target.value })}
                     className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">
-                  Title
-                </label>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Title</label>
                 <input
                   type="text"
                   value={title}
-                  onChange={(e) => setTitle(e.target.value)}
+                  onChange={(e) => dispatch({ type: 'SET_TITLE', payload: e.target.value })}
                   className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">
-                  Bio
-                </label>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Bio</label>
                 <textarea
                   value={bio}
-                  onChange={(e) => setBio(e.target.value)}
+                  onChange={(e) => dispatch({ type: 'SET_BIO', payload: e.target.value })}
                   rows={4}
                   className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
@@ -261,7 +223,9 @@ const AdminProfileEditModal = ({
                   <input
                     type="text"
                     value={primaryDept}
-                    onChange={(e) => setPrimaryDept(e.target.value)}
+                    onChange={(e) =>
+                      dispatch({ type: 'SET_PRIMARY_DEPT', payload: e.target.value })
+                    }
                     className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
@@ -272,7 +236,9 @@ const AdminProfileEditModal = ({
                   <input
                     type="text"
                     value={secondaryDepts}
-                    onChange={(e) => setSecondaryDepts(e.target.value)}
+                    onChange={(e) =>
+                      dispatch({ type: 'SET_SECONDARY_DEPTS', payload: e.target.value })
+                    }
                     className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
@@ -285,42 +251,38 @@ const AdminProfileEditModal = ({
                 <input
                   type="text"
                   value={researchInterests}
-                  onChange={(e) => setResearchInterests(e.target.value)}
+                  onChange={(e) =>
+                    dispatch({ type: 'SET_RESEARCH_INTERESTS', payload: e.target.value })
+                  }
                   className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
 
               <div className="grid grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">
-                    H-Index
-                  </label>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">H-Index</label>
                   <input
                     type="number"
                     value={hIndex}
-                    onChange={(e) => setHIndex(e.target.value)}
+                    onChange={(e) => dispatch({ type: 'SET_H_INDEX', payload: e.target.value })}
                     className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">
-                    ORCID
-                  </label>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">ORCID</label>
                   <input
                     type="text"
                     value={orcid}
-                    onChange={(e) => setOrcid(e.target.value)}
+                    onChange={(e) => dispatch({ type: 'SET_ORCID', payload: e.target.value })}
                     className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">
-                    Image URL
-                  </label>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Image URL</label>
                   <input
                     type="text"
                     value={imageUrl}
-                    onChange={(e) => setImageUrl(e.target.value)}
+                    onChange={(e) => dispatch({ type: 'SET_IMAGE_URL', payload: e.target.value })}
                     className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
@@ -333,13 +295,8 @@ const AdminProfileEditModal = ({
                   </label>
                   <div className="max-h-[200px] overflow-y-auto border border-gray-200 rounded-lg p-3 space-y-2">
                     {full.publications.slice(0, 50).map((pub, i) => (
-                      <div
-                        key={i}
-                        className="text-xs text-gray-600 flex items-start gap-2"
-                      >
-                        <span className="text-gray-400 whitespace-nowrap">
-                          {pub.year || "—"}
-                        </span>
+                      <div key={i} className="text-xs text-gray-600 flex items-start gap-2">
+                        <span className="text-gray-400 whitespace-nowrap">{pub.year || '—'}</span>
                         <span className="truncate">{pub.title}</span>
                         {pub.doi && (
                           <a
@@ -367,7 +324,9 @@ const AdminProfileEditModal = ({
                   <input
                     type="checkbox"
                     checked={profileVerified}
-                    onChange={(e) => setProfileVerified(e.target.checked)}
+                    onChange={(e) =>
+                      dispatch({ type: 'SET_PROFILE_VERIFIED', payload: e.target.checked })
+                    }
                     className="rounded border-gray-300"
                   />
                   Profile Verified
@@ -376,18 +335,18 @@ const AdminProfileEditModal = ({
                   <input
                     type="checkbox"
                     checked={userConfirmed}
-                    onChange={(e) => setUserConfirmed(e.target.checked)}
+                    onChange={(e) =>
+                      dispatch({ type: 'SET_USER_CONFIRMED', payload: e.target.checked })
+                    }
                     className="rounded border-gray-300"
                   />
                   Account Confirmed
                 </label>
                 <div>
-                  <label className="text-xs font-medium text-gray-600 mr-2">
-                    User Type:
-                  </label>
+                  <label className="text-xs font-medium text-gray-600 mr-2">User Type:</label>
                   <select
                     value={userType}
-                    onChange={(e) => setUserType(e.target.value)}
+                    onChange={(e) => dispatch({ type: 'SET_USER_TYPE', payload: e.target.value })}
                     className="text-sm border border-gray-200 rounded-lg px-2 py-1"
                   >
                     <option value="professor">Professor</option>
@@ -415,7 +374,7 @@ const AdminProfileEditModal = ({
             disabled={saving || loading}
             className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50"
           >
-            {saving ? "Saving..." : "Save Changes"}
+            {saving ? 'Saving...' : 'Save Changes'}
           </button>
         </div>
       </div>

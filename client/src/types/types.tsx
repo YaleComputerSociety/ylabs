@@ -84,7 +84,7 @@ export type User = {
   userType: string;
   userConfirmed: boolean;
   profileVerified?: boolean;
-}
+};
 
 export type Publication = {
   title: string;
@@ -119,7 +119,7 @@ export type FacultyProfile = {
   topics: string[];
   profileVerified: boolean;
   ownListings: string[];
-}
+};
 
 export type Developer = {
   name: string;
@@ -128,9 +128,10 @@ export type Developer = {
   location: string;
   website?: string;
   linkedin?: string;
-  github?:string;
-}
+  github?: string;
+};
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 interface ImportMeta {
   readonly env: {
     readonly VITE_APP_TITLE: string;

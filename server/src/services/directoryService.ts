@@ -1,9 +1,9 @@
 /**
  * Yale directory API integration for faculty data lookup.
  */
-import axios from "axios";
+import axios from 'axios';
 
-const DIRECTORY_URL = "https://directory.yale.edu/api/people";
+const DIRECTORY_URL = 'https://directory.yale.edu/api/people';
 
 interface DirectoryPerson {
   name: string;
@@ -27,10 +27,15 @@ export function isFacultyTitle(title: string): boolean {
   if (!title) return false;
   const lower = title.toLowerCase();
   const facultyKeywords = [
-    'professor', 'lecturer', 'instructor', 'research scientist',
-    'research fellow', 'senior lector', 'clinical',
+    'professor',
+    'lecturer',
+    'instructor',
+    'research scientist',
+    'research fellow',
+    'senior lector',
+    'clinical',
   ];
-  return facultyKeywords.some(kw => lower.includes(kw));
+  return facultyKeywords.some((kw) => lower.includes(kw));
 }
 
 /**
@@ -40,14 +45,17 @@ export function isFacultyTitle(title: string): boolean {
  *
  * Returns null if the person is not found or the request fails.
  */
-export async function fetchFromDirectory(query: string, searchType: 'netid' | 'name' = 'netid'): Promise<DirectoryPerson | null> {
+export async function fetchFromDirectory(
+  query: string,
+  searchType: 'netid' | 'name' = 'netid',
+): Promise<DirectoryPerson | null> {
   try {
     const response = await axios.get(DIRECTORY_URL, {
       params: { search: query, searchType },
       timeout: 8000,
       headers: {
         'User-Agent': 'YLabs/1.0',
-        'Accept': 'application/json',
+        Accept: 'application/json',
       },
     });
 

@@ -33,8 +33,17 @@ const ARTS_SUFFIX = 'Studio';
 const DEFAULT_SUFFIX = 'Research';
 
 const NAME_BASED_SUFFIXES = [
-  'lab', 'laboratory', 'group', 'research', 'research group',
-  'studio', 'project', 'team', 'center', 'centre', 'initiative'
+  'lab',
+  'laboratory',
+  'group',
+  'research',
+  'research group',
+  'studio',
+  'project',
+  'team',
+  'center',
+  'centre',
+  'initiative',
 ];
 
 export interface DepartmentDoc {
@@ -62,7 +71,7 @@ function normalizeString(str: string): string {
   return str
     .toLowerCase()
     .trim()
-    .replace(/[''`]/g, "'")  // Normalize all apostrophe variants
+    .replace(/[''`]/g, "'") // Normalize all apostrophe variants
     .replace(/[^\w\s']/g, '') // Remove special chars except apostrophe
     .replace(/\s+/g, ' ');
 }
@@ -92,11 +101,7 @@ function escapeRegex(str: string): string {
  * @param lastName - Owner's last name
  * @returns true if title is custom (preserve), false if name-based (replace)
  */
-export function isCustomTitle(
-  title: string,
-  firstName: string,
-  lastName: string
-): boolean {
+export function isCustomTitle(title: string, firstName: string, lastName: string): boolean {
   if (!title || !lastName) {
     return false;
   }
@@ -111,7 +116,7 @@ export function isCustomTitle(
 
   const escapedFirstName = escapeRegex(normalizedFirstName);
   const escapedLastName = escapeRegex(normalizedLastName);
-  const suffixPattern = NAME_BASED_SUFFIXES.map(s => escapeRegex(s)).join('|');
+  const suffixPattern = NAME_BASED_SUFFIXES.map((s) => escapeRegex(s)).join('|');
 
   const nameBasedPatterns = [
     new RegExp(`^(the\\s+)?${escapedLastName}('?s)?\\s+(${suffixPattern})$`, 'i'),
@@ -122,7 +127,10 @@ export function isCustomTitle(
 
     new RegExp(`^${escapedLastName}$`, 'i'),
 
-    new RegExp(`^(dr\\.?|prof\\.?|professor)\\s+${escapedLastName}('?s)?\\s+(${suffixPattern})$`, 'i'),
+    new RegExp(
+      `^(dr\\.?|prof\\.?|professor)\\s+${escapedLastName}('?s)?\\s+(${suffixPattern})$`,
+      'i',
+    ),
 
     new RegExp(`^(dr\\.?|prof\\.?|professor)\\s+${escapedLastName}$`, 'i'),
 
@@ -141,7 +149,7 @@ export function isCustomTitle(
   remainingTitle = remainingTitle.replace(/\b(the|a|an|of|for|and|in|on|at)\b/gi, '');
   remainingTitle = remainingTitle.replace(/[''`'s]/g, '').trim();
 
-  const remainingWords = remainingTitle.split(/\s+/).filter(w => w.length > 1);
+  const remainingWords = remainingTitle.split(/\s+/).filter((w) => w.length > 1);
 
   if (remainingWords.length >= 2) {
     return true;
@@ -171,7 +179,7 @@ function extractAbbreviation(displayName: string): string {
  */
 function determineSuffix(
   departments: string[],
-  lookup: Map<string, DepartmentDoc>
+  lookup: Map<string, DepartmentDoc>,
 ): { suffix: string; category: DepartmentCategory | 'Arts' | 'Unknown' } {
   const allCategories = new Set<DepartmentCategory>();
   let hasArtsDepartment = false;
@@ -215,7 +223,7 @@ function determineSuffix(
     if (allCategories.has(priorityCategory)) {
       return {
         suffix: CATEGORY_SUFFIXES[priorityCategory],
-        category: priorityCategory
+        category: priorityCategory,
       };
     }
   }
@@ -241,7 +249,7 @@ export async function buildDepartmentLookup(): Promise<Map<string, DepartmentDoc
       abbreviation: dept.abbreviation,
       displayName: dept.displayName,
       categories: dept.categories as DepartmentCategory[],
-      primaryCategory: dept.primaryCategory as DepartmentCategory
+      primaryCategory: dept.primaryCategory as DepartmentCategory,
     };
 
     lookup.set(dept.displayName, deptDoc);
@@ -263,7 +271,7 @@ export async function buildDepartmentLookup(): Promise<Map<string, DepartmentDoc
  */
 export async function getDepartmentLookup(): Promise<Map<string, DepartmentDoc>> {
   const now = Date.now();
-  if (!departmentLookupCache || (now - cacheTimestamp) > CACHE_TTL) {
+  if (!departmentLookupCache || now - cacheTimestamp > CACHE_TTL) {
     departmentLookupCache = await buildDepartmentLookup();
     cacheTimestamp = now;
   }
@@ -290,9 +298,9 @@ export function invalidateDepartmentLookupCache(): void {
 export async function generateSmartTitle(
   lastName: string,
   departments: string[],
-  lookup?: Map<string, DepartmentDoc>
+  lookup?: Map<string, DepartmentDoc>,
 ): Promise<SmartTitleResult> {
-  const deptLookup = lookup || await getDepartmentLookup();
+  const deptLookup = lookup || (await getDepartmentLookup());
 
   const { suffix, category } = determineSuffix(departments, deptLookup);
 
@@ -301,7 +309,7 @@ export async function generateSmartTitle(
   return {
     title,
     suffix,
-    determinedCategory: category
+    determinedCategory: category,
   };
 }
 
@@ -320,15 +328,14 @@ export async function processListingTitle(
   firstName: string,
   lastName: string,
   departments: string[],
-  lookup?: Map<string, DepartmentDoc>
+  lookup?: Map<string, DepartmentDoc>,
 ): Promise<string> {
   if (!lastName) {
     return currentTitle || '';
   }
 
-  const isPlaceholder = !currentTitle ||
-    currentTitle.includes("* Your Lab's Name") ||
-    currentTitle.trim() === '';
+  const isPlaceholder =
+    !currentTitle || currentTitle.includes("* Your Lab's Name") || currentTitle.trim() === '';
 
   if (!isPlaceholder && isCustomTitle(currentTitle, firstName, lastName)) {
     return currentTitle;

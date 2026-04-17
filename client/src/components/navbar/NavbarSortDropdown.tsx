@@ -17,7 +17,7 @@ const NavbarSortDropdown = () => {
     { value: 'createdAt', label: 'Date Added' },
     { value: 'ownerLastName', label: 'Last Name' },
     { value: 'ownerFirstName', label: 'First Name' },
-    { value: 'title', label: 'Lab Title' }
+    { value: 'title', label: 'Lab Title' },
   ];
 
   const handleSelect = (value: string) => {
@@ -32,9 +32,7 @@ const NavbarSortDropdown = () => {
         if (!isDropdownOpen) {
           setIsDropdownOpen(true);
         } else {
-          setFocusedIndex((prev) =>
-            prev < sortOptions.length - 1 ? prev + 1 : prev
-          );
+          setFocusedIndex((prev) => (prev < sortOptions.length - 1 ? prev + 1 : prev));
         }
         break;
       case 'ArrowUp':

@@ -1,15 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  ConfigPayload,
-  configReducer,
-  createInitialConfigState,
-} from '../configReducer';
+import { ConfigPayload, configReducer, createInitialConfigState } from '../configReducer';
 
 const samplePayload: ConfigPayload = {
-  researchAreas: [
-    { name: 'Neuroscience', field: 'Biology', colorKey: 'blue', isDefault: true },
-  ],
+  researchAreas: [{ name: 'Neuroscience', field: 'Biology', colorKey: 'blue', isDefault: true }],
   researchFields: [{ name: 'Biology', colorKey: 'blue' }],
   fieldOrder: ['Biology'],
   departments: [
@@ -60,10 +54,10 @@ describe('configReducer', () => {
   });
 
   it('FETCH_FAILURE records the error message and stops loading without clearing data', () => {
-    const loaded = configReducer(
-      createInitialConfigState(),
-      { type: 'FETCH_SUCCESS', payload: samplePayload }
-    );
+    const loaded = configReducer(createInitialConfigState(), {
+      type: 'FETCH_SUCCESS',
+      payload: samplePayload,
+    });
     const next = configReducer(loaded, { type: 'FETCH_FAILURE', payload: 'Server down' });
     expect(next.error).toBe('Server down');
     expect(next.isLoading).toBe(false);

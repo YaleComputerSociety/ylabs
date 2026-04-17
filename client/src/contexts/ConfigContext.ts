@@ -1,7 +1,7 @@
 /**
  * React context for application configuration (departments, research areas).
  */
-import { createContext } from "react";
+import { createContext } from 'react';
 
 export interface ResearchAreaConfig {
   name: string;
@@ -56,10 +56,14 @@ export const defaultConfigContext: ConfigContextType = {
   departments: [],
   departmentCategories: [],
   getResearchAreaByName: () => undefined,
-  getColorForResearchArea: () => ({ bg: "bg-gray-200", text: "text-gray-800", border: "border-gray-300" }),
+  getColorForResearchArea: () => ({
+    bg: 'bg-gray-200',
+    text: 'text-gray-800',
+    border: 'border-gray-300',
+  }),
   getDepartmentByAbbr: () => undefined,
   getDepartmentByName: () => undefined,
-  getDepartmentColor: () => "bg-gray-100",
+  getDepartmentColor: () => 'bg-gray-100',
   getDepartmentsByCategory: () => [],
   refreshConfig: async () => {},
 };

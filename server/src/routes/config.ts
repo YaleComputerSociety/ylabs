@@ -1,7 +1,7 @@
 /**
  * Express routes for client configuration (departments, research areas).
  */
-import { Router, Request, Response } from "express";
+import { Router, Request, Response } from 'express';
 import { getConfig, invalidateConfigCache } from '../services/configService';
 import { isAuthenticated } from '../middleware/index';
 

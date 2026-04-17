@@ -1,8 +1,8 @@
 /**
  * React context for fellowship search, filter, and sort state.
  */
-import { createContext } from "react";
-import { Fellowship, FellowshipFilterOptions } from "../types/types";
+import { createContext } from 'react';
+import { Fellowship, FellowshipFilterOptions } from '../types/types';
 
 export interface FellowshipSearchContextType {
   queryString: string;

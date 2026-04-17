@@ -25,13 +25,11 @@ interface TagInfo {
 
 export function getItemTags(
   item: BrowsableItem,
-  getColor: (area: string) => { bg: string; text: string }
+  getColor: (area: string) => { bg: string; text: string },
 ): TagInfo[] {
   if (item.type === 'listing') {
     const areas =
-      item.data.researchAreas?.length > 0
-        ? item.data.researchAreas
-        : item.data.keywords || [];
+      item.data.researchAreas?.length > 0 ? item.data.researchAreas : item.data.keywords || [];
     return areas.map((a) => ({ label: a, ...getColor(a) }));
   }
   return [
@@ -53,9 +51,7 @@ export function getItemSubtitle(item: BrowsableItem): string {
     const { ownerFirstName, ownerLastName, departments } = item.data;
     const name = `${ownerFirstName} ${ownerLastName}`;
     const dept =
-      departments && departments.length > 0
-        ? getDepartmentAbbreviation(departments[0])
-        : null;
+      departments && departments.length > 0 ? getDepartmentAbbreviation(departments[0]) : null;
     return dept ? `${name} · ${dept}` : name;
   }
   const { deadline } = item.data;

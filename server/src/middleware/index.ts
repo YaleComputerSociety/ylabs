@@ -1,13 +1,13 @@
 /**
  * Authentication and authorization middleware exports.
  */
-export { 
-  isAuthenticated, 
-  isTrustworthy, 
+export {
+  isAuthenticated,
+  isTrustworthy,
   canCreateListing,
   isAdmin,
   isProfessor,
-  isConfirmed
+  isConfirmed,
 } from './auth';
 
 export {
@@ -17,14 +17,10 @@ export {
   requireFields,
   validatePagination,
   validateSort,
-  validateQuery
+  validateQuery,
 } from './validation';
 
-export {
-  errorHandler,
-  notFoundHandler,
-  asyncHandler
-} from './errorHandler';
+export { errorHandler, notFoundHandler, asyncHandler } from './errorHandler';
 
 export { securityHeaders } from './securityHeaders';
 

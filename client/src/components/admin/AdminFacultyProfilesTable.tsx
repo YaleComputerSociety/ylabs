@@ -1,9 +1,16 @@
 /**
  * Admin panel table for managing faculty profiles.
+ *
+ * Table state lives in reducers/adminFacultyProfilesTableReducer.ts (a thin
+ * specialization of the generic adminTableReducer).
  */
-import { useState, useEffect, useCallback } from "react";
-import axios from "../../utils/axios";
-import AdminProfileEditModal from "./AdminProfileEditModal";
+import { useEffect, useCallback, useReducer } from 'react';
+import axios from '../../utils/axios';
+import AdminProfileEditModal from './AdminProfileEditModal';
+import {
+  adminFacultyProfilesTableReducer,
+  createInitialAdminFacultyProfilesTableState,
+} from '../../reducers/adminFacultyProfilesTableReducer';
 
 interface AdminProfile {
   _id: string;
@@ -23,48 +30,56 @@ interface AdminProfile {
   updatedAt?: string;
 }
 
-type SortField = "lname" | "primary_department" | "h_index" | "createdAt";
+type SortField = 'lname' | 'primary_department' | 'h_index' | 'createdAt';
 
 const TABLE_COLUMNS: { value: SortField; label: string }[] = [
-  { value: "lname", label: "Name" },
-  { value: "primary_department", label: "Department" },
-  { value: "h_index", label: "H-Index" },
-  { value: "createdAt", label: "Added" },
+  { value: 'lname', label: 'Name' },
+  { value: 'primary_department', label: 'Department' },
+  { value: 'h_index', label: 'H-Index' },
+  { value: 'createdAt', label: 'Added' },
 ];
 
 const PAGE_SIZES = [10, 25, 50, 100];
 
 const AdminFacultyProfilesTable = () => {
-  const [profiles, setProfiles] = useState<AdminProfile[]>([]);
-  const [total, setTotal] = useState(0);
-  const [totalPages, setTotalPages] = useState(0);
-  const [isLoading, setIsLoading] = useState(true);
-
-  const [search, setSearch] = useState("");
-  const [sortBy, setSortBy] = useState<SortField>("lname");
-  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
-  const [verifiedFilter, setVerifiedFilter] = useState<string>("");
-  const [hasListingsFilter, setHasListingsFilter] = useState<string>("");
-
-  const [editingProfile, setEditingProfile] = useState<AdminProfile | null>(null);
+  const [state, dispatch] = useReducer(
+    adminFacultyProfilesTableReducer<AdminProfile>,
+    undefined,
+    () => createInitialAdminFacultyProfilesTableState<AdminProfile>(),
+  );
+  const {
+    items: profiles,
+    total,
+    totalPages,
+    isLoading,
+    search,
+    sortBy,
+    sortOrder,
+    page,
+    pageSize,
+    filters,
+    editing: editingProfile,
+  } = state;
+  const verifiedFilter = filters.profileVerified;
+  const hasListingsFilter = filters.hasListings;
 
   const fetchProfiles = useCallback(async () => {
-    setIsLoading(true);
+    dispatch({ type: 'FETCH_START' });
     try {
       const params: any = { search, sortBy, sortOrder, page, pageSize };
       if (verifiedFilter) params.profileVerified = verifiedFilter;
       if (hasListingsFilter) params.hasListings = hasListingsFilter;
 
-      const res = await axios.get("/admin/profiles", { params });
-      setProfiles(res.data.profiles);
-      setTotal(res.data.total);
-      setTotalPages(res.data.totalPages);
+      const res = await axios.get('/admin/profiles', { params });
+      dispatch({
+        type: 'FETCH_SUCCESS',
+        items: res.data.profiles,
+        total: res.data.total,
+        totalPages: res.data.totalPages,
+      });
     } catch (err) {
-      console.error("Error fetching profiles:", err);
-    } finally {
-      setIsLoading(false);
+      console.error('Error fetching profiles:', err);
+      dispatch({ type: 'FETCH_FAILURE' });
     }
   }, [search, sortBy, sortOrder, page, pageSize, verifiedFilter, hasListingsFilter]);
 
@@ -72,16 +87,19 @@ const AdminFacultyProfilesTable = () => {
     fetchProfiles();
   }, [fetchProfiles]);
 
-  useEffect(() => {
-    setPage(1);
-  }, [search, verifiedFilter, hasListingsFilter]);
-
+  // Preserve the original sort-direction defaults: alpha columns start
+  // ascending, numeric/date columns start descending. Clicking the active
+  // column flips direction.
   const handleColumnSort = (field: SortField) => {
     if (sortBy === field) {
-      setSortOrder((o) => (o === "asc" ? "desc" : "asc"));
-    } else {
-      setSortBy(field);
-      setSortOrder(field === "lname" || field === "primary_department" ? "asc" : "desc");
+      dispatch({ type: 'TOGGLE_SORT_ORDER' });
+      return;
+    }
+    const preferred: 'asc' | 'desc' =
+      field === 'lname' || field === 'primary_department' ? 'asc' : 'desc';
+    dispatch({ type: 'SET_SORT_BY', field });
+    if (sortOrder !== preferred) {
+      dispatch({ type: 'TOGGLE_SORT_ORDER' });
     }
   };
 
@@ -92,13 +110,15 @@ const AdminFacultyProfilesTable = () => {
           type="text"
           placeholder="Search by name, netid, department..."
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(e) => dispatch({ type: 'SET_SEARCH', payload: e.target.value })}
           className="flex-1 min-w-[200px] px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
 
         <select
           value={verifiedFilter}
-          onChange={(e) => setVerifiedFilter(e.target.value)}
+          onChange={(e) =>
+            dispatch({ type: 'SET_FILTER', filter: 'profileVerified', value: e.target.value })
+          }
           className="px-3 py-2 text-sm border border-gray-200 rounded-lg"
         >
           <option value="">All Verified</option>
@@ -108,7 +128,9 @@ const AdminFacultyProfilesTable = () => {
 
         <select
           value={hasListingsFilter}
-          onChange={(e) => setHasListingsFilter(e.target.value)}
+          onChange={(e) =>
+            dispatch({ type: 'SET_FILTER', filter: 'hasListings', value: e.target.value })
+          }
           className="px-3 py-2 text-sm border border-gray-200 rounded-lg"
         >
           <option value="">All Listings</option>
@@ -118,7 +140,7 @@ const AdminFacultyProfilesTable = () => {
 
         <select
           value={pageSize}
-          onChange={(e) => setPageSize(Number(e.target.value))}
+          onChange={(e) => dispatch({ type: 'SET_PAGE_SIZE', payload: Number(e.target.value) })}
           className="px-3 py-2 text-sm border border-gray-200 rounded-lg"
         >
           {PAGE_SIZES.map((s) => (
@@ -130,7 +152,7 @@ const AdminFacultyProfilesTable = () => {
       </div>
 
       <p className="text-xs text-gray-500 mb-2">
-        {total} profile{total !== 1 ? "s" : ""} found
+        {total} profile{total !== 1 ? 's' : ''} found
       </p>
 
       <div className="overflow-x-auto border border-gray-200 rounded-lg">
@@ -145,7 +167,7 @@ const AdminFacultyProfilesTable = () => {
                 >
                   {col.label}
                   {sortBy === col.value && (
-                    <span className="ml-1">{sortOrder === "asc" ? "\u25B2" : "\u25BC"}</span>
+                    <span className="ml-1">{sortOrder === 'asc' ? '\u25B2' : '\u25BC'}</span>
                   )}
                 </th>
               ))}
@@ -174,7 +196,7 @@ const AdminFacultyProfilesTable = () => {
               profiles.map((p) => (
                 <tr
                   key={p._id}
-                  onClick={() => setEditingProfile(p)}
+                  onClick={() => dispatch({ type: 'OPEN_EDIT', item: p })}
                   className="border-t border-gray-100 cursor-pointer hover:bg-blue-50 transition-colors"
                 >
                   <td className="px-4 py-3">
@@ -184,15 +206,11 @@ const AdminFacultyProfilesTable = () => {
                     <div className="text-xs text-gray-400">{p.netid}</div>
                   </td>
                   <td className="px-4 py-3 text-gray-600 max-w-[200px] truncate">
-                    {p.primary_department || "—"}
+                    {p.primary_department || '—'}
                   </td>
-                  <td className="px-4 py-3 text-gray-600">
-                    {p.h_index ?? "—"}
-                  </td>
+                  <td className="px-4 py-3 text-gray-600">{p.h_index ?? '—'}</td>
                   <td className="px-4 py-3 text-gray-500 whitespace-nowrap">
-                    {p.createdAt
-                      ? new Date(p.createdAt).toLocaleDateString()
-                      : "—"}
+                    {p.createdAt ? new Date(p.createdAt).toLocaleDateString() : '—'}
                   </td>
                   <td className="px-4 py-3 text-gray-600">
                     {(p.ownListings?.length || 0) > 0 ? (
@@ -235,7 +253,7 @@ const AdminFacultyProfilesTable = () => {
       {totalPages > 1 && (
         <div className="flex items-center justify-between mt-4">
           <button
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            onClick={() => dispatch({ type: 'SET_PAGE', payload: Math.max(1, page - 1) })}
             disabled={page === 1}
             className="px-3 py-1.5 text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40"
           >
@@ -245,7 +263,7 @@ const AdminFacultyProfilesTable = () => {
             Page {page} of {totalPages}
           </span>
           <button
-            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            onClick={() => dispatch({ type: 'SET_PAGE', payload: Math.min(totalPages, page + 1) })}
             disabled={page === totalPages}
             className="px-3 py-1.5 text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40"
           >
@@ -257,9 +275,9 @@ const AdminFacultyProfilesTable = () => {
       {editingProfile && (
         <AdminProfileEditModal
           profile={editingProfile}
-          onClose={() => setEditingProfile(null)}
+          onClose={() => dispatch({ type: 'CLOSE_EDIT' })}
           onSaved={() => {
-            setEditingProfile(null);
+            dispatch({ type: 'CLOSE_EDIT' });
             fetchProfiles();
           }}
         />

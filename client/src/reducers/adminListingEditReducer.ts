@@ -93,7 +93,7 @@ const resolve = <T>(payload: T | ((prev: T) => T), prev: T): T =>
   typeof payload === 'function' ? (payload as (prev: T) => T)(prev) : payload;
 
 export const createInitialAdminListingEditState = (
-  listing: AdminListingShape
+  listing: AdminListingShape,
 ): AdminListingEditState => ({
   ownerTitle: listing.ownerTitle || '',
   title: listing.title || '',
@@ -125,7 +125,7 @@ export const createInitialAdminListingEditState = (
 
 export function adminListingEditReducer(
   state: AdminListingEditState,
-  action: AdminListingEditAction
+  action: AdminListingEditAction,
 ): AdminListingEditState {
   switch (action.type) {
     case 'SET_OWNER_TITLE':

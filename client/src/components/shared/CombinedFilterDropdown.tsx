@@ -71,8 +71,18 @@ const CombinedFilterDropdown = ({ tabs }: CombinedFilterDropdownProps) => {
         className="flex items-center h-9 px-3 border border-gray-300 rounded-md bg-white text-sm hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 whitespace-nowrap"
         style={{ color: '#374151' }}
       >
-        <svg className="h-4 w-4 text-gray-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+        <svg
+          className="h-4 w-4 text-gray-500 mr-2"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth="2"
+            d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"
+          />
         </svg>
         <span>Filters</span>
         {totalFilters > 0 && (
@@ -80,7 +90,12 @@ const CombinedFilterDropdown = ({ tabs }: CombinedFilterDropdownProps) => {
             {totalFilters}
           </span>
         )}
-        <svg className={`ml-2 h-4 w-4 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+        <svg
+          className={`ml-2 h-4 w-4 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 20 20"
+          fill="currentColor"
+        >
           <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" />
         </svg>
       </button>
@@ -100,9 +115,13 @@ const CombinedFilterDropdown = ({ tabs }: CombinedFilterDropdownProps) => {
               >
                 <span>{tab.label}</span>
                 {tab.selected.length > 0 && (
-                  <span className={`ml-1 text-xs px-1.5 py-0.5 rounded-full ${
-                    activeTabKey === tab.key ? 'bg-blue-100 text-blue-700' : 'bg-gray-200 text-gray-600'
-                  }`}>
+                  <span
+                    className={`ml-1 text-xs px-1.5 py-0.5 rounded-full ${
+                      activeTabKey === tab.key
+                        ? 'bg-blue-100 text-blue-700'
+                        : 'bg-gray-200 text-gray-600'
+                    }`}
+                  >
                     {tab.selected.length}
                   </span>
                 )}
@@ -157,17 +176,31 @@ const CombinedFilterDropdown = ({ tabs }: CombinedFilterDropdownProps) => {
                     }`}
                     onMouseDown={(e) => e.preventDefault()}
                   >
-                    <div className={`w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center transition-colors ${
-                      isSelected ? 'bg-blue-500 border-blue-500' : 'border-gray-300'
-                    }`}>
+                    <div
+                      className={`w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center transition-colors ${
+                        isSelected ? 'bg-blue-500 border-blue-500' : 'border-gray-300'
+                      }`}
+                    >
                       {isSelected && (
-                        <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" />
+                        <svg
+                          className="w-3 h-3 text-white"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth="3"
+                            d="M5 13l4 4L19 7"
+                          />
                         </svg>
                       )}
                     </div>
                     {colors ? (
-                      <span className={`${colors.bg} ${colors.text} text-xs rounded px-2 py-1 truncate`}>
+                      <span
+                        className={`${colors.bg} ${colors.text} text-xs rounded px-2 py-1 truncate`}
+                      >
                         {option}
                       </span>
                     ) : (
