@@ -1,8 +1,12 @@
 /**
  * Multi-select department autocomplete dropdown with chips.
  */
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useReducer, useRef, useEffect } from 'react';
 import { useConfig } from '../../../../hooks/useConfig';
+import {
+  createInitialDepartmentInputState,
+  departmentInputReducer,
+} from '../../../../reducers/departmentInputReducer';
 
 interface DepartmentInputProps {
   departments: string[];
@@ -23,9 +27,12 @@ const DepartmentInput = ({
   error,
   label = 'Department Affiliation',
 }: DepartmentInputProps) => {
-  const [isDeptDropdownOpen, setIsDeptDropdownOpen] = useState(false);
-  const [deptSearchTerm, setDeptSearchTerm] = useState('');
-  const [focusedDeptIndex, setFocusedDeptIndex] = useState(-1);
+  const [state, dispatch] = useReducer(
+    departmentInputReducer,
+    undefined,
+    createInitialDepartmentInputState,
+  );
+  const { isDeptDropdownOpen, deptSearchTerm, focusedDeptIndex } = state;
 
   const { getDepartmentColor, isLoading: configLoading } = useConfig();
 
@@ -39,8 +46,7 @@ const DepartmentInput = ({
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (deptDropdownRef.current && !deptDropdownRef.current.contains(e.target as Node)) {
-        setIsDeptDropdownOpen(false);
-        setDeptSearchTerm('');
+        dispatch({ type: 'CLOSE_DROPDOWN' });
       }
     };
 
@@ -52,30 +58,34 @@ const DepartmentInput = ({
     switch (e.key) {
       case 'ArrowDown':
         e.preventDefault();
-        setFocusedDeptIndex((prev) => (prev < filteredDepartments.length - 1 ? prev + 1 : prev));
+        dispatch({
+          type: 'SET_FOCUSED_INDEX',
+          payload: (prev) => (prev < filteredDepartments.length - 1 ? prev + 1 : prev),
+        });
         break;
       case 'ArrowUp':
         e.preventDefault();
-        setFocusedDeptIndex((prev) => (prev > 0 ? prev - 1 : 0));
+        dispatch({
+          type: 'SET_FOCUSED_INDEX',
+          payload: (prev) => (prev > 0 ? prev - 1 : 0),
+        });
         break;
       case 'Enter':
         e.preventDefault();
         if (focusedDeptIndex >= 0 && focusedDeptIndex < filteredDepartments.length) {
           onAddDepartment(filteredDepartments[focusedDeptIndex]);
-          setDeptSearchTerm('');
-          setFocusedDeptIndex(-1);
+          dispatch({ type: 'SET_SEARCH', payload: '' });
         }
         break;
       case 'Escape':
         e.preventDefault();
-        setIsDeptDropdownOpen(false);
-        setDeptSearchTerm('');
+        dispatch({ type: 'CLOSE_DROPDOWN' });
         if (deptInputRef.current) {
           deptInputRef.current.blur();
         }
         break;
       case 'Tab':
-        setIsDeptDropdownOpen(false);
+        dispatch({ type: 'CLOSE_DROPDOWN' });
         break;
     }
   };
@@ -111,17 +121,14 @@ const DepartmentInput = ({
                   : ''
             }
             onClick={() => {
-              setDeptSearchTerm('');
-              setIsDeptDropdownOpen(true);
+              dispatch({ type: 'OPEN_DROPDOWN' });
             }}
             onChange={(e) => {
-              setDeptSearchTerm(e.target.value);
-              setFocusedDeptIndex(-1);
+              dispatch({ type: 'SET_SEARCH', payload: e.target.value });
             }}
             onKeyDown={handleDeptInputKeyDown}
             onFocus={() => {
-              setDeptSearchTerm('');
-              setIsDeptDropdownOpen(true);
+              dispatch({ type: 'OPEN_DROPDOWN' });
             }}
             readOnly={!isDeptDropdownOpen}
             className={`shadow appearance-none border rounded w-full py-2 px-3 pr-10 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500 truncate ${
@@ -133,11 +140,12 @@ const DepartmentInput = ({
             className="absolute inset-y-0 right-0 flex items-center px-2 text-gray-700 cursor-pointer"
             onClick={() => {
               if (isDeptDropdownOpen) {
-                setDeptSearchTerm('');
-              }
-              setIsDeptDropdownOpen(!isDeptDropdownOpen);
-              if (!isDeptDropdownOpen && deptInputRef.current) {
-                deptInputRef.current.focus();
+                dispatch({ type: 'CLOSE_DROPDOWN' });
+              } else {
+                dispatch({ type: 'OPEN_DROPDOWN' });
+                if (deptInputRef.current) {
+                  deptInputRef.current.focus();
+                }
               }
             }}
           >
@@ -183,7 +191,7 @@ const DepartmentInput = ({
                     key={index}
                     onClick={() => {
                       onAddDepartment(dept);
-                      setDeptSearchTerm('');
+                      dispatch({ type: 'SET_SEARCH', payload: '' });
                     }}
                     className={`p-2 cursor-pointer ${
                       focusedDeptIndex === index ? 'bg-blue-100' : 'hover:bg-gray-100'

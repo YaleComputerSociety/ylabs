@@ -195,8 +195,10 @@ export const searchListings = async (request: Request, response: Response) => {
       searchParams.sort = sortConfig;
     }
 
-    // Use hybrid search if we have a query
-    if (query && (query as string).trim() !== '') {
+    // Use hybrid search for multi-word queries; keyword-only for single-word queries
+    // to avoid semantic drift (e.g. "startup" pulling in "early development" embryo docs).
+    const trimmedQuery = ((query as string) || '').trim();
+    if (trimmedQuery !== '' && trimmedQuery.split(/\s+/).length > 1) {
       searchParams.hybrid = {
         semanticRatio: 0.8,
         embedder: 'default',

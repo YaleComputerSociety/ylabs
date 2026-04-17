@@ -1,10 +1,14 @@
 /**
  * Multi-select research area autocomplete with add-new modal.
  */
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useReducer, useRef, useEffect, useMemo } from 'react';
 import ReactDOM from 'react-dom';
 import axios from 'axios';
 import { useConfig } from '../../../../hooks/useConfig';
+import {
+  createInitialResearchAreaInputState,
+  researchAreaInputReducer,
+} from '../../../../reducers/researchAreaInputReducer';
 
 interface ResearchAreaInputProps {
   researchAreas: string[];
@@ -94,12 +98,13 @@ const ResearchAreaInput = ({
   onRemoveResearchArea,
   error,
 }: ResearchAreaInputProps) => {
-  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [focusedIndex, setFocusedIndex] = useState(-1);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [pendingNewArea, setPendingNewArea] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+  const [state, dispatch] = useReducer(
+    researchAreaInputReducer,
+    undefined,
+    () => createInitialResearchAreaInputState(),
+  );
+  const { isDropdownOpen, searchTerm, focusedIndex, isModalOpen, pendingNewArea, isLoading } =
+    state;
 
   const dropdownRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -133,8 +138,7 @@ const ResearchAreaInput = ({
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setIsDropdownOpen(false);
-        setSearchTerm('');
+        dispatch({ type: 'CLOSE_DROPDOWN' });
       }
     };
 
@@ -148,11 +152,17 @@ const ResearchAreaInput = ({
     switch (e.key) {
       case 'ArrowDown':
         e.preventDefault();
-        setFocusedIndex((prev) => (prev < totalItems - 1 ? prev + 1 : prev));
+        dispatch({
+          type: 'SET_FOCUSED_INDEX',
+          payload: (prev) => (prev < totalItems - 1 ? prev + 1 : prev),
+        });
         break;
       case 'ArrowUp':
         e.preventDefault();
-        setFocusedIndex((prev) => (prev > 0 ? prev - 1 : 0));
+        dispatch({
+          type: 'SET_FOCUSED_INDEX',
+          payload: (prev) => (prev > 0 ? prev - 1 : 0),
+        });
         break;
       case 'Enter':
         e.preventDefault();
@@ -168,32 +178,28 @@ const ResearchAreaInput = ({
         break;
       case 'Escape':
         e.preventDefault();
-        setIsDropdownOpen(false);
-        setSearchTerm('');
+        dispatch({ type: 'CLOSE_DROPDOWN' });
         if (inputRef.current) {
           inputRef.current.blur();
         }
         break;
       case 'Tab':
-        setIsDropdownOpen(false);
+        dispatch({ type: 'CLOSE_DROPDOWN' });
         break;
     }
   };
 
   const handleSelectArea = (areaName: string) => {
     onAddResearchArea(areaName);
-    setSearchTerm('');
-    setFocusedIndex(-1);
-    setIsDropdownOpen(false);
+    dispatch({ type: 'SELECT_AREA' });
   };
 
   const handleAddNewArea = () => {
-    setPendingNewArea(searchTerm.trim());
-    setIsModalOpen(true);
+    dispatch({ type: 'OPEN_ADD_MODAL', payload: searchTerm.trim() });
   };
 
   const handleFieldSelect = async (fieldName: string) => {
-    setIsLoading(true);
+    dispatch({ type: 'SUBMIT_START' });
     try {
       const response = await axios.post('/api/research-areas', {
         name: pendingNewArea,
@@ -212,12 +218,9 @@ const ResearchAreaInput = ({
         alert('Failed to add research area. Please try again.');
       }
     } finally {
-      setIsLoading(false);
-      setIsModalOpen(false);
-      setPendingNewArea('');
-      setSearchTerm('');
-      setFocusedIndex(-1);
-      setIsDropdownOpen(false);
+      dispatch({ type: 'SUBMIT_END' });
+      dispatch({ type: 'CLOSE_ADD_MODAL' });
+      dispatch({ type: 'CLOSE_DROPDOWN' });
     }
   };
 
@@ -239,18 +242,34 @@ const ResearchAreaInput = ({
             ref={inputRef}
             type="text"
             value={searchTerm}
-            onClick={() => setIsDropdownOpen(true)}
-            onChange={(e) => {
-              setSearchTerm(e.target.value);
-              setFocusedIndex(-1);
-              if (e.target.value.trim()) {
-                setIsDropdownOpen(true);
+            onClick={() => {
+              if (isDropdownOpen) return;
+              // OPEN_DROPDOWN clears searchTerm; re-seed to preserve any text
+              // the user had typed before the dropdown was closed.
+              const currentSearch = searchTerm;
+              dispatch({ type: 'OPEN_DROPDOWN' });
+              if (currentSearch) {
+                dispatch({ type: 'SET_SEARCH_TERM', payload: currentSearch });
               }
+            }}
+            onChange={(e) => {
+              const value = e.target.value;
+              // Order matters: OPEN_DROPDOWN clears searchTerm, so dispatch it
+              // first (when we need it) then SET_SEARCH_TERM carries the typed
+              // value and resets focusedIndex in the same batched render.
+              if (value.trim() && !isDropdownOpen) {
+                dispatch({ type: 'OPEN_DROPDOWN' });
+              }
+              dispatch({ type: 'SET_SEARCH_TERM', payload: value });
             }}
             onKeyDown={handleInputKeyDown}
             onFocus={() => {
-              if (searchTerm.trim()) {
-                setIsDropdownOpen(true);
+              // Re-open on refocus only when there is already text to filter
+              // by. OPEN_DROPDOWN clears searchTerm, so re-seed it after.
+              if (searchTerm.trim() && !isDropdownOpen) {
+                const currentSearch = searchTerm;
+                dispatch({ type: 'OPEN_DROPDOWN' });
+                dispatch({ type: 'SET_SEARCH_TERM', payload: currentSearch });
               }
             }}
             className="shadow appearance-none border rounded w-full py-2 px-3 pr-10 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -260,11 +279,20 @@ const ResearchAreaInput = ({
             className="absolute inset-y-0 right-0 flex items-center px-2 text-gray-700 cursor-pointer"
             onClick={() => {
               if (isDropdownOpen) {
-                setSearchTerm('');
-              }
-              setIsDropdownOpen(!isDropdownOpen);
-              if (!isDropdownOpen && inputRef.current) {
-                inputRef.current.focus();
+                // Original closed-from-chevron behavior also cleared the
+                // search; CLOSE_DROPDOWN does both atomically.
+                dispatch({ type: 'CLOSE_DROPDOWN' });
+              } else {
+                // Preserve any existing searchTerm on open (OPEN_DROPDOWN
+                // clears it, so re-seed).
+                const currentSearch = searchTerm;
+                dispatch({ type: 'OPEN_DROPDOWN' });
+                if (currentSearch) {
+                  dispatch({ type: 'SET_SEARCH_TERM', payload: currentSearch });
+                }
+                if (inputRef.current) {
+                  inputRef.current.focus();
+                }
               }
             }}
           >
@@ -378,10 +406,7 @@ const ResearchAreaInput = ({
           isOpen={isModalOpen}
           newAreaName={pendingNewArea}
           fields={researchFields}
-          onClose={() => {
-            setIsModalOpen(false);
-            setPendingNewArea('');
-          }}
+          onClose={() => dispatch({ type: 'CLOSE_ADD_MODAL' })}
           onSelectField={handleFieldSelect}
         />,
         document.body,

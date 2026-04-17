@@ -1,105 +1,41 @@
 /**
  * Analytics dashboard page for admin usage statistics.
  */
-import { useState, useEffect } from 'react';
+import { useEffect, useReducer } from 'react';
 import axios from '../utils/axios';
 import swal from 'sweetalert';
 import AdminPanel from '../components/admin/AdminPanel';
-
-interface AnalyticsData {
-  visitors: {
-    lifetime: {
-      total: number;
-      byType: Array<{ userType: string; count: number }>;
-    };
-    last7Days: {
-      total: number;
-      byType: Array<{ userType: string; count: number }>;
-    };
-    today: {
-      total: number;
-      byType: Array<{ userType: string; count: number }>;
-    };
-    loginFrequency: {
-      totalLogins: number;
-      loginsLast7Days: number;
-      loginsToday: number;
-    };
-  };
-  engagement: {
-    search: {
-      totalSearches: number;
-      searchesLast7Days: number;
-      searchesToday: number;
-    };
-    topSearchQueries: Array<{ query: string; count: number }>;
-    views: {
-      totalViews: number;
-      viewsLast7Days: number;
-      viewsToday: number;
-    };
-    favorites: Array<{ eventType: string; total: number; last7Days: number }>;
-    trendingListings: Array<any>;
-    userActivity: {
-      activeUsers: number;
-      avgEventsPerUser: number;
-    };
-    mostActiveUsers: Array<{ userId: string; userType: string; eventCount: number }>;
-    totalViewsFromCounters: number;
-    totalFavoritesFromCounters: number;
-    avgViews: number;
-    avgFavorites: number;
-    viewsByDepartment: Array<{
-      department: string;
-      totalViews: number;
-      listingCount: number;
-      avgViews: number;
-    }>;
-  };
-  listings: {
-    overview: {
-      total: number;
-      active: number;
-      archived: number;
-      unconfirmed: number;
-    };
-    newListingsLast7Days: number;
-    newListingsToday: number;
-    byDepartment: Array<{ department: string; count: number }>;
-    byProfessor: Array<{ professorName: string; netId: string; count: number }>;
-    listingsWithZeroViews: number;
-    topViewedListings: Array<any>;
-    topFavoritedListings: Array<any>;
-  };
-  users: {
-    overview: { total: number; confirmed: number };
-    byType: Array<{ userType: string; count: number }>;
-    newUsersLast7Days: number;
-    newUsersToday: number;
-    newUsersTodayByType: Array<{ userType: string; count: number }>;
-  };
-  timestamp: string;
-}
+import {
+  analyticsReducer,
+  createInitialAnalyticsState,
+} from '../reducers/analyticsReducer';
 
 const Analytics = () => {
-  const [data, setData] = useState<AnalyticsData | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [lastUpdated, setLastUpdated] = useState<string>('');
+  const [state, dispatch] = useReducer(
+    analyticsReducer,
+    undefined,
+    () => createInitialAnalyticsState()
+  );
+  const { data, isLoading, lastUpdated } = state;
 
   const fetchAnalytics = async () => {
-    setIsLoading(true);
+    dispatch({ type: 'FETCH_START' });
     try {
       const response = await axios.get('/analytics', { withCredentials: true });
-      setData(response.data);
-      setLastUpdated(new Date().toLocaleString());
-      setIsLoading(false);
+      dispatch({
+        type: 'FETCH_SUCCESS',
+        payload: { data: response.data, timestamp: new Date().toLocaleString() },
+      });
     } catch (error) {
       console.error('Error fetching analytics:', error);
       swal({
         text: 'Failed to load analytics data',
         icon: 'error',
       });
-      setIsLoading(false);
+      dispatch({
+        type: 'FETCH_FAILURE',
+        payload: error instanceof Error ? error.message : 'Failed to load analytics data',
+      });
     }
   };
 

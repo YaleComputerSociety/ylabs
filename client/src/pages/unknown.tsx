@@ -1,27 +1,24 @@
 /**
  * Fallback page for unknown user types.
  */
-import React, { useState, useRef } from 'react';
+import React, { useReducer, useRef } from 'react';
 import axios from '../utils/axios';
 import swal from 'sweetalert';
+import {
+  createInitialUnknownUserState,
+  unknownUserReducer,
+  UnknownUserErrors,
+} from '../reducers/unknownUserReducer';
 
 const Unknown = () => {
-  const [firstName, setFirstName] = useState('');
-  const [lastName, setLastName] = useState('');
-  const [email, setEmail] = useState('');
-  const [userType, setUserType] = useState('');
-  const [isUserTypeDropdownOpen, setIsUserTypeDropdownOpen] = useState(false);
-  const [focusedUserTypeIndex, setFocusedUserTypeIndex] = useState(-1);
+  const [state, dispatch] = useReducer(unknownUserReducer, undefined, () =>
+    createInitialUnknownUserState(),
+  );
+  const { firstName, lastName, email, userType, isUserTypeDropdownOpen, focusedUserTypeIndex, errors } =
+    state;
 
   const userTypeRef = useRef<HTMLDivElement>(null);
   const userTypeInputRef = useRef<HTMLInputElement>(null);
-
-  const [errors, setErrors] = useState<{
-    firstName?: string;
-    lastName?: string;
-    email?: string;
-    userType?: string;
-  }>({});
 
   const userTypeOptions = [
     { value: 'undergraduate', label: 'Undergraduate Student' },
@@ -53,23 +50,31 @@ const Unknown = () => {
   };
 
   const handleUserTypeSelect = (value: string) => {
-    setUserType(value);
-    setIsUserTypeDropdownOpen(false);
+    dispatch({ type: 'SELECT_USER_TYPE', payload: value });
     if (userTypeInputRef.current) {
       userTypeInputRef.current.blur();
     }
-    setErrors((prev) => ({ ...prev, userType: validateUserType(value) }));
+    dispatch({
+      type: 'SET_ERRORS',
+      payload: (prev) => ({ ...prev, userType: validateUserType(value) }),
+    });
   };
 
   const handleUserTypeInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     switch (e.key) {
       case 'ArrowDown':
         e.preventDefault();
-        setFocusedUserTypeIndex((prev) => (prev < userTypeOptions.length - 1 ? prev + 1 : prev));
+        dispatch({
+          type: 'SET_FOCUSED_INDEX',
+          payload: (prev) => (prev < userTypeOptions.length - 1 ? prev + 1 : prev),
+        });
         break;
       case 'ArrowUp':
         e.preventDefault();
-        setFocusedUserTypeIndex((prev) => (prev > 0 ? prev - 1 : 0));
+        dispatch({
+          type: 'SET_FOCUSED_INDEX',
+          payload: (prev) => (prev > 0 ? prev - 1 : 0),
+        });
         break;
       case 'Enter':
         e.preventDefault();
@@ -79,13 +84,13 @@ const Unknown = () => {
         break;
       case 'Escape':
         e.preventDefault();
-        setIsUserTypeDropdownOpen(false);
+        dispatch({ type: 'CLOSE_DROPDOWN' });
         if (userTypeInputRef.current) {
           userTypeInputRef.current.blur();
         }
         break;
       case 'Tab':
-        setIsUserTypeDropdownOpen(false);
+        dispatch({ type: 'CLOSE_DROPDOWN' });
         break;
     }
   };
@@ -100,11 +105,11 @@ const Unknown = () => {
       userType: validateUserType(userType),
     };
 
-    const filteredErrors = Object.fromEntries(
+    const filteredErrors: UnknownUserErrors = Object.fromEntries(
       Object.entries(validationErrors).filter(([_, value]) => value !== undefined),
     );
 
-    setErrors(filteredErrors);
+    dispatch({ type: 'SET_ERRORS', payload: filteredErrors });
 
     if (Object.keys(filteredErrors).length === 0) {
       console.log('Submitting user information:', { firstName, lastName, email, userType });
@@ -171,9 +176,12 @@ const Unknown = () => {
               type="text"
               value={firstName}
               onChange={(e) => {
-                setFirstName(e.target.value);
+                dispatch({ type: 'SET_FIRST_NAME', payload: e.target.value });
                 if (errors.firstName) {
-                  setErrors((prev) => ({ ...prev, firstName: validateFirstName(e.target.value) }));
+                  dispatch({
+                    type: 'SET_ERRORS',
+                    payload: (prev) => ({ ...prev, firstName: validateFirstName(e.target.value) }),
+                  });
                 }
               }}
               className={`shadow appearance-none border ${errors.firstName ? 'border-red-500' : ''} rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500`}
@@ -190,9 +198,12 @@ const Unknown = () => {
               type="text"
               value={lastName}
               onChange={(e) => {
-                setLastName(e.target.value);
+                dispatch({ type: 'SET_LAST_NAME', payload: e.target.value });
                 if (errors.lastName) {
-                  setErrors((prev) => ({ ...prev, lastName: validateLastName(e.target.value) }));
+                  dispatch({
+                    type: 'SET_ERRORS',
+                    payload: (prev) => ({ ...prev, lastName: validateLastName(e.target.value) }),
+                  });
                 }
               }}
               className={`shadow appearance-none border ${errors.lastName ? 'border-red-500' : ''} rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500`}
@@ -209,9 +220,12 @@ const Unknown = () => {
               type="text"
               value={email}
               onChange={(e) => {
-                setEmail(e.target.value);
+                dispatch({ type: 'SET_EMAIL', payload: e.target.value });
                 if (errors.email) {
-                  setErrors((prev) => ({ ...prev, email: validateEmail(e.target.value) }));
+                  dispatch({
+                    type: 'SET_ERRORS',
+                    payload: (prev) => ({ ...prev, email: validateEmail(e.target.value) }),
+                  });
                 }
               }}
               className={`shadow appearance-none border ${errors.email ? 'border-red-500' : ''} rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500`}
@@ -234,14 +248,14 @@ const Unknown = () => {
                       : ''
                   }
                   onClick={() => {
-                    setIsUserTypeDropdownOpen(true);
+                    dispatch({ type: 'OPEN_DROPDOWN' });
                   }}
                   onKeyDown={handleUserTypeInputKeyDown}
-                  onFocus={() => setIsUserTypeDropdownOpen(true)}
+                  onFocus={() => dispatch({ type: 'OPEN_DROPDOWN' })}
                   onBlur={() => {
                     setTimeout(() => {
                       if (!userTypeRef.current?.contains(document.activeElement)) {
-                        setIsUserTypeDropdownOpen(false);
+                        dispatch({ type: 'CLOSE_DROPDOWN' });
                       }
                     }, 100);
                   }}
@@ -250,9 +264,13 @@ const Unknown = () => {
                 <div
                   className="absolute inset-y-0 right-0 flex items-center px-2 text-gray-700 cursor-pointer"
                   onClick={() => {
-                    setIsUserTypeDropdownOpen(!isUserTypeDropdownOpen);
-                    if (!isUserTypeDropdownOpen && userTypeInputRef.current) {
-                      userTypeInputRef.current.focus();
+                    if (isUserTypeDropdownOpen) {
+                      dispatch({ type: 'CLOSE_DROPDOWN' });
+                    } else {
+                      dispatch({ type: 'OPEN_DROPDOWN' });
+                      if (userTypeInputRef.current) {
+                        userTypeInputRef.current.focus();
+                      }
                     }
                   }}
                 >

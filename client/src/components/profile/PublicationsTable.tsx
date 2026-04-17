@@ -1,51 +1,79 @@
 /**
  * Profile tab displaying academic publications.
  */
-import { useState, useEffect } from 'react';
+import { useReducer, useEffect } from 'react';
 import { Publication } from '../../types/types';
 import axios from '../../utils/axios';
 import { safeUrl } from '../../utils/url';
+import {
+  PublicationsSortField,
+  createInitialPublicationsTableState,
+  publicationsTableReducer,
+} from '../../reducers/publicationsTableReducer';
 
 interface PublicationsTableProps {
   netid: string;
 }
 
-type SortField = 'year' | 'title' | 'venue' | 'cited_by_count';
+type SortField = PublicationsSortField;
 
 const PublicationsTable = ({ netid }: PublicationsTableProps) => {
-  const [publications, setPublications] = useState<Publication[]>([]);
-  const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
-  const [sortBy, setSortBy] = useState<SortField>('year');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
-  const [loading, setLoading] = useState(true);
-  const pageSize = 20;
+  const [state, dispatch] = useReducer(
+    publicationsTableReducer<Publication>,
+    undefined,
+    createInitialPublicationsTableState<Publication>,
+  );
+  const {
+    items: publications,
+    total,
+    totalPages,
+    isLoading: loading,
+    page,
+    pageSize,
+    sortBy,
+    sortOrder,
+    editing: _editing,
+  } = state;
+  void _editing;
 
   useEffect(() => {
-    setLoading(true);
+    dispatch({ type: 'FETCH_START' });
     axios
       .get(`/profiles/${netid}/publications`, {
         params: { page, pageSize, sortBy, sortOrder },
       })
       .then((res) => {
-        setPublications(res.data.publications);
-        setTotal(res.data.total);
+        const fetchedTotal = res.data.total ?? 0;
+        dispatch({
+          type: 'FETCH_SUCCESS',
+          items: res.data.publications ?? [],
+          total: fetchedTotal,
+          totalPages: Math.ceil(fetchedTotal / pageSize),
+        });
       })
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  }, [netid, page, sortBy, sortOrder]);
+      .catch((err) => {
+        console.error(err);
+        dispatch({ type: 'FETCH_FAILURE' });
+      });
+  }, [netid, page, pageSize, sortBy, sortOrder]);
 
   const toggleSort = (field: SortField) => {
     if (sortBy === field) {
-      setSortOrder((o) => (o === 'asc' ? 'desc' : 'asc'));
+      dispatch({ type: 'TOGGLE_SORT_ORDER' });
     } else {
-      setSortBy(field);
-      setSortOrder(field === 'title' || field === 'venue' ? 'asc' : 'desc');
+      dispatch({ type: 'SET_SORT_BY', field });
+      // Preserve prior behavior: text columns default to asc on first click,
+      // numeric columns default to desc. TOGGLE_SORT would always reset to
+      // desc, so we set explicitly when an ascending default is needed.
+      if (field === 'title' || field === 'venue') {
+        if (sortOrder !== 'asc') {
+          dispatch({ type: 'TOGGLE_SORT_ORDER' });
+        }
+      } else if (sortOrder !== 'desc') {
+        dispatch({ type: 'TOGGLE_SORT_ORDER' });
+      }
     }
-    setPage(1);
   };
-
-  const totalPages = Math.ceil(total / pageSize);
 
   const SortIcon = ({ field }: { field: SortField }) => {
     if (sortBy !== field) return <span className="text-gray-300 ml-1">&#x2195;</span>;
@@ -172,7 +200,7 @@ const PublicationsTable = ({ netid }: PublicationsTableProps) => {
       {totalPages > 1 && (
         <div className="flex items-center justify-between mt-4">
           <button
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            onClick={() => dispatch({ type: 'SET_PAGE', payload: Math.max(1, page - 1) })}
             disabled={page === 1}
             className="px-3 py-1.5 text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
           >
@@ -182,7 +210,7 @@ const PublicationsTable = ({ netid }: PublicationsTableProps) => {
             Page {page} of {totalPages}
           </span>
           <button
-            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            onClick={() => dispatch({ type: 'SET_PAGE', payload: Math.min(totalPages, page + 1) })}
             disabled={page === totalPages}
             className="px-3 py-1.5 text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
           >

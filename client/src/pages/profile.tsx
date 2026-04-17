@@ -1,7 +1,13 @@
 /**
  * Faculty profile page with bio, research, listings, and courses tabs.
+ *
+ * State split: fetch-lifecycle state (profile, loading, error, coursesAvailable)
+ * lives in a useReducer backed by `profilePageReducer` so transitions are pure
+ * and unit-testable. UI-only state (`activeTab`, `showAdminEdit`) intentionally
+ * stays as plain local state — each is single-concern and unrelated to the
+ * fetch lifecycle, so the reducer indirection would obscure rather than clarify.
  */
-import { useState, useEffect, useContext } from 'react';
+import { useState, useEffect, useContext, useReducer } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { FacultyProfile } from '../types/types';
 import UserContext from '../contexts/UserContext';
@@ -11,6 +17,10 @@ import ResearchInterests from '../components/profile/ResearchInterests';
 import ProfileListings from '../components/profile/ProfileListings';
 import CourseTableSection from '../components/profile/CourseTableSection';
 import AdminProfileEditModal from '../components/admin/AdminProfileEditModal';
+import {
+  createInitialProfilePageState,
+  profilePageReducer,
+} from '../reducers/profilePageReducer';
 
 type Tab = 'bio' | 'research' | 'listings' | 'courses';
 const VALID_TABS: Tab[] = ['bio', 'research', 'listings', 'courses'];
@@ -20,14 +30,16 @@ const Profile = () => {
   const { user } = useContext(UserContext);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const [profile, setProfile] = useState<FacultyProfile | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [state, dispatch] = useReducer(
+    profilePageReducer,
+    undefined,
+    () => createInitialProfilePageState(),
+  );
+  const { profile, loading, error, coursesAvailable } = state;
   const tabParam = searchParams.get('tab') as Tab | null;
   const [activeTab, setActiveTab] = useState<Tab>(
     tabParam && VALID_TABS.includes(tabParam) ? tabParam : 'bio',
   );
-  const [coursesAvailable, setCoursesAvailable] = useState<boolean | null>(null);
   const [showAdminEdit, setShowAdminEdit] = useState(false);
 
   const isOwnProfile = user?.netId === netid;
@@ -35,21 +47,19 @@ const Profile = () => {
 
   const fetchProfile = () => {
     if (!netid) return;
-    setLoading(true);
-    setError(null);
+    dispatch({ type: 'FETCH_START' });
     axios
       .get(`/profiles/${netid}`)
       .then((res) => {
-        setProfile(res.data.profile);
+        dispatch({ type: 'FETCH_SUCCESS', profile: res.data.profile as FacultyProfile });
       })
       .catch((err) => {
         if (err.response?.status === 404) {
-          setError('Profile not found.');
+          dispatch({ type: 'FETCH_FAILURE', payload: 'Profile not found.' });
         } else {
-          setError('Failed to load profile.');
+          dispatch({ type: 'FETCH_FAILURE', payload: 'Failed to load profile.' });
         }
-      })
-      .finally(() => setLoading(false));
+      });
   };
 
   useEffect(() => {
@@ -161,7 +171,12 @@ const Profile = () => {
         {activeTab === 'listings' && netid && <ProfileListings netid={netid} />}
 
         {activeTab === 'courses' && netid && (
-          <CourseTableSection netid={netid} onAvailabilityChange={setCoursesAvailable} />
+          <CourseTableSection
+            netid={netid}
+            onAvailabilityChange={(available) =>
+              dispatch({ type: 'SET_COURSES_AVAILABLE', payload: available })
+            }
+          />
         )}
       </div>
 

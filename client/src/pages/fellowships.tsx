@@ -1,7 +1,7 @@
 /**
  * Fellowships browse page with search, filters, and grid/list view.
  */
-import { useState, useEffect, useContext, useMemo } from 'react';
+import { useReducer, useEffect, useContext, useMemo } from 'react';
 import FellowshipModal from '../components/fellowship/FellowshipModal';
 import AdminFellowshipEditModal from '../components/admin/AdminFellowshipEditModal';
 import FellowshipSearchContext from '../contexts/FellowshipSearchContext';
@@ -11,6 +11,7 @@ import LoadingSpinner from '../components/shared/LoadingSpinner';
 import { BrowsableItem } from '../types/browsable';
 import { Fellowship } from '../types/types';
 import axios from '../utils/axios';
+import { browsePageReducer, createInitialBrowsePageState } from '../reducers/browsePageReducer';
 
 const CLOSING_SOON_DAYS = 30;
 
@@ -53,10 +54,17 @@ const Fellowships = () => {
   const { user } = useContext(UserContext);
   const isAdmin = user?.userType === 'admin';
 
-  const [favFellowshipIds, setFavFellowshipIds] = useState<string[]>([]);
-  const [selectedFellowship, setSelectedFellowship] = useState<Fellowship | null>(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [adminEditFellowship, setAdminEditFellowship] = useState<Fellowship | null>(null);
+  const [state, dispatch] = useReducer(
+    browsePageReducer<Fellowship>,
+    undefined as unknown as never,
+    () => createInitialBrowsePageState<Fellowship>(),
+  );
+  const {
+    favIds: favFellowshipIds,
+    selectedItem: selectedFellowship,
+    isDetailModalOpen: isModalOpen,
+    adminEditItem: adminEditFellowship,
+  } = state;
 
   useEffect(() => {
     setQueryString('');
@@ -66,11 +74,11 @@ const Fellowships = () => {
     axios
       .get('/users/favFellowshipIds')
       .then((response) => {
-        setFavFellowshipIds(response.data.favFellowshipIds || []);
+        dispatch({ type: 'SET_FAVORITES', ids: response.data.favFellowshipIds || [] });
       })
       .catch((error) => {
         console.error("Error fetching user's favorite fellowships:", error);
-        setFavFellowshipIds([]);
+        dispatch({ type: 'SET_FAVORITES', ids: [] });
       });
   };
 
@@ -125,19 +133,19 @@ const Fellowships = () => {
     const prevFavIds = favFellowshipIds;
 
     if (favorite) {
-      setFavFellowshipIds([fellowshipId, ...prevFavIds]);
+      dispatch({ type: 'SET_FAVORITES', ids: [fellowshipId, ...prevFavIds] });
       axios
         .put('/users/favFellowships', { data: { favFellowships: [fellowshipId] } })
         .catch((error) => {
-          setFavFellowshipIds(prevFavIds);
+          dispatch({ type: 'SET_FAVORITES', ids: prevFavIds });
           console.error('Error favoriting fellowship:', error);
         });
     } else {
-      setFavFellowshipIds(prevFavIds.filter((id) => id !== fellowshipId));
+      dispatch({ type: 'SET_FAVORITES', ids: prevFavIds.filter((id) => id !== fellowshipId) });
       axios
         .delete('/users/favFellowships', { data: { favFellowships: [fellowshipId] } })
         .catch((error) => {
-          setFavFellowshipIds(prevFavIds);
+          dispatch({ type: 'SET_FAVORITES', ids: prevFavIds });
           console.error('Error unfavoriting fellowship:', error);
         });
     }
@@ -150,14 +158,13 @@ const Fellowships = () => {
 
   const handleOpenModal = (item: BrowsableItem) => {
     if (item.type === 'fellowship') {
-      setSelectedFellowship(item.data);
-      setIsModalOpen(true);
+      dispatch({ type: 'OPEN_DETAIL_MODAL', item: item.data });
     }
   };
 
   const handleAdminEdit = (item: BrowsableItem) => {
     if (item.type === 'fellowship') {
-      setAdminEditFellowship(item.data);
+      dispatch({ type: 'OPEN_ADMIN_EDIT', item: item.data });
     }
   };
 
@@ -243,10 +250,7 @@ const Fellowships = () => {
         <FellowshipModal
           fellowship={selectedFellowship}
           isOpen={isModalOpen}
-          onClose={() => {
-            setIsModalOpen(false);
-            setSelectedFellowship(null);
-          }}
+          onClose={() => dispatch({ type: 'CLOSE_DETAIL_MODAL' })}
           isFavorite={favFellowshipIds.includes(selectedFellowship.id)}
           toggleFavorite={() => {
             updateFavorite(
@@ -260,9 +264,9 @@ const Fellowships = () => {
       {adminEditFellowship && (
         <AdminFellowshipEditModal
           fellowship={adminEditFellowship}
-          onClose={() => setAdminEditFellowship(null)}
+          onClose={() => dispatch({ type: 'CLOSE_ADMIN_EDIT' })}
           onSave={() => {
-            setAdminEditFellowship(null);
+            dispatch({ type: 'CLOSE_ADMIN_EDIT' });
             refreshFellowships();
           }}
         />

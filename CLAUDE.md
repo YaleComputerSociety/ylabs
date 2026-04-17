@@ -163,15 +163,31 @@ Client-side tests run under **Vitest 3** with a `jsdom` environment. Config live
 
 Coverage focuses on pure reducer modules in `client/src/reducers/`, with matching test files in `client/src/reducers/__tests__/`. The pattern extracts state transitions out of providers/components (as `createInitial<Name>State()` + `<name>Reducer(state, action)`) so they can be tested without mounting React or mocking network. Side effects (axios, localStorage, timers) stay in the component that uses `useReducer`.
 
-Current reducers with test coverage:
+Current reducers with test coverage (all in `client/src/reducers/`, tests in `client/src/reducers/__tests__/`):
 
 | Reducer | Consumer | What it models |
 |---------|----------|----------------|
 | `searchReducer` | `SearchContextProvider` | Listing search query, filters, sort, pagination, results lifecycle |
 | `fellowshipSearchReducer` | `FellowshipSearchContextProvider` | Fellowship equivalent with filter-options fetch lifecycle |
+| `browsePageReducer` | `pages/home`, `pages/fellowships` | Generic over `<T>`. Browse-page UI: favorites, detail-modal selection, admin-edit modal. Open/close modal flips `selectedItem` and `isDetailModalOpen` atomically. |
 | `configReducer` | `ConfigContextProvider` | Config fetch (idle → loading → loaded/error) |
+| `userReducer` | `UserContextProvider` | Auth-check lifecycle (loading → authenticated/unauthenticated) + explicit LOGOUT |
+| `favoritesReducer` | `components/accounts/FavoritesManager` | Favorited listings + fellowships, sort/filter/view state, optimistic add/remove |
+| `ownListingsReducer` | `components/accounts/ListingEditor` | Professor's own listings + edit/create lifecycle (isEditing/isCreating), skeleton-listing handling |
+| `unknownUserReducer` | Unknown-user flow | State for the "unknown user" verification path |
 | `listingFormReducer` | `components/accounts/ListingForm` | Form fields, errors, hydrate/reset, department add/remove |
-| `accountTrackingReducer` | `pages/account.tsx` | Kanban stage + notes per lab/fellowship; includes `loadAccountTrackingFromStorage()` with legacy-key migration |
+| `profileEditorReducer` | Profile editor | Profile form state |
+| `publicationsTableReducer` | Publications table | Publication CRUD/table state |
+| `inlineCrudReducer` | Inline CRUD components | Generic add/edit/delete row state |
+| `accountTrackingReducer` | `components/accounts/FavoritesManager` | Kanban stage + notes per lab/fellowship; includes `loadAccountTrackingFromStorage()` with legacy-key migration |
+| `adminTableReducer` | Admin tables | Generic admin table sort/filter/pagination |
+| `adminListingsTableReducer` | Admin listings table | Listing-specific admin table state |
+| `adminFellowshipsTableReducer` | Admin fellowships table | Fellowship-specific admin table state |
+| `adminFacultyProfilesTableReducer` | Admin faculty profiles table | Faculty profile admin table state |
+| `adminListingEditReducer` | Admin listing edit | Edit form for an admin-managed listing |
+| `adminFellowshipEditReducer` | Admin fellowship edit | Edit form for an admin-managed fellowship |
+| `adminFellowshipFormReducer` | Admin fellowship form | Fellowship create/edit form fields and errors |
+| `adminProfileEditReducer` | Admin profile edit | Edit form for an admin-managed faculty profile |
 
 ## CI
 
@@ -296,8 +312,6 @@ User → Yale CAS SSO → passport.ts findOrCreateUser
 
 | Issue | Location | Status |
 |-------|----------|--------|
-| `account.tsx` is ~65KB | `client/src/pages/account.tsx` | Deferred — splitting into ListingEditor, ProfileEditor, FavoritesManager is planned |
-| Non-atomic view/favorite counters | `server/src/services/itemOperations.ts` | Uses read-then-update instead of `$inc`; race condition under load |
 | No server-side tests | `server/` | No test framework configured server-side. Client uses Vitest; reducer modules in `client/src/reducers/` are covered. |
 | ESLint/Prettier configured but not in CI | `eslint.config.js`, `.prettierrc` | Flat-config ESLint + Prettier set up at repo root. Currently reports ~15 errors / ~55 warnings across the codebase; not wired to CI until pre-existing violations are triaged. Run `yarn lint`, `yarn lint:fix`, `yarn format`. |
 | Console-only logging | Server | No structured logging (Winston/Pino) |

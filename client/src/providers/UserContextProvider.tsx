@@ -1,37 +1,39 @@
 /**
  * Provider component managing user authentication and session state.
  */
-import { FC, useCallback, useEffect, useState } from 'react';
+import { FC, useCallback, useEffect, useReducer } from 'react';
 import swal from 'sweetalert';
 
 import axios from '../utils/axios';
 import UserContext from '../contexts/UserContext';
 import { User } from '../types/types';
+import { createInitialUserState, userReducer } from '../reducers/userReducer';
 
 const UserContextProvider: FC = ({ children }) => {
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
-  const [user, setUser] = useState<User>();
+  const [state, dispatch] = useReducer(userReducer, undefined, createInitialUserState);
+  const { isLoading, isAuthenticated, user } = state;
 
   const checkContext = useCallback(() => {
-    setIsLoading(true);
+    dispatch({ type: 'FETCH_START' });
     axios
       .get<{ auth: boolean; user?: User }>('/check', { withCredentials: true })
       .then(({ data }) => {
         if (data.auth) {
-          setIsAuthenticated(true);
-          setUser(data.user);
+          dispatch({
+            type: 'FETCH_SUCCESS',
+            payload: { isAuthenticated: true, user: data.user },
+          });
         } else {
-          setIsAuthenticated(false);
-          setUser(undefined);
+          dispatch({
+            type: 'FETCH_SUCCESS',
+            payload: { isAuthenticated: false },
+          });
         }
-        setIsLoading(false);
       })
       .catch((error) => {
         console.error('Auth check failed:', error);
-        setIsAuthenticated(false);
-        setUser(undefined);
-        setIsLoading(false);
+        dispatch({ type: 'LOGOUT' });
+        dispatch({ type: 'FETCH_FAILURE' });
 
         swal({
           text: 'Something went wrong while checking authentication status.',

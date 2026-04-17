@@ -1,7 +1,7 @@
 /**
  * Main listings browse page with search, filters, and grid/list view.
  */
-import { useState, useEffect, useContext, useMemo } from 'react';
+import { useReducer, useEffect, useContext, useMemo } from 'react';
 import SearchContext from '../contexts/SearchContext';
 import UserContext from '../contexts/UserContext';
 import { useInfiniteScroll } from '../hooks/useInfiniteScroll';
@@ -13,6 +13,10 @@ import { Listing } from '../types/types';
 import axios from '../utils/axios';
 import swal from 'sweetalert';
 import { getInstitutionAffiliation } from '../utils/institutionAffiliation';
+import {
+  browsePageReducer,
+  createInitialBrowsePageState,
+} from '../reducers/browsePageReducer';
 
 const Home = () => {
   const {
@@ -32,10 +36,17 @@ const Home = () => {
   const { user } = useContext(UserContext);
   const isAdmin = user?.userType === 'admin';
 
-  const [favListingsIds, setFavListingsIds] = useState<string[]>([]);
-  const [selectedListing, setSelectedListing] = useState<Listing | null>(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [adminEditListing, setAdminEditListing] = useState<Listing | null>(null);
+  const [state, dispatch] = useReducer(
+    browsePageReducer<Listing>,
+    undefined as unknown as never,
+    () => createInitialBrowsePageState<Listing>(),
+  );
+  const {
+    favIds: favListingsIds,
+    selectedItem: selectedListing,
+    isDetailModalOpen: isModalOpen,
+    adminEditItem: adminEditListing,
+  } = state;
 
   useEffect(() => {
     setQueryString('');
@@ -45,11 +56,11 @@ const Home = () => {
     axios
       .get('/users/favListingsIds', { withCredentials: true })
       .then((response) => {
-        setFavListingsIds(response.data.favListingsIds);
+        dispatch({ type: 'SET_FAVORITES', ids: response.data.favListingsIds });
       })
       .catch((error) => {
         console.error("Error fetching user's favorite listings:", error);
-        setFavListingsIds([]);
+        dispatch({ type: 'SET_FAVORITES', ids: [] });
         swal({ text: 'Could not load your favorite listings', icon: 'warning' });
       });
   };
@@ -98,21 +109,24 @@ const Home = () => {
     const prevFavListingsIds = favListingsIds;
 
     if (favorite) {
-      setFavListingsIds([listingId, ...prevFavListingsIds]);
+      dispatch({ type: 'SET_FAVORITES', ids: [listingId, ...prevFavListingsIds] });
       axios
         .put('/users/favListings', { withCredentials: true, data: { favListings: [listingId] } })
         .catch((error) => {
-          setFavListingsIds(prevFavListingsIds);
+          dispatch({ type: 'SET_FAVORITES', ids: prevFavListingsIds });
           console.error('Error favoriting listing:', error);
           swal({ text: 'Unable to favorite listing', icon: 'warning' });
           reloadFavorites();
         });
     } else {
-      setFavListingsIds(prevFavListingsIds.filter((id) => id !== listingId));
+      dispatch({
+        type: 'SET_FAVORITES',
+        ids: prevFavListingsIds.filter((id) => id !== listingId),
+      });
       axios
         .delete('/users/favListings', { withCredentials: true, data: { favListings: [listingId] } })
         .catch((error) => {
-          setFavListingsIds(prevFavListingsIds);
+          dispatch({ type: 'SET_FAVORITES', ids: prevFavListingsIds });
           console.error('Error unfavoriting listing:', error);
           swal({ text: 'Unable to unfavorite listing', icon: 'warning' });
           reloadFavorites();
@@ -127,14 +141,13 @@ const Home = () => {
 
   const handleOpenModal = (item: BrowsableItem) => {
     if (item.type === 'listing') {
-      setSelectedListing(item.data);
-      setIsModalOpen(true);
+      dispatch({ type: 'OPEN_DETAIL_MODAL', item: item.data });
     }
   };
 
   const handleAdminEdit = (item: BrowsableItem) => {
     if (item.type === 'listing') {
-      setAdminEditListing(item.data);
+      dispatch({ type: 'OPEN_ADMIN_EDIT', item: item.data });
     }
   };
 
@@ -143,7 +156,7 @@ const Home = () => {
     setSelectedDepartments([]);
     setSelectedResearchAreas([]);
     setSelectedListingResearchAreas([area]);
-    setIsModalOpen(false);
+    dispatch({ type: 'CLOSE_DETAIL_MODAL' });
   };
 
   const handleNavigateToDepartment = (dept: string) => {
@@ -151,7 +164,7 @@ const Home = () => {
     setSelectedDepartments([dept]);
     setSelectedResearchAreas([]);
     setSelectedListingResearchAreas([]);
-    setIsModalOpen(false);
+    dispatch({ type: 'CLOSE_DETAIL_MODAL' });
   };
 
   return (
@@ -175,8 +188,7 @@ const Home = () => {
         <ListingDetailModal
           isOpen={isModalOpen}
           onClose={() => {
-            setIsModalOpen(false);
-            setSelectedListing(null);
+            dispatch({ type: 'CLOSE_DETAIL_MODAL' });
           }}
           listing={selectedListing}
           isFavorite={favListingsIds.includes(selectedListing.id)}
@@ -192,9 +204,9 @@ const Home = () => {
       {adminEditListing && (
         <AdminListingEditModal
           listing={{ ...adminEditListing, _id: adminEditListing.id } as any}
-          onClose={() => setAdminEditListing(null)}
+          onClose={() => dispatch({ type: 'CLOSE_ADMIN_EDIT' })}
           onSave={() => {
-            setAdminEditListing(null);
+            dispatch({ type: 'CLOSE_ADMIN_EDIT' });
             refreshListings();
           }}
         />
