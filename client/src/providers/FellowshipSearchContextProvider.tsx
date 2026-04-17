@@ -1,15 +1,23 @@
 /**
  * Provider component managing fellowship search state and API calls.
+ *
+ * State transitions live in reducers/fellowshipSearchReducer.ts; this component
+ * owns side effects and maps reducer state/dispatch onto the context API.
  */
-import { FC, useState, useEffect, useCallback, useContext, ReactNode } from "react";
+import { FC, useEffect, useCallback, useContext, useReducer, useRef, ReactNode } from "react";
 import { useLocation } from "react-router-dom";
 import axios from "../utils/axios";
 import swal from "sweetalert";
 
 import FellowshipSearchContext from "../contexts/FellowshipSearchContext";
 import UserContext from "../contexts/UserContext";
-import { Fellowship, FellowshipFilterOptions } from "../types/types";
+import { Fellowship } from "../types/types";
 import { createFellowship } from "../utils/createFellowship";
+import {
+  fellowshipSearchReducer,
+  createInitialFellowshipSearchState,
+  FellowshipQuickFilter,
+} from "../reducers/fellowshipSearchReducer";
 
 interface FellowshipSearchContextProviderProps {
   children: ReactNode;
@@ -25,54 +33,126 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
   const { isAuthenticated, isLoading: authLoading } = useContext(UserContext);
   const authReady = !authLoading && isAuthenticated;
 
-  const [queryString, setQueryString] = useState<string>('');
+  const [state, dispatch] = useReducer(
+    fellowshipSearchReducer,
+    undefined,
+    () => createInitialFellowshipSearchState({ sortBy: sortableKeys[0] })
+  );
 
-  const [selectedYearOfStudy, setSelectedYearOfStudy] = useState<string[]>([]);
-  const [selectedTermOfAward, setSelectedTermOfAward] = useState<string[]>([]);
-  const [selectedPurpose, setSelectedPurpose] = useState<string[]>([]);
-  const [selectedRegions, setSelectedRegions] = useState<string[]>([]);
-  const [selectedCitizenship, setSelectedCitizenship] = useState<string[]>([]);
+  const {
+    queryString,
+    selectedYearOfStudy,
+    selectedTermOfAward,
+    selectedPurpose,
+    selectedRegions,
+    selectedCitizenship,
+    sortBy,
+    sortOrder,
+    sortDirection,
+    fellowships,
+    isLoading,
+    searchExhausted,
+    total,
+    page,
+    filterOptions,
+    quickFilter,
+    filterBarHeight,
+    queryStringLoaded,
+    filtersLoaded,
+    initialSearchDone,
+    filterOptionsLoaded,
+  } = state;
 
-  const [sortBy, setSortBy] = useState<string>(sortableKeys[0]);
-  const [sortOrder, setSortOrder] = useState<number>(-1);
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
+  const setQueryString = useCallback((value: string) => {
+    dispatch({ type: 'SET_QUERY_STRING', payload: value });
+  }, []);
 
-  const [fellowships, setFellowships] = useState<Fellowship[]>([]);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [searchExhausted, setSearchExhausted] = useState<boolean>(false);
-  const [total, setTotal] = useState<number>(0);
+  const setSelectedYearOfStudy = useCallback(
+    (value: React.SetStateAction<string[]>) => {
+      dispatch({ type: 'SET_SELECTED_YEAR_OF_STUDY', payload: value });
+    },
+    []
+  ) as React.Dispatch<React.SetStateAction<string[]>>;
 
-  const [page, setPage] = useState<number>(1);
+  const setSelectedTermOfAward = useCallback(
+    (value: React.SetStateAction<string[]>) => {
+      dispatch({ type: 'SET_SELECTED_TERM_OF_AWARD', payload: value });
+    },
+    []
+  ) as React.Dispatch<React.SetStateAction<string[]>>;
 
-  const [filterOptions, setFilterOptions] = useState<FellowshipFilterOptions>({
-    yearOfStudy: [],
-    termOfAward: [],
-    purpose: [],
-    globalRegions: [],
-    citizenshipStatus: [],
-  });
+  const setSelectedPurpose = useCallback(
+    (value: React.SetStateAction<string[]>) => {
+      dispatch({ type: 'SET_SELECTED_PURPOSE', payload: value });
+    },
+    []
+  ) as React.Dispatch<React.SetStateAction<string[]>>;
 
-  const [quickFilter, setQuickFilter] = useState<'open' | 'closingSoon' | 'recent' | null>(null);
+  const setSelectedRegions = useCallback(
+    (value: React.SetStateAction<string[]>) => {
+      dispatch({ type: 'SET_SELECTED_REGIONS', payload: value });
+    },
+    []
+  ) as React.Dispatch<React.SetStateAction<string[]>>;
 
-  const [filterBarHeight, setFilterBarHeight] = useState<number>(0);
+  const setSelectedCitizenship = useCallback(
+    (value: React.SetStateAction<string[]>) => {
+      dispatch({ type: 'SET_SELECTED_CITIZENSHIP', payload: value });
+    },
+    []
+  ) as React.Dispatch<React.SetStateAction<string[]>>;
 
-  const [queryStringLoaded, setQueryStringLoaded] = useState(false);
-  const [filtersLoaded, setFiltersLoaded] = useState(false);
-  const [initialSearchDone, setInitialSearchDone] = useState(false);
-  const [filterOptionsLoaded, setFilterOptionsLoaded] = useState(false);
+  const setSortBy = useCallback((value: string) => {
+    dispatch({ type: 'SET_SORT_BY', payload: value });
+  }, []);
+
+  const setSortOrder = useCallback((value: number) => {
+    dispatch({ type: 'SET_SORT_ORDER', payload: value });
+  }, []);
+
+  const setPage = useCallback(
+    (value: React.SetStateAction<number>) => {
+      dispatch({ type: 'SET_PAGE', payload: value });
+    },
+    []
+  ) as React.Dispatch<React.SetStateAction<number>>;
+
+  const setQuickFilter = useCallback((value: FellowshipQuickFilter) => {
+    dispatch({ type: 'SET_QUICK_FILTER', payload: value });
+  }, []);
+
+  const setFilterBarHeight = useCallback((value: number) => {
+    dispatch({ type: 'SET_FILTER_BAR_HEIGHT', payload: value });
+  }, []);
 
   const onToggleSortDirection = useCallback(() => {
-    const newDirection = sortDirection === 'asc' ? 'desc' : 'asc';
-    setSortDirection(newDirection);
-    setSortOrder(newDirection === 'asc' ? 1 : -1);
-  }, [sortDirection]);
+    dispatch({ type: 'TOGGLE_SORT_DIRECTION' });
+  }, []);
+
+  const filtersRef = useRef({
+    queryString,
+    selectedYearOfStudy,
+    selectedTermOfAward,
+    selectedPurpose,
+    selectedRegions,
+    selectedCitizenship,
+    sortBy,
+    sortOrder,
+  });
+  filtersRef.current = {
+    queryString,
+    selectedYearOfStudy,
+    selectedTermOfAward,
+    selectedPurpose,
+    selectedRegions,
+    selectedCitizenship,
+    sortBy,
+    sortOrder,
+  };
 
   useEffect(() => {
     if (!isActive) {
-      setInitialSearchDone(false);
-      setFilterOptionsLoaded(false);
-      setQueryStringLoaded(false);
-      setFiltersLoaded(false);
+      dispatch({ type: 'RESET_LIFECYCLE_FLAGS' });
     }
   }, [isActive]);
 
@@ -83,47 +163,51 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
     axios
       .get('/fellowships/filters')
       .then((response) => {
-        setFilterOptions({
-          yearOfStudy: response.data.yearOfStudy || [],
-          termOfAward: response.data.termOfAward || [],
-          purpose: response.data.purpose || [],
-          globalRegions: response.data.globalRegions || [],
-          citizenshipStatus: response.data.citizenshipStatus || [],
+        dispatch({
+          type: 'SET_FILTER_OPTIONS',
+          payload: {
+            yearOfStudy: response.data.yearOfStudy || [],
+            termOfAward: response.data.termOfAward || [],
+            purpose: response.data.purpose || [],
+            globalRegions: response.data.globalRegions || [],
+            citizenshipStatus: response.data.citizenshipStatus || [],
+          },
         });
-        setFilterOptionsLoaded(true);
+        dispatch({ type: 'MARK_FILTER_OPTIONS_LOADED' });
       })
       .catch((error) => {
         console.error('Error loading fellowship filter options:', error);
-        setFilterOptionsLoaded(true);
+        dispatch({ type: 'MARK_FILTER_OPTIONS_LOADED' });
       });
   }, [isActive, authReady]);
 
   const handleSearch = useCallback((searchPage: number) => {
-    const formattedQuery = queryString.trim();
+    const f = filtersRef.current;
+    const formattedQuery = f.queryString.trim();
 
     let url = `/fellowships/search?query=${encodeURIComponent(formattedQuery)}&page=${searchPage}&pageSize=${pageSize}`;
 
-    if (sortBy !== 'default') {
-      url += `&sortBy=${sortBy}&sortOrder=${sortOrder}`;
+    if (f.sortBy !== 'default') {
+      url += `&sortBy=${f.sortBy}&sortOrder=${f.sortOrder}`;
     }
 
-    if (selectedYearOfStudy.length > 0) {
-      url += `&yearOfStudy=${encodeURIComponent(selectedYearOfStudy.join(','))}`;
+    if (f.selectedYearOfStudy.length > 0) {
+      url += `&yearOfStudy=${encodeURIComponent(f.selectedYearOfStudy.join(','))}`;
     }
-    if (selectedTermOfAward.length > 0) {
-      url += `&termOfAward=${encodeURIComponent(selectedTermOfAward.join(','))}`;
+    if (f.selectedTermOfAward.length > 0) {
+      url += `&termOfAward=${encodeURIComponent(f.selectedTermOfAward.join(','))}`;
     }
-    if (selectedPurpose.length > 0) {
-      url += `&purpose=${encodeURIComponent(selectedPurpose.join(','))}`;
+    if (f.selectedPurpose.length > 0) {
+      url += `&purpose=${encodeURIComponent(f.selectedPurpose.join(','))}`;
     }
-    if (selectedRegions.length > 0) {
-      url += `&globalRegions=${encodeURIComponent(selectedRegions.join(','))}`;
+    if (f.selectedRegions.length > 0) {
+      url += `&globalRegions=${encodeURIComponent(f.selectedRegions.join(','))}`;
     }
-    if (selectedCitizenship.length > 0) {
-      url += `&citizenshipStatus=${encodeURIComponent(selectedCitizenship.join(','))}`;
+    if (f.selectedCitizenship.length > 0) {
+      url += `&citizenshipStatus=${encodeURIComponent(f.selectedCitizenship.join(','))}`;
     }
 
-    setIsLoading(true);
+    dispatch({ type: 'SEARCH_REQUEST' });
 
     axios
       .get(url)
@@ -132,14 +216,15 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
           (elem: any) => createFellowship(elem)
         );
 
-        if (searchPage === 1) {
-          setFellowships(responseFellowships);
-        } else {
-          setFellowships((oldFellowships) => [...oldFellowships, ...responseFellowships]);
-        }
-        setTotal(response.data.total || responseFellowships.length);
-        setSearchExhausted(responseFellowships.length < pageSize);
-        setIsLoading(false);
+        dispatch({
+          type: 'SEARCH_SUCCESS',
+          payload: {
+            fellowships: responseFellowships,
+            total: response.data.total,
+            pageSize,
+            append: searchPage !== 1,
+          },
+        });
       })
       .catch((error) => {
         console.error('Error loading fellowships:', error);
@@ -149,12 +234,12 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
             icon: 'warning',
           });
         }
-        setIsLoading(false);
+        dispatch({ type: 'SEARCH_FAILURE' });
       });
-  }, [queryString, selectedYearOfStudy, selectedTermOfAward, selectedPurpose, selectedRegions, selectedCitizenship, sortBy, sortOrder, pageSize]);
+  }, [pageSize]);
 
   const refreshFellowships = useCallback(() => {
-    setPage(1);
+    dispatch({ type: 'SET_PAGE', payload: 1 });
     handleSearch(1);
   }, [handleSearch]);
 
@@ -162,9 +247,9 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
     if (!isActive) return;
     if (!authReady) return;
     if (filterOptionsLoaded && !initialSearchDone) {
-      setPage(1);
+      dispatch({ type: 'SET_PAGE', payload: 1 });
       handleSearch(1);
-      setInitialSearchDone(true);
+      dispatch({ type: 'MARK_INITIAL_SEARCH_DONE' });
     }
   }, [filterOptionsLoaded, initialSearchDone, handleSearch, isActive, authReady]);
 
@@ -174,10 +259,10 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
 
     const debounceTimeout = setTimeout(() => {
       if (queryStringLoaded) {
-        setPage(1);
+        dispatch({ type: 'SET_PAGE', payload: 1 });
         handleSearch(1);
       }
-      setQueryStringLoaded(true);
+      dispatch({ type: 'MARK_QUERY_STRING_LOADED' });
     }, 500);
 
     return () => {
@@ -190,10 +275,10 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
     if (!filterOptionsLoaded) return;
 
     if (filtersLoaded) {
-      setPage(1);
+      dispatch({ type: 'SET_PAGE', payload: 1 });
       handleSearch(1);
     }
-    setFiltersLoaded(true);
+    dispatch({ type: 'MARK_FILTERS_LOADED' });
   }, [selectedYearOfStudy, selectedTermOfAward, selectedPurpose, selectedRegions, selectedCitizenship, sortBy, sortOrder, filterOptionsLoaded, isActive]);
 
   useEffect(() => {

@@ -65,6 +65,8 @@ ylabs/
 | `yarn build` | Corepack enable + install all + build server + build client |
 | `yarn start` | Run both servers in production (concurrently) |
 | `yarn clean:all` | Remove all node_modules directories |
+| `yarn --cwd client test` | Run Vitest in watch mode |
+| `yarn --cwd client test:ci` | Run Vitest once (used by CI) |
 
 Migration scripts run from `data-migration/` with `npx ts-node --transpile-only <script>.ts`.
 
@@ -154,6 +156,30 @@ const logListingEvent = (eventType: AnalyticsEventType) => {
 Listing creation uses the same pattern but intercepts `res.json` to extract the created listing's `_id` from the response body.
 
 Analytics events have a 3-year TTL via MongoDB's `expireAfterSeconds` index.
+
+## Testing
+
+Client-side tests run under **Vitest 3** with a `jsdom` environment. Config lives in the `test` block of `client/vite.config.js`; tests are discovered from `client/src/**/*.{test,spec}.{ts,tsx}`. The server has no test framework configured.
+
+Coverage focuses on pure reducer modules in `client/src/reducers/`, with matching test files in `client/src/reducers/__tests__/`. The pattern extracts state transitions out of providers/components (as `createInitial<Name>State()` + `<name>Reducer(state, action)`) so they can be tested without mounting React or mocking network. Side effects (axios, localStorage, timers) stay in the component that uses `useReducer`.
+
+Current reducers with test coverage:
+
+| Reducer | Consumer | What it models |
+|---------|----------|----------------|
+| `searchReducer` | `SearchContextProvider` | Listing search query, filters, sort, pagination, results lifecycle |
+| `fellowshipSearchReducer` | `FellowshipSearchContextProvider` | Fellowship equivalent with filter-options fetch lifecycle |
+| `configReducer` | `ConfigContextProvider` | Config fetch (idle → loading → loaded/error) |
+| `listingFormReducer` | `components/accounts/ListingForm` | Form fields, errors, hydrate/reset, department add/remove |
+| `accountTrackingReducer` | `pages/account.tsx` | Kanban stage + notes per lab/fellowship; includes `loadAccountTrackingFromStorage()` with legacy-key migration |
+
+## CI
+
+`.github/workflows/ci.yml` runs on PRs to `main` and `beta` (and via `workflow_dispatch`). Steps: checkout → Node 20 → Corepack → `yarn install:all` → `yarn --cwd client test:ci` → `yarn build`. The workflow enforces that tests pass and both server and client build successfully before merge.
+
+`tsc --noEmit` is intentionally **not** in CI — the client has pre-existing type errors (shadow-variable spreads, `AdminListing` field drift, etc.) that predate the reducer work. Enforcing strict typecheck requires a dedicated cleanup pass first.
+
+The only other workflow is `keep-alive.yml`, which pings the Beta Render service every 10 minutes to prevent cold starts.
 
 ## Rate Limiting
 
@@ -275,7 +301,7 @@ User → Yale CAS SSO → passport.ts findOrCreateUser
 | `isDevelopment()` checks `"dev"` but `NODE_ENV` is typically `"development"` | `server/src/utils/environment.ts` | Mismatch exists; rate limiters and CORS bypass depend on this |
 | `facultyDepartments.json` is 588KB, bundled with client | `client/src/utils/facultyDepartments.json` | Deferred — should be lazy-loaded or served from API |
 | Non-atomic view/favorite counters | `server/src/services/itemOperations.ts` | Uses read-then-update instead of `$inc`; race condition under load |
-| No automated tests | Entire codebase | No test framework configured |
+| No server-side tests | `server/` | No test framework configured server-side. Client uses Vitest; reducer modules in `client/src/reducers/` are covered. |
 | No ESLint/Prettier | Entire codebase | No linting enforcement |
 | Console-only logging | Server | No structured logging (Winston/Pino) |
 

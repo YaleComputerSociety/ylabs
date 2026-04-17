@@ -1,8 +1,12 @@
 /**
  * Account dashboard page for managing own listings, favorites, and fellowship tracking.
  */
-import { useState, useEffect, useContext, useMemo, useRef } from "react";
+import { useState, useEffect, useContext, useMemo, useReducer, useRef } from "react";
 import { Listing, Fellowship, FellowshipStage } from '../types/types';
+import {
+    accountTrackingReducer,
+    loadAccountTrackingFromStorage,
+} from '../reducers/accountTrackingReducer';
 import { BrowsableItem } from '../types/browsable';
 import { createListing } from '../utils/apiCleaner';
 import { createFellowship } from '../utils/createFellowship';
@@ -40,23 +44,19 @@ const Account = () => {
     const [selectedFellowship, setSelectedFellowship] = useState<Fellowship | null>(null);
     const { user } = useContext(UserContext);
 
-    const [labStage, setLabStage] = useState<Record<string, LabStage>>(() => {
-        try {
-            const saved = localStorage.getItem('ylabs-lab-stages');
-            if (saved) return JSON.parse(saved);
-
-            const oldSaved = localStorage.getItem('ylabs-emailed-labs');
-            if (oldSaved) {
-                const oldSet: string[] = JSON.parse(oldSaved);
-                const migrated: Record<string, LabStage> = {};
-                for (const id of oldSet) migrated[id] = 'emailed';
-                localStorage.removeItem('ylabs-emailed-labs');
-                return migrated;
-            }
-
-            return {};
-        } catch { return {}; }
-    });
+    const [tracking, trackingDispatch] = useReducer(
+        accountTrackingReducer,
+        undefined,
+        () => loadAccountTrackingFromStorage(localStorage)
+    );
+    const {
+        labStage,
+        labNotes,
+        editingNoteId,
+        fellowshipStage,
+        fellowshipNotes,
+        editingFellowshipNoteId,
+    } = tracking;
 
     const emailedLabs = useMemo(() => {
         const s = new Set<string>();
@@ -67,27 +67,6 @@ const Account = () => {
     }, [labStage]);
     const [favSortKey, setFavSortKey] = useState<FavSortKey>('dateAdded');
     const [favSortAsc, setFavSortAsc] = useState(true);
-    const [labNotes, setLabNotes] = useState<Record<string, string>>(() => {
-        try {
-            const saved = localStorage.getItem('ylabs-lab-notes');
-            return saved ? JSON.parse(saved) : {};
-        } catch { return {}; }
-    });
-    const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
-
-    const [fellowshipStage, setFellowshipStage] = useState<Record<string, FellowshipStage>>(() => {
-        try {
-            const saved = localStorage.getItem('ylabs-fellowship-stages');
-            return saved ? JSON.parse(saved) : {};
-        } catch { return {}; }
-    });
-    const [fellowshipNotes, setFellowshipNotes] = useState<Record<string, string>>(() => {
-        try {
-            const saved = localStorage.getItem('ylabs-fellowship-notes');
-            return saved ? JSON.parse(saved) : {};
-        } catch { return {}; }
-    });
-    const [editingFellowshipNoteId, setEditingFellowshipNoteId] = useState<string | null>(null);
     const [showFellowshipExportMenu, setShowFellowshipExportMenu] = useState(false);
     const fellowshipExportMenuRef = useRef<HTMLDivElement>(null);
 
@@ -107,17 +86,6 @@ const Account = () => {
     }, [labStage]);
 
     useEffect(() => {
-        if (!showExportMenu) return;
-        const handler = (e: MouseEvent) => {
-            if (exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) {
-                setShowExportMenu(false);
-            }
-        };
-        document.addEventListener('mousedown', handler);
-        return () => document.removeEventListener('mousedown', handler);
-    }, [showExportMenu]);
-
-    useEffect(() => {
         localStorage.setItem('ylabs-lab-notes', JSON.stringify(labNotes));
     }, [labNotes]);
 
@@ -128,6 +96,17 @@ const Account = () => {
     useEffect(() => {
         localStorage.setItem('ylabs-fellowship-notes', JSON.stringify(fellowshipNotes));
     }, [fellowshipNotes]);
+
+    useEffect(() => {
+        if (!showExportMenu) return;
+        const handler = (e: MouseEvent) => {
+            if (exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) {
+                setShowExportMenu(false);
+            }
+        };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, [showExportMenu]);
 
     useEffect(() => {
         if (!showFellowshipExportMenu) return;
@@ -458,40 +437,15 @@ const Account = () => {
     };
 
     const toggleEmailed = (listingId: string) => {
-        setLabStage(prev => {
-            const current = prev[listingId] || 'not_emailed';
-            const next = { ...prev };
-            if (current === 'not_emailed') {
-                next[listingId] = 'emailed';
-            } else {
-                delete next[listingId];
-            }
-            return next;
-        });
+        trackingDispatch({ type: 'TOGGLE_EMAILED_LISTING', listingId });
     };
 
     const handleStageChange = (listingId: string, stage: LabStage) => {
-        setLabStage(prev => {
-            const next = { ...prev };
-            if (stage === 'not_emailed') {
-                delete next[listingId];
-            } else {
-                next[listingId] = stage;
-            }
-            return next;
-        });
+        trackingDispatch({ type: 'SET_LAB_STAGE', listingId, stage });
     };
 
     const handleFellowshipStageChange = (fellowshipId: string, stage: FellowshipStage) => {
-        setFellowshipStage(prev => {
-            const next = { ...prev };
-            if (stage === 'not_applied') {
-                delete next[fellowshipId];
-            } else {
-                next[fellowshipId] = stage;
-            }
-            return next;
-        });
+        trackingDispatch({ type: 'SET_FELLOWSHIP_STAGE', fellowshipId, stage });
     };
 
     const exportFellowshipsToCSV = () => {
@@ -928,7 +882,7 @@ const Account = () => {
                                                             </svg>
                                                         </button>
                                                         <button
-                                                            onClick={() => setEditingNoteId(editingNoteId === listing.id ? null : listing.id)}
+                                                            onClick={() => trackingDispatch({ type: 'TOGGLE_EDITING_LAB_NOTE', listingId: listing.id })}
                                                             className={`p-1.5 rounded border transition-colors ${
                                                                 labNotes[listing.id]
                                                                     ? 'bg-yellow-50 border-yellow-300 text-yellow-600'
@@ -947,7 +901,7 @@ const Account = () => {
                                                     <div className="mt-1 ml-0">
                                                         <textarea
                                                             value={labNotes[listing.id] || ''}
-                                                            onChange={(e) => setLabNotes(prev => ({ ...prev, [listing.id]: e.target.value }))}
+                                                            onChange={(e) => trackingDispatch({ type: 'SET_LAB_NOTE', listingId: listing.id, value: e.target.value })}
                                                             placeholder="Add a note about this lab..."
                                                             rows={2}
                                                             className="w-full text-sm border border-gray-200 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
@@ -1057,7 +1011,7 @@ const Account = () => {
                                                             </svg>
                                                         </button>
                                                         <button
-                                                            onClick={() => setEditingFellowshipNoteId(editingFellowshipNoteId === fellowship.id ? null : fellowship.id)}
+                                                            onClick={() => trackingDispatch({ type: 'TOGGLE_EDITING_FELLOWSHIP_NOTE', fellowshipId: fellowship.id })}
                                                             className={`p-1.5 rounded border transition-colors ${
                                                                 fellowshipNotes[fellowship.id]
                                                                     ? 'bg-yellow-50 border-yellow-300 text-yellow-600'
@@ -1076,7 +1030,7 @@ const Account = () => {
                                                     <div className="mt-1">
                                                         <textarea
                                                             value={fellowshipNotes[fellowship.id] || ''}
-                                                            onChange={(e) => setFellowshipNotes(prev => ({ ...prev, [fellowship.id]: e.target.value }))}
+                                                            onChange={(e) => trackingDispatch({ type: 'SET_FELLOWSHIP_NOTE', fellowshipId: fellowship.id, value: e.target.value })}
                                                             placeholder="Add a note about this fellowship..."
                                                             rows={2}
                                                             className="w-full text-sm border border-gray-200 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"

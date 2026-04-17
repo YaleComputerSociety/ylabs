@@ -1,9 +1,13 @@
 /**
  * Admin panel table for managing fellowships.
  */
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useReducer } from "react";
 import axios from "../../utils/axios";
 import swal from "sweetalert";
+import {
+  adminFellowshipsTableReducer,
+  createInitialAdminFellowshipsTableState,
+} from "../../reducers/adminFellowshipsTableReducer";
 
 interface FellowshipLink {
   label: string;
@@ -61,23 +65,28 @@ const TABLE_COLUMNS: { value: SortField; label: string }[] = [
 const PAGE_SIZES = [10, 25, 50, 100];
 
 const AdminFellowshipsTable = () => {
-  const [fellowships, setFellowships] = useState<AdminFellowship[]>([]);
-  const [total, setTotal] = useState(0);
-  const [totalPages, setTotalPages] = useState(0);
-  const [isLoading, setIsLoading] = useState(true);
-
-  const [search, setSearch] = useState("");
-  const [sortBy, setSortBy] = useState<SortField>("createdAt");
-  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
-  const [archivedFilter, setArchivedFilter] = useState<string>("");
-  const [auditedFilter, setAuditedFilter] = useState<string>("");
-
-  const [editingFellowship, setEditingFellowship] = useState<AdminFellowship | null>(null);
+  const [state, dispatch] = useReducer(
+    adminFellowshipsTableReducer<AdminFellowship>,
+    undefined,
+    () => createInitialAdminFellowshipsTableState<AdminFellowship>()
+  );
+  const {
+    fellowships,
+    total,
+    totalPages,
+    isLoading,
+    search,
+    sortBy,
+    sortOrder,
+    page,
+    pageSize,
+    archivedFilter,
+    auditedFilter,
+    editingFellowship,
+  } = state;
 
   const fetchFellowships = useCallback(async () => {
-    setIsLoading(true);
+    dispatch({ type: 'FETCH_START' });
     try {
       const params: any = {
         search: search.trim(),
@@ -90,14 +99,18 @@ const AdminFellowshipsTable = () => {
       if (auditedFilter) params.audited = auditedFilter;
 
       const response = await axios.get("/admin/fellowships", { params, withCredentials: true });
-      setFellowships(response.data.fellowships);
-      setTotal(response.data.total);
-      setTotalPages(response.data.totalPages);
+      dispatch({
+        type: 'FETCH_SUCCESS',
+        payload: {
+          fellowships: response.data.fellowships,
+          total: response.data.total,
+          totalPages: response.data.totalPages,
+        },
+      });
     } catch (error) {
       console.error("Error fetching admin fellowships:", error);
       swal({ text: "Failed to fetch fellowships", icon: "error" });
-    } finally {
-      setIsLoading(false);
+      dispatch({ type: 'FETCH_FAILURE' });
     }
   }, [search, sortBy, sortOrder, page, pageSize, archivedFilter, auditedFilter]);
 
@@ -151,7 +164,7 @@ const AdminFellowshipsTable = () => {
         { withCredentials: true }
       );
       swal({ text: "Fellowship updated", icon: "success", timer: 1500 });
-      setEditingFellowship(null);
+      dispatch({ type: 'CLOSE_EDIT' });
       fetchFellowships();
     } catch (error) {
       console.error("Error updating fellowship:", error);
@@ -165,13 +178,7 @@ const AdminFellowshipsTable = () => {
   };
 
   const handleSort = (field: SortField) => {
-    if (sortBy === field) {
-      setSortOrder(sortOrder === "asc" ? "desc" : "asc");
-    } else {
-      setSortBy(field);
-      setSortOrder("desc");
-    }
-    setPage(1);
+    dispatch({ type: 'TOGGLE_SORT', field });
   };
 
   return (
@@ -181,19 +188,13 @@ const AdminFellowshipsTable = () => {
           type="text"
           placeholder="Search fellowships..."
           value={search}
-          onChange={(e) => {
-            setSearch(e.target.value);
-            setPage(1);
-          }}
+          onChange={(e) => dispatch({ type: 'SET_SEARCH', payload: e.target.value })}
           className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 w-64"
         />
 
         <select
           value={archivedFilter}
-          onChange={(e) => {
-            setArchivedFilter(e.target.value);
-            setPage(1);
-          }}
+          onChange={(e) => dispatch({ type: 'SET_ARCHIVED_FILTER', payload: e.target.value })}
           className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
           <option value="">All</option>
@@ -203,10 +204,7 @@ const AdminFellowshipsTable = () => {
 
         <select
           value={auditedFilter}
-          onChange={(e) => {
-            setAuditedFilter(e.target.value);
-            setPage(1);
-          }}
+          onChange={(e) => dispatch({ type: 'SET_AUDITED_FILTER', payload: e.target.value })}
           className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
           <option value="">All (Audit)</option>
@@ -216,10 +214,7 @@ const AdminFellowshipsTable = () => {
 
         <select
           value={pageSize}
-          onChange={(e) => {
-            setPageSize(Number(e.target.value));
-            setPage(1);
-          }}
+          onChange={(e) => dispatch({ type: 'SET_PAGE_SIZE', payload: Number(e.target.value) })}
           className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
           {PAGE_SIZES.map((size) => (
@@ -307,7 +302,7 @@ const AdminFellowshipsTable = () => {
                   <td className="px-4 py-3 text-sm">
                     <div className="flex gap-2">
                       <button
-                        onClick={() => setEditingFellowship(fellowship)}
+                        onClick={() => dispatch({ type: 'OPEN_EDIT', fellowship })}
                         className="text-blue-600 hover:text-blue-800"
                       >
                         Edit
@@ -340,14 +335,14 @@ const AdminFellowshipsTable = () => {
           </div>
           <div className="flex gap-2">
             <button
-              onClick={() => setPage(Math.max(1, page - 1))}
+              onClick={() => dispatch({ type: 'SET_PAGE', payload: Math.max(1, page - 1) })}
               disabled={page === 1}
               className="px-3 py-1 border rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
             >
               Previous
             </button>
             <button
-              onClick={() => setPage(Math.min(totalPages, page + 1))}
+              onClick={() => dispatch({ type: 'SET_PAGE', payload: Math.min(totalPages, page + 1) })}
               disabled={page === totalPages}
               className="px-3 py-1 border rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
             >
@@ -361,7 +356,7 @@ const AdminFellowshipsTable = () => {
         <FellowshipEditModal
           fellowship={editingFellowship}
           onSave={handleSave}
-          onClose={() => setEditingFellowship(null)}
+          onClose={() => dispatch({ type: 'CLOSE_EDIT' })}
         />
       )}
     </div>

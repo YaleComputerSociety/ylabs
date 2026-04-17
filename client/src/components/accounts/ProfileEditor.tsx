@@ -1,36 +1,49 @@
 /**
  * Professor profile editor with department, research, and verification.
+ *
+ * Form/UI/lifecycle state lives in reducers/profileEditorReducer.ts. This
+ * component owns the fetch/save side effects and the click-outside handler.
  */
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useEffect, useRef, useMemo, useReducer, useCallback } from 'react';
 import { FacultyProfile } from '../../types/types';
 import axios from '../../utils/axios';
 import { useConfig } from '../../hooks/useConfig';
 import DepartmentInput from './ListingForm/FormFields/DepartmentInput';
 import ResearchAreaInput from './ListingForm/FormFields/ResearchAreaInput';
+import {
+  createInitialProfileEditorState,
+  profileEditorReducer,
+} from '../../reducers/profileEditorReducer';
 
 interface ProfileEditorProps {
   netid: string;
 }
 
 const ProfileEditor = ({ netid }: ProfileEditorProps) => {
-  const [profile, setProfile] = useState<FacultyProfile | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [editing, setEditing] = useState(false);
-  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const [validationErrors, setValidationErrors] = useState<string[]>([]);
+  const [state, dispatch] = useReducer(
+    profileEditorReducer,
+    undefined,
+    () => createInitialProfileEditorState()
+  );
+  const {
+    profile,
+    loading,
+    saving,
+    editing,
+    message,
+    validationErrors,
+    bio,
+    primaryDept,
+    secondaryDepts,
+    researchInterests,
+    imageUrl,
+    primaryDeptSearch,
+    isPrimaryDropdownOpen,
+    focusedPrimaryIndex,
+  } = state;
 
   const { departments: allDepartmentsConfig, isLoading: configLoading } = useConfig();
   const departmentNames = useMemo(() => allDepartmentsConfig.map(d => d.displayName), [allDepartmentsConfig]);
-
-  const [bio, setBio] = useState('');
-  const [primaryDept, setPrimaryDept] = useState('');
-  const [primaryDeptSearch, setPrimaryDeptSearch] = useState('');
-  const [isPrimaryDropdownOpen, setIsPrimaryDropdownOpen] = useState(false);
-  const [focusedPrimaryIndex, setFocusedPrimaryIndex] = useState(-1);
-  const [secondaryDepts, setSecondaryDepts] = useState<string[]>([]);
-  const [researchInterests, setResearchInterests] = useState<string[]>([]);
-  const [imageUrl, setImageUrl] = useState('');
 
   const primaryDropdownRef = useRef<HTMLDivElement>(null);
   const primaryInputRef = useRef<HTMLInputElement>(null);
@@ -53,8 +66,7 @@ const ProfileEditor = ({ netid }: ProfileEditorProps) => {
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (primaryDropdownRef.current && !primaryDropdownRef.current.contains(e.target as Node)) {
-        setIsPrimaryDropdownOpen(false);
-        setPrimaryDeptSearch('');
+        dispatch({ type: 'CLOSE_PRIMARY_DROPDOWN' });
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -65,32 +77,25 @@ const ProfileEditor = ({ netid }: ProfileEditorProps) => {
     axios
       .get(`/profiles/${netid}`)
       .then((res) => {
-        const p = res.data.profile;
-        setProfile(p);
-        setBio(p.bio || '');
-        setPrimaryDept(p.primary_department || '');
-        setSecondaryDepts(p.secondary_departments || []);
-        setResearchInterests(p.research_interests || []);
-        setImageUrl(p.image_url || '');
-        if (!p.profileVerified) {
-          setEditing(true);
-        }
+        const p: FacultyProfile = res.data.profile;
+        dispatch({ type: 'FETCH_SUCCESS', profile: p });
       })
-      .catch(console.error)
-      .finally(() => setLoading(false));
+      .catch((err) => {
+        console.error(err);
+        dispatch({ type: 'FETCH_FAILURE' });
+      });
   }, [netid]);
 
+  const isUnverified = profile ? !profile.profileVerified : false;
+
   const handleSave = async () => {
-    setSaving(true);
-    setMessage(null);
-    setValidationErrors([]);
+    dispatch({ type: 'SAVE_START' });
 
     const errors: string[] = [];
     if (!primaryDept.trim()) errors.push('Primary Department is required.');
     if (researchInterests.length === 0) errors.push('At least one Research Interest is required.');
     if (errors.length > 0) {
-      setValidationErrors(errors);
-      setSaving(false);
+      dispatch({ type: 'SAVE_VALIDATION_FAILED', errors });
       return;
     }
 
@@ -107,53 +112,75 @@ const ProfileEditor = ({ netid }: ProfileEditorProps) => {
 
       if (isUnverified) {
         const verifyRes = await axios.put('/profiles/me/verify');
-        const updatedProfile = verifyRes.data.profile;
-        setProfile({ ...profile, ...updatedProfile, profileVerified: true });
-        setEditing(false);
-        setMessage({ type: 'success', text: 'Profile verified! You can now create listings.' });
+        const updatedProfile: FacultyProfile = { ...(profile as FacultyProfile), ...verifyRes.data.profile, profileVerified: true };
+        dispatch({
+          type: 'SAVE_SUCCESS',
+          profile: updatedProfile,
+          message: { type: 'success', text: 'Profile verified! You can now create listings.' },
+        });
       } else {
         const res = await axios.put('/profiles/me', data);
-        const updatedProfile = res.data.profile;
-        setProfile({ ...profile, ...updatedProfile });
-        setEditing(false);
-        setMessage({ type: 'success', text: 'Profile updated. Department changes have been applied to your listings.' });
+        const updatedProfile: FacultyProfile = { ...(profile as FacultyProfile), ...res.data.profile };
+        dispatch({
+          type: 'SAVE_SUCCESS',
+          profile: updatedProfile,
+          message: { type: 'success', text: 'Profile updated. Department changes have been applied to your listings.' },
+        });
       }
     } catch (err: any) {
-      setMessage({ type: 'error', text: err.response?.data?.error || 'Failed to save profile.' });
-    } finally {
-      setSaving(false);
+      dispatch({
+        type: 'SAVE_FAILURE',
+        message: { type: 'error', text: err.response?.data?.error || 'Failed to save profile.' },
+      });
     }
   };
+
+  const setSecondaryDepts = useCallback(
+    (value: React.SetStateAction<string[]>) => {
+      dispatch({ type: 'SET_SECONDARY_DEPTS', payload: value });
+    },
+    []
+  );
+
+  const setResearchInterests = useCallback(
+    (value: React.SetStateAction<string[]>) => {
+      dispatch({ type: 'SET_RESEARCH_INTERESTS', payload: value });
+    },
+    []
+  );
 
   const handlePrimaryKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     switch (e.key) {
       case 'ArrowDown':
         e.preventDefault();
-        setFocusedPrimaryIndex(prev =>
-          prev < filteredPrimaryDepts.length - 1 ? prev + 1 : prev
-        );
+        dispatch({
+          type: 'SET_FOCUSED_PRIMARY_INDEX',
+          payload: (prev) => (prev < filteredPrimaryDepts.length - 1 ? prev + 1 : prev),
+        });
         break;
       case 'ArrowUp':
         e.preventDefault();
-        setFocusedPrimaryIndex(prev => prev > 0 ? prev - 1 : 0);
+        dispatch({
+          type: 'SET_FOCUSED_PRIMARY_INDEX',
+          payload: (prev) => (prev > 0 ? prev - 1 : 0),
+        });
         break;
       case 'Enter':
         e.preventDefault();
         if (focusedPrimaryIndex >= 0 && focusedPrimaryIndex < filteredPrimaryDepts.length) {
-          setPrimaryDept(filteredPrimaryDepts[focusedPrimaryIndex]);
-          setIsPrimaryDropdownOpen(false);
-          setPrimaryDeptSearch('');
-          setFocusedPrimaryIndex(-1);
+          dispatch({
+            type: 'SELECT_PRIMARY_DEPT',
+            payload: filteredPrimaryDepts[focusedPrimaryIndex],
+          });
         }
         break;
       case 'Escape':
         e.preventDefault();
-        setIsPrimaryDropdownOpen(false);
-        setPrimaryDeptSearch('');
+        dispatch({ type: 'CLOSE_PRIMARY_DROPDOWN' });
         primaryInputRef.current?.blur();
         break;
       case 'Tab':
-        setIsPrimaryDropdownOpen(false);
+        dispatch({ type: 'CLOSE_PRIMARY_DROPDOWN' });
         break;
     }
   };
@@ -170,7 +197,6 @@ const ProfileEditor = ({ netid }: ProfileEditorProps) => {
 
   const fullName = `${profile.fname} ${profile.lname}`;
   const initials = `${profile.fname?.charAt(0) || ''}${profile.lname?.charAt(0) || ''}`.toUpperCase();
-  const isUnverified = !profile.profileVerified;
 
   return (
     <section className="mb-8">
@@ -205,7 +231,7 @@ const ProfileEditor = ({ netid }: ProfileEditorProps) => {
           </div>
           {!editing && (
             <button
-              onClick={() => setEditing(true)}
+              onClick={() => dispatch({ type: 'START_EDITING' })}
               className="px-4 py-2 text-sm font-medium text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50 transition-colors"
             >
               Edit Profile
@@ -239,7 +265,7 @@ const ProfileEditor = ({ netid }: ProfileEditorProps) => {
               <label className="block text-xs font-medium text-gray-600 mb-1">Bio</label>
               <textarea
                 value={bio}
-                onChange={(e) => setBio(e.target.value)}
+                onChange={(e) => dispatch({ type: 'SET_BIO', payload: e.target.value })}
                 rows={4}
                 className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
@@ -255,19 +281,10 @@ const ProfileEditor = ({ netid }: ProfileEditorProps) => {
                     ref={primaryInputRef}
                     type="text"
                     value={isPrimaryDropdownOpen ? primaryDeptSearch : primaryDept}
-                    onClick={() => {
-                      setPrimaryDeptSearch('');
-                      setIsPrimaryDropdownOpen(true);
-                    }}
-                    onChange={(e) => {
-                      setPrimaryDeptSearch(e.target.value);
-                      setFocusedPrimaryIndex(-1);
-                    }}
+                    onClick={() => dispatch({ type: 'OPEN_PRIMARY_DROPDOWN' })}
+                    onChange={(e) => dispatch({ type: 'SET_PRIMARY_DEPT_SEARCH', payload: e.target.value })}
                     onKeyDown={handlePrimaryKeyDown}
-                    onFocus={() => {
-                      setPrimaryDeptSearch('');
-                      setIsPrimaryDropdownOpen(true);
-                    }}
+                    onFocus={() => dispatch({ type: 'OPEN_PRIMARY_DROPDOWN' })}
                     readOnly={!isPrimaryDropdownOpen}
                     className={`w-full text-sm border rounded-lg px-3 py-2 pr-8 focus:outline-none focus:ring-2 focus:ring-blue-500 truncate ${
                       isUnverified && !primaryDept.trim() ? 'border-red-300' : 'border-gray-200'
@@ -278,11 +295,10 @@ const ProfileEditor = ({ netid }: ProfileEditorProps) => {
                     className="absolute inset-y-0 right-0 flex items-center px-2 text-gray-500 cursor-pointer"
                     onClick={() => {
                       if (isPrimaryDropdownOpen) {
-                        setPrimaryDeptSearch('');
-                      }
-                      setIsPrimaryDropdownOpen(!isPrimaryDropdownOpen);
-                      if (!isPrimaryDropdownOpen && primaryInputRef.current) {
-                        primaryInputRef.current.focus();
+                        dispatch({ type: 'CLOSE_PRIMARY_DROPDOWN' });
+                      } else {
+                        dispatch({ type: 'OPEN_PRIMARY_DROPDOWN' });
+                        primaryInputRef.current?.focus();
                       }
                     }}
                   >
@@ -300,8 +316,7 @@ const ProfileEditor = ({ netid }: ProfileEditorProps) => {
                             type="button"
                             onMouseDown={(e) => e.preventDefault()}
                             onClick={() => {
-                              setPrimaryDept('');
-                              setPrimaryDeptSearch('');
+                              dispatch({ type: 'CLEAR_PRIMARY_DEPT' });
                               primaryInputRef.current?.focus();
                             }}
                             className="text-xs text-red-500 hover:text-red-700"
@@ -315,12 +330,7 @@ const ProfileEditor = ({ netid }: ProfileEditorProps) => {
                           filteredPrimaryDepts.map((dept, index) => (
                             <li
                               key={index}
-                              onClick={() => {
-                                setPrimaryDept(dept);
-                                setIsPrimaryDropdownOpen(false);
-                                setPrimaryDeptSearch('');
-                                setFocusedPrimaryIndex(-1);
-                              }}
+                              onClick={() => dispatch({ type: 'SELECT_PRIMARY_DEPT', payload: dept })}
                               className={`p-2 cursor-pointer text-sm ${
                                 focusedPrimaryIndex === index ? 'bg-blue-100' : 'hover:bg-gray-100'
                               }`}
@@ -343,7 +353,7 @@ const ProfileEditor = ({ netid }: ProfileEditorProps) => {
                 <input
                   type="text"
                   value={imageUrl}
-                  onChange={(e) => setImageUrl(e.target.value)}
+                  onChange={(e) => dispatch({ type: 'SET_IMAGE_URL', payload: e.target.value })}
                   className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -353,8 +363,8 @@ const ProfileEditor = ({ netid }: ProfileEditorProps) => {
               label="Joint Appointments"
               departments={secondaryDepts}
               availableDepartments={availableSecondaryDepts}
-              onAddDepartment={(dept) => setSecondaryDepts(prev => [...prev, dept])}
-              onRemoveDepartment={(index) => setSecondaryDepts(prev => prev.filter((_, i) => i !== index))}
+              onAddDepartment={(dept) => setSecondaryDepts((prev) => [...prev, dept])}
+              onRemoveDepartment={(index) => setSecondaryDepts((prev) => prev.filter((_, i) => i !== index))}
             />
 
             <div>
@@ -363,8 +373,8 @@ const ProfileEditor = ({ netid }: ProfileEditorProps) => {
               </label>
               <ResearchAreaInput
                 researchAreas={researchInterests}
-                onAddResearchArea={(area) => setResearchInterests(prev => [...prev, area])}
-                onRemoveResearchArea={(index) => setResearchInterests(prev => prev.filter((_, i) => i !== index))}
+                onAddResearchArea={(area) => setResearchInterests((prev) => [...prev, area])}
+                onRemoveResearchArea={(index) => setResearchInterests((prev) => prev.filter((_, i) => i !== index))}
               />
             </div>
 
@@ -380,13 +390,7 @@ const ProfileEditor = ({ netid }: ProfileEditorProps) => {
               </button>
               <button
                 onClick={() => {
-                  setEditing(false);
-                  setValidationErrors([]);
-                  setBio(profile.bio || '');
-                  setPrimaryDept(profile.primary_department || '');
-                  setSecondaryDepts(profile.secondary_departments || []);
-                  setResearchInterests(profile.research_interests || []);
-                  setImageUrl(profile.image_url || '');
+                  if (profile) dispatch({ type: 'CANCEL_EDITING', profile });
                 }}
                 className="px-4 py-2 text-sm font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
               >

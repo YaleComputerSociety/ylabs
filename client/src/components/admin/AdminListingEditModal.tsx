@@ -1,10 +1,17 @@
 /**
  * Admin modal for editing listing details.
+ *
+ * Form/UI state lives in reducers/adminListingEditReducer.ts.
+ * This component owns the save/delete side effects and the body-scroll lock.
  */
-import { useState, useEffect } from "react";
+import { useEffect, useReducer, useCallback } from "react";
 import axios from "../../utils/axios";
 import swal from "sweetalert";
 import { useConfig } from "../../hooks/useConfig";
+import {
+  adminListingEditReducer,
+  createInitialAdminListingEditState,
+} from "../../reducers/adminListingEditReducer";
 
 interface AdminListing {
   _id: string;
@@ -41,38 +48,43 @@ interface Props {
 const AdminListingEditModal = ({ listing, onClose, onSave, onDelete }: Props) => {
   const config = useConfig();
 
-  const [ownerTitle, setOwnerTitle] = useState(listing.ownerTitle || "");
-  const [title, setTitle] = useState(listing.title || "");
-  const [description, setDescription] = useState(listing.description || "");
-  const [applicantDescription, setApplicantDescription] = useState(listing.applicantDescription || "");
-  const [departments, setDepartments] = useState<string[]>(listing.departments || []);
-  const [researchAreas, setResearchAreas] = useState<string[]>(listing.researchAreas || []);
-  const [professorNames, setProfessorNames] = useState<string[]>(listing.professorNames || []);
-  const [professorIds, setProfessorIds] = useState<string[]>(listing.professorIds || []);
-  const [emails, setEmails] = useState<string[]>(listing.emails || []);
-  const [websites, setWebsites] = useState<string[]>(listing.websites || []);
-  const [hiringStatus, setHiringStatus] = useState(listing.hiringStatus >= 0 ? 0 : -1);
-  const [archived, setArchived] = useState(listing.archived);
-  const [confirmed, setConfirmed] = useState(listing.confirmed);
-  const [audited, setAudited] = useState(listing.audited ?? false);
-  const [resetCreatedAt, setResetCreatedAt] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
+  const [state, dispatch] = useReducer(
+    adminListingEditReducer,
+    listing,
+    createInitialAdminListingEditState
+  );
+
+  const {
+    ownerTitle,
+    title,
+    description,
+    applicantDescription,
+    departments,
+    researchAreas,
+    professorNames,
+    professorIds,
+    emails,
+    websites,
+    hiringStatus,
+    archived,
+    confirmed,
+    audited,
+    resetCreatedAt,
+    isSaving,
+    deptSearch,
+    showDeptDropdown,
+    raSearch,
+    showRaDropdown,
+    newProfName,
+    newProfId,
+    newEmail,
+    newWebsite,
+  } = state;
 
   const getResetDate = () => {
     const original = new Date(listing.createdAt);
     return new Date(2025, original.getMonth(), original.getDate());
   };
-
-  const [deptSearch, setDeptSearch] = useState("");
-  const [showDeptDropdown, setShowDeptDropdown] = useState(false);
-
-  const [raSearch, setRaSearch] = useState("");
-  const [showRaDropdown, setShowRaDropdown] = useState(false);
-
-  const [newProfName, setNewProfName] = useState("");
-  const [newProfId, setNewProfId] = useState("");
-  const [newEmail, setNewEmail] = useState("");
-  const [newWebsite, setNewWebsite] = useState("");
 
   useEffect(() => {
     document.body.style.overflow = "hidden";
@@ -100,7 +112,7 @@ const AdminListingEditModal = ({ listing, onClose, onSave, onDelete }: Props) =>
 
     if (!confirmSave) return;
 
-    setIsSaving(true);
+    dispatch({ type: 'SET_SAVING', payload: true });
     try {
       await axios.put(
         `/admin/listings/${listing._id}`,
@@ -131,7 +143,7 @@ const AdminListingEditModal = ({ listing, onClose, onSave, onDelete }: Props) =>
       console.error("Error updating listing:", error);
       swal({ text: error.response?.data?.error || "Failed to update listing", icon: "error" });
     } finally {
-      setIsSaving(false);
+      dispatch({ type: 'SET_SAVING', payload: false });
     }
   };
 
@@ -170,6 +182,67 @@ const AdminListingEditModal = ({ listing, onClose, onSave, onDelete }: Props) =>
   ) => {
     setArr(arr.filter((_, i) => i !== index));
   };
+
+  // Stable Dispatch-compatible setters for the inline ArrayField helper below.
+  const setProfessorNames = useCallback(
+    (value: React.SetStateAction<string[]>) =>
+      dispatch({ type: 'SET_PROFESSOR_NAMES', payload: value }),
+    []
+  ) as React.Dispatch<React.SetStateAction<string[]>>;
+  const setProfessorIds = useCallback(
+    (value: React.SetStateAction<string[]>) =>
+      dispatch({ type: 'SET_PROFESSOR_IDS', payload: value }),
+    []
+  ) as React.Dispatch<React.SetStateAction<string[]>>;
+  const setEmails = useCallback(
+    (value: React.SetStateAction<string[]>) =>
+      dispatch({ type: 'SET_EMAILS', payload: value }),
+    []
+  ) as React.Dispatch<React.SetStateAction<string[]>>;
+  const setWebsites = useCallback(
+    (value: React.SetStateAction<string[]>) =>
+      dispatch({ type: 'SET_WEBSITES', payload: value }),
+    []
+  ) as React.Dispatch<React.SetStateAction<string[]>>;
+  const setDepartments = useCallback(
+    (value: React.SetStateAction<string[]>) =>
+      dispatch({ type: 'SET_DEPARTMENTS', payload: value }),
+    []
+  ) as React.Dispatch<React.SetStateAction<string[]>>;
+  const setResearchAreas = useCallback(
+    (value: React.SetStateAction<string[]>) =>
+      dispatch({ type: 'SET_RESEARCH_AREAS', payload: value }),
+    []
+  ) as React.Dispatch<React.SetStateAction<string[]>>;
+
+  const setNewProfName = useCallback(
+    (value: React.SetStateAction<string>) => {
+      const next = typeof value === 'function' ? (value as (prev: string) => string)(newProfName) : value;
+      dispatch({ type: 'SET_NEW_PROF_NAME', payload: next });
+    },
+    [newProfName]
+  ) as React.Dispatch<React.SetStateAction<string>>;
+  const setNewProfId = useCallback(
+    (value: React.SetStateAction<string>) => {
+      const next = typeof value === 'function' ? (value as (prev: string) => string)(newProfId) : value;
+      dispatch({ type: 'SET_NEW_PROF_ID', payload: next });
+    },
+    [newProfId]
+  ) as React.Dispatch<React.SetStateAction<string>>;
+  const setNewEmail = useCallback(
+    (value: React.SetStateAction<string>) => {
+      const next = typeof value === 'function' ? (value as (prev: string) => string)(newEmail) : value;
+      dispatch({ type: 'SET_NEW_EMAIL', payload: next });
+    },
+    [newEmail]
+  ) as React.Dispatch<React.SetStateAction<string>>;
+  const setNewWebsite = useCallback(
+    (value: React.SetStateAction<string>) => {
+      const next = typeof value === 'function' ? (value as (prev: string) => string)(newWebsite) : value;
+      dispatch({ type: 'SET_NEW_WEBSITE', payload: next });
+    },
+    [newWebsite]
+  ) as React.Dispatch<React.SetStateAction<string>>;
 
   const ArrayField = ({
     label,
@@ -259,7 +332,7 @@ const AdminListingEditModal = ({ listing, onClose, onSave, onDelete }: Props) =>
                 </label>
                 <input
                   value={ownerTitle}
-                  onChange={(e) => setOwnerTitle(e.target.value)}
+                  onChange={(e) => dispatch({ type: 'SET_OWNER_TITLE', payload: e.target.value })}
                   placeholder="e.g. Professor of Sociology"
                   className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
@@ -271,7 +344,7 @@ const AdminListingEditModal = ({ listing, onClose, onSave, onDelete }: Props) =>
                 </label>
                 <input
                   value={title}
-                  onChange={(e) => setTitle(e.target.value)}
+                  onChange={(e) => dispatch({ type: 'SET_TITLE', payload: e.target.value })}
                   className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
               </div>
@@ -282,7 +355,7 @@ const AdminListingEditModal = ({ listing, onClose, onSave, onDelete }: Props) =>
                 </label>
                 <textarea
                   value={description}
-                  onChange={(e) => setDescription(e.target.value)}
+                  onChange={(e) => dispatch({ type: 'SET_DESCRIPTION', payload: e.target.value })}
                   rows={6}
                   className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
@@ -295,7 +368,7 @@ const AdminListingEditModal = ({ listing, onClose, onSave, onDelete }: Props) =>
                 </label>
                 <textarea
                   value={applicantDescription}
-                  onChange={(e) => setApplicantDescription(e.target.value)}
+                  onChange={(e) => dispatch({ type: 'SET_APPLICANT_DESCRIPTION', payload: e.target.value })}
                   rows={3}
                   className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
@@ -305,7 +378,7 @@ const AdminListingEditModal = ({ listing, onClose, onSave, onDelete }: Props) =>
                 <label className="block text-xs font-semibold text-gray-600 mb-1">Hiring Status</label>
                 <select
                   value={hiringStatus}
-                  onChange={(e) => setHiringStatus(Number(e.target.value))}
+                  onChange={(e) => dispatch({ type: 'SET_HIRING_STATUS', payload: Number(e.target.value) })}
                   className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
                 >
                   <option value={0}>Open to Applicants</option>
@@ -318,7 +391,7 @@ const AdminListingEditModal = ({ listing, onClose, onSave, onDelete }: Props) =>
                   <input
                     type="checkbox"
                     checked={archived}
-                    onChange={(e) => setArchived(e.target.checked)}
+                    onChange={(e) => dispatch({ type: 'SET_ARCHIVED', payload: e.target.checked })}
                     className="rounded"
                   />
                   Archived
@@ -327,7 +400,7 @@ const AdminListingEditModal = ({ listing, onClose, onSave, onDelete }: Props) =>
                   <input
                     type="checkbox"
                     checked={confirmed}
-                    onChange={(e) => setConfirmed(e.target.checked)}
+                    onChange={(e) => dispatch({ type: 'SET_CONFIRMED', payload: e.target.checked })}
                     className="rounded"
                   />
                   Confirmed
@@ -336,7 +409,7 @@ const AdminListingEditModal = ({ listing, onClose, onSave, onDelete }: Props) =>
                   <input
                     type="checkbox"
                     checked={audited}
-                    onChange={(e) => setAudited(e.target.checked)}
+                    onChange={(e) => dispatch({ type: 'SET_AUDITED', payload: e.target.checked })}
                     className="rounded"
                   />
                   Audited
@@ -348,7 +421,7 @@ const AdminListingEditModal = ({ listing, onClose, onSave, onDelete }: Props) =>
                   <input
                     type="checkbox"
                     checked={resetCreatedAt}
-                    onChange={(e) => setResetCreatedAt(e.target.checked)}
+                    onChange={(e) => dispatch({ type: 'SET_RESET_CREATED_AT', payload: e.target.checked })}
                     className="rounded"
                   />
                   <span>
@@ -384,11 +457,8 @@ const AdminListingEditModal = ({ listing, onClose, onSave, onDelete }: Props) =>
                 </div>
                 <input
                   value={deptSearch}
-                  onChange={(e) => {
-                    setDeptSearch(e.target.value);
-                    setShowDeptDropdown(true);
-                  }}
-                  onFocus={() => setShowDeptDropdown(true)}
+                  onChange={(e) => dispatch({ type: 'SET_DEPT_SEARCH', payload: e.target.value })}
+                  onFocus={() => dispatch({ type: 'SHOW_DEPT_DROPDOWN', payload: true })}
                   placeholder="Search departments..."
                   className="w-full border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
@@ -397,11 +467,7 @@ const AdminListingEditModal = ({ listing, onClose, onSave, onDelete }: Props) =>
                     {filteredDepts.slice(0, 20).map((dept) => (
                       <button
                         key={dept.abbreviation}
-                        onClick={() => {
-                          setDepartments([...departments, dept.displayName]);
-                          setDeptSearch("");
-                          setShowDeptDropdown(false);
-                        }}
+                        onClick={() => dispatch({ type: 'ADD_DEPARTMENT', payload: dept.displayName })}
                         className="block w-full text-left px-3 py-1.5 text-sm hover:bg-blue-50"
                       >
                         {dept.displayName}
@@ -412,7 +478,7 @@ const AdminListingEditModal = ({ listing, onClose, onSave, onDelete }: Props) =>
                 {showDeptDropdown && (
                   <div
                     className="fixed inset-0 z-[5]"
-                    onClick={() => setShowDeptDropdown(false)}
+                    onClick={() => dispatch({ type: 'SHOW_DEPT_DROPDOWN', payload: false })}
                   />
                 )}
               </div>
@@ -437,11 +503,8 @@ const AdminListingEditModal = ({ listing, onClose, onSave, onDelete }: Props) =>
                 </div>
                 <input
                   value={raSearch}
-                  onChange={(e) => {
-                    setRaSearch(e.target.value);
-                    setShowRaDropdown(true);
-                  }}
-                  onFocus={() => setShowRaDropdown(true)}
+                  onChange={(e) => dispatch({ type: 'SET_RA_SEARCH', payload: e.target.value })}
+                  onFocus={() => dispatch({ type: 'SHOW_RA_DROPDOWN', payload: true })}
                   placeholder="Search research areas..."
                   className="w-full border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
@@ -450,11 +513,7 @@ const AdminListingEditModal = ({ listing, onClose, onSave, onDelete }: Props) =>
                     {availableResearchAreas.slice(0, 20).map((area) => (
                       <button
                         key={area.name}
-                        onClick={() => {
-                          setResearchAreas([...researchAreas, area.name]);
-                          setRaSearch("");
-                          setShowRaDropdown(false);
-                        }}
+                        onClick={() => dispatch({ type: 'ADD_RESEARCH_AREA', payload: area.name })}
                         className="block w-full text-left px-3 py-1.5 text-sm hover:bg-purple-50"
                       >
                         {area.name}
@@ -466,7 +525,7 @@ const AdminListingEditModal = ({ listing, onClose, onSave, onDelete }: Props) =>
                 {showRaDropdown && (
                   <div
                     className="fixed inset-0 z-[5]"
-                    onClick={() => setShowRaDropdown(false)}
+                    onClick={() => dispatch({ type: 'SHOW_RA_DROPDOWN', payload: false })}
                   />
                 )}
               </div>

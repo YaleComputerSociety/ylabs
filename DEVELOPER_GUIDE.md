@@ -134,6 +134,8 @@ Visit `http://localhost:4000/api/dev-login` to log in as a test user (`test123` 
 | `yarn build` | Full production build |
 | `yarn start` | Run both servers in production mode |
 | `yarn clean:all` | Remove all node_modules |
+| `yarn --cwd client test` | Run Vitest in watch mode |
+| `yarn --cwd client test:ci` | Run Vitest once (used by CI) |
 
 ### Migration Scripts
 
@@ -239,6 +241,43 @@ All mount under `/api`.
 | `/research-areas` | Research area CRUD | Admin for writes |
 | `/admin` | Admin operations | Admin |
 | `/seed` | Dev seeding routes | Dev mode only |
+
+---
+
+## Testing
+
+Client-side tests run under **Vitest 3** with a `jsdom` environment. Configuration lives in the `test` block of [client/vite.config.js](client/vite.config.js). There is currently **no server-side test framework**.
+
+### Running tests
+
+```bash
+cd client
+yarn test        # watch mode — reruns on file changes
+yarn test:ci     # single run — used by CI
+```
+
+Tests are discovered from `client/src/**/*.{test,spec}.{ts,tsx}`.
+
+### What is tested
+
+Pure reducer modules under [client/src/reducers/](client/src/reducers/) have unit-test coverage in [client/src/reducers/__tests__/](client/src/reducers/__tests__/). Each reducer file has a matching `*.test.ts`. The reducers back the search, fellowship-search, config, listing-form, and account-tracking (kanban/notes) flows — extracting state transitions from providers/components into pure functions makes them testable without mounting React or mocking network.
+
+When adding a new reducer:
+1. Place the reducer in [client/src/reducers/](client/src/reducers/) with an exported `createInitial<Name>State()` factory.
+2. Add `client/src/reducers/__tests__/<name>.test.ts` covering each action type, the initial state, and a purity check (reducer does not mutate prior state).
+3. Import the reducer in the provider/component via `useReducer`; keep side effects (network, localStorage, timers) in the component, not the reducer.
+
+### CI
+
+Pull requests into `main` or `beta` trigger [.github/workflows/ci.yml](.github/workflows/ci.yml), which runs:
+
+1. `yarn install:all`
+2. `yarn --cwd client test:ci`
+3. `yarn build` (server + client)
+
+The workflow also accepts `workflow_dispatch` so it can be run manually from the Actions tab. Branch protection (configured in GitHub repo settings → Branches) requires this check to pass before merging.
+
+`tsc --noEmit` is **not** part of CI yet — the client has known pre-existing type errors that need a cleanup pass before strict type-checking can be enforced.
 
 ---
 

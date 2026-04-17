@@ -1,14 +1,17 @@
 /**
  * Provider component loading and caching application configuration.
+ *
+ * State transitions live in reducers/configReducer.ts (pure, testable).
+ * This component owns the fetch side effect and derived memoized lookups.
  */
-import { FC, useState, useEffect, useCallback, useMemo, ReactNode } from "react";
+import { FC, useEffect, useCallback, useMemo, useReducer, ReactNode } from "react";
 import axios from "../utils/axios";
 import ConfigContext, {
   ConfigContextType,
   ResearchAreaConfig,
-  FieldConfig,
   DepartmentConfig
 } from "../contexts/ConfigContext";
+import { configReducer, createInitialConfigState } from "../reducers/configReducer";
 
 const colorKeyToTailwind: Record<string, { bg: string; text: string; border: string }> = {
   blue: { bg: "bg-blue-200", text: "text-blue-800", border: "border-blue-300" },
@@ -40,36 +43,29 @@ interface ConfigContextProviderProps {
 }
 
 const ConfigContextProvider: FC<ConfigContextProviderProps> = ({ children }) => {
-  const [isLoading, setIsLoading] = useState(true);
-  const [isLoaded, setIsLoaded] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const [researchAreas, setResearchAreas] = useState<ResearchAreaConfig[]>([]);
-  const [researchFields, setResearchFields] = useState<FieldConfig[]>([]);
-  const [fieldOrder, setFieldOrder] = useState<string[]>([]);
-
-  const [departments, setDepartments] = useState<DepartmentConfig[]>([]);
-  const [departmentCategories, setDepartmentCategories] = useState<string[]>([]);
+  const [state, dispatch] = useReducer(configReducer, undefined, () => createInitialConfigState());
+  const {
+    isLoading,
+    isLoaded,
+    error,
+    researchAreas,
+    researchFields,
+    fieldOrder,
+    departments,
+    departmentCategories,
+  } = state;
 
   const fetchConfig = useCallback(async () => {
+    dispatch({ type: 'FETCH_START' });
     try {
-      setIsLoading(true);
-      setError(null);
-
       const response = await axios.get('/config');
       const data = response.data;
 
-      const areas = data?.researchAreas?.areas || [];
+      const areas: ResearchAreaConfig[] = data?.researchAreas?.areas || [];
       const fields = data?.researchAreas?.fields || [];
       const fieldOrderData = data?.researchAreas?.fieldOrder || [];
-      const deptList = data?.departments?.list || [];
+      const deptList: DepartmentConfig[] = data?.departments?.list || [];
       const deptCategories = data?.departments?.categories || [];
-
-      setResearchAreas(areas);
-      setResearchFields(fields);
-      setFieldOrder(fieldOrderData);
-      setDepartments(deptList);
-      setDepartmentCategories(deptCategories);
 
       if (areas.length === 0 || deptList.length === 0) {
         console.warn('Config loaded but data may be incomplete:', {
@@ -79,12 +75,22 @@ const ConfigContextProvider: FC<ConfigContextProviderProps> = ({ children }) => 
         });
       }
 
-      setIsLoaded(true);
+      dispatch({
+        type: 'FETCH_SUCCESS',
+        payload: {
+          researchAreas: areas,
+          researchFields: fields,
+          fieldOrder: fieldOrderData,
+          departments: deptList,
+          departmentCategories: deptCategories,
+        },
+      });
     } catch (err) {
       console.error('Error fetching config:', err);
-      setError('Failed to load configuration. Some features may not work correctly.');
-    } finally {
-      setIsLoading(false);
+      dispatch({
+        type: 'FETCH_FAILURE',
+        payload: 'Failed to load configuration. Some features may not work correctly.',
+      });
     }
   }, []);
 

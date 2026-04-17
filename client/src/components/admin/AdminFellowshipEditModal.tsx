@@ -1,10 +1,17 @@
 /**
  * Admin modal for editing fellowship details.
+ *
+ * Field state lives in reducers/adminFellowshipEditReducer.ts. This component
+ * owns the body-scroll lock and the save/delete side effects.
  */
-import { useState, useEffect, KeyboardEvent } from "react";
+import { useState, useEffect, useReducer, KeyboardEvent } from "react";
 import { Fellowship } from "../../types/types";
 import axios from "../../utils/axios";
 import swal from "sweetalert";
+import {
+  adminFellowshipEditReducer,
+  createInitialAdminFellowshipEditState,
+} from "../../reducers/adminFellowshipEditReducer";
 
 const TagInput = ({
   label,
@@ -66,26 +73,34 @@ interface Props {
 }
 
 const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
-  const [title, setTitle] = useState(fellowship.title || "");
-  const [summary, setSummary] = useState(fellowship.summary || "");
-  const [description, setDescription] = useState(fellowship.description || "");
-  const [applicationInformation, setApplicationInformation] = useState(fellowship.applicationInformation || "");
-  const [eligibility, setEligibility] = useState(fellowship.eligibility || "");
-  const [applicationLink, setApplicationLink] = useState(fellowship.applicationLink || "");
-  const [awardAmount, setAwardAmount] = useState(fellowship.awardAmount || "");
-  const [isAcceptingApplications, setIsAcceptingApplications] = useState(fellowship.isAcceptingApplications);
-  const [deadline, setDeadline] = useState(fellowship.deadline ? new Date(fellowship.deadline).toISOString().slice(0, 16) : "");
-  const [applicationOpenDate, setApplicationOpenDate] = useState(fellowship.applicationOpenDate ? new Date(fellowship.applicationOpenDate).toISOString().slice(0, 16) : "");
-  const [contactName, setContactName] = useState(fellowship.contactName || "");
-  const [contactEmail, setContactEmail] = useState(fellowship.contactEmail || "");
-  const [archived, setArchived] = useState(fellowship.archived);
-  const [audited, setAudited] = useState(fellowship.audited ?? false);
-  const [yearOfStudy, setYearOfStudy] = useState<string[]>([...(fellowship.yearOfStudy || [])]);
-  const [termOfAward, setTermOfAward] = useState<string[]>([...(fellowship.termOfAward || [])]);
-  const [purpose, setPurpose] = useState<string[]>([...(fellowship.purpose || [])]);
-  const [globalRegions, setGlobalRegions] = useState<string[]>([...(fellowship.globalRegions || [])]);
-  const [citizenshipStatus, setCitizenshipStatus] = useState<string[]>([...(fellowship.citizenshipStatus || [])]);
-  const [isSaving, setIsSaving] = useState(false);
+  const [state, dispatch] = useReducer(
+    adminFellowshipEditReducer,
+    fellowship,
+    createInitialAdminFellowshipEditState
+  );
+
+  const {
+    title,
+    summary,
+    description,
+    applicationInformation,
+    eligibility,
+    applicationLink,
+    awardAmount,
+    isAcceptingApplications,
+    deadline,
+    applicationOpenDate,
+    contactName,
+    contactEmail,
+    archived,
+    audited,
+    yearOfStudy,
+    termOfAward,
+    purpose,
+    globalRegions,
+    citizenshipStatus,
+    isSaving,
+  } = state;
 
   useEffect(() => {
     document.body.style.overflow = "hidden";
@@ -107,7 +122,7 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
 
     if (!confirmSave) return;
 
-    setIsSaving(true);
+    dispatch({ type: 'SET_SAVING', payload: true });
     try {
       await axios.put(
         `/admin/fellowships/${fellowship.id}`,
@@ -142,7 +157,7 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
       console.error("Error updating fellowship:", error);
       swal({ text: error.response?.data?.error || "Failed to update fellowship", icon: "error" });
     } finally {
-      setIsSaving(false);
+      dispatch({ type: 'SET_SAVING', payload: false });
     }
   };
 
@@ -171,7 +186,7 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
                 </label>
                 <input
                   value={title}
-                  onChange={(e) => setTitle(e.target.value)}
+                  onChange={(e) => dispatch({ type: 'SET_TITLE', payload: e.target.value })}
                   className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
               </div>
@@ -180,7 +195,7 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
                 <label className="block text-xs font-semibold text-gray-600 mb-1">Summary</label>
                 <textarea
                   value={summary}
-                  onChange={(e) => setSummary(e.target.value)}
+                  onChange={(e) => dispatch({ type: 'SET_SUMMARY', payload: e.target.value })}
                   rows={3}
                   className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
@@ -190,7 +205,7 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
                 <label className="block text-xs font-semibold text-gray-600 mb-1">Description</label>
                 <textarea
                   value={description}
-                  onChange={(e) => setDescription(e.target.value)}
+                  onChange={(e) => dispatch({ type: 'SET_DESCRIPTION', payload: e.target.value })}
                   rows={6}
                   className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
@@ -200,7 +215,7 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
                 <label className="block text-xs font-semibold text-gray-600 mb-1">Application Information</label>
                 <textarea
                   value={applicationInformation}
-                  onChange={(e) => setApplicationInformation(e.target.value)}
+                  onChange={(e) => dispatch({ type: 'SET_APPLICATION_INFORMATION', payload: e.target.value })}
                   rows={3}
                   className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
@@ -210,7 +225,7 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
                 <label className="block text-xs font-semibold text-gray-600 mb-1">Eligibility</label>
                 <textarea
                   value={eligibility}
-                  onChange={(e) => setEligibility(e.target.value)}
+                  onChange={(e) => dispatch({ type: 'SET_ELIGIBILITY', payload: e.target.value })}
                   rows={2}
                   className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
@@ -222,7 +237,7 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
                 <label className="block text-xs font-semibold text-gray-600 mb-1">Accepting Applications</label>
                 <select
                   value={isAcceptingApplications ? "yes" : "no"}
-                  onChange={(e) => setIsAcceptingApplications(e.target.value === "yes")}
+                  onChange={(e) => dispatch({ type: 'SET_IS_ACCEPTING_APPLICATIONS', payload: e.target.value === "yes" })}
                   className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
                 >
                   <option value="yes">Yes</option>
@@ -235,7 +250,7 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
                 <input
                   type="datetime-local"
                   value={applicationOpenDate}
-                  onChange={(e) => setApplicationOpenDate(e.target.value)}
+                  onChange={(e) => dispatch({ type: 'SET_APPLICATION_OPEN_DATE', payload: e.target.value })}
                   className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
               </div>
@@ -245,7 +260,7 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
                 <input
                   type="datetime-local"
                   value={deadline}
-                  onChange={(e) => setDeadline(e.target.value)}
+                  onChange={(e) => dispatch({ type: 'SET_DEADLINE', payload: e.target.value })}
                   className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
               </div>
@@ -254,7 +269,7 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
                 <label className="block text-xs font-semibold text-gray-600 mb-1">Application Link</label>
                 <input
                   value={applicationLink}
-                  onChange={(e) => setApplicationLink(e.target.value)}
+                  onChange={(e) => dispatch({ type: 'SET_APPLICATION_LINK', payload: e.target.value })}
                   className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
                   placeholder="https://..."
                 />
@@ -264,7 +279,7 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
                 <label className="block text-xs font-semibold text-gray-600 mb-1">Award Amount</label>
                 <input
                   value={awardAmount}
-                  onChange={(e) => setAwardAmount(e.target.value)}
+                  onChange={(e) => dispatch({ type: 'SET_AWARD_AMOUNT', payload: e.target.value })}
                   className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
                   placeholder="e.g. $5,000"
                 />
@@ -274,7 +289,7 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
                 <label className="block text-xs font-semibold text-gray-600 mb-1">Contact Name</label>
                 <input
                   value={contactName}
-                  onChange={(e) => setContactName(e.target.value)}
+                  onChange={(e) => dispatch({ type: 'SET_CONTACT_NAME', payload: e.target.value })}
                   className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
               </div>
@@ -284,7 +299,7 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
                 <input
                   type="email"
                   value={contactEmail}
-                  onChange={(e) => setContactEmail(e.target.value)}
+                  onChange={(e) => dispatch({ type: 'SET_CONTACT_EMAIL', payload: e.target.value })}
                   className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
               </div>
@@ -294,7 +309,7 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
                   <input
                     type="checkbox"
                     checked={archived}
-                    onChange={(e) => setArchived(e.target.checked)}
+                    onChange={(e) => dispatch({ type: 'SET_ARCHIVED', payload: e.target.checked })}
                     className="rounded"
                   />
                   Archived
@@ -303,7 +318,7 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
                   <input
                     type="checkbox"
                     checked={audited}
-                    onChange={(e) => setAudited(e.target.checked)}
+                    onChange={(e) => dispatch({ type: 'SET_AUDITED', payload: e.target.checked })}
                     className="rounded"
                   />
                   Audited
@@ -315,11 +330,11 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
           <div className="border-t pt-3 mt-3">
             <h4 className="text-xs font-bold text-gray-700 mb-2">Categories & Filters</h4>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4">
-              <TagInput label="Year of Study" values={yearOfStudy} onChange={setYearOfStudy} placeholder="e.g. Freshman, Sophomore..." />
-              <TagInput label="Term of Award" values={termOfAward} onChange={setTermOfAward} placeholder="e.g. Fall, Spring, Summer..." />
-              <TagInput label="Purpose" values={purpose} onChange={setPurpose} placeholder="e.g. Research, Study Abroad..." />
-              <TagInput label="Global Regions" values={globalRegions} onChange={setGlobalRegions} placeholder="e.g. North America, Europe..." />
-              <TagInput label="Citizenship Status" values={citizenshipStatus} onChange={setCitizenshipStatus} placeholder="e.g. US Citizen, International..." />
+              <TagInput label="Year of Study" values={yearOfStudy} onChange={(v) => dispatch({ type: 'SET_YEAR_OF_STUDY', payload: v })} placeholder="e.g. Freshman, Sophomore..." />
+              <TagInput label="Term of Award" values={termOfAward} onChange={(v) => dispatch({ type: 'SET_TERM_OF_AWARD', payload: v })} placeholder="e.g. Fall, Spring, Summer..." />
+              <TagInput label="Purpose" values={purpose} onChange={(v) => dispatch({ type: 'SET_PURPOSE', payload: v })} placeholder="e.g. Research, Study Abroad..." />
+              <TagInput label="Global Regions" values={globalRegions} onChange={(v) => dispatch({ type: 'SET_GLOBAL_REGIONS', payload: v })} placeholder="e.g. North America, Europe..." />
+              <TagInput label="Citizenship Status" values={citizenshipStatus} onChange={(v) => dispatch({ type: 'SET_CITIZENSHIP_STATUS', payload: v })} placeholder="e.g. US Citizen, International..." />
             </div>
           </div>
         </div>

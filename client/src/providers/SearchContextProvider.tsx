@@ -1,7 +1,11 @@
 /**
  * Provider component managing listing search state and API calls.
+ *
+ * State transitions live in reducers/searchReducer.ts so they are pure and
+ * unit-testable. This component owns side effects (network, debounced effects)
+ * and maps the reducer state/dispatch onto the existing SearchContext API.
  */
-import { FC, useState, useEffect, useCallback, useMemo, useContext, ReactNode } from "react";
+import { FC, useEffect, useCallback, useMemo, useReducer, useRef, useContext, ReactNode } from "react";
 import axios from "../utils/axios";
 import swal from "sweetalert";
 
@@ -10,6 +14,10 @@ import UserContext from "../contexts/UserContext";
 import { Listing } from "../types/types";
 import { createListing } from "../utils/apiCleaner";
 import { useConfig } from "../hooks/useConfig";
+import {
+  searchReducer,
+  createInitialSearchState,
+} from "../reducers/searchReducer";
 
 interface SearchContextProviderProps {
   children: ReactNode;
@@ -43,69 +51,161 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
     [researchAreas]
   );
 
-  const [queryString, setQueryString] = useState<string>('');
+  const [state, dispatch] = useReducer(
+    searchReducer,
+    undefined,
+    () => createInitialSearchState({ sortBy: sortableKeys[0] })
+  );
 
-  const [selectedDepartments, setSelectedDepartments] = useState<string[]>([]);
+  const {
+    queryString,
+    selectedDepartments,
+    selectedResearchAreas,
+    selectedListingResearchAreas,
+    departmentsFilterMode,
+    researchAreasFilterMode,
+    listingResearchAreasFilterMode,
+    sortBy,
+    sortOrder,
+    sortDirection,
+    listings,
+    isLoading,
+    searchExhausted,
+    totalCount,
+    page,
+    filterBarHeight,
+    quickFilter,
+    queryStringLoaded,
+    departmentsLoaded,
+    initialSearchDone,
+  } = state;
 
-  const [selectedResearchAreas, setSelectedResearchAreas] = useState<string[]>([]);
+  // Context setter API preserved for compatibility with existing call sites
+  // (some pass a value, some pass an updater function).
+  const setQueryString = useCallback((query: string) => {
+    dispatch({ type: 'SET_QUERY_STRING', payload: query });
+  }, []);
 
-  const [selectedListingResearchAreas, setSelectedListingResearchAreas] = useState<string[]>([]);
+  const setSelectedDepartments = useCallback(
+    (value: React.SetStateAction<string[]>) => {
+      dispatch({ type: 'SET_SELECTED_DEPARTMENTS', payload: value });
+    },
+    []
+  ) as React.Dispatch<React.SetStateAction<string[]>>;
 
-  const [departmentsFilterMode, setDepartmentsFilterMode] = useState<FilterMode>('union');
-  const [researchAreasFilterMode, setResearchAreasFilterMode] = useState<FilterMode>('union');
-  const [listingResearchAreasFilterMode, setListingResearchAreasFilterMode] = useState<FilterMode>('union');
+  const setSelectedResearchAreas = useCallback(
+    (value: React.SetStateAction<string[]>) => {
+      dispatch({ type: 'SET_SELECTED_RESEARCH_AREAS', payload: value });
+    },
+    []
+  ) as React.Dispatch<React.SetStateAction<string[]>>;
 
-  const [sortBy, setSortBy] = useState<string>(sortableKeys[0]);
-  const [sortOrder, setSortOrder] = useState<number>(1);
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  const setSelectedListingResearchAreas = useCallback(
+    (value: React.SetStateAction<string[]>) => {
+      dispatch({ type: 'SET_SELECTED_LISTING_RESEARCH_AREAS', payload: value });
+    },
+    []
+  ) as React.Dispatch<React.SetStateAction<string[]>>;
 
-  const [listings, setListings] = useState<Listing[]>([]);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [searchExhausted, setSearchExhausted] = useState<boolean>(false);
-  const [totalCount, setTotalCount] = useState<number>(0);
+  const setDepartmentsFilterMode = useCallback(
+    (value: React.SetStateAction<FilterMode>) => {
+      dispatch({ type: 'SET_DEPARTMENTS_FILTER_MODE', payload: value });
+    },
+    []
+  ) as React.Dispatch<React.SetStateAction<FilterMode>>;
 
-  const [page, setPage] = useState<number>(1);
+  const setResearchAreasFilterMode = useCallback(
+    (value: React.SetStateAction<FilterMode>) => {
+      dispatch({ type: 'SET_RESEARCH_AREAS_FILTER_MODE', payload: value });
+    },
+    []
+  ) as React.Dispatch<React.SetStateAction<FilterMode>>;
 
-  const [filterBarHeight, setFilterBarHeight] = useState<number>(0);
+  const setListingResearchAreasFilterMode = useCallback(
+    (value: React.SetStateAction<FilterMode>) => {
+      dispatch({ type: 'SET_LISTING_RESEARCH_AREAS_FILTER_MODE', payload: value });
+    },
+    []
+  ) as React.Dispatch<React.SetStateAction<FilterMode>>;
 
-  const [quickFilter, setQuickFilter] = useState<string | null>(null);
+  const setSortBy = useCallback((value: string) => {
+    dispatch({ type: 'SET_SORT_BY', payload: value });
+  }, []);
 
-  const [queryStringLoaded, setQueryStringLoaded] = useState(false);
-  const [departmentsLoaded, setDepartmentsLoaded] = useState(false);
-  const [initialSearchDone, setInitialSearchDone] = useState(false);
+  const setSortOrder = useCallback((value: number) => {
+    dispatch({ type: 'SET_SORT_ORDER', payload: value });
+  }, []);
+
+  const setPage = useCallback(
+    (value: React.SetStateAction<number>) => {
+      dispatch({ type: 'SET_PAGE', payload: value });
+    },
+    []
+  ) as React.Dispatch<React.SetStateAction<number>>;
+
+  const setQuickFilter = useCallback((value: string | null) => {
+    dispatch({ type: 'SET_QUICK_FILTER', payload: value });
+  }, []);
+
+  const setFilterBarHeight = useCallback((value: number) => {
+    dispatch({ type: 'SET_FILTER_BAR_HEIGHT', payload: value });
+  }, []);
 
   const onToggleSortDirection = useCallback(() => {
-    const newDirection = sortDirection === 'asc' ? 'desc' : 'asc';
-    setSortDirection(newDirection);
-    setSortOrder(newDirection === 'asc' ? 1 : -1);
-  }, [sortDirection]);
+    dispatch({ type: 'TOGGLE_SORT_DIRECTION' });
+  }, []);
+
+  // Keep latest filter values in a ref so handleSearch can remain stable.
+  const filtersRef = useRef({
+    queryString,
+    selectedDepartments,
+    selectedResearchAreas,
+    selectedListingResearchAreas,
+    departmentsFilterMode,
+    researchAreasFilterMode,
+    listingResearchAreasFilterMode,
+    sortBy,
+    sortOrder,
+  });
+  filtersRef.current = {
+    queryString,
+    selectedDepartments,
+    selectedResearchAreas,
+    selectedListingResearchAreas,
+    departmentsFilterMode,
+    researchAreasFilterMode,
+    listingResearchAreasFilterMode,
+    sortBy,
+    sortOrder,
+  };
 
   const handleSearch = useCallback((searchPage: number) => {
-    const formattedQuery = queryString.trim();
+    const f = filtersRef.current;
+    const formattedQuery = f.queryString.trim();
 
     let url = `/listings/search?query=${encodeURIComponent(formattedQuery)}&page=${searchPage}&pageSize=${pageSize}`;
 
-    if (sortBy !== 'default') {
-      url += `&sortBy=${sortBy}&sortOrder=${sortOrder}`;
+    if (f.sortBy !== 'default') {
+      url += `&sortBy=${f.sortBy}&sortOrder=${f.sortOrder}`;
     }
 
-    if (selectedDepartments.length > 0) {
-      url += `&departments=${encodeURIComponent(selectedDepartments.join('||'))}`;
+    if (f.selectedDepartments.length > 0) {
+      url += `&departments=${encodeURIComponent(f.selectedDepartments.join('||'))}`;
     }
 
-    if (selectedResearchAreas.length > 0) {
-      url += `&academicDisciplines=${encodeURIComponent(selectedResearchAreas.join('||'))}`;
+    if (f.selectedResearchAreas.length > 0) {
+      url += `&academicDisciplines=${encodeURIComponent(f.selectedResearchAreas.join('||'))}`;
     }
 
-    if (selectedListingResearchAreas.length > 0) {
-      url += `&researchAreas=${encodeURIComponent(selectedListingResearchAreas.join(','))}`;
+    if (f.selectedListingResearchAreas.length > 0) {
+      url += `&researchAreas=${encodeURIComponent(f.selectedListingResearchAreas.join(','))}`;
     }
 
-    url += `&departmentsMode=${departmentsFilterMode}`;
-    url += `&academicDisciplinesMode=${researchAreasFilterMode}`;
-    url += `&researchAreasMode=${listingResearchAreasFilterMode}`;
+    url += `&departmentsMode=${f.departmentsFilterMode}`;
+    url += `&academicDisciplinesMode=${f.researchAreasFilterMode}`;
+    url += `&researchAreasMode=${f.listingResearchAreasFilterMode}`;
 
-    setIsLoading(true);
+    dispatch({ type: 'SEARCH_REQUEST' });
 
     axios
       .get(url)
@@ -116,16 +216,15 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
           return createListing(elem);
         });
 
-        if (searchPage === 1) {
-          setListings(responseListings);
-        } else {
-          setListings((oldListings) => [...oldListings, ...responseListings]);
-        }
-        if (response.data.totalCount !== undefined) {
-          setTotalCount(response.data.totalCount);
-        }
-        setSearchExhausted(responseListings.length < pageSize);
-        setIsLoading(false);
+        dispatch({
+          type: 'SEARCH_SUCCESS',
+          payload: {
+            listings: responseListings,
+            totalCount: response.data.totalCount,
+            pageSize,
+            append: searchPage !== 1,
+          },
+        });
       })
       .catch((error) => {
         console.error('Error loading listings:', error);
@@ -135,20 +234,20 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
             icon: 'warning',
           });
         }
-        setIsLoading(false);
+        dispatch({ type: 'SEARCH_FAILURE' });
       });
-  }, [queryString, selectedDepartments, selectedResearchAreas, selectedListingResearchAreas, departmentsFilterMode, researchAreasFilterMode, listingResearchAreasFilterMode, sortBy, sortOrder, pageSize]);
+  }, [pageSize]);
 
   const refreshListings = useCallback(() => {
-    setPage(1);
+    dispatch({ type: 'SET_PAGE', payload: 1 });
     handleSearch(1);
   }, [handleSearch]);
 
   useEffect(() => {
     if (configLoaded && !authLoading && isAuthenticated && !initialSearchDone) {
-      setPage(1);
+      dispatch({ type: 'SET_PAGE', payload: 1 });
       handleSearch(1);
-      setInitialSearchDone(true);
+      dispatch({ type: 'MARK_INITIAL_SEARCH_DONE' });
     }
   }, [configLoaded, authLoading, isAuthenticated, initialSearchDone, handleSearch]);
 
@@ -157,10 +256,10 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
 
     const debounceTimeout = setTimeout(() => {
       if (queryStringLoaded) {
-        setPage(1);
+        dispatch({ type: 'SET_PAGE', payload: 1 });
         handleSearch(1);
       }
-      setQueryStringLoaded(true);
+      dispatch({ type: 'MARK_QUERY_STRING_LOADED' });
     }, 500);
 
     return () => {
@@ -172,10 +271,10 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
     if (!configLoaded) return;
 
     if (departmentsLoaded) {
-      setPage(1);
+      dispatch({ type: 'SET_PAGE', payload: 1 });
       handleSearch(1);
     }
-    setDepartmentsLoaded(true);
+    dispatch({ type: 'MARK_DEPARTMENTS_LOADED' });
   }, [selectedDepartments, selectedResearchAreas, selectedListingResearchAreas, departmentsFilterMode, researchAreasFilterMode, listingResearchAreasFilterMode, sortBy, sortOrder, configLoaded]);
 
   useEffect(() => {
