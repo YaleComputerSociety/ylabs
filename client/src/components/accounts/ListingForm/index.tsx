@@ -7,9 +7,9 @@
 import React, { useEffect, useContext, useMemo, useReducer, useCallback } from 'react';
 import { Listing } from '../../../types/types';
 import { useConfig } from '../../../hooks/useConfig';
-import swal from "sweetalert";
+import swal from 'sweetalert';
 import axios from '../../../utils/axios';
-import PulseLoader from "react-spinners/PulseLoader";
+import PulseLoader from 'react-spinners/PulseLoader';
 
 import TextInput from './FormFields/TextInput';
 import TextArea from './FormFields/TextArea';
@@ -17,10 +17,18 @@ import ArrayInput from './FormFields/ArrayInput';
 import DepartmentInput from './FormFields/DepartmentInput';
 import HiringStatus from './FormFields/HiringStatus';
 import ResearchAreaInput from './FormFields/ResearchAreaInput';
-import { validateTitle, validateDescription, validateEstablished,
-         validateProfessors, validateEmails, validateWebsites, validateProfessorIds, validateDepartments } from './utils/validation';
+import {
+  validateTitle,
+  validateDescription,
+  validateEstablished,
+  validateProfessors,
+  validateEmails,
+  validateWebsites,
+  validateProfessorIds,
+  validateDepartments,
+} from './utils/validation';
 import { createListing } from '../../../utils/apiCleaner';
-import UserContext from "../../../contexts/UserContext";
+import UserContext from '../../../contexts/UserContext';
 import {
   ListingFormErrors,
   createInitialListingFormState,
@@ -36,15 +44,21 @@ interface ListingFormProps {
   onCreate?: (listing: Listing) => void;
 }
 
-const ListingForm = ({ listing, isCreated, onLoad, onCancel, onSave, onCreate }: ListingFormProps) => {
+const ListingForm = ({
+  listing,
+  isCreated,
+  onLoad,
+  onCancel,
+  onSave,
+  onCreate,
+}: ListingFormProps) => {
   const { departments: allDepartmentsConfig } = useConfig();
-  const departmentNames = useMemo(() => allDepartmentsConfig.map(d => d.displayName), [allDepartmentsConfig]);
-
-  const [state, dispatch] = useReducer(
-    listingFormReducer,
-    listing,
-    createInitialListingFormState
+  const departmentNames = useMemo(
+    () => allDepartmentsConfig.map((d) => d.displayName),
+    [allDepartmentsConfig],
   );
+
+  const [state, dispatch] = useReducer(listingFormReducer, listing, createInitialListingFormState);
 
   const {
     title,
@@ -67,7 +81,7 @@ const ListingForm = ({ listing, isCreated, onLoad, onCancel, onSave, onCreate }:
   } = state;
 
   const { user } = useContext(UserContext);
-  const isOwner = user && (user.netId === listing.ownerId);
+  const isOwner = user && user.netId === listing.ownerId;
 
   // Setters shaped like Dispatch<SetStateAction<T>> so existing child components
   // (ArrayInput, HiringStatus, etc.) can remain unchanged.
@@ -75,33 +89,21 @@ const ListingForm = ({ listing, isCreated, onLoad, onCancel, onSave, onCreate }:
     dispatch({ type: 'SET_TITLE', payload: value });
   }, []);
 
-  const setProfessorNames = useCallback(
-    (value: React.SetStateAction<string[]>) => {
-      dispatch({ type: 'SET_PROFESSOR_NAMES', payload: value });
-    },
-    []
-  ) as React.Dispatch<React.SetStateAction<string[]>>;
+  const setProfessorNames = useCallback((value: React.SetStateAction<string[]>) => {
+    dispatch({ type: 'SET_PROFESSOR_NAMES', payload: value });
+  }, []) as React.Dispatch<React.SetStateAction<string[]>>;
 
-  const setProfessorIds = useCallback(
-    (value: React.SetStateAction<string[]>) => {
-      dispatch({ type: 'SET_PROFESSOR_IDS', payload: value });
-    },
-    []
-  ) as React.Dispatch<React.SetStateAction<string[]>>;
+  const setProfessorIds = useCallback((value: React.SetStateAction<string[]>) => {
+    dispatch({ type: 'SET_PROFESSOR_IDS', payload: value });
+  }, []) as React.Dispatch<React.SetStateAction<string[]>>;
 
-  const setEmails = useCallback(
-    (value: React.SetStateAction<string[]>) => {
-      dispatch({ type: 'SET_EMAILS', payload: value });
-    },
-    []
-  ) as React.Dispatch<React.SetStateAction<string[]>>;
+  const setEmails = useCallback((value: React.SetStateAction<string[]>) => {
+    dispatch({ type: 'SET_EMAILS', payload: value });
+  }, []) as React.Dispatch<React.SetStateAction<string[]>>;
 
-  const setWebsites = useCallback(
-    (value: React.SetStateAction<string[]>) => {
-      dispatch({ type: 'SET_WEBSITES', payload: value });
-    },
-    []
-  ) as React.Dispatch<React.SetStateAction<string[]>>;
+  const setWebsites = useCallback((value: React.SetStateAction<string[]>) => {
+    dispatch({ type: 'SET_WEBSITES', payload: value });
+  }, []) as React.Dispatch<React.SetStateAction<string[]>>;
 
   const setDescription = useCallback((value: string) => {
     dispatch({ type: 'SET_DESCRIPTION', payload: value });
@@ -115,12 +117,9 @@ const ListingForm = ({ listing, isCreated, onLoad, onCancel, onSave, onCreate }:
     dispatch({ type: 'SET_ESTABLISHED', payload: value });
   }, []);
 
-  const setHiringStatus = useCallback(
-    (value: React.SetStateAction<number>) => {
-      dispatch({ type: 'SET_HIRING_STATUS', payload: value });
-    },
-    []
-  ) as React.Dispatch<React.SetStateAction<number>>;
+  const setHiringStatus = useCallback((value: React.SetStateAction<number>) => {
+    dispatch({ type: 'SET_HIRING_STATUS', payload: value });
+  }, []) as React.Dispatch<React.SetStateAction<number>>;
 
   const updateError = useCallback((field: keyof ListingFormErrors, value: string | undefined) => {
     dispatch({ type: 'UPDATE_ERROR', field, value });
@@ -129,30 +128,33 @@ const ListingForm = ({ listing, isCreated, onLoad, onCancel, onSave, onCreate }:
   useEffect(() => {
     if (!isCreated) {
       dispatch({ type: 'SET_LOADING', payload: true });
-      axios.get(`/listings/${listing.id}`, { withCredentials: true }).then((response) => {
-        if (!response.data.listing) {
-          console.error(`Response, but no listing ${listing.id}:`, response.data);
+      axios
+        .get(`/listings/${listing.id}`, { withCredentials: true })
+        .then((response) => {
+          if (!response.data.listing) {
+            console.error(`Response, but no listing ${listing.id}:`, response.data);
+            onLoad(listing, false);
+            return;
+          }
+          const fetched = createListing(response.data.listing);
+          const nextAvailable = departmentNames
+            .filter((dept) => !fetched.departments.includes(dept))
+            .sort();
+          dispatch({
+            type: 'HYDRATE',
+            listing: fetched,
+            availableDepartments: nextAvailable,
+          });
+          onLoad(fetched, true);
+        })
+        .catch((error) => {
+          console.error(`Error fetching most recent listing ${listing.id}:`, error);
           onLoad(listing, false);
-          return;
-        }
-        const fetched = createListing(response.data.listing);
-        const nextAvailable = departmentNames
-          .filter(dept => !fetched.departments.includes(dept))
-          .sort();
-        dispatch({
-          type: 'HYDRATE',
-          listing: fetched,
-          availableDepartments: nextAvailable,
         });
-        onLoad(fetched, true);
-      }).catch((error) => {
-        console.error(`Error fetching most recent listing ${listing.id}:`, error);
-        onLoad(listing, false);
-      });
     } else {
       dispatch({
         type: 'SET_AVAILABLE_DEPARTMENTS',
-        payload: departmentNames.filter(dept => !departments.includes(dept)).sort(),
+        payload: departmentNames.filter((dept) => !departments.includes(dept)).sort(),
       });
       dispatch({ type: 'SET_LOADING', payload: false });
     }
@@ -172,17 +174,26 @@ const ListingForm = ({ listing, isCreated, onLoad, onCancel, onSave, onCreate }:
       researchAreas,
       established,
       hiringStatus,
-      archived
+      archived,
     };
     onLoad(updatedListing, true);
-  }, [title, professorNames, departments, emails, websites, description, applicantDescription, researchAreas, established, hiringStatus, archived]);
+  }, [
+    title,
+    professorNames,
+    departments,
+    emails,
+    websites,
+    description,
+    applicantDescription,
+    researchAreas,
+    established,
+    hiringStatus,
+    archived,
+  ]);
 
-  const setResearchAreas = useCallback(
-    (value: React.SetStateAction<string[]>) => {
-      dispatch({ type: 'SET_RESEARCH_AREAS', payload: value });
-    },
-    []
-  );
+  const setResearchAreas = useCallback((value: React.SetStateAction<string[]>) => {
+    dispatch({ type: 'SET_RESEARCH_AREAS', payload: value });
+  }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -195,11 +206,11 @@ const ListingForm = ({ listing, isCreated, onLoad, onCancel, onSave, onCreate }:
       professorIds: validateProfessorIds(professorIds),
       emails: validateEmails([ownerEmail, ...emails]),
       websites: validateWebsites(websites),
-      departments: validateDepartments(departments)
+      departments: validateDepartments(departments),
     };
 
     const filteredErrors: ListingFormErrors = Object.fromEntries(
-      Object.entries(validationErrors).filter(([_, value]) => value !== undefined)
+      Object.entries(validationErrors).filter(([_, value]) => value !== undefined),
     );
 
     dispatch({ type: 'SET_ERRORS', payload: filteredErrors });
@@ -219,15 +230,15 @@ const ListingForm = ({ listing, isCreated, onLoad, onCancel, onSave, onCreate }:
         researchAreas,
         established,
         hiringStatus,
-        archived
+        archived,
       };
 
       if (isCreated) {
         swal({
-          title: "Create Listing",
-          text: "Are you sure you want to create this listing?",
-          icon: "info",
-          buttons: ["Cancel", "Create"],
+          title: 'Create Listing',
+          text: 'Are you sure you want to create this listing?',
+          icon: 'info',
+          buttons: ['Cancel', 'Create'],
         }).then((willSave) => {
           if (willSave && onCreate) {
             onCreate(updatedListing);
@@ -235,10 +246,10 @@ const ListingForm = ({ listing, isCreated, onLoad, onCancel, onSave, onCreate }:
         });
       } else {
         swal({
-          title: "Submit Form",
-          text: "Are you sure you want to save these changes?",
-          icon: "info",
-          buttons: ["Cancel", "Save"],
+          title: 'Submit Form',
+          text: 'Are you sure you want to save these changes?',
+          icon: 'info',
+          buttons: ['Cancel', 'Save'],
         }).then((willSave) => {
           if (willSave && onSave) {
             onSave(updatedListing);
@@ -250,27 +261,27 @@ const ListingForm = ({ listing, isCreated, onLoad, onCancel, onSave, onCreate }:
     }
   };
 
-const handleCancel = () => {
-  if (isCreated) {
-    swal({
-      title: "Delete Listing",
-      text: "Are you sure you want to delete this listing? This action cannot be undone",
-      icon: "warning",
-      buttons: ["Cancel", "Delete"],
-      dangerMode: true,
-    }).then((willCancel) => {
-      if (willCancel && onCancel) {
+  const handleCancel = () => {
+    if (isCreated) {
+      swal({
+        title: 'Delete Listing',
+        text: 'Are you sure you want to delete this listing? This action cannot be undone',
+        icon: 'warning',
+        buttons: ['Cancel', 'Delete'],
+        dangerMode: true,
+      }).then((willCancel) => {
+        if (willCancel && onCancel) {
+          onCancel();
+        }
+      });
+    } else {
+      dispatch({ type: 'RESET_FROM_LISTING', listing });
+      onLoad({ ...listing }, true);
+      if (onCancel) {
         onCancel();
       }
-    });
-  } else {
-    dispatch({ type: 'RESET_FROM_LISTING', listing });
-    onLoad({ ...listing }, true);
-    if (onCancel) {
-      onCancel();
     }
-  }
-};
+  };
 
   const handleAddDepartment = (department: string) => {
     dispatch({ type: 'ADD_DEPARTMENT', department });
@@ -304,10 +315,7 @@ const handleCancel = () => {
               }}
             />
 
-            <HiringStatus
-              hiringStatus={hiringStatus}
-              setHiringStatus={setHiringStatus}
-            />
+            <HiringStatus hiringStatus={hiringStatus} setHiringStatus={setHiringStatus} />
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -378,7 +386,9 @@ const handleCancel = () => {
             <ResearchAreaInput
               researchAreas={researchAreas}
               onAddResearchArea={(area) => setResearchAreas((prev) => [...prev, area])}
-              onRemoveResearchArea={(index) => setResearchAreas((prev) => prev.filter((_, i) => i !== index))}
+              onRemoveResearchArea={(index) =>
+                setResearchAreas((prev) => prev.filter((_, i) => i !== index))
+              }
             />
           </div>
 
@@ -406,7 +416,9 @@ const handleCancel = () => {
                   textColor="text-green-800"
                   buttonColor="text-green-500 hover:text-green-700"
                   error={errors.professorIds}
-                  onValidate={(newArray) => updateError('professorIds', validateProfessorIds(newArray))}
+                  onValidate={(newArray) =>
+                    updateError('professorIds', validateProfessorIds(newArray))
+                  }
                   infoText="Allow others in your lab to update this listing"
                 />
               )}
@@ -433,7 +445,10 @@ const handleCancel = () => {
                   onChange={(e) => dispatch({ type: 'SET_ARCHIVED', payload: e.target.checked })}
                   className="mr-3 h-4 w-4 text-blue-500 focus:ring-blue-400 cursor-pointer"
                 />
-                <label className="text-gray-700 text-sm font-bold cursor-pointer" htmlFor="archived">
+                <label
+                  className="text-gray-700 text-sm font-bold cursor-pointer"
+                  htmlFor="archived"
+                >
                   Archive this listing
                 </label>
               </div>
@@ -446,20 +461,22 @@ const handleCancel = () => {
               onClick={handleCancel}
               className={`py-2 px-4 rounded-md text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 ${
                 isCreated
-                  ? "border border-gray-300 text-gray-600 hover:bg-gray-50 focus:ring-gray-300"
-                  : "border border-gray-300 text-gray-600 hover:bg-gray-50 focus:ring-gray-300"
+                  ? 'border border-gray-300 text-gray-600 hover:bg-gray-50 focus:ring-gray-300'
+                  : 'border border-gray-300 text-gray-600 hover:bg-gray-50 focus:ring-gray-300'
               }`}
             >
-              {isCreated ? "Discard" : "Cancel"}
+              {isCreated ? 'Discard' : 'Cancel'}
             </button>
             <button
               type="submit"
               className="py-2 px-4 rounded-md text-sm font-medium text-white transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-600"
               style={{ backgroundColor: 'rgba(0, 85, 164, 0.85)' }}
-              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(0, 85, 164, 1)'}
-              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'rgba(0, 85, 164, 0.85)'}
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'rgba(0, 85, 164, 1)')}
+              onMouseLeave={(e) =>
+                (e.currentTarget.style.backgroundColor = 'rgba(0, 85, 164, 0.85)')
+              }
             >
-              {isCreated ? "Create Listing" : "Save Changes"}
+              {isCreated ? 'Create Listing' : 'Save Changes'}
             </button>
           </div>
         </form>
