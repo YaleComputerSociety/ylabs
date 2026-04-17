@@ -11,16 +11,7 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "resolveJsonModule": true,
-    "baseUrl": "..",
-    "paths": {
-      "meilisearch": [
-        "data-migration/node_modules/meilisearch/dist/meilisearch.d.ts"
-      ],
-      "../server/*": [
-        "server/*"
-      ]
-    }
+    "resolveJsonModule": true
   },
   "include": [
     "*.ts",
