@@ -3,23 +3,23 @@
   "version": "1.0.0",
   "description": "Database seeding scripts for YLabs",
   "scripts": {
-    "seed:research-areas": "npx ts-node --transpile-only seedResearchAreas.ts",
-    "seed:departments": "npx ts-node --transpile-only seedDepartments.ts",
-    "seed:all": "npx ts-node --transpile-only seedResearchAreas.ts both && npx ts-node --transpile-only seedDepartments.ts both",
-    "seed:dev": "npx ts-node --transpile-only seedResearchAreas.ts dev && npx ts-node --transpile-only seedDepartments.ts dev",
-    "seed:prod": "npx ts-node --transpile-only seedResearchAreas.ts prod && npx ts-node --transpile-only seedDepartments.ts prod",
-    "migrate:listings": "npx ts-node --transpile-only MigrateListings.ts",
-    "migrate:users": "npx ts-node --transpile-only MigrateUsers.ts",
-    "migrate:all": "npx ts-node --transpile-only MigrateListings.ts && npx ts-node --transpile-only MigrateUsers.ts",
-    "migrate:departments": "npx ts-node --transpile-only MigrateDepartments.ts",
-    "migrate:departments:live": "npx ts-node --transpile-only MigrateDepartments.ts --live",
-    "migrate:smart-titles": "npx ts-node --transpile-only migrateSmartTitles.ts",
-    "migrate:smart-titles:live": "npx ts-node --transpile-only migrateSmartTitles.ts --live",
-    "generate:keywords": "npx ts-node --transpile-only generateKeywords.ts",
-    "generate:keywords:live": "npx ts-node --transpile-only generateKeywords.ts --live",
-    "generate:keywords:force": "npx ts-node --transpile-only generateKeywords.ts --live-force",
-    "generate:keywords:classify": "npx ts-node --transpile-only generateKeywords.ts --classify",
-    "import:fellowships": "npx ts-node --transpile-only importFellowships.ts"
+    "seed:research-areas": "npx tsx seedResearchAreas.ts",
+    "seed:departments": "npx tsx seedDepartments.ts",
+    "seed:all": "npx tsx seedResearchAreas.ts both && npx tsx seedDepartments.ts both",
+    "seed:dev": "npx tsx seedResearchAreas.ts dev && npx tsx seedDepartments.ts dev",
+    "seed:prod": "npx tsx seedResearchAreas.ts prod && npx tsx seedDepartments.ts prod",
+    "migrate:listings": "npx tsx MigrateListings.ts",
+    "migrate:users": "npx tsx MigrateUsers.ts",
+    "migrate:all": "npx tsx MigrateListings.ts && npx tsx MigrateUsers.ts",
+    "migrate:departments": "npx tsx MigrateDepartments.ts",
+    "migrate:departments:live": "npx tsx MigrateDepartments.ts --live",
+    "migrate:smart-titles": "npx tsx migrateSmartTitles.ts",
+    "migrate:smart-titles:live": "npx tsx migrateSmartTitles.ts --live",
+    "generate:keywords": "npx tsx generateKeywords.ts",
+    "generate:keywords:live": "npx tsx generateKeywords.ts --live",
+    "generate:keywords:force": "npx tsx generateKeywords.ts --live-force",
+    "generate:keywords:classify": "npx tsx generateKeywords.ts --classify",
+    "import:fellowships": "npx tsx importFellowships.ts"
   },
   "dependencies": {
     "csv-parse": "^5.5.3",
@@ -31,6 +31,7 @@
   "devDependencies": {
     "@types/node": "^20.10.0",
     "ts-node": "^10.9.2",
+    "tsx": "^4.19.2",
     "typescript": "^5.3.3"
   }
 }
