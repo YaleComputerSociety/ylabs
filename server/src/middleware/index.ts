@@ -1,27 +1,27 @@
-// Auth middleware
-export { 
-  isAuthenticated, 
-  isTrustworthy, 
+/**
+ * Authentication and authorization middleware exports.
+ */
+export {
+  isAuthenticated,
+  isTrustworthy,
   canCreateListing,
   isAdmin,
   isProfessor,
-  isConfirmed
+  isConfirmed,
 } from './auth';
 
-// Validation middleware
-export { 
-  validateObjectId, 
+export {
+  validateObjectId,
+  validateNetid,
   requireBody,
   requireFields,
   validatePagination,
   validateSort,
-  validateQuery
+  validateQuery,
 } from './validation';
 
-// Error handling middleware
-export {
-  errorHandler,
-  notFoundHandler,
-  asyncHandler
-} from './errorHandler';
+export { errorHandler, notFoundHandler, asyncHandler } from './errorHandler';
 
+export { securityHeaders } from './securityHeaders';
+
+export { sanitizeMongo } from './sanitizeMongo';

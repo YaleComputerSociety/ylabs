@@ -1,21 +1,42 @@
 # YURA Research Database
 
-The site is live [here](https://rdb.onrender.com). 
+A research lab and fellowship discovery platform for Yale University.
 
-### Running Locally
+**Live:** [yalelabs.io](https://yalelabs.io/) · **Beta:** [ylabs-dev.onrender.com](https://ylabs-dev.onrender.com)
 
-Prereqs:
-- Node v16.20 
-- Yarn 
+## Tech Stack
 
-#### For development
+| Layer | Tech |
+|-------|------|
+| Client | React 19, TypeScript, Vite, TailwindCSS, MUI |
+| Server | Express 4, TypeScript, Passport.js (Yale CAS) |
+| Database | MongoDB Atlas (Mongoose 8) |
+| Search | Meilisearch (hybrid: keyword + semantic via OpenAI embedder) |
+| Package Manager | Yarn 4 via Corepack |
 
-Run `yarn install:all` to install relevant npm packages. Rename the .env.example files in the client and server directories to .env, and fill in the relevant fields. To launch the client, open a terminal and run `yarn dev:client`. To launch the server, open a separate terminal and run `yarn dev:server`. The client is served on port 3000, and the REST API is run on port 4000. Go to `http://localhost:3000` in your browser to view the application.
+## Quick Start
 
-#### For testing
+```bash
+corepack enable
+yarn install:all
+```
 
-Run `yarn test` or `yarn install:all && yarn build && yarn start`. Go to `http://localhost:3000` in your browser to view the application.
+Create `server/.env` and `client/.env` — see the [Developer Guide](DEVELOPER_GUIDE.md) for required variables.
 
-### Acknowledgements
+```bash
+# Terminal 1
+yarn dev:client
 
-Thanks @wu-json for creating a CAS authentication [demo](https://github.com/yale-swe/cas-auth-example-express/tree/main)!
+# Terminal 2
+yarn dev:server
+```
+
+Go to **http://localhost:3000**. Use `http://localhost:4000/api/dev-login` to bypass CAS auth locally.
+
+## Documentation
+
+See **[DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md)** for full setup instructions, architecture details, environment configuration, and contribution guidelines.
+
+## Acknowledgements
+
+Thanks [@wu-json](https://github.com/wu-json) for creating a CAS authentication [demo](https://github.com/yale-swe/cas-auth-example-express/tree/main).

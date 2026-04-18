@@ -1,22 +1,27 @@
-import app from "./app";
-import mongoose from "mongoose";
-import dotenv from "dotenv";
+/**
+ * Server entry point — connects to MongoDB and starts the Express server.
+ */
+import app from './app';
+import dotenv from 'dotenv';
+import { initializeConnections, getApiMode } from './db/connections';
 
 dotenv.config();
 
 const port = process.env.PORT || 4000;
-const mongoUri = (process.env.MONGODBURL_TEST && (process.env.API_MODE == 'test')) ? process.env.MONGODBURL_TEST : process.env.MONGODBURL;
 
 const startApp = async () => {
   try {
-    await mongoose.connect(mongoUri);
+    await initializeConnections();
+
+    const mode = getApiMode();
+
     app.listen(port, () => {
       console.log(`Server is ready at: ${port} 🐶`);
-      if (process.env.MONGODBURL_TEST && (process.env.API_MODE == 'test')) {
-        console.log("Using test MongoDB database 🔬")
-      } else {
-        console.log(mongoUri)
-        console.log("Using production MongoDB database 🚀")
+
+      if (mode === 'productionMigration') {
+        console.log(
+          'Mode: ProductionMigration - Listings from migration DB, everything else from primary',
+        );
       }
     });
   } catch (e) {
@@ -24,4 +29,4 @@ const startApp = async () => {
   }
 };
 
-startApp();
+void startApp();

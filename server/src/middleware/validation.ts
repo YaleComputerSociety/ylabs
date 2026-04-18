@@ -1,3 +1,6 @@
+/**
+ * Request validation middleware using express-validator.
+ */
 import { Request, Response, NextFunction } from 'express';
 import mongoose from 'mongoose';
 
@@ -8,15 +11,30 @@ import mongoose from 'mongoose';
 export const validateObjectId = (paramName: string = 'id') => {
   return (req: Request, res: Response, next: NextFunction) => {
     const id = req.params[paramName];
-    
+
     if (!id) {
       return res.status(400).json({ error: `Missing required parameter: ${paramName}` });
     }
-    
+
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({ error: `Invalid ${paramName}: ${id}` });
     }
-    
+
+    next();
+  };
+};
+
+const NETID_RE = /^[A-Za-z0-9]{2,12}$/;
+
+/**
+ * Middleware to validate a Yale-style netid path parameter.
+ */
+export const validateNetid = (paramName: string = 'netid') => {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const value = req.params[paramName];
+    if (!value || !NETID_RE.test(value)) {
+      return res.status(400).json({ error: `Invalid ${paramName}` });
+    }
     next();
   };
 };
@@ -37,14 +55,14 @@ export const requireBody = (req: Request, res: Response, next: NextFunction) => 
  */
 export const requireFields = (fields: string[]) => {
   return (req: Request, res: Response, next: NextFunction) => {
-    const missingFields = fields.filter(field => !(field in req.body));
-    
+    const missingFields = fields.filter((field) => !(field in req.body));
+
     if (missingFields.length > 0) {
-      return res.status(400).json({ 
-        error: `Missing required fields: ${missingFields.join(', ')}` 
+      return res.status(400).json({
+        error: `Missing required fields: ${missingFields.join(', ')}`,
       });
     }
-    
+
     next();
   };
 };
@@ -54,15 +72,15 @@ export const requireFields = (fields: string[]) => {
  */
 export const validatePagination = (req: Request, res: Response, next: NextFunction) => {
   const { page, pageSize } = req.query;
-  
+
   if (page && (isNaN(Number(page)) || Number(page) < 1)) {
     return res.status(400).json({ error: 'Invalid page number (must be >= 1)' });
   }
-  
-  if (pageSize && (isNaN(Number(pageSize)) || Number(pageSize) < 1 || Number(pageSize) > 100)) {
-    return res.status(400).json({ error: 'Invalid page size (must be between 1 and 100)' });
+
+  if (pageSize && (isNaN(Number(pageSize)) || Number(pageSize) < 1 || Number(pageSize) > 500)) {
+    return res.status(400).json({ error: 'Invalid page size (must be between 1 and 500)' });
   }
-  
+
   next();
 };
 
@@ -72,19 +90,19 @@ export const validatePagination = (req: Request, res: Response, next: NextFuncti
 export const validateSort = (allowedFields: string[]) => {
   return (req: Request, res: Response, next: NextFunction) => {
     const { sortBy, sortOrder } = req.query;
-    
+
     if (sortBy && !allowedFields.includes(sortBy as string)) {
-      return res.status(400).json({ 
-        error: `Invalid sortBy field. Allowed: ${allowedFields.join(', ')}` 
+      return res.status(400).json({
+        error: `Invalid sortBy field. Allowed: ${allowedFields.join(', ')}`,
       });
     }
-    
+
     if (sortOrder && sortOrder !== '1' && sortOrder !== '-1') {
-      return res.status(400).json({ 
-        error: 'Invalid sortOrder. Must be "1" (ascending) or "-1" (descending)' 
+      return res.status(400).json({
+        error: 'Invalid sortOrder. Must be "1" (ascending) or "-1" (descending)',
       });
     }
-    
+
     next();
   };
 };
@@ -95,14 +113,14 @@ export const validateSort = (allowedFields: string[]) => {
 export const validateQuery = (allowedParams: string[]) => {
   return (req: Request, res: Response, next: NextFunction) => {
     const queryParams = Object.keys(req.query);
-    const invalidParams = queryParams.filter(param => !allowedParams.includes(param));
-    
+    const invalidParams = queryParams.filter((param) => !allowedParams.includes(param));
+
     if (invalidParams.length > 0) {
-      return res.status(400).json({ 
-        error: `Invalid query parameters: ${invalidParams.join(', ')}` 
+      return res.status(400).json({
+        error: `Invalid query parameters: ${invalidParams.join(', ')}`,
       });
     }
-    
+
     next();
   };
 };

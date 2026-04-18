@@ -1,6 +1,9 @@
-import { createContext } from "react";
+/**
+ * React context for current user authentication state.
+ */
+import { createContext } from 'react';
 
-import { User } from "../types/types";
+import { User } from '../types/types';
 
 export const defaultUserContext = {
   isLoading: true,

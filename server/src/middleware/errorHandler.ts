@@ -1,3 +1,6 @@
+/**
+ * Global error handling middleware for Express.
+ */
 import { Request, Response, NextFunction } from 'express';
 import { NotFoundError, ObjectIdError, IncorrectPermissionsError } from '../utils/errors';
 
@@ -5,16 +8,10 @@ import { NotFoundError, ObjectIdError, IncorrectPermissionsError } from '../util
  * Global error handler middleware
  * This should be added LAST in your middleware chain
  */
-export const errorHandler = (
-  error: Error,
-  req: Request,
-  res: Response,
-  next: NextFunction
-) => {
+export const errorHandler = (error: Error, req: Request, res: Response, _next: NextFunction) => {
   console.error('Error:', error.message);
   console.error('Stack:', error.stack);
 
-  // Handle custom errors
   if (error instanceof NotFoundError) {
     return res.status(error.status).json({ error: error.message });
   }
@@ -24,34 +21,30 @@ export const errorHandler = (
   }
 
   if (error instanceof IncorrectPermissionsError) {
-    return res.status(error.status).json({ 
+    return res.status(error.status).json({
       error: error.message,
-      incorrectPermissions: true 
+      incorrectPermissions: true,
     });
   }
 
-  // Handle Mongoose validation errors
   if (error.name === 'ValidationError') {
-    return res.status(400).json({ 
+    return res.status(400).json({
       error: 'Validation error',
-      details: error.message 
+      details: error.message,
     });
   }
 
-  // Handle Mongoose cast errors (invalid ObjectId format)
   if (error.name === 'CastError') {
     return res.status(400).json({ error: 'Invalid ID format' });
   }
 
-  // Handle duplicate key errors
   if (error.name === 'MongoServerError' && (error as any).code === 11000) {
     return res.status(409).json({ error: 'Duplicate key error' });
   }
 
-  // Default to 500 server error
-  res.status(500).json({ 
+  res.status(500).json({
     error: 'Internal server error',
-    message: process.env.NODE_ENV === 'development' ? error.message : undefined
+    message: process.env.NODE_ENV === 'development' ? error.message : undefined,
   });
 };
 
@@ -59,10 +52,10 @@ export const errorHandler = (
  * 404 Not Found handler
  * This should be added after all routes but before errorHandler
  */
-export const notFoundHandler = (req: Request, res: Response, next: NextFunction) => {
-  res.status(404).json({ 
+export const notFoundHandler = (req: Request, res: Response, _next: NextFunction) => {
+  res.status(404).json({
     error: 'Not found',
-    path: req.path 
+    path: req.path,
   });
 };
 
@@ -71,7 +64,9 @@ export const notFoundHandler = (req: Request, res: Response, next: NextFunction)
  * Wraps async route handlers to catch errors and pass to error handler
  * Usage: router.get('/', asyncHandler(async (req, res) => {...}))
  */
-export const asyncHandler = (fn: Function) => {
+type AsyncRequestHandler = (req: Request, res: Response, next: NextFunction) => Promise<unknown>;
+
+export const asyncHandler = (fn: AsyncRequestHandler) => {
   return (req: Request, res: Response, next: NextFunction) => {
     Promise.resolve(fn(req, res, next)).catch(next);
   };

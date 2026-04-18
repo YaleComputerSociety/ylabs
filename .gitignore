@@ -47,14 +47,11 @@ client/coverage
 
 #Client production
 client/build
+client/dist/
 
-#Web scraper utility files
-web-scraper/my_paths.txt
-web-scraper/toDo.txt
-web-scraper/data/
-
-#Web scraper pycache
-web-scraper/__pycache__/
+#Scraper and enricher tools
+web-scraper/
+yale-faculty-enricher/
 
 #MongoDB local backup
 backup

@@ -1,68 +1,155 @@
-import express from "express";
-import passport from "passport";
-import { Strategy } from "passport-cas";
-import { validateUser, createUser } from './services/userService';
-import { fetchYalie } from "./services/yaliesService";
-import { logEvent } from "./services/analyticsService";
-import { AnalyticsEventType } from "./models";
+/**
+ * Passport.js configuration for Yale CAS authentication.
+ */
+import express from 'express';
+import passport from 'passport';
+import { Strategy } from 'passport-cas';
+import { validateUser, createUser, updateUser } from './services/userService';
+import { fetchYalie } from './services/yaliesService';
+import { fetchFromDirectory, isFacultyTitle } from './services/directoryService';
+import { logEvent } from './services/analyticsService';
+import { AnalyticsEventType } from './models/index';
+
+const STALE_THRESHOLD_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * Resolve a caller-supplied redirect to a safe same-origin target.
+ * Accepts only relative paths ("/foo") or absolute URLs whose host matches
+ * SERVER_BASE_URL. Anything else returns null.
+ */
+function safeRedirectTarget(raw: unknown): string | null {
+  if (typeof raw !== 'string' || raw.length === 0) return null;
+  if (raw.startsWith('/') && !raw.startsWith('//')) return raw;
+  try {
+    const base = process.env.SERVER_BASE_URL ?? '';
+    if (!base) return null;
+    const baseHost = new URL(base).host;
+    const target = new URL(raw);
+    if (target.host === baseHost) return target.toString();
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+/**
+ * Build an update object from directory data (only non-empty fields).
+ */
+function buildDirectoryUpdate(
+  dirPerson: NonNullable<Awaited<ReturnType<typeof fetchFromDirectory>>>,
+) {
+  const update: Record<string, any> = {};
+  if (dirPerson.firstName) update.fname = dirPerson.firstName;
+  if (dirPerson.lastName) update.lname = dirPerson.lastName;
+  if (dirPerson.email) update.email = dirPerson.email;
+  if (dirPerson.department) update.departments = [dirPerson.department];
+  if (dirPerson.title) update.title = dirPerson.title;
+  if (dirPerson.phone) update.phone = dirPerson.phone;
+  if (dirPerson.upi) update.upi = dirPerson.upi;
+  if (dirPerson.unit) update.unit = dirPerson.unit;
+  if (dirPerson.physical_location) update.physical_location = dirPerson.physical_location;
+  if (dirPerson.building_desk) update.building_desk = dirPerson.building_desk;
+  if (dirPerson.mailing_address) update.mailing_address = dirPerson.mailing_address;
+  return update;
+}
+
+/**
+ * Shared helper: find or create a user by netid.
+ * 1. Check if user already exists in DB (refresh from directory if stale)
+ * 2. Try Yalies API (undergrad/grad detection)
+ * 3. If Yalies fails, try Yale Directory (faculty detection)
+ * 4. Fallback: create a default user
+ */
+async function findOrCreateUser(netid: string) {
+  let user = await validateUser(netid);
+  if (user) {
+    const updatedAt = user.updatedAt ? new Date(user.updatedAt).getTime() : 0;
+    const isStale = Date.now() - updatedAt > STALE_THRESHOLD_MS;
+
+    if (isStale) {
+      console.log(
+        `findOrCreateUser: refreshing stale data for ${netid} (last updated: ${user.updatedAt || 'never'})`,
+      );
+      try {
+        const dirPerson = await fetchFromDirectory(netid, 'netid');
+        if (dirPerson && dirPerson.name) {
+          const dirUpdate = buildDirectoryUpdate(dirPerson);
+          if (user.userType === 'unknown' && isFacultyTitle(dirPerson.title)) {
+            dirUpdate.userType = 'professor';
+            dirUpdate.userConfirmed = true;
+          }
+          user = await updateUser(netid, dirUpdate);
+          console.log(`findOrCreateUser: refreshed directory data for ${netid}`);
+        }
+      } catch {
+        console.log(`findOrCreateUser: directory refresh failed for ${netid}, using cached data`);
+      }
+    } else {
+      console.log(`findOrCreateUser: existing user ${netid} (fresh)`);
+    }
+    return user;
+  }
+
+  console.log(`findOrCreateUser: trying Yalies API for ${netid}`);
+  user = await fetchYalie(netid);
+  if (user) {
+    console.log(`findOrCreateUser: Yalies success for ${netid}, type=${user.userType}`);
+    return user;
+  }
+
+  console.log(`findOrCreateUser: Yalies failed, trying Yale Directory for ${netid}`);
+  const dirPerson = await fetchFromDirectory(netid, 'netid');
+  if (dirPerson && dirPerson.name) {
+    console.log(`findOrCreateUser: Directory found ${dirPerson.name}, title="${dirPerson.title}"`);
+
+    const userType = isFacultyTitle(dirPerson.title) ? 'professor' : 'unknown';
+    const dirFields = buildDirectoryUpdate(dirPerson);
+    user = await createUser({
+      netid,
+      fname: dirPerson.firstName || dirPerson.name.split(' ')[0] || 'NA',
+      lname: dirPerson.lastName || dirPerson.name.split(' ').slice(1).join(' ') || 'NA',
+      email: dirPerson.email || `${netid}@yale.edu`,
+      departments: dirPerson.department ? [dirPerson.department] : [],
+      userType,
+      userConfirmed: userType === 'professor',
+      ...dirFields,
+    });
+    console.log(`findOrCreateUser: Directory user created, type=${userType}`);
+    return user;
+  }
+
+  console.log(`findOrCreateUser: Directory also failed, creating default user for ${netid}`);
+  user = await createUser({
+    netid,
+    fname: 'NA',
+    lname: 'NA',
+    email: 'NA',
+  });
+  return user;
+}
 
 passport.use(
   new Strategy(
     {
-      version: "CAS1.0",
-      ssoBaseURL: process.env.SSOBASEURL,
-      serverBaseURL: process.env.SERVER_BASE_URL,
+      version: 'CAS1.0',
+      ssoBaseURL: process.env.SSOBASEURL ?? '',
+      serverBaseURL: process.env.SERVER_BASE_URL ?? '',
     },
     async function (profile, done) {
-      console.log('User logged in from CAS');
-      console.log("User profile: ", profile);
-
       try {
-        console.log('Validating user');
-        let user = await validateUser(profile.user);
-        console.log('Done validating user');
-        if (user) {
-          console.log('User already exists');
-          done(null, {
-            netId: profile.user,
-            userType: user.userType,
-            userConfirmed: user.userConfirmed,
-          });
-        } else {
-          console.log('User does not exist, fetching yalies');
-          user = await fetchYalie(profile.user);
-          console.log('Done fetching yalies');
-          if (user) {
-            console.log('Yalies fetch a success, sending user');
-            done(null, {
-              netId: user.netid,
-              userType: user.userType,
-              userConfirmed: user.userConfirmed,
-            });
-          } else {
-            console.log('Yalies fetch no result, creating default user');
-            user = await createUser(
-              {
-                netid: profile.user,
-                fname: "NA",
-                lname: "NA",
-                email: "NA",
-              }
-            )
-            console.log('Default user created, sending user');
-            done(null, {
-              netId: user.netid,
-              userType: user.userType,
-              userConfirmed: user.userConfirmed,
-            });
-          }
-        }
+        const user = await findOrCreateUser(profile.user);
+        done(null, {
+          netId: user.netid || profile.user,
+          userType: user.userType,
+          userConfirmed: user.userConfirmed,
+          profileVerified: user.profileVerified || false,
+        });
       } catch (error) {
         console.log('Error in CAS login');
         done(error);
       }
-    }
-  )
+    },
+  ),
 );
 
 passport.serializeUser(function (user: any, done) {
@@ -70,50 +157,18 @@ passport.serializeUser(function (user: any, done) {
   done(null, user.netId);
 });
 
-passport.deserializeUser(async (netId: String, done) => {
+passport.deserializeUser(async (netId: string, done) => {
   try {
     console.log('Deserializing user');
-    console.log('Deserialize: Validating user');
-    let user = await validateUser(netId);
-    console.log('Deserialize: Done validating user');
-    if (user) {
-      console.log('Deserialize: User already exists');
-      done(null, {
-        netId: user.netid,
-        userType: user.userType,
-        userConfirmed: user.userConfirmed,
-      });
-    } else {
-      console.log('Deserialize: User does not exist, fetching yalies');
-      user = await fetchYalie(netId);
-      console.log('Deserialize: Done fetching yalies');
-      if (user) {
-        console.log('Deserialize: Yalies fetch a success, sending user');
-        done(null, {
-          netId: user.netid,
-          userType: user.userType,
-          userConfirmed: user.userConfirmed,
-        });
-      } else {
-        console.log('Deserialize: Yalies fetch no result, creating default user');
-        user = await createUser(
-          {
-            netid: netId,
-            fname: "NA",
-            lname: "NA",
-            email: "NA",
-          }
-        )
-        console.log('Deserialize: Default user created, sending user');
-        done(null, {
-          netId: user.netid,
-          userType: user.userType,
-          userConfirmed: user.userConfirmed,
-        });
-      }
-    }
+    const user = await findOrCreateUser(netId as string);
+    done(null, {
+      netId: user.netid || netId,
+      userType: user.userType,
+      userConfirmed: user.userConfirmed,
+      profileVerified: user.profileVerified || false,
+    });
   } catch (error) {
-    console.log('Deserialize: Error in CAS login');
+    console.log('Deserialize: Error');
     done(error, null);
   }
 });
@@ -121,76 +176,64 @@ passport.deserializeUser(async (netId: String, done) => {
 const casLogin = function (
   req: express.Request,
   res: express.Response,
-  next: express.NextFunction
+  next: express.NextFunction,
 ) {
-  passport.authenticate("cas", function (err, user, info) {
+  passport.authenticate('cas', function (err, user, info) {
     if (err) {
-      console.log("Error in authenticate function")
+      console.log('Error in authenticate function');
       try {
-        console.error("Authentication error details: ", {
+        console.error('Authentication error details: ', {
           message: err.messsage,
           stack: err.stack,
           name: err.name,
-          fullError: JSON.stringify(err, Object.getOwnPropertyNames(err))
+          fullError: JSON.stringify(err, Object.getOwnPropertyNames(err)),
         });
       } catch (e) {
-        console.error("Error serializing error object: ", e);
-      }
-      
-      if (req.query && req.query.error) {
-        return res.redirect(req.query.error as string);
+        console.error('Error serializing error object: ', e);
       }
 
-      return res.status(401).json({ error: "Error in authentication" });
+      const errorRedirect = safeRedirectTarget(req.query?.error);
+      if (errorRedirect) {
+        return res.redirect(errorRedirect);
+      }
+
+      return res.status(401).json({ error: 'Error in authentication' });
     }
 
     if (!user) {
-      console.log("CAS auth but no user");
-      return res.status(401).json({ error: info.message || "CAS auth but no user" });
+      console.log('CAS auth but no user');
+      return res.status(401).json({ error: info.message || 'CAS auth but no user' });
     }
 
-    console.log("1::");
-    console.log(user);
-
-    console.log("Logging in user: ", user);
     req.logIn(user, async function (err) {
-      console.log("Post login");
       if (err) {
-        console.log("Error logging in");
+        console.error('CAS login failed for netid:', user?.netId);
         return next(err);
       }
 
       try {
         await logEvent({
           eventType: AnalyticsEventType.LOGIN,
-          netid: user.netId,  // Note: user.netId (capital I) from session
+          netid: user.netId,
           userType: user.userType || 'unknown',
           metadata: {
             timestamp: new Date(),
-            loginMethod: 'CAS'
-          }
+            loginMethod: 'CAS',
+          },
         });
         console.log('Login event logged to analytics');
       } catch (analyticsError) {
-        console.error("Error logging analytics event:", analyticsError);
-        // Don't fail the login if analytics fails
+        console.error('Error logging analytics event:', analyticsError);
       }
 
-      if (req.query.redirect) {
-        // Try to parse the URL to make sure it's valid
-        try {
-          const redirectUrl = new URL(req.query.redirect as string);
-          
-          return res.redirect(req.query.redirect as string);
-        } catch (error) {
-          console.error("Error parsing redirect URL:", error);
-          console.log("Falling back to default redirect");
-          return res.redirect("/");
-        }
+      const safeTarget = safeRedirectTarget(req.query?.redirect);
+      if (safeTarget) {
+        return res.redirect(safeTarget);
       }
 
-      console.log("Default redirecting user");
-      return res.redirect("/");
+      const defaultRedirect =
+        process.env.NODE_ENV === 'development' ? 'http://localhost:3000' : '/';
+      return res.redirect(defaultRedirect);
     });
   })(req, res, next);
 };
@@ -198,7 +241,7 @@ const casLogin = function (
 const router = express.Router();
 
 router.use(async (req, res, next) => {
-  if (req.isAuthenticated() && !req.session.visitorLogged) {
+  if (req.isAuthenticated() && !req.session!.visitorLogged) {
     const user = req.user as any;
     try {
       await logEvent({
@@ -207,22 +250,19 @@ router.use(async (req, res, next) => {
         userType: user.userType || 'unknown',
         metadata: {
           timestamp: new Date(),
-          loginMethod: 'cookie'
-        }
+          loginMethod: 'cookie',
+        },
       });
       console.log('🍪 Visitor event logged to analytics (cookie login)');
-      req.session.visitorLogged = true;
+      req.session!.visitorLogged = true;
     } catch (analyticsError) {
-      console.error("Error logging visitor analytics event:", analyticsError);
+      console.error('Error logging visitor analytics event:', analyticsError);
     }
   }
   next();
 });
 
-router.get("/check", (req, res) => {
-  console.log("Checking user");
-  console.log("2::");
-  console.log(req.user);
+router.get('/check', (req, res) => {
   if (req.user) {
     res.json({ auth: true, user: req.user });
   } else {
@@ -230,12 +270,11 @@ router.get("/check", (req, res) => {
   }
 });
 
-router.get("/cas", casLogin);
+router.get('/cas', casLogin);
 
-router.get("/logout", async (req, res) => {
-  console.log("Logging out user");
-  
-  // ===== LOG LOGOUT EVENT TO ANALYTICS =====
+router.get('/logout', async (req, res) => {
+  console.log('Logging out user');
+
   if (req.user) {
     const user = req.user as any;
     try {
@@ -244,78 +283,45 @@ router.get("/logout", async (req, res) => {
         netid: user.netId,
         userType: user.userType || 'unknown',
         metadata: {
-          timestamp: new Date()
-        }
+          timestamp: new Date(),
+        },
       });
       console.log('Logout event logged to analytics');
     } catch (analyticsError) {
-      console.error("Error logging analytics event:", analyticsError);
+      console.error('Error logging analytics event:', analyticsError);
     }
   }
-  // ===== END ANALYTICS LOGGING =====
-  
-  // Call logOut without a callback (it's now synchronous)
+
   req.logOut();
-  
-  // Clear the session
+
   const casLogoutUrl = `${process.env.SSOBASEURL}/logout`;
 
-  // Determine the service URL based on environment
   let serviceUrl;
 
   if (process.env.NODE_ENV === 'development') {
-    // In development, redirect to the client on port 3000
-    serviceUrl = "http://localhost:3000/login";
+    serviceUrl = 'http://localhost:3000/login';
   } else {
-    // In production, use the server base URL (which serves the client)
     serviceUrl = `${process.env.SERVER_BASE_URL}/login`;
   }
 
   const fullLogoutUrl = `${casLogoutUrl}?service=${encodeURIComponent(serviceUrl)}`;
   return res.redirect(fullLogoutUrl);
-  
-  // -----------------------------------------
-  // IF WE WANT TO FORCE LOGOUT CAS TOO
-  // -----------------------------------------
-
-  // Construct CAS logout URL
-  // const casLogoutUrl = process.env.SSOBASEURL + '/logout';
-
-  // Determine the service URL based on environment
-  // const host = req.get('host') || '';
-  // let serviceUrl;  
-  // if (host.includes('yalelabs.io')) {
-  //   // Production
-  //   serviceUrl = "https://yalelabs.io/login";
-  // } else if (host.includes('onrender.com')) {
-  //   // Render dev environment
-  //   serviceUrl = `https://${host}/login`;
-  // } else {
-  //   // Local development
-  //   serviceUrl = "http://localhost:3000/login";
-  // }
-  
-  // Redirect to CAS logout with service parameter
-  // const fullLogoutUrl = `${casLogoutUrl}?service=${encodeURIComponent(serviceUrl)}`;
-  
-  // console.log('Redirecting to CAS logout:', fullLogoutUrl);
-  // return res.redirect(fullLogoutUrl);
 });
 
 if (process.env.NODE_ENV === 'development') {
-  router.get("/dev-login", async (req, res) => {
+  router.get('/dev-login', async (req, res) => {
     const testUser = {
-      netId: "test123",
-      userType: "student", // or whatever default you want: "admin", "faculty", etc.
+      netId: 'test123',
+      userType: 'student',
       userConfirmed: true,
     };
-    
+
     try {
       console.log('Dev login with hardcoded user:', testUser);
-      
+
       req.logIn(testUser, async (err) => {
         if (err) {
-          console.error("Dev login error:", err);
+          console.error('Dev login error:', err);
           return res.status(500).json({ error: err.message });
         }
 
@@ -326,22 +332,20 @@ if (process.env.NODE_ENV === 'development') {
             userType: testUser.userType || 'unknown',
             metadata: {
               timestamp: new Date(),
-              loginMethod: 'dev-login'
-            }
+              loginMethod: 'dev-login',
+            },
           });
           console.log('Dev login event logged to analytics');
         } catch (analyticsError) {
-          console.error("Error logging dev login analytics event:", analyticsError);
-          // Don't fail the login if analytics fails
+          console.error('Error logging dev login analytics event:', analyticsError);
         }
 
-        const redirectUrl = (req.query.redirect as string) || "http://localhost:3000";
-        console.log('Redirecting to:', redirectUrl);
+        const redirectUrl = safeRedirectTarget(req.query?.redirect) ?? 'http://localhost:3000';
         res.redirect(redirectUrl);
       });
-    } catch (error) {    
-      console.error("Dev login error:", error);
-      res.status(500).json({ error: "Dev login failed" });
+    } catch (error) {
+      console.error('Dev login error:', error);
+      res.status(500).json({ error: 'Dev login failed' });
     }
   });
 }
