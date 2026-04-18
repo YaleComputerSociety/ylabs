@@ -160,6 +160,11 @@ export const verifyProfile = async (req: Request, res: Response) => {
     }
 
     const profile = existing as any;
+    if (profile.userType !== 'professor' && profile.userType !== 'faculty') {
+      return res
+        .status(403)
+        .json({ error: 'Only faculty accounts can self-verify their profile.' });
+    }
     if (!profile.primary_department?.trim()) {
       return res.status(400).json({ error: 'Primary department is required for verification.' });
     }

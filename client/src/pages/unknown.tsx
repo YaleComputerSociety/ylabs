@@ -23,8 +23,6 @@ const Unknown = () => {
   const userTypeOptions = [
     { value: 'undergraduate', label: 'Undergraduate Student' },
     { value: 'graduate', label: 'Graduate Student' },
-    { value: 'professor', label: 'Professor' },
-    { value: 'faculty', label: 'Faculty' },
   ];
 
   const validateFirstName = (value: string): string | undefined => {

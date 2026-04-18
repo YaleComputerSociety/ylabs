@@ -129,9 +129,6 @@ export const getUserListings = async (request: Request, response: Response) => {
 };
 
 const SELF_UPDATABLE_FIELDS = [
-  'fname',
-  'lname',
-  'email',
   'bio',
   'website',
   'image_url',
@@ -151,7 +148,11 @@ const SELF_UPDATABLE_FIELDS = [
   'profile_urls',
 ] as const;
 
-const ALLOWED_SELF_USER_TYPES = new Set(['undergraduate', 'graduate', 'professor', 'faculty']);
+const ALLOWED_SELF_USER_TYPES = new Set(['undergraduate', 'graduate']);
+
+// Identity fields can only be set during the unknown-user bootstrap flow,
+// then become admin-only to prevent impersonation of established accounts.
+const UNKNOWN_BOOTSTRAP_FIELDS = ['fname', 'lname', 'email'] as const;
 
 export const updateCurrentUser = async (
   request: Request,
@@ -173,12 +174,20 @@ export const updateCurrentUser = async (
       }
     }
 
-    if (payload.userType !== undefined && currentUser.userType === 'unknown') {
-      if (!ALLOWED_SELF_USER_TYPES.has(payload.userType)) {
-        response.status(400).json({ error: 'Invalid userType' });
-        return;
+    if (currentUser.userType === 'unknown') {
+      for (const field of UNKNOWN_BOOTSTRAP_FIELDS) {
+        if (payload[field] !== undefined) {
+          update[field] = payload[field];
+        }
       }
-      update.userType = payload.userType;
+
+      if (payload.userType !== undefined) {
+        if (!ALLOWED_SELF_USER_TYPES.has(payload.userType)) {
+          response.status(400).json({ error: 'Invalid userType' });
+          return;
+        }
+        update.userType = payload.userType;
+      }
     }
 
     const user = await updateUser(currentUser.netId, update);
