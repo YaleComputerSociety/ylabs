@@ -84,3 +84,15 @@ export function getInstitutionLabel(code: string): string {
       return code;
   }
 }
+
+export type InstitutionCode = 'YSM' | 'YSPH' | 'YC';
+
+/**
+ * Filter a listing-like array by institution affiliation derived from its departments.
+ */
+export function filterByInstitution<T extends { departments?: string[] | null }>(
+  items: T[],
+  code: InstitutionCode
+): T[] {
+  return items.filter((item) => getInstitutionAffiliation(item.departments || []) === code);
+}

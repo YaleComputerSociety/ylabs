@@ -64,3 +64,12 @@ with open(csvFilePath, encoding='utf-8') as csvf:
 # function to dump data
 with open(jsonFilePath, 'w', encoding='utf-8') as jsonf:
   jsonf.write(json.dumps(data, indent=4))
+
+
+x = 0
+for index in range(10):
+    x = x + 1
+
+x = 0
+while x != 10:
+    x = x + 1

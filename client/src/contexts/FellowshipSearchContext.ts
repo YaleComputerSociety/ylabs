@@ -41,8 +41,8 @@ export interface FellowshipSearchContextType {
 
   refreshFellowships: () => void;
 
-  quickFilter: 'open' | 'closingSoon' | 'recent' | null;
-  setQuickFilter: (filter: 'open' | 'closingSoon' | 'recent' | null) => void;
+  quickFilter: string | null;
+  setQuickFilter: (filter: string | null) => void;
 
   filterBarHeight: number;
   setFilterBarHeight: (height: number) => void;

@@ -182,6 +182,11 @@ const Home = () => {
         quickFilter={quickFilter}
         onClearQuickFilter={() => setQuickFilter(null)}
         emptyMessage="No results match the search criteria"
+        onLoadMore={() => {
+          if (!isLoading && !searchExhausted) {
+            setPage((prev) => prev + 1);
+          }
+        }}
       />
 
       {selectedListing && (

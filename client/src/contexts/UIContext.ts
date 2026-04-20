@@ -3,7 +3,7 @@
  */
 import { createContext } from 'react';
 
-export type ViewMode = 'card' | 'list';
+export type ViewMode = 'card' | 'list' | 'compact';
 
 export interface UIContextType {
   viewMode: ViewMode;

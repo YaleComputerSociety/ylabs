@@ -4,6 +4,45 @@
 import { Listing, Fellowship } from './types';
 import { getDepartmentAbbreviation } from '../utils/departmentNames';
 
+export const DEPT_CAP = 3;
+export const TAG_CAP = 3;
+export const DESCRIPTION_CLAMP_CLASS = 'line-clamp-3';
+
+export function getOrderedDepartments(
+  departments: string[] | undefined,
+  primary: string | undefined,
+): string[] {
+  const deps = [...(departments || [])];
+  if (deps.length === 0) {
+    return primary ? [primary] : [];
+  }
+  if (primary && deps.length > 1) {
+    const idx = deps.findIndex(
+      (d) => d === primary || getDepartmentAbbreviation(d) === getDepartmentAbbreviation(primary),
+    );
+    if (idx > 0) {
+      deps.splice(idx, 1);
+      deps.unshift(primary);
+    } else if (idx === -1) {
+      deps.unshift(primary);
+    }
+  }
+  return deps;
+}
+
+export function getOrderedDeptAbbrs(
+  departments: string[] | undefined,
+  primary: string | undefined,
+  limit?: number,
+): { abbrs: string[]; truncated: number } {
+  const ordered = getOrderedDepartments(departments, primary);
+  const abbrs = ordered.map((d) => getDepartmentAbbreviation(d));
+  if (limit && abbrs.length > limit) {
+    return { abbrs: abbrs.slice(0, limit), truncated: abbrs.length - limit };
+  }
+  return { abbrs, truncated: 0 };
+}
+
 export type BrowsableItem =
   | { type: 'listing'; data: Listing }
   | { type: 'fellowship'; data: Fellowship };

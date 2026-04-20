@@ -12,6 +12,7 @@ import { BrowsableItem } from '../types/browsable';
 import { Fellowship } from '../types/types';
 import axios from '../utils/axios';
 import { browsePageReducer, createInitialBrowsePageState } from '../reducers/browsePageReducer';
+import { useInfiniteScroll } from '../hooks/useInfiniteScroll';
 
 const CLOSING_SOON_DAYS = 30;
 
@@ -48,8 +49,15 @@ const SectionHeader = ({
 );
 
 const Fellowships = () => {
-  const { fellowships, isLoading, setQueryString, quickFilter, refreshFellowships } =
-    useContext(FellowshipSearchContext);
+  const {
+    fellowships,
+    isLoading,
+    setQueryString,
+    quickFilter,
+    refreshFellowships,
+    setPage,
+    searchExhausted,
+  } = useContext(FellowshipSearchContext);
 
   const { user } = useContext(UserContext);
   const isAdmin = user?.userType === 'admin';
@@ -170,6 +178,21 @@ const Fellowships = () => {
 
   const noResults = fellowships.length === 0 && !isLoading;
 
+  const sentinelRef = useInfiniteScroll({
+    searchExhausted,
+    isLoading,
+    setPage,
+    filteredCount: closingSoonItems.length + openItems.length + closedItems.length,
+    totalRawCount: fellowships.length,
+    quickFilterActive: !!quickFilter,
+  });
+
+  const handleLoadMore = () => {
+    if (!isLoading && !searchExhausted) {
+      setPage((prev) => prev + 1);
+    }
+  };
+
   return (
     <div className="mx-auto max-w-[1300px] px-6 w-full min-h-[calc(100vh-12rem)]">
       <div className="mb-4 mt-6 text-center">
@@ -208,8 +231,10 @@ const Fellowships = () => {
                 onToggleFavorite={handleToggleFavorite}
                 onOpenModal={handleOpenModal}
                 onAdminEdit={isAdmin ? handleAdminEdit : undefined}
-                isLoading={false}
+                isLoading={isLoading}
                 emptyMessage="No closing-soon fellowships"
+                onLoadMore={handleLoadMore}
+                disableVirtualization
               />
             </>
           )}
@@ -223,8 +248,10 @@ const Fellowships = () => {
                 onToggleFavorite={handleToggleFavorite}
                 onOpenModal={handleOpenModal}
                 onAdminEdit={isAdmin ? handleAdminEdit : undefined}
-                isLoading={false}
+                isLoading={isLoading}
                 emptyMessage="No open fellowships"
+                onLoadMore={handleLoadMore}
+                disableVirtualization
               />
             </>
           )}
@@ -238,11 +265,15 @@ const Fellowships = () => {
                 onToggleFavorite={handleToggleFavorite}
                 onOpenModal={handleOpenModal}
                 onAdminEdit={isAdmin ? handleAdminEdit : undefined}
-                isLoading={false}
+                isLoading={isLoading}
                 emptyMessage="No closed fellowships"
+                onLoadMore={handleLoadMore}
+                disableVirtualization
               />
             </>
           )}
+
+          {!searchExhausted && <div ref={sentinelRef} className="h-10 w-full mt-4" />}
         </>
       )}
 

@@ -735,7 +735,7 @@ async function generateKeywords(dryRun: boolean = true, forceMode: boolean = fal
             bulkOps.push({
               updateOne: {
                 filter: { _id: new mongoose.Types.ObjectId(listing.id) },
-                update: { $set: { researchAreas: resolvedAreas, keywords: resolvedAreas } }
+                update: { $set: { researchAreas: resolvedAreas } }
               }
             });
           }
@@ -845,7 +845,7 @@ async function generateKeywords(dryRun: boolean = true, forceMode: boolean = fal
                 novelAppendOps.push({
                   updateOne: {
                     filter: { _id: new mongoose.Types.ObjectId(listing.id) },
-                    update: { $addToSet: { researchAreas: { $each: deduped }, keywords: { $each: deduped } } }
+                    update: { $addToSet: { researchAreas: { $each: deduped } } }
                   }
                 });
               }

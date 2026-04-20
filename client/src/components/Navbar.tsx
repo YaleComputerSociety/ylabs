@@ -105,6 +105,32 @@ const ViewToggle = () => {
           <line x1="3" y1="18" x2="3.01" y2="18" />
         </svg>
       </button>
+      <button
+        onClick={() => setViewMode('compact')}
+        className={`p-1.5 transition-colors ${viewMode === 'compact' ? 'bg-blue-50 text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}
+        aria-label="Compact view"
+        title="Compact view"
+      >
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <line x1="8" y1="4" x2="21" y2="4" />
+          <line x1="8" y1="9" x2="21" y2="9" />
+          <line x1="8" y1="14" x2="21" y2="14" />
+          <line x1="8" y1="19" x2="21" y2="19" />
+          <line x1="3" y1="4" x2="3.01" y2="4" />
+          <line x1="3" y1="9" x2="3.01" y2="9" />
+          <line x1="3" y1="14" x2="3.01" y2="14" />
+          <line x1="3" y1="19" x2="3.01" y2="19" />
+        </svg>
+      </button>
     </div>
   );
 };

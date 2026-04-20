@@ -99,8 +99,6 @@ router.post(
   listingController.createListingForCurrentUser,
 );
 
-router.get('/skeleton', isAuthenticated, listingController.getSkeletonListingForCurrentUser);
-
 router.get('/:id', isAuthenticated, validateObjectId('id'), listingController.getListingById);
 
 router.put(

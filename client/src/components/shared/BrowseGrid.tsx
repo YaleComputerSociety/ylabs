@@ -2,11 +2,14 @@
  * Grid/list layout switcher for browse pages.
  */
 import React, { useContext } from 'react';
+import { Virtuoso } from 'react-virtuoso';
 import { BrowsableItem } from '../../types/browsable';
 import BrowseCard from './BrowseCard';
 import BrowseListItem from './BrowseListItem';
 import LoadingSpinner from './LoadingSpinner';
 import UIContext from '../../contexts/UIContext';
+
+const VIRTUALIZATION_THRESHOLD = 50;
 
 interface BrowseGridProps {
   items: BrowsableItem[];
@@ -20,6 +23,8 @@ interface BrowseGridProps {
   quickFilter?: string | null;
   onClearQuickFilter?: () => void;
   emptyMessage?: string;
+  onLoadMore?: () => void;
+  disableVirtualization?: boolean;
 }
 
 const BrowseGrid = ({
@@ -34,9 +39,21 @@ const BrowseGrid = ({
   quickFilter,
   onClearQuickFilter,
   emptyMessage = 'No results match the current filter',
+  onLoadMore,
+  disableVirtualization = false,
 }: BrowseGridProps) => {
   const { viewMode } = useContext(UIContext);
+  const isCompact = viewMode === 'compact';
   const showLoader = isLoading && items.length > 0;
+  
+  const loadingLock = React.useRef(false);
+  React.useEffect(() => {
+    if (!isLoading) {
+      setTimeout(() => { loadingLock.current = false; }, 100);
+    } else {
+      loadingLock.current = true;
+    }
+  }, [isLoading]);
 
   if (items.length === 0 && !isLoading) {
     return (
@@ -57,12 +74,13 @@ const BrowseGrid = ({
   return (
     <div className="flex flex-col items-center relative pb-4">
       <div className="w-full">
-        {viewMode === 'card' ? (
+        {viewMode === 'card' || viewMode === 'compact' ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {items.map((item) => (
               <BrowseCard
                 key={item.data.id}
                 item={item}
+                isCompact={isCompact}
                 isFavorite={favIds.includes(item.data.id)}
                 onToggleFavorite={(e) => onToggleFavorite(item.data.id, e)}
                 onOpenModal={() => onOpenModal(item)}
@@ -70,6 +88,30 @@ const BrowseGrid = ({
               />
             ))}
           </div>
+        ) : items.length > VIRTUALIZATION_THRESHOLD && !disableVirtualization ? (
+            <Virtuoso
+            useWindowScroll
+            data={items}
+            increaseViewportBy={600}
+            endReached={() => {
+              if (onLoadMore && !loadingLock.current && !searchExhausted) {
+                loadingLock.current = true;
+                onLoadMore();
+              }
+            }}
+            itemContent={(_, item) => (
+              <div className="pb-2">
+                <BrowseListItem
+                  item={item}
+                  isFavorite={favIds.includes(item.data.id)}
+                  onToggleFavorite={(e) => onToggleFavorite(item.data.id, e)}
+                  onOpenModal={() => onOpenModal(item)}
+                  onAdminEdit={onAdminEdit ? () => onAdminEdit(item) : undefined}
+                />
+              </div>
+            )}
+            computeItemKey={(_, item) => item.data.id}
+          />
         ) : (
           <div className="flex flex-col gap-2">
             {items.map((item) => (

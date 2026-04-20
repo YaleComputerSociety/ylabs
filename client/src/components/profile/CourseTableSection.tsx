@@ -64,7 +64,7 @@ const CourseTableSection = ({ netid, onAvailabilityChange }: CourseTableSectionP
     bySeason.get(key)!.push(course);
   }
 
-  const sortedSeasons = [...bySeason.keys()].sort((a, b) => b.localeCompare(a));
+  const sortedSeasons = Array.from(bySeason.keys()).sort((a, b) => b.localeCompare(a));
 
   return (
     <div className="space-y-6">

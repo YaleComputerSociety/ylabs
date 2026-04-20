@@ -1764,6 +1764,7 @@ __metadata:
     react-is: "npm:^19.0.0-rc.0"
     react-router-dom: "npm:^6.21.2"
     react-spinners: "npm:^0.17.0"
+    react-virtuoso: "npm:^4.18.5"
     styled-components: "npm:^6.1.19"
     sweetalert: "npm:^2.1.2"
     tailwindcss: "npm:3"
@@ -3526,6 +3527,16 @@ __metadata:
     react: ">=16.6.0"
     react-dom: ">=16.6.0"
   checksum: 10c0/2ba754ba748faefa15f87c96dfa700d5525054a0141de8c75763aae6734af0740e77e11261a1e8f4ffc08fd9ab78510122e05c21c2d79066c38bb6861a886c82
+  languageName: node
+  linkType: hard
+
+"react-virtuoso@npm:^4.18.5":
+  version: 4.18.5
+  resolution: "react-virtuoso@npm:4.18.5"
+  peerDependencies:
+    react: ">=16 || >=17 || >= 18 || >= 19"
+    react-dom: ">=16 || >=17 || >= 18 || >=19"
+  checksum: 10c0/613888b77f824d756293ea205c495de6ae9c5caa68060937acc026c00d24817505eb66547b0d900b559d0c75f775e6d02c2cb1b15e2122b023bdd2b99e2beeec
   languageName: node
   linkType: hard
 

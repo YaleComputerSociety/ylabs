@@ -176,7 +176,6 @@ interface RawFacultyEntry {
   image_url: string;
   orcid: string | null;
   openalex_id: string | null;
-  h_index: number | null;
   profile_urls: Record<string, string>;
   publications: Array<{
     title: string;
@@ -249,7 +248,6 @@ async function importFaculty() {
         image_url: entry.image_url || '',
         orcid: entry.orcid || undefined,
         openalex_id: entry.openalex_id || undefined,
-        h_index: entry.h_index || undefined,
         profile_urls: entry.profile_urls || {},
         publications: (entry.publications || []).map((p) => ({
           title: p.title,
@@ -264,8 +262,8 @@ async function importFaculty() {
         topics: entry.topics || [],
         data_sources: entry.data_sources || [],
         userType: 'professor',
-        userConfirmed: true,
-        profileVerified: false,
+        adminApproved: true,
+        selfVerified: false,
       };
 
       for (const key of Object.keys(cleanedData)) {
