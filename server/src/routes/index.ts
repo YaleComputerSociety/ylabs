@@ -11,6 +11,7 @@ import ConfigRoutes from './config';
 import AdminRoutes from './admin';
 import ProfileRoutes from './profiles';
 import SeedRoutes from './seed';
+import ResearchGroupsRoutes from './researchGroups';
 
 const router = Router();
 
@@ -18,6 +19,8 @@ router.use('/listings', ListingsRoutes);
 router.use('/fellowships', FellowshipsRoutes);
 router.use('/users', UsersRoutes);
 router.use('/profiles', ProfileRoutes);
+router.use('/research-groups', ResearchGroupsRoutes);
+router.use('/research', ResearchGroupsRoutes);
 router.use('/analytics', AnalyticsRoutes);
 router.use('/research-areas', ResearchAreasRoutes);
 router.use('/config', ConfigRoutes);

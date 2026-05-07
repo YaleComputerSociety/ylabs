@@ -164,6 +164,9 @@ const CombinedFilterDropdown = ({ tabs }: CombinedFilterDropdownProps) => {
                 return (
                   <li
                     key={option}
+                    tabIndex={0}
+                    role="option"
+                    aria-selected={isSelected}
                     onClick={() => {
                       if (isSelected) {
                         activeTab.setSelected((prev) => prev.filter((v) => v !== option));
@@ -171,7 +174,17 @@ const CombinedFilterDropdown = ({ tabs }: CombinedFilterDropdownProps) => {
                         activeTab.setSelected((prev) => [...prev, option]);
                       }
                     }}
-                    className={`px-3 py-2 cursor-pointer text-sm rounded-md flex items-center gap-3 transition-colors ${
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        if (isSelected) {
+                          activeTab.setSelected((prev) => prev.filter((v) => v !== option));
+                        } else {
+                          activeTab.setSelected((prev) => [...prev, option]);
+                        }
+                      }
+                    }}
+                    className={`px-3 py-2 cursor-pointer text-sm rounded-md flex items-center gap-3 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-inset ${
                       isSelected ? 'bg-blue-50 text-blue-900' : 'hover:bg-gray-50 text-gray-700'
                     }`}
                     onMouseDown={(e) => e.preventDefault()}

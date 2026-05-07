@@ -2,6 +2,7 @@
  * Main listings browse page with search, filters, and grid/list view.
  */
 import { useReducer, useEffect, useContext, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import SearchContext from '../contexts/SearchContext';
 import UserContext from '../contexts/UserContext';
 import { useInfiniteScroll } from '../hooks/useInfiniteScroll';
@@ -17,8 +18,10 @@ import {
   browsePageReducer,
   createInitialBrowsePageState,
 } from '../reducers/browsePageReducer';
+import { createListing } from '../utils/apiCleaner';
 
 const Home = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
   const {
     listings,
     isLoading,
@@ -69,6 +72,27 @@ const Home = () => {
     refreshListings();
     reloadFavorites();
   }, []);
+
+  useEffect(() => {
+    const listingId = searchParams.get('listing');
+    if (listingId && !isModalOpen && !selectedListing) {
+      axios
+        .get(`/listings/${listingId}`, { withCredentials: true })
+        .then((response) => {
+          if (response.data?.listing) {
+            const listing = createListing(response.data.listing);
+            dispatch({ type: 'OPEN_DETAIL_MODAL', item: listing });
+          }
+        })
+        .catch((error) => {
+          console.error('Error fetching direct listing link:', error);
+          setSearchParams((params) => {
+            params.delete('listing');
+            return params;
+          });
+        });
+    }
+  }, [searchParams, isModalOpen, selectedListing, setSearchParams]);
 
   const filteredListings = useMemo(() => {
     if (quickFilter === 'open') {
@@ -142,6 +166,10 @@ const Home = () => {
   const handleOpenModal = (item: BrowsableItem) => {
     if (item.type === 'listing') {
       dispatch({ type: 'OPEN_DETAIL_MODAL', item: item.data });
+      setSearchParams((params) => {
+        params.set('listing', item.data.id);
+        return params;
+      });
     }
   };
 
@@ -157,6 +185,10 @@ const Home = () => {
     setSelectedResearchAreas([]);
     setSelectedListingResearchAreas([area]);
     dispatch({ type: 'CLOSE_DETAIL_MODAL' });
+    setSearchParams((params) => {
+      params.delete('listing');
+      return params;
+    });
   };
 
   const handleNavigateToDepartment = (dept: string) => {
@@ -165,6 +197,10 @@ const Home = () => {
     setSelectedResearchAreas([]);
     setSelectedListingResearchAreas([]);
     dispatch({ type: 'CLOSE_DETAIL_MODAL' });
+    setSearchParams((params) => {
+      params.delete('listing');
+      return params;
+    });
   };
 
   return (
@@ -194,6 +230,10 @@ const Home = () => {
           isOpen={isModalOpen}
           onClose={() => {
             dispatch({ type: 'CLOSE_DETAIL_MODAL' });
+            setSearchParams((params) => {
+              params.delete('listing');
+              return params;
+            });
           }}
           listing={selectedListing}
           isFavorite={favListingsIds.includes(selectedListing.id)}

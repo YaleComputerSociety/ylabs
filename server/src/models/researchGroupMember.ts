@@ -1,7 +1,8 @@
 /**
- * Mongoose schema and model for ResearchGroup ↔ User membership with role.
+ * Mongoose schema and model for ResearchGroup membership with role.
  */
 import mongoose from 'mongoose';
+import { fieldProvenanceSchema } from './modelPrimitives';
 
 const researchGroupMemberSchema = new mongoose.Schema(
   {
@@ -13,12 +14,50 @@ const researchGroupMemberSchema = new mongoose.Schema(
     userId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'users',
-      required: true,
+      required: false,
+    },
+    facultyMemberId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'facultymembers',
+      required: false,
+    },
+    name: {
+      type: String,
+      default: '',
+    },
+    email: {
+      type: String,
+      default: '',
     },
     role: {
       type: String,
-      enum: ['pi', 'co-pi', 'director', 'co-director', 'core-faculty', 'affiliated', 'alumni'],
+      enum: [
+        'pi',
+        'co-pi',
+        'director',
+        'co-director',
+        'core-faculty',
+        'affiliated',
+        'alumni',
+        'postdoc',
+        'grad-student',
+        'undergrad',
+        'staff',
+        'affiliate',
+      ],
       required: true,
+    },
+    isCurrentMember: {
+      type: Boolean,
+      default: true,
+    },
+    joinedAt: {
+      type: Date,
+      required: false,
+    },
+    leftAt: {
+      type: Date,
+      required: false,
     },
     startedAt: {
       type: Date,
@@ -30,6 +69,21 @@ const researchGroupMemberSchema = new mongoose.Schema(
     },
     confidenceByField: {
       type: mongoose.Schema.Types.Mixed,
+      default: {},
+    },
+    confidence: {
+      type: Number,
+      min: 0,
+      max: 1,
+      default: 0,
+    },
+    sourceUrl: {
+      type: String,
+      default: '',
+    },
+    fieldProvenance: {
+      type: Map,
+      of: fieldProvenanceSchema,
       default: {},
     },
     manuallyLockedFields: {
@@ -46,13 +100,16 @@ const researchGroupMemberSchema = new mongoose.Schema(
   },
 );
 
-researchGroupMemberSchema.index({ researchGroupId: 1, userId: 1 }, { unique: true });
+researchGroupMemberSchema.index({ researchGroupId: 1, userId: 1 });
+researchGroupMemberSchema.index({ researchGroupId: 1, facultyMemberId: 1, role: 1 });
 researchGroupMemberSchema.index({ userId: 1 });
+researchGroupMemberSchema.index({ facultyMemberId: 1 });
 researchGroupMemberSchema.index({ researchGroupId: 1, role: 1 });
 
 export const ResearchGroupMember = mongoose.model(
   'researchgroupmembers',
   researchGroupMemberSchema,
+  'research_group_members',
 );
 
 export { researchGroupMemberSchema };

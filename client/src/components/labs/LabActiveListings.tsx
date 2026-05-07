@@ -24,7 +24,7 @@ const LabActiveListings = ({ listings }: LabActiveListingsProps) => {
   if (!listings || listings.length === 0) {
     return (
       <p className="text-gray-500 text-sm py-8 text-center">
-        No active listings from this lab right now.
+        No active opportunities from this research group right now.
       </p>
     );
   }

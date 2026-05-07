@@ -265,7 +265,7 @@ export async function findUserForPi(
         lname: lnameRe,
         userType: { $in: ['professor', 'faculty', 'admin'] },
       },
-      { _id: 1, fname: 1, lname: 1, netid: 1, primary_department: 1 },
+      { _id: 1, fname: 1, lname: 1, netid: 1, primaryDepartment: 1 },
     )
     .limit(10)
     .lean();
@@ -358,7 +358,7 @@ export function piGrantsToObservations(
     if (first) out.push({ ...userBase, field: 'fname', value: first });
     if (last) out.push({ ...userBase, field: 'lname', value: last });
     out.push({ ...userBase, field: 'userType', value: 'faculty' });
-    out.push({ ...userBase, field: 'data_sources', value: ['nih-reporter'] });
+    out.push({ ...userBase, field: 'dataSources', value: ['nih-reporter'] });
   }
 
   // 2. ResearchGroup observations.

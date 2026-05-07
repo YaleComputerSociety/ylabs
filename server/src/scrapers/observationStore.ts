@@ -20,8 +20,8 @@ interface AppendContext {
 export async function appendObservations(
   inputs: ObservationInput[],
   ctx: AppendContext,
-): Promise<{ inserted: number; skipped: number }> {
-  if (inputs.length === 0) return { inserted: 0, skipped: 0 };
+): Promise<{ inserted: number; skipped: number; superseded: number }> {
+  if (inputs.length === 0) return { inserted: 0, skipped: 0, superseded: 0 };
 
   const docs = inputs.map((obs) => ({
     entityType: obs.entityType,
@@ -36,14 +36,88 @@ export async function appendObservations(
     observedAt: obs.observedAt || new Date(),
     confidence: obs.confidenceOverride ?? ctx.sourceWeight,
     superseded: false,
+    observationFingerprint: buildObservationFingerprint({
+      sourceName: ctx.sourceName,
+      entityType: obs.entityType,
+      entityId: obs.entityId,
+      entityKey: obs.entityKey,
+      field: obs.field,
+      value: obs.value,
+    }),
   }));
 
   if (ctx.dryRun) {
-    return { inserted: 0, skipped: docs.length };
+    return { inserted: 0, skipped: docs.length, superseded: 0 };
   }
 
   const result = await Observation.insertMany(docs, { ordered: false });
-  return { inserted: result.length, skipped: 0 };
+  let superseded = 0;
+  const latestByFingerprint = new Map<string, any>();
+  for (const doc of result as any[]) {
+    if (!doc.observationFingerprint) continue;
+    latestByFingerprint.set(doc.observationFingerprint, doc._id);
+  }
+
+  for (const [fingerprint, latestId] of latestByFingerprint) {
+    const update = await Observation.updateMany(
+      {
+        observationFingerprint: fingerprint,
+        superseded: false,
+        _id: { $ne: latestId },
+      },
+      {
+        $set: {
+          superseded: true,
+          supersededBy: latestId,
+        },
+      },
+    );
+    superseded += update.modifiedCount || 0;
+  }
+
+  return { inserted: result.length, skipped: 0, superseded };
+}
+
+export function buildObservationFingerprint(input: {
+  sourceName: string;
+  entityType: string;
+  entityId?: unknown;
+  entityKey?: string;
+  field: string;
+  value: unknown;
+}): string | undefined {
+  const entityId = stringifyIdentifier(input.entityId);
+  const entityKey = stringifyIdentifier(input.entityKey);
+  const entity = entityId ? `id:${entityId}` : entityKey ? `key:${entityKey}` : undefined;
+  if (!entity) return undefined;
+
+  return stableSerialize([
+    input.sourceName,
+    input.entityType,
+    entity,
+    input.field,
+    input.value,
+  ]);
+}
+
+function stringifyIdentifier(value: unknown): string | undefined {
+  if (value === null || value === undefined || value === '') return undefined;
+  return String(value);
+}
+
+function stableSerialize(value: unknown): string {
+  if (value === null || value === undefined) return 'null';
+  if (typeof value === 'string') return JSON.stringify(value.trim().toLowerCase());
+  if (typeof value === 'number' || typeof value === 'boolean') return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(stableSerialize).sort().join(',')}]`;
+  if (typeof value === 'object') {
+    const obj = value as Record<string, unknown>;
+    return `{${Object.keys(obj)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableSerialize(obj[key])}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(String(value));
 }
 
 export async function getSourceByName(name: string): Promise<{

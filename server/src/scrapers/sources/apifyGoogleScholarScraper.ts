@@ -15,18 +15,18 @@
  *   - User.userType in ['professor', 'faculty']
  *   - User.googleScholarId is non-empty (no auto-discovery in v1; admins set
  *     this manually, or a future scraper will).
- *   - User.manuallyLockedFields does NOT include 'h_index' (don't trample
+ *   - User.manuallyLockedFields does NOT include 'hIndex' (don't trample
  *     hand-curated values).
  *   - Optionally restrict to humanities/social-sciences departments by
  *     resolving Department rows whose `primaryCategory` is HUMANITIES_ARTS or
- *     SOCIAL_SCIENCES, then matching User.primary_department against those
+ *     SOCIAL_SCIENCES, then matching User.primaryDepartment against those
  *     names. This keeps the dollar spend focused on the cohort that needs
  *     enrichment most. The filter is best-effort — STEM faculty whose admin
  *     set their Scholar ID will still be enriched.
  *
  * For each returned author profile we emit:
  *   - User observations (entityKey = netid):
- *       googleScholarId, h_index, image_url (only if existing is empty),
+ *       googleScholarId, hIndex, imageUrl (only if existing is empty),
  *       topics, googleScholarMetricsUpdatedAt
  *   - Paper observations (entityKey = `gs:<authorId>:<paperHash>`):
  *       title, year, venue, citationCount, authors,
@@ -151,12 +151,12 @@ export function eligibleFacultyQuery(categoryDeptNames?: string[]): Record<strin
   const base: Record<string, unknown> = {
     userType: { $in: ['professor', 'faculty'] },
     googleScholarId: { $exists: true, $nin: [null, ''] },
-    manuallyLockedFields: { $nin: ['h_index'] },
+    manuallyLockedFields: { $nin: ['hIndex'] },
   };
   if (categoryDeptNames && categoryDeptNames.length > 0) {
     base.$or = [
-      { primary_department: { $in: categoryDeptNames } },
-      { secondary_departments: { $in: categoryDeptNames } },
+      { primaryDepartment: { $in: categoryDeptNames } },
+      { secondaryDepartments: { $in: categoryDeptNames } },
       { departments: { $in: categoryDeptNames } },
     ];
   }
@@ -208,8 +208,8 @@ function splitAuthors(authors: string | undefined | null): string[] {
 export interface MapTargetUser {
   _id: string | { toString(): string };
   netid: string;
-  /** Existing image_url on the user; used to suppress overwrite when set. */
-  image_url?: string;
+  /** Existing imageUrl on the user; used to suppress overwrite when set. */
+  imageUrl?: string;
   /** Existing manually-locked fields; never overwrite a locked field. */
   manuallyLockedFields?: string[];
 }
@@ -220,10 +220,10 @@ export interface MapTargetUser {
  *
  * Rules:
  *   - User obs are keyed by `netid` (User entity's keyField).
- *   - h_index is skipped if `manuallyLockedFields` includes 'h_index' — the
+ *   - hIndex is skipped if `manuallyLockedFields` includes 'hIndex' — the
  *     Mongo query already drops these users, but we belt-and-braces here
  *     since callers can pass any user.
- *   - image_url is only emitted when the existing user.image_url is empty
+ *   - imageUrl is only emitted when the existing user.imageUrl is empty
  *     (don't trample hand-uploaded headshots).
  *   - topics is emitted only when interests is a non-empty array.
  *   - Paper obs are keyed by `gs:<authorId>:<paperHash>` so re-runs are
@@ -273,20 +273,20 @@ export function mapAuthorProfileToObservations(
     out.push({ ...userBase, field: 'googleScholarId', value: profile.authorId });
   }
 
-  // h_index — skip if locked or not a number.
-  if (typeof profile.hIndex === 'number' && Number.isFinite(profile.hIndex) && !locked.has('h_index')) {
-    out.push({ ...userBase, field: 'h_index', value: profile.hIndex });
+  // hIndex — skip if locked or not a number.
+  if (typeof profile.hIndex === 'number' && Number.isFinite(profile.hIndex) && !locked.has('hIndex')) {
+    out.push({ ...userBase, field: 'hIndex', value: profile.hIndex });
   }
 
-  // image_url — only emit when user has no existing image. We never overwrite
+  // imageUrl — only emit when user has no existing image. We never overwrite
   // a manually uploaded photo with Scholar's auto-generated thumbnail.
   if (
     profile.profileImageUrl &&
     typeof profile.profileImageUrl === 'string' &&
-    !locked.has('image_url') &&
-    !(user.image_url && user.image_url.trim() !== '')
+    !locked.has('imageUrl') &&
+    !(user.imageUrl && user.imageUrl.trim() !== '')
   ) {
-    out.push({ ...userBase, field: 'image_url', value: profile.profileImageUrl });
+    out.push({ ...userBase, field: 'imageUrl', value: profile.profileImageUrl });
   }
 
   // topics — Scholar's "interests" field. Conservative: only when non-empty.
@@ -368,7 +368,7 @@ export interface CandidateFaculty {
   fname?: string;
   lname?: string;
   googleScholarId: string;
-  image_url?: string;
+  imageUrl?: string;
   manuallyLockedFields?: string[];
 }
 
@@ -385,7 +385,7 @@ export const defaultUserFinder: UserFinderFn = async (query, limit) => {
     fname: 1,
     lname: 1,
     googleScholarId: 1,
-    image_url: 1,
+    imageUrl: 1,
     manuallyLockedFields: 1,
   }).lean();
   if (limit && limit > 0) q = q.limit(limit);
@@ -396,14 +396,14 @@ export const defaultUserFinder: UserFinderFn = async (query, limit) => {
     fname: d.fname,
     lname: d.lname,
     googleScholarId: d.googleScholarId,
-    image_url: d.image_url,
+    imageUrl: d.imageUrl,
     manuallyLockedFields: d.manuallyLockedFields || [],
   }));
 };
 
 /** Resolves Department names whose primaryCategory is one of TARGET_CATEGORIES.
- *  Returned strings are matched against User.primary_department / departments
- *  / secondary_departments in eligibleFacultyQuery. */
+ *  Returned strings are matched against User.primaryDepartment / departments
+ *  / secondaryDepartments in eligibleFacultyQuery. */
 export type DepartmentNameResolverFn = (categories: DepartmentCategory[]) => Promise<string[]>;
 
 export const defaultDepartmentNameResolver: DepartmentNameResolverFn = async (categories) => {

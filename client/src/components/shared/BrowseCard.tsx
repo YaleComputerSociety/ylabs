@@ -4,9 +4,13 @@
 import React, { useContext, useMemo } from 'react';
 import {
   BrowsableItem,
+  getItemId,
   getItemTags,
   getItemSubtitle,
   getItemSubtitleColor,
+  getResearchGroupDisplayName,
+  getResearchGroupKindLabel,
+  getResearchGroupStatus,
   getDaysUntilDeadline,
   getOrderedDeptAbbrs,
   DEPT_CAP,
@@ -24,7 +28,7 @@ import { useViewTracking } from '../../hooks/useViewTracking';
 interface BrowseCardProps {
   item: BrowsableItem;
   isFavorite: boolean;
-  onToggleFavorite: (e: React.MouseEvent) => void;
+  onToggleFavorite?: (e: React.MouseEvent) => void;
   onOpenModal: () => void;
   onAdminEdit?: () => void;
   isCompact?: boolean;
@@ -35,7 +39,7 @@ const BrowseCard = React.memo(({ item, isFavorite, onToggleFavorite, onOpenModal
   const { user } = useContext(UserContext);
   const isAdmin = user?.userType === 'admin';
   const tags = useMemo(() => getItemTags(item, getColorForResearchArea), [item, getColorForResearchArea]);
-  const trackView = useViewTracking(item.type === 'listing' ? 'listing' : 'fellowship', item.data.id);
+  const trackView = useViewTracking(item.type, getItemId(item));
 
   const daysUntil = getDaysUntilDeadline(item);
   const showUrgentBanner = item.type === 'fellowship' && daysUntil !== null && daysUntil > 0 && daysUntil <= 14;
@@ -44,6 +48,7 @@ const BrowseCard = React.memo(({ item, isFavorite, onToggleFavorite, onOpenModal
     !!item.data.applicantDescription && item.data.applicantDescription.trim() !== '';
 
   const isListing = item.type === 'listing';
+  const isResearchGroup = item.type === 'researchGroup';
   const professorName = isListing
     ? `${item.data.ownerFirstName} ${item.data.ownerLastName}`
     : null;
@@ -60,8 +65,9 @@ const BrowseCard = React.memo(({ item, isFavorite, onToggleFavorite, onOpenModal
 
   const subtitle = getItemSubtitle(item);
   const subtitleColor = getItemSubtitleColor(item);
+  const researchStatus = getResearchGroupStatus(item);
 
-  const isAudited = isAdmin && item.data.audited;
+  const isAudited = isAdmin && item.type !== 'researchGroup' && item.data.audited;
 
   const handleClick = () => {
     trackView();
@@ -96,10 +102,68 @@ const BrowseCard = React.memo(({ item, isFavorite, onToggleFavorite, onOpenModal
               </svg>
             </button>
           )}
-          <FavoriteButton isFavorite={isFavorite} onToggle={onToggleFavorite} />
+          {onToggleFavorite && item.type !== 'researchGroup' && (
+            <FavoriteButton isFavorite={isFavorite} onToggle={onToggleFavorite} />
+          )}
         </div>
 
-        {isListing ? (
+        {isResearchGroup ? (
+          <>
+            <div className="flex items-center gap-2 mb-2 flex-wrap pr-10">
+              <span className="text-xs font-semibold px-1.5 py-0.5 rounded bg-blue-50 text-blue-700">
+                {getResearchGroupKindLabel(item.data.kind)}
+              </span>
+              {researchStatus && (
+                <span className={`text-xs font-semibold px-1.5 py-0.5 rounded ${researchStatus.className}`}>
+                  {researchStatus.label}
+                </span>
+              )}
+              {item.data.hasActiveListing && (
+                <span className="text-xs font-semibold px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-100">
+                  Active opportunity
+                </span>
+              )}
+            </div>
+
+            <h3 className="text-base font-bold text-gray-900 leading-tight line-clamp-2">
+              {getResearchGroupDisplayName(item.data)}
+            </h3>
+
+            <p className="text-sm text-gray-600 mb-1 line-clamp-1 leading-snug">
+              {subtitle}
+            </p>
+
+            {item.data.description && !isCompact && (
+              <p className={`text-sm text-gray-500 mb-2 leading-snug ${DESCRIPTION_CLAMP_CLASS}`}>
+                {item.data.description}
+              </p>
+            )}
+
+            {tags.length > 0 && !isCompact && (
+              <div className="border-t border-gray-100 my-2" />
+            )}
+
+            <div className="flex-1" />
+
+            {tags.length > 0 && (
+              <div className="flex flex-wrap gap-1">
+                {tags.slice(0, isCompact ? tags.length : TAG_CAP).map((tag) => (
+                  <span
+                    key={tag.label}
+                    className={`${tag.bg} ${tag.text} text-xs px-1.5 py-0.5 rounded`}
+                  >
+                    {tag.label}
+                  </span>
+                ))}
+                {!isCompact && tags.length > TAG_CAP && (
+                  <span className="text-xs text-gray-400">
+                    +{tags.length - TAG_CAP}
+                  </span>
+                )}
+              </div>
+            )}
+          </>
+        ) : isListing ? (
           <>
             <div className="flex items-center gap-2 mb-1">
               {deptLabel && (

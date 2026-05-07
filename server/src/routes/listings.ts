@@ -14,23 +14,72 @@ import { AnalyticsEventType } from '../models/index';
 
 const router = Router();
 
+const getStringParam = (value: unknown): string => {
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) return getStringParam(value[0]);
+  return '';
+};
+
+const parseFilterParam = (value: unknown): string[] =>
+  getStringParam(value)
+    .split(/[,|]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+const buildListingSearchFilters = (query: Request['query']) => ({
+  departments: parseFilterParam(query.departments),
+  academicDisciplines: parseFilterParam(query.academicDisciplines),
+  researchAreas: parseFilterParam(query.researchAreas),
+  departmentsMode: getStringParam(query.departmentsMode) || 'union',
+  academicDisciplinesMode: getStringParam(query.academicDisciplinesMode) || 'union',
+  researchAreasMode: getStringParam(query.researchAreasMode) || 'union',
+});
+
+const hasListingSearchFilters = (filters: ReturnType<typeof buildListingSearchFilters>) =>
+  filters.departments.length > 0 ||
+  filters.academicDisciplines.length > 0 ||
+  filters.researchAreas.length > 0;
+
 const logSearchEvent = async (req: Request, res: Response, next: NextFunction) => {
-  const currentUser = req.user as { netId?: string; userType: string };
+  const originalJson = res.json.bind(res);
 
-  if (currentUser?.netId) {
-    const { query, departments } = req.query;
-    const searchQuery = (query as string) || '';
+  res.json = function (data: any) {
+    const response = originalJson(data);
 
-    if (searchQuery.trim() !== '') {
-      logEvent({
-        eventType: AnalyticsEventType.SEARCH,
-        netid: currentUser.netId,
-        userType: currentUser.userType,
-        searchQuery: searchQuery,
-        searchDepartments: departments ? (departments as string).split(',') : [],
-      }).catch((err) => console.error('Error logging search event:', err));
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      const currentUser = req.user as { netId?: string; userType: string };
+      const searchQuery = getStringParam(req.query.query);
+      const filters = buildListingSearchFilters(req.query);
+
+      if (currentUser?.netId && (searchQuery.trim() !== '' || hasListingSearchFilters(filters))) {
+        const resultCount =
+          typeof data?.totalCount === 'number'
+            ? data.totalCount
+            : Array.isArray(data?.results)
+              ? data.results.length
+              : 0;
+
+        logEvent({
+          eventType: AnalyticsEventType.SEARCH,
+          netid: currentUser.netId,
+          userType: currentUser.userType,
+          searchQuery,
+          searchDepartments: filters.departments,
+          metadata: {
+            entityType: 'listing',
+            resultCount,
+            totalCount: data?.totalCount,
+            filters,
+            page: data?.page,
+            pageSize: data?.pageSize,
+          },
+        }).catch((err) => console.error('Error logging search event:', err));
+      }
     }
-  }
+
+    return response;
+  };
+
   next();
 };
 

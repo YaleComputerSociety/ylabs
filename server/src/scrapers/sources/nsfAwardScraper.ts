@@ -423,7 +423,7 @@ function buildPiUserObservations(
       obs.push({ ...base, field: 'email', value: parts.email });
     }
   }
-  obs.push({ ...base, field: 'data_sources', value: ['nsf-award-search'] });
+  obs.push({ ...base, field: 'dataSources', value: ['nsf-award-search'] });
   return { observations: obs, entityKey };
 }
 

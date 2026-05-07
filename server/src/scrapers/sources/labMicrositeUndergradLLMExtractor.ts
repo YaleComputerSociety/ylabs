@@ -29,10 +29,18 @@
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { ResearchGroup } from '../../models/researchGroup';
+import {
+  createScraplingRenderedFetcher,
+  measureRenderedFetch,
+  summarizeFetchMetrics,
+  type RenderedFetcher,
+  type RenderedFetchResult,
+} from '../renderedFetch';
 import { getCached, setCached } from '../snapshotCache';
 import type {
   IScraper,
   ObservationInput,
+  ScraperFetchMetric,
   ScraperContext,
   ScraperResult,
 } from '../types';
@@ -418,6 +426,7 @@ export const defaultCallLLM: CallLLMFn = async ({
 
 export interface LabMicrositeUndergradLLMExtractorDeps {
   fetchPage?: FetchPageFn;
+  renderedFetcher?: RenderedFetcher | null;
   callLLM?: CallLLMFn;
   /** Resolves the candidate-lab list. Default queries Mongo. */
   labFinder?: () => Promise<CandidateLab[]>;
@@ -456,6 +465,7 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
   readonly displayName = 'Lab microsite LLM (undergrad signals)';
 
   private readonly fetchPage: FetchPageFn;
+  private readonly renderedFetcher: RenderedFetcher | null;
   private readonly callLLM: CallLLMFn;
   private readonly labFinder: () => Promise<CandidateLab[]>;
   private readonly model: string;
@@ -463,6 +473,7 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
 
   constructor(deps: LabMicrositeUndergradLLMExtractorDeps = {}) {
     this.fetchPage = deps.fetchPage ?? defaultFetchPage;
+    this.renderedFetcher = deps.renderedFetcher ?? createScraplingRenderedFetcher();
     this.callLLM = deps.callLLM ?? defaultCallLLM;
     this.labFinder = deps.labFinder ?? defaultLabFinder;
     this.model = deps.model ?? DEFAULT_MODEL;
@@ -497,6 +508,7 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
     let succeeded = 0;
     let fetchFailed = 0;
     let llmFailed = 0;
+    const fetchAttempts: ScraperFetchMetric[] = [];
 
     for (const lab of labs) {
       processed++;
@@ -508,6 +520,27 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
           `[${lab.slug}] fetch error for ${lab.websiteUrl}: ${err?.message || err}`,
         );
         homePage = null;
+      }
+      if (!homePage || htmlToPromptText(homePage.html).length < 200) {
+        const rendered = await measureRenderedFetch(
+          lab.websiteUrl,
+          'scrapling',
+          () =>
+            fetchRenderedLabPage(
+              SOURCE_KEY,
+              ctx.options.useCache,
+              lab.websiteUrl,
+              this.renderedFetcher,
+            ),
+          { selectorName: 'body' },
+        );
+        fetchAttempts.push(rendered.metric);
+        if (rendered.result?.html) {
+          homePage = {
+            url: rendered.result.url || lab.websiteUrl,
+            html: rendered.result.html,
+          };
+        }
       }
       if (!homePage) {
         fetchFailed++;
@@ -609,6 +642,28 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
       observationCount: totalObs,
       entitiesObserved: succeeded,
       notes: `LLM-extracted undergrad signals for ${succeeded}/${processed} labs (${fetchFailed} fetch-failed, ${llmFailed} llm-failed)`,
+      fetchMetrics: summarizeFetchMetrics(fetchAttempts),
     };
   }
+}
+
+async function fetchRenderedLabPage(
+  sourceName: string,
+  useCache: boolean,
+  url: string,
+  renderedFetcher: RenderedFetcher | null,
+): Promise<RenderedFetchResult | null> {
+  if (!renderedFetcher) return null;
+  const cacheKey = `rendered-page:v1:${url}`;
+  if (useCache) {
+    const cached = await getCached<RenderedFetchResult>(sourceName, cacheKey);
+    if (cached) return cached;
+  }
+  const result = await renderedFetcher({
+    url,
+    waitSelector: 'body',
+    timeoutMs: FETCH_TIMEOUT_MS,
+  });
+  if (useCache && result?.html) await setCached(sourceName, cacheKey, result);
+  return result;
 }

@@ -509,7 +509,7 @@ router.get('/profiles', async (req: Request, res: Response) => {
         { lname: searchRegex },
         { netid: searchRegex },
         { email: searchRegex },
-        { primary_department: searchRegex },
+        { primaryDepartment: searchRegex },
       ];
       if (filter.$or) {
         filter.$and = [{ $or: filter.$or }, { $or: searchOr }];
@@ -578,7 +578,7 @@ router.put('/profiles/:netid', validateNetid('netid'), async (req: Request, res:
       return res.status(404).json({ error: 'Profile not found' });
     }
 
-    if (data.primary_department !== undefined || data.secondary_departments !== undefined) {
+    if (data.primaryDepartment !== undefined || data.secondaryDepartments !== undefined) {
       await cascadeDepartmentsToListings(req.params.netid);
     }
 

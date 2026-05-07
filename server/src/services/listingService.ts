@@ -22,11 +22,11 @@ export const createListing = async (data: any, owner: any) => {
     data.departments || [],
   );
 
-  const ownerDepts = [owner.primary_department, ...(owner.secondary_departments || [])].filter(
+  const ownerDepts = [owner.primaryDepartment, ...(owner.secondaryDepartments || [])].filter(
     Boolean,
   );
 
-  const ownerResearchAreas = owner.research_interests || [];
+  const ownerResearchAreas = owner.researchInterests || [];
 
   const listing = new (getListingModel())({
     ...data,
@@ -36,7 +36,7 @@ export const createListing = async (data: any, owner: any) => {
     ownerFirstName: owner.fname,
     ownerLastName: owner.lname,
     ownerTitle: owner.title || '',
-    ownerPrimaryDepartment: owner.primary_department || '',
+    ownerPrimaryDepartment: owner.primaryDepartment || '',
     departments: ownerDepts.length > 0 ? ownerDepts : data.departments || [],
     researchAreas:
       ownerResearchAreas.length > 0
@@ -105,7 +105,7 @@ export const readListing = async (id: any) => {
 
 export const getSkeletonListing = async (userId: string) => {
   const user = await readUser(userId);
-  const departments = [user.primary_department, ...(user.secondary_departments || [])].filter(
+  const departments = [user.primaryDepartment, ...(user.secondaryDepartments || [])].filter(
     Boolean,
   );
   return {
@@ -115,10 +115,10 @@ export const getSkeletonListing = async (userId: string) => {
     ownerLastName: user.lname,
     ownerEmail: user.email,
     ownerTitle: user.title || '',
-    ownerPrimaryDepartment: user.primary_department || '',
+    ownerPrimaryDepartment: user.primaryDepartment || '',
     departments,
-    researchAreas: user.research_interests || [],
-    keywords: user.research_interests || [],
+    researchAreas: user.researchInterests || [],
+    keywords: user.researchInterests || [],
     confirmed: user.userConfirmed,
   };
 };

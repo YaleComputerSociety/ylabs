@@ -360,6 +360,7 @@ describe('DepartmentRosterScraper.run', () => {
     expect(result.entitiesObserved).toBe(2); // 1 user + 1 lab
     expect(result.notes).toContain('econ=1');
     expect(result.notes).toContain('cs=js-rendered-skip');
+    expect(result.fetchMetrics?.summary.total).toBe(0);
 
     // user observations include netid and email
     const userObs = emitted.filter((o) => o.entityType === 'user');
@@ -367,7 +368,7 @@ describe('DepartmentRosterScraper.run', () => {
     expect(userObs.find((o) => o.field === 'email')?.value).toBe('tf123@yale.edu');
     expect(userObs.find((o) => o.field === 'fname')?.value).toBe('Test');
     expect(userObs.find((o) => o.field === 'lname')?.value).toBe('Faculty');
-    expect(userObs.find((o) => o.field === 'primary_department')?.value).toBe('Economics');
+    expect(userObs.find((o) => o.field === 'primaryDepartment')?.value).toBe('Economics');
     // entityKey uses netid: prefix when an @yale.edu email is present
     expect(userObs[0].entityKey).toBe('netid:tf123');
 
@@ -440,6 +441,92 @@ describe('DepartmentRosterScraper.run', () => {
     expect(userObs.find((o) => o.field === 'netid')).toBeUndefined();
 
     getSpy.mockRestore();
+  });
+
+  it('uses an injected rendered fetcher for JS-rendered depts while keeping parsing local', async () => {
+    const stubExtractor = vi.fn((): FacultyEntry[] => {
+      throw new Error('should not use the Cheerio stub for rendered pages');
+    });
+    const renderedExtractor = vi.fn((): FacultyEntry[] => [
+      {
+        name: 'Grace Hopper',
+        email: 'grace.hopper@yale.edu',
+        profileUrl: 'https://example.invalid/cs/grace-hopper',
+      },
+    ]);
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'cs',
+        deptName: 'Computer Science',
+        schoolName: 'SEAS',
+        url: 'https://example.invalid/cs',
+        paginated: false,
+        extractor: stubExtractor,
+        renderedExtractor,
+        renderWaitSelector: 'main',
+        jsRenderedSkip: true,
+      },
+    ];
+    const renderedFetcher = vi.fn().mockResolvedValue({
+      html: '<html><body>hydrated faculty cards</body></html>',
+      url: 'https://example.invalid/cs#rendered',
+      fetchMode: 'scrapling',
+    });
+    const axios = (await import('axios')).default;
+    const getSpy = vi.spyOn(axios, 'get');
+
+    const scraper = new DepartmentRosterScraper(configs, renderedFetcher);
+    const { ctx, emitted } = makeContext();
+    const result = await scraper.run(ctx);
+
+    expect(renderedFetcher).toHaveBeenCalledWith({
+      url: 'https://example.invalid/cs',
+      waitSelector: 'main',
+      timeoutMs: 30000,
+    });
+    expect(renderedExtractor).toHaveBeenCalledWith(
+      '<html><body>hydrated faculty cards</body></html>',
+      { pageUrl: 'https://example.invalid/cs#rendered' },
+    );
+    expect(stubExtractor).not.toHaveBeenCalled();
+    expect(getSpy).not.toHaveBeenCalled();
+    expect(result.entitiesObserved).toBe(1);
+    expect(result.notes).toContain('cs=1');
+    expect(emitted.find((o) => o.field === 'primaryDepartment')?.value).toBe('Computer Science');
+    expect(emitted[0].sourceUrl).toBe('https://example.invalid/cs#rendered');
+
+    getSpy.mockRestore();
+  });
+
+  it('skips JS-rendered depts when the injected rendered page fetcher returns null', async () => {
+    const renderedExtractor = vi.fn((): FacultyEntry[] => [{ name: 'Unexpected Faculty' }]);
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'cs',
+        deptName: 'Computer Science',
+        schoolName: 'SEAS',
+        url: 'https://example.invalid/cs',
+        paginated: false,
+        extractor: vi.fn((): FacultyEntry[] => []),
+        renderedExtractor,
+        jsRenderedSkip: true,
+      },
+    ];
+    const renderedFetcher = vi.fn().mockResolvedValue(null);
+
+    const scraper = new DepartmentRosterScraper(configs, renderedFetcher);
+    const { ctx, emitted } = makeContext();
+    const result = await scraper.run(ctx);
+
+    expect(renderedFetcher).toHaveBeenCalledWith({
+      url: 'https://example.invalid/cs',
+      waitSelector: undefined,
+      timeoutMs: 30000,
+    });
+    expect(renderedExtractor).not.toHaveBeenCalled();
+    expect(emitted).toEqual([]);
+    expect(result.entitiesObserved).toBe(0);
+    expect(result.notes).toContain('cs=rendered-unavailable');
   });
 
   it('only-filter skips depts not in the list', async () => {

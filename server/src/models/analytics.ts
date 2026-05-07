@@ -10,7 +10,12 @@ export enum AnalyticsEventType {
   LISTING_VIEW = 'listing_view',
   LISTING_FAVORITE = 'listing_favorite',
   LISTING_UNFAVORITE = 'listing_unfavorite',
+  FELLOWSHIP_VIEW = 'fellowship_view',
+  FELLOWSHIP_FAVORITE = 'fellowship_favorite',
+  FELLOWSHIP_UNFAVORITE = 'fellowship_unfavorite',
   SEARCH = 'search',
+  OUTREACH_CLICK = 'outreach_click',
+  OUTREACH_OUTCOME = 'outreach_outcome',
   LISTING_CREATE = 'listing_create',
   LISTING_UPDATE = 'listing_update',
   LISTING_ARCHIVE = 'listing_archive',
@@ -38,6 +43,10 @@ const analyticsEventSchema = new mongoose.Schema(
       index: true,
     },
     listingId: {
+      type: mongoose.Schema.Types.ObjectId,
+      index: true,
+    },
+    fellowshipId: {
       type: mongoose.Schema.Types.ObjectId,
       index: true,
     },

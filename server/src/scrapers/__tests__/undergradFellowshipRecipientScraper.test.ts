@@ -376,7 +376,7 @@ describe('UndergradFellowshipRecipientScraper.run', () => {
             netid: 'rrb1',
             fname: 'Ronald',
             lname: 'Breaker',
-            primary_department: 'MCDB',
+            primaryDepartment: 'MCDB',
           },
         ];
       }
@@ -387,7 +387,7 @@ describe('UndergradFellowshipRecipientScraper.run', () => {
             netid: 'arnsten1',
             fname: 'Amy',
             lname: 'Arnsten',
-            primary_department: 'Neuroscience',
+            primaryDepartment: 'Neuroscience',
           },
         ];
       }

@@ -70,6 +70,15 @@ const observationSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    supersededBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'observations',
+      required: false,
+    },
+    observationFingerprint: {
+      type: String,
+      required: false,
+    },
   },
   {
     timestamps: true,
@@ -81,6 +90,7 @@ observationSchema.index({ entityType: 1, entityKey: 1, field: 1, observedAt: -1 
 observationSchema.index({ scrapeRunId: 1 });
 observationSchema.index({ sourceId: 1, observedAt: -1 });
 observationSchema.index({ superseded: 1 });
+observationSchema.index({ observationFingerprint: 1, superseded: 1 });
 
 export const Observation = mongoose.model('observations', observationSchema);
 

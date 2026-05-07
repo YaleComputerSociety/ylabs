@@ -34,11 +34,13 @@ const Login = () => {
             className="w-[7rem] h-[3rem] md:w-[13.03rem] md:h-[5.4rem] sm:w-[9rem] sm:h-[4rem]"
           />
         </div>
-        <TitleText className="mt-12">A Yale Research Database</TitleText>
-        <Text className="mt-2">
+        <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-gray-900 mt-5 md:mt-12">
+          A Yale Research Database
+        </h1>
+        <p className="text-base sm:text-lg md:text-xl text-gray-700 mt-2">
           Search through 1400+ Yale faculty listings across 60+ fields of study. Learn about
           professors who share your research interests and find potential research mentors.
-        </Text>
+        </p>
       </Description>
       <AuthContainer>
         {isLoading ? (
@@ -79,32 +81,7 @@ const Description = styled.div`
 `;
 
 
-const TitleText = styled.h1`
-  color: #000000;
-  font-size: 32px;
 
-  @media (max-width: 768px) {
-    font-size: 28px;
-    margin-top: 20px !important;
-  }
-
-  @media (max-width: 480px) {
-    font-size: 24px;
-  }
-`;
-
-const Text = styled.p`
-  color: #000000;
-  font-size: 20px;
-
-  @media (max-width: 768px) {
-    font-size: 18px;
-  }
-
-  @media (max-width: 480px) {
-    font-size: 16px;
-  }
-`;
 
 const AuthContainer = styled.div`
   margin-top: 30px;

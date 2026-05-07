@@ -36,7 +36,7 @@ export interface OwnerLike {
   netid?: string;
   fname?: string;
   lname?: string;
-  primary_department?: string;
+  primaryDepartment?: string;
 }
 
 function slugify(input: string): string {
@@ -106,7 +106,7 @@ export async function findOrCreateForOwner(owner: OwnerLike): Promise<{
     }
   }
 
-  const kind = await inferKindFromDepartment(owner.primary_department);
+  const kind = await inferKindFromDepartment(owner.primaryDepartment);
   const slug = ownerSlugSeed(owner, kind);
   const name = ownerDisplayName(owner, kind);
 
@@ -119,7 +119,7 @@ export async function findOrCreateForOwner(owner: OwnerLike): Promise<{
       acceptingUndergrads: true,
       lastObservedAt: new Date(),
       sourceUrls: [],
-      departments: owner.primary_department ? [owner.primary_department] : [],
+      departments: owner.primaryDepartment ? [owner.primaryDepartment] : [],
     },
   };
 
@@ -222,8 +222,27 @@ export async function searchResearchGroupsViaMeili(
   const index = await getMeiliIndex('researchgroups');
   const { hits, estimatedTotalHits } = await index.search(trimmedQuery, searchParams);
 
+  const hitIds = (hits || [])
+    .map((hit: any) => hit.id || hit._id)
+    .filter((id: any) => mongoose.Types.ObjectId.isValid(id));
+  const activeListingGroupIds =
+    hitIds.length > 0
+      ? await Listing.distinct('researchGroupId', {
+          researchGroupId: { $in: hitIds },
+          archived: false,
+        })
+      : [];
+  const activeListingGroupIdSet = new Set(activeListingGroupIds.map((id: any) => String(id)));
+
   // Map Meilisearch's `id` back to `_id` for client backward compatibility.
-  const normalizedHits = (hits || []).map((hit: any) => ({ ...hit, _id: hit.id }));
+  const normalizedHits = (hits || []).map((hit: any) => {
+    const id = hit.id || hit._id;
+    return {
+      ...hit,
+      _id: id,
+      hasActiveListing: activeListingGroupIdSet.has(String(id)),
+    };
+  });
 
   return {
     hits: normalizedHits,
@@ -234,7 +253,7 @@ export async function searchResearchGroupsViaMeili(
 }
 
 const PUBLIC_USER_FIELDS =
-  'netid fname lname image_url primary_department title secondary_departments';
+  'netid fname lname imageUrl primaryDepartment title secondaryDepartments';
 
 /**
  * Detail payload for the lab page: the group itself, member User snapshots
@@ -280,9 +299,17 @@ export async function getResearchGroupDetail(slug: string): Promise<{
       role: row.role,
     }))
     .filter((m) => m.user !== null)
+    .map((m) => ({
+      ...m,
+      user: {
+        ...m.user,
+        image_url: m.user.imageUrl || m.user.image_url,
+        primary_department: m.user.primaryDepartment || m.user.primary_department,
+      },
+    }))
     .sort((a, b) => (ROLE_PRIORITY[a.role] ?? 99) - (ROLE_PRIORITY[b.role] ?? 99));
 
-  const [recentPapers, activeListings] = await Promise.all([
+  const [recentPapers, activeListingsRaw] = await Promise.all([
     memberUserIds.length
       ? Paper.find({ yaleAuthorIds: { $in: memberUserIds } })
           .sort({ publishedAt: -1 })
@@ -291,6 +318,11 @@ export async function getResearchGroupDetail(slug: string): Promise<{
       : Promise.resolve([]),
     Listing.find({ researchGroupId: (group as any)._id, archived: false }).lean(),
   ]);
+
+  const activeListings = activeListingsRaw.map((listing: any) => ({
+    ...listing,
+    id: String(listing._id),
+  }));
 
   return {
     group,

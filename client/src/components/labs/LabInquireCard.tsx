@@ -1,5 +1,5 @@
 /**
- * "Inquire" CTA panel for a lab. Shows undergrad-relevant context
+ * "Inquire" CTA panel for a research group. Shows undergrad-relevant context
  * (typical roles, prereqs, time commitment, credit options, funding) and
  * an action button:
  *   - openness === 'open' AND a contact email exists → "Inquire" (opens modal)
@@ -176,7 +176,7 @@ const LabInquireCard = ({
         {canInquireInline
           ? "Send a quick message to introduce yourself — we'll prefill the basics."
           : group.openness === 'closed'
-            ? "This lab isn't accepting new undergraduates right now."
+            ? "This research group isn't accepting new undergraduates right now."
             : 'Reach out to the PI directly to ask about getting involved.'}
       </p>
 

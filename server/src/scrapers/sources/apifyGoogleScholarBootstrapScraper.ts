@@ -12,7 +12,7 @@
  * pick from the alternates in the resolver UI.
  *
  * Flow per faculty:
- *   1. Apify search-mode call: `<fname> <lname> Yale <primary_department>`.
+ *   1. Apify search-mode call: `<fname> <lname> Yale <primaryDepartment>`.
  *      Aggregate distinct authorIds from the search results (top 5).
  *   2. Apify profile-mode call: pull the full profile for each candidate.
  *   3. Cross-reference each profile against:
@@ -203,12 +203,12 @@ export function normalizeTitle(title: string | undefined | null): string {
 /** Pure: build the search-mode query string for a given faculty member.
  *  We intentionally include "Yale" so the upstream search returns more
  *  Yale-relevant pages — the affiliation check still gates the final assignment. */
-export function buildSearchQuery(user: { fname?: string; lname?: string; primary_department?: string }): string {
+export function buildSearchQuery(user: { fname?: string; lname?: string; primaryDepartment?: string }): string {
   const parts: string[] = [];
   if (user.fname) parts.push(user.fname.trim());
   if (user.lname) parts.push(user.lname.trim());
   parts.push('Yale');
-  if (user.primary_department) parts.push(user.primary_department.trim());
+  if (user.primaryDepartment) parts.push(user.primaryDepartment.trim());
   return parts.filter((p) => p.length > 0).join(' ');
 }
 
@@ -249,8 +249,8 @@ export interface ScoringUser {
   netid: string;
   fname?: string;
   lname?: string;
-  primary_department?: string;
-  h_index?: number;
+  primaryDepartment?: string;
+  hIndex?: number;
 }
 
 export interface OpenAlexPaperLite {
@@ -271,10 +271,10 @@ export interface ScoreResult {
  *   +1.0  affiliation contains "yale"
  *   −1.0  affiliation contains another major university (hard disqualifier)
  *   +0.6  verified email at @yale.edu
- *   +0.4  interest overlaps with primary_department
+ *   +0.4  interest overlaps with primaryDepartment
  *   +0.3 per known Yale-faculty co-author (cap +0.6)
  *   +0.5 per paper-title overlap with the user's OpenAlex papers (cap +1.0)
- *   force −1.0 if candidate has totalCitations<5 AND user has h_index>10
+ *   force −1.0 if candidate has totalCitations<5 AND user has hIndex>10
  *
  * Notes:
  *   - The Yale-affiliation bonus and the competing-university penalty are both
@@ -314,9 +314,9 @@ export function scoreCandidate(
     signals.push('+0.6 verified-email:@yale.edu');
   }
 
-  // Interests overlap with primary_department. Substring either direction.
-  if (user.primary_department && Array.isArray(profile.interests)) {
-    const dept = user.primary_department.toLowerCase();
+  // Interests overlap with primaryDepartment. Substring either direction.
+  if (user.primaryDepartment && Array.isArray(profile.interests)) {
+    const dept = user.primaryDepartment.toLowerCase();
     const hit = profile.interests.some((i) => {
       const n = String(i || '').toLowerCase();
       if (!n) return false;
@@ -380,11 +380,11 @@ export function scoreCandidate(
   if (
     typeof profile.totalCitations === 'number' &&
     profile.totalCitations < 5 &&
-    typeof user.h_index === 'number' &&
-    user.h_index > 10
+    typeof user.hIndex === 'number' &&
+    user.hIndex > 10
   ) {
     score = -1.0;
-    signals.push('floor:totalCitations<5 AND user.h_index>10 → -1.0');
+    signals.push('floor:totalCitations<5 AND user.hIndex>10 → -1.0');
   }
 
   return { score, signals };
@@ -507,9 +507,9 @@ export interface BootstrapCandidateFaculty {
   netid: string;
   fname?: string;
   lname?: string;
-  primary_department?: string;
-  h_index?: number;
-  openalex_id?: string;
+  primaryDepartment?: string;
+  hIndex?: number;
+  openAlexId?: string;
   orcid?: string;
 }
 
@@ -524,9 +524,9 @@ export const defaultUserFinder: UserFinderFn = async (query, limit) => {
     netid: 1,
     fname: 1,
     lname: 1,
-    primary_department: 1,
-    h_index: 1,
-    openalex_id: 1,
+    primaryDepartment: 1,
+    hIndex: 1,
+    openAlexId: 1,
     orcid: 1,
   }).lean();
   if (limit && limit > 0) q = q.limit(limit);
@@ -536,9 +536,9 @@ export const defaultUserFinder: UserFinderFn = async (query, limit) => {
     netid: d.netid,
     fname: d.fname,
     lname: d.lname,
-    primary_department: d.primary_department,
-    h_index: d.h_index,
-    openalex_id: d.openalex_id,
+    primaryDepartment: d.primaryDepartment,
+    hIndex: d.hIndex,
+    openAlexId: d.openAlexId,
     orcid: d.orcid,
   }));
 };
@@ -619,8 +619,8 @@ export function eligibleBootstrapFacultyQuery(
     base.$and = [
       {
         $or: [
-          { primary_department: { $in: categoryDeptNames } },
-          { secondary_departments: { $in: categoryDeptNames } },
+          { primaryDepartment: { $in: categoryDeptNames } },
+          { secondaryDepartments: { $in: categoryDeptNames } },
           { departments: { $in: categoryDeptNames } },
         ],
       },

@@ -236,7 +236,7 @@ describe('lookupAuthorIdByName', () => {
 // ---------------------------------------------------------------------------
 
 describe('resolveAuthorIdForFaculty precedence', () => {
-  it('prefers ORCID over openalex_id when both present', async () => {
+  it('prefers ORCID over openAlexId when both present', async () => {
     const fetcher: HttpFetcher = vi.fn(async (url, params) => {
       // Only the ORCID lookup should fire.
       expect(url).toBe('https://api.openalex.org/authors');
@@ -249,7 +249,7 @@ describe('resolveAuthorIdForFaculty precedence', () => {
         fname: 'Amy',
         lname: 'Arnsten',
         orcid: '0000-0001-2345-6789',
-        openalex_id: 'A-stale',
+        openAlexId: 'A-stale',
       },
       'x@y.io',
       ctx,
@@ -260,20 +260,20 @@ describe('resolveAuthorIdForFaculty precedence', () => {
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
 
-  it('falls back to openalex_id when ORCID lookup returns nothing', async () => {
+  it('falls back to openAlexId when ORCID lookup returns nothing', async () => {
     const fetcher: HttpFetcher = vi.fn(async () => ({ results: [] }));
     const { ctx } = makeContext();
     const resolved = await resolveAuthorIdForFaculty(
-      { fname: 'X', lname: 'Y', orcid: '0000-0001-0000-0000', openalex_id: 'A-existing' },
+      { fname: 'X', lname: 'Y', orcid: '0000-0001-0000-0000', openAlexId: 'A-existing' },
       'x@y.io',
       ctx,
       fetcher,
     );
-    expect(resolved.method).toBe('openalex_id');
+    expect(resolved.method).toBe('openAlexId');
     expect(resolved.authorId).toBe('https://openalex.org/A-existing');
   });
 
-  it('falls back to name search when neither orcid nor openalex_id is present', async () => {
+  it('falls back to name search when neither orcid nor openAlexId is present', async () => {
     const fetcher: HttpFetcher = vi.fn(async () => ({
       results: [{ id: 'https://openalex.org/A-name-found', display_name: 'Amy Arnsten' }],
     }));
@@ -307,7 +307,7 @@ describe('resolveAuthorIdForFaculty precedence', () => {
 // ---------------------------------------------------------------------------
 
 describe('OpenAlexPaperScraper.run', () => {
-  it('prefers ORCID over openalex_id when both are present', async () => {
+  it('prefers ORCID over openAlexId when both are present', async () => {
     const calls: { url: string; params: Record<string, string> }[] = [];
     const fetcher: HttpFetcher = vi.fn(async (url, params) => {
       calls.push({ url, params });
@@ -341,7 +341,7 @@ describe('OpenAlexPaperScraper.run', () => {
         fname: 'Amy',
         lname: 'Arnsten',
         orcid: '0000-0001-2345-6789',
-        openalex_id: 'A-stale-id', // present but should be ignored
+        openAlexId: 'A-stale-id', // present but should be ignored
       },
     ]);
 
@@ -353,7 +353,7 @@ describe('OpenAlexPaperScraper.run', () => {
     const worksCall = calls.find((c) => c.url === 'https://api.openalex.org/works');
     expect(worksCall?.params.filter).toBe('author.id:https://openalex.org/A-from-orcid');
 
-    // No openalex_id observation should fire (we only emit on the name path).
+    // No openAlexId observation should fire (we only emit on the name path).
     const userObs = emitted.filter((o) => o.entityType === 'user');
     expect(userObs).toHaveLength(0);
 
@@ -362,11 +362,11 @@ describe('OpenAlexPaperScraper.run', () => {
     expect(paperObs.length).toBeGreaterThan(0);
 
     expect(result.notes).toContain('orcid:1');
-    expect(result.notes).toContain('openalex_id:0');
+    expect(result.notes).toContain('openAlexId:0');
     expect(result.notes).toContain('name:0');
   });
 
-  it('emits an openalex_id observation when the name lookup succeeds', async () => {
+  it('emits an openAlexId observation when the name lookup succeeds', async () => {
     const fetcher: HttpFetcher = vi.fn(async (url, params) => {
       if (url === 'https://api.openalex.org/authors') {
         // Name search returns one exact match.
@@ -386,7 +386,7 @@ describe('OpenAlexPaperScraper.run', () => {
         netid: 'js99',
         fname: 'John',
         lname: 'Smith',
-        // no orcid, no openalex_id → name path
+        // no orcid, no openAlexId → name path
       },
     ]);
 
@@ -394,12 +394,12 @@ describe('OpenAlexPaperScraper.run', () => {
     const { ctx, emitted } = makeContext();
     const result = await scraper.run(ctx);
 
-    // Should have emitted a User observation with the discovered openalex_id.
+    // Should have emitted a User observation with the discovered openAlexId.
     const userObs = emitted.find(
       (o) =>
         o.entityType === 'user' &&
         o.entityKey === 'js99' &&
-        o.field === 'openalex_id',
+        o.field === 'openAlexId',
     );
     expect(userObs).toBeDefined();
     expect(userObs?.value).toBe('A-discovered');

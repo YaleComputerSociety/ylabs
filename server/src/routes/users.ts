@@ -9,26 +9,42 @@ import { AnalyticsEventType } from '../models/index';
 
 const router = Router();
 
-const logFavoriteEvent = (isFavorite: boolean) => {
+const getFavoriteIds = (req: Request, key: string): string[] => {
+  const value = req.body?.data?.[key] ?? req.body?.[key];
+  if (!value) {
+    return [];
+  }
+  return Array.isArray(value) ? value : [value];
+};
+
+const logFavoriteEvent = (
+  isFavorite: boolean,
+  kind: 'listing' | 'fellowship' = 'listing',
+) => {
   return async (req: Request, res: Response, next: NextFunction) => {
     const originalSend = res.send.bind(res);
 
     res.send = function (data: any) {
       if (res.statusCode >= 200 && res.statusCode < 300) {
         const currentUser = req.user as { netId?: string; userType: string };
-        if (currentUser?.netId && req.body.favListings) {
-          const listings = Array.isArray(req.body.favListings)
-            ? req.body.favListings
-            : [req.body.favListings];
+        const ids = getFavoriteIds(req, kind === 'listing' ? 'favListings' : 'favFellowships');
 
-          listings.forEach((listingId: string) => {
+        if (currentUser?.netId && ids.length > 0) {
+          ids.forEach((itemId: string) => {
             logEvent({
-              eventType: isFavorite
-                ? AnalyticsEventType.LISTING_FAVORITE
-                : AnalyticsEventType.LISTING_UNFAVORITE,
+              eventType:
+                kind === 'listing'
+                  ? isFavorite
+                    ? AnalyticsEventType.LISTING_FAVORITE
+                    : AnalyticsEventType.LISTING_UNFAVORITE
+                  : isFavorite
+                    ? AnalyticsEventType.FELLOWSHIP_FAVORITE
+                    : AnalyticsEventType.FELLOWSHIP_UNFAVORITE,
               netid: currentUser.netId!,
               userType: currentUser.userType,
-              listingId: listingId,
+              listingId: kind === 'listing' ? itemId : undefined,
+              fellowshipId: kind === 'fellowship' ? itemId : undefined,
+              metadata: { entityType: kind },
             }).catch((err) => console.error('Error logging favorite event:', err));
           });
         }
@@ -76,8 +92,18 @@ router.delete(
 
 router.get('/favFellowshipIds', isAuthenticated, userController.getFavFellowshipIds);
 router.get('/favFellowships', isAuthenticated, userController.getFavFellowships);
-router.put('/favFellowships', isAuthenticated, userController.addFavFellowships);
-router.delete('/favFellowships', isAuthenticated, userController.removeFavFellowships);
+router.put(
+  '/favFellowships',
+  isAuthenticated,
+  logFavoriteEvent(true, 'fellowship'),
+  userController.addFavFellowships,
+);
+router.delete(
+  '/favFellowships',
+  isAuthenticated,
+  logFavoriteEvent(false, 'fellowship'),
+  userController.removeFavFellowships,
+);
 
 router.get('/listings', isAuthenticated, userController.getUserListings);
 router.put('/', isAuthenticated, logProfileUpdateEvent, userController.updateCurrentUser);

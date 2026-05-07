@@ -51,7 +51,7 @@ describe('LabHeader', () => {
     const websiteLink = container.querySelector('a[href*="example.edu/lovelace"]');
     expect(websiteLink).not.toBeNull();
     expect(websiteLink?.getAttribute('target')).toBe('_blank');
-    expect(websiteLink?.textContent).toContain('Visit lab website');
+    expect(websiteLink?.textContent).toContain('Visit website');
   });
 
   it('hides the website link when websiteUrl is empty', () => {

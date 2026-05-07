@@ -431,7 +431,7 @@ describe('NsfAwardScraper.run', () => {
     expect(userObs.find((o) => o.field === 'fname')?.value).toBe('Patrick');
     expect(userObs.find((o) => o.field === 'lname')?.value).toBe('Holland');
     expect(userObs.find((o) => o.field === 'email')?.value).toBe('patrick.holland@yale.edu');
-    expect(userObs.find((o) => o.field === 'data_sources')?.value).toEqual(['nsf-award-search']);
+    expect(userObs.find((o) => o.field === 'dataSources')?.value).toEqual(['nsf-award-search']);
   });
 
   it('skips emitting User observations and uses user-id slug when PI matches a Yale User', async () => {

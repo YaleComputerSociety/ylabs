@@ -135,7 +135,7 @@ export const updateProfile = async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Profile not found' });
     }
 
-    if (req.body.primary_department !== undefined || req.body.secondary_departments !== undefined) {
+    if (req.body.primaryDepartment !== undefined || req.body.secondaryDepartments !== undefined) {
       await cascadeDepartmentsToListings(currentUser.netId);
     }
 
@@ -148,7 +148,7 @@ export const updateProfile = async (req: Request, res: Response) => {
 
 /**
  * PUT /profiles/me/verify — set profileVerified=true
- * Requires primary_department and at least one research_interest.
+ * Requires primaryDepartment and at least one research_interest.
  */
 export const verifyProfile = async (req: Request, res: Response) => {
   try {
@@ -165,10 +165,10 @@ export const verifyProfile = async (req: Request, res: Response) => {
         .status(403)
         .json({ error: 'Only faculty accounts can self-verify their profile.' });
     }
-    if (!profile.primary_department?.trim()) {
+    if (!profile.primaryDepartment?.trim()) {
       return res.status(400).json({ error: 'Primary department is required for verification.' });
     }
-    if (!profile.research_interests?.length) {
+    if (!profile.researchInterests?.length) {
       return res
         .status(400)
         .json({ error: 'At least one research interest is required for verification.' });

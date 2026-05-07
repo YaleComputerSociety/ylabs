@@ -47,9 +47,9 @@ function buildDirectoryUpdate(
   if (dirPerson.phone) update.phone = dirPerson.phone;
   if (dirPerson.upi) update.upi = dirPerson.upi;
   if (dirPerson.unit) update.unit = dirPerson.unit;
-  if (dirPerson.physical_location) update.physical_location = dirPerson.physical_location;
-  if (dirPerson.building_desk) update.building_desk = dirPerson.building_desk;
-  if (dirPerson.mailing_address) update.mailing_address = dirPerson.mailing_address;
+  if (dirPerson.physicalLocation) update.physicalLocation = dirPerson.physicalLocation;
+  if (dirPerson.buildingDesk) update.buildingDesk = dirPerson.buildingDesk;
+  if (dirPerson.mailingAddress) update.mailingAddress = dirPerson.mailingAddress;
   return update;
 }
 

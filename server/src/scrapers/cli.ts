@@ -5,6 +5,7 @@
  *   npx tsx server/src/scrapers/cli.ts list
  *   npx tsx server/src/scrapers/cli.ts run --source openalex [flags]
  *   npx tsx server/src/scrapers/cli.ts materialize --run <runId>
+ *   npx tsx server/src/scrapers/cli.ts report --run <runId>
  *
  * Flags for `run`:
  *   --dry-run       Don't write Observations (just log what would be inserted)
@@ -19,6 +20,8 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { buildOrchestrator } from './registry';
 import { materializeFromRun } from './entityMaterializer';
+import { getScrapeRunReport } from './runReport';
+import { applyScraperEnvironmentGuards } from './scraperEnvironment';
 import type { ScraperOptions } from './types';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -46,10 +49,29 @@ function parseArgs(argv: string[]): { command: string; flags: Record<string, str
 
 async function main(): Promise<void> {
   const { command, flags } = parseArgs(process.argv);
-  const url = process.env.MONGODBURL;
-  if (!url) {
-    console.error('ERROR: MONGODBURL not set in environment');
-    process.exit(1);
+
+  if (command === 'help' || command === '--help' || command === '-h') {
+    console.log(`
+ylabs scraper CLI
+
+  list                                       List registered scrapers
+  run --source <name> [flags]                Run a scraper
+  materialize --run <runId>                  Materialize observations from a previous run
+  report --run <runId>                       Print a QA report for a ScrapeRun
+
+Run flags:
+  --dry-run            Skip Observation writes (preview only)
+  --use-cache          Cache external fetches in ScrapeSnapshot (dev)
+  --release            Production mode
+  --limit <n>          Cap entities processed
+  --auto-materialize   Materialize immediately after a successful run
+
+Environment guardrails:
+  SCRAPER_ENV=development|beta|production
+  Non-production runs default to --dry-run and disable --auto-materialize.
+  Production writes require --release and CONFIRM_PROD_SCRAPE=true.
+`);
+    return;
   }
 
   const orchestrator = buildOrchestrator();
@@ -62,22 +84,10 @@ async function main(): Promise<void> {
     return;
   }
 
-  if (command === 'help' || command === '--help' || command === '-h') {
-    console.log(`
-ylabs scraper CLI
-
-  list                                       List registered scrapers
-  run --source <name> [flags]                Run a scraper
-  materialize --run <runId>                  Materialize observations from a previous run
-
-Run flags:
-  --dry-run            Skip Observation writes (preview only)
-  --use-cache          Cache external fetches in ScrapeSnapshot (dev)
-  --release            Production mode
-  --limit <n>          Cap entities processed
-  --auto-materialize   Materialize immediately after a successful run
-`);
-    return;
+  const url = process.env.MONGODBURL;
+  if (!url) {
+    console.error('ERROR: MONGODBURL not set in environment');
+    process.exit(1);
   }
 
   await mongoose.connect(url);
@@ -95,19 +105,31 @@ Run flags:
         release: !!flags.release,
         limit: flags.limit ? parseInt(String(flags.limit), 10) : undefined,
       };
+      const guard = applyScraperEnvironmentGuards({
+        command: 'run',
+        options,
+        autoMaterialize: !!flags['auto-materialize'],
+        mongoUrl: url,
+      });
+      for (const warning of guard.warnings) console.warn(`WARNING: ${warning}`);
+      console.log(
+        `Scraper environment: ${guard.environment}; Mongo target: ${guard.dbLabel}`,
+      );
       console.log(
         `Running scraper "${sourceName}" with options:`,
-        JSON.stringify(options, null, 2),
+        JSON.stringify(guard.options, null, 2),
       );
-      const { runId, result } = await orchestrator.run(sourceName, options);
+      const { runId, result } = await orchestrator.run(sourceName, guard.options);
       console.log(`\nScrapeRun ${runId} finished:`);
       console.log(JSON.stringify(result, null, 2));
 
-      if (flags['auto-materialize'] && !options.dryRun) {
+      if (guard.autoMaterialize && !guard.options.dryRun) {
         console.log(`\nMaterializing observations from run ${runId}...`);
         const matResult = await materializeFromRun(runId, { dryRun: false });
         console.log(JSON.stringify(matResult, null, 2));
       }
+      console.log(`\nRun report for ${runId}:`);
+      console.log(JSON.stringify(await getScrapeRunReport(runId), null, 2));
       return;
     }
 
@@ -118,8 +140,34 @@ Run flags:
         process.exit(1);
       }
       console.log(`Materializing observations from run ${runId}...`);
-      const result = await materializeFromRun(runId, { dryRun: !!flags['dry-run'] });
+      const guard = applyScraperEnvironmentGuards({
+        command: 'materialize',
+        options: {
+          dryRun: !!flags['dry-run'],
+          useCache: false,
+          release: !!flags.release,
+        },
+        autoMaterialize: false,
+        mongoUrl: url,
+      });
+      for (const warning of guard.warnings) console.warn(`WARNING: ${warning}`);
+      console.log(
+        `Scraper environment: ${guard.environment}; Mongo target: ${guard.dbLabel}`,
+      );
+      const result = await materializeFromRun(runId, { dryRun: guard.options.dryRun });
       console.log(JSON.stringify(result, null, 2));
+      console.log(`\nRun report for ${runId}:`);
+      console.log(JSON.stringify(await getScrapeRunReport(runId), null, 2));
+      return;
+    }
+
+    if (command === 'report') {
+      const runId = flags.run as string;
+      if (!runId) {
+        console.error('ERROR: --run <runId> is required');
+        process.exit(1);
+      }
+      console.log(JSON.stringify(await getScrapeRunReport(runId), null, 2));
       return;
     }
 

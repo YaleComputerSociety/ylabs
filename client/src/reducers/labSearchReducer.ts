@@ -1,5 +1,5 @@
 /**
- * Pure reducer for the labs (`/labs`) browse-page search state.
+ * Pure reducer for the research (`/research`) browse-page search state.
  *
  * Mirrors searchReducer.ts (listings) and fellowshipSearchReducer.ts in shape
  * so consumers and tests are familiar. The provider that wraps this reducer

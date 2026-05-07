@@ -30,6 +30,10 @@ const AboutButton = () => {
           backgroundColor: 'transparent',
           color: '#1876D1',
         },
+        '&:focus-visible': {
+          outline: '2px solid #1876D1',
+          outlineOffset: '2px',
+        },
       }}
       disableRipple={true}
     >

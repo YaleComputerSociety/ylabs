@@ -10,6 +10,7 @@ import { Observation, ObservedEntityType } from '../models/observation';
 import { Paper } from '../models/paper';
 import { User } from '../models/user';
 import { ResearchGroup } from '../models/researchGroup';
+import { ScrapeRun } from '../models/scrapeRun';
 import {
   resolveAllFields,
   ResolverObservation,
@@ -238,6 +239,7 @@ export async function materializeFromRun(
 ): Promise<{
   materialized: number;
   created: number;
+  updated: number;
   conflicts: number;
   skipped: number;
   errors: number;
@@ -253,6 +255,7 @@ export async function materializeFromRun(
 
   let materialized = 0;
   let created = 0;
+  let updated = 0;
   let conflicts = 0;
   let skipped = 0;
   let errors = 0;
@@ -261,13 +264,13 @@ export async function materializeFromRun(
     let res: MaterializeResult;
     try {
       res = await materializeEntity(
-      entityType,
-      {
-        entityId: entityId ? String(entityId) : undefined,
-        entityKey: entityKey || undefined,
-      },
-      options,
-    );
+        entityType,
+        {
+          entityId: entityId ? String(entityId) : undefined,
+          entityKey: entityKey || undefined,
+        },
+        options,
+      );
     } catch (err: any) {
       errors++;
       console.error(
@@ -278,8 +281,23 @@ export async function materializeFromRun(
     }
     materialized++;
     if (res.created) created++;
+    else if (!res.skipped) updated++;
     if (res.skipped) skipped++;
     conflicts += res.conflicts;
   }
-  return { materialized, created, conflicts, skipped, errors };
+  if (!options.dryRun) {
+    await ScrapeRun.updateOne(
+      { _id: scrapeRunId },
+      {
+        $set: {
+          entitiesCreated: created,
+          entitiesUpdated: updated,
+          materializationSkipped: skipped,
+          materializationConflicts: conflicts,
+          materializationErrors: errors,
+        },
+      },
+    );
+  }
+  return { materialized, created, updated, conflicts, skipped, errors };
 }

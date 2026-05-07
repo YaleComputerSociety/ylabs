@@ -101,8 +101,7 @@ describe('isFacultyPerson', () => {
   });
 
   it('returns false for nullish / netid-less inputs', () => {
-    // @ts-expect-error intentionally invalid
-    expect(isFacultyPerson(null)).toBe(false);
+    expect(isFacultyPerson(null as any)).toBe(false);
     expect(isFacultyPerson({} as any)).toBe(false);
   });
 });
@@ -141,13 +140,13 @@ describe('personToObservations', () => {
     expect(byField.email?.value).toBe('jane.doe@yale.edu');
     expect(byField.userType?.value).toBe('professor');
     expect(byField.title?.value).toContain('Professor');
-    expect(byField.primary_department?.value).toBe('Molecular Biophysics & Biochemistry');
-    expect(byField.secondary_departments?.value).toEqual(['Yale School of Medicine']);
+    expect(byField.primaryDepartment?.value).toBe('Molecular Biophysics & Biochemistry');
+    expect(byField.secondaryDepartments?.value).toEqual(['Yale School of Medicine']);
     expect(byField.school?.value).toBe('Yale Graduate School of Arts and Sciences');
-    expect(byField.image_url?.value).toBe('https://yalies.io/images/jdoe24.jpg');
+    expect(byField.imageUrl?.value).toBe('https://yalies.io/images/jdoe24.jpg');
     expect(byField.phone?.value).toBe('+1 203 555 0001');
     expect(byField.orcid?.value).toBe('0000-0001-2345-6789');
-    expect(byField.profile_urls?.value).toEqual({ yalies: 'https://yalies.io/jdoe24' });
+    expect(byField.profileUrls?.value).toEqual({ yalies: 'https://yalies.io/jdoe24' });
 
     // All observations should be keyed by netid + entityType=user.
     for (const o of obs) {
@@ -212,9 +211,9 @@ describe('personToObservations', () => {
     expect(fields).not.toContain('email');
     expect(fields).not.toContain('phone');
     expect(fields).not.toContain('orcid');
-    expect(fields).not.toContain('image_url');
-    expect(fields).not.toContain('profile_urls');
-    expect(fields).not.toContain('secondary_departments');
+    expect(fields).not.toContain('imageUrl');
+    expect(fields).not.toContain('profileUrls');
+    expect(fields).not.toContain('secondaryDepartments');
   });
 });
 

@@ -7,20 +7,20 @@
  * Lookup precedence (per faculty member, first hit wins):
  *   1. ORCID — query `?filter=author.orcid:<orcid>`. Most reliable; ORCID is the
  *      canonical author identifier, so it wins whenever present even if we already
- *      have an openalex_id (the ORCID may pick up co-author works the OpenAlex
+ *      have an openAlexId (the ORCID may pick up co-author works the OpenAlex
  *      profile is missing for humanities/social-sci faculty whose institutional
  *      affiliation tagging is patchy).
- *   2. openalex_id — query `?filter=author.id:<openalex_id>` (legacy fast path).
+ *   2. openAlexId — query `?filter=author.id:<openAlexId>` (legacy fast path).
  *   3. Name + Yale-affiliation search — query the `/authors` endpoint scoped to
  *      Yale (institution I32971472) and accept ONLY when there is exactly one
  *      result whose display_name matches `<fname> <lname>` exactly (case-
  *      insensitive, ignoring middle names). When this succeeds we also emit a
- *      `openalex_id` observation against the User so the next run takes the fast
+ *      `openAlexId` observation against the User so the next run takes the fast
  *      path. Otherwise the candidate is skipped (we will not guess on ambiguous
  *      name matches).
  *
  * Faculty selection: any User with userType in ['professor', 'faculty'] AND at
- * least one of {orcid, openalex_id} OR fname + lname (so the name-search fallback
+ * least one of {orcid, openAlexId} OR fname + lname (so the name-search fallback
  * can run). Users with no usable signals are filtered out.
  *
  * For each work, emit Observations on a Paper entity keyed by openAlexId. The
@@ -309,7 +309,7 @@ function workToObservations(
 // snapshotCache when ctx.options.useCache is set.
 // ---------------------------------------------------------------------------
 
-export type LookupMethod = 'orcid' | 'openalex_id' | 'name' | 'none';
+export type LookupMethod = 'orcid' | 'openAlexId' | 'name' | 'none';
 
 export interface ResolvedAuthor {
   authorId: string | null;
@@ -320,7 +320,7 @@ interface FacultyRecord {
   fname?: string;
   lname?: string;
   orcid?: string;
-  openalex_id?: string;
+  openAlexId?: string;
 }
 
 export async function resolveAuthorIdForFaculty(
@@ -347,10 +347,10 @@ export async function resolveAuthorIdForFaculty(
     if (id) return { authorId: id, method: 'orcid' };
   }
 
-  // Tier 2: existing openalex_id.
-  const existingId = normalizeOpenAlexId(fac.openalex_id);
+  // Tier 2: existing openAlexId.
+  const existingId = normalizeOpenAlexId(fac.openAlexId);
   if (existingId) {
-    return { authorId: `https://openalex.org/${existingId}`, method: 'openalex_id' };
+    return { authorId: `https://openalex.org/${existingId}`, method: 'openAlexId' };
   }
 
   // Tier 3: name + Yale affiliation search.
@@ -398,7 +398,7 @@ export class OpenAlexPaperScraper implements IScraper {
     const userModel = this.opts.userModel || User;
 
     // Faculty filter: include anyone with userType in [professor, faculty]
-    // and at least one of {orcid, openalex_id, fname+lname}. Mongo can't do
+    // and at least one of {orcid, openAlexId, fname+lname}. Mongo can't do
     // the fname+lname conjunction cleanly here without {} matching everything,
     // so we filter in JS after the broad fetch — fname/lname are required on
     // the User schema anyway.
@@ -406,7 +406,7 @@ export class OpenAlexPaperScraper implements IScraper {
       userType: { $in: ['professor', 'faculty'] },
       $or: [
         { orcid: { $exists: true, $ne: null, $nin: [''] } },
-        { openalex_id: { $exists: true, $ne: null, $nin: [''] } },
+        { openAlexId: { $exists: true, $ne: null, $nin: [''] } },
         // Anyone with userType professor/faculty is name-eligible (fname+lname required by schema).
         { fname: { $exists: true, $nin: [null, ''] } },
       ],
@@ -418,7 +418,7 @@ export class OpenAlexPaperScraper implements IScraper {
         fname: 1,
         lname: 1,
         orcid: 1,
-        openalex_id: 1,
+        openAlexId: 1,
       })
       .lean();
     if (ctx.options.limit && ctx.options.limit > 0) {
@@ -432,7 +432,7 @@ export class OpenAlexPaperScraper implements IScraper {
     let processed = 0;
     const tierCounts: Record<LookupMethod, number> = {
       orcid: 0,
-      openalex_id: 0,
+      openAlexId: 0,
       name: 0,
       none: 0,
     };
@@ -446,7 +446,7 @@ export class OpenAlexPaperScraper implements IScraper {
           fname: fac.fname,
           lname: fac.lname,
           orcid: fac.orcid,
-          openalex_id: fac.openalex_id,
+          openAlexId: fac.openAlexId,
         },
         email,
         ctx,
@@ -459,7 +459,7 @@ export class OpenAlexPaperScraper implements IScraper {
         continue;
       }
 
-      // When the name-search tier wins, persist the discovered openalex_id back
+      // When the name-search tier wins, persist the discovered openAlexId back
       // to the User so future runs take the fast path.
       if (resolved.method === 'name' && yaleNetId) {
         const discoveredBareId =
@@ -467,7 +467,7 @@ export class OpenAlexPaperScraper implements IScraper {
         await ctx.emit({
           entityType: 'user',
           entityKey: yaleNetId,
-          field: 'openalex_id',
+          field: 'openAlexId',
           value: discoveredBareId,
           sourceUrl: `${OPENALEX_BASE}/authors?search=${encodeURIComponent(
             `${fac.fname} ${fac.lname}`,
@@ -510,13 +510,13 @@ export class OpenAlexPaperScraper implements IScraper {
     }
 
     ctx.log(
-      `lookup methods — orcid: ${tierCounts.orcid}, openalex_id: ${tierCounts.openalex_id}, name: ${tierCounts.name}, skipped (no signals): ${tierCounts.none}`,
+      `lookup methods — orcid: ${tierCounts.orcid}, openAlexId: ${tierCounts.openAlexId}, name: ${tierCounts.name}, skipped (no signals): ${tierCounts.none}`,
     );
 
     return {
       observationCount: totalObs,
       entitiesObserved: totalWorks,
-      notes: `Synced papers for ${processed} faculty (${totalWorks} works total). Lookup tiers — orcid:${tierCounts.orcid}, openalex_id:${tierCounts.openalex_id}, name:${tierCounts.name}, skipped:${tierCounts.none}`,
+      notes: `Synced papers for ${processed} faculty (${totalWorks} works total). Lookup tiers — orcid:${tierCounts.orcid}, openAlexId:${tierCounts.openAlexId}, name:${tierCounts.name}, skipped:${tierCounts.none}`,
     };
   }
 }

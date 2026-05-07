@@ -173,7 +173,7 @@ export function personToObservations(
 
   // Department fields. Yalies exposes organization_name / unit_name pairs and
   // primary_organization_* on faculty records. We treat the most-specific unit
-  // as primary_department and the broader organization as a secondary.
+  // as primaryDepartment and the broader organization as a secondary.
   const primaryDept =
     (person.unit_name && String(person.unit_name).trim()) ||
     (person.primary_division_name && String(person.primary_division_name).trim()) ||
@@ -206,14 +206,14 @@ export function personToObservations(
     ['email', email],
     ['userType', classifyUserType(title)],
     ['title', title],
-    ['primary_department', primaryDept],
-    ['secondary_departments', secondaryDepts.length > 0 ? secondaryDepts : undefined],
+    ['primaryDepartment', primaryDept],
+    ['secondaryDepartments', secondaryDepts.length > 0 ? secondaryDepts : undefined],
     ['college', college],
     ['school', school],
-    ['image_url', imageUrl],
+    ['imageUrl', imageUrl],
     ['phone', phone],
     ['orcid', orcid],
-    ['profile_urls', Object.keys(profileUrls).length > 0 ? profileUrls : undefined],
+    ['profileUrls', Object.keys(profileUrls).length > 0 ? profileUrls : undefined],
   ];
 
   for (const [field, value] of fields) {

@@ -323,14 +323,14 @@ describe('IndependentStudyCourseScraper.run', () => {
         netid: 'bgage',
         fname: 'Beverly',
         lname: 'Gage',
-        primary_department: 'History',
+        primaryDepartment: 'History',
       },
       'Daniel|Greco': {
         _id: 'u-dgreco',
         netid: 'dgreco',
         fname: 'Daniel',
         lname: 'Greco',
-        primary_department: 'Philosophy',
+        primaryDepartment: 'Philosophy',
       },
       // 'Some Lecturer' intentionally absent — not an indep-study course anyway.
     };

@@ -10,6 +10,60 @@ dotenv.config();
 const YALIES_API_URL = 'https://api.yalies.io/v2/people';
 const API_KEY = process.env.YALIES_API_KEY;
 
+export interface YaliesPerson {
+  netid?: string;
+  first_name?: string;
+  last_name?: string;
+  preferred_name?: string;
+  email?: string;
+  phone?: string;
+  title?: string;
+  school_code?: string;
+  school_name?: string;
+  school?: string;
+  year?: string | number;
+  college?: string;
+  major?: string | string[];
+  image?: string;
+  orcid?: string;
+  url?: string;
+  unit_name?: string;
+  organization_name?: string;
+  primary_organization_name?: string;
+  primary_division_name?: string;
+}
+
+export interface ListYaliesOptions {
+  page?: number;
+  pageSize?: number;
+  filters?: Record<string, unknown>;
+  userAgent?: string;
+}
+
+export async function listYalies(options: ListYaliesOptions = {}): Promise<YaliesPerson[]> {
+  const apiKey = process.env.YALIES_API_KEY || API_KEY;
+  if (!apiKey) {
+    throw new Error('YALIES_API_KEY not set');
+  }
+
+  const response = await axios.post(
+    YALIES_API_URL,
+    {
+      page: options.page,
+      page_size: options.pageSize,
+      filters: options.filters || {},
+    },
+    {
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        ...(options.userAgent ? { 'User-Agent': options.userAgent } : {}),
+      },
+    },
+  );
+
+  return Array.isArray(response.data) ? response.data : [];
+}
+
 /**
  * Function to fetch a Yalie by NetID.
  * - First, check the database for cached data.

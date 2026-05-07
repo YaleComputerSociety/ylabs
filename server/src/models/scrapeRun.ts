@@ -56,6 +56,22 @@ const scrapeRunSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    materializationSkipped: {
+      type: Number,
+      default: 0,
+    },
+    materializationConflicts: {
+      type: Number,
+      default: 0,
+    },
+    materializationErrors: {
+      type: Number,
+      default: 0,
+    },
+    fetchMetrics: {
+      type: mongoose.Schema.Types.Mixed,
+      default: undefined,
+    },
     errors: {
       type: [
         {
@@ -86,6 +102,6 @@ scrapeRunSchema.index({ sourceId: 1, startedAt: -1 });
 scrapeRunSchema.index({ status: 1, startedAt: -1 });
 scrapeRunSchema.index({ invalidated: 1 });
 
-export const ScrapeRun = mongoose.model('scraperuns', scrapeRunSchema);
+export const ScrapeRun = mongoose.model('scraperuns', scrapeRunSchema, 'scrape_runs');
 
 export { scrapeRunSchema };

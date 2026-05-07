@@ -1,5 +1,5 @@
 /**
- * Provider for the labs (`/labs`) browse-page search state.
+ * Provider for the research (`/research`) browse-page search state.
  *
  * State transitions live in reducers/labSearchReducer.ts (pure & unit-tested);
  * this component owns side effects (axios, debouncing).
@@ -93,7 +93,7 @@ const LabSearchContextProvider: FC<LabSearchContextProviderProps> = ({ children 
     dispatch({ type: 'SEARCH_REQUEST' });
 
     axios
-      .post<ResearchGroupSearchResponse>('/research-groups/search', body)
+      .post<ResearchGroupSearchResponse>('/research/search', body)
       .then((response) => {
         const { hits, estimatedTotalHits } = response.data;
         dispatch({

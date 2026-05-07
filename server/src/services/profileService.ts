@@ -14,8 +14,8 @@ export const cascadeDepartmentsToListings = async (netid: string) => {
   if (!user) return;
 
   const userDepts = [
-    (user as any).primary_department,
-    ...((user as any).secondary_departments || []),
+    (user as any).primaryDepartment,
+    ...((user as any).secondaryDepartments || []),
   ].filter(Boolean);
 
   const ownedListings = await getListingModel().find({ ownerId: netid }).lean();
@@ -27,13 +27,13 @@ export const cascadeDepartmentsToListings = async (netid: string) => {
 
     if (coPIIds.length > 0) {
       const coPIs = await User.find({ netid: { $in: coPIIds } })
-        .select('primary_department secondary_departments')
+        .select('primaryDepartment secondaryDepartments')
         .lean();
 
       const allDepts = new Set<string>(userDepts);
       for (const pi of coPIs) {
-        if ((pi as any).primary_department) allDepts.add((pi as any).primary_department);
-        for (const d of (pi as any).secondary_departments || []) {
+        if ((pi as any).primaryDepartment) allDepts.add((pi as any).primaryDepartment);
+        for (const d of (pi as any).secondaryDepartments || []) {
           allDepts.add(d);
         }
       }
@@ -44,7 +44,7 @@ export const cascadeDepartmentsToListings = async (netid: string) => {
 
     await getListingModel().findByIdAndUpdate(listing._id, {
       departments: finalDepts,
-      ownerPrimaryDepartment: (user as any).primary_department || '',
+      ownerPrimaryDepartment: (user as any).primaryDepartment || '',
       ownerTitle: (user as any).title || '',
     });
   }
@@ -58,18 +58,18 @@ export const cascadeDepartmentsToListings = async (netid: string) => {
     const uniqueIds = [...new Set(allPIIds)];
 
     const allPIs = await User.find({ netid: { $in: uniqueIds } })
-      .select('primary_department secondary_departments')
+      .select('primaryDepartment secondaryDepartments')
       .lean();
 
     const owner = allPIs.find((p: any) => p.netid === listing.ownerId);
-    const ownerPrimary = (owner as any)?.primary_department;
+    const ownerPrimary = (owner as any)?.primaryDepartment;
 
     const allDepts = new Set<string>();
     if (ownerPrimary) allDepts.add(ownerPrimary);
 
     for (const pi of allPIs) {
-      if ((pi as any).primary_department) allDepts.add((pi as any).primary_department);
-      for (const d of (pi as any).secondary_departments || []) {
+      if ((pi as any).primaryDepartment) allDepts.add((pi as any).primaryDepartment);
+      for (const d of (pi as any).secondaryDepartments || []) {
         allDepts.add(d);
       }
     }
@@ -98,12 +98,12 @@ export const getProfileByNetid = async (netid: string, includePublications = fal
  */
 const ALLOWED_SELF_UPDATE_FIELDS = [
   'bio',
-  'primary_department',
-  'secondary_departments',
-  'research_interests',
+  'primaryDepartment',
+  'secondaryDepartments',
+  'researchInterests',
   'topics',
-  'image_url',
-  'profile_urls',
+  'imageUrl',
+  'profileUrls',
   'website',
 ];
 
@@ -116,10 +116,10 @@ export const updateOwnProfile = async (netid: string, data: any) => {
     }
   }
 
-  if (update.primary_department !== undefined || update.secondary_departments !== undefined) {
+  if (update.primaryDepartment !== undefined || update.secondaryDepartments !== undefined) {
     const current = await User.findOne({ netid }).lean();
-    const primary = update.primary_department ?? (current as any)?.primary_department ?? '';
-    const secondary = update.secondary_departments ?? (current as any)?.secondary_departments ?? [];
+    const primary = update.primaryDepartment ?? (current as any)?.primaryDepartment ?? '';
+    const secondary = update.secondaryDepartments ?? (current as any)?.secondaryDepartments ?? [];
     update.departments = [primary, ...secondary].filter(Boolean);
   }
 
@@ -140,9 +140,9 @@ const ADMIN_UPDATE_FIELDS = [
   'lname',
   'email',
   'title',
-  'h_index',
+  'hIndex',
   'orcid',
-  'openalex_id',
+  'openAlexId',
   'profileVerified',
   'userType',
   'userConfirmed',
@@ -157,10 +157,10 @@ export const adminUpdateProfile = async (netid: string, data: any) => {
     }
   }
 
-  if (update.primary_department !== undefined || update.secondary_departments !== undefined) {
+  if (update.primaryDepartment !== undefined || update.secondaryDepartments !== undefined) {
     const current = await User.findOne({ netid }).lean();
-    const primary = update.primary_department ?? (current as any)?.primary_department ?? '';
-    const secondary = update.secondary_departments ?? (current as any)?.secondary_departments ?? [];
+    const primary = update.primaryDepartment ?? (current as any)?.primaryDepartment ?? '';
+    const secondary = update.secondaryDepartments ?? (current as any)?.secondaryDepartments ?? [];
     update.departments = [primary, ...secondary].filter(Boolean);
   }
 

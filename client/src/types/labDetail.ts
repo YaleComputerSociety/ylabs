@@ -1,5 +1,5 @@
 /**
- * Types for the lab detail page payload (`GET /api/research-groups/:slug`).
+ * Types for the research detail page payload (`GET /api/research/:slug`).
  *
  * The server returns the ResearchGroup plus a denormalized member list (with
  * embedded user info), recent papers, and active listings. The UI consumes

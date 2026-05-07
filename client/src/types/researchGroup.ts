@@ -13,7 +13,8 @@ export type ResearchGroupKind =
   | 'program'
   | 'initiative'
   | 'group'
-  | 'individual';
+  | 'individual'
+  | 'solo';
 
 export type ResearchGroupOpenness = 'open' | 'inquire' | 'closed' | 'unknown';
 
@@ -52,6 +53,7 @@ export interface ResearchGroup {
   id?: string;
   slug: string;
   name: string;
+  displayName?: string;
   kind: ResearchGroupKind;
   description: string;
   websiteUrl: string;

@@ -148,7 +148,7 @@ export interface UserMatch {
   netid: string;
   fname: string;
   lname: string;
-  primary_department?: string;
+  primaryDepartment?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -448,7 +448,7 @@ async function defaultUserFinder(
     netid: 1,
     fname: 1,
     lname: 1,
-    primary_department: 1,
+    primaryDepartment: 1,
   })
     .limit(10)
     .lean();
@@ -457,7 +457,7 @@ async function defaultUserFinder(
     netid: d.netid,
     fname: d.fname,
     lname: d.lname,
-    primary_department: d.primary_department,
+    primaryDepartment: d.primaryDepartment,
   }));
 }
 
@@ -474,7 +474,7 @@ async function defaultOwnerToGroupSlug(owner: UserMatch): Promise<string | null>
       netid: owner.netid,
       fname: owner.fname,
       lname: owner.lname,
-      primary_department: owner.primary_department,
+      primaryDepartment: owner.primaryDepartment,
     });
     return group?.slug || null;
   } catch {

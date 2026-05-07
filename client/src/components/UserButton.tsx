@@ -84,6 +84,10 @@ const UserButton = () => {
           '&:hover': {
             backgroundColor: '#1e6ab3',
           },
+          '&:focus-visible': {
+            outline: '2px solid #1876D1',
+            outlineOffset: '2px',
+          },
         }}
         disableRipple
       >

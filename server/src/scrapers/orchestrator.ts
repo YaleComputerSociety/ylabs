@@ -7,7 +7,13 @@
  */
 import { ScrapeRun } from '../models/scrapeRun';
 import { appendObservations, getSourceByName } from './observationStore';
-import type { IScraper, ScraperContext, ScraperOptions, ObservationInput } from './types';
+import type {
+  IScraper,
+  ScraperContext,
+  ScraperOptions,
+  ObservationInput,
+  ScraperResult,
+} from './types';
 
 export class ScraperOrchestrator {
   private scrapers: Map<string, IScraper> = new Map();
@@ -87,7 +93,7 @@ export class ScraperOrchestrator {
     };
 
     try {
-      const result = await scraper.run(ctx);
+      const result = await scraper.run(ctx) as ScraperResult;
       await ScrapeRun.updateOne(
         { _id: run._id },
         {
@@ -96,6 +102,7 @@ export class ScraperOrchestrator {
             status: errors.length === 0 ? 'success' : 'partial',
             observationCount,
             entitiesObserved,
+            fetchMetrics: result.fetchMetrics,
             errors,
           },
         },

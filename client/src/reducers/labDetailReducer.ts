@@ -1,7 +1,7 @@
 /**
- * Pure reducer for the lab detail page (`/labs/:slug`).
+ * Pure reducer for the research detail page (`/research/:slug`).
  *
- * Models the fetch lifecycle for the `GET /api/research-groups/:slug` payload
+ * Models the fetch lifecycle for the `GET /api/research/:slug` payload
  * (idle → loading → loaded/error), plus a UI-only toggle for the Inquire modal.
  *
  * Following the convention from `configReducer` and `profilePageReducer`:

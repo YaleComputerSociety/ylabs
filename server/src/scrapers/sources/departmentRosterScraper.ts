@@ -25,8 +25,21 @@
  */
 import axios from 'axios';
 import * as cheerio from 'cheerio';
+import {
+  createScraplingRenderedFetcher,
+  measureRenderedFetch,
+  summarizeFetchMetrics,
+  type RenderedFetcher,
+  type RenderedFetchResult,
+} from '../renderedFetch';
 import { getCached, setCached } from '../snapshotCache';
-import type { IScraper, ScraperContext, ScraperResult, ObservationInput } from '../types';
+import type {
+  IScraper,
+  ScraperContext,
+  ScraperResult,
+  ObservationInput,
+  ScraperFetchMetric,
+} from '../types';
 import { netidFromEmail, normalizeName, slugify, splitName } from '../utils/scraperHelpers';
 
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
@@ -64,6 +77,10 @@ export interface DeptConfig {
   /** When true, the scraper crawls `?page=1`, `?page=2`, … until an empty page or the safety cap. */
   paginated?: boolean;
   extractor: FacultyExtractor;
+  /** Optional parser to use after a rendered fetch. Keeps browser fetching separate from domain parsing. */
+  renderedExtractor?: FacultyExtractor;
+  /** Selector that should exist after hydration; used for rendered-fetch waits/metrics. */
+  renderWaitSelector?: string;
   /** Set when the page is JS-rendered and the extractor is intentionally a stub. */
   jsRenderedSkip?: boolean;
 }
@@ -174,6 +191,46 @@ export const csJsRenderedStub: FacultyExtractor = () => {
   throw new Error('Yale CS faculty page is JS-rendered; needs headless browser');
 };
 
+export const csRenderedExtractor: FacultyExtractor = (html, ctx) => {
+  const $ = cheerio.load(html);
+  const out: FacultyEntry[] = [];
+  const seen = new Set<string>();
+
+  $('a').each((_i, el) => {
+    const link = $(el);
+    const href = link.attr('href') || '';
+    const text = link.text().replace(/\s+/g, ' ').trim();
+    if (!text || !href) return;
+    if (!/\/faculty\/|\/profile\/|people|directory/i.test(href)) return;
+    if (!/^[A-Z][A-Za-z.'-]+(?:\s+[A-Z][A-Za-z.'-]+)+/.test(text)) return;
+
+    const name = normalizeName(text.replace(/\s*,?\s*(Ph\.?D\.?|M\.?D\.?)$/i, ''));
+    const key = `${name}:${href}`;
+    if (!name || seen.has(key)) return;
+    seen.add(key);
+
+    const container = link.closest('article, li, tr, .card, .views-row, div').first();
+    const title =
+      container
+        .find('[class*="title"], [class*="position"], [class*="role"]')
+        .first()
+        .text()
+        .replace(/\s+/g, ' ')
+        .trim() || undefined;
+    const emailHref = container.find('a[href^="mailto:"]').first().attr('href') || '';
+    const email = emailHref ? emailHref.replace(/^mailto:/i, '').trim() : undefined;
+
+    out.push({
+      name,
+      profileUrl: absolutize(href, ctx.pageUrl),
+      title,
+      email,
+    });
+  });
+
+  return out;
+};
+
 // ---------------------------------------------------------------------------
 // Default config (mutable so callers can swap or extend in tests if needed,
 // though the typical add-a-dept path is just a new entry below).
@@ -203,6 +260,8 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     url: 'https://engineering.yale.edu/academic-study/departments/computer-science/faculty',
     paginated: false,
     extractor: csJsRenderedStub,
+    renderedExtractor: csRenderedExtractor,
+    renderWaitSelector: 'a[href*="faculty"], a[href*="profile"], main',
     jsRenderedSkip: true,
   },
   {
@@ -273,14 +332,14 @@ function entryToUserObservations(
   if (first) obs.push({ ...base, field: 'fname', value: first });
   if (last) obs.push({ ...base, field: 'lname', value: last });
   obs.push({ ...base, field: 'userType', value: 'faculty' });
-  obs.push({ ...base, field: 'primary_department', value: dept.deptName });
+  obs.push({ ...base, field: 'primaryDepartment', value: dept.deptName });
   obs.push({ ...base, field: 'departments', value: [dept.deptName] });
   if (entry.title) obs.push({ ...base, field: 'title', value: entry.title });
   if (entry.profileUrl) {
-    obs.push({ ...base, field: 'profile_urls', value: { departmental: entry.profileUrl } });
+    obs.push({ ...base, field: 'profileUrls', value: { departmental: entry.profileUrl } });
   }
   if (entry.labUrl) obs.push({ ...base, field: 'website', value: entry.labUrl });
-  obs.push({ ...base, field: 'data_sources', value: ['dept-faculty-roster'] });
+  obs.push({ ...base, field: 'dataSources', value: ['dept-faculty-roster'] });
 
   return { observations: obs, entityKey };
 }
@@ -323,7 +382,10 @@ export class DepartmentRosterScraper implements IScraper {
   readonly displayName = 'Department faculty rosters (Econ, MCDB, CS, Psych)';
 
   /** Configs are injectable for testing; default to the v1 four-department set. */
-  constructor(private readonly configs: DeptConfig[] = DEFAULT_DEPT_CONFIGS) {}
+  constructor(
+    private readonly configs: DeptConfig[] = DEFAULT_DEPT_CONFIGS,
+    private readonly renderedFetcher: RenderedFetcher | null = createScraplingRenderedFetcher(),
+  ) {}
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
     const onlyFilter = ctx.options.only && ctx.options.only.length > 0
@@ -335,12 +397,13 @@ export class DepartmentRosterScraper implements IScraper {
     let totalFaculty = 0;
     let totalLabs = 0;
     const perDept: Array<{ deptKey: string; count: number; status: string }> = [];
+    const fetchAttempts: ScraperFetchMetric[] = [];
 
     for (const dept of this.configs) {
       if (onlyFilter && !onlyFilter.has(dept.deptKey.toLowerCase())) continue;
       if (totalFaculty >= limit) break;
 
-      if (dept.jsRenderedSkip) {
+      if (dept.jsRenderedSkip && !this.renderedFetcher) {
         ctx.log(`[${dept.deptKey}] skipped — JS-rendered, needs headless browser`);
         perDept.push({ deptKey: dept.deptKey, count: 0, status: 'js-rendered-skip' });
         continue;
@@ -350,6 +413,59 @@ export class DepartmentRosterScraper implements IScraper {
       const maxPages = dept.paginated ? MAX_PAGES_PER_DEPT : 1;
       let pagesFetched = 0;
       let lastPageHadEntries = true;
+
+      if (dept.jsRenderedSkip && this.renderedFetcher) {
+        if (totalFaculty >= limit) break;
+
+        const rendered = await measureRenderedFetch(
+          dept.url,
+          'scrapling',
+          () => fetchRenderedDeptPage(this.name, ctx.options.useCache, dept, this.renderedFetcher),
+          { selectorName: dept.renderWaitSelector },
+        );
+        fetchAttempts.push(rendered.metric);
+        pagesFetched++;
+
+        if (!rendered.result || !rendered.result.html) {
+          ctx.log(`[${dept.deptKey}] skipped — rendered page unavailable`);
+          perDept.push({ deptKey: dept.deptKey, count: 0, status: 'rendered-unavailable' });
+          continue;
+        }
+
+        let entries: FacultyEntry[];
+        const pageUrl = rendered.result.url || dept.url;
+        try {
+          entries = (dept.renderedExtractor || dept.extractor)(rendered.result.html, { pageUrl });
+        } catch (err: any) {
+          ctx.log(`[${dept.deptKey}] rendered extractor error on ${pageUrl}: ${err?.message || err}`);
+          perDept.push({ deptKey: dept.deptKey, count: 0, status: 'rendered-extractor-error' });
+          continue;
+        }
+
+        for (const entry of entries) {
+          if (totalFaculty >= limit) break;
+          const { observations: userObs, entityKey } = entryToUserObservations(
+            entry,
+            dept,
+            pageUrl,
+          );
+          await ctx.emit(userObs);
+          totalObs += userObs.length;
+
+          const labObs = entryToLabObservations(entry, dept, pageUrl, entityKey);
+          if (labObs.length > 0) {
+            await ctx.emit(labObs);
+            totalObs += labObs.length;
+            totalLabs++;
+          }
+          deptCount++;
+          totalFaculty++;
+        }
+
+        ctx.log(`[${dept.deptKey}] ${deptCount} faculty across ${pagesFetched} rendered page(s)`);
+        perDept.push({ deptKey: dept.deptKey, count: deptCount, status: 'ok' });
+        continue;
+      }
 
       for (let pageIdx = 0; pageIdx < maxPages && lastPageHadEntries; pageIdx++) {
         if (totalFaculty >= limit) break;
@@ -415,6 +531,28 @@ export class DepartmentRosterScraper implements IScraper {
       observationCount: totalObs,
       entitiesObserved: totalFaculty + totalLabs,
       notes: `Departments: ${summary}`,
+      fetchMetrics: summarizeFetchMetrics(fetchAttempts),
     };
   }
+}
+
+async function fetchRenderedDeptPage(
+  sourceName: string,
+  useCache: boolean,
+  dept: DeptConfig,
+  renderedFetcher: RenderedFetcher | null,
+): Promise<RenderedFetchResult | null> {
+  if (!renderedFetcher) return null;
+  const cacheKey = `rendered-page:v1:${dept.url}`;
+  if (useCache) {
+    const cached = await getCached<RenderedFetchResult>(sourceName, cacheKey);
+    if (cached) return cached;
+  }
+  const result = await renderedFetcher({
+    url: dept.url,
+    waitSelector: dept.renderWaitSelector,
+    timeoutMs: FETCH_TIMEOUT_MS,
+  });
+  if (useCache && result?.html) await setCached(sourceName, cacheKey, result);
+  return result;
 }

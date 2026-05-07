@@ -95,19 +95,19 @@ describe('buildApifyInput', () => {
 });
 
 describe('eligibleFacultyQuery', () => {
-  it('always restricts to professor/faculty with a non-empty googleScholarId and unlocked h_index', () => {
+  it('always restricts to professor/faculty with a non-empty googleScholarId and unlocked hIndex', () => {
     const q = eligibleFacultyQuery();
     expect(q.userType).toEqual({ $in: ['professor', 'faculty'] });
     expect(q.googleScholarId).toEqual({ $exists: true, $nin: [null, ''] });
-    expect(q.manuallyLockedFields).toEqual({ $nin: ['h_index'] });
+    expect(q.manuallyLockedFields).toEqual({ $nin: ['hIndex'] });
     expect(q.$or).toBeUndefined();
   });
 
   it('adds an $or department filter when category dept names are provided', () => {
     const q = eligibleFacultyQuery(['English', 'History']);
     expect(q.$or).toEqual([
-      { primary_department: { $in: ['English', 'History'] } },
-      { secondary_departments: { $in: ['English', 'History'] } },
+      { primaryDepartment: { $in: ['English', 'History'] } },
+      { secondaryDepartments: { $in: ['English', 'History'] } },
       { departments: { $in: ['English', 'History'] } },
     ]);
   });
@@ -185,9 +185,9 @@ describe('mapAuthorProfileToObservations', () => {
     publications: [],
   };
 
-  it('maps hIndex → h_index and interests → topics, keyed by netid', () => {
+  it('maps hIndex → hIndex and interests → topics, keyed by netid', () => {
     const obs = mapAuthorProfileToObservations(baseProfile, baseUser, fixedDate);
-    const h = obs.find((o) => o.field === 'h_index');
+    const h = obs.find((o) => o.field === 'hIndex');
     expect(h).toBeDefined();
     expect(h!.value).toBe(24);
     expect(h!.entityKey).toBe('abc123');
@@ -206,29 +206,29 @@ describe('mapAuthorProfileToObservations', () => {
     expect(h!.sourceUrl).toBe('https://scholar.google.com/citations?user=GS_AUTHOR_1');
   });
 
-  it('maps profileImageUrl → image_url only when the user has no existing image', () => {
-    const withImage: MapTargetUser = { ...baseUser, image_url: 'https://existing.example/photo.jpg' };
+  it('maps profileImageUrl → imageUrl only when the user has no existing image', () => {
+    const withImage: MapTargetUser = { ...baseUser, imageUrl: 'https://existing.example/photo.jpg' };
     const obsWith = mapAuthorProfileToObservations(baseProfile, withImage, fixedDate);
-    expect(obsWith.find((o) => o.field === 'image_url')).toBeUndefined();
+    expect(obsWith.find((o) => o.field === 'imageUrl')).toBeUndefined();
 
     const obsWithout = mapAuthorProfileToObservations(baseProfile, baseUser, fixedDate);
-    const img = obsWithout.find((o) => o.field === 'image_url');
+    const img = obsWithout.find((o) => o.field === 'imageUrl');
     expect(img!.value).toBe('https://scholar.google.com/img/jane.jpg');
   });
 
-  it('skips h_index when manuallyLockedFields includes "h_index"', () => {
-    const locked: MapTargetUser = { ...baseUser, manuallyLockedFields: ['h_index'] };
+  it('skips hIndex when manuallyLockedFields includes "hIndex"', () => {
+    const locked: MapTargetUser = { ...baseUser, manuallyLockedFields: ['hIndex'] };
     const obs = mapAuthorProfileToObservations(baseProfile, locked, fixedDate);
-    expect(obs.find((o) => o.field === 'h_index')).toBeUndefined();
-    // googleScholarId, googleScholarMetricsUpdatedAt, topics, image_url still emitted
+    expect(obs.find((o) => o.field === 'hIndex')).toBeUndefined();
+    // googleScholarId, googleScholarMetricsUpdatedAt, topics, imageUrl still emitted
     expect(obs.find((o) => o.field === 'googleScholarId')).toBeDefined();
   });
 
-  it('skips topics when manuallyLockedFields includes "topics" and image_url when locked', () => {
-    const locked: MapTargetUser = { ...baseUser, manuallyLockedFields: ['topics', 'image_url'] };
+  it('skips topics when manuallyLockedFields includes "topics" and imageUrl when locked', () => {
+    const locked: MapTargetUser = { ...baseUser, manuallyLockedFields: ['topics', 'imageUrl'] };
     const obs = mapAuthorProfileToObservations(baseProfile, locked, fixedDate);
     expect(obs.find((o) => o.field === 'topics')).toBeUndefined();
-    expect(obs.find((o) => o.field === 'image_url')).toBeUndefined();
+    expect(obs.find((o) => o.field === 'imageUrl')).toBeUndefined();
   });
 
   it('handles an empty publications array without crashing', () => {
@@ -334,7 +334,7 @@ function makeFaculty(n: number): CandidateFaculty[] {
     fname: 'Test',
     lname: `User${i}`,
     googleScholarId: `GS_${i}`,
-    image_url: '',
+    imageUrl: '',
     manuallyLockedFields: [],
   }));
 }
@@ -406,7 +406,7 @@ describe('ApifyGoogleScholarScraper.run', () => {
         _id: 'mongo-id-1',
         netid: 'jdoe',
         googleScholarId: 'GS_WRONG_PERSON',
-        image_url: '',
+        imageUrl: '',
         manuallyLockedFields: [],
       },
     ];
@@ -439,7 +439,7 @@ describe('ApifyGoogleScholarScraper.run', () => {
         _id: 'mongo-id-1',
         netid: 'jdoe',
         googleScholarId: 'GS_JDOE',
-        image_url: '',
+        imageUrl: '',
         manuallyLockedFields: ['googleScholarId'],
       },
     ];
@@ -462,7 +462,7 @@ describe('ApifyGoogleScholarScraper.run', () => {
     const result = await scraper.run(ctx);
 
     expect(result.entitiesObserved).toBe(1);
-    expect(emitted.some((o) => o.field === 'h_index')).toBe(true);
+    expect(emitted.some((o) => o.field === 'hIndex')).toBe(true);
   });
 
   it('emits the expected User + Paper observations end-to-end', async () => {
@@ -471,7 +471,7 @@ describe('ApifyGoogleScholarScraper.run', () => {
         _id: 'mongo-id-1',
         netid: 'jdoe',
         googleScholarId: 'GS_JDOE',
-        image_url: '',
+        imageUrl: '',
         manuallyLockedFields: [],
       },
     ];
@@ -504,8 +504,8 @@ describe('ApifyGoogleScholarScraper.run', () => {
     const userObs = emitted.filter((o) => o.entityType === 'user');
     const fields = new Set(userObs.map((o) => o.field));
     expect(fields.has('googleScholarId')).toBe(true);
-    expect(fields.has('h_index')).toBe(true);
-    expect(fields.has('image_url')).toBe(true);
+    expect(fields.has('hIndex')).toBe(true);
+    expect(fields.has('imageUrl')).toBe(true);
     expect(fields.has('topics')).toBe(true);
     expect(fields.has('googleScholarMetricsUpdatedAt')).toBe(true);
 
@@ -563,7 +563,7 @@ describe('ApifyGoogleScholarScraper.run', () => {
     expect(callApify).not.toHaveBeenCalled();
     // We still emit observations from the cached payload
     expect(result.entitiesObserved).toBe(2);
-    expect(emitted.some((o) => o.field === 'h_index')).toBe(true);
+    expect(emitted.some((o) => o.field === 'hIndex')).toBe(true);
   });
 
   it('writes each returned profile to the per-scholarId cache after a fresh Apify call', async () => {
@@ -664,8 +664,8 @@ describe('ApifyGoogleScholarScraper.run', () => {
     expect(departmentResolver).toHaveBeenCalledWith(TARGET_CATEGORIES);
     const passedQuery = userFinder.mock.calls[0][0];
     expect(passedQuery.$or).toEqual([
-      { primary_department: { $in: ['English', 'History', 'Anthropology'] } },
-      { secondary_departments: { $in: ['English', 'History', 'Anthropology'] } },
+      { primaryDepartment: { $in: ['English', 'History', 'Anthropology'] } },
+      { secondaryDepartments: { $in: ['English', 'History', 'Anthropology'] } },
       { departments: { $in: ['English', 'History', 'Anthropology'] } },
     ]);
   });
@@ -692,7 +692,7 @@ describe('ApifyGoogleScholarScraper.run', () => {
 
   it('skips Apify-returned profiles whose authorId does not match any queried user', async () => {
     const faculty: CandidateFaculty[] = [
-      { _id: 'a', netid: 'a1', googleScholarId: 'GS_A', image_url: '', manuallyLockedFields: [] },
+      { _id: 'a', netid: 'a1', googleScholarId: 'GS_A', imageUrl: '', manuallyLockedFields: [] },
     ];
     const callApify = vi.fn(async () => [
       profileFor('GS_A'),

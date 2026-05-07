@@ -15,9 +15,9 @@ interface DirectoryPerson {
   phone: string;
   upi: string;
   unit: string;
-  physical_location: string;
-  building_desk: string;
-  mailing_address: string;
+  physicalLocation: string;
+  buildingDesk: string;
+  mailingAddress: string;
 }
 
 /**
@@ -84,9 +84,9 @@ export async function fetchFromDirectory(
       phone: person.phone || person.telephone || '',
       upi: person.upi || '',
       unit: person.unit || person.organization_unit || '',
-      physical_location: person.location || person.address || '',
-      building_desk: person.office || person.building || '',
-      mailing_address: person.mailing_address || person.postal_address || '',
+      physicalLocation: person.location || person.address || '',
+      buildingDesk: person.office || person.building || '',
+      mailingAddress: person.mailingAddress || person.postal_address || '',
     };
   } catch (error: any) {
     if (error.response?.status !== 404) {
@@ -130,9 +130,9 @@ export async function fetchFromDirectoryHTML(name: string): Promise<DirectoryPer
       phone: '',
       upi: '',
       unit: '',
-      physical_location: '',
-      building_desk: '',
-      mailing_address: '',
+      physicalLocation: '',
+      buildingDesk: '',
+      mailingAddress: '',
     };
   } catch {
     return null;

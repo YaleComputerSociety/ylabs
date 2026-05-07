@@ -395,6 +395,52 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
     expect(emitted.find((o) => o.field === 'currentUndergradCount')!.value).toBe(3);
   });
 
+  it('falls back to a rendered fetcher when the home page is empty or script-heavy', async () => {
+    const fetchPage = makeFetchPage({
+      'https://hydrated.example.com/': '<html><body><div id="root"></div><script>app()</script></body></html>',
+    });
+    const renderedFetcher = vi.fn().mockResolvedValue({
+      url: 'https://hydrated.example.com/',
+      html: HOME_HTML,
+      fetchMode: 'scrapling',
+    });
+    const callLLM = vi.fn(async () => ({
+      openToUndergrads: 'yes',
+      currentUndergradCount: 0,
+      evidenceQuote: 'We welcome undergraduate researchers each semester.',
+      evidenceSource: 'explicit_text',
+      joinPageUrl: null,
+    } satisfies LLMExtraction));
+    const labFinder = async (): Promise<CandidateLab[]> => [
+      {
+        _id: '1',
+        slug: 'hydrated-lab',
+        name: 'Hydrated Lab',
+        websiteUrl: 'https://hydrated.example.com/',
+      },
+    ];
+
+    const scraper = new LabMicrositeUndergradLLMExtractor({
+      fetchPage,
+      renderedFetcher,
+      callLLM,
+      labFinder,
+      apiKey: 'sk-test',
+    });
+    const { ctx } = makeContext();
+    const result = await scraper.run(ctx);
+
+    expect(renderedFetcher).toHaveBeenCalledWith({
+      url: 'https://hydrated.example.com/',
+      waitSelector: 'body',
+      timeoutMs: 10000,
+    });
+    expect(callLLM).toHaveBeenCalled();
+    const llmInput = (callLLM.mock.calls as unknown as Array<[{ userPrompt: string }]>)[0][0];
+    expect(llmInput.userPrompt).toContain('We welcome undergraduate researchers');
+    expect(result.fetchMetrics?.summary.succeeded).toBe(1);
+  });
+
   it('skips labs whose acceptingUndergrads field is manually locked', async () => {
     const fetchPage = makeFetchPage({});
     const callLLM = vi.fn();

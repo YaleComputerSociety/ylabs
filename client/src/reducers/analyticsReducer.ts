@@ -84,6 +84,131 @@ export interface AnalyticsData {
   timestamp: string;
 }
 
+export interface AnalyticsUserActivityRow {
+  netid: string;
+  userType: string;
+  fname?: string;
+  lname?: string;
+  email?: string;
+  totalEvents: number;
+  logins: number;
+  searches: number;
+  views: number;
+  fellowshipViews: number;
+  listingFavorites: number;
+  listingUnfavorites: number;
+  fellowshipFavorites: number;
+  fellowshipUnfavorites: number;
+  outreachClicks: number;
+  outreachOutcomes: number;
+  listingCreates: number;
+  listingUpdates: number;
+  listingArchives: number;
+  listingUnarchives: number;
+  profileUpdates: number;
+  loginCount: number;
+  lastEventAt?: string | null;
+  lastLogin?: string | null;
+  lastActive: string | null;
+  firstSeen?: string | null;
+}
+
+export interface AnalyticsUserEvent {
+  id?: string;
+  _id?: string;
+  eventType: string;
+  timestamp: string;
+  listingId?: string;
+  fellowshipId?: string;
+  searchQuery?: string;
+  searchDepartments?: string[];
+  metadata?: Record<string, unknown>;
+}
+
+export interface AnalyticsUserActivityResponse {
+  users: AnalyticsUserActivityRow[];
+  total: number;
+  limit: number;
+}
+
+export interface AnalyticsUserDrilldownResponse {
+  user: AnalyticsUserActivityRow;
+  events: AnalyticsUserEvent[];
+  limit: number;
+}
+
+export type AnalyticsRange = 'today' | '7d' | '30d' | 'semester' | 'all';
+
+export interface AnalyticsSearchQualityQuery {
+  query: string;
+  count?: number;
+  totalSearches?: number;
+  zeroResults?: number;
+  zeroResultSearches?: number;
+  entityType?: string;
+  avgResults?: number;
+  avgResultCount?: number;
+  avgResultsPerSearch?: number;
+  lastSearchedAt?: string | null;
+}
+
+export interface AnalyticsSearchQualityResponse {
+  range?: AnalyticsRange;
+  totalSearches?: number;
+  searchesWithResults?: number;
+  zeroResultSearches?: number;
+  zeroResultRate?: number;
+  avgResults?: number;
+  avgResultsPerSearch?: number;
+  avgLatencyMs?: number;
+  topQueries?: AnalyticsSearchQualityQuery[];
+  zeroResultQueries?: AnalyticsSearchQualityQuery[];
+  topZeroResultQueries?: AnalyticsSearchQualityQuery[];
+  lowResultQueries?: AnalyticsSearchQualityQuery[];
+}
+
+export interface AnalyticsFunnelStage {
+  key?: string;
+  stage?: string;
+  label: string;
+  count: number;
+  conversionRate?: number;
+  dropoffRate?: number;
+}
+
+export interface AnalyticsFunnelResponse {
+  range?: AnalyticsRange;
+  stages?: AnalyticsFunnelStage[];
+  visitorCount?: number;
+  searcherCount?: number;
+  viewerCount?: number;
+  favoriteCount?: number;
+  applicantCount?: number;
+  profileUpdateCount?: number;
+  listingCreateCount?: number;
+  overallConversionRate?: number;
+}
+
+export interface AnalyticsActionNeededItem {
+  id?: string;
+  _id?: string;
+  type?: string;
+  priority?: 'high' | 'medium' | 'low' | string;
+  title: string;
+  owner?: string;
+  department?: string;
+  count?: number;
+  metric?: number | string;
+  lastActivityAt?: string | null;
+  url?: string;
+}
+
+export interface AnalyticsActionNeededResponse {
+  range?: AnalyticsRange;
+  cards?: AnalyticsActionNeededItem[];
+  items?: AnalyticsActionNeededItem[];
+}
+
 export interface AnalyticsState {
   data: AnalyticsData | null;
   isLoading: boolean;

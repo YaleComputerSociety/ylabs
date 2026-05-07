@@ -2,6 +2,7 @@
  * Fellowships browse page with search, filters, and grid/list view.
  */
 import { useReducer, useEffect, useContext, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import FellowshipModal from '../components/fellowship/FellowshipModal';
 import AdminFellowshipEditModal from '../components/admin/AdminFellowshipEditModal';
 import FellowshipSearchContext from '../contexts/FellowshipSearchContext';
@@ -49,6 +50,7 @@ const SectionHeader = ({
 );
 
 const Fellowships = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
   const {
     fellowships,
     isLoading,
@@ -93,6 +95,26 @@ const Fellowships = () => {
   useEffect(() => {
     reloadFavorites();
   }, []);
+
+  useEffect(() => {
+    const fellowshipId = searchParams.get('fellowship');
+    if (fellowshipId && !isModalOpen && !selectedFellowship) {
+      axios
+        .get(`/fellowships/${fellowshipId}`)
+        .then((response) => {
+          if (response.data?.fellowship) {
+            dispatch({ type: 'OPEN_DETAIL_MODAL', item: response.data.fellowship });
+          }
+        })
+        .catch((error) => {
+          console.error('Error fetching direct fellowship link:', error);
+          setSearchParams((params) => {
+            params.delete('fellowship');
+            return params;
+          });
+        });
+    }
+  }, [searchParams, isModalOpen, selectedFellowship, setSearchParams]);
 
   const { closingSoon, open, closed } = useMemo(() => {
     const now = new Date();
@@ -167,6 +189,10 @@ const Fellowships = () => {
   const handleOpenModal = (item: BrowsableItem) => {
     if (item.type === 'fellowship') {
       dispatch({ type: 'OPEN_DETAIL_MODAL', item: item.data });
+      setSearchParams((params) => {
+        params.set('fellowship', item.data.id);
+        return params;
+      });
     }
   };
 
@@ -281,7 +307,13 @@ const Fellowships = () => {
         <FellowshipModal
           fellowship={selectedFellowship}
           isOpen={isModalOpen}
-          onClose={() => dispatch({ type: 'CLOSE_DETAIL_MODAL' })}
+          onClose={() => {
+            dispatch({ type: 'CLOSE_DETAIL_MODAL' });
+            setSearchParams((params) => {
+              params.delete('fellowship');
+              return params;
+            });
+          }}
           isFavorite={favFellowshipIds.includes(selectedFellowship.id)}
           toggleFavorite={() => {
             updateFavorite(

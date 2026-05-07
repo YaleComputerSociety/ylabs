@@ -41,11 +41,11 @@ import theme from '../utils/muiTheme';
 const MOBILE_BREAKPOINT = '768px';
 
 const HamburgerIcon = () => (
-  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '2px' }}>
-    <div style={{ width: '18px', height: '2px', backgroundColor: 'black' }}></div>
-    <div style={{ width: '18px', height: '2px', backgroundColor: 'black' }}></div>
-    <div style={{ width: '18px', height: '2px', backgroundColor: 'black' }}></div>
-  </div>
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="3" y1="12" x2="21" y2="12"></line>
+    <line x1="3" y1="6" x2="21" y2="6"></line>
+    <line x1="3" y1="18" x2="21" y2="18"></line>
+  </svg>
 );
 
 const SearchIcon = () => (
@@ -355,6 +355,7 @@ export default function Navbar() {
   const isAdmin = user?.userType === 'admin';
   const isHomePage = location.pathname === '/';
   const isFellowshipsPage = location.pathname === '/fellowships';
+  const isResearchPage = location.pathname === '/research' || location.pathname.startsWith('/research/');
   const isAccountPage = location.pathname === '/account';
 
   const {
@@ -556,6 +557,22 @@ export default function Navbar() {
               <ListItem sx={listItemStyle}>
                 <Button
                   component={Link}
+                  to="/research"
+                  sx={{
+                    textTransform: 'none',
+                    color: isResearchPage ? '#0055A4' : '#333',
+                    fontWeight: isResearchPage ? 600 : 400,
+                    justifyContent: 'flex-start',
+                    width: '100%',
+                    pl: 1,
+                  }}
+                >
+                  Research
+                </Button>
+              </ListItem>
+              <ListItem sx={listItemStyle}>
+                <Button
+                  component={Link}
                   to="/fellowships"
                   sx={{
                     textTransform: 'none',
@@ -636,37 +653,26 @@ export default function Navbar() {
                   component={Link}
                   to="/"
                   disableRipple
-                  sx={{
-                    textTransform: 'none',
-                    fontSize: '0.875rem',
-                    fontWeight: isHomePage ? 600 : 400,
-                    color: isHomePage ? '#0055A4' : '#666',
-                    borderBottom: isHomePage ? '2px solid #0055A4' : '2px solid transparent',
-                    borderRadius: 0,
-                    px: 1.5,
-                    py: 0.5,
-                    minWidth: 'auto',
-                    '&:hover': { backgroundColor: 'transparent', color: '#0055A4' },
-                  }}
+                  className={`!normal-case !text-sm !min-w-0 !px-3 !py-1 !rounded-none !border-b-2 hover:!bg-transparent ${isHomePage ? '!font-semibold !text-blue-700 !border-blue-700 hover:!text-blue-700' : '!font-normal !text-gray-600 !border-transparent hover:!text-blue-700'}`}
+                  sx={{ '&:focus-visible': { outline: '2px solid #1876D1', outlineOffset: '2px' } }}
                 >
                   Find Labs
                 </Button>
                 <Button
                   component={Link}
+                  to="/research"
+                  disableRipple
+                  className={`!normal-case !text-sm !min-w-0 !px-3 !py-1 !rounded-none !border-b-2 hover:!bg-transparent ${isResearchPage ? '!font-semibold !text-blue-700 !border-blue-700 hover:!text-blue-700' : '!font-normal !text-gray-600 !border-transparent hover:!text-blue-700'}`}
+                  sx={{ '&:focus-visible': { outline: '2px solid #1876D1', outlineOffset: '2px' } }}
+                >
+                  Research
+                </Button>
+                <Button
+                  component={Link}
                   to="/fellowships"
                   disableRipple
-                  sx={{
-                    textTransform: 'none',
-                    fontSize: '0.875rem',
-                    fontWeight: isFellowshipsPage ? 600 : 400,
-                    color: isFellowshipsPage ? '#0055A4' : '#666',
-                    borderBottom: isFellowshipsPage ? '2px solid #0055A4' : '2px solid transparent',
-                    borderRadius: 0,
-                    px: 1.5,
-                    py: 0.5,
-                    minWidth: 'auto',
-                    '&:hover': { backgroundColor: 'transparent', color: '#0055A4' },
-                  }}
+                  className={`!normal-case !text-sm !min-w-0 !px-3 !py-1 !rounded-none !border-b-2 hover:!bg-transparent ${isFellowshipsPage ? '!font-semibold !text-blue-700 !border-blue-700 hover:!text-blue-700' : '!font-normal !text-gray-600 !border-transparent hover:!text-blue-700'}`}
+                  sx={{ '&:focus-visible': { outline: '2px solid #1876D1', outlineOffset: '2px' } }}
                 >
                   Find Fellowships
                 </Button>
@@ -674,18 +680,8 @@ export default function Navbar() {
                   component={Link}
                   to="/account"
                   disableRipple
-                  sx={{
-                    textTransform: 'none',
-                    fontSize: '0.875rem',
-                    fontWeight: isAccountPage ? 600 : 400,
-                    color: isAccountPage ? '#0055A4' : '#666',
-                    borderBottom: isAccountPage ? '2px solid #0055A4' : '2px solid transparent',
-                    borderRadius: 0,
-                    px: 1.5,
-                    py: 0.5,
-                    minWidth: 'auto',
-                    '&:hover': { backgroundColor: 'transparent', color: '#0055A4' },
-                  }}
+                  className={`!normal-case !text-sm !min-w-0 !px-3 !py-1 !rounded-none !border-b-2 hover:!bg-transparent ${isAccountPage ? '!font-semibold !text-blue-700 !border-blue-700 hover:!text-blue-700' : '!font-normal !text-gray-600 !border-transparent hover:!text-blue-700'}`}
+                  sx={{ '&:focus-visible': { outline: '2px solid #1876D1', outlineOffset: '2px' } }}
                 >
                   Dashboard
                 </Button>
@@ -702,9 +698,9 @@ export default function Navbar() {
                   display: { xs: 'none', md: 'flex' },
                   gap: '12px',
                   ml: 1,
-                  mr: '380px',
                   alignItems: 'center',
                   flexShrink: 1,
+                  flexGrow: 1,
                   overflow: 'visible',
                 }}
               >
@@ -721,9 +717,9 @@ export default function Navbar() {
                   display: { xs: 'none', md: 'flex' },
                   gap: '12px',
                   ml: 1,
-                  mr: '380px',
                   alignItems: 'center',
                   flexShrink: 1,
+                  flexGrow: 1,
                   overflow: 'visible',
                 }}
               >

@@ -7,6 +7,8 @@ import AdminRoute from './components/AdminRoute';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import Home from './pages/home';
 import Fellowships from './pages/fellowships';
+import Research from './pages/labs';
+import ResearchDetail from './pages/labDetail';
 import Login from './pages/login';
 import About from './pages/about';
 import Account from './pages/account';
@@ -45,6 +47,14 @@ const App = () => {
                       <Route
                         path="/fellowships"
                         element={<PrivateRoute Component={Fellowships} unknownBlocked={true} />}
+                      />
+                      <Route
+                        path="/research"
+                        element={<PrivateRoute Component={Research} unknownBlocked={true} />}
+                      />
+                      <Route
+                        path="/research/:slug"
+                        element={<PrivateRoute Component={ResearchDetail} unknownBlocked={true} />}
                       />
                       <Route
                         path="/about"

@@ -1,14 +1,38 @@
 /**
  * Analytics dashboard page for admin usage statistics.
  */
-import { useEffect, useReducer } from 'react';
+import { useCallback, useEffect, useReducer, useState } from 'react';
 import axios from '../utils/axios';
 import swal from 'sweetalert';
 import AdminPanel from '../components/admin/AdminPanel';
 import {
+  AnalyticsActionNeededResponse,
+  AnalyticsFunnelResponse,
+  AnalyticsRange,
+  AnalyticsSearchQualityResponse,
+  AnalyticsUserActivityResponse,
+  AnalyticsUserActivityRow,
+  AnalyticsUserDrilldownResponse,
   analyticsReducer,
   createInitialAnalyticsState,
 } from '../reducers/analyticsReducer';
+
+type UserActivitySort = 'lastActive' | 'totalEvents' | 'logins' | 'searches' | 'views';
+type SortOrder = 'asc' | 'desc';
+
+const analyticsRanges: Array<{ value: AnalyticsRange; label: string }> = [
+  { value: 'today', label: 'Today' },
+  { value: '7d', label: '7 Days' },
+  { value: '30d', label: '30 Days' },
+  { value: 'semester', label: 'Semester' },
+  { value: 'all', label: 'All Time' },
+];
+
+const defaultUserActivity: AnalyticsUserActivityResponse = {
+  users: [],
+  total: 0,
+  limit: 25,
+};
 
 const Analytics = () => {
   const [state, dispatch] = useReducer(
@@ -17,8 +41,27 @@ const Analytics = () => {
     () => createInitialAnalyticsState()
   );
   const { data, isLoading, lastUpdated } = state;
+  const [userActivity, setUserActivity] =
+    useState<AnalyticsUserActivityResponse>(defaultUserActivity);
+  const [isUserActivityLoading, setIsUserActivityLoading] = useState(false);
+  const [userActivityError, setUserActivityError] = useState<string | null>(null);
+  const [userSearch, setUserSearch] = useState('');
+  const [userTypeFilter, setUserTypeFilter] = useState('all');
+  const [userActivityLimit, setUserActivityLimit] = useState(25);
+  const [userActivitySort, setUserActivitySort] = useState<UserActivitySort>('lastActive');
+  const [userActivityOrder, setUserActivityOrder] = useState<SortOrder>('desc');
+  const [selectedNetid, setSelectedNetid] = useState<string | null>(null);
+  const [selectedUser, setSelectedUser] = useState<AnalyticsUserDrilldownResponse | null>(null);
+  const [isSelectedUserLoading, setIsSelectedUserLoading] = useState(false);
+  const [selectedUserError, setSelectedUserError] = useState<string | null>(null);
+  const [analyticsRange, setAnalyticsRange] = useState<AnalyticsRange>('30d');
+  const [searchQuality, setSearchQuality] = useState<AnalyticsSearchQualityResponse | null>(null);
+  const [funnel, setFunnel] = useState<AnalyticsFunnelResponse | null>(null);
+  const [actions, setActions] = useState<AnalyticsActionNeededResponse | null>(null);
+  const [isImpactLoading, setIsImpactLoading] = useState(false);
+  const [impactError, setImpactError] = useState<string | null>(null);
 
-  const fetchAnalytics = async () => {
+  const fetchAnalytics = useCallback(async () => {
     dispatch({ type: 'FETCH_START' });
     try {
       const response = await axios.get('/analytics', { withCredentials: true });
@@ -37,11 +80,113 @@ const Analytics = () => {
         payload: error instanceof Error ? error.message : 'Failed to load analytics data',
       });
     }
-  };
+  }, []);
+
+  const fetchUserActivity = useCallback(async () => {
+    setIsUserActivityLoading(true);
+    setUserActivityError(null);
+    try {
+      const response = await axios.get<AnalyticsUserActivityResponse>('/analytics/users', {
+        withCredentials: true,
+        params: {
+          search: userSearch.trim() || undefined,
+          userType: userTypeFilter === 'all' ? undefined : userTypeFilter,
+          sort: userActivitySort,
+          direction: userActivityOrder,
+          limit: userActivityLimit,
+        },
+      });
+      setUserActivity({
+        ...defaultUserActivity,
+        ...response.data,
+        users: response.data.users || [],
+      });
+    } catch (error) {
+      console.error('Error fetching user analytics:', error);
+      setUserActivityError(
+        error instanceof Error ? error.message : 'Failed to load user activity data'
+      );
+    } finally {
+      setIsUserActivityLoading(false);
+    }
+  }, [userActivityLimit, userActivityOrder, userActivitySort, userSearch, userTypeFilter]);
+
+  const fetchSelectedUser = useCallback(async (netid: string) => {
+    setIsSelectedUserLoading(true);
+    setSelectedUserError(null);
+    try {
+      const response = await axios.get<AnalyticsUserDrilldownResponse>(
+        `/analytics/users/${encodeURIComponent(netid)}`,
+        { withCredentials: true }
+      );
+      setSelectedUser({
+        ...response.data,
+        events: response.data.events || [],
+      });
+    } catch (error) {
+      console.error('Error fetching user drilldown:', error);
+      setSelectedUser(null);
+      setSelectedUserError(
+        error instanceof Error ? error.message : 'Failed to load NetID activity'
+      );
+    } finally {
+      setIsSelectedUserLoading(false);
+    }
+  }, []);
+
+  const fetchImpactAnalytics = useCallback(async () => {
+    setIsImpactLoading(true);
+    setImpactError(null);
+
+    try {
+      const [searchQualityResponse, funnelResponse, actionsResponse] = await Promise.all([
+        axios.get<AnalyticsSearchQualityResponse>('/analytics/search-quality', {
+          withCredentials: true,
+          params: { range: analyticsRange },
+        }),
+        axios.get<AnalyticsFunnelResponse>('/analytics/funnel', {
+          withCredentials: true,
+          params: { range: analyticsRange },
+        }),
+        axios.get<AnalyticsActionNeededResponse>('/analytics/actions', {
+          withCredentials: true,
+          params: { range: analyticsRange },
+        }),
+      ]);
+
+      setSearchQuality(searchQualityResponse.data);
+      setFunnel(funnelResponse.data);
+      setActions(actionsResponse.data);
+    } catch (error) {
+      console.error('Error fetching impact analytics:', error);
+      setImpactError(
+        error instanceof Error ? error.message : 'Failed to load impact analytics data'
+      );
+    } finally {
+      setIsImpactLoading(false);
+    }
+  }, [analyticsRange]);
 
   useEffect(() => {
     fetchAnalytics();
-  }, []);
+  }, [fetchAnalytics]);
+
+  useEffect(() => {
+    fetchUserActivity();
+  }, [fetchUserActivity]);
+
+  useEffect(() => {
+    fetchImpactAnalytics();
+  }, [fetchImpactAnalytics]);
+
+  useEffect(() => {
+    if (selectedNetid) {
+      fetchSelectedUser(selectedNetid);
+    } else {
+      setSelectedUser(null);
+      setSelectedUserError(null);
+    }
+  }, [fetchSelectedUser, selectedNetid]);
 
   if (isLoading || !data) {
     return (
@@ -88,19 +233,140 @@ const Analytics = () => {
     return typeMap[type] || type;
   };
 
+  const formatDateTime = (value?: string | null) => {
+    if (!value) {
+      return 'Never';
+    }
+
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+  };
+
+  const formatEventType = (eventType: string) =>
+    eventType
+      .split('_')
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
+
+  const formatNumber = (value?: number | null, digits = 0) => {
+    if (typeof value !== 'number' || Number.isNaN(value)) {
+      return '-';
+    }
+
+    return value.toLocaleString(undefined, {
+      maximumFractionDigits: digits,
+      minimumFractionDigits: digits,
+    });
+  };
+
+  const formatPercent = (value?: number | null) => {
+    if (typeof value !== 'number' || Number.isNaN(value)) {
+      return '-';
+    }
+
+    return `${formatNumber(value > 1 ? value : value * 100, 1)}%`;
+  };
+
+  const formatCompactMetric = (value?: number | string | null) => {
+    if (typeof value === 'number') {
+      return formatNumber(value, value % 1 === 0 ? 0 : 1);
+    }
+
+    return value || '-';
+  };
+
+  const actionPriorityClass = (priority?: string) => {
+    if (priority === 'high') {
+      return 'border-red-200 bg-red-50 text-red-700';
+    }
+
+    if (priority === 'medium') {
+      return 'border-amber-200 bg-amber-50 text-amber-700';
+    }
+
+    return 'border-gray-200 bg-gray-50 text-gray-700';
+  };
+
+  const updateUserActivitySort = (sort: UserActivitySort) => {
+    if (sort === userActivitySort) {
+      setUserActivityOrder(userActivityOrder === 'asc' ? 'desc' : 'asc');
+      return;
+    }
+
+    setUserActivitySort(sort);
+    setUserActivityOrder('desc');
+  };
+
+  const sortLabel = (sort: UserActivitySort) => {
+    if (sort !== userActivitySort) {
+      return '';
+    }
+    return userActivityOrder === 'asc' ? ' ^' : ' v';
+  };
+
+  const selectedUserSummary: AnalyticsUserActivityRow | null =
+    selectedUser?.user || userActivity.users.find((user) => user.netid === selectedNetid) || null;
+
+  const searchTotal = searchQuality?.totalSearches || 0;
+  const searchZeroResults = searchQuality?.zeroResultSearches || 0;
+  const searchesWithResults =
+    searchQuality?.searchesWithResults ?? Math.max(searchTotal - searchZeroResults, 0);
+  const avgResults = searchQuality?.avgResults ?? searchQuality?.avgResultsPerSearch;
+  const zeroResultQueries = searchQuality?.zeroResultQueries || [];
+  const lowResultQueries = searchQuality?.lowResultQueries || [];
+  const actionCards = actions?.cards || [];
+  const actionItems = actions?.items || [];
+  const funnelStages =
+    funnel?.stages ||
+    [
+      { key: 'visitors', label: 'Visitors', count: funnel?.visitorCount || 0 },
+      { key: 'searchers', label: 'Searched', count: funnel?.searcherCount || 0 },
+      { key: 'viewers', label: 'Viewed Listings', count: funnel?.viewerCount || 0 },
+      { key: 'favorites', label: 'Favorited', count: funnel?.favoriteCount || 0 },
+      { key: 'applications', label: 'Applied', count: funnel?.applicantCount || 0 },
+    ].filter((stage) => stage.count > 0);
+
   return (
     <div className="container mx-auto px-4 py-8 max-w-7xl">
       <div className="flex justify-between items-center mb-8">
         <h1 className="text-4xl font-bold">Analytics Dashboard</h1>
         <div className="text-right">
           <button
-            onClick={fetchAnalytics}
+            onClick={() => {
+              fetchAnalytics();
+              fetchImpactAnalytics();
+            }}
             className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors mb-2"
           >
             Refresh Data
           </button>
           <p className="text-sm text-gray-500">Last updated: {lastUpdated}</p>
         </div>
+      </div>
+
+      <div className="mb-8 flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4 shadow-sm md:flex-row md:items-center md:justify-between">
+        <div>
+          <h2 className="text-lg font-semibold text-gray-800">High-Impact Range</h2>
+          <p className="text-sm text-gray-500">
+            Applies to search quality, funnel conversion, and action-needed insights.
+          </p>
+        </div>
+        <label className="block md:w-56">
+          <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">
+            Range
+          </span>
+          <select
+            value={analyticsRange}
+            onChange={(event) => setAnalyticsRange(event.target.value as AnalyticsRange)}
+            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+          >
+            {analyticsRanges.map((range) => (
+              <option key={range.value} value={range.value}>
+                {range.label}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
 
       <section className="mb-10">
@@ -258,6 +524,188 @@ const Analytics = () => {
         </div>
       </section>
 
+      <section className="mb-10">
+        <div className="mb-4 flex flex-col gap-2 border-b-2 border-blue-600 pb-2 md:flex-row md:items-end md:justify-between">
+          <div>
+            <h2 className="text-2xl font-bold text-gray-800">High-Impact Diagnostics</h2>
+            <p className="text-sm text-gray-500">
+              {analyticsRanges.find((range) => range.value === analyticsRange)?.label} snapshot
+            </p>
+          </div>
+          {isImpactLoading && <span className="text-sm text-gray-500">Loading diagnostics...</span>}
+        </div>
+
+        {impactError && (
+          <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {impactError}
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+          <div className="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden">
+            <div className="border-b border-gray-200 p-4">
+              <h3 className="text-lg font-semibold text-gray-800">Search Quality</h3>
+              <p className="text-sm text-gray-500">Results coverage and failed intent signals</p>
+            </div>
+            <div className="grid grid-cols-3 gap-3 p-4 text-sm">
+              <div>
+                <p className="text-gray-500">Searches</p>
+                <p className="text-xl font-semibold text-gray-900">{formatNumber(searchTotal)}</p>
+              </div>
+              <div>
+                <p className="text-gray-500">With Results</p>
+                <p className="text-xl font-semibold text-gray-900">
+                  {formatNumber(searchesWithResults)}
+                </p>
+              </div>
+              <div>
+                <p className="text-gray-500">Zero-Result</p>
+                <p className="text-xl font-semibold text-gray-900">
+                  {formatPercent(searchQuality?.zeroResultRate)}
+                </p>
+              </div>
+            </div>
+            <div className="border-t border-gray-100 px-4 py-3 text-sm">
+              <div className="mb-2 flex justify-between text-gray-600">
+                <span>Avg results/search</span>
+                <span className="font-medium text-gray-900">{formatNumber(avgResults, 1)}</span>
+              </div>
+              <div className="mb-3 flex justify-between text-gray-600">
+                <span>Avg latency</span>
+                <span className="font-medium text-gray-900">
+                  {searchQuality?.avgLatencyMs ? `${formatNumber(searchQuality.avgLatencyMs)} ms` : '-'}
+                </span>
+              </div>
+              <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                Zero or Low Result Queries
+              </h4>
+              <div className="space-y-2">
+                {[...zeroResultQueries, ...lowResultQueries].slice(0, 5).map((query, index) => (
+                  <div
+                    key={`${query.query}-${index}`}
+                    className="flex items-center justify-between gap-3 border-b border-gray-100 pb-2 last:border-0 last:pb-0"
+                  >
+                    <span className="min-w-0 truncate text-gray-700">
+                      {query.query || '(empty search)'}
+                    </span>
+                    <span className="shrink-0 text-xs font-medium text-blue-600">
+                      {query.zeroResults ?? query.count} hits
+                    </span>
+                  </div>
+                ))}
+                {zeroResultQueries.length === 0 && lowResultQueries.length === 0 && (
+                  <p className="text-gray-500">No search quality flags returned.</p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden">
+            <div className="border-b border-gray-200 p-4">
+              <h3 className="text-lg font-semibold text-gray-800">Student Funnel</h3>
+              <p className="text-sm text-gray-500">Visitor progression through key actions</p>
+            </div>
+            <div className="p-4">
+              <div className="mb-4 rounded-md bg-blue-50 p-3">
+                <p className="text-sm text-blue-700">Overall conversion</p>
+                <p className="text-2xl font-semibold text-blue-900">
+                  {formatPercent(funnel?.overallConversionRate)}
+                </p>
+              </div>
+              <div className="space-y-3">
+                {funnelStages.length > 0 ? (
+                  funnelStages.map((stage, index) => {
+                    const previousCount = index > 0 ? funnelStages[index - 1].count : stage.count;
+                    const derivedRate =
+                      stage.conversionRate ??
+                      (previousCount > 0 ? stage.count / previousCount : undefined);
+
+                    return (
+                      <div key={stage.key || stage.stage || stage.label}>
+                        <div className="mb-1 flex items-center justify-between text-sm">
+                          <span className="font-medium text-gray-700">{stage.label}</span>
+                          <span className="text-gray-500">
+                            {formatNumber(stage.count)} ({formatPercent(derivedRate)})
+                          </span>
+                        </div>
+                        <div className="h-2 overflow-hidden rounded-full bg-gray-100">
+                          <div
+                            className="h-full rounded-full bg-blue-600"
+                            style={{ width: `${Math.min(Math.max((derivedRate || 0) * 100, 0), 100)}%` }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <p className="text-sm text-gray-500">No funnel stages returned.</p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden">
+            <div className="border-b border-gray-200 p-4">
+              <h3 className="text-lg font-semibold text-gray-800">Action Needed</h3>
+              <p className="text-sm text-gray-500">Highest-priority admin follow-ups</p>
+            </div>
+            <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2 xl:grid-cols-1">
+              {actionCards.length > 0 ? (
+                actionCards.slice(0, 4).map((card, index) => (
+                  <div
+                    key={card.id || card._id || `${card.title}-${index}`}
+                    className={`rounded-md border px-3 py-2 ${actionPriorityClass(card.priority)}`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="font-medium">{card.title}</p>
+                      <span className="shrink-0 text-sm font-semibold">
+                        {formatCompactMetric(card.metric ?? card.count)}
+                      </span>
+                    </div>
+                    {(card.owner || card.department || card.type) && (
+                      <p className="mt-1 text-xs opacity-80">
+                        {[card.owner, card.department, card.type].filter(Boolean).join(' - ')}
+                      </p>
+                    )}
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-gray-500">No action cards returned.</p>
+              )}
+            </div>
+            {actionItems.length > 0 && (
+              <div className="border-t border-gray-100 p-4">
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-sm">
+                    <thead>
+                      <tr className="border-b text-gray-600">
+                        <th className="py-2 pr-3 text-left font-semibold">Item</th>
+                        <th className="py-2 px-3 text-left font-semibold">Owner</th>
+                        <th className="py-2 pl-3 text-right font-semibold">Metric</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {actionItems.slice(0, 5).map((item, index) => (
+                        <tr
+                          key={item.id || item._id || `${item.title}-${index}`}
+                          className="border-b last:border-0"
+                        >
+                          <td className="py-2 pr-3 text-gray-800">{item.title}</td>
+                          <td className="py-2 px-3 text-gray-600">{item.owner || '-'}</td>
+                          <td className="py-2 pl-3 text-right font-medium text-gray-900">
+                            {formatCompactMetric(item.metric ?? item.count)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </section>
+
       {data.engagement.mostActiveUsers.length > 0 && (
         <section className="mb-10">
           <h2 className="text-2xl font-bold mb-4 text-gray-800 border-b-2 border-blue-600 pb-2">
@@ -287,6 +735,299 @@ const Analytics = () => {
           </div>
         </section>
       )}
+
+      <section className="mb-10">
+        <div className="flex flex-col gap-3 mb-4 border-b-2 border-blue-600 pb-2 md:flex-row md:items-end md:justify-between">
+          <div>
+            <h2 className="text-2xl font-bold text-gray-800">NetID User Activity</h2>
+            <p className="text-sm text-gray-500">
+              Admin-only activity lookup from tracked analytics events
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={fetchUserActivity}
+            className="self-start rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300 md:self-auto"
+            disabled={isUserActivityLoading}
+          >
+            {isUserActivityLoading ? 'Refreshing...' : 'Refresh Users'}
+          </button>
+        </div>
+
+        <div className="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden">
+          <div className="grid grid-cols-1 gap-4 border-b border-gray-200 p-4 lg:grid-cols-5">
+            <label className="block lg:col-span-2">
+              <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">
+                Search NetID
+              </span>
+              <input
+                type="search"
+                value={userSearch}
+                onChange={(event) => setUserSearch(event.target.value)}
+                placeholder="e.g. abc123"
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+              />
+            </label>
+
+            <label className="block">
+              <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">
+                User Type
+              </span>
+              <select
+                value={userTypeFilter}
+                onChange={(event) => setUserTypeFilter(event.target.value)}
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+              >
+                <option value="all">All Types</option>
+                <option value="undergraduate">Undergrads</option>
+                <option value="graduate">Graduates</option>
+                <option value="professor">Professors</option>
+                <option value="faculty">Faculty</option>
+                <option value="admin">Admins</option>
+                <option value="unknown">Unknown</option>
+              </select>
+            </label>
+
+            <label className="block">
+              <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">
+                Sort
+              </span>
+              <select
+                value={userActivitySort}
+                onChange={(event) => setUserActivitySort(event.target.value as UserActivitySort)}
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+              >
+                <option value="lastActive">Last Active</option>
+                <option value="totalEvents">Total Events</option>
+                <option value="logins">Logins</option>
+                <option value="searches">Searches</option>
+                <option value="views">Views</option>
+              </select>
+            </label>
+
+            <label className="block">
+              <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">
+                Limit
+              </span>
+              <select
+                value={userActivityLimit}
+                onChange={(event) => setUserActivityLimit(Number(event.target.value))}
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+              >
+                <option value={10}>10 users</option>
+                <option value={25}>25 users</option>
+                <option value={50}>50 users</option>
+                <option value={100}>100 users</option>
+              </select>
+            </label>
+          </div>
+
+          <div className="flex flex-col gap-6 p-4 xl:flex-row">
+            <div className="min-w-0 flex-1">
+              <div className="mb-3 flex flex-col gap-2 text-sm text-gray-500 sm:flex-row sm:items-center sm:justify-between">
+                <span>
+                  Showing {userActivity.users.length} of {userActivity.total} matching users
+                </span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setUserActivityOrder(userActivityOrder === 'asc' ? 'desc' : 'asc')
+                  }
+                  className="self-start rounded-md border border-gray-300 px-3 py-1.5 text-gray-700 transition-colors hover:bg-gray-50 sm:self-auto"
+                >
+                  Order: {userActivityOrder === 'asc' ? 'Ascending' : 'Descending'}
+                </button>
+              </div>
+
+              {userActivityError && (
+                <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  {userActivityError}
+                </div>
+              )}
+
+              <div className="overflow-x-auto">
+                <table className="min-w-full">
+                  <thead>
+                    <tr className="border-b bg-gray-50">
+                      <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">
+                        NetID
+                      </th>
+                      <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">
+                        Type
+                      </th>
+                      <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">
+                        <button type="button" onClick={() => updateUserActivitySort('totalEvents')}>
+                          Events{sortLabel('totalEvents')}
+                        </button>
+                      </th>
+                      <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">
+                        <button type="button" onClick={() => updateUserActivitySort('logins')}>
+                          Logins{sortLabel('logins')}
+                        </button>
+                      </th>
+                      <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">
+                        <button type="button" onClick={() => updateUserActivitySort('searches')}>
+                          Searches{sortLabel('searches')}
+                        </button>
+                      </th>
+                      <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">
+                        <button type="button" onClick={() => updateUserActivitySort('views')}>
+                          Views{sortLabel('views')}
+                        </button>
+                      </th>
+                      <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">
+                        <button type="button" onClick={() => updateUserActivitySort('lastActive')}>
+                          Last Active{sortLabel('lastActive')}
+                        </button>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {isUserActivityLoading && userActivity.users.length === 0 ? (
+                      <tr>
+                        <td className="px-4 py-6 text-center text-gray-500" colSpan={7}>
+                          Loading user activity...
+                        </td>
+                      </tr>
+                    ) : userActivity.users.length > 0 ? (
+                      userActivity.users.map((user) => (
+                        <tr
+                          key={user.netid}
+                          className={`cursor-pointer border-b transition-colors hover:bg-blue-50 ${
+                            selectedNetid === user.netid ? 'bg-blue-50' : ''
+                          }`}
+                          onClick={() => setSelectedNetid(user.netid)}
+                        >
+                          <td className="px-4 py-3 font-medium text-gray-900">{user.netid}</td>
+                          <td className="px-4 py-3 text-gray-600">
+                            {formatUserType(user.userType)}
+                          </td>
+                          <td className="px-4 py-3 text-right font-medium">{user.totalEvents}</td>
+                          <td className="px-4 py-3 text-right">{user.logins}</td>
+                          <td className="px-4 py-3 text-right">{user.searches}</td>
+                          <td className="px-4 py-3 text-right">{user.views}</td>
+                          <td className="px-4 py-3 text-sm text-gray-600">
+                            {formatDateTime(user.lastActive)}
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td className="px-4 py-6 text-center text-gray-500" colSpan={7}>
+                          No users match the current filters.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <aside className="w-full rounded-lg border border-gray-200 bg-gray-50 p-4 xl:w-96">
+              <div className="mb-4 flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-800">
+                    {selectedNetid ? selectedNetid : 'Select a NetID'}
+                  </h3>
+                  {selectedUserSummary && (
+                    <p className="text-sm text-gray-500">
+                      {formatUserType(selectedUserSummary.userType)} -{' '}
+                      {selectedUserSummary.totalEvents} events
+                    </p>
+                  )}
+                </div>
+                {selectedNetid && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedNetid(null)}
+                    className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-600 hover:bg-white"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+
+              {!selectedNetid && (
+                <p className="text-sm text-gray-500">
+                  Pick a row to inspect the latest events for that NetID.
+                </p>
+              )}
+
+              {selectedNetid && isSelectedUserLoading && (
+                <p className="text-sm text-gray-500">Loading recent events...</p>
+              )}
+
+              {selectedNetid && selectedUserError && (
+                <div className="rounded-md border border-red-200 bg-white px-3 py-2 text-sm text-red-700">
+                  {selectedUserError}
+                </div>
+              )}
+
+              {selectedUser && !isSelectedUserLoading && (
+                <div>
+                  <div className="mb-4 grid grid-cols-2 gap-3 text-sm">
+                    <div className="rounded-md bg-white p-3">
+                      <p className="text-gray-500">Logins</p>
+                      <p className="text-lg font-semibold text-gray-900">
+                        {selectedUser.user.logins}
+                      </p>
+                    </div>
+                    <div className="rounded-md bg-white p-3">
+                      <p className="text-gray-500">Searches</p>
+                      <p className="text-lg font-semibold text-gray-900">
+                        {selectedUser.user.searches}
+                      </p>
+                    </div>
+                    <div className="rounded-md bg-white p-3">
+                      <p className="text-gray-500">Views</p>
+                      <p className="text-lg font-semibold text-gray-900">
+                        {selectedUser.user.views}
+                      </p>
+                    </div>
+                    <div className="rounded-md bg-white p-3">
+                      <p className="text-gray-500">Favorites</p>
+                      <p className="text-lg font-semibold text-gray-900">
+                        {selectedUser.user.listingFavorites}
+                      </p>
+                    </div>
+                  </div>
+
+                  <h4 className="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500">
+                    Recent Events
+                  </h4>
+                  <div className="max-h-96 space-y-3 overflow-y-auto pr-1">
+                    {selectedUser.events.length > 0 ? (
+                      selectedUser.events.map((event, index) => (
+                        <div
+                          key={event.id || event._id || `${event.eventType}-${event.timestamp}-${index}`}
+                          className="rounded-md border border-gray-200 bg-white p-3"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <p className="font-medium text-gray-800">
+                              {formatEventType(event.eventType)}
+                            </p>
+                            <p className="shrink-0 text-right text-xs text-gray-500">
+                              {formatDateTime(event.timestamp)}
+                            </p>
+                          </div>
+                          {event.searchQuery && (
+                            <p className="mt-1 text-sm text-gray-600">Query: {event.searchQuery}</p>
+                          )}
+                          {event.listingId && (
+                            <p className="mt-1 text-sm text-gray-600">Listing: {event.listingId}</p>
+                          )}
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-sm text-gray-500">No recent events returned.</p>
+                    )}
+                  </div>
+                </div>
+              )}
+            </aside>
+          </div>
+        </div>
+      </section>
 
       {data.engagement.trendingListings.length > 0 && (
         <section className="mb-10">

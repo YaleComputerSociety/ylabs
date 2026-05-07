@@ -9,8 +9,8 @@ const publicationSchema = new mongoose.Schema(
     doi: { type: String },
     year: { type: Number },
     venue: { type: String },
-    cited_by_count: { type: Number, default: 0 },
-    open_access_url: { type: String },
+    citedByCount: { type: Number, default: 0 },
+    openAccessUrl: { type: String },
     source: { type: String },
   },
   { _id: false },
@@ -29,8 +29,27 @@ const userSchema = new mongoose.Schema(
     },
     userType: {
       type: String,
-      enum: ['undergraduate', 'graduate', 'professor', 'faculty', 'unknown', 'admin'],
+      enum: [
+        'undergraduate',
+        'graduate',
+        'student',
+        'professor',
+        'faculty',
+        'staff',
+        'unknown',
+        'admin',
+      ],
       default: 'unknown',
+    },
+    facultyMemberId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'facultymembers',
+      required: false,
+    },
+    studentProfileId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'studentprofiles',
+      required: false,
     },
     userConfirmed: {
       type: Boolean,
@@ -82,19 +101,19 @@ const userSchema = new mongoose.Schema(
       type: String,
       required: false,
     },
-    physical_location: {
+    physicalLocation: {
       type: String,
       required: false,
     },
-    building_desk: {
+    buildingDesk: {
       type: String,
       required: false,
     },
-    mailing_address: {
+    mailingAddress: {
       type: String,
       required: false,
     },
-    primary_department: {
+    primaryDepartment: {
       type: String,
       required: false,
     },
@@ -115,7 +134,7 @@ const userSchema = new mongoose.Schema(
       default: [],
       select: false,
     },
-    h_index: {
+    hIndex: {
       type: Number,
       required: false,
     },
@@ -123,19 +142,19 @@ const userSchema = new mongoose.Schema(
       type: String,
       required: false,
     },
-    openalex_id: {
+    openAlexId: {
       type: String,
       required: false,
     },
-    image_url: {
+    imageUrl: {
       type: String,
       required: false,
     },
-    secondary_departments: {
+    secondaryDepartments: {
       type: [String],
       default: [],
     },
-    research_interests: {
+    researchInterests: {
       type: [String],
       default: [],
     },
@@ -143,7 +162,7 @@ const userSchema = new mongoose.Schema(
       type: [String],
       default: [],
     },
-    profile_urls: {
+    profileUrls: {
       type: mongoose.Schema.Types.Mixed,
       default: {},
     },
@@ -151,11 +170,15 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
-    data_sources: {
+    dataSources: {
       type: [String],
       default: [],
     },
     lastLogin: {
+      type: Date,
+      index: true,
+    },
+    lastLoginAt: {
       type: Date,
       index: true,
     },
@@ -174,6 +197,8 @@ const userSchema = new mongoose.Schema(
 );
 
 userSchema.index({ userType: 1, profileVerified: 1 });
-userSchema.index({ primary_department: 1 });
+userSchema.index({ primaryDepartment: 1 });
+userSchema.index({ facultyMemberId: 1 }, { sparse: true });
+userSchema.index({ studentProfileId: 1 }, { sparse: true });
 
 export const User = mongoose.model('users', userSchema);

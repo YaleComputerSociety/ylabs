@@ -6,6 +6,7 @@
  * authors without duplication.
  */
 import mongoose from 'mongoose';
+import { fieldProvenanceSchema } from './modelPrimitives';
 
 const paperSchema = new mongoose.Schema(
   {
@@ -44,6 +45,16 @@ const paperSchema = new mongoose.Schema(
       type: [String],
       default: [],
     },
+    facultyMemberIds: {
+      type: [mongoose.Schema.Types.ObjectId],
+      ref: 'facultymembers',
+      default: [],
+    },
+    researchGroupIds: {
+      type: [mongoose.Schema.Types.ObjectId],
+      ref: 'researchgroups',
+      default: [],
+    },
     year: {
       type: Number,
       required: false,
@@ -56,6 +67,10 @@ const paperSchema = new mongoose.Schema(
       type: String,
       required: false,
     },
+    plainSummary: {
+      type: String,
+      default: '',
+    },
     tldr: {
       type: String,
       required: false,
@@ -66,6 +81,18 @@ const paperSchema = new mongoose.Schema(
     },
     openAccessUrl: {
       type: String,
+      required: false,
+    },
+    landingPageUrl: {
+      type: String,
+      required: false,
+    },
+    pdfUrl: {
+      type: String,
+      required: false,
+    },
+    isOpenAccess: {
+      type: Boolean,
       required: false,
     },
     citationCount: {
@@ -80,9 +107,27 @@ const paperSchema = new mongoose.Schema(
       type: [String],
       default: [],
     },
+    publicationTypes: {
+      type: [String],
+      default: [],
+    },
+    externalIds: {
+      type: mongoose.Schema.Types.Mixed,
+      default: {},
+    },
     sources: {
       type: [String],
       default: [],
+    },
+    sourceIds: {
+      type: [mongoose.Schema.Types.ObjectId],
+      ref: 'sources',
+      default: [],
+    },
+    fieldProvenance: {
+      type: Map,
+      of: fieldProvenanceSchema,
+      default: {},
     },
     confidenceByField: {
       type: mongoose.Schema.Types.Mixed,
@@ -113,10 +158,15 @@ const paperSchema = new mongoose.Schema(
 
 paperSchema.index({ yaleAuthorIds: 1 });
 paperSchema.index({ yaleAuthorNetIds: 1 });
+paperSchema.index({ facultyMemberIds: 1 });
+paperSchema.index({ researchGroupIds: 1 });
 paperSchema.index({ year: -1 });
 paperSchema.index({ citationCount: -1 });
 paperSchema.index({ publishedAt: -1 });
 paperSchema.index({ fieldsOfStudy: 1 });
+paperSchema.index({ publicationTypes: 1 });
+paperSchema.index({ sourceIds: 1 });
+paperSchema.index({ isOpenAccess: 1 });
 paperSchema.index({ archived: 1 });
 paperSchema.index({ lastObservedAt: 1 });
 paperSchema.index({ title: 'text', abstract: 'text', tldr: 'text' });

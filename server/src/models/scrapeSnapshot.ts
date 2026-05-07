@@ -39,6 +39,10 @@ const scrapeSnapshotSchema = new mongoose.Schema(
 scrapeSnapshotSchema.index({ sourceName: 1, requestKey: 1 }, { unique: true });
 scrapeSnapshotSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 
-export const ScrapeSnapshot = mongoose.model('scrapesnapshots', scrapeSnapshotSchema);
+export const ScrapeSnapshot = mongoose.model(
+  'scrapesnapshots',
+  scrapeSnapshotSchema,
+  'scrape_snapshots',
+);
 
 export { scrapeSnapshotSchema };

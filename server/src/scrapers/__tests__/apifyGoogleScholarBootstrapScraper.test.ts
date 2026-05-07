@@ -102,9 +102,9 @@ describe('normalizeTitle', () => {
 });
 
 describe('buildSearchQuery', () => {
-  it('joins fname, lname, "Yale", and primary_department', () => {
+  it('joins fname, lname, "Yale", and primaryDepartment', () => {
     expect(
-      buildSearchQuery({ fname: 'David', lname: 'Bromwich', primary_department: 'English' }),
+      buildSearchQuery({ fname: 'David', lname: 'Bromwich', primaryDepartment: 'English' }),
     ).toBe('David Bromwich Yale English');
   });
 
@@ -157,8 +157,8 @@ describe('eligibleBootstrapFacultyQuery', () => {
     expect(q.$and).toEqual([
       {
         $or: [
-          { primary_department: { $in: ['English', 'History'] } },
-          { secondary_departments: { $in: ['English', 'History'] } },
+          { primaryDepartment: { $in: ['English', 'History'] } },
+          { secondaryDepartments: { $in: ['English', 'History'] } },
           { departments: { $in: ['English', 'History'] } },
         ],
       },
@@ -202,8 +202,8 @@ const baseUser: ScoringUser = {
   netid: 'db123',
   fname: 'David',
   lname: 'Bromwich',
-  primary_department: 'English',
-  h_index: undefined,
+  primaryDepartment: 'English',
+  hIndex: undefined,
 };
 
 function profile(overrides: Partial<ApifyCandidateProfile> = {}): ApifyCandidateProfile {
@@ -250,7 +250,7 @@ describe('scoreCandidate', () => {
     expect(r.score).toBeCloseTo(1.6);
   });
 
-  it('adds +0.4 when interests overlap with primary_department (substring either direction)', () => {
+  it('adds +0.4 when interests overlap with primaryDepartment (substring either direction)', () => {
     const r = scoreCandidate(
       profile({ affiliation: 'Yale University', interests: ['English Romanticism', 'Poetry'] }),
       baseUser,
@@ -316,7 +316,7 @@ describe('scoreCandidate', () => {
   });
 
   it('forces the score to -1.0 when candidate is too small for an h>10 user', () => {
-    const tinyUser: ScoringUser = { ...baseUser, h_index: 25 };
+    const tinyUser: ScoringUser = { ...baseUser, hIndex: 25 };
     const r = scoreCandidate(
       profile({ affiliation: 'Yale University', totalCitations: 3 }),
       tinyUser,
@@ -397,7 +397,7 @@ function faculty(n: number, overrides: Partial<BootstrapCandidateFaculty> = {}):
     netid: `netid${i}`,
     fname: 'Test',
     lname: `User${i}`,
-    primary_department: 'English',
+    primaryDepartment: 'English',
     ...overrides,
   }));
 }
@@ -602,22 +602,22 @@ describe('ApifyGoogleScholarBootstrapScraper.run', () => {
         netid: 'confident',
         fname: 'Alice',
         lname: 'Confident',
-        primary_department: 'English',
-        h_index: 20,
+        primaryDepartment: 'English',
+        hIndex: 20,
       },
       {
         _id: 'm2',
         netid: 'ambiguous',
         fname: 'Bob',
         lname: 'Ambiguous',
-        primary_department: 'History',
+        primaryDepartment: 'History',
       },
       {
         _id: 'm3',
         netid: 'nobody',
         fname: 'Carol',
         lname: 'Nobody',
-        primary_department: 'Linguistics',
+        primaryDepartment: 'Linguistics',
       },
     ];
     const callApify = vi.fn(async ({ body }: any) => {
@@ -858,7 +858,7 @@ describe('ApifyGoogleScholarBootstrapScraper.run', () => {
         netid: 'realprof',
         fname: 'Real',
         lname: 'Prof',
-        primary_department: 'English',
+        primaryDepartment: 'English',
       },
     ];
     const callApify = vi.fn(async ({ body }: any) => {

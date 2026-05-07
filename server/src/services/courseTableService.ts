@@ -4,7 +4,7 @@
  * Caches results for 1 hour to avoid excessive API calls.
  */
 
-interface CourseTableCourse {
+export interface CourseTableCourse {
   course_code: string;
   title: string;
   season_code: string;
@@ -24,7 +24,7 @@ const COURSETABLE_API = 'https://coursetable.com/api/catalog/public';
  * Get recent season codes (last 3 semesters).
  * Season code format: YYYYSS where SS is 01=Spring, 03=Fall
  */
-function getRecentSeasonCodes(): string[] {
+export function getRecentSeasonCodes(): string[] {
   const now = new Date();
   const year = now.getFullYear();
   const month = now.getMonth() + 1;
@@ -42,6 +42,65 @@ function getRecentSeasonCodes(): string[] {
   }
 
   return seasons;
+}
+
+/**
+ * Fetch all catalog courses for one CourseTable season.
+ * This is used by the independent-study scraper, which needs a season-wide
+ * scan instead of a per-professor lookup.
+ */
+export async function fetchAllSeasonCourses(
+  season: string,
+): Promise<CourseTableCourse[]> {
+  const cacheKey = `season:${season}`;
+  const cached = cache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    return cached.data;
+  }
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+
+    const response = await fetch(`${COURSETABLE_API}/${season}`, {
+      signal: controller.signal,
+      headers: { Accept: 'application/json' },
+    });
+
+    clearTimeout(timeout);
+
+    if (!response.ok) return [];
+
+    const data = await response.json();
+    if (!Array.isArray(data)) return [];
+
+    const courses = data.map((course: any) => {
+      const listings = course.listings || [];
+      const courseCode =
+        listings.length > 0
+          ? `${listings[0].subject} ${listings[0].number}`
+          : course.course_code || '';
+      const profs = course.course_professors || [];
+      return {
+        course_code: courseCode,
+        title: course.title || '',
+        season_code: season,
+        description: course.description || '',
+        credits: course.credits,
+        areas: course.areas ? String(course.areas).split('') : [],
+        skills: course.skills ? String(course.skills).split('') : [],
+        professor_names: profs.map((p: any) => p.professor_name || ''),
+      };
+    });
+
+    cache.set(cacheKey, { data: courses, timestamp: Date.now() });
+    return courses;
+  } catch (err: any) {
+    if (err.name !== 'AbortError') {
+      console.error(`CourseTable: Failed to fetch season ${season}:`, err.message);
+    }
+    return [];
+  }
 }
 
 /**

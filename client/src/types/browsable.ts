@@ -2,7 +2,13 @@
  * Shared types and helpers for browsable listings and fellowships.
  */
 import { Listing, Fellowship } from './types';
+import { ResearchGroup, ResearchGroupKind } from './researchGroup';
 import { getDepartmentAbbreviation } from '../utils/departmentNames';
+import {
+  computeAcceptanceVerdict,
+  verdictBadgeStyles,
+  verdictLabel,
+} from '../utils/undergradAcceptance';
 
 export const DEPT_CAP = 3;
 export const TAG_CAP = 3;
@@ -45,11 +51,43 @@ export function getOrderedDeptAbbrs(
 
 export type BrowsableItem =
   | { type: 'listing'; data: Listing }
-  | { type: 'fellowship'; data: Fellowship };
+  | { type: 'fellowship'; data: Fellowship }
+  | { type: 'researchGroup'; data: ResearchGroup };
+
+export function getItemId(item: BrowsableItem): string {
+  if (item.type === 'researchGroup') {
+    return item.data.id || item.data._id || item.data.slug;
+  }
+  return item.data.id;
+}
+
+export function getResearchGroupKindLabel(kind: ResearchGroupKind): string {
+  const labels: Record<ResearchGroupKind, string> = {
+    lab: 'Lab',
+    center: 'Center',
+    institute: 'Institute',
+    program: 'Program',
+    initiative: 'Initiative',
+    group: 'Group',
+    individual: 'Faculty Research',
+    solo: 'Faculty Research',
+  };
+  return labels[kind] || 'Research';
+}
+
+export function getResearchGroupDisplayName(group: ResearchGroup): string {
+  if (group.kind !== 'individual' && group.kind !== 'solo') {
+    return group.name;
+  }
+  return group.displayName || group.name.replace(/\s+—\s+Research$/i, '').replace(/\s+Research$/i, '');
+}
 
 export function isItemOpen(item: BrowsableItem): boolean {
   if (item.type === 'listing') {
     return item.data.hiringStatus >= 0;
+  }
+  if (item.type === 'researchGroup') {
+    return item.data.openness === 'open' || item.data.hasActiveListing === true;
   }
   const { isAcceptingApplications, deadline } = item.data;
   const deadlinePassed = deadline ? new Date(deadline) < new Date() : false;
@@ -69,6 +107,10 @@ export function getItemTags(
   if (item.type === 'listing') {
     const areas =
       item.data.researchAreas?.length > 0 ? item.data.researchAreas : item.data.keywords || [];
+    return areas.map((a) => ({ label: a, ...getColor(a) }));
+  }
+  if (item.type === 'researchGroup') {
+    const areas = item.data.researchAreas || [];
     return areas.map((a) => ({ label: a, ...getColor(a) }));
   }
   return [
@@ -93,6 +135,14 @@ export function getItemSubtitle(item: BrowsableItem): string {
       departments && departments.length > 0 ? getDepartmentAbbreviation(departments[0]) : null;
     return dept ? `${name} · ${dept}` : name;
   }
+  if (item.type === 'researchGroup') {
+    const kind = getResearchGroupKindLabel(item.data.kind);
+    const dept =
+      item.data.departments && item.data.departments.length > 0
+        ? getDepartmentAbbreviation(item.data.departments[0])
+        : null;
+    return dept ? `${kind} · ${dept}` : kind;
+  }
   const { deadline } = item.data;
   if (!deadline) return 'No deadline';
   const d = new Date(deadline);
@@ -102,6 +152,7 @@ export function getItemSubtitle(item: BrowsableItem): string {
 
 export function getItemSubtitleColor(item: BrowsableItem): string {
   if (item.type === 'listing') return 'text-gray-500';
+  if (item.type === 'researchGroup') return 'text-gray-500';
   const { deadline } = item.data;
   if (!deadline) return 'text-gray-500';
   const d = new Date(deadline);
@@ -115,4 +166,16 @@ export function getDaysUntilDeadline(item: BrowsableItem): number | null {
   if (item.type !== 'fellowship' || !item.data.deadline) return null;
   const d = new Date(item.data.deadline);
   return Math.ceil((d.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+}
+
+export function getResearchGroupStatus(item: BrowsableItem): {
+  label: string;
+  className: string;
+} | null {
+  if (item.type !== 'researchGroup') return null;
+  const { verdict } = computeAcceptanceVerdict(item.data, item.data.hasActiveListing === true);
+  return {
+    label: verdictLabel(verdict),
+    className: verdictBadgeStyles(verdict),
+  };
 }

@@ -19,7 +19,17 @@
     "generate:keywords:live": "npx tsx generateKeywords.ts --live",
     "generate:keywords:force": "npx tsx generateKeywords.ts --live-force",
     "generate:keywords:classify": "npx tsx generateKeywords.ts --classify",
-    "import:fellowships": "npx tsx importFellowships.ts"
+    "import:fellowships": "npx tsx importFellowships.ts",
+    "migrate:v4:faculty-members": "npx tsx BackfillV4FacultyMembers.ts",
+    "migrate:v4:student-profiles": "npx tsx BackfillV4StudentProfiles.ts",
+    "migrate:v4:research-group-members": "npx tsx BackfillV4ResearchGroupMembers.ts",
+    "migrate:v4:listings": "npx tsx BackfillV4Listings.ts",
+    "migrate:v4:paper-graph": "npx tsx BackfillV4PaperGraph.ts",
+    "migrate:v4:grants": "npx tsx BackfillV4Grants.ts",
+    "migrate:v4:openness-signals": "npx tsx BackfillV4OpennessSignals.ts",
+    "migrate:v4:research-group-stats": "npx tsx BackfillV4ResearchGroupStats.ts",
+    "migrate:v4:identity": "npx tsx BackfillV4FacultyMembers.ts && npx tsx BackfillV4StudentProfiles.ts && npx tsx BackfillV4ResearchGroupMembers.ts",
+    "migrate:v4:all": "npx tsx BackfillV4FacultyMembers.ts && npx tsx BackfillV4StudentProfiles.ts && npx tsx BackfillV4ResearchGroupMembers.ts && npx tsx BackfillV4Listings.ts && npx tsx BackfillV4PaperGraph.ts && npx tsx BackfillV4Grants.ts && npx tsx BackfillV4OpennessSignals.ts && npx tsx BackfillV4ResearchGroupStats.ts"
   },
   "dependencies": {
     "csv-parse": "^5.5.3",

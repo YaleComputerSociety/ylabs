@@ -1,5 +1,5 @@
 /**
- * Inquire modal for a lab. Shows a prefilled email template the student
+ * Inquire modal for a research group. Shows a prefilled email template the student
  * can review and send via the OS mail client (mailto: link).
  *
  * Pure presentational — open/close state lives in the page reducer.
@@ -91,7 +91,7 @@ const LabInquireModal = ({ isOpen, onClose, group, members }: LabInquireModalPro
         <div className="px-6 py-5 space-y-4">
           {!contact ? (
             <p className="text-sm text-gray-700">
-              We don't have a public contact email for this lab yet. Try the lab website
+              We don't have a public contact email for this research group yet. Try the website
               or check back later.
             </p>
           ) : (

@@ -1,9 +1,9 @@
 /**
- * React context for the labs (`/labs`) browse-page search state.
+ * React context for the research (`/research`) browse-page search state.
  *
  * Mirrors SearchContext but for ResearchGroup rather than Listing. Provider
  * wires this onto labSearchReducer + a runSearch() function that calls
- * `POST /api/research-groups/search`.
+ * `POST /api/research/search`.
  */
 import { createContext } from 'react';
 import {

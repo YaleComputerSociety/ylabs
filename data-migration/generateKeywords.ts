@@ -587,7 +587,11 @@ async function generateKeywords(dryRun: boolean = true, forceMode: boolean = fal
     researchAreaSchema.index({ name: 'text' });
     researchAreaSchema.index({ field: 1 });
 
-    const ResearchAreaModel = prodConnection.model('researchAreas', researchAreaSchema);
+    const ResearchAreaModel = prodConnection.model(
+      'researchareas',
+      researchAreaSchema,
+      'research_areas',
+    );
 
     console.log('Loading valid research areas from Production...');
     const researchAreaDocs = await ResearchAreaModel.find({}).lean();
@@ -999,7 +1003,11 @@ async function classifyExistingAreas() {
     researchAreaSchema.index({ name: 'text' });
     researchAreaSchema.index({ field: 1 });
 
-    const ResearchAreaModel = prodConnection.model('researchAreas', researchAreaSchema);
+    const ResearchAreaModel = prodConnection.model(
+      'researchareas',
+      researchAreaSchema,
+      'research_areas',
+    );
 
     // Find areas added by migration-agent that may need reclassification
     const agentAreas = await ResearchAreaModel.find({ addedBy: 'migration-agent' }).lean();

@@ -4,10 +4,14 @@
 import React, { useContext, useMemo } from 'react';
 import {
   BrowsableItem,
+  getItemId,
   isItemOpen,
   getItemTags,
   getItemSubtitle,
   getItemSubtitleColor,
+  getResearchGroupDisplayName,
+  getResearchGroupKindLabel,
+  getResearchGroupStatus,
   getDaysUntilDeadline,
   getOrderedDeptAbbrs,
   DEPT_CAP,
@@ -27,7 +31,7 @@ import { getDepartmentAbbreviation } from '../../utils/departmentNames';
 interface BrowseListItemProps {
   item: BrowsableItem;
   isFavorite: boolean;
-  onToggleFavorite: (e: React.MouseEvent) => void;
+  onToggleFavorite?: (e: React.MouseEvent) => void;
   onOpenModal: () => void;
   onAdminEdit?: () => void;
   isCompact?: boolean;
@@ -39,7 +43,7 @@ const BrowseListItem = React.memo(({ item, isFavorite, onToggleFavorite, onOpenM
   const isAdmin = user?.userType === 'admin';
   const open = isItemOpen(item);
   const tags = useMemo(() => getItemTags(item, getColorForResearchArea), [item, getColorForResearchArea]);
-  const trackView = useViewTracking(item.type === 'listing' ? 'listing' : 'fellowship', item.data.id);
+  const trackView = useViewTracking(item.type, getItemId(item));
 
   const hasPrerequisites = item.type === 'listing' &&
     !!item.data.applicantDescription && item.data.applicantDescription.trim() !== '';
@@ -48,6 +52,7 @@ const BrowseListItem = React.memo(({ item, isFavorite, onToggleFavorite, onOpenM
   const urgentBadge = item.type === 'fellowship' && daysUntil !== null && daysUntil > 0 && daysUntil <= 14;
 
   const isListing = item.type === 'listing';
+  const isResearchGroup = item.type === 'researchGroup';
   const professorName = isListing
     ? `${item.data.ownerFirstName} ${item.data.ownerLastName}`
     : null;
@@ -68,8 +73,9 @@ const BrowseListItem = React.memo(({ item, isFavorite, onToggleFavorite, onOpenM
 
   const subtitle = getItemSubtitle(item);
   const subtitleColor = getItemSubtitleColor(item);
+  const researchStatus = getResearchGroupStatus(item);
 
-  const isAudited = isAdmin && item.data.audited;
+  const isAudited = isAdmin && item.type !== 'researchGroup' && item.data.audited;
 
   const handleClick = () => {
     trackView();
@@ -94,7 +100,26 @@ const BrowseListItem = React.memo(({ item, isFavorite, onToggleFavorite, onOpenM
           {urgentBadge && daysUntil !== null && (
             <UrgentBadge daysUntil={daysUntil} variant="inline" />
           )}
-          {isListing ? (
+          {isResearchGroup ? (
+            <>
+              <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+                <span className="text-xs font-semibold text-blue-700 truncate">
+                  {getResearchGroupKindLabel(item.data.kind)}
+                </span>
+                {item.data.hasActiveListing && (
+                  <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-100">
+                    Active opportunity
+                  </span>
+                )}
+              </div>
+              <h3 className="text-sm font-semibold text-gray-900 truncate">
+                {getResearchGroupDisplayName(item.data)}
+              </h3>
+              <p className="text-xs text-gray-500 truncate">
+                {subtitle}
+              </p>
+            </>
+          ) : isListing ? (
             <>
               <h3 className="text-sm font-semibold text-gray-900 truncate">
                 {professorName}
@@ -133,7 +158,11 @@ const BrowseListItem = React.memo(({ item, isFavorite, onToggleFavorite, onOpenM
         {!isCompact && (
           <div className="col-span-6 hidden md:block">
             <p className={`text-sm text-gray-600 ${DESCRIPTION_CLAMP_CLASS}`}>
-              {item.type === 'listing' ? item.data.description : (item.data.summary || item.data.description)}
+              {item.type === 'listing'
+                ? item.data.description
+                : item.type === 'researchGroup'
+                  ? item.data.description
+                  : item.data.summary || item.data.description}
             </p>
           </div>
         )}
@@ -141,7 +170,13 @@ const BrowseListItem = React.memo(({ item, isFavorite, onToggleFavorite, onOpenM
         <div className="col-span-12 md:col-span-2 flex md:flex-col items-center md:items-end gap-2 flex-shrink-0">
           <div className="flex items-center gap-1">
             {hasPrerequisites && <HasPrerequisitesIcon />}
-            <StatusBadge isOpen={open} />
+            {isResearchGroup && researchStatus ? (
+              <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${researchStatus.className}`}>
+                {researchStatus.label}
+              </span>
+            ) : (
+              <StatusBadge isOpen={open} />
+            )}
           </div>
           <div className="flex items-center gap-1">
             {isAdmin && onAdminEdit && (
@@ -157,7 +192,9 @@ const BrowseListItem = React.memo(({ item, isFavorite, onToggleFavorite, onOpenM
                 </svg>
               </button>
             )}
-            <FavoriteButton isFavorite={isFavorite} onToggle={onToggleFavorite} />
+            {onToggleFavorite && item.type !== 'researchGroup' && (
+              <FavoriteButton isFavorite={isFavorite} onToggle={onToggleFavorite} />
+            )}
           </div>
         </div>
       </div>

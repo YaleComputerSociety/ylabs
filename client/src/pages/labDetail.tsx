@@ -1,9 +1,9 @@
 /**
- * Lab detail page rendered at `/labs/:slug`.
+ * Research detail page rendered at `/research/:slug`.
  *
  * Smart-component responsibilities:
  *   - Resolve the slug from the URL and fetch the detail payload from
- *     `GET /api/research-groups/:slug` via the labDetailReducer.
+ *     `GET /api/research/:slug` via the labDetailReducer.
  *   - Compose the small presentational components in `components/labs/`.
  *   - Own the "Inquire" modal toggle (delegated to the reducer so the
  *     transitions are pure and testable).
@@ -46,15 +46,15 @@ const LabDetail = () => {
     if (!slug) return;
     dispatch({ type: 'FETCH_START' });
     axios
-      .get(`/research-groups/${slug}`)
+      .get(`/research/${slug}`)
       .then((res) => {
         dispatch({ type: 'FETCH_SUCCESS', payload: res.data as LabDetailPayload });
       })
       .catch((err) => {
         if (err?.response?.status === 404) {
-          dispatch({ type: 'FETCH_FAILURE', payload: 'Lab not found.' });
+          dispatch({ type: 'FETCH_FAILURE', payload: 'Research profile not found.' });
         } else {
-          dispatch({ type: 'FETCH_FAILURE', payload: 'Failed to load this lab.' });
+          dispatch({ type: 'FETCH_FAILURE', payload: 'Failed to load this research profile.' });
         }
       });
   }, [slug]);
@@ -72,7 +72,7 @@ const LabDetail = () => {
       <div className="max-w-6xl mx-auto px-4 py-16 text-center">
         <h2 className="text-xl font-semibold text-gray-800">{error}</h2>
         <p className="text-gray-500 mt-2">
-          The lab you're looking for may not exist or may have been removed.
+          The research profile you're looking for may not exist or may have been removed.
         </p>
       </div>
     );
@@ -90,6 +90,11 @@ const LabDetail = () => {
           <LabHeader group={group} hasActiveListing={hasActiveListing} />
 
           <section>
+            <SectionHeading>Active Opportunities</SectionHeading>
+            <LabActiveListings listings={activeListings} />
+          </section>
+
+          <section>
             <SectionHeading>People</SectionHeading>
             <LabMembersList members={members} />
           </section>
@@ -99,10 +104,6 @@ const LabDetail = () => {
             <LabPapersList papers={recentPapers} />
           </section>
 
-          <section>
-            <SectionHeading>Active Listings</SectionHeading>
-            <LabActiveListings listings={activeListings} />
-          </section>
         </div>
 
         <aside className="lg:col-span-1">

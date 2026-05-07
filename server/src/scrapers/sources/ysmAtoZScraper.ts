@@ -118,13 +118,13 @@ async function findPiUserId(surname: string | null): Promise<string | null> {
       lname: new RegExp(`^${surname.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i'),
       userType: { $in: ['professor', 'faculty'] },
     },
-    { _id: 1, fname: 1, lname: 1, primary_department: 1 },
+    { _id: 1, fname: 1, lname: 1, primaryDepartment: 1 },
   )
     .limit(5)
     .lean();
   if (matches.length !== 1) return null;
   const m: any = matches[0];
-  if (m.primary_department && /medicine|health|nursing|public health/i.test(m.primary_department)) {
+  if (m.primaryDepartment && /medicine|health|nursing|public health/i.test(m.primaryDepartment)) {
     return String(m._id);
   }
   return String(m._id);
