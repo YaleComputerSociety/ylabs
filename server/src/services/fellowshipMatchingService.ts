@@ -163,15 +163,29 @@ export function scoreFellowshipForPathway(
     score += 10;
     reasons.push('Fellowship is currently marked as accepting applications.');
   } else {
-    caveats.push('Fellowship is not currently marked as accepting applications.');
+    if (applicationCycle.nextCycleSignal) {
+      reasons.push('Fellowship source can guide next-cycle funding planning.');
+    } else {
+      caveats.push('Fellowship is not currently marked as accepting applications.');
+    }
   }
 
   if (applicationCycle.deadlineHasNotPassed === true) {
     score += 10;
     reasons.push('Fellowship deadline has not passed.');
   } else if (applicationCycle.deadlineHasNotPassed === false) {
-    score -= 20;
-    caveats.push('Fellowship deadline appears to have passed.');
+    if (applicationCycle.nextCycleSignal) {
+      score -= 8;
+      reasons.push('Past deadline still provides evidence for a likely recurring application cycle.');
+      caveats.push('Current fellowship deadline appears to have passed; verify the next cycle before applying.');
+    } else {
+      score -= 20;
+      caveats.push('Fellowship deadline appears to have passed.');
+    }
+  }
+
+  if (applicationCycle.nextCycleSignal) {
+    score += 8;
   }
 
   if (applicationCycle.supportsOfficialApplicationRoute) {

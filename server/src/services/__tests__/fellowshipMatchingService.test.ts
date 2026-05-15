@@ -47,6 +47,7 @@ describe('fellowshipMatchingService', () => {
       applicationCycle: {
         sourceBacked: true,
         activeCycle: true,
+        nextCycleSignal: false,
         supportsFellowshipFundedProject: true,
         supportsFellowshipCompatible: true,
         supportsOfficialApplicationRoute: true,
@@ -82,6 +83,7 @@ describe('fellowshipMatchingService', () => {
       applicationCycle: {
         sourceBacked: false,
         activeCycle: false,
+        nextCycleSignal: false,
         supportsFellowshipFundedProject: false,
       },
     });
@@ -107,7 +109,7 @@ describe('fellowshipMatchingService', () => {
     expect(match?.strength).toBe('candidate');
   });
 
-  it('keeps expired official cycles below source-confirmed strength', () => {
+  it('keeps expired official cycles as next-cycle planning candidates', () => {
     const match = scoreFellowshipForPathway(pathway(), {
       _id: 'fellowship-expired',
       title: 'Summer RNA Research Fellowship',
@@ -120,13 +122,20 @@ describe('fellowshipMatchingService', () => {
 
     expect(match).toMatchObject({
       fellowshipId: 'fellowship-expired',
-      strength: 'weak_candidate',
+      strength: 'candidate',
       applicationCycle: {
         sourceBacked: true,
         activeCycle: false,
+        nextCycleSignal: true,
         deadlineHasNotPassed: false,
       },
     });
+    expect(match?.reasons).toContain(
+      'Past deadline still provides evidence for a likely recurring application cycle.',
+    );
+    expect(match?.caveats).toContain(
+      'Current fellowship deadline appears to have passed; verify the next cycle before applying.',
+    );
   });
 
   it('does not return weak text overlap below the minimum score', () => {

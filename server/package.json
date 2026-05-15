@@ -19,6 +19,7 @@
     "meili:rebuild-pathways": "tsx src/scripts/rebuildPathwaySearchIndex.ts",
     "meili:rebuild-research-entities": "tsx src/scripts/rebuildResearchEntitySearchIndex.ts",
     "research-entity:audit-rename": "tsx src/scripts/auditResearchEntityRename.ts",
+    "research-entity:coverage-audit": "tsx src/scripts/researchEntityCoverageAudit.ts",
     "accepted-inputs": "tsx src/scripts/acceptedInputs.ts",
     "beta:readiness": "tsx src/scripts/betaReadinessGate.ts",
     "pathway:relevance-review": "tsx src/scripts/pathwayRelevanceReview.ts",

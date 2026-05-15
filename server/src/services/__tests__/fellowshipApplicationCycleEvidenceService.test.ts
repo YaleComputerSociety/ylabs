@@ -31,6 +31,7 @@ describe('fellowshipApplicationCycleEvidenceService', () => {
       sourceUrls: ['https://example.edu/apply', 'https://example.edu/program'],
       sourceBacked: true,
       activeCycle: true,
+      nextCycleSignal: false,
       supportsFellowshipFundedProject: true,
       supportsFellowshipCompatible: true,
       supportsOfficialApplicationRoute: true,
@@ -57,6 +58,7 @@ describe('fellowshipApplicationCycleEvidenceService', () => {
       sourceUrls: [],
       sourceBacked: false,
       activeCycle: false,
+      nextCycleSignal: false,
       supportsFellowshipFundedProject: false,
       supportsFellowshipCompatible: false,
       supportsOfficialApplicationRoute: false,
@@ -92,6 +94,7 @@ describe('fellowshipApplicationCycleEvidenceService', () => {
     });
     expect(pastDeadlineEvidence).toMatchObject({
       activeCycle: false,
+      nextCycleSignal: true,
       deadlineHasNotPassed: false,
     });
   });
