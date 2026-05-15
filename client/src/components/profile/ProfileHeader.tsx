@@ -9,10 +9,32 @@ interface ProfileHeaderProps {
   onTabChange?: (tab: string) => void;
 }
 
+const orcidHref = (orcid: unknown, profileUrl: unknown): string => {
+  const raw = typeof orcid === 'string' && orcid.trim() ? orcid : profileUrl;
+  if (typeof raw !== 'string') return '';
+
+  const trimmed = raw.trim();
+  if (!trimmed) return '';
+
+  const bareOrcid = trimmed.replace(/^https?:\/\/orcid\.org\//i, '');
+  if (/^\d{4}-\d{4}-\d{4}-[\dX]{4}$/i.test(bareOrcid)) {
+    return `https://orcid.org/${bareOrcid.toUpperCase()}`;
+  }
+
+  const href = safeUrl(trimmed);
+  try {
+    const parsed = new URL(href);
+    return parsed.hostname === 'orcid.org' ? href : '';
+  } catch {
+    return '';
+  }
+};
+
 const ProfileHeader = ({ profile, onTabChange }: ProfileHeaderProps) => {
   const fullName = `${profile.fname} ${profile.lname}`;
   const initials =
     `${profile.fname?.charAt(0) || ''}${profile.lname?.charAt(0) || ''}`.toUpperCase();
+  const orcidProfileHref = orcidHref(profile.orcid, profile.profile_urls?.orcid);
 
   const building = profile.building_desk
     ? profile.building_desk.split(',')[0].trim()
@@ -110,6 +132,17 @@ const ProfileHeader = ({ profile, onTabChange }: ProfileHeaderProps) => {
             >
               {profile.ownListings.length} listing{profile.ownListings.length !== 1 ? 's' : ''}
             </button>
+          )}
+          {orcidProfileHref && (
+            <a
+              href={orcidProfileHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs px-2 py-1 rounded-full bg-gray-50 text-gray-600 font-medium hover:bg-gray-100 transition-colors"
+              aria-label={`${fullName} ORCID profile`}
+            >
+              ORCID
+            </a>
           )}
           {profile.profile_urls &&
             Object.entries(profile.profile_urls)
