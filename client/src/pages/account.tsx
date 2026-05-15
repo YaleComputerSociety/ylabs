@@ -12,6 +12,7 @@ import UserContext from '../contexts/UserContext';
 import ProfileEditor from '../components/accounts/ProfileEditor';
 import ListingEditor from '../components/accounts/ListingEditor';
 import FavoritesManager from '../components/accounts/FavoritesManager';
+import SavedPathwaysSection from '../components/accounts/SavedPathwaysSection';
 
 const Account = () => {
   const { user } = useContext(UserContext);
@@ -54,7 +55,7 @@ const Account = () => {
         <div className="bg-amber-100 border-l-4 border-amber-500 text-amber-700 p-4 mb-6 rounded shadow-sm">
           <div className="flex items-center">
             <p className="font-medium">
-              Your account is pending confirmation. Any listings that you create will not be
+              Your account is pending confirmation. Any posted roles that you create will not be
               publicly visible as favorites or in search results until your account is confirmed.
             </p>
           </div>
@@ -64,6 +65,7 @@ const Account = () => {
       {showProfView && user && <ProfileEditor netid={user.netId} />}
       {showProfView && user && <ListingEditor user={user} />}
 
+      {!showProfView && <SavedPathwaysSection />}
       <FavoritesManager variant={showProfView ? 'professor' : 'student'} />
     </div>
   );
