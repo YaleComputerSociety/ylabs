@@ -6,7 +6,7 @@
  */
 import { Fellowship, FellowshipFilterOptions } from '../types/types';
 
-export type FellowshipQuickFilter = 'open' | 'closingSoon' | 'recent' | null;
+export type FellowshipQuickFilter = 'open' | 'closingSoon' | 'nextCycle' | 'recent' | null;
 
 export interface FellowshipSearchState {
   queryString: string;

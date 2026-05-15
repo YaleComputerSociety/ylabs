@@ -14,24 +14,10 @@ import { Fellowship } from '../types/types';
 import axios from '../utils/axios';
 import { browsePageReducer, createInitialBrowsePageState } from '../reducers/browsePageReducer';
 import { useInfiniteScroll } from '../hooks/useInfiniteScroll';
-
-const CLOSING_SOON_DAYS = 30;
-
-function categorizeFellowship(f: Fellowship, now: Date): 'closingSoon' | 'open' | 'closed' {
-  const deadlinePassed = f.deadline ? new Date(f.deadline) < now : false;
-  const isOpen = f.isAcceptingApplications && !deadlinePassed;
-
-  if (!isOpen) return 'closed';
-
-  if (f.deadline) {
-    const daysUntil = Math.ceil(
-      (new Date(f.deadline).getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
-    );
-    if (daysUntil <= CLOSING_SOON_DAYS && daysUntil > 0) return 'closingSoon';
-  }
-
-  return 'open';
-}
+import {
+  getFellowshipCycleStatus,
+  type FellowshipCycleCategory,
+} from '../utils/fellowshipCycle';
 
 const SectionHeader = ({
   title,
@@ -116,15 +102,16 @@ const Fellowships = () => {
     }
   }, [searchParams, isModalOpen, selectedFellowship, setSearchParams]);
 
-  const { closingSoon, open, closed } = useMemo(() => {
+  const { closingSoon, open, nextCycle, closed } = useMemo(() => {
     const now = new Date();
     const groups = {
       closingSoon: [] as Fellowship[],
       open: [] as Fellowship[],
+      nextCycle: [] as Fellowship[],
       closed: [] as Fellowship[],
     };
     for (const f of fellowships) {
-      const cat = categorizeFellowship(f, now);
+      const cat = getFellowshipCycleStatus(f, now).category;
       groups[cat].push(f);
     }
     groups.closingSoon.sort((a, b) => {
@@ -150,12 +137,17 @@ const Fellowships = () => {
     [closingSoon, quickFilter],
   );
   const openItems = useMemo(() => toBrowsable(recentFilter(open)), [open, quickFilter]);
+  const nextCycleItems = useMemo(
+    () => toBrowsable(recentFilter(nextCycle)),
+    [nextCycle, quickFilter],
+  );
   const closedItems = useMemo(() => toBrowsable(recentFilter(closed)), [closed, quickFilter]);
 
-  const showSection = (section: 'closingSoon' | 'open' | 'closed') => {
+  const showSection = (section: FellowshipCycleCategory) => {
     if (quickFilter === null || quickFilter === 'recent') return true;
-    if (quickFilter === 'open') return section !== 'closed';
+    if (quickFilter === 'open') return section === 'closingSoon' || section === 'open';
     if (quickFilter === 'closingSoon') return section === 'closingSoon';
+    if (quickFilter === 'nextCycle') return section === 'nextCycle';
     return false;
   };
 
@@ -208,7 +200,8 @@ const Fellowships = () => {
     searchExhausted,
     isLoading,
     setPage,
-    filteredCount: closingSoonItems.length + openItems.length + closedItems.length,
+    filteredCount:
+      closingSoonItems.length + openItems.length + nextCycleItems.length + closedItems.length,
     totalRawCount: fellowships.length,
     quickFilterActive: !!quickFilter,
   });
@@ -276,6 +269,27 @@ const Fellowships = () => {
                 onAdminEdit={isAdmin ? handleAdminEdit : undefined}
                 isLoading={isLoading}
                 emptyMessage="No open fellowships"
+                onLoadMore={handleLoadMore}
+                disableVirtualization
+              />
+            </>
+          )}
+
+          {showSection('nextCycle') && nextCycleItems.length > 0 && (
+            <>
+              <SectionHeader
+                title="Likely Next Cycle"
+                count={nextCycleItems.length}
+                color="bg-sky-500"
+              />
+              <BrowseGrid
+                items={nextCycleItems}
+                favIds={favFellowshipIds}
+                onToggleFavorite={handleToggleFavorite}
+                onOpenModal={handleOpenModal}
+                onAdminEdit={isAdmin ? handleAdminEdit : undefined}
+                isLoading={isLoading}
+                emptyMessage="No next-cycle fellowship signals"
                 onLoadMore={handleLoadMore}
                 disableVirtualization
               />

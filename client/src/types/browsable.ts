@@ -9,6 +9,10 @@ import {
   verdictBadgeStyles,
   verdictLabel,
 } from '../utils/undergradAcceptance';
+import {
+  getFellowshipCycleStatus,
+  getFellowshipDeadlineSubtitle,
+} from '../utils/fellowshipCycle';
 
 export const DEPT_CAP = 3;
 export const TAG_CAP = 3;
@@ -187,16 +191,14 @@ export function getItemSubtitle(item: BrowsableItem): string {
         : null;
     return dept ? `${kind} · ${dept}` : kind;
   }
-  const { deadline } = item.data;
-  if (!deadline) return 'No deadline';
-  const d = new Date(deadline);
-  if (d < new Date()) return 'Deadline passed';
-  return `Due ${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+  return getFellowshipDeadlineSubtitle(item.data);
 }
 
 export function getItemSubtitleColor(item: BrowsableItem): string {
   if (item.type === 'listing') return 'text-gray-500';
   if (item.type === 'researchGroup') return 'text-gray-500';
+  const status = getFellowshipCycleStatus(item.data);
+  if (status.category === 'nextCycle') return 'text-sky-700 font-medium';
   const { deadline } = item.data;
   if (!deadline) return 'text-gray-500';
   const d = new Date(deadline);
