@@ -7,12 +7,17 @@ const studentEngagementEventSchema = new mongoose.Schema(
   {
     studentProfileId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'studentprofiles',
+      ref: 'StudentProfile',
       required: false,
     },
     researchGroupId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'researchgroups',
+      ref: 'ResearchGroup',
+      required: false,
+    },
+    researchEntityId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'ResearchEntity',
       required: true,
     },
     eventType: {
@@ -36,11 +41,12 @@ const studentEngagementEventSchema = new mongoose.Schema(
 );
 
 studentEngagementEventSchema.index({ researchGroupId: 1, eventType: 1, occurredAt: -1 });
+studentEngagementEventSchema.index({ researchEntityId: 1, eventType: 1, occurredAt: -1 });
 studentEngagementEventSchema.index({ studentProfileId: 1, occurredAt: -1 });
 studentEngagementEventSchema.index({ occurredAt: -1 });
 
 export const StudentEngagementEvent = mongoose.model(
-  'studentengagementevents',
+  'StudentEngagementEvent',
   studentEngagementEventSchema,
   'student_engagement_events',
 );

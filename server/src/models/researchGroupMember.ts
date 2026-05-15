@@ -1,5 +1,5 @@
 /**
- * Mongoose schema and model for ResearchGroup membership with role.
+ * Mongoose schema and model for ResearchEntity membership with role.
  */
 import mongoose from 'mongoose';
 import { fieldProvenanceSchema } from './modelPrimitives';
@@ -8,17 +8,22 @@ const researchGroupMemberSchema = new mongoose.Schema(
   {
     researchGroupId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'researchgroups',
-      required: true,
+      ref: 'ResearchGroup',
+      required: false,
+    },
+    researchEntityId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'ResearchEntity',
+      required: false,
     },
     userId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'users',
+      ref: 'User',
       required: false,
     },
     facultyMemberId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'facultymembers',
+      ref: 'FacultyMember',
       required: false,
     },
     name: {
@@ -105,11 +110,14 @@ researchGroupMemberSchema.index({ researchGroupId: 1, facultyMemberId: 1, role: 
 researchGroupMemberSchema.index({ userId: 1 });
 researchGroupMemberSchema.index({ facultyMemberId: 1 });
 researchGroupMemberSchema.index({ researchGroupId: 1, role: 1 });
+researchGroupMemberSchema.index({ researchEntityId: 1, userId: 1 });
+researchGroupMemberSchema.index({ researchEntityId: 1, facultyMemberId: 1, role: 1 });
+researchGroupMemberSchema.index({ researchEntityId: 1, role: 1 });
 
 export const ResearchGroupMember = mongoose.model(
-  'researchgroupmembers',
+  'ResearchGroupMember',
   researchGroupMemberSchema,
-  'research_group_members',
+  'research_entity_members',
 );
 
 export { researchGroupMemberSchema };

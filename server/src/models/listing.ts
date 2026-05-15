@@ -11,12 +11,17 @@ const listingSchema = new mongoose.Schema(
     },
     researchGroupId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'researchgroups',
+      ref: 'ResearchGroup',
+      required: false,
+    },
+    researchEntityId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'ResearchEntity',
       required: false,
     },
     createdByUserId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'users',
+      ref: 'User',
       required: false,
     },
     ownerFirstName: {
@@ -141,9 +146,10 @@ const listingSchema = new mongoose.Schema(
   },
 );
 
+listingSchema.index({ researchEntityId: 1, archived: 1 });
 listingSchema.index({ researchGroupId: 1, archived: 1 });
 listingSchema.index({ expiresAt: 1 });
 
-export const Listing = mongoose.model('listings', listingSchema);
+export const Listing = mongoose.model('Listing', listingSchema);
 
 export { listingSchema };

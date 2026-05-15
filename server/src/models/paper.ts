@@ -22,6 +22,12 @@ const paperSchema = new mongoose.Schema(
       sparse: true,
       unique: true,
     },
+    arxivId: {
+      type: String,
+      required: false,
+      sparse: true,
+      unique: true,
+    },
     doi: {
       type: String,
       required: false,
@@ -38,7 +44,7 @@ const paperSchema = new mongoose.Schema(
     },
     yaleAuthorIds: {
       type: [mongoose.Schema.Types.ObjectId],
-      ref: 'users',
+      ref: 'User',
       default: [],
     },
     yaleAuthorNetIds: {
@@ -47,12 +53,17 @@ const paperSchema = new mongoose.Schema(
     },
     facultyMemberIds: {
       type: [mongoose.Schema.Types.ObjectId],
-      ref: 'facultymembers',
+      ref: 'FacultyMember',
       default: [],
     },
     researchGroupIds: {
       type: [mongoose.Schema.Types.ObjectId],
-      ref: 'researchgroups',
+      ref: 'ResearchGroup',
+      default: [],
+    },
+    researchEntityIds: {
+      type: [mongoose.Schema.Types.ObjectId],
+      ref: 'ResearchEntity',
       default: [],
     },
     year: {
@@ -111,6 +122,23 @@ const paperSchema = new mongoose.Schema(
       type: [String],
       default: [],
     },
+    publicationStage: {
+      type: String,
+      enum: ['PREPRINT', 'PUBLISHED', 'UNKNOWN'],
+      default: 'UNKNOWN',
+    },
+    preprintServer: {
+      type: String,
+      required: false,
+    },
+    postedAt: {
+      type: Date,
+      required: false,
+    },
+    versionDate: {
+      type: Date,
+      required: false,
+    },
     externalIds: {
       type: mongoose.Schema.Types.Mixed,
       default: {},
@@ -121,7 +149,7 @@ const paperSchema = new mongoose.Schema(
     },
     sourceIds: {
       type: [mongoose.Schema.Types.ObjectId],
-      ref: 'sources',
+      ref: 'Source',
       default: [],
     },
     fieldProvenance: {
@@ -138,6 +166,10 @@ const paperSchema = new mongoose.Schema(
       default: [],
     },
     lastObservedAt: {
+      type: Date,
+      required: false,
+    },
+    crossrefHydratedAt: {
       type: Date,
       required: false,
     },
@@ -160,17 +192,22 @@ paperSchema.index({ yaleAuthorIds: 1 });
 paperSchema.index({ yaleAuthorNetIds: 1 });
 paperSchema.index({ facultyMemberIds: 1 });
 paperSchema.index({ researchGroupIds: 1 });
+paperSchema.index({ researchEntityIds: 1 });
 paperSchema.index({ year: -1 });
 paperSchema.index({ citationCount: -1 });
 paperSchema.index({ publishedAt: -1 });
+paperSchema.index({ postedAt: -1 });
+paperSchema.index({ versionDate: -1 });
 paperSchema.index({ fieldsOfStudy: 1 });
 paperSchema.index({ publicationTypes: 1 });
+paperSchema.index({ publicationStage: 1 });
+paperSchema.index({ preprintServer: 1 });
 paperSchema.index({ sourceIds: 1 });
 paperSchema.index({ isOpenAccess: 1 });
 paperSchema.index({ archived: 1 });
 paperSchema.index({ lastObservedAt: 1 });
 paperSchema.index({ title: 'text', abstract: 'text', tldr: 'text' });
 
-export const Paper = mongoose.model('papers', paperSchema);
+export const Paper = mongoose.model('Paper', paperSchema, 'papers');
 
 export { paperSchema };

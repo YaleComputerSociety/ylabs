@@ -74,4 +74,4 @@ const researchAreaSchema = new mongoose.Schema(
 researchAreaSchema.index({ name: 'text' });
 researchAreaSchema.index({ field: 1 });
 
-export const ResearchArea = mongoose.model('researchareas', researchAreaSchema, 'research_areas');
+export const ResearchArea = mongoose.model('ResearchArea', researchAreaSchema, 'research_areas');

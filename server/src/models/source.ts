@@ -6,6 +6,11 @@
  * Observations from this source unless overridden per-observation.
  */
 import mongoose from 'mongoose';
+import {
+  sourceCoverageArtifactTypes,
+  sourceCoverageEvidenceCategories,
+  sourceCoverageTiers,
+} from './sourceCoverageTypes';
 
 const sourceSchema = new mongoose.Schema(
   {
@@ -48,6 +53,38 @@ const sourceSchema = new mongoose.Schema(
       type: String,
       default: '',
     },
+    coverage: {
+      priority: {
+        type: Number,
+        min: 0,
+        max: 100,
+        required: false,
+      },
+      tier: {
+        type: String,
+        enum: [...sourceCoverageTiers],
+        required: false,
+      },
+      artifactTypes: {
+        type: [String],
+        enum: [...sourceCoverageArtifactTypes],
+        default: [],
+      },
+      evidenceCategories: {
+        type: [String],
+        enum: [...sourceCoverageEvidenceCategories],
+        default: [],
+      },
+      defaultConfidence: {
+        type: String,
+        enum: ['HIGH', 'MEDIUM', 'LOW'],
+        required: false,
+      },
+      notes: {
+        type: String,
+        default: '',
+      },
+    },
   },
   {
     timestamps: true,
@@ -55,7 +92,9 @@ const sourceSchema = new mongoose.Schema(
 );
 
 sourceSchema.index({ enabled: 1 });
+sourceSchema.index({ 'coverage.priority': 1 });
+sourceSchema.index({ 'coverage.artifactTypes': 1 });
 
-export const Source = mongoose.model('sources', sourceSchema);
+export const Source = mongoose.model('Source', sourceSchema);
 
 export { sourceSchema };

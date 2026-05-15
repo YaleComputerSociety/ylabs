@@ -7,17 +7,22 @@ const studentOutreachSchema = new mongoose.Schema(
   {
     studentProfileId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'studentprofiles',
+      ref: 'StudentProfile',
       required: true,
     },
     researchGroupId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'researchgroups',
+      ref: 'ResearchGroup',
+      required: false,
+    },
+    researchEntityId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'ResearchEntity',
       required: true,
     },
     trackingId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'studenttrackings',
+      ref: 'StudentTracking',
       required: true,
     },
     reachedOutAt: {
@@ -72,11 +77,17 @@ studentOutreachSchema.index({
   researchGroupId: 1,
   reachedOutAt: -1,
 });
+studentOutreachSchema.index({
+  studentProfileId: 1,
+  researchEntityId: 1,
+  reachedOutAt: -1,
+});
 studentOutreachSchema.index({ researchGroupId: 1, outcome: 1, reachedOutAt: -1 });
+studentOutreachSchema.index({ researchEntityId: 1, outcome: 1, reachedOutAt: -1 });
 studentOutreachSchema.index({ trackingId: 1 });
 
 export const StudentOutreach = mongoose.model(
-  'studentoutreaches',
+  'StudentOutreach',
   studentOutreachSchema,
   'student_outreaches',
 );

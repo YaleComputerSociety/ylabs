@@ -1,5 +1,5 @@
 /**
- * Mongoose schema and model for Paper ↔ ResearchGroup association.
+ * Mongoose schema and model for Paper ↔ ResearchEntity association.
  */
 import mongoose from 'mongoose';
 import { fieldProvenanceSchema } from './modelPrimitives';
@@ -8,13 +8,18 @@ const paperGroupLinkSchema = new mongoose.Schema(
   {
     paperId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'papers',
+      ref: 'Paper',
       required: true,
     },
     researchGroupId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'researchgroups',
-      required: true,
+      ref: 'ResearchGroup',
+      required: false,
+    },
+    researchEntityId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'ResearchEntity',
+      required: false,
     },
     relationship: {
       type: String,
@@ -45,7 +50,7 @@ const paperGroupLinkSchema = new mongoose.Schema(
     },
     matchedFacultyMemberIds: {
       type: [mongoose.Schema.Types.ObjectId],
-      ref: 'facultymembers',
+      ref: 'FacultyMember',
       default: [],
     },
     fieldProvenance: {
@@ -69,15 +74,23 @@ const paperGroupLinkSchema = new mongoose.Schema(
 
 paperGroupLinkSchema.index({ paperId: 1, researchGroupId: 1 }, { unique: true });
 paperGroupLinkSchema.index({ researchGroupId: 1, isFeatured: 1 });
+paperGroupLinkSchema.index(
+  { paperId: 1, researchEntityId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { researchEntityId: { $exists: true } },
+  },
+);
+paperGroupLinkSchema.index({ researchEntityId: 1, isFeatured: 1 });
 paperGroupLinkSchema.index({ paperId: 1 });
 paperGroupLinkSchema.index({ matchedFacultyMemberIds: 1 });
 paperGroupLinkSchema.index({ archived: 1 });
 paperGroupLinkSchema.index({ lastObservedAt: 1 });
 
 export const PaperGroupLink = mongoose.model(
-  'papergrouplinks',
+  'PaperGroupLink',
   paperGroupLinkSchema,
-  'paper_group_links',
+  'paper_entity_links',
 );
 
 export { paperGroupLinkSchema };

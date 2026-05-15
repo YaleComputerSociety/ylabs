@@ -76,4 +76,8 @@ analyticsEventSchema.index({ eventType: 1, netid: 1, timestamp: -1 });
 analyticsEventSchema.index({ timestamp: -1 });
 
 analyticsEventSchema.index({ timestamp: 1 }, { expireAfterSeconds: 94608000 });
-export const AnalyticsEvent = mongoose.model('analytics_events', analyticsEventSchema);
+export const AnalyticsEvent = mongoose.model(
+  'AnalyticsEvent',
+  analyticsEventSchema,
+  'analytics_events',
+);

@@ -1,5 +1,5 @@
 /**
- * Mongoose schema and model for recomputable ResearchGroup metrics.
+ * Mongoose schema and model for recomputable ResearchEntity metrics.
  */
 import mongoose from 'mongoose';
 
@@ -7,9 +7,17 @@ const researchGroupStatsSchema = new mongoose.Schema(
   {
     researchGroupId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'researchgroups',
-      required: true,
+      ref: 'ResearchGroup',
+      required: false,
       unique: true,
+      sparse: true,
+    },
+    researchEntityId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'ResearchEntity',
+      required: false,
+      unique: true,
+      sparse: true,
     },
     responseRateAllTime: {
       type: Number,
@@ -99,9 +107,9 @@ researchGroupStatsSchema.index({ responseRate90dSampleSize: -1 });
 researchGroupStatsSchema.index({ outreachCount30d: -1 });
 
 export const ResearchGroupStats = mongoose.model(
-  'researchgroupstats',
+  'ResearchGroupStats',
   researchGroupStatsSchema,
-  'research_group_stats',
+  'research_entity_stats',
 );
 
 export { researchGroupStatsSchema };

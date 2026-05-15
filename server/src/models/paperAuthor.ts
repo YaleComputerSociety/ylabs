@@ -8,17 +8,17 @@ const paperAuthorSchema = new mongoose.Schema(
   {
     paperId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'papers',
+      ref: 'Paper',
       required: true,
     },
     facultyMemberId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'facultymembers',
+      ref: 'FacultyMember',
       required: false,
     },
     userId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'users',
+      ref: 'User',
       required: false,
     },
     displayName: {
@@ -68,6 +68,6 @@ paperAuthorSchema.index({ userId: 1 });
 paperAuthorSchema.index({ paperId: 1, facultyMemberId: 1 });
 paperAuthorSchema.index({ lastObservedAt: 1 });
 
-export const PaperAuthor = mongoose.model('paperauthors', paperAuthorSchema, 'paper_authors');
+export const PaperAuthor = mongoose.model('PaperAuthor', paperAuthorSchema, 'paper_authors');
 
 export { paperAuthorSchema };

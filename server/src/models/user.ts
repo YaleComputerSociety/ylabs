@@ -43,12 +43,12 @@ const userSchema = new mongoose.Schema(
     },
     facultyMemberId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'facultymembers',
+      ref: 'FacultyMember',
       required: false,
     },
     studentProfileId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'studentprofiles',
+      ref: 'StudentProfile',
       required: false,
     },
     userConfirmed: {
@@ -129,6 +129,14 @@ const userSchema = new mongoose.Schema(
       type: [mongoose.Schema.ObjectId],
       default: [],
     },
+    favPathways: {
+      type: [mongoose.Schema.ObjectId],
+      default: [],
+    },
+    savedPathwayPlans: {
+      type: mongoose.Schema.Types.Mixed,
+      default: {},
+    },
     publications: {
       type: [publicationSchema],
       default: [],
@@ -138,12 +146,44 @@ const userSchema = new mongoose.Schema(
       type: Number,
       required: false,
     },
+    googleScholarId: {
+      type: String,
+      required: false,
+      sparse: true,
+      index: true,
+    },
+    googleScholarMetricsUpdatedAt: {
+      type: Date,
+      required: false,
+    },
     orcid: {
       type: String,
       required: false,
     },
     openAlexId: {
       type: String,
+      required: false,
+    },
+    semanticScholarId: {
+      type: String,
+      required: false,
+      sparse: true,
+      index: true,
+    },
+    openAlexWorksSyncedAt: {
+      type: Date,
+      required: false,
+    },
+    orcidWorksSyncedAt: {
+      type: Date,
+      required: false,
+    },
+    europePmcWorksSyncedAt: {
+      type: Date,
+      required: false,
+    },
+    pubmedWorksSyncedAt: {
+      type: Date,
       required: false,
     },
     imageUrl: {
@@ -166,11 +206,23 @@ const userSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.Mixed,
       default: {},
     },
+    scholarCandidateProfileUrls: {
+      type: [String],
+      default: [],
+    },
     profileVerified: {
       type: Boolean,
       default: false,
     },
     dataSources: {
+      type: [String],
+      default: [],
+    },
+    confidenceByField: {
+      type: mongoose.Schema.Types.Mixed,
+      default: {},
+    },
+    manuallyLockedFields: {
       type: [String],
       default: [],
     },
@@ -200,5 +252,6 @@ userSchema.index({ userType: 1, profileVerified: 1 });
 userSchema.index({ primaryDepartment: 1 });
 userSchema.index({ facultyMemberId: 1 }, { sparse: true });
 userSchema.index({ studentProfileId: 1 }, { sparse: true });
+userSchema.index({ orcid: 1 }, { sparse: true });
 
-export const User = mongoose.model('users', userSchema);
+export const User = mongoose.model('User', userSchema);

@@ -8,6 +8,7 @@ import mongoose from 'mongoose';
 
 export type ObservedEntityType =
   | 'user'
+  | 'researchEntity'
   | 'researchGroup'
   | 'researchGroupMember'
   | 'paper'
@@ -19,7 +20,15 @@ const observationSchema = new mongoose.Schema(
     entityType: {
       type: String,
       required: true,
-      enum: ['user', 'researchGroup', 'researchGroupMember', 'paper', 'listing', 'fellowship'],
+      enum: [
+        'user',
+        'researchEntity',
+        'researchGroup',
+        'researchGroupMember',
+        'paper',
+        'listing',
+        'fellowship',
+      ],
     },
     entityId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -39,7 +48,7 @@ const observationSchema = new mongoose.Schema(
     },
     sourceId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'sources',
+      ref: 'Source',
       required: true,
     },
     sourceName: {
@@ -48,7 +57,7 @@ const observationSchema = new mongoose.Schema(
     },
     scrapeRunId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'scraperuns',
+      ref: 'ScrapeRun',
       required: false,
     },
     sourceUrl: {
@@ -72,7 +81,7 @@ const observationSchema = new mongoose.Schema(
     },
     supersededBy: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'observations',
+      ref: 'Observation',
       required: false,
     },
     observationFingerprint: {
@@ -92,6 +101,6 @@ observationSchema.index({ sourceId: 1, observedAt: -1 });
 observationSchema.index({ superseded: 1 });
 observationSchema.index({ observationFingerprint: 1, superseded: 1 });
 
-export const Observation = mongoose.model('observations', observationSchema);
+export const Observation = mongoose.model('Observation', observationSchema);
 
 export { observationSchema };

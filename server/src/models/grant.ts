@@ -41,17 +41,22 @@ const grantSchema = new mongoose.Schema(
     },
     piFacultyMemberId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'facultymembers',
+      ref: 'FacultyMember',
       required: false,
     },
     coPiFacultyMemberIds: {
       type: [mongoose.Schema.Types.ObjectId],
-      ref: 'facultymembers',
+      ref: 'FacultyMember',
       default: [],
     },
     researchGroupIds: {
       type: [mongoose.Schema.Types.ObjectId],
-      ref: 'researchgroups',
+      ref: 'ResearchGroup',
+      default: [],
+    },
+    researchEntityIds: {
+      type: [mongoose.Schema.Types.ObjectId],
+      ref: 'ResearchEntity',
       default: [],
     },
     sourceUrl: {
@@ -105,6 +110,7 @@ const grantSchema = new mongoose.Schema(
 
 grantSchema.index({ agency: 1, externalId: 1 }, { unique: true });
 grantSchema.index({ researchGroupIds: 1 });
+grantSchema.index({ researchEntityIds: 1 });
 grantSchema.index({ piFacultyMemberId: 1 });
 grantSchema.index({ coPiFacultyMemberIds: 1 });
 grantSchema.index({ fiscalYear: -1 });
@@ -114,6 +120,6 @@ grantSchema.index({ archived: 1 });
 grantSchema.index({ lastObservedAt: 1 });
 grantSchema.index({ title: 'text', abstract: 'text', plainSummary: 'text', keywords: 'text' });
 
-export const Grant = mongoose.model('grants', grantSchema);
+export const Grant = mongoose.model('Grant', grantSchema);
 
 export { grantSchema };

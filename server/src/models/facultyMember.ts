@@ -17,7 +17,7 @@ const facultyMemberSchema = new mongoose.Schema(
     },
     userId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'users',
+      ref: 'User',
       required: false,
       unique: true,
       sparse: true,
@@ -81,12 +81,12 @@ const facultyMemberSchema = new mongoose.Schema(
     },
     primaryDepartmentId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'departments',
+      ref: 'Department',
       required: false,
     },
     departmentIds: {
       type: [mongoose.Schema.Types.ObjectId],
-      ref: 'departments',
+      ref: 'Department',
       default: [],
     },
     primarySchool: {
@@ -175,7 +175,7 @@ facultyMemberSchema.index({ lastObservedAt: 1 });
 facultyMemberSchema.index({ name: 'text', bio: 'text', researchInterests: 'text', topics: 'text' });
 
 export const FacultyMember = mongoose.model(
-  'facultymembers',
+  'FacultyMember',
   facultyMemberSchema,
   'faculty_members',
 );

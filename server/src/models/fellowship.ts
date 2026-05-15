@@ -142,6 +142,6 @@ fellowshipSchema.index({ citizenshipStatus: 1 });
 fellowshipSchema.index({ archived: 1 });
 fellowshipSchema.index({ deadline: 1 });
 
-export const Fellowship = mongoose.model('fellowships', fellowshipSchema);
+export const Fellowship = mongoose.model('Fellowship', fellowshipSchema);
 
 export { fellowshipSchema };

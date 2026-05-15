@@ -1,8 +1,13 @@
 /**
- * Mongoose schema and model for research groups (labs, centers, institutes, programs, etc.).
+ * Shared legacy-shaped schema for research entities.
  */
 import mongoose from 'mongoose';
 import { fieldProvenanceSchema, opennessSignalSchema } from './modelPrimitives';
+import {
+  mapResearchGroupKindToEntityType,
+  researchEntityTypes,
+  type ResearchEntityType,
+} from './researchAccessTypes';
 
 const researchGroupSchema = new mongoose.Schema(
   {
@@ -21,7 +26,7 @@ const researchGroupSchema = new mongoose.Schema(
     },
     canonicalGroupId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'researchgroups',
+      ref: 'ResearchEntity',
       required: false,
       default: null,
     },
@@ -38,6 +43,13 @@ const researchGroupSchema = new mongoose.Schema(
         'solo',
       ],
       default: 'lab',
+    },
+    entityType: {
+      type: String,
+      enum: [...researchEntityTypes],
+      default: function (this: { kind?: string }): ResearchEntityType {
+        return mapResearchGroupKindToEntityType(this?.kind || 'lab');
+      },
     },
     shortDescription: {
       type: String,
@@ -61,17 +73,17 @@ const researchGroupSchema = new mongoose.Schema(
     },
     primaryDepartmentId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'departments',
+      ref: 'Department',
       required: false,
     },
     departmentIds: {
       type: [mongoose.Schema.Types.ObjectId],
-      ref: 'departments',
+      ref: 'Department',
       default: [],
     },
     researchAreaIds: {
       type: [mongoose.Schema.Types.ObjectId],
-      ref: 'researchareas',
+      ref: 'ResearchArea',
       default: [],
     },
     location: {
@@ -238,7 +250,7 @@ const researchGroupSchema = new mongoose.Schema(
     },
     featuredPaperIds: {
       type: [mongoose.Schema.Types.ObjectId],
-      ref: 'papers',
+      ref: 'Paper',
       default: [],
     },
     typicalUndergradRoles: {
@@ -312,7 +324,7 @@ const researchGroupSchema = new mongoose.Schema(
     },
     claimedByUserId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'users',
+      ref: 'User',
       required: false,
     },
     claimedByFaculty: {
@@ -335,6 +347,7 @@ const researchGroupSchema = new mongoose.Schema(
 );
 
 researchGroupSchema.index({ kind: 1 });
+researchGroupSchema.index({ entityType: 1 });
 researchGroupSchema.index({ canonicalGroupId: 1 });
 researchGroupSchema.index({ school: 1 });
 researchGroupSchema.index({ schools: 1 });
@@ -352,10 +365,8 @@ researchGroupSchema.index({ recentPaperCount: -1 });
 researchGroupSchema.index({ fundingAgencies: 1 });
 researchGroupSchema.index({ offersIndependentStudy: 1 });
 
-export const ResearchGroup = mongoose.model(
-  'researchgroups',
-  researchGroupSchema,
-  'research_groups',
-);
-
 export { researchGroupSchema };
+export {
+  ResearchGroupKindToEntityType,
+  researchEntityTypeForResearchGroupKind,
+} from './researchAccessTypes';

@@ -22,12 +22,17 @@ const studentTrackingSchema = new mongoose.Schema(
   {
     studentProfileId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'studentprofiles',
+      ref: 'StudentProfile',
       required: true,
     },
     researchGroupId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'researchgroups',
+      ref: 'ResearchGroup',
+      required: false,
+    },
+    researchEntityId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'ResearchEntity',
       required: true,
     },
     stage: {
@@ -62,11 +67,19 @@ studentTrackingSchema.index(
   { studentProfileId: 1, researchGroupId: 1 },
   { unique: true },
 );
+studentTrackingSchema.index(
+  { studentProfileId: 1, researchEntityId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { researchEntityId: { $exists: true } },
+  },
+);
 studentTrackingSchema.index({ researchGroupId: 1, stage: 1 });
+studentTrackingSchema.index({ researchEntityId: 1, stage: 1 });
 studentTrackingSchema.index({ studentProfileId: 1, updatedAt: -1 });
 
 export const StudentTracking = mongoose.model(
-  'studenttrackings',
+  'StudentTracking',
   studentTrackingSchema,
   'student_trackings',
 );

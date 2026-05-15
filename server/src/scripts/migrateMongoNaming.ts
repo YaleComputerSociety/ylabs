@@ -11,15 +11,19 @@
 import mongoose from 'mongoose';
 
 const COLLECTION_RENAMES = [
+  ['accesssignals', 'access_signals'],
   ['analyticsevents', 'analytics_events'],
+  ['contactroutes', 'contact_routes'],
+  ['entrypathways', 'entry_pathways'],
   ['facultymembers', 'faculty_members'],
   ['paperauthors', 'paper_authors'],
-  ['papergrouplinks', 'paper_group_links'],
+  ['papergrouplinks', 'paper_entity_links'],
+  ['postedopportunities', 'posted_opportunities'],
   ['researchareas', 'research_areas'],
   ['researchAreas', 'research_areas'],
-  ['researchgroups', 'research_groups'],
-  ['researchgroupmembers', 'research_group_members'],
-  ['researchgroupstats', 'research_group_stats'],
+  ['researchgroups', 'research_entities'],
+  ['researchgroupmembers', 'research_entity_members'],
+  ['researchgroupstats', 'research_entity_stats'],
   ['scraperuns', 'scrape_runs'],
   ['scrapesnapshots', 'scrape_snapshots'],
   ['studentengagementevents', 'student_engagement_events'],
@@ -73,7 +77,44 @@ async function renameCollections() {
     }
 
     if (toExists) {
-      console.log(`WARN   ${from} and ${to} both exist; leaving both unchanged`);
+      const fromCount = await db.collection(from).countDocuments();
+
+      if (fromCount > 0) {
+        const overlapResult = await db.collection(from).aggregate([
+          {
+            $lookup: {
+              from: to,
+              localField: '_id',
+              foreignField: '_id',
+              as: 'matchingTargetDocs',
+            },
+          },
+          { $match: { matchingTargetDocs: { $ne: [] } } },
+          { $count: 'count' },
+        ]).toArray();
+        const overlapCount = overlapResult[0]?.count ?? 0;
+
+        if (overlapCount > 0) {
+          console.log(
+            `WARN   ${from} and ${to} overlap on ${overlapCount} _id values; leaving both unchanged`,
+          );
+          continue;
+        }
+
+        await db.collection(from).aggregate([
+          {
+            $merge: {
+              into: to,
+              on: '_id',
+              whenMatched: 'fail',
+              whenNotMatched: 'insert',
+            },
+          },
+        ]).toArray();
+      }
+
+      await db.collection(from).drop();
+      console.log(`MERGED  ${from} -> ${to} (${fromCount} documents)`);
       continue;
     }
 

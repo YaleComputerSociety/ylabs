@@ -3,11 +3,19 @@
  */
 import mongoose from 'mongoose';
 
+export const recordReviewStatuses = [
+  'unreviewed',
+  'approved',
+  'needs_source',
+  'disputed',
+  'archived_by_review',
+] as const;
+
 export const fieldProvenanceSchema = new mongoose.Schema(
   {
     sourceId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'sources',
+      ref: 'Source',
       required: false,
     },
     sourceName: {
@@ -20,7 +28,7 @@ export const fieldProvenanceSchema = new mongoose.Schema(
     },
     observationId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'observations',
+      ref: 'Observation',
       required: false,
     },
     observedAt: {
@@ -32,6 +40,35 @@ export const fieldProvenanceSchema = new mongoose.Schema(
       min: 0,
       max: 1,
       required: false,
+    },
+  },
+  { _id: false },
+);
+
+export const recordReviewSchema = new mongoose.Schema(
+  {
+    status: {
+      type: String,
+      enum: [...recordReviewStatuses],
+      default: 'unreviewed',
+    },
+    reviewedByUserId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: false,
+    },
+    reviewedAt: {
+      type: Date,
+      required: false,
+    },
+    note: {
+      type: String,
+      default: '',
+      maxlength: 2000,
+    },
+    lockedFields: {
+      type: [String],
+      default: [],
     },
   },
   { _id: false },
@@ -85,12 +122,12 @@ export const opennessSignalSchema = new mongoose.Schema(
     },
     sourceId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'sources',
+      ref: 'Source',
       required: false,
     },
     observationId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'observations',
+      ref: 'Observation',
       required: false,
     },
   },

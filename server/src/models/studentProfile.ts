@@ -7,7 +7,7 @@ const studentProfileSchema = new mongoose.Schema(
   {
     userId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'users',
+      ref: 'User',
       required: true,
       unique: true,
     },
@@ -22,12 +22,12 @@ const studentProfileSchema = new mongoose.Schema(
     },
     majorDepartmentIds: {
       type: [mongoose.Schema.Types.ObjectId],
-      ref: 'departments',
+      ref: 'Department',
       default: [],
     },
     researchAreaIds: {
       type: [mongoose.Schema.Types.ObjectId],
-      ref: 'researchareas',
+      ref: 'ResearchArea',
       default: [],
     },
     lookingFor: {
@@ -50,7 +50,7 @@ studentProfileSchema.index({ researchAreaIds: 1 });
 studentProfileSchema.index({ lookingFor: 1 });
 
 export const StudentProfile = mongoose.model(
-  'studentprofiles',
+  'StudentProfile',
   studentProfileSchema,
   'student_profiles',
 );
