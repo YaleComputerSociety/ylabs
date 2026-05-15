@@ -69,7 +69,7 @@ const Profile = () => {
   const tabs: { key: Tab; label: string; show: boolean }[] = [
     { key: 'bio', label: 'Bio', show: true },
     { key: 'research', label: 'Research', show: true },
-    { key: 'listings', label: 'Listings', show: true },
+    { key: 'listings', label: 'Posted Roles', show: true },
     { key: 'courses', label: 'Courses', show: coursesAvailable === true },
   ];
 
@@ -116,7 +116,7 @@ const Profile = () => {
             </p>
             <p className="text-xs text-amber-600 mt-0.5">
               Please review and edit your information, then confirm verification to start posting
-              listings.
+              roles.
             </p>
           </div>
           <button

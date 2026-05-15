@@ -122,7 +122,7 @@ const ProfileEditor = ({ netid }: ProfileEditorProps) => {
         dispatch({
           type: 'SAVE_SUCCESS',
           profile: updatedProfile,
-          message: { type: 'success', text: 'Profile verified! You can now create listings.' },
+          message: { type: 'success', text: 'Profile verified! You can now create posted roles.' },
         });
       } else {
         const res = await axios.put('/profiles/me', data);
@@ -135,7 +135,7 @@ const ProfileEditor = ({ netid }: ProfileEditorProps) => {
           profile: updatedProfile,
           message: {
             type: 'success',
-            text: 'Profile updated. Department changes have been applied to your listings.',
+            text: 'Profile updated. Department changes have been applied to your posted roles.',
           },
         });
       }

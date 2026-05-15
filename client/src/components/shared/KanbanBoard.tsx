@@ -109,7 +109,7 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
           <div className="flex-1 p-2 space-y-2 overflow-y-auto max-h-[60vh]">
             {col.listings.length === 0 ? (
               <div className="flex items-center justify-center h-20 text-xs text-gray-400 italic">
-                Drag listings here
+                Drag posted roles here
               </div>
             ) : (
               col.listings.map((listing) => (

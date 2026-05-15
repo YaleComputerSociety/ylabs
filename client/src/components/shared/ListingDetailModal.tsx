@@ -443,9 +443,9 @@ const ListingDetailModal = ({
                 )}
                 {listing.archived && (
                   <div className="p-4 bg-red-50 border border-red-200 text-red-700 rounded-lg">
-                    <div className="font-semibold text-sm">This listing is archived</div>
+                    <div className="font-semibold text-sm">This posted role is archived</div>
                     <div className="text-sm mt-1">
-                      Archived listings are not visible in search results or as favorites.
+                      Archived posted roles are not visible in search results or as favorites.
                     </div>
                   </div>
                 )}

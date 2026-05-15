@@ -34,8 +34,8 @@ const About = () => {
         </p>
         <h1 className="text-3xl font-bold mb-7">Help us with our first release!</h1>
         <p className="text-lg text-gray-700 mb-10 leading-relaxed">
-          While we are working dilligently to get more up-to-date listings on the site, we are also
-          working on changes to improve the browsing experience! As you look around the site, please
+          While we are working diligently to connect posted roles with broader research homes and
+          pathways, we are also improving the browsing experience. As you look around the site, please
           let us know in the{' '}
           <a
             href={

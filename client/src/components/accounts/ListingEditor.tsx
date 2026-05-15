@@ -1,5 +1,5 @@
 /**
- * Professor dashboard section: manage a professor's own listings (create, edit
+ * Professor dashboard section: manage a professor's own posted roles (create, edit
  * inline, save, delete). Owns the own-listings reducer and its axios/side-
  * effect lifecycle (fetch on mount, beforeunload warning while editing).
  * Extracted from pages/account.tsx as part of the three-way split with
@@ -41,10 +41,10 @@ const ListingEditor = ({ user }: ListingEditorProps) => {
         dispatch({ type: 'SET_LOADING', value: false });
       })
       .catch((error) => {
-        console.error('Error fetching listings:', error);
+        console.error('Error fetching posted roles:', error);
         dispatch({ type: 'SET_OWN_LISTINGS', listings: [] });
         dispatch({ type: 'SET_LOADING', value: false });
-        swal({ text: 'Error fetching your listings', icon: 'warning' });
+        swal({ text: 'Error fetching your posted roles', icon: 'warning' });
       });
   };
 
@@ -98,9 +98,12 @@ const ListingEditor = ({ user }: ListingEditorProps) => {
         dispatch({ type: 'SET_LOADING', value: false });
       })
       .catch((error) => {
-        console.error(isNewListing ? 'Error creating listing:' : 'Error updating listing:', error);
+        console.error(
+          isNewListing ? 'Error creating posted role:' : 'Error updating posted role:',
+          error,
+        );
         swal({
-          text: isNewListing ? 'Unable to create listing' : 'Unable to update listing',
+          text: isNewListing ? 'Unable to create posted role' : 'Unable to update posted role',
           icon: 'warning',
         });
         reloadListings();
@@ -122,8 +125,8 @@ const ListingEditor = ({ user }: ListingEditorProps) => {
         dispatch({ type: 'SET_LOADING', value: false });
       })
       .catch((error) => {
-        console.error('Error deleting listing:', error);
-        swal({ text: 'Unable to delete listing', icon: 'warning' });
+        console.error('Error deleting posted role:', error);
+        swal({ text: 'Unable to delete posted role', icon: 'warning' });
         reloadListings();
         dispatch({ type: 'SET_LOADING', value: false });
       });
@@ -137,8 +140,8 @@ const ListingEditor = ({ user }: ListingEditorProps) => {
         dispatch({ type: 'START_CREATE', skeleton: skeletonListing });
       })
       .catch((error) => {
-        console.error('Error fetching skeleton listing:', error);
-        swal({ text: 'Unable to create listing', icon: 'warning' });
+        console.error('Error fetching skeleton posted role:', error);
+        swal({ text: 'Unable to create posted role', icon: 'warning' });
       });
   };
 
@@ -160,11 +163,13 @@ const ListingEditor = ({ user }: ListingEditorProps) => {
 
   return (
     <>
-      <h2 className="text-2xl font-bold text-gray-800 text-center mb-6 pb-2">Your Listings</h2>
+      <h2 className="text-2xl font-bold text-gray-800 text-center mb-6 pb-2">
+        Your Posted Roles
+      </h2>
       {!user.profileVerified && user.userType !== 'admin' ? (
         <div className="p-4 bg-gray-50 border border-gray-200 rounded-lg text-center my-6">
           <p className="text-sm text-gray-600">
-            Verify your profile above to create and manage listings.
+            Verify your profile above to create and manage posted roles.
           </p>
         </div>
       ) : (

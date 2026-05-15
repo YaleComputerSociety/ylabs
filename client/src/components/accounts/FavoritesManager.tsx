@@ -140,10 +140,10 @@ const FavoritesManager = ({ variant = 'student' }: FavoritesManagerProps) => {
         favDispatch({ type: 'HYDRATE', payload: { favListings: responseFavListings } });
       })
       .catch((error) => {
-        console.error('Error fetching listings:', error);
+        console.error('Error fetching posted roles:', error);
         favDispatch({ type: 'HYDRATE', payload: { favListings: [] } });
         setIsLoading(false);
-        swal({ text: 'Error fetching your listings', icon: 'warning' });
+        swal({ text: 'Error fetching your posted roles', icon: 'warning' });
       });
 
     axios
@@ -156,14 +156,14 @@ const FavoritesManager = ({ variant = 'student' }: FavoritesManagerProps) => {
         setIsLoading(false);
       })
       .catch((error) => {
-        console.error("Error fetching user's favorite listings:", error);
+        console.error("Error fetching user's favorite posted roles:", error);
         favDispatch({
           type: 'SET_FAV_LISTINGS',
           favListings: [],
           favListingsIds: [],
         });
         setIsLoading(false);
-        swal({ text: 'Error fetching your listings', icon: 'warning' });
+        swal({ text: 'Error fetching your posted roles', icon: 'warning' });
       });
 
     axios
@@ -343,7 +343,7 @@ const FavoritesManager = ({ variant = 'student' }: FavoritesManagerProps) => {
   const exportToCSV = () => {
     const visible = filterHiddenListings(favListings);
     if (visible.length === 0) {
-      swal({ text: 'No listings to export', icon: 'info' });
+      swal({ text: 'No posted roles to export', icon: 'info' });
       return;
     }
 
@@ -384,7 +384,7 @@ const FavoritesManager = ({ variant = 'student' }: FavoritesManagerProps) => {
   const exportToGoogleSheets = async () => {
     const visible = filterHiddenListings(favListings);
     if (visible.length === 0) {
-      swal({ text: 'No listings to export', icon: 'info' });
+      swal({ text: 'No posted roles to export', icon: 'info' });
       return;
     }
 
@@ -602,7 +602,7 @@ const FavoritesManager = ({ variant = 'student' }: FavoritesManagerProps) => {
     return (
       <>
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-2xl font-bold text-gray-800">Favorite Listings</h2>
+          <h2 className="text-2xl font-bold text-gray-800">Favorite Posted Roles</h2>
           <ViewToggle />
         </div>
 
@@ -639,7 +639,7 @@ const FavoritesManager = ({ variant = 'student' }: FavoritesManagerProps) => {
             </div>
           )
         ) : (
-          <p className="my-4 text-center">No listings found.</p>
+          <p className="my-4 text-center">No posted roles found.</p>
         )}
 
         <h2 className="text-2xl font-bold text-gray-800 text-center mb-6 mt-10 pb-2">
@@ -725,7 +725,7 @@ const FavoritesManager = ({ variant = 'student' }: FavoritesManagerProps) => {
   return (
     <>
       <div className="flex items-center justify-between mb-2">
-        <h2 className="text-2xl font-bold text-gray-800">Favorite Listings</h2>
+        <h2 className="text-2xl font-bold text-gray-800">Favorite Posted Roles</h2>
         {filterHiddenListings(favListings).length > 0 && (
           <div className="flex items-center gap-2">
             <ViewToggle />
@@ -989,7 +989,7 @@ const FavoritesManager = ({ variant = 'student' }: FavoritesManagerProps) => {
           </ul>
         )
       ) : (
-        <p className="my-4 text-center">No listings found.</p>
+        <p className="my-4 text-center">No posted roles found.</p>
       )}
 
       <div className="flex items-center justify-between mb-2 mt-10">

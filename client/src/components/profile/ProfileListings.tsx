@@ -1,5 +1,5 @@
 /**
- * Profile tab showing faculty member research listings.
+ * Profile tab showing faculty member posted roles.
  */
 import { useState, useEffect, useContext } from 'react';
 import { Listing } from '../../types/types';
@@ -47,7 +47,7 @@ const ProfileListings = ({ netid }: ProfileListingsProps) => {
   }
 
   if (listings.length === 0) {
-    return <p className="text-gray-500 text-sm py-8 text-center">No active listings.</p>;
+    return <p className="text-gray-500 text-sm py-8 text-center">No active posted roles.</p>;
   }
 
   return (

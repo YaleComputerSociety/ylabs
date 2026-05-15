@@ -1,6 +1,6 @@
-import { render, screen } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
 import RootRedirect from '../rootRedirect';
 
@@ -19,6 +19,10 @@ const renderAt = (entry: string) =>
       </Routes>
     </MemoryRouter>,
   );
+
+afterEach(() => {
+  cleanup();
+});
 
 describe('RootRedirect', () => {
   it('sends the authenticated root route to research discovery', () => {
