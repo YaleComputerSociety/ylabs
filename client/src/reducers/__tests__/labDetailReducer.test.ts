@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { LabDetailPayload } from '../../types/labDetail';
 import { ResearchGroup } from '../../types/researchGroup';
+import { ResearchEntityDetailPayload } from '../../types/researchEntity';
 import { Listing } from '../../types/types';
 import {
   createInitialLabDetailState,
@@ -58,8 +58,9 @@ const sampleListing: Listing = {
   audited: false,
 };
 
-const samplePayload: LabDetailPayload = {
+const samplePayload: ResearchEntityDetailPayload = {
   group: sampleGroup,
+  researchEntity: sampleGroup,
   members: [
     {
       user: {
@@ -85,9 +86,10 @@ const samplePayload: LabDetailPayload = {
   activeListings: [sampleListing],
 };
 
-const otherPayload: LabDetailPayload = {
+const otherPayload: ResearchEntityDetailPayload = {
   ...samplePayload,
   group: { ...sampleGroup, _id: 'g2', slug: 'hopper-lab', name: 'Hopper Lab' },
+  researchEntity: { ...sampleGroup, _id: 'g2', slug: 'hopper-lab', name: 'Hopper Lab' },
 };
 
 describe('labDetailReducer', () => {

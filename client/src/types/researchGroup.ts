@@ -1,5 +1,5 @@
 /**
- * Client-side type for ResearchGroup records (Yale labs/centers/institutes/etc.).
+ * Client-side compatibility shape for canonical ResearchEntity records.
  *
  * Mirrors the server's `researchGroupSchema` in
  * `server/src/models/researchGroup.ts`. Kept narrow to what the UI consumes —
@@ -16,7 +16,44 @@ export type ResearchGroupKind =
   | 'individual'
   | 'solo';
 
+export type ResearchEntityType =
+  | 'LAB'
+  | 'CENTER'
+  | 'INSTITUTE'
+  | 'FACULTY_RESEARCH_AREA'
+  | 'FACULTY_PROJECT'
+  | 'DIGITAL_HUMANITIES_PROJECT'
+  | 'COLLECTIONS_INITIATIVE'
+  | 'RA_PROGRAM'
+  | 'FELLOWSHIP_PROGRAM'
+  | 'COURSE_SEQUENCE'
+  | 'ARCHIVE_OR_MUSEUM_PROJECT'
+  | 'PROGRAM'
+  | 'INITIATIVE'
+  | 'GROUP'
+  | 'INDIVIDUAL_RESEARCH';
+
 export type ResearchGroupOpenness = 'open' | 'inquire' | 'closed' | 'unknown';
+
+export interface AccessSummary {
+  status:
+    | 'posted-opening'
+    | 'evidence-backed'
+    | 'reach-out-plausible'
+    | 'not-currently-available'
+    | 'unknown';
+  confidence: number;
+  evidence: Array<{
+    signalType: string;
+    confidence: string;
+    excerpt?: string;
+    sourceUrl?: string;
+  }>;
+  signalTypes: string[];
+  entryPathwayTypes: string[];
+  hasActivePostedOpportunity: boolean;
+  bestNextStep: string;
+}
 
 export interface TimeCommitmentRange {
   min?: number;
@@ -55,6 +92,7 @@ export interface ResearchGroup {
   name: string;
   displayName?: string;
   kind: ResearchGroupKind;
+  entityType?: ResearchEntityType;
   description: string;
   websiteUrl: string;
   location: string;
@@ -112,7 +150,15 @@ export interface ResearchGroup {
    * not include it.
    */
   hasActiveListing?: boolean;
+  accessSummary?: AccessSummary;
 }
+
+/**
+ * Public API alias for the current ResearchGroup-backed ResearchEntity. New
+ * client code should prefer this name across page/API boundaries while legacy
+ * Historical names remain in this file while runtime APIs use ResearchEntity.
+ */
+export type ResearchEntity = ResearchGroup;
 
 export type AcceptanceLevelFilter = 'verified' | 'verified-or-likely' | 'all';
 
@@ -147,6 +193,7 @@ export interface ResearchGroupSearchRequest {
 
 export interface ResearchGroupSearchResponse {
   hits: ResearchGroup[];
+  researchEntities?: ResearchEntity[];
   estimatedTotalHits: number;
   page: number;
   pageSize: number;

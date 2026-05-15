@@ -7,20 +7,20 @@
  * pure so transitions are easy to test.
  */
 import {
-  ResearchGroup,
-  ResearchGroupSearchFilters,
-  ResearchGroupSortBy,
-  ResearchGroupSortOrder,
-} from '../types/researchGroup';
+  ResearchEntity,
+  ResearchEntitySearchFilters,
+  ResearchEntitySortBy,
+  ResearchEntitySortOrder,
+} from '../types/researchEntity';
 
 export interface LabSearchState {
   queryString: string;
-  filters: ResearchGroupSearchFilters;
-  sortBy: ResearchGroupSortBy | 'default';
-  sortOrder: ResearchGroupSortOrder;
+  filters: ResearchEntitySearchFilters;
+  sortBy: ResearchEntitySortBy | 'default';
+  sortOrder: ResearchEntitySortOrder;
   page: number;
   pageSize: number;
-  results: ResearchGroup[];
+  results: ResearchEntity[];
   totalHits: number;
   isLoading: boolean;
   error: string | null;
@@ -36,18 +36,18 @@ export type LabSearchAction =
   | {
       type: 'SET_FILTERS';
       payload:
-        | ResearchGroupSearchFilters
-        | ((prev: ResearchGroupSearchFilters) => ResearchGroupSearchFilters);
+        | ResearchEntitySearchFilters
+        | ((prev: ResearchEntitySearchFilters) => ResearchEntitySearchFilters);
     }
   | { type: 'CLEAR_FILTERS' }
-  | { type: 'SET_SORT_BY'; payload: ResearchGroupSortBy | 'default' }
-  | { type: 'SET_SORT_ORDER'; payload: ResearchGroupSortOrder }
+  | { type: 'SET_SORT_BY'; payload: ResearchEntitySortBy | 'default' }
+  | { type: 'SET_SORT_ORDER'; payload: ResearchEntitySortOrder }
   | { type: 'SET_PAGE'; payload: number | ((prev: number) => number) }
   | { type: 'SEARCH_REQUEST' }
   | {
       type: 'SEARCH_SUCCESS';
       payload: {
-        results: ResearchGroup[];
+        results: ResearchEntity[];
         totalHits?: number;
         pageSize: number;
         append: boolean;

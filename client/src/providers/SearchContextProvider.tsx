@@ -16,7 +16,7 @@ import {
   ReactNode,
 } from 'react';
 import axios from '../utils/axios';
-import swal from 'sweetalert';
+import { useLocation } from 'react-router-dom';
 
 import SearchContext, { FilterMode } from '../contexts/SearchContext';
 import UserContext from '../contexts/UserContext';
@@ -34,6 +34,8 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
   const sortableKeys = ['default', 'createdAt', 'ownerLastName', 'ownerFirstName', 'title'];
 
   const { isAuthenticated, isLoading: authLoading } = useContext(UserContext);
+  const location = useLocation();
+  const isListingsRoute = location.pathname === '/';
 
   const { departments, departmentCategories, researchAreas, isLoaded: configLoaded } = useConfig();
 
@@ -69,6 +71,7 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
     sortDirection,
     listings,
     isLoading,
+    error,
     searchExhausted,
     totalCount,
     page,
@@ -208,13 +211,11 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
         })
         .catch((error) => {
           console.error('Error loading listings:', error);
-          if (error?.response?.status !== 401) {
-            swal({
-              text: 'Unable to load listings. Please try again later.',
-              icon: 'warning',
-            });
-          }
-          dispatch({ type: 'SEARCH_FAILURE' });
+          const message =
+            error?.response?.status === 401
+              ? 'Please sign in again to view listings.'
+              : 'Listings are temporarily unavailable. Research homes and pathways are still available.';
+          dispatch({ type: 'SEARCH_FAILURE', payload: message });
         });
     },
     [pageSize],
@@ -226,15 +227,28 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
   }, [handleSearch]);
 
   useEffect(() => {
-    if (configLoaded && !authLoading && isAuthenticated && !initialSearchDone) {
+    if (
+      isListingsRoute &&
+      configLoaded &&
+      !authLoading &&
+      isAuthenticated &&
+      !initialSearchDone
+    ) {
       dispatch({ type: 'SET_PAGE', payload: 1 });
       handleSearch(1);
       dispatch({ type: 'MARK_INITIAL_SEARCH_DONE' });
     }
-  }, [configLoaded, authLoading, isAuthenticated, initialSearchDone, handleSearch]);
+  }, [
+    isListingsRoute,
+    configLoaded,
+    authLoading,
+    isAuthenticated,
+    initialSearchDone,
+    handleSearch,
+  ]);
 
   useEffect(() => {
-    if (!configLoaded) return;
+    if (!isListingsRoute || !configLoaded) return;
 
     const debounceTimeout = setTimeout(() => {
       if (queryStringLoaded) {
@@ -247,10 +261,10 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
     return () => {
       clearTimeout(debounceTimeout);
     };
-  }, [queryString, configLoaded]);
+  }, [queryString, configLoaded, isListingsRoute]);
 
   useEffect(() => {
-    if (!configLoaded) return;
+    if (!isListingsRoute || !configLoaded) return;
 
     if (departmentsLoaded) {
       dispatch({ type: 'SET_PAGE', payload: 1 });
@@ -267,13 +281,14 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
     sortBy,
     sortOrder,
     configLoaded,
+    isListingsRoute,
   ]);
 
   useEffect(() => {
-    if (page > 1 && configLoaded) {
+    if (isListingsRoute && page > 1 && configLoaded) {
       handleSearch(page);
     }
-  }, [page, configLoaded]);
+  }, [page, configLoaded, isListingsRoute]);
 
   return (
     <SearchContext.Provider
@@ -301,6 +316,7 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
         onToggleSortDirection,
         listings,
         isLoading,
+        error,
         searchExhausted,
         totalCount,
         page,

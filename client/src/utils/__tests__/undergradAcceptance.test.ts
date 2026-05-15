@@ -87,6 +87,94 @@ describe('computeAcceptanceVerdict — closed by non-locked source', () => {
   });
 });
 
+describe('computeAcceptanceVerdict — access summary compatibility', () => {
+  it('uses posted-opening accessSummary before legacy scalar fallback', () => {
+    const result = computeAcceptanceVerdict(
+      baseGroup({
+        acceptingUndergrads: false,
+        undergradEvidenceQuote: 'Legacy field says closed.',
+        accessSummary: {
+          status: 'posted-opening',
+          confidence: 0.88,
+          evidence: [
+            {
+              signalType: 'POSTED_OPENING',
+              confidence: 'HIGH',
+              excerpt: 'Spring RA role',
+            },
+          ],
+          signalTypes: ['POSTED_OPENING'],
+          entryPathwayTypes: ['POSTED_ROLE'],
+          hasActivePostedOpportunity: true,
+          bestNextStep: 'Apply',
+        },
+      }),
+      false,
+    );
+
+    expect(result.verdict).toBe('verified-accepting');
+    expect(result.confidence).toBe(0.88);
+    expect(result.evidence[0].kind).toBe('active-listing');
+    expect(result.evidence[0].label).toBe('Posted opening');
+  });
+
+  it('uses pathway types from accessSummary before legacy positive fallback', () => {
+    const result = computeAcceptanceVerdict(
+      baseGroup({
+        acceptingUndergrads: true,
+        confidenceByField: { acceptingUndergrads: 0.65 },
+        accessSummary: {
+          status: 'reach-out-plausible',
+          confidence: 0.74,
+          evidence: [],
+          signalTypes: [],
+          entryPathwayTypes: ['EXPLORATORY_CONTACT'],
+          hasActivePostedOpportunity: false,
+          bestNextStep: 'Prepare a focused outreach note.',
+        },
+      }),
+      false,
+    );
+
+    expect(result.verdict).toBe('likely-accepting');
+    expect(result.confidence).toBe(0.74);
+    expect(result.evidence).toHaveLength(1);
+    expect(result.evidence[0]).toMatchObject({
+      kind: 'access-signal',
+      label: 'Exploratory contact',
+      detail: 'Prepare a focused outreach note.',
+    });
+  });
+
+  it('maps not-currently-available accessSummary to the closed verdict', () => {
+    const result = computeAcceptanceVerdict(
+      baseGroup({
+        accessSummary: {
+          status: 'not-currently-available',
+          confidence: 0.72,
+          evidence: [
+            {
+              signalType: 'NOT_CURRENTLY_AVAILABLE',
+              confidence: 'HIGH',
+              excerpt: 'Not taking undergraduates this term.',
+            },
+          ],
+          signalTypes: ['NOT_CURRENTLY_AVAILABLE'],
+          entryPathwayTypes: [],
+          hasActivePostedOpportunity: false,
+          bestNextStep: 'Check back later',
+        },
+      }),
+      false,
+    );
+
+    expect(result.verdict).toBe('not-accepting');
+    expect(result.confidence).toBe(0.72);
+    expect(result.evidence[0].kind).toBe('closed-evidence');
+    expect(result.evidence[0].detail).toBe('Not taking undergraduates this term.');
+  });
+});
+
 describe('computeAcceptanceVerdict — verdict thresholds', () => {
   it('two strong signals → verified-accepting', () => {
     const result = computeAcceptanceVerdict(
@@ -262,9 +350,9 @@ describe('verdictBadgeStyles + verdictLabel', () => {
     }
   });
   it('returns a human-readable label for every verdict', () => {
-    expect(verdictLabel('verified-accepting')).toBe('Verified accepting');
-    expect(verdictLabel('likely-accepting')).toBe('Likely accepting');
-    expect(verdictLabel('unknown')).toBe('Status unknown');
-    expect(verdictLabel('not-accepting')).toBe('Not accepting');
+    expect(verdictLabel('verified-accepting')).toBe('Strong evidence');
+    expect(verdictLabel('likely-accepting')).toBe('Some evidence');
+    expect(verdictLabel('unknown')).toBe('Evidence unknown');
+    expect(verdictLabel('not-accepting')).toBe('Not currently available');
   });
 });

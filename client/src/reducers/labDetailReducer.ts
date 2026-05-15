@@ -13,10 +13,10 @@
  * in one place — closing the modal on a fresh fetch, for instance, becomes
  * a single state transition rather than a coordination dance between hooks.
  */
-import { LabDetailPayload } from '../types/labDetail';
+import { ResearchEntityDetailPayload } from '../types/researchEntity';
 
 export interface LabDetailState {
-  payload: LabDetailPayload | null;
+  payload: ResearchEntityDetailPayload | null;
   loading: boolean;
   error: string | null;
   isInquireModalOpen: boolean;
@@ -24,7 +24,7 @@ export interface LabDetailState {
 
 export type LabDetailAction =
   | { type: 'FETCH_START' }
-  | { type: 'FETCH_SUCCESS'; payload: LabDetailPayload }
+  | { type: 'FETCH_SUCCESS'; payload: ResearchEntityDetailPayload }
   | { type: 'FETCH_FAILURE'; payload: string }
   | { type: 'OPEN_INQUIRE_MODAL' }
   | { type: 'CLOSE_INQUIRE_MODAL' };

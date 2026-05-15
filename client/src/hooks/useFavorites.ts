@@ -2,18 +2,19 @@
  * Favorites state + optimistic toggle for listings or fellowships.
  * Keeps load/update endpoints local so the two kinds share all orchestration.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type MouseEvent } from 'react';
 import axios from '../utils/axios';
 import swal from 'sweetalert';
 
-type FavoritesKind = 'listings' | 'fellowships';
+type FavoritesKind = 'listings' | 'fellowships' | 'pathways';
 
 interface Endpoints {
   load: string;
   responseKey: string;
   collectionPath: string;
   payloadKey: string;
-  warnOnError: boolean;
+  warnOnLoadError: boolean;
+  warnOnMutationError: boolean;
 }
 
 const ENDPOINTS: Record<FavoritesKind, Endpoints> = {
@@ -22,14 +23,24 @@ const ENDPOINTS: Record<FavoritesKind, Endpoints> = {
     responseKey: 'favListingsIds',
     collectionPath: '/users/favListings',
     payloadKey: 'favListings',
-    warnOnError: true,
+    warnOnLoadError: false,
+    warnOnMutationError: true,
   },
   fellowships: {
     load: '/users/favFellowshipIds',
     responseKey: 'favFellowshipIds',
     collectionPath: '/users/favFellowships',
     payloadKey: 'favFellowships',
-    warnOnError: false,
+    warnOnLoadError: false,
+    warnOnMutationError: false,
+  },
+  pathways: {
+    load: '/users/favPathwayIds',
+    responseKey: 'favPathwayIds',
+    collectionPath: '/users/favPathways',
+    payloadKey: 'favPathways',
+    warnOnLoadError: false,
+    warnOnMutationError: false,
   },
 };
 
@@ -44,11 +55,11 @@ export const useFavorites = (kind: FavoritesKind) => {
     } catch (error) {
       console.error(`Error fetching user's favorite ${kind}:`, error);
       setFavIds([]);
-      if (config.warnOnError) {
+      if (config.warnOnLoadError) {
         swal({ text: `Could not load your favorite ${kind}`, icon: 'warning' });
       }
     }
-  }, [kind, config.load, config.responseKey, config.warnOnError]);
+  }, [kind, config.load, config.responseKey, config.warnOnLoadError]);
 
   useEffect(() => {
     reload();
@@ -66,14 +77,14 @@ export const useFavorites = (kind: FavoritesKind) => {
     } catch (error) {
       console.error(`Error ${favorite ? 'favoriting' : 'unfavoriting'} ${kind.slice(0, -1)}:`, error);
       setFavIds(previous);
-      if (config.warnOnError) {
+      if (config.warnOnMutationError) {
         swal({ text: `Unable to ${favorite ? 'favorite' : 'unfavorite'} ${kind.slice(0, -1)}`, icon: 'warning' });
       }
       reload();
     }
-  }, [favIds, kind, config.collectionPath, config.payloadKey, config.warnOnError, reload]);
+  }, [favIds, kind, config.collectionPath, config.payloadKey, config.warnOnMutationError, reload]);
 
-  const toggleFavorite = useCallback((id: string, e?: React.MouseEvent) => {
+  const toggleFavorite = useCallback((id: string, e?: MouseEvent) => {
     e?.stopPropagation();
     setFavorite(id, !favIds.includes(id));
   }, [favIds, setFavorite]);

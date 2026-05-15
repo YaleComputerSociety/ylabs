@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { ResearchGroup } from '../../types/researchGroup';
+import { ResearchEntity } from '../../types/researchEntity';
 import {
   LabSearchState,
   createInitialLabSearchState,
   labSearchReducer,
 } from '../labSearchReducer';
 
-const makeGroup = (overrides: Partial<ResearchGroup> = {}): ResearchGroup => ({
+const makeGroup = (overrides: Partial<ResearchEntity> = {}): ResearchEntity => ({
   _id: 'g-1',
   slug: 'group-1',
   name: 'Group 1',

@@ -1,5 +1,5 @@
 /**
- * Trust gradient + evidence computation for "is this lab accepting undergrads?"
+ * Trust gradient + evidence computation for undergraduate access pathways.
  *
  * The product surface for this evolves: every lab used to render an "Open"
  * pill regardless of evidence. Now that we have 11 scrapers writing scored
@@ -26,6 +26,7 @@ export type EvidenceKind =
   | 'lab-lists-undergrads'
   | 'offers-indep-study'
   | 'active-listing'
+  | 'access-signal'
   | 'llm-evidence'
   | 'closed-toggle'
   | 'closed-evidence';
@@ -50,6 +51,38 @@ export interface AcceptanceVerdictResult {
 const MANUAL_LOCK_FIELD = 'acceptingUndergrads';
 const LLM_CONFIDENCE_MIN = 0.5;
 const LLM_CONFIDENCE_MAX = 1.0;
+
+const ACCESS_SIGNAL_LABELS: Record<string, string> = {
+  POSTED_OPENING: 'Posted opening',
+  RECURRING_PROGRAM: 'Recurring pathway',
+  CREDIT_FORMALIZATION_POSSIBLE: 'Credit formalization possible',
+  COURSE_CREDIT_PATHWAY: 'Course-credit pathway',
+  PAST_UNDERGRADS: 'Past undergrads',
+  CURRENT_UNDERGRADS: 'Current undergrads',
+  FACULTY_SUPERVISES_STUDENT_PROJECTS: 'Faculty supervises projects',
+  FELLOWSHIP_COMPATIBLE: 'Fellowship-compatible',
+  REACH_OUT_PLAUSIBLE: 'Reach-out plausible',
+  APPLICATION_FORM_EXISTS: 'Application form',
+  CONTACT_INSTRUCTIONS_EXIST: 'Contact instructions',
+  LAB_MANAGER_LISTED: 'Lab manager listed',
+  PROGRAM_MANAGER_LISTED: 'Program manager listed',
+  APPLICATION_ONLY: 'Application only',
+};
+
+const ENTRY_PATHWAY_LABELS: Record<string, string> = {
+  POSTED_ROLE: 'Posted role',
+  RECURRING_PROGRAM: 'Recurring pathway',
+  COURSE_CREDIT: 'Course-credit pathway',
+  SENIOR_THESIS: 'Senior thesis pathway',
+  FELLOWSHIP_FUNDED_PROJECT: 'Fellowship-funded pathway',
+  WORK_STUDY: 'Work-study pathway',
+  VOLUNTEER_OUTREACH: 'Volunteer outreach',
+  EXPLORATORY_CONTACT: 'Exploratory contact',
+  CENTER_INTERNSHIP: 'Center internship',
+  FACULTY_SUPERVISION: 'Faculty supervision',
+  STUDENT_JOB: 'Student job',
+  UNKNOWN: 'Pathway evidence',
+};
 
 /**
  * Build a label like "1 past advisee" or "3 STARS scholars (2022–2024)".
@@ -90,6 +123,71 @@ function summarizePastAdvisees(
   return { label, detail };
 }
 
+function accessSignalLabel(signalType: string): string {
+  return ACCESS_SIGNAL_LABELS[signalType] || signalType.replace(/_/g, ' ').toLowerCase();
+}
+
+function entryPathwayLabel(pathwayType: string): string {
+  return ENTRY_PATHWAY_LABELS[pathwayType] || pathwayType.replace(/_/g, ' ').toLowerCase();
+}
+
+function verdictFromAccessSummary(group: ResearchGroup): AcceptanceVerdictResult | null {
+  const summary = group.accessSummary;
+  if (!summary || summary.status === 'unknown') return null;
+
+  if (summary.status === 'not-currently-available') {
+    return {
+      verdict: 'not-accepting',
+      confidence: summary.confidence,
+      evidence: [
+        {
+          kind: 'closed-evidence',
+          label: 'Not currently available',
+          detail: summary.evidence[0]?.excerpt || undefined,
+          strength: 'strong',
+        },
+      ],
+    };
+  }
+
+  const evidence = summary.evidence.slice(0, 4).map<EvidenceItem>((item) => ({
+    kind: item.signalType === 'POSTED_OPENING' ? 'active-listing' : 'access-signal',
+    label: accessSignalLabel(item.signalType),
+    detail: item.excerpt || item.sourceUrl || undefined,
+    strength: item.confidence === 'HIGH' ? 'strong' : 'moderate',
+  }));
+
+  if (
+    summary.hasActivePostedOpportunity &&
+    !evidence.some((item) => item.kind === 'active-listing')
+  ) {
+    evidence.unshift({
+      kind: 'active-listing',
+      label: 'Active opportunity',
+      detail: summary.bestNextStep,
+      strength: 'strong',
+    });
+  }
+
+  if (evidence.length === 0) {
+    const pathwayType = summary.entryPathwayTypes[0];
+    evidence.push({
+      kind: 'access-signal',
+      label: pathwayType
+        ? entryPathwayLabel(pathwayType)
+        : summary.bestNextStep || 'Evidence available',
+      detail: pathwayType ? summary.bestNextStep || undefined : undefined,
+      strength: summary.status === 'posted-opening' ? 'strong' : 'moderate',
+    });
+  }
+
+  return {
+    verdict: summary.status === 'posted-opening' ? 'verified-accepting' : 'likely-accepting',
+    confidence: summary.confidence,
+    evidence,
+  };
+}
+
 /**
  * Pure verdict computation. See module-level docstring for the rules.
  *
@@ -112,7 +210,7 @@ export function computeAcceptanceVerdict(
       evidence.push({
         kind: 'pi-claim',
         label: 'PI confirmed',
-        detail: 'The PI manually marked this lab as accepting undergrads.',
+        detail: 'The PI manually confirmed undergraduate access.',
         strength: 'strong',
       });
       return { verdict: 'verified-accepting', confidence: 1.0, evidence };
@@ -121,11 +219,16 @@ export function computeAcceptanceVerdict(
       evidence.push({
         kind: 'closed-toggle',
         label: 'PI marked closed',
-        detail: 'The PI explicitly indicated this lab is not currently accepting undergrads.',
+        detail: 'The PI explicitly indicated this pathway is not currently available.',
         strength: 'strong',
       });
       return { verdict: 'not-accepting', confidence: 1.0, evidence };
     }
+  }
+
+  const accessSummaryVerdict = verdictFromAccessSummary(group);
+  if (accessSummaryVerdict) {
+    return accessSummaryVerdict;
   }
 
   // Closed by any non-locked source — also short-circuits.
@@ -252,14 +355,14 @@ export function verdictBadgeStyles(verdict: TrustVerdict): string {
 export function verdictLabel(verdict: TrustVerdict): string {
   switch (verdict) {
     case 'verified-accepting':
-      return 'Verified accepting';
+      return 'Strong evidence';
     case 'likely-accepting':
-      return 'Likely accepting';
+      return 'Some evidence';
     case 'unknown':
-      return 'Status unknown';
+      return 'Evidence unknown';
     case 'not-accepting':
-      return 'Not accepting';
+      return 'Not currently available';
     default:
-      return 'Status unknown';
+      return 'Evidence unknown';
   }
 }

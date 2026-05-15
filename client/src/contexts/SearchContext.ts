@@ -35,6 +35,7 @@ export interface SearchContextType {
 
   listings: Listing[];
   isLoading: boolean;
+  error: string | null;
   searchExhausted: boolean;
   totalCount: number;
 
@@ -82,6 +83,7 @@ export const defaultSearchContext: SearchContextType = {
   onToggleSortDirection: () => {},
   listings: [],
   isLoading: false,
+  error: null,
   searchExhausted: false,
   totalCount: 0,
   page: 1,

@@ -1,36 +1,36 @@
 /**
  * React context for the research (`/research`) browse-page search state.
  *
- * Mirrors SearchContext but for ResearchGroup rather than Listing. Provider
+ * Mirrors SearchContext but for ResearchEntity rather than Listing. Provider
  * wires this onto labSearchReducer + a runSearch() function that calls
  * `POST /api/research/search`.
  */
 import { createContext } from 'react';
 import {
-  ResearchGroup,
-  ResearchGroupSearchFilters,
-  ResearchGroupSortBy,
-  ResearchGroupSortOrder,
-} from '../types/researchGroup';
+  ResearchEntity,
+  ResearchEntitySearchFilters,
+  ResearchEntitySortBy,
+  ResearchEntitySortOrder,
+} from '../types/researchEntity';
 
 export interface LabSearchContextType {
   queryString: string;
   setQueryString: (query: string) => void;
 
-  filters: ResearchGroupSearchFilters;
-  setFilters: React.Dispatch<React.SetStateAction<ResearchGroupSearchFilters>>;
+  filters: ResearchEntitySearchFilters;
+  setFilters: React.Dispatch<React.SetStateAction<ResearchEntitySearchFilters>>;
   clearFilters: () => void;
 
-  sortBy: ResearchGroupSortBy | 'default';
-  setSortBy: (sortBy: ResearchGroupSortBy | 'default') => void;
-  sortOrder: ResearchGroupSortOrder;
-  setSortOrder: (sortOrder: ResearchGroupSortOrder) => void;
+  sortBy: ResearchEntitySortBy | 'default';
+  setSortBy: (sortBy: ResearchEntitySortBy | 'default') => void;
+  sortOrder: ResearchEntitySortOrder;
+  setSortOrder: (sortOrder: ResearchEntitySortOrder) => void;
 
   page: number;
   setPage: React.Dispatch<React.SetStateAction<number>>;
   pageSize: number;
 
-  results: ResearchGroup[];
+  results: ResearchEntity[];
   totalHits: number;
   isLoading: boolean;
   error: string | null;

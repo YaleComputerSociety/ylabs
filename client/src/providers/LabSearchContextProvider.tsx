@@ -12,12 +12,13 @@ import {
   labSearchReducer,
 } from '../reducers/labSearchReducer';
 import {
-  ResearchGroupSearchFilters,
-  ResearchGroupSearchRequest,
-  ResearchGroupSearchResponse,
-  ResearchGroupSortBy,
-  ResearchGroupSortOrder,
-} from '../types/researchGroup';
+  normalizeResearchEntitySearchResponse,
+  ResearchEntitySearchFilters,
+  ResearchEntitySearchRequest,
+  ResearchEntitySearchResponse,
+  ResearchEntitySortBy,
+  ResearchEntitySortOrder,
+} from '../types/researchEntity';
 
 interface LabSearchContextProviderProps {
   children: ReactNode;
@@ -50,21 +51,21 @@ const LabSearchContextProvider: FC<LabSearchContextProviderProps> = ({ children 
   }, []);
 
   const setFilters = useCallback(
-    (value: React.SetStateAction<ResearchGroupSearchFilters>) => {
+    (value: React.SetStateAction<ResearchEntitySearchFilters>) => {
       dispatch({ type: 'SET_FILTERS', payload: value });
     },
     [],
-  ) as React.Dispatch<React.SetStateAction<ResearchGroupSearchFilters>>;
+  ) as React.Dispatch<React.SetStateAction<ResearchEntitySearchFilters>>;
 
   const clearFilters = useCallback(() => {
     dispatch({ type: 'CLEAR_FILTERS' });
   }, []);
 
-  const setSortBy = useCallback((value: ResearchGroupSortBy | 'default') => {
+  const setSortBy = useCallback((value: ResearchEntitySortBy | 'default') => {
     dispatch({ type: 'SET_SORT_BY', payload: value });
   }, []);
 
-  const setSortOrder = useCallback((value: ResearchGroupSortOrder) => {
+  const setSortOrder = useCallback((value: ResearchEntitySortOrder) => {
     dispatch({ type: 'SET_SORT_ORDER', payload: value });
   }, []);
 
@@ -79,27 +80,28 @@ const LabSearchContextProvider: FC<LabSearchContextProviderProps> = ({ children 
     const f = filtersRef.current;
     const trimmedQuery = (f.queryString || '').trim();
 
-    const body: ResearchGroupSearchRequest = {
+    const body: ResearchEntitySearchRequest = {
       q: trimmedQuery,
       page: searchPage,
       pageSize: f.pageSize,
       filters: f.filters,
     };
     if (f.sortBy !== 'default') {
-      body.sortBy = f.sortBy as ResearchGroupSortBy;
+      body.sortBy = f.sortBy as ResearchEntitySortBy;
       body.sortOrder = f.sortOrder;
     }
 
     dispatch({ type: 'SEARCH_REQUEST' });
 
     axios
-      .post<ResearchGroupSearchResponse>('/research/search', body)
+      .post<ResearchEntitySearchResponse>('/research/search', body)
       .then((response) => {
-        const { hits, estimatedTotalHits } = response.data;
+        const { researchEntities, estimatedTotalHits } =
+          normalizeResearchEntitySearchResponse(response.data);
         dispatch({
           type: 'SEARCH_SUCCESS',
           payload: {
-            results: hits,
+            results: researchEntities,
             totalHits: estimatedTotalHits,
             pageSize: f.pageSize,
             append: searchPage !== 1,
@@ -108,8 +110,8 @@ const LabSearchContextProvider: FC<LabSearchContextProviderProps> = ({ children 
       })
       .catch((err) => {
         const message =
-          err?.response?.data?.error || err?.message || 'Unable to load research groups';
-        console.error('Lab search failed:', err);
+          err?.response?.data?.error || err?.message || 'Unable to load research entities';
+        console.error('Research entity search failed:', err);
         dispatch({ type: 'SEARCH_FAILURE', payload: message });
       });
   }, []);
