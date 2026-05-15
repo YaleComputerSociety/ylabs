@@ -27,7 +27,7 @@ async function migrateListings() {
     // Connect to source (Production)
     console.log('Connecting to Production database...');
     const sourceConnection = await mongoose.createConnection(sourceUrl).asPromise();
-    const SourceListing = sourceConnection.model('listings', Listing.schema);
+    const SourceListing = sourceConnection.model('Listing', Listing.schema, 'listings');
 
     // Fetch all listings from Production (including embeddings)
     console.log('Fetching listings from Production...');
@@ -43,7 +43,7 @@ async function migrateListings() {
     // Connect to target (ProductionMigration)
     console.log('Connecting to ProductionMigration database...');
     const targetConnection = await mongoose.createConnection(targetUrl).asPromise();
-    const TargetListing = targetConnection.model('listings', Listing.schema);
+    const TargetListing = targetConnection.model('Listing', Listing.schema, 'listings');
 
     // Check existing count in target
     const existingCount = await TargetListing.countDocuments();

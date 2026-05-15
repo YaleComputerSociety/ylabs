@@ -188,7 +188,7 @@ async function importFellowships() {
     // Connect to MongoDB
     console.log('\nConnecting to MongoDB...');
     const connection = await mongoose.createConnection(mongoUrl).asPromise();
-    const FellowshipModel = connection.model('fellowships', fellowshipSchema);
+    const FellowshipModel = connection.model('Fellowship', fellowshipSchema, 'fellowships');
 
     // Check existing count
     const existingCount = await FellowshipModel.countDocuments();

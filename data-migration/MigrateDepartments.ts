@@ -278,7 +278,7 @@ async function migrateDepartments(dryRun: boolean = true) {
     // Connect to Production to get valid departments (for validation)
     console.log('Connecting to Production database to fetch departments...');
     const sourceConnection = await mongoose.createConnection(sourceUrl).asPromise();
-    const SourceDepartment = sourceConnection.model('departments', Department.schema);
+    const SourceDepartment = sourceConnection.model('Department', Department.schema, 'departments');
 
     const departments = await SourceDepartment.find({}).lean() as unknown as DepartmentDoc[];
     console.log(`Loaded ${departments.length} valid departments from Production`);
@@ -311,7 +311,7 @@ async function migrateDepartments(dryRun: boolean = true) {
     // Connect to ProductionMigration to update listings
     console.log('Connecting to ProductionMigration database...');
     const targetConnection = await mongoose.createConnection(targetUrl).asPromise();
-    const TargetListing = targetConnection.model('listings', Listing.schema);
+    const TargetListing = targetConnection.model('Listing', Listing.schema, 'listings');
 
     // Fetch all listings
     const listings = await TargetListing.find({}).lean();

@@ -27,7 +27,7 @@ async function migrateUsers() {
     // Connect to source (Production)
     console.log('Connecting to Production database...');
     const sourceConnection = await mongoose.createConnection(sourceUrl).asPromise();
-    const SourceUser = sourceConnection.model('users', User.schema);
+    const SourceUser = sourceConnection.model('User', User.schema, 'users');
 
     // Fetch all users from Production
     console.log('Fetching users from Production...');
@@ -43,7 +43,7 @@ async function migrateUsers() {
     // Connect to target (ProductionMigration)
     console.log('Connecting to ProductionMigration database...');
     const targetConnection = await mongoose.createConnection(targetUrl).asPromise();
-    const TargetUser = targetConnection.model('users', User.schema);
+    const TargetUser = targetConnection.model('User', User.schema, 'users');
 
     // Check existing count in target
     const existingCount = await TargetUser.countDocuments();

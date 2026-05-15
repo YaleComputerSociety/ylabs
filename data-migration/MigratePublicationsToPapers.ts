@@ -19,8 +19,8 @@ import { paperSchema } from '../server/src/models/paper';
 
 dotenv.config({ path: path.resolve(__dirname, '../server/.env') });
 
-const User = mongoose.model('users', userSchema);
-const Paper = mongoose.model('papers', paperSchema);
+const User = mongoose.model('User', userSchema, 'users');
+const Paper = mongoose.model('Paper', paperSchema, 'papers');
 
 const LIVE = process.argv.includes('--live');
 

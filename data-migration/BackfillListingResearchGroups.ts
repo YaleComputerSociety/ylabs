@@ -24,8 +24,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, '../server/.env') });
 
-const Listing = mongoose.model('listings', listingSchema);
-const User = mongoose.model('users', userSchema);
+const Listing = mongoose.model('Listing', listingSchema, 'listings');
+const User = mongoose.model('User', userSchema, 'users');
 
 const LIVE = process.argv.includes('--live');
 

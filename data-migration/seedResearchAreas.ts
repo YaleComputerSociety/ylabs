@@ -702,7 +702,7 @@ const researchAreaSchema = new mongoose.Schema({
 researchAreaSchema.index({ name: 'text' });
 researchAreaSchema.index({ field: 1 });
 
-const ResearchArea = mongoose.model('researchareas', researchAreaSchema, 'research_areas');
+const ResearchArea = mongoose.model('ResearchArea', researchAreaSchema, 'research_areas');
 
 async function seedResearchAreas(dbUrl: string, dbName: string) {
   console.log(`\n=== Seeding Research Areas to ${dbName} ===\n`);

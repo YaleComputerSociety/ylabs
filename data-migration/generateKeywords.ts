@@ -588,7 +588,7 @@ async function generateKeywords(dryRun: boolean = true, forceMode: boolean = fal
     researchAreaSchema.index({ field: 1 });
 
     const ResearchAreaModel = prodConnection.model(
-      'researchareas',
+      'ResearchArea',
       researchAreaSchema,
       'research_areas',
     );
@@ -609,7 +609,7 @@ async function generateKeywords(dryRun: boolean = true, forceMode: boolean = fal
     const systemPrompt = buildSystemPrompt(validAreaNames);
 
     // Create Listing model on migration connection
-    const ListingModel = migrationConnection.model('listings', listingSchema);
+    const ListingModel = migrationConnection.model('Listing', listingSchema, 'listings');
 
     // Fetch all listings from ProductionMigration
     console.log('Fetching listings from ProductionMigration...');
@@ -1004,7 +1004,7 @@ async function classifyExistingAreas() {
     researchAreaSchema.index({ field: 1 });
 
     const ResearchAreaModel = prodConnection.model(
-      'researchareas',
+      'ResearchArea',
       researchAreaSchema,
       'research_areas',
     );

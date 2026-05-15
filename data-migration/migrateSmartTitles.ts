@@ -284,8 +284,8 @@ async function migrateSmartTitles(dryRun: boolean = true) {
     console.log('Connected to ProductionMigration\n');
 
     // Create models on appropriate connections
-    const DepartmentModel = prodConnection.model('departments', Department.schema);
-    const ListingModel = migrationConnection.model('listings', Listing.schema);
+    const DepartmentModel = prodConnection.model('Department', Department.schema, 'departments');
+    const ListingModel = migrationConnection.model('Listing', Listing.schema, 'listings');
 
     // Build department lookup (map by displayName, name, AND abbreviation for old format compatibility)
     console.log('Building department lookup from Production...');
