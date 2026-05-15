@@ -11,6 +11,7 @@ export interface FellowshipApplicationCycleEvidence {
   supportsFellowshipFundedProject: boolean;
   supportsFellowshipCompatible: boolean;
   supportsOfficialApplicationRoute: boolean;
+  nextCycleSignal: boolean;
   applicationHasOpened?: boolean;
   deadlineHasNotPassed?: boolean;
 }
@@ -59,6 +60,12 @@ function textForFellowship(fellowship: any): string {
     .join(' ');
 }
 
+function looksRecurring(fellowshipText: string): boolean {
+  return /\b(fellowship|funding|grant|stipend|award|summer|annual|year|cycle|term|spring|fall|deadline|application)\b/i.test(
+    fellowshipText,
+  );
+}
+
 function hasApplicationRoute(fellowship: any, sourceUrls: string[]): boolean {
   if (cleanHttpUrl(fellowship.applicationLink)) return true;
   if (!Array.isArray(fellowship.links)) return false;
@@ -98,6 +105,14 @@ export function buildFellowshipApplicationCycleEvidence(
   const fellowshipText = textForFellowship(fellowship);
   const projectLike = /research|project|proposal|summer|thesis/i.test(fellowshipText);
   const fellowshipLike = /fellowship|funding|grant|stipend|award/i.test(fellowshipText);
+  const supportsFellowshipFundedProject = sourceBacked && projectLike;
+  const supportsFellowshipCompatible = sourceBacked && (projectLike || fellowshipLike);
+  const nextCycleSignal =
+    sourceBacked &&
+    !activeCycle &&
+    supportsFellowshipCompatible &&
+    looksRecurring(fellowshipText) &&
+    (deadlineHasNotPassed === false || fellowship.isAcceptingApplications !== true);
 
   return {
     sourceUrls,
@@ -109,9 +124,10 @@ export function buildFellowshipApplicationCycleEvidence(
     contactEmail: cleanString(fellowship.contactEmail),
     sourceBacked,
     activeCycle,
-    supportsFellowshipFundedProject: sourceBacked && projectLike,
-    supportsFellowshipCompatible: sourceBacked && (projectLike || fellowshipLike),
+    supportsFellowshipFundedProject,
+    supportsFellowshipCompatible,
     supportsOfficialApplicationRoute: sourceBacked && hasApplicationRoute(fellowship, sourceUrls),
+    nextCycleSignal,
     applicationHasOpened,
     deadlineHasNotPassed,
   };

@@ -6,6 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import { Fellowship } from '../../types/types';
 import FellowshipSearchContext from '../../contexts/FellowshipSearchContext';
 import { ensureHttpPrefix, safeUrl } from '../../utils/url';
+import { getFellowshipCycleStatus } from '../../utils/fellowshipCycle';
 import FavoriteButton from '../shared/FavoriteButton';
 
 interface FellowshipModalProps {
@@ -86,6 +87,7 @@ const FellowshipModal = ({
   } = useContext(FellowshipSearchContext);
 
   if (!isOpen || !fellowship) return null;
+  const cycleStatus = getFellowshipCycleStatus(fellowship);
 
   const handleFilterClick = (
     filterType: 'yearOfStudy' | 'termOfAward' | 'purpose' | 'globalRegions' | 'citizenshipStatus',
@@ -162,15 +164,9 @@ const FellowshipModal = ({
                     </span>
                   )}
                   <span
-                    className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                      fellowship.isAcceptingApplications
-                        ? 'bg-green-50 text-green-700'
-                        : 'bg-red-50 text-red-600'
-                    }`}
+                    className={`text-xs px-2 py-0.5 rounded-full font-medium ${cycleStatus.className}`}
                   >
-                    {fellowship.isAcceptingApplications
-                      ? 'Accepting Applications'
-                      : 'Not Accepting'}
+                    {cycleStatus.label}
                   </span>
                 </div>
 
@@ -187,7 +183,7 @@ const FellowshipModal = ({
                     rel="noopener noreferrer"
                     onClick={(e) => e.stopPropagation()}
                     className="p-2 rounded-lg hover:bg-gray-100 transition-colors text-gray-500 hover:text-blue-600"
-                    title="Apply"
+                    title={cycleStatus.category === 'open' || cycleStatus.category === 'closingSoon' ? 'Apply' : 'Open source'}
                   >
                     <svg
                       xmlns="http://www.w3.org/2000/svg"
@@ -286,6 +282,13 @@ const FellowshipModal = ({
                     Key Dates
                   </h3>
                   <div className="bg-blue-50 rounded-lg p-3 space-y-3">
+                    {cycleStatus.category === 'nextCycle' && (
+                      <div className="rounded-md bg-white/70 border border-sky-100 px-2.5 py-2">
+                        <p className="text-xs font-medium text-sky-800">
+                          Past cycle, useful for next-cycle planning.
+                        </p>
+                      </div>
+                    )}
                     <div>
                       <span className="text-xs text-blue-600">Application Opens</span>
                       <p className="text-sm font-medium text-blue-900">
@@ -553,7 +556,9 @@ const FellowshipModal = ({
                       rel="noopener noreferrer"
                       className="inline-flex items-center px-6 py-2.5 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors text-sm"
                     >
-                      Apply Now
+                      {cycleStatus.category === 'open' || cycleStatus.category === 'closingSoon'
+                        ? 'Apply Now'
+                        : 'Open Fellowship Source'}
                       <svg
                         xmlns="http://www.w3.org/2000/svg"
                         width="16"
