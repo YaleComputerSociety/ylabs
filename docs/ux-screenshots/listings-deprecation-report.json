@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-05-15T01:30:46.341Z",
+  "timestamp": "2026-05-15T01:32:42.556Z",
   "rootRedirect": {
     "url": "http://localhost:3000/research",
     "hasResearchShell": 1,
@@ -7,12 +7,13 @@
     "logoHref": "/research"
   },
   "legacyQueryRedirect": {
-    "url": "http://localhost:3000/listings"
+    "url": "http://localhost:3000/listings?listing=legacy123",
+    "hasDirectListingModal": 1
   },
   "listings": {
     "url": "http://localhost:3000/listings",
     "hasPostedRolesHeading": 1,
-    "hasResearchCta": 2,
+    "hasResearchCta": 1,
     "hasPathwaysCta": 1,
     "navListingsCount": 0
   },
@@ -31,22 +32,5 @@
     "hasResearchButton": 1,
     "hasPathwaysButton": 1
   },
-  "consoleErrors": [
-    "Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
-    "Error loading listings: AxiosError: Request failed with status code 500\n    at settle (http://localhost:3000/node_modules/.vite/deps/axios.js?v=cd105765:1344:7)\n    at XMLHttpRequest.onloadend (http://localhost:3000/node_modules/.vite/deps/axios.js?v=cd105765:1707:7)",
-    "Failed to load resource: the server responded with a status of 400 (Bad Request)",
-    "Error fetching direct listing link: AxiosError: Request failed with status code 400\n    at settle (http://localhost:3000/node_modules/.vite/deps/axios.js?v=cd105765:1344:7)\n    at XMLHttpRequest.onloadend (http://localhost:3000/node_modules/.vite/deps/axios.js?v=cd105765:1707:7)",
-    "Failed to load resource: the server responded with a status of 400 (Bad Request)",
-    "Error fetching direct listing link: AxiosError: Request failed with status code 400\n    at settle (http://localhost:3000/node_modules/.vite/deps/axios.js?v=cd105765:1344:7)\n    at XMLHttpRequest.onloadend (http://localhost:3000/node_modules/.vite/deps/axios.js?v=cd105765:1707:7)",
-    "Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
-    "Error loading listings: AxiosError: Request failed with status code 500\n    at settle (http://localhost:3000/node_modules/.vite/deps/axios.js?v=cd105765:1344:7)\n    at XMLHttpRequest.onloadend (http://localhost:3000/node_modules/.vite/deps/axios.js?v=cd105765:1707:7)",
-    "Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
-    "Error loading listings: AxiosError: Request failed with status code 500\n    at settle (http://localhost:3000/node_modules/.vite/deps/axios.js?v=cd105765:1344:7)\n    at XMLHttpRequest.onloadend (http://localhost:3000/node_modules/.vite/deps/axios.js?v=cd105765:1707:7)",
-    "Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
-    "Error loading listings: AxiosError: Request failed with status code 500\n    at settle (http://localhost:3000/node_modules/.vite/deps/axios.js?v=cd105765:1344:7)\n    at XMLHttpRequest.onloadend (http://localhost:3000/node_modules/.vite/deps/axios.js?v=cd105765:1707:7)",
-    "Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
-    "Error loading listings: AxiosError: Request failed with status code 500\n    at settle (http://localhost:3000/node_modules/.vite/deps/axios.js?v=cd105765:1344:7)\n    at XMLHttpRequest.onloadend (http://localhost:3000/node_modules/.vite/deps/axios.js?v=cd105765:1707:7)",
-    "Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
-    "Error loading listings: AxiosError: Request failed with status code 500\n    at settle (http://localhost:3000/node_modules/.vite/deps/axios.js?v=cd105765:1344:7)\n    at XMLHttpRequest.onloadend (http://localhost:3000/node_modules/.vite/deps/axios.js?v=cd105765:1707:7)"
-  ]
+  "consoleErrors": []
 }
