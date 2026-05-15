@@ -7,6 +7,7 @@ import AdminFellowshipsTable from './AdminFellowshipsTable';
 import AdminResearchAreas from './AdminResearchAreas';
 import AdminDepartments from './AdminDepartments';
 import AdminFacultyProfilesTable from './AdminFacultyProfilesTable';
+import AdminAccessReview from './AdminAccessReview';
 
 const TABS = [
   'Listings',
@@ -14,6 +15,7 @@ const TABS = [
   'Research Areas',
   'Departments',
   'Faculty Profiles',
+  'Access Review',
 ] as const;
 type Tab = (typeof TABS)[number];
 
@@ -62,6 +64,7 @@ const AdminPanel = () => {
       {activeTab === 'Research Areas' && <AdminResearchAreas />}
       {activeTab === 'Departments' && <AdminDepartments />}
       {activeTab === 'Faculty Profiles' && <AdminFacultyProfilesTable />}
+      {activeTab === 'Access Review' && <AdminAccessReview />}
     </section>
   );
 };
