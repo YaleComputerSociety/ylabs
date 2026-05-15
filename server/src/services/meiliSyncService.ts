@@ -1,9 +1,9 @@
 /**
- * Syncs entities (listings, research groups, papers, ...) to Meilisearch.
+ * Syncs entities (listings, research entities, papers, ...) to Meilisearch.
  */
 import { getMeiliIndex } from '../utils/meiliClient';
 
-export type SyncableEntityType = 'listing' | 'researchGroup' | 'paper';
+export type SyncableEntityType = 'listing' | 'researchEntity' | 'paper';
 
 interface EntityIndexConfig {
   indexName: string;
@@ -25,8 +25,8 @@ const ENTITY_REGISTRY: Record<SyncableEntityType, EntityIndexConfig> = {
     primaryKey: 'id',
     transform: stripInternalFields,
   },
-  researchGroup: {
-    indexName: 'researchgroups',
+  researchEntity: {
+    indexName: 'researchentities',
     primaryKey: 'id',
     transform: stripInternalFields,
   },

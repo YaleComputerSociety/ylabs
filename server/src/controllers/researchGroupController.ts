@@ -102,7 +102,7 @@ export const searchResearchGroups = async (request: Request, response: Response)
     const result = await searchResearchGroupsViaMeili(q, filters, page, pageSize, sort);
     return response.json(result);
   } catch (error) {
-    console.error('ResearchGroup search failed:', error);
+    console.error('ResearchEntity search failed:', error);
     return response.status(500).json({ error: 'Search failed' });
   }
 };
@@ -115,7 +115,7 @@ export const getResearchGroupBySlug = async (request: Request, response: Respons
 
   const detail = await getResearchGroupDetail(slug);
   if (!detail) {
-    throw new NotFoundError(`Research group not found with slug: ${slug}`);
+    throw new NotFoundError(`Research entity not found with slug: ${slug}`);
   }
 
   return response.status(200).json(detail);

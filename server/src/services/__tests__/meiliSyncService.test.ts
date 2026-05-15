@@ -27,7 +27,7 @@ beforeEach(() => {
 describe('isSyncableEntityType', () => {
   it('accepts the registered entity types', () => {
     expect(isSyncableEntityType('listing')).toBe(true);
-    expect(isSyncableEntityType('researchGroup')).toBe(true);
+    expect(isSyncableEntityType('researchEntity')).toBe(true);
     expect(isSyncableEntityType('paper')).toBe(true);
   });
 
@@ -65,7 +65,7 @@ describe('syncEntity transform', () => {
     expect(docs[0]).not.toHaveProperty('embedding');
   });
 
-  it('strips _id, __v, embedding and sets stringified id for researchGroups', async () => {
+  it('strips _id, __v, embedding and sets stringified id for researchEntities', async () => {
     const doc = {
       _id: { toString: () => 'rg-id-42' },
       __v: 0,
@@ -77,9 +77,9 @@ describe('syncEntity transform', () => {
       researchAreas: ['Genetics'],
     };
 
-    await syncEntity('researchGroup', doc);
+    await syncEntity('researchEntity', doc);
 
-    expect(getMeiliIndexMock).toHaveBeenCalledWith('researchgroups');
+    expect(getMeiliIndexMock).toHaveBeenCalledWith('researchentities');
     const [docs, opts] = addDocumentsMock.mock.calls[0];
     expect(opts).toEqual({ primaryKey: 'id' });
     expect(docs[0]).toEqual({
@@ -150,9 +150,9 @@ describe('syncEntities', () => {
       { _id: { toString: () => 'b' }, __v: 2, embedding: [2], name: 'B' },
     ];
 
-    await syncEntities('researchGroup', docs);
+    await syncEntities('researchEntity', docs);
 
-    expect(getMeiliIndexMock).toHaveBeenCalledWith('researchgroups');
+    expect(getMeiliIndexMock).toHaveBeenCalledWith('researchentities');
     expect(addDocumentsMock).toHaveBeenCalledTimes(1);
     const [meiliDocs, opts] = addDocumentsMock.mock.calls[0];
     expect(opts).toEqual({ primaryKey: 'id' });

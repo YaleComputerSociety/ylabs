@@ -1,6 +1,6 @@
 /**
- * Service layer for ResearchGroup CRUD plus the find-or-create helper that gives every
- * Listing a parent group on creation.
+ * Service layer for canonical ResearchEntity browse/detail plus the
+ * find-or-create helper that gives every Listing a parent entity on creation.
  *
  * Strategy for findOrCreateForOwner:
  *   1. Look for an existing group where the owner is a 'pi' member.
@@ -13,17 +13,32 @@
  * primary department's category.
  */
 import mongoose from 'mongoose';
-import { ResearchGroup } from '../models/researchGroup';
+import { ResearchEntity } from '../models/researchEntity';
 import { ResearchGroupMember } from '../models/researchGroupMember';
 import { Department, DepartmentCategory } from '../models/department';
 import { Paper } from '../models/paper';
+import { PaperGroupLink } from '../models/paperGroupLink';
 import { Listing } from '../models/listing';
 import { User } from '../models/user';
+import { AccessSignal } from '../models/accessSignal';
+import { ContactRoute } from '../models/contactRoute';
+import { EntryPathway } from '../models/entryPathway';
+import { PostedOpportunity } from '../models/postedOpportunity';
 import { getMeiliIndex } from '../utils/meiliClient';
+import {
+  getAccessSummaryForResearchEntity,
+  listAccessSummariesForResearchEntities,
+} from './accessSummaryService';
 import {
   buildResearchGroupFilterString,
   ResearchGroupFilterInput,
 } from './researchGroupFilters';
+import { mapResearchGroupKindToEntityType } from '../models/researchAccessTypes';
+import {
+  addResearchEntityDetailAlias,
+  addResearchEntitySearchAliases,
+  type PublicResearchEntityDto,
+} from './researchEntityDto';
 
 const NON_LAB_CATEGORIES = new Set<string>([
   DepartmentCategory.SOCIAL_SCIENCES,
@@ -84,7 +99,7 @@ function ownerDisplayName(owner: OwnerLike, kind: 'lab' | 'individual'): string 
 }
 
 /**
- * Returns an existing ResearchGroup for which the owner is the PI, or creates a stub one.
+ * Returns an existing ResearchEntity for which the owner is the PI, or creates a stub one.
  * Never throws on duplicate slug — uses upsert + member-row idempotent insert.
  */
 export async function findOrCreateForOwner(owner: OwnerLike): Promise<{
@@ -101,7 +116,9 @@ export async function findOrCreateForOwner(owner: OwnerLike): Promise<{
       role: 'pi',
     }).lean();
     if (existingMember) {
-      const group = await ResearchGroup.findById((existingMember as any).researchGroupId).lean();
+      const group = await ResearchEntity.findById(
+        (existingMember as any).researchEntityId || (existingMember as any).researchGroupId,
+      ).lean();
       if (group) return { group, created: false };
     }
   }
@@ -115,6 +132,7 @@ export async function findOrCreateForOwner(owner: OwnerLike): Promise<{
       slug,
       name,
       kind,
+      entityType: mapResearchGroupKindToEntityType(kind),
       openness: 'open',
       acceptingUndergrads: true,
       lastObservedAt: new Date(),
@@ -123,7 +141,7 @@ export async function findOrCreateForOwner(owner: OwnerLike): Promise<{
     },
   };
 
-  const group: any = await ResearchGroup.findOneAndUpdate({ slug }, update, {
+  const group: any = await ResearchEntity.findOneAndUpdate({ slug }, update, {
     upsert: true,
     new: true,
     setDefaultsOnInsert: true,
@@ -131,9 +149,10 @@ export async function findOrCreateForOwner(owner: OwnerLike): Promise<{
 
   if (owner._id && mongoose.Types.ObjectId.isValid(owner._id)) {
     await ResearchGroupMember.updateOne(
-      { researchGroupId: group._id, userId: owner._id },
+      { researchEntityId: group._id, userId: owner._id },
       {
         $setOnInsert: {
+          researchEntityId: group._id,
           researchGroupId: group._id,
           userId: owner._id,
           role: 'pi',
@@ -151,16 +170,16 @@ export async function findOrCreateForOwner(owner: OwnerLike): Promise<{
 
 export async function getResearchGroupById(id: any): Promise<any | null> {
   if (!mongoose.Types.ObjectId.isValid(id)) return null;
-  return ResearchGroup.findById(id).lean();
+  return ResearchEntity.findById(id).lean();
 }
 
 export async function getResearchGroupBySlug(slug: string): Promise<any | null> {
-  return ResearchGroup.findOne({ slug }).lean();
+  return ResearchEntity.findOne({ slug }).lean();
 }
 
 export async function listMembersOfGroup(groupId: any): Promise<any[]> {
   if (!mongoose.Types.ObjectId.isValid(groupId)) return [];
-  return ResearchGroupMember.find({ researchGroupId: groupId }).lean();
+  return ResearchGroupMember.find({ researchEntityId: groupId }).lean();
 }
 
 export interface ResearchGroupSearchSort {
@@ -169,7 +188,7 @@ export interface ResearchGroupSearchSort {
 }
 
 export interface ResearchGroupSearchResult {
-  hits: any[];
+  researchEntities: PublicResearchEntityDto[];
   estimatedTotalHits: number;
   page: number;
   pageSize: number;
@@ -177,8 +196,23 @@ export interface ResearchGroupSearchResult {
 
 const MAX_PAGE_SIZE = 100;
 
+const isMissingMeiliEmbedderError = (error: unknown): boolean => {
+  const maybeError = error as {
+    code?: string;
+    message?: string;
+    cause?: { code?: string; message?: string };
+  };
+
+  return (
+    maybeError?.code === 'invalid_search_embedder' ||
+    maybeError?.cause?.code === 'invalid_search_embedder' ||
+    /Cannot find embedder/i.test(maybeError?.message || '') ||
+    /Cannot find embedder/i.test(maybeError?.cause?.message || '')
+  );
+};
+
 /**
- * Hybrid Meilisearch query for ResearchGroup. Mirrors the pattern used in
+ * Hybrid Meilisearch query for ResearchEntity. Mirrors the pattern used in
  * listingService — keyword-only when no query, hybrid (semanticRatio 0.8) when
  * a non-empty query is provided.
  */
@@ -219,41 +253,54 @@ export async function searchResearchGroupsViaMeili(
     };
   }
 
-  const index = await getMeiliIndex('researchgroups');
-  const { hits, estimatedTotalHits } = await index.search(trimmedQuery, searchParams);
+  const index = await getMeiliIndex('researchentities');
+  let searchResult: { hits?: any[]; estimatedTotalHits?: number };
+  try {
+    searchResult = await index.search(trimmedQuery, searchParams);
+  } catch (error) {
+    if (!searchParams.hybrid || !isMissingMeiliEmbedderError(error)) {
+      throw error;
+    }
+
+    const keywordOnlyParams = { ...searchParams };
+    delete keywordOnlyParams.hybrid;
+    searchResult = await index.search(trimmedQuery, keywordOnlyParams);
+  }
+  const { hits, estimatedTotalHits } = searchResult;
 
   const hitIds = (hits || [])
     .map((hit: any) => hit.id || hit._id)
     .filter((id: any) => mongoose.Types.ObjectId.isValid(id));
   const activeListingGroupIds =
     hitIds.length > 0
-      ? await Listing.distinct('researchGroupId', {
-          researchGroupId: { $in: hitIds },
+      ? await Listing.distinct('researchEntityId', {
+          researchEntityId: { $in: hitIds },
           archived: false,
         })
       : [];
   const activeListingGroupIdSet = new Set(activeListingGroupIds.map((id: any) => String(id)));
 
   // Map Meilisearch's `id` back to `_id` for client backward compatibility.
+  const accessSummaries = await listAccessSummariesForResearchEntities(hitIds);
   const normalizedHits = (hits || []).map((hit: any) => {
     const id = hit.id || hit._id;
     return {
       ...hit,
       _id: id,
       hasActiveListing: activeListingGroupIdSet.has(String(id)),
+      accessSummary: accessSummaries.get(String(id)),
     };
   });
 
-  return {
+  return addResearchEntitySearchAliases({
     hits: normalizedHits,
     estimatedTotalHits: estimatedTotalHits ?? normalizedHits.length,
     page: safePage,
     pageSize: safePageSize,
-  };
+  });
 }
 
-const PUBLIC_USER_FIELDS =
-  'netid fname lname imageUrl primaryDepartment title secondaryDepartments';
+const PUBLIC_USER_FIELDS = 'netid fname lname imageUrl primaryDepartment title secondaryDepartments';
 
 /**
  * Detail payload for the lab page: the group itself, member User snapshots
@@ -261,16 +308,21 @@ const PUBLIC_USER_FIELDS =
  * non-archived listings.
  */
 export async function getResearchGroupDetail(slug: string): Promise<{
-  group: any;
+  researchEntity: PublicResearchEntityDto;
   members: Array<{ user: any; role: string }>;
   recentPapers: any[];
+  recentArxivPreprints: any[];
   activeListings: any[];
+  entryPathways: any[];
+  accessSignals: any[];
+  contactRoutes: any[];
+  postedOpportunities: any[];
 } | null> {
-  const group = await ResearchGroup.findOne({ slug }).lean();
+  const group = await ResearchEntity.findOne({ slug }).lean();
   if (!group) return null;
 
   const memberRows: any[] = await ResearchGroupMember.find({
-    researchGroupId: (group as any)._id,
+    researchEntityId: (group as any)._id,
   }).lean();
 
   const memberUserIds = memberRows
@@ -309,14 +361,78 @@ export async function getResearchGroupDetail(slug: string): Promise<{
     }))
     .sort((a, b) => (ROLE_PRIORITY[a.role] ?? 99) - (ROLE_PRIORITY[b.role] ?? 99));
 
-  const [recentPapers, activeListingsRaw] = await Promise.all([
+  const linkedPaperRows = await PaperGroupLink.find({
+    researchEntityId: (group as any)._id,
+    archived: false,
+  })
+    .select('paperId')
+    .lean();
+  const linkedPaperIds = linkedPaperRows.map((row: any) => row.paperId).filter(Boolean);
+
+  const [
+    recentPapers,
+    recentArxivPreprints,
+    activeListingsRaw,
+    entryPathways,
+    accessSignals,
+    contactRoutes,
+    postedOpportunities,
+    accessSummary,
+  ] = await Promise.all([
     memberUserIds.length
-      ? Paper.find({ yaleAuthorIds: { $in: memberUserIds } })
+      ? Paper.find({
+          yaleAuthorIds: { $in: memberUserIds },
+          $or: [
+            { publicationStage: { $exists: false } },
+            { publicationStage: { $ne: 'PREPRINT' } },
+          ],
+        })
           .sort({ publishedAt: -1 })
           .limit(10)
           .lean()
       : Promise.resolve([]),
-    Listing.find({ researchGroupId: (group as any)._id, archived: false }).lean(),
+    linkedPaperIds.length || memberUserIds.length
+      ? Paper.find({
+          archived: false,
+          ...(linkedPaperIds.length && memberUserIds.length
+            ? {
+                $and: [
+                  {
+                    $or: [
+                      { _id: { $in: linkedPaperIds } },
+                      { yaleAuthorIds: { $in: memberUserIds } },
+                    ],
+                  },
+                ],
+              }
+            : linkedPaperIds.length
+              ? { _id: { $in: linkedPaperIds } }
+              : { yaleAuthorIds: { $in: memberUserIds } }),
+          $or: [{ preprintServer: 'arxiv' }, { publicationStage: 'PREPRINT' }],
+        })
+          .sort({ postedAt: -1, versionDate: -1, publishedAt: -1 })
+          .limit(10)
+          .lean()
+      : Promise.resolve([]),
+    Listing.find({ researchEntityId: (group as any)._id, archived: false }).lean(),
+    EntryPathway.find({ researchEntityId: (group as any)._id, archived: false }).lean(),
+    AccessSignal.find({ researchEntityId: (group as any)._id, archived: false })
+      .sort({ observedAt: -1 })
+      .lean(),
+    ContactRoute.find(
+      {
+        researchEntityId: (group as any)._id,
+        archived: false,
+        visibility: 'PUBLIC',
+      },
+      'routeType label url priority visibility contactPolicy rationale sourceUrl observedAt',
+    )
+      .sort({ priority: 1 })
+      .lean(),
+    PostedOpportunity.find({ researchEntityId: (group as any)._id, archived: false })
+      .sort({ deadline: 1 })
+      .lean(),
+    getAccessSummaryForResearchEntity((group as any)._id),
   ]);
 
   const activeListings = activeListingsRaw.map((listing: any) => ({
@@ -324,10 +440,18 @@ export async function getResearchGroupDetail(slug: string): Promise<{
     id: String(listing._id),
   }));
 
-  return {
-    group,
+  return addResearchEntityDetailAlias({
+    group: {
+      ...group,
+      accessSummary,
+    },
     members,
     recentPapers,
+    recentArxivPreprints,
     activeListings,
-  };
+    entryPathways,
+    accessSignals,
+    contactRoutes,
+    postedOpportunities,
+  });
 }
