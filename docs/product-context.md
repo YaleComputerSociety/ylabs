@@ -60,16 +60,18 @@ This surface should emphasize concrete next steps toward a plausible research ho
 
 Target surfaces:
 
+- `/`: authenticated default redirect to `/research`.
 - `/research`: explore research entities, even when no opening exists.
 - `/pathways`: browse practical routes toward plausible research homes, with filters for evidence, next step, compensation/funding possibility, structured fellowship program, thesis fit, method, timing, exploratory outreach, internships, and active posted roles.
 - `/research/:slug`: show what the entity does, who is involved, evidence of undergraduate access, pathways, and contact routes.
 - `/opportunities/:id`: show real active/time-bound postings only. These must be backed by `PostedOpportunity`.
+- `/listings`: temporary legacy board for posted roles, preserved for old direct links and professor-created role workflows while the product migrates toward posted opportunities.
 
 The hard-pivot migration removes `/labs` as a runtime compatibility surface; `/research` is the canonical Explore Research route.
 
 Implementation note: `/pathways` now has an MVP client page backed by `POST /api/pathways/search`. It should remain practical and route-focused; real openings appear there as posted-role pathways. `/opportunities/:id` has a first implementation for specific posted instances and should not render generic exploratory pathways.
 
-Implementation note: legacy listings now bridge into `PostedOpportunity` records for the Pathways surface. Public contact CTAs should prefer guarded route URLs and official channels over raw emails.
+Implementation note: legacy listings now bridge into `PostedOpportunity` records for the Pathways surface. Public contact CTAs should prefer guarded route URLs and official channels over raw emails. Student-facing navigation should not present Listings as the primary product surface; use Research, Pathways, and Posted Roles/Posted Opportunities language instead.
 
 ## Entity Page Questions
 

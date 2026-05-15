@@ -145,6 +145,18 @@ Consequences:
 - Existing listing rows can be backfilled with [`data-migration/BackfillPostedOpportunitiesFromListings.ts`](../data-migration/BackfillPostedOpportunitiesFromListings.ts).
 - Legacy listing APIs and Meilisearch behavior remain intact during migration.
 
+## 2026-05-15: Deprecate Listings As The Primary UI Surface
+
+The app should default authenticated users to `/research`, not to a listings board. Legacy listings remain useful as professor-created posted-role records and as source material for `PostedOpportunity`, but they are no longer the center of student navigation.
+
+Consequences:
+
+- `/` redirects to `/research`.
+- `/listings` is a temporary compatibility route for the old browse board and `?listing=` deep links.
+- Primary navigation should show Research, Pathways, Find Fellowships, and Dashboard, not Listings.
+- Student-facing copy should prefer Posted Roles or Posted Opportunities over Listings.
+- Backend listing APIs, admin listing tools, analytics, favorites, and professor posting workflows remain in place until a later posted-opportunity workflow fully replaces them.
+
 ## 2026-05-11: Make Lab Microsite Evidence More Granular
 
 The lab-microsite LLM scraper should emit evidence-shaped observations before product conclusions.

@@ -44,11 +44,12 @@ The current app uses a quiet, operational UI: white backgrounds, gray text, Yale
 
 Current implementation anchors:
 
-- [`client/src/App.tsx`](../client/src/App.tsx): routes `/`, `/research`, `/research/:slug`, `/pathways`, `/opportunities/:id`, `/fellowships`, and legacy `/labs` redirects.
-- [`client/src/components/Navbar.tsx`](../client/src/components/Navbar.tsx): primary navigation, including Research, Find Fellowships, and Pathways.
+- [`client/src/App.tsx`](../client/src/App.tsx): routes `/` as a redirect to `/research`, plus `/research`, `/research/:slug`, `/pathways`, `/opportunities/:id`, `/fellowships`, and temporary legacy `/listings`.
+- [`client/src/components/Navbar.tsx`](../client/src/components/Navbar.tsx): primary navigation, including Research, Pathways, Find Fellowships, and Dashboard.
 - [`client/src/pages/labs.tsx`](../client/src/pages/labs.tsx): `/research` browse page for labs, centers, programs, faculty research, and related groups.
 - [`client/src/pages/pathways.tsx`](../client/src/pages/pathways.tsx): `/pathways` MVP for practical routes into research.
 - [`client/src/pages/labDetail.tsx`](../client/src/pages/labDetail.tsx): `/research/:slug` detail page.
+- [`client/src/pages/home.tsx`](../client/src/pages/home.tsx): temporary `/listings` legacy board for posted roles, not the primary app home.
 - [`client/src/components/shared/BrowseCard.tsx`](../client/src/components/shared/BrowseCard.tsx): shared card treatment for listings, fellowships, and research groups.
 - [`client/src/components/labs/LabHeader.tsx`](../client/src/components/labs/LabHeader.tsx): research detail header and access verdict.
 - [`client/src/components/labs/LabInquireCard.tsx`](../client/src/components/labs/LabInquireCard.tsx): right-rail action/evidence card.
@@ -87,6 +88,12 @@ Primary UX ingredients:
 - Prefer official application or program routes before direct faculty contact.
 
 Current gap: the MVP is usable but still visually close to generic cards. The next pass should make Best Next Step and Evidence feel like the card's organizing structure.
+
+### `/listings`
+
+Purpose: temporary compatibility surface for professor-created posted roles and old direct listing links.
+
+The page should answer: "Which specific posted roles exist right now?" It should not be the default student home or primary navigation item. Keep it available at `/listings` while professor workflows and saved listing behavior still depend on legacy APIs, but frame it as Posted Roles and point students back to Research and Pathways.
 
 ### `/research/:slug`
 
