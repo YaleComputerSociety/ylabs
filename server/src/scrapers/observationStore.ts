@@ -51,29 +51,34 @@ export async function appendObservations(
   }
 
   const result = await Observation.insertMany(docs, { ordered: false });
-  let superseded = 0;
   const latestByFingerprint = new Map<string, any>();
   for (const doc of result as any[]) {
     if (!doc.observationFingerprint) continue;
     latestByFingerprint.set(doc.observationFingerprint, doc._id);
   }
 
-  for (const [fingerprint, latestId] of latestByFingerprint) {
-    const update = await Observation.updateMany(
-      {
-        observationFingerprint: fingerprint,
-        superseded: false,
-        _id: { $ne: latestId },
-      },
-      {
-        $set: {
-          superseded: true,
-          supersededBy: latestId,
+  const supersedeOps = Array.from(latestByFingerprint.entries()).map(
+    ([fingerprint, latestId]) => ({
+      updateMany: {
+        filter: {
+          observationFingerprint: fingerprint,
+          superseded: false,
+          _id: { $ne: latestId },
+        },
+        update: {
+          $set: {
+            superseded: true,
+            supersededBy: latestId,
+          },
         },
       },
-    );
-    superseded += update.modifiedCount || 0;
-  }
+    }),
+  );
+
+  const superseded =
+    supersedeOps.length > 0
+      ? ((await Observation.bulkWrite(supersedeOps, { ordered: false })).modifiedCount || 0)
+      : 0;
 
   return { inserted: result.length, skipped: 0, superseded };
 }

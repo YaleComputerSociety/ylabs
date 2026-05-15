@@ -24,7 +24,7 @@ describe('buildObservationFingerprint', () => {
 
   it('keeps same facts from different sources distinct', () => {
     const base = {
-      entityType: 'researchGroup',
+      entityType: 'researchEntity',
       entityKey: 'smith-lab',
       field: 'acceptingUndergrads',
       value: true,
@@ -54,10 +54,9 @@ describe('appendObservations', () => {
         observationFingerprint: 'fp:user:title',
       },
     ] as any);
-    const updateMany = vi
-      .spyOn(Observation, 'updateMany')
-      .mockResolvedValueOnce({ modifiedCount: 2 } as any)
-      .mockResolvedValueOnce({ modifiedCount: 0 } as any);
+    const bulkWrite = vi.spyOn(Observation, 'bulkWrite').mockResolvedValue({
+      modifiedCount: 2,
+    } as any);
 
     const result = await appendObservations(
       [
@@ -84,21 +83,69 @@ describe('appendObservations', () => {
     );
 
     expect(insertMany).toHaveBeenCalledTimes(1);
-    expect(updateMany).toHaveBeenCalledTimes(2);
-    expect(updateMany.mock.calls[0][0]).toMatchObject({
-      observationFingerprint: 'fp:user:name',
-      superseded: false,
-      _id: { $ne: 'new-1' },
+    expect(bulkWrite).toHaveBeenCalledTimes(1);
+    expect(bulkWrite.mock.calls[0][0][0]).toMatchObject({
+      updateMany: {
+        filter: {
+          observationFingerprint: 'fp:user:name',
+          superseded: false,
+          _id: { $ne: 'new-1' },
+        },
+        update: {
+          $set: { superseded: true, supersededBy: 'new-1' },
+        },
+      },
     });
-    expect(updateMany.mock.calls[0][1]).toMatchObject({
-      $set: { superseded: true, supersededBy: 'new-1' },
-    });
+    expect(result).toEqual({ inserted: 2, skipped: 0, superseded: 2 });
+  });
+
+  it('supersedes duplicate fingerprints with one bulk write per append batch', async () => {
+    vi.spyOn(Observation, 'insertMany').mockResolvedValue([
+      {
+        _id: 'new-1',
+        observationFingerprint: 'fp:user:name',
+      },
+      {
+        _id: 'new-2',
+        observationFingerprint: 'fp:user:title',
+      },
+    ] as any);
+    const bulkWrite = vi.spyOn(Observation, 'bulkWrite').mockResolvedValue({
+      modifiedCount: 2,
+    } as any);
+
+    const result = await appendObservations(
+      [
+        {
+          entityType: 'user',
+          entityKey: 'abc123',
+          field: 'name',
+          value: 'Ada Lovelace',
+        },
+        {
+          entityType: 'user',
+          entityKey: 'abc123',
+          field: 'title',
+          value: 'Professor',
+        },
+      ],
+      {
+        scrapeRunId: 'run-1',
+        sourceId: 'source-1',
+        sourceName: 'yale-directory',
+        sourceWeight: 0.9,
+        dryRun: false,
+      },
+    );
+
+    expect(bulkWrite).toHaveBeenCalledTimes(1);
+    expect(bulkWrite.mock.calls[0][0]).toHaveLength(2);
     expect(result).toEqual({ inserted: 2, skipped: 0, superseded: 2 });
   });
 
   it('does not supersede anything during dry runs', async () => {
     const insertMany = vi.spyOn(Observation, 'insertMany');
-    const updateMany = vi.spyOn(Observation, 'updateMany');
+    const bulkWrite = vi.spyOn(Observation, 'bulkWrite');
 
     const result = await appendObservations(
       [
@@ -119,7 +166,7 @@ describe('appendObservations', () => {
     );
 
     expect(insertMany).not.toHaveBeenCalled();
-    expect(updateMany).not.toHaveBeenCalled();
+    expect(bulkWrite).not.toHaveBeenCalled();
     expect(result).toEqual({ inserted: 0, skipped: 1, superseded: 0 });
   });
 });
