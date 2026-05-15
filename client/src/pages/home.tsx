@@ -1,8 +1,8 @@
 /**
- * Main listings browse page with search, filters, and grid/list view.
+ * Legacy posted roles browse page with search, filters, and grid/list view.
  */
 import { useReducer, useEffect, useContext, useMemo } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import SearchContext from '../contexts/SearchContext';
 import UserContext from '../contexts/UserContext';
 import { useInfiniteScroll } from '../hooks/useInfiniteScroll';
@@ -25,6 +25,7 @@ const Home = () => {
   const {
     listings,
     isLoading,
+    error: searchError,
     searchExhausted,
     setPage,
     quickFilter,
@@ -62,9 +63,9 @@ const Home = () => {
         dispatch({ type: 'SET_FAVORITES', ids: response.data.favListingsIds });
       })
       .catch((error) => {
-        console.error("Error fetching user's favorite listings:", error);
+        console.error("Error fetching user's favorite posted roles:", error);
         dispatch({ type: 'SET_FAVORITES', ids: [] });
-        swal({ text: 'Could not load your favorite listings', icon: 'warning' });
+        swal({ text: 'Could not load your favorite posted roles', icon: 'warning' });
       });
   };
 
@@ -206,6 +207,59 @@ const Home = () => {
   return (
     <div className="mx-auto max-w-[1300px] px-6 w-full min-h-[calc(100vh-12rem)]">
       <div className="mt-4 md:mt-8" />
+      <section className="mb-5 rounded-lg border border-blue-100 bg-white px-4 py-4 shadow-sm">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-blue-700">
+              Legacy board
+            </p>
+            <h1 className="mt-1 text-2xl font-bold text-gray-950">Posted Roles</h1>
+            <p className="mt-1 max-w-3xl text-sm leading-relaxed text-gray-600">
+              Posted roles are now one part of Yale Research. Start with research homes
+              when you want to explore what exists, or use pathways when you want a practical next step.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Link
+              to="/research"
+              className="inline-flex min-h-11 items-center rounded-md bg-blue-700 px-3 text-sm font-semibold text-white hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+            >
+              Explore research homes
+            </Link>
+            <Link
+              to="/pathways"
+              className="inline-flex min-h-11 items-center rounded-md border border-gray-300 px-3 text-sm font-semibold text-gray-800 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+            >
+              Browse pathways
+            </Link>
+          </div>
+        </div>
+      </section>
+      {searchError && (
+        <div
+          role="status"
+          className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"
+        >
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p>{searchError}</p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={refreshListings}
+                className="min-h-11 rounded-md border border-amber-300 bg-white px-3 text-sm font-semibold text-amber-950 hover:bg-amber-100 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2"
+              >
+                Retry posted roles
+              </button>
+              <Link
+                to="/research"
+                className="inline-flex min-h-11 items-center rounded-md bg-amber-900 px-3 text-sm font-semibold text-white hover:bg-amber-950 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2"
+              >
+                Explore research homes
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
       <BrowseGrid
         items={items}
         favIds={favListingsIds}

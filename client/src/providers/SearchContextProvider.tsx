@@ -35,7 +35,7 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
 
   const { isAuthenticated, isLoading: authLoading } = useContext(UserContext);
   const location = useLocation();
-  const isListingsRoute = location.pathname === '/';
+  const isListingsRoute = location.pathname === '/listings';
 
   const { departments, departmentCategories, researchAreas, isLoaded: configLoaded } = useConfig();
 
@@ -213,8 +213,8 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
           console.error('Error loading listings:', error);
           const message =
             error?.response?.status === 401
-              ? 'Please sign in again to view listings.'
-              : 'Listings are temporarily unavailable. Research homes and pathways are still available.';
+              ? 'Please sign in again to view posted roles.'
+              : 'Posted roles are temporarily unavailable. Research homes and pathways are still available.';
           dispatch({ type: 'SEARCH_FAILURE', payload: message });
         });
     },

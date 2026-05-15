@@ -5,10 +5,13 @@ import PrivateRoute from './components/PrivateRoute';
 import UnprivateRoute from './components/UnprivateRoute';
 import AdminRoute from './components/AdminRoute';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import RootRedirect from './pages/rootRedirect';
 import Home from './pages/home';
 import Fellowships from './pages/fellowships';
-import Research from './pages/labs';
+import Research from './pages/research';
 import ResearchDetail from './pages/labDetail';
+import Pathways from './pages/pathways';
+import OpportunityDetail from './pages/opportunityDetail';
 import Login from './pages/login';
 import About from './pages/about';
 import Account from './pages/account';
@@ -42,6 +45,10 @@ const App = () => {
                     <Routes>
                       <Route
                         path="/"
+                        element={<PrivateRoute Component={RootRedirect} unknownBlocked={true} />}
+                      />
+                      <Route
+                        path="/listings"
                         element={<PrivateRoute Component={Home} unknownBlocked={true} />}
                       />
                       <Route
@@ -55,6 +62,14 @@ const App = () => {
                       <Route
                         path="/research/:slug"
                         element={<PrivateRoute Component={ResearchDetail} unknownBlocked={true} />}
+                      />
+                      <Route
+                        path="/pathways"
+                        element={<PrivateRoute Component={Pathways} unknownBlocked={true} />}
+                      />
+                      <Route
+                        path="/opportunities/:id"
+                        element={<PrivateRoute Component={OpportunityDetail} unknownBlocked={true} />}
                       />
                       <Route
                         path="/about"

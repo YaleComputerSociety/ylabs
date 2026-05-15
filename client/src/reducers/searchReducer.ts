@@ -179,7 +179,7 @@ export function searchReducer(state: SearchState, action: SearchAction): SearchS
       return {
         ...state,
         isLoading: false,
-        error: action.payload || 'Listings are temporarily unavailable.',
+        error: action.payload || 'Posted roles are temporarily unavailable.',
       };
 
     case 'MARK_QUERY_STRING_LOADED':
