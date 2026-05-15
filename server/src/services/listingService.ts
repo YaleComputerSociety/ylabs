@@ -9,6 +9,16 @@ import { getMeiliIndex } from '../utils/meiliClient';
 import { getListingModel } from '../db/connections';
 import { processListingTitle, isCustomTitle, generateSmartTitle } from '../utils/smartTitle';
 import * as itemOps from './itemOperations';
+import { materializePostedOpportunityFromListing } from './postedOpportunityService';
+import { findOrCreateForOwner } from './researchGroupService';
+
+async function syncPostedOpportunityBridge(listing: any): Promise<void> {
+  try {
+    await materializePostedOpportunityFromListing(listing);
+  } catch (error) {
+    console.error('Failed to sync listing to PostedOpportunity:', error);
+  }
+}
 
 export const createListing = async (data: any, owner: any) => {
   if (!owner.netid || !owner.email || !owner.fname || !owner.lname) {
@@ -27,9 +37,28 @@ export const createListing = async (data: any, owner: any) => {
   );
 
   const ownerResearchAreas = owner.researchInterests || [];
+  let researchEntityId = data.researchEntityId || data.researchGroupId;
+
+  if (!researchEntityId) {
+    try {
+      const { group } = await findOrCreateForOwner({
+        _id: owner._id,
+        netid: owner.netid,
+        fname: owner.fname,
+        lname: owner.lname,
+        primaryDepartment: owner.primaryDepartment,
+      });
+      researchEntityId = group?._id;
+    } catch (error) {
+      console.error('Failed to attach listing to ResearchEntity:', error);
+    }
+  }
 
   const listing = new (getListingModel())({
     ...data,
+    researchEntityId,
+    researchGroupId: data.researchGroupId || researchEntityId,
+    createdByUserId: owner._id || data.createdByUserId,
     title: processedTitle,
     ownerId: owner.netid,
     ownerEmail: owner.email,
@@ -82,6 +111,8 @@ export const createListing = async (data: any, owner: any) => {
   } catch (error) {
     console.error('Failed to sync new listing to Meilisearch:', error);
   }
+
+  await syncPostedOpportunityBridge(listing.toObject());
 
   return listing.toObject();
 };
@@ -236,6 +267,8 @@ export const updateListing = async (
       console.error('Failed to sync updated listing to Meilisearch:', error);
     }
 
+    await syncPostedOpportunityBridge(listing.toObject());
+
     return listing.toObject();
   } else {
     throw new ObjectIdError('Did not received expected id type ObjectId');
@@ -292,6 +325,11 @@ export const deleteListing = async (id: any) => {
 
     const oldListingId = listing._id;
     const oldProfessorIds = listing.professorIds;
+
+    await syncPostedOpportunityBridge({
+      ...listing.toObject(),
+      archived: true,
+    });
 
     for (const id of oldProfessorIds) {
       if (await userExists(id)) {

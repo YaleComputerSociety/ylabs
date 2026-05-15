@@ -5,6 +5,7 @@
   "scripts": {
     "seed:research-areas": "npx tsx seedResearchAreas.ts",
     "seed:departments": "npx tsx seedDepartments.ts",
+    "seed:departments:apply": "npx tsx seedDepartments.ts --apply",
     "seed:all": "npx tsx seedResearchAreas.ts both && npx tsx seedDepartments.ts both",
     "seed:dev": "npx tsx seedResearchAreas.ts dev && npx tsx seedDepartments.ts dev",
     "seed:prod": "npx tsx seedResearchAreas.ts prod && npx tsx seedDepartments.ts prod",
@@ -20,6 +21,7 @@
     "generate:keywords:force": "npx tsx generateKeywords.ts --live-force",
     "generate:keywords:classify": "npx tsx generateKeywords.ts --classify",
     "import:fellowships": "npx tsx importFellowships.ts",
+    "migrate:root-data-files": "npx tsx ImportRootDataFiles.ts",
     "migrate:v4:faculty-members": "npx tsx BackfillV4FacultyMembers.ts",
     "migrate:v4:student-profiles": "npx tsx BackfillV4StudentProfiles.ts",
     "migrate:v4:research-group-members": "npx tsx BackfillV4ResearchGroupMembers.ts",
@@ -27,6 +29,8 @@
     "migrate:v4:paper-graph": "npx tsx BackfillV4PaperGraph.ts",
     "migrate:v4:grants": "npx tsx BackfillV4Grants.ts",
     "migrate:v4:openness-signals": "npx tsx BackfillV4OpennessSignals.ts",
+    "migrate:v4:posted-opportunities": "npx tsx BackfillPostedOpportunitiesFromListings.ts",
+    "migrate:v4:posted-opportunities:live": "npx tsx BackfillPostedOpportunitiesFromListings.ts --apply",
     "migrate:v4:research-group-stats": "npx tsx BackfillV4ResearchGroupStats.ts",
     "migrate:v4:identity": "npx tsx BackfillV4FacultyMembers.ts && npx tsx BackfillV4StudentProfiles.ts && npx tsx BackfillV4ResearchGroupMembers.ts",
     "migrate:v4:all": "npx tsx BackfillV4FacultyMembers.ts && npx tsx BackfillV4StudentProfiles.ts && npx tsx BackfillV4ResearchGroupMembers.ts && npx tsx BackfillV4Listings.ts && npx tsx BackfillV4PaperGraph.ts && npx tsx BackfillV4Grants.ts && npx tsx BackfillV4OpennessSignals.ts && npx tsx BackfillV4ResearchGroupStats.ts"
