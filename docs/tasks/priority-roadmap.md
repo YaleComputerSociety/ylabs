@@ -1,6 +1,6 @@
 # Priority Roadmap
 
-Last updated: 2026-05-14
+Last updated: 2026-05-15
 
 This is the single task source of truth for Yale Research. Keep it operational: the top sections should say what to do next, while the lower sections preserve stable context, completed milestones, and verification commands.
 
@@ -37,7 +37,7 @@ Full Beta scraper validation is accepted as of 2026-05-14. Production writes/cop
 | ---- | -------- | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1    | P2       | Beta data trust audit fixes       | Repair or explicitly suppress broken/stale profile links, invalid placeholder emails, and sparse pathway/contact coverage before copying Beta to production.                 | Beta trust audit has no high-confidence broken-link/contact placeholders and coverage gaps are either fixed or product-accepted as sparse.                          |
 | 2    | P2       | Production scraper rollout        | Confirm backup, copy accepted Beta data to production or run guarded production deltas, sync Meili, and smoke-test.                                                         | Production has the accepted Beta dataset, backup/rollback notes, Meili sync, and smoke coverage; recurring jobs wait for trusted WorkPlanner coverage.              |
-| 3    | P2       | OpenAlex retention policy         | Before production, choose storage posture: provision enough Atlas storage for raw OpenAlex observations, or keep the Beta compact-retention policy with saved run logs.       | Production OpenAlex rollout has an explicit retention/storage decision and rollback notes.                                                                          |
+| 3    | P2       | OpenAlex retention policy         | Production defaults to compact retention; dry-run `yarn scrape prune-observations` before enabling apply mode and keep saved run reports for broad sources.                   | Production OpenAlex rollout has accepted compact-retention counts or a deliberate Atlas storage upgrade, plus rollback notes.                                      |
 | 4    | P2       | Publication source chunks         | Run ORCID, PubMed, and Europe PMC in Beta/production chunks before promotion if broader identity-backed biomedical/publication coverage is desired; keep Crossref chunked/as-needed. | New publication sources have accepted reports with zero materialization errors, or are explicitly left as implemented-but-not-promoted enrichment sources.           |
 | 5    | P2       | Opportunity detail polish         | Complete as of 2026-05-14; keep regression tests green during later opportunity work.                                                                                      | Listing-bridged and scraper-derived posted opportunities show richer evidence, application state, and smoke coverage.                                               |
 | 6    | P2       | Admin and data-quality operations | Blocked on concrete PI claim, Scholar disambiguation, and broader field-lock workflows; do not add admin UI without a review loop.                                         | Scraper QA artifacts, PI claim flow, Scholar disambiguation, source-health summaries, status reaper behavior, and broader field locks exist where needed.           |
@@ -111,7 +111,8 @@ All accepted Beta source runs below reported `materialization.errors = 0`. This 
 ### P2: Production Scraper Rollout
 
 - [x] Wait for the full Beta scraper soak to pass. Full lab-microsite, fellowship, arXiv, and OpenAlex Beta source execution is accepted with zero materialization errors.
-- [ ] Use `docs/scraper-deployment-runbook.md` for production guardrails.
+- [x] Add production cron safety guardrails. `yarn scrape cron --source <source-name> --release` now uses source-level locks, refuses disabled sources by default, materializes immediately, emits reports, and exits nonzero on materialization errors; `yarn scrape prune-observations` provides dry-run-first compact retention for old superseded observations.
+- [ ] Use `docs/scraper-deployment-runbook.md` for production rollout and Render Cron setup.
 - [ ] Decide production promotion mechanism: copy the accepted Beta database to production, or run guarded production deltas only after confirming the backup/restore point.
 - [ ] Run production sources one at a time with backup, `SCRAPER_ENV=production`, `CONFIRM_PROD_SCRAPE=true`, and `--release` posture.
 - [ ] Accept, materialize, sync Meili, and document rollback posture per source.
@@ -164,7 +165,7 @@ All accepted Beta source runs below reported `materialization.errors = 0`. This 
 ### Known Incomplete
 
 - Production copy/rollout has not been run. The accepted full Beta dataset is now the promotion candidate, subject to backup and storage-retention review.
-- OpenAlex production retention/storage is unresolved. Beta proved the full identifier-backed source by materializing `papers` and pruning raw OpenAlex observations; production must either provision more Atlas storage or explicitly accept the same compact-retention policy.
+- OpenAlex production retention/storage now defaults to compact retention unless an Atlas storage upgrade is deliberately chosen. The retention command is dry-run-first and deletes only old superseded observations while preserving active evidence and recent runs.
 - ORCID, PubMed, and Europe PMC author-proof scrapers plus Crossref DOI hydration are implemented and dry-run smoked against Beta in small batches, but have not been promoted as full non-dry Beta/production chunks. Use `--offset`/`--limit` chunks; do not run full Crossref across all DOI papers as a single broad job.
 - Recurring broad/paid scraper jobs are intentionally not enabled until WorkPlanner behavior is trusted in production posture.
 - `yarn --cwd server pathway:relevance-review` compares Mongo and Meili across the current student-style query set and leaves rollback as `PATHWAY_SEARCH_BACKEND=mongo`; reviewed local Beta divergences for `summer`, `data`, and `posted roles` are accepted.
@@ -218,6 +219,7 @@ On 2026-05-13, the active scraper inventory was audited against the Development 
 - 2026-05-14: Polished `/opportunities/:id` by adding explicit deadline state, application state, listing-bridge versus scraper-derived provenance, and public contact-redacted evidence excerpts to the server payload and client page.
 - 2026-05-14: Completed opportunity detail smoke coverage for listing-bridged open postings and scraper-derived closed postings.
 - 2026-05-14: Added `yarn --cwd server source:health` for read-only source-health summaries. After hard-retiring Apify Scholar and reseeding source metadata, the final Development audit reported 23 active sources, 10 ok, 13 warn, and 0 error over the last 30 days; warnings are mostly no recent run, materialization conflicts needing report review, or missing coverage metadata.
+- 2026-05-15: Completed a Playwright-driven detail-page trust pass for `/research/center-wu-tsai`. Research detail pages now dedupe official source URLs into one Sources section, pathway/evidence cards no longer repeat `Source 1` links, and Listings load failures render inline recovery instead of a blocking SweetAlert modal.
 - 2026-05-14: Added `yarn --cwd server opportunities:reap-statuses` as a dry-run-first status reaper for expired posted opportunities. The Development dry run found 0 expired open posted opportunities.
 - 2026-05-14: Added saved scraper QA artifacts through `yarn scrape report --run <scrapeRunId> --output <path>`.
 - 2026-05-14: Completed saved/advising workflow expansion. Saved Pathways now supports explicit private-note opt-in for advising exports, deadline-aware reminders from posted opportunities and fellowship matches, fellowship bundle cues, thesis/outreach planning checklists, and source-only exports by default without mass-email behavior.
@@ -245,6 +247,7 @@ On 2026-05-13, the active scraper inventory was audited against the Development 
 - 2026-05-14: Completed the final Beta database audit and Production parity pass. The Mongo naming migration merged 700 legacy `researchareas` rows into canonical `research_areas`, 28 missing Production users were copied into Beta without overwriting existing Beta records, strict Beta readiness stayed ready, source health reported 11 ok, 12 warn, 0 error, and canonical referential checks found zero broken links.
 - 2026-05-14: Implemented identity-backed professor paper authorship. arXiv now upserts preprint metadata by `arxivId` without Yale author IDs; OpenAlex attaches authorship only from accepted ORCID/OpenAlex author IDs; ORCID public works plus PubMed/Europe PMC ORCID-backed discovery can emit `paperAuthorshipEvidence`; Crossref hydrates DOI metadata only; `paper_authors` stores durable proof; `yarn --cwd server papers:authorship-audit --apply` backfilled 400,396 OpenAlex proof rows in Beta, superseded 2,878 arXiv author observations, cleared 1,173 arXiv-only faculty links, and left zero unsupported legacy/name-only links.
 - 2026-05-14: Completed the stricter post-authorship database audit. The enhanced `papers:authorship-audit` command now reports invalid/orphan/duplicate proof rows, direct author-field observations, denormalized drift, and identifierless paper clutter; apply mode found zero remaining records to delete after the prior cleanup.
+- 2026-05-15: Implemented production cron readiness for scrapers. Added `ScrapeJobLock` source leases, `yarn scrape cron`, cron-triggered run metadata, disabled-source enforcement for cron, dry-run-first compact observation retention, and focused lock/cron/retention tests.
 
 ## Verification Commands
 

@@ -1,6 +1,6 @@
 # UI/UX Direction
 
-Last updated: 2026-05-14
+Last updated: 2026-05-15
 
 This document captures the current Yale Research interface direction and the next UX moves. It is grounded in Graphify as the navigation layer, then verified against product docs and implementation files.
 
@@ -109,10 +109,11 @@ Primary UX ingredients:
 - Header with entity type, department/school, short description, website, and credible access summary.
 - A Pathways section before or near active opportunities.
 - Evidence section with source-backed snippets.
+- A deduped Sources section that shows each official source once and explains which pathways/evidence/routes it supports.
 - People section that distinguishes PI, program manager, lab manager, mentor, and other roles where possible.
 - A right-rail Best Next Step card with guarded CTAs.
 
-Current gap: the right rail already has useful inquiry/evidence concepts, but the detail page still centers "Active Opportunities" before the broader pathway model.
+Current gap: the detail page now presents pathways, evidence, best next step, and deduped sources before active opportunities. The next improvement should reduce duplication between the right-rail route CTA and the main Best Next Step CTA without hiding the action on mobile.
 
 ## UX Principles
 
@@ -129,7 +130,7 @@ Current gap: the right rail already has useful inquiry/evidence concepts, but th
 2. Make `/pathways` cards more action-oriented: pathway, entity, evidence, next step, and guarded CTA should be visually obvious.
 3. Add a Pathways section to research detail pages before treating active opportunities as the whole story.
 4. Keep `/research` cards discovery-oriented, but show compact pathway/evidence hints when available.
-5. Add source visibility wherever evidence snippets appear, without overwhelming card density.
+5. Keep source visibility centralized on detail pages: evidence cards should explain what was observed, while the Sources section should carry deduped official links.
 6. Preserve the current quiet visual style: compact filters, restrained cards, clear typography, and Yale-blue accents.
 
 ## Open UX Questions

@@ -1,6 +1,6 @@
 # UX/UI Audit Log
 
-Last updated: 2026-05-14
+Last updated: 2026-05-15
 
 ## Session Notes
 
@@ -218,7 +218,43 @@ Last updated: 2026-05-14
 - **Status**
   - Fixed and verified with Playwright.
 
-### 13) `/research` showed duplicate Neuroscience concepts and undersized touch targets
+### 13) `/research/:slug` repeated the same official source link across pathways, evidence, and CTAs
+- **Observed behavior**
+  - On `/research/center-wu-tsai`, the same Wu Tsai undergraduate initiatives URL appeared repeatedly as `Source 1`, per-evidence `Source`, and official-route CTAs.
+  - Screenshots:
+    - `docs/ux-screenshots/wu-tsai-sources-before.png`
+    - `docs/ux-screenshots/wu-tsai-sources-after-desktop.png`
+    - `docs/ux-screenshots/wu-tsai-sources-after-mobile.png`
+- **User impact**
+  - The repetition made evidence feel noisy and less trustworthy; users could reasonably wonder whether multiple independent sources existed when the page was really citing one official page.
+- **Root cause**
+  - Detail sections rendered source links locally without a page-level dedupe pass.
+- **Severity**
+  - Medium (trust and clarity issue on a core detail page).
+- **Fix implemented**
+  - Added `client/src/utils/researchDetailSources.ts` to normalize, label, dedupe, and context-tag detail sources.
+  - Replaced inline pathway/evidence source links with concise evidence metadata.
+  - Added a single Sources section on `/research/:slug` that shows each official source once with the contexts it supports.
+- **Status**
+  - Fixed and verified with headed Playwright. After verification: no `Source 1` labels, two source-ledger rows, no mobile horizontal overflow.
+
+### 14) Listings load failure used a blocking modal instead of inline recovery
+- **Observed behavior**
+  - A `/listings/search` failure could trigger SweetAlert with “Unable to load listings. Please try again later.”
+- **User impact**
+  - The modal interrupted the session and offered no next action beyond dismissal.
+- **Root cause**
+  - Listing search failures were handled only as side effects in `SearchContextProvider`, not as UI state.
+- **Severity**
+  - Medium for Listings; High when it appeared during unrelated exploration.
+- **Fix implemented**
+  - Added `error` to listing search reducer/context state.
+  - Removed the blocking SweetAlert for listing search failures.
+  - Added an inline recovery banner on `/` with `Retry listings` and `Explore research homes`.
+- **Status**
+  - Fixed and verified with Playwright by forcing `/api/listings/search` to return 500. No SweetAlert modal appeared; inline recovery rendered.
+
+### 15) `/research` showed duplicate Neuroscience concepts and undersized touch targets
 - **Observed behavior**
   - The Suggested searches row showed both `NEUROSCIENCES` and `Neuroscience`.
   - After searching `Neuroscience`, the cluster label was `Neuroscience` but the same concept appeared again as a `NEUROSCIENCES` metadata tag.
@@ -243,7 +279,7 @@ Last updated: 2026-05-14
 - **Status**
   - Fixed and verified with Playwright on desktop and 375px mobile.
 
-### 14) `/research` hierarchy exposed clusters before student decisions
+### 16) `/research` hierarchy exposed clusters before student decisions
 - **Observed behavior**
   - The first viewport and searched results used terms like `Clusters`, `Cluster: experimental`, `Cluster: metadata-grouped`, `Profiles in this cluster`, and raw pathway signal labels such as `POSTED_OPENING`.
   - Baseline screenshots:
