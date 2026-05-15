@@ -11,6 +11,8 @@ import {
   getItemSubtitleColor,
   getResearchGroupDisplayName,
   getResearchGroupKindLabel,
+  getResearchEntityBestNextStep,
+  getResearchEntityPathwaySummary,
   getResearchGroupStatus,
   getDaysUntilDeadline,
   getOrderedDeptAbbrs,
@@ -74,6 +76,12 @@ const BrowseListItem = React.memo(({ item, isFavorite, onToggleFavorite, onOpenM
   const subtitle = getItemSubtitle(item);
   const subtitleColor = getItemSubtitleColor(item);
   const researchStatus = getResearchGroupStatus(item);
+  const researchPathwaySummary = isResearchGroup
+    ? getResearchEntityPathwaySummary(item.data)
+    : null;
+  const researchBestNextStep = isResearchGroup
+    ? getResearchEntityBestNextStep(item.data)
+    : null;
 
   const isAudited = isAdmin && item.type !== 'researchGroup' && item.data.audited;
 
@@ -161,7 +169,7 @@ const BrowseListItem = React.memo(({ item, isFavorite, onToggleFavorite, onOpenM
               {item.type === 'listing'
                 ? item.data.description
                 : item.type === 'researchGroup'
-                  ? item.data.description
+                  ? researchPathwaySummary || researchBestNextStep || item.data.description
                   : item.data.summary || item.data.description}
             </p>
           </div>

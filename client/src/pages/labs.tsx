@@ -1,12 +1,13 @@
 /**
- * `/research` browse page — students search and filter ALL Yale research groups
- * (labs, centers, individual prof pages) with semantic + keyword search.
+ * `/research` browse page — students search and filter Yale research entities
+ * (labs, centers, programs, faculty projects) with semantic + keyword search.
  *
  * State (query, filters, page, results) is owned by `LabSearchContextProvider`.
  * This page is the smart component: composes the search bar, the filter
  * sidebar, and the results grid.
  */
 import { FC, ReactNode, useContext, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import { useNavigate } from 'react-router-dom';
 import LabSearchContext from '../contexts/LabSearchContext';
 import LabSearchContextProvider from '../providers/LabSearchContextProvider';
@@ -17,8 +18,8 @@ import BrowseGrid from '../components/shared/BrowseGrid';
 import { BrowsableItem } from '../types/browsable';
 import {
   AcceptanceLevelFilter,
-  ResearchGroupSearchFilters,
 } from '../types/researchGroup';
+import { ResearchEntitySearchFilters } from '../types/researchEntity';
 
 const KIND_OPTIONS: { value: string; label: string }[] = [
   { value: 'lab', label: 'Lab' },
@@ -30,16 +31,10 @@ const KIND_OPTIONS: { value: string; label: string }[] = [
   { value: 'individual', label: 'Individual' },
 ];
 
-const OPENNESS_OPTIONS: { value: string; label: string }[] = [
-  { value: 'open', label: 'Open' },
-  { value: 'inquire', label: 'Inquire' },
-  { value: 'closed', label: 'Closed' },
-];
-
 const ACCEPTANCE_LEVEL_OPTIONS: { value: AcceptanceLevelFilter; label: string }[] = [
-  { value: 'all', label: 'All groups' },
-  { value: 'verified-or-likely', label: 'Verified or likely accepting' },
-  { value: 'verified', label: 'Verified accepting only' },
+  { value: 'all', label: 'All research' },
+  { value: 'verified-or-likely', label: 'Has access evidence' },
+  { value: 'verified', label: 'Strong access evidence' },
 ];
 
 const SCHOOL_OPTIONS: string[] = [
@@ -138,29 +133,17 @@ const LabsPageBody: FC = () => {
     [departmentCategories],
   );
 
-  const toggleArrayFilter = (key: keyof ResearchGroupSearchFilters, value: string) => {
+  const toggleArrayFilter = (key: keyof ResearchEntitySearchFilters, value: string) => {
     setFilters((prev) => {
       const current = (prev[key] as string[] | undefined) ?? [];
       const next = current.includes(value)
         ? current.filter((v) => v !== value)
         : [...current, value];
-      const updated: ResearchGroupSearchFilters = { ...prev };
+      const updated: ResearchEntitySearchFilters = { ...prev };
       if (next.length === 0) {
         delete (updated as Record<string, unknown>)[key];
       } else {
         (updated as Record<string, unknown>)[key] = next;
-      }
-      return updated;
-    });
-  };
-
-  const toggleAcceptingUndergrads = () => {
-    setFilters((prev) => {
-      const updated: ResearchGroupSearchFilters = { ...prev };
-      if (prev.acceptingUndergrads === true) {
-        delete updated.acceptingUndergrads;
-      } else {
-        updated.acceptingUndergrads = true;
       }
       return updated;
     });
@@ -182,8 +165,6 @@ const LabsPageBody: FC = () => {
     (filters.school?.length ?? 0) +
     (filters.departments?.length ?? 0) +
     (filters.researchAreas?.length ?? 0) +
-    (filters.openness?.length ?? 0) +
-    (filters.acceptingUndergrads === true ? 1 : 0) +
     (acceptanceLevel !== 'all' ? 1 : 0);
 
   const showInitialLoader = isLoading && results.length === 0;
@@ -198,7 +179,34 @@ const LabsPageBody: FC = () => {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Yale Research</h1>
           <p className="text-sm text-gray-500">
-            Browse labs, centers, programs, and faculty research across Yale.
+            Browse labs, centers, institutes, programs, faculty projects, and other research structures across Yale.
+          </p>
+        </div>
+        <Link
+          to="/pathways"
+          className="hidden shrink-0 rounded-md border border-blue-200 px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50 sm:inline-flex"
+        >
+          Browse Pathways
+        </Link>
+      </div>
+
+      <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+        <div className="rounded-md border border-gray-200 bg-white p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Explore Research</p>
+          <p className="mt-1 text-sm text-gray-700">
+            Start with research structures, people, topics, and methods.
+          </p>
+        </div>
+        <div className="rounded-md border border-gray-200 bg-white p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Ways In</p>
+          <p className="mt-1 text-sm text-gray-700">
+            Open a profile to review evidence-backed routes and best next steps.
+          </p>
+        </div>
+        <div className="rounded-md border border-gray-200 bg-white p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Posted Roles</p>
+          <p className="mt-1 text-sm text-gray-700">
+            For active applications and practical filters, use the Pathways surface.
           </p>
         </div>
       </div>
@@ -232,7 +240,7 @@ const LabsPageBody: FC = () => {
 
             <fieldset className="border-t border-gray-200 pt-3 mt-3 first:border-t-0 first:pt-0 first:mt-0">
               <legend className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
-                Acceptance
+                Access Evidence
               </legend>
               <div className="flex flex-col gap-1.5">
                 {ACCEPTANCE_LEVEL_OPTIONS.map((opt) => (
@@ -285,34 +293,13 @@ const LabsPageBody: FC = () => {
               />
             )}
 
-            <CheckboxGroup
-              label="Openness"
-              options={OPENNESS_OPTIONS}
-              selected={filters.openness ?? []}
-              onToggle={(v) => toggleArrayFilter('openness', v)}
-            />
-
-            <fieldset className="border-t border-gray-200 pt-3 mt-3">
-              <legend className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
-                Undergrads
-              </legend>
-              <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer hover:text-gray-900">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                  checked={filters.acceptingUndergrads === true}
-                  onChange={toggleAcceptingUndergrads}
-                />
-                <span>Accepting undergraduates</span>
-              </label>
-            </fieldset>
           </Section>
         </aside>
 
         <div>
           <div className="flex items-center justify-between mb-3 text-sm text-gray-600">
             <span>
-              {totalHits.toLocaleString()} {totalHits === 1 ? 'group' : 'groups'}
+              {totalHits.toLocaleString()} {totalHits === 1 ? 'research profile' : 'research profiles'}
             </span>
             <div className="flex items-center gap-2">
               <label htmlFor="lab-sort" className="text-xs text-gray-500">
@@ -353,7 +340,7 @@ const LabsPageBody: FC = () => {
             </div>
           ) : items.length === 0 ? (
             <div className="text-center py-12 text-gray-500">
-              <p>No research groups match the current filters.</p>
+              <p>No research profiles match the current filters.</p>
               {activeFilterCount > 0 && (
                 <button
                   onClick={clearFilters}
@@ -377,7 +364,7 @@ const LabsPageBody: FC = () => {
                 sentinelRef={sentinelRef}
                 isLoading={isLoading}
                 searchExhausted={searchExhausted}
-                emptyMessage="No research groups match the current filters."
+                emptyMessage="No research entities match the current filters."
               />
 
               {isLoading && results.length > 0 && (
