@@ -1,13 +1,17 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  buildPathwayEvidenceRows,
   buildDynamicSearchSuggestions,
   buildGroupedSearchResults,
   buildIdentityConfidenceRecords,
   buildMetadataClusters,
+  getPathwayActionLabel,
+  getPathwayTypeLabel,
   parseQueryInterpretationChips,
 } from '../researchDiscoveryAdapters';
 import type { ResearchEntity } from '../../types/researchEntity';
+import type { PathwaySearchHit } from '../../types/pathway';
 
 const entity = (overrides: Partial<ResearchEntity>): ResearchEntity => ({
   _id: overrides._id || 'entity-1',
@@ -31,6 +35,66 @@ const entity = (overrides: Partial<ResearchEntity>): ResearchEntity => ({
   contactRole: overrides.contactRole || '',
   sourceUrls: overrides.sourceUrls || [],
   ...overrides,
+});
+
+describe('pathway display helpers', () => {
+  const pathway = (overrides: Partial<PathwaySearchHit> = {}): PathwaySearchHit => ({
+    _id: 'pathway-1',
+    pathwayType: 'POSTED_ROLE',
+    status: 'ACTIVE',
+    evidenceStrength: 'DIRECT',
+    studentFacingLabel: 'Posted research role',
+    explanation: 'A posted role mentions undergraduate research.',
+    bestNextStep: 'Apply through the posted listing.',
+    bestNextStepCategory: 'apply',
+    confidence: 0.9,
+    sourceUrls: ['https://example.yale.edu/posting'],
+    researchEntity: {
+      _id: 'entity-1',
+      slug: 'mccormick-lab',
+      name: 'McCormick Lab',
+      departments: ['Neuroscience'],
+      researchAreas: ['Systems neuroscience'],
+    },
+    evidence: [
+      {
+        signalType: 'POSTED_OPENING',
+        confidence: 'HIGH',
+        confidenceScore: 1,
+        sourceUrl: 'https://example.yale.edu/posting',
+        excerpt: 'Posted listing: David A. McCormick',
+      },
+    ],
+    ...overrides,
+  });
+
+  it('maps best-next-step categories to student-facing actions', () => {
+    expect(getPathwayActionLabel('apply')).toBe('Apply or view posting');
+    expect(getPathwayActionLabel('contact-program')).toBe('Contact program');
+    expect(getPathwayActionLabel('plan-outreach')).toBe('Plan outreach');
+    expect(getPathwayActionLabel('find-funding')).toBe('Find funding');
+    expect(getPathwayActionLabel('register-for-credit')).toBe(
+      'Ask about credit after finding a mentor',
+    );
+    expect(getPathwayActionLabel('save-for-thesis')).toBe('Save for thesis planning');
+    expect(getPathwayActionLabel('check-back-later')).toBe('Save for later');
+    expect(getPathwayActionLabel('save-for-later')).toBe('Save for later');
+  });
+
+  it('normalizes pathway type and evidence labels without raw enums', () => {
+    expect(getPathwayTypeLabel('POSTED_ROLE')).toBe('Posted role');
+    expect(getPathwayTypeLabel('REACH_OUT_PLAUSIBLE')).toBe('Exploratory outreach');
+
+    const evidenceRows = buildPathwayEvidenceRows(pathway());
+
+    expect(evidenceRows[0]).toMatchObject({
+      claim: 'A posted role mentions undergraduate research.',
+      sourceType: 'Posted opening',
+      url: 'https://example.yale.edu/posting',
+    });
+    expect(JSON.stringify(evidenceRows)).not.toContain('POSTED_OPENING');
+    expect(JSON.stringify(evidenceRows)).not.toContain('POSTED_ROLE');
+  });
 });
 
 describe('buildMetadataClusters', () => {

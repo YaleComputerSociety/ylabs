@@ -1,5 +1,5 @@
 import type { LabPaper } from '../types/labDetail';
-import type { PathwaySearchHit } from '../types/pathway';
+import type { PathwayBestNextStepCategory, PathwaySearchHit } from '../types/pathway';
 import type { ResearchEntity } from '../types/researchEntity';
 
 export interface EvidenceSourceRowData {
@@ -84,6 +84,113 @@ interface SearchSuggestionOptions {
 }
 
 export const RESEARCH_HOME_GROUPING_LABEL = 'Evidence-backed grouping';
+
+const titleizeValue = (value?: string): string =>
+  (value || '')
+    .toLowerCase()
+    .split(/[_\s-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+
+export const getPathwayActionLabel = (
+  category?: PathwayBestNextStepCategory | string,
+): string => {
+  switch (category) {
+    case 'apply':
+      return 'Apply or view posting';
+    case 'contact-program':
+      return 'Contact program';
+    case 'plan-outreach':
+      return 'Plan outreach';
+    case 'find-funding':
+      return 'Find funding';
+    case 'register-for-credit':
+      return 'Ask about credit after finding a mentor';
+    case 'save-for-thesis':
+      return 'Save for thesis planning';
+    case 'check-back-later':
+    case 'save-for-later':
+      return 'Save for later';
+    default:
+      return 'Review next step';
+  }
+};
+
+export const getPathwayTypeLabel = (value?: string): string => {
+  switch (value) {
+    case 'POSTED_ROLE':
+      return 'Posted role';
+    case 'EXPLORATORY_CONTACT':
+    case 'REACH_OUT_PLAUSIBLE':
+      return 'Exploratory outreach';
+    case 'STRUCTURED_PROGRAM':
+      return 'Structured program';
+    case 'FACULTY_SUPERVISION':
+      return 'Faculty supervision';
+    case 'INTERNSHIP':
+      return 'Internship';
+    default:
+      return titleizeValue(value) || 'Pathway';
+  }
+};
+
+export const getEvidenceStrengthLabel = (value?: string): string => {
+  switch (value) {
+    case 'DIRECT':
+    case 'SOURCE_BACKED':
+      return 'Direct evidence';
+    case 'STRONG':
+      return 'Strong evidence';
+    case 'MODERATE':
+      return 'Moderate evidence';
+    case 'WEAK':
+      return 'Early signal';
+    default:
+      return titleizeValue(value) || 'Evidence available';
+  }
+};
+
+export const getEvidenceSignalLabel = (value?: string): string => {
+  switch (value) {
+    case 'POSTED_OPENING':
+      return 'Posted opening';
+    case 'RECURRING_PROGRAM':
+      return 'Recurring program';
+    case 'PAST_UNDERGRADS':
+      return 'Past undergraduate participation';
+    case 'CURRENT_UNDERGRADS':
+      return 'Current undergraduate participation';
+    case 'FACULTY_SUPERVISION':
+      return 'Faculty supervision evidence';
+    case 'FELLOWSHIP_COMPATIBLE':
+      return 'Fellowship-compatible evidence';
+    case 'CREDIT_FORMALIZATION_POSSIBLE':
+      return 'Credit may be possible later';
+    default:
+      return titleizeValue(value) || 'Source evidence';
+  }
+};
+
+export const buildPathwayEvidenceRows = (
+  pathway: PathwaySearchHit,
+): EvidenceSourceRowData[] => {
+  const evidence = pathway.evidence?.[0];
+  return [
+    {
+      claim:
+        pathway.explanation ||
+        pathway.bestNextStep ||
+        pathway.studentFacingLabel ||
+        'This pathway is connected to the current search.',
+      sourceType: getEvidenceSignalLabel(evidence?.signalType || pathway.pathwayType),
+      url: evidence?.sourceUrl || pathway.sourceUrls?.[0],
+      excerpt: evidence?.excerpt,
+      observedDate: evidence?.observedAt || pathway.lastObservedAt,
+      confidence: evidence?.confidenceScore ?? pathway.confidence,
+    },
+  ];
+};
 
 const GENERIC_SUGGESTION_LABELS = new Set([
   'faculty research',
