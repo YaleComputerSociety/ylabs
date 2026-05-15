@@ -49,20 +49,60 @@ Code flows **Local → Beta → Prod**. Beta is the staging gate.
 
 ## Local Development Setup
 
+These instructions assume a Unix-like shell. Mac developers can run them in Terminal. Windows developers should run them inside WSL, with the repo stored in the Linux filesystem, for example under `~/code/ylabs` rather than `/mnt/c/...`.
+
 ### Prerequisites
 
-- Node.js ≥ 20.9.0
-- Corepack (ships with Node ≥ 16.9)
+- Node.js >= 20.9.0
+- Corepack, which ships with modern Node versions
+- Yarn 4, activated through Corepack
 - Docker Desktop (for local Meilisearch)
 
-### 1. Install dependencies
+### 1. Fresh machine setup
+
+On a brand new Unix/WSL environment, install the basic system packages first:
+
+```bash
+sudo apt update
+sudo apt install -y curl git ca-certificates build-essential python3 make g++
+```
+
+Use `nvm` for Node. Avoid `apt install nodejs`, which often installs an older Node version than this repo supports.
+
+```bash
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/master/install.sh | bash
+```
+
+Restart your shell, then install and select Node 20:
+
+```bash
+nvm install 20
+nvm use 20
+nvm alias default 20
+node -v
+npm -v
+```
+
+Enable Corepack and activate the Yarn version pinned by this repo:
 
 ```bash
 corepack enable
+corepack prepare yarn@4.6.0 --activate
+yarn -v
+```
+
+Expected versions:
+
+- `node` should be `v20.x` or newer.
+- `yarn` should be `4.6.0`.
+
+### 2. Install dependencies
+
+```bash
 yarn install:all
 ```
 
-### 2. Configure environment
+### 3. Configure environment
 
 Copy the example and fill in credentials:
 
@@ -82,7 +122,9 @@ For the client:
 VITE_APP_SERVER=http://localhost:4000
 ```
 
-### 3. Start local Meilisearch
+Ask a project maintainer for the development MongoDB and API credentials. Do not commit `server/.env` or `client/.env`.
+
+### 4. Start local Meilisearch
 
 Pull the latest Meilisearch image and start a container:
 
@@ -102,7 +144,9 @@ curl http://localhost:7700/health
 
 Data persists in the `meili_data` volume — you only need to seed once.
 
-### 4. Seed Meilisearch
+On Windows, install Docker Desktop on Windows and enable WSL integration for your Linux distribution. Run the `docker` commands from inside WSL.
+
+### 5. Seed Meilisearch
 
 ```bash
 cd data-migration
@@ -111,11 +155,55 @@ npx ts-node --transpile-only MigrateToMeilisearch.ts
 
 This reads listings from your `Development` MongoDB and pushes them to the local Meilisearch with the OpenAI embedder configured.
 
-### 5. Start dev servers
+### 6. Start dev servers
 
 ```bash
 yarn dev:client    # Vite on port 3000
 yarn dev:server    # Express with nodemon on port 4000
+```
+
+Run these in two separate terminals.
+
+### 7. Verify setup
+
+```bash
+curl http://localhost:7700/health
+npx tsc --noEmit -p server/tsconfig.json
+yarn --cwd client test:ci
+```
+
+### Troubleshooting Yarn setup
+
+If `yarn install:all` fails with an error like:
+
+```txt
+Usage Error: Couldn't find the node_modules state file - running an install might help (findPackageLocation)
+```
+
+or if `yarn`/`corepack` is not found, first confirm you are using the `nvm` Node install rather than a system `apt` Node:
+
+```bash
+which node
+node -v
+which corepack
+```
+
+If `which node` prints `/usr/bin/node`, switch to the `nvm` Node:
+
+```bash
+nvm install 20
+nvm use 20
+nvm alias default 20
+corepack enable
+corepack prepare yarn@4.6.0 --activate
+yarn -v
+```
+
+Then run the root install before the all-workspaces helper:
+
+```bash
+yarn install
+yarn install:all
 ```
 
 ### Dev login bypass

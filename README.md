@@ -33,6 +33,16 @@ yarn dev:server
 
 Go to **http://localhost:3000**. Use `http://localhost:4000/api/dev-login` to bypass CAS auth locally.
 
+### Playwright environment fix (no root required)
+
+If `npx playwright` crashes with missing system libs (for example `libnspr4.so`), run Playwright through the local shim:
+
+```bash
+yarn playwright:run screenshot https://example.com /tmp/example.png
+```
+
+This command downloads the required shared libraries into `./.playwright-libs` and launches Playwright with `LD_LIBRARY_PATH` pointed to that local copy.
+
 ## Documentation
 
 See **[DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md)** for full setup instructions, architecture details, environment configuration, and contribution guidelines.

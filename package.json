@@ -18,6 +18,7 @@
     "migrate:mongo-naming": "yarn --cwd server migrate:mongo-naming",
     "scrape": "yarn --cwd server scrape",
     "scrape:seed-sources": "yarn --cwd server scrape:seed-sources",
+    "playwright:run": "bash scripts/with-playwright-libs.sh npx playwright",
     "start": "concurrently \"yarn start:client\" \"yarn start:server\"",
     "start:client": "cd client && yarn dev",
     "start:server": "cd server && yarn start",
