@@ -26,6 +26,7 @@ import ArchivedBadge from './ArchivedBadge';
 import ConfigContext from '../../contexts/ConfigContext';
 import UserContext from '../../contexts/UserContext';
 import { useViewTracking } from '../../hooks/useViewTracking';
+import { getFellowshipCycleStatus } from '../../utils/fellowshipCycle';
 
 interface BrowseCardProps {
   item: BrowsableItem;
@@ -77,6 +78,9 @@ const BrowseCard = React.memo(({ item, isFavorite, onToggleFavorite, onOpenModal
   const hasActiveResearchOpportunity =
     isResearchGroup &&
     (item.data.hasActiveListing || item.data.accessSummary?.hasActivePostedOpportunity);
+  const fellowshipCycleStatus = item.type === 'fellowship'
+    ? getFellowshipCycleStatus(item.data)
+    : null;
 
   const isAudited = isAdmin && item.type !== 'researchGroup' && item.data.audited;
 
@@ -242,6 +246,16 @@ const BrowseCard = React.memo(({ item, isFavorite, onToggleFavorite, onOpenModal
           </>
         ) : (
           <>
+            {fellowshipCycleStatus && (
+              <div className="mb-2 pr-10">
+                <span
+                  className={`text-xs font-semibold px-1.5 py-0.5 rounded ${fellowshipCycleStatus.className}`}
+                >
+                  {fellowshipCycleStatus.label}
+                </span>
+              </div>
+            )}
+
             <h3 className="text-base font-bold text-gray-900 mb-1 line-clamp-2 leading-tight">
               {item.data.title}
             </h3>

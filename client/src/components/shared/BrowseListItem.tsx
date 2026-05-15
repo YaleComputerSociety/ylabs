@@ -29,6 +29,7 @@ import ConfigContext from '../../contexts/ConfigContext';
 import UserContext from '../../contexts/UserContext';
 import { useViewTracking } from '../../hooks/useViewTracking';
 import { getDepartmentAbbreviation } from '../../utils/departmentNames';
+import { getFellowshipCycleStatus } from '../../utils/fellowshipCycle';
 
 interface BrowseListItemProps {
   item: BrowsableItem;
@@ -81,6 +82,9 @@ const BrowseListItem = React.memo(({ item, isFavorite, onToggleFavorite, onOpenM
     : null;
   const researchBestNextStep = isResearchGroup
     ? getResearchEntityBestNextStep(item.data)
+    : null;
+  const fellowshipCycleStatus = item.type === 'fellowship'
+    ? getFellowshipCycleStatus(item.data)
     : null;
 
   const isAudited = isAdmin && item.type !== 'researchGroup' && item.data.audited;
@@ -181,6 +185,12 @@ const BrowseListItem = React.memo(({ item, isFavorite, onToggleFavorite, onOpenM
             {isResearchGroup && researchStatus ? (
               <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${researchStatus.className}`}>
                 {researchStatus.label}
+              </span>
+            ) : fellowshipCycleStatus ? (
+              <span
+                className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${fellowshipCycleStatus.className}`}
+              >
+                {fellowshipCycleStatus.label}
               </span>
             ) : (
               <StatusBadge isOpen={open} />
