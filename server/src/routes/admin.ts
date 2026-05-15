@@ -21,10 +21,82 @@ import {
 } from '../services/fellowshipService';
 import { adminUpdateProfile, cascadeDepartmentsToListings } from '../services/profileService';
 import { buildSafeSearchRegex } from '../utils/regex';
+import {
+  getAccessReviewEntity,
+  listAccessReviewEntities,
+  updateAccessReviewManualLocks,
+  updateAccessReviewRecordReview,
+} from '../services/adminAccessReviewService';
 
 const router = Router();
 
 router.use(isAuthenticated, isAdmin);
+
+router.get('/access-review', async (req: Request, res: Response) => {
+  try {
+    const result = await listAccessReviewEntities({
+      search: typeof req.query.search === 'string' ? req.query.search : undefined,
+      page: Number(req.query.page),
+      pageSize: Number(req.query.pageSize),
+    });
+    res.json(result);
+  } catch (error) {
+    console.error('Admin: Error fetching access review entities:', error);
+    res.status(500).json({ error: 'Failed to fetch access review entities' });
+  }
+});
+
+router.get(
+  '/access-review/:id',
+  validateObjectId('id'),
+  async (req: Request, res: Response) => {
+    try {
+      const result = await getAccessReviewEntity(req.params.id);
+      if (!result) return res.status(404).json({ error: 'Research entity not found' });
+      res.json(result);
+    } catch (error) {
+      console.error('Admin: Error fetching access review entity:', error);
+      res.status(500).json({ error: 'Failed to fetch access review entity' });
+    }
+  },
+);
+
+router.put(
+  '/access-review/:id/manual-locks',
+  validateObjectId('id'),
+  async (req: Request, res: Response) => {
+    try {
+      const group = await updateAccessReviewManualLocks(req.params.id, req.body?.fields);
+      if (!group) return res.status(400).json({ error: 'Invalid manual lock fields' });
+      res.json({ group });
+    } catch (error) {
+      console.error('Admin: Error updating access review manual locks:', error);
+      res.status(400).json({ error: 'Request failed' });
+    }
+  },
+);
+
+router.put(
+  '/access-review/records/:type/:recordId/review',
+  validateObjectId('recordId'),
+  async (req: Request, res: Response) => {
+    try {
+      const record = await updateAccessReviewRecordReview({
+        type: req.params.type as any,
+        id: req.params.recordId,
+        status: req.body?.status,
+        note: req.body?.note,
+        lockedFields: req.body?.lockedFields,
+        reviewerId: (req.user as any)?._id,
+      });
+      if (!record) return res.status(400).json({ error: 'Invalid review update' });
+      res.json({ record });
+    } catch (error) {
+      console.error('Admin: Error updating access review record:', error);
+      res.status(400).json({ error: 'Request failed' });
+    }
+  },
+);
 
 router.get('/listings', async (req: Request, res: Response) => {
   try {

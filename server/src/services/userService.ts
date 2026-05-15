@@ -14,7 +14,178 @@ import {
   addFavorite as addFellowshipFavorite,
   removeFavorite as removeFellowshipFavorite,
 } from './fellowshipService';
+import { getPathwaysByIds, type PathwaySearchHit } from './pathwaySearchService';
 import mongoose from 'mongoose';
+
+const PLANNING_INTENTS = new Set(['thesis', 'outreach', 'credit', 'funding', 'apply', 'later']);
+const PLANNING_STAGES = new Set(['saved', 'researching', 'ready', 'acted', 'archived']);
+
+export interface SavedPathwayPlanInput {
+  intent?: string;
+  stage?: string;
+  note?: string;
+  checklist?: Record<string, unknown>;
+}
+
+export interface SavedPathwayPlansExportOptions {
+  includePrivateNotes?: boolean;
+  exportedAt?: Date;
+}
+
+export interface SavedPathwayPlansExportItem {
+  pathwayId: string;
+  title: string;
+  researchEntity: {
+    id: string;
+    slug: string;
+    name: string;
+  };
+  intent: string;
+  stage: string;
+  checklist: Record<string, boolean>;
+  sourceLinks: string[];
+  bestNextStepCategory: string;
+  privateNote?: string;
+}
+
+export interface SavedPathwayPlansExport {
+  schemaVersion: 1;
+  exportedAt: string;
+  itemCount: number;
+  privacy: {
+    includesPrivateNotes: boolean;
+    includesContactRoutes: false;
+    includesNonPublicContactEmails: false;
+  };
+  items: SavedPathwayPlansExportItem[];
+}
+
+export function sanitizeSavedPathwayPlanForStorage(
+  plan: unknown,
+): Required<SavedPathwayPlanInput> {
+  const candidate =
+    plan && typeof plan === 'object' ? (plan as SavedPathwayPlanInput) : {};
+  const checklist = Object.fromEntries(
+    Object.entries(candidate.checklist || {})
+      .filter(([key]) => typeof key === 'string' && key.length > 0)
+      .map(([key, value]) => [key, value === true]),
+  );
+
+  return {
+    intent:
+      candidate.intent && PLANNING_INTENTS.has(candidate.intent) ? candidate.intent : 'later',
+    stage: candidate.stage && PLANNING_STAGES.has(candidate.stage) ? candidate.stage : 'saved',
+    note: typeof candidate.note === 'string' ? candidate.note.slice(0, 5000) : '',
+    checklist,
+  };
+}
+
+const isHttpUrl = (value: unknown): value is string => {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    return false;
+  }
+
+  try {
+    const url = new URL(value);
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  } catch {
+    return false;
+  }
+};
+
+const sourceLinksForPathwayExport = (pathway: PathwaySearchHit): string[] =>
+  Array.from(
+    new Set(
+      [
+        ...(pathway.sourceUrls || []),
+        ...(pathway.evidence || []).map((item) => item.sourceUrl),
+        pathway.activePostedOpportunity?.applicationUrl,
+      ].filter(isHttpUrl),
+    ),
+  );
+
+const defaultIntentForPathwayExport = (pathway: PathwaySearchHit): string => {
+  switch (pathway.bestNextStepCategory) {
+    case 'apply':
+      return 'apply';
+    case 'find-funding':
+      return 'funding';
+    case 'plan-outreach':
+    case 'contact-program':
+      return 'outreach';
+    default:
+      return 'later';
+  }
+};
+
+export const buildSavedPathwayPlansExport = (
+  pathways: PathwaySearchHit[],
+  savedPathwayPlans: Record<string, SavedPathwayPlanInput | undefined>,
+  options: SavedPathwayPlansExportOptions = {},
+): SavedPathwayPlansExport => {
+  const includePrivateNotes = options.includePrivateNotes === true;
+
+  return {
+    schemaVersion: 1,
+    exportedAt: (options.exportedAt || new Date()).toISOString(),
+    itemCount: pathways.length,
+    privacy: {
+      includesPrivateNotes: includePrivateNotes,
+      includesContactRoutes: false,
+      includesNonPublicContactEmails: false,
+    },
+    items: pathways.map((pathway) => {
+      const rawPlan = savedPathwayPlans[pathway._id] || {
+        intent: defaultIntentForPathwayExport(pathway),
+        stage: 'saved',
+        note: '',
+        checklist: {},
+      };
+      const plan = sanitizeSavedPathwayPlanForStorage(rawPlan);
+      const item: SavedPathwayPlansExportItem = {
+        pathwayId: pathway._id,
+        title: pathway.studentFacingLabel,
+        researchEntity: {
+          id: pathway.researchEntity._id,
+          slug: pathway.researchEntity.slug,
+          name: pathway.researchEntity.displayName || pathway.researchEntity.name,
+        },
+        intent: plan.intent,
+        stage: plan.stage,
+        checklist: plan.checklist as Record<string, boolean>,
+        sourceLinks: sourceLinksForPathwayExport(pathway),
+        bestNextStepCategory: pathway.bestNextStepCategory,
+      };
+
+      if (includePrivateNotes && plan.note) {
+        item.privateNote = plan.note;
+      }
+
+      return item;
+    }),
+  };
+};
+
+export function pruneSavedPathwayPlansForExistingPathways(
+  savedPathwayPlans: Record<string, SavedPathwayPlanInput | undefined> = {},
+  pathwayIds: Array<string | mongoose.Types.ObjectId>,
+): Record<string, SavedPathwayPlanInput | undefined> {
+  const validIds = new Set(pathwayIds.map((id) => String(id)));
+  return Object.fromEntries(
+    Object.entries(savedPathwayPlans).filter(([pathwayId]) => validIds.has(pathwayId)),
+  );
+}
+
+export function buildSavedPathwayPlanUnsetForIds(
+  pathwayIds: Array<string | mongoose.Types.ObjectId>,
+): Record<string, ''> {
+  return Object.fromEntries(
+    pathwayIds
+      .map((pathwayId) => String(pathwayId))
+      .filter((pathwayId) => pathwayId.length > 0)
+      .map((pathwayId) => [`savedPathwayPlans.${pathwayId}`, '']),
+  );
+}
 
 export const createUser = async (userData: any) => {
   const user = new User(userData);
@@ -281,4 +452,93 @@ export const clearFavFellowships = async (id: any) => {
   const newUser = await updateUser(id, { favFellowships: [] });
 
   return newUser;
+};
+
+export const addFavPathways = async (id: any, pathways: [mongoose.Types.ObjectId]) => {
+  const user = await readUser(id);
+
+  user.favPathways = user.favPathways || [];
+  user.favPathways.unshift(...pathways);
+  user.favPathways = Array.from(new Set(user.favPathways.map((p: any) => p.toString()))).map(
+    (p: string) => new mongoose.Types.ObjectId(p),
+  ) as mongoose.Types.ObjectId[];
+
+  const newUser = await updateUser(id, { favPathways: user.favPathways });
+
+  return newUser;
+};
+
+export const deleteFavPathways = async (
+  id: any,
+  removedPathways: [mongoose.Types.ObjectId],
+) => {
+  const user = await readUser(id);
+
+  const removedPathwayStrings = removedPathways.map((p) => p.toString());
+
+  user.favPathways = (user.favPathways || []).filter(
+    (p: any) => removedPathwayStrings.indexOf(p.toString()) < 0,
+  );
+
+  const unset = buildSavedPathwayPlanUnsetForIds(removedPathwayStrings);
+  const update =
+    Object.keys(unset).length > 0
+      ? { $set: { favPathways: user.favPathways }, $unset: unset }
+      : { favPathways: user.favPathways };
+  const newUser = await updateUser(id, update);
+
+  return newUser;
+};
+
+export const clearFavPathways = async (id: any) => {
+  const newUser = await updateUser(id, { favPathways: [], savedPathwayPlans: {} });
+
+  return newUser;
+};
+
+export const getSavedPathwayPlans = async (id: any) => {
+  const user = await readUser(id);
+  return user.savedPathwayPlans || {};
+};
+
+export const exportSavedPathwayPlans = async (
+  id: any,
+  options: SavedPathwayPlansExportOptions = {},
+) => {
+  const user = await readUser(id);
+  const pathwayIds = (user.favPathways || []).map((pathwayId: mongoose.Types.ObjectId | string) =>
+    pathwayId.toString(),
+  );
+  const pathways = await getPathwaysByIds(pathwayIds);
+
+  return buildSavedPathwayPlansExport(pathways, user.savedPathwayPlans || {}, options);
+};
+
+export const updateSavedPathwayPlan = async (
+  id: any,
+  pathwayId: string,
+  plan: SavedPathwayPlanInput,
+) => {
+  if (!mongoose.Types.ObjectId.isValid(pathwayId)) {
+    throw new Error('Invalid pathway id');
+  }
+  const sanitized = sanitizeSavedPathwayPlanForStorage(plan);
+  const user = await updateUser(id, {
+    $set: {
+      [`savedPathwayPlans.${pathwayId}`]: sanitized,
+    },
+  });
+  return user.savedPathwayPlans || {};
+};
+
+export const deleteSavedPathwayPlan = async (id: any, pathwayId: string) => {
+  if (!mongoose.Types.ObjectId.isValid(pathwayId)) {
+    throw new Error('Invalid pathway id');
+  }
+  const user = await updateUser(id, {
+    $unset: {
+      [`savedPathwayPlans.${pathwayId}`]: '',
+    },
+  });
+  return user.savedPathwayPlans || {};
 };

@@ -105,6 +105,32 @@ router.delete(
   userController.removeFavFellowships,
 );
 
+router.get('/favPathwayIds', isAuthenticated, userController.getFavPathwayIds);
+router.get('/favPathways', isAuthenticated, userController.getFavPathways);
+router.get(
+  '/favPathwayFundingMatches',
+  isAuthenticated,
+  userController.getFavPathwayFundingMatches,
+);
+router.put('/favPathways', isAuthenticated, userController.addFavPathways);
+router.delete('/favPathways', isAuthenticated, userController.removeFavPathways);
+router.get('/favPathwayPlans', isAuthenticated, userController.getSavedPathwayPlans);
+router.get(
+  '/favPathwayPlans/export',
+  isAuthenticated,
+  userController.exportSavedPathwayPlans,
+);
+router.put(
+  '/favPathwayPlans/:pathwayId',
+  isAuthenticated,
+  userController.updateSavedPathwayPlan,
+);
+router.delete(
+  '/favPathwayPlans/:pathwayId',
+  isAuthenticated,
+  userController.deleteSavedPathwayPlan,
+);
+
 router.get('/listings', isAuthenticated, userController.getUserListings);
 router.put('/', isAuthenticated, logProfileUpdateEvent, userController.updateCurrentUser);
 

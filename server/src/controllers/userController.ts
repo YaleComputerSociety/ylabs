@@ -5,6 +5,8 @@ import { Request, Response, NextFunction } from 'express';
 import mongoose from 'mongoose';
 import { readListings } from '../services/listingService';
 import { readFellowships } from '../services/fellowshipService';
+import { matchFellowshipsForPathways } from '../services/fellowshipMatchingService';
+import { getPathwaysByIds } from '../services/pathwaySearchService';
 import {
   readUser,
   updateUser,
@@ -12,6 +14,13 @@ import {
   deleteFavListings as deleteFavListingsService,
   addFavFellowships as addFavFellowshipsService,
   deleteFavFellowships as deleteFavFellowshipsService,
+  addFavPathways as addFavPathwaysService,
+  deleteFavPathways as deleteFavPathwaysService,
+  getSavedPathwayPlans as getSavedPathwayPlansService,
+  exportSavedPathwayPlans as exportSavedPathwayPlansService,
+  pruneSavedPathwayPlansForExistingPathways,
+  updateSavedPathwayPlan as updateSavedPathwayPlanService,
+  deleteSavedPathwayPlan as deleteSavedPathwayPlanService,
 } from '../services/userService';
 
 export const getFavListingsIds = async (request: Request, response: Response) => {
@@ -106,6 +115,109 @@ export const removeFavFellowships = async (request: Request, response: Response)
 
   const user = await deleteFavFellowshipsService(currentUser.netId, favFellowshipsArray);
   response.status(200).json({ user });
+};
+
+export const getFavPathwayIds = async (request: Request, response: Response) => {
+  const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
+  const user = await readUser(currentUser.netId);
+  response.status(200).json({ favPathwayIds: user.favPathways || [] });
+};
+
+export const getFavPathways = async (request: Request, response: Response) => {
+  const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
+  const user = await readUser(currentUser.netId);
+  const favPathwayIds = (user.favPathways || []).map((id: mongoose.Types.ObjectId | string) =>
+    id.toString(),
+  );
+  const favPathways = await getPathwaysByIds(favPathwayIds);
+  const validIds = favPathways.map((pathway) => new mongoose.Types.ObjectId(pathway._id));
+  const savedPathwayPlans = pruneSavedPathwayPlansForExistingPathways(
+    user.savedPathwayPlans || {},
+    validIds,
+  );
+
+  await updateUser(currentUser.netId, { favPathways: validIds, savedPathwayPlans });
+  response.status(200).json({ favPathways });
+};
+
+export const getFavPathwayFundingMatches = async (request: Request, response: Response) => {
+  const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
+  const user = await readUser(currentUser.netId);
+  const favPathwayIds = (user.favPathways || []).map((id: mongoose.Types.ObjectId | string) =>
+    id.toString(),
+  );
+  const matchesByPathwayId = await matchFellowshipsForPathways(favPathwayIds);
+  response.status(200).json({ matchesByPathwayId });
+};
+
+export const addFavPathways = async (request: Request, response: Response) => {
+  const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
+
+  if (!request.body.data?.favPathways) {
+    const error: any = new Error('No favPathways provided');
+    error.status = 400;
+    throw error;
+  }
+
+  const favPathwaysArray = Array.isArray(request.body.data.favPathways)
+    ? request.body.data.favPathways
+    : [request.body.data.favPathways];
+
+  const user = await addFavPathwaysService(currentUser.netId, favPathwaysArray);
+  response.status(200).json({ user });
+};
+
+export const removeFavPathways = async (request: Request, response: Response) => {
+  const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
+
+  if (!request.body.favPathways) {
+    const error: any = new Error('No favPathways provided');
+    error.status = 400;
+    throw error;
+  }
+
+  const favPathwaysArray = Array.isArray(request.body.favPathways)
+    ? request.body.favPathways
+    : [request.body.favPathways];
+
+  const user = await deleteFavPathwaysService(currentUser.netId, favPathwaysArray);
+  response.status(200).json({ user });
+};
+
+export const getSavedPathwayPlans = async (request: Request, response: Response) => {
+  const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
+  const savedPathwayPlans = await getSavedPathwayPlansService(currentUser.netId);
+  response.status(200).json({ savedPathwayPlans });
+};
+
+export const exportSavedPathwayPlans = async (request: Request, response: Response) => {
+  const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
+  const includePrivateNotes = request.query.includePrivateNotes === 'true';
+  const exportPayload = await exportSavedPathwayPlansService(currentUser.netId, {
+    includePrivateNotes,
+  });
+
+  response.setHeader('Content-Disposition', 'attachment; filename="saved-pathway-plans.json"');
+  response.status(200).json(exportPayload);
+};
+
+export const updateSavedPathwayPlan = async (request: Request, response: Response) => {
+  const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
+  const savedPathwayPlans = await updateSavedPathwayPlanService(
+    currentUser.netId,
+    request.params.pathwayId,
+    request.body?.data?.plan || request.body?.plan || {},
+  );
+  response.status(200).json({ savedPathwayPlans });
+};
+
+export const deleteSavedPathwayPlan = async (request: Request, response: Response) => {
+  const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
+  const savedPathwayPlans = await deleteSavedPathwayPlanService(
+    currentUser.netId,
+    request.params.pathwayId,
+  );
+  response.status(200).json({ savedPathwayPlans });
 };
 
 export const getUserListings = async (request: Request, response: Response) => {
