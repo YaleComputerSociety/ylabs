@@ -16,7 +16,16 @@ export interface ScraperCommandGuardResult {
   dbLabel: string;
 }
 
-export function resolveScraperEnvironment(env: NodeJS.ProcessEnv = process.env): ScraperEnvironment {
+export interface ObservationPruneGuardResult {
+  environment: ScraperEnvironment;
+  apply: boolean;
+  warnings: string[];
+  dbLabel: string;
+}
+
+export function resolveScraperEnvironment(
+  env: NodeJS.ProcessEnv = process.env,
+): ScraperEnvironment {
   const raw = String(env.SCRAPER_ENV || env.APP_ENV || env.NODE_ENV || 'development')
     .trim()
     .toLowerCase();
@@ -40,7 +49,7 @@ export function summarizeMongoUrl(mongoUrl: string | undefined): string {
 }
 
 export function applyScraperEnvironmentGuards(args: {
-  command: 'run' | 'materialize' | 'report';
+  command: 'run' | 'cron' | 'materialize' | 'report';
   options: ScraperOptions;
   autoMaterialize: boolean;
   mongoUrl?: string;
@@ -54,7 +63,11 @@ export function applyScraperEnvironmentGuards(args: {
   const allowNonProdWrites = env.ALLOW_NON_PROD_SCRAPER_WRITES === 'true';
 
   if (environment !== 'production') {
-    if (args.command === 'run' && !options.dryRun && !allowNonProdWrites) {
+    if (
+      (args.command === 'run' || args.command === 'cron') &&
+      !options.dryRun &&
+      !allowNonProdWrites
+    ) {
       options.dryRun = true;
       warnings.push(
         `SCRAPER_ENV=${environment}; forcing --dry-run. Set ALLOW_NON_PROD_SCRAPER_WRITES=true to write to this non-production DB.`,
@@ -78,7 +91,10 @@ export function applyScraperEnvironmentGuards(args: {
 
   if (environment === 'production') {
     const confirmed = env.CONFIRM_PROD_SCRAPE === 'true';
-    const writes = args.command === 'run' ? !options.dryRun : args.command === 'materialize' && !options.dryRun;
+    const writes =
+      args.command === 'run' || args.command === 'cron'
+        ? !options.dryRun
+        : args.command === 'materialize' && !options.dryRun;
 
     if (writes && !options.release) {
       throw new Error('Production scraper writes require --release.');
@@ -100,6 +116,38 @@ export function applyScraperEnvironmentGuards(args: {
     environment,
     options,
     autoMaterialize,
+    warnings,
+    dbLabel: summarizeMongoUrl(args.mongoUrl),
+  };
+}
+
+export function applyObservationPruneEnvironmentGuards(args: {
+  apply: boolean;
+  mongoUrl?: string;
+  env?: NodeJS.ProcessEnv;
+}): ObservationPruneGuardResult {
+  const env = args.env || process.env;
+  const environment = resolveScraperEnvironment(env);
+  let apply = args.apply;
+  const warnings: string[] = [];
+  const allowNonProdWrites = env.ALLOW_NON_PROD_SCRAPER_WRITES === 'true';
+
+  if (environment !== 'production' && apply && !allowNonProdWrites) {
+    apply = false;
+    warnings.push(
+      `SCRAPER_ENV=${environment}; forcing prune-observations dry-run. Set ALLOW_NON_PROD_SCRAPER_WRITES=true to delete in this non-production DB.`,
+    );
+  }
+
+  if (environment === 'production' && apply && env.CONFIRM_PROD_SCRAPE !== 'true') {
+    throw new Error(
+      'Production observation pruning requires CONFIRM_PROD_SCRAPE=true in the environment.',
+    );
+  }
+
+  return {
+    environment,
+    apply,
     warnings,
     dbLabel: summarizeMongoUrl(args.mongoUrl),
   };

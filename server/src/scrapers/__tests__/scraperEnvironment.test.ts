@@ -107,4 +107,27 @@ describe('applyScraperEnvironmentGuards', () => {
     expect(guarded.options.useCache).toBe(false);
     expect(guarded.autoMaterialize).toBe(true);
   });
+
+  it('treats cron as a confirmed production release write', () => {
+    expect(() =>
+      applyScraperEnvironmentGuards({
+        command: 'cron',
+        options: { ...baseOptions, dryRun: false, release: false },
+        autoMaterialize: true,
+        env: {
+          SCRAPER_ENV: 'production',
+          CONFIRM_PROD_SCRAPE: 'true',
+        },
+      }),
+    ).toThrow('Production scraper writes require --release.');
+
+    expect(() =>
+      applyScraperEnvironmentGuards({
+        command: 'cron',
+        options: { ...baseOptions, dryRun: false, release: true },
+        autoMaterialize: true,
+        env: { SCRAPER_ENV: 'production' },
+      }),
+    ).toThrow('CONFIRM_PROD_SCRAPE=true');
+  });
 });

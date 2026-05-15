@@ -43,15 +43,13 @@ export class ScraperOrchestrator {
 
     const source = await getSourceByName(name);
     if (!source) {
-      throw new Error(
-        `No Source row found with name "${name}". Run "yarn seed:sources" first.`,
-      );
+      throw new Error(`No Source row found with name "${name}". Run "yarn seed:sources" first.`);
     }
 
     const run = await ScrapeRun.create({
       sourceId: source._id,
       sourceName: source.name,
-      triggeredBy: options.release ? 'cron' : 'cli',
+      triggeredBy: options.triggeredBy || 'cli',
       startedAt: new Date(),
       status: 'running',
       options: options as any,
@@ -93,7 +91,7 @@ export class ScraperOrchestrator {
     };
 
     try {
-      const result = await scraper.run(ctx) as ScraperResult;
+      const result = (await scraper.run(ctx)) as ScraperResult;
       await ScrapeRun.updateOne(
         { _id: run._id },
         {
@@ -103,6 +101,7 @@ export class ScraperOrchestrator {
             observationCount,
             entitiesObserved,
             fetchMetrics: result.fetchMetrics,
+            metrics: result.metrics,
             errors,
           },
         },
@@ -117,10 +116,7 @@ export class ScraperOrchestrator {
             status: 'failure',
             observationCount,
             entitiesObserved,
-            errors: [
-              ...errors,
-              { message: err?.message, stack: err?.stack, at: new Date() },
-            ],
+            errors: [...errors, { message: err?.message, stack: err?.stack, at: new Date() }],
           },
         },
       );
