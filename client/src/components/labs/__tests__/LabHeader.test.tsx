@@ -63,14 +63,14 @@ describe('LabHeader', () => {
 });
 
 describe('LabHeader trust-gradient pill', () => {
-  it('shows "Status unknown" when there are no positive signals', () => {
+  it('shows "Evidence unknown" when there are no positive signals', () => {
     const { container } = render(<LabHeader group={baseGroup} />);
     const pill = container.querySelector('[data-verdict]');
     expect(pill?.getAttribute('data-verdict')).toBe('unknown');
-    expect(pill?.textContent).toBe('Status unknown');
+    expect(pill?.textContent).toBe('Evidence unknown');
   });
 
-  it('shows "Verified accepting" when the PI manually confirmed', () => {
+  it('shows "Strong evidence" when the PI manually confirmed', () => {
     const { container } = render(
       <LabHeader
         group={{
@@ -82,10 +82,10 @@ describe('LabHeader trust-gradient pill', () => {
     );
     const pill = container.querySelector('[data-verdict]');
     expect(pill?.getAttribute('data-verdict')).toBe('verified-accepting');
-    expect(pill?.textContent).toBe('Verified accepting');
+    expect(pill?.textContent).toBe('Strong evidence');
   });
 
-  it('shows "Likely accepting" with a single strong signal (past advisees)', () => {
+  it('shows "Some evidence" with a single strong signal (past advisees)', () => {
     const { container } = render(
       <LabHeader
         group={{
@@ -96,10 +96,10 @@ describe('LabHeader trust-gradient pill', () => {
     );
     const pill = container.querySelector('[data-verdict]');
     expect(pill?.getAttribute('data-verdict')).toBe('likely-accepting');
-    expect(pill?.textContent).toBe('Likely accepting');
+    expect(pill?.textContent).toBe('Some evidence');
   });
 
-  it('shows "Verified accepting" when there are 2+ strong signals', () => {
+  it('shows "Strong evidence" when there are 2+ strong signals', () => {
     const { container } = render(
       <LabHeader
         group={{
@@ -114,7 +114,7 @@ describe('LabHeader trust-gradient pill', () => {
     expect(pill?.getAttribute('data-verdict')).toBe('verified-accepting');
   });
 
-  it('shows "Not accepting" when acceptingUndergrads=false', () => {
+  it('shows "Not currently available" when acceptingUndergrads=false', () => {
     const { container } = render(
       <LabHeader
         group={{
@@ -126,7 +126,7 @@ describe('LabHeader trust-gradient pill', () => {
     );
     const pill = container.querySelector('[data-verdict]');
     expect(pill?.getAttribute('data-verdict')).toBe('not-accepting');
-    expect(pill?.textContent).toBe('Not accepting');
+    expect(pill?.textContent).toBe('Not currently available');
   });
 
   it('honors hasActiveListing prop as a strong signal', () => {

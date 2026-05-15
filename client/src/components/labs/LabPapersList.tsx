@@ -9,13 +9,25 @@ import { ensureHttpPrefix, safeUrl } from '../../utils/url';
 
 interface LabPapersListProps {
   papers: LabPaper[];
+  emptyText?: string;
+  showPreprintMeta?: boolean;
 }
 
 const resolvePaperLink = (paper: LabPaper): string => {
   if (paper.doi) return `https://doi.org/${paper.doi}`;
+  const landing = paper.landingPageUrl ? safeUrl(paper.landingPageUrl) : '';
+  if (landing) return landing;
   const oa = paper.openAccessUrl ? safeUrl(paper.openAccessUrl) : '';
   if (oa) return oa;
   return paper.url ? ensureHttpPrefix(paper.url) : '';
+};
+
+const resolveDisplayDate = (paper: LabPaper): string | undefined => {
+  const rawDate = paper.postedAt || paper.versionDate || paper.publishedAt;
+  if (!rawDate) return undefined;
+  const date = new Date(rawDate);
+  if (Number.isNaN(date.getTime())) return undefined;
+  return date.toLocaleDateString(undefined, { month: 'short', year: 'numeric' });
 };
 
 const resolveYear = (paper: LabPaper): number | undefined => {
@@ -27,9 +39,13 @@ const resolveYear = (paper: LabPaper): number | undefined => {
   return undefined;
 };
 
-const LabPapersList = ({ papers }: LabPapersListProps) => {
+const LabPapersList = ({
+  papers,
+  emptyText = 'No recent papers.',
+  showPreprintMeta = false,
+}: LabPapersListProps) => {
   if (!papers || papers.length === 0) {
-    return <p className="text-gray-500 text-sm py-8 text-center">No recent papers.</p>;
+    return <p className="text-gray-500 text-sm py-8 text-center">{emptyText}</p>;
   }
 
   return (
@@ -37,6 +53,7 @@ const LabPapersList = ({ papers }: LabPapersListProps) => {
       {papers.map((paper) => {
         const link = resolvePaperLink(paper);
         const year = resolveYear(paper);
+        const displayDate = resolveDisplayDate(paper);
         const titleEl = (
           <span className="text-sm font-semibold text-gray-900 hover:text-blue-700 transition-colors">
             {paper.title}
@@ -62,10 +79,27 @@ const LabPapersList = ({ papers }: LabPapersListProps) => {
                   titleEl
                 )}
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-xs text-gray-500">
+                  {showPreprintMeta && (
+                    <span className="font-medium not-italic text-blue-700">arXiv preprint</span>
+                  )}
                   {paper.venue && <span className="italic">{paper.venue}</span>}
-                  {year !== undefined && <span>&middot; {year}</span>}
+                  {showPreprintMeta && displayDate ? (
+                    <span>&middot; posted {displayDate}</span>
+                  ) : (
+                    year !== undefined && <span>&middot; {year}</span>
+                  )}
                   {typeof paper.citationCount === 'number' && paper.citationCount > 0 && (
                     <span>&middot; {paper.citationCount} citation{paper.citationCount !== 1 ? 's' : ''}</span>
+                  )}
+                  {showPreprintMeta && paper.pdfUrl && (
+                    <a
+                      href={safeUrl(paper.pdfUrl)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-700 hover:text-blue-900"
+                    >
+                      &middot; PDF
+                    </a>
                   )}
                 </div>
                 {paper.tldr && (

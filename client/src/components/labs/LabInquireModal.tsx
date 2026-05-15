@@ -25,13 +25,6 @@ const resolveContact = (
       lname: piMember?.user.lname || group.contactName || '',
     };
   }
-  const pi =
-    members.find((m) => m.role === 'pi' || m.role === 'director') ||
-    members.find((m) => m.role === 'co-pi' || m.role === 'co-director') ||
-    members[0];
-  if (pi && pi.user.email) {
-    return { email: pi.user.email, lname: pi.user.lname };
-  }
   return null;
 };
 
@@ -41,7 +34,7 @@ const LabInquireModal = ({ isOpen, onClose, group, members }: LabInquireModalPro
   const contact = resolveContact(group, members);
   const subject = `Inquiry from a Yale undergraduate about research in ${group.name}`;
   const body = contact
-    ? `Hi Professor ${contact.lname || ''},\n\nI'm a Yale undergraduate interested in research in your group. I'd love to learn more about how I might contribute to your work on ${
+    ? `Hello${contact.lname ? ` ${contact.lname}` : ''},\n\nI'm a Yale undergraduate interested in research in your group. I'd love to learn more about how I might contribute to your work on ${
         (group.researchAreas && group.researchAreas[0]) || group.name
       }.\n\nA bit about me:\n  - Year & major:\n  - Relevant coursework:\n  - Why your lab:\n\nWould you have time to chat in the next couple of weeks?\n\nThank you,\n`
     : '';

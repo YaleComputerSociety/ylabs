@@ -2,8 +2,9 @@
  * "Inquire" CTA panel for a research group. Shows undergrad-relevant context
  * (typical roles, prereqs, time commitment, credit options, funding) and
  * an action button:
- *   - openness === 'open' AND a contact email exists → "Inquire" (opens modal)
- *   - otherwise → "Email PI" mailto fallback if any email is available
+ *   - public official/contact route with URL -> linked route CTA
+ *   - explicit group contact email -> "Inquire" (opens modal)
+ *   - otherwise -> planning-oriented fallback
  *
  * Below the CTA we render an "Evidence" section that mirrors the trust
  * gradient on the header: each scraper-derived signal becomes a chip with a
@@ -13,7 +14,7 @@
  * Pure presentational. The page owns the modal state (via the reducer).
  */
 import { ResearchGroup } from '../../types/researchGroup';
-import { LabMember } from '../../types/labDetail';
+import { LabContactRoute, LabMember } from '../../types/labDetail';
 import {
   computeAcceptanceVerdict,
   EvidenceItem,
@@ -24,13 +25,14 @@ import {
 interface LabInquireCardProps {
   group: ResearchGroup;
   members: LabMember[];
+  contactRoutes?: LabContactRoute[];
   /** Whether the lab has at least one non-archived listing. */
   hasActiveListing?: boolean;
   onInquire: () => void;
 }
 
-// Resolve the best email for an "Email PI" mailto: prefer the explicit
-// contactEmail on the group, otherwise the first PI/director member's email.
+// Only use an explicit group contact email for direct mailto flows. Public
+// member emails are intentionally not used as fallback CTAs.
 const resolvePiEmail = (
   group: ResearchGroup,
   members: LabMember[],
@@ -42,15 +44,47 @@ const resolvePiEmail = (
       lname: piMember?.user.lname || group.contactName || '',
     };
   }
-  const pi =
-    members.find((m) => m.role === 'pi' || m.role === 'director') ||
-    members.find((m) => m.role === 'co-pi' || m.role === 'co-director') ||
-    members[0];
-  if (pi && pi.user.email) {
-    return { email: pi.user.email, lname: pi.user.lname };
-  }
   return null;
 };
+
+const CONTACT_ROUTE_ORDER: Record<string, number> = {
+  OFFICIAL_APPLICATION: 0,
+  PROGRAM_MANAGER: 1,
+  DEPARTMENT_CONTACT: 2,
+  FELLOWSHIP_OFFICE: 3,
+  COURSE_INSTRUCTOR: 4,
+  LAB_MANAGER: 5,
+  FACULTY_PI: 8,
+  UNKNOWN: 9,
+};
+
+const contactRouteCtaLabel = (route?: LabContactRoute): string => {
+  switch (route?.routeType) {
+    case 'OFFICIAL_APPLICATION':
+      return 'Use official route';
+    case 'PROGRAM_MANAGER':
+      return 'Contact program';
+    case 'DEPARTMENT_CONTACT':
+      return 'Contact department';
+    case 'FELLOWSHIP_OFFICE':
+      return 'Contact fellowship office';
+    case 'COURSE_INSTRUCTOR':
+      return 'Contact course instructor';
+    case 'LAB_MANAGER':
+      return 'Contact lab manager';
+    default:
+      return 'Open contact route';
+  }
+};
+
+const preferredPublicRoute = (routes?: LabContactRoute[]): LabContactRoute | null =>
+  (routes || [])
+    .filter((route) => route.visibility === 'PUBLIC' && !!route.url)
+    .sort(
+      (a, b) =>
+        (CONTACT_ROUTE_ORDER[a.routeType] ?? 9) - (CONTACT_ROUTE_ORDER[b.routeType] ?? 9) ||
+        (a.priority ?? 100) - (b.priority ?? 100),
+    )[0] || null;
 
 const formatHours = (group: ResearchGroup): string | null => {
   const t = group.timeCommitmentHoursPerWeek;
@@ -132,20 +166,23 @@ const EvidenceChip = ({ item }: EvidenceChipProps) => {
 const LabInquireCard = ({
   group,
   members,
+  contactRoutes,
   hasActiveListing = false,
   onInquire,
 }: LabInquireCardProps) => {
   const piContact = resolvePiEmail(group, members);
-  const canInquireInline = group.openness === 'open' && !!group.contactEmail;
+  const preferredRoute = preferredPublicRoute(contactRoutes);
   const hours = formatHours(group);
   const { verdict, evidence } = computeAcceptanceVerdict(group, hasActiveListing);
+  const isUnavailable = verdict === 'not-accepting';
+  const canInquireInline = !preferredRoute && !isUnavailable && !!group.contactEmail;
 
-  // Mailto for the fallback path (no inline-inquire flow).
+  // Mailto for the explicit-contact fallback path (no route URL available).
   const fallbackMailto = piContact
     ? `mailto:${piContact.email}?subject=${encodeURIComponent(
         `Inquiry from a Yale undergraduate about research in ${group.name}`,
       )}&body=${encodeURIComponent(
-        `Hi Professor ${piContact.lname || ''},\n\nI'm a Yale undergraduate interested in research in your group. I'd love to learn more about how I might contribute.\n\nThank you,\n`,
+        `Hello${piContact.lname ? ` ${piContact.lname}` : ''},\n\nI'm a Yale undergraduate interested in research in your group. I'd love to learn more about how I might contribute.\n\nThank you,\n`,
       )}`
     : '';
 
@@ -173,11 +210,13 @@ const LabInquireCard = ({
     <div className="rounded-xl border border-blue-100 bg-gradient-to-br from-blue-50/60 to-white p-5 shadow-sm">
       <h3 className="text-base font-bold text-gray-900">Interested in joining?</h3>
       <p className="text-sm text-gray-600 mt-1">
-        {canInquireInline
+        {preferredRoute
+          ? 'Use the preferred route before trying direct outreach.'
+          : canInquireInline
           ? "Send a quick message to introduce yourself — we'll prefill the basics."
-          : group.openness === 'closed'
-            ? "This research group isn't accepting new undergraduates right now."
-            : 'Reach out to the PI directly to ask about getting involved.'}
+          : isUnavailable
+            ? 'Evidence indicates this pathway is not currently available.'
+            : 'Plan a specific outreach note before contacting the research group.'}
       </p>
 
       <div className="mt-4 space-y-3">
@@ -275,19 +314,28 @@ const LabInquireCard = ({
       </div>
 
       <div className="mt-5">
-        {canInquireInline ? (
+        {preferredRoute ? (
+          <a
+            href={preferredRoute.url}
+            target="_blank"
+            rel="noreferrer"
+            className="block w-full text-center px-4 py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            {preferredRoute.label || contactRouteCtaLabel(preferredRoute)}
+          </a>
+        ) : canInquireInline ? (
           <button
             onClick={onInquire}
             className="w-full px-4 py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-colors"
           >
             Inquire about joining
           </button>
-        ) : fallbackMailto ? (
+        ) : !isUnavailable && fallbackMailto ? (
           <a
             href={fallbackMailto}
             className="block w-full text-center px-4 py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-colors"
           >
-            Email PI
+            Email listed contact
           </a>
         ) : (
           <p className="text-xs text-gray-500 text-center">

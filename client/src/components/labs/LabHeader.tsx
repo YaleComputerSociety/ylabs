@@ -1,12 +1,12 @@
 /**
  * Hero header for a lab detail page: name, kind badge, school, location,
- * trust-gradient acceptance pill, departments, research areas, website link.
+ * trust-gradient evidence pill, departments, research areas, website link.
  *
  * Pure presentational — takes a ResearchGroup, no fetching or context.
  *
- * The acceptance pill replaces the legacy boolean-only "Accepting Undergrads"
- * pill with a trust gradient ("Verified accepting" / "Likely accepting" /
- * "Status unknown" / "Not accepting"). The verdict is computed by the shared
+ * The evidence pill replaces the legacy boolean-only "Accepting Undergrads"
+ * pill with a trust gradient ("Strong evidence" / "Some evidence" /
+ * "Evidence unknown" / "Not currently available"). The verdict is computed by the shared
  * `computeAcceptanceVerdict` helper so this surface stays consistent with the
  * browse cards and the inquire CTA.
  */
