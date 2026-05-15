@@ -25,21 +25,19 @@ const Login = () => {
         <div className="flex items-center">
           <img
             src="/assets/logos/paperclip.png"
-            alt="ylabs-logo"
+            alt=""
             className="mr-2 w-[3.5rem] h-[3rem] md:w-[6.33rem] md:h-[5.4rem] sm:w-[4.5rem] sm:h-[4rem] "
           />
-          <img
-            src="/assets/logos/ylabs-blue.png"
-            alt="ylabs-logo"
-            className="w-[7rem] h-[3rem] md:w-[13.03rem] md:h-[5.4rem] sm:w-[9rem] sm:h-[4rem]"
-          />
+          <span className="text-3xl font-semibold text-blue-700 sm:text-4xl md:text-5xl">
+            Yale Research
+          </span>
         </div>
         <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-gray-900 mt-5 md:mt-12">
-          A Yale Research Database
+          Find a credible path into Yale research
         </h1>
         <p className="text-base sm:text-lg md:text-xl text-gray-700 mt-2">
-          Search through 1400+ Yale faculty listings across 60+ fields of study. Learn about
-          professors who share your research interests and find potential research mentors.
+          Search by idea, method, professor, or pathway. Yale Research maps undergraduate curiosity
+          to research structures, evidence, and practical next steps.
         </p>
       </Description>
       <AuthContainer>

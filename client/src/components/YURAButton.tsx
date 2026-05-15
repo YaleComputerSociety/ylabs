@@ -9,18 +9,16 @@ const YURAButton = () => {
   };
 
   return (
-    <Button onClick={handleReload} disableRipple={true}>
+    <Button onClick={handleReload} disableRipple={true} sx={{ textTransform: 'none' }}>
       <img
         src="/assets/logos/paperclip.png"
-        alt="ylabs-logo"
+        alt=""
         className="mr-2"
         style={{ width: '31.65px', height: '27px' }}
       />
-      <img
-        src="/assets/logos/ylabs-blue.png"
-        alt="ylabs-logo"
-        style={{ width: '65.17px', height: '27px' }}
-      />
+      <span className="text-xl font-semibold tracking-normal text-blue-700">
+        Yale Research
+      </span>
     </Button>
   );
 };

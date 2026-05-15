@@ -1,5 +1,5 @@
 /**
- * Home navigation button used inside the mobile drawer menu.
+ * Research navigation button used inside the mobile drawer menu.
  */
 import Button from '@mui/material/Button';
 import { Link } from 'react-router-dom';
@@ -9,7 +9,7 @@ const DrawerHomeButton = () => {
     <Button
       color="inherit"
       component={Link}
-      to="/"
+      to="/research"
       sx={{
         textTransform: 'none',
         color: '#000000',
@@ -19,7 +19,7 @@ const DrawerHomeButton = () => {
       }}
       disableRipple={true}
     >
-      Find Labs
+      Research
     </Button>
   );
 };

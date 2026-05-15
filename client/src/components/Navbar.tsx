@@ -16,9 +16,7 @@ import Button from '@mui/material/Button';
 import UserButton from './UserButton';
 import SignOutButton from './SignOutButton';
 import AboutButton from './AboutButton';
-import AccountButton from './AccountButton';
 import HomeButton from './HomeButton';
-import DrawerHomeButton from './DrawerHomeButton';
 import YURAButton from './YURAButton';
 import AnalyticsButton from './AnalyticsButton';
 import UserContext from '../contexts/UserContext';
@@ -34,6 +32,7 @@ import CombinedFilterDropdown, { FilterTabConfig } from './shared/CombinedFilter
 import ActiveFilters, { ActiveFilterChip, QuickFilterDef } from './shared/ActiveFilters';
 import { getColorForResearchArea } from '../utils/researchAreas';
 import { useConfig } from '../hooks/useConfig';
+import { isPrimaryNavLinkActive, primaryNavLinks } from './navigationLinks';
 
 import { ThemeProvider } from '@mui/material/styles';
 import theme from '../utils/muiTheme';
@@ -353,10 +352,9 @@ export default function Navbar() {
   const location = useLocation();
 
   const isAdmin = user?.userType === 'admin';
-  const isHomePage = location.pathname === '/';
+  const isListingsPage = location.pathname === '/listings';
+  const isHomePage = isListingsPage;
   const isFellowshipsPage = location.pathname === '/fellowships';
-  const isResearchPage = location.pathname === '/research' || location.pathname.startsWith('/research/');
-  const isAccountPage = location.pathname === '/account';
 
   const {
     selectedDepartments,
@@ -551,44 +549,27 @@ export default function Navbar() {
         <List>
           {isAuthenticated ? (
             <>
-              <ListItem sx={listItemStyle}>
-                <DrawerHomeButton />
-              </ListItem>
-              <ListItem sx={listItemStyle}>
-                <Button
-                  component={Link}
-                  to="/research"
-                  sx={{
-                    textTransform: 'none',
-                    color: isResearchPage ? '#0055A4' : '#333',
-                    fontWeight: isResearchPage ? 600 : 400,
-                    justifyContent: 'flex-start',
-                    width: '100%',
-                    pl: 1,
-                  }}
-                >
-                  Research
-                </Button>
-              </ListItem>
-              <ListItem sx={listItemStyle}>
-                <Button
-                  component={Link}
-                  to="/fellowships"
-                  sx={{
-                    textTransform: 'none',
-                    color: isFellowshipsPage ? '#0055A4' : '#333',
-                    fontWeight: isFellowshipsPage ? 600 : 400,
-                    justifyContent: 'flex-start',
-                    width: '100%',
-                    pl: 1,
-                  }}
-                >
-                  Find Fellowships
-                </Button>
-              </ListItem>
-              <ListItem sx={listItemStyle}>
-                <AccountButton />
-              </ListItem>
+              {primaryNavLinks.map((link) => {
+                const active = isPrimaryNavLinkActive(location.pathname, link);
+                return (
+                  <ListItem key={link.key} sx={listItemStyle}>
+                    <Button
+                      component={Link}
+                      to={link.to}
+                      sx={{
+                        textTransform: 'none',
+                        color: active ? '#0055A4' : '#333',
+                        fontWeight: active ? 600 : 400,
+                        justifyContent: 'flex-start',
+                        width: '100%',
+                        pl: 1,
+                      }}
+                    >
+                      {link.label}
+                    </Button>
+                  </ListItem>
+                );
+              })}
               <ListItem sx={listItemStyle}>
                 <AboutButton />
               </ListItem>
@@ -649,42 +630,21 @@ export default function Navbar() {
               }}
             >
               <Box sx={{ display: 'flex', gap: 0, alignItems: 'center' }}>
-                <Button
-                  component={Link}
-                  to="/"
-                  disableRipple
-                  className={`!normal-case !text-sm !min-w-0 !px-3 !py-1 !rounded-none !border-b-2 hover:!bg-transparent ${isHomePage ? '!font-semibold !text-blue-700 !border-blue-700 hover:!text-blue-700' : '!font-normal !text-gray-600 !border-transparent hover:!text-blue-700'}`}
-                  sx={{ '&:focus-visible': { outline: '2px solid #1876D1', outlineOffset: '2px' } }}
-                >
-                  Find Labs
-                </Button>
-                <Button
-                  component={Link}
-                  to="/research"
-                  disableRipple
-                  className={`!normal-case !text-sm !min-w-0 !px-3 !py-1 !rounded-none !border-b-2 hover:!bg-transparent ${isResearchPage ? '!font-semibold !text-blue-700 !border-blue-700 hover:!text-blue-700' : '!font-normal !text-gray-600 !border-transparent hover:!text-blue-700'}`}
-                  sx={{ '&:focus-visible': { outline: '2px solid #1876D1', outlineOffset: '2px' } }}
-                >
-                  Research
-                </Button>
-                <Button
-                  component={Link}
-                  to="/fellowships"
-                  disableRipple
-                  className={`!normal-case !text-sm !min-w-0 !px-3 !py-1 !rounded-none !border-b-2 hover:!bg-transparent ${isFellowshipsPage ? '!font-semibold !text-blue-700 !border-blue-700 hover:!text-blue-700' : '!font-normal !text-gray-600 !border-transparent hover:!text-blue-700'}`}
-                  sx={{ '&:focus-visible': { outline: '2px solid #1876D1', outlineOffset: '2px' } }}
-                >
-                  Find Fellowships
-                </Button>
-                <Button
-                  component={Link}
-                  to="/account"
-                  disableRipple
-                  className={`!normal-case !text-sm !min-w-0 !px-3 !py-1 !rounded-none !border-b-2 hover:!bg-transparent ${isAccountPage ? '!font-semibold !text-blue-700 !border-blue-700 hover:!text-blue-700' : '!font-normal !text-gray-600 !border-transparent hover:!text-blue-700'}`}
-                  sx={{ '&:focus-visible': { outline: '2px solid #1876D1', outlineOffset: '2px' } }}
-                >
-                  Dashboard
-                </Button>
+                {primaryNavLinks.map((link) => {
+                  const active = isPrimaryNavLinkActive(location.pathname, link);
+                  return (
+                    <Button
+                      key={link.key}
+                      component={Link}
+                      to={link.to}
+                      disableRipple
+                      className={`!normal-case !text-sm !min-w-0 !px-3 !py-1 !rounded-none !border-b-2 hover:!bg-transparent ${active ? '!font-semibold !text-blue-700 !border-blue-700 hover:!text-blue-700' : '!font-normal !text-gray-600 !border-transparent hover:!text-blue-700'}`}
+                      sx={{ '&:focus-visible': { outline: '2px solid #1876D1', outlineOffset: '2px' } }}
+                    >
+                      {link.label}
+                    </Button>
+                  );
+                })}
               </Box>
               <UserButton />
             </Box>
@@ -692,7 +652,7 @@ export default function Navbar() {
           <Toolbar sx={{ height: '64px', width: '100%', justifyContent: 'flex-start' }}>
             <Box sx={{ flexShrink: 0 }}>{isAuthenticated ? <HomeButton /> : <YURAButton />}</Box>
 
-            {isAuthenticated && isHomePage && (
+            {isAuthenticated && isListingsPage && (
               <Box
                 sx={{
                   display: { xs: 'none', md: 'flex' },
@@ -733,13 +693,13 @@ export default function Navbar() {
             {isAuthenticated && (
               <>
                 <Box sx={{ display: 'flex', gap: '8px', alignItems: 'center', ml: 'auto' }}>
-                  {(isHomePage || isFellowshipsPage) && isMobile && (
+                  {(isListingsPage || isFellowshipsPage) && isMobile && (
                     <IconButton
                       size="small"
                       color="inherit"
                       aria-label="search"
                       onClick={() => {
-                        if (isHomePage) setMobileSearchOpen(!mobileSearchOpen);
+                        if (isListingsPage) setMobileSearchOpen(!mobileSearchOpen);
                         if (isFellowshipsPage)
                           setMobileFellowshipSearchOpen(!mobileFellowshipSearchOpen);
                       }}
@@ -777,7 +737,7 @@ export default function Navbar() {
           </Toolbar>
         </AppBar>
 
-        {isAuthenticated && isHomePage && isMobile && (
+        {isAuthenticated && isListingsPage && isMobile && (
           <Collapse in={mobileSearchOpen}>
             <Box
               sx={{
@@ -819,7 +779,7 @@ export default function Navbar() {
           </Collapse>
         )}
 
-        {isAuthenticated && isHomePage && (
+        {isAuthenticated && isListingsPage && (
           <ActiveFilters
             quickFilters={listingQuickFilters}
             activeQuickFilter={quickFilter}
