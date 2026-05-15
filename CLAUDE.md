@@ -46,13 +46,14 @@ ylabs/
 │       ├── passport.ts       # CAS auth strategy + user find-or-create cascade
 │       ├── routes/           # Express routers aggregated in routes/index.ts
 │       ├── controllers/      # Request handlers
-│       ├── services/         # Business logic (11 services)
-│       ├── models/           # Mongoose schemas (user, listing, fellowship, analytics, department, researchArea)
+│       ├── services/         # Business logic (25+ services)
+│       ├── models/           # Mongoose schemas: user, listing, fellowship, analytics, department, researchArea, researchEntity, researchGroup, entryPathway, accessSignal, contactRoute, postedOpportunity, observation, source, scrapeRun, facultyMember, grant, paper, studentApplication, studentProfile, and more
+│       ├── scrapers/         # Scraper infrastructure: CLI, orchestrator, materializers, sources/, utils/
 │       ├── middleware/        # Auth guards, validation, error handling
 │       ├── db/               # Multi-mode database connections
-│       ├── utils/            # smartTitle, errors, permissions (legacy), environment, meiliClient
-│       └── scripts/          # One-off import/cleanup scripts
-└── data-migration/           # Standalone migration scripts (run with ts-node --transpile-only)
+│       ├── utils/            # smartTitle, errors, environment, meiliClient
+│       └── scripts/          # One-off migration/rebuild scripts (research-entity migrate, meili rebuild, etc.)
+└── data-migration/           # Standalone migration scripts (run with npx tsx --transpile-only)
 ```
 
 ## Commands
@@ -67,14 +68,19 @@ ylabs/
 | `yarn clean:all` | Remove all node_modules directories |
 | `yarn --cwd client test` | Run Vitest in watch mode |
 | `yarn --cwd client test:ci` | Run Vitest once (used by CI) |
+| `yarn --cwd server test` | Run server-side Vitest suite |
+| `yarn --cwd server scrape <cmd>` | Run the scraper CLI (see `yarn --cwd server scrape help`) |
+| `yarn --cwd server meili:rebuild-research-entities` | Rebuild the ResearchEntity Meilisearch index |
+| `yarn --cwd server meili:rebuild-pathways` | Rebuild the Pathway Meilisearch index |
+| `yarn --cwd server research-entity:migrate` | Run the ResearchEntity physical migration |
 
-Migration scripts run from `data-migration/` with `npx ts-node --transpile-only <script>.ts`.
+Migration scripts run from `data-migration/` with `npx tsx --transpile-only <script>.ts`.
 
 Dev login bypass: `GET http://localhost:4000/api/dev-login` creates a test session (`test123` / `student`) without CAS.
 
 ## TypeScript Configuration
 
-**Server**: target ES2022, module NodeNext, moduleResolution NodeNext, strict true, output to `build/`.
+**Server**: target ES2022, module NodeNext, moduleResolution NodeNext, strict true, output to `build/`. Built with `tsup`; dev mode uses `tsx watch`.
 
 **Client**: target ES5, module ESNext, jsx react-jsx, strict true, noEmit true.
 
@@ -86,17 +92,19 @@ MongoDB via Mongoose 8. All environments use `MONGODBURL` — the connection str
 
 Search has migrated from MongoDB Atlas Vector Search to **Meilisearch**. The old `embeddingService.ts` (OpenAI client-side embedding generation + in-memory LRU cache) has been removed.
 
-Current search flow:
-1. Client sends query + filters to `/api/listings/search`
-2. Controller builds Meilisearch filter strings from query params (`departments`, `researchAreas`, `archived`, `confirmed`)
-3. When a text query is present, hybrid search is enabled with `semanticRatio: 0.8` using the Meilisearch-configured OpenAI embedder
-4. Results are returned with `estimatedTotalHits` for pagination
+Three Meilisearch indexes are now in use:
 
-The Meilisearch client (`server/src/utils/meiliClient.ts`) lazy-loads and caches the connection. Configuration: `MEILISEARCH_HOST` (defaults to `http://localhost:7700`), `MEILISEARCH_API_KEY`, and `MEILISEARCH_INDEX_PREFIX` (optional, for multi-environment isolation on a shared instance). The module exports `getMeiliIndex(name)` which resolves prefixed index names and `resolveIndexName(name)` for use in migration scripts.
+| Index | Service | Purpose |
+|-------|---------|---------|
+| `listings` | `listingService.ts` | Legacy listing search (keyword + semantic, `semanticRatio: 0.8`) |
+| `research_entities` | `researchEntitySearchIndexService.ts` | Explore Research (`/research`) |
+| `pathways` | `pathwaySearchIndexService.ts` | Pathways surface (`/pathways`) |
 
-Listing mutations in `listingService.ts` sync to Meilisearch after MongoDB writes — create uses `addDocuments()`, update uses `updateDocuments()`, delete uses `deleteDocument()`. Documents are indexed with `primaryKey: 'id'` (string-cast `_id`), with `embedding`, `_id`, and `__v` fields stripped.
+The Meilisearch client (`server/src/utils/meiliClient.ts`) lazy-loads and caches the connection. Configuration: `MEILISEARCH_HOST` (defaults to `http://localhost:7700`), `MEILISEARCH_API_KEY`, and `MEILISEARCH_INDEX_PREFIX` (optional prefix applied to all index names, e.g. `beta_listings`). The module exports `getMeiliIndex(name)` and `resolveIndexName(name)`.
 
-The migration script `data-migration/MigrateToMeilisearch.ts` configures the Meilisearch index with filterable attributes (`departments`, `researchAreas`, `archived`, `confirmed`), sortable attributes (`createdAt`, `updatedAt`, `searchScore`), and the OpenAI embedder. Run it with `MEILISEARCH_INDEX_PREFIX` set to populate the correct index per environment.
+Listing mutations in `listingService.ts` sync to Meilisearch after MongoDB writes. Pathway and ResearchEntity index documents are synced via `meiliSyncService.ts` after upserts to their respective collections. Rebuild scripts (`meili:rebuild-research-entities`, `meili:rebuild-pathways`) do a full repopulation.
+
+`data-migration/MigrateToMeilisearch.ts` configures the listings index (filterable: `departments`, `researchAreas`, `archived`, `confirmed`; sortable: `createdAt`, `updatedAt`, `searchScore`; OpenAI embedder). Run with `MEILISEARCH_INDEX_PREFIX` set.
 
 ## Environments
 
@@ -159,7 +167,9 @@ Analytics events have a 3-year TTL via MongoDB's `expireAfterSeconds` index.
 
 ## Testing
 
-Client-side tests run under **Vitest 3** with a `jsdom` environment. Config lives in the `test` block of `client/vite.config.js`; tests are discovered from `client/src/**/*.{test,spec}.{ts,tsx}`. The server has no test framework configured.
+Client-side tests run under **Vitest 3** with a `jsdom` environment. Config lives in the `test` block of `client/vite.config.js`; tests are discovered from `client/src/**/*.{test,spec}.{ts,tsx}`.
+
+Server-side tests also run under **Vitest** (`yarn --cwd server test`). Test files live in `server/src/services/__tests__/` and `server/src/scrapers/__tests__/`. Coverage spans services (accessSignal, fellowship matching, opportunity detail, pathway search, researchEntity DTO, Meilisearch sync, userService, etc.) and individual scrapers (NSF, NIH, Yale Directory, OpenAlex, undergrad fellowship recipient, YSE Centers, and more).
 
 Coverage focuses on pure reducer modules in `client/src/reducers/`, with matching test files in `client/src/reducers/__tests__/`. The pattern extracts state transitions out of providers/components (as `createInitial<Name>State()` + `<name>Reducer(state, action)`) so they can be tested without mounting React or mocking network. Side effects (axios, localStorage, timers) stay in the component that uses `useReducer`.
 
@@ -246,6 +256,9 @@ All routes mount under `/api` in `app.ts`. Route files in `server/src/routes/`:
 | `/analytics` | `analytics.ts` | Admin |
 | `/config` | `config.ts` | No |
 | `/research-areas` | `researchAreas.ts` | Admin for writes |
+| `/research` | `researchGroups.ts` | Varies (search/detail public) |
+| `/pathways` | `pathways.ts` | Varies (search public, saves require auth) |
+| `/opportunities` | `opportunities.ts` | Public |
 | `/admin` | `admin.ts` | Admin |
 | `/seed` | `seed.ts` | Dev mode only |
 
@@ -292,8 +305,11 @@ User → Yale CAS SSO → passport.ts findOrCreateUser
 | `OPENAI_API_KEY` | No | OpenAI API key (used by Meilisearch embedder config) |
 | `MEILISEARCH_HOST` | No (default: `http://localhost:7700`) | Meilisearch instance URL |
 | `MEILISEARCH_API_KEY` | No | Meilisearch API key |
-| `MEILISEARCH_INDEX_PREFIX` | No | Environment prefix for index names (e.g., `prod`, `beta`). When set, indexes become `{prefix}_listings`. Allows prod and beta to share one Meilisearch instance. |
+| `MEILISEARCH_INDEX_PREFIX` | No | Environment prefix for index names (e.g., `prod`, `beta`). When set, indexes become `{prefix}_listings`, `{prefix}_research_entities`, etc. Allows prod and beta to share one Meilisearch instance. |
 | `PORT` | No (default: 4000) | Server port |
+| `SCRAPER_ENV` | No (default: `development`) | Controls scraper write guards. `production` requires `CONFIRM_PROD_SCRAPE=true`. Non-production defaults to dry-run unless `ALLOW_NON_PROD_SCRAPER_WRITES=true`. |
+| `ALLOW_NON_PROD_SCRAPER_WRITES` | No | Set to `true` to allow scraper writes to a non-production database. |
+| `CONFIRM_PROD_SCRAPE` | No | Set to `true` to allow scraper writes to production. Required when `SCRAPER_ENV=production`. |
 
 ### `client/.env`
 
@@ -312,9 +328,72 @@ User → Yale CAS SSO → passport.ts findOrCreateUser
 
 | Issue | Location | Status |
 |-------|----------|--------|
-| No server-side tests | `server/` | No test framework configured server-side. Client uses Vitest; reducer modules in `client/src/reducers/` are covered. |
-| ESLint/Prettier configured but not in CI | `eslint.config.js`, `.prettierrc` | Flat-config ESLint + Prettier set up at repo root. Currently reports ~15 errors / ~55 warnings across the codebase; not wired to CI until pre-existing violations are triaged. Run `yarn lint`, `yarn lint:fix`, `yarn format`. |
+| Pre-existing client type errors | `client/` | `tsc --noEmit` on the client is not clean (shadow-variable spreads, `AdminListing` field drift, etc.) and is not in CI. Requires a dedicated cleanup pass. |
+| ESLint/Prettier configured but not in CI | `eslint.config.js`, `.prettierrc` | Flat-config ESLint + Prettier set up at repo root. Not wired to CI until pre-existing violations are triaged. Run `yarn lint`, `yarn lint:fix`, `yarn format`. |
 | Console-only logging | Server | No structured logging (Winston/Pino) |
+| Legacy naming residue | `server/src/` | Files and fields using `researchGroup`/`lab`/`researchGroupId` naming are migration residue. Canonical names are `ResearchEntity`, `research_entities`, `/api/research`. Do not expand legacy naming. |
+
+## Product Model
+
+The canonical runtime model for Yale Research (not a simple job board):
+
+| Concept | Collection | Purpose |
+|---------|-----------|---------|
+| `ResearchEntity` | `research_entities` | What exists: lab, center, institute, faculty project, RA program, fellowship program, etc. |
+| `EntryPathway` | `entry_pathways` | How a student might approach a plausible research home (posted role, recurring program, outreach, etc.) |
+| `PostedOpportunity` | `posted_opportunities` | A real active/time-bound posting (Spring 2026 RA role, DHLab internship, etc.) |
+| `AccessSignal` | `access_signals` | Evidence-backed signal about undergraduate access (past undergrads, posted opening, fellowship-compatible, etc.) |
+| `ContactRoute` | `contact_routes` | The best known way to act (official application, lab manager, faculty PI, etc.) |
+
+Important distinctions:
+- Course credit and fellowship funding are **formalization outcomes** after a student finds a research home — not entry pathways.
+- `EntryPathway` is durable; `PostedOpportunity` is a specific active/time-bound instance of one.
+- Scrapers emit append-only `Observation` rows; `accessMaterializer.ts` and `entityMaterializer.ts` derive first-class access records from them.
+- Avoid binary fields like `acceptingUndergrads`. Use `AccessSignal` with evidence strength instead.
+- Contact routes are fail-closed: prefer official/public URLs; redact scraped emails from public payloads.
+
+See `docs/research-model.md` for full schema and migration guidance.
+
+## Scrapers
+
+The scraper system lives in `server/src/scrapers/`. Run via `yarn --cwd server scrape <command>` (uses `server/src/scrapers/cli.ts`).
+
+**Infrastructure files:**
+- `cli.ts` — CLI entrypoint (`scrape run`, `scrape materialize`, `scrape report`, etc.)
+- `orchestrator.ts` — `ScraperOrchestrator` runs registered scrapers sequentially
+- `registry.ts` — registers all source scrapers
+- `observationStore.ts` — writes `Observation` rows to MongoDB
+- `entityMaterializer.ts` — derives `ResearchEntity`/`ResearchGroupMember` from observations
+- `accessMaterializer.ts` — derives `AccessSignal`, `EntryPathway`, `ContactRoute` from observations
+- `workPlanner.ts` — per-entity field-level work planning (what sources to run, what to skip)
+- `snapshotCache.ts` — caches fetched pages to avoid redundant HTTP requests
+- `scraperEnvironment.ts` — enforces `SCRAPER_ENV` write guards
+- `sourceCoverageRegistry.ts` — declares source priority, tier, and artifact types
+
+**Active source scrapers** (in `server/src/scrapers/sources/`):
+
+| Scraper | Data |
+|---------|------|
+| `nsfAwardScraper.ts` | NSF grant awards |
+| `nihReporterScraper.ts` | NIH Reporter grants |
+| `centersInstitutesScraper.ts` | Yale centers and institutes index |
+| `departmentRosterScraper.ts` | Department faculty roster pages |
+| `ysmAtoZScraper.ts` | Yale School of Medicine A–Z index |
+| `yseCentersScraper.ts` | Yale School of Engineering centers |
+| `arxivPreprintScraper.ts` | arXiv preprints |
+| `openAlexPaperScraper.ts` | OpenAlex paper metadata |
+| `orcidWorksScraper.ts` | ORCID public works with identity-backed authorship |
+| `europePmcPaperScraper.ts` | Europe PMC and PubMed ORCID-backed paper metadata |
+| `crossrefPaperScraper.ts` | Crossref DOI metadata hydration |
+| `undergradFellowshipRecipientScraper.ts` | Undergrad fellowship recipient lists |
+| `labMicrositeUndergradLLMExtractor.ts` | LLM extraction from lab microsites |
+
+**Scraper safety rules:**
+- Non-production environments default to dry-run. Set `ALLOW_NON_PROD_SCRAPER_WRITES=true` to write to a dev DB.
+- Production requires `SCRAPER_ENV=production CONFIRM_PROD_SCRAPE=true`.
+- Scrapers emit observations first; materializers derive access records. Never hard-assert product conclusions directly from scraper output.
+
+See `docs/scraper-audit-guide.md` and `docs/scraper-deployment-runbook.md` for audit and deployment details.
 
 ## Adding a New Endpoint
 
@@ -327,6 +406,8 @@ User → Yale CAS SSO → passport.ts findOrCreateUser
 
 1. Page component in `client/src/pages/<page>.tsx`
 2. Route in `client/src/App.tsx` wrapped with appropriate guard (`PrivateRoute`, `AdminRoute`)
+
+Current pages: `home`, `labs` (Explore Research), `labDetail` (`/research/:slug`), `pathways`, `opportunityDetail` (`/opportunities/:id`), `fellowships`, `account`, `profile`, `analytics`, `about`, `login`, `loginError`, `notFound`, `unknown`.
 
 ## Modifying a Schema
 
@@ -349,3 +430,27 @@ User → Yale CAS SSO → passport.ts findOrCreateUser
 ## Maintenance
 
 DEVELOPER_GUIDE.md and CLAUDE.md are living documents. When making changes that affect architecture, services, models, routes, patterns, environment variables, or external integrations, both files are updated in the same commit as the code change. CLAUDE.md is updated to reflect new factual context. DEVELOPER_GUIDE.md is updated to keep the human-facing documentation accurate. Neither file is updated speculatively — only when something described in them has actually changed.
+
+## Graphify Repo Memory
+
+Graphify is the shared knowledge graph and navigation layer for this repo. Output lives in `graphify-out/`.
+
+**Before broad codebase exploration**, read `graphify-out/GRAPH_REPORT.md` — it maps the repo and is faster than grep for cross-module questions.
+
+| Command | Effect |
+|---------|--------|
+| `graphify query "<question>"` | Ask cross-module architecture questions |
+| `graphify explain "<concept>"` | Get definition and related nodes for a concept |
+| `graphify path "<A>" "<B>"` | Trace relationship between two nodes |
+| `graphify update .` | Rebuild graph from AST after code changes (no API cost) |
+| `graphify extract .` | Optional: full semantic extraction (requires LLM key) |
+
+**Refresh policy**: run `graphify update .` after durable changes to schema/models, scraper behavior, architecture, or product docs. If Graphify cannot be refreshed, note it in the final response.
+
+**Source of truth**: Graphify is a navigation layer only. Verify important claims against source files, tests, and `docs/*.md` before editing or summarizing.
+
+**Committed outputs** (in `graphify-out/`): `GRAPH_REPORT.md`, `graph.json`, `graph.html`. Not committed: `cache/`, `cost.json`, `manifest.json`, `.graphify_root`, `.graphify_analysis.json`, `.graphify_labels.json`, `.rebuild.lock`, `memory/`.
+
+**Installation**: `uv tool install graphifyy` (preferred) or `pipx install graphifyy`, then `graphify install --platform codex`.
+
+`.graphifyignore` controls what enters the graph — keep it strict (no secrets, `node_modules`, build outputs, or raw scraped data).
