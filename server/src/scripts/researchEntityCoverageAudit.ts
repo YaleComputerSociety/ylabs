@@ -33,6 +33,24 @@ interface CliOptions {
   includeAll: boolean;
 }
 
+interface AuditEntityRecord {
+  _id: unknown;
+  slug: string;
+  name: string;
+  kind?: string;
+  entityType?: string;
+  school?: string;
+  description?: string;
+  shortDescription?: string;
+  fullDescription?: string;
+  websiteUrl?: string;
+  researchAreas?: string[];
+  sourceUrls?: string[];
+  acceptanceConfidence?: number;
+  undergradEvidenceQuote?: string;
+  lastObservedAt?: Date;
+}
+
 interface ObservationHint {
   entityId?: string;
   entityKey?: string;
@@ -147,12 +165,12 @@ async function aggregateCountMap(
 }
 
 async function fetchEntities(filter: Record<string, unknown>) {
-  return ResearchEntity.find(filter)
+  return (await ResearchEntity.find(filter)
     .select(
       '_id slug name kind entityType school description shortDescription fullDescription websiteUrl researchAreas sourceUrls archived',
     )
     .sort({ name: 1 })
-    .lean();
+    .lean()) as unknown as AuditEntityRecord[];
 }
 
 async function buildBulkAudit(options: CliOptions) {
@@ -283,11 +301,11 @@ async function buildBulkAudit(options: CliOptions) {
 }
 
 async function buildSlugAudit(slug: string) {
-  const entity = await ResearchEntity.findOne({ slug })
+  const entity = (await ResearchEntity.findOne({ slug })
     .select(
       '_id slug name kind entityType school description shortDescription fullDescription websiteUrl sourceUrls researchAreas acceptanceConfidence undergradEvidenceQuote lastObservedAt',
     )
-    .lean();
+    .lean()) as AuditEntityRecord | null;
   if (!entity) {
     return {
       generatedAt: new Date().toISOString(),
