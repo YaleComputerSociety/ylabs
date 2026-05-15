@@ -1,0 +1,300 @@
+[
+  {
+    "viewport": "desktop",
+    "state": "initial",
+    "url": "http://localhost:3000/research",
+    "title": "Yale Research",
+    "overflowX": false,
+    "rawVisible": [
+      "Cluster: experimental",
+      "Cluster: metadata-grouped"
+    ],
+    "visibleTerms": {
+      "clustersHeading": true,
+      "exploreTopicClusters": true,
+      "profilesInCluster": true,
+      "exploreCluster": true,
+      "researchHomes": false,
+      "bestNextStep": false
+    },
+    "hasModal": false,
+    "smallTargets": [
+      {
+        "text": "Listings",
+        "width": 75,
+        "height": 28,
+        "href": "/"
+      },
+      {
+        "text": "Research",
+        "width": 90,
+        "height": 28,
+        "href": "/research"
+      },
+      {
+        "text": "Find Fellowships",
+        "width": 135,
+        "height": 28,
+        "href": "/fellowships"
+      },
+      {
+        "text": "Pathways",
+        "width": 88,
+        "height": 28,
+        "href": "/pathways"
+      },
+      {
+        "text": "Dashboard",
+        "width": 96,
+        "height": 28,
+        "href": "/account"
+      },
+      {
+        "text": "TT",
+        "width": 36,
+        "height": 36,
+        "href": null
+      },
+      {
+        "text": "Yale Research",
+        "width": 191,
+        "height": 40,
+        "href": "/"
+      },
+      {
+        "text": "",
+        "width": 40,
+        "height": 23,
+        "href": "https://www.hudsonrivertrading.com/"
+      },
+      {
+        "text": "",
+        "width": 40,
+        "height": 27,
+        "href": "https://www.minimax.com/"
+      }
+    ],
+    "textSample": "Listings\nResearch\nFind Fellowships\nPathways\nDashboard\nTT\nYale Research\nYale Research\nTopic-first discovery\nMap an idea to Yale papers, people, labs, and pathways.\n\nSearch by idea, method, paper, professor, or pathway. Clusters are grouped from visible Yale metadata, with confidence labels kept literal.\n\nTRUST CONSTRAINT\n\nSame names are not merged. Identity, source evidence, and cluster confidence remain visible.\n\nSearch Yale research\nSearch\n\nSuggested searches\n\nNeuroscience\nMolecular, Cellular and Developmental Biology\nPsychology\nmachine learning\nEXPLORE TOPIC CLUSTERS\nmachine learning\nNo matching cluster metadata is available yet.\nmechanism design\nNo matching cluster metadata is available yet.\nneuroscience\nNeuroscience\nCluster: experimental\nCluster: metadata-grouped\n\nResearch profiles grouped by visible Yale metadata for Neuroscience.\n\n10 profiles\nPsychology\nMolecular, Cellular and Deve"
+  },
+  {
+    "viewport": "desktop",
+    "state": "search-neuroscience",
+    "url": "http://localhost:3000/research",
+    "title": "Yale Research",
+    "overflowX": false,
+    "rawVisible": [
+      "Cluster: experimental",
+      "Cluster: metadata-grouped",
+      "REACH_OUT_PLAUSIBLE",
+      "POSTED_OPENING"
+    ],
+    "visibleTerms": {
+      "clustersHeading": true,
+      "exploreTopicClusters": false,
+      "profilesInCluster": true,
+      "exploreCluster": true,
+      "researchHomes": false,
+      "bestNextStep": false
+    },
+    "hasModal": false,
+    "smallTargets": [
+      {
+        "text": "Listings",
+        "width": 75,
+        "height": 28,
+        "href": "/"
+      },
+      {
+        "text": "Research",
+        "width": 90,
+        "height": 28,
+        "href": "/research"
+      },
+      {
+        "text": "Find Fellowships",
+        "width": 135,
+        "height": 28,
+        "href": "/fellowships"
+      },
+      {
+        "text": "Pathways",
+        "width": 88,
+        "height": 28,
+        "href": "/pathways"
+      },
+      {
+        "text": "Dashboard",
+        "width": 96,
+        "height": 28,
+        "href": "/account"
+      },
+      {
+        "text": "TT",
+        "width": 36,
+        "height": 36,
+        "href": null
+      },
+      {
+        "text": "Yale Research",
+        "width": 191,
+        "height": 40,
+        "href": "/"
+      },
+      {
+        "text": "Yale Clinical Neuroscience Neuroanalytics",
+        "width": 265,
+        "height": 20,
+        "href": "/research/ysm-ynn"
+      },
+      {
+        "text": "Yale Clinical Neuroscience Neuroanalytics",
+        "width": 265,
+        "height": 20,
+        "href": "/research/ysm-ynn"
+      },
+      {
+        "text": "Wu Tsai Institute",
+        "width": 107,
+        "height": 20,
+        "href": "/research/center-wu-tsai"
+      },
+      {
+        "text": "McCormick Lab",
+        "width": 98,
+        "height": 20,
+        "href": "/research/mccormick-lab-mccormic"
+      },
+      {
+        "text": "Sestan Lab",
+        "width": 69,
+        "height": 20,
+        "href": "/research/sestan-lab-ns44"
+      },
+      {
+        "text": "Cardin Lab",
+        "width": 68,
+        "height": 20,
+        "href": "/research/cardin-lab-jac52"
+      },
+      {
+        "text": "Arnsten Lab",
+        "width": 77,
+        "height": 20,
+        "href": "/research/arnsten-lab-aa52"
+      },
+      {
+        "text": "Yogev Lab",
+        "width": 65,
+        "height": 20,
+        "href": "/research/yogev-lab-sy427"
+      },
+      {
+        "text": "",
+        "width": 40,
+        "height": 23,
+        "href": "https://www.hudsonrivertrading.com/"
+      },
+      {
+        "text": "",
+        "width": 40,
+        "height": 27,
+        "href": "https://www.minimax.com/"
+      }
+    ],
+    "textSample": "Listings\nResearch\nFind Fellowships\nPathways\nDashboard\nTT\nYale Research\nYale Research\nTopic-first discovery\nMap an idea to Yale papers, people, labs, and pathways.\n\nSearch by idea, method, paper, professor, or pathway. Clusters are grouped from visible Yale metadata, with confidence labels kept literal.\n\nTRUST CONSTRAINT\n\nSame names are not merged. Identity, source evidence, and cluster confidence remain visible.\n\nSearch Yale research\nSearch\n\nSuggested searches\n\nNeuroscience\nMolecular, Cellular and Developmental Biology\nPsychology\nmachine learning\nResults for neuroscience\n\n2 clusters, 0 people, and 8 pathways\n\nQuery: neuroscience\nTopic term: neuroscience\nCLUSTERS\n2\nNeuroscience\nCluster: experimental\nCluster: metadata-grouped\n\nResearch profiles grouped by visible Yale metadata for Neuroscience.\n\n22 profiles\n1 pathway\nPsychology\nMolecular, Cellular and Developmental Biology\nGENETICS\n\nPROFIL"
+  },
+  {
+    "viewport": "tablet",
+    "state": "initial",
+    "url": "http://localhost:3000/research",
+    "title": "Yale Research",
+    "overflowX": false,
+    "rawVisible": [
+      "Cluster: experimental",
+      "Cluster: metadata-grouped"
+    ],
+    "visibleTerms": {
+      "clustersHeading": true,
+      "exploreTopicClusters": true,
+      "profilesInCluster": true,
+      "exploreCluster": true,
+      "researchHomes": false,
+      "bestNextStep": false
+    },
+    "hasModal": false,
+    "smallTargets": [
+      {
+        "text": "Yale Research",
+        "width": 191,
+        "height": 40,
+        "href": "/"
+      },
+      {
+        "text": "menu",
+        "width": 40,
+        "height": 40,
+        "href": null
+      },
+      {
+        "text": "",
+        "width": 40,
+        "height": 23,
+        "href": "https://www.hudsonrivertrading.com/"
+      },
+      {
+        "text": "",
+        "width": 40,
+        "height": 27,
+        "href": "https://www.minimax.com/"
+      }
+    ],
+    "textSample": "Yale Research\nYale Research\nTopic-first discovery\nMap an idea to Yale papers, people, labs, and pathways.\n\nSearch by idea, method, paper, professor, or pathway. Clusters are grouped from visible Yale metadata, with confidence labels kept literal.\n\nTRUST CONSTRAINT\n\nSame names are not merged. Identity, source evidence, and cluster confidence remain visible.\n\nSearch Yale research\nSearch\n\nSuggested searches\n\nNeuroscience\nMolecular, Cellular and Developmental Biology\nPsychology\nmachine learning\nEXPLORE TOPIC CLUSTERS\nmachine learning\nNo matching cluster metadata is available yet.\nmechanism design\nNo matching cluster metadata is available yet.\nneuroscience\nNeuroscience\nCluster: experimental\nCluster: metadata-grouped\n\nResearch profiles grouped by visible Yale metadata for Neuroscience.\n\n10 profiles\nPsychology\nMolecular, Cellular and Developmental Biology\n\nPROFILES IN THIS CLUSTER\n\nWu Tsai Inst"
+  },
+  {
+    "viewport": "mobile",
+    "state": "initial",
+    "url": "http://localhost:3000/research",
+    "title": "Yale Research",
+    "overflowX": false,
+    "rawVisible": [
+      "Cluster: experimental",
+      "Cluster: metadata-grouped"
+    ],
+    "visibleTerms": {
+      "clustersHeading": true,
+      "exploreTopicClusters": true,
+      "profilesInCluster": true,
+      "exploreCluster": true,
+      "researchHomes": false,
+      "bestNextStep": false
+    },
+    "hasModal": false,
+    "smallTargets": [
+      {
+        "text": "Yale Research",
+        "width": 191,
+        "height": 40,
+        "href": "/"
+      },
+      {
+        "text": "menu",
+        "width": 40,
+        "height": 40,
+        "href": null
+      },
+      {
+        "text": "",
+        "width": 40,
+        "height": 23,
+        "href": "https://www.hudsonrivertrading.com/"
+      },
+      {
+        "text": "",
+        "width": 40,
+        "height": 27,
+        "href": "https://www.minimax.com/"
+      }
+    ],
+    "textSample": "Yale Research\nYale Research\nTopic-first discovery\nMap an idea to Yale papers, people, labs, and pathways.\n\nSearch by idea, method, paper, professor, or pathway. Clusters are grouped from visible Yale metadata, with confidence labels kept literal.\n\nTRUST CONSTRAINT\n\nSame names are not merged. Identity, source evidence, and cluster confidence remain visible.\n\nSearch Yale research\nSearch\n\nSuggested searches\n\nNeuroscience\nMolecular, Cellular and Developmental Biology\nPsychology\nmachine learning\nEXPLORE TOPIC CLUSTERS\nmachine learning\nNo matching cluster metadata is available yet.\nmechanism design\nNo matching cluster metadata is available yet.\nneuroscience\nNeuroscience\nCluster: experimental\nCluster: metadata-grouped\n\nResearch profiles grouped by visible Yale metadata for Neuroscience.\n\n10 profiles\nPsychology\nMolecular, Cellular and Developmental Biology\n\nPROFILES IN THIS CLUSTER\n\nWu Tsai Inst"
+  }
+]

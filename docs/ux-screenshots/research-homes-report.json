@@ -1,0 +1,230 @@
+[
+  {
+    "viewport": "desktop",
+    "state": "initial",
+    "url": "http://localhost:3000/research",
+    "title": "Yale Research",
+    "overflowX": false,
+    "rawVisible": [],
+    "visibleTerms": {
+      "matchingResearchHomes": true,
+      "browseResearchAreas": true,
+      "bestNextStep": false,
+      "clustersHeading": false
+    },
+    "hasModal": false,
+    "smallTargets": [
+      {
+        "text": "Listings",
+        "width": 75,
+        "height": 28,
+        "href": "/"
+      },
+      {
+        "text": "Research",
+        "width": 90,
+        "height": 28,
+        "href": "/research"
+      },
+      {
+        "text": "Find Fellowships",
+        "width": 135,
+        "height": 28,
+        "href": "/fellowships"
+      },
+      {
+        "text": "Pathways",
+        "width": 88,
+        "height": 28,
+        "href": "/pathways"
+      },
+      {
+        "text": "Dashboard",
+        "width": 96,
+        "height": 28,
+        "href": "/account"
+      },
+      {
+        "text": "TT",
+        "width": 36,
+        "height": 36,
+        "href": null
+      },
+      {
+        "text": "Yale Research",
+        "width": 191,
+        "height": 40,
+        "href": "/"
+      },
+      {
+        "text": "",
+        "width": 40,
+        "height": 23,
+        "href": "https://www.hudsonrivertrading.com/"
+      },
+      {
+        "text": "",
+        "width": 40,
+        "height": 27,
+        "href": "https://www.minimax.com/"
+      }
+    ],
+    "textSample": "Listings\nResearch\nFind Fellowships\nPathways\nDashboard\nTT\nYale Research\nYale Research\nTopic-first discovery\nMap an idea to Yale papers, people, labs, and pathways.\n\nSearch by topic, method, professor, program, or question. Results connect you to Yale research homes, evidence, and practical next steps.\n\nTRUST CONSTRAINT\n\nEvery suggestion keeps its source context visible, so you can tell whether it is a posted role, a recurring route, or exploratory evidence.\n\nSearch Yale research\nSearch\n\nSuggested searches\n\nNeuroscience\nMolecular, Cellular and Developmental Biology\nPsychology\nmachine learning\nBROWSE RESEARCH AREAS\nmachine learning\nNo matching research homes are available yet.\nmechanism design\nNo matching research homes are available yet.\nneuroscience\nNeuroscience\nEvidence-backed grouping\n\nResearch homes connected by Yale department metadata for Neuroscience.\n\n10 research homes\nPsychology\nM"
+  },
+  {
+    "viewport": "desktop",
+    "state": "search-neuroscience",
+    "url": "http://localhost:3000/research",
+    "title": "Yale Research",
+    "overflowX": false,
+    "rawVisible": [],
+    "visibleTerms": {
+      "matchingResearchHomes": true,
+      "browseResearchAreas": true,
+      "bestNextStep": true,
+      "clustersHeading": false
+    },
+    "hasModal": false,
+    "smallTargets": [
+      {
+        "text": "Listings",
+        "width": 75,
+        "height": 28,
+        "href": "/"
+      },
+      {
+        "text": "Research",
+        "width": 90,
+        "height": 28,
+        "href": "/research"
+      },
+      {
+        "text": "Find Fellowships",
+        "width": 135,
+        "height": 28,
+        "href": "/fellowships"
+      },
+      {
+        "text": "Pathways",
+        "width": 88,
+        "height": 28,
+        "href": "/pathways"
+      },
+      {
+        "text": "Dashboard",
+        "width": 96,
+        "height": 28,
+        "href": "/account"
+      },
+      {
+        "text": "TT",
+        "width": 36,
+        "height": 36,
+        "href": null
+      },
+      {
+        "text": "Yale Research",
+        "width": 191,
+        "height": 40,
+        "href": "/"
+      },
+      {
+        "text": "",
+        "width": 40,
+        "height": 23,
+        "href": "https://www.hudsonrivertrading.com/"
+      },
+      {
+        "text": "",
+        "width": 40,
+        "height": 27,
+        "href": "https://www.minimax.com/"
+      }
+    ],
+    "textSample": "Listings\nResearch\nFind Fellowships\nPathways\nDashboard\nTT\nYale Research\nYale Research\nTopic-first discovery\nMap an idea to Yale papers, people, labs, and pathways.\n\nSearch by topic, method, professor, program, or question. Results connect you to Yale research homes, evidence, and practical next steps.\n\nTRUST CONSTRAINT\n\nEvery suggestion keeps its source context visible, so you can tell whether it is a posted role, a recurring route, or exploratory evidence.\n\nSearch Yale research\nSearch\n\nSuggested searches\n\nNeuroscience\nMolecular, Cellular and Developmental Biology\nPsychology\nmachine learning\nResults for neuroscience\n\n2 research homes, 8 next-step pathways\n\nQuery: neuroscience\nTopic term: neuroscience\nMATCHING RESEARCH HOMES\n2\nNeuroscience\nEvidence-backed grouping\n\nResearch homes connected by Yale department metadata for Neuroscience.\n\n22 research homes\n1 next step\nPsychology\nMolecular, Ce"
+  },
+  {
+    "viewport": "tablet",
+    "state": "initial",
+    "url": "http://localhost:3000/research",
+    "title": "Yale Research",
+    "overflowX": false,
+    "rawVisible": [],
+    "visibleTerms": {
+      "matchingResearchHomes": true,
+      "browseResearchAreas": true,
+      "bestNextStep": false,
+      "clustersHeading": false
+    },
+    "hasModal": false,
+    "smallTargets": [
+      {
+        "text": "Yale Research",
+        "width": 191,
+        "height": 40,
+        "href": "/"
+      },
+      {
+        "text": "menu",
+        "width": 40,
+        "height": 40,
+        "href": null
+      },
+      {
+        "text": "",
+        "width": 40,
+        "height": 23,
+        "href": "https://www.hudsonrivertrading.com/"
+      },
+      {
+        "text": "",
+        "width": 40,
+        "height": 27,
+        "href": "https://www.minimax.com/"
+      }
+    ],
+    "textSample": "Yale Research\nYale Research\nTopic-first discovery\nMap an idea to Yale papers, people, labs, and pathways.\n\nSearch by topic, method, professor, program, or question. Results connect you to Yale research homes, evidence, and practical next steps.\n\nTRUST CONSTRAINT\n\nEvery suggestion keeps its source context visible, so you can tell whether it is a posted role, a recurring route, or exploratory evidence.\n\nSearch Yale research\nSearch\n\nSuggested searches\n\nNeuroscience\nMolecular, Cellular and Developmental Biology\nPsychology\nmachine learning\nBROWSE RESEARCH AREAS\nmachine learning\nNo matching research homes are available yet.\nmechanism design\nNo matching research homes are available yet.\nneuroscience\nNeuroscience\nEvidence-backed grouping\n\nResearch homes connected by Yale department metadata for Neuroscience.\n\n10 research homes\nPsychology\nMolecular, Cellular and Developmental Biology\n\nRESEARCH HO"
+  },
+  {
+    "viewport": "mobile",
+    "state": "initial",
+    "url": "http://localhost:3000/research",
+    "title": "Yale Research",
+    "overflowX": false,
+    "rawVisible": [],
+    "visibleTerms": {
+      "matchingResearchHomes": true,
+      "browseResearchAreas": true,
+      "bestNextStep": false,
+      "clustersHeading": false
+    },
+    "hasModal": false,
+    "smallTargets": [
+      {
+        "text": "Yale Research",
+        "width": 191,
+        "height": 40,
+        "href": "/"
+      },
+      {
+        "text": "menu",
+        "width": 40,
+        "height": 40,
+        "href": null
+      },
+      {
+        "text": "",
+        "width": 40,
+        "height": 23,
+        "href": "https://www.hudsonrivertrading.com/"
+      },
+      {
+        "text": "",
+        "width": 40,
+        "height": 27,
+        "href": "https://www.minimax.com/"
+      }
+    ],
+    "textSample": "Yale Research\nYale Research\nTopic-first discovery\nMap an idea to Yale papers, people, labs, and pathways.\n\nSearch by topic, method, professor, program, or question. Results connect you to Yale research homes, evidence, and practical next steps.\n\nTRUST CONSTRAINT\n\nEvery suggestion keeps its source context visible, so you can tell whether it is a posted role, a recurring route, or exploratory evidence.\n\nSearch Yale research\nSearch\n\nSuggested searches\n\nNeuroscience\nMolecular, Cellular and Developmental Biology\nPsychology\nmachine learning\nBROWSE RESEARCH AREAS\nmachine learning\nNo matching research homes are available yet.\nmechanism design\nNo matching research homes are available yet.\nneuroscience\nNeuroscience\nEvidence-backed grouping\n\nResearch homes connected by Yale department metadata for Neuroscience.\n\n10 research homes\nPsychology\nMolecular, Cellular and Developmental Biology\n\nRESEARCH HO"
+  }
+]
