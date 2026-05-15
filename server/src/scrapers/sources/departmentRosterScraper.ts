@@ -7,10 +7,10 @@
  * is a single config-row change — the orchestrator class itself is closed for
  * modification.
  *
- * For v1 we target Economics, MCDB, Computer Science, and Psychology. CS uses
- * a Next.js client-side render so its extractor is a no-op stub until we wire
- * up a headless browser. The other three are server-rendered Drupal sites and
- * scrape cleanly with plain HTTP + cheerio.
+ * The initial official-profile batch targets Economics, MCDB, Computer Science,
+ * Psychology, Math, Physics, Statistics & Data Science, and Astronomy. CS uses a
+ * client-rendered faculty component, so the scraper first tries the component's
+ * JSON endpoint and falls back to rendered HTML when needed.
  *
  * Output observations:
  *   - For each faculty member: User observations keyed by netid (when an
@@ -33,6 +33,7 @@ import {
   type RenderedFetchResult,
 } from '../renderedFetch';
 import { getCached, setCached } from '../snapshotCache';
+import { normalizeOrcid } from '../../utils/orcid';
 import type {
   IScraper,
   ScraperContext,
@@ -57,6 +58,18 @@ export interface FacultyEntry {
   email?: string;
   /** External lab / personal website URL discovered on the listing. */
   labUrl?: string;
+  /** ORCID extracted from an official Yale profile page. */
+  orcid?: string;
+  /** Short bio or research summary extracted from an official Yale profile page. */
+  bio?: string;
+  /** Research interests extracted from official profile or roster topic fields. */
+  researchInterests?: string[];
+  /** Search/topic labels extracted from official profile or roster topic fields. */
+  topics?: string[];
+  /** Review-only Google Scholar profile URLs; never materialized as accepted Scholar IDs. */
+  scholarCandidateProfileUrls?: string[];
+  /** Official profile page that supplied profile-level enrichment fields. */
+  profileSourceUrl?: string;
 }
 
 /** Context passed to each per-department extractor for URL resolution and logging. */
@@ -67,6 +80,8 @@ export interface ExtractorCtx {
 
 /** Pure extractor: HTML in, structured rows out. No I/O. */
 export type FacultyExtractor = (html: string, ctx: ExtractorCtx) => FacultyEntry[];
+export type FacultyDataExtractor = (payload: unknown, ctx: ExtractorCtx) => FacultyEntry[];
+export type HtmlFetcher = (url: string, useCache: boolean, sourceName: string) => Promise<string>;
 
 export interface DeptConfig {
   deptKey: string;
@@ -81,6 +96,10 @@ export interface DeptConfig {
   renderedExtractor?: FacultyExtractor;
   /** Selector that should exist after hydration; used for rendered-fetch waits/metrics. */
   renderWaitSelector?: string;
+  /** Optional JSON endpoint for client-rendered faculty components. */
+  dataUrl?: string;
+  dataRequest?: Record<string, string>;
+  dataExtractor?: FacultyDataExtractor;
   /** Set when the page is JS-rendered and the extractor is intentionally a stub. */
   jsRenderedSkip?: boolean;
 }
@@ -146,7 +165,8 @@ export const mcdbExtractor: FacultyExtractor = (html, ctx) => {
         labUrl = href;
       }
     });
-    out.push({ name, profileUrl, title, email, labUrl });
+    const bio = cleanText(card.find('.directory-listing-card__snippet').first().text()) || undefined;
+    out.push({ name, profileUrl, title, email, labUrl, bio });
   });
   return out;
 };
@@ -164,16 +184,86 @@ export const mcdbExtractor: FacultyExtractor = (html, ctx) => {
 export const psychExtractor: FacultyExtractor = (html, ctx) => {
   const $ = cheerio.load(html);
   const out: FacultyEntry[] = [];
-  $('table.views-table tbody tr').each((_i, tr) => {
-    const row = $(tr);
-    const nameLink = row.find('td.views-field-name a').first();
-    const name = nameLink.text().trim();
+  $('table.views-table tbody tr, table.views-view-grid td[class*="col-"]').each((_i, el) => {
+    const row = $(el);
+    const nameCell = row.find('.views-field-name').first();
+    const nameLink = nameCell.find('a.username, a[href*="/people/"]').first();
+    const profileLink = nameLink.length > 0
+      ? nameLink
+      : row.find('.views-field-picture a[href*="/people/"], a.username, a[href*="/people/"]').first();
+    const name =
+      cleanText(nameLink.text()) ||
+      cleanText(nameCell.find('.field-content').first().text()) ||
+      cleanText(profileLink.text());
     if (!name) return;
-    const profileHref = nameLink.attr('href') || '';
+    const profileHref = profileLink.attr('href') || '';
     const profileUrl = profileHref ? absolutize(profileHref, ctx.pageUrl) : undefined;
-    const emailHref = row.find('td.views-field-mail a').first().attr('href') || '';
+    const emailHref =
+      row.find('.views-field-mail a[href^="mailto:"]').first().attr('href') ||
+      nameCell.find('a[href^="mailto:"]').first().attr('href') ||
+      row.find('a[href^="mailto:"]').first().attr('href') ||
+      '';
     const email = /^mailto:/i.test(emailHref) ? emailHref.replace(/^mailto:/i, '').trim() : undefined;
-    out.push({ name, profileUrl, email });
+
+    let title: string | undefined;
+    let seenNameLink = false;
+    if (nameLink.length > 0) {
+      nameCell.contents().each((_j, node) => {
+        if (title) return false;
+        if (node.type === 'tag' && node === nameLink[0]) {
+          seenNameLink = true;
+          return;
+        }
+        if (!seenNameLink || node.type !== 'text') return;
+        const text = cleanText($(node).text());
+        if (text) title = text;
+      });
+    }
+    title =
+      title ||
+      cleanText(
+        row
+          .find('.views-field-field-title .field-content, .views-field-field-title')
+          .first()
+          .text(),
+      ) ||
+      undefined;
+
+    let labUrl: string | undefined;
+    row.find('a[href]').each((_j, a) => {
+      if (labUrl) return;
+      const link = $(a);
+      const href = link.attr('href') || '';
+      if (!href || /^mailto:|^tel:|^#|^javascript:/i.test(href)) return;
+      if (profileHref && href === profileHref) return;
+      if (profileUrl && normalizeUrlForDedupe(absolutize(href, ctx.pageUrl)) === normalizeUrlForDedupe(profileUrl)) {
+        return;
+      }
+      const text = link.text().replace(/\s+/g, ' ').trim();
+      const signal = `${text} ${link.attr('aria-label') || ''} ${link.attr('title') || ''} ${href}`;
+      if (!/\b(website|lab|laboratory|homepage|research group)\b/i.test(signal) && !/^https?:\/\//i.test(href)) {
+        return;
+      }
+      labUrl = absolutize(href, ctx.pageUrl);
+    });
+
+    const topics = splitTopicText(
+      row
+        .find(
+          '.views-field-field-field-of-study, [class*="field-of-study"], .views-field-field-term-reference',
+        )
+        .text(),
+    );
+
+    out.push({
+      name,
+      profileUrl,
+      title,
+      email,
+      labUrl,
+      topics: topics.length > 0 ? topics : undefined,
+      researchInterests: topics.length > 0 ? topics : undefined,
+    });
   });
   return out;
 };
@@ -231,6 +321,41 @@ export const csRenderedExtractor: FacultyExtractor = (html, ctx) => {
   return out;
 };
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+export const csFacultyDataExtractor: FacultyDataExtractor = (payload, ctx) => {
+  if (!isRecord(payload) || !isRecord(payload.pages)) return [];
+
+  const out: FacultyEntry[] = [];
+  const seen = new Set<string>();
+  for (const page of Object.values(payload.pages)) {
+    if (!isRecord(page) || !Array.isArray(page.facultyMembers)) continue;
+    for (const member of page.facultyMembers) {
+      if (!isRecord(member)) continue;
+      const name = normalizeName(stringValue(member.name) || '');
+      if (!name) continue;
+      const url = stringValue(member.url);
+      const profileUrl = url ? absolutize(url, ctx.pageUrl) : undefined;
+      const key = `${name}:${profileUrl || ''}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+
+      const title = stringValue(member.fullTitle) || stringValue(member.title);
+      const labUrl =
+        profileUrl && !isOfficialYaleUrl(profileUrl) ? profileUrl : undefined;
+      out.push({ name, profileUrl, title, labUrl });
+    }
+  }
+
+  return out;
+};
+
 // ---------------------------------------------------------------------------
 // Default config (mutable so callers can swap or extend in tests if needed,
 // though the typical add-a-dept path is just a new entry below).
@@ -260,6 +385,13 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     url: 'https://engineering.yale.edu/academic-study/departments/computer-science/faculty',
     paginated: false,
     extractor: csJsRenderedStub,
+    dataUrl:
+      'https://engineering.yale.edu/academic-study/departments/computer-science/faculty/load_faculty/4841',
+    dataRequest: {
+      template: 'department',
+      maxpages: '0',
+    },
+    dataExtractor: csFacultyDataExtractor,
     renderedExtractor: csRenderedExtractor,
     renderWaitSelector: 'a[href*="faculty"], a[href*="profile"], main',
     jsRenderedSkip: true,
@@ -268,7 +400,39 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     deptKey: 'psych',
     deptName: 'Psychology',
     schoolName: 'Yale Faculty of Arts and Sciences',
-    url: 'https://psychology.yale.edu/people/faculty',
+    url: 'https://psychology.yale.edu/people/faculty/primary',
+    paginated: false,
+    extractor: psychExtractor,
+  },
+  {
+    deptKey: 'math',
+    deptName: 'Mathematics',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    url: 'https://math.yale.edu/people/faculty',
+    paginated: false,
+    extractor: mcdbExtractor,
+  },
+  {
+    deptKey: 'physics',
+    deptName: 'Physics',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    url: 'https://physics.yale.edu/people/faculty',
+    paginated: false,
+    extractor: psychExtractor,
+  },
+  {
+    deptKey: 'statistics',
+    deptName: 'Statistics & Data Science',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    url: 'https://statistics.yale.edu/people/faculty',
+    paginated: false,
+    extractor: mcdbExtractor,
+  },
+  {
+    deptKey: 'astronomy',
+    deptName: 'Astronomy',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    url: 'https://astronomy.yale.edu/people/faculty',
     paginated: false,
     extractor: psychExtractor,
   },
@@ -286,6 +450,34 @@ function absolutize(href: string, base: string): string {
   }
 }
 
+function cleanText(value: string | undefined | null): string {
+  return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function splitTopicText(value: string | undefined | null): string[] {
+  const cleaned = String(value || '').trim();
+  if (!cleaned) return [];
+  const parts = cleaned
+    .split(/[,;|•\n\r]+/)
+    .map((part) => cleanText(part))
+    .filter((part) => part.length > 1 && !/^[-–—]+$/.test(part));
+  return uniqueStrings(parts);
+}
+
+function uniqueStrings(values: Array<string | undefined>): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of values) {
+    const value = cleanText(raw);
+    if (!value) continue;
+    const key = value.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(value);
+  }
+  return out;
+}
+
 function pageUrlForIndex(baseUrl: string, pageIndex: number): string {
   if (pageIndex === 0) return baseUrl;
   try {
@@ -295,6 +487,118 @@ function pageUrlForIndex(baseUrl: string, pageIndex: number): string {
   } catch {
     return baseUrl;
   }
+}
+
+function sameOrSubdomain(hostname: string, rootHostname: string): boolean {
+  return hostname === rootHostname || hostname.endsWith(`.${rootHostname}`);
+}
+
+function isOfficialYaleUrl(url: string): boolean {
+  try {
+    const hostname = new URL(url).hostname.toLowerCase();
+    return sameOrSubdomain(hostname, 'yale.edu');
+  } catch {
+    return false;
+  }
+}
+
+function normalizeUrlForDedupe(url: string): string {
+  try {
+    const u = new URL(url);
+    u.hash = '';
+    if (u.pathname !== '/') u.pathname = u.pathname.replace(/\/+$/, '');
+    return u.toString();
+  } catch {
+    return url;
+  }
+}
+
+function canonicalProfileUrlFromHtml($: cheerio.CheerioAPI, fallbackUrl: string): string {
+  const canonicalHref =
+    $('link[rel="canonical"]').first().attr('href') ||
+    $('meta[property="og:url"]').first().attr('content') ||
+    '';
+  return canonicalHref ? absolutize(canonicalHref, fallbackUrl) : fallbackUrl;
+}
+
+function scholarProfileUrlFromHref(href: string, baseUrl: string): string | undefined {
+  if (!href) return undefined;
+  const absolute = absolutize(href, baseUrl);
+  try {
+    const url = new URL(absolute);
+    if (!url.hostname.toLowerCase().includes('scholar.google.')) return undefined;
+    if (!url.pathname.includes('/citations')) return undefined;
+    if (!url.searchParams.get('user')) return undefined;
+    url.hash = '';
+    return url.toString();
+  } catch {
+    return undefined;
+  }
+}
+
+function extractOrcidFromHtml($: cheerio.CheerioAPI): string | undefined {
+  const candidates: string[] = [];
+  $('a[href*="orcid.org"], a[href^="orcid:"]').each((_i, el) => {
+    const href = $(el).attr('href') || '';
+    const text = $(el).text();
+    candidates.push(href, text);
+  });
+  const bodyText = $('body').text();
+  const matches = bodyText.match(/\b\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{3}[\dX]\b/gi) || [];
+  candidates.push(...matches);
+
+  for (const candidate of candidates) {
+    const normalized = normalizeOrcid(candidate);
+    if (normalized) return normalized;
+  }
+  return undefined;
+}
+
+function extractBioFromHtml($: cheerio.CheerioAPI): string | undefined {
+  const selectors = [
+    '[class*="profile-body"]',
+    '[class*="profile"][class*="body"]',
+    '[class*="profile"] [class*="body"]',
+    '[class*="person"] [class*="bio"]',
+    '[class*="biography"]',
+    '[class*="research"] [class*="summary"]',
+    '[class*="field--name-body"]',
+    'article [class*="body"]',
+    'main p',
+  ];
+
+  for (const selector of selectors) {
+    const text = cleanText($(selector).first().text());
+    if (text.length >= 40) return text.slice(0, 2000);
+  }
+  return undefined;
+}
+
+function extractResearchInterestsFromHtml($: cheerio.CheerioAPI): string[] {
+  const values: string[] = [];
+  const selectors = [
+    '[class*="research-interest"]',
+    '[class*="field-of-study"]',
+    '[class*="field--name-field-research"]',
+    '[class*="field--name-field-interests"]',
+    '[class*="interests"]',
+  ];
+
+  for (const selector of selectors) {
+    $(selector).each((_i, el) => {
+      const text = cleanText($(el).text());
+      values.push(...splitTopicText(text));
+    });
+  }
+
+  $('h2,h3,h4,strong').each((_i, heading) => {
+    const label = cleanText($(heading).text()).toLowerCase();
+    if (!/\b(research interests?|fields? of study|topics?)\b/.test(label)) return;
+    const next = $(heading).next();
+    values.push(...splitTopicText(next.text()));
+  });
+
+  return uniqueStrings(values).slice(0, 20);
 }
 
 async function fetchHtml(url: string, useCache: boolean, sourceName: string): Promise<string> {
@@ -313,6 +617,196 @@ async function fetchHtml(url: string, useCache: boolean, sourceName: string): Pr
   return html;
 }
 
+async function fetchDeptData(
+  dept: DeptConfig,
+  useCache: boolean,
+  sourceName: string,
+): Promise<unknown | null> {
+  if (!dept.dataUrl || !dept.dataExtractor) return null;
+  const request = dept.dataRequest || {};
+  const cacheKey = `data:${dept.dataUrl}:${JSON.stringify(request)}`;
+  if (useCache) {
+    const cached = await getCached<unknown>(sourceName, cacheKey);
+    if (cached) return cached;
+  }
+
+  const body = new URLSearchParams(request);
+  const res = await axios.post(dept.dataUrl, body, {
+    timeout: FETCH_TIMEOUT_MS,
+    headers: {
+      'User-Agent': USER_AGENT,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    maxRedirects: 5,
+  });
+  const data = res.data;
+  if (useCache) await setCached(sourceName, cacheKey, data);
+  return data;
+}
+
+function profileEnrichmentFromHtml(
+  html: string,
+  profileUrl: string,
+): Partial<Pick<
+  FacultyEntry,
+  | 'profileUrl'
+  | 'email'
+  | 'labUrl'
+  | 'title'
+  | 'orcid'
+  | 'bio'
+  | 'researchInterests'
+  | 'topics'
+  | 'scholarCandidateProfileUrls'
+  | 'profileSourceUrl'
+>> {
+  const $ = cheerio.load(html);
+  const canonicalUrl = canonicalProfileUrlFromHtml($, profileUrl);
+
+  const emailHref = $('a[href^="mailto:"]').first().attr('href') || '';
+  const email = emailHref ? emailHref.replace(/^mailto:/i, '').trim() : undefined;
+
+  const title =
+    $('[class*="professional-title"], [class*="person-title"], [class*="job-title"], [class*="position"]')
+      .first()
+      .text()
+      .replace(/\s+/g, ' ')
+      .trim() || undefined;
+
+  let labUrl: string | undefined;
+  const scholarCandidateProfileUrls: string[] = [];
+  const profileHost = (() => {
+    try {
+      return new URL(profileUrl).hostname.toLowerCase();
+    } catch {
+      return '';
+    }
+  })();
+
+  $('a[href]').each((_i, el) => {
+    const link = $(el);
+    const href = link.attr('href') || '';
+    if (!href || /^mailto:|^tel:|^#|^javascript:/i.test(href)) return;
+
+    const absolute = absolutize(href, profileUrl);
+    let parsed: URL;
+    try {
+      parsed = new URL(absolute);
+    } catch {
+      return;
+    }
+    if (!/^https?:$/i.test(parsed.protocol)) return;
+    const scholarUrl = scholarProfileUrlFromHref(absolute, profileUrl);
+    if (scholarUrl) {
+      scholarCandidateProfileUrls.push(scholarUrl);
+      return;
+    }
+    if (parsed.hostname.toLowerCase().includes('orcid.org')) return;
+    if (labUrl) return;
+    if (normalizeUrlForDedupe(absolute) === normalizeUrlForDedupe(canonicalUrl)) return;
+
+    const text = link.text().replace(/\s+/g, ' ').trim();
+    const aria = link.attr('aria-label') || '';
+    const titleAttr = link.attr('title') || '';
+    const signal = `${text} ${aria} ${titleAttr} ${parsed.hostname} ${parsed.pathname}`;
+    const hasWebsiteSignal =
+      /\b(lab|laboratory|website|personal|homepage|research group|group site)\b/i.test(signal);
+    if (!hasWebsiteSignal) return;
+
+    const candidateHost = parsed.hostname.toLowerCase();
+    const isProfileSite = profileHost && candidateHost === profileHost;
+    const isDirectoryPath = /\/(people|person|profile|faculty|directory)\//i.test(parsed.pathname);
+    if (isProfileSite && isDirectoryPath) return;
+
+    labUrl = absolute;
+  });
+
+  const researchInterests = extractResearchInterestsFromHtml($);
+  const bio = extractBioFromHtml($);
+
+  return {
+    profileUrl: canonicalUrl,
+    profileSourceUrl: canonicalUrl,
+    email,
+    title,
+    labUrl,
+    orcid: extractOrcidFromHtml($),
+    bio,
+    researchInterests: researchInterests.length > 0 ? researchInterests : undefined,
+    topics: researchInterests.length > 0 ? researchInterests : undefined,
+    scholarCandidateProfileUrls:
+      scholarCandidateProfileUrls.length > 0
+        ? uniqueStrings(scholarCandidateProfileUrls)
+        : undefined,
+  };
+}
+
+function mergeProfileEnrichment(
+  entry: FacultyEntry,
+  enrichment: Partial<Pick<
+    FacultyEntry,
+    | 'profileUrl'
+    | 'email'
+    | 'labUrl'
+    | 'title'
+    | 'orcid'
+    | 'bio'
+    | 'researchInterests'
+    | 'topics'
+    | 'scholarCandidateProfileUrls'
+    | 'profileSourceUrl'
+  >>,
+): FacultyEntry {
+  return {
+    ...entry,
+    profileUrl: enrichment.profileUrl || entry.profileUrl,
+    profileSourceUrl: enrichment.profileSourceUrl || entry.profileSourceUrl,
+    title: entry.title || enrichment.title,
+    email: entry.email || enrichment.email,
+    labUrl: entry.labUrl || enrichment.labUrl,
+    orcid: entry.orcid || enrichment.orcid,
+    bio: entry.bio || enrichment.bio,
+    researchInterests:
+      uniqueStrings([...(entry.researchInterests || []), ...(enrichment.researchInterests || [])])
+        .length > 0
+        ? uniqueStrings([...(entry.researchInterests || []), ...(enrichment.researchInterests || [])])
+        : undefined,
+    topics:
+      uniqueStrings([...(entry.topics || []), ...(enrichment.topics || [])]).length > 0
+        ? uniqueStrings([...(entry.topics || []), ...(enrichment.topics || [])])
+        : undefined,
+    scholarCandidateProfileUrls:
+      uniqueStrings([
+        ...(entry.scholarCandidateProfileUrls || []),
+        ...(enrichment.scholarCandidateProfileUrls || []),
+      ]).length > 0
+        ? uniqueStrings([
+            ...(entry.scholarCandidateProfileUrls || []),
+            ...(enrichment.scholarCandidateProfileUrls || []),
+          ])
+        : undefined,
+  };
+}
+
+async function enrichEntryFromOfficialProfile(
+  entry: FacultyEntry,
+  sourceName: string,
+  useCache: boolean,
+  htmlFetcher: HtmlFetcher,
+  log: ScraperContext['log'],
+): Promise<FacultyEntry> {
+  if (!entry.profileUrl || !isOfficialYaleUrl(entry.profileUrl)) return entry;
+
+  try {
+    const html = await htmlFetcher(entry.profileUrl, useCache, sourceName);
+    const enrichment = profileEnrichmentFromHtml(html, entry.profileUrl);
+    return mergeProfileEnrichment(entry, enrichment);
+  } catch (err: any) {
+    log(`[profile] fetch failed for ${entry.profileUrl}: ${err?.message || err}`);
+    return entry;
+  }
+}
+
 function entryToUserObservations(
   entry: FacultyEntry,
   dept: DeptConfig,
@@ -324,22 +818,42 @@ function entryToUserObservations(
   const slug = slugify(cleaned);
   const entityKey = netid ? `netid:${netid}` : `dept:${dept.deptKey}:${slug || 'unknown'}`;
 
-  const base = { entityType: 'user' as const, entityKey, sourceUrl };
+  const rosterBase = { entityType: 'user' as const, entityKey, sourceUrl };
+  const profileBase = {
+    entityType: 'user' as const,
+    entityKey,
+    sourceUrl: entry.profileSourceUrl || entry.profileUrl || sourceUrl,
+  };
   const obs: ObservationInput[] = [];
 
-  if (netid) obs.push({ ...base, field: 'netid', value: netid });
-  if (entry.email) obs.push({ ...base, field: 'email', value: entry.email });
-  if (first) obs.push({ ...base, field: 'fname', value: first });
-  if (last) obs.push({ ...base, field: 'lname', value: last });
-  obs.push({ ...base, field: 'userType', value: 'faculty' });
-  obs.push({ ...base, field: 'primaryDepartment', value: dept.deptName });
-  obs.push({ ...base, field: 'departments', value: [dept.deptName] });
-  if (entry.title) obs.push({ ...base, field: 'title', value: entry.title });
+  if (netid) obs.push({ ...rosterBase, field: 'netid', value: netid });
+  if (first) obs.push({ ...rosterBase, field: 'fname', value: first });
+  if (last) obs.push({ ...rosterBase, field: 'lname', value: last });
+  obs.push({ ...rosterBase, field: 'userType', value: 'faculty' });
+  obs.push({ ...rosterBase, field: 'primaryDepartment', value: dept.deptName });
+  obs.push({ ...rosterBase, field: 'departments', value: [dept.deptName] });
+  if (entry.email) obs.push({ ...profileBase, field: 'email', value: entry.email });
+  if (entry.title) obs.push({ ...profileBase, field: 'title', value: entry.title });
   if (entry.profileUrl) {
-    obs.push({ ...base, field: 'profileUrls', value: { departmental: entry.profileUrl } });
+    obs.push({ ...profileBase, field: 'profileUrls', value: { departmental: entry.profileUrl } });
   }
-  if (entry.labUrl) obs.push({ ...base, field: 'website', value: entry.labUrl });
-  obs.push({ ...base, field: 'dataSources', value: ['dept-faculty-roster'] });
+  if (entry.labUrl) obs.push({ ...profileBase, field: 'website', value: entry.labUrl });
+  if (entry.orcid) obs.push({ ...profileBase, field: 'orcid', value: entry.orcid });
+  if (entry.bio) obs.push({ ...profileBase, field: 'bio', value: entry.bio });
+  if (entry.researchInterests && entry.researchInterests.length > 0) {
+    obs.push({ ...profileBase, field: 'researchInterests', value: entry.researchInterests });
+  }
+  if (entry.topics && entry.topics.length > 0) {
+    obs.push({ ...profileBase, field: 'topics', value: entry.topics });
+  }
+  if (entry.scholarCandidateProfileUrls && entry.scholarCandidateProfileUrls.length > 0) {
+    obs.push({
+      ...profileBase,
+      field: 'scholarCandidateProfileUrls',
+      value: entry.scholarCandidateProfileUrls,
+    });
+  }
+  obs.push({ ...rosterBase, field: 'dataSources', value: ['dept-faculty-roster'] });
 
   return { observations: obs, entityKey };
 }
@@ -355,7 +869,7 @@ function entryToLabObservations(
   const nameSlug = slugify(cleanedName) || slugify(entry.labUrl);
   const slug = `dept-${dept.deptKey}-${nameSlug}`.slice(0, 100);
   const labName = cleanedName ? `${cleanedName} Lab` : entry.labUrl;
-  const base = { entityType: 'researchGroup' as const, entityKey: slug, sourceUrl };
+  const base = { entityType: 'researchEntity' as const, entityKey: slug, sourceUrl };
   return [
     { ...base, field: 'slug', value: slug },
     { ...base, field: 'name', value: labName },
@@ -379,12 +893,13 @@ function entryToLabObservations(
 
 export class DepartmentRosterScraper implements IScraper {
   readonly name = 'dept-faculty-roster';
-  readonly displayName = 'Department faculty rosters (Econ, MCDB, CS, Psych)';
+  readonly displayName = 'Department faculty rosters and official profile enrichment';
 
   /** Configs are injectable for testing; default to the v1 four-department set. */
   constructor(
     private readonly configs: DeptConfig[] = DEFAULT_DEPT_CONFIGS,
     private readonly renderedFetcher: RenderedFetcher | null = createScraplingRenderedFetcher(),
+    private readonly htmlFetcher: HtmlFetcher = fetchHtml,
   ) {}
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
@@ -398,10 +913,73 @@ export class DepartmentRosterScraper implements IScraper {
     let totalLabs = 0;
     const perDept: Array<{ deptKey: string; count: number; status: string }> = [];
     const fetchAttempts: ScraperFetchMetric[] = [];
+    const seenUserKeys = new Set<string>();
+    const seenLabKeys = new Set<string>();
+    const processEntries = async (
+      entries: FacultyEntry[],
+      dept: DeptConfig,
+      sourceUrl: string,
+    ): Promise<{ faculty: number; labs: number; observations: number }> => {
+      let faculty = 0;
+      let labs = 0;
+      let observations = 0;
+
+      for (const rawEntry of entries) {
+        if (totalFaculty >= limit) break;
+        const entry = await enrichEntryFromOfficialProfile(
+          rawEntry,
+          this.name,
+          ctx.options.useCache,
+          this.htmlFetcher,
+          ctx.log,
+        );
+        const { observations: userObs, entityKey } = entryToUserObservations(
+          entry,
+          dept,
+          sourceUrl,
+        );
+        const userDedupeKey = `${dept.deptKey}:${entityKey}`;
+        if (seenUserKeys.has(userDedupeKey)) continue;
+        seenUserKeys.add(userDedupeKey);
+        await ctx.emit(userObs);
+        observations += userObs.length;
+
+        const labObs = entryToLabObservations(entry, dept, sourceUrl, entityKey);
+        const labKey = labObs[0]?.entityKey;
+        if (labObs.length > 0 && labKey && !seenLabKeys.has(labKey)) {
+          seenLabKeys.add(labKey);
+          await ctx.emit(labObs);
+          observations += labObs.length;
+          labs++;
+        }
+        faculty++;
+        totalFaculty++;
+      }
+
+      return { faculty, labs, observations };
+    };
 
     for (const dept of this.configs) {
       if (onlyFilter && !onlyFilter.has(dept.deptKey.toLowerCase())) continue;
       if (totalFaculty >= limit) break;
+
+      if (dept.jsRenderedSkip && dept.dataUrl && dept.dataExtractor) {
+        try {
+          const payload = await fetchDeptData(dept, ctx.options.useCache, this.name);
+          const entries = dept.dataExtractor(payload, { pageUrl: dept.dataUrl });
+          if (entries.length > 0) {
+            const processed = await processEntries(entries, dept, dept.dataUrl);
+            totalObs += processed.observations;
+            totalLabs += processed.labs;
+            ctx.log(`[${dept.deptKey}] ${processed.faculty} faculty from data endpoint`);
+            perDept.push({ deptKey: dept.deptKey, count: processed.faculty, status: 'ok' });
+            continue;
+          }
+          ctx.log(`[${dept.deptKey}] data endpoint returned no faculty; trying rendered page`);
+        } catch (err: any) {
+          ctx.log(`[${dept.deptKey}] data endpoint failed: ${err?.message || err}`);
+        }
+      }
 
       if (dept.jsRenderedSkip && !this.renderedFetcher) {
         ctx.log(`[${dept.deptKey}] skipped — JS-rendered, needs headless browser`);
@@ -442,25 +1020,10 @@ export class DepartmentRosterScraper implements IScraper {
           continue;
         }
 
-        for (const entry of entries) {
-          if (totalFaculty >= limit) break;
-          const { observations: userObs, entityKey } = entryToUserObservations(
-            entry,
-            dept,
-            pageUrl,
-          );
-          await ctx.emit(userObs);
-          totalObs += userObs.length;
-
-          const labObs = entryToLabObservations(entry, dept, pageUrl, entityKey);
-          if (labObs.length > 0) {
-            await ctx.emit(labObs);
-            totalObs += labObs.length;
-            totalLabs++;
-          }
-          deptCount++;
-          totalFaculty++;
-        }
+        const processed = await processEntries(entries, dept, pageUrl);
+        totalObs += processed.observations;
+        totalLabs += processed.labs;
+        deptCount += processed.faculty;
 
         ctx.log(`[${dept.deptKey}] ${deptCount} faculty across ${pagesFetched} rendered page(s)`);
         perDept.push({ deptKey: dept.deptKey, count: deptCount, status: 'ok' });
@@ -472,7 +1035,7 @@ export class DepartmentRosterScraper implements IScraper {
         const pageUrl = pageUrlForIndex(dept.url, pageIdx);
         let html: string;
         try {
-          html = await fetchHtml(pageUrl, ctx.options.useCache, this.name);
+          html = await this.htmlFetcher(pageUrl, ctx.options.useCache, this.name);
         } catch (err: any) {
           ctx.log(`[${dept.deptKey}] fetch failed for ${pageUrl}: ${err?.message || err}`);
           break;
@@ -490,25 +1053,10 @@ export class DepartmentRosterScraper implements IScraper {
           break;
         }
 
-        for (const entry of entries) {
-          if (totalFaculty >= limit) break;
-          const { observations: userObs, entityKey } = entryToUserObservations(
-            entry,
-            dept,
-            pageUrl,
-          );
-          await ctx.emit(userObs);
-          totalObs += userObs.length;
-
-          const labObs = entryToLabObservations(entry, dept, pageUrl, entityKey);
-          if (labObs.length > 0) {
-            await ctx.emit(labObs);
-            totalObs += labObs.length;
-            totalLabs++;
-          }
-          deptCount++;
-          totalFaculty++;
-        }
+        const processed = await processEntries(entries, dept, pageUrl);
+        totalObs += processed.observations;
+        totalLabs += processed.labs;
+        deptCount += processed.faculty;
 
         // Drupal pagination returns the same first page when `?page=N` is past
         // the end (some sites) — stop early when a page yields fewer entries

@@ -475,7 +475,7 @@ export function centerToGroupObservations(
   sourceUrl: string,
 ): { observations: ObservationInput[]; entityKey: string } {
   const entityKey = `center-${config.centerKey}`;
-  const base = { entityType: 'researchGroup' as const, entityKey, sourceUrl };
+  const base = { entityType: 'researchEntity' as const, entityKey, sourceUrl };
 
   // Aggregate departments from member titles when none were declared in config.
   const declaredDepts = config.departments && config.departments.length > 0
@@ -547,7 +547,7 @@ export function childCenterToObservations(
   const childSlug = slugify(child.name);
   if (!childSlug) return [];
   const entityKey = `center-${parentConfig.centerKey}-${childSlug}`.slice(0, 100);
-  const base = { entityType: 'researchGroup' as const, entityKey, sourceUrl };
+  const base = { entityType: 'researchEntity' as const, entityKey, sourceUrl };
   const obs: ObservationInput[] = [
     { ...base, field: 'slug', value: entityKey },
     { ...base, field: 'name', value: child.name },

@@ -8,12 +8,17 @@
  * ownerToGroupSlug) injected so neither axios nor mongoose are touched.
  */
 import { describe, it, expect, vi } from 'vitest';
+import fs from 'fs/promises';
+import os from 'os';
+import path from 'path';
 import {
   UndergradFellowshipRecipientScraper,
   drupalRecipientRowExtractor,
   manualUploadStub,
+  manualRecipientCsvExtractor,
   aggregateAdviseesByAdvisor,
   findUserForAdvisor,
+  findUserForAdvisorOrcid,
   buildObservationsForAdvisor,
   inferYearFromUrl,
   DEFAULT_PROGRAM_CONFIGS,
@@ -210,6 +215,34 @@ describe('aggregateAdviseesByAdvisor', () => {
       'https://example.invalid/2024/',
     ]);
   });
+
+  it('uses advisor ORCID as the aggregate key when present', () => {
+    const recipients: FellowshipRecipient[] = [
+      {
+        studentName: 'A',
+        advisorName: 'Dr. Ronald Breaker',
+        advisorOrcid: 'https://orcid.org/0000-0001-2345-6789',
+        year: 2025,
+        sourceUrl: 'https://example.invalid/source-a',
+      },
+      {
+        studentName: 'B',
+        advisorName: 'Ron Breaker',
+        advisorOrcid: '0000-0001-2345-6789',
+        year: 2025,
+        sourceUrl: 'https://example.invalid/source-b',
+      },
+    ];
+    const out = aggregateAdviseesByAdvisor(recipients, 'STARS II');
+    expect(out.size).toBe(1);
+    const row = out.get('orcid:0000-0001-2345-6789')!;
+    expect(row.advisorOrcid).toBe('0000-0001-2345-6789');
+    expect(row.advisees[0].count).toBe(2);
+    expect(Array.from(row.sourceUrls).sort()).toEqual([
+      'https://example.invalid/source-a',
+      'https://example.invalid/source-b',
+    ]);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -275,6 +308,43 @@ describe('findUserForAdvisor', () => {
   });
 });
 
+describe('findUserForAdvisorOrcid', () => {
+  it('matches exactly one reviewed ORCID', async () => {
+    const finder = vi.fn(async (q: any) =>
+      q.orcid === '0000-0001-2345-6789'
+        ? [
+            {
+              _id: 'u1',
+              netid: 'rrb1',
+              fname: 'Ronald',
+              lname: 'Breaker',
+              orcid: '0000-0001-2345-6789',
+            },
+          ]
+        : [],
+    );
+    const out = await findUserForAdvisorOrcid('https://orcid.org/0000-0001-2345-6789', finder);
+    expect(out?._id).toBe('u1');
+    expect(finder).toHaveBeenCalledWith({
+      orcid: '0000-0001-2345-6789',
+      userType: { $in: ['professor', 'faculty', 'admin'] },
+    });
+  });
+
+  it('returns null for missing or ambiguous ORCID matches', async () => {
+    expect(await findUserForAdvisorOrcid('', vi.fn())).toBeNull();
+    expect(
+      await findUserForAdvisorOrcid(
+        '0000-0001-2345-6789',
+        vi.fn(async () => [
+          { _id: 'a', netid: 'a1', fname: 'A', lname: 'Smith' },
+          { _id: 'b', netid: 'b1', fname: 'B', lname: 'Smith' },
+        ]),
+      ),
+    ).toBeNull();
+  });
+});
+
 // ---------------------------------------------------------------------------
 // buildObservationsForAdvisor
 // ---------------------------------------------------------------------------
@@ -291,7 +361,7 @@ describe('buildObservationsForAdvisor', () => {
       'https://example.invalid/2024/',
     );
     expect(out).toHaveLength(3);
-    expect(out.every((o) => o.entityType === 'researchGroup')).toBe(true);
+    expect(out.every((o) => o.entityType === 'researchEntity')).toBe(true);
     expect(out.every((o) => o.entityKey === 'breaker-lab-rrb1')).toBe(true);
     expect(out.every((o) => o.sourceUrl === 'https://example.invalid/2024/')).toBe(true);
 
@@ -312,11 +382,10 @@ describe('buildObservationsForAdvisor', () => {
 // ---------------------------------------------------------------------------
 
 describe('DEFAULT_PROGRAM_CONFIGS', () => {
-  it('covers the v1 set of ~6 fellowship programs and stubs each one for manual upload', () => {
+  it('covers the active v1 fellowship programs and stubs each one for manual upload', () => {
     const keys = DEFAULT_PROGRAM_CONFIGS.map((c) => c.programKey).sort();
     expect(keys).toEqual(
       [
-        'bass-writing',
         'deans-research',
         'mellon-mays',
         'stars-ii',
@@ -329,6 +398,81 @@ describe('DEFAULT_PROGRAM_CONFIGS', () => {
     expect(DEFAULT_PROGRAM_CONFIGS.every((c) => c.skipReason && c.skipReason.length > 0)).toBe(
       true,
     );
+  });
+});
+
+describe('manualRecipientCsvExtractor', () => {
+  it('parses curated recipient CSV rows into fellowship recipients', () => {
+    const csv = [
+      'studentName,advisorName,year,projectTitle',
+      '"Ada Lovelace","Ronald Breaker",2025,"RNA switches, sensors"',
+      '"Grace Hopper","Amy Arnsten",2024,"Working memory"',
+    ].join('\n');
+
+    expect(
+      manualRecipientCsvExtractor(csv, {
+        pageUrl: 'manual://stars.csv',
+      }),
+    ).toEqual([
+      {
+        studentName: 'Ada Lovelace',
+        advisorName: 'Ronald Breaker',
+        year: 2025,
+        projectTitle: 'RNA switches, sensors',
+      },
+      {
+        studentName: 'Grace Hopper',
+        advisorName: 'Amy Arnsten',
+        year: 2024,
+        projectTitle: 'Working memory',
+      },
+    ]);
+  });
+
+  it('uses the URL-inferred default year and skips rows without advisors', () => {
+    const csv = [
+      'recipient,advisor,project',
+      'Ada Lovelace,Ronald Breaker,RNA switches',
+      'Skipped Student,,No advisor',
+    ].join('\n');
+
+    expect(
+      manualRecipientCsvExtractor(csv, {
+        pageUrl: 'manual://stars-2026.csv',
+        defaultYear: 2026,
+      }),
+    ).toEqual([
+      {
+        studentName: 'Ada Lovelace',
+        advisorName: 'Ronald Breaker',
+        year: 2026,
+        projectTitle: 'RNA switches',
+      },
+    ]);
+  });
+
+  it('parses reviewed accepted-input provenance columns', () => {
+    const csv = [
+      'studentName,advisorName,advisorOrcid,year,projectTitle,sourceUrl,sourcePage,reviewNote',
+      'Ada Lovelace,Ronald Breaker,https://orcid.org/0000-0001-2345-6789,2025,RNA,https://example.yale.edu/stars.pdf,text-block-1,Reviewed against official PDF',
+    ].join('\n');
+
+    expect(
+      manualRecipientCsvExtractor(csv, {
+        pageUrl: 'manual://stars-ii.csv',
+      }),
+    ).toEqual([
+      {
+        studentName: 'Ada Lovelace',
+        advisorName: 'Ronald Breaker',
+        advisorOrcid: '0000-0001-2345-6789',
+        year: 2025,
+        projectTitle: 'RNA',
+        sourceUrl: 'https://example.yale.edu/stars.pdf',
+        sourcePage: 'text-block-1',
+        reviewNote: 'Reviewed against official PDF',
+      },
+    ]);
   });
 });
 
@@ -457,6 +601,164 @@ describe('UndergradFellowshipRecipientScraper.run', () => {
     ]);
 
     expect(result.notes).toContain('fake-program=2');
+  });
+
+  it('can run manual recipient CSV data through the full scraper pipeline', async () => {
+    const csv = [
+      'studentName,advisorName,year,projectTitle',
+      '"Ada Lovelace","Ronald Breaker",2025,"RNA switches"',
+      '"Grace Hopper","Ronald Breaker",2025,"Genetic circuits"',
+    ].join('\n');
+    const fetchPage = vi.fn(async () => csv);
+    const userFinder = vi.fn(async () => [
+      {
+        _id: 'u-breaker',
+        netid: 'rrb1',
+        fname: 'Ronald',
+        lname: 'Breaker',
+        primaryDepartment: 'MCDB',
+      },
+    ]);
+    const ownerToGroupSlug = vi.fn(async () => 'breaker-lab-rrb1');
+    const configs: ProgramConfig[] = [
+      {
+        programKey: 'manual-stars',
+        programName: 'Manual STARS Upload',
+        urls: ['manual://stars-2025.csv'],
+        extractor: manualRecipientCsvExtractor,
+      },
+    ];
+
+    const scraper = new UndergradFellowshipRecipientScraper(configs, {
+      fetchPage,
+      userFinder,
+      ownerToGroupSlug,
+    });
+    const { ctx, emitted } = makeContext();
+    const result = await scraper.run(ctx);
+
+    expect(fetchPage).toHaveBeenCalledWith('manual://stars-2025.csv', false);
+    expect(result.entitiesObserved).toBe(1);
+    expect(result.observationCount).toBe(3);
+    expect(emitted.find((o) => o.field === 'pastUndergradAdvisees')?.value).toEqual([
+      { year: 2025, programName: 'Manual STARS Upload', count: 2 },
+    ]);
+    expect(result.notes).toContain('manual-stars=1');
+  });
+
+  it('loads manual-upload-required program CSVs from manualRecipientCsvDir', async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ylabs-fellowship-csv-'));
+    try {
+      await fs.writeFile(
+        path.join(tmpDir, 'stars-ii.csv'),
+        [
+          'studentName,advisorName,year,projectTitle,sourceUrl,reviewNote',
+          '"Ada Lovelace","Ronald Breaker",2025,"RNA switches","https://example.yale.edu/stars-2025.pdf","Reviewed against official PDF"',
+        ].join('\n'),
+        'utf8',
+      );
+      const userFinder = vi.fn(async () => [
+        {
+          _id: 'u-breaker',
+          netid: 'rrb1',
+          fname: 'Ronald',
+          lname: 'Breaker',
+          primaryDepartment: 'MCDB',
+        },
+      ]);
+      const ownerToGroupSlug = vi.fn(async () => 'breaker-lab-rrb1');
+      const configs: ProgramConfig[] = [
+        {
+          programKey: 'stars-ii',
+          programName: 'STARS II',
+          urls: ['https://example.invalid/symposium.pdf'],
+          extractor: manualUploadStub,
+          manualUploadRequired: true,
+          skipReason: 'PDF only',
+        },
+      ];
+      const scraper = new UndergradFellowshipRecipientScraper(configs, {
+        fetchPage: vi.fn(async () => {
+          throw new Error('manual CSV should bypass fetchPage');
+        }),
+        userFinder,
+        ownerToGroupSlug,
+      });
+      const { ctx, emitted } = makeContext({ manualRecipientCsvDir: tmpDir });
+
+      const result = await scraper.run(ctx);
+
+      expect(result.entitiesObserved).toBe(1);
+      expect(result.observationCount).toBe(3);
+      expect(emitted.find((o) => o.field === 'pastUndergradAdvisees')?.sourceUrl).toBe(
+        'https://example.yale.edu/stars-2025.pdf',
+      );
+      expect(result.notes).toContain('stars-ii=1');
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('prefers advisor ORCID resolution for accepted manual rows', async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ylabs-fellowship-csv-'));
+    try {
+      await fs.writeFile(
+        path.join(tmpDir, 'stars-ii.csv'),
+        [
+          'studentName,advisorName,advisorOrcid,year,projectTitle,sourceUrl,reviewNote',
+          '"Ada Lovelace","Wrong Display Name","0000-0001-2345-6789",2025,"RNA switches","https://example.yale.edu/stars-2025.pdf","Reviewed against official PDF"',
+        ].join('\n'),
+        'utf8',
+      );
+      const userFinder = vi.fn(async (query: any) => {
+        if (query.orcid === '0000-0001-2345-6789') {
+          return [
+            {
+              _id: 'u-breaker',
+              netid: 'rrb1',
+              fname: 'Ronald',
+              lname: 'Breaker',
+              primaryDepartment: 'MCDB',
+              orcid: '0000-0001-2345-6789',
+            },
+          ];
+        }
+        return [];
+      });
+      const ownerToGroupSlug = vi.fn(async () => 'breaker-lab-rrb1');
+      const scraper = new UndergradFellowshipRecipientScraper(
+        [
+          {
+            programKey: 'stars-ii',
+            programName: 'STARS II',
+            urls: ['https://example.invalid/symposium.pdf'],
+            extractor: manualUploadStub,
+            manualUploadRequired: true,
+          },
+        ],
+        {
+          fetchPage: vi.fn(async () => {
+            throw new Error('manual CSV should bypass fetchPage');
+          }),
+          userFinder,
+          ownerToGroupSlug,
+        },
+      );
+
+      const { ctx, emitted } = makeContext({ manualRecipientCsvDir: tmpDir });
+      const result = await scraper.run(ctx);
+
+      expect(result.entitiesObserved).toBe(1);
+      expect(userFinder).toHaveBeenCalledWith({
+        orcid: '0000-0001-2345-6789',
+        userType: { $in: ['professor', 'faculty', 'admin'] },
+      });
+      expect(emitted.find((o) => o.field === 'pastUndergradAdvisees')?.entityKey).toBe(
+        'breaker-lab-rrb1',
+      );
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
   });
 
   it('silently skips advisors that cannot be matched against the User collection', async () => {

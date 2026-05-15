@@ -442,7 +442,7 @@ function buildResearchGroupObservations(
   const sorted = sortGrantsByRecency(records);
   const top = sorted.slice(0, MAX_GRANTS_PER_PI);
 
-  const base = { entityType: 'researchGroup' as const, entityKey: slug, sourceUrl };
+  const base = { entityType: 'researchEntity' as const, entityKey: slug, sourceUrl };
   const out: ObservationInput[] = [
     { ...base, field: 'slug', value: slug },
     { ...base, field: 'name', value: labName },

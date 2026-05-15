@@ -13,6 +13,18 @@
     "build:clean": "rm -rf build",
     "dev": "cross-env NODE_ENV=development tsx watch src/index.ts",
     "migrate:mongo-naming": "tsx src/scripts/migrateMongoNaming.ts",
+    "research-entity:migrate": "tsx src/scripts/migrateResearchEntities.ts",
+    "research-entity:cleanup-collections": "tsx src/scripts/migrateResearchEntityCollections.ts",
+    "legacy:cleanup": "tsx src/scripts/cleanupLegacyMongoCollections.ts",
+    "meili:rebuild-pathways": "tsx src/scripts/rebuildPathwaySearchIndex.ts",
+    "meili:rebuild-research-entities": "tsx src/scripts/rebuildResearchEntitySearchIndex.ts",
+    "research-entity:audit-rename": "tsx src/scripts/auditResearchEntityRename.ts",
+    "accepted-inputs": "tsx src/scripts/acceptedInputs.ts",
+    "beta:readiness": "tsx src/scripts/betaReadinessGate.ts",
+    "pathway:relevance-review": "tsx src/scripts/pathwayRelevanceReview.ts",
+    "papers:authorship-audit": "tsx src/scripts/paperAuthorshipAudit.ts",
+    "source:health": "tsx src/scripts/sourceHealth.ts",
+    "opportunities:reap-statuses": "tsx src/scripts/reapPostedOpportunityStatuses.ts",
     "scrape": "tsx src/scrapers/cli.ts",
     "scrape:seed-sources": "tsx src/scrapers/seedSources.ts",
     "start": "node build/index.js",
@@ -21,6 +33,7 @@
   },
   "dependencies": {
     "axios": "^1.13.5",
+    "cheerio": "^1.2.0",
     "cookie-session": "^2.1.0",
     "cors": "^2.8.5",
     "cross-env": "^7.0.3",
@@ -32,7 +45,8 @@
     "mongoose": "^8.9.5",
     "passport": "^0.5.2",
     "passport-cas": "git+https://github.com/coursetable/passport-cas#79612f1",
-    "passport-strategy": "^1.0.0"
+    "passport-strategy": "^1.0.0",
+    "pdfjs-dist": "^5.4.54"
   },
   "devDependencies": {
     "@types/cookie-session": "^2.0.48",

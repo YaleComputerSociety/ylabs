@@ -10,6 +10,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { Source } from '../models/source';
+import { getSourceCoverage } from './sourceCoverageRegistry';
+import type { SourceCoverageMetadata } from '../models/sourceCoverageTypes';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -25,6 +27,7 @@ interface SourceSeed {
   defaultWeight: number;
   isManualLock?: boolean;
   cadence: string;
+  coverage?: SourceCoverageMetadata;
 }
 
 const SOURCES: SourceSeed[] = [
@@ -44,6 +47,14 @@ const SOURCES: SourceSeed[] = [
     baseUrl: '',
     defaultWeight: 1.0,
     isManualLock: true,
+    cadence: 'event',
+  },
+  {
+    name: 'ylabs-listing',
+    displayName: 'YLabs listing',
+    description: 'Legacy YLabs posted research role row materialized into PostedOpportunity records.',
+    baseUrl: '',
+    defaultWeight: 0.9,
     cadence: 'event',
   },
   {
@@ -67,6 +78,14 @@ const SOURCES: SourceSeed[] = [
     displayName: 'PubMed',
     description: 'NLM-curated biomedical paper metadata.',
     baseUrl: 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils',
+    defaultWeight: 0.9,
+    cadence: 'weekly',
+  },
+  {
+    name: 'europe-pmc',
+    displayName: 'Europe PMC',
+    description: 'ORCID-backed biomedical and life-science paper metadata.',
+    baseUrl: 'https://www.ebi.ac.uk/europepmc/webservices/rest',
     defaultWeight: 0.9,
     cadence: 'weekly',
   },
@@ -136,8 +155,9 @@ const SOURCES: SourceSeed[] = [
   },
   {
     name: 'dept-faculty-roster',
-    displayName: 'Department faculty roster (parameterized per dept)',
-    description: 'Per-department faculty rosters and lab URL discovery.',
+    displayName: 'Department faculty rosters and official profile enrichment',
+    description:
+      'Per-department official faculty rosters, profile URLs, ORCID, research interests, Scholar review candidates, and lab URL discovery.',
     baseUrl: '',
     defaultWeight: 0.7,
     cadence: 'weekly',
@@ -183,14 +203,6 @@ const SOURCES: SourceSeed[] = [
     cadence: 'weekly',
   },
   {
-    name: 'yale-course-catalog',
-    displayName: 'Yale Course Catalog (independent study)',
-    description: 'CourseTable-driven scan for independent-study courses; signals which faculty take undergrad researchers.',
-    baseUrl: 'https://api.coursetable.com',
-    defaultWeight: 0.7,
-    cadence: 'monthly',
-  },
-  {
     name: 'centers-institutes-index',
     displayName: 'Yale centers/institutes index',
     description: 'Parameterized per-center scrapers (Wu Tsai, Cancer Center, Cowles, Tobin, MacMillan, ISPS, Whitney Humanities, Yale Quantum, etc.).',
@@ -216,24 +228,17 @@ const SOURCES: SourceSeed[] = [
     defaultWeight: 0.5,
     cadence: 'weekly',
   },
-  {
-    name: 'apify-google-scholar',
-    displayName: 'Apify Google Scholar (humanities enrichment)',
-    description:
-      'Apify-hosted Google Scholar scraper. Pulls h-index, i10, citations, interests, and recent publications for Yale humanities/social-science faculty whose OpenAlex coverage is weak. Requires APIFY_API_TOKEN env var and User.googleScholarId populated per faculty.',
-    baseUrl: 'https://api.apify.com/v2/acts/solidcode~google-scholar-scraper',
-    defaultWeight: 0.7,
-    cadence: 'quarterly',
-  },
-  {
-    name: 'apify-google-scholar-bootstrap',
-    displayName: 'Apify Google Scholar — bootstrap (discover IDs)',
-    description:
-      'Auto-discovers Google Scholar authorIds for Yale faculty via multi-signal disambiguation (Yale affiliation, dept overlap, paper-title overlap with OpenAlex, known-Yale coauthors, hostile-affiliation penalty). Confident matches assigned at 0.85 confidence; ambiguous matches surface alternates at 0.2-0.3 for admin review. Requires APIFY_API_TOKEN.',
-    baseUrl: 'https://api.apify.com/v2/acts/solidcode~google-scholar-scraper',
-    defaultWeight: 0.85,
-    cadence: 'as-needed',
-  },
+];
+
+const SOURCES_WITH_COVERAGE: SourceSeed[] = SOURCES.map((seed) => ({
+  ...seed,
+  coverage: getSourceCoverage(seed.name),
+}));
+
+const RETIRED_SOURCE_NAMES = [
+  'yale-course-catalog',
+  'apify-google-scholar-bootstrap',
+  'apify-google-scholar',
 ];
 
 async function main(): Promise<void> {
@@ -243,9 +248,9 @@ async function main(): Promise<void> {
     process.exit(1);
   }
   await mongoose.connect(url);
-  console.log(`Seeding ${SOURCES.length} sources (${RESET ? 'RESET' : 'upsert'})...`);
+  console.log(`Seeding ${SOURCES_WITH_COVERAGE.length} sources (${RESET ? 'RESET' : 'upsert'})...`);
 
-  for (const seed of SOURCES) {
+  for (const seed of SOURCES_WITH_COVERAGE) {
     if (RESET) {
       await Source.replaceOne({ name: seed.name }, seed, { upsert: true });
       console.log(`  [reset] ${seed.name}`);
@@ -262,6 +267,7 @@ async function main(): Promise<void> {
               defaultWeight: seed.defaultWeight,
               isManualLock: !!seed.isManualLock,
               cadence: seed.cadence,
+              coverage: seed.coverage,
             },
           },
         );
@@ -271,6 +277,22 @@ async function main(): Promise<void> {
         console.log(`  [created] ${seed.name}`);
       }
     }
+  }
+
+  const retired = await Source.updateMany(
+    { name: { $in: RETIRED_SOURCE_NAMES } },
+    {
+      $set: {
+        enabled: false,
+        cadence: 'retired',
+        notes:
+          'Retired as an active scraper source. Keep historical runs for audit, but do not schedule or seed as active.',
+      },
+      $unset: { coverage: '' },
+    },
+  );
+  if (retired.matchedCount > 0) {
+    console.log(`  [retired] ${RETIRED_SOURCE_NAMES.join(', ')}`);
   }
 
   console.log('Done.');

@@ -393,7 +393,7 @@ describe('NsfAwardScraper.run', () => {
 
     // Holland's ResearchGroup observations
     const hollandRg = emitted.filter(
-      (o) => o.entityType === 'researchGroup' && o.entityKey?.includes('holland'),
+      (o) => o.entityType === 'researchEntity' && o.entityKey?.includes('holland'),
     );
     const grants = hollandRg.find((o) => o.field === 'recentGrants')?.value as Array<{
       id: string;
@@ -450,7 +450,7 @@ describe('NsfAwardScraper.run', () => {
     // No user observations for matched PI
     expect(emitted.filter((o) => o.entityType === 'user')).toHaveLength(0);
 
-    const rgObs = emitted.filter((o) => o.entityType === 'researchGroup');
+    const rgObs = emitted.filter((o) => o.entityType === 'researchEntity');
     expect(rgObs.find((o) => o.field === 'slug')?.value).toBe('nsf-pi-user-holland');
     expect(rgObs.find((o) => o.field === 'inferredPiUserId')?.value).toBe('user-holland');
     const inferredObs = rgObs.find((o) => o.field === 'inferredPiUserId');

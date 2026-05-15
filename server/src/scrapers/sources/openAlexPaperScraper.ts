@@ -29,26 +29,34 @@
  * Uses the polite pool by passing a contact email via the `mailto` query parameter
  * (configured by OPENALEX_CONTACT_EMAIL env var, defaults to info@yalelabs.io).
  *
- * Honors --use-cache (memoizes per-author page fetches and per-author lookups)
- * and --limit (caps faculty processed).
+ * Honors --use-cache (memoizes per-author page fetches and per-author lookups),
+ * --only (netid allowlist), --offset, and --limit. Name-only author discovery is
+ * opt-in through --discover-openalex-authors because it can fan out into many
+ * slow sequential OpenAlex calls.
  */
 import axios from 'axios';
 import { User } from '../../models/user';
 import { getCached, setCached } from '../snapshotCache';
 import type { IScraper, ScraperContext, ScraperResult, ObservationInput } from '../types';
+import {
+  PAPER_AUTHORSHIP_EVIDENCE_FIELD,
+  type PaperAuthorshipEvidence,
+} from '../paperAuthorshipPolicy';
 
 const OPENALEX_BASE = 'https://api.openalex.org';
 const PAGE_SIZE = 200;
 const YALE_INSTITUTION_ID = 'I32971472';
+const OBSERVATION_EMIT_BATCH_SIZE = 1000;
 
 interface OpenAlexAuthorship {
-  author?: { id?: string; display_name?: string };
+  author?: { id?: string; display_name?: string; orcid?: string };
   institutions?: { id?: string; display_name?: string; ror?: string }[];
   raw_affiliation_strings?: string[];
 }
 
 interface OpenAlexWork {
   id: string;
+  ids?: Record<string, string | undefined>;
   doi?: string;
   title?: string;
   display_name?: string;
@@ -56,7 +64,16 @@ interface OpenAlexWork {
   publication_date?: string;
   cited_by_count?: number;
   authorships?: OpenAlexAuthorship[];
-  primary_location?: { source?: { display_name?: string } };
+  primary_location?: {
+    source?: { display_name?: string };
+    landing_page_url?: string;
+    pdf_url?: string;
+  };
+  locations?: {
+    landing_page_url?: string;
+    pdf_url?: string;
+    source?: { display_name?: string };
+  }[];
   open_access?: { is_oa?: boolean; oa_url?: string };
   abstract_inverted_index?: Record<string, number[]>;
   topics?: { display_name?: string; field?: { display_name?: string } }[];
@@ -89,6 +106,69 @@ function reconstructAbstract(inverted?: Record<string, number[]>): string | unde
   }
   positions.sort((a, b) => a.pos - b.pos);
   return positions.map((p) => p.word).join(' ') || undefined;
+}
+
+function normalizeDoi(raw: string | undefined | null): string | undefined {
+  if (!raw) return undefined;
+  const normalized = String(raw)
+    .trim()
+    .replace(/^https?:\/\/(dx\.)?doi\.org\//i, '')
+    .toLowerCase();
+  return normalized || undefined;
+}
+
+function normalizeOpenAlexWorkId(raw: string | undefined | null): string | undefined {
+  if (!raw) return undefined;
+  const id = String(raw).trim();
+  return id || undefined;
+}
+
+function normalizeArxivId(raw: string | undefined | null): string | undefined {
+  if (!raw) return undefined;
+  const normalized = String(raw)
+    .trim()
+    .replace(/^https?:\/\/arxiv\.org\/abs\//i, '')
+    .replace(/^arxiv:/i, '')
+    .replace(/v\d+$/i, '');
+  return normalized || undefined;
+}
+
+function arxivIdFromUrl(raw: string | undefined | null): string | undefined {
+  if (!raw) return undefined;
+  const match = String(raw).match(/arxiv\.org\/(?:abs|pdf)\/([^?#\s.]+(?:\.\d+)?)/i);
+  return normalizeArxivId(match?.[1]);
+}
+
+function extractArxivId(work: OpenAlexWork): string | undefined {
+  const ids = work.ids || {};
+  const fromIds =
+    normalizeArxivId(ids.arxiv) ||
+    normalizeArxivId(ids.arxiv_id) ||
+    normalizeArxivId(ids.arxivId);
+  if (fromIds) return fromIds;
+
+  const urls = [
+    work.primary_location?.landing_page_url,
+    work.primary_location?.pdf_url,
+    ...(work.locations || []).flatMap((location) => [
+      location.landing_page_url,
+      location.pdf_url,
+    ]),
+  ];
+  return urls.map(arxivIdFromUrl).find(Boolean);
+}
+
+function buildExternalIds(work: OpenAlexWork): Record<string, string> {
+  const ids: Record<string, string> = {};
+  const openAlex = normalizeOpenAlexWorkId(work.id);
+  const doi = normalizeDoi(work.doi || work.ids?.doi);
+  const arxiv = extractArxivId(work);
+  if (openAlex) ids.openalex = openAlex;
+  if (doi) ids.DOI = doi;
+  if (arxiv) ids.arxiv = arxiv;
+  if (work.ids?.pmid) ids.PMID = work.ids.pmid;
+  if (work.ids?.pmcid) ids.PMCID = work.ids.pmcid;
+  return ids;
 }
 
 // ---------------------------------------------------------------------------
@@ -250,18 +330,21 @@ async function fetchPage(
 
 function workToObservations(
   work: OpenAlexWork,
-  yaleUserId: string,
-  yaleNetId: string,
   sourceUrl: string,
+  authorshipEvidence?: PaperAuthorshipEvidence,
 ): ObservationInput[] {
   const openAlexId = work.id;
   const out: ObservationInput[] = [];
   const baseId = { entityType: 'paper' as const, entityKey: openAlexId, sourceUrl };
+  const doi = normalizeDoi(work.doi || work.ids?.doi);
+  const arxivId = extractArxivId(work);
+  const externalIds = buildExternalIds(work);
 
   const fields: Array<[string, unknown]> = [
     ['openAlexId', openAlexId],
+    ['arxivId', arxivId],
     ['title', work.title || work.display_name],
-    ['doi', work.doi ? work.doi.replace(/^https?:\/\/(dx\.)?doi\.org\//i, '').toLowerCase() : undefined],
+    ['doi', doi],
     ['year', work.publication_year],
     ['publishedAt', work.publication_date ? new Date(work.publication_date) : undefined],
     ['venue', work.primary_location?.source?.display_name],
@@ -289,6 +372,7 @@ function workToObservations(
         ),
       ),
     ],
+    ['externalIds', externalIds],
   ];
 
   for (const [field, value] of fields) {
@@ -296,8 +380,14 @@ function workToObservations(
     out.push({ ...baseId, field, value });
   }
 
-  out.push({ ...baseId, field: 'yaleAuthorIds', value: [yaleUserId] });
-  out.push({ ...baseId, field: 'yaleAuthorNetIds', value: [yaleNetId] });
+  if (authorshipEvidence) {
+    out.push({
+      ...baseId,
+      field: PAPER_AUTHORSHIP_EVIDENCE_FIELD,
+      value: authorshipEvidence,
+      confidenceOverride: authorshipEvidence.confidence,
+    });
+  }
   out.push({ ...baseId, field: 'sources', value: ['openalex'] });
 
   return out;
@@ -316,6 +406,32 @@ export interface ResolvedAuthor {
   method: LookupMethod;
 }
 
+function buildOpenAlexAuthorshipEvidence(
+  fac: any,
+  resolved: ResolvedAuthor,
+  sourceUrl: string,
+): PaperAuthorshipEvidence | undefined {
+  if (!resolved.authorId) return undefined;
+  if (resolved.method !== 'orcid' && resolved.method !== 'openAlexId') return undefined;
+
+  const displayName = `${String(fac.fname || '').trim()} ${String(fac.lname || '').trim()}`.trim();
+  if (!displayName) return undefined;
+  return {
+    userId: String(fac._id),
+    netid: fac.netid ? String(fac.netid) : undefined,
+    displayName,
+    sourceName: 'openalex',
+    method: resolved.method === 'orcid' ? 'openalex-orcid' : 'openalex-author-id',
+    externalAuthorIds: {
+      openAlex: resolved.authorId,
+      ...(normalizeOrcid(fac.orcid) ? { orcid: normalizeOrcid(fac.orcid)! } : {}),
+    },
+    confidence: resolved.method === 'orcid' ? 0.95 : 0.9,
+    sourceUrl,
+    observedAt: new Date(),
+  };
+}
+
 interface FacultyRecord {
   fname?: string;
   lname?: string;
@@ -328,6 +444,7 @@ export async function resolveAuthorIdForFaculty(
   email: string,
   ctx: ScraperContext,
   fetcher: HttpFetcher = defaultFetcher,
+  allowNameSearch = true,
 ): Promise<ResolvedAuthor> {
   // Tier 1: ORCID (most reliable when present).
   const orcid = normalizeOrcid(fac.orcid);
@@ -356,7 +473,7 @@ export async function resolveAuthorIdForFaculty(
   // Tier 3: name + Yale affiliation search.
   const f = (fac.fname || '').trim();
   const l = (fac.lname || '').trim();
-  if (f && l) {
+  if (allowNameSearch && f && l) {
     const cacheKey = `name-author:${l}-${f}`;
     let id: string | null = null;
     if (ctx.options.useCache) {
@@ -402,16 +519,28 @@ export class OpenAlexPaperScraper implements IScraper {
     // the fname+lname conjunction cleanly here without {} matching everything,
     // so we filter in JS after the broad fetch — fname/lname are required on
     // the User schema anyway.
+    const identifierBackedFilters = [
+      { orcid: { $exists: true, $ne: null, $nin: [''] } },
+      { openAlexId: { $exists: true, $ne: null, $nin: [''] } },
+    ];
     const facultyFilter: any = {
       userType: { $in: ['professor', 'faculty'] },
-      $or: [
-        { orcid: { $exists: true, $ne: null, $nin: [''] } },
-        { openAlexId: { $exists: true, $ne: null, $nin: [''] } },
-        // Anyone with userType professor/faculty is name-eligible (fname+lname required by schema).
-        { fname: { $exists: true, $nin: [null, ''] } },
-      ],
+      $or: ctx.options.discoverOpenAlexAuthors
+        ? [
+            ...identifierBackedFilters,
+            // Anyone with userType professor/faculty is name-eligible (fname+lname required by schema).
+            { fname: { $exists: true, $nin: [null, ''] } },
+          ]
+        : identifierBackedFilters,
     };
-    let facultyQuery = userModel
+    const onlyFilter =
+      ctx.options.only && ctx.options.only.length > 0
+        ? new Set(ctx.options.only.map((s) => s.trim().toLowerCase()).filter(Boolean))
+        : null;
+    if (onlyFilter) {
+      facultyFilter.netid = { $in: Array.from(onlyFilter) };
+    }
+    const facultyQuery = userModel
       .find(facultyFilter, {
         _id: 1,
         netid: 1,
@@ -421,15 +550,57 @@ export class OpenAlexPaperScraper implements IScraper {
         openAlexId: 1,
       })
       .lean();
-    if (ctx.options.limit && ctx.options.limit > 0) {
-      facultyQuery = facultyQuery.limit(ctx.options.limit);
+    let faculty: any[] = await facultyQuery;
+    if (!ctx.options.discoverOpenAlexAuthors) {
+      faculty = faculty.filter(
+        (fac) => normalizeOrcid(fac.orcid) || normalizeOpenAlexId(fac.openAlexId),
+      );
     }
-    const faculty: any[] = await facultyQuery;
-    ctx.log(`Faculty candidates for OpenAlex sync: ${faculty.length}`);
+    if (onlyFilter) {
+      faculty = faculty.filter((fac) => onlyFilter.has(String(fac.netid || '').toLowerCase()));
+    }
+    faculty = faculty.sort((a, b) => {
+      const aKey = `${String(a.netid || '').toLowerCase()}\u0000${String(a._id || '')}`;
+      const bKey = `${String(b.netid || '').toLowerCase()}\u0000${String(b._id || '')}`;
+      return aKey.localeCompare(bKey);
+    });
+    const totalEligibleFaculty = faculty.length;
+    const offset =
+      ctx.options.offset && Number.isFinite(ctx.options.offset) && ctx.options.offset > 0
+        ? Math.floor(ctx.options.offset)
+        : 0;
+    const limit =
+      ctx.options.limit && Number.isFinite(ctx.options.limit) && ctx.options.limit > 0
+        ? Math.floor(ctx.options.limit)
+        : undefined;
+    faculty = faculty.slice(offset, limit ? offset + limit : undefined);
+    ctx.log(
+      `Faculty candidates for OpenAlex sync: ${faculty.length} (eligible ${totalEligibleFaculty}, offset ${offset}${limit ? `, limit ${limit}` : ''})`,
+    );
+    if (!ctx.options.discoverOpenAlexAuthors) {
+      ctx.log(
+        'Name-only OpenAlex author discovery disabled; pass --discover-openalex-authors to opt in.',
+      );
+    }
 
     let totalObs = 0;
     let totalWorks = 0;
     let processed = 0;
+    const pendingObservations: ObservationInput[] = [];
+    const flushObservations = async () => {
+      if (pendingObservations.length === 0) return;
+      const batch = pendingObservations.splice(0, pendingObservations.length);
+      await ctx.emit(batch);
+    };
+    const queueObservations = async (observations: ObservationInput | ObservationInput[]) => {
+      const batch = Array.isArray(observations) ? observations : [observations];
+      if (batch.length === 0) return;
+      pendingObservations.push(...batch);
+      totalObs += batch.length;
+      if (pendingObservations.length >= OBSERVATION_EMIT_BATCH_SIZE) {
+        await flushObservations();
+      }
+    };
     const tierCounts: Record<LookupMethod, number> = {
       orcid: 0,
       openAlexId: 0,
@@ -438,7 +609,6 @@ export class OpenAlexPaperScraper implements IScraper {
     };
 
     for (const fac of faculty) {
-      const yaleUserId = String(fac._id);
       const yaleNetId = fac.netid;
 
       const resolved = await resolveAuthorIdForFaculty(
@@ -451,46 +621,66 @@ export class OpenAlexPaperScraper implements IScraper {
         email,
         ctx,
         fetcher,
+        !!ctx.options.discoverOpenAlexAuthors,
       );
       tierCounts[resolved.method]++;
 
       if (!resolved.authorId) {
         processed++;
+        if (processed % 25 === 0 || processed === faculty.length) {
+          ctx.log(
+            `progress: ${processed}/${faculty.length} faculty | ${totalWorks} works | ${totalObs} observations`,
+          );
+        }
         continue;
       }
 
-      // When the name-search tier wins, persist the discovered openAlexId back
-      // to the User so future runs take the fast path.
-      if (resolved.method === 'name' && yaleNetId) {
-        const discoveredBareId =
-          normalizeOpenAlexId(resolved.authorId) || resolved.authorId;
-        await ctx.emit({
-          entityType: 'user',
-          entityKey: yaleNetId,
-          field: 'openAlexId',
-          value: discoveredBareId,
-          sourceUrl: `${OPENALEX_BASE}/authors?search=${encodeURIComponent(
-            `${fac.fname} ${fac.lname}`,
-          )}&filter=affiliations.institution.id:${YALE_INSTITUTION_ID}`,
-          confidenceOverride: 0.7,
-        });
-        totalObs++;
+      if (resolved.method === 'name') {
+        ctx.log(
+          `review-only OpenAlex author candidate for ${yaleNetId || fac.fname}: ${resolved.authorId}; not writing openAlexId or paper authorship`,
+        );
+        processed++;
+        if (processed % 25 === 0 || processed === faculty.length) {
+          ctx.log(
+            `progress: ${processed}/${faculty.length} faculty | ${totalWorks} works | ${totalObs} observations`,
+          );
+        }
+        continue;
       }
 
       const authorId = resolved.authorId;
       let cursor = '*';
       let pages = 0;
       let worksForAuthor = 0;
+      const seenCursors = new Set<string>();
+      const maxPages =
+        ctx.options.maxOpenAlexPagesPerAuthor &&
+        Number.isFinite(ctx.options.maxOpenAlexPagesPerAuthor) &&
+        ctx.options.maxOpenAlexPagesPerAuthor > 0
+          ? ctx.options.maxOpenAlexPagesPerAuthor
+          : undefined;
 
       while (cursor) {
+        if (seenCursors.has(cursor)) {
+          ctx.log(`stopping ${yaleNetId}: repeated OpenAlex cursor "${cursor}"`);
+          break;
+        }
+        seenCursors.add(cursor);
+        if (maxPages && pages >= maxPages) {
+          ctx.log(`stopping ${yaleNetId}: reached ${maxPages} OpenAlex page(s)`);
+          break;
+        }
         try {
           const sourceUrl = `${OPENALEX_BASE}/works?filter=author.id:${authorId}&cursor=${cursor}`;
           const { results, nextCursor } = await fetchPage(authorId, cursor, email, ctx, fetcher);
           pages++;
           for (const work of results) {
-            const obs = workToObservations(work, yaleUserId, yaleNetId, sourceUrl);
-            await ctx.emit(obs);
-            totalObs += obs.length;
+            const obs = workToObservations(
+              work,
+              sourceUrl,
+              buildOpenAlexAuthorshipEvidence(fac, resolved, sourceUrl),
+            );
+            await queueObservations(obs);
             worksForAuthor++;
           }
           cursor = nextCursor || '';
@@ -501,6 +691,15 @@ export class OpenAlexPaperScraper implements IScraper {
         }
       }
       totalWorks += worksForAuthor;
+      if (yaleNetId) {
+        await queueObservations({
+          entityType: 'user',
+          entityKey: String(yaleNetId),
+          field: 'openAlexWorksSyncedAt',
+          value: new Date(),
+          sourceUrl: `${OPENALEX_BASE}/authors/${normalizeOpenAlexId(authorId) || authorId}`,
+        });
+      }
       processed++;
       if (processed % 25 === 0 || processed === faculty.length) {
         ctx.log(
@@ -508,6 +707,7 @@ export class OpenAlexPaperScraper implements IScraper {
         );
       }
     }
+    await flushObservations();
 
     ctx.log(
       `lookup methods — orcid: ${tierCounts.orcid}, openAlexId: ${tierCounts.openAlexId}, name: ${tierCounts.name}, skipped (no signals): ${tierCounts.none}`,

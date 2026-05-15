@@ -9,10 +9,13 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
   DepartmentRosterScraper,
+  DEFAULT_DEPT_CONFIGS,
   econExtractor,
   mcdbExtractor,
   psychExtractor,
   csJsRenderedStub,
+  csRenderedExtractor,
+  csFacultyDataExtractor,
   type DeptConfig,
   type FacultyEntry,
 } from '../sources/departmentRosterScraper';
@@ -150,6 +153,60 @@ const PSYCH_HTML = `
 </body></html>
 `;
 
+const PSYCH_PRIMARY_HTML = `
+<html><body>
+  <table class="views-table cols-0">
+    <tbody>
+      <tr class="odd views-row-first">
+        <td class="views-field views-field-picture">
+          <a href="/people/woo-kyoung-ahn"><img alt="Woo-kyoung Ahn's picture" /></a>
+        </td>
+        <td class="views-field views-field-name">
+          <a href="/people/woo-kyoung-ahn" title="View user profile." class="username">Woo-kyoung Ahn</a><br />
+          John Hay Whitney Professor of Psychology<br />
+          100 College St.<br />
+          <a href="mailto:woo-kyoung.ahn@yale.edu">woo-kyoung.ahn@yale.edu</a><br />
+          Phone: 203-432-9626<br />
+          <a href="http://ahnthinkinglab.yale.edu/" target="_blank">Website</a>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+</body></html>
+`;
+
+const ASTRONOMY_GRID_HTML = `
+<html><body>
+  <table class="views-view-grid cols-1">
+    <tbody>
+      <tr>
+        <td class="col-1 col-first">
+          <div class="views-field views-field-picture">
+            <span class="field-content">
+              <a href="/people/hector-arce"><img alt="Hector Arce's picture" /></a>
+            </span>
+          </div>
+          <div class="views-field views-field-name">
+            <span class="field-content">Hector Arce</span>
+          </div>
+          <div class="views-field views-field-field-title">
+            <div class="field-content">Professor of Astronomy</div>
+          </div>
+          <div class="views-field views-field-mail">
+            <span class="field-content">
+              <a href="mailto:hector.arce@yale.edu">hector.arce@yale.edu</a>
+            </span>
+          </div>
+          <div class="views-field views-field-field-term-reference">
+            <div class="field-content">Star Formation and ISM</div>
+          </div>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+</body></html>
+`;
+
 // ---------------------------------------------------------------------------
 // Helper tests
 // ---------------------------------------------------------------------------
@@ -271,6 +328,40 @@ describe('mcdbExtractor', () => {
   });
 });
 
+describe('official Yale profile-card extractor coverage', () => {
+  it('supports the Math and Statistics profile-card shape', () => {
+    const html = `
+      <html><body>
+        <div class="directory-listing-card">
+          <div class="directory-listing-card__content">
+            <h3 class="directory-listing-card__heading">
+              <a class="directory-listing-card__heading-link" href="/profile/ada-lovelace">
+                Ada Lovelace
+              </a>
+            </h3>
+            <div class="directory-listing-card__subheading">Professor of Mathematics</div>
+            <div class="directory-listing-card__snippet">Algebraic geometry and topology.</div>
+            <a class="directory-listing-card__link" href="mailto:ada.lovelace@yale.edu">Email</a>
+          </div>
+        </div>
+      </body></html>
+    `;
+
+    const out = mcdbExtractor(html, { pageUrl: 'https://math.yale.edu/people/faculty' });
+
+    expect(out).toEqual([
+      {
+        name: 'Ada Lovelace',
+        profileUrl: 'https://math.yale.edu/profile/ada-lovelace',
+        title: 'Professor of Mathematics',
+        email: 'ada.lovelace@yale.edu',
+        labUrl: undefined,
+        bio: 'Algebraic geometry and topology.',
+      },
+    ]);
+  });
+});
+
 describe('psychExtractor', () => {
   it('extracts rows from all views-table sections, skipping empty rows', () => {
     const out = psychExtractor(PSYCH_HTML, {
@@ -286,11 +377,156 @@ describe('psychExtractor', () => {
     expect(out[2]).toMatchObject({ name: 'Jane Doe' });
     expect(out[2].email).toBeUndefined();
   });
+
+  it('extracts the current primary-faculty view with embedded email and website links', () => {
+    const out = psychExtractor(PSYCH_PRIMARY_HTML, {
+      pageUrl: 'https://psychology.yale.edu/people/faculty/primary',
+    });
+
+    expect(out).toEqual([
+      {
+        name: 'Woo-kyoung Ahn',
+        title: 'John Hay Whitney Professor of Psychology',
+        email: 'woo-kyoung.ahn@yale.edu',
+        profileUrl: 'https://psychology.yale.edu/people/woo-kyoung-ahn',
+        labUrl: 'http://ahnthinkinglab.yale.edu/',
+      },
+    ]);
+  });
+
+  it('supports Physics and Astronomy views-table rows with field-of-study topics', () => {
+    const html = `
+      <html><body>
+        <table class="views-table">
+          <tbody>
+            <tr>
+              <td class="views-field views-field-name">
+                <a href="/people/marie-curie" class="username">Marie Curie</a><br />
+                Professor of Physics<br />
+                <a href="mailto:marie.curie@yale.edu">marie.curie@yale.edu</a><br />
+                <a href="https://curielab.yale.edu/">Research Website</a>
+              </td>
+              <td class="views-field views-field-field-field-of-study">
+                Condensed Matter; Quantum Materials
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </body></html>
+    `;
+
+    const out = psychExtractor(html, { pageUrl: 'https://physics.yale.edu/people/faculty' });
+
+    expect(out).toEqual([
+      {
+        name: 'Marie Curie',
+        title: 'Professor of Physics',
+        email: 'marie.curie@yale.edu',
+        profileUrl: 'https://physics.yale.edu/people/marie-curie',
+        labUrl: 'https://curielab.yale.edu/',
+        topics: ['Condensed Matter', 'Quantum Materials'],
+        researchInterests: ['Condensed Matter', 'Quantum Materials'],
+      },
+    ]);
+  });
+
+  it('supports Astronomy views grid cells with profile picture links and topic fields', () => {
+    const out = psychExtractor(ASTRONOMY_GRID_HTML, {
+      pageUrl: 'https://astronomy.yale.edu/people/faculty',
+    });
+
+    expect(out).toEqual([
+      {
+        name: 'Hector Arce',
+        title: 'Professor of Astronomy',
+        email: 'hector.arce@yale.edu',
+        profileUrl: 'https://astronomy.yale.edu/people/hector-arce',
+        labUrl: undefined,
+        topics: ['Star Formation and ISM'],
+        researchInterests: ['Star Formation and ISM'],
+      },
+    ]);
+  });
 });
 
 describe('csJsRenderedStub', () => {
   it('throws to signal the page needs a headless browser', () => {
     expect(() => csJsRenderedStub('<html></html>', { pageUrl: 'x' })).toThrow(/JS-rendered/);
+  });
+});
+
+describe('csRenderedExtractor', () => {
+  it('extracts hydrated profile links once with official profile URLs', () => {
+    const html = `
+      <main>
+        <article>
+          <a href="/faculty/grace-hopper">Grace Hopper</a>
+          <div class="person-title">Professor of Computer Science</div>
+          <a href="mailto:grace.hopper@yale.edu">Email</a>
+        </article>
+        <article>
+          <a href="/faculty/grace-hopper">Grace Hopper</a>
+        </article>
+      </main>
+    `;
+    const out = csRenderedExtractor(html, { pageUrl: 'https://engineering.yale.edu/cs/faculty' });
+
+    expect(out).toEqual([
+      {
+        name: 'Grace Hopper',
+        profileUrl: 'https://engineering.yale.edu/faculty/grace-hopper',
+        title: 'Professor of Computer Science',
+        email: 'grace.hopper@yale.edu',
+      },
+    ]);
+  });
+});
+
+describe('csFacultyDataExtractor', () => {
+  it('extracts the client-rendered faculty endpoint payload', () => {
+    const out = csFacultyDataExtractor(
+      {
+        pages: {
+          3: {
+            name: 'Primary Faculty',
+            facultyMembers: [
+              {
+                name: 'Grace Hopper',
+                title: 'Professor',
+                fullTitle: 'Professor of Computer Science',
+                url: '/academic-study/departments/computer-science/faculty/grace-hopper',
+              },
+              {
+                name: 'David Van Dijk',
+                title: 'Assistant Professor',
+                fullTitle: 'Assistant Professor of Computer Science',
+                url: 'https://www.vandijklab.org/',
+              },
+            ],
+          },
+        },
+      },
+      {
+        pageUrl:
+          'https://engineering.yale.edu/academic-study/departments/computer-science/faculty/load_faculty/4841',
+      },
+    );
+
+    expect(out).toEqual([
+      {
+        name: 'Grace Hopper',
+        title: 'Professor of Computer Science',
+        profileUrl:
+          'https://engineering.yale.edu/academic-study/departments/computer-science/faculty/grace-hopper',
+        labUrl: undefined,
+      },
+      {
+        name: 'David Van Dijk',
+        title: 'Assistant Professor of Computer Science',
+        profileUrl: 'https://www.vandijklab.org/',
+        labUrl: 'https://www.vandijklab.org/',
+      },
+    ]);
   });
 });
 
@@ -373,7 +609,7 @@ describe('DepartmentRosterScraper.run', () => {
     expect(userObs[0].entityKey).toBe('netid:tf123');
 
     // lab observations
-    const labObs = emitted.filter((o) => o.entityType === 'researchGroup');
+    const labObs = emitted.filter((o) => o.entityType === 'researchEntity');
     expect(labObs.find((o) => o.field === 'websiteUrl')?.value).toBe('https://tflab.example.org');
     expect(labObs.find((o) => o.field === 'kind')?.value).toBe('lab');
     expect(labObs.find((o) => o.field === 'departments')?.value).toEqual(['Economics']);
@@ -443,6 +679,141 @@ describe('DepartmentRosterScraper.run', () => {
     getSpy.mockRestore();
   });
 
+  it('follows official profile pages for canonical profile URLs and lab websites', async () => {
+    const profileHtml = `
+      <html><head>
+        <link rel="canonical" href="/people/ada-lovelace" />
+      </head><body>
+        <div class="person-title">Associate Professor of Applied Mathematics</div>
+        <div class="profile-body">Ada works on computation, algebraic geometry, and foundations of mathematical modeling.</div>
+        <div class="research-interests">Algebraic Geometry, Topology</div>
+        <a href="https://orcid.org/0000-0002-1825-0097">ORCID</a>
+        <a href="https://scholar.google.com/citations?user=adaCandidate">Google Scholar</a>
+        <a href="mailto:ada.lovelace@yale.edu">ada.lovelace@yale.edu</a>
+        <a href="https://lovelacelab.yale.edu">Lab Website</a>
+      </body></html>
+    `;
+    const htmlFetcher = vi.fn(async (url: string) => {
+      if (url === 'https://math.yale.edu/people/ada-lovelace') return profileHtml;
+      return '<html><body>listing</body></html>';
+    });
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'math',
+        deptName: 'Mathematics',
+        schoolName: 'FAS',
+        url: 'https://math.yale.edu/people/faculty',
+        paginated: false,
+        extractor: () => [
+          {
+            name: 'Ada Lovelace',
+            profileUrl: 'https://math.yale.edu/people/ada-lovelace',
+          },
+        ],
+      },
+    ];
+
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx, emitted } = makeContext();
+    const result = await scraper.run(ctx);
+
+    expect(htmlFetcher).toHaveBeenCalledWith(
+      'https://math.yale.edu/people/faculty',
+      false,
+      'dept-faculty-roster',
+    );
+    expect(htmlFetcher).toHaveBeenCalledWith(
+      'https://math.yale.edu/people/ada-lovelace',
+      false,
+      'dept-faculty-roster',
+    );
+    expect(result.entitiesObserved).toBe(2);
+
+    const userObs = emitted.filter((o) => o.entityType === 'user');
+    expect(userObs[0].entityKey).toBe('netid:ada.lovelace');
+    expect(userObs.find((o) => o.field === 'profileUrls')?.value).toEqual({
+      departmental: 'https://math.yale.edu/people/ada-lovelace',
+    });
+    expect(userObs.find((o) => o.field === 'title')?.value).toBe(
+      'Associate Professor of Applied Mathematics',
+    );
+    expect(userObs.find((o) => o.field === 'website')?.value).toBe(
+      'https://lovelacelab.yale.edu/',
+    );
+    expect(userObs.find((o) => o.field === 'orcid')?.value).toBe('0000-0002-1825-0097');
+    expect(userObs.find((o) => o.field === 'bio')?.sourceUrl).toBe(
+      'https://math.yale.edu/people/ada-lovelace',
+    );
+    expect(userObs.find((o) => o.field === 'researchInterests')?.value).toEqual([
+      'Algebraic Geometry',
+      'Topology',
+    ]);
+    expect(userObs.find((o) => o.field === 'topics')?.value).toEqual([
+      'Algebraic Geometry',
+      'Topology',
+    ]);
+    expect(userObs.find((o) => o.field === 'scholarCandidateProfileUrls')?.value).toEqual([
+      'https://scholar.google.com/citations?user=adaCandidate',
+    ]);
+    expect(userObs.find((o) => o.field === 'googleScholarId')).toBeUndefined();
+    expect(userObs.find((o) => o.field === 'profileUrls')?.value).not.toHaveProperty(
+      'googleScholar',
+    );
+
+    const labObs = emitted.filter((o) => o.entityType === 'researchEntity');
+    expect(labObs.find((o) => o.field === 'websiteUrl')?.value).toBe(
+      'https://lovelacelab.yale.edu/',
+    );
+    expect(labObs.find((o) => o.field === 'inferredPiUserKey')?.value).toBe(
+      'netid:ada.lovelace',
+    );
+  });
+
+  it('registers the first Math/Physics/Statistics/Astronomy roster batch', () => {
+    expect(DEFAULT_DEPT_CONFIGS.map((config) => config.deptKey)).toEqual(
+      expect.arrayContaining(['math', 'physics', 'statistics', 'astronomy']),
+    );
+  });
+
+  it('dedupes repeated official profile rows after enrichment', async () => {
+    const htmlFetcher = vi.fn(async (url: string) => {
+      if (url === 'https://physics.yale.edu/people/marie-curie') {
+        return `
+          <html><head><meta property="og:url" content="https://physics.yale.edu/people/marie-curie" /></head>
+          <body>
+            <a href="mailto:marie.curie@yale.edu">Email</a>
+            <a href="https://curielab.yale.edu">Personal Website</a>
+          </body></html>
+        `;
+      }
+      return '<html><body>listing</body></html>';
+    });
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'physics',
+        deptName: 'Physics',
+        schoolName: 'FAS',
+        url: 'https://physics.yale.edu/people/faculty',
+        paginated: false,
+        extractor: () => [
+          { name: 'Marie Curie', profileUrl: 'https://physics.yale.edu/people/marie-curie' },
+          { name: 'Marie Curie', profileUrl: 'https://physics.yale.edu/people/marie-curie' },
+        ],
+      },
+    ];
+
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx, emitted } = makeContext();
+    const result = await scraper.run(ctx);
+
+    expect(result.entitiesObserved).toBe(2);
+    expect(emitted.filter((o) => o.entityType === 'user' && o.field === 'userType')).toHaveLength(
+      1,
+    );
+    expect(emitted.filter((o) => o.entityType === 'researchEntity' && o.field === 'websiteUrl'))
+      .toHaveLength(1);
+  });
+
   it('uses an injected rendered fetcher for JS-rendered depts while keeping parsing local', async () => {
     const stubExtractor = vi.fn((): FacultyEntry[] => {
       throw new Error('should not use the Cheerio stub for rendered pages');
@@ -451,7 +822,7 @@ describe('DepartmentRosterScraper.run', () => {
       {
         name: 'Grace Hopper',
         email: 'grace.hopper@yale.edu',
-        profileUrl: 'https://example.invalid/cs/grace-hopper',
+        profileUrl: 'https://engineering.yale.edu/faculty/grace-hopper',
       },
     ]);
     const configs: DeptConfig[] = [
@@ -472,10 +843,14 @@ describe('DepartmentRosterScraper.run', () => {
       url: 'https://example.invalid/cs#rendered',
       fetchMode: 'scrapling',
     });
+    const htmlFetcher = vi.fn(async () => `
+      <html><head><link rel="canonical" href="/faculty/grace-hopper" /></head>
+      <body><a href="https://hoppersystems.yale.edu">Research Group Website</a></body></html>
+    `);
     const axios = (await import('axios')).default;
     const getSpy = vi.spyOn(axios, 'get');
 
-    const scraper = new DepartmentRosterScraper(configs, renderedFetcher);
+    const scraper = new DepartmentRosterScraper(configs, renderedFetcher, htmlFetcher);
     const { ctx, emitted } = makeContext();
     const result = await scraper.run(ctx);
 
@@ -488,14 +863,77 @@ describe('DepartmentRosterScraper.run', () => {
       '<html><body>hydrated faculty cards</body></html>',
       { pageUrl: 'https://example.invalid/cs#rendered' },
     );
+    expect(htmlFetcher).toHaveBeenCalledWith(
+      'https://engineering.yale.edu/faculty/grace-hopper',
+      false,
+      'dept-faculty-roster',
+    );
     expect(stubExtractor).not.toHaveBeenCalled();
     expect(getSpy).not.toHaveBeenCalled();
-    expect(result.entitiesObserved).toBe(1);
+    expect(result.entitiesObserved).toBe(2);
     expect(result.notes).toContain('cs=1');
     expect(emitted.find((o) => o.field === 'primaryDepartment')?.value).toBe('Computer Science');
     expect(emitted[0].sourceUrl).toBe('https://example.invalid/cs#rendered');
+    expect(emitted.find((o) => o.field === 'websiteUrl')?.value).toBe(
+      'https://hoppersystems.yale.edu/',
+    );
 
     getSpy.mockRestore();
+  });
+
+  it('uses the CS component data endpoint before falling back to rendered fetching', async () => {
+    const renderedFetcher = vi.fn();
+    const dataExtractor = vi.fn((): FacultyEntry[] => [
+      {
+        name: 'Grace Hopper',
+        title: 'Professor of Computer Science',
+        profileUrl: 'https://engineering.yale.edu/faculty/grace-hopper',
+      },
+    ]);
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'cs',
+        deptName: 'Computer Science',
+        schoolName: 'SEAS',
+        url: 'https://example.invalid/cs',
+        paginated: false,
+        extractor: vi.fn((): FacultyEntry[] => []),
+        dataUrl: 'https://example.invalid/cs/faculty-data',
+        dataRequest: { template: 'department', maxpages: '0' },
+        dataExtractor,
+        renderedExtractor: vi.fn((): FacultyEntry[] => []),
+        jsRenderedSkip: true,
+      },
+    ];
+    const htmlFetcher = vi.fn(async () => '<html><body>profile</body></html>');
+    const axios = (await import('axios')).default;
+    const postSpy = vi.spyOn(axios, 'post').mockResolvedValue({
+      data: { pages: { 1: { facultyMembers: [] } } },
+    } as any);
+
+    const scraper = new DepartmentRosterScraper(configs, renderedFetcher, htmlFetcher);
+    const { ctx, emitted } = makeContext();
+    const result = await scraper.run(ctx);
+
+    expect(postSpy).toHaveBeenCalledWith(
+      'https://example.invalid/cs/faculty-data',
+      expect.any(URLSearchParams),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          'Content-Type': 'application/x-www-form-urlencoded',
+        }),
+      }),
+    );
+    expect(dataExtractor).toHaveBeenCalledWith(
+      { pages: { 1: { facultyMembers: [] } } },
+      { pageUrl: 'https://example.invalid/cs/faculty-data' },
+    );
+    expect(renderedFetcher).not.toHaveBeenCalled();
+    expect(result.entitiesObserved).toBe(1);
+    expect(result.notes).toContain('cs=1');
+    expect(emitted.find((o) => o.field === 'primaryDepartment')?.value).toBe('Computer Science');
+
+    postSpy.mockRestore();
   });
 
   it('skips JS-rendered depts when the injected rendered page fetcher returns null', async () => {

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import * as cheerio from 'cheerio';
+import { labToObservations } from '../sources/ysmAtoZScraper';
 
 const SAMPLE_HTML = `
 <html><body>
@@ -104,5 +105,20 @@ describe('inferPiSurname', () => {
 
   it('returns null for descriptive-only names', () => {
     expect(inferPiSurname('3D Tumor Lab')).not.toBe('3D');
+  });
+});
+
+describe('labToObservations', () => {
+  it('does not emit index-only undergraduate access claims', () => {
+    const obs = labToObservations(
+      {
+        name: 'Arnsten Lab',
+        url: 'https://medicine.yale.edu/lab/arnsten/',
+        slug: 'ysm-arnsten',
+      },
+      'https://medicine.yale.edu/about/a-to-z-index/atoz/lab-websites/',
+    );
+
+    expect(obs.map((o) => o.field)).not.toContain('acceptingUndergrads');
   });
 });

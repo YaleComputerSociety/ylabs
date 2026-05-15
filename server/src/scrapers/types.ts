@@ -2,6 +2,7 @@
  * Shared types for the scraper subsystem.
  */
 import type { ObservedEntityType } from '../models/observation';
+import type { WorkPlannerMetrics } from './workPlanner';
 
 export interface ObservationInput {
   entityType: ObservedEntityType;
@@ -29,8 +30,14 @@ export interface ScraperOptions {
   useCache: boolean;
   release: boolean;
   limit?: number;
+  offset?: number;
   only?: string[];
   since?: Date;
+  discoverOpenAlexAuthors?: boolean;
+  maxOpenAlexPagesPerAuthor?: number;
+  manualRecipientCsvDir?: string;
+  ignoreWorkPlanner?: boolean;
+  triggeredBy?: 'cli' | 'cron' | 'admin';
 }
 
 export interface ScraperResult {
@@ -99,4 +106,5 @@ export interface ScraperFetchMetrics<TFetchMode extends string = ScraperFetchMod
 
 export interface ScraperMetrics<TFetchMode extends string = ScraperFetchMode> {
   fetchAttempts?: ScraperFetchAttemptMetrics<TFetchMode>[];
+  workPlanner?: WorkPlannerMetrics;
 }

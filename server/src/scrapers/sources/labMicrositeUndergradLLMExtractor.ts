@@ -1,17 +1,19 @@
 /**
  * LabMicrositeUndergradLLMExtractor
  *
- * For every ResearchGroup with a non-empty `websiteUrl`, fetch the lab home
+ * For every canonical ResearchEntity with a usable website URL, fetch the lab home
  * page (and a likely "people"/"members"/"join" sub-page if discoverable),
  * strip HTML to plain text, and ask an LLM (gpt-4o-mini via OpenAI's
- * structured-output API) to extract three undergrad-related signals:
+ * structured-output API) to extract evidence about undergrad access:
  *
- *   - `acceptingUndergrads`     (Boolean)   — yes/no/unclear from page content
+ *   - `undergradAccessEvidence` (Object)    — evidence-shaped access assessment
  *   - `currentUndergradCount`   (Integer)   — only emitted when the LLM
  *                                              identified a members section
  *                                              (open prose is unreliable)
  *   - `undergradEvidenceQuote`  (String)    — verbatim quote from the page
  *                                              proving the verdict
+ *   - `joinPageUrl`             (String)    — official join/application route
+ *   - role, contact-instruction, and constraint quotes when present
  *
  * The scraper is deliberately conservative:
  *   - LLM-derived observations carry a 0.5 confidence override (low-trust)
@@ -28,7 +30,8 @@
  */
 import axios from 'axios';
 import * as cheerio from 'cheerio';
-import { ResearchGroup } from '../../models/researchGroup';
+import { ResearchEntity } from '../../models/researchEntity';
+import { redactDirectContactInfo } from '../../utils/contactRedaction';
 import {
   createScraplingRenderedFetcher,
   measureRenderedFetch,
@@ -44,6 +47,15 @@ import type {
   ScraperContext,
   ScraperResult,
 } from '../types';
+import {
+  createWorkPlannerMetrics,
+  getWorkPlannerSourcePolicy,
+  loadEntityWorkPlan,
+  recordWorkPlannerDecision,
+  recordWorkPlannerNoIdentifier,
+  type EntityWorkPlan,
+  type WorkPlannerSourcePolicy,
+} from '../workPlanner';
 
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 10_000;
@@ -51,6 +63,8 @@ const MAX_PROMPT_CHARS = 50_000;
 const DEFAULT_LIMIT = 100;
 const DEFAULT_MODEL = 'gpt-4o-mini';
 const SOURCE_KEY = 'lab-microsite-undergrad-llm';
+const MAX_CANDIDATE_SUBPAGE_URLS = 8;
+const MAX_SUBPAGES_FETCHED = 3;
 
 /** Path patterns we'll probe on the lab origin if the home page doesn't link
  *  to one. Ordered most-specific → least-specific. */
@@ -85,6 +99,14 @@ export interface LLMExtraction {
   evidenceQuote: string;
   evidenceSource: EvidenceSource;
   joinPageUrl: string | null;
+  undergradRoleQuote?: string;
+  contactInstructionsQuote?: string;
+  explicitConstraintQuote?: string;
+}
+
+export interface PromptSourcePage {
+  url: string;
+  text: string;
 }
 
 export const LAB_UNDERGRAD_RESPONSE_FORMAT = {
@@ -103,6 +125,9 @@ export const LAB_UNDERGRAD_RESPONSE_FORMAT = {
           enum: ['explicit_text', 'members_section', 'none'],
         },
         joinPageUrl: { type: ['string', 'null'] },
+        undergradRoleQuote: { type: 'string' },
+        contactInstructionsQuote: { type: 'string' },
+        explicitConstraintQuote: { type: 'string' },
       },
       required: [
         'openToUndergrads',
@@ -110,6 +135,9 @@ export const LAB_UNDERGRAD_RESPONSE_FORMAT = {
         'evidenceQuote',
         'evidenceSource',
         'joinPageUrl',
+        'undergradRoleQuote',
+        'contactInstructionsQuote',
+        'explicitConstraintQuote',
       ],
     },
     strict: true,
@@ -125,6 +153,9 @@ Your job is to read text scraped from a lab's website (home page plus optionally
 - evidenceQuote: a verbatim quote from the page (≤200 characters) that supports your verdict. If openToUndergrads is "unclear" or "no", quote the most relevant text you found, or empty string if there is none.
 - evidenceSource: "explicit_text" if your verdict comes from prose ("we welcome undergraduates"), "members_section" if from a roster listing, "none" if no evidence.
 - joinPageUrl: the URL (absolute) of a "join the lab" or "opportunities" page, if mentioned. Otherwise null.
+- undergradRoleQuote: a verbatim quote that describes undergraduate roles/tasks, if present. Otherwise empty string.
+- contactInstructionsQuote: a verbatim quote with contact/application instructions, if present. Otherwise empty string.
+- explicitConstraintQuote: a verbatim quote with constraints such as "not accepting", eligibility, required courses, or application-only instructions, if present. Otherwise empty string.
 
 Be conservative. Do not infer openness from the mere presence of undergraduates as authors on papers. Quotes must be verbatim — do not paraphrase.`;
 
@@ -155,21 +186,25 @@ export function htmlToPromptText(html: string): string {
 
 /**
  * Pure: discover candidate sub-page URLs given the home-page HTML and its
- * resolved URL. Returns at most one absolute URL — the first anchor whose
- * text matches `SUBPAGE_ANCHOR_RE`. The caller can additionally probe
- * `SUBPAGE_PATH_HINTS` if no link is found.
+ * resolved URL. Returns same-host absolute URLs whose anchor text looks useful
+ * for undergraduate-access evidence.
  */
-export function discoverSubPageUrl(html: string, pageUrl: string): string | null {
-  if (!html) return null;
+export function discoverSubPageUrls(
+  html: string,
+  pageUrl: string,
+  maxUrls: number = MAX_CANDIDATE_SUBPAGE_URLS,
+): string[] {
+  if (!html || maxUrls <= 0) return [];
   let $: cheerio.CheerioAPI;
   try {
     $ = cheerio.load(html);
   } catch {
-    return null;
+    return [];
   }
-  let found: string | null = null;
+  const found: string[] = [];
+  const seen = new Set<string>();
   $('a').each((_i, el) => {
-    if (found) return;
+    if (found.length >= maxUrls) return;
     const text = ($(el).text() || '').trim();
     const href = $(el).attr('href') || '';
     if (!text || !href) return;
@@ -183,12 +218,23 @@ export function discoverSubPageUrl(html: string, pageUrl: string): string | null
       if (dest.hostname.replace(/^www\./, '') !== base.hostname.replace(/^www\./, '')) {
         return;
       }
-      found = abs;
+      const normalized = normalizeCandidateUrl(abs);
+      if (seen.has(normalized)) return;
+      seen.add(normalized);
+      found.push(normalized);
     } catch {
       /* ignore malformed URL */
     }
   });
   return found;
+}
+
+/**
+ * Backward-compatible helper for callers/tests that only need the first
+ * discovered sub-page.
+ */
+export function discoverSubPageUrl(html: string, pageUrl: string): string | null {
+  return discoverSubPageUrls(html, pageUrl, 1)[0] ?? null;
 }
 
 /**
@@ -206,6 +252,42 @@ export function candidateSubPageUrls(homeUrl: string): string[] {
 }
 
 /**
+ * Pure: build a bounded, deduped crawl list. Home-page links win because they
+ * preserve the site's own URL shape; origin-rooted fallback paths fill the
+ * remaining budget.
+ */
+export function candidateCrawlUrls(
+  homeHtml: string,
+  homeUrl: string,
+  maxUrls: number = MAX_CANDIDATE_SUBPAGE_URLS,
+): string[] {
+  if (maxUrls <= 0) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const url of [
+    ...discoverSubPageUrls(homeHtml, homeUrl, maxUrls),
+    ...candidateSubPageUrls(homeUrl),
+  ]) {
+    const normalized = normalizeCandidateUrl(url);
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    out.push(normalized);
+    if (out.length >= maxUrls) break;
+  }
+  return out;
+}
+
+function normalizeCandidateUrl(rawUrl: string): string {
+  try {
+    const u = new URL(rawUrl);
+    u.hash = '';
+    return u.toString();
+  } catch {
+    return '';
+  }
+}
+
+/**
  * Pure: assemble the user-facing prompt body the LLM sees.
  */
 export function buildLLMPrompt(
@@ -214,6 +296,7 @@ export function buildLLMPrompt(
   homeText: string,
   subPageUrl: string | null,
   subPageText: string | null,
+  additionalSubPages: PromptSourcePage[] = [],
 ): string {
   const parts: string[] = [];
   parts.push(`Lab name: ${groupName}`);
@@ -226,15 +309,43 @@ export function buildLLMPrompt(
     parts.push(`--- SUB-PAGE TEXT (${subPageUrl}) ---`);
     parts.push(subPageText);
   }
+  for (const page of additionalSubPages) {
+    if (!page.url || !page.text) continue;
+    parts.push('');
+    parts.push(`--- SUB-PAGE TEXT (${page.url}) ---`);
+    parts.push(page.text);
+  }
   return parts.join('\n').slice(0, MAX_PROMPT_CHARS);
+}
+
+export function sourceUrlForExtraction(
+  homePage: PromptSourcePage,
+  subPages: PromptSourcePage[],
+  extraction: LLMExtraction,
+): string {
+  const quoteCandidates = [
+    extraction.evidenceQuote,
+    extraction.undergradRoleQuote,
+    extraction.contactInstructionsQuote,
+    extraction.explicitConstraintQuote,
+  ]
+    .map((q) => (q || '').trim())
+    .filter(Boolean);
+  for (const quote of quoteCandidates) {
+    const matchingSubPage = subPages.find((page) => page.text.includes(quote));
+    if (matchingSubPage) return matchingSubPage.url;
+    if (homePage.text.includes(quote)) return homePage.url;
+  }
+  return homePage.url;
 }
 
 /**
  * Pure: turn an LLMExtraction into the ObservationInput list the materializer
  * will consume. Implements the rules:
  *
- *   - acceptingUndergrads: emitted iff openToUndergrads is 'yes' or 'no';
+ *   - undergradAccessEvidence: emitted iff openToUndergrads is 'yes' or 'no';
  *     skipped on 'unclear'. Confidence override 0.5 (LLM-based, low-trust).
+ *   - acceptingUndergrads: still emitted for legacy compatibility only.
  *   - currentUndergradCount: emitted iff evidenceSource is 'members_section'
  *     AND the count is a non-negative integer. Open prose ("we have many
  *     undergrads") is too unreliable to write a count from. Confidence 0.5.
@@ -247,9 +358,12 @@ export function extractionToObservations(
   sourceUrl: string,
   extraction: LLMExtraction,
   observedAt: Date = new Date(),
+  sourceContext: { sourceUrls?: string[]; quoteSourceUrl?: string } = {},
 ): ObservationInput[] {
+  const sourceUrls = sourceContext.sourceUrls?.filter(Boolean) ?? [sourceUrl];
+  const quoteSourceUrl = sourceContext.quoteSourceUrl || sourceUrl;
   const base = {
-    entityType: 'researchGroup' as const,
+    entityType: 'researchEntity' as const,
     entityKey: groupSlug,
     sourceUrl,
   };
@@ -258,11 +372,35 @@ export function extractionToObservations(
   if (extraction.openToUndergrads === 'yes') {
     out.push({
       ...base,
+      field: 'undergradAccessEvidence',
+      value: {
+        openToUndergrads: extraction.openToUndergrads,
+        evidenceSource: extraction.evidenceSource,
+        evidenceQuote: extraction.evidenceQuote,
+        sourceUrls,
+        quoteSourceUrl,
+      },
+      confidenceOverride: 0.5,
+    });
+    out.push({
+      ...base,
       field: 'acceptingUndergrads',
       value: true,
       confidenceOverride: 0.5,
     });
   } else if (extraction.openToUndergrads === 'no') {
+    out.push({
+      ...base,
+      field: 'undergradAccessEvidence',
+      value: {
+        openToUndergrads: extraction.openToUndergrads,
+        evidenceSource: extraction.evidenceSource,
+        evidenceQuote: extraction.evidenceQuote,
+        sourceUrls,
+        quoteSourceUrl,
+      },
+      confidenceOverride: 0.5,
+    });
     out.push({
       ...base,
       field: 'acceptingUndergrads',
@@ -289,8 +427,51 @@ export function extractionToObservations(
   if (quote) {
     out.push({
       ...base,
+      sourceUrl: quoteSourceUrl,
       field: 'undergradEvidenceQuote',
-      value: quote.slice(0, 500),
+      value: redactDirectContactInfo(quote).slice(0, 500),
+      confidenceOverride: 0.5,
+    });
+  }
+
+  if (extraction.joinPageUrl) {
+    out.push({
+      ...base,
+      field: 'joinPageUrl',
+      value: extraction.joinPageUrl,
+      confidenceOverride: 0.5,
+    });
+  }
+
+  const undergradRoleQuote = (extraction.undergradRoleQuote || '').trim();
+  if (undergradRoleQuote) {
+    out.push({
+      ...base,
+      sourceUrl: quoteSourceUrl,
+      field: 'undergradRoleEvidenceQuote',
+      value: redactDirectContactInfo(undergradRoleQuote).slice(0, 500),
+      confidenceOverride: 0.5,
+    });
+  }
+
+  const contactInstructionsQuote = (extraction.contactInstructionsQuote || '').trim();
+  if (contactInstructionsQuote) {
+    out.push({
+      ...base,
+      sourceUrl: quoteSourceUrl,
+      field: 'contactInstructionsQuote',
+      value: redactDirectContactInfo(contactInstructionsQuote).slice(0, 500),
+      confidenceOverride: 0.5,
+    });
+  }
+
+  const explicitConstraintQuote = (extraction.explicitConstraintQuote || '').trim();
+  if (explicitConstraintQuote) {
+    out.push({
+      ...base,
+      sourceUrl: quoteSourceUrl,
+      field: 'undergradConstraintQuote',
+      value: redactDirectContactInfo(explicitConstraintQuote).slice(0, 500),
       confidenceOverride: 0.5,
     });
   }
@@ -301,7 +482,7 @@ export function extractionToObservations(
 }
 
 /**
- * Pure: filter the list of candidate ResearchGroups down to the ones we
+ * Pure: filter the list of candidate ResearchEntities down to the ones we
  * should actually process this run.
  *
  *   - drop labs without a websiteUrl
@@ -317,6 +498,31 @@ export interface CandidateLab {
   websiteUrl: string;
   archived?: boolean;
   manuallyLockedFields?: string[];
+}
+
+function usableWebsiteUrlFromDoc(doc: Record<string, any>): string {
+  const candidates = [
+    doc.websiteUrl,
+    doc.website,
+    ...(Array.isArray(doc.sourceUrls) ? doc.sourceUrls : []),
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate !== 'string') continue;
+    const url = candidate.trim();
+    if (/^https?:\/\//i.test(url)) return url;
+  }
+  return '';
+}
+
+export function candidateLabFromResearchEntityDoc(doc: Record<string, any>): CandidateLab {
+  return {
+    _id: doc._id,
+    slug: doc.slug,
+    name: doc.name,
+    websiteUrl: usableWebsiteUrlFromDoc(doc),
+    archived: !!doc.archived,
+    manuallyLockedFields: doc.manuallyLockedFields || [],
+  };
 }
 
 export function selectLabsToProcess(
@@ -382,6 +588,12 @@ export type CallLLMFn = (input: {
   apiKey: string;
 }) => Promise<LLMExtraction>;
 
+export type WorkPlanLoaderFn = (
+  lab: CandidateLab,
+  policy: WorkPlannerSourcePolicy,
+  ctx: ScraperContext,
+) => Promise<EntityWorkPlan>;
+
 export const defaultCallLLM: CallLLMFn = async ({
   model,
   systemPrompt,
@@ -428,36 +640,52 @@ export interface LabMicrositeUndergradLLMExtractorDeps {
   fetchPage?: FetchPageFn;
   renderedFetcher?: RenderedFetcher | null;
   callLLM?: CallLLMFn;
+  workPlanLoader?: WorkPlanLoaderFn;
   /** Resolves the candidate-lab list. Default queries Mongo. */
   labFinder?: () => Promise<CandidateLab[]>;
   model?: string;
   apiKey?: string;
 }
 
-/** Default: query ResearchGroup for non-archived rows that have a website. */
+async function defaultWorkPlanLoader(
+  lab: CandidateLab,
+  policy: WorkPlannerSourcePolicy,
+  _ctx: ScraperContext,
+): Promise<EntityWorkPlan> {
+  return loadEntityWorkPlan({
+    entityType: policy.entityType,
+    entityKey: lab.slug,
+    sourceName: policy.sourceName,
+    targetFields: policy.targetFields,
+    manuallyLockedFields: lab.manuallyLockedFields,
+    freshnessWindowMs: policy.freshnessWindowMs,
+    now: new Date(),
+  });
+}
+
+/** Default: query ResearchEntity for non-archived rows that have a website. */
 async function defaultLabFinder(): Promise<CandidateLab[]> {
-  const docs = await ResearchGroup.find(
+  const docs = await ResearchEntity.find(
     {
       archived: { $ne: true },
-      websiteUrl: { $exists: true, $ne: '' },
+      $or: [
+        { websiteUrl: { $exists: true, $ne: '' } },
+        { website: { $exists: true, $ne: '' } },
+        { sourceUrls: /^https?:\/\//i },
+      ],
     },
     {
       _id: 1,
       slug: 1,
       name: 1,
       websiteUrl: 1,
+      website: 1,
+      sourceUrls: 1,
       archived: 1,
       manuallyLockedFields: 1,
     },
   ).lean();
-  return (docs as any[]).map((d) => ({
-    _id: d._id,
-    slug: d.slug,
-    name: d.name,
-    websiteUrl: d.websiteUrl || '',
-    archived: !!d.archived,
-    manuallyLockedFields: d.manuallyLockedFields || [],
-  }));
+  return (docs as any[]).map(candidateLabFromResearchEntityDoc);
 }
 
 export class LabMicrositeUndergradLLMExtractor implements IScraper {
@@ -467,6 +695,7 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
   private readonly fetchPage: FetchPageFn;
   private readonly renderedFetcher: RenderedFetcher | null;
   private readonly callLLM: CallLLMFn;
+  private readonly workPlanLoader: WorkPlanLoaderFn;
   private readonly labFinder: () => Promise<CandidateLab[]>;
   private readonly model: string;
   private readonly apiKey: string | undefined;
@@ -475,6 +704,7 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
     this.fetchPage = deps.fetchPage ?? defaultFetchPage;
     this.renderedFetcher = deps.renderedFetcher ?? createScraplingRenderedFetcher();
     this.callLLM = deps.callLLM ?? defaultCallLLM;
+    this.workPlanLoader = deps.workPlanLoader ?? defaultWorkPlanLoader;
     this.labFinder = deps.labFinder ?? defaultLabFinder;
     this.model = deps.model ?? DEFAULT_MODEL;
     this.apiKey = deps.apiKey ?? process.env.OPENAI_API_KEY;
@@ -493,7 +723,7 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
     }
 
     const candidates = await this.labFinder();
-    ctx.log(`Found ${candidates.length} candidate ResearchGroups with websiteUrl`);
+    ctx.log(`Found ${candidates.length} candidate ResearchEntities with usable website URLs`);
 
     const labs = selectLabsToProcess(candidates, {
       only: ctx.options.only,
@@ -509,18 +739,35 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
     let fetchFailed = 0;
     let llmFailed = 0;
     const fetchAttempts: ScraperFetchMetric[] = [];
+    const workPlannerPolicy = ctx.options.ignoreWorkPlanner
+      ? undefined
+      : getWorkPlannerSourcePolicy(this.name);
+    const workPlannerMetrics = createWorkPlannerMetrics();
 
     for (const lab of labs) {
       processed++;
-      let homePage: FetchedPage | null;
-      try {
-        homePage = await this.fetchPage(lab.websiteUrl);
-      } catch (err: any) {
-        ctx.log(
-          `[${lab.slug}] fetch error for ${lab.websiteUrl}: ${err?.message || err}`,
-        );
-        homePage = null;
+      if (workPlannerPolicy) {
+        if (!lab.slug) {
+          recordWorkPlannerNoIdentifier(workPlannerMetrics);
+          ctx.log(`[${lab.name}] skipped by WorkPlanner — missing slug/entity key.`);
+          continue;
+        }
+        const plan = await this.workPlanLoader(lab, workPlannerPolicy, ctx);
+        recordWorkPlannerDecision(workPlannerMetrics, plan);
+        if (!plan.shouldFetch) {
+          const reasons = Array.from(new Set(plan.fields.map((field) => field.reason))).join(',');
+          ctx.log(`[${lab.slug}] skipped by WorkPlanner — ${reasons || 'fresh'}.`);
+          continue;
+        }
       }
+
+      const measuredHomePage = await measureRenderedFetch(
+        lab.websiteUrl,
+        'http',
+        () => this.fetchPage(lab.websiteUrl),
+      );
+      fetchAttempts.push(measuredHomePage.metric);
+      let homePage: FetchedPage | null = measuredHomePage.result;
       if (!homePage || htmlToPromptText(homePage.html).length < 200) {
         const rendered = await measureRenderedFetch(
           lab.websiteUrl,
@@ -548,39 +795,35 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
       }
       const homeText = htmlToPromptText(homePage.html);
 
-      // Try to find a likely sub-page (people/members/join). Best-effort.
-      let subPage: FetchedPage | null = null;
-      const linkedSub = discoverSubPageUrl(homePage.html, homePage.url);
-      if (linkedSub) {
-        try {
-          subPage = await this.fetchPage(linkedSub);
-        } catch {
-          subPage = null;
-        }
-      } else {
-        // Fall back to probing common path hints (one shot — first 200 wins).
-        for (const candidate of candidateSubPageUrls(homePage.url)) {
-          try {
-            subPage = await this.fetchPage(candidate);
-          } catch {
-            subPage = null;
-          }
-          if (subPage) break;
-        }
+      const subPages: PromptSourcePage[] = [];
+      for (const candidate of candidateCrawlUrls(homePage.html, homePage.url)) {
+        if (subPages.length >= MAX_SUBPAGES_FETCHED) break;
+        const measuredSubPage = await measureRenderedFetch(
+          candidate,
+          'http',
+          () => this.fetchPage(candidate),
+        );
+        fetchAttempts.push(measuredSubPage.metric);
+        const fetched = measuredSubPage.result;
+        if (!fetched) continue;
+        const text = htmlToPromptText(fetched.html);
+        if (!text) continue;
+        subPages.push({ url: fetched.url, text });
       }
-      const subText = subPage ? htmlToPromptText(subPage.html) : null;
-      const subUrl = subPage ? subPage.url : null;
+      const [primarySubPage, ...additionalSubPages] = subPages;
 
       const userPrompt = buildLLMPrompt(
         lab.name,
         homePage.url,
         homeText,
-        subUrl,
-        subText,
+        primarySubPage?.url ?? null,
+        primarySubPage?.text ?? null,
+        additionalSubPages,
       );
 
       // Per-(websiteUrl, model) cache so reruns don't re-charge OpenAI.
-      const cacheKey = `llm:${this.model}:${homePage.url}${subUrl ? `+${subUrl}` : ''}`;
+      const sourceUrls = [homePage.url, ...subPages.map((page) => page.url)];
+      const cacheKey = `llm:${this.model}:${sourceUrls.join('+')}`;
 
       let extraction: LLMExtraction | null = null;
       if (ctx.options.useCache) {
@@ -618,8 +861,21 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
 
       const observations = extractionToObservations(
         lab.slug,
-        homePage.url,
+        sourceUrlForExtraction(
+          { url: homePage.url, text: homeText },
+          subPages,
+          extraction,
+        ),
         extraction,
+        new Date(),
+        {
+          sourceUrls,
+          quoteSourceUrl: sourceUrlForExtraction(
+            { url: homePage.url, text: homeText },
+            subPages,
+            extraction,
+          ),
+        },
       );
       if (observations.length > 0) {
         await ctx.emit(observations);
@@ -641,7 +897,10 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
     return {
       observationCount: totalObs,
       entitiesObserved: succeeded,
-      notes: `LLM-extracted undergrad signals for ${succeeded}/${processed} labs (${fetchFailed} fetch-failed, ${llmFailed} llm-failed)`,
+      notes: `LLM-extracted undergrad signals for ${succeeded}/${processed} labs (${fetchFailed} fetch-failed, ${llmFailed} llm-failed, ${workPlannerMetrics.skippedFresh + workPlannerMetrics.skippedManualLock} workplanner-skipped)`,
+      metrics: {
+        workPlanner: workPlannerMetrics,
+      },
       fetchMetrics: summarizeFetchMetrics(fetchAttempts),
     };
   }

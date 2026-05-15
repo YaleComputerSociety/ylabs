@@ -31,6 +31,26 @@ export interface EntityWorkPlan {
   shouldFetch: boolean;
 }
 
+export type WorkPlannerRecurringCadence = 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'manual';
+
+export interface WorkPlannerSourcePolicy {
+  sourceName: string;
+  entityType: ObservedEntityType;
+  targetFields: string[];
+  freshnessWindowMs: number;
+  paid?: boolean;
+  defaultRecurringCadence?: WorkPlannerRecurringCadence;
+  notes?: string;
+}
+
+export interface WorkPlannerMetrics {
+  planned: number;
+  fetched: number;
+  skippedFresh: number;
+  skippedManualLock: number;
+  skippedNoIdentifier: number;
+}
+
 export interface BuildFieldPlanOptions {
   sourceName: string;
   targetFields: string[];
@@ -55,6 +75,106 @@ export interface LoadEntityWorkPlanOptions {
   manuallyLockedFields?: string[];
   freshnessWindowMs: number;
   now?: Date;
+}
+
+export const WORK_PLANNER_DAY_MS = 24 * 60 * 60 * 1000;
+
+export const workPlannerSourcePolicies = [
+  {
+    sourceName: 'lab-microsite-undergrad-llm',
+    entityType: 'researchEntity',
+    targetFields: ['lastObservedAt'],
+    freshnessWindowMs: 7 * WORK_PLANNER_DAY_MS,
+    paid: true,
+    defaultRecurringCadence: 'weekly',
+    notes:
+      'Official microsite evidence; use the source-level lastObservedAt heartbeat to skip fresh entities before fetch/LLM calls.',
+  },
+  {
+    sourceName: 'openalex',
+    entityType: 'user',
+    targetFields: ['openAlexWorksSyncedAt'],
+    freshnessWindowMs: 30 * WORK_PLANNER_DAY_MS,
+    defaultRecurringCadence: 'monthly',
+    notes:
+      'Publication enrichment policy; concrete integration should emit a user-level freshness marker after a successful faculty sync.',
+  },
+  {
+    sourceName: 'orcid',
+    entityType: 'user',
+    targetFields: ['orcidWorksSyncedAt'],
+    freshnessWindowMs: 30 * WORK_PLANNER_DAY_MS,
+    defaultRecurringCadence: 'monthly',
+    notes:
+      'Identity-backed ORCID public works ingestion for accepted Yale user ORCIDs.',
+  },
+  {
+    sourceName: 'europe-pmc',
+    entityType: 'user',
+    targetFields: ['europePmcWorksSyncedAt'],
+    freshnessWindowMs: 30 * WORK_PLANNER_DAY_MS,
+    defaultRecurringCadence: 'monthly',
+    notes:
+      'Biomedical ORCID-backed paper discovery; no name-only authorship.',
+  },
+  {
+    sourceName: 'pubmed',
+    entityType: 'user',
+    targetFields: ['pubmedWorksSyncedAt'],
+    freshnessWindowMs: 30 * WORK_PLANNER_DAY_MS,
+    defaultRecurringCadence: 'monthly',
+    notes:
+      'PubMed-facing ORCID-backed biomedical paper discovery via Europe PMC.',
+  },
+  {
+    sourceName: 'crossref',
+    entityType: 'paper',
+    targetFields: ['crossrefHydratedAt'],
+    freshnessWindowMs: 90 * WORK_PLANNER_DAY_MS,
+    defaultRecurringCadence: 'quarterly',
+    notes:
+      'DOI metadata hydration only; never creates Yale authorship links.',
+  },
+] satisfies WorkPlannerSourcePolicy[];
+
+export function getWorkPlannerSourcePolicy(
+  sourceName: string,
+): WorkPlannerSourcePolicy | undefined {
+  return workPlannerSourcePolicies.find((policy) => policy.sourceName === sourceName);
+}
+
+export function createWorkPlannerMetrics(): WorkPlannerMetrics {
+  return {
+    planned: 0,
+    fetched: 0,
+    skippedFresh: 0,
+    skippedManualLock: 0,
+    skippedNoIdentifier: 0,
+  };
+}
+
+export function recordWorkPlannerNoIdentifier(metrics: WorkPlannerMetrics): WorkPlannerMetrics {
+  metrics.planned += 1;
+  metrics.skippedNoIdentifier += 1;
+  return metrics;
+}
+
+export function recordWorkPlannerDecision(
+  metrics: WorkPlannerMetrics,
+  plan: EntityWorkPlan,
+): WorkPlannerMetrics {
+  metrics.planned += 1;
+  if (plan.shouldFetch) {
+    metrics.fetched += 1;
+    return metrics;
+  }
+
+  if (plan.fields.some((field) => field.reason === 'manual-lock')) {
+    metrics.skippedManualLock += 1;
+  } else {
+    metrics.skippedFresh += 1;
+  }
+  return metrics;
 }
 
 export function buildEntityWorkPlan(options: BuildEntityWorkPlanOptions): EntityWorkPlan {

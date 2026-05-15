@@ -4,7 +4,7 @@
  * Reverse-looks-up Yale faculty who have actually mentored undergraduate
  * researchers by harvesting publicly published recipient lists for each of the
  * major Yale undergrad research fellowship programs (STARS, Dean's Research,
- * Tetelman, Mellon Mays, Bass / Yale College Research Fellowship, etc.).
+ * Tetelman, Mellon Mays, etc.).
  *
  * Each {student, program, year, advisor} pair feeds the matched advisor's
  * ResearchGroup as a `pastUndergradAdvisees` entry. The pure presence of even
@@ -45,6 +45,8 @@
  *     without producing 1000s of observations
  *   - ctx.options.only — filters to a subset of programKeys, e.g.
  *     `--only stars-ii,deans-research`
+ *   - ctx.options.manualRecipientCsvDir — optional directory containing
+ *     `<programKey>.csv` files for otherwise manual-upload-required programs
  *
  * Most Yale fellowship programs do NOT publish recipient lists in scrapable
  * HTML — they're either symposium PDFs (STARS II), hidden behind admin email
@@ -57,8 +59,11 @@
  */
 import axios from 'axios';
 import * as cheerio from 'cheerio';
+import fs from 'fs/promises';
+import path from 'path';
 import { User } from '../../models/user';
 import { findOrCreateForOwner } from '../../services/researchGroupService';
+import { normalizeOrcid } from '../../utils/orcid';
 import { getCached, setCached } from '../snapshotCache';
 import { normalizeName, slugify, splitName } from '../utils/scraperHelpers';
 import type {
@@ -81,8 +86,16 @@ export interface FellowshipRecipient {
   studentName: string;
   /** Faculty advisor's full name as it appears on the recipient list. */
   advisorName: string;
+  /** Advisor ORCID when an accepted manual row has already been reviewed. */
+  advisorOrcid?: string;
   /** Project title as it appears on the recipient list, when available. */
   projectTitle?: string;
+  /** Row-level source URL for manual accepted inputs, when available. */
+  sourceUrl?: string;
+  /** Optional source page or text block pointer for review traceability. */
+  sourcePage?: string;
+  /** Human review note retained from accepted-input CSVs. */
+  reviewNote?: string;
   /** Year of the award (4-digit). Inferred from the listing or the URL. */
   year: number;
 }
@@ -132,6 +145,8 @@ export interface PastUndergradAdviseeEntry {
 export interface AdvisorAggregateRow {
   /** Canonical (normalized) advisor display name. */
   canonicalName: string;
+  /** Advisor ORCID when present; takes precedence over name-based resolution. */
+  advisorOrcid?: string;
   /** Original/raw name as it first appeared (for logging). */
   rawName: string;
   /** Full aggregated `pastUndergradAdvisees` array for this advisor. */
@@ -149,16 +164,16 @@ export interface UserMatch {
   fname: string;
   lname: string;
   primaryDepartment?: string;
+  orcid?: string;
 }
 
 // ---------------------------------------------------------------------------
 // Per-program extractor stubs
 //
-// All six v1 programs require a manual upload: their recipient lists are either
+// All active v1 programs require a manual upload: their recipient lists are either
 // PDF-only (STARS II symposium booklets), behind an admin contact (Mellon Mays,
-// Tetelman, Dean's Research), or simply never published (Bass writing /
-// "Yale College Research Fellowship" doesn't exist as a discrete program with
-// a public list). Each stub throws a clear, identical-shaped error so the
+// Tetelman, Dean's Research), or simply never published. Each stub throws a
+// clear, identical-shaped error so the
 // orchestrator records `manual-upload-required` for that program and continues.
 //
 // The architecture keeps the per-program extractor as the single change-site:
@@ -171,6 +186,104 @@ export const manualUploadStub: RecipientExtractor = () => {
   throw new Error(
     'Recipient list not available as scrapable HTML — manual upload required',
   );
+};
+
+function parseCsvRows(input: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < input.length; i++) {
+    const char = input[i];
+    const next = input[i + 1];
+    if (char === '"') {
+      if (inQuotes && next === '"') {
+        cell += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (char === ',' && !inQuotes) {
+      row.push(cell.trim());
+      cell = '';
+    } else if ((char === '\n' || char === '\r') && !inQuotes) {
+      if (char === '\r' && next === '\n') i++;
+      row.push(cell.trim());
+      if (row.some((value) => value.length > 0)) rows.push(row);
+      row = [];
+      cell = '';
+    } else {
+      cell += char;
+    }
+  }
+
+  row.push(cell.trim());
+  if (row.some((value) => value.length > 0)) rows.push(row);
+  return rows;
+}
+
+function normalizedHeader(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function valueFor(row: Record<string, string>, names: string[]): string {
+  for (const name of names) {
+    const value = row[normalizedHeader(name)];
+    if (value) return value;
+  }
+  return '';
+}
+
+/**
+ * Manual recipient CSV extractor for programs whose official pages are
+ * PDF-only, gated, or published by an office as a spreadsheet.
+ *
+ * Required columns:
+ *   - advisorName or advisor
+ *   - year or awardYear, unless the URL provides a default year
+ *
+ * Optional columns:
+ *   - studentName or student
+ *   - projectTitle or project/title
+ *   - advisorOrcid or orcid
+ *   - sourceUrl
+ *   - sourcePage
+ *   - reviewNote
+ */
+export const manualRecipientCsvExtractor: RecipientExtractor = (csv, ctx) => {
+  const rows = parseCsvRows(csv);
+  if (rows.length < 2) return [];
+
+  const headers = rows[0].map(normalizedHeader);
+  const out: FellowshipRecipient[] = [];
+  for (const cells of rows.slice(1)) {
+    const record: Record<string, string> = {};
+    headers.forEach((header, index) => {
+      record[header] = cells[index]?.trim() || '';
+    });
+
+    const advisorName = valueFor(record, ['advisorName', 'advisor', 'facultyAdvisor']);
+    if (!advisorName) continue;
+
+    const rawYear = valueFor(record, ['year', 'awardYear', 'fellowshipYear']);
+    const parsedYear = rawYear ? parseInt(rawYear, 10) : undefined;
+    const year = parsedYear && !Number.isNaN(parsedYear) ? parsedYear : ctx.defaultYear;
+    if (!year) continue;
+
+    out.push({
+      studentName: valueFor(record, ['studentName', 'student', 'recipientName', 'recipient']),
+      advisorName,
+      advisorOrcid: normalizeOrcid(valueFor(record, ['advisorOrcid', 'orcid'])) || undefined,
+      projectTitle:
+        valueFor(record, ['projectTitle', 'project', 'title', 'researchTitle']) || undefined,
+      sourceUrl: valueFor(record, ['sourceUrl', 'source', 'sourceLink', 'url']) || undefined,
+      sourcePage: valueFor(record, ['sourcePage', 'page']) || undefined,
+      reviewNote: valueFor(record, ['reviewNote', 'note', 'notes']) || undefined,
+      year,
+    });
+  }
+  return out;
 };
 
 /**
@@ -283,17 +396,6 @@ export const DEFAULT_PROGRAM_CONFIGS: ProgramConfig[] = [
     manualUploadRequired: true,
     skipReason: 'Mellon Mays Yale fellow names not publicly published',
   },
-  {
-    programKey: 'bass-writing',
-    programName: 'Bass Writing / Yale College Research Fellowship (placeholder)',
-    urls: [
-      'https://writing.yalecollege.yale.edu/',
-    ],
-    extractor: manualUploadStub,
-    manualUploadRequired: true,
-    skipReason:
-      'No matching Yale undergrad research fellowship called "Bass Writing" / "Yale College Research Fellowship" with a public recipient list',
-  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -340,18 +442,20 @@ export function aggregateAdviseesByAdvisor(
   const out = new Map<string, AdvisorAggregateRow>();
   for (const r of recipients) {
     const cleaned = normalizeName(r.advisorName);
-    if (!cleaned) continue;
+    const advisorOrcid = normalizeOrcid(r.advisorOrcid);
+    if (!cleaned && !advisorOrcid) continue;
     const { last } = splitName(cleaned);
-    if (!last) continue;
+    if (!last && !advisorOrcid) continue;
     // Canonical key is the slugified normalized name — collapses
     // "Dr. Sandy Chang" and "Sandy Chang" into one row.
-    const key = slugify(cleaned);
+    const key = advisorOrcid ? `orcid:${advisorOrcid}` : slugify(cleaned);
     if (!key) continue;
 
     const existing =
       out.get(key) ||
       ({
-        canonicalName: cleaned,
+        canonicalName: cleaned || advisorOrcid,
+        advisorOrcid: advisorOrcid || undefined,
         rawName: r.advisorName,
         advisees: [] as PastUndergradAdviseeEntry[],
         sourceUrls: new Set<string>(),
@@ -373,7 +477,7 @@ export function aggregateAdviseesByAdvisor(
     }
     existing.latestYear = Math.max(existing.latestYear, r.year);
 
-    const url = sourceUrlByRecipient?.get(r);
+    const url = r.sourceUrl || sourceUrlByRecipient?.get(r);
     if (url) existing.sourceUrls.add(url);
 
     out.set(key, existing);
@@ -436,6 +540,29 @@ export async function findUserForAdvisor(
   return null;
 }
 
+export async function findUserForAdvisorOrcid(
+  advisorOrcid: string,
+  userFinder: (filter: Record<string, unknown>) => Promise<UserMatch[]> = defaultUserFinder,
+): Promise<UserMatch | null> {
+  const cleaned = normalizeOrcid(advisorOrcid);
+  if (!cleaned) return null;
+  const matches = await userFinder({
+    orcid: cleaned,
+    userType: { $in: ['professor', 'faculty', 'admin'] },
+  });
+  return matches.length === 1 ? matches[0] : null;
+}
+
+async function findUserForAdvisorRow(
+  row: AdvisorAggregateRow,
+  userFinder: (filter: Record<string, unknown>) => Promise<UserMatch[]>,
+): Promise<UserMatch | null> {
+  if (row.advisorOrcid) {
+    return findUserForAdvisorOrcid(row.advisorOrcid, userFinder);
+  }
+  return findUserForAdvisor(row.canonicalName, userFinder);
+}
+
 function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -449,6 +576,7 @@ async function defaultUserFinder(
     fname: 1,
     lname: 1,
     primaryDepartment: 1,
+    orcid: 1,
   })
     .limit(10)
     .lean();
@@ -458,6 +586,7 @@ async function defaultUserFinder(
     fname: d.fname,
     lname: d.lname,
     primaryDepartment: d.primaryDepartment,
+    orcid: d.orcid,
   }));
 }
 
@@ -478,7 +607,10 @@ async function defaultOwnerToGroupSlug(owner: UserMatch): Promise<string | null>
     });
     return group?.slug || null;
   } catch {
-    return null;
+    const fullName = `${owner.fname || ''} ${owner.lname || ''}`.trim();
+    const nameSlug = slugify(fullName || owner.netid || 'advisor');
+    const netidSlug = slugify(owner.netid || '');
+    return netidSlug ? `${nameSlug}-${netidSlug}` : nameSlug;
   }
 }
 
@@ -500,7 +632,7 @@ export function buildObservationsForAdvisor(
   sourceUrl: string,
 ): ObservationInput[] {
   const base = {
-    entityType: 'researchGroup' as const,
+    entityType: 'researchEntity' as const,
     entityKey: groupSlug,
     sourceUrl,
   };
@@ -597,7 +729,30 @@ export class UndergradFellowshipRecipientScraper implements IScraper {
       if (onlyFilter && !onlyFilter.has(config.programKey.toLowerCase())) continue;
       if (totalRecipientsProcessed >= recipientLimit) break;
 
-      if (config.manualUploadRequired) {
+      let effectiveConfig = config;
+      let manualCsvBody: string | null = null;
+      if (config.manualUploadRequired && ctx.options.manualRecipientCsvDir) {
+        const csvPath = path.resolve(
+          ctx.options.manualRecipientCsvDir,
+          `${config.programKey}.csv`,
+        );
+        try {
+          manualCsvBody = await fs.readFile(csvPath, 'utf8');
+          effectiveConfig = {
+            ...config,
+            manualUploadRequired: false,
+            urls: [`manual://${config.programKey}.csv`],
+            extractor: manualRecipientCsvExtractor,
+          };
+          ctx.log(`[${config.programKey}] using manual recipient CSV ${csvPath}`);
+        } catch (err: any) {
+          ctx.log(
+            `[${config.programKey}] manual CSV not found/readable at ${csvPath}: ${err?.message || err}`,
+          );
+        }
+      }
+
+      if (effectiveConfig.manualUploadRequired) {
         ctx.log(
           `[${config.programKey}] skipped — ${config.skipReason || 'manual upload required'}`,
         );
@@ -612,14 +767,17 @@ export class UndergradFellowshipRecipientScraper implements IScraper {
       // Fetch + extract per URL, accumulating recipients across the program's URLs.
       const recipients: FellowshipRecipient[] = [];
       const sourceByRecipient = new Map<FellowshipRecipient, string>();
-      let representativeUrl = config.urls[0] || '';
+      let representativeUrl = effectiveConfig.urls[0] || '';
       let extractFailed = false;
 
-      for (const url of config.urls) {
+      for (const url of effectiveConfig.urls) {
         if (totalRecipientsProcessed + recipients.length >= recipientLimit) break;
         let html: string;
         try {
-          html = await this.fetchPage(url, ctx.options.useCache);
+          html =
+            manualCsvBody && url.startsWith('manual://')
+              ? manualCsvBody
+              : await this.fetchPage(url, ctx.options.useCache);
         } catch (err: any) {
           ctx.log(
             `[${config.programKey}] fetch failed for ${url}: ${err?.message || err}`,
@@ -629,7 +787,7 @@ export class UndergradFellowshipRecipientScraper implements IScraper {
         const defaultYear = inferYearFromUrl(url);
         let pageRecipients: FellowshipRecipient[];
         try {
-          pageRecipients = config.extractor(html, { pageUrl: url, defaultYear });
+          pageRecipients = effectiveConfig.extractor(html, { pageUrl: url, defaultYear });
         } catch (err: any) {
           ctx.log(
             `[${config.programKey}] extractor error on ${url}: ${err?.message || err}`,
@@ -639,7 +797,7 @@ export class UndergradFellowshipRecipientScraper implements IScraper {
         }
         for (const r of pageRecipients) {
           recipients.push(r);
-          sourceByRecipient.set(r, url);
+          sourceByRecipient.set(r, r.sourceUrl || url);
         }
         if (!representativeUrl) representativeUrl = url;
       }
@@ -653,7 +811,7 @@ export class UndergradFellowshipRecipientScraper implements IScraper {
         continue;
       }
       if (recipients.length === 0) {
-        ctx.log(`[${config.programKey}] 0 recipients found across ${config.urls.length} URL(s)`);
+        ctx.log(`[${config.programKey}] 0 recipients found across ${effectiveConfig.urls.length} URL(s)`);
         perProgram.push({ key: config.programKey, status: 'empty', count: 0 });
         continue;
       }
@@ -666,7 +824,7 @@ export class UndergradFellowshipRecipientScraper implements IScraper {
       // Aggregate by canonical advisor name.
       const aggregated = aggregateAdviseesByAdvisor(
         trimmed,
-        config.programName,
+        effectiveConfig.programName,
         sourceByRecipient,
       );
 
@@ -676,7 +834,7 @@ export class UndergradFellowshipRecipientScraper implements IScraper {
         // Resolve advisor → User
         let user: UserMatch | null;
         try {
-          user = await findUserForAdvisor(row.canonicalName, this.userFinder);
+          user = await findUserForAdvisorRow(row, this.userFinder);
         } catch (err: any) {
           ctx.log(
             `[${config.programKey}] user lookup failed for "${row.rawName}": ${err?.message || err}`,
@@ -698,7 +856,7 @@ export class UndergradFellowshipRecipientScraper implements IScraper {
         }
 
         const sourceUrl =
-          row.sourceUrls.values().next().value || representativeUrl || config.urls[0];
+          row.sourceUrls.values().next().value || representativeUrl || effectiveConfig.urls[0];
         const obs = buildObservationsForAdvisor(slug, row.advisees, sourceUrl);
         await ctx.emit(obs);
         totalObs += obs.length;
@@ -732,4 +890,3 @@ export class UndergradFellowshipRecipientScraper implements IScraper {
     };
   }
 }
-

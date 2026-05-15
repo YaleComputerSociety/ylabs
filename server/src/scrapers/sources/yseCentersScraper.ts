@@ -110,7 +110,7 @@ export function parseCenters(html: string): RawYseEntity[] {
 }
 
 export function entityToObservations(entity: RawYseEntity, sourceUrl: string): ObservationInput[] {
-  const base = { entityType: 'researchGroup' as const, entityKey: entity.slug, sourceUrl };
+  const base = { entityType: 'researchEntity' as const, entityKey: entity.slug, sourceUrl };
   return [
     { ...base, field: 'slug', value: entity.slug },
     { ...base, field: 'name', value: entity.name },
@@ -119,7 +119,6 @@ export function entityToObservations(entity: RawYseEntity, sourceUrl: string): O
     { ...base, field: 'websiteUrl', value: entity.url },
     { ...base, field: 'sourceUrls', value: [sourceUrl, entity.url] },
     { ...base, field: 'openness', value: 'open' },
-    { ...base, field: 'acceptingUndergrads', value: true },
   ];
 }
 

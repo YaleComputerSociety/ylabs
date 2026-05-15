@@ -168,10 +168,9 @@ describe('entityToObservations', () => {
       'websiteUrl',
       'sourceUrls',
       'openness',
-      'acceptingUndergrads',
     ]);
     expect(obs.every((o) => o.entityKey === 'yse-industrial-ecology')).toBe(true);
-    expect(obs.every((o) => o.entityType === 'researchGroup')).toBe(true);
+    expect(obs.every((o) => o.entityType === 'researchEntity')).toBe(true);
     const schoolObs = obs.find((o) => o.field === 'school');
     expect(schoolObs!.value).toBe('Yale School of the Environment');
   });

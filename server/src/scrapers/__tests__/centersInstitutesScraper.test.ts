@@ -545,7 +545,7 @@ describe('CentersInstitutesScraper.run', () => {
     // 2 centers + 2 members + 1 member = 5 entities observed
     expect(result.entitiesObserved).toBe(5);
 
-    const groupObs = emitted.filter((o) => o.entityType === 'researchGroup');
+    const groupObs = emitted.filter((o) => o.entityType === 'researchEntity');
     const cowlesGroup = groupObs.filter((o) => o.entityKey === 'center-cowles');
     expect(cowlesGroup.find((o) => o.field === 'name')!.value).toBe('Cowles');
     expect(cowlesGroup.find((o) => o.field === 'school')!.value).toBe('FAS');
@@ -741,7 +741,7 @@ describe('CentersInstitutesScraper.run', () => {
     // 1 parent + 2 child centers = 3 entities
     expect(result.entitiesObserved).toBe(3);
     const groupKeys = new Set(
-      emitted.filter((o) => o.entityType === 'researchGroup').map((o) => o.entityKey),
+      emitted.filter((o) => o.entityType === 'researchEntity').map((o) => o.entityKey),
     );
     expect(groupKeys.has('center-jackson-centers')).toBe(true);
     expect(groupKeys.has('center-jackson-centers-schmidt-program')).toBe(true);

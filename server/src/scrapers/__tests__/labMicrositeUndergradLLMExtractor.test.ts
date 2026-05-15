@@ -14,13 +14,19 @@ import {
   LabMicrositeUndergradLLMExtractor,
   htmlToPromptText,
   discoverSubPageUrl,
+  discoverSubPageUrls,
   candidateSubPageUrls,
+  candidateCrawlUrls,
   buildLLMPrompt,
   extractionToObservations,
+  sourceUrlForExtraction,
+  candidateLabFromResearchEntityDoc,
   selectLabsToProcess,
   type CandidateLab,
+  type LabMicrositeUndergradLLMExtractorDeps,
   type LLMExtraction,
   type FetchedPage,
+  type WorkPlanLoaderFn,
 } from '../sources/labMicrositeUndergradLLMExtractor';
 import type { ObservationInput, ScraperContext } from '../types';
 
@@ -53,6 +59,27 @@ function makeContext(
     },
   };
   return { ctx, emitted, logs };
+}
+
+const alwaysFetchWorkPlan: WorkPlanLoaderFn = async (lab, policy) => ({
+  entityType: policy.entityType,
+  entityKey: lab.slug,
+  sourceName: policy.sourceName,
+  fields: policy.targetFields.map((field) => ({
+    field,
+    shouldFetch: true,
+    reason: 'missing' as const,
+  })),
+  shouldFetch: true,
+});
+
+function newTestScraper(
+  deps: LabMicrositeUndergradLLMExtractorDeps,
+): LabMicrositeUndergradLLMExtractor {
+  return new LabMicrositeUndergradLLMExtractor({
+    workPlanLoader: alwaysFetchWorkPlan,
+    ...deps,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -118,6 +145,34 @@ describe('discoverSubPageUrl', () => {
   });
 });
 
+describe('discoverSubPageUrls', () => {
+  it('returns multiple same-host relevant links in document order', () => {
+    const html = `
+      <a href="/people">People</a>
+      <a href="/join">Join Us</a>
+      <a href="/opportunities#students">Opportunities</a>
+      <a href="/news">News</a>
+    `;
+    expect(discoverSubPageUrls(html, 'https://lab.example.com/')).toEqual([
+      'https://lab.example.com/people',
+      'https://lab.example.com/join',
+      'https://lab.example.com/opportunities',
+    ]);
+  });
+
+  it('dedupes links after normalizing URL hashes and honors the max', () => {
+    const html = `
+      <a href="/people#students">People</a>
+      <a href="/people">Lab Members</a>
+      <a href="/join">Join</a>
+    `;
+    expect(discoverSubPageUrls(html, 'https://lab.example.com/', 2)).toEqual([
+      'https://lab.example.com/people',
+      'https://lab.example.com/join',
+    ]);
+  });
+});
+
 describe('candidateSubPageUrls', () => {
   it('builds origin-rooted candidate URLs for the standard hint paths', () => {
     const urls = candidateSubPageUrls('https://lab.example.com/some/page');
@@ -129,6 +184,22 @@ describe('candidateSubPageUrls', () => {
 
   it('returns [] for malformed input', () => {
     expect(candidateSubPageUrls('not a url')).toEqual([]);
+  });
+});
+
+describe('candidateCrawlUrls', () => {
+  it('combines discovered links with fallback paths, deduped and bounded', () => {
+    const html = `
+      <a href="/join">Join</a>
+      <a href="/people#current">People</a>
+      <a href="/join#students">Opportunities</a>
+    `;
+    expect(candidateCrawlUrls(html, 'https://lab.example.com/', 4)).toEqual([
+      'https://lab.example.com/join',
+      'https://lab.example.com/people',
+      'https://lab.example.com/members',
+      'https://lab.example.com/team',
+    ]);
   });
 });
 
@@ -162,6 +233,45 @@ describe('buildLLMPrompt', () => {
     );
     expect(prompt).not.toContain('SUB-PAGE TEXT');
   });
+
+  it('includes additional sub-pages with their raw source URLs', () => {
+    const prompt = buildLLMPrompt(
+      'Smith Lab',
+      'https://smith.example.com/',
+      'home text',
+      'https://smith.example.com/people',
+      'people text',
+      [{ url: 'https://smith.example.com/join', text: 'join text' }],
+    );
+    expect(prompt).toContain('SUB-PAGE TEXT (https://smith.example.com/people)');
+    expect(prompt).toContain('people text');
+    expect(prompt).toContain('SUB-PAGE TEXT (https://smith.example.com/join)');
+    expect(prompt).toContain('join text');
+  });
+});
+
+describe('sourceUrlForExtraction', () => {
+  it('returns the page whose text contains the evidence quote', () => {
+    const ext: LLMExtraction = {
+      openToUndergrads: 'yes',
+      currentUndergradCount: 0,
+      evidenceQuote: 'Undergraduates help with field work.',
+      evidenceSource: 'explicit_text',
+      joinPageUrl: 'https://smith.example.com/join',
+    };
+    const sourceUrl = sourceUrlForExtraction(
+      { url: 'https://smith.example.com/', text: 'Welcome.' },
+      [
+        { url: 'https://smith.example.com/people', text: 'Members.' },
+        {
+          url: 'https://smith.example.com/join',
+          text: 'Undergraduates help with field work.',
+        },
+      ],
+      ext,
+    );
+    expect(sourceUrl).toBe('https://smith.example.com/join');
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -171,7 +281,7 @@ describe('buildLLMPrompt', () => {
 describe('extractionToObservations', () => {
   const fixedDate = new Date('2026-04-27T12:00:00Z');
 
-  it('emits acceptingUndergrads=true on yes (with confidence override 0.5)', () => {
+  it('emits evidence-shaped access observations plus legacy compatibility on yes', () => {
     const ext: LLMExtraction = {
       openToUndergrads: 'yes',
       currentUndergradCount: 0,
@@ -179,16 +289,27 @@ describe('extractionToObservations', () => {
       evidenceSource: 'explicit_text',
       joinPageUrl: null,
     };
-    const obs = extractionToObservations('lab-foo', 'https://x.example/', ext, fixedDate);
+    const obs = extractionToObservations('lab-foo', 'https://x.example/', ext, fixedDate, {
+      sourceUrls: ['https://x.example/', 'https://x.example/join'],
+      quoteSourceUrl: 'https://x.example/join',
+    });
     const accepting = obs.find((o) => o.field === 'acceptingUndergrads');
     expect(accepting).toBeDefined();
     expect(accepting!.value).toBe(true);
     expect(accepting!.confidenceOverride).toBe(0.5);
+    const evidence = obs.find((o) => o.field === 'undergradAccessEvidence');
+    expect(evidence!.value).toMatchObject({
+      openToUndergrads: 'yes',
+      evidenceSource: 'explicit_text',
+      sourceUrls: ['https://x.example/', 'https://x.example/join'],
+      quoteSourceUrl: 'https://x.example/join',
+    });
     // count not emitted because evidenceSource is explicit_text, not members_section
     expect(obs.find((o) => o.field === 'currentUndergradCount')).toBeUndefined();
     // quote was emitted
     const quote = obs.find((o) => o.field === 'undergradEvidenceQuote');
     expect(quote!.value).toBe('We welcome motivated undergraduates each semester.');
+    expect(quote!.sourceUrl).toBe('https://x.example/join');
     // lastObservedAt always emitted
     expect(obs.find((o) => o.field === 'lastObservedAt')!.value).toEqual(fixedDate);
   });
@@ -205,6 +326,9 @@ describe('extractionToObservations', () => {
     const accepting = obs.find((o) => o.field === 'acceptingUndergrads');
     expect(accepting!.value).toBe(false);
     expect(accepting!.confidenceOverride).toBe(0.5);
+    expect(obs.find((o) => o.field === 'undergradAccessEvidence')!.value).toMatchObject({
+      openToUndergrads: 'no',
+    });
   });
 
   it('skips acceptingUndergrads observation entirely on unclear', () => {
@@ -260,6 +384,54 @@ describe('extractionToObservations', () => {
     const quote = obs.find((o) => o.field === 'undergradEvidenceQuote');
     expect((quote!.value as string).length).toBe(500);
   });
+
+  it('emits join/contact/role evidence as separate observations', () => {
+    const ext: LLMExtraction = {
+      openToUndergrads: 'yes',
+      currentUndergradCount: 0,
+      evidenceQuote: 'We welcome students.',
+      evidenceSource: 'explicit_text',
+      joinPageUrl: 'https://x.example/join',
+      undergradRoleQuote: 'Undergraduates help collect data.',
+      contactInstructionsQuote: 'Apply using the form on this page.',
+      explicitConstraintQuote: 'Prior Python experience preferred.',
+    };
+    const obs = extractionToObservations('lab-4', 'https://x/', ext, fixedDate);
+    expect(obs.find((o) => o.field === 'joinPageUrl')!.value).toBe('https://x.example/join');
+    expect(obs.find((o) => o.field === 'undergradRoleEvidenceQuote')!.value).toBe(
+      'Undergraduates help collect data.',
+    );
+    expect(obs.find((o) => o.field === 'contactInstructionsQuote')!.value).toBe(
+      'Apply using the form on this page.',
+    );
+    expect(obs.find((o) => o.field === 'undergradConstraintQuote')!.value).toBe(
+      'Prior Python experience preferred.',
+    );
+  });
+
+  it('redacts direct contact details from legacy public quote fields', () => {
+    const ext: LLMExtraction = {
+      openToUndergrads: 'yes',
+      currentUndergradCount: 0,
+      evidenceQuote: 'Email pi.person@yale.edu to discuss undergraduate research.',
+      evidenceSource: 'explicit_text',
+      joinPageUrl: 'https://x.example/join',
+      undergradRoleQuote: '',
+      contactInstructionsQuote: 'Call 203-432-1234 or email manager@yale.edu.',
+      explicitConstraintQuote: '',
+    };
+    const obs = extractionToObservations('lab-5', 'https://x/', ext, fixedDate);
+
+    expect(obs.find((o) => o.field === 'undergradEvidenceQuote')!.value).toBe(
+      'Email [email redacted] to discuss undergraduate research.',
+    );
+    expect(obs.find((o) => o.field === 'contactInstructionsQuote')!.value).toBe(
+      'Call [phone redacted] or email [email redacted].',
+    );
+    expect((obs.find((o) => o.field === 'undergradAccessEvidence')!.value as any).evidenceQuote).toBe(
+      'Email pi.person@yale.edu to discuss undergraduate research.',
+    );
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -301,6 +473,33 @@ describe('selectLabsToProcess', () => {
     const out = selectLabsToProcess(labs, { limit: 1 });
     expect(out).toHaveLength(1);
     expect(out[0].slug).toBe('lab-a');
+  });
+
+  it('normalizes canonical ResearchEntity website fallbacks for candidate selection', () => {
+    expect(
+      candidateLabFromResearchEntityDoc({
+        _id: 'entity-1',
+        slug: 'legacy-website',
+        name: 'Legacy Website Lab',
+        website: 'https://legacy.example.edu/',
+        websiteUrl: '',
+      }),
+    ).toMatchObject({
+      slug: 'legacy-website',
+      websiteUrl: 'https://legacy.example.edu/',
+    });
+
+    expect(
+      candidateLabFromResearchEntityDoc({
+        _id: 'entity-2',
+        slug: 'source-url',
+        name: 'Source URL Lab',
+        sourceUrls: ['mailto:hidden@example.edu', 'https://source.example.edu/lab'],
+      }),
+    ).toMatchObject({
+      slug: 'source-url',
+      websiteUrl: 'https://source.example.edu/lab',
+    });
   });
 });
 
@@ -357,7 +556,7 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
       },
     ];
 
-    const scraper = new LabMicrositeUndergradLLMExtractor({
+    const scraper = newTestScraper({
       fetchPage,
       callLLM,
       labFinder,
@@ -379,12 +578,20 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
 
     // Observations
     expect(result.entitiesObserved).toBe(1);
+    expect(result.metrics?.workPlanner).toEqual({
+      planned: 1,
+      fetched: 1,
+      skippedFresh: 0,
+      skippedManualLock: 0,
+      skippedNoIdentifier: 0,
+    });
     const fields = emitted.map((o) => o.field).sort();
     expect(fields).toEqual(
       [
         'acceptingUndergrads',
         'currentUndergradCount',
         'lastObservedAt',
+        'undergradAccessEvidence',
         'undergradEvidenceQuote',
       ].sort(),
     );
@@ -393,6 +600,228 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
     expect(accepting!.confidenceOverride).toBe(0.5);
     expect(accepting!.entityKey).toBe('smith-lab');
     expect(emitted.find((o) => o.field === 'currentUndergradCount')!.value).toBe(3);
+  });
+
+  it('uses WorkPlanner to skip fresh labs before fetch or LLM calls', async () => {
+    const fetchPage = vi.fn();
+    const callLLM = vi.fn();
+    const workPlanLoader: WorkPlanLoaderFn = async (lab, policy) => ({
+      entityType: policy.entityType,
+      entityKey: lab.slug,
+      sourceName: policy.sourceName,
+      fields: policy.targetFields.map((field) => ({
+        field,
+        shouldFetch: false,
+        reason: 'fresh' as const,
+        lastObservedAt: '2026-05-12T00:00:00.000Z',
+      })),
+      shouldFetch: false,
+    });
+
+    const scraper = newTestScraper({
+      fetchPage,
+      callLLM,
+      workPlanLoader,
+      labFinder: async () => [
+        {
+          _id: '1',
+          slug: 'fresh-lab',
+          name: 'Fresh Lab',
+          websiteUrl: 'https://fresh.example.com/',
+        },
+      ],
+      apiKey: 'sk-test',
+    });
+    const { ctx, emitted, logs } = makeContext();
+    const result = await scraper.run(ctx);
+
+    expect(fetchPage).not.toHaveBeenCalled();
+    expect(callLLM).not.toHaveBeenCalled();
+    expect(emitted).toEqual([]);
+    expect(result).toMatchObject({
+      observationCount: 0,
+      entitiesObserved: 0,
+      metrics: {
+        workPlanner: {
+          planned: 1,
+          fetched: 0,
+          skippedFresh: 1,
+          skippedManualLock: 0,
+          skippedNoIdentifier: 0,
+        },
+      },
+    });
+    expect(logs.some((log) => log.includes('[fresh-lab] skipped by WorkPlanner'))).toBe(true);
+  });
+
+  it('can bypass WorkPlanner for full audit runs', async () => {
+    const fetchPage = makeFetchPage({
+      'https://fresh.example.com/':
+        '<html><body><h1>Fresh Lab</h1><p>Undergraduates join projects.</p></body></html>',
+    });
+    const callLLM = vi.fn(async (): Promise<LLMExtraction> => ({
+      openToUndergrads: 'yes',
+      currentUndergradCount: 0,
+      evidenceQuote: 'Undergraduates join projects.',
+      evidenceSource: 'explicit_text',
+      joinPageUrl: null,
+    }));
+    const workPlanLoader = vi.fn(async (lab, policy) => ({
+      entityType: policy.entityType,
+      entityKey: lab.slug,
+      sourceName: policy.sourceName,
+      fields: policy.targetFields.map((field: string) => ({
+        field,
+        shouldFetch: false,
+        reason: 'fresh' as const,
+      })),
+      shouldFetch: false,
+    }));
+
+    const scraper = newTestScraper({
+      fetchPage,
+      callLLM,
+      workPlanLoader,
+      labFinder: async () => [
+        {
+          _id: '1',
+          slug: 'fresh-lab',
+          name: 'Fresh Lab',
+          websiteUrl: 'https://fresh.example.com/',
+        },
+      ],
+      apiKey: 'sk-test',
+    });
+    const { ctx } = makeContext({ ignoreWorkPlanner: true });
+    const result = await scraper.run(ctx);
+
+    expect(workPlanLoader).not.toHaveBeenCalled();
+    expect(fetchPage).toHaveBeenCalledWith('https://fresh.example.com/');
+    expect(callLLM).toHaveBeenCalledTimes(1);
+    expect(result.entitiesObserved).toBe(1);
+    expect(result.metrics?.workPlanner).toEqual({
+      planned: 0,
+      fetched: 0,
+      skippedFresh: 0,
+      skippedManualLock: 0,
+      skippedNoIdentifier: 0,
+    });
+  });
+
+  it('follows multiple relevant home-page links and preserves the quote source URL', async () => {
+    const fetchPage = makeFetchPage({
+      'https://smith.example.com/': `
+        <html><body>
+          <h1>The Smith Lab</h1>
+          <a href="/people">People</a>
+          <a href="/join">Join Us</a>
+        </body></html>
+      `,
+      'https://smith.example.com/people': '<html><body>Current students</body></html>',
+      'https://smith.example.com/join':
+        '<html><body>Undergraduates help collect data each summer.</body></html>',
+    });
+    const callLLM = vi.fn(async () => ({
+      openToUndergrads: 'yes',
+      currentUndergradCount: 0,
+      evidenceQuote: 'Undergraduates help collect data each summer.',
+      evidenceSource: 'explicit_text',
+      joinPageUrl: 'https://smith.example.com/join',
+    } satisfies LLMExtraction));
+    const scraper = newTestScraper({
+      fetchPage,
+      callLLM,
+      labFinder: async () => [
+        {
+          _id: '1',
+          slug: 'smith-lab',
+          name: 'The Smith Lab',
+          websiteUrl: 'https://smith.example.com/',
+        },
+      ],
+      apiKey: 'sk-test',
+    });
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    expect(fetchPage).toHaveBeenCalledWith('https://smith.example.com/people');
+    expect(fetchPage).toHaveBeenCalledWith('https://smith.example.com/join');
+    const prompt = (callLLM.mock.calls as unknown as Array<[{ userPrompt: string }]>)[0][0]
+      .userPrompt;
+    expect(prompt).toContain('SUB-PAGE TEXT (https://smith.example.com/people)');
+    expect(prompt).toContain('SUB-PAGE TEXT (https://smith.example.com/join)');
+    const evidence = emitted.find((o) => o.field === 'undergradAccessEvidence');
+    expect(evidence!.sourceUrl).toBe('https://smith.example.com/join');
+    expect(evidence!.value).toMatchObject({
+      sourceUrls: [
+        'https://smith.example.com/',
+        'https://smith.example.com/people',
+        'https://smith.example.com/join',
+      ],
+      quoteSourceUrl: 'https://smith.example.com/join',
+    });
+    expect(emitted.find((o) => o.field === 'undergradEvidenceQuote')!.sourceUrl).toBe(
+      'https://smith.example.com/join',
+    );
+  });
+
+  it('dedupes candidate pages and fetches only the bounded number of sub-pages', async () => {
+    const fetchPage = makeFetchPage({
+      'https://bounded.example.com/': `
+        <html><body>
+          <a href="/people#undergrads">People</a>
+          <a href="/people">Lab Members</a>
+          <a href="/join">Join</a>
+          <a href="/opportunities">Opportunities</a>
+          <a href="/undergraduates">Undergraduates</a>
+        </body></html>
+      `,
+      'https://bounded.example.com/people': '<html><body>People page</body></html>',
+      'https://bounded.example.com/join': '<html><body>Join page</body></html>',
+      'https://bounded.example.com/opportunities':
+        '<html><body>Opportunities page</body></html>',
+      'https://bounded.example.com/undergraduates':
+        '<html><body>Undergraduates page</body></html>',
+    });
+    const callLLM = vi.fn(async () => ({
+      openToUndergrads: 'unclear',
+      currentUndergradCount: 0,
+      evidenceQuote: '',
+      evidenceSource: 'none',
+      joinPageUrl: null,
+    } satisfies LLMExtraction));
+    const scraper = newTestScraper({
+      fetchPage,
+      callLLM,
+      labFinder: async () => [
+        {
+          _id: '1',
+          slug: 'bounded-lab',
+          name: 'Bounded Lab',
+          websiteUrl: 'https://bounded.example.com/',
+        },
+      ],
+      apiKey: 'sk-test',
+    });
+    const { ctx } = makeContext();
+    await scraper.run(ctx);
+
+    expect(fetchPage).toHaveBeenCalledWith('https://bounded.example.com/people');
+    expect(fetchPage).toHaveBeenCalledWith('https://bounded.example.com/join');
+    expect(fetchPage).toHaveBeenCalledWith('https://bounded.example.com/opportunities');
+    expect(fetchPage).not.toHaveBeenCalledWith(
+      'https://bounded.example.com/undergraduates',
+    );
+    expect(
+      fetchPage.mock.calls.filter(
+        ([url]) => url === 'https://bounded.example.com/people',
+      ),
+    ).toHaveLength(1);
+    const prompt = (callLLM.mock.calls as unknown as Array<[{ userPrompt: string }]>)[0][0]
+      .userPrompt;
+    expect(prompt).not.toContain(
+      'Undergraduates page',
+    );
   });
 
   it('falls back to a rendered fetcher when the home page is empty or script-heavy', async () => {
@@ -420,7 +849,7 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
       },
     ];
 
-    const scraper = new LabMicrositeUndergradLLMExtractor({
+    const scraper = newTestScraper({
       fetchPage,
       renderedFetcher,
       callLLM,
@@ -438,7 +867,8 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
     expect(callLLM).toHaveBeenCalled();
     const llmInput = (callLLM.mock.calls as unknown as Array<[{ userPrompt: string }]>)[0][0];
     expect(llmInput.userPrompt).toContain('We welcome undergraduate researchers');
-    expect(result.fetchMetrics?.summary.succeeded).toBe(1);
+    expect(result.fetchMetrics?.summary.byMode.scrapling?.succeeded).toBe(1);
+    expect(result.fetchMetrics?.summary.byMode.http?.succeeded).toBe(1);
   });
 
   it('skips labs whose acceptingUndergrads field is manually locked', async () => {
@@ -460,7 +890,7 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
       },
     ];
 
-    const scraper = new LabMicrositeUndergradLLMExtractor({
+    const scraper = newTestScraper({
       fetchPage,
       callLLM,
       labFinder,
@@ -491,7 +921,7 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
       { _id: '2', slug: 'lab-b', name: 'B', websiteUrl: 'https://b.example/' },
     ];
 
-    const scraper = new LabMicrositeUndergradLLMExtractor({
+    const scraper = newTestScraper({
       fetchPage,
       callLLM,
       labFinder,
@@ -528,7 +958,7 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
       { _id: '2', slug: 'happy', name: 'Happy Lab', websiteUrl: 'https://b.example/' },
     ];
 
-    const scraper = new LabMicrositeUndergradLLMExtractor({
+    const scraper = newTestScraper({
       fetchPage,
       callLLM,
       labFinder,
@@ -573,7 +1003,7 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
       },
     ];
 
-    const scraper = new LabMicrositeUndergradLLMExtractor({
+    const scraper = newTestScraper({
       fetchPage,
       callLLM,
       labFinder,
@@ -598,7 +1028,7 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
     const labFinder = async (): Promise<CandidateLab[]> => [
       { _id: '1', slug: 'x', name: 'X', websiteUrl: 'https://x.example/' },
     ];
-    const scraper = new LabMicrositeUndergradLLMExtractor({
+    const scraper = newTestScraper({
       fetchPage: vi.fn(),
       callLLM: vi.fn(),
       labFinder,
@@ -627,7 +1057,7 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
       joinPageUrl: null,
     } satisfies LLMExtraction));
 
-    const scraper = new LabMicrositeUndergradLLMExtractor({
+    const scraper = newTestScraper({
       fetchPage,
       callLLM,
       labFinder: async () => labs,

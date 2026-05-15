@@ -130,8 +130,8 @@ async function findPiUserId(surname: string | null): Promise<string | null> {
   return String(m._id);
 }
 
-function labToObservations(lab: RawLab, sourceUrl: string): ObservationInput[] {
-  const base = { entityType: 'researchGroup' as const, entityKey: lab.slug, sourceUrl };
+export function labToObservations(lab: RawLab, sourceUrl: string): ObservationInput[] {
+  const base = { entityType: 'researchEntity' as const, entityKey: lab.slug, sourceUrl };
   return [
     { ...base, field: 'slug', value: lab.slug },
     { ...base, field: 'name', value: lab.name },
@@ -140,7 +140,6 @@ function labToObservations(lab: RawLab, sourceUrl: string): ObservationInput[] {
     { ...base, field: 'websiteUrl', value: lab.url },
     { ...base, field: 'sourceUrls', value: [sourceUrl, lab.url] },
     { ...base, field: 'openness', value: 'open' },
-    { ...base, field: 'acceptingUndergrads', value: true },
   ];
 }
 
@@ -166,7 +165,7 @@ export class YsmAtoZScraper implements IScraper {
       const piUserId = await findPiUserId(surname);
       if (piUserId) {
         observations.push({
-          entityType: 'researchGroup',
+          entityType: 'researchEntity',
           entityKey: lab.slug,
           field: 'inferredPiUserId',
           value: piUserId,

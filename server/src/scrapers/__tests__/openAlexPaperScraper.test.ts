@@ -346,27 +346,35 @@ describe('OpenAlexPaperScraper.run', () => {
     ]);
 
     const scraper = new OpenAlexPaperScraper({ userModel, fetcher });
-    const { ctx, emitted } = makeContext();
+    const { ctx, emitted } = makeContext({ discoverOpenAlexAuthors: true });
     const result = await scraper.run(ctx);
 
     // The ORCID path won — the works call should target the ORCID-derived author id.
     const worksCall = calls.find((c) => c.url === 'https://api.openalex.org/works');
     expect(worksCall?.params.filter).toBe('author.id:https://openalex.org/A-from-orcid');
 
-    // No openAlexId observation should fire (we only emit on the name path).
+    // No openAlexId lock should fire; the user observation is only a sync marker.
     const userObs = emitted.filter((o) => o.entityType === 'user');
-    expect(userObs).toHaveLength(0);
+    expect(userObs.map((obs) => obs.field)).toEqual(['openAlexWorksSyncedAt']);
 
     // Paper observations were emitted.
     const paperObs = emitted.filter((o) => o.entityType === 'paper');
     expect(paperObs.length).toBeGreaterThan(0);
+    expect(paperObs.find((o) => o.field === 'paperAuthorshipEvidence')?.value).toMatchObject({
+      userId: 'u-amy',
+      netid: 'aa1',
+      sourceName: 'openalex',
+      method: 'openalex-orcid',
+    });
+    expect(paperObs.filter((o) => o.field === 'yaleAuthorIds')).toHaveLength(0);
+    expect(paperObs.filter((o) => o.field === 'yaleAuthorNetIds')).toHaveLength(0);
 
     expect(result.notes).toContain('orcid:1');
     expect(result.notes).toContain('openAlexId:0');
     expect(result.notes).toContain('name:0');
   });
 
-  it('emits an openAlexId observation when the name lookup succeeds', async () => {
+  it('keeps successful name lookup review-only and does not create authorship', async () => {
     const fetcher: HttpFetcher = vi.fn(async (url, params) => {
       if (url === 'https://api.openalex.org/authors') {
         // Name search returns one exact match.
@@ -375,7 +383,16 @@ describe('OpenAlexPaperScraper.run', () => {
         };
       }
       if (url === 'https://api.openalex.org/works') {
-        return { results: [], meta: { next_cursor: null } };
+        return {
+          results: [
+            {
+              id: 'https://openalex.org/W-name-only',
+              title: 'Name-only matched work',
+              publication_year: 2025,
+            },
+          ],
+          meta: { next_cursor: null },
+        };
       }
       return { results: [] };
     });
@@ -391,19 +408,180 @@ describe('OpenAlexPaperScraper.run', () => {
     ]);
 
     const scraper = new OpenAlexPaperScraper({ userModel, fetcher });
+    const { ctx, emitted } = makeContext({ discoverOpenAlexAuthors: true });
+    const result = await scraper.run(ctx);
+
+    expect(emitted.filter((o) => o.entityType === 'user')).toHaveLength(0);
+    expect(emitted.filter((o) => o.field === 'openAlexId' && o.entityType === 'user')).toHaveLength(0);
+    expect(emitted.filter((o) => o.field === 'yaleAuthorIds')).toHaveLength(0);
+    expect(emitted.filter((o) => o.field === 'yaleAuthorNetIds')).toHaveLength(0);
+    expect(emitted.filter((o) => o.field === 'paperAuthorshipEvidence')).toHaveLength(0);
+    expect(result.notes).toContain('name:1');
+  });
+
+  it('skips name-only discovery by default so dry-run audits do not appear stalled', async () => {
+    const fetcher: HttpFetcher = vi.fn(async () => {
+      throw new Error('name lookup should not run');
+    });
+    const userModel = mockUserModel([
+      {
+        _id: 'u-john',
+        netid: 'js99',
+        fname: 'John',
+        lname: 'Smith',
+      },
+    ]);
+
+    const scraper = new OpenAlexPaperScraper({ userModel, fetcher });
     const { ctx, emitted } = makeContext();
     const result = await scraper.run(ctx);
 
-    // Should have emitted a User observation with the discovered openAlexId.
-    const userObs = emitted.find(
-      (o) =>
-        o.entityType === 'user' &&
-        o.entityKey === 'js99' &&
-        o.field === 'openAlexId',
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(userModel.find).toHaveBeenCalledWith(
+      expect.objectContaining({
+        $or: [
+          { orcid: { $exists: true, $ne: null, $nin: [''] } },
+          { openAlexId: { $exists: true, $ne: null, $nin: [''] } },
+        ],
+      }),
+      expect.anything(),
     );
-    expect(userObs).toBeDefined();
-    expect(userObs?.value).toBe('A-discovered');
-    expect(result.notes).toContain('name:1');
+    expect(emitted).toHaveLength(0);
+    expect(result.notes).toContain('skipped:0');
+  });
+
+  it('caps OpenAlex work pages per author when requested', async () => {
+    const calls: { url: string; params: Record<string, string> }[] = [];
+    const fetcher: HttpFetcher = vi.fn(async (url, params) => {
+      calls.push({ url, params });
+      if (url === 'https://api.openalex.org/works') {
+        return {
+          results: [
+            {
+              id: `https://openalex.org/W-${params.cursor}`,
+              title: `Paper ${params.cursor}`,
+              publication_year: 2024,
+            },
+          ],
+          meta: { next_cursor: `next-${params.cursor}` },
+        };
+      }
+      return { results: [] };
+    });
+    const userModel = mockUserModel([
+      {
+        _id: 'u-amy',
+        netid: 'aa1',
+        fname: 'Amy',
+        lname: 'Arnsten',
+        openAlexId: 'A-existing',
+      },
+    ]);
+
+    const scraper = new OpenAlexPaperScraper({ userModel, fetcher });
+    const { ctx } = makeContext({ maxOpenAlexPagesPerAuthor: 1 });
+    const result = await scraper.run(ctx);
+
+    const workCalls = calls.filter((c) => c.url === 'https://api.openalex.org/works');
+    expect(workCalls).toHaveLength(1);
+    expect(result.entitiesObserved).toBe(1);
+  });
+
+  it('respects --only by filtering to requested netids before processing', async () => {
+    const calls: { url: string; params: Record<string, string> }[] = [];
+    const fetcher: HttpFetcher = vi.fn(async (url, params) => {
+      calls.push({ url, params });
+      if (url === 'https://api.openalex.org/works') {
+        return {
+          results: [
+            {
+              id: 'https://openalex.org/W-only',
+              title: 'Scoped paper',
+              publication_year: 2024,
+            },
+          ],
+          meta: { next_cursor: null },
+        };
+      }
+      return { results: [] };
+    });
+    const userModel = mockUserModel([
+      {
+        _id: 'u1',
+        netid: 'n1',
+        fname: 'First',
+        lname: 'Faculty',
+        openAlexId: 'A-one',
+      },
+      {
+        _id: 'u2',
+        netid: 'n2',
+        fname: 'Second',
+        lname: 'Faculty',
+        openAlexId: 'A-two',
+      },
+    ]);
+
+    const scraper = new OpenAlexPaperScraper({ userModel, fetcher });
+    const { ctx } = makeContext({ only: ['n2'] });
+    const result = await scraper.run(ctx);
+
+    const workCalls = calls.filter((c) => c.url === 'https://api.openalex.org/works');
+    expect(workCalls).toHaveLength(1);
+    expect(workCalls[0].params.filter).toBe('author.id:https://openalex.org/A-two');
+    expect(result.notes).toContain('Synced papers for 1 faculty');
+  });
+
+  it('applies offset plus limit after sorting the eligible OpenAlex cohort', async () => {
+    const calls: { url: string; params: Record<string, string> }[] = [];
+    const fetcher: HttpFetcher = vi.fn(async (url, params) => {
+      calls.push({ url, params });
+      if (url === 'https://api.openalex.org/works') {
+        return {
+          results: [
+            {
+              id: `https://openalex.org/W-${params.filter}`,
+              title: 'Windowed paper',
+              publication_year: 2024,
+            },
+          ],
+          meta: { next_cursor: null },
+        };
+      }
+      return { results: [] };
+    });
+    const userModel = mockUserModel([
+      {
+        _id: 'u1',
+        netid: 'n1',
+        fname: 'First',
+        lname: 'Faculty',
+        openAlexId: 'A-one',
+      },
+      {
+        _id: 'u2',
+        netid: 'n2',
+        fname: 'Second',
+        lname: 'Faculty',
+        openAlexId: 'A-two',
+      },
+      {
+        _id: 'u3',
+        netid: 'n3',
+        fname: 'Third',
+        lname: 'Faculty',
+        openAlexId: 'A-three',
+      },
+    ]);
+
+    const scraper = new OpenAlexPaperScraper({ userModel, fetcher });
+    const { ctx } = makeContext({ offset: 1, limit: 1 } as any);
+    const result = await scraper.run(ctx);
+
+    const workCalls = calls.filter((c) => c.url === 'https://api.openalex.org/works');
+    expect(workCalls).toHaveLength(1);
+    expect(workCalls[0].params.filter).toBe('author.id:https://openalex.org/A-two');
+    expect(result.notes).toContain('Synced papers for 1 faculty');
   });
 
   it('respects --limit (caps total faculty processed)', async () => {
@@ -421,9 +599,8 @@ describe('OpenAlexPaperScraper.run', () => {
       return { results: [] };
     });
 
-    // Mock model that records whether limit() was applied. Five rows; we'll
-    // ask for limit=2 and assert only two were processed.
-    let limitApplied: number | undefined;
+    // Five rows; ask for limit=2 and assert only two were processed after
+    // deterministic in-memory ordering.
     const rows = [
       { _id: 'u1', netid: 'n1', fname: 'A', lname: 'A', orcid: '0000-0001-1111-1111' },
       { _id: 'u2', netid: 'n2', fname: 'B', lname: 'B', orcid: '0000-0002-2222-2222' },
@@ -434,10 +611,7 @@ describe('OpenAlexPaperScraper.run', () => {
     const buildThenableLean = (rs: any[]): any => ({
       then: (resolve: (v: any) => any, reject?: (e: any) => any) =>
         Promise.resolve(rs).then(resolve, reject),
-      limit: (n: number) => {
-        limitApplied = n;
-        return buildThenableLean(rs.slice(0, n));
-      },
+      limit: (n: number) => buildThenableLean(rs.slice(0, n)),
     });
     const userModel = {
       find: vi.fn(() => ({
@@ -450,7 +624,6 @@ describe('OpenAlexPaperScraper.run', () => {
     const { ctx } = makeContext({ limit: 2 });
     await scraper.run(ctx);
 
-    expect(limitApplied).toBe(2);
     // Only two faculty should have been processed → only two ORCID lookups fired.
     expect(lookupCalls.length).toBe(2);
   });

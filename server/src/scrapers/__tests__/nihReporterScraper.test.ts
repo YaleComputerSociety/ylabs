@@ -296,7 +296,7 @@ describe('piGrantsToObservations', () => {
     expect(userObs.find((o) => o.field === 'lname')?.value).toBe('Arnsten');
     expect(userObs.find((o) => o.field === 'userType')?.value).toBe('faculty');
 
-    const groupObs = obs.filter((o) => o.entityType === 'researchGroup');
+    const groupObs = obs.filter((o) => o.entityType === 'researchEntity');
     expect(groupObs.every((o) => o.entityKey === 'nih-pi-amy-arnsten')).toBe(true);
     expect(groupObs.find((o) => o.field === 'slug')?.value).toBe('nih-pi-amy-arnsten');
     expect(groupObs.find((o) => o.field === 'name')?.value).toBe('Amy Arnsten Lab');
@@ -326,7 +326,7 @@ describe('piGrantsToObservations', () => {
       netid: 'rrb1',
     });
     expect(obs.filter((o) => o.entityType === 'user')).toHaveLength(0);
-    const groupObs = obs.filter((o) => o.entityType === 'researchGroup');
+    const groupObs = obs.filter((o) => o.entityType === 'researchEntity');
     const piId = groupObs.find((o) => o.field === 'inferredPiUserId');
     expect(piId?.value).toBe('user-abc');
     expect(piId?.confidenceOverride).toBeGreaterThanOrEqual(0.8);
@@ -342,12 +342,12 @@ describe('piGrantsToObservations', () => {
     }));
     const obs = piGrantsToObservations('Amy Arnsten', many, null);
     const recentGrants = obs.find(
-      (o) => o.entityType === 'researchGroup' && o.field === 'recentGrants',
+      (o) => o.entityType === 'researchEntity' && o.field === 'recentGrants',
     )?.value as any[];
     expect(recentGrants).toHaveLength(10);
     expect(
       obs.find(
-        (o) => o.entityType === 'researchGroup' && o.field === 'recentGrantCount',
+        (o) => o.entityType === 'researchEntity' && o.field === 'recentGrantCount',
       )?.value,
     ).toBe(10);
   });
@@ -440,13 +440,13 @@ describe('NihReporterScraper.run', () => {
 
     // Both should have ResearchGroup observations
     const arnstenGroup = emitted.filter(
-      (o) => o.entityType === 'researchGroup' && o.entityKey === 'nih-pi-amy-arnsten',
+      (o) => o.entityType === 'researchEntity' && o.entityKey === 'nih-pi-amy-arnsten',
     );
     expect(arnstenGroup.length).toBeGreaterThan(0);
     expect(arnstenGroup.find((o) => o.field === 'recentGrantCount')?.value).toBe(2);
 
     const breakerGroup = emitted.filter(
-      (o) => o.entityType === 'researchGroup' && o.entityKey === 'nih-pi-ronald-breaker',
+      (o) => o.entityType === 'researchEntity' && o.entityKey === 'nih-pi-ronald-breaker',
     );
     expect(breakerGroup.find((o) => o.field === 'inferredPiUserId')?.value).toBe('breaker-id');
   });
@@ -467,7 +467,7 @@ describe('NihReporterScraper.run', () => {
     // Only one PI should have been emitted observations for.
     const groupKeys = new Set(
       emitted
-        .filter((o) => o.entityType === 'researchGroup')
+        .filter((o) => o.entityType === 'researchEntity')
         .map((o) => o.entityKey),
     );
     expect(groupKeys.size).toBe(1);

@@ -363,7 +363,7 @@ export function piGrantsToObservations(
 
   // 2. ResearchGroup observations.
   const groupBase = {
-    entityType: 'researchGroup' as const,
+    entityType: 'researchEntity' as const,
     entityKey: slug,
     sourceUrl: sorted[0]?.project_detail_url || REPORTER_ENDPOINT,
   };
