@@ -18,13 +18,13 @@ const Login = () => {
   const destination = (() => {
     if (returnPath.startsWith('/research') || returnPath.startsWith('/listings')) {
       return {
-        heading: 'Continue to Yale Labs',
+        heading: 'Continue to Yale Research',
         description: 'Use your Yale account to browse research homes, evidence, and source-backed profiles.',
       };
     }
     if (returnPath.startsWith('/pathways')) {
       return {
-        heading: 'Continue to Yale Labs',
+        heading: 'Continue to Yale Research',
         description: 'Use your Yale account to browse labs, evidence, and possible ways in.',
       };
     }

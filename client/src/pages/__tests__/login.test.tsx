@@ -29,10 +29,10 @@ afterEach(() => {
 });
 
 describe('Login', () => {
-  it('routes retired Pathways context to Yale Labs on the CAS gate', () => {
+  it('routes retired Pathways context to Yale Research on the CAS gate', () => {
     renderLogin('/pathways');
 
-    expect(screen.getByRole('heading', { name: /continue to yale labs/i })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: /continue to yale research/i })).toBeTruthy();
     expect(
       screen.getByText(/browse labs, evidence, and possible ways in/i),
     ).toBeTruthy();
@@ -45,10 +45,10 @@ describe('Login', () => {
     expect(screen.getByText(/structured programs, funding cycles, and planning/i)).toBeTruthy();
   });
 
-  it('frames retired listing links as Yale Labs', () => {
+  it('frames retired listing links as Yale Research', () => {
     renderLogin('/listings');
 
-    expect(screen.getByRole('heading', { name: /continue to yale labs/i })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: /continue to yale research/i })).toBeTruthy();
     expect(screen.getByText(/browse research homes, evidence, and source-backed profiles/i)).toBeTruthy();
   });
 

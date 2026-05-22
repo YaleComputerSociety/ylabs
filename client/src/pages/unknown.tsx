@@ -289,13 +289,17 @@ const Unknown = () => {
 
               {isUserTypeDropdownOpen && (
                 <div
-                  className="absolute left-0 right-0 z-10 mt-1 max-h-[200px] overflow-hidden rounded-md border border-slate-300 bg-white shadow-lg"
+                  className="mt-2 max-h-[200px] overflow-hidden rounded-md border border-slate-300 bg-white shadow-lg"
+                  role="listbox"
+                  aria-label="Role at Yale options"
                   tabIndex={-1}
                 >
                   <ul className="max-h-[200px] overflow-y-auto" tabIndex={-1}>
                     {userTypeOptions.map((option, index) => (
                       <li
                         key={index}
+                        role="option"
+                        aria-selected={userType === option.value}
                         onClick={() => handleUserTypeSelect(option.value)}
                         className={`flex min-h-[44px] cursor-pointer items-center justify-between p-2 ${
                           focusedUserTypeIndex === index ? 'bg-[var(--yr-blue-soft)]' : 'hover:bg-slate-100'
@@ -334,7 +338,7 @@ const Unknown = () => {
               type="submit"
               className="inline-flex min-h-[44px] w-full items-center justify-center rounded-md bg-[var(--yr-blue)] px-6 py-2 text-sm font-semibold text-white hover:bg-blue-900 focus:outline-none focus:ring-2 focus:ring-blue-200 sm:w-auto"
             >
-              Continue to Yale Labs
+              Continue to Yale Research
             </button>
           </div>
         </form>
