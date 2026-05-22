@@ -2,19 +2,22 @@
  * About page displaying project information, sponsors, and developer team members.
  */
 import DeveloperCard from '../components/DeveloperCard';
+import useDocumentTitle from '../hooks/useDocumentTitle';
 
 const About = () => {
+  useDocumentTitle('About');
   return (
-    <div className="flex flex-col items-center p-8 min-h-screen">
-      <div className="max-w-5xl text-center">
-        <h1 className="text-4xl font-bold mb-7">Welcome to Yale Research</h1>
-        <p className="text-lg text-gray-700 mb-10 leading-relaxed">
+    <div className="yr-page flex min-h-screen flex-col items-center px-5 py-8 sm:px-8">
+      <div className="yr-panel max-w-5xl rounded-md p-5 text-center sm:p-8">
+        <p className="yr-kicker mb-3">About the project</p>
+        <h1 className="mb-7 text-4xl font-semibold text-slate-950">Welcome to Yale Research</h1>
+        <p className="mb-10 text-lg leading-relaxed text-slate-700">
           A collaboration between the{' '}
           <a
             href={'https://yalecomputersociety.org/'}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-blue-500"
+            className="yr-link rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
           >
             Yale Computer Society
           </a>{' '}
@@ -23,7 +26,7 @@ const About = () => {
             href={'https://www.yura.yale.edu/'}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-blue-500"
+            className="yr-link rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
           >
             Yale Undergraduate Research Association
           </a>
@@ -32,37 +35,47 @@ const About = () => {
           topic or method they care about to a credible research home without already knowing the
           right lab or professor name.
         </p>
-        <h1 className="text-3xl font-bold mb-7">Help us with our first release!</h1>
-        <p className="text-lg text-gray-700 mb-10 leading-relaxed">
-          While we are working diligently to connect posted roles with broader research homes and
-          pathways, we are also improving the browsing experience. As you look around the site, please
-          let us know in the{' '}
+        <h2 className="mb-7 text-3xl font-semibold text-slate-950">Help improve Yale Research</h2>
+        <p className="mb-10 text-lg leading-relaxed text-slate-700">
+          We are continuing to connect source-backed openings with broader research homes and
+          pathways while improving the browsing experience. As you look around the site, please let
+          us know in the{' '}
           <a
             href={
               'https://docs.google.com/forms/d/e/1FAIpQLSf2BE6MBulJHWXhDDp3y4Nixwe6EH0Oo9X1pTo976-KrJKv5g/viewform?usp=dialog'
             }
             target="_blank"
             rel="noopener noreferrer"
-            className="text-blue-500"
+            className="yr-link rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
           >
             feedback form
           </a>{' '}
           if there is anything that is broken, annoying, or that you would like to see added to the
           site.
         </p>
-        <a href="https://yalecomputersociety.org/" target="_blank" rel="noopener noreferrer">
+        <a
+          href="https://yalecomputersociety.org/"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+        >
           <img
             src="/assets/icons/ycs-icon.png"
-            alt="y/cs Website"
+            alt="Yale Computer Society website"
             width={40}
             height={40}
             className="inline-block mx-2"
           />
         </a>
-        <a href="https://www.yura.yale.edu/" target="_blank" rel="noopener noreferrer">
+        <a
+          href="https://www.yura.yale.edu/"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+        >
           <img
             src="/assets/icons/yura-icon.png"
-            alt="YURA Website"
+            alt="Yale Undergraduate Research Association website"
             width={32}
             height={40}
             className="inline-block mx-2"
@@ -72,16 +85,22 @@ const About = () => {
           href="https://github.com/YaleComputerSociety/ylabs"
           target="_blank"
           rel="noopener noreferrer"
+          className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
         >
           <img
             src="/assets/icons/github-icon.png"
-            alt="RDB Github"
+            alt="Yale Research GitHub"
             width={40}
             height={40}
             className="inline-block mx-2"
           />
         </a>
-        <a href="https://www.hudsonrivertrading.com/" target="_blank" rel="noopener noreferrer">
+        <a
+          href="https://www.hudsonrivertrading.com/"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+        >
           <img
             src="/assets/logos/HudsonRiverTrading.png"
             alt="Hudson River Trading"
@@ -90,7 +109,12 @@ const About = () => {
             className="inline-block mx-2"
           />
         </a>
-        <a href="https://www.minimax.com/" target="_blank" rel="noopener noreferrer">
+        <a
+          href="https://www.minimax.com/"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+        >
           <img
             src="/assets/logos/MiniMax.png"
             alt="MiniMax"
@@ -100,19 +124,19 @@ const About = () => {
           />
         </a>
       </div>
-      <div className="max-w-6xl text-center mt-16">
-        <h2 className="text-3xl font-bold mb-10">Meet our team</h2>
+      <div className="mt-16 max-w-6xl text-center">
+        <h2 className="mb-10 text-3xl font-semibold text-slate-950">Meet our team</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-16">
           {currentDevelopers.map((developer) => (
-            <div key={developer.name} className="bg-gray-50 p-3 rounded-lg shadow-md">
+            <div key={developer.name} className="yr-card rounded-md p-3">
               <DeveloperCard developer={developer}></DeveloperCard>
             </div>
           ))}
         </div>
-        <h2 className="text-3xl font-bold mb-10">RDB alumni</h2>
+        <h2 className="mb-10 text-3xl font-semibold text-slate-950">Yale Research alumni</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
           {pastDevelopers.map((developer) => (
-            <div key={developer.name} className="bg-gray-50 p-3 rounded-lg shadow-md">
+            <div key={developer.name} className="yr-card rounded-md p-3">
               <DeveloperCard developer={developer}></DeveloperCard>
             </div>
           ))}
@@ -211,7 +235,7 @@ const currentDevelopers = [
 const pastDevelopers = [
   {
     name: 'Julian Lee',
-    position: 'RDB Founder',
+    position: 'Founder',
     location: 'New York, NY',
     github: 'https://github.com/JulianLee123',
   },

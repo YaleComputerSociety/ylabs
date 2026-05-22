@@ -5,9 +5,11 @@ import { useCallback, useEffect, useReducer, useState } from 'react';
 import axios from '../utils/axios';
 import swal from 'sweetalert';
 import AdminPanel from '../components/admin/AdminPanel';
+import useDocumentTitle from '../hooks/useDocumentTitle';
 import {
   AnalyticsActionNeededResponse,
   AnalyticsFunnelResponse,
+  AnalyticsSearchQueryResponse,
   AnalyticsRange,
   AnalyticsSearchQualityResponse,
   AnalyticsUserActivityResponse,
@@ -35,12 +37,13 @@ const defaultUserActivity: AnalyticsUserActivityResponse = {
 };
 
 const Analytics = () => {
+  useDocumentTitle('Analytics');
   const [state, dispatch] = useReducer(
     analyticsReducer,
     undefined,
     () => createInitialAnalyticsState()
   );
-  const { data, isLoading, lastUpdated } = state;
+  const { data, isLoading, lastUpdated, error } = state;
   const [userActivity, setUserActivity] =
     useState<AnalyticsUserActivityResponse>(defaultUserActivity);
   const [isUserActivityLoading, setIsUserActivityLoading] = useState(false);
@@ -56,6 +59,7 @@ const Analytics = () => {
   const [selectedUserError, setSelectedUserError] = useState<string | null>(null);
   const [analyticsRange, setAnalyticsRange] = useState<AnalyticsRange>('30d');
   const [searchQuality, setSearchQuality] = useState<AnalyticsSearchQualityResponse | null>(null);
+  const [searchQueries, setSearchQueries] = useState<AnalyticsSearchQueryResponse | null>(null);
   const [funnel, setFunnel] = useState<AnalyticsFunnelResponse | null>(null);
   const [actions, setActions] = useState<AnalyticsActionNeededResponse | null>(null);
   const [isImpactLoading, setIsImpactLoading] = useState(false);
@@ -139,10 +143,14 @@ const Analytics = () => {
     setImpactError(null);
 
     try {
-      const [searchQualityResponse, funnelResponse, actionsResponse] = await Promise.all([
+      const [searchQualityResponse, searchQueriesResponse, funnelResponse, actionsResponse] = await Promise.all([
         axios.get<AnalyticsSearchQualityResponse>('/analytics/search-quality', {
           withCredentials: true,
           params: { range: analyticsRange },
+        }),
+        axios.get<AnalyticsSearchQueryResponse>('/analytics/search-queries', {
+          withCredentials: true,
+          params: { range: analyticsRange, limit: 25 },
         }),
         axios.get<AnalyticsFunnelResponse>('/analytics/funnel', {
           withCredentials: true,
@@ -155,6 +163,7 @@ const Analytics = () => {
       ]);
 
       setSearchQuality(searchQualityResponse.data);
+      setSearchQueries(searchQueriesResponse.data);
       setFunnel(funnelResponse.data);
       setActions(actionsResponse.data);
     } catch (error) {
@@ -172,12 +181,16 @@ const Analytics = () => {
   }, [fetchAnalytics]);
 
   useEffect(() => {
-    fetchUserActivity();
-  }, [fetchUserActivity]);
+    if (data) {
+      fetchUserActivity();
+    }
+  }, [data, fetchUserActivity]);
 
   useEffect(() => {
-    fetchImpactAnalytics();
-  }, [fetchImpactAnalytics]);
+    if (data) {
+      fetchImpactAnalytics();
+    }
+  }, [data, fetchImpactAnalytics]);
 
   useEffect(() => {
     if (selectedNetid) {
@@ -188,10 +201,30 @@ const Analytics = () => {
     }
   }, [fetchSelectedUser, selectedNetid]);
 
-  if (isLoading || !data) {
+  if (isLoading) {
     return (
       <div className="flex justify-center items-center min-h-screen">
         <div className="text-xl">Loading analytics...</div>
+      </div>
+    );
+  }
+
+  if (!data) {
+    return (
+      <div className="flex min-h-screen items-center justify-center px-4">
+        <div className="max-w-md rounded-lg border border-red-200 bg-white p-6 text-center shadow-sm">
+          <h1 className="mb-3 text-2xl font-bold text-gray-900">Analytics unavailable</h1>
+          <p className="mb-5 text-sm text-gray-600">
+            {error || 'Failed to load analytics data'}
+          </p>
+          <button
+            type="button"
+            onClick={fetchAnalytics}
+            className="inline-flex min-h-[44px] items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+          >
+            Retry Analytics
+          </button>
+        </div>
       </div>
     );
   }
@@ -205,19 +238,52 @@ const Analytics = () => {
     value: number | string;
     subtitle?: string;
   }) => (
-    <div className="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden">
-      <div
-        className="h-0.5"
-        style={{
-          background: 'linear-gradient(90deg, #0055A4 0%, #3b82f6 60%, #93c5fd 100%)',
-          opacity: 0.5,
-        }}
-      />
+    <div className="overflow-hidden rounded-md border border-slate-200 bg-white shadow-sm">
       <div className="p-6">
         <h3 className="text-sm font-medium text-gray-600 mb-2">{title}</h3>
         <p className="text-3xl font-bold text-gray-900">{value}</p>
         {subtitle && <p className="text-sm text-gray-500 mt-1">{subtitle}</p>}
       </div>
+    </div>
+  );
+
+  const DashboardMetric = ({
+    title,
+    value,
+    context,
+    tone = 'blue',
+  }: {
+    title: string;
+    value: number | string;
+    context: string;
+    tone?: 'blue' | 'green' | 'amber' | 'red';
+  }) => {
+    const toneClass = {
+      blue: 'border-blue-200 bg-blue-50 text-blue-800',
+      green: 'border-emerald-200 bg-emerald-50 text-emerald-800',
+      amber: 'border-amber-200 bg-amber-50 text-amber-800',
+      red: 'border-red-200 bg-red-50 text-red-800',
+    }[tone];
+
+    return (
+      <div className={`rounded-lg border p-4 ${toneClass}`}>
+        <h3 className="text-sm font-semibold">{title}</h3>
+        <p className="mt-2 text-3xl font-bold text-gray-950">{value}</p>
+        <p className="mt-2 text-sm leading-5 opacity-85">{context}</p>
+      </div>
+    );
+  };
+
+  const DetailSectionHeader = ({
+    title,
+    description,
+  }: {
+    title: string;
+    description?: string;
+  }) => (
+    <div className="mb-4 flex flex-col gap-1 border-b border-gray-200 pb-3">
+      <h2 className="text-xl font-semibold text-gray-900">{title}</h2>
+      {description && <p className="text-sm text-gray-500">{description}</p>}
     </div>
   );
 
@@ -242,11 +308,25 @@ const Analytics = () => {
     return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
   };
 
-  const formatEventType = (eventType: string) =>
-    eventType
-      .split('_')
-      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(' ');
+  const formatEventType = (eventType: string) => {
+    const labelMap: Record<string, string> = {
+      listing_view: 'Opportunity View',
+      listing_favorite: 'Opportunity Save',
+      listing_unfavorite: 'Opportunity Unsave',
+      listing_create: 'Opportunity Create',
+      listing_update: 'Opportunity Update',
+      listing_archive: 'Opportunity Archive',
+      listing_unarchive: 'Opportunity Unarchive',
+    };
+
+    return (
+      labelMap[eventType] ||
+      eventType
+        .split('_')
+        .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(' ')
+    );
+  };
 
   const formatNumber = (value?: number | null, digits = 0) => {
     if (typeof value !== 'number' || Number.isNaN(value)) {
@@ -304,6 +384,11 @@ const Analytics = () => {
     return userActivityOrder === 'asc' ? ' ^' : ' v';
   };
 
+  const formatSearcherName = (searcher: { fname?: string; lname?: string; netid: string }) => {
+    const name = [searcher.fname, searcher.lname].filter(Boolean).join(' ');
+    return name ? `${searcher.netid} (${name})` : searcher.netid;
+  };
+
   const selectedUserSummary: AnalyticsUserActivityRow | null =
     selectedUser?.user || userActivity.users.find((user) => user.netid === selectedNetid) || null;
 
@@ -314,6 +399,7 @@ const Analytics = () => {
   const avgResults = searchQuality?.avgResults ?? searchQuality?.avgResultsPerSearch;
   const zeroResultQueries = searchQuality?.zeroResultQueries || [];
   const lowResultQueries = searchQuality?.lowResultQueries || [];
+  const searchQueryRows = searchQueries?.queries || [];
   const actionCards = actions?.cards || [];
   const actionItems = actions?.items || [];
   const funnelStages =
@@ -321,56 +407,174 @@ const Analytics = () => {
     [
       { key: 'visitors', label: 'Visitors', count: funnel?.visitorCount || 0 },
       { key: 'searchers', label: 'Searched', count: funnel?.searcherCount || 0 },
-      { key: 'viewers', label: 'Viewed Listings', count: funnel?.viewerCount || 0 },
-      { key: 'favorites', label: 'Favorited', count: funnel?.favoriteCount || 0 },
-      { key: 'applications', label: 'Applied', count: funnel?.applicantCount || 0 },
+      { key: 'viewers', label: 'Viewed Opportunities', count: funnel?.viewerCount || 0 },
+      { key: 'favorites', label: 'Saved', count: funnel?.favoriteCount || 0 },
+      { key: 'applications', label: 'Outreach Clicked', count: funnel?.applicantCount || 0 },
     ].filter((stage) => stage.count > 0);
+  const opportunityViewDataHealth = data.engagement.opportunityViewDataHealth;
+  const orphanedOpportunityViewEvents =
+    opportunityViewDataHealth?.orphanedOpportunityViewEventsLast30Days || 0;
+  const orphanedOpportunityIds = opportunityViewDataHealth?.orphanedOpportunityIds || [];
+  const selectedRangeLabel =
+    analyticsRanges.find((range) => range.value === analyticsRange)?.label || 'Selected range';
+  const searchSuccessRate = searchTotal > 0 ? searchesWithResults / searchTotal : null;
+  const activeOpportunityRate =
+    data.listings.overview.total > 0
+      ? data.listings.overview.active / data.listings.overview.total
+      : null;
+  const attentionCount =
+    actionCards.length + zeroResultQueries.length + lowResultQueries.length + orphanedOpportunityIds.length;
+  const healthTone =
+    attentionCount > 4 || (searchSuccessRate !== null && searchSuccessRate < 0.75)
+      ? 'red'
+      : attentionCount > 0
+        ? 'amber'
+        : 'green';
+  const topAction = actionCards[0]?.title || 'No urgent admin action returned';
+  const largestFunnelStageCount = Math.max(...funnelStages.map((stage) => stage.count), 1);
 
   return (
-    <div className="container mx-auto px-4 py-8 max-w-7xl">
-      <div className="flex justify-between items-center mb-8">
-        <h1 className="text-4xl font-bold">Analytics Dashboard</h1>
-        <div className="text-right">
-          <button
-            onClick={() => {
-              fetchAnalytics();
-              fetchImpactAnalytics();
-            }}
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors mb-2"
-          >
-            Refresh Data
-          </button>
-          <p className="text-sm text-gray-500">Last updated: {lastUpdated}</p>
+    <div className="yr-page min-h-[calc(100vh-8rem)]">
+    <div className="mx-auto max-w-7xl px-4 py-8">
+      <section className="yr-panel mb-8 rounded-md">
+        <div className="border-b border-slate-200 p-5 lg:flex lg:items-start lg:justify-between lg:gap-8">
+          <div className="max-w-3xl">
+            <p className="yr-kicker">Primary dashboard question</p>
+            <h1 className="mt-2 text-3xl font-semibold text-slate-950">Research Discovery Health</h1>
+            <p className="mt-3 text-base leading-7 text-slate-600">
+              Are students finding credible research next steps, and where should admins intervene?
+            </p>
+          </div>
+          <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-end lg:mt-0">
+            <label className="block sm:w-56">
+              <span className="mb-1 block text-xs font-semibold uppercase text-gray-500">
+                Range
+              </span>
+              <select
+                value={analyticsRange}
+                onChange={(event) => setAnalyticsRange(event.target.value as AnalyticsRange)}
+                className="min-h-[44px] w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+              >
+                {analyticsRanges.map((range) => (
+                  <option key={range.value} value={range.value}>
+                    {range.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              onClick={() => {
+                fetchAnalytics();
+                fetchImpactAnalytics();
+              }}
+              className="inline-flex min-h-[44px] items-center justify-center rounded-md bg-[var(--yr-blue)] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+            >
+              Refresh Data
+            </button>
+          </div>
         </div>
-      </div>
 
-      <div className="mb-8 flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4 shadow-sm md:flex-row md:items-center md:justify-between">
-        <div>
-          <h2 className="text-lg font-semibold text-gray-800">High-Impact Range</h2>
-          <p className="text-sm text-gray-500">
-            Applies to search quality, funnel conversion, and action-needed insights.
-          </p>
+        <div className="grid grid-cols-1 gap-4 p-5 lg:grid-cols-4">
+          <DashboardMetric
+            title="Search success"
+            value={searchSuccessRate === null ? '-' : formatPercent(searchSuccessRate)}
+            context={`${formatNumber(searchesWithResults)} of ${formatNumber(searchTotal)} searches returned results in ${selectedRangeLabel}.`}
+            tone={searchSuccessRate !== null && searchSuccessRate < 0.75 ? 'amber' : 'green'}
+          />
+          <DashboardMetric
+            title="Student action funnel"
+            value={formatPercent(funnel?.overallConversionRate)}
+            context="Share of visitors reaching a concrete save or outreach-style action."
+            tone="blue"
+          />
+          <DashboardMetric
+            title="Active opportunity supply"
+            value={activeOpportunityRate === null ? '-' : formatPercent(activeOpportunityRate)}
+            context={`${formatNumber(data.listings.overview.active)} active out of ${formatNumber(data.listings.overview.total)} posted opportunities.`}
+            tone="blue"
+          />
+          <DashboardMetric
+            title="Needs attention"
+            value={formatNumber(attentionCount)}
+            context={topAction}
+            tone={healthTone}
+          />
         </div>
-        <label className="block md:w-56">
-          <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">
-            Range
-          </span>
-          <select
-            value={analyticsRange}
-            onChange={(event) => setAnalyticsRange(event.target.value as AnalyticsRange)}
-            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
-          >
-            {analyticsRanges.map((range) => (
-              <option key={range.value} value={range.value}>
-                {range.label}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
+
+        <div className="grid grid-cols-1 gap-5 border-t border-gray-200 p-5 xl:grid-cols-[1fr_1.2fr]">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">Decision Readout</h2>
+            <div className="mt-3 space-y-3 text-sm leading-6 text-gray-600">
+              <p>
+                Start with search success and funnel movement: they show whether discovery intent
+                becomes visible next-step behavior.
+              </p>
+              <p>
+                Treat low-result queries and action cards as the work queue, not just warnings.
+              </p>
+              <p className="text-gray-500">Last updated: {lastUpdated || 'Not refreshed yet'}</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+            <div>
+              <h3 className="text-sm font-semibold text-gray-900">Funnel Snapshot</h3>
+              <div className="mt-3 space-y-3">
+                {funnelStages.length > 0 ? (
+                  funnelStages.map((stage) => (
+                    <div key={stage.key || stage.stage || stage.label}>
+                      <div className="mb-1 flex items-center justify-between gap-3 text-sm">
+                        <span className="font-medium text-gray-700">{stage.label}</span>
+                        <span className="text-gray-500">{formatNumber(stage.count)}</span>
+                      </div>
+                      <div className="h-2 rounded-full bg-gray-100">
+                        <div
+                          className="h-2 rounded-full bg-blue-600"
+                          style={{
+                            width: `${Math.min((stage.count / largestFunnelStageCount) * 100, 100)}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-gray-500">No funnel stages returned.</p>
+                )}
+              </div>
+            </div>
+
+            <div>
+              <h3 className="text-sm font-semibold text-gray-900">Search Gaps</h3>
+              <div className="mt-3 space-y-2">
+                {[...zeroResultQueries, ...lowResultQueries].slice(0, 5).map((query, index) => (
+                  <div
+                    key={`${query.query}-${index}`}
+                    className="flex items-center justify-between gap-3 rounded-md border border-gray-200 px-3 py-2 text-sm"
+                  >
+                    <span className="min-w-0 truncate text-gray-700">
+                      {query.query || '(empty search)'}
+                    </span>
+                    <span className="shrink-0 font-medium text-gray-900">
+                      {formatCompactMetric(query.zeroResults ?? query.count)}
+                    </span>
+                  </div>
+                ))}
+                {zeroResultQueries.length === 0 && lowResultQueries.length === 0 && (
+                  <p className="text-sm text-gray-500">No search quality flags returned.</p>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <DetailSectionHeader
+        title="Supporting Detail"
+        description="Operational tables and lower-priority counts remain below the readout for drilldown."
+      />
 
       <section className="mb-10">
-        <h2 className="text-2xl font-bold mb-4 text-gray-800 border-b-2 border-blue-600 pb-2">
+        <h2 className="text-2xl font-semibold mb-4 text-slate-950 border-b border-slate-200 pb-2">
           Visitor Statistics
         </h2>
 
@@ -454,7 +658,7 @@ const Analytics = () => {
       </section>
 
       <section className="mb-10">
-        <h2 className="text-2xl font-bold mb-4 text-gray-800 border-b-2 border-blue-600 pb-2">
+        <h2 className="text-2xl font-semibold mb-4 text-slate-950 border-b border-slate-200 pb-2">
           User Engagement
         </h2>
 
@@ -496,7 +700,7 @@ const Analytics = () => {
           <StatCard
             title="Total View Events"
             value={data.engagement.views.totalViews}
-            subtitle="Listing views tracked"
+            subtitle="Opportunity views tracked"
           />
           <StatCard
             title="Views (Last 7 Days)"
@@ -524,8 +728,43 @@ const Analytics = () => {
         </div>
       </section>
 
+      {opportunityViewDataHealth && (
+        <section className="mb-10">
+          <h2 className="text-2xl font-semibold mb-4 text-slate-950 border-b border-slate-200 pb-2">
+            Analytics Data Health
+          </h2>
+
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+            <StatCard
+              title="Opportunity view events (30 days)"
+              value={formatNumber(opportunityViewDataHealth.opportunityViewEventsLast30Days)}
+              subtitle="Tracked recent view events"
+            />
+            <StatCard
+              title="Resolved opportunity view events"
+              value={formatNumber(
+                opportunityViewDataHealth.resolvedOpportunityViewEventsLast30Days
+              )}
+              subtitle="Mapped to current records"
+            />
+            <StatCard
+              title="Orphaned opportunity view events"
+              value={formatNumber(orphanedOpportunityViewEvents)}
+              subtitle={`${formatNumber(orphanedOpportunityIds.length)} unresolved IDs`}
+            />
+          </div>
+
+          {orphanedOpportunityViewEvents > 0 && (
+            <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              Some recent opportunity view events reference retired or missing opportunity records.
+              The trending table only shows events that map to current records.
+            </div>
+          )}
+        </section>
+      )}
+
       <section className="mb-10">
-        <div className="mb-4 flex flex-col gap-2 border-b-2 border-blue-600 pb-2 md:flex-row md:items-end md:justify-between">
+        <div className="mb-4 flex flex-col gap-2 border-b border-slate-200 pb-2 md:flex-row md:items-end md:justify-between">
           <div>
             <h2 className="text-2xl font-bold text-gray-800">High-Impact Diagnostics</h2>
             <p className="text-sm text-gray-500">
@@ -706,9 +945,93 @@ const Analytics = () => {
         </div>
       </section>
 
+      <section className="mb-10">
+        <div className="mb-4 flex flex-col gap-2 border-b border-slate-200 pb-2 md:flex-row md:items-end md:justify-between">
+          <div>
+            <h2 className="text-2xl font-bold text-gray-800">Search Query Analytics</h2>
+            <p className="text-sm text-gray-500">
+              Most popular search queries and the NetIDs behind them for the selected range.
+            </p>
+          </div>
+        </div>
+
+        <div className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-md">
+          <div className="overflow-x-auto">
+            <table className="min-w-full">
+              <thead>
+                <tr className="border-b bg-gray-50">
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">
+                    Query
+                  </th>
+                  <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">
+                    Searches
+                  </th>
+                  <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">
+                    Searchers
+                  </th>
+                  <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">
+                    Zero Results
+                  </th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">
+                    Who Searched
+                  </th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">
+                    Last Search
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {searchQueryRows.length > 0 ? (
+                  searchQueryRows.map((query) => (
+                    <tr key={query.query} className="border-b align-top hover:bg-gray-50">
+                      <td className="max-w-xs px-4 py-3 font-medium text-gray-900">
+                        {query.query || '(empty search)'}
+                      </td>
+                      <td className="px-4 py-3 text-right font-medium text-blue-600">
+                        {formatNumber(query.totalSearches)}
+                      </td>
+                      <td className="px-4 py-3 text-right">{formatNumber(query.uniqueSearchers)}</td>
+                      <td className="px-4 py-3 text-right">
+                        {formatNumber(query.zeroResultSearches || 0)}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex max-w-xl flex-wrap gap-2">
+                          {query.searchers.slice(0, 8).map((searcher) => (
+                            <span
+                              key={`${query.query}-${searcher.netid}`}
+                              className="rounded-md border border-gray-200 bg-gray-50 px-2 py-1 text-xs text-gray-700"
+                            >
+                              {formatSearcherName(searcher)} - {searcher.searchCount}
+                            </span>
+                          ))}
+                          {query.searchers.length > 8 && (
+                            <span className="px-1 py-1 text-xs text-gray-500">
+                              +{query.searchers.length - 8} more
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-600">
+                        {formatDateTime(query.lastSearchedAt)}
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td className="px-4 py-6 text-center text-gray-500" colSpan={6}>
+                      No tracked search queries for this range.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
       {data.engagement.mostActiveUsers.length > 0 && (
         <section className="mb-10">
-          <h2 className="text-2xl font-bold mb-4 text-gray-800 border-b-2 border-blue-600 pb-2">
+          <h2 className="text-2xl font-semibold mb-4 text-slate-950 border-b border-slate-200 pb-2">
             Most Active Users (Last 30 Days)
           </h2>
           <div className="bg-white rounded-lg shadow-md p-6 border border-gray-200">
@@ -722,8 +1045,8 @@ const Analytics = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.engagement.mostActiveUsers.map((user) => (
-                    <tr key={user.userId} className="border-b hover:bg-gray-50">
+                  {data.engagement.mostActiveUsers.map((user, index) => (
+                    <tr key={`${user.userId}-${index}`} className="border-b hover:bg-gray-50">
                       <td className="py-3 px-4 text-gray-800">{user.userId}</td>
                       <td className="py-3 px-4 text-gray-600">{formatUserType(user.userType)}</td>
                       <td className="py-3 px-4 text-right font-medium">{user.eventCount}</td>
@@ -737,7 +1060,7 @@ const Analytics = () => {
       )}
 
       <section className="mb-10">
-        <div className="flex flex-col gap-3 mb-4 border-b-2 border-blue-600 pb-2 md:flex-row md:items-end md:justify-between">
+        <div className="flex flex-col gap-3 mb-4 border-b border-slate-200 pb-2 md:flex-row md:items-end md:justify-between">
           <div>
             <h2 className="text-2xl font-bold text-gray-800">NetID User Activity</h2>
             <p className="text-sm text-gray-500">
@@ -747,7 +1070,7 @@ const Analytics = () => {
           <button
             type="button"
             onClick={fetchUserActivity}
-            className="self-start rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300 md:self-auto"
+            className="inline-flex min-h-[44px] items-center justify-center self-start rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300 md:self-auto"
             disabled={isUserActivityLoading}
           >
             {isUserActivityLoading ? 'Refreshing...' : 'Refresh Users'}
@@ -765,7 +1088,7 @@ const Analytics = () => {
                 value={userSearch}
                 onChange={(event) => setUserSearch(event.target.value)}
                 placeholder="e.g. abc123"
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                className="min-h-[44px] w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
               />
             </label>
 
@@ -776,7 +1099,7 @@ const Analytics = () => {
               <select
                 value={userTypeFilter}
                 onChange={(event) => setUserTypeFilter(event.target.value)}
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                className="min-h-[44px] w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
               >
                 <option value="all">All Types</option>
                 <option value="undergraduate">Undergrads</option>
@@ -795,7 +1118,7 @@ const Analytics = () => {
               <select
                 value={userActivitySort}
                 onChange={(event) => setUserActivitySort(event.target.value as UserActivitySort)}
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                className="min-h-[44px] w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
               >
                 <option value="lastActive">Last Active</option>
                 <option value="totalEvents">Total Events</option>
@@ -812,7 +1135,7 @@ const Analytics = () => {
               <select
                 value={userActivityLimit}
                 onChange={(event) => setUserActivityLimit(Number(event.target.value))}
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                className="min-h-[44px] w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
               >
                 <option value={10}>10 users</option>
                 <option value={25}>25 users</option>
@@ -833,7 +1156,7 @@ const Analytics = () => {
                   onClick={() =>
                     setUserActivityOrder(userActivityOrder === 'asc' ? 'desc' : 'asc')
                   }
-                  className="self-start rounded-md border border-gray-300 px-3 py-1.5 text-gray-700 transition-colors hover:bg-gray-50 sm:self-auto"
+                  className="inline-flex min-h-[44px] items-center self-start rounded-md border border-gray-300 px-3 py-2 text-gray-700 transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 sm:self-auto"
                 >
                   Order: {userActivityOrder === 'asc' ? 'Ascending' : 'Descending'}
                 </button>
@@ -856,27 +1179,47 @@ const Analytics = () => {
                         Type
                       </th>
                       <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">
-                        <button type="button" onClick={() => updateUserActivitySort('totalEvents')}>
+                        <button
+                          type="button"
+                          onClick={() => updateUserActivitySort('totalEvents')}
+                          className="inline-flex min-h-[44px] items-center rounded-md px-2 hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                        >
                           Events{sortLabel('totalEvents')}
                         </button>
                       </th>
                       <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">
-                        <button type="button" onClick={() => updateUserActivitySort('logins')}>
+                        <button
+                          type="button"
+                          onClick={() => updateUserActivitySort('logins')}
+                          className="inline-flex min-h-[44px] items-center rounded-md px-2 hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                        >
                           Logins{sortLabel('logins')}
                         </button>
                       </th>
                       <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">
-                        <button type="button" onClick={() => updateUserActivitySort('searches')}>
+                        <button
+                          type="button"
+                          onClick={() => updateUserActivitySort('searches')}
+                          className="inline-flex min-h-[44px] items-center rounded-md px-2 hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                        >
                           Searches{sortLabel('searches')}
                         </button>
                       </th>
                       <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">
-                        <button type="button" onClick={() => updateUserActivitySort('views')}>
+                        <button
+                          type="button"
+                          onClick={() => updateUserActivitySort('views')}
+                          className="inline-flex min-h-[44px] items-center rounded-md px-2 hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                        >
                           Views{sortLabel('views')}
                         </button>
                       </th>
                       <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">
-                        <button type="button" onClick={() => updateUserActivitySort('lastActive')}>
+                        <button
+                          type="button"
+                          onClick={() => updateUserActivitySort('lastActive')}
+                          className="inline-flex min-h-[44px] items-center rounded-md px-2 hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                        >
                           Last Active{sortLabel('lastActive')}
                         </button>
                       </th>
@@ -890,9 +1233,9 @@ const Analytics = () => {
                         </td>
                       </tr>
                     ) : userActivity.users.length > 0 ? (
-                      userActivity.users.map((user) => (
+                      userActivity.users.map((user, index) => (
                         <tr
-                          key={user.netid}
+                          key={`${user.netid}-${index}`}
                           className={`cursor-pointer border-b transition-colors hover:bg-blue-50 ${
                             selectedNetid === user.netid ? 'bg-blue-50' : ''
                           }`}
@@ -940,7 +1283,7 @@ const Analytics = () => {
                   <button
                     type="button"
                     onClick={() => setSelectedNetid(null)}
-                    className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-600 hover:bg-white"
+                    className="inline-flex min-h-[44px] items-center rounded-md border border-gray-300 px-3 py-2 text-xs text-gray-600 hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
                   >
                     Clear
                   </button>
@@ -985,7 +1328,7 @@ const Analytics = () => {
                       </p>
                     </div>
                     <div className="rounded-md bg-white p-3">
-                      <p className="text-gray-500">Favorites</p>
+                      <p className="text-gray-500">Saves</p>
                       <p className="text-lg font-semibold text-gray-900">
                         {selectedUser.user.listingFavorites}
                       </p>
@@ -1014,7 +1357,9 @@ const Analytics = () => {
                             <p className="mt-1 text-sm text-gray-600">Query: {event.searchQuery}</p>
                           )}
                           {event.listingId && (
-                            <p className="mt-1 text-sm text-gray-600">Listing: {event.listingId}</p>
+                            <p className="mt-1 text-sm text-gray-600">
+                              Opportunity: {event.listingId}
+                            </p>
                           )}
                         </div>
                       ))
@@ -1031,8 +1376,8 @@ const Analytics = () => {
 
       {data.engagement.trendingListings.length > 0 && (
         <section className="mb-10">
-          <h2 className="text-2xl font-bold mb-4 text-gray-800 border-b-2 border-blue-600 pb-2">
-            Trending Listings (Last 30 Days)
+          <h2 className="text-2xl font-semibold mb-4 text-slate-950 border-b border-slate-200 pb-2">
+            Trending Posted Opportunities (Last 30 Days)
           </h2>
           <div className="bg-white rounded-lg shadow-md p-6 border border-gray-200">
             <div className="overflow-x-auto">
@@ -1066,28 +1411,31 @@ const Analytics = () => {
       )}
 
       <section className="mb-10">
-        <h2 className="text-2xl font-bold mb-4 text-gray-800 border-b-2 border-blue-600 pb-2">
-          Listings Overview
+        <h2 className="text-2xl font-semibold mb-4 text-slate-950 border-b border-slate-200 pb-2">
+          Posted Opportunities Overview
         </h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
-          <StatCard title="Total Listings" value={data.listings.overview.total} />
-          <StatCard title="Active Listings" value={data.listings.overview.active} />
-          <StatCard title="Archived Listings" value={data.listings.overview.archived} />
-          <StatCard title="Unconfirmed Listings" value={data.listings.overview.unconfirmed} />
+          <StatCard title="Total Posted Opportunities" value={data.listings.overview.total} />
+          <StatCard title="Active Posted Opportunities" value={data.listings.overview.active} />
+          <StatCard title="Archived Posted Opportunities" value={data.listings.overview.archived} />
+          <StatCard
+            title="Unconfirmed Posted Opportunities"
+            value={data.listings.overview.unconfirmed}
+          />
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <StatCard
-            title="New Listings (Last 7 Days)"
+            title="New Posted Opportunities (Last 7 Days)"
             value={data.listings.newListingsLast7Days}
             subtitle="Created in past week"
           />
           <StatCard
-            title="New Listings Today"
+            title="New Posted Opportunities Today"
             value={data.listings.newListingsToday}
             subtitle="Created today"
           />
           <StatCard
-            title="Listings with 0 Views"
+            title="Posted Opportunities with 0 Views"
             value={data.listings.listingsWithZeroViews}
             subtitle="May need attention"
           />
@@ -1095,25 +1443,28 @@ const Analytics = () => {
       </section>
 
       <section className="mb-10">
-        <h2 className="text-2xl font-bold mb-4 text-gray-800 border-b-2 border-blue-600 pb-2">
+        <h2 className="text-2xl font-semibold mb-4 text-slate-950 border-b border-slate-200 pb-2">
           Cumulative Engagement Metrics
         </h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <StatCard title="Total Views (Counter)" value={data.engagement.totalViewsFromCounters} />
           <StatCard
-            title="Total Favorites (Counter)"
+            title="Total Saves (Counter)"
             value={data.engagement.totalFavoritesFromCounters}
           />
-          <StatCard title="Avg Views per Listing" value={data.engagement.avgViews.toFixed(1)} />
           <StatCard
-            title="Avg Favorites per Listing"
+            title="Avg Views per Posted Opportunity"
+            value={data.engagement.avgViews.toFixed(1)}
+          />
+          <StatCard
+            title="Avg Saves per Posted Opportunity"
             value={data.engagement.avgFavorites.toFixed(1)}
           />
         </div>
       </section>
 
       <section className="mb-10">
-        <h2 className="text-2xl font-bold mb-4 text-gray-800 border-b-2 border-blue-600 pb-2">
+        <h2 className="text-2xl font-semibold mb-4 text-slate-950 border-b border-slate-200 pb-2">
           Views by Department
         </h2>
         <div className="bg-white rounded-lg shadow-md p-6 border border-gray-200">
@@ -1123,7 +1474,9 @@ const Analytics = () => {
                 <tr className="border-b">
                   <th className="text-left py-3 px-4 font-semibold text-gray-700">Department</th>
                   <th className="text-right py-3 px-4 font-semibold text-gray-700">Total Views</th>
-                  <th className="text-right py-3 px-4 font-semibold text-gray-700">Listings</th>
+                  <th className="text-right py-3 px-4 font-semibold text-gray-700">
+                    Posted Opportunities
+                  </th>
                   <th className="text-right py-3 px-4 font-semibold text-gray-700">Avg Views</th>
                 </tr>
               </thead>
@@ -1143,8 +1496,8 @@ const Analytics = () => {
       </section>
 
       <section className="mb-10">
-        <h2 className="text-2xl font-bold mb-4 text-gray-800 border-b-2 border-blue-600 pb-2">
-          Listings by Department
+        <h2 className="text-2xl font-semibold mb-4 text-slate-950 border-b border-slate-200 pb-2">
+          Posted Opportunities by Department
         </h2>
         <div className="bg-white rounded-lg shadow-md p-6 border border-gray-200">
           <div className="overflow-x-auto">
@@ -1152,7 +1505,9 @@ const Analytics = () => {
               <thead>
                 <tr className="border-b">
                   <th className="text-left py-3 px-4 font-semibold text-gray-700">Department</th>
-                  <th className="text-right py-3 px-4 font-semibold text-gray-700">Listings</th>
+                  <th className="text-right py-3 px-4 font-semibold text-gray-700">
+                    Posted Opportunities
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -1169,8 +1524,8 @@ const Analytics = () => {
       </section>
 
       <section className="mb-10">
-        <h2 className="text-2xl font-bold mb-4 text-gray-800 border-b-2 border-blue-600 pb-2">
-          Top Professors by Listings
+        <h2 className="text-2xl font-semibold mb-4 text-slate-950 border-b border-slate-200 pb-2">
+          Top Professors by Posted Opportunities
         </h2>
         <div className="bg-white rounded-lg shadow-md p-6 border border-gray-200">
           <div className="overflow-x-auto">
@@ -1179,7 +1534,9 @@ const Analytics = () => {
                 <tr className="border-b">
                   <th className="text-left py-3 px-4 font-semibold text-gray-700">Professor</th>
                   <th className="text-left py-3 px-4 font-semibold text-gray-700">NetID</th>
-                  <th className="text-right py-3 px-4 font-semibold text-gray-700">Listings</th>
+                  <th className="text-right py-3 px-4 font-semibold text-gray-700">
+                    Posted Opportunities
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -1197,8 +1554,8 @@ const Analytics = () => {
       </section>
 
       <section className="mb-10">
-        <h2 className="text-2xl font-bold mb-4 text-gray-800 border-b-2 border-blue-600 pb-2">
-          Top 10 Most Viewed Listings (All-Time)
+        <h2 className="text-2xl font-semibold mb-4 text-slate-950 border-b border-slate-200 pb-2">
+          Top 10 Most Viewed Posted Opportunities (All-Time)
         </h2>
         <div className="bg-white rounded-lg shadow-md p-6 border border-gray-200">
           <div className="overflow-x-auto">
@@ -1227,8 +1584,8 @@ const Analytics = () => {
       </section>
 
       <section className="mb-10">
-        <h2 className="text-2xl font-bold mb-4 text-gray-800 border-b-2 border-blue-600 pb-2">
-          Top 10 Most Favorited Listings
+        <h2 className="text-2xl font-semibold mb-4 text-slate-950 border-b border-slate-200 pb-2">
+          Top 10 Most Saved Posted Opportunities
         </h2>
         <div className="bg-white rounded-lg shadow-md p-6 border border-gray-200">
           <div className="overflow-x-auto">
@@ -1237,7 +1594,7 @@ const Analytics = () => {
                 <tr className="border-b">
                   <th className="text-left py-3 px-4 font-semibold text-gray-700">Title</th>
                   <th className="text-left py-3 px-4 font-semibold text-gray-700">Owner</th>
-                  <th className="text-right py-3 px-4 font-semibold text-gray-700">Favorites</th>
+                  <th className="text-right py-3 px-4 font-semibold text-gray-700">Saves</th>
                 </tr>
               </thead>
               <tbody>
@@ -1257,7 +1614,7 @@ const Analytics = () => {
       </section>
 
       <section className="mb-10">
-        <h2 className="text-2xl font-bold mb-4 text-gray-800 border-b-2 border-blue-600 pb-2">
+        <h2 className="text-2xl font-semibold mb-4 text-slate-950 border-b border-slate-200 pb-2">
           User Statistics
         </h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
@@ -1299,6 +1656,7 @@ const Analytics = () => {
       </section>
 
       <AdminPanel />
+    </div>
     </div>
   );
 };
