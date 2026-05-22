@@ -59,7 +59,7 @@ export interface DeadlineReminder {
   sourceUrl?: string;
 }
 
-const PLAN_STORAGE_KEY = 'ylabs.savedPathwayPlans.v1';
+const PLAN_STORAGE_KEY = 'ylabs.savedResearchPlans.v1';
 
 const INTENT_OPTIONS: Array<{ value: PlanningIntent; label: string }> = [
   { value: 'thesis', label: 'Thesis idea' },
@@ -116,7 +116,7 @@ const CHECKLIST_TEMPLATES: Record<PlanningIntent, Array<{ key: string; label: st
     { key: 'funding-project-fit', label: 'Connect the pathway to a fundable project idea' },
   ],
   apply: [
-    { key: 'apply-open', label: 'Open the application or posted role source' },
+    { key: 'apply-open', label: 'Open the application or posted opening source' },
     { key: 'apply-requirements', label: 'Check requirements, timing, and materials' },
     { key: 'apply-materials', label: 'Draft or gather application materials' },
     { key: 'apply-submitted', label: 'Mark when submitted or no longer relevant' },
@@ -207,6 +207,11 @@ const reminderUrgencyLabel = (urgency: DeadlineReminder['urgency']): string => {
   }
 };
 
+const labelForOption = <T extends string>(
+  options: Array<{ value: T; label: string }>,
+  value: T,
+): string => options.find((option) => option.value === value)?.label || labelize(value);
+
 export const defaultIntentForPathway = (pathway: PathwaySearchHit): PlanningIntent => {
   switch (pathway.bestNextStepCategory) {
     case 'apply':
@@ -234,7 +239,7 @@ export const deadlineReminderForPathway = (
     pathway.activePostedOpportunity?.deadline
       ? {
           kind: 'posted-opportunity' as const,
-          label: 'Posted role deadline',
+          label: 'Posted opening deadline',
           title: pathway.activePostedOpportunity.title,
           deadline: pathway.activePostedOpportunity.deadline,
           sourceUrl: pathway.activePostedOpportunity.applicationUrl,
@@ -286,7 +291,7 @@ const readStoredPlans = (): PathwayPlanMap => {
     const raw = window.localStorage.getItem(PLAN_STORAGE_KEY);
     return raw ? JSON.parse(raw) : {};
   } catch (err) {
-    console.error('Error reading saved pathway plans:', err);
+    console.error('Error reading saved research plans:', err);
     return {};
   }
 };
@@ -334,7 +339,7 @@ export const fundingCueForPathway = (
     return {
       label: 'Fellowship-funded route',
       detail:
-        'This pathway already has fellowship/project evidence. Use the source links, then compare eligibility and deadlines on the fellowships page.',
+        'This pathway already has fellowship/project evidence. Use the source links, then compare eligibility and deadlines on the programs page.',
       confidence: 'strong',
     };
   }
@@ -374,7 +379,15 @@ export const fundingCueForPathway = (
   };
 };
 
-const SavedPathwaysSection = () => {
+interface SavedPathwaysSectionProps {
+  onSummaryChange?: (summary: {
+    count: number;
+    nextDeadlineLabel?: string;
+    nextDeadlineDate?: string;
+  }) => void;
+}
+
+const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) => {
   const [pathways, setPathways] = useState<PathwaySearchHit[]>([]);
   const [fundingMatches, setFundingMatches] = useState<FundingMatchesByPathway>({});
   const [plans, setPlans] = useState<PathwayPlanMap>(() => readStoredPlans());
@@ -383,20 +396,22 @@ const SavedPathwaysSection = () => {
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState('');
   const [includePrivateNotesInExport, setIncludePrivateNotesInExport] = useState(false);
+  const [showExportControls, setShowExportControls] = useState(false);
+  const [expandedPlanIds, setExpandedPlanIds] = useState<Record<string, boolean>>({});
 
   const loadPathways = useCallback(async () => {
     setLoading(true);
     setError('');
     setExportError('');
     try {
-      const response = await axios.get('/users/favPathways', { withCredentials: true });
-      const savedPathways = response.data.favPathways || [];
+      const response = await axios.get('/users/savedResearchPlans', { withCredentials: true });
+      const savedPathways = response.data.savedResearchPlans || [];
       setPathways(savedPathways);
       try {
-        const plansResponse = await axios.get('/users/favPathwayPlans', {
+        const plansResponse = await axios.get('/users/savedResearchPlanDetails', {
           withCredentials: true,
         });
-        const serverPlans = plansResponse.data.savedPathwayPlans || {};
+        const serverPlans = plansResponse.data.savedResearchPlanDetails || {};
         const localPlans = readStoredPlans();
         const mergedPlans = mergeSavedPathwayPlansForHydration(localPlans, serverPlans);
         setPlans(mergedPlans);
@@ -409,29 +424,29 @@ const SavedPathwaysSection = () => {
         await Promise.all(
           localOnlyPlanIds.map((id) =>
             axios.put(
-              `/users/favPathwayPlans/${id}`,
+              `/users/savedResearchPlanDetails/${id}`,
               { data: { plan: localPlans[id] } },
               { withCredentials: true },
             ),
           ),
         );
       } catch (planErr) {
-        console.error('Error loading saved pathway plans:', planErr);
+        console.error('Error loading saved research plans:', planErr);
       }
       try {
-        const matchesResponse = await axios.get('/users/favPathwayFundingMatches', {
+        const matchesResponse = await axios.get('/users/savedResearchPlanFundingMatches', {
           withCredentials: true,
         });
         setFundingMatches(matchesResponse.data.matchesByPathwayId || {});
       } catch (matchErr) {
-        console.error('Error loading saved pathway funding matches:', matchErr);
+        console.error('Error loading saved research-plan funding matches:', matchErr);
         setFundingMatches({});
       }
     } catch (err) {
-      console.error('Error loading saved pathways:', err);
+      console.error('Error loading saved research plans:', err);
       setPathways([]);
       setFundingMatches({});
-      setError('Saved pathways could not be loaded.');
+      setError('Saved research plans could not be loaded.');
     } finally {
       setLoading(false);
     }
@@ -444,6 +459,19 @@ const SavedPathwaysSection = () => {
   useEffect(() => {
     window.localStorage.setItem(PLAN_STORAGE_KEY, JSON.stringify(plans));
   }, [plans]);
+
+  useEffect(() => {
+    const reminders = pathways
+      .map((pathway) => deadlineReminderForPathway(pathway, fundingMatches[pathway._id] || []))
+      .filter((reminder): reminder is DeadlineReminder => !!reminder)
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+    onSummaryChange?.({
+      count: pathways.length,
+      nextDeadlineLabel: reminders[0]?.detail,
+      nextDeadlineDate: reminders[0]?.date,
+    });
+  }, [fundingMatches, onSummaryChange, pathways]);
 
   const getPlan = (pathway: PathwaySearchHit): PathwayPlan => {
     const storedPlan = plans[pathway._id];
@@ -474,11 +502,11 @@ const SavedPathwaysSection = () => {
       };
       axios
         .put(
-          `/users/favPathwayPlans/${pathwayId}`,
+          `/users/savedResearchPlanDetails/${pathwayId}`,
           { data: { plan: nextPlan } },
           { withCredentials: true },
         )
-        .catch((err) => console.error('Error saving pathway plan:', err));
+        .catch((err) => console.error('Error saving research plan:', err));
       return {
         ...current,
         [pathwayId]: nextPlan,
@@ -505,29 +533,41 @@ const SavedPathwaysSection = () => {
   const removePathway = async (pathwayId: string) => {
     const previous = pathways;
     setPathways((current) => current.filter((pathway) => pathway._id !== pathwayId));
+    setExpandedPlanIds((current) => {
+      const next = { ...current };
+      delete next[pathwayId];
+      return next;
+    });
     try {
-      await axios.delete('/users/favPathways', {
+      await axios.delete('/users/savedResearchPlans', {
         withCredentials: true,
-        data: { favPathways: [pathwayId] },
+        data: { savedResearchPlans: [pathwayId] },
       });
       setPlans((current) => {
         const next = { ...current };
         delete next[pathwayId];
         return next;
       });
-      await axios.delete(`/users/favPathwayPlans/${pathwayId}`, { withCredentials: true });
+      await axios.delete(`/users/savedResearchPlanDetails/${pathwayId}`, { withCredentials: true });
     } catch (err) {
-      console.error('Error removing saved pathway:', err);
+      console.error('Error removing saved research plan:', err);
       setPathways(previous);
-      setError('Could not remove that saved pathway.');
+      setError('Could not remove that saved research plan.');
     }
+  };
+
+  const toggleExpandedPlan = (pathwayId: string) => {
+    setExpandedPlanIds((current) => ({
+      ...current,
+      [pathwayId]: !current[pathwayId],
+    }));
   };
 
   const exportSavedPathways = async () => {
     setExporting(true);
     setExportError('');
     try {
-      const response = await axios.get('/users/favPathwayPlans/export', {
+      const response = await axios.get('/users/savedResearchPlanDetails/export', {
         withCredentials: true,
         params: includePrivateNotesInExport ? { includePrivateNotes: 'true' } : undefined,
       });
@@ -538,15 +578,15 @@ const SavedPathwaysSection = () => {
       const link = document.createElement('a');
       link.href = url;
       link.download = includePrivateNotesInExport
-        ? 'saved-pathway-advising-share.json'
-        : 'saved-pathway-plans.json';
+        ? 'saved-research-plan-advising-share.json'
+        : 'saved-research-plans.json';
       document.body.appendChild(link);
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
     } catch (err) {
-      console.error('Error exporting saved pathway plans:', err);
-      setExportError('Saved pathways could not be exported.');
+      console.error('Error exporting saved research plans:', err);
+      setExportError('Saved research plans could not be exported.');
     } finally {
       setExporting(false);
     }
@@ -554,40 +594,48 @@ const SavedPathwaysSection = () => {
 
   return (
     <section className="mb-8 rounded-md border border-gray-200 bg-white p-5">
-      <div className="mb-4 flex items-start justify-between gap-4">
-        <div>
-          <h2 className="text-xl font-bold text-gray-900">Saved Pathways</h2>
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <h2 className="text-xl font-bold text-gray-900">Saved Research Plans</h2>
           <p className="text-sm text-gray-500">
-            Keep track of thesis ideas, future outreach routes, and practical Ways In.
+            Compact by default. Open details only when you need notes, funding, or source checks.
           </p>
         </div>
-        <div className="flex shrink-0 flex-wrap items-center justify-end gap-3">
+        <div className="flex flex-wrap items-center gap-3 sm:shrink-0 sm:justify-end">
           {pathways.length > 0 && (
-            <>
-              <label className="flex items-center gap-2 text-sm font-medium text-gray-600">
-                <input
-                  type="checkbox"
-                  checked={includePrivateNotesInExport}
-                  onChange={(event) => setIncludePrivateNotesInExport(event.target.checked)}
-                  className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                />
-                <span>Include private notes</span>
-              </label>
-              <button
-                type="button"
-                onClick={exportSavedPathways}
-                disabled={exporting || loading}
-                className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:border-gray-400 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {exporting ? 'Exporting...' : 'Export for advising'}
-              </button>
-            </>
+            <button
+              type="button"
+              onClick={() => setShowExportControls((current) => !current)}
+              aria-expanded={showExportControls}
+              className="inline-flex min-h-[44px] items-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:border-gray-400 hover:bg-gray-50"
+            >
+              Advising export
+            </button>
           )}
-          <Link to="/pathways" className="text-sm font-semibold text-blue-700 hover:underline">
-            Browse pathways
-          </Link>
         </div>
       </div>
+
+      {showExportControls && pathways.length > 0 && (
+        <div className="mb-4 flex flex-col gap-3 rounded-md border border-gray-100 bg-slate-50 p-3 sm:flex-row sm:items-center sm:justify-between">
+          <label className="flex items-center gap-2 text-sm font-medium text-gray-600">
+            <input
+              type="checkbox"
+              checked={includePrivateNotesInExport}
+              onChange={(event) => setIncludePrivateNotesInExport(event.target.checked)}
+              className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            <span>Include private notes</span>
+          </label>
+          <button
+            type="button"
+            onClick={exportSavedPathways}
+            disabled={exporting || loading}
+            className="inline-flex min-h-[44px] items-center justify-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:border-gray-400 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {exporting ? 'Exporting...' : 'Export for advising'}
+          </button>
+        </div>
+      )}
 
       {exportError && (
         <div className="mb-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
@@ -604,8 +652,26 @@ const SavedPathwaysSection = () => {
           {error}
         </div>
       ) : pathways.length === 0 ? (
-        <div className="rounded-md border border-dashed border-gray-300 p-5 text-sm text-gray-500">
-          Saved pathways will appear here when you save routes from the Pathways page.
+        <div className="rounded-md border border-dashed border-gray-300 bg-slate-50 p-5">
+          <h3 className="text-base font-semibold text-gray-950">No saved research plans yet</h3>
+          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-gray-600">
+            Start with Yale Labs, open profiles that look promising, then save a plan when you find
+            a route worth tracking for outreach, credit, funding, or an application.
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Link
+              to="/research"
+              className="inline-flex min-h-[44px] items-center rounded-md bg-blue-700 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+            >
+              Yale Labs
+            </Link>
+            <Link
+              to="/programs"
+              className="inline-flex min-h-[44px] items-center rounded-md border border-blue-200 bg-white px-3 py-2 text-sm font-semibold text-blue-800 hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+            >
+              Programs & Fellowships
+            </Link>
+          </div>
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
@@ -619,244 +685,259 @@ const SavedPathwaysSection = () => {
             const fundingCue = fundingCueForPathway(pathway, plan);
             const matches = fundingMatches[pathway._id] || [];
             const deadlineReminder = deadlineReminderForPathway(pathway, matches);
+            const isExpanded = Boolean(expandedPlanIds[pathway._id]);
+            const profileName = pathway.researchEntity.displayName || pathway.researchEntity.name;
+            const stage = labelForOption(STAGE_OPTIONS, plan.stage);
 
             return (
               <article key={pathway._id} className="rounded-md border border-gray-200 p-4">
-                <div className="mb-2 flex flex-wrap gap-1.5">
-                  <span className="rounded bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700">
-                    {labelize(pathway.pathwayType)}
-                  </span>
-                  <span className="rounded bg-gray-100 px-2 py-0.5 text-xs font-semibold text-gray-700">
-                    {labelize(pathway.evidenceStrength)} evidence
-                  </span>
-                </div>
-
-                <h3 className="text-base font-bold leading-snug text-gray-900">
-                  {pathway.studentFacingLabel}
-                </h3>
-                <Link
-                  to={`/research/${pathway.researchEntity.slug}`}
-                  className="text-sm font-medium text-blue-700 hover:underline"
-                >
-                  {pathway.researchEntity.displayName || pathway.researchEntity.name}
-                </Link>
-
-                <div className="mt-3 rounded border border-gray-100 bg-gray-50 p-3 text-sm text-gray-700">
-                  <span className="font-semibold text-gray-900">Best next step:</span>{' '}
-                  {nextStepLabel(pathway.bestNextStepCategory)}
-                </div>
-
-                {deadlineReminder && (
-                  <div
-                    className={`mt-3 rounded-md border p-3 text-sm ${
-                      deadlineReminder.urgency === 'overdue'
-                        ? 'border-rose-100 bg-rose-50 text-rose-900'
-                        : deadlineReminder.urgency === 'soon'
-                          ? 'border-amber-100 bg-amber-50 text-amber-950'
-                          : 'border-blue-100 bg-blue-50 text-blue-950'
-                    }`}
-                  >
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-semibold">{deadlineReminder.label}</span>
-                      <span className="rounded bg-white/80 px-2 py-0.5 text-xs font-semibold">
-                        {deadlineReminder.urgencyLabel}
+                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                  <div className="min-w-0">
+                    <div className="mb-2 flex flex-wrap gap-1.5">
+                      <span className="rounded bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700">
+                        {labelize(pathway.pathwayType)}
+                      </span>
+                      <span className="rounded bg-gray-100 px-2 py-0.5 text-xs font-semibold text-gray-700">
+                        {labelize(pathway.evidenceStrength)} evidence
+                      </span>
+                      <span className="rounded bg-slate-100 px-2 py-0.5 text-xs font-semibold text-gray-700">
+                        {stage}
                       </span>
                     </div>
-                    <p className="mt-1">{deadlineReminder.detail}</p>
-                    {deadlineReminder.sourceUrl && (
+                    <h3 className="text-base font-bold leading-snug text-gray-900">
+                      {pathway.studentFacingLabel}
+                    </h3>
+                    <p className="mt-1 text-sm font-medium text-gray-700">{profileName}</p>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2 md:justify-end">
+	                    <Link
+	                      to={`/research/${pathway.researchEntity.slug}`}
+	                      className="inline-flex min-h-[44px] items-center rounded-md border border-blue-200 bg-white px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                    >
+                      Open profile
+                    </Link>
+                    <button
+                      type="button"
+	                      aria-expanded={isExpanded}
+	                      onClick={() => toggleExpandedPlan(pathway._id)}
+	                      className="inline-flex min-h-[44px] items-center rounded-md bg-blue-700 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                    >
+                      {isExpanded ? 'Hide details' : 'Plan details'}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mt-4 grid gap-3 md:grid-cols-2">
+                  <div className="rounded border border-gray-100 bg-gray-50 p-3 text-sm text-gray-700">
+                    <span className="font-semibold text-gray-900">Next step:</span>{' '}
+                    {nextStepLabel(pathway.bestNextStepCategory)}
+                  </div>
+                  <div className="rounded border border-gray-100 bg-gray-50 p-3 text-sm text-gray-700">
+                    <span className="font-semibold text-gray-900">Deadline:</span>{' '}
+                    {deadlineReminder ? deadlineReminder.detail : 'No deadline attached'}
+                  </div>
+                </div>
+
+                {isExpanded && (
+                  <div className="mt-4 space-y-4 border-t border-gray-100 pt-4">
+                    {deadlineReminder?.sourceUrl && (
                       <a
                         href={deadlineReminder.sourceUrl}
                         target="_blank"
                         rel="noreferrer"
-                        className="mt-2 inline-flex text-sm font-semibold underline underline-offset-2"
+                        className="inline-flex text-sm font-semibold text-blue-700 underline underline-offset-2 hover:text-blue-900"
                       >
-                        Open source
+                        Open deadline source
                       </a>
                     )}
-                  </div>
-                )}
 
-                {fundingCue && (
-                  <div className="mt-3 rounded-md border border-emerald-100 bg-emerald-50 p-3 text-sm text-emerald-900">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-semibold">{fundingCue.label}</span>
-                      <span className="rounded bg-white/80 px-2 py-0.5 text-xs font-semibold text-emerald-700">
-                        {fundingCue.confidence === 'strong' ? 'Evidence-backed' : 'Planning cue'}
-                      </span>
-                    </div>
-                    <p className="mt-1 text-emerald-800">{fundingCue.detail}</p>
-                    <Link
-                      to="/fellowships"
-                      className="mt-2 inline-flex text-sm font-semibold text-emerald-800 underline underline-offset-2 hover:text-emerald-950"
-                    >
-                      Browse fellowships
-                    </Link>
-                  </div>
-                )}
+                    {fundingCue && (
+                      <div className="rounded-md border border-emerald-100 bg-emerald-50 p-3 text-sm text-emerald-900">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-semibold">{fundingCue.label}</span>
+                          <span className="rounded bg-white/80 px-2 py-0.5 text-xs font-semibold text-emerald-700">
+                            {fundingCue.confidence === 'strong'
+                              ? 'Evidence-backed'
+                              : 'Planning cue'}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-emerald-800">{fundingCue.detail}</p>
+                        <Link
+                          to="/programs"
+                          className="mt-2 inline-flex text-sm font-semibold text-emerald-800 underline underline-offset-2 hover:text-emerald-950"
+                        >
+                          Browse programs
+                        </Link>
+                      </div>
+                    )}
 
-                {matches.length > 0 && (
-                  <div className="mt-3 rounded-md border border-cyan-100 bg-cyan-50 p-3 text-sm text-cyan-950">
-                    <div className="mb-2 flex items-center justify-between gap-2">
-                      <span className="font-semibold">Fellowship candidates</span>
-                      <span className="rounded bg-white/80 px-2 py-0.5 text-xs font-semibold text-cyan-700">
-                        Scored from saved pathway
-                      </span>
-                    </div>
-                    <div className="space-y-2">
-                      {matches.slice(0, 2).map((match) => {
-                        const deadline = formatDeadline(match.deadline);
-                        const fellowshipSourceUrl = match.applicationLink || match.sourceUrls?.[0];
-                        return (
-                          <div
-                            key={match.fellowshipId}
-                            className="rounded border border-cyan-100 bg-white/80 p-2"
-                          >
-                            <div className="flex flex-wrap items-center gap-2">
-                              <Link
-                                to={`/fellowships?fellowship=${match.fellowshipId}`}
-                                className="font-semibold text-cyan-900 underline underline-offset-2 hover:text-cyan-700"
+                    {matches.length > 0 && (
+                      <div className="rounded-md border border-cyan-100 bg-cyan-50 p-3 text-sm text-cyan-950">
+                        <div className="mb-2 flex items-center justify-between gap-2">
+                          <span className="font-semibold">Fellowship candidates</span>
+                          <span className="rounded bg-white/80 px-2 py-0.5 text-xs font-semibold text-cyan-700">
+                            Scored from saved research plan
+                          </span>
+                        </div>
+                        <div className="space-y-2">
+                          {matches.slice(0, 2).map((match) => {
+                            const deadline = formatDeadline(match.deadline);
+                            const fellowshipSourceUrl =
+                              match.applicationLink || match.sourceUrls?.[0];
+                            return (
+                              <div
+                                key={match.fellowshipId}
+                                className="rounded border border-cyan-100 bg-white/80 p-2"
                               >
-                                {match.title}
-                              </Link>
-                              <span className="rounded bg-cyan-100 px-2 py-0.5 text-xs font-semibold text-cyan-800">
-                                {matchStrengthLabel(match.strength)}
-                              </span>
-                              {deadline && (
-                                <span className="text-xs font-medium text-cyan-700">
-                                  Due {deadline}
-                                </span>
-                              )}
-                            </div>
-                            {match.reasons[0] && (
-                              <p className="mt-1 text-xs text-cyan-800">{match.reasons[0]}</p>
-                            )}
-                            {match.caveats[0] && (
-                              <p className="mt-1 text-xs text-cyan-700">
-                                Caveat: {match.caveats[0]}
-                              </p>
-                            )}
-                            {fellowshipSourceUrl && (
-                              <a
-                                href={fellowshipSourceUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="mt-1 inline-flex text-xs font-semibold text-cyan-800 underline underline-offset-2 hover:text-cyan-950"
-                              >
-                                Open fellowship source
-                              </a>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <Link
+                                    to={`/programs?program=${match.fellowshipId}`}
+                                    className="font-semibold text-cyan-900 underline underline-offset-2 hover:text-cyan-700"
+                                  >
+                                    {match.title}
+                                  </Link>
+                                  <span className="rounded bg-cyan-100 px-2 py-0.5 text-xs font-semibold text-cyan-800">
+                                    {matchStrengthLabel(match.strength)}
+                                  </span>
+                                  {deadline && (
+                                    <span className="text-xs font-medium text-cyan-700">
+                                      Due {deadline}
+                                    </span>
+                                  )}
+                                </div>
+                                {match.reasons[0] && (
+                                  <p className="mt-1 text-xs text-cyan-800">{match.reasons[0]}</p>
+                                )}
+                                {match.caveats[0] && (
+                                  <p className="mt-1 text-xs text-cyan-700">
+                                    Caveat: {match.caveats[0]}
+                                  </p>
+                                )}
+                                {fellowshipSourceUrl && (
+                                  <a
+                                    href={fellowshipSourceUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="mt-1 inline-flex text-xs font-semibold text-cyan-800 underline underline-offset-2 hover:text-cyan-950"
+                                  >
+                                    Open fellowship source
+                                  </a>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
 
-                <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <label className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                    Intent
-                    <select
-                      value={plan.intent}
-                      onChange={(event) =>
-                        updatePlan(pathway._id, { intent: event.target.value as PlanningIntent })
-                      }
-                      className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-2 py-2 text-sm font-normal normal-case tracking-normal text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      {INTENT_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  <label className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                    Stage
-                    <select
-                      value={plan.stage}
-                      onChange={(event) =>
-                        updatePlan(pathway._id, { stage: event.target.value as PlanningStage })
-                      }
-                      className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-2 py-2 text-sm font-normal normal-case tracking-normal text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      {STAGE_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
-
-                <label className="mt-3 block text-xs font-semibold uppercase tracking-wide text-gray-500">
-                  Note
-                  <textarea
-                    value={plan.note}
-                    onChange={(event) => updatePlan(pathway._id, { note: event.target.value })}
-                    rows={3}
-                    placeholder="Why this route matters, what to check next, or who to ask."
-                    className="mt-1 block w-full resize-y rounded-md border border-gray-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </label>
-
-                <div className="mt-4 rounded-md border border-gray-100 bg-white p-3">
-                  <div className="mb-2 flex items-center justify-between gap-3">
-                    <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                      Checklist
-                    </h4>
-                    <span className="text-xs font-medium text-gray-500">
-                      {completedChecklistItems}/{checklistItems.length}
-                    </span>
-                  </div>
-                  <div className="space-y-2">
-                    {checklistItems.map((item) => (
-                      <label
-                        key={item.key}
-                        className="flex items-start gap-2 text-sm text-gray-700"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={!!plan.checklist?.[item.key]}
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <label className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                        Intent
+                        <select
+                          value={plan.intent}
                           onChange={(event) =>
-                            toggleChecklistItem(pathway._id, item.key, event.target.checked)
+                            updatePlan(pathway._id, {
+                              intent: event.target.value as PlanningIntent,
+                            })
                           }
-                          className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                        />
-                        <span>{item.label}</span>
+                          className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-2 py-2 text-sm font-normal normal-case tracking-normal text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        >
+                          {INTENT_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
                       </label>
-                    ))}
+
+                      <label className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                        Stage
+                        <select
+                          value={plan.stage}
+                          onChange={(event) =>
+                            updatePlan(pathway._id, {
+                              stage: event.target.value as PlanningStage,
+                            })
+                          }
+                          className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-2 py-2 text-sm font-normal normal-case tracking-normal text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        >
+                          {STAGE_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+
+                    <label className="block text-xs font-semibold uppercase tracking-wide text-gray-500">
+                      Note
+                      <textarea
+                        value={plan.note}
+                        onChange={(event) =>
+                          updatePlan(pathway._id, { note: event.target.value })
+                        }
+                        rows={3}
+                        placeholder="Why this route matters, what to check next, or who to ask."
+                        className="mt-1 block w-full resize-y rounded-md border border-gray-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </label>
+
+                    <div className="rounded-md border border-gray-100 bg-white p-3">
+                      <div className="mb-2 flex items-center justify-between gap-3">
+                        <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                          Checklist
+                        </h4>
+                        <span className="text-xs font-medium text-gray-500">
+                          {completedChecklistItems}/{checklistItems.length}
+                        </span>
+                      </div>
+                      <div className="space-y-2">
+                        {checklistItems.map((item) => (
+                          <label
+                            key={item.key}
+                            className="flex items-start gap-2 text-sm text-gray-700"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={!!plan.checklist?.[item.key]}
+                              onChange={(event) =>
+                                toggleChecklistItem(pathway._id, item.key, event.target.checked)
+                              }
+                              className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                            />
+                            <span>{item.label}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+
+                    {pathway.explanation && (
+                      <p className="line-clamp-3 text-sm text-gray-600">{pathway.explanation}</p>
+                    )}
+
+                    <div className="flex flex-wrap gap-2">
+                      {sourceUrls.slice(0, 2).map((url, index) => (
+                        <a
+                          key={url}
+                          href={url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-xs font-semibold text-blue-700 underline underline-offset-2 hover:text-blue-900"
+                        >
+                          Source {index + 1}
+                        </a>
+                      ))}
+                    </div>
                   </div>
-                </div>
-
-                {pathway.explanation && (
-                  <p className="mt-3 line-clamp-3 text-sm text-gray-600">{pathway.explanation}</p>
                 )}
-
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {sourceUrls.slice(0, 2).map((url, index) => (
-                    <a
-                      key={url}
-                      href={url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-xs font-semibold text-blue-700 underline underline-offset-2 hover:text-blue-900"
-                    >
-                      Source {index + 1}
-                    </a>
-                  ))}
-                </div>
 
                 <div className="mt-4 flex flex-wrap items-center gap-3">
-                  <Link
-                    to={`/research/${pathway.researchEntity.slug}`}
-                    className="text-sm font-semibold text-blue-700 hover:underline"
-                  >
-                    View research profile
-                  </Link>
                   <button
-                    type="button"
-                    onClick={() => removePathway(pathway._id)}
-                    className="text-sm font-semibold text-gray-500 hover:text-red-600"
+	                    type="button"
+	                    onClick={() => removePathway(pathway._id)}
+	                    className="inline-flex min-h-[44px] items-center rounded-md px-2 text-sm font-semibold text-gray-500 hover:bg-red-50 hover:text-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-200"
                   >
                     Remove
                   </button>
