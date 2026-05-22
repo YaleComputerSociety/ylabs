@@ -29,7 +29,7 @@ const baseOpportunity: OpportunityDetailPayload = {
   applicationLabel: 'Apply now',
   status: 'OPEN',
   provenance: 'LISTING_BRIDGED',
-  provenanceLabel: 'YLabs listing bridge',
+  provenanceLabel: 'Legacy YLabs listing signal',
   hoursPerWeek: 8,
   payRate: '$18/hour',
   compensationType: 'PAID',
@@ -94,7 +94,9 @@ describe('OpportunityDetail page', () => {
     await screen.findByText('Spring RA role');
 
     expect(container.textContent).toContain('Apply now');
-    expect(container.textContent).toContain('YLabs listing bridge');
+    expect(container.textContent).toContain('Legacy YLabs listing signal');
+    expect(container.textContent).toContain('Listing-derived signal');
+    expect(container.textContent).not.toContain('Posted opportunity');
     expect(container.textContent).toContain('Upcoming deadline');
     expect(container.textContent).toContain('Apply through the official posting.');
     expect(container.textContent).toContain('[email redacted]');
@@ -127,6 +129,7 @@ describe('OpportunityDetail page', () => {
     expect(container.textContent).toContain('Closed');
     expect(container.textContent).toContain('Past deadline');
     expect(container.textContent).toContain('Scraper-derived posting');
+    expect(container.textContent).toContain('Posted opportunity');
     expect(container.querySelector('a[href="https://apply.example.edu/role"]')).toBeNull();
 
     await waitFor(() => {

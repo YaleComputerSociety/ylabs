@@ -1,6 +1,6 @@
 import { createElement } from 'react';
 import { MemoryRouter } from 'react-router-dom';
-import { render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PathwaySearchHit } from '../../../types/pathway';
@@ -100,10 +100,11 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  cleanup();
   vi.restoreAllMocks();
 });
 
-describe('saved pathway plan hydration helpers', () => {
+describe('saved research plan hydration helpers', () => {
   it('lets server plans win over local drafts when both exist', () => {
     expect(
       mergeSavedPathwayPlansForHydration(
@@ -123,7 +124,7 @@ describe('saved pathway plan hydration helpers', () => {
     });
   });
 
-  it('migrates only local plans for currently saved pathways', () => {
+  it('migrates only local plans for currently saved research plans', () => {
     expect(
       getLocalOnlySavedPathwayPlanIds(
         {
@@ -140,7 +141,7 @@ describe('saved pathway plan hydration helpers', () => {
   });
 });
 
-describe('saved pathway planning helpers', () => {
+describe('saved research planning helpers', () => {
   it('maps pathway next steps into thesis and outreach planning defaults', () => {
     expect(defaultIntentForPathway(pathway({ bestNextStepCategory: 'save-for-thesis' }))).toBe(
       'thesis',
@@ -150,7 +151,7 @@ describe('saved pathway planning helpers', () => {
     );
   });
 
-  it('builds funding cues for saved pathway and fellowship bundles', () => {
+  it('builds funding cues for saved research plans and program bundles', () => {
     expect(
       fundingCueForPathway(pathway({ bestNextStepCategory: 'find-funding' }), plan()),
     ).toMatchObject({
@@ -189,17 +190,126 @@ describe('saved pathway planning helpers', () => {
 });
 
 describe('SavedPathwaysSection advising export', () => {
+  it('keeps detailed planning controls collapsed until a saved plan is expanded', async () => {
+    const user = userEvent.setup();
+
+    mockedAxios.get.mockImplementation((url) => {
+      if (url === '/users/savedResearchPlans') {
+        return Promise.resolve({ data: { savedResearchPlans: [pathway()] } });
+      }
+      if (url === '/users/savedResearchPlanDetails') {
+        return Promise.resolve({
+          data: {
+            savedResearchPlanDetails: {
+              'pathway-1': plan({ intent: 'outreach', stage: 'researching' }),
+            },
+          },
+        });
+      }
+      if (url === '/users/savedResearchPlanFundingMatches') {
+        return Promise.resolve({
+          data: {
+            matchesByPathwayId: {
+              'pathway-1': [fellowshipMatch()],
+            },
+          },
+        });
+      }
+      return Promise.reject(new Error(`Unexpected URL: ${url}`));
+    });
+
+    render(createElement(MemoryRouter, null, createElement(SavedPathwaysSection)));
+
+    await screen.findByText('Explore archival climate records');
+
+    expect(screen.getByRole('link', { name: 'Open profile' }).getAttribute('href')).toBe(
+      '/research/climate-archive',
+    );
+    expect(screen.getByRole('button', { name: 'Plan details' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Open profile' }).className).toContain(
+      'min-h-[44px]',
+    );
+    expect(screen.getByRole('button', { name: 'Plan details' }).className).toContain(
+      'min-h-[44px]',
+    );
+    expect(screen.getByRole('button', { name: 'Remove' }).className).toContain(
+      'min-h-[44px]',
+    );
+    expect(screen.getByText('Researching')).toBeTruthy();
+    expect(screen.queryByLabelText('Note')).toBeNull();
+    expect(screen.queryByText('Checklist')).toBeNull();
+    expect(screen.queryByText('Fellowship candidates')).toBeNull();
+    expect(screen.queryByText('Source 1')).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: 'Plan details' }));
+
+    expect(screen.getByLabelText('Note')).toBeTruthy();
+    expect(screen.getByText('Checklist')).toBeTruthy();
+    expect(screen.getByText('Fellowship candidates')).toBeTruthy();
+    expect(screen.getByText('Source 1')).toBeTruthy();
+  });
+
+  it('reports saved research plan count and next deadline summary', async () => {
+    const onSummaryChange = vi.fn();
+
+    mockedAxios.get.mockImplementation((url) => {
+      if (url === '/users/savedResearchPlans') {
+        return Promise.resolve({
+          data: {
+            savedResearchPlans: [
+              pathway({
+                activePostedOpportunity: {
+                  _id: 'posted-1',
+                  title: 'Archive assistant',
+                  deadline: '2026-05-20T00:00:00.000Z',
+                  applicationUrl: 'https://example.edu/apply',
+                  status: 'OPEN',
+                },
+              }),
+            ],
+          },
+        });
+      }
+      if (url === '/users/savedResearchPlanDetails') {
+        return Promise.resolve({ data: { savedResearchPlanDetails: {} } });
+      }
+      if (url === '/users/savedResearchPlanFundingMatches') {
+        return Promise.resolve({ data: { matchesByPathwayId: {} } });
+      }
+      return Promise.reject(new Error(`Unexpected URL: ${url}`));
+    });
+
+    render(
+      createElement(
+        MemoryRouter,
+        null,
+        createElement(SavedPathwaysSection, { onSummaryChange }),
+      ),
+    );
+
+    await screen.findByText('Explore archival climate records');
+
+    await waitFor(() => {
+      expect(onSummaryChange).toHaveBeenCalledWith(
+        expect.objectContaining({
+          count: 1,
+          nextDeadlineLabel: expect.stringContaining('Archive assistant'),
+        }),
+      );
+    });
+  });
+
   it('requires an explicit opt-in before private notes are requested for export', async () => {
     const user = userEvent.setup();
 
     mockedAxios.get.mockImplementation((url, config) => {
-      if (url === '/users/favPathways') {
-        return Promise.resolve({ data: { favPathways: [pathway()] } });
+      if (url === '/users/savedResearchPlans') {
+        return Promise.resolve({ data: { savedResearchPlans: [pathway()] } });
       }
-      if (url === '/users/favPathwayPlans') {
+      if (url === '/users/savedResearchPlanDetails') {
         return Promise.resolve({
           data: {
-            savedPathwayPlans: {
+            savedResearchPlanDetails: {
               'pathway-1': plan({
                 intent: 'outreach',
                 note: 'Discuss with my advisor.',
@@ -208,10 +318,10 @@ describe('SavedPathwaysSection advising export', () => {
           },
         });
       }
-      if (url === '/users/favPathwayFundingMatches') {
+      if (url === '/users/savedResearchPlanFundingMatches') {
         return Promise.resolve({ data: { matchesByPathwayId: {} } });
       }
-      if (url === '/users/favPathwayPlans/export') {
+      if (url === '/users/savedResearchPlanDetails/export') {
         return Promise.resolve({
           data: {
             privacy: {
@@ -228,12 +338,13 @@ describe('SavedPathwaysSection advising export', () => {
 
     await screen.findByText('Explore archival climate records');
 
+    await user.click(screen.getByRole('button', { name: 'Advising export' }));
     await user.click(screen.getByLabelText('Include private notes'));
     await user.click(screen.getByRole('button', { name: 'Export for advising' }));
 
     await waitFor(() => {
       expect(mockedAxios.get).toHaveBeenCalledWith(
-        '/users/favPathwayPlans/export',
+        '/users/savedResearchPlanDetails/export',
         expect.objectContaining({
           withCredentials: true,
           params: { includePrivateNotes: 'true' },
