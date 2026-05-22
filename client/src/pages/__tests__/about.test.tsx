@@ -11,6 +11,9 @@ describe('About', () => {
   it('uses current Yale Research naming for project history and links', () => {
     render(<About />);
 
+    expect(screen.getByText(/Yale Research is a/)).toBeTruthy();
+    expect(screen.getByText(/product that gives students/)).toBeTruthy();
+    expect(screen.queryByText(/collaboration between/i)).toBeNull();
     expect(screen.getByRole('heading', { name: 'Yale Research alumni' })).toBeTruthy();
     expect(screen.getByText('Founder')).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Yale Research GitHub' })).toBeTruthy();

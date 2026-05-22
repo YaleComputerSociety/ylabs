@@ -12,7 +12,7 @@ const About = () => {
         <p className="yr-kicker mb-3">About the project</p>
         <h1 className="mb-7 text-4xl font-semibold text-slate-950">Welcome to Yale Research</h1>
         <p className="mb-10 text-lg leading-relaxed text-slate-700">
-          A collaboration between the{' '}
+          Yale Research is a{' '}
           <a
             href={'https://yalecomputersociety.org/'}
             target="_blank"
@@ -21,16 +21,7 @@ const About = () => {
           >
             Yale Computer Society
           </a>{' '}
-          and the{' '}
-          <a
-            href={'https://www.yura.yale.edu/'}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="yr-link rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
-          >
-            Yale Undergraduate Research Association
-          </a>
-          , Yale Research gives students a single place to discover research structures, evidence,
+          product that gives students a single place to discover research structures, evidence,
           openings, and practical next steps at Yale. The goal is to help undergraduates move from a
           topic or method they care about to a credible research home without already knowing the
           right lab or professor name.
