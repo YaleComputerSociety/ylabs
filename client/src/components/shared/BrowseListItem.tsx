@@ -28,7 +28,7 @@ import ArchivedBadge from './ArchivedBadge';
 import ConfigContext from '../../contexts/ConfigContext';
 import UserContext from '../../contexts/UserContext';
 import { useViewTracking } from '../../hooks/useViewTracking';
-import { getDepartmentAbbreviation } from '../../utils/departmentNames';
+import { getDepartmentAbbreviation, getDepartmentCanonicalLabel } from '../../utils/departmentNames';
 import { getFellowshipCycleStatus } from '../../utils/fellowshipCycle';
 
 interface BrowseListItemProps {
@@ -41,7 +41,7 @@ interface BrowseListItemProps {
 }
 
 const BrowseListItem = React.memo(({ item, isFavorite, onToggleFavorite, onOpenModal, onAdminEdit, isCompact }: BrowseListItemProps) => {
-  const { getColorForResearchArea } = useContext(ConfigContext);
+  const { departments, getColorForResearchArea } = useContext(ConfigContext);
   const { user } = useContext(UserContext);
   const isAdmin = user?.userType === 'admin';
   const open = isItemOpen(item);
@@ -63,15 +63,20 @@ const BrowseListItem = React.memo(({ item, isFavorite, onToggleFavorite, onOpenM
 
   const deptInfo = useMemo(() => {
     if (!isListing) return null;
-    return getOrderedDeptAbbrs(item.data.departments, item.data.ownerPrimaryDepartment, DEPT_CAP);
-  }, [item, isListing]);
+    return getOrderedDeptAbbrs(
+      item.data.departments,
+      item.data.ownerPrimaryDepartment,
+      DEPT_CAP,
+      departments,
+    );
+  }, [item, isListing, departments]);
 
   const deptLabel = deptInfo && deptInfo.abbrs.length > 0
     ? deptInfo.abbrs.join(' | ') + (deptInfo.truncated > 0 ? ` +${deptInfo.truncated}` : '')
     : null;
 
   const listingDept = isListing && item.data.departments && item.data.departments.length > 0
-    ? getDepartmentAbbreviation(item.data.departments[0])
+    ? getDepartmentAbbreviation(getDepartmentCanonicalLabel(item.data.departments[0], departments))
     : null;
 
   const subtitle = getItemSubtitle(item);
@@ -118,7 +123,7 @@ const BrowseListItem = React.memo(({ item, isFavorite, onToggleFavorite, onOpenM
                 <span className="text-xs font-semibold text-blue-700 truncate">
                   {getResearchGroupKindLabel(item.data.kind)}
                 </span>
-                {item.data.hasActiveListing && (
+                {item.data.accessSummary?.hasActivePostedOpportunity && (
                   <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-100">
                     Active opportunity
                   </span>
@@ -200,7 +205,7 @@ const BrowseListItem = React.memo(({ item, isFavorite, onToggleFavorite, onOpenM
             {isAdmin && onAdminEdit && (
               <button
                 onClick={(e) => { e.stopPropagation(); onAdminEdit(); }}
-                className="p-1 rounded-full text-gray-500 hover:text-blue-600 hover:bg-gray-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full text-gray-500 hover:text-blue-600 hover:bg-gray-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                 title="Edit listing (Admin)"
                 aria-label="Admin edit"
               >

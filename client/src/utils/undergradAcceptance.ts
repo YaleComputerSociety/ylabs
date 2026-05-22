@@ -70,7 +70,7 @@ const ACCESS_SIGNAL_LABELS: Record<string, string> = {
 };
 
 const ENTRY_PATHWAY_LABELS: Record<string, string> = {
-  POSTED_ROLE: 'Posted role',
+  POSTED_ROLE: 'Posted opening',
   RECURRING_PROGRAM: 'Recurring pathway',
   COURSE_CREDIT: 'Course-credit pathway',
   SENIOR_THESIS: 'Senior thesis pathway',
@@ -142,7 +142,7 @@ function verdictFromAccessSummary(group: ResearchGroup): AcceptanceVerdictResult
       evidence: [
         {
           kind: 'closed-evidence',
-          label: 'Not currently available',
+          label: 'Limited access evidence',
           detail: summary.evidence[0]?.excerpt || undefined,
           strength: 'strong',
         },
@@ -191,13 +191,12 @@ function verdictFromAccessSummary(group: ResearchGroup): AcceptanceVerdictResult
 /**
  * Pure verdict computation. See module-level docstring for the rules.
  *
- * `hasActiveListing` is computed by callers — the search-hit type doesn't
- * carry it (search returns ResearchGroup, listings are joined separately on
- * the detail page). Browse cards pass `false` unless they've been hydrated.
+ * The active posted-opening flag is computed by callers from canonical
+ * PostedOpportunity/search-summary data. Legacy listings are not counted.
  */
 export function computeAcceptanceVerdict(
   group: ResearchGroup,
-  hasActiveListing: boolean,
+  hasActivePostedOpportunity: boolean,
 ): AcceptanceVerdictResult {
   const evidence: EvidenceItem[] = [];
   const lockedFields = group.manuallyLockedFields || [];
@@ -263,11 +262,11 @@ export function computeAcceptanceVerdict(
     });
   }
 
-  if (hasActiveListing) {
+  if (hasActivePostedOpportunity) {
     evidence.push({
       kind: 'active-listing',
-      label: 'Active listing',
-      detail: 'This lab has at least one open listing on Y/Labs.',
+      label: 'Active posted opening',
+      detail: 'This research home has at least one active canonical posted opportunity.',
       strength: 'strong',
     });
   }
@@ -361,7 +360,7 @@ export function verdictLabel(verdict: TrustVerdict): string {
     case 'unknown':
       return 'Evidence unknown';
     case 'not-accepting':
-      return 'Not currently available';
+      return 'Limited access evidence';
     default:
       return 'Evidence unknown';
   }

@@ -20,16 +20,13 @@ import HomeButton from './HomeButton';
 import YURAButton from './YURAButton';
 import AnalyticsButton from './AnalyticsButton';
 import UserContext from '../contexts/UserContext';
-import UIContext from '../contexts/UIContext';
 import SearchContext from '../contexts/SearchContext';
-import FellowshipSearchContext from '../contexts/FellowshipSearchContext';
 import FeedbackButton from './FeebackButton';
 import NavbarSearchBar from './navbar/NavbarSearchBar';
 import NavbarSortDropdown from './navbar/NavbarSortDropdown';
-import NavbarFellowshipSearchBar from './navbar/NavbarFellowshipSearchBar';
-import NavbarFellowshipSortDropdown from './navbar/NavbarFellowshipSortDropdown';
 import CombinedFilterDropdown, { FilterTabConfig } from './shared/CombinedFilterDropdown';
 import ActiveFilters, { ActiveFilterChip, QuickFilterDef } from './shared/ActiveFilters';
+import ViewModeToggle from './shared/ViewModeToggle';
 import { getColorForResearchArea } from '../utils/researchAreas';
 import { useConfig } from '../hooks/useConfig';
 import { isPrimaryNavLinkActive, primaryNavLinks } from './navigationLinks';
@@ -47,92 +44,19 @@ const HamburgerIcon = () => (
   </svg>
 );
 
+const CloseIcon = () => (
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="18" y1="6" x2="6" y2="18"></line>
+    <line x1="6" y1="6" x2="18" y2="18"></line>
+  </svg>
+);
+
 const SearchIcon = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
     <circle cx="11" cy="11" r="8" />
     <path d="M21 21l-4.35-4.35" />
   </svg>
 );
-
-const ViewToggle = () => {
-  const { viewMode, setViewMode } = useContext(UIContext);
-  return (
-    <div className="flex border border-gray-200 rounded overflow-hidden">
-      <button
-        onClick={() => setViewMode('card')}
-        className={`p-1.5 transition-colors ${viewMode === 'card' ? 'bg-blue-50 text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}
-        aria-label="Card view"
-        title="Card view"
-      >
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <rect x="3" y="3" width="7" height="7" />
-          <rect x="14" y="3" width="7" height="7" />
-          <rect x="3" y="14" width="7" height="7" />
-          <rect x="14" y="14" width="7" height="7" />
-        </svg>
-      </button>
-      <button
-        onClick={() => setViewMode('list')}
-        className={`p-1.5 transition-colors ${viewMode === 'list' ? 'bg-blue-50 text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}
-        aria-label="List view"
-        title="List view"
-      >
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <line x1="8" y1="6" x2="21" y2="6" />
-          <line x1="8" y1="12" x2="21" y2="12" />
-          <line x1="8" y1="18" x2="21" y2="18" />
-          <line x1="3" y1="6" x2="3.01" y2="6" />
-          <line x1="3" y1="12" x2="3.01" y2="12" />
-          <line x1="3" y1="18" x2="3.01" y2="18" />
-        </svg>
-      </button>
-      <button
-        onClick={() => setViewMode('compact')}
-        className={`p-1.5 transition-colors ${viewMode === 'compact' ? 'bg-blue-50 text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}
-        aria-label="Compact view"
-        title="Compact view"
-      >
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <line x1="8" y1="4" x2="21" y2="4" />
-          <line x1="8" y1="9" x2="21" y2="9" />
-          <line x1="8" y1="14" x2="21" y2="14" />
-          <line x1="8" y1="19" x2="21" y2="19" />
-          <line x1="3" y1="4" x2="3.01" y2="4" />
-          <line x1="3" y1="9" x2="3.01" y2="9" />
-          <line x1="3" y1="14" x2="3.01" y2="14" />
-          <line x1="3" y1="19" x2="3.01" y2="19" />
-        </svg>
-      </button>
-    </div>
-  );
-};
 
 const getAcademicDisciplineColor = (area: string): { bg: string; text: string } => {
   switch (area) {
@@ -280,101 +204,18 @@ const listingQuickFilters: QuickFilterDef[] = [
   },
 ];
 
-const fellowshipQuickFilters: QuickFilterDef[] = [
-  {
-    label: 'Open Only',
-    value: 'open',
-    icon: (
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        width="12"
-        height="12"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-        <polyline points="22 4 12 14.01 9 11.01" />
-      </svg>
-    ),
-  },
-  {
-    label: 'Closing Soon',
-    value: 'closingSoon',
-    icon: (
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        width="12"
-        height="12"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <circle cx="12" cy="12" r="10" />
-        <polyline points="12 6 12 12 16 14" />
-      </svg>
-    ),
-  },
-  {
-    label: 'Next Cycle',
-    value: 'nextCycle',
-    icon: (
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        width="12"
-        height="12"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <path d="M21 12a9 9 0 1 1-2.64-6.36" />
-        <path d="M21 3v6h-6" />
-      </svg>
-    ),
-  },
-  {
-    label: 'Recently Added',
-    value: 'recent',
-    icon: (
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        width="12"
-        height="12"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
-      </svg>
-    ),
-  },
-];
-
 export default function Navbar() {
   const { isAuthenticated, user } = useContext(UserContext);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
-  const [mobileFellowshipSearchOpen, setMobileFellowshipSearchOpen] = useState(false);
   const isMobile = useMediaQuery(`(max-width:${MOBILE_BREAKPOINT})`);
-  const _showFellowshipMobilePanel = useMediaQuery('(max-width:1279px)');
+  const showPageControlsPanel = useMediaQuery('(max-width:1279px)');
   const location = useLocation();
 
   const isAdmin = user?.userType === 'admin';
-  const isListingsPage = location.pathname === '/listings';
+  const isProfessorUser = user?.userType === 'professor' || user?.userType === 'faculty';
+  const isListingsPage = false;
   const isHomePage = isListingsPage;
-  const isFellowshipsPage = location.pathname === '/fellowships';
 
   const {
     selectedDepartments,
@@ -398,26 +239,6 @@ export default function Navbar() {
     isLoading: listingLoading,
     setFilterBarHeight,
   } = useContext(SearchContext);
-
-  const {
-    filterOptions: fellowshipFilterOptions,
-    selectedYearOfStudy,
-    setSelectedYearOfStudy,
-    selectedTermOfAward,
-    setSelectedTermOfAward,
-    selectedPurpose,
-    setSelectedPurpose,
-    selectedRegions,
-    setSelectedRegions,
-    selectedCitizenship,
-    setSelectedCitizenship,
-    setFilterBarHeight: setFellowshipFilterBarHeight,
-    quickFilter: fellowshipQuickFilter,
-    setQuickFilter: setFellowshipQuickFilter,
-    fellowships: _fellowshipResults,
-    isLoading: fellowshipLoading,
-    total: fellowshipTotal,
-  } = useContext(FellowshipSearchContext);
 
   const { getDepartmentColor: getColorFromConfig } = useConfig();
 
@@ -456,44 +277,6 @@ export default function Navbar() {
     },
   ];
 
-  const fellowshipFilterTabs: FilterTabConfig[] = [
-    {
-      key: 'year',
-      label: 'Year',
-      options: fellowshipFilterOptions.yearOfStudy,
-      selected: selectedYearOfStudy,
-      setSelected: setSelectedYearOfStudy,
-    },
-    {
-      key: 'term',
-      label: 'Term',
-      options: fellowshipFilterOptions.termOfAward,
-      selected: selectedTermOfAward,
-      setSelected: setSelectedTermOfAward,
-    },
-    {
-      key: 'purpose',
-      label: 'Purpose',
-      options: fellowshipFilterOptions.purpose,
-      selected: selectedPurpose,
-      setSelected: setSelectedPurpose,
-    },
-    {
-      key: 'region',
-      label: 'Region',
-      options: fellowshipFilterOptions.globalRegions,
-      selected: selectedRegions,
-      setSelected: setSelectedRegions,
-    },
-    {
-      key: 'citizenship',
-      label: 'Citizenship',
-      options: fellowshipFilterOptions.citizenshipStatus,
-      selected: selectedCitizenship,
-      setSelected: setSelectedCitizenship,
-    },
-  ];
-
   const listingChips: ActiveFilterChip[] = [
     ...selectedResearchAreas.map((area) => ({
       key: `area-${area}`,
@@ -518,27 +301,6 @@ export default function Navbar() {
     }),
   ];
 
-  const fellowshipFilterGroups = [
-    { label: 'Year', values: selectedYearOfStudy, clear: () => setSelectedYearOfStudy([]) },
-    { label: 'Term', values: selectedTermOfAward, clear: () => setSelectedTermOfAward([]) },
-    { label: 'Purpose', values: selectedPurpose, clear: () => setSelectedPurpose([]) },
-    { label: 'Region', values: selectedRegions, clear: () => setSelectedRegions([]) },
-    { label: 'Citizenship', values: selectedCitizenship, clear: () => setSelectedCitizenship([]) },
-  ].filter((g) => g.values.length > 0);
-
-  const fellowshipChips: ActiveFilterChip[] = fellowshipFilterGroups.map((group) => {
-    const display =
-      group.values.length <= 3
-        ? group.values.join(', ')
-        : `${group.values.slice(0, 2).join(', ')} +${group.values.length - 2} more`;
-    return {
-      key: `f-${group.label}`,
-      label: `${group.label}: ${display}`,
-      colorClass: 'bg-gray-100 text-gray-700 border border-gray-300',
-      onRemove: group.clear,
-    };
-  });
-
   const toggleDrawer = (open: boolean) => (event: React.KeyboardEvent | React.MouseEvent) => {
     if (
       event.type === 'keydown' &&
@@ -555,6 +317,7 @@ export default function Navbar() {
       '& .MuiButton-root': {
         paddingLeft: 1,
         justifyContent: 'flex-start',
+        minHeight: 44,
         width: '100%',
       },
     };
@@ -566,6 +329,25 @@ export default function Navbar() {
         onClick={toggleDrawer(false)}
         onKeyDown={toggleDrawer(false)}
       >
+        <Box sx={{ display: 'flex', justifyContent: 'flex-end', p: 1 }}>
+          <IconButton
+            size="large"
+            aria-label="Close menu"
+            onClick={(event) => {
+              event.stopPropagation();
+              setDrawerOpen(false);
+            }}
+            sx={{
+              borderRadius: '4px',
+              height: 44,
+              width: 44,
+              padding: '8px',
+              '&:hover': { backgroundColor: 'transparent' },
+            }}
+          >
+            <CloseIcon />
+          </IconButton>
+        </Box>
         <List>
           {isAuthenticated ? (
             <>
@@ -581,6 +363,7 @@ export default function Navbar() {
                         color: active ? '#0055A4' : '#333',
                         fontWeight: active ? 600 : 400,
                         justifyContent: 'flex-start',
+                        minHeight: 44,
                         width: '100%',
                         pl: 1,
                       }}
@@ -596,6 +379,45 @@ export default function Navbar() {
               {isAdmin && (
                 <ListItem sx={listItemStyle}>
                   <AnalyticsButton />
+                </ListItem>
+              )}
+              {isProfessorUser && (
+                <ListItem sx={listItemStyle}>
+                  <Button
+                    component={Link}
+                    to="/account"
+                    sx={{
+                      textTransform: 'none',
+                      color: location.pathname === '/account' ? '#0055A4' : '#333',
+                      fontWeight: location.pathname === '/account' ? 600 : 400,
+                      justifyContent: 'flex-start',
+                      minHeight: 44,
+                      width: '100%',
+                      pl: 1,
+                    }}
+                  >
+                    Edit Profile
+                  </Button>
+                </ListItem>
+              )}
+              {isProfessorUser && user?.netId && (
+                <ListItem sx={listItemStyle}>
+                  <Button
+                    component={Link}
+                    to={`/profile/${user.netId}`}
+                    sx={{
+                      textTransform: 'none',
+                      color:
+                        location.pathname === `/profile/${user.netId}` ? '#0055A4' : '#333',
+                      fontWeight: location.pathname === `/profile/${user.netId}` ? 600 : 400,
+                      justifyContent: 'flex-start',
+                      minHeight: 44,
+                      width: '100%',
+                      pl: 1,
+                    }}
+                  >
+                    Public Profile
+                  </Button>
                 </ListItem>
               )}
               <ListItem sx={listItemStyle}>
@@ -622,109 +444,102 @@ export default function Navbar() {
           position="static"
           sx={{
             position: 'relative',
-            background: 'linear-gradient(180deg, #ffffff 0%, #f3f4f6 100%)',
-            color: '#000000',
-            height: { xs: '64px', sm: '64px' },
+            background:
+              'linear-gradient(180deg, rgba(255,255,255,0.96) 0%, rgba(251,252,248,0.94) 100%)',
+            color: 'var(--yr-ink)',
+            height: { xs: '68px', sm: '68px' },
             '& .MuiToolbar-root': {
-              minHeight: '64px !important',
-              height: '64px !important',
-              paddingLeft: '32px !important',
-              paddingRight: { lg: '85px' },
+              minHeight: '68px !important',
+              height: '68px !important',
+              paddingLeft: { xs: '20px !important', sm: '32px !important' },
+              paddingRight: { xs: '16px', lg: '24px' },
               transition: 'padding 0.3s ease',
             },
-            boxShadow: '0px 1px 4px rgba(0, 0, 0, 0.1), 0px 1px 3px rgba(0, 85, 164, 0.06)',
-            borderBottom: '1px solid rgba(0, 0, 0, 0.06)',
+            boxShadow: '0 1px 0 rgba(23, 32, 51, 0.05)',
+            borderBottom: '1px solid var(--yr-line)',
           }}
         >
-          {isAuthenticated && !isMobile && (
-            <Box
-              sx={{
-                position: 'absolute',
-                right: '16px',
-                top: '50%',
-                transform: 'translateY(-50%)',
-                display: 'flex',
-                gap: '14px',
-                alignItems: 'center',
-                zIndex: 10,
-              }}
-            >
-              <Box sx={{ display: 'flex', gap: 0, alignItems: 'center' }}>
-                {primaryNavLinks.map((link) => {
-                  const active = isPrimaryNavLinkActive(location.pathname, link);
-                  return (
-                    <Button
-                      key={link.key}
-                      component={Link}
-                      to={link.to}
-                      disableRipple
-                      className={`!normal-case !text-sm !min-w-0 !px-3 !py-1 !rounded-none !border-b-2 hover:!bg-transparent ${active ? '!font-semibold !text-blue-700 !border-blue-700 hover:!text-blue-700' : '!font-normal !text-gray-600 !border-transparent hover:!text-blue-700'}`}
-                      sx={{ '&:focus-visible': { outline: '2px solid #1876D1', outlineOffset: '2px' } }}
-                    >
-                      {link.label}
-                    </Button>
-                  );
-                })}
-              </Box>
-              <UserButton />
-            </Box>
-          )}
-          <Toolbar sx={{ height: '64px', width: '100%', justifyContent: 'flex-start' }}>
+          <Toolbar sx={{ height: '68px', width: '100%', justifyContent: 'flex-start' }}>
             <Box sx={{ flexShrink: 0 }}>{isAuthenticated ? <HomeButton /> : <YURAButton />}</Box>
 
             {isAuthenticated && isListingsPage && (
               <Box
                 sx={{
-                  display: { xs: 'none', md: 'flex' },
+                  display: { xs: 'none', xl: 'flex' },
                   gap: '12px',
                   ml: 1,
                   alignItems: 'center',
+                  minWidth: 0,
                   flexShrink: 1,
                   flexGrow: 1,
-                  overflow: 'visible',
+                  overflow: 'hidden',
                 }}
               >
                 <NavbarSearchBar />
                 <CombinedFilterDropdown tabs={listingFilterTabs} />
                 <NavbarSortDropdown />
-                <ViewToggle />
-              </Box>
-            )}
-
-            {isAuthenticated && isFellowshipsPage && (
-              <Box
-                sx={{
-                  display: { xs: 'none', md: 'flex' },
-                  gap: '12px',
-                  ml: 1,
-                  alignItems: 'center',
-                  flexShrink: 1,
-                  flexGrow: 1,
-                  overflow: 'visible',
-                }}
-              >
-                <NavbarFellowshipSearchBar />
-                <CombinedFilterDropdown tabs={fellowshipFilterTabs} />
-                <NavbarFellowshipSortDropdown />
-                <ViewToggle />
+                <ViewModeToggle />
               </Box>
             )}
 
             {isAuthenticated && (
               <>
-                <Box sx={{ display: 'flex', gap: '8px', alignItems: 'center', ml: 'auto' }}>
-                  {(isListingsPage || isFellowshipsPage) && isMobile && (
+                <Box
+                  sx={{
+                    display: 'flex',
+                    gap: { xs: '8px', lg: '14px' },
+                    alignItems: 'center',
+                    ml: 'auto',
+                    flexShrink: 0,
+                  }}
+                >
+                  {!isMobile && (
+                    <>
+                      <Box
+                        component="nav"
+                        aria-label="Primary navigation"
+                        sx={{ display: 'flex', gap: 0, alignItems: 'center', flexShrink: 0 }}
+                      >
+                        {primaryNavLinks.map((link) => {
+                          const active = isPrimaryNavLinkActive(location.pathname, link);
+                          return (
+                            <Button
+                              key={link.key}
+                              component={Link}
+                              to={link.to}
+                              disableRipple
+                              className={`!normal-case !text-sm !min-w-0 !min-h-[44px] !px-3 !py-0 !inline-flex !items-center !rounded-none !border-b-2 hover:!bg-transparent ${active ? '!font-semibold !text-blue-700 !border-blue-700 hover:!text-blue-700' : '!font-normal !text-gray-600 !border-transparent hover:!text-blue-700'}`}
+                              sx={{
+                                borderRadius: '6px 6px 0 0',
+                                transition:
+                                  'background-color 150ms ease, color 150ms ease, border-color 150ms ease',
+                                '&:hover': {
+                                  backgroundColor: 'rgba(24, 74, 155, 0.05) !important',
+                                },
+                                '&:focus-visible': {
+                                  outline: '2px solid rgba(24, 74, 155, 0.45)',
+                                  outlineOffset: '2px',
+                                },
+                              }}
+                            >
+                              {link.label}
+                            </Button>
+                          );
+                        })}
+                      </Box>
+                      <UserButton />
+                    </>
+                  )}
+                  {isListingsPage && showPageControlsPanel && (
                     <IconButton
                       size="small"
                       color="inherit"
                       aria-label="search"
-                      onClick={() => {
-                        if (isListingsPage) setMobileSearchOpen(!mobileSearchOpen);
-                        if (isFellowshipsPage)
-                          setMobileFellowshipSearchOpen(!mobileFellowshipSearchOpen);
-                      }}
+                      onClick={() => setMobileSearchOpen(!mobileSearchOpen)}
                       sx={{
                         borderRadius: '4px',
+                        height: 44,
+                        width: 44,
                         padding: '8px',
                         '&:hover': { backgroundColor: 'transparent' },
                       }}
@@ -737,10 +552,14 @@ export default function Navbar() {
                       size="large"
                       edge="end"
                       color="inherit"
-                      aria-label="menu"
+                      aria-label="Open menu"
+                      aria-expanded={drawerOpen}
+                      aria-controls="primary-mobile-menu"
                       onClick={toggleDrawer(true)}
                       sx={{
                         borderRadius: '4px',
+                        height: 44,
+                        width: 44,
                         padding: '8px',
                         '&:hover': { backgroundColor: 'transparent' },
                       }}
@@ -749,7 +568,12 @@ export default function Navbar() {
                     </IconButton>
                   )}
                 </Box>
-                <Drawer anchor="right" open={drawerOpen} onClose={toggleDrawer(false)}>
+                <Drawer
+                  anchor="right"
+                  open={drawerOpen}
+                  onClose={toggleDrawer(false)}
+                  slotProps={{ paper: { id: 'primary-mobile-menu' } }}
+                >
                   {mobileMenu()}
                 </Drawer>
               </>
@@ -757,7 +581,7 @@ export default function Navbar() {
           </Toolbar>
         </AppBar>
 
-        {isAuthenticated && isListingsPage && isMobile && (
+        {isAuthenticated && isListingsPage && showPageControlsPanel && (
           <Collapse in={mobileSearchOpen}>
             <Box
               sx={{
@@ -773,27 +597,6 @@ export default function Navbar() {
               <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
                 <CombinedFilterDropdown tabs={listingFilterTabs} />
                 <NavbarSortDropdown />
-              </Box>
-            </Box>
-          </Collapse>
-        )}
-
-        {isAuthenticated && isFellowshipsPage && isMobile && (
-          <Collapse in={mobileFellowshipSearchOpen}>
-            <Box
-              sx={{
-                bgcolor: 'white',
-                boxShadow: '0px 2px 4px rgba(0, 0, 0, 0.1)',
-                p: 2,
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 2,
-              }}
-            >
-              <NavbarFellowshipSearchBar />
-              <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-                <CombinedFilterDropdown tabs={fellowshipFilterTabs} />
-                <NavbarFellowshipSortDropdown />
               </Box>
             </Box>
           </Collapse>
@@ -817,25 +620,6 @@ export default function Navbar() {
           />
         )}
 
-        {isAuthenticated && isFellowshipsPage && (
-          <ActiveFilters
-            quickFilters={fellowshipQuickFilters}
-            activeQuickFilter={fellowshipQuickFilter}
-            onQuickFilterChange={setFellowshipQuickFilter}
-            totalCount={fellowshipTotal}
-            isLoading={fellowshipLoading}
-            chips={fellowshipChips}
-            onClearAll={() => {
-              setSelectedYearOfStudy([]);
-              setSelectedTermOfAward([]);
-              setSelectedPurpose([]);
-              setSelectedRegions([]);
-              setSelectedCitizenship([]);
-              setFellowshipQuickFilter(null);
-            }}
-            onHeightChange={setFellowshipFilterBarHeight}
-          />
-        )}
       </Box>
     </ThemeProvider>
   );

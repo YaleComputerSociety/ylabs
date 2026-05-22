@@ -6,7 +6,7 @@ import { Virtuoso } from 'react-virtuoso';
 import { BrowsableItem, getItemId } from '../../types/browsable';
 import BrowseCard from './BrowseCard';
 import BrowseListItem from './BrowseListItem';
-import LoadingSpinner from './LoadingSpinner';
+import InfiniteScrollLoadingDots from './InfiniteScrollLoadingDots';
 import UIContext from '../../contexts/UIContext';
 
 const VIRTUALIZATION_THRESHOLD = 50;
@@ -136,7 +136,7 @@ const BrowseGrid = ({
         {sentinelRef && !searchExhausted && <div ref={sentinelRef} className="h-10 w-full" />}
       </div>
 
-      {showLoader && <LoadingSpinner size="lg" />}
+      {showLoader && <InfiniteScrollLoadingDots label="Loading more results" />}
     </div>
   );
 };

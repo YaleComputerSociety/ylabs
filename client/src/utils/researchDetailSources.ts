@@ -58,15 +58,40 @@ export const labelizeResearchDetailValue = (value?: string): string =>
   (value || 'Unknown')
     .replace(/([a-z])([A-Z])/g, '$1 $2')
     .toLowerCase()
-    .split(/[_\s-]+/)
+    .split(/[_\s.-]+/)
     .filter(Boolean)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ');
 
+export const isDepartmentRosterProvenanceUrl = (url?: string | null): boolean => {
+  const normalized = normalizeSourceUrl(url);
+  if (!normalized) return false;
+
+  try {
+    const parsed = new URL(normalized);
+    const host = parsed.hostname.replace(/^www\./, '');
+    const path = parsed.pathname.toLowerCase().replace(/\/+$/, '');
+
+    return (
+      host.endsWith('yale.edu') &&
+      (/^\/people\/faculty(?:-|\/|$)/.test(path) ||
+        /^\/academic-study\/departments\/[^/]+\/faculty\/load_faculty(?:\/|$)/.test(path) ||
+        (host === 'engineering.yale.edu' &&
+          /^\/research-and-faculty\/faculty-directory\/[^/]+$/.test(path)))
+    );
+  } catch {
+    return false;
+  }
+};
+
 const titleFromPath = (path: string): string => {
   const parts = path.split('/').filter(Boolean);
-  const leaf = parts[parts.length - 1];
+  const rawLeaf = parts[parts.length - 1];
+  const leaf = rawLeaf ? decodeURIComponent(rawLeaf) : '';
   if (!leaf) return 'Official source';
+  if (/\.pdf$/i.test(leaf)) {
+    return `${labelizeResearchDetailValue(leaf.replace(/\.pdf$/i, ''))} PDF`;
+  }
   return `${labelizeResearchDetailValue(leaf)} page`;
 };
 
@@ -100,6 +125,7 @@ export const buildResearchDetailSources = ({
   const addSource = (url: string | undefined, context: string) => {
     const normalized = normalizeSourceUrl(url);
     if (!normalized) return;
+    if (isDepartmentRosterProvenanceUrl(normalized)) return;
 
     const existing = sources.get(normalized);
     if (existing) {
@@ -109,7 +135,7 @@ export const buildResearchDetailSources = ({
 
     sources.set(normalized, {
       url: normalized,
-      label: sourceLabelForUrl(normalized),
+      label: context === 'Profile website' ? 'Research website' : sourceLabelForUrl(normalized),
       contexts: [context],
     });
   };

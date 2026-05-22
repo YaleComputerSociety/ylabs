@@ -18,9 +18,11 @@ export type LabMemberRole =
   | 'alumni';
 
 export interface LabMemberUser {
-  netid: string;
+  _id?: string;
+  netid?: string;
   fname: string;
   lname: string;
+  displayName?: string;
   image_url?: string;
   primary_department?: string;
   title?: string;
@@ -52,6 +54,50 @@ export interface LabPaper {
   versionDate?: string;
   publicationStage?: string;
   preprintServer?: string;
+}
+
+export interface LabScholarlyLink {
+  _id: string;
+  researchEntityId?: string;
+  userId?: string;
+  title: string;
+  url: string;
+  destinationKind:
+    | 'DOI'
+    | 'PUBLISHER'
+    | 'PUBMED'
+    | 'PMC'
+    | 'ARXIV'
+    | 'ORCID'
+    | 'OPENALEX'
+    | 'OFFICIAL_PROFILE'
+    | 'OTHER';
+  displaySource: string;
+  freeFullTextUrl?: string;
+  freeFullTextLabel?: string;
+  discoveredVia: 'OPENALEX' | 'ORCID' | 'OFFICIAL_PROFILE' | 'MANUAL';
+  year?: number;
+  venue?: string;
+  confidence?: number;
+  observedAt?: string;
+  externalIds?: {
+    doi?: string;
+    openAlexId?: string;
+    arxivId?: string;
+    pmid?: string;
+    pmcid?: string;
+  };
+}
+
+export type LabResearchActivityRelationshipBasis =
+  | 'explicit_entity_link'
+  | 'entity_source'
+  | 'member_authorship'
+  | 'manual';
+
+export interface LabResearchActivityLink extends LabScholarlyLink {
+  relationshipBasis: LabResearchActivityRelationshipBasis;
+  evidenceLabel: string;
 }
 
 export interface LabEntryPathway {
@@ -104,10 +150,25 @@ export interface LabPostedOpportunity {
   sourceUrls?: string[];
 }
 
+export interface LabEntityRelationship {
+  _id: string;
+  sourceResearchEntityId: string;
+  targetResearchEntityId: string;
+  relationshipType: string;
+  label: string;
+  evidenceStrength?: string;
+  sourceUrl?: string;
+  evidenceQuote?: string;
+  confidence?: number;
+}
+
 export interface LabDetailPayload {
   group: ResearchGroup;
   researchEntity?: ResearchEntity;
   members: LabMember[];
+  researchActivityLinks?: LabResearchActivityLink[];
+  scholarlyLinks?: LabScholarlyLink[];
+  memberScholarlyLinks?: LabScholarlyLink[];
   recentPapers: LabPaper[];
   recentArxivPreprints?: LabPaper[];
   activeListings: Listing[];
@@ -115,4 +176,8 @@ export interface LabDetailPayload {
   accessSignals?: LabAccessSignal[];
   contactRoutes?: LabContactRoute[];
   postedOpportunities?: LabPostedOpportunity[];
+  entityRelationships?: LabEntityRelationship[];
+  relatedResearchEntities?: ResearchEntity[];
+  affiliatedRelationships?: LabEntityRelationship[];
+  affiliatedResearchEntities?: ResearchEntity[];
 }

@@ -15,7 +15,7 @@ export type PathwaySortBy =
   | 'deadline'
   | 'createdAt';
 
-export type PathwaySortOrder = 'asc' | 'desc';
+export type PathwayActionability = 'ACTION_READY' | 'REFERENCE_ONLY';
 
 export interface PathwaySearchFilters {
   pathwayType?: string[];
@@ -29,20 +29,14 @@ export interface PathwaySearchFilters {
   bestNextStepCategory?: PathwayBestNextStepCategory[];
 }
 
-export interface PathwaySearchRequest {
-  q?: string;
-  page?: number;
-  pageSize?: number;
-  filters?: PathwaySearchFilters;
-  sortBy?: PathwaySortBy;
-  sortOrder?: PathwaySortOrder;
-}
-
 export interface PathwayResearchEntitySummary {
   _id: string;
   slug: string;
   name: string;
   displayName?: string;
+  shortDescription?: string;
+  description?: string;
+  fullDescription?: string;
   kind?: string;
   entityType?: string;
   departments: string[];
@@ -58,6 +52,7 @@ export interface PathwayPostedOpportunitySummary {
   applicationUrl?: string;
   status: 'OPEN' | 'ROLLING';
   term?: string;
+  provenance?: 'LISTING_BRIDGED' | 'SCRAPER_DERIVED';
 }
 
 export interface PathwayEvidenceSummary {
@@ -96,6 +91,7 @@ export interface PathwaySearchHit {
   activePostedOpportunity?: PathwayPostedOpportunitySummary;
   evidence: PathwayEvidenceSummary[];
   contactRoute?: PathwayContactRouteSummary;
+  actionability?: PathwayActionability;
 }
 
 export interface PathwaySearchResponse {

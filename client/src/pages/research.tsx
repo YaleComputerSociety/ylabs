@@ -1,38 +1,67 @@
-import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { FormEvent, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { isCancel } from 'axios';
+import { useSearchParams } from 'react-router-dom';
 
-import IdentityConfidenceCard from '../components/research/IdentityConfidenceCard';
-import PathwayActionCard from '../components/research/PathwayActionCard';
 import ResearchHomeCard from '../components/research/ResearchHomeCard';
+import InfiniteScrollLoadingDots from '../components/shared/InfiniteScrollLoadingDots';
+import UserContext from '../contexts/UserContext';
+import useConfig from '../hooks/useConfig';
+import { useInfiniteScroll } from '../hooks/useInfiniteScroll';
 import axios from '../utils/axios';
 import {
-  buildDynamicSearchSuggestions,
   buildGroupedSearchResults,
-  buildMetadataClusters,
   GroupedResearchResults,
-  ResearchCluster,
 } from '../utils/researchDiscoveryAdapters';
 import {
   normalizeResearchEntitySearchResponse,
   ResearchEntity,
   ResearchEntitySearchResponse,
 } from '../types/researchEntity';
-import type { PathwaySearchHit, PathwaySearchResponse } from '../types/pathway';
+import { getUniqueDepartmentLabels } from '../utils/departmentNames';
+import useDocumentTitle from '../hooks/useDocumentTitle';
+import type {
+  PathwaySearchFilters,
+  PathwaySearchHit,
+} from '../types/pathway';
 
-const SUGGESTED_SEARCH_FALLBACK = [
-  'machine learning',
-  'mechanism design',
-  'neuroscience',
-  'protein folding',
-];
-const HOME_QUERIES = ['machine learning', 'mechanism design', 'neuroscience'];
-
-interface HomeClusterRow {
-  query: string;
-  clusters: ResearchCluster[];
-  loading: boolean;
-  error?: string;
+interface DepartmentResearchHomeConfig {
+  abbreviation?: string;
+  displayName?: string;
+  name?: string;
+  primaryCategory?: string;
+  categories?: string[];
 }
+
+interface DepartmentSearchTarget {
+  label: string;
+  filters: {
+    departments: string[];
+  };
+}
+
+type ResearchSearchFilters = PathwaySearchFilters & {
+  kind?: string[];
+  school?: string[];
+  openness?: string[];
+  acceptanceLevel?: 'verified' | 'verified-or-likely' | 'all';
+};
+
+const DEFAULT_RESEARCH_HOME_LABEL = 'all Yale research';
+const DEFAULT_RESEARCH_HOME_LIMIT = 24;
+const QUICK_START_PROMPTS = [
+  { label: 'Machine learning', query: 'machine learning' },
+  { label: 'Wet lab', query: 'wet lab' },
+  { label: 'Archival research', query: 'archival research' },
+  { label: 'Digital humanities', query: 'digital humanities' },
+  { label: 'Public health', query: 'public health' },
+  { label: 'Social science data', query: 'social science data' },
+];
+
+const hasStructuredFilters = (filters: ResearchSearchFilters): boolean =>
+  Object.values(filters).some((value) => {
+    if (Array.isArray(value)) return value.length > 0;
+    return value !== undefined && value !== null && value !== false;
+  });
 
 const emptyGroupedResults = (query: string): GroupedResearchResults =>
   buildGroupedSearchResults({
@@ -42,72 +71,94 @@ const emptyGroupedResults = (query: string): GroupedResearchResults =>
     papers: [],
   });
 
-const initialHomeRows = (): HomeClusterRow[] =>
-  HOME_QUERIES.map((query) => ({
-    query,
-    clusters: [],
-    loading: true,
-  }));
+interface ResearchEntitySearchPage {
+  researchEntities: ResearchEntity[];
+  estimatedTotalHits: number;
+  page: number;
+  pageSize: number;
+}
+
+interface ActiveResearchSearchRequest {
+  searchQuery: string;
+  filters: ResearchSearchFilters;
+}
+
+interface ResearchPageSnapshot {
+  key: string;
+  query: string;
+  submittedQuery: string;
+  departmentSearch: DepartmentSearchTarget | null;
+  showWeakestProfilesFirst: boolean;
+  groupedResults: GroupedResearchResults;
+  searchResultResearchEntities: ResearchEntity[];
+  searchPage: number;
+  searchTotal: number;
+  searchExhausted: boolean;
+  activeSearchRequest: ActiveResearchSearchRequest | null;
+  defaultResearchEntities: ResearchEntity[];
+  defaultSearchPage: number;
+  defaultSearchTotal: number;
+  defaultSearchExhausted: boolean;
+  searchError: string;
+  defaultSearchError: string;
+}
+
+interface ResearchEntitySearchOptions {
+  lowQualityFirst?: boolean;
+}
+
+let researchPageSnapshot: ResearchPageSnapshot | null = null;
 
 const searchResearchEntities = async (
   q: string,
   pageSize = 18,
   signal?: AbortSignal,
-): Promise<ResearchEntity[]> => {
+  filters: ResearchSearchFilters = {},
+  page = 1,
+  options: ResearchEntitySearchOptions = {},
+): Promise<ResearchEntitySearchPage> => {
   const response = await axios.post<ResearchEntitySearchResponse>(
     '/research/search',
     {
       q,
-      page: 1,
+      page,
       pageSize,
-      filters: {},
+      filters,
+      ...(options.lowQualityFirst ? { browseQuality: 'low-first' } : {}),
     },
     { signal },
   );
   const normalized = normalizeResearchEntitySearchResponse(response.data);
-  return normalized.researchEntities || [];
+  return {
+    researchEntities: normalized.researchEntities || [],
+    estimatedTotalHits: normalized.estimatedTotalHits || 0,
+    page: normalized.page || page,
+    pageSize: normalized.pageSize || pageSize,
+  };
 };
 
-const searchPathways = async (q: string, signal?: AbortSignal): Promise<PathwaySearchHit[]> => {
-  const response = await axios.post<PathwaySearchResponse>(
-    '/pathways/search',
-    {
-      q,
-      page: 1,
-      pageSize: 8,
-      filters: {},
-      sortBy: 'relevance',
-      sortOrder: 'desc',
-    },
-    { signal },
-  );
-  const hits = response.data.hits || [];
-  return Array.isArray(hits) ? hits : [];
-};
+const waysInFromResearchEntities = (researchEntities: ResearchEntity[]): PathwaySearchHit[] =>
+  researchEntities.flatMap((entity) => (Array.isArray(entity.waysIn) ? entity.waysIn : []));
 
-const SectionHeading = ({
-  children,
-  count,
-}: {
-  children: string;
-  count?: number;
-}) => (
-  <div className="mb-3 flex items-center justify-between gap-3">
-    <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+const isResearchEntitySearchExhausted = (page: ResearchEntitySearchPage) =>
+  page.researchEntities.length === 0 ||
+  (page.researchEntities.length < page.pageSize &&
+    page.page * page.pageSize >= page.estimatedTotalHits);
+
+const SectionHeading = ({ children }: { children: string }) => (
+  <div className="mb-3 flex w-full items-center justify-between gap-3">
+    <h2 className="yr-kicker min-w-0 flex-1">
       {children}
     </h2>
-    {typeof count === 'number' && (
-      <span className="text-xs text-gray-500">{count.toLocaleString()}</span>
-    )}
   </div>
 );
 
 const ClusterLoadingCard = () => (
-  <div className="rounded-md border border-gray-200 bg-white p-4">
-    <div className="h-3 w-2/3 rounded bg-gray-100" />
-    <div className="mt-3 h-2 w-full rounded bg-gray-100" />
-    <div className="mt-2 h-2 w-5/6 rounded bg-gray-100" />
-    <p className="mt-4 text-xs text-gray-400">Loading research homes</p>
+  <div className="yr-card rounded-md p-4">
+    <div className="h-3 w-2/3 rounded bg-slate-100" />
+    <div className="mt-3 h-2 w-full rounded bg-slate-100" />
+    <div className="mt-2 h-2 w-5/6 rounded bg-slate-100" />
+    <p className="mt-4 text-xs text-slate-500">Loading research homes</p>
   </div>
 );
 
@@ -118,11 +169,24 @@ const resultSummary = (
   results: GroupedResearchResults,
   query: string,
   loading: boolean,
+  departmentGapLabel?: string,
 ): string => {
   if (loading) return `Searching Yale Research for ${query}.`;
+  const matchingHomeCount = results.clusters.length;
+  const wayInCount = results.clusters.reduce((sum, cluster) => sum + cluster.pathwayCount, 0);
+  if (
+    departmentGapLabel &&
+    results.clusters.length === 0 &&
+    matchingHomeCount === 0 &&
+    wayInCount === 0 &&
+    results.people.length === 0 &&
+    results.papers.length === 0
+  ) {
+    return `No indexed research homes yet for ${departmentGapLabel}.`;
+  }
   const parts = [
-    pluralize(results.clusters.length, 'research home'),
-    pluralize(results.pathways.length, 'next-step pathway'),
+    pluralize(matchingHomeCount, 'research home'),
+    pluralize(wayInCount, 'way in', 'ways in'),
   ];
   if (results.people.length > 0) {
     parts.push(pluralize(results.people.length, 'contact', 'contacts'));
@@ -134,130 +198,241 @@ const resultSummary = (
 };
 
 const EmptyGroup = ({ children }: { children: string }) => (
-  <div className="rounded-md border border-dashed border-gray-200 bg-white p-4 text-sm text-gray-500">
+  <div className="rounded-md border border-dashed border-slate-300 bg-white/70 p-4 text-sm text-slate-500">
     {children}
   </div>
 );
 
+const uniqueStrings = (values: Array<string | undefined>): string[] => {
+  const seen = new Set<string>();
+  const out: string[] = [];
+
+  for (const value of values) {
+    const trimmed = (value || '').trim();
+    const key = trimmed.toLowerCase();
+    if (!trimmed || seen.has(key)) continue;
+    seen.add(key);
+    out.push(trimmed);
+  }
+
+  return out;
+};
+
+const buildDepartmentSearchTargets = (
+  departments: DepartmentResearchHomeConfig[],
+): DepartmentSearchTarget[] =>
+  departments
+    .map((department) => {
+      const labels = getUniqueDepartmentLabels(
+        [department.name, department.displayName].filter(Boolean) as string[],
+        departments,
+      );
+      const label = (labels[0] || '').trim();
+      if (!label) return null;
+      return {
+        label,
+        filters: {
+          departments: uniqueStrings([department.displayName, department.name]),
+        },
+      };
+    })
+    .filter((target): target is DepartmentSearchTarget => Boolean(target))
+    .filter((target) => target.filters.departments.length > 0)
+    .sort((a, b) => a.label.localeCompare(b.label));
+
+const scrollResearchViewportToTop = () => {
+  const scrollContainer = document.querySelector<HTMLElement>('[data-scroll-container]');
+  if (scrollContainer) {
+    scrollContainer.scrollTo({ top: 0, behavior: 'smooth' });
+    return;
+  }
+
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+};
+
 const Research = () => {
-  const [query, setQuery] = useState('');
-  const [submittedQuery, setSubmittedQuery] = useState('');
-  const [homeRows, setHomeRows] = useState<HomeClusterRow[]>(() => initialHomeRows());
+  const [searchParams] = useSearchParams();
+  const { user } = useContext(UserContext);
+  const { departments } = useConfig();
+  const isAdmin = user?.userType === 'admin';
+  const pageSnapshotKey = searchParams.toString();
+  const restoredSnapshotRef = useRef<ResearchPageSnapshot | null>(
+    researchPageSnapshot?.key === pageSnapshotKey ? researchPageSnapshot : null,
+  );
+  const [query, setQuery] = useState(
+    () => restoredSnapshotRef.current?.query ?? searchParams.get('q') ?? '',
+  );
+  const [submittedQuery, setSubmittedQuery] = useState(
+    () => restoredSnapshotRef.current?.submittedQuery ?? '',
+  );
+  const [departmentSearch, setDepartmentSearch] = useState<DepartmentSearchTarget | null>(
+    () => restoredSnapshotRef.current?.departmentSearch ?? null,
+  );
+  const [showWeakestProfilesFirst, setShowWeakestProfilesFirst] = useState(
+    () => restoredSnapshotRef.current?.showWeakestProfilesFirst ?? false,
+  );
   const [groupedResults, setGroupedResults] = useState<GroupedResearchResults>(() =>
-    emptyGroupedResults(''),
+    restoredSnapshotRef.current?.groupedResults ?? emptyGroupedResults(''),
+  );
+  const [searchResultResearchEntities, setSearchResultResearchEntities] = useState<ResearchEntity[]>(
+    () => restoredSnapshotRef.current?.searchResultResearchEntities ?? [],
+  );
+  const [searchPage, setSearchPage] = useState(() => restoredSnapshotRef.current?.searchPage ?? 1);
+  const [searchTotal, setSearchTotal] = useState(() => restoredSnapshotRef.current?.searchTotal ?? 0);
+  const [searchExhausted, setSearchExhausted] = useState(
+    () => restoredSnapshotRef.current?.searchExhausted ?? true,
+  );
+  const [activeSearchRequest, setActiveSearchRequest] =
+    useState<ActiveResearchSearchRequest | null>(
+      () => restoredSnapshotRef.current?.activeSearchRequest ?? null,
+    );
+  const [defaultResearchEntities, setDefaultResearchEntities] = useState<ResearchEntity[]>(
+    () => restoredSnapshotRef.current?.defaultResearchEntities ?? [],
+  );
+  const [defaultSearchPage, setDefaultSearchPage] = useState(
+    () => restoredSnapshotRef.current?.defaultSearchPage ?? 1,
+  );
+  const [defaultSearchTotal, setDefaultSearchTotal] = useState(
+    () => restoredSnapshotRef.current?.defaultSearchTotal ?? 0,
+  );
+  const [defaultSearchExhausted, setDefaultSearchExhausted] = useState(
+    () => restoredSnapshotRef.current?.defaultSearchExhausted ?? false,
   );
   const [searchLoading, setSearchLoading] = useState(false);
-  const [searchError, setSearchError] = useState('');
+  const [defaultSearchLoading, setDefaultSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState(
+    () => restoredSnapshotRef.current?.searchError ?? '',
+  );
+  const [defaultSearchError, setDefaultSearchError] = useState(
+    () => restoredSnapshotRef.current?.defaultSearchError ?? '',
+  );
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
   const searchRequestIdRef = useRef(0);
+  const defaultSearchRequestIdRef = useRef(0);
   const searchAbortRef = useRef<AbortController | null>(null);
+  const defaultSearchAbortRef = useRef<AbortController | null>(null);
+  const restoredSnapshotSyncKeyRef = useRef(
+    restoredSnapshotRef.current
+      ? `${pageSnapshotKey}|${String(isAdmin)}|${String(showWeakestProfilesFirst)}`
+      : null,
+  );
 
-  useEffect(() => {
-    const previousTitle = document.title;
-    document.title = 'Yale Research';
-
-    return () => {
-      document.title = previousTitle;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (import.meta.env.MODE === 'test') return;
-
-    let cancelled = false;
-    const rowControllers = HOME_QUERIES.map(() => new AbortController());
-    setHomeRows((rows) => rows.map((row) => ({ ...row, loading: true, error: undefined })));
-
-    Promise.all(
-      HOME_QUERIES.map(async (homeQuery, index) => {
-        try {
-          const entities = await searchResearchEntities(homeQuery, 12, rowControllers[index].signal);
-          const clusters = buildMetadataClusters(entities, { limit: 3 });
-          return {
-            query: homeQuery,
-            clusters,
-            loading: false,
-            error: clusters.length > 0 ? undefined : 'No matching research homes are available yet.',
-          };
-        } catch {
-          if (rowControllers[index].signal.aborted) {
-            return {
-              query: homeQuery,
-              clusters: [],
-              loading: false,
-              error: undefined,
-            };
-          }
-
-          return {
-            query: homeQuery,
-            clusters: [],
-            loading: false,
-            error: 'Live research-home metadata is unavailable right now.',
-          };
-        }
-      }),
-    ).then((rows) => {
-      if (!cancelled) setHomeRows(rows);
-    });
-
-    return () => {
-      cancelled = true;
-      rowControllers.forEach((controller) => controller.abort());
-    };
-  }, []);
+  useDocumentTitle('Yale Labs');
 
   useEffect(() => () => {
     searchAbortRef.current?.abort();
+    defaultSearchAbortRef.current?.abort();
   }, []);
 
-  const runSearch = async (nextQuery: string) => {
+  const runDefaultResearchHomeSearch = async (page = 1) => {
+    const requestId = ++defaultSearchRequestIdRef.current;
+    const controller = new AbortController();
+    defaultSearchAbortRef.current?.abort();
+    defaultSearchAbortRef.current = controller;
+
+    setDefaultSearchLoading(true);
+    setDefaultSearchError('');
+    if (page === 1) {
+      setDefaultSearchExhausted(false);
+    }
+
+    try {
+      const researchEntitiesPage = await searchResearchEntities(
+        '',
+        DEFAULT_RESEARCH_HOME_LIMIT,
+        controller.signal,
+        {},
+        page,
+        {
+          lowQualityFirst: isAdmin && showWeakestProfilesFirst,
+        },
+      );
+
+      if (requestId !== defaultSearchRequestIdRef.current || controller.signal.aborted) return;
+
+      const researchEntities = researchEntitiesPage.researchEntities;
+
+      setDefaultResearchEntities((current) =>
+        page === 1 ? researchEntities : [...current, ...researchEntities],
+      );
+      setDefaultSearchTotal(researchEntitiesPage.estimatedTotalHits);
+      setDefaultSearchExhausted(isResearchEntitySearchExhausted(researchEntitiesPage));
+      setDefaultSearchError('');
+    } catch (error) {
+      if (
+        requestId === defaultSearchRequestIdRef.current &&
+        !controller.signal.aborted &&
+        !isCancel(error)
+      ) {
+        setDefaultSearchError('Research homes are temporarily unavailable.');
+      }
+    } finally {
+      if (requestId === defaultSearchRequestIdRef.current && !controller.signal.aborted) {
+        setDefaultSearchLoading(false);
+      }
+    }
+  };
+
+  const runSearch = async (
+    nextQuery: string,
+    options: {
+      searchQuery?: string;
+      filters?: ResearchSearchFilters;
+      hasFilterSelections?: boolean;
+      departmentSearch?: DepartmentSearchTarget | null;
+    } = {},
+  ) => {
+    defaultSearchAbortRef.current?.abort();
     const trimmed = nextQuery.trim();
-    if (!trimmed) return;
+    const searchQuery = options.searchQuery ?? trimmed;
+    const filters = options.filters ?? {};
+    const hasFilters = hasStructuredFilters(filters) || Boolean(options.hasFilterSelections);
+    if (!trimmed && !hasFilters) return;
+    if (!searchQuery.trim() && !hasFilters) return;
+    const resultQueryLabel = trimmed || 'filtered research';
 
     const requestId = ++searchRequestIdRef.current;
     const controller = new AbortController();
     searchAbortRef.current?.abort();
     searchAbortRef.current = controller;
 
+    setDefaultSearchExhausted(true);
+    setSearchPage(1);
+    setSearchTotal(0);
+    setSearchExhausted(false);
+    setSearchResultResearchEntities([]);
+    setActiveSearchRequest({
+      searchQuery: searchQuery.trim(),
+      filters,
+    });
     setQuery(trimmed);
-    setSubmittedQuery(trimmed);
+    setSubmittedQuery(resultQueryLabel);
+    setDepartmentSearch(options.departmentSearch ?? null);
     setSearchLoading(true);
     setSearchError('');
-    setGroupedResults(emptyGroupedResults(trimmed));
+    setGroupedResults(emptyGroupedResults(resultQueryLabel));
 
     try {
-      const [researchEntitiesResult, pathwaysResult] = await Promise.allSettled([
-        searchResearchEntities(trimmed, 24, controller.signal),
-        searchPathways(trimmed, controller.signal),
-      ]);
+      const researchEntitiesPage = await searchResearchEntities(
+        searchQuery.trim(),
+        24,
+        controller.signal,
+        filters,
+      );
 
       if (requestId !== searchRequestIdRef.current || controller.signal.aborted) return;
 
-      const researchEntities =
-        researchEntitiesResult.status === 'fulfilled' ? researchEntitiesResult.value : [];
-      const pathways = pathwaysResult.status === 'fulfilled' ? pathwaysResult.value : [];
-      const failures: string[] = [];
+      const researchEntities = researchEntitiesPage.researchEntities;
+      const pathways = waysInFromResearchEntities(researchEntities);
 
-      if (researchEntitiesResult.status === 'rejected' && !isCancel(researchEntitiesResult.reason)) {
-        failures.push('research metadata');
-      }
-      if (pathwaysResult.status === 'rejected' && !isCancel(pathwaysResult.reason)) {
-        failures.push('pathway');
-      }
-
-      if (failures.length === 2) {
-        setSearchError('Search metadata is unavailable for both research and pathways queries.');
-      } else if (failures.length === 1) {
-        setSearchError(
-          `${failures[0] === 'research metadata' ? 'Research metadata' : 'Pathway'} search is temporarily unavailable.`,
-        );
-      } else {
-        setSearchError('');
-      }
+      setSearchError('');
+      setSearchResultResearchEntities(researchEntities);
+      setSearchTotal(researchEntitiesPage.estimatedTotalHits);
+      setSearchExhausted(isResearchEntitySearchExhausted(researchEntitiesPage));
 
       setGroupedResults(
         buildGroupedSearchResults({
-          query: trimmed,
+          query: resultQueryLabel,
           researchEntities,
           pathways,
           papers: [],
@@ -272,6 +447,59 @@ const Research = () => {
         setSearchError(
           'Live search metadata is unavailable right now. Try another topic or check back soon.',
         );
+        setSearchExhausted(true);
+      }
+    } finally {
+      if (requestId === searchRequestIdRef.current && !controller.signal.aborted) {
+        setSearchLoading(false);
+      }
+    }
+  };
+
+  const runSearchResultsPage = async (page: number) => {
+    if (!activeSearchRequest) return;
+    const requestId = ++searchRequestIdRef.current;
+    const controller = new AbortController();
+    searchAbortRef.current?.abort();
+    searchAbortRef.current = controller;
+
+    setSearchLoading(true);
+
+    try {
+      const researchEntitiesPage = await searchResearchEntities(
+        activeSearchRequest.searchQuery,
+        24,
+        controller.signal,
+        activeSearchRequest.filters,
+        page,
+      );
+
+      if (requestId !== searchRequestIdRef.current || controller.signal.aborted) return;
+
+      const visibleResearchEntities = researchEntitiesPage.researchEntities;
+
+      setSearchResultResearchEntities((current) => {
+        const nextResearchEntities = [...current, ...visibleResearchEntities];
+        setGroupedResults(
+          buildGroupedSearchResults({
+            query: submittedQuery,
+            researchEntities: nextResearchEntities,
+            pathways: waysInFromResearchEntities(nextResearchEntities),
+            papers: [],
+          }),
+        );
+        return nextResearchEntities;
+      });
+      setSearchTotal(researchEntitiesPage.estimatedTotalHits);
+      setSearchExhausted(isResearchEntitySearchExhausted(researchEntitiesPage));
+    } catch (error) {
+      if (
+        requestId === searchRequestIdRef.current &&
+        !controller.signal.aborted &&
+        !isCancel(error)
+      ) {
+        setSearchError('More research homes are temporarily unavailable.');
+        setSearchExhausted(true);
       }
     } finally {
       if (requestId === searchRequestIdRef.current && !controller.signal.aborted) {
@@ -282,245 +510,370 @@ const Research = () => {
 
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    runSearch(query);
+    runSearch(query.trim());
   };
+
+  useEffect(() => {
+    const urlQuery = searchParams.get('q') || '';
+    const syncKey = `${pageSnapshotKey}|${String(isAdmin)}|${String(showWeakestProfilesFirst)}`;
+
+    if (restoredSnapshotSyncKeyRef.current === syncKey) {
+      restoredSnapshotRef.current = null;
+      return;
+    }
+
+    if (urlQuery.trim()) {
+      runSearch(urlQuery);
+      return;
+    }
+
+    setQuery('');
+    setSubmittedQuery('');
+    setDepartmentSearch(null);
+    setGroupedResults(emptyGroupedResults(''));
+    setSearchResultResearchEntities([]);
+    setSearchPage(1);
+    setSearchTotal(0);
+    setSearchExhausted(true);
+    setActiveSearchRequest(null);
+    setSearchError('');
+    setSearchLoading(false);
+    setDefaultResearchEntities([]);
+    setDefaultSearchTotal(0);
+    setDefaultSearchExhausted(false);
+    setDefaultSearchPage(1);
+    runDefaultResearchHomeSearch(1);
+  }, [searchParams, pageSnapshotKey, isAdmin, showWeakestProfilesFirst]);
+
+  useEffect(() => {
+    researchPageSnapshot = {
+      key: pageSnapshotKey,
+      query,
+      submittedQuery,
+      departmentSearch,
+      showWeakestProfilesFirst,
+      groupedResults,
+      searchResultResearchEntities,
+      searchPage,
+      searchTotal,
+      searchExhausted,
+      activeSearchRequest,
+      defaultResearchEntities,
+      defaultSearchPage,
+      defaultSearchTotal,
+      defaultSearchExhausted,
+      searchError,
+      defaultSearchError,
+    };
+  }, [
+    pageSnapshotKey,
+    query,
+    submittedQuery,
+    departmentSearch,
+    showWeakestProfilesFirst,
+    groupedResults,
+    searchResultResearchEntities,
+    searchPage,
+    searchTotal,
+    searchExhausted,
+    activeSearchRequest,
+    defaultResearchEntities,
+    defaultSearchPage,
+    defaultSearchTotal,
+    defaultSearchExhausted,
+    searchError,
+    defaultSearchError,
+  ]);
+
+  const hasSubmittedSearch = submittedQuery.trim().length > 0;
+
+  useEffect(() => {
+    if (hasSubmittedSearch || defaultSearchPage <= 1) return;
+    runDefaultResearchHomeSearch(defaultSearchPage);
+  }, [defaultSearchPage, hasSubmittedSearch]);
+
+  useEffect(() => {
+    if (!hasSubmittedSearch || searchPage <= 1 || !activeSearchRequest) return;
+    runSearchResultsPage(searchPage);
+  }, [activeSearchRequest, hasSubmittedSearch, searchPage]);
 
   const activeResults = useMemo(
     () => groupedResults,
     [groupedResults],
   );
-  const suggestedSearches = useMemo(
+  const defaultGroupedResults = useMemo(
     () =>
-      buildDynamicSearchSuggestions(
-        homeRows.flatMap((row) =>
-          row.clusters.flatMap((cluster) => cluster.entities),
-        ),
-        {
-          fallback: SUGGESTED_SEARCH_FALLBACK,
-          limit: 4,
-        },
-      ),
-    [homeRows],
+      buildGroupedSearchResults({
+        query: DEFAULT_RESEARCH_HOME_LABEL,
+        researchEntities: defaultResearchEntities,
+        pathways: waysInFromResearchEntities(defaultResearchEntities),
+        papers: [],
+      }),
+    [defaultResearchEntities],
   );
-  const hasSubmittedSearch = submittedQuery.trim().length > 0;
+  const departmentSearchTargets = useMemo(
+    () => buildDepartmentSearchTargets(departments),
+    [departments],
+  );
+  const departmentSearchTargetByLabel = useMemo(
+    () =>
+      new Map(
+        departmentSearchTargets.map((target) => [target.label.toLowerCase(), target]),
+      ),
+    [departmentSearchTargets],
+  );
+  const defaultSentinelRef = useInfiniteScroll({
+    searchExhausted: hasSubmittedSearch || defaultSearchExhausted,
+    isLoading: defaultSearchLoading,
+    setPage: setDefaultSearchPage,
+    totalRawCount: defaultSearchTotal,
+    filteredCount: defaultResearchEntities.length,
+  });
+  const searchSentinelRef = useInfiniteScroll({
+    searchExhausted: !hasSubmittedSearch || searchExhausted,
+    isLoading: searchLoading,
+    setPage: setSearchPage,
+    totalRawCount: searchTotal,
+    filteredCount: searchResultResearchEntities.length,
+  });
   const searchDisabled = searchLoading || query.trim().length === 0;
+  const searchHelpText = query.trim()
+    ? 'Press Enter or Search to see matching research homes.'
+    : 'Enter a topic or name to enable Search.';
+  const runDepartmentSearch = (target: DepartmentSearchTarget) =>
+    runSearch(target.label, {
+      searchQuery: '',
+      filters: { departments: target.filters.departments },
+      hasFilterSelections: true,
+      departmentSearch: target,
+    });
+  const exploreHome = (label: string) => {
+    scrollResearchViewportToTop();
+    const target = departmentSearchTargetByLabel.get(label.toLowerCase());
+    if (target) {
+      runDepartmentSearch(target);
+      return;
+    }
+    runSearch(label);
+  };
 
   return (
-    <div className="min-h-[calc(100vh-8rem)] bg-slate-50">
-      <div className="mx-auto flex w-full max-w-[1260px] flex-col gap-8 px-5 py-8 lg:px-8">
-        <header className="border-b border-gray-200 pb-6">
-          <div className="mb-3 flex flex-wrap items-center gap-2">
-            <span className="rounded bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-700">
-              Yale Research
-            </span>
-            <span className="rounded bg-white px-2 py-1 text-xs font-medium text-gray-600 ring-1 ring-gray-200">
-              Topic-first discovery
-            </span>
-          </div>
-          <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-end">
-            <div>
-              <h1 className="max-w-3xl text-3xl font-semibold tracking-normal text-gray-950">
-                Map an idea to Yale papers, people, labs, and pathways.
-              </h1>
-              <p
-                id="research-search-context"
-                className="mt-3 max-w-2xl text-sm leading-relaxed text-gray-600"
-              >
-                Search by topic, method, professor, program, or question. Results connect you to
-                Yale research homes, evidence, and practical next steps.
-              </p>
-            </div>
-            <div className="rounded-md border border-gray-200 bg-white p-4">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">
-                Trust constraint
-              </p>
-              <p className="mt-1 text-sm leading-relaxed text-gray-700">
-                Every suggestion keeps its source context visible, so you can tell whether it is a
-                posted role, a recurring route, or exploratory evidence.
-              </p>
-            </div>
-          </div>
+    <div className="yr-page min-h-[calc(100vh-8rem)]">
+      <div className="mx-auto w-full max-w-screen-2xl px-5 py-5 sm:py-8 lg:px-8">
+        <div className="grid gap-5 sm:gap-6 2xl:grid-cols-[22rem_minmax(0,1fr)] 2xl:items-start 2xl:gap-8">
+        <header className="yr-panel rounded-md p-4 sm:p-6 2xl:sticky 2xl:top-6">
+          <p className="yr-kicker mb-3">Yale Research</p>
+          <h1 className="max-w-3xl text-2xl font-semibold leading-tight tracking-normal text-slate-950 sm:text-4xl">
+            Find a Yale lab that fits you.
+          </h1>
+          <p
+            id="research-search-context"
+            className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-600 sm:mt-3 sm:text-base"
+          >
+            Search by interest, professor, course topic, method, or question. We&apos;ll help you
+            find relevant research profiles and possible next steps.
+          </p>
 
-          <form onSubmit={onSubmit} className="mt-6">
-            <label htmlFor="research-search" className="mb-2 block text-sm font-semibold text-gray-900">
+          <form onSubmit={onSubmit} className="mt-4 sm:mt-7">
+            <label htmlFor="research-search" className="mb-2 block text-sm font-semibold text-slate-950">
               Search Yale research
             </label>
-            <div className="flex flex-col gap-2 sm:flex-row">
+            <div className="flex flex-col gap-2 sm:flex-row 2xl:flex-col">
               <input
                 id="research-search"
+                ref={searchInputRef}
                 type="search"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                aria-describedby="research-search-context"
-                placeholder="Search by topic, method, professor, program, or question"
-                className="min-h-[48px] flex-1 rounded-md border border-gray-300 bg-white px-4 text-base text-gray-950 placeholder:text-gray-400 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                aria-describedby="research-search-context research-search-help"
+                placeholder="Type a topic, professor, lab, method, or research question"
+                className="min-h-12 min-w-0 flex-1 rounded-md border border-slate-300 bg-white px-4 text-base text-slate-950 placeholder:text-slate-400 focus:border-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 sm:min-h-14"
               />
               <button
                 type="submit"
-                className="min-h-[48px] rounded-md bg-blue-700 px-5 text-sm font-semibold text-white hover:bg-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 disabled:bg-gray-300"
+                className="min-h-12 rounded-md bg-[var(--yr-blue)] px-6 text-sm font-semibold text-white hover:bg-blue-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 disabled:bg-slate-200 disabled:text-slate-700 sm:min-h-14"
                 disabled={searchDisabled}
               >
                 {searchLoading ? 'Searching...' : 'Search'}
               </button>
             </div>
-            <div className="mt-3">
-              <p className="mb-2 text-xs font-medium text-gray-500">Suggested searches</p>
+            <p id="research-search-help" className="mt-2 text-sm text-slate-600">
+              {searchHelpText}
+            </p>
+            <div
+              className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center"
+              aria-label="Suggested research searches"
+            >
+              <span className="yr-kicker text-[0.7rem]">
+                Try a starting point
+              </span>
               <div className="flex flex-wrap gap-2">
-              {suggestedSearches.map((topic) => (
-                <button
-                  key={topic}
-                  type="button"
-                  onClick={() => runSearch(topic)}
-                  className="inline-flex min-h-[44px] items-center rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:border-blue-200 hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
-                >
-                  {topic}
-                </button>
-              ))}
+                {QUICK_START_PROMPTS.map((prompt) => (
+                  <button
+                    key={prompt.query}
+                    type="button"
+                    onClick={() => {
+                      setQuery(prompt.query);
+                      runSearch(prompt.query);
+                    }}
+                    className="yr-pill yr-pill-blue min-h-[44px] rounded-md px-3 py-2 transition-colors hover:border-blue-300 hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                  >
+                    {prompt.label}
+                  </button>
+                ))}
               </div>
             </div>
           </form>
+
         </header>
+
+        <div className="min-w-0">
+        {!hasSubmittedSearch && (
+          <section aria-busy={defaultSearchLoading} aria-label="Research homes to explore">
+            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+              <div className="w-full">
+                <SectionHeading>Research homes to explore</SectionHeading>
+                <p className="text-sm text-gray-600">
+                  Open a profile to see people, evidence, sources, and possible ways in.
+                </p>
+              </div>
+              {defaultSearchTotal > 0 && (
+                <span className="yr-pill yr-pill-blue shrink-0 rounded-md px-3 py-2">
+                  {defaultSearchTotal.toLocaleString()} indexed profiles
+                </span>
+              )}
+              {isAdmin && (
+                <label className="yr-card inline-flex min-h-11 shrink-0 items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={showWeakestProfilesFirst}
+                    onChange={(event) => setShowWeakestProfilesFirst(event.target.checked)}
+                    className="h-4 w-4 rounded border-slate-300 text-blue-700 focus:ring-blue-200"
+                  />
+                  <span>Show weakest profiles first</span>
+                </label>
+              )}
+            </div>
+            {defaultSearchError && (
+              <div
+                role="alert"
+                className="mb-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
+              >
+                {defaultSearchError}
+              </div>
+            )}
+            {defaultSearchLoading && defaultGroupedResults.clusters.length === 0 ? (
+              <div className="grid gap-3">
+                {Array.from({ length: 3 }).map((_, index) => (
+                  <ClusterLoadingCard key={index} />
+                ))}
+              </div>
+            ) : defaultGroupedResults.clusters.length > 0 ? (
+              <div className="grid gap-5">
+                <div>
+                  <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-[repeat(3,minmax(0,1fr))]">
+                    {defaultGroupedResults.clusters.map((cluster) => (
+                      <ResearchHomeCard
+                        key={cluster.id}
+                        home={cluster}
+                        onSelect={exploreHome}
+                        variant="compact"
+                      />
+                    ))}
+                  </div>
+                  {defaultSearchLoading && defaultGroupedResults.clusters.length > 0 && (
+                    <InfiniteScrollLoadingDots label="Loading more research homes" />
+                  )}
+                  {!defaultSearchExhausted && <div ref={defaultSentinelRef} className="h-10 w-full" />}
+                </div>
+              </div>
+            ) : (
+              <EmptyGroup>
+                Research homes are still loading. Try searching a broader topic, professor name,
+                lab, method, or research question.
+              </EmptyGroup>
+            )}
+          </section>
+        )}
 
         {hasSubmittedSearch && (
           <section aria-busy={searchLoading} aria-label="Search results">
-            <div className="flex flex-col gap-3 border-b border-gray-200 pb-4 md:flex-row md:items-center md:justify-between">
+            <div className="yr-card rounded-md p-4 md:flex md:items-center md:justify-between md:gap-3">
               <div>
-                <h2 className="text-lg font-semibold text-gray-950">
-                  Results for {submittedQuery}
+                <h2 className="text-lg font-semibold text-slate-950">
+                  Showing research matches for &apos;{submittedQuery}&apos;
                 </h2>
                 <p
                   role="status"
                   aria-live="polite"
                   aria-atomic="true"
-                  className="mt-1 text-sm text-gray-500"
+                  className="mt-1 text-sm text-slate-600"
                 >
-                  {resultSummary(activeResults, submittedQuery, searchLoading)}
+                  {resultSummary(
+                    activeResults,
+                    submittedQuery,
+                    searchLoading,
+                    departmentSearch?.label,
+                  )}
                 </p>
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {activeResults.interpretationChips.map((chip) => (
-                  <span
-                    key={chip}
-                    className="rounded bg-white px-2 py-1 text-xs text-gray-700 ring-1 ring-gray-200"
-                  >
-                    {chip}
-                  </span>
-                ))}
               </div>
             </div>
 
             {searchError && (
               <div
                 role="alert"
-                className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800"
+                className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
               >
                 {searchError}
               </div>
             )}
 
-            <div className="mt-5 grid gap-6 xl:grid-cols-[minmax(0,1.4fr)_minmax(360px,0.8fr)]">
-              <div className="space-y-6">
-                <section>
-                  <SectionHeading count={activeResults.clusters.length}>Matching Research Homes</SectionHeading>
-                  {activeResults.clusters.length > 0 ? (
-                    <div className="grid gap-3">
+            <section className="mt-5">
+              <SectionHeading>Research homes</SectionHeading>
+              {searchLoading && activeResults.clusters.length === 0 ? (
+                <div className="grid gap-3">
+                  {Array.from({ length: 3 }).map((_, index) => (
+                    <ClusterLoadingCard key={index} />
+                  ))}
+                </div>
+              ) : activeResults.clusters.length > 0 ? (
+                <>
+                  <div className="grid gap-5">
+                    <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-[repeat(3,minmax(0,1fr))]">
                       {activeResults.clusters.map((cluster) => (
                         <ResearchHomeCard
                           key={cluster.id}
                           home={cluster}
-                          onSelect={(label) => runSearch(label)}
+                          onSelect={exploreHome}
+                          variant="compact"
                         />
                       ))}
                     </div>
-                  ) : (
-                    <EmptyGroup>
-                      Search an idea or choose a suggested search to see matching Yale research homes.
-                    </EmptyGroup>
+                  </div>
+                  {searchLoading && activeResults.clusters.length > 0 && (
+                    <InfiniteScrollLoadingDots label="Loading more research homes" />
                   )}
-                </section>
-
-                {activeResults.papers.length > 0 && (
-                  <section>
-                    <SectionHeading count={activeResults.papers.length}>Papers via profiles</SectionHeading>
-                    <div className="grid gap-3">
-                      {activeResults.papers.map((paper) => (
-                        <article key={paper._id} className="rounded-md border border-gray-200 bg-white p-4">
-                          <h3 className="text-sm font-semibold text-gray-950">{paper.title}</h3>
-                          <p className="mt-1 text-xs text-gray-500">
-                            {[paper.venue, paper.year].filter(Boolean).join(' | ')}
-                          </p>
-                        </article>
-                      ))}
-                    </div>
-                  </section>
-                )}
-              </div>
-
-              <div className="space-y-6">
-                <section>
-                  <SectionHeading count={activeResults.pathways.length}>Best Next Steps</SectionHeading>
-                  {activeResults.pathways.length > 0 ? (
-                    <div className="grid gap-3">
-                      {activeResults.pathways.map((pathway) => (
-                        <PathwayActionCard key={pathway._id} pathway={pathway} />
-                      ))}
-                    </div>
-                  ) : (
-                    <EmptyGroup>
-                      Best next steps appear when pathway search finds an evidence-backed route.
-                    </EmptyGroup>
-                  )}
-                </section>
-
-                <section>
-                  <SectionHeading count={activeResults.people.length}>People and Contacts</SectionHeading>
-                  {activeResults.people.length > 0 ? (
-                    <div className="grid gap-3">
-                      {activeResults.people.map((identity) => (
-                        <IdentityConfidenceCard key={identity.id} identity={identity} />
-                      ))}
-                    </div>
-                  ) : (
-                    <EmptyGroup>
-                      People and contacts appear when existing research metadata includes names, profile links, or source context.
-                    </EmptyGroup>
-                  )}
-                </section>
-              </div>
-            </div>
+                  {!searchExhausted && <div ref={searchSentinelRef} className="h-10 w-full" />}
+                </>
+              ) : (
+                <EmptyGroup>
+                  {departmentSearch
+                    ? 'This is a data coverage gap, not proof that the department has no undergraduate research. Try a topic, method, professor, or adjacent department while this department is being seeded.'
+                    : 'No indexed research homes matched this search yet. Try a broader topic, related method, professor, or adjacent department while coverage improves.'}
+                </EmptyGroup>
+              )}
+            </section>
           </section>
         )}
-
-        <section>
-          <SectionHeading>{hasSubmittedSearch ? 'Keep Exploring' : 'Browse Research Areas'}</SectionHeading>
-          <div className="grid gap-4 lg:grid-cols-3">
-            {homeRows.map((row) => (
-              <div key={row.query} className="space-y-2">
-                <div className="flex items-center justify-between gap-2">
-                  <h3 className="text-sm font-semibold text-gray-900">{row.query}</h3>
-                </div>
-                {row.loading ? (
-                  <ClusterLoadingCard />
-                ) : row.error ? (
-                  <EmptyGroup>{row.error}</EmptyGroup>
-                ) : row.clusters.length > 0 ? (
-                  row.clusters.slice(0, 1).map((cluster) => (
-                    <ResearchHomeCard
-                      key={cluster.id}
-                      home={cluster}
-                      onSelect={(label) => runSearch(label)}
-                    />
-                  ))
-                ) : (
-                  <EmptyGroup>Research homes will appear here when matching profiles are available.</EmptyGroup>
-                )}
-              </div>
-            ))}
-          </div>
-        </section>
+        </div>
+        </div>
       </div>
     </div>
   );
+};
+
+export const __resetResearchPageSnapshotForTests = () => {
+  researchPageSnapshot = null;
 };
 
 export default Research;

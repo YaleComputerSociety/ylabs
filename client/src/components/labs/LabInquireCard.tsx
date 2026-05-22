@@ -26,8 +26,8 @@ interface LabInquireCardProps {
   group: ResearchGroup;
   members: LabMember[];
   contactRoutes?: LabContactRoute[];
-  /** Whether the lab has at least one non-archived listing. */
-  hasActiveListing?: boolean;
+  /** Whether the research home has at least one active canonical posted opportunity. */
+  hasActivePostedOpportunity?: boolean;
   onInquire: () => void;
 }
 
@@ -61,7 +61,7 @@ const CONTACT_ROUTE_ORDER: Record<string, number> = {
 const contactRouteCtaLabel = (route?: LabContactRoute): string => {
   switch (route?.routeType) {
     case 'OFFICIAL_APPLICATION':
-      return 'Use official route';
+      return 'Open official route';
     case 'PROGRAM_MANAGER':
       return 'Contact program';
     case 'DEPARTMENT_CONTACT':
@@ -72,6 +72,8 @@ const contactRouteCtaLabel = (route?: LabContactRoute): string => {
       return 'Contact course instructor';
     case 'LAB_MANAGER':
       return 'Contact lab manager';
+    case 'FACULTY_PI':
+      return 'Open official profile';
     default:
       return 'Open contact route';
   }
@@ -167,13 +169,13 @@ const LabInquireCard = ({
   group,
   members,
   contactRoutes,
-  hasActiveListing = false,
+  hasActivePostedOpportunity = false,
   onInquire,
 }: LabInquireCardProps) => {
   const piContact = resolvePiEmail(group, members);
   const preferredRoute = preferredPublicRoute(contactRoutes);
   const hours = formatHours(group);
-  const { verdict, evidence } = computeAcceptanceVerdict(group, hasActiveListing);
+  const { verdict, evidence } = computeAcceptanceVerdict(group, hasActivePostedOpportunity);
   const isUnavailable = verdict === 'not-accepting';
   const canInquireInline = !preferredRoute && !isUnavailable && !!group.contactEmail;
 
@@ -208,12 +210,12 @@ const LabInquireCard = ({
 
   return (
     <div className="rounded-xl border border-blue-100 bg-gradient-to-br from-blue-50/60 to-white p-5 shadow-sm">
-      <h3 className="text-base font-bold text-gray-900">Interested in joining?</h3>
+      <h3 className="text-base font-bold text-gray-900">Contact route</h3>
       <p className="text-sm text-gray-600 mt-1">
         {preferredRoute
           ? 'Use the preferred route before trying direct outreach.'
           : canInquireInline
-          ? "Send a quick message to introduce yourself — we'll prefill the basics."
+          ? "Draft a focused message that mentions the research fit before asking about openings."
           : isUnavailable
             ? 'Evidence indicates this pathway is not currently available.'
             : 'Plan a specific outreach note before contacting the research group.'}
@@ -319,21 +321,21 @@ const LabInquireCard = ({
             href={preferredRoute.url}
             target="_blank"
             rel="noreferrer"
-            className="block w-full text-center px-4 py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-colors"
+            className="flex min-h-[44px] w-full items-center justify-center rounded-md bg-blue-600 px-4 py-2.5 text-center text-sm font-semibold text-white transition-colors hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
           >
-            {preferredRoute.label || contactRouteCtaLabel(preferredRoute)}
+            {contactRouteCtaLabel(preferredRoute)}
           </a>
         ) : canInquireInline ? (
           <button
             onClick={onInquire}
-            className="w-full px-4 py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-colors"
+            className="flex min-h-[44px] w-full items-center justify-center rounded-md bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
           >
-            Inquire about joining
+            Draft outreach email
           </button>
         ) : !isUnavailable && fallbackMailto ? (
           <a
             href={fallbackMailto}
-            className="block w-full text-center px-4 py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-colors"
+            className="flex min-h-[44px] w-full items-center justify-center rounded-md bg-blue-600 px-4 py-2.5 text-center text-sm font-semibold text-white transition-colors hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
           >
             Email listed contact
           </a>

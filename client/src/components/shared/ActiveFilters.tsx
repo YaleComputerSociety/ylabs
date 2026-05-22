@@ -74,8 +74,9 @@ const ActiveFilters = ({
                     key={option.value}
                     onClick={() => onQuickFilterChange(isActive ? null : option.value)}
                     className={`
-                    inline-flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-full
+                    inline-flex min-h-[44px] items-center gap-1.5 rounded-md px-3 py-2 text-xs font-medium
                     transition-all duration-200 border cursor-pointer
+                    focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200
                     ${
                       isActive
                         ? 'bg-blue-50 text-blue-700 border-blue-200'
@@ -128,7 +129,7 @@ const ActiveFilters = ({
                 <button
                   type="button"
                   onClick={chip.onRemove}
-                  className="ml-1.5 text-gray-500 hover:text-gray-700"
+                  className="ml-1.5 inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-gray-500 hover:text-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
                 >
                   x
                 </button>
@@ -137,7 +138,7 @@ const ActiveFilters = ({
             {hasAnyFilter && (
               <button
                 onClick={onClearAll}
-                className="text-gray-400 hover:text-gray-600 text-xs transition-colors flex items-center gap-1"
+                className="inline-flex min-h-[44px] items-center gap-1 rounded-md px-2 text-xs text-gray-400 transition-colors hover:text-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
               >
                 <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path

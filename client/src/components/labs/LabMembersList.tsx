@@ -1,6 +1,6 @@
 /**
- * Grid of member cards for a lab: photo, name, role pill, department,
- * link to /profile/:netid.
+ * Grid of public lead-investigator cards for a research entity: photo, name,
+ * role pill, department, link to /profile/:netid.
  *
  * Pure presentational — receives the member list as a prop.
  */
@@ -44,7 +44,16 @@ const ROLE_ORDER: Record<LabMemberRole, number> = {
 
 const LabMembersList = ({ members }: LabMembersListProps) => {
   if (!members || members.length === 0) {
-    return <p className="text-gray-500 text-sm py-8 text-center">No members listed yet.</p>;
+    return (
+      <div className="rounded-md border border-dashed border-gray-200 bg-white px-4 py-6 text-center">
+        <p className="text-sm font-semibold text-gray-900">
+          No principal investigator is attached yet
+        </p>
+        <p className="mx-auto mt-1 max-w-xl text-sm leading-relaxed text-gray-700">
+          Check the official profile for current lab leadership.
+        </p>
+      </div>
+    );
   }
 
   // Don't mutate the prop.
@@ -55,16 +64,12 @@ const LabMembersList = ({ members }: LabMembersListProps) => {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
       {sorted.map(({ user, role }) => {
-        const fullName = `${user.fname} ${user.lname}`.trim();
+        const fullName = user.displayName || `${user.fname} ${user.lname}`.trim();
         const initials = `${user.fname?.charAt(0) || ''}${
           user.lname?.charAt(0) || ''
         }`.toUpperCase();
-        return (
-          <Link
-            key={user.netid}
-            to={`/profile/${user.netid}`}
-            className="flex items-center gap-3 p-3 rounded-lg border border-gray-200 hover:border-blue-300 hover:shadow-sm transition-all bg-white"
-          >
+        const content = (
+          <>
             <div className="flex-shrink-0">
               {user.image_url ? (
                 <img
@@ -74,7 +79,7 @@ const LabMembersList = ({ members }: LabMembersListProps) => {
                 />
               ) : (
                 <div className="w-14 h-14 rounded-full bg-gradient-to-br from-blue-100 to-blue-200 flex items-center justify-center text-blue-700 font-semibold">
-                  {initials || '?'}
+                  {initials || fullName.charAt(0).toUpperCase() || '?'}
                 </div>
               )}
             </div>
@@ -96,6 +101,25 @@ const LabMembersList = ({ members }: LabMembersListProps) => {
                 )}
               </div>
             </div>
+          </>
+        );
+        const className =
+          'flex items-center gap-3 p-3 rounded-lg border border-gray-200 bg-white';
+        if (!user.netid) {
+          return (
+            <div key={`${fullName}-${role}`} className={className}>
+              {content}
+            </div>
+          );
+        }
+
+        return (
+          <Link
+            key={user.netid}
+            to={`/profile/${user.netid}`}
+            className={`${className} hover:border-blue-300 hover:shadow-sm transition-all`}
+          >
+            {content}
           </Link>
         );
       })}

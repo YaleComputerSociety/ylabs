@@ -68,7 +68,7 @@ const CombinedFilterDropdown = ({ tabs }: CombinedFilterDropdownProps) => {
     <div className="relative" ref={dropdownRef}>
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center h-9 px-3 border border-gray-300 rounded-md bg-white text-sm hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 whitespace-nowrap"
+        className="flex min-h-[44px] items-center rounded-md border border-gray-300 bg-white px-3 text-sm transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 whitespace-nowrap"
         style={{ color: '#374151' }}
       >
         <svg

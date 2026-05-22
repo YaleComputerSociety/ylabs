@@ -18,6 +18,7 @@ export interface ResearchIdentityInput {
   departments?: string[];
   affiliations?: string[];
   netid?: string;
+  email?: string;
   labName?: string;
   labSlug?: string;
   profileUrl?: string;
@@ -26,6 +27,31 @@ export interface ResearchIdentityInput {
   matchLabel?: string;
   sourceContext?: string;
   evidence?: EvidenceSourceRowData[];
+}
+
+export type ResearchHomeContextState = 'complete' | 'sparse';
+export type ResearchHomeEvidenceState = 'official' | 'limited' | 'review' | 'publications';
+
+export interface ResearchHomeContextInput {
+  shortDescription?: string | null;
+  description?: string | null;
+  fullDescription?: string | null;
+  profileSynthesisDescription?: string | null;
+  researchAreas?: Array<string | undefined | null>;
+  departments?: Array<string | undefined | null>;
+  sourceUrls?: Array<string | undefined | null>;
+  school?: string | null;
+}
+
+export interface ResearchHomeContextSummary {
+  text: string;
+  state: ResearchHomeContextState;
+  label: string;
+}
+
+export interface ResearchHomeEvidenceStatus {
+  label: 'Official Yale source found' | 'Evidence limited' | 'Needs review' | 'Publications found';
+  state: ResearchHomeEvidenceState;
 }
 
 export interface ResearchIdentityConfidence {
@@ -51,6 +77,10 @@ export interface ResearchCluster {
   id: string;
   label: string;
   description: string;
+  contextState?: ResearchHomeContextState;
+  contextLabel?: string;
+  contextLine?: string;
+  evidenceStatus: ResearchHomeEvidenceStatus;
   matchReason: string;
   entityCount: number;
   paperCount: number;
@@ -58,6 +88,8 @@ export interface ResearchCluster {
   peopleCount: number;
   labels: string[];
   metadataTags: string[];
+  wayInBadges?: string[];
+  activePostedOpportunity?: PathwaySearchHit['activePostedOpportunity'];
   entities: ResearchEntity[];
   pathways: PathwaySearchHit[];
   papers: LabPaper[];
@@ -75,15 +107,7 @@ export interface GroupedResearchResults {
 interface ClusterOptions {
   pathways?: PathwaySearchHit[];
   papers?: LabPaper[];
-  limit?: number;
 }
-
-interface SearchSuggestionOptions {
-  fallback?: string[];
-  limit?: number;
-}
-
-export const RESEARCH_HOME_GROUPING_LABEL = 'Evidence-backed grouping';
 
 const titleizeValue = (value?: string): string =>
   (value || '')
@@ -98,11 +122,11 @@ export const getPathwayActionLabel = (
 ): string => {
   switch (category) {
     case 'apply':
-      return 'Apply or view posting';
+      return 'Apply';
     case 'contact-program':
       return 'Contact program';
     case 'plan-outreach':
-      return 'Plan outreach';
+      return 'Plan targeted outreach';
     case 'find-funding':
       return 'Find funding';
     case 'register-for-credit':
@@ -118,12 +142,26 @@ export const getPathwayActionLabel = (
 };
 
 export const getPathwayTypeLabel = (value?: string): string => {
+  const studentFacingLabel = getStudentFacingPathwayLabel(value);
+  if (studentFacingLabel !== 'Pathway') return studentFacingLabel;
+  return titleizeValue(value) || 'Pathway';
+};
+
+export const getStudentFacingPathwayLabel = (value?: string): string => {
   switch (value) {
     case 'POSTED_ROLE':
-      return 'Posted role';
+      return 'Posted opening';
     case 'EXPLORATORY_CONTACT':
     case 'REACH_OUT_PLAUSIBLE':
       return 'Exploratory outreach';
+    case 'VOLUNTEER_OUTREACH':
+      return 'Volunteer outreach';
+    case 'WORK_STUDY':
+      return 'Work-study';
+    case 'CENTER_INTERNSHIP':
+      return 'Center internship';
+    case 'RECURRING_PROGRAM':
+      return 'Recurring route';
     case 'STRUCTURED_PROGRAM':
       return 'Structured program';
     case 'FACULTY_SUPERVISION':
@@ -131,7 +169,16 @@ export const getPathwayTypeLabel = (value?: string): string => {
     case 'INTERNSHIP':
       return 'Internship';
     default:
-      return titleizeValue(value) || 'Pathway';
+      return 'Pathway';
+  }
+};
+
+export const formatSourceLabel = (url?: string): string => {
+  if (!url) return 'Source';
+  try {
+    return new URL(url).hostname.replace(/^www\./, '');
+  } catch {
+    return url;
   }
 };
 
@@ -167,6 +214,8 @@ export const getEvidenceSignalLabel = (value?: string): string => {
       return 'Fellowship-compatible evidence';
     case 'CREDIT_FORMALIZATION_POSSIBLE':
       return 'Credit may be possible later';
+    case 'REACH_OUT_PLAUSIBLE':
+      return 'Profile/contact evidence';
     default:
       return titleizeValue(value) || 'Source evidence';
   }
@@ -224,11 +273,175 @@ const isGenericMetadataLabel = (value: string): boolean => {
   const normalized = value.trim().toLowerCase();
   if (!normalized) return true;
   if (normalized.length < 3) return true;
+  if (/^\d+$/.test(normalized)) return true;
   return GENERIC_SUGGESTION_LABELS.has(normalized) || normalized === 'research';
 };
 
+const GENERIC_CONTEXT_DESCRIPTION_PATTERNS = [
+  /^research homes connected by yale .+ metadata for .+\.?$/i,
+  /^browse yale research homes connected to .+\.?$/i,
+  /^research home (?:focused on|connected to)(?:\s|\.|$)/i,
+  /^.+ is a yale research home(?: connected to .*)?\.?$/i,
+  /(?:\sand\s\.)|\bconnected to\s*\./i,
+];
+
+const normalizeContextText = (value?: string | null): string =>
+  (value || '').replace(/\s+/g, ' ').trim();
+
+const SOURCE_CHROME_PATTERNS = [
+  /\b\d{4}-\d{4}-\d{4}-\d{3}[\dX]\b/i,
+  /\bORCID\s*\d{4}-\d{4}-\d{4}-\d{3}[\dX]\b/i,
+  /View (Lab Website|Related Publication)/i,
+  /View (Full Profile|\d+\s+(Common|Related)\s+Publications?)/i,
+  /View\s+\d+\s+Related\s+Publications?/i,
+  /(Common|Related)\s+Publications?/i,
+  /^Publications$/i,
+  /Publications\s*Timeline/i,
+  /Yale Co-Authors/i,
+  /YSM Researchers/i,
+  /YSM Researcher/i,
+  /Streamline Icon/i,
+  /Director of Department Cores/i,
+  /Course Director/i,
+  /\bCitations\b/i,
+];
+
+const hasRepeatedSourceChromePhrase = (value: string): boolean => {
+  const phraseCounts = new Map<string, number>();
+  const phrasePattern =
+    /\b(?:Director of Department Cores|Therapeutic Radiology|Radiobiology Course Director|View Lab Website|View Related Publication|View Full Profile|Common Publications|Related Publications|YSM Researcher|YSM Researchers)\b/gi;
+  const text = normalizeContextText(value);
+  let match = phrasePattern.exec(text);
+  while (match) {
+    const phrase = match[0].toLowerCase();
+    phraseCounts.set(phrase, (phraseCounts.get(phrase) || 0) + 1);
+    match = phrasePattern.exec(text);
+  }
+  return Array.from(phraseCounts.values()).some((count) => count >= 2);
+};
+
+const isAcademicAppointmentDescription = (value: string): boolean => {
+  const normalized = normalizeContextText(value);
+  if (
+    /\b(studies|investigates|examines|explores|focuses on|works on|develops|uses|employs)\b/i.test(
+      normalized,
+    )
+  ) {
+    return false;
+  }
+
+  return [
+    /^Department Chair\b.*\bProfessor of\b/i,
+    /\bProfessor of\b.*;\s*Affiliated Faculty\b/i,
+    /\bProfessor of\b.*\bDirector,\s+Yale\b/i,
+    /^[A-Z][A-Za-z.'-]+(?:\s+[A-Z][A-Za-z.'-]+)+\s+is\s+(?:an?\s+)?(?:Assistant|Associate|Full|Adjunct|Clinical|Visiting)?\s*Professor\b/i,
+    /\b(?:Assistant|Associate|Full|Adjunct|Clinical|Visiting)?\s*Professor\b.*\bPrincipal Investigator\b/i,
+    /\bPrincipal Investigator\b.*\b(?:Assistant|Associate|Full|Adjunct|Clinical|Visiting)?\s*Professor\b/i,
+  ].some((pattern) => pattern.test(normalized));
+};
+
+const isGenericResearchHomeDescription = (value: string): boolean => {
+  const normalized = normalizeContextText(value);
+  return (
+    GENERIC_CONTEXT_DESCRIPTION_PATTERNS.some((pattern) =>
+      pattern.test(normalized),
+    ) ||
+    isAcademicAppointmentDescription(normalized) ||
+    SOURCE_CHROME_PATTERNS.some((pattern) => pattern.test(normalized)) ||
+    hasRepeatedSourceChromePhrase(normalized)
+  );
+};
+
 const meaningfulMetadata = (values: Array<string | undefined | null>): string[] =>
-  uniq(values).filter((value) => !isGenericMetadataLabel(value));
+  uniq(values).filter(
+    (value) =>
+      !isGenericMetadataLabel(value) &&
+      !SOURCE_CHROME_PATTERNS.some((pattern) => pattern.test(value)),
+  );
+
+const formatReadableList = (values: string[]): string => {
+  if (values.length <= 1) return values[0] || '';
+  if (values.length === 2) return `${values[0]} and ${values[1]}`;
+  return `${values.slice(0, -1).join(', ')}, and ${values[values.length - 1]}`;
+};
+
+const buildCompleteContextSummary = (
+  description?: string | null,
+  label: string = 'Research description',
+): ResearchHomeContextSummary | undefined => {
+  const text = normalizeContextText(description);
+  if (!text || isGenericResearchHomeDescription(text)) return undefined;
+  return {
+    text,
+    state: 'complete',
+    label,
+  };
+};
+
+const hasUsefulFullDescription = (input: ResearchHomeContextInput): boolean => {
+  const fullText = normalizeContextText(input.fullDescription || input.description);
+  return Boolean(fullText && !isGenericResearchHomeDescription(fullText));
+};
+
+const isWeakShortDescription = (value?: string | null): boolean => {
+  const text = normalizeContextText(value);
+  const wordCount = text.split(/\s+/).filter(Boolean).length;
+  return (
+    wordCount < 10 &&
+    (/^my lab (?:focuses|studies|investigates|examines|works) (?:on|in|with)\b/i.test(text) ||
+      /^our lab (?:focuses|studies|investigates|examines|works) (?:on|in|with)\b/i.test(text))
+  );
+};
+
+const selectResearchDescriptionSummary = (
+  input: ResearchHomeContextInput,
+): ResearchHomeContextSummary | undefined => {
+  const fullIsUseful = hasUsefulFullDescription(input);
+  if (fullIsUseful) {
+    const shortSummary = isWeakShortDescription(input.shortDescription)
+      ? undefined
+      : buildCompleteContextSummary(input.shortDescription);
+    if (shortSummary) return shortSummary;
+    return buildCompleteContextSummary(input.fullDescription || input.description);
+  }
+
+  const summaries = [
+    buildCompleteContextSummary(input.profileSynthesisDescription, 'Profile context'),
+  ].filter((summary): summary is ResearchHomeContextSummary => Boolean(summary));
+
+  return summaries[0];
+};
+
+export const buildResearchHomeContextSummary = (
+  input: ResearchHomeContextInput = {},
+): ResearchHomeContextSummary => {
+  const descriptionSummary = selectResearchDescriptionSummary(input);
+
+  if (descriptionSummary) return descriptionSummary;
+
+  const homeMetadata = uniq([
+    ...(input.departments || []),
+    input.school,
+  ]);
+  const hasSourceLinks = (input.sourceUrls || []).some(Boolean);
+  if (homeMetadata.length > 0) {
+    return {
+      text: hasSourceLinks
+        ? `No plain-English summary is available yet. Use the source links and ${formatReadableList(homeMetadata)} context to decide whether this research home fits.`
+        : `No plain-English summary is available yet. Use the ${formatReadableList(homeMetadata)} context while this profile awaits source review.`,
+      state: 'sparse',
+      label: 'Summary limited',
+    };
+  }
+
+  return {
+    text: hasSourceLinks
+      ? 'No plain-English summary is available yet. Use the source links to decide whether this research home fits.'
+      : 'No plain-English summary is available yet. This research home needs source review before fit can be assessed.',
+    state: 'sparse',
+    label: 'Summary limited',
+  };
+};
 
 const parseConfidence = (value?: number | string): number | undefined => {
   if (typeof value === 'number' && Number.isFinite(value)) {
@@ -246,14 +459,6 @@ const parseConfidence = (value?: number | string): number | undefined => {
   if (['low', 'weak', 'uncertain', 'unresolved', 'possible', 'inferred'].includes(normalized)) return 0.35;
   return undefined;
 };
-
-const isMeaningfulResearchEntity = (entity: ResearchEntity): boolean =>
-  meaningfulMetadata(entity.researchAreas).length > 0 ||
-  meaningfulMetadata(entity.departments).length > 0 ||
-  meaningfulMetadata([entity.school]).length > 0 ||
-  (typeof entity.recentPaperCount === 'number' && entity.recentPaperCount > 0) ||
-  meaningfulMetadata([entity.description]).length > 0 ||
-  (entity.sourceUrls?.length || 0) > 0;
 
 const parseProfileNetidFromEmail = (email: string | undefined): string | undefined => {
   if (!email) return undefined;
@@ -289,90 +494,6 @@ const kindLabel = (kind?: string): string => {
   }
 };
 
-type ClusterMatchType = 'department' | 'research-area' | 'school' | 'kind';
-
-const normalizeClusterLabel = (value: string): string =>
-  value.trim().toLowerCase().replace(/\s+/g, ' ');
-
-const normalizeDepartmentClusterLabel = (value: string): string =>
-  value
-    .trim()
-    .toLowerCase()
-    .replace(/&/g, 'and')
-    .replace(/[^a-z0-9]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-const isShoutedLabel = (value: string): boolean =>
-  /[A-Z]/.test(value) && value === value.toUpperCase();
-
-const preferredReadableLabel = (current: string | undefined, next: string): string => {
-  if (!current) return next;
-  if (isShoutedLabel(current) && !isShoutedLabel(next)) return next;
-  return current;
-};
-
-const isDepartmentLabelVariant = (a: string, b: string): boolean => {
-  const first = a.trim();
-  const second = b.trim();
-  if (!first || !second) return false;
-  if (Math.abs(first.length - second.length) !== 1) return false;
-  const [shorter, longer] =
-    first.length < second.length ? [first, second] : [second, first];
-  return longer.length - shorter.length === 1 && longer === `${shorter}s`;
-};
-
-const clusterLabelForEntity = (
-  entity: ResearchEntity,
-): { label: string; matchType: ClusterMatchType } => {
-  const normalizedDepartments = meaningfulMetadata(entity.departments || []);
-  if (normalizedDepartments.length > 0) {
-    return { label: normalizedDepartments[0], matchType: 'department' };
-  }
-
-  const normalizedResearchAreas = meaningfulMetadata(entity.researchAreas || []);
-  if (normalizedResearchAreas.length > 0) {
-    return { label: normalizedResearchAreas[0], matchType: 'research-area' };
-  }
-
-  return entity.school ? { label: entity.school, matchType: 'school' } : { label: kindLabel(entity.kind), matchType: 'kind' };
-};
-
-const MATCH_LABEL_BY_TYPE: Record<ClusterMatchType, string> = {
-  department: 'department',
-  'research-area': 'research area',
-  school: 'school',
-  kind: 'entity type',
-};
-
-const clusterMatchReason = (matchType: ClusterMatchType, label: string): string =>
-  `Shared ${MATCH_LABEL_BY_TYPE[matchType]}: ${label}`;
-
-const compactMetadataTags = (values: Array<string | undefined | null>, label: string): string[] => {
-  const labelKey = normalizeDepartmentClusterLabel(label);
-  const tags = new Map<string, string>();
-
-  for (const tag of meaningfulMetadata(values)) {
-    const normalizedTag = normalizeDepartmentClusterLabel(tag);
-    if (
-      normalizedTag === labelKey ||
-      isDepartmentLabelVariant(normalizedTag, labelKey)
-    ) {
-      continue;
-    }
-
-    const key =
-      Array.from(tags.keys()).find(
-        (candidateKey) =>
-          candidateKey === normalizedTag ||
-          isDepartmentLabelVariant(normalizedTag, candidateKey),
-      ) ?? normalizedTag;
-    tags.set(key, preferredReadableLabel(tags.get(key), tag));
-  }
-
-  return Array.from(tags.values()).slice(0, 6);
-};
-
 const entityDisplayName = (entity: ResearchEntity): string =>
   entity.displayName || entity.name || 'Untitled research profile';
 
@@ -389,6 +510,134 @@ const pathwaysForEntities = (
     const entity = pathway.researchEntity;
     return ids.has(String(entity?._id)) || slugs.has(entity?.slug || '');
   });
+};
+
+const hasCanonicalPostedOpportunity = (pathway: PathwaySearchHit): boolean =>
+  Boolean(pathway.activePostedOpportunity) &&
+  pathway.activePostedOpportunity?.provenance !== 'LISTING_BRIDGED';
+
+const hasContactRoute = (pathway: PathwaySearchHit): boolean =>
+  Boolean(pathway.contactRoute?.url || pathway.contactRoute?.routeType) ||
+  ['contact-program', 'plan-outreach'].includes(pathway.bestNextStepCategory);
+
+const pathwayEvidenceTypes = (pathways: PathwaySearchHit[]): string[] =>
+  pathways.flatMap((pathway) => pathway.evidence || []).map((item) => item.signalType);
+
+export const buildWayInBadges = (
+  entity: ResearchEntity | undefined,
+  pathways: PathwaySearchHit[],
+): string[] => {
+  const signalTypes = [
+    ...(entity?.accessSummary?.signalTypes || []),
+    ...pathwayEvidenceTypes(pathways),
+  ];
+  const badges: string[] = [];
+  const addBadge = (label: string, condition: boolean) => {
+    if (condition && !badges.includes(label)) badges.push(label);
+  };
+
+  addBadge('Posted route', pathways.some(hasCanonicalPostedOpportunity));
+  addBadge('Contact route', pathways.some(hasContactRoute));
+  addBadge(
+    'Undergrad evidence',
+    signalTypes.some((signal) =>
+      ['CURRENT_UNDERGRADS', 'PAST_UNDERGRADS', 'FACULTY_SUPERVISION'].includes(signal),
+    ),
+  );
+  addBadge('Student project evidence', signalTypes.includes('FACULTY_SUPERVISES_STUDENT_PROJECTS'));
+
+  return badges.slice(0, 5);
+};
+
+export const buildResearchHomeContextLine = (entity: ResearchEntity | undefined): string => {
+  if (!entity) return '';
+  return uniq([...(entity.departments || []), entity.school]).slice(0, 3).join(' · ');
+};
+
+const hasOfficialYaleSource = (entity: ResearchEntity | undefined): boolean =>
+  (entity?.sourceUrls || []).some((url) => {
+    try {
+      return new URL(url).hostname.endsWith('yale.edu');
+    } catch {
+      return /(^|\.)yale\.edu\//i.test(url);
+    }
+  });
+
+export const buildResearchHomeEvidenceStatus = (
+  entity: ResearchEntity | undefined,
+  pathways: PathwaySearchHit[],
+): ResearchHomeEvidenceStatus => {
+  if ((entity?.recentPaperCount || 0) > 0) {
+    return { label: 'Publications found', state: 'publications' };
+  }
+  if (hasOfficialYaleSource(entity)) {
+    return { label: 'Official Yale source found', state: 'official' };
+  }
+  if (
+    entity?.accessSummary?.status === 'not-currently-available' ||
+    entity?.accessSummary?.signalTypes?.includes('NOT_CURRENTLY_AVAILABLE')
+  ) {
+    return { label: 'Needs review', state: 'review' };
+  }
+  if (
+    (entity?.accessSummary?.evidence || []).length > 0 ||
+    pathways.some((pathway) => (pathway.sourceUrls || []).length > 0 || (pathway.evidence || []).length > 0)
+  ) {
+    return { label: 'Evidence limited', state: 'limited' };
+  }
+  return { label: 'Evidence limited', state: 'limited' };
+};
+
+const normalizeDisplayKeyPart = (value?: string): string =>
+  (value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+
+const pathwayDisplayKey = (pathway: PathwaySearchHit): string => {
+  const entity = pathway.researchEntity;
+  const hasPostedOpportunity = !!pathway.activePostedOpportunity;
+  const entityKey =
+    !hasPostedOpportunity && (entity?.displayName || entity?.name)
+      ? entity.displayName || entity.name
+      : entity?.slug ||
+        entity?._id ||
+        entity?.displayName ||
+        entity?.name ||
+        'unknown-entity';
+  const sourceKey =
+    pathway.contactRoute?.url ||
+    pathway.sourceUrls?.[0] ||
+    pathway.evidence?.find((entry) => entry.sourceUrl)?.sourceUrl;
+  const opportunityKey =
+    pathway.activePostedOpportunity?._id ||
+    pathway.activePostedOpportunity?.title ||
+    sourceKey ||
+    pathway.bestNextStepCategory ||
+    pathway.bestNextStep ||
+    pathway.studentFacingLabel ||
+    pathway._id;
+
+  return [
+    entityKey,
+    pathway.pathwayType || 'pathway',
+    opportunityKey,
+  ]
+    .map(normalizeDisplayKeyPart)
+    .join('|');
+};
+
+export const dedupePathwayDisplayHits = (
+  pathways: PathwaySearchHit[],
+): PathwaySearchHit[] => {
+  const seen = new Set<string>();
+  const displayHits: PathwaySearchHit[] = [];
+
+  for (const pathway of pathways) {
+    const key = pathwayDisplayKey(pathway);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    displayHits.push(pathway);
+  }
+
+  return displayHits;
 };
 
 const isPathwayResultRelevant = (pathway: PathwaySearchHit): boolean => {
@@ -415,151 +664,65 @@ const hasPersonContextForDiscovery = (entity: ResearchEntity): boolean =>
   (entity.departments || []).length > 0 ||
   (entity.accessSummary?.evidence || []).length > 0;
 
-export function buildMetadataClusters(
-  researchEntities: ResearchEntity[],
+const buildProfileDiscoveryClusters = (
+  entities: ResearchEntity[],
   options: ClusterOptions = {},
-): ResearchCluster[] {
-  const groups = new Map<
-    string,
-    { label: string; matchType: ClusterMatchType; entities: ResearchEntity[] }
-  >();
-
-  for (const entity of researchEntities) {
-    const { label, matchType } = clusterLabelForEntity(entity);
-    const normalizedLabel =
-      matchType === 'department'
-        ? normalizeDepartmentClusterLabel(label)
-        : normalizeClusterLabel(label);
-    const key =
-      matchType === 'department'
-        ? Array.from(groups.entries())
-            .find(
-              ([groupKey, group]) =>
-                group.matchType === 'department' &&
-                isDepartmentLabelVariant(normalizedLabel, groupKey),
-            )?.[0] ?? normalizedLabel
-        : normalizedLabel;
-    const bucket = groups.get(key);
-    if (bucket) {
-      bucket.entities.push(entity);
-      continue;
-    }
-    groups.set(key, { label, matchType, entities: [entity] });
-  }
-
-  const clusters = Array.from(groups.values())
-    .sort((a, b) => {
-      if (a.entities.length !== b.entities.length) return b.entities.length - a.entities.length;
-      return a.label.localeCompare(b.label);
-    })
-    .slice(0, options.limit ?? 6)
-    .map(({ label, matchType, entities }) => {
-      const pathways = pathwaysForEntities(options.pathways || [], entities);
-      const papers = options.papers || [];
-      const relevantEntities = entities.filter(isMeaningfulResearchEntity);
-      const isGenericSingleton =
-        entities.length === 1 &&
-        !relevantEntities.length &&
-        isGenericMetadataLabel(label);
-
-      if (isGenericSingleton) {
-        return null;
-      }
-
-      const sourceUrls = uniq(entities.flatMap((entity) => entity.sourceUrls || []));
-      const metadataTags = compactMetadataTags([
-        ...entities.flatMap((entity) => entity.researchAreas || []),
-        ...entities.flatMap((entity) => entity.departments || []),
-        ...entities.map((entity) => entity.school),
-      ], label);
-      const peopleCount = uniq(
-        entities.filter(hasPersonContextForDiscovery).map((entity) => entity.contactName),
-      ).length;
-      const paperCount =
-        papers.length ||
-        entities.reduce((sum, entity) => sum + (entity.recentPaperCount || 0), 0);
-
-      return {
-        id: slugify(label),
-        label,
-        description:
-          entities[0]?.description ||
-          `Research homes connected by Yale ${MATCH_LABEL_BY_TYPE[matchType]} metadata for ${label}.`,
-        matchReason: clusterMatchReason(matchType, label),
-        entityCount: entities.length,
-        paperCount,
-        pathwayCount: pathways.length,
-        peopleCount,
-        labels: [RESEARCH_HOME_GROUPING_LABEL],
-        metadataTags,
-        entities,
-        pathways,
-        papers,
-        evidence: [
-          {
-            claim: `${entities.length} Yale research ${
-              entities.length === 1 ? 'profile shares' : 'profiles share'
-            } ${label} metadata.`,
-            sourceType: 'Research metadata',
-            url: sourceUrls[0],
-            confidence: 'metadata fallback',
-          },
-        ],
-      };
+): ResearchCluster[] =>
+  entities.map((entity) => {
+    const displayName = entityDisplayName(entity);
+    const contextSummary = buildResearchHomeContextSummary({
+      shortDescription: entity.shortDescription,
+      description: entity.description,
+      fullDescription: entity.fullDescription,
+      profileSynthesisDescription: entity.profileSynthesisDescription,
+      researchAreas: entity.researchAreas,
+      departments: entity.departments,
+      sourceUrls: entity.sourceUrls,
+      school: entity.school,
     });
+    const matchReason = entity.searchMatch?.reason || 'Yale research profile source.';
+    const methodLabels = meaningfulMetadata(entity.searchMatch?.methods || []);
+    const researchAreaLabels = meaningfulMetadata(entity.researchAreas || []);
+    const conceptTags = meaningfulMetadata(entity.searchMatch?.concepts || []);
+    const pathways = pathwaysForEntities(options.pathways || [], [entity]);
+    const activePostedOpportunity = pathways.find(hasCanonicalPostedOpportunity)?.activePostedOpportunity;
+    const evidenceStatus = buildResearchHomeEvidenceStatus(entity, pathways);
 
-  return clusters.filter((cluster): cluster is ResearchCluster => cluster !== null);
-}
-
-export function buildDynamicSearchSuggestions(
-  researchEntities: ResearchEntity[],
-  options: SearchSuggestionOptions = {},
-): string[] {
-  const limit = options.limit ?? 4;
-  const candidates = new Map<string, { label: string; score: number }>();
-
-  const addCandidate = (label: string | undefined, score: number) => {
-    const trimmed = (label || '').trim();
-    const normalizedKey = normalizeDepartmentClusterLabel(trimmed);
-    if (!trimmed || trimmed.length < 3 || GENERIC_SUGGESTION_LABELS.has(normalizedKey)) return;
-
-    const key =
-      Array.from(candidates.keys()).find(
-        (candidateKey) =>
-          candidateKey === normalizedKey ||
-          isDepartmentLabelVariant(normalizedKey, candidateKey),
-      ) ?? normalizedKey;
-    const current = candidates.get(key);
-    candidates.set(key, {
-      label: preferredReadableLabel(current?.label, trimmed),
-      score: (current?.score || 0) + score,
-    });
-  };
-
-  for (const entity of researchEntities) {
-    const paperBoost = Math.min(1, (entity.recentPaperCount || 0) / 10);
-    entity.researchAreas?.forEach((area, index) => {
-      addCandidate(area, (index === 0 ? 4 : 3) + paperBoost);
-    });
-    entity.departments?.forEach((department) => {
-      addCandidate(department, 2 + paperBoost / 2);
-    });
-  }
-
-  const suggestions = Array.from(candidates.values())
-    .sort((a, b) => b.score - a.score || a.label.localeCompare(b.label))
-    .map((candidate) => candidate.label);
-
-  for (const fallback of options.fallback || []) {
-    if (suggestions.length >= limit) break;
-    const exists = suggestions.some(
-      (suggestion) => suggestion.toLowerCase() === fallback.toLowerCase(),
-    );
-    if (!exists) suggestions.push(fallback);
-  }
-
-  return suggestions.slice(0, limit);
-}
+    return {
+      id: entity.slug || entity.id || entity._id || slugify(displayName),
+      label: displayName,
+      description: contextSummary.text,
+      contextState: contextSummary.state,
+      contextLabel: contextSummary.label,
+      contextLine: buildResearchHomeContextLine(entity),
+      evidenceStatus,
+      matchReason,
+      entityCount: 1,
+      paperCount: entity.recentPaperCount || 0,
+      pathwayCount: pathways.length,
+      peopleCount: hasPersonContextForDiscovery(entity) ? 1 : 0,
+      labels: methodLabels.length > 0 ? methodLabels : researchAreaLabels,
+      metadataTags: uniq([
+        ...(entity.departments || []).slice(0, 2),
+        ...conceptTags,
+      ]).slice(0, 5),
+      wayInBadges: buildWayInBadges(entity, pathways),
+      activePostedOpportunity,
+      entities: [entity],
+      pathways,
+      papers: [],
+      evidence: [
+        {
+          claim: matchReason,
+          sourceType: entity.sourceUrls?.length
+            ? 'Yale research source'
+            : 'Research search match',
+          url: entity.sourceUrls?.[0],
+          confidence: entity.searchMatch?.mode || 'indexed source',
+        },
+      ],
+    };
+  });
 
 const normalizeName = (name: string): string => name.trim().toLowerCase().replace(/\s+/g, ' ');
 
@@ -624,9 +787,41 @@ export function buildIdentityConfidenceRecords(
 
 const identitiesFromResearchEntities = (
   researchEntities: ResearchEntity[],
-): ResearchIdentityConfidence[] =>
-  buildIdentityConfidenceRecords(
-    researchEntities
+): ResearchIdentityConfidence[] => {
+  const byPerson = new Map<string, ResearchIdentityInput>();
+
+  const mergeIdentityInput = (input: ResearchIdentityInput) => {
+    const key = input.netid
+      ? `netid:${input.netid.toLowerCase()}`
+      : input.email
+        ? `email:${input.email.toLowerCase()}`
+        : `input:${input.id}`;
+    const existing = byPerson.get(key);
+    if (!existing) {
+      byPerson.set(key, input);
+      return;
+    }
+
+    byPerson.set(key, {
+      ...existing,
+      title: existing.title || input.title,
+      departments: uniq([...(existing.departments || []), ...(input.departments || [])]),
+      affiliations: uniq([...(existing.affiliations || []), ...(input.affiliations || [])]),
+      labName: existing.labName || input.labName,
+      labSlug: existing.labSlug || input.labSlug,
+      profileUrl: existing.profileUrl || input.profileUrl,
+      orcidUrl: existing.orcidUrl || input.orcidUrl,
+      sourceCount: Math.max(
+        existing.sourceCount || 0,
+        input.sourceCount || 0,
+        (existing.evidence || []).length + (input.evidence || []).length,
+      ),
+      sourceContext: uniq([existing.sourceContext, input.sourceContext]).join(', '),
+      evidence: [...(existing.evidence || []), ...(input.evidence || [])],
+    });
+  };
+
+  researchEntities
       .filter((entity) => {
         const hasName = (entity.contactName || '').trim().length > 0;
         return hasName && hasPersonContextForDiscovery(entity);
@@ -640,6 +835,7 @@ const identitiesFromResearchEntities = (
           departments: entity.departments || [],
           affiliations: uniq([entity.school, kindLabel(entity.kind)]),
           netid,
+          email: entity.contactEmail || undefined,
           profileUrl: netid ? `/profile/${netid}` : undefined,
           labName: entityDisplayName(entity),
           labSlug: entity.slug,
@@ -658,8 +854,11 @@ const identitiesFromResearchEntities = (
             },
           ],
         };
-      }),
-  );
+      })
+      .forEach(mergeIdentityInput);
+
+  return buildIdentityConfidenceRecords(Array.from(byPerson.values()));
+};
 
 export function parseQueryInterpretationChips(query: string): string[] {
   const trimmed = query.trim();
@@ -688,7 +887,7 @@ export function buildGroupedSearchResults({
   const people = identitiesFromResearchEntities(researchEntities);
 
   return {
-    clusters: buildMetadataClusters(researchEntities, { pathways: relevantPathways, papers }),
+    clusters: buildProfileDiscoveryClusters(researchEntities, { pathways: relevantPathways, papers }),
     papers,
     people: people.filter((person) =>
       person.identityLabel === 'Identity: Yale-confirmed' || person.sourceCount > 1 || person.departments.length > 0,

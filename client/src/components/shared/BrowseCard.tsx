@@ -38,7 +38,7 @@ interface BrowseCardProps {
 }
 
 const BrowseCard = React.memo(({ item, isFavorite, onToggleFavorite, onOpenModal, onAdminEdit, isCompact }: BrowseCardProps) => {
-  const { getColorForResearchArea } = useContext(ConfigContext);
+  const { departments, getColorForResearchArea } = useContext(ConfigContext);
   const { user } = useContext(UserContext);
   const isAdmin = user?.userType === 'admin';
   const tags = useMemo(() => getItemTags(item, getColorForResearchArea), [item, getColorForResearchArea]);
@@ -59,8 +59,13 @@ const BrowseCard = React.memo(({ item, isFavorite, onToggleFavorite, onOpenModal
 
   const deptInfo = useMemo(() => {
     if (!isListing) return null;
-    return getOrderedDeptAbbrs(item.data.departments, item.data.ownerPrimaryDepartment, DEPT_CAP);
-  }, [item, isListing]);
+    return getOrderedDeptAbbrs(
+      item.data.departments,
+      item.data.ownerPrimaryDepartment,
+      DEPT_CAP,
+      departments,
+    );
+  }, [item, isListing, departments]);
 
   const deptLabel = deptInfo && deptInfo.abbrs.length > 0
     ? deptInfo.abbrs.join(' | ') + (deptInfo.truncated > 0 ? ` +${deptInfo.truncated}` : '')
@@ -77,7 +82,7 @@ const BrowseCard = React.memo(({ item, isFavorite, onToggleFavorite, onOpenModal
     : null;
   const hasActiveResearchOpportunity =
     isResearchGroup &&
-    (item.data.hasActiveListing || item.data.accessSummary?.hasActivePostedOpportunity);
+    item.data.accessSummary?.hasActivePostedOpportunity;
   const fellowshipCycleStatus = item.type === 'fellowship'
     ? getFellowshipCycleStatus(item.data)
     : null;
@@ -107,7 +112,7 @@ const BrowseCard = React.memo(({ item, isFavorite, onToggleFavorite, onOpenModal
                 e.stopPropagation();
                 onAdminEdit();
               }}
-              className="p-1 rounded-full text-gray-500 hover:text-blue-600 hover:bg-gray-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+              className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full text-gray-500 hover:text-blue-600 hover:bg-gray-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
               aria-label="Admin edit"
               title={`Edit ${item.type} (Admin)`}
             >
