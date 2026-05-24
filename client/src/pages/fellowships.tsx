@@ -39,15 +39,15 @@ const SectionHeader = ({
   count: number;
   description?: string;
 }) => (
-  <div className="mb-4 mt-8 first:mt-0">
-    <div className="flex flex-wrap items-center gap-3">
-      <h2 className="text-lg font-semibold text-slate-950">{title}</h2>
-      <span className="yr-pill yr-pill-blue min-h-0 rounded px-2 py-0.5">
+  <div className="mb-4 mt-10 border-t border-slate-200 pt-5 first:mt-0 first:border-t-0 first:pt-0">
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <h2 className="text-xl font-semibold text-slate-950">{title}</h2>
+      <span className="yr-pill yr-pill-blue min-h-0 rounded px-2.5 py-1">
         {count}
       </span>
     </div>
     {description && (
-      <p className="mt-1 max-w-3xl text-sm text-slate-600">{description}</p>
+      <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-600">{description}</p>
     )}
   </div>
 );
@@ -91,14 +91,14 @@ const StatusSummary = ({
   ];
 
   return (
-    <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+    <dl className="grid grid-cols-1 gap-px overflow-hidden rounded-md border border-slate-200 bg-slate-200 sm:grid-cols-2 lg:grid-cols-4">
       {items.map((item) => (
         <div
           key={item.label}
-          className={`yr-card rounded-md px-4 py-3 ${item.className}`}
+          className={`bg-white px-4 py-3 ${item.className}`}
         >
           <dt className="yr-kicker text-[0.68rem]">{item.label}</dt>
-          <dd className="mt-2 flex items-baseline justify-between gap-3">
+          <dd className="mt-2 flex min-h-[3rem] items-end justify-between gap-3">
             <span className="text-2xl font-semibold text-slate-950">{item.value}</span>
             <span className="max-w-[8rem] text-right text-xs font-medium leading-tight text-slate-600">{item.detail}</span>
           </dd>
@@ -441,22 +441,22 @@ const Fellowships = () => {
   return (
     <div className="yr-page min-h-[calc(100vh-12rem)]">
     <div className="mx-auto w-full max-w-screen-2xl px-4 pb-10 sm:px-6 lg:px-8">
-      <div className="pt-6 pb-5">
-        <div className="yr-panel flex flex-col gap-5 rounded-md p-5 lg:flex-row lg:items-end lg:justify-between">
+      <div className="pt-8 pb-6">
+        <div className="grid gap-6 border-b border-slate-200 pb-6 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-end">
           <div className="max-w-3xl">
             <p className="yr-kicker">
-              Programs
+              Program planning
             </p>
-            <h1 className="mt-1 text-3xl font-semibold text-slate-950">
+            <h1 className="mt-2 text-3xl font-semibold leading-tight text-slate-950 sm:text-4xl">
               Programs & Fellowships
             </h1>
-            <p className="mt-2 text-base leading-7 text-slate-600">
-              Browse structured applications, recurring research programs, center internships, and
-              fellowship cycles. Some records fund a project after you find a research home; others
-              directly organize mentor matching or summer research.
+            <p className="mt-3 text-base leading-7 text-slate-600">
+              Track structured applications, recurring research programs, center internships, and
+              fellowship cycles alongside your research search. Some records fund a project after
+              you find a research home; others directly organize mentor matching or summer work.
             </p>
           </div>
-          <div className="flex flex-col gap-2 sm:flex-row lg:justify-end">
+          <div className="flex flex-col gap-2 border-l border-slate-200 pl-0 sm:flex-row lg:flex-col lg:pl-5">
             <Link
               to="/account"
               className="inline-flex min-h-[44px] items-center justify-center rounded-md border border-blue-200 bg-[var(--yr-blue-soft)] px-4 text-sm font-semibold text-[var(--yr-blue)] transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
@@ -484,9 +484,9 @@ const Fellowships = () => {
         </div>
       </div>
 
-      <div className="grid gap-5 2xl:grid-cols-[22rem_minmax(0,1fr)] 2xl:items-start 2xl:gap-8">
-        <aside className="space-y-3 2xl:sticky 2xl:top-6">
-          <div className="yr-panel flex flex-col gap-3 rounded-md p-3 sm:flex-row sm:flex-wrap sm:items-end 2xl:flex-col 2xl:items-stretch">
+      <div className="grid gap-6 xl:grid-cols-[20rem_minmax(0,1fr)] xl:items-start xl:gap-8">
+        <aside className="space-y-3 xl:sticky xl:top-6">
+          <div className="yr-panel flex flex-col gap-3 rounded-md p-3 sm:flex-row sm:flex-wrap sm:items-end xl:flex-col xl:items-stretch">
             <div className="min-w-[220px] flex-1">
               <label
                 htmlFor="program-search"
@@ -509,10 +509,10 @@ const Fellowships = () => {
                 className="min-h-[44px] w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-700 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
-            <div className="flex flex-wrap items-center gap-2 2xl:flex-col 2xl:items-stretch">
-              <CombinedFilterDropdown tabs={fellowshipFilterTabs} />
+            <div className="flex flex-wrap items-center gap-2 xl:flex-col xl:items-stretch">
               <FellowshipSortDropdown />
               <ViewModeToggle />
+              <CombinedFilterDropdown tabs={fellowshipFilterTabs} />
             </div>
           </div>
           <ActiveFilters
