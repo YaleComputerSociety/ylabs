@@ -229,6 +229,16 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
           field: 'sourceFingerprint',
           value: 'fingerprint',
         }),
+        expect.objectContaining({
+          entityType: 'fellowship',
+          field: 'programCategory',
+          value: 'FELLOWSHIP',
+        }),
+        expect.objectContaining({
+          entityType: 'fellowship',
+          field: 'programAccessRole',
+          value: 'FUNDING_ONLY',
+        }),
       ]),
     );
   });
@@ -267,7 +277,7 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
     expect(fetchPage).toHaveBeenCalledTimes(1);
     expect(fetchPage).toHaveBeenCalledWith(fundingPageUrl, false);
     expect(result.entitiesObserved).toBe(1);
-    expect(result.metrics?.fellowshipCatalog).toMatchObject({
+    expect((result.metrics as any)?.fellowshipCatalog).toMatchObject({
       discovered: 1,
       emitted: 1,
       deadlineMissing: 1,

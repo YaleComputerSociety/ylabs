@@ -5,8 +5,14 @@
  * treating gated CommunityForce URLs as application links, not fetch targets.
  */
 import axios from 'axios';
-import crypto from 'crypto';
 import * as cheerio from 'cheerio';
+import {
+  candidateToProgramObservations,
+  finalizeProgramCandidate,
+  inferProgramAccessRole,
+  parseProgramDeadlineToUtcEndOfDay,
+  type ProgramAccessRole,
+} from '../programCandidate';
 import { getCached, setCached } from '../snapshotCache';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 
@@ -24,24 +30,10 @@ const PUBLIC_YALE_HOSTS = new Set([
   'science.yalecollege.yale.edu',
 ]);
 
-const MONTHS: Record<string, number> = {
-  january: 0,
-  february: 1,
-  march: 2,
-  april: 3,
-  may: 4,
-  june: 5,
-  july: 6,
-  august: 7,
-  september: 8,
-  october: 9,
-  november: 10,
-  december: 11,
-};
-
 export interface FellowshipCatalogCandidate {
   sourceKey: string;
   sourceFingerprint: string;
+  sourceName?: typeof YALE_COLLEGE_FELLOWSHIPS_OFFICE_SOURCE;
   title: string;
   summary?: string;
   description?: string;
@@ -59,6 +51,8 @@ export interface FellowshipCatalogCandidate {
   citizenshipStatus: string[];
   isAcceptingApplications: boolean;
   reviewRequired: boolean;
+  programCategory?: 'FELLOWSHIP';
+  programAccessRole?: ProgramAccessRole;
 }
 
 type FetchPage = (url: string, useCache: boolean) => Promise<string>;
@@ -70,18 +64,6 @@ interface YaleCollegeFellowshipsOfficeScraperDeps {
 
 function normalizeWhitespace(value: string): string {
   return value.replace(/\s+/g, ' ').trim();
-}
-
-function slugify(value: string): string {
-  return normalizeWhitespace(value)
-    .toLowerCase()
-    .replace(/&/g, ' and ')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-}
-
-function sourceKeyForTitle(title: string): string {
-  return `${YALE_COLLEGE_FELLOWSHIPS_OFFICE_SOURCE}:${slugify(title)}`;
 }
 
 function absoluteUrl(rawUrl: string | undefined, pageUrl: string): string | undefined {
@@ -253,7 +235,11 @@ export function parseDeadlineToUtcEndOfDay(
   referenceDate: Date = new Date(),
 ): Date | undefined {
   const normalized = normalizeWhitespace(text);
-  const monthPattern = Object.keys(MONTHS).join('|');
+  const exactDeadline = parseProgramDeadlineToUtcEndOfDay(normalized, referenceDate);
+  if (exactDeadline) return exactDeadline;
+
+  const monthPattern =
+    'january|february|march|april|may|june|july|august|september|october|november|december';
   const match = normalized.match(
     new RegExp(
       `(?:deadline[^A-Za-z0-9]*)?(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)?[,]?\\s*(${monthPattern})\\s+(\\d{1,2})(?:,\\s*(\\d{4}))?`,
@@ -262,7 +248,7 @@ export function parseDeadlineToUtcEndOfDay(
   );
   if (!match) return undefined;
 
-  const month = MONTHS[match[1].toLowerCase()];
+  const month = new Date(`${match[1]} 1, 2000`).getUTCMonth();
   const day = Number(match[2]);
   let year = match[3] ? Number(match[3]) : referenceDate.getUTCFullYear();
   let date = new Date(Date.UTC(year, month, day, 23, 59, 59, 999));
@@ -280,35 +266,22 @@ export function parseDeadlineToUtcEndOfDay(
   return date;
 }
 
-function fingerprintCandidate(candidate: Omit<FellowshipCatalogCandidate, 'sourceFingerprint'>): string {
-  const stable = {
-    title: candidate.title,
-    summary: candidate.summary || '',
-    description: candidate.description || '',
-    sourceUrl: candidate.sourceUrl,
-    applicationLink: candidate.applicationLink || '',
-    deadline: candidate.deadline?.toISOString() || '',
-    applicationOpenDate: candidate.applicationOpenDate?.toISOString() || '',
-    contactOffice: candidate.contactOffice || '',
-    contactEmail: candidate.contactEmail || '',
-    yearOfStudy: candidate.yearOfStudy,
-    termOfAward: candidate.termOfAward,
-    purpose: candidate.purpose,
-    globalRegions: candidate.globalRegions,
-    citizenshipStatus: candidate.citizenshipStatus,
-    isAcceptingApplications: candidate.isAcceptingApplications,
-    reviewRequired: candidate.reviewRequired,
-  };
-  return crypto.createHash('sha256').update(JSON.stringify(stable)).digest('hex');
-}
-
 function finalizeCandidate(
-  candidate: Omit<FellowshipCatalogCandidate, 'sourceFingerprint'>,
+  candidate: Omit<
+    FellowshipCatalogCandidate,
+    'sourceKey' | 'sourceFingerprint' | 'sourceName' | 'programCategory' | 'programAccessRole'
+  >,
 ): FellowshipCatalogCandidate {
-  return {
+  const inferredAccessRole = inferProgramAccessRole(
+    candidate.title,
+    `${candidate.summary || ''} ${candidate.description || ''}`,
+  );
+  return finalizeProgramCandidate({
     ...candidate,
-    sourceFingerprint: fingerprintCandidate(candidate),
-  };
+    sourceName: YALE_COLLEGE_FELLOWSHIPS_OFFICE_SOURCE,
+    programCategory: 'FELLOWSHIP',
+    programAccessRole: inferredAccessRole === 'UNKNOWN' ? 'FUNDING_ONLY' : inferredAccessRole,
+  }) as FellowshipCatalogCandidate;
 }
 
 function compactTitleIdentity(title: string): string {
@@ -410,7 +383,6 @@ function candidateFromLink(
     hasExplicitActiveApplicationLanguage(contextText);
 
   return finalizeCandidate({
-    sourceKey: sourceKeyForTitle(title),
     title,
     summary: rowContext && rowContext !== title ? rowContext : undefined,
     description: undefined,
@@ -460,7 +432,6 @@ function candidateFromDetailPage(
     hasExplicitActiveApplicationLanguage(bodyText);
 
   return finalizeCandidate({
-    sourceKey: sourceKeyForTitle(title),
     title,
     summary: undefined,
     description: bodyText.slice(0, 2000),
@@ -494,10 +465,9 @@ function mergeCandidates(
     ).values(),
   );
   const applicationLink = incoming.applicationLink || existing.applicationLink;
-  return finalizeCandidate({
+  const merged = finalizeCandidate({
     ...existing,
     title: preferredTitle(existing, incoming),
-    sourceKey: existing.sourceKey,
     summary: incoming.summary || existing.summary,
     description: incoming.description || existing.description,
     sourceUrl:
@@ -519,7 +489,8 @@ function mergeCandidates(
     ),
     isAcceptingApplications: existing.isAcceptingApplications || incoming.isAcceptingApplications,
     reviewRequired: existing.reviewRequired && incoming.reviewRequired,
-  });
+  }) as FellowshipCatalogCandidate;
+  return { ...merged, sourceKey: existing.sourceKey };
 }
 
 export function parseFellowshipCatalogPage(
@@ -542,42 +513,21 @@ export function parseFellowshipCatalogPage(
   return Array.from(byKey.values()).sort((a, b) => a.title.localeCompare(b.title));
 }
 
-function observation(field: string, value: unknown, candidate: FellowshipCatalogCandidate): ObservationInput | null {
-  if (value === undefined || value === null || value === '') return null;
-  if (Array.isArray(value) && value.length === 0) return null;
-  return {
-    entityType: 'fellowship',
-    entityKey: candidate.sourceKey,
-    field,
-    value,
-    sourceUrl: candidate.sourceUrl,
-    confidenceOverride: 0.95,
-  };
-}
-
 export function candidateToObservations(candidate: FellowshipCatalogCandidate): ObservationInput[] {
-  return [
-    observation('sourceKey', candidate.sourceKey, candidate),
-    observation('sourceName', YALE_COLLEGE_FELLOWSHIPS_OFFICE_SOURCE, candidate),
-    observation('sourceUrl', candidate.sourceUrl, candidate),
-    observation('sourceFingerprint', candidate.sourceFingerprint, candidate),
-    observation('title', candidate.title, candidate),
-    observation('summary', candidate.summary, candidate),
-    observation('description', candidate.description, candidate),
-    observation('applicationLink', candidate.applicationLink, candidate),
-    observation('links', candidate.links, candidate),
-    observation('deadline', candidate.deadline, candidate),
-    observation('applicationOpenDate', candidate.applicationOpenDate, candidate),
-    observation('contactOffice', candidate.contactOffice, candidate),
-    observation('contactEmail', candidate.contactEmail, candidate),
-    observation('yearOfStudy', candidate.yearOfStudy, candidate),
-    observation('termOfAward', candidate.termOfAward, candidate),
-    observation('purpose', candidate.purpose, candidate),
-    observation('globalRegions', candidate.globalRegions, candidate),
-    observation('citizenshipStatus', candidate.citizenshipStatus, candidate),
-    observation('isAcceptingApplications', candidate.isAcceptingApplications, candidate),
-    observation('reviewRequired', candidate.reviewRequired, candidate),
-  ].filter((item): item is ObservationInput => !!item);
+  const inferredAccessRole =
+    candidate.programAccessRole ||
+    inferProgramAccessRole(candidate.title, `${candidate.summary || ''} ${candidate.description || ''}`);
+  const normalizedCandidate = {
+    ...candidate,
+    sourceName: candidate.sourceName || YALE_COLLEGE_FELLOWSHIPS_OFFICE_SOURCE,
+    programCategory: candidate.programCategory || 'FELLOWSHIP',
+    programAccessRole: inferredAccessRole === 'UNKNOWN' ? 'FUNDING_ONLY' : inferredAccessRole,
+  };
+
+  return candidateToProgramObservations(normalizedCandidate).map((observation) => ({
+    ...observation,
+    confidenceOverride: 0.95,
+  }));
 }
 
 async function fetchHtml(url: string, useCache: boolean): Promise<string> {
@@ -678,6 +628,31 @@ export class YaleCollegeFellowshipsOfficeScraper implements IScraper {
 
     const deadlineParsed = selected.filter((candidate) => !!candidate.deadline).length;
     const reviewRequired = selected.filter((candidate) => candidate.reviewRequired).length;
+    const metrics = {
+      fellowshipCatalog: {
+        discovered: allCandidates.length,
+        emitted: selected.length,
+        created: 0,
+        updated: 0,
+        unchanged: 0,
+        reviewRequired,
+        missingPreviouslySeen: 0,
+        deadlineParsed,
+        deadlineMissing: selected.length - deadlineParsed,
+      },
+    } as ScraperResult['metrics'] & {
+      fellowshipCatalog: {
+        discovered: number;
+        emitted: number;
+        created: number;
+        updated: number;
+        unchanged: number;
+        reviewRequired: number;
+        missingPreviouslySeen: number;
+        deadlineParsed: number;
+        deadlineMissing: number;
+      };
+    };
 
     return {
       observationCount: observations.length,
@@ -686,19 +661,7 @@ export class YaleCollegeFellowshipsOfficeScraper implements IScraper {
         failedUrls.length > 0
           ? `Skipped ${failedUrls.length} fellowship page(s) after fetch/parse failure.`
           : undefined,
-      metrics: {
-        fellowshipCatalog: {
-          discovered: allCandidates.length,
-          emitted: selected.length,
-          created: 0,
-          updated: 0,
-          unchanged: 0,
-          reviewRequired,
-          missingPreviouslySeen: 0,
-          deadlineParsed,
-          deadlineMissing: selected.length - deadlineParsed,
-        },
-      },
+      metrics,
     };
   }
 }
