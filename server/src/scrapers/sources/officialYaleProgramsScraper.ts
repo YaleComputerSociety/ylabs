@@ -6,6 +6,7 @@
  */
 import axios from 'axios';
 import * as cheerio from 'cheerio';
+import type { AnyNode } from 'domhandler';
 import {
   candidateToProgramObservations,
   finalizeProgramCandidate,
@@ -93,6 +94,59 @@ function bestDeadlineText(text: string): string {
   return text.match(/[^.]*\b(?:deadline|due)\b[^.]*\./i)?.[0] || text;
 }
 
+function primaryContent($: cheerio.CheerioAPI): cheerio.Cheerio<AnyNode> {
+  const primary = $('main, [role="main"], article').first();
+  return primary.length > 0 ? primary : $('body').first();
+}
+
+function contentWithoutPageChrome(
+  $: cheerio.CheerioAPI,
+  content: cheerio.Cheerio<AnyNode>,
+): cheerio.Cheerio<AnyNode> {
+  const cleaned = content.clone();
+  cleaned
+    .find(
+      [
+        'header',
+        'nav',
+        'footer',
+        'aside',
+        '[role="banner"]',
+        '[role="navigation"]',
+        '[role="contentinfo"]',
+        '[role="complementary"]',
+        '[aria-label*="breadcrumb"]',
+        '[class*="breadcrumb"]',
+        '[id*="breadcrumb"]',
+        '[class*="menu"]',
+        '[id*="menu"]',
+        '[class*="sidebar"]',
+        '[id*="sidebar"]',
+      ].join(', '),
+    )
+    .remove();
+  return $(cleaned);
+}
+
+function hasExplicitProgramLanguage(title: string, text: string): boolean {
+  return /\b(program|fellowship|internship|research program)\b/i.test(`${title} ${text}`);
+}
+
+function hasProgramEvidence(args: {
+  title: string;
+  bodyText: string;
+  programAccessRole: ProgramAccessRole;
+  deadline?: Date;
+  applicationLink?: string;
+}): boolean {
+  return (
+    args.programAccessRole !== 'UNKNOWN' ||
+    !!args.deadline ||
+    !!args.applicationLink ||
+    hasExplicitProgramLanguage(args.title, args.bodyText)
+  );
+}
+
 export function parseOfficialYaleProgramPage(
   html: string,
   config: OfficialYaleProgramPageConfig,
@@ -102,13 +156,13 @@ export function parseOfficialYaleProgramPage(
   if (!pageUrl) return [];
   const sourceName = config.sourceName || OFFICIAL_YALE_PROGRAMS_SOURCE;
   const $ = cheerio.load(html);
-  const title = normalizeWhitespace($('h1').first().text());
+  const content = contentWithoutPageChrome($, primaryContent($));
+  const title = normalizeWhitespace(content.find('h1').first().text() || $('h1').first().text());
   if (!title) return [];
 
-  const bodyText = normalizeWhitespace(
-    $('main, [role="main"], article').first().text() || $('body').text(),
-  );
-  const links = $('a')
+  const bodyText = normalizeWhitespace(content.text());
+  const links = content
+    .find('a')
     .toArray()
     .map((link) => {
       const url = absoluteUrl($(link).attr('href'), pageUrl);
@@ -121,6 +175,9 @@ export function parseOfficialYaleProgramPage(
   )?.url;
   const deadline = parseProgramDeadlineToUtcEndOfDay(bestDeadlineText(bodyText), referenceDate);
   const programAccessRole = inferAccessRole(title, bodyText, config.programCategory);
+  if (!hasProgramEvidence({ title, bodyText, programAccessRole, deadline, applicationLink })) {
+    return [];
+  }
 
   return [
     finalizeProgramCandidate({

@@ -62,6 +62,68 @@ describe('OfficialYaleProgramsScraper', () => {
     });
   });
 
+  it('does not emit a candidate for a generic non-program page', () => {
+    const candidates = parseOfficialYaleProgramPage(
+      `
+        <main>
+          <h1>Digital Humanities Laboratory</h1>
+          <p>The Digital Humanities Laboratory supports teaching, consultation, and collaborations across campus.</p>
+          <p>Visit our space to learn about workshops, equipment, and current staff.</p>
+        </main>
+      `,
+      {
+        sourceName: 'official-yale-programs',
+        pageUrl: 'https://library.yale.edu/digital-humanities-laboratory',
+        programCategory: 'CENTER_INTERNSHIP',
+        hostedByResearchEntityName: 'Digital Humanities Lab',
+        hostedByResearchEntityUrl: 'https://library.yale.edu/digital-humanities-laboratory',
+      },
+      new Date('2026-01-01T00:00:00Z'),
+    );
+
+    expect(candidates).toEqual([]);
+  });
+
+  it('ignores application links outside primary content', () => {
+    const candidates = parseOfficialYaleProgramPage(
+      `
+        <body>
+          <nav>
+            <a href="/apply">Apply</a>
+          </nav>
+          <main>
+            <h1>Digital Humanities Lab Summer Internship</h1>
+            <p>The summer internship program places students on digital humanities research projects.</p>
+            <a href="/about">About the lab</a>
+          </main>
+          <footer>
+            <a href="https://library.yale.edu/apply">Application</a>
+          </footer>
+        </body>
+      `,
+      {
+        sourceName: 'official-yale-programs',
+        pageUrl: 'https://library.yale.edu/digital-humanities-laboratory/internships',
+        programCategory: 'CENTER_INTERNSHIP',
+        hostedByResearchEntityName: 'Digital Humanities Lab',
+        hostedByResearchEntityUrl: 'https://library.yale.edu/digital-humanities-laboratory',
+      },
+      new Date('2026-01-01T00:00:00Z'),
+    );
+
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]).toMatchObject({
+      title: 'Digital Humanities Lab Summer Internship',
+      applicationLink: undefined,
+    });
+    expect(candidates[0].links).toEqual([
+      {
+        label: 'About the lab',
+        url: 'https://library.yale.edu/about',
+      },
+    ]);
+  });
+
   it('emits observations through the scraper run without fetching application portals', async () => {
     const fetchPage = vi.fn(
       async () => `
