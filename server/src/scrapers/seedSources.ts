@@ -52,7 +52,8 @@ const SOURCES: SourceSeed[] = [
   {
     name: 'ylabs-listing',
     displayName: 'YLabs listing',
-    description: 'Legacy YLabs posted research role row materialized into PostedOpportunity records.',
+    description:
+      'Legacy YLabs posted research role row materialized into PostedOpportunity records.',
     baseUrl: '',
     defaultWeight: 0.9,
     cadence: 'event',
@@ -179,6 +180,15 @@ const SOURCES: SourceSeed[] = [
     cadence: 'daily-during-cycle',
   },
   {
+    name: 'official-yale-programs',
+    displayName: 'Official Yale Programs',
+    description:
+      'Curated official Yale program pages for structured undergraduate research programs, internships, and fellowships outside the central fellowship catalog.',
+    baseUrl: '',
+    defaultWeight: 0.9,
+    cadence: 'weekly',
+  },
+  {
     name: 'external-fellowship-llm-scraper',
     displayName: 'External fellowship LLM scraper',
     description: 'LLM extracts external programs (NSF REU, NIH, Goldwater, Beckman, etc.).',
@@ -205,7 +215,8 @@ const SOURCES: SourceSeed[] = [
   {
     name: 'centers-institutes-index',
     displayName: 'Yale centers/institutes index',
-    description: 'Parameterized per-center scrapers (Wu Tsai, Cancer Center, Cowles, Tobin, MacMillan, ISPS, Whitney Humanities, Yale Quantum, etc.).',
+    description:
+      'Parameterized per-center scrapers (Wu Tsai, Cancer Center, Cowles, Tobin, MacMillan, ISPS, Whitney Humanities, Yale Quantum, etc.).',
     baseUrl: '',
     defaultWeight: 0.8,
     cadence: 'weekly',

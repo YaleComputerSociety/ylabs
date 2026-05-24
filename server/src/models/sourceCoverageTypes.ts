@@ -6,6 +6,7 @@
  * before a scraper is expanded.
  */
 export const sourceCoverageArtifactTypes = [
+  'Fellowship',
   'ResearchEntity',
   'EntryPathway',
   'AccessSignal',

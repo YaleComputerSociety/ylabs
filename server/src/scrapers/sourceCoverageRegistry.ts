@@ -141,6 +141,29 @@ export const sourceCoverageRegistry = {
     defaultConfidence: 'HIGH',
     notes: 'Authoritative fellowship program, application-cycle, and official office route source.',
   },
+  'official-yale-programs': {
+    priority: 4,
+    tier: 'PRIMARY_OFFICIAL',
+    artifactTypes: [
+      'Fellowship',
+      'ResearchEntity',
+      'EntryPathway',
+      'AccessSignal',
+      'ContactRoute',
+      'PostedOpportunity',
+      'Observation',
+    ],
+    evidenceCategories: [
+      'ENTITY_IDENTITY',
+      'APPLICATION_LINK',
+      'OFFICIAL_CONTACT_ROUTE',
+      'POSTED_OPENING',
+      'FELLOWSHIP_COMPATIBILITY',
+    ],
+    defaultConfidence: 'HIGH',
+    notes:
+      'Curated official Yale program pages for structured undergraduate research programs outside the central fellowship catalog.',
+  },
   'ylabs-listing': {
     priority: 5,
     tier: 'PRIMARY_OFFICIAL',

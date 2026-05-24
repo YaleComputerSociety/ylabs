@@ -17,6 +17,7 @@ import { NsfAwardScraper } from './sources/nsfAwardScraper';
 import { CentersInstitutesScraper } from './sources/centersInstitutesScraper';
 import { UndergradFellowshipRecipientScraper } from './sources/undergradFellowshipRecipientScraper';
 import { LabMicrositeUndergradLLMExtractor } from './sources/labMicrositeUndergradLLMExtractor';
+import { OfficialYaleProgramsScraper } from './sources/officialYaleProgramsScraper';
 
 export function buildOrchestrator(): ScraperOrchestrator {
   const o = new ScraperOrchestrator();
@@ -35,5 +36,6 @@ export function buildOrchestrator(): ScraperOrchestrator {
   o.register(new CentersInstitutesScraper());
   o.register(new UndergradFellowshipRecipientScraper());
   o.register(new LabMicrositeUndergradLLMExtractor());
+  o.register(new OfficialYaleProgramsScraper());
   return o;
 }
