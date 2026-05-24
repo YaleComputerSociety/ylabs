@@ -409,7 +409,7 @@ const DecisionSummary = ({
           )}
         </div>
 
-        <div className="order-first rounded-md border border-gray-200 bg-gray-50 p-4 md:order-none">
+        <div className="rounded-md border border-gray-200 bg-gray-50 p-4">
           <dl className="space-y-3 text-sm">
             <div>
               <dt className="text-xs font-semibold uppercase tracking-wider text-gray-600">
