@@ -300,9 +300,7 @@ describe('Programs page', () => {
     });
 
     expect(screen.getByRole('heading', { name: 'Programs & Fellowships' })).toBeTruthy();
-    expect(
-      screen.getByText(/structured applications, recurring research programs/i),
-    ).toBeTruthy();
+    expect(screen.getByText(/track structured applications, recurring research programs/i)).toBeTruthy();
     expect(screen.getByText('Open now')).toBeTruthy();
     expect(screen.getByText('Closing soon')).toBeTruthy();
     expect(screen.getByText('Likely next cycle')).toBeTruthy();

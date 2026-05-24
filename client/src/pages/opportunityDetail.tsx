@@ -2,8 +2,10 @@ import { FC, useEffect, useMemo, useRef, useState } from 'react';
 import { isCancel } from 'axios';
 import { Link, useParams } from 'react-router-dom';
 import LoadingSpinner from '../components/shared/LoadingSpinner';
+import LongText from '../components/shared/LongText';
 import axios from '../utils/axios';
 import { OpportunityDetailPayload } from '../types/opportunity';
+import useDocumentTitle from '../hooks/useDocumentTitle';
 
 const labelize = (value?: string): string =>
   (value || 'Unknown')
@@ -43,12 +45,12 @@ const applicationStateTone = (value?: string): string => {
   switch (value) {
     case 'APPLY_NOW':
     case 'ROLLING':
-      return 'bg-emerald-50 text-emerald-700';
+      return 'yr-pill-green';
     case 'CLOSED':
     case 'ARCHIVED':
-      return 'bg-gray-100 text-gray-600';
+      return '';
     default:
-      return 'bg-amber-50 text-amber-700';
+      return 'yr-pill-gold';
   }
 };
 
@@ -60,9 +62,9 @@ const uniq = (values: Array<string | undefined>): string[] =>
 const DetailField: FC<{ label: string; value?: string | number }> = ({ label, value }) => {
   if (value === undefined || value === null || value === '') return null;
   return (
-    <div className="border-t border-gray-100 py-3 first:border-t-0 first:pt-0">
-      <dt className="text-xs font-semibold uppercase tracking-wider text-gray-400">{label}</dt>
-      <dd className="mt-1 text-sm font-medium text-gray-900">{value}</dd>
+    <div className="border-t border-slate-100 py-3 first:border-t-0 first:pt-0">
+      <dt className="yr-kicker text-[0.68rem]">{label}</dt>
+      <dd className="mt-1 text-sm font-medium text-slate-950">{value}</dd>
     </div>
   );
 };
@@ -74,6 +76,7 @@ const OpportunityDetail = () => {
   const [error, setError] = useState('');
   const requestIdRef = useRef(0);
   const fetchAbortRef = useRef<AbortController | null>(null);
+  useDocumentTitle(opportunity?.title || 'Posted opportunity');
 
   useEffect(() => {
     if (!id) return;
@@ -131,7 +134,7 @@ const OpportunityDetail = () => {
 
   if (loading) {
     return (
-      <div className="max-w-5xl mx-auto px-4 py-16">
+      <div className="yr-page mx-auto max-w-5xl px-4 py-16">
         <LoadingSpinner size="lg" />
       </div>
     );
@@ -139,18 +142,23 @@ const OpportunityDetail = () => {
 
   if (error || !opportunity) {
     return (
-      <div className="max-w-3xl mx-auto px-4 py-16 text-center">
-        <h1 className="text-2xl font-bold text-gray-900">{error || 'Opportunity not found.'}</h1>
-        <p className="mt-2 text-gray-600">
-          This page only shows real posted openings that are still present in the research access
-          model.
-        </p>
-        <Link
-          to="/pathways"
-          className="inline-flex mt-6 rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
-        >
-          Browse Pathways
-        </Link>
+      <div className="yr-page flex min-h-[calc(100vh-8rem)] items-center justify-center px-4 py-16">
+        <div className="yr-panel max-w-lg rounded-md p-6 text-center">
+          <p className="yr-kicker mb-3">Posted opportunity</p>
+          <h1 className="text-2xl font-semibold text-slate-950">
+            {error || 'Opportunity not found.'}
+          </h1>
+          <p className="mt-2 text-sm leading-relaxed text-slate-600">
+            This page only shows real posted openings that are still present in the research access
+            model.
+          </p>
+          <Link
+            to="/research"
+            className="mt-6 inline-flex min-h-[44px] items-center justify-center rounded-md bg-[var(--yr-blue)] px-4 py-2 text-sm font-semibold text-white hover:bg-blue-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+          >
+            Browse Yale Research
+          </Link>
+        </div>
       </div>
     );
   }
@@ -166,65 +174,75 @@ const OpportunityDetail = () => {
   const researchLink = entity?.slug ? `/research/${entity.slug}` : '/research';
   const researchDisplayName = entity?.displayName || entity?.name || 'Research profile';
   const researchHostType = entity?.entityType || entity?.kind || 'Research home';
+  const opportunityKindLabel =
+    opportunity.provenance === 'LISTING_BRIDGED' ? 'Listing-derived signal' : 'Posted opportunity';
 
   return (
-    <div className="max-w-6xl mx-auto px-4 py-8">
+    <div className="yr-page min-h-[calc(100vh-8rem)]">
+      <div className="max-w-6xl mx-auto px-4 py-8">
       <div className="mb-6">
-        <Link to="/pathways" className="text-sm font-medium text-blue-700 hover:underline">
-          Back to Pathways
+        <Link
+          to="/research"
+          className="yr-link inline-flex min-h-[44px] items-center rounded-md text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+        >
+          Back to Yale Labs
         </Link>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <article className="lg:col-span-2 space-y-8">
-          <header className="border-b border-gray-200 pb-6">
+          <header className="yr-panel rounded-md p-5">
             <div className="flex flex-wrap gap-2 mb-3">
-              <span className="text-xs font-semibold rounded bg-blue-50 px-2 py-1 text-blue-700">
+              <span className="yr-pill yr-pill-blue min-h-0 rounded px-2 py-1">
                 {labelize(opportunity.status)}
               </span>
               <span
-                className={`text-xs font-semibold rounded px-2 py-1 ${applicationStateTone(
+                className={`yr-pill min-h-0 rounded px-2 py-1 ${applicationStateTone(
                   opportunity.applicationState,
                 )}`}
               >
                 {opportunity.applicationLabel}
               </span>
               {opportunity.term && (
-                <span className="text-xs font-semibold rounded bg-gray-100 px-2 py-1 text-gray-700">
+                <span className="yr-pill min-h-0 rounded px-2 py-1">
                   {opportunity.term}
                 </span>
               )}
-              <span className="text-xs font-semibold rounded bg-emerald-50 px-2 py-1 text-emerald-700">
-                Posted opportunity
+              <span className="yr-pill yr-pill-green min-h-0 rounded px-2 py-1">
+                {opportunityKindLabel}
               </span>
-              <span className="text-xs font-semibold rounded bg-slate-100 px-2 py-1 text-slate-700">
+              <span className="yr-pill min-h-0 rounded px-2 py-1">
                 {opportunity.provenanceLabel}
               </span>
             </div>
-            <h1 className="text-3xl font-bold text-gray-900 leading-tight">{opportunity.title}</h1>
+            <h1 className="text-3xl font-semibold text-slate-950 leading-tight">{opportunity.title}</h1>
             <Link
               to={researchLink}
-              className="inline-flex mt-3 text-base font-semibold text-blue-700 hover:underline"
+              className="yr-link inline-flex mt-3 text-base font-semibold"
             >
               {researchDisplayName}
             </Link>
             {entity?.shortDescription && (
-              <p className="mt-4 text-sm leading-relaxed text-gray-600">
-                {entity.shortDescription}
-              </p>
+              <LongText
+                text={entity.shortDescription}
+                className="mt-4 text-sm leading-relaxed text-gray-600"
+              />
             )}
           </header>
 
           <section>
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">
+            <h2 className="yr-kicker mb-3">
               Best Next Step
             </h2>
-            <div className="border border-gray-200 rounded-md bg-white p-4">
+            <div className="yr-card rounded-md p-4">
               <p className="text-sm font-semibold text-gray-900">
                 {pathway?.bestNextStep || 'Use the official application route when available.'}
               </p>
               {pathway?.explanation && (
-                <p className="mt-2 text-sm leading-relaxed text-gray-600">{pathway.explanation}</p>
+                <LongText
+                  text={pathway.explanation}
+                  className="mt-2 text-sm leading-relaxed text-gray-600"
+                />
               )}
               {(opportunity.applicationState === 'APPLY_NOW' ||
                 opportunity.applicationState === 'ROLLING') &&
@@ -233,7 +251,7 @@ const OpportunityDetail = () => {
                     href={opportunity.applicationUrl}
                     target="_blank"
                     rel="noreferrer"
-                    className="inline-flex mt-4 rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+                    className="mt-4 inline-flex min-h-[44px] items-center justify-center rounded-md bg-[var(--yr-blue)] px-4 py-2 text-sm font-semibold text-white hover:bg-blue-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
                   >
                     {opportunity.applicationLabel}
                   </a>
@@ -249,10 +267,10 @@ const OpportunityDetail = () => {
 
           {(opportunity.eligibility || compensation) && (
             <section>
-              <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">
+              <h2 className="yr-kicker mb-3">
                 Eligibility and Compensation
               </h2>
-              <div className="border border-gray-200 rounded-md bg-white p-4 space-y-3">
+              <div className="yr-card rounded-md p-4 space-y-3">
                 {opportunity.eligibility && (
                   <p className="text-sm leading-relaxed text-gray-700">
                     <span className="font-semibold text-gray-900">Eligibility:</span>{' '}
@@ -270,10 +288,10 @@ const OpportunityDetail = () => {
           )}
 
           <section>
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">
+            <h2 className="yr-kicker mb-3">
               Evidence
             </h2>
-            <div className="border border-gray-200 rounded-md bg-white p-4">
+            <div className="yr-card rounded-md p-4">
               {evidence.length > 0 ? (
                 <div className="space-y-3">
                   {evidence.map((item) => (
@@ -299,7 +317,7 @@ const OpportunityDetail = () => {
                           href={item.sourceUrl}
                           target="_blank"
                           rel="noreferrer"
-                          className="inline-flex mt-1 text-xs font-medium text-blue-700 hover:underline"
+                          className="yr-link mt-1 inline-flex min-h-[44px] items-center rounded-md text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
                         >
                           Open source
                         </a>
@@ -317,8 +335,8 @@ const OpportunityDetail = () => {
         </article>
 
         <aside className="lg:col-span-1">
-          <div className="lg:sticky lg:top-8 border border-gray-200 rounded-md bg-white p-5">
-            <h2 className="text-sm font-bold text-gray-900 mb-4">Opportunity Details</h2>
+          <div className="yr-panel lg:sticky lg:top-8 rounded-md p-5">
+            <h2 className="text-sm font-semibold text-slate-950 mb-4">Opportunity Details</h2>
             <dl>
               <DetailField label="Status" value={labelize(opportunity.status)} />
               <DetailField label="Application" value={opportunity.applicationLabel} />
@@ -338,7 +356,7 @@ const OpportunityDetail = () => {
 
             {sourceUrls.length > 0 && (
               <div className="border-t border-gray-100 pt-4 mt-1">
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400">
+                <h3 className="yr-kicker">
                   Sources
                 </h3>
                 <div className="mt-2 flex flex-col gap-2">
@@ -348,7 +366,7 @@ const OpportunityDetail = () => {
                       href={url}
                       target="_blank"
                       rel="noreferrer"
-                      className="text-sm font-medium text-blue-700 hover:underline break-words"
+                      className="yr-link inline-flex min-h-[44px] items-center rounded-md text-sm font-medium break-words focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
                     >
                       Source {index + 1}
                     </a>
@@ -358,6 +376,7 @@ const OpportunityDetail = () => {
             )}
           </div>
         </aside>
+      </div>
       </div>
     </div>
   );

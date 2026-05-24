@@ -9,8 +9,10 @@ import {
   unknownUserReducer,
   UnknownUserErrors,
 } from '../reducers/unknownUserReducer';
+import useDocumentTitle from '../hooks/useDocumentTitle';
 
 const Unknown = () => {
+  useDocumentTitle('Set up account');
   const [state, dispatch] = useReducer(unknownUserReducer, undefined, () =>
     createInitialUnknownUserState(),
   );
@@ -44,7 +46,7 @@ const Unknown = () => {
   };
 
   const validateUserType = (value: string): string | undefined => {
-    return value.trim() ? undefined : 'User type is required';
+    return value.trim() ? undefined : 'Role at Yale is required';
   };
 
   const handleUserTypeSelect = (value: string) => {
@@ -148,26 +150,25 @@ const Unknown = () => {
   };
 
   return (
-    <div className="flex items-center justify-center bg-gray-50 p-4 min-h-full">
-      <div className="w-full max-w-md bg-white rounded-lg shadow-lg p-6">
+    <div className="yr-page flex min-h-full items-center justify-center p-4">
+      <div className="yr-panel w-full max-w-md rounded-md p-6">
         <div className="mb-6">
-          <h2 className="text-xl font-bold text-gray-800 mb-2">Welcome to y/labs!</h2>
-          {/* Welcome message warning commented out for now, can be re-added later
-                        <div className="bg-amber-100 border-l-4 border-amber-500 text-amber-700 p-4 rounded">
-                            <div className="flex items-center">
-                                <svg className="h-6 w-6 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                                </svg>
-                                <p>We couldn't find your information. Please complete the form below to continue.</p>
-                            </div>
-                        </div>
-                    */}
+          <p className="yr-kicker">
+            One-minute setup
+          </p>
+          <h1 className="mt-1 text-2xl font-semibold text-slate-950">
+            Tell us how you use Yale Research
+          </h1>
+          <p className="mt-2 text-sm leading-relaxed text-slate-600">
+            This keeps the app pointed at the right research planning experience. You can start
+            searching as soon as this is saved.
+          </p>
         </div>
 
         <form onSubmit={handleSubmit}>
           <div className="mb-4">
-            <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="firstName">
-              First Name
+            <label className="mb-2 block text-sm font-semibold text-slate-900" htmlFor="firstName">
+              First name
             </label>
             <input
               id="firstName"
@@ -182,14 +183,14 @@ const Unknown = () => {
                   });
                 }
               }}
-              className={`shadow appearance-none border ${errors.firstName ? 'border-red-500' : ''} rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500`}
+              className={`min-h-[44px] w-full rounded-md border bg-white px-3 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.firstName ? 'border-red-500' : 'border-slate-300'}`}
             />
             <ErrorMessage error={errors.firstName} />
           </div>
 
           <div className="mb-4">
-            <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="lastName">
-              Last Name
+            <label className="mb-2 block text-sm font-semibold text-slate-900" htmlFor="lastName">
+              Last name
             </label>
             <input
               id="lastName"
@@ -204,13 +205,13 @@ const Unknown = () => {
                   });
                 }
               }}
-              className={`shadow appearance-none border ${errors.lastName ? 'border-red-500' : ''} rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500`}
+              className={`min-h-[44px] w-full rounded-md border bg-white px-3 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.lastName ? 'border-red-500' : 'border-slate-300'}`}
             />
             <ErrorMessage error={errors.lastName} />
           </div>
 
           <div className="mb-4">
-            <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="email">
+            <label className="mb-2 block text-sm font-semibold text-slate-900" htmlFor="email">
               Email
             </label>
             <input
@@ -226,13 +227,15 @@ const Unknown = () => {
                   });
                 }
               }}
-              className={`shadow appearance-none border ${errors.email ? 'border-red-500' : ''} rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500`}
+              className={`min-h-[44px] w-full rounded-md border bg-white px-3 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.email ? 'border-red-500' : 'border-slate-300'}`}
             />
             <ErrorMessage error={errors.email} />
           </div>
 
           <div className="mb-6" ref={userTypeRef}>
-            <label className="block text-gray-700 text-sm font-bold mb-2">User Type</label>
+            <label className="mb-2 block text-sm font-semibold text-slate-900" htmlFor="userType">
+              Role at Yale
+            </label>
             <div className="relative">
               <div className="relative">
                 <input
@@ -257,10 +260,12 @@ const Unknown = () => {
                       }
                     }, 100);
                   }}
-                  className={`shadow appearance-none border ${errors.userType ? 'border-red-500' : ''} rounded w-full py-2 px-3 pr-10 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer`}
+                  className={`min-h-[44px] w-full cursor-pointer rounded-md border bg-white px-3 pr-10 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.userType ? 'border-red-500' : 'border-slate-300'}`}
                 />
-                <div
-                  className="absolute inset-y-0 right-0 flex items-center px-2 text-gray-700 cursor-pointer"
+                <button
+                  type="button"
+                  aria-label={isUserTypeDropdownOpen ? 'Close role options' : 'Open role options'}
+                  className="absolute inset-y-0 right-0 inline-flex min-h-[44px] min-w-[44px] cursor-pointer items-center justify-center rounded-r-md text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   onClick={() => {
                     if (isUserTypeDropdownOpen) {
                       dispatch({ type: 'CLOSE_DROPDOWN' });
@@ -279,21 +284,25 @@ const Unknown = () => {
                   >
                     <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" />
                   </svg>
-                </div>
+                </button>
               </div>
 
               {isUserTypeDropdownOpen && (
                 <div
-                  className="absolute left-0 right-0 bg-white rounded-lg z-10 shadow-lg border overflow-hidden mt-1 max-h-[200px] border-gray-300"
+                  className="mt-2 max-h-[200px] overflow-hidden rounded-md border border-slate-300 bg-white shadow-lg"
+                  role="listbox"
+                  aria-label="Role at Yale options"
                   tabIndex={-1}
                 >
                   <ul className="max-h-[200px] overflow-y-auto" tabIndex={-1}>
                     {userTypeOptions.map((option, index) => (
                       <li
                         key={index}
+                        role="option"
+                        aria-selected={userType === option.value}
                         onClick={() => handleUserTypeSelect(option.value)}
-                        className={`p-2 cursor-pointer flex items-center justify-between ${
-                          focusedUserTypeIndex === index ? 'bg-blue-100' : 'hover:bg-gray-100'
+                        className={`flex min-h-[44px] cursor-pointer items-center justify-between p-2 ${
+                          focusedUserTypeIndex === index ? 'bg-[var(--yr-blue-soft)]' : 'hover:bg-slate-100'
                         }`}
                         tabIndex={-1}
                         onMouseDown={(e) => e.preventDefault()}
@@ -327,9 +336,9 @@ const Unknown = () => {
           <div className="flex justify-end">
             <button
               type="submit"
-              className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded focus:outline-none focus:shadow-outline"
+              className="inline-flex min-h-[44px] w-full items-center justify-center rounded-md bg-[var(--yr-blue)] px-6 py-2 text-sm font-semibold text-white hover:bg-blue-900 focus:outline-none focus:ring-2 focus:ring-blue-200 sm:w-auto"
             >
-              Continue
+              Continue to Yale Research
             </button>
           </div>
         </form>

@@ -35,8 +35,17 @@ const CombinedFilterDropdown = ({ tabs }: CombinedFilterDropdownProps) => {
         setIsOpen(false);
       }
     };
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsOpen(false);
+      }
+    };
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
   }, []);
 
   const totalFilters = tabs.reduce((sum, tab) => sum + tab.selected.length, 0);
@@ -101,13 +110,13 @@ const CombinedFilterDropdown = ({ tabs }: CombinedFilterDropdownProps) => {
       </button>
 
       {isOpen && (
-        <div className="absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden z-50 w-[340px]">
+        <div className="absolute left-0 top-full z-50 mt-1 w-[calc(100vw-2rem)] max-w-[340px] overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg">
           <div className="flex border-b border-gray-200 bg-gray-50 overflow-x-auto">
             {tabs.map((tab) => (
               <button
                 key={tab.key}
                 onClick={() => setActiveTabKey(tab.key)}
-                className={`flex-1 px-2 py-2.5 text-xs font-medium transition-colors relative whitespace-nowrap ${
+                className={`relative flex min-h-[44px] flex-1 items-center justify-center px-2 py-2.5 text-xs font-medium transition-colors whitespace-nowrap ${
                   activeTabKey === tab.key
                     ? 'text-blue-600 bg-white border-b-2 border-blue-500 -mb-px'
                     : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
@@ -184,7 +193,7 @@ const CombinedFilterDropdown = ({ tabs }: CombinedFilterDropdownProps) => {
                         }
                       }
                     }}
-                    className={`px-3 py-2 cursor-pointer text-sm rounded-md flex items-center gap-3 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-inset ${
+                    className={`flex min-h-[44px] cursor-pointer items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-inset ${
                       isSelected ? 'bg-blue-50 text-blue-900' : 'hover:bg-gray-50 text-gray-700'
                     }`}
                     onMouseDown={(e) => e.preventDefault()}
