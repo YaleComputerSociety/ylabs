@@ -77,8 +77,17 @@ function isPublicLink(url: string): boolean {
 
 function inferAccessRole(title: string, text: string, programCategory: string): ProgramAccessRole {
   const inferred = inferProgramAccessRole(title, text);
+  const combinedText = `${title} ${text}`;
+  if (programCategory === 'SUMMER_RESEARCH_PROGRAM' && ['FUNDING_ONLY', 'UNKNOWN'].includes(inferred)) {
+    if (/\b(?:mentors?|mentorship|faculty mentors?|work under (?:the )?mentorship|matched with (?:a |the )?mentors?)\b/i.test(combinedText)) {
+      return 'MENTOR_MATCHING';
+    }
+    if (/\b(?:summer research|research program|cohort|placement|placed into (?:a )?research teams?)\b/i.test(combinedText)) {
+      return 'STRUCTURED_ENTRY';
+    }
+  }
   if (inferred !== 'UNKNOWN') return inferred;
-  if (programCategory === 'CENTER_INTERNSHIP' && /\binternships?\b/i.test(`${title} ${text}`)) {
+  if (programCategory === 'CENTER_INTERNSHIP' && /\binternships?\b/i.test(combinedText)) {
     return 'HOSTED_INTERNSHIP';
   }
   return inferred;

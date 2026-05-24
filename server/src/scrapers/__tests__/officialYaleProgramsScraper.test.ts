@@ -36,6 +36,30 @@ describe('OfficialYaleProgramsScraper', () => {
     ]);
   });
 
+  it('treats WTI-style summer research mentorship with stipend support as mentor matching', () => {
+    const candidates = parseOfficialYaleProgramPage(
+      `
+        <main>
+          <h1>Wu Tsai Undergraduate Fellowship</h1>
+          <p>Participants carry out summer research and work under the mentorship of Wu Tsai faculty. Fellowship support includes a stipend.</p>
+        </main>
+      `,
+      {
+        sourceName: 'official-yale-programs',
+        pageUrl: 'https://wti.yale.edu/initiatives/undergraduate',
+        programCategory: 'SUMMER_RESEARCH_PROGRAM',
+        hostedByResearchEntityName: 'Wu Tsai Institute',
+        hostedByResearchEntityUrl: 'https://wti.yale.edu',
+      },
+      new Date('2026-01-01T00:00:00Z'),
+    );
+
+    expect(candidates[0]).toMatchObject({
+      programAccessRole: 'MENTOR_MATCHING',
+      programCategory: 'SUMMER_RESEARCH_PROGRAM',
+    });
+  });
+
   it('extracts a hosted center internship', () => {
     const candidates = parseOfficialYaleProgramPage(
       `
