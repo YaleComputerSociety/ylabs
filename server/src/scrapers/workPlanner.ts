@@ -81,6 +81,16 @@ export const WORK_PLANNER_DAY_MS = 24 * 60 * 60 * 1000;
 
 export const workPlannerSourcePolicies = [
   {
+    sourceName: 'lab-microsite-description-llm',
+    entityType: 'researchEntity',
+    targetFields: ['lastObservedAt'],
+    freshnessWindowMs: 7 * WORK_PLANNER_DAY_MS,
+    paid: true,
+    defaultRecurringCadence: 'weekly',
+    notes:
+      'Official microsite description evidence; use the source-level lastObservedAt heartbeat to skip fresh entities before fetch/LLM calls.',
+  },
+  {
     sourceName: 'lab-microsite-undergrad-llm',
     entityType: 'researchEntity',
     targetFields: ['lastObservedAt'],
@@ -128,12 +138,12 @@ export const workPlannerSourcePolicies = [
   },
   {
     sourceName: 'crossref',
-    entityType: 'paper',
+    entityType: 'scholarlyLink',
     targetFields: ['crossrefHydratedAt'],
     freshnessWindowMs: 90 * WORK_PLANNER_DAY_MS,
     defaultRecurringCadence: 'quarterly',
     notes:
-      'DOI metadata hydration only; never creates Yale authorship links.',
+      'DOI-backed compact scholarly-link hydration only; never creates Yale authorship links.',
   },
 ] satisfies WorkPlannerSourcePolicy[];
 

@@ -4,6 +4,8 @@ import { Observation } from '../models/observation';
 import { PostedOpportunity } from '../models/postedOpportunity';
 import { ResearchEntity } from '../models/researchEntity';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
+import { publicSourceUrl, publicSourceUrls } from '../utils/publicSourceUrl';
+import { firstUsableResearchWebsiteUrl } from '../utils/researchWebsiteUrl';
 
 export type OpportunityDetailProvenance = 'LISTING_BRIDGED' | 'SCRAPER_DERIVED';
 export type OpportunityDetailDeadlineState =
@@ -313,11 +315,12 @@ export async function getOpportunityDetail(
           .lean()
       : [];
 
-  const sourceUrls = compactStrings([
+  const sourceUrls = publicSourceUrls(compactStrings([
     opportunity.sourceUrls || [],
     pathway.sourceUrls || [],
     evidence.map((item: any) => item.sourceUrl),
-  ]);
+  ]));
+  const applicationUrl = publicSourceUrl(opportunity.applicationUrl);
   const deadlineState = getOpportunityDeadlineState(
     opportunity.status,
     opportunity.deadline || undefined,
@@ -326,7 +329,7 @@ export async function getOpportunityDetail(
   const applicationState = getOpportunityApplicationState(
     opportunity.status,
     deadlineState,
-    opportunity.applicationUrl || undefined,
+    applicationUrl,
   );
   const provenance: OpportunityDetailProvenance = opportunity.listingId
     ? 'LISTING_BRIDGED'
@@ -341,13 +344,15 @@ export async function getOpportunityDetail(
     term: opportunity.term || undefined,
     deadline: opportunity.deadline || undefined,
     deadlineState,
-    applicationUrl: opportunity.applicationUrl || undefined,
+    applicationUrl,
     applicationState,
     applicationLabel: getOpportunityApplicationLabel(applicationState),
     status: opportunity.status,
     provenance,
     provenanceLabel:
-      provenance === 'LISTING_BRIDGED' ? 'YLabs listing bridge' : 'Scraper-derived posting',
+      provenance === 'LISTING_BRIDGED'
+        ? 'Legacy YLabs listing signal'
+        : 'Scraper-derived posting',
     hoursPerWeek:
       typeof opportunity.hoursPerWeek === 'number' ? opportunity.hoursPerWeek : undefined,
     payRate: opportunity.payRate || undefined,
@@ -364,7 +369,11 @@ export async function getOpportunityDetail(
       departments: researchEntity.departments || [],
       researchAreas: researchEntity.researchAreas || [],
       school: researchEntity.school,
-      websiteUrl: researchEntity.websiteUrl || researchEntity.website,
+      websiteUrl: firstUsableResearchWebsiteUrl([
+        researchEntity.websiteUrl,
+        researchEntity.website,
+        researchEntity.sourceUrls,
+      ]) || undefined,
       shortDescription: researchEntity.shortDescription,
     },
     pathway: {
@@ -377,12 +386,12 @@ export async function getOpportunityDetail(
       bestNextStep: pathway.bestNextStep,
       compensation: pathway.compensation,
       confidence: pathway.confidence,
-      sourceUrls: compactStrings([pathway.sourceUrls || []]),
+      sourceUrls: publicSourceUrls(compactStrings([pathway.sourceUrls || []])),
     },
     evidence: evidence.map((item: any) => ({
       _id: documentId(item),
       sourceName: item.sourceName,
-      sourceUrl: item.sourceUrl,
+      sourceUrl: publicSourceUrl(item.sourceUrl),
       field: item.field,
       excerpt: evidenceExcerpt(item.value),
       confidence: item.confidence,

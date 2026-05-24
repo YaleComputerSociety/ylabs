@@ -6,11 +6,6 @@ import { fieldProvenanceSchema } from './modelPrimitives';
 
 const researchGroupMemberSchema = new mongoose.Schema(
   {
-    researchGroupId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'ResearchGroup',
-      required: false,
-    },
     researchEntityId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'ResearchEntity',
@@ -19,11 +14,6 @@ const researchGroupMemberSchema = new mongoose.Schema(
     userId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
-      required: false,
-    },
-    facultyMemberId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'FacultyMember',
       required: false,
     },
     name: {
@@ -105,13 +95,19 @@ const researchGroupMemberSchema = new mongoose.Schema(
   },
 );
 
-researchGroupMemberSchema.index({ researchGroupId: 1, userId: 1 });
-researchGroupMemberSchema.index({ researchGroupId: 1, facultyMemberId: 1, role: 1 });
 researchGroupMemberSchema.index({ userId: 1 });
-researchGroupMemberSchema.index({ facultyMemberId: 1 });
-researchGroupMemberSchema.index({ researchGroupId: 1, role: 1 });
 researchGroupMemberSchema.index({ researchEntityId: 1, userId: 1 });
-researchGroupMemberSchema.index({ researchEntityId: 1, facultyMemberId: 1, role: 1 });
+researchGroupMemberSchema.index(
+  { researchEntityId: 1, userId: 1, role: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      researchEntityId: { $exists: true },
+      userId: { $exists: true },
+      isCurrentMember: true,
+    },
+  },
+);
 researchGroupMemberSchema.index({ researchEntityId: 1, role: 1 });
 
 export const ResearchGroupMember = mongoose.model(

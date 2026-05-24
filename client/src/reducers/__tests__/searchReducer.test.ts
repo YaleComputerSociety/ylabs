@@ -220,11 +220,11 @@ describe('searchReducer', () => {
       const state = createInitialSearchState({ listings: original, isLoading: true });
       const next = searchReducer(state, {
         type: 'SEARCH_FAILURE',
-        payload: 'Posted roles are temporarily unavailable.',
+        payload: 'Legacy listing search is temporarily unavailable.',
       });
       expect(next.isLoading).toBe(false);
       expect(next.listings).toBe(original);
-      expect(next.error).toBe('Posted roles are temporarily unavailable.');
+      expect(next.error).toBe('Legacy listing search is temporarily unavailable.');
     });
   });
 

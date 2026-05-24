@@ -9,6 +9,7 @@ import useDocumentTitle from '../hooks/useDocumentTitle';
 import {
   AnalyticsActionNeededResponse,
   AnalyticsFunnelResponse,
+  AnalyticsFunnelStage,
   AnalyticsSearchQueryResponse,
   AnalyticsRange,
   AnalyticsSearchQualityResponse,
@@ -402,15 +403,16 @@ const Analytics = () => {
   const searchQueryRows = searchQueries?.queries || [];
   const actionCards = actions?.cards || [];
   const actionItems = actions?.items || [];
-  const funnelStages =
+  const fallbackFunnelStages: AnalyticsFunnelStage[] = [
+    { key: 'visitors', label: 'Visitors', count: funnel?.visitorCount || 0 },
+    { key: 'searchers', label: 'Searched', count: funnel?.searcherCount || 0 },
+    { key: 'viewers', label: 'Viewed Opportunities', count: funnel?.viewerCount || 0 },
+    { key: 'favorites', label: 'Saved', count: funnel?.favoriteCount || 0 },
+    { key: 'applications', label: 'Outreach Clicked', count: funnel?.applicantCount || 0 },
+  ].filter((stage) => stage.count > 0);
+  const funnelStages: AnalyticsFunnelStage[] =
     funnel?.stages ||
-    [
-      { key: 'visitors', label: 'Visitors', count: funnel?.visitorCount || 0 },
-      { key: 'searchers', label: 'Searched', count: funnel?.searcherCount || 0 },
-      { key: 'viewers', label: 'Viewed Opportunities', count: funnel?.viewerCount || 0 },
-      { key: 'favorites', label: 'Saved', count: funnel?.favoriteCount || 0 },
-      { key: 'applications', label: 'Outreach Clicked', count: funnel?.applicantCount || 0 },
-    ].filter((stage) => stage.count > 0);
+    fallbackFunnelStages;
   const opportunityViewDataHealth = data.engagement.opportunityViewDataHealth;
   const orphanedOpportunityViewEvents =
     opportunityViewDataHealth?.orphanedOpportunityViewEventsLast30Days || 0;

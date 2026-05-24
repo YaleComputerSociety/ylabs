@@ -71,10 +71,10 @@ const LocationProbe = () => {
 };
 
 const profile = {
-  netid: 'al123',
-  fname: 'Ada',
-  lname: 'Lovelace',
-  email: 'ada.lovelace@yale.edu',
+  netid: 'fixture-profile',
+  fname: 'Test',
+  lname: 'Person',
+  email: 'profile@example.test',
   title: 'Professor of Computation',
   primary_department: 'Computer Science',
   secondary_departments: [],
@@ -98,12 +98,12 @@ describe('Profile page', () => {
     mockedAxios.get.mockResolvedValue({ data: { profile } });
 
     render(
-      <MemoryRouter initialEntries={['/profile/al123?tab=listings']}>
+      <MemoryRouter initialEntries={['/profile/fixture-profile?tab=listings']}>
         <UserContext.Provider
           value={{
             isLoading: false,
             isAuthenticated: true,
-            user: { netId: 'student1', userType: 'student' } as any,
+            user: { netId: 'fixture-student', userType: 'student' } as any,
             checkContext: vi.fn(),
           }}
         >
@@ -114,9 +114,9 @@ describe('Profile page', () => {
       </MemoryRouter>,
     );
 
-    await screen.findByText('Ada Lovelace');
+    await screen.findByText('Test Person');
     await waitFor(() => {
-      expect(mockedAxios.get).toHaveBeenCalledWith('/profiles/al123');
+      expect(mockedAxios.get).toHaveBeenCalledWith('/profiles/fixture-profile');
     });
 
     expect(screen.queryByRole('button', { name: 'Posted Roles' })).toBeNull();
@@ -135,11 +135,11 @@ describe('Profile page', () => {
           scholarlyLinks: [
             {
               _id: 'link-1',
-              title: 'Interface superconductivity in complex oxides',
-              url: 'https://doi.org/10.1000/ahn-paper',
+              title: 'Fixture research activity',
+              url: 'https://research.example.test/activity',
               destinationKind: 'DOI',
               displaySource: 'DOI',
-              freeFullTextUrl: 'https://pmc.ncbi.nlm.nih.gov/articles/PMC1234567/pdf/',
+              freeFullTextUrl: 'https://research.example.test/activity/full-text',
               freeFullTextLabel: 'Free PDF',
               discoveredVia: 'OPENALEX',
               year: 2024,
@@ -150,12 +150,12 @@ describe('Profile page', () => {
     });
 
     render(
-      <MemoryRouter initialEntries={['/profile/al123?tab=research']}>
+      <MemoryRouter initialEntries={['/profile/fixture-profile?tab=research']}>
         <UserContext.Provider
           value={{
             isLoading: false,
             isAuthenticated: true,
-            user: { netId: 'student1', userType: 'student' } as any,
+            user: { netId: 'fixture-student', userType: 'student' } as any,
             checkContext: vi.fn(),
           }}
         >
@@ -166,15 +166,15 @@ describe('Profile page', () => {
       </MemoryRouter>,
     );
 
-    await screen.findByText('Ada Lovelace');
+    await screen.findByText('Test Person');
 
     expect(screen.getByText('Research interests')).toBeTruthy();
     expect(screen.getByText('Research Activity')).toBeTruthy();
     expect(
-      screen.getByRole('link', { name: 'Interface superconductivity in complex oxides' }).getAttribute('href'),
-    ).toBe('https://doi.org/10.1000/ahn-paper');
+      screen.getByRole('link', { name: 'Fixture research activity' }).getAttribute('href'),
+    ).toBe('https://research.example.test/activity');
     expect(screen.getByRole('link', { name: 'Free PDF' }).getAttribute('href')).toBe(
-      'https://pmc.ncbi.nlm.nih.gov/articles/PMC1234567/pdf/',
+      'https://research.example.test/activity/full-text',
     );
   });
 
@@ -186,9 +186,9 @@ describe('Profile page', () => {
           researchEntities: [
             {
               _id: 'entity-1',
-              slug: 'dept-cs-james-aspnes',
-              name: 'James Aspnes Lab',
-              shortDescription: 'Studies distributed algorithms and population protocols.',
+              slug: 'fixture-research-home',
+              name: 'Fixture Research Home',
+              shortDescription: 'Studies fixture protocols.',
               researchAreas: ['Distributed Algorithms'],
               role: 'pi',
             },
@@ -198,12 +198,12 @@ describe('Profile page', () => {
     });
 
     render(
-      <MemoryRouter initialEntries={['/profile/al123?tab=research']}>
+      <MemoryRouter initialEntries={['/profile/fixture-profile?tab=research']}>
         <UserContext.Provider
           value={{
             isLoading: false,
             isAuthenticated: true,
-            user: { netId: 'student1', userType: 'student' } as any,
+            user: { netId: 'fixture-student', userType: 'student' } as any,
             checkContext: vi.fn(),
           }}
         >
@@ -214,26 +214,24 @@ describe('Profile page', () => {
       </MemoryRouter>,
     );
 
-    await screen.findByText('Ada Lovelace');
+    await screen.findByText('Test Person');
 
-    expect(screen.getByRole('link', { name: 'James Aspnes Lab' }).getAttribute('href')).toBe(
-      '/research/dept-cs-james-aspnes',
+    expect(screen.getByRole('link', { name: 'Fixture Research Home' }).getAttribute('href')).toBe(
+      '/research/fixture-research-home',
     );
-    expect(
-      screen.getByText('Studies distributed algorithms and population protocols.'),
-    ).toBeTruthy();
+    expect(screen.getByText('Studies fixture protocols.')).toBeTruthy();
   });
 
   it('writes profile tab changes to the URL so browser history can restore them', async () => {
     mockedAxios.get.mockResolvedValue({ data: { profile } });
 
     render(
-      <MemoryRouter initialEntries={['/profile/al123']}>
+      <MemoryRouter initialEntries={['/profile/fixture-profile']}>
         <UserContext.Provider
           value={{
             isLoading: false,
             isAuthenticated: true,
-            user: { netId: 'student1', userType: 'student' } as any,
+            user: { netId: 'fixture-student', userType: 'student' } as any,
             checkContext: vi.fn(),
           }}
         >
@@ -252,16 +250,18 @@ describe('Profile page', () => {
       </MemoryRouter>,
     );
 
-    await screen.findByText('Ada Lovelace');
+    await screen.findByText('Test Person');
 
     fireEvent.click(screen.getByRole('tab', { name: 'Research' }));
-    expect(screen.getByTestId('location').textContent).toBe('/profile/al123?tab=research');
+    expect(screen.getByTestId('location').textContent).toBe(
+      '/profile/fixture-profile?tab=research',
+    );
     expect(screen.getByRole('tab', { name: 'Research' }).getAttribute('aria-selected')).toBe(
       'true',
     );
 
     fireEvent.click(screen.getByRole('tab', { name: 'Bio' }));
-    expect(screen.getByTestId('location').textContent).toBe('/profile/al123');
+    expect(screen.getByTestId('location').textContent).toBe('/profile/fixture-profile');
     expect(screen.getByRole('tab', { name: 'Bio' }).getAttribute('aria-selected')).toBe('true');
   });
 
@@ -272,19 +272,19 @@ describe('Profile page', () => {
           ...profile,
           research_interests: [],
           research_interest_summary:
-            'My research interests include the functional morphology and systematics of mammals.',
+            'My research interests include fixture morphology and synthetic systematics.',
           topics: [],
         },
       },
     });
 
     render(
-      <MemoryRouter initialEntries={['/profile/sje9?tab=research']}>
+      <MemoryRouter initialEntries={['/profile/fixture-profile?tab=research']}>
         <UserContext.Provider
           value={{
             isLoading: false,
             isAuthenticated: true,
-            user: { netId: 'student1', userType: 'student' } as any,
+            user: { netId: 'fixture-student', userType: 'student' } as any,
             checkContext: vi.fn(),
           }}
         >
@@ -295,12 +295,12 @@ describe('Profile page', () => {
       </MemoryRouter>,
     );
 
-    await screen.findByText('Ada Lovelace');
+    await screen.findByText('Test Person');
 
     expect(screen.getByTestId('research-interest-count').textContent).toBe('0');
     expect(
       screen.getByText(
-        'My research interests include the functional morphology and systematics of mammals.',
+        'My research interests include fixture morphology and synthetic systematics.',
       ),
     ).toBeTruthy();
   });
@@ -317,12 +317,12 @@ describe('Profile page', () => {
     });
 
     render(
-      <MemoryRouter initialEntries={['/profile/zy279']}>
+      <MemoryRouter initialEntries={['/profile/fixture-profile']}>
         <UserContext.Provider
           value={{
             isLoading: false,
             isAuthenticated: true,
-            user: { netId: 'student1', userType: 'student' } as any,
+            user: { netId: 'fixture-student', userType: 'student' } as any,
             checkContext: vi.fn(),
           }}
         >
@@ -333,7 +333,7 @@ describe('Profile page', () => {
       </MemoryRouter>,
     );
 
-    await screen.findByText('Ada Lovelace');
+    await screen.findByText('Test Person');
 
     expect(screen.getByText('No bio available.')).toBeTruthy();
     expect(screen.queryByText('Assistant Professor of Statistics & Data Science')).toBeNull();
@@ -346,18 +346,18 @@ describe('Profile page', () => {
           ...profile,
           bio: '',
           researchSummaryFallback:
-            'The Newburgh Lab builds instruments to chart cosmic history with radio telescopes.',
+            'The Fixture Research Home builds instruments for synthetic astronomy examples.',
         },
       },
     });
 
     render(
-      <MemoryRouter initialEntries={['/profile/ln267']}>
+      <MemoryRouter initialEntries={['/profile/fixture-profile']}>
         <UserContext.Provider
           value={{
             isLoading: false,
             isAuthenticated: true,
-            user: { netId: 'student1', userType: 'student' } as any,
+            user: { netId: 'fixture-student', userType: 'student' } as any,
             checkContext: vi.fn(),
           }}
         >
@@ -368,13 +368,13 @@ describe('Profile page', () => {
       </MemoryRouter>,
     );
 
-    await screen.findByText('Ada Lovelace');
+    await screen.findByText('Test Person');
 
     expect(screen.getByText('No bio available.')).toBeTruthy();
     expect(screen.queryByText('Research Summary')).toBeNull();
     expect(
       screen.queryByText(
-        'The Newburgh Lab builds instruments to chart cosmic history with radio telescopes.',
+        'The Fixture Research Home builds instruments for synthetic astronomy examples.',
       ),
     ).toBeNull();
   });

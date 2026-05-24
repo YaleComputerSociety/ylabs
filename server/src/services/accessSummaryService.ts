@@ -41,6 +41,20 @@ const FORMALIZATION_ONLY_PATHWAY_TYPES = new Set([
   'FELLOWSHIP_FUNDED_PROJECT',
 ]);
 
+function isLegacyListingDerived(record: any): boolean {
+  return (
+    String(record?.derivationKey || '').startsWith('listing:') ||
+    record?.sourceName === 'ylabs-listing'
+  );
+}
+
+function isCanonicalPostedOpportunity(opportunity: any): boolean {
+  return (
+    !opportunity?.listingId &&
+    !String(opportunity?.derivationKey || '').startsWith('listing:')
+  );
+}
+
 function confidenceScore(signal: any): number {
   if (typeof signal.confidenceScore === 'number') return signal.confidenceScore;
   if (signal.confidence === 'HIGH') return 0.9;
@@ -111,23 +125,26 @@ export async function listAccessSummariesForResearchEntities(
       researchEntityId: { $in: objectIds },
       archived: false,
       status: { $in: ['OPEN', 'ROLLING'] },
+      $or: [{ listingId: { $exists: false } }, { listingId: null }],
     }).lean(),
   ]);
 
   const signalsByEntity = new Map<string, any[]>();
-  for (const signal of signals as any[]) {
+  for (const signal of (signals as any[]).filter((item) => !isLegacyListingDerived(item))) {
     const key = String(signal.researchEntityId);
     signalsByEntity.set(key, [...(signalsByEntity.get(key) || []), signal]);
   }
 
   const pathwaysByEntity = new Map<string, any[]>();
-  for (const pathway of pathways as any[]) {
+  for (const pathway of (pathways as any[]).filter((item) => !isLegacyListingDerived(item))) {
     const key = String(pathway.researchEntityId);
     pathwaysByEntity.set(key, [...(pathwaysByEntity.get(key) || []), pathway]);
   }
 
   const activeOpportunityEntityIds = new Set(
-    (opportunities as any[]).map((opportunity) => String(opportunity.researchEntityId)),
+    (opportunities as any[])
+      .filter(isCanonicalPostedOpportunity)
+      .map((opportunity) => String(opportunity.researchEntityId)),
   );
 
   const out = new Map<string, AccessSummary>();

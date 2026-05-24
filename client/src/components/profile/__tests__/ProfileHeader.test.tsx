@@ -1,14 +1,15 @@
 import { render } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
+import ConfigContext, { defaultConfigContext } from '../../../contexts/ConfigContext';
 import { FacultyProfile } from '../../../types/types';
 import ProfileHeader from '../ProfileHeader';
 
 const baseProfile: FacultyProfile = {
-  netid: 'al123',
-  fname: 'Ada',
-  lname: 'Lovelace',
-  email: 'ada.lovelace@yale.edu',
+  netid: 'fixture-profile',
+  fname: 'Example',
+  lname: 'Researcher',
+  email: 'researcher@example.test',
   title: 'Professor of Computation',
   primary_department: 'Computer Science',
   secondary_departments: [],
@@ -21,30 +22,48 @@ const baseProfile: FacultyProfile = {
   ownListings: [],
 };
 
+const renderProfileHeader = (profile: FacultyProfile) =>
+  render(
+    <ConfigContext.Provider
+      value={{
+        ...defaultConfigContext,
+        departments: [
+          {
+            _id: 'cpsc',
+            abbreviation: 'CPSC',
+            name: 'Computer Science',
+            displayName: 'CPSC - Computer Science',
+            aliases: ['EASCPS Computer Science'],
+            isActive: true,
+          } as any,
+        ],
+      }}
+    >
+      <ProfileHeader profile={profile} />
+    </ConfigContext.Provider>,
+  );
+
 describe('ProfileHeader', () => {
   it('surfaces ORCID as a low-prominence profile link when an ORCID id is present', () => {
-    const { container } = render(
-      <ProfileHeader profile={{ ...baseProfile, orcid: '0000-0002-1825-0097' }} />,
-    );
+    const { container } = renderProfileHeader({
+      ...baseProfile,
+      orcid: '0000-0000-0000-001X',
+    });
 
-    const link = container.querySelector('a[href="https://orcid.org/0000-0002-1825-0097"]');
+    const link = container.querySelector('a[href="https://orcid.org/0000-0000-0000-001X"]');
     expect(link).not.toBeNull();
     expect(link?.textContent).toBe('ORCID');
-    expect(link?.getAttribute('aria-label')).toBe('Ada Lovelace ORCID profile');
+    expect(link?.getAttribute('aria-label')).toBe('Example Researcher ORCID profile');
   });
 
   it('uses profile_urls.orcid as a fallback and does not render a duplicate generic link', () => {
-    const { container } = render(
-      <ProfileHeader
-        profile={{
-          ...baseProfile,
-          profile_urls: {
-            orcid: 'https://orcid.org/0000-0002-1825-0097',
-            lab_website: 'https://example.edu/lab',
-          },
-        }}
-      />,
-    );
+    const { container } = renderProfileHeader({
+      ...baseProfile,
+      profile_urls: {
+        orcid: 'https://orcid.org/0000-0000-0000-001X',
+        lab_website: 'https://research-home.example.test',
+      },
+    });
 
     const links = Array.from(container.querySelectorAll('a')).filter(
       (link) => link.textContent === 'ORCID',
@@ -54,20 +73,16 @@ describe('ProfileHeader', () => {
   });
 
   it('deduplicates profile URL aliases that point to the same destination', () => {
-    const { container } = render(
-      <ProfileHeader
-        profile={{
-          ...baseProfile,
-          profile_urls: {
-            medicine: 'https://medicine.yale.edu/profile/david-vandijk/',
-            official: 'https://medicine.yale.edu/profile/david-vandijk/',
-          },
-        }}
-      />,
-    );
+    const { container } = renderProfileHeader({
+      ...baseProfile,
+      profile_urls: {
+        medicine: 'https://profile.example.test/example-researcher/',
+        official: 'https://profile.example.test/example-researcher/',
+      },
+    });
 
     const duplicateLinks = container.querySelectorAll(
-      'a[href="https://medicine.yale.edu/profile/david-vandijk/"]',
+      'a[href="https://profile.example.test/example-researcher/"]',
     );
     expect(duplicateLinks).toHaveLength(1);
     expect(duplicateLinks[0].textContent).toBe('medicine');
@@ -75,34 +90,31 @@ describe('ProfileHeader', () => {
   });
 
   it('renders the professor website as a first-class profile link', () => {
-    const { container } = render(
-      <ProfileHeader profile={{ ...baseProfile, website: 'https://ada.example.edu/' }} />,
-    );
+    const { container } = renderProfileHeader({
+      ...baseProfile,
+      website: 'https://researcher.example.test/',
+    });
 
-    const link = container.querySelector('a[href="https://ada.example.edu/"]');
+    const link = container.querySelector('a[href="https://researcher.example.test/"]');
     expect(link).not.toBeNull();
     expect(link?.textContent).toBe('Website');
   });
 
   it('keeps profile contact and external links large enough for touch input', () => {
-    const { container } = render(
-      <ProfileHeader
-        profile={{
-          ...baseProfile,
-          website: 'https://ada.example.edu/',
-          orcid: '0000-0002-1825-0097',
-          profile_urls: {
-            departmental: 'https://cs.yale.edu/ada-lovelace',
-          },
-        }}
-      />,
-    );
+    const { container } = renderProfileHeader({
+      ...baseProfile,
+      website: 'https://researcher.example.test/',
+      orcid: '0000-0000-0000-001X',
+      profile_urls: {
+        departmental: 'https://department.example.test/example-researcher',
+      },
+    });
 
     const links = [
-      container.querySelector('a[href="mailto:ada.lovelace@yale.edu"]'),
-      container.querySelector('a[href="https://ada.example.edu/"]'),
-      container.querySelector('a[href="https://orcid.org/0000-0002-1825-0097"]'),
-      container.querySelector('a[href="https://cs.yale.edu/ada-lovelace"]'),
+      container.querySelector('a[href="mailto:researcher@example.test"]'),
+      container.querySelector('a[href="https://researcher.example.test/"]'),
+      container.querySelector('a[href="https://orcid.org/0000-0000-0000-001X"]'),
+      container.querySelector('a[href="https://department.example.test/example-researcher"]'),
     ];
 
     for (const link of links) {
@@ -111,25 +123,34 @@ describe('ProfileHeader', () => {
   });
 
   it('does not surface legacy listing counts from faculty profiles', () => {
-    const { container } = render(
-      <ProfileHeader profile={{ ...baseProfile, ownListings: ['listing-1', 'listing-2'] }} />,
-    );
+    const { container } = renderProfileHeader({
+      ...baseProfile,
+      ownListings: ['listing-1', 'listing-2'],
+    });
 
     expect(container.textContent).not.toContain('listing');
   });
 
   it('crops profile images toward the face area instead of centering full portraits', () => {
-    const { container } = render(
-      <ProfileHeader
-        profile={{
-          ...baseProfile,
-          image_url: 'https://example.edu/full-portrait.jpg',
-        }}
-      />,
-    );
+    const { container } = renderProfileHeader({
+      ...baseProfile,
+      image_url: 'https://images.example.test/full-portrait.jpg',
+    });
 
-    const image = container.querySelector('img[alt="Ada Lovelace"]');
+    const image = container.querySelector('img[alt="Example Researcher"]');
     expect(image?.className).toContain('object-cover');
     expect(image?.className).toContain('object-top');
+  });
+
+  it('shows canonical CPSC profile department labels without raw Yale org-unit labels', () => {
+    const { container } = renderProfileHeader({
+      ...baseProfile,
+      primary_department: 'EASCPS Computer Science',
+      secondary_departments: ['EAS School of Engineering and Applied Science'],
+      departments: ['Computer Science'],
+    });
+
+    expect(container.textContent).toContain('CPSC - Computer Science');
+    expect(container.textContent).not.toContain('EASCPS');
   });
 });

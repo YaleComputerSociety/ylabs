@@ -7,6 +7,8 @@ import { Source } from '../models/source';
 import { ResearchEntity } from '../models/researchEntity';
 import { EntryPathway } from '../models/entryPathway';
 import { PostedOpportunity } from '../models/postedOpportunity';
+import { getMeiliIndex } from '../utils/meiliClient';
+import { getResearchEntitySemanticIndexReadiness } from '../services/researchEntitySearchIndexService';
 import {
   DEFAULT_ACCEPTED_INPUT_ROOT,
   buildAcceptedInputsStatus,
@@ -178,6 +180,41 @@ async function collectionCount(name: string): Promise<number> {
   return db.collection(name).estimatedDocumentCount();
 }
 
+async function loadResearchSemanticGate(): Promise<GateStatus & {
+  documentCount?: number;
+  embeddedDocumentCount?: number;
+}> {
+  if (process.env.RESEARCH_SEARCH_SEMANTIC !== 'true') {
+    return {
+      status: 'deferred',
+      message:
+        'Research semantic search is not enabled. Set RESEARCH_SEARCH_SEMANTIC=true, configure the Meili default embedder, and rebuild researchentities before semantic production promotion.',
+      documentCount: 0,
+      embeddedDocumentCount: 0,
+    };
+  }
+
+  try {
+    const index = await getMeiliIndex('researchentities');
+    const readiness = await getResearchEntitySemanticIndexReadiness(index);
+    return {
+      status: readiness.status,
+      message: readiness.message,
+      documentCount: readiness.documentCount,
+      embeddedDocumentCount: readiness.embeddedDocumentCount,
+    };
+  } catch (error) {
+    return {
+      status: 'blocked',
+      message: `Unable to read ResearchEntity Meilisearch semantic stats: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+      documentCount: 0,
+      embeddedDocumentCount: 0,
+    };
+  }
+}
+
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
   const mongoTarget = describeMongoTarget(process.env.MONGODBURL);
@@ -206,6 +243,7 @@ async function main(): Promise<void> {
   const pathwayRuntimeReady =
     runtimeBackend === 'mongo' ||
     (runtimeBackend === 'meili' && options.acceptPathwayMeili);
+  const researchSemanticSearch = await loadResearchSemanticGate();
 
   const gates = {
     betaBackup: {
@@ -240,6 +278,7 @@ async function main(): Promise<void> {
             : 'Set PATHWAY_SEARCH_BACKEND=mongo before Beta relevance review completes, or pass --accept-pathway-meili after product review.',
       backend: runtimeBackend,
     },
+    researchSemanticSearch,
     fellowshipInput: summarizeFellowshipGate(acceptedInputs),
     scholarInput: summarizeFileGate(
       acceptedInputs.scholar,
@@ -280,9 +319,10 @@ async function main(): Promise<void> {
       sourceRun:
         'SCRAPER_ENV=beta ALLOW_NON_PROD_SCRAPER_WRITES=true yarn scrape run --source <source> --auto-materialize',
       pathwayRelevance: 'PATHWAY_SEARCH_BACKEND=mongo yarn --cwd server pathway:relevance-review',
-      paperAuthorshipAudit: 'yarn --cwd server papers:authorship-audit',
       meiliRebuild:
         'yarn --cwd server meili:rebuild-pathways --clear && yarn --cwd server meili:rebuild-research-entities --clear',
+      researchSemanticReadiness:
+        'RESEARCH_SEARCH_SEMANTIC=true yarn --cwd server beta:readiness --confirm-beta-backup --strict',
       acceptedMeiliReadiness:
         'PATHWAY_SEARCH_BACKEND=meili yarn --cwd server beta:readiness --confirm-beta-backup --accept-pathway-meili --strict',
     },

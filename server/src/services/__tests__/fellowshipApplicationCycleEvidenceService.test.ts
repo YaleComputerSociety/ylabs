@@ -66,6 +66,26 @@ describe('fellowshipApplicationCycleEvidenceService', () => {
     });
   });
 
+  it('does not mark malformed absolute URLs as source-backed evidence', () => {
+    const evidence = buildFellowshipApplicationCycleEvidence(
+      {
+        title: 'Summer Research Fellowship',
+        summary: 'Supports undergraduate research projects and proposals.',
+        applicationLink: 'https://',
+        links: [{ label: 'Apply', url: 'https://' }],
+        isAcceptingApplications: true,
+      },
+      now,
+    );
+
+    expect(evidence).toMatchObject({
+      sourceUrls: [],
+      sourceBacked: false,
+      activeCycle: false,
+      supportsOfficialApplicationRoute: false,
+    });
+  });
+
   it('keeps cycle activity cautious when dates contradict an active cycle', () => {
     const futureOpenEvidence = buildFellowshipApplicationCycleEvidence(
       {

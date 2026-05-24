@@ -3,13 +3,7 @@
  */
 import { User } from '../models/index';
 import { NotFoundError } from '../utils/errors';
-import {
-  readListing,
-  confirmListing,
-  unconfirmListing,
-  addFavorite,
-  removeFavorite,
-} from './listingService';
+import { publicSourceUrls } from '../utils/publicSourceUrl';
 import {
   addFavorite as addFellowshipFavorite,
   removeFavorite as removeFellowshipFavorite,
@@ -80,27 +74,14 @@ export function sanitizeSavedPathwayPlanForStorage(
   };
 }
 
-const isHttpUrl = (value: unknown): value is string => {
-  if (typeof value !== 'string' || value.trim().length === 0) {
-    return false;
-  }
-
-  try {
-    const url = new URL(value);
-    return url.protocol === 'http:' || url.protocol === 'https:';
-  } catch {
-    return false;
-  }
-};
-
 const sourceLinksForPathwayExport = (pathway: PathwaySearchHit): string[] =>
   Array.from(
     new Set(
-      [
+      publicSourceUrls([
         ...(pathway.sourceUrls || []),
         ...(pathway.evidence || []).map((item) => item.sourceUrl),
         pathway.activePostedOpportunity?.applicationUrl,
-      ].filter(isHttpUrl),
+      ]),
     ),
   );
 
@@ -268,23 +249,11 @@ export const updateUser = async (id: any, data: any) => {
 
 export const confirmUser = async (id: any) => {
   const user = await updateUser(id, { userConfirmed: true });
-  for (const id of user.ownListings) {
-    const listing = await readListing(id);
-    if (listing && listing.ownerId === user.netid) {
-      await confirmListing(id, user.netid);
-    }
-  }
   return user;
 };
 
 export const unconfirmUser = async (id: any) => {
   const user = await updateUser(id, { userConfirmed: false });
-  for (const id of user.ownListings) {
-    const listing = await readListing(id);
-    if (listing && listing.ownerId === user.netid) {
-      await unconfirmListing(id, user.netid);
-    }
-  }
   return user;
 };
 
@@ -369,58 +338,29 @@ export const clearOwnListings = async (id: any) => {
   return newUser;
 };
 
-export const addFavListings = async (id: any, Listings: [mongoose.Types.ObjectId]) => {
-  const user = await readUser(id);
-
-  user.favListings.unshift(...Listings);
-  user.favListings = Array.from(
-    new Set(user.favListings.map((listing: any) => listing.toString())),
-  ).map((listing: string) => new mongoose.Types.ObjectId(listing));
-
-  const newUser = await updateUser(id, { favListings: user.favListings });
-
-  for (const listingId of Listings) {
-    await addFavorite(listingId.toString(), id);
-  }
-
-  return newUser;
-};
-
-export const deleteFavListings = async (id: any, removedListings: [mongoose.Types.ObjectId]) => {
-  const user = await readUser(id);
-
-  const removedListingsStrings = removedListings.map((listing) => listing.toString());
-
-  user.favListings = user.favListings.filter(
-    (listing: any) => removedListingsStrings.indexOf(listing.toString()) < 0,
-  );
-
-  const newUser = await updateUser(id, { favListings: user.favListings });
-
-  for (const listingId of removedListings) {
-    await removeFavorite(listingId.toString(), id);
-  }
-
-  return newUser;
-};
-
 export const clearFavListings = async (id: any) => {
   const newUser = await updateUser(id, { favListings: [] });
 
   return newUser;
 };
 
-export const addFavFellowships = async (id: any, fellowships: [mongoose.Types.ObjectId]) => {
+export const addFavFellowships = async (
+  id: any,
+  fellowships: Array<mongoose.Types.ObjectId | string>,
+) => {
   const user = await readUser(id);
+  const fellowshipObjectIds = fellowships.map(
+    (fellowship) => new mongoose.Types.ObjectId(fellowship.toString()),
+  );
 
-  user.favFellowships.unshift(...fellowships);
+  user.favFellowships.unshift(...fellowshipObjectIds);
   user.favFellowships = Array.from(new Set(user.favFellowships.map((f: any) => f.toString()))).map(
     (f: string) => new mongoose.Types.ObjectId(f),
   ) as mongoose.Types.ObjectId[];
 
   const newUser = await updateUser(id, { favFellowships: user.favFellowships });
 
-  for (const fellowshipId of fellowships) {
+  for (const fellowshipId of fellowshipObjectIds) {
     await addFellowshipFavorite(fellowshipId.toString());
   }
 
@@ -429,7 +369,7 @@ export const addFavFellowships = async (id: any, fellowships: [mongoose.Types.Ob
 
 export const deleteFavFellowships = async (
   id: any,
-  removedFellowships: [mongoose.Types.ObjectId],
+  removedFellowships: Array<mongoose.Types.ObjectId | string>,
 ) => {
   const user = await readUser(id);
 
@@ -454,11 +394,17 @@ export const clearFavFellowships = async (id: any) => {
   return newUser;
 };
 
-export const addFavPathways = async (id: any, pathways: [mongoose.Types.ObjectId]) => {
+export const addFavPathways = async (
+  id: any,
+  pathways: Array<mongoose.Types.ObjectId | string>,
+) => {
   const user = await readUser(id);
+  const pathwayObjectIds = pathways.map(
+    (pathway) => new mongoose.Types.ObjectId(pathway.toString()),
+  );
 
   user.favPathways = user.favPathways || [];
-  user.favPathways.unshift(...pathways);
+  user.favPathways.unshift(...pathwayObjectIds);
   user.favPathways = Array.from(new Set(user.favPathways.map((p: any) => p.toString()))).map(
     (p: string) => new mongoose.Types.ObjectId(p),
   ) as mongoose.Types.ObjectId[];
@@ -470,7 +416,7 @@ export const addFavPathways = async (id: any, pathways: [mongoose.Types.ObjectId
 
 export const deleteFavPathways = async (
   id: any,
-  removedPathways: [mongoose.Types.ObjectId],
+  removedPathways: Array<mongoose.Types.ObjectId | string>,
 ) => {
   const user = await readUser(id);
 

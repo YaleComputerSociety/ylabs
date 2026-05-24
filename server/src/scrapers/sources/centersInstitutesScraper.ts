@@ -33,6 +33,11 @@ import { normalizeName, slugify, splitName } from '../utils/scraperHelpers';
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
 const MAX_PAGES_PER_CENTER = 30;
+const RELATIONSHIP_CENTER_KEYS = new Set([
+  'wu-tsai',
+  'yale-cancer-center',
+  'yale-quantum-institute',
+]);
 
 export type CenterKind = 'center' | 'institute' | 'program' | 'initiative';
 export type MemberRole = 'director' | 'co-director' | 'core-faculty' | 'affiliated';
@@ -535,6 +540,52 @@ export function memberToObservations(
   return obs;
 }
 
+function facultyResearchAreaKey(memberName: string): string {
+  return `faculty-research-area-${slugify(memberName)}`.slice(0, 100);
+}
+
+function facultyResearchAreaName(memberName: string): string {
+  return `${normalizeName(memberName)} Research`.trim();
+}
+
+/**
+ * Conservative institute-to-research-home relationship observations.
+ *
+ * A center member page proves affiliation with the umbrella entity, but not a
+ * lab opening or standalone research home. Emit only the relationship. The
+ * materializer can resolve `faculty-research-area-*` target keys to an existing
+ * PI-led ResearchEntity when one is known; otherwise the relationship is skipped
+ * instead of minting a weak duplicate shell.
+ */
+export function centerMemberRelationshipObservations(
+  member: CenterMember,
+  config: CenterConfig,
+  sourceUrl: string,
+): ObservationInput[] {
+  if (!RELATIONSHIP_CENTER_KEYS.has(config.centerKey)) return [];
+
+  const cleaned = normalizeName(member.name);
+  const targetEntityKey = facultyResearchAreaKey(cleaned);
+  if (!cleaned || !targetEntityKey) return [];
+
+  const sourceEntityKey = `center-${config.centerKey}`;
+  const relationshipType = 'MEMBER_RESEARCH_AREA';
+  const relationshipKey = `${sourceEntityKey}:${targetEntityKey}:${relationshipType}`;
+  const relationshipBase = {
+    entityType: 'researchEntityRelationship' as const,
+    entityKey: relationshipKey,
+    sourceUrl,
+  };
+
+  return [
+    { ...relationshipBase, field: 'sourceEntityKey', value: sourceEntityKey },
+    { ...relationshipBase, field: 'targetEntityKey', value: targetEntityKey },
+    { ...relationshipBase, field: 'relationshipType', value: relationshipType },
+    { ...relationshipBase, field: 'evidenceStrength', value: 'MODERATE' },
+    { ...relationshipBase, field: 'confidence', value: 0.72 },
+  ];
+}
+
 /**
  * Emit a child ResearchGroup discovered on a meta-index page (Jackson School).
  * Each child becomes its own `center-jackson-<slug>` ResearchGroup.
@@ -670,6 +721,11 @@ export class CentersInstitutesScraper implements IScraper {
           await ctx.emit(memberObs);
           totalObs += memberObs.length;
           totalMembers++;
+        }
+        const relationshipObs = centerMemberRelationshipObservations(member, config, sourceUrl);
+        if (relationshipObs.length > 0) {
+          await ctx.emit(relationshipObs);
+          totalObs += relationshipObs.length;
         }
       }
 

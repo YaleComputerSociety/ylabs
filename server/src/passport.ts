@@ -13,23 +13,78 @@ import { AnalyticsEventType } from './models/index';
 const STALE_THRESHOLD_MS = 30 * 24 * 60 * 60 * 1000;
 
 /**
- * Resolve a caller-supplied redirect to a safe same-origin target.
- * Accepts only relative paths ("/foo") or absolute URLs whose host matches
- * SERVER_BASE_URL. Anything else returns null.
+ * Resolve a caller-supplied redirect to a safe app target.
+ * Accepts relative paths, configured app origins, and the local Vite client
+ * origin during development.
  */
-function safeRedirectTarget(raw: unknown): string | null {
+export function safeRedirectTarget(raw: unknown): string | null {
   if (typeof raw !== 'string' || raw.length === 0) return null;
   if (raw.startsWith('/') && !raw.startsWith('//')) return raw;
   try {
-    const base = process.env.SERVER_BASE_URL ?? '';
-    if (!base) return null;
-    const baseHost = new URL(base).host;
     const target = new URL(raw);
-    if (target.host === baseHost) return target.toString();
+    const allowedOrigins = [process.env.SERVER_BASE_URL, process.env.CLIENT_BASE_URL]
+      .filter((value): value is string => Boolean(value))
+      .map((value) => new URL(value).origin);
+
+    if (process.env.NODE_ENV === 'development') {
+      allowedOrigins.push('http://localhost:3000');
+    }
+
+    if (allowedOrigins.includes(target.origin)) return target.toString();
   } catch {
     return null;
   }
   return null;
+}
+
+const DEV_LOGIN_USER_TYPES = new Set([
+  'undergraduate',
+  'graduate',
+  'professor',
+  'faculty',
+  'admin',
+  'unknown',
+]);
+
+export function buildDevLoginUser({
+  netid,
+  userType,
+  redirect,
+}: {
+  netid?: unknown;
+  userType?: unknown;
+  redirect?: unknown;
+} = {}) {
+  const requestedNetid = typeof netid === 'string' && netid.trim() ? netid.trim() : undefined;
+  const requestedUserType =
+    typeof userType === 'string' && DEV_LOGIN_USER_TYPES.has(userType) ? userType : undefined;
+  const safeRedirect = safeRedirectTarget(redirect);
+  const derivedUserType =
+    requestedUserType || (safeRedirect?.includes('/analytics') ? 'admin' : 'undergraduate');
+  const defaultNetid = derivedUserType === 'admin' ? 'devadmin' : 'test123';
+  const netId = requestedNetid || defaultNetid;
+
+  return {
+    netId,
+    userType: derivedUserType,
+    userConfirmed: true,
+    profileVerified: true,
+  };
+}
+
+async function upsertDevLoginUser(devUser: ReturnType<typeof buildDevLoginUser>) {
+  const userData = {
+    netid: devUser.netId,
+    fname: 'Dev',
+    lname: devUser.userType === 'admin' ? 'Admin' : 'User',
+    email: `${devUser.netId}@example.test`,
+    userType: devUser.userType,
+    userConfirmed: devUser.userConfirmed,
+    profileVerified: devUser.profileVerified,
+  };
+
+  const existing = await validateUser(devUser.netId);
+  return existing ? updateUser(devUser.netId, userData) : createUser(userData);
 }
 
 /**
@@ -310,14 +365,15 @@ router.get('/logout', async (req, res) => {
 
 if (process.env.NODE_ENV === 'development') {
   router.get('/dev-login', async (req, res) => {
-    const testUser = {
-      netId: 'test123',
-      userType: 'student',
-      userConfirmed: true,
-    };
+    const testUser = buildDevLoginUser({
+      netid: req.query?.netid,
+      userType: req.query?.userType,
+      redirect: req.query?.redirect,
+    });
 
     try {
       console.log('Dev login with hardcoded user:', testUser);
+      await upsertDevLoginUser(testUser);
 
       req.logIn(testUser, async (err) => {
         if (err) {

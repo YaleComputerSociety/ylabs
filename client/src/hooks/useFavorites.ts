@@ -1,12 +1,12 @@
 /**
- * Favorites state + optimistic toggle for listings or fellowships.
- * Keeps load/update endpoints local so the two kinds share all orchestration.
+ * Favorites state + optimistic toggle for saved collections.
+ * Keeps load/update endpoints local so the supported kinds share orchestration.
  */
 import { useCallback, useEffect, useState, type MouseEvent } from 'react';
 import axios from '../utils/axios';
 import swal from 'sweetalert';
 
-type FavoritesKind = 'listings' | 'fellowships' | 'pathways';
+type FavoritesKind = 'listings' | 'programs' | 'researchPlans';
 
 interface Endpoints {
   load: string;
@@ -26,19 +26,19 @@ const ENDPOINTS: Record<FavoritesKind, Endpoints> = {
     warnOnLoadError: false,
     warnOnMutationError: true,
   },
-  fellowships: {
-    load: '/users/favFellowshipIds',
-    responseKey: 'favFellowshipIds',
-    collectionPath: '/users/favFellowships',
-    payloadKey: 'favFellowships',
+  programs: {
+    load: '/users/savedProgramIds',
+    responseKey: 'savedProgramIds',
+    collectionPath: '/users/savedPrograms',
+    payloadKey: 'savedPrograms',
     warnOnLoadError: false,
     warnOnMutationError: false,
   },
-  pathways: {
-    load: '/users/favPathwayIds',
-    responseKey: 'favPathwayIds',
-    collectionPath: '/users/favPathways',
-    payloadKey: 'favPathways',
+  researchPlans: {
+    load: '/users/savedResearchPlanIds',
+    responseKey: 'savedResearchPlanIds',
+    collectionPath: '/users/savedResearchPlans',
+    payloadKey: 'savedResearchPlans',
     warnOnLoadError: false,
     warnOnMutationError: false,
   },

@@ -9,6 +9,8 @@ import mongoose from 'mongoose';
 import { Observation } from '../models/observation';
 import { ScrapeRun } from '../models/scrapeRun';
 import { Source } from '../models/source';
+import type { PostMaterializationIntegritySummary } from './integrityGate';
+import { PAPER_AUTHORSHIP_EVIDENCE_FIELD } from './paperAuthorshipPolicy';
 import type { ScraperFetchMetrics, ScraperMetrics } from './types';
 
 export interface ReportObservation {
@@ -40,6 +42,7 @@ export interface ReportScrapeRun {
   materializationConflicts?: number;
   materializationErrors?: number;
   postMaterializationMetrics?: ReportPostMaterializationMetrics;
+  postMaterializationIntegrity?: PostMaterializationIntegritySummary;
   errors?: Array<{ message?: string; context?: unknown; at?: Date | string }>;
   options?: Record<string, unknown>;
   fetchMetrics?: ScraperFetchMetrics;
@@ -132,6 +135,7 @@ export interface ScrapeRunReport {
     conflicts: number;
     errors: number;
   };
+  postMaterializationIntegrity?: PostMaterializationIntegritySummary;
   fetchMetrics?: ScraperFetchMetrics;
   metrics?: ScraperMetrics;
   coverage: {
@@ -224,6 +228,14 @@ function serializeValue(value: unknown): string {
   }
 }
 
+function isRepeatableRunReportField(entityType: string, field: string): boolean {
+  if (entityType === 'paper' && field === PAPER_AUTHORSHIP_EVIDENCE_FIELD) return true;
+  return (
+    (entityType === 'researchEntity' || entityType === 'researchGroup') &&
+    (field === 'inferredPiUserId' || field === 'inferredPiUserKey')
+  );
+}
+
 function topEntries(map: Record<string, number>, limit: number): Array<{ field: string; count: number }> {
   return Object.entries(map)
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
@@ -299,6 +311,25 @@ const ACCESS_ARTIFACT_TYPES = [
   'ContactRoute',
   'PostedOpportunity',
 ] as const;
+const ACCESS_MATERIALIZATION_EVIDENCE_FIELDS = new Set([
+  'independentStudyCourses',
+  'undergradAccessEvidence',
+  'undergradEvidenceQuote',
+  'undergradRoleEvidenceQuote',
+  'undergradConstraintQuote',
+  'contactInstructionsQuote',
+  'joinPageUrl',
+  'applicationUrl',
+  'applicationLink',
+]);
+
+function hasAccessMaterializationEvidence(observations: ReportObservation[]): boolean {
+  return observations.some(
+    (observation) =>
+      observation.entityType === 'listing' ||
+      ACCESS_MATERIALIZATION_EVIDENCE_FIELDS.has(observation.field || ''),
+  );
+}
 
 function metricForArtifact(
   metrics: Required<ReportPostMaterializationMetrics>,
@@ -432,7 +463,13 @@ export function buildScrapeRunReport(
   }
 
   const conflictCandidates = Array.from(valuesByEntityField.entries())
-    .filter(([, values]) => values.size > 1)
+    .filter(([key, values]) => {
+      if (values.size <= 1) return false;
+      const label = labelsByEntityField.get(key);
+      if (!label) return true;
+      if (isRepeatableRunReportField(label.entityType, label.field)) return false;
+      return true;
+    })
     .map(([key, values]) => {
       const label = labelsByEntityField.get(key);
       return {
@@ -456,6 +493,11 @@ export function buildScrapeRunReport(
     run.postMaterializationMetrics,
     coverageSource,
   );
+  const isDryRun = run.options?.dryRun === true;
+  const reportedObservationCount =
+    observations.length > 0 ? observations.length : isDryRun ? run.observationCount || 0 : 0;
+  const reportedEntitiesObserved =
+    entities.size > 0 ? entities.size : isDryRun ? run.entitiesObserved || 0 : 0;
   const workPlanner = run.metrics?.workPlanner;
   const workPlannerSkippedAll =
     !!workPlanner &&
@@ -472,7 +514,7 @@ export function buildScrapeRunReport(
   if (run.status === 'failure') warnings.push('Run failed; do not materialize without inspecting errors.');
   if (run.status === 'partial') warnings.push('Run completed partially; inspect source-level logs/errors.');
   if (run.invalidated) warnings.push('Run has been invalidated.');
-  if (observations.length === 0 && !workPlannerSkippedAll) {
+  if (reportedObservationCount === 0 && !workPlannerSkippedAll) {
     warnings.push('Run produced zero observations.');
   }
   if (missingEntityIdentifierCount > 0) {
@@ -490,43 +532,56 @@ export function buildScrapeRunReport(
   if (!coverageSource) {
     warnings.push(`No Source coverage metadata found for "${run.sourceName}".`);
   } else if (
-    observations.length > 0 &&
+    reportedObservationCount > 0 &&
     !coverageSource.artifactTypes.values.includes('Observation')
   ) {
     warnings.push(
-      `Source coverage metadata does not list Observation artifacts, but run emitted ${observations.length} observation(s).`,
+      `Source coverage metadata does not list Observation artifacts, but run emitted ${reportedObservationCount} observation(s).`,
     );
   }
   if (
     coverageSource &&
-    observations.length === 0 &&
+    reportedObservationCount === 0 &&
     run.status === 'success' &&
     !workPlannerSkippedAll
   ) {
     warnings.push('Source coverage metadata exists, but successful run emitted zero observations.');
   }
-  if (coverageFetch.succeeded > 0 && observations.length === 0) {
+  if (coverageFetch.succeeded > 0 && reportedObservationCount === 0) {
     warnings.push(
       `${coverageFetch.succeeded} fetch(es) succeeded, but run emitted zero observations.`,
     );
   }
-  if (coverageFetch.attempts > 0 && coverageFetch.succeeded === 0 && observations.length > 0) {
+  if (coverageFetch.attempts > 0 && coverageFetch.succeeded === 0 && reportedObservationCount > 0) {
     warnings.push(
-      `Run emitted ${observations.length} observation(s), but fetch metrics report zero successful fetches.`,
+      `Run emitted ${reportedObservationCount} observation(s), but fetch metrics report zero successful fetches.`,
     );
   }
   if (postMaterialization) {
+    const accessEvidenceObserved = hasAccessMaterializationEvidence(observations);
     if (
       postMaterialization.expectedArtifactTypes.length > 0 &&
       postMaterialization.totalAccessArtifacts === 0 &&
-      run.status === 'success'
+      run.status === 'success' &&
+      accessEvidenceObserved
     ) {
       warnings.push(
         `Source coverage expects access artifacts (${postMaterialization.expectedArtifactTypes.join(', ')}), but post-materialization metrics report zero access artifacts.`,
       );
-    } else if (postMaterialization.missingExpectedArtifactTypes.length > 0) {
+    } else if (
+      postMaterialization.missingExpectedArtifactTypes.length > 0 &&
+      accessEvidenceObserved
+    ) {
       warnings.push(
         `Post-materialization metrics are missing expected artifact type(s): ${postMaterialization.missingExpectedArtifactTypes.join(', ')}.`,
+      );
+    }
+    if (
+      postMaterialization.expectedArtifactTypes.length === 0 &&
+      postMaterialization.totalAccessArtifacts > 0
+    ) {
+      warnings.push(
+        `Source coverage does not expect access artifacts, but post-materialization created ${postMaterialization.totalAccessArtifacts} access artifact(s).`,
       );
     }
     if (postMaterialization.guardedContactRoutes > 0) {
@@ -539,6 +594,22 @@ export function buildScrapeRunReport(
         `${postMaterialization.staleEvidenceSkipped} stale evidence item(s) skipped during materialization.`,
       );
     }
+  }
+  const fellowshipCatalog = run.metrics?.fellowshipCatalog;
+  if ((fellowshipCatalog?.reviewRequired || 0) > 0) {
+    warnings.push(
+      `${fellowshipCatalog?.reviewRequired} fellowship catalog row(s) require operator review.`,
+    );
+  }
+  if ((fellowshipCatalog?.missingPreviouslySeen || 0) > 0) {
+    warnings.push(
+      `${fellowshipCatalog?.missingPreviouslySeen} previously seen fellowship source row(s) were missing from this run; no rows were archived automatically.`,
+    );
+  }
+  if (run.postMaterializationIntegrity?.status === 'failure') {
+    warnings.push(
+      `Post-materialization integrity gate failed: ${run.postMaterializationIntegrity.failureNames.join(', ')}.`,
+    );
   }
 
   return {
@@ -554,14 +625,14 @@ export function buildScrapeRunReport(
       options: run.options || {},
     },
     observations: {
-      total: observations.length,
-      entitiesObserved: entities.size,
+      total: reportedObservationCount,
+      entitiesObserved: reportedEntitiesObserved,
       byEntityType,
       byField,
       topFields: topEntries(byField, 15),
-      active: observations.length - supersededCount,
+      active: Math.max(0, reportedObservationCount - supersededCount),
       superseded: supersededCount,
-      duplicateRate: observations.length > 0 ? supersededCount / observations.length : 0,
+      duplicateRate: reportedObservationCount > 0 ? supersededCount / reportedObservationCount : 0,
     },
     materialization: {
       created: run.entitiesCreated || 0,
@@ -571,12 +642,13 @@ export function buildScrapeRunReport(
       conflicts: run.materializationConflicts || 0,
       errors: run.materializationErrors || 0,
     },
+    postMaterializationIntegrity: run.postMaterializationIntegrity,
     fetchMetrics: run.fetchMetrics,
     metrics: run.metrics,
     coverage: {
       source: coverageSource,
       fetch: coverageFetch,
-      observationsEmitted: observations.length,
+      observationsEmitted: reportedObservationCount,
       materializationWrites,
       postMaterialization,
       workPlanner: run.metrics?.workPlanner,

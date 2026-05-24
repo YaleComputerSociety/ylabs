@@ -4,6 +4,7 @@
 import Button from '@mui/material/Button';
 import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
+import { buildApiUrl } from '../utils/apiBaseUrl';
 
 const normalizeReturnUrl = (value?: string | null): string => {
   if (!value) return '';
@@ -22,10 +23,6 @@ interface SignInButtonProps {
 }
 
 const SignInButton = ({ label = 'Sign in with Yale CAS' }: SignInButtonProps) => {
-  const backendBaseURL = window.location.host.includes('yalelabs.io')
-    ? 'https://yalelabs.io'
-    : import.meta.env.VITE_APP_SERVER;
-
   const [redirectParam, setRedirectParam] = useState('');
   const location = useLocation();
   const locationState = location.state as { from?: string } | null;
@@ -41,7 +38,7 @@ const SignInButton = ({ label = 'Sign in with Yale CAS' }: SignInButtonProps) =>
     if (savedPath) localStorage.removeItem('logoutReturnPath');
   }, [locationState?.from]);
 
-  const finalUrl = `${backendBaseURL}/api/cas${redirectParam}`;
+  const finalUrl = buildApiUrl(`/cas${redirectParam}`);
 
   return (
     <Button

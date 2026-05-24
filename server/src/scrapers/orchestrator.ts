@@ -76,7 +76,7 @@ export class ScraperOrchestrator {
           sourceWeight: source.defaultWeight,
           dryRun: options.dryRun,
         });
-        observationCount += res.inserted;
+        observationCount += options.dryRun ? inputs.length : res.inserted;
         for (const o of inputs) {
           const key = `${o.entityType}:${o.entityId || o.entityKey || ''}`;
           observedEntityKeys.add(key);
@@ -92,6 +92,9 @@ export class ScraperOrchestrator {
 
     try {
       const result = (await scraper.run(ctx)) as ScraperResult;
+      const resultEntitiesObserved = Number.isFinite(result.entitiesObserved)
+        ? result.entitiesObserved
+        : entitiesObserved;
       await ScrapeRun.updateOne(
         { _id: run._id },
         {
@@ -99,7 +102,7 @@ export class ScraperOrchestrator {
             finishedAt: new Date(),
             status: errors.length === 0 ? 'success' : 'partial',
             observationCount,
-            entitiesObserved,
+            entitiesObserved: resultEntitiesObserved,
             fetchMetrics: result.fetchMetrics,
             metrics: result.metrics,
             errors,

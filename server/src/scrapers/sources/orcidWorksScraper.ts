@@ -2,16 +2,14 @@
  * ORCID public works scraper.
  *
  * ORCID records are accepted Yale-user identifiers in this pipeline. A work
- * listed on an accepted user's public ORCID record is therefore authorship
- * evidence for that user. The paper metadata can then be enriched later by
- * arXiv/OpenAlex/Crossref without those sources inventing faculty links.
+ * listed on an accepted user's public ORCID record is therefore a compact
+ * scholarly-link signal for that user. Full paper metadata stays outside the
+ * canonical Yale Research data model.
  */
 import axios from 'axios';
 import { User } from '../../models/user';
-import {
-  PAPER_AUTHORSHIP_EVIDENCE_FIELD,
-  type PaperAuthorshipEvidence,
-} from '../paperAuthorshipPolicy';
+import { buildScholarlyLinkFromPaper } from '../../services/scholarlyLinkService';
+import { type PaperAuthorshipEvidence } from '../paperAuthorshipPolicy';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 
 const ORCID_BASE = 'https://pub.orcid.org/v3.0';
@@ -170,17 +168,23 @@ export function parseOrcidWorks(payload: unknown): ParsedOrcidWork[] {
   return works;
 }
 
-function entityKeyForWork(work: ParsedOrcidWork): string | undefined {
+function workIdentityKey(work: ParsedOrcidWork): string | undefined {
   if (work.arxivId) return work.arxivId;
   if (work.doi) return `doi:${work.doi}`;
   return undefined;
+}
+
+function entityKeyForWork(work: ParsedOrcidWork, owner: OrcidOwner): string | undefined {
+  const workKey = workIdentityKey(work);
+  if (!workKey) return undefined;
+  return `user:${owner.userId}:${workKey}`;
 }
 
 export function orcidWorkSummaryToObservations(
   work: ParsedOrcidWork,
   owner: OrcidOwner,
 ): ObservationInput[] {
-  const entityKey = entityKeyForWork(work);
+  const entityKey = entityKeyForWork(work, owner);
   if (!entityKey) return [];
 
   const sourceUrl =
@@ -199,32 +203,36 @@ export function orcidWorkSummaryToObservations(
     observedAt: new Date(),
   };
   const base = {
-    entityType: 'paper' as const,
+    entityType: 'scholarlyLink' as const,
     entityKey,
     sourceUrl,
   };
-  const fields: Array<[string, unknown]> = [
-    ['title', work.title],
-    ['doi', work.doi],
-    ['arxivId', work.arxivId],
-    ['year', work.year],
-    ['venue', work.venue],
-    ['url', sourceUrl],
-    ['publicationTypes', work.type ? [work.type] : undefined],
-    ['externalIds', work.externalIds],
-    [PAPER_AUTHORSHIP_EVIDENCE_FIELD, evidence],
-    ['sources', ['orcid']],
-  ];
+  const link = buildScholarlyLinkFromPaper(
+    {
+      title: work.title,
+      doi: work.doi,
+      arxivId: work.arxivId,
+      year: work.year,
+      venue: work.venue,
+      url: sourceUrl,
+      externalIds: work.externalIds,
+      publicationTypes: [work.type].filter((value): value is string => Boolean(value)),
+      sources: ['orcid'],
+      sourceUrl,
+    },
+    {
+      userId: owner.userId,
+    },
+  );
+  if (!link) return [];
 
-  return fields
+  return Object.entries(link)
     .filter(([, value]) => value !== undefined && value !== null && value !== '')
     .map(([field, value]) => ({
       ...base,
       field,
       value,
-      ...(field === PAPER_AUTHORSHIP_EVIDENCE_FIELD
-        ? { confidenceOverride: evidence.confidence }
-        : {}),
+      ...(field === 'userId' ? { confidenceOverride: evidence.confidence } : {}),
     }));
 }
 

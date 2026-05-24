@@ -116,10 +116,10 @@ describe('Analytics page', () => {
                 uniqueSearchers: 2,
                 searchers: [
                   {
-                    netid: 'abc123',
+                    netid: 'fixture_searcher',
                     userType: 'undergraduate',
-                    fname: 'Ada',
-                    lname: 'Lovelace',
+                    fname: 'Fixture',
+                    lname: 'Searcher',
                     searchCount: 2,
                   },
                 ],
@@ -155,7 +155,7 @@ describe('Analytics page', () => {
     await waitFor(() => {
       expect(screen.getByText('machine learning')).toBeTruthy();
     });
-    expect(screen.getByText(/abc123/)).toBeTruthy();
+    expect(screen.getByText(/fixture_searcher/)).toBeTruthy();
     expect(screen.queryByText(/Listings/i)).toBeNull();
     expect(screen.queryByText(/Favorites/i)).toBeNull();
     expect(screen.getByRole('button', { name: 'Refresh Data' }).className).toContain(

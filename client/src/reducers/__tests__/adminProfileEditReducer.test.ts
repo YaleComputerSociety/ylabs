@@ -8,10 +8,10 @@ import {
 } from '../adminProfileEditReducer';
 
 const baseProfile: AdminProfileShape = {
-  netid: 'abc123',
-  fname: 'Ada',
-  lname: 'Lovelace',
-  email: 'ada@yale.edu',
+  netid: 'fixture-profile',
+  fname: 'Example',
+  lname: 'Researcher',
+  email: 'researcher@example.test',
   title: 'Professor',
   bio: 'Short bio',
   phone: '555-0100',
@@ -20,7 +20,7 @@ const baseProfile: AdminProfileShape = {
   research_interests: ['Algorithms', 'Cryptography'],
   h_index: 42,
   orcid: '0000-0000-0000-0001',
-  image_url: 'https://example.com/a.jpg',
+  image_url: 'https://images.example.test/a.jpg',
   profileVerified: true,
   userType: 'professor',
   userConfirmed: true,
@@ -33,9 +33,9 @@ describe('adminProfileEditReducer', () => {
       expect(state.loading).toBe(true);
       expect(state.saving).toBe(false);
       expect(state.full).toBeNull();
-      expect(state.fname).toBe('Ada');
-      expect(state.lname).toBe('Lovelace');
-      expect(state.email).toBe('ada@yale.edu');
+      expect(state.fname).toBe('Example');
+      expect(state.lname).toBe('Researcher');
+      expect(state.email).toBe('researcher@example.test');
       expect(state.primaryDept).toBe('Computer Science');
       expect(state.userType).toBe('professor');
       expect(state.userConfirmed).toBe(true);
@@ -45,6 +45,28 @@ describe('adminProfileEditReducer', () => {
       const state = createInitialAdminProfileEditState(baseProfile);
       expect(state.secondaryDepts).toBe('Math');
       expect(state.researchInterests).toBe('Algorithms, Cryptography');
+    });
+
+    it('hydrates camelCase fields returned by the admin profiles API', () => {
+      const state = createInitialAdminProfileEditState({
+        ...baseProfile,
+        primary_department: undefined,
+        secondary_departments: undefined,
+        research_interests: undefined,
+        h_index: undefined,
+        image_url: undefined,
+        primaryDepartment: 'Statistics',
+        secondaryDepartments: ['Data Science', 'Mathematics'],
+        researchInterests: ['Causal inference', 'Public health'],
+        hIndex: 13,
+        imageUrl: 'https://images.example.test/camel.jpg',
+      } as any);
+
+      expect(state.primaryDept).toBe('Statistics');
+      expect(state.secondaryDepts).toBe('Data Science, Mathematics');
+      expect(state.researchInterests).toBe('Causal inference, Public health');
+      expect(state.hIndex).toBe('13');
+      expect(state.imageUrl).toBe('https://images.example.test/camel.jpg');
     });
 
     it('stringifies h_index and treats undefined as empty string', () => {
@@ -60,7 +82,7 @@ describe('adminProfileEditReducer', () => {
 
     it('defaults missing fields to empty strings / false', () => {
       const minimal: AdminProfileShape = {
-        netid: 'x',
+        netid: 'fixture-minimal',
         fname: '',
         lname: '',
         email: '',

@@ -6,8 +6,17 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import UserContext from '../../contexts/UserContext';
 import Account from '../account';
 
-let savedPathwaySummary = { count: 2, nextDeadlineLabel: 'Archive assistant: Due May 20, 2026' };
-let savedProgramSummary = { count: 1 };
+type PlanningSummary = {
+  count: number;
+  nextDeadlineLabel?: string;
+  nextDeadlineDate?: string;
+};
+
+let savedPathwaySummary: PlanningSummary = {
+  count: 2,
+  nextDeadlineLabel: 'Archive assistant: Due May 20, 2026',
+};
+let savedProgramSummary: PlanningSummary = { count: 1 };
 
 vi.mock('../../components/accounts/ProfileEditor', () => ({
   default: () => <section>Profile editor</section>,

@@ -19,6 +19,7 @@
     "scrape": "yarn --cwd server scrape",
     "scrape:seed-sources": "yarn --cwd server scrape:seed-sources",
     "playwright:run": "bash scripts/with-playwright-libs.sh npx playwright",
+    "audit:unified-research": "bash scripts/with-playwright-libs.sh node scripts/unified-research-search-audit.mjs",
     "start": "concurrently \"yarn start:client\" \"yarn start:server\"",
     "start:client": "cd client && yarn dev",
     "start:server": "cd server && yarn start",
@@ -30,7 +31,7 @@
     "format:check": "prettier --check \"client/src/**/*.{ts,tsx,css}\" \"server/src/**/*.ts\""
   },
   "dependencies": {
-    "axios": "^1.6.0",
+    "axios": "^1.16.1",
     "concurrently": "^9.2.1",
     "cookie-session": "^2.1.0",
     "cors": "^2.8.5",
@@ -40,7 +41,7 @@
     "env": "^0.0.2",
     "express": "^4.17.3",
     "express-session": "^1.17.2",
-    "mongoose": "^8.0.4",
+    "mongoose": "^8.24.0",
     "passport": "^0.5.2",
     "passport-cas": "git+https://github.com/coursetable/passport-cas#79612f1fb25fea7d62a7c38701494411cf560201",
     "passport-strategy": "^1.0.0"
@@ -53,6 +54,7 @@
     "eslint-plugin-react": "^7.37.4",
     "eslint-plugin-react-hooks": "^5.1.0",
     "globals": "^15.14.0",
+    "playwright": "^1.60.0",
     "prettier": "^3.4.2",
     "typescript": "^5.3.0",
     "typescript-eslint": "^8.20.0"

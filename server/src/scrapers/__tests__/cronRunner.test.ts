@@ -130,6 +130,32 @@ describe('runScraperCron', () => {
     });
   });
 
+  it('applies promotion guards before acquiring a source lock', async () => {
+    const deps = makeDeps();
+
+    await expect(
+      runScraperCron(
+        {
+          sourceName: 'openalex',
+          environment: 'production',
+          options: {
+            dryRun: false,
+            useCache: false,
+            release: true,
+            discoverOpenAlexAuthors: true,
+          },
+          ownerId: 'owner-1',
+          now: NOW,
+          heartbeatIntervalMs: 0,
+        },
+        deps,
+      ),
+    ).rejects.toThrow('OpenAlex name discovery');
+
+    expect(deps.acquireScrapeJobLock).not.toHaveBeenCalled();
+    expect(deps.orchestrator.run).not.toHaveBeenCalled();
+  });
+
   it('exits nonzero and releases as failure when materialization reports errors', async () => {
     const deps = makeDeps({
       materializeFromRun: vi.fn().mockResolvedValue({
@@ -139,6 +165,43 @@ describe('runScraperCron', () => {
         conflicts: 0,
         skipped: 0,
         errors: 2,
+      }),
+    });
+
+    const result = await runScraperCron(
+      {
+        sourceName: 'openalex',
+        environment: 'production',
+        options: { dryRun: false, useCache: false, release: true },
+        ownerId: 'owner-1',
+        now: NOW,
+        heartbeatIntervalMs: 0,
+      },
+      deps,
+    );
+
+    expect(result.exitCode).toBe(1);
+    expect(deps.releaseScrapeJobLock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        releaseReason: 'failure',
+        lastRunId: 'run-1',
+      }),
+    );
+  });
+
+  it('exits nonzero and releases as failure when the integrity gate fails', async () => {
+    const deps = makeDeps({
+      materializeFromRun: vi.fn().mockResolvedValue({
+        materialized: 3,
+        created: 1,
+        updated: 2,
+        conflicts: 0,
+        skipped: 0,
+        errors: 0,
+        postMaterializationIntegrity: {
+          status: 'failure',
+          failureNames: ['duplicateCurrentMembers'],
+        },
       }),
     });
 

@@ -105,7 +105,7 @@ const AdminListingEditModal = ({ listing, onClose, onSave, onDelete }: Props) =>
 
     const confirmSave = await swal({
       title: 'Save Changes',
-      text: 'Are you sure you want to update this listing?',
+      text: 'Are you sure you want to update this legacy listing evidence?',
       icon: 'info',
       buttons: ['Cancel', 'Save'],
     });
@@ -137,11 +137,14 @@ const AdminListingEditModal = ({ listing, onClose, onSave, onDelete }: Props) =>
         },
         { withCredentials: true },
       );
-      swal({ text: 'Listing updated', icon: 'success', timer: 1500 });
+      swal({ text: 'Legacy listing evidence updated', icon: 'success', timer: 1500 });
       onSave();
     } catch (error: any) {
       console.error('Error updating listing:', error);
-      swal({ text: error.response?.data?.error || 'Failed to update listing', icon: 'error' });
+      swal({
+        text: error.response?.data?.error || 'Failed to update legacy listing evidence',
+        icon: 'error',
+      });
     } finally {
       dispatch({ type: 'SET_SAVING', payload: false });
     }
@@ -313,7 +316,7 @@ const AdminListingEditModal = ({ listing, onClose, onSave, onDelete }: Props) =>
       <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl mx-4">
         <div className="flex items-center justify-between px-6 py-4 border-b">
           <div>
-            <h3 className="text-lg font-bold text-gray-900">Edit Listing</h3>
+            <h3 className="text-lg font-bold text-gray-900">Edit Legacy Listing Evidence</h3>
             <p className="text-xs text-gray-500">
               ID: {listing._id} | Owner: {listing.ownerFirstName} {listing.ownerLastName} (
               {listing.ownerId})
@@ -592,7 +595,7 @@ const AdminListingEditModal = ({ listing, onClose, onSave, onDelete }: Props) =>
           <button
             onClick={async () => {
               const confirmed = await swal({
-                title: 'Delete Listing',
+                title: 'Delete Legacy Listing Evidence',
                 text: `Permanently delete "${listing.title}"? This cannot be undone.`,
                 icon: 'warning',
                 buttons: ['Cancel', 'Delete'],
@@ -601,7 +604,7 @@ const AdminListingEditModal = ({ listing, onClose, onSave, onDelete }: Props) =>
               if (!confirmed) return;
               try {
                 await axios.delete(`/admin/listings/${listing._id}`, { withCredentials: true });
-                swal({ text: 'Listing deleted', icon: 'success', timer: 1500 });
+                swal({ text: 'Legacy listing evidence deleted', icon: 'success', timer: 1500 });
                 if (onDelete) onDelete();
                 else onSave();
               } catch (error: any) {
@@ -610,7 +613,7 @@ const AdminListingEditModal = ({ listing, onClose, onSave, onDelete }: Props) =>
             }}
             className="px-4 py-2 text-sm text-red-600 border border-red-200 rounded-md hover:bg-red-50 transition-colors"
           >
-            Delete Listing
+            Delete Legacy Listing Evidence
           </button>
           <div className="flex gap-3">
             <button

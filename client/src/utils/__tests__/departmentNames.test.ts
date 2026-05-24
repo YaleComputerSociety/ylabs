@@ -67,9 +67,9 @@ describe('departmentNames', () => {
         departmentTable,
       ),
     ).toEqual([
-      'Computer Science',
-      'Ecology and Evolutionary Biology',
-      'Statistics & Data Science',
+      'CPSC - Computer Science',
+      'EEB - Ecology and Evolutionary Biology',
+      'S&DS - Statistics & Data Science',
     ]);
   });
 });

@@ -33,6 +33,10 @@ import * as cheerio from 'cheerio';
 import { ResearchEntity } from '../../models/researchEntity';
 import { redactDirectContactInfo } from '../../utils/contactRedaction';
 import {
+  firstUsableResearchWebsiteUrl,
+  isUsableResearchWebsiteUrl,
+} from '../../utils/researchWebsiteUrl';
+import {
   createScraplingRenderedFetcher,
   measureRenderedFetch,
   summarizeFetchMetrics,
@@ -46,6 +50,7 @@ import type {
   ScraperFetchMetric,
   ScraperContext,
   ScraperResult,
+  UndergradLlmReviewSample,
 } from '../types';
 import {
   createWorkPlannerMetrics,
@@ -63,8 +68,17 @@ const MAX_PROMPT_CHARS = 50_000;
 const DEFAULT_LIMIT = 100;
 const DEFAULT_MODEL = 'gpt-4o-mini';
 const SOURCE_KEY = 'lab-microsite-undergrad-llm';
+const LAB_IDENTITY_CONFIDENCE_OVERRIDE = 0.55;
 const MAX_CANDIDATE_SUBPAGE_URLS = 8;
 const MAX_SUBPAGES_FETCHED = 3;
+const MAX_UNDERGRAD_LLM_REVIEW_SAMPLES = 100;
+const HARD_NEGATIVE_UNDERGRAD_RE =
+  /\b(not currently accepting|not accepting|not taking|do not accept|don't accept|do not take|don't take|no bandwidth|don't have bandwidth|do not have bandwidth|cannot respond|can't respond|unable to respond|please do not email)\b/i;
+const GRAD_ONLY_INSTRUCTION_RE =
+  /\bprospective\s+(?:ph\.?d\.?|doctoral|graduate)\b|\b(?:ph\.?d\.?|doctoral|graduate)\s+(?:students?|applicants?)\b.{0,100}\b(?:apply|application|applications|welcome|welcomed|contact|email|should)\b|\b(?:apply|applications?|welcome|welcomed|contact|email|should apply|open to)\b.{0,100}\b(?:ph\.?d\.?|doctoral|graduate)\s+(?:students?|applicants?)\b/i;
+const UNDERGRAD_REFERENCE_RE = /\bundergrad(?:uate)?s?\b/i;
+const UNDERGRAD_ADMIN_TITLE_RE =
+  /\b(?:director|co-director|chair|dean|advisor|adviser)\b.{0,120}\bundergraduate\s+studies\b|\bundergraduate\s+studies\b.{0,120}\b(?:director|co-director|chair|dean|advisor|adviser)\b/i;
 
 /** Path patterns we'll probe on the lab origin if the home page doesn't link
  *  to one. Ordered most-specific → least-specific. */
@@ -149,6 +163,8 @@ const SYSTEM_PROMPT = `You are an expert classifier evaluating whether a Yale re
 Your job is to read text scraped from a lab's website (home page plus optionally a "members" or "join" sub-page) and return a JSON object with these fields:
 
 - openToUndergrads: "yes" if there is text that affirmatively states the lab welcomes / hires / mentors undergraduates, OR if the members section lists undergraduate students. "no" if the lab explicitly states they do NOT take undergraduates. "unclear" otherwise. Default to "unclear" — be conservative.
+- Treat strong constraints like "not accepting undergraduates", "do not email about openings", or "I do not have bandwidth to respond" as "no" rather than "unclear".
+- If the page only gives PhD or graduate-student application instructions and provides no undergraduate path, keep "openToUndergrads" conservative, but put that quote in explicitConstraintQuote.
 - currentUndergradCount: integer count of currently-listed undergraduates if (and only if) you can identify a members section that explicitly labels undergraduates. Return 0 if no members section exists or no undergrads are listed there.
 - evidenceQuote: a verbatim quote from the page (≤200 characters) that supports your verdict. If openToUndergrads is "unclear" or "no", quote the most relevant text you found, or empty string if there is none.
 - evidenceSource: "explicit_text" if your verdict comes from prose ("we welcome undergraduates"), "members_section" if from a roster listing, "none" if no evidence.
@@ -218,6 +234,7 @@ export function discoverSubPageUrls(
       if (dest.hostname.replace(/^www\./, '') !== base.hostname.replace(/^www\./, '')) {
         return;
       }
+      if (!isWithinMicrositePath(base, dest)) return;
       const normalized = normalizeCandidateUrl(abs);
       if (seen.has(normalized)) return;
       seen.add(normalized);
@@ -244,8 +261,8 @@ export function discoverSubPageUrl(html: string, pageUrl: string): string | null
  */
 export function candidateSubPageUrls(homeUrl: string): string[] {
   try {
-    const u = new URL(homeUrl);
-    return SUBPAGE_PATH_HINTS.map((p) => `${u.origin}${p}`);
+    const base = micrositeBaseUrl(new URL(homeUrl));
+    return SUBPAGE_PATH_HINTS.map((p) => `${base}${p.replace(/^\//, '')}`);
   } catch {
     return [];
   }
@@ -287,6 +304,17 @@ function normalizeCandidateUrl(rawUrl: string): string {
   }
 }
 
+function micrositeBaseUrl(url: URL): string {
+  const pathname = url.pathname.endsWith('/') ? url.pathname : `${url.pathname}/`;
+  return `${url.origin}${pathname}`;
+}
+
+function isWithinMicrositePath(base: URL, candidate: URL): boolean {
+  const basePath = base.pathname.endsWith('/') ? base.pathname : `${base.pathname}/`;
+  if (basePath === '/') return true;
+  return candidate.pathname === base.pathname || candidate.pathname.startsWith(basePath);
+}
+
 /**
  * Pure: assemble the user-facing prompt body the LLM sees.
  */
@@ -322,21 +350,268 @@ export function sourceUrlForExtraction(
   homePage: PromptSourcePage,
   subPages: PromptSourcePage[],
   extraction: LLMExtraction,
-): string {
-  const quoteCandidates = [
-    extraction.evidenceQuote,
-    extraction.undergradRoleQuote,
-    extraction.contactInstructionsQuote,
-    extraction.explicitConstraintQuote,
-  ]
-    .map((q) => (q || '').trim())
-    .filter(Boolean);
-  for (const quote of quoteCandidates) {
-    const matchingSubPage = subPages.find((page) => page.text.includes(quote));
-    if (matchingSubPage) return matchingSubPage.url;
-    if (homePage.text.includes(quote)) return homePage.url;
+): string | null {
+  const quote = (extraction.evidenceQuote || '').trim();
+  if (!quote) return homePage.url;
+  return sourceUrlForQuote(homePage, subPages, quote);
+}
+
+type LLMQuoteField =
+  | 'evidenceQuote'
+  | 'undergradRoleQuote'
+  | 'contactInstructionsQuote'
+  | 'explicitConstraintQuote';
+
+type LLMQuoteSourceUrls = Partial<Record<LLMQuoteField, string>>;
+
+function sourceUrlForQuote(
+  homePage: PromptSourcePage,
+  subPages: PromptSourcePage[],
+  quote: string,
+): string | null {
+  const normalizedQuote = quote.trim();
+  if (!normalizedQuote) return null;
+  const matchingSubPage = subPages.find((page) => page.text.includes(normalizedQuote));
+  if (matchingSubPage) return matchingSubPage.url;
+  if (homePage.text.includes(normalizedQuote)) return homePage.url;
+  return null;
+}
+
+function isSupportedJoinPageUrl(
+  rawUrl: string,
+  homeUrl: string,
+  sourceUrls: string[],
+): string | null {
+  const normalized = normalizeCandidateUrl(rawUrl);
+  if (!normalized) return null;
+
+  const fetchedUrls = new Set(sourceUrls.map(normalizeCandidateUrl).filter(Boolean));
+  if (fetchedUrls.has(normalized)) return normalized;
+
+  try {
+    const home = new URL(homeUrl);
+    const candidate = new URL(normalized);
+    if (!/^https?:$/i.test(candidate.protocol)) return null;
+    if (candidate.hostname.replace(/^www\./, '') !== home.hostname.replace(/^www\./, '')) {
+      return null;
+    }
+    if (!isWithinMicrositePath(home, candidate)) return null;
+    return normalized;
+  } catch {
+    return null;
   }
-  return homePage.url;
+}
+
+function uniqueRejectionReasons(reasons: string[]): string[] {
+  return Array.from(new Set(reasons));
+}
+
+function validateExtractionAgainstSources(
+  extraction: LLMExtraction,
+  homePage: PromptSourcePage,
+  subPages: PromptSourcePage[],
+  sourceUrls: string[],
+): {
+  extraction: LLMExtraction;
+  quoteSourceUrl: string | null;
+  quoteSourceUrls: LLMQuoteSourceUrls;
+  rejectionReasons: string[];
+  decision: 'accepted' | 'rejected';
+} {
+  const normalized = normalizeExtraction(extraction);
+  const quoteSourceUrls: LLMQuoteSourceUrls = {};
+  const rejectionReasons: string[] = [];
+
+  const evidenceQuote = normalized.evidenceQuote.trim();
+  if (evidenceQuote) {
+    const evidenceSourceUrl = sourceUrlForQuote(homePage, subPages, evidenceQuote);
+    if (evidenceSourceUrl) {
+      quoteSourceUrls.evidenceQuote = evidenceSourceUrl;
+    } else {
+      rejectionReasons.push('unsupported_evidence_quote');
+      normalized.openToUndergrads = 'unclear';
+      normalized.evidenceSource = 'none';
+      normalized.evidenceQuote = '';
+      normalized.currentUndergradCount = 0;
+    }
+  } else if (
+    normalized.openToUndergrads !== 'unclear' ||
+    normalized.evidenceSource !== 'none'
+  ) {
+    rejectionReasons.push('missing_evidence_quote');
+    normalized.openToUndergrads = 'unclear';
+    normalized.evidenceSource = 'none';
+    normalized.currentUndergradCount = 0;
+  }
+
+  const ancillaryQuoteFields: Array<[LLMQuoteField, string]> = [
+    ['undergradRoleQuote', 'unsupported_undergrad_role_quote'],
+    ['contactInstructionsQuote', 'unsupported_contact_instructions_quote'],
+    ['explicitConstraintQuote', 'unsupported_explicit_constraint_quote'],
+  ];
+  for (const [field, reason] of ancillaryQuoteFields) {
+    const quote = (normalized[field] || '').trim();
+    if (!quote) continue;
+    const quoteSourceUrl = sourceUrlForQuote(homePage, subPages, quote);
+    if (quoteSourceUrl) {
+      quoteSourceUrls[field] = quoteSourceUrl;
+    } else {
+      normalized[field] = '';
+      rejectionReasons.push(reason);
+    }
+  }
+
+  const renormalized = normalizeExtraction(normalized);
+  Object.assign(normalized, renormalized);
+  for (const field of [
+    'evidenceQuote',
+    'undergradRoleQuote',
+    'contactInstructionsQuote',
+    'explicitConstraintQuote',
+  ] as LLMQuoteField[]) {
+    if (!(normalized[field] || '').trim()) {
+      delete quoteSourceUrls[field];
+    }
+  }
+
+  if (normalized.joinPageUrl) {
+    const supportedJoinPageUrl = isSupportedJoinPageUrl(
+      normalized.joinPageUrl,
+      homePage.url,
+      sourceUrls,
+    );
+    if (supportedJoinPageUrl) {
+      normalized.joinPageUrl = supportedJoinPageUrl;
+    } else {
+      normalized.joinPageUrl = null;
+      rejectionReasons.push('unsupported_join_page_url');
+    }
+  }
+
+  const uniqueReasons = uniqueRejectionReasons(rejectionReasons);
+  return {
+    extraction: normalized,
+    quoteSourceUrl: quoteSourceUrls.evidenceQuote ?? null,
+    quoteSourceUrls,
+    rejectionReasons: uniqueReasons,
+    decision: uniqueReasons.some((reason) =>
+      ['unsupported_evidence_quote', 'missing_evidence_quote'].includes(reason),
+    )
+      ? 'rejected'
+      : 'accepted',
+  };
+}
+
+function looksLikeHardNegativeUndergradConstraint(value: string): boolean {
+  return value.length > 0 && HARD_NEGATIVE_UNDERGRAD_RE.test(value);
+}
+
+function looksLikeGraduateOnlyInstruction(value: string): boolean {
+  return (
+    value.length > 0 &&
+    GRAD_ONLY_INSTRUCTION_RE.test(value) &&
+    !UNDERGRAD_REFERENCE_RE.test(value)
+  );
+}
+
+function looksLikeUndergradAdministrativeTitle(value: string): boolean {
+  return value.length > 0 && UNDERGRAD_ADMIN_TITLE_RE.test(value);
+}
+
+function quoteMentionsUndergraduates(value: string | undefined | null): boolean {
+  return Boolean(value && UNDERGRAD_REFERENCE_RE.test(value));
+}
+
+function firstUndergradSpecificQuote(normalized: LLMExtraction): string {
+  return (
+    [
+      normalized.evidenceQuote,
+      normalized.undergradRoleQuote,
+      normalized.contactInstructionsQuote,
+      normalized.explicitConstraintQuote,
+    ].find((quote) => quoteMentionsUndergraduates(quote)) || ''
+  );
+}
+
+function clearAccessVerdict(normalized: LLMExtraction): void {
+  normalized.openToUndergrads = 'unclear';
+  normalized.evidenceSource = 'none';
+  normalized.evidenceQuote = '';
+  normalized.currentUndergradCount = 0;
+  normalized.joinPageUrl = null;
+}
+
+export function normalizeExtraction(extraction: LLMExtraction): LLMExtraction {
+  const normalized: LLMExtraction = {
+    ...extraction,
+    evidenceQuote: (extraction.evidenceQuote || '').trim(),
+    joinPageUrl: extraction.joinPageUrl ? extraction.joinPageUrl.trim() : null,
+    undergradRoleQuote: (extraction.undergradRoleQuote || '').trim(),
+    contactInstructionsQuote: (extraction.contactInstructionsQuote || '').trim(),
+    explicitConstraintQuote: (extraction.explicitConstraintQuote || '').trim(),
+  };
+
+  const hardNegativeQuote = [
+    normalized.explicitConstraintQuote,
+    normalized.evidenceQuote,
+    normalized.contactInstructionsQuote,
+  ].find((quote): quote is string => looksLikeHardNegativeUndergradConstraint(quote || ''));
+  const gradOnlyQuote = [
+    normalized.explicitConstraintQuote,
+    normalized.contactInstructionsQuote,
+    normalized.evidenceQuote,
+  ].find((quote): quote is string => looksLikeGraduateOnlyInstruction(quote || ''));
+
+  if (!normalized.explicitConstraintQuote) {
+    normalized.explicitConstraintQuote = hardNegativeQuote || gradOnlyQuote || '';
+  }
+
+  if (normalized.openToUndergrads === 'yes') {
+    const supportedQuote = firstUndergradSpecificQuote(normalized);
+    if (gradOnlyQuote && !supportedQuote) {
+      clearAccessVerdict(normalized);
+    } else if (!supportedQuote) {
+      clearAccessVerdict(normalized);
+    } else if (!quoteMentionsUndergraduates(normalized.evidenceQuote)) {
+      normalized.evidenceQuote = supportedQuote;
+    }
+  }
+
+  if (
+    normalized.openToUndergrads === 'yes' &&
+    looksLikeUndergradAdministrativeTitle(normalized.evidenceQuote)
+  ) {
+    normalized.openToUndergrads = 'unclear';
+    normalized.evidenceSource = 'none';
+    normalized.evidenceQuote = '';
+    normalized.currentUndergradCount = 0;
+  }
+
+  if (
+    normalized.openToUndergrads === 'no' &&
+    !hardNegativeQuote &&
+    !quoteMentionsUndergraduates(normalized.evidenceQuote)
+  ) {
+    clearAccessVerdict(normalized);
+  }
+
+  if (normalized.openToUndergrads === 'unclear' && hardNegativeQuote) {
+    normalized.openToUndergrads = 'no';
+    if (normalized.evidenceSource === 'none') {
+      normalized.evidenceSource = 'explicit_text';
+    }
+    if (!normalized.evidenceQuote) {
+      normalized.evidenceQuote = hardNegativeQuote;
+    }
+  }
+
+  if (normalized.openToUndergrads === 'unclear') {
+    normalized.evidenceSource = 'none';
+    normalized.evidenceQuote = '';
+    normalized.currentUndergradCount = 0;
+  }
+
+  return normalized;
 }
 
 /**
@@ -358,10 +633,17 @@ export function extractionToObservations(
   sourceUrl: string,
   extraction: LLMExtraction,
   observedAt: Date = new Date(),
-  sourceContext: { sourceUrls?: string[]; quoteSourceUrl?: string } = {},
+  sourceContext: {
+    sourceUrls?: string[];
+    quoteSourceUrl?: string;
+    quoteSourceUrls?: LLMQuoteSourceUrls;
+  } = {},
 ): ObservationInput[] {
+  const normalizedExtraction = normalizeExtraction(extraction);
   const sourceUrls = sourceContext.sourceUrls?.filter(Boolean) ?? [sourceUrl];
   const quoteSourceUrl = sourceContext.quoteSourceUrl || sourceUrl;
+  const quoteSourceUrls = sourceContext.quoteSourceUrls || {};
+  const evidenceQuoteSourceUrl = quoteSourceUrls.evidenceQuote || quoteSourceUrl;
   const base = {
     entityType: 'researchEntity' as const,
     entityKey: groupSlug,
@@ -369,16 +651,16 @@ export function extractionToObservations(
   };
   const out: ObservationInput[] = [];
 
-  if (extraction.openToUndergrads === 'yes') {
+  if (normalizedExtraction.openToUndergrads === 'yes') {
     out.push({
       ...base,
       field: 'undergradAccessEvidence',
       value: {
-        openToUndergrads: extraction.openToUndergrads,
-        evidenceSource: extraction.evidenceSource,
-        evidenceQuote: extraction.evidenceQuote,
+        openToUndergrads: normalizedExtraction.openToUndergrads,
+        evidenceSource: normalizedExtraction.evidenceSource,
+        evidenceQuote: normalizedExtraction.evidenceQuote,
         sourceUrls,
-        quoteSourceUrl,
+        quoteSourceUrl: evidenceQuoteSourceUrl,
       },
       confidenceOverride: 0.5,
     });
@@ -388,16 +670,16 @@ export function extractionToObservations(
       value: true,
       confidenceOverride: 0.5,
     });
-  } else if (extraction.openToUndergrads === 'no') {
+  } else if (normalizedExtraction.openToUndergrads === 'no') {
     out.push({
       ...base,
       field: 'undergradAccessEvidence',
       value: {
-        openToUndergrads: extraction.openToUndergrads,
-        evidenceSource: extraction.evidenceSource,
-        evidenceQuote: extraction.evidenceQuote,
+        openToUndergrads: normalizedExtraction.openToUndergrads,
+        evidenceSource: normalizedExtraction.evidenceSource,
+        evidenceQuote: normalizedExtraction.evidenceQuote,
         sourceUrls,
-        quoteSourceUrl,
+        quoteSourceUrl: evidenceQuoteSourceUrl,
       },
       confidenceOverride: 0.5,
     });
@@ -411,65 +693,65 @@ export function extractionToObservations(
   // 'unclear' → no observation
 
   if (
-    extraction.evidenceSource === 'members_section' &&
-    Number.isInteger(extraction.currentUndergradCount) &&
-    extraction.currentUndergradCount >= 0
+    normalizedExtraction.evidenceSource === 'members_section' &&
+    Number.isInteger(normalizedExtraction.currentUndergradCount) &&
+    normalizedExtraction.currentUndergradCount >= 0
   ) {
     out.push({
       ...base,
       field: 'currentUndergradCount',
-      value: extraction.currentUndergradCount,
+      value: normalizedExtraction.currentUndergradCount,
       confidenceOverride: 0.5,
     });
   }
 
-  const quote = (extraction.evidenceQuote || '').trim();
+  const quote = normalizedExtraction.evidenceQuote;
   if (quote) {
     out.push({
       ...base,
-      sourceUrl: quoteSourceUrl,
+      sourceUrl: evidenceQuoteSourceUrl,
       field: 'undergradEvidenceQuote',
       value: redactDirectContactInfo(quote).slice(0, 500),
       confidenceOverride: 0.5,
     });
   }
 
-  if (extraction.joinPageUrl) {
+  if (normalizedExtraction.joinPageUrl) {
     out.push({
       ...base,
       field: 'joinPageUrl',
-      value: extraction.joinPageUrl,
+      value: normalizedExtraction.joinPageUrl,
       confidenceOverride: 0.5,
     });
   }
 
-  const undergradRoleQuote = (extraction.undergradRoleQuote || '').trim();
+  const undergradRoleQuote = normalizedExtraction.undergradRoleQuote || '';
   if (undergradRoleQuote) {
     out.push({
       ...base,
-      sourceUrl: quoteSourceUrl,
+      sourceUrl: quoteSourceUrls.undergradRoleQuote || quoteSourceUrl,
       field: 'undergradRoleEvidenceQuote',
       value: redactDirectContactInfo(undergradRoleQuote).slice(0, 500),
       confidenceOverride: 0.5,
     });
   }
 
-  const contactInstructionsQuote = (extraction.contactInstructionsQuote || '').trim();
+  const contactInstructionsQuote = normalizedExtraction.contactInstructionsQuote || '';
   if (contactInstructionsQuote) {
     out.push({
       ...base,
-      sourceUrl: quoteSourceUrl,
+      sourceUrl: quoteSourceUrls.contactInstructionsQuote || quoteSourceUrl,
       field: 'contactInstructionsQuote',
       value: redactDirectContactInfo(contactInstructionsQuote).slice(0, 500),
       confidenceOverride: 0.5,
     });
   }
 
-  const explicitConstraintQuote = (extraction.explicitConstraintQuote || '').trim();
+  const explicitConstraintQuote = normalizedExtraction.explicitConstraintQuote || '';
   if (explicitConstraintQuote) {
     out.push({
       ...base,
-      sourceUrl: quoteSourceUrl,
+      sourceUrl: quoteSourceUrls.explicitConstraintQuote || quoteSourceUrl,
       field: 'undergradConstraintQuote',
       value: redactDirectContactInfo(explicitConstraintQuote).slice(0, 500),
       confidenceOverride: 0.5,
@@ -498,20 +780,118 @@ export interface CandidateLab {
   websiteUrl: string;
   archived?: boolean;
   manuallyLockedFields?: string[];
+  listingBacked?: boolean;
+  activeListingCount?: number;
+  listingWebsiteUrls?: string[];
+}
+
+export interface ListingGuidance {
+  researchEntityId: string;
+  activeListingCount: number;
+  websiteUrls: string[];
 }
 
 function usableWebsiteUrlFromDoc(doc: Record<string, any>): string {
-  const candidates = [
+  return firstUsableResearchWebsiteUrl([
     doc.websiteUrl,
     doc.website,
     ...(Array.isArray(doc.sourceUrls) ? doc.sourceUrls : []),
+  ]);
+}
+
+function idToString(value: unknown): string {
+  if (!value) return '';
+  return String(value);
+}
+
+function uniqueHttpUrls(values: unknown[]): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const value of values.flatMap((item) => (Array.isArray(item) ? item : [item]))) {
+    if (typeof value !== 'string') continue;
+    const url = value.trim();
+    if (!isUsableResearchWebsiteUrl(url)) continue;
+    const key = url.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(url);
+  }
+  return out;
+}
+
+function cleanHomepageLabName(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  const cleaned = value
+    .replace(/\s+/g, ' ')
+    .replace(/\s*[|–—-]\s*(?:Yale University|Yale School of.*|Yale Engineering).*$/i, '')
+    .replace(/\s+at\s+Yale(?:\s+University)?(?:\s+.*)?$/i, '')
+    .trim();
+  if (!cleaned || cleaned.length < 3 || cleaned.length > 80) return '';
+  if (/^(home|welcome|research|people|members|publications|contact|about)$/i.test(cleaned)) {
+    return '';
+  }
+  if (!/\b(lab|laboratory|center|centre|group|faboratory)\b/i.test(cleaned)) return '';
+  return cleaned;
+}
+
+function isGeneratedFacultyResearchArea(lab: Pick<CandidateLab, 'slug'>): boolean {
+  return /^faculty-research-area-/i.test(lab.slug || '');
+}
+
+function officialLabNameFromHomePage(html: string): string {
+  if (!html) return '';
+  let $: cheerio.CheerioAPI;
+  try {
+    $ = cheerio.load(html);
+  } catch {
+    return '';
+  }
+
+  const candidates = [
+    $('h1').first().text(),
+    $('meta[property="og:title"]').attr('content'),
+    $('meta[name="twitter:title"]').attr('content'),
+    $('title').first().text(),
   ];
+
   for (const candidate of candidates) {
-    if (typeof candidate !== 'string') continue;
-    const url = candidate.trim();
-    if (/^https?:\/\//i.test(url)) return url;
+    const name = cleanHomepageLabName(candidate);
+    if (name) return name;
   }
   return '';
+}
+
+export function labIdentityObservationsFromHomePage(
+  lab: Pick<CandidateLab, '_id' | 'slug' | 'name' | 'websiteUrl' | 'manuallyLockedFields'>,
+  homePage: FetchedPage,
+  observedAt: Date = new Date(),
+): ObservationInput[] {
+  const websiteUrl = firstUsableResearchWebsiteUrl([homePage.url]);
+  if (!lab.slug || !websiteUrl) return [];
+
+  const locked = new Set(lab.manuallyLockedFields || []);
+  const base = {
+    entityType: 'researchEntity' as const,
+    entityKey: lab.slug,
+    sourceUrl: websiteUrl,
+    observedAt,
+    confidenceOverride: LAB_IDENTITY_CONFIDENCE_OVERRIDE,
+  };
+  const out: ObservationInput[] = [];
+  const homepageName = officialLabNameFromHomePage(homePage.html);
+  const existingName = String(lab.name || '').replace(/\s+/g, ' ').trim().toLowerCase();
+
+  if (homepageName && homepageName.toLowerCase() !== existingName && !locked.has('name')) {
+    out.push({ ...base, field: 'name', value: homepageName });
+  }
+  if (!lab.websiteUrl && !locked.has('websiteUrl')) {
+    out.push({ ...base, field: 'websiteUrl', value: websiteUrl });
+  }
+  if (!locked.has('sourceUrls')) {
+    out.push({ ...base, field: 'sourceUrls', value: [websiteUrl] });
+  }
+
+  return out;
 }
 
 export function candidateLabFromResearchEntityDoc(doc: Record<string, any>): CandidateLab {
@@ -523,6 +903,46 @@ export function candidateLabFromResearchEntityDoc(doc: Record<string, any>): Can
     archived: !!doc.archived,
     manuallyLockedFields: doc.manuallyLockedFields || [],
   };
+}
+
+export function applyListingGuidanceToCandidateLabs(
+  candidates: CandidateLab[],
+  guidance: ListingGuidance[],
+): CandidateLab[] {
+  const guidanceByEntityId = new Map(
+    guidance.map((item) => [String(item.researchEntityId), item]),
+  );
+
+  return candidates.map((candidate) => {
+    const item = guidanceByEntityId.get(idToString(candidate._id));
+    if (!item) return candidate;
+
+    const listingWebsiteUrls = uniqueHttpUrls(item.websiteUrls);
+    return {
+      ...candidate,
+      websiteUrl: candidate.websiteUrl || listingWebsiteUrls[0] || '',
+      activeListingCount: item.activeListingCount,
+      listingBacked: item.activeListingCount > 0,
+      listingWebsiteUrls,
+    };
+  });
+}
+
+function listingGuidanceFromDocs(listings: Record<string, any>[]): ListingGuidance[] {
+  const byEntityId = new Map<string, ListingGuidance>();
+  for (const listing of listings) {
+    const researchEntityId = idToString(listing.researchEntityId || listing.researchGroupId);
+    if (!researchEntityId) continue;
+    const existing = byEntityId.get(researchEntityId) || {
+      researchEntityId,
+      activeListingCount: 0,
+      websiteUrls: [],
+    };
+    existing.activeListingCount += 1;
+    existing.websiteUrls = uniqueHttpUrls([...existing.websiteUrls, listing.websites]);
+    byEntityId.set(researchEntityId, existing);
+  }
+  return Array.from(byEntityId.values());
 }
 
 export function selectLabsToProcess(
@@ -537,14 +957,16 @@ export function selectLabsToProcess(
 
   const out: CandidateLab[] = [];
   for (const lab of candidates) {
-    if (!lab.websiteUrl || !/^https?:\/\//i.test(lab.websiteUrl)) continue;
+    if (!isUsableResearchWebsiteUrl(lab.websiteUrl)) continue;
+    if (isGeneratedFacultyResearchArea(lab)) continue;
     if (lab.archived) continue;
     if ((lab.manuallyLockedFields || []).includes('acceptingUndergrads')) continue;
     if (onlyFilter && !onlyFilter.has(lab.slug.toLowerCase())) continue;
     out.push(lab);
-    if (out.length >= limit) break;
   }
-  return out;
+  return out
+    .sort((a, b) => (b.activeListingCount || 0) - (a.activeListingCount || 0))
+    .slice(0, limit);
 }
 
 // ---------------------------------------------------------------------------
@@ -663,7 +1085,7 @@ async function defaultWorkPlanLoader(
   });
 }
 
-/** Default: query ResearchEntity for non-archived rows that have a website. */
+/** Default: query ResearchEntity rows with a usable website/source URL. */
 async function defaultLabFinder(): Promise<CandidateLab[]> {
   const docs = await ResearchEntity.find(
     {
@@ -723,7 +1145,10 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
     }
 
     const candidates = await this.labFinder();
-    ctx.log(`Found ${candidates.length} candidate ResearchEntities with usable website URLs`);
+    const listingBackedCandidates = candidates.filter((lab) => lab.listingBacked).length;
+    ctx.log(
+      `Found ${candidates.length} candidate ResearchEntities (${listingBackedCandidates} listing-backed)`,
+    );
 
     const labs = selectLabsToProcess(candidates, {
       only: ctx.options.only,
@@ -739,6 +1164,7 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
     let fetchFailed = 0;
     let llmFailed = 0;
     const fetchAttempts: ScraperFetchMetric[] = [];
+    const undergradLlmReviewSamples: UndergradLlmReviewSample[] = [];
     const workPlannerPolicy = ctx.options.ignoreWorkPlanner
       ? undefined
       : getWorkPlannerSourcePolicy(this.name);
@@ -859,24 +1285,45 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
         }
       }
 
-      const observations = extractionToObservations(
-        lab.slug,
-        sourceUrlForExtraction(
-          { url: homePage.url, text: homeText },
-          subPages,
-          extraction,
-        ),
+      const observedAt = new Date();
+      const validation = validateExtractionAgainstSources(
         extraction,
-        new Date(),
-        {
-          sourceUrls,
-          quoteSourceUrl: sourceUrlForExtraction(
-            { url: homePage.url, text: homeText },
-            subPages,
-            extraction,
-          ),
-        },
+        { url: homePage.url, text: homeText },
+        subPages,
+        sourceUrls,
       );
+      const quoteSourceUrl = validation.quoteSourceUrl || homePage.url;
+      if (
+        ctx.options.dryRun &&
+        undergradLlmReviewSamples.length < MAX_UNDERGRAD_LLM_REVIEW_SAMPLES
+      ) {
+        undergradLlmReviewSamples.push({
+          slug: lab.slug,
+          name: lab.name,
+          sourceUrl: quoteSourceUrl,
+          sourceUrls,
+          quote: (validation.extraction.evidenceQuote || '').trim(),
+          verdict: validation.extraction.openToUndergrads,
+          evidenceSource: validation.extraction.evidenceSource,
+          joinPageUrl: validation.extraction.joinPageUrl,
+          decision: validation.decision,
+          rejectionReasons: validation.rejectionReasons,
+        });
+      }
+      const observations = [
+        ...labIdentityObservationsFromHomePage(lab, homePage, observedAt),
+        ...extractionToObservations(
+          lab.slug,
+          quoteSourceUrl,
+          validation.extraction,
+          observedAt,
+          {
+            sourceUrls,
+            quoteSourceUrl,
+            quoteSourceUrls: validation.quoteSourceUrls,
+          },
+        ),
+      ];
       if (observations.length > 0) {
         await ctx.emit(observations);
         totalObs += observations.length;
@@ -900,6 +1347,9 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
       notes: `LLM-extracted undergrad signals for ${succeeded}/${processed} labs (${fetchFailed} fetch-failed, ${llmFailed} llm-failed, ${workPlannerMetrics.skippedFresh + workPlannerMetrics.skippedManualLock} workplanner-skipped)`,
       metrics: {
         workPlanner: workPlannerMetrics,
+        ...(undergradLlmReviewSamples.length > 0
+          ? { undergradLlmReviewSamples }
+          : {}),
       },
       fetchMetrics: summarizeFetchMetrics(fetchAttempts),
     };

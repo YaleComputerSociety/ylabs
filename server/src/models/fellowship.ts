@@ -3,8 +3,22 @@
  */
 import mongoose from 'mongoose';
 
+export const programCategories = [
+  'FELLOWSHIP',
+  'CENTER_INTERNSHIP',
+  'RECURRING_PROGRAM',
+  'SUMMER_RESEARCH_PROGRAM',
+] as const;
+
+export type ProgramCategory = (typeof programCategories)[number];
+
 const fellowshipSchema = new mongoose.Schema(
   {
+    programCategory: {
+      type: String,
+      enum: programCategories,
+      default: 'FELLOWSHIP',
+    },
     title: {
       type: String,
       required: true,
@@ -102,6 +116,30 @@ const fellowshipSchema = new mongoose.Schema(
       type: [String],
       default: [],
     },
+    sourceName: {
+      type: String,
+      default: '',
+    },
+    sourceUrl: {
+      type: String,
+      default: '',
+    },
+    sourceKey: {
+      type: String,
+      required: false,
+    },
+    sourceFingerprint: {
+      type: String,
+      default: '',
+    },
+    sourceLastVerifiedAt: {
+      type: Date,
+      required: false,
+    },
+    sourceLastChangedAt: {
+      type: Date,
+      required: false,
+    },
     archived: {
       type: Boolean,
       default: false,
@@ -139,8 +177,14 @@ fellowshipSchema.index({ termOfAward: 1 });
 fellowshipSchema.index({ purpose: 1 });
 fellowshipSchema.index({ globalRegions: 1 });
 fellowshipSchema.index({ citizenshipStatus: 1 });
+fellowshipSchema.index({ programCategory: 1 });
 fellowshipSchema.index({ archived: 1 });
 fellowshipSchema.index({ deadline: 1 });
+fellowshipSchema.index(
+  { sourceKey: 1 },
+  { unique: true, sparse: true, partialFilterExpression: { sourceKey: { $type: 'string' } } },
+);
+fellowshipSchema.index({ sourceName: 1, sourceLastVerifiedAt: -1 });
 
 export const Fellowship = mongoose.model('Fellowship', fellowshipSchema);
 

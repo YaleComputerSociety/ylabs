@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import { initializeConnections } from '../db/connections';
 import { mapResearchGroupKindToEntityType } from '../models/researchAccessTypes';
+import { assertScriptApplyAllowed } from './scriptWriteGuards';
 
 dotenv.config();
 
@@ -16,6 +17,12 @@ interface ReferenceCheck {
   array?: boolean;
 }
 
+interface BackfillFieldPair {
+  collection: string;
+  legacy: string;
+  next: string;
+}
+
 const SOURCE_COLLECTION = 'research_groups';
 const TARGET_COLLECTION = 'research_entities';
 
@@ -24,39 +31,13 @@ const REFERENCE_CHECKS: ReferenceCheck[] = [
   { collection: 'access_signals', field: 'researchEntityId', label: 'AccessSignal host entity' },
   { collection: 'contact_routes', field: 'researchEntityId', label: 'ContactRoute host entity' },
   { collection: 'posted_opportunities', field: 'researchEntityId', label: 'PostedOpportunity host entity' },
-  { collection: 'listings', field: 'researchEntityId', label: 'Listing host entity' },
   { collection: 'research_entity_members', field: 'researchEntityId', label: 'Member host entity' },
-  { collection: 'research_entity_stats', field: 'researchEntityId', label: 'Stats host entity' },
-  { collection: 'paper_entity_links', field: 'researchEntityId', label: 'Paper link host entity' },
-  { collection: 'research_group_members', field: 'researchEntityId', label: 'Member host entity' },
-  { collection: 'research_group_stats', field: 'researchEntityId', label: 'Stats host entity' },
-  { collection: 'paper_group_links', field: 'researchEntityId', label: 'Paper link host entity' },
-  { collection: 'papers', field: 'researchEntityIds', label: 'Paper linked entities', array: true },
-  { collection: 'grants', field: 'researchEntityIds', label: 'Grant linked entities', array: true },
-  { collection: 'student_trackings', field: 'researchEntityId', label: 'Student tracking entity' },
-  { collection: 'student_outreaches', field: 'researchEntityId', label: 'Student outreach entity' },
-  {
-    collection: 'student_engagement_events',
-    field: 'researchEntityId',
-    label: 'Student event entity',
-  },
   { collection: 'observations', field: 'entityId', label: 'ResearchEntity observations' },
 ];
 
-const BACKFILL_FIELD_PAIRS = [
-  { collection: 'listings', legacy: 'researchGroupId', next: 'researchEntityId' },
-  { collection: 'research_group_members', legacy: 'researchGroupId', next: 'researchEntityId' },
-  { collection: 'research_group_stats', legacy: 'researchGroupId', next: 'researchEntityId' },
-  { collection: 'paper_group_links', legacy: 'researchGroupId', next: 'researchEntityId' },
-  { collection: 'student_trackings', legacy: 'researchGroupId', next: 'researchEntityId' },
-  { collection: 'student_outreaches', legacy: 'researchGroupId', next: 'researchEntityId' },
-  { collection: 'student_engagement_events', legacy: 'researchGroupId', next: 'researchEntityId' },
-] as const;
+const BACKFILL_FIELD_PAIRS: BackfillFieldPair[] = [];
 
-const BACKFILL_ARRAY_FIELD_PAIRS = [
-  { collection: 'papers', legacy: 'researchGroupIds', next: 'researchEntityIds' },
-  { collection: 'grants', legacy: 'researchGroupIds', next: 'researchEntityIds' },
-] as const;
+const BACKFILL_ARRAY_FIELD_PAIRS: BackfillFieldPair[] = [];
 
 function parseMode(argv: string[]): Mode {
   if (argv.includes('--rollback-plan')) return 'rollback-plan';
@@ -358,6 +339,11 @@ async function main() {
     console.log(JSON.stringify({ mode, ...rollbackPlan() }, null, 2));
     return;
   }
+  assertScriptApplyAllowed({
+    apply: mode === 'apply',
+    scriptName: 'research-entity:migrate',
+    mongoUrl: process.env.MONGODBURL,
+  });
 
   await initializeConnections();
   const db = mongoose.connection.db;

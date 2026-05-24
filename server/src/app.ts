@@ -15,6 +15,8 @@ import { fileURLToPath } from 'url';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
 import { securityHeaders } from './middleware/securityHeaders';
 import { sanitizeMongo } from './middleware/sanitizeMongo';
+import { requestContext } from './middleware/requestContext';
+import { applyLocalAuthBypass } from './middleware/auth';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -52,7 +54,7 @@ const apiLimiter = rateLimit({
   skip: () => isCI() || isDevelopment() || isTest(),
 });
 
-// Write limiter for listing/fellowship mutations
+// Write limiter for retired listing endpoints and program/fellowship mutations.
 const writeLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 50,
@@ -89,6 +91,7 @@ const corsOptions = {
 const app = express()
   .set('trust proxy', 1)
   .disable('x-powered-by')
+  .use(requestContext)
   .use(securityHeaders)
   .use(cors(corsOptions))
   .use(express.json())
@@ -105,6 +108,7 @@ const app = express()
   )
   .use(passport.initialize())
   .use(passport.session())
+  .use('/api', applyLocalAuthBypass)
   .use('/api', sanitizeMongo)
   .use('/api', apiLimiter)
   .use('/api/listings', (req, res, next) => {
@@ -114,6 +118,12 @@ const app = express()
     return writeLimiter(req, res, next);
   })
   .use('/api/fellowships', (req, res, next) => {
+    if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') {
+      return next();
+    }
+    return writeLimiter(req, res, next);
+  })
+  .use('/api/programs', (req, res, next) => {
     if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') {
       return next();
     }

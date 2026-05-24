@@ -1,4 +1,5 @@
 import {
+  computePathwayQuality,
   getPathwaysByIds,
   searchPathways,
   type PathwaySearchHit,
@@ -7,6 +8,10 @@ import {
 } from './pathwaySearchService';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { getMeiliIndex } from '../utils/meiliClient';
+import { publicSourceUrl, publicSourceUrls } from '../utils/publicSourceUrl';
+import { firstUsableResearchWebsiteUrl } from '../utils/researchWebsiteUrl';
+import { sanitizeResearchEntityPublicDescriptionFields } from '../utils/researchEntityDescriptionText';
+import { publicResearchAreaArray } from './researchEntityDto';
 
 export const PATHWAY_SEARCH_INDEX_NAME = 'pathways';
 export const PATHWAY_SEARCH_INDEX_PRIMARY_KEY = 'id';
@@ -32,6 +37,8 @@ export interface PathwaySearchIndexEvidenceDocument {
   confidenceScore?: number;
   excerpt?: string;
   sourceUrl?: string;
+  sourceName?: string;
+  derivationKey?: string;
   observedAt?: string;
   observedAtTimestamp?: number;
 }
@@ -65,6 +72,9 @@ export interface PathwaySearchIndexDocument {
   entitySlug?: string;
   entityName?: string;
   entityDisplayName?: string;
+  entityShortDescription?: string;
+  entityDescription?: string;
+  entityFullDescription?: string;
   entityKind?: string;
   entityType?: string;
   entityDepartments: string[];
@@ -78,11 +88,17 @@ export interface PathwaySearchIndexDocument {
   postedOpportunityDeadlineTimestamp?: number;
   postedOpportunityStatus?: string;
   postedOpportunityTerm?: string;
+  postedOpportunityProvenance?: string;
   publicContactRoute?: PathwaySearchIndexContactRouteDocument;
   publicContactRouteType?: string;
   publicContactPolicy?: string;
   evidence: PathwaySearchIndexEvidenceDocument[];
   evidenceSnippets: string[];
+  qualityScore: number;
+  evidenceCount: number;
+  hasMicrositeEvidence: boolean;
+  hasFellowshipEvidence: boolean;
+  isProfileFallback: boolean;
 }
 
 export type PathwaySearchIndexInput = Record<string, unknown>;
@@ -113,7 +129,10 @@ export interface RebuildPathwaySearchIndexResult {
 }
 
 export interface PathwaySearchIndexSearchAdapter extends PathwaySearchIndexAdapter {
-  search: (query: string, params: Record<string, unknown>) => Promise<{
+  search: (
+    query: string,
+    params: Record<string, unknown>,
+  ) => Promise<{
     hits?: PathwaySearchIndexDocument[];
     estimatedTotalHits?: number;
   }>;
@@ -136,6 +155,9 @@ export const PATHWAY_SEARCH_INDEX_SETTINGS: PathwaySearchIndexSettings = {
     'compensation',
     'entityName',
     'entityDisplayName',
+    'entityShortDescription',
+    'entityDescription',
+    'entityFullDescription',
     'entityDepartments',
     'entityResearchAreas',
     'entitySchool',
@@ -159,8 +181,13 @@ export const PATHWAY_SEARCH_INDEX_SETTINGS: PathwaySearchIndexSettings = {
     'postedOpportunityStatus',
     'publicContactRouteType',
     'publicContactPolicy',
+    'hasMicrositeEvidence',
+    'hasFellowshipEvidence',
+    'isProfileFallback',
   ],
   sortableAttributes: [
+    'qualityScore',
+    'evidenceCount',
     'confidence',
     'lastObservedAtTimestamp',
     'createdAtTimestamp',
@@ -205,9 +232,7 @@ const toStringArray = (value: unknown): string[] => {
   if (!Array.isArray(value)) return [];
   return Array.from(
     new Set(
-      value
-        .map((item) => toStringValue(item))
-        .filter((item): item is string => Boolean(item)),
+      value.map((item) => toStringValue(item)).filter((item): item is string => Boolean(item)),
     ),
   );
 };
@@ -242,13 +267,7 @@ const redactAndTrim = (value: unknown): string | undefined => {
 const toPublicHttpUrl = (value: unknown): string | undefined => {
   const stringValue = toStringValue(value);
   if (!stringValue) return undefined;
-
-  try {
-    const url = new URL(stringValue);
-    return url.protocol === 'http:' || url.protocol === 'https:' ? stringValue : undefined;
-  } catch {
-    return undefined;
-  }
+  return publicSourceUrl(stringValue);
 };
 
 const toPublicHttpArray = (value: unknown): string[] =>
@@ -270,15 +289,19 @@ const normalizeEvidence = (
   const items = evidence
     .filter(isRecord)
     .slice(0, MAX_EVIDENCE_ITEMS)
-    .map((item): PathwaySearchIndexEvidenceDocument => ({
-      signalType: toStringValue(item.signalType),
-      confidence: toStringValue(item.confidence),
-      confidenceScore: toNumberValue(item.confidenceScore),
-      excerpt: redactAndTrim(item.excerpt),
-      sourceUrl: toPublicHttpUrl(item.sourceUrl),
-      observedAt: toIsoString(item.observedAt),
-      observedAtTimestamp: toTimestamp(item.observedAt),
-    }));
+    .map(
+      (item): PathwaySearchIndexEvidenceDocument => ({
+        signalType: toStringValue(item.signalType),
+        confidence: toStringValue(item.confidence),
+        confidenceScore: toNumberValue(item.confidenceScore),
+        excerpt: redactAndTrim(item.excerpt),
+        sourceUrl: toPublicHttpUrl(item.sourceUrl),
+        sourceName: toStringValue(item.sourceName),
+        derivationKey: toStringValue(item.derivationKey),
+        observedAt: toIsoString(item.observedAt),
+        observedAtTimestamp: toTimestamp(item.observedAt),
+      }),
+    );
 
   return {
     evidence: items,
@@ -299,11 +322,14 @@ const normalizePublicContactRoute = (
   const visibility = toStringValue(contactRoute.visibility);
   const contactPolicy = toStringValue(contactRoute.contactPolicy);
   if (visibility !== 'PUBLIC' || contactPolicy === 'NO_DIRECT_CONTACT') return undefined;
+  const rawUrl = toStringValue(contactRoute.url);
+  const url = toPublicHttpUrl(contactRoute.url);
+  if (rawUrl && /^https?:\/\//i.test(rawUrl) && !url) return undefined;
 
   return {
     routeType: toStringValue(contactRoute.routeType),
     label: redactAndTrim(contactRoute.label),
-    url: toPublicHttpUrl(contactRoute.url),
+    url,
     contactPolicy,
     rationale: redactAndTrim(contactRoute.rationale),
   };
@@ -312,7 +338,8 @@ const normalizePublicContactRoute = (
 const uniqueStrings = (...groups: string[][]): string[] =>
   Array.from(new Set(groups.flat().filter(Boolean)));
 
-const quoteFilterValue = (value: string): string => `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+const quoteFilterValue = (value: string): string =>
+  `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
 
 const anyFilter = (field: string, values?: string[]): string | undefined => {
   const clean = toStringArray(values);
@@ -327,9 +354,9 @@ function buildPathwayMeiliFilter(filters: PathwaySearchInput['filters'] = {}): s
   const pathwayTypeFilter =
     toStringArray(filters.pathwayType).length > 0
       ? anyFilter('pathwayType', requestedPathwayTypes)
-      : FORMALIZATION_ONLY_PATHWAY_TYPES
-          .map((pathwayType) => `pathwayType != ${quoteFilterValue(pathwayType)}`)
-          .join(' AND ');
+      : FORMALIZATION_ONLY_PATHWAY_TYPES.map(
+          (pathwayType) => `pathwayType != ${quoteFilterValue(pathwayType)}`,
+        ).join(' AND ');
   const parts = [
     anyFilter('pathwayId', filters.pathwayIds),
     anyFilter('entityId', filters.entityIds),
@@ -352,19 +379,61 @@ function buildPathwayMeiliSort(input: PathwaySearchInput): string[] | undefined 
   const direction = input.sort?.sortOrder === 'asc' ? 'asc' : 'desc';
   switch (input.sort?.sortBy) {
     case 'confidence':
-      return [`confidence:${direction}`, 'lastObservedAtTimestamp:desc'];
+      return [`confidence:${direction}`, 'qualityScore:desc', 'lastObservedAtTimestamp:desc'];
     case 'lastObservedAt':
-      return [`lastObservedAtTimestamp:${direction}`, 'confidence:desc'];
+      return [`lastObservedAtTimestamp:${direction}`, 'qualityScore:desc', 'confidence:desc'];
     case 'deadline':
-      return [`postedOpportunityDeadlineTimestamp:${direction}`, 'confidence:desc'];
+      return [
+        `postedOpportunityDeadlineTimestamp:${direction}`,
+        'qualityScore:desc',
+        'confidence:desc',
+      ];
     case 'createdAt':
-      return [`createdAtTimestamp:${direction}`, 'confidence:desc'];
+      return [`createdAtTimestamp:${direction}`, 'qualityScore:desc', 'confidence:desc'];
     default:
-      return input.q?.trim() ? undefined : ['lastObservedAtTimestamp:desc', 'confidence:desc'];
+      return input.q?.trim()
+        ? undefined
+        : [
+            'qualityScore:desc',
+            'evidenceCount:desc',
+            'confidence:desc',
+            'lastObservedAtTimestamp:desc',
+          ];
   }
 }
 
+const shouldUsePathwayHybridSearch = (query?: string): boolean =>
+  (query || '').trim().split(/\s+/).filter(Boolean).length > 1;
+
+const isMissingMeiliEmbedderError = (error: unknown): boolean => {
+  const maybeError = error as {
+    code?: string;
+    message?: string;
+    cause?: { code?: string; message?: string };
+  };
+
+  return (
+    maybeError?.code === 'invalid_search_embedder' ||
+    maybeError?.cause?.code === 'invalid_search_embedder' ||
+    /Cannot find embedder/i.test(maybeError?.message || '') ||
+    /Cannot find embedder/i.test(maybeError?.cause?.message || '')
+  );
+};
+
 function indexDocumentToHit(doc: PathwaySearchIndexDocument): PathwaySearchHit {
+  const contactRouteUrl = publicSourceUrl(doc.publicContactRoute?.url);
+  const contactRoute =
+    doc.publicContactRoute && (!doc.publicContactRoute.url || contactRouteUrl)
+      ? {
+          routeType: doc.publicContactRoute.routeType || '',
+          label: doc.publicContactRoute.label,
+          url: contactRouteUrl,
+          contactPolicy: doc.publicContactRoute.contactPolicy,
+          visibility: 'PUBLIC' as const,
+          rationale: doc.publicContactRoute.rationale,
+        }
+      : undefined;
+
   return {
     _id: doc.pathwayId || doc.id,
     pathwayType: doc.pathwayType || '',
@@ -376,7 +445,7 @@ function indexDocumentToHit(doc: PathwaySearchIndexDocument): PathwaySearchHit {
     bestNextStepCategory: (doc.bestNextStepCategory || 'save-for-later') as any,
     compensation: doc.compensation,
     confidence: doc.confidence,
-    sourceUrls: doc.sourceUrls || [],
+    sourceUrls: publicSourceUrls(doc.sourceUrls || []),
     lastObservedAt: doc.lastObservedAt ? new Date(doc.lastObservedAt) : undefined,
     createdAt: doc.createdAt ? new Date(doc.createdAt) : undefined,
     researchEntity: {
@@ -384,12 +453,15 @@ function indexDocumentToHit(doc: PathwaySearchIndexDocument): PathwaySearchHit {
       slug: doc.entitySlug || '',
       name: doc.entityName || '',
       displayName: doc.entityDisplayName,
+      shortDescription: doc.entityShortDescription,
+      description: doc.entityDescription,
+      fullDescription: doc.entityFullDescription,
       kind: doc.entityKind,
       entityType: doc.entityType,
       departments: doc.entityDepartments || [],
-      researchAreas: doc.entityResearchAreas || [],
+      researchAreas: publicResearchAreaArray(doc.entityResearchAreas),
       school: doc.entitySchool,
-      websiteUrl: doc.entityWebsiteUrl,
+      websiteUrl: firstUsableResearchWebsiteUrl([doc.entityWebsiteUrl]) || undefined,
     },
     activePostedOpportunity: doc.hasActivePostedOpportunity
       ? {
@@ -400,6 +472,7 @@ function indexDocumentToHit(doc: PathwaySearchIndexDocument): PathwaySearchHit {
             : undefined,
           status: (doc.postedOpportunityStatus || 'OPEN') as any,
           term: doc.postedOpportunityTerm,
+          provenance: doc.postedOpportunityProvenance as any,
         }
       : undefined,
     evidence: (doc.evidence || []).map((item) => ({
@@ -407,35 +480,48 @@ function indexDocumentToHit(doc: PathwaySearchIndexDocument): PathwaySearchHit {
       confidence: item.confidence || '',
       confidenceScore: item.confidenceScore,
       excerpt: item.excerpt,
-      sourceUrl: item.sourceUrl,
+      sourceUrl: publicSourceUrl(item.sourceUrl),
+      sourceName: item.sourceName,
+      derivationKey: item.derivationKey,
       observedAt: item.observedAt ? new Date(item.observedAt) : undefined,
     })),
-    contactRoute: doc.publicContactRoute
-      ? {
-          routeType: doc.publicContactRoute.routeType || '',
-          label: doc.publicContactRoute.label,
-          url: doc.publicContactRoute.url,
-          contactPolicy: doc.publicContactRoute.contactPolicy,
-          visibility: 'PUBLIC',
-          rationale: doc.publicContactRoute.rationale,
-        }
-      : undefined,
+    contactRoute,
+    qualityScore: doc.qualityScore,
+    evidenceCount: doc.evidenceCount,
+    hasMicrositeEvidence: doc.hasMicrositeEvidence,
+    hasFellowshipEvidence: doc.hasFellowshipEvidence,
+    isProfileFallback: doc.isProfileFallback,
   };
+}
+
+function isListingBridgedIndexDocument(doc: PathwaySearchIndexDocument): boolean {
+  return doc.postedOpportunityProvenance === 'LISTING_BRIDGED';
 }
 
 export function buildPathwaySearchIndexDocument(
   input: PathwaySearchHit | PathwaySearchIndexInput,
 ): PathwaySearchIndexDocument {
   const record = input as PathwaySearchIndexInput;
-  const researchEntity: Record<string, unknown> = isRecord(record.researchEntity)
-    ? record.researchEntity
-    : {};
+  const researchEntity: Record<string, unknown> = sanitizeResearchEntityPublicDescriptionFields(
+    isRecord(record.researchEntity) ? record.researchEntity : {},
+  );
   const activePostedOpportunity = isRecord(record.activePostedOpportunity)
     ? record.activePostedOpportunity
     : undefined;
   const normalizedEvidence = normalizeEvidence(record.evidence);
   const publicContactRoute = normalizePublicContactRoute(record.contactRoute);
   const id = stringifyId(record._id) || stringifyId(record.id) || '';
+  const quality = computePathwayQuality({
+    pathwayType: toStringValue(record.pathwayType),
+    status: toStringValue(record.status),
+    evidenceStrength: toStringValue(record.evidenceStrength),
+    compensation: toStringValue(record.compensation),
+    confidence: toNumberValue(record.confidence),
+    derivationKey: toStringValue(record.derivationKey),
+    activePostedOpportunity,
+    evidence: normalizedEvidence.evidence,
+    contactRoute: publicContactRoute,
+  });
 
   return {
     id,
@@ -444,9 +530,9 @@ export function buildPathwaySearchIndexDocument(
     status: toStringValue(record.status),
     evidenceStrength: toStringValue(record.evidenceStrength),
     compensation: toStringValue(record.compensation),
-    studentFacingLabel: toStringValue(record.studentFacingLabel),
-    explanation: toStringValue(record.explanation),
-    bestNextStep: toStringValue(record.bestNextStep),
+    studentFacingLabel: redactAndTrim(record.studentFacingLabel),
+    explanation: redactAndTrim(record.explanation),
+    bestNextStep: redactAndTrim(record.bestNextStep),
     bestNextStepCategory: toStringValue(record.bestNextStepCategory),
     confidence: toNumberValue(record.confidence),
     sourceUrls: uniqueStrings(toPublicHttpArray(record.sourceUrls), normalizedEvidence.sourceUrls),
@@ -458,13 +544,17 @@ export function buildPathwaySearchIndexDocument(
     entitySlug: toStringValue(researchEntity.slug),
     entityName: toStringValue(researchEntity.name),
     entityDisplayName: toStringValue(researchEntity.displayName),
+    entityShortDescription: toStringValue(researchEntity.shortDescription),
+    entityDescription: toStringValue(researchEntity.description),
+    entityFullDescription: toStringValue(researchEntity.fullDescription),
     entityKind: toStringValue(researchEntity.kind),
     entityType: toStringValue(researchEntity.entityType),
     entityDepartments: toStringArray(researchEntity.departments),
-    entityResearchAreas: toStringArray(researchEntity.researchAreas),
+    entityResearchAreas: publicResearchAreaArray(researchEntity.researchAreas),
     entitySchool: toStringValue(researchEntity.school),
     entityWebsiteUrl:
-      toStringValue(researchEntity.websiteUrl) || toStringValue(researchEntity.website),
+      firstUsableResearchWebsiteUrl([researchEntity.websiteUrl, researchEntity.website]) ||
+      undefined,
     hasActivePostedOpportunity: Boolean(activePostedOpportunity),
     postedOpportunityId:
       stringifyId(activePostedOpportunity?._id) || stringifyId(activePostedOpportunity?.id),
@@ -473,18 +563,26 @@ export function buildPathwaySearchIndexDocument(
     postedOpportunityDeadlineTimestamp: toTimestamp(activePostedOpportunity?.deadline),
     postedOpportunityStatus: toStringValue(activePostedOpportunity?.status),
     postedOpportunityTerm: toStringValue(activePostedOpportunity?.term),
+    postedOpportunityProvenance: toStringValue(activePostedOpportunity?.provenance),
     publicContactRoute,
     publicContactRouteType: publicContactRoute?.routeType,
     publicContactPolicy: publicContactRoute?.contactPolicy,
     evidence: normalizedEvidence.evidence,
     evidenceSnippets: normalizedEvidence.snippets,
+    qualityScore: quality.qualityScore,
+    evidenceCount: quality.evidenceCount,
+    hasMicrositeEvidence: quality.hasMicrositeEvidence,
+    hasFellowshipEvidence: quality.hasFellowshipEvidence,
+    isProfileFallback: quality.isProfileFallback,
   };
 }
 
 export function buildPathwaySearchIndexDocuments(
   inputs: Array<PathwaySearchHit | PathwaySearchIndexInput>,
 ): PathwaySearchIndexDocument[] {
-  return inputs.map(buildPathwaySearchIndexDocument).filter((doc) => Boolean(doc.id));
+  return inputs
+    .map(buildPathwaySearchIndexDocument)
+    .filter((doc) => Boolean(doc.id) && !isListingBridgedIndexDocument(doc));
 }
 
 export async function configurePathwaySearchIndex(
@@ -511,13 +609,36 @@ export async function searchPathwaysViaMeili(
   };
   if (filter) params.filter = filter;
   if (sort && sort.length > 0) params.sort = sort;
+  if (shouldUsePathwayHybridSearch(input.q)) {
+    params.hybrid = {
+      semanticRatio: 0.75,
+      embedder: 'default',
+    };
+  }
 
-  const result = await index.search((input.q || '').trim(), params);
-  const hits = (result.hits || []).map(indexDocumentToHit);
+  const query = (input.q || '').trim();
+  let result: { hits?: PathwaySearchIndexDocument[]; estimatedTotalHits?: number };
+  try {
+    result = await index.search(query, params);
+  } catch (error) {
+    if (!params.hybrid || !isMissingMeiliEmbedderError(error)) {
+      throw error;
+    }
+
+    const keywordOnlyParams = { ...params };
+    delete keywordOnlyParams.hybrid;
+    result = await index.search(query, keywordOnlyParams);
+  }
+  const rawHits = result.hits || [];
+  const publicHits = rawHits.filter((doc) => !isListingBridgedIndexDocument(doc));
+  const hits = publicHits.map(indexDocumentToHit);
 
   return {
     hits,
-    estimatedTotalHits: result.estimatedTotalHits ?? hits.length,
+    estimatedTotalHits:
+      publicHits.length === rawHits.length
+        ? (result.estimatedTotalHits ?? hits.length)
+        : hits.length,
     page,
     pageSize,
   };

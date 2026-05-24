@@ -27,6 +27,7 @@ const buildFellowshipSearchFilters = (query: Request['query']) => ({
   purpose: parseFilterParam(query.purpose),
   globalRegions: parseFilterParam(query.globalRegions),
   citizenshipStatus: parseFilterParam(query.citizenshipStatus),
+  programCategory: parseFilterParam(query.programCategory),
 });
 
 const hasFellowshipSearchFilters = (filters: ReturnType<typeof buildFellowshipSearchFilters>) =>
@@ -34,7 +35,8 @@ const hasFellowshipSearchFilters = (filters: ReturnType<typeof buildFellowshipSe
   filters.termOfAward.length > 0 ||
   filters.purpose.length > 0 ||
   filters.globalRegions.length > 0 ||
-  filters.citizenshipStatus.length > 0;
+  filters.citizenshipStatus.length > 0 ||
+  filters.programCategory.length > 0;
 
 const logFellowshipSearchEvent = async (req: Request, res: Response, next: NextFunction) => {
   const originalJson = res.json.bind(res);

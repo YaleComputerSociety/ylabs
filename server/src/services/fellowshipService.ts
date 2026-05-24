@@ -53,6 +53,7 @@ export const fellowshipExists = async (id: any) => {
 
 const FELLOWSHIP_ADMIN_UPDATABLE_FIELDS = [
   'title',
+  'programCategory',
   'competitionType',
   'summary',
   'description',
@@ -151,6 +152,7 @@ export const searchFellowships = async (params: {
   purpose?: string[];
   globalRegions?: string[];
   citizenshipStatus?: string[];
+  programCategory?: string[];
 }) => {
   const {
     query = '',
@@ -163,6 +165,7 @@ export const searchFellowships = async (params: {
     purpose = [],
     globalRegions = [],
     citizenshipStatus = [],
+    programCategory = [],
   } = params;
 
   const filter: any = { archived: false };
@@ -185,6 +188,9 @@ export const searchFellowships = async (params: {
   }
   if (citizenshipStatus.length > 0) {
     filter.citizenshipStatus = { $in: citizenshipStatus };
+  }
+  if (programCategory.length > 0) {
+    filter.programCategory = { $in: programCategory };
   }
 
   const sortOptions: any = {};
@@ -222,12 +228,14 @@ export const getFilterOptions = async () => {
     purposeOptions,
     globalRegionsOptions,
     citizenshipStatusOptions,
+    programCategoryOptions,
   ] = await Promise.all([
     Fellowship.distinct('yearOfStudy', { archived: false }),
     Fellowship.distinct('termOfAward', { archived: false }),
     Fellowship.distinct('purpose', { archived: false }),
     Fellowship.distinct('globalRegions', { archived: false }),
     Fellowship.distinct('citizenshipStatus', { archived: false }),
+    Fellowship.distinct('programCategory', { archived: false }),
   ]);
 
   return {
@@ -236,6 +244,7 @@ export const getFilterOptions = async () => {
     purpose: purposeOptions.filter(Boolean).sort(),
     globalRegions: globalRegionsOptions.filter(Boolean).sort(),
     citizenshipStatus: citizenshipStatusOptions.filter(Boolean).sort(),
+    programCategory: programCategoryOptions.filter(Boolean).sort(),
   };
 };
 

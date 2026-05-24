@@ -5,26 +5,25 @@
  * Yale's OpenAlex institution ID is I32971472 (ROR 03v76x132).
  *
  * Lookup precedence (per faculty member, first hit wins):
- *   1. ORCID — query `?filter=author.orcid:<orcid>`. Most reliable; ORCID is the
- *      canonical author identifier, so it wins whenever present even if we already
- *      have an openAlexId (the ORCID may pick up co-author works the OpenAlex
- *      profile is missing for humanities/social-sci faculty whose institutional
- *      affiliation tagging is patchy).
- *   2. openAlexId — query `?filter=author.id:<openAlexId>` (legacy fast path).
+ *   1. ORCID — query `?filter=author.orcid:<orcid>`. ORCID is the person-identity
+ *      anchor, so it wins whenever present even if a stored openAlexId exists.
+ *      If ORCID is present but OpenAlex cannot resolve it, skip this user and
+ *      flag review instead of falling back to a stale OpenAlex author id.
+ *   2. openAlexId — query `?filter=author.id:<openAlexId>` only when no ORCID is
+ *      available. Treat this as an accepted external author pointer, not as
+ *      person proof.
  *   3. Name + Yale-affiliation search — query the `/authors` endpoint scoped to
- *      Yale (institution I32971472) and accept ONLY when there is exactly one
- *      result whose display_name matches `<fname> <lname>` exactly (case-
- *      insensitive, ignoring middle names). When this succeeds we also emit a
- *      `openAlexId` observation against the User so the next run takes the fast
- *      path. Otherwise the candidate is skipped (we will not guess on ambiguous
- *      name matches).
+ *      Yale (institution I32971472) only when discovery is explicitly enabled.
+ *      Exact-name matches are review-only and never write `openAlexId` or paper
+ *      authorship evidence.
  *
  * Faculty selection: any User with userType in ['professor', 'faculty'] AND at
  * least one of {orcid, openAlexId} OR fname + lname (so the name-search fallback
  * can run). Users with no usable signals are filtered out.
  *
- * For each work, emit Observations on a Paper entity keyed by openAlexId. The
- * materializer upserts the Paper and links to yaleAuthorIds.
+ * For each work, emit compact scholarly-link observations keyed by OpenAlex id.
+ * OpenAlex is the query layer; public profiles link to DOI, publisher, PubMed,
+ * arXiv, or OpenAlex only as fallback.
  *
  * Uses the polite pool by passing a contact email via the `mailto` query parameter
  * (configured by OPENALEX_CONTACT_EMAIL env var, defaults to info@yalelabs.io).
@@ -36,12 +35,10 @@
  */
 import axios from 'axios';
 import { User } from '../../models/user';
+import { buildScholarlyLinkFromPaper } from '../../services/scholarlyLinkService';
 import { getCached, setCached } from '../snapshotCache';
 import type { IScraper, ScraperContext, ScraperResult, ObservationInput } from '../types';
-import {
-  PAPER_AUTHORSHIP_EVIDENCE_FIELD,
-  type PaperAuthorshipEvidence,
-} from '../paperAuthorshipPolicy';
+import { type PaperAuthorshipEvidence } from '../paperAuthorshipPolicy';
 
 const OPENALEX_BASE = 'https://api.openalex.org';
 const PAGE_SIZE = 200;
@@ -58,6 +55,8 @@ interface OpenAlexWork {
   id: string;
   ids?: Record<string, string | undefined>;
   doi?: string;
+  type?: string;
+  type_crossref?: string;
   title?: string;
   display_name?: string;
   publication_year?: number;
@@ -334,63 +333,49 @@ function workToObservations(
   authorshipEvidence?: PaperAuthorshipEvidence,
 ): ObservationInput[] {
   const openAlexId = work.id;
-  const out: ObservationInput[] = [];
-  const baseId = { entityType: 'paper' as const, entityKey: openAlexId, sourceUrl };
   const doi = normalizeDoi(work.doi || work.ids?.doi);
   const arxivId = extractArxivId(work);
   const externalIds = buildExternalIds(work);
-
-  const fields: Array<[string, unknown]> = [
-    ['openAlexId', openAlexId],
-    ['arxivId', arxivId],
-    ['title', work.title || work.display_name],
-    ['doi', doi],
-    ['year', work.publication_year],
-    ['publishedAt', work.publication_date ? new Date(work.publication_date) : undefined],
-    ['venue', work.primary_location?.source?.display_name],
-    ['citationCount', work.cited_by_count ?? 0],
-    ['abstract', reconstructAbstract(work.abstract_inverted_index)],
-    ['url', `https://openalex.org/${(openAlexId || '').replace(/^https?:\/\/openalex\.org\//, '')}`],
-    ['openAccessUrl', work.open_access?.oa_url],
-    [
-      'authors',
-      (work.authorships || [])
-        .map((a) => a.author?.display_name)
-        .filter(Boolean) as string[],
-    ],
-    [
-      'fieldsOfStudy',
-      Array.from(
-        new Set(
-          [
-            ...(work.topics || []).map((t) => t.field?.display_name).filter(Boolean),
-            ...(work.concepts || [])
-              .filter((c) => (c.level ?? 99) <= 1)
-              .map((c) => c.display_name)
-              .filter(Boolean),
-          ] as string[],
-        ),
+  const openAlexUrl = `https://openalex.org/${(openAlexId || '').replace(/^https?:\/\/openalex\.org\//, '')}`;
+  const link = buildScholarlyLinkFromPaper(
+    {
+      openAlexId,
+      arxivId,
+      title: work.title || work.display_name,
+      doi,
+      year: work.publication_year,
+      publishedAt: work.publication_date ? new Date(work.publication_date) : undefined,
+      venue: work.primary_location?.source?.display_name,
+      url: openAlexUrl,
+      landingPageUrl: work.primary_location?.landing_page_url,
+      openAccessUrl: work.open_access?.oa_url,
+      pdfUrl: work.primary_location?.pdf_url,
+      externalIds,
+      publicationTypes: [work.type, work.type_crossref].filter(
+        (value): value is string => Boolean(value),
       ),
-    ],
-    ['externalIds', externalIds],
-  ];
+      sources: ['openalex'],
+      sourceUrl,
+    },
+    {
+      userId: authorshipEvidence?.userId,
+    },
+  );
+  if (!link) return [];
 
-  for (const [field, value] of fields) {
-    if (value === undefined || value === null || value === '') continue;
-    out.push({ ...baseId, field, value });
-  }
-
-  if (authorshipEvidence) {
-    out.push({
+  const entityKey = authorshipEvidence?.userId
+    ? `user:${authorshipEvidence.userId}:${openAlexId}`
+    : openAlexId;
+  const baseId = { entityType: 'scholarlyLink' as const, entityKey, sourceUrl };
+  return Object.entries(link)
+    .filter(([, value]) => value !== undefined && value !== null && value !== '')
+    .map(([field, value]) => ({
       ...baseId,
-      field: PAPER_AUTHORSHIP_EVIDENCE_FIELD,
-      value: authorshipEvidence,
-      confidenceOverride: authorshipEvidence.confidence,
-    });
-  }
-  out.push({ ...baseId, field: 'sources', value: ['openalex'] });
-
-  return out;
+      field,
+      value,
+      confidenceOverride:
+        field === 'userId' && authorshipEvidence ? authorshipEvidence.confidence : undefined,
+    }));
 }
 
 // ---------------------------------------------------------------------------
@@ -462,6 +447,7 @@ export async function resolveAuthorIdForFaculty(
       }
     }
     if (id) return { authorId: id, method: 'orcid' };
+    return { authorId: null, method: 'none' };
   }
 
   // Tier 2: existing openAlexId.
@@ -692,6 +678,18 @@ export class OpenAlexPaperScraper implements IScraper {
       }
       totalWorks += worksForAuthor;
       if (yaleNetId) {
+        if (
+          resolved.method === 'orcid' &&
+          normalizeOpenAlexId(fac.openAlexId) !== normalizeOpenAlexId(authorId)
+        ) {
+          await queueObservations({
+            entityType: 'user',
+            entityKey: String(yaleNetId),
+            field: 'openAlexId',
+            value: authorId,
+            sourceUrl: `${OPENALEX_BASE}/authors/${normalizeOpenAlexId(authorId) || authorId}`,
+          });
+        }
         await queueObservations({
           entityType: 'user',
           entityKey: String(yaleNetId),

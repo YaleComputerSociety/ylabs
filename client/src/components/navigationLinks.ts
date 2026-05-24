@@ -1,19 +1,21 @@
 export interface PrimaryNavLink {
-  key: 'research' | 'pathways' | 'fellowships' | 'account';
+  key: 'research' | 'programs' | 'account';
   label: string;
   to: string;
 }
 
 export const primaryNavLinks: PrimaryNavLink[] = [
-  { key: 'research', label: 'Research', to: '/research' },
-  { key: 'pathways', label: 'Pathways', to: '/pathways' },
-  { key: 'fellowships', label: 'Find Fellowships', to: '/fellowships' },
+  { key: 'research', label: 'Yale Labs', to: '/research' },
+  { key: 'programs', label: 'Programs & Fellowships', to: '/programs' },
   { key: 'account', label: 'Dashboard', to: '/account' },
 ];
 
 export const isPrimaryNavLinkActive = (pathname: string, link: PrimaryNavLink): boolean => {
   if (link.key === 'research') {
     return pathname === '/research' || pathname.startsWith('/research/');
+  }
+  if (link.key === 'programs') {
+    return pathname === '/programs';
   }
   return pathname === link.to;
 };

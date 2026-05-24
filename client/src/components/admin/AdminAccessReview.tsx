@@ -320,7 +320,7 @@ const RecordReviewControls = ({
         <select
           value={status}
           onChange={(event) => setStatus(event.target.value as ReviewStatus)}
-          className="rounded border border-gray-300 px-2 py-1.5 text-xs"
+          className="min-h-[44px] rounded border border-gray-300 px-2 py-1.5 text-xs"
         >
           {REVIEW_STATUSES.map((option) => (
             <option key={option} value={option}>
@@ -333,12 +333,12 @@ const RecordReviewControls = ({
           value={lockedFields}
           onChange={(event) => setLockedFields(event.target.value)}
           placeholder="locked fields"
-          className="rounded border border-gray-300 px-2 py-1.5 text-xs"
+          className="min-h-[44px] rounded border border-gray-300 px-2 py-1.5 text-xs"
         />
         <button
           onClick={save}
           disabled={isSaving}
-          className="rounded bg-gray-900 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+          className="min-h-[44px] rounded bg-gray-900 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
         >
           {isSaving ? 'Saving...' : 'Save Review'}
         </button>
@@ -348,7 +348,7 @@ const RecordReviewControls = ({
         onChange={(event) => setNote(event.target.value)}
         rows={2}
         placeholder="Reviewer note"
-        className="mt-2 w-full rounded border border-gray-300 px-2 py-1.5 text-xs"
+        className="mt-2 min-h-[64px] w-full rounded border border-gray-300 px-2 py-1.5 text-xs"
       />
       {record.review?.reviewedAt && (
         <p className="mt-1 text-[11px] text-gray-500">Last reviewed {formatDate(record.review.reviewedAt)}</p>
@@ -548,7 +548,7 @@ const AdminAccessReview = () => {
                 setPage(1);
               }}
               placeholder="Search entity, slug, department, area..."
-              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="min-h-[44px] w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
           <div>
@@ -559,7 +559,7 @@ const AdminAccessReview = () => {
                 setPageSize(Number(event.target.value));
                 setPage(1);
               }}
-              className="border border-gray-300 rounded-md px-3 py-2 text-sm"
+              className="min-h-[44px] border border-gray-300 rounded-md px-3 py-2 text-sm"
             >
               {PAGE_SIZES.map((size) => (
                 <option key={size} value={size}>
@@ -570,7 +570,7 @@ const AdminAccessReview = () => {
           </div>
           <button
             onClick={fetchEntities}
-            className="px-4 py-2 rounded-md bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700"
+            className="min-h-[44px] px-4 py-2 rounded-md bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700"
           >
             Refresh
           </button>
@@ -631,14 +631,14 @@ const AdminAccessReview = () => {
             <button
               onClick={() => setPage((current) => Math.max(1, current - 1))}
               disabled={page <= 1}
-              className="px-3 py-1.5 text-sm border border-gray-300 rounded disabled:opacity-40"
+              className="min-h-[44px] px-3 py-1.5 text-sm border border-gray-300 rounded disabled:opacity-40"
             >
               Previous
             </button>
             <button
               onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
               disabled={page >= totalPages}
-              className="px-3 py-1.5 text-sm border border-gray-300 rounded disabled:opacity-40"
+              className="min-h-[44px] px-3 py-1.5 text-sm border border-gray-300 rounded disabled:opacity-40"
             >
               Next
             </button>
@@ -670,7 +670,7 @@ const AdminAccessReview = () => {
                   href={`/research/${detail.group.slug}`}
                   target="_blank"
                   rel="noreferrer"
-                  className="px-3 py-2 text-sm font-semibold text-blue-700 border border-blue-200 rounded hover:bg-blue-50"
+                  className="inline-flex min-h-[44px] items-center px-3 py-2 text-sm font-semibold text-blue-700 border border-blue-200 rounded hover:bg-blue-50"
                 >
                   Open Research Page
                 </a>
@@ -687,12 +687,12 @@ const AdminAccessReview = () => {
                     value={manualLocksText}
                     onChange={(event) => setManualLocksText(event.target.value)}
                     placeholder="acceptingUndergrads, contactRoutes..."
-                    className="flex-1 border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="min-h-[44px] flex-1 border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                   <button
                     onClick={saveManualLocks}
                     disabled={isSavingLocks}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-semibold hover:bg-blue-700 disabled:opacity-50"
+                    className="min-h-[44px] px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-semibold hover:bg-blue-700 disabled:opacity-50"
                   >
                     {isSavingLocks ? 'Saving...' : 'Save Locks'}
                   </button>
@@ -748,7 +748,7 @@ const AdminAccessReview = () => {
                   <select
                     value={recordFilter}
                     onChange={(event) => setRecordFilter(event.target.value as RecordFilter)}
-                    className="rounded border border-gray-300 px-3 py-2 text-sm"
+                    className="min-h-[44px] rounded border border-gray-300 px-3 py-2 text-sm"
                   >
                     {RECORD_FILTERS.map((option) => (
                       <option key={option.value} value={option.value}>

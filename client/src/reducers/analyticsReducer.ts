@@ -58,6 +58,12 @@ export interface AnalyticsData {
       listingCount: number;
       avgViews: number;
     }>;
+    opportunityViewDataHealth?: {
+      opportunityViewEventsLast30Days: number;
+      resolvedOpportunityViewEventsLast30Days: number;
+      orphanedOpportunityViewEventsLast30Days: number;
+      orphanedOpportunityIds: string[];
+    };
   };
   listings: {
     overview: {
@@ -165,6 +171,31 @@ export interface AnalyticsSearchQualityResponse {
   zeroResultQueries?: AnalyticsSearchQualityQuery[];
   topZeroResultQueries?: AnalyticsSearchQualityQuery[];
   lowResultQueries?: AnalyticsSearchQualityQuery[];
+}
+
+export interface AnalyticsSearchQuerySearcher {
+  netid: string;
+  userType: string;
+  fname?: string;
+  lname?: string;
+  email?: string;
+  searchCount: number;
+  lastSearchedAt?: string | null;
+}
+
+export interface AnalyticsSearchQueryRow {
+  query: string;
+  totalSearches: number;
+  uniqueSearchers: number;
+  zeroResultSearches?: number;
+  avgResultCount?: number;
+  lastSearchedAt?: string | null;
+  searchers: AnalyticsSearchQuerySearcher[];
+}
+
+export interface AnalyticsSearchQueryResponse {
+  queries: AnalyticsSearchQueryRow[];
+  limit: number;
 }
 
 export interface AnalyticsFunnelStage {

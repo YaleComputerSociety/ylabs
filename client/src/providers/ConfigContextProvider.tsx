@@ -106,13 +106,17 @@ const ConfigContextProvider: FC<ConfigContextProviderProps> = ({ children }) => 
 
   const departmentAbbrMap = useMemo(() => {
     const map = new Map<string, DepartmentConfig>();
-    departments.forEach((dept) => map.set(dept.abbreviation, dept));
+    departments.forEach((dept) => map.set(dept.abbreviation.toUpperCase(), dept));
     return map;
   }, [departments]);
 
   const departmentNameMap = useMemo(() => {
     const map = new Map<string, DepartmentConfig>();
-    departments.forEach((dept) => map.set(dept.name.toLowerCase(), dept));
+    departments.forEach((dept) => {
+      map.set(dept.name.toLowerCase(), dept);
+      map.set(dept.displayName.toLowerCase(), dept);
+      (dept.aliases || []).forEach((alias) => map.set(alias.toLowerCase(), dept));
+    });
     return map;
   }, [departments]);
 
@@ -136,7 +140,7 @@ const ConfigContextProvider: FC<ConfigContextProviderProps> = ({ children }) => 
 
   const getDepartmentByAbbr = useCallback(
     (abbr: string): DepartmentConfig | undefined => {
-      return departmentAbbrMap.get(abbr);
+      return departmentAbbrMap.get(abbr.toUpperCase());
     },
     [departmentAbbrMap],
   );
@@ -150,8 +154,8 @@ const ConfigContextProvider: FC<ConfigContextProviderProps> = ({ children }) => 
 
   const getDepartmentColor = useCallback(
     (dept: string): string => {
-      const match = dept.match(/^([A-Z&/]+)\s*-/);
-      const abbr = match ? match[1] : null;
+      const match = dept.match(/^([A-Za-z&/]+)\s*-/);
+      const abbr = match ? match[1].toUpperCase() : null;
 
       if (abbr) {
         const deptConfig = departmentAbbrMap.get(abbr);

@@ -47,7 +47,7 @@ ylabs/
 │       ├── routes/           # Express routers aggregated in routes/index.ts
 │       ├── controllers/      # Request handlers
 │       ├── services/         # Business logic (25+ services)
-│       ├── models/           # Mongoose schemas: user, listing, fellowship, analytics, department, researchArea, researchEntity, researchGroup, entryPathway, accessSignal, contactRoute, postedOpportunity, observation, source, scrapeRun, facultyMember, grant, paper, studentApplication, studentProfile, and more
+│       ├── models/           # Mongoose schemas: user, listing, fellowship, analytics, department, researchArea, researchEntity, researchGroup, entryPathway, accessSignal, contactRoute, postedOpportunity, observation, source, scrapeRun, scrapeJobLock, scrapeSnapshot, facultyMember, grant, paper, paperAuthor, paperGroupLink, studentApplication, studentProfile, studentTracking, studentOutreach, studentEngagementEvent, and more
 │       ├── scrapers/         # Scraper infrastructure: CLI, orchestrator, materializers, sources/, utils/
 │       ├── middleware/        # Auth guards, validation, error handling
 │       ├── db/               # Multi-mode database connections
@@ -86,25 +86,24 @@ Dev login bypass: `GET http://localhost:4000/api/dev-login` creates a test sessi
 
 ## Database
 
-MongoDB via Mongoose 8. All environments use `MONGODBURL` — the connection string determines which database (Production, Beta, or Development) is used. An optional `productionMigration` mode (via `API_MODE=productionMigration`) adds a second connection to `MONGODBURL_MIGRATION` for dual-DB migrations; `getListingModel()` returns the migration model in this mode.
+MongoDB via Mongoose 8. All environments use `MONGODBURL` — the connection string determines which database (Production, Beta, or Development) is used. An optional `productionMigration` mode (via `API_MODE=productionMigration`) adds a second connection to `MONGODBURL_MIGRATION` for dual-DB migrations.
 
 ## Search
 
 Search has migrated from MongoDB Atlas Vector Search to **Meilisearch**. The old `embeddingService.ts` (OpenAI client-side embedding generation + in-memory LRU cache) has been removed.
 
-Three Meilisearch indexes are now in use:
+Current Meilisearch indexes:
 
 | Index | Service | Purpose |
 |-------|---------|---------|
-| `listings` | `listingService.ts` | Legacy listing search (keyword + semantic, `semanticRatio: 0.8`) |
-| `research_entities` | `researchEntitySearchIndexService.ts` | Explore Research (`/research`) |
-| `pathways` | `pathwaySearchIndexService.ts` | Pathways surface (`/pathways`) |
+| `researchentities` | `researchEntitySearchIndexService.ts` | Yale Labs / Research search (`/research`) |
+| `pathways` | `pathwaySearchIndexService.ts` | Internal ways-in enrichment, saved planning, parity testing, and future admin workflows |
 
-The Meilisearch client (`server/src/utils/meiliClient.ts`) lazy-loads and caches the connection. Configuration: `MEILISEARCH_HOST` (defaults to `http://localhost:7700`), `MEILISEARCH_API_KEY`, and `MEILISEARCH_INDEX_PREFIX` (optional prefix applied to all index names, e.g. `beta_listings`). The module exports `getMeiliIndex(name)` and `resolveIndexName(name)`.
+The Meilisearch client (`server/src/utils/meiliClient.ts`) lazy-loads and caches the connection. Configuration: `MEILISEARCH_HOST` (defaults to `http://localhost:7700`), `MEILISEARCH_API_KEY`, and `MEILISEARCH_INDEX_PREFIX` (optional prefix applied to all index names, e.g. `beta_researchentities`). The module exports `getMeiliIndex(name)` and `resolveIndexName(name)`.
 
-Listing mutations in `listingService.ts` sync to Meilisearch after MongoDB writes. Pathway and ResearchEntity index documents are synced via `meiliSyncService.ts` after upserts to their respective collections. Rebuild scripts (`meili:rebuild-research-entities`, `meili:rebuild-pathways`) do a full repopulation.
+ResearchEntity and pathway index documents are synced via `meiliSyncService.ts` after upserts to their respective collections. Rebuild scripts (`meili:rebuild-research-entities`, `meili:rebuild-pathways`) do a full repopulation.
 
-`data-migration/MigrateToMeilisearch.ts` configures the listings index (filterable: `departments`, `researchAreas`, `archived`, `confirmed`; sortable: `createdAt`, `updatedAt`, `searchScore`; OpenAI embedder). Run with `MEILISEARCH_INDEX_PREFIX` set.
+The legacy listing Meilisearch migration has been removed. Use the server rebuild scripts for current Research and Pathways indexes.
 
 ## Environments
 
@@ -113,7 +112,7 @@ Code flows Local → Beta → Prod. Beta is the staging gate where infrastructur
 | Environment | Hosting | `MEILISEARCH_INDEX_PREFIX` | Data source |
 |-------------|---------|---------------------------|-------------|
 | Local | localhost | *(unset)* | Seed script / local MongoDB |
-| Beta | Render (`ylabs-dev.onrender.com`) | `beta` | Seeded via `MigrateToMeilisearch.ts` |
+| Beta | Render (`ylabs-dev.onrender.com`) | `beta` | Rebuilt via server Meilisearch rebuild scripts |
 | Prod | Render (`yalelabs.onrender.com`) | `prod` | Real data |
 
 Meilisearch is a single Render Private Service shared by both beta and prod, isolated by index prefixes. MongoDB is a single Atlas cluster with separate databases per environment.
@@ -144,7 +143,7 @@ export const asyncHandler = (fn: Function) => {
 
 ## Analytics Interception
 
-Analytics events are logged by intercepting `res.send` or `res.json` in route-level middleware (`server/src/routes/listings.ts`). The original method is bound, replaced with a wrapper that fires a log event on 2xx responses, then calls the original. This keeps analytics logic out of controllers and services.
+Analytics events are logged by intercepting `res.send` or `res.json` in route-level middleware. The original method is bound, replaced with a wrapper that fires a log event on 2xx responses, then calls the original. This keeps analytics logic out of controllers and services.
 
 ```typescript
 const logListingEvent = (eventType: AnalyticsEventType) => {
@@ -161,7 +160,7 @@ const logListingEvent = (eventType: AnalyticsEventType) => {
 };
 ```
 
-Listing creation uses the same pattern but intercepts `res.json` to extract the created listing's `_id` from the response body.
+Event-specific wrappers can inspect the response body before forwarding it, but retired listing creation is no longer an active analytics path.
 
 Analytics events have a 3-year TTL via MongoDB's `expireAfterSeconds` index.
 
@@ -169,7 +168,7 @@ Analytics events have a 3-year TTL via MongoDB's `expireAfterSeconds` index.
 
 Client-side tests run under **Vitest 3** with a `jsdom` environment. Config lives in the `test` block of `client/vite.config.js`; tests are discovered from `client/src/**/*.{test,spec}.{ts,tsx}`.
 
-Server-side tests also run under **Vitest** (`yarn --cwd server test`). Test files live in `server/src/services/__tests__/` and `server/src/scrapers/__tests__/`. Coverage spans services (accessSignal, fellowship matching, opportunity detail, pathway search, researchEntity DTO, Meilisearch sync, userService, etc.) and individual scrapers (NSF, NIH, Yale Directory, OpenAlex, undergrad fellowship recipient, YSE Centers, and more).
+Server-side tests also run under **Vitest** (`yarn --cwd server test`). Test files live in `server/src/services/__tests__/` and `server/src/scrapers/__tests__/`. Coverage spans services (accessSignal, accessSummary, fellowship matching, opportunity detail, pathway search, researchEntity DTO, Meilisearch sync, sourceHealth, userService, etc.) and scraper infrastructure (cronRunner, confidenceResolver, observationStore, observationRetention, runReport, scrapeJobLock, workPlanner, sourceCoverageRegistry, scraperEnvironment, renderedFetch, accessMaterializer, entityMaterializer) and individual scrapers (NSF, NIH, Yale Directory, Yale College Fellowships Office, OpenAlex, ORCID, undergrad fellowship recipient, YSE Centers, and more).
 
 Coverage focuses on pure reducer modules in `client/src/reducers/`, with matching test files in `client/src/reducers/__tests__/`. The pattern extracts state transitions out of providers/components (as `createInitial<Name>State()` + `<name>Reducer(state, action)`) so they can be tested without mounting React or mocking network. Side effects (axios, localStorage, timers) stay in the component that uses `useReducer`.
 
@@ -177,33 +176,39 @@ Current reducers with test coverage (all in `client/src/reducers/`, tests in `cl
 
 | Reducer | Consumer | What it models |
 |---------|----------|----------------|
-| `searchReducer` | `SearchContextProvider` | Listing search query, filters, sort, pagination, results lifecycle |
-| `fellowshipSearchReducer` | `FellowshipSearchContextProvider` | Fellowship equivalent with filter-options fetch lifecycle |
-| `browsePageReducer` | `pages/home`, `pages/fellowships` | Generic over `<T>`. Browse-page UI: favorites, detail-modal selection, admin-edit modal. Open/close modal flips `selectedItem` and `isDetailModalOpen` atomically. |
+| `searchReducer` | `SearchContextProvider` | Research search query, filters, sort, pagination, results lifecycle |
+| `fellowshipSearchReducer` | `FellowshipSearchContextProvider` | Programs & Fellowships equivalent with filter-options fetch lifecycle |
+| `browsePageReducer` | Legacy/common browse flows | Generic over `<T>`. Browse-page UI: favorites, detail-modal selection, admin-edit modal. Open/close modal flips `selectedItem` and `isDetailModalOpen` atomically. |
 | `configReducer` | `ConfigContextProvider` | Config fetch (idle → loading → loaded/error) |
 | `userReducer` | `UserContextProvider` | Auth-check lifecycle (loading → authenticated/unauthenticated) + explicit LOGOUT |
-| `favoritesReducer` | `components/accounts/FavoritesManager` | Favorited listings + fellowships, sort/filter/view state, optimistic add/remove |
-| `ownListingsReducer` | `components/accounts/ListingEditor` | Professor's own listings + edit/create lifecycle (isEditing/isCreating), skeleton-listing handling |
+| `favoritesReducer` | Account saved-state compatibility flows | Favorited legacy rows plus programs, sort/filter/view state, optimistic add/remove |
+| `ownListingsReducer` | Legacy compatibility only | Retired professor listing lifecycle residue |
 | `unknownUserReducer` | Unknown-user flow | State for the "unknown user" verification path |
-| `listingFormReducer` | `components/accounts/ListingForm` | Form fields, errors, hydrate/reset, department add/remove |
+| `listingFormReducer` | Legacy compatibility only | Retired listing form state residue |
 | `profileEditorReducer` | Profile editor | Profile form state |
 | `publicationsTableReducer` | Publications table | Publication CRUD/table state |
 | `inlineCrudReducer` | Inline CRUD components | Generic add/edit/delete row state |
 | `accountTrackingReducer` | `components/accounts/FavoritesManager` | Kanban stage + notes per lab/fellowship; includes `loadAccountTrackingFromStorage()` with legacy-key migration |
 | `adminTableReducer` | Admin tables | Generic admin table sort/filter/pagination |
-| `adminListingsTableReducer` | Admin listings table | Listing-specific admin table state |
+| `adminListingsTableReducer` | Retired admin listings route | Listing-specific admin table state retained only for compatibility/regression cleanup |
 | `adminFellowshipsTableReducer` | Admin fellowships table | Fellowship-specific admin table state |
 | `adminFacultyProfilesTableReducer` | Admin faculty profiles table | Faculty profile admin table state |
-| `adminListingEditReducer` | Admin listing edit | Edit form for an admin-managed listing |
+| `adminListingEditReducer` | Retired admin listing edit | Edit form state retained only for compatibility/regression cleanup |
 | `adminFellowshipEditReducer` | Admin fellowship edit | Edit form for an admin-managed fellowship |
 | `adminFellowshipFormReducer` | Admin fellowship form | Fellowship create/edit form fields and errors |
 | `adminProfileEditReducer` | Admin profile edit | Edit form for an admin-managed faculty profile |
+| `analyticsReducer` | `pages/analytics` | Analytics dashboard fetch lifecycle (idle → loading → loaded/error) |
+| `departmentInputReducer` | `DepartmentInput` combobox | Dropdown open/search/keyboard state for multi-select department input |
+| `researchAreaInputReducer` | `ResearchAreaInput` combobox | Autocomplete open/filter/keyboard state for research area input |
+| `labSearchReducer` | Research browse page (`/research`) | Research entity search query, filters, sort, pagination — mirrors `searchReducer` shape |
+| `labDetailReducer` | Research detail page (`/research/:slug`) | Fetch lifecycle for a single research entity + Inquire modal toggle |
+| `profilePageReducer` | Faculty profile page | Profile fetch lifecycle + `coursesAvailable` signal |
 
 ## CI
 
-`.github/workflows/ci.yml` runs on PRs to `main` and `beta` (and via `workflow_dispatch`). Steps: checkout → Node 20 → Corepack → `yarn install:all` → `yarn --cwd client test:ci` → `yarn build`. The workflow enforces that tests pass and both server and client build successfully before merge.
+`.github/workflows/ci.yml` runs on PRs to `main` and `beta` (and via `workflow_dispatch`). Steps: checkout -> Node 20 -> Corepack -> `yarn install:all` -> server typecheck -> server tests -> client tests -> high-severity dependency audit -> `yarn build`. The workflow enforces that tests pass and both server and client build successfully before merge.
 
-`tsc --noEmit` is intentionally **not** in CI — the client has pre-existing type errors (shadow-variable spreads, `AdminListing` field drift, etc.) that predate the reducer work. Enforcing strict typecheck requires a dedicated cleanup pass first.
+Client `tsc --noEmit` is intentionally **not** in CI because the client has pre-existing type errors (shadow-variable spreads, `AdminListing` field drift, etc.) that predate the reducer work. Server typecheck is in CI.
 
 The only other workflow is `keep-alive.yml`, which pings the Beta Render service every 10 minutes to prevent cold starts.
 
@@ -214,7 +219,7 @@ Two rate limiters in `app.ts`, both keyed by authenticated user's `netId` with I
 | Limiter | Scope | Limit |
 |---------|-------|-------|
 | `apiLimiter` | All `/api` routes | 200 req / 15 min |
-| `writeLimiter` | Non-GET requests to `/api/listings` and `/api/fellowships` | 50 req / 15 min |
+| `writeLimiter` | Non-GET API routes, including retired listing/program compatibility routes where mounted | 50 req / 15 min |
 
 Both limiters are skipped in CI, development, and test environments.
 
@@ -227,7 +232,6 @@ Defined in `server/src/middleware/auth.ts`:
 | `isAuthenticated` | `req.user` exists |
 | `isAdmin` | `userType === 'admin'` |
 | `isProfessor` | `userType` in `['professor', 'faculty', 'admin']` |
-| `canCreateListing` | professor/faculty + `profileVerified` (admins bypass) |
 | `isTrustworthy` | `userConfirmed` + admin/professor/faculty |
 | `isConfirmed` | `userConfirmed === true` |
 
@@ -249,8 +253,11 @@ All routes mount under `/api` in `app.ts`. Route files in `server/src/routes/`:
 
 | Prefix | File | Auth |
 |--------|------|------|
-| `/listings` | `listings.ts` | Varies (search public, mutations require auth) |
-| `/fellowships` | `fellowships.ts` | Varies |
+| `/research` | `researchGroups.ts` | Varies |
+| `/programs` | `programs.ts` | Varies |
+| `/opportunities` | `opportunities.ts` | Varies |
+| `/listings` | `listings.ts` | Retired compatibility route, returns `410 Gone` |
+| `/fellowships` | `fellowships.ts` | Temporary compatibility alias around Programs/Fellowships storage |
 | `/users` | `users.ts` | Yes |
 | `/profiles` | `profiles.ts` | Varies |
 | `/analytics` | `analytics.ts` | Admin |
@@ -305,7 +312,7 @@ User → Yale CAS SSO → passport.ts findOrCreateUser
 | `OPENAI_API_KEY` | No | OpenAI API key (used by Meilisearch embedder config) |
 | `MEILISEARCH_HOST` | No (default: `http://localhost:7700`) | Meilisearch instance URL |
 | `MEILISEARCH_API_KEY` | No | Meilisearch API key |
-| `MEILISEARCH_INDEX_PREFIX` | No | Environment prefix for index names (e.g., `prod`, `beta`). When set, indexes become `{prefix}_listings`, `{prefix}_research_entities`, etc. Allows prod and beta to share one Meilisearch instance. |
+| `MEILISEARCH_INDEX_PREFIX` | No | Environment prefix for index names (e.g., `prod`, `beta`). When set, indexes become `{prefix}_researchentities`, `{prefix}_pathways`, etc. Allows prod and beta to share one Meilisearch instance. |
 | `PORT` | No (default: 4000) | Server port |
 | `SCRAPER_ENV` | No (default: `development`) | Controls scraper write guards. `production` requires `CONFIRM_PROD_SCRAPE=true`. Non-production defaults to dry-run unless `ALLOW_NON_PROD_SCRAPER_WRITES=true`. |
 | `ALLOW_NON_PROD_SCRAPER_WRITES` | No | Set to `true` to allow scraper writes to a non-production database. |
@@ -369,6 +376,14 @@ The scraper system lives in `server/src/scrapers/`. Run via `yarn --cwd server s
 - `snapshotCache.ts` — caches fetched pages to avoid redundant HTTP requests
 - `scraperEnvironment.ts` — enforces `SCRAPER_ENV` write guards
 - `sourceCoverageRegistry.ts` — declares source priority, tier, and artifact types
+- `cronRunner.ts` — cron-aware runner with distributed job locking (`ScrapeJobLock`) to prevent overlapping runs
+- `confidenceResolver.ts` — pure-function aggregator that picks a winning observation value and computes a confidence score (no DB calls, fully testable)
+- `observationRetention.ts` — TTL/cleanup logic for old observation rows
+- `renderedFetch.ts` — headless-browser fetch helper for JS-rendered pages
+- `runReport.ts` — generates a structured report for a completed scrape run
+- `scrapeJobLock.ts` — acquire/heartbeat/release helpers wrapping the `ScrapeJobLock` model
+- `seedSources.ts` — populates the `Source` collection from the coverage registry
+- `scraplingBridge.py` — Python bridge for scraper utilities requiring Python tooling
 
 **Active source scrapers** (in `server/src/scrapers/sources/`):
 
@@ -387,6 +402,8 @@ The scraper system lives in `server/src/scrapers/`. Run via `yarn --cwd server s
 | `crossrefPaperScraper.ts` | Crossref DOI metadata hydration |
 | `undergradFellowshipRecipientScraper.ts` | Undergrad fellowship recipient lists |
 | `labMicrositeUndergradLLMExtractor.ts` | LLM extraction from lab microsites |
+| `yaleCollegeFellowshipsOfficeScraper.ts` | Yale College Fellowships Office public catalog |
+| `yaleDirectoryScraper.ts` | Faculty roster via Yalies API (live equivalent of the static bootstrap import) |
 
 **Scraper safety rules:**
 - Non-production environments default to dry-run. Set `ALLOW_NON_PROD_SCRAPER_WRITES=true` to write to a dev DB.
@@ -407,14 +424,14 @@ See `docs/scraper-audit-guide.md` and `docs/scraper-deployment-runbook.md` for a
 1. Page component in `client/src/pages/<page>.tsx`
 2. Route in `client/src/App.tsx` wrapped with appropriate guard (`PrivateRoute`, `AdminRoute`)
 
-Current pages: `home`, `labs` (Explore Research), `labDetail` (`/research/:slug`), `pathways`, `opportunityDetail` (`/opportunities/:id`), `fellowships`, `account`, `profile`, `analytics`, `about`, `login`, `loginError`, `notFound`, `unknown`.
+Current student-facing pages: `research` (Yale Labs browse, `/research`), `labDetail` (`/research/:slug`), `programs` (`/programs`), `opportunityDetail` (`/opportunities/:id`), `account`, `profile`, `analytics`, `about`, `login`, `loginError`, `notFound`, `unknown`, and `rootRedirect` (redirects `/` → `/research`). Legacy `/labs`, `/pathways`, `/listings`, and `/fellowships` paths should redirect rather than define new product surfaces.
 
 ## Modifying a Schema
 
 1. Mongoose schema in `server/src/models/<model>.ts`
 2. TypeScript interfaces in `client/src/types/`
 3. Migration script in `data-migration/` if existing data needs transformation
-4. If the model is `listing`, update the Meilisearch index configuration (filterable/sortable attributes) if new fields need to be searchable or filterable
+4. If the model affects Research or Pathways search, update the relevant Meilisearch rebuild/index config and release gate.
 
 ## External Integrations
 
@@ -425,7 +442,7 @@ Current pages: `home`, `labs` (Explore Research), `labDetail` (`/research/:slug`
 | Yale Directory (`directory.yale.edu`) | Faculty data lookup | None | `directoryService.ts` |
 | CourseTable (`coursetable.com/api/catalog/public`) | Professor course data | None | `courseTableService.ts` |
 | Meilisearch | Hybrid search (keyword + semantic) | API key | `meiliClient.ts` |
-| OpenAI | Embeddings via Meilisearch embedder | API key (in Meilisearch config) | Configured in migration script |
+| OpenAI | Embeddings via Meilisearch embedder | API key (in Meilisearch config) | Configured through Meilisearch/index setup and gated before semantic Research rollout |
 
 ## Maintenance
 
@@ -449,7 +466,7 @@ Graphify is the shared knowledge graph and navigation layer for this repo. Outpu
 
 **Source of truth**: Graphify is a navigation layer only. Verify important claims against source files, tests, and `docs/*.md` before editing or summarizing.
 
-**Committed outputs** (in `graphify-out/`): `GRAPH_REPORT.md`, `graph.json`, `graph.html`. Not committed: `cache/`, `cost.json`, `manifest.json`, `.graphify_root`, `.graphify_analysis.json`, `.graphify_labels.json`, `.rebuild.lock`, `memory/`.
+**Committed outputs** (in `graphify-out/`): `GRAPH_REPORT.md`, `graph.json`, and `graph.html` only when Graphify generates it. Large graphs may skip HTML output and rely on `graph.json` plus `GRAPH_REPORT.md`. Not committed: `cache/`, `cost.json`, `manifest.json`, `.graphify_root`, `.graphify_analysis.json`, `.graphify_labels.json`, `.rebuild.lock`, `memory/`.
 
 **Installation**: `uv tool install graphifyy` (preferred) or `pipx install graphifyy`, then `graphify install --platform codex`.
 

@@ -27,6 +27,7 @@ export interface ConfigData {
       abbreviation: string;
       name: string;
       displayName: string;
+      aliases: string[];
       categories: string[];
       primaryCategory: string;
       colorKey: number;
@@ -71,6 +72,7 @@ export const getConfig = async (forceRefresh: boolean = false): Promise<ConfigDa
         abbreviation: dept.abbreviation,
         name: dept.name,
         displayName: dept.displayName,
+        aliases: dept.aliases || [],
         categories: dept.categories,
         primaryCategory: dept.primaryCategory,
         colorKey: dept.colorKey,

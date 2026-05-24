@@ -193,7 +193,7 @@ const AdminFellowshipsTable = () => {
           placeholder="Search fellowships..."
           value={search}
           onChange={(e) => dispatch({ type: 'SET_SEARCH', payload: e.target.value })}
-          className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 w-64"
+          className="min-h-[44px] px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 w-64"
         />
 
         <select
@@ -201,7 +201,7 @@ const AdminFellowshipsTable = () => {
           onChange={(e) =>
             dispatch({ type: 'SET_FILTER', filter: 'archived', value: e.target.value })
           }
-          className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="min-h-[44px] px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
           <option value="">All</option>
           <option value="false">Active</option>
@@ -213,7 +213,7 @@ const AdminFellowshipsTable = () => {
           onChange={(e) =>
             dispatch({ type: 'SET_FILTER', filter: 'audited', value: e.target.value })
           }
-          className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="min-h-[44px] px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
           <option value="">All (Audit)</option>
           <option value="true">Audited</option>
@@ -223,7 +223,7 @@ const AdminFellowshipsTable = () => {
         <select
           value={pageSize}
           onChange={(e) => dispatch({ type: 'SET_PAGE_SIZE', payload: Number(e.target.value) })}
-          className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="min-h-[44px] px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
           {PAGE_SIZES.map((size) => (
             <option key={size} value={size}>
@@ -354,7 +354,7 @@ const AdminFellowshipsTable = () => {
             <button
               onClick={() => dispatch({ type: 'SET_PAGE', payload: Math.max(1, page - 1) })}
               disabled={page === 1}
-              className="px-3 py-1 border rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+              className="min-h-[44px] px-3 py-1 border rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
             >
               Previous
             </button>
@@ -363,7 +363,7 @@ const AdminFellowshipsTable = () => {
                 dispatch({ type: 'SET_PAGE', payload: Math.min(totalPages, page + 1) })
               }
               disabled={page === totalPages}
-              className="px-3 py-1 border rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+              className="min-h-[44px] px-3 py-1 border rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
             >
               Next
             </button>

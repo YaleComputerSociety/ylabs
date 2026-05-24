@@ -8,6 +8,7 @@ import type { Fellowship } from '../../types/types';
 
 const baseFellowship = (overrides: Partial<Fellowship> = {}): Fellowship => ({
   id: 'f1',
+  programCategory: 'FELLOWSHIP',
   title: 'Summer Research Fellowship',
   competitionType: 'Fellowship',
   summary: 'Annual funding for undergraduate research projects.',
@@ -31,6 +32,12 @@ const baseFellowship = (overrides: Partial<Fellowship> = {}): Fellowship => ({
   purpose: ['Research'],
   globalRegions: [],
   citizenshipStatus: [],
+  sourceName: '',
+  sourceUrl: '',
+  sourceKey: '',
+  sourceFingerprint: '',
+  sourceLastVerifiedAt: null,
+  sourceLastChangedAt: null,
   archived: false,
   audited: false,
   views: 0,

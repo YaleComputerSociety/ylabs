@@ -50,7 +50,7 @@ describe('sourceHealthService', () => {
     expect(rows[2].risk).toBe('ok');
   });
 
-  it('ignores invalidated runs and flags materialization errors', () => {
+  it('ignores invalidated and dry-run runs when choosing latest source health', () => {
     const rows = buildSourceHealthRows(
       [
         {
@@ -65,8 +65,17 @@ describe('sourceHealthService', () => {
           _id: 'old-invalidated',
           sourceName: 'access-source',
           status: 'failure',
-          startedAt: '2026-05-13T01:00:00.000Z',
+          startedAt: '2026-05-13T03:00:00.000Z',
           invalidated: true,
+        },
+        {
+          _id: 'new-dry-run',
+          sourceName: 'access-source',
+          status: 'success',
+          startedAt: '2026-05-13T04:00:00.000Z',
+          observationCount: 0,
+          materializationErrors: 0,
+          options: { dryRun: true },
         },
         {
           _id: 'latest',
@@ -102,5 +111,32 @@ describe('sourceHealthService', () => {
 
     expect(rows[0].risk).toBe('ok');
     expect(rows[0].action).toMatch(/Event-driven source/i);
+  });
+
+  it('does not treat resolved materialization conflict counts as source-health warnings', () => {
+    const rows = buildSourceHealthRows(
+      [
+        {
+          name: 'roster',
+          displayName: 'Roster',
+          enabled: true,
+          coverage: { priority: 1, artifactTypes: ['ResearchEntity'] },
+        },
+      ],
+      [
+        {
+          _id: 'resolved-conflicts',
+          sourceName: 'roster',
+          status: 'success',
+          startedAt: '2026-05-13T02:00:00.000Z',
+          observationCount: 12,
+          materializationConflicts: 32,
+          materializationErrors: 0,
+        },
+      ],
+    );
+
+    expect(rows[0].risk).toBe('ok');
+    expect(rows[0].action).toMatch(/acceptable/i);
   });
 });

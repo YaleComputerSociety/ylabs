@@ -9,6 +9,7 @@ import {
 
 const makeFellowship = (overrides: Partial<Fellowship> = {}): Fellowship => ({
   id: 'f-1',
+  programCategory: 'FELLOWSHIP',
   title: 'Fellowship',
   competitionType: '',
   summary: '',
@@ -32,6 +33,12 @@ const makeFellowship = (overrides: Partial<Fellowship> = {}): Fellowship => ({
   purpose: [],
   globalRegions: [],
   citizenshipStatus: [],
+  sourceName: '',
+  sourceUrl: '',
+  sourceKey: '',
+  sourceFingerprint: '',
+  sourceLastVerifiedAt: null,
+  sourceLastChangedAt: null,
   archived: false,
   audited: false,
   views: 0,
@@ -85,6 +92,7 @@ describe('fellowshipSearchReducer', () => {
     const next = fellowshipSearchReducer(state, {
       type: 'SET_FILTER_OPTIONS',
       payload: {
+        programCategory: ['FELLOWSHIP'],
         yearOfStudy: ['Senior'],
         termOfAward: ['Summer'],
         purpose: ['Research'],

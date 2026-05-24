@@ -19,10 +19,14 @@ import {
   candidateCrawlUrls,
   buildLLMPrompt,
   extractionToObservations,
+  labIdentityObservationsFromHomePage,
+  normalizeExtraction,
   sourceUrlForExtraction,
   candidateLabFromResearchEntityDoc,
+  applyListingGuidanceToCandidateLabs,
   selectLabsToProcess,
   type CandidateLab,
+  type ListingGuidance,
   type LabMicrositeUndergradLLMExtractorDeps,
   type LLMExtraction,
   type FetchedPage,
@@ -91,14 +95,14 @@ describe('htmlToPromptText', () => {
     const html = `
       <html><head><style>body{color:red}</style></head>
       <body>
-        <h1>Welcome to the Smith Lab</h1>
+        <h1>Welcome to the Fixture Access Lab</h1>
         <p>We do research.</p>
         <script>alert('hi')</script>
         <p>We welcome   undergraduates.</p>
       </body></html>
     `;
     const text = htmlToPromptText(html);
-    expect(text).toContain('Welcome to the Smith Lab');
+    expect(text).toContain('Welcome to the Fixture Access Lab');
     expect(text).toContain('We welcome undergraduates.');
     expect(text).not.toContain('alert');
     expect(text).not.toContain('color:red');
@@ -171,15 +175,28 @@ describe('discoverSubPageUrls', () => {
       'https://lab.example.com/join',
     ]);
   });
+
+  it('keeps nested lab microsite links inside the lab path and skips global same-host navigation', () => {
+    const html = `
+      <a href="/people">Yale Medicine People</a>
+      <a href="/lab/fixture-access/members">Members</a>
+      <a href="/lab/fixture-access/join#students">Join Us</a>
+    `;
+
+    expect(discoverSubPageUrls(html, 'https://medicine.yale.edu/lab/fixture-access/')).toEqual([
+      'https://medicine.yale.edu/lab/fixture-access/members',
+      'https://medicine.yale.edu/lab/fixture-access/join',
+    ]);
+  });
 });
 
 describe('candidateSubPageUrls', () => {
   it('builds origin-rooted candidate URLs for the standard hint paths', () => {
     const urls = candidateSubPageUrls('https://lab.example.com/some/page');
-    expect(urls).toContain('https://lab.example.com/people');
-    expect(urls).toContain('https://lab.example.com/members');
-    expect(urls).toContain('https://lab.example.com/join');
-    expect(urls.every((u) => u.startsWith('https://lab.example.com/'))).toBe(true);
+    expect(urls).toContain('https://lab.example.com/some/page/people');
+    expect(urls).toContain('https://lab.example.com/some/page/members');
+    expect(urls).toContain('https://lab.example.com/some/page/join');
+    expect(urls.every((u) => u.startsWith('https://lab.example.com/some/page/'))).toBe(true);
   });
 
   it('returns [] for malformed input', () => {
@@ -210,23 +227,23 @@ describe('candidateCrawlUrls', () => {
 describe('buildLLMPrompt', () => {
   it('includes the lab name, URL, home text, and sub-page text', () => {
     const prompt = buildLLMPrompt(
-      'Smith Lab',
-      'https://smith.example.com/',
+      'Fixture Access Lab',
+      'https://fixture-access.example.com/',
       'we welcome undergraduates',
-      'https://smith.example.com/people',
-      'undergrads: alice, bob',
+      'https://fixture-access.example.com/people',
+      'undergrads: student-one, student-two',
     );
-    expect(prompt).toContain('Smith Lab');
-    expect(prompt).toContain('https://smith.example.com/');
+    expect(prompt).toContain('Fixture Access Lab');
+    expect(prompt).toContain('https://fixture-access.example.com/');
     expect(prompt).toContain('we welcome undergraduates');
-    expect(prompt).toContain('https://smith.example.com/people');
-    expect(prompt).toContain('undergrads: alice, bob');
+    expect(prompt).toContain('https://fixture-access.example.com/people');
+    expect(prompt).toContain('undergrads: student-one, student-two');
   });
 
   it('omits the sub-page section when none was fetched', () => {
     const prompt = buildLLMPrompt(
-      'Smith Lab',
-      'https://smith.example.com/',
+      'Fixture Access Lab',
+      'https://fixture-access.example.com/',
       'home text',
       null,
       null,
@@ -236,17 +253,60 @@ describe('buildLLMPrompt', () => {
 
   it('includes additional sub-pages with their raw source URLs', () => {
     const prompt = buildLLMPrompt(
-      'Smith Lab',
-      'https://smith.example.com/',
+      'Fixture Access Lab',
+      'https://fixture-access.example.com/',
       'home text',
-      'https://smith.example.com/people',
+      'https://fixture-access.example.com/people',
       'people text',
-      [{ url: 'https://smith.example.com/join', text: 'join text' }],
+      [{ url: 'https://fixture-access.example.com/join', text: 'join text' }],
     );
-    expect(prompt).toContain('SUB-PAGE TEXT (https://smith.example.com/people)');
+    expect(prompt).toContain('SUB-PAGE TEXT (https://fixture-access.example.com/people)');
     expect(prompt).toContain('people text');
-    expect(prompt).toContain('SUB-PAGE TEXT (https://smith.example.com/join)');
+    expect(prompt).toContain('SUB-PAGE TEXT (https://fixture-access.example.com/join)');
     expect(prompt).toContain('join text');
+  });
+});
+
+describe('labIdentityObservationsFromHomePage', () => {
+  it('emits official lab name and website observations from a Yale-shaped lab homepage', () => {
+    const observations = labIdentityObservationsFromHomePage(
+      {
+        slug: 'fixture-identity-lab',
+        name: 'Legacy Fixture Lab',
+        websiteUrl: '',
+        _id: 'entity-1',
+      },
+      {
+        url: 'https://www.eng.yale.edu/fixture-identity-lab/',
+        html: `
+          <html>
+            <head><title>Fixture Identity Lab at Yale University</title></head>
+            <body><h1>Fixture Identity Lab</h1></body>
+          </html>
+        `,
+      },
+      new Date('2026-05-18T12:00:00Z'),
+    );
+
+    expect(observations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          entityType: 'researchEntity',
+          entityKey: 'fixture-identity-lab',
+          field: 'name',
+          value: 'Fixture Identity Lab',
+          sourceUrl: 'https://www.eng.yale.edu/fixture-identity-lab/',
+        }),
+        expect.objectContaining({
+          field: 'websiteUrl',
+          value: 'https://www.eng.yale.edu/fixture-identity-lab/',
+        }),
+        expect.objectContaining({
+          field: 'sourceUrls',
+          value: ['https://www.eng.yale.edu/fixture-identity-lab/'],
+        }),
+      ]),
+    );
   });
 });
 
@@ -257,20 +317,42 @@ describe('sourceUrlForExtraction', () => {
       currentUndergradCount: 0,
       evidenceQuote: 'Undergraduates help with field work.',
       evidenceSource: 'explicit_text',
-      joinPageUrl: 'https://smith.example.com/join',
+      joinPageUrl: 'https://fixture-access.example.com/join',
     };
     const sourceUrl = sourceUrlForExtraction(
-      { url: 'https://smith.example.com/', text: 'Welcome.' },
+      { url: 'https://fixture-access.example.com/', text: 'Welcome.' },
       [
-        { url: 'https://smith.example.com/people', text: 'Members.' },
+        { url: 'https://fixture-access.example.com/people', text: 'Members.' },
         {
-          url: 'https://smith.example.com/join',
+          url: 'https://fixture-access.example.com/join',
           text: 'Undergraduates help with field work.',
         },
       ],
       ext,
     );
-    expect(sourceUrl).toBe('https://smith.example.com/join');
+    expect(sourceUrl).toBe('https://fixture-access.example.com/join');
+  });
+
+  it('returns null instead of blessing an unsupported evidence quote with another source URL', () => {
+    const ext: LLMExtraction = {
+      openToUndergrads: 'yes',
+      currentUndergradCount: 0,
+      evidenceQuote: 'Undergraduates lead independent projects every summer.',
+      evidenceSource: 'explicit_text',
+      joinPageUrl: null,
+      undergradRoleQuote: 'Undergraduates help with field work.',
+    };
+    const sourceUrl = sourceUrlForExtraction(
+      { url: 'https://fixture-access.example.com/', text: 'Welcome.' },
+      [
+        {
+          url: 'https://fixture-access.example.com/join',
+          text: 'Undergraduates help with field work.',
+        },
+      ],
+      ext,
+    );
+    expect(sourceUrl).toBeNull();
   });
 });
 
@@ -280,6 +362,134 @@ describe('sourceUrlForExtraction', () => {
 
 describe('extractionToObservations', () => {
   const fixedDate = new Date('2026-04-27T12:00:00Z');
+
+  it('normalizes strong negative evidence into an explicit constraint and negative verdict', () => {
+    const normalized = normalizeExtraction({
+      openToUndergrads: 'unclear',
+      currentUndergradCount: 0,
+      evidenceQuote: "I regrettably don't have bandwidth to respond to all of them.",
+      evidenceSource: 'none',
+      joinPageUrl: null,
+      contactInstructionsQuote:
+        'For prospective PhD students, you are encouraged to apply through Yale SDS or CS.',
+      explicitConstraintQuote: '',
+    });
+
+    expect(normalized.openToUndergrads).toBe('no');
+    expect(normalized.evidenceSource).toBe('explicit_text');
+    expect(normalized.explicitConstraintQuote).toBe(
+      "I regrettably don't have bandwidth to respond to all of them.",
+    );
+  });
+
+  it('preserves graduate-only instructions as constraints without turning them into a negative verdict by themselves', () => {
+    const normalized = normalizeExtraction({
+      openToUndergrads: 'unclear',
+      currentUndergradCount: 0,
+      evidenceQuote: '',
+      evidenceSource: 'none',
+      joinPageUrl: 'https://x.example/join',
+      contactInstructionsQuote:
+        'Prospective PhD students should apply through the Yale CS admissions portal.',
+      explicitConstraintQuote: '',
+    });
+
+    expect(normalized.openToUndergrads).toBe('unclear');
+    expect(normalized.explicitConstraintQuote).toBe(
+      'Prospective PhD students should apply through the Yale CS admissions portal.',
+    );
+  });
+
+  it('does not treat undergraduate-studies administrative titles as access evidence', () => {
+    const normalized = normalizeExtraction({
+      openToUndergrads: 'yes',
+      currentUndergradCount: 0,
+      evidenceQuote:
+        'Dr. Fixture joined the Department of Molecular Biophysics and Biochemistry at Yale University in 2009, where they are now Professor and Director of Undergraduate Studies.',
+      evidenceSource: 'explicit_text',
+      joinPageUrl: null,
+      undergradRoleQuote: '',
+      contactInstructionsQuote: '',
+      explicitConstraintQuote: '',
+    });
+
+    expect(normalized.openToUndergrads).toBe('unclear');
+    expect(normalized.evidenceSource).toBe('none');
+    expect(normalized.evidenceQuote).toBe('');
+  });
+
+  it('requires positive undergraduate verdicts to cite undergraduate-specific evidence', () => {
+    const traineeHistory = normalizeExtraction({
+      openToUndergrads: 'yes',
+      currentUndergradCount: 0,
+      evidenceQuote:
+        'Dr. Fixture has trained, mentored, and advised more than 60 trainees ranging from MPH and PhD students to postdoctoral fellows and junior faculty.',
+      evidenceSource: 'explicit_text',
+      joinPageUrl: null,
+    });
+    expect(traineeHistory.openToUndergrads).toBe('unclear');
+    expect(traineeHistory.evidenceSource).toBe('none');
+    expect(traineeHistory.evidenceQuote).toBe('');
+
+    const genericMembersHeading = normalizeExtraction({
+      openToUndergrads: 'yes',
+      currentUndergradCount: 0,
+      evidenceQuote: 'Students and Visiting Scholars',
+      evidenceSource: 'members_section',
+      joinPageUrl: null,
+    });
+    expect(genericMembersHeading.openToUndergrads).toBe('unclear');
+    expect(genericMembersHeading.evidenceSource).toBe('none');
+    expect(genericMembersHeading.evidenceQuote).toBe('');
+  });
+
+  it('preserves graduate-only instructions as constraints instead of positive access', () => {
+    const normalized = normalizeExtraction({
+      openToUndergrads: 'yes',
+      currentUndergradCount: 0,
+      evidenceQuote: 'Applications from postdocs, postdocs and graduate students are always welcomed.',
+      evidenceSource: 'explicit_text',
+      joinPageUrl: null,
+    });
+
+    expect(normalized.openToUndergrads).toBe('unclear');
+    expect(normalized.evidenceSource).toBe('none');
+    expect(normalized.evidenceQuote).toBe('');
+    expect(normalized.explicitConstraintQuote).toBe(
+      'Applications from postdocs, postdocs and graduate students are always welcomed.',
+    );
+  });
+
+  it('does not turn alumni maintenance notes into negative undergraduate evidence', () => {
+    const normalized = normalizeExtraction({
+      openToUndergrads: 'no',
+      currentUndergradCount: 0,
+      evidenceQuote: 'If you are a lab alumn who wishes to remove or add their email from the page let us know.',
+      evidenceSource: 'none',
+      joinPageUrl: null,
+    });
+
+    expect(normalized.openToUndergrads).toBe('unclear');
+    expect(normalized.evidenceQuote).toBe('');
+  });
+
+  it('drops generic evidence quotes when the verdict remains unclear', () => {
+    const normalized = normalizeExtraction({
+      openToUndergrads: 'unclear',
+      currentUndergradCount: 0,
+      evidenceQuote:
+        'We always welcome collaboration and look for students and fellows interested in working with us.',
+      evidenceSource: 'explicit_text',
+      joinPageUrl: null,
+      undergradRoleQuote: '',
+      contactInstructionsQuote: '',
+      explicitConstraintQuote: '',
+    });
+
+    expect(normalized.openToUndergrads).toBe('unclear');
+    expect(normalized.evidenceSource).toBe('none');
+    expect(normalized.evidenceQuote).toBe('');
+  });
 
   it('emits evidence-shaped access observations plus legacy compatibility on yes', () => {
     const ext: LLMExtraction = {
@@ -351,7 +561,7 @@ describe('extractionToObservations', () => {
     const fromMembers: LLMExtraction = {
       openToUndergrads: 'yes',
       currentUndergradCount: 4,
-      evidenceQuote: 'Undergraduates: Alice, Bob, Carol, Dan',
+      evidenceQuote: 'Undergraduates: Student One, Student Two, Student Three, Student Four',
       evidenceSource: 'members_section',
       joinPageUrl: null,
     };
@@ -376,7 +586,7 @@ describe('extractionToObservations', () => {
     const ext: LLMExtraction = {
       openToUndergrads: 'yes',
       currentUndergradCount: 0,
-      evidenceQuote: 'q'.repeat(2000),
+      evidenceQuote: `Undergraduates ${'q'.repeat(2000)}`,
       evidenceSource: 'explicit_text',
       joinPageUrl: null,
     };
@@ -413,11 +623,11 @@ describe('extractionToObservations', () => {
     const ext: LLMExtraction = {
       openToUndergrads: 'yes',
       currentUndergradCount: 0,
-      evidenceQuote: 'Email pi.person@yale.edu to discuss undergraduate research.',
+      evidenceQuote: 'Email fixture.pi@yale.edu to discuss undergraduate research.',
       evidenceSource: 'explicit_text',
       joinPageUrl: 'https://x.example/join',
       undergradRoleQuote: '',
-      contactInstructionsQuote: 'Call 203-432-1234 or email manager@yale.edu.',
+      contactInstructionsQuote: 'Call 203-432-1234 or email fixture.contact@yale.edu.',
       explicitConstraintQuote: '',
     };
     const obs = extractionToObservations('lab-5', 'https://x/', ext, fixedDate);
@@ -429,7 +639,7 @@ describe('extractionToObservations', () => {
       'Call [phone redacted] or email [email redacted].',
     );
     expect((obs.find((o) => o.field === 'undergradAccessEvidence')!.value as any).evidenceQuote).toBe(
-      'Email pi.person@yale.edu to discuss undergraduate research.',
+      'Email fixture.pi@yale.edu to discuss undergraduate research.',
     );
   });
 });
@@ -462,6 +672,28 @@ describe('selectLabsToProcess', () => {
   it('drops labs without a websiteUrl, with the field locked, or archived', () => {
     const out = selectLabsToProcess(labs, {});
     expect(out.map((l) => l.slug)).toEqual(['lab-a', 'lab-e']);
+  });
+
+  it('drops generated faculty research-area pages from lab microsite access extraction', () => {
+    const out = selectLabsToProcess(
+      [
+        {
+          _id: 'faculty-1',
+          slug: 'faculty-research-area-profile-only',
+          name: 'Profile Only Research',
+          websiteUrl: 'https://medicine.yale.edu/profile/example/',
+        },
+        {
+          _id: 'lab-1',
+          slug: 'ysm-example',
+          name: 'Example Lab',
+          websiteUrl: 'https://medicine.yale.edu/lab/example/',
+        },
+      ],
+      {},
+    );
+
+    expect(out.map((l) => l.slug)).toEqual(['ysm-example']);
   });
 
   it('honors --only as a slug allowlist (case-insensitive)', () => {
@@ -498,8 +730,126 @@ describe('selectLabsToProcess', () => {
       }),
     ).toMatchObject({
       slug: 'source-url',
-      websiteUrl: 'https://source.example.edu/lab',
+        websiteUrl: 'https://source.example.edu/lab',
+      });
+  });
+
+  it('does not use the YSM lab websites index as a candidate lab website fallback', () => {
+    expect(
+      candidateLabFromResearchEntityDoc({
+        _id: 'entity-3',
+        slug: 'real-lab-from-source-url',
+        name: 'Real Lab From Source URL',
+        websiteUrl: '',
+        sourceUrls: [
+          'https://medicine.yale.edu/about/a-to-z-index/atoz/lab-websites/',
+          'https://medicine.yale.edu/lab/fixture-access/',
+        ],
+      }),
+    ).toMatchObject({
+      slug: 'real-lab-from-source-url',
+      websiteUrl: 'https://medicine.yale.edu/lab/fixture-access/',
     });
+  });
+
+  it('does not use the Yale glassblowing service as a candidate lab website fallback', () => {
+    expect(
+      candidateLabFromResearchEntityDoc({
+        _id: 'entity-4',
+        slug: 'bad-service-link',
+        name: 'Bad Service Link Lab',
+        websiteUrl: 'https://glassshop.yale.edu/',
+        sourceUrls: ['https://glassshop.yale.edu/', 'https://real-lab.example.edu/'],
+      }),
+    ).toMatchObject({
+      slug: 'bad-service-link',
+      websiteUrl: 'https://real-lab.example.edu/',
+    });
+  });
+
+  it('uses active listing guidance to fill missing candidate websites', () => {
+    const candidates: CandidateLab[] = [
+      {
+        _id: 'entity-1',
+        slug: 'listing-backed',
+        name: 'Listing Backed',
+        websiteUrl: '',
+      },
+      {
+        _id: 'entity-2',
+        slug: 'canonical-site',
+        name: 'Canonical Site',
+        websiteUrl: 'https://canonical.example.edu/',
+      },
+    ];
+    const guidance: ListingGuidance[] = [
+      {
+        researchEntityId: 'entity-1',
+        activeListingCount: 2,
+        websiteUrls: [
+          'mailto:skip@example.edu',
+          'https://legacy-listing.example.edu/profile',
+        ],
+      },
+      {
+        researchEntityId: 'entity-2',
+        activeListingCount: 1,
+        websiteUrls: ['https://listing.example.edu/fallback'],
+      },
+    ];
+
+    expect(applyListingGuidanceToCandidateLabs(candidates, guidance)).toEqual([
+      {
+        _id: 'entity-1',
+        slug: 'listing-backed',
+        name: 'Listing Backed',
+        websiteUrl: 'https://legacy-listing.example.edu/profile',
+        activeListingCount: 2,
+        listingBacked: true,
+        listingWebsiteUrls: ['https://legacy-listing.example.edu/profile'],
+      },
+      {
+        _id: 'entity-2',
+        slug: 'canonical-site',
+        name: 'Canonical Site',
+        websiteUrl: 'https://canonical.example.edu/',
+        activeListingCount: 1,
+        listingBacked: true,
+        listingWebsiteUrls: ['https://listing.example.edu/fallback'],
+      },
+    ]);
+  });
+
+  it('prioritizes listing-backed labs before applying the LLM limit', () => {
+    const out = selectLabsToProcess(
+      [
+        {
+          _id: '1',
+          slug: 'generic-lab',
+          name: 'Generic Lab',
+          websiteUrl: 'https://generic.example.edu/',
+        },
+        {
+          _id: '2',
+          slug: 'listing-backed-a',
+          name: 'Listing Backed A',
+          websiteUrl: 'https://listing-a.example.edu/',
+          activeListingCount: 1,
+          listingBacked: true,
+        },
+        {
+          _id: '3',
+          slug: 'listing-backed-b',
+          name: 'Listing Backed B',
+          websiteUrl: 'https://listing-b.example.edu/',
+          activeListingCount: 3,
+          listingBacked: true,
+        },
+      ],
+      { limit: 2 },
+    );
+
+    expect(out.map((lab) => lab.slug)).toEqual(['listing-backed-b', 'listing-backed-a']);
   });
 });
 
@@ -509,7 +859,7 @@ describe('selectLabsToProcess', () => {
 
 const HOME_HTML = `
 <html><body>
-  <h1>The Smith Lab</h1>
+  <h1>The Fixture Access Lab</h1>
   <p>We welcome undergraduate researchers each semester.</p>
   <a href="/people">Lab Members</a>
 </body></html>
@@ -519,7 +869,7 @@ const PEOPLE_HTML = `
 <html><body>
   <h2>Members</h2>
   <h3>Undergraduates</h3>
-  <ul><li>Alice</li><li>Bob</li><li>Carol</li></ul>
+  <ul><li>Student One</li><li>Student Two</li><li>Student Three</li></ul>
 </body></html>
 `;
 
@@ -533,8 +883,8 @@ function makeFetchPage(pages: Record<string, string>) {
 describe('LabMicrositeUndergradLLMExtractor.run', () => {
   it('fetches the home page, follows a discovered sub-page, and emits the right observations', async () => {
     const fetchPage = makeFetchPage({
-      'https://smith.example.com/': HOME_HTML,
-      'https://smith.example.com/people': PEOPLE_HTML,
+      'https://fixture-access.example.com/': HOME_HTML,
+      'https://fixture-access.example.com/people': PEOPLE_HTML,
     });
     const callLLM = vi.fn(
       async (
@@ -550,9 +900,9 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
     const labFinder = async (): Promise<CandidateLab[]> => [
       {
         _id: '1',
-        slug: 'smith-lab',
-        name: 'The Smith Lab',
-        websiteUrl: 'https://smith.example.com/',
+        slug: 'fixture-access-lab',
+        name: 'The Fixture Access Lab',
+        websiteUrl: 'https://fixture-access.example.com/',
       },
     ];
 
@@ -566,15 +916,15 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
     const result = await scraper.run(ctx);
 
     // Home + sub-page were both fetched
-    expect(fetchPage).toHaveBeenCalledWith('https://smith.example.com/');
-    expect(fetchPage).toHaveBeenCalledWith('https://smith.example.com/people');
+    expect(fetchPage).toHaveBeenCalledWith('https://fixture-access.example.com/');
+    expect(fetchPage).toHaveBeenCalledWith('https://fixture-access.example.com/people');
     expect(callLLM).toHaveBeenCalledTimes(1);
 
     // The system prompt and user prompt include the sub-page text.
     const llmInput = callLLM.mock.calls[0][0];
     expect(llmInput.userPrompt).toContain('We welcome undergraduate researchers');
     expect(llmInput.userPrompt).toContain('SUB-PAGE TEXT');
-    expect(llmInput.userPrompt).toContain('Alice');
+    expect(llmInput.userPrompt).toContain('Student One');
 
     // Observations
     expect(result.entitiesObserved).toBe(1);
@@ -591,6 +941,7 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
         'acceptingUndergrads',
         'currentUndergradCount',
         'lastObservedAt',
+        'sourceUrls',
         'undergradAccessEvidence',
         'undergradEvidenceQuote',
       ].sort(),
@@ -598,7 +949,7 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
     const accepting = emitted.find((o) => o.field === 'acceptingUndergrads');
     expect(accepting!.value).toBe(true);
     expect(accepting!.confidenceOverride).toBe(0.5);
-    expect(accepting!.entityKey).toBe('smith-lab');
+    expect(accepting!.entityKey).toBe('fixture-access-lab');
     expect(emitted.find((o) => o.field === 'currentUndergradCount')!.value).toBe(3);
   });
 
@@ -710,15 +1061,15 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
 
   it('follows multiple relevant home-page links and preserves the quote source URL', async () => {
     const fetchPage = makeFetchPage({
-      'https://smith.example.com/': `
+      'https://fixture-access.example.com/': `
         <html><body>
-          <h1>The Smith Lab</h1>
+          <h1>The Fixture Access Lab</h1>
           <a href="/people">People</a>
           <a href="/join">Join Us</a>
         </body></html>
       `,
-      'https://smith.example.com/people': '<html><body>Current students</body></html>',
-      'https://smith.example.com/join':
+      'https://fixture-access.example.com/people': '<html><body>Current students</body></html>',
+      'https://fixture-access.example.com/join':
         '<html><body>Undergraduates help collect data each summer.</body></html>',
     });
     const callLLM = vi.fn(async () => ({
@@ -726,7 +1077,7 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
       currentUndergradCount: 0,
       evidenceQuote: 'Undergraduates help collect data each summer.',
       evidenceSource: 'explicit_text',
-      joinPageUrl: 'https://smith.example.com/join',
+      joinPageUrl: 'https://fixture-access.example.com/join',
     } satisfies LLMExtraction));
     const scraper = newTestScraper({
       fetchPage,
@@ -734,9 +1085,9 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
       labFinder: async () => [
         {
           _id: '1',
-          slug: 'smith-lab',
-          name: 'The Smith Lab',
-          websiteUrl: 'https://smith.example.com/',
+          slug: 'fixture-access-lab',
+          name: 'The Fixture Access Lab',
+          websiteUrl: 'https://fixture-access.example.com/',
         },
       ],
       apiKey: 'sk-test',
@@ -744,24 +1095,251 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
     const { ctx, emitted } = makeContext();
     await scraper.run(ctx);
 
-    expect(fetchPage).toHaveBeenCalledWith('https://smith.example.com/people');
-    expect(fetchPage).toHaveBeenCalledWith('https://smith.example.com/join');
+    expect(fetchPage).toHaveBeenCalledWith('https://fixture-access.example.com/people');
+    expect(fetchPage).toHaveBeenCalledWith('https://fixture-access.example.com/join');
     const prompt = (callLLM.mock.calls as unknown as Array<[{ userPrompt: string }]>)[0][0]
       .userPrompt;
-    expect(prompt).toContain('SUB-PAGE TEXT (https://smith.example.com/people)');
-    expect(prompt).toContain('SUB-PAGE TEXT (https://smith.example.com/join)');
+    expect(prompt).toContain('SUB-PAGE TEXT (https://fixture-access.example.com/people)');
+    expect(prompt).toContain('SUB-PAGE TEXT (https://fixture-access.example.com/join)');
     const evidence = emitted.find((o) => o.field === 'undergradAccessEvidence');
-    expect(evidence!.sourceUrl).toBe('https://smith.example.com/join');
+    expect(evidence!.sourceUrl).toBe('https://fixture-access.example.com/join');
     expect(evidence!.value).toMatchObject({
       sourceUrls: [
-        'https://smith.example.com/',
-        'https://smith.example.com/people',
-        'https://smith.example.com/join',
+        'https://fixture-access.example.com/',
+        'https://fixture-access.example.com/people',
+        'https://fixture-access.example.com/join',
       ],
-      quoteSourceUrl: 'https://smith.example.com/join',
+      quoteSourceUrl: 'https://fixture-access.example.com/join',
     });
     expect(emitted.find((o) => o.field === 'undergradEvidenceQuote')!.sourceUrl).toBe(
-      'https://smith.example.com/join',
+      'https://fixture-access.example.com/join',
+    );
+  });
+
+  it('rejects unsupported LLM evidence quotes instead of treating the home page as source-backed', async () => {
+    const fetchPage = makeFetchPage({
+      'https://unsupported.example.com/': `
+        <html><body>
+          <h1>Unsupported Lab</h1>
+          <p>Our group studies cellular signaling, imaging, and computational models.</p>
+        </body></html>
+      `,
+    });
+    const callLLM = vi.fn(async () => ({
+      openToUndergrads: 'yes',
+      currentUndergradCount: 0,
+      evidenceQuote: 'Undergraduates lead independent projects every summer.',
+      evidenceSource: 'explicit_text',
+      joinPageUrl: null,
+    } satisfies LLMExtraction));
+    const scraper = newTestScraper({
+      fetchPage,
+      callLLM,
+      labFinder: async () => [
+        {
+          _id: '1',
+          slug: 'unsupported-lab',
+          name: 'Unsupported Lab',
+          websiteUrl: 'https://unsupported.example.com/',
+        },
+      ],
+      apiKey: 'sk-test',
+    });
+    const { ctx, emitted } = makeContext();
+    const result = await scraper.run(ctx);
+
+    expect(emitted.find((o) => o.field === 'undergradAccessEvidence')).toBeUndefined();
+    expect(emitted.find((o) => o.field === 'acceptingUndergrads')).toBeUndefined();
+    expect(emitted.find((o) => o.field === 'undergradEvidenceQuote')).toBeUndefined();
+    expect((result.metrics as any)?.undergradLlmReviewSamples).toEqual([
+      expect.objectContaining({
+        slug: 'unsupported-lab',
+        sourceUrl: 'https://unsupported.example.com/',
+        quote: '',
+        verdict: 'unclear',
+        evidenceSource: 'none',
+        decision: 'rejected',
+        rejectionReasons: ['unsupported_evidence_quote'],
+      }),
+    ]);
+  });
+
+  it('reports normalized unclear verdicts in dry-run review samples', async () => {
+    const fetchPage = makeFetchPage({
+      'https://unclear.example.com/': `
+        <html><body>
+          <h1>Unclear Lab</h1>
+          <p>We always welcome collaboration and look for students and fellows interested in working with us.</p>
+        </body></html>
+      `,
+    });
+    const callLLM = vi.fn(async () => ({
+      openToUndergrads: 'unclear',
+      currentUndergradCount: 0,
+      evidenceQuote:
+        'We always welcome collaboration and look for students and fellows interested in working with us.',
+      evidenceSource: 'explicit_text',
+      joinPageUrl: null,
+    } satisfies LLMExtraction));
+    const scraper = newTestScraper({
+      fetchPage,
+      callLLM,
+      labFinder: async () => [
+        {
+          _id: '1',
+          slug: 'unclear-lab',
+          name: 'Unclear Lab',
+          websiteUrl: 'https://unclear.example.com/',
+        },
+      ],
+      apiKey: 'sk-test',
+    });
+    const { ctx, emitted } = makeContext();
+    const result = await scraper.run(ctx);
+
+    expect(emitted.find((o) => o.field === 'undergradEvidenceQuote')).toBeUndefined();
+    expect((result.metrics as any)?.undergradLlmReviewSamples).toEqual([
+      expect.objectContaining({
+        slug: 'unclear-lab',
+        quote: '',
+        verdict: 'unclear',
+        evidenceSource: 'none',
+        decision: 'accepted',
+      }),
+    ]);
+  });
+
+  it('does not keep a negative verdict when the only hard negative quote is unsupported', async () => {
+    const fetchPage = makeFetchPage({
+      'https://fixture-negative.example.com/': `
+        <html><body>
+          <h1>Fixture Negative Lab</h1>
+          <p>Currently, I am a graduate student in Professor Fixture Mentor's lab, where I am studying arrhythmias using iPSC-derived engineered heart tissues.</p>
+        </body></html>
+      `,
+    });
+    const callLLM = vi.fn(async () => ({
+      openToUndergrads: 'no',
+      currentUndergradCount: 0,
+      evidenceQuote:
+        "Currently, I am a graduate student in Professor Fixture Mentor's lab, where I am studying arrhythmias using iPSC-derived engineered heart tissues.",
+      evidenceSource: 'explicit_text',
+      joinPageUrl: null,
+      explicitConstraintQuote: 'We do not accept undergraduate students.',
+    } satisfies LLMExtraction));
+    const scraper = newTestScraper({
+      fetchPage,
+      callLLM,
+      labFinder: async () => [
+        {
+          _id: '1',
+          slug: 'fixture-negative-lab',
+          name: 'Fixture Negative Lab',
+          websiteUrl: 'https://fixture-negative.example.com/',
+        },
+      ],
+      apiKey: 'sk-test',
+    });
+    const { ctx, emitted } = makeContext();
+    const result = await scraper.run(ctx);
+
+    expect(emitted.find((o) => o.field === 'undergradAccessEvidence')).toBeUndefined();
+    expect(emitted.find((o) => o.field === 'acceptingUndergrads')).toBeUndefined();
+    expect(emitted.find((o) => o.field === 'undergradEvidenceQuote')).toBeUndefined();
+    expect((result.metrics as any)?.undergradLlmReviewSamples).toEqual([
+      expect.objectContaining({
+        slug: 'fixture-negative-lab',
+        quote: '',
+        verdict: 'unclear',
+        evidenceSource: 'none',
+        decision: 'accepted',
+        rejectionReasons: ['unsupported_explicit_constraint_quote'],
+      }),
+    ]);
+  });
+
+  it('drops unsupported external joinPageUrl values while keeping source-backed access evidence', async () => {
+    const fetchPage = makeFetchPage({
+      'https://fixture-access.example.com/': `
+        <html><body>
+          <h1>Fixture Access Lab</h1>
+          <p>We welcome undergraduate researchers each semester.</p>
+        </body></html>
+      `,
+    });
+    const callLLM = vi.fn(async () => ({
+      openToUndergrads: 'yes',
+      currentUndergradCount: 0,
+      evidenceQuote: 'We welcome undergraduate researchers each semester.',
+      evidenceSource: 'explicit_text',
+      joinPageUrl: 'https://forms.example.com/fixture-access-lab-application',
+    } satisfies LLMExtraction));
+    const scraper = newTestScraper({
+      fetchPage,
+      callLLM,
+      labFinder: async () => [
+        {
+          _id: '1',
+          slug: 'fixture-access-lab',
+          name: 'Fixture Access Lab',
+          websiteUrl: 'https://fixture-access.example.com/',
+        },
+      ],
+      apiKey: 'sk-test',
+    });
+    const { ctx, emitted } = makeContext();
+    const result = await scraper.run(ctx);
+
+    expect(emitted.find((o) => o.field === 'undergradAccessEvidence')).toBeDefined();
+    expect(emitted.find((o) => o.field === 'joinPageUrl')).toBeUndefined();
+    expect(
+      emitted.some((o) => o.value === 'https://forms.example.com/fixture-access-lab-application'),
+    ).toBe(false);
+    expect((result.metrics as any)?.undergradLlmReviewSamples).toEqual([
+      expect.objectContaining({
+        slug: 'fixture-access-lab',
+        quote: 'We welcome undergraduate researchers each semester.',
+        verdict: 'yes',
+        decision: 'accepted',
+        rejectionReasons: ['unsupported_join_page_url'],
+      }),
+    ]);
+  });
+
+  it('allows unfetched joinPageUrl values when they stay inside the official microsite path', async () => {
+    const fetchPage = makeFetchPage({
+      'https://medicine.yale.edu/lab/fixture-access/': `
+        <html><body>
+          <h1>Fixture Access Lab</h1>
+          <p>We welcome undergraduate researchers each semester.</p>
+        </body></html>
+      `,
+    });
+    const callLLM = vi.fn(async () => ({
+      openToUndergrads: 'yes',
+      currentUndergradCount: 0,
+      evidenceQuote: 'We welcome undergraduate researchers each semester.',
+      evidenceSource: 'explicit_text',
+      joinPageUrl: 'https://medicine.yale.edu/lab/fixture-access/join-us',
+    } satisfies LLMExtraction));
+    const scraper = newTestScraper({
+      fetchPage,
+      callLLM,
+      labFinder: async () => [
+        {
+          _id: '1',
+          slug: 'fixture-access-lab',
+          name: 'Fixture Access Lab',
+          websiteUrl: 'https://medicine.yale.edu/lab/fixture-access/',
+        },
+      ],
+      apiKey: 'sk-test',
+    });
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    expect(emitted.find((o) => o.field === 'joinPageUrl')!.value).toBe(
+      'https://medicine.yale.edu/lab/fixture-access/join-us',
     );
   });
 
@@ -989,7 +1567,7 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
     const callLLM = vi.fn(async () => ({
       openToUndergrads: 'yes',
       currentUndergradCount: 0,
-      evidenceQuote: 'We welcome undergraduates.',
+      evidenceQuote: 'We welcome undergraduate researchers each semester.',
       evidenceSource: 'explicit_text',
       joinPageUrl: null,
     } satisfies LLMExtraction));

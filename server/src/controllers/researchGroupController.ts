@@ -8,6 +8,7 @@ import { Request, Response } from 'express';
 import { NotFoundError } from '../utils/errors';
 import {
   getResearchGroupDetail,
+  listResearchSearchSuggestions,
   searchResearchGroupsViaMeili,
   ResearchGroupSearchSort,
 } from '../services/researchGroupService';
@@ -80,6 +81,7 @@ export const searchResearchGroups = async (request: Request, response: Response)
       filters?: unknown;
       sortBy?: string;
       sortOrder?: 'asc' | 'desc';
+      browseQuality?: string;
     };
 
     const q = typeof body.q === 'string' ? body.q : '';
@@ -99,12 +101,33 @@ export const searchResearchGroups = async (request: Request, response: Response)
       sort.sortOrder = body.sortOrder === 'asc' ? 'asc' : 'desc';
     }
 
-    const result = await searchResearchGroupsViaMeili(q, filters, page, pageSize, sort);
+    const currentUser = request.user as { userType?: string } | undefined;
+    const canUseAdminBrowseQuality = currentUser?.userType === 'admin';
+    const options = {
+      lowQualityFirst:
+        canUseAdminBrowseQuality &&
+        q.trim() === '' &&
+        body.browseQuality === 'low-first',
+    };
+
+    const result = await searchResearchGroupsViaMeili(
+      q,
+      filters,
+      page,
+      pageSize,
+      sort,
+      options,
+    );
     return response.json(result);
   } catch (error) {
     console.error('ResearchEntity search failed:', error);
     return response.status(500).json({ error: 'Search failed' });
   }
+};
+
+export const getResearchSearchSuggestions = async (_request: Request, response: Response) => {
+  const suggestions = await listResearchSearchSuggestions(6);
+  return response.json({ suggestions });
 };
 
 export const getResearchGroupBySlug = async (request: Request, response: Response) => {

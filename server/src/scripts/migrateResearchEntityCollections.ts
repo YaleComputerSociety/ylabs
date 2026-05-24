@@ -1,6 +1,8 @@
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import { initializeConnections } from '../db/connections';
+import { resolveScraperEnvironment } from '../scrapers/scraperEnvironment';
+import { assertScriptApplyAllowed } from './scriptWriteGuards';
 
 dotenv.config();
 
@@ -30,40 +32,8 @@ const COLLECTION_MIGRATIONS: CollectionMigration[] = [
     label: 'ResearchEntity members',
     indexes: [
       { keys: { researchEntityId: 1, userId: 1 } },
-      { keys: { researchEntityId: 1, facultyMemberId: 1, role: 1 } },
       { keys: { researchEntityId: 1, role: 1 } },
       { keys: { userId: 1 } },
-      { keys: { facultyMemberId: 1 } },
-    ],
-  },
-  {
-    source: 'research_group_stats',
-    target: 'research_entity_stats',
-    label: 'ResearchEntity stats',
-    indexes: [
-      { keys: { researchEntityId: 1 }, options: { unique: true, sparse: true } },
-      { keys: { computedAt: -1 } },
-      { keys: { responseRate90dSampleSize: -1 } },
-      { keys: { outreachCount30d: -1 } },
-    ],
-  },
-  {
-    source: 'paper_group_links',
-    target: 'paper_entity_links',
-    label: 'Paper to ResearchEntity links',
-    indexes: [
-      {
-        keys: { paperId: 1, researchEntityId: 1 },
-        options: {
-          unique: true,
-          partialFilterExpression: { researchEntityId: { $exists: true } },
-        },
-      },
-      { keys: { researchEntityId: 1, isFeatured: 1 } },
-      { keys: { paperId: 1 } },
-      { keys: { matchedFacultyMemberIds: 1 } },
-      { keys: { archived: 1 } },
-      { keys: { lastObservedAt: 1 } },
     ],
   },
 ];
@@ -73,6 +43,20 @@ function parseMode(argv: string[]): Mode {
   if (argv.includes('--verify')) return 'verify';
   if (argv.includes('--apply')) return 'apply';
   return 'dry-run';
+}
+
+function assertModeAllowed(mode: Mode, argv: string[], env: NodeJS.ProcessEnv = process.env): void {
+  if (mode !== 'drop-legacy') return;
+
+  if (!argv.includes('--confirm-drop-legacy')) {
+    throw new Error('ResearchEntity collection drop requires --confirm-drop-legacy with --drop-legacy.');
+  }
+
+  if (resolveScraperEnvironment(env) === 'production' && env.CONFIRM_PROD_SCRAPE !== 'true') {
+    throw new Error(
+      'Production ResearchEntity collection drop requires CONFIRM_PROD_SCRAPE=true in the environment.',
+    );
+  }
 }
 
 async function collectionExists(db: MongoDb, name: string): Promise<boolean> {
@@ -352,7 +336,14 @@ async function dropLegacyCollections(db: MongoDb) {
 }
 
 async function main() {
-  const mode = parseMode(process.argv.slice(2));
+  const argv = process.argv.slice(2);
+  const mode = parseMode(argv);
+  assertModeAllowed(mode, argv);
+  assertScriptApplyAllowed({
+    apply: mode === 'apply',
+    scriptName: 'research-entity:cleanup-collections',
+    mongoUrl: process.env.MONGODBURL,
+  });
   await initializeConnections();
   const db = mongoose.connection.db;
   if (!db) throw new Error('MongoDB connection is not initialized');

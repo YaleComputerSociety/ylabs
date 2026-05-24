@@ -3,12 +3,15 @@
  */
 import { createContext } from 'react';
 import { Fellowship, FellowshipFilterOptions } from '../types/types';
+import { FellowshipQuickFilter } from '../reducers/fellowshipSearchReducer';
 
 export interface FellowshipSearchContextType {
   queryString: string;
   setQueryString: (query: string) => void;
 
   selectedYearOfStudy: string[];
+  selectedProgramCategory: string[];
+  setSelectedProgramCategory: React.Dispatch<React.SetStateAction<string[]>>;
   setSelectedYearOfStudy: React.Dispatch<React.SetStateAction<string[]>>;
   selectedTermOfAward: string[];
   setSelectedTermOfAward: React.Dispatch<React.SetStateAction<string[]>>;
@@ -42,7 +45,7 @@ export interface FellowshipSearchContextType {
   refreshFellowships: () => void;
 
   quickFilter: string | null;
-  setQuickFilter: (filter: string | null) => void;
+  setQuickFilter: (filter: FellowshipQuickFilter) => void;
 
   filterBarHeight: number;
   setFilterBarHeight: (height: number) => void;
@@ -52,6 +55,8 @@ export const defaultFellowshipSearchContext: FellowshipSearchContextType = {
   queryString: '',
   setQueryString: () => {},
   selectedYearOfStudy: [],
+  selectedProgramCategory: [],
+  setSelectedProgramCategory: () => {},
   setSelectedYearOfStudy: () => {},
   selectedTermOfAward: [],
   setSelectedTermOfAward: () => {},
@@ -75,6 +80,7 @@ export const defaultFellowshipSearchContext: FellowshipSearchContextType = {
   pageSize: 20,
   total: 0,
   filterOptions: {
+    programCategory: [],
     yearOfStudy: [],
     termOfAward: [],
     purpose: [],

@@ -6,7 +6,6 @@ import { initializeConnections } from '../db/connections';
 import { AccessSignal } from '../models/accessSignal';
 import { ContactRoute } from '../models/contactRoute';
 import { EntryPathway } from '../models/entryPathway';
-import { Listing } from '../models/listing';
 import { Observation } from '../models/observation';
 import { PostedOpportunity } from '../models/postedOpportunity';
 import { ResearchEntity } from '../models/researchEntity';
@@ -44,6 +43,7 @@ interface AuditEntityRecord {
   shortDescription?: string;
   fullDescription?: string;
   websiteUrl?: string;
+  departments?: string[];
   researchAreas?: string[];
   sourceUrls?: string[];
   acceptanceConfidence?: number;
@@ -104,6 +104,7 @@ function stringId(value: unknown): string {
 
 function makeEmptyCounts(): CoverageAuditCounts {
   return {
+    departments: 0,
     researchAreas: 0,
     sourceUrls: 0,
     members: 0,
@@ -164,16 +165,36 @@ async function aggregateCountMap(
   return countMap(rows);
 }
 
+async function aggregateSignalTypesMap(
+  match: Record<string, unknown>,
+): Promise<Map<string, string[]>> {
+  const rows = await AccessSignal.aggregate<{ _id: unknown; signalTypes: string[] }>([
+    { $match: match },
+    {
+      $group: {
+        _id: '$researchEntityId',
+        signalTypes: { $addToSet: '$signalType' },
+      },
+    },
+  ]);
+  return new Map(
+    rows.map((row) => [
+      stringId(row._id),
+      Array.isArray(row.signalTypes) ? row.signalTypes.filter(Boolean) : [],
+    ]),
+  );
+}
+
 async function fetchEntities(filter: Record<string, unknown>) {
   return (await ResearchEntity.find(filter)
     .select(
-      '_id slug name kind entityType school description shortDescription fullDescription websiteUrl researchAreas sourceUrls archived',
+      '_id slug name kind entityType school description shortDescription fullDescription websiteUrl departments researchAreas sourceUrls archived',
     )
     .sort({ name: 1 })
     .lean()) as unknown as AuditEntityRecord[];
 }
 
-async function buildBulkAudit(options: CliOptions) {
+export async function buildBulkAudit(options: CliOptions) {
   const entityFilter = options.slug
     ? { slug: options.slug }
     : options.includeArchived
@@ -191,8 +212,8 @@ async function buildBulkAudit(options: CliOptions) {
     publicRouteCounts,
     totalRouteCounts,
     signalCounts,
+    signalTypesByEntityId,
     opportunityCounts,
-    listingCounts,
     observationHints,
   ] = await Promise.all([
     aggregateCountMap(ResearchGroupMember, { researchEntityId: { $in: entityIds } }),
@@ -213,11 +234,11 @@ async function buildBulkAudit(options: CliOptions) {
       researchEntityId: { $in: entityIds },
       archived: { $ne: true },
     }),
-    aggregateCountMap(PostedOpportunity, {
+    aggregateSignalTypesMap({
       researchEntityId: { $in: entityIds },
       archived: { $ne: true },
     }),
-    aggregateCountMap(Listing, {
+    aggregateCountMap(PostedOpportunity, {
       researchEntityId: { $in: entityIds },
       archived: { $ne: true },
     }),
@@ -265,6 +286,7 @@ async function buildBulkAudit(options: CliOptions) {
         shortDescription: entity.shortDescription,
         fullDescription: entity.fullDescription,
         counts: {
+          departments: Array.isArray(entity.departments) ? entity.departments.length : 0,
           researchAreas: Array.isArray(entity.researchAreas) ? entity.researchAreas.length : 0,
           sourceUrls: Array.isArray(entity.sourceUrls) ? entity.sourceUrls.length : 0,
           members: memberCounts.get(entityId) || 0,
@@ -273,9 +295,10 @@ async function buildBulkAudit(options: CliOptions) {
           totalContactRoutes: totalRouteCounts.get(entityId) || 0,
           accessSignals: signalCounts.get(entityId) || 0,
           postedOpportunities: opportunityCounts.get(entityId) || 0,
-          activeListings: listingCounts.get(entityId) || 0,
+          activeListings: 0,
         },
         observationFlags: buildObservationFlags(observationsBySlug.get(entity.slug) || []),
+        signalTypes: signalTypesByEntityId.get(entityId) || [],
       };
       return buildCoverageAuditRow(facts);
     })
@@ -300,10 +323,10 @@ async function buildBulkAudit(options: CliOptions) {
   };
 }
 
-async function buildSlugAudit(slug: string) {
+export async function buildSlugAudit(slug: string) {
   const entity = (await ResearchEntity.findOne({ slug })
     .select(
-      '_id slug name kind entityType school description shortDescription fullDescription websiteUrl sourceUrls researchAreas acceptanceConfidence undergradEvidenceQuote lastObservedAt',
+      '_id slug name kind entityType school description shortDescription fullDescription websiteUrl departments sourceUrls researchAreas acceptanceConfidence undergradEvidenceQuote lastObservedAt',
     )
     .lean()) as AuditEntityRecord | null;
   if (!entity) {
@@ -321,7 +344,6 @@ async function buildSlugAudit(slug: string) {
     signals,
     routes,
     opportunities,
-    listings,
     observations,
   ] = await Promise.all([
     ResearchGroupMember.find({ researchEntityId: entity._id })
@@ -340,9 +362,6 @@ async function buildSlugAudit(slug: string) {
       .lean(),
     PostedOpportunity.find({ researchEntityId: entity._id, archived: { $ne: true } })
       .select('title term status applicationUrl sourceUrls derivationKey')
-      .lean(),
-    Listing.find({ researchEntityId: entity._id, archived: { $ne: true } })
-      .select('title deadline website')
       .lean(),
     Observation.find({
       entityType: { $in: ['researchEntity', 'researchGroup'] },
@@ -365,6 +384,7 @@ async function buildSlugAudit(slug: string) {
     shortDescription: entity.shortDescription,
     fullDescription: entity.fullDescription,
     counts: {
+      departments: Array.isArray(entity.departments) ? entity.departments.length : 0,
       researchAreas: Array.isArray(entity.researchAreas) ? entity.researchAreas.length : 0,
       sourceUrls: Array.isArray(entity.sourceUrls) ? entity.sourceUrls.length : 0,
       members: members.length,
@@ -373,7 +393,7 @@ async function buildSlugAudit(slug: string) {
       totalContactRoutes: routes.length,
       accessSignals: signals.length,
       postedOpportunities: opportunities.length,
-      activeListings: listings.length,
+      activeListings: 0,
     },
     observationFlags: buildObservationFlags(observationHints),
     signalTypes: signals.map((signal) => signal.signalType),
@@ -422,7 +442,7 @@ async function buildSlugAudit(slug: string) {
       publicContactRoutes: routes.filter((route) => route.visibility === 'PUBLIC'),
       nonPublicContactRoutes: routes.filter((route) => route.visibility !== 'PUBLIC'),
       postedOpportunities: opportunities,
-      activeListings: listings,
+      activeListings: [],
     },
     recentObservations: observationHints.slice(0, 40),
   };
@@ -439,11 +459,13 @@ async function main(): Promise<void> {
   console.log(JSON.stringify(result, null, 2));
 }
 
-main()
-  .catch((error) => {
-    console.error(error instanceof Error ? error.message : error);
-    process.exitCode = 1;
-  })
-  .finally(async () => {
-    await mongoose.disconnect();
-  });
+if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
+  main()
+    .catch((error) => {
+      console.error(error instanceof Error ? error.message : error);
+      process.exitCode = 1;
+    })
+    .finally(async () => {
+      await mongoose.disconnect();
+    });
+}

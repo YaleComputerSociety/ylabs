@@ -71,6 +71,63 @@ describe('buildScrapeRunReport', () => {
     expect(report.warnings).toEqual([]);
   });
 
+  it('includes post-materialization integrity failures separately from materialization errors', () => {
+    const report = buildScrapeRunReport(
+      {
+        _id: 'run-integrity',
+        sourceName: 'openalex',
+        status: 'success',
+        materializationErrors: 0,
+        postMaterializationIntegrity: {
+          status: 'failure',
+          counts: {
+            samePiSameNameResearchEntities: 0,
+            officialLabUrlResearchEntities: 0,
+            duplicatePeople: 0,
+            duplicateResearchPapers: 0,
+            duplicateCurrentMembers: 1,
+            currentMembersOnArchivedEntities: 0,
+            duplicateExploratoryContactPathways: 0,
+            duplicateAccessSignals: 0,
+            activeArtifactsOnArchivedEntities: 0,
+          },
+          failureNames: ['duplicateCurrentMembers'],
+          samples: {
+            samePiSameNameResearchEntities: [],
+            officialLabUrlResearchEntities: [],
+            duplicatePeople: [],
+            duplicateResearchPapers: [],
+            duplicateCurrentMembers: [
+              {
+                researchEntityId: 'entity-1',
+                userId: 'user-1',
+                role: 'pi',
+                memberIds: ['member-1', 'member-2'],
+              },
+            ],
+            currentMembersOnArchivedEntities: [],
+            duplicateExploratoryContactPathways: [],
+            duplicateAccessSignals: [],
+            activeArtifactsOnArchivedEntities: [],
+          },
+          warnings: [],
+          recommendedCommands: [
+            'yarn --cwd server research-entity:dedupe-by-pi --limit=1000 --apply',
+          ],
+        },
+      },
+      [],
+      observationCoverage,
+    );
+
+    expect(report.materialization.errors).toBe(0);
+    expect(report.postMaterializationIntegrity?.status).toBe('failure');
+    expect(report.postMaterializationIntegrity?.failureNames).toEqual(['duplicateCurrentMembers']);
+    expect(report.warnings).toContain(
+      'Post-materialization integrity gate failed: duplicateCurrentMembers.',
+    );
+  });
+
   it('flags conflict candidates and malformed observations', () => {
     const report = buildScrapeRunReport(
       {
@@ -134,6 +191,122 @@ describe('buildScrapeRunReport', () => {
     );
   });
 
+  it('does not flag repeatable inferred PI memberships as conflict candidates', () => {
+    const report = buildScrapeRunReport(
+      {
+        _id: 'run-repeatable-pi',
+        sourceName: 'ysm-atoz-index',
+        status: 'success',
+      },
+      [
+        {
+          entityType: 'researchEntity',
+          entityKey: 'ysm-digital',
+          field: 'inferredPiUserId',
+          value: '64f0000000000000000000bb',
+          sourceUrl: 'https://medicine.yale.edu/lab/digital/',
+        },
+        {
+          entityType: 'researchEntity',
+          entityKey: 'ysm-digital',
+          field: 'inferredPiUserId',
+          value: '64f0000000000000000000cc',
+          sourceUrl: 'https://medicine.yale.edu/lab/digital/',
+        },
+      ],
+      observationCoverage,
+    );
+
+    expect(report.quality.conflictCandidateCount).toBe(0);
+    expect(report.warnings).not.toContain(
+      '1 entity-field conflict candidate(s) found within this run.',
+    );
+  });
+
+  it('does not flag additive paper authorship evidence as a conflict candidate', () => {
+    const report = buildScrapeRunReport(
+      {
+        _id: 'run-paper-authorship',
+        sourceName: 'europe-pmc',
+        status: 'success',
+      },
+      [
+        {
+          entityType: 'paper',
+          entityKey: 'doi:10.1234/shared',
+          field: 'paperAuthorshipEvidence',
+          value: {
+            userId: '64f000000000000000000001',
+            displayName: 'Fixture Author One',
+            sourceName: 'europe-pmc',
+            method: 'europepmc-orcid',
+          },
+          sourceUrl: 'https://europepmc.org/article/MED/1',
+        },
+        {
+          entityType: 'paper',
+          entityKey: 'doi:10.1234/shared',
+          field: 'paperAuthorshipEvidence',
+          value: {
+            userId: '64f000000000000000000002',
+            displayName: 'Fixture Author Two',
+            sourceName: 'europe-pmc',
+            method: 'europepmc-orcid',
+          },
+          sourceUrl: 'https://europepmc.org/article/MED/1',
+        },
+      ],
+      observationCoverage,
+    );
+
+    expect(report.quality.conflictCandidateCount).toBe(0);
+    expect(report.warnings).not.toContain(
+      '1 entity-field conflict candidate(s) found within this run.',
+    );
+  });
+
+  it('flags conflicting user profile URL maps as conflict candidates', () => {
+    const report = buildScrapeRunReport(
+      {
+        _id: 'run-profile-urls',
+        sourceName: 'ysm-atoz-index',
+        status: 'success',
+      },
+      [
+        {
+          entityType: 'user',
+          entityKey: 'netid:fx101',
+          field: 'profileUrls',
+          value: {
+            official: 'https://medicine.yale.edu/lab/digital/profile/fixture-alpha/',
+          },
+          sourceUrl: 'https://medicine.yale.edu/lab/digital/',
+        },
+        {
+          entityType: 'user',
+          entityKey: 'netid:fx101',
+          field: 'profileUrls',
+          value: {
+            official: 'https://medicine.yale.edu/lab/habit/profile/fixture-alpha/',
+          },
+          sourceUrl: 'https://medicine.yale.edu/lab/habit/',
+        },
+      ],
+      observationCoverage,
+    );
+
+    expect(report.quality.conflictCandidateCount).toBe(1);
+    expect(report.quality.conflictCandidates[0]).toMatchObject({
+      entityType: 'user',
+      entity: 'netid:fx101',
+      field: 'profileUrls',
+      distinctValues: 2,
+    });
+    expect(report.warnings).toContain(
+      '1 entity-field conflict candidate(s) found within this run.',
+    );
+  });
+
   it('warns on failed zero-observation runs and fills default counters', () => {
     const report = buildScrapeRunReport(
       {
@@ -181,6 +354,30 @@ describe('buildScrapeRunReport', () => {
       },
       { message: 'Unknown scrape error', at: undefined, context: undefined },
     ]);
+  });
+
+  it('summarizes dry-run emitted observations from run counters when observations are not persisted', () => {
+    const report = buildScrapeRunReport(
+      {
+        _id: 'dry-run-1',
+        sourceName: 'yale-directory',
+        status: 'success',
+        observationCount: 157,
+        entitiesObserved: 25,
+        options: { dryRun: true, limit: 25 },
+      },
+      [],
+      observationCoverage,
+    );
+
+    expect(report.observations.total).toBe(157);
+    expect(report.observations.active).toBe(157);
+    expect(report.observations.entitiesObserved).toBe(25);
+    expect(report.coverage.observationsEmitted).toBe(157);
+    expect(report.warnings).not.toContain('Run produced zero observations.');
+    expect(report.warnings).not.toContain(
+      'Source coverage metadata exists, but successful run emitted zero observations.',
+    );
   });
 
   it('adds source-level coverage and fetch coverage metrics', () => {
@@ -261,20 +458,26 @@ describe('buildScrapeRunReport', () => {
       },
     );
 
-    expect(report.coverage.source).toEqual({
+    expect(report.coverage.source).toMatchObject({
       priority: 1,
       tier: 'PRIMARY_OFFICIAL',
       artifactTypes: {
         total: 4,
-        values: ['EntryPathway', 'AccessSignal', 'ContactRoute', 'Observation'],
       },
       evidenceCategories: {
         total: 3,
-        values: ['LAB_WEBSITE', 'JOIN_INSTRUCTIONS', 'UNDERGRAD_ROLE_LANGUAGE'],
       },
       defaultConfidence: 'MEDIUM',
       notes: 'Preserve source URLs.',
     });
+    expect(report.coverage.source?.artifactTypes.values).toHaveLength(4);
+    expect(report.coverage.source?.artifactTypes.values).toEqual(
+      expect.arrayContaining(['EntryPathway', 'AccessSignal', 'ContactRoute', 'Observation']),
+    );
+    expect(report.coverage.source?.evidenceCategories.values).toHaveLength(3);
+    expect(report.coverage.source?.evidenceCategories.values).toEqual(
+      expect.arrayContaining(['LAB_WEBSITE', 'JOIN_INSTRUCTIONS', 'UNDERGRAD_ROLE_LANGUAGE']),
+    );
     expect(report.coverage.fetch).toMatchObject({
       pagesVisited: 2,
       pagesFetched: 1,
@@ -328,6 +531,51 @@ describe('buildScrapeRunReport', () => {
       skippedNoIdentifier: 0,
     });
     expect(report.coverage.workPlanner).toEqual(report.metrics?.workPlanner);
+  });
+
+  it('warns when fellowship catalog metrics need operator review', () => {
+    const report = buildScrapeRunReport(
+      {
+        _id: 'run-fellowships',
+        sourceName: 'yale-college-fellowships-office',
+        status: 'success',
+        metrics: {
+          fellowshipCatalog: {
+            discovered: 5,
+            emitted: 5,
+            created: 1,
+            updated: 2,
+            unchanged: 2,
+            reviewRequired: 1,
+            missingPreviouslySeen: 2,
+            deadlineParsed: 3,
+            deadlineMissing: 2,
+          },
+        },
+      },
+      [
+        {
+          entityType: 'fellowship',
+          entityKey: 'yale-college-fellowships-office:fort-family-research-fellowship',
+          field: 'title',
+          value: 'Fort Family Research Fellowship',
+          sourceUrl: 'https://funding.yale.edu/find-funding/yale-fellowships-offered-through',
+        },
+      ],
+      getSourceCoverage('yale-college-fellowships-office'),
+    );
+
+    expect(report.metrics?.fellowshipCatalog).toMatchObject({
+      discovered: 5,
+      reviewRequired: 1,
+      missingPreviouslySeen: 2,
+    });
+    expect(report.warnings).toEqual(
+      expect.arrayContaining([
+        '1 fellowship catalog row(s) require operator review.',
+        '2 previously seen fellowship source row(s) were missing from this run; no rows were archived automatically.',
+      ]),
+    );
   });
 
   it('does not warn on zero-observation runs when WorkPlanner intentionally skipped all work', () => {
@@ -486,7 +734,7 @@ describe('buildScrapeRunReport', () => {
       },
     );
 
-    expect(report.coverage.postMaterialization).toEqual({
+    expect(report.coverage.postMaterialization).toMatchObject({
       entryPathways: 2,
       accessSignals: 3,
       contactRoutes: 1,
@@ -496,9 +744,12 @@ describe('buildScrapeRunReport', () => {
       conflicts: 0,
       errors: 0,
       totalAccessArtifacts: 6,
-      expectedArtifactTypes: ['EntryPathway', 'AccessSignal', 'ContactRoute'],
       missingExpectedArtifactTypes: [],
     });
+    expect(report.coverage.postMaterialization?.expectedArtifactTypes).toHaveLength(3);
+    expect(report.coverage.postMaterialization?.expectedArtifactTypes).toEqual(
+      expect.arrayContaining(['EntryPathway', 'AccessSignal', 'ContactRoute']),
+    );
     expect(report.warnings).toEqual(
       expect.arrayContaining([
         '1 contact route(s) were guarded from public exposure.',
@@ -547,6 +798,49 @@ describe('buildScrapeRunReport', () => {
     );
   });
 
+  it('does not warn on zero new access artifacts when the chunk emitted only profile context', () => {
+    const report = buildScrapeRunReport(
+      {
+        _id: 'run-8b',
+        sourceName: 'dept-faculty-roster',
+        status: 'success',
+        postMaterializationMetrics: {
+          entryPathways: 0,
+          accessSignals: 0,
+          contactRoutes: 0,
+          postedOpportunities: 0,
+        },
+      },
+      [
+        {
+          entityType: 'researchEntity',
+          entityKey: 'dept-eeb-example',
+          field: 'researchAreas',
+          value: ['community ecology'],
+          sourceUrl: 'https://eeb.yale.edu/people/faculty/example',
+        },
+      ],
+      {
+        priority: 2,
+        tier: 'OFFICIAL_INDEX',
+        artifactTypes: ['ResearchEntity', 'EntryPathway', 'ContactRoute', 'Observation'],
+        evidenceCategories: ['ENTITY_IDENTITY', 'OFFICIAL_PROFILE', 'TOPICS'],
+        defaultConfidence: 'HIGH',
+      },
+    );
+
+    expect(report.coverage.postMaterialization?.missingExpectedArtifactTypes).toEqual([
+      'EntryPathway',
+      'ContactRoute',
+    ]);
+    expect(report.warnings).not.toContain(
+      'Source coverage expects access artifacts (EntryPathway, ContactRoute), but post-materialization metrics report zero access artifacts.',
+    );
+    expect(report.warnings).not.toContain(
+      'Post-materialization metrics are missing expected artifact type(s): EntryPathway, ContactRoute.',
+    );
+  });
+
   it('does not add access-artifact warnings for observation-only sources', () => {
     const report = buildScrapeRunReport(
       {
@@ -578,6 +872,47 @@ describe('buildScrapeRunReport', () => {
       missingExpectedArtifactTypes: [],
     });
     expect(report.warnings).toEqual([]);
+  });
+
+  it('warns when observation-only sources create access artifacts', () => {
+    const report = buildScrapeRunReport(
+      {
+        _id: 'run-9b',
+        sourceName: 'nsf-award-search',
+        status: 'success',
+        postMaterializationMetrics: {
+          entryPathways: 1,
+          accessSignals: 1,
+          contactRoutes: 1,
+          postedOpportunities: 0,
+        },
+      },
+      [
+        {
+          entityType: 'researchEntity',
+          entityKey: 'nsf-ada-lovelace',
+          field: 'recentGrants',
+          value: [{ id: '123' }],
+          sourceUrl: 'https://www.research.gov/awardsearch/showAward?AWD_ID=123',
+        },
+      ],
+      {
+        priority: 6,
+        tier: 'THIRD_PARTY_ENRICHMENT',
+        artifactTypes: ['ResearchEntity', 'Observation'],
+        evidenceCategories: ['FUNDING_ACTIVITY', 'TOPICS'],
+        defaultConfidence: 'MEDIUM',
+      },
+    );
+
+    expect(report.coverage.postMaterialization).toMatchObject({
+      totalAccessArtifacts: 3,
+      expectedArtifactTypes: [],
+      missingExpectedArtifactTypes: [],
+    });
+    expect(report.warnings).toContain(
+      'Source coverage does not expect access artifacts, but post-materialization created 3 access artifact(s).',
+    );
   });
 
   it('builds a source evidence gap review for access, fellowship, and posted-role sources', () => {
@@ -616,63 +951,80 @@ describe('buildScrapeRunReport', () => {
       },
     ]);
 
-    expect(review).toEqual([
-      {
-        sourceName: 'lab-microsite-undergrad-llm',
-        expectedArtifactTypes: ['EntryPathway', 'AccessSignal', 'ContactRoute'],
-        actualArtifactCounts: {
-          entryPathways: 2,
-          accessSignals: 2,
-          contactRoutes: 1,
-          postedOpportunities: 0,
-        },
-        missingExpectedArtifactTypes: [],
-        totalAccessArtifacts: 5,
-        hasGap: false,
-        coverageKnown: true,
-      },
-      {
-        sourceName: 'undergrad-fellowships-recipients',
-        expectedArtifactTypes: ['EntryPathway', 'AccessSignal'],
-        actualArtifactCounts: {
-          entryPathways: 0,
-          accessSignals: 0,
-          contactRoutes: 0,
-          postedOpportunities: 0,
-        },
-        missingExpectedArtifactTypes: ['EntryPathway', 'AccessSignal'],
-        totalAccessArtifacts: 0,
-        hasGap: true,
-        coverageKnown: true,
-      },
-      {
-        sourceName: 'ylabs-listing',
-        expectedArtifactTypes: ['EntryPathway', 'AccessSignal', 'PostedOpportunity'],
-        actualArtifactCounts: {
-          entryPathways: 1,
-          accessSignals: 1,
-          contactRoutes: 0,
-          postedOpportunities: 1,
-        },
-        missingExpectedArtifactTypes: [],
-        totalAccessArtifacts: 3,
-        hasGap: false,
-        coverageKnown: true,
-      },
-      {
-        sourceName: 'unknown-source',
-        expectedArtifactTypes: [],
-        actualArtifactCounts: {
-          entryPathways: 0,
-          accessSignals: 0,
-          contactRoutes: 0,
-          postedOpportunities: 0,
-        },
-        missingExpectedArtifactTypes: [],
-        totalAccessArtifacts: 0,
-        hasGap: false,
-        coverageKnown: false,
-      },
-    ]);
+    expect(review).toHaveLength(4);
+    expect(review).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          sourceName: 'lab-microsite-undergrad-llm',
+          actualArtifactCounts: expect.objectContaining({
+            entryPathways: 2,
+            accessSignals: 2,
+            contactRoutes: 1,
+            postedOpportunities: 0,
+          }),
+          missingExpectedArtifactTypes: [],
+          totalAccessArtifacts: 5,
+          hasGap: false,
+          coverageKnown: true,
+        }),
+        expect.objectContaining({
+          sourceName: 'undergrad-fellowships-recipients',
+          actualArtifactCounts: expect.objectContaining({
+            entryPathways: 0,
+            accessSignals: 0,
+            contactRoutes: 0,
+            postedOpportunities: 0,
+          }),
+          totalAccessArtifacts: 0,
+          hasGap: true,
+          coverageKnown: true,
+        }),
+        expect.objectContaining({
+          sourceName: 'ylabs-listing',
+          actualArtifactCounts: expect.objectContaining({
+            entryPathways: 1,
+            accessSignals: 1,
+            contactRoutes: 0,
+            postedOpportunities: 1,
+          }),
+          missingExpectedArtifactTypes: [],
+          totalAccessArtifacts: 3,
+          hasGap: false,
+          coverageKnown: true,
+        }),
+        expect.objectContaining({
+          sourceName: 'unknown-source',
+          expectedArtifactTypes: [],
+          actualArtifactCounts: expect.objectContaining({
+            entryPathways: 0,
+            accessSignals: 0,
+            contactRoutes: 0,
+            postedOpportunities: 0,
+          }),
+          missingExpectedArtifactTypes: [],
+          totalAccessArtifacts: 0,
+          hasGap: false,
+          coverageKnown: false,
+        }),
+      ]),
+    );
+
+    const reviewBySource = new Map(review.map((row) => [row.sourceName, row]));
+    expect(reviewBySource.get('lab-microsite-undergrad-llm')?.expectedArtifactTypes).toEqual(
+      expect.arrayContaining(['EntryPathway', 'AccessSignal', 'ContactRoute']),
+    );
+    expect(reviewBySource.get('lab-microsite-undergrad-llm')?.expectedArtifactTypes).toHaveLength(3);
+    expect(reviewBySource.get('undergrad-fellowships-recipients')?.expectedArtifactTypes).toEqual(
+      expect.arrayContaining(['EntryPathway', 'AccessSignal']),
+    );
+    expect(reviewBySource.get('undergrad-fellowships-recipients')?.expectedArtifactTypes).toHaveLength(2);
+    expect(reviewBySource.get('undergrad-fellowships-recipients')?.missingExpectedArtifactTypes).toEqual(
+      expect.arrayContaining(['EntryPathway', 'AccessSignal']),
+    );
+    expect(reviewBySource.get('undergrad-fellowships-recipients')?.missingExpectedArtifactTypes).toHaveLength(2);
+    expect(reviewBySource.get('ylabs-listing')?.expectedArtifactTypes).toEqual(
+      expect.arrayContaining(['EntryPathway', 'AccessSignal', 'PostedOpportunity']),
+    );
+    expect(reviewBySource.get('ylabs-listing')?.expectedArtifactTypes).toHaveLength(3);
   });
 });

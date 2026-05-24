@@ -12,6 +12,9 @@ const DeveloperCard = ({ developer }: DeveloperCardProps) => {
     return null;
   }
 
+  const iconLinkClass =
+    'inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md transition hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2';
+
   return (
     <div>
       <img
@@ -24,38 +27,60 @@ const DeveloperCard = ({ developer }: DeveloperCardProps) => {
       <h3 className="text-xl font-semibold">{developer.name}</h3>
       <p className="text-gray-700">{developer.position}</p>
       <p className="text-gray-700 mb-1">{developer.location}</p>
-      {developer.website && (
-        <a href={developer.website} target="_blank" rel="noopener noreferrer">
-          <img
-            src="/assets/icons/website-icon.png"
-            alt={`${developer.name} Website`}
-            width={20}
-            height={20}
-            className="inline-block"
-          />
-        </a>
-      )}
-      {developer.linkedin && (
-        <a href={developer.linkedin} target="_blank" rel="noopener noreferrer">
-          <img
-            src="/assets/icons/linkedin-icon.png"
-            alt={`${developer.name} LinkedIn`}
-            width={28}
-            height={28}
-            className="inline-block"
-          />
-        </a>
-      )}
-      {developer.github && (
-        <a href={developer.github} target="_blank" rel="noopener noreferrer">
-          <img
-            src="/assets/icons/github-icon.png"
-            alt={`${developer.name} Website`}
-            width={20}
-            height={20}
-            className="inline-block"
-          />
-        </a>
+      {(developer.website || developer.linkedin || developer.github) && (
+        <div className="mt-2 flex flex-wrap justify-center gap-1">
+          {developer.website && (
+            <a
+              href={developer.website}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={`${developer.name} Website`}
+              className={iconLinkClass}
+            >
+              <img
+                src="/assets/icons/website-icon.png"
+                alt={`${developer.name} Website`}
+                width={20}
+                height={20}
+                className="block"
+              />
+            </a>
+          )}
+          {developer.linkedin && (
+            <a
+              href={developer.linkedin}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={`${developer.name} LinkedIn`}
+              className={iconLinkClass}
+            >
+              <img
+                src="/assets/icons/linkedin-icon.png"
+                alt={`${developer.name} LinkedIn`}
+                width={28}
+                height={28}
+                className="block"
+              />
+            </a>
+          )}
+          {developer.github && (
+            <a
+              href={developer.github}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={`${developer.name} GitHub`}
+              className={iconLinkClass}
+            >
+              <img
+                src="/assets/icons/github-icon.png"
+                alt={`${developer.name} GitHub`}
+                width={20}
+                height={20}
+                className="block"
+              />
+            </a>
+          )}
+        </div>
       )}
     </div>
   );

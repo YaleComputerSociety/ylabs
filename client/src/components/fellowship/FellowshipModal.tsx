@@ -8,6 +8,7 @@ import FellowshipSearchContext from '../../contexts/FellowshipSearchContext';
 import { ensureHttpPrefix, safeUrl } from '../../utils/url';
 import { getFellowshipCycleStatus } from '../../utils/fellowshipCycle';
 import FavoriteButton from '../shared/FavoriteButton';
+import LongText from '../shared/LongText';
 
 interface FellowshipModalProps {
   fellowship: Fellowship;
@@ -56,6 +57,10 @@ const RichText = ({ text }: { text: string }) => {
 };
 
 const RichTextBlock = ({ text, className }: { text: string; className?: string }) => {
+  if (!/\[[^\]]+\]\s*\([^)]+\)/.test(text)) {
+    return <LongText text={text} className={className} />;
+  }
+
   const lines = text.split('\n');
   return (
     <div className={className}>
@@ -119,7 +124,7 @@ const FellowshipModal = ({
     }
 
     onClose();
-    navigate('/fellowships');
+    navigate('/programs');
   };
 
   const formatDate = (dateStr: string | null) => {
@@ -139,6 +144,10 @@ const FellowshipModal = ({
     fellowship.contactEmail ||
     fellowship.contactPhone ||
     fellowship.contactOffice;
+  const iconActionClass =
+    'inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-gray-100 hover:text-blue-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200';
+  const filterChipClass =
+    'inline-flex min-h-[44px] items-center rounded-md px-3 py-2 text-xs transition-all hover:ring-2 hover:ring-offset-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200';
 
   return (
     <div
@@ -147,6 +156,9 @@ const FellowshipModal = ({
     >
       <div
         className="bg-white rounded-xl shadow-2xl w-full max-w-4xl h-[85vh] flex flex-col overflow-hidden"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="program-detail-title"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex-shrink-0 border-b border-gray-100">
@@ -155,7 +167,7 @@ const FellowshipModal = ({
             style={{ background: 'linear-gradient(90deg, #0055A4 0%, #3b82f6 50%, #93c5fd 100%)' }}
           />
           <div className="px-6 py-5">
-            <div className="flex items-start justify-between gap-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
               <div className="flex-1 min-w-0">
                 <div className="flex flex-wrap items-center gap-2 mb-2">
                   {fellowship.competitionType && (
@@ -170,19 +182,19 @@ const FellowshipModal = ({
                   </span>
                 </div>
 
-                <h2 className="text-xl font-bold text-gray-900 leading-tight">
+                <h2 id="program-detail-title" className="text-xl font-bold text-gray-900 leading-tight">
                   {fellowship.title}
                 </h2>
               </div>
 
-              <div className="flex items-center gap-1 flex-shrink-0">
+              <div className="flex flex-shrink-0 flex-wrap items-center gap-1">
                 {fellowship.applicationLink && (
                   <a
                     href={ensureHttpPrefix(fellowship.applicationLink)}
                     target="_blank"
                     rel="noopener noreferrer"
                     onClick={(e) => e.stopPropagation()}
-                    className="p-2 rounded-lg hover:bg-gray-100 transition-colors text-gray-500 hover:text-blue-600"
+                    className={iconActionClass}
                     title={cycleStatus.category === 'open' || cycleStatus.category === 'closingSoon' ? 'Apply' : 'Open source'}
                   >
                     <svg
@@ -206,7 +218,7 @@ const FellowshipModal = ({
                   <a
                     href={`mailto:${fellowship.contactEmail}`}
                     onClick={(e) => e.stopPropagation()}
-                    className="p-2 rounded-lg hover:bg-gray-100 transition-colors text-gray-500 hover:text-blue-600"
+                    className={iconActionClass}
                     title="Email contact"
                   >
                     <svg
@@ -225,19 +237,17 @@ const FellowshipModal = ({
                     </svg>
                   </a>
                 )}
-                <span className="px-1">
-                  <FavoriteButton
-                    isFavorite={isFavorite}
-                    onToggle={(e) => {
-                      e.stopPropagation();
-                      toggleFavorite();
-                    }}
-                    size={22}
-                  />
-                </span>
+                <FavoriteButton
+                  isFavorite={isFavorite}
+                  onToggle={(e) => {
+                    e.stopPropagation();
+                    toggleFavorite();
+                  }}
+                  size={22}
+                />
                 <button
                   onClick={onClose}
-                  className="p-2 rounded-lg hover:bg-gray-100 transition-colors text-gray-400 hover:text-gray-600"
+                  className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
                   aria-label="Close"
                 >
                   <svg
@@ -318,7 +328,7 @@ const FellowshipModal = ({
                       {fellowship.contactEmail && (
                         <a
                           href={`mailto:${fellowship.contactEmail}`}
-                          className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800 hover:underline"
+                          className="inline-flex min-h-[44px] max-w-full items-center gap-2 rounded-md px-2 text-sm text-blue-600 hover:text-blue-800 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
                         >
                           <svg
                             xmlns="http://www.w3.org/2000/svg"
@@ -360,7 +370,7 @@ const FellowshipModal = ({
                           href={ensureHttpPrefix(link.url)}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800 hover:underline"
+                          className="inline-flex min-h-[44px] max-w-full items-center gap-2 rounded-md px-2 text-sm text-blue-600 hover:text-blue-800 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
                         >
                           <svg
                             xmlns="http://www.w3.org/2000/svg"
@@ -394,12 +404,12 @@ const FellowshipModal = ({
                     {fellowship.yearOfStudy.length > 0 && (
                       <div>
                         <span className="text-xs text-gray-500">Year of Study</span>
-                        <div className="flex flex-wrap gap-1 mt-1">
+                        <div className="mt-1 flex flex-wrap gap-2">
                           {fellowship.yearOfStudy.map((year) => (
                             <button
                               key={year}
                               onClick={() => handleFilterClick('yearOfStudy', year)}
-                              className="bg-blue-100 text-blue-800 text-xs rounded-md px-2 py-1 hover:ring-2 hover:ring-offset-1 cursor-pointer transition-all"
+                              className={`${filterChipClass} bg-blue-100 text-blue-800`}
                             >
                               {year}
                             </button>
@@ -410,12 +420,12 @@ const FellowshipModal = ({
                     {fellowship.termOfAward.length > 0 && (
                       <div>
                         <span className="text-xs text-gray-500">Term of Award</span>
-                        <div className="flex flex-wrap gap-1 mt-1">
+                        <div className="mt-1 flex flex-wrap gap-2">
                           {fellowship.termOfAward.map((term) => (
                             <button
                               key={term}
                               onClick={() => handleFilterClick('termOfAward', term)}
-                              className="bg-yellow-100 text-yellow-800 text-xs rounded-md px-2 py-1 hover:ring-2 hover:ring-offset-1 cursor-pointer transition-all"
+                              className={`${filterChipClass} bg-yellow-100 text-yellow-800`}
                             >
                               {term}
                             </button>
@@ -426,12 +436,12 @@ const FellowshipModal = ({
                     {fellowship.purpose.length > 0 && (
                       <div>
                         <span className="text-xs text-gray-500">Purpose</span>
-                        <div className="flex flex-wrap gap-1 mt-1">
+                        <div className="mt-1 flex flex-wrap gap-2">
                           {fellowship.purpose.map((p) => (
                             <button
                               key={p}
                               onClick={() => handleFilterClick('purpose', p)}
-                              className="bg-purple-100 text-purple-800 text-xs rounded-md px-2 py-1 hover:ring-2 hover:ring-offset-1 cursor-pointer transition-all"
+                              className={`${filterChipClass} bg-purple-100 text-purple-800`}
                             >
                               {p}
                             </button>
@@ -442,12 +452,12 @@ const FellowshipModal = ({
                     {fellowship.globalRegions.length > 0 && (
                       <div>
                         <span className="text-xs text-gray-500">Global Regions</span>
-                        <div className="flex flex-wrap gap-1 mt-1">
+                        <div className="mt-1 flex flex-wrap gap-2">
                           {fellowship.globalRegions.map((region) => (
                             <button
                               key={region}
                               onClick={() => handleFilterClick('globalRegions', region)}
-                              className="bg-green-100 text-green-800 text-xs rounded-md px-2 py-1 hover:ring-2 hover:ring-offset-1 cursor-pointer transition-all"
+                              className={`${filterChipClass} bg-green-100 text-green-800`}
                             >
                               {region}
                             </button>
@@ -458,12 +468,12 @@ const FellowshipModal = ({
                     {fellowship.citizenshipStatus.length > 0 && (
                       <div>
                         <span className="text-xs text-gray-500">Citizenship Status</span>
-                        <div className="flex flex-wrap gap-1 mt-1">
+                        <div className="mt-1 flex flex-wrap gap-2">
                           {fellowship.citizenshipStatus.map((status) => (
                             <button
                               key={status}
                               onClick={() => handleFilterClick('citizenshipStatus', status)}
-                              className="bg-orange-100 text-orange-800 text-xs rounded-md px-2 py-1 hover:ring-2 hover:ring-offset-1 cursor-pointer transition-all"
+                              className={`${filterChipClass} bg-orange-100 text-orange-800`}
                             >
                               {status}
                             </button>
@@ -554,7 +564,7 @@ const FellowshipModal = ({
                       href={ensureHttpPrefix(fellowship.applicationLink)}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center px-6 py-2.5 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors text-sm"
+                      className="inline-flex min-h-[44px] items-center rounded-md bg-blue-600 px-6 py-2.5 text-sm font-medium text-white transition-colors hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
                     >
                       {cycleStatus.category === 'open' || cycleStatus.category === 'closingSoon'
                         ? 'Apply Now'

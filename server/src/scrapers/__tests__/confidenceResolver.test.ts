@@ -51,6 +51,39 @@ describe('resolveField', () => {
     expect(r?.value).toBe('Smith Lab');
   });
 
+  it('uses an optional field-specific observation scorer before generic weights', () => {
+    const r = resolveField(
+      'bio',
+      [
+        {
+          field: 'bio',
+          value: 'My research studies mammal evolution.',
+          sourceName: 'official-profile-enrichment',
+          confidence: 0.95,
+          observedAt: D('2026-04-01'),
+        },
+        {
+          field: 'bio',
+          value:
+            'My research interests include the functional morphology and systematics of mammals. I study extant and extinct primates, treeshrews, guenon diversity, and paleontological field expeditions.',
+          sourceName: 'dept-faculty-roster',
+          confidence: 0.7,
+          observedAt: D('2026-04-01'),
+          sourceUrl: 'https://faculty.yale.edu/example',
+        },
+      ],
+      {
+        now: D('2026-04-10'),
+        observationScore: (observation, baseScore) =>
+          observation.field === 'bio' && String(observation.value).includes('field expeditions')
+            ? baseScore * 2
+            : baseScore,
+      },
+    );
+
+    expect(r?.value).toContain('field expeditions');
+  });
+
   it('flags a conflict when two values are close in weight', () => {
     const r = resolveField(
       'title',

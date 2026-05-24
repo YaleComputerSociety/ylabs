@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { reapExpiredPostedOpportunities } from '../services/postedOpportunityService';
+import { assertScriptApplyAllowed } from './scriptWriteGuards';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -40,6 +41,11 @@ function parseArgs(argv: string[]): CliOptions {
 
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
+  assertScriptApplyAllowed({
+    apply: !options.dryRun,
+    scriptName: 'opportunities:reap-statuses',
+    mongoUrl: process.env.MONGODBURL,
+  });
   await initializeConnections();
   const result = await reapExpiredPostedOpportunities({
     dryRun: options.dryRun,

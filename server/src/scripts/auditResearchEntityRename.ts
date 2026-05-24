@@ -30,44 +30,6 @@ const REFERENCE_CHECKS: ReferenceCheck[] = [
     label: 'ResearchEntity member host entity',
   },
   {
-    collection: 'research_entity_stats',
-    field: 'researchEntityId',
-    label: 'ResearchEntityStats host entity',
-  },
-  { collection: 'paper_entity_links', field: 'researchEntityId', label: 'PaperEntityLink host entity' },
-  {
-    collection: 'research_group_members',
-    field: 'researchEntityId',
-    label: 'Legacy ResearchEntity member host entity',
-  },
-  {
-    collection: 'research_group_stats',
-    field: 'researchEntityId',
-    label: 'Legacy ResearchEntityStats host entity',
-  },
-  {
-    collection: 'paper_group_links',
-    field: 'researchEntityId',
-    label: 'Legacy PaperEntityLink host entity',
-  },
-  { collection: 'papers', field: 'researchEntityIds', label: 'Paper linked entities', array: true },
-  { collection: 'grants', field: 'researchEntityIds', label: 'Grant linked entities', array: true },
-  {
-    collection: 'student_trackings',
-    field: 'researchEntityId',
-    label: 'StudentTracking host entity',
-  },
-  {
-    collection: 'student_outreaches',
-    field: 'researchEntityId',
-    label: 'StudentOutreach host entity',
-  },
-  {
-    collection: 'student_engagement_events',
-    field: 'researchEntityId',
-    label: 'StudentEngagementEvent host entity',
-  },
-  {
     collection: 'observations',
     field: 'entityId',
     label: 'Observation researchEntity entity',
@@ -138,25 +100,12 @@ async function main() {
   const db = mongoose.connection.db;
   if (!db) throw new Error('MongoDB connection is not initialized');
 
-  const [
-    researchGroups,
-    researchEntities,
-    researchGroupMembers,
-    researchEntityMembers,
-    researchGroupStats,
-    researchEntityStats,
-    paperGroupLinks,
-    paperEntityLinks,
-    references,
-  ] = await Promise.all([
+  const [researchGroups, researchEntities, researchGroupMembers, researchEntityMembers, references] =
+    await Promise.all([
     countCollection(db, 'research_groups'),
     countCollection(db, 'research_entities'),
     countCollection(db, 'research_group_members'),
     countCollection(db, 'research_entity_members'),
-    countCollection(db, 'research_group_stats'),
-    countCollection(db, 'research_entity_stats'),
-    countCollection(db, 'paper_group_links'),
-    countCollection(db, 'paper_entity_links'),
     Promise.all(REFERENCE_CHECKS.map((check) => countDanglingReferences(db, check))),
   ]);
 
@@ -170,10 +119,6 @@ async function main() {
           research_entities: researchEntities,
           research_group_members: researchGroupMembers,
           research_entity_members: researchEntityMembers,
-          research_group_stats: researchGroupStats,
-          research_entity_stats: researchEntityStats,
-          paper_group_links: paperGroupLinks,
-          paper_entity_links: paperEntityLinks,
         },
         references,
         rollbackNote:

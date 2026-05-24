@@ -21,6 +21,7 @@ import { BrowsableItem } from '../types/browsable';
 import { Fellowship } from '../types/types';
 import axios from '../utils/axios';
 import { browsePageReducer, createInitialBrowsePageState } from '../reducers/browsePageReducer';
+import type { FellowshipQuickFilter } from '../reducers/fellowshipSearchReducer';
 import { useInfiniteScroll } from '../hooks/useInfiniteScroll';
 import useDocumentTitle from '../hooks/useDocumentTitle';
 import {
@@ -518,7 +519,7 @@ const Fellowships = () => {
           <ActiveFilters
             quickFilters={fellowshipQuickFilters}
             activeQuickFilter={quickFilter}
-            onQuickFilterChange={setQuickFilter}
+            onQuickFilterChange={(value) => setQuickFilter(value as FellowshipQuickFilter)}
             totalCount={total}
             isLoading={isLoading}
             chips={fellowshipChips}

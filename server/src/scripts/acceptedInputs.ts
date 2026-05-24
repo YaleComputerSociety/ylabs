@@ -20,6 +20,7 @@ import {
   serializeCsv,
   validateArxivOrcidList,
 } from './acceptedInputsCore';
+import { assertScriptApplyAllowed } from './scriptWriteGuards';
 
 dotenv.config();
 
@@ -140,6 +141,11 @@ async function main() {
     printHelp();
     return;
   }
+  assertScriptApplyAllowed({
+    apply: options.apply,
+    scriptName: `accepted-inputs ${options.command}`,
+    mongoUrl: process.env.MONGODBURL,
+  });
   const needsDb = COMMANDS_REQUIRING_DB.has(options.command);
   if (needsDb) await initializeConnections();
 

@@ -1,7 +1,6 @@
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import path from 'path';
-import { Listing } from '../server/src/models/listing';
 import { Department } from '../server/src/models/department';
 
 // Load environment variables from server/.env
@@ -308,13 +307,19 @@ async function migrateDepartments(dryRun: boolean = true) {
     }
     console.log('All manual mappings are valid!\n');
 
-    // Connect to ProductionMigration to update listings
+    // Connect to ProductionMigration to update legacy listings if that collection still exists.
     console.log('Connecting to ProductionMigration database...');
     const targetConnection = await mongoose.createConnection(targetUrl).asPromise();
-    const TargetListing = targetConnection.model('Listing', Listing.schema, 'listings');
+    const targetDb = targetConnection.db;
+    if (!targetDb) throw new Error('ProductionMigration database connection failed');
+    const listingCollectionExists =
+      (await targetDb.listCollections({ name: 'listings' }, { nameOnly: true }).toArray()).length >
+      0;
 
     // Fetch all listings
-    const listings = await TargetListing.find({}).lean();
+    const listings = listingCollectionExists
+      ? await targetDb.collection('listings').find({}).toArray()
+      : [];
     console.log(`Found ${listings.length} listings in ProductionMigration\n`);
 
     // Collect all unique department values
@@ -407,7 +412,7 @@ async function migrateDepartments(dryRun: boolean = true) {
 
       // Update the listing if there are changes
       if (hasChanges && !dryRun) {
-        await TargetListing.updateOne(
+        await targetDb.collection('listings').updateOne(
           { _id: listing._id },
           { $set: { departments: newDepartments } }
         );

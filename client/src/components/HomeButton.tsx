@@ -24,6 +24,7 @@ const HomeButton = () => {
         '&:hover': { backgroundColor: 'transparent' },
         textTransform: 'none',
         minWidth: 'auto',
+        minHeight: '44px',
         padding: '6px 16px 6px 0px',
         marginLeft: '-16px',
       }}

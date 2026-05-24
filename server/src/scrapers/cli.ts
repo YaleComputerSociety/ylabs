@@ -32,7 +32,12 @@ import {
   applyObservationPruneEnvironmentGuards,
   applyScraperEnvironmentGuards,
 } from './scraperEnvironment';
+import {
+  applyScraperPromotionGuards,
+  parseAcceptedReviewArtifact,
+} from './scraperPromotionGuards';
 import { createCronRunnerDependencies, runScraperCron } from './cronRunner';
+import { isIntegrityGateFailure } from './integrityGate';
 import { pruneSupersededObservations } from './observationRetention';
 import type { ScraperOptions } from './types';
 
@@ -82,6 +87,10 @@ function parseScraperOptions(flags: Record<string, string | boolean>): ScraperOp
         ? flags['manual-recipient-csv-dir']
         : undefined,
     ignoreWorkPlanner: !!flags['ignore-work-planner'],
+    acceptedReviewArtifact:
+      typeof flags['accepted-review-artifact'] === 'string'
+        ? flags['accepted-review-artifact']
+        : undefined,
     since: flags.since ? new Date(String(flags.since)) : undefined,
   };
 
@@ -134,6 +143,8 @@ Run flags:
                        For openalex, cap cursor pages per resolved author
   --manual-recipient-csv-dir <path>
                        For undergrad-fellowships-recipients, read <programKey>.csv files
+  --accepted-review-artifact <path>
+      Read approved LLM slugs or arXiv identity targets from JSON or newline text
   --ignore-work-planner
                        Bypass freshness skips for full audit/backfill runs
   --auto-materialize   Materialize immediately after a successful run
@@ -176,6 +187,26 @@ Environment guardrails:
   await mongoose.connect(url);
 
   try {
+    const applyPromotionGuards = async (
+      sourceName: string,
+      guard: ReturnType<typeof applyScraperEnvironmentGuards>,
+    ) => {
+      const acceptedReviewSlugs =
+        guard.options.acceptedReviewArtifact && typeof guard.options.acceptedReviewArtifact === 'string'
+          ? parseAcceptedReviewArtifact(
+              await fs.readFile(path.resolve(guard.options.acceptedReviewArtifact), 'utf8'),
+            )
+          : undefined;
+      const promotionGuard = applyScraperPromotionGuards({
+        sourceName,
+        environment: guard.environment,
+        options: guard.options,
+        autoMaterialize: guard.autoMaterialize,
+        acceptedReviewSlugs,
+      });
+      guard.options = promotionGuard.options;
+    };
+
     if (command === 'run') {
       const sourceName = flags.source as string;
       if (!sourceName) {
@@ -189,6 +220,7 @@ Environment guardrails:
         autoMaterialize: !!flags['auto-materialize'],
         mongoUrl: url,
       });
+      await applyPromotionGuards(sourceName, guard);
       for (const warning of guard.warnings) console.warn(`WARNING: ${warning}`);
       console.log(`Scraper environment: ${guard.environment}; Mongo target: ${guard.dbLabel}`);
       console.log(
@@ -203,6 +235,9 @@ Environment guardrails:
         console.log(`\nMaterializing observations from run ${runId}...`);
         const matResult = await materializeFromRun(runId, { dryRun: false });
         console.log(JSON.stringify(matResult, null, 2));
+        if (matResult.errors > 0) {
+          process.exitCode = 1;
+        }
       }
       console.log(`\nRun report for ${runId}:`);
       console.log(JSON.stringify(await getScrapeRunReport(runId), null, 2));
@@ -222,6 +257,7 @@ Environment guardrails:
         autoMaterialize: true,
         mongoUrl: url,
       });
+      await applyPromotionGuards(sourceName, guard);
       for (const warning of guard.warnings) console.warn(`WARNING: ${warning}`);
       console.log(`Scraper environment: ${guard.environment}; Mongo target: ${guard.dbLabel}`);
       const result = await runScraperCron(
@@ -277,6 +313,9 @@ Environment guardrails:
       console.log(JSON.stringify(result, null, 2));
       console.log(`\nRun report for ${runId}:`);
       console.log(JSON.stringify(await getScrapeRunReport(runId), null, 2));
+      if (result.errors > 0 || isIntegrityGateFailure(result.postMaterializationIntegrity)) {
+        process.exitCode = 1;
+      }
       return;
     }
 

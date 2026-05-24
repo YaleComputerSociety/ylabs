@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   addResearchEntityDetailAlias,
   addResearchEntitySearchAliases,
+  publicResearchAreaArray,
   toPublicResearchEntityDto,
 } from '../researchEntityDto';
 
@@ -16,7 +17,7 @@ describe('researchEntityDto', () => {
       acceptingUndergrads: true,
       departments: ['History'],
       researchAreas: ['Digital humanities'],
-      sourceUrls: ['https://example.yale.edu/project'],
+      sourceUrls: ['https://example.edu/project'],
     });
 
     expect(dto).toEqual(
@@ -31,7 +32,7 @@ describe('researchEntityDto', () => {
         acceptingUndergrads: true,
         departments: ['History'],
         researchAreas: ['Digital humanities'],
-        sourceUrls: ['https://example.yale.edu/project'],
+        sourceUrls: ['https://example.edu/project'],
       }),
     );
   });
@@ -73,8 +74,8 @@ describe('researchEntityDto', () => {
     const detail = addResearchEntityDetailAlias({
       group: {
         _id: 'entity-4',
-        slug: 'smith-research',
-        name: 'Smith Research',
+        slug: 'example-research',
+        name: 'Example Research',
         kind: 'individual',
       },
       members: [],
@@ -83,5 +84,30 @@ describe('researchEntityDto', () => {
     expect(detail).not.toHaveProperty('group');
     expect(detail.researchEntity.entityType).toBe('INDIVIDUAL_RESEARCH');
     expect(detail.members).toEqual([]);
+  });
+
+  it('removes YSM profile and publication-widget chrome from research areas', () => {
+    expect(
+      publicResearchAreaArray([
+        'Example Faculty, MDView Full ProfileView 33 Common Publications',
+        'View Full Profile',
+        'View 33 Common Publications',
+        '1',
+        '2,056',
+        '...',
+        'Publications',
+        'Citations',
+        '3 YSM ResearchersView 16 Related Publications',
+        'Signal Pathways2 YSM ResearchersView 8 Related Publications',
+        'Cellular Models3 YSM ResearchersView 16 Related Publications',
+        'Functional Brain Connectivity Studies',
+        'Advanced Neuroimaging Techniques and Applications',
+      ]),
+    ).toEqual([
+      'Signal Pathways',
+      'Cellular Models',
+      'Functional Brain Connectivity Studies',
+      'Advanced Neuroimaging Techniques and Applications',
+    ]);
   });
 });

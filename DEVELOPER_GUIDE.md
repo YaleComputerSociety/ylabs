@@ -6,7 +6,7 @@
 
 ## What Is This?
 
-Y/Labs is a **Yale research lab discovery platform**. Students find labs and fellowships, professors create and manage listings, admins oversee everything.
+Yale Research is a **Yale research discovery platform**. Students discover Yale research homes, evidence-backed ways in, structured programs/fellowships, and real posted opportunities when they exist. The product is not a listings board; the legacy Listings surface and public Pathways page are retired.
 
 ---
 
@@ -38,9 +38,9 @@ Code flows **Local → Beta → Prod**. Beta is the staging gate.
 
 | Environment | Hosting | MongoDB Database | Meilisearch | `MEILISEARCH_INDEX_PREFIX` |
 |-------------|---------|-----------------|-------------|---------------------------|
-| Local | localhost | `Development` | Docker (`localhost:7700`) | *(unset)* → bare `listings` |
-| Beta | Render (free tier) | `Beta` | Shared Render private service | `beta` → `beta_listings` |
-| Prod | Render (starter) | `Production` | Shared Render private service | `prod` → `prod_listings` |
+| Local | localhost | `Development` | Docker (`localhost:7700`) | *(unset)* → bare `researchentities` / `pathways` |
+| Beta | Render (free tier) | `Beta` | Shared Render private service | `beta` → `beta_researchentities` / `beta_pathways` |
+| Prod | Render (starter) | `Production` | Shared Render private service | `prod` → `prod_researchentities` / `prod_pathways` |
 
 - MongoDB: one Atlas cluster, three databases. `MONGODBURL` points to the right one per environment.
 - Meilisearch: beta and prod share one Render private service, isolated by index prefixes. Local uses its own Docker container.
@@ -114,7 +114,7 @@ Your local `.env` should point to:
 - `MONGODBURL` → the `Development` database on Atlas
 - `MEILISEARCH_HOST` → `http://localhost:7700`
 - `MEILISEARCH_API_KEY` → your local master key (e.g., `testkey`)
-- No `MEILISEARCH_INDEX_PREFIX` (local uses bare `listings` index)
+- No `MEILISEARCH_INDEX_PREFIX` (local uses bare `researchentities` and `pathways` indexes)
 
 For the client:
 ```bash
@@ -149,11 +149,11 @@ On Windows, install Docker Desktop on Windows and enable WSL integration for you
 ### 5. Seed Meilisearch
 
 ```bash
-cd data-migration
-npx ts-node --transpile-only MigrateToMeilisearch.ts
+yarn --cwd server meili:rebuild-research-entities --clear
+yarn --cwd server meili:rebuild-pathways --clear
 ```
 
-This reads listings from your `Development` MongoDB and pushes them to the local Meilisearch with the OpenAI embedder configured.
+This rebuilds local Research and Pathways indexes from MongoDB. Semantic Research search is release-gated separately: Meilisearch must report embedded `researchentities` documents before `RESEARCH_SEARCH_SEMANTIC=true` should be used for Beta or production.
 
 ### 6. Start dev servers
 
@@ -169,6 +169,7 @@ Run these in two separate terminals.
 ```bash
 curl http://localhost:7700/health
 npx tsc --noEmit -p server/tsconfig.json
+yarn --cwd server test
 yarn --cwd client test:ci
 ```
 
@@ -210,6 +211,15 @@ yarn install:all
 
 Visit `http://localhost:4000/api/dev-login` to log in as a test user (`test123` / `student`) without CAS.
 
+For request-level local testing, set `LOCAL_AUTH_BYPASS=true` in `server/.env`. In `development` or `test` only, protected `/api` requests without a session receive a dev admin user by default:
+
+```bash
+LOCAL_AUTH_BYPASS_NETID=devadmin
+LOCAL_AUTH_BYPASS_USER_TYPE=admin
+```
+
+Per-request overrides are available with `x-dev-netid` and `x-dev-user-type` headers. `/api/cas` and `/api/logout` are not bypassed, so leave `LOCAL_AUTH_BYPASS=false` or visit those routes directly when testing Yale CAS behavior.
+
 ---
 
 ## Common Commands
@@ -224,20 +234,23 @@ Visit `http://localhost:4000/api/dev-login` to log in as a test user (`test123` 
 | `yarn clean:all` | Remove all node_modules |
 | `yarn --cwd client test` | Run Vitest in watch mode |
 | `yarn --cwd client test:ci` | Run Vitest once (used by CI) |
+| `yarn --cwd server test` | Run server Vitest tests |
+| `npx tsc --noEmit -p server/tsconfig.json` | Server typecheck |
+| `yarn --cwd server beta:readiness --confirm-beta-backup --strict` | Read-only Beta release gate |
+| `yarn --cwd server beta:data-quality --include-samples` | Read-only Beta data-quality scorecard |
+| `yarn --cwd server scraper:integrity-gate --include-samples` | Read-only scraper materialization integrity gate |
 
-### Migration Scripts
+### Scraper And Data Scripts
 
-Run from `data-migration/`:
+Use the server workspace scripts for current data flows:
 
 ```bash
-npx ts-node --transpile-only <script>.ts
+yarn scrape help
+yarn --cwd server meili:rebuild-research-entities --clear
+yarn --cwd server meili:rebuild-pathways --clear
 ```
 
-| Script | Purpose |
-|--------|---------|
-| `MigrateToMeilisearch.ts` | Populate Meilisearch index from MongoDB |
-| `seedDepartments.ts` | Seed department taxonomy |
-| `seedResearchAreas.ts` | Seed research area taxonomy |
+Historical `data-migration/` scripts remain for one-off migrations only. Do not use the old listing Meilisearch migration for current Research or Pathways indexes.
 
 ---
 
@@ -276,18 +289,18 @@ ylabs/
 
 ## Search
 
-Search uses **Meilisearch** with hybrid mode (80% semantic, 20% keyword).
+Search uses **Meilisearch** for Research, with internal pathway enrichment and Mongo fallback where rollout safety requires it.
 
-1. Client sends query + filters to `/api/listings/search`
-2. Controller builds Meilisearch filter strings from query params
-3. Hybrid search uses the Meilisearch-configured OpenAI embedder
-4. Results returned with `estimatedTotalHits` for pagination
+1. Research discovery uses the `researchentities` index and should only run true semantic search when Meilisearch reports embedded ResearchEntity documents.
+2. `EntryPathway` data remains an internal action model for ways-in summaries, research detail, saved planning, admin review, and data-quality workflows. The public client should consume it through `/api/research/search`, not by calling a standalone Pathways endpoint.
+3. Pathway Meilisearch rebuilds remain useful for parity testing and future internal enrichment work; rollback remains `PATHWAY_SEARCH_BACKEND=mongo` where that service is used.
+4. Results carry evidence and next-step context rather than legacy listing claims.
 
-Listing CRUD in `listingService.ts` automatically syncs to Meilisearch after MongoDB writes.
+Listing CRUD is retired and must not be used as the search sync path.
 
 The Meilisearch client (`server/src/utils/meiliClient.ts`) exports:
 - `getMeiliClient()` — lazy-loaded singleton
-- `getMeiliIndex(name)` — returns a prefixed index (e.g., `prod_listings`)
+- `getMeiliIndex(name)` — returns a prefixed index (e.g., `prod_researchentities`)
 - `resolveIndexName(name)` — pure function for prefix resolution
 
 ---
@@ -307,10 +320,10 @@ User → Yale CAS SSO → passport.ts findOrCreateUser
 
 | Middleware | Check |
 |------------|-------|
+| `applyLocalAuthBypass` | Optional local/test-only `req.user` injection when `LOCAL_AUTH_BYPASS=true`; skips CAS routes |
 | `isAuthenticated` | `req.user` exists |
 | `isAdmin` | `userType === 'admin'` |
 | `isProfessor` | `userType` in `['professor', 'faculty', 'admin']` |
-| `canCreateListing` | professor/faculty + `profileVerified` (admins bypass) |
 
 ---
 
@@ -320,8 +333,11 @@ All mount under `/api`.
 
 | Prefix | Description | Auth |
 |--------|-------------|------|
-| `/listings` | Listing CRUD and search | Varies |
-| `/fellowships` | Fellowship CRUD and search | Varies |
+| `/research` | Yale Labs search/detail, including ways-in enrichment | Varies |
+| `/programs` | Programs & Fellowships browse/search and saved-program support | Varies |
+| `/opportunities` | Real posted opportunity detail workflows | Varies |
+| `/listings` | Retired legacy API, returns `410 Gone` | Varies |
+| `/fellowships` | Compatibility alias around program/fellowship storage during migration | Varies |
 | `/users` | User CRUD | Yes |
 | `/profiles` | Faculty profiles | Varies |
 | `/analytics` | Analytics dashboards | Admin |
@@ -334,14 +350,15 @@ All mount under `/api`.
 
 ## Testing
 
-Client-side tests run under **Vitest 3** with a `jsdom` environment. Configuration lives in the `test` block of [client/vite.config.js](client/vite.config.js). There is currently **no server-side test framework**.
+Client-side tests run under **Vitest 3** with a `jsdom` environment. Server-side tests also run under **Vitest**.
 
 ### Running tests
 
 ```bash
-cd client
-yarn test        # watch mode — reruns on file changes
-yarn test:ci     # single run — used by CI
+yarn --cwd client test        # watch mode — reruns on file changes
+yarn --cwd client test:ci     # single run — used by CI
+yarn --cwd server test        # server Vitest tests
+npx tsc --noEmit -p server/tsconfig.json
 ```
 
 Tests are discovered from `client/src/**/*.{test,spec}.{ts,tsx}`.
@@ -360,12 +377,15 @@ When adding a new reducer:
 Pull requests into `main` or `beta` trigger [.github/workflows/ci.yml](.github/workflows/ci.yml), which runs:
 
 1. `yarn install:all`
-2. `yarn --cwd client test:ci`
-3. `yarn build` (server + client)
+2. `npx tsc --noEmit -p server/tsconfig.json`
+3. `yarn --cwd server test`
+4. `yarn --cwd client test:ci`
+5. `yarn npm audit --severity high`
+6. `yarn build` (server + client)
 
 The workflow also accepts `workflow_dispatch` so it can be run manually from the Actions tab. Branch protection (configured in GitHub repo settings → Branches) requires this check to pass before merging.
 
-`tsc --noEmit` is **not** part of CI yet — the client has known pre-existing type errors that need a cleanup pass before strict type-checking can be enforced.
+Client `tsc --noEmit` is still not part of CI; the client has known pre-existing type errors that need a cleanup pass before strict type-checking can be enforced.
 
 ---
 
@@ -388,7 +408,7 @@ The workflow also accepts `workflow_dispatch` so it can be run manually from the
 1. Mongoose schema in `server/src/models/<model>.ts`
 2. TypeScript interfaces in `client/src/types/`
 3. Migration script in `data-migration/` if existing data needs transformation
-4. If the model is `listing`, update Meilisearch index config if new fields need filtering/sorting
+4. If the model affects Research or Pathways search, update the relevant Meilisearch rebuild/index config and release gate.
 
 ---
 
@@ -400,4 +420,6 @@ The workflow also accepts `workflow_dispatch` so it can be run manually from the
 | Search returns no results | Check Meilisearch is running: `curl http://localhost:7700/health` |
 | Meilisearch connection refused | Start Docker container or check `MEILISEARCH_HOST` in `.env` |
 | CORS errors | Add origin to `allowList` in `app.ts` or use dev mode |
-| "Forbidden" on listing creation | Professor needs `profileVerified: true` |
+| `/api/listings` returns `410` | Expected; Listings is retired. Use Research, Programs, or PostedOpportunity workflows. |
+| `/pathways` redirects to `/research` | Expected; public Pathways search is retired. Ways-in evidence appears inside Yale Labs, research detail, and Dashboard planning. |
+| A client needs pathway data | Use `/api/research/search`, research detail, or saved research-plan APIs. Standalone `/api/pathways/search` is not a public/client contract. |

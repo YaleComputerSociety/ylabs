@@ -169,7 +169,7 @@ const AdminResearchAreas = () => {
                 dispatch({ type: 'SET_NEW_DRAFT', payload: { name: e.target.value } })
               }
               placeholder="e.g. Quantum Computing"
-              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="min-h-[44px] w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               onKeyDown={(e) => {
                 if (e.key === 'Enter') handleAdd();
               }}
@@ -182,7 +182,7 @@ const AdminResearchAreas = () => {
               onChange={(e) =>
                 dispatch({ type: 'SET_NEW_DRAFT', payload: { field: e.target.value } })
               }
-              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="min-h-[44px] w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               {RESEARCH_FIELDS.map((f) => (
                 <option key={f} value={f}>
@@ -193,7 +193,7 @@ const AdminResearchAreas = () => {
           </div>
           <button
             onClick={handleAdd}
-            className="bg-green-600 text-white px-4 py-2 rounded text-sm hover:bg-green-700 transition-colors"
+            className="min-h-[44px] bg-green-600 text-white px-4 py-2 rounded text-sm hover:bg-green-700 transition-colors"
           >
             Add
           </button>
@@ -205,7 +205,7 @@ const AdminResearchAreas = () => {
           value={search}
           onChange={(e) => dispatch({ type: 'SET_SEARCH', payload: e.target.value })}
           placeholder="Filter research areas..."
-          className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="min-h-[44px] w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
         <div className="text-xs text-gray-400 mt-1">{filtered.length} research areas</div>
       </div>
@@ -248,7 +248,7 @@ const AdminResearchAreas = () => {
                               payload: { name: e.target.value },
                             })
                           }
-                          className="border border-gray-300 rounded px-2 py-1 text-sm w-full focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          className="min-h-[44px] border border-gray-300 rounded px-2 py-1 text-sm w-full focus:outline-none focus:ring-1 focus:ring-blue-500"
                           onKeyDown={(e) => {
                             if (e.key === 'Enter') handleUpdate(area._id);
                             if (e.key === 'Escape') dispatch({ type: 'CANCEL_EDIT' });
@@ -269,7 +269,7 @@ const AdminResearchAreas = () => {
                               payload: { field: e.target.value },
                             })
                           }
-                          className="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          className="min-h-[44px] border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
                         >
                           {RESEARCH_FIELDS.map((f) => (
                             <option key={f} value={f}>
@@ -301,13 +301,13 @@ const AdminResearchAreas = () => {
                           <>
                             <button
                               onClick={() => handleUpdate(area._id)}
-                              className="text-xs bg-green-600 text-white px-2 py-1 rounded hover:bg-green-700"
+                              className="min-h-[44px] text-xs bg-green-600 text-white px-2 py-1 rounded hover:bg-green-700"
                             >
                               Save
                             </button>
                             <button
                               onClick={() => dispatch({ type: 'CANCEL_EDIT' })}
-                              className="text-xs bg-gray-300 text-gray-700 px-2 py-1 rounded hover:bg-gray-400"
+                              className="min-h-[44px] text-xs bg-gray-300 text-gray-700 px-2 py-1 rounded hover:bg-gray-400"
                             >
                               Cancel
                             </button>
@@ -316,13 +316,13 @@ const AdminResearchAreas = () => {
                           <>
                             <button
                               onClick={() => startEdit(area)}
-                              className="text-xs bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700"
+                              className="min-h-[44px] text-xs bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700"
                             >
                               Edit
                             </button>
                             <button
                               onClick={() => handleDelete(area)}
-                              className="text-xs bg-red-600 text-white px-2 py-1 rounded hover:bg-red-700"
+                              className="min-h-[44px] text-xs bg-red-600 text-white px-2 py-1 rounded hover:bg-red-700"
                             >
                               Delete
                             </button>

@@ -20,8 +20,11 @@ interface AdminProfile {
   email: string;
   title?: string;
   primary_department?: string;
+  primaryDepartment?: string;
   secondary_departments?: string[];
+  secondaryDepartments?: string[];
   h_index?: number;
+  hIndex?: number;
   profileVerified?: boolean;
   userType: string;
   userConfirmed: boolean;
@@ -40,6 +43,11 @@ const TABLE_COLUMNS: { value: SortField; label: string }[] = [
 ];
 
 const PAGE_SIZES = [10, 25, 50, 100];
+
+const getPrimaryDepartment = (profile: AdminProfile) =>
+  profile.primary_department ?? profile.primaryDepartment ?? '';
+
+const getHIndex = (profile: AdminProfile) => profile.h_index ?? profile.hIndex;
 
 const AdminFacultyProfilesTable = () => {
   const [state, dispatch] = useReducer(
@@ -111,7 +119,7 @@ const AdminFacultyProfilesTable = () => {
           placeholder="Search by name, netid, department..."
           value={search}
           onChange={(e) => dispatch({ type: 'SET_SEARCH', payload: e.target.value })}
-          className="flex-1 min-w-[200px] px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="min-h-[44px] flex-1 min-w-[200px] px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
 
         <select
@@ -119,7 +127,7 @@ const AdminFacultyProfilesTable = () => {
           onChange={(e) =>
             dispatch({ type: 'SET_FILTER', filter: 'profileVerified', value: e.target.value })
           }
-          className="px-3 py-2 text-sm border border-gray-200 rounded-lg"
+          className="min-h-[44px] px-3 py-2 text-sm border border-gray-200 rounded-lg"
         >
           <option value="">All Verified</option>
           <option value="true">Verified</option>
@@ -131,17 +139,17 @@ const AdminFacultyProfilesTable = () => {
           onChange={(e) =>
             dispatch({ type: 'SET_FILTER', filter: 'hasListings', value: e.target.value })
           }
-          className="px-3 py-2 text-sm border border-gray-200 rounded-lg"
+          className="min-h-[44px] px-3 py-2 text-sm border border-gray-200 rounded-lg"
         >
-          <option value="">All Listings</option>
-          <option value="true">Has Listings</option>
-          <option value="false">No Listings</option>
+          <option value="">All Posted Opportunity Evidence</option>
+          <option value="true">Has Posted Opportunity Evidence</option>
+          <option value="false">No Posted Opportunity Evidence</option>
         </select>
 
         <select
           value={pageSize}
           onChange={(e) => dispatch({ type: 'SET_PAGE_SIZE', payload: Number(e.target.value) })}
-          className="px-3 py-2 text-sm border border-gray-200 rounded-lg"
+          className="min-h-[44px] px-3 py-2 text-sm border border-gray-200 rounded-lg"
         >
           {PAGE_SIZES.map((s) => (
             <option key={s} value={s}>
@@ -172,7 +180,7 @@ const AdminFacultyProfilesTable = () => {
                 </th>
               ))}
               <th className="text-left px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">
-                Listings
+                Posted Opportunity Evidence
               </th>
               <th className="text-left px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">
                 Status
@@ -206,24 +214,14 @@ const AdminFacultyProfilesTable = () => {
                     <div className="text-xs text-gray-400">{p.netid}</div>
                   </td>
                   <td className="px-4 py-3 text-gray-600 max-w-[200px] truncate">
-                    {p.primary_department || '—'}
+                    {getPrimaryDepartment(p) || '—'}
                   </td>
-                  <td className="px-4 py-3 text-gray-600">{p.h_index ?? '—'}</td>
+                  <td className="px-4 py-3 text-gray-600">{getHIndex(p) ?? '—'}</td>
                   <td className="px-4 py-3 text-gray-500 whitespace-nowrap">
                     {p.createdAt ? new Date(p.createdAt).toLocaleDateString() : '—'}
                   </td>
                   <td className="px-4 py-3 text-gray-600">
-                    {(p.ownListings?.length || 0) > 0 ? (
-                      <a
-                        href={`/profile/${p.netid}?tab=listings`}
-                        onClick={(e) => e.stopPropagation()}
-                        className="text-blue-600 hover:text-blue-800 hover:underline font-medium"
-                      >
-                        {p.ownListings?.length}
-                      </a>
-                    ) : (
-                      <span>0</span>
-                    )}
+                    <span>{p.ownListings?.length || 0}</span>
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex gap-1">
@@ -255,7 +253,7 @@ const AdminFacultyProfilesTable = () => {
           <button
             onClick={() => dispatch({ type: 'SET_PAGE', payload: Math.max(1, page - 1) })}
             disabled={page === 1}
-            className="px-3 py-1.5 text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40"
+            className="min-h-[44px] px-3 py-1.5 text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40"
           >
             Previous
           </button>
@@ -265,7 +263,7 @@ const AdminFacultyProfilesTable = () => {
           <button
             onClick={() => dispatch({ type: 'SET_PAGE', payload: Math.min(totalPages, page + 1) })}
             disabled={page === totalPages}
-            className="px-3 py-1.5 text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40"
+            className="min-h-[44px] px-3 py-1.5 text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40"
           >
             Next
           </button>

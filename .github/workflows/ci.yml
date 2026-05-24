@@ -25,8 +25,17 @@ jobs:
       - name: Install dependencies
         run: yarn install:all
 
+      - name: Run server typecheck
+        run: npx tsc --noEmit -p server/tsconfig.json
+
+      - name: Run server tests
+        run: yarn --cwd server test
+
       - name: Run client tests
         run: yarn --cwd client test:ci
+
+      - name: Check high severity dependency advisories
+        run: yarn npm audit --severity high
 
       - name: Build server and client
         run: yarn build

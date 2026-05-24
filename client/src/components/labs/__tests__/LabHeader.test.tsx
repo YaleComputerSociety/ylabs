@@ -13,45 +13,95 @@ import { ResearchGroup } from '../../../types/researchGroup';
 
 const baseGroup: ResearchGroup = {
   _id: 'g1',
-  slug: 'lovelace-lab',
-  name: 'Lovelace Computational Lab',
+  slug: 'fixture-research-home',
+  name: 'Fixture Research Home',
   kind: 'lab',
-  description: 'We study analytical engines.',
-  websiteUrl: 'https://example.edu/lovelace',
-  location: 'Watson Center, Room 200',
+  description: 'We study fixture systems.',
+  websiteUrl: 'https://fixture.example.test/research-home',
+  location: 'Fixture Hall, Room 200',
   departments: ['Computer Science', 'Mathematics'],
   researchAreas: ['Theoretical CS'],
-  school: 'School of Engineering & Applied Science',
+  school: 'Fixture School of Research',
   openness: 'open',
   acceptingUndergrads: true,
   typicalUndergradRoles: [],
   prerequisiteCourses: [],
   creditOptions: [],
   fundingPrograms: [],
-  contactEmail: 'ada@example.edu',
-  contactName: 'Ada Lovelace',
+  contactEmail: 'contact@example.test',
+  contactName: 'Fixture Contact',
   contactRole: 'PI',
   sourceUrls: [],
 };
 
 describe('LabHeader', () => {
-  it('renders the lab name as an h1 and includes the description', () => {
+  it('renders the lab name as an h1 without repeating the description', () => {
     const { container } = render(<LabHeader group={baseGroup} />);
     const h1 = container.querySelector('h1');
-    expect(h1?.textContent).toBe('Lovelace Computational Lab');
-    expect(container.textContent).toContain('We study analytical engines.');
-    expect(container.textContent).toContain('School of Engineering & Applied Science');
-    expect(container.textContent).toContain('Watson Center, Room 200');
+    expect(h1?.textContent).toBe('Fixture Research Home');
+    expect(container.textContent).not.toContain('We study fixture systems.');
+    expect(container.textContent).toContain('Fixture School of Research');
+    expect(container.textContent).toContain('Fixture Hall, Room 200');
   });
 
-  it('renders all departments and a website link with the correct href', () => {
+  it('renders all departments and a lab website link with the correct href', () => {
     const { container } = render(<LabHeader group={baseGroup} />);
     expect(container.textContent).toContain('Computer Science');
     expect(container.textContent).toContain('Mathematics');
-    const websiteLink = container.querySelector('a[href*="example.edu/lovelace"]');
+    const websiteLink = container.querySelector('a[href*="fixture.example.test/research-home"]');
     expect(websiteLink).not.toBeNull();
     expect(websiteLink?.getAttribute('target')).toBe('_blank');
-    expect(websiteLink?.textContent).toContain('Visit website');
+    expect(websiteLink?.textContent).toContain('Visit lab website');
+  });
+
+  it('does not render research-area chips in the detail header', () => {
+    const { container } = render(
+      <LabHeader
+        group={{
+          ...baseGroup,
+          departments: ['Computer Science'],
+          researchAreas: ['Computer Science', 'Algorithms'],
+        }}
+      />,
+    );
+
+    expect(container.textContent?.match(/Computer Science/g)).toHaveLength(1);
+    expect(container.textContent).not.toContain('Algorithms');
+  });
+
+  it('hides profile fallback research-area chips', () => {
+    const { container } = render(
+      <LabHeader
+        group={{
+          ...baseGroup,
+          researchAreas: [],
+          profileResearchAreas: ['Fixture Topic Alpha'],
+          researchAreaSource: 'PI_PROFILE_FALLBACK',
+        }}
+      />,
+    );
+
+    expect(container.textContent).not.toContain('PI research interests');
+    expect(container.textContent).not.toContain('Fixture Topic Alpha');
+  });
+
+  it('keeps the Lab badge for real lab entities with PI-profile synthesis fallback text', () => {
+    const { container } = render(
+      <LabHeader
+        group={{
+          ...baseGroup,
+          description: '',
+          shortDescription: '',
+          fullDescription: '',
+          descriptionSource: 'PI_PROFILE_SYNTHESIS',
+          kind: 'lab',
+          entityType: 'LAB',
+        }}
+      />,
+    );
+
+    expect(container.textContent).toContain('Lab');
+    expect(container.textContent).not.toContain('Faculty Research');
   });
 
   it('hides the website link when websiteUrl is empty', () => {
@@ -90,7 +140,7 @@ describe('LabHeader trust-gradient pill', () => {
       <LabHeader
         group={{
           ...baseGroup,
-          pastUndergradAdvisees: [{ year: 2024, programName: 'STARS', count: 1 }],
+          pastUndergradAdvisees: [{ year: 2024, programName: 'Fixture Program', count: 1 }],
         }}
       />,
     );
@@ -104,17 +154,17 @@ describe('LabHeader trust-gradient pill', () => {
       <LabHeader
         group={{
           ...baseGroup,
-          pastUndergradAdvisees: [{ year: 2024, programName: 'STARS', count: 2 }],
+          pastUndergradAdvisees: [{ year: 2024, programName: 'Fixture Program', count: 2 }],
           currentUndergradCount: 3,
         }}
-        hasActiveListing={false}
+        hasActivePostedOpportunity={false}
       />,
     );
     const pill = container.querySelector('[data-verdict]');
     expect(pill?.getAttribute('data-verdict')).toBe('verified-accepting');
   });
 
-  it('shows "Not currently available" when acceptingUndergrads=false', () => {
+  it('shows "Limited access evidence" when acceptingUndergrads=false', () => {
     const { container } = render(
       <LabHeader
         group={{
@@ -126,12 +176,12 @@ describe('LabHeader trust-gradient pill', () => {
     );
     const pill = container.querySelector('[data-verdict]');
     expect(pill?.getAttribute('data-verdict')).toBe('not-accepting');
-    expect(pill?.textContent).toBe('Not currently available');
+    expect(pill?.textContent).toBe('Limited access evidence');
   });
 
-  it('honors hasActiveListing prop as a strong signal', () => {
+  it('honors active posted opportunities as a strong signal', () => {
     const { container } = render(
-      <LabHeader group={baseGroup} hasActiveListing={true} />,
+      <LabHeader group={baseGroup} hasActivePostedOpportunity={true} />,
     );
     const pill = container.querySelector('[data-verdict]');
     // 1 strong signal → likely-accepting

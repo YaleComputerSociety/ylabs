@@ -9,6 +9,10 @@ import {
   searchPathwaysViaMeili,
 } from '../pathwaySearchIndexService';
 
+const forbiddenEngineeringProfileUrl =
+  'https://engineering.yale.edu/research-and-faculty/faculty-directory/example-person';
+const safeExternalLabUrl = 'https://example-lab.test/';
+
 describe('pathwaySearchIndexService', () => {
   it('builds a Meilisearch-ready pathway document with filterable and sortable fields', () => {
     const doc = buildPathwaySearchIndexDocument({
@@ -16,26 +20,30 @@ describe('pathwaySearchIndexService', () => {
       pathwayType: 'POSTED_ROLE',
       status: 'ACTIVE',
       evidenceStrength: 'DIRECT',
-      studentFacingLabel: 'Summer RA role',
-      explanation: 'Work with the lab on imaging analysis.',
-      bestNextStep: 'Apply through the official form.',
+      studentFacingLabel: 'Summer RA role: hidden@example.edu',
+      explanation: 'Work with the lab on imaging analysis. Questions: hidden@example.edu',
+      bestNextStep: 'Apply through the official form or call 203-555-1212.',
       bestNextStepCategory: 'apply',
       compensation: 'PAID',
       confidence: 0.91,
-      sourceUrls: ['https://example.yale.edu/pathway', 'mailto:hidden@yale.edu'],
+      sourceUrls: ['https://example.edu/pathway', 'mailto:hidden@example.edu'],
       lastObservedAt: new Date('2026-02-03T04:05:06.000Z'),
       createdAt: '2026-01-02T03:04:05.000Z',
       researchEntity: {
         _id: { toString: () => 'entity-1' },
-        slug: 'smith-lab',
-        name: 'Smith Lab',
-        displayName: 'Smith Neuroimaging Lab',
+        slug: 'example-lab',
+        name: 'Example Lab',
+        displayName: 'Example Methods Lab',
         kind: 'lab',
         entityType: 'LAB',
+        shortDescription: 'A concise lab description for pathway cards.',
+        description: 'Studies visual cortex circuits with imaging analysis.',
+        fullDescription:
+          'A fuller lab description with methods, model systems, and student-facing context.',
         departments: ['Psychology', 'Psychology', 'Neuroscience'],
         researchAreas: ['Neuroimaging'],
         school: 'Faculty of Arts and Sciences',
-        websiteUrl: 'https://smithlab.yale.edu',
+        websiteUrl: safeExternalLabUrl,
       },
       activePostedOpportunity: {
         _id: { toString: () => 'opportunity-1' },
@@ -43,21 +51,22 @@ describe('pathwaySearchIndexService', () => {
         deadline: '2026-03-15T12:00:00.000Z',
         status: 'OPEN',
         term: 'Summer 2026',
+        provenance: 'LISTING_BRIDGED',
       },
       evidence: [
         {
           signalType: 'POSTED_OPENING',
           confidence: 'HIGH',
           confidenceScore: 0.95,
-          excerpt: 'Apply by emailing jane.doe@yale.edu or calling 203-555-1212.',
-          sourceUrl: 'https://example.yale.edu/pathway',
+          excerpt: 'Apply by emailing hidden@example.edu or calling 203-555-1212.',
+          sourceUrl: 'https://example.edu/pathway',
           observedAt: '2026-02-01T00:00:00.000Z',
         },
       ],
       contactRoute: {
         routeType: 'OFFICIAL_APPLICATION',
-        label: 'Official form, not jane.doe@yale.edu',
-        url: 'https://example.yale.edu/apply',
+        label: 'Official form, not hidden@example.edu',
+        url: 'https://example.edu/apply',
         contactPolicy: 'APPLICATION_ONLY',
         visibility: 'PUBLIC',
         rationale: 'Use the form; questions at 203-555-1212 are not indexed.',
@@ -76,8 +85,12 @@ describe('pathwaySearchIndexService', () => {
       lastObservedAt: '2026-02-03T04:05:06.000Z',
       createdAt: '2026-01-02T03:04:05.000Z',
       entityId: 'entity-1',
-      entitySlug: 'smith-lab',
-      entityName: 'Smith Lab',
+      entitySlug: 'example-lab',
+      entityName: 'Example Lab',
+      entityShortDescription: 'A concise lab description for pathway cards.',
+      entityDescription: 'Studies visual cortex circuits with imaging analysis.',
+      entityFullDescription:
+        'A fuller lab description with methods, model systems, and student-facing context.',
       entityType: 'LAB',
       entityDepartments: ['Psychology', 'Neuroscience'],
       hasActivePostedOpportunity: true,
@@ -85,22 +98,31 @@ describe('pathwaySearchIndexService', () => {
       postedOpportunityTitle: 'Summer Research Assistant',
       postedOpportunityDeadline: '2026-03-15T12:00:00.000Z',
       postedOpportunityStatus: 'OPEN',
+      postedOpportunityProvenance: 'LISTING_BRIDGED',
       publicContactRouteType: 'OFFICIAL_APPLICATION',
       publicContactPolicy: 'APPLICATION_ONLY',
+      evidenceCount: 1,
+      hasMicrositeEvidence: false,
+      hasFellowshipEvidence: false,
+      isProfileFallback: false,
     });
+    expect(doc.qualityScore).toBeGreaterThan(100);
     expect(doc.lastObservedAtTimestamp).toBe(
       new Date('2026-02-03T04:05:06.000Z').getTime(),
     );
     expect(doc.postedOpportunityDeadlineTimestamp).toBe(
       new Date('2026-03-15T12:00:00.000Z').getTime(),
     );
-    expect(doc.sourceUrls).toEqual(['https://example.yale.edu/pathway']);
+    expect(doc.sourceUrls).toEqual(['https://example.edu/pathway']);
+    expect(doc.studentFacingLabel).toBe('Summer RA role: [email redacted]');
+    expect(doc.explanation).toContain('[email redacted]');
+    expect(doc.bestNextStep).toContain('[phone redacted]');
     expect(doc.evidenceSnippets[0]).toContain('[email redacted]');
     expect(doc.evidenceSnippets[0]).toContain('[phone redacted]');
     expect(doc.publicContactRoute?.label).toBe(
       'Official form, not [email redacted]',
     );
-    expect(doc.publicContactRoute?.url).toBe('https://example.yale.edu/apply');
+    expect(doc.publicContactRoute?.url).toBe('https://example.edu/apply');
     expect(doc.publicContactRoute?.rationale).toContain('[phone redacted]');
   });
 
@@ -110,8 +132,8 @@ describe('pathwaySearchIndexService', () => {
       researchEntity: { departments: [] },
       contactRoute: {
         routeType: 'FACULTY_PI',
-        label: 'Private PI email pi@yale.edu',
-        url: 'mailto:pi@yale.edu',
+        label: 'Private PI email pi@example.edu',
+        url: 'mailto:pi@example.edu',
         contactPolicy: 'DIRECT_CONTACT_OK',
         visibility: 'AUTHENTICATED',
       },
@@ -122,7 +144,7 @@ describe('pathwaySearchIndexService', () => {
       contactRoute: {
         routeType: 'FACULTY_PI',
         label: 'Do not contact',
-        url: 'mailto:pi@yale.edu',
+        url: 'mailto:pi@example.edu',
         contactPolicy: 'NO_DIRECT_CONTACT',
         visibility: 'PUBLIC',
       },
@@ -133,7 +155,7 @@ describe('pathwaySearchIndexService', () => {
       contactRoute: {
         routeType: 'FACULTY_PI',
         label: 'Official contact route',
-        url: 'mailto:pi@yale.edu',
+        url: 'mailto:pi@example.edu',
         contactPolicy: 'DIRECT_CONTACT_OK',
         visibility: 'PUBLIC',
       },
@@ -144,6 +166,103 @@ describe('pathwaySearchIndexService', () => {
     expect(noDirectContactDoc.publicContactRoute).toBeUndefined();
     expect(noDirectContactDoc.publicContactRouteType).toBeUndefined();
     expect(publicMailtoDoc.publicContactRoute?.url).toBeUndefined();
+  });
+
+  it('drops forbidden Engineering faculty-directory URLs from indexed public sources and routes', () => {
+    const doc = buildPathwaySearchIndexDocument({
+      _id: 'pathway-public-source-boundary',
+      pathwayType: 'EXPLORATORY_CONTACT',
+      sourceUrls: [forbiddenEngineeringProfileUrl, safeExternalLabUrl],
+      researchEntity: {
+        departments: ['Computer Science'],
+        websiteUrl: forbiddenEngineeringProfileUrl,
+      },
+      evidence: [
+        {
+          signalType: 'REACH_OUT_PLAUSIBLE',
+          sourceUrl: forbiddenEngineeringProfileUrl,
+        },
+      ],
+      contactRoute: {
+        routeType: 'FACULTY_PI',
+        label: 'Example PI',
+        url: forbiddenEngineeringProfileUrl,
+        contactPolicy: 'OFFICIAL_ROUTE_PREFERRED',
+        visibility: 'PUBLIC',
+      },
+    });
+
+    expect(doc.sourceUrls).toEqual([safeExternalLabUrl]);
+    expect(doc.entityWebsiteUrl).toBeUndefined();
+    expect(doc.evidence[0].sourceUrl).toBeUndefined();
+    expect(doc.publicContactRoute).toBeUndefined();
+    expect(doc.publicContactRouteType).toBeUndefined();
+  });
+
+  it('uses public research-area normalization for pathway index documents', () => {
+    const doc = buildPathwaySearchIndexDocument({
+      _id: 'pathway-fixture-areas',
+      researchEntity: {
+        departments: ['Medicine'],
+        researchAreas: [
+          'Synthetic ORCID profile token',
+          'Synthetic Inflammation40 ResearchersView 5 Related Publications',
+          'SyntheticChrome View 5 Related Publications',
+          'Synthetic Inflammation',
+        ],
+      },
+    });
+
+    expect(doc.entityResearchAreas).toEqual(['Synthetic Inflammation']);
+  });
+
+  it('uses public research-area normalization for Meili pathway result DTOs', async () => {
+    const fakeIndex = {
+      updateSettings: async () => undefined,
+      addDocuments: async () => undefined,
+      search: async () => ({
+        estimatedTotalHits: 1,
+        hits: [
+          {
+            id: 'pathway-fixture-areas',
+            pathwayId: 'pathway-fixture-areas',
+            pathwayType: 'EXPLORATORY_CONTACT',
+            status: 'PLAUSIBLE',
+            evidenceStrength: 'MODERATE',
+            studentFacingLabel: 'Exploratory outreach',
+            bestNextStepCategory: 'plan-outreach',
+            sourceUrls: [],
+            entityId: 'entity-1',
+            entitySlug: 'fixture-profile-lab',
+            entityName: 'Synthetic Fixture Lab',
+            entityDepartments: ['Medicine'],
+            entityResearchAreas: [
+              'Synthetic ORCID profile token',
+              'Synthetic Inflammation40 ResearchersView 5 Related Publications',
+              'SyntheticChrome View 5 Related Publications',
+              'Synthetic Inflammation',
+            ],
+            hasActivePostedOpportunity: false,
+            evidence: [],
+            evidenceSnippets: [],
+            qualityScore: 1,
+            evidenceCount: 0,
+            hasMicrositeEvidence: false,
+            hasFellowshipEvidence: false,
+            isProfileFallback: false,
+          },
+        ],
+      }),
+    };
+
+    const result = await searchPathwaysViaMeili(
+      { page: 1, pageSize: 5 },
+      async () => fakeIndex as any,
+    );
+
+    expect(result.hits[0].researchEntity.researchAreas).toEqual([
+      'Synthetic Inflammation',
+    ]);
   });
 
   it('filters out inputs without ids and exposes clone-safe index settings', () => {
@@ -170,13 +289,21 @@ describe('pathwaySearchIndexService', () => {
         'entityDepartments',
         'hasActivePostedOpportunity',
         'postedOpportunityStatus',
+        'hasMicrositeEvidence',
+        'hasFellowshipEvidence',
+        'isProfileFallback',
       ]),
     );
     expect(getPathwaySearchIndexSettings().filterableAttributes).not.toContain(
       'mutated',
     );
+    expect(getPathwaySearchIndexSettings().searchableAttributes).toContain(
+      'entityDescription',
+    );
     expect(getPathwaySearchIndexSettings().sortableAttributes).toEqual(
       expect.arrayContaining([
+        'qualityScore',
+        'evidenceCount',
         'confidence',
         'lastObservedAtTimestamp',
         'createdAtTimestamp',
@@ -254,25 +381,57 @@ describe('pathwaySearchIndexService', () => {
         return {
           estimatedTotalHits: 1,
           hits: [
-            buildPathwaySearchIndexDocument({
-              _id: 'pathway-1',
-              pathwayType: 'EXPLORATORY_CONTACT',
-              status: 'PLAUSIBLE',
-              evidenceStrength: 'STRONG',
-              compensation: 'UNKNOWN',
-              studentFacingLabel: 'Exploratory outreach',
-              bestNextStepCategory: 'plan-outreach',
-              sourceUrls: ['https://example.yale.edu/source'],
-              researchEntity: {
-                _id: 'entity-1',
-                slug: 'smith-lab',
-                name: 'Smith Lab',
-                entityType: 'LAB',
-                departments: ['Computer Science'],
-                researchAreas: ['Machine Learning'],
+            {
+              ...buildPathwaySearchIndexDocument({
+                _id: 'pathway-1',
+                pathwayType: 'EXPLORATORY_CONTACT',
+                status: 'PLAUSIBLE',
+                evidenceStrength: 'STRONG',
+                compensation: 'UNKNOWN',
+                studentFacingLabel: 'Exploratory outreach',
+                bestNextStepCategory: 'plan-outreach',
+                sourceUrls: [forbiddenEngineeringProfileUrl, 'https://example.edu/source'],
+                researchEntity: {
+                  _id: 'entity-1',
+                  slug: 'example-lab',
+                  name: 'Example Lab',
+                  description: 'Studies mentor-driven machine learning research.',
+                  entityType: 'LAB',
+                  departments: ['Computer Science'],
+                  researchAreas: ['Machine Learning'],
+                  websiteUrl: forbiddenEngineeringProfileUrl,
+                },
+                evidence: [
+                  {
+                    signalType: 'REACH_OUT_PLAUSIBLE',
+                    sourceUrl: forbiddenEngineeringProfileUrl,
+                  },
+                ],
+                contactRoute: {
+                  routeType: 'FACULTY_PI',
+                  url: forbiddenEngineeringProfileUrl,
+                  visibility: 'PUBLIC',
+                  contactPolicy: 'OFFICIAL_ROUTE_PREFERRED',
+                },
+              }),
+              sourceUrls: [
+                forbiddenEngineeringProfileUrl,
+                'https://example.edu/source',
+              ],
+              entityWebsiteUrl: forbiddenEngineeringProfileUrl,
+              evidence: [
+                {
+                  signalType: 'REACH_OUT_PLAUSIBLE',
+                  sourceUrl: forbiddenEngineeringProfileUrl,
+                },
+              ],
+              publicContactRoute: {
+                routeType: 'FACULTY_PI',
+                url: forbiddenEngineeringProfileUrl,
+                visibility: 'PUBLIC',
+                contactPolicy: 'OFFICIAL_ROUTE_PREFERRED',
               },
-              evidence: [],
-            }),
+            },
           ],
         };
       },
@@ -301,10 +460,11 @@ describe('pathwaySearchIndexService', () => {
         params: expect.objectContaining({
           limit: 10,
           offset: 10,
-          sort: ['confidence:asc', 'lastObservedAtTimestamp:desc'],
+          sort: ['confidence:asc', 'qualityScore:desc', 'lastObservedAtTimestamp:desc'],
         }),
       },
     ]);
+    expect(searches[0].params).not.toHaveProperty('hybrid');
     expect(String(searches[0].params.filter)).toContain(
       'pathwayType = "EXPLORATORY_CONTACT"',
     );
@@ -321,11 +481,209 @@ describe('pathwaySearchIndexService', () => {
     expect(result.hits[0]).toMatchObject({
       _id: 'pathway-1',
       bestNextStepCategory: 'plan-outreach',
+      sourceUrls: ['https://example.edu/source'],
+      contactRoute: undefined,
       researchEntity: {
-        slug: 'smith-lab',
+        slug: 'example-lab',
+        description: 'Studies mentor-driven machine learning research.',
         departments: ['Computer Science'],
+        websiteUrl: undefined,
       },
     });
+    expect(result.hits[0].evidence[0].sourceUrl).toBeUndefined();
+  });
+
+  it('uses hybrid semantic search only for multi-word pathway queries', async () => {
+    const searches: Array<{ query: string; params: Record<string, unknown> }> = [];
+    const fakeIndex = {
+      updateSettings: async () => undefined,
+      addDocuments: async () => undefined,
+      search: async (query: string, params: Record<string, unknown>) => {
+        searches.push({ query, params });
+        return { estimatedTotalHits: 0, hits: [] };
+      },
+    };
+
+    await searchPathwaysViaMeili(
+      { q: 'paid summer data research', page: 1, pageSize: 5 },
+      async () => fakeIndex as any,
+    );
+    await searchPathwaysViaMeili(
+      { q: 'summer', page: 1, pageSize: 5 },
+      async () => fakeIndex as any,
+    );
+    await searchPathwaysViaMeili(
+      { q: '', page: 1, pageSize: 5 },
+      async () => fakeIndex as any,
+    );
+
+    expect(searches[0]).toMatchObject({
+      query: 'paid summer data research',
+      params: expect.objectContaining({
+        hybrid: { semanticRatio: 0.75, embedder: 'default' },
+      }),
+    });
+    expect(searches[1].params).not.toHaveProperty('hybrid');
+    expect(searches[2].params).not.toHaveProperty('hybrid');
+    expect(searches[2].params).toMatchObject({
+      sort: ['qualityScore:desc', 'evidenceCount:desc', 'confidence:desc', 'lastObservedAtTimestamp:desc'],
+    });
+  });
+
+  it('exposes equivalent quality fields for richer and fallback pathway documents', () => {
+    const fallback = buildPathwaySearchIndexDocument({
+      _id: 'fallback-pathway',
+      pathwayType: 'EXPLORATORY_CONTACT',
+      status: 'PLAUSIBLE',
+      evidenceStrength: 'WEAK',
+      confidence: 0.8,
+      derivationKey: 'pathway:EXPLORATORY_CONTACT:OFFICIAL_PROFILE:user-1',
+      researchEntity: { departments: [] },
+      evidence: [{ signalType: 'REACH_OUT_PLAUSIBLE', sourceName: 'dept-faculty-roster' }],
+      contactRoute: {
+        routeType: 'FACULTY_PI',
+        visibility: 'PUBLIC',
+        contactPolicy: 'DIRECT_CONTACT_OK',
+      },
+    });
+    const richer = buildPathwaySearchIndexDocument({
+      _id: 'richer-pathway',
+      pathwayType: 'EXPLORATORY_CONTACT',
+      status: 'PLAUSIBLE',
+      evidenceStrength: 'STRONG',
+      confidence: 0.7,
+      derivationKey: 'pathway:EXPLORATORY_CONTACT:PAST_UNDERGRADS',
+      researchEntity: { departments: [] },
+      evidence: [
+        {
+          signalType: 'PAST_UNDERGRADS',
+          sourceName: 'lab-microsite-undergrad-llm',
+          derivationKey: 'signal:PAST_UNDERGRADS',
+        },
+        { signalType: 'FELLOWSHIP_COMPATIBLE', sourceName: 'fellowship-recipients' },
+      ],
+      contactRoute: {
+        routeType: 'LAB_MANAGER',
+        visibility: 'PUBLIC',
+        contactPolicy: 'DIRECT_CONTACT_OK',
+      },
+    });
+
+    expect(richer.qualityScore).toBeGreaterThan(fallback.qualityScore);
+    expect(richer.evidenceCount).toBe(2);
+    expect(richer.hasMicrositeEvidence).toBe(true);
+    expect(richer.hasFellowshipEvidence).toBe(true);
+    expect(fallback.isProfileFallback).toBe(true);
+  });
+
+  it('retries keyword-only when the pathway index lacks the configured embedder', async () => {
+    const searches: Array<{ query: string; params: Record<string, unknown> }> = [];
+    const fakeIndex = {
+      updateSettings: async () => undefined,
+      addDocuments: async () => undefined,
+      search: async (query: string, params: Record<string, unknown>) => {
+        searches.push({ query, params });
+        if (searches.length === 1) {
+          const error = new Error('Cannot find embedder with name `default`.');
+          (error as any).code = 'invalid_search_embedder';
+          throw error;
+        }
+        return {
+          estimatedTotalHits: 1,
+          hits: [
+            buildPathwaySearchIndexDocument({
+              _id: 'pathway-1',
+              pathwayType: 'EXPLORATORY_CONTACT',
+              status: 'PLAUSIBLE',
+              studentFacingLabel: 'Exploratory outreach',
+              bestNextStepCategory: 'plan-outreach',
+              researchEntity: {
+                _id: 'entity-1',
+                slug: 'example-lab',
+                name: 'Example Lab',
+                departments: ['Computer Science'],
+              },
+              evidence: [],
+            }),
+          ],
+        };
+      },
+    };
+
+    const result = await searchPathwaysViaMeili(
+      { q: 'paid summer data research', page: 1, pageSize: 5 },
+      async () => fakeIndex as any,
+    );
+
+    expect(searches).toHaveLength(2);
+    expect(searches[0].params).toMatchObject({
+      hybrid: { semanticRatio: 0.75, embedder: 'default' },
+    });
+    expect(searches[1].params).not.toHaveProperty('hybrid');
+    expect(result.hits[0]).toMatchObject({
+      _id: 'pathway-1',
+      researchEntity: { slug: 'example-lab' },
+    });
+  });
+
+  it('throws non-embedder Meili errors from pathway search', async () => {
+    const fakeIndex = {
+      updateSettings: async () => undefined,
+      addDocuments: async () => undefined,
+      search: async () => {
+        throw new Error('meili unavailable');
+      },
+    };
+
+    await expect(
+      searchPathwaysViaMeili(
+        { q: 'paid summer data research', page: 1, pageSize: 5 },
+        async () => fakeIndex as any,
+      ),
+    ).rejects.toThrow('meili unavailable');
+  });
+
+  it('does not return stale listing-bridged Meili documents as public pathways', async () => {
+    const fakeIndex = {
+      updateSettings: async () => undefined,
+      addDocuments: async () => undefined,
+      search: async () => ({
+        estimatedTotalHits: 1,
+        hits: [
+          buildPathwaySearchIndexDocument({
+            _id: 'legacy-listing-pathway',
+            pathwayType: 'POSTED_ROLE',
+            status: 'ACTIVE',
+            evidenceStrength: 'DIRECT',
+            studentFacingLabel: 'Posted research role',
+            bestNextStepCategory: 'apply',
+            researchEntity: {
+              _id: 'entity-1',
+              slug: 'example-lab',
+              name: 'Example Lab',
+              departments: ['Psychology'],
+            },
+            activePostedOpportunity: {
+              _id: 'legacy-opportunity',
+              title: 'Legacy listing',
+              status: 'ROLLING',
+              provenance: 'LISTING_BRIDGED',
+            },
+            evidence: [
+              {
+                signalType: 'POSTED_OPENING',
+                sourceUrl: 'https://example.edu/listing',
+              },
+            ],
+          }),
+        ],
+      }),
+    };
+
+    const result = await searchPathwaysViaMeili({}, async () => fakeIndex as any);
+
+    expect(result.hits).toEqual([]);
+    expect(result.estimatedTotalHits).toBe(0);
   });
 
   it('keeps formalization-only pathway types out of default and explicit Meili searches', async () => {

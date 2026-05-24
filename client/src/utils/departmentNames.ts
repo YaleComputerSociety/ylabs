@@ -46,7 +46,7 @@ const buildDepartmentLabelMap = (
   const map = new Map<string, string>();
 
   for (const row of departmentTable || []) {
-    const canonical = (row.name || getDepartmentDisplayLabel(row.displayName || '')).trim();
+    const canonical = (row.displayName || row.name || '').trim();
     if (!canonical) continue;
     const values = [
       row.abbreviation,

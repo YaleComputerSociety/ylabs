@@ -6,6 +6,7 @@ import { Fellowship } from '../types/types';
 export function createFellowship(data: any): Fellowship {
   return {
     id: data._id || data.id,
+    programCategory: data.programCategory || 'FELLOWSHIP',
     title: data.title || '',
     competitionType: data.competitionType || '',
     summary: data.summary || '',
@@ -29,6 +30,12 @@ export function createFellowship(data: any): Fellowship {
     purpose: data.purpose || [],
     globalRegions: data.globalRegions || [],
     citizenshipStatus: data.citizenshipStatus || [],
+    sourceName: data.sourceName || '',
+    sourceUrl: data.sourceUrl || '',
+    sourceKey: data.sourceKey || '',
+    sourceFingerprint: data.sourceFingerprint || '',
+    sourceLastVerifiedAt: data.sourceLastVerifiedAt || null,
+    sourceLastChangedAt: data.sourceLastChangedAt || null,
     archived: data.archived || false,
     audited: data.audited || false,
     views: data.views || 0,

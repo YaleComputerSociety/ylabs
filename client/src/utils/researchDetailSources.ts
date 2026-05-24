@@ -1,18 +1,22 @@
 interface DetailSourceGroup {
+  name?: string;
   websiteUrl?: string;
   sourceUrls?: string[];
 }
 
 interface DetailSourcePathway {
+  _id?: string;
   sourceUrls?: string[];
 }
 
 interface DetailSourceSignal {
+  _id?: string;
   signalType?: string;
   sourceUrl?: string;
 }
 
 interface DetailSourceContactRoute {
+  _id?: string;
   routeType?: string;
   label?: string;
   name?: string;

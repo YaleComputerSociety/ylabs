@@ -16,12 +16,12 @@ import {
   ReactNode,
 } from 'react';
 import axios from '../utils/axios';
-import { useLocation } from 'react-router-dom';
 
 import SearchContext, { FilterMode } from '../contexts/SearchContext';
 import UserContext from '../contexts/UserContext';
 import { Listing } from '../types/types';
 import { createListing } from '../utils/apiCleaner';
+import { getUniqueDepartmentLabels } from '../utils/departmentNames';
 import { useConfig } from '../hooks/useConfig';
 import { searchReducer, createInitialSearchState } from '../reducers/searchReducer';
 
@@ -34,13 +34,18 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
   const sortableKeys = ['default', 'createdAt', 'ownerLastName', 'ownerFirstName', 'title'];
 
   const { isAuthenticated, isLoading: authLoading } = useContext(UserContext);
-  const location = useLocation();
-  const isListingsRoute = location.pathname === '/listings';
+  const isListingsRoute = false;
 
   const { departments, departmentCategories, researchAreas, isLoaded: configLoaded } = useConfig();
 
   const allDepartments = useMemo(
-    () => departments.map((d) => d.displayName).sort((a, b) => a.localeCompare(b)),
+    () =>
+      getUniqueDepartmentLabels(
+        departments.map((d) => d.name || d.displayName),
+        departments,
+      ).sort((a, b) =>
+        a.localeCompare(b),
+      ),
     [departments],
   );
 
@@ -213,8 +218,8 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
           console.error('Error loading listings:', error);
           const message =
             error?.response?.status === 401
-              ? 'Please sign in again to view posted roles.'
-              : 'Posted roles are temporarily unavailable. Research homes and pathways are still available.';
+              ? 'Please sign in again to view saved search results.'
+              : 'Legacy listing search is unavailable. Research homes and pathways are still available.';
           dispatch({ type: 'SEARCH_FAILURE', payload: message });
         });
     },

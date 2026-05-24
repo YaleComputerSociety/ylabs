@@ -72,6 +72,10 @@ const scrapeRunSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.Mixed,
       default: undefined,
     },
+    postMaterializationIntegrity: {
+      type: mongoose.Schema.Types.Mixed,
+      default: undefined,
+    },
     fetchMetrics: {
       type: mongoose.Schema.Types.Mixed,
       default: undefined,

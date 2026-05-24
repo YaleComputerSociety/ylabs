@@ -1,6 +1,11 @@
 import type { LabPaper } from '../types/labDetail';
 import type { PathwayBestNextStepCategory, PathwaySearchHit } from '../types/pathway';
 import type { ResearchEntity } from '../types/researchEntity';
+import {
+  isGenericResearchHomeDescription,
+  normalizeResearchInlineText,
+  normalizeResearchMetadataLabels,
+} from './researchTextNormalization';
 
 export interface EvidenceSourceRowData {
   claim: string;
@@ -241,15 +246,6 @@ export const buildPathwayEvidenceRows = (
   ];
 };
 
-const GENERIC_SUGGESTION_LABELS = new Set([
-  'faculty research',
-  'research profiles',
-  'yale college',
-  'school of medicine',
-  'faculty of arts and sciences',
-  'school of engineering & applied science',
-]);
-
 const STOPWORDS = new Set([
   'a',
   'an',
@@ -269,95 +265,11 @@ const STOPWORDS = new Set([
 const uniq = (values: Array<string | undefined | null>): string[] =>
   Array.from(new Set(values.map((value) => (value || '').trim()).filter(Boolean)));
 
-const isGenericMetadataLabel = (value: string): boolean => {
-  const normalized = value.trim().toLowerCase();
-  if (!normalized) return true;
-  if (normalized.length < 3) return true;
-  if (/^\d+$/.test(normalized)) return true;
-  return GENERIC_SUGGESTION_LABELS.has(normalized) || normalized === 'research';
-};
-
-const GENERIC_CONTEXT_DESCRIPTION_PATTERNS = [
-  /^research homes connected by yale .+ metadata for .+\.?$/i,
-  /^browse yale research homes connected to .+\.?$/i,
-  /^research home (?:focused on|connected to)(?:\s|\.|$)/i,
-  /^.+ is a yale research home(?: connected to .*)?\.?$/i,
-  /(?:\sand\s\.)|\bconnected to\s*\./i,
-];
-
 const normalizeContextText = (value?: string | null): string =>
-  (value || '').replace(/\s+/g, ' ').trim();
-
-const SOURCE_CHROME_PATTERNS = [
-  /\b\d{4}-\d{4}-\d{4}-\d{3}[\dX]\b/i,
-  /\bORCID\s*\d{4}-\d{4}-\d{4}-\d{3}[\dX]\b/i,
-  /View (Lab Website|Related Publication)/i,
-  /View (Full Profile|\d+\s+(Common|Related)\s+Publications?)/i,
-  /View\s+\d+\s+Related\s+Publications?/i,
-  /(Common|Related)\s+Publications?/i,
-  /^Publications$/i,
-  /Publications\s*Timeline/i,
-  /Yale Co-Authors/i,
-  /YSM Researchers/i,
-  /YSM Researcher/i,
-  /Streamline Icon/i,
-  /Director of Department Cores/i,
-  /Course Director/i,
-  /\bCitations\b/i,
-];
-
-const hasRepeatedSourceChromePhrase = (value: string): boolean => {
-  const phraseCounts = new Map<string, number>();
-  const phrasePattern =
-    /\b(?:Director of Department Cores|Therapeutic Radiology|Radiobiology Course Director|View Lab Website|View Related Publication|View Full Profile|Common Publications|Related Publications|YSM Researcher|YSM Researchers)\b/gi;
-  const text = normalizeContextText(value);
-  let match = phrasePattern.exec(text);
-  while (match) {
-    const phrase = match[0].toLowerCase();
-    phraseCounts.set(phrase, (phraseCounts.get(phrase) || 0) + 1);
-    match = phrasePattern.exec(text);
-  }
-  return Array.from(phraseCounts.values()).some((count) => count >= 2);
-};
-
-const isAcademicAppointmentDescription = (value: string): boolean => {
-  const normalized = normalizeContextText(value);
-  if (
-    /\b(studies|investigates|examines|explores|focuses on|works on|develops|uses|employs)\b/i.test(
-      normalized,
-    )
-  ) {
-    return false;
-  }
-
-  return [
-    /^Department Chair\b.*\bProfessor of\b/i,
-    /\bProfessor of\b.*;\s*Affiliated Faculty\b/i,
-    /\bProfessor of\b.*\bDirector,\s+Yale\b/i,
-    /^[A-Z][A-Za-z.'-]+(?:\s+[A-Z][A-Za-z.'-]+)+\s+is\s+(?:an?\s+)?(?:Assistant|Associate|Full|Adjunct|Clinical|Visiting)?\s*Professor\b/i,
-    /\b(?:Assistant|Associate|Full|Adjunct|Clinical|Visiting)?\s*Professor\b.*\bPrincipal Investigator\b/i,
-    /\bPrincipal Investigator\b.*\b(?:Assistant|Associate|Full|Adjunct|Clinical|Visiting)?\s*Professor\b/i,
-  ].some((pattern) => pattern.test(normalized));
-};
-
-const isGenericResearchHomeDescription = (value: string): boolean => {
-  const normalized = normalizeContextText(value);
-  return (
-    GENERIC_CONTEXT_DESCRIPTION_PATTERNS.some((pattern) =>
-      pattern.test(normalized),
-    ) ||
-    isAcademicAppointmentDescription(normalized) ||
-    SOURCE_CHROME_PATTERNS.some((pattern) => pattern.test(normalized)) ||
-    hasRepeatedSourceChromePhrase(normalized)
-  );
-};
+  normalizeResearchInlineText(value);
 
 const meaningfulMetadata = (values: Array<string | undefined | null>): string[] =>
-  uniq(values).filter(
-    (value) =>
-      !isGenericMetadataLabel(value) &&
-      !SOURCE_CHROME_PATTERNS.some((pattern) => pattern.test(value)),
-  );
+  normalizeResearchMetadataLabels(values);
 
 const formatReadableList = (values: string[]): string => {
   if (values.length <= 1) return values[0] || '';

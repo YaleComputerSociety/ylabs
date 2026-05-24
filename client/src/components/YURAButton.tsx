@@ -9,7 +9,11 @@ const YURAButton = () => {
   };
 
   return (
-    <Button onClick={handleReload} disableRipple={true} sx={{ textTransform: 'none' }}>
+    <Button
+      onClick={handleReload}
+      disableRipple={true}
+      sx={{ textTransform: 'none', minHeight: '44px' }}
+    >
       <img
         src="/assets/logos/paperclip.png"
         alt=""

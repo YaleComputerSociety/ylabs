@@ -9,27 +9,18 @@
  */
 
 import mongoose from 'mongoose';
+import { assertScriptApplyAllowed } from './scriptWriteGuards';
 
 const COLLECTION_RENAMES = [
   ['accesssignals', 'access_signals'],
   ['analyticsevents', 'analytics_events'],
   ['contactroutes', 'contact_routes'],
   ['entrypathways', 'entry_pathways'],
-  ['facultymembers', 'faculty_members'],
-  ['paperauthors', 'paper_authors'],
-  ['papergrouplinks', 'paper_entity_links'],
   ['postedopportunities', 'posted_opportunities'],
   ['researchareas', 'research_areas'],
   ['researchAreas', 'research_areas'],
-  ['researchgroups', 'research_entities'],
-  ['researchgroupmembers', 'research_entity_members'],
-  ['researchgroupstats', 'research_entity_stats'],
   ['scraperuns', 'scrape_runs'],
   ['scrapesnapshots', 'scrape_snapshots'],
-  ['studentengagementevents', 'student_engagement_events'],
-  ['studentoutreaches', 'student_outreaches'],
-  ['studentprofiles', 'student_profiles'],
-  ['studenttrackings', 'student_trackings'],
 ] as const;
 
 const USER_FIELD_RENAMES = {
@@ -242,6 +233,11 @@ async function migrateMongoNaming() {
     console.error('Error: MONGODBURL environment variable is required');
     process.exit(1);
   }
+  assertScriptApplyAllowed({
+    apply: true,
+    scriptName: 'migrate:mongo-naming',
+    mongoUrl,
+  });
 
   console.log('Connecting to MongoDB...');
   await mongoose.connect(mongoUrl);

@@ -4,13 +4,11 @@
 import PrivateRoute from './components/PrivateRoute';
 import UnprivateRoute from './components/UnprivateRoute';
 import AdminRoute from './components/AdminRoute';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import RootRedirect from './pages/rootRedirect';
-import Home from './pages/home';
 import Fellowships from './pages/fellowships';
 import Research from './pages/research';
 import ResearchDetail from './pages/labDetail';
-import Pathways from './pages/pathways';
 import OpportunityDetail from './pages/opportunityDetail';
 import Login from './pages/login';
 import About from './pages/about';
@@ -28,9 +26,13 @@ import FellowshipSearchContextProvider from './providers/FellowshipSearchContext
 import UIContextProvider from './providers/UIContextProvider';
 import ScrollToTop from './components/shared/ScrollToTop';
 
+const RetiredListingsRedirect = () => <Navigate to="/research" replace />;
+const RetiredFellowshipsRedirect = () => <Navigate to="/programs" replace />;
+const RetiredPathwaysRedirect = () => <Navigate to="/research" replace />;
+
 const App = () => {
   return (
-    <Router>
+    <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <ScrollToTop />
       <ConfigContextProvider>
         <SearchContextProvider>
@@ -49,10 +51,21 @@ const App = () => {
                       />
                       <Route
                         path="/listings"
-                        element={<PrivateRoute Component={Home} unknownBlocked={true} />}
+                        element={
+                          <PrivateRoute Component={RetiredListingsRedirect} unknownBlocked={true} />
+                        }
                       />
                       <Route
                         path="/fellowships"
+                        element={
+                          <PrivateRoute
+                            Component={RetiredFellowshipsRedirect}
+                            unknownBlocked={true}
+                          />
+                        }
+                      />
+                      <Route
+                        path="/programs"
                         element={<PrivateRoute Component={Fellowships} unknownBlocked={true} />}
                       />
                       <Route
@@ -65,11 +78,15 @@ const App = () => {
                       />
                       <Route
                         path="/pathways"
-                        element={<PrivateRoute Component={Pathways} unknownBlocked={true} />}
+                        element={
+                          <PrivateRoute Component={RetiredPathwaysRedirect} unknownBlocked={true} />
+                        }
                       />
                       <Route
                         path="/opportunities/:id"
-                        element={<PrivateRoute Component={OpportunityDetail} unknownBlocked={true} />}
+                        element={
+                          <PrivateRoute Component={OpportunityDetail} unknownBlocked={true} />
+                        }
                       />
                       <Route
                         path="/about"

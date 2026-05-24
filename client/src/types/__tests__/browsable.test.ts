@@ -78,7 +78,7 @@ describe('research entity pathway card summaries', () => {
           },
         }),
       ),
-    ).toBe('Posted role available');
+    ).toBe('Posted opening available');
   });
 
   it('summarizes non-posted pathway types without formalization-only evidence', () => {

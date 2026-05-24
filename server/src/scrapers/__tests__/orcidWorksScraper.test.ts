@@ -90,34 +90,26 @@ describe('parseOrcidWorks', () => {
 });
 
 describe('orcidWorkSummaryToObservations', () => {
-  it('emits identity-backed paper authorship evidence for the ORCID owner', () => {
+  it('emits an identity-backed scholarly link for the ORCID owner', () => {
     const [work] = parseOrcidWorks(ORCID_WORKS_PAYLOAD);
     const observations = orcidWorkSummaryToObservations(work, {
       userId: '64f000000000000000000001',
-      netid: 'aa1',
-      displayName: 'Amy Arnsten',
+      netid: 'fixture-alpha',
+      displayName: 'Fixture Alpha',
       orcid: '0000-0001-2345-6789',
     });
 
     expect(observations).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          entityType: 'paper',
-          entityKey: '2401.01234',
-          field: 'paperAuthorshipEvidence',
-          value: expect.objectContaining({
-            userId: '64f000000000000000000001',
-            netid: 'aa1',
-            sourceName: 'orcid',
-            method: 'orcid-record',
-            externalAuthorIds: expect.objectContaining({
-              orcid: '0000-0001-2345-6789',
-            }),
-          }),
+          entityType: 'scholarlyLink',
+          entityKey: 'user:64f000000000000000000001:2401.01234',
+          field: 'userId',
+          value: '64f000000000000000000001',
         }),
         expect.objectContaining({
-          field: 'sources',
-          value: ['orcid'],
+          field: 'discoveredVia',
+          value: 'ORCID',
         }),
       ]),
     );
@@ -125,14 +117,14 @@ describe('orcidWorkSummaryToObservations', () => {
 });
 
 describe('OrcidWorksScraper.run', () => {
-  it('fetches accepted ORCID users and emits paper observations', async () => {
+  it('fetches accepted ORCID users and emits scholarly-link observations', async () => {
     const fetcher: OrcidWorksFetcher = vi.fn(async () => ORCID_WORKS_PAYLOAD);
     const userModel = mockUserModel([
       {
         _id: '64f000000000000000000001',
-        netid: 'aa1',
-        fname: 'Amy',
-        lname: 'Arnsten',
+        netid: 'fixture-alpha',
+        fname: 'Fixture',
+        lname: 'Alpha',
         orcid: '0000-0001-2345-6789',
       },
     ]);
@@ -142,7 +134,8 @@ describe('OrcidWorksScraper.run', () => {
     const result = await scraper.run(ctx);
 
     expect(fetcher).toHaveBeenCalledWith('0000-0001-2345-6789');
-    expect(emitted.some((obs) => obs.field === 'paperAuthorshipEvidence')).toBe(true);
+    expect(emitted.some((obs) => obs.entityType === 'scholarlyLink')).toBe(true);
+    expect(emitted.some((obs) => obs.field === 'paperAuthorshipEvidence')).toBe(false);
     expect(result.entitiesObserved).toBe(1);
   });
 });

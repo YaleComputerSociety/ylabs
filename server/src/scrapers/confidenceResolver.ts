@@ -16,6 +16,7 @@ export interface ResolverObservation {
   field: string;
   value: unknown;
   sourceName: string;
+  sourceUrl?: string;
   confidence: number;
   observedAt: Date;
 }
@@ -35,6 +36,7 @@ export interface ResolverOptions {
   agreementBonusPerExtraSource?: number;
   conflictThreshold?: number;
   now?: Date;
+  observationScore?: (observation: ResolverObservation, baseScore: number) => number;
 }
 
 const DEFAULTS = {
@@ -92,7 +94,10 @@ export function resolveField(
   for (const obs of fieldObs) {
     const key = serializeValue(obs.value);
     const decay = recencyDecay(obs.observedAt, now, halfLifeDays);
-    const contribution = obs.confidence * decay;
+    const baseContribution = obs.confidence * decay;
+    const contribution = opts.observationScore
+      ? opts.observationScore(obs, baseContribution)
+      : baseContribution;
     let g = groups.get(key);
     if (!g) {
       g = { value: obs.value, weight: 0, sources: new Set() };

@@ -94,10 +94,16 @@ export interface ResearchGroup {
   kind: ResearchGroupKind;
   entityType?: ResearchEntityType;
   description: string;
+  shortDescription?: string;
+  fullDescription?: string;
+  profileSynthesisDescription?: string;
+  descriptionSource?: 'ENTITY_SOURCE' | 'PI_PROFILE_SYNTHESIS' | 'NONE';
   websiteUrl: string;
   location: string;
   departments: string[];
   researchAreas: string[];
+  profileResearchAreas?: string[];
+  researchAreaSource?: 'PI_PROFILE_FALLBACK';
   school: string;
   openness: ResearchGroupOpenness;
   /**
@@ -159,37 +165,6 @@ export interface ResearchGroup {
  * Historical names remain in this file while runtime APIs use ResearchEntity.
  */
 export type ResearchEntity = ResearchGroup;
-
-export type AcceptanceLevelFilter = 'verified' | 'verified-or-likely' | 'all';
-
-export interface ResearchGroupSearchFilters {
-  kind?: string[];
-  school?: string[];
-  departments?: string[];
-  researchAreas?: string[];
-  openness?: string[];
-  acceptingUndergrads?: boolean;
-  /**
-   * Trust-gradient filter. `'all'` (default) preserves prior behavior — no
-   * additional constraint. `'verified'` requires `acceptingUndergrads = true`
-   * AND `acceptanceConfidence >= 0.7`. `'verified-or-likely'` matches any
-   * group with at least one positive signal (active listing, past advisees,
-   * current roster, or independent study).
-   */
-  acceptanceLevel?: AcceptanceLevelFilter;
-}
-
-export type ResearchGroupSortBy = 'lastObservedAt' | 'name' | 'createdAt' | 'updatedAt';
-export type ResearchGroupSortOrder = 'asc' | 'desc';
-
-export interface ResearchGroupSearchRequest {
-  q?: string;
-  page?: number;
-  pageSize?: number;
-  filters?: ResearchGroupSearchFilters;
-  sortBy?: ResearchGroupSortBy;
-  sortOrder?: ResearchGroupSortOrder;
-}
 
 export interface ResearchGroupSearchResponse {
   hits: ResearchGroup[];

@@ -1,5 +1,5 @@
 /**
- * Admin panel table for managing listings.
+ * Admin panel table for managing legacy listing evidence.
  */
 import { useEffect, useCallback, useReducer } from 'react';
 import axios from '../../utils/axios';
@@ -32,6 +32,8 @@ interface AdminListing {
   confirmed: boolean;
   audited: boolean;
   createdAt: string;
+  updatedAt: string;
+  ownerTitle?: string;
 }
 
 type SortField =
@@ -107,7 +109,7 @@ const AdminListingsTable = () => {
       });
     } catch (error) {
       console.error('Error fetching admin listings:', error);
-      swal({ text: 'Failed to fetch listings', icon: 'error' });
+      swal({ text: 'Failed to fetch legacy listing evidence', icon: 'error' });
       dispatch({ type: 'FETCH_FAILURE' });
     }
   }, [search, sortBy, sortOrder, page, pageSize, archivedFilter, confirmedFilter, auditedFilter]);
@@ -124,7 +126,7 @@ const AdminListingsTable = () => {
 
   const handleDelete = async (listing: AdminListing) => {
     const confirmed = await swal({
-      title: 'Delete Listing',
+      title: 'Delete Legacy Listing Evidence',
       text: `Are you sure you want to permanently delete "${listing.title}"? This cannot be undone.`,
       icon: 'warning',
       buttons: ['Cancel', 'Delete'],
@@ -135,17 +137,17 @@ const AdminListingsTable = () => {
 
     try {
       await axios.delete(`/admin/listings/${listing._id}`, { withCredentials: true });
-      swal({ text: 'Listing deleted', icon: 'success', timer: 1500 });
+      swal({ text: 'Legacy listing evidence deleted', icon: 'success', timer: 1500 });
       fetchListings();
     } catch (error) {
       console.error('Error deleting listing:', error);
-      swal({ text: 'Failed to delete listing', icon: 'error' });
+      swal({ text: 'Failed to delete legacy listing evidence', icon: 'error' });
     }
   };
 
   const handleCheckUrls = async (listing: AdminListing) => {
     if (!listing.websites || listing.websites.length === 0) {
-      swal({ text: 'No URLs to check for this listing', icon: 'info' });
+      swal({ text: 'No URLs to check for this legacy listing evidence', icon: 'info' });
       return;
     }
 
@@ -287,7 +289,7 @@ const AdminListingsTable = () => {
         </div>
 
         <div className="mt-2 text-sm text-gray-500">
-          {total} listing{total !== 1 ? 's' : ''} total
+          {total} legacy listing evidence record{total !== 1 ? 's' : ''} total
           {sortBy === 'redFlags' && (
             <span className="ml-2 text-red-600 font-medium">
               • Sorted by red flags (no dept, no views, old, etc.)
@@ -341,7 +343,7 @@ const AdminListingsTable = () => {
               ) : listings.length === 0 ? (
                 <tr>
                   <td colSpan={13} className="text-center py-8 text-gray-500">
-                    No listings found
+                    No legacy listing evidence found
                   </td>
                 </tr>
               ) : (

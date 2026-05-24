@@ -10,33 +10,33 @@ import {
 
 const sampleGroup: ResearchGroup = {
   _id: 'g1',
-  slug: 'lovelace-lab',
-  name: 'Lovelace Computational Lab',
+  slug: 'synthetic-computation-lab',
+  name: 'Synthetic Computation Lab',
   kind: 'lab',
-  description: 'We study analytical engines.',
-  websiteUrl: 'https://example.edu/lovelace',
-  location: 'Watson Center, Room 200',
+  description: 'We study synthetic systems.',
+  websiteUrl: 'https://synthetic-computation.example.test',
+  location: 'Fixture Hall, Room 200',
   departments: ['Computer Science'],
   researchAreas: ['Theoretical CS'],
-  school: 'School of Engineering & Applied Science',
+  school: 'Fixture School of Research',
   openness: 'open',
   acceptingUndergrads: true,
   typicalUndergradRoles: ['Research Assistant'],
   prerequisiteCourses: ['CPSC 201'],
   creditOptions: ['CPSC 490'],
   fundingPrograms: [],
-  contactEmail: 'ada@example.edu',
-  contactName: 'Ada Lovelace',
+  contactEmail: 'fixture.contact@example.test',
+  contactName: 'Fixture Contact',
   contactRole: 'PI',
   sourceUrls: [],
 };
 
 const sampleListing: Listing = {
   id: 'l1',
-  ownerId: 'abc123',
-  ownerFirstName: 'Ada',
-  ownerLastName: 'Lovelace',
-  ownerEmail: 'ada@example.edu',
+  ownerId: 'fixture_owner',
+  ownerFirstName: 'Fixture',
+  ownerLastName: 'Owner',
+  ownerEmail: 'fixture.owner@example.test',
   professorIds: [],
   professorNames: [],
   title: 'Undergrad RA opening',
@@ -64,9 +64,9 @@ const samplePayload: ResearchEntityDetailPayload = {
   members: [
     {
       user: {
-        netid: 'abc123',
-        fname: 'Ada',
-        lname: 'Lovelace',
+        netid: 'fixture_owner',
+        fname: 'Fixture',
+        lname: 'Owner',
         image_url: '',
         primary_department: 'Computer Science',
         title: 'Professor',
@@ -77,9 +77,9 @@ const samplePayload: ResearchEntityDetailPayload = {
   recentPapers: [
     {
       _id: 'p1',
-      title: 'On the analytical engine',
+      title: 'Synthetic systems note',
       year: 1843,
-      venue: 'Notes on the Analytical Engine',
+      venue: 'Fixture Research Notes',
       tldr: 'A foundational paper.',
     },
   ],
@@ -88,8 +88,18 @@ const samplePayload: ResearchEntityDetailPayload = {
 
 const otherPayload: ResearchEntityDetailPayload = {
   ...samplePayload,
-  group: { ...sampleGroup, _id: 'g2', slug: 'hopper-lab', name: 'Hopper Lab' },
-  researchEntity: { ...sampleGroup, _id: 'g2', slug: 'hopper-lab', name: 'Hopper Lab' },
+  group: {
+    ...sampleGroup,
+    _id: 'g2',
+    slug: 'synthetic-systems-lab',
+    name: 'Synthetic Systems Lab',
+  },
+  researchEntity: {
+    ...sampleGroup,
+    _id: 'g2',
+    slug: 'synthetic-systems-lab',
+    name: 'Synthetic Systems Lab',
+  },
 };
 
 describe('labDetailReducer', () => {

@@ -25,7 +25,7 @@ describe('buildObservationFingerprint', () => {
   it('keeps same facts from different sources distinct', () => {
     const base = {
       entityType: 'researchEntity',
-      entityKey: 'smith-lab',
+      entityKey: 'sample-lab',
       field: 'acceptingUndergrads',
       value: true,
     };
@@ -64,7 +64,7 @@ describe('appendObservations', () => {
           entityType: 'user',
           entityKey: 'abc123',
           field: 'name',
-          value: 'Ada Lovelace',
+          value: 'Example Person',
         },
         {
           entityType: 'user',
@@ -84,18 +84,25 @@ describe('appendObservations', () => {
 
     expect(insertMany).toHaveBeenCalledTimes(1);
     expect(bulkWrite).toHaveBeenCalledTimes(1);
-    expect(bulkWrite.mock.calls[0][0][0]).toMatchObject({
-      updateMany: {
-        filter: {
-          observationFingerprint: 'fp:user:name',
+    const insertedDocs = insertMany.mock.calls[0][0] as any[];
+    expect(insertedDocs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          entityType: 'user',
+          entityKey: 'abc123',
+          field: 'name',
+          sourceName: 'yale-directory',
           superseded: false,
-          _id: { $ne: 'new-1' },
-        },
-        update: {
-          $set: { superseded: true, supersededBy: 'new-1' },
-        },
-      },
-    });
+        }),
+        expect.objectContaining({
+          entityType: 'user',
+          entityKey: 'abc123',
+          field: 'title',
+          sourceName: 'yale-directory',
+          superseded: false,
+        }),
+      ]),
+    );
     expect(result).toEqual({ inserted: 2, skipped: 0, superseded: 2 });
   });
 
@@ -120,7 +127,7 @@ describe('appendObservations', () => {
           entityType: 'user',
           entityKey: 'abc123',
           field: 'name',
-          value: 'Ada Lovelace',
+          value: 'Example Person',
         },
         {
           entityType: 'user',

@@ -11,12 +11,12 @@ const makeListing = (overrides: Partial<Listing> = {}): Listing =>
   ({
     id: 'L1',
     ownerId: 'u1',
-    ownerFirstName: 'Alice',
-    ownerLastName: 'Nguyen',
-    ownerEmail: 'alice@example.edu',
+    ownerFirstName: 'Test',
+    ownerLastName: 'Owner',
+    ownerEmail: 'owner@example.test',
     professorIds: [],
     professorNames: [],
-    title: 'Neural Dynamics Lab',
+    title: 'Fixture Listing',
     departments: ['Neuroscience'],
     emails: [],
     websites: [],
@@ -39,7 +39,7 @@ const makeListing = (overrides: Partial<Listing> = {}): Listing =>
 const makeFellowship = (overrides: Partial<Fellowship> = {}): Fellowship =>
   ({
     id: 'F1',
-    title: 'Rhodes',
+    title: 'Fixture Fellowship',
     competitionType: '',
     summary: '',
     description: '',

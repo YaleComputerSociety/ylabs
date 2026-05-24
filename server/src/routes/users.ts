@@ -1,5 +1,5 @@
 /**
- * User routes for favorites, fellowships, listings, and profile updates.
+ * User routes for saved programs, saved research plans, and profile updates.
  */
 import { Router, Request, Response, NextFunction } from 'express';
 import { isAuthenticated } from '../middleware/index';
@@ -8,6 +8,18 @@ import { logEvent } from '../services/analyticsService';
 import { AnalyticsEventType } from '../models/index';
 
 const router = Router();
+
+const deprecateFavPathwayEndpoint = (_req: Request, res: Response, next: NextFunction) => {
+  res.setHeader('Deprecation', 'true');
+  res.setHeader('Link', '</api/users/savedResearchPlans>; rel="successor-version"');
+  next();
+};
+
+const deprecateFavFellowshipEndpoint = (_req: Request, res: Response, next: NextFunction) => {
+  res.setHeader('Deprecation', 'true');
+  res.setHeader('Link', '</api/users/savedPrograms>; rel="successor-version"');
+  next();
+};
 
 const getFavoriteIds = (req: Request, key: string): string[] => {
   const value = req.body?.data?.[key] ?? req.body?.[key];
@@ -19,7 +31,8 @@ const getFavoriteIds = (req: Request, key: string): string[] => {
 
 const logFavoriteEvent = (
   isFavorite: boolean,
-  kind: 'listing' | 'fellowship' = 'listing',
+  kind: 'listing' | 'fellowship' | 'program' = 'listing',
+  payloadKey?: string,
 ) => {
   return async (req: Request, res: Response, next: NextFunction) => {
     const originalSend = res.send.bind(res);
@@ -27,7 +40,10 @@ const logFavoriteEvent = (
     res.send = function (data: any) {
       if (res.statusCode >= 200 && res.statusCode < 300) {
         const currentUser = req.user as { netId?: string; userType: string };
-        const ids = getFavoriteIds(req, kind === 'listing' ? 'favListings' : 'favFellowships');
+        const ids = getFavoriteIds(
+          req,
+          payloadKey || (kind === 'listing' ? 'favListings' : 'favFellowships'),
+        );
 
         if (currentUser?.netId && ids.length > 0) {
           ids.forEach((itemId: string) => {
@@ -43,7 +59,7 @@ const logFavoriteEvent = (
               netid: currentUser.netId!,
               userType: currentUser.userType,
               listingId: kind === 'listing' ? itemId : undefined,
-              fellowshipId: kind === 'fellowship' ? itemId : undefined,
+              fellowshipId: kind !== 'listing' ? itemId : undefined,
               metadata: { entityType: kind },
             }).catch((err) => console.error('Error logging favorite event:', err));
           });
@@ -82,52 +98,129 @@ const logProfileUpdateEvent = async (req: Request, res: Response, next: NextFunc
 };
 
 router.get('/favListingsIds', isAuthenticated, userController.getFavListingsIds);
-router.put('/favListings', isAuthenticated, logFavoriteEvent(true), userController.addFavListings);
-router.delete(
-  '/favListings',
+router.put('/favListings', isAuthenticated, userController.addFavListings);
+router.delete('/favListings', isAuthenticated, userController.removeFavListings);
+
+router.get('/savedProgramIds', isAuthenticated, userController.getSavedProgramIds);
+router.get('/savedPrograms', isAuthenticated, userController.getSavedPrograms);
+router.put(
+  '/savedPrograms',
   isAuthenticated,
-  logFavoriteEvent(false),
-  userController.removeFavListings,
+  logFavoriteEvent(true, 'program', 'savedPrograms'),
+  userController.addSavedPrograms,
+);
+router.delete(
+  '/savedPrograms',
+  isAuthenticated,
+  logFavoriteEvent(false, 'program', 'savedPrograms'),
+  userController.removeSavedPrograms,
 );
 
-router.get('/favFellowshipIds', isAuthenticated, userController.getFavFellowshipIds);
-router.get('/favFellowships', isAuthenticated, userController.getFavFellowships);
+router.get(
+  '/favFellowshipIds',
+  isAuthenticated,
+  deprecateFavFellowshipEndpoint,
+  userController.getFavFellowshipIds,
+);
+router.get(
+  '/favFellowships',
+  isAuthenticated,
+  deprecateFavFellowshipEndpoint,
+  userController.getFavFellowships,
+);
 router.put(
   '/favFellowships',
   isAuthenticated,
+  deprecateFavFellowshipEndpoint,
   logFavoriteEvent(true, 'fellowship'),
   userController.addFavFellowships,
 );
 router.delete(
   '/favFellowships',
   isAuthenticated,
+  deprecateFavFellowshipEndpoint,
   logFavoriteEvent(false, 'fellowship'),
   userController.removeFavFellowships,
 );
 
-router.get('/favPathwayIds', isAuthenticated, userController.getFavPathwayIds);
-router.get('/favPathways', isAuthenticated, userController.getFavPathways);
+router.get('/savedResearchPlanIds', isAuthenticated, userController.getSavedResearchPlanIds);
+router.get('/savedResearchPlans', isAuthenticated, userController.getSavedResearchPlans);
+router.get(
+  '/savedResearchPlanFundingMatches',
+  isAuthenticated,
+  userController.getSavedResearchPlanFundingMatches,
+);
+router.put('/savedResearchPlans', isAuthenticated, userController.addSavedResearchPlans);
+router.delete('/savedResearchPlans', isAuthenticated, userController.removeSavedResearchPlans);
+router.get('/savedResearchPlanDetails', isAuthenticated, userController.getSavedResearchPlanDetails);
+router.get(
+  '/savedResearchPlanDetails/export',
+  isAuthenticated,
+  userController.exportSavedResearchPlanDetails,
+);
+router.put(
+  '/savedResearchPlanDetails/:pathwayId',
+  isAuthenticated,
+  userController.updateSavedResearchPlanDetail,
+);
+router.delete(
+  '/savedResearchPlanDetails/:pathwayId',
+  isAuthenticated,
+  userController.deleteSavedResearchPlanDetail,
+);
+
+router.get(
+  '/favPathwayIds',
+  isAuthenticated,
+  deprecateFavPathwayEndpoint,
+  userController.getFavPathwayIds,
+);
+router.get(
+  '/favPathways',
+  isAuthenticated,
+  deprecateFavPathwayEndpoint,
+  userController.getFavPathways,
+);
 router.get(
   '/favPathwayFundingMatches',
   isAuthenticated,
+  deprecateFavPathwayEndpoint,
   userController.getFavPathwayFundingMatches,
 );
-router.put('/favPathways', isAuthenticated, userController.addFavPathways);
-router.delete('/favPathways', isAuthenticated, userController.removeFavPathways);
-router.get('/favPathwayPlans', isAuthenticated, userController.getSavedPathwayPlans);
+router.put(
+  '/favPathways',
+  isAuthenticated,
+  deprecateFavPathwayEndpoint,
+  userController.addFavPathways,
+);
+router.delete(
+  '/favPathways',
+  isAuthenticated,
+  deprecateFavPathwayEndpoint,
+  userController.removeFavPathways,
+);
+router.get(
+  '/favPathwayPlans',
+  isAuthenticated,
+  deprecateFavPathwayEndpoint,
+  userController.getSavedPathwayPlans,
+);
 router.get(
   '/favPathwayPlans/export',
   isAuthenticated,
+  deprecateFavPathwayEndpoint,
   userController.exportSavedPathwayPlans,
 );
 router.put(
   '/favPathwayPlans/:pathwayId',
   isAuthenticated,
+  deprecateFavPathwayEndpoint,
   userController.updateSavedPathwayPlan,
 );
 router.delete(
   '/favPathwayPlans/:pathwayId',
   isAuthenticated,
+  deprecateFavPathwayEndpoint,
   userController.deleteSavedPathwayPlan,
 );
 

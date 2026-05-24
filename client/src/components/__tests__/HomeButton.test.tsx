@@ -11,7 +11,7 @@ afterEach(() => {
 describe('HomeButton', () => {
   it('routes the Yale Research logo to the research discovery surface', () => {
     render(
-      <MemoryRouter initialEntries={['/pathways']}>
+      <MemoryRouter initialEntries={['/programs']}>
         <HomeButton />
       </MemoryRouter>,
     );

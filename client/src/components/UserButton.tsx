@@ -16,6 +16,7 @@ const UserButton = () => {
   const location = useLocation();
   const { user } = useContext(UserContext);
   const isAdmin = user?.userType === 'admin';
+  const isProfessorUser = user?.userType === 'professor' || user?.userType === 'faculty';
 
   const getInitials = () => {
     if (user?.netId && user.netId.length > 0) {
@@ -69,20 +70,23 @@ const UserButton = () => {
   return (
     <Box>
       <Button
+        aria-label="Open user menu"
+        aria-haspopup="menu"
+        aria-expanded={open ? 'true' : undefined}
         onClick={handleClick}
         sx={{
-          minWidth: '36px',
-          width: '36px',
-          height: '36px',
+          minWidth: '44px',
+          width: '44px',
+          height: '44px',
           borderRadius: '50%',
-          backgroundColor: '#257fce',
+          backgroundColor: '#0055A4',
           color: '#FFFFFF',
           fontFamily: 'Inter',
           fontWeight: 600,
           fontSize: '14px',
           padding: 0,
           '&:hover': {
-            backgroundColor: '#1e6ab3',
+            backgroundColor: '#004B93',
           },
           '&:focus-visible': {
             outline: '2px solid #1876D1',
@@ -123,6 +127,28 @@ const UserButton = () => {
             disableRipple
           >
             Analytics
+          </MenuItem>
+        )}
+        {isProfessorUser && (
+          <MenuItem
+            component={Link}
+            to="/account"
+            onClick={handleClose}
+            sx={menuItemStyle}
+            disableRipple
+          >
+            Edit Profile
+          </MenuItem>
+        )}
+        {isProfessorUser && user?.netId && (
+          <MenuItem
+            component={Link}
+            to={`/profile/${user.netId}`}
+            onClick={handleClose}
+            sx={menuItemStyle}
+            disableRipple
+          >
+            Public Profile
           </MenuItem>
         )}
         <MenuItem

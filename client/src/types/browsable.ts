@@ -1,9 +1,13 @@
 /**
- * Shared types and helpers for browsable listings and fellowships.
+ * Shared types and helpers for browsable research homes, listings, and fellowships.
  */
 import { Listing, Fellowship } from './types';
 import { ResearchGroup, ResearchGroupKind } from './researchGroup';
-import { getDepartmentAbbreviation } from '../utils/departmentNames';
+import {
+  DepartmentNameRecord,
+  getDepartmentAbbreviation,
+  getUniqueDepartmentLabels,
+} from '../utils/departmentNames';
 import {
   computeAcceptanceVerdict,
   verdictBadgeStyles,
@@ -21,6 +25,7 @@ export const DESCRIPTION_CLAMP_CLASS = 'line-clamp-3';
 export function getOrderedDepartments(
   departments: string[] | undefined,
   primary: string | undefined,
+  departmentTable?: DepartmentNameRecord[],
 ): string[] {
   const deps = [...(departments || [])];
   if (deps.length === 0) {
@@ -37,15 +42,16 @@ export function getOrderedDepartments(
       deps.unshift(primary);
     }
   }
-  return deps;
+  return getUniqueDepartmentLabels(deps, departmentTable);
 }
 
 export function getOrderedDeptAbbrs(
   departments: string[] | undefined,
   primary: string | undefined,
   limit?: number,
+  departmentTable?: DepartmentNameRecord[],
 ): { abbrs: string[]; truncated: number } {
-  const ordered = getOrderedDepartments(departments, primary);
+  const ordered = getOrderedDepartments(departments, primary, departmentTable);
   const abbrs = ordered.map((d) => getDepartmentAbbreviation(d));
   if (limit && abbrs.length > limit) {
     return { abbrs: abbrs.slice(0, limit), truncated: abbrs.length - limit };
@@ -87,7 +93,7 @@ export function getResearchGroupDisplayName(group: ResearchGroup): string {
 }
 
 const PATHWAY_TYPE_LABELS: Record<string, string> = {
-  POSTED_ROLE: 'Posted role',
+  POSTED_ROLE: 'Posted opening',
   STUDENT_JOB: 'Student job',
   RECURRING_PROGRAM: 'Recurring program',
   COURSE_CREDIT: 'Course credit',
@@ -109,7 +115,7 @@ const FORMALIZATION_ONLY_PATHWAY_TYPES = new Set([
 export function getResearchEntityPathwaySummary(group: ResearchGroup): string | null {
   const summary = group.accessSummary;
   if (!summary) return null;
-  if (summary.hasActivePostedOpportunity) return 'Posted role available';
+  if (summary.hasActivePostedOpportunity) return 'Posted opening available';
 
   const labels = Array.from(new Set(summary.entryPathwayTypes || []))
     .filter((type) => !FORMALIZATION_ONLY_PATHWAY_TYPES.has(type))
@@ -133,7 +139,7 @@ export function isItemOpen(item: BrowsableItem): boolean {
   if (item.type === 'researchGroup') {
     const { verdict } = computeAcceptanceVerdict(
       item.data,
-      item.data.hasActiveListing === true,
+      item.data.accessSummary?.hasActivePostedOpportunity === true,
     );
     return verdict === 'verified-accepting' || verdict === 'likely-accepting';
   }
@@ -219,7 +225,10 @@ export function getResearchGroupStatus(item: BrowsableItem): {
   className: string;
 } | null {
   if (item.type !== 'researchGroup') return null;
-  const { verdict } = computeAcceptanceVerdict(item.data, item.data.hasActiveListing === true);
+  const { verdict } = computeAcceptanceVerdict(
+    item.data,
+    item.data.accessSummary?.hasActivePostedOpportunity === true,
+  );
   return {
     label: verdictLabel(verdict),
     className: verdictBadgeStyles(verdict),

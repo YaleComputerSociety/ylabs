@@ -24,6 +24,7 @@ export const searchFellowshipsController = async (request: Request, response: Re
       purpose,
       globalRegions,
       citizenshipStatus,
+      programCategory,
     } = request.query;
 
     const parseFilter = (filter: string | undefined): string[] => {
@@ -45,6 +46,7 @@ export const searchFellowshipsController = async (request: Request, response: Re
       purpose: parseFilter(purpose as string),
       globalRegions: parseFilter(globalRegions as string),
       citizenshipStatus: parseFilter(citizenshipStatus as string),
+      programCategory: parseFilter(programCategory as string),
     });
 
     response.json({

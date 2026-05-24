@@ -7,8 +7,11 @@ function mountedRouter(prefix: string): unknown {
 }
 
 describe('research routes', () => {
-  it('mounts only the canonical /research router', () => {
+  it('mounts only canonical public research and program routers', () => {
     expect(mountedRouter('research')).toBeTruthy();
+    expect(mountedRouter('programs')).toBeTruthy();
+    expect(mountedRouter('fellowships')).toBeTruthy();
     expect(mountedRouter('research-groups')).toBeFalsy();
+    expect(mountedRouter('pathways')).toBeFalsy();
   });
 });

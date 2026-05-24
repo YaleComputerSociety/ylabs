@@ -63,8 +63,8 @@ const SAMPLE_FEED = `<?xml version="1.0" encoding="UTF-8"?>
     <summary>
       A concise summary of the work.
     </summary>
-    <author><name>Amy F Arnsten</name></author>
-    <author><name>Other Author</name></author>
+    <author><name>Fixture M Alpha</name></author>
+    <author><name>Fixture Coauthor</name></author>
     <category term="cs.AI" />
     <category term="stat.ML" />
     <link href="http://arxiv.org/abs/2401.01234v2" rel="alternate" type="text/html" />
@@ -89,16 +89,16 @@ describe('normalizeArxivId', () => {
 
 describe('buildAuthorSearchQuery', () => {
   it('builds a quoted arXiv author query', () => {
-    expect(buildAuthorSearchQuery('Amy', 'Arnsten')).toBe('au:"Amy Arnsten"');
+    expect(buildAuthorSearchQuery('Fixture', 'Alpha')).toBe('au:"Fixture Alpha"');
   });
 });
 
 describe('shouldProcessFaculty', () => {
   it('matches --only filters by netid, last name, or full name', () => {
-    const fac = { netid: 'bs276', fname: 'Brian', lname: 'Scassellati' };
-    expect(shouldProcessFaculty(fac, ['bs276'])).toBe(true);
-    expect(shouldProcessFaculty(fac, ['scassellati'])).toBe(true);
-    expect(shouldProcessFaculty(fac, ['brian scassellati'])).toBe(true);
+    const fac = { netid: 'targetfixture001', fname: 'Target', lname: 'Fixture' };
+    expect(shouldProcessFaculty(fac, ['targetfixture001'])).toBe(true);
+    expect(shouldProcessFaculty(fac, ['fixture'])).toBe(true);
+    expect(shouldProcessFaculty(fac, ['target fixture'])).toBe(true);
     expect(shouldProcessFaculty(fac, ['someone else'])).toBe(false);
   });
 });
@@ -111,7 +111,7 @@ describe('parseArxivFeed', () => {
       arxivId: '2401.01234',
       versionedArxivId: '2401.01234v2',
       title: 'A Fast Yale Preprint',
-      authors: ['Amy F Arnsten', 'Other Author'],
+      authors: ['Fixture M Alpha', 'Fixture Coauthor'],
       categories: ['cs.AI', 'stat.ML'],
       doi: '10.1000/example',
       journalRef: 'Journal of Examples 1',
@@ -142,6 +142,25 @@ describe('arxivEntryToObservations', () => {
     expect(obs.some((o) => o.field === 'yaleAuthorIds')).toBe(false);
     expect(obs.some((o) => o.field === 'yaleAuthorNetIds')).toBe(false);
   });
+
+  it('does not emit access artifacts from preprint metadata', () => {
+    const [entry] = parseArxivFeed(SAMPLE_FEED);
+    const obs = arxivEntryToObservations(entry);
+
+    expect(
+      obs.filter((o) =>
+        [
+          'acceptingUndergrads',
+          'accessSignals',
+          'accessSummary',
+          'contactRoutes',
+          'entryPathways',
+          'postedOpportunities',
+          'undergradAccessEvidence',
+        ].includes(o.field),
+      ),
+    ).toEqual([]);
+  });
 });
 
 describe('ArxivPreprintScraper.run', () => {
@@ -149,10 +168,10 @@ describe('ArxivPreprintScraper.run', () => {
     const fetcher: ArxivFetcher = vi.fn(async () => SAMPLE_FEED);
     const userModel = mockUserModel([
       {
-        _id: 'u-amy',
-        netid: 'aa1',
-        fname: 'Amy',
-        lname: 'Arnsten',
+        _id: 'u-fixture-alpha',
+        netid: 'fixturealpha001',
+        fname: 'Fixture',
+        lname: 'Alpha',
       },
     ]);
 
@@ -166,7 +185,7 @@ describe('ArxivPreprintScraper.run', () => {
 
     expect(fetcher).toHaveBeenCalledWith(
       expect.objectContaining({
-        search_query: 'au:"Amy Arnsten"',
+        search_query: 'au:"Fixture Alpha"',
         sortBy: 'lastUpdatedDate',
         sortOrder: 'descending',
       }),
@@ -180,14 +199,14 @@ describe('ArxivPreprintScraper.run', () => {
   });
 
   it('filters out non-matching author names from ambiguous arXiv results', async () => {
-    const feed = SAMPLE_FEED.replace('Amy F Arnsten', 'Amelia Arnsten');
+    const feed = SAMPLE_FEED.replace('Fixture M Alpha', 'Different Alpha');
     const fetcher: ArxivFetcher = vi.fn(async () => feed);
     const userModel = mockUserModel([
       {
-        _id: 'u-amy',
-        netid: 'aa1',
-        fname: 'Amy',
-        lname: 'Arnsten',
+        _id: 'u-fixture-alpha',
+        netid: 'fixturealpha001',
+        fname: 'Fixture',
+        lname: 'Alpha',
       },
     ]);
 
@@ -216,10 +235,10 @@ describe('ArxivPreprintScraper.run', () => {
     });
     const userModel = mockUserModel([
       {
-        _id: 'u-amy',
-        netid: 'aa1',
-        fname: 'Amy',
-        lname: 'Arnsten',
+        _id: 'u-fixture-alpha',
+        netid: 'fixturealpha001',
+        fname: 'Fixture',
+        lname: 'Alpha',
       },
     ]);
     const sleep = vi.fn(async () => {});
@@ -245,16 +264,16 @@ describe('ArxivPreprintScraper.run', () => {
     const fetcher: ArxivFetcher = vi.fn(async () => SAMPLE_FEED);
     const userModel = mockUserModel([
       {
-        _id: 'u-amy',
-        netid: 'aa1',
-        fname: 'Amy',
-        lname: 'Arnsten',
+        _id: 'u-fixture-alpha',
+        netid: 'fixturealpha001',
+        fname: 'Fixture',
+        lname: 'Alpha',
       },
       {
-        _id: 'u-brian',
-        netid: 'bs276',
-        fname: 'Brian',
-        lname: 'Scassellati',
+        _id: 'u-target-fixture',
+        netid: 'targetfixture001',
+        fname: 'Target',
+        lname: 'Fixture',
       },
     ]);
 
@@ -263,11 +282,69 @@ describe('ArxivPreprintScraper.run', () => {
       fetcher,
       requestDelayMs: 0,
     });
-    const { ctx } = makeContext({ only: ['aa1'] });
+    const { ctx } = makeContext({ only: ['fixturealpha001'] });
     const result = await scraper.run(ctx);
 
     expect(fetcher).toHaveBeenCalledTimes(1);
-    expect(fetcher).toHaveBeenCalledWith(expect.objectContaining({ search_query: 'au:"Amy Arnsten"' }));
+    expect(fetcher).toHaveBeenCalledWith(expect.objectContaining({ search_query: 'au:"Fixture Alpha"' }));
     expect(result.notes).toContain('Faculty processed: 1');
+  });
+
+  it('applies --limit after --only filtering so targeted dry-runs are not clipped', async () => {
+    const targetFeed = SAMPLE_FEED.replace('Fixture M Alpha', 'Target Fixture');
+    const fetcher: ArxivFetcher = vi.fn(async () => targetFeed);
+    const userModel = mockUserModel([
+      {
+        _id: 'u-fixture-alpha',
+        netid: 'fixturealpha001',
+        fname: 'Fixture',
+        lname: 'Alpha',
+      },
+      {
+        _id: 'u-target-fixture',
+        netid: 'targetfixture001',
+        fname: 'Target',
+        lname: 'Fixture',
+      },
+    ]);
+
+    const scraper = new ArxivPreprintScraper({
+      userModel,
+      fetcher,
+      requestDelayMs: 0,
+    });
+    const { ctx } = makeContext({ only: ['targetfixture001'], limit: 1 });
+    const result = await scraper.run(ctx);
+
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(fetcher).toHaveBeenCalledWith(expect.objectContaining({ search_query: 'au:"Target Fixture"' }));
+    expect(result.entitiesObserved).toBe(1);
+  });
+
+  it('uses publishedAt as the --since fallback when arXiv omits updatedAt', async () => {
+    const feed = SAMPLE_FEED.replace(
+      '<updated>2024-02-03T00:00:00Z</updated>',
+      '',
+    );
+    const fetcher: ArxivFetcher = vi.fn(async () => feed);
+    const userModel = mockUserModel([
+      {
+        _id: 'u-fixture-alpha',
+        netid: 'fixturealpha001',
+        fname: 'Fixture',
+        lname: 'Alpha',
+      },
+    ]);
+    const scraper = new ArxivPreprintScraper({
+      userModel,
+      fetcher,
+      requestDelayMs: 0,
+    });
+    const { ctx, emitted } = makeContext({ since: new Date('2024-02-01T00:00:00Z') });
+
+    const result = await scraper.run(ctx);
+
+    expect(emitted).toEqual([]);
+    expect(result.entitiesObserved).toBe(0);
   });
 });

@@ -11,6 +11,7 @@ export type FellowshipQuickFilter = 'open' | 'closingSoon' | 'nextCycle' | 'rece
 export interface FellowshipSearchState {
   queryString: string;
   selectedYearOfStudy: string[];
+  selectedProgramCategory: string[];
   selectedTermOfAward: string[];
   selectedPurpose: string[];
   selectedRegions: string[];
@@ -34,6 +35,7 @@ export interface FellowshipSearchState {
 
 export type FellowshipSearchAction =
   | { type: 'SET_QUERY_STRING'; payload: string }
+  | { type: 'SET_SELECTED_PROGRAM_CATEGORY'; payload: string[] | ((prev: string[]) => string[]) }
   | { type: 'SET_SELECTED_YEAR_OF_STUDY'; payload: string[] | ((prev: string[]) => string[]) }
   | { type: 'SET_SELECTED_TERM_OF_AWARD'; payload: string[] | ((prev: string[]) => string[]) }
   | { type: 'SET_SELECTED_PURPOSE'; payload: string[] | ((prev: string[]) => string[]) }
@@ -67,6 +69,7 @@ export const createInitialFellowshipSearchState = (
   overrides: Partial<FellowshipSearchState> = {},
 ): FellowshipSearchState => ({
   queryString: '',
+  selectedProgramCategory: [],
   selectedYearOfStudy: [],
   selectedTermOfAward: [],
   selectedPurpose: [],
@@ -81,6 +84,7 @@ export const createInitialFellowshipSearchState = (
   total: 0,
   page: 1,
   filterOptions: {
+    programCategory: [],
     yearOfStudy: [],
     termOfAward: [],
     purpose: [],
@@ -106,6 +110,12 @@ export function fellowshipSearchReducer(
   switch (action.type) {
     case 'SET_QUERY_STRING':
       return { ...state, queryString: action.payload };
+
+    case 'SET_SELECTED_PROGRAM_CATEGORY':
+      return {
+        ...state,
+        selectedProgramCategory: resolve(action.payload, state.selectedProgramCategory),
+      };
 
     case 'SET_SELECTED_YEAR_OF_STUDY':
       return { ...state, selectedYearOfStudy: resolve(action.payload, state.selectedYearOfStudy) };

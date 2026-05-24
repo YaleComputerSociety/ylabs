@@ -1,13 +1,43 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   getEntryPathwayStatusForPostedOpportunity,
   getPostedOpportunityStatusForListing,
   mapListingCompensationToAccessCompensation,
+  materializeListingEvidenceFromListing,
   reapExpiredPostedOpportunities,
   upsertPostedOpportunity,
 } from '../postedOpportunityService';
 
+const mocks = vi.hoisted(() => ({
+  upsertEntryPathway: vi.fn(),
+  upsertAccessSignal: vi.fn(),
+  postedOpportunityUpdateMany: vi.fn(),
+}));
+
+vi.mock('../entryPathwayService', () => ({
+  upsertEntryPathway: mocks.upsertEntryPathway,
+}));
+
+vi.mock('../accessSignalService', () => ({
+  upsertAccessSignal: mocks.upsertAccessSignal,
+}));
+
+vi.mock('../../models/postedOpportunity', () => ({
+  PostedOpportunity: {
+    updateMany: mocks.postedOpportunityUpdateMany,
+  },
+}));
+
 describe('postedOpportunityService', () => {
+  const listingWebsite = 'https://example-lab.test/openings';
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.upsertEntryPathway.mockResolvedValue({ pathwayId: 'pathway-1' });
+    mocks.upsertAccessSignal.mockResolvedValue({ signalId: 'signal-1' });
+    mocks.postedOpportunityUpdateMany.mockResolvedValue({ matchedCount: 0, modifiedCount: 0 });
+  });
+
   it('maps legacy listing compensation into pathway compensation facets', () => {
     expect(mapListingCompensationToAccessCompensation('paid')).toBe('PAID');
     expect(mapListingCompensationToAccessCompensation('volunteer')).toBe('VOLUNTEER');
@@ -37,6 +67,114 @@ describe('postedOpportunityService', () => {
     expect(getEntryPathwayStatusForPostedOpportunity('ROLLING')).toBe('ACTIVE');
     expect(getEntryPathwayStatusForPostedOpportunity('CLOSED')).toBe('NOT_CURRENTLY_AVAILABLE');
     expect(getEntryPathwayStatusForPostedOpportunity('ARCHIVED')).toBe('NOT_CURRENTLY_AVAILABLE');
+  });
+
+  it('materializes legacy listings as professor-submitted profile evidence, not posted openings', async () => {
+    const result = await materializeListingEvidenceFromListing({
+      _id: 'listing-1',
+      researchEntityId: 'entity-1',
+      title: 'Example Lab',
+      websites: [listingWebsite],
+      compensationType: 'paid',
+      updatedAt: '2026-05-10T12:00:00.000Z',
+    });
+
+    expect(result).toEqual({ entryPathwayId: 'pathway-1' });
+    expect(mocks.upsertEntryPathway).toHaveBeenCalledWith(
+      expect.objectContaining({
+        researchEntityId: 'entity-1',
+        pathwayType: 'EXPLORATORY_CONTACT',
+        status: 'PLAUSIBLE',
+        studentFacingLabel: 'Professor-submitted research profile',
+        compensation: 'PAID',
+        sourceUrls: [listingWebsite],
+        archived: false,
+      }),
+    );
+    expect(mocks.upsertAccessSignal).toHaveBeenCalledWith(
+      expect.objectContaining({
+        researchEntityId: 'entity-1',
+        entryPathwayId: 'pathway-1',
+        signalType: 'REACH_OUT_PLAUSIBLE',
+        confidence: 'MEDIUM',
+        excerpt: 'Professor-submitted research profile: Example Lab',
+        sourceUrl: listingWebsite,
+        archived: false,
+      }),
+    );
+  });
+
+  it('filters listing website source URLs through the public source boundary', async () => {
+    const blockedUrl =
+      'https://engineering.yale.edu/research-and-faculty/faculty-directory/example-person';
+
+    await materializeListingEvidenceFromListing({
+      _id: 'listing-1',
+      researchEntityId: 'entity-1',
+      title: 'Example Lab',
+      websites: [
+        'mailto:private@example.edu',
+        blockedUrl,
+        listingWebsite,
+        'https://yale.edu\n.evil.example/source',
+      ],
+    });
+
+    expect(mocks.upsertEntryPathway).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sourceUrls: [listingWebsite],
+      }),
+    );
+    expect(mocks.upsertAccessSignal).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sourceUrl: listingWebsite,
+      }),
+    );
+  });
+
+  it('archives professor-submitted profile evidence when the source listing is archived or unconfirmed', async () => {
+    await materializeListingEvidenceFromListing({
+      _id: 'listing-archived',
+      researchEntityId: 'entity-1',
+      archived: true,
+      confirmed: false,
+    });
+
+    expect(mocks.upsertEntryPathway).toHaveBeenCalledWith(
+      expect.objectContaining({
+        derivationKey: 'listing:listing-archived:EXPLORATORY_CONTACT',
+        archived: true,
+      }),
+    );
+    expect(mocks.upsertAccessSignal).toHaveBeenCalledWith(
+      expect.objectContaining({
+        derivationKey: 'listing:listing-archived:REACH_OUT_PLAUSIBLE',
+        archived: true,
+      }),
+    );
+  });
+
+  it('archives existing listing-backed posted opportunities once listing evidence has been migrated', async () => {
+    mocks.postedOpportunityUpdateMany.mockResolvedValue({ matchedCount: 2, modifiedCount: 2 });
+
+    await materializeListingEvidenceFromListing({
+      _id: 'listing-1',
+      researchEntityId: 'entity-1',
+      title: 'Example Lab',
+    });
+
+    expect(mocks.postedOpportunityUpdateMany).toHaveBeenCalledWith(
+      {
+        $or: [{ listingId: 'listing-1' }, { derivationKey: 'listing:listing-1' }],
+        archived: { $ne: true },
+      },
+      {
+        $set: {
+          archived: true,
+          status: 'ARCHIVED',
+        },
+      },
+    );
   });
 
   it('does not set archived in conflicting upsert operators', async () => {

@@ -171,6 +171,7 @@ describe('computeAcceptanceVerdict — access summary compatibility', () => {
     expect(result.verdict).toBe('not-accepting');
     expect(result.confidence).toBe(0.72);
     expect(result.evidence[0].kind).toBe('closed-evidence');
+    expect(result.evidence[0].label).toBe('Limited access evidence');
     expect(result.evidence[0].detail).toBe('Not taking undergraduates this term.');
   });
 });
@@ -179,7 +180,7 @@ describe('computeAcceptanceVerdict — verdict thresholds', () => {
   it('two strong signals → verified-accepting', () => {
     const result = computeAcceptanceVerdict(
       baseGroup({
-        pastUndergradAdvisees: [{ year: 2023, programName: 'STARS', count: 2 }],
+        pastUndergradAdvisees: [{ year: 2023, programName: 'Fixture Scholars', count: 2 }],
         currentUndergradCount: 4,
       }),
       false,
@@ -216,14 +217,14 @@ describe('computeAcceptanceVerdict — verdict thresholds', () => {
     const result = computeAcceptanceVerdict(
       baseGroup({
         offersIndependentStudy: true,
-        independentStudyCourses: [{ code: 'MCDB 471', title: 'Indep Research' }],
+        independentStudyCourses: [{ code: 'TEST 101', title: 'Independent Research Fixture' }],
       }),
       false,
     );
     expect(result.verdict).toBe('likely-accepting');
     expect(result.evidence).toHaveLength(1);
     expect(result.evidence[0].kind).toBe('offers-indep-study');
-    expect(result.evidence[0].detail).toBe('MCDB 471');
+    expect(result.evidence[0].detail).toBe('TEST 101');
   });
 
   it('LLM evidence with confidence in [0.5, 1) → moderate signal, likely-accepting', () => {
@@ -263,7 +264,7 @@ describe('computeAcceptanceVerdict — verdict thresholds', () => {
     expect(result.evidence).toHaveLength(0);
   });
 
-  it('hasActiveListing=true alone is one strong signal → likely-accepting', () => {
+  it('an active posted opportunity alone is one strong signal -> likely-accepting', () => {
     const result = computeAcceptanceVerdict(baseGroup(), true);
     expect(result.verdict).toBe('likely-accepting');
     expect(result.evidence).toHaveLength(1);
@@ -276,14 +277,14 @@ describe('computeAcceptanceVerdict — chip details and ordering', () => {
     const result = computeAcceptanceVerdict(
       baseGroup({
         pastUndergradAdvisees: [
-          { year: 2022, programName: 'STARS', count: 1 },
-          { year: 2023, programName: 'STARS', count: 1 },
-          { year: 2024, programName: 'Yale Summer Research', count: 1 },
+          { year: 2022, programName: 'Fixture Scholars', count: 1 },
+          { year: 2023, programName: 'Fixture Scholars', count: 1 },
+          { year: 2024, programName: 'Fixture Summer Research', count: 1 },
         ],
       }),
       false,
     );
-    expect(result.evidence[0].label).toBe('3 STARS advisees');
+    expect(result.evidence[0].label).toBe('3 Fixture Scholars advisees');
     expect(result.evidence[0].detail).toBe('(2022–2024)');
   });
 
@@ -353,6 +354,6 @@ describe('verdictBadgeStyles + verdictLabel', () => {
     expect(verdictLabel('verified-accepting')).toBe('Strong evidence');
     expect(verdictLabel('likely-accepting')).toBe('Some evidence');
     expect(verdictLabel('unknown')).toBe('Evidence unknown');
-    expect(verdictLabel('not-accepting')).toBe('Not currently available');
+    expect(verdictLabel('not-accepting')).toBe('Limited access evidence');
   });
 });

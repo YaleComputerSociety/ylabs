@@ -5,7 +5,6 @@
  */
 import { Router, Request, Response, NextFunction } from 'express';
 import { createUser, validateUser, updateUser } from '../services/userService';
-import { updateListing, readAllListings } from '../services/listingService';
 import { validateNetid } from '../middleware/validation';
 
 const router = Router();
@@ -58,27 +57,6 @@ router.put('/users/:netid', validateNetid('netid'), async (req: Request, res: Re
     res.json({ action: 'updated', user: updated });
   } catch (error: any) {
     console.error('Seed: Error updating user:', error);
-    res.status(400).json({ error: 'Request failed' });
-  }
-});
-
-router.get('/listings', async (req: Request, res: Response) => {
-  try {
-    const listings = await readAllListings();
-    res.json({ results: listings });
-  } catch (error: any) {
-    console.error('Seed: Error fetching listings:', error);
-    res.status(500).json({ error: 'Request failed' });
-  }
-});
-
-router.put('/listings/:id', async (req: Request, res: Response) => {
-  try {
-    const { departments } = req.body;
-    const listing = await updateListing(req.params.id, '' as string, { departments }, true);
-    res.json({ listing });
-  } catch (error: any) {
-    console.error('Seed: Error updating listing:', error);
     res.status(400).json({ error: 'Request failed' });
   }
 });

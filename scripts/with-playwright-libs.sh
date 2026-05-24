@@ -42,4 +42,28 @@ install_libs() {
 install_libs
 
 export LD_LIBRARY_PATH="${LIB_DIR}:${LD_LIBRARY_PATH:-}"
+
+if [[ "$*" == *"@playwright/mcp"* || "$*" == *"playwright-mcp"* ]]; then
+  has_isolated=false
+  has_headless=false
+  for arg in "$@"; do
+    if [ "$arg" = "--isolated" ]; then
+      has_isolated=true
+    fi
+    if [ "$arg" = "--headless" ]; then
+      has_headless=true
+    fi
+  done
+
+  extra_args=()
+  if [ "$has_isolated" = false ]; then
+    extra_args+=("--isolated")
+  fi
+  if [ "$has_headless" = false ]; then
+    extra_args+=("--headless")
+  fi
+
+  exec "$@" "${extra_args[@]}"
+fi
+
 exec "$@"

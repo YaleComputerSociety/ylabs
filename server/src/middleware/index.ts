@@ -4,10 +4,10 @@
 export {
   isAuthenticated,
   isTrustworthy,
-  canCreateListing,
   isAdmin,
   isProfessor,
   isConfirmed,
+  applyLocalAuthBypass,
 } from './auth';
 
 export {
@@ -25,3 +25,4 @@ export { errorHandler, notFoundHandler, asyncHandler } from './errorHandler';
 export { securityHeaders } from './securityHeaders';
 
 export { sanitizeMongo } from './sanitizeMongo';
+export { requestContext, requestIdFrom } from './requestContext';

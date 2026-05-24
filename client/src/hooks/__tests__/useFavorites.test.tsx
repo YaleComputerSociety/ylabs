@@ -19,6 +19,8 @@ vi.mock('sweetalert', () => ({
 
 const mockedAxios = axios as unknown as {
   get: ReturnType<typeof vi.fn>;
+  put: ReturnType<typeof vi.fn>;
+  delete: ReturnType<typeof vi.fn>;
 };
 
 const mockedSwal = swal as unknown as ReturnType<typeof vi.fn>;
@@ -43,5 +45,33 @@ describe('useFavorites', () => {
 
     expect(result.current.favIds).toEqual([]);
     expect(mockedSwal).not.toHaveBeenCalled();
+  });
+
+  it('uses saved program endpoints for canonical program favorites', async () => {
+    mockedAxios.get.mockResolvedValueOnce({ data: { savedProgramIds: ['program-1'] } });
+
+    const { result } = renderHook(() => useFavorites('programs'));
+
+    await waitFor(() => {
+      expect(result.current.favIds).toEqual(['program-1']);
+    });
+
+    expect(mockedAxios.get).toHaveBeenCalledWith('/users/savedProgramIds', {
+      withCredentials: true,
+    });
+  });
+
+  it('uses saved research plan endpoints for canonical research plan favorites', async () => {
+    mockedAxios.get.mockResolvedValueOnce({ data: { savedResearchPlanIds: ['plan-1'] } });
+
+    const { result } = renderHook(() => useFavorites('researchPlans'));
+
+    await waitFor(() => {
+      expect(result.current.favIds).toEqual(['plan-1']);
+    });
+
+    expect(mockedAxios.get).toHaveBeenCalledWith('/users/savedResearchPlanIds', {
+      withCredentials: true,
+    });
   });
 });

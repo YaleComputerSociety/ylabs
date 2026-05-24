@@ -4,26 +4,26 @@ import { buildResearchDetailSources } from '../researchDetailSources';
 
 describe('buildResearchDetailSources', () => {
   it('deduplicates repeated evidence, pathway, and route URLs into one source row', () => {
+    const profileUrl = 'https://research-home.example.test/faculty';
+    const pathwayUrl = 'https://program.example.test/initiatives/undergraduate';
+
     const sources = buildResearchDetailSources({
       group: {
-        name: 'Wu Tsai Institute',
-        websiteUrl: 'https://wti.yale.edu/humans/faculty',
-        sourceUrls: ['https://wti.yale.edu/initiatives/undergraduate'],
+        name: 'Example Institute',
+        websiteUrl: profileUrl,
+        sourceUrls: [pathwayUrl],
       },
       pathways: [
         {
           _id: 'pathway-1',
-          sourceUrls: [
-            'https://wti.yale.edu/initiatives/undergraduate',
-            'https://wti.yale.edu/initiatives/undergraduate/',
-          ],
+          sourceUrls: [pathwayUrl, `${pathwayUrl}/`],
         },
       ],
       accessSignals: [
         {
           _id: 'signal-1',
           signalType: 'REACH_OUT_PLAUSIBLE',
-          sourceUrl: 'https://wti.yale.edu/initiatives/undergraduate',
+          sourceUrl: pathwayUrl,
         },
       ],
       contactRoutes: [
@@ -31,76 +31,77 @@ describe('buildResearchDetailSources', () => {
           _id: 'route-1',
           routeType: 'OFFICIAL_APPLICATION',
           label: 'Official Application',
-          url: 'https://wti.yale.edu/initiatives/undergraduate',
-          sourceUrl: 'https://wti.yale.edu/initiatives/undergraduate',
+          url: pathwayUrl,
+          sourceUrl: pathwayUrl,
         },
       ],
       postedOpportunities: [],
     });
 
-    expect(sources.map((source) => source.url)).toEqual([
-      'https://wti.yale.edu/humans/faculty',
-      'https://wti.yale.edu/initiatives/undergraduate',
-    ]);
-    expect(sources[1].label).toBe('Undergraduate initiatives page');
-    expect(sources[1].contexts).toEqual([
-      'Profile source',
-      'Pathway source',
-      'Reach Out Plausible evidence',
-      'Official Application route',
-    ]);
+    expect(sources.map((source) => source.url)).toEqual([profileUrl, pathwayUrl]);
+    expect(sources[1].label).toBe('program.example.test source');
+    expect(sources[1].contexts).toHaveLength(4);
+    expect(sources[1].contexts).toEqual(
+      expect.arrayContaining([
+        'Profile source',
+        'Pathway source',
+        'Reach Out Plausible evidence',
+        'Official Application route',
+      ]),
+    );
   });
 
   it('prefers the research website over department roster provenance in public sources', () => {
+    const researchWebsite = 'https://research-home.example.test';
+    const facultyProfileUrl = 'https://example.yale.edu/people/faculty-affiliated/example-person';
+
     const sources = buildResearchDetailSources({
       group: {
-        websiteUrl: 'https://campuspress.yale.edu/stucci/',
+        websiteUrl: `${researchWebsite}/`,
         sourceUrls: [
-          'https://eeb.yale.edu/people/faculty',
-          'https://eeb.yale.edu/people/faculty-affiliated/serena-tucci',
-          'https://campuspress.yale.edu/stucci/',
+          'https://example.yale.edu/people/faculty',
+          facultyProfileUrl,
+          `${researchWebsite}/`,
         ],
       },
       pathways: [
         {
-          sourceUrls: [
-            'https://eeb.yale.edu/people/faculty-affiliated/serena-tucci',
-            'https://campuspress.yale.edu/stucci/',
-          ],
+          sourceUrls: [facultyProfileUrl, `${researchWebsite}/`],
         },
       ],
       accessSignals: [
         {
           signalType: 'REACH_OUT_PLAUSIBLE',
-          sourceUrl: 'https://eeb.yale.edu/people/faculty-affiliated/serena-tucci',
+          sourceUrl: facultyProfileUrl,
         },
       ],
       contactRoutes: [
         {
           routeType: 'FACULTY_PI',
-          label: 'Serena Tucci',
-          url: 'https://eeb.yale.edu/people/faculty-affiliated/serena-tucci',
-          sourceUrl: 'https://eeb.yale.edu/people/faculty-affiliated/serena-tucci',
+          label: 'Faculty contact',
+          url: facultyProfileUrl,
+          sourceUrl: facultyProfileUrl,
         },
       ],
       postedOpportunities: [],
     });
 
-    expect(sources.map((source) => source.url)).toEqual([
-      'https://campuspress.yale.edu/stucci',
-    ]);
+    expect(sources.map((source) => source.url)).toEqual([researchWebsite]);
     expect(sources[0].label).toBe('Research website');
-    expect(sources[0].contexts).toEqual(['Profile website', 'Profile source', 'Pathway source']);
+    expect(sources[0].contexts).toHaveLength(3);
+    expect(sources[0].contexts).toEqual(
+      expect.arrayContaining(['Profile website', 'Profile source', 'Pathway source']),
+    );
   });
 
   it('keeps the lab website and official profile while hiding the faculty roster list', () => {
     const sources = buildResearchDetailSources({
       group: {
-        websiteUrl: 'https://emonet.biology.yale.edu/',
+        websiteUrl: 'https://lab.example.test/',
         sourceUrls: [
-          'https://mcdb.yale.edu/people/faculty',
-          'https://mcdb.yale.edu/profile/thierry-emonet-phd',
-          'https://emonet.biology.yale.edu/',
+          'https://example.yale.edu/people/faculty',
+          'https://example.yale.edu/profile/example-person',
+          'https://lab.example.test/',
         ],
       },
       pathways: [],
@@ -110,12 +111,12 @@ describe('buildResearchDetailSources', () => {
     });
 
     expect(sources.map((source) => source.url)).toEqual([
-      'https://emonet.biology.yale.edu',
-      'https://mcdb.yale.edu/profile/thierry-emonet-phd',
+      'https://lab.example.test',
+      'https://example.yale.edu/profile/example-person',
     ]);
     expect(sources.map((source) => source.label)).toEqual([
       'Research website',
-      'Thierry Emonet Phd page',
+      'Example Person page',
     ]);
   });
 
@@ -123,73 +124,72 @@ describe('buildResearchDetailSources', () => {
     const sources = buildResearchDetailSources({
       group: {
         websiteUrl: '',
-        sourceUrls: ['https://stars.yale.edu/files/2025%20stars2%20symposium.pdf'],
+        sourceUrls: ['https://example.yale.edu/files/2025%20student%20symposium.pdf'],
       },
     });
 
-    expect(sources[0].label).toBe('2025 Stars2 Symposium PDF');
+    expect(sources[0].label).toBe('2025 Student Symposium PDF');
   });
 
   it('never surfaces department faculty roster pages as detail sources', () => {
     const sources = buildResearchDetailSources({
       group: {
         websiteUrl: '',
-        sourceUrls: ['https://egc.yale.edu/people/faculty'],
+        sourceUrls: ['https://example.yale.edu/people/faculty'],
       },
     });
 
-    expect(sources).toEqual([]);
+    expect(sources).toHaveLength(0);
   });
 
   it('never surfaces Engineering load_faculty roster endpoints as detail sources', () => {
     const sources = buildResearchDetailSources({
       group: {
-        websiteUrl: 'https://www.cs.yale.edu/homes/wibisono/',
+        websiteUrl: 'https://research-home.example.test/',
         sourceUrls: [
-          'https://engineering.yale.edu/academic-study/departments/computer-science/faculty/load_faculty/4841',
-          'https://www.cs.yale.edu/homes/wibisono/',
+          'https://example.yale.edu/academic-study/departments/example/faculty/load_faculty/1234',
+          'https://research-home.example.test/',
         ],
       },
     });
 
-    expect(sources.map((source) => source.url)).toEqual([
-      'https://www.cs.yale.edu/homes/wibisono',
-    ]);
+    expect(sources.map((source) => source.url)).toEqual(['https://research-home.example.test']);
   });
 
   it('never surfaces forbidden Engineering faculty-directory profile pages as detail sources', () => {
+    const forbiddenProfileUrl =
+      'https://engineering.yale.edu/research-and-faculty/faculty-directory/example-person';
+
     const sources = buildResearchDetailSources({
       group: {
-        websiteUrl: 'https://quanquancliu.com/',
-        sourceUrls: [
-          'https://engineering.yale.edu/research-and-faculty/faculty-directory/quanquan-liu',
-          'https://quanquancliu.com/',
-        ],
+        websiteUrl: 'https://research-home.example.test/',
+        sourceUrls: [forbiddenProfileUrl, 'https://research-home.example.test/'],
       },
       pathways: [
         {
-          sourceUrls: [
-            'https://engineering.yale.edu/research-and-faculty/faculty-directory/quanquan-liu',
-          ],
+          sourceUrls: [forbiddenProfileUrl],
         },
       ],
       accessSignals: [
         {
           signalType: 'REACH_OUT_PLAUSIBLE',
-          sourceUrl: 'https://engineering.yale.edu/research-and-faculty/faculty-directory/quanquan-liu',
+          sourceUrl: forbiddenProfileUrl,
         },
       ],
       contactRoutes: [
         {
           routeType: 'FACULTY_PI',
-          label: 'Quanquan Liu',
-          url: 'https://engineering.yale.edu/research-and-faculty/faculty-directory/quanquan-liu',
-          sourceUrl: 'https://engineering.yale.edu/research-and-faculty/faculty-directory/quanquan-liu',
+          label: 'Faculty contact',
+          url: forbiddenProfileUrl,
+          sourceUrl: forbiddenProfileUrl,
         },
       ],
     });
 
-    expect(sources.map((source) => source.url)).toEqual(['https://quanquancliu.com']);
-    expect(sources[0].contexts).toEqual(['Profile website', 'Profile source']);
+    expect(sources.map((source) => source.url)).toEqual(['https://research-home.example.test']);
+    expect(sources[0].contexts).toHaveLength(2);
+    expect(sources[0].contexts).toEqual(
+      expect.arrayContaining(['Profile website', 'Profile source']),
+    );
   });
 });

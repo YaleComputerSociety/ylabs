@@ -1,6 +1,7 @@
 /**
  * Core TypeScript interfaces for listings, fellowships, and user profiles.
  */
+import type { LabScholarlyLink } from './labDetail';
 
 export type Listing = {
   id: string;
@@ -38,6 +39,7 @@ export type FellowshipLink = {
 
 export type Fellowship = {
   id: string;
+  programCategory: string;
   title: string;
   competitionType: string;
   summary: string;
@@ -61,6 +63,12 @@ export type Fellowship = {
   purpose: string[];
   globalRegions: string[];
   citizenshipStatus: string[];
+  sourceName: string;
+  sourceUrl: string;
+  sourceKey: string;
+  sourceFingerprint: string;
+  sourceLastVerifiedAt: string | null;
+  sourceLastChangedAt: string | null;
   archived: boolean;
   audited: boolean;
   views: number;
@@ -72,6 +80,7 @@ export type Fellowship = {
 export type FellowshipStage = 'not_applied' | 'applied';
 
 export type FellowshipFilterOptions = {
+  programCategory: string[];
   yearOfStudy: string[];
   termOfAward: string[];
   purpose: string[];
@@ -104,6 +113,7 @@ export type FacultyProfile = {
   title?: string;
   bio?: string;
   phone?: string;
+  website?: string;
   primary_department?: string;
   secondary_departments: string[];
   departments: string[];
@@ -115,7 +125,20 @@ export type FacultyProfile = {
   openalex_id?: string;
   profile_urls: Record<string, string>;
   publications: Publication[];
+  scholarlyLinks?: LabScholarlyLink[];
+  researchEntities?: Array<{
+    _id: string;
+    slug: string;
+    name: string;
+    displayName?: string;
+    shortDescription?: string;
+    description?: string;
+    departments?: string[];
+    researchAreas?: string[];
+    role?: string;
+  }>;
   research_interests: string[];
+  research_interest_summary?: string;
   topics: string[];
   profileVerified: boolean;
   ownListings: string[];

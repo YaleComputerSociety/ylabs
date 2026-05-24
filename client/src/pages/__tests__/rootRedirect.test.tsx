@@ -31,9 +31,9 @@ describe('RootRedirect', () => {
     expect(screen.getByTestId('location').textContent).toBe('/research');
   });
 
-  it('preserves old direct listing modal links on the legacy listings route', () => {
+  it('drops old listing modal deep links and sends them to research discovery', () => {
     renderAt('/?listing=abc123');
 
-    expect(screen.getByTestId('location').textContent).toBe('/listings?listing=abc123');
+    expect(screen.getByTestId('location').textContent).toBe('/research');
   });
 });

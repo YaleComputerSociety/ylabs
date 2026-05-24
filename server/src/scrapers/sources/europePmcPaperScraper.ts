@@ -28,6 +28,7 @@ interface EuropePmcSourceConfig {
   displayName: string;
   authorshipMethod: 'europepmc-orcid' | 'pubmed-orcid';
   syncField: 'europePmcWorksSyncedAt' | 'pubmedWorksSyncedAt';
+  allowedResultSources?: string[];
 }
 
 const EUROPE_PMC_SOURCE_CONFIG: EuropePmcSourceConfig = {
@@ -42,6 +43,7 @@ const PUBMED_SOURCE_CONFIG: EuropePmcSourceConfig = {
   displayName: 'PubMed ORCID paper sync via Europe PMC',
   authorshipMethod: 'pubmed-orcid',
   syncField: 'pubmedWorksSyncedAt',
+  allowedResultSources: ['MED'],
 };
 
 interface EuropePmcResult {
@@ -90,6 +92,18 @@ function entityKeyForResult(result: EuropePmcResult): string | undefined {
   return undefined;
 }
 
+function parsePublicationDate(result: EuropePmcResult): Date | undefined {
+  if (!result.firstPublicationDate) return undefined;
+  const publishedAt = new Date(result.firstPublicationDate);
+  return Number.isNaN(publishedAt.getTime()) ? undefined : publishedAt;
+}
+
+function publicationYear(result: EuropePmcResult, publishedAt: Date | undefined): number | undefined {
+  if (publishedAt) return publishedAt.getUTCFullYear();
+  const year = result.pubYear ? Number(result.pubYear) : undefined;
+  return year && Number.isInteger(year) ? year : undefined;
+}
+
 function resultToObservations(
   result: EuropePmcResult,
   owner: {
@@ -100,6 +114,12 @@ function resultToObservations(
   },
   sourceConfig: EuropePmcSourceConfig,
 ): ObservationInput[] {
+  if (
+    sourceConfig.allowedResultSources?.length &&
+    !sourceConfig.allowedResultSources.includes(String(result.source || '').toUpperCase())
+  ) {
+    return [];
+  }
   const entityKey = entityKeyForResult(result);
   if (!entityKey || !result.title) return [];
   const doi = normalizeDoi(result.doi);
@@ -123,14 +143,12 @@ function resultToObservations(
     sourceUrl,
     observedAt: new Date(),
   };
-  const publishedAt = result.firstPublicationDate
-    ? new Date(result.firstPublicationDate)
-    : undefined;
+  const publishedAt = parsePublicationDate(result);
   const fields: Array<[string, unknown]> = [
     ['title', result.title],
     ['doi', doi],
-    ['year', result.pubYear ? Number(result.pubYear) : undefined],
-    ['publishedAt', publishedAt && !Number.isNaN(publishedAt.getTime()) ? publishedAt : undefined],
+    ['year', publicationYear(result, publishedAt)],
+    ['publishedAt', publishedAt],
     ['venue', result.journalTitle],
     ['authors', result.authorString ? result.authorString.split(/\s*,\s*/).filter(Boolean) : undefined],
     ['url', sourceUrl],
@@ -151,6 +169,42 @@ function resultToObservations(
         ? { confidenceOverride: evidence.confidence }
         : {}),
     }));
+}
+
+function serializeObservationValueForRunDedupe(value: unknown): string {
+  if (value instanceof Date) return value.toISOString();
+  if (value === null || value === undefined) return '__null__';
+  if (typeof value !== 'object') return String(value);
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function runDedupeKeyForObservation(obs: ObservationInput): string | undefined {
+  if (obs.field === PAPER_AUTHORSHIP_EVIDENCE_FIELD) return undefined;
+  const entity = obs.entityId || obs.entityKey;
+  if (!entity) return undefined;
+  return JSON.stringify([
+    obs.entityType,
+    String(entity),
+    obs.field,
+    serializeObservationValueForRunDedupe(obs.value),
+  ]);
+}
+
+function filterDuplicateRunObservations(
+  observations: ObservationInput[],
+  seenKeys: Set<string>,
+): ObservationInput[] {
+  return observations.filter((obs) => {
+    const key = runDedupeKeyForObservation(obs);
+    if (!key) return true;
+    if (seenKeys.has(key)) return false;
+    seenKeys.add(key);
+    return true;
+  });
 }
 
 export class EuropePmcPaperScraper implements IScraper {
@@ -190,8 +244,9 @@ export class EuropePmcPaperScraper implements IScraper {
     if (ctx.options.limit && ctx.options.limit > 0) query = query.limit(ctx.options.limit);
     const users: any[] = await query.lean();
     let totalObs = 0;
-    let totalPapers = 0;
     let failures = 0;
+    const paperKeysObserved = new Set<string>();
+    const emittedObservationKeys = new Set<string>();
 
     for (const user of users) {
       const orcid = normalizeOrcid(user.orcid);
@@ -210,10 +265,16 @@ export class EuropePmcPaperScraper implements IScraper {
             orcid,
           }, this.sourceConfig),
         );
-        if (observations.length > 0) {
-          await ctx.emit(observations);
-          totalObs += observations.length;
-          totalPapers += new Set(observations.map((obs) => obs.entityKey)).size;
+        for (const obs of observations) {
+          if (obs.entityType === 'paper' && obs.entityKey) paperKeysObserved.add(obs.entityKey);
+        }
+        const observationsToEmit = filterDuplicateRunObservations(
+          observations,
+          emittedObservationKeys,
+        );
+        if (observationsToEmit.length > 0) {
+          await ctx.emit(observationsToEmit);
+          totalObs += observationsToEmit.length;
         }
         await ctx.emit({
           entityType: 'user',
@@ -231,8 +292,8 @@ export class EuropePmcPaperScraper implements IScraper {
 
     return {
       observationCount: totalObs,
-      entitiesObserved: totalPapers,
-      notes: `Synced ${this.displayName} for ${users.length} users (${totalPapers} papers, ${failures} failures).`,
+      entitiesObserved: paperKeysObserved.size,
+      notes: `Synced ${this.displayName} for ${users.length} users (${paperKeysObserved.size} papers, ${failures} failures).`,
     };
   }
 }

@@ -4,6 +4,11 @@ import type {
   ResearchEntity as ResearchEntityBacking,
   ResearchGroupSearchResponse,
 } from './researchGroup';
+import {
+  normalizeResearchMetadataLabels,
+  normalizeResearchStringArray,
+  publicResearchDescriptionText,
+} from '../utils/researchTextNormalization';
 
 export interface ResearchEntitySearchMatch {
   mode: 'semantic' | 'hybrid' | 'expanded-keyword' | 'keyword';
@@ -18,7 +23,7 @@ export interface ResearchEntity extends ResearchEntityBacking {
 }
 
 export interface ResearchEntitySearchResponse
-  extends Omit<ResearchGroupSearchResponse, 'hits' | 'researchEntities'> {
+  extends Partial<Omit<ResearchGroupSearchResponse, 'hits' | 'researchEntities'>> {
   researchEntities?: ResearchEntity[];
   hits?: ResearchEntity[];
 }
@@ -41,113 +46,6 @@ type MaybeResearchEntityDetailPayload =
     group?: ResearchEntity | null;
   };
 
-const normalizeStringArray = (values: unknown): string[] =>
-  Array.isArray(values)
-    ? values
-        .map((value) => (typeof value === 'string' ? value.trim() : ''))
-        .filter(Boolean)
-    : [];
-
-const SOURCE_CHROME_PATTERNS = [
-  /\b\d{4}-\d{4}-\d{4}-\d{3}[\dX]\b/i,
-  /\bORCID\s*/i,
-  /Publications\s*Timeline/i,
-  /\bYSM Researchers?\b/i,
-  /ResearchersView/i,
-  /View\s+(?:Lab Website|Full Profile|Related Publications?|Related Publication)/i,
-  /View\s+\d+\s+(?:Common|Related)\s+Publications?/i,
-  /\b(?:Common|Related)\s+Publications?\b/i,
-  /Yale Co-Authors/i,
-  /Streamline Icon/i,
-  /\bCitations\b/i,
-];
-
-const normalizeText = (value: unknown): string =>
-  typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
-
-const isSourceChromeText = (value: unknown): boolean => {
-  const text = normalizeText(value);
-  return !!text && SOURCE_CHROME_PATTERNS.some((pattern) => pattern.test(text));
-};
-
-const isDescriptionPlaceholder = (value: unknown): boolean =>
-  /^research areas?\s*(?::|include\b)/i.test(normalizeText(value));
-
-const isAcademicAppointmentText = (value: unknown): boolean => {
-  const text = normalizeText(value);
-  if (!text) return false;
-  if (
-    /\b(studies|investigates|examines|explores|focuses on|works on|develops|uses|employs)\b/i.test(
-      text,
-    )
-  ) {
-    return false;
-  }
-
-  return [
-    /^Department Chair\b.*\bProfessor of\b/i,
-    /\bProfessor of\b.*;\s*Affiliated Faculty\b/i,
-    /\bProfessor of\b.*\bDirector,\s+Yale\b/i,
-  ].some((pattern) => pattern.test(text));
-};
-
-const isRoleOnlyTitleFragment = (value: unknown): boolean => {
-  const text = normalizeText(value);
-  if (!text || text.length > 120) return false;
-  const titlePatterns = [
-    /^(?:track\s+)?director\b(?:\s+of\b|,|\s+-|\s+\(|$)/i,
-    /^(?:co-)?director\b(?:\s+of\b|,|\s+-|\s+\(|$)/i,
-    /^(?:assistant|associate|full|adjunct|clinical|visiting)?\s*professor\b(?:\s+of\b|,|\s+-|\s+\(|$)/i,
-    /^(?:principal\s+investigator|faculty|lecturer|instructor)\b(?:\s+of\b|,|\s+-|\s+\(|$)/i,
-    /\b(?:course|program|track|site|center|centre|department)\s+director\b/i,
-  ];
-  if (titlePatterns.some((pattern) => pattern.test(text))) return true;
-
-  if (
-    /\b(studies|investigates|examines|explores|focuses on|works on|develops|uses|employs|researches)\b/i.test(
-      text,
-    )
-  ) {
-    return false;
-  }
-
-  return false;
-};
-
-const publicDescriptionText = (value: unknown): string => {
-  const text = normalizeText(value);
-  if (
-    !text ||
-    isDescriptionPlaceholder(text) ||
-    isAcademicAppointmentText(text) ||
-    isRoleOnlyTitleFragment(text) ||
-    isSourceChromeText(text)
-  ) {
-    return '';
-  }
-  return text;
-};
-
-const publicResearchAreas = (values: unknown): string[] => {
-  const seen = new Set<string>();
-  const areas: string[] = [];
-  for (const value of normalizeStringArray(values)) {
-    const key = value.toLowerCase();
-    if (
-      !key ||
-      seen.has(key) ||
-      value.length > 90 ||
-      /https?:\/\//i.test(value) ||
-      isSourceChromeText(value)
-    ) {
-      continue;
-    }
-    seen.add(key);
-    areas.push(value);
-  }
-  return areas;
-};
-
 const normalizeSearchMatch = (
   value: ResearchEntitySearchMatch | undefined,
 ): ResearchEntitySearchMatch | undefined => {
@@ -155,18 +53,18 @@ const normalizeSearchMatch = (
 
   return {
     mode: value.mode,
-    concepts: normalizeStringArray(value.concepts),
-    methods: normalizeStringArray(value.methods),
+    concepts: normalizeResearchStringArray(value.concepts),
+    methods: normalizeResearchStringArray(value.methods),
     reason: value.reason.trim(),
   };
 };
 
 const normalizeResearchEntity = (entity: ResearchEntity): ResearchEntity => ({
   ...entity,
-  shortDescription: publicDescriptionText(entity.shortDescription),
-  description: publicDescriptionText(entity.description),
-  fullDescription: publicDescriptionText(entity.fullDescription),
-  researchAreas: publicResearchAreas(entity.researchAreas),
+  shortDescription: publicResearchDescriptionText(entity.shortDescription),
+  description: publicResearchDescriptionText(entity.description),
+  fullDescription: publicResearchDescriptionText(entity.fullDescription),
+  researchAreas: normalizeResearchMetadataLabels(entity.researchAreas),
   searchMatch: normalizeSearchMatch(entity.searchMatch),
 });
 

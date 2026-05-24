@@ -1,6 +1,6 @@
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import SignInButton from '../SignInButton';
 
@@ -22,6 +22,7 @@ const signInLink = () => screen.getByRole('link', { name: /sign in with yale cas
 afterEach(() => {
   cleanup();
   localStorage.clear();
+  vi.unstubAllEnvs();
 });
 
 describe('SignInButton', () => {
@@ -52,5 +53,13 @@ describe('SignInButton', () => {
     renderSignInButton();
 
     expect(signInLink().className).toContain('min-h-[44px]');
+  });
+
+  it('does not duplicate the api prefix when the configured server already includes it', () => {
+    vi.stubEnv('VITE_APP_SERVER', 'http://localhost:4000/api');
+
+    renderSignInButton();
+
+    expect(signInHref()).toBe('http://localhost:4000/api/cas');
   });
 });

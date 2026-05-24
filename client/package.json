@@ -55,6 +55,7 @@
     "@testing-library/dom": "^10.0.0",
     "@types/styled-components": "^5.1.23",
     "@vitejs/plugin-react": "^4.4.1",
+    "agentation": "^3.0.2",
     "autoprefixer": "^10.4.21",
     "jsdom": "^26.1.0",
     "postcss": "^8.5.6",

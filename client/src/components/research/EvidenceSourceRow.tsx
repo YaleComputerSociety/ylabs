@@ -49,7 +49,7 @@ const EvidenceSourceRow = ({
 }: EvidenceSourceRowProps) => {
   if (!evidence || evidence.length === 0) {
     return (
-      <p className={`text-xs text-gray-400 ${className}`.trim()}>
+      <p className={`text-xs text-gray-600 ${className}`.trim()}>
         No source evidence attached
       </p>
     );
@@ -58,19 +58,22 @@ const EvidenceSourceRow = ({
   return (
     <div className={`space-y-2 ${className}`.trim()}>
       {evidence.map((item, index) => {
-        const confidence = formatConfidence(item.confidence);
-        const observedDate = formatDate(item.observedDate);
+        const confidence = compact ? '' : formatConfidence(item.confidence);
+        const observedDate = compact ? '' : formatDate(item.observedDate);
+        const sourceType = compact ? '' : formatSourceType(item.sourceType);
         return (
           <div
             key={`${item.claim}-${index}`}
             className={compact ? 'border-t border-gray-100 pt-2 first:border-t-0 first:pt-0' : 'rounded-md border border-gray-200 bg-white p-3'}
           >
             <p className="text-sm font-medium leading-snug text-gray-900">{item.claim}</p>
-            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-500">
-              {item.sourceType && <span>{formatSourceType(item.sourceType)}</span>}
-              {confidence && <span>{confidence}</span>}
-              {observedDate && <span>Observed {observedDate}</span>}
-            </div>
+            {(sourceType || confidence || observedDate) && (
+              <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-600">
+                {sourceType && <span>{sourceType}</span>}
+                {confidence && <span>{confidence}</span>}
+                {observedDate && <span>Observed {observedDate}</span>}
+              </div>
+            )}
             {item.excerpt && (
               <p className="mt-1 text-sm leading-relaxed text-gray-600">{item.excerpt}</p>
             )}

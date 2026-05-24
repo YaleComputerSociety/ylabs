@@ -17,6 +17,7 @@ const FeedbackButton = () => {
         fontFamily: 'Inter',
         fontWeight: 450,
         fontSize: '14px',
+        minHeight: '44px',
       }}
       disableRipple={true}
     >

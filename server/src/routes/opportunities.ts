@@ -4,7 +4,7 @@
  * - GET /:id -> detail payload for one non-archived PostedOpportunity.
  *
  * The route is intentionally backed by PostedOpportunity only. Durable
- * exploratory EntryPathway records belong on the Pathways surface.
+ * exploratory EntryPathway records enrich Yale Labs and saved research plans.
  */
 import { Router } from 'express';
 import * as opportunityController from '../controllers/opportunityController';

@@ -2,6 +2,65 @@
  * Authentication guards and role-based access control middleware.
  */
 import express from 'express';
+import { isDevelopment, isTest } from '../utils/environment';
+
+const DEV_AUTH_USER_TYPES = new Set([
+  'undergraduate',
+  'graduate',
+  'professor',
+  'faculty',
+  'admin',
+  'unknown',
+]);
+
+const CAS_ROUTE_PREFIXES = ['/cas', '/logout'];
+
+const envFlagEnabled = (value: string | undefined) => value === 'true' || value === '1';
+
+const allowedDevUserType = (value: unknown): string | undefined =>
+  typeof value === 'string' && DEV_AUTH_USER_TYPES.has(value) ? value : undefined;
+
+/**
+ * Resolve a local-development auth user. The default is an admin for local
+ * operator testing, while env vars and request headers can exercise other roles.
+ */
+export function buildLocalAuthBypassUser(req?: express.Request) {
+  const requestedUserType =
+    allowedDevUserType(req?.header('x-dev-user-type')) ||
+    allowedDevUserType(process.env.LOCAL_AUTH_BYPASS_USER_TYPE);
+  const userType = requestedUserType || 'admin';
+  const requestedNetid = req?.header('x-dev-netid') || process.env.LOCAL_AUTH_BYPASS_NETID;
+  const netId = requestedNetid?.trim() || (userType === 'admin' ? 'devadmin' : 'test123');
+
+  return {
+    netId,
+    userType,
+    userConfirmed: true,
+    profileVerified: true,
+  };
+}
+
+const canBypassLocalAuth = () =>
+  envFlagEnabled(process.env.LOCAL_AUTH_BYPASS) && (isDevelopment() || isTest());
+
+const isCasExerciseRoute = (path: string) =>
+  CAS_ROUTE_PREFIXES.some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
+
+/**
+ * Optional local/dev auth bypass. It never runs in production and deliberately
+ * skips CAS routes so developers can still test the real Yale CAS flow.
+ */
+export const applyLocalAuthBypass = (
+  req: express.Request,
+  _res: express.Response,
+  next: express.NextFunction,
+) => {
+  if (!req.user && canBypassLocalAuth() && !isCasExerciseRoute(req.path)) {
+    req.user = buildLocalAuthBypassUser(req);
+  }
+
+  next();
+};
 
 /**
  * Middleware to check if user is authenticated
@@ -35,43 +94,6 @@ export const isTrustworthy = (
     return next();
   }
   res.status(403).json({ error: 'Forbidden' });
-};
-
-/**
- * Middleware to check if user has permission to create listings.
- * Requires professor/faculty/admin type AND profileVerified (admins bypass verification).
- */
-export const canCreateListing = (
-  req: express.Request,
-  res: express.Response,
-  next: express.NextFunction,
-) => {
-  const currentUser = req.user as {
-    netId?: string;
-    userType?: string;
-    userConfirmed?: boolean;
-    profileVerified?: boolean;
-  };
-
-  if (!currentUser) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
-
-  const allowedTypes = ['admin', 'professor', 'faculty'];
-  if (!allowedTypes.includes(currentUser.userType ?? '')) {
-    return res.status(403).json({ error: 'User does not have permission to create listings' });
-  }
-
-  if (currentUser.userType !== 'admin' && !currentUser.profileVerified) {
-    return res
-      .status(403)
-      .json({
-        error:
-          'You must verify your profile before creating listings. Go to your account page to review and verify your profile.',
-      });
-  }
-
-  next();
 };
 
 /**

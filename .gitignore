@@ -77,4 +77,11 @@ graphify-out/memory/
 
 # Local agent and browser-driver support files
 .codex/
+.superpowers/
 .playwright-libs/
+.playwright-mcp/
+.audit/
+audit/
+tmp/
+test-results/
+research-detail-*.png

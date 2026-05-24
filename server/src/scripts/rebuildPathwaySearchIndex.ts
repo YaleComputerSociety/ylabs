@@ -11,12 +11,16 @@ interface CliOptions {
 function parseArgs(argv: string[]): CliOptions {
   const options: CliOptions = {
     pageSize: 100,
-    clearExisting: false,
+    clearExisting: true,
   };
 
   for (const arg of argv) {
     if (arg === '--clear') {
       options.clearExisting = true;
+      continue;
+    }
+    if (arg === '--no-clear') {
+      options.clearExisting = false;
       continue;
     }
 

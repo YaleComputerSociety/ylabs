@@ -56,14 +56,14 @@ describe('research access models', () => {
     const doc = new ContactRoute({
       researchEntityId: oid(),
       routeType: 'LAB_MANAGER',
-      email: 'manager@yale.edu',
+      email: 'fixture.manager@yale.edu',
     });
 
     expect(doc.validateSync()).toBeUndefined();
     expect((doc as any).visibility).toBe('AUTHENTICATED');
   });
 
-  it('allows posted opportunities to wrap a legacy listing', () => {
+  it('preserves historical listing ids for audit without requiring a Listing model', () => {
     const doc = new PostedOpportunity({
       entryPathwayId: oid(),
       researchEntityId: oid(),

@@ -30,7 +30,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
   const sortableKeys = ['default', 'createdAt', 'deadline', 'title'];
 
   const location = useLocation();
-  const isActive = location.pathname === '/fellowships';
+  const isActive = location.pathname === '/programs';
 
   const { isAuthenticated, isLoading: authLoading } = useContext(UserContext);
   const authReady = !authLoading && isAuthenticated;
@@ -41,6 +41,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
 
   const {
     queryString,
+    selectedProgramCategory,
     selectedYearOfStudy,
     selectedTermOfAward,
     selectedPurpose,
@@ -69,6 +70,10 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
 
   const setSelectedYearOfStudy = useCallback((value: React.SetStateAction<string[]>) => {
     dispatch({ type: 'SET_SELECTED_YEAR_OF_STUDY', payload: value });
+  }, []) as React.Dispatch<React.SetStateAction<string[]>>;
+
+  const setSelectedProgramCategory = useCallback((value: React.SetStateAction<string[]>) => {
+    dispatch({ type: 'SET_SELECTED_PROGRAM_CATEGORY', payload: value });
   }, []) as React.Dispatch<React.SetStateAction<string[]>>;
 
   const setSelectedTermOfAward = useCallback((value: React.SetStateAction<string[]>) => {
@@ -113,6 +118,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
 
   const filtersRef = useRef({
     queryString,
+    selectedProgramCategory,
     selectedYearOfStudy,
     selectedTermOfAward,
     selectedPurpose,
@@ -123,6 +129,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
   });
   filtersRef.current = {
     queryString,
+    selectedProgramCategory,
     selectedYearOfStudy,
     selectedTermOfAward,
     selectedPurpose,
@@ -143,12 +150,13 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
     if (!authReady) return;
 
     axios
-      .get('/fellowships/filters')
+      .get('/programs/filters')
       .then((response) => {
         dispatch({
           type: 'SET_FILTER_OPTIONS',
           payload: {
             yearOfStudy: response.data.yearOfStudy || [],
+            programCategory: response.data.programCategory || [],
             termOfAward: response.data.termOfAward || [],
             purpose: response.data.purpose || [],
             globalRegions: response.data.globalRegions || [],
@@ -168,12 +176,15 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
       const f = filtersRef.current;
       const formattedQuery = f.queryString.trim();
 
-      let url = `/fellowships/search?query=${encodeURIComponent(formattedQuery)}&page=${searchPage}&pageSize=${pageSize}`;
+      let url = `/programs/search?query=${encodeURIComponent(formattedQuery)}&page=${searchPage}&pageSize=${pageSize}`;
 
       if (f.sortBy !== 'default') {
         url += `&sortBy=${f.sortBy}&sortOrder=${f.sortOrder}`;
       }
 
+      if (f.selectedProgramCategory.length > 0) {
+        url += `&programCategory=${encodeURIComponent(f.selectedProgramCategory.join(','))}`;
+      }
       if (f.selectedYearOfStudy.length > 0) {
         url += `&yearOfStudy=${encodeURIComponent(f.selectedYearOfStudy.join(','))}`;
       }
@@ -266,6 +277,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
     dispatch({ type: 'MARK_FILTERS_LOADED' });
   }, [
     selectedYearOfStudy,
+    selectedProgramCategory,
     selectedTermOfAward,
     selectedPurpose,
     selectedRegions,
@@ -288,6 +300,8 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
       value={{
         queryString,
         setQueryString,
+        selectedProgramCategory,
+        setSelectedProgramCategory,
         selectedYearOfStudy,
         setSelectedYearOfStudy,
         selectedTermOfAward,

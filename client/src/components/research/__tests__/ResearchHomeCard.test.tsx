@@ -15,8 +15,8 @@ const LocationProbe = () => {
 };
 
 const researchHome = (overrides: Partial<ResearchCluster> = {}): ResearchCluster => ({
-  id: 'mccormick-lab',
-  label: 'McCormick Lab',
+  id: 'example-research-home',
+  label: 'Example Research Home',
   description: 'Studies systems neuroscience.',
   contextState: 'complete',
   contextLabel: 'Research description',
@@ -35,8 +35,8 @@ const researchHome = (overrides: Partial<ResearchCluster> = {}): ResearchCluster
   entities: [
     {
       _id: 'entity-1',
-      slug: 'mccormick-lab',
-      name: 'McCormick Lab',
+      slug: 'example-research-home',
+      name: 'Example Research Home',
       kind: 'lab',
       description: 'Studies systems neuroscience.',
       websiteUrl: '',
@@ -52,7 +52,7 @@ const researchHome = (overrides: Partial<ResearchCluster> = {}): ResearchCluster
       contactEmail: '',
       contactName: '',
       contactRole: '',
-      sourceUrls: ['https://medicine.yale.edu/lab/mccormick'],
+      sourceUrls: ['https://research-home.example.test'],
     },
   ],
   pathways: [],
@@ -76,7 +76,7 @@ describe('ResearchHomeCard', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByRole('heading', { name: 'McCormick Lab' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Example Research Home' })).toBeTruthy();
     expect(container.textContent).toContain('Neuroscience · School of Medicine');
     expect(container.textContent).toContain('Systems Neuroscience');
     expect(container.textContent).toContain('Official Yale source found');
@@ -92,14 +92,14 @@ describe('ResearchHomeCard', () => {
     expect(container.textContent).not.toContain('Profiles in this cluster');
 
     expect(screen.getByRole('link', { name: 'View profile →' }).getAttribute('href')).toBe(
-      '/research/mccormick-lab',
+      '/research/example-research-home',
     );
-    expect(screen.getByRole('link', { name: 'McCormick Lab' }).getAttribute('href')).toBe(
-      '/research/mccormick-lab',
+    expect(screen.getByRole('link', { name: 'Example Research Home' }).getAttribute('href')).toBe(
+      '/research/example-research-home',
     );
     expect(screen.queryByRole('button', { name: 'Search this area' })).toBeNull();
     expect(onSelect).not.toHaveBeenCalled();
-    expect(container.querySelector('a[href="/research/mccormick-lab"]')).not.toBeNull();
+    expect(container.querySelector('a[href="/research/example-research-home"]')).not.toBeNull();
   });
 
   it('puts department and topic badges before summary and evidence badges', () => {
@@ -129,28 +129,28 @@ describe('ResearchHomeCard', () => {
         <ResearchHomeCard
           home={researchHome({
             labels: [
-              'mammalian evolutionary morphology',
-              'functional morphology',
-              'mammalian systematics',
-              'primate evolution',
-              'paleontology',
-              'vertebrate paleontology',
+              'alpha topic modeling',
+              'beta field methods',
+              'gamma archive analysis',
+              'delta source review',
+              'epsilon data curation',
+              'zeta visualization',
             ],
-            metadataTags: ['Anthropology'],
+            metadataTags: ['Fixture Department'],
           })}
         />
       </MemoryRouter>,
     );
 
-    expect(screen.getByText('Anthropology')).toBeTruthy();
-    expect(screen.getByText('Mammalian Evolutionary Morphology')).toBeTruthy();
-    expect(screen.getByText('Functional Morphology')).toBeTruthy();
-    expect(screen.getByText('Mammalian Systematics')).toBeTruthy();
-    expect(screen.getByText('Primate Evolution').className).toContain('hidden');
-    expect(screen.getByText('Primate Evolution').className).toContain('sm:inline-flex');
-    expect(screen.getByText('Paleontology').className).toContain('hidden');
-    expect(screen.getByText('Paleontology').className).toContain('sm:inline-flex');
-    expect(screen.queryByText('Vertebrate Paleontology')).toBeNull();
+    expect(screen.getByText('Fixture Department')).toBeTruthy();
+    expect(screen.getByText('Alpha Topic Modeling')).toBeTruthy();
+    expect(screen.getByText('Beta Field Methods')).toBeTruthy();
+    expect(screen.getByText('Gamma Archive Analysis')).toBeTruthy();
+    expect(screen.getByText('Delta Source Review').className).toContain('hidden');
+    expect(screen.getByText('Delta Source Review').className).toContain('sm:inline-flex');
+    expect(screen.getByText('Epsilon Data Curation').className).toContain('hidden');
+    expect(screen.getByText('Epsilon Data Curation').className).toContain('sm:inline-flex');
+    expect(screen.queryByText('Zeta Visualization')).toBeNull();
     expect(screen.getByText('+3 more').className).toContain('sm:hidden');
     expect(screen.getByText('+1 more').className).toContain('sm:inline-flex');
   });
@@ -163,12 +163,16 @@ describe('ResearchHomeCard', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.queryByRole('link', { name: 'Open McCormick Lab research profile' })).toBeNull();
+    expect(
+      screen.queryByRole('link', { name: 'Open Example Research Home research profile' }),
+    ).toBeNull();
 
     const card = container.querySelector('article');
     expect(card?.getAttribute('role')).toBeNull();
-    fireEvent.click(card);
-    expect(screen.getByLabelText('Current path').textContent).toBe('/research/mccormick-lab');
+    fireEvent.click(card!);
+    expect(screen.getByLabelText('Current path').textContent).toBe(
+      '/research/example-research-home',
+    );
   });
 
   it('shows ways-in badges from pathway and access-summary data inline', () => {
@@ -207,11 +211,11 @@ describe('ResearchHomeCard', () => {
                 studentFacingLabel: 'Posted opening',
                 bestNextStepCategory: 'apply',
                 compensation: 'STIPEND',
-                sourceUrls: ['https://example.yale.edu/opening'],
+                sourceUrls: ['https://program.example.test/opening'],
                 researchEntity: {
                   _id: 'entity-1',
-                  slug: 'mccormick-lab',
-                  name: 'McCormick Lab',
+                  slug: 'example-research-home',
+                  name: 'Example Research Home',
                   departments: ['Neuroscience'],
                   researchAreas: ['Systems neuroscience'],
                 },
@@ -224,14 +228,14 @@ describe('ResearchHomeCard', () => {
                 contactRoute: {
                   routeType: 'OFFICIAL_APPLICATION',
                   label: 'Apply through program page',
-                  url: 'https://example.yale.edu/opening',
+                  url: 'https://program.example.test/opening',
                 },
                 evidence: [
                   {
                     signalType: 'POSTED_OPENING',
                     confidence: 'HIGH',
                     confidenceScore: 1,
-                    sourceUrl: 'https://example.yale.edu/opening',
+                    sourceUrl: 'https://program.example.test/opening',
                   },
                 ],
               },
@@ -258,13 +262,13 @@ describe('ResearchHomeCard', () => {
           variant="compact"
           home={researchHome({
             description:
-              'Studies how cortical circuits transform sensory input into behavior, using electrophysiology, imaging, computational modeling, and experiments that help students understand the questions before opening the profile.',
+              'Studies how synthetic signals move through fixture workflows, using modeling, simulation, and validation steps that help students understand the questions before opening the profile.',
           })}
         />
       </MemoryRouter>,
     );
 
-    const description = screen.getByText(/Studies how cortical circuits transform sensory input/);
+    const description = screen.getByText(/Studies how synthetic signals move through fixture workflows/);
     expect(description.className).toContain('line-clamp-4');
     expect(description.className).not.toContain('line-clamp-2');
     expect(screen.getByRole('link', { name: 'View profile →' })).toBeTruthy();
@@ -280,8 +284,8 @@ describe('ResearchHomeCard', () => {
               {
                 ...(researchHome().entities[0]),
                 _id: 'entity-2',
-                slug: 'visual-neuroscience-lab',
-                name: 'Visual Neuroscience Lab',
+                slug: 'related-research-home',
+                name: 'Related Research Home',
               },
             ],
           })}
@@ -290,11 +294,11 @@ describe('ResearchHomeCard', () => {
     );
 
     expect(screen.getByText('Research homes')).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'McCormick Lab' }).getAttribute('href')).toBe(
-      '/research/mccormick-lab',
+    expect(screen.getByRole('link', { name: 'Example Research Home' }).getAttribute('href')).toBe(
+      '/research/example-research-home',
     );
-    expect(screen.getByRole('link', { name: 'Visual Neuroscience Lab' }).getAttribute('href')).toBe(
-      '/research/visual-neuroscience-lab',
+    expect(screen.getByRole('link', { name: 'Related Research Home' }).getAttribute('href')).toBe(
+      '/research/related-research-home',
     );
   });
 
@@ -366,7 +370,7 @@ describe('ResearchHomeCard', () => {
     const card = container.querySelector('article');
     expect(card?.getAttribute('role')).toBeNull();
 
-    fireEvent.click(card);
+    fireEvent.click(card!);
 
     expect(onSelect).toHaveBeenCalledWith('Computer Science');
   });
