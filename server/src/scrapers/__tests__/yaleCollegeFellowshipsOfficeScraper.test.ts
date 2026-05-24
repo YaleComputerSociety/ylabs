@@ -184,6 +184,45 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
     });
   });
 
+  it('keeps duplicate CommunityForce fingerprints stable regardless of duplicate count', () => {
+    const applicationUrl =
+      'http://yale.communityforce.com/Funds/FundDetails.aspx?FixtureFundId=abc123';
+    const duplicateLink = (title: string) => `
+      <p>
+        <a href="${applicationUrl.replace('http://', 'https://')}">
+          ${title}
+        </a>
+      </p>
+    `;
+    const twoDuplicateCandidates = parseFellowshipCatalogPage(
+      `
+        <main>
+          ${duplicateLink('Jordan OFixture and Riley Example Fellowship for Synthetic Regional Study')}
+          ${duplicateLink("Jordan O'Fixture and Riley Example Fellowship for Synthetic Regional Study")}
+        </main>
+      `,
+      fundingPageUrl,
+      new Date('2026-01-01T00:00:00Z'),
+    );
+    const threeDuplicateCandidates = parseFellowshipCatalogPage(
+      `
+        <main>
+          ${duplicateLink('Jordan OFixture and Riley Example Fellowship for Synthetic Regional Study')}
+          ${duplicateLink("Jordan O'Fixture and Riley Example Fellowship for Synthetic Regional Study")}
+          ${duplicateLink('Jordan OFixture and Riley Example Fellowship for Synthetic Regional Study')}
+        </main>
+      `,
+      fundingPageUrl,
+      new Date('2026-01-01T00:00:00Z'),
+    );
+
+    expect(twoDuplicateCandidates).toHaveLength(1);
+    expect(threeDuplicateCandidates).toHaveLength(1);
+    expect(twoDuplicateCandidates[0].sourceFingerprint).toBe(
+      threeDuplicateCandidates[0].sourceFingerprint,
+    );
+  });
+
   it('parses Month Day Year deadlines as UTC end-of-day and ignores fuzzy dates', () => {
     expect(parseDeadlineToUtcEndOfDay('Deadline: Monday, January 5, 2026 at 11:00pm ET')).toEqual(
       new Date('2026-01-05T23:59:59.999Z'),

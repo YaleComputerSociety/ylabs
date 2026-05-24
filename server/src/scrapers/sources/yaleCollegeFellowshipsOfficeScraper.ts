@@ -284,6 +284,23 @@ function finalizeCandidate(
   }) as FellowshipCatalogCandidate;
 }
 
+function candidateInputForMerge(
+  candidate: FellowshipCatalogCandidate,
+): Omit<
+  FellowshipCatalogCandidate,
+  'sourceKey' | 'sourceFingerprint' | 'sourceName' | 'programCategory' | 'programAccessRole'
+> {
+  const {
+    sourceKey: _sourceKey,
+    sourceFingerprint: _sourceFingerprint,
+    sourceName: _sourceName,
+    programCategory: _programCategory,
+    programAccessRole: _programAccessRole,
+    ...input
+  } = candidate;
+  return input;
+}
+
 function compactTitleIdentity(title: string): string {
   return normalizeWhitespace(title)
     .toLowerCase()
@@ -465,30 +482,32 @@ function mergeCandidates(
     ).values(),
   );
   const applicationLink = incoming.applicationLink || existing.applicationLink;
+  const existingInput = candidateInputForMerge(existing);
+  const incomingInput = candidateInputForMerge(incoming);
   const merged = finalizeCandidate({
-    ...existing,
+    ...existingInput,
     title: preferredTitle(existing, incoming),
-    summary: incoming.summary || existing.summary,
-    description: incoming.description || existing.description,
+    summary: incomingInput.summary || existingInput.summary,
+    description: incomingInput.description || existingInput.description,
     sourceUrl:
       incoming.sourceUrl !== existing.sourceUrl && isPublicYaleUrl(incoming.sourceUrl)
         ? incoming.sourceUrl
         : existing.sourceUrl,
     applicationLink: applicationLink ? normalizeLinkUrl(applicationLink) : undefined,
     links,
-    deadline: incoming.deadline || existing.deadline,
-    applicationOpenDate: incoming.applicationOpenDate || existing.applicationOpenDate,
-    contactOffice: incoming.contactOffice || existing.contactOffice,
-    contactEmail: incoming.contactEmail || existing.contactEmail,
-    yearOfStudy: Array.from(new Set([...existing.yearOfStudy, ...incoming.yearOfStudy])),
-    termOfAward: Array.from(new Set([...existing.termOfAward, ...incoming.termOfAward])),
-    purpose: Array.from(new Set([...existing.purpose, ...incoming.purpose])),
-    globalRegions: Array.from(new Set([...existing.globalRegions, ...incoming.globalRegions])),
+    deadline: incomingInput.deadline || existingInput.deadline,
+    applicationOpenDate: incomingInput.applicationOpenDate || existingInput.applicationOpenDate,
+    contactOffice: incomingInput.contactOffice || existingInput.contactOffice,
+    contactEmail: incomingInput.contactEmail || existingInput.contactEmail,
+    yearOfStudy: Array.from(new Set([...existingInput.yearOfStudy, ...incomingInput.yearOfStudy])),
+    termOfAward: Array.from(new Set([...existingInput.termOfAward, ...incomingInput.termOfAward])),
+    purpose: Array.from(new Set([...existingInput.purpose, ...incomingInput.purpose])),
+    globalRegions: Array.from(new Set([...existingInput.globalRegions, ...incomingInput.globalRegions])),
     citizenshipStatus: Array.from(
-      new Set([...existing.citizenshipStatus, ...incoming.citizenshipStatus]),
+      new Set([...existingInput.citizenshipStatus, ...incomingInput.citizenshipStatus]),
     ),
-    isAcceptingApplications: existing.isAcceptingApplications || incoming.isAcceptingApplications,
-    reviewRequired: existing.reviewRequired && incoming.reviewRequired,
+    isAcceptingApplications: existingInput.isAcceptingApplications || incomingInput.isAcceptingApplications,
+    reviewRequired: existingInput.reviewRequired && incomingInput.reviewRequired,
   }) as FellowshipCatalogCandidate;
   return { ...merged, sourceKey: existing.sourceKey };
 }
