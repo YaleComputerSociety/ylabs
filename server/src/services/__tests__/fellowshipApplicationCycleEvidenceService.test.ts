@@ -115,6 +115,22 @@ describe('fellowshipApplicationCycleEvidenceService', () => {
     expect(evidence.supportsStructuredResearchEntry).toBe(true);
   });
 
+  it('does not promote funding-only fellowships as structured research entry', () => {
+    const evidence = buildFellowshipApplicationCycleEvidence(
+      {
+        title: 'Summer Research Fellowship',
+        programAccessRole: 'FUNDING_ONLY',
+        applicationLink: 'https://example.edu/apply',
+        links: [{ label: 'Apply', url: 'https://example.edu/apply' }],
+        isAcceptingApplications: true,
+        deadline: new Date('2026-06-01T23:59:59.999Z'),
+      },
+      now,
+    );
+
+    expect(evidence.supportsStructuredResearchEntry).toBe(false);
+  });
+
   it('redacts contact email from public evidence payloads', () => {
     const evidence = buildFellowshipApplicationCycleEvidence(
       {

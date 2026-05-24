@@ -13,6 +13,7 @@ import { User } from '../models/user';
 import { ResearchEntity } from '../models/researchEntity';
 import { ScrapeRun } from '../models/scrapeRun';
 import { PostedOpportunity } from '../models/postedOpportunity';
+import { Fellowship } from '../models/fellowship';
 import {
   resolveAllFields,
   ResolverObservation,
@@ -257,6 +258,8 @@ function entityModelFor(entityType: ObservedEntityType): mongoose.Model<any> | n
     case 'researchEntity':
     case 'researchGroup':
       return ResearchEntity;
+    case 'fellowship':
+      return Fellowship;
     default:
       return null;
   }
@@ -271,6 +274,8 @@ function uniqueKeyFieldFor(entityType: ObservedEntityType): string | null {
     case 'researchEntity':
     case 'researchGroup':
       return 'slug';
+    case 'fellowship':
+      return 'sourceKey';
     default:
       return null;
   }
@@ -754,6 +759,9 @@ function hasRequiredFieldsForCreate(
   }
   if (isResearchEntityObservationType(entityType)) {
     return !!insert.name;
+  }
+  if (entityType === 'fellowship') {
+    return !!insert.title;
   }
   return true;
 }

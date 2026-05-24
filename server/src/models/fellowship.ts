@@ -5,6 +5,12 @@ import mongoose from 'mongoose';
 
 const fellowshipSchema = new mongoose.Schema(
   {
+    sourceKey: {
+      type: String,
+      required: false,
+      unique: true,
+      sparse: true,
+    },
     title: {
       type: String,
       required: true,

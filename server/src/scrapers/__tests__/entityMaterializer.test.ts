@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   addPostMaterializationMetrics,
   buildFellowshipUpdateFromObservations,
@@ -6,14 +6,21 @@ import {
   countListingBackedPostedOpportunitiesForRun,
   emptyPostMaterializationMetrics,
   mergeUniqueArrayValues,
+  materializeEntity,
   normalizeDoiForMaterialization,
   shouldClearIgnoredAccessClaimForEntity,
   shouldIgnoreObservationForEntityMaterialization,
   uniqueKeyValueForIdentifier,
 } from '../entityMaterializer';
 import { redactDirectContactInfo } from '../../utils/contactRedaction';
+import { Observation } from '../../models/observation';
+import { Fellowship } from '../../models/fellowship';
 
 describe('entityMaterializer post-materialization metrics', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it('normalizes DOI values for paper identity matching', () => {
     expect(normalizeDoiForMaterialization(' https://doi.org/10.1000/ABC ')).toBe(
       '10.1000/abc',
@@ -125,6 +132,53 @@ describe('entityMaterializer post-materialization metrics', () => {
       programAccessRole: 'MENTOR_MATCHING',
       hostedByResearchEntityName: 'Wu Tsai Institute',
     });
+  });
+
+  it('materializes fellowship observations to Fellowship rows by sourceKey', async () => {
+    const entityKey = 'official-yale-programs:wu-tsai-undergraduate-fellowship';
+    const observedAt = new Date('2026-01-01T00:00:00Z');
+    const observations = [
+      {
+        entityType: 'fellowship',
+        entityKey,
+        field: 'title',
+        value: 'Wu Tsai Undergraduate Fellowship',
+        sourceName: 'official-yale-programs',
+        confidence: 0.9,
+        observedAt,
+        superseded: false,
+      },
+      {
+        entityType: 'fellowship',
+        entityKey,
+        field: 'programAccessRole',
+        value: 'MENTOR_MATCHING',
+        sourceName: 'official-yale-programs',
+        confidence: 0.9,
+        observedAt,
+        superseded: false,
+      },
+    ];
+    const findLean = vi.fn().mockResolvedValue(observations);
+    const findOneLean = vi.fn().mockResolvedValue(null);
+    const create = vi.fn().mockResolvedValue({ _id: '64f000000000000000000123' });
+
+    vi.spyOn(Observation, 'find').mockReturnValue({ lean: findLean } as any);
+    vi.spyOn(Fellowship, 'findOne').mockReturnValue({ lean: findOneLean } as any);
+    vi.spyOn(Fellowship, 'create').mockImplementation(create as any);
+
+    const result = await materializeEntity('fellowship', { entityKey });
+
+    expect(result.skipped).toBeUndefined();
+    expect(result.created).toBe(true);
+    expect(Fellowship.findOne).toHaveBeenCalledWith({ sourceKey: entityKey });
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sourceKey: entityKey,
+        title: 'Wu Tsai Undergraduate Fellowship',
+        programAccessRole: 'MENTOR_MATCHING',
+      }),
+    );
   });
 
   it('ignores untrusted paper-source author ids when building paper updates', () => {
