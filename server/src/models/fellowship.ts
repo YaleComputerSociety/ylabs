@@ -102,6 +102,25 @@ const fellowshipSchema = new mongoose.Schema(
       type: [String],
       default: [],
     },
+    programAccessRole: {
+      type: String,
+      enum: [
+        'FUNDING_ONLY',
+        'STRUCTURED_ENTRY',
+        'HOSTED_INTERNSHIP',
+        'MENTOR_MATCHING',
+        'UNKNOWN',
+      ],
+      default: 'UNKNOWN',
+    },
+    hostedByResearchEntityName: {
+      type: String,
+      default: '',
+    },
+    hostedByResearchEntityUrl: {
+      type: String,
+      default: '',
+    },
     archived: {
       type: Boolean,
       default: false,
@@ -141,6 +160,8 @@ fellowshipSchema.index({ globalRegions: 1 });
 fellowshipSchema.index({ citizenshipStatus: 1 });
 fellowshipSchema.index({ archived: 1 });
 fellowshipSchema.index({ deadline: 1 });
+fellowshipSchema.index({ programAccessRole: 1 });
+fellowshipSchema.index({ hostedByResearchEntityName: 1 });
 
 export const Fellowship = mongoose.model('Fellowship', fellowshipSchema);
 

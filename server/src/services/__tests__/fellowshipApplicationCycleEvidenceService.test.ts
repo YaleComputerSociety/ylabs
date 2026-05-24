@@ -99,6 +99,22 @@ describe('fellowshipApplicationCycleEvidenceService', () => {
     });
   });
 
+  it('marks structured-entry programs as supporting pathway promotion', () => {
+    const evidence = buildFellowshipApplicationCycleEvidence(
+      {
+        title: 'Wu Tsai Undergraduate Fellowship',
+        programAccessRole: 'MENTOR_MATCHING',
+        applicationLink: 'https://wti.yale.edu/apply',
+        links: [{ label: 'Apply', url: 'https://wti.yale.edu/apply' }],
+        isAcceptingApplications: true,
+        deadline: new Date('2026-02-09T23:59:59.999Z'),
+      },
+      new Date('2026-01-01T00:00:00Z'),
+    );
+
+    expect(evidence.supportsStructuredResearchEntry).toBe(true);
+  });
+
   it('redacts contact email from public evidence payloads', () => {
     const evidence = buildFellowshipApplicationCycleEvidence(
       {

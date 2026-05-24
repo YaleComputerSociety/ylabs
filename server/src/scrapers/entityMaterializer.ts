@@ -82,6 +82,53 @@ type PaperMaterializationPatch = {
   skipped?: string;
 };
 
+type FellowshipMaterializationObservation = {
+  field: string;
+  value: unknown;
+  sourceName: string;
+  confidence: number;
+  observedAt: Date;
+  sourceUrl?: string;
+};
+
+type FellowshipMaterializationPatch = {
+  update: {
+    $set: Record<string, unknown>;
+  };
+  fieldsWritten: number;
+  conflicts: number;
+  skipped?: string;
+};
+
+export const FELLOWSHIP_MATERIALIZED_FIELDS = new Set([
+  'title',
+  'competitionType',
+  'summary',
+  'description',
+  'applicationInformation',
+  'eligibility',
+  'restrictionsToUseOfAward',
+  'additionalInformation',
+  'links',
+  'applicationLink',
+  'awardAmount',
+  'isAcceptingApplications',
+  'applicationOpenDate',
+  'deadline',
+  'contactName',
+  'contactEmail',
+  'contactPhone',
+  'contactOffice',
+  'yearOfStudy',
+  'termOfAward',
+  'purpose',
+  'globalRegions',
+  'citizenshipStatus',
+  'programAccessRole',
+  'hostedByResearchEntityName',
+  'hostedByResearchEntityUrl',
+]);
+
 function isResearchEntityObservationType(entityType: ObservedEntityType): boolean {
   return entityType === 'researchEntity' || entityType === 'researchGroup';
 }
@@ -642,6 +689,51 @@ export function buildPaperUpdateFromObservations(
   const update: PaperMaterializationPatch['update'] = { $set: set };
   if (Object.keys(addToSet).length > 0) update.$addToSet = addToSet;
   return { update, fieldsWritten, conflicts };
+}
+
+export function buildFellowshipUpdateFromObservations(
+  _entityKey: string,
+  observations: FellowshipMaterializationObservation[],
+  existingDoc: { manuallyLockedFields?: string[] } | null = null,
+): FellowshipMaterializationPatch {
+  const manuallyLockedFields = existingDoc?.manuallyLockedFields || [];
+  const resolverObs: ResolverObservation[] = observations
+    .filter((obs) => FELLOWSHIP_MATERIALIZED_FIELDS.has(obs.field))
+    .map((obs) => ({
+      field: obs.field,
+      value: obs.value,
+      sourceName: obs.sourceName,
+      confidence: obs.confidence,
+      observedAt: obs.observedAt,
+    }));
+  const resolved = resolveAllFields(resolverObs, { manuallyLockedFields });
+  const set: Record<string, unknown> = {
+    lastObservedAt: new Date(),
+  };
+  let fieldsWritten = 0;
+  let conflicts = 0;
+
+  for (const [field, r] of Object.entries(resolved)) {
+    if (manuallyLockedFields.includes(field)) continue;
+    const value = materializedFieldValue('fellowship', field, r.value);
+    if (value !== undefined && value !== null && value !== '') {
+      set[field] = value;
+    }
+    set[`confidenceByField.${field}`] = r.confidence;
+    if (r.hasConflict) conflicts++;
+    fieldsWritten++;
+  }
+
+  if (!existingDoc && !set.title) {
+    return {
+      update: { $set: set },
+      fieldsWritten: 0,
+      conflicts: 0,
+      skipped: 'missing-required-fields',
+    };
+  }
+
+  return { update: { $set: set }, fieldsWritten, conflicts };
 }
 
 /**

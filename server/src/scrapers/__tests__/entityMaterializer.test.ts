@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   addPostMaterializationMetrics,
+  buildFellowshipUpdateFromObservations,
   buildPaperUpdateFromObservations,
   countListingBackedPostedOpportunitiesForRun,
   emptyPostMaterializationMetrics,
@@ -86,6 +87,43 @@ describe('entityMaterializer post-materialization metrics', () => {
     expect(patch.update.$addToSet).toMatchObject({
       authors: { $each: ['Author One', 'Author Two'] },
       sources: { $each: ['openalex'] },
+    });
+  });
+
+  it('materializes program access metadata onto fellowship rows', () => {
+    const patch = buildFellowshipUpdateFromObservations(
+      'official-yale-programs:wu-tsai-undergraduate-fellowship',
+      [
+        {
+          field: 'title',
+          value: 'Wu Tsai Undergraduate Fellowship',
+          sourceName: 'official-yale-programs',
+          confidence: 0.9,
+          observedAt: new Date('2026-01-01T00:00:00Z'),
+          sourceUrl: 'https://wti.yale.edu/initiatives/undergraduate',
+        },
+        {
+          field: 'programAccessRole',
+          value: 'MENTOR_MATCHING',
+          sourceName: 'official-yale-programs',
+          confidence: 0.9,
+          observedAt: new Date('2026-01-01T00:00:00Z'),
+          sourceUrl: 'https://wti.yale.edu/initiatives/undergraduate',
+        },
+        {
+          field: 'hostedByResearchEntityName',
+          value: 'Wu Tsai Institute',
+          sourceName: 'official-yale-programs',
+          confidence: 0.9,
+          observedAt: new Date('2026-01-01T00:00:00Z'),
+          sourceUrl: 'https://wti.yale.edu/initiatives/undergraduate',
+        },
+      ],
+    );
+
+    expect(patch.update.$set).toMatchObject({
+      programAccessRole: 'MENTOR_MATCHING',
+      hostedByResearchEntityName: 'Wu Tsai Institute',
     });
   });
 

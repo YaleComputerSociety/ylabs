@@ -11,6 +11,7 @@ export interface FellowshipApplicationCycleEvidence {
   supportsFellowshipFundedProject: boolean;
   supportsFellowshipCompatible: boolean;
   supportsOfficialApplicationRoute: boolean;
+  supportsStructuredResearchEntry: boolean;
   nextCycleSignal: boolean;
   applicationHasOpened?: boolean;
   deadlineHasNotPassed?: boolean;
@@ -77,6 +78,14 @@ function hasApplicationRoute(fellowship: any, sourceUrls: string[]): boolean {
   });
 }
 
+function supportsStructuredAccessRole(value: unknown): boolean {
+  return (
+    value === 'STRUCTURED_ENTRY' ||
+    value === 'HOSTED_INTERNSHIP' ||
+    value === 'MENTOR_MATCHING'
+  );
+}
+
 export function buildFellowshipApplicationCycleEvidence(
   fellowship: any,
   now: Date = new Date(),
@@ -107,6 +116,10 @@ export function buildFellowshipApplicationCycleEvidence(
   const fellowshipLike = /fellowship|funding|grant|stipend|award/i.test(fellowshipText);
   const supportsFellowshipFundedProject = sourceBacked && projectLike;
   const supportsFellowshipCompatible = sourceBacked && (projectLike || fellowshipLike);
+  const supportsOfficialApplicationRoute = sourceBacked && hasApplicationRoute(fellowship, sourceUrls);
+  const supportsStructuredResearchEntry =
+    supportsStructuredAccessRole(fellowship.programAccessRole) &&
+    (sourceBacked || supportsOfficialApplicationRoute);
   const nextCycleSignal =
     sourceBacked &&
     !activeCycle &&
@@ -126,7 +139,8 @@ export function buildFellowshipApplicationCycleEvidence(
     activeCycle,
     supportsFellowshipFundedProject,
     supportsFellowshipCompatible,
-    supportsOfficialApplicationRoute: sourceBacked && hasApplicationRoute(fellowship, sourceUrls),
+    supportsOfficialApplicationRoute,
+    supportsStructuredResearchEntry,
     nextCycleSignal,
     applicationHasOpened,
     deadlineHasNotPassed,
