@@ -55,7 +55,7 @@ describe('PathwayActionCard', () => {
 
     expect(screen.getByText('Best next step')).toBeTruthy();
     expect(screen.getByText('Apply through the posted listing.')).toBeTruthy();
-    expect(screen.getByText('Apply or view posting')).toBeTruthy();
+    expect(screen.getByText('Apply')).toBeTruthy();
     expect(screen.getByRole('link', { name: 'McCormick Lab' }).getAttribute('href')).toBe(
       '/research/mccormick-lab',
     );
@@ -80,7 +80,7 @@ describe('PathwayActionCard', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByText('Plan outreach')).toBeTruthy();
+    expect(screen.getByText('Plan targeted outreach')).toBeTruthy();
     expect(screen.getByText('Contact the program with a specific question.')).toBeTruthy();
     expect(screen.queryByRole('link', { name: 'Open application' })).toBeNull();
   });

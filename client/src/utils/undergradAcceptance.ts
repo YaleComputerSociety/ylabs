@@ -142,7 +142,7 @@ function verdictFromAccessSummary(group: ResearchGroup): AcceptanceVerdictResult
       evidence: [
         {
           kind: 'closed-evidence',
-          label: 'Limited access evidence',
+          label: 'Not currently available',
           detail: summary.evidence[0]?.excerpt || undefined,
           strength: 'strong',
         },
@@ -360,7 +360,7 @@ export function verdictLabel(verdict: TrustVerdict): string {
     case 'unknown':
       return 'Evidence unknown';
     case 'not-accepting':
-      return 'Limited access evidence';
+      return 'Not currently available';
     default:
       return 'Evidence unknown';
   }

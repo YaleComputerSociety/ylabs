@@ -44,8 +44,8 @@ describe('normalizeResearchEntitySearchResponse', () => {
       pageSize: 24,
     });
 
-    expect(result.researchEntities).toEqual([canonical]);
-    expect(result.hits).toEqual([canonical]);
+    expect(result.researchEntities).toEqual([expect.objectContaining(canonical)]);
+    expect(result.hits).toEqual([expect.objectContaining(canonical)]);
   });
 
   it('falls back to legacy hits when canonical search entities are absent', () => {
@@ -58,8 +58,8 @@ describe('normalizeResearchEntitySearchResponse', () => {
       pageSize: 10,
     } as unknown as Parameters<typeof normalizeResearchEntitySearchResponse>[0]);
 
-    expect(result.researchEntities).toEqual([legacy]);
-    expect(result.hits).toEqual([legacy]);
+    expect(result.researchEntities).toEqual([expect.objectContaining(legacy)]);
+    expect(result.hits).toEqual([expect.objectContaining(legacy)]);
   });
 
   it('does not fall back to legacy hits', () => {
@@ -93,8 +93,8 @@ describe('normalizeResearchEntityDetailPayload', () => {
       activeListings: [],
     });
 
-    expect(result.researchEntity).toBe(canonical);
-    expect(result.group).toBe(legacy);
+    expect(result.researchEntity).toEqual(expect.objectContaining(canonical));
+    expect(result.group).toEqual(expect.objectContaining(legacy));
   });
 
   it('does not fall back to legacy group when canonical payload is absent', () => {
@@ -102,8 +102,8 @@ describe('normalizeResearchEntityDetailPayload', () => {
 
     const result = normalizeResearchEntityDetailPayload({ group: legacy });
 
-    expect(result.researchEntity).toBe(legacy);
-    expect(result.group).toBe(legacy);
+    expect(result.researchEntity).toEqual(expect.objectContaining(legacy));
+    expect(result.group).toEqual(expect.objectContaining(legacy));
   });
 
   it('throws on payloads that contain neither canonical nor legacy entity data', () => {

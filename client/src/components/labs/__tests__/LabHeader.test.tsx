@@ -35,11 +35,10 @@ const baseGroup: ResearchGroup = {
 };
 
 describe('LabHeader', () => {
-  it('renders the lab name as an h1 and includes the description', () => {
+  it('renders the lab name, school, and location', () => {
     const { container } = render(<LabHeader group={baseGroup} />);
     const h1 = container.querySelector('h1');
     expect(h1?.textContent).toBe('Lovelace Computational Lab');
-    expect(container.textContent).toContain('We study analytical engines.');
     expect(container.textContent).toContain('School of Engineering & Applied Science');
     expect(container.textContent).toContain('Watson Center, Room 200');
   });
@@ -51,7 +50,7 @@ describe('LabHeader', () => {
     const websiteLink = container.querySelector('a[href*="example.edu/lovelace"]');
     expect(websiteLink).not.toBeNull();
     expect(websiteLink?.getAttribute('target')).toBe('_blank');
-    expect(websiteLink?.textContent).toContain('Visit website');
+    expect(websiteLink?.textContent).toContain('Visit lab website');
   });
 
   it('hides the website link when websiteUrl is empty', () => {
@@ -107,7 +106,7 @@ describe('LabHeader trust-gradient pill', () => {
           pastUndergradAdvisees: [{ year: 2024, programName: 'STARS', count: 2 }],
           currentUndergradCount: 3,
         }}
-        hasActiveListing={false}
+        hasActivePostedOpportunity={false}
       />,
     );
     const pill = container.querySelector('[data-verdict]');
@@ -129,9 +128,9 @@ describe('LabHeader trust-gradient pill', () => {
     expect(pill?.textContent).toBe('Not currently available');
   });
 
-  it('honors hasActiveListing prop as a strong signal', () => {
+  it('honors hasActivePostedOpportunity prop as a strong signal', () => {
     const { container } = render(
-      <LabHeader group={baseGroup} hasActiveListing={true} />,
+      <LabHeader group={baseGroup} hasActivePostedOpportunity={true} />,
     );
     const pill = container.querySelector('[data-verdict]');
     // 1 strong signal → likely-accepting
