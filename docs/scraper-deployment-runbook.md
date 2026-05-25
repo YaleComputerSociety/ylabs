@@ -230,6 +230,12 @@ yarn --cwd server meili:rebuild-research-entities --clear
 yarn --cwd server pathway:relevance-review
 ```
 
+The pathway rebuild is mandatory after promotion because the production index must include
+the current filterable fields, including `entityStudentVisibilityTier`, before traffic can
+use Meili. Keep `PATHWAY_SEARCH_BACKEND=mongo` until the rebuild completes and
+`yarn --cwd server pathway:relevance-review` has been accepted against that production
+index.
+
 If Meili rebuild fails after Mongo writes succeeded, keep production traffic on Mongo-backed Pathways and complete the Mongo smoke checklist. Do not switch `PATHWAY_SEARCH_BACKEND=meili` until relevance review is accepted for the production index.
 
 ### Smoke Checklist
