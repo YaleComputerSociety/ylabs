@@ -329,6 +329,797 @@ const saybrookResearchFellowshipRepairs = new Map<
   ],
 ]);
 
+const reviewedResidentialCollegeResearchFundingRepairs = new Map<
+  string,
+  {
+    sourceUrl: string;
+    studentFacingCategory: string;
+    summary: string;
+    description: string;
+    bestNextStep: string;
+    prepSteps: string[];
+    sourceKey: string;
+    studentVisibilityOverrideTier?: 'limited_but_safe';
+  }
+>([
+  [
+    'Berkeley College Mellon Senior Research Grant',
+    {
+      sourceUrl: 'https://commonplace.yale.edu/mellon-forum-undergraduate-research-grants',
+      studentFacingCategory: 'Residential college senior research funding',
+      summary: 'Berkeley College Mellon Forum research grant for seniors presenting independent research through the Commonplace Society.',
+      description:
+        'The Berkeley College Mellon Forum Undergraduate Research Grants support seniors participating in the Commonplace Society with funding toward a research project. The source directs students to search the Student Grants Database for the Berkeley College Mellon Senior Research Grant.',
+      bestNextStep:
+        'Review the Commonplace Society Mellon grant page, confirm Berkeley eligibility, and prepare the Student Grants Database application around a senior research project.',
+      prepSteps: [
+        'Official Berkeley/Commonplace page',
+        'Senior research project',
+        'Commonplace Society participation',
+        'Student Grants Database application',
+      ],
+      sourceKey: 'berkeley-commonplace:mellon-forum-undergraduate-research-grants',
+    },
+  ],
+  [
+    'Branford College Mellon Senior Research Grant',
+    {
+      sourceUrl: 'https://branford.yale.edu/head-of-branford-college/student-project-funding',
+      studentFacingCategory: 'Residential college senior research funding',
+      summary: 'Branford College Mellon funding for seniors working on senior essays, projects, or analogous independent research.',
+      description:
+        'Branford College describes its Mellon Senior Research Grant as funding for seniors to support senior essays, projects, or analogous forms of research and independent study, with faculty-adviser approval and a presentation expectation.',
+      bestNextStep:
+        'Review Branford student project funding, confirm college eligibility, and prepare a one-page project description plus faculty-adviser reference.',
+      prepSteps: [
+        'Official Branford funding page',
+        'Senior essay or project plan',
+        'Faculty-adviser approval',
+        'Student Grants Database application',
+      ],
+      sourceKey: 'branford-college:mellon-senior-research-grant',
+    },
+  ],
+  [
+    'Branford College Richter Summer Fellowship',
+    {
+      sourceUrl: 'https://branford.yale.edu/head-of-branford-college/student-project-funding',
+      studentFacingCategory: 'Residential college summer research funding',
+      summary: 'Branford College Richter funding for independent summer study or research projects.',
+      description:
+        'Branford College describes Richter Fund Awards as support for independent study and research, including internships or research-team participation only when the primary component is study or research.',
+      bestNextStep:
+        'Review Branford student project funding, confirm eligibility, and prepare a summer research proposal and budget.',
+      prepSteps: [
+        'Official Branford funding page',
+        'Independent summer research plan',
+        'Budget',
+        'Student Grants Database application',
+      ],
+      sourceKey: 'branford-college:richter-summer-fellowship',
+    },
+  ],
+  [
+    'Davenport College Mellon Senior Research Grant',
+    {
+      sourceUrl: DAVENPORT_FELLOWSHIPS_SOURCE_URL,
+      studentFacingCategory: 'Residential college senior research funding',
+      summary: 'Davenport College Mellon Research Award for seniors pursuing independent research.',
+      description:
+        'Davenport College lists the Mellon Research Award as residential-college funding for seniors independent research. This should be shown as college-restricted research funding, not as a general Yale-wide research placement.',
+      bestNextStep:
+        'Review Davenport fellowships and awards, confirm college eligibility, and prepare the Student Grants Database application around a senior research project.',
+      prepSteps: [
+        'Official Davenport fellowships page',
+        'Senior research project',
+        'Budget',
+        'Student Grants Database application',
+      ],
+      sourceKey: 'davenport-college:mellon-senior-research-grant',
+    },
+  ],
+  [
+    'Davenport College Richter Summer Fellowship',
+    {
+      sourceUrl: DAVENPORT_FELLOWSHIPS_SOURCE_URL,
+      studentFacingCategory: 'Residential college summer research funding',
+      summary: 'Davenport College Richter Summer Fellowship for independent summer research.',
+      description:
+        'Davenport College lists the Richter Summer Fellowship as residential-college funding for independent summer research. This should be shown as college-restricted research funding, not as a general Yale-wide research placement.',
+      bestNextStep:
+        'Review Davenport fellowships and awards, confirm college eligibility, and prepare the Student Grants Database application around an independent summer research plan.',
+      prepSteps: [
+        'Official Davenport fellowships page',
+        'Independent summer research plan',
+        'Budget',
+        'Student Grants Database application',
+      ],
+      sourceKey: 'davenport-college:richter-summer-fellowship',
+    },
+  ],
+  [
+    'Morse College Mellon Senior Research Grant',
+    {
+      sourceUrl: 'https://morse.yale.edu/head-of-colleges-office/fellowships-grants',
+      studentFacingCategory: 'Residential college senior research funding',
+      summary: 'Morse College Mellon Senior Research Award for seniors independent research.',
+      description:
+        'Morse College lists the Mellon Senior Research Award as funding for seniors independent research. This should be shown as college-restricted research funding, not as a general Yale-wide research placement.',
+      bestNextStep:
+        'Review Morse fellowships and grants, confirm college eligibility, and prepare the Student Grants Database application around a senior research project.',
+      prepSteps: [
+        'Official Morse fellowships page',
+        'Senior research project',
+        'Budget',
+        'Student Grants Database application',
+      ],
+      sourceKey: 'morse-college:mellon-senior-research-grant',
+    },
+  ],
+  [
+    'Morse College Richter Summer Fellowship',
+    {
+      sourceUrl: 'https://morse.yale.edu/head-of-colleges-office/fellowships-grants',
+      studentFacingCategory: 'Residential college summer research funding',
+      summary: 'Morse College Richter Summer Fellowship for independent summer research.',
+      description:
+        'Morse College lists the Richter Summer Fellowship as funding for independent summer research. This should be shown as college-restricted research funding, not as a general Yale-wide research placement.',
+      bestNextStep:
+        'Review Morse fellowships and grants, confirm college eligibility, and prepare the Student Grants Database application around an independent summer research plan.',
+      prepSteps: [
+        'Official Morse fellowships page',
+        'Independent summer research plan',
+        'Budget',
+        'Student Grants Database application',
+      ],
+      sourceKey: 'morse-college:richter-summer-fellowship',
+    },
+  ],
+  [
+    'Pauli Murray College Richter Summer Fellowship',
+    {
+      sourceUrl: 'https://paulimurray.yalecollege.yale.edu/student-information/fellowships-grants',
+      studentFacingCategory: 'Residential college summer research funding',
+      summary: 'Pauli Murray College Richter Summer Fellowship for independent summer study or research.',
+      description:
+        'Pauli Murray College lists the Richter Summer Fellowship as residential-college funding for independent summer study or research. This should be shown as college-restricted research funding, not as a general Yale-wide research placement.',
+      bestNextStep:
+        'Review Pauli Murray fellowships and grants, confirm college eligibility, and prepare the Student Grants Database application around an independent summer research plan.',
+      prepSteps: [
+        'Official Pauli Murray fellowships page',
+        'Independent summer research plan',
+        'Budget',
+        'Student Grants Database application',
+      ],
+      sourceKey: 'pauli-murray-college:richter-summer-fellowship',
+    },
+  ],
+  [
+    'Pauli Murray Mellon Research Fellowship for Seniors',
+    {
+      sourceUrl: 'https://paulimurray.yalecollege.yale.edu/student-information/fellowships-grants',
+      studentFacingCategory: 'Residential college senior research funding',
+      summary: 'Pauli Murray College Mellon Research Fellowship for seniors pursuing independent research.',
+      description:
+        'Pauli Murray College lists the Mellon Research Fellowship for Seniors as residential-college funding for senior research. This should be shown as college-restricted research funding, not as a general Yale-wide research placement.',
+      bestNextStep:
+        'Review Pauli Murray fellowships and grants, confirm college eligibility, and prepare the Student Grants Database application around a senior research project.',
+      prepSteps: [
+        'Official Pauli Murray fellowships page',
+        'Senior research project',
+        'Budget',
+        'Student Grants Database application',
+      ],
+      sourceKey: 'pauli-murray-college:mellon-research-fellowship-seniors',
+    },
+  ],
+  [
+    'Saybrook College Mellon Senior Research Grant',
+    {
+      sourceUrl: SAYBROOK_FELLOWSHIPS_SOURCE_URL,
+      studentFacingCategory: 'Residential college senior research funding',
+      summary: 'Saybrook College Mellon undergraduate research funding for seniors pursuing academic-year research.',
+      description:
+        'Saybrook College lists Mellon Undergraduate Research Awards for seniors pursuing academic-year research, with a Senior Mellon Forum or other presentation expectation.',
+      bestNextStep:
+        'Review Saybrook fellowships, confirm college eligibility, and prepare the Student Grants Database application around a senior research project.',
+      prepSteps: [
+        'Official Saybrook fellowships page',
+        'Senior research project',
+        'Presentation expectation',
+        'Student Grants Database application',
+      ],
+      sourceKey: 'saybrook-college:mellon-senior-research-grant',
+    },
+  ],
+  [
+    'Saybrook College Richter Summer Fellowship',
+    {
+      sourceUrl: SAYBROOK_FELLOWSHIPS_SOURCE_URL,
+      studentFacingCategory: 'Residential college summer research funding',
+      summary: 'Saybrook College Richter Summer Fellowship for independent summer study or research.',
+      description:
+        'Saybrook College lists the Richter Summer Fellowship as funding for independent study or research. This should be shown as college-restricted research funding, not as a general Yale-wide research placement.',
+      bestNextStep:
+        'Review Saybrook fellowships, confirm college eligibility, and prepare the Student Grants Database application around an independent summer research plan.',
+      prepSteps: [
+        'Official Saybrook fellowships page',
+        'Independent summer research plan',
+        'Budget',
+        'Student Grants Database application',
+      ],
+      sourceKey: 'saybrook-college:richter-summer-fellowship',
+    },
+  ],
+  [
+    'Silliman College Mellon Senior Research Grant',
+    {
+      sourceUrl: SILLIMAN_FELLOWSHIPS_SOURCE_URL,
+      studentFacingCategory: 'Residential college senior research funding',
+      summary: 'Silliman College Mellon Research Grant for seniors pursuing faculty-supervised academic-year research.',
+      description:
+        'Silliman College lists the Mellon Research Grant as support for Silliman seniors pursuing research during the academic year under the supervision of a Yale faculty member.',
+      bestNextStep:
+        'Review Silliman fellowships, confirm college eligibility, and prepare the Student Grants Database application around a faculty-supervised senior research project.',
+      prepSteps: [
+        'Official Silliman fellowships page',
+        'Faculty-supervised research project',
+        'Budget',
+        'Student Grants Database application',
+      ],
+      sourceKey: 'silliman-college:mellon-senior-research-grant',
+    },
+  ],
+  [
+    'Silliman College Richter Summer Fellowship',
+    {
+      sourceUrl: SILLIMAN_FELLOWSHIPS_SOURCE_URL,
+      studentFacingCategory: 'Residential college summer research funding',
+      summary: 'Silliman College Richter Summer Fellowship for independent summer study or research.',
+      description:
+        'Silliman College lists the Richter Summer Fellowship as an award for independent study and research, not for general travel, work, or school enrollment.',
+      bestNextStep:
+        'Review Silliman fellowships, confirm college eligibility, and prepare the Student Grants Database application around an independent summer research plan.',
+      prepSteps: [
+        'Official Silliman fellowships page',
+        'Independent summer research plan',
+        'Budget',
+        'Student Grants Database application',
+      ],
+      sourceKey: 'silliman-college:richter-summer-fellowship',
+    },
+  ],
+  [
+    'Trumbull College Mellon Research Grant',
+    {
+      sourceUrl: 'https://trumbull.yalecollege.yale.edu/masters-office/trumbull-college-awards',
+      studentFacingCategory: 'Residential college senior research funding',
+      summary: 'Trumbull College Mellon Research Grant for Trumbull seniors and juniors, with senior projects prioritized.',
+      description:
+        'Trumbull College lists the Mellon Research Grant as college funding for Trumbull seniors and juniors, with senior research projects prioritized. This should be shown as college-restricted research funding.',
+      bestNextStep:
+        'Review Trumbull college awards, confirm college eligibility, and prepare the Student Grants Database application around a research project.',
+      prepSteps: [
+        'Official Trumbull awards page',
+        'Research project',
+        'Budget',
+        'Student Grants Database application',
+      ],
+      sourceKey: 'trumbull-college:mellon-research-grant',
+    },
+  ],
+  [
+    'Trumbull College Richter Summer Fellowship',
+    {
+      sourceUrl: 'https://trumbull.yalecollege.yale.edu/masters-office/trumbull-college-awards',
+      studentFacingCategory: 'Residential college summer research funding',
+      summary: 'Trumbull College Richter Summer Fellowship for independent summer study or research.',
+      description:
+        'Trumbull College lists the Richter Summer Fellowship as funding for independent study and research. This should be shown as college-restricted research funding.',
+      bestNextStep:
+        'Review Trumbull college awards, confirm college eligibility, and prepare the Student Grants Database application around an independent summer research plan.',
+      prepSteps: [
+        'Official Trumbull awards page',
+        'Independent summer research plan',
+        'Budget',
+        'Student Grants Database application',
+      ],
+      sourceKey: 'trumbull-college:richter-summer-fellowship',
+    },
+  ],
+]);
+
+const reviewedAreaStudiesProgramRepairs = new Map<
+  string,
+  {
+    sourceUrl: string;
+    studentFacingCategory: string;
+    summary: string;
+    description: string;
+    bestNextStep: string;
+    prepSteps: string[];
+    sourceKey: string;
+    studentVisibilityOverrideTier?: 'limited_but_safe';
+  }
+>([
+  [
+    'CMES Ganzfried Family Travel Fellowship',
+    {
+      sourceUrl: 'https://macmillan.yale.edu/middleeast/grants',
+      studentFacingCategory: 'Area-studies research travel funding',
+      summary: 'CMES travel fellowship for Yale students pursuing research in Jewish Studies.',
+      description:
+        'The Ganzfried Family Travel Fellowship is listed by the Council on Middle East Studies as funding for Yale students pursuing research in Jewish Studies. Because the source is an area-studies funding page rather than a structured placement, keep the copy focused on funding for a student-defined project.',
+      bestNextStep:
+        'Review the official CMES grants page, confirm eligibility, and prepare a research proposal, budget, and recommendation materials.',
+      prepSteps: ['Official CMES grants page', 'Research proposal', 'Budget', 'Recommendation materials'],
+      sourceKey: 'macmillan-cmes:ganzfried-family-travel-fellowship',
+      studentVisibilityOverrideTier: 'limited_but_safe',
+    },
+  ],
+  [
+    'CMES Libby Rouse Fund for Peace Fellowships',
+    {
+      sourceUrl: 'https://macmillan.yale.edu/middleeast/grants',
+      studentFacingCategory: 'Area-studies research funding',
+      summary: 'CMES fellowship funding for Yale students whose work focuses on the Middle East or parts of Central Asia.',
+      description:
+        'The Libby Rouse Fund for Peace Fellowships are listed by the Council on Middle East Studies as support for Yale students whose work focuses on the Middle East or Tajikistan, Turkmenistan, or Uzbekistan. Keep this framed as project funding rather than a research placement.',
+      bestNextStep:
+        'Review the official CMES grants page, confirm regional fit, and prepare a project proposal and budget before applying.',
+      prepSteps: ['Official CMES grants page', 'Regional project fit', 'Project proposal', 'Budget'],
+      sourceKey: 'macmillan-cmes:libby-rouse-fund-for-peace-fellowships',
+      studentVisibilityOverrideTier: 'limited_but_safe',
+    },
+  ],
+  [
+    'Council on East Asian Studies Senior Essay Research Grants',
+    {
+      sourceUrl: 'https://macmillan.yale.edu/eastasia/opportunities/ceas-senior-essay-research-grants',
+      studentFacingCategory: 'Undergraduate senior essay research funding',
+      summary: 'CEAS grant supporting Yale College undergraduate research for senior essays focused on East Asia.',
+      description:
+        'The Council on East Asian Studies Senior Essay Research Grants support Yale College undergraduate research in preparation for senior essays focused on East Asia, with applications for research during summer or the academic year.',
+      bestNextStep:
+        'Review the CEAS Senior Essay Research Grants page, confirm language and regional fit, and prepare the Student Grants Database application.',
+      prepSteps: ['Official CEAS page', 'Senior essay research plan', 'Language preparation', 'Student Grants Database application'],
+      sourceKey: 'macmillan-ceas:senior-essay-research-grants',
+    },
+  ],
+  [
+    'Council on Southeast Asia Studies Grants',
+    {
+      sourceUrl: 'https://macmillan.yale.edu/southeast-asia/council-southeast-asia-studies-grant',
+      studentFacingCategory: 'Area-studies research funding',
+      summary: 'CSEAS grants for Yale undergraduate and graduate students with research or study connected to Southeast Asia.',
+      description:
+        'The Council on Southeast Asia Studies Grant supports research-related purposes for Yale undergraduate and graduate students with a demonstrated commitment to Southeast Asian studies. Keep this framed as funding for a student-defined research or study plan.',
+      bestNextStep:
+        'Review the CSEAS grant page, confirm Southeast Asia fit, and prepare a project proposal, budget, and recommendation materials.',
+      prepSteps: ['Official CSEAS page', 'Project proposal', 'Budget', 'Recommendation materials'],
+      sourceKey: 'macmillan-cseas:council-on-southeast-asia-studies-grant',
+      studentVisibilityOverrideTier: 'limited_but_safe',
+    },
+  ],
+  [
+    'European Union Studies Grants',
+    {
+      sourceUrl: 'https://macmillan.yale.edu/europe/eustudies/european-union-studies-grants-fellowships',
+      studentFacingCategory: 'Area-studies research funding',
+      summary: 'European Union Studies grants for Yale students pursuing research on the European Union or European integration.',
+      description:
+        'The European Union Studies Program lists grants for undergraduate and graduate students whose work or research involves the European Union or European integration. Keep this framed as funding for a student-defined project rather than a placement.',
+      bestNextStep:
+        'Review the European Union Studies grants page, confirm project fit, and prepare the application materials around a focused research plan.',
+      prepSteps: ['Official EU Studies page', 'Research plan', 'Budget', 'Application materials'],
+      sourceKey: 'macmillan-europe:european-union-studies-grants',
+      studentVisibilityOverrideTier: 'limited_but_safe',
+    },
+  ],
+  [
+    'Georg Walter Leitner Program in International and Comparative Political Economy Grants',
+    {
+      sourceUrl: 'https://macmillan.yale.edu/leitner/research-grants',
+      studentFacingCategory: 'Political economy research funding',
+      summary: 'Leitner Program grants for Yale students pursuing research in international and comparative political economy.',
+      description:
+        'The Georg Walter Leitner Program offers research grants to Yale graduate and undergraduate students working on international and comparative political economy, including senior essay and travel fellowship support.',
+      bestNextStep:
+        'Review the Leitner research grants page, confirm political-economy fit, and prepare a project proposal and budget.',
+      prepSteps: ['Official Leitner grants page', 'Political-economy research fit', 'Project proposal', 'Budget'],
+      sourceKey: 'macmillan-leitner:international-comparative-political-economy-grants',
+      studentVisibilityOverrideTier: 'limited_but_safe',
+    },
+  ],
+  [
+    'Harold C. Conklin Research Fellowship in the Philippines',
+    {
+      sourceUrl: 'https://macmillan.yale.edu/southeast-asia/harold-c-conklin-research-fellowship',
+      studentFacingCategory: 'Area-studies research funding',
+      summary: 'CSEAS fellowship for Yale students conducting primary-source or direct research in the Philippines.',
+      description:
+        'The Harold C. Conklin Research Fellowship in the Philippines supports Yale graduate or undergraduate students conducting primary-source or direct research in the Philippines.',
+      bestNextStep:
+        'Review the official fellowship page, confirm Philippines research fit, and prepare the Student Grants Database application.',
+      prepSteps: ['Official CSEAS page', 'Philippines research plan', 'Budget', 'Student Grants Database application'],
+      sourceKey: 'macmillan-cseas:harold-c-conklin-research-fellowship',
+      studentVisibilityOverrideTier: 'limited_but_safe',
+    },
+  ],
+  [
+    'Keggi-Berzins Fellowships for Baltic Studies',
+    {
+      sourceUrl: 'https://macmillan.yale.edu/baltic/keggi-berzins-fellowship-baltic-studies',
+      studentFacingCategory: 'Area-studies research or language funding',
+      summary: 'Baltic Studies fellowship for current Yale students pursuing research or language study in or about Baltic countries.',
+      description:
+        'The Keggi-Berzins Fellowship for Baltic Studies supports current Yale undergraduate and graduate students pursuing research or language study in or about Baltic countries.',
+      bestNextStep:
+        'Review the official Baltic Studies fellowship page, confirm regional fit, and prepare the project or language-study application.',
+      prepSteps: ['Official Baltic Studies page', 'Regional project fit', 'Project or language-study plan', 'Budget'],
+      sourceKey: 'macmillan-baltic:keggi-berzins-fellowship',
+      studentVisibilityOverrideTier: 'limited_but_safe',
+    },
+  ],
+  [
+    'Latin American and Iberian Studies Summer Travel Awards',
+    {
+      sourceUrl: 'https://macmillan.yale.edu/latam/student-grants-and-prizes',
+      studentFacingCategory: 'Area-studies research travel funding',
+      summary: 'CLAIS summer travel funding for junior undergraduates and graduate students conducting research in Latin America, the Caribbean, Portugal, or Spain.',
+      description:
+        'The Council on Latin American and Iberian Studies lists summer travel grants for junior undergraduates and graduate students planning research or study abroad in Latin America, the Caribbean, Portugal, or Spain.',
+      bestNextStep:
+        'Review the CLAIS grants page, confirm regional fit, and prepare the Student Grants Database application with a focused research or study plan.',
+      prepSteps: ['Official CLAIS grants page', 'Regional research or study plan', 'Budget', 'Student Grants Database application'],
+      sourceKey: 'macmillan-clais:summer-travel-awards',
+      studentVisibilityOverrideTier: 'limited_but_safe',
+    },
+  ],
+  [
+    'South Asian Studies Rustgi Fellowships',
+    {
+      sourceUrl: 'https://macmillan.yale.edu/southasia/rustgi-fellowships',
+      studentFacingCategory: 'Area-studies research funding',
+      summary: 'South Asian Studies Council Rustgi funding for Yale students pursuing South Asia-focused research or study.',
+      description:
+        'The South Asian Studies Council lists Rustgi Fellowships as support for Yale students pursuing South Asia-focused research or study, with undergraduate evidence and undergraduate preference in related SASC guidance.',
+      bestNextStep:
+        'Review the Rustgi Fellowship page and undergraduate grants guidance, then prepare a South Asia-focused proposal and budget.',
+      prepSteps: ['Official SASC Rustgi page', 'South Asia project fit', 'Proposal', 'Budget'],
+      sourceKey: 'macmillan-southasia:rustgi-fellowships',
+      studentVisibilityOverrideTier: 'limited_but_safe',
+    },
+  ],
+  [
+    'South Asian Studies Senior Essay Research Grant',
+    {
+      sourceUrl: 'https://macmillan.yale.edu/southasia/undergraduate-grants',
+      studentFacingCategory: 'Undergraduate senior essay research funding',
+      summary: 'South Asian Studies Council grant supporting undergraduate senior essay research related to South Asia.',
+      description:
+        'The South Asian Studies Council undergraduate grants page lists a Senior Essay Research Grant supporting undergraduate research for South Asian Studies senior essays.',
+      bestNextStep:
+        'Review the SASC undergraduate grants page and prepare a senior essay research proposal and budget.',
+      prepSteps: ['Official SASC undergraduate grants page', 'Senior essay research plan', 'Budget', 'Student Grants Database application'],
+      sourceKey: 'macmillan-southasia:senior-essay-research-grant',
+    },
+  ],
+  [
+    'South Asian Studies Travel Research Grant for Undergraduate Students',
+    {
+      sourceUrl: 'https://macmillan.yale.edu/southasia/undergraduate-grants',
+      studentFacingCategory: 'Undergraduate research travel funding',
+      summary: 'South Asian Studies Council travel research grant for Yale undergraduates studying South Asian history, society, languages, or culture.',
+      description:
+        'The South Asian Studies Council undergraduate grants page lists a travel research grant for Yale undergraduates studying South Asian history, society, languages, or culture in the United States or internationally.',
+      bestNextStep:
+        'Review the SASC undergraduate grants page and prepare a South Asia-focused travel research plan and budget.',
+      prepSteps: ['Official SASC undergraduate grants page', 'Travel research plan', 'Budget', 'Student Grants Database application'],
+      sourceKey: 'macmillan-southasia:travel-research-grant-undergraduates',
+    },
+  ],
+]);
+
+const reviewedProgramSuppressions = new Map<
+  string,
+  {
+    sourceUrl: string;
+    summary: string;
+    description: string;
+    bestNextStep: string;
+    sourceKey: string;
+    suppressionReason: string;
+  }
+>([
+  [
+    'Council on African Studies - Graduate Student Conference/Research Award',
+    {
+      sourceUrl: 'https://macmillan.yale.edu/africa/cas-graduate-conferenceresearch-award',
+      summary: 'Graduate-student conference and research award for Africa-related research or conference travel.',
+      description:
+        'The official Council on African Studies page describes this as a graduate-student conference and research award, not an undergraduate research-entry program.',
+      bestNextStep:
+        'Keep suppressed unless the product adds a graduate/professional fellowship surface.',
+      sourceKey: 'macmillan-africa:graduate-student-conference-research-award',
+      suppressionReason: 'graduate_or_professional_only',
+    },
+  ],
+  [
+    'Council on East Asian Studies Field Research Grants',
+    {
+      sourceUrl: 'https://macmillan.yale.edu/eastasia/opportunities/ceas-field-research-grants',
+      summary: 'Graduate field-research grant for doctoral dissertation research in East Asian studies.',
+      description:
+        'The official CEAS page limits Field Research Grants to registered Yale graduate students engaged in doctoral dissertation research, so this is not an undergraduate research-entry program.',
+      bestNextStep:
+        'Keep suppressed unless the product adds a graduate dissertation-research funding surface.',
+      sourceKey: 'macmillan-ceas:field-research-grants',
+      suppressionReason: 'graduate_or_professional_only',
+    },
+  ],
+  [
+    'Georges Lurcy Travel Fellowship for Research in France',
+    {
+      sourceUrl: 'https://macmillan.yale.edu/graduate-professional-student-grants',
+      summary: 'Graduate or doctoral travel fellowship for dissertation-related French Studies research.',
+      description:
+        'MacMillan graduate/professional grants guidance describes the Georges Lurcy Travel Fellowship as support for graduate or doctoral research in France, not an undergraduate research-entry program.',
+      bestNextStep:
+        'Keep suppressed unless the product adds a graduate dissertation-research funding surface.',
+      sourceKey: 'macmillan-center:georges-lurcy-travel-fellowship',
+      suppressionReason: 'graduate_or_professional_only',
+    },
+  ],
+  [
+    'MacMillan Center Pre-Dissertation Research Fellowships',
+    {
+      sourceUrl: 'https://macmillan.yale.edu/graduate-professional-student-grants',
+      summary: 'Graduate pre-dissertation research fellowship, not an undergraduate program.',
+      description:
+        'MacMillan graduate/professional grants guidance describes the Pre-Dissertation Research Fellowships as support for PhD candidates and limited named master’s programs, not undergraduate research entry.',
+      bestNextStep:
+        'Keep suppressed unless the product adds a graduate pre-dissertation funding surface.',
+      sourceKey: 'macmillan-center:pre-dissertation-research-fellowships',
+      suppressionReason: 'graduate_or_professional_only',
+    },
+  ],
+  [
+    'MacMillan International Dissertation Research Fellowships (IDRF)',
+    {
+      sourceUrl: 'https://macmillan.yale.edu/graduate-professional-student-grants',
+      summary: 'International dissertation research fellowship for PhD students.',
+      description:
+        'MacMillan graduate/professional grants guidance describes IDRF as support for PhD students engaged in international dissertation research, not undergraduate research entry.',
+      bestNextStep:
+        'Keep suppressed unless the product adds a graduate dissertation-research funding surface.',
+      sourceKey: 'macmillan-center:international-dissertation-research-fellowships',
+      suppressionReason: 'graduate_or_professional_only',
+    },
+  ],
+  [
+    'South Asian Studies Summer Research Awards for Graduate Students',
+    {
+      sourceUrl: 'https://macmillan.yale.edu/southasia/graduate',
+      summary: 'South Asian Studies summer research awards for graduate students.',
+      description:
+        'The South Asian Studies graduate page limits this award to qualified graduate students doing pre-dissertation research or language study relevant to doctoral work.',
+      bestNextStep:
+        'Keep suppressed unless the product adds a graduate pre-dissertation funding surface.',
+      sourceKey: 'macmillan-southasia:summer-research-awards-graduate-students',
+      suppressionReason: 'graduate_or_professional_only',
+    },
+  ],
+  [
+    'Beinecke Library Research Fellowships for Yale Graduate and Professional Students',
+    {
+      sourceUrl: 'https://beinecke.library.yale.edu/programs/fellowships/research-fellowships-graduate-students',
+      summary: 'Beinecke Library graduate-student research fellowship for onsite special-collections work.',
+      description:
+        'The official Beinecke Library page describes this as a research fellowship for Yale graduate and professional students, not an undergraduate research-entry program.',
+      bestNextStep:
+        'Keep suppressed unless the product adds a graduate/professional fellowship surface.',
+      sourceKey: 'beinecke-library:graduate-student-research-fellowships',
+      suppressionReason: 'graduate_or_professional_only',
+    },
+  ],
+  [
+    'Global Rhodes Scholarship',
+    {
+      sourceUrl: 'https://funding.yale.edu/funding-postgraduate-opportunities',
+      summary: 'External postgraduate scholarship route, not a Yale undergraduate research-entry program.',
+      description:
+        'The Global Rhodes Scholarship is a postgraduate award route. It should not appear in undergraduate research-program browse by default.',
+      bestNextStep:
+        'Keep suppressed unless the product adds a postgraduate fellowships surface.',
+      sourceKey: 'yale-office-of-fellowships:global-rhodes-scholarship',
+      suppressionReason: 'external_postgraduate_award',
+    },
+  ],
+  [
+    'Graduate Affiliate Fellows with Program in Agrarian Studies',
+    {
+      sourceUrl: 'https://macmillan.yale.edu/agrarian/graduate-affiliate-fellowship',
+      summary: 'Agrarian Studies graduate affiliate fellowship for Yale PhD students.',
+      description:
+        'The official Program in Agrarian Studies page describes this as a fellowship for Yale PhD students participating in the Agrarian Studies community and dissertation-related work.',
+      bestNextStep:
+        'Keep suppressed unless the product adds a graduate fellowship surface.',
+      sourceKey: 'macmillan-agrarian:graduate-affiliate-fellowship',
+      suppressionReason: 'graduate_or_professional_only',
+    },
+  ],
+  [
+    'Graduate Research Fellowships of the Gilder Lehrman Center',
+    {
+      sourceUrl: 'https://macmillan.yale.edu/glc/summer-graduate-research-fellowships',
+      summary: 'Gilder Lehrman Center summer research funding for Yale graduate students.',
+      description:
+        'The official Gilder Lehrman Center page describes this as summer research funding for Yale graduate students, not undergraduate research entry.',
+      bestNextStep:
+        'Keep suppressed unless the product adds a graduate fellowship surface.',
+      sourceKey: 'macmillan-glc:summer-graduate-research-fellowships',
+      suppressionReason: 'graduate_or_professional_only',
+    },
+  ],
+  [
+    'Grand Strategy Dissertation Research Award',
+    {
+      sourceUrl: 'https://jackson.yale.edu/academics/grand-strategy-program/fellowships-awards/',
+      summary: 'Grand Strategy dissertation research award for graduate-level work.',
+      description:
+        'The official Jackson School page frames this as graduate student travel or research funding for dissertation-level work, not undergraduate research entry.',
+      bestNextStep:
+        'Keep suppressed unless the product adds a graduate dissertation-research funding surface.',
+      sourceKey: 'jackson-grand-strategy:dissertation-research-award',
+      suppressionReason: 'graduate_or_professional_only',
+    },
+  ],
+  [
+    'Heyman Federal Public Service Fellowship Program - Yale Law School',
+    {
+      sourceUrl: 'https://law.yale.edu/student-life/career-development/students/career-pathways/public-interest/public-interest-fellowships',
+      summary: 'Yale Law School public-service fellowship route, not an undergraduate research-entry program.',
+      description:
+        'The official Yale Law School source describes public-interest fellowship options for law-school students or graduates, not undergraduate research entry.',
+      bestNextStep:
+        'Keep suppressed unless the product adds a law-school or postgraduate fellowship surface.',
+      sourceKey: 'yale-law-school:heyman-federal-public-service-fellowship',
+      suppressionReason: 'graduate_or_professional_only',
+    },
+  ],
+  [
+    'John Morton Blum Fellowship for Graduate Research in American History and Culture',
+    {
+      sourceUrl: 'https://gsas.yale.edu/john-morton-blum-fellowship-graduate-research-american-history-and-culture',
+      summary: 'GSAS fellowship for PhD candidates doing dissertation research in American history and culture.',
+      description:
+        'The official GSAS source describes this as a fellowship for PhD candidates in History or American Studies, not undergraduate research entry.',
+      bestNextStep:
+        'Keep suppressed unless the product adds a graduate dissertation-research funding surface.',
+      sourceKey: 'gsas:john-morton-blum-fellowship',
+      suppressionReason: 'graduate_or_professional_only',
+    },
+  ],
+  [
+    'Law School Fellowships Common Application',
+    {
+      sourceUrl: 'https://law.yale.edu/sites/default/files/area/department/cdo/document/instructions_for_online_yls_fellowship_applications.pdf',
+      summary: 'Yale Law School common application container for law-school fellowships.',
+      description:
+        'This is a common application container for Yale Law School fellowships. It is not a specific undergraduate research-entry program.',
+      bestNextStep:
+        'Keep suppressed; expose specific source-backed child programs only if the product adds a suitable surface.',
+      sourceKey: 'yale-law-school:fellowships-common-application',
+      suppressionReason: 'common_application_container',
+    },
+  ],
+  [
+    'Mellon Mays and Bouchet Common Application',
+    {
+      sourceUrl: 'https://college.yale.edu/life-at-yale/student-faculty-awards/mellon-mays-undergraduate-fellowship-program',
+      summary: 'Common application container for Mellon Mays and Bouchet records.',
+      description:
+        'The Mellon Mays and Bouchet common application record is a container-style route. The student-facing surface should expose the specific source-backed Mellon Mays and Bouchet program records instead.',
+      bestNextStep:
+        'Keep suppressed and rely on specific child program records for public browse.',
+      sourceKey: 'yale-college:mellon-mays-bouchet-common-application',
+      suppressionReason: 'common_application_container',
+    },
+  ],
+  [
+    'Office of Fellowships Summer Projects Common Application',
+    {
+      sourceUrl: YALE_OFFICE_RESEARCH_FELLOWSHIPS_SOURCE_URL,
+      summary: 'Office of Fellowships common application container for multiple summer project awards.',
+      description:
+        'This is a broad common application container rather than a specific fellowship record. Public browse should expose source-backed child fellowships instead.',
+      bestNextStep:
+        'Keep suppressed and rely on specific child fellowship records for public browse.',
+      sourceKey: 'yale-office-of-fellowships:summer-projects-common-application',
+      suppressionReason: 'common_application_container',
+    },
+  ],
+  [
+    'Office of Fellowships Summer Research Common Application',
+    {
+      sourceUrl: YALE_OFFICE_RESEARCH_FELLOWSHIPS_SOURCE_URL,
+      summary: 'Office of Fellowships common application container for multiple summer research awards.',
+      description:
+        'This is a broad common application container rather than a specific fellowship record. Public browse should expose source-backed child summer research fellowships instead.',
+      bestNextStep:
+        'Keep suppressed and rely on specific child fellowship records for public browse.',
+      sourceKey: 'yale-office-of-fellowships:summer-research-common-application',
+      suppressionReason: 'common_application_container',
+    },
+  ],
+  [
+    'Parker Huang Postgraduate Fellowship',
+    {
+      sourceUrl: 'https://funding.yale.edu/funding-postgraduate-opportunities',
+      summary: 'Yale College postgraduate fellowship route for graduating seniors.',
+      description:
+        'The Parker Huang Postgraduate Fellowship is a postgraduate award route. It should not appear in undergraduate research-program browse by default.',
+      bestNextStep:
+        'Keep suppressed unless the product adds a postgraduate fellowships surface.',
+      sourceKey: 'yale-office-of-fellowships:parker-huang-postgraduate-fellowship',
+      suppressionReason: 'postgraduate_award',
+    },
+  ],
+  [
+    'Robert C. Bates Postgraduate Fellowship',
+    {
+      sourceUrl: 'https://funding.yale.edu/funding-postgraduate-opportunities',
+      summary: 'Yale College postgraduate fellowship route for graduating seniors.',
+      description:
+        'The Robert C. Bates Postgraduate Fellowship is a postgraduate project, internship, or research fellowship route. It should not appear in undergraduate research-program browse by default.',
+      bestNextStep:
+        'Keep suppressed unless the product adds a postgraduate fellowships surface.',
+      sourceKey: 'yale-office-of-fellowships:robert-c-bates-postgraduate-fellowship',
+      suppressionReason: 'postgraduate_award',
+    },
+  ],
+  [
+    'Translation Initiative Summer Fellowships for Graduate Students',
+    {
+      sourceUrl: 'https://macmillan.yale.edu/node/800023/grants-fellowships',
+      summary: 'Translation Studies summer fellowship for graduate students.',
+      description:
+        'The official source describes this as a summer fellowship for graduate students, not undergraduate research entry.',
+      bestNextStep:
+        'Keep suppressed unless the product adds a graduate fellowship surface.',
+      sourceKey: 'translation-initiative:summer-fellowships-graduate-students',
+      suppressionReason: 'graduate_or_professional_only',
+    },
+  ],
+  [
+    'Yale College Postgraduate Fellowships Common Application',
+    {
+      sourceUrl: 'https://funding.yale.edu/funding-postgraduate-opportunities',
+      summary: 'Common application container for Yale College postgraduate fellowships.',
+      description:
+        'This is a common application container for postgraduate fellowships. It is not a specific undergraduate research-entry program.',
+      bestNextStep:
+        'Keep suppressed unless the product adds a postgraduate fellowships surface.',
+      sourceKey: 'yale-office-of-fellowships:postgraduate-fellowships-common-application',
+      suppressionReason: 'common_application_container',
+    },
+  ],
+  [
+    'Yale University Art Gallery and Yale Center for British Art Graduate Research Assistantships',
+    {
+      sourceUrl: 'https://english.yale.edu/graduate/research-resources',
+      summary: 'Graduate research assistantship route for doctoral students.',
+      description:
+        'The official English Department source describes these museum research assistantships as graduate research resources, not undergraduate research entry.',
+      bestNextStep:
+        'Keep suppressed unless the product adds a graduate assistantship surface.',
+      sourceKey: 'yale-english:yuag-ycba-graduate-research-assistantships',
+      suppressionReason: 'graduate_or_professional_only',
+    },
+  ],
+]);
+
 function firstOfficialYaleLinkedUrl(program: any): string {
   const urls = [
     program.applicationLink,
@@ -1888,6 +2679,76 @@ async function planProgramRepairs(): Promise<PlannedProgramRepair[]> {
           compensationSummary: 'Summer fellowship funding when awarded',
           programDates: 'Summer',
           ...yaleOfficeResearchRepair,
+        },
+      );
+      continue;
+    }
+
+    const reviewedResidentialCollegeRepair = reviewedResidentialCollegeResearchFundingRepairs.get(title);
+    if (reviewedResidentialCollegeRepair) {
+      addRepairIfChanged(
+        repairs,
+        program,
+        'repair_reviewed_residential_college_research_funding',
+        {
+          programCategory: 'FELLOWSHIP',
+          programKind: /mellon|senior/i.test(title) ? 'SENIOR_THESIS_FUNDING' : 'TRAVEL_RESEARCH_GRANT',
+          entryMode: 'SECURE_MENTOR_THEN_APPLY',
+          requiresMentorBeforeApply: true,
+          mentorMatching: false,
+          undergraduateOnly: true,
+          yaleCollegeOnly: true,
+          compensationSummary: 'Residential college research funding when awarded',
+          ...reviewedResidentialCollegeRepair,
+          studentVisibilityOverrideTier: 'limited_but_safe',
+        },
+      );
+      continue;
+    }
+
+    const reviewedAreaStudiesRepair = reviewedAreaStudiesProgramRepairs.get(title);
+    if (reviewedAreaStudiesRepair) {
+      addRepairIfChanged(
+        repairs,
+        program,
+        'repair_reviewed_area_studies_research_funding',
+        {
+          programCategory: 'FELLOWSHIP',
+          programKind: /senior essay/i.test(title) ? 'SENIOR_THESIS_FUNDING' : 'TRAVEL_RESEARCH_GRANT',
+          entryMode: 'SECURE_MENTOR_THEN_APPLY',
+          requiresMentorBeforeApply: true,
+          mentorMatching: false,
+          undergraduateOnly: true,
+          yaleCollegeOnly: false,
+          compensationSummary: 'Area-studies research funding when awarded',
+          ...reviewedAreaStudiesRepair,
+          studentVisibilityOverrideTier: reviewedAreaStudiesRepair.studentVisibilityOverrideTier ?? 'limited_but_safe',
+        },
+      );
+      continue;
+    }
+
+    const reviewedSuppression = reviewedProgramSuppressions.get(title);
+    if (reviewedSuppression) {
+      addRepairIfChanged(
+        repairs,
+        program,
+        'suppress_reviewed_non_undergraduate_program',
+        {
+          sourceUrl: reviewedSuppression.sourceUrl,
+          programCategory: 'FELLOWSHIP',
+          programKind: 'OTHER',
+          entryMode: 'TRACK_NEXT_CYCLE',
+          undergraduateOnly: false,
+          yaleCollegeOnly: false,
+          studentFacingCategory: 'Archive / review',
+          summary: reviewedSuppression.summary,
+          description: reviewedSuppression.description,
+          bestNextStep: reviewedSuppression.bestNextStep,
+          prepSteps: ['Archive review', 'Official source review'],
+          sourceKey: reviewedSuppression.sourceKey,
+          studentVisibilityOverrideTier: 'suppressed',
+          studentVisibilitySuppressionReason: reviewedSuppression.suppressionReason,
         },
       );
       continue;
