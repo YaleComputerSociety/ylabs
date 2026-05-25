@@ -3,6 +3,7 @@ import { ResearchEntity } from '../models/researchEntity';
 import { ScrapeRun } from '../models/scrapeRun';
 import { Source } from '../models/source';
 import type { StudentVisibilityTier } from '../models/studentVisibility';
+import { VisibilityReleaseQueueItem } from '../models/visibilityReleaseQueueItem';
 import { workPlannerSourcePolicies } from '../scrapers/workPlanner';
 import { buildSourceHealthRows, type SourceHealthRisk } from './sourceHealthService';
 
@@ -268,6 +269,64 @@ async function buildQueueSummaries() {
   };
 }
 
+async function buildReleaseQueueSummary() {
+  const [statusRows, blockerRows, sourceRows, samples] = await Promise.all([
+    VisibilityReleaseQueueItem.aggregate([
+      { $group: { _id: '$status', count: { $sum: 1 } } },
+      { $sort: { count: -1, _id: 1 } },
+    ]),
+    VisibilityReleaseQueueItem.aggregate([
+      { $match: { status: 'open' } },
+      { $unwind: '$blockerReasons' },
+      { $group: { _id: '$blockerReasons', count: { $sum: 1 } } },
+      { $sort: { count: -1, _id: 1 } },
+      { $limit: 12 },
+      { $project: { _id: 0, reason: '$_id', count: 1 } },
+    ]),
+    VisibilityReleaseQueueItem.aggregate([
+      { $match: { status: 'open' } },
+      { $unwind: '$sourceNames' },
+      { $group: { _id: '$sourceNames', count: { $sum: 1 } } },
+      { $sort: { count: -1, _id: 1 } },
+      { $limit: 12 },
+      { $project: { _id: 0, sourceName: '$_id', count: 1 } },
+    ]),
+    VisibilityReleaseQueueItem.find({ status: 'open' })
+      .select(
+        'collection recordId label currentTier computedTier targetTier blockerReasons evidenceSignals sourceNames nextRepairAction lastSeenAt',
+      )
+      .sort({ lastSeenAt: -1, _id: 1 })
+      .limit(8)
+      .lean(),
+  ]);
+
+  const statusCounts = statusRows.reduce<Record<string, number>>((acc, row: any) => {
+    acc[row._id || 'unknown'] = row.count;
+    return acc;
+  }, {});
+
+  return {
+    statusCounts,
+    openCount: statusCounts.open || 0,
+    topBlockers: blockerRows,
+    sourcePressure: sourceRows,
+    samples: samples.map((sample: any) => ({
+      id: String(sample._id),
+      collection: sample.collection,
+      recordId: sample.recordId,
+      label: sample.label,
+      currentTier: sample.currentTier,
+      computedTier: sample.computedTier,
+      targetTier: sample.targetTier,
+      blockerReasons: sample.blockerReasons || [],
+      evidenceSignals: sample.evidenceSignals || [],
+      sourceNames: sample.sourceNames || [],
+      nextRepairAction: sample.nextRepairAction || '',
+      lastSeenAt: sample.lastSeenAt?.toISOString?.() || sample.lastSeenAt,
+    })),
+  };
+}
+
 const freshnessWindowDays = (windowMs: number) => Math.round(windowMs / (24 * 60 * 60 * 1000));
 
 async function buildSourceFreshness() {
@@ -323,12 +382,13 @@ async function buildSourceFreshness() {
 }
 
 export async function buildAdminOperatorBoard() {
-  const [sourceFreshness, researchTierCounts, programTierCounts, queueSummaries] =
+  const [sourceFreshness, researchTierCounts, programTierCounts, queueSummaries, releaseQueue] =
     await Promise.all([
       buildSourceFreshness(),
       countByTier(ResearchEntity, { archived: { $ne: true } }),
       countByTier(Fellowship, { archived: false }),
       buildQueueSummaries(),
+      buildReleaseQueueSummary(),
     ]);
   const integrityStatus: 'unknown' = 'unknown';
   const pendingMeiliSync = Boolean(sourceFreshness.latestRunSummary.latestWriteRun);
@@ -351,6 +411,7 @@ export async function buildAdminOperatorBoard() {
       research: researchTierCounts,
       programs: programTierCounts,
     },
+    releaseQueue,
     ...queueSummaries,
     gates: {
       dataQuality: {

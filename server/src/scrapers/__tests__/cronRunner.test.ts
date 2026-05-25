@@ -22,6 +22,9 @@ function makeDeps(overrides: Partial<CronRunnerDependencies> = {}): CronRunnerDe
       errors: 0,
     }),
     getScrapeRunReport: vi.fn().mockResolvedValue({ run: { id: 'run-1' } }),
+    runStudentVisibilityGate: vi.fn().mockResolvedValue({
+      counts: { scanned: 3, promoted: 2, held: 1, resolved: 2, changed: 2 },
+    }),
     acquireScrapeJobLock: vi.fn().mockResolvedValue({
       acquired: true,
       ownerId: 'owner-1',
@@ -112,6 +115,11 @@ describe('runScraperCron', () => {
       triggeredBy: 'cron',
     });
     expect(deps.materializeFromRun).toHaveBeenCalledWith('run-1', { dryRun: false });
+    expect(deps.runStudentVisibilityGate).toHaveBeenCalledWith({
+      collection: 'all',
+      mode: 'apply',
+      sourceName: 'openalex',
+    });
     expect(deps.getScrapeRunReport).toHaveBeenCalledWith('run-1');
     expect(deps.releaseScrapeJobLock).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -155,6 +163,7 @@ describe('runScraperCron', () => {
     );
 
     expect(result.exitCode).toBe(1);
+    expect(deps.runStudentVisibilityGate).not.toHaveBeenCalled();
     expect(deps.releaseScrapeJobLock).toHaveBeenCalledWith(
       expect.objectContaining({
         releaseReason: 'failure',

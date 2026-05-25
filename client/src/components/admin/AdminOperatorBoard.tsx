@@ -48,6 +48,23 @@ interface SourceHealthRow {
   };
 }
 
+interface ReleaseQueueSummary {
+  openCount: number;
+  statusCounts: Record<string, number>;
+  topBlockers: Array<{ reason: string; count: number }>;
+  sourcePressure: Array<{ sourceName: string; count: number }>;
+  samples: Array<{
+    id: string;
+    collection: 'research' | 'programs';
+    recordId: string;
+    label: string;
+    blockerReasons: string[];
+    evidenceSignals: string[];
+    sourceNames: string[];
+    nextRepairAction: string;
+  }>;
+}
+
 interface OperatorBoard {
   generatedAt: string;
   trustTiers: {
@@ -59,6 +76,7 @@ interface OperatorBoard {
     programs: ReasonCount[];
   };
   queues: QueueSummary[];
+  releaseQueue?: ReleaseQueueSummary;
   gates: {
     dataQuality: {
       status: string;
@@ -308,6 +326,69 @@ const AdminOperatorBoard = () => {
           </div>
         </div>
       </section>
+
+      {board.releaseQueue && (
+        <section className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <h4 className="font-semibold text-gray-900">Release Queue</h4>
+            <span className="text-sm text-gray-500">
+              {board.releaseQueue.openCount} open ·{' '}
+              {board.releaseQueue.statusCounts.resolved || 0} resolved
+            </span>
+          </div>
+          <div className="grid gap-3 lg:grid-cols-3">
+            <div className="rounded-md border border-[var(--yr-line)] p-3">
+              <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                Top blockers
+              </div>
+              <div className="mt-2 space-y-2">
+                {board.releaseQueue.topBlockers.slice(0, 5).map((row) => (
+                  <div key={row.reason} className="flex items-center justify-between gap-2 text-sm">
+                    <span className="text-gray-700">{row.reason}</span>
+                    <span className="font-semibold text-gray-900">{row.count}</span>
+                  </div>
+                ))}
+                {board.releaseQueue.topBlockers.length === 0 && (
+                  <div className="text-sm text-gray-500">No open blockers</div>
+                )}
+              </div>
+            </div>
+            <div className="rounded-md border border-[var(--yr-line)] p-3">
+              <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                Source pressure
+              </div>
+              <div className="mt-2 space-y-2">
+                {board.releaseQueue.sourcePressure.slice(0, 5).map((row) => (
+                  <div key={row.sourceName} className="flex items-center justify-between gap-2 text-sm">
+                    <span className="text-gray-700">{row.sourceName}</span>
+                    <span className="font-semibold text-gray-900">{row.count}</span>
+                  </div>
+                ))}
+                {board.releaseQueue.sourcePressure.length === 0 && (
+                  <div className="text-sm text-gray-500">No source pressure</div>
+                )}
+              </div>
+            </div>
+            <div className="rounded-md border border-[var(--yr-line)] p-3">
+              <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                Recent holds
+              </div>
+              <div className="mt-2 space-y-3">
+                {board.releaseQueue.samples.slice(0, 3).map((sample) => (
+                  <div key={sample.id}>
+                    <div className="text-sm font-semibold text-gray-900">{sample.label}</div>
+                    <div className="mt-1 text-xs text-gray-500">{sample.collection}</div>
+                    <div className="mt-1 text-sm text-gray-600">{sample.nextRepairAction}</div>
+                  </div>
+                ))}
+                {board.releaseQueue.samples.length === 0 && (
+                  <div className="text-sm text-gray-500">No held samples</div>
+                )}
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
 
       <section className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4">
         <h4 className="mb-3 font-semibold text-gray-900">Review Queues</h4>

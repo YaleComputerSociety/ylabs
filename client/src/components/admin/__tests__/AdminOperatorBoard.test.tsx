@@ -42,6 +42,24 @@ describe('AdminOperatorBoard', () => {
           research: [],
           programs: [],
         },
+        releaseQueue: {
+          openCount: 2,
+          statusCounts: { open: 2, resolved: 4 },
+          topBlockers: [{ reason: 'missing_description', count: 2 }],
+          sourcePressure: [{ sourceName: 'ysm-atoz-index', count: 2 }],
+          samples: [
+            {
+              id: 'queue-sample',
+              collection: 'research',
+              recordId: 'entity-held',
+              label: 'Queued Lab',
+              blockerReasons: ['missing_description'],
+              evidenceSignals: ['concrete_next_step'],
+              sourceNames: ['ysm-atoz-index'],
+              nextRepairAction: 'Backfill a source-backed research description.',
+            },
+          ],
+        },
         queues: [
           {
             collection: 'research',
@@ -109,5 +127,8 @@ describe('AdminOperatorBoard', () => {
     expect(screen.getByText('Evidence signals')).toBeTruthy();
     expect(screen.getByText('Repair Candidate Lab')).toBeTruthy();
     expect(screen.getByText('Source Backed Lab')).toBeTruthy();
+    expect(screen.getByText('Release Queue')).toBeTruthy();
+    expect(screen.getByText('Queued Lab')).toBeTruthy();
+    expect(screen.getByText('ysm-atoz-index')).toBeTruthy();
   });
 });
