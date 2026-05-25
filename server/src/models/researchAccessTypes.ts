@@ -17,6 +17,7 @@ export const researchEntityTypes = [
   'FELLOWSHIP_PROGRAM',
   'COURSE_SEQUENCE',
   'ARCHIVE_OR_MUSEUM_PROJECT',
+  'CORE_FACILITY',
   'PROGRAM',
   'INITIATIVE',
   'GROUP',

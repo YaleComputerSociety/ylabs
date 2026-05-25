@@ -7,7 +7,15 @@ import {
   type PathwaySearchResult,
 } from './pathwaySearchService';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
-import { getMeiliIndex } from '../utils/meiliClient';
+import {
+  createMeiliIndex,
+  deleteMeiliIndex,
+  ensureMeiliIndex,
+  getMeiliIndex,
+  resolveIndexName,
+  swapMeiliIndexes,
+  waitForMeiliTaskResponse,
+} from '../utils/meiliClient';
 import { publicSourceUrl, publicSourceUrls } from '../utils/publicSourceUrl';
 import { firstUsableResearchWebsiteUrl } from '../utils/researchWebsiteUrl';
 import { sanitizeResearchEntityPublicDescriptionFields } from '../utils/researchEntityDescriptionText';
@@ -15,6 +23,8 @@ import { publicResearchAreaArray } from './researchEntityDto';
 
 export const PATHWAY_SEARCH_INDEX_NAME = 'pathways';
 export const PATHWAY_SEARCH_INDEX_PRIMARY_KEY = 'id';
+
+export type PathwaySearchIndexRebuildStrategy = 'direct' | 'swap';
 
 const MAX_EVIDENCE_ITEMS = 3;
 const MAX_EVIDENCE_EXCERPT_LENGTH = 480;
@@ -111,21 +121,34 @@ export interface PathwaySearchIndexAdapter {
   ) => Promise<unknown>;
   deleteAllDocuments?: () => Promise<unknown>;
   deleteDocument?: (id: string) => Promise<unknown>;
+  getStats?: () => Promise<Record<string, any>>;
 }
 
 export interface RebuildPathwaySearchIndexOptions {
   pageSize?: number;
   clearExisting?: boolean;
+  strategy?: PathwaySearchIndexRebuildStrategy;
   getIndex?: (name: string) => Promise<PathwaySearchIndexAdapter>;
+  ensureIndex?: (name: string, primaryKey: string) => Promise<PathwaySearchIndexAdapter>;
+  createIndex?: (indexName: string, primaryKey: string) => Promise<PathwaySearchIndexAdapter>;
+  swapIndexes?: (sourceIndexName: string, targetIndexName: string) => Promise<unknown>;
+  deleteIndex?: (indexName: string) => Promise<unknown>;
+  resolveIndexName?: (name: string) => string;
+  waitForTaskResponse?: (response: unknown) => Promise<void>;
+  tempIndexName?: string;
 }
 
 export interface RebuildPathwaySearchIndexResult {
   indexName: string;
+  resolvedIndexName: string;
+  strategy: PathwaySearchIndexRebuildStrategy;
   pageSize: number;
   fetchedHitCount: number;
   indexedDocumentCount: number;
   pageCount: number;
   clearedExisting: boolean;
+  meiliDocumentCount?: number;
+  meiliIsIndexing?: boolean;
 }
 
 export interface PathwaySearchIndexSearchAdapter extends PathwaySearchIndexAdapter {
@@ -585,6 +608,64 @@ export function buildPathwaySearchIndexDocuments(
     .filter((doc) => Boolean(doc.id) && !isListingBridgedIndexDocument(doc));
 }
 
+const defaultTempIndexName = (resolvedIndexName: string): string =>
+  `${resolvedIndexName}_rebuild_${Date.now()}`;
+
+const numericStat = (value: unknown): number =>
+  typeof value === 'number' && Number.isFinite(value) ? value : 0;
+
+const statsFromIndex = async (
+  index: PathwaySearchIndexAdapter,
+): Promise<{ meiliDocumentCount?: number; meiliIsIndexing?: boolean }> => {
+  if (!index.getStats) return {};
+  const stats = await index.getStats();
+  return {
+    meiliDocumentCount: numericStat(stats.numberOfDocuments ?? stats.numberOfDocumentsTotal),
+    meiliIsIndexing:
+      typeof stats.isIndexing === 'boolean' ? stats.isIndexing : undefined,
+  };
+};
+
+async function addPathwayDocumentsToIndex(
+  index: PathwaySearchIndexAdapter,
+  fetchPage: FetchPathwaySearchIndexPage,
+  pageSize: number,
+  waitForTask: (response: unknown) => Promise<void>,
+): Promise<{
+  fetchedHitCount: number;
+  indexedDocumentCount: number;
+  pageCount: number;
+}> {
+  let page = 1;
+  let fetchedHitCount = 0;
+  let indexedDocumentCount = 0;
+  let estimatedTotalHits = 0;
+
+  while (page === 1 || fetchedHitCount < estimatedTotalHits) {
+    const result = await fetchPage(page, pageSize);
+    const hits = result.hits || [];
+    estimatedTotalHits = result.estimatedTotalHits || hits.length;
+    fetchedHitCount += hits.length;
+
+    const documents = buildPathwaySearchIndexDocuments(hits);
+    if (documents.length > 0) {
+      await waitForTask(
+        await index.addDocuments(documents, { primaryKey: PATHWAY_SEARCH_INDEX_PRIMARY_KEY }),
+      );
+      indexedDocumentCount += documents.length;
+    }
+
+    if (hits.length === 0) break;
+    page += 1;
+  }
+
+  return {
+    fetchedHitCount,
+    indexedDocumentCount,
+    pageCount: page - 1,
+  };
+}
+
 export async function configurePathwaySearchIndex(
   getIndex: (name: string) => Promise<PathwaySearchIndexAdapter> = getMeiliIndex,
 ): Promise<PathwaySearchIndexAdapter> {
@@ -649,40 +730,59 @@ export async function rebuildPathwaySearchIndex(
   options: RebuildPathwaySearchIndexOptions = {},
 ): Promise<RebuildPathwaySearchIndexResult> {
   const pageSize = Math.max(1, Math.min(100, Math.floor(options.pageSize || 100)));
-  const index = await configurePathwaySearchIndex(options.getIndex || getMeiliIndex);
+  const strategy = options.strategy || 'direct';
+  const resolveName = options.resolveIndexName || resolveIndexName;
+  const resolvedIndexName = resolveName(PATHWAY_SEARCH_INDEX_NAME);
+  const waitForTask = options.waitForTaskResponse || waitForMeiliTaskResponse;
+  const ensureIndex =
+    options.ensureIndex ||
+    (async (name: string, primaryKey: string) => ensureMeiliIndex(name, primaryKey));
+  const createIndex =
+    options.createIndex ||
+    (async (indexName: string, primaryKey: string) => createMeiliIndex(indexName, primaryKey));
+  const swapIndexes = options.swapIndexes || swapMeiliIndexes;
+  const deleteIndex = options.deleteIndex || deleteMeiliIndex;
   const clearExisting = options.clearExisting === true;
+
+  if (strategy === 'swap') {
+    const tempIndexName = options.tempIndexName || defaultTempIndexName(resolvedIndexName);
+    const index = await createIndex(tempIndexName, PATHWAY_SEARCH_INDEX_PRIMARY_KEY);
+    await waitForTask(await index.updateSettings(getPathwaySearchIndexSettings()));
+    const counts = await addPathwayDocumentsToIndex(index, fetchPage, pageSize, waitForTask);
+    await ensureIndex(PATHWAY_SEARCH_INDEX_NAME, PATHWAY_SEARCH_INDEX_PRIMARY_KEY);
+    await swapIndexes(tempIndexName, resolvedIndexName);
+    await deleteIndex(tempIndexName);
+    const targetIndex = await ensureIndex(PATHWAY_SEARCH_INDEX_NAME, PATHWAY_SEARCH_INDEX_PRIMARY_KEY);
+    const stats = await statsFromIndex(targetIndex);
+    return {
+      indexName: PATHWAY_SEARCH_INDEX_NAME,
+      resolvedIndexName,
+      strategy,
+      pageSize,
+      ...counts,
+      clearedExisting: clearExisting,
+      ...stats,
+    };
+  }
+
+  const index = options.getIndex
+    ? await options.getIndex(PATHWAY_SEARCH_INDEX_NAME)
+    : await ensureIndex(PATHWAY_SEARCH_INDEX_NAME, PATHWAY_SEARCH_INDEX_PRIMARY_KEY);
+  await waitForTask(await index.updateSettings(getPathwaySearchIndexSettings()));
   if (clearExisting && index.deleteAllDocuments) {
-    await index.deleteAllDocuments();
+    await waitForTask(await index.deleteAllDocuments());
   }
-
-  let page = 1;
-  let fetchedHitCount = 0;
-  let indexedDocumentCount = 0;
-  let estimatedTotalHits = 0;
-
-  while (page === 1 || fetchedHitCount < estimatedTotalHits) {
-    const result = await fetchPage(page, pageSize);
-    const hits = result.hits || [];
-    estimatedTotalHits = result.estimatedTotalHits || hits.length;
-    fetchedHitCount += hits.length;
-
-    const documents = buildPathwaySearchIndexDocuments(hits);
-    if (documents.length > 0) {
-      await index.addDocuments(documents, { primaryKey: PATHWAY_SEARCH_INDEX_PRIMARY_KEY });
-      indexedDocumentCount += documents.length;
-    }
-
-    if (hits.length === 0) break;
-    page += 1;
-  }
+  const counts = await addPathwayDocumentsToIndex(index, fetchPage, pageSize, waitForTask);
+  const stats = await statsFromIndex(index);
 
   return {
     indexName: PATHWAY_SEARCH_INDEX_NAME,
+    resolvedIndexName,
+    strategy,
     pageSize,
-    fetchedHitCount,
-    indexedDocumentCount,
-    pageCount: page - 1,
+    ...counts,
     clearedExisting: clearExisting,
+    ...stats,
   };
 }
 

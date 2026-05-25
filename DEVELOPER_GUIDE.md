@@ -1,8 +1,6 @@
-# Y/Labs — Developer Guide
+# Yale Research — Developer Guide
 
-> **Live site:** [yalelabs.io](https://yalelabs.io/) · **Beta:** [ylabs-dev.onrender.com](https://ylabs-dev.onrender.com)
-
----
+> **Live site:** [yalelabs.io](https://yalelabs.io/) · **Beta:** [ylabs-gr4v.onrender.com](https://ylabs-gr4v.onrender.com) · **Repo:** [YaleComputerSociety/ylabs](https://github.com/YaleComputerSociety/ylabs)
 
 ## What Is This?
 
@@ -49,7 +47,7 @@ Code flows **Local → Beta → Prod**. Beta is the staging gate.
 
 ## Local Development Setup
 
-These instructions assume a Unix-like shell. Mac developers can run them in Terminal. Windows developers should run them inside WSL, with the repo stored in the Linux filesystem, for example under `~/code/ylabs` rather than `/mnt/c/...`.
+These instructions assume a Unix-like shell. Mac developers can run them in Terminal. Windows developers should run them inside WSL, with the repo stored in the Linux filesystem rather than `/mnt/c/...`.
 
 ### Prerequisites
 
@@ -149,11 +147,10 @@ On Windows, install Docker Desktop on Windows and enable WSL integration for you
 ### 5. Seed Meilisearch
 
 ```bash
-yarn --cwd server meili:rebuild-research-entities --clear
-yarn --cwd server meili:rebuild-pathways --clear
+yarn --cwd server meili:rebuild-all --clear
 ```
 
-This rebuilds local Research and Pathways indexes from MongoDB. Semantic Research search is release-gated separately: Meilisearch must report embedded `researchentities` documents before `RESEARCH_SEARCH_SEMANTIC=true` should be used for Beta or production.
+This rebuilds local Research and Pathways indexes from MongoDB. Use `--strategy=swap` for beta/production rebuilds that serve live traffic. Semantic Research search is release-gated separately: Meilisearch must report embedded `researchentities` documents before `RESEARCH_SEARCH_SEMANTIC=true` should be used for Beta or production.
 
 ### 6. Start dev servers
 
@@ -246,8 +243,7 @@ Use the server workspace scripts for current data flows:
 
 ```bash
 yarn scrape help
-yarn --cwd server meili:rebuild-research-entities --clear
-yarn --cwd server meili:rebuild-pathways --clear
+yarn --cwd server meili:rebuild-all --clear
 ```
 
 Historical `data-migration/` scripts remain for one-off migrations only. Do not use the old listing Meilisearch migration for current Research or Pathways indexes.
@@ -257,7 +253,7 @@ Historical `data-migration/` scripts remain for one-off migrations only. Do not 
 ## Project Structure
 
 ```
-ylabs/
+yale-research/
 ├── package.json              # Root scripts: install:all, dev:client, dev:server, build, start
 ├── DEVELOPER_GUIDE.md        # This file — developer guide
 ├── CLAUDE.md                 # Agent-facing codebase context

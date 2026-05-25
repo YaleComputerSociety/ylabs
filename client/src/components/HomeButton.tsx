@@ -25,17 +25,17 @@ const HomeButton = () => {
         textTransform: 'none',
         minWidth: 'auto',
         minHeight: '44px',
-        padding: '6px 16px 6px 0px',
-        marginLeft: '-16px',
+        padding: { xs: '6px 10px 6px 0px', sm: '6px 16px 6px 0px' },
+        marginLeft: { xs: '-10px', sm: '-16px' },
       }}
     >
       <img
-        src="/assets/logos/paperclip.png"
+        src="/brand/yale-research-mark.svg"
         alt=""
         className="mr-2"
-        style={{ width: '31.65px', height: '27px' }}
+        style={{ width: '32px', height: '32px' }}
       />
-      <span className="text-xl font-semibold tracking-normal text-blue-700">
+      <span className="yr-wordmark text-xl text-[var(--yr-blue)] sm:text-[1.35rem]">
         Yale Research
       </span>
     </Button>

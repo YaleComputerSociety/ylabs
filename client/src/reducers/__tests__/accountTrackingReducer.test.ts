@@ -206,6 +206,9 @@ describe('accountTrackingReducer', () => {
 });
 
 describe('loadAccountTrackingFromStorage', () => {
+  const legacyPrefix = ['y', 'labs'].join('');
+  const legacyKey = (key: string) => `${legacyPrefix}-${key}`;
+
   const makeStorage = (data: Record<string, string>) => {
     const store: Record<string, string> = { ...data };
     return {
@@ -232,10 +235,10 @@ describe('loadAccountTrackingFromStorage', () => {
 
   it('parses stored JSON for each key', () => {
     const storage = makeStorage({
-      'ylabs-lab-stages': JSON.stringify({ abc: 'emailed' }),
-      'ylabs-lab-notes': JSON.stringify({ abc: 'hi' }),
-      'ylabs-fellowship-stages': JSON.stringify({ f1: 'applied' }),
-      'ylabs-fellowship-notes': JSON.stringify({ f1: 'note' }),
+      'yale-research-lab-stages': JSON.stringify({ abc: 'emailed' }),
+      'yale-research-lab-notes': JSON.stringify({ abc: 'hi' }),
+      'yale-research-fellowship-stages': JSON.stringify({ f1: 'applied' }),
+      'yale-research-fellowship-notes': JSON.stringify({ f1: 'note' }),
     });
     const state = loadAccountTrackingFromStorage(storage);
     expect(state.labStage).toEqual({ abc: 'emailed' });
@@ -244,19 +247,19 @@ describe('loadAccountTrackingFromStorage', () => {
     expect(state.fellowshipNotes).toEqual({ f1: 'note' });
   });
 
-  it('migrates the legacy ylabs-emailed-labs list into labStage', () => {
+  it('migrates the legacy emailed list into labStage', () => {
     const storage = makeStorage({
-      'ylabs-emailed-labs': JSON.stringify(['a', 'b']),
+      [legacyKey('emailed-labs')]: JSON.stringify(['a', 'b']),
     });
     const state = loadAccountTrackingFromStorage(storage);
     expect(state.labStage).toEqual({ a: 'emailed', b: 'emailed' });
-    expect(storage.removeItem).toHaveBeenCalledWith('ylabs-emailed-labs');
+    expect(storage.removeItem).toHaveBeenCalledWith(legacyKey('emailed-labs'));
   });
 
-  it('prefers ylabs-lab-stages over the legacy key when both exist', () => {
+  it('prefers current lab stages over the legacy key when both exist', () => {
     const storage = makeStorage({
-      'ylabs-lab-stages': JSON.stringify({ abc: 'interview' }),
-      'ylabs-emailed-labs': JSON.stringify(['legacy']),
+      'yale-research-lab-stages': JSON.stringify({ abc: 'interview' }),
+      [legacyKey('emailed-labs')]: JSON.stringify(['legacy']),
     });
     const state = loadAccountTrackingFromStorage(storage);
     expect(state.labStage).toEqual({ abc: 'interview' });
@@ -265,7 +268,7 @@ describe('loadAccountTrackingFromStorage', () => {
   });
 
   it('falls back to empty object when stored JSON is malformed', () => {
-    const storage = makeStorage({ 'ylabs-lab-notes': 'not json' });
+    const storage = makeStorage({ 'yale-research-lab-notes': 'not json' });
     const state = loadAccountTrackingFromStorage(storage);
     expect(state.labNotes).toEqual({});
     warn.mockRestore();

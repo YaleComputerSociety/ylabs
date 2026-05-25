@@ -59,7 +59,7 @@ export interface DeadlineReminder {
   sourceUrl?: string;
 }
 
-const PLAN_STORAGE_KEY = 'ylabs.savedResearchPlans.v1';
+const PLAN_STORAGE_KEY = 'yale-research.savedResearchPlans.v1';
 
 const INTENT_OPTIONS: Array<{ value: PlanningIntent; label: string }> = [
   { value: 'thesis', label: 'Thesis idea' },
@@ -655,15 +655,15 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
         <div className="rounded-md border border-dashed border-gray-300 bg-slate-50 p-5">
           <h3 className="text-base font-semibold text-gray-950">No saved research plans yet</h3>
           <p className="mt-2 max-w-2xl text-sm leading-relaxed text-gray-600">
-            Start with Yale Labs, open profiles that look promising, then save a plan when you find
-            a route worth tracking for outreach, credit, funding, or an application.
+            Start with Yale Research, open profiles that look promising, then save a plan when you
+            find a route worth tracking for outreach, credit, funding, or an application.
           </p>
           <div className="mt-4 flex flex-wrap gap-2">
             <Link
               to="/research"
               className="inline-flex min-h-[44px] items-center rounded-md bg-blue-700 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
             >
-              Yale Labs
+              Yale Research
             </Link>
             <Link
               to="/programs"

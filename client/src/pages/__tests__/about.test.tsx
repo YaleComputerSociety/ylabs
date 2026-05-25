@@ -25,11 +25,9 @@ describe('About', () => {
 
     expect(screen.getAllByRole('link', { name: 'Yale Computer Society website' }).length).toBe(1);
     expect(
-      screen.getAllByRole('link', { name: 'Yale Undergraduate Research Association website' })
-        .length,
-    ).toBe(1);
+      screen.queryByRole('link', { name: 'Yale Undergraduate Research Association website' }),
+    ).toBeNull();
     expect(screen.queryByRole('link', { name: 'y/cs Website' })).toBeNull();
-    expect(screen.queryByRole('link', { name: 'YURA Website' })).toBeNull();
   });
 
   it('keeps the feedback prompt current and below the main page heading', () => {

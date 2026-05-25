@@ -29,7 +29,7 @@ const baseOpportunity: OpportunityDetailPayload = {
   applicationLabel: 'Apply now',
   status: 'OPEN',
   provenance: 'LISTING_BRIDGED',
-  provenanceLabel: 'Legacy YLabs listing signal',
+  provenanceLabel: 'Legacy listing signal',
   hoursPerWeek: 8,
   payRate: '$18/hour',
   compensationType: 'PAID',
@@ -61,7 +61,7 @@ const baseOpportunity: OpportunityDetailPayload = {
   evidence: [
     {
       _id: 'evidence-1',
-      sourceName: 'ylabs-listing',
+      sourceName: 'legacy-listing',
       sourceUrl: 'https://source.example.edu/posting',
       field: 'postedOpportunity',
       excerpt: 'Apply through the official posting. Questions: [email redacted]',
@@ -94,7 +94,7 @@ describe('OpportunityDetail page', () => {
     await screen.findByText('Spring RA role');
 
     expect(container.textContent).toContain('Apply now');
-    expect(container.textContent).toContain('Legacy YLabs listing signal');
+    expect(container.textContent).toContain('Legacy listing signal');
     expect(container.textContent).toContain('Listing-derived signal');
     expect(container.textContent).not.toContain('Posted opportunity');
     expect(container.textContent).toContain('Upcoming deadline');

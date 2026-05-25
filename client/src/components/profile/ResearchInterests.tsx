@@ -1,4 +1,5 @@
 import { Fragment } from 'react';
+import { formatTitleCaseLabel } from '../../utils/displayText';
 
 /**
  * Profile tab displaying research interests and topics.
@@ -88,7 +89,7 @@ const ResearchInterests = ({ interests, topics, summary }: ResearchInterestsProp
         {researchInterests.map((interest, index) => (
           <Fragment key={interest}>
             <span className="rounded-md border border-blue-100 bg-blue-50 px-2.5 py-1 text-sm font-medium text-blue-800">
-              {interest}
+              {formatTitleCaseLabel(interest)}
             </span>
             {index < researchInterests.length - 1 && <span className="sr-only">, </span>}
           </Fragment>

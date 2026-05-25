@@ -41,7 +41,9 @@ External researcher identity note: accepted operator inputs should prefer ORCID 
 
 Faculty profile department note: student-facing profile departments should use canonical `Department.displayName` labels such as `CPSC - Computer Science`. Raw Yale directory, roster, or school-unit labels such as `EASCPS Computer Science` and `EAS School of Engineering and Applied Science` remain in observations for auditability, but profile materialization, profile API output, and reviewed backfills should resolve them before they appear in badges, filters, or student-facing profile summaries. Broad school units should be ignored for department badges when a more specific canonical department is available. Reviewed source-unit families such as Nursing, Law, Architecture, Music, FAS departments, YSPH departments with active rows, and high-confidence Yale School of Medicine department prefixes may resolve through explicit aliases only when they map to active canonical `Department` rows. Source units without an active canonical department row, such as some centers, administrative units, Drama, Divinity, Laboratory Medicine, and Social and Behavioral Sciences, are ignored for student-facing department badges rather than guessed.
 
-Program source metadata note: `Fellowship` rows are the current storage model for the student-facing Programs & Fellowships surface and may carry `programCategory`, `sourceName`, `sourceUrl`, `sourceKey`, `sourceFingerprint`, `sourceLastVerifiedAt`, and `sourceLastChangedAt`. Official Yale fellowship-office scraper rows upsert by source key, source/application links, then exact title. They should not be archived automatically when a source row disappears; disappearance is a review signal because expired or temporarily unavailable program pages can still be useful next-cycle planning data.
+Program source metadata note: `Fellowship` rows are the current storage model for the student-facing Programs & Fellowships surface and may carry `programCategory`, `programKind`, `entryMode`, `studentFacingCategory`, mentor/eligibility flags, `bestNextStep`, `prepSteps`, `sourceName`, `sourceUrl`, `sourceKey`, `sourceFingerprint`, `sourceLastVerifiedAt`, and `sourceLastChangedAt`. Official Yale fellowship-office scraper rows upsert by source key, source/application links, then exact title. They should not be archived automatically when a source row disappears; disappearance is a review signal because expired or temporarily unavailable program pages can still be useful next-cycle planning data.
+
+Student visibility note: `ResearchEntity` and `Fellowship` rows now share a Trust Tier projection through `studentVisibilityTier`, `studentVisibilityComputedTier`, optional `studentVisibilityOverrideTier`, `studentVisibilityReasons`, suppression/review metadata, and `studentVisibilityVersion`. The public tiers are `student_ready` and `limited_but_safe`; `operator_review` is for admin/operator review; `suppressed` is not student-visible. Research search and Program search default to the public tiers, while admin filters can inspect review and suppressed rows.
 
 ## Target Conceptual Model
 
@@ -259,7 +261,7 @@ Opportunity detail note: `/api/opportunities/:id` exposes explicit public state 
 
 ## Ways-In Enrichment
 
-`EntryPathway` remains the internal route model for ways into a plausible research home, but public Pathways search is retired. `POST /api/research/search` is the client-facing search contract for Yale Labs cards and returns research homes enriched with a small `waysIn` summary derived from `EntryPathway` data. The server may still call `pathwaySearchService` internally for research-card enrichment, research detail, saved planning, matching, admin review, and indexing workflows. Do not describe `/pathways` or `POST /api/pathways/search` as current public/student-facing contracts.
+`EntryPathway` remains the internal route model for ways into a plausible research home, but public Pathways search is retired. `POST /api/research/search` is the client-facing search contract for Yale Research cards and returns research homes enriched with a small `waysIn` summary derived from `EntryPathway` data. The server may still call `pathwaySearchService` internally for research-card enrichment, research detail, saved planning, matching, admin review, and indexing workflows. Do not describe `/pathways` or `POST /api/pathways/search` as current public/student-facing contracts.
 
 Current internal behavior:
 
@@ -284,7 +286,7 @@ Student workflow depth starts with saved research plans. User accounts still sto
 
 First-slice behavior:
 
-- Yale Labs and research-detail ways-in cards support save and unsave controls for pathway records.
+- Yale Research and research-detail ways-in cards support save and unsave controls for pathway records.
 - `/api/users/savedResearchPlanIds` returns saved ids for optimistic UI state.
 - `/api/users/savedResearchPlans` returns hydrated saved research plans and prunes archived or otherwise hidden pathways from the saved list.
 - `/api/users/savedResearchPlanDetails` stores per-plan intent, stage, notes, and checklist state.
@@ -302,7 +304,7 @@ Saved research-plan program matching should stay source-cautious. The backend no
 
 ## Programs API
 
-`/api/programs` is canonical for the Programs & Fellowships surface. It uses program-facing route/controller/service wrappers over the current `Fellowship` storage model and supports `programCategory` values for `FELLOWSHIP`, `CENTER_INTERNSHIP`, `RECURRING_PROGRAM`, and `SUMMER_RESEARCH_PROGRAM`. `/api/fellowships` remains a temporary compatibility alias with a deprecation header while clients migrate.
+`/api/programs` is canonical for the Programs & Fellowships surface. It uses program-facing route/controller/service wrappers over the current `Fellowship` storage model and supports legacy `programCategory` values plus journey fields such as `programKind`, `entryMode`, `studentFacingCategory`, `requiresMentorBeforeApply`, and `mentorMatching`. `/api/fellowships` remains a temporary compatibility alias with a deprecation header while clients migrate.
 
 Saved program state uses `/api/users/savedProgramIds` and `/api/users/savedPrograms` as the client-facing account APIs, backed by the existing `favFellowships` storage field until a later user-data migration. Canonical client saved-state code should use `programs` and `researchPlans` names rather than fellowship/pathway favorite aliases.
 
@@ -348,7 +350,11 @@ AccessSignal {
 
 Absence of evidence should usually be computed from missing signals, not stored as many `NO_EVIDENCE` records. Store negative signals only when a source explicitly states a limitation, such as application-only, not accepting students, or not currently available.
 
-Initial materialization in [`server/src/scrapers/accessMaterializer.ts`](../server/src/scrapers/accessMaterializer.ts) derives first-class access records from raw `Observation` rows using the original observation confidence and source metadata. Independent-study and course-credit evidence now supports `CREDIT_FORMALIZATION_POSSIBLE` signals or best-next-step hints after home/mentor fit, not standalone `EntryPathway` rows. Current undergraduate counts can support `CURRENT_UNDERGRADS` plus `EXPLORATORY_CONTACT`; past undergraduate advisees can support `PAST_UNDERGRADS`, `FELLOWSHIP_COMPATIBLE`, exploratory outreach, and thesis/advising fit. Fellowship funding remains a formalization/funding-planning cue unless a real hosted program or posted opportunity exists. Contact fields can support guarded `ContactRoute` records. Entity-discovery sources such as `ysm-atoz-index` and `yse-centers-index` should not emit undergraduate-access booleans; legacy observations from those sources are ignored for access derivation unless a more explicit undergraduate evidence observation exists.
+Initial materialization in [`server/src/scrapers/accessMaterializer.ts`](../server/src/scrapers/accessMaterializer.ts) derives first-class access records from raw `Observation` rows using the original observation confidence and source metadata. Independent-study and course-credit evidence now supports `CREDIT_FORMALIZATION_POSSIBLE` signals or best-next-step hints after home/mentor fit, not standalone `EntryPathway` rows. Current undergraduate counts can support `CURRENT_UNDERGRADS` plus `EXPLORATORY_CONTACT`; past undergraduate advisees can support `PAST_UNDERGRADS`, `FELLOWSHIP_COMPATIBLE`, exploratory outreach, and thesis/advising fit. Fellowship funding remains a formalization/funding-planning cue unless a real hosted program or posted opportunity exists. Contact fields can support guarded `ContactRoute` records. Entity-discovery sources such as `ysm-atoz-index`, `yse-centers-index`, and `yale-research-official` should not emit undergraduate-access booleans; legacy observations from those sources are ignored for access derivation unless a more explicit undergraduate evidence observation exists.
+
+Official `research.yale.edu` core facilities are `CORE_FACILITY` ResearchEntities because they represent durable Yale research infrastructure. Individual instruments, equipment, and services discovered from the cores directory remain method/topic context on the parent core in v1 rather than standalone research homes. Resource-directory rows are ingested only when they describe a durable center, institute, program, or initiative; policy/help pages remain source context and should not become pathways or posted opportunities.
+
+Official `research.yale.edu` center/institute rows can overlap with existing official index sources such as YSE centers. The materializer should attach those observations to one unique active exact-name `ResearchEntity` when available, preserve that entity's canonical slug, and merge source provenance instead of creating a parallel `yale-research-center-*` shell.
 
 Course-credit evidence is formalization-specific, not entry-specific. The CourseTable-backed `yale-course-catalog` scraper is no longer an active source. Course-specific evidence should not create a generic exploratory outreach pathway or a `COURSE_CREDIT` entry pathway by itself. Thesis evidence should usually support thesis-fit/advising signals, formalization options, or planning next steps after a plausible mentor/home exists.
 
@@ -368,7 +374,7 @@ The active development database and codebase no longer keep Mongoose models or r
 
 `Source` rows can include optional `coverage` metadata seeded from [`server/src/scrapers/sourceCoverageRegistry.ts`](../server/src/scrapers/sourceCoverageRegistry.ts). Coverage records declare the source priority, source tier, artifact types a source can support, evidence categories it targets, default confidence stance, and planning notes.
 
-This metadata is a planning and review contract, not a substitute for evidence. A source that can emit `Observation` rows should not be treated as access evidence unless the materializer maps specific observations into `EntryPathway`, `AccessSignal`, `ContactRoute`, or `PostedOpportunity` rows. Discovery-only sources such as YSM/YSE indexes remain entity discovery inputs unless explicit undergraduate-access evidence is present.
+This metadata is a planning and review contract, not a substitute for evidence. A source that can emit `Observation` rows should not be treated as access evidence unless the materializer maps specific observations into `EntryPathway`, `AccessSignal`, `ContactRoute`, or `PostedOpportunity` rows. Discovery-only sources such as YSM/YSE indexes and `research.yale.edu` official directories remain entity discovery inputs unless explicit undergraduate-access evidence is present.
 
 ## Researcher Identity Signals
 
@@ -484,7 +490,7 @@ Use precise internal names in code and schema docs, but use warmer labels in the
 - formalization metadata -> Ways to formalize
 - computed CTA / `RecommendedNextStep` -> Best Next Step
 
-Use "Pathways" as internal, advising, and route-comparison vocabulary, but do not make it a public student-facing route or navigation label. Student-facing surfaces should say "Ways in" on Yale Labs cards and "saved research plans" in Account. Internally, keep the distinction: `EntryPathway` is a durable route toward a plausible research home, `PostedOpportunity` is a real active/time-bound posting, and course credit/fellowship funding/thesis advising are formalization outcomes after home/mentor fit unless they are attached to a real hosted program, mentor-matching program, or posted application instance.
+Use "Pathways" as internal, advising, and route-comparison vocabulary, but do not make it a public student-facing route or navigation label. Student-facing surfaces should say "Ways in" on Yale Research cards and "saved research plans" in Account. Internally, keep the distinction: `EntryPathway` is a durable route toward a plausible research home, `PostedOpportunity` is a real active/time-bound posting, and course credit/fellowship funding/thesis advising are formalization outcomes after home/mentor fit unless they are attached to a real hosted program, mentor-matching program, or posted application instance.
 
 ## Migration Guidance
 

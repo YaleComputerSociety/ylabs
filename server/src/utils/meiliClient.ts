@@ -30,3 +30,87 @@ export const getMeiliIndex = async (name: string) => {
   const client = await getMeiliClient();
   return client.index(resolveIndexName(name));
 };
+
+export const meiliTaskUidFromResponse = (response: unknown): number | undefined => {
+  if (!response || typeof response !== 'object') return undefined;
+  const record = response as Record<string, unknown>;
+  const uid = record.taskUid ?? record.uid;
+  return typeof uid === 'number' && Number.isFinite(uid) ? uid : undefined;
+};
+
+export const waitForMeiliTask = async (taskUid: number): Promise<unknown> => {
+  const client = await getMeiliClient();
+  const result = await client.tasks.waitForTask(taskUid, {
+    timeout: Number(process.env.MEILI_TASK_TIMEOUT_MS || 15 * 60 * 1000),
+    interval: Number(process.env.MEILI_TASK_POLL_INTERVAL_MS || 500),
+  });
+  if (result?.status === 'failed') {
+    throw new Error(result.error?.message || `Meilisearch task ${taskUid} failed`);
+  }
+  return result;
+};
+
+export const waitForMeiliTaskResponse = async (response: unknown): Promise<void> => {
+  const taskUid = meiliTaskUidFromResponse(response);
+  if (taskUid !== undefined) {
+    await waitForMeiliTask(taskUid);
+  }
+};
+
+const isMissingIndexError = (error: unknown): boolean => {
+  const maybeError = error as {
+    code?: string;
+    message?: string;
+    cause?: { code?: string; message?: string };
+  };
+  return (
+    maybeError?.code === 'index_not_found' ||
+    maybeError?.cause?.code === 'index_not_found' ||
+    /index .*not found/i.test(maybeError?.message || '') ||
+    /index .*not found/i.test(maybeError?.cause?.message || '')
+  );
+};
+
+export const createMeiliIndex = async (indexName: string, primaryKey: string) => {
+  const client = await getMeiliClient();
+  await waitForMeiliTaskResponse(await client.createIndex(indexName, { primaryKey }));
+  return client.index(indexName);
+};
+
+export const ensureMeiliIndex = async (name: string, primaryKey: string) => {
+  const client = await getMeiliClient();
+  const resolvedIndexName = resolveIndexName(name);
+  try {
+    await client.getRawIndex(resolvedIndexName);
+  } catch (error) {
+    if (!isMissingIndexError(error)) throw error;
+    await waitForMeiliTaskResponse(
+      await client.createIndex(resolvedIndexName, { primaryKey }),
+    );
+  }
+  return client.index(resolvedIndexName);
+};
+
+export const swapMeiliIndexes = async (
+  sourceIndexName: string,
+  targetIndexName: string,
+): Promise<void> => {
+  const client = await getMeiliClient();
+  await waitForMeiliTaskResponse(
+    await client.swapIndexes([
+      {
+        indexes: [sourceIndexName, targetIndexName],
+        rename: false,
+      },
+    ]),
+  );
+};
+
+export const deleteMeiliIndex = async (indexName: string): Promise<void> => {
+  const client = await getMeiliClient();
+  try {
+    await waitForMeiliTaskResponse(await client.deleteIndex(indexName));
+  } catch (error) {
+    if (!isMissingIndexError(error)) throw error;
+  }
+};

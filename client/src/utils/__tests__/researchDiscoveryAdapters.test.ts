@@ -208,7 +208,7 @@ describe('buildResearchHomeContextSummary', () => {
         sourceUrls: ['https://research-home.example.test/lab/example/'],
       }),
     ).toMatchObject({
-      text: 'No plain-English summary is available yet. Use the source links and Fixture Medicine context to decide whether this research home fits.',
+      text: 'Limited public description. Open the profile to review source links and Fixture Medicine context.',
       state: 'sparse',
       label: 'Summary limited',
     });
@@ -267,7 +267,7 @@ describe('buildResearchHomeContextSummary', () => {
         researchAreas: ['archival research', 'digital humanities'],
       }),
     ).toMatchObject({
-      text: 'No plain-English summary is available yet. This research home needs source review before fit can be assessed.',
+      text: 'Limited public description. This profile needs source review before fit can be assessed.',
       state: 'sparse',
       label: 'Summary limited',
     });
@@ -325,7 +325,7 @@ describe('buildResearchHomeContextSummary', () => {
         school: 'Fixture School of Medicine',
       }),
     ).toMatchObject({
-      text: 'No plain-English summary is available yet. Use the Fixture School of Medicine context while this profile awaits source review.',
+      text: 'Limited public description. Use the Fixture School of Medicine context while this profile is reviewed.',
       state: 'sparse',
       label: 'Summary limited',
     });
@@ -381,7 +381,7 @@ describe('buildResearchHomeContextSummary', () => {
         ],
       }),
     ).toMatchObject({
-      text: 'No plain-English summary is available yet. This research home needs source review before fit can be assessed.',
+      text: 'Limited public description. This profile needs source review before fit can be assessed.',
       state: 'sparse',
       label: 'Summary limited',
     });
@@ -393,7 +393,7 @@ describe('buildResearchHomeContextSummary', () => {
         departments: ['Computer Science'],
       }),
     ).toMatchObject({
-      text: 'No plain-English summary is available yet. Use the Computer Science context while this profile awaits source review.',
+      text: 'Limited public description. Use the Computer Science context while this profile is reviewed.',
       state: 'sparse',
       label: 'Summary limited',
     });
@@ -406,7 +406,7 @@ describe('buildResearchHomeContextSummary', () => {
         sourceUrls: ['https://source.example.test/example'],
       }),
     ).toMatchObject({
-      text: 'No plain-English summary is available yet. Use the source links and Computer Science context to decide whether this research home fits.',
+      text: 'Limited public description. Open the profile to review source links and Computer Science context.',
       state: 'sparse',
       label: 'Summary limited',
     });
@@ -414,7 +414,7 @@ describe('buildResearchHomeContextSummary', () => {
 
   it('uses generic sparse context when no useful metadata is present', () => {
     expect(buildResearchHomeContextSummary({})).toMatchObject({
-      text: 'No plain-English summary is available yet. This research home needs source review before fit can be assessed.',
+      text: 'Limited public description. This profile needs source review before fit can be assessed.',
       state: 'sparse',
       label: 'Summary limited',
     });

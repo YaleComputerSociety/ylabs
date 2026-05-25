@@ -22,6 +22,8 @@ export const sourceCoverageEvidenceCategories = [
   'ENTITY_MEMBERSHIP',
   'TOPICS',
   'METHODS',
+  'RESEARCH_INFRASTRUCTURE',
+  'OFFICIAL_RESOURCE',
   'OFFICIAL_PROFILE',
   'LAB_WEBSITE',
   'JOIN_INSTRUCTIONS',

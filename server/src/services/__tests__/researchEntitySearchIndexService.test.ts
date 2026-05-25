@@ -272,7 +272,7 @@ describe('researchEntitySearchIndexService', () => {
     });
   });
 
-  it('rebuilds the index before applying semantic settings and waits for tasks', async () => {
+  it('creates missing indexes, applies settings before documents, and waits for tasks', async () => {
     const calls: Array<{ kind: string; payload?: unknown }> = [];
     const fakeIndex = {
       updateSettings: async (settings: unknown) => {
@@ -287,6 +287,10 @@ describe('researchEntitySearchIndexService', () => {
         calls.push({ kind: 'documents', payload: { documents, options } });
         return { taskUid: 2 };
       },
+      getStats: async () => {
+        calls.push({ kind: 'stats' });
+        return { numberOfDocuments: 2, isIndexing: false };
+      },
     };
     const fetchPage = async (page: number) =>
       page === 1
@@ -299,11 +303,14 @@ describe('researchEntitySearchIndexService', () => {
     const result = await rebuildResearchEntitySearchIndex({
       pageSize: 2,
       clearExisting: true,
-      getIndex: async () => fakeIndex,
+      ensureIndex: async (indexName, primaryKey) => {
+        calls.push({ kind: 'ensure', payload: { indexName, primaryKey } });
+        return fakeIndex;
+      },
       fetchPage,
-      waitForTask: async (taskUid: number) => {
+      waitForTaskResponse: async (response: unknown) => {
+        const taskUid = (response as { taskUid?: number }).taskUid;
         calls.push({ kind: 'wait', payload: taskUid });
-        return { uid: taskUid, status: 'succeeded' };
       },
     });
 
@@ -314,23 +321,102 @@ describe('researchEntitySearchIndexService', () => {
       indexedDocumentCount: 2,
       pageCount: 1,
       clearedExisting: true,
+      strategy: 'direct',
+      resolvedIndexName: RESEARCH_ENTITY_SEARCH_INDEX_NAME,
+      meiliDocumentCount: 2,
+      meiliIsIndexing: false,
     });
     expect(calls.map((call) => call.kind)).toEqual([
+      'ensure',
+      'settings',
+      'wait',
       'clear',
       'wait',
       'documents',
       'wait',
-      'settings',
-      'wait',
+      'stats',
     ]);
-    expect(calls[2].payload).toMatchObject({
+    expect(calls[0].payload).toEqual({
+      indexName: RESEARCH_ENTITY_SEARCH_INDEX_NAME,
+      primaryKey: RESEARCH_ENTITY_SEARCH_INDEX_PRIMARY_KEY,
+    });
+    expect(calls[5].payload).toMatchObject({
       options: { primaryKey: RESEARCH_ENTITY_SEARCH_INDEX_PRIMARY_KEY },
     });
     expect(calls.filter((call) => call.kind === 'wait').map((call) => call.payload)).toEqual([
+      3,
       1,
       2,
-      3,
     ]);
+  });
+
+  it('can rebuild through a temporary index and atomically swap into the live index', async () => {
+    const calls: Array<{ kind: string; payload?: unknown }> = [];
+    const fakeIndex = {
+      updateSettings: async () => {
+        calls.push({ kind: 'settings' });
+        return { taskUid: 11 };
+      },
+      addDocuments: async () => {
+        calls.push({ kind: 'documents' });
+        return { taskUid: 12 };
+      },
+      getStats: async () => ({ numberOfDocuments: 1, isIndexing: false }),
+    };
+
+    const result = await rebuildResearchEntitySearchIndex({
+      strategy: 'swap',
+      pageSize: 10,
+      clearExisting: true,
+      resolveIndexName: (name) => `beta_${name}`,
+      createIndex: async (indexName, primaryKey) => {
+        calls.push({ kind: 'create', payload: { indexName, primaryKey } });
+        return fakeIndex;
+      },
+      ensureIndex: async (indexName, primaryKey) => {
+        calls.push({ kind: 'ensure', payload: { indexName, primaryKey } });
+        return fakeIndex;
+      },
+      swapIndexes: async (sourceIndexName, targetIndexName) => {
+        calls.push({ kind: 'swap', payload: { sourceIndexName, targetIndexName } });
+      },
+      deleteIndex: async (indexName) => {
+        calls.push({ kind: 'delete', payload: indexName });
+      },
+      fetchPage: async (page) =>
+        page === 1 ? [{ _id: 'entity-1', name: 'Example Lab', archived: false }] : [],
+      waitForTaskResponse: async (response: unknown) => {
+        calls.push({ kind: 'wait', payload: (response as { taskUid?: number }).taskUid });
+      },
+      tempIndexName: 'beta_researchentities_rebuild_test',
+    });
+
+    expect(result).toMatchObject({
+      indexName: RESEARCH_ENTITY_SEARCH_INDEX_NAME,
+      resolvedIndexName: 'beta_researchentities',
+      strategy: 'swap',
+      indexedDocumentCount: 1,
+      clearedExisting: true,
+    });
+    expect(calls.map((call) => call.kind)).toEqual([
+      'create',
+      'settings',
+      'wait',
+      'documents',
+      'wait',
+      'ensure',
+      'swap',
+      'delete',
+      'ensure',
+    ]);
+    expect(calls[0].payload).toEqual({
+      indexName: 'beta_researchentities_rebuild_test',
+      primaryKey: RESEARCH_ENTITY_SEARCH_INDEX_PRIMARY_KEY,
+    });
+    expect(calls[6].payload).toEqual({
+      sourceIndexName: 'beta_researchentities_rebuild_test',
+      targetIndexName: 'beta_researchentities',
+    });
   });
 
   it('reports semantic readiness from embedded document stats', async () => {

@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -71,8 +71,8 @@ describe('Navbar', () => {
 
     const primaryNav = screen.getByRole('navigation', { name: 'Primary navigation' });
     expect(primaryNav.closest('.MuiToolbar-root')).toBeTruthy();
-    expect(primaryNav.contains(screen.getByRole('link', { name: 'Yale Labs' }))).toBe(true);
-    expect(primaryNav.contains(screen.getByRole('link', { name: 'Programs & Fellowships' }))).toBe(true);
+    expect(within(primaryNav).getByRole('link', { name: 'Yale Research' })).toBeTruthy();
+    expect(within(primaryNav).getByRole('link', { name: 'Programs & Fellowships' })).toBeTruthy();
     expect(screen.queryByRole('link', { name: 'Find Pathways' })).toBeNull();
     expect(screen.queryByPlaceholderText('Search programs and fellowships...')).toBeNull();
     expect(screen.queryByRole('button', { name: /filters/i })).toBeNull();
@@ -110,6 +110,6 @@ describe('Navbar', () => {
 
     expect(screen.getByRole('dialog')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Close menu' })).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Yale Labs' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Yale Research' })).toBeTruthy();
   });
 });

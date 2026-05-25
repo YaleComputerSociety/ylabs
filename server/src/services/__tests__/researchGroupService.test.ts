@@ -484,7 +484,45 @@ describe('searchResearchGroupsViaMeili', () => {
     );
   });
 
-  it('keeps evidence-first browse ordering in production even when low-quality order is requested', async () => {
+  it('defaults evidence browse to student-visible trust tiers', async () => {
+    mocks.researchEntityAggregate.mockResolvedValueOnce([
+      {
+        data: [],
+        total: [{ count: 0 }],
+      },
+    ]);
+
+    await searchResearchGroupsViaMeili('', {}, 1, 24);
+
+    const pipeline = mocks.researchEntityAggregate.mock.calls[0][0];
+    expect(pipeline[0]).toEqual({
+      $match: {
+        archived: { $ne: true },
+        studentVisibilityTier: { $in: ['student_ready', 'limited_but_safe'] },
+      },
+    });
+  });
+
+  it('defaults evidence browse to student-visible trust tiers', async () => {
+    mocks.researchEntityAggregate.mockResolvedValueOnce([
+      {
+        data: [],
+        total: [{ count: 0 }],
+      },
+    ]);
+
+    await searchResearchGroupsViaMeili('', {}, 1, 24);
+
+    const pipeline = mocks.researchEntityAggregate.mock.calls[0][0];
+    expect(pipeline[0]).toEqual({
+      $match: {
+        archived: { $ne: true },
+        studentVisibilityTier: { $in: ['student_ready', 'limited_but_safe'] },
+      },
+    });
+  });
+
+  it('keeps admin low-quality browse ordering available in production', async () => {
     process.env.NODE_ENV = 'production';
     mocks.researchEntityAggregate.mockResolvedValueOnce([
       {
@@ -500,12 +538,13 @@ describe('searchResearchGroupsViaMeili', () => {
       expect.arrayContaining([
         expect.objectContaining({
           $sort: expect.objectContaining({
-            _evidenceScore: -1,
-            _postedOpportunityCount: -1,
-            _accessSignalCount: -1,
-            _actionablePathwayCount: -1,
-            _officialYaleSourceCount: -1,
-            lastObservedAt: -1,
+            _qualityRepairScore: -1,
+            _evidenceScore: 1,
+            _postedOpportunityCount: 1,
+            _accessSignalCount: 1,
+            _actionablePathwayCount: 1,
+            _officialYaleSourceCount: 1,
+            lastObservedAt: 1,
           }),
         }),
       ]),

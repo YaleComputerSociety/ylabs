@@ -17,6 +17,7 @@ import {
   getFellowshipCycleStatus,
   getFellowshipDeadlineSubtitle,
 } from '../utils/fellowshipCycle';
+import { entryModeLabel, programKindLabel } from '../utils/programJourney';
 
 export const DEPT_CAP = 3;
 export const TAG_CAP = 3;
@@ -168,6 +169,24 @@ export function getItemTags(
     return areas.map((a) => ({ label: a, ...getColor(a) }));
   }
   return [
+    ...(item.data.studentFacingCategory
+      ? [
+          {
+            label: item.data.studentFacingCategory,
+            bg: 'bg-sky-50',
+            text: 'text-sky-700',
+          },
+        ]
+      : []),
+    ...(item.data.entryMode
+      ? [
+          {
+            label: entryModeLabel(item.data.entryMode),
+            bg: 'bg-emerald-50',
+            text: 'text-emerald-700',
+          },
+        ]
+      : []),
     ...item.data.yearOfStudy.map((y) => ({
       label: y,
       bg: 'bg-blue-50',
@@ -212,6 +231,17 @@ export function getItemSubtitleColor(item: BrowsableItem): string {
   const daysUntil = Math.ceil((d.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
   if (daysUntil <= 14) return 'text-amber-600 font-medium';
   return 'text-gray-500';
+}
+
+export function getFellowshipJourneySummary(fellowship: Fellowship): string | null {
+  const parts = [
+    fellowship.studentFacingCategory || programKindLabel(fellowship.programKind),
+    fellowship.requiresMentorBeforeApply ? 'mentor first' : null,
+    fellowship.mentorMatching ? 'mentor matching' : null,
+    fellowship.compensationSummary || null,
+    fellowship.hoursPerWeek ? `${fellowship.hoursPerWeek} hrs/week` : null,
+  ].filter(Boolean);
+  return parts.length > 0 ? parts.join(' · ') : null;
 }
 
 export function getDaysUntilDeadline(item: BrowsableItem): number | null {

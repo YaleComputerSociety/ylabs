@@ -85,6 +85,25 @@ const isRoleOnlyTitleFragment = (value: unknown): boolean => {
   return false;
 };
 
+const isIncompleteSentenceFragment = (value: unknown): boolean => {
+  const text = normalizeResearchInlineText(value);
+  if (!text) return false;
+
+  if (
+    /^[a-z]/.test(text) &&
+    /^(?:is|of|focuses?|focused|works|studies|examines|investigates|uses|employs)\b/i.test(text)
+  ) {
+    return true;
+  }
+
+  if (/\beduHQ\s*\d/i.test(text)) return true;
+  if (/(?:\b(?:Dr|Prof|Mr|Ms|Mrs)|\b[A-Z])\.$/.test(text)) {
+    return !/(?:U\.S|U\.K|Ph\.D|M\.D|B\.S|M\.S|Sc\.D)\.$/i.test(text);
+  }
+
+  return false;
+};
+
 const hasRepeatedSourceChromePhrase = (value: string): boolean => {
   const phraseCounts = new Map<string, number>();
   const phrasePattern =
@@ -106,6 +125,7 @@ export const isGenericResearchHomeDescription = (value: unknown): boolean => {
     GENERIC_CONTEXT_DESCRIPTION_PATTERNS.some((pattern) => pattern.test(text)) ||
     isAcademicAppointmentDescription(text) ||
     isRoleOnlyTitleFragment(text) ||
+    isIncompleteSentenceFragment(text) ||
     isResearchSourceChromeText(text) ||
     hasRepeatedSourceChromePhrase(text)
   );

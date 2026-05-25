@@ -15,12 +15,12 @@ const YURAButton = () => {
       sx={{ textTransform: 'none', minHeight: '44px' }}
     >
       <img
-        src="/assets/logos/paperclip.png"
+        src="/brand/yale-research-mark.svg"
         alt=""
         className="mr-2"
-        style={{ width: '31.65px', height: '27px' }}
+        style={{ width: '32px', height: '32px' }}
       />
-      <span className="text-xl font-semibold tracking-normal text-blue-700">
+      <span className="yr-wordmark text-xl text-[var(--yr-blue)]">
         Yale Research
       </span>
     </Button>

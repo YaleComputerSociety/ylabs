@@ -1,4 +1,4 @@
-# Y/Labs Codebase Reference
+# Yale Research Codebase Reference
 
 ## Architecture
 
@@ -26,7 +26,7 @@ The server follows a layered architecture: **Routes → Middleware → Controlle
 ## Monorepo Structure
 
 ```
-ylabs/
+yale-research/
 ├── package.json              # Root scripts: install:all, dev:client, dev:server, build, start
 ├── DEVELOPER_GUIDE.md                # Human-facing project documentation
 ├── CLAUDE.md                 # This file — agent-facing codebase context
@@ -112,7 +112,7 @@ Code flows Local → Beta → Prod. Beta is the staging gate where infrastructur
 | Environment | Hosting | `MEILISEARCH_INDEX_PREFIX` | Data source |
 |-------------|---------|---------------------------|-------------|
 | Local | localhost | *(unset)* | Seed script / local MongoDB |
-| Beta | Render (`ylabs-dev.onrender.com`) | `beta` | Rebuilt via server Meilisearch rebuild scripts |
+| Beta | Render (`ylabs-gr4v.onrender.com`) | `beta` | Rebuilt via server Meilisearch rebuild scripts |
 | Prod | Render (`yalelabs.onrender.com`) | `prod` | Real data |
 
 Meilisearch is a single Render Private Service shared by both beta and prod, isolated by index prefixes. MongoDB is a single Atlas cluster with separate databases per environment.

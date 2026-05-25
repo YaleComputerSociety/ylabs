@@ -2,6 +2,7 @@
  * Mongoose schema and model for fellowship/funding opportunity records.
  */
 import mongoose from 'mongoose';
+import { studentVisibilityFields } from './studentVisibility';
 
 export const programCategories = [
   'FELLOWSHIP',
@@ -12,12 +13,86 @@ export const programCategories = [
 
 export type ProgramCategory = (typeof programCategories)[number];
 
+export const programKinds = [
+  'STRUCTURED_PROGRAM',
+  'CENTER_INTERNSHIP',
+  'RA_PROGRAM',
+  'MENTOR_MATCHING',
+  'FELLOWSHIP_FUNDING',
+  'TRAVEL_RESEARCH_GRANT',
+  'SENIOR_THESIS_FUNDING',
+  'OTHER',
+] as const;
+
+export type ProgramKind = (typeof programKinds)[number];
+
+export const programEntryModes = [
+  'APPLY_TO_PROGRAM',
+  'APPLY_TO_PROJECT',
+  'SECURE_MENTOR_THEN_APPLY',
+  'DIRECT_FACULTY_MATCHING',
+  'TRACK_NEXT_CYCLE',
+  'UNKNOWN',
+] as const;
+
+export type ProgramEntryMode = (typeof programEntryModes)[number];
+
 const fellowshipSchema = new mongoose.Schema(
   {
     programCategory: {
       type: String,
       enum: programCategories,
       default: 'FELLOWSHIP',
+    },
+    programKind: {
+      type: String,
+      enum: programKinds,
+      default: 'OTHER',
+    },
+    entryMode: {
+      type: String,
+      enum: programEntryModes,
+      default: 'UNKNOWN',
+    },
+    studentFacingCategory: {
+      type: String,
+      default: '',
+    },
+    requiresMentorBeforeApply: {
+      type: Boolean,
+      default: false,
+    },
+    mentorMatching: {
+      type: Boolean,
+      default: false,
+    },
+    undergraduateOnly: {
+      type: Boolean,
+      required: false,
+    },
+    yaleCollegeOnly: {
+      type: Boolean,
+      required: false,
+    },
+    compensationSummary: {
+      type: String,
+      default: '',
+    },
+    hoursPerWeek: {
+      type: Number,
+      required: false,
+    },
+    programDates: {
+      type: String,
+      default: '',
+    },
+    bestNextStep: {
+      type: String,
+      default: '',
+    },
+    prepSteps: {
+      type: [String],
+      default: [],
     },
     title: {
       type: String,
@@ -156,6 +231,7 @@ const fellowshipSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    ...studentVisibilityFields,
   },
   {
     timestamps: true,
@@ -178,7 +254,13 @@ fellowshipSchema.index({ purpose: 1 });
 fellowshipSchema.index({ globalRegions: 1 });
 fellowshipSchema.index({ citizenshipStatus: 1 });
 fellowshipSchema.index({ programCategory: 1 });
+fellowshipSchema.index({ programKind: 1 });
+fellowshipSchema.index({ entryMode: 1 });
+fellowshipSchema.index({ requiresMentorBeforeApply: 1 });
+fellowshipSchema.index({ mentorMatching: 1 });
 fellowshipSchema.index({ archived: 1 });
+fellowshipSchema.index({ studentVisibilityTier: 1, archived: 1 });
+fellowshipSchema.index({ studentVisibilityComputedAt: -1 });
 fellowshipSchema.index({ deadline: 1 });
 fellowshipSchema.index(
   { sourceKey: 1 },

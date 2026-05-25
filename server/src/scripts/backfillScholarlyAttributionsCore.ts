@@ -4,6 +4,7 @@ import { buildScholarlyAttributionWriteModels } from '../scrapers/entityMaterial
 export interface BackfillScholarlyAttributionsOptions {
   apply: boolean;
   limit: number;
+  offset: number;
 }
 
 export interface ScholarlyAttributionBackfillSummary {
@@ -11,6 +12,15 @@ export interface ScholarlyAttributionBackfillSummary {
   writeOps: number;
   skippedMissingLinkId: number;
   skippedMissingTarget: number;
+  samples: ScholarlyAttributionBackfillSample[];
+}
+
+export interface ScholarlyAttributionBackfillSample {
+  scholarlyLinkId: string;
+  title: string;
+  userId: string;
+  researchEntityId: string;
+  plannedAttributions: string[];
 }
 
 export function parseBackfillScholarlyAttributionsArgs(
@@ -19,6 +29,7 @@ export function parseBackfillScholarlyAttributionsArgs(
   const options: BackfillScholarlyAttributionsOptions = {
     apply: argv.includes('--apply'),
     limit: 1000,
+    offset: 0,
   };
 
   for (const arg of argv) {
@@ -26,6 +37,12 @@ export function parseBackfillScholarlyAttributionsArgs(
       const value = Number(arg.split('=')[1]);
       if (Number.isFinite(value) && value > 0) {
         options.limit = Math.floor(value);
+      }
+    }
+    if (arg.startsWith('--offset=')) {
+      const value = Number(arg.split('=')[1]);
+      if (Number.isFinite(value) && value >= 0) {
+        options.offset = Math.floor(value);
       }
     }
   }
@@ -48,6 +65,7 @@ export function buildScholarlyAttributionBackfillOps(links: Record<string, any>[
     writeOps: 0,
     skippedMissingLinkId: 0,
     skippedMissingTarget: 0,
+    samples: [],
   };
   const ops: any[] = [];
 
@@ -75,6 +93,17 @@ export function buildScholarlyAttributionBackfillOps(links: Record<string, any>[
       observedAt: link.observedAt,
     });
     ops.push(...linkOps);
+    if (summary.samples.length < 5 && linkOps.length > 0) {
+      summary.samples.push({
+        scholarlyLinkId: String(scholarlyLinkId),
+        title: String(link.title || '').trim(),
+        userId: userId ? String(userId) : '',
+        researchEntityId: researchEntityId ? String(researchEntityId) : '',
+        plannedAttributions: linkOps.map((op) =>
+          String(op.updateOne?.filter?.relationshipBasis || ''),
+        ).filter(Boolean),
+      });
+    }
   }
 
   summary.writeOps = ops.length;
@@ -82,14 +111,21 @@ export function buildScholarlyAttributionBackfillOps(links: Record<string, any>[
 }
 
 export function summarizeScholarlyAttributionBackfill(
-  input: ScholarlyAttributionBackfillSummary & { apply: boolean },
+  input: ScholarlyAttributionBackfillSummary & {
+    apply: boolean;
+    totalEligible?: number;
+    offset?: number;
+  },
 ) {
   return {
     mode: input.apply ? 'apply' : 'dry-run',
+    totalEligible: input.totalEligible,
+    offset: input.offset,
     scanned: input.scanned,
     planned: input.writeOps,
     written: input.apply ? input.writeOps : 0,
     skippedMissingLinkId: input.skippedMissingLinkId,
     skippedMissingTarget: input.skippedMissingTarget,
+    samples: input.samples,
   };
 }

@@ -339,8 +339,8 @@ export const buildResearchHomeContextSummary = (
   if (homeMetadata.length > 0) {
     return {
       text: hasSourceLinks
-        ? `No plain-English summary is available yet. Use the source links and ${formatReadableList(homeMetadata)} context to decide whether this research home fits.`
-        : `No plain-English summary is available yet. Use the ${formatReadableList(homeMetadata)} context while this profile awaits source review.`,
+        ? `Limited public description. Open the profile to review source links and ${formatReadableList(homeMetadata)} context.`
+        : `Limited public description. Use the ${formatReadableList(homeMetadata)} context while this profile is reviewed.`,
       state: 'sparse',
       label: 'Summary limited',
     };
@@ -348,8 +348,8 @@ export const buildResearchHomeContextSummary = (
 
   return {
     text: hasSourceLinks
-      ? 'No plain-English summary is available yet. Use the source links to decide whether this research home fits.'
-      : 'No plain-English summary is available yet. This research home needs source review before fit can be assessed.',
+      ? 'Limited public description. Open the profile to review source links before deciding fit.'
+      : 'Limited public description. This profile needs source review before fit can be assessed.',
     state: 'sparse',
     label: 'Summary limited',
   };
@@ -615,6 +615,7 @@ const buildProfileDiscoveryClusters = (
       peopleCount: hasPersonContextForDiscovery(entity) ? 1 : 0,
       labels: methodLabels.length > 0 ? methodLabels : researchAreaLabels,
       metadataTags: uniq([
+        ...(entity.studentVisibilityTier === 'limited_but_safe' ? ['Limited profile'] : []),
         ...(entity.departments || []).slice(0, 2),
         ...conceptTags,
       ]).slice(0, 5),

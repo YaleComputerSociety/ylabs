@@ -6,12 +6,14 @@ import { rebuildPathwaySearchIndex } from '../services/pathwaySearchIndexService
 interface CliOptions {
   pageSize: number;
   clearExisting: boolean;
+  strategy: 'direct' | 'swap';
 }
 
 function parseArgs(argv: string[]): CliOptions {
   const options: CliOptions = {
     pageSize: 100,
     clearExisting: true,
+    strategy: 'direct',
   };
 
   for (const arg of argv) {
@@ -29,6 +31,15 @@ function parseArgs(argv: string[]): CliOptions {
       if (Number.isFinite(parsed) && parsed > 0) {
         options.pageSize = parsed;
       }
+      continue;
+    }
+
+    if (arg === '--strategy=swap') {
+      options.strategy = 'swap';
+      continue;
+    }
+    if (arg === '--strategy=direct') {
+      options.strategy = 'direct';
     }
   }
 

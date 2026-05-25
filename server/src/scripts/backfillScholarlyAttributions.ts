@@ -25,14 +25,17 @@ async function main() {
   });
   await initializeConnections();
 
-  const links = await ResearchScholarlyLink.find({
+  const eligibleFilter = {
     archived: { $ne: true },
     $or: [
       { userId: { $exists: true, $ne: null } },
       { researchEntityId: { $exists: true, $ne: null } },
     ],
-  })
+  };
+  const totalEligible = await ResearchScholarlyLink.countDocuments(eligibleFilter);
+  const links = await ResearchScholarlyLink.find(eligibleFilter)
     .sort({ updatedAt: -1, _id: 1 })
+    .skip(options.offset)
     .limit(options.limit)
     .lean();
 
@@ -43,7 +46,12 @@ async function main() {
 
   console.log(
     JSON.stringify(
-      summarizeScholarlyAttributionBackfill({ ...summary, apply: options.apply }),
+      summarizeScholarlyAttributionBackfill({
+        ...summary,
+        apply: options.apply,
+        totalEligible,
+        offset: options.offset,
+      }),
       null,
       2,
     ),

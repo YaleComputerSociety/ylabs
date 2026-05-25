@@ -360,7 +360,7 @@ export default function Navbar() {
                       to={link.to}
                       sx={{
                         textTransform: 'none',
-                        color: active ? '#0055A4' : '#333',
+                        color: active ? 'var(--yr-blue)' : 'var(--yr-text)',
                         fontWeight: active ? 600 : 400,
                         justifyContent: 'flex-start',
                         minHeight: 44,
@@ -388,7 +388,7 @@ export default function Navbar() {
                     to="/account"
                     sx={{
                       textTransform: 'none',
-                      color: location.pathname === '/account' ? '#0055A4' : '#333',
+                      color: location.pathname === '/account' ? 'var(--yr-blue)' : 'var(--yr-text)',
                       fontWeight: location.pathname === '/account' ? 600 : 400,
                       justifyContent: 'flex-start',
                       minHeight: 44,
@@ -408,7 +408,7 @@ export default function Navbar() {
                     sx={{
                       textTransform: 'none',
                       color:
-                        location.pathname === `/profile/${user.netId}` ? '#0055A4' : '#333',
+                        location.pathname === `/profile/${user.netId}` ? 'var(--yr-blue)' : 'var(--yr-text)',
                       fontWeight: location.pathname === `/profile/${user.netId}` ? 600 : 400,
                       justifyContent: 'flex-start',
                       minHeight: 44,
@@ -445,7 +445,7 @@ export default function Navbar() {
           sx={{
             position: 'relative',
             background:
-              'linear-gradient(180deg, rgba(255,255,255,0.96) 0%, rgba(251,252,248,0.94) 100%)',
+              'linear-gradient(180deg, rgba(255,253,248,0.97) 0%, rgba(248,245,237,0.94) 100%)',
             color: 'var(--yr-ink)',
             height: { xs: '68px', sm: '68px' },
             '& .MuiToolbar-root': {
@@ -455,7 +455,7 @@ export default function Navbar() {
               paddingRight: { xs: '16px', lg: '24px' },
               transition: 'padding 0.3s ease',
             },
-            boxShadow: '0 1px 0 rgba(23, 32, 51, 0.05)',
+            boxShadow: '0 1px 0 rgba(11, 31, 58, 0.06)',
             borderBottom: '1px solid var(--yr-line)',
           }}
         >
@@ -508,7 +508,7 @@ export default function Navbar() {
                               component={Link}
                               to={link.to}
                               disableRipple
-                              className={`!normal-case !text-sm !min-w-0 !min-h-[44px] !px-3 !py-0 !inline-flex !items-center !rounded-none !border-b-2 hover:!bg-transparent ${active ? '!font-semibold !text-blue-700 !border-blue-700 hover:!text-blue-700' : '!font-normal !text-gray-600 !border-transparent hover:!text-blue-700'}`}
+                              className={`!normal-case !text-sm !min-w-0 !min-h-[44px] !px-3 !py-0 !inline-flex !items-center !rounded-none !border-b-2 hover:!bg-transparent ${active ? '!font-semibold !text-[var(--yr-blue)] !border-[var(--yr-blue)] hover:!text-[var(--yr-blue)]' : '!font-normal !text-[var(--yr-muted)] !border-transparent hover:!text-[var(--yr-blue)]'}`}
                               sx={{
                                 borderRadius: '6px 6px 0 0',
                                 transition:
@@ -517,7 +517,7 @@ export default function Navbar() {
                                   backgroundColor: 'rgba(24, 74, 155, 0.05) !important',
                                 },
                                 '&:focus-visible': {
-                                  outline: '2px solid rgba(24, 74, 155, 0.45)',
+                                  outline: '2px solid rgba(0, 53, 107, 0.45)',
                                   outlineOffset: '2px',
                                 },
                               }}
@@ -585,8 +585,8 @@ export default function Navbar() {
           <Collapse in={mobileSearchOpen}>
             <Box
               sx={{
-                bgcolor: 'white',
-                boxShadow: '0px 2px 4px rgba(0, 0, 0, 0.1)',
+                bgcolor: 'var(--yr-panel)',
+                boxShadow: '0px 2px 4px rgba(11, 31, 58, 0.1)',
                 p: 2,
                 display: 'flex',
                 flexDirection: 'column',

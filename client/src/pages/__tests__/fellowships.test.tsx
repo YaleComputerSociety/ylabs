@@ -82,6 +82,18 @@ const baseFellowship = (overrides: Partial<Fellowship> = {}): Fellowship => ({
   id: 'f1',
   title: 'Summer Research Fellowship',
   programCategory: 'FELLOWSHIP',
+  programKind: 'FELLOWSHIP_FUNDING',
+  entryMode: 'SECURE_MENTOR_THEN_APPLY',
+  studentFacingCategory: 'Funding after mentor',
+  requiresMentorBeforeApply: true,
+  mentorMatching: false,
+  undergraduateOnly: true,
+  yaleCollegeOnly: true,
+  compensationSummary: '',
+  hoursPerWeek: null,
+  programDates: '',
+  bestNextStep: 'Find a mentor before applying.',
+  prepSteps: ['Faculty mentor', 'Research proposal'],
   competitionType: 'Fellowship',
   summary: 'Annual funding for undergraduate research projects.',
   description: '',
@@ -130,6 +142,12 @@ const renderPage = (
     setQueryString: vi.fn(),
     selectedProgramCategory: [],
     setSelectedProgramCategory: vi.fn(),
+    selectedProgramKind: [],
+    setSelectedProgramKind: vi.fn(),
+    selectedEntryMode: [],
+    setSelectedEntryMode: vi.fn(),
+    selectedStudentFacingCategory: [],
+    setSelectedStudentFacingCategory: vi.fn(),
     selectedYearOfStudy: [],
     setSelectedYearOfStudy: vi.fn(),
     selectedTermOfAward: [],
@@ -155,6 +173,9 @@ const renderPage = (
     total: fellowships.length,
     filterOptions: {
       programCategory: [],
+      programKind: [],
+      entryMode: [],
+      studentFacingCategory: [],
       yearOfStudy: [],
       termOfAward: [],
       purpose: [],
@@ -215,6 +236,12 @@ const renderStatefulPage = (fellowships: Fellowship[]) => {
                 setQueryString: vi.fn(),
                 selectedProgramCategory: [],
                 setSelectedProgramCategory: vi.fn(),
+                selectedProgramKind: [],
+                setSelectedProgramKind: vi.fn(),
+                selectedEntryMode: [],
+                setSelectedEntryMode: vi.fn(),
+                selectedStudentFacingCategory: [],
+                setSelectedStudentFacingCategory: vi.fn(),
                 selectedYearOfStudy: [],
                 setSelectedYearOfStudy: vi.fn(),
                 selectedTermOfAward: [],
@@ -241,6 +268,9 @@ const renderStatefulPage = (fellowships: Fellowship[]) => {
                 total: fellowships.length,
                 filterOptions: {
                   programCategory: ['FELLOWSHIP', 'SUMMER_RESEARCH_PROGRAM'],
+                  programKind: ['FELLOWSHIP_FUNDING', 'STRUCTURED_PROGRAM'],
+                  entryMode: ['SECURE_MENTOR_THEN_APPLY', 'APPLY_TO_PROGRAM'],
+                  studentFacingCategory: ['Funding after mentor', 'Structured program'],
                   yearOfStudy: ['Junior', 'Senior'],
                   termOfAward: ['Summer'],
                   purpose: ['Research'],
@@ -290,6 +320,10 @@ describe('Programs page', () => {
       baseFellowship({
         id: 'next-cycle',
         title: 'Next Cycle Fellowship',
+        programKind: 'OTHER',
+        entryMode: 'UNKNOWN',
+        studentFacingCategory: 'Program record',
+        requiresMentorBeforeApply: false,
         isAcceptingApplications: false,
         deadline: '2026-05-01T00:00:00.000Z',
       }),
@@ -316,6 +350,9 @@ describe('Programs page', () => {
       {
         filterOptions: {
           programCategory: ['FELLOWSHIP', 'SUMMER_RESEARCH_PROGRAM'],
+          programKind: ['FELLOWSHIP_FUNDING', 'STRUCTURED_PROGRAM'],
+          entryMode: ['SECURE_MENTOR_THEN_APPLY', 'APPLY_TO_PROGRAM'],
+          studentFacingCategory: ['Funding after mentor', 'Structured program'],
           yearOfStudy: ['Junior', 'Senior'],
           termOfAward: ['Summer'],
           purpose: ['Research'],
@@ -363,7 +400,7 @@ describe('Programs page', () => {
     await userEvent.click(screen.getByText('Name'));
     await userEvent.click(screen.getByRole('button', { name: /sort descending/i }));
 
-    const openSection = screen.getByRole('region', { name: 'No open programs' });
+    const openSection = screen.getByRole('region', { name: 'No apply now records' });
     expect(
       within(openSection)
         .getAllByRole('article')
@@ -388,6 +425,10 @@ describe('Programs page', () => {
       baseFellowship({
         id: 'next-cycle',
         title: 'Next Cycle Fellowship',
+        programKind: 'OTHER',
+        entryMode: 'UNKNOWN',
+        studentFacingCategory: 'Program record',
+        requiresMentorBeforeApply: false,
         isAcceptingApplications: false,
         deadline: '2026-05-01T00:00:00.000Z',
       }),
@@ -423,7 +464,7 @@ describe('Programs page', () => {
   });
 
   it('does not repeat the program first-save callout after the first acknowledgement', async () => {
-    localStorage.setItem('ylabs.firstSave.program.v1', 'true');
+    localStorage.setItem('yale-research.firstSave.program.v1', 'true');
     mockedAxios.put.mockResolvedValue({ data: {} });
     renderPage([
       baseFellowship({

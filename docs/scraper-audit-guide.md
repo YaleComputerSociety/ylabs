@@ -21,7 +21,7 @@ Source metadata
   -> materializer/resolver
   -> ResearchEntity/User/research_scholarly_links/etc.
   -> EntryPathway / AccessSignal / ContactRoute / PostedOpportunity when evidence supports it
-  -> student surfaces: Yale Labs, Programs & Fellowships, saved research plans, Evidence, Best Next Step
+  -> student surfaces: Yale Research, Programs & Fellowships, saved research plans, Evidence, Best Next Step
 ```
 
 Most scrapers write raw `Observation` rows first. `entityMaterializer.ts` then upserts physical entities such as `research_entities` and `users`. `accessMaterializer.ts` derives access-model records such as `entry_pathways`, `access_signals`, and `contact_routes` from evidence-bearing observations.
@@ -49,6 +49,16 @@ Materialization may then touch:
 - `access_signals`: evidence-backed access clues.
 - `contact_routes`: guarded routes for next action.
 - `posted_opportunities`: real posting/application instances.
+
+## Official Yale Research Directories
+
+`yale-research-official` ingests `research.yale.edu` centers/institutes, cores, and selected durable research-infrastructure resources. It is an official-index, discovery-only source:
+
+- Expected writes: `ResearchEntity` and `Observation`.
+- Expected entity types: `CENTER`, `INSTITUTE`, `PROGRAM`, `INITIATIVE`, and `CORE_FACILITY`.
+- Expected non-writes: no `EntryPathway`, `AccessSignal`, `ContactRoute`, or `PostedOpportunity` rows.
+- Core services, instruments, and equipment should enrich the parent core facility as method/topic context instead of creating standalone research homes.
+- Center/institute rows may overlap with existing official source rows. Materialization should reuse one active exact-name `ResearchEntity` for `yale-research-official` directory observations when the match is unique, preserve the canonical slug, and merge `sourceUrls` rather than creating a duplicate shell.
 
 ## Safe Audit Commands
 
@@ -147,7 +157,7 @@ yarn --cwd server observations:replay-cleanup \
   --field fullDescription \
   --older-than-days 7 \
   --limit 25 \
-  --output /tmp/ylabs-observation-replay-review.json
+  --output /tmp/yale-research-observation-replay-review.json
 ```
 
 Review the output. Rows with `SCRAPER_STILL_BAD` mean the scraper still needs a code fix and regression test. Rows with `SCRAPER_ALREADY_FIXED` or `MATERIALIZED_STALE` may be accepted by setting `acceptedForApply: true` in a reviewed copy of the file.
@@ -158,9 +168,9 @@ Apply accepted rows only:
 SCRAPER_ENV=beta ALLOW_NON_PROD_SCRAPER_WRITES=true \
   yarn --cwd server observations:replay-cleanup \
   --apply \
-  --accepted-input /tmp/ylabs-observation-replay-accepted.json \
+  --accepted-input /tmp/yale-research-observation-replay-accepted.json \
   --reviewed-by <reviewer> \
-  --output /tmp/ylabs-observation-replay-applied.json
+  --output /tmp/yale-research-observation-replay-applied.json
 ```
 
 After apply, run:
@@ -199,7 +209,7 @@ npx -y corepack@0.34.7 yarn scrape report --run <scrapeRunId>
 To save a durable QA artifact outside the repo, add `--output`:
 
 ```bash
-npx -y corepack@0.34.7 yarn scrape report --run <scrapeRunId> --output /tmp/ylabs-scraper-reports/<scrapeRunId>.json
+npx -y corepack@0.34.7 yarn scrape report --run <scrapeRunId> --output /tmp/yale-research-scraper-reports/<scrapeRunId>.json
 ```
 
 Useful source-health summary:
@@ -257,7 +267,7 @@ The reaper defaults to dry-run. Use `--apply` only after reviewing the dry-run o
 5. `centers-institutes-index`, `ysm-atoz-index`, `yse-centers-index`: entity discovery.
 6. `nih-reporter`, `nsf-award-search`, `openalex`, `arxiv`: enrichment, funding, publication, and preprint context.
 
-Legacy `ylabs-listing` records are not scraper coverage proof. The Beta `listings` collection has been dropped, and listing-derived pathways/signals/opportunities are archived or deleted. Use source coverage, official profile URLs, reviewed accepted inputs, and admin/manual seeds to prioritize sparse entities.
+Legacy `legacy-listing` records are not scraper coverage proof. The Beta `listings` collection has been dropped, and listing-derived pathways/signals/opportunities are archived or deleted. Use source coverage, official profile URLs, reviewed accepted inputs, and admin/manual seeds to prioritize sparse entities.
 
 ## Source Map
 
@@ -376,7 +386,7 @@ Commands:
 
 ```bash
 SCRAPER_ENV=development \
-  npx -y corepack@0.34.7 yarn scrape run --source undergrad-fellowships-recipients --limit 25 --dry-run --manual-recipient-csv-dir /tmp/ylabs-accepted-inputs/fellowships
+  npx -y corepack@0.34.7 yarn scrape run --source undergrad-fellowships-recipients --limit 25 --dry-run --manual-recipient-csv-dir /tmp/yale-research-accepted-inputs/fellowships
 ```
 
 Expected collections:

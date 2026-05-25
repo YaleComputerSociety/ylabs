@@ -16,7 +16,7 @@ The app should make this ecosystem navigable without forcing every discipline in
 
 ## Primary Surfaces
 
-### Yale Labs
+### Yale Research
 
 Curiosity-first search and browsing of what exists:
 
@@ -46,6 +46,8 @@ Structured applications and recurring programs live at `/programs`:
 
 Most fellowships fund or formalize a project after a student has a plausible research home. Some programs directly organize mentor matching, cohorts, internships, or hosted summer research and can be an entry route in their own right. Student-facing copy should call this surface "Programs & Fellowships"; `/fellowships` is a temporary redirect/compatibility alias.
 
+The Programs & Fellowships planner should group records by what a student can do next: apply now, join a structured research program, use funding after mentor/home fit, plan a likely next cycle, or review archived/low-fit records. Journey labels should make mentor-first funding distinct from mentor-matching programs so students do not mistake a grant for a research placement.
+
 ### Ways In
 
 Practical filtering by how a student might participate:
@@ -66,38 +68,39 @@ Practical filtering by how a student might participate:
 - digital humanities
 - policy research
 
-This route data should emphasize concrete next steps toward a plausible research home without becoming a separate student search destination. "Pathways" remains valid internal, saved, advising, and route-comparison vocabulary, but the student-facing search loop should surface it inside Yale Labs as ways-in badges, evidence, best-next-step hints, and posted-opportunity CTAs. Generic official-profile fallbacks, faculty-profile-only routes, and thin "maybe outreach" records belong on Research detail pages as evidence or possible outreach signals, not as standalone results. Course credit is not itself an entry pathway; it is a formalization option after the student has found a research home and mentor. Fellowship funding is usually also formalization after mentor/home fit, but a fellowship that matches students with mentors or runs a cohort research program can be a pathway in its own right. Only call something an open or posted opportunity when there is a real active or time-bound posting.
+This route data should emphasize concrete next steps toward a plausible research home without becoming a separate student search destination. "Pathways" remains valid internal, saved, advising, and route-comparison vocabulary, but the student-facing search loop should surface it inside Yale Research as ways-in badges, evidence, best-next-step hints, and posted-opportunity CTAs. Generic official-profile fallbacks, faculty-profile-only routes, and thin "maybe outreach" records belong on Research detail pages as evidence or possible outreach signals, not as standalone results. Course credit is not itself an entry pathway; it is a formalization option after the student has found a research home and mentor. Fellowship funding is usually also formalization after mentor/home fit, but a fellowship that matches students with mentors or runs a cohort research program can be a pathway in its own right. Only call something an open or posted opportunity when there is a real active or time-bound posting.
 
 ## Navigation Shape
 
 Current student-facing surfaces:
 
 - `/`: authenticated default redirect to `/research`.
-- `/research`: Yale Labs, the primary experience for research entities, enriched with pathway evidence and ways-in badges even when no opening exists.
+- `/research`: Yale Research, the primary experience for research entities, enriched with pathway evidence and ways-in badges even when no opening exists.
 - `/programs`: Programs & Fellowships, the canonical structured application and recurring-program surface.
 - `/research/:slug`: show what the entity does, who is involved, evidence of undergraduate access, pathways, contact routes, and related labs/groups when the entity is an umbrella institute or center.
 - `/opportunities/:id`: show real active/time-bound postings only. These must be backed by `PostedOpportunity`.
 - `/account`: saved research plans, saved programs, notes, checklist progress, and planning context.
 
-The hard-pivot migration removes `/labs` as a runtime compatibility surface; `/research` is the canonical Yale Labs route. `/pathways` is retired as a public client route and redirects to `/research`. `/fellowships` redirects to `/programs` while compatibility callers migrate.
+The hard-pivot migration removes `/labs` as a runtime compatibility surface; `/research` is the canonical Yale Research route. `/pathways` is retired as a public client route and redirects to `/research`. `/fellowships` redirects to `/programs` while compatibility callers migrate.
 
 Implementation note: route search remains an internal service capability through `EntryPathway` and pathway search services, but `POST /api/pathways/search` is no longer part of the public/client contract. Research cards get ways-in enrichment from `POST /api/research/search`, research detail still uses internal pathway data, and saved planning hydrates via user saved-research-plan APIs. Listing-derived rows, official-profile-only fallbacks, and weak generic exploratory outreach are not standalone student results, while real active openings remain posted opportunities. `/opportunities/:id` should not render generic exploratory pathways.
 
-Implementation note: `/listings` is retired as a public UI route and direct visits redirect to `/research`; `/api/listings` returns `410 Gone`. The Beta `listings` collection has been dropped, and legacy listing-derived artifacts are archived or deleted rather than used as runtime evidence. Public contact CTAs should prefer guarded route URLs and official channels over raw emails. Student-facing primary navigation should use Yale Labs, Programs & Fellowships, and Dashboard; active openings are discovered as pathway enrichments on Research cards and through `/opportunities/:id`.
+Implementation note: `/listings` is retired as a public UI route and direct visits redirect to `/research`; `/api/listings` returns `410 Gone`. The Beta `listings` collection has been dropped, and legacy listing-derived artifacts are archived or deleted rather than used as runtime evidence. Public contact CTAs should prefer guarded route URLs and official channels over raw emails. Student-facing primary navigation should use Yale Research, Programs & Fellowships, and Dashboard; active openings are discovered as pathway enrichments on Research cards and through `/opportunities/:id`.
 
 Implementation note: umbrella entities such as Yale Quantum Institute, Wu Tsai Institute, and Yale Cancer Center should behave as hubs. Their detail pages may show related labs, research groups, hosted programs, or faculty research areas through `ResearchEntityRelationship`, but affiliation alone is not undergraduate-access evidence and must not create an Apply CTA or posted opportunity.
 
 ## Current Product Snapshot
 
-Playwright verification on 2026-05-23 matched this shape:
+Playwright verification on 2026-05-24 matched this shape:
 
-- `/research` is titled `Yale Labs | Yale Research`, leads with `Find a Yale lab that fits you.`, shows quick-start prompts such as `Machine learning`, `Wet lab`, `Archival research`, `Digital humanities`, `Public health`, and `Social science data`, and opens with roughly 2,720 indexed profiles in the current development dataset.
+- `/research` is titled `Yale Research`, leads with topic-first Yale Research discovery copy, shows quick-start prompts such as `Machine learning`, `Neuroscience`, `Climate change`, `Ancient DNA`, `Digital archives`, and `Quantum materials`, and opens with roughly 2,720 indexed profiles in the current development dataset.
 - A `machine learning` search returns a single research-home stream with profile cards, topic/method badges, descriptions, a count such as `24 research homes, 5 ways in`, and `View profile` as the primary action.
 - `/research/:slug` pages lead with the research-home type, evidence level, the `Student decision` summary, `What this lab studies`, reach-out status, recommended next step, lead/PI context when known, profile status, and source links.
 - `/programs` is titled `Programs & Fellowships | Yale Research` and behaves as a cycle planner: open now, closing soon, likely next cycle, and planning archive.
 - `/account` is titled `Dashboard | Yale Research` and behaves as the saved planning workspace for research plans and a program watchlist.
 - `/pathways` and `/listings` redirect to `/research`; `/fellowships` redirects to `/programs`.
-- Desktop navigation is Yale Labs, Programs & Fellowships, Dashboard. Mobile uses the compact menu and had no horizontal overflow on `/research`, `/programs`, or `/account` in the 390px Playwright pass.
+- Desktop navigation is Yale Research, Programs & Fellowships, Dashboard. Mobile uses the compact menu and had no horizontal overflow on `/research`, `/programs`, or `/account` in the 390px Playwright pass.
+- Planning implication from the 2026-05-24 consolidation pass: the product focus is no longer route shape or IA. The next leverage is data trust, semantic result quality, Programs classification/visibility, and the production gate.
 
 ## Entity Page Questions
 

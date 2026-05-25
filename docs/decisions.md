@@ -122,7 +122,7 @@ Students should not have to choose between entity discovery and pathway discover
 
 Consequences:
 
-- Primary navigation should show Yale Labs, Programs & Fellowships, and Dashboard; Find Pathways is not a peer primary nav link.
+- Primary navigation should show Yale Research, Programs & Fellowships, and Dashboard; Find Pathways is not a peer primary nav link.
 - `/research` should render one research-home-first result stream. The client should not call `/api/pathways/search`; the server enriches research results with compact ways-in summaries from internal pathway services.
 - Pathway data appears inline as "Ways in" badges, action chips, best next steps, and real posted-opportunity CTAs when evidence exists.
 - Main Research results should not show "Pathway Preview", "Compare pathways", "View all matching pathways", or "No pathways indexed yet"; those expose implementation boundaries rather than the student's job.
@@ -136,11 +136,44 @@ The public Pathways page and public Pathways search API should go away, while th
 Consequences:
 
 - `/pathways` redirects to `/research`; `/api/pathways/search` is not mounted as a public/client endpoint.
-- `/api/research/search` is the client-facing source for Yale Labs cards plus ways-in enrichment.
+- `/api/research/search` is the client-facing source for Yale Research cards plus ways-in enrichment.
 - `/programs` and `/api/programs` are canonical for structured programs and fellowships; program-facing API handlers wrap the current fellowship storage model during migration.
 - `/fellowships` and `/api/fellowships` remain temporary compatibility aliases with deprecation/redirect behavior.
 - Remove dead public Pathways route/controller code; keep `EntryPathway` services only where they support internal enrichment, saved plans, admin/data-quality review, or scraper/indexing workflows.
 - Saved `EntryPathway` records should be presented as saved research plans. The `favPathways` user field remains storage residue until a later migration.
+
+## 2026-05-24: Consolidate Around The Existing Product Loop
+
+After reading the durable docs and rechecking the local app with Playwright, the focus is not another navigation or route redesign. The product loop is stable enough: `/research` for Yale Research discovery, `/research/:slug` for evidence-backed evaluation and next step, `/programs` for structured applications and recurring cycles, and `/account` for saved planning.
+
+Consequences:
+
+- New planning should prioritize data trust, semantic search quality, Programs classification/visibility, and the production gate.
+- Do not reintroduce public Pathways, Listings, versioned Research routes, or separate exploratory surfaces to express existing model concepts. `/pathways` should remain only as a compatibility redirect while `EntryPathway` continues as internal infrastructure.
+- Keep admin quality tools as operator lenses. Student-facing surfaces should stay calm and should not expose weak-profile repair language.
+- Treat Playwright route checks as the evidence that IA is stable; future UX work should improve card/detail quality and saved planning within existing routes.
+
+## 2026-05-25: Build A Pipeline Control Plane Before Workerization
+
+The data-quality bottleneck should be solved by making the existing ingestion/materialization system visible and controllable before replacing scripts and cron jobs with a new worker architecture.
+
+Consequences:
+
+- Keep source-specific CLI/cron jobs for now; they already produce `ScrapeRun`, `Observation`, materialization, WorkPlanner, lock, and gate data.
+- Add a pipeline control plane over existing primitives: source readiness, latest runs, expected artifacts, gate status, review queues, and next operator action.
+- Treat workerization as a later scaling phase, triggered by runtime limits, concurrent admin-triggered jobs, durable retry/cancel requirements, or central rate-limit needs.
+- Programs & Fellowships classification/visibility is part of the same pipeline, not a separate UI cleanup problem.
+- The pipeline architecture lives in [`docs/research-data-pipeline.md`](./research-data-pipeline.md); the first implementation slice lives in [`docs/superpowers/plans/2026-05-25-research-data-pipeline-control-plane.md`](./superpowers/plans/2026-05-25-research-data-pipeline-control-plane.md).
+
+## 2026-05-25: Gate Existing Data With Student Trust Tiers
+
+Before expanding ingestion, current records need a student-visible trust gate. `ResearchEntity` and `Fellowship` rows now share `studentVisibilityTier` fields and the `student-visibility-v1` calculator.
+
+Consequences:
+
+- Public `/research` and `/programs` searches default to `student_ready` and `limited_but_safe`.
+- `operator_review` and `suppressed` are admin/operator states, not normal student browse states.
+- The backfill command is dry-run by default and must be reviewed before `--apply`; after applying, rebuild Meili `researchentities` so tier filtering is reflected in keyword/semantic search.
 
 ## 2026-05-11: Adopt Graphify As Shared Repo Memory
 
@@ -187,7 +220,7 @@ Consequences:
 
 - `/` redirects to `/research`.
 - `/listings` redirects to `/research`, and old `?listing=` root links are not preserved.
-- Primary navigation should show Yale Labs, Programs & Fellowships, and Dashboard, not Listings or Pathways.
+- Primary navigation should show Yale Research, Programs & Fellowships, and Dashboard, not Listings or Pathways.
 - Student-facing copy should prefer research homes, pathways, evidence, and posted openings only when a real `PostedOpportunity` exists.
 - Backend listing APIs return `410 Gone`; analytics and historical audit notes should not imply a live Listing table.
 - The `Listing` model, service, controller, and migration-only bridge scripts have been removed so Mongoose does not recreate an empty `listings` collection.

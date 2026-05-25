@@ -1,3 +1,5 @@
+import { fullDescriptionQuality } from '../utils/researchEntityDescriptionQuality';
+
 export interface TwoFieldDescriptionEntity {
   slug?: string;
   name?: string;
@@ -71,6 +73,27 @@ function readableList(values: string[]): string {
 
 function sameText(a: string, b: string): boolean {
   return textValue(a).toLowerCase() === textValue(b).toLowerCase();
+}
+
+function isSafeProfileSynthesisFullDescription(value: unknown): boolean {
+  const text = textValue(value);
+  if (!text) return false;
+  const words = wordCount(text);
+  if (words < 8 || words > 120 || text.length > 900) return false;
+  if (!fullDescriptionQuality(text).isUseful) return false;
+  if (/^(?:i|my|we|our)\b/i.test(text) || /[.!?]\s+(?:i|my|we|our)\b/i.test(text)) {
+    return false;
+  }
+  if (
+    /\b(?:course|courses|teach|teaches|teaching|taught|book|books|major works|publication|publications|published|editor of|articles?|chapters?|winner|award|honors?|fellowship|ph\.?d|m\.?a|b\.?a|b\.?s|professor of|director of|served as|joined yale|received|earned|press|translation)\b/i.test(
+      text,
+    )
+  ) {
+    return false;
+  }
+  return /\b(?:research|studies|examines|investigates|focuses|explores|tracks|analyzes|models|specializes|works on|interested in)\b/i.test(
+    text,
+  );
 }
 
 function isWeakShortDescription(shortDescription: string, fullDescription: string): boolean {
@@ -295,7 +318,7 @@ export function buildTwoFieldDescriptionRepair(
     fullDescription = legacyDescription;
     reasons.push('copied-description-to-fullDescription');
   }
-  if (!fullDescription && profileSynthesis) {
+  if (!fullDescription && profileSynthesis && isSafeProfileSynthesisFullDescription(profileSynthesis)) {
     fullDescription = profileSynthesis;
     reasons.push('copied-profileSynthesisDescription-to-fullDescription');
   }

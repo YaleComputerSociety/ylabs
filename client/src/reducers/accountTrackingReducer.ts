@@ -127,10 +127,15 @@ export function accountTrackingReducer(
   }
 }
 
+const STORAGE_PREFIX = 'yale-research';
+const LEGACY_STORAGE_PREFIX = ['y', 'labs'].join('');
+
+const storageKey = (key: string) => `${STORAGE_PREFIX}-${key}`;
+const legacyStorageKey = (key: string) => `${LEGACY_STORAGE_PREFIX}-${key}`;
+
 /**
- * Hydrate tracking state from localStorage. The `ylabs-emailed-labs` key is
- * the legacy format (a bare list of listing IDs), migrated here into the
- * per-listing `ylabs-lab-stages` map. Exported for reuse and unit-testing.
+ * Hydrate tracking state from localStorage, including older saved-state keys.
+ * Exported for reuse and unit-testing.
  */
 export const loadAccountTrackingFromStorage = (
   storage: Pick<Storage, 'getItem' | 'removeItem'>,
@@ -144,21 +149,33 @@ export const loadAccountTrackingFromStorage = (
     }
   };
 
-  let labStage = parse<Record<string, LabStage>>('ylabs-lab-stages', {});
+  const parseMigrated = <T>(key: string, fallback: T): T => {
+    const current = parse<T | null>(storageKey(key), null);
+    if (current !== null) return current;
+    const legacyKey = legacyStorageKey(key);
+    const legacy = parse<T | null>(legacyKey, null);
+    if (legacy !== null) {
+      storage.removeItem(legacyKey);
+      return legacy;
+    }
+    return fallback;
+  };
+
+  let labStage = parseMigrated<Record<string, LabStage>>('lab-stages', {});
   if (Object.keys(labStage).length === 0) {
-    const legacyEmailed = parse<string[] | null>('ylabs-emailed-labs', null);
+    const legacyEmailed = parse<string[] | null>(legacyStorageKey('emailed-labs'), null);
     if (legacyEmailed) {
       const migrated: Record<string, LabStage> = {};
       for (const id of legacyEmailed) migrated[id] = 'emailed';
-      storage.removeItem('ylabs-emailed-labs');
+      storage.removeItem(legacyStorageKey('emailed-labs'));
       labStage = migrated;
     }
   }
 
   return createInitialAccountTrackingState({
     labStage,
-    labNotes: parse<Record<string, string>>('ylabs-lab-notes', {}),
-    fellowshipStage: parse<Record<string, FellowshipStage>>('ylabs-fellowship-stages', {}),
-    fellowshipNotes: parse<Record<string, string>>('ylabs-fellowship-notes', {}),
+    labNotes: parseMigrated<Record<string, string>>('lab-notes', {}),
+    fellowshipStage: parseMigrated<Record<string, FellowshipStage>>('fellowship-stages', {}),
+    fellowshipNotes: parseMigrated<Record<string, string>>('fellowship-notes', {}),
   });
 };

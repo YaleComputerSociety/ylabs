@@ -7,6 +7,7 @@ import { Fellowship } from '../../types/types';
 import FellowshipSearchContext from '../../contexts/FellowshipSearchContext';
 import { ensureHttpPrefix, safeUrl } from '../../utils/url';
 import { getFellowshipCycleStatus } from '../../utils/fellowshipCycle';
+import { entryModeLabel, programKindLabel } from '../../utils/programJourney';
 import FavoriteButton from '../shared/FavoriteButton';
 import LongText from '../shared/LongText';
 
@@ -289,6 +290,37 @@ const FellowshipModal = ({
 
                 <section>
                   <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+                    Program Route
+                  </h3>
+                  <div className="space-y-2 rounded-lg border border-slate-100 bg-slate-50 p-3">
+                    <div>
+                      <span className="text-xs text-slate-500">What this is</span>
+                      <p className="text-sm font-medium text-slate-900">
+                        {fellowship.studentFacingCategory || programKindLabel(fellowship.programKind)}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-xs text-slate-500">Entry mode</span>
+                      <p className="text-sm font-medium text-slate-900">
+                        {entryModeLabel(fellowship.entryMode)}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-xs text-slate-500">Do you need a mentor first?</span>
+                      <p className="text-sm font-medium text-slate-900">
+                        {fellowship.requiresMentorBeforeApply ? 'Yes' : 'Not usually'}
+                      </p>
+                    </div>
+                    {fellowship.mentorMatching && (
+                      <p className="rounded-md bg-white px-2.5 py-2 text-xs font-medium text-slate-700">
+                        This source suggests a mentor-matching or mentored program route.
+                      </p>
+                    )}
+                  </div>
+                </section>
+
+                <section>
+                  <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
                     Key Dates
                   </h3>
                   <div className="bg-blue-50 rounded-lg p-3 space-y-3">
@@ -354,6 +386,19 @@ const FellowshipModal = ({
                       {fellowship.contactOffice && (
                         <p className="text-sm text-gray-600">{fellowship.contactOffice}</p>
                       )}
+                    </div>
+                  </section>
+                )}
+
+                {(fellowship.compensationSummary || fellowship.hoursPerWeek || fellowship.programDates) && (
+                  <section>
+                    <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+                      Time & Funding
+                    </h3>
+                    <div className="space-y-2 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-900">
+                      {fellowship.compensationSummary && <p>{fellowship.compensationSummary}</p>}
+                      {fellowship.hoursPerWeek && <p>{fellowship.hoursPerWeek} hours/week</p>}
+                      {fellowship.programDates && <p>{fellowship.programDates}</p>}
                     </div>
                   </section>
                 )}
@@ -486,6 +531,35 @@ const FellowshipModal = ({
               </div>
 
               <div className="col-span-1 md:col-span-2 space-y-6">
+                {fellowship.bestNextStep && (
+                  <section>
+                    <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+                      What To Do Next
+                    </h3>
+                    <p className="rounded-lg border border-blue-100 bg-blue-50/70 p-4 text-sm leading-relaxed text-blue-950">
+                      {fellowship.bestNextStep}
+                    </p>
+                  </section>
+                )}
+
+                {fellowship.prepSteps.length > 0 && (
+                  <section>
+                    <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+                      Prep Steps
+                    </h3>
+                    <div className="flex flex-wrap gap-2">
+                      {fellowship.prepSteps.map((step) => (
+                        <span
+                          key={step}
+                          className="rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700"
+                        >
+                          {step}
+                        </span>
+                      ))}
+                    </div>
+                  </section>
+                )}
+
                 {fellowship.summary && (
                   <section>
                     <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">

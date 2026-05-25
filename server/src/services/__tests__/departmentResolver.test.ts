@@ -796,6 +796,96 @@ describe('departmentResolver canonical department lists', () => {
     expect(result.unresolved).toEqual([]);
   });
 
+  it('maps reviewed NIH department buckets and ignores non-department buckets', () => {
+    const rowsWithReviewedNihBuckets = [
+      ...rows,
+      {
+        _id: 'eph',
+        abbreviation: 'EPH',
+        name: 'Public Health',
+        displayName: 'EPH - Public Health',
+        aliases: [],
+      },
+      {
+        _id: 'biol',
+        abbreviation: 'BIOL',
+        name: 'Biological & Biomedical Sciences',
+        displayName: 'BIOL - Biological & Biomedical Sciences',
+        aliases: [],
+      },
+      {
+        _id: 'mbio',
+        abbreviation: 'MBIO',
+        name: 'Microbiology',
+        displayName: 'MBIO - Microbiology',
+        aliases: [],
+      },
+    ];
+
+    const result = canonicalizeDepartmentListFromRows(
+      [
+        'INTERNAL MEDICINE/MEDICINE',
+        'PUBLIC HEALTH & PREV MEDICINE',
+        'RADIATION-DIAGNOSTIC/ONCOLOGY',
+        'BIOCHEMISTRY',
+        'MICROBIOLOGY/IMMUN/VIROLOGY',
+        'ANATOMY/CELL BIOLOGY',
+        'OBSTETRICS & GYNECOLOGY',
+        'PHYSIOLOGY',
+        'NEUROSCIENCES',
+        'OPHTHALMOLOGY',
+        'VETERINARY SCIENCES',
+        'BIOLOGY',
+        'BIOSTATISTICS & OTHER MATH SCI',
+        'EASMAT MatSci Faculty',
+        'ORTHOPEDICS',
+        'Otolaryngology Surgery',
+        'NONE',
+        'ADMINISTRATION',
+        'SOCIAL SCIENCES',
+        'Infectious Diseases',
+      ],
+      rowsWithReviewedNihBuckets,
+    );
+
+    expect(result.departments).toEqual([
+      'Internal Medicine',
+      'Public Health',
+      'Therapeutic Radiology/Radiation Oncology',
+      'Molecular Biophysics & Biochemistry',
+      'Microbiology',
+      'Immunobiology',
+      'Cell Biology',
+      'Obstetrics, Gynecology & Reproductive Sciences',
+      'Cellular & Molecular Physiology',
+      'Neuroscience',
+      'Ophthalmology & Visual Science',
+      'Comparative Medicine',
+      'Biological & Biomedical Sciences',
+      'Biostatistics',
+      'Mechanical Engineering & Materials Science',
+      'Orthopaedics & Rehabilitation',
+      'Surgery',
+    ]);
+    expect(result.ignored).toEqual([
+      'NONE',
+      'ADMINISTRATION',
+      'SOCIAL SCIENCES',
+      'Infectious Diseases',
+    ]);
+    expect(result.unresolved).toEqual([]);
+  });
+
+  it('does not prefix-ignore reviewed exact NIH non-department buckets', () => {
+    const result = canonicalizeDepartmentListFromRows(
+      ['Infectious Diseases', 'Infectious Diseases Program'],
+      rows,
+    );
+
+    expect(result.ignored).toEqual(['Infectious Diseases']);
+    expect(result.unresolved).toEqual(['Infectious Diseases Program']);
+  });
+
   it('maps additional reviewed FAS source-unit families to active canonical rows', () => {
     const result = canonicalizeDepartmentListFromRows(
       [

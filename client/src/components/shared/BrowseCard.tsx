@@ -12,6 +12,7 @@ import {
   getResearchGroupKindLabel,
   getResearchEntityBestNextStep,
   getResearchEntityPathwaySummary,
+  getFellowshipJourneySummary,
   getResearchGroupStatus,
   getDaysUntilDeadline,
   getOrderedDeptAbbrs,
@@ -85,6 +86,9 @@ const BrowseCard = React.memo(({ item, isFavorite, onToggleFavorite, onOpenModal
     item.data.accessSummary?.hasActivePostedOpportunity;
   const fellowshipCycleStatus = item.type === 'fellowship'
     ? getFellowshipCycleStatus(item.data)
+    : null;
+  const fellowshipJourneySummary = item.type === 'fellowship'
+    ? getFellowshipJourneySummary(item.data)
     : null;
 
   const isAudited = isAdmin && item.type !== 'researchGroup' && item.data.audited;
@@ -273,6 +277,23 @@ const BrowseCard = React.memo(({ item, isFavorite, onToggleFavorite, onOpenModal
               <p className={`text-sm text-gray-500 mb-2 leading-snug ${DESCRIPTION_CLAMP_CLASS}`}>
                 {item.data.summary}
               </p>
+            )}
+
+            {(fellowshipJourneySummary || item.data.bestNextStep) && !isCompact && (
+              <div className="mb-2 rounded-md border border-slate-100 bg-slate-50 px-2.5 py-2 text-xs text-slate-700">
+                {fellowshipJourneySummary && (
+                  <p>
+                    <span className="font-semibold text-slate-800">Route:</span>{' '}
+                    {fellowshipJourneySummary}
+                  </p>
+                )}
+                {item.data.bestNextStep && (
+                  <p className={fellowshipJourneySummary ? 'mt-1' : ''}>
+                    <span className="font-semibold text-slate-800">Next:</span>{' '}
+                    {item.data.bestNextStep}
+                  </p>
+                )}
+              </div>
             )}
 
             <div className="flex-1" />

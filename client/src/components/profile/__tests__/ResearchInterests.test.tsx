@@ -20,7 +20,21 @@ describe('ResearchInterests', () => {
     expect(screen.queryByText('Research Topics')).toBeNull();
     expect(screen.getAllByText(/quantum materials/i)).toHaveLength(1);
     expect(screen.getByText('Condensed Matter')).toBeTruthy();
-    expect(screen.getByText('Thin films')).toBeTruthy();
+    expect(screen.getByText('Thin Films')).toBeTruthy();
+  });
+
+  it('title-cases lowercase research interest chips', () => {
+    render(
+      <ResearchInterests
+        topics={[]}
+        interests={['functional morphology', 'phylogenetics of mammals']}
+      />,
+    );
+
+    expect(screen.getByText('Functional Morphology')).toBeTruthy();
+    expect(screen.getByText('Phylogenetics Of Mammals')).toBeTruthy();
+    expect(screen.queryByText('functional morphology')).toBeNull();
+    expect(screen.queryByText('phylogenetics of mammals')).toBeNull();
   });
 
   it('splits concatenated title-case interests before deduping', () => {

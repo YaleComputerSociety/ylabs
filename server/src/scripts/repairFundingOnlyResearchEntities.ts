@@ -14,6 +14,7 @@ import { User } from '../models/user';
 import { deleteFromIndex, syncEntity } from '../services/meiliSyncService';
 import { publicResearchEntityDescriptionText } from '../utils/researchEntityDescriptionText';
 import { assertScriptApplyAllowed } from './scriptWriteGuards';
+import { isRepairableFundingOnlyShell } from './repairFundingOnlyResearchEntitiesCore';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -119,20 +120,6 @@ function objectId(value: unknown): mongoose.Types.ObjectId {
   return value instanceof mongoose.Types.ObjectId
     ? value
     : new mongoose.Types.ObjectId(String(value));
-}
-
-function isSparseFundingEntity(entity: any): boolean {
-  const sourceUrls = Array.isArray(entity.sourceUrls) ? entity.sourceUrls : [];
-  const hasSourceBackedContext =
-    sourceUrls.length > 0 ||
-    textValue(entity.websiteUrl) ||
-    textValue(entity.profileSynthesisDescription) ||
-    textValue(entity.descriptionSource);
-  return (
-    FUNDING_ENTITY_SLUG_RE.test(textValue(entity.slug)) &&
-    !hasSourceBackedContext &&
-    (!Array.isArray(entity.departments) || entity.departments.length === 0)
-  );
 }
 
 function sourceUrlsFromUser(user: any): string[] {
@@ -282,7 +269,7 @@ async function main(): Promise<void> {
             .lean()
         : null;
     const syntheticUser = !!user && SYNTHETIC_FUNDING_NETID_RE.test(textValue((user as any).netid));
-    const sparse = isSparseFundingEntity(entity);
+    const sparse = isRepairableFundingOnlyShell(entity);
     const mismatchedUser = !!user && !inferredPiNameMatchesEntity(entity, user);
 
     if (!user || syntheticUser || mismatchedUser) {

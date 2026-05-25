@@ -4,18 +4,29 @@
  * Mirrors searchReducer but for the fellowships listing flow. Extracted so
  * state transitions are testable without mounting the provider.
  */
-import { Fellowship, FellowshipFilterOptions } from '../types/types';
+import { Fellowship, FellowshipFilterOptions, StudentVisibilityTier } from '../types/types';
 
-export type FellowshipQuickFilter = 'open' | 'closingSoon' | 'nextCycle' | 'recent' | null;
+export type FellowshipQuickFilter =
+  | 'open'
+  | 'closingSoon'
+  | 'nextCycle'
+  | 'structured'
+  | 'mentorFirst'
+  | 'recent'
+  | null;
 
 export interface FellowshipSearchState {
   queryString: string;
   selectedYearOfStudy: string[];
   selectedProgramCategory: string[];
+  selectedProgramKind: string[];
+  selectedEntryMode: string[];
+  selectedStudentFacingCategory: string[];
   selectedTermOfAward: string[];
   selectedPurpose: string[];
   selectedRegions: string[];
   selectedCitizenship: string[];
+  selectedStudentVisibilityTier: StudentVisibilityTier[];
   sortBy: string;
   sortOrder: number;
   sortDirection: 'asc' | 'desc';
@@ -36,11 +47,21 @@ export interface FellowshipSearchState {
 export type FellowshipSearchAction =
   | { type: 'SET_QUERY_STRING'; payload: string }
   | { type: 'SET_SELECTED_PROGRAM_CATEGORY'; payload: string[] | ((prev: string[]) => string[]) }
+  | { type: 'SET_SELECTED_PROGRAM_KIND'; payload: string[] | ((prev: string[]) => string[]) }
+  | { type: 'SET_SELECTED_ENTRY_MODE'; payload: string[] | ((prev: string[]) => string[]) }
+  | {
+      type: 'SET_SELECTED_STUDENT_FACING_CATEGORY';
+      payload: string[] | ((prev: string[]) => string[]);
+    }
   | { type: 'SET_SELECTED_YEAR_OF_STUDY'; payload: string[] | ((prev: string[]) => string[]) }
   | { type: 'SET_SELECTED_TERM_OF_AWARD'; payload: string[] | ((prev: string[]) => string[]) }
   | { type: 'SET_SELECTED_PURPOSE'; payload: string[] | ((prev: string[]) => string[]) }
   | { type: 'SET_SELECTED_REGIONS'; payload: string[] | ((prev: string[]) => string[]) }
   | { type: 'SET_SELECTED_CITIZENSHIP'; payload: string[] | ((prev: string[]) => string[]) }
+  | {
+      type: 'SET_SELECTED_STUDENT_VISIBILITY_TIER';
+      payload: StudentVisibilityTier[] | ((prev: StudentVisibilityTier[]) => StudentVisibilityTier[]);
+    }
   | { type: 'SET_SORT_BY'; payload: string }
   | { type: 'SET_SORT_ORDER'; payload: number }
   | { type: 'TOGGLE_SORT_DIRECTION' }
@@ -70,11 +91,15 @@ export const createInitialFellowshipSearchState = (
 ): FellowshipSearchState => ({
   queryString: '',
   selectedProgramCategory: [],
+  selectedProgramKind: [],
+  selectedEntryMode: [],
+  selectedStudentFacingCategory: [],
   selectedYearOfStudy: [],
   selectedTermOfAward: [],
   selectedPurpose: [],
   selectedRegions: [],
   selectedCitizenship: [],
+  selectedStudentVisibilityTier: [],
   sortBy: 'default',
   sortOrder: -1,
   sortDirection: 'desc',
@@ -85,6 +110,9 @@ export const createInitialFellowshipSearchState = (
   page: 1,
   filterOptions: {
     programCategory: [],
+    programKind: [],
+    entryMode: [],
+    studentFacingCategory: [],
     yearOfStudy: [],
     termOfAward: [],
     purpose: [],
@@ -117,6 +145,27 @@ export function fellowshipSearchReducer(
         selectedProgramCategory: resolve(action.payload, state.selectedProgramCategory),
       };
 
+    case 'SET_SELECTED_PROGRAM_KIND':
+      return {
+        ...state,
+        selectedProgramKind: resolve(action.payload, state.selectedProgramKind),
+      };
+
+    case 'SET_SELECTED_ENTRY_MODE':
+      return {
+        ...state,
+        selectedEntryMode: resolve(action.payload, state.selectedEntryMode),
+      };
+
+    case 'SET_SELECTED_STUDENT_FACING_CATEGORY':
+      return {
+        ...state,
+        selectedStudentFacingCategory: resolve(
+          action.payload,
+          state.selectedStudentFacingCategory,
+        ),
+      };
+
     case 'SET_SELECTED_YEAR_OF_STUDY':
       return { ...state, selectedYearOfStudy: resolve(action.payload, state.selectedYearOfStudy) };
 
@@ -131,6 +180,15 @@ export function fellowshipSearchReducer(
 
     case 'SET_SELECTED_CITIZENSHIP':
       return { ...state, selectedCitizenship: resolve(action.payload, state.selectedCitizenship) };
+
+    case 'SET_SELECTED_STUDENT_VISIBILITY_TIER':
+      return {
+        ...state,
+        selectedStudentVisibilityTier: resolve(
+          action.payload,
+          state.selectedStudentVisibilityTier,
+        ),
+      };
 
     case 'SET_SORT_BY':
       return { ...state, sortBy: action.payload };

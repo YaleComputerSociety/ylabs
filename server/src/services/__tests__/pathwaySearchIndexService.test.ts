@@ -312,17 +312,24 @@ describe('pathwaySearchIndexService', () => {
     );
   });
 
-  it('rebuilds the index in pages without switching live pathway search traffic', async () => {
+  it('creates missing indexes, applies settings before documents, and waits for tasks', async () => {
     const calls: Array<{ kind: string; payload?: unknown }> = [];
     const fakeIndex = {
       updateSettings: async (settings: unknown) => {
         calls.push({ kind: 'settings', payload: settings });
+        return { taskUid: 3 };
       },
       deleteAllDocuments: async () => {
         calls.push({ kind: 'clear' });
+        return { taskUid: 1 };
       },
       addDocuments: async (documents: unknown, options: unknown) => {
         calls.push({ kind: 'documents', payload: { documents, options } });
+        return { taskUid: 2 };
+      },
+      getStats: async () => {
+        calls.push({ kind: 'stats' });
+        return { numberOfDocuments: 2, isIndexing: false };
       },
     };
     const fetchPage = async (page: number) => ({
@@ -354,20 +361,130 @@ describe('pathwaySearchIndexService', () => {
     const result = await rebuildPathwaySearchIndex(fetchPage, {
       pageSize: 1,
       clearExisting: true,
-      getIndex: async () => fakeIndex,
+      ensureIndex: async (indexName, primaryKey) => {
+        calls.push({ kind: 'ensure', payload: { indexName, primaryKey } });
+        return fakeIndex;
+      },
+      waitForTaskResponse: async (response: unknown) => {
+        calls.push({ kind: 'wait', payload: (response as { taskUid?: number }).taskUid });
+      },
     });
 
     expect(result).toEqual({
       indexName: PATHWAY_SEARCH_INDEX_NAME,
+      resolvedIndexName: PATHWAY_SEARCH_INDEX_NAME,
+      strategy: 'direct',
       pageSize: 1,
       fetchedHitCount: 2,
       indexedDocumentCount: 2,
       pageCount: 2,
       clearedExisting: true,
+      meiliDocumentCount: 2,
+      meiliIsIndexing: false,
     });
-    expect(calls.map((call) => call.kind)).toEqual(['settings', 'clear', 'documents', 'documents']);
-    expect(calls[2].payload).toMatchObject({
+    expect(calls.map((call) => call.kind)).toEqual([
+      'ensure',
+      'settings',
+      'wait',
+      'clear',
+      'wait',
+      'documents',
+      'wait',
+      'documents',
+      'wait',
+      'stats',
+    ]);
+    expect(calls[0].payload).toEqual({
+      indexName: PATHWAY_SEARCH_INDEX_NAME,
+      primaryKey: PATHWAY_SEARCH_INDEX_PRIMARY_KEY,
+    });
+    expect(calls[5].payload).toMatchObject({
       options: { primaryKey: PATHWAY_SEARCH_INDEX_PRIMARY_KEY },
+    });
+    expect(calls.filter((call) => call.kind === 'wait').map((call) => call.payload)).toEqual([
+      3,
+      1,
+      2,
+      2,
+    ]);
+  });
+
+  it('can rebuild pathways through a temporary index and swap into the live index', async () => {
+    const calls: Array<{ kind: string; payload?: unknown }> = [];
+    const fakeIndex = {
+      updateSettings: async () => {
+        calls.push({ kind: 'settings' });
+        return { taskUid: 11 };
+      },
+      addDocuments: async () => {
+        calls.push({ kind: 'documents' });
+        return { taskUid: 12 };
+      },
+      getStats: async () => ({ numberOfDocuments: 1, isIndexing: false }),
+    };
+
+    const result = await rebuildPathwaySearchIndex(
+      async (page) => ({
+        estimatedTotalHits: 1,
+        hits:
+          page === 1
+            ? [
+                {
+                  _id: 'pathway-1',
+                  studentFacingLabel: 'Pathway one',
+                  sourceUrls: [],
+                  researchEntity: { departments: [] },
+                  evidence: [],
+                } as any,
+              ]
+            : [],
+      }),
+      {
+        strategy: 'swap',
+        clearExisting: true,
+        resolveIndexName: (name) => `beta_${name}`,
+        createIndex: async (indexName, primaryKey) => {
+          calls.push({ kind: 'create', payload: { indexName, primaryKey } });
+          return fakeIndex;
+        },
+        ensureIndex: async (indexName, primaryKey) => {
+          calls.push({ kind: 'ensure', payload: { indexName, primaryKey } });
+          return fakeIndex;
+        },
+        swapIndexes: async (sourceIndexName, targetIndexName) => {
+          calls.push({ kind: 'swap', payload: { sourceIndexName, targetIndexName } });
+        },
+        deleteIndex: async (indexName) => {
+          calls.push({ kind: 'delete', payload: indexName });
+        },
+        waitForTaskResponse: async (response: unknown) => {
+          calls.push({ kind: 'wait', payload: (response as { taskUid?: number }).taskUid });
+        },
+        tempIndexName: 'beta_pathways_rebuild_test',
+      },
+    );
+
+    expect(result).toMatchObject({
+      indexName: PATHWAY_SEARCH_INDEX_NAME,
+      resolvedIndexName: 'beta_pathways',
+      strategy: 'swap',
+      indexedDocumentCount: 1,
+      clearedExisting: true,
+    });
+    expect(calls.map((call) => call.kind)).toEqual([
+      'create',
+      'settings',
+      'wait',
+      'documents',
+      'wait',
+      'ensure',
+      'swap',
+      'delete',
+      'ensure',
+    ]);
+    expect(calls[6].payload).toEqual({
+      sourceIndexName: 'beta_pathways_rebuild_test',
+      targetIndexName: 'beta_pathways',
     });
   });
 

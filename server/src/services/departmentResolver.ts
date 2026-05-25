@@ -81,7 +81,7 @@ const BROAD_UNIT_KEYS = new Set(
   ].map(normalize),
 );
 
-const SOURCE_UNIT_ABBREVIATION_ALIASES = new Map<string, string>(
+const SOURCE_UNIT_ABBREVIATION_ALIASES = new Map<string, readonly string[]>(
   Object.entries({
     'NUR School of Nursing': 'NURS',
     'LAW School of Law': 'LAW',
@@ -138,7 +138,26 @@ const SOURCE_UNIT_ABBREVIATION_ALIASES = new Map<string, string>(
     'SOM School of Management': 'MGT',
     'School of Management': 'MGT',
     'SOMRES Research and Teaching Unit': 'MGT',
-  }).map(([raw, abbreviation]) => [normalize(raw), abbreviation]),
+    'INTERNAL MEDICINE/MEDICINE': 'INMD',
+    'PUBLIC HEALTH & PREV MEDICINE': 'EPH',
+    'RADIATION-DIAGNOSTIC/ONCOLOGY': 'TRAD',
+    'BIOCHEMISTRY': 'MB&B',
+    'MICROBIOLOGY/IMMUN/VIROLOGY': ['MBIO', 'IBIO'],
+    'ANATOMY/CELL BIOLOGY': 'CBIO',
+    'OBSTETRICS & GYNECOLOGY': 'OBGN',
+    'PHYSIOLOGY': 'C&MP',
+    'NEUROSCIENCES': 'NSCI',
+    'OPHTHALMOLOGY': 'OPVS',
+    'VETERINARY SCIENCES': 'CPMD',
+    'BIOLOGY': 'BIOL',
+    'BIOSTATISTICS & OTHER MATH SCI': 'BIS',
+    'EASMAT MatSci Faculty': 'MENG',
+    'ORTHOPEDICS': 'OPRH',
+    'Otolaryngology Surgery': 'SURG',
+  }).map(([raw, abbreviation]): [string, readonly string[]] => [
+    normalize(raw),
+    Array.isArray(abbreviation) ? abbreviation : [abbreviation],
+  ]),
 );
 
 const SOURCE_UNIT_PREFIX_ABBREVIATION_ALIASES: Array<[string, string]> = Object.entries({
@@ -275,6 +294,15 @@ const SOURCE_UNIT_IGNORED_PREFIXES = [
   'Yale Summer Session',
 ].map(normalize);
 
+const SOURCE_UNIT_IGNORED_EXACT_KEYS = new Set(
+  [
+    'ADMINISTRATION',
+    'NONE',
+    'SOCIAL SCIENCES',
+    'Infectious Diseases',
+  ].map(normalize),
+);
+
 async function loadCache(force = false): Promise<void> {
   if (!force && cache.loadedAt && Date.now() - cache.loadedAt < CACHE_TTL_MS) return;
   const rows = await Department.find({}).lean<DepartmentRow[]>();
@@ -334,10 +362,11 @@ export function canonicalizeDepartmentListFromRows(
     const value = typeof raw === 'string' ? raw.trim() : '';
     if (!value) continue;
     const key = normalize(value);
-    const aliasAbbreviation = SOURCE_UNIT_ABBREVIATION_ALIASES.get(key);
-    const aliasRow = aliasAbbreviation ? byNormalized.get(normalize(aliasAbbreviation)) : undefined;
-    if (aliasRow) {
-      addDepartment(departments, seen, aliasRow);
+    const aliasRows = (SOURCE_UNIT_ABBREVIATION_ALIASES.get(key) || [])
+      .map((abbreviation) => byNormalized.get(normalize(abbreviation)))
+      .filter((row): row is DepartmentRow => Boolean(row));
+    if (aliasRows.length > 0) {
+      for (const row of aliasRows) addDepartment(departments, seen, row);
       continue;
     }
     const prefixAliasAbbreviation = SOURCE_UNIT_PREFIX_ABBREVIATION_ALIASES.find(([prefix]) =>
@@ -351,6 +380,10 @@ export function canonicalizeDepartmentListFromRows(
       continue;
     }
     if (BROAD_UNIT_KEYS.has(key)) {
+      if (!ignored.includes(value)) ignored.push(value);
+      continue;
+    }
+    if (SOURCE_UNIT_IGNORED_EXACT_KEYS.has(key)) {
       if (!ignored.includes(value)) ignored.push(value);
       continue;
     }

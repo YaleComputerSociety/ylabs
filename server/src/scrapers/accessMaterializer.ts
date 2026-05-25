@@ -28,6 +28,7 @@ import { parseNormalizedHttpUrl } from '../utils/urlNormalization';
 
 const ENTITY_DISCOVERY_ONLY_SOURCES = new Set([
   'centers-institutes-index',
+  'yale-research-official',
   'ysm-atoz-index',
   'yse-centers-index',
 ]);

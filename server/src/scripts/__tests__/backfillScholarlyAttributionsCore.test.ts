@@ -11,13 +11,15 @@ describe('backfillScholarlyAttributionsCore', () => {
     expect(parseBackfillScholarlyAttributionsArgs([])).toEqual({
       apply: false,
       limit: 1000,
+      offset: 0,
     });
   });
 
-  it('parses apply and limit options', () => {
-    expect(parseBackfillScholarlyAttributionsArgs(['--apply', '--limit=25'])).toEqual({
+  it('parses apply, limit, and offset options', () => {
+    expect(parseBackfillScholarlyAttributionsArgs(['--apply', '--limit=25', '--offset=50'])).toEqual({
       apply: true,
       limit: 25,
+      offset: 50,
     });
   });
 
@@ -43,6 +45,15 @@ describe('backfillScholarlyAttributionsCore', () => {
       writeOps: 2,
       skippedMissingLinkId: 0,
       skippedMissingTarget: 0,
+      samples: [
+        {
+          scholarlyLinkId: '64f000000000000000000222',
+          title: '',
+          userId: '64f000000000000000000001',
+          researchEntityId: '64f000000000000000000002',
+          plannedAttributions: ['identity_authorship', 'explicit_entity_link'],
+        },
+      ],
     });
     expect(result.ops).toHaveLength(2);
     expect(result.ops[0].updateOne.filter).toMatchObject({
@@ -61,31 +72,41 @@ describe('backfillScholarlyAttributionsCore', () => {
     expect(
       summarizeScholarlyAttributionBackfill({
         apply: false,
+        totalEligible: 120,
+        offset: 20,
         scanned: 2,
         writeOps: 3,
         skippedMissingLinkId: 0,
         skippedMissingTarget: 1,
+        samples: [],
       }),
     ).toEqual({
       mode: 'dry-run',
+      totalEligible: 120,
+      offset: 20,
       scanned: 2,
       planned: 3,
       written: 0,
       skippedMissingLinkId: 0,
       skippedMissingTarget: 1,
+      samples: [],
     });
     expect(
       summarizeScholarlyAttributionBackfill({
         apply: true,
+        totalEligible: 120,
+        offset: 20,
         scanned: 2,
         writeOps: 3,
         skippedMissingLinkId: 0,
         skippedMissingTarget: 1,
+        samples: [],
       }),
     ).toMatchObject({
       mode: 'apply',
       planned: 3,
       written: 3,
+      samples: [],
     });
   });
 });

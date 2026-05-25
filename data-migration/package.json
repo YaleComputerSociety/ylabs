@@ -1,7 +1,7 @@
 {
   "name": "data-migration",
   "version": "1.0.0",
-  "description": "Database seeding scripts for YLabs",
+  "description": "Database seeding scripts for Yale Research",
   "scripts": {
     "seed:research-areas": "npx tsx seedResearchAreas.ts",
     "seed:departments": "npx tsx seedDepartments.ts",

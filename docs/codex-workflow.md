@@ -33,7 +33,46 @@ Default to acting after inspection. Ask questions only when the answer cannot be
 
 Use parallel subagents when work can be split into independent streams without sacrificing coherence. Good candidates include separate frontend/backend impact checks, docs updates alongside verification, or implementation tasks with disjoint file ownership.
 
+For ideas, prototypes, and exploratory implementation that involve multiple agents, use the Superpowers worktree workflow before agent work begins. The goal is checkout isolation, not branch isolation: related agents may collaborate on the same branch when that is useful, but each agent should work from its own worktree unless a shared workspace is explicitly required.
+
+Correct use means:
+
+- Detect existing isolation first with git metadata; never create a nested worktree.
+- Prefer a harness-native worktree command when available, falling back to `git worktree` only when no native tool exists.
+- Create one worktree per implementation agent by default. Agents may share a branch for related collaboration, but should not share a checkout unless the task explicitly requires it.
+- Ensure project-local worktree directories such as `.worktrees/` or `worktrees/` are ignored before creating them.
+- Run setup and focused baseline verification in the worktree before substantial edits, so later failures can be attributed correctly.
+- Bring results back through the main Codex thread, which reviews each diff, resolves conflicts, updates durable docs, refreshes Graphify when needed, and runs final verification.
+
 Avoid subagents for tiny tasks, tightly coupled edits, or product decisions that need one consistent judgment. After subagents finish, the main Codex thread must review their outputs, inspect changed files, resolve conflicts, and run or recommend verification.
+
+## GStack Routing
+
+Use gstack skills as first-class workflow tools when they match the task. Prefer them over one-off shell/browser improvisation for flows they cover, while still treating repo source, tests, product docs, and Graphify as canonical.
+
+| Situation | Use |
+| --- | --- |
+| Need to open the app, test a flow, capture screenshots, inspect responsive behavior, or dogfood a page | `browse` |
+| Need systematic QA plus fixes | `qa` |
+| Need systematic QA report without edits | `qa-only` |
+| Need visual/UI polish, hierarchy, spacing, or interaction review | `design-review` |
+| Need performance regression evidence | `benchmark` |
+| Need broad code health signal | `health` |
+| Need pre-landing review of a non-trivial diff | `review` |
+| Need commit, push, PR creation, or deploy workflow | `ship` |
+| Need PR merge, deployment wait, and production verification | `land-and-deploy` |
+| Need production smoke monitoring after deploy | `canary` |
+| Need strategic or cross-functional plan review | `autoplan`, or the focused `plan-ceo-review`, `plan-eng-review`, `plan-design-review`, `plan-devex-review` skills |
+| Need repeatable web data extraction | `scrape`, then `skillify` only after the flow is stable and useful enough to preserve |
+| Need to persist recurring project lessons | `learn` |
+
+Operational rules:
+
+- Use the exact gstack skill workflow once selected; do not cherry-pick only the familiar parts.
+- Combine gstack with worktrees for multi-agent idea/prototype work: isolate each agent's checkout, then use gstack QA/review/design tools inside the relevant worktree when useful.
+- Keep generated gstack/browser artifacts under ignored local paths such as `tmp/` or `.gstack/`; fold only stable conclusions into durable docs.
+- Do not let gstack replace focused repo verification. Final handoff still needs the narrowest relevant test, typecheck, build, browser check, or explicit explanation for skipped verification.
+- When gstack findings affect durable product, schema, architecture, setup, or design direction, update the relevant doc and refresh Graphify.
 
 ## Done Criteria
 
@@ -61,11 +100,11 @@ Use Playwright in two layers:
 Codex is configured with a global `playwright` MCP server:
 
 ```bash
-codex mcp add playwright -- /home/quntaoz/ylabs/scripts/with-playwright-libs.sh npx -y @playwright/mcp@latest --output-dir /home/quntaoz/ylabs/tmp/playwright-mcp
+codex mcp add playwright -- <repo>/scripts/with-playwright-libs.sh npx -y @playwright/mcp@latest --output-dir <repo>/tmp/playwright-mcp
 ```
 
 The MCP server intentionally launches through `scripts/with-playwright-libs.sh`, matching `yarn playwright:run` and `yarn audit:unified-research`, so browser sessions use the repo's no-root shared-library workaround.
-Configure Playwright MCP with `--output-dir /home/quntaoz/ylabs/tmp/playwright-mcp` so generated snapshots, console logs, and session artifacts stay in the repo-local scratch directory instead of the repository root.
+Configure Playwright MCP with `--output-dir <repo>/tmp/playwright-mcp` so generated snapshots, console logs, and session artifacts stay in the repo-local scratch directory instead of the repository root.
 All temporary browser-audit screenshots, one-off reports, generated helper scripts, and JSON captures should also be written under `tmp/`, preferably a named subdirectory such as `tmp/ux-audit-2026-05-22/`. Only fold stable findings into durable docs such as `docs/ui-ux-direction.md`, `docs/product-context.md`, or `docs/tasks/priority-roadmap.md`.
 
 Do not run `pkill`, `kill`, or broad cleanup commands against `playwright-mcp` from the same Codex session that is using Playwright MCP. That kills the stdio MCP server attached to the active session, and subsequent `browser_*` calls will fail with `Transport closed` until Codex is restarted or a new session is opened. If MCP is already closed, restart Codex or continue browser checks through `yarn playwright:run` / a direct Playwright script in a fresh process.
@@ -79,14 +118,14 @@ When doing UI/UX work, a good loop is:
 
 ## MongoDB MCP
 
-Codex may be configured with a global `mongodb-ylabs` MCP server for MongoDB exploration. Treat it as a read-only diagnostic lens for inspecting collections, sampling records, and understanding data shape.
+Codex may be configured with a global `mongodb-yale-research` MCP server for MongoDB exploration. Treat it as a read-only diagnostic lens for inspecting collections, sampling records, and understanding data shape.
 
 Do not use MongoDB MCP as the durable write path for this project. Any operation that creates, updates, deletes, backfills, materializes, migrates, or repairs data should still be implemented through repo scripts or services so the logic is reviewable, repeatable, and aligned with Mongoose models, scraper evidence rules, and product invariants.
 
 Local Codex setup uses the official MongoDB MCP package in read-only mode:
 
 ```bash
-codex mcp add mongodb-ylabs -- /home/quntaoz/.codex/bin/mongodb-ylabs-mcp.cjs
+codex mcp add mongodb-yale-research -- /home/quntaoz/.codex/bin/mongodb-yale-research-mcp.cjs
 ```
 
 ## Rule Evolution
@@ -135,6 +174,7 @@ Use:
 - Client route pages live in `client/src/pages/` and are wired through `client/src/App.tsx`.
 - Reducers should keep state transitions pure; side effects belong in providers/components.
 - Schema changes may require Mongoose model updates, client type updates, migrations, and Meilisearch index updates.
+- For deployment or CI/CD questions, remember the environment contract: `beta` deploys to the Beta Render service and should use `MEILISEARCH_INDEX_PREFIX=beta`; `main` deploys to the paid production Render service and should use `MEILISEARCH_INDEX_PREFIX=prod`; local development is allowed to differ and commonly uses Docker Meilisearch with no prefix or a local/test prefix. Treat future work as adding validation/gates around this contract, not inventing prefix support.
 - Scraper-derived claims should remain evidence-first: store raw observations/source evidence, then materialize derived access signals/pathways.
 - Contact and outreach features need guardrails. Prefer official application/contact routes and avoid encouraging mass outreach.
 

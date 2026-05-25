@@ -2,7 +2,7 @@
 
 A research-discovery app for Yale students. It helps students find research homes, evidence-backed pathways, posted opportunities when they exist, and the best next step toward a specific Yale research context.
 
-**Live:** [yalelabs.io](https://yalelabs.io/) · **Beta:** [ylabs-dev.onrender.com](https://ylabs-dev.onrender.com)
+**Live:** [yalelabs.io](https://yalelabs.io/) · **Repo:** [YaleComputerSociety/ylabs](https://github.com/YaleComputerSociety/ylabs)
 
 ## Tech Stack
 
@@ -35,7 +35,7 @@ Go to **http://localhost:3000**. Use `http://localhost:4000/api/dev-login` for a
 
 ## Product Surfaces
 
-- `/research`: Yale Labs, the primary discovery surface for labs, centers, institutes, faculty projects, archives, collections projects, RA programs, and other research homes. Cards are enriched with compact ways-in evidence when it exists.
+- `/research`: Yale Research, the primary discovery surface for labs, centers, institutes, faculty projects, archives, collections projects, RA programs, and other research homes. Cards are enriched with compact ways-in evidence when it exists.
 - `/programs`: Programs & Fellowships, the structured application and planning surface for open cycles, closing-soon deadlines, likely next cycles, center internships, fellowships, and recurring research programs.
 - `/account`: Dashboard, the private saved-planning workspace for research plans, saved programs, notes, checklist context, and next deadlines.
 - `/research/:slug`: research-home detail pages with the student decision summary, evidence level, recommended next step, people, sources, and ways-in context.
@@ -62,7 +62,7 @@ This command downloads the required shared libraries into `./.playwright-libs` a
 For Codex browser exploration, register Playwright MCP through the same shim:
 
 ```bash
-codex mcp add playwright -- /home/quntaoz/ylabs/scripts/with-playwright-libs.sh npx -y @playwright/mcp@latest --output-dir /home/quntaoz/ylabs/tmp/playwright-mcp
+codex mcp add playwright -- <repo>/scripts/with-playwright-libs.sh npx -y @playwright/mcp@latest --output-dir <repo>/tmp/playwright-mcp
 ```
 
 Use Playwright MCP for exploratory browser passes, then codify durable findings in Playwright scripts or tests such as `yarn audit:unified-research`.

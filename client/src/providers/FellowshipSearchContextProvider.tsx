@@ -11,7 +11,7 @@ import swal from 'sweetalert';
 
 import FellowshipSearchContext from '../contexts/FellowshipSearchContext';
 import UserContext from '../contexts/UserContext';
-import { Fellowship } from '../types/types';
+import { Fellowship, StudentVisibilityTier } from '../types/types';
 import { createFellowship } from '../utils/createFellowship';
 import {
   fellowshipSearchReducer,
@@ -33,7 +33,9 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
   const isActive = location.pathname === '/programs';
 
   const { isAuthenticated, isLoading: authLoading } = useContext(UserContext);
+  const { user } = useContext(UserContext);
   const authReady = !authLoading && isAuthenticated;
+  const isAdmin = user?.userType === 'admin';
 
   const [state, dispatch] = useReducer(fellowshipSearchReducer, undefined, () =>
     createInitialFellowshipSearchState({ sortBy: sortableKeys[0] }),
@@ -42,11 +44,15 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
   const {
     queryString,
     selectedProgramCategory,
+    selectedProgramKind,
+    selectedEntryMode,
+    selectedStudentFacingCategory,
     selectedYearOfStudy,
     selectedTermOfAward,
     selectedPurpose,
     selectedRegions,
     selectedCitizenship,
+    selectedStudentVisibilityTier,
     sortBy,
     sortOrder,
     sortDirection,
@@ -76,6 +82,18 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
     dispatch({ type: 'SET_SELECTED_PROGRAM_CATEGORY', payload: value });
   }, []) as React.Dispatch<React.SetStateAction<string[]>>;
 
+  const setSelectedProgramKind = useCallback((value: React.SetStateAction<string[]>) => {
+    dispatch({ type: 'SET_SELECTED_PROGRAM_KIND', payload: value });
+  }, []) as React.Dispatch<React.SetStateAction<string[]>>;
+
+  const setSelectedEntryMode = useCallback((value: React.SetStateAction<string[]>) => {
+    dispatch({ type: 'SET_SELECTED_ENTRY_MODE', payload: value });
+  }, []) as React.Dispatch<React.SetStateAction<string[]>>;
+
+  const setSelectedStudentFacingCategory = useCallback((value: React.SetStateAction<string[]>) => {
+    dispatch({ type: 'SET_SELECTED_STUDENT_FACING_CATEGORY', payload: value });
+  }, []) as React.Dispatch<React.SetStateAction<string[]>>;
+
   const setSelectedTermOfAward = useCallback((value: React.SetStateAction<string[]>) => {
     dispatch({ type: 'SET_SELECTED_TERM_OF_AWARD', payload: value });
   }, []) as React.Dispatch<React.SetStateAction<string[]>>;
@@ -91,6 +109,13 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
   const setSelectedCitizenship = useCallback((value: React.SetStateAction<string[]>) => {
     dispatch({ type: 'SET_SELECTED_CITIZENSHIP', payload: value });
   }, []) as React.Dispatch<React.SetStateAction<string[]>>;
+
+  const setSelectedStudentVisibilityTier = useCallback(
+    (value: React.SetStateAction<StudentVisibilityTier[]>) => {
+      dispatch({ type: 'SET_SELECTED_STUDENT_VISIBILITY_TIER', payload: value });
+    },
+    [],
+  ) as React.Dispatch<React.SetStateAction<StudentVisibilityTier[]>>;
 
   const setSortBy = useCallback((value: string) => {
     dispatch({ type: 'SET_SORT_BY', payload: value });
@@ -119,22 +144,30 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
   const filtersRef = useRef({
     queryString,
     selectedProgramCategory,
+    selectedProgramKind,
+    selectedEntryMode,
+    selectedStudentFacingCategory,
     selectedYearOfStudy,
     selectedTermOfAward,
     selectedPurpose,
     selectedRegions,
     selectedCitizenship,
+    selectedStudentVisibilityTier,
     sortBy,
     sortOrder,
   });
   filtersRef.current = {
     queryString,
     selectedProgramCategory,
+    selectedProgramKind,
+    selectedEntryMode,
+    selectedStudentFacingCategory,
     selectedYearOfStudy,
     selectedTermOfAward,
     selectedPurpose,
     selectedRegions,
     selectedCitizenship,
+    selectedStudentVisibilityTier,
     sortBy,
     sortOrder,
   };
@@ -157,6 +190,9 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
           payload: {
             yearOfStudy: response.data.yearOfStudy || [],
             programCategory: response.data.programCategory || [],
+            programKind: response.data.programKind || [],
+            entryMode: response.data.entryMode || [],
+            studentFacingCategory: response.data.studentFacingCategory || [],
             termOfAward: response.data.termOfAward || [],
             purpose: response.data.purpose || [],
             globalRegions: response.data.globalRegions || [],
@@ -185,6 +221,15 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
       if (f.selectedProgramCategory.length > 0) {
         url += `&programCategory=${encodeURIComponent(f.selectedProgramCategory.join(','))}`;
       }
+      if (f.selectedProgramKind.length > 0) {
+        url += `&programKind=${encodeURIComponent(f.selectedProgramKind.join(','))}`;
+      }
+      if (f.selectedEntryMode.length > 0) {
+        url += `&entryMode=${encodeURIComponent(f.selectedEntryMode.join(','))}`;
+      }
+      if (f.selectedStudentFacingCategory.length > 0) {
+        url += `&studentFacingCategory=${encodeURIComponent(f.selectedStudentFacingCategory.join(','))}`;
+      }
       if (f.selectedYearOfStudy.length > 0) {
         url += `&yearOfStudy=${encodeURIComponent(f.selectedYearOfStudy.join(','))}`;
       }
@@ -199,6 +244,15 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
       }
       if (f.selectedCitizenship.length > 0) {
         url += `&citizenshipStatus=${encodeURIComponent(f.selectedCitizenship.join(','))}`;
+      }
+      if (isAdmin && f.selectedStudentVisibilityTier.length > 0) {
+        url += `&studentVisibilityTier=${encodeURIComponent(f.selectedStudentVisibilityTier.join(','))}`;
+        if (f.selectedStudentVisibilityTier.includes('operator_review')) {
+          url += '&includeOperatorReview=true';
+        }
+        if (f.selectedStudentVisibilityTier.includes('suppressed')) {
+          url += '&includeSuppressed=true';
+        }
       }
 
       dispatch({ type: 'SEARCH_REQUEST' });
@@ -231,7 +285,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
           dispatch({ type: 'SEARCH_FAILURE' });
         });
     },
-    [pageSize],
+    [isAdmin, pageSize],
   );
 
   const refreshFellowships = useCallback(() => {
@@ -278,10 +332,14 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
   }, [
     selectedYearOfStudy,
     selectedProgramCategory,
+    selectedProgramKind,
+    selectedEntryMode,
+    selectedStudentFacingCategory,
     selectedTermOfAward,
     selectedPurpose,
     selectedRegions,
     selectedCitizenship,
+    selectedStudentVisibilityTier,
     sortBy,
     sortOrder,
     filterOptionsLoaded,
@@ -302,6 +360,12 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
         setQueryString,
         selectedProgramCategory,
         setSelectedProgramCategory,
+        selectedProgramKind,
+        setSelectedProgramKind,
+        selectedEntryMode,
+        setSelectedEntryMode,
+        selectedStudentFacingCategory,
+        setSelectedStudentFacingCategory,
         selectedYearOfStudy,
         setSelectedYearOfStudy,
         selectedTermOfAward,
@@ -311,6 +375,8 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
         selectedRegions,
         setSelectedRegions,
         selectedCitizenship,
+        selectedStudentVisibilityTier,
+        setSelectedStudentVisibilityTier,
         setSelectedCitizenship,
         sortBy,
         setSortBy,

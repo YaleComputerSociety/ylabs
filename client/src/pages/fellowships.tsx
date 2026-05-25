@@ -18,18 +18,19 @@ import ActiveFilters, {
 import FellowshipSortDropdown from '../components/shared/FellowshipSortDropdown';
 import ViewModeToggle from '../components/shared/ViewModeToggle';
 import { BrowsableItem } from '../types/browsable';
-import { Fellowship } from '../types/types';
+import { Fellowship, type StudentVisibilityTier } from '../types/types';
 import axios from '../utils/axios';
 import { browsePageReducer, createInitialBrowsePageState } from '../reducers/browsePageReducer';
 import type { FellowshipQuickFilter } from '../reducers/fellowshipSearchReducer';
 import { useInfiniteScroll } from '../hooks/useInfiniteScroll';
 import useDocumentTitle from '../hooks/useDocumentTitle';
+import { getFellowshipCycleStatus } from '../utils/fellowshipCycle';
 import {
-  getFellowshipCycleStatus,
-  type FellowshipCycleCategory,
-} from '../utils/fellowshipCycle';
+  getProgramJourneyStatus,
+  type ProgramJourneyCategory,
+} from '../utils/programJourney';
 
-const FIRST_PROGRAM_SAVE_KEY = 'ylabs.firstSave.program.v1';
+const FIRST_PROGRAM_SAVE_KEY = 'yale-research.firstSave.program.v1';
 
 const SectionHeader = ({
   title,
@@ -112,8 +113,49 @@ const StatusSummary = ({
 const fellowshipQuickFilters: QuickFilterDef[] = [
   { label: 'Open Only', value: 'open' },
   { label: 'Closing Soon', value: 'closingSoon' },
+  { label: 'Structured', value: 'structured' },
+  { label: 'Mentor First', value: 'mentorFirst' },
   { label: 'Next Cycle', value: 'nextCycle' },
   { label: 'Recently Added', value: 'recent' },
+];
+
+const trustTierFilterOptions: Array<{ value: StudentVisibilityTier; label: string }> = [
+  { value: 'student_ready', label: 'Ready' },
+  { value: 'limited_but_safe', label: 'Limited' },
+  { value: 'operator_review', label: 'Review' },
+  { value: 'suppressed', label: 'Suppressed' },
+];
+
+const journeySections: Array<{
+  key: ProgramJourneyCategory;
+  title: string;
+  description: string;
+}> = [
+  {
+    key: 'applyNow',
+    title: 'Apply Now',
+    description: 'Current program, internship, project, and fellowship application windows.',
+  },
+  {
+    key: 'structured',
+    title: 'Structured Research Programs',
+    description: 'Programs, internships, RA routes, and mentor-matching experiences that organize research participation.',
+  },
+  {
+    key: 'fundingAfterMentor',
+    title: 'Funding After You Have a Mentor',
+    description: 'Funding records that usually require a research home, adviser, proposal, or lab fit first.',
+  },
+  {
+    key: 'nextCycle',
+    title: 'Plan Next Cycle',
+    description: 'Official past cycles that look recurring. Track these while preparing eligibility and mentor fit.',
+  },
+  {
+    key: 'archive',
+    title: 'Archive / Review',
+    description: 'Retained records that need eligibility review or should not be treated as active undergraduate options.',
+  },
 ];
 
 const dateValue = (value?: string | null) => {
@@ -167,6 +209,12 @@ const Fellowships = () => {
     filterOptions,
     selectedProgramCategory,
     setSelectedProgramCategory,
+    selectedProgramKind,
+    setSelectedProgramKind,
+    selectedEntryMode,
+    setSelectedEntryMode,
+    selectedStudentFacingCategory,
+    setSelectedStudentFacingCategory,
     selectedYearOfStudy,
     setSelectedYearOfStudy,
     selectedTermOfAward,
@@ -177,6 +225,8 @@ const Fellowships = () => {
     setSelectedRegions,
     selectedCitizenship,
     setSelectedCitizenship,
+    selectedStudentVisibilityTier,
+    setSelectedStudentVisibilityTier,
     sortBy,
     sortDirection,
     quickFilter,
@@ -248,8 +298,29 @@ const Fellowships = () => {
 
   const fellowshipFilterTabs: FilterTabConfig[] = [
     {
+      key: 'studentFacingCategory',
+      label: 'Journey',
+      options: filterOptions.studentFacingCategory,
+      selected: selectedStudentFacingCategory,
+      setSelected: setSelectedStudentFacingCategory,
+    },
+    {
+      key: 'programKind',
+      label: 'Program Kind',
+      options: filterOptions.programKind,
+      selected: selectedProgramKind,
+      setSelected: setSelectedProgramKind,
+    },
+    {
+      key: 'entryMode',
+      label: 'Entry Mode',
+      options: filterOptions.entryMode,
+      selected: selectedEntryMode,
+      setSelected: setSelectedEntryMode,
+    },
+    {
       key: 'programCategory',
-      label: 'Program Type',
+      label: 'Legacy Type',
       options: filterOptions.programCategory,
       selected: selectedProgramCategory,
       setSelected: setSelectedProgramCategory,
@@ -292,11 +363,10 @@ const Fellowships = () => {
   ];
 
   const fellowshipFilterGroups = [
-    {
-      label: 'Program Type',
-      values: selectedProgramCategory,
-      clear: () => setSelectedProgramCategory([]),
-    },
+    { label: 'Journey', values: selectedStudentFacingCategory, clear: () => setSelectedStudentFacingCategory([]) },
+    { label: 'Program Kind', values: selectedProgramKind, clear: () => setSelectedProgramKind([]) },
+    { label: 'Entry Mode', values: selectedEntryMode, clear: () => setSelectedEntryMode([]) },
+    { label: 'Legacy Type', values: selectedProgramCategory, clear: () => setSelectedProgramCategory([]) },
     { label: 'Year', values: selectedYearOfStudy, clear: () => setSelectedYearOfStudy([]) },
     { label: 'Term', values: selectedTermOfAward, clear: () => setSelectedTermOfAward([]) },
     { label: 'Purpose', values: selectedPurpose, clear: () => setSelectedPurpose([]) },
@@ -317,30 +387,49 @@ const Fellowships = () => {
     };
   });
 
-  const { closingSoon, open, nextCycle, closed } = useMemo(() => {
+  const { closingSoon, open, nextCycle, closed, journeyGroups } = useMemo(() => {
     const now = new Date();
-    const groups = {
+    const cycleGroups = {
       closingSoon: [] as Fellowship[],
       open: [] as Fellowship[],
       nextCycle: [] as Fellowship[],
       closed: [] as Fellowship[],
     };
+    const groups: Record<ProgramJourneyCategory, Fellowship[]> = {
+      applyNow: [],
+      structured: [],
+      fundingAfterMentor: [],
+      nextCycle: [],
+      archive: [],
+    };
     for (const f of fellowships) {
-      const cat = getFellowshipCycleStatus(f, now).category;
-      groups[cat].push(f);
+      const cycleCat = getFellowshipCycleStatus(f, now).category;
+      cycleGroups[cycleCat].push(f);
+      groups[getProgramJourneyStatus(f, now).category].push(f);
     }
-    groups.closingSoon.sort((a, b) => {
+    cycleGroups.closingSoon.sort((a, b) => {
       const da = a.deadline ? new Date(a.deadline).getTime() : Infinity;
       const db = b.deadline ? new Date(b.deadline).getTime() : Infinity;
       return da - db;
     });
     if (sortBy !== 'default') {
-      groups.closingSoon = sortFellowshipsForDisplay(groups.closingSoon, sortBy, sortDirection);
-      groups.open = sortFellowshipsForDisplay(groups.open, sortBy, sortDirection);
-      groups.nextCycle = sortFellowshipsForDisplay(groups.nextCycle, sortBy, sortDirection);
-      groups.closed = sortFellowshipsForDisplay(groups.closed, sortBy, sortDirection);
+      cycleGroups.closingSoon = sortFellowshipsForDisplay(cycleGroups.closingSoon, sortBy, sortDirection);
+      cycleGroups.open = sortFellowshipsForDisplay(cycleGroups.open, sortBy, sortDirection);
+      cycleGroups.nextCycle = sortFellowshipsForDisplay(cycleGroups.nextCycle, sortBy, sortDirection);
+      cycleGroups.closed = sortFellowshipsForDisplay(cycleGroups.closed, sortBy, sortDirection);
+      for (const key of Object.keys(groups) as ProgramJourneyCategory[]) {
+        groups[key] = sortFellowshipsForDisplay(groups[key], sortBy, sortDirection);
+      }
+    } else {
+      for (const key of Object.keys(groups) as ProgramJourneyCategory[]) {
+        groups[key].sort((a, b) => {
+          const da = dateValue(a.deadline) ?? Number.MAX_SAFE_INTEGER;
+          const db = dateValue(b.deadline) ?? Number.MAX_SAFE_INTEGER;
+          return da - db;
+        });
+      }
     }
-    return groups;
+    return { ...cycleGroups, journeyGroups: groups };
   }, [fellowships, sortBy, sortDirection]);
 
   const toBrowsable = (fs: Fellowship[]): BrowsableItem[] =>
@@ -353,22 +442,40 @@ const Fellowships = () => {
     return fs.filter((f) => new Date(f.createdAt) >= thirtyDaysAgo);
   };
 
-  const closingSoonItems = useMemo(
-    () => toBrowsable(recentFilter(closingSoon)),
-    [closingSoon, quickFilter],
-  );
-  const openItems = useMemo(() => toBrowsable(recentFilter(open)), [open, quickFilter]);
-  const nextCycleItems = useMemo(
-    () => toBrowsable(recentFilter(nextCycle)),
-    [nextCycle, quickFilter],
-  );
-  const closedItems = useMemo(() => toBrowsable(recentFilter(closed)), [closed, quickFilter]);
+  const journeyItems = useMemo(() => {
+    const byKey = {} as Record<ProgramJourneyCategory, BrowsableItem[]>;
+    for (const key of Object.keys(journeyGroups) as ProgramJourneyCategory[]) {
+      let rows = journeyGroups[key];
+      if (quickFilter === 'open') {
+        rows = rows.filter((f) =>
+          ['open', 'closingSoon'].includes(getFellowshipCycleStatus(f).category),
+        );
+      }
+      if (quickFilter === 'closingSoon') {
+        rows = rows.filter((f) => getFellowshipCycleStatus(f).category === 'closingSoon');
+      }
+      if (quickFilter === 'structured') {
+        rows = rows.filter((f) =>
+          ['STRUCTURED_PROGRAM', 'CENTER_INTERNSHIP', 'RA_PROGRAM', 'MENTOR_MATCHING'].includes(
+            f.programKind,
+          ),
+        );
+      }
+      if (quickFilter === 'mentorFirst') {
+        rows = rows.filter((f) => f.requiresMentorBeforeApply);
+      }
+      byKey[key] = toBrowsable(recentFilter(rows));
+    }
+    return byKey;
+  }, [journeyGroups, quickFilter]);
 
-  const showSection = (section: FellowshipCycleCategory) => {
+  const showSection = (section: ProgramJourneyCategory) => {
     if (quickFilter === null || quickFilter === 'recent') return true;
-    if (quickFilter === 'open') return section === 'closingSoon' || section === 'open';
-    if (quickFilter === 'closingSoon') return section === 'closingSoon';
+    if (quickFilter === 'open') return section === 'applyNow';
+    if (quickFilter === 'closingSoon') return section === 'applyNow';
     if (quickFilter === 'nextCycle') return section === 'nextCycle';
+    if (quickFilter === 'structured') return section === 'structured';
+    if (quickFilter === 'mentorFirst') return section === 'fundingAfterMentor' || section === 'applyNow';
     return false;
   };
 
@@ -421,8 +528,19 @@ const Fellowships = () => {
   };
 
   const noResults = fellowships.length === 0 && !isLoading;
+  const toggleTrustTierFilter = (tier: StudentVisibilityTier) => {
+    setSelectedStudentVisibilityTier((current) =>
+      current.includes(tier)
+        ? current.filter((value) => value !== tier)
+        : [...current, tier],
+    );
+  };
   const visibleCount =
-    closingSoonItems.length + openItems.length + nextCycleItems.length + closedItems.length;
+    journeyItems.applyNow.length +
+    journeyItems.structured.length +
+    journeyItems.fundingAfterMentor.length +
+    journeyItems.nextCycle.length +
+    journeyItems.archive.length;
 
   const sentinelRef = useInfiniteScroll({
     searchExhausted,
@@ -525,15 +643,46 @@ const Fellowships = () => {
             chips={fellowshipChips}
             onClearAll={() => {
               setSelectedProgramCategory([]);
+              setSelectedProgramKind([]);
+              setSelectedEntryMode([]);
+              setSelectedStudentFacingCategory([]);
               setSelectedYearOfStudy([]);
               setSelectedTermOfAward([]);
               setSelectedPurpose([]);
               setSelectedRegions([]);
               setSelectedCitizenship([]);
+              setSelectedStudentVisibilityTier([]);
               setQuickFilter(null);
             }}
             onHeightChange={setFilterBarHeight}
           />
+          {isAdmin && (
+            <div
+              className="rounded-md border border-slate-200 bg-white p-2"
+              aria-label="Trust tier filters"
+            >
+              <div className="flex flex-wrap gap-2">
+                {trustTierFilterOptions.map((option) => {
+                  const isActive = selectedStudentVisibilityTier.includes(option.value);
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      aria-pressed={isActive}
+                      onClick={() => toggleTrustTierFilter(option.value)}
+                      className={`min-h-10 rounded-md border px-3 py-1.5 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 ${
+                        isActive
+                          ? 'border-slate-900 bg-slate-900 text-white'
+                          : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </aside>
 
         <div className="min-w-0">
@@ -555,88 +704,27 @@ const Fellowships = () => {
         </div>
       ) : (
         <>
-          {showSection('closingSoon') && closingSoonItems.length > 0 && (
-            <>
-              <SectionHeader
-                title="Closing Soon"
-                count={closingSoonItems.length}
-                description="Deadlines close enough that eligibility and mentor fit should be checked immediately."
-              />
-              <BrowseGrid
-                items={closingSoonItems}
-                favIds={favFellowshipIds}
-                onToggleFavorite={handleToggleFavorite}
-                onOpenModal={handleOpenModal}
-                onAdminEdit={isAdmin ? handleAdminEdit : undefined}
-                isLoading={isLoading}
-                emptyMessage="No closing-soon programs"
-                onLoadMore={handleLoadMore}
-                disableVirtualization
-              />
-            </>
-          )}
-
-          {showSection('open') && openItems.length > 0 && (
-            <>
-              <SectionHeader
-                title="Open Now"
-                count={openItems.length}
-                description="Current application windows with deadlines that have not passed."
-              />
-              <BrowseGrid
-                items={openItems}
-                favIds={favFellowshipIds}
-                onToggleFavorite={handleToggleFavorite}
-                onOpenModal={handleOpenModal}
-                onAdminEdit={isAdmin ? handleAdminEdit : undefined}
-                isLoading={isLoading}
-                emptyMessage="No open programs"
-                onLoadMore={handleLoadMore}
-                disableVirtualization
-              />
-            </>
-          )}
-
-          {showSection('nextCycle') && nextCycleItems.length > 0 && (
-            <>
-              <SectionHeader
-                title="Likely Next Cycle"
-                count={nextCycleItems.length}
-                description="Official past cycles that look recurring. Treat these as planning leads until the next application window is confirmed."
-              />
-              <BrowseGrid
-                items={nextCycleItems}
-                favIds={favFellowshipIds}
-                onToggleFavorite={handleToggleFavorite}
-                onOpenModal={handleOpenModal}
-                onAdminEdit={isAdmin ? handleAdminEdit : undefined}
-                isLoading={isLoading}
-                emptyMessage="No next-cycle program signals"
-                onLoadMore={handleLoadMore}
-                disableVirtualization
-              />
-            </>
-          )}
-
-          {showSection('closed') && closedItems.length > 0 && (
-            <>
-              <SectionHeader
-                title="Planning Archive"
-                count={closedItems.length}
-                description="Retained records that may still inform future scraper review, but should not be treated as active opportunities."
-              />
-              <BrowseGrid
-                items={closedItems}
-                favIds={favFellowshipIds}
-                onToggleFavorite={handleToggleFavorite}
-                onOpenModal={handleOpenModal}
-                onAdminEdit={isAdmin ? handleAdminEdit : undefined}
-                isLoading={isLoading}
-                emptyMessage="No closed programs"
-                onLoadMore={handleLoadMore}
-                disableVirtualization
-              />
-            </>
+          {journeySections.map((section) =>
+            showSection(section.key) && journeyItems[section.key].length > 0 ? (
+              <div key={section.key}>
+                <SectionHeader
+                  title={section.title}
+                  count={journeyItems[section.key].length}
+                  description={section.description}
+                />
+                <BrowseGrid
+                  items={journeyItems[section.key]}
+                  favIds={favFellowshipIds}
+                  onToggleFavorite={handleToggleFavorite}
+                  onOpenModal={handleOpenModal}
+                  onAdminEdit={isAdmin ? handleAdminEdit : undefined}
+                  isLoading={isLoading}
+                  emptyMessage={`No ${section.title.toLowerCase()} records`}
+                  onLoadMore={handleLoadMore}
+                  disableVirtualization
+                />
+              </div>
+            ) : null,
           )}
 
           {!searchExhausted && <div ref={sentinelRef} className="h-10 w-full mt-4" />}

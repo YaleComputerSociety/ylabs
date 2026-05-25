@@ -45,7 +45,7 @@ vi.mock('../providers/UIContextProvider', () => ({
 }));
 
 vi.mock('../pages/research', () => ({
-  default: () => <div data-testid="research-page">Yale Labs</div>,
+  default: () => <div data-testid="research-page">Yale Research</div>,
 }));
 
 vi.mock('../pages/fellowships', () => ({
@@ -91,12 +91,12 @@ describe('App routing', () => {
     });
   });
 
-  it('renders Yale Labs at /research', async () => {
+  it('renders Yale Research at /research', async () => {
     window.history.pushState({}, '', '/research');
 
     const { getByTestId } = render(<App />);
 
-    expect(getByTestId('research-page').textContent).toBe('Yale Labs');
+    expect(getByTestId('research-page').textContent).toBe('Yale Research');
   });
 
   it('renders Programs & Fellowships at /programs', async () => {

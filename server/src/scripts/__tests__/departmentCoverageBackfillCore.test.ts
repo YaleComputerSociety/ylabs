@@ -110,4 +110,26 @@ describe('departmentCoverageBackfillCore', () => {
     });
     expect(result.planned).toEqual([]);
   });
+
+  it('does not partially rewrite rows that still contain unresolved labels', () => {
+    const result = planDepartmentCoverageBackfill(
+      [
+        {
+          _id: 'entity-mixed',
+          slug: 'mixed-lab',
+          name: 'Mixed Lab',
+          departments: ['EASCEE CEE Faculty', 'Unknown Unit'],
+        },
+      ],
+      departments,
+    );
+
+    expect(result.summary).toMatchObject({
+      scanned: 1,
+      plannedUpdates: 0,
+      unresolvedLabels: 1,
+      ignoredLabels: 0,
+    });
+    expect(result.planned).toEqual([]);
+  });
 });

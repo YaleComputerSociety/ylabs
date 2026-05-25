@@ -59,6 +59,15 @@ const SOURCES: SourceSeed[] = [
     cadence: 'event',
   },
   {
+    name: 'research-entity-cache-backfill',
+    displayName: 'ResearchEntity cache backfill',
+    description:
+      'One-time recovery of legacy ResearchEntity undergraduate-access cache fields into append-only observations.',
+    baseUrl: '',
+    defaultWeight: 0.35,
+    cadence: 'manual-audit',
+  },
+  {
     name: 'orcid',
     displayName: 'ORCID',
     description: 'Author-curated paper and biographical metadata from ORCID.',
@@ -227,6 +236,15 @@ const SOURCES: SourceSeed[] = [
     description: 'Parameterized per-center scrapers (Wu Tsai, Cancer Center, Cowles, Tobin, MacMillan, ISPS, Whitney Humanities, Yale Quantum, etc.).',
     baseUrl: '',
     defaultWeight: 0.8,
+    cadence: 'weekly',
+  },
+  {
+    name: 'yale-research-official',
+    displayName: 'Yale Research official directories',
+    description:
+      'Official research.yale.edu centers, institutes, cores, and resource directories for discovery-only ResearchEntity evidence.',
+    baseUrl: 'https://research.yale.edu',
+    defaultWeight: 0.9,
     cadence: 'weekly',
   },
   {

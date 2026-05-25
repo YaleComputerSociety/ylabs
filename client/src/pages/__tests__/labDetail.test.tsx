@@ -721,10 +721,10 @@ describe('LabDetail page', () => {
           ...basePayload.group,
           _id: 'entity-umbrella',
           id: 'entity-umbrella',
-          slug: 'center-example-umbrella',
-          name: 'Example Umbrella Institute',
-          kind: 'institute',
-          entityType: 'INSTITUTE',
+          slug: 'center-yale-cancer-center',
+          name: 'Yale Cancer Center',
+          kind: 'center',
+          entityType: 'CENTER',
           departments: ['Neuroscience'],
           researchAreas: [],
           sourceUrls: [],
@@ -735,8 +735,9 @@ describe('LabDetail page', () => {
     await screen.findByText('Example Affiliate Research');
 
     expect(screen.getByText('Affiliated with')).toBeTruthy();
-    expect(screen.getByRole('link', { name: /Example Umbrella Institute/ }).getAttribute('href')).toBe(
-      '/research/center-example-umbrella',
+    expect(screen.getByText('Center')).toBeTruthy();
+    expect(screen.getByRole('link', { name: /Yale Cancer Center/ }).getAttribute('href')).toBe(
+      '/research/center-yale-cancer-center',
     );
   });
 
@@ -846,6 +847,36 @@ describe('LabDetail page', () => {
     expect(link.getAttribute('href')).toBe(EXAMPLE_MECHANISM_DOI);
     expect(screen.getByText('DOI')).toBeTruthy();
     expect(screen.queryByText('Found via OpenAlex')).toBeNull();
+  });
+
+  it('renders research activity titles without source HTML wrappers', async () => {
+    renderLabDetail({
+      ...basePayload,
+      researchActivityLinks: [
+        {
+          _id: 'link-html-title',
+          relationshipBasis: 'explicit_entity_link',
+          evidenceLabel: 'Linked to this research profile',
+          title:
+            '<p><b><span>Biomass gasification tar removal using catalyst assisted Dielectric Barrier discharge reactor</span></b><span></span></p>',
+          url: EXAMPLE_MECHANISM_DOI,
+          destinationKind: 'DOI',
+          displaySource: 'DOI',
+          discoveredVia: 'OPENALEX',
+          year: 2024,
+          venue: 'Fixture Discovery Journal',
+        },
+      ],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(
+      screen.getByRole('link', {
+        name: 'Biomass gasification tar removal using catalyst assisted Dielectric Barrier discharge reactor',
+      }).getAttribute('href'),
+    ).toBe(EXAMPLE_MECHANISM_DOI);
+    expect(document.body.textContent).not.toContain('<p><b><span>');
   });
 
   it('renders member profile publications as recent professor work with a profile handoff', async () => {

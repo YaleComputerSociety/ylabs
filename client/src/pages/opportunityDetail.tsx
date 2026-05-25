@@ -185,7 +185,7 @@ const OpportunityDetail = () => {
           to="/research"
           className="yr-link inline-flex min-h-[44px] items-center rounded-md text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
         >
-          Back to Yale Labs
+          Back to Yale Research
         </Link>
       </div>
 

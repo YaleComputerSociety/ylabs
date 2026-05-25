@@ -77,11 +77,11 @@ const Login = () => {
         <section className="mx-auto max-w-2xl text-center lg:mx-0 lg:text-left">
           <div className="flex items-center justify-center gap-3 lg:justify-start">
             <img
-              src="/assets/logos/paperclip.png"
+              src="/brand/yale-research-mark.svg"
               alt=""
-              className="h-14 w-[4.1rem] drop-shadow-sm sm:h-16 sm:w-[4.7rem]"
+              className="h-14 w-14 drop-shadow-sm sm:h-16 sm:w-16"
             />
-            <span className="text-4xl font-semibold tracking-normal text-[var(--yr-blue)] sm:text-5xl">
+            <span className="yr-wordmark text-4xl text-[var(--yr-blue)] sm:text-5xl">
               Yale Research
             </span>
           </div>
@@ -122,7 +122,7 @@ const Login = () => {
           </div>
           <div className="mt-5 flex min-h-[44px] items-center">
             {isLoading ? (
-              <PulseLoader color="#184a9b" size={10} />
+              <PulseLoader color="#00356b" size={10} />
             ) : isAuthenticated ? (
               <Navigate to={getRedirectPath()} replace />
             ) : (

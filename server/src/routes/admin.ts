@@ -27,6 +27,7 @@ import {
   updateAccessReviewRecordReview,
 } from '../services/adminAccessReviewService';
 import { buildSourceHealthRows } from '../services/sourceHealthService';
+import { buildAdminOperatorBoard } from '../services/adminOperatorBoardService';
 import { getScrapeRunReport } from '../scrapers/runReport';
 
 const router = Router();
@@ -41,6 +42,15 @@ const retiredAdminListings = (_req: Request, res: Response) =>
 
 router.all('/listings', retiredAdminListings);
 router.all('/listings/:id', retiredAdminListings);
+
+router.get('/operator-board', async (_req: Request, res: Response) => {
+  try {
+    res.json(await buildAdminOperatorBoard());
+  } catch (error) {
+    console.error('Admin: Error fetching operator board:', error);
+    res.status(500).json({ error: 'Failed to fetch operator board' });
+  }
+});
 
 router.get('/scraper-sources/health', async (req: Request, res: Response) => {
   try {

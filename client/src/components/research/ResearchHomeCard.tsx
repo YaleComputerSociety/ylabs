@@ -14,6 +14,7 @@ interface ResearchHomeCardProps {
   onSelect?: (label: string) => void;
   onPreview?: (home: ResearchCluster) => void;
   variant?: 'default' | 'compact';
+  showAdminQuality?: boolean;
 }
 
 const countLabel = (count: number, singular: string, plural: string): string =>
@@ -46,11 +47,28 @@ const evidenceStatusClass = (state?: string): string => {
 const isInteractiveElement = (target: EventTarget | null): boolean =>
   target instanceof HTMLElement && Boolean(target.closest('a, button'));
 
+const adminQualityLabels = (home: ResearchCluster): string[] => {
+  const flags = new Set(
+    home.entities.flatMap((entity) => entity.qualitySummary?.repairFlags || []),
+  );
+  const labels: string[] = [];
+
+  if (flags.has('missing_description') || flags.has('thin_description')) {
+    labels.push('Needs description');
+  }
+  if (flags.has('profile_fallback_only')) labels.push('Profile fallback');
+  if (flags.has('missing_lead')) labels.push('Missing lead');
+  if (flags.has('missing_source_url')) labels.push('Missing source');
+
+  return labels;
+};
+
 const ResearchHomeCard = ({
   home,
   onSelect,
   onPreview,
   variant = 'default',
+  showAdminQuality = false,
 }: ResearchHomeCardProps) => {
   const navigate = useNavigate();
   const isCompact = variant === 'compact';
@@ -97,6 +115,7 @@ const ResearchHomeCard = ({
     )?.activePostedOpportunity;
   const primaryProfileUrl = primaryLinkedEntity ? `/research/${primaryLinkedEntity.slug}` : '';
   const isCardClickable = Boolean(primaryProfileUrl || onSelect);
+  const qualityLabels = showAdminQuality ? adminQualityLabels(home) : [];
   const activateCard = () => {
     if (primaryProfileUrl) {
       navigate(primaryProfileUrl);
@@ -140,6 +159,19 @@ const ResearchHomeCard = ({
 
         {contextLine && (
           <p className="text-xs font-medium leading-relaxed text-gray-500">{contextLine}</p>
+        )}
+
+        {qualityLabels.length > 0 && (
+          <div className="flex flex-wrap gap-1.5" aria-label="Admin quality flags">
+            {qualityLabels.map((label) => (
+              <span
+                key={label}
+                className="rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-900"
+              >
+                {label}
+              </span>
+            ))}
+          </div>
         )}
 
         <div className="flex flex-wrap gap-1.5">

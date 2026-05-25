@@ -85,6 +85,32 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
     });
   });
 
+  it('extracts structured undergraduate program detail pages', () => {
+    const candidates = parseFellowshipCatalogPage(
+      `
+        <h1>STARS Summer Research Program</h1>
+        <main>
+          <p>Students conduct summer research in a Yale lab and must secure a lab commitment before applying.</p>
+          <p>Deadline: February 19, 2026.</p>
+        </main>
+      `,
+      'https://science.yalecollege.yale.edu/stem-fellowships/funding-stem-opportunities-yale/stars/stars-summer-research-program',
+      new Date('2026-01-01T00:00:00Z'),
+    );
+
+    expect(candidates[0]).toMatchObject({
+      title: 'STARS Summer Research Program',
+      deadline: new Date('2026-02-19T23:59:59.999Z'),
+    });
+    expect(candidateToObservations(candidates[0])).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ field: 'programKind', value: 'STRUCTURED_PROGRAM' }),
+        expect.objectContaining({ field: 'entryMode', value: 'SECURE_MENTOR_THEN_APPLY' }),
+        expect.objectContaining({ field: 'requiresMentorBeforeApply', value: true }),
+      ]),
+    );
+  });
+
   it('ignores nav, admin, generic funding, and download links as fellowship candidates', () => {
     const candidates = parseFellowshipCatalogPage(
       `

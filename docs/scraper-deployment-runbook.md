@@ -26,6 +26,8 @@ The web app can stay on Render while scraper execution remains separate:
 
 `MONGODBURL` decides the target database. Always read the CLI's printed Mongo target before accepting a run.
 
+Render environments should be stricter than local environments. The Beta Render service is tied to the `beta` branch and should use `MEILISEARCH_INDEX_PREFIX=beta`; the paid production Render service is tied to `main` and should use `MEILISEARCH_INDEX_PREFIX=prod`. Local development can intentionally differ, usually Docker Meilisearch on `localhost:7700` with no prefix or a test prefix. When adding CI/CD or deploy automation, validate dangerous deployed combinations instead of forcing local parity: Beta must not write prod-prefixed Meili indexes, production must not write beta-prefixed indexes, and production Meili rebuild/delete jobs should require explicit production confirmation.
+
 Do not add a separate always-on scraper server yet. Cron and one-off CLI jobs are the right default while Beta is the live testing gate. Promote scraper execution to a worker service only if a real requirement appears: platform cron runtime limits, queueing/retry needs beyond `ScrapeJobLock`, concurrent operator-triggered jobs, or a persistent scheduler/admin UI.
 
 Avoid the fix-scraper-then-backfill loop by treating backfill as promotion, not debugging. A source must pass the audit-first gate in [`docs/scraper-audit-guide.md`](./scraper-audit-guide.md): source health and integrity baseline, bounded dry run, small non-production write with materialization, report review, edge-case regression tests, then chunked scale-up. Broad backfills should continue only when the previous chunk passes the same acceptance bar.
@@ -135,7 +137,7 @@ Beta can be seeded from a local machine pointed at the Beta database. This is us
 Use the read-only scorecard as the weekly pre-production baseline:
 
 ```bash
-yarn --cwd server beta:data-quality --include-samples --output /tmp/ylabs-beta-quality.json
+yarn --cwd server beta:data-quality --include-samples --output /tmp/yale-research-beta-quality.json
 ```
 
 The scorecard reports the Mongo target, collection counts, canonical reference integrity, URL/email hygiene, expired open posted opportunities, paper-authorship integrity, source-health risk counts, pathway/access/contact coverage, short-description gaps, duplicate entity-name clusters, and compact-retention candidates. It does not mutate Beta data.

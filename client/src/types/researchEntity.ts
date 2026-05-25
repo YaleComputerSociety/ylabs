@@ -17,9 +17,43 @@ export interface ResearchEntitySearchMatch {
   reason: string;
 }
 
+export type ResearchEntityDescriptionState =
+  | 'source_backed'
+  | 'profile_synthesis'
+  | 'thin'
+  | 'missing';
+
+export type ResearchEntityLeadState = 'lead_attached' | 'lead_weak' | 'lead_missing';
+
+export type ResearchEntityRepairFlag =
+  | 'missing_description'
+  | 'thin_description'
+  | 'profile_fallback_only'
+  | 'missing_lead'
+  | 'missing_source_url';
+
+export interface ResearchEntityQualitySummary {
+  descriptionState: ResearchEntityDescriptionState;
+  leadState: ResearchEntityLeadState;
+  repairFlags: ResearchEntityRepairFlag[];
+  score: number;
+}
+
+export type StudentVisibilityTier =
+  | 'student_ready'
+  | 'limited_but_safe'
+  | 'operator_review'
+  | 'suppressed';
+
 export interface ResearchEntity extends ResearchEntityBacking {
   searchMatch?: ResearchEntitySearchMatch;
   waysIn?: PathwaySearchHit[];
+  qualitySummary?: ResearchEntityQualitySummary;
+  studentVisibilityTier?: StudentVisibilityTier;
+  studentVisibilityComputedTier?: StudentVisibilityTier;
+  studentVisibilityOverrideTier?: StudentVisibilityTier;
+  studentVisibilityReasons?: string[];
+  studentVisibilitySuppressionReason?: string;
 }
 
 export interface ResearchEntitySearchResponse

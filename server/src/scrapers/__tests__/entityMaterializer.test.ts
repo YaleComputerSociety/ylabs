@@ -15,6 +15,7 @@ import {
   countListingBackedPostedOpportunitiesForRun,
   emptyPostMaterializationMetrics,
   findExistingResearchEntityByFacultyResearchAreaIdentity,
+  findExistingResearchEntityByOfficialDirectoryExactName,
   findExistingResearchEntityByOfficialLabUrl,
   findExistingResearchEntityByPiAndName,
   filterUserObservationsWithMismatchedProfileUrl,
@@ -286,6 +287,84 @@ describe('entityMaterializer post-materialization metrics', () => {
       ]),
     ).resolves.toBeNull();
     expect(researchEntityModel.find).not.toHaveBeenCalled();
+  });
+
+  it('resolves official Yale research directory center observations to a unique exact-name entity', async () => {
+    const researchEntityModel = {
+      find: vi.fn().mockReturnValue({
+        select: () => ({
+          limit: () => ({
+            lean: async () => [
+              {
+                _id: '6650000000000000000000aa',
+                slug: 'yse-geospatial-solutions',
+                name: 'Yale Center for Geospatial Solutions',
+                entityType: 'CENTER',
+              },
+            ],
+          }),
+        }),
+      }),
+      findById: vi.fn().mockReturnValue({
+        lean: async () => ({
+          _id: '6650000000000000000000aa',
+          slug: 'yse-geospatial-solutions',
+          name: 'Yale Center for Geospatial Solutions',
+          entityType: 'CENTER',
+        }),
+      }),
+    };
+
+    await expect(
+      findExistingResearchEntityByOfficialDirectoryExactName(researchEntityModel as any, [
+        {
+          field: 'name',
+          value: 'Yale Center for Geospatial Solutions',
+          sourceName: 'yale-research-official',
+        },
+        {
+          field: 'entityType',
+          value: 'CENTER',
+          sourceName: 'yale-research-official',
+        },
+      ]),
+    ).resolves.toMatchObject({
+      _id: '6650000000000000000000aa',
+      slug: 'yse-geospatial-solutions',
+    });
+    expect(researchEntityModel.findById).toHaveBeenCalledWith('6650000000000000000000aa');
+  });
+
+  it('does not exact-name resolve non-official or ambiguous research directory observations', async () => {
+    const researchEntityModel = {
+      find: vi.fn().mockReturnValue({
+        select: () => ({
+          limit: () => ({
+            lean: async () => [
+              { _id: 'one', name: 'Yale Example Center' },
+              { _id: 'two', displayName: 'Yale Example Center' },
+            ],
+          }),
+        }),
+      }),
+      findById: vi.fn(),
+    };
+
+    await expect(
+      findExistingResearchEntityByOfficialDirectoryExactName(researchEntityModel as any, [
+        { field: 'name', value: 'Yale Example Center', sourceName: 'dept-faculty-roster' },
+        { field: 'entityType', value: 'CENTER', sourceName: 'dept-faculty-roster' },
+      ]),
+    ).resolves.toBeNull();
+    expect(researchEntityModel.find).not.toHaveBeenCalled();
+
+    await expect(
+      findExistingResearchEntityByOfficialDirectoryExactName(researchEntityModel as any, [
+        { field: 'name', value: 'Yale Example Center', sourceName: 'yale-research-official' },
+        { field: 'entityType', value: 'CENTER', sourceName: 'yale-research-official' },
+      ]),
+    ).resolves.toBeNull();
+    expect(researchEntityModel.findById).not.toHaveBeenCalled();
   });
 
   it('redirects archived research-entity materialization targets to their canonical entity', async () => {
@@ -1448,6 +1527,10 @@ describe('entityMaterializer post-materialization metrics', () => {
       title: 'Example Undergraduate Research Fellowship',
       applicationLink: 'https://yale.communityforce.com/Funds/FundDetails.aspx?123',
       deadline: new Date('2026-02-19T23:59:59.999Z'),
+      programKind: 'FELLOWSHIP_FUNDING',
+      entryMode: 'SECURE_MENTOR_THEN_APPLY',
+      studentFacingCategory: 'Funding after mentor',
+      requiresMentorBeforeApply: true,
     });
   });
 

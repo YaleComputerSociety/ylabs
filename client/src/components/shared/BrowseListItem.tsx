@@ -13,6 +13,7 @@ import {
   getResearchGroupKindLabel,
   getResearchEntityBestNextStep,
   getResearchEntityPathwaySummary,
+  getFellowshipJourneySummary,
   getResearchGroupStatus,
   getDaysUntilDeadline,
   getOrderedDeptAbbrs,
@@ -90,6 +91,9 @@ const BrowseListItem = React.memo(({ item, isFavorite, onToggleFavorite, onOpenM
     : null;
   const fellowshipCycleStatus = item.type === 'fellowship'
     ? getFellowshipCycleStatus(item.data)
+    : null;
+  const fellowshipJourneySummary = item.type === 'fellowship'
+    ? getFellowshipJourneySummary(item.data)
     : null;
 
   const isAudited = isAdmin && item.type !== 'researchGroup' && item.data.audited;
@@ -179,7 +183,7 @@ const BrowseListItem = React.memo(({ item, isFavorite, onToggleFavorite, onOpenM
                 ? item.data.description
                 : item.type === 'researchGroup'
                   ? researchPathwaySummary || researchBestNextStep || item.data.description
-                  : item.data.summary || item.data.description}
+                  : item.data.bestNextStep || fellowshipJourneySummary || item.data.summary || item.data.description}
             </p>
           </div>
         )}

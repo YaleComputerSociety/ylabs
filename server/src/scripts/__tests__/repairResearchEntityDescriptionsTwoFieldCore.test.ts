@@ -66,6 +66,55 @@ describe('repairResearchEntityDescriptionsTwoFieldCore', () => {
     expect(repair.reasons).not.toContain('generated-shortDescription');
   });
 
+  it('does not copy raw profile synthesis biography blobs into fullDescription', () => {
+    const repair = buildTwoFieldDescriptionRepair({
+      slug: 'dudley-kdudley',
+      name: 'Kathryn Dudley — Research',
+      shortDescription: '',
+      fullDescription: '',
+      profileSynthesisDescription:
+        'Questions about what ethnography is and does—as an aesthetic genre, political practice, and interpersonal field of knowledge construction—are at the center of my teaching and scholarly work. My books explore the production of embodied knowledge and social trauma under regimes of labor marginalized by transformations in global capitalism. My current research tracks the unfolding impact of federal policy, anthropogenic climate change, and industrial resource extraction on wild horses on America’s public lands. Among other honors, I received the Margaret Mead Award.',
+      profileBio:
+        'Questions about what ethnography is and does—as an aesthetic genre, political practice, and interpersonal field of knowledge construction—are at the center of my teaching and scholarly work. My books explore the production of embodied knowledge and social trauma under regimes of labor marginalized by transformations in global capitalism. My current research tracks the unfolding impact of federal policy, anthropogenic climate change, and industrial resource extraction on wild horses on America’s public lands. Among other honors, I received the Margaret Mead Award.',
+    });
+
+    expect(repair.update).toEqual({});
+    expect(repair.reasons).not.toContain('copied-profileSynthesisDescription-to-fullDescription');
+  });
+
+  it('copies concise research-focused profile synthesis when it is safe as a public description', () => {
+    const repair = buildTwoFieldDescriptionRepair({
+      slug: 'schott-pks4',
+      name: 'Peter Schott — Research',
+      shortDescription: '',
+      fullDescription: '',
+      profileSynthesisDescription:
+        'Peter Schott’s research focuses on how firms and workers respond to globalization. His recent projects examine manufacturing employment, export quality, and the relationship between trade policy and firm productivity.',
+    });
+
+    expect(repair.update.fullDescription).toBe(
+      'Peter Schott’s research focuses on how firms and workers respond to globalization. His recent projects examine manufacturing employment, export quality, and the relationship between trade policy and firm productivity.',
+    );
+    expect(repair.update.shortDescription).toBe(
+      'Peter Schott’s research focuses on how firms and workers respond to globalization.',
+    );
+    expect(repair.reasons).toContain('copied-profileSynthesisDescription-to-fullDescription');
+  });
+
+  it('does not copy profile synthesis that mixes research with publication biography', () => {
+    const repair = buildTwoFieldDescriptionRepair({
+      slug: 'inwood-bi35',
+      name: 'Brad Inwood — Research',
+      shortDescription: '',
+      fullDescription: '',
+      profileSynthesisDescription:
+        'His research has always focused on ancient philosophy, especially in the Hellenistic and Presocratic periods. Major works include Ethics and Human Action in Early Stoicism, The Poem of Empedocles, Reading Seneca: Stoic Philosophy at Rome, Seneca: Selected Philosophical Letters, and Ethics After Aristotle. From 2007 to 2015 he was the editor of Oxford Studies in Ancient Philosophy and he has recently published Later Stoicism 155 BC to AD 200: An Introduction and Collection of Sources in Translation for Cambridge University Press.',
+    });
+
+    expect(repair.update).toEqual({});
+    expect(repair.reasons).not.toContain('copied-profileSynthesisDescription-to-fullDescription');
+  });
+
   it('does not synthesize placeholder descriptions without source or profile evidence', () => {
     const repair = buildTwoFieldDescriptionRepair({
       slug: 'placeholder-lab-aek58',

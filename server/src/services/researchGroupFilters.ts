@@ -29,6 +29,7 @@ export interface ResearchGroupFilterInput {
    *   - 'all' or undefined → no filter
    */
   acceptanceLevel?: AcceptanceLevelInput;
+  studentVisibilityTier?: string[];
 }
 
 const VERIFIED_CONFIDENCE_FLOOR = 0.7;
@@ -94,6 +95,11 @@ export function buildResearchGroupFilterString(filters: ResearchGroupFilterInput
 
   const opennessClause = filters.openness ? orEqualsClause('openness', filters.openness) : null;
   if (opennessClause) parts.push(opennessClause);
+
+  const studentVisibilityClause = filters.studentVisibilityTier
+    ? orEqualsClause('studentVisibilityTier', filters.studentVisibilityTier)
+    : null;
+  if (studentVisibilityClause) parts.push(studentVisibilityClause);
 
   if (typeof filters.acceptingUndergrads === 'boolean') {
     parts.push(`acceptingUndergrads = ${filters.acceptingUndergrads}`);

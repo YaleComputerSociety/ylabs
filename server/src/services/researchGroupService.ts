@@ -12,7 +12,7 @@
  * "labs" (Econ, History, etc.); otherwise `kind: 'lab'`. This is determined by the
  * primary department's category.
  */
-import mongoose from 'mongoose';
+import mongoose, { type PipelineStage } from 'mongoose';
 import { ResearchEntity } from '../models/researchEntity';
 import { ResearchGroupMember } from '../models/researchGroupMember';
 import { Department, DepartmentCategory } from '../models/department';
@@ -27,6 +27,7 @@ import {
   listAccessSummariesForResearchEntities,
 } from './accessSummaryService';
 import { buildResearchGroupFilterString, ResearchGroupFilterInput } from './researchGroupFilters';
+import { publicStudentVisibilityTiers, type StudentVisibilityTier } from '../models/studentVisibility';
 import { mapResearchGroupKindToEntityType } from '../models/researchAccessTypes';
 import {
   addResearchEntityDetailAlias,
@@ -56,9 +57,11 @@ import {
   isUsableResearchWebsiteUrl,
 } from '../utils/researchWebsiteUrl';
 import { publicSourceUrl, publicSourceUrls } from '../utils/publicSourceUrl';
-import { isProduction } from '../utils/environment';
 import { httpUrlHasHostSuffix } from '../utils/urlNormalization';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
+import {
+  buildResearchEntityQualitySummary,
+} from './researchEntityQuality';
 
 const NON_LAB_CATEGORIES = new Set<string>([
   DepartmentCategory.SOCIAL_SCIENCES,
@@ -327,8 +330,17 @@ export interface ResearchGroupSearchSort {
   sortOrder?: 'asc' | 'desc';
 }
 
+export type ResearchGroupQualityFilter =
+  | 'description-issue'
+  | 'missing-lead'
+  | 'profile-fallback';
+
 export interface ResearchGroupSearchOptions {
   lowQualityFirst?: boolean;
+  includeQualitySummary?: boolean;
+  qualityFilters?: ResearchGroupQualityFilter[];
+  studentVisibilityTiers?: StudentVisibilityTier[];
+  includeSuppressed?: boolean;
 }
 
 export interface ResearchGroupSearchResult {
@@ -443,7 +455,57 @@ const evidenceScoreExpression = {
 };
 
 const shouldShowLowQualityResearchFirst = (options: ResearchGroupSearchOptions = {}): boolean =>
-  Boolean(options.lowQualityFirst) && !isProduction();
+  Boolean(options.lowQualityFirst);
+
+const visibleTierMatch = (options: ResearchGroupSearchOptions = {}) => {
+  const tiers = options.studentVisibilityTiers?.length
+    ? options.studentVisibilityTiers
+    : options.includeSuppressed || shouldShowLowQualityResearchFirst(options)
+      ? []
+      : publicStudentVisibilityTiers;
+  if (tiers.length === 0) return {};
+  return { studentVisibilityTier: { $in: tiers } };
+};
+
+const qualityFilterMatchStage = (
+  filters: ResearchGroupQualityFilter[] = [],
+): PipelineStage.Match | null => {
+  const match: PipelineStage.Match['$match'] = {};
+  if (filters.includes('description-issue')) match._qualityDescriptionIssue = true;
+  if (filters.includes('missing-lead')) match._qualityMissingLead = true;
+  if (filters.includes('profile-fallback')) match._qualityProfileFallback = true;
+  return Object.keys(match).length > 0 ? { $match: match } : null;
+};
+
+const stripInternalQualityFields = (hit: Record<string, any>): Record<string, any> => {
+  const {
+    _leadMembers,
+    _qualityDescriptionIssue,
+    _qualityMissingLead,
+    _qualityProfileFallback,
+    _qualityRepairScore,
+    ...publicHit
+  } = hit;
+  return publicHit;
+};
+
+const addQualitySummaryToHit = (
+  hit: Record<string, any>,
+  options: ResearchGroupSearchOptions = {},
+): Record<string, any> => {
+  const publicHit = stripInternalQualityFields(hit);
+  if (!options.includeQualitySummary) return publicHit;
+
+  const qualitySummary = buildResearchEntityQualitySummary({
+    entity: publicHit,
+    leadMembers: Array.isArray(hit._leadMembers) ? hit._leadMembers : [],
+  });
+
+  return {
+    ...publicHit,
+    qualitySummary,
+  };
+};
 
 const profileSourceUrlsForUser = (user: Record<string, any> | null | undefined): string[] => {
   if (!user) return [];
@@ -543,8 +605,10 @@ async function searchResearchGroupsByEvidence(
   const safePageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, Math.floor(pageSize) || 24));
   const offset = (safePage - 1) * safePageSize;
   const qualitySortDirection = shouldShowLowQualityResearchFirst(options) ? 1 : -1;
-  const [result] = await ResearchEntity.aggregate([
-    { $match: { archived: { $ne: true } } },
+  const qualityMatch = qualityFilterMatchStage(options.qualityFilters);
+  const lowQualityFirst = shouldShowLowQualityResearchFirst(options);
+  const pipeline: PipelineStage[] = [
+    { $match: { archived: { $ne: true }, ...visibleTierMatch(options) } },
     {
       $lookup: {
         from: 'access_signals',
@@ -624,6 +688,23 @@ async function searchResearchGroupsByEvidence(
       },
     },
     {
+      $lookup: {
+        from: 'research_entity_members',
+        let: { entityId: '$_id' },
+        pipeline: [
+          {
+            $match: {
+              $expr: { $eq: ['$researchEntityId', '$$entityId'] },
+              isCurrentMember: { $ne: false },
+              role: { $in: Array.from(LEAD_RESEARCH_AREA_ROLES) },
+            },
+          },
+          { $project: { role: 1, userId: 1, name: 1, sourceUrl: 1 } },
+        ],
+        as: '_leadMembers',
+      },
+    },
+    {
       $addFields: {
         _sourceUrls: { $ifNull: ['$sourceUrls', []] },
         _descriptionEvidenceText: {
@@ -699,27 +780,63 @@ async function searchResearchGroupsByEvidence(
           },
         },
         _postedOpportunityCount: { $size: '$_postedOpportunities' },
+        _leadMemberCount: { $size: '$_leadMembers' },
         _hasDescriptionEvidence: {
           $gt: [{ $strLenCP: '$_descriptionEvidenceText' }, 0],
+        },
+        _qualityProfileFallback: {
+          $eq: ['$descriptionSource', 'PI_PROFILE_SYNTHESIS'],
         },
       },
     },
     {
       $addFields: {
         _evidenceScore: evidenceScoreExpression,
+        _qualityDescriptionIssue: {
+          $or: [
+            { $not: ['$_hasDescriptionEvidence'] },
+            { $eq: ['$descriptionSource', 'PI_PROFILE_SYNTHESIS'] },
+          ],
+        },
+        _qualityMissingLead: { $eq: ['$_leadMemberCount', 0] },
       },
     },
     {
-      $sort: {
-        _evidenceScore: qualitySortDirection,
-        _postedOpportunityCount: qualitySortDirection,
-        _accessSignalCount: qualitySortDirection,
-        _actionablePathwayCount: qualitySortDirection,
-        _officialYaleSourceCount: qualitySortDirection,
-        lastObservedAt: qualitySortDirection,
-        name: 1,
-        _id: 1,
+      $addFields: {
+        _qualityRepairScore: {
+          $add: [
+            { $cond: ['$_qualityDescriptionIssue', 45, 0] },
+            { $cond: ['$_qualityMissingLead', 35, 0] },
+            { $cond: [{ $eq: ['$_sourceUrlCount', 0] }, 16, 0] },
+            { $cond: ['$_qualityProfileFallback', 22, 0] },
+          ],
+        },
       },
+    },
+    ...(qualityMatch ? [qualityMatch] : []),
+    {
+      $sort: lowQualityFirst
+        ? {
+            _qualityRepairScore: -1,
+            _evidenceScore: 1,
+            _postedOpportunityCount: 1,
+            _accessSignalCount: 1,
+            _actionablePathwayCount: 1,
+            _officialYaleSourceCount: 1,
+            lastObservedAt: 1,
+            name: 1,
+            _id: 1,
+          }
+        : {
+            _evidenceScore: qualitySortDirection,
+            _postedOpportunityCount: qualitySortDirection,
+            _accessSignalCount: qualitySortDirection,
+            _actionablePathwayCount: qualitySortDirection,
+            _officialYaleSourceCount: qualitySortDirection,
+            lastObservedAt: qualitySortDirection,
+            name: 1,
+            _id: 1,
+          },
     },
     {
       $facet: {
@@ -740,6 +857,7 @@ async function searchResearchGroupsByEvidence(
               _strongAccessSignalCount: 0,
               _actionablePathwayCount: 0,
               _postedOpportunityCount: 0,
+              _leadMemberCount: 0,
               _hasDescriptionEvidence: 0,
               _evidenceScore: 0,
             },
@@ -748,7 +866,8 @@ async function searchResearchGroupsByEvidence(
         total: [{ $count: 'count' }],
       },
     },
-  ]);
+  ];
+  const [result] = await ResearchEntity.aggregate(pipeline);
 
   const hits = Array.isArray(result?.data) ? result.data : [];
   const estimatedTotalHits =
@@ -764,12 +883,12 @@ async function searchResearchGroupsByEvidence(
   ]);
   const normalizedHits = hits.map((hit: any) => {
     const id = hit.id || hit._id;
-    return {
+    return addQualitySummaryToHit({
       ...hit,
       _id: id,
       accessSummary: accessSummaries.get(String(id)),
       waysIn: waysInByEntityId.get(String(id)) || [],
-    };
+    }, options);
   });
   const enrichedHits = await enrichResearchHitsWithProfileFallback(normalizedHits);
 
@@ -798,7 +917,19 @@ export async function searchResearchGroupsViaMeili(
   const safePageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, Math.floor(pageSize) || 24));
   const offset = (safePage - 1) * safePageSize;
 
-  const filterString = buildResearchGroupFilterString(filters || {});
+  const effectiveFilters: ResearchGroupFilterInput = {
+    ...(filters || {}),
+    ...(options.studentVisibilityTiers?.length ||
+    (!options.includeSuppressed && !shouldShowLowQualityResearchFirst(options))
+      ? {
+          studentVisibilityTier:
+            options.studentVisibilityTiers?.length
+              ? options.studentVisibilityTiers
+              : publicStudentVisibilityTiers,
+        }
+      : {}),
+  };
+  const filterString = buildResearchGroupFilterString(effectiveFilters);
 
   const trimmedQuery = (query || '').trim();
   if (trimmedQuery === '' && !sort.sortBy && !hasResearchGroupFilters(filters || {})) {
@@ -1224,7 +1355,10 @@ export function sortEntryPathwaysByQuality(entryPathways: any[]): any[] {
  * Detail payload for the lab page: the group itself, member User snapshots
  * (PIs first), recent scholarly links, and pathway/access summaries.
  */
-export async function getResearchGroupDetail(slug: string): Promise<{
+export async function getResearchGroupDetail(
+  slug: string,
+  options: { includeQualitySummary?: boolean } = {},
+): Promise<{
   researchEntity: PublicResearchEntityDto;
   members: Array<{ user: any; role: string }>;
   researchActivityLinks: any[];
@@ -1423,12 +1557,21 @@ export async function getResearchGroupDetail(slug: string): Promise<{
           publicResearchEntityDescriptionText((normalizedGroup as any).description) ||
           publicResearchEntityDescriptionText((normalizedGroup as any).shortDescription) ||
           publicResearchEntityDescriptionText((normalizedGroup as any).fullDescription)
-            ? 'ENTITY_SOURCE'
-            : (normalizedGroup as any).descriptionSource || 'NONE',
+          ? 'ENTITY_SOURCE'
+          : (normalizedGroup as any).descriptionSource || 'NONE',
       };
+  const detailResearchEntity = options.includeQualitySummary
+    ? {
+        ...detailGroup,
+        qualitySummary: buildResearchEntityQualitySummary({
+          entity: detailGroup,
+          leadMembers: members.filter((member) => LEAD_RESEARCH_AREA_ROLES.has(member.role)),
+        }),
+      }
+    : detailGroup;
 
   return addResearchEntityDetailAlias({
-    group: detailGroup,
+    group: detailResearchEntity,
     members: publicMembers,
     researchActivityLinks,
     scholarlyLinks,

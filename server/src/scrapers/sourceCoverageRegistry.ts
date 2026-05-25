@@ -36,6 +36,15 @@ export const sourceCoverageRegistry = {
     defaultConfidence: 'HIGH',
     notes: 'PI edits should remain protected by manual locks where appropriate.',
   },
+  'research-entity-cache-backfill': {
+    priority: 1,
+    tier: 'DERIVED_OFFICIAL',
+    artifactTypes: ['Observation', 'EntryPathway', 'AccessSignal'],
+    evidenceCategories: ['UNDERGRAD_ROLE_LANGUAGE', 'PAST_UNDERGRADS', 'JOIN_INSTRUCTIONS'],
+    defaultConfidence: 'LOW',
+    notes:
+      'One-time provenance recovery from legacy ResearchEntity undergraduate-access cache fields; use only to bridge old scalar cache data into first-class access artifacts.',
+  },
   'lab-microsite-description-llm': {
     priority: 1,
     tier: 'PRIMARY_OFFICIAL',
@@ -142,6 +151,21 @@ export const sourceCoverageRegistry = {
     evidenceCategories: ['ENTITY_IDENTITY', 'ENTITY_MEMBERSHIP', 'OFFICIAL_PROFILE', 'TOPICS'],
     defaultConfidence: 'HIGH',
     notes: 'Center/institute discovery and membership context; contact routes require explicit guarded route evidence.',
+  },
+  'yale-research-official': {
+    priority: 2,
+    tier: 'OFFICIAL_INDEX',
+    artifactTypes: ['ResearchEntity', 'Observation'],
+    evidenceCategories: [
+      'ENTITY_IDENTITY',
+      'RESEARCH_INFRASTRUCTURE',
+      'TOPICS',
+      'METHODS',
+      'OFFICIAL_RESOURCE',
+    ],
+    defaultConfidence: 'HIGH',
+    notes:
+      'Official research.yale.edu directories for centers, institutes, cores, and infrastructure resources. Discovery-only; must not imply undergraduate access, contact routes, or posted openings without a more explicit source.',
   },
   'undergrad-fellowships-recipients': {
     priority: 4,

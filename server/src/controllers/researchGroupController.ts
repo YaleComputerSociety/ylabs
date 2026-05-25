@@ -11,8 +11,13 @@ import {
   listResearchSearchSuggestions,
   searchResearchGroupsViaMeili,
   ResearchGroupSearchSort,
+  ResearchGroupQualityFilter,
 } from '../services/researchGroupService';
 import { ResearchGroupFilterInput } from '../services/researchGroupFilters';
+import {
+  isStudentVisibilityTier,
+  type StudentVisibilityTier,
+} from '../models/studentVisibility';
 
 const MAX_PAGE_SIZE = 100;
 const DEFAULT_PAGE_SIZE = 24;
@@ -36,6 +41,26 @@ const ALLOWED_SORT_FIELDS: ResearchGroupSearchSort['sortBy'][] = [
   'createdAt',
   'updatedAt',
 ];
+
+const ALLOWED_QUALITY_FILTERS = new Set<ResearchGroupQualityFilter>([
+  'description-issue',
+  'missing-lead',
+  'profile-fallback',
+]);
+
+const parseQualityFilters = (raw: unknown): ResearchGroupQualityFilter[] => {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((value) => (typeof value === 'string' ? value : String(value)))
+    .filter((value): value is ResearchGroupQualityFilter =>
+      ALLOWED_QUALITY_FILTERS.has(value as ResearchGroupQualityFilter),
+    );
+};
+
+const parseStudentVisibilityTiers = (raw: unknown): StudentVisibilityTier[] => {
+  const values = toStringArray(raw) || [];
+  return values.filter(isStudentVisibilityTier);
+};
 
 const parseFilters = (raw: unknown): ResearchGroupFilterInput => {
   if (!raw || typeof raw !== 'object') return {};
@@ -82,6 +107,9 @@ export const searchResearchGroups = async (request: Request, response: Response)
       sortBy?: string;
       sortOrder?: 'asc' | 'desc';
       browseQuality?: string;
+      qualityFilters?: unknown;
+      studentVisibilityTier?: unknown;
+      includeSuppressed?: boolean;
     };
 
     const q = typeof body.q === 'string' ? body.q : '';
@@ -103,11 +131,15 @@ export const searchResearchGroups = async (request: Request, response: Response)
 
     const currentUser = request.user as { userType?: string } | undefined;
     const canUseAdminBrowseQuality = currentUser?.userType === 'admin';
+    const canUseAdminQualityControls = canUseAdminBrowseQuality && q.trim() === '';
     const options = {
       lowQualityFirst:
-        canUseAdminBrowseQuality &&
-        q.trim() === '' &&
-        body.browseQuality === 'low-first',
+        canUseAdminQualityControls && body.browseQuality === 'low-first',
+      includeQualitySummary: canUseAdminQualityControls && body.browseQuality === 'low-first',
+      qualityFilters: canUseAdminQualityControls ? parseQualityFilters(body.qualityFilters) : [],
+      studentVisibilityTiers:
+        canUseAdminBrowseQuality ? parseStudentVisibilityTiers(body.studentVisibilityTier) : [],
+      includeSuppressed: canUseAdminBrowseQuality && body.includeSuppressed === true,
     };
 
     const result = await searchResearchGroupsViaMeili(
@@ -136,7 +168,10 @@ export const getResearchGroupBySlug = async (request: Request, response: Respons
     return response.status(400).json({ error: 'Missing slug' });
   }
 
-  const detail = await getResearchGroupDetail(slug);
+  const currentUser = request.user as { userType?: string } | undefined;
+  const detail = await getResearchGroupDetail(slug, {
+    includeQualitySummary: currentUser?.userType === 'admin',
+  });
   if (!detail) {
     throw new NotFoundError(`Research entity not found with slug: ${slug}`);
   }

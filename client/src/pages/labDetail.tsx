@@ -39,7 +39,7 @@ import {
   LabPostedOpportunity,
   LabResearchActivityLink,
 } from '../types/labDetail';
-import type { ResearchEntity } from '../types/researchEntity';
+import type { ResearchEntity, ResearchEntityRepairFlag } from '../types/researchEntity';
 import { normalizeResearchEntityDetailPayload } from '../types/researchEntity';
 import {
   buildResearchDetailSources,
@@ -53,13 +53,16 @@ import {
 } from '../utils/researchDiscoveryAdapters';
 import { computeAcceptanceVerdict, verdictLabel } from '../utils/undergradAcceptance';
 
-const FIRST_RESEARCH_PLAN_SAVE_KEY = 'ylabs.firstResearchPlanSave.v1';
+const FIRST_RESEARCH_PLAN_SAVE_KEY = 'yale-research.firstResearchPlanSave.v1';
 
 const SectionHeading = ({ children }: { children: React.ReactNode }) => (
   <h2 className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-3">
     {children}
   </h2>
 );
+
+const formatEntityKindTag = (kind?: string | null): string | undefined =>
+  kind ? formatTitleCaseLabel(kind.replace(/[_-]+/g, ' ')) : undefined;
 
 const RelatedResearchEntitiesSection = ({
   relationships,
@@ -80,7 +83,10 @@ const RelatedResearchEntitiesSection = ({
           const relationship = relationshipByTargetId.get(entity.id || entity._id);
           const description =
             entity.shortDescription || entity.fullDescription || entity.description || '';
-          const tags = uniqueCompact([relationship?.label, entity.kind, ...(entity.departments || [])], 3);
+          const tags = uniqueCompact(
+            [relationship?.label, formatEntityKindTag(entity.kind), ...(entity.departments || [])],
+            3,
+          );
           return (
             <Link
               key={entity.id || entity._id || entity.slug}
@@ -126,14 +132,16 @@ const AffiliatedResearchEntitiesSection = ({
           className="block rounded-lg border border-gray-200 bg-white p-4 transition hover:border-blue-300 hover:shadow-sm"
         >
           <div className="flex flex-wrap gap-2">
-            {uniqueCompact([entity.kind, ...(entity.departments || [])], 3).map((tag) => (
-              <span
-                key={tag}
-                className="rounded-full bg-gray-50 px-2 py-1 text-xs font-medium text-gray-700"
-              >
-                {tag}
-              </span>
-            ))}
+            {uniqueCompact([formatEntityKindTag(entity.kind), ...(entity.departments || [])], 3).map(
+              (tag) => (
+                <span
+                  key={tag}
+                  className="rounded-full bg-gray-50 px-2 py-1 text-xs font-medium text-gray-700"
+                >
+                  {tag}
+                </span>
+              ),
+            )}
           </div>
           <h3 className="mt-3 text-sm font-semibold text-gray-900">{entity.name}</h3>
         </Link>
@@ -331,6 +339,28 @@ const memberDisplayName = (member: LabMember): string =>
 
 const memberId = (member: LabMember): string => String(member.user._id || '');
 
+const adminQualityNotes = (flags: ResearchEntityRepairFlag[] = []): string[] => {
+  const flagSet = new Set(flags);
+  const notes: string[] = [];
+
+  if (flagSet.has('missing_description')) {
+    notes.push('Missing public research description.');
+  } else if (flagSet.has('thin_description')) {
+    notes.push('Thin public research description.');
+  }
+  if (flagSet.has('profile_fallback_only')) {
+    notes.push('Only profile-derived context is available.');
+  }
+  if (flagSet.has('missing_lead')) {
+    notes.push('No lead professor is attached to this research profile.');
+  }
+  if (flagSet.has('missing_source_url')) {
+    notes.push('No official source URL is attached.');
+  }
+
+  return notes;
+};
+
 const DecisionSummary = ({
   group,
   pathways,
@@ -514,6 +544,7 @@ const ProfileStatusSection = ({
   ]);
   const missingProfileItems =
     missingItems.length > 0 ? missingItems : ['No major profile gaps are currently flagged.'];
+  const qualityNotes = adminQualityNotes(group.qualitySummary?.repairFlags);
 
   return (
     <section className="rounded-md border border-gray-200 bg-white p-4">
@@ -538,6 +569,14 @@ const ProfileStatusSection = ({
           </div>
         </div>
       </div>
+      {qualityNotes.length > 0 && (
+        <div className="mt-4 border-t border-amber-100 pt-4">
+          <h3 className="text-sm font-semibold text-amber-950">Admin quality notes</h3>
+          <div className="mt-2">
+            <BulletList items={qualityNotes} />
+          </div>
+        </div>
+      )}
     </section>
   );
 };

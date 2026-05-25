@@ -10,6 +10,7 @@ import {
   addProgramFavorite,
   removeProgramFavorite,
 } from '../services/programService';
+import { isStudentVisibilityTier, type StudentVisibilityTier } from '../models/studentVisibility';
 
 const parseFilter = (filter: string | undefined): string[] => {
   if (!filter) return [];
@@ -18,6 +19,9 @@ const parseFilter = (filter: string | undefined): string[] => {
     .map((s) => s.trim())
     .filter(Boolean);
 };
+
+const parseStudentVisibilityFilter = (filter: string | undefined): StudentVisibilityTier[] =>
+  parseFilter(filter).filter(isStudentVisibilityTier);
 
 export const searchProgramsController = async (request: Request, response: Response) => {
   try {
@@ -33,7 +37,12 @@ export const searchProgramsController = async (request: Request, response: Respo
       globalRegions,
       citizenshipStatus,
       programCategory,
+      studentVisibilityTier,
+      includeOperatorReview,
+      includeSuppressed,
     } = request.query;
+    const currentUser = request.user as { userType?: string } | undefined;
+    const isAdmin = currentUser?.userType === 'admin';
 
     const result = await searchPrograms({
       query: query as string,
@@ -47,6 +56,11 @@ export const searchProgramsController = async (request: Request, response: Respo
       globalRegions: parseFilter(globalRegions as string),
       citizenshipStatus: parseFilter(citizenshipStatus as string),
       programCategory: parseFilter(programCategory as string),
+      studentVisibilityTier: isAdmin
+        ? parseStudentVisibilityFilter(studentVisibilityTier as string)
+        : [],
+      includeOperatorReview: isAdmin && includeOperatorReview === 'true',
+      includeSuppressed: isAdmin && includeSuppressed === 'true',
     });
 
     response.json({

@@ -66,6 +66,38 @@ describe('program search service', () => {
     );
   });
 
+  it('defaults public program search to student-visible trust tiers', async () => {
+    await searchPrograms({});
+
+    expect(mocks.find).toHaveBeenCalledWith(
+      expect.objectContaining({
+        archived: false,
+        studentVisibilityTier: { $in: ['student_ready', 'limited_but_safe'] },
+      }),
+    );
+    expect(mocks.countDocuments).toHaveBeenCalledWith(
+      expect.objectContaining({
+        studentVisibilityTier: { $in: ['student_ready', 'limited_but_safe'] },
+      }),
+    );
+  });
+
+  it('defaults public program search to student-visible trust tiers', async () => {
+    await searchPrograms({});
+
+    expect(mocks.find).toHaveBeenCalledWith(
+      expect.objectContaining({
+        archived: false,
+        studentVisibilityTier: { $in: ['student_ready', 'limited_but_safe'] },
+      }),
+    );
+    expect(mocks.countDocuments).toHaveBeenCalledWith(
+      expect.objectContaining({
+        studentVisibilityTier: { $in: ['student_ready', 'limited_but_safe'] },
+      }),
+    );
+  });
+
   it('includes program categories in filter options', async () => {
     mocks.distinct.mockResolvedValueOnce(['FELLOWSHIP']);
     mocks.distinct.mockResolvedValueOnce(['Summer']);
@@ -73,10 +105,19 @@ describe('program search service', () => {
     mocks.distinct.mockResolvedValueOnce(['Global']);
     mocks.distinct.mockResolvedValueOnce(['US']);
     mocks.distinct.mockResolvedValueOnce(['CENTER_INTERNSHIP']);
+    mocks.distinct.mockResolvedValueOnce(['MENTOR_MATCHING']);
+    mocks.distinct.mockResolvedValueOnce(['DIRECT_FACULTY_MATCHING']);
+    mocks.distinct.mockResolvedValueOnce(['Structured research program']);
 
     const options = await getProgramFilterOptions();
 
     expect(options.programCategory).toEqual(['CENTER_INTERNSHIP']);
-    expect(mocks.distinct).toHaveBeenLastCalledWith('programCategory', { archived: false });
+    expect(options.programKind).toEqual(['MENTOR_MATCHING']);
+    expect(options.entryMode).toEqual(['DIRECT_FACULTY_MATCHING']);
+    expect(options.studentFacingCategory).toEqual(['Structured research program']);
+    expect(mocks.distinct).toHaveBeenCalledWith('programCategory', { archived: false });
+    expect(mocks.distinct).toHaveBeenCalledWith('programKind', { archived: false });
+    expect(mocks.distinct).toHaveBeenCalledWith('entryMode', { archived: false });
+    expect(mocks.distinct).toHaveBeenCalledWith('studentFacingCategory', { archived: false });
   });
 });

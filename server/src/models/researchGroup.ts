@@ -8,6 +8,7 @@ import {
   researchEntityTypes,
   type ResearchEntityType,
 } from './researchAccessTypes';
+import { studentVisibilityFields } from './studentVisibility';
 
 const researchGroupSchema = new mongoose.Schema(
   {
@@ -348,6 +349,7 @@ const researchGroupSchema = new mongoose.Schema(
       required: false,
       select: false,
     },
+    ...studentVisibilityFields,
   },
   {
     timestamps: true,
@@ -367,6 +369,8 @@ researchGroupSchema.index({ openness: 1, acceptingUndergrads: 1 });
 researchGroupSchema.index({ opennessStatusCache: 1 });
 researchGroupSchema.index({ activeAtYaleCache: 1 });
 researchGroupSchema.index({ archived: 1 });
+researchGroupSchema.index({ studentVisibilityTier: 1, archived: 1 });
+researchGroupSchema.index({ studentVisibilityComputedAt: -1 });
 researchGroupSchema.index({ lastObservedAt: 1 });
 researchGroupSchema.index({ recentGrantCount: -1 });
 researchGroupSchema.index({ recentPaperCount: -1 });

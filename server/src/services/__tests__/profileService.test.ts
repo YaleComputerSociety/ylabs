@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { normalizeProfileForClient, normalizeProfileUpdateForStorage } from '../profileService';
+import {
+  normalizeProfileForClient,
+  normalizeProfileUpdateForStorage,
+  sanitizeProfileBio,
+} from '../profileService';
 
 const TEST_NETID = 'test-user';
 const TEST_PROFILE_URL = 'https://profiles.example.edu/test-user';
@@ -345,6 +349,56 @@ describe('normalizeProfileForClient', () => {
 
     expect(profile.bio).toBe('');
     expect(profile).not.toHaveProperty('researchSummaryFallback');
+  });
+
+  it('removes copied headings from public profile bios', () => {
+    const profile = normalizeProfileForClient({
+      netid: TEST_NETID,
+      bio: [
+        'Biography',
+        'Our lab studies organelle structure and dynamics. We use imaging and genetic tools in C. elegans.',
+      ].join('\n'),
+    });
+
+    expect(profile.bio).toBe(
+      'Our lab studies organelle structure and dynamics. We use imaging and genetic tools in C. elegans.',
+    );
+  });
+
+  it('removes copied title-only lead paragraphs from public profile bios', () => {
+    const profile = normalizeProfileForClient({
+      netid: TEST_NETID,
+      bio: [
+        'Lecturer in the Practice of Management',
+        '',
+        'Alex Fixture studies organizational learning and practical leadership in complex institutions.',
+      ].join('\n'),
+    });
+
+    expect(profile.bio).toBe(
+      'Alex Fixture studies organizational learning and practical leadership in complex institutions.',
+    );
+  });
+
+  it('adds missing spaces between copied bio sentences', () => {
+    const profile = normalizeProfileForClient({
+      netid: TEST_NETID,
+      bio: 'I collaborate with investigators on autism research.Here are some papers from the group.',
+    });
+
+    expect(profile.bio).toBe(
+      'I collaborate with investigators on autism research. Here are some papers from the group.',
+    );
+  });
+
+  it('normalizes spaced degree abbreviations in public profile bios', () => {
+    expect(
+      sanitizeProfileBio(
+        'Dr. Fixture received a Ph. d. in Chemistry, an M. Phil. , an M. Sc. in Physics, and a B. A. in Biology before joining Yale. My research interests include biological systems and molecular methods.',
+      ),
+    ).toBe(
+      'Dr. Fixture received a Ph.D. in Chemistry, an M.Phil., an M.Sc. in Physics, and a B.A. in Biology before joining Yale. My research interests include biological systems and molecular methods.',
+    );
   });
 
   it('recovers full Yale address text pasted into malformed directory bios', () => {

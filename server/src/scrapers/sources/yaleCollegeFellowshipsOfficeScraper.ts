@@ -9,12 +9,20 @@ import crypto from 'crypto';
 import * as cheerio from 'cheerio';
 import { getCached, setCached } from '../snapshotCache';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
+import { classifyProgram } from '../../services/programClassifier';
 
 export const YALE_COLLEGE_FELLOWSHIPS_OFFICE_SOURCE = 'yale-college-fellowships-office';
 
 const DEFAULT_PAGE_URLS = [
   'https://funding.yale.edu/find-funding/yale-fellowships-offered-through',
   'https://science.yalecollege.yale.edu/stem-fellowships/funding-stem-opportunities-yale',
+  'https://science.yalecollege.yale.edu/stem-fellowships/funding-stem-opportunities-yale/stars/stars-summer-research-program',
+  'https://wti.yale.edu/initiatives/undergraduate',
+  'https://medicine.yale.edu/whr/training/fellowship/apply/',
+  'https://ycmd.yale.edu/education/summer-undergraduate-internships',
+  'https://economics.yale.edu/undergraduate/tobin-ra',
+  'https://engineering.yale.edu/academic-study/departments/computer-science/undergraduate-study/research-internship-program',
+  'https://college.yale.edu/life-at-yale/student-faculty-awards/mellon-mays-undergraduate-fellowship-program',
 ];
 
 const PUBLIC_YALE_HOSTS = new Set([
@@ -22,6 +30,11 @@ const PUBLIC_YALE_HOSTS = new Set([
   'yalecollege.yale.edu',
   'college.yale.edu',
   'science.yalecollege.yale.edu',
+  'wti.yale.edu',
+  'medicine.yale.edu',
+  'ycmd.yale.edu',
+  'economics.yale.edu',
+  'engineering.yale.edu',
 ]);
 
 const MONTHS: Record<string, number> = {
@@ -166,7 +179,7 @@ function isLikelyFellowshipTitle(title: string): boolean {
   if (!normalized || normalized.length > 180) return false;
   if (/^\d+\s*\(/.test(normalized)) return false;
   if (isGenericCatalogTitle(normalized)) return false;
-  return /\b(?:fellowships?|grants?|scholars?|scholarships?|awards?|prizes?|internships?)\b/i.test(
+  return /\b(?:fellowships?|grants?|scholars?|scholarships?|awards?|prizes?|internships?|assistantships?|programs?)\b/i.test(
     normalized,
   );
 }
@@ -186,7 +199,7 @@ function isLikelyPublicFellowshipDetailUrl(url: string): boolean {
   if (!isPublicYaleUrl(url) || !isHtmlLikeUrl(url) || isGenericPublicYalePath(url)) return false;
   try {
     const pathname = new URL(url).pathname.toLowerCase();
-    return /(?:find-funding|fellowship|fellowships|grant|grants|scholar|scholars|award|awards|prize|prizes|stem-fellowships|yale-undergraduate-research)/i.test(
+    return /(?:find-funding|fellowship|fellowships|grant|grants|scholar|scholars|award|awards|prize|prizes|stem-fellowships|yale-undergraduate-research|undergraduate|internships|tobin-ra|research-internship-program|training\/fellowship)/i.test(
       pathname,
     );
   } catch {
@@ -556,11 +569,32 @@ function observation(field: string, value: unknown, candidate: FellowshipCatalog
 }
 
 export function candidateToObservations(candidate: FellowshipCatalogCandidate): ObservationInput[] {
+  const classification = classifyProgram({
+    title: candidate.title,
+    summary: candidate.summary,
+    description: candidate.description,
+    purpose: candidate.purpose,
+    termOfAward: candidate.termOfAward,
+    sourceUrl: candidate.sourceUrl,
+  });
   return [
     observation('sourceKey', candidate.sourceKey, candidate),
     observation('sourceName', YALE_COLLEGE_FELLOWSHIPS_OFFICE_SOURCE, candidate),
     observation('sourceUrl', candidate.sourceUrl, candidate),
     observation('sourceFingerprint', candidate.sourceFingerprint, candidate),
+    observation('programCategory', classification.programCategory, candidate),
+    observation('programKind', classification.programKind, candidate),
+    observation('entryMode', classification.entryMode, candidate),
+    observation('studentFacingCategory', classification.studentFacingCategory, candidate),
+    observation('requiresMentorBeforeApply', classification.requiresMentorBeforeApply, candidate),
+    observation('mentorMatching', classification.mentorMatching, candidate),
+    observation('undergraduateOnly', classification.undergraduateOnly, candidate),
+    observation('yaleCollegeOnly', classification.yaleCollegeOnly, candidate),
+    observation('compensationSummary', classification.compensationSummary, candidate),
+    observation('hoursPerWeek', classification.hoursPerWeek, candidate),
+    observation('programDates', classification.programDates, candidate),
+    observation('bestNextStep', classification.bestNextStep, candidate),
+    observation('prepSteps', classification.prepSteps, candidate),
     observation('title', candidate.title, candidate),
     observation('summary', candidate.summary, candidate),
     observation('description', candidate.description, candidate),

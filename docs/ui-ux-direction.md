@@ -1,6 +1,6 @@
 # UI/UX Direction
 
-Last updated: 2026-05-23
+Last updated: 2026-05-25
 
 This document captures the current Yale Research interface direction and the next UX moves. It is grounded in Graphify as the navigation layer, then verified against product docs and implementation files.
 
@@ -31,7 +31,7 @@ Yale Research is a research navigation product, not a simple lab-opening board. 
 
 The student-facing grammar is:
 
-- **Yale Labs**: what exists and who is close to a student's interest.
+- **Yale Research**: what exists and who is close to a student's interest.
 - **Ways in**: compact action signals on research-home results.
 - **Saved research plans**: the account/advising layer for saved ways into research homes.
 - **Evidence**: why the route is credible.
@@ -39,17 +39,19 @@ The student-facing grammar is:
 
 Use [`docs/product-context.md`](./product-context.md), [`docs/research-model.md`](./research-model.md), and [`docs/decisions.md`](./decisions.md) when this document conflicts with older lab-first implementation details.
 
-The older Research/Pathways split spec has been folded into the roadmap as historical context. The current durable decision is that `/research` is the unified Yale Labs student front door, `/programs` is the Programs & Fellowships surface, and `/pathways` is retired publicly while `EntryPathway` remains the internal action model.
+The older Research/Pathways split spec has been folded into the roadmap as historical context. The current durable decision is that `/research` is the unified Yale Research student front door, `/programs` is the Programs & Fellowships surface, and `/pathways` is retired publicly while `EntryPathway` remains the internal action model.
 
 ## Current Interface Shape
 
-The current app uses a quiet, operational UI: white backgrounds, gray text, Yale-blue accents, compact cards, filter sidebars, small status chips, and grid/list browsing. This is the right general tone. It should feel like a focused student research tool, not a marketing site.
+The current app uses a quiet, operational UI: warm ivory backgrounds, charcoal/navy text, Yale-blue accents, compact cards, filter sidebars, small status chips, and grid/list browsing. The shipped brand subset is editorial and academic: a custom pilcrow mark for Yale Research identity, Source Serif 4 for the wordmark and major display moments, Yale Blue on warm ivory, and restrained gold accents. Keep unused brand-system variants out of `client/public/brand/` until a runtime surface actually references them. It should feel like a focused student research tool, not a marketing site.
 
 Current implementation anchors:
 
 - [`client/src/App.tsx`](../client/src/App.tsx): routes `/` as a redirect to `/research`, plus `/research`, `/research/:slug`, `/programs`, `/opportunities/:id`, and account/admin routes. `/pathways` redirects to `/research`; `/fellowships` redirects to `/programs`.
-- [`client/src/components/Navbar.tsx`](../client/src/components/Navbar.tsx): primary navigation, including Yale Labs, Programs & Fellowships, and Dashboard.
-- [`client/src/pages/research.tsx`](../client/src/pages/research.tsx): unified Yale Labs page for research homes, semantic search, action filters, and pathway-derived ways-in badges.
+- [`client/src/components/Navbar.tsx`](../client/src/components/Navbar.tsx): primary navigation, including Yale Research, Programs & Fellowships, and Dashboard.
+- [`client/public/brand/`](../client/public/brand/): shipped runtime brand assets. Keep this directory limited to files referenced by the app shell or manifest.
+- [`client/src/index.css`](../client/src/index.css): shared `--yr-*` brand tokens and reusable wordmark/bracket utilities.
+- [`client/src/pages/research.tsx`](../client/src/pages/research.tsx): unified Yale Research page for research homes, semantic search, action filters, and pathway-derived ways-in badges.
 - [`client/src/pages/fellowships.tsx`](../client/src/pages/fellowships.tsx): Programs & Fellowships page backed by the canonical `/api/programs` API.
 - [`client/src/pages/labDetail.tsx`](../client/src/pages/labDetail.tsx): `/research/:slug` detail page.
 - [`client/src/components/shared/BrowseCard.tsx`](../client/src/components/shared/BrowseCard.tsx): shared card treatment for listings, fellowships, and research groups.
@@ -63,7 +65,7 @@ A local Playwright pass used `http://localhost:4000/api/dev-login` and exercised
 
 Observed current state:
 
-- `/research` is the authenticated front door. It renders the Yale Labs title, the `Find a Yale lab that fits you.` H1, search placeholder `Type a topic, professor, lab, method, or research question`, quick-start prompt chips, and a browse baseline of about 2,720 indexed profiles in the current development data.
+- `/research` is the authenticated front door. It renders Yale Research branding, topic-first discovery copy, search placeholder `Type a topic, professor, lab, method, or research question`, quick-start prompt chips, and a browse baseline of about 2,720 indexed profiles in the current development data.
 - Searching `machine learning` returns one research-home stream rather than a Research/Pathways split. Cards show entity name, school/department, topic/method tags such as Machine Learning and Computational Modeling, a concise description, compact ways-in evidence when available, and `View profile` as the main card action.
 - Opening the first search result showed a sparse but coherent detail page: entity type, evidence level, `Student decision`, `What this lab studies`, reach-out status, recommended next step, principal-investigator status, source-backed details, missing-profile notes, and source links.
 - `/programs` presents Programs & Fellowships as a status-based planner with Open Now, Closing Soon, Likely Next Cycle, and Planning Archive counts, plus official Yale fellowship links.
@@ -89,7 +91,7 @@ Immediate UX direction from this evidence: make `/research` a research-profile d
 
 Implemented follow-up: `/research` now starts with curated curiosity prompts such as `machine learning`, `archival research`, and `wet lab`; department filtering lives in the single filter-bar select and still uses exact department filters; Research search cards prefer `Open research profile` when a linked entity exists; action-oriented filters live inside Research; and pathway data appears as ways-in badges rather than a Pathway Preview rail.
 
-2026-05-17 first-time clarity pass: `/research` now states the product promise as finding a Yale research home and deciding the next step, compact research-home cards expose a visible `Open research profile` action, `/account` has a planning-oriented dashboard header, saved empty states point users back to Yale Labs or Programs & Fellowships instead of ending the flow, and `/unknown` setup uses calmer one-minute onboarding copy. The temporary advanced `/pathways` public framing from this pass was superseded later the same day by public Pathways retirement.
+2026-05-17 first-time clarity pass: `/research` now states the product promise as finding a Yale research home and deciding the next step, compact research-home cards expose a visible `Open research profile` action, `/account` has a planning-oriented dashboard header, saved empty states point users back to Yale Research or Programs & Fellowships instead of ending the flow, and `/unknown` setup uses calmer one-minute onboarding copy. The temporary advanced `/pathways` public framing from this pass was superseded later the same day by public Pathways retirement.
 
 Search follow-up: `/research/search` should behave as semantic profile discovery, not a literal department or keyword index. Student-language queries such as `wet lab`, `archival research`, `digital humanities`, `climate policy`, and `social science data` are interpreted into concepts, methods, and expansion queries; ResearchEntity index documents carry semantic text and inferred method/concept signals; and result cards can show a concise "Why this matches" explanation before summarizing available ways in.
 
@@ -228,12 +230,12 @@ Current posture: the detail page is organized around student action under uncert
 
 ## Near-Term UX Moves
 
-1. Rename remaining student-facing "acceptance" language toward "access," "evidence," "ways in," or "best next step."
-2. Improve backend-fed ways-in quality on `/research` and `/research/:slug`: add source titles/domains, descriptions, profile links, canonical posted-opportunity dedupe, and paper-level matches so the UI does not have to rely on generic metadata.
-3. Keep source visibility centralized on detail pages: evidence cards should explain what was observed, while the Sources section should carry deduped official links.
-4. Continue polishing saved planning into one obvious workflow: the Dashboard now has one command-center overview fed by saved research plans and saved programs, direct research-profile saves, compact saved-plan cards with expandable details, and a secondary program watchlist; remaining work should focus on richer advising/export context rather than adding another saved-list model.
-5. Preserve first-success feedback on meaningful actions: the first saved research plan or program should point students to the Dashboard plan without turning every save into a noisy notification.
-6. Preserve the current quiet visual style: compact filters, restrained cards, clear typography, and Yale-blue accents.
+1. Keep the current route shape stable: `/research` is the Yale Research front door, `/programs` is the Programs & Fellowships planner, `/account` is Dashboard, and retired routes redirect.
+2. Improve backend-fed ways-in quality on `/research` and `/research/:slug`: add source titles/domains, descriptions, profile links, canonical posted-opportunity dedupe, and compact scholarly context so the UI does not have to rely on generic metadata.
+3. Make semantic search feel intentional: preserve the single research-home stream, but add product-reviewed niche-query cases and clear match explanations grounded in source-backed fields.
+4. Keep source visibility centralized on detail pages: evidence cards should explain what was observed, while the Sources section should carry deduped official links.
+5. Finish Programs classification cleanup in the pipeline, not by adding more visible filter clutter. Normal students should see undergraduate-relevant journey groups; admin/review/suppressed records should require explicit operator mode.
+6. Preserve the current quiet visual style: compact filters, restrained cards, clear typography, warm ivory surfaces, Yale-blue accents, and no horizontal overflow in desktop/mobile Playwright checks.
 
 ## Open UX Questions
 

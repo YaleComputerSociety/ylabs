@@ -58,6 +58,7 @@ const mockSearchResponses = (
       filters?: Record<string, unknown>;
       page?: number;
       browseQuality?: string;
+      qualityFilters?: string[];
     },
   ) => unknown,
 ) => {
@@ -69,6 +70,7 @@ const mockSearchResponses = (
         filters?: Record<string, unknown>;
         page?: number;
         browseQuality?: string;
+        qualityFilters?: string[];
       },
     ) =>
       Promise.resolve(resolver(url, body)),
@@ -329,9 +331,9 @@ describe('Research page', () => {
     expect(screen.getByRole('button', { name: 'Machine learning' }).className).toContain(
       'min-h-[44px]',
     );
-    expect(screen.getByRole('button', { name: 'Public health' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Wet lab' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Archival research' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Neuroscience' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Climate change' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Ancient DNA' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Explore by department' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Look up a professor' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Open roles' })).toBeNull();
@@ -376,8 +378,8 @@ describe('Research page', () => {
     expect(screen.queryByLabelText('Method/topic')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Open roles' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Machine learning' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Archival research' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Digital humanities' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Digital archives' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Quantum materials' })).toBeTruthy();
     expect(container.textContent).not.toContain('mechanism design');
     expect(container.textContent).not.toContain('neuroscience');
     expect(container.textContent).not.toContain('protein folding');
@@ -403,15 +405,15 @@ describe('Research page', () => {
     mockSearchResponses((url, body) => {
       if (url !== '/research/search') return unexpectedSearchEndpoint(url);
       return researchSearchResponse(
-        body.q === 'wet lab'
+        body.q === 'ancient DNA'
           ? [
               {
                 ...researchEntity,
-                _id: 'wet-lab-1',
-                slug: 'wet-lab-example',
-                name: 'Wet Lab Example',
-                displayName: 'Wet Lab Example',
-                researchAreas: ['Wet lab'],
+                _id: 'ancient-dna-1',
+                slug: 'ancient-dna-example',
+                name: 'Ancient DNA Example',
+                displayName: 'Ancient DNA Example',
+                researchAreas: ['Ancient DNA'],
               },
             ]
           : [],
@@ -421,17 +423,64 @@ describe('Research page', () => {
     renderResearch();
 
     await screen.findByText('Try a starting point');
-    fireEvent.click(screen.getByRole('button', { name: 'Wet lab' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Ancient DNA' }));
 
-    await screen.findByRole('heading', { name: 'Wet Lab Example' });
+    await screen.findByRole('heading', { name: 'Ancient DNA Example' });
     expect(mockedAxios.post).toHaveBeenLastCalledWith(
       '/research/search',
       expect.objectContaining({
-        q: 'wet lab',
+        q: 'ancient DNA',
         filters: {},
       }),
       expect.any(Object),
     );
+  });
+
+  it('returns to default research homes when clearing a quick-start search', async () => {
+    mockSearchResponses((url, body) => {
+      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
+      if (body.q === '') {
+        return researchSearchResponse([
+          {
+            ...researchEntity,
+            _id: 'default-home-1',
+            slug: 'default-home',
+            name: 'Default Research Home',
+            displayName: 'Default Research Home',
+          },
+        ]);
+      }
+      if (body.q === 'quantum materials') {
+        return researchSearchResponse([
+          {
+            ...researchEntity,
+            _id: 'quantum-materials-1',
+            slug: 'quantum-materials-example',
+            name: 'Quantum Materials Example',
+            displayName: 'Quantum Materials Example',
+            researchAreas: ['Quantum materials'],
+          },
+        ]);
+      }
+      return researchSearchResponse([]);
+    });
+
+    renderResearch();
+
+    await screen.findByRole('heading', { name: 'Default Research Home' });
+    fireEvent.click(screen.getByRole('button', { name: 'Quantum materials' }));
+
+    await screen.findByText("Showing research matches for 'quantum materials'");
+    expect(await screen.findByRole('heading', { name: 'Quantum Materials Example' })).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText('Search Yale research'), {
+      target: { value: '' },
+    });
+
+    expect(await screen.findByText('Research homes to explore')).toBeTruthy();
+    expect(screen.queryByLabelText('Search results')).toBeNull();
+    expect(screen.queryByText("Showing research matches for 'quantum materials'")).toBeNull();
+    expect(screen.getByRole('heading', { name: 'Default Research Home' })).toBeTruthy();
   });
 
   it('uses research search enrichment without calling the retired Pathways API', async () => {
@@ -508,6 +557,58 @@ describe('Research page', () => {
       );
     });
     expect(mockedAxios.post.mock.calls.at(-1)?.[1]).not.toHaveProperty('browseQuality');
+  });
+
+  it('lets admins filter weakest browse by description and lead quality', async () => {
+    mockSearchResponses((url, body) => {
+      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
+      return researchSearchResponse(
+        body.browseQuality === 'low-first'
+          ? [
+              {
+                ...researchEntity,
+                name: 'Sparse Lab',
+                displayName: 'Sparse Lab',
+                slug: 'sparse-lab',
+                qualitySummary: {
+                  descriptionState: 'missing',
+                  leadState: 'lead_missing',
+                  repairFlags: ['missing_description', 'missing_lead', 'missing_source_url'],
+                  score: 96,
+                },
+              },
+            ]
+          : [researchEntity],
+      );
+    });
+
+    renderResearch(departments, ['/research'], {
+      netId: 'admin1',
+      userType: 'admin',
+      userConfirmed: true,
+    });
+
+    await screen.findByRole('heading', { name: 'AI Safety Lab' });
+    fireEvent.click(screen.getByLabelText('Show weakest profiles first'));
+    await screen.findByRole('button', { name: 'Description issue' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Description issue' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Missing lead' }));
+
+    await waitFor(() => {
+      expect(mockedAxios.post).toHaveBeenLastCalledWith(
+        '/research/search',
+        expect.objectContaining({
+          q: '',
+          filters: {},
+          browseQuality: 'low-first',
+          qualityFilters: ['description-issue', 'missing-lead'],
+        }),
+        expect.any(Object),
+      );
+    });
+    expect(screen.getByText('Needs description')).toBeTruthy();
+    expect(screen.getByLabelText('Admin quality flags').textContent).toContain('Missing lead');
   });
 
   it('does not show the weakest-first browse toggle to non-admin users', async () => {

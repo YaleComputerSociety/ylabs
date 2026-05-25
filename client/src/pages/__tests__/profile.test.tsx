@@ -189,7 +189,7 @@ describe('Profile page', () => {
               slug: 'fixture-research-home',
               name: 'Fixture Research Home',
               shortDescription: 'Studies fixture protocols.',
-              researchAreas: ['Distributed Algorithms'],
+              researchAreas: ['distributed algorithms'],
               role: 'pi',
             },
           ],
@@ -220,6 +220,8 @@ describe('Profile page', () => {
       '/research/fixture-research-home',
     );
     expect(screen.getByText('Studies fixture protocols.')).toBeTruthy();
+    expect(screen.getByText('Distributed Algorithms')).toBeTruthy();
+    expect(screen.queryByText('distributed algorithms')).toBeNull();
   });
 
   it('writes profile tab changes to the URL so browser history can restore them', async () => {

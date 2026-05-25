@@ -23,6 +23,7 @@ import {
   createInitialProfilePageState,
   profilePageReducer,
 } from '../reducers/profilePageReducer';
+import { formatTitleCaseLabel } from '../utils/displayText';
 
 type Tab = 'bio' | 'research' | 'courses';
 const VALID_TABS: Tab[] = ['bio', 'research', 'courses'];
@@ -269,7 +270,7 @@ const Profile = () => {
                                   key={area}
                                   className="rounded bg-gray-50 px-2 py-0.5 text-xs font-semibold text-gray-600"
                                 >
-                                  {area}
+                                  {formatTitleCaseLabel(area)}
                                 </span>
                               ))}
                             </div>

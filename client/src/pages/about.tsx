@@ -59,20 +59,6 @@ const About = () => {
           />
         </a>
         <a
-          href="https://www.yura.yale.edu/"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
-        >
-          <img
-            src="/assets/icons/yura-icon.png"
-            alt="Yale Undergraduate Research Association website"
-            width={32}
-            height={40}
-            className="inline-block mx-2"
-          />
-        </a>
-        <a
           href="https://github.com/YaleComputerSociety/ylabs"
           target="_blank"
           rel="noopener noreferrer"

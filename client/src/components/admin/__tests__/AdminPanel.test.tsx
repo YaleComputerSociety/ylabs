@@ -27,15 +27,19 @@ vi.mock('../AdminAccessReview', () => ({
   default: () => <div data-testid="access-review" />,
 }));
 
+vi.mock('../AdminOperatorBoard', () => ({
+  default: () => <div data-testid="operator-board" />,
+}));
+
 afterEach(() => {
   cleanup();
 });
 
 describe('AdminPanel', () => {
-  it('opens on access review instead of the retired legacy listings endpoint', () => {
+  it('opens on the operator board instead of the retired legacy listings endpoint', () => {
     render(<AdminPanel />);
 
-    expect(screen.getByTestId('access-review')).toBeTruthy();
+    expect(screen.getByTestId('operator-board')).toBeTruthy();
     expect(screen.queryByTestId('legacy-listings-table')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Legacy Listing Evidence' })).toBeNull();
   });
@@ -44,6 +48,7 @@ describe('AdminPanel', () => {
     render(<AdminPanel />);
 
     for (const tab of [
+      'Operator Board',
       'Access Review',
       'Fellowships',
       'Research Areas',

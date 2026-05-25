@@ -2,11 +2,31 @@ import { ResearchEntity } from '../models/researchEntity';
 import { ResearchGroupMember } from '../models/researchGroupMember';
 import { User } from '../models/user';
 import { publicResearchAreaArray } from './researchEntityDto';
-import { getMeiliClient, getMeiliIndex } from '../utils/meiliClient';
+import {
+  createMeiliIndex,
+  deleteMeiliIndex,
+  ensureMeiliIndex,
+  getMeiliIndex,
+  resolveIndexName,
+  swapMeiliIndexes,
+  waitForMeiliTaskResponse,
+} from '../utils/meiliClient';
 import { sanitizeResearchEntityPublicDescriptionFields } from '../utils/researchEntityDescriptionText';
 
 export const RESEARCH_ENTITY_SEARCH_INDEX_NAME = 'researchentities';
 export const RESEARCH_ENTITY_SEARCH_INDEX_PRIMARY_KEY = 'id';
+
+export type SearchIndexRebuildStrategy = 'direct' | 'swap';
+
+interface ResearchEntitySearchIndexAdapter {
+  updateSettings: (settings: Record<string, any>) => Promise<unknown>;
+  addDocuments: (
+    documents: Record<string, any>[],
+    options: { primaryKey: string },
+  ) => Promise<unknown>;
+  deleteAllDocuments?: () => Promise<unknown>;
+  getStats?: () => Promise<Record<string, any>>;
+}
 
 const RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS = {
   searchableAttributes: [
@@ -39,6 +59,7 @@ const RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS = {
     'acceptanceConfidence',
     'offersIndependentStudy',
     'currentUndergradCount',
+    'studentVisibilityTier',
   ],
   sortableAttributes: ['lastObservedAt', 'name', 'createdAt', 'updatedAt'],
   displayedAttributes: ['*'],
@@ -47,9 +68,22 @@ const RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS = {
 export interface ResearchEntitySearchIndexRebuildOptions {
   pageSize?: number;
   clearExisting?: boolean;
+  strategy?: SearchIndexRebuildStrategy;
   getIndex?: typeof getMeiliIndex;
+  ensureIndex?: (
+    name: string,
+    primaryKey: string,
+  ) => Promise<ResearchEntitySearchIndexAdapter>;
+  createIndex?: (
+    indexName: string,
+    primaryKey: string,
+  ) => Promise<ResearchEntitySearchIndexAdapter>;
+  swapIndexes?: (sourceIndexName: string, targetIndexName: string) => Promise<unknown>;
+  deleteIndex?: (indexName: string) => Promise<unknown>;
+  resolveIndexName?: (name: string) => string;
   fetchPage?: (page: number, pageSize: number) => Promise<any[]>;
-  waitForTask?: (taskUid: number) => Promise<unknown>;
+  waitForTaskResponse?: (response: unknown) => Promise<void>;
+  tempIndexName?: string;
 }
 
 export interface ResearchEntitySearchIndexSettingsOptions {
@@ -60,11 +94,15 @@ export interface ResearchEntitySearchIndexSettingsOptions {
 
 export interface ResearchEntitySearchIndexRebuildResult {
   indexName: string;
+  resolvedIndexName: string;
+  strategy: SearchIndexRebuildStrategy;
   pageSize: number;
   fetchedDocumentCount: number;
   indexedDocumentCount: number;
   pageCount: number;
   clearedExisting: boolean;
+  meiliDocumentCount?: number;
+  meiliIsIndexing?: boolean;
 }
 
 export interface ResearchEntitySemanticIndexReadiness {
@@ -77,35 +115,6 @@ export interface ResearchEntitySemanticIndexReadiness {
 interface ResearchEntitySemanticStatsAdapter {
   getStats: () => Promise<Record<string, any>>;
 }
-
-const taskUidFromResponse = (response: unknown): number | undefined => {
-  if (!response || typeof response !== 'object') return undefined;
-  const record = response as Record<string, unknown>;
-  const uid = record.taskUid ?? record.uid;
-  return typeof uid === 'number' && Number.isFinite(uid) ? uid : undefined;
-};
-
-const defaultWaitForMeiliTask = async (taskUid: number): Promise<unknown> => {
-  const client = await getMeiliClient();
-  const result = await client.tasks.waitForTask(taskUid, {
-    timeout: Number(process.env.MEILI_TASK_TIMEOUT_MS || 15 * 60 * 1000),
-    interval: Number(process.env.MEILI_TASK_POLL_INTERVAL_MS || 500),
-  });
-  if (result?.status === 'failed') {
-    throw new Error(result.error?.message || `Meilisearch task ${taskUid} failed`);
-  }
-  return result;
-};
-
-const waitForTaskResponse = async (
-  response: unknown,
-  waitForTask: (taskUid: number) => Promise<unknown>,
-): Promise<void> => {
-  const taskUid = taskUidFromResponse(response);
-  if (taskUid !== undefined) {
-    await waitForTask(taskUid);
-  }
-};
 
 const numericStat = (value: unknown): number =>
   typeof value === 'number' && Number.isFinite(value) ? value : 0;
@@ -344,6 +353,59 @@ export function buildResearchEntitySearchIndexDocuments(docs: any[]): Record<str
     .filter((doc): doc is Record<string, any> => doc !== null);
 }
 
+const defaultTempIndexName = (resolvedIndexName: string): string =>
+  `${resolvedIndexName}_rebuild_${Date.now()}`;
+
+const statsFromIndex = async (
+  index: ResearchEntitySearchIndexAdapter,
+): Promise<{ meiliDocumentCount?: number; meiliIsIndexing?: boolean }> => {
+  if (!index.getStats) return {};
+  const stats = await index.getStats();
+  return {
+    meiliDocumentCount: numericStat(stats.numberOfDocuments ?? stats.numberOfDocumentsTotal),
+    meiliIsIndexing:
+      typeof stats.isIndexing === 'boolean' ? stats.isIndexing : undefined,
+  };
+};
+
+async function addResearchEntityDocumentsToIndex(
+  index: ResearchEntitySearchIndexAdapter,
+  pageSize: number,
+  fetchPage: (page: number, pageSize: number) => Promise<any[]>,
+  waitForTask: (response: unknown) => Promise<void>,
+): Promise<{
+  fetchedDocumentCount: number;
+  indexedDocumentCount: number;
+  pageCount: number;
+}> {
+  let page = 1;
+  let fetchedDocumentCount = 0;
+  let indexedDocumentCount = 0;
+  let pageCount = 0;
+
+  while (true) {
+    const docs = await fetchPage(page, pageSize);
+    if (docs.length === 0) break;
+
+    fetchedDocumentCount += docs.length;
+    pageCount += 1;
+    const indexDocs = buildResearchEntitySearchIndexDocuments(docs);
+    indexedDocumentCount += indexDocs.length;
+    if (indexDocs.length > 0) {
+      await waitForTask(
+        await index.addDocuments(indexDocs, {
+          primaryKey: RESEARCH_ENTITY_SEARCH_INDEX_PRIMARY_KEY,
+        }),
+      );
+    }
+
+    if (docs.length < pageSize) break;
+    page += 1;
+  }
+
+  return { fetchedDocumentCount, indexedDocumentCount, pageCount };
+}
+
 async function fetchResearchEntityPage(page: number, pageSize: number): Promise<any[]> {
   const docs = await ResearchEntity.find({})
     .sort({ _id: 1 })
@@ -391,57 +453,72 @@ export async function rebuildResearchEntitySearchIndex(
 ): Promise<ResearchEntitySearchIndexRebuildResult> {
   const pageSize = Math.max(1, Math.floor(options.pageSize || 250));
   const clearExisting = options.clearExisting ?? false;
-  const index = await (options.getIndex || getMeiliIndex)(RESEARCH_ENTITY_SEARCH_INDEX_NAME);
+  const strategy = options.strategy || 'direct';
+  const resolveName = options.resolveIndexName || resolveIndexName;
+  const resolvedIndexName = resolveName(RESEARCH_ENTITY_SEARCH_INDEX_NAME);
+  const waitForTask = options.waitForTaskResponse || waitForMeiliTaskResponse;
+  const ensureIndex =
+    options.ensureIndex ||
+    (async (name: string, primaryKey: string) => ensureMeiliIndex(name, primaryKey));
+  const createIndex =
+    options.createIndex ||
+    (async (indexName: string, primaryKey: string) => createMeiliIndex(indexName, primaryKey));
+  const swapIndexes = options.swapIndexes || swapMeiliIndexes;
+  const deleteIndex = options.deleteIndex || deleteMeiliIndex;
   const fetchPage = options.fetchPage || fetchResearchEntityPage;
-  const waitForTask = options.waitForTask || defaultWaitForMeiliTask;
+  const settings = getResearchEntitySearchIndexSettings({
+    semanticSearchEnabled: process.env.RESEARCH_SEARCH_SEMANTIC === 'true',
+    openAiApiKey: process.env.OPENAI_API_KEY,
+    embeddingModel: process.env.RESEARCH_SEARCH_EMBEDDING_MODEL,
+  });
+
+  if (strategy === 'swap') {
+    const tempIndexName = options.tempIndexName || defaultTempIndexName(resolvedIndexName);
+    const index = await createIndex(tempIndexName, RESEARCH_ENTITY_SEARCH_INDEX_PRIMARY_KEY);
+    await waitForTask(await index.updateSettings(settings));
+    const counts = await addResearchEntityDocumentsToIndex(index, pageSize, fetchPage, waitForTask);
+    await ensureIndex(RESEARCH_ENTITY_SEARCH_INDEX_NAME, RESEARCH_ENTITY_SEARCH_INDEX_PRIMARY_KEY);
+    await swapIndexes(tempIndexName, resolvedIndexName);
+    await deleteIndex(tempIndexName);
+    const targetIndex = await ensureIndex(
+      RESEARCH_ENTITY_SEARCH_INDEX_NAME,
+      RESEARCH_ENTITY_SEARCH_INDEX_PRIMARY_KEY,
+    );
+    const stats = await statsFromIndex(targetIndex);
+    return {
+      indexName: RESEARCH_ENTITY_SEARCH_INDEX_NAME,
+      resolvedIndexName,
+      strategy,
+      pageSize,
+      ...counts,
+      clearedExisting: clearExisting,
+      ...stats,
+    };
+  }
+
+  const index = options.getIndex
+    ? ((await options.getIndex(RESEARCH_ENTITY_SEARCH_INDEX_NAME)) as ResearchEntitySearchIndexAdapter)
+    : await ensureIndex(RESEARCH_ENTITY_SEARCH_INDEX_NAME, RESEARCH_ENTITY_SEARCH_INDEX_PRIMARY_KEY);
+
+  await waitForTask(await index.updateSettings(settings));
 
   if (clearExisting) {
-    await waitForTaskResponse(await index.deleteAllDocuments(), waitForTask);
-  }
-
-  let page = 1;
-  let fetchedDocumentCount = 0;
-  let indexedDocumentCount = 0;
-  let pageCount = 0;
-
-  while (true) {
-    const docs = await fetchPage(page, pageSize);
-    if (docs.length === 0) break;
-
-    fetchedDocumentCount += docs.length;
-    pageCount += 1;
-    const indexDocs = buildResearchEntitySearchIndexDocuments(docs);
-    indexedDocumentCount += indexDocs.length;
-    if (indexDocs.length > 0) {
-      await waitForTaskResponse(
-        await index.addDocuments(indexDocs, {
-          primaryKey: RESEARCH_ENTITY_SEARCH_INDEX_PRIMARY_KEY,
-        }),
-        waitForTask,
-      );
+    if (!index.deleteAllDocuments) {
+      throw new Error(`Meilisearch index ${resolvedIndexName} does not support deleteAllDocuments`);
     }
-
-    if (docs.length < pageSize) break;
-    page += 1;
+    await waitForTask(await index.deleteAllDocuments());
   }
 
-  await waitForTaskResponse(
-    await index.updateSettings(
-      getResearchEntitySearchIndexSettings({
-        semanticSearchEnabled: process.env.RESEARCH_SEARCH_SEMANTIC === 'true',
-        openAiApiKey: process.env.OPENAI_API_KEY,
-        embeddingModel: process.env.RESEARCH_SEARCH_EMBEDDING_MODEL,
-      }),
-    ),
-    waitForTask,
-  );
+  const counts = await addResearchEntityDocumentsToIndex(index, pageSize, fetchPage, waitForTask);
+  const stats = await statsFromIndex(index);
 
   return {
     indexName: RESEARCH_ENTITY_SEARCH_INDEX_NAME,
+    resolvedIndexName,
+    strategy,
     pageSize,
-    fetchedDocumentCount,
-    indexedDocumentCount,
-    pageCount,
+    ...counts,
     clearedExisting: clearExisting,
+    ...stats,
   };
 }

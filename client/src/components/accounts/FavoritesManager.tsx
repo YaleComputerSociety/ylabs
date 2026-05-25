@@ -102,11 +102,11 @@ const FavoritesManager = ({ variant = 'student', onSummaryChange }: FavoritesMan
   const fellowshipExportMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    localStorage.setItem('ylabs-fellowship-stages', JSON.stringify(fellowshipStage));
+    localStorage.setItem('yale-research-fellowship-stages', JSON.stringify(fellowshipStage));
   }, [fellowshipStage]);
 
   useEffect(() => {
-    localStorage.setItem('ylabs-fellowship-notes', JSON.stringify(fellowshipNotes));
+    localStorage.setItem('yale-research-fellowship-notes', JSON.stringify(fellowshipNotes));
   }, [fellowshipNotes]);
 
   useEffect(() => {
@@ -267,7 +267,7 @@ const FavoritesManager = ({ variant = 'student', onSummaryChange }: FavoritesMan
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `ylabs-programs-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.download = `yale-research-programs-${new Date().toISOString().slice(0, 10)}.csv`;
     link.click();
     URL.revokeObjectURL(url);
   };
@@ -311,7 +311,7 @@ const FavoritesManager = ({ variant = 'student', onSummaryChange }: FavoritesMan
 
     try {
       const url = await createGoogleSheet(
-        `YLabs Programs - ${new Date().toISOString().slice(0, 10)}`,
+        `Yale Research Programs - ${new Date().toISOString().slice(0, 10)}`,
         headers,
         rows,
       );

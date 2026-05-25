@@ -66,7 +66,7 @@ const Account = () => {
         eyebrow: 'Dashboard',
         title: 'Plan your next research move',
         body:
-          'Saved research plans, program candidates, notes, and checklist progress live here. Start in Yale Labs when you need a new lead.',
+          'Saved research plans, program candidates, notes, and checklist progress live here. Start in Yale Research when you need a new lead.',
       };
 
   return (

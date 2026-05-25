@@ -49,6 +49,7 @@ import {
   researchNarrativeScore,
 } from '../utils/profileBioQuality';
 import { httpUrlHasHostSuffix } from '../utils/urlNormalization';
+import { classifyProgram } from '../services/programClassifier';
 
 export { isMaterializableUserBioCandidate } from '../utils/profileBioQuality';
 import {
@@ -146,7 +147,20 @@ interface OfficialProfileCoverageResult {
   contactRoutes: number;
 }
 
-const DISCOVERY_ONLY_ACCESS_FIELD_SOURCES = new Set(['ysm-atoz-index', 'yse-centers-index']);
+const DISCOVERY_ONLY_ACCESS_FIELD_SOURCES = new Set([
+  'ysm-atoz-index',
+  'yse-centers-index',
+  'yale-research-official',
+]);
+const OFFICIAL_DIRECTORY_EXACT_NAME_SOURCES = new Set(['yale-research-official']);
+const OFFICIAL_DIRECTORY_EXACT_NAME_ENTITY_TYPES = new Set([
+  'CENTER',
+  'INSTITUTE',
+  'PROGRAM',
+  'INITIATIVE',
+  'GROUP',
+  'CORE_FACILITY',
+]);
 const USER_MATERIALIZATION_BLOCKED_SOURCES = new Set(['nih-reporter', 'nsf-award-search']);
 const PUBLIC_QUOTE_FIELDS = new Set([
   'undergradEvidenceQuote',
@@ -763,6 +777,12 @@ async function findEntityDocByIdentifier(
     const officialLabUrlEntity = await findExistingResearchEntityByOfficialLabUrl(Model, obs);
     if (officialLabUrlEntity) return officialLabUrlEntity;
 
+    const officialDirectoryEntity = await findExistingResearchEntityByOfficialDirectoryExactName(
+      Model,
+      obs,
+    );
+    if (officialDirectoryEntity) return officialDirectoryEntity;
+
     const facultyResearchAreaEntity = await findExistingResearchEntityByFacultyResearchAreaIdentity(
       Model,
       {
@@ -839,6 +859,54 @@ export async function findExistingResearchEntityByOfficialLabUrl(
     .limit(2)
     .lean();
   return candidates.length === 1 ? candidates[0] : null;
+}
+
+export async function findExistingResearchEntityByOfficialDirectoryExactName(
+  Model: mongoose.Model<any>,
+  observations: Array<{
+    field?: string;
+    value?: unknown;
+    sourceName?: string;
+  }>,
+): Promise<any | null> {
+  const sourceNames = Array.from(
+    new Set(
+      observations
+        .map((observation) => firstStringValue(observation.sourceName))
+        .filter(Boolean),
+    ),
+  );
+  if (
+    sourceNames.length === 0 ||
+    sourceNames.some((sourceName) => !OFFICIAL_DIRECTORY_EXACT_NAME_SOURCES.has(sourceName))
+  ) {
+    return null;
+  }
+
+  const observedEntityType = firstStringValue(
+    bestObservationForField(observations, 'entityType')?.value,
+  );
+  if (!OFFICIAL_DIRECTORY_EXACT_NAME_ENTITY_TYPES.has(observedEntityType)) return null;
+
+  const observedNameValue = firstStringValue(bestObservationForField(observations, 'name')?.value);
+  const observedName = normalizeResearchEntityName(observedNameValue);
+  if (!observedName) return null;
+
+  const exactNamePattern = new RegExp(`^\\s*${escapeRegExp(observedNameValue)}\\s*$`, 'i');
+  const candidates = await Model.find({
+    archived: { $ne: true },
+    $or: [{ name: exactNamePattern }, { displayName: exactNamePattern }],
+  })
+    .select('_id name displayName slug entityType')
+    .limit(3)
+    .lean();
+  const sameName = candidates.filter((candidate: any) => {
+    const names = [candidate.name, candidate.displayName].map(normalizeResearchEntityName);
+    return names.includes(observedName);
+  });
+  if (sameName.length !== 1) return null;
+
+  return Model.findById(sameName[0]._id).lean();
 }
 
 export async function resolveArchivedEntityDocToCanonical(
@@ -2499,6 +2567,7 @@ const PAPER_SET_FIELDS = new Set([
   'publicationTypes',
   'sources',
 ]);
+const RESEARCH_ENTITY_SET_FIELDS = new Set(['sourceUrls']);
 
 const PAPER_DERIVED_AUTHOR_FIELDS = new Set(['yaleAuthorIds', 'yaleAuthorNetIds']);
 const PAPER_MATERIALIZATION_ONLY_FIELDS = new Set([PAPER_AUTHORSHIP_EVIDENCE_FIELD]);
@@ -2679,6 +2748,19 @@ export function buildFellowshipLookupClauses(
 const FELLOWSHIP_MATERIALIZED_FIELDS = new Set([
   'title',
   'competitionType',
+  'programCategory',
+  'programKind',
+  'entryMode',
+  'studentFacingCategory',
+  'requiresMentorBeforeApply',
+  'mentorMatching',
+  'undergraduateOnly',
+  'yaleCollegeOnly',
+  'compensationSummary',
+  'hoursPerWeek',
+  'programDates',
+  'bestNextStep',
+  'prepSteps',
   'summary',
   'description',
   'applicationInformation',
@@ -2754,6 +2836,25 @@ export function buildFellowshipUpdateFromObservations(
     firstStringValue(bestObservationForField(observations, 'sourceName')?.value) ||
     observations.find((obs) => firstStringValue(obs.sourceName))?.sourceName;
   if (sourceName && !set.sourceName) set.sourceName = sourceName;
+
+  const classification = classifyProgram({
+    title: firstStringValue(set.title),
+    competitionType: firstStringValue(set.competitionType),
+    summary: firstStringValue(set.summary),
+    description: firstStringValue(set.description),
+    applicationInformation: firstStringValue(set.applicationInformation),
+    eligibility: firstStringValue(set.eligibility),
+    additionalInformation: firstStringValue(set.additionalInformation),
+    purpose: Array.isArray(set.purpose) ? (set.purpose as string[]) : [],
+    termOfAward: Array.isArray(set.termOfAward) ? (set.termOfAward as string[]) : [],
+    sourceUrl: firstStringValue(set.sourceUrl),
+  });
+  for (const [field, value] of Object.entries(classification)) {
+    if (manuallyLockedFields.includes(field)) continue;
+    if (set[field] !== undefined && set[field] !== null && set[field] !== '') continue;
+    if (Array.isArray(value) && value.length === 0) continue;
+    set[field] = value;
+  }
 
   const sourceFingerprint = firstStringValue(set.sourceFingerprint);
   const unchanged =
@@ -3032,10 +3133,15 @@ export async function materializeEntity(
     if (entityType === 'user' && userProfileDepartmentFields.includes(field)) {
       continue;
     }
-    let nextValue =
-      entityType === 'paper' && PAPER_SET_FIELDS.has(field)
-        ? mergeUniqueArrayValues(entityDoc?.[field], r.value)
-        : r.value;
+    let nextValue = r.value;
+    if (
+      (entityType === 'paper' && PAPER_SET_FIELDS.has(field)) ||
+      (isResearchEntityObservationType(entityType) &&
+        entityDoc &&
+        RESEARCH_ENTITY_SET_FIELDS.has(field))
+    ) {
+      nextValue = mergeUniqueArrayValues(entityDoc?.[field], r.value);
+    }
     if (isResearchEntityObservationType(entityType) && field === 'departments') {
       const canonical = await canonicalizeDepartmentList(nextValue);
       nextValue = canonical.departments;
