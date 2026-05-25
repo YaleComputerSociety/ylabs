@@ -15,7 +15,7 @@ export type ScholarlyLinkDestinationKind =
   | 'OFFICIAL_PROFILE'
   | 'OTHER';
 
-export type ScholarlyLinkDiscoverySource = 'OPENALEX' | 'ORCID' | 'OFFICIAL_PROFILE' | 'MANUAL';
+export type ScholarlyLinkDiscoverySource = 'OPENALEX' | 'ORCID' | 'OFFICIAL_PROFILE' | 'MANUAL' | 'LEGACY';
 export type ScholarlyAttributionBasis =
   | 'identity_authorship'
   | 'explicit_entity_link'

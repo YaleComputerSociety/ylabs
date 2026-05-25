@@ -17,6 +17,7 @@ export const scholarlyLinkDiscoverySources = [
   'ORCID',
   'OFFICIAL_PROFILE',
   'MANUAL',
+  'LEGACY',
 ] as const;
 
 const externalIdsSchema = new mongoose.Schema(

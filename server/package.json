@@ -57,6 +57,8 @@
     "research-entity:backfill-access-from-cache": "tsx src/scripts/backfillAccessArtifactsFromEntityCache.ts",
     "scraper:integrity-gate": "tsx src/scripts/scraperIntegrityGate.ts",
     "scholarly-links:cleanup-legacy": "tsx src/scripts/cleanupLegacyPapers.ts",
+    "scholarly-links:backfill": "tsx src/scripts/backfillScholarlyLinks.ts",
+    "scholarly-links:retire-legacy-observations": "tsx src/scripts/retireLegacyPaperAuthorshipObservations.ts",
     "scholarly-links:backfill-attributions": "tsx src/scripts/backfillScholarlyAttributions.ts",
     "source:health": "tsx src/scripts/sourceHealth.ts",
     "opportunities:reap-statuses": "tsx src/scripts/reapPostedOpportunityStatuses.ts",
