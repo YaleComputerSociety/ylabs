@@ -148,6 +148,47 @@ describe('pathwaySearchIndexService', () => {
     expect(publicMailtoDoc.publicContactRoute?.url).toBeUndefined();
   });
 
+  it('indexes public entity visibility tiers and gates Meili searches to those tiers', async () => {
+    const studentReadyDoc = buildPathwaySearchIndexDocument({
+      _id: 'pathway-student-ready',
+      researchEntity: {
+        _id: 'entity-student-ready',
+        name: 'Student Ready Lab',
+        studentVisibilityTier: 'student_ready',
+      },
+    });
+    const limitedSafeDoc = buildPathwaySearchIndexDocument({
+      _id: 'pathway-limited-safe',
+      researchEntity: {
+        _id: 'entity-limited-safe',
+        name: 'Limited Safe Center',
+        studentVisibilityTier: 'limited_but_safe',
+      },
+    });
+    const searches: Array<{ params: Record<string, unknown> }> = [];
+    const fakeIndex = {
+      updateSettings: async () => undefined,
+      addDocuments: async () => undefined,
+      search: async (_query: string, params: Record<string, unknown>) => {
+        searches.push({ params });
+        return { estimatedTotalHits: 0, hits: [] };
+      },
+    };
+
+    await searchPathwaysViaMeili({}, async () => fakeIndex as any);
+
+    expect(studentReadyDoc.entityStudentVisibilityTier).toBe('student_ready');
+    expect(limitedSafeDoc.entityStudentVisibilityTier).toBe('limited_but_safe');
+    expect(String(searches[0].params.filter)).toContain(
+      'entityStudentVisibilityTier = "student_ready"',
+    );
+    expect(String(searches[0].params.filter)).toContain(
+      'entityStudentVisibilityTier = "limited_but_safe"',
+    );
+    expect(String(searches[0].params.filter)).not.toContain('operator_review');
+    expect(String(searches[0].params.filter)).not.toContain('suppressed');
+  });
+
   it('filters out inputs without ids and exposes clone-safe index settings', () => {
     const docs = buildPathwaySearchIndexDocuments([
       { _id: 'pathway-1', researchEntity: { departments: [] } },
