@@ -559,3 +559,14 @@ Consequences:
 - Meilisearch rebuild or sync is a required post-Mongo step; Pathways rollback remains `PATHWAY_SEARCH_BACKEND=mongo`.
 - Render cron is for accepted source-specific recurrence, not initial backfill, VPN-dependent sources, local accepted-input files, or interactive browser checks.
 - `docs/tasks/priority-roadmap.md` records the lane, backup identifier, run IDs, Meili outcome, smoke outcome, rollback posture, and accepted warnings after the gate.
+
+## 2026-05-25: Use Beta As The Production-Candidate Dataset
+
+The current promotion strategy is Lane A: make Beta as close to production as possible, then copy the accepted seeded data into Production only after the promotion gate is complete. Guarded production deltas are deferred unless fresh Beta-vs-production parity cannot be re-established.
+
+Consequences:
+
+- Beta remains the source of truth for final data-quality, source-health, search-quality, and privacy payload review.
+- The promotion dataset version is `beta-production-candidate-2026-05-25` until replaced by a newer accepted Beta snapshot.
+- Production writes, production scraper deltas, compact-retention apply mode, and recurring cron remain blocked until the runbook packet has backup/restore ownership, smoke ownership, fresh parity, accepted warnings, and Meili rollback posture recorded.
+- Pathways keep Mongo as the rollback posture until production Meili rebuild and relevance review are accepted.
