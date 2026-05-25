@@ -54,6 +54,9 @@ export interface SourceHealthRow {
   };
   risk: SourceHealthRisk;
   action: string;
+  queueType?: string;
+  owner?: string;
+  nextCommand?: string;
 }
 
 const stringifyId = (value: unknown): string => {
@@ -82,6 +85,9 @@ function riskForSource(
 ): {
   risk: SourceHealthRisk;
   action: string;
+  queueType?: string;
+  owner?: string;
+  nextCommand?: string;
 } {
   if (!source.enabled) {
     return {
@@ -125,10 +131,19 @@ function riskForSource(
       action: 'Materialization errors exist; fix or document before accepting output.',
     };
   }
-  if (latestRun.status === 'partial' || (latestRun.materializationConflicts || 0) > 0) {
+  if ((latestRun.materializationConflicts || 0) > 0) {
     return {
       risk: 'warn',
-      action: 'Inspect partial run or materialization conflicts before promotion.',
+      action: 'Review materialization conflicts before promoting scraper output.',
+      queueType: 'conflict-review',
+      owner: 'scraper-source operator',
+      nextCommand: 'yarn --cwd server source:health',
+    };
+  }
+  if (latestRun.status === 'partial') {
+    return {
+      risk: 'warn',
+      action: 'Inspect partial run before promotion.',
     };
   }
   return {

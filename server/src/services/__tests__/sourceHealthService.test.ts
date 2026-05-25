@@ -86,6 +86,41 @@ describe('sourceHealthService', () => {
     expect(rows[0].expectedArtifactTypes).toEqual(['EntryPathway', 'AccessSignal']);
   });
 
+  it('adds operator lane metadata for materialization conflicts', () => {
+    const rows = buildSourceHealthRows(
+      [
+        {
+          name: 'lab-microsite-undergrad-llm',
+          displayName: 'Lab microsite undergrad LLM',
+          enabled: true,
+          coverage: { priority: 2, artifactTypes: ['ResearchEntity', 'EntryPathway'] },
+        },
+      ],
+      [
+        {
+          _id: 'conflict-run',
+          sourceName: 'lab-microsite-undergrad-llm',
+          status: 'success',
+          startedAt: '2026-05-13T02:00:00.000Z',
+          observationCount: 12,
+          materializationConflicts: 3,
+        },
+      ],
+    );
+
+    const row = rows[0] as (typeof rows)[number] & {
+      queueType?: string;
+      owner?: string;
+      nextCommand?: string;
+    };
+
+    expect(row.risk).toBe('warn');
+    expect(row.queueType).toBe('conflict-review');
+    expect(row.owner).toBe('scraper-source operator');
+    expect(row.nextCommand).toContain('source:health');
+    expect(row.action).toMatch(/materialization conflicts/i);
+  });
+
   it('treats event-driven sources without scraper runs as healthy', () => {
     const rows = buildSourceHealthRows(
       [

@@ -149,6 +149,7 @@ All accepted Beta source runs below reported `materialization.errors = 0`. This 
 - [x] Add smoke coverage for listing-bridged and scraper-derived posted opportunities.
 - [x] Expand saved run artifacts where they help reviewed data quality.
 - [x] Add source-health summaries for trusted data-quality review.
+- [x] Classify source-health materialization conflict warnings for operator review. Warning rows now include `conflict-review` queue metadata, `scraper-source operator` ownership, and the supported `yarn --cwd server source:health` follow-up command; 2026-05-25 read-only source health reported 18 ok, 6 warn, 0 error.
 - [x] Add status reaper behavior for expired posted opportunities.
 - [x] Add `department-undergrad-research` as the first deterministic source-expansion scraper for official department undergraduate research pages. It emits research entity/access/contact/application-route evidence and is covered by parser plus access-materializer tests; it must not create posted opportunities from generic department guidance.
 - [x] Merge the `yale-college-fellowships-office` URL-hygiene and program-classification model into `new-foundation`. The scraper canonicalizes the moved Mellon Mays URL, skips gated CommunityForce fetches, emits program/source visibility evidence, and keeps fellowship funding separate from posted opportunity/pathway creation.
