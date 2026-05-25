@@ -82,6 +82,7 @@ function newTestScraper(
 ): LabMicrositeUndergradLLMExtractor {
   return new LabMicrositeUndergradLLMExtractor({
     workPlanLoader: alwaysFetchWorkPlan,
+    userFinder: async () => [],
     ...deps,
   });
 }
@@ -951,6 +952,74 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
     expect(accepting!.confidenceOverride).toBe(0.5);
     expect(accepting!.entityKey).toBe('fixture-access-lab');
     expect(emitted.find((o) => o.field === 'currentUndergradCount')!.value).toBe(3);
+  });
+
+  it('emits source-backed inferred PI observations from official YSM lab home pages', async () => {
+    const ysmUrl = 'https://medicine.yale.edu/lab/fixture-access/';
+    const profileUrl = 'https://medicine.yale.edu/lab/fixture-access/profile/arya-synthetic/';
+    const fetchPage = makeFetchPage({
+      [ysmUrl]: `
+        <html><body>
+          <h1>The Fixture Access Lab</h1>
+          <script id="page-data" type="application/json">
+            {&quot;sidebarComponents&quot;:[{&quot;key&quot;:&quot;ProfileContactWidget&quot;,&quot;model&quot;:{&quot;title&quot;:&quot;Principal Investigator&quot;,&quot;profile&quot;:{&quot;fullName&quot;:&quot;Arya Synthetic&quot;,&quot;profileUrl&quot;:&quot;/lab/fixture-access/profile/arya-synthetic/&quot;,&quot;generalContacts&quot;:{&quot;email&quot;:&quot;arya.synthetic@yale.edu&quot;}}}}]}
+          </script>
+          <p>Our team studies cellular systems, immune signaling, imaging, and translational methods.</p>
+          <p>Students can learn more about research projects, methods, mentoring, and lab culture on this official site.</p>
+          <p>Undergraduates may contact the lab through official Yale channels when projects are available.</p>
+        </body></html>
+      `,
+    });
+    const callLLM = vi.fn(async (): Promise<LLMExtraction> => ({
+      openToUndergrads: 'yes',
+      currentUndergradCount: 0,
+      evidenceQuote:
+        'Undergraduates may contact the lab through official Yale channels when projects are available.',
+      evidenceSource: 'explicit_text',
+      joinPageUrl: null,
+    }));
+    const labFinder = async (): Promise<CandidateLab[]> => [
+      {
+        _id: '1',
+        slug: 'ysm-fixture-access',
+        name: 'The Fixture Access Lab',
+        websiteUrl: ysmUrl,
+      },
+    ];
+    const userFinder = vi.fn(async () => [
+      {
+        _id: 'user-1',
+        netid: 'as123',
+        fname: 'Arya',
+        lname: 'Synthetic',
+        email: 'arya.synthetic@yale.edu',
+        profileUrls: { official: profileUrl },
+      },
+    ]);
+
+    const scraper = newTestScraper({
+      fetchPage,
+      callLLM,
+      labFinder,
+      userFinder,
+      apiKey: 'sk-test',
+    });
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    expect(userFinder).toHaveBeenCalledTimes(1);
+    expect(emitted).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          entityType: 'researchEntity',
+          entityKey: 'ysm-fixture-access',
+          field: 'inferredPiUserId',
+          value: 'user-1',
+          sourceUrl: ysmUrl,
+          confidenceOverride: 0.5,
+        }),
+      ]),
+    );
   });
 
   it('uses WorkPlanner to skip fresh labs before fetch or LLM calls', async () => {

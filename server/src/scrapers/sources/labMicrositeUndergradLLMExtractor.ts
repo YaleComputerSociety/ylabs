@@ -31,6 +31,7 @@
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { ResearchEntity } from '../../models/researchEntity';
+import { User } from '../../models/user';
 import { redactDirectContactInfo } from '../../utils/contactRedaction';
 import {
   firstUsableResearchWebsiteUrl,
@@ -61,6 +62,12 @@ import {
   type EntityWorkPlan,
   type WorkPlannerSourcePolicy,
 } from '../workPlanner';
+import {
+  findPiUserIdsForLabFromCandidates,
+  parsePrincipalInvestigatorProfilesFromLabHtml,
+  piProfileUserObservationsFromProfiles,
+  type FacultyUserCandidate,
+} from './ysmAtoZScraper';
 
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 10_000;
@@ -894,6 +901,63 @@ export function labIdentityObservationsFromHomePage(
   return out;
 }
 
+function isYsmOfficialLabMicrositeUrl(rawUrl: string): boolean {
+  try {
+    const url = new URL(rawUrl);
+    return (
+      url.hostname.toLowerCase() === 'medicine.yale.edu' &&
+      /^\/lab\/[^/]+\/?$/i.test(url.pathname)
+    );
+  } catch {
+    return false;
+  }
+}
+
+export function ysmLeadObservationsFromHomePage(
+  lab: Pick<CandidateLab, 'slug' | 'name' | 'websiteUrl'>,
+  homePage: FetchedPage,
+  candidates: FacultyUserCandidate[],
+  observedAt: Date = new Date(),
+): ObservationInput[] {
+  if (!lab.slug || !isYsmOfficialLabMicrositeUrl(homePage.url)) return [];
+
+  const principalInvestigators = parsePrincipalInvestigatorProfilesFromLabHtml(
+    homePage.html,
+    homePage.url,
+  );
+  if (principalInvestigators.length === 0) return [];
+
+  const piUserIds = findPiUserIdsForLabFromCandidates(
+    {
+      name: lab.name,
+      url: lab.websiteUrl || homePage.url,
+      slug: lab.slug,
+      principalInvestigators,
+    },
+    candidates,
+  );
+  const base = {
+    entityType: 'researchEntity' as const,
+    entityKey: lab.slug,
+    sourceUrl: homePage.url,
+    observedAt,
+    confidenceOverride: 0.5,
+  };
+
+  return [
+    ...piUserIds.map((piUserId) => ({
+      ...base,
+      field: 'inferredPiUserId',
+      value: piUserId,
+    })),
+    ...piProfileUserObservationsFromProfiles(
+      principalInvestigators,
+      candidates,
+      homePage.url,
+    ).map((observation) => ({ ...observation, observedAt })),
+  ];
+}
+
 export function candidateLabFromResearchEntityDoc(doc: Record<string, any>): CandidateLab {
   return {
     _id: doc._id,
@@ -1015,6 +1079,7 @@ export type WorkPlanLoaderFn = (
   policy: WorkPlannerSourcePolicy,
   ctx: ScraperContext,
 ) => Promise<EntityWorkPlan>;
+export type UserFinderFn = () => Promise<FacultyUserCandidate[]>;
 
 export const defaultCallLLM: CallLLMFn = async ({
   model,
@@ -1063,6 +1128,7 @@ export interface LabMicrositeUndergradLLMExtractorDeps {
   renderedFetcher?: RenderedFetcher | null;
   callLLM?: CallLLMFn;
   workPlanLoader?: WorkPlanLoaderFn;
+  userFinder?: UserFinderFn;
   /** Resolves the candidate-lab list. Default queries Mongo. */
   labFinder?: () => Promise<CandidateLab[]>;
   model?: string;
@@ -1110,6 +1176,20 @@ async function defaultLabFinder(): Promise<CandidateLab[]> {
   return (docs as any[]).map(candidateLabFromResearchEntityDoc);
 }
 
+async function defaultUserFinder(): Promise<FacultyUserCandidate[]> {
+  const docs = await User.find(
+    {
+      $or: [
+        { userType: { $in: ['professor', 'faculty'] } },
+        { email: /@yale\.edu$/i },
+        { profileUrls: { $exists: true, $ne: null } },
+      ],
+    },
+    { _id: 1, netid: 1, fname: 1, lname: 1, primaryDepartment: 1, email: 1, profileUrls: 1 },
+  ).lean();
+  return docs as FacultyUserCandidate[];
+}
+
 export class LabMicrositeUndergradLLMExtractor implements IScraper {
   readonly name = 'lab-microsite-undergrad-llm';
   readonly displayName = 'Lab microsite LLM (undergrad signals)';
@@ -1118,6 +1198,7 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
   private readonly renderedFetcher: RenderedFetcher | null;
   private readonly callLLM: CallLLMFn;
   private readonly workPlanLoader: WorkPlanLoaderFn;
+  private readonly userFinder: UserFinderFn;
   private readonly labFinder: () => Promise<CandidateLab[]>;
   private readonly model: string;
   private readonly apiKey: string | undefined;
@@ -1127,6 +1208,7 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
     this.renderedFetcher = deps.renderedFetcher ?? createScraplingRenderedFetcher();
     this.callLLM = deps.callLLM ?? defaultCallLLM;
     this.workPlanLoader = deps.workPlanLoader ?? defaultWorkPlanLoader;
+    this.userFinder = deps.userFinder ?? defaultUserFinder;
     this.labFinder = deps.labFinder ?? defaultLabFinder;
     this.model = deps.model ?? DEFAULT_MODEL;
     this.apiKey = deps.apiKey ?? process.env.OPENAI_API_KEY;
@@ -1154,6 +1236,10 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
       only: ctx.options.only,
       limit: ctx.options.limit,
     });
+    const needsYsmLeadCandidates = labs.some((lab) =>
+      isYsmOfficialLabMicrositeUrl(lab.websiteUrl),
+    );
+    const userCandidates = needsYsmLeadCandidates ? await this.userFinder() : [];
     ctx.log(
       `Processing ${labs.length} labs (limit=${ctx.options.limit ?? DEFAULT_LIMIT}, only=${(ctx.options.only || []).join(',') || 'none'})`,
     );
@@ -1312,6 +1398,7 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
       }
       const observations = [
         ...labIdentityObservationsFromHomePage(lab, homePage, observedAt),
+        ...ysmLeadObservationsFromHomePage(lab, homePage, userCandidates, observedAt),
         ...extractionToObservations(
           lab.slug,
           quoteSourceUrl,

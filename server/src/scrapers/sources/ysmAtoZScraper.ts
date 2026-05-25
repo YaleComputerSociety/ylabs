@@ -30,7 +30,7 @@ interface RawLab {
   principalInvestigators?: PrincipalInvestigatorProfile[];
 }
 
-type FacultyUserCandidate = {
+export type FacultyUserCandidate = {
   _id?: unknown;
   netid?: string | null;
   fname?: string | null;
