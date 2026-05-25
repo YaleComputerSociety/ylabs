@@ -2,6 +2,10 @@ import fs from 'fs';
 import path from 'path';
 
 export type BetaDataQualitySeverity = 'ok' | 'warn' | 'error';
+export type DataQualityWarningClassification =
+  | 'must_fix_before_promotion'
+  | 'accepted_release_warning'
+  | 'post_promotion_backlog';
 
 export interface BetaDataQualityOptions {
   strict: boolean;
@@ -18,6 +22,9 @@ export interface BetaDataQualityCheck {
   count: number;
   message: string;
   target: number | string;
+  classification?: DataQualityWarningClassification;
+  owner?: string;
+  nextCommand?: string;
 }
 
 export interface BetaDataQualitySummary {
@@ -112,6 +119,59 @@ export interface ResearchEntityContentPageLeakSummary {
   count: number;
   samples: ResearchEntityContentPageLeakSample[];
 }
+
+const BETA_WARNING_OPERATOR_METADATA: Record<
+  string,
+  Pick<BetaDataQualityCheck, 'classification' | 'owner' | 'nextCommand'>
+> = {
+  sourceHealthWarnings: {
+    classification: 'must_fix_before_promotion',
+    owner: 'scraper-source operator',
+    nextCommand:
+      'yarn --cwd server beta:data-quality --include-samples --output /tmp/ylabs-beta-quality.json',
+  },
+  duplicateEntityNames: {
+    classification: 'must_fix_before_promotion',
+    owner: 'data-quality operator',
+    nextCommand: 'yarn --cwd server research-entity:dedupe-by-pi --limit=10000',
+  },
+  missingShortDescriptions: {
+    classification: 'accepted_release_warning',
+    owner: 'content-quality operator',
+    nextCommand:
+      'yarn --cwd server beta:data-quality --include-samples --output /tmp/ylabs-beta-quality.json',
+  },
+  weakShortDescriptions: {
+    classification: 'post_promotion_backlog',
+    owner: 'content-quality operator',
+    nextCommand:
+      'yarn --cwd server beta:data-quality --include-samples --output /tmp/ylabs-beta-quality.json',
+  },
+  coverageWithoutPathways: {
+    classification: 'accepted_release_warning',
+    owner: 'pathway coverage operator',
+    nextCommand:
+      'yarn --cwd server beta:data-quality --include-samples --output /tmp/ylabs-beta-quality.json',
+  },
+  coverageWithoutAccessSignals: {
+    classification: 'accepted_release_warning',
+    owner: 'pathway coverage operator',
+    nextCommand:
+      'yarn --cwd server beta:data-quality --include-samples --output /tmp/ylabs-beta-quality.json',
+  },
+  coverageWithoutContactRoutes: {
+    classification: 'accepted_release_warning',
+    owner: 'contact coverage operator',
+    nextCommand:
+      'yarn --cwd server beta:data-quality --include-samples --output /tmp/ylabs-beta-quality.json',
+  },
+  suspiciousUserEmails: {
+    classification: 'must_fix_before_promotion',
+    owner: 'identity/account operator',
+    nextCommand:
+      'yarn --cwd server beta:data-quality --include-samples --output /tmp/ylabs-beta-quality.json',
+  },
+};
 
 export function parseBetaDataQualityArgs(argv: string[]): BetaDataQualityOptions {
   const options: BetaDataQualityOptions = {
@@ -218,7 +278,9 @@ export function isInvalidObservationSourceUrl(value: unknown): boolean {
   }
   try {
     const parsed = new URL(trimmed);
-    return parsed.protocol !== 'http:' && parsed.protocol !== 'https:' && parsed.protocol !== 'file:';
+    return (
+      parsed.protocol !== 'http:' && parsed.protocol !== 'https:' && parsed.protocol !== 'file:'
+    );
   } catch {
     return true;
   }
@@ -238,7 +300,9 @@ export function isInvalidOptionalEmail(value: unknown): boolean {
   return !/^[^\s@]+@[^\s@]+\.[^\s@]+$/i.test(trimmed);
 }
 
-export function buildReferenceIntegritySummary(inputs: ReferenceAuditInput[]): ReferenceIntegritySummary {
+export function buildReferenceIntegritySummary(
+  inputs: ReferenceAuditInput[],
+): ReferenceIntegritySummary {
   const items = inputs.map((input) => {
     const missingRequired = input.required ? Math.max(0, input.missingRequired) : 0;
     const orphanedPresentRefs = Math.max(0, input.orphanedPresentRefs);
@@ -253,7 +317,10 @@ export function buildReferenceIntegritySummary(inputs: ReferenceAuditInput[]): R
   });
 
   const missingRequiredTotal = items.reduce((total, item) => total + item.missingRequired, 0);
-  const orphanedPresentRefTotal = items.reduce((total, item) => total + item.orphanedPresentRefs, 0);
+  const orphanedPresentRefTotal = items.reduce(
+    (total, item) => total + item.orphanedPresentRefs,
+    0,
+  );
 
   return {
     items,
@@ -263,105 +330,131 @@ export function buildReferenceIntegritySummary(inputs: ReferenceAuditInput[]): R
   };
 }
 
-export function buildBetaDataQualitySummary(input: BetaDataQualitySummaryInput): BetaDataQualitySummary {
+export function buildBetaDataQualitySummary(
+  input: BetaDataQualitySummaryInput,
+): BetaDataQualitySummary {
   const errors = compactChecks([
     buildCheck(
       'referenceIntegrity',
       'error',
       input.referenceHardFailures,
       'Broken required references or orphaned present references need repair.',
-      0
+      0,
     ),
-    buildCheck('urlSyntax', 'error', input.invalidUrlCount, 'Invalid URL syntax found in optional URL fields.', 0),
-    buildCheck('emailSyntax', 'error', input.invalidEmailCount ?? 0, 'Invalid email syntax found in email fields.', 0),
+    buildCheck(
+      'urlSyntax',
+      'error',
+      input.invalidUrlCount,
+      'Invalid URL syntax found in optional URL fields.',
+      0,
+    ),
+    buildCheck(
+      'emailSyntax',
+      'error',
+      input.invalidEmailCount ?? 0,
+      'Invalid email syntax found in email fields.',
+      0,
+    ),
     buildCheck(
       'expiredOpenOpportunities',
       'error',
       input.expiredOpenOpportunityCount,
       'Open posted opportunities have deadlines in the past.',
-      0
+      0,
     ),
     buildCheck(
       'paperAuthorship',
       'error',
       input.paperAuthorshipIntegrityFailures,
       'Paper-authorship integrity audit found hard failures.',
-      0
+      0,
     ),
-    buildCheck('sourceHealthErrors', 'error', input.sourceHealthErrors, 'Source health has error-risk sources.', 0),
+    buildCheck(
+      'sourceHealthErrors',
+      'error',
+      input.sourceHealthErrors,
+      'Source health has error-risk sources.',
+      0,
+    ),
   ]);
 
   const warnings = compactChecks([
-    buildCheck('sourceHealthWarnings', 'warn', input.sourceHealthWarnings, 'Source health has warning-risk sources.', 0),
+    buildCheck(
+      'sourceHealthWarnings',
+      'warn',
+      input.sourceHealthWarnings,
+      'Source health has warning-risk sources.',
+      0,
+    ),
     buildCheck(
       'duplicateEntityNames',
       'warn',
       input.duplicateEntityClusterCount,
       'Research entities share normalized names and need review before merging.',
-      0
+      0,
     ),
     buildCheck(
       'researchEntityContentPageLeaks',
       'warn',
       input.researchEntityContentPageLeakCount ?? 0,
       'Active research entities look like blogs, news, events, or other content pages rather than research homes.',
-      0
+      0,
     ),
     buildCheck(
       'missingShortDescriptions',
       'warn',
       input.missingShortDescriptionCount,
       'Research entities are missing student-facing short descriptions.',
-      0
+      0,
     ),
     buildCheck(
       'weakShortDescriptions',
       'warn',
       input.weakShortDescriptionCount,
       'Research entities have very short descriptions that may be weak.',
-      0
+      0,
     ),
     buildCheck(
       'coverageWithoutPathways',
       'warn',
       input.coverageGaps.withoutPathways,
       'Active research entities do not yet have entry pathways.',
-      0
+      0,
     ),
     buildCheck(
       'coverageWithoutAccessSignals',
       'warn',
       input.coverageGaps.withoutAccessSignals,
       'Active research entities do not yet have access signals.',
-      0
+      0,
     ),
     buildCheck(
       'coverageWithoutContactRoutes',
       'warn',
       input.coverageGaps.withoutContactRoutes,
       'Active research entities do not yet have contact routes.',
-      0
+      0,
     ),
     buildCheck(
       'suspiciousUserEmails',
       'warn',
       input.suspiciousUserEmailCount,
       'User emails look synthetic, placeholder, or otherwise suspicious.',
-      0
+      0,
     ),
     buildCheck(
       'retentionCandidates',
       'warn',
       input.retentionCandidateCount,
       'Superseded scraper observations are eligible for compact retention pruning.',
-      0
+      0,
     ),
     buildCheck(
       'liveLinkFailures',
       'warn',
       input.liveLinkFailureCount ?? 0,
       'Sampled live links did not return a successful response.',
-      0
+      0,
     ),
   ]);
 
@@ -455,7 +548,10 @@ export function buildResearchEntityContentPageLeakSummary(
   return { count, samples };
 }
 
-export function selectLiveLinkCandidates(inputs: LinkCandidateInput[], sampleSize: number): LiveLinkCandidate[] {
+export function selectLiveLinkCandidates(
+  inputs: LinkCandidateInput[],
+  sampleSize: number,
+): LiveLinkCandidate[] {
   const byUrl = new Map<string, LiveLinkCandidate>();
 
   for (const input of inputs) {
@@ -479,7 +575,10 @@ export function selectLiveLinkCandidates(inputs: LinkCandidateInput[], sampleSiz
   return [...byUrl.values()].slice(0, sampleSize);
 }
 
-export function writeScorecardOutput(scorecard: BetaDataQualityScorecard, outputPath?: string): void {
+export function writeScorecardOutput(
+  scorecard: BetaDataQualityScorecard,
+  outputPath?: string,
+): void {
   if (!outputPath) {
     return;
   }
@@ -496,12 +595,19 @@ function buildCheck(
   severity: Exclude<BetaDataQualitySeverity, 'ok'>,
   count: number,
   message: string,
-  target: number | string
+  target: number | string,
 ): BetaDataQualityCheck | null {
   if (count <= 0) {
     return null;
   }
-  return { name, severity, count, message, target };
+  return {
+    name,
+    severity,
+    count,
+    message,
+    target,
+    ...(severity === 'warn' ? BETA_WARNING_OPERATOR_METADATA[name] : undefined),
+  };
 }
 
 function parsePositiveIntegerFlag(arg: string, prefix: string): number {
