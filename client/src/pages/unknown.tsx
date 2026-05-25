@@ -151,21 +151,22 @@ const Unknown = () => {
 
   return (
     <div className="yr-page flex min-h-full items-center justify-center p-4">
-      <div className="yr-panel w-full max-w-md rounded-md p-6">
-        <div className="mb-6">
-          <p className="yr-kicker">
-            One-minute setup
-          </p>
-          <h1 className="mt-1 text-2xl font-semibold text-slate-950">
-            Tell us how you use Yale Research
-          </h1>
-          <p className="mt-2 text-sm leading-relaxed text-slate-600">
-            This keeps the app pointed at the right research planning experience. You can start
-            searching as soon as this is saved.
-          </p>
-        </div>
+      <div className="grid w-full max-w-4xl gap-6 lg:grid-cols-[1fr_0.8fr] lg:items-start">
+        <div className="yr-panel rounded-md p-6">
+          <div className="mb-6">
+            <p className="yr-kicker">
+              One-minute setup
+            </p>
+            <h1 className="mt-1 text-2xl font-semibold text-slate-950">
+              Tell us how you use Yale Research
+            </h1>
+            <p className="mt-2 text-sm leading-relaxed text-slate-600">
+              This keeps the app pointed at the right research planning experience. You can start
+              searching as soon as this is saved.
+            </p>
+          </div>
 
-        <form onSubmit={handleSubmit}>
+          <form onSubmit={handleSubmit}>
           <div className="mb-4">
             <label className="mb-2 block text-sm font-semibold text-slate-900" htmlFor="firstName">
               First name
@@ -341,7 +342,35 @@ const Unknown = () => {
               Continue to Yale Research
             </button>
           </div>
-        </form>
+          </form>
+        </div>
+
+        <aside className="yr-panel rounded-md p-6">
+          <p className="yr-kicker">What changes after this</p>
+          <div className="mt-4 space-y-4">
+            <div>
+              <h2 className="text-sm font-semibold text-slate-950">Student-facing pathways</h2>
+              <p className="mt-1 text-sm leading-relaxed text-slate-600">
+                Your role helps us put research homes, posted opportunities, and practical next
+                steps in the right order for browsing.
+              </p>
+            </div>
+            <div>
+              <h2 className="text-sm font-semibold text-slate-950">Verification can happen later</h2>
+              <p className="mt-1 text-sm leading-relaxed text-slate-600">
+                Saving this unlocks the app now while the account details can still be reviewed by
+                the team.
+              </p>
+            </div>
+            <div>
+              <h2 className="text-sm font-semibold text-slate-950">Yale Research stays focused</h2>
+              <p className="mt-1 text-sm leading-relaxed text-slate-600">
+                The setup keeps the product oriented around credible research discovery rather
+                than a generic profile form.
+              </p>
+            </div>
+          </div>
+        </aside>
       </div>
     </div>
   );

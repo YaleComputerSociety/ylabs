@@ -16,6 +16,8 @@ describe('Unknown', () => {
     expect(
       screen.getByText(/you can start searching as soon as this is saved/i),
     ).toBeTruthy();
+    expect(screen.getByText('What changes after this')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Student-facing pathways' })).toBeTruthy();
     expect(screen.queryByText(/y\/labs/i)).toBeNull();
   });
 
