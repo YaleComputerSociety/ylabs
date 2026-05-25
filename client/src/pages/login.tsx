@@ -120,6 +120,15 @@ const Login = () => {
               Authentication is handled by Yale CAS. Yale Research does not ask for your password.
             </p>
           </div>
+          <div className="mt-3 grid gap-2 text-sm text-slate-700">
+            {['Saved plans stay with your Yale account', 'Profiles and pathways remain source-backed'].map(
+              (item) => (
+                <div key={item} className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+                  {item}
+                </div>
+              ),
+            )}
+          </div>
           <div className="mt-5 flex min-h-[44px] items-center">
             {isLoading ? (
               <PulseLoader color="#184a9b" size={10} />

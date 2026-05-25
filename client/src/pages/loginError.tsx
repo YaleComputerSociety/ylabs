@@ -20,6 +20,15 @@ const LoginError = () => {
             Yale Research did not receive a valid CAS session. Try Yale CAS again, or return to
             the research entry page and start from the surface you were opening.
           </p>
+          <div className="mt-6 grid gap-2 text-left text-sm text-slate-700 sm:grid-cols-3">
+            {['Confirm you are using Yale CAS', 'Retry in the same browser', 'Return to Research if CAS keeps failing'].map(
+              (item) => (
+                <div key={item} className="rounded-md border border-slate-200 bg-white px-3 py-3">
+                  {item}
+                </div>
+              ),
+            )}
+          </div>
           <div className="mt-8 flex w-full max-w-md flex-col gap-3 sm:flex-row sm:justify-center">
             <SignInButton label="Try Yale CAS again" />
             <Link
