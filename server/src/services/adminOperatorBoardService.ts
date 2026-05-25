@@ -16,10 +16,12 @@ const researchReasonActions: Record<string, string> = {
   missing_action_evidence:
     'Add source-backed access signals, entry pathways, contact routes, or posted opportunities before promotion.',
   missing_description: 'Repair with official source-backed description text.',
-  missing_lead: 'Attach PI, director, or owner evidence, or mark a reviewed non-person-owner exception.',
+  missing_lead:
+    'Attach PI, director, or owner evidence, or mark a reviewed non-person-owner exception.',
   missing_source_url: 'Attach an official source URL before public promotion.',
   thin_description: 'Replace thin text with a fuller source-backed description.',
-  profile_fallback_only: 'Verify entity/lab context instead of relying only on faculty profile synthesis.',
+  profile_fallback_only:
+    'Verify entity/lab context instead of relying only on faculty profile synthesis.',
 };
 
 const programReasonActions: Record<string, string> = {
@@ -31,6 +33,37 @@ const programReasonActions: Record<string, string> = {
   official_source: 'Review for possible promotion if audience and route are student-safe.',
   application_route: 'Verify the route is the official next step, not a generic catalog link.',
 };
+
+const evidenceReasons = new Set([
+  'application_route',
+  'concrete_next_step',
+  'official_source',
+  'source_backed_description',
+  'undergraduate_relevant',
+]);
+
+export type QueueKind = 'blocking' | 'evidence' | 'review';
+
+export function classifyOperatorQueueReason(reason: string): QueueKind {
+  if (evidenceReasons.has(reason)) return 'evidence';
+  if (
+    reason.startsWith('missing_') ||
+    reason.endsWith('_only') ||
+    reason === 'application_source_only' ||
+    reason === 'archive_review' ||
+    reason === 'content_page_risk' ||
+    reason === 'duplicate_name_risk' ||
+    reason === 'duplicate_risk' ||
+    reason === 'inactive_at_yale' ||
+    reason === 'missing_application_route' ||
+    reason === 'missing_source_route' ||
+    reason === 'not_undergraduate_relevant' ||
+    reason === 'thin_description'
+  ) {
+    return 'blocking';
+  }
+  return 'review';
+}
 
 const tierAction: Record<StudentVisibilityTier, string> = {
   student_ready: 'Sample for false positives and copy quality before prominent browse.',
@@ -59,7 +92,7 @@ async function countByTier(model: any, match: Record<string, unknown>) {
 }
 
 async function reasonCounts(model: any, match: Record<string, unknown>, limit = 12) {
-  return model.aggregate([
+  const rows = await model.aggregate([
     { $match: match },
     { $unwind: '$studentVisibilityReasons' },
     { $group: { _id: '$studentVisibilityReasons', count: { $sum: 1 } } },
@@ -67,11 +100,18 @@ async function reasonCounts(model: any, match: Record<string, unknown>, limit = 
     { $limit: limit },
     { $project: { _id: 0, reason: '$_id', count: 1 } },
   ]);
+
+  return rows.map((row: { reason: string; count: number }) => ({
+    ...row,
+    kind: classifyOperatorQueueReason(row.reason),
+  }));
 }
 
 async function sampleResearch(match: Record<string, unknown>, limit = 5) {
   return ResearchEntity.find({ archived: { $ne: true }, ...match })
-    .select('name slug studentVisibilityTier studentVisibilityReasons sourceUrls websiteUrl shortDescription')
+    .select(
+      'name slug studentVisibilityTier studentVisibilityReasons sourceUrls websiteUrl shortDescription',
+    )
     .sort({ name: 1 })
     .limit(limit)
     .lean();
@@ -79,7 +119,9 @@ async function sampleResearch(match: Record<string, unknown>, limit = 5) {
 
 async function samplePrograms(match: Record<string, unknown>, limit = 5) {
   return Fellowship.find({ archived: false, ...match })
-    .select('title studentVisibilityTier studentVisibilityReasons sourceUrl summary studentFacingCategory')
+    .select(
+      'title studentVisibilityTier studentVisibilityReasons sourceUrl summary studentFacingCategory',
+    )
     .sort({ title: 1 })
     .limit(limit)
     .lean();
@@ -118,6 +160,7 @@ async function buildQueueSummaries() {
     researchReasons.slice(0, 8).map(async (row: { reason: string; count: number }) => ({
       collection: 'research' as const,
       reason: row.reason,
+      kind: classifyOperatorQueueReason(row.reason),
       count: row.count,
       nextAction: researchReasonActions[row.reason] || 'Review samples and decide repair action.',
       samples: (await sampleResearch({ studentVisibilityReasons: row.reason }, 3)).map(
@@ -130,6 +173,7 @@ async function buildQueueSummaries() {
     programReasons.slice(0, 8).map(async (row: { reason: string; count: number }) => ({
       collection: 'programs' as const,
       reason: row.reason,
+      kind: classifyOperatorQueueReason(row.reason),
       count: row.count,
       nextAction: programReasonActions[row.reason] || 'Review samples and decide repair action.',
       samples: (await samplePrograms({ studentVisibilityReasons: row.reason }, 3)).map(
@@ -164,9 +208,7 @@ async function buildQueueSummaries() {
 async function buildSourceFreshness() {
   const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
   const [sources, runs, latestIntegrityRuns] = await Promise.all([
-    Source.find({})
-      .select('name displayName enabled cadence coverage')
-      .lean(),
+    Source.find({}).select('name displayName enabled cadence coverage').lean(),
     ScrapeRun.find({ startedAt: { $gte: since } })
       .select(
         'sourceName status startedAt finishedAt observationCount materializationErrors materializationConflicts invalidated options',
@@ -206,17 +248,13 @@ async function buildSourceFreshness() {
 }
 
 export async function buildAdminOperatorBoard() {
-  const [
-    researchTierCounts,
-    programTierCounts,
-    queueSummaries,
-    sourceFreshness,
-  ] = await Promise.all([
-    countByTier(ResearchEntity, { archived: { $ne: true } }),
-    countByTier(Fellowship, { archived: false }),
-    buildQueueSummaries(),
-    buildSourceFreshness(),
-  ]);
+  const [researchTierCounts, programTierCounts, queueSummaries, sourceFreshness] =
+    await Promise.all([
+      countByTier(ResearchEntity, { archived: { $ne: true } }),
+      countByTier(Fellowship, { archived: false }),
+      buildQueueSummaries(),
+      buildSourceFreshness(),
+    ]);
 
   return {
     generatedAt: new Date().toISOString(),

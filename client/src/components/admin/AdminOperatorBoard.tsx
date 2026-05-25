@@ -3,6 +3,7 @@ import axios from '../../utils/axios';
 
 type Tier = 'student_ready' | 'limited_but_safe' | 'operator_review' | 'suppressed';
 type Risk = 'ok' | 'warn' | 'error';
+type QueueKind = 'blocking' | 'evidence' | 'review';
 
 interface TierCount {
   tier: Tier;
@@ -22,11 +23,13 @@ interface QueueSample {
 interface ReasonCount {
   reason: string;
   count: number;
+  kind?: QueueKind;
 }
 
 interface QueueSummary {
   collection: 'research' | 'programs';
   reason: string;
+  kind?: QueueKind;
   count: number;
   nextAction: string;
   samples: QueueSample[];
@@ -94,6 +97,51 @@ const riskStyles: Record<Risk, string> = {
   error: 'border-red-200 bg-red-50 text-red-800',
 };
 
+const evidenceReasons = new Set([
+  'application_route',
+  'concrete_next_step',
+  'official_source',
+  'source_backed_description',
+  'undergraduate_relevant',
+]);
+
+const classifyReason = (reason: string): QueueKind => {
+  if (evidenceReasons.has(reason)) return 'evidence';
+  if (
+    reason.startsWith('missing_') ||
+    reason.endsWith('_only') ||
+    [
+      'application_source_only',
+      'archive_review',
+      'content_page_risk',
+      'duplicate_name_risk',
+      'duplicate_risk',
+      'inactive_at_yale',
+      'not_undergraduate_relevant',
+      'thin_description',
+    ].includes(reason)
+  ) {
+    return 'blocking';
+  }
+  return 'review';
+};
+
+const uniqueReasons = (reasons: string[]) => [
+  ...new Set(reasons.map((reason) => reason.trim()).filter(Boolean)),
+];
+
+const splitReasons = (reasons: string[], primaryReason: string) => {
+  const normalizedPrimaryReason = primaryReason.trim().toLowerCase();
+  const sampleReasons = uniqueReasons(reasons).filter(
+    (reason) => reason.toLowerCase() !== normalizedPrimaryReason,
+  );
+
+  return {
+    blockers: sampleReasons.filter((reason) => classifyReason(reason) === 'blocking'),
+    signals: sampleReasons.filter((reason) => classifyReason(reason) === 'evidence'),
+  };
+};
+
 const formatDate = (value?: string) => {
   if (!value) return 'No run';
   const date = new Date(value);
@@ -101,6 +149,54 @@ const formatDate = (value?: string) => {
 };
 
 const total = (rows: TierCount[]) => rows.reduce((sum, row) => sum + row.count, 0);
+
+const queueKindLabel: Record<QueueKind, string> = {
+  blocking: 'Repair queue',
+  evidence: 'Evidence signal',
+  review: 'Review signal',
+};
+
+const queueKindStyles: Record<QueueKind, string> = {
+  blocking: 'border-red-200 bg-red-50 text-red-700',
+  evidence: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  review: 'border-gray-200 bg-gray-50 text-gray-700',
+};
+
+const queueKindRank: Record<QueueKind, number> = {
+  blocking: 0,
+  review: 1,
+  evidence: 2,
+};
+
+const ReasonList = ({
+  label,
+  reasons,
+  tone,
+}: {
+  label: string;
+  reasons: string[];
+  tone: 'blocker' | 'signal';
+}) => {
+  if (reasons.length === 0) return null;
+
+  const toneClass =
+    tone === 'blocker'
+      ? 'border-red-200 bg-red-50 text-red-700'
+      : 'border-emerald-200 bg-emerald-50 text-emerald-700';
+
+  return (
+    <div className="mt-2">
+      <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">{label}</div>
+      <div className="mt-1 flex flex-wrap gap-1">
+        {reasons.map((reason) => (
+          <span key={reason} className={`rounded-md border px-2 py-0.5 text-xs ${toneClass}`}>
+            {reason}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+};
 
 const AdminOperatorBoard = () => {
   const [board, setBoard] = useState<OperatorBoard | null>(null);
@@ -128,7 +224,14 @@ const AdminOperatorBoard = () => {
   }, [fetchBoard]);
 
   const topQueues = useMemo(
-    () => [...(board?.queues || [])].sort((a, b) => b.count - a.count).slice(0, 10),
+    () =>
+      [...(board?.queues || [])]
+        .sort((a, b) => {
+          const aKind = a.kind || classifyReason(a.reason);
+          const bKind = b.kind || classifyReason(b.reason);
+          return queueKindRank[aKind] - queueKindRank[bKind] || b.count - a.count;
+        })
+        .slice(0, 10),
     [board],
   );
 
@@ -222,6 +325,13 @@ const AdminOperatorBoard = () => {
               {topQueues.map((queue) => (
                 <tr key={`${queue.collection}-${queue.reason}`}>
                   <td className="px-3 py-3 align-top">
+                    <span
+                      className={`inline-flex rounded-md border px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${
+                        queueKindStyles[queue.kind || classifyReason(queue.reason)]
+                      }`}
+                    >
+                      {queueKindLabel[queue.kind || classifyReason(queue.reason)]}
+                    </span>
                     <div className="font-semibold text-gray-900">{queue.reason}</div>
                     <div className="text-xs capitalize text-gray-500">{queue.collection}</div>
                   </td>
@@ -229,8 +339,33 @@ const AdminOperatorBoard = () => {
                     {queue.count}
                   </td>
                   <td className="max-w-sm px-3 py-3 align-top text-gray-700">{queue.nextAction}</td>
-                  <td className="px-3 py-3 align-top text-gray-600">
-                    {queue.samples.map((sample) => sample.label).join(', ') || 'No samples'}
+                  <td className="min-w-80 px-3 py-3 align-top text-gray-600">
+                    {queue.samples.length === 0
+                      ? 'No samples'
+                      : queue.samples.slice(0, 3).map((sample) => {
+                          const { blockers, signals } = splitReasons(sample.reasons, queue.reason);
+
+                          return (
+                            <div key={sample.id} className="mb-3 last:mb-0">
+                              <div className="font-medium text-gray-900">{sample.label}</div>
+                              <ReasonList
+                                label="Likely blockers"
+                                reasons={blockers}
+                                tone="blocker"
+                              />
+                              <ReasonList
+                                label="Evidence signals"
+                                reasons={signals}
+                                tone="signal"
+                              />
+                            </div>
+                          );
+                        })}
+                    {queue.samples.length > 3 && (
+                      <div className="mt-2 text-xs text-gray-500">
+                        +{queue.samples.length - 3} more samples
+                      </div>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -256,7 +391,9 @@ const AdminOperatorBoard = () => {
                   <div className="font-semibold text-gray-900">{row.displayName}</div>
                   <div className="text-xs text-gray-500">{row.sourceName}</div>
                 </div>
-                <span className={`rounded-md border px-2 py-1 text-xs font-semibold ${riskStyles[row.risk]}`}>
+                <span
+                  className={`rounded-md border px-2 py-1 text-xs font-semibold ${riskStyles[row.risk]}`}
+                >
                   {row.risk}
                 </span>
               </div>
