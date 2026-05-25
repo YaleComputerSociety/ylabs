@@ -14,6 +14,10 @@ import {
   STUDENT_VISIBILITY_VERSION,
 } from '../services/studentVisibilityTier';
 import { assertScriptApplyAllowed } from './scriptWriteGuards';
+import {
+  buildCollectionReport,
+  nextRepairActionForReasons,
+} from './studentVisibilityBackfillReport';
 
 dotenv.config();
 
@@ -30,6 +34,7 @@ interface PlannedTierUpdate {
   tier: StudentVisibilityTier;
   computedTier: StudentVisibilityTier;
   reasons: string[];
+  nextRepairAction: string;
 }
 
 const FORMALIZATION_ONLY_ENTRY_PATHWAY_TYPES = [
@@ -136,6 +141,7 @@ async function planResearchEntityUpdates(limit: number): Promise<PlannedTierUpda
       tier: result.tier,
       computedTier: result.computedTier,
       reasons: result.reasons,
+      nextRepairAction: nextRepairActionForReasons(result.reasons),
     };
   });
 }
@@ -153,6 +159,7 @@ async function planProgramUpdates(limit: number): Promise<PlannedTierUpdate[]> {
       tier: result.tier,
       computedTier: result.computedTier,
       reasons: result.reasons,
+      nextRepairAction: nextRepairActionForReasons(result.reasons),
     };
   });
 }
@@ -208,6 +215,24 @@ async function main() {
     options.collection === 'all' || options.collection === 'programs'
       ? await planProgramUpdates(options.limit)
       : [];
+  const researchReport = buildCollectionReport(research, { collectionName: 'research' });
+  const programReport = buildCollectionReport(programs, {
+    collectionName: 'programs',
+    minimumPublicCount: programs.length > 0 ? 1 : 0,
+  });
+  const applyBlockers = [
+    ...(research.length > 0 ? researchReport.applySafety.blockers : []),
+    ...(programs.length > 0 ? programReport.applySafety.blockers : []),
+  ];
+
+  if (options.apply && applyBlockers.length > 0) {
+    throw new Error(
+      [
+        'Refusing to apply student visibility backfill because the dry-run distribution is unsafe.',
+        ...applyBlockers.map((blocker) => `- ${blocker}`),
+      ].join('\n'),
+    );
+  }
 
   if (options.apply) {
     await applyResearchUpdates(research);
@@ -230,6 +255,16 @@ async function main() {
           programs: programs.length,
         },
         counts,
+        diagnostics: {
+          research: researchReport,
+          programs: programReport,
+          applySafety: {
+            safeToApply: applyBlockers.length === 0,
+            recommendation:
+              applyBlockers.length === 0 ? 'apply' : 'repair_source_materialization_first',
+            blockers: applyBlockers,
+          },
+        },
         samples: {
           research: research.slice(0, 20),
           programs: programs.slice(0, 20),
