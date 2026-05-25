@@ -193,6 +193,75 @@ describe('buildBetaDataQualitySummary', () => {
     expect(summary.errorCount).toBe(0);
     expect(shouldStrictModeFail(summary)).toBe(false);
   });
+
+  it('adds operator classification metadata and next commands to current promotion warnings', () => {
+    const summary = buildBetaDataQualitySummary({
+      referenceHardFailures: 0,
+      invalidUrlCount: 0,
+      expiredOpenOpportunityCount: 0,
+      paperAuthorshipIntegrityFailures: 0,
+      sourceHealthErrors: 0,
+      sourceHealthWarnings: 12,
+      duplicateEntityClusterCount: 269,
+      missingShortDescriptionCount: 2858,
+      weakShortDescriptionCount: 11,
+      suspiciousUserEmailCount: 4,
+      retentionCandidateCount: 0,
+      coverageGaps: {
+        withoutPathways: 1825,
+        withoutAccessSignals: 1981,
+        withoutContactRoutes: 3056,
+      },
+    });
+
+    expect(summary.warnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'sourceHealthWarnings',
+          classification: 'must_fix_before_promotion',
+          owner: 'scraper-source operator',
+          nextCommand:
+            'yarn --cwd server beta:data-quality --include-samples --output /tmp/ylabs-beta-quality.json',
+        }),
+        expect.objectContaining({
+          name: 'duplicateEntityNames',
+          classification: 'must_fix_before_promotion',
+          owner: 'data-quality operator',
+          nextCommand: 'yarn --cwd server research-entity:dedupe-by-pi --limit=10000',
+        }),
+        expect.objectContaining({
+          name: 'missingShortDescriptions',
+          classification: 'accepted_release_warning',
+          owner: 'content-quality operator',
+        }),
+        expect.objectContaining({
+          name: 'weakShortDescriptions',
+          classification: 'post_promotion_backlog',
+          owner: 'content-quality operator',
+        }),
+        expect.objectContaining({
+          name: 'coverageWithoutPathways',
+          classification: 'accepted_release_warning',
+          owner: 'pathway coverage operator',
+        }),
+        expect.objectContaining({
+          name: 'coverageWithoutAccessSignals',
+          classification: 'accepted_release_warning',
+          owner: 'pathway coverage operator',
+        }),
+        expect.objectContaining({
+          name: 'coverageWithoutContactRoutes',
+          classification: 'accepted_release_warning',
+          owner: 'contact coverage operator',
+        }),
+        expect.objectContaining({
+          name: 'suspiciousUserEmails',
+          classification: 'must_fix_before_promotion',
+          owner: 'identity/account operator',
+        }),
+      ]),
+    );
+  });
 });
 
 describe('parseBetaDataQualityArgs', () => {

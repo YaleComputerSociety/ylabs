@@ -15,6 +15,10 @@ import {
 } from '../scripts/researchEntityPiDedupeCore';
 
 export type PostMaterializationIntegrityStatus = 'pass' | 'failure';
+export type IntegrityWarningClassification =
+  | 'must_fix_before_promotion'
+  | 'accepted_release_warning'
+  | 'post_promotion_backlog';
 
 export type PostMaterializationIntegrityFailureName =
   | 'samePiSameNameResearchEntities'
@@ -90,6 +94,9 @@ export interface PostMaterializationIntegrityWarning {
   name: string;
   count: number;
   message: string;
+  classification?: IntegrityWarningClassification;
+  owner?: string;
+  nextCommand?: string;
 }
 
 export interface BuildPostMaterializationIntegrityInput {
@@ -158,6 +165,17 @@ const RECOMMENDED_COMMANDS = [
 ];
 const SAME_PI_ENTITY_SCAN_LIMIT = 10000;
 
+const INTEGRITY_WARNING_OPERATOR_METADATA: Record<
+  string,
+  Pick<PostMaterializationIntegrityWarning, 'classification' | 'owner' | 'nextCommand'>
+> = {
+  duplicatePersonIdentityConflicts: {
+    classification: 'must_fix_before_promotion',
+    owner: 'identity/account operator',
+    nextCommand: 'yarn --cwd server users:dedupe-by-identity --limit=1000',
+  },
+};
+
 function sample<T>(rows: T[] | undefined, limit: number): T[] {
   return (rows || []).slice(0, limit);
 }
@@ -183,6 +201,10 @@ export function buildPostMaterializationIntegritySummary(
     activeArtifactsOnArchivedEntities: input.activeArtifactsOnArchivedEntities?.length || 0,
   };
   const failureNames = FAILURE_ORDER.filter((name) => counts[name] > 0);
+  const warnings = enrichIntegrityWarnings(input.warnings || []);
+  const warningCommands = warnings
+    .map((warning) => warning.nextCommand)
+    .filter((command): command is string => Boolean(command));
 
   return {
     status: failureNames.length > 0 ? 'failure' : 'pass',
@@ -203,9 +225,21 @@ export function buildPostMaterializationIntegritySummary(
       duplicateAccessSignals: sample(input.duplicateAccessSignalGroups, limit),
       activeArtifactsOnArchivedEntities: sample(input.activeArtifactsOnArchivedEntities, limit),
     },
-    warnings: input.warnings || [],
-    recommendedCommands: failureNames.length > 0 ? RECOMMENDED_COMMANDS : [],
+    warnings,
+    recommendedCommands: [
+      ...(failureNames.length > 0 ? RECOMMENDED_COMMANDS : []),
+      ...warningCommands,
+    ],
   };
+}
+
+function enrichIntegrityWarnings(
+  warnings: PostMaterializationIntegrityWarning[],
+): PostMaterializationIntegrityWarning[] {
+  return warnings.map((warning) => ({
+    ...warning,
+    ...INTEGRITY_WARNING_OPERATOR_METADATA[warning.name],
+  }));
 }
 
 async function loadDuplicatePeopleIntegrity(): Promise<{
