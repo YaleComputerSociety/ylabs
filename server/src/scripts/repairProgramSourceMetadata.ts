@@ -119,6 +119,24 @@ const SCHELL_HUMAN_RIGHTS_CAMPUS_SOURCE_URL =
   'https://law.yale.edu/schell/get-involved/human-rights-campus';
 const YSE_SUMMER_FUNDING_SOURCE_URL =
   'https://careers.environment.yale.edu/resources/summer-experience-funding-sources/';
+const TETELMAN_BATES_SOURCE_URL =
+  'https://science.yalecollege.yale.edu/yale-undergraduate-research/fellowship-grants/tetelman-fellowship-international-research-sciences';
+const LGBT_STUDIES_COHEN_SOURCE_URL = 'https://lgbts.yale.edu/Cohen';
+const YIGH_AWARDS_SOURCE_URL = 'https://medicine.yale.edu/yigh/students/awards-and-fellowships/';
+const INCLUSION_ECONOMICS_INTERNSHIPS_SOURCE_URL =
+  'https://ie.yale.edu/opportunities-ie/inclusion-economics-internships';
+const MELLON_MAYS_SOURCE_URL =
+  'https://college.yale.edu/life-at-yale/student-faculty-awards/mellon-mays-undergraduate-fellowship-program';
+const YALE_LIBRARY_SENIOR_EXHIBIT_SOURCE_URL =
+  'https://library.yale.edu/news/summer-fellowship-library-invites-rising-seniors-create-exhibition';
+const EVST_SUMMER_ENVIRONMENTAL_FELLOWSHIP_SOURCE_URL =
+  'https://evst.yale.edu/posts/2026-01-09-summer-environmental-fellowship-and-climate-technologies-fellowship-applications';
+const JACKSON_UNDERGRAD_SUMMER_SOURCE_URL = 'https://jackson.yale.edu/careers/undergrad-summer/';
+const GSAS_YALE_CLUB_PHILADELPHIA_SOURCE_URL =
+  'https://gsas.yale.edu/yale-club-philadelphia-summer-research-grants';
+const GSAS_YALE_CLUB_SAN_FRANCISCO_SOURCE_URL =
+  'https://gsas.yale.edu/yale-club-san-francisco-summer-research-grant';
+const YIBS_SMALL_GRANT_SOURCE_URL = 'https://yibs.yale.edu/research/yibs-small-grant-program';
 
 const yaleOfficeResearchFellowshipRepairs = new Map<
   string,
@@ -821,6 +839,428 @@ const reviewedAreaStudiesProgramRepairs = new Map<
   ],
 ]);
 
+const reviewedGeneralProgramRepairs = new Map<
+  string,
+  {
+    sourceUrl: string;
+    programCategory: 'FELLOWSHIP' | 'RECURRING_PROGRAM' | 'SUMMER_RESEARCH_PROGRAM' | 'CENTER_INTERNSHIP';
+    programKind:
+      | 'STRUCTURED_PROGRAM'
+      | 'CENTER_INTERNSHIP'
+      | 'FELLOWSHIP_FUNDING'
+      | 'TRAVEL_RESEARCH_GRANT'
+      | 'SENIOR_THESIS_FUNDING'
+      | 'OTHER';
+    entryMode: 'APPLY_TO_PROGRAM' | 'SECURE_MENTOR_THEN_APPLY' | 'TRACK_NEXT_CYCLE';
+    studentFacingCategory: string;
+    requiresMentorBeforeApply: boolean;
+    mentorMatching: boolean;
+    undergraduateOnly: boolean;
+    yaleCollegeOnly: boolean;
+    compensationSummary?: string;
+    programDates?: string;
+    summary: string;
+    description: string;
+    bestNextStep: string;
+    prepSteps: string[];
+    sourceKey: string;
+    studentVisibilityOverrideTier: 'student_ready' | 'limited_but_safe';
+  }
+>([
+  [
+    'Alan S. Tetelman 1958 Fellowships for International Research in the Sciences AND the Robert C. Bates Summer Fellowship',
+    {
+      sourceUrl: TETELMAN_BATES_SOURCE_URL,
+      programCategory: 'FELLOWSHIP',
+      programKind: 'TRAVEL_RESEARCH_GRANT',
+      entryMode: 'SECURE_MENTOR_THEN_APPLY',
+      studentFacingCategory: 'STEM research travel funding',
+      requiresMentorBeforeApply: true,
+      mentorMatching: false,
+      undergraduateOnly: true,
+      yaleCollegeOnly: true,
+      compensationSummary: 'Summer research funding when awarded',
+      programDates: 'Summer',
+      summary:
+        'Yale College Science and QR funding route for eligible undergraduates pursuing international STEM research.',
+      description:
+        'Yale College Science and QR lists the Tetelman and Bates fellowships as summer funding routes for eligible Yale College students pursuing STEM research outside the United States. Because this row combines two source-backed awards, keep it restrained until split into separate records.',
+      bestNextStep:
+        'Review the Science and QR page, confirm the correct fellowship fit, and prepare a research plan with adviser or host-lab context before applying.',
+      prepSteps: [
+        'Official Science and QR page',
+        'STEM research plan',
+        'Adviser or host-lab context',
+        'Budget',
+        'Student Grants Database application',
+      ],
+      sourceKey: 'yale-science-qr:tetelman-bates-combined',
+      studentVisibilityOverrideTier: 'limited_but_safe',
+    },
+  ],
+  [
+    'Alexander P. Hixon Fellowship',
+    {
+      sourceUrl: YALE_OFFICE_RESEARCH_FELLOWSHIPS_SOURCE_URL,
+      programCategory: 'FELLOWSHIP',
+      programKind: 'FELLOWSHIP_FUNDING',
+      entryMode: 'SECURE_MENTOR_THEN_APPLY',
+      studentFacingCategory: 'Undergraduate summer project funding',
+      requiresMentorBeforeApply: true,
+      mentorMatching: false,
+      undergraduateOnly: true,
+      yaleCollegeOnly: true,
+      compensationSummary: 'Summer fellowship funding when awarded',
+      programDates: 'Summer',
+      summary:
+        'Yale Office of Fellowships-listed summer funding route for eligible Yale College students pursuing a source-backed international project.',
+      description:
+        'The Alexander P. Hixon Fellowship is listed by Yale Office of Fellowships among Yale-funded summer fellowships. Keep it restrained because the public source is a broad fellowship list rather than a dedicated research-program page.',
+      bestNextStep:
+        'Review Yale Office of Fellowships guidance, confirm project eligibility, and prepare a focused proposal, budget, and adviser context before applying.',
+      prepSteps: [
+        'Yale Office of Fellowships guidance',
+        'Project proposal',
+        'Adviser context',
+        'Budget',
+        'Student Grants Database application',
+      ],
+      sourceKey: 'yale-office-of-fellowships:alexander-p-hixon-fellowship',
+      studentVisibilityOverrideTier: 'limited_but_safe',
+    },
+  ],
+  [
+    'Bruce L. Cohen Fund Research Award',
+    {
+      sourceUrl: LGBT_STUDIES_COHEN_SOURCE_URL,
+      programCategory: 'RECURRING_PROGRAM',
+      programKind: 'FELLOWSHIP_FUNDING',
+      entryMode: 'SECURE_MENTOR_THEN_APPLY',
+      studentFacingCategory: 'Undergraduate research award',
+      requiresMentorBeforeApply: true,
+      mentorMatching: false,
+      undergraduateOnly: true,
+      yaleCollegeOnly: true,
+      compensationSummary: 'Research award funding when awarded',
+      programDates: 'Annual',
+      summary:
+        'Yale LGBT Studies research award supporting undergraduate research in LGBT and sexuality studies.',
+      description:
+        'The Bruce L. Cohen Fund Research Award is a Yale LGBT Studies award for undergraduates pursuing research in LGBT and sexuality studies. It is useful once the student has a concrete research project and faculty or program context.',
+      bestNextStep:
+        'Review the official LGBT Studies award page, confirm the current deadline, and prepare a research proposal with adviser context.',
+      prepSteps: ['Official LGBT Studies page', 'Research proposal', 'Adviser context', 'Current deadline check'],
+      sourceKey: 'lgbt-studies:bruce-l-cohen-research-award',
+      studentVisibilityOverrideTier: 'student_ready',
+    },
+  ],
+  [
+    'Charles H. Siegel Traveling Fellowship',
+    {
+      sourceUrl: YALE_OFFICE_RESEARCH_FELLOWSHIPS_SOURCE_URL,
+      programCategory: 'FELLOWSHIP',
+      programKind: 'TRAVEL_RESEARCH_GRANT',
+      entryMode: 'SECURE_MENTOR_THEN_APPLY',
+      studentFacingCategory: 'Undergraduate research travel funding',
+      requiresMentorBeforeApply: true,
+      mentorMatching: false,
+      undergraduateOnly: true,
+      yaleCollegeOnly: true,
+      compensationSummary: 'Travel fellowship funding when awarded',
+      programDates: 'Summer or term-time cycle',
+      summary:
+        'Yale Office of Fellowships-listed travel fellowship route for eligible Yale College research or project travel.',
+      description:
+        'The Charles H. Siegel Traveling Fellowship is source-backed through Yale Office of Fellowships, but the public source is a broad fellowship list. Keep this row restrained until a dedicated current page is attached.',
+      bestNextStep:
+        'Review Yale Office of Fellowships guidance, confirm the correct travel cycle, and prepare a proposal, budget, and adviser context.',
+      prepSteps: [
+        'Yale Office of Fellowships guidance',
+        'Travel or research proposal',
+        'Budget',
+        'Adviser context',
+      ],
+      sourceKey: 'yale-office-of-fellowships:charles-h-siegel-traveling-fellowship',
+      studentVisibilityOverrideTier: 'limited_but_safe',
+    },
+  ],
+  [
+    'Dockterman Family Humanities Fellowship',
+    {
+      sourceUrl: YALE_OFFICE_RESEARCH_FELLOWSHIPS_SOURCE_URL,
+      programCategory: 'FELLOWSHIP',
+      programKind: 'FELLOWSHIP_FUNDING',
+      entryMode: 'SECURE_MENTOR_THEN_APPLY',
+      studentFacingCategory: 'Humanities research funding',
+      requiresMentorBeforeApply: true,
+      mentorMatching: false,
+      undergraduateOnly: true,
+      yaleCollegeOnly: true,
+      compensationSummary: 'Summer fellowship funding when awarded',
+      programDates: 'Summer',
+      summary:
+        'Yale Office of Fellowships-listed humanities funding route for eligible Yale College summer projects.',
+      description:
+        'The Dockterman Family Humanities Fellowship is source-backed through Yale Office of Fellowships. Keep public copy restrained because the current source is a broad fellowship list rather than a dedicated program page.',
+      bestNextStep:
+        'Review Yale Office of Fellowships guidance and prepare a humanities project proposal with adviser context before applying.',
+      prepSteps: ['Yale Office of Fellowships guidance', 'Humanities proposal', 'Adviser context', 'Budget'],
+      sourceKey: 'yale-office-of-fellowships:dockterman-family-humanities-fellowship',
+      studentVisibilityOverrideTier: 'limited_but_safe',
+    },
+  ],
+  [
+    'Global Health Awards for Research',
+    {
+      sourceUrl: YIGH_AWARDS_SOURCE_URL,
+      programCategory: 'RECURRING_PROGRAM',
+      programKind: 'FELLOWSHIP_FUNDING',
+      entryMode: 'SECURE_MENTOR_THEN_APPLY',
+      studentFacingCategory: 'Global health research funding',
+      requiresMentorBeforeApply: true,
+      mentorMatching: false,
+      undergraduateOnly: true,
+      yaleCollegeOnly: false,
+      compensationSummary: 'Global health research award funding when awarded',
+      programDates: 'Annual',
+      summary:
+        'Yale Institute for Global Health research award for students pursuing source-backed global health research projects.',
+      description:
+        'Yale Institute for Global Health lists Global Health Awards for Research as funding for student research projects. This should be shown as project funding that requires a specific global health research plan and appropriate Yale context.',
+      bestNextStep:
+        'Review the YIGH awards page, confirm eligibility and current deadline, and prepare the Student Grants Database application around a global health research project.',
+      prepSteps: ['Official YIGH awards page', 'Global health research plan', 'Adviser context', 'Budget'],
+      sourceKey: 'yigh:global-health-awards-for-research',
+      studentVisibilityOverrideTier: 'student_ready',
+    },
+  ],
+  [
+    'Inclusion Economics Summer Research Internship',
+    {
+      sourceUrl: INCLUSION_ECONOMICS_INTERNSHIPS_SOURCE_URL,
+      programCategory: 'SUMMER_RESEARCH_PROGRAM',
+      programKind: 'CENTER_INTERNSHIP',
+      entryMode: 'APPLY_TO_PROGRAM',
+      studentFacingCategory: 'Summer research internship',
+      requiresMentorBeforeApply: false,
+      mentorMatching: true,
+      undergraduateOnly: true,
+      yaleCollegeOnly: false,
+      compensationSummary: 'Summer internship compensation when awarded',
+      programDates: 'Summer',
+      summary:
+        'Inclusion Economics summer research internship for students contributing to economics and policy research projects.',
+      description:
+        'Inclusion Economics at Yale describes a summer research internship route involving research work with its economics and policy teams. This is a structured research-facing internship rather than a generic funding award.',
+      bestNextStep:
+        'Review the Inclusion Economics internship page, confirm the current cycle and role expectations, and apply through the listed route.',
+      prepSteps: ['Official Inclusion Economics page', 'Eligibility check', 'Resume or CV', 'Application materials'],
+      sourceKey: 'inclusion-economics:summer-research-internship',
+      studentVisibilityOverrideTier: 'student_ready',
+    },
+  ],
+  [
+    'John Boit Morse Memorial Fellowship',
+    {
+      sourceUrl: YALE_OFFICE_RESEARCH_FELLOWSHIPS_SOURCE_URL,
+      programCategory: 'FELLOWSHIP',
+      programKind: 'FELLOWSHIP_FUNDING',
+      entryMode: 'SECURE_MENTOR_THEN_APPLY',
+      studentFacingCategory: 'Undergraduate project funding',
+      requiresMentorBeforeApply: true,
+      mentorMatching: false,
+      undergraduateOnly: true,
+      yaleCollegeOnly: true,
+      compensationSummary: 'Summer fellowship funding when awarded',
+      programDates: 'Summer',
+      summary:
+        'Yale Office of Fellowships-listed summer funding route for eligible Yale College student projects.',
+      description:
+        'The John Boit Morse Memorial Fellowship is source-backed through Yale Office of Fellowships. Keep it restrained because the public source is a broad fellowship list rather than a dedicated research-program page.',
+      bestNextStep:
+        'Review Yale Office of Fellowships guidance, confirm the award fit, and prepare a project proposal, budget, and adviser context before applying.',
+      prepSteps: ['Yale Office of Fellowships guidance', 'Project proposal', 'Adviser context', 'Budget'],
+      sourceKey: 'yale-office-of-fellowships:john-boit-morse-memorial-fellowship',
+      studentVisibilityOverrideTier: 'limited_but_safe',
+    },
+  ],
+  [
+    'Leitner International Research and Internship Fellowship',
+    {
+      sourceUrl: JACKSON_UNDERGRAD_SUMMER_SOURCE_URL,
+      programCategory: 'FELLOWSHIP',
+      programKind: 'FELLOWSHIP_FUNDING',
+      entryMode: 'APPLY_TO_PROGRAM',
+      studentFacingCategory: 'International affairs summer funding',
+      requiresMentorBeforeApply: false,
+      mentorMatching: false,
+      undergraduateOnly: true,
+      yaleCollegeOnly: true,
+      compensationSummary: 'Summer experience funding when awarded',
+      programDates: 'Summer',
+      summary:
+        'Jackson School undergraduate summer funding for international affairs research, internships, or coursework.',
+      description:
+        'The Leitner International Research and Internship Fellowship is source-backed by Jackson School undergraduate summer guidance. Because the source includes research, internships, and coursework, present it as international-affairs summer funding rather than a guaranteed research placement.',
+      bestNextStep:
+        'Review the Jackson undergraduate summer page, confirm the experience type, and prepare the application materials around a specific summer plan.',
+      prepSteps: ['Official Jackson page', 'Summer plan', 'Budget', 'Application materials'],
+      sourceKey: 'jackson-school:leitner-international-research-internship-fellowship',
+      studentVisibilityOverrideTier: 'limited_but_safe',
+    },
+  ],
+  [
+    'Mellon Mays Undergraduate Fellowship Program',
+    {
+      sourceUrl: MELLON_MAYS_SOURCE_URL,
+      programCategory: 'RECURRING_PROGRAM',
+      programKind: 'STRUCTURED_PROGRAM',
+      entryMode: 'APPLY_TO_PROGRAM',
+      studentFacingCategory: 'Structured undergraduate research fellowship',
+      requiresMentorBeforeApply: false,
+      mentorMatching: true,
+      undergraduateOnly: true,
+      yaleCollegeOnly: true,
+      compensationSummary: 'Program funding and research support when awarded',
+      programDates: 'Academic year and summer',
+      summary:
+        'Yale College Mellon Mays program supporting undergraduates from eligible fields as they prepare for research and doctoral study.',
+      description:
+        'The Mellon Mays Undergraduate Fellowship Program is a structured Yale College research and mentoring program. It supports undergraduate fellows through research development, mentoring, and preparation for graduate study.',
+      bestNextStep:
+        'Review the Yale College Mellon Mays page, confirm field and eligibility fit, and prepare the required application materials.',
+      prepSteps: ['Official Yale College page', 'Eligibility check', 'Research interests', 'Application materials'],
+      sourceKey: 'yale-college:mellon-mays-undergraduate-fellowship-program',
+      studentVisibilityOverrideTier: 'student_ready',
+    },
+  ],
+  [
+    'Robert C. Bates Summer Research Fellowship',
+    {
+      sourceUrl: TETELMAN_BATES_SOURCE_URL,
+      programCategory: 'FELLOWSHIP',
+      programKind: 'TRAVEL_RESEARCH_GRANT',
+      entryMode: 'SECURE_MENTOR_THEN_APPLY',
+      studentFacingCategory: 'STEM research travel funding',
+      requiresMentorBeforeApply: true,
+      mentorMatching: false,
+      undergraduateOnly: true,
+      yaleCollegeOnly: true,
+      compensationSummary: 'Summer research funding when awarded',
+      programDates: 'Summer',
+      summary:
+        'Yale College Science and QR fellowship supporting STEM-based summer research outside the continental United States.',
+      description:
+        'The Robert C. Bates Summer Research Fellowship is listed by Yale College Science and QR as support for eligible Yale College students pursuing STEM-based summer research outside the continental United States.',
+      bestNextStep:
+        'Review the Science and QR fellowship page, confirm the research location and eligibility, and prepare a research plan with adviser or host context.',
+      prepSteps: ['Official Science and QR page', 'STEM research plan', 'Adviser or host context', 'Budget'],
+      sourceKey: 'yale-science-qr:robert-c-bates-summer-research-fellowship',
+      studentVisibilityOverrideTier: 'student_ready',
+    },
+  ],
+  [
+    'Senior Exhibit Fellowship at Yale Library',
+    {
+      sourceUrl: YALE_LIBRARY_SENIOR_EXHIBIT_SOURCE_URL,
+      programCategory: 'SUMMER_RESEARCH_PROGRAM',
+      programKind: 'STRUCTURED_PROGRAM',
+      entryMode: 'APPLY_TO_PROGRAM',
+      studentFacingCategory: 'Library collections research fellowship',
+      requiresMentorBeforeApply: false,
+      mentorMatching: true,
+      undergraduateOnly: true,
+      yaleCollegeOnly: true,
+      compensationSummary: 'Summer fellowship stipend when awarded',
+      programDates: 'Summer',
+      summary:
+        'Yale Library summer fellowship for rising seniors creating an exhibition from library collections.',
+      description:
+        'The Senior Exhibit Fellowship at Yale Library is a structured summer research and exhibition program for Yale College rising seniors using Yale Library collections.',
+      bestNextStep:
+        'Review the Yale Library fellowship announcement, confirm current cycle timing, and prepare an exhibition idea connected to library collections.',
+      prepSteps: ['Official Yale Library source', 'Collections-based exhibition idea', 'Application materials'],
+      sourceKey: 'yale-library:senior-exhibit-fellowship',
+      studentVisibilityOverrideTier: 'student_ready',
+    },
+  ],
+  [
+    'Strong Family Travel Fellowship for Peace and Development',
+    {
+      sourceUrl: MACMILLAN_FELLOWSHIPS_SOURCE_URL,
+      programCategory: 'FELLOWSHIP',
+      programKind: 'TRAVEL_RESEARCH_GRANT',
+      entryMode: 'SECURE_MENTOR_THEN_APPLY',
+      studentFacingCategory: 'Peace and development research travel funding',
+      requiresMentorBeforeApply: true,
+      mentorMatching: false,
+      undergraduateOnly: true,
+      yaleCollegeOnly: true,
+      compensationSummary: 'Travel fellowship funding when awarded',
+      programDates: 'Summer',
+      summary:
+        'MacMillan-linked travel fellowship for Yale College students pursuing peace and development work.',
+      description:
+        'The Strong Family Travel Fellowship for Peace and Development is source-backed by MacMillan fellowship guidance for Yale College students. Keep it framed as travel or project funding that requires a specific plan rather than a placement.',
+      bestNextStep:
+        'Review MacMillan fellowship guidance, confirm the peace and development fit, and prepare a focused project plan and budget.',
+      prepSteps: ['Official MacMillan source', 'Project plan', 'Budget', 'Application materials'],
+      sourceKey: 'macmillan-center:strong-family-travel-fellowship-peace-development',
+      studentVisibilityOverrideTier: 'limited_but_safe',
+    },
+  ],
+  [
+    'Summer Environmental Fellowship',
+    {
+      sourceUrl: EVST_SUMMER_ENVIRONMENTAL_FELLOWSHIP_SOURCE_URL,
+      programCategory: 'FELLOWSHIP',
+      programKind: 'FELLOWSHIP_FUNDING',
+      entryMode: 'APPLY_TO_PROGRAM',
+      studentFacingCategory: 'Environmental summer funding',
+      requiresMentorBeforeApply: false,
+      mentorMatching: false,
+      undergraduateOnly: true,
+      yaleCollegeOnly: true,
+      compensationSummary: 'Summer fellowship funding when awarded',
+      programDates: 'Summer',
+      summary:
+        'Environmental Studies summer fellowship funding for Yale College students pursuing environmental research or internships.',
+      description:
+        'Yale Environmental Studies describes the Summer Environmental Fellowship as funding for summer environmental research or internship work. Present it as summer funding rather than a guaranteed research-home placement.',
+      bestNextStep:
+        'Review the Environmental Studies fellowship page, confirm the current cycle, and prepare a research or internship plan before applying.',
+      prepSteps: ['Official EVST page', 'Summer plan', 'Budget', 'Application materials'],
+      sourceKey: 'environmental-studies:summer-environmental-fellowship',
+      studentVisibilityOverrideTier: 'limited_but_safe',
+    },
+  ],
+  [
+    'Summer Journalism Fellowships: Yale College Summer Journalism',
+    {
+      sourceUrl: YALE_OFFICE_FELLOWSHIPS_SOURCE_URL,
+      programCategory: 'FELLOWSHIP',
+      programKind: 'FELLOWSHIP_FUNDING',
+      entryMode: 'APPLY_TO_PROGRAM',
+      studentFacingCategory: 'Journalism project funding',
+      requiresMentorBeforeApply: false,
+      mentorMatching: false,
+      undergraduateOnly: true,
+      yaleCollegeOnly: true,
+      compensationSummary: 'Summer fellowship funding when awarded',
+      programDates: 'Summer',
+      summary:
+        'Yale Office of Fellowships-listed summer journalism funding for Yale College student projects.',
+      description:
+        'Yale Office of Fellowships lists Yale College summer journalism funding, but this is journalism or media project support rather than a research-home entry pathway. Keep it restrained on the Programs surface.',
+      bestNextStep:
+        'Review Yale Office of Fellowships guidance, confirm the journalism fellowship fit, and prepare the project application materials.',
+      prepSteps: ['Yale Office of Fellowships guidance', 'Journalism project plan', 'Application materials'],
+      sourceKey: 'yale-office-of-fellowships:yale-college-summer-journalism-fellowship',
+      studentVisibilityOverrideTier: 'limited_but_safe',
+    },
+  ],
+]);
+
 const reviewedProgramSuppressions = new Map<
   string,
   {
@@ -832,6 +1272,164 @@ const reviewedProgramSuppressions = new Map<
     suppressionReason: string;
   }
 >([
+  [
+    'Class of 1982 Cowles Summer Fellowship',
+    {
+      sourceUrl: DAVENPORT_FELLOWSHIPS_SOURCE_URL,
+      summary: 'Davenport College summer internship fellowship for media, government, or public-service work.',
+      description:
+        'The official Davenport College source describes the Class of 1982 Cowles Summer Fellowship as internship funding for media, government, or public-service work, not as a research-entry program.',
+      bestNextStep:
+        'Keep suppressed on the research Programs surface unless a separate research-specific source is found.',
+      sourceKey: 'davenport-college:class-of-1982-cowles-summer-fellowship',
+      suppressionReason: 'not_undergraduate_research_entry',
+    },
+  ],
+  [
+    'Coca-Cola World Fund at Yale',
+    {
+      sourceUrl: 'https://macmillan.yale.edu/eastasia/opportunities/coca-cola-world-fund-yale-summer-travel-grants',
+      summary: 'Graduate and professional student applied research or internship funding.',
+      description:
+        'The official MacMillan source describes Coca-Cola World Fund at Yale summer travel grants for graduate and professional students, so this is not an undergraduate research-entry program.',
+      bestNextStep:
+        'Keep suppressed unless the product adds a graduate/professional funding surface.',
+      sourceKey: 'macmillan-ceas:coca-cola-world-fund-yale',
+      suppressionReason: 'graduate_or_professional_only',
+    },
+  ],
+  [
+    'Global Health Awards for Internships or Non-Research Projects',
+    {
+      sourceUrl: YIGH_AWARDS_SOURCE_URL,
+      summary: 'YIGH funding route for internships or non-research projects.',
+      description:
+        'Yale Institute for Global Health separates internship or non-research project awards from Global Health Awards for Research. This row should stay hidden from undergraduate research-program browse.',
+      bestNextStep:
+        'Expose the separate Global Health Awards for Research record for research discovery.',
+      sourceKey: 'yigh:global-health-awards-internships-non-research',
+      suppressionReason: 'not_research_program',
+    },
+  ],
+  [
+    'Gordon Grand Fellowship',
+    {
+      sourceUrl:
+        'https://secretary.yale.edu/services-resources/lectureships-fellowships-prizes/scholarship-or-character-prizes/gordon-grand',
+      summary: 'Post-baccalaureate Yale award, not an undergraduate research-entry program.',
+      description:
+        'The Gordon Grand Fellowship is a post-baccalaureate award. It should not appear in undergraduate research-program browse by default.',
+      bestNextStep:
+        'Keep suppressed unless the product adds a postgraduate awards surface.',
+      sourceKey: 'yale-secretary:gordon-grand-fellowship',
+      suppressionReason: 'postgraduate_award',
+    },
+  ],
+  [
+    'John F. Enders Fellowships and Research Grants',
+    {
+      sourceUrl: 'https://gsas.yale.edu/john-f-enders-research-grants',
+      summary: 'GSAS doctoral research grant for dissertation-stage work.',
+      description:
+        'The official GSAS source describes the John F. Enders grants as support for PhD students and doctoral dissertation research, not undergraduate research entry.',
+      bestNextStep:
+        'Keep suppressed unless the product adds a graduate dissertation-research funding surface.',
+      sourceKey: 'gsas:john-f-enders-research-grants',
+      suppressionReason: 'graduate_or_professional_only',
+    },
+  ],
+  [
+    'Slifka Israel Summer Travel Fellowships Common Application',
+    {
+      sourceUrl:
+        'https://advising.yalecollege.yale.edu/event/yale-summer-research-fellowships-common-application-deadline',
+      summary: 'Common-application container for Slifka Israel summer travel fellowships.',
+      description:
+        'This row is a common-application/container route rather than a distinct source-backed undergraduate research program. Public browse should use specific child fellowship records when they are in scope.',
+      bestNextStep:
+        'Keep suppressed and create exact child records only when source-backed research relevance is verified.',
+      sourceKey: 'yale-college-advising:slifka-israel-summer-travel-common-application',
+      suppressionReason: 'common_application_container',
+    },
+  ],
+  [
+    'Stolwijk Fellowship for Environmental Health',
+    {
+      sourceUrl: 'https://ysph.yale.edu/admissions-financial-aid/applied-practice-and-research/fellowships/stolwijk-fellowship/',
+      summary: 'Yale School of Public Health fellowship for first-year MPH students.',
+      description:
+        'The official YSPH source describes the Stolwijk Fellowship for Environmental Health as an MPH student fellowship, not an undergraduate research-entry program.',
+      bestNextStep:
+        'Keep suppressed unless the product adds a graduate/professional public-health funding surface.',
+      sourceKey: 'ysph:stolwijk-fellowship-environmental-health',
+      suppressionReason: 'graduate_or_professional_only',
+    },
+  ],
+  [
+    'Wilbur G. Downs Fellowship',
+    {
+      sourceUrl: YIGH_AWARDS_SOURCE_URL,
+      summary: 'Global health fellowship for Yale graduate and professional students.',
+      description:
+        'Yale Institute for Global Health describes the Wilbur G. Downs Fellowship as funding for graduate and professional students, not undergraduate research entry.',
+      bestNextStep:
+        'Keep suppressed unless the product adds a graduate/professional global-health funding surface.',
+      sourceKey: 'yigh:wilbur-g-downs-fellowship',
+      suppressionReason: 'graduate_or_professional_only',
+    },
+  ],
+  [
+    'Yale Club of Philadelphia Summer Research Fellowships',
+    {
+      sourceUrl: GSAS_YALE_CLUB_PHILADELPHIA_SOURCE_URL,
+      summary: 'GSAS summer research grant for PhD dissertation research.',
+      description:
+        'The official GSAS source describes this Yale Club of Philadelphia award as dissertation research support for GSAS PhD students, not undergraduate research entry.',
+      bestNextStep:
+        'Keep suppressed unless the product adds a graduate dissertation-research funding surface.',
+      sourceKey: 'gsas:yale-club-philadelphia-summer-research-grants',
+      suppressionReason: 'graduate_or_professional_only',
+    },
+  ],
+  [
+    'Yale Club of San Francisco Summer Research Fellowships',
+    {
+      sourceUrl: GSAS_YALE_CLUB_SAN_FRANCISCO_SOURCE_URL,
+      summary: 'GSAS summer research grant for PhD dissertation research.',
+      description:
+        'The official GSAS source describes this Yale Club of San Francisco award as dissertation research support for GSAS PhD students, not undergraduate research entry.',
+      bestNextStep:
+        'Keep suppressed unless the product adds a graduate dissertation-research funding surface.',
+      sourceKey: 'gsas:yale-club-san-francisco-summer-research-grants',
+      suppressionReason: 'graduate_or_professional_only',
+    },
+  ],
+  [
+    'Yale Institute for Biospheric Studies (YIBS) Early Grant',
+    {
+      sourceUrl: YIBS_SMALL_GRANT_SOURCE_URL,
+      summary: 'YIBS small grant for early-stage doctoral or terminal master\'s students.',
+      description:
+        'The official YIBS small grant source describes the Early Grant audience as graduate students, not undergraduate research entry.',
+      bestNextStep:
+        'Keep suppressed unless the product adds a graduate environmental-research funding surface.',
+      sourceKey: 'yibs:small-grant-early-grant',
+      suppressionReason: 'graduate_or_professional_only',
+    },
+  ],
+  [
+    'Yale Institute for Biospheric Studies (YIBS) Late Grant',
+    {
+      sourceUrl: YIBS_SMALL_GRANT_SOURCE_URL,
+      summary: 'YIBS small grant for PhD students advanced to candidacy.',
+      description:
+        'The official YIBS small grant source describes the Late Grant audience as PhD students advanced to candidacy, not undergraduate research entry.',
+      bestNextStep:
+        'Keep suppressed unless the product adds a graduate environmental-research funding surface.',
+      sourceKey: 'yibs:small-grant-late-grant',
+      suppressionReason: 'graduate_or_professional_only',
+    },
+  ],
   [
     'Council on African Studies - Graduate Student Conference/Research Award',
     {
@@ -2680,6 +3278,17 @@ async function planProgramRepairs(): Promise<PlannedProgramRepair[]> {
           programDates: 'Summer',
           ...yaleOfficeResearchRepair,
         },
+      );
+      continue;
+    }
+
+    const reviewedGeneralProgramRepair = reviewedGeneralProgramRepairs.get(title);
+    if (reviewedGeneralProgramRepair) {
+      addRepairIfChanged(
+        repairs,
+        program,
+        'repair_reviewed_general_program_source',
+        reviewedGeneralProgramRepair,
       );
       continue;
     }
