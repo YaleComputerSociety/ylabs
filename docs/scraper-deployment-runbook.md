@@ -114,6 +114,19 @@ Beta can be seeded from a local machine pointed at the Beta database. This is us
 Purpose: populate production only after Beta output is accepted.
 
 This is a manual promotion gate. Do not run it from the Render web service process, do not mix copy and delta strategies in the same promotion, and do not enable recurring cron until the smoke checklist passes.
+Production writes are off by default: no operator should run a production copy, scraper write, retention apply, or recurring job unless this gate is explicitly recorded and the command includes the required production confirmations.
+
+### Production Promotion Gate Checklist
+
+Record each item in [`docs/tasks/priority-roadmap.md`](./tasks/priority-roadmap.md) before changing production data:
+
+- [ ] **Backup and restore drill:** Create the fresh Atlas backup or restore point, name its identifier and rollback owner, and confirm the restore drill or exact restore procedure has been exercised for the target cluster.
+- [ ] **Dataset versioning:** Assign a promotion dataset version such as `prod-promote-YYYY-MM-DD-<lane>` and attach it to the accepted Beta snapshot or per-source production run IDs, saved reports, and Meili rebuild outputs.
+- [ ] **Copy-vs-delta decision:** Choose exactly one lane: accepted Beta copy or guarded production delta. Do not mix the lanes in one promotion window.
+- [ ] **Privacy payload gate:** Sample public API payloads before promotion and confirm they exclude non-public scraped contact data, suppressed/operator-review programs, raw observations, internal review notes, and production-only usage/session data.
+- [ ] **Meili sync and rollback:** Decide whether production traffic stays on Mongo or switches to Meili after rebuild; keep `PATHWAY_SEARCH_BACKEND=mongo` as the rollback posture until production relevance review and document counts are accepted.
+- [ ] **Smoke routes:** Assign an owner for `/api/config`, `/api/research/search`, `/research/:slug`, `/api/pathways/search`, `/opportunities/:id`, `/programs` or `/fellowships`, unauthenticated admin `401`, and removed legacy route checks.
+- [ ] **No recurring writes by default:** Keep production cron, compact-retention apply mode, and broad/paid source reruns disabled until the manual promotion smoke checklist passes.
 
 Required before any production copy or write:
 
@@ -123,6 +136,8 @@ Required before any production copy or write:
 - The Beta trust-audit caveats in the roadmap are either fixed or explicitly accepted for this release.
 - Production storage posture is decided: provision enough Atlas storage for raw OpenAlex observations, or keep compact retention after saved reports.
 - Promotion lane is chosen and recorded: accepted Beta copy or guarded production delta.
+- Promotion dataset version is recorded and tied to accepted reports or source run IDs.
+- Privacy payload gate is accepted for public student routes.
 - Meilisearch sync or reindex plan is ready.
 - Smoke checklist owner and rollback owner are known.
 
