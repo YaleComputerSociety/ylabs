@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { parseResearchEntityCoverageRepairArgs } from '../researchEntityCoverageRepair';
+import {
+  buildTrustTierMissingLeadsFilter,
+  parseResearchEntityCoverageRepairArgs,
+} from '../researchEntityCoverageRepair';
 import { DEFAULT_REPAIR_ISSUES } from '../researchEntityCoverageRepairCore';
 
 describe('researchEntityCoverageRepair CLI', () => {
@@ -7,7 +10,7 @@ describe('researchEntityCoverageRepair CLI', () => {
     expect(
       parseResearchEntityCoverageRepairArgs([
         '--trust-tier-missing-leads',
-        '--limit=21',
+        '--limit=12',
         '--sync-meili',
         '--apply',
       ]),
@@ -15,11 +18,22 @@ describe('researchEntityCoverageRepair CLI', () => {
       apply: true,
       includeArchived: false,
       issues: [...DEFAULT_REPAIR_ISSUES],
-      limit: 21,
+      limit: 12,
       minScore: 8,
       slug: undefined,
       syncMeili: true,
       trustTierMissingLeads: true,
+    });
+  });
+
+  it('targets only lab-like Trust Tier missing-lead rows', () => {
+    expect(buildTrustTierMissingLeadsFilter()).toEqual({
+      archived: { $ne: true },
+      studentVisibilityTier: 'operator_review',
+      studentVisibilityReasons: {
+        $all: ['source_backed_description', 'concrete_next_step', 'missing_lead'],
+      },
+      $or: [{ kind: 'lab' }, { entityType: 'LAB' }],
     });
   });
 });

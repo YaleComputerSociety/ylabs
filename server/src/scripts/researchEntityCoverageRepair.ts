@@ -29,6 +29,17 @@ interface RepairCliOptions {
   trustTierMissingLeads: boolean;
 }
 
+export function buildTrustTierMissingLeadsFilter(): Record<string, unknown> {
+  return {
+    archived: { $ne: true },
+    studentVisibilityTier: 'operator_review',
+    studentVisibilityReasons: {
+      $all: ['source_backed_description', 'concrete_next_step', 'missing_lead'],
+    },
+    $or: [{ kind: 'lab' }, { entityType: 'LAB' }],
+  };
+}
+
 export function parseResearchEntityCoverageRepairArgs(argv: string[]): RepairCliOptions {
   const options: RepairCliOptions = {
     limit: 50,
@@ -83,13 +94,7 @@ export function parseResearchEntityCoverageRepairArgs(argv: string[]): RepairCli
 async function candidateSlugs(options: RepairCliOptions): Promise<string[]> {
   if (options.slug) return [options.slug];
   if (options.trustTierMissingLeads) {
-    const docs = await ResearchEntity.find({
-      archived: { $ne: true },
-      studentVisibilityTier: 'operator_review',
-      studentVisibilityReasons: {
-        $all: ['source_backed_description', 'concrete_next_step', 'missing_lead'],
-      },
-    })
+    const docs = await ResearchEntity.find(buildTrustTierMissingLeadsFilter())
       .select('slug')
       .sort({ name: 1, slug: 1 })
       .limit(options.limit)
