@@ -439,7 +439,7 @@ const DecisionSummary = ({
           )}
         </div>
 
-        <div className="order-first rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] p-4 md:order-none">
+        <div className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] p-4">
           <dl className="space-y-3 text-sm">
             <div>
               <dt className="text-xs font-semibold uppercase tracking-wider text-gray-600">
