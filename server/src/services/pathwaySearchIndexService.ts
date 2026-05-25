@@ -5,6 +5,7 @@ import {
   type PathwaySearchInput,
   type PathwaySearchResult,
 } from './pathwaySearchService';
+import { publicStudentVisibilityTiers } from '../models/studentVisibility';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { getMeiliIndex } from '../utils/meiliClient';
 
@@ -67,6 +68,7 @@ export interface PathwaySearchIndexDocument {
   entityDisplayName?: string;
   entityKind?: string;
   entityType?: string;
+  entityStudentVisibilityTier?: string;
   entityDepartments: string[];
   entityResearchAreas: string[];
   entitySchool?: string;
@@ -153,6 +155,7 @@ export const PATHWAY_SEARCH_INDEX_SETTINGS: PathwaySearchIndexSettings = {
     'entityId',
     'entitySlug',
     'entityType',
+    'entityStudentVisibilityTier',
     'entityDepartments',
     'entityResearchAreas',
     'hasActivePostedOpportunity',
@@ -333,6 +336,7 @@ function buildPathwayMeiliFilter(filters: PathwaySearchInput['filters'] = {}): s
   const parts = [
     anyFilter('pathwayId', filters.pathwayIds),
     anyFilter('entityId', filters.entityIds),
+    anyFilter('entityStudentVisibilityTier', publicStudentVisibilityTiers),
     pathwayTypeFilter || 'pathwayId = "__formalization_only_pathway_filter_miss__"',
     anyFilter('compensation', filters.compensation),
     anyFilter('status', filters.status),
@@ -386,6 +390,7 @@ function indexDocumentToHit(doc: PathwaySearchIndexDocument): PathwaySearchHit {
       displayName: doc.entityDisplayName,
       kind: doc.entityKind,
       entityType: doc.entityType,
+      studentVisibilityTier: doc.entityStudentVisibilityTier,
       departments: doc.entityDepartments || [],
       researchAreas: doc.entityResearchAreas || [],
       school: doc.entitySchool,
@@ -460,6 +465,7 @@ export function buildPathwaySearchIndexDocument(
     entityDisplayName: toStringValue(researchEntity.displayName),
     entityKind: toStringValue(researchEntity.kind),
     entityType: toStringValue(researchEntity.entityType),
+    entityStudentVisibilityTier: toStringValue(researchEntity.studentVisibilityTier),
     entityDepartments: toStringArray(researchEntity.departments),
     entityResearchAreas: toStringArray(researchEntity.researchAreas),
     entitySchool: toStringValue(researchEntity.school),

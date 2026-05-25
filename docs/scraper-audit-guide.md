@@ -356,6 +356,9 @@ Project impact:
 
 Before switching a source to production:
 
+- The operator has read the production gate in [`docs/scraper-deployment-runbook.md`](./scraper-deployment-runbook.md).
+- The promotion lane is explicit: accepted Beta copy or guarded production delta.
+- A Production Atlas backup or restore point exists and rollback ownership is clear.
 - Small dev write passes.
 - Larger dev write passes.
 - Materialization errors are `0`.
@@ -364,3 +367,5 @@ Before switching a source to production:
 - Meilisearch backfill/reindex plan is ready.
 - Production command includes `SCRAPER_ENV=production`, `CONFIRM_PROD_SCRAPE=true`, and `--release`.
 - Render cron is source-specific and staggered rather than one giant all-scraper job.
+- Render cron does not assume Yale VPN, local accepted-input files, local Meili, or interactive browser dependencies.
+- Post-write smoke checks cover Research, Pathways, Opportunity detail, Programs/Fellowships visibility, admin auth, removed legacy routes, source health, and Meili counts.

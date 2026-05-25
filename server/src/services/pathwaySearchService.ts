@@ -7,6 +7,7 @@ import type {
   EvidenceStrength,
   ResearchEntityType,
 } from '../models/researchAccessTypes';
+import { publicStudentVisibilityTiers } from '../models/studentVisibility';
 
 export const pathwayBestNextStepCategories = [
   'apply',
@@ -54,6 +55,7 @@ export interface PathwaySearchResearchEntityHit {
   displayName?: string;
   kind?: string;
   entityType?: string;
+  studentVisibilityTier?: string;
   departments: string[];
   researchAreas: string[];
   school?: string;
@@ -275,6 +277,7 @@ function buildEntityMatch(filters: PathwaySearchFilters): Record<string, unknown
 
   return compactMatch({
     'researchEntity.archived': { $ne: true },
+    'researchEntity.studentVisibilityTier': { $in: publicStudentVisibilityTiers },
     'researchEntity._id':
       trimValues(filters.entityIds).length > 0 ? { $in: entityIds } : undefined,
     'researchEntity.entityType':
@@ -366,6 +369,7 @@ function normalizeHit(raw: Record<string, any>): PathwaySearchHit {
       displayName: raw.researchEntity?.displayName,
       kind: raw.researchEntity?.kind,
       entityType: raw.researchEntity?.entityType,
+      studentVisibilityTier: raw.researchEntity?.studentVisibilityTier,
       departments: raw.researchEntity?.departments || [],
       researchAreas: raw.researchEntity?.researchAreas || [],
       school: raw.researchEntity?.school,
@@ -624,6 +628,7 @@ export async function searchPathways(
               displayName: '$researchEntity.displayName',
               kind: '$researchEntity.kind',
               entityType: '$researchEntity.entityType',
+              studentVisibilityTier: '$researchEntity.studentVisibilityTier',
               departments: '$researchEntity.departments',
               researchAreas: '$researchEntity.researchAreas',
               school: '$researchEntity.school',

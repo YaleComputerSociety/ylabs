@@ -14,6 +14,7 @@
  */
 import mongoose from 'mongoose';
 import { ResearchEntity } from '../models/researchEntity';
+import { publicStudentVisibilityTiers } from '../models/studentVisibility';
 import { ResearchGroupMember } from '../models/researchGroupMember';
 import { Department, DepartmentCategory } from '../models/department';
 import { Paper } from '../models/paper';
@@ -174,7 +175,11 @@ export async function getResearchGroupById(id: any): Promise<any | null> {
 }
 
 export async function getResearchGroupBySlug(slug: string): Promise<any | null> {
-  return ResearchEntity.findOne({ slug }).lean();
+  return ResearchEntity.findOne({
+    slug,
+    archived: { $ne: true },
+    studentVisibilityTier: { $in: publicStudentVisibilityTiers },
+  }).lean();
 }
 
 export async function listMembersOfGroup(groupId: any): Promise<any[]> {
@@ -318,7 +323,11 @@ export async function getResearchGroupDetail(slug: string): Promise<{
   contactRoutes: any[];
   postedOpportunities: any[];
 } | null> {
-  const group = await ResearchEntity.findOne({ slug }).lean();
+  const group = await ResearchEntity.findOne({
+    slug,
+    archived: { $ne: true },
+    studentVisibilityTier: { $in: publicStudentVisibilityTiers },
+  }).lean();
   if (!group) return null;
 
   const memberRows: any[] = await ResearchGroupMember.find({

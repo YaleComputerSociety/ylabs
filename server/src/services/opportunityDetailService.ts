@@ -3,6 +3,7 @@ import { EntryPathway } from '../models/entryPathway';
 import { Observation } from '../models/observation';
 import { PostedOpportunity } from '../models/postedOpportunity';
 import { ResearchEntity } from '../models/researchEntity';
+import { publicStudentVisibilityTiers } from '../models/studentVisibility';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 
 export type OpportunityDetailProvenance = 'LISTING_BRIDGED' | 'SCRAPER_DERIVED';
@@ -275,7 +276,11 @@ export async function getOpportunityDetail(
       .lean(),
     researchEntityModel
       .findOne(
-        { _id: opportunity.researchEntityId, archived: { $ne: true } },
+        {
+          _id: opportunity.researchEntityId,
+          archived: { $ne: true },
+          studentVisibilityTier: { $in: publicStudentVisibilityTiers },
+        },
         [
           'slug',
           'name',

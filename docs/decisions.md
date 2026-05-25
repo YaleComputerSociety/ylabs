@@ -546,3 +546,16 @@ Consequences:
 - Student-facing program and research search should default to public visibility tiers only; admin/operator flows can include `operator_review` and `suppressed` when explicitly requested.
 - The Operator Board is read-only and summarizes Trust Tier queues, source health, and gate commands. It does not execute writes or automatic approvals.
 - Before relying on the public program surface after a data import, run dry-run classification and visibility backfills, inspect the report, then apply intentionally.
+
+## 2026-05-25: Make Production Promotion A Single Explicit Gate
+
+Production promotion must use one explicit lane: copy the accepted Beta research-discovery dataset after fresh parity and backup checks, or run guarded production deltas source by source. Mixing the two in one promotion makes rollback and smoke interpretation ambiguous.
+
+Consequences:
+
+- Production promotion requires a fresh Atlas backup or restore point before copy or writes.
+- Accepted Beta copy is allowed only when fresh parity confirms Beta contains the production base records that must be preserved.
+- Guarded production delta runs must be one source at a time with `SCRAPER_ENV=production`, `CONFIRM_PROD_SCRAPE=true`, and `--release`.
+- Meilisearch rebuild or sync is a required post-Mongo step; Pathways rollback remains `PATHWAY_SEARCH_BACKEND=mongo`.
+- Render cron is for accepted source-specific recurrence, not initial backfill, VPN-dependent sources, local accepted-input files, or interactive browser checks.
+- `docs/tasks/priority-roadmap.md` records the lane, backup identifier, run IDs, Meili outcome, smoke outcome, rollback posture, and accepted warnings after the gate.

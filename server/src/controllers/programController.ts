@@ -84,7 +84,10 @@ export const searchProgramsController = async (request: Request, response: Respo
 
 export const getProgramById = async (request: Request, response: Response) => {
   try {
-    const program = await readProgram(request.params.id);
+    const currentUser = request.user as { userType?: string } | undefined;
+    const program = await readProgram(request.params.id, {
+      includeNonPublic: currentUser?.userType === 'admin',
+    });
     response.status(200).json({ program, fellowship: program });
   } catch (error: any) {
     if (error.name === 'NotFoundError') {

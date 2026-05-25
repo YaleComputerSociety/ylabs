@@ -2,7 +2,7 @@
 
 Status: active runbook
 
-Last updated: 2026-05-15
+Last updated: 2026-05-25
 
 ## Goal
 
@@ -10,6 +10,7 @@ Move scraper data safely from development testing to Beta seeding and then produ
 
 Use this with:
 
+- [`docs/research-data-pipeline.md`](./research-data-pipeline.md) for the stable evidence-to-product data flow.
 - [`docs/scraper-audit-guide.md`](./scraper-audit-guide.md) for per-source expectations and audit commands.
 - [`docs/tasks/priority-roadmap.md`](./tasks/priority-roadmap.md) for source readiness status, WorkPlanner follow-ups, and ranked production tasks.
 
@@ -112,18 +113,69 @@ Beta can be seeded from a local machine pointed at the Beta database. This is us
 
 Purpose: populate production only after Beta output is accepted.
 
-Required before the first production write:
+This is a manual promotion gate. Do not run it from the Render web service process, do not mix copy and delta strategies in the same promotion, and do not enable recurring cron until the smoke checklist passes.
+
+Required before any production copy or write:
 
 - Atlas backup or restore point exists.
+- The operator can name the exact restore point and the person who can restore it.
 - Source readiness is recorded in [`docs/tasks/priority-roadmap.md`](./tasks/priority-roadmap.md).
+- The Beta trust-audit caveats in the roadmap are either fixed or explicitly accepted for this release.
+- Production storage posture is decided: provision enough Atlas storage for raw OpenAlex observations, or keep compact retention after saved reports.
+- Promotion lane is chosen and recorded: accepted Beta copy or guarded production delta.
 - Meilisearch sync or reindex plan is ready.
-- Production command includes `SCRAPER_ENV=production`, `CONFIRM_PROD_SCRAPE=true`, and `--release`.
+- Smoke checklist owner and rollback owner are known.
+
+### Production Promotion Lanes
+
+Choose one lane before touching production.
+
+#### Lane A: Accepted Beta Copy
+
+Use this when Beta is the accepted production candidate and a fresh parity check confirms Beta already contains every production base record that must be preserved, such as users, listings, departments, fellowships, and research areas.
+
+Gate:
+
+1. Create a fresh Atlas backup or restore point for Production.
+2. Confirm no new production-only base data appeared after the last Beta parity audit. If it did, copy the missing base data into Beta and rerun parity, or use Lane B.
+3. Copy only the accepted research-discovery dataset and required base collections. Do not copy production usage logs, sessions, analytics events, or other live operational collections unless a separate decision says to.
+4. Keep recurring scraper jobs disabled during the copy.
+5. Rebuild or sync Meilisearch after Mongo copy completes.
+6. Run the smoke checklist before declaring the gate complete.
+
+Minimum copy set for the accepted full Beta posture:
+
+- Research discovery: `research_entities`, `research_entity_members`, `research_entity_stats`, `entry_pathways`, `access_signals`, `contact_routes`, `posted_opportunities`, `papers`, `paper_authors`, `paper_entity_links`, and `grants`.
+- Source audit trail: `sources`, `scrape_runs`, and retained `observations`.
+- Base/support collections only after parity is fresh: `users`, `listings`, `departments`, `research_areas`, and `fellowships`.
+
+Rollback for a bad copy is restoring Production from the pre-copy Atlas backup, then rebuilding or resyncing Meilisearch.
+
+#### Lane B: Guarded Production Delta
+
+Use this when live Production data must remain in place or Beta parity cannot be re-established safely.
+
+Gate:
+
+1. Create a fresh Atlas backup or restore point for Production.
+2. Run one source at a time with production guardrails.
+3. Save the run ID and report before moving to the next source.
+4. Stop on materialization errors, unexpected access artifacts, unexplained conflicts, or source-health errors.
+5. Rebuild or sync Meilisearch after accepted writes.
+6. Run the smoke checklist before enabling any recurrence.
 
 Production command shape:
 
 ```bash
 SCRAPER_ENV=production CONFIRM_PROD_SCRAPE=true \
   yarn scrape run --source <source-name> --release --auto-materialize
+```
+
+Cron command shape after manual acceptance:
+
+```bash
+SCRAPER_ENV=production CONFIRM_PROD_SCRAPE=true \
+  yarn scrape cron --source <source-name> --release
 ```
 
 Rules:
@@ -133,6 +185,66 @@ Rules:
 - Prefer a bounded first production pass for expensive or broad sources.
 - Run `report` immediately and inspect warnings before moving to the next source.
 - Treat Meilisearch failures as non-blocking for Mongo correctness, then reindex or batch-sync after accepted writes.
+- Keep `PATHWAY_SEARCH_BACKEND=mongo` as the Pathways rollback posture until Meili production relevance and parity are accepted.
+
+### Meilisearch Gate
+
+After accepted production copy or writes, run with production Mongo and Meili environment variables:
+
+```bash
+yarn --cwd server meili:rebuild-pathways
+yarn --cwd server meili:rebuild-research-entities --clear
+yarn --cwd server pathway:relevance-review
+```
+
+If Meili rebuild fails after Mongo writes succeeded, keep production traffic on Mongo-backed Pathways and complete the Mongo smoke checklist. Do not switch `PATHWAY_SEARCH_BACKEND=meili` until relevance review is accepted for the production index.
+
+### Smoke Checklist
+
+Run these checks against the production app and production API after copy/delta plus Meili sync:
+
+- `/api/config` returns `200` and points at the expected environment.
+- Research search returns real `research_entities` results for broad terms such as `machine learning`, `biology`, and `history`.
+- A known research detail page renders sources, evidence, people, and pathways without legacy `/labs` or `/api/research-groups` dependencies.
+- Pathways search returns evidence-backed cards and does not expose raw non-public scraped contact data.
+- Opportunity detail renders a listing-bridged open posting and a scraper-derived closed or historical posting.
+- Programs/Fellowships surface hides `operator_review` and `suppressed` records from public student routes.
+- Unauthenticated admin/operator routes return `401`.
+- Legacy `/api/research-groups/search`, `/labs`, and `/labs/:slug` remain unavailable.
+- Source health is `0 error`; any warnings match the accepted warnings in the roadmap.
+- Meili document counts are plausible against the accepted Beta counts in the roadmap or the chosen delta scope.
+
+### Known Accepted Warnings To Recheck
+
+These are not automatic blockers if still accurate and accepted in the roadmap, but the operator must re-read them before production promotion:
+
+- OpenAlex raw observations were pruned in Beta after report capture to stay inside the 5GB Atlas tier.
+- `dept-faculty-roster` and `arxiv` had reviewed non-fatal materialization conflicts.
+- The final accepted `arxiv` run hit rate limits/timeouts and should not be rerun immediately without backoff.
+- Some papers have missing `year` values or duplicate DOI groups, while identifier duplicates and unsupported name-only faculty links are cleared.
+- Eight logged-in placeholder accounts remain for account repair, not deletion.
+- Many entities still lack public contact routes or pathways; this is sparse coverage, not broken referential integrity.
+- Local Meili may lack the semantic `default` embedder; production Meili must be checked independently.
+- Browser smoke may require host libraries that are missing in some local workspaces; if Playwright cannot run locally, use production API smokes plus a browser from an environment with the required libraries.
+
+### Local, VPN, And Render Constraints
+
+- Local operator runs can use Yale VPN, local accepted-input files, local Meili, and browser tooling. Confirm `MONGODBURL`, Meili host, and `SCRAPER_ENV` before every run.
+- Render web service should not run scraper backfills. Keep scraper execution in local CLI, one-off jobs, or source-specific cron.
+- Render cron should run only public/network-reachable sources with all required environment variables configured. It cannot assume Yale VPN, local files under `/tmp/ylabs-accepted-inputs`, local Meili, or interactive browser dependencies.
+- For sources that need Yale network access, private credentials, or manual accepted-input files, run a guarded local or one-off job instead of Render cron.
+
+### Post-Gate Documentation
+
+After a successful gate, update [`docs/tasks/priority-roadmap.md`](./tasks/priority-roadmap.md) with:
+
+- Promotion lane used.
+- Backup or restore-point identifier, without secrets.
+- Collections or sources promoted.
+- Production run IDs and saved report locations.
+- Meili rebuild/sync outcome and active Pathways backend.
+- Smoke checklist outcome.
+- Rollback posture and any accepted warnings.
 
 ## Recurring Refresh
 
@@ -216,14 +328,16 @@ After every non-dry run:
 
 ## Rollback
 
-Before production seeding, prefer an Atlas backup over clever cleanup.
+Before production seeding, prefer an Atlas backup over clever cleanup. The rollback owner must know whether the gate used Lane A or Lane B.
 
 If a production run is bad:
 
 1. Disable the scheduled job or stop the manual rollout.
 2. Do not run more sources on top of questionable materialized data.
-3. For minor field-quality issues, use manual locks or a fixed rerun after inspection.
-4. For broad bad materialization, restore from the pre-run Atlas backup.
-5. Rebuild or resync Meilisearch after restoring MongoDB.
+3. Set `PATHWAY_SEARCH_BACKEND=mongo` if Pathways Meili behavior is questionable.
+4. For minor field-quality issues, use manual locks or a fixed rerun after inspection.
+5. For a bad Beta copy or broad bad materialization, restore from the pre-run Atlas backup.
+6. Rebuild or resync Meilisearch after restoring MongoDB.
+7. Record the rollback and follow-up decision in [`docs/tasks/priority-roadmap.md`](./tasks/priority-roadmap.md).
 
 `Source.enabled=false` blocks cron execution by default. Use `--force-disabled` only for an explicit manual recovery run after checking the source-health report.

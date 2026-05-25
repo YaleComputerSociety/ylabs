@@ -62,7 +62,10 @@ export const searchFellowshipsController = async (request: Request, response: Re
 
 export const getFellowshipById = async (request: Request, response: Response) => {
   try {
-    const fellowship = await readFellowship(request.params.id);
+    const currentUser = request.user as { userType?: string } | undefined;
+    const fellowship = await readFellowship(request.params.id, {
+      includeNonPublic: currentUser?.userType === 'admin',
+    });
     response.status(200).json({ fellowship });
   } catch (error: any) {
     if (error.name === 'NotFoundError') {

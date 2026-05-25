@@ -54,6 +54,42 @@ describe('opportunityDetailService', () => {
     expect(calls[0].filter.archived).toBe(false);
   });
 
+  it('requires public student visibility for the host research entity', async () => {
+    const opportunityId = new Types.ObjectId();
+    const pathwayId = new Types.ObjectId();
+    const entityId = new Types.ObjectId();
+    const researchEntityCalls: any[] = [];
+
+    const detail = await getOpportunityDetail(opportunityId.toString(), {
+      opportunityModel: leanOneModel({
+        _id: opportunityId,
+        entryPathwayId: pathwayId,
+        researchEntityId: entityId,
+        title: 'Hidden entity role',
+        status: 'OPEN',
+        sourceEvidenceIds: [],
+        sourceUrls: [],
+      }) as any,
+      pathwayModel: leanOneModel({
+        _id: pathwayId,
+        pathwayType: 'POSTED_ROLE',
+        status: 'ACTIVE',
+        studentFacingLabel: 'Posted role',
+        sourceEvidenceIds: [],
+        sourceUrls: [],
+      }) as any,
+      researchEntityModel: leanOneModel(null, researchEntityCalls) as any,
+      observationModel: leanManyModel([]) as any,
+    });
+
+    expect(detail).toBeNull();
+    expect(researchEntityCalls[0].filter).toMatchObject({
+      _id: entityId,
+      archived: { $ne: true },
+      studentVisibilityTier: { $in: ['student_ready', 'limited_but_safe'] },
+    });
+  });
+
   it('maps host entity, pathway, and evidence without exposing contact data', async () => {
     const opportunityId = new Types.ObjectId();
     const pathwayId = new Types.ObjectId();

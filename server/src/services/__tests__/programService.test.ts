@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   find: vi.fn(),
+  findOne: vi.fn(),
   countDocuments: vi.fn(),
   distinct: vi.fn(),
 }));
@@ -9,12 +10,13 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../../models/fellowship', () => ({
   Fellowship: {
     find: mocks.find,
+    findOne: mocks.findOne,
     countDocuments: mocks.countDocuments,
     distinct: mocks.distinct,
   },
 }));
 
-import { getProgramFilterOptions, searchPrograms } from '../programService';
+import { getProgramFilterOptions, readProgram, searchPrograms } from '../programService';
 
 const mockFindChain = () => {
   const chain = {
@@ -37,6 +39,9 @@ describe('program search service', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockFindChain();
+    mocks.findOne.mockResolvedValue({
+      toObject: () => ({ _id: '67d8928150621bcef434a1d5', title: 'Visible program' }),
+    });
     mocks.countDocuments.mockResolvedValue(0);
     mocks.distinct.mockResolvedValue([]);
   });
@@ -82,20 +87,14 @@ describe('program search service', () => {
     );
   });
 
-  it('defaults public program search to student-visible trust tiers', async () => {
-    await searchPrograms({});
+  it('requires student-visible trust tiers for normal program detail reads', async () => {
+    await readProgram('67d8928150621bcef434a1d5');
 
-    expect(mocks.find).toHaveBeenCalledWith(
-      expect.objectContaining({
-        archived: false,
-        studentVisibilityTier: { $in: ['student_ready', 'limited_but_safe'] },
-      }),
-    );
-    expect(mocks.countDocuments).toHaveBeenCalledWith(
-      expect.objectContaining({
-        studentVisibilityTier: { $in: ['student_ready', 'limited_but_safe'] },
-      }),
-    );
+    expect(mocks.findOne).toHaveBeenCalledWith({
+      _id: '67d8928150621bcef434a1d5',
+      archived: false,
+      studentVisibilityTier: { $in: ['student_ready', 'limited_but_safe'] },
+    });
   });
 
   it('includes program categories in filter options', async () => {
@@ -115,9 +114,13 @@ describe('program search service', () => {
     expect(options.programKind).toEqual(['MENTOR_MATCHING']);
     expect(options.entryMode).toEqual(['DIRECT_FACULTY_MATCHING']);
     expect(options.studentFacingCategory).toEqual(['Structured research program']);
-    expect(mocks.distinct).toHaveBeenCalledWith('programCategory', { archived: false });
-    expect(mocks.distinct).toHaveBeenCalledWith('programKind', { archived: false });
-    expect(mocks.distinct).toHaveBeenCalledWith('entryMode', { archived: false });
-    expect(mocks.distinct).toHaveBeenCalledWith('studentFacingCategory', { archived: false });
+    const visibleFilter = {
+      archived: false,
+      studentVisibilityTier: { $in: ['student_ready', 'limited_but_safe'] },
+    };
+    expect(mocks.distinct).toHaveBeenCalledWith('programCategory', visibleFilter);
+    expect(mocks.distinct).toHaveBeenCalledWith('programKind', visibleFilter);
+    expect(mocks.distinct).toHaveBeenCalledWith('entryMode', visibleFilter);
+    expect(mocks.distinct).toHaveBeenCalledWith('studentFacingCategory', visibleFilter);
   });
 });

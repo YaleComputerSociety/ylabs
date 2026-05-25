@@ -32,6 +32,7 @@ describe('pathwaySearchIndexService', () => {
         displayName: 'Smith Neuroimaging Lab',
         kind: 'lab',
         entityType: 'LAB',
+        studentVisibilityTier: 'student_ready',
         departments: ['Psychology', 'Psychology', 'Neuroscience'],
         researchAreas: ['Neuroimaging'],
         school: 'Faculty of Arts and Sciences',
@@ -79,6 +80,7 @@ describe('pathwaySearchIndexService', () => {
       entitySlug: 'smith-lab',
       entityName: 'Smith Lab',
       entityType: 'LAB',
+      entityStudentVisibilityTier: 'student_ready',
       entityDepartments: ['Psychology', 'Neuroscience'],
       hasActivePostedOpportunity: true,
       postedOpportunityId: 'opportunity-1',
@@ -167,6 +169,7 @@ describe('pathwaySearchIndexService', () => {
         'compensation',
         'bestNextStepCategory',
         'entityId',
+        'entityStudentVisibilityTier',
         'entityDepartments',
         'hasActivePostedOpportunity',
         'postedOpportunityStatus',
@@ -268,6 +271,7 @@ describe('pathwaySearchIndexService', () => {
                 slug: 'smith-lab',
                 name: 'Smith Lab',
                 entityType: 'LAB',
+                studentVisibilityTier: 'student_ready',
                 departments: ['Computer Science'],
                 researchAreas: ['Machine Learning'],
               },
@@ -314,6 +318,12 @@ describe('pathwaySearchIndexService', () => {
     );
     expect(String(searches[0].params.filter)).toContain(
       'entityResearchAreas = "Machine Learning"',
+    );
+    expect(String(searches[0].params.filter)).toContain(
+      'entityStudentVisibilityTier = "student_ready"',
+    );
+    expect(String(searches[0].params.filter)).toContain(
+      'entityStudentVisibilityTier = "limited_but_safe"',
     );
     expect(String(searches[0].params.filter)).toContain(
       'hasActivePostedOpportunity = false',

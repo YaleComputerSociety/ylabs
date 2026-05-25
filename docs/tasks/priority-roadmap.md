@@ -1,6 +1,6 @@
 # Priority Roadmap
 
-Last updated: 2026-05-15
+Last updated: 2026-05-25
 
 This is the single task source of truth for Yale Research. Keep it operational: the top sections should say what to do next, while the lower sections preserve stable context, completed milestones, and verification commands.
 
@@ -112,6 +112,9 @@ All accepted Beta source runs below reported `materialization.errors = 0`. This 
 
 - [x] Wait for the full Beta scraper soak to pass. Full lab-microsite, fellowship, arXiv, and OpenAlex Beta source execution is accepted with zero materialization errors.
 - [x] Add production cron safety guardrails. `yarn scrape cron --source <source-name> --release` now uses source-level locks, refuses disabled sources by default, materializes immediately, emits reports, and exits nonzero on materialization errors; `yarn scrape prune-observations` provides dry-run-first compact retention for old superseded observations.
+- [x] Make the production promotion runbook executable. `docs/research-data-pipeline.md`, `docs/scraper-deployment-runbook.md`, and `docs/scraper-audit-guide.md` now define the single-lane gate, backup/rollback posture, Meili sync, smoke checklist, known warnings, local/VPN/Render constraints, and post-gate documentation requirements.
+- [x] Restore the DB-backed production gate commands. `yarn --cwd server beta:data-quality --include-samples` and `yarn --cwd server scraper:integrity-gate --include-samples` are defined again and backed by focused unit coverage for data quality, scraper integrity, identity dedupe, PI dedupe, and archived artifact repair helpers.
+- [x] Run the GStack production-gate dry run from isolated worktrees. Read-only source health reported 25 sources with `13 ok`, `12 warn`, and `0 error`; scraper integrity passed with warning-only duplicate person identity conflicts that still need review before production promotion. UI smoke found no blocking student/admin regressions under mocked read-only API data.
 - [ ] Use `docs/scraper-deployment-runbook.md` for production rollout and Render Cron setup.
 - [ ] Decide production promotion mechanism: copy the accepted Beta database to production, or run guarded production deltas only after confirming the backup/restore point.
 - [ ] Run production sources one at a time with backup, `SCRAPER_ENV=production`, `CONFIRM_PROD_SCRAPE=true`, and `--release` posture.
@@ -129,6 +132,7 @@ All accepted Beta source runs below reported `materialization.errors = 0`. This 
 - [x] Merge the `yale-college-fellowships-office` URL-hygiene and program-classification model into `new-foundation`. The scraper canonicalizes the moved Mellon Mays URL, skips gated CommunityForce fetches, emits program/source visibility evidence, and keeps fellowship funding separate from posted opportunity/pathway creation.
 - [x] Add the canonical `/programs` API and Programs & Fellowships route while preserving `/fellowships` compatibility aliases during migration.
 - [x] Add student visibility tiers and dry-run/apply backfill scripts for programs and research entities so student surfaces hide `operator_review` and `suppressed` records by default.
+- [x] Gate public research/program/opportunity/pathway API detail and search surfaces to student-visible tiers by default; admin program detail can still read non-public program records for review.
 - [x] Add a read-only Operator Board foundation to the admin panel. It summarizes source health, Trust Tier counts, review queues, latest dry/write runs, gate commands, Meili status placeholders, and a top-level promotion status without adding write buttons or worker execution.
 - [ ] Add PI claim flow, Scholar disambiguation, and broader admin field-lock UI only when the workflow is clear.
 
