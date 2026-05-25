@@ -268,6 +268,16 @@ Run these checks against the production app and production API after copy/delta 
 - Source health is `0 error`; any warnings match the accepted warnings in the roadmap.
 - Meili document counts are plausible against the accepted Beta counts in the roadmap or the chosen delta scope.
 
+Reusable read-only helper:
+
+```bash
+yarn --cwd client smoke:production-promotion --api-base https://<host>/api --app-base https://<host>
+```
+
+The helper writes only local artifacts under `tmp/ui-smoke/` by default. It does not call `/api/dev-login`, does not require secrets, and does not send write-method requests. Public API checks use the configured API base directly. Browser UI checks use read-only route interception for `/api/check`, saved-item endpoints, program list fixtures, and the Operator Board payload so student and admin route guards can be checked without creating sessions or analytics events. If Playwright is not installed in the runner, the helper still runs the public API and unauthenticated admin API checks and records the browser limitation in the JSON report.
+
+Current admin UI limitation: the client does not expose `/admin/operator-board` as a page route. The guarded API is `/api/admin/operator-board`, and the Operator Board UI renders inside the admin `/analytics` route. The smoke helper therefore checks unauthenticated access on `/api/admin/operator-board`, student denial on `/analytics`, and admin rendering on `/analytics` through route interception.
+
 ### Known Accepted Warnings To Recheck
 
 These are not automatic blockers if still accurate and accepted in the roadmap, but the operator must re-read them before production promotion:
