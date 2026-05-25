@@ -49,4 +49,14 @@ describe('publicResearchDescriptionText', () => {
       ),
     ).toBe('Dr. Jones studies U.S. health policy and vaccination programs.');
   });
+
+  it('strips Yale Medicine copied section chrome while preserving research substance', () => {
+    expect(
+      publicResearchDescriptionText(
+        'INFORMATION FOR Copy Link Throughout our bodies, human cells coexist with diverse and abundant bacteria.They exchange metabolites. To identify, understand, and modulate signaling at the human:microbe interface,our laboratory integratesleading-edge chemical biology and immunology. Copy Link We welcome enthusiastic and curious scientists from diverse backgrounds. Department of Microbial Pathogenesis, 295 Congress Ave. New Haven, CT 06519, United States',
+      ),
+    ).toBe(
+      'Throughout our bodies, human cells coexist with diverse and abundant bacteria. They exchange metabolites. To identify, understand, and modulate signaling at the human:microbe interface, our laboratory integrates leading-edge chemical biology and immunology.',
+    );
+  });
 });

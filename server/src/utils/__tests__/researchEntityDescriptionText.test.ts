@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { publicResearchEntityDescriptionText } from '../researchEntityDescriptionText';
+import {
+  publicResearchEntityDescriptionText,
+  sanitizeResearchEntityPublicDescriptionFields,
+} from '../researchEntityDescriptionText';
 
 describe('publicResearchEntityDescriptionText', () => {
   it('suppresses scraped sentence fragments that should not display as descriptions', () => {
@@ -48,5 +51,30 @@ describe('publicResearchEntityDescriptionText', () => {
         'Dr. Jones studies U.S. health policy and vaccination programs.',
       ),
     ).toBe('Dr. Jones studies U.S. health policy and vaccination programs.');
+  });
+
+  it('strips Yale Medicine copied section chrome while preserving research substance', () => {
+    expect(
+      publicResearchEntityDescriptionText(
+        'INFORMATION FOR Copy Link Throughout our bodies, human cells coexist with diverse and abundant bacteria.They exchange metabolites. To identify, understand, and modulate signaling at the human:microbe interface,our laboratory integratesleading-edge chemical biology and immunology. Copy Link We welcome enthusiastic and curious scientists from diverse backgrounds. Department of Microbial Pathogenesis, 295 Congress Ave. New Haven, CT 06519, United States',
+      ),
+    ).toBe(
+      'Throughout our bodies, human cells coexist with diverse and abundant bacteria. They exchange metabolites. To identify, understand, and modulate signaling at the human:microbe interface, our laboratory integrates leading-edge chemical biology and immunology.',
+    );
+  });
+
+  it('clears copied truncated short descriptions so full descriptions can render', () => {
+    expect(
+      sanitizeResearchEntityPublicDescriptionFields({
+        shortDescription:
+          'Throughout our bodies, human cells coexist with diverse and abundant bacteria. To identify, understand, and modulate signaling at the human:microbe interface, our laboratory integrates chem',
+        fullDescription:
+          'Throughout our bodies, human cells coexist with diverse and abundant bacteria. To identify, understand, and modulate signaling at the human:microbe interface, our laboratory integrates chemical biology and immunology.',
+      }),
+    ).toEqual({
+      shortDescription: '',
+      fullDescription:
+        'Throughout our bodies, human cells coexist with diverse and abundant bacteria. To identify, understand, and modulate signaling at the human:microbe interface, our laboratory integrates chemical biology and immunology.',
+    });
   });
 });

@@ -132,9 +132,9 @@ describe('adminProfileEditReducer', () => {
       const state = createInitialAdminProfileEditState(baseProfile);
       const next = adminProfileEditReducer(state, {
         type: 'SET_USER_TYPE',
-        payload: 'admin',
+        payload: 'faculty',
       });
-      expect(next.userType).toBe('admin');
+      expect(next.userType).toBe('faculty');
     });
   });
 

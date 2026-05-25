@@ -22,13 +22,13 @@ const ROLE_LABELS: Record<LabMemberRole, string> = {
 };
 
 const ROLE_PILL_CLASSES: Record<LabMemberRole, string> = {
-  pi: 'bg-blue-100 text-blue-700',
-  'co-pi': 'bg-blue-50 text-blue-700',
+  pi: 'bg-[var(--yr-blue-soft)] text-blue-700',
+  'co-pi': 'bg-[var(--yr-blue-soft)] text-blue-700',
   director: 'bg-indigo-100 text-indigo-700',
   'co-director': 'bg-indigo-50 text-indigo-700',
   'core-faculty': 'bg-purple-50 text-purple-700',
-  affiliated: 'bg-gray-100 text-gray-600',
-  alumni: 'bg-gray-50 text-gray-500',
+  affiliated: 'bg-[var(--yr-panel-muted)] text-gray-600',
+  alumni: 'bg-[var(--yr-panel-muted)] text-gray-500',
 };
 
 // Lower index = more prominent. Sort members so leaders come first.
@@ -45,7 +45,7 @@ const ROLE_ORDER: Record<LabMemberRole, number> = {
 const LabMembersList = ({ members }: LabMembersListProps) => {
   if (!members || members.length === 0) {
     return (
-      <div className="rounded-md border border-dashed border-gray-200 bg-white px-4 py-6 text-center">
+      <div className="rounded-md border border-dashed border-[var(--yr-line)] bg-[var(--yr-panel)] px-4 py-6 text-center">
         <p className="text-sm font-semibold text-gray-900">
           No principal investigator is attached yet
         </p>
@@ -95,7 +95,7 @@ const LabMembersList = ({ members }: LabMembersListProps) => {
                   {ROLE_LABELS[role]}
                 </span>
                 {user.primary_department && (
-                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-50 text-gray-500 truncate max-w-[10rem]">
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[var(--yr-panel-muted)] text-gray-500 truncate max-w-[10rem]">
                     {user.primary_department}
                   </span>
                 )}
@@ -104,7 +104,7 @@ const LabMembersList = ({ members }: LabMembersListProps) => {
           </>
         );
         const className =
-          'flex items-center gap-3 p-3 rounded-lg border border-gray-200 bg-white';
+          'flex items-center gap-3 p-3 rounded-lg border border-[var(--yr-line)] bg-[var(--yr-panel)]';
         if (!user.netid) {
           return (
             <div key={`${fullName}-${role}`} className={className}>

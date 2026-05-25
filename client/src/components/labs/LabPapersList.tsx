@@ -88,7 +88,7 @@ const LabPapersList = ({
 }: LabPapersListProps) => {
   if (!papers || papers.length === 0) {
     return (
-      <div className="rounded-md border border-dashed border-slate-300 bg-white/70 px-4 py-8 text-center">
+      <div className="rounded-md border border-dashed border-[var(--yr-line-strong)] bg-[var(--yr-panel)]/70 px-4 py-8 text-center">
         <p className="text-sm text-slate-600">{emptyText}</p>
       </div>
     );
@@ -103,8 +103,8 @@ const LabPapersList = ({
   );
 
   return (
-    <div className="overflow-hidden rounded-md border border-[var(--yr-line)] bg-white">
-      <div className="flex flex-col gap-2 border-b border-slate-200 bg-slate-50/70 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+    <div className="overflow-hidden rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)]">
+      <div className="flex flex-col gap-2 border-b border-[var(--yr-line)] bg-[var(--yr-panel-muted)]/70 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
         <div>
           <p className="text-xs font-semibold uppercase text-slate-500">Research evidence</p>
           <p className="mt-0.5 text-sm text-slate-700">
@@ -141,7 +141,7 @@ const LabPapersList = ({
               className="group grid gap-3 px-4 py-4 transition-colors hover:bg-[var(--yr-blue-soft)]/45 sm:grid-cols-[2.75rem_minmax(0,1fr)_9rem] sm:px-5"
             >
             <div className="hidden sm:block">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-300 bg-slate-50 font-mono text-xs font-semibold text-slate-700">
+              <div className="flex h-8 w-8 items-center justify-center rounded-full border border-[var(--yr-line-strong)] bg-[var(--yr-panel-muted)] font-mono text-xs font-semibold text-slate-700">
                 {String(index + 1).padStart(2, '0')}
               </div>
             </div>
@@ -216,7 +216,7 @@ const LabPapersList = ({
                     href={link}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="yr-focus-ring rounded-md border border-blue-200 bg-[var(--yr-blue-soft)] px-3 py-2 text-[var(--yr-blue)] transition-colors hover:bg-white"
+                    className="yr-focus-ring rounded-md border border-blue-200 bg-[var(--yr-blue-soft)] px-3 py-2 text-[var(--yr-blue)] transition-colors hover:bg-[var(--yr-panel)]"
                   >
                     Open source
                   </a>

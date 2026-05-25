@@ -12,18 +12,22 @@ const theme = createTheme({
     },
     secondary: {
       main: '#B89B5E',
-      light: '#F4EDDC',
+      light: '#FFF7E6',
       dark: '#5D4722',
     },
     background: {
-      default: '#F8F5ED',
-      paper: '#FFFDF8',
+      default: '#FBFAF7',
+      paper: '#FFFFFF',
     },
     text: {
       primary: '#0B1F3A',
       secondary: '#5F6570',
     },
-    divider: '#DDD6C8',
+    divider: '#E2E8F0',
+    action: {
+      hover: '#F7F3EC',
+      selected: '#E6EDF5',
+    },
   },
   typography: {
     fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',

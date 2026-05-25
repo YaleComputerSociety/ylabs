@@ -97,7 +97,7 @@ const DepartmentInput = ({
           {label}
           {required && <span className="text-red-500 ml-1">*</span>}
         </label>
-        <div className="animate-pulse bg-gray-200 h-10 rounded"></div>
+        <div className="animate-pulse bg-[var(--yr-panel-muted)] h-10 rounded"></div>
       </div>
     );
   }
@@ -161,11 +161,11 @@ const DepartmentInput = ({
 
         {isDeptDropdownOpen && (
           <div
-            className="absolute w-full bg-white rounded-lg z-10 shadow-lg border overflow-hidden mt-1 border-gray-300"
+            className="absolute w-full bg-[var(--yr-panel)] rounded-lg z-10 shadow-lg border overflow-hidden mt-1 border-[var(--yr-line-strong)]"
             tabIndex={-1}
           >
             {departments.length > 0 && (
-              <div className="flex flex-wrap gap-2 p-2 border-b border-gray-200 bg-gray-50">
+              <div className="flex flex-wrap gap-2 p-2 border-b border-[var(--yr-line)] bg-[var(--yr-panel-muted)]">
                 {departments.map((department, index) => (
                   <span
                     key={index}
@@ -194,7 +194,7 @@ const DepartmentInput = ({
                       dispatch({ type: 'SET_SEARCH', payload: '' });
                     }}
                     className={`p-2 cursor-pointer ${
-                      focusedDeptIndex === index ? 'bg-blue-100' : 'hover:bg-gray-100'
+                      focusedDeptIndex === index ? 'bg-blue-100' : 'hover:bg-[var(--yr-panel-muted)]'
                     }`}
                     tabIndex={-1}
                     onMouseDown={(e) => e.preventDefault()}

@@ -61,7 +61,7 @@ const ProfileHeader = ({ profile }: ProfileHeaderProps) => {
     ...(profile.secondary_departments || []),
   ].filter((department): department is string => Boolean(department)), departments);
   const profileLinkClass =
-    'yr-pill inline-flex min-h-[44px] items-center rounded-md px-3 text-xs font-medium transition-colors hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200';
+    'yr-pill inline-flex min-h-[44px] items-center rounded-md px-3 text-xs font-medium transition-colors hover:bg-[var(--yr-panel)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200';
 
   return (
     <div className="yr-panel flex flex-col items-start gap-6 rounded-md p-4 md:flex-row md:p-6">

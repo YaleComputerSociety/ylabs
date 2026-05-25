@@ -239,8 +239,8 @@ const ProfileEditor = ({ netid }: ProfileEditorProps) => {
         </div>
       )}
 
-      <div className="bg-white border border-gray-200 rounded-md p-6">
-        <div className="flex flex-col gap-4 border-b border-gray-100 pb-5 md:flex-row md:items-start md:justify-between">
+      <div className="bg-[var(--yr-panel)] border border-[var(--yr-line)] rounded-md p-6">
+        <div className="flex flex-col gap-4 border-b border-[var(--yr-line)] pb-5 md:flex-row md:items-start md:justify-between">
           <div className="flex items-center gap-4">
             {profile.image_url ? (
               <img
@@ -249,7 +249,7 @@ const ProfileEditor = ({ netid }: ProfileEditorProps) => {
                 className="w-16 h-16 rounded-md object-cover"
               />
             ) : (
-              <div className="w-16 h-16 rounded-md bg-blue-100 flex items-center justify-center">
+              <div className="w-16 h-16 rounded-md bg-[var(--yr-blue-soft)] flex items-center justify-center">
                 <span className="text-xl font-bold text-blue-700">{initials}</span>
               </div>
             )}
@@ -270,14 +270,14 @@ const ProfileEditor = ({ netid }: ProfileEditorProps) => {
           {!editing && (
             <button
               onClick={() => dispatch({ type: 'START_EDITING' })}
-              className="min-h-[44px] px-4 py-2 text-sm font-medium text-blue-600 border border-blue-200 rounded-md hover:bg-blue-50 transition-colors"
+              className="min-h-[44px] px-4 py-2 text-sm font-medium text-blue-600 border border-blue-200 rounded-md hover:bg-[var(--yr-blue-soft)] transition-colors"
             >
               Edit Profile
             </button>
           )}
         </div>
 
-        <div className="border-b border-gray-100 py-5">
+        <div className="border-b border-[var(--yr-line)] py-5">
           <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <div>
               <p className="text-sm font-semibold text-gray-900">Profile readiness</p>
@@ -289,7 +289,7 @@ const ProfileEditor = ({ netid }: ProfileEditorProps) => {
               {readinessCount}/{readinessItems.length} complete
             </p>
           </div>
-          <div className="mt-3 h-2 overflow-hidden rounded-full bg-gray-100">
+          <div className="mt-3 h-2 overflow-hidden rounded-full bg-[var(--yr-panel-muted)]">
             <div className="h-full bg-blue-600" style={{ width: `${readinessPercent}%` }} />
           </div>
           <ul className="mt-3 grid gap-2 text-xs text-gray-600 sm:grid-cols-2 lg:grid-cols-4">
@@ -347,7 +347,7 @@ const ProfileEditor = ({ netid }: ProfileEditorProps) => {
                 value={bio}
                 onChange={(e) => dispatch({ type: 'SET_BIO', payload: e.target.value })}
                 rows={4}
-                className="w-full text-sm border border-gray-200 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full text-sm border border-[var(--yr-line)] rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
 
@@ -382,7 +382,7 @@ const ProfileEditor = ({ netid }: ProfileEditorProps) => {
                     aria-invalid={primaryDeptError || undefined}
                     aria-describedby={primaryDeptError ? primaryDeptErrorId : undefined}
                     className={`w-full text-sm border rounded-md px-3 py-2 pr-8 focus:outline-none focus:ring-2 focus:ring-blue-500 truncate ${
-                      primaryDeptError ? 'border-red-300' : 'border-gray-200'
+                      primaryDeptError ? 'border-red-300' : 'border-[var(--yr-line)]'
                     } ${!isPrimaryDropdownOpen && primaryDept ? 'text-gray-900' : 'text-gray-700'}`}
                     placeholder="Select primary department..."
                   />
@@ -407,9 +407,9 @@ const ProfileEditor = ({ netid }: ProfileEditorProps) => {
                   </div>
 
                   {isPrimaryDropdownOpen && (
-                    <div className="absolute w-full bg-white rounded-lg z-10 shadow-lg border overflow-hidden mt-1 border-gray-300">
+                    <div className="absolute w-full bg-[var(--yr-panel)] rounded-lg z-10 shadow-lg border overflow-hidden mt-1 border-[var(--yr-line-strong)]">
                       {primaryDept && (
-                        <div className="px-3 py-2 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
+                        <div className="px-3 py-2 border-b border-[var(--yr-line)] bg-[var(--yr-panel-muted)] flex items-center justify-between">
                           <span className="text-sm text-gray-700">{primaryDept}</span>
                           <button
                             type="button"
@@ -439,7 +439,7 @@ const ProfileEditor = ({ netid }: ProfileEditorProps) => {
                                 dispatch({ type: 'SELECT_PRIMARY_DEPT', payload: dept })
                               }
                               className={`p-2 cursor-pointer text-sm ${
-                                focusedPrimaryIndex === index ? 'bg-blue-100' : 'hover:bg-gray-100'
+                                focusedPrimaryIndex === index ? 'bg-[var(--yr-blue-soft)]' : 'hover:bg-[var(--yr-panel-muted)]'
                               }`}
                               onMouseDown={(e) => e.preventDefault()}
                             >
@@ -471,7 +471,7 @@ const ProfileEditor = ({ netid }: ProfileEditorProps) => {
                   type="text"
                   value={imageUrl}
                   onChange={(e) => dispatch({ type: 'SET_IMAGE_URL', payload: e.target.value })}
-                  className="w-full text-sm border border-gray-200 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full text-sm border border-[var(--yr-line)] rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
             </div>
@@ -523,7 +523,7 @@ const ProfileEditor = ({ netid }: ProfileEditorProps) => {
                 onClick={() => {
                   if (profile) dispatch({ type: 'CANCEL_EDITING', profile });
                 }}
-                className="min-h-[44px] px-4 py-2 text-sm font-medium text-gray-600 border border-gray-200 rounded-md hover:bg-gray-50 transition-colors"
+                className="min-h-[44px] px-4 py-2 text-sm font-medium text-gray-600 border border-[var(--yr-line)] rounded-md hover:bg-[var(--yr-panel-muted)] transition-colors"
               >
                 Cancel
               </button>

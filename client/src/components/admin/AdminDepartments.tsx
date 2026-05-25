@@ -24,7 +24,7 @@ const DEPARTMENT_CATEGORIES = [
 ];
 
 const CATEGORY_COLORS: Record<string, string> = {
-  'Computing & AI': 'bg-blue-100 text-blue-800',
+  'Computing & AI': 'bg-[var(--yr-blue-soft)] text-blue-800',
   'Life Sciences': 'bg-green-100 text-green-800',
   'Physical Sciences & Engineering': 'bg-yellow-100 text-yellow-800',
   'Health & Medicine': 'bg-red-100 text-red-800',
@@ -194,7 +194,7 @@ const AdminDepartments = () => {
 
   return (
     <div>
-      <div className="bg-white rounded-lg shadow-md p-4 border border-gray-200 mb-4">
+      <div className="bg-[var(--yr-panel)] rounded-lg shadow-md p-4 border border-[var(--yr-line)] mb-4">
         <h3 className="text-sm font-semibold text-gray-700 mb-3">Add New Department</h3>
         <div className="flex flex-wrap gap-2 items-end">
           <div className="w-28">
@@ -203,7 +203,7 @@ const AdminDepartments = () => {
               value={newDraft.abbr}
               onChange={(e) => dispatch({ type: 'SET_NEW_DRAFT', payload: { abbr: e.target.value } })}
               placeholder="e.g. CPSC"
-              className="min-h-[44px] w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase"
+              className="min-h-[44px] w-full border border-[var(--yr-line-strong)] rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase"
             />
           </div>
           <div className="flex-1 min-w-[200px]">
@@ -212,7 +212,7 @@ const AdminDepartments = () => {
               value={newDraft.name}
               onChange={(e) => dispatch({ type: 'SET_NEW_DRAFT', payload: { name: e.target.value } })}
               placeholder="e.g. Computer Science"
-              className="min-h-[44px] w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="min-h-[44px] w-full border border-[var(--yr-line-strong)] rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               onKeyDown={(e) => {
                 if (e.key === 'Enter') handleAdd();
               }}
@@ -223,7 +223,7 @@ const AdminDepartments = () => {
             <select
               value={newDraft.category}
               onChange={(e) => dispatch({ type: 'SET_NEW_DRAFT', payload: { category: e.target.value } })}
-              className="min-h-[44px] w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="min-h-[44px] w-full border border-[var(--yr-line-strong)] rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               {DEPARTMENT_CATEGORIES.map((c) => (
                 <option key={c} value={c}>
@@ -246,16 +246,16 @@ const AdminDepartments = () => {
           value={search}
           onChange={(e) => dispatch({ type: 'SET_SEARCH', payload: e.target.value })}
           placeholder="Filter departments..."
-          className="min-h-[44px] w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="min-h-[44px] w-full border border-[var(--yr-line-strong)] rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
         <div className="text-xs text-gray-400 mt-1">{filtered.length} departments</div>
       </div>
 
-      <div className="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden">
+      <div className="bg-[var(--yr-panel)] rounded-lg shadow-md border border-[var(--yr-line)] overflow-hidden">
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm">
             <thead>
-              <tr className="bg-gray-50 border-b">
+              <tr className="bg-[var(--yr-panel-muted)] border-b">
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Abbr</th>
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Name</th>
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Display Name</th>
@@ -279,7 +279,7 @@ const AdminDepartments = () => {
                 </tr>
               ) : (
                 filtered.map((dept) => (
-                  <tr key={dept._id} className="border-b hover:bg-gray-50">
+                  <tr key={dept._id} className="border-b hover:bg-[var(--yr-panel-muted)]">
                     <td className="py-2 px-4">
                       {editingId === dept._id && editDraft ? (
                         <input
@@ -287,7 +287,7 @@ const AdminDepartments = () => {
                           onChange={(e) =>
                             dispatch({ type: 'SET_EDIT_DRAFT', payload: { abbr: e.target.value } })
                           }
-                          className="min-h-[44px] border border-gray-300 rounded px-2 py-1 text-sm w-20 uppercase focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          className="min-h-[44px] border border-[var(--yr-line-strong)] rounded px-2 py-1 text-sm w-20 uppercase focus:outline-none focus:ring-1 focus:ring-blue-500"
                           autoFocus
                         />
                       ) : (
@@ -301,7 +301,7 @@ const AdminDepartments = () => {
                           onChange={(e) =>
                             dispatch({ type: 'SET_EDIT_DRAFT', payload: { name: e.target.value } })
                           }
-                          className="min-h-[44px] border border-gray-300 rounded px-2 py-1 text-sm w-full focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          className="min-h-[44px] border border-[var(--yr-line-strong)] rounded px-2 py-1 text-sm w-full focus:outline-none focus:ring-1 focus:ring-blue-500"
                           onKeyDown={(e) => {
                             if (e.key === 'Enter') handleUpdate(dept._id);
                             if (e.key === 'Escape') dispatch({ type: 'CANCEL_EDIT' });
@@ -322,7 +322,7 @@ const AdminDepartments = () => {
                               payload: { category: e.target.value },
                             })
                           }
-                          className="min-h-[44px] border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          className="min-h-[44px] border border-[var(--yr-line-strong)] rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
                         >
                           {DEPARTMENT_CATEGORIES.map((c) => (
                             <option key={c} value={c}>
@@ -333,7 +333,7 @@ const AdminDepartments = () => {
                       ) : (
                         <span
                           className={`px-2 py-0.5 rounded text-xs font-medium ${
-                            CATEGORY_COLORS[dept.primaryCategory] || 'bg-gray-100 text-gray-700'
+                            CATEGORY_COLORS[dept.primaryCategory] || 'bg-[var(--yr-panel-muted)] text-gray-700'
                           }`}
                         >
                           {dept.primaryCategory}

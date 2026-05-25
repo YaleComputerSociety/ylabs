@@ -41,7 +41,7 @@ const SectionHeader = ({
   count: number;
   description?: string;
 }) => (
-  <div className="mb-4 mt-10 border-t border-slate-200 pt-5 first:mt-0 first:border-t-0 first:pt-0">
+  <div className="mb-4 mt-10 border-t border-[var(--yr-line)] pt-5 first:mt-0 first:border-t-0 first:pt-0">
     <div className="flex flex-wrap items-center justify-between gap-3">
       <h2 className="text-xl font-semibold text-slate-950">{title}</h2>
       <span className="yr-pill yr-pill-blue min-h-0 rounded px-2.5 py-1">
@@ -93,11 +93,11 @@ const StatusSummary = ({
   ];
 
   return (
-    <dl className="grid grid-cols-1 gap-px overflow-hidden rounded-md border border-slate-200 bg-slate-200 sm:grid-cols-2 lg:grid-cols-4">
+    <dl className="grid grid-cols-1 gap-px overflow-hidden rounded-md border border-[var(--yr-line)] bg-[var(--yr-line)] sm:grid-cols-2 lg:grid-cols-4">
       {items.map((item) => (
         <div
           key={item.label}
-          className={`bg-white px-4 py-3 ${item.className}`}
+          className={`bg-[var(--yr-panel)] px-4 py-3 ${item.className}`}
         >
           <dt className="yr-kicker text-[0.68rem]">{item.label}</dt>
           <dd className="mt-2 flex min-h-[3rem] items-end justify-between gap-3">
@@ -382,7 +382,7 @@ const Fellowships = () => {
     return {
       key: `f-${group.label}`,
       label: `${group.label}: ${display}`,
-      colorClass: 'bg-gray-100 text-gray-700 border border-gray-300',
+      colorClass: 'bg-[var(--yr-panel-muted)] text-gray-700 border border-[var(--yr-line-strong)]',
       onRemove: group.clear,
     };
   });
@@ -561,7 +561,7 @@ const Fellowships = () => {
     <div className="yr-page min-h-[calc(100vh-12rem)]">
     <div className="mx-auto w-full max-w-screen-2xl px-4 pb-10 sm:px-6 lg:px-8">
       <div className="pt-8 pb-6">
-        <div className="grid gap-6 border-b border-slate-200 pb-6 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-end">
+        <div className="grid gap-6 border-b border-[var(--yr-line)] pb-6 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-end">
           <div className="max-w-3xl">
             <p className="yr-kicker">
               Program planning
@@ -575,10 +575,10 @@ const Fellowships = () => {
               you find a research home; others directly organize mentor matching or summer work.
             </p>
           </div>
-          <div className="flex flex-col gap-2 border-l border-slate-200 pl-0 sm:flex-row lg:flex-col lg:pl-5">
+          <div className="flex flex-col gap-2 border-l border-[var(--yr-line)] pl-0 sm:flex-row lg:flex-col lg:pl-5">
             <Link
               to="/account"
-              className="inline-flex min-h-[44px] items-center justify-center rounded-md border border-blue-200 bg-[var(--yr-blue-soft)] px-4 text-sm font-semibold text-[var(--yr-blue)] transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+              className="inline-flex min-h-[44px] items-center justify-center rounded-md border border-blue-200 bg-[var(--yr-blue-soft)] px-4 text-sm font-semibold text-[var(--yr-blue)] transition hover:bg-[var(--yr-panel)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
             >
               Saved programs
             </Link>
@@ -586,7 +586,7 @@ const Fellowships = () => {
               href="https://yale.communityforce.com/Funds/Search.aspx#4371597136646D517975544F5976596D4E73384E69673D3D"
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex min-h-[44px] items-center justify-center rounded-md border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+              className="inline-flex min-h-[44px] items-center justify-center rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-4 text-sm font-semibold text-slate-700 transition hover:border-[var(--yr-line-strong)] hover:bg-[var(--yr-panel-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
             >
               All Yale fellowships
             </a>
@@ -625,7 +625,7 @@ const Fellowships = () => {
                   }
                 }}
                 placeholder="Try a topic, program, deadline, or funding source"
-                className="min-h-[44px] w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-700 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-3 text-sm text-slate-700 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
             <div className="flex flex-wrap items-center gap-2 xl:flex-col xl:items-stretch">
@@ -658,7 +658,7 @@ const Fellowships = () => {
           />
           {isAdmin && (
             <div
-              className="rounded-md border border-slate-200 bg-white p-2"
+              className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-2"
               aria-label="Trust tier filters"
             >
               <div className="flex flex-wrap gap-2">
@@ -673,7 +673,7 @@ const Fellowships = () => {
                       className={`min-h-10 rounded-md border px-3 py-1.5 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 ${
                         isActive
                           ? 'border-slate-900 bg-slate-900 text-white'
-                          : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                          : 'border-[var(--yr-line)] bg-[var(--yr-panel)] text-slate-700 hover:bg-[var(--yr-panel-muted)]'
                       }`}
                     >
                       {option.label}

@@ -57,7 +57,7 @@ const FellowshipSortDropdown = () => {
 
   return (
     <div className="relative" ref={outerRef}>
-      <div className="flex min-h-[44px] items-center overflow-hidden rounded-md border border-gray-300 bg-white text-sm">
+      <div className="flex min-h-[44px] items-center overflow-hidden rounded-md border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] text-sm">
         <button
           ref={buttonRef}
           onClick={() => setIsDropdownOpen(!isDropdownOpen)}
@@ -89,7 +89,7 @@ const FellowshipSortDropdown = () => {
             <div className="w-px h-5 bg-gray-300" />
             <button
               onClick={onToggleSortDirection}
-              className="flex min-h-[44px] min-w-[44px] items-center justify-center text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-inset"
+              className="flex min-h-[44px] min-w-[44px] items-center justify-center text-gray-500 transition-colors hover:bg-[var(--yr-panel-muted)] hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-inset"
               aria-label={sortDirection === 'asc' ? 'Sort ascending' : 'Sort descending'}
               title={sortDirection === 'asc' ? 'Ascending' : 'Descending'}
             >
@@ -114,14 +114,14 @@ const FellowshipSortDropdown = () => {
       </div>
 
       {isDropdownOpen && (
-        <div className="absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg border border-gray-300 overflow-hidden z-50 min-w-[180px]">
+        <div className="absolute left-0 top-full mt-1 bg-[var(--yr-panel)] rounded-lg shadow-lg border border-[var(--yr-line-strong)] overflow-hidden z-50 min-w-[180px]">
           <ul className="max-h-[250px] overflow-y-auto">
             {sortOptions.map((option, index) => (
               <li
                 key={option.value}
                 onClick={() => handleSelect(option.value)}
                 className={`px-3 py-2 cursor-pointer text-sm flex items-center justify-between ${
-                  focusedIndex === index ? 'bg-blue-100' : 'hover:bg-gray-100'
+                  focusedIndex === index ? 'bg-[var(--yr-blue-soft)]' : 'hover:bg-[var(--yr-panel-muted)]'
                 }`}
                 onMouseDown={(e) => e.preventDefault()}
               >

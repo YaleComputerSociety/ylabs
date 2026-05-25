@@ -62,7 +62,7 @@ const uniq = (values: Array<string | undefined>): string[] =>
 const DetailField: FC<{ label: string; value?: string | number }> = ({ label, value }) => {
   if (value === undefined || value === null || value === '') return null;
   return (
-    <div className="border-t border-slate-100 py-3 first:border-t-0 first:pt-0">
+    <div className="border-t border-[var(--yr-line)] py-3 first:border-t-0 first:pt-0">
       <dt className="yr-kicker text-[0.68rem]">{label}</dt>
       <dd className="mt-1 text-sm font-medium text-slate-950">{value}</dd>
     </div>
@@ -297,7 +297,7 @@ const OpportunityDetail = () => {
                   {evidence.map((item) => (
                     <div
                       key={item._id}
-                      className="border-t border-gray-100 pt-3 first:border-t-0 first:pt-0"
+                      className="border-t border-[var(--yr-line)] pt-3 first:border-t-0 first:pt-0"
                     >
                       <p className="text-sm font-semibold text-gray-900">
                         {item.sourceName || 'Source evidence'}
@@ -355,7 +355,7 @@ const OpportunityDetail = () => {
             </dl>
 
             {sourceUrls.length > 0 && (
-              <div className="border-t border-gray-100 pt-4 mt-1">
+              <div className="border-t border-[var(--yr-line)] pt-4 mt-1">
                 <h3 className="yr-kicker">
                   Sources
                 </h3>

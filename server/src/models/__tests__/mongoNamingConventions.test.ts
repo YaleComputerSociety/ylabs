@@ -1,6 +1,7 @@
 import type mongoose from 'mongoose';
 import { describe, expect, it } from 'vitest';
 import { AccessSignal } from '../accessSignal';
+import { AdminGrant } from '../adminGrant';
 import { AnalyticsEvent } from '../analytics';
 import { ContactRoute } from '../contactRoute';
 import { Department } from '../department';
@@ -21,6 +22,7 @@ import { User } from '../user';
 
 const models: Array<[mongoose.Model<any>, string]> = [
   [AccessSignal, 'access_signals'],
+  [AdminGrant, 'admin_grants'],
   [AnalyticsEvent, 'analytics_events'],
   [ContactRoute, 'contact_routes'],
   [Department, 'departments'],

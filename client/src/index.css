@@ -5,19 +5,22 @@
 :root {
   --yr-blue: #00356b;
   --yr-navy: #0b1f3a;
-  --yr-ivory: #f8f5ed;
-  --yr-parchment: #efe7d3;
+  --yr-page: #fbfaf7;
+  --yr-ivory: #fbfaf7;
+  --yr-parchment: #f6f2ea;
   --yr-gold: #b89b5e;
   --yr-text: #222222;
-  --yr-border: #ddd6c8;
+  --yr-border: #e2e8f0;
+  --yr-border-warm: #e7dfd2;
   --yr-ink: var(--yr-navy);
   --yr-muted: #5f6570;
   --yr-line: var(--yr-border);
-  --yr-line-strong: #c7bda9;
-  --yr-paper: var(--yr-ivory);
-  --yr-panel: #fffdf8;
+  --yr-line-strong: #cbd5e1;
+  --yr-paper: var(--yr-page);
+  --yr-panel: #ffffff;
+  --yr-panel-muted: #f7f3ec;
   --yr-blue-soft: #e6edf5;
-  --yr-gold-soft: #f4eddc;
+  --yr-gold-soft: #fff7e6;
   --yr-green: #23705b;
   --yr-green-soft: #e5f4ee;
   --yr-shadow: 0 18px 45px rgba(11, 31, 58, 0.09);
@@ -48,10 +51,7 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   color: var(--yr-ink);
-  background:
-    linear-gradient(180deg, rgba(255, 253, 248, 0.84), rgba(248, 245, 237, 0.96)),
-    radial-gradient(circle at 12% 0%, rgba(0, 53, 107, 0.09), transparent 34rem),
-    var(--yr-paper);
+  background: var(--yr-paper);
 }
 
 code {
@@ -60,14 +60,56 @@ code {
 
 @layer components {
   .yr-page {
-    background:
-      linear-gradient(180deg, rgba(255, 253, 248, 0.76), rgba(248, 245, 237, 0.98)),
-      var(--yr-paper);
+    background: var(--yr-paper);
+  }
+
+  .yr-muted-surface {
+    border: 1px solid var(--yr-border-warm);
+    background: var(--yr-panel-muted);
+  }
+
+  .yr-field {
+    border: 1px solid var(--yr-line);
+    background: var(--yr-panel);
+    color: var(--yr-ink);
+  }
+
+  .yr-menu {
+    border: 1px solid var(--yr-line);
+    background: var(--yr-panel);
+    box-shadow: 0 18px 38px rgba(11, 31, 58, 0.14);
+  }
+
+  .yr-secondary-action {
+    border: 1px solid var(--yr-line);
+    background: var(--yr-panel);
+    color: var(--yr-ink);
+    transition:
+      border-color 150ms ease,
+      background-color 150ms ease,
+      color 150ms ease;
+  }
+
+  .yr-secondary-action:hover {
+    border-color: var(--yr-line-strong);
+    background: var(--yr-panel-muted);
+  }
+
+  .yr-divider {
+    border-color: var(--yr-line);
+  }
+
+  .yr-row-hover {
+    transition: background-color 150ms ease;
+  }
+
+  .yr-row-hover:hover {
+    background: var(--yr-panel-muted);
   }
 
   .yr-panel {
     border: 1px solid var(--yr-line);
-    background: color-mix(in srgb, var(--yr-panel) 94%, var(--yr-paper));
+    background: var(--yr-panel);
     box-shadow: var(--yr-shadow);
   }
 
@@ -113,7 +155,7 @@ code {
     align-items: center;
     border-radius: 999px;
     border: 1px solid var(--yr-line);
-    background: var(--yr-panel);
+    background: color-mix(in srgb, var(--yr-panel) 86%, var(--yr-page));
     padding: 0.25rem 0.625rem;
     color: var(--yr-muted);
     font-size: 0.75rem;

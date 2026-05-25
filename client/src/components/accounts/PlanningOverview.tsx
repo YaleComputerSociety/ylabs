@@ -14,7 +14,7 @@ const PlanningOverview = ({
   savedFellowshipCount,
   nextDeadlineLabel,
 }: PlanningOverviewProps) => (
-  <section className="mb-6 rounded-md border border-gray-200 bg-white p-5">
+  <section className="mb-6 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-5">
     <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
       <div className="min-w-0">
         <p className="text-xs font-semibold uppercase tracking-wider text-blue-700">
@@ -33,7 +33,7 @@ const PlanningOverview = ({
         Find more research homes
       </Link>
     </div>
-    <div className="mt-4 rounded-md border border-blue-100 bg-blue-50 p-4">
+    <div className="mt-4 rounded-md border border-blue-100 bg-[var(--yr-blue-soft)] p-4">
       <p className="text-xs font-semibold uppercase tracking-wider text-blue-700">Next up</p>
       <p className="mt-1 text-sm font-semibold text-gray-950">
         {nextDeadlineLabel || 'No deadline yet'}

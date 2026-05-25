@@ -242,7 +242,7 @@ const SourceLinks = ({
         {sourceIds.map((id) => (
           <span
             key={id}
-            className="text-xs text-gray-500 bg-gray-100 border border-gray-200 rounded px-2 py-0.5"
+            className="text-xs text-gray-500 bg-[var(--yr-panel-muted)] border border-[var(--yr-line)] rounded px-2 py-0.5"
             title={id}
           >
             evidence {id.slice(-6)}
@@ -250,13 +250,13 @@ const SourceLinks = ({
         ))}
       </div>
       {evidence.length > 0 && (
-        <details className="rounded border border-gray-200 bg-gray-50 p-2">
+        <details className="rounded border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] p-2">
           <summary className="cursor-pointer text-xs font-semibold text-gray-700">
             Source evidence ({evidence.length})
           </summary>
           <div className="mt-2 space-y-2">
             {evidence.map((item) => (
-              <div key={item.observationId} className="rounded border border-gray-200 bg-white p-2 text-xs text-gray-600">
+              <div key={item.observationId} className="rounded border border-[var(--yr-line)] bg-[var(--yr-panel)] p-2 text-xs text-gray-600">
                 <div className="flex flex-wrap gap-2">
                   <span className="font-semibold text-gray-800">{item.sourceName || 'unknown source'}</span>
                   <span>obs {item.observationId.slice(-6)}</span>
@@ -315,12 +315,12 @@ const RecordReviewControls = ({
   };
 
   return (
-    <div className="mt-3 rounded border border-gray-200 bg-gray-50 p-3">
+    <div className="mt-3 rounded border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] p-3">
       <div className="grid gap-2 md:grid-cols-[180px_1fr_auto]">
         <select
           value={status}
           onChange={(event) => setStatus(event.target.value as ReviewStatus)}
-          className="min-h-[44px] rounded border border-gray-300 px-2 py-1.5 text-xs"
+          className="min-h-[44px] rounded border border-[var(--yr-line-strong)] px-2 py-1.5 text-xs"
         >
           {REVIEW_STATUSES.map((option) => (
             <option key={option} value={option}>
@@ -333,7 +333,7 @@ const RecordReviewControls = ({
           value={lockedFields}
           onChange={(event) => setLockedFields(event.target.value)}
           placeholder="locked fields"
-          className="min-h-[44px] rounded border border-gray-300 px-2 py-1.5 text-xs"
+          className="min-h-[44px] rounded border border-[var(--yr-line-strong)] px-2 py-1.5 text-xs"
         />
         <button
           onClick={save}
@@ -348,7 +348,7 @@ const RecordReviewControls = ({
         onChange={(event) => setNote(event.target.value)}
         rows={2}
         placeholder="Reviewer note"
-        className="mt-2 min-h-[64px] w-full rounded border border-gray-300 px-2 py-1.5 text-xs"
+        className="mt-2 min-h-[64px] w-full rounded border border-[var(--yr-line-strong)] px-2 py-1.5 text-xs"
       />
       {record.review?.reviewedAt && (
         <p className="mt-1 text-[11px] text-gray-500">Last reviewed {formatDate(record.review.reviewedAt)}</p>
@@ -358,14 +358,14 @@ const RecordReviewControls = ({
 };
 
 const CountPill = ({ label, value }: { label: string; value: number }) => (
-  <span className="inline-flex items-center gap-1 rounded border border-gray-200 bg-gray-50 px-2 py-1 text-xs text-gray-700">
+  <span className="inline-flex items-center gap-1 rounded border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] px-2 py-1 text-xs text-gray-700">
     <span className="font-semibold text-gray-900">{value}</span>
     {label}
   </span>
 );
 
 const EmptyState = ({ label }: { label: string }) => (
-  <div className="border border-dashed border-gray-200 rounded p-4 text-sm text-gray-500">
+  <div className="border border-dashed border-[var(--yr-line)] rounded p-4 text-sm text-gray-500">
     {label}
   </div>
 );
@@ -536,7 +536,7 @@ const AdminAccessReview = () => {
 
   return (
     <div className="space-y-4">
-      <div className="bg-white rounded-lg border border-gray-200 p-4">
+      <div className="bg-[var(--yr-panel)] rounded-lg border border-[var(--yr-line)] p-4">
         <div className="flex flex-wrap items-end gap-3">
           <div className="flex-1 min-w-[220px]">
             <label className="block text-xs font-medium text-gray-600 mb-1">Search</label>
@@ -548,7 +548,7 @@ const AdminAccessReview = () => {
                 setPage(1);
               }}
               placeholder="Search entity, slug, department, area..."
-              className="min-h-[44px] w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="min-h-[44px] w-full border border-[var(--yr-line-strong)] rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
           <div>
@@ -559,7 +559,7 @@ const AdminAccessReview = () => {
                 setPageSize(Number(event.target.value));
                 setPage(1);
               }}
-              className="min-h-[44px] border border-gray-300 rounded-md px-3 py-2 text-sm"
+              className="min-h-[44px] border border-[var(--yr-line-strong)] rounded-md px-3 py-2 text-sm"
             >
               {PAGE_SIZES.map((size) => (
                 <option key={size} value={size}>
@@ -578,8 +578,8 @@ const AdminAccessReview = () => {
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-[420px_1fr] gap-4">
-        <section className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-          <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
+        <section className="bg-[var(--yr-panel)] border border-[var(--yr-line)] rounded-lg overflow-hidden">
+          <div className="px-4 py-3 border-b border-[var(--yr-line)] flex items-center justify-between">
             <p className="text-sm font-semibold text-gray-900">
               {total} entit{total === 1 ? 'y' : 'ies'}
             </p>
@@ -597,7 +597,7 @@ const AdminAccessReview = () => {
                   key={entity._id}
                   onClick={() => setSelectedId(entity._id)}
                   className={`w-full text-left p-4 transition-colors ${
-                    selectedId === entity._id ? 'bg-blue-50' : 'hover:bg-gray-50'
+                    selectedId === entity._id ? 'bg-[var(--yr-blue-soft)]' : 'hover:bg-[var(--yr-panel-muted)]'
                   }`}
                 >
                   <div className="flex items-start justify-between gap-3">
@@ -605,7 +605,7 @@ const AdminAccessReview = () => {
                       <h3 className="font-semibold text-gray-900">{entity.name}</h3>
                       <p className="text-xs text-gray-500">{entity.slug}</p>
                     </div>
-                    <span className="text-xs text-gray-600 bg-white border border-gray-200 rounded px-2 py-1">
+                    <span className="text-xs text-gray-600 bg-[var(--yr-panel)] border border-[var(--yr-line)] rounded px-2 py-1">
                       {formatToken(entity.entityType || entity.kind)}
                     </span>
                   </div>
@@ -627,25 +627,25 @@ const AdminAccessReview = () => {
             </div>
           )}
 
-          <div className="px-4 py-3 border-t border-gray-200 flex items-center justify-between">
+          <div className="px-4 py-3 border-t border-[var(--yr-line)] flex items-center justify-between">
             <button
               onClick={() => setPage((current) => Math.max(1, current - 1))}
               disabled={page <= 1}
-              className="min-h-[44px] px-3 py-1.5 text-sm border border-gray-300 rounded disabled:opacity-40"
+              className="min-h-[44px] px-3 py-1.5 text-sm border border-[var(--yr-line-strong)] rounded disabled:opacity-40"
             >
               Previous
             </button>
             <button
               onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
               disabled={page >= totalPages}
-              className="min-h-[44px] px-3 py-1.5 text-sm border border-gray-300 rounded disabled:opacity-40"
+              className="min-h-[44px] px-3 py-1.5 text-sm border border-[var(--yr-line-strong)] rounded disabled:opacity-40"
             >
               Next
             </button>
           </div>
         </section>
 
-        <section className="bg-white border border-gray-200 rounded-lg p-5">
+        <section className="bg-[var(--yr-panel)] border border-[var(--yr-line)] rounded-lg p-5">
           {!selectedId || !selectedEntity ? (
             <EmptyState label="Select an entity to review derived access records." />
           ) : isLoadingDetail || !detail ? (
@@ -660,7 +660,7 @@ const AdminAccessReview = () => {
                   <p className="text-sm text-gray-500">{detail.group.slug}</p>
                   <div className="flex flex-wrap gap-2 mt-3">
                     {(detail.group.departments || []).slice(0, 4).map((department) => (
-                      <span key={department} className="text-xs bg-gray-100 text-gray-700 rounded px-2 py-1">
+                      <span key={department} className="text-xs bg-[var(--yr-panel-muted)] text-gray-700 rounded px-2 py-1">
                         {department}
                       </span>
                     ))}
@@ -670,13 +670,13 @@ const AdminAccessReview = () => {
                   href={`/research/${detail.group.slug}`}
                   target="_blank"
                   rel="noreferrer"
-                  className="inline-flex min-h-[44px] items-center px-3 py-2 text-sm font-semibold text-blue-700 border border-blue-200 rounded hover:bg-blue-50"
+                  className="inline-flex min-h-[44px] items-center px-3 py-2 text-sm font-semibold text-blue-700 border border-blue-200 rounded hover:bg-[var(--yr-blue-soft)]"
                 >
                   Open Research Page
                 </a>
               </div>
 
-              <div className="border border-gray-200 rounded-lg p-4">
+              <div className="border border-[var(--yr-line)] rounded-lg p-4">
                 <label className="block text-sm font-semibold text-gray-900 mb-1">Manual Locks</label>
                 <p className="text-xs text-gray-500 mb-3">
                   Comma-separated field names protected from scraper materialization.
@@ -687,7 +687,7 @@ const AdminAccessReview = () => {
                     value={manualLocksText}
                     onChange={(event) => setManualLocksText(event.target.value)}
                     placeholder="acceptingUndergrads, contactRoutes..."
-                    className="min-h-[44px] flex-1 border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="min-h-[44px] flex-1 border border-[var(--yr-line-strong)] rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                   <button
                     onClick={saveManualLocks}
@@ -700,7 +700,7 @@ const AdminAccessReview = () => {
               </div>
 
               {detail.reviewSummary && (
-                <div className="border border-gray-200 rounded-lg p-4">
+                <div className="border border-[var(--yr-line)] rounded-lg p-4">
                   <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                     <h4 className="text-sm font-semibold text-gray-900">Review Summary</h4>
                     <span className="text-xs text-gray-500">
@@ -723,7 +723,7 @@ const AdminAccessReview = () => {
                         {detail.reviewSummary.sourceNames.map((sourceName) => (
                           <span
                             key={sourceName}
-                            className="rounded border border-gray-200 bg-gray-50 px-2 py-1 text-xs text-gray-700"
+                            className="rounded border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] px-2 py-1 text-xs text-gray-700"
                           >
                             {sourceName}
                           </span>
@@ -736,7 +736,7 @@ const AdminAccessReview = () => {
                 </div>
               )}
 
-              <div className="border border-gray-200 rounded-lg p-4">
+              <div className="border border-[var(--yr-line)] rounded-lg p-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <h4 className="text-sm font-semibold text-gray-900">Record Filter</h4>
@@ -748,7 +748,7 @@ const AdminAccessReview = () => {
                   <select
                     value={recordFilter}
                     onChange={(event) => setRecordFilter(event.target.value as RecordFilter)}
-                    className="min-h-[44px] rounded border border-gray-300 px-3 py-2 text-sm"
+                    className="min-h-[44px] rounded border border-[var(--yr-line-strong)] px-3 py-2 text-sm"
                   >
                     {RECORD_FILTERS.map((option) => (
                       <option key={option.value} value={option.value}>
@@ -763,13 +763,13 @@ const AdminAccessReview = () => {
                 <h4 className="text-lg font-bold text-gray-900 mb-3">Pathways</h4>
                 <div className="space-y-3">
                   {filteredRecords.entryPathways.map((pathway) => (
-                    <div key={pathway._id} className="border border-gray-200 rounded-lg p-4">
+                    <div key={pathway._id} className="border border-[var(--yr-line)] rounded-lg p-4">
                       <div className="flex flex-wrap items-center gap-2 mb-2">
                         <span className="font-semibold text-gray-900">{pathway.studentFacingLabel}</span>
-                        <span className="text-xs bg-blue-50 text-blue-700 rounded px-2 py-1">
+                        <span className="text-xs bg-[var(--yr-blue-soft)] text-blue-700 rounded px-2 py-1">
                           {formatToken(pathway.pathwayType)}
                         </span>
-                        <span className="text-xs bg-gray-100 text-gray-700 rounded px-2 py-1">
+                        <span className="text-xs bg-[var(--yr-panel-muted)] text-gray-700 rounded px-2 py-1">
                           {formatToken(pathway.status)}
                         </span>
                         {pathway.archived && (
@@ -808,10 +808,10 @@ const AdminAccessReview = () => {
                 <h4 className="text-lg font-bold text-gray-900 mb-3">Access Signals</h4>
                 <div className="space-y-3">
                   {filteredRecords.accessSignals.map((signal) => (
-                    <div key={signal._id} className="border border-gray-200 rounded-lg p-4">
+                    <div key={signal._id} className="border border-[var(--yr-line)] rounded-lg p-4">
                       <div className="flex flex-wrap items-center gap-2 mb-2">
                         <span className="font-semibold text-gray-900">{formatToken(signal.signalType)}</span>
-                        <span className="text-xs bg-gray-100 text-gray-700 rounded px-2 py-1">
+                        <span className="text-xs bg-[var(--yr-panel-muted)] text-gray-700 rounded px-2 py-1">
                           {formatToken(signal.confidence)}
                         </span>
                         {signal.archived && (
@@ -848,15 +848,15 @@ const AdminAccessReview = () => {
                 <h4 className="text-lg font-bold text-gray-900 mb-3">Contact Routes</h4>
                 <div className="space-y-3">
                   {filteredRecords.contactRoutes.map((route) => (
-                    <div key={route._id} className="border border-gray-200 rounded-lg p-4">
+                    <div key={route._id} className="border border-[var(--yr-line)] rounded-lg p-4">
                       <div className="flex flex-wrap items-center gap-2 mb-2">
                         <span className="font-semibold text-gray-900">
                           {route.label || route.name || route.personName || formatToken(route.routeType)}
                         </span>
-                        <span className="text-xs bg-gray-100 text-gray-700 rounded px-2 py-1">
+                        <span className="text-xs bg-[var(--yr-panel-muted)] text-gray-700 rounded px-2 py-1">
                           {formatToken(route.visibility)}
                         </span>
-                        <span className="text-xs bg-gray-100 text-gray-700 rounded px-2 py-1">
+                        <span className="text-xs bg-[var(--yr-panel-muted)] text-gray-700 rounded px-2 py-1">
                           {formatToken(route.contactPolicy)}
                         </span>
                         {route.archived && (
@@ -891,7 +891,7 @@ const AdminAccessReview = () => {
                 <h4 className="text-lg font-bold text-gray-900 mb-3">Posted Opportunities</h4>
                 <div className="space-y-3">
                   {filteredRecords.postedOpportunities.map((opportunity) => (
-                    <div key={opportunity._id} className="border border-gray-200 rounded-lg p-4">
+                    <div key={opportunity._id} className="border border-[var(--yr-line)] rounded-lg p-4">
                       <div className="flex flex-wrap items-center gap-2 mb-2">
                         <span className="font-semibold text-gray-900">{opportunity.title}</span>
                         <span className="text-xs bg-green-50 text-green-700 rounded px-2 py-1">

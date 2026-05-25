@@ -46,7 +46,7 @@ const ClosedIcon = () => (
 const StatusBadge = React.memo(({ isOpen }: StatusBadgeProps) => (
   <span
     className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full ${
-      isOpen ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'
+      isOpen ? 'bg-green-100 text-green-700' : 'bg-[var(--yr-panel-muted)] text-gray-600'
     }`}
   >
     {isOpen ? <OpenIcon /> : <ClosedIcon />}

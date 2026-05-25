@@ -593,7 +593,7 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
   };
 
   return (
-    <section className="mb-8 rounded-md border border-gray-200 bg-white p-5">
+    <section className="mb-8 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-5">
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <h2 className="text-xl font-bold text-gray-900">Saved Research Plans</h2>
@@ -607,7 +607,7 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
               type="button"
               onClick={() => setShowExportControls((current) => !current)}
               aria-expanded={showExportControls}
-              className="inline-flex min-h-[44px] items-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:border-gray-400 hover:bg-gray-50"
+              className="inline-flex min-h-[44px] items-center rounded-md border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-3 py-2 text-sm font-semibold text-gray-700 hover:border-gray-400 hover:bg-[var(--yr-panel-muted)]"
             >
               Advising export
             </button>
@@ -616,13 +616,13 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
       </div>
 
       {showExportControls && pathways.length > 0 && (
-        <div className="mb-4 flex flex-col gap-3 rounded-md border border-gray-100 bg-slate-50 p-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="mb-4 flex flex-col gap-3 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] p-3 sm:flex-row sm:items-center sm:justify-between">
           <label className="flex items-center gap-2 text-sm font-medium text-gray-600">
             <input
               type="checkbox"
               checked={includePrivateNotesInExport}
               onChange={(event) => setIncludePrivateNotesInExport(event.target.checked)}
-              className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              className="h-4 w-4 rounded border-[var(--yr-line-strong)] text-blue-600 focus:ring-blue-500"
             />
             <span>Include private notes</span>
           </label>
@@ -630,7 +630,7 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
             type="button"
             onClick={exportSavedPathways}
             disabled={exporting || loading}
-            className="inline-flex min-h-[44px] items-center justify-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:border-gray-400 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex min-h-[44px] items-center justify-center rounded-md border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-3 py-2 text-sm font-semibold text-gray-700 hover:border-gray-400 hover:bg-[var(--yr-panel-muted)] disabled:cursor-not-allowed disabled:opacity-60"
           >
             {exporting ? 'Exporting...' : 'Export for advising'}
           </button>
@@ -652,7 +652,7 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
           {error}
         </div>
       ) : pathways.length === 0 ? (
-        <div className="rounded-md border border-dashed border-gray-300 bg-slate-50 p-5">
+        <div className="rounded-md border border-dashed border-[var(--yr-line-strong)] bg-[var(--yr-panel-muted)] p-5">
           <h3 className="text-base font-semibold text-gray-950">No saved research plans yet</h3>
           <p className="mt-2 max-w-2xl text-sm leading-relaxed text-gray-600">
             Start with Yale Research, open profiles that look promising, then save a plan when you
@@ -667,7 +667,7 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
             </Link>
             <Link
               to="/programs"
-              className="inline-flex min-h-[44px] items-center rounded-md border border-blue-200 bg-white px-3 py-2 text-sm font-semibold text-blue-800 hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+              className="inline-flex min-h-[44px] items-center rounded-md border border-blue-200 bg-[var(--yr-panel)] px-3 py-2 text-sm font-semibold text-blue-800 hover:bg-[var(--yr-blue-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
             >
               Programs & Fellowships
             </Link>
@@ -690,14 +690,14 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
             const stage = labelForOption(STAGE_OPTIONS, plan.stage);
 
             return (
-              <article key={pathway._id} className="rounded-md border border-gray-200 p-4">
+              <article key={pathway._id} className="rounded-md border border-[var(--yr-line)] p-4">
                 <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                   <div className="min-w-0">
                     <div className="mb-2 flex flex-wrap gap-1.5">
-                      <span className="rounded bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700">
+                      <span className="rounded bg-[var(--yr-blue-soft)] px-2 py-0.5 text-xs font-semibold text-blue-700">
                         {labelize(pathway.pathwayType)}
                       </span>
-                      <span className="rounded bg-gray-100 px-2 py-0.5 text-xs font-semibold text-gray-700">
+                      <span className="rounded bg-[var(--yr-panel-muted)] px-2 py-0.5 text-xs font-semibold text-gray-700">
                         {labelize(pathway.evidenceStrength)} evidence
                       </span>
                       <span className="rounded bg-slate-100 px-2 py-0.5 text-xs font-semibold text-gray-700">
@@ -713,7 +713,7 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
                   <div className="flex flex-wrap gap-2 md:justify-end">
 	                    <Link
 	                      to={`/research/${pathway.researchEntity.slug}`}
-	                      className="inline-flex min-h-[44px] items-center rounded-md border border-blue-200 bg-white px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+	                      className="inline-flex min-h-[44px] items-center rounded-md border border-blue-200 bg-[var(--yr-panel)] px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-[var(--yr-blue-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
                     >
                       Open profile
                     </Link>
@@ -729,18 +729,18 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
                 </div>
 
                 <div className="mt-4 grid gap-3 md:grid-cols-2">
-                  <div className="rounded border border-gray-100 bg-gray-50 p-3 text-sm text-gray-700">
+                  <div className="rounded border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] p-3 text-sm text-gray-700">
                     <span className="font-semibold text-gray-900">Next step:</span>{' '}
                     {nextStepLabel(pathway.bestNextStepCategory)}
                   </div>
-                  <div className="rounded border border-gray-100 bg-gray-50 p-3 text-sm text-gray-700">
+                  <div className="rounded border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] p-3 text-sm text-gray-700">
                     <span className="font-semibold text-gray-900">Deadline:</span>{' '}
                     {deadlineReminder ? deadlineReminder.detail : 'No deadline attached'}
                   </div>
                 </div>
 
                 {isExpanded && (
-                  <div className="mt-4 space-y-4 border-t border-gray-100 pt-4">
+                  <div className="mt-4 space-y-4 border-t border-[var(--yr-line)] pt-4">
                     {deadlineReminder?.sourceUrl && (
                       <a
                         href={deadlineReminder.sourceUrl}
@@ -756,7 +756,7 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
                       <div className="rounded-md border border-emerald-100 bg-emerald-50 p-3 text-sm text-emerald-900">
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="font-semibold">{fundingCue.label}</span>
-                          <span className="rounded bg-white/80 px-2 py-0.5 text-xs font-semibold text-emerald-700">
+                          <span className="rounded bg-[var(--yr-panel)]/80 px-2 py-0.5 text-xs font-semibold text-emerald-700">
                             {fundingCue.confidence === 'strong'
                               ? 'Evidence-backed'
                               : 'Planning cue'}
@@ -776,7 +776,7 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
                       <div className="rounded-md border border-cyan-100 bg-cyan-50 p-3 text-sm text-cyan-950">
                         <div className="mb-2 flex items-center justify-between gap-2">
                           <span className="font-semibold">Fellowship candidates</span>
-                          <span className="rounded bg-white/80 px-2 py-0.5 text-xs font-semibold text-cyan-700">
+                          <span className="rounded bg-[var(--yr-panel)]/80 px-2 py-0.5 text-xs font-semibold text-cyan-700">
                             Scored from saved research plan
                           </span>
                         </div>
@@ -788,7 +788,7 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
                             return (
                               <div
                                 key={match.fellowshipId}
-                                className="rounded border border-cyan-100 bg-white/80 p-2"
+                                className="rounded border border-cyan-100 bg-[var(--yr-panel)]/80 p-2"
                               >
                                 <div className="flex flex-wrap items-center gap-2">
                                   <Link
@@ -841,7 +841,7 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
                               intent: event.target.value as PlanningIntent,
                             })
                           }
-                          className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-2 py-2 text-sm font-normal normal-case tracking-normal text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className="mt-1 block w-full rounded-md border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-2 py-2 text-sm font-normal normal-case tracking-normal text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
                         >
                           {INTENT_OPTIONS.map((option) => (
                             <option key={option.value} value={option.value}>
@@ -860,7 +860,7 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
                               stage: event.target.value as PlanningStage,
                             })
                           }
-                          className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-2 py-2 text-sm font-normal normal-case tracking-normal text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className="mt-1 block w-full rounded-md border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-2 py-2 text-sm font-normal normal-case tracking-normal text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
                         >
                           {STAGE_OPTIONS.map((option) => (
                             <option key={option.value} value={option.value}>
@@ -880,11 +880,11 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
                         }
                         rows={3}
                         placeholder="Why this route matters, what to check next, or who to ask."
-                        className="mt-1 block w-full resize-y rounded-md border border-gray-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="mt-1 block w-full resize-y rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-sm font-normal normal-case tracking-normal text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                       />
                     </label>
 
-                    <div className="rounded-md border border-gray-100 bg-white p-3">
+                    <div className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-3">
                       <div className="mb-2 flex items-center justify-between gap-3">
                         <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
                           Checklist
@@ -905,7 +905,7 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
                               onChange={(event) =>
                                 toggleChecklistItem(pathway._id, item.key, event.target.checked)
                               }
-                              className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                              className="mt-0.5 h-4 w-4 rounded border-[var(--yr-line-strong)] text-blue-600 focus:ring-blue-500"
                             />
                             <span>{item.label}</span>
                           </label>

@@ -119,7 +119,7 @@ const AdminFacultyProfilesTable = () => {
           placeholder="Search by name, netid, department..."
           value={search}
           onChange={(e) => dispatch({ type: 'SET_SEARCH', payload: e.target.value })}
-          className="min-h-[44px] flex-1 min-w-[200px] px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="min-h-[44px] flex-1 min-w-[200px] px-3 py-2 text-sm border border-[var(--yr-line)] rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
 
         <select
@@ -127,7 +127,7 @@ const AdminFacultyProfilesTable = () => {
           onChange={(e) =>
             dispatch({ type: 'SET_FILTER', filter: 'profileVerified', value: e.target.value })
           }
-          className="min-h-[44px] px-3 py-2 text-sm border border-gray-200 rounded-lg"
+          className="min-h-[44px] px-3 py-2 text-sm border border-[var(--yr-line)] rounded-lg"
         >
           <option value="">All Verified</option>
           <option value="true">Verified</option>
@@ -139,7 +139,7 @@ const AdminFacultyProfilesTable = () => {
           onChange={(e) =>
             dispatch({ type: 'SET_FILTER', filter: 'hasListings', value: e.target.value })
           }
-          className="min-h-[44px] px-3 py-2 text-sm border border-gray-200 rounded-lg"
+          className="min-h-[44px] px-3 py-2 text-sm border border-[var(--yr-line)] rounded-lg"
         >
           <option value="">All Posted Opportunity Evidence</option>
           <option value="true">Has Posted Opportunity Evidence</option>
@@ -149,7 +149,7 @@ const AdminFacultyProfilesTable = () => {
         <select
           value={pageSize}
           onChange={(e) => dispatch({ type: 'SET_PAGE_SIZE', payload: Number(e.target.value) })}
-          className="min-h-[44px] px-3 py-2 text-sm border border-gray-200 rounded-lg"
+          className="min-h-[44px] px-3 py-2 text-sm border border-[var(--yr-line)] rounded-lg"
         >
           {PAGE_SIZES.map((s) => (
             <option key={s} value={s}>
@@ -163,9 +163,9 @@ const AdminFacultyProfilesTable = () => {
         {total} profile{total !== 1 ? 's' : ''} found
       </p>
 
-      <div className="overflow-x-auto border border-gray-200 rounded-lg">
+      <div className="overflow-x-auto border border-[var(--yr-line)] rounded-lg">
         <table className="w-full text-sm">
-          <thead className="bg-gray-50">
+          <thead className="bg-[var(--yr-panel-muted)]">
             <tr>
               {TABLE_COLUMNS.map((col) => (
                 <th
@@ -205,7 +205,7 @@ const AdminFacultyProfilesTable = () => {
                 <tr
                   key={p._id}
                   onClick={() => dispatch({ type: 'OPEN_EDIT', item: p })}
-                  className="border-t border-gray-100 cursor-pointer hover:bg-blue-50 transition-colors"
+                  className="border-t border-[var(--yr-line)] cursor-pointer hover:bg-[var(--yr-blue-soft)] transition-colors"
                 >
                   <td className="px-4 py-3">
                     <div className="font-medium text-gray-800">
@@ -235,7 +235,7 @@ const AdminFacultyProfilesTable = () => {
                         </span>
                       )}
                       {p.userConfirmed && (
-                        <span className="text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-600">
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-[var(--yr-blue-soft)] text-blue-600">
                           Confirmed
                         </span>
                       )}
@@ -253,7 +253,7 @@ const AdminFacultyProfilesTable = () => {
           <button
             onClick={() => dispatch({ type: 'SET_PAGE', payload: Math.max(1, page - 1) })}
             disabled={page === 1}
-            className="min-h-[44px] px-3 py-1.5 text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40"
+            className="min-h-[44px] px-3 py-1.5 text-sm rounded-lg border border-[var(--yr-line)] text-gray-600 hover:bg-[var(--yr-panel-muted)] disabled:opacity-40"
           >
             Previous
           </button>
@@ -263,7 +263,7 @@ const AdminFacultyProfilesTable = () => {
           <button
             onClick={() => dispatch({ type: 'SET_PAGE', payload: Math.min(totalPages, page + 1) })}
             disabled={page === totalPages}
-            className="min-h-[44px] px-3 py-1.5 text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40"
+            className="min-h-[44px] px-3 py-1.5 text-sm rounded-lg border border-[var(--yr-line)] text-gray-600 hover:bg-[var(--yr-panel-muted)] disabled:opacity-40"
           >
             Next
           </button>

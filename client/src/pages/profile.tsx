@@ -177,7 +177,7 @@ const Profile = () => {
         </div>
       )}
 
-      <div className="border-b border-gray-200 mt-8">
+      <div className="border-b border-[var(--yr-line)] mt-8">
         <nav className="flex gap-1" role="tablist" aria-label="Profile sections">
           {tabs
             .filter((t) => t.show)
@@ -193,7 +193,7 @@ const Profile = () => {
                 className={`min-h-[44px] px-5 py-3 text-sm font-semibold border-b-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 ${
                   activeTab === tab.key
                     ? 'border-blue-600 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-[var(--yr-line-strong)]'
                 }`}
               >
                 {tab.label}
@@ -240,7 +240,7 @@ const Profile = () => {
                     return (
                       <article
                         key={entity._id || entity.slug || title}
-                        className="rounded-md border border-gray-200 bg-white p-4"
+                        className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4"
                       >
                         <div className="flex flex-col gap-2">
                           <div className="flex flex-wrap items-center gap-2">
@@ -255,7 +255,7 @@ const Profile = () => {
                               <h3 className="text-base font-semibold text-gray-950">{title}</h3>
                             )}
                             {roleLabel && (
-                              <span className="rounded bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700">
+                              <span className="rounded bg-[var(--yr-blue-soft)] px-2 py-0.5 text-xs font-semibold text-blue-700">
                                 {roleLabel}
                               </span>
                             )}
@@ -268,7 +268,7 @@ const Profile = () => {
                               {(entity.researchAreas || []).slice(0, 4).map((area) => (
                                 <span
                                   key={area}
-                                  className="rounded bg-gray-50 px-2 py-0.5 text-xs font-semibold text-gray-600"
+                                  className="rounded bg-[var(--yr-panel-muted)] px-2 py-0.5 text-xs font-semibold text-gray-600"
                                 >
                                   {formatTitleCaseLabel(area)}
                                 </span>

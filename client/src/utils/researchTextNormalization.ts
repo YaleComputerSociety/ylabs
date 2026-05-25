@@ -35,6 +35,39 @@ const GENERIC_CONTEXT_DESCRIPTION_PATTERNS = [
 export const normalizeResearchInlineText = (value: unknown): string =>
   typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
 
+export const stripResearchDescriptionChrome = (value: unknown): string => {
+  let text = normalizeResearchInlineText(value);
+  if (!text) return '';
+
+  text = text
+    .replace(/^INFORMATION FOR\s+(?=Copy Link\b|[A-Z])/i, '')
+    .replace(/\bCopy Link\b/gi, ' ')
+    .replace(/([a-z])\.([A-Z])/g, '$1. $2')
+    .replace(/([a-z]),([a-z])/g, '$1, $2')
+    .replace(/([a-z])(?=leading-edge\b)/gi, '$1 ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const tailMarkers = [
+    /\bResearch\/Training Opportunities\b/i,
+    /\bResearch and Training Opportunities\b/i,
+    /\bWe welcome enthusiastic\b/i,
+    /\bContact Us\b/i,
+    /\bContact us\b/i,
+    /\bDepartment of [A-Z][\s\S]*\b(?:United States|New Haven,\s*CT)\b/i,
+  ];
+  const tailIndex = tailMarkers.reduce((best, pattern) => {
+    const match = text.match(pattern);
+    if (!match || match.index === undefined) return best;
+    return best === -1 ? match.index : Math.min(best, match.index);
+  }, -1);
+  if (tailIndex > 0) {
+    text = text.slice(0, tailIndex).trim();
+  }
+
+  return text;
+};
+
 export const normalizeResearchStringArray = (values: unknown): string[] =>
   Array.isArray(values)
     ? values
@@ -132,7 +165,7 @@ export const isGenericResearchHomeDescription = (value: unknown): boolean => {
 };
 
 export const publicResearchDescriptionText = (value: unknown): string => {
-  const text = normalizeResearchInlineText(value);
+  const text = stripResearchDescriptionChrome(value);
   if (!text || isDescriptionPlaceholder(text) || isGenericResearchHomeDescription(text)) {
     return '';
   }

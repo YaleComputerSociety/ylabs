@@ -159,7 +159,7 @@ const queueKindLabel: Record<QueueKind, string> = {
 const queueKindStyles: Record<QueueKind, string> = {
   blocking: 'border-red-200 bg-red-50 text-red-700',
   evidence: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-  review: 'border-gray-200 bg-gray-50 text-gray-700',
+  review: 'border-[var(--yr-line)] bg-[var(--yr-panel-muted)] text-gray-700',
 };
 
 const queueKindRank: Record<QueueKind, number> = {
@@ -236,7 +236,7 @@ const AdminOperatorBoard = () => {
   );
 
   if (loading) {
-    return <div className="rounded-md border border-gray-200 bg-white p-6">Loading board...</div>;
+    return <div className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-6">Loading board...</div>;
   }
 
   if (error || !board) {
@@ -257,7 +257,7 @@ const AdminOperatorBoard = () => {
         <button
           type="button"
           onClick={fetchBoard}
-          className="min-h-10 rounded-md border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+          className="min-h-10 rounded-md border border-[var(--yr-line-strong)] px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-[var(--yr-panel-muted)]"
         >
           Refresh
         </button>
@@ -268,14 +268,14 @@ const AdminOperatorBoard = () => {
           ['Research', board.trustTiers.research],
           ['Programs', board.trustTiers.programs],
         ].map(([label, rows]) => (
-          <section key={label as string} className="rounded-md border border-gray-200 bg-white p-4">
+          <section key={label as string} className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4">
             <div className="mb-3 flex items-center justify-between">
               <h4 className="font-semibold text-gray-900">{label as string}</h4>
               <span className="text-sm text-gray-500">{total(rows as TierCount[])} records</span>
             </div>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
               {(rows as TierCount[]).map((row) => (
-                <div key={row.tier} className="rounded-md border border-gray-200 p-3">
+                <div key={row.tier} className="rounded-md border border-[var(--yr-line)] p-3">
                   <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
                     {tierLabel[row.tier]}
                   </div>
@@ -287,17 +287,17 @@ const AdminOperatorBoard = () => {
         ))}
       </div>
 
-      <section className="rounded-md border border-gray-200 bg-white p-4">
+      <section className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4">
         <h4 className="mb-3 font-semibold text-gray-900">Gate Status</h4>
         <div className="grid gap-3 lg:grid-cols-2">
-          <div className="rounded-md border border-gray-200 p-3">
+          <div className="rounded-md border border-[var(--yr-line)] p-3">
             <div className="text-sm font-semibold text-gray-900">Data quality</div>
             <code className="mt-2 block whitespace-pre-wrap text-xs text-gray-600">
               {board.gates.dataQuality.command}
             </code>
             <p className="mt-2 text-sm text-gray-600">{board.gates.dataQuality.note}</p>
           </div>
-          <div className="rounded-md border border-gray-200 p-3">
+          <div className="rounded-md border border-[var(--yr-line)] p-3">
             <div className="text-sm font-semibold text-gray-900">Scraper integrity</div>
             <code className="mt-2 block whitespace-pre-wrap text-xs text-gray-600">
               {board.gates.scraperIntegrity.command}
@@ -309,11 +309,11 @@ const AdminOperatorBoard = () => {
         </div>
       </section>
 
-      <section className="rounded-md border border-gray-200 bg-white p-4">
+      <section className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4">
         <h4 className="mb-3 font-semibold text-gray-900">Review Queues</h4>
         <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200 text-sm">
-            <thead className="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+          <table className="min-w-full divide-y divide-[var(--yr-line)] text-sm">
+            <thead className="bg-[var(--yr-panel-muted)] text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
               <tr>
                 <th className="px-3 py-2">Queue</th>
                 <th className="px-3 py-2 text-right">Count</th>
@@ -374,7 +374,7 @@ const AdminOperatorBoard = () => {
         </div>
       </section>
 
-      <section className="rounded-md border border-gray-200 bg-white p-4">
+      <section className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4">
         <div className="mb-3 flex items-center justify-between">
           <h4 className="font-semibold text-gray-900">Source Freshness</h4>
           <span className="text-sm text-gray-500">
@@ -385,7 +385,7 @@ const AdminOperatorBoard = () => {
         </div>
         <div className="grid gap-3 lg:grid-cols-2">
           {board.sourceFreshness.rows.slice(0, 8).map((row) => (
-            <div key={row.sourceName} className="rounded-md border border-gray-200 p-3">
+            <div key={row.sourceName} className="rounded-md border border-[var(--yr-line)] p-3">
               <div className="flex items-start justify-between gap-2">
                 <div>
                   <div className="font-semibold text-gray-900">{row.displayName}</div>

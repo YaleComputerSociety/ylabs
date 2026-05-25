@@ -146,7 +146,7 @@ const FellowshipModal = ({
     fellowship.contactPhone ||
     fellowship.contactOffice;
   const iconActionClass =
-    'inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-gray-100 hover:text-blue-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200';
+    'inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-[var(--yr-panel-muted)] hover:text-blue-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200';
   const filterChipClass =
     'inline-flex min-h-[44px] items-center rounded-md px-3 py-2 text-xs transition-all hover:ring-2 hover:ring-offset-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200';
 
@@ -156,13 +156,13 @@ const FellowshipModal = ({
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-xl shadow-2xl w-full max-w-4xl h-[85vh] flex flex-col overflow-hidden"
+        className="bg-[var(--yr-panel)] rounded-xl shadow-2xl w-full max-w-4xl h-[85vh] flex flex-col overflow-hidden"
         role="dialog"
         aria-modal="true"
         aria-labelledby="program-detail-title"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex-shrink-0 border-b border-gray-100">
+        <div className="flex-shrink-0 border-b border-[var(--yr-line)]">
           <div
             className="h-1 w-full"
             style={{ background: 'linear-gradient(90deg, #0055A4 0%, #3b82f6 50%, #93c5fd 100%)' }}
@@ -248,7 +248,7 @@ const FellowshipModal = ({
                 />
                 <button
                   onClick={onClose}
-                  className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                  className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-[var(--yr-panel-muted)] hover:text-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
                   aria-label="Close"
                 >
                   <svg
@@ -292,7 +292,7 @@ const FellowshipModal = ({
                   <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
                     Program Route
                   </h3>
-                  <div className="space-y-2 rounded-lg border border-slate-100 bg-slate-50 p-3">
+                  <div className="space-y-2 rounded-lg border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] p-3">
                     <div>
                       <span className="text-xs text-slate-500">What this is</span>
                       <p className="text-sm font-medium text-slate-900">
@@ -312,7 +312,7 @@ const FellowshipModal = ({
                       </p>
                     </div>
                     {fellowship.mentorMatching && (
-                      <p className="rounded-md bg-white px-2.5 py-2 text-xs font-medium text-slate-700">
+                      <p className="rounded-md bg-[var(--yr-panel)] px-2.5 py-2 text-xs font-medium text-slate-700">
                         This source suggests a mentor-matching or mentored program route.
                       </p>
                     )}
@@ -323,9 +323,9 @@ const FellowshipModal = ({
                   <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
                     Key Dates
                   </h3>
-                  <div className="bg-blue-50 rounded-lg p-3 space-y-3">
+                  <div className="bg-[var(--yr-blue-soft)] rounded-lg p-3 space-y-3">
                     {cycleStatus.category === 'nextCycle' && (
-                      <div className="rounded-md bg-white/70 border border-sky-100 px-2.5 py-2">
+                      <div className="rounded-md bg-[var(--yr-panel)]/70 border border-sky-100 px-2.5 py-2">
                         <p className="text-xs font-medium text-sky-800">
                           Past cycle, useful for next-cycle planning.
                         </p>
@@ -454,7 +454,7 @@ const FellowshipModal = ({
                             <button
                               key={year}
                               onClick={() => handleFilterClick('yearOfStudy', year)}
-                              className={`${filterChipClass} bg-blue-100 text-blue-800`}
+                              className={`${filterChipClass} bg-[var(--yr-blue-soft)] text-blue-800`}
                             >
                               {year}
                             </button>
@@ -536,7 +536,7 @@ const FellowshipModal = ({
                     <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
                       What To Do Next
                     </h3>
-                    <p className="rounded-lg border border-blue-100 bg-blue-50/70 p-4 text-sm leading-relaxed text-blue-950">
+                    <p className="rounded-lg border border-blue-100 bg-[var(--yr-blue-soft)]/70 p-4 text-sm leading-relaxed text-blue-950">
                       {fellowship.bestNextStep}
                     </p>
                   </section>
@@ -551,7 +551,7 @@ const FellowshipModal = ({
                       {fellowship.prepSteps.map((step) => (
                         <span
                           key={step}
-                          className="rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700"
+                          className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-2.5 py-1 text-xs font-medium text-slate-700"
                         >
                           {step}
                         </span>
@@ -591,7 +591,7 @@ const FellowshipModal = ({
                     </h3>
                     <RichTextBlock
                       text={fellowship.applicationInformation}
-                      className="text-sm text-gray-700 leading-relaxed bg-blue-50/50 border border-blue-100 rounded-lg p-4"
+                      className="text-sm text-gray-700 leading-relaxed bg-[var(--yr-blue-soft)]/50 border border-blue-100 rounded-lg p-4"
                     />
                   </section>
                 )}
@@ -633,7 +633,7 @@ const FellowshipModal = ({
                 )}
 
                 {fellowship.applicationLink && (
-                  <div className="pt-4 border-t border-gray-100">
+                  <div className="pt-4 border-t border-[var(--yr-line)]">
                     <a
                       href={ensureHttpPrefix(fellowship.applicationLink)}
                       target="_blank"

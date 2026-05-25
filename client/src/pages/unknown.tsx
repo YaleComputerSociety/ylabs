@@ -183,7 +183,7 @@ const Unknown = () => {
                   });
                 }
               }}
-              className={`min-h-[44px] w-full rounded-md border bg-white px-3 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.firstName ? 'border-red-500' : 'border-slate-300'}`}
+              className={`min-h-[44px] w-full rounded-md border bg-[var(--yr-panel)] px-3 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.firstName ? 'border-red-500' : 'border-[var(--yr-line-strong)]'}`}
             />
             <ErrorMessage error={errors.firstName} />
           </div>
@@ -205,7 +205,7 @@ const Unknown = () => {
                   });
                 }
               }}
-              className={`min-h-[44px] w-full rounded-md border bg-white px-3 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.lastName ? 'border-red-500' : 'border-slate-300'}`}
+              className={`min-h-[44px] w-full rounded-md border bg-[var(--yr-panel)] px-3 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.lastName ? 'border-red-500' : 'border-[var(--yr-line-strong)]'}`}
             />
             <ErrorMessage error={errors.lastName} />
           </div>
@@ -227,7 +227,7 @@ const Unknown = () => {
                   });
                 }
               }}
-              className={`min-h-[44px] w-full rounded-md border bg-white px-3 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.email ? 'border-red-500' : 'border-slate-300'}`}
+              className={`min-h-[44px] w-full rounded-md border bg-[var(--yr-panel)] px-3 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.email ? 'border-red-500' : 'border-[var(--yr-line-strong)]'}`}
             />
             <ErrorMessage error={errors.email} />
           </div>
@@ -260,7 +260,7 @@ const Unknown = () => {
                       }
                     }, 100);
                   }}
-                  className={`min-h-[44px] w-full cursor-pointer rounded-md border bg-white px-3 pr-10 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.userType ? 'border-red-500' : 'border-slate-300'}`}
+                  className={`min-h-[44px] w-full cursor-pointer rounded-md border bg-[var(--yr-panel)] px-3 pr-10 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.userType ? 'border-red-500' : 'border-[var(--yr-line-strong)]'}`}
                 />
                 <button
                   type="button"
@@ -289,7 +289,7 @@ const Unknown = () => {
 
               {isUserTypeDropdownOpen && (
                 <div
-                  className="mt-2 max-h-[200px] overflow-hidden rounded-md border border-slate-300 bg-white shadow-lg"
+                  className="mt-2 max-h-[200px] overflow-hidden rounded-md border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] shadow-lg"
                   role="listbox"
                   aria-label="Role at Yale options"
                   tabIndex={-1}
@@ -302,7 +302,7 @@ const Unknown = () => {
                         aria-selected={userType === option.value}
                         onClick={() => handleUserTypeSelect(option.value)}
                         className={`flex min-h-[44px] cursor-pointer items-center justify-between p-2 ${
-                          focusedUserTypeIndex === index ? 'bg-[var(--yr-blue-soft)]' : 'hover:bg-slate-100'
+                          focusedUserTypeIndex === index ? 'bg-[var(--yr-blue-soft)]' : 'hover:bg-[var(--yr-panel-muted)]'
                         }`}
                         tabIndex={-1}
                         onMouseDown={(e) => e.preventDefault()}

@@ -2,6 +2,7 @@
  * Barrel export for all Mongoose models.
  */
 export { User } from './user';
+export { AdminGrant } from './adminGrant';
 export { Fellowship } from './fellowship';
 export * from './analytics';
 export { ResearchArea, ResearchField, fieldColorKeys } from './researchArea';

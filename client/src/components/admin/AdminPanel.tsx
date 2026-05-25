@@ -41,7 +41,7 @@ const AdminPanel = () => {
         <h2 className="text-3xl font-bold text-gray-900">Admin Controls</h2>
       </div>
 
-      <div className="border-b border-gray-300 mb-6">
+      <div className="border-b border-[var(--yr-line-strong)] mb-6">
         <nav className="flex gap-1">
           {TABS.map((tab) => (
             <button
@@ -50,7 +50,7 @@ const AdminPanel = () => {
               className={`min-h-[44px] px-5 py-3 text-sm font-semibold border-b-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 ${
                 activeTab === tab
                   ? 'border-blue-600 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-[var(--yr-line-strong)]'
               }`}
             >
               {tab}

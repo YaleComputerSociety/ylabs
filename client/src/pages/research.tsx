@@ -216,7 +216,7 @@ const resultSummary = (
 };
 
 const EmptyGroup = ({ children }: { children: string }) => (
-  <div className="rounded-md border border-dashed border-slate-300 bg-white/70 p-4 text-sm text-slate-500">
+  <div className="yr-muted-surface rounded-md border-dashed p-4 text-sm text-slate-500">
     {children}
   </div>
 );
@@ -783,7 +783,7 @@ const Research = () => {
                 }}
                 aria-describedby="research-search-context research-search-help"
                 placeholder="Type a topic, professor, lab, method, or research question"
-                className="min-h-12 min-w-0 flex-1 rounded-md border border-slate-300 bg-white px-4 text-base text-slate-950 placeholder:text-slate-400 focus:border-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 sm:min-h-14"
+                className="min-h-12 min-w-0 flex-1 rounded-md border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-4 text-base text-slate-950 placeholder:text-slate-400 focus:border-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 sm:min-h-14"
               />
               <button
                 type="submit"
@@ -812,7 +812,7 @@ const Research = () => {
                       setQuery(prompt.query);
                       runSearch(prompt.query);
                     }}
-                    className="yr-pill yr-pill-blue min-h-[44px] rounded-md px-3 py-2 transition-colors hover:border-blue-300 hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                    className="yr-pill yr-pill-blue min-h-[44px] rounded-md px-3 py-2 transition-colors hover:border-blue-300 hover:bg-[var(--yr-panel)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
                   >
                     {prompt.label}
                   </button>
@@ -844,7 +844,7 @@ const Research = () => {
                     type="checkbox"
                     checked={showWeakestProfilesFirst}
                     onChange={(event) => setShowWeakestProfilesFirst(event.target.checked)}
-                    className="h-4 w-4 rounded border-slate-300 text-blue-700 focus:ring-blue-200"
+                    className="h-4 w-4 rounded border-[var(--yr-line-strong)] text-blue-700 focus:ring-blue-200"
                   />
                   <span>Show weakest profiles first</span>
                 </label>
@@ -860,7 +860,7 @@ const Research = () => {
             )}
             {isAdmin && showWeakestProfilesFirst && (
               <div
-                className="mb-4 flex flex-wrap gap-2 rounded-md border border-blue-100 bg-blue-50/70 p-2"
+                className="yr-muted-surface mb-4 flex flex-wrap gap-2 rounded-md p-2"
                 aria-label="Quality filters"
               >
                 {QUALITY_FILTER_OPTIONS.map((option) => {
@@ -873,8 +873,8 @@ const Research = () => {
                       onClick={() => toggleQualityFilter(option.value)}
                       className={`min-h-10 rounded-md border px-3 py-1.5 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 ${
                         isActive
-                          ? 'border-blue-700 bg-white text-blue-900'
-                          : 'border-blue-100 bg-transparent text-slate-700 hover:bg-white'
+                          ? 'border-blue-700 bg-[var(--yr-panel)] text-blue-900'
+                          : 'border-[var(--yr-border-warm)] bg-transparent text-slate-700 hover:bg-[var(--yr-panel)]'
                       }`}
                     >
                       {option.label}
@@ -885,7 +885,7 @@ const Research = () => {
             )}
             {isAdmin && (
               <div
-                className="mb-4 flex flex-wrap gap-2 rounded-md border border-slate-200 bg-white p-2"
+                className="mb-4 flex flex-wrap gap-2 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-2"
                 aria-label="Trust tier filters"
               >
                 {TRUST_TIER_FILTER_OPTIONS.map((option) => {
@@ -899,7 +899,7 @@ const Research = () => {
                       className={`min-h-10 rounded-md border px-3 py-1.5 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 ${
                         isActive
                           ? 'border-slate-900 bg-slate-900 text-white'
-                          : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                          : 'border-[var(--yr-line)] bg-[var(--yr-panel)] text-slate-700 hover:bg-[var(--yr-panel-muted)]'
                       }`}
                     >
                       {option.label}

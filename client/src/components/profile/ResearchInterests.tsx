@@ -88,7 +88,7 @@ const ResearchInterests = ({ interests, topics, summary }: ResearchInterestsProp
       <div className="flex flex-wrap gap-2">
         {researchInterests.map((interest, index) => (
           <Fragment key={interest}>
-            <span className="rounded-md border border-blue-100 bg-blue-50 px-2.5 py-1 text-sm font-medium text-blue-800">
+            <span className="rounded-md border border-blue-100 bg-[var(--yr-blue-soft)] px-2.5 py-1 text-sm font-medium text-blue-800">
               {formatTitleCaseLabel(interest)}
             </span>
             {index < researchInterests.length - 1 && <span className="sr-only">, </span>}

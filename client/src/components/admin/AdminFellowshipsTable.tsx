@@ -193,7 +193,7 @@ const AdminFellowshipsTable = () => {
           placeholder="Search fellowships..."
           value={search}
           onChange={(e) => dispatch({ type: 'SET_SEARCH', payload: e.target.value })}
-          className="min-h-[44px] px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 w-64"
+          className="min-h-[44px] px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 w-64"
         />
 
         <select
@@ -201,7 +201,7 @@ const AdminFellowshipsTable = () => {
           onChange={(e) =>
             dispatch({ type: 'SET_FILTER', filter: 'archived', value: e.target.value })
           }
-          className="min-h-[44px] px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="min-h-[44px] px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
           <option value="">All</option>
           <option value="false">Active</option>
@@ -213,7 +213,7 @@ const AdminFellowshipsTable = () => {
           onChange={(e) =>
             dispatch({ type: 'SET_FILTER', filter: 'audited', value: e.target.value })
           }
-          className="min-h-[44px] px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="min-h-[44px] px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
           <option value="">All (Audit)</option>
           <option value="true">Audited</option>
@@ -223,7 +223,7 @@ const AdminFellowshipsTable = () => {
         <select
           value={pageSize}
           onChange={(e) => dispatch({ type: 'SET_PAGE_SIZE', payload: Number(e.target.value) })}
-          className="min-h-[44px] px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="min-h-[44px] px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
           {PAGE_SIZES.map((size) => (
             <option key={size} value={size}>
@@ -238,14 +238,14 @@ const AdminFellowshipsTable = () => {
       </div>
 
       <div className="overflow-x-auto border rounded-lg">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
+        <table className="min-w-full divide-y divide-[var(--yr-line)]">
+          <thead className="bg-[var(--yr-panel-muted)]">
             <tr>
               {TABLE_COLUMNS.map((col) => (
                 <th
                   key={col.value}
                   onClick={() => handleSort(col.value)}
-                  className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                  className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-[var(--yr-panel-muted)]"
                 >
                   <div className="flex items-center gap-1">
                     {col.label}
@@ -261,7 +261,7 @@ const AdminFellowshipsTable = () => {
               </th>
             </tr>
           </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
+          <tbody className="bg-[var(--yr-panel)] divide-y divide-[var(--yr-line)]">
             {isLoading ? (
               <tr>
                 <td
@@ -284,7 +284,7 @@ const AdminFellowshipsTable = () => {
               fellowships.map((fellowship) => (
                 <tr
                   key={fellowship._id}
-                  className={`hover:bg-gray-50 ${fellowship.archived ? 'opacity-50' : ''}`}
+                  className={`hover:bg-[var(--yr-panel-muted)] ${fellowship.archived ? 'opacity-50' : ''}`}
                 >
                   <td className="px-4 py-3">
                     <div className="max-w-xs">
@@ -354,7 +354,7 @@ const AdminFellowshipsTable = () => {
             <button
               onClick={() => dispatch({ type: 'SET_PAGE', payload: Math.max(1, page - 1) })}
               disabled={page === 1}
-              className="min-h-[44px] px-3 py-1 border rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+              className="min-h-[44px] px-3 py-1 border rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[var(--yr-panel-muted)]"
             >
               Previous
             </button>
@@ -363,7 +363,7 @@ const AdminFellowshipsTable = () => {
                 dispatch({ type: 'SET_PAGE', payload: Math.min(totalPages, page + 1) })
               }
               disabled={page === totalPages}
-              className="min-h-[44px] px-3 py-1 border rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+              className="min-h-[44px] px-3 py-1 border rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[var(--yr-panel-muted)]"
             >
               Next
             </button>
@@ -414,7 +414,7 @@ const ArrayFieldEditor = ({
         {values.map((value) => (
           <span
             key={value}
-            className="inline-flex items-center bg-blue-50 text-blue-800 text-sm px-2 py-0.5 rounded border border-blue-200"
+            className="inline-flex items-center bg-[var(--yr-blue-soft)] text-blue-800 text-sm px-2 py-0.5 rounded border border-blue-200"
           >
             {value}
             <button
@@ -439,7 +439,7 @@ const ArrayFieldEditor = ({
             }
           }}
           placeholder={placeholder || `Add ${label.toLowerCase()}...`}
-          className="flex-1 px-3 py-1.5 border border-gray-300 rounded-lg text-sm"
+          className="flex-1 px-3 py-1.5 border border-[var(--yr-line-strong)] rounded-lg text-sm"
         />
         <button
           type="button"
@@ -485,7 +485,7 @@ const LinksEditor = ({
           {links.map((link, i) => (
             <div
               key={i}
-              className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded px-2 py-1 text-sm"
+              className="flex items-center gap-2 bg-[var(--yr-blue-soft)] border border-blue-200 rounded px-2 py-1 text-sm"
             >
               <span className="font-medium text-blue-800 truncate">{link.label}</span>
               <span className="text-blue-400 truncate flex-shrink min-w-0">{link.url}</span>
@@ -506,7 +506,7 @@ const LinksEditor = ({
           value={newLabel}
           onChange={(e) => setNewLabel(e.target.value)}
           placeholder="Label (optional)"
-          className="w-1/3 px-3 py-1.5 border border-gray-300 rounded-lg text-sm"
+          className="w-1/3 px-3 py-1.5 border border-[var(--yr-line-strong)] rounded-lg text-sm"
         />
         <input
           type="text"
@@ -519,7 +519,7 @@ const LinksEditor = ({
             }
           }}
           placeholder="URL"
-          className="flex-1 px-3 py-1.5 border border-gray-300 rounded-lg text-sm"
+          className="flex-1 px-3 py-1.5 border border-[var(--yr-line-strong)] rounded-lg text-sm"
         />
         <button
           type="button"
@@ -608,7 +608,7 @@ const FellowshipEditModal = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-      <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto p-6">
+      <div className="bg-[var(--yr-panel)] rounded-lg shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto p-6">
         <h3 className="text-lg font-semibold mb-4">Edit Fellowship</h3>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
@@ -616,7 +616,7 @@ const FellowshipEditModal = ({
             <input
               value={title}
               onChange={(e) => formDispatch({ type: 'SET_TITLE', payload: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              className="w-full px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg"
             />
           </div>
           <div>
@@ -627,14 +627,14 @@ const FellowshipEditModal = ({
                 formDispatch({ type: 'SET_COMPETITION_TYPE', payload: e.target.value })
               }
               placeholder="e.g. Application/Funded Research"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              className="w-full px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg"
             />
           </div>
 
-          <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+          <div className="bg-[var(--yr-panel-muted)] border border-[var(--yr-line)] rounded-lg p-3">
             <p className="text-xs text-gray-500 mb-1">
               <strong>Tip:</strong> To add a clickable link inside any text field, use the format:{' '}
-              <code className="bg-gray-200 px-1 rounded">[link text](https://url)</code>
+              <code className="bg-[var(--yr-panel-muted)] px-1 rounded">[link text](https://url)</code>
             </p>
           </div>
 
@@ -646,7 +646,7 @@ const FellowshipEditModal = ({
               value={summary}
               onChange={(e) => formDispatch({ type: 'SET_SUMMARY', payload: e.target.value })}
               rows={3}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              className="w-full px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg"
             />
           </div>
           <div>
@@ -655,7 +655,7 @@ const FellowshipEditModal = ({
               value={description}
               onChange={(e) => formDispatch({ type: 'SET_DESCRIPTION', payload: e.target.value })}
               rows={6}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              className="w-full px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg"
             />
           </div>
           <div>
@@ -668,7 +668,7 @@ const FellowshipEditModal = ({
                 formDispatch({ type: 'SET_APPLICATION_INFORMATION', payload: e.target.value })
               }
               rows={4}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              className="w-full px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg"
               placeholder="How to apply, required documents, etc."
             />
           </div>
@@ -680,7 +680,7 @@ const FellowshipEditModal = ({
               value={eligibility}
               onChange={(e) => formDispatch({ type: 'SET_ELIGIBILITY', payload: e.target.value })}
               rows={3}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              className="w-full px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg"
             />
           </div>
           <div>
@@ -691,7 +691,7 @@ const FellowshipEditModal = ({
               value={restrictionsToUseOfAward}
               onChange={(e) => formDispatch({ type: 'SET_RESTRICTIONS', payload: e.target.value })}
               rows={3}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              className="w-full px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg"
               placeholder="Any restrictions on how funds can be used..."
             />
           </div>
@@ -705,7 +705,7 @@ const FellowshipEditModal = ({
                 formDispatch({ type: 'SET_ADDITIONAL_INFORMATION', payload: e.target.value })
               }
               rows={4}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              className="w-full px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg"
               placeholder="Any other relevant details..."
             />
           </div>
@@ -716,7 +716,7 @@ const FellowshipEditModal = ({
               onChange={(e) =>
                 formDispatch({ type: 'SET_APPLICATION_LINK', payload: e.target.value })
               }
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              className="w-full px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg"
             />
           </div>
           <div>
@@ -725,7 +725,7 @@ const FellowshipEditModal = ({
               value={awardAmount}
               onChange={(e) => formDispatch({ type: 'SET_AWARD_AMOUNT', payload: e.target.value })}
               placeholder="e.g. $5,000"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              className="w-full px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg"
             />
           </div>
 
@@ -746,7 +746,7 @@ const FellowshipEditModal = ({
                   onChange={(e) =>
                     formDispatch({ type: 'SET_CONTACT_NAME', payload: e.target.value })
                   }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  className="w-full px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg"
                   placeholder="e.g. John Smith"
                 />
               </div>
@@ -759,7 +759,7 @@ const FellowshipEditModal = ({
                   onChange={(e) =>
                     formDispatch({ type: 'SET_CONTACT_EMAIL', payload: e.target.value })
                   }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  className="w-full px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg"
                 />
               </div>
               <div>
@@ -771,7 +771,7 @@ const FellowshipEditModal = ({
                   onChange={(e) =>
                     formDispatch({ type: 'SET_CONTACT_PHONE', payload: e.target.value })
                   }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  className="w-full px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg"
                   placeholder="e.g. (203) 432-1234"
                 />
               </div>
@@ -784,7 +784,7 @@ const FellowshipEditModal = ({
                   onChange={(e) =>
                     formDispatch({ type: 'SET_CONTACT_OFFICE', payload: e.target.value })
                   }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  className="w-full px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg"
                   placeholder="e.g. 55 Whitney Ave, Room 200"
                 />
               </div>
@@ -806,7 +806,7 @@ const FellowshipEditModal = ({
                       payload: e.target.value === 'true',
                     })
                   }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  className="w-full px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg"
                 >
                   <option value="true">Yes</option>
                   <option value="false">No</option>
@@ -822,7 +822,7 @@ const FellowshipEditModal = ({
                   onChange={(e) =>
                     formDispatch({ type: 'SET_APPLICATION_OPEN_DATE', payload: e.target.value })
                   }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  className="w-full px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg"
                 />
               </div>
               <div>
@@ -833,7 +833,7 @@ const FellowshipEditModal = ({
                   type="datetime-local"
                   value={deadline}
                   onChange={(e) => formDispatch({ type: 'SET_DEADLINE', payload: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  className="w-full px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg"
                 />
               </div>
             </div>
@@ -905,7 +905,7 @@ const FellowshipEditModal = ({
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+              className="px-4 py-2 border border-[var(--yr-line-strong)] rounded-lg hover:bg-[var(--yr-panel-muted)]"
             >
               Cancel
             </button>

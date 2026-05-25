@@ -1,13 +1,16 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import Analytics from '../analytics';
 import axios from '../../utils/axios';
 import { AnalyticsData } from '../../reducers/analyticsReducer';
+import swal from 'sweetalert';
+import UserContext from '../../contexts/UserContext';
 
 vi.mock('../../utils/axios', () => ({
   default: {
     get: vi.fn(),
+    post: vi.fn(),
   },
 }));
 
@@ -21,7 +24,9 @@ vi.mock('../../components/admin/AdminPanel', () => ({
 
 const mockedAxios = axios as unknown as {
   get: ReturnType<typeof vi.fn>;
+  post: ReturnType<typeof vi.fn>;
 };
+const mockedSwal = vi.mocked(swal);
 
 const analyticsData: AnalyticsData = {
   visitors: {
@@ -102,6 +107,12 @@ describe('Analytics page', () => {
         return Promise.resolve({ data: { users: [], total: 0, limit: 25 } });
       }
 
+      if (url === '/admin/admin-grants') {
+        return Promise.resolve({
+          data: { activeCount: 0, grants: [], legacyAdminsWithoutGrant: [] },
+        });
+      }
+
       if (url === '/analytics/search-quality') {
         return Promise.resolve({ data: { totalSearches: 0, zeroResultSearches: 0 } });
       }
@@ -180,6 +191,12 @@ describe('Analytics page', () => {
         return Promise.resolve({ data: { users: [], total: 0, limit: 25 } });
       }
 
+      if (url === '/admin/admin-grants') {
+        return Promise.resolve({
+          data: { activeCount: 0, grants: [], legacyAdminsWithoutGrant: [] },
+        });
+      }
+
       if (url === '/analytics/search-quality') {
         return Promise.resolve({
           data: {
@@ -247,6 +264,228 @@ describe('Analytics page', () => {
     await waitFor(() => {
       expect(screen.getAllByText('Review zero-result searches').length).toBeGreaterThan(0);
       expect(screen.getAllByText('quantum materials').length).toBeGreaterThan(0);
+    });
+  });
+
+  it('shows current admin access from the admin grants source of truth', async () => {
+    mockedAxios.get.mockImplementation((url: string) => {
+      if (url === '/analytics') {
+        return Promise.resolve({ data: analyticsData });
+      }
+
+      if (url === '/analytics/users') {
+        return Promise.resolve({ data: { users: [], total: 0, limit: 25 } });
+      }
+
+      if (url === '/admin/admin-grants') {
+        return Promise.resolve({
+          data: {
+            activeCount: 1,
+            grants: [
+              {
+                netid: 'fixture-admin',
+                status: 'active',
+                source: 'manual',
+                grantedAt: '2026-05-25T12:00:00.000Z',
+                grantedBy: 'fixture-bootstrap',
+                user: {
+                  fname: 'Fixture',
+                  lname: 'Admin',
+                  email: 'fixture-admin@example.invalid',
+                },
+              },
+            ],
+            legacyAdminsWithoutGrant: [
+              {
+                netid: 'fixture-legacy-admin',
+                fname: 'Fixture',
+                lname: 'Legacy',
+                email: 'fixture-legacy-admin@example.invalid',
+              },
+            ],
+          },
+        });
+      }
+
+      if (url === '/analytics/search-quality') {
+        return Promise.resolve({ data: { totalSearches: 0, zeroResultSearches: 0 } });
+      }
+
+      if (url === '/analytics/search-queries') {
+        return Promise.resolve({ data: { queries: [], limit: 25 } });
+      }
+
+      if (url === '/analytics/funnel') {
+        return Promise.resolve({ data: { stages: [] } });
+      }
+
+      if (url === '/analytics/actions') {
+        return Promise.resolve({ data: { cards: [], items: [] } });
+      }
+
+      return Promise.reject(new Error(`Unexpected URL: ${url}`));
+    });
+
+    render(<Analytics />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Admin Access' })).toBeTruthy();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('1 active admin')).toBeTruthy();
+    });
+    expect(screen.getByText('fixture-admin')).toBeTruthy();
+    expect(screen.getByText('Fixture Admin')).toBeTruthy();
+    expect(screen.getByText('manual')).toBeTruthy();
+    expect(
+      screen.getByText(/legacy admin profile row without active grants: fixture-legacy-admin/i)
+    ).toBeTruthy();
+  });
+
+  it('grants admin access from the analytics admin access section', async () => {
+    let grantFetchCount = 0;
+    mockedAxios.get.mockImplementation((url: string) => {
+      if (url === '/analytics') return Promise.resolve({ data: analyticsData });
+      if (url === '/analytics/users') {
+        return Promise.resolve({ data: { users: [], total: 0, limit: 25 } });
+      }
+      if (url === '/admin/admin-grants') {
+        grantFetchCount += 1;
+        return Promise.resolve({
+          data:
+            grantFetchCount === 1
+              ? { activeCount: 0, grants: [], legacyAdminsWithoutGrant: [] }
+              : {
+                  activeCount: 1,
+                  grants: [
+                    {
+                      netid: 'fixture-new-admin',
+                      status: 'active',
+                      source: 'manual',
+                      grantedAt: '2026-05-25T12:00:00.000Z',
+                      grantedBy: 'fixture-actor',
+                    },
+                  ],
+                  legacyAdminsWithoutGrant: [],
+                },
+        });
+      }
+      if (url === '/analytics/search-quality') {
+        return Promise.resolve({ data: { totalSearches: 0, zeroResultSearches: 0 } });
+      }
+      if (url === '/analytics/search-queries') {
+        return Promise.resolve({ data: { queries: [], limit: 25 } });
+      }
+      if (url === '/analytics/funnel') return Promise.resolve({ data: { stages: [] } });
+      if (url === '/analytics/actions') return Promise.resolve({ data: { cards: [], items: [] } });
+      return Promise.reject(new Error(`Unexpected URL: ${url}`));
+    });
+    mockedAxios.post.mockResolvedValue({ data: { grant: { netid: 'fixture-new-admin' } } });
+
+    render(<Analytics />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Admin Access' })).toBeTruthy();
+    });
+
+    fireEvent.change(screen.getByLabelText('Grant admin NetID'), {
+      target: { value: 'fixture-new-admin' },
+    });
+    fireEvent.change(screen.getByLabelText('Admin grant note'), {
+      target: { value: 'Temporary coverage' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Grant Admin' }));
+
+    await waitFor(() => {
+      expect(mockedAxios.post).toHaveBeenCalledWith(
+        '/admin/admin-grants',
+        { netid: 'fixture-new-admin', note: 'Temporary coverage' },
+        { withCredentials: true },
+      );
+    });
+    await waitFor(() => {
+      expect(screen.getByText('fixture-new-admin')).toBeTruthy();
+    });
+  });
+
+  it('revokes admin access after confirmation and blocks self-revoke controls', async () => {
+    mockedAxios.get.mockImplementation((url: string) => {
+      if (url === '/analytics') return Promise.resolve({ data: analyticsData });
+      if (url === '/analytics/users') {
+        return Promise.resolve({ data: { users: [], total: 0, limit: 25 } });
+      }
+      if (url === '/admin/admin-grants') {
+        return Promise.resolve({
+          data: {
+            activeCount: 2,
+            grants: [
+              {
+                netid: 'fixture-admin',
+                status: 'active',
+                source: 'manual',
+                grantedAt: '2026-05-25T12:00:00.000Z',
+                grantedBy: 'fixture-bootstrap',
+              },
+              {
+                netid: 'devadmin',
+                status: 'active',
+                source: 'bootstrap',
+                grantedAt: '2026-05-25T12:00:00.000Z',
+                grantedBy: 'fixture-bootstrap',
+              },
+            ],
+            legacyAdminsWithoutGrant: [],
+          },
+        });
+      }
+      if (url === '/analytics/search-quality') {
+        return Promise.resolve({ data: { totalSearches: 0, zeroResultSearches: 0 } });
+      }
+      if (url === '/analytics/search-queries') {
+        return Promise.resolve({ data: { queries: [], limit: 25 } });
+      }
+      if (url === '/analytics/funnel') return Promise.resolve({ data: { stages: [] } });
+      if (url === '/analytics/actions') return Promise.resolve({ data: { cards: [], items: [] } });
+      return Promise.reject(new Error(`Unexpected URL: ${url}`));
+    });
+    mockedAxios.post.mockResolvedValue({ data: { grant: { netid: 'fixture-admin' } } });
+    mockedSwal.mockResolvedValue(true);
+
+    render(
+      <UserContext.Provider
+        value={{
+          isLoading: false,
+          isAuthenticated: true,
+          user: {
+            netId: 'devadmin',
+            userType: 'admin',
+            userConfirmed: true,
+            profileVerified: true,
+          },
+          checkContext: vi.fn(),
+        }}
+      >
+        <Analytics />
+      </UserContext.Provider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('fixture-admin')).toBeTruthy();
+    });
+
+    expect(screen.getByRole('button', { name: 'Current session' })).toHaveProperty(
+      'disabled',
+      true,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Revoke fixture-admin' }));
+
+    await waitFor(() => {
+      expect(mockedAxios.post).toHaveBeenCalledWith(
+        '/admin/admin-grants/fixture-admin/revoke',
+        { note: '' },
+        { withCredentials: true },
+      );
     });
   });
 });

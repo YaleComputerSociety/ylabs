@@ -175,6 +175,28 @@ Consequences:
 - `operator_review` and `suppressed` are admin/operator states, not normal student browse states.
 - The backfill command is dry-run by default and must be reviewed before `--apply`; after applying, rebuild Meili `researchentities` so tier filtering is reflected in keyword/semantic search.
 
+## 2026-05-25: Use A Warm Academic Shell With White Content Surfaces
+
+The Yale Research UI should feel academic, archival, and calm without becoming beige-heavy. Use a very light warm page shell as a brand undertone, then keep content cards, panels, forms, and dense reading surfaces white for clarity.
+
+Consequences:
+
+- Global page tokens in `client/src/index.css` and MUI background tokens in `client/src/utils/muiTheme.ts` should stay aligned: warm off-white for page background, white for paper/panels.
+- Avoid broad beige/parchment gradients and warm borders that make the whole app read tan.
+- Yale blue, restrained gold accents, serif headings, and subtle cool-gray borders should carry brand and hierarchy without reducing perceived crispness.
+
+## 2026-05-25: Admin Authority Comes From Admin Grants
+
+Admin access is a first-class grant, not a mutable profile type. `users.userType = admin` is legacy profile residue and must not be treated as the source of truth for authorization.
+
+Consequences:
+
+- Active `admin_grants` rows are the admin source of truth for protected routes and session state.
+- Local development and tests may keep the synthetic `devadmin` bypass, but that exception must not convert real accounts into admins.
+- Admin profile editing must not grant admin authority by writing `userType`.
+- The analytics admin dashboard should show active admin grants, flag legacy admin profile rows without active grants, and let admins grant or revoke manual admin access for existing users.
+- Admins must not be able to revoke their own current-session admin grant from the dashboard.
+
 ## 2026-05-11: Adopt Graphify As Shared Repo Memory
 
 Use Graphify as an optional shared knowledge graph for Codex context on architecture, schema, scraper, product-model, and cross-surface tasks.
@@ -715,3 +737,13 @@ Consequences:
 - Use short, targeted TTL or HTTP caching only for public, low-risk, mostly-static responses such as config, suggestions, entity detail, and default browse pages.
 - Do not cache user-specific saved plans, profile state, admin views, evidence-review workflows, or deadline-sensitive posted opportunities unless the cache key and invalidation policy are explicit.
 - Design invalidation around scraper/materializer/reindex events before introducing shared infrastructure like Redis.
+
+## 2026-05-25: Keep Operator Visibility Approval Rule-Based And Auditable
+
+Research records in `operator_review` should not be promoted just to increase browse counts. Operator approval is an explicit override with a rule id, review note, and reviewed timestamp; broad missing description, missing source URL, thin description, duplicate, inactive, or missing action-evidence queues remain hidden until repaired from source evidence.
+
+Consequences:
+
+- The first conservative rule promotes only records with a source-backed description and concrete next step where the remaining blocker is a missing lead attribution; these become `limited_but_safe`, not `student_ready`.
+- Rule-based approvals write `studentVisibilityOverrideTier`, `studentVisibilityReviewRuleId`, and `studentVisibilityReviewNote` so future Trust Tier backfills preserve that the public tier came from a reviewed operator exception.
+- Default student search still shows only `student_ready` and `limited_but_safe`; admins can inspect `operator_review` and `suppressed` through trust-tier filters and the operator board.

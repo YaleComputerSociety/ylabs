@@ -105,7 +105,7 @@ const BrowseListItem = React.memo(({ item, isFavorite, onToggleFavorite, onOpenM
 
   return (
     <div
-      className={`group bg-white rounded-md border ${isAudited ? 'border-green-400 ring-1 ring-green-200' : 'border-gray-200'} hover:border-blue-400 hover:shadow-sm transition-all duration-200 cursor-pointer ${isArchived ? 'opacity-75' : ''}`}
+      className={`group bg-[var(--yr-panel)] rounded-md border ${isAudited ? 'border-green-400 ring-1 ring-green-200' : 'border-[var(--yr-line)]'} hover:border-blue-400 hover:shadow-sm transition-all duration-200 cursor-pointer ${isArchived ? 'opacity-75' : ''}`}
       onClick={handleClick}
     >
       <div className="p-4 grid grid-cols-12 gap-4 items-start">
@@ -209,7 +209,7 @@ const BrowseListItem = React.memo(({ item, isFavorite, onToggleFavorite, onOpenM
             {isAdmin && onAdminEdit && (
               <button
                 onClick={(e) => { e.stopPropagation(); onAdminEdit(); }}
-                className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full text-gray-500 hover:text-blue-600 hover:bg-gray-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full text-gray-500 hover:text-blue-600 hover:bg-[var(--yr-panel-muted)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                 title="Edit listing (Admin)"
                 aria-label="Admin edit"
               >

@@ -100,7 +100,7 @@ const BrowseCard = React.memo(({ item, isFavorite, onToggleFavorite, onOpenModal
 
   return (
     <div
-      className={`group relative bg-white rounded-md border ${isAudited ? 'border-green-400 ring-1 ring-green-200' : 'border-gray-200'} hover:border-blue-400 hover:shadow-md transition-all duration-200 cursor-pointer overflow-hidden h-full flex flex-col ${isArchived ? 'opacity-75' : ''}`}
+      className={`yr-card-interactive group relative rounded-md ${isAudited ? 'border-green-400 ring-1 ring-green-200' : ''} cursor-pointer overflow-hidden h-full flex flex-col ${isArchived ? 'opacity-75' : ''}`}
       onClick={handleClick}
     >
       {showUrgentBanner && daysUntil !== null && (
@@ -116,7 +116,7 @@ const BrowseCard = React.memo(({ item, isFavorite, onToggleFavorite, onOpenModal
                 e.stopPropagation();
                 onAdminEdit();
               }}
-              className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full text-gray-500 hover:text-blue-600 hover:bg-gray-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+              className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full text-gray-500 hover:text-blue-600 hover:bg-[var(--yr-panel-muted)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
               aria-label="Admin edit"
               title={`Edit ${item.type} (Admin)`}
             >
@@ -134,7 +134,7 @@ const BrowseCard = React.memo(({ item, isFavorite, onToggleFavorite, onOpenModal
         {isResearchGroup ? (
           <>
             <div className="flex items-center gap-2 mb-2 flex-wrap pr-10">
-              <span className="text-xs font-semibold px-1.5 py-0.5 rounded bg-blue-50 text-blue-700">
+              <span className="text-xs font-semibold px-1.5 py-0.5 rounded bg-[var(--yr-blue-soft)] text-blue-700">
                 {getResearchGroupKindLabel(item.data.kind)}
               </span>
               {researchStatus && (
@@ -164,7 +164,7 @@ const BrowseCard = React.memo(({ item, isFavorite, onToggleFavorite, onOpenModal
             )}
 
             {(researchPathwaySummary || researchBestNextStep) && !isCompact && (
-              <div className="mb-2 rounded-md border border-gray-100 bg-gray-50 px-2.5 py-2 text-xs text-gray-700">
+              <div className="mb-2 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] px-2.5 py-2 text-xs text-gray-700">
                 {researchPathwaySummary && (
                   <p>
                     <span className="font-semibold text-gray-800">Pathway:</span>{' '}
@@ -181,7 +181,7 @@ const BrowseCard = React.memo(({ item, isFavorite, onToggleFavorite, onOpenModal
             )}
 
             {tags.length > 0 && !isCompact && (
-              <div className="border-t border-gray-100 my-2" />
+              <div className="border-t border-[var(--yr-line)] my-2" />
             )}
 
             <div className="flex-1" />
@@ -230,7 +230,7 @@ const BrowseCard = React.memo(({ item, isFavorite, onToggleFavorite, onOpenModal
             )}
 
             {tags.length > 0 && !isCompact && (
-              <div className="border-t border-gray-100 my-2" />
+              <div className="border-t border-[var(--yr-line)] my-2" />
             )}
 
             <div className="flex-1" />
@@ -280,7 +280,7 @@ const BrowseCard = React.memo(({ item, isFavorite, onToggleFavorite, onOpenModal
             )}
 
             {(fellowshipJourneySummary || item.data.bestNextStep) && !isCompact && (
-              <div className="mb-2 rounded-md border border-slate-100 bg-slate-50 px-2.5 py-2 text-xs text-slate-700">
+              <div className="mb-2 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] px-2.5 py-2 text-xs text-slate-700">
                 {fellowshipJourneySummary && (
                   <p>
                     <span className="font-semibold text-slate-800">Route:</span>{' '}

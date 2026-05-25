@@ -1,11 +1,12 @@
 /**
  * Analytics dashboard page for admin usage statistics.
  */
-import { useCallback, useEffect, useReducer, useState } from 'react';
+import { FormEvent, useCallback, useContext, useEffect, useReducer, useState } from 'react';
 import axios from '../utils/axios';
 import swal from 'sweetalert';
 import AdminPanel from '../components/admin/AdminPanel';
 import useDocumentTitle from '../hooks/useDocumentTitle';
+import UserContext from '../contexts/UserContext';
 import {
   AnalyticsActionNeededResponse,
   AnalyticsFunnelResponse,
@@ -16,6 +17,7 @@ import {
   AnalyticsUserActivityResponse,
   AnalyticsUserActivityRow,
   AnalyticsUserDrilldownResponse,
+  AdminAccessResponse,
   analyticsReducer,
   createInitialAnalyticsState,
 } from '../reducers/analyticsReducer';
@@ -37,8 +39,15 @@ const defaultUserActivity: AnalyticsUserActivityResponse = {
   limit: 25,
 };
 
+const defaultAdminAccess: AdminAccessResponse = {
+  activeCount: 0,
+  grants: [],
+  legacyAdminsWithoutGrant: [],
+};
+
 const Analytics = () => {
   useDocumentTitle('Analytics');
+  const { user: currentUser } = useContext(UserContext);
   const [state, dispatch] = useReducer(
     analyticsReducer,
     undefined,
@@ -58,6 +67,13 @@ const Analytics = () => {
   const [selectedUser, setSelectedUser] = useState<AnalyticsUserDrilldownResponse | null>(null);
   const [isSelectedUserLoading, setIsSelectedUserLoading] = useState(false);
   const [selectedUserError, setSelectedUserError] = useState<string | null>(null);
+  const [adminAccess, setAdminAccess] = useState<AdminAccessResponse>(defaultAdminAccess);
+  const [adminAccessError, setAdminAccessError] = useState<string | null>(null);
+  const [adminGrantNetid, setAdminGrantNetid] = useState('');
+  const [adminGrantNote, setAdminGrantNote] = useState('');
+  const [adminAccessActionError, setAdminAccessActionError] = useState<string | null>(null);
+  const [adminAccessActionMessage, setAdminAccessActionMessage] = useState<string | null>(null);
+  const [adminAccessActionNetid, setAdminAccessActionNetid] = useState<string | null>(null);
   const [analyticsRange, setAnalyticsRange] = useState<AnalyticsRange>('30d');
   const [searchQuality, setSearchQuality] = useState<AnalyticsSearchQualityResponse | null>(null);
   const [searchQueries, setSearchQueries] = useState<AnalyticsSearchQueryResponse | null>(null);
@@ -115,6 +131,100 @@ const Analytics = () => {
       setIsUserActivityLoading(false);
     }
   }, [userActivityLimit, userActivityOrder, userActivitySort, userSearch, userTypeFilter]);
+
+  const fetchAdminAccess = useCallback(async () => {
+    setAdminAccessError(null);
+    try {
+      const response = await axios.get<AdminAccessResponse>('/admin/admin-grants', {
+        withCredentials: true,
+      });
+      setAdminAccess({
+        ...defaultAdminAccess,
+        ...response.data,
+        grants: response.data.grants || [],
+        legacyAdminsWithoutGrant: response.data.legacyAdminsWithoutGrant || [],
+      });
+    } catch (error) {
+      console.error('Error fetching admin access:', error);
+      setAdminAccess(defaultAdminAccess);
+      setAdminAccessError(
+        error instanceof Error ? error.message : 'Failed to load admin access data'
+      );
+    }
+  }, []);
+
+  const adminActorNetid = (currentUser?.netId || '').trim().toLowerCase();
+
+  const adminAccessErrorMessage = (error: unknown, fallback: string) => {
+    const responseError = error as { response?: { data?: { error?: string } }; message?: string };
+    return responseError.response?.data?.error || responseError.message || fallback;
+  };
+
+  const handleGrantAdminAccess = useCallback(
+    async (event?: FormEvent, requestedNetid?: string) => {
+      event?.preventDefault();
+      const netid = (requestedNetid || adminGrantNetid).trim().toLowerCase();
+      if (!netid) {
+        setAdminAccessActionError('NetID is required.');
+        return;
+      }
+      setAdminAccessActionNetid(netid);
+      setAdminAccessActionError(null);
+      setAdminAccessActionMessage(null);
+      try {
+        await axios.post(
+          '/admin/admin-grants',
+          { netid, note: requestedNetid ? '' : adminGrantNote.trim() },
+          { withCredentials: true },
+        );
+        setAdminGrantNetid('');
+        if (!requestedNetid) setAdminGrantNote('');
+        setAdminAccessActionMessage(`Admin access granted to ${netid}.`);
+        await fetchAdminAccess();
+      } catch (error) {
+        setAdminAccessActionError(
+          adminAccessErrorMessage(error, `Failed to grant admin access to ${netid}.`),
+        );
+      } finally {
+        setAdminAccessActionNetid(null);
+      }
+    },
+    [adminGrantNetid, adminGrantNote, fetchAdminAccess],
+  );
+
+  const handleRevokeAdminAccess = useCallback(
+    async (netid: string) => {
+      const normalizedNetid = netid.trim().toLowerCase();
+      const confirmed = await swal({
+        title: 'Revoke admin access?',
+        text: `Revoke admin access for ${normalizedNetid}?`,
+        icon: 'warning',
+        buttons: ['Cancel', 'Revoke'],
+        dangerMode: true,
+      });
+      if (!confirmed) return;
+
+      setAdminAccessActionNetid(normalizedNetid);
+      setAdminAccessActionError(null);
+      setAdminAccessActionMessage(null);
+      try {
+        await axios.post(
+          `/admin/admin-grants/${encodeURIComponent(normalizedNetid)}/revoke`,
+          { note: '' },
+          { withCredentials: true },
+        );
+        setAdminAccessActionMessage(`Admin access revoked for ${normalizedNetid}.`);
+        await fetchAdminAccess();
+      } catch (error) {
+        setAdminAccessActionError(
+          adminAccessErrorMessage(error, `Failed to revoke admin access for ${normalizedNetid}.`),
+        );
+      } finally {
+        setAdminAccessActionNetid(null);
+      }
+    },
+    [fetchAdminAccess],
+  );
 
   const fetchSelectedUser = useCallback(async (netid: string) => {
     setIsSelectedUserLoading(true);
@@ -184,8 +294,9 @@ const Analytics = () => {
   useEffect(() => {
     if (data) {
       fetchUserActivity();
+      fetchAdminAccess();
     }
-  }, [data, fetchUserActivity]);
+  }, [data, fetchAdminAccess, fetchUserActivity]);
 
   useEffect(() => {
     if (data) {
@@ -213,7 +324,7 @@ const Analytics = () => {
   if (!data) {
     return (
       <div className="flex min-h-screen items-center justify-center px-4">
-        <div className="max-w-md rounded-lg border border-red-200 bg-white p-6 text-center shadow-sm">
+        <div className="max-w-md rounded-lg border border-red-200 bg-[var(--yr-panel)] p-6 text-center shadow-sm">
           <h1 className="mb-3 text-2xl font-bold text-gray-900">Analytics unavailable</h1>
           <p className="mb-5 text-sm text-gray-600">
             {error || 'Failed to load analytics data'}
@@ -239,7 +350,7 @@ const Analytics = () => {
     value: number | string;
     subtitle?: string;
   }) => (
-    <div className="overflow-hidden rounded-md border border-slate-200 bg-white shadow-sm">
+    <div className="overflow-hidden rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] shadow-sm">
       <div className="p-6">
         <h3 className="text-sm font-medium text-gray-600 mb-2">{title}</h3>
         <p className="text-3xl font-bold text-gray-900">{value}</p>
@@ -260,7 +371,7 @@ const Analytics = () => {
     tone?: 'blue' | 'green' | 'amber' | 'red';
   }) => {
     const toneClass = {
-      blue: 'border-blue-200 bg-blue-50 text-blue-800',
+      blue: 'border-blue-200 bg-[var(--yr-blue-soft)] text-blue-800',
       green: 'border-emerald-200 bg-emerald-50 text-emerald-800',
       amber: 'border-amber-200 bg-amber-50 text-amber-800',
       red: 'border-red-200 bg-red-50 text-red-800',
@@ -282,7 +393,7 @@ const Analytics = () => {
     title: string;
     description?: string;
   }) => (
-    <div className="mb-4 flex flex-col gap-1 border-b border-gray-200 pb-3">
+    <div className="mb-4 flex flex-col gap-1 border-b border-[var(--yr-line)] pb-3">
       <h2 className="text-xl font-semibold text-gray-900">{title}</h2>
       {description && <p className="text-sm text-gray-500">{description}</p>}
     </div>
@@ -365,7 +476,7 @@ const Analytics = () => {
       return 'border-amber-200 bg-amber-50 text-amber-700';
     }
 
-    return 'border-gray-200 bg-gray-50 text-gray-700';
+    return 'border-[var(--yr-line)] bg-[var(--yr-panel-muted)] text-gray-700';
   };
 
   const updateUserActivitySort = (sort: UserActivitySort) => {
@@ -439,7 +550,7 @@ const Analytics = () => {
     <div className="yr-page min-h-[calc(100vh-8rem)]">
     <div className="mx-auto max-w-7xl px-4 py-8">
       <section className="yr-panel mb-8 rounded-md">
-        <div className="border-b border-slate-200 p-5 lg:flex lg:items-start lg:justify-between lg:gap-8">
+        <div className="border-b border-[var(--yr-line)] p-5 lg:flex lg:items-start lg:justify-between lg:gap-8">
           <div className="max-w-3xl">
             <p className="yr-kicker">Primary dashboard question</p>
             <h1 className="mt-2 text-3xl font-semibold text-slate-950">Research Discovery Health</h1>
@@ -455,7 +566,7 @@ const Analytics = () => {
               <select
                 value={analyticsRange}
                 onChange={(event) => setAnalyticsRange(event.target.value as AnalyticsRange)}
-                className="min-h-[44px] w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
               >
                 {analyticsRanges.map((range) => (
                   <option key={range.value} value={range.value}>
@@ -468,6 +579,7 @@ const Analytics = () => {
               onClick={() => {
                 fetchAnalytics();
                 fetchImpactAnalytics();
+                fetchAdminAccess();
               }}
               className="inline-flex min-h-[44px] items-center justify-center rounded-md bg-[var(--yr-blue)] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
             >
@@ -503,7 +615,7 @@ const Analytics = () => {
           />
         </div>
 
-        <div className="grid grid-cols-1 gap-5 border-t border-gray-200 p-5 xl:grid-cols-[1fr_1.2fr]">
+        <div className="grid grid-cols-1 gap-5 border-t border-[var(--yr-line)] p-5 xl:grid-cols-[1fr_1.2fr]">
           <div>
             <h2 className="text-lg font-semibold text-gray-900">Decision Readout</h2>
             <div className="mt-3 space-y-3 text-sm leading-6 text-gray-600">
@@ -529,7 +641,7 @@ const Analytics = () => {
                         <span className="font-medium text-gray-700">{stage.label}</span>
                         <span className="text-gray-500">{formatNumber(stage.count)}</span>
                       </div>
-                      <div className="h-2 rounded-full bg-gray-100">
+                      <div className="h-2 rounded-full bg-[var(--yr-panel-muted)]">
                         <div
                           className="h-2 rounded-full bg-blue-600"
                           style={{
@@ -551,7 +663,7 @@ const Analytics = () => {
                 {[...zeroResultQueries, ...lowResultQueries].slice(0, 5).map((query, index) => (
                   <div
                     key={`${query.query}-${index}`}
-                    className="flex items-center justify-between gap-3 rounded-md border border-gray-200 px-3 py-2 text-sm"
+                    className="flex items-center justify-between gap-3 rounded-md border border-[var(--yr-line)] px-3 py-2 text-sm"
                   >
                     <span className="min-w-0 truncate text-gray-700">
                       {query.query || '(empty search)'}
@@ -570,13 +682,201 @@ const Analytics = () => {
         </div>
       </section>
 
+      <section className="mb-10">
+        <div className="mb-4 flex flex-col gap-2 border-b border-slate-200 pb-2 md:flex-row md:items-end md:justify-between">
+          <div>
+            <h2 className="text-2xl font-bold text-gray-800">Admin Access</h2>
+            <p className="text-sm text-gray-500">
+              Current admin authority comes from active admin grants, not profile user type.
+            </p>
+          </div>
+          <span className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-800">
+            {formatNumber(adminAccess.activeCount)} active admin
+            {adminAccess.activeCount === 1 ? '' : 's'}
+          </span>
+        </div>
+
+        {adminAccessError && (
+          <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {adminAccessError}
+          </div>
+        )}
+
+        <form
+          className="mb-4 grid gap-3 rounded-lg border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)_auto]"
+          onSubmit={(event) => {
+            void handleGrantAdminAccess(event);
+          }}
+        >
+          <label className="block">
+            <span className="mb-1 block text-xs font-semibold uppercase text-gray-500">
+              Grant admin NetID
+            </span>
+            <input
+              className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+              value={adminGrantNetid}
+              onChange={(event) => setAdminGrantNetid(event.target.value)}
+              placeholder="fixture-admin"
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-xs font-semibold uppercase text-gray-500">
+              Admin grant note
+            </span>
+            <input
+              className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+              value={adminGrantNote}
+              onChange={(event) => setAdminGrantNote(event.target.value)}
+              placeholder="Optional"
+            />
+          </label>
+          <button
+            className="inline-flex min-h-[44px] items-center justify-center self-end rounded-md bg-[var(--yr-blue)] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-900 disabled:cursor-not-allowed disabled:bg-blue-300"
+            type="submit"
+            disabled={adminAccessActionNetid !== null}
+          >
+            Grant Admin
+          </button>
+        </form>
+
+        {adminAccessActionError && (
+          <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {adminAccessActionError}
+          </div>
+        )}
+
+        {adminAccessActionMessage && (
+          <div className="mb-4 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+            {adminAccessActionMessage}
+          </div>
+        )}
+
+        {adminAccess.legacyAdminsWithoutGrant.length > 0 && (
+          <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            {adminAccess.legacyAdminsWithoutGrant.length} legacy admin profile row
+            {adminAccess.legacyAdminsWithoutGrant.length === 1 ? '' : 's'} without active grants:{' '}
+            {adminAccess.legacyAdminsWithoutGrant.map((user) => user.netid).join(', ')}
+            <div className="mt-3 flex flex-wrap gap-2">
+              {adminAccess.legacyAdminsWithoutGrant.map((user) => (
+                <button
+                  key={user.netid}
+                  type="button"
+                  className="rounded-md border border-amber-300 bg-white px-3 py-1 text-xs font-semibold text-amber-900 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={adminAccessActionNetid !== null}
+                  onClick={() => {
+                    void handleGrantAdminAccess(undefined, user.netid);
+                  }}
+                >
+                  Grant {user.netid}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-md">
+          <div className="overflow-x-auto">
+            <table className="min-w-full">
+              <thead>
+                <tr className="border-b bg-gray-50">
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">
+                    NetID
+                  </th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">
+                    Person
+                  </th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">
+                    Source
+                  </th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">
+                    Granted
+                  </th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">
+                    Granted By
+                  </th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">
+                    Status
+                  </th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {adminAccess.grants.length > 0 ? (
+                  adminAccess.grants.map((grant) => {
+                    const name = [grant.user?.fname, grant.user?.lname].filter(Boolean).join(' ');
+                    const isCurrentAdmin = grant.netid === adminActorNetid;
+                    return (
+                      <tr key={`${grant.netid}-${grant.status}`} className="border-b hover:bg-gray-50">
+                        <td className="px-4 py-3 font-medium text-gray-900">{grant.netid}</td>
+                        <td className="px-4 py-3 text-gray-700">
+                          {name || grant.user?.email || '-'}
+                        </td>
+                        <td className="px-4 py-3 text-gray-700">{grant.source}</td>
+                        <td className="px-4 py-3 text-sm text-gray-600">
+                          {formatDateTime(grant.grantedAt)}
+                        </td>
+                        <td className="px-4 py-3 text-gray-700">{grant.grantedBy || '-'}</td>
+                        <td className="px-4 py-3">
+                          <span
+                            className={`rounded-md px-2 py-1 text-xs font-semibold ${
+                              grant.status === 'active'
+                                ? 'bg-emerald-50 text-emerald-700'
+                                : 'bg-gray-100 text-gray-600'
+                            }`}
+                          >
+                            {grant.status}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          {grant.status !== 'active' ? (
+                            <span className="text-sm text-gray-500">-</span>
+                          ) : isCurrentAdmin ? (
+                            <button
+                              type="button"
+                              disabled
+                              className="rounded-md border border-gray-200 px-3 py-1 text-xs font-semibold text-gray-500"
+                            >
+                              Current session
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              aria-label={`Revoke ${grant.netid}`}
+                              className="rounded-md border border-red-200 bg-red-50 px-3 py-1 text-xs font-semibold text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+                              disabled={adminAccessActionNetid !== null}
+                              onClick={() => {
+                                void handleRevokeAdminAccess(grant.netid);
+                              }}
+                            >
+                              Revoke
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })
+                ) : (
+                  <tr>
+                    <td className="px-4 py-6 text-center text-gray-500" colSpan={7}>
+                      No admin grants returned.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
       <DetailSectionHeader
         title="Supporting Detail"
         description="Operational tables and lower-priority counts remain below the readout for drilldown."
       />
 
       <section className="mb-10">
-        <h2 className="text-2xl font-semibold mb-4 text-slate-950 border-b border-slate-200 pb-2">
+        <h2 className="text-2xl font-semibold mb-4 text-slate-950 border-b border-[var(--yr-line)] pb-2">
           Visitor Statistics
         </h2>
 
@@ -617,7 +917,7 @@ const Analytics = () => {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="bg-white rounded-lg shadow-md p-6 border border-gray-200">
+          <div className="bg-[var(--yr-panel)] rounded-lg shadow-md p-6 border border-[var(--yr-line)]">
             <h3 className="text-sm font-semibold text-gray-700 mb-3">Lifetime Visitors by Type</h3>
             <div className="space-y-2">
               {data.visitors.lifetime.byType.map((item) => (
@@ -629,7 +929,7 @@ const Analytics = () => {
             </div>
           </div>
 
-          <div className="bg-white rounded-lg shadow-md p-6 border border-gray-200">
+          <div className="bg-[var(--yr-panel)] rounded-lg shadow-md p-6 border border-[var(--yr-line)]">
             <h3 className="text-sm font-semibold text-gray-700 mb-3">Last 7 Days by Type</h3>
             <div className="space-y-2">
               {data.visitors.last7Days.byType.map((item) => (
@@ -641,7 +941,7 @@ const Analytics = () => {
             </div>
           </div>
 
-          <div className="bg-white rounded-lg shadow-md p-6 border border-gray-200">
+          <div className="bg-[var(--yr-panel)] rounded-lg shadow-md p-6 border border-[var(--yr-line)]">
             <h3 className="text-sm font-semibold text-gray-700 mb-3">Today by Type</h3>
             <div className="space-y-2">
               {data.visitors.today.byType.length > 0 ? (
@@ -660,7 +960,7 @@ const Analytics = () => {
       </section>
 
       <section className="mb-10">
-        <h2 className="text-2xl font-semibold mb-4 text-slate-950 border-b border-slate-200 pb-2">
+        <h2 className="text-2xl font-semibold mb-4 text-slate-950 border-b border-[var(--yr-line)] pb-2">
           User Engagement
         </h2>
 
@@ -683,7 +983,7 @@ const Analytics = () => {
         </div>
 
         {data.engagement.topSearchQueries.length > 0 && (
-          <div className="bg-white rounded-lg shadow-md p-6 border border-gray-200 mb-6">
+          <div className="bg-[var(--yr-panel)] rounded-lg shadow-md p-6 border border-[var(--yr-line)] mb-6">
             <h3 className="text-lg font-semibold text-gray-700 mb-4">
               Top Search Queries (Last 30 Days)
             </h3>
@@ -732,7 +1032,7 @@ const Analytics = () => {
 
       {opportunityViewDataHealth && (
         <section className="mb-10">
-          <h2 className="text-2xl font-semibold mb-4 text-slate-950 border-b border-slate-200 pb-2">
+          <h2 className="text-2xl font-semibold mb-4 text-slate-950 border-b border-[var(--yr-line)] pb-2">
             Analytics Data Health
           </h2>
 
@@ -766,7 +1066,7 @@ const Analytics = () => {
       )}
 
       <section className="mb-10">
-        <div className="mb-4 flex flex-col gap-2 border-b border-slate-200 pb-2 md:flex-row md:items-end md:justify-between">
+        <div className="mb-4 flex flex-col gap-2 border-b border-[var(--yr-line)] pb-2 md:flex-row md:items-end md:justify-between">
           <div>
             <h2 className="text-2xl font-bold text-gray-800">High-Impact Diagnostics</h2>
             <p className="text-sm text-gray-500">
@@ -783,8 +1083,8 @@ const Analytics = () => {
         )}
 
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-          <div className="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden">
-            <div className="border-b border-gray-200 p-4">
+          <div className="bg-[var(--yr-panel)] rounded-lg shadow-md border border-[var(--yr-line)] overflow-hidden">
+            <div className="border-b border-[var(--yr-line)] p-4">
               <h3 className="text-lg font-semibold text-gray-800">Search Quality</h3>
               <p className="text-sm text-gray-500">Results coverage and failed intent signals</p>
             </div>
@@ -806,7 +1106,7 @@ const Analytics = () => {
                 </p>
               </div>
             </div>
-            <div className="border-t border-gray-100 px-4 py-3 text-sm">
+            <div className="border-t border-[var(--yr-line)] px-4 py-3 text-sm">
               <div className="mb-2 flex justify-between text-gray-600">
                 <span>Avg results/search</span>
                 <span className="font-medium text-gray-900">{formatNumber(avgResults, 1)}</span>
@@ -824,7 +1124,7 @@ const Analytics = () => {
                 {[...zeroResultQueries, ...lowResultQueries].slice(0, 5).map((query, index) => (
                   <div
                     key={`${query.query}-${index}`}
-                    className="flex items-center justify-between gap-3 border-b border-gray-100 pb-2 last:border-0 last:pb-0"
+                    className="flex items-center justify-between gap-3 border-b border-[var(--yr-line)] pb-2 last:border-0 last:pb-0"
                   >
                     <span className="min-w-0 truncate text-gray-700">
                       {query.query || '(empty search)'}
@@ -841,13 +1141,13 @@ const Analytics = () => {
             </div>
           </div>
 
-          <div className="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden">
-            <div className="border-b border-gray-200 p-4">
+          <div className="bg-[var(--yr-panel)] rounded-lg shadow-md border border-[var(--yr-line)] overflow-hidden">
+            <div className="border-b border-[var(--yr-line)] p-4">
               <h3 className="text-lg font-semibold text-gray-800">Student Funnel</h3>
               <p className="text-sm text-gray-500">Visitor progression through key actions</p>
             </div>
             <div className="p-4">
-              <div className="mb-4 rounded-md bg-blue-50 p-3">
+              <div className="mb-4 rounded-md bg-[var(--yr-blue-soft)] p-3">
                 <p className="text-sm text-blue-700">Overall conversion</p>
                 <p className="text-2xl font-semibold text-blue-900">
                   {formatPercent(funnel?.overallConversionRate)}
@@ -869,7 +1169,7 @@ const Analytics = () => {
                             {formatNumber(stage.count)} ({formatPercent(derivedRate)})
                           </span>
                         </div>
-                        <div className="h-2 overflow-hidden rounded-full bg-gray-100">
+                        <div className="h-2 overflow-hidden rounded-full bg-[var(--yr-panel-muted)]">
                           <div
                             className="h-full rounded-full bg-blue-600"
                             style={{ width: `${Math.min(Math.max((derivedRate || 0) * 100, 0), 100)}%` }}
@@ -885,8 +1185,8 @@ const Analytics = () => {
             </div>
           </div>
 
-          <div className="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden">
-            <div className="border-b border-gray-200 p-4">
+          <div className="bg-[var(--yr-panel)] rounded-lg shadow-md border border-[var(--yr-line)] overflow-hidden">
+            <div className="border-b border-[var(--yr-line)] p-4">
               <h3 className="text-lg font-semibold text-gray-800">Action Needed</h3>
               <p className="text-sm text-gray-500">Highest-priority admin follow-ups</p>
             </div>
@@ -915,7 +1215,7 @@ const Analytics = () => {
               )}
             </div>
             {actionItems.length > 0 && (
-              <div className="border-t border-gray-100 p-4">
+              <div className="border-t border-[var(--yr-line)] p-4">
                 <div className="overflow-x-auto">
                   <table className="min-w-full text-sm">
                     <thead>
@@ -948,7 +1248,7 @@ const Analytics = () => {
       </section>
 
       <section className="mb-10">
-        <div className="mb-4 flex flex-col gap-2 border-b border-slate-200 pb-2 md:flex-row md:items-end md:justify-between">
+        <div className="mb-4 flex flex-col gap-2 border-b border-[var(--yr-line)] pb-2 md:flex-row md:items-end md:justify-between">
           <div>
             <h2 className="text-2xl font-bold text-gray-800">Search Query Analytics</h2>
             <p className="text-sm text-gray-500">
@@ -957,11 +1257,11 @@ const Analytics = () => {
           </div>
         </div>
 
-        <div className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-md">
+        <div className="overflow-hidden rounded-lg border border-[var(--yr-line)] bg-[var(--yr-panel)] shadow-md">
           <div className="overflow-x-auto">
             <table className="min-w-full">
               <thead>
-                <tr className="border-b bg-gray-50">
+                <tr className="border-b bg-[var(--yr-panel-muted)]">
                   <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">
                     Query
                   </th>
@@ -985,7 +1285,7 @@ const Analytics = () => {
               <tbody>
                 {searchQueryRows.length > 0 ? (
                   searchQueryRows.map((query) => (
-                    <tr key={query.query} className="border-b align-top hover:bg-gray-50">
+                    <tr key={query.query} className="border-b align-top hover:bg-[var(--yr-panel-muted)]">
                       <td className="max-w-xs px-4 py-3 font-medium text-gray-900">
                         {query.query || '(empty search)'}
                       </td>
@@ -1001,7 +1301,7 @@ const Analytics = () => {
                           {query.searchers.slice(0, 8).map((searcher) => (
                             <span
                               key={`${query.query}-${searcher.netid}`}
-                              className="rounded-md border border-gray-200 bg-gray-50 px-2 py-1 text-xs text-gray-700"
+                              className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] px-2 py-1 text-xs text-gray-700"
                             >
                               {formatSearcherName(searcher)} - {searcher.searchCount}
                             </span>
@@ -1033,10 +1333,10 @@ const Analytics = () => {
 
       {data.engagement.mostActiveUsers.length > 0 && (
         <section className="mb-10">
-          <h2 className="text-2xl font-semibold mb-4 text-slate-950 border-b border-slate-200 pb-2">
+          <h2 className="text-2xl font-semibold mb-4 text-slate-950 border-b border-[var(--yr-line)] pb-2">
             Most Active Users (Last 30 Days)
           </h2>
-          <div className="bg-white rounded-lg shadow-md p-6 border border-gray-200">
+          <div className="bg-[var(--yr-panel)] rounded-lg shadow-md p-6 border border-[var(--yr-line)]">
             <div className="overflow-x-auto">
               <table className="min-w-full">
                 <thead>
@@ -1048,7 +1348,7 @@ const Analytics = () => {
                 </thead>
                 <tbody>
                   {data.engagement.mostActiveUsers.map((user, index) => (
-                    <tr key={`${user.userId}-${index}`} className="border-b hover:bg-gray-50">
+                    <tr key={`${user.userId}-${index}`} className="border-b hover:bg-[var(--yr-panel-muted)]">
                       <td className="py-3 px-4 text-gray-800">{user.userId}</td>
                       <td className="py-3 px-4 text-gray-600">{formatUserType(user.userType)}</td>
                       <td className="py-3 px-4 text-right font-medium">{user.eventCount}</td>
@@ -1062,7 +1362,7 @@ const Analytics = () => {
       )}
 
       <section className="mb-10">
-        <div className="flex flex-col gap-3 mb-4 border-b border-slate-200 pb-2 md:flex-row md:items-end md:justify-between">
+        <div className="flex flex-col gap-3 mb-4 border-b border-[var(--yr-line)] pb-2 md:flex-row md:items-end md:justify-between">
           <div>
             <h2 className="text-2xl font-bold text-gray-800">NetID User Activity</h2>
             <p className="text-sm text-gray-500">
@@ -1079,8 +1379,8 @@ const Analytics = () => {
           </button>
         </div>
 
-        <div className="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden">
-          <div className="grid grid-cols-1 gap-4 border-b border-gray-200 p-4 lg:grid-cols-5">
+        <div className="bg-[var(--yr-panel)] rounded-lg shadow-md border border-[var(--yr-line)] overflow-hidden">
+          <div className="grid grid-cols-1 gap-4 border-b border-[var(--yr-line)] p-4 lg:grid-cols-5">
             <label className="block lg:col-span-2">
               <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">
                 Search NetID
@@ -1090,7 +1390,7 @@ const Analytics = () => {
                 value={userSearch}
                 onChange={(event) => setUserSearch(event.target.value)}
                 placeholder="e.g. abc123"
-                className="min-h-[44px] w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
               />
             </label>
 
@@ -1101,7 +1401,7 @@ const Analytics = () => {
               <select
                 value={userTypeFilter}
                 onChange={(event) => setUserTypeFilter(event.target.value)}
-                className="min-h-[44px] w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
               >
                 <option value="all">All Types</option>
                 <option value="undergraduate">Undergrads</option>
@@ -1120,7 +1420,7 @@ const Analytics = () => {
               <select
                 value={userActivitySort}
                 onChange={(event) => setUserActivitySort(event.target.value as UserActivitySort)}
-                className="min-h-[44px] w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
               >
                 <option value="lastActive">Last Active</option>
                 <option value="totalEvents">Total Events</option>
@@ -1137,7 +1437,7 @@ const Analytics = () => {
               <select
                 value={userActivityLimit}
                 onChange={(event) => setUserActivityLimit(Number(event.target.value))}
-                className="min-h-[44px] w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
               >
                 <option value={10}>10 users</option>
                 <option value={25}>25 users</option>
@@ -1158,7 +1458,7 @@ const Analytics = () => {
                   onClick={() =>
                     setUserActivityOrder(userActivityOrder === 'asc' ? 'desc' : 'asc')
                   }
-                  className="inline-flex min-h-[44px] items-center self-start rounded-md border border-gray-300 px-3 py-2 text-gray-700 transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 sm:self-auto"
+                  className="inline-flex min-h-[44px] items-center self-start rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-gray-700 transition-colors hover:bg-[var(--yr-panel-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 sm:self-auto"
                 >
                   Order: {userActivityOrder === 'asc' ? 'Ascending' : 'Descending'}
                 </button>
@@ -1173,7 +1473,7 @@ const Analytics = () => {
               <div className="overflow-x-auto">
                 <table className="min-w-full">
                   <thead>
-                    <tr className="border-b bg-gray-50">
+                    <tr className="border-b bg-[var(--yr-panel-muted)]">
                       <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">
                         NetID
                       </th>
@@ -1184,7 +1484,7 @@ const Analytics = () => {
                         <button
                           type="button"
                           onClick={() => updateUserActivitySort('totalEvents')}
-                          className="inline-flex min-h-[44px] items-center rounded-md px-2 hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                          className="inline-flex min-h-[44px] items-center rounded-md px-2 hover:bg-[var(--yr-panel-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
                         >
                           Events{sortLabel('totalEvents')}
                         </button>
@@ -1193,7 +1493,7 @@ const Analytics = () => {
                         <button
                           type="button"
                           onClick={() => updateUserActivitySort('logins')}
-                          className="inline-flex min-h-[44px] items-center rounded-md px-2 hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                          className="inline-flex min-h-[44px] items-center rounded-md px-2 hover:bg-[var(--yr-panel-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
                         >
                           Logins{sortLabel('logins')}
                         </button>
@@ -1202,7 +1502,7 @@ const Analytics = () => {
                         <button
                           type="button"
                           onClick={() => updateUserActivitySort('searches')}
-                          className="inline-flex min-h-[44px] items-center rounded-md px-2 hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                          className="inline-flex min-h-[44px] items-center rounded-md px-2 hover:bg-[var(--yr-panel-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
                         >
                           Searches{sortLabel('searches')}
                         </button>
@@ -1211,7 +1511,7 @@ const Analytics = () => {
                         <button
                           type="button"
                           onClick={() => updateUserActivitySort('views')}
-                          className="inline-flex min-h-[44px] items-center rounded-md px-2 hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                          className="inline-flex min-h-[44px] items-center rounded-md px-2 hover:bg-[var(--yr-panel-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
                         >
                           Views{sortLabel('views')}
                         </button>
@@ -1220,7 +1520,7 @@ const Analytics = () => {
                         <button
                           type="button"
                           onClick={() => updateUserActivitySort('lastActive')}
-                          className="inline-flex min-h-[44px] items-center rounded-md px-2 hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                          className="inline-flex min-h-[44px] items-center rounded-md px-2 hover:bg-[var(--yr-panel-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
                         >
                           Last Active{sortLabel('lastActive')}
                         </button>
@@ -1238,8 +1538,8 @@ const Analytics = () => {
                       userActivity.users.map((user, index) => (
                         <tr
                           key={`${user.netid}-${index}`}
-                          className={`cursor-pointer border-b transition-colors hover:bg-blue-50 ${
-                            selectedNetid === user.netid ? 'bg-blue-50' : ''
+                          className={`cursor-pointer border-b transition-colors hover:bg-[var(--yr-blue-soft)] ${
+                            selectedNetid === user.netid ? 'bg-[var(--yr-blue-soft)]' : ''
                           }`}
                           onClick={() => setSelectedNetid(user.netid)}
                         >
@@ -1268,7 +1568,7 @@ const Analytics = () => {
               </div>
             </div>
 
-            <aside className="w-full rounded-lg border border-gray-200 bg-gray-50 p-4 xl:w-96">
+            <aside className="w-full rounded-lg border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] p-4 xl:w-96">
               <div className="mb-4 flex items-start justify-between gap-3">
                 <div>
                   <h3 className="text-lg font-semibold text-gray-800">
@@ -1285,7 +1585,7 @@ const Analytics = () => {
                   <button
                     type="button"
                     onClick={() => setSelectedNetid(null)}
-                    className="inline-flex min-h-[44px] items-center rounded-md border border-gray-300 px-3 py-2 text-xs text-gray-600 hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                    className="inline-flex min-h-[44px] items-center rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-xs text-gray-600 hover:bg-[var(--yr-panel)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
                   >
                     Clear
                   </button>
@@ -1303,7 +1603,7 @@ const Analytics = () => {
               )}
 
               {selectedNetid && selectedUserError && (
-                <div className="rounded-md border border-red-200 bg-white px-3 py-2 text-sm text-red-700">
+                <div className="rounded-md border border-red-200 bg-[var(--yr-panel)] px-3 py-2 text-sm text-red-700">
                   {selectedUserError}
                 </div>
               )}
@@ -1311,25 +1611,25 @@ const Analytics = () => {
               {selectedUser && !isSelectedUserLoading && (
                 <div>
                   <div className="mb-4 grid grid-cols-2 gap-3 text-sm">
-                    <div className="rounded-md bg-white p-3">
+                    <div className="rounded-md bg-[var(--yr-panel)] p-3">
                       <p className="text-gray-500">Logins</p>
                       <p className="text-lg font-semibold text-gray-900">
                         {selectedUser.user.logins}
                       </p>
                     </div>
-                    <div className="rounded-md bg-white p-3">
+                    <div className="rounded-md bg-[var(--yr-panel)] p-3">
                       <p className="text-gray-500">Searches</p>
                       <p className="text-lg font-semibold text-gray-900">
                         {selectedUser.user.searches}
                       </p>
                     </div>
-                    <div className="rounded-md bg-white p-3">
+                    <div className="rounded-md bg-[var(--yr-panel)] p-3">
                       <p className="text-gray-500">Views</p>
                       <p className="text-lg font-semibold text-gray-900">
                         {selectedUser.user.views}
                       </p>
                     </div>
-                    <div className="rounded-md bg-white p-3">
+                    <div className="rounded-md bg-[var(--yr-panel)] p-3">
                       <p className="text-gray-500">Saves</p>
                       <p className="text-lg font-semibold text-gray-900">
                         {selectedUser.user.listingFavorites}
@@ -1345,7 +1645,7 @@ const Analytics = () => {
                       selectedUser.events.map((event, index) => (
                         <div
                           key={event.id || event._id || `${event.eventType}-${event.timestamp}-${index}`}
-                          className="rounded-md border border-gray-200 bg-white p-3"
+                          className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-3"
                         >
                           <div className="flex items-start justify-between gap-3">
                             <p className="font-medium text-gray-800">
@@ -1378,10 +1678,10 @@ const Analytics = () => {
 
       {data.engagement.trendingListings.length > 0 && (
         <section className="mb-10">
-          <h2 className="text-2xl font-semibold mb-4 text-slate-950 border-b border-slate-200 pb-2">
+          <h2 className="text-2xl font-semibold mb-4 text-slate-950 border-b border-[var(--yr-line)] pb-2">
             Trending Posted Opportunities (Last 30 Days)
           </h2>
-          <div className="bg-white rounded-lg shadow-md p-6 border border-gray-200">
+          <div className="bg-[var(--yr-panel)] rounded-lg shadow-md p-6 border border-[var(--yr-line)]">
             <div className="overflow-x-auto">
               <table className="min-w-full">
                 <thead>
@@ -1396,7 +1696,7 @@ const Analytics = () => {
                 </thead>
                 <tbody>
                   {data.engagement.trendingListings.map((listing) => (
-                    <tr key={listing.listingId} className="border-b hover:bg-gray-50">
+                    <tr key={listing.listingId} className="border-b hover:bg-[var(--yr-panel-muted)]">
                       <td className="py-3 px-4 text-gray-800">{listing.title}</td>
                       <td className="py-3 px-4 text-gray-600">
                         {listing.ownerFirstName} {listing.ownerLastName}
@@ -1413,7 +1713,7 @@ const Analytics = () => {
       )}
 
       <section className="mb-10">
-        <h2 className="text-2xl font-semibold mb-4 text-slate-950 border-b border-slate-200 pb-2">
+        <h2 className="text-2xl font-semibold mb-4 text-slate-950 border-b border-[var(--yr-line)] pb-2">
           Posted Opportunities Overview
         </h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
@@ -1445,7 +1745,7 @@ const Analytics = () => {
       </section>
 
       <section className="mb-10">
-        <h2 className="text-2xl font-semibold mb-4 text-slate-950 border-b border-slate-200 pb-2">
+        <h2 className="text-2xl font-semibold mb-4 text-slate-950 border-b border-[var(--yr-line)] pb-2">
           Cumulative Engagement Metrics
         </h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -1466,10 +1766,10 @@ const Analytics = () => {
       </section>
 
       <section className="mb-10">
-        <h2 className="text-2xl font-semibold mb-4 text-slate-950 border-b border-slate-200 pb-2">
+        <h2 className="text-2xl font-semibold mb-4 text-slate-950 border-b border-[var(--yr-line)] pb-2">
           Views by Department
         </h2>
-        <div className="bg-white rounded-lg shadow-md p-6 border border-gray-200">
+        <div className="bg-[var(--yr-panel)] rounded-lg shadow-md p-6 border border-[var(--yr-line)]">
           <div className="overflow-x-auto">
             <table className="min-w-full">
               <thead>
@@ -1484,7 +1784,7 @@ const Analytics = () => {
               </thead>
               <tbody>
                 {data.engagement.viewsByDepartment.slice(0, 15).map((dept) => (
-                  <tr key={dept.department} className="border-b hover:bg-gray-50">
+                  <tr key={dept.department} className="border-b hover:bg-[var(--yr-panel-muted)]">
                     <td className="py-3 px-4 text-gray-800">{dept.department}</td>
                     <td className="py-3 px-4 text-right font-medium">{dept.totalViews}</td>
                     <td className="py-3 px-4 text-right">{dept.listingCount}</td>
@@ -1498,10 +1798,10 @@ const Analytics = () => {
       </section>
 
       <section className="mb-10">
-        <h2 className="text-2xl font-semibold mb-4 text-slate-950 border-b border-slate-200 pb-2">
+        <h2 className="text-2xl font-semibold mb-4 text-slate-950 border-b border-[var(--yr-line)] pb-2">
           Posted Opportunities by Department
         </h2>
-        <div className="bg-white rounded-lg shadow-md p-6 border border-gray-200">
+        <div className="bg-[var(--yr-panel)] rounded-lg shadow-md p-6 border border-[var(--yr-line)]">
           <div className="overflow-x-auto">
             <table className="min-w-full">
               <thead>
@@ -1514,7 +1814,7 @@ const Analytics = () => {
               </thead>
               <tbody>
                 {data.listings.byDepartment.slice(0, 15).map((dept) => (
-                  <tr key={dept.department} className="border-b hover:bg-gray-50">
+                  <tr key={dept.department} className="border-b hover:bg-[var(--yr-panel-muted)]">
                     <td className="py-3 px-4 text-gray-800">{dept.department}</td>
                     <td className="py-3 px-4 text-right font-medium">{dept.count}</td>
                   </tr>
@@ -1526,10 +1826,10 @@ const Analytics = () => {
       </section>
 
       <section className="mb-10">
-        <h2 className="text-2xl font-semibold mb-4 text-slate-950 border-b border-slate-200 pb-2">
+        <h2 className="text-2xl font-semibold mb-4 text-slate-950 border-b border-[var(--yr-line)] pb-2">
           Top Professors by Posted Opportunities
         </h2>
-        <div className="bg-white rounded-lg shadow-md p-6 border border-gray-200">
+        <div className="bg-[var(--yr-panel)] rounded-lg shadow-md p-6 border border-[var(--yr-line)]">
           <div className="overflow-x-auto">
             <table className="min-w-full">
               <thead>
@@ -1543,7 +1843,7 @@ const Analytics = () => {
               </thead>
               <tbody>
                 {data.listings.byProfessor.map((prof) => (
-                  <tr key={prof.netId} className="border-b hover:bg-gray-50">
+                  <tr key={prof.netId} className="border-b hover:bg-[var(--yr-panel-muted)]">
                     <td className="py-3 px-4 text-gray-800">{prof.professorName}</td>
                     <td className="py-3 px-4 text-gray-600">{prof.netId}</td>
                     <td className="py-3 px-4 text-right font-medium">{prof.count}</td>
@@ -1556,10 +1856,10 @@ const Analytics = () => {
       </section>
 
       <section className="mb-10">
-        <h2 className="text-2xl font-semibold mb-4 text-slate-950 border-b border-slate-200 pb-2">
+        <h2 className="text-2xl font-semibold mb-4 text-slate-950 border-b border-[var(--yr-line)] pb-2">
           Top 10 Most Viewed Posted Opportunities (All-Time)
         </h2>
-        <div className="bg-white rounded-lg shadow-md p-6 border border-gray-200">
+        <div className="bg-[var(--yr-panel)] rounded-lg shadow-md p-6 border border-[var(--yr-line)]">
           <div className="overflow-x-auto">
             <table className="min-w-full">
               <thead>
@@ -1571,7 +1871,7 @@ const Analytics = () => {
               </thead>
               <tbody>
                 {data.listings.topViewedListings.map((listing) => (
-                  <tr key={listing._id} className="border-b hover:bg-gray-50">
+                  <tr key={listing._id} className="border-b hover:bg-[var(--yr-panel-muted)]">
                     <td className="py-3 px-4 text-gray-800">{listing.title}</td>
                     <td className="py-3 px-4 text-gray-600">
                       {listing.ownerFirstName} {listing.ownerLastName}
@@ -1586,10 +1886,10 @@ const Analytics = () => {
       </section>
 
       <section className="mb-10">
-        <h2 className="text-2xl font-semibold mb-4 text-slate-950 border-b border-slate-200 pb-2">
+        <h2 className="text-2xl font-semibold mb-4 text-slate-950 border-b border-[var(--yr-line)] pb-2">
           Top 10 Most Saved Posted Opportunities
         </h2>
-        <div className="bg-white rounded-lg shadow-md p-6 border border-gray-200">
+        <div className="bg-[var(--yr-panel)] rounded-lg shadow-md p-6 border border-[var(--yr-line)]">
           <div className="overflow-x-auto">
             <table className="min-w-full">
               <thead>
@@ -1601,7 +1901,7 @@ const Analytics = () => {
               </thead>
               <tbody>
                 {data.listings.topFavoritedListings.map((listing) => (
-                  <tr key={listing._id} className="border-b hover:bg-gray-50">
+                  <tr key={listing._id} className="border-b hover:bg-[var(--yr-panel-muted)]">
                     <td className="py-3 px-4 text-gray-800">{listing.title}</td>
                     <td className="py-3 px-4 text-gray-600">
                       {listing.ownerFirstName} {listing.ownerLastName}
@@ -1616,7 +1916,7 @@ const Analytics = () => {
       </section>
 
       <section className="mb-10">
-        <h2 className="text-2xl font-semibold mb-4 text-slate-950 border-b border-slate-200 pb-2">
+        <h2 className="text-2xl font-semibold mb-4 text-slate-950 border-b border-[var(--yr-line)] pb-2">
           User Statistics
         </h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
@@ -1627,7 +1927,7 @@ const Analytics = () => {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="bg-white rounded-lg shadow-md p-6 border border-gray-200">
+          <div className="bg-[var(--yr-panel)] rounded-lg shadow-md p-6 border border-[var(--yr-line)]">
             <h3 className="text-lg font-semibold text-gray-700 mb-4">Users by Type</h3>
             <div className="space-y-3">
               {data.users.byType.map((item) => (
@@ -1639,7 +1939,7 @@ const Analytics = () => {
             </div>
           </div>
 
-          <div className="bg-white rounded-lg shadow-md p-6 border border-gray-200">
+          <div className="bg-[var(--yr-panel)] rounded-lg shadow-md p-6 border border-[var(--yr-line)]">
             <h3 className="text-lg font-semibold text-gray-700 mb-4">New Users Today by Type</h3>
             <div className="space-y-3">
               {data.users.newUsersTodayByType.length > 0 ? (

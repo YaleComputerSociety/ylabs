@@ -79,7 +79,7 @@ const getAcademicDisciplineColor = (area: string): { bg: string; text: string } 
     case 'Mathematics':
       return { bg: 'bg-indigo-200', text: 'text-indigo-800' };
     default:
-      return { bg: 'bg-gray-200', text: 'text-gray-800' };
+      return { bg: 'bg-[var(--yr-panel-muted)]', text: 'text-gray-800' };
   }
 };
 
@@ -95,7 +95,7 @@ const getResearchAreaChipColor = (area: string) => {
     Economics: 'bg-orange-200 text-gray-900',
     Mathematics: 'bg-indigo-200 text-gray-900',
   };
-  return m[area] || 'bg-gray-100 text-gray-900';
+  return m[area] || 'bg-[var(--yr-panel-muted)] text-gray-900';
 };
 
 const listingQuickFilters: QuickFilterDef[] = [
@@ -281,7 +281,7 @@ export default function Navbar() {
     ...selectedResearchAreas.map((area) => ({
       key: `area-${area}`,
       label: area,
-      colorClass: `${getResearchAreaChipColor(area)} border border-gray-300`,
+      colorClass: `${getResearchAreaChipColor(area)} border border-[var(--yr-line-strong)]`,
       onRemove: () => setSelectedResearchAreas((prev) => prev.filter((a) => a !== area)),
     })),
     ...selectedDepartments.map((dept) => ({
@@ -444,8 +444,7 @@ export default function Navbar() {
           position="static"
           sx={{
             position: 'relative',
-            background:
-              'linear-gradient(180deg, rgba(255,253,248,0.97) 0%, rgba(248,245,237,0.94) 100%)',
+            background: 'color-mix(in srgb, var(--yr-panel) 96%, var(--yr-page))',
             color: 'var(--yr-ink)',
             height: { xs: '68px', sm: '68px' },
             '& .MuiToolbar-root': {
@@ -527,6 +526,7 @@ export default function Navbar() {
                           );
                         })}
                       </Box>
+                      {isAdmin && <AnalyticsButton />}
                       <UserButton />
                     </>
                   )}
@@ -586,6 +586,7 @@ export default function Navbar() {
             <Box
               sx={{
                 bgcolor: 'var(--yr-panel)',
+                borderTop: '1px solid var(--yr-line)',
                 boxShadow: '0px 2px 4px rgba(11, 31, 58, 0.1)',
                 p: 2,
                 display: 'flex',

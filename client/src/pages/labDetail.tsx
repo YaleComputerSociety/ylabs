@@ -91,13 +91,13 @@ const RelatedResearchEntitiesSection = ({
             <Link
               key={entity.id || entity._id || entity.slug}
               to={`/research/${entity.slug}`}
-              className="block rounded-lg border border-gray-200 bg-white p-4 transition hover:border-blue-300 hover:shadow-sm"
+              className="block rounded-lg border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4 transition hover:border-blue-300 hover:shadow-sm"
             >
               <div className="flex flex-wrap gap-2">
                 {tags.map((tag) => (
                   <span
                     key={tag}
-                    className="rounded-full bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700"
+                    className="rounded-full bg-[var(--yr-blue-soft)] px-2 py-1 text-xs font-medium text-blue-700"
                   >
                     {tag}
                   </span>
@@ -129,14 +129,14 @@ const AffiliatedResearchEntitiesSection = ({
         <Link
           key={entity.id || entity._id || entity.slug}
           to={`/research/${entity.slug}`}
-          className="block rounded-lg border border-gray-200 bg-white p-4 transition hover:border-blue-300 hover:shadow-sm"
+          className="block rounded-lg border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4 transition hover:border-blue-300 hover:shadow-sm"
         >
           <div className="flex flex-wrap gap-2">
             {uniqueCompact([formatEntityKindTag(entity.kind), ...(entity.departments || [])], 3).map(
               (tag) => (
                 <span
                   key={tag}
-                  className="rounded-full bg-gray-50 px-2 py-1 text-xs font-medium text-gray-700"
+                  className="rounded-full bg-[var(--yr-panel-muted)] px-2 py-1 text-xs font-medium text-gray-700"
                 >
                   {tag}
                 </span>
@@ -264,7 +264,7 @@ const ResearchPlanSaveButton = ({
     size={20}
     ariaLabel={isSaved ? 'Saved to Dashboard' : 'Save research plan'}
     title={isSaved ? 'Saved to Dashboard' : 'Save research plan'}
-    className="flex w-full items-start gap-3 rounded-md border border-gray-200 bg-white px-3 py-2 text-left transition-colors hover:border-blue-200 hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 sm:w-auto sm:min-w-[13rem]"
+    className="flex w-full items-start gap-3 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 py-2 text-left transition-colors hover:border-blue-200 hover:bg-[var(--yr-blue-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 sm:w-auto sm:min-w-[13rem]"
     iconClassName="mt-0.5 shrink-0"
   >
     <span className="min-w-0 flex-1">
@@ -400,7 +400,7 @@ const DecisionSummary = ({
   ).join(' · ');
 
   return (
-    <section className="rounded-lg border border-blue-100 bg-white p-4 shadow-sm sm:p-5">
+    <section className="rounded-lg border border-blue-100 bg-[var(--yr-panel)] p-4 shadow-sm sm:p-5">
       <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_16rem] md:gap-5">
         <div>
           <SectionHeading>Student decision</SectionHeading>
@@ -429,7 +429,7 @@ const DecisionSummary = ({
                 {topics.map((topic) => (
                   <span
                     key={topic}
-                    className="rounded-md border border-blue-100 bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-800"
+                    className="rounded-md border border-blue-100 bg-[var(--yr-blue-soft)] px-2.5 py-1 text-xs font-medium text-blue-800"
                   >
                     {formatTitleCaseLabel(topic)}
                   </span>
@@ -439,7 +439,7 @@ const DecisionSummary = ({
           )}
         </div>
 
-        <div className="order-first rounded-md border border-gray-200 bg-gray-50 p-4 md:order-none">
+        <div className="order-first rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] p-4 md:order-none">
           <dl className="space-y-3 text-sm">
             <div>
               <dt className="text-xs font-semibold uppercase tracking-wider text-gray-600">
@@ -457,14 +457,14 @@ const DecisionSummary = ({
             </div>
           </dl>
           {leadProfessor && (
-            <div className="mt-4 border-t border-gray-200 pt-4">
+            <div className="mt-4 border-t border-[var(--yr-line)] pt-4">
               <p className="text-xs font-semibold uppercase tracking-wider text-gray-600">
                 Lead professor
               </p>
               {leadProfessor.user.netid ? (
                 <Link
                   to={`/profile/${leadProfessor.user.netid}`}
-                  className="mt-2 flex min-h-11 flex-col justify-center rounded-md border border-blue-100 bg-white px-3 py-2 text-sm transition-colors hover:border-blue-300 hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                  className="mt-2 flex min-h-11 flex-col justify-center rounded-md border border-blue-100 bg-[var(--yr-panel)] px-3 py-2 text-sm transition-colors hover:border-blue-300 hover:bg-[var(--yr-blue-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
                 >
                   <span className="font-semibold text-blue-800">{leadProfessorName}</span>
                   {leadProfessorMeta && (
@@ -474,7 +474,7 @@ const DecisionSummary = ({
                   )}
                 </Link>
               ) : (
-                <div className="mt-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm">
+                <div className="mt-2 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 py-2 text-sm">
                   <p className="font-semibold text-gray-900">{leadProfessorName}</p>
                   {leadProfessorMeta && (
                     <p className="mt-0.5 text-xs leading-relaxed text-gray-600">
@@ -485,7 +485,7 @@ const DecisionSummary = ({
               )}
             </div>
           )}
-          <div className="mt-4 border-t border-gray-200 pt-4">
+          <div className="mt-4 border-t border-[var(--yr-line)] pt-4">
             <p className="text-xs font-semibold uppercase tracking-wider text-gray-600">
               Recommended next step
             </p>
@@ -507,7 +507,7 @@ const DecisionSummary = ({
                 href={officialRoute.url}
                 target="_blank"
                 rel="noreferrer"
-                className="mt-2 inline-flex min-h-11 items-center justify-center rounded-md border border-blue-200 bg-white px-3 py-2 text-sm font-semibold text-blue-700 transition-colors hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                className="mt-2 inline-flex min-h-11 items-center justify-center rounded-md border border-blue-200 bg-[var(--yr-panel)] px-3 py-2 text-sm font-semibold text-blue-700 transition-colors hover:bg-[var(--yr-blue-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
               >
                 Open official route
               </a>
@@ -547,7 +547,7 @@ const ProfileStatusSection = ({
   const qualityNotes = adminQualityNotes(group.qualitySummary?.repairFlags);
 
   return (
-    <section className="rounded-md border border-gray-200 bg-white p-4">
+    <section className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4">
       <SectionHeading>Profile status</SectionHeading>
       <div className="grid gap-4 md:grid-cols-2">
         <div>
@@ -595,26 +595,26 @@ const WaysToApproachSection = ({
     <section>
       <SectionHeading>Ways to approach this lab</SectionHeading>
       <div className="grid gap-3 md:grid-cols-3">
-        <article className="rounded-md border border-gray-200 bg-white p-4">
+        <article className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4">
           <h3 className="text-sm font-semibold text-gray-900">Explore first</h3>
           <p className="mt-2 text-sm leading-relaxed text-gray-700">
             Best if you are unsure whether this lab accepts undergrads. Open the official profile
             and look for current instructions.
           </p>
         </article>
-        <article className="rounded-md border border-gray-200 bg-white p-4">
+        <article className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4">
           <h3 className="text-sm font-semibold text-gray-900">Send exploratory email</h3>
           <p className="mt-2 text-sm leading-relaxed text-gray-700">
             Best if the research area strongly matches your interests. Ask whether undergraduates
             can get involved this semester or summer.
           </p>
           {pathway?.evidenceStrength && (
-            <span className="mt-3 inline-flex rounded border border-gray-200 bg-gray-50 px-2 py-1 text-xs text-gray-600">
+            <span className="mt-3 inline-flex rounded border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] px-2 py-1 text-xs text-gray-600">
               {getEvidenceStrengthLabel(pathway.evidenceStrength)}
             </span>
           )}
         </article>
-        <article className="rounded-md border border-gray-200 bg-white p-4">
+        <article className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4">
           <h3 className="text-sm font-semibold text-gray-900">
             {posted ? 'Review posted opportunity' : 'Look for related labs'}
           </h3>
@@ -649,7 +649,7 @@ const OutreachSection = ({ group, onDraft }: { group: any; onDraft: () => void }
   );
 
   return (
-    <section className="rounded-lg border border-blue-100 bg-blue-50/50 p-5">
+    <section className="rounded-lg border border-blue-100 bg-[var(--yr-blue-soft)]/50 p-5">
       <SectionHeading>Outreach</SectionHeading>
       <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_13rem]">
         <div>
@@ -681,7 +681,7 @@ const OutreachSection = ({ group, onDraft }: { group: any; onDraft: () => void }
               />
             </div>
           </div>
-          <p className="mt-4 rounded-md border border-blue-100 bg-white px-3 py-2 text-sm leading-relaxed text-gray-800">
+          <p className="mt-4 rounded-md border border-blue-100 bg-[var(--yr-panel)] px-3 py-2 text-sm leading-relaxed text-gray-800">
             Ask: "Are there any opportunities for undergraduates to get involved with the lab this
             semester or summer?"
           </p>
@@ -707,8 +707,8 @@ const SourcesSection = ({ sources }: { sources: ResearchDetailSource[] }) => {
   );
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-white">
-      <div className="border-b border-gray-100 px-4 py-3">
+    <div className="rounded-lg border border-[var(--yr-line)] bg-[var(--yr-panel)]">
+      <div className="border-b border-[var(--yr-line)] px-4 py-3">
         <p className="text-sm text-gray-600">
           {hasActionContext
             ? 'These official pages support the profile details and action evidence shown above.'
@@ -726,7 +726,7 @@ const SourcesSection = ({ sources }: { sources: ResearchDetailSource[] }) => {
                   {source.contexts.map((context) => (
                     <span
                       key={context}
-                      className="rounded border border-gray-200 bg-gray-50 px-2 py-1 text-xs text-gray-600"
+                      className="rounded border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] px-2 py-1 text-xs text-gray-600"
                     >
                       {context}
                     </span>
@@ -737,7 +737,7 @@ const SourcesSection = ({ sources }: { sources: ResearchDetailSource[] }) => {
                 href={source.url}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-md border border-gray-300 px-3 text-sm font-semibold text-gray-800 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-md border border-[var(--yr-line-strong)] px-3 text-sm font-semibold text-gray-800 hover:bg-[var(--yr-panel-muted)] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
               >
                 Open source
               </a>

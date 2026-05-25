@@ -87,7 +87,7 @@ const Account = () => {
               {user?.netId && (
                 <Link
                   to={`/profile/${user.netId}`}
-                  className="inline-flex min-h-[44px] items-center justify-center rounded-md border border-blue-200 bg-[var(--yr-blue-soft)] px-4 py-2 text-sm font-semibold text-[var(--yr-blue)] hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                  className="inline-flex min-h-[44px] items-center justify-center rounded-md border border-blue-200 bg-[var(--yr-blue-soft)] px-4 py-2 text-sm font-semibold text-[var(--yr-blue)] hover:bg-[var(--yr-panel)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
                 >
                   View public profile
                 </Link>
@@ -110,7 +110,7 @@ const Account = () => {
               className={`inline-flex min-h-[44px] items-center px-4 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 ${
                 adminViewMode === 'student'
                   ? 'bg-[var(--yr-blue)] text-white'
-                  : 'bg-white text-slate-600 hover:bg-slate-50'
+                  : 'bg-[var(--yr-panel)] text-slate-600 hover:bg-[var(--yr-panel-muted)]'
               }`}
             >
               Student Dashboard
@@ -122,7 +122,7 @@ const Account = () => {
               className={`inline-flex min-h-[44px] items-center px-4 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 ${
                 adminViewMode === 'professor'
                   ? 'bg-[var(--yr-blue)] text-white'
-                  : 'bg-white text-slate-600 hover:bg-slate-50'
+                  : 'bg-[var(--yr-panel)] text-slate-600 hover:bg-[var(--yr-panel-muted)]'
               }`}
             >
               Faculty Profile Preview
@@ -132,7 +132,7 @@ const Account = () => {
       )}
 
       {isAdmin && showProfView && (
-        <div className="mb-6 rounded-md border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+        <div className="mb-6 rounded-md border border-blue-100 bg-[var(--yr-blue-soft)] px-4 py-3 text-sm text-blue-800">
           Previewing the signed-in admin account in the faculty layout. Edit specific professors
           from Faculty Profiles in Analytics.
         </div>

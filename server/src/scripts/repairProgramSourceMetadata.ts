@@ -137,6 +137,34 @@ const GSAS_YALE_CLUB_PHILADELPHIA_SOURCE_URL =
 const GSAS_YALE_CLUB_SAN_FRANCISCO_SOURCE_URL =
   'https://gsas.yale.edu/yale-club-san-francisco-summer-research-grant';
 const YIBS_SMALL_GRANT_SOURCE_URL = 'https://yibs.yale.edu/research/yibs-small-grant-program';
+const BERKELEY_FELLOWSHIPS_SOURCE_URL = 'https://berkeley.yale.edu/college-resources/fellowships';
+const EZRA_STILES_FELLOWSHIPS_SOURCE_URL = 'https://ezrastiles.yale.edu/resources/fellowships';
+const PIERSON_FELLOWSHIPS_SOURCE_URL =
+  'https://pierson.yale.edu/people/deans-office/fellowships-and-grants';
+const TIMOTHY_DWIGHT_FELLOWSHIPS_SOURCE_URL =
+  'https://timothydwight.yalecollege.yale.edu/timothy-dwight-grants-and-fellowships';
+const MACMILLAN_CANADA_SUMMER_GRANTS_SOURCE_URL = 'https://macmillan.yale.edu/canada/summer-grants';
+const MACMILLAN_CLAIS_GRANTS_SOURCE_URL = 'https://macmillan.yale.edu/latam/student-grants-and-prizes';
+const FRANKE_UNDERGRADUATE_FELLOWSHIP_SOURCE_URL =
+  'https://physics.yale.edu/franke-undergraduate-fellowship';
+const GRAND_STRATEGY_SUMMER_RESEARCH_SOURCE_URL =
+  'https://jackson.yale.edu/academics/grand-strategy-program/summer-research/';
+const FRENCH_GRANTS_PRIZES_SOURCE_URL = 'https://french.yale.edu/undergraduate-program/french-grants-and-prizes';
+const NUCLEAR_SECURITY_FELLOWSHIP_SOURCE_URL = 'https://macmillan.yale.edu/nuclear-security/fellowship';
+const POLITICAL_SCIENCE_FUNDS_SOURCE_URL =
+  'https://politicalscience.yale.edu/academics/undergraduate-program/funds';
+const YALE_FELLOWSHIPS_PUBLIC_SERVICE_PDF_SOURCE_URL =
+  'https://funding.yale.edu/sites/default/files/files/Awards%20for%20Public%20Service.pdf';
+const YALE_COLLEGE_ADVISING_BARRY_SOURCE_URL =
+  'https://advising.yalecollege.yale.edu/event/thomas-c-barry-travel-term-time-fellowship-application-deadline';
+const YALE_SCIENCE_NON_YALE_RESEARCH_SOURCE_URL =
+  'https://science.yalecollege.yale.edu/stem-fellowships/non-yale-research-opportunities';
+const WESTERN_RESOURCES_FELLOWSHIP_SOURCE_URL =
+  'https://west.yale.edu/funding/western-resources-fellowship-ucross-high-plains-stewardship-initiative-yse';
+const GYORGYEY_SIMBONIS_SOURCE_URL =
+  'https://library.medicine.yale.edu/historical/research/grants-fellowships/gyorgyey-simbonis/';
+const YCEJ_ENVIRONMENTAL_JUSTICE_FELLOWSHIP_SOURCE_URL =
+  'https://ycej.yale.edu/en/research/yse-environmental-justice-research-fellowship';
 
 const yaleOfficeResearchFellowshipRepairs = new Map<
   string,
@@ -380,6 +408,26 @@ const reviewedResidentialCollegeResearchFundingRepairs = new Map<
     },
   ],
   [
+    'Berkeley College Richter Summer Fellowship',
+    {
+      sourceUrl: BERKELEY_FELLOWSHIPS_SOURCE_URL,
+      studentFacingCategory: 'Residential college summer research funding',
+      summary: 'Berkeley College Richter funding for independent summer study or research.',
+      description:
+        'Berkeley College lists Richter funding for independent study and research. Show this as Berkeley-restricted project funding rather than a general Yale-wide research placement.',
+      bestNextStep:
+        'Review Berkeley fellowships, confirm college eligibility, and prepare the Student Grants Database application around an independent summer research plan.',
+      prepSteps: [
+        'Official Berkeley fellowships page',
+        'Berkeley eligibility check',
+        'Independent summer research plan',
+        'Student Grants Database application',
+      ],
+      sourceKey: 'berkeley-college:richter-summer-fellowship',
+      studentVisibilityOverrideTier: 'limited_but_safe',
+    },
+  ],
+  [
     'Branford College Mellon Senior Research Grant',
     {
       sourceUrl: 'https://branford.yale.edu/head-of-branford-college/student-project-funding',
@@ -453,6 +501,46 @@ const reviewedResidentialCollegeResearchFundingRepairs = new Map<
         'Student Grants Database application',
       ],
       sourceKey: 'davenport-college:richter-summer-fellowship',
+    },
+  ],
+  [
+    'Ezra Stiles College Mellon Senior Research Grant',
+    {
+      sourceUrl: EZRA_STILES_FELLOWSHIPS_SOURCE_URL,
+      studentFacingCategory: 'Residential college senior research funding',
+      summary: 'Ezra Stiles College Mellon funding for seniors pursuing academic-year research.',
+      description:
+        'Ezra Stiles lists Mellon senior research funding for senior research projects. Show this as college-restricted research funding, not a general research placement.',
+      bestNextStep:
+        'Review the Ezra Stiles fellowships page, confirm college eligibility, and prepare the Student Grants Database application around a senior research project.',
+      prepSteps: [
+        'Official Ezra Stiles fellowships page',
+        'Senior research project',
+        'Budget',
+        'Student Grants Database application',
+      ],
+      sourceKey: 'ezra-stiles-college:mellon-senior-research-grant',
+      studentVisibilityOverrideTier: 'limited_but_safe',
+    },
+  ],
+  [
+    'Ezra Stiles Richter Summer Fellowship',
+    {
+      sourceUrl: EZRA_STILES_FELLOWSHIPS_SOURCE_URL,
+      studentFacingCategory: 'Residential college summer research funding',
+      summary: 'Ezra Stiles College Richter Fellowship for independent summer study or research.',
+      description:
+        'Ezra Stiles lists Richter funding for independent summer study or research. Show this as college-restricted project funding rather than a general Yale-wide placement.',
+      bestNextStep:
+        'Review the Ezra Stiles fellowships page, confirm college eligibility, and prepare a summer research plan and budget.',
+      prepSteps: [
+        'Official Ezra Stiles fellowships page',
+        'Independent summer research plan',
+        'Budget',
+        'Student Grants Database application',
+      ],
+      sourceKey: 'ezra-stiles-college:richter-summer-fellowship',
+      studentVisibilityOverrideTier: 'limited_but_safe',
     },
   ],
   [
@@ -532,6 +620,36 @@ const reviewedResidentialCollegeResearchFundingRepairs = new Map<
     },
   ],
   [
+    'Pierson College Mellon Senior Research Grant',
+    {
+      sourceUrl: PIERSON_FELLOWSHIPS_SOURCE_URL,
+      studentFacingCategory: 'Residential college senior research funding',
+      summary: 'Pierson College Mellon funding for senior research projects.',
+      description:
+        'Pierson College lists Mellon research awards for senior independent research. Show this as college-restricted senior research funding.',
+      bestNextStep:
+        'Review Pierson fellowships and grants, confirm college eligibility, and prepare the Student Grants Database application around a senior research project.',
+      prepSteps: ['Official Pierson fellowships page', 'Senior research project', 'Budget', 'Student Grants Database application'],
+      sourceKey: 'pierson-college:mellon-senior-research-grant',
+      studentVisibilityOverrideTier: 'limited_but_safe',
+    },
+  ],
+  [
+    'Pierson College Richter Summer Fellowship',
+    {
+      sourceUrl: PIERSON_FELLOWSHIPS_SOURCE_URL,
+      studentFacingCategory: 'Residential college summer research funding',
+      summary: 'Pierson College Richter funding for independent summer study or research.',
+      description:
+        'Pierson College lists Richter Fellowship funding for independent study or research. Show this as college-restricted project funding rather than a research placement.',
+      bestNextStep:
+        'Review Pierson fellowships and grants, confirm college eligibility, and prepare the Student Grants Database application around an independent summer research plan.',
+      prepSteps: ['Official Pierson fellowships page', 'Independent summer research plan', 'Budget', 'Student Grants Database application'],
+      sourceKey: 'pierson-college:richter-summer-fellowship',
+      studentVisibilityOverrideTier: 'limited_but_safe',
+    },
+  ],
+  [
     'Saybrook College Mellon Senior Research Grant',
     {
       sourceUrl: SAYBROOK_FELLOWSHIPS_SOURCE_URL,
@@ -605,6 +723,46 @@ const reviewedResidentialCollegeResearchFundingRepairs = new Map<
         'Student Grants Database application',
       ],
       sourceKey: 'silliman-college:richter-summer-fellowship',
+    },
+  ],
+  [
+    'Timothy Dwight College Mellon Senior Research Grant',
+    {
+      sourceUrl: TIMOTHY_DWIGHT_FELLOWSHIPS_SOURCE_URL,
+      studentFacingCategory: 'Residential college senior research funding',
+      summary: 'Timothy Dwight College Mellon funding for senior research projects.',
+      description:
+        'Timothy Dwight College lists Mellon funding for senior research projects. Show this as college-restricted funding that requires a specific research plan.',
+      bestNextStep:
+        'Review Timothy Dwight grants and fellowships, confirm college eligibility, and prepare the Student Grants Database application around a senior research project.',
+      prepSteps: [
+        'Official Timothy Dwight fellowships page',
+        'Senior research project',
+        'Budget',
+        'Student Grants Database application',
+      ],
+      sourceKey: 'timothy-dwight-college:mellon-senior-research-grant',
+      studentVisibilityOverrideTier: 'limited_but_safe',
+    },
+  ],
+  [
+    'Timothy Dwight Richter Summer Fellowship',
+    {
+      sourceUrl: TIMOTHY_DWIGHT_FELLOWSHIPS_SOURCE_URL,
+      studentFacingCategory: 'Residential college summer research funding',
+      summary: 'Timothy Dwight College Richter Fellowship for independent summer study or research.',
+      description:
+        'Timothy Dwight College lists Richter funding for independent summer research or study. Show this as college-restricted project funding rather than a general research placement.',
+      bestNextStep:
+        'Review Timothy Dwight grants and fellowships, confirm college eligibility, and prepare a summer project proposal and budget.',
+      prepSteps: [
+        'Official Timothy Dwight fellowships page',
+        'Independent summer research plan',
+        'Budget',
+        'Student Grants Database application',
+      ],
+      sourceKey: 'timothy-dwight-college:richter-summer-fellowship',
+      studentVisibilityOverrideTier: 'limited_but_safe',
     },
   ],
   [
@@ -791,6 +949,51 @@ const reviewedAreaStudiesProgramRepairs = new Map<
         'Review the CLAIS grants page, confirm regional fit, and prepare the Student Grants Database application with a focused research or study plan.',
       prepSteps: ['Official CLAIS grants page', 'Regional research or study plan', 'Budget', 'Student Grants Database application'],
       sourceKey: 'macmillan-clais:summer-travel-awards',
+      studentVisibilityOverrideTier: 'limited_but_safe',
+    },
+  ],
+  [
+    'Albert Bildner Travel Prize',
+    {
+      sourceUrl: MACMILLAN_CLAIS_GRANTS_SOURCE_URL,
+      studentFacingCategory: 'Area-studies research travel funding',
+      summary: 'CLAIS travel prize for junior senior-essay research in Latin American or Iberian studies.',
+      description:
+        'The Albert Bildner Travel Prize is source-backed by the Council on Latin American and Iberian Studies as research-travel funding for junior senior-essay research. Keep this framed as project funding, not as a research placement.',
+      bestNextStep:
+        'Review the CLAIS grants page, confirm regional and senior-essay fit, and prepare a travel research plan and budget.',
+      prepSteps: ['Official CLAIS grants page', 'Senior essay research plan', 'Travel budget', 'Application materials'],
+      sourceKey: 'macmillan-clais:albert-bildner-travel-prize',
+      studentVisibilityOverrideTier: 'limited_but_safe',
+    },
+  ],
+  [
+    'Canadian Studies Summer Grant for Undergraduate, Graduate, and Professional Students',
+    {
+      sourceUrl: MACMILLAN_CANADA_SUMMER_GRANTS_SOURCE_URL,
+      studentFacingCategory: 'Canadian Studies summer research funding',
+      summary: 'Canadian Studies summer funding for Yale students pursuing Canada-focused research.',
+      description:
+        'The Canadian Studies Summer Grant supports undergraduate, graduate, and professional students pursuing Canada-focused summer research or study. Keep this restrained because it is mixed-audience funding rather than a structured undergraduate placement.',
+      bestNextStep:
+        'Review the Canadian Studies summer grants page, confirm Canada project fit, and prepare a project proposal and budget.',
+      prepSteps: ['Official Canadian Studies page', 'Canada-focused project plan', 'Budget', 'Application materials'],
+      sourceKey: 'macmillan-canada:summer-grant',
+      studentVisibilityOverrideTier: 'limited_but_safe',
+    },
+  ],
+  [
+    'Steven Clark Senior Essay Travel Grant',
+    {
+      sourceUrl: MACMILLAN_CLAIS_GRANTS_SOURCE_URL,
+      studentFacingCategory: 'Area-studies senior essay research travel funding',
+      summary: 'CLAIS senior essay travel grant for Latin American or Iberian studies research.',
+      description:
+        'The CLAIS grants source supports a senior-essay travel grant for research related to Latin American or Iberian studies. Keep the row restrained until the misspelled title is canonicalized in source data.',
+      bestNextStep:
+        'Review the CLAIS grants page, confirm senior-essay and regional fit, and prepare a travel research proposal.',
+      prepSteps: ['Official CLAIS grants page', 'Senior essay research plan', 'Travel budget', 'Application materials'],
+      sourceKey: 'macmillan-clais:stephen-clark-senior-essay-travel-grant',
       studentVisibilityOverrideTier: 'limited_but_safe',
     },
   ],
@@ -1185,6 +1388,271 @@ const reviewedGeneralProgramRepairs = new Map<
     },
   ],
   [
+    "Alec Ellison '84 and Tamar Sadeh '85 Israel Travel Fund",
+    {
+      sourceUrl:
+        'https://advising.yalecollege.yale.edu/event/yale-summer-research-fellowships-common-application-deadline',
+      programCategory: 'FELLOWSHIP',
+      programKind: 'TRAVEL_RESEARCH_GRANT',
+      entryMode: 'APPLY_TO_PROGRAM',
+      studentFacingCategory: 'Israel travel research funding',
+      requiresMentorBeforeApply: false,
+      mentorMatching: false,
+      undergraduateOnly: true,
+      yaleCollegeOnly: true,
+      compensationSummary: 'Summer travel fellowship funding when awarded',
+      programDates: 'Summer',
+      summary: 'Yale College-listed Israel travel fund with limited public source detail.',
+      description:
+        'Yale College Advising lists this fund in the Yale Summer Research Fellowships common application cycle. Keep the copy restrained because the source is a deadline/application listing rather than a dedicated program page.',
+      bestNextStep:
+        'Review the Yale College Advising fellowship deadline, then confirm the current Student Grants Database details before preparing a project proposal.',
+      prepSteps: ['Yale College Advising source', 'Student Grants Database details', 'Project proposal', 'Budget'],
+      sourceKey: 'yale-college-advising:alec-ellison-tamar-sadeh-israel-travel-fund',
+      studentVisibilityOverrideTier: 'limited_but_safe',
+    },
+  ],
+  [
+    "Elisa Spungen Bildner '75 and Robert Bildner '72 Israel Travel Grant",
+    {
+      sourceUrl: YALE_SCIENCE_NON_YALE_RESEARCH_SOURCE_URL,
+      programCategory: 'FELLOWSHIP',
+      programKind: 'TRAVEL_RESEARCH_GRANT',
+      entryMode: 'SECURE_MENTOR_THEN_APPLY',
+      studentFacingCategory: 'Israel STEM research travel funding',
+      requiresMentorBeforeApply: true,
+      mentorMatching: false,
+      undergraduateOnly: true,
+      yaleCollegeOnly: true,
+      compensationSummary: 'Summer travel funding when awarded',
+      programDates: 'Summer',
+      summary: 'Yale College Science and QR-listed travel grant for Israel-based STEM research or lab internship work.',
+      description:
+        'Yale College Science and QR lists this Israel travel grant among non-Yale research opportunities. Keep it restrained because students still need a specific research or lab-internship plan.',
+      bestNextStep:
+        'Review the Science and QR source, confirm the Israel STEM research fit, and secure host or adviser context before applying.',
+      prepSteps: ['Official Science and QR source', 'Israel STEM project fit', 'Host or adviser context', 'Budget'],
+      sourceKey: 'yale-science-qr:elisa-robert-bildner-israel-travel-grant',
+      studentVisibilityOverrideTier: 'limited_but_safe',
+    },
+  ],
+  [
+    'Franke Fellowship in Science and the Humanities',
+    {
+      sourceUrl: FRANKE_UNDERGRADUATE_FELLOWSHIP_SOURCE_URL,
+      programCategory: 'FELLOWSHIP',
+      programKind: 'SENIOR_THESIS_FUNDING',
+      entryMode: 'SECURE_MENTOR_THEN_APPLY',
+      studentFacingCategory: 'Senior thesis research funding',
+      requiresMentorBeforeApply: true,
+      mentorMatching: false,
+      undergraduateOnly: true,
+      yaleCollegeOnly: true,
+      compensationSummary: 'Research fellowship funding when awarded',
+      programDates: 'Summer before senior year',
+      summary: 'Franke Program fellowship for rising seniors developing science-and-humanities senior essay research.',
+      description:
+        'The Franke Undergraduate Fellowship supports rising seniors developing senior essay research at the intersection of science and the humanities. Present it as thesis research funding, not as a lab placement.',
+      bestNextStep:
+        'Review the Franke fellowship page, confirm thesis fit, and prepare a research proposal with adviser context.',
+      prepSteps: ['Official Franke fellowship page', 'Senior essay research plan', 'Faculty adviser context', 'Application materials'],
+      sourceKey: 'franke-program:undergraduate-fellowship',
+      studentVisibilityOverrideTier: 'limited_but_safe',
+    },
+  ],
+  [
+    'Grand Strategy Summer Research Award',
+    {
+      sourceUrl: GRAND_STRATEGY_SUMMER_RESEARCH_SOURCE_URL,
+      programCategory: 'FELLOWSHIP',
+      programKind: 'FELLOWSHIP_FUNDING',
+      entryMode: 'APPLY_TO_PROGRAM',
+      studentFacingCategory: 'Grand Strategy summer research funding',
+      requiresMentorBeforeApply: false,
+      mentorMatching: false,
+      undergraduateOnly: false,
+      yaleCollegeOnly: false,
+      compensationSummary: 'Summer research funding when awarded',
+      programDates: 'Summer',
+      summary: 'Jackson School Grand Strategy summer research funding for eligible students in the program ecosystem.',
+      description:
+        'The Jackson School source supports Grand Strategy summer research funding, but the audience is broader than Yale College undergraduates. Keep it restrained and eligibility-focused.',
+      bestNextStep:
+        'Review the Grand Strategy summer research page, confirm program eligibility, and prepare a research proposal.',
+      prepSteps: ['Official Grand Strategy source', 'Program eligibility check', 'Research proposal', 'Application materials'],
+      sourceKey: 'jackson-school:grand-strategy-summer-research-award',
+      studentVisibilityOverrideTier: 'limited_but_safe',
+    },
+  ],
+  [
+    'Les Aspin 1960 Summer Fellowships',
+    {
+      sourceUrl: YALE_FELLOWSHIPS_PUBLIC_SERVICE_PDF_SOURCE_URL,
+      programCategory: 'FELLOWSHIP',
+      programKind: 'FELLOWSHIP_FUNDING',
+      entryMode: 'APPLY_TO_PROGRAM',
+      studentFacingCategory: 'Public service project funding',
+      requiresMentorBeforeApply: false,
+      mentorMatching: false,
+      undergraduateOnly: true,
+      yaleCollegeOnly: true,
+      compensationSummary: 'Summer fellowship funding when awarded',
+      programDates: 'Summer',
+      summary: 'Yale Office-listed summer public service fellowship with possible policy or civic project fit.',
+      description:
+        'The official Yale fellowships PDF supports this summer fellowship, but it is public-service project funding rather than a research-home entry program. Keep it restrained on the Programs surface.',
+      bestNextStep:
+        'Review the Yale Office of Fellowships source, confirm current Student Grants Database details, and prepare the project application materials.',
+      prepSteps: ['Official Yale fellowships source', 'Student Grants Database details', 'Project plan', 'Application materials'],
+      sourceKey: 'yale-office-of-fellowships:les-aspin-1960-summer-fellowships',
+      studentVisibilityOverrideTier: 'limited_but_safe',
+    },
+  ],
+  [
+    'Nuclear Security Program Research and Travel Award',
+    {
+      sourceUrl: NUCLEAR_SECURITY_FELLOWSHIP_SOURCE_URL,
+      programCategory: 'FELLOWSHIP',
+      programKind: 'TRAVEL_RESEARCH_GRANT',
+      entryMode: 'APPLY_TO_PROGRAM',
+      studentFacingCategory: 'Nuclear security research and travel funding',
+      requiresMentorBeforeApply: false,
+      mentorMatching: false,
+      undergraduateOnly: false,
+      yaleCollegeOnly: false,
+      compensationSummary: 'Research or travel funding when awarded',
+      programDates: 'Summer or posted award cycle',
+      summary: 'MacMillan Nuclear Security Program award for student research or travel in nuclear security.',
+      description:
+        'The Nuclear Security Program source supports undergraduate and graduate student research or travel funding. Keep it restrained because it is mixed-audience project funding.',
+      bestNextStep:
+        'Review the Nuclear Security Program fellowship page, confirm topic fit, and prepare a research or travel proposal.',
+      prepSteps: ['Official Nuclear Security source', 'Topic fit', 'Research or travel proposal', 'Budget'],
+      sourceKey: 'macmillan-nuclear-security:research-and-travel-award',
+      studentVisibilityOverrideTier: 'limited_but_safe',
+    },
+  ],
+  [
+    'Political Science Summer Research and Internship Grants',
+    {
+      sourceUrl: POLITICAL_SCIENCE_FUNDS_SOURCE_URL,
+      programCategory: 'FELLOWSHIP',
+      programKind: 'FELLOWSHIP_FUNDING',
+      entryMode: 'APPLY_TO_PROGRAM',
+      studentFacingCategory: 'Political science summer research or internship funding',
+      requiresMentorBeforeApply: false,
+      mentorMatching: false,
+      undergraduateOnly: true,
+      yaleCollegeOnly: true,
+      compensationSummary: 'Summer grant funding when awarded',
+      programDates: 'Summer',
+      summary: 'Political Science funding for eligible majors pursuing summer research or internship projects.',
+      description:
+        'Yale Political Science lists summer research/internship grants for eligible undergraduate majors. Keep it framed as departmental project funding, not as a guaranteed research placement.',
+      bestNextStep:
+        'Review the Political Science funds page, confirm major and class-year eligibility, and prepare the project proposal.',
+      prepSteps: ['Official Political Science funds page', 'Eligibility check', 'Research or internship plan', 'Budget'],
+      sourceKey: 'political-science:summer-research-internship-grants',
+      studentVisibilityOverrideTier: 'limited_but_safe',
+    },
+  ],
+  [
+    'Spanish and Latin American Fellowships: Yale College Class of 2004 Summer',
+    {
+      sourceUrl: YALE_OFFICE_FELLOWSHIPS_SOURCE_URL,
+      programCategory: 'FELLOWSHIP',
+      programKind: 'TRAVEL_RESEARCH_GRANT',
+      entryMode: 'APPLY_TO_PROGRAM',
+      studentFacingCategory: 'Spanish and Latin American project funding',
+      requiresMentorBeforeApply: false,
+      mentorMatching: false,
+      undergraduateOnly: true,
+      yaleCollegeOnly: true,
+      compensationSummary: 'Summer fellowship funding when awarded',
+      programDates: 'Summer',
+      summary: 'Yale Office-listed summer travel fellowship for Spanish or Latin American projects.',
+      description:
+        'The Yale Office of Fellowships source supports the Yale College Class of 2004 Travel Fellowship. Keep this row restrained and canonicalize the title in a future source-data cleanup.',
+      bestNextStep:
+        'Review Yale Office of Fellowships guidance, confirm current Student Grants Database details, and prepare a focused project proposal.',
+      prepSteps: ['Yale Office of Fellowships guidance', 'Student Grants Database details', 'Project proposal', 'Budget'],
+      sourceKey: 'yale-office-of-fellowships:yale-college-class-of-2004-travel-fellowship',
+      studentVisibilityOverrideTier: 'limited_but_safe',
+    },
+  ],
+  [
+    'Sunrise Foundation Travel Grant',
+    {
+      sourceUrl: YALE_OFFICE_FELLOWSHIPS_SOURCE_URL,
+      programCategory: 'FELLOWSHIP',
+      programKind: 'TRAVEL_RESEARCH_GRANT',
+      entryMode: 'APPLY_TO_PROGRAM',
+      studentFacingCategory: 'Travel project funding',
+      requiresMentorBeforeApply: false,
+      mentorMatching: false,
+      undergraduateOnly: true,
+      yaleCollegeOnly: true,
+      compensationSummary: 'Travel grant funding when awarded',
+      programDates: 'Summer or posted cycle',
+      summary: 'Yale Office-listed travel grant with limited public source detail.',
+      description:
+        'Yale Office of Fellowships lists the Sunrise Foundation Travel Grant, but the public source is a broad fellowship list. Keep this row restrained until dedicated eligibility details are attached.',
+      bestNextStep:
+        'Review Yale Office of Fellowships guidance and current Student Grants Database details before preparing a travel proposal.',
+      prepSteps: ['Yale Office of Fellowships guidance', 'Student Grants Database details', 'Travel proposal', 'Budget'],
+      sourceKey: 'yale-office-of-fellowships:sunrise-foundation-travel-grant',
+      studentVisibilityOverrideTier: 'limited_but_safe',
+    },
+  ],
+  [
+    'Thomas C. Barry Travel Fellowship - Term Time',
+    {
+      sourceUrl: YALE_COLLEGE_ADVISING_BARRY_SOURCE_URL,
+      programCategory: 'FELLOWSHIP',
+      programKind: 'TRAVEL_RESEARCH_GRANT',
+      entryMode: 'APPLY_TO_PROGRAM',
+      studentFacingCategory: 'Term-time travel project funding',
+      requiresMentorBeforeApply: false,
+      mentorMatching: false,
+      undergraduateOnly: true,
+      yaleCollegeOnly: true,
+      compensationSummary: 'Term-time travel funding when awarded',
+      programDates: 'Term time',
+      summary: 'Yale College term-time travel fellowship for student-defined projects.',
+      description:
+        'Yale College Advising lists the Thomas C. Barry Travel Term Time Fellowship application cycle. Keep this framed as travel/project funding, not as a research-home entry program.',
+      bestNextStep:
+        'Review the Yale College Advising deadline, confirm the current application details, and prepare a travel project proposal.',
+      prepSteps: ['Yale College Advising source', 'Current application details', 'Travel project proposal', 'Budget'],
+      sourceKey: 'yale-college-advising:thomas-c-barry-travel-fellowship-term-time',
+      studentVisibilityOverrideTier: 'limited_but_safe',
+    },
+  ],
+  [
+    'Western Resources Fellowship at Ucross High Plains Stewardship Initiative',
+    {
+      sourceUrl: WESTERN_RESOURCES_FELLOWSHIP_SOURCE_URL,
+      programCategory: 'SUMMER_RESEARCH_PROGRAM',
+      programKind: 'STRUCTURED_PROGRAM',
+      entryMode: 'APPLY_TO_PROGRAM',
+      studentFacingCategory: 'Western resources summer research fellowship',
+      requiresMentorBeforeApply: false,
+      mentorMatching: true,
+      undergraduateOnly: false,
+      yaleCollegeOnly: false,
+      compensationSummary: 'Summer fellowship funding when awarded',
+      programDates: 'Summer',
+      summary: 'Yale West and High Plains Stewardship Initiative summer fellowship for Western resources research or project work.',
+      description:
+        'The official Yale West source supports the Western Resources Fellowship for Yale undergraduate and graduate students, with summer research, internship, or project work and mentorship. This is sufficiently structured and source-backed to show prominently.',
+      bestNextStep:
+        'Review the Yale West fellowship page, confirm current cycle timing, and prepare an application around a Western resources research or project plan.',
+      prepSteps: ['Official Yale West fellowship page', 'Western resources project fit', 'Application materials', 'Current cycle check'],
+      sourceKey: 'yale-west:western-resources-fellowship-ucross-hpsi',
+      studentVisibilityOverrideTier: 'student_ready',
+    },
+  ],
+  [
     'Strong Family Travel Fellowship for Peace and Development',
     {
       sourceUrl: MACMILLAN_FELLOWSHIPS_SOURCE_URL,
@@ -1312,6 +1780,32 @@ const reviewedProgramSuppressions = new Map<
     },
   ],
   [
+    'Kenneth Cornell Memorial Undergraduate Research Grant for French Francophone Studies',
+    {
+      sourceUrl: FRENCH_GRANTS_PRIZES_SOURCE_URL,
+      summary: 'Duplicate or noncanonical French major research grant row.',
+      description:
+        'The official French department source supports the canonical Kenneth Cornell French Major Research Grant. Keep this scraped title suppressed until it is merged into the canonical row rather than exposing a duplicate.',
+      bestNextStep:
+        'Merge this row into the canonical French major research grant record, preserving the official French department source.',
+      sourceKey: 'french-department:kenneth-cornell-french-major-research-grant-duplicate',
+      suppressionReason: 'duplicate_or_noncanonical_record',
+    },
+  ],
+  [
+    "The Ferenc Gyorgyey/Stanley Simbonis YSM'57 Research Travel Grant",
+    {
+      sourceUrl: GYORGYEY_SIMBONIS_SOURCE_URL,
+      summary: 'Medical Historical Library research travel grant for researchers outside Yale.',
+      description:
+        'The official Medical Historical Library source limits this grant to researchers outside Yale, so it should not appear as a Yale undergraduate research program.',
+      bestNextStep:
+        'Keep suppressed unless the product adds an external-scholar funding surface.',
+      sourceKey: 'medical-historical-library:gyorgyey-simbonis-research-travel-grant',
+      suppressionReason: 'not_yale_student_opportunity',
+    },
+  ],
+  [
     'Gordon Grand Fellowship',
     {
       sourceUrl:
@@ -1335,6 +1829,32 @@ const reviewedProgramSuppressions = new Map<
       bestNextStep:
         'Keep suppressed unless the product adds a graduate dissertation-research funding surface.',
       sourceKey: 'gsas:john-f-enders-research-grants',
+      suppressionReason: 'graduate_or_professional_only',
+    },
+  ],
+  [
+    'Tropical Resources Institute (TRI) Fellowship',
+    {
+      sourceUrl: YSE_SUMMER_FUNDING_SOURCE_URL,
+      summary: 'YSE summer funding route limited to master’s and doctoral students.',
+      description:
+        'The official YSE summer funding source describes TRI endowed fellowship eligibility for YSE master’s and doctoral students, not Yale College undergraduate research discovery.',
+      bestNextStep:
+        'Keep suppressed unless the product adds a YSE graduate funding surface.',
+      sourceKey: 'yse:tri-fellowship-graduate-only',
+      suppressionReason: 'graduate_or_professional_only',
+    },
+  ],
+  [
+    'YSE Environmental Justice Research Fellowship',
+    {
+      sourceUrl: YCEJ_ENVIRONMENTAL_JUSTICE_FELLOWSHIP_SOURCE_URL,
+      summary: 'YSE Environmental Justice research fellowship for YSE master’s and doctoral students.',
+      description:
+        'The official YCEJ source limits this fellowship to YSE master’s and doctoral students, including joint-degree students with YSE. It should not appear in undergraduate research-program browse.',
+      bestNextStep:
+        'Keep suppressed unless the product adds a YSE graduate funding surface.',
+      sourceKey: 'ycej:yse-environmental-justice-research-fellowship',
       suppressionReason: 'graduate_or_professional_only',
     },
   ],

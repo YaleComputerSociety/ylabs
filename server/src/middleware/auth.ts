@@ -3,6 +3,9 @@
  */
 import express from 'express';
 import { isDevelopment, isTest } from '../utils/environment';
+import { createUser, updateUser, validateUser } from '../services/userService';
+import { assertCanOverwriteWithDevUser } from '../utils/devAuthGuard';
+import { isAdminNetid } from '../services/adminAccessService';
 
 const DEV_AUTH_USER_TYPES = new Set([
   'undergraduate',
@@ -40,6 +43,22 @@ export function buildLocalAuthBypassUser(req?: express.Request) {
   };
 }
 
+async function ensureLocalAuthBypassUser(user: ReturnType<typeof buildLocalAuthBypassUser>) {
+  const userData = {
+    netid: user.netId,
+    fname: 'Dev',
+    lname: user.userType === 'admin' ? 'Admin' : 'User',
+    email: `${user.netId}@example.test`,
+    userType: user.userType,
+    userConfirmed: user.userConfirmed,
+    profileVerified: user.profileVerified,
+  };
+
+  const existing = await validateUser(user.netId);
+  assertCanOverwriteWithDevUser(existing, user);
+  return existing ? updateUser(user.netId, userData) : createUser(userData);
+}
+
 const canBypassLocalAuth = () =>
   envFlagEnabled(process.env.LOCAL_AUTH_BYPASS) && (isDevelopment() || isTest());
 
@@ -56,7 +75,14 @@ export const applyLocalAuthBypass = (
   next: express.NextFunction,
 ) => {
   if (!req.user && canBypassLocalAuth() && !isCasExerciseRoute(req.path)) {
-    req.user = buildLocalAuthBypassUser(req);
+    const localUser = buildLocalAuthBypassUser(req);
+    ensureLocalAuthBypassUser(localUser)
+      .then(() => {
+        req.user = localUser;
+        next();
+      })
+      .catch(next);
+    return;
   }
 
   next();
@@ -104,17 +130,27 @@ export const isAdmin = (
   res: express.Response,
   next: express.NextFunction,
 ) => {
-  const currentUser = req.user as { netId?: string; userType?: string; userConfirmed?: boolean };
+  const currentUser = req.user as {
+    netId?: string;
+    netid?: string;
+    userType?: string;
+    userConfirmed?: boolean;
+  };
 
   if (!currentUser) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  if (currentUser.userType !== 'admin') {
-    return res.status(403).json({ error: 'Admin privileges required' });
-  }
-
-  next();
+  const netid = currentUser.netId || currentUser.netid;
+  isAdminNetid(netid)
+    .then((allowed) => {
+      if (!allowed) {
+        res.status(403).json({ error: 'Admin privileges required' });
+        return;
+      }
+      next();
+    })
+    .catch(next);
 };
 
 /**

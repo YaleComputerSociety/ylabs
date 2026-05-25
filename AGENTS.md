@@ -144,6 +144,7 @@ The client has had pre-existing typecheck issues; do not assume `tsc --noEmit` f
 ## Sensitive Areas
 
 - Never commit `server/.env` or `client/.env`.
+- Do not put real user identifiers, real emails, scraped person data, or other sensitive/production-derived values in tests or fixtures. Use clearly synthetic identifiers such as `fixture-real-user`, `example.invalid`, and `example.test`.
 - Be careful around `server/src/passport.ts`, `server/src/db/connections.ts`, and `server/src/app.ts`; these affect auth, DB routing, sessions, CORS, and rate limits.
 - Production scraper writes require explicit guardrails. Respect `SCRAPER_ENV`, `CONFIRM_PROD_SCRAPE`, and related safety checks.
 

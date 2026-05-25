@@ -3,7 +3,7 @@
  */
 const Footer = () => {
   return (
-    <footer className="mt-auto border-t border-[var(--yr-border)] bg-[var(--yr-ivory)] py-5">
+    <footer className="mt-auto border-t border-[var(--yr-border-warm)] bg-[var(--yr-page)] py-5">
       <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 px-6 sm:flex-row">
         <div className="flex items-center gap-2 text-[var(--yr-blue)]">
           <img src="/brand/yale-research-mark.svg" alt="" width={24} height={24} />

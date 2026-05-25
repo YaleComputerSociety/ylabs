@@ -357,6 +357,9 @@ export const adminUpdateProfile = async (netid: string, data: any) => {
 
   for (const field of ADMIN_UPDATE_FIELDS) {
     if (normalizedData[field] !== undefined) {
+      if (field === 'userType' && normalizedData[field] === 'admin') {
+        continue;
+      }
       update[field] = normalizedData[field];
     }
   }

@@ -270,7 +270,7 @@ const AdminListingEditModal = ({ listing, onClose, onSave, onDelete }: Props) =>
         {items.map((item, i) => (
           <span
             key={i}
-            className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded text-xs flex items-center gap-1"
+            className="bg-[var(--yr-blue-soft)] text-blue-800 px-2 py-0.5 rounded text-xs flex items-center gap-1"
           >
             {item}
             <button
@@ -294,11 +294,11 @@ const AdminListingEditModal = ({ listing, onClose, onSave, onDelete }: Props) =>
             }
           }}
           placeholder={placeholder}
-          className="flex-1 border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+          className="flex-1 border border-[var(--yr-line-strong)] rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
         />
         <button
           onClick={() => addToArray(items, setItems, newValue, setNewValue)}
-          className="text-xs bg-gray-200 hover:bg-gray-300 px-2 py-1 rounded"
+          className="text-xs bg-[var(--yr-panel-muted)] hover:bg-gray-300 px-2 py-1 rounded"
         >
           Add
         </button>
@@ -313,7 +313,7 @@ const AdminListingEditModal = ({ listing, onClose, onSave, onDelete }: Props) =>
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl mx-4">
+      <div className="bg-[var(--yr-panel)] rounded-lg shadow-xl w-full max-w-3xl mx-4">
         <div className="flex items-center justify-between px-6 py-4 border-b">
           <div>
             <h3 className="text-lg font-bold text-gray-900">Edit Legacy Listing Evidence</h3>
@@ -341,7 +341,7 @@ const AdminListingEditModal = ({ listing, onClose, onSave, onDelete }: Props) =>
                   value={ownerTitle}
                   onChange={(e) => dispatch({ type: 'SET_OWNER_TITLE', payload: e.target.value })}
                   placeholder="e.g. Professor of Sociology"
-                  className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="w-full border border-[var(--yr-line-strong)] rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
               </div>
 
@@ -352,7 +352,7 @@ const AdminListingEditModal = ({ listing, onClose, onSave, onDelete }: Props) =>
                 <input
                   value={title}
                   onChange={(e) => dispatch({ type: 'SET_TITLE', payload: e.target.value })}
-                  className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="w-full border border-[var(--yr-line-strong)] rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
               </div>
 
@@ -364,7 +364,7 @@ const AdminListingEditModal = ({ listing, onClose, onSave, onDelete }: Props) =>
                   value={description}
                   onChange={(e) => dispatch({ type: 'SET_DESCRIPTION', payload: e.target.value })}
                   rows={6}
-                  className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="w-full border border-[var(--yr-line-strong)] rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
                 <span className="text-xs text-gray-400">{description.length} chars</span>
               </div>
@@ -379,7 +379,7 @@ const AdminListingEditModal = ({ listing, onClose, onSave, onDelete }: Props) =>
                     dispatch({ type: 'SET_APPLICANT_DESCRIPTION', payload: e.target.value })
                   }
                   rows={3}
-                  className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="w-full border border-[var(--yr-line-strong)] rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
               </div>
 
@@ -392,7 +392,7 @@ const AdminListingEditModal = ({ listing, onClose, onSave, onDelete }: Props) =>
                   onChange={(e) =>
                     dispatch({ type: 'SET_HIRING_STATUS', payload: Number(e.target.value) })
                   }
-                  className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="w-full border border-[var(--yr-line-strong)] rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
                 >
                   <option value={0}>Open to Applicants</option>
                   <option value={-1}>Not Open to Applicants</option>
@@ -459,7 +459,7 @@ const AdminListingEditModal = ({ listing, onClose, onSave, onDelete }: Props) =>
                   {departments.map((dept, i) => (
                     <span
                       key={i}
-                      className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded text-xs flex items-center gap-1"
+                      className="bg-[var(--yr-blue-soft)] text-blue-800 px-2 py-0.5 rounded text-xs flex items-center gap-1"
                     >
                       {dept.split(' - ')[0]}
                       <button
@@ -476,17 +476,17 @@ const AdminListingEditModal = ({ listing, onClose, onSave, onDelete }: Props) =>
                   onChange={(e) => dispatch({ type: 'SET_DEPT_SEARCH', payload: e.target.value })}
                   onFocus={() => dispatch({ type: 'SHOW_DEPT_DROPDOWN', payload: true })}
                   placeholder="Search departments..."
-                  className="w-full border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="w-full border border-[var(--yr-line-strong)] rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
                 {showDeptDropdown && filteredDepts.length > 0 && (
-                  <div className="absolute z-10 w-full bg-white border border-gray-300 rounded mt-1 max-h-40 overflow-y-auto shadow-lg">
+                  <div className="absolute z-10 w-full bg-[var(--yr-panel)] border border-[var(--yr-line-strong)] rounded mt-1 max-h-40 overflow-y-auto shadow-lg">
                     {filteredDepts.slice(0, 20).map((dept) => (
                       <button
                         key={dept.abbreviation}
                         onClick={() =>
                           dispatch({ type: 'ADD_DEPARTMENT', payload: dept.displayName })
                         }
-                        className="block w-full text-left px-3 py-1.5 text-sm hover:bg-blue-50"
+                        className="block w-full text-left px-3 py-1.5 text-sm hover:bg-[var(--yr-blue-soft)]"
                       >
                         {dept.displayName}
                       </button>
@@ -526,10 +526,10 @@ const AdminListingEditModal = ({ listing, onClose, onSave, onDelete }: Props) =>
                   onChange={(e) => dispatch({ type: 'SET_RA_SEARCH', payload: e.target.value })}
                   onFocus={() => dispatch({ type: 'SHOW_RA_DROPDOWN', payload: true })}
                   placeholder="Search research areas..."
-                  className="w-full border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="w-full border border-[var(--yr-line-strong)] rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
                 {showRaDropdown && availableResearchAreas.length > 0 && (
-                  <div className="absolute z-10 w-full bg-white border border-gray-300 rounded mt-1 max-h-40 overflow-y-auto shadow-lg">
+                  <div className="absolute z-10 w-full bg-[var(--yr-panel)] border border-[var(--yr-line-strong)] rounded mt-1 max-h-40 overflow-y-auto shadow-lg">
                     {availableResearchAreas.slice(0, 20).map((area) => (
                       <button
                         key={area.name}
@@ -591,7 +591,7 @@ const AdminListingEditModal = ({ listing, onClose, onSave, onDelete }: Props) =>
           </div>
         </div>
 
-        <div className="flex justify-between px-6 py-4 border-t bg-gray-50 rounded-b-lg">
+        <div className="flex justify-between px-6 py-4 border-t bg-[var(--yr-panel-muted)] rounded-b-lg">
           <button
             onClick={async () => {
               const confirmed = await swal({
@@ -618,7 +618,7 @@ const AdminListingEditModal = ({ listing, onClose, onSave, onDelete }: Props) =>
           <div className="flex gap-3">
             <button
               onClick={onClose}
-              className="px-4 py-2 text-sm border border-gray-300 rounded-md hover:bg-gray-100 transition-colors"
+              className="px-4 py-2 text-sm border border-[var(--yr-line-strong)] rounded-md hover:bg-[var(--yr-panel-muted)] transition-colors"
             >
               Cancel
             </button>

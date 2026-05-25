@@ -86,6 +86,8 @@ export type Fellowship = {
   studentVisibilityOverrideTier?: StudentVisibilityTier;
   studentVisibilityReasons?: string[];
   studentVisibilitySuppressionReason?: string;
+  studentVisibilityReviewRuleId?: string;
+  studentVisibilityReviewNote?: string;
   archived: boolean;
   audited: boolean;
   views: number;
@@ -119,6 +121,7 @@ export type User = {
   userType: string;
   userConfirmed: boolean;
   profileVerified?: boolean;
+  isAdmin?: boolean;
 };
 
 export type Publication = {

@@ -281,7 +281,7 @@ const ResearchHomeCard = ({
       )}
 
       {home.entities.length > 0 && !singleLinkedEntity && !isCompact && (
-        <div className="mt-4 border-t border-gray-100 pt-3">
+        <div className="mt-4 border-t border-[var(--yr-line)] pt-3">
           <p className="yr-kicker mb-2 text-[0.68rem]">
             Research homes
           </p>
@@ -315,7 +315,7 @@ const ResearchHomeCard = ({
       )}
 
       {!isCompact && (
-        <div className="mt-4 border-t border-gray-100 pt-3">
+        <div className="mt-4 border-t border-[var(--yr-line)] pt-3">
           <p className="yr-kicker mb-2 text-[0.68rem]">
             Evidence
           </p>
@@ -343,7 +343,7 @@ const ResearchHomeCard = ({
             className={`yr-focus-ring inline-flex min-h-[44px] items-center rounded-md px-3 py-2 text-sm font-semibold transition-colors ${
               isCompact
                 ? 'border border-[var(--yr-blue)] bg-[var(--yr-blue)] text-white hover:bg-blue-900'
-                : 'border border-blue-200 bg-white text-[var(--yr-blue)] hover:border-blue-300 hover:bg-blue-50'
+                : 'border border-blue-200 bg-[var(--yr-panel)] text-[var(--yr-blue)] hover:border-blue-300 hover:bg-[var(--yr-blue-soft)]'
             }`}
             onClick={(event) => event.stopPropagation()}
           >
@@ -364,7 +364,7 @@ const ResearchHomeCard = ({
           <button
             type="button"
             onClick={() => onSelect(home.label)}
-            className="yr-focus-ring inline-flex min-h-[44px] items-center rounded-md border border-blue-200 bg-white px-3 py-2 text-sm font-semibold text-[var(--yr-blue)] transition-colors hover:border-blue-300 hover:bg-blue-50"
+            className="yr-focus-ring inline-flex min-h-[44px] items-center rounded-md border border-blue-200 bg-[var(--yr-panel)] px-3 py-2 text-sm font-semibold text-[var(--yr-blue)] transition-colors hover:border-blue-300 hover:bg-[var(--yr-blue-soft)]"
           >
             Search this area
           </button>

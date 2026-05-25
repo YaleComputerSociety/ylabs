@@ -28,6 +28,12 @@ import {
 } from '../services/adminAccessReviewService';
 import { buildSourceHealthRows } from '../services/sourceHealthService';
 import { buildAdminOperatorBoard } from '../services/adminOperatorBoardService';
+import {
+  AdminAccessError,
+  grantAdminAccess,
+  listAdminAccess,
+  revokeAdminAccess,
+} from '../services/adminAccessService';
 import { getScrapeRunReport } from '../scrapers/runReport';
 
 const router = Router();
@@ -42,6 +48,58 @@ const retiredAdminListings = (_req: Request, res: Response) =>
 
 router.all('/listings', retiredAdminListings);
 router.all('/listings/:id', retiredAdminListings);
+
+const NETID_RE = /^[A-Za-z0-9]{2,12}$/;
+
+const currentAdminNetid = (req: Request): string =>
+  String((req.user as any)?.netId || (req.user as any)?.netid || '').trim().toLowerCase();
+
+const sendAdminAccessError = (res: Response, error: unknown, fallback: string) => {
+  if (error instanceof AdminAccessError) {
+    return res.status(error.statusCode).json({ error: error.message });
+  }
+  console.error(`Admin: ${fallback}:`, error);
+  return res.status(500).json({ error: fallback });
+};
+
+router.get('/admin-grants', async (_req: Request, res: Response) => {
+  try {
+    res.json(await listAdminAccess());
+  } catch (error) {
+    console.error('Admin: Error fetching admin grants:', error);
+    res.status(500).json({ error: 'Failed to fetch admin grants' });
+  }
+});
+
+router.post('/admin-grants', async (req: Request, res: Response) => {
+  try {
+    const netid = String(req.body?.netid || '').trim();
+    if (!NETID_RE.test(netid)) {
+      return res.status(400).json({ error: 'Invalid netid' });
+    }
+    const grant = await grantAdminAccess({
+      netid,
+      actorNetid: currentAdminNetid(req),
+      note: req.body?.note,
+    });
+    res.status(201).json({ grant });
+  } catch (error) {
+    sendAdminAccessError(res, error, 'Failed to grant admin access');
+  }
+});
+
+router.post('/admin-grants/:netid/revoke', validateNetid('netid'), async (req: Request, res: Response) => {
+  try {
+    const grant = await revokeAdminAccess({
+      netid: req.params.netid,
+      actorNetid: currentAdminNetid(req),
+      note: req.body?.note,
+    });
+    res.json({ grant });
+  } catch (error) {
+    sendAdminAccessError(res, error, 'Failed to revoke admin access');
+  }
+});
 
 router.get('/operator-board', async (_req: Request, res: Response) => {
   try {

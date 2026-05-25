@@ -101,7 +101,7 @@ const PublicationsTable = ({ netid }: PublicationsTableProps) => {
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-gray-200">
+            <tr className="border-b border-[var(--yr-line)]">
               <th
                 className="text-left py-2 px-2 font-semibold text-gray-600 cursor-pointer hover:text-gray-900 whitespace-nowrap"
                 onClick={() => toggleSort('year')}
@@ -130,7 +130,7 @@ const PublicationsTable = ({ netid }: PublicationsTableProps) => {
           </thead>
           <tbody>
             {publications.map((pub, i) => (
-              <tr key={i} className="border-b border-gray-100 hover:bg-gray-50">
+              <tr key={i} className="border-b border-[var(--yr-line)] hover:bg-[var(--yr-panel-muted)]">
                 <td className="py-2 px-2 text-gray-500 whitespace-nowrap">{pub.year || '—'}</td>
                 <td className="py-2 px-2">
                   <div className="flex items-start gap-1.5">
@@ -202,7 +202,7 @@ const PublicationsTable = ({ netid }: PublicationsTableProps) => {
           <button
             onClick={() => dispatch({ type: 'SET_PAGE', payload: Math.max(1, page - 1) })}
             disabled={page === 1}
-            className="px-3 py-1.5 text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+            className="px-3 py-1.5 text-sm rounded-lg border border-[var(--yr-line)] text-gray-600 hover:bg-[var(--yr-panel-muted)] disabled:opacity-40 disabled:cursor-not-allowed"
           >
             Previous
           </button>
@@ -212,7 +212,7 @@ const PublicationsTable = ({ netid }: PublicationsTableProps) => {
           <button
             onClick={() => dispatch({ type: 'SET_PAGE', payload: Math.min(totalPages, page + 1) })}
             disabled={page === totalPages}
-            className="px-3 py-1.5 text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+            className="px-3 py-1.5 text-sm rounded-lg border border-[var(--yr-line)] text-gray-600 hover:bg-[var(--yr-panel-muted)] disabled:opacity-40 disabled:cursor-not-allowed"
           >
             Next
           </button>

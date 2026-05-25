@@ -23,7 +23,7 @@ const FirstSaveCallout = ({ kind, onDismiss }: FirstSaveCalloutProps) => {
   return (
     <div
       role="status"
-      className="mb-4 rounded-md border border-blue-200 bg-blue-50 p-4 text-blue-950"
+      className="mb-4 rounded-md border border-blue-200 bg-[var(--yr-blue-soft)] p-4 text-blue-950"
     >
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
@@ -42,7 +42,7 @@ const FirstSaveCallout = ({ kind, onDismiss }: FirstSaveCalloutProps) => {
           <button
             type="button"
             onClick={onDismiss}
-            className="inline-flex min-h-[40px] items-center rounded-md border border-blue-200 bg-white px-3 py-2 text-sm font-semibold text-blue-800 hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+            className="inline-flex min-h-[40px] items-center rounded-md border border-blue-200 bg-[var(--yr-panel)] px-3 py-2 text-sm font-semibold text-blue-800 hover:bg-[var(--yr-blue-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
           >
             Dismiss
           </button>

@@ -51,8 +51,8 @@ const LabInquireModal = ({ isOpen, onClose, group, members }: LabInquireModalPro
       className="fixed inset-0 bg-black/60 z-[1200] flex items-center justify-center overflow-y-auto p-4 pt-20"
       onClick={handleBackdropClick}
     >
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-xl flex flex-col overflow-hidden">
-        <div className="flex items-start justify-between px-6 py-4 border-b border-gray-100">
+      <div className="bg-[var(--yr-panel)] rounded-xl shadow-2xl w-full max-w-xl flex flex-col overflow-hidden">
+        <div className="flex items-start justify-between px-6 py-4 border-b border-[var(--yr-line)]">
           <div>
             <h2 className="text-lg font-bold text-gray-900">Inquire about {group.name}</h2>
             <p className="text-xs text-gray-500 mt-0.5">
@@ -61,7 +61,7 @@ const LabInquireModal = ({ isOpen, onClose, group, members }: LabInquireModalPro
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600"
+            className="p-1.5 rounded-lg hover:bg-[var(--yr-panel-muted)] text-gray-400 hover:text-gray-600"
             aria-label="Close"
           >
             <svg
@@ -105,7 +105,7 @@ const LabInquireModal = ({ isOpen, onClose, group, members }: LabInquireModalPro
                 <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">
                   Body
                 </p>
-                <pre className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap font-sans bg-gray-50 border border-gray-100 rounded-lg p-3 mt-1">
+                <pre className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap font-sans bg-[var(--yr-panel-muted)] border border-[var(--yr-line)] rounded-lg p-3 mt-1">
                   {body}
                 </pre>
               </div>
@@ -113,10 +113,10 @@ const LabInquireModal = ({ isOpen, onClose, group, members }: LabInquireModalPro
           )}
         </div>
 
-        <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-end gap-2">
+        <div className="px-6 py-4 border-t border-[var(--yr-line)] flex items-center justify-end gap-2">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-lg"
+            className="px-4 py-2 text-sm font-medium text-gray-600 hover:bg-[var(--yr-panel-muted)] rounded-lg"
           >
             Cancel
           </button>

@@ -54,6 +54,8 @@ export interface ResearchEntity extends ResearchEntityBacking {
   studentVisibilityOverrideTier?: StudentVisibilityTier;
   studentVisibilityReasons?: string[];
   studentVisibilitySuppressionReason?: string;
+  studentVisibilityReviewRuleId?: string;
+  studentVisibilityReviewNote?: string;
 }
 
 export interface ResearchEntitySearchResponse

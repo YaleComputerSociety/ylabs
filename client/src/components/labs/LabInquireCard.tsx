@@ -127,7 +127,7 @@ const EvidenceChip = ({ item }: EvidenceChipProps) => {
   const tone =
     item.strength === 'strong'
       ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-      : 'bg-blue-50 text-blue-700 border-blue-100';
+      : 'bg-[var(--yr-blue-soft)] text-blue-700 border-blue-100';
   const negativeTone = 'bg-red-50 text-red-700 border-red-100';
   const isNegative = item.kind === 'closed-toggle' || item.kind === 'closed-evidence';
   const cls = isNegative ? negativeTone : tone;
@@ -231,7 +231,7 @@ const LabInquireCard = ({
               {group.typicalUndergradRoles.map((role) => (
                 <span
                   key={role}
-                  className="text-xs bg-blue-50 text-blue-700 rounded-md px-2 py-1"
+                  className="text-xs bg-[var(--yr-blue-soft)] text-blue-700 rounded-md px-2 py-1"
                 >
                   {role}
                 </span>

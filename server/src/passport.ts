@@ -9,6 +9,8 @@ import { fetchYalie } from './services/yaliesService';
 import { fetchFromDirectory, isFacultyTitle } from './services/directoryService';
 import { logEvent } from './services/analyticsService';
 import { AnalyticsEventType } from './models/index';
+import { assertCanOverwriteWithDevUser } from './utils/devAuthGuard';
+import { effectiveUserType, isAdminNetid } from './services/adminAccessService';
 
 const STALE_THRESHOLD_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -72,7 +74,7 @@ export function buildDevLoginUser({
   };
 }
 
-async function upsertDevLoginUser(devUser: ReturnType<typeof buildDevLoginUser>) {
+export async function upsertDevLoginUser(devUser: ReturnType<typeof buildDevLoginUser>) {
   const userData = {
     netid: devUser.netId,
     fname: 'Dev',
@@ -84,6 +86,7 @@ async function upsertDevLoginUser(devUser: ReturnType<typeof buildDevLoginUser>)
   };
 
   const existing = await validateUser(devUser.netId);
+  assertCanOverwriteWithDevUser(existing, devUser);
   return existing ? updateUser(devUser.netId, userData) : createUser(userData);
 }
 
@@ -183,6 +186,18 @@ async function findOrCreateUser(netid: string) {
   return user;
 }
 
+async function buildSessionUser(user: any, fallbackNetid: string) {
+  const netId = user.netid || fallbackNetid;
+  const isAdmin = await isAdminNetid(netId);
+  return {
+    netId,
+    userType: effectiveUserType(user, isAdmin),
+    userConfirmed: user.userConfirmed,
+    profileVerified: user.profileVerified || false,
+    isAdmin,
+  };
+}
+
 passport.use(
   new Strategy(
     {
@@ -193,12 +208,7 @@ passport.use(
     async function (profile, done) {
       try {
         const user = await findOrCreateUser(profile.user);
-        done(null, {
-          netId: user.netid || profile.user,
-          userType: user.userType,
-          userConfirmed: user.userConfirmed,
-          profileVerified: user.profileVerified || false,
-        });
+        done(null, await buildSessionUser(user, profile.user));
       } catch (error) {
         console.log('Error in CAS login');
         done(error);
@@ -216,12 +226,7 @@ passport.deserializeUser(async (netId: string, done) => {
   try {
     console.log('Deserializing user');
     const user = await findOrCreateUser(netId as string);
-    done(null, {
-      netId: user.netid || netId,
-      userType: user.userType,
-      userConfirmed: user.userConfirmed,
-      profileVerified: user.profileVerified || false,
-    });
+    done(null, await buildSessionUser(user, netId));
   } catch (error) {
     console.log('Deserialize: Error');
     done(error, null);
@@ -317,12 +322,24 @@ router.use(async (req, res, next) => {
   next();
 });
 
-router.get('/check', (req, res) => {
+router.get('/check', async (req, res, next) => {
   if (req.user) {
-    res.json({ auth: true, user: req.user });
-  } else {
-    res.json({ auth: false });
+    try {
+      const user = req.user as any;
+      const isAdmin = await isAdminNetid(user.netId || user.netid);
+      return res.json({
+        auth: true,
+        user: {
+          ...user,
+          userType: effectiveUserType(user, isAdmin),
+          isAdmin,
+        },
+      });
+    } catch (error) {
+      return next(error);
+    }
   }
+  return res.json({ auth: false });
 });
 
 router.get('/cas', casLogin);

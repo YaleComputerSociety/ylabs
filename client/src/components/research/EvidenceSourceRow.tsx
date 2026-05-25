@@ -64,7 +64,7 @@ const EvidenceSourceRow = ({
         return (
           <div
             key={`${item.claim}-${index}`}
-            className={compact ? 'border-t border-gray-100 pt-2 first:border-t-0 first:pt-0' : 'rounded-md border border-gray-200 bg-white p-3'}
+            className={compact ? 'border-t border-[var(--yr-line)] pt-2 first:border-t-0 first:pt-0' : 'rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-3'}
           >
             <p className="text-sm font-medium leading-snug text-gray-900">{item.claim}</p>
             {(sourceType || confidence || observedDate) && (

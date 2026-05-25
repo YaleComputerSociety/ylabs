@@ -91,6 +91,14 @@ describe('Navbar', () => {
     });
   });
 
+  it('shows the desktop analytics dashboard link for admin users', () => {
+    renderNavbar({ userType: 'admin', netId: 'devadmin' });
+
+    const analyticsLink = screen.getByRole('link', { name: 'Analytics' });
+    expect(analyticsLink.getAttribute('href')).toBe('/analytics');
+    expect(analyticsLink.closest('.MuiToolbar-root')).toBeTruthy();
+  });
+
   it('gives professor users direct profile actions from the account menu', () => {
     renderNavbar({ userType: 'professor', netId: 'prof1' });
 

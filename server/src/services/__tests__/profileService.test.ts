@@ -1,14 +1,20 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  adminUpdateProfile,
   normalizeProfileForClient,
   normalizeProfileUpdateForStorage,
   sanitizeProfileBio,
 } from '../profileService';
+import { User } from '../../models/user';
 
 const TEST_NETID = 'test-user';
 const TEST_PROFILE_URL = 'https://profiles.example.edu/test-user';
 const TEST_IMAGE_URL = 'https://profiles.example.edu/test-user.jpg';
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 describe('normalizeProfileForClient', () => {
   it('surfaces stored professor image URLs using the client profile field name', () => {
@@ -446,5 +452,30 @@ describe('normalizeProfileUpdateForStorage', () => {
     expect(update.imageUrl).toBe(TEST_IMAGE_URL);
     expect(update.hIndex).toBe(14);
     expect(update.openAlexId).toBe('https://openalex.org/A1');
+  });
+});
+
+describe('adminUpdateProfile', () => {
+  it('does not allow profile edits to grant admin authority', async () => {
+    const lean = vi.fn().mockResolvedValue({
+      netid: 'fixture-profile',
+      fname: 'Fixture',
+      lname: 'Profile',
+      email: 'fixture-profile@example.invalid',
+      userType: 'faculty',
+    });
+    const select = vi.fn().mockReturnValue({ lean });
+    const findOneAndUpdate = vi.spyOn(User, 'findOneAndUpdate').mockReturnValue({ select } as any);
+
+    await adminUpdateProfile('fixture-profile', {
+      userType: 'admin',
+      userConfirmed: true,
+    });
+
+    expect(findOneAndUpdate).toHaveBeenCalledWith(
+      { netid: 'fixture-profile' },
+      { userConfirmed: true },
+      { new: true, runValidators: true },
+    );
   });
 });

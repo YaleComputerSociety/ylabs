@@ -186,7 +186,7 @@ const AdminListingsTable = () => {
 
   return (
     <div>
-      <div className="bg-white rounded-lg shadow-md p-4 border border-gray-200 mb-4">
+      <div className="bg-[var(--yr-panel)] rounded-lg shadow-md p-4 border border-[var(--yr-line)] mb-4">
         <div className="flex flex-wrap gap-3 items-end">
           <div className="flex-1 min-w-[200px]">
             <label className="block text-xs font-medium text-gray-600 mb-1">Search</label>
@@ -195,7 +195,7 @@ const AdminListingsTable = () => {
               value={search}
               onChange={(e) => dispatch({ type: 'SET_SEARCH', payload: e.target.value })}
               placeholder="Search by title, owner, description..."
-              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full border border-[var(--yr-line-strong)] rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
 
@@ -206,7 +206,7 @@ const AdminListingsTable = () => {
               onChange={(e) =>
                 dispatch({ type: 'SET_FILTER', filter: 'archived', value: e.target.value })
               }
-              className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="border border-[var(--yr-line-strong)] rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="">All</option>
               <option value="true">Archived</option>
@@ -221,7 +221,7 @@ const AdminListingsTable = () => {
               onChange={(e) =>
                 dispatch({ type: 'SET_FILTER', filter: 'confirmed', value: e.target.value })
               }
-              className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="border border-[var(--yr-line-strong)] rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="">All</option>
               <option value="true">Confirmed</option>
@@ -236,7 +236,7 @@ const AdminListingsTable = () => {
               onChange={(e) =>
                 dispatch({ type: 'SET_FILTER', filter: 'audited', value: e.target.value })
               }
-              className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="border border-[var(--yr-line-strong)] rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="">All</option>
               <option value="true">Audited</option>
@@ -253,7 +253,7 @@ const AdminListingsTable = () => {
                   dispatch({ type: 'SET_SORT_BY', field: e.target.value as SortField })
                 }
                 className={`border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                  sortBy === 'redFlags' ? 'border-red-400 bg-red-50' : 'border-gray-300'
+                  sortBy === 'redFlags' ? 'border-red-400 bg-red-50' : 'border-[var(--yr-line-strong)]'
                 }`}
               >
                 {SORT_OPTIONS.map((opt) => (
@@ -264,7 +264,7 @@ const AdminListingsTable = () => {
               </select>
               <button
                 onClick={() => dispatch({ type: 'TOGGLE_SORT_ORDER' })}
-                className="border border-gray-300 rounded-md px-2 py-2 text-sm hover:bg-gray-50"
+                className="border border-[var(--yr-line-strong)] rounded-md px-2 py-2 text-sm hover:bg-[var(--yr-panel-muted)]"
                 title={sortOrder === 'asc' ? 'Ascending' : 'Descending'}
               >
                 {sortOrder === 'asc' ? '↑' : '↓'}
@@ -277,7 +277,7 @@ const AdminListingsTable = () => {
             <select
               value={pageSize}
               onChange={(e) => dispatch({ type: 'SET_PAGE_SIZE', payload: Number(e.target.value) })}
-              className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="border border-[var(--yr-line-strong)] rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               {PAGE_SIZES.map((s) => (
                 <option key={s} value={s}>
@@ -298,16 +298,16 @@ const AdminListingsTable = () => {
         </div>
       </div>
 
-      <div className="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden">
+      <div className="bg-[var(--yr-panel)] rounded-lg shadow-md border border-[var(--yr-line)] overflow-hidden">
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm">
             <thead>
-              <tr className="bg-gray-50 border-b">
+              <tr className="bg-[var(--yr-panel-muted)] border-b">
                 {TABLE_COLUMNS.map((col) => (
                   <th
                     key={col.value}
                     onClick={() => handleSort(col.value)}
-                    className="text-left py-3 px-2 font-semibold text-gray-700 cursor-pointer hover:bg-gray-100 select-none whitespace-nowrap text-xs"
+                    className="text-left py-3 px-2 font-semibold text-gray-700 cursor-pointer hover:bg-[var(--yr-panel-muted)] select-none whitespace-nowrap text-xs"
                   >
                     {col.label}
                     <SortIcon field={col.value} />
@@ -358,7 +358,7 @@ const AdminListingsTable = () => {
                   return (
                     <tr
                       key={listing._id}
-                      className={`border-b hover:bg-gray-50 ${hasRedFlags ? 'bg-red-50/50' : ''}`}
+                      className={`border-b hover:bg-[var(--yr-panel-muted)] ${hasRedFlags ? 'bg-red-50/50' : ''}`}
                     >
                       <td
                         className="py-1.5 px-2 max-w-[180px] truncate text-xs"
@@ -403,7 +403,7 @@ const AdminListingsTable = () => {
                             {listing.departments?.slice(0, 2).map((d) => (
                               <span
                                 key={d}
-                                className="text-[10px] bg-blue-100 text-blue-800 px-1 py-0.5 rounded"
+                                className="text-[10px] bg-[var(--yr-blue-soft)] text-blue-800 px-1 py-0.5 rounded"
                               >
                                 {d.split(' - ')[0]}
                               </span>
@@ -490,14 +490,14 @@ const AdminListingsTable = () => {
             <button
               onClick={() => dispatch({ type: 'SET_PAGE', payload: 1 })}
               disabled={page === 1}
-              className="px-3 py-1.5 text-sm border rounded hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="px-3 py-1.5 text-sm border rounded hover:bg-[var(--yr-panel-muted)] disabled:opacity-40 disabled:cursor-not-allowed"
             >
               First
             </button>
             <button
               onClick={() => dispatch({ type: 'SET_PAGE', payload: Math.max(1, page - 1) })}
               disabled={page === 1}
-              className="px-3 py-1.5 text-sm border rounded hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="px-3 py-1.5 text-sm border rounded hover:bg-[var(--yr-panel-muted)] disabled:opacity-40 disabled:cursor-not-allowed"
             >
               Prev
             </button>
@@ -506,14 +506,14 @@ const AdminListingsTable = () => {
                 dispatch({ type: 'SET_PAGE', payload: Math.min(totalPages, page + 1) })
               }
               disabled={page === totalPages}
-              className="px-3 py-1.5 text-sm border rounded hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="px-3 py-1.5 text-sm border rounded hover:bg-[var(--yr-panel-muted)] disabled:opacity-40 disabled:cursor-not-allowed"
             >
               Next
             </button>
             <button
               onClick={() => dispatch({ type: 'SET_PAGE', payload: totalPages })}
               disabled={page === totalPages}
-              className="px-3 py-1.5 text-sm border rounded hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="px-3 py-1.5 text-sm border rounded hover:bg-[var(--yr-panel-muted)] disabled:opacity-40 disabled:cursor-not-allowed"
             >
               Last
             </button>

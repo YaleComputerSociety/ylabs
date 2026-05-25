@@ -21,7 +21,7 @@ const NavbarSearchBar = () => {
         }
       }}
       placeholder="Search labs..."
-      className="h-9 px-3 flex-1 min-w-[200px] border border-gray-300 rounded-md text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+      className="h-9 px-3 flex-1 min-w-[200px] border border-[var(--yr-line-strong)] rounded-md text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
     />
   );
 };

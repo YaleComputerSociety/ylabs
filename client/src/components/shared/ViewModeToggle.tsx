@@ -8,10 +8,10 @@ const ViewModeToggle = () => {
   const { viewMode, setViewMode } = useContext(UIContext);
 
   return (
-    <div className="flex border border-gray-200 rounded overflow-hidden">
+    <div className="flex border border-[var(--yr-line)] rounded overflow-hidden">
       <button
         onClick={() => setViewMode('card')}
-        className={`min-h-[44px] min-w-[44px] inline-flex items-center justify-center p-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 ${viewMode === 'card' ? 'bg-blue-50 text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}
+        className={`min-h-[44px] min-w-[44px] inline-flex items-center justify-center p-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 ${viewMode === 'card' ? 'bg-[var(--yr-blue-soft)] text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}
         aria-label="Card view"
         aria-pressed={viewMode === 'card'}
         title="Card view"
@@ -34,7 +34,7 @@ const ViewModeToggle = () => {
       </button>
       <button
         onClick={() => setViewMode('list')}
-        className={`min-h-[44px] min-w-[44px] inline-flex items-center justify-center p-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 ${viewMode === 'list' ? 'bg-blue-50 text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}
+        className={`min-h-[44px] min-w-[44px] inline-flex items-center justify-center p-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 ${viewMode === 'list' ? 'bg-[var(--yr-blue-soft)] text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}
         aria-label="List view"
         aria-pressed={viewMode === 'list'}
         title="List view"
@@ -59,7 +59,7 @@ const ViewModeToggle = () => {
       </button>
       <button
         onClick={() => setViewMode('compact')}
-        className={`min-h-[44px] min-w-[44px] inline-flex items-center justify-center p-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 ${viewMode === 'compact' ? 'bg-blue-50 text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}
+        className={`min-h-[44px] min-w-[44px] inline-flex items-center justify-center p-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 ${viewMode === 'compact' ? 'bg-[var(--yr-blue-soft)] text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}
         aria-label="Compact view"
         aria-pressed={viewMode === 'compact'}
         title="Compact view"

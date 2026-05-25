@@ -143,6 +143,32 @@ export interface AnalyticsUserDrilldownResponse {
   limit: number;
 }
 
+export interface AdminAccessUser {
+  netid: string;
+  fname?: string;
+  lname?: string;
+  email?: string;
+  userType?: string;
+}
+
+export interface AdminAccessGrant {
+  netid: string;
+  status: 'active' | 'revoked';
+  source: 'bootstrap' | 'manual' | 'migration';
+  grantedBy?: string;
+  grantedAt?: string | null;
+  revokedBy?: string;
+  revokedAt?: string | null;
+  note?: string;
+  user?: AdminAccessUser;
+}
+
+export interface AdminAccessResponse {
+  activeCount: number;
+  grants: AdminAccessGrant[];
+  legacyAdminsWithoutGrant: AdminAccessUser[];
+}
+
 export type AnalyticsRange = 'today' | '7d' | '30d' | 'semester' | 'all';
 
 export interface AnalyticsSearchQualityQuery {

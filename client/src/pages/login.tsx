@@ -115,7 +115,7 @@ const Login = () => {
           <p className="mt-2 text-sm leading-relaxed text-slate-600">
             {destination.description}
           </p>
-          <div className="mt-5 rounded-md border border-slate-200 bg-white p-3">
+          <div className="yr-muted-surface mt-5 rounded-md p-3">
             <p className="text-xs font-semibold text-slate-500">
               Authentication is handled by Yale CAS. Yale Research does not ask for your password.
             </p>
