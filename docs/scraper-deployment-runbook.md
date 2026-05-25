@@ -126,6 +126,22 @@ Required before any production copy or write:
 - Meilisearch sync or reindex plan is ready.
 - Smoke checklist owner and rollback owner are known.
 
+### Operator Decision Packet
+
+Fill this packet before any production copy, guarded production write, Meilisearch backend switch, or recurring cron enablement. Leave undecided items blank until the operator explicitly accepts them; this packet is a gate record, not the lane decision itself.
+
+| Field | Operator value |
+| --- | --- |
+| Promotion lane | |
+| Atlas backup / restore point | |
+| Rollback owner | |
+| Smoke owner | |
+| Meili backend before gate | |
+| Meili backend after gate | |
+| Accepted warnings | |
+| Run IDs | |
+| Rollback tested | |
+
 ### Production Promotion Lanes
 
 Choose one lane before touching production.
@@ -150,6 +166,14 @@ Minimum copy set for the accepted full Beta posture:
 - Base/support collections only after parity is fresh: `users`, `listings`, `departments`, `research_areas`, and `fellowships`.
 
 Rollback for a bad copy is restoring Production from the pre-copy Atlas backup, then rebuilding or resyncing Meilisearch.
+
+Dry-run rollback drill before using Lane A:
+
+1. Record the Atlas backup or point-in-time restore timestamp that would be used if the copy is rejected.
+2. Name the collections that would be restored: every copied research-discovery, source audit, and base/support collection in the accepted copy set above.
+3. Confirm who has Atlas restore permission and how they will avoid restoring unrelated operational collections unless the incident requires a full database restore.
+4. Record the Meilisearch recovery command sequence: `yarn --cwd server meili:rebuild-pathways`, `yarn --cwd server meili:rebuild-research-entities --clear`, then `yarn --cwd server pathway:relevance-review`.
+5. Confirm `PATHWAY_SEARCH_BACKEND=mongo` is the live rollback posture until the rebuilt Meili indexes pass review.
 
 #### Lane B: Guarded Production Delta
 
@@ -186,6 +210,15 @@ Rules:
 - Run `report` immediately and inspect warnings before moving to the next source.
 - Treat Meilisearch failures as non-blocking for Mongo correctness, then reindex or batch-sync after accepted writes.
 - Keep `PATHWAY_SEARCH_BACKEND=mongo` as the Pathways rollback posture until Meili production relevance and parity are accepted.
+
+Dry-run rollback drill before using Lane B:
+
+1. For each source in the delta, record the source name, planned command, expected materialized collections, and source-health warning posture before the run.
+2. Confirm the source can be stopped by disabling `Source.enabled` for cron or by stopping the manual rollout; do not start additional source runs until the incident is classified.
+3. Record the pre-run Atlas backup or restore point for broad bad materialization.
+4. Confirm minor field-quality issues will use manual locks or a fixed rerun only after inspection, while broad materialization problems restore from the pre-run backup.
+5. Confirm `PATHWAY_SEARCH_BACKEND=mongo` is set or remains set if Meili behavior is questionable after the delta.
+6. Record the Meilisearch recovery command sequence after any accepted restore or fixed rerun.
 
 ### Meilisearch Gate
 
@@ -284,6 +317,19 @@ Suggested starting cadence:
 | `undergrad-fellowships-recipients` | monthly/manual | Requires accepted real CSV/manual data. |
 
 Use separate Render Cron jobs per source or per source group and stagger start times. If a job needs more than the platform's cron runtime limits, split it into batches or use a background worker temporarily for that backfill only.
+
+### Source-Specific Cron Acceptance Matrix
+
+Do not enable recurring cron for a source until its row is accepted. A source may be accepted for manual guarded runs while remaining unaccepted for unattended cron.
+
+| Source | Cron acceptance prerequisites | First cron posture | Hold if |
+| --- | --- | --- | --- |
+| `ysm-atoz-index` | Manual production or accepted Beta evidence shows entity discovery is stable, `materialization.errors = 0`, and source health has no unexplained errors. | Weekly, one source-specific cron, report saved with run ID. | Selector/fetch failures, duplicate entity churn, or unexpected access artifacts. |
+| `department-undergrad-research` | Source metadata exists, output is verified as undergraduate-access evidence rather than generic department discovery, and public contact policy is reviewed. | Manual or low-frequency cron after one accepted guarded run. | It emits unsupported access claims, non-public contact data, or department pages require Yale-network-only access. |
+| `yale-college-fellowships-office` | Fellowship program mapping and public application/contact routes are reviewed; no private recipient or applicant data is required. | Monthly or term-bound cron, aligned to public deadline cycles. | The run depends on manual/private files, creates person-level scraped data, or deadline state cannot be verified. |
+| `lab-microsite-undergrad-llm` | WorkPlanner target list is accepted, paid/LLM cost cap is set, stale-only or bounded scope is enforced, and contact redaction is smoke-tested. | Weekly after WorkPlanner, with saved report and sampled public UI smoke. | Cost cap is missing, source emits raw non-public emails, or materialization conflicts are unexplained. |
+| `openalex` | Production storage posture is accepted, compact-retention/report-save policy is recorded, and identifier-backed candidate rules are confirmed. | Weekly or monthly, bounded by identifiers/offsets; save reports before pruning observations. | Name-only discovery is enabled unintentionally, Atlas storage is insufficient, or materialization creates unsupported authorship links. |
+| `arxiv` | Accepted ORCID/input target list is current, backoff window has cleared, and metadata-only behavior does not create name-only Yale author links. | Weekly with `--since` or bounded accepted targets. | Rate limits/timeouts recur, ORCID input is stale, or the source attempts unsupported faculty links. |
 
 ### Compact Observation Retention
 
