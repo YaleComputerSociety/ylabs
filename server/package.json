@@ -39,6 +39,7 @@
     "student-visibility:backfill": "tsx src/scripts/backfillStudentVisibilityTiers.ts",
     "beta:readiness": "tsx src/scripts/betaReadinessGate.ts",
     "beta:data-quality": "tsx src/scripts/betaDataQuality.ts",
+    "beta:repair-data-hygiene": "tsx src/scripts/repairBetaDataHygiene.ts",
     "pathway:relevance-review": "tsx src/scripts/pathwayRelevanceReview.ts",
     "research-entity:relevance-review": "tsx src/scripts/researchEntityRelevanceReview.ts",
     "pathways:dedupe-exploratory": "tsx src/scripts/dedupeExploratoryPathways.ts",
