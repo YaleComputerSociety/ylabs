@@ -30,6 +30,15 @@ const analyticsRanges: Array<{ value: AnalyticsRange; label: string }> = [
   { value: 'all', label: 'All Time' },
 ];
 
+const analyticsDetailNav = [
+  { href: '#visitor-statistics', label: 'Visitors' },
+  { href: '#engagement-overview', label: 'Engagement' },
+  { href: '#diagnostics', label: 'Diagnostics' },
+  { href: '#search-query-analytics', label: 'Searches' },
+  { href: '#user-activity', label: 'Users' },
+  { href: '#posted-opportunities-overview', label: 'Opportunities' },
+];
+
 const defaultUserActivity: AnalyticsUserActivityResponse = {
   users: [],
   total: 0,
@@ -573,7 +582,22 @@ const Analytics = () => {
         description="Operational tables and lower-priority counts remain below the readout for drilldown."
       />
 
-      <section className="mb-10">
+      <nav
+        aria-label="Analytics detail sections"
+        className="mb-8 flex flex-wrap gap-2 rounded-md border border-slate-200 bg-white p-3 shadow-sm"
+      >
+        {analyticsDetailNav.map((item) => (
+          <a
+            key={item.href}
+            href={item.href}
+            className="inline-flex min-h-[44px] items-center rounded-md border border-slate-200 px-3 text-sm font-semibold text-slate-700 transition-colors hover:border-blue-300 hover:bg-blue-50 hover:text-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+          >
+            {item.label}
+          </a>
+        ))}
+      </nav>
+
+      <section id="visitor-statistics" className="scroll-mt-24 mb-10">
         <h2 className="text-2xl font-semibold mb-4 text-slate-950 border-b border-slate-200 pb-2">
           Visitor Statistics
         </h2>
@@ -657,7 +681,7 @@ const Analytics = () => {
         </div>
       </section>
 
-      <section className="mb-10">
+      <section id="engagement-overview" className="scroll-mt-24 mb-10">
         <h2 className="text-2xl font-semibold mb-4 text-slate-950 border-b border-slate-200 pb-2">
           User Engagement
         </h2>
@@ -763,7 +787,7 @@ const Analytics = () => {
         </section>
       )}
 
-      <section className="mb-10">
+      <section id="diagnostics" className="scroll-mt-24 mb-10">
         <div className="mb-4 flex flex-col gap-2 border-b border-slate-200 pb-2 md:flex-row md:items-end md:justify-between">
           <div>
             <h2 className="text-2xl font-bold text-gray-800">High-Impact Diagnostics</h2>
@@ -945,7 +969,7 @@ const Analytics = () => {
         </div>
       </section>
 
-      <section className="mb-10">
+      <section id="search-query-analytics" className="scroll-mt-24 mb-10">
         <div className="mb-4 flex flex-col gap-2 border-b border-slate-200 pb-2 md:flex-row md:items-end md:justify-between">
           <div>
             <h2 className="text-2xl font-bold text-gray-800">Search Query Analytics</h2>
@@ -1059,7 +1083,7 @@ const Analytics = () => {
         </section>
       )}
 
-      <section className="mb-10">
+      <section id="user-activity" className="scroll-mt-24 mb-10">
         <div className="flex flex-col gap-3 mb-4 border-b border-slate-200 pb-2 md:flex-row md:items-end md:justify-between">
           <div>
             <h2 className="text-2xl font-bold text-gray-800">NetID User Activity</h2>
@@ -1410,7 +1434,7 @@ const Analytics = () => {
         </section>
       )}
 
-      <section className="mb-10">
+      <section id="posted-opportunities-overview" className="scroll-mt-24 mb-10">
         <h2 className="text-2xl font-semibold mb-4 text-slate-950 border-b border-slate-200 pb-2">
           Posted Opportunities Overview
         </h2>

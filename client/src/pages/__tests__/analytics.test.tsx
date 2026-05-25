@@ -244,6 +244,17 @@ describe('Analytics page', () => {
     expect(screen.getByText('Student action funnel')).toBeTruthy();
     expect(screen.getByText('Needs attention')).toBeTruthy();
     expect(screen.getByText('Supporting Detail')).toBeTruthy();
+    const detailNav = screen.getByRole('navigation', { name: 'Analytics detail sections' });
+    expect(detailNav).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Visitors' }).getAttribute('href')).toBe(
+      '#visitor-statistics',
+    );
+    expect(screen.getByRole('link', { name: 'Diagnostics' }).getAttribute('href')).toBe(
+      '#diagnostics',
+    );
+    expect(screen.getByRole('link', { name: 'Opportunities' }).getAttribute('href')).toBe(
+      '#posted-opportunities-overview',
+    );
     await waitFor(() => {
       expect(screen.getAllByText('Review zero-result searches').length).toBeGreaterThan(0);
       expect(screen.getAllByText('quantum materials').length).toBeGreaterThan(0);
