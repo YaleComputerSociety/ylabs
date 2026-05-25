@@ -124,6 +124,51 @@ describe('computeResearchEntityStudentVisibility', () => {
     expect(result.computedTier).toBe('student_ready');
     expect(result.reasons).toContain('operator_override');
   });
+
+  it('does not let a public override promote content-page leaks', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        shortDescription:
+          'Studies patient stories, clinical news, and blog updates from a Yale Medicine content page.',
+        fullDescription:
+          'Studies patient stories, clinical news, and blog updates from a Yale Medicine content page with a source URL that should not be treated as a research home.',
+        sourceUrls: ['https://medicine.yale.edu/lab/urology-mens-health-blog/'],
+        studentVisibilityOverrideTier: 'limited_but_safe',
+        studentVisibilityReviewRuleId: 'reviewed_non_person_owner_source_action_v1',
+      },
+      leadMembers: [{ userId: 'user-1', role: 'pi' }],
+      accessSignalCount: 1,
+      contentPageRisk: true,
+    });
+
+    expect(result.tier).toBe('suppressed');
+    expect(result.computedTier).toBe('suppressed');
+    expect(result.reasons).toContain('content_page_risk');
+    expect(result.reasons).not.toContain('operator_override');
+  });
+
+  it('preserves the operator approval rule reason when an override is present', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        shortDescription:
+          'Studies public humanities research questions through community archives, collections, and historical interpretation projects.',
+        fullDescription:
+          'This research home studies public humanities research questions through community archives, collections, and historical interpretation projects with source-backed student-facing context.',
+        sourceUrls: ['https://humanities.yale.edu/example'],
+        studentVisibilityOverrideTier: 'limited_but_safe',
+        studentVisibilityReviewRuleId: 'reviewed_non_person_owner_source_action_v1',
+      },
+      leadMembers: [],
+      accessSignalCount: 1,
+      actionablePathwayCount: 0,
+      openPostedOpportunityCount: 0,
+    });
+
+    expect(result.tier).toBe('limited_but_safe');
+    expect(result.computedTier).toBe('operator_review');
+    expect(result.reasons).toContain('operator_override');
+    expect(result.reasons).toContain('reviewed_non_person_owner_source_action_v1');
+  });
 });
 
 describe('computeProgramStudentVisibility', () => {

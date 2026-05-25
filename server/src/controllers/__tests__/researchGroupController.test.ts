@@ -136,6 +136,33 @@ describe('searchResearchGroups controller', () => {
     );
   });
 
+  it('accepts query as an alias for q', async () => {
+    const res = response();
+
+    await searchResearchGroups(
+      {
+        body: { query: 'archival research', page: 1, pageSize: 20 },
+        user: undefined,
+      } as any,
+      res as any,
+    );
+
+    expect(mocks.searchResearchGroupsViaMeili).toHaveBeenCalledWith(
+      'archival research',
+      {},
+      1,
+      20,
+      {},
+      {
+        lowQualityFirst: false,
+        includeQualitySummary: false,
+        qualityFilters: [],
+        studentVisibilityTiers: [],
+        includeSuppressed: false,
+      },
+    );
+  });
+
   it('ignores low-quality browse sorting for non-admins and submitted searches', async () => {
     const nonAdminResponse = response();
     await searchResearchGroups(

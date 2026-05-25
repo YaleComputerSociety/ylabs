@@ -18,6 +18,7 @@ import {
   buildCollectionReport,
   nextRepairActionForReasons,
 } from './studentVisibilityBackfillReport';
+import { isLikelyResearchEntityContentPageLeak } from './betaDataQualityCore';
 
 dotenv.config();
 
@@ -133,6 +134,7 @@ async function planResearchEntityUpdates(limit: number): Promise<PlannedTierUpda
       accessSignalCount: accessCounts.get(id) || 0,
       actionablePathwayCount: pathwayCounts.get(id) || 0,
       openPostedOpportunityCount: postedCounts.get(id) || 0,
+      contentPageRisk: isLikelyResearchEntityContentPageLeak(entity as any).length > 0,
     });
     return {
       id,

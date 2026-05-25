@@ -15,6 +15,10 @@ export interface RankedResearchEntityCandidate<TCandidate = unknown> {
   searchMatch: ResearchEntitySearchMatch;
 }
 
+interface CandidateScore<TCandidate> extends RankedResearchEntityCandidate<TCandidate> {
+  hasSearchEvidence: boolean;
+}
+
 const normalize = (value: unknown): string =>
   String(value || '')
     .toLowerCase()
@@ -36,6 +40,11 @@ const QUERY_STOP_WORDS = new Set([
   'the',
   'to',
   'with',
+  'group',
+  'home',
+  'lab',
+  'labs',
+  'research',
 ]);
 
 const asStringArray = (value: unknown): string[] =>
@@ -48,6 +57,11 @@ const getCandidateValue = (candidate: unknown, key: string): unknown =>
 
 const normalizedTokens = (value: string): string[] =>
   value.split(/\s+/).filter(Boolean);
+
+const includesPhrase = (searchableText: string, phrase: string): boolean => {
+  const normalizedPhrase = normalize(phrase);
+  return normalizedPhrase.length > 2 && searchableText.includes(normalizedPhrase);
+};
 
 const significantQueryTokens = (normalizedQuery: string): string[] => {
   const seen = new Set<string>();
@@ -96,7 +110,7 @@ export function rankResearchEntityCandidates<TCandidate>(
   mode: ResearchSearchMode,
 ): RankedResearchEntityCandidate<TCandidate>[] {
   return candidates
-    .map((candidate, index) => {
+    .map((candidate, index): CandidateScore<TCandidate> => {
       const searchableText = collectText(candidate);
       const queryTokens = significantQueryTokens(semantics.normalizedQuery);
       const searchableTokenSet = new Set(normalizedTokens(searchableText));
@@ -105,14 +119,30 @@ export function rankResearchEntityCandidates<TCandidate>(
         Boolean(semantics.normalizedQuery) &&
         searchableText.includes(semantics.normalizedQuery);
       const conceptHits = semantics.concepts.filter((concept) =>
-        searchableText.includes(normalize(concept)),
+        includesPhrase(searchableText, concept),
       );
       const methodHits = semantics.methods.filter((method) =>
-        searchableText.includes(normalize(method)),
+        includesPhrase(searchableText, method),
+      );
+      const phraseHits = semantics.phrases.filter((phrase) =>
+        includesPhrase(searchableText, phrase),
       );
       const expansionHits = semantics.expansionQueries.filter((expansion) =>
-        searchableText.includes(normalize(expansion)),
+        includesPhrase(searchableText, expansion),
       );
+      const semanticRuleMatched =
+        semantics.concepts.length > 0 ||
+        semantics.methods.length > 0 ||
+        semantics.expansionQueries.length > 1;
+      const hasSearchEvidence =
+        !semanticRuleMatched ||
+        !semantics.normalizedQuery ||
+        queryHit ||
+        queryTokenHits.length > 0 ||
+        phraseHits.length > 0 ||
+        conceptHits.length > 0 ||
+        methodHits.length > 0 ||
+        expansionHits.length > 0;
 
       let score = Math.max(0, 1000 - index);
       score += Math.round(meiliRankingScore(candidate) * 240);
@@ -137,6 +167,7 @@ export function rankResearchEntityCandidates<TCandidate>(
       }
       score += conceptHits.length * 500;
       score += methodHits.length * 400;
+      score += phraseHits.length * 220;
       score += expansionHits.length * 120;
       if (
         getCandidateValue(candidate, 'description') ||
@@ -154,9 +185,18 @@ export function rankResearchEntityCandidates<TCandidate>(
         score += 80;
       }
 
-      const concepts = conceptHits.length > 0 ? conceptHits : semantics.concepts.slice(0, 2);
-      const methods = methodHits.length > 0 ? methodHits : semantics.methods.slice(0, 2);
-      const reasonParts = [...methods, ...concepts].filter(Boolean);
+      const concepts =
+        conceptHits.length > 0 || expansionHits.length > 0 ? semantics.concepts.slice(0, 2) : [];
+      const methods =
+        methodHits.length > 0 || expansionHits.length > 0 ? semantics.methods.slice(0, 2) : [];
+      const reasonParts = [
+        ...methodHits,
+        ...conceptHits,
+        ...phraseHits,
+        ...(methodHits.length === 0 && conceptHits.length === 0 && expansionHits.length > 0
+          ? [...methods, ...concepts, ...expansionHits.slice(0, 2)]
+          : []),
+      ].filter(Boolean);
       const reason =
         reasonParts.length > 0
           ? `Matches ${reasonParts.slice(0, 3).join(', ')}.`
@@ -165,6 +205,7 @@ export function rankResearchEntityCandidates<TCandidate>(
       return {
         candidate,
         score,
+        hasSearchEvidence,
         searchMatch: {
           mode,
           concepts,
@@ -173,5 +214,6 @@ export function rankResearchEntityCandidates<TCandidate>(
         },
       };
     })
+    .filter((record) => record.hasSearchEvidence)
     .sort((a, b) => b.score - a.score);
 }

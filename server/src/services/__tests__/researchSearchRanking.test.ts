@@ -55,6 +55,25 @@ describe('rankResearchEntityCandidates', () => {
     expect(ranked[0].searchMatch.reason).toContain('wet lab');
   });
 
+  it('drops semantic-expanded candidates that have no evidence in searchable text', () => {
+    const semantics = buildResearchSearchQuerySemantics('archival research');
+    const ranked = rankResearchEntityCandidates(
+      [
+        {
+          id: 'clinical',
+          name: 'Clinical Trials Lab',
+          description: 'Studies clinical trials, substance use, and hospital interventions.',
+          researchAreas: ['public health'],
+          sourceUrls: ['https://example.edu/clinical'],
+        },
+      ],
+      semantics,
+      'expanded-keyword',
+    );
+
+    expect(ranked).toEqual([]);
+  });
+
   it('treats canonical short and full descriptions as quality signals', () => {
     const semantics = buildResearchSearchQuerySemantics('decision making');
     const ranked = rankResearchEntityCandidates(

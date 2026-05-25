@@ -101,6 +101,7 @@ export const searchResearchGroups = async (request: Request, response: Response)
   try {
     const body = (request.body || {}) as {
       q?: string;
+      query?: string;
       page?: number;
       pageSize?: number;
       filters?: unknown;
@@ -112,7 +113,12 @@ export const searchResearchGroups = async (request: Request, response: Response)
       includeSuppressed?: boolean;
     };
 
-    const q = typeof body.q === 'string' ? body.q : '';
+    const q =
+      typeof body.q === 'string'
+        ? body.q
+        : typeof body.query === 'string'
+          ? body.query
+          : '';
     const page = Number.isFinite(Number(body.page)) ? Number(body.page) : 1;
     const requestedPageSize = Number.isFinite(Number(body.pageSize))
       ? Number(body.pageSize)

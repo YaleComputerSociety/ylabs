@@ -37,6 +37,9 @@ export const searchProgramsController = async (request: Request, response: Respo
       globalRegions,
       citizenshipStatus,
       programCategory,
+      programKind,
+      entryMode,
+      studentFacingCategory,
       studentVisibilityTier,
       includeOperatorReview,
       includeSuppressed,
@@ -56,6 +59,9 @@ export const searchProgramsController = async (request: Request, response: Respo
       globalRegions: parseFilter(globalRegions as string),
       citizenshipStatus: parseFilter(citizenshipStatus as string),
       programCategory: parseFilter(programCategory as string),
+      programKind: parseFilter(programKind as string),
+      entryMode: parseFilter(entryMode as string),
+      studentFacingCategory: parseFilter(studentFacingCategory as string),
       studentVisibilityTier: isAdmin
         ? parseStudentVisibilityFilter(studentVisibilityTier as string)
         : [],

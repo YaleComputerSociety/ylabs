@@ -1034,8 +1034,9 @@ export async function searchResearchGroupsViaMeili(
   const hitRecords = usesMergedExploratorySearch
     ? rankedHitRecords.slice(offset, offset + safePageSize)
     : rankedHitRecords;
-  const estimatedTotalHits =
-    searchQueries.length === 1
+  const estimatedTotalHits = usesMergedExploratorySearch
+    ? rankedHitRecords.length
+    : searchQueries.length === 1
       ? searchResults[0]?.estimatedTotalHits
       : Math.max(
           mergedHits.length,

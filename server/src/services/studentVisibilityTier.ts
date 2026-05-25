@@ -57,15 +57,23 @@ const withOverride = (
   computedTier: StudentVisibilityTier,
   reasons: string[],
 ): StudentVisibilityResult => {
+  if (
+    computedTier === 'suppressed' &&
+    (reasons.includes('content_page_risk') || reasons.includes('inactive_at_yale'))
+  ) {
+    return { tier: computedTier, computedTier, reasons };
+  }
+
   const override = overrideTier(record);
   if (!override) {
     return { tier: computedTier, computedTier, reasons };
   }
+  const reviewRuleId = textValue(record.studentVisibilityReviewRuleId);
 
   return {
     tier: override,
     computedTier,
-    reasons: Array.from(new Set([...reasons, 'operator_override'])),
+    reasons: Array.from(new Set([...reasons, 'operator_override', reviewRuleId].filter(Boolean))),
   };
 };
 
