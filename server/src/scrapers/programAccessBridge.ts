@@ -63,8 +63,8 @@ export interface ProgramAccessBridgeInputs {
     websiteUrl?: string;
   };
   entryPathway: Omit<UpsertEntryPathwayInput, 'researchEntityId'>;
-  accessSignal: Omit<UpsertAccessSignalInput, 'researchEntityId' | 'entryPathwayId'>;
-  contactRoute: Omit<UpsertContactRouteInput, 'researchEntityId' | 'entryPathwayId'>;
+  accessSignal?: Omit<UpsertAccessSignalInput, 'researchEntityId' | 'entryPathwayId'>;
+  contactRoute?: Omit<UpsertContactRouteInput, 'researchEntityId' | 'entryPathwayId'>;
   postedOpportunity?: {
     title: string;
     deadline?: Date;
@@ -175,8 +175,7 @@ function postedOpportunityStatusFor(fellowship: FellowshipLike, now = new Date()
 }
 
 function shouldBuildPostedOpportunity(fellowship: FellowshipLike, status: PostedOpportunityStatus): boolean {
-  const hasRoute = !!(fellowship.applicationLink || fellowship.sourceUrl);
-  if (!hasRoute) return false;
+  if (!fellowship.applicationLink) return false;
   return status === 'OPEN' || status === 'ROLLING';
 }
 
@@ -201,6 +200,7 @@ export function buildProgramAccessBridgeInputs(
     toDate(fellowship.updatedAt) || toDate(fellowship.createdAt) || options.now || new Date();
   const sourceUrls = sourceUrlsFor(fellowship);
   const sourceUrl = fellowship.applicationLink || fellowship.sourceUrl || hostUrl;
+  const hasApplicationLink = !!fellowship.applicationLink;
   const pathwayType = pathwayTypeForRole(role);
   const status: EntryPathwayStatus = 'ACTIVE';
   const opportunityStatus = postedOpportunityStatusFor(fellowship, options.now);
@@ -232,7 +232,7 @@ export function buildProgramAccessBridgeInputs(
       lastObservedAt: observedAt,
     },
     accessSignal: {
-      signalType: 'APPLICATION_FORM_EXISTS',
+      signalType: hasApplicationLink ? 'APPLICATION_FORM_EXISTS' : 'RECURRING_PROGRAM',
       confidence: 'HIGH',
       observedAt,
       excerpt: fellowship.summary || fellowship.description || fellowship.title,
@@ -240,27 +240,31 @@ export function buildProgramAccessBridgeInputs(
       sourceUrl,
       originalConfidence: 1,
       confidenceScore: 1,
-      derivationKey: `program:${fellowshipId}:signal:application`,
+      derivationKey: hasApplicationLink
+        ? `program:${fellowshipId}:signal:application`
+        : `program:${fellowshipId}:signal:recurring-program`,
       archived: false,
     },
-    contactRoute: {
-      routeType: 'OFFICIAL_APPLICATION',
-      priority: 1,
-      visibility: 'PUBLIC',
-      contactPolicy: 'APPLICATION_ONLY',
-      url: fellowship.applicationLink || fellowship.sourceUrl,
-      rationale: 'The source identifies an official program application route.',
-      sourceEvidenceIds: [],
-      observedAt,
-      sourceName: 'program-access-bridge',
-      sourceUrl,
-      derivationKey: `program:${fellowshipId}:route:official-application`,
-    },
+    contactRoute: hasApplicationLink
+      ? {
+          routeType: 'OFFICIAL_APPLICATION',
+          priority: 1,
+          visibility: 'PUBLIC',
+          contactPolicy: 'APPLICATION_ONLY',
+          url: fellowship.applicationLink,
+          rationale: 'The source identifies an official program application route.',
+          sourceEvidenceIds: [],
+          observedAt,
+          sourceName: 'program-access-bridge',
+          sourceUrl,
+          derivationKey: `program:${fellowshipId}:route:official-application`,
+        }
+      : undefined,
     postedOpportunity: shouldBuildPostedOpportunity(fellowship, opportunityStatus)
       ? {
           title: fellowship.title || 'Structured research program',
           deadline: toDate(fellowship.deadline),
-          applicationUrl: fellowship.applicationLink || fellowship.sourceUrl,
+          applicationUrl: fellowship.applicationLink,
           status: opportunityStatus,
           compensationType: 'FELLOWSHIP',
           sourceUrls,
@@ -297,8 +301,8 @@ export async function materializeProgramAccessBridge(
       skipped: undefined,
       researchEntities: 1,
       entryPathways: 1,
-      accessSignals: 1,
-      contactRoutes: 1,
+      accessSignals: inputs.accessSignal ? 1 : 0,
+      contactRoutes: inputs.contactRoute ? 1 : 0,
       postedOpportunities: inputs.postedOpportunity ? 1 : 0,
     };
   }
@@ -356,16 +360,20 @@ export async function materializeProgramAccessBridge(
     };
   }
 
-  await upsertAccessSignal({
-    researchEntityId,
-    entryPathwayId,
-    ...inputs.accessSignal,
-  });
-  await upsertContactRoute({
-    researchEntityId,
-    entryPathwayId,
-    ...inputs.contactRoute,
-  });
+  if (inputs.accessSignal) {
+    await upsertAccessSignal({
+      researchEntityId,
+      entryPathwayId,
+      ...inputs.accessSignal,
+    });
+  }
+  if (inputs.contactRoute) {
+    await upsertContactRoute({
+      researchEntityId,
+      entryPathwayId,
+      ...inputs.contactRoute,
+    });
+  }
 
   let postedOpportunities = 0;
   if (inputs.postedOpportunity) {
@@ -409,8 +417,8 @@ export async function materializeProgramAccessBridge(
     skipped: undefined,
     researchEntities: 1,
     entryPathways: 1,
-    accessSignals: 1,
-    contactRoutes: 1,
+    accessSignals: inputs.accessSignal ? 1 : 0,
+    contactRoutes: inputs.contactRoute ? 1 : 0,
     postedOpportunities,
   };
 }

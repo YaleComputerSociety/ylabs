@@ -60,7 +60,13 @@ describe('sourceCoverageRegistry', () => {
     const coverage = getSourceCoverage('yale-college-fellowships-office');
 
     expect(coverage?.artifactTypes).toEqual(
-      expect.arrayContaining(['EntryPathway', 'AccessSignal', 'ContactRoute', 'PostedOpportunity']),
+      expect.arrayContaining([
+        'Fellowship',
+        'EntryPathway',
+        'AccessSignal',
+        'ContactRoute',
+        'PostedOpportunity',
+      ]),
     );
     expect(coverage?.evidenceCategories).toEqual(
       expect.arrayContaining([

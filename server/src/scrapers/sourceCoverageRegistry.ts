@@ -126,6 +126,7 @@ export const sourceCoverageRegistry = {
     priority: 4,
     tier: 'PRIMARY_OFFICIAL',
     artifactTypes: [
+      'Fellowship',
       'EntryPathway',
       'AccessSignal',
       'ContactRoute',

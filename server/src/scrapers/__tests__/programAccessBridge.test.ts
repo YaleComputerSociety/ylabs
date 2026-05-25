@@ -101,6 +101,27 @@ describe('programAccessBridge', () => {
     expect(postedOpportunityModel.updateOne).toHaveBeenCalled();
   });
 
+  it('does not create application artifacts without an application link', async () => {
+    const inputs = buildProgramAccessBridgeInputs({
+      _id: '665000000000000000000001',
+      title: 'Wu Tsai Undergraduate Fellowship',
+      sourceUrl: 'https://wti.yale.edu/initiatives/undergraduate',
+      isAcceptingApplications: true,
+      programCategory: 'SUMMER_RESEARCH_PROGRAM',
+      programAccessRole: 'MENTOR_MATCHING',
+      hostedByResearchEntityName: 'Wu Tsai Institute',
+      hostedByResearchEntityUrl: 'https://wti.yale.edu',
+    } as any);
+
+    expect(inputs).toMatchObject({
+      accessSignal: {
+        signalType: 'RECURRING_PROGRAM',
+      },
+      contactRoute: undefined,
+      postedOpportunity: undefined,
+    });
+  });
+
   it('preserves review-locked posted opportunity fields while updating source fields', async () => {
     const researchEntityModel = {
       findOneAndUpdate: vi.fn().mockResolvedValue({ _id: '665000000000000000000010' }),
