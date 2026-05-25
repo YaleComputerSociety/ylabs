@@ -88,4 +88,14 @@ describe('adminOperatorBoardService', () => {
       'Rebuild Meili indexes after accepted data repairs.',
     ]);
   });
+
+  it('adds an explicit pending search-sync action after write runs', () => {
+    expect(
+      buildRecommendedNextActions({
+        promotionStatus: 'watch',
+        sourceRiskCounts: { ok: 2, warn: 0, error: 0 },
+        pendingMeiliSync: true,
+      }),
+    ).toContain('Rebuild Meili after the latest accepted write run.');
+  });
 });

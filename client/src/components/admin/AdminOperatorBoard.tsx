@@ -49,6 +49,25 @@ interface SourceHealthRow {
   };
 }
 
+interface SourceReadinessRow {
+  sourceName: string;
+  displayName: string;
+  status: 'ready' | 'needs_review' | 'needs_dry_run' | 'blocked';
+  nextAction: string;
+  expectedArtifactTypes: string[];
+  latestRun?: SourceHealthRow['latestRun'];
+}
+
+interface FreshnessPolicy {
+  sourceName: string;
+  entityType: string;
+  targetFields: string[];
+  windowDays: number;
+  cadence: string;
+  paid: boolean;
+  notes: string;
+}
+
 interface OperatorBoard {
   generatedAt: string;
   promotionStatus?: PromotionStatus;
@@ -61,6 +80,8 @@ interface OperatorBoard {
     research: ReasonCount[];
     programs: ReasonCount[];
   };
+  queueKindCounts?: Record<QueueKind, number>;
+  discoveryCandidates?: Array<Pick<QueueSummary, 'collection' | 'reason' | 'count' | 'nextAction' | 'samples'>>;
   queues: QueueSummary[];
   gates: {
     dataQuality: {
@@ -75,12 +96,19 @@ interface OperatorBoard {
     };
     meili?: {
       status: string;
+      pendingSync?: boolean;
       note: string;
     };
   };
   sourceFreshness: {
     windowDays: number;
     riskCounts: Record<Risk, number>;
+    latestRunSummary?: {
+      latestDryRun?: SourceHealthRow['latestRun'] | null;
+      latestWriteRun?: SourceHealthRow['latestRun'] | null;
+    };
+    readinessRows?: SourceReadinessRow[];
+    freshnessPolicies?: FreshnessPolicy[];
     rows: SourceHealthRow[];
   };
 }
@@ -167,6 +195,13 @@ const queueKindRank: Record<QueueKind, number> = {
   blocking: 0,
   review: 1,
   evidence: 2,
+};
+
+const readinessStyles: Record<SourceReadinessRow['status'], string> = {
+  ready: 'border-emerald-200 bg-emerald-50 text-emerald-800',
+  needs_review: 'border-amber-200 bg-amber-50 text-amber-800',
+  needs_dry_run: 'border-amber-200 bg-amber-50 text-amber-800',
+  blocked: 'border-red-200 bg-red-50 text-red-800',
 };
 
 const ReasonList = ({
@@ -290,6 +325,16 @@ const AdminOperatorBoard = () => {
 
       <section className="rounded-md border border-gray-200 bg-white p-4">
         <h4 className="mb-3 font-semibold text-gray-900">Gate Status</h4>
+        {board.recommendedNextActions && board.recommendedNextActions.length > 0 && (
+          <div className="mb-3 rounded-md border border-blue-100 bg-blue-50 p-3 text-sm text-blue-900">
+            <div className="font-semibold">Promotion posture: {board.promotionStatus || 'watch'}</div>
+            <ul className="mt-1 list-disc space-y-1 pl-5">
+              {board.recommendedNextActions.map((action) => (
+                <li key={action}>{action}</li>
+              ))}
+            </ul>
+          </div>
+        )}
         <div className="grid gap-3 lg:grid-cols-2">
           <div className="rounded-md border border-gray-200 p-3">
             <div className="text-sm font-semibold text-gray-900">Data quality</div>
@@ -307,11 +352,74 @@ const AdminOperatorBoard = () => {
               Latest persisted integrity status: {board.gates.scraperIntegrity.status}
             </p>
           </div>
+          {board.gates.meili && (
+            <div className="rounded-md border border-gray-200 p-3">
+              <div className="text-sm font-semibold text-gray-900">Search sync</div>
+              <p className="mt-2 text-sm text-gray-600">
+                Status: {board.gates.meili.status}
+                {board.gates.meili.pendingSync ? ' · pending rebuild confirmation' : ''}
+              </p>
+              <p className="mt-2 text-sm text-gray-600">{board.gates.meili.note}</p>
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section className="rounded-md border border-gray-200 bg-white p-4">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h4 className="font-semibold text-gray-900">Pipeline Readiness</h4>
+          <span className="text-sm text-gray-500">
+            Latest dry run: {formatDate(board.sourceFreshness.latestRunSummary?.latestDryRun?.startedAt)} ·
+            latest write: {formatDate(board.sourceFreshness.latestRunSummary?.latestWriteRun?.startedAt)}
+          </span>
+        </div>
+        <div className="grid gap-3 lg:grid-cols-2">
+          {(board.sourceFreshness.readinessRows || []).slice(0, 8).map((row) => (
+            <div key={row.sourceName} className="rounded-md border border-gray-200 p-3">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <div className="font-semibold text-gray-900">{row.displayName}</div>
+                  <div className="text-xs text-gray-500">{row.sourceName}</div>
+                </div>
+                <span
+                  className={`rounded-md border px-2 py-1 text-xs font-semibold ${readinessStyles[row.status]}`}
+                >
+                  {row.status.replaceAll('_', ' ')}
+                </span>
+              </div>
+              {row.expectedArtifactTypes.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1">
+                  {row.expectedArtifactTypes.map((artifact) => (
+                    <span
+                      key={artifact}
+                      className="rounded-md border border-gray-200 bg-gray-50 px-2 py-0.5 text-xs text-gray-600"
+                    >
+                      {artifact}
+                    </span>
+                  ))}
+                </div>
+              )}
+              <p className="mt-2 text-sm text-gray-600">{row.nextAction}</p>
+            </div>
+          ))}
         </div>
       </section>
 
       <section className="rounded-md border border-gray-200 bg-white p-4">
         <h4 className="mb-3 font-semibold text-gray-900">Review Queues</h4>
+        {board.queueKindCounts && (
+          <div className="mb-3 flex flex-wrap gap-2 text-xs font-semibold">
+            <span className="rounded-md border border-red-200 bg-red-50 px-2 py-1 text-red-700">
+              {board.queueKindCounts.blocking || 0} repair blockers
+            </span>
+            <span className="rounded-md border border-gray-200 bg-gray-50 px-2 py-1 text-gray-700">
+              {board.queueKindCounts.review || 0} review signals
+            </span>
+            <span className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-emerald-700">
+              {board.queueKindCounts.evidence || 0} evidence signals
+            </span>
+          </div>
+        )}
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200 text-sm">
             <thead className="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
@@ -375,6 +483,31 @@ const AdminOperatorBoard = () => {
         </div>
       </section>
 
+      {(board.discoveryCandidates || []).length > 0 && (
+        <section className="rounded-md border border-gray-200 bg-white p-4">
+          <h4 className="mb-3 font-semibold text-gray-900">Discovery Candidates</h4>
+          <div className="grid gap-3 lg:grid-cols-2">
+            {board.discoveryCandidates!.map((candidate) => (
+              <div
+                key={`${candidate.collection}-${candidate.reason}`}
+                className="rounded-md border border-gray-200 p-3"
+              >
+                <div className="text-sm font-semibold text-gray-900">
+                  {candidate.reason} · {candidate.count}
+                </div>
+                <div className="text-xs capitalize text-gray-500">{candidate.collection}</div>
+                <p className="mt-2 text-sm text-gray-600">{candidate.nextAction}</p>
+                {candidate.samples.length > 0 && (
+                  <p className="mt-2 text-xs text-gray-500">
+                    Sample: {candidate.samples.map((sample) => sample.label).join(', ')}
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
       <section className="rounded-md border border-gray-200 bg-white p-4">
         <div className="mb-3 flex items-center justify-between">
           <h4 className="font-semibold text-gray-900">Source Freshness</h4>
@@ -406,6 +539,24 @@ const AdminOperatorBoard = () => {
           ))}
         </div>
       </section>
+
+      {(board.sourceFreshness.freshnessPolicies || []).length > 0 && (
+        <section className="rounded-md border border-gray-200 bg-white p-4">
+          <h4 className="mb-3 font-semibold text-gray-900">Freshness Policies</h4>
+          <div className="grid gap-3 lg:grid-cols-3">
+            {board.sourceFreshness.freshnessPolicies!.slice(0, 6).map((policy) => (
+              <div key={policy.sourceName} className="rounded-md border border-gray-200 p-3">
+                <div className="font-semibold text-gray-900">{policy.sourceName}</div>
+                <div className="mt-1 text-xs text-gray-500">
+                  {policy.cadence} · {policy.windowDays} days · {policy.entityType}
+                  {policy.paid ? ' · paid/limited' : ''}
+                </div>
+                <p className="mt-2 text-sm text-gray-600">{policy.notes}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   );
 };

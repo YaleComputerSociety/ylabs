@@ -21,6 +21,19 @@ Source metadata
 
 Scrapers collect evidence. They should not create unsupported student-facing conclusions such as "accepting undergrads." Materializers derive product records from observed evidence, source confidence, stable keys, and manual locks.
 
+## Read-Only Control Plane
+
+The first control-plane slice is the admin Operator Board. It remains read-only and does not replace CLI or cron execution. It should show:
+
+- source readiness from seeded `Source` rows, recent `ScrapeRun` posture, expected artifacts, and next actions
+- latest dry-run and write-run posture so operators can see whether Mongo writes need a follow-up Meili rebuild
+- review queues split into repair blockers, review signals, and positive evidence signals
+- discovery candidates from high-signal evidence queues that may be promotable after review
+- WorkPlanner freshness policies for broad, paid, API-limited, or stale-sensitive sources
+- manual gate commands for data quality, scraper integrity, and search sync posture
+
+Pending Meili sync is an operator warning, not a worker. Local or VPN jobs may make Mongo current while Render-owned Meili remains stale; production promotion must explicitly rebuild or verify the prefixed production indexes before smoke checks.
+
 ## Canonical Collections
 
 Runtime research discovery is centered on:

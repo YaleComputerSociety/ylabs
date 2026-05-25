@@ -3,6 +3,7 @@ import { ResearchEntity } from '../models/researchEntity';
 import { ScrapeRun } from '../models/scrapeRun';
 import { Source } from '../models/source';
 import type { StudentVisibilityTier } from '../models/studentVisibility';
+import { workPlannerSourcePolicies } from '../scrapers/workPlanner';
 import { buildSourceHealthRows, type SourceHealthRisk } from './sourceHealthService';
 
 export type QueueKind = 'blocking' | 'evidence' | 'review';
@@ -86,6 +87,7 @@ export function derivePromotionStatus(input: {
 export function buildRecommendedNextActions(input: {
   promotionStatus: PromotionStatus;
   sourceRiskCounts: Record<SourceHealthRisk, number>;
+  pendingMeiliSync?: boolean;
 }) {
   const actions: string[] = [];
   if (input.sourceRiskCounts.error > 0) {
@@ -93,6 +95,9 @@ export function buildRecommendedNextActions(input: {
   }
   if (input.sourceRiskCounts.warn > 0) {
     actions.push('Run bounded dry runs for warning sources before promotion.');
+  }
+  if (input.pendingMeiliSync) {
+    actions.push('Rebuild Meili after the latest accepted write run.');
   }
   actions.push('Run scraper integrity and data-quality gates before any production promotion.');
   actions.push('Rebuild Meili indexes after accepted data repairs.');
@@ -234,14 +239,36 @@ async function buildQueueSummaries() {
     })),
   );
 
+  const queues = [...researchQueues, ...programQueues];
+  const queueKindCounts = queues.reduce(
+    (acc, queue) => {
+      acc[queue.kind] += queue.count;
+      return acc;
+    },
+    { blocking: 0, evidence: 0, review: 0 },
+  );
+
   return {
     reasonCounts: {
       research: researchReasons,
       programs: programReasons,
     },
-    queues: [...researchQueues, ...programQueues],
+    queueKindCounts,
+    discoveryCandidates: queues
+      .filter((queue) => queue.kind === 'evidence' || queue.reason.includes('official_source'))
+      .slice(0, 6)
+      .map((queue) => ({
+        collection: queue.collection,
+        reason: queue.reason,
+        count: queue.count,
+        nextAction: queue.nextAction,
+        samples: queue.samples.slice(0, 2),
+      })),
+    queues,
   };
 }
+
+const freshnessWindowDays = (windowMs: number) => Math.round(windowMs / (24 * 60 * 60 * 1000));
 
 async function buildSourceFreshness() {
   const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
@@ -267,6 +294,15 @@ async function buildSourceFreshness() {
     windowDays: 30,
     riskCounts,
     latestRunSummary: summarizeDryRunPosture(runs),
+    freshnessPolicies: workPlannerSourcePolicies.map((policy) => ({
+      sourceName: policy.sourceName,
+      entityType: policy.entityType,
+      targetFields: policy.targetFields,
+      windowDays: freshnessWindowDays(policy.freshnessWindowMs),
+      cadence: policy.defaultRecurringCadence || 'manual',
+      paid: Boolean(policy.paid),
+      notes: policy.notes || '',
+    })),
     readinessRows: rows.slice(0, 12).map((row) => ({
       sourceName: row.sourceName,
       displayName: row.displayName,
@@ -295,7 +331,8 @@ export async function buildAdminOperatorBoard() {
       buildQueueSummaries(),
     ]);
   const integrityStatus: 'unknown' = 'unknown';
-  const meiliStatus: 'unknown' = 'unknown';
+  const pendingMeiliSync = Boolean(sourceFreshness.latestRunSummary.latestWriteRun);
+  const meiliStatus: PromotionStatus | 'unknown' = pendingMeiliSync ? 'watch' : 'unknown';
   const promotionStatus = derivePromotionStatus({
     sourceRiskCounts: sourceFreshness.riskCounts,
     integrityStatus,
@@ -308,6 +345,7 @@ export async function buildAdminOperatorBoard() {
     recommendedNextActions: buildRecommendedNextActions({
       promotionStatus,
       sourceRiskCounts: sourceFreshness.riskCounts,
+      pendingMeiliSync,
     }),
     trustTiers: {
       research: researchTierCounts,
@@ -327,7 +365,10 @@ export async function buildAdminOperatorBoard() {
       },
       meili: {
         status: meiliStatus,
-        note: 'Meili index stats are not persisted in this branch yet.',
+        pendingSync: pendingMeiliSync,
+        note: pendingMeiliSync
+          ? 'A recent non-dry scraper run exists; confirm Mongo changes were rebuilt into Meili before promotion.'
+          : 'Meili index stats are not persisted in this branch yet.',
       },
     },
     sourceFreshness,
