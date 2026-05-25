@@ -331,6 +331,95 @@ const memberDisplayName = (member: LabMember): string =>
 
 const memberId = (member: LabMember): string => String(member.user._id || '');
 
+const summarizeNextStep = (step: string): string => {
+  if (step.toLowerCase().includes('official profile')) {
+    return 'Start with the official profile, then decide whether outreach is appropriate.';
+  }
+  if (step.toLowerCase().includes('official') || step.toLowerCase().includes('application')) {
+    return 'Use the official route first, then verify timing and eligibility.';
+  }
+  return 'Follow the indexed route after reviewing its source context.';
+};
+
+const ResearchDetailSignalStrip = ({
+  sourcesCount,
+  accessSignalCount,
+  pathwayCount,
+  postedOpportunityCount,
+  leadProfessor,
+  nextStep,
+}: {
+  sourcesCount: number;
+  accessSignalCount: number;
+  pathwayCount: number;
+  postedOpportunityCount: number;
+  leadProfessor?: LabMember;
+  nextStep: string;
+}) => {
+  const leadProfessorName = leadProfessor ? memberDisplayName(leadProfessor) : 'Not indexed yet';
+  const items = [
+    {
+      label: 'Source count',
+      value: sourcesCount > 0 ? `${sourcesCount}` : 'Needs source',
+      detail: sourcesCount > 0 ? 'official page(s)' : 'source pending',
+    },
+    {
+      label: 'Access evidence',
+      value: accessSignalCount > 0 ? `${accessSignalCount}` : 'None yet',
+      detail: accessSignalCount > 0 ? 'signal(s) indexed' : 'verify manually',
+    },
+    {
+      label: 'Ways in',
+      value:
+        postedOpportunityCount > 0
+          ? `${postedOpportunityCount}`
+          : pathwayCount > 0
+            ? `${pathwayCount}`
+            : 'Not indexed',
+      detail:
+        postedOpportunityCount > 0
+          ? 'posted opportunity'
+          : pathwayCount > 0
+            ? 'pathway candidate'
+            : 'exploratory only',
+    },
+    {
+      label: 'Lead',
+      value: leadProfessorName,
+      detail: leadProfessor?.user.title || 'profile contact',
+    },
+  ];
+
+  return (
+    <section
+      aria-label="Research profile summary"
+      className="rounded-md border border-slate-200 bg-slate-950 text-white shadow-sm"
+    >
+      <div className="grid gap-px bg-white/10 md:grid-cols-[minmax(0,1fr)_18rem]">
+        <div className="grid grid-cols-2 gap-px bg-white/10 lg:grid-cols-4">
+          {items.map((item) => (
+            <div key={item.label} className="min-w-0 bg-slate-950 px-3 py-3 sm:px-4 sm:py-4">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-300">
+                {item.label}
+              </p>
+              <p className="mt-2 truncate text-base font-semibold text-white">{item.value}</p>
+              <p className="mt-1 truncate text-xs text-slate-300">{item.detail}</p>
+            </div>
+          ))}
+        </div>
+        <div className="bg-slate-900 px-3 py-3 sm:px-4 sm:py-4">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-300">
+            Best next step
+          </p>
+          <p className="mt-2 line-clamp-3 text-sm leading-relaxed text-white">
+            {summarizeNextStep(nextStep)}
+          </p>
+        </div>
+      </div>
+    </section>
+  );
+};
+
 const DecisionSummary = ({
   group,
   pathways,
@@ -912,6 +1001,7 @@ const LabDetail = () => {
     contactRoutes,
     hasActivePostedOpportunity,
   });
+  const recommendedNextStep = decisionNextStep({ pathways: entryPathways, contactRoutes });
   const primaryPathway = entryPathways[0];
   const isPrimaryPathwaySaved = primaryPathway
     ? savedResearchPlanIds.includes(primaryPathway._id)
@@ -951,6 +1041,15 @@ const LabDetail = () => {
                 />
               ) : undefined
             }
+          />
+
+          <ResearchDetailSignalStrip
+            sourcesCount={sources.length}
+            accessSignalCount={accessSignals.length}
+            pathwayCount={entryPathways.length}
+            postedOpportunityCount={postedOpportunities.length}
+            leadProfessor={principalInvestigators[0]}
+            nextStep={recommendedNextStep}
           />
 
           <DecisionSummary

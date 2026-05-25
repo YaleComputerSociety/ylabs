@@ -114,6 +114,31 @@ router.get(
 );
 router.put('/favPathways', isAuthenticated, userController.addFavPathways);
 router.delete('/favPathways', isAuthenticated, userController.removeFavPathways);
+router.get('/savedResearchPlanIds', isAuthenticated, userController.getSavedResearchPlanIds);
+router.get('/savedResearchPlans', isAuthenticated, userController.getSavedResearchPlans);
+router.put('/savedResearchPlans', isAuthenticated, userController.addSavedResearchPlans);
+router.delete('/savedResearchPlans', isAuthenticated, userController.removeSavedResearchPlans);
+router.get(
+  '/savedResearchPlanFundingMatches',
+  isAuthenticated,
+  userController.getSavedResearchPlanFundingMatches,
+);
+router.get('/savedResearchPlanDetails', isAuthenticated, userController.getSavedResearchPlanDetails);
+router.get(
+  '/savedResearchPlanDetails/export',
+  isAuthenticated,
+  userController.exportSavedResearchPlanDetails,
+);
+router.put(
+  '/savedResearchPlanDetails/:pathwayId',
+  isAuthenticated,
+  userController.updateSavedResearchPlanDetail,
+);
+router.delete(
+  '/savedResearchPlanDetails/:pathwayId',
+  isAuthenticated,
+  userController.deleteSavedResearchPlanDetail,
+);
 router.get('/favPathwayPlans', isAuthenticated, userController.getSavedPathwayPlans);
 router.get(
   '/favPathwayPlans/export',
