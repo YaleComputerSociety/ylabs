@@ -28,7 +28,7 @@ type Tab = 'bio' | 'research' | 'courses';
 const VALID_TABS: Tab[] = ['bio', 'research', 'courses'];
 
 const SectionHeading = ({ children }: { children: ReactNode }) => (
-  <h2 className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-3">
+  <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-600">
     {children}
   </h2>
 );
@@ -40,6 +40,22 @@ const formatRoleLabel = (role?: string) =>
         .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
         .join(' ')
     : '';
+
+const ProfileSignalTile = ({
+  label,
+  value,
+  detail,
+}: {
+  label: string;
+  value: string | number;
+  detail: string;
+}) => (
+  <div className="rounded-md border border-slate-200 bg-white px-4 py-3">
+    <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">{label}</p>
+    <p className="mt-1 text-xl font-semibold text-slate-950">{value}</p>
+    <p className="mt-1 text-xs leading-snug text-slate-500">{detail}</p>
+  </div>
+);
 
 const Profile = () => {
   const { netid } = useParams<{ netid: string }>();
@@ -105,6 +121,11 @@ const Profile = () => {
     { key: 'research', label: 'Research', show: true },
     { key: 'courses', label: 'Courses', show: coursesAvailable === true },
   ];
+  const profileRuntime = profile as any;
+  const researchHomeCount = profileRuntime?.researchEntities?.length ?? 0;
+  const researchSignalCount =
+    (profile?.research_interests?.length ?? 0) + (profile?.topics?.length ?? 0);
+  const scholarlyLinkCount = profileRuntime?.scholarlyLinks?.length ?? 0;
 
   if (loading) {
     return (
@@ -142,19 +163,19 @@ const Profile = () => {
   return (
     <div className="yr-page w-full">
       <div className="mx-auto max-w-5xl px-4 py-8">
-      <div className="flex items-start justify-between">
-        <div className="flex-1">
-          <ProfileHeader profile={profile} />
+        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+          <div className="flex-1">
+            <ProfileHeader profile={profile} />
+          </div>
+          {isAdmin && (
+            <button
+              onClick={() => setShowAdminEdit(true)}
+              className="inline-flex min-h-[44px] flex-shrink-0 items-center justify-center rounded-md bg-gray-700 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-gray-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 md:ml-4"
+            >
+              Edit Profile
+            </button>
+          )}
         </div>
-        {isAdmin && (
-          <button
-            onClick={() => setShowAdminEdit(true)}
-            className="ml-4 inline-flex min-h-[44px] flex-shrink-0 items-center justify-center rounded-md bg-gray-700 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-gray-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-300"
-          >
-            Edit Profile
-          </button>
-        )}
-      </div>
 
       {isOwnProfile && !profile.profileVerified && (
         <div className="mt-6 p-4 bg-amber-50 border border-amber-200 rounded-lg flex items-center justify-between gap-4">
@@ -176,7 +197,33 @@ const Profile = () => {
         </div>
       )}
 
-      <div className="border-b border-gray-200 mt-8">
+        <section
+          aria-label="Faculty profile research summary"
+          className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4"
+        >
+          <ProfileSignalTile
+            label="Research homes"
+            value={researchHomeCount}
+            detail="Linked labs, centers, or research structures"
+          />
+          <ProfileSignalTile
+            label="Research signals"
+            value={researchSignalCount}
+            detail="Interests and topics attached to this profile"
+          />
+          <ProfileSignalTile
+            label="Scholarly links"
+            value={scholarlyLinkCount}
+            detail="Recent work surfaced for context"
+          />
+          <ProfileSignalTile
+            label="Courses"
+            value={coursesAvailable ? 'Available' : 'Not shown'}
+            detail="Teaching context appears when records exist"
+          />
+        </section>
+
+      <div className="mt-8 border-b border-slate-200">
         <nav className="flex gap-1" role="tablist" aria-label="Profile sections">
           {tabs
             .filter((t) => t.show)
@@ -192,7 +239,7 @@ const Profile = () => {
                 className={`min-h-[44px] px-5 py-3 text-sm font-semibold border-b-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 ${
                   activeTab === tab.key
                     ? 'border-blue-600 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700'
                 }`}
               >
                 {tab.label}
@@ -209,9 +256,13 @@ const Profile = () => {
             aria-labelledby="profile-bio-tab"
           >
             {bioText ? (
-              <LongText text={bioText} className="text-sm text-gray-700 leading-relaxed" />
+              <div className="rounded-md border border-slate-200 bg-white p-5">
+                <LongText text={bioText} className="text-sm leading-relaxed text-slate-700" />
+              </div>
             ) : (
-              <p className="text-gray-500 text-sm py-8 text-center">No bio available.</p>
+              <p className="rounded-md border border-slate-200 bg-white py-8 text-center text-sm text-slate-500">
+                No bio available.
+              </p>
             )}
           </div>
         )}
