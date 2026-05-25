@@ -6,6 +6,9 @@ export interface DedupeUsersByIdentityArgs {
   apply: boolean;
   limit: number;
   identityField?: UserIdentityField;
+  output?: string;
+  sampleSize: number;
+  maxApplyGroups?: number;
 }
 
 export interface UserIdentityDedupeUser {
@@ -45,7 +48,7 @@ export interface PlannedUserIdentityDedupeGroup {
 export interface UserIdentityDedupeWarningGroup {
   identityField: UserIdentityField;
   identityValue: string;
-  reason: 'identity-shared-by-different-names';
+  reason: 'identity-shared-by-different-names' | 'email-not-person-specific';
   normalizedNames: string[];
   userIds: string[];
 }
@@ -55,6 +58,17 @@ export interface UserIdentityDedupePlan {
   groups: PlannedUserIdentityDedupeGroup[];
   duplicateUsers: number;
   warningGroups: UserIdentityDedupeWarningGroup[];
+}
+
+export interface UserIdentityDedupeSummary {
+  mode: 'apply' | 'dry-run';
+  candidateGroups: number;
+  plannedGroups: number;
+  duplicateUsers: number;
+  warningGroups: number;
+  plan: PlannedUserIdentityDedupeGroup[];
+  warnings: UserIdentityDedupeWarningGroup[];
+  applied: Record<string, unknown>[];
 }
 
 const IDENTITY_FIELDS: UserIdentityField[] = [
@@ -73,6 +87,17 @@ export function parseDedupeUsersByIdentityArgs(argv: string[]): DedupeUsersByIde
   let apply = false;
   let limit = 100;
   let identityField: UserIdentityField | undefined;
+  let output: string | undefined;
+  let sampleSize = 25;
+  let maxApplyGroups: number | undefined;
+
+  const parsePositiveInteger = (value: string, flag: string): number => {
+    const parsed = Number(value);
+    if (!Number.isInteger(parsed) || parsed < 1) {
+      throw new Error(`${flag} must be a positive integer`);
+    }
+    return parsed;
+  };
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -88,11 +113,7 @@ export function parseDedupeUsersByIdentityArgs(argv: string[]): DedupeUsersByIde
 
     const limitValue = valueAfterEquals(arg, '--limit') || (arg === '--limit' ? argv[++index] : '');
     if (limitValue) {
-      const parsed = Number(limitValue);
-      if (!Number.isInteger(parsed) || parsed < 1) {
-        throw new Error('--limit must be a positive integer');
-      }
-      limit = parsed;
+      limit = parsePositiveInteger(limitValue, '--limit');
       continue;
     }
 
@@ -107,10 +128,38 @@ export function parseDedupeUsersByIdentityArgs(argv: string[]): DedupeUsersByIde
       continue;
     }
 
+    const outputValue = valueAfterEquals(arg, '--output') || (arg === '--output' ? argv[++index] : '');
+    if (outputValue) {
+      output = outputValue;
+      continue;
+    }
+
+    const sampleSizeValue =
+      valueAfterEquals(arg, '--sample-size') || (arg === '--sample-size' ? argv[++index] : '');
+    if (sampleSizeValue) {
+      sampleSize = parsePositiveInteger(sampleSizeValue, '--sample-size');
+      continue;
+    }
+
+    const maxApplyGroupsValue =
+      valueAfterEquals(arg, '--max-apply-groups') ||
+      (arg === '--max-apply-groups' ? argv[++index] : '');
+    if (maxApplyGroupsValue) {
+      maxApplyGroups = parsePositiveInteger(maxApplyGroupsValue, '--max-apply-groups');
+      continue;
+    }
+
     throw new Error(`Unknown argument: ${arg}`);
   }
 
-  return identityField ? { apply, limit, identityField } : { apply, limit };
+  return {
+    apply,
+    limit,
+    ...(identityField ? { identityField } : {}),
+    ...(output ? { output } : {}),
+    sampleSize,
+    ...(maxApplyGroups ? { maxApplyGroups } : {}),
+  };
 }
 
 function timeValue(value: Date | string | null | undefined): number {
@@ -125,6 +174,10 @@ function isRealNetid(value?: string): boolean {
 
 function hasExternalIdentity(user: UserIdentityDedupeUser): boolean {
   return Boolean(user.orcid || user.openAlexId || user.googleScholarId);
+}
+
+function isExternalIdentityField(field: UserIdentityField): boolean {
+  return field === 'orcid' || field === 'openAlexId' || field === 'googleScholarId';
 }
 
 function canonicalScore(user: UserIdentityDedupeUser): number {
@@ -192,6 +245,45 @@ function samePersonNameVariant(
   return aGiven.some((left) => bGiven.some((right) => givenNameCompatible(left, right)));
 }
 
+function emailTokens(identityValue: string): string[] {
+  const localPart = identityValue.split('@')[0] || '';
+  return localPart
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .split(/[^a-zA-Z0-9]+/)
+    .map((token) => token.toLowerCase())
+    .filter((token) => token && !/^\d+$/.test(token));
+}
+
+function emailLooksPersonSpecific(identityValue: string, normalizedName: string): boolean {
+  const tokens = emailTokens(identityValue);
+  const nameTokens = normalizedName.split(/\s+/).filter(Boolean);
+  const lastName = nameTokens.at(-1) || '';
+  const givenNames = nameTokens.slice(0, -1);
+  if (!tokens.length || !lastName || givenNames.length === 0) return false;
+
+  const tokenText = tokens.join(' ');
+  const compactTokenText = tokens.join('');
+  const reversedCompact = [lastName, ...givenNames].join('');
+  const normalCompact = [...givenNames, lastName].join('');
+
+  if (compactTokenText.includes(normalCompact) || compactTokenText.includes(reversedCompact)) {
+    return true;
+  }
+
+  if (!tokens.some((token) => token === lastName || token.includes(lastName))) return false;
+
+  return givenNames.some((given) =>
+    tokens.some(
+      (token) =>
+        token === given ||
+        token.startsWith(given) ||
+        given.startsWith(token) ||
+        (token.length === 1 && given.startsWith(token)),
+    ),
+  );
+}
+
 function clusterUsersByCompatibleName(users: UserIdentityDedupeUser[]): Array<{
   normalizedName: string;
   users: UserIdentityDedupeUser[];
@@ -250,12 +342,33 @@ export function buildUserIdentityDedupePlan(
         identityValue: collision.identityValue,
         reason: 'identity-shared-by-different-names',
         normalizedNames: byName.map((group) => group.normalizedName).sort(),
-        userIds: collision.users.map((user) => user.id).filter(Boolean),
+        userIds: collision.users
+          .map((user) => user.id)
+          .filter(Boolean)
+          .sort(),
       });
+
+      if (isExternalIdentityField(collision.identityField)) continue;
     }
 
     for (const { normalizedName, users } of byName) {
       if (users.length <= 1) continue;
+      if (
+        collision.identityField === 'email' &&
+        !emailLooksPersonSpecific(collision.identityValue, normalizedName)
+      ) {
+        warningGroups.push({
+          identityField: collision.identityField,
+          identityValue: collision.identityValue,
+          reason: 'email-not-person-specific',
+          normalizedNames: [normalizedName],
+          userIds: users
+            .map((user) => user.id)
+            .filter(Boolean)
+            .sort(),
+        });
+        continue;
+      }
       const canonical = chooseCanonicalUser(users);
       groups.push({
         identityField: collision.identityField,
@@ -263,16 +376,88 @@ export function buildUserIdentityDedupePlan(
         canonicalUserId: canonical.id,
         duplicateUserIds: users
           .map((user) => user.id)
-          .filter((userId) => userId && userId !== canonical.id),
+          .filter((userId) => userId && userId !== canonical.id)
+          .sort(),
         normalizedName,
       });
     }
   }
 
+  const plannedGroups = groups
+    .filter((group) => group.duplicateUserIds.length > 0)
+    .sort(comparePlannedGroups);
+  const sortedWarnings = warningGroups.sort(compareWarningGroups);
+
   return {
     candidateGroups: collisions.length,
-    groups: groups.filter((group) => group.duplicateUserIds.length > 0),
-    duplicateUsers: groups.reduce((count, group) => count + group.duplicateUserIds.length, 0),
-    warningGroups,
+    groups: plannedGroups,
+    duplicateUsers: plannedGroups.reduce((count, group) => count + group.duplicateUserIds.length, 0),
+    warningGroups: sortedWarnings,
+  };
+}
+
+function compareStrings(a: string, b: string): number {
+  return a.localeCompare(b);
+}
+
+function comparePlannedGroups(
+  a: PlannedUserIdentityDedupeGroup,
+  b: PlannedUserIdentityDedupeGroup,
+): number {
+  return (
+    compareStrings(a.identityField, b.identityField) ||
+    compareStrings(a.identityValue, b.identityValue) ||
+    compareStrings(a.normalizedName, b.normalizedName) ||
+    compareStrings(a.canonicalUserId, b.canonicalUserId) ||
+    compareStrings(a.duplicateUserIds.join('\0'), b.duplicateUserIds.join('\0'))
+  );
+}
+
+function compareWarningGroups(
+  a: UserIdentityDedupeWarningGroup,
+  b: UserIdentityDedupeWarningGroup,
+): number {
+  return (
+    compareStrings(a.identityField, b.identityField) ||
+    compareStrings(a.identityValue, b.identityValue) ||
+    compareStrings(a.normalizedNames.join('\0'), b.normalizedNames.join('\0')) ||
+    compareStrings(a.userIds.join('\0'), b.userIds.join('\0'))
+  );
+}
+
+export function uniquePlannedUserIdentityDedupeGroups(
+  groups: PlannedUserIdentityDedupeGroup[],
+): PlannedUserIdentityDedupeGroup[] {
+  const seenUserIds = new Set<string>();
+  return [...groups].sort(comparePlannedGroups).filter((group) => {
+    const groupUserIds = [group.canonicalUserId, ...group.duplicateUserIds];
+    if (groupUserIds.some((userId) => seenUserIds.has(userId))) return false;
+    groupUserIds.forEach((userId) => seenUserIds.add(userId));
+    return true;
+  });
+}
+
+export function buildUserIdentityDedupeSummary(input: {
+  apply: boolean;
+  plan: UserIdentityDedupePlan;
+  sampleSize: number;
+  maxApplyGroups?: number;
+  applied: Record<string, unknown>[];
+}): UserIdentityDedupeSummary {
+  const uniqueGroups = uniquePlannedUserIdentityDedupeGroups(input.plan.groups);
+  const plannedGroups = input.maxApplyGroups
+    ? uniqueGroups.slice(0, input.maxApplyGroups)
+    : uniqueGroups;
+  const warnings = [...input.plan.warningGroups].sort(compareWarningGroups);
+
+  return {
+    mode: input.apply ? 'apply' : 'dry-run',
+    candidateGroups: input.plan.candidateGroups,
+    plannedGroups: plannedGroups.length,
+    duplicateUsers: plannedGroups.reduce((count, group) => count + group.duplicateUserIds.length, 0),
+    warningGroups: warnings.length,
+    plan: plannedGroups.slice(0, input.sampleSize),
+    warnings: warnings.slice(0, input.sampleSize),
+    applied: input.applied,
   };
 }

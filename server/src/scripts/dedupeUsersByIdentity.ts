@@ -1,13 +1,16 @@
 import dotenv from 'dotenv';
+import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { User } from '../models/user';
 import {
+  buildUserIdentityDedupeSummary,
   buildUserIdentityDedupePlan,
   parseDedupeUsersByIdentityArgs,
   type PlannedUserIdentityDedupeGroup,
   type UserIdentityCollision,
+  uniquePlannedUserIdentityDedupeGroups,
 } from './dedupeUsersByIdentityCore';
 import { assertScriptApplyAllowed } from './scriptWriteGuards';
 
@@ -17,6 +20,7 @@ dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 const SIMPLE_USER_REF_SPECS = [
   { collection: 'contact_routes', field: 'personId' },
+  { collection: 'listings', field: 'createdByUserId' },
   { collection: 'research_entities', field: 'claimedByUserId' },
   { collection: 'observations', field: 'entityId', extraMatch: { entityType: 'user' } },
 ] as const;
@@ -364,40 +368,33 @@ async function main(): Promise<void> {
     identityField: args.identityField,
   });
   const plan = buildUserIdentityDedupePlan(collisions);
-  const seenUserIds = new Set<string>();
-  const uniqueGroups = plan.groups.filter((group) => {
-    const groupUserIds = [group.canonicalUserId, ...group.duplicateUserIds];
-    if (groupUserIds.some((userId) => seenUserIds.has(userId))) return false;
-    groupUserIds.forEach((userId) => seenUserIds.add(userId));
-    return true;
-  });
+  const uniqueGroups = uniquePlannedUserIdentityDedupeGroups(plan.groups);
+  const groupsToApply = args.maxApplyGroups
+    ? uniqueGroups.slice(0, args.maxApplyGroups)
+    : uniqueGroups;
 
-  const applied = [];
+  const applied: Record<string, unknown>[] = [];
   if (args.apply) {
-    for (const group of uniqueGroups) {
+    for (const group of groupsToApply) {
       applied.push(await applyGroup(group));
     }
   }
 
-  console.log(
-    JSON.stringify(
-      {
-        mode: args.apply ? 'apply' : 'dry-run',
-        candidateGroups: plan.candidateGroups,
-        plannedGroups: uniqueGroups.length,
-        duplicateUsers: uniqueGroups.reduce(
-          (count, group) => count + group.duplicateUserIds.length,
-          0,
-        ),
-        warningGroups: plan.warningGroups.length,
-        plan: uniqueGroups.slice(0, 25),
-        warnings: plan.warningGroups.slice(0, 25),
-        applied,
-      },
-      null,
-      2,
-    ),
-  );
+  const summary = buildUserIdentityDedupeSummary({
+    apply: args.apply,
+    plan,
+    sampleSize: args.sampleSize,
+    maxApplyGroups: args.maxApplyGroups,
+    applied,
+  });
+  const jsonSummary = JSON.stringify(summary, null, 2);
+
+  if (args.output) {
+    await fs.mkdir(path.dirname(args.output), { recursive: true });
+    await fs.writeFile(args.output, `${jsonSummary}\n`, 'utf8');
+  }
+
+  console.log(jsonSummary);
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {

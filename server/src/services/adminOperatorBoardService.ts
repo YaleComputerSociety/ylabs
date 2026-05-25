@@ -2,6 +2,7 @@ import { Fellowship } from '../models/fellowship';
 import { ResearchEntity } from '../models/researchEntity';
 import { ScrapeRun } from '../models/scrapeRun';
 import { Source } from '../models/source';
+import type { DuplicatePersonGroup } from '../scrapers/integrityGate';
 import type { StudentVisibilityTier } from '../models/studentVisibility';
 import { buildSourceHealthRows } from './sourceHealthService';
 
@@ -43,6 +44,52 @@ const evidenceReasons = new Set([
 ]);
 
 export type QueueKind = 'blocking' | 'evidence' | 'review';
+
+const DUPLICATE_PERSON_REPAIR_COMMAND =
+  'yarn --cwd server users:dedupe-by-identity --limit=1000 --apply';
+
+type IntegrityRunWithSummary = {
+  postMaterializationIntegrity?: {
+    status?: string;
+    counts?: {
+      duplicatePeople?: number;
+    };
+    samples?: {
+      duplicatePeople?: DuplicatePersonGroup[];
+    };
+    warnings?: Array<{
+      name: string;
+      count: number;
+      message?: string;
+    }>;
+  };
+};
+
+export function buildDuplicatePersonGatePosture(run: IntegrityRunWithSummary | undefined) {
+  const summary = run?.postMaterializationIntegrity;
+  const count = Number(summary?.counts?.duplicatePeople || 0);
+  const duplicatePersonWarnings = (summary?.warnings || []).filter((warning) =>
+    warning.name.toLowerCase().includes('duplicateperson'),
+  );
+  const warningCount = duplicatePersonWarnings.reduce(
+    (total, warning) => total + Number(warning.count || 0),
+    0,
+  );
+  const samples = ((summary?.samples?.duplicatePeople || []) as DuplicatePersonGroup[]).slice(
+    0,
+    5,
+  );
+  const status =
+    count > 0 ? 'failure' : warningCount > 0 ? 'warning' : summary ? 'pass' : 'unknown';
+
+  return {
+    status,
+    count,
+    warningCount,
+    samples,
+    nextRepairCommand: DUPLICATE_PERSON_REPAIR_COMMAND,
+  };
+}
 
 export function classifyOperatorQueueReason(reason: string): QueueKind {
   if (evidenceReasons.has(reason)) return 'evidence';
@@ -235,15 +282,20 @@ async function buildSourceFreshness() {
     windowDays: 30,
     riskCounts,
     rows: rows.slice(0, 12),
-    latestIntegrityRuns: latestIntegrityRuns.map((run: any) => ({
-      id: String(run._id),
-      sourceName: run.sourceName,
-      status: run.status,
-      startedAt: run.startedAt?.toISOString?.() || run.startedAt,
-      finishedAt: run.finishedAt?.toISOString?.() || run.finishedAt,
-      integrityStatus: run.postMaterializationIntegrity?.status,
-      failureNames: run.postMaterializationIntegrity?.failureNames || [],
-    })),
+    latestIntegrityRuns: latestIntegrityRuns.map((run: any) => {
+      const duplicatePeople = buildDuplicatePersonGatePosture(run);
+
+      return {
+        id: String(run._id),
+        sourceName: run.sourceName,
+        status: run.status,
+        startedAt: run.startedAt?.toISOString?.() || run.startedAt,
+        finishedAt: run.finishedAt?.toISOString?.() || run.finishedAt,
+        integrityStatus: run.postMaterializationIntegrity?.status,
+        failureNames: run.postMaterializationIntegrity?.failureNames || [],
+        duplicatePeople,
+      };
+    }),
   };
 }
 
@@ -274,6 +326,9 @@ export async function buildAdminOperatorBoard() {
           sourceFreshness.latestIntegrityRuns[0]?.integrityStatus ||
           (sourceFreshness.riskCounts.error > 0 ? 'error' : 'watch'),
         command: 'yarn --cwd server scraper:integrity-gate --include-samples',
+        duplicatePeople:
+          sourceFreshness.latestIntegrityRuns[0]?.duplicatePeople ||
+          buildDuplicatePersonGatePosture(undefined),
         latestRuns: sourceFreshness.latestIntegrityRuns,
       },
     },
