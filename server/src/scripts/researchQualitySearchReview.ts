@@ -14,6 +14,7 @@ import { searchResearchGroupsViaMeili } from '../services/researchGroupService';
 import {
   DEFAULT_RESEARCH_QUALITY_GOLDEN_QUERIES,
   buildResearchQualitySearchReviewRow,
+  deriveResearchEntitySourceTitleFromUrls,
   summarizeResearchQualitySearchRows,
   type ResearchQualityDuplicateCandidate,
   type ResearchQualityGoldenQuery,
@@ -304,7 +305,10 @@ async function buildReview(options: CliOptions) {
         fullDescription: entity.fullDescription,
         sourceUrls: entity.sourceUrls || [],
         websiteUrl: entity.websiteUrl,
-        sourceTitle: '',
+        sourceTitle: deriveResearchEntitySourceTitleFromUrls(
+          entity.sourceUrls || [],
+          entity.websiteUrl,
+        ),
         members: membersByEntityId.get(id) || [],
         researchAreas: entity.researchAreas || [],
         departments: entity.departments || [],

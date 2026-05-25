@@ -51,13 +51,13 @@ The repeatable gstack data-quality loop is:
 source health -> data quality -> dry-run repair yield -> Playwright UX verification -> controlled apply
 ```
 
-Search/UX review should connect golden-query warnings to live research-home pages before broad writes. The quality-search review row must keep enough fields to pick a route and diagnose student-visible gaps: `slug`, source domains, lead count, pathway/contact/access/posting counts, duplicate candidates, matched query names, and warning codes. Playwright checks are read-only and should verify that the lab page is visible, research-home-first, source-backed, and honest about missing access or activity evidence.
+Search/UX review should connect golden-query warnings to live research-home pages before broad writes. The quality-search review row must keep enough fields to pick a route and diagnose student-visible gaps: `slug`, source domains, lead count, pathway/contact/access/posting counts, duplicate candidates, matched query names, and warning codes. When research entities have source URLs but no captured page title, the review derives an inspectable research entity source title from the first valid source URL so `WEAK_SOURCE_TITLE` remains a real missing-source signal instead of a default warning. Playwright checks are read-only and should verify that the lab page is visible, research-home-first, source-backed, and honest about missing access or activity evidence.
 
 The release queue is written by `yarn --cwd server student-visibility:gate`. Scraper `--auto-materialize`, manual materialize, and production cron paths run the gate after clean write materialization. Scheduled or manual global reconciliation should run the same command with `--collection=all --mode=apply` under the existing environment write guards.
 
 Research activity enriches the lab/detail experience but is not itself undergraduate access evidence. Papers and scholarly links should appear when they are tied through `paper_authors` identity proof or explicit entity-paper links, helping students understand what the PI or lab studies before clicking through to a professor profile. Do not let name-only publication matches create PI/member links, access signals, contact routes, or public visibility.
 
-`yarn --cwd server papers:quality-audit --sample-limit=0` is the read-only paper activity sanity gate. A result with zero active papers is a coverage warning, not a clean pass, because it usually means the materialization target DB or active-paper filter needs inspection before research activity can be trusted.
+`yarn --cwd server papers:quality-audit --sample-limit=0` is the read-only paper activity sanity gate. A result with zero active papers is a coverage warning, not a clean pass, because it usually means the materialization target DB or active-paper filter needs inspection before research activity can be trusted. On 2026-05-25 the current Beta target had `papers=0`, `paper_authors=0`, and no research entity paper caches, so the next paper/activity lane must restore or rerun identity-backed paper materialization before frontend research-activity polish can be meaningful.
 
 ## Canonical Collections
 

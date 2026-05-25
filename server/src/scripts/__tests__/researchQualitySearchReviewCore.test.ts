@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_RESEARCH_QUALITY_GOLDEN_QUERIES,
   buildResearchQualitySearchReviewRow,
+  deriveResearchEntitySourceTitleFromUrls,
   summarizeResearchQualitySearchRows,
   type ResearchQualitySearchFacts,
 } from '../researchQualitySearchReviewCore';
@@ -46,6 +47,21 @@ describe('DEFAULT_RESEARCH_QUALITY_GOLDEN_QUERIES', () => {
         'thesis mentor',
       ]),
     );
+  });
+});
+
+describe('deriveResearchEntitySourceTitleFromUrls', () => {
+  it('derives an inspectable research entity source title from the first valid URL', () => {
+    expect(
+      deriveResearchEntitySourceTitleFromUrls(
+        ['not-a-url', 'https://medicine.yale.edu/lab/pierce/research/'],
+        'https://medicine.yale.edu/lab/pierce/',
+      ),
+    ).toBe('medicine.yale.edu/lab/pierce');
+  });
+
+  it('returns an empty label when no inspectable URL exists', () => {
+    expect(deriveResearchEntitySourceTitleFromUrls(['not-a-url'], '')).toBe('');
   });
 });
 

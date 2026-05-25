@@ -123,6 +123,23 @@ function validUrl(value: string): URL | null {
   }
 }
 
+export function deriveResearchEntitySourceTitleFromUrls(
+  sourceUrls: string[] | undefined,
+  websiteUrl?: string,
+): string {
+  const urls = compactStrings([...(sourceUrls || []), websiteUrl]);
+  const firstInspectable = urls.map(validUrl).find((url): url is URL => Boolean(url));
+  if (!firstInspectable) return '';
+
+  const hostname = firstInspectable.hostname.toLowerCase().replace(/^www\./, '');
+  const pathParts = firstInspectable.pathname
+    .split('/')
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .slice(0, 2);
+  return [hostname, ...pathParts].join('/');
+}
+
 function sourceDomainsFor(facts: ResearchQualitySearchFacts): string[] {
   const urls = compactStrings([...(facts.sourceUrls || []), facts.websiteUrl]);
   return Array.from(
