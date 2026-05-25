@@ -49,6 +49,8 @@ The release queue is written by `yarn --cwd server student-visibility:gate`. Scr
 
 Research activity enriches the lab/detail experience but is not itself undergraduate access evidence. Papers and scholarly links should appear when they are tied through `paper_authors` identity proof or explicit entity-paper links, helping students understand what the PI or lab studies before clicking through to a professor profile. Do not let name-only publication matches create PI/member links, access signals, contact routes, or public visibility.
 
+`yarn --cwd server papers:quality-audit --sample-limit=0` is the read-only paper activity sanity gate. A result with zero active papers is a coverage warning, not a clean pass, because it usually means the materialization target DB or active-paper filter needs inspection before research activity can be trusted.
+
 ## Canonical Collections
 
 Runtime research discovery is centered on:
