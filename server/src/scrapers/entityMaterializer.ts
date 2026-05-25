@@ -21,6 +21,10 @@ import {
 } from './confidenceResolver';
 import { syncEntity, isSyncableEntityType } from '../services/meiliSyncService';
 import { materializeAccessForResearchGroup } from './accessMaterializer';
+import {
+  isStructuredProgramAccessRole,
+  materializeProgramAccessBridge,
+} from './programAccessBridge';
 import type { ReportPostMaterializationMetrics } from './runReport';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import {
@@ -972,6 +976,27 @@ export async function materializeEntity(
       staleEvidenceSkipped: accessResult.staleEvidenceSkipped,
       conflicts: 0,
       errors: accessResult.errors,
+    };
+  }
+  if (
+    entityType === 'fellowship' &&
+    entityIdString &&
+    isStructuredProgramAccessRole(set.programAccessRole)
+  ) {
+    const bridgeResult = await materializeProgramAccessBridge({
+      ...(entityDoc || {}),
+      ...set,
+      _id: entityIdString,
+      sourceUrl: obs.find((o: any) => typeof o.sourceUrl === 'string' && o.sourceUrl.trim())
+        ?.sourceUrl,
+    });
+    postMaterializationMetrics = {
+      ...(postMaterializationMetrics || {}),
+      entryPathways: (postMaterializationMetrics?.entryPathways || 0) + bridgeResult.entryPathways,
+      accessSignals: (postMaterializationMetrics?.accessSignals || 0) + bridgeResult.accessSignals,
+      contactRoutes: (postMaterializationMetrics?.contactRoutes || 0) + bridgeResult.contactRoutes,
+      postedOpportunities:
+        (postMaterializationMetrics?.postedOpportunities || 0) + bridgeResult.postedOpportunities,
     };
   }
 
