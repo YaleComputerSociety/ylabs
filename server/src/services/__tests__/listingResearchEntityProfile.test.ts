@@ -58,4 +58,18 @@ describe('buildListingResearchEntityProfilePatch', () => {
 
     expect(patch).toEqual({});
   });
+
+  it('redacts direct contact details before copying listing descriptions', () => {
+    const patch = buildListingResearchEntityProfilePatch({
+      entity: {},
+      listing: {
+        websites: ['https://example.yale.edu/lab'],
+        description: 'Email jane.doe@yale.edu or call 203-555-1212 to apply.',
+      },
+    });
+
+    expect(patch.shortDescription).toBe(
+      'Email [email redacted] or call [phone redacted] to apply.',
+    );
+  });
 });

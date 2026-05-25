@@ -1,3 +1,5 @@
+import { redactDirectContactInfo } from '../utils/contactRedaction';
+
 export interface ListingResearchEntityProfileInput {
   entity?: Record<string, any> | null;
   listing?: Record<string, any> | null;
@@ -40,7 +42,7 @@ export function buildListingResearchEntityProfilePatch({
     listing?.website,
   ]).filter(isHttpUrl);
   const firstUrl = urls[0];
-  const description = textValue(listing?.description || listing?.summary);
+  const description = redactDirectContactInfo(textValue(listing?.description || listing?.summary));
   const departments = stringArray(listing?.departments);
   const researchAreas = uniqueStrings([
     ...(Array.isArray(listing?.researchAreas) ? listing.researchAreas : []),
