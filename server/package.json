@@ -28,6 +28,7 @@
     "beta:readiness": "tsx src/scripts/betaReadinessGate.ts",
     "pathway:relevance-review": "tsx src/scripts/pathwayRelevanceReview.ts",
     "research:quality-search-review": "tsx src/scripts/researchQualitySearchReview.ts",
+    "papers:quality-audit": "tsx src/scripts/paperQualityAudit.ts",
     "papers:authorship-audit": "tsx src/scripts/paperAuthorshipAudit.ts",
     "scraper:integrity-gate": "tsx src/scripts/scraperIntegrityGate.ts",
     "source:health": "tsx src/scripts/sourceHealth.ts",
