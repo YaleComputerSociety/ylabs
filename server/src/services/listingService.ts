@@ -11,12 +11,29 @@ import { processListingTitle, isCustomTitle, generateSmartTitle } from '../utils
 import * as itemOps from './itemOperations';
 import { materializePostedOpportunityFromListing } from './postedOpportunityService';
 import { findOrCreateForOwner } from './researchGroupService';
+import { ResearchEntity } from '../models/researchEntity';
+import { buildListingResearchEntityProfilePatch } from './listingResearchEntityProfile';
 
 async function syncPostedOpportunityBridge(listing: any): Promise<void> {
   try {
     await materializePostedOpportunityFromListing(listing);
   } catch (error) {
     console.error('Failed to sync listing to PostedOpportunity:', error);
+  }
+}
+
+async function syncResearchEntityProfileFromListing(listing: any): Promise<void> {
+  const researchEntityId = listing?.researchEntityId || listing?.researchGroupId;
+  if (!researchEntityId || !mongoose.Types.ObjectId.isValid(researchEntityId)) return;
+
+  try {
+    const entity = await ResearchEntity.findById(researchEntityId).lean();
+    if (!entity) return;
+    const patch = buildListingResearchEntityProfilePatch({ entity, listing });
+    if (Object.keys(patch).length === 0) return;
+    await ResearchEntity.updateOne({ _id: researchEntityId }, { $set: patch });
+  } catch (error) {
+    console.error('Failed to sync listing profile fields to ResearchEntity:', error);
   }
 }
 
@@ -112,9 +129,11 @@ export const createListing = async (data: any, owner: any) => {
     console.error('Failed to sync new listing to Meilisearch:', error);
   }
 
-  await syncPostedOpportunityBridge(listing.toObject());
+  const savedListing = listing.toObject();
+  await syncPostedOpportunityBridge(savedListing);
+  await syncResearchEntityProfileFromListing(savedListing);
 
-  return listing.toObject();
+  return savedListing;
 };
 
 export const readAllListings = async () => {
@@ -267,9 +286,11 @@ export const updateListing = async (
       console.error('Failed to sync updated listing to Meilisearch:', error);
     }
 
-    await syncPostedOpportunityBridge(listing.toObject());
+    const updatedListing = listing.toObject();
+    await syncPostedOpportunityBridge(updatedListing);
+    await syncResearchEntityProfileFromListing(updatedListing);
 
-    return listing.toObject();
+    return updatedListing;
   } else {
     throw new ObjectIdError('Did not received expected id type ObjectId');
   }
