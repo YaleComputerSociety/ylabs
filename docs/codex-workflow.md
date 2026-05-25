@@ -122,6 +122,8 @@ Codex may be configured with a global `mongodb-yale-research` MCP server for Mon
 
 Do not use MongoDB MCP as the durable write path for this project. Any operation that creates, updates, deletes, backfills, materializes, migrates, or repairs data should still be implemented through repo scripts or services so the logic is reviewable, repeatable, and aligned with Mongoose models, scraper evidence rules, and product invariants.
 
+For Beta or production data writes, do not rely on local `server/.env`; it may point at Development. Pass the intended `MONGODBURL` explicitly or verify the script output shows the expected database target, such as `yalelabs0.ilyce1q.mongodb.net/Beta`, before applying backfills, migrations, or index rebuilds.
+
 Local Codex setup uses the official MongoDB MCP package in read-only mode:
 
 ```bash

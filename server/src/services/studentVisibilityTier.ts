@@ -111,10 +111,17 @@ export function computeResearchEntityStudentVisibility({
   ) {
     computedTier = 'student_ready';
   } else if (
-    (quality.descriptionState === 'source_backed' ||
-      quality.descriptionState === 'profile_synthesis') &&
+    quality.descriptionState === 'source_backed' &&
     quality.leadState === 'lead_attached' &&
     !quality.repairFlags.includes('missing_source_url') &&
+    !duplicateRisk
+  ) {
+    computedTier = 'limited_but_safe';
+  } else if (
+    quality.descriptionState === 'profile_synthesis' &&
+    quality.leadState === 'lead_attached' &&
+    !quality.repairFlags.includes('missing_source_url') &&
+    hasActionEvidence &&
     !duplicateRisk
   ) {
     computedTier = 'limited_but_safe';

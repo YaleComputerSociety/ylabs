@@ -47,6 +47,44 @@ describe('computeResearchEntityStudentVisibility', () => {
     expect(result.reasons).toContain('missing_action_evidence');
   });
 
+  it('keeps profile fallback rows without action evidence in operator review', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        profileSynthesisDescription:
+          'Faculty profile context indicates research in computational biology and translational genomics.',
+        sourceUrls: ['https://medicine.yale.edu/example-profile'],
+        activeAtYaleCache: true,
+      },
+      leadMembers: [{ userId: 'user-1', role: 'pi' }],
+      accessSignalCount: 0,
+      actionablePathwayCount: 0,
+      openPostedOpportunityCount: 0,
+    });
+
+    expect(result.tier).toBe('operator_review');
+    expect(result.reasons).toContain('profile_fallback_only');
+    expect(result.reasons).toContain('missing_action_evidence');
+  });
+
+  it('keeps profile fallback rows limited when concrete action evidence exists', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        profileSynthesisDescription:
+          'Faculty profile context indicates research in computational biology and translational genomics.',
+        sourceUrls: ['https://medicine.yale.edu/example-profile'],
+        activeAtYaleCache: true,
+      },
+      leadMembers: [{ userId: 'user-1', role: 'pi' }],
+      accessSignalCount: 1,
+      actionablePathwayCount: 0,
+      openPostedOpportunityCount: 0,
+    });
+
+    expect(result.tier).toBe('limited_but_safe');
+    expect(result.reasons).toContain('profile_fallback_only');
+    expect(result.reasons).toContain('concrete_next_step');
+  });
+
   it('routes missing source or lead records to operator review', () => {
     const result = computeResearchEntityStudentVisibility({
       entity: {
