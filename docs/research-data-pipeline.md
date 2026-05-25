@@ -47,6 +47,8 @@ Pending Meili sync is an operator warning, not a worker. Local or VPN jobs may m
 
 The release queue is written by `yarn --cwd server student-visibility:gate`. Scraper `--auto-materialize`, manual materialize, and production cron paths run the gate after clean write materialization. Scheduled or manual global reconciliation should run the same command with `--collection=all --mode=apply` under the existing environment write guards.
 
+Research activity enriches the lab/detail experience but is not itself undergraduate access evidence. Papers and scholarly links should appear when they are tied through `paper_authors` identity proof or explicit entity-paper links, helping students understand what the PI or lab studies before clicking through to a professor profile. Do not let name-only publication matches create PI/member links, access signals, contact routes, or public visibility.
+
 ## Canonical Collections
 
 Runtime research discovery is centered on:

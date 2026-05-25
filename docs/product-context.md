@@ -88,6 +88,8 @@ Each research entity page should answer:
 - How might the research relationship later be formalized?
 - What source verifies this?
 
+Research activity belongs on the research-home page as context, not as the primary funnel. A strong lab/entity detail page should show the PI or lead, verified members when known, and relevant papers or scholarly activity tied through identity-backed authorship or explicit entity links. Student workflow should stay research-home-first: use papers to understand the lab's work and prepare better outreach, then let the PI profile be a secondary deep-dive for reading more by that professor.
+
 ## CTA Vocabulary
 
 CTA options should depend on the access evidence, route, and current next step:
