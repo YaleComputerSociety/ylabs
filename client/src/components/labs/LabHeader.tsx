@@ -6,7 +6,7 @@
  *
  * The evidence pill replaces the legacy boolean-only "Accepting Undergrads"
  * pill with a trust gradient ("Strong evidence" / "Some evidence" /
- * "Evidence unknown" / "Limited access evidence"). The verdict is computed by the shared
+ * "Evidence unknown" / "Not currently available"). The verdict is computed by the shared
  * `computeAcceptanceVerdict` helper so this surface stays consistent with the
  * browse cards and the inquire CTA.
  */

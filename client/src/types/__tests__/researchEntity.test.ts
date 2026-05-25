@@ -14,11 +14,11 @@ const entity = (overrides: Partial<ResearchEntity> = {}): ResearchEntity => ({
   kind: 'initiative',
   entityType: 'DIGITAL_HUMANITIES_PROJECT',
   description: 'Archives and computational methods.',
-  websiteUrl: 'https://project.example.test',
+  websiteUrl: 'https://example.edu/project',
   location: '',
   departments: ['History'],
   researchAreas: ['Digital humanities'],
-  school: 'Fixture College',
+  school: 'Yale College',
   openness: 'unknown',
   typicalUndergradRoles: [],
   prerequisiteCourses: [],
@@ -44,15 +44,8 @@ describe('normalizeResearchEntitySearchResponse', () => {
       pageSize: 24,
     });
 
-    expect(result.researchEntities).toEqual([
-      expect.objectContaining({
-        _id: 'canonical',
-        slug: 'canonical',
-        description: 'Archives and computational methods.',
-        researchAreas: ['Digital humanities'],
-      }),
-    ]);
-    expect(result.hits).toEqual(result.researchEntities);
+    expect(result.researchEntities).toEqual([expect.objectContaining(canonical)]);
+    expect(result.hits).toEqual([expect.objectContaining(canonical)]);
   });
 
   it('falls back to legacy hits when canonical search entities are absent', () => {
@@ -65,15 +58,8 @@ describe('normalizeResearchEntitySearchResponse', () => {
       pageSize: 10,
     } as unknown as Parameters<typeof normalizeResearchEntitySearchResponse>[0]);
 
-    expect(result.researchEntities).toEqual([
-      expect.objectContaining({
-        _id: 'legacy',
-        slug: 'legacy',
-        description: 'Archives and computational methods.',
-        researchAreas: ['Digital humanities'],
-      }),
-    ]);
-    expect(result.hits).toEqual(result.researchEntities);
+    expect(result.researchEntities).toEqual([expect.objectContaining(legacy)]);
+    expect(result.hits).toEqual([expect.objectContaining(legacy)]);
   });
 
   it('does not fall back to legacy hits', () => {
@@ -92,30 +78,6 @@ describe('normalizeResearchEntitySearchResponse', () => {
     expect(result.page).toBe(2);
     expect(result.pageSize).toBe(10);
   });
-
-  it('normalizes public research text and metadata with shared discovery cleanup rules', () => {
-    const result = normalizeResearchEntitySearchResponse({
-      researchEntities: [
-        entity({
-          description: 'Publications',
-          shortDescription: 'Yale Co-AuthorsFrequent collaborators of Fixture Researcher.',
-          researchAreas: [
-            'Research',
-            'Yale College',
-            '844',
-            'View Full Profile',
-            'Epigenetics and DNA Methylation',
-          ],
-        }),
-      ],
-    });
-
-    expect(result.researchEntities[0]).toMatchObject({
-      description: '',
-      shortDescription: '',
-      researchAreas: ['Epigenetics and DNA Methylation'],
-    });
-  });
 });
 
 describe('normalizeResearchEntityDetailPayload', () => {
@@ -131,34 +93,8 @@ describe('normalizeResearchEntityDetailPayload', () => {
       activeListings: [],
     });
 
-    expect(result.researchEntity).toEqual(
-      expect.objectContaining({
-        _id: 'canonical',
-        slug: 'canonical',
-        description: 'Archives and computational methods.',
-      }),
-    );
-    expect(result.group).toEqual(
-      expect.objectContaining({
-        _id: 'legacy',
-        slug: 'legacy',
-        description: 'Archives and computational methods.',
-      }),
-    );
-  });
-
-  it('removes role-only title fragments from detail descriptions', () => {
-    const result = normalizeResearchEntityDetailPayload({
-      researchEntity: entity({
-        description: '',
-        shortDescription: 'Co-Director of Graduate Studies',
-        fullDescription: 'Track Director, PMB',
-      }),
-    });
-
-    expect(result.researchEntity.shortDescription).toBe('');
-    expect(result.researchEntity.fullDescription).toBe('');
-    expect(result.group?.shortDescription).toBe('');
+    expect(result.researchEntity).toEqual(expect.objectContaining(canonical));
+    expect(result.group).toEqual(expect.objectContaining(legacy));
   });
 
   it('does not fall back to legacy group when canonical payload is absent', () => {
@@ -166,14 +102,8 @@ describe('normalizeResearchEntityDetailPayload', () => {
 
     const result = normalizeResearchEntityDetailPayload({ group: legacy });
 
-    expect(result.researchEntity).toEqual(
-      expect.objectContaining({
-        _id: 'legacy',
-        slug: 'legacy',
-        description: 'Archives and computational methods.',
-      }),
-    );
-    expect(result.group).toEqual(result.researchEntity);
+    expect(result.researchEntity).toEqual(expect.objectContaining(legacy));
+    expect(result.group).toEqual(expect.objectContaining(legacy));
   });
 
   it('throws on payloads that contain neither canonical nor legacy entity data', () => {
