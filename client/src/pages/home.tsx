@@ -120,6 +120,23 @@ const Home = () => {
     () => filteredListings.map((l) => ({ type: 'listing' as const, data: l })),
     [filteredListings],
   );
+  const openListingCount = useMemo(
+    () => listings.filter((l) => l.hiringStatus >= 0).length,
+    [listings],
+  );
+  const recentListingCount = useMemo(() => {
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    return listings.filter((l) => new Date(l.createdAt) >= thirtyDaysAgo).length;
+  }, [listings]);
+  const roleBoardModes = [
+    { key: null, label: 'All roles', value: listings.length },
+    { key: 'open', label: 'Open', value: openListingCount },
+    { key: 'recent', label: 'Recent', value: recentListingCount },
+    { key: 'ysm', label: 'Medicine', value: listings.filter((l) => getInstitutionAffiliation(l.departments || []) === 'YSM').length },
+    { key: 'ysph', label: 'Public Health', value: listings.filter((l) => getInstitutionAffiliation(l.departments || []) === 'YSPH').length },
+    { key: 'yc', label: 'Yale College', value: listings.filter((l) => getInstitutionAffiliation(l.departments || []) === 'YC').length },
+  ];
 
   const sentinelRef = useInfiniteScroll({
     searchExhausted,
@@ -235,6 +252,45 @@ const Home = () => {
           </div>
         </div>
       </section>
+      <section
+        aria-label="Posted role board controls"
+        className="mb-5 rounded-lg border border-slate-200 bg-slate-950 p-3 text-white shadow-sm"
+      >
+        <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_18rem]">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
+            {roleBoardModes.map((mode) => {
+              const active = quickFilter === mode.key || (!quickFilter && mode.key === null);
+              return (
+                <button
+                  key={mode.label}
+                  type="button"
+                  onClick={() => setQuickFilter(mode.key)}
+                  className={`min-h-14 rounded-md border px-3 py-2 text-left transition-colors focus:outline-none focus:ring-2 focus:ring-blue-300 ${
+                    active
+                      ? 'border-white bg-white text-slate-950'
+                      : 'border-white/15 bg-white/5 text-white hover:bg-white/10'
+                  }`}
+                >
+                  <span className="block text-[11px] font-semibold uppercase tracking-wider opacity-75">
+                    {mode.label}
+                  </span>
+                  <span className="mt-1 block text-lg font-semibold">{mode.value}</span>
+                </button>
+              );
+            })}
+          </div>
+          <div className="rounded-md border border-white/10 bg-white/5 px-3 py-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-300">
+              Board status
+            </p>
+            <p className="mt-2 text-sm leading-relaxed text-white">
+              {searchError
+                ? 'Posted-role search is unavailable; use Research or Pathways while the index is restored.'
+                : `${filteredListings.length} visible role${filteredListings.length === 1 ? '' : 's'} from ${listings.length} loaded.`}
+            </p>
+          </div>
+        </div>
+      </section>
       {searchError && (
         <div
           role="status"
@@ -271,7 +327,11 @@ const Home = () => {
         searchExhausted={searchExhausted}
         quickFilter={quickFilter}
         onClearQuickFilter={() => setQuickFilter(null)}
-        emptyMessage="No results match the search criteria"
+        emptyMessage={
+          searchError
+            ? 'Posted-role search is unavailable. Use Research or Pathways for source-backed routes.'
+            : 'No results match the search criteria'
+        }
         onLoadMore={() => {
           if (!isLoading && !searchExhausted) {
             setPage((prev) => prev + 1);

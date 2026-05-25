@@ -6,6 +6,7 @@ import {
   archiveListing,
   createListing,
   deleteListing,
+  readAllListings,
   readListing,
   unarchiveListing,
   updateListing,
@@ -148,6 +149,33 @@ const buildRobustFilterMatch = async (params: {
   return filters.join(' AND ');
 };
 
+const splitParam = (value?: string, separator = ','): string[] =>
+  value ? value.split(separator).map((item) => item.trim()).filter(Boolean) : [];
+
+const listingIncludes = (listing: any, query: string): boolean => {
+  if (!query) return true;
+  const haystack = [
+    listing.title,
+    listing.description,
+    listing.ownerFirstName,
+    listing.ownerLastName,
+    ...(listing.departments || []),
+    ...(listing.researchAreas || []),
+    ...(listing.keywords || []),
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+  return haystack.includes(query.toLowerCase());
+};
+
+const matchesListFilter = (values: string[] = [], selected: string[], mode: string): boolean => {
+  if (selected.length === 0) return true;
+  const normalized = new Set(values.map((value) => value.toLowerCase()));
+  const checks = selected.map((value) => normalized.has(value.toLowerCase()));
+  return mode === 'intersection' ? checks.every(Boolean) : checks.some(Boolean);
+};
+
 export const searchListings = async (request: Request, response: Response) => {
   try {
     const {
@@ -217,7 +245,50 @@ export const searchListings = async (request: Request, response: Response) => {
       page: Number(page),
       pageSize: Number(pageSize),
     });
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.cause?.code === 'index_not_found') {
+      const {
+        query = '',
+        departments,
+        researchAreas,
+        departmentsMode = 'union',
+        researchAreasMode = 'union',
+        page = 1,
+        pageSize = 10,
+      } = request.query;
+      const limit = Number(pageSize);
+      const offset = (Number(page) - 1) * limit;
+      const departmentList = splitParam(departments as string | undefined, '||');
+      const researchAreaList = splitParam(researchAreas as string | undefined);
+      const trimmedQuery = ((query as string) || '').trim();
+
+      const allListings = await readAllListings();
+      const filtered = allListings
+        .filter((listing: any) => listing.archived !== true && listing.confirmed === true)
+        .filter((listing: any) => listingIncludes(listing, trimmedQuery))
+        .filter((listing: any) =>
+          matchesListFilter(listing.departments || [], departmentList, departmentsMode as string),
+        )
+        .filter((listing: any) =>
+          matchesListFilter(listing.researchAreas || [], researchAreaList, researchAreasMode as string),
+        )
+        .sort(
+          (a: any, b: any) =>
+            new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime(),
+        );
+      const results = filtered.slice(offset, offset + limit).map((listing: any) => ({
+        ...listing,
+        id: listing._id?.toString?.() || listing.id,
+      }));
+
+      return response.json({
+        results,
+        totalCount: filtered.length,
+        page: Number(page),
+        pageSize: Number(pageSize),
+      });
+    }
+
     console.error('Meilisearch search failed:', error);
     return response.status(500).json({ error: 'Search failed' });
   }
