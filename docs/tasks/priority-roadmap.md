@@ -126,6 +126,7 @@ All accepted Beta source runs below reported `materialization.errors = 0`. This 
 | `duplicateEntityNames`             | 269   | `must_fix_before_promotion` | data-quality operator     | `yarn --cwd server research-entity:dedupe-by-pi --limit=10000`                                |
 | `suspiciousUserEmails`             | 4     | `must_fix_before_promotion` | identity/account operator | `yarn --cwd server beta:data-quality --include-samples --output /tmp/ylabs-beta-quality.json` |
 | `duplicatePersonIdentityConflicts` | 1329  | `must_fix_before_promotion` | identity/account operator | `yarn --cwd server users:dedupe-by-identity --limit=1000`                                     |
+| `piDataQualityForLabs`             | TBD   | `must_fix_before_promotion` | identity/account operator | Review attached PI identity, title/department, profile URL, ORCID/Scholar/OpenAlex IDs, and authorship-proof coverage for promoted lab/entity records |
 | `missingShortDescriptions`         | 2858  | `accepted_release_warning`  | content-quality operator  | `yarn --cwd server beta:data-quality --include-samples --output /tmp/ylabs-beta-quality.json` |
 | `coverageWithoutPathways`          | 1825  | `accepted_release_warning`  | pathway coverage operator | `yarn --cwd server beta:data-quality --include-samples --output /tmp/ylabs-beta-quality.json` |
 | `coverageWithoutAccessSignals`     | 1981  | `accepted_release_warning`  | pathway coverage operator | `yarn --cwd server beta:data-quality --include-samples --output /tmp/ylabs-beta-quality.json` |
@@ -156,6 +157,7 @@ All accepted Beta source runs below reported `materialization.errors = 0`. This 
 - [x] Tighten the Programs public/admin visibility pipeline so service-level program search ignores non-public tier requests unless the route/controller marks the caller as admin; focused tests cover public filtering and admin inspection of review/suppressed rows.
 - [x] Add a read-only Operator Board foundation to the admin panel. It summarizes source health, Trust Tier counts, review queues, latest dry/write runs, gate commands, Meili status placeholders, and a top-level promotion status without adding write buttons or worker execution.
 - [x] Extend the Operator Board control-plane slice with source readiness rows, WorkPlanner freshness policies, queue-kind totals, discovery-candidate samples, and pending Meili-sync warnings from recent non-dry scraper runs. This keeps operators aware of stale/blocked/pending-search-sync posture without adding worker execution or write buttons.
+- [ ] Treat PI data quality as part of lab/operator review before production promotion. A lab/research entity is not high quality if its attached PI identity is low confidence, duplicated, missing official profile context, missing basic title/department context, or has unsupported publication/authorship links.
 - [ ] Add PI claim flow, Scholar disambiguation, and broader admin field-lock UI only when the workflow is clear.
 
 ### P2: Post-Beta Legacy Cleanup

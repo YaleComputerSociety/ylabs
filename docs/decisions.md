@@ -188,6 +188,17 @@ Consequences:
 - Admins can update `ResearchGroup.manuallyLockedFields` through `/api/admin/access-review/:id/manual-locks`.
 - A full admin UI/editor remains a later P3 task.
 
+## 2026-05-25: PI Quality Is Part Of Lab Quality
+
+Operator review must not stop at the lab/research-entity record. A lab that has a PI attached is only production-ready if the attached PI/person data is also source-backed and not obviously stale, duplicated, or name-only inferred.
+
+Consequences:
+
+- Production promotion must include PI identity quality in the Beta gate for promoted labs/entities.
+- PI review should check official profile/source URL, title and department context, same-name ambiguity, accepted identifiers such as ORCID/Scholar/OpenAlex where present, and publication authorship proof.
+- Name-only publication links are not acceptable PI quality evidence; professor/lab papers must remain backed by `paper_authors` or other identity-backed authorship evidence.
+- Future operator UI should surface PI/person quality alongside lab/entity access review instead of treating it as a separate cleanup concern.
+
 ## 2026-05-12: Keep A Graphify-Grounded UI/UX Direction Doc
 
 Use [`docs/ui-ux-direction.md`](./ui-ux-direction.md) as the durable home for student-facing UX direction.

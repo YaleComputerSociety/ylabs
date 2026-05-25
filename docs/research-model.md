@@ -409,6 +409,8 @@ Admins need a way to inspect derived access records before deeper editorial work
 
 Implementation note: `GET /api/admin/access-review` returns research entities with counts of related `EntryPathway`, `AccessSignal`, `ContactRoute`, and `PostedOpportunity` rows. `GET /api/admin/access-review/:id` returns the full derived access bundle for one entity. `PUT /api/admin/access-review/:id/manual-locks` updates manually locked entity fields, and record-level review endpoints update per-record status/notes/locks. The admin UI can inspect source evidence, update review state, manage locks, and filter records by review/evidence/contact/archive gaps before Beta.
 
+PI quality is part of research-entity quality. Operator review for a lab or faculty-attached research home must also inspect the attached PI/person record: official profile URL, title and department context, identity identifiers such as ORCID/Scholar/OpenAlex when present, same-name ambiguity, and publication authorship proof. Do not treat a lab/entity as production-ready solely because its pathway/access records look clean if the attached PI identity is stale, duplicated, unsupported by source evidence, or linked to papers by name-only inference.
+
 ## Product Vocabulary
 
 Use precise internal names in code and schema docs, but use warmer labels in the UI:
