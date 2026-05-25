@@ -48,6 +48,23 @@ const NEXT_STEP_OPTIONS: Array<{ value: PathwayBestNextStepCategory; label: stri
   { value: 'check-back-later', label: 'Check back later' },
 ];
 
+const NEXT_STEP_DETAIL: Record<PathwayBestNextStepCategory, string> = {
+  apply: 'Application route',
+  'register-for-credit': 'Credit route',
+  'find-funding': 'Funding route',
+  'plan-outreach': 'Outreach prep',
+  'contact-program': 'Program contact',
+  'save-for-thesis': 'Thesis lead',
+  'save-for-later': 'Saved lead',
+  'check-back-later': 'Planning lead',
+};
+
+const OPTION_LABELS = new Map(
+  [...PATHWAY_OPTIONS, ...COMPENSATION_OPTIONS, ...EVIDENCE_OPTIONS, ...NEXT_STEP_OPTIONS].map(
+    (option) => [option.value, option.label],
+  ),
+);
+
 const labelize = (value?: string): string =>
   (value || 'Unknown')
     .toLowerCase()
@@ -94,15 +111,15 @@ interface CheckboxFilterProps {
 }
 
 const CheckboxFilter: FC<CheckboxFilterProps> = ({ label, options, selected, onToggle }) => (
-  <fieldset className="border-t border-gray-200 pt-3 mt-3 first:border-t-0 first:pt-0 first:mt-0">
-    <legend className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+  <fieldset className="border-t border-slate-200 pt-3 mt-3 first:border-t-0 first:pt-0 first:mt-0">
+    <legend className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
       {label}
     </legend>
     <div className="flex flex-col gap-1.5">
       {options.map((option) => (
         <label
           key={option.value}
-          className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer hover:text-gray-900"
+          className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer hover:text-slate-950"
         >
           <input
             type="checkbox"
@@ -134,6 +151,7 @@ const PathwayCard: FC<{
   const contactRoute = pathway.contactRoute?.url ? pathway.contactRoute : undefined;
   const entityLabel = entity?.displayName || entity?.name || 'Research profile';
   const entityLink = entity?.slug ? `/research/${entity.slug}` : '/research';
+  const nextStepDetail = NEXT_STEP_DETAIL[pathway.bestNextStepCategory] || 'Next step';
   const sourceUrls = Array.from(
     new Set([
       ...(pathway.sourceUrls || []),
@@ -142,18 +160,18 @@ const PathwayCard: FC<{
   ) as string[];
 
   return (
-    <article className="bg-white border border-gray-200 rounded-md p-5 hover:border-blue-300 hover:shadow-sm transition-shadow">
+    <article className="bg-white border border-slate-200 rounded-md p-5 hover:border-blue-300 hover:shadow-sm transition-shadow">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <div className="flex flex-wrap gap-1.5 mb-2">
             <span className="text-xs font-semibold px-2 py-0.5 rounded bg-blue-50 text-blue-700">
               {labelize(pathway.pathwayType)}
             </span>
-            <span className="text-xs font-semibold px-2 py-0.5 rounded bg-gray-100 text-gray-700">
+            <span className="text-xs font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-700">
               {labelize(pathway.status)}
             </span>
           </div>
-          <h2 className="text-lg font-bold text-gray-900 leading-tight">
+          <h2 className="text-lg font-bold text-slate-950 leading-tight">
             {pathway.studentFacingLabel}
           </h2>
           <Link
@@ -180,17 +198,18 @@ const PathwayCard: FC<{
           <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">
             Best Next Step
           </p>
-          <p className="text-sm font-semibold text-gray-900">
+          <p className="text-sm font-semibold text-slate-950">
             {nextStep?.label || labelize(pathway.bestNextStepCategory)}
           </p>
+          <p className="text-xs text-slate-500">{nextStepDetail}</p>
         </div>
       </div>
 
       {pathway.explanation && (
-        <p className="mt-3 text-sm text-gray-600 leading-relaxed">{pathway.explanation}</p>
+        <p className="mt-3 text-sm text-slate-600 leading-relaxed">{pathway.explanation}</p>
       )}
 
-      <div className="mt-3 text-sm text-gray-700 bg-gray-50 border border-gray-100 rounded p-3">
+      <div className="mt-3 text-sm text-slate-700 bg-slate-50 border border-slate-100 rounded p-3">
         {isPostedRole(pathway)
           ? 'This is tied to a specific posted role or rolling application.'
           : 'This is an evidence-backed way in, not necessarily an active job posting.'}
@@ -198,7 +217,7 @@ const PathwayCard: FC<{
 
       <div className="mt-4 flex flex-wrap gap-1.5">
         {tags.map((tag) => (
-          <span key={tag} className="text-xs px-2 py-0.5 rounded bg-gray-50 text-gray-700">
+          <span key={tag} className="text-xs px-2 py-0.5 rounded bg-slate-50 text-slate-700">
             {tag}
           </span>
         ))}
@@ -210,14 +229,17 @@ const PathwayCard: FC<{
       </div>
 
       {evidence.length > 0 && (
-        <div className="mt-4 border-t border-gray-100 pt-3">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-1">
+        <div className="mt-4 border-t border-slate-100 pt-3">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1">
             Evidence
           </p>
           <div className="space-y-1">
-            {evidence.slice(0, 2).map((item) => (
-              <p key={`${pathway._id}-${item.signalType}`} className="text-sm text-gray-600">
-                <span className="font-medium text-gray-800">{labelize(item.signalType)}</span>
+            {evidence.slice(0, 2).map((item, index) => (
+              <p
+                key={`${pathway._id}-${item.signalType}-${index}`}
+                className="text-sm text-gray-600"
+              >
+                <span className="font-medium text-slate-800">{labelize(item.signalType)}</span>
                 {item.excerpt ? `: ${item.excerpt}` : ''}
                 {item.confidenceScore !== undefined ? (
                   <span className="text-xs text-gray-400">
@@ -276,6 +298,37 @@ const PathwayCard: FC<{
   );
 };
 
+const PathwayMetricStrip: FC<{
+  results: PathwaySearchHit[];
+  total: number;
+}> = ({ results, total }) => {
+  const postedCount = results.filter(isPostedRole).length;
+  const strongEvidenceCount = results.filter((pathway) =>
+    ['DIRECT', 'STRONG'].includes(pathway.evidenceStrength || ''),
+  ).length;
+  const applyCount = results.filter((pathway) => pathway.bestNextStepCategory === 'apply').length;
+
+  return (
+    <section
+      aria-label="Pathway result summary"
+      className="mb-4 grid gap-3 md:grid-cols-4"
+    >
+      {[
+        { label: 'Total matches', value: total.toLocaleString(), detail: 'Across all pages' },
+        { label: 'Visible now', value: results.length.toLocaleString(), detail: 'Loaded in this view' },
+        { label: 'Posted routes', value: postedCount.toLocaleString(), detail: 'Application-linked' },
+        { label: 'Direct or strong', value: strongEvidenceCount.toLocaleString(), detail: `${applyCount} apply-first` },
+      ].map((item) => (
+        <div key={item.label} className="rounded-md border border-slate-200 bg-white px-4 py-3">
+          <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">{item.label}</p>
+          <p className="mt-1 text-2xl font-semibold text-slate-950">{item.value}</p>
+          <p className="mt-1 text-xs text-slate-500">{item.detail}</p>
+        </div>
+      ))}
+    </section>
+  );
+};
+
 const PathwaysPage: FC = () => {
   const [query, setQuery] = useState('');
   const [filters, setFilters] = useState<PathwaySearchFilters>({});
@@ -297,6 +350,17 @@ const PathwaysPage: FC = () => {
       (filters.hasActivePostedOpportunity ? 1 : 0),
     [filters],
   );
+  const activeFilterLabels = useMemo(() => {
+    const labels = compact([
+      query.trim() ? `Search: ${query.trim()}` : undefined,
+      ...(filters.pathwayType || []).map((value) => OPTION_LABELS.get(value) || labelize(value)),
+      ...(filters.compensation || []).map((value) => OPTION_LABELS.get(value) || labelize(value)),
+      ...(filters.evidenceStrength || []).map((value) => OPTION_LABELS.get(value) || labelize(value)),
+      ...(filters.bestNextStepCategory || []).map((value) => OPTION_LABELS.get(value) || labelize(value)),
+      filters.hasActivePostedOpportunity ? 'Active posted role' : undefined,
+    ]);
+    return labels;
+  }, [filters, query]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -364,17 +428,22 @@ const PathwaysPage: FC = () => {
 
   return (
     <div className="mx-auto max-w-[1300px] px-6 w-full min-h-[calc(100vh-12rem)] py-6">
-      <div className="flex items-center justify-between gap-4 mb-4">
+      <div className="flex flex-col gap-3 border-b border-slate-200 pb-5 mb-5 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Pathways</h1>
-          <p className="text-sm text-gray-500">
-            Browse Ways In to Yale research, from posted roles to exploratory and evidence-backed routes.
+          <p className="text-xs font-semibold uppercase tracking-wider text-blue-700">Ways in</p>
+          <h1 className="mt-1 text-3xl font-bold text-slate-950">Pathways into research</h1>
+          <p className="mt-2 max-w-3xl text-sm text-slate-600">
+            Compare posted roles, outreach routes, and evidence-backed ways to start a Yale research conversation.
           </p>
+        </div>
+        <div className="rounded-md border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
+          <span className="font-semibold text-slate-950">{total.toLocaleString()}</span>{' '}
+          evidence-backed routes
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-6">
-        <aside className="space-y-4">
+        <aside className="space-y-4 lg:sticky lg:top-24 lg:self-start">
           <section className="bg-white rounded-md border border-gray-200 p-4">
             <input
               type="search"
@@ -386,7 +455,7 @@ const PathwaysPage: FC = () => {
             />
           </section>
 
-          <section className="bg-white rounded-md border border-gray-200 p-4">
+          <section className="max-h-[420px] overflow-y-auto bg-white rounded-md border border-gray-200 p-4 lg:max-h-none">
             <div className="flex items-center justify-between mb-2">
               <h2 className="text-sm font-semibold text-gray-900">Filters</h2>
               {activeFilterCount > 0 && (
@@ -399,6 +468,24 @@ const PathwaysPage: FC = () => {
                 </button>
               )}
             </div>
+
+            {activeFilterLabels.length > 0 && (
+              <div className="mb-3 flex flex-wrap gap-1.5">
+                {activeFilterLabels.slice(0, 6).map((label) => (
+                  <span
+                    key={label}
+                    className="rounded bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700"
+                  >
+                    {label}
+                  </span>
+                ))}
+                {activeFilterLabels.length > 6 && (
+                  <span className="rounded bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600">
+                    +{activeFilterLabels.length - 6}
+                  </span>
+                )}
+              </div>
+            )}
 
             <CheckboxFilter
               label="Pathway"
@@ -449,6 +536,8 @@ const PathwaysPage: FC = () => {
         </aside>
 
         <div>
+          <PathwayMetricStrip results={results} total={total} />
+
           <div className="flex items-center justify-between mb-3 text-sm text-gray-600">
             <span>
               {total.toLocaleString()} {total === 1 ? 'pathway' : 'pathways'}
