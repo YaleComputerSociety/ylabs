@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildEvidenceCoverageBoardSummary,
   buildRecommendedNextActions,
   classifyOperatorQueueReason,
   derivePromotionStatus,
@@ -97,5 +98,56 @@ describe('adminOperatorBoardService', () => {
         pendingMeiliSync: true,
       }),
     ).toContain('Rebuild Meili after the latest accepted write run.');
+  });
+
+  it('summarizes evidence coverage pressure for listing quality repair', () => {
+    const summary = buildEvidenceCoverageBoardSummary([
+      {
+        id: 'entity-1',
+        label: 'Peters Lab',
+        slug: 'peters-lab-jdp52',
+        assessment: {
+          coverageTier: 'thin',
+          claimStates: {} as any,
+          blockers: ['missing_source_backed_description', 'listing_only_profile'],
+          suggestedSourceTypes: ['official-profile-page', 'official-lab-homepage'],
+          rejectedFields: [],
+          publicSummary: 'Needs repair',
+        },
+      },
+      {
+        id: 'entity-2',
+        label: 'Partial Lab',
+        slug: 'partial-lab',
+        assessment: {
+          coverageTier: 'partial',
+          claimStates: {} as any,
+          blockers: ['missing_access_evidence'],
+          suggestedSourceTypes: ['department-undergrad-research'],
+          rejectedFields: [],
+          publicSummary: 'Needs access evidence',
+        },
+      },
+    ]);
+
+    expect(summary).toMatchObject({
+      thinResearchEntities: 1,
+      partialResearchEntities: 1,
+      topBlockers: [
+        { blocker: 'listing_only_profile', count: 1 },
+        { blocker: 'missing_access_evidence', count: 1 },
+        { blocker: 'missing_source_backed_description', count: 1 },
+      ],
+      suggestedSourceTypes: [
+        { sourceType: 'department-undergrad-research', count: 1 },
+        { sourceType: 'official-lab-homepage', count: 1 },
+        { sourceType: 'official-profile-page', count: 1 },
+      ],
+    });
+    expect(summary.samples[0]).toMatchObject({
+      label: 'Peters Lab',
+      coverageTier: 'thin',
+      blockers: ['missing_source_backed_description', 'listing_only_profile'],
+    });
   });
 });

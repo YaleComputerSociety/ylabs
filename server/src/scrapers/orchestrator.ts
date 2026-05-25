@@ -6,6 +6,7 @@
  * never directly affects entity collections.
  */
 import { ScrapeRun } from '../models/scrapeRun';
+import { buildEvidenceCoverageImpactReportForObservations } from '../services/researchEntityEvidenceCoverage';
 import { appendObservations, getSourceByName } from './observationStore';
 import type {
   IScraper,
@@ -59,6 +60,7 @@ export class ScraperOrchestrator {
     let entitiesObserved = 0;
     const observedEntityKeys = new Set<string>();
     const errors: any[] = [];
+    const previewObservations: Array<Record<string, unknown>> = [];
 
     const ctx: ScraperContext = {
       scrapeRunId: String(run._id),
@@ -76,6 +78,16 @@ export class ScraperOrchestrator {
           sourceWeight: source.defaultWeight,
           dryRun: options.dryRun,
         });
+        if (options.dryRun && options.dbReview) {
+          previewObservations.push(
+            ...inputs.map((obs) => ({
+              ...obs,
+              sourceName: source.name,
+              sourceId: source._id,
+              confidence: obs.confidenceOverride ?? source.defaultWeight,
+            })),
+          );
+        }
         observationCount += res.inserted;
         for (const o of inputs) {
           const key = `${o.entityType}:${o.entityId || o.entityKey || ''}`;
@@ -92,6 +104,10 @@ export class ScraperOrchestrator {
 
     try {
       const result = (await scraper.run(ctx)) as ScraperResult;
+      const evidenceCoverageImpact =
+        options.dryRun && options.dbReview
+          ? await buildEvidenceCoverageImpactReportForObservations(previewObservations)
+          : undefined;
       await ScrapeRun.updateOne(
         { _id: run._id },
         {
@@ -101,12 +117,22 @@ export class ScraperOrchestrator {
             observationCount,
             entitiesObserved,
             fetchMetrics: result.fetchMetrics,
-            metrics: result.metrics,
+            metrics: evidenceCoverageImpact
+              ? { ...(result.metrics || {}), evidenceCoverageImpact }
+              : result.metrics,
             errors,
           },
         },
       );
-      return { runId: String(run._id), result };
+      return {
+        runId: String(run._id),
+        result: evidenceCoverageImpact
+          ? {
+              ...result,
+              metrics: { ...(result.metrics || {}), evidenceCoverageImpact },
+            }
+          : result,
+      };
     } catch (err: any) {
       await ScrapeRun.updateOne(
         { _id: run._id },

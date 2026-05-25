@@ -37,6 +37,7 @@ export interface ScraperOptions {
   maxOpenAlexPagesPerAuthor?: number;
   manualRecipientCsvDir?: string;
   ignoreWorkPlanner?: boolean;
+  dbReview?: boolean;
   triggeredBy?: 'cli' | 'cron' | 'admin';
 }
 
@@ -117,5 +118,19 @@ export interface ScraperMetrics<TFetchMode extends string = ScraperFetchMode> {
     missingPreviouslySeen: number;
     deadlineParsed: number;
     deadlineMissing: number;
+  };
+  evidenceCoverageImpact?: {
+    assessed: number;
+    improved: number;
+    rows: Array<{
+      entityType: string;
+      entityId?: string;
+      entityKey?: string;
+      beforeCoverageTier: string;
+      afterCoverageTier: string;
+      resolvedBlockers: string[];
+      remainingBlockers: string[];
+      rejectedFields: Array<{ field: string; reason: string; sourceName?: string }>;
+    }>;
   };
 }

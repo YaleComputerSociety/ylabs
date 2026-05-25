@@ -1,10 +1,19 @@
 import { Fellowship } from '../models/fellowship';
+import { AccessSignal } from '../models/accessSignal';
+import { ContactRoute } from '../models/contactRoute';
+import { Listing } from '../models/listing';
+import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
+import { ResearchGroupMember } from '../models/researchGroupMember';
 import { ScrapeRun } from '../models/scrapeRun';
 import { Source } from '../models/source';
 import type { StudentVisibilityTier } from '../models/studentVisibility';
 import { VisibilityReleaseQueueItem } from '../models/visibilityReleaseQueueItem';
 import { workPlannerSourcePolicies } from '../scrapers/workPlanner';
+import {
+  assessResearchEntityEvidenceCoverage,
+  type EvidenceCoverageAssessment,
+} from './researchEntityEvidenceCoverage';
 import { buildSourceHealthRows, type SourceHealthRisk } from './sourceHealthService';
 
 export type QueueKind = 'blocking' | 'evidence' | 'review';
@@ -104,6 +113,67 @@ export function buildRecommendedNextActions(input: {
   actions.push('Rebuild Meili indexes after accepted data repairs.');
   if (input.promotionStatus === 'ready') actions.push('Confirm backup and rollback notes.');
   return actions;
+}
+
+export interface EvidenceCoverageBoardRow {
+  id: string;
+  label: string;
+  slug?: string;
+  assessment: EvidenceCoverageAssessment;
+}
+
+const incrementCount = (counts: Record<string, number>, key: string) => {
+  counts[key] = (counts[key] || 0) + 1;
+};
+
+const sortedCountRows = <TName extends string>(
+  counts: Record<string, number>,
+  keyName: TName,
+  limit = 8,
+): Array<Record<TName, string> & { count: number }> =>
+  Object.entries(counts)
+    .sort(([aKey, aCount], [bKey, bCount]) => bCount - aCount || aKey.localeCompare(bKey))
+    .slice(0, limit)
+    .map(([key, count]) => ({ [keyName]: key, count }) as Record<TName, string> & { count: number });
+
+export function buildEvidenceCoverageBoardSummary(rows: EvidenceCoverageBoardRow[]) {
+  const blockerCounts: Record<string, number> = {};
+  const suggestedSourceTypeCounts: Record<string, number> = {};
+  let thinResearchEntities = 0;
+  let partialResearchEntities = 0;
+  let readyCandidateResearchEntities = 0;
+
+  for (const row of rows) {
+    if (row.assessment.coverageTier === 'thin') thinResearchEntities++;
+    if (row.assessment.coverageTier === 'partial') partialResearchEntities++;
+    if (row.assessment.coverageTier === 'ready_candidate') readyCandidateResearchEntities++;
+    for (const blocker of row.assessment.blockers) incrementCount(blockerCounts, blocker);
+    for (const sourceType of row.assessment.suggestedSourceTypes) {
+      incrementCount(suggestedSourceTypeCounts, sourceType);
+    }
+  }
+
+  return {
+    assessedResearchEntities: rows.length,
+    thinResearchEntities,
+    partialResearchEntities,
+    readyCandidateResearchEntities,
+    topBlockers: sortedCountRows(blockerCounts, 'blocker'),
+    suggestedSourceTypes: sortedCountRows(suggestedSourceTypeCounts, 'sourceType'),
+    samples: rows
+      .filter((row) => row.assessment.coverageTier !== 'ready_candidate')
+      .slice(0, 8)
+      .map((row) => ({
+        id: row.id,
+        label: row.label,
+        slug: row.slug,
+        coverageTier: row.assessment.coverageTier,
+        blockers: row.assessment.blockers,
+        suggestedSourceTypes: row.assessment.suggestedSourceTypes,
+        publicSummary: row.assessment.publicSummary,
+        rejectedFields: row.assessment.rejectedFields,
+      })),
+  };
 }
 
 const tierOrder: StudentVisibilityTier[] = [
@@ -327,6 +397,59 @@ async function buildReleaseQueueSummary() {
   };
 }
 
+async function buildEvidenceCoverageSummary() {
+  const entities = await ResearchEntity.find({
+    archived: { $ne: true },
+    $or: [
+      { studentVisibilityTier: { $in: ['operator_review', 'suppressed'] } },
+      { studentVisibilityTier: { $exists: false } },
+      { studentVisibilityTier: null },
+    ],
+  })
+    .select('_id name slug description shortDescription fullDescription profileSynthesisDescription sourceUrls websiteUrl website')
+    .sort({ updatedAt: -1, _id: 1 })
+    .limit(60)
+    .lean();
+
+  const rows: EvidenceCoverageBoardRow[] = [];
+  for (const entity of entities as any[]) {
+    const id = String(entity._id);
+    const [listings, members, accessSignals, contactRoutes, observations] = await Promise.all([
+      Listing.find({ researchEntityId: id, archived: { $ne: true } }).limit(8).lean(),
+      ResearchGroupMember.find({ researchEntityId: id, isCurrentMember: { $ne: false } })
+        .limit(8)
+        .lean(),
+      AccessSignal.find({ researchEntityId: id, archived: { $ne: true } }).limit(12).lean(),
+      ContactRoute.find({ researchEntityId: id, archived: { $ne: true } }).limit(12).lean(),
+      Observation.find({
+        entityType: 'researchEntity',
+        superseded: { $ne: true },
+        $or: [{ entityId: id }, ...(entity.slug ? [{ entityKey: entity.slug }] : [])],
+      })
+        .select('sourceName field value sourceUrl observedAt confidence')
+        .sort({ observedAt: -1 })
+        .limit(40)
+        .lean(),
+    ]);
+    const assessment = assessResearchEntityEvidenceCoverage({
+      entity,
+      listings,
+      members,
+      accessSignals,
+      contactRoutes,
+      observations,
+    });
+    rows.push({
+      id,
+      label: entity.name || entity.slug || id,
+      slug: entity.slug,
+      assessment,
+    });
+  }
+
+  return buildEvidenceCoverageBoardSummary(rows);
+}
+
 const freshnessWindowDays = (windowMs: number) => Math.round(windowMs / (24 * 60 * 60 * 1000));
 
 async function buildSourceFreshness() {
@@ -382,13 +505,21 @@ async function buildSourceFreshness() {
 }
 
 export async function buildAdminOperatorBoard() {
-  const [sourceFreshness, researchTierCounts, programTierCounts, queueSummaries, releaseQueue] =
+  const [
+    sourceFreshness,
+    researchTierCounts,
+    programTierCounts,
+    queueSummaries,
+    releaseQueue,
+    evidenceCoverage,
+  ] =
     await Promise.all([
       buildSourceFreshness(),
       countByTier(ResearchEntity, { archived: { $ne: true } }),
       countByTier(Fellowship, { archived: false }),
       buildQueueSummaries(),
       buildReleaseQueueSummary(),
+      buildEvidenceCoverageSummary(),
     ]);
   const integrityStatus: 'unknown' = 'unknown';
   const pendingMeiliSync = Boolean(sourceFreshness.latestRunSummary.latestWriteRun);
@@ -412,6 +543,7 @@ export async function buildAdminOperatorBoard() {
       programs: programTierCounts,
     },
     releaseQueue,
+    evidenceCoverage,
     ...queueSummaries,
     gates: {
       dataQuality: {

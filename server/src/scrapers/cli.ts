@@ -11,6 +11,7 @@
  *
  * Flags for `run`:
  *   --dry-run       Don't write Observations (just log what would be inserted)
+ *   --db-review     During dry-run, compare emitted evidence against current DB coverage
  *   --use-cache     Memoize external fetches in ScrapeSnapshot collection (dev only)
  *   --release       Production mode (cache off, errors surface)
  *   --limit <n>     Cap the number of entities the scraper processes
@@ -65,6 +66,7 @@ function parseScraperOptions(flags: Record<string, string | boolean>): ScraperOp
     dryRun: !!flags['dry-run'],
     useCache: !!flags['use-cache'] && !flags.release,
     release: !!flags.release,
+    dbReview: !!flags['db-review'],
     limit: flags.limit ? parseInt(String(flags.limit), 10) : undefined,
     offset: flags.offset ? parseInt(String(flags.offset), 10) : undefined,
     only:
@@ -123,6 +125,7 @@ ylabs scraper CLI
 
 Run flags:
   --dry-run            Skip Observation writes (preview only)
+  --db-review          During dry-run, report evidence-coverage impact against current DB rows
   --use-cache          Cache external fetches in ScrapeSnapshot (dev)
   --release            Production mode
   --limit <n>          Cap entities processed

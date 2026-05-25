@@ -12,6 +12,7 @@ Yale Research data moves through an evidence-first pipeline. Use this document f
 Source metadata
   -> ScrapeRun
   -> append-only Observation rows
+  -> evidence coverage review for research listing/entity claim gaps
   -> entity/materializer resolution
   -> ResearchEntity / User / Paper / Grant / Fellowship records
   -> EntryPathway / AccessSignal / ContactRoute / PostedOpportunity when evidence supports it
@@ -20,7 +21,15 @@ Source metadata
   -> Research, Pathways, Programs, Opportunity detail, and admin/operator surfaces
 ```
 
-Scrapers collect evidence. They should not create unsupported student-facing conclusions such as "accepting undergrads." Materializers derive product records from observed evidence, source confidence, stable keys, and manual locks. The student visibility gate is the public-release boundary: it promotes records that satisfy the visibility rules and holds the rest in the release queue with root repair reasons.
+Scrapers collect evidence. They should not create unsupported student-facing conclusions such as "accepting undergrads." Materializers derive product records from observed evidence, source confidence, stable keys, and manual locks. Evidence coverage review is the pre-write/pre-visibility diagnostic layer for research listings: it classifies whether identity, description, lead/contact, access, action route, and freshness claims are missing, weak, or supported. The student visibility gate remains the public-release boundary: it promotes records that satisfy the visibility rules and holds the rest in the release queue with root repair reasons.
+
+Use DB-backed dry-run review before broad source expansion:
+
+```bash
+yarn scrape run --source <source-name> --dry-run --db-review
+```
+
+The dry-run report includes `evidenceCoverageImpact` for affected `ResearchEntity` rows, including resolved blockers, remaining blockers, and rejected fields. This makes "more data" operationally useful only when the new source repairs a specific public claim. Publication/book blurbs may support research-topic context, but they should not satisfy entity-description coverage; listings can support access/action evidence, but they should not by themselves make a research home student-ready.
 
 ## Read-Only Control Plane
 

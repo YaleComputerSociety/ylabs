@@ -60,6 +60,25 @@ describe('AdminOperatorBoard', () => {
             },
           ],
         },
+        evidenceCoverage: {
+          assessedResearchEntities: 3,
+          thinResearchEntities: 2,
+          partialResearchEntities: 1,
+          readyCandidateResearchEntities: 0,
+          topBlockers: [{ blocker: 'missing_source_backed_description', count: 2 }],
+          suggestedSourceTypes: [{ sourceType: 'official-profile-page', count: 2 }],
+          samples: [
+            {
+              id: 'coverage-sample',
+              label: 'Thin Listing Lab',
+              slug: 'thin-listing-lab',
+              coverageTier: 'thin',
+              blockers: ['missing_source_backed_description'],
+              suggestedSourceTypes: ['official-profile-page'],
+              publicSummary: 'Needs source-backed description.',
+            },
+          ],
+        },
         queues: [
           {
             collection: 'research',
@@ -130,5 +149,9 @@ describe('AdminOperatorBoard', () => {
     expect(screen.getByText('Release Queue')).toBeTruthy();
     expect(screen.getByText('Queued Lab')).toBeTruthy();
     expect(screen.getByText('ysm-atoz-index')).toBeTruthy();
+    expect(screen.getByText('Evidence Coverage')).toBeTruthy();
+    expect(screen.getByText('missing_source_backed_description')).toBeTruthy();
+    expect(screen.getByText('official-profile-page')).toBeTruthy();
+    expect(screen.getByText('Thin Listing Lab')).toBeTruthy();
   });
 });

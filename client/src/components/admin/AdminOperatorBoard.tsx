@@ -65,6 +65,24 @@ interface ReleaseQueueSummary {
   }>;
 }
 
+interface EvidenceCoverageSummary {
+  assessedResearchEntities: number;
+  thinResearchEntities: number;
+  partialResearchEntities: number;
+  readyCandidateResearchEntities: number;
+  topBlockers: Array<{ blocker: string; count: number }>;
+  suggestedSourceTypes: Array<{ sourceType: string; count: number }>;
+  samples: Array<{
+    id: string;
+    label: string;
+    slug?: string;
+    coverageTier: 'thin' | 'partial' | 'ready_candidate';
+    blockers: string[];
+    suggestedSourceTypes: string[];
+    publicSummary: string;
+  }>;
+}
+
 interface OperatorBoard {
   generatedAt: string;
   trustTiers: {
@@ -77,6 +95,7 @@ interface OperatorBoard {
   };
   queues: QueueSummary[];
   releaseQueue?: ReleaseQueueSummary;
+  evidenceCoverage?: EvidenceCoverageSummary;
   gates: {
     dataQuality: {
       status: string;
@@ -383,6 +402,64 @@ const AdminOperatorBoard = () => {
                 ))}
                 {board.releaseQueue.samples.length === 0 && (
                   <div className="text-sm text-gray-500">No held samples</div>
+                )}
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {board.evidenceCoverage && (
+        <section className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <h4 className="font-semibold text-gray-900">Evidence Coverage</h4>
+            <span className="text-sm text-gray-500">
+              {board.evidenceCoverage.assessedResearchEntities} reviewed ·{' '}
+              {board.evidenceCoverage.thinResearchEntities} thin ·{' '}
+              {board.evidenceCoverage.partialResearchEntities} partial
+            </span>
+          </div>
+          <div className="grid gap-3 lg:grid-cols-3">
+            <div className="rounded-md border border-[var(--yr-line)] p-3">
+              <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                Coverage blockers
+              </div>
+              <div className="mt-2 space-y-2">
+                {board.evidenceCoverage.topBlockers.slice(0, 5).map((row) => (
+                  <div key={row.blocker} className="flex items-center justify-between gap-2 text-sm">
+                    <span className="text-gray-700">{row.blocker}</span>
+                    <span className="font-semibold text-gray-900">{row.count}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="rounded-md border border-[var(--yr-line)] p-3">
+              <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                Suggested source types
+              </div>
+              <div className="mt-2 space-y-2">
+                {board.evidenceCoverage.suggestedSourceTypes.slice(0, 5).map((row) => (
+                  <div key={row.sourceType} className="flex items-center justify-between gap-2 text-sm">
+                    <span className="text-gray-700">{row.sourceType}</span>
+                    <span className="font-semibold text-gray-900">{row.count}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="rounded-md border border-[var(--yr-line)] p-3">
+              <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                Repair samples
+              </div>
+              <div className="mt-2 space-y-3">
+                {board.evidenceCoverage.samples.slice(0, 3).map((sample) => (
+                  <div key={sample.id}>
+                    <div className="text-sm font-semibold text-gray-900">{sample.label}</div>
+                    <div className="text-xs text-gray-500">{sample.coverageTier}</div>
+                    <div className="mt-1 text-sm text-gray-600">{sample.publicSummary}</div>
+                  </div>
+                ))}
+                {board.evidenceCoverage.samples.length === 0 && (
+                  <div className="text-sm text-gray-500">No coverage repair samples</div>
                 )}
               </div>
             </div>

@@ -185,6 +185,20 @@ export interface ScrapeRunReport {
     missingSourceUrlCount: number;
     lowConfidenceCount: number;
   };
+  evidenceCoverageImpact?: {
+    assessed: number;
+    improved: number;
+    rows: Array<{
+      entityType: string;
+      entityId?: string;
+      entityKey?: string;
+      beforeCoverageTier: string;
+      afterCoverageTier: string;
+      resolvedBlockers: string[];
+      remainingBlockers: string[];
+      rejectedFields: Array<{ field: string; reason: string; sourceName?: string }>;
+    }>;
+  };
   warnings: string[];
   errors: Array<{ message: string; at?: string; context?: unknown }>;
 }
@@ -588,6 +602,7 @@ export function buildScrapeRunReport(
       missingSourceUrlCount,
       lowConfidenceCount,
     },
+    evidenceCoverageImpact: (run.metrics as any)?.evidenceCoverageImpact,
     warnings,
     errors,
   };

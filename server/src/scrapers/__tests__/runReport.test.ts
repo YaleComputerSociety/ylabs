@@ -71,6 +71,64 @@ describe('buildScrapeRunReport', () => {
     expect(report.warnings).toEqual([]);
   });
 
+  it('surfaces evidence coverage impact stored on dry-run metrics', () => {
+    const report = buildScrapeRunReport(
+      {
+        _id: 'run-coverage',
+        sourceName: 'official-profile-page',
+        status: 'success',
+        options: { dryRun: true, dbReview: true },
+        metrics: {
+          evidenceCoverageImpact: {
+            assessed: 1,
+            improved: 1,
+            rows: [
+              {
+                entityType: 'researchEntity',
+                entityKey: 'peters-lab-jdp52',
+                beforeCoverageTier: 'thin',
+                afterCoverageTier: 'partial',
+                resolvedBlockers: ['missing_source_backed_description'],
+                remainingBlockers: ['missing_verified_lead'],
+                rejectedFields: [
+                  {
+                    field: 'description',
+                    reason: 'publication_or_book_blurb',
+                    sourceName: 'ylabs-listing',
+                  },
+                ],
+              },
+            ],
+          },
+        } as any,
+      },
+      [],
+      observationCoverage,
+    );
+
+    expect(report.evidenceCoverageImpact).toEqual({
+      assessed: 1,
+      improved: 1,
+      rows: [
+        {
+          entityType: 'researchEntity',
+          entityKey: 'peters-lab-jdp52',
+          beforeCoverageTier: 'thin',
+          afterCoverageTier: 'partial',
+          resolvedBlockers: ['missing_source_backed_description'],
+          remainingBlockers: ['missing_verified_lead'],
+          rejectedFields: [
+            {
+              field: 'description',
+              reason: 'publication_or_book_blurb',
+              sourceName: 'ylabs-listing',
+            },
+          ],
+        },
+      ],
+    });
+  });
+
   it('flags conflict candidates and malformed observations', () => {
     const report = buildScrapeRunReport(
       {
