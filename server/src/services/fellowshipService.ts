@@ -207,6 +207,7 @@ export const searchFellowships = async (params: {
   undergraduateOnly?: boolean;
   yaleCollegeOnly?: boolean;
   studentVisibilityTier?: StudentVisibilityTier[];
+  includeNonPublic?: boolean;
   includeOperatorReview?: boolean;
   includeSuppressed?: boolean;
 }) => {
@@ -230,16 +231,17 @@ export const searchFellowships = async (params: {
     undergraduateOnly,
     yaleCollegeOnly,
     studentVisibilityTier = [],
+    includeNonPublic = false,
     includeOperatorReview = false,
     includeSuppressed = false,
   } = params;
 
   const filter: any = { archived: false };
-  if (studentVisibilityTier.length > 0) {
+  if (includeNonPublic && studentVisibilityTier.length > 0) {
     filter.studentVisibilityTier = { $in: studentVisibilityTier };
-  } else if (includeSuppressed) {
+  } else if (includeNonPublic && includeSuppressed) {
     // Admin/operator mode: keep all archived=false tiers in scope.
-  } else if (includeOperatorReview) {
+  } else if (includeNonPublic && includeOperatorReview) {
     filter.studentVisibilityTier = {
       $in: [...publicStudentVisibilityTiers, 'operator_review'],
     };

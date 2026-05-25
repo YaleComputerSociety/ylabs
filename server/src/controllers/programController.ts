@@ -62,6 +62,7 @@ export const searchProgramsController = async (request: Request, response: Respo
       programKind: parseFilter(programKind as string),
       entryMode: parseFilter(entryMode as string),
       studentFacingCategory: parseFilter(studentFacingCategory as string),
+      includeNonPublic: isAdmin,
       studentVisibilityTier: isAdmin
         ? parseStudentVisibilityFilter(studentVisibilityTier as string)
         : [],
