@@ -34,13 +34,15 @@ Source metadata
   -> ScrapeRun
   -> append-only Observation rows
   -> entity materialization
-  -> ResearchGroup/User/Paper/etc.
+  -> ResearchGroup/User/Paper/Fellowship/etc.
   -> access materialization where evidence supports it
   -> EntryPathway / AccessSignal / ContactRoute / PostedOpportunity
   -> Meilisearch sync or later reindex
 ```
 
 The current system avoids most duplicate materialized entities through stable slugs, identifiers, derivation keys, and upserts. Observation rows are append-only during a run; identical observations can be superseded, and old superseded rows can be pruned by the compact-retention command after reports are captured. Use the WorkPlanner task before unattended recurring runs for expensive sources.
+
+For program/fellowship sources, run dry-run parser checks first, review application/deadline/source metadata, then run non-production writes with auto-materialization. Confirm funding-only rows do not create access artifacts, and structured-entry rows create at most one pathway, one application signal, one official route, and one posted-opportunity instance per source-backed program cycle.
 
 ## Environment Progression
 
