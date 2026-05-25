@@ -42,6 +42,27 @@ describe('AdminOperatorBoard', () => {
           research: [],
           programs: [],
         },
+        queueKindCounts: {
+          blocking: 5,
+          review: 0,
+          evidence: 25,
+        },
+        discoveryCandidates: [
+          {
+            collection: 'research',
+            reason: 'source_backed_description',
+            count: 25,
+            nextAction: 'Review for possible promotion.',
+            samples: [
+              {
+                id: 'sample-evidence',
+                label: 'Source Backed Lab',
+                tier: 'limited_but_safe',
+                reasons: ['source_backed_description', 'missing_action_evidence'],
+              },
+            ],
+          },
+        ],
         queues: [
           {
             collection: 'research',
@@ -85,10 +106,55 @@ describe('AdminOperatorBoard', () => {
             command: 'yarn --cwd server scraper:integrity-gate --include-samples',
             latestRuns: [],
           },
+          meili: {
+            status: 'watch',
+            pendingSync: true,
+            note: 'A recent non-dry scraper run exists; confirm Mongo changes were rebuilt into Meili before promotion.',
+          },
         },
         sourceFreshness: {
           windowDays: 30,
           riskCounts: { ok: 1, warn: 0, error: 0 },
+          latestRunSummary: {
+            latestDryRun: {
+              id: 'dry-run',
+              sourceName: 'fixture-source',
+              status: 'success',
+              startedAt: '2026-05-24T15:00:00.000Z',
+              observationCount: 1,
+              materializationErrors: 0,
+              materializationConflicts: 0,
+            },
+            latestWriteRun: {
+              id: 'write-run',
+              sourceName: 'fixture-source',
+              status: 'success',
+              startedAt: '2026-05-25T15:00:00.000Z',
+              observationCount: 2,
+              materializationErrors: 0,
+              materializationConflicts: 0,
+            },
+          },
+          readinessRows: [
+            {
+              sourceName: 'fixture-source',
+              displayName: 'Fixture Source',
+              status: 'ready',
+              nextAction: 'Latest run is acceptable for source-health purposes.',
+              expectedArtifactTypes: ['ResearchEntity'],
+            },
+          ],
+          freshnessPolicies: [
+            {
+              sourceName: 'lab-microsite-undergrad-llm',
+              entityType: 'researchEntity',
+              targetFields: ['lastObservedAt'],
+              windowDays: 7,
+              cadence: 'weekly',
+              paid: true,
+              notes: 'Official microsite evidence.',
+            },
+          ],
           rows: [],
         },
       },
@@ -109,5 +175,10 @@ describe('AdminOperatorBoard', () => {
     expect(screen.getByText('Evidence signals')).toBeTruthy();
     expect(screen.getByText('Repair Candidate Lab')).toBeTruthy();
     expect(screen.getByText('Source Backed Lab')).toBeTruthy();
+    expect(screen.getByText('Pipeline Readiness')).toBeTruthy();
+    expect(screen.getByText('Fixture Source')).toBeTruthy();
+    expect(screen.getByText(/pending rebuild confirmation/)).toBeTruthy();
+    expect(screen.getByText('Discovery Candidates')).toBeTruthy();
+    expect(screen.getByText('Freshness Policies')).toBeTruthy();
   });
 });

@@ -134,6 +134,7 @@ All accepted Beta source runs below reported `materialization.errors = 0`. This 
 - [x] Add student visibility tiers and dry-run/apply backfill scripts for programs and research entities so student surfaces hide `operator_review` and `suppressed` records by default.
 - [x] Gate public research/program/opportunity/pathway API detail and search surfaces to student-visible tiers by default; admin program detail can still read non-public program records for review.
 - [x] Add a read-only Operator Board foundation to the admin panel. It summarizes source health, Trust Tier counts, review queues, latest dry/write runs, gate commands, Meili status placeholders, and a top-level promotion status without adding write buttons or worker execution.
+- [x] Extend the Operator Board control-plane slice with source readiness rows, WorkPlanner freshness policies, queue-kind totals, discovery-candidate samples, and pending Meili-sync warnings from recent non-dry scraper runs. This keeps operators aware of stale/blocked/pending-search-sync posture without adding worker execution or write buttons.
 - [ ] Add PI claim flow, Scholar disambiguation, and broader admin field-lock UI only when the workflow is clear.
 
 ### P2: Post-Beta Legacy Cleanup
