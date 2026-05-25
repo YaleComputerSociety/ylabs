@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildEvidenceCoverageBoardSummary,
+  buildGstackNextLane,
   buildRecommendedNextActions,
   classifyOperatorQueueReason,
   derivePromotionStatus,
@@ -98,6 +99,28 @@ describe('adminOperatorBoardService', () => {
         pendingMeiliSync: true,
       }),
     ).toContain('Rebuild Meili after the latest accepted write run.');
+  });
+
+  it('surfaces the next gstack lane when source warnings need review', () => {
+    const actions = buildRecommendedNextActions({
+      promotionStatus: 'watch',
+      sourceRiskCounts: { ok: 18, warn: 6, error: 0 },
+      pendingMeiliSync: false,
+    });
+
+    expect(actions).toContain('Run bounded dry runs for warning sources before promotion.');
+    expect(actions).toContain(
+      'Run scraper integrity and data-quality gates before any production promotion.',
+    );
+    expect(
+      buildGstackNextLane({
+        sourceRiskCounts: { ok: 18, warn: 6, error: 0 },
+      }),
+    ).toEqual({
+      lane: 'source-conflict-review',
+      command: 'yarn --cwd server source:health',
+      rationale: 'Warning sources need materialization conflict review before broad writes.',
+    });
   });
 
   it('summarizes evidence coverage pressure for listing quality repair', () => {

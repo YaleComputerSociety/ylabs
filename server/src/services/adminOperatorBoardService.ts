@@ -115,6 +115,18 @@ export function buildRecommendedNextActions(input: {
   return actions;
 }
 
+export function buildGstackNextLane(input: {
+  sourceRiskCounts: Record<SourceHealthRisk, number>;
+}) {
+  if (input.sourceRiskCounts.warn === 0) return null;
+
+  return {
+    lane: 'source-conflict-review',
+    command: 'yarn --cwd server source:health',
+    rationale: 'Warning sources need materialization conflict review before broad writes.',
+  };
+}
+
 export interface EvidenceCoverageBoardRow {
   id: string;
   label: string;
@@ -537,6 +549,9 @@ export async function buildAdminOperatorBoard() {
       promotionStatus,
       sourceRiskCounts: sourceFreshness.riskCounts,
       pendingMeiliSync,
+    }),
+    gstackNextLane: buildGstackNextLane({
+      sourceRiskCounts: sourceFreshness.riskCounts,
     }),
     trustTiers: {
       research: researchTierCounts,
