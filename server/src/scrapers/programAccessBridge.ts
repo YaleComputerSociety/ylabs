@@ -18,6 +18,7 @@ import {
   upsertEntryPathway as defaultUpsertEntryPathway,
   type UpsertEntryPathwayInput,
 } from '../services/entryPathwayService';
+import { findReviewLockedRecord, omitReviewLockedFields } from '../services/reviewLockUtils';
 import { slugify } from './utils/scraperHelpers';
 
 export type ProgramAccessRole =
@@ -94,7 +95,7 @@ export interface ProgramAccessBridgeDeps {
   upsertEntryPathway?: typeof defaultUpsertEntryPathway;
   upsertAccessSignal?: typeof defaultUpsertAccessSignal;
   upsertContactRoute?: typeof defaultUpsertContactRoute;
-  postedOpportunityModel?: Pick<typeof PostedOpportunity, 'updateOne'>;
+  postedOpportunityModel?: Pick<typeof PostedOpportunity, 'findOne' | 'updateOne'>;
 }
 
 export interface ProgramAccessBridgeOptions {
@@ -368,8 +369,16 @@ export async function materializeProgramAccessBridge(
 
   let postedOpportunities = 0;
   if (inputs.postedOpportunity) {
+    const postedOpportunityFilter = {
+      entryPathwayId,
+      derivationKey: inputs.postedOpportunity.derivationKey,
+    };
+    const existingPostedOpportunity = await findReviewLockedRecord(
+      postedOpportunityModel as any,
+      postedOpportunityFilter,
+    );
     await postedOpportunityModel.updateOne(
-      { entryPathwayId, derivationKey: inputs.postedOpportunity.derivationKey },
+      postedOpportunityFilter,
       {
         $setOnInsert: compactObject({
           entryPathwayId,
@@ -378,12 +387,15 @@ export async function materializeProgramAccessBridge(
           compensationType: inputs.postedOpportunity.compensationType,
           derivationKey: inputs.postedOpportunity.derivationKey,
         }),
-        $set: compactObject({
-          status: inputs.postedOpportunity.status,
-          deadline: inputs.postedOpportunity.deadline,
-          applicationUrl: inputs.postedOpportunity.applicationUrl,
-          archived: inputs.postedOpportunity.archived,
-        }),
+        $set: omitReviewLockedFields(
+          compactObject({
+            status: inputs.postedOpportunity.status,
+            deadline: inputs.postedOpportunity.deadline,
+            applicationUrl: inputs.postedOpportunity.applicationUrl,
+            archived: inputs.postedOpportunity.archived,
+          }),
+          existingPostedOpportunity,
+        ),
         $addToSet: {
           sourceUrls: { $each: inputs.postedOpportunity.sourceUrls },
         },

@@ -211,6 +211,86 @@ describe('entityMaterializer post-materialization metrics', () => {
     );
   });
 
+  it('reports structured fellowship bridge metrics during dry-run without writing rows', async () => {
+    const entityKey = 'official-yale-programs:wu-tsai-undergraduate-fellowship';
+    const observedAt = new Date('2026-01-01T00:00:00Z');
+    const observations = [
+      {
+        entityType: 'fellowship',
+        entityKey,
+        field: 'title',
+        value: 'Wu Tsai Undergraduate Fellowship',
+        sourceName: 'official-yale-programs',
+        confidence: 0.9,
+        observedAt,
+        sourceUrl: 'https://wti.yale.edu/initiatives/undergraduate',
+        superseded: false,
+      },
+      {
+        entityType: 'fellowship',
+        entityKey,
+        field: 'applicationLink',
+        value: 'https://wti.yale.edu/apply',
+        sourceName: 'official-yale-programs',
+        confidence: 0.9,
+        observedAt,
+        sourceUrl: 'https://wti.yale.edu/initiatives/undergraduate',
+        superseded: false,
+      },
+      {
+        entityType: 'fellowship',
+        entityKey,
+        field: 'programAccessRole',
+        value: 'MENTOR_MATCHING',
+        sourceName: 'official-yale-programs',
+        confidence: 0.9,
+        observedAt,
+        superseded: false,
+      },
+      {
+        entityType: 'fellowship',
+        entityKey,
+        field: 'hostedByResearchEntityName',
+        value: 'Wu Tsai Institute',
+        sourceName: 'official-yale-programs',
+        confidence: 0.9,
+        observedAt,
+        superseded: false,
+      },
+      {
+        entityType: 'fellowship',
+        entityKey,
+        field: 'hostedByResearchEntityUrl',
+        value: 'https://wti.yale.edu',
+        sourceName: 'official-yale-programs',
+        confidence: 0.9,
+        observedAt,
+        superseded: false,
+      },
+    ];
+    const findLean = vi.fn().mockResolvedValue(observations);
+    const findOneLean = vi.fn().mockResolvedValue(null);
+    const create = vi.fn();
+    const updateOne = vi.fn();
+
+    vi.spyOn(Observation, 'find').mockReturnValue({ lean: findLean } as any);
+    vi.spyOn(Fellowship, 'findOne').mockReturnValue({ lean: findOneLean } as any);
+    vi.spyOn(Fellowship, 'create').mockImplementation(create as any);
+    vi.spyOn(Fellowship, 'updateOne').mockImplementation(updateOne as any);
+
+    const result = await materializeEntity('fellowship', { entityKey }, { dryRun: true });
+
+    expect(result.created).toBe(true);
+    expect(result.postMaterializationMetrics).toEqual({
+      entryPathways: 1,
+      accessSignals: 1,
+      contactRoutes: 1,
+      postedOpportunities: 1,
+    });
+    expect(create).not.toHaveBeenCalled();
+    expect(updateOne).not.toHaveBeenCalled();
+  });
+
   it('does not write non-allowlisted fellowship observations when updating rows', async () => {
     const entityKey = 'official-yale-programs:example';
     const observedAt = new Date('2026-01-01T00:00:00Z');

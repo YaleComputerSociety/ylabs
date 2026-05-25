@@ -907,6 +907,33 @@ export async function materializeEntity(
   }
   set.lastObservedAt = new Date();
 
+  let postMaterializationMetrics: ReportPostMaterializationMetrics | undefined;
+  if (
+    options.dryRun &&
+    entityType === 'fellowship' &&
+    isStructuredProgramAccessRole(set.programAccessRole)
+  ) {
+    const bridgeResult = await materializeProgramAccessBridge(
+      {
+        ...(entityDoc || {}),
+        ...set,
+        _id: entityIdString || identifier.entityKey,
+        sourceUrl: obs.find((o: any) => typeof o.sourceUrl === 'string' && o.sourceUrl.trim())
+          ?.sourceUrl,
+      },
+      {},
+      { dryRun: options.dryRun },
+    );
+    postMaterializationMetrics = {
+      ...(postMaterializationMetrics || {}),
+      entryPathways: (postMaterializationMetrics?.entryPathways || 0) + bridgeResult.entryPathways,
+      accessSignals: (postMaterializationMetrics?.accessSignals || 0) + bridgeResult.accessSignals,
+      contactRoutes: (postMaterializationMetrics?.contactRoutes || 0) + bridgeResult.contactRoutes,
+      postedOpportunities:
+        (postMaterializationMetrics?.postedOpportunities || 0) + bridgeResult.postedOpportunities,
+    };
+  }
+
   if (options.dryRun) {
     return {
       entityType,
@@ -916,6 +943,7 @@ export async function materializeEntity(
       conflicts,
       created: !entityDoc,
       resolved,
+      postMaterializationMetrics,
     };
   }
 
@@ -961,7 +989,6 @@ export async function materializeEntity(
     if (fresh) await syncEntity(syncEntityType, fresh);
   }
 
-  let postMaterializationMetrics: ReportPostMaterializationMetrics | undefined;
   if (isResearchEntityObservationType(entityType) && entityIdString) {
     const accessResult = await materializeAccessForResearchGroup({
       researchEntityId: entityIdString,
