@@ -13,5 +13,6 @@ describe('admin routes', () => {
 
     expect(guardNames).toEqual(expect.arrayContaining(['isAuthenticated', 'isAdmin']));
     expect(routeByPath('/operator-board')).toBeTruthy();
+    expect(routeByPath('/release-queue')).toBeTruthy();
   });
 });

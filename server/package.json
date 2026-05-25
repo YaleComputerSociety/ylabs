@@ -24,6 +24,7 @@
     "beta:data-quality": "tsx src/scripts/betaDataQuality.ts",
     "programs:backfill-classification": "tsx src/scripts/backfillProgramClassifications.ts",
     "student-visibility:backfill": "tsx src/scripts/backfillStudentVisibilityTiers.ts",
+    "student-visibility:gate": "tsx src/scripts/studentVisibilityGate.ts",
     "beta:readiness": "tsx src/scripts/betaReadinessGate.ts",
     "pathway:relevance-review": "tsx src/scripts/pathwayRelevanceReview.ts",
     "research:quality-search-review": "tsx src/scripts/researchQualitySearchReview.ts",

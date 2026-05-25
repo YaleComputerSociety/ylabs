@@ -26,6 +26,7 @@ export { ResearchGroupMember } from './researchGroupMember';
 export { ResearchGroupStats } from './researchGroupStats';
 export { ScrapeJobLock } from './scrapeJobLock';
 export { Source } from './source';
+export { VisibilityReleaseQueueItem } from './visibilityReleaseQueueItem';
 export { StudentApplication } from './studentApplication';
 export { StudentEngagementEvent } from './studentEngagementEvent';
 export { StudentOutreach } from './studentOutreach';

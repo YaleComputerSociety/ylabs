@@ -28,6 +28,7 @@ import {
   updateAccessReviewRecordReview,
 } from '../services/adminAccessReviewService';
 import { buildAdminOperatorBoard } from '../services/adminOperatorBoardService';
+import { listVisibilityReleaseQueue } from '../services/studentVisibilityGateService';
 
 const router = Router();
 
@@ -39,6 +40,27 @@ router.get('/operator-board', async (_req: Request, res: Response) => {
   } catch (error) {
     console.error('Admin: Error fetching operator board:', error);
     res.status(500).json({ error: 'Failed to fetch operator board' });
+  }
+});
+
+router.get('/release-queue', async (req: Request, res: Response) => {
+  try {
+    res.json(
+      await listVisibilityReleaseQueue({
+        collection:
+          req.query.collection === 'research' || req.query.collection === 'programs'
+            ? req.query.collection
+            : undefined,
+        reason: typeof req.query.reason === 'string' ? req.query.reason : undefined,
+        sourceName: typeof req.query.sourceName === 'string' ? req.query.sourceName : undefined,
+        status: typeof req.query.status === 'string' ? req.query.status : undefined,
+        page: Number(req.query.page),
+        pageSize: Number(req.query.pageSize),
+      }),
+    );
+  } catch (error) {
+    console.error('Admin: Error fetching release queue:', error);
+    res.status(500).json({ error: 'Failed to fetch release queue' });
   }
 });
 
