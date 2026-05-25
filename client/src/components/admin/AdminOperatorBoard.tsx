@@ -93,6 +93,11 @@ interface OperatorBoard {
     research: ReasonCount[];
     programs: ReasonCount[];
   };
+  gstackNextLane?: {
+    lane: string;
+    command: string;
+    rationale: string;
+  } | null;
   queues: QueueSummary[];
   releaseQueue?: ReleaseQueueSummary;
   evidenceCoverage?: EvidenceCoverageSummary;
@@ -344,6 +349,20 @@ const AdminOperatorBoard = () => {
             </p>
           </div>
         </div>
+        {board.gstackNextLane && (
+          <div className="mt-3 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] p-3">
+            <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+              GStack next lane
+            </div>
+            <div className="mt-1 text-sm font-semibold text-gray-900">
+              {board.gstackNextLane.lane}
+            </div>
+            <code className="mt-2 block whitespace-pre-wrap text-xs text-gray-600">
+              {board.gstackNextLane.command}
+            </code>
+            <p className="mt-2 text-sm text-gray-600">{board.gstackNextLane.rationale}</p>
+          </div>
+        )}
       </section>
 
       {board.releaseQueue && (

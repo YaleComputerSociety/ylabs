@@ -42,6 +42,11 @@ describe('AdminOperatorBoard', () => {
           research: [],
           programs: [],
         },
+        gstackNextLane: {
+          lane: 'source-conflict-review',
+          command: 'yarn --cwd server source:health',
+          rationale: 'Warning sources need materialization conflict review before broad writes.',
+        },
         releaseQueue: {
           openCount: 2,
           statusCounts: { open: 2, resolved: 4 },
@@ -153,5 +158,7 @@ describe('AdminOperatorBoard', () => {
     expect(screen.getByText('missing_source_backed_description')).toBeTruthy();
     expect(screen.getByText('official-profile-page')).toBeTruthy();
     expect(screen.getByText('Thin Listing Lab')).toBeTruthy();
+    expect(screen.getByText(/source-conflict-review/i)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /run/i })).toBeNull();
   });
 });
