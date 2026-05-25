@@ -4,6 +4,7 @@ import { useSearchParams } from 'react-router-dom';
 
 import ResearchHomeCard from '../components/research/ResearchHomeCard';
 import InfiniteScrollLoadingDots from '../components/shared/InfiniteScrollLoadingDots';
+import LabPapersList from '../components/labs/LabPapersList';
 import UserContext from '../contexts/UserContext';
 import useConfig from '../hooks/useConfig';
 import { useInfiniteScroll } from '../hooks/useInfiniteScroll';
@@ -863,6 +864,16 @@ const Research = () => {
                 </EmptyGroup>
               )}
             </section>
+
+            {activeResults.papers.length > 0 && (
+              <section className="mt-5">
+                <SectionHeading>Papers via profiles</SectionHeading>
+                <LabPapersList
+                  papers={activeResults.papers}
+                  emptyText="No related profile papers matched this search yet."
+                />
+              </section>
+            )}
           </section>
         )}
         </div>

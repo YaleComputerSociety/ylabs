@@ -1,6 +1,7 @@
 /**
- * Research-activity link list for a research profile. Each card links to the
- * real scholarly destination students can inspect.
+ * Hallmark · pre-emit critique: P4 H4 E4 S4 R4 V4
+ * Research-activity link list for a research profile. Each row links to the
+ * real scholarly destination students can inspect, with source evidence first.
  *
  * Pure presentational — receives the papers as a prop.
  */
@@ -47,6 +48,13 @@ const resolveYear = (paper: ResearchActivityLink): number | undefined => {
   return undefined;
 };
 
+const sourceTone = (paper: ResearchActivityLink, showPreprintMeta: boolean): string => {
+  if (!isScholarlyLink(paper)) return showPreprintMeta ? 'yr-pill-gold' : 'yr-pill-blue';
+  if (paper.destinationKind === 'PMC' || paper.freeFullTextUrl) return 'yr-pill-green';
+  if (paper.destinationKind === 'ARXIV' || paper.destinationKind === 'OPENALEX') return 'yr-pill-gold';
+  return 'yr-pill-blue';
+};
+
 const LabPapersList = ({
   papers,
   emptyText = 'No recent papers.',
@@ -60,8 +68,32 @@ const LabPapersList = ({
     );
   }
 
+  const sourceLabels = Array.from(
+    new Set(
+      papers.slice(0, 4).map((paper) =>
+        isScholarlyLink(paper) ? paper.displaySource : showPreprintMeta ? 'arXiv' : 'Paper',
+      ),
+    ),
+  );
+
   return (
-    <div className="yr-card divide-y divide-slate-200 overflow-hidden rounded-md">
+    <div className="overflow-hidden rounded-md border border-[var(--yr-line)] bg-white">
+      <div className="flex flex-col gap-2 border-b border-slate-200 bg-slate-50/70 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+        <div>
+          <p className="text-xs font-semibold uppercase text-slate-500">Research evidence</p>
+          <p className="mt-0.5 text-sm text-slate-700">
+            {papers.length} linked source{papers.length === 1 ? '' : 's'} students can inspect directly.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          {sourceLabels.map((label) => (
+            <span key={label} className="yr-pill min-h-0 rounded px-2 py-0.5 text-[11px]">
+              {label} source
+            </span>
+          ))}
+        </div>
+      </div>
+      <div className="divide-y divide-slate-200">
       {papers.map((paper, index) => {
         const link = resolvePaperLink(paper);
         const year = resolveYear(paper);
@@ -79,7 +111,7 @@ const LabPapersList = ({
         return (
           <article
             key={paper._id}
-            className="group grid gap-3 px-4 py-4 transition-colors hover:bg-[var(--yr-blue-soft)]/45 sm:grid-cols-[2.75rem_minmax(0,1fr)] sm:px-5"
+            className="group grid gap-3 px-4 py-4 transition-colors hover:bg-[var(--yr-blue-soft)]/45 sm:grid-cols-[2.75rem_minmax(0,1fr)_9rem] sm:px-5"
           >
             <div className="hidden sm:block">
               <div className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-300 bg-slate-50 font-mono text-xs font-semibold text-slate-700">
@@ -88,7 +120,7 @@ const LabPapersList = ({
             </div>
             <div className="min-w-0">
               <div className="mb-2 flex flex-wrap items-center gap-2">
-                <span className="yr-pill yr-pill-blue min-h-0 px-2.5 py-0.5">
+                <span className={`yr-pill min-h-0 px-2.5 py-0.5 ${sourceTone(paper, showPreprintMeta)}`}>
                   {sourceLabel}
                 </span>
                 {paper.venue && (
@@ -122,7 +154,7 @@ const LabPapersList = ({
               {!isScholarlyLink(paper) && paper.tldr && (
                 <p className="mt-2 text-sm leading-relaxed text-slate-700">{paper.tldr}</p>
               )}
-              <div className="mt-3 flex flex-wrap items-center gap-3 text-xs font-semibold">
+              <div className="mt-3 flex flex-wrap items-center gap-3 text-xs font-semibold sm:hidden">
                 {link && (
                   <a href={link} target="_blank" rel="noopener noreferrer" className="yr-link">
                     Open source
@@ -150,9 +182,44 @@ const LabPapersList = ({
                 )}
               </div>
             </div>
+            <div className="hidden items-start justify-end sm:flex">
+              <div className="flex flex-col items-end gap-2 text-xs font-semibold">
+                {link && (
+                  <a
+                    href={link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="yr-focus-ring rounded-md border border-blue-200 bg-[var(--yr-blue-soft)] px-3 py-2 text-[var(--yr-blue)] transition-colors hover:bg-white"
+                  >
+                    Open source
+                  </a>
+                )}
+                {isScholarlyLink(paper) && paper.freeFullTextUrl && (
+                  <a
+                    href={safeUrl(paper.freeFullTextUrl)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="yr-link rounded-sm"
+                  >
+                    {paper.freeFullTextLabel || 'Free full text'}
+                  </a>
+                )}
+                {showPreprintMeta && !isScholarlyLink(paper) && paper.pdfUrl && (
+                  <a
+                    href={safeUrl(paper.pdfUrl)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="yr-link rounded-sm"
+                  >
+                    PDF
+                  </a>
+                )}
+              </div>
+            </div>
           </article>
         );
       })}
+      </div>
     </div>
   );
 };

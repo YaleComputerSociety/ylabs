@@ -31,19 +31,39 @@ import {
 const FIRST_PROGRAM_SAVE_KEY = 'ylabs.firstSave.program.v1';
 
 const SectionHeader = ({
+  id,
   title,
   count,
   description,
+  tone = 'blue',
 }: {
+  id: string;
   title: string;
   count: number;
   description?: string;
+  tone?: 'green' | 'gold' | 'blue' | 'neutral';
 }) => (
-  <div className="mb-4 mt-10 border-t border-slate-200 pt-5 first:mt-0 first:border-t-0 first:pt-0">
+  <div
+    id={id}
+    className="mb-4 mt-10 scroll-mt-24 rounded-md border border-slate-200 bg-white px-4 py-4 first:mt-0"
+  >
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <h2 className="text-xl font-semibold text-slate-950">{title}</h2>
-      <span className="yr-pill yr-pill-blue min-h-0 rounded px-2.5 py-1">
-        {count}
+      <div>
+        <p className="yr-kicker">Program lane</p>
+        <h2 className="mt-1 text-xl font-semibold text-slate-950">{title}</h2>
+      </div>
+      <span
+        className={`yr-pill min-h-0 rounded px-2.5 py-1 ${
+          tone === 'green'
+            ? 'yr-pill-green'
+            : tone === 'gold'
+              ? 'yr-pill-gold'
+              : tone === 'neutral'
+                ? ''
+                : 'yr-pill-blue'
+        }`}
+      >
+        {count} {count === 1 ? 'record' : 'records'}
       </span>
     </div>
     {description && (
@@ -51,6 +71,63 @@ const SectionHeader = ({
     )}
   </div>
 );
+
+interface SectionNavItem {
+  id: string;
+  label: string;
+  count: number;
+  detail: string;
+  tone: 'green' | 'gold' | 'blue' | 'neutral';
+}
+
+const SectionNavigator = ({ items }: { items: SectionNavItem[] }) => {
+  if (items.length <= 1) return null;
+
+  return (
+    <nav
+      aria-label="Program result sections"
+      className="yr-card mb-5 rounded-md p-3"
+    >
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <p className="yr-kicker">Result map</p>
+          <p className="mt-1 text-sm text-slate-600">
+            Jump by timing instead of scrolling through every program record.
+          </p>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          {items.map((item) => (
+            <a
+              key={item.id}
+              href={`#${item.id}`}
+              className="yr-focus-ring rounded-md border border-slate-200 bg-white px-3 py-2 text-left transition-colors hover:border-blue-200 hover:bg-[var(--yr-blue-soft)]"
+            >
+              <span
+                className={`yr-pill min-h-0 rounded px-2 py-0.5 text-[11px] ${
+                  item.tone === 'green'
+                    ? 'yr-pill-green'
+                    : item.tone === 'gold'
+                      ? 'yr-pill-gold'
+                      : item.tone === 'neutral'
+                        ? ''
+                        : 'yr-pill-blue'
+                }`}
+              >
+                {item.count}
+              </span>
+              <span className="mt-2 block text-sm font-semibold text-slate-950">
+                {item.label}
+              </span>
+              <span className="mt-0.5 block text-xs leading-snug text-slate-600">
+                {item.detail}
+              </span>
+            </a>
+          ))}
+        </div>
+      </div>
+    </nav>
+  );
+};
 
 const StatusSummary = ({
   openCount,
@@ -422,6 +499,45 @@ const Fellowships = () => {
   const noResults = fellowships.length === 0 && !isLoading;
   const visibleCount =
     closingSoonItems.length + openItems.length + nextCycleItems.length + closedItems.length;
+  const sectionNavCandidates: SectionNavItem[] = [
+    {
+      id: 'program-section-closing-soon',
+      label: 'Closing Soon',
+      count: closingSoonItems.length,
+      detail: 'Check fit immediately',
+      tone: 'gold',
+    },
+    {
+      id: 'program-section-open-now',
+      label: 'Open Now',
+      count: openItems.length,
+      detail: 'Applications active',
+      tone: 'green',
+    },
+    {
+      id: 'program-section-next-cycle',
+      label: 'Likely Next Cycle',
+      count: nextCycleItems.length,
+      detail: 'Plan ahead',
+      tone: 'blue',
+    },
+    {
+      id: 'program-section-archive',
+      label: 'Planning Archive',
+      count: closedItems.length,
+      detail: 'Reference only',
+      tone: 'neutral',
+    },
+  ];
+  const sectionNavItems = sectionNavCandidates.filter((item) => item.count > 0 && showSection(
+    item.id === 'program-section-closing-soon'
+      ? 'closingSoon'
+      : item.id === 'program-section-open-now'
+        ? 'open'
+        : item.id === 'program-section-next-cycle'
+          ? 'nextCycle'
+          : 'closed',
+  ));
 
   const sentinelRef = useInfiniteScroll({
     searchExhausted,
@@ -554,12 +670,16 @@ const Fellowships = () => {
         </div>
       ) : (
         <>
+          <SectionNavigator items={sectionNavItems} />
+
           {showSection('closingSoon') && closingSoonItems.length > 0 && (
             <>
               <SectionHeader
+                id="program-section-closing-soon"
                 title="Closing Soon"
                 count={closingSoonItems.length}
                 description="Deadlines close enough that eligibility and mentor fit should be checked immediately."
+                tone="gold"
               />
               <BrowseGrid
                 items={closingSoonItems}
@@ -578,9 +698,11 @@ const Fellowships = () => {
           {showSection('open') && openItems.length > 0 && (
             <>
               <SectionHeader
+                id="program-section-open-now"
                 title="Open Now"
                 count={openItems.length}
                 description="Current application windows with deadlines that have not passed."
+                tone="green"
               />
               <BrowseGrid
                 items={openItems}
@@ -599,9 +721,11 @@ const Fellowships = () => {
           {showSection('nextCycle') && nextCycleItems.length > 0 && (
             <>
               <SectionHeader
+                id="program-section-next-cycle"
                 title="Likely Next Cycle"
                 count={nextCycleItems.length}
                 description="Official past cycles that look recurring. Treat these as planning leads until the next application window is confirmed."
+                tone="blue"
               />
               <BrowseGrid
                 items={nextCycleItems}
@@ -620,9 +744,11 @@ const Fellowships = () => {
           {showSection('closed') && closedItems.length > 0 && (
             <>
               <SectionHeader
+                id="program-section-archive"
                 title="Planning Archive"
                 count={closedItems.length}
                 description="Retained records that may still inform future scraper review, but should not be treated as active opportunities."
+                tone="neutral"
               />
               <BrowseGrid
                 items={closedItems}
