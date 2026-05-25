@@ -72,4 +72,34 @@ describe('buildListingResearchEntityProfilePatch', () => {
       'Email [email redacted] or call [phone redacted] to apply.',
     );
   });
+
+  it('does not promote person-page publication blurbs into entity descriptions', () => {
+    const patch = buildListingResearchEntityProfilePatch({
+      entity: {
+        sourceUrls: [],
+        websiteUrl: '',
+        shortDescription: '',
+        fullDescription: '',
+        description: '',
+      },
+      listing: {
+        title: 'John Peters',
+        ownerFirstName: 'John',
+        ownerLastName: 'Peters',
+        websites: ['http://filmstudies.yale.edu/people/john-durham-peters'],
+        description:
+          'This book explores the materiality of communication and provides a genealogy of the information age up to Google.',
+        departments: ['Film and Media Studies', 'English'],
+      },
+    });
+
+    expect(patch).toMatchObject({
+      sourceUrls: ['http://filmstudies.yale.edu/people/john-durham-peters'],
+      websiteUrl: 'http://filmstudies.yale.edu/people/john-durham-peters',
+      departments: ['Film and Media Studies', 'English'],
+    });
+    expect(patch).not.toHaveProperty('shortDescription');
+    expect(patch).not.toHaveProperty('fullDescription');
+    expect(patch).not.toHaveProperty('description');
+  });
 });

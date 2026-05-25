@@ -99,6 +99,22 @@ function ownerDisplayName(owner: OwnerLike, kind: 'lab' | 'individual'): string 
   return owner.netid ? `${owner.netid} Lab` : 'Lab';
 }
 
+async function verifiedOwnerUserId(owner: OwnerLike): Promise<mongoose.Types.ObjectId | null> {
+  const rawId = owner._id;
+  if (rawId && mongoose.Types.ObjectId.isValid(rawId)) {
+    if (!owner.netid) return rawId;
+    const user = await User.findById(rawId).select('netid').lean();
+    return user?.netid === owner.netid ? rawId : null;
+  }
+
+  if (owner.netid) {
+    const user = await User.findOne({ netid: owner.netid }).select('_id').lean();
+    return user?._id || null;
+  }
+
+  return null;
+}
+
 /**
  * Returns an existing ResearchEntity for which the owner is the PI, or creates a stub one.
  * Never throws on duplicate slug — uses upsert + member-row idempotent insert.
@@ -111,9 +127,11 @@ export async function findOrCreateForOwner(owner: OwnerLike): Promise<{
     throw new Error('findOrCreateForOwner requires owner._id or owner.netid');
   }
 
-  if (owner._id && mongoose.Types.ObjectId.isValid(owner._id)) {
+  const ownerUserId = await verifiedOwnerUserId(owner);
+
+  if (ownerUserId) {
     const existingMember = await ResearchGroupMember.findOne({
-      userId: owner._id,
+      userId: ownerUserId,
       role: 'pi',
     }).lean();
     if (existingMember) {
@@ -148,14 +166,14 @@ export async function findOrCreateForOwner(owner: OwnerLike): Promise<{
     setDefaultsOnInsert: true,
   }).lean();
 
-  if (owner._id && mongoose.Types.ObjectId.isValid(owner._id)) {
+  if (ownerUserId) {
     await ResearchGroupMember.updateOne(
-      { researchEntityId: group._id, userId: owner._id },
+      { researchEntityId: group._id, userId: ownerUserId },
       {
         $setOnInsert: {
           researchEntityId: group._id,
           researchGroupId: group._id,
-          userId: owner._id,
+          userId: ownerUserId,
           role: 'pi',
           startedAt: new Date(),
           lastObservedAt: new Date(),

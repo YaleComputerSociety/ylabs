@@ -31,6 +31,31 @@ const missingArray = (value: unknown): boolean => !Array.isArray(value) || value
 
 const missingText = (value: unknown): boolean => !hasText(value);
 
+const normalizedTextKey = (value: unknown): string =>
+  textValue(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+
+const looksLikeOwnerTitle = (listing: Record<string, any> | null): boolean => {
+  const title = normalizedTextKey(listing?.title);
+  const ownerName = normalizedTextKey([listing?.ownerFirstName, listing?.ownerLastName].filter(Boolean).join(' '));
+  return !!title && !!ownerName && title === ownerName;
+};
+
+const looksLikePublicationBlurb = (value: string): boolean =>
+  /\b(this|the)\s+(book|article|chapter|essay)\b/i.test(value) ||
+  /\b(book|article|chapter|essay)\s+(explores|examines|argues|provides|introduces)\b/i.test(value);
+
+const usableProfileDescription = (
+  listing: Record<string, any> | null,
+  description: string,
+): string => {
+  if (!description) return '';
+  if (looksLikeOwnerTitle(listing) && looksLikePublicationBlurb(description)) return '';
+  return description;
+};
+
 export function buildListingResearchEntityProfilePatch({
   entity = {},
   listing = {},
@@ -42,7 +67,10 @@ export function buildListingResearchEntityProfilePatch({
     listing?.website,
   ]).filter(isHttpUrl);
   const firstUrl = urls[0];
-  const description = redactDirectContactInfo(textValue(listing?.description || listing?.summary));
+  const description = usableProfileDescription(
+    listing,
+    redactDirectContactInfo(textValue(listing?.description || listing?.summary)),
+  );
   const departments = stringArray(listing?.departments);
   const researchAreas = uniqueStrings([
     ...(Array.isArray(listing?.researchAreas) ? listing.researchAreas : []),
