@@ -26,9 +26,10 @@ interface RepairCliOptions {
   apply: boolean;
   syncMeili: boolean;
   issues: string[];
+  trustTierMissingLeads: boolean;
 }
 
-function parseArgs(argv: string[]): RepairCliOptions {
+export function parseResearchEntityCoverageRepairArgs(argv: string[]): RepairCliOptions {
   const options: RepairCliOptions = {
     limit: 50,
     minScore: 8,
@@ -36,6 +37,7 @@ function parseArgs(argv: string[]): RepairCliOptions {
     apply: false,
     syncMeili: false,
     issues: parseIssueList(),
+    trustTierMissingLeads: false,
   };
 
   for (const arg of argv) {
@@ -49,6 +51,10 @@ function parseArgs(argv: string[]): RepairCliOptions {
     }
     if (arg === '--sync-meili') {
       options.syncMeili = true;
+      continue;
+    }
+    if (arg === '--trust-tier-missing-leads') {
+      options.trustTierMissingLeads = true;
       continue;
     }
     if (arg.startsWith('--slug=')) {
@@ -76,6 +82,21 @@ function parseArgs(argv: string[]): RepairCliOptions {
 
 async function candidateSlugs(options: RepairCliOptions): Promise<string[]> {
   if (options.slug) return [options.slug];
+  if (options.trustTierMissingLeads) {
+    const docs = await ResearchEntity.find({
+      archived: { $ne: true },
+      studentVisibilityTier: 'operator_review',
+      studentVisibilityReasons: {
+        $all: ['source_backed_description', 'concrete_next_step', 'missing_lead'],
+      },
+    })
+      .select('slug')
+      .sort({ name: 1, slug: 1 })
+      .limit(options.limit)
+      .lean();
+
+    return docs.map((doc: any) => doc.slug).filter(Boolean);
+  }
 
   const audit = await buildBulkAudit({
     limit: options.limit,
@@ -98,7 +119,7 @@ async function detailRowsForSlugs(slugs: string[]): Promise<FoundSlugAudit[]> {
 }
 
 async function main(): Promise<void> {
-  const options = parseArgs(process.argv.slice(2));
+  const options = parseResearchEntityCoverageRepairArgs(process.argv.slice(2));
   assertScriptApplyAllowed({
     apply: options.apply,
     scriptName: 'research-entity:coverage-repair',
@@ -170,6 +191,7 @@ async function main(): Promise<void> {
           includeArchived: options.includeArchived,
           syncMeili: options.syncMeili,
           issues: options.issues,
+          trustTierMissingLeads: options.trustTierMissingLeads,
         },
         before: summarizeRepairRows(beforeRows),
         after: summarizeRepairRows(afterRows),
