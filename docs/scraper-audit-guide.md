@@ -220,6 +220,84 @@ npx -y corepack@0.34.7 yarn --cwd server source:health
 
 The source-health command is read-only. It summarizes enabled sources, recent run status, coverage metadata, materialization errors/conflicts, and the next action needed before promotion.
 
+## Repeatable Source Automation Runbook
+
+Use this operator sequence for any source-expansion batch before student-facing promotion:
+
+1. **Seed sources in the target DB.** Confirm the CLI prints the intended Mongo target.
+
+   ```bash
+   SCRAPER_ENV=<development|beta> ALLOW_NON_PROD_SCRAPER_WRITES=true \
+     npx -y corepack@0.34.7 yarn scrape:seed-sources
+   ```
+
+2. **Run a DB-backed dry-run.** Omit `--use-cache` for the first live parser audit. Dry-run may create or update `scrape_runs`, but must not write `Observation` rows or materialized collections.
+
+   ```bash
+   SCRAPER_ENV=<development|beta> \
+     npx -y corepack@0.34.7 yarn scrape run --source <source-name> --limit <n> --dry-run
+   ```
+
+3. **Review and accept before apply.** Inspect the printed report or save it with `scrape report`; require plausible counters, zero materialization errors, understood warnings, no unsupported access claims, and no non-public contact exposure. Do not run apply from an unreviewed dry-run.
+
+   ```bash
+   npx -y corepack@0.34.7 yarn scrape report --run <dryRunId> \
+     --output /tmp/yale-research-scraper-reports/<dryRunId>.json
+   ```
+
+4. **Apply only the reviewed scope.** Use the same bounded source options that were accepted in dry-run and materialize immediately.
+
+   ```bash
+   SCRAPER_ENV=<development|beta> ALLOW_NON_PROD_SCRAPER_WRITES=true \
+     npx -y corepack@0.34.7 yarn scrape run --source <source-name> --limit <n> --auto-materialize
+   ```
+
+   If materialization is run separately, use the accepted run ID:
+
+   ```bash
+   SCRAPER_ENV=<development|beta> ALLOW_NON_PROD_SCRAPER_WRITES=true \
+     npx -y corepack@0.34.7 yarn scrape materialize --run <scrapeRunId>
+   ```
+
+5. **Run gates after materialization.**
+
+   ```bash
+   npx -y corepack@0.34.7 yarn --cwd server scraper:integrity-gate --include-samples --limit=50
+   npx -y corepack@0.34.7 yarn --cwd server source:health --strict
+   ```
+
+6. **Recompute student visibility.** Dry-run first, get operator acceptance for rule effects, then apply. When the target checkout provides `student-visibility:approve-rules`, use it as the explicit approval step before apply; otherwise record the reviewed dry-run output and reviewer decision in the run artifact.
+
+   ```bash
+   npx -y corepack@0.34.7 yarn --cwd server student-visibility:backfill --collection=all
+   npx -y corepack@0.34.7 yarn --cwd server student-visibility:approve-rules --input <reviewed-backfill-report.json>
+   SCRAPER_ENV=<development|beta> ALLOW_NON_PROD_SCRAPER_WRITES=true \
+     npx -y corepack@0.34.7 yarn --cwd server student-visibility:backfill --collection=all --apply
+   ```
+
+7. **Rebuild Meilisearch after accepted writes.** Use `--clear` for local/dev rebuilds; use the deployment runbook's swap/reindex posture for Beta or production traffic.
+
+   ```bash
+   npx -y corepack@0.34.7 yarn --cwd server meili:rebuild-research-entities --clear
+   npx -y corepack@0.34.7 yarn --cwd server meili:rebuild-pathways --clear
+   ```
+
+8. **Smoke-check student APIs.** Confirm public APIs return only `student_ready` / `limited_but_safe` rows by default and that search still returns plausible results for the source's expected terms.
+
+   ```bash
+   curl -sS 'http://localhost:4000/api/research?page=1&pageSize=5'
+   curl -sS 'http://localhost:4000/api/programs?page=1&pageSize=5'
+   curl -sS 'http://localhost:4000/api/research/search?q=<term>&page=1&pageSize=5'
+   ```
+
+No production writes are allowed without the existing production guardrails: `SCRAPER_ENV=production`, `CONFIRM_PROD_SCRAPE=true`, source-specific `--release` posture where applicable, a confirmed backup/rollback point, and the same review gates above. Equivalent future automation must preserve those guardrails rather than bypassing them.
+
+Current source-specific lessons:
+
+- `department-undergrad-research` dry-run posture is healthy. Keep using bounded `--only` batches and verify that department guidance creates restrained access evidence rather than `PostedOpportunity` rows.
+- `yale-research-official` and `ysm-atoz-index` are healthy discovery-only sources. They should continue to materialize entities and provenance without undergraduate-access artifacts unless a later reviewed extractor adds explicit access evidence.
+- `yale-college-fellowships-office` needs stale URL hygiene around the Mellon path before promotion. Clean or suppress stale Mellon URLs before accepting a full apply.
+
 Useful sparse-detail / coverage-gap audit:
 
 ```bash
@@ -261,11 +339,12 @@ The reaper defaults to dry-run. Use `--apply` only after reviewing the dry-run o
 ## Recommended Audit Order
 
 1. `dept-faculty-roster`: entity/faculty/lab ownership trunk.
-2. `lab-microsite-description-llm`: sparse ResearchEntity description repair, higher risk because it uses LLM and live websites.
-3. `lab-microsite-undergrad-llm`: high-value pathway evidence, higher risk because it uses LLM and live websites.
-4. `undergrad-fellowships-recipients`: past-undergrad and fellowship-compatible evidence.
-5. `centers-institutes-index`, `ysm-atoz-index`, `yse-centers-index`: entity discovery.
-6. `nih-reporter`, `nsf-award-search`, `openalex`, `arxiv`: enrichment, funding, publication, and preprint context.
+2. `department-undergrad-research`: official department undergraduate research routes, project lists, contacts, and application links.
+3. `lab-microsite-description-llm`: sparse ResearchEntity description repair, higher risk because it uses LLM and live websites.
+4. `lab-microsite-undergrad-llm`: high-value pathway evidence, higher risk because it uses LLM and live websites.
+5. `undergrad-fellowships-recipients`: past-undergrad and fellowship-compatible evidence.
+6. `centers-institutes-index`, `ysm-atoz-index`, `yse-centers-index`: entity discovery.
+7. `nih-reporter`, `nsf-award-search`, `openalex`, `arxiv`: enrichment, funding, publication, and preprint context.
 
 Legacy `legacy-listing` records are not scraper coverage proof. The Beta `listings` collection has been dropped, and listing-derived pathways/signals/opportunities are archived or deleted. Use source coverage, official profile URLs, reviewed accepted inputs, and admin/manual seeds to prioritize sparse entities.
 
@@ -274,6 +353,7 @@ Legacy `legacy-listing` records are not scraper coverage proof. The Beta `listin
 | Scraper                            | Main purpose                                                                                             | Primary observation entity types                                       | Expected materialized collections                                               | Access-model impact                                                                                                                                                                         | Audit notes                                                                                                                                                                                                                                           |
 | ---------------------------------- | -------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `dept-faculty-roster`              | Discover faculty, official profile URLs, ORCID, lab/personal sites, Scholar review candidates, inferred PI ownership | `researchEntity`, `user`                                               | `users`, `research_entities`, then guarded fallback `research_entity_members`, `entry_pathways`, `contact_routes` during materialization when applicable | Can backfill lab descriptions/research areas, PI membership, and guarded public PI-profile fallback routes/pathways. It should not create active posted openings or strong access claims by itself.               | Audit by department when possible. Current configs cover Econ, MCDB, CS, Engineering-wide SEAS, Psych, Math, Physics, Statistics, and Astronomy. Engineering endpoints require Yale VPN and bounded `--only cs` / `--only seas` chunks; `seas` excludes CS-only rows and infers per-person Engineering departments from titles. Large runs can be slow because profile pages are enriched sequentially. Review negative microsite signals before trusting fallback pathways/routes. |
+| `department-undergrad-research`    | Extract official department undergraduate research routes, project lists, contacts, and application links             | `researchEntity`                                                       | `research_entities`, then access records through `accessMaterializer.ts`             | Can create exploratory `EntryPathway`, `AccessSignal`, and guarded `ContactRoute` records from explicit undergraduate research evidence. It must not create `PostedOpportunity` rows by itself.               | Start with `--only physics,chemistry,mcdb,economics-tobin-ra,psychology` dry-runs. Physics-style project lists can create lab-specific evidence; generic department guidance should remain a restrained program/pathway entity. |
 | `lab-microsite-description-llm`    | Extract source-backed research descriptions, methods, and conservative topic labels from official lab websites | `researchEntity`                                                       | `research_entities`                                                             | None. It must not create `EntryPathway`, `AccessSignal`, `ContactRoute`, or `PostedOpportunity` records.                                                                                  | Start with an uncached dry-run sample such as `SCRAPER_ENV=beta yarn --cwd server scrape run --source lab-microsite-description-llm --limit 25 --dry-run --ignore-work-planner`. Review source URLs, specificity, review samples, and absence of access/opportunity claims before apply. |
 | `lab-microsite-undergrad-llm`      | Extract evidence from lab/faculty websites: join pages, role language, constraints, contact instructions | `researchEntity`                                                       | `research_entities`, then access records when evidence supports them            | Can create `access_signals`, `entry_pathways`, and guarded `contact_routes` through `accessMaterializer.ts`. Should preserve quotes/source URLs and avoid final claims inside scraper code. | Start with small `--limit`. Requires `OPENAI_API_KEY`. Use source coverage, official profile URLs, accepted inputs, and reviewed sparse-entity reports for target selection; review quotes and `quoteSourceUrl` carefully.                         |
 | `undergrad-fellowships-recipients` | Capture evidence of past undergrad advisees and fellowship-compatible research                           | `researchEntity`                                                       | `research_entities`, `entry_pathways`, `access_signals`                         | Can create exploratory outreach pathways plus `PAST_UNDERGRADS` and `FELLOWSHIP_COMPATIBLE` signals. Fellowship funding remains formalization evidence, not a standalone entry pathway.     | Many programs require manual upload or CSV/PDF handling. Audit skipped/manual-upload programs separately.                                                                                                                                             |

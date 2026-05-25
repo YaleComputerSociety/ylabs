@@ -18,10 +18,8 @@ const DEFAULT_PAGE_URLS = [
   'https://science.yalecollege.yale.edu/stem-fellowships/funding-stem-opportunities-yale',
   'https://science.yalecollege.yale.edu/stem-fellowships/funding-stem-opportunities-yale/stars/stars-summer-research-program',
   'https://wti.yale.edu/initiatives/undergraduate',
-  'https://medicine.yale.edu/whr/training/fellowship/apply/',
   'https://ycmd.yale.edu/education/summer-undergraduate-internships',
   'https://economics.yale.edu/undergraduate/tobin-ra',
-  'https://engineering.yale.edu/academic-study/departments/computer-science/undergraduate-study/research-internship-program',
   'https://college.yale.edu/life-at-yale/student-faculty-awards/mellon-mays-undergraduate-fellowship-program',
 ];
 
