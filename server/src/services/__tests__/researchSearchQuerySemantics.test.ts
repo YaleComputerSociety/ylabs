@@ -40,6 +40,28 @@ describe('buildResearchSearchQuerySemantics', () => {
     expect(ai.concepts).toContain('machine learning');
   });
 
+  it('keeps archival research expansions evidence-specific', () => {
+    const semantics = buildResearchSearchQuerySemantics('archival research');
+
+    expect(semantics.expansionQueries).toEqual(
+      expect.arrayContaining([
+        'archival research',
+        'archives',
+        'archival',
+        'manuscripts',
+        'special collections',
+        'library collections',
+        'museum collections',
+        'curatorial',
+        'rare books',
+        'primary sources',
+        'oral history',
+        'material culture',
+      ]),
+    );
+    expect(semantics.expansionQueries).not.toContain('history humanities');
+  });
+
   it('does not need one-off semantic rules for specific proper-noun queries', () => {
     const semantics = buildResearchSearchQuerySemantics('black scholes');
 

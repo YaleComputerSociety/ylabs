@@ -16,7 +16,7 @@ export const RESEARCH_SEARCH_QUALITY_CASES: ResearchSearchQualityCase[] = [
     query: 'archival research',
     expectedConcepts: ['archives and collections'],
     expectedMethods: ['archival research'],
-    expectedExpansionIncludes: ['manuscripts', 'collections', 'history'],
+    expectedExpansionIncludes: ['manuscripts', 'special collections', 'library collections'],
   },
   {
     query: 'digital humanities',

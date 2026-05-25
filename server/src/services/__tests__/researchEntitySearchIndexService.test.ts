@@ -98,6 +98,51 @@ describe('researchEntitySearchIndexService', () => {
     expect(document?.semanticText).toContain('computational text analysis');
   });
 
+  it('does not infer archival research from generic collection wording alone', () => {
+    const document = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-collections-noise',
+      name: 'Robotics Data Collection Lab',
+      fullDescription:
+        'Develops robot learning systems for sensor collection, dataset construction, and field deployment.',
+      departments: ['Computer Science'],
+      researchAreas: ['robotics'],
+      keywords: ['data collection'],
+    });
+
+    expect(document?.methodSignals).not.toContain('archival research');
+    expect(document?.conceptSignals).not.toContain('archives and collections');
+  });
+
+  it('infers archival research from source-backed archival evidence phrases', () => {
+    const document = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-archival-evidence',
+      name: 'Special Collections Research Home',
+      fullDescription:
+        'Supports undergraduate projects using special collections, rare books, manuscripts, and primary sources.',
+      departments: ['History'],
+      researchAreas: ['book history'],
+      keywords: [],
+    });
+
+    expect(document?.methodSignals).toContain('archival research');
+    expect(document?.conceptSignals).toContain('archives and collections');
+  });
+
+  it('keeps trusted library and museum collection contexts discoverable', () => {
+    const document = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-library-collections',
+      name: 'Museum Collections Research Home',
+      fullDescription:
+        'Supports curatorial research with library collections and museum collections.',
+      departments: ['History of Art'],
+      researchAreas: ['material culture'],
+      keywords: [],
+    });
+
+    expect(document?.methodSignals).toContain('archival research');
+    expect(document?.conceptSignals).toContain('archives and collections');
+  });
+
   it('prioritizes full descriptions in semantic text while retaining concise summaries', () => {
     const document = buildResearchEntitySearchIndexDocument({
       _id: 'entity-description-depth',

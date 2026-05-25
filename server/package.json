@@ -40,6 +40,7 @@
     "beta:readiness": "tsx src/scripts/betaReadinessGate.ts",
     "beta:data-quality": "tsx src/scripts/betaDataQuality.ts",
     "pathway:relevance-review": "tsx src/scripts/pathwayRelevanceReview.ts",
+    "research-entity:relevance-review": "tsx src/scripts/researchEntityRelevanceReview.ts",
     "pathways:dedupe-exploratory": "tsx src/scripts/dedupeExploratoryPathways.ts",
     "users:dedupe-by-identity": "tsx src/scripts/dedupeUsersByIdentity.ts",
     "users:cleanup-conflicting-identities": "tsx src/scripts/cleanupConflictingUserIdentities.ts",

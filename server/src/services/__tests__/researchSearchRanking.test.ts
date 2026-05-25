@@ -55,6 +55,36 @@ describe('rankResearchEntityCandidates', () => {
     expect(ranked[0].searchMatch.reason).toContain('wet lab');
   });
 
+  it('treats canonical short and full descriptions as quality signals', () => {
+    const semantics = buildResearchSearchQuerySemantics('decision making');
+    const ranked = rankResearchEntityCandidates(
+      [
+        {
+          id: 'legacy-summary',
+          name: 'Decision Research',
+          departments: ['Psychology'],
+          summary: '',
+          researchAreas: ['decision making'],
+          sourceUrls: [],
+        },
+        {
+          id: 'canonical-description',
+          name: 'Decision Research',
+          departments: ['Psychology'],
+          shortDescription: 'Studies decision making across learning and uncertainty.',
+          fullDescription:
+            'The research home studies decision making across learning, uncertainty, and behavioral experiments.',
+          researchAreas: ['decision making'],
+          sourceUrls: [],
+        },
+      ],
+      semantics,
+      'expanded-keyword',
+    );
+
+    expect(ranked[0].candidate.id).toBe('canonical-description');
+  });
+
   it('prefers exact multi-token matches over typo-like partial matches', () => {
     const semantics = buildResearchSearchQuerySemantics('blue silver');
     const ranked = rankResearchEntityCandidates(

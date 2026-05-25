@@ -215,6 +215,11 @@ const collectSemanticSourceText = (doc: any): string =>
     ].join(' '),
   );
 
+const hasArchivalEvidence = (text: string): boolean =>
+  /\b(archives?|archival|manuscripts?|special collections?|library collections?|museum collections?|curatorial|rare books?|primary sources?|oral history|material culture)\b/.test(
+    text,
+  );
+
 const inferMethodSignals = (doc: any): string[] => {
   const text = collectSemanticSourceText(doc);
 
@@ -222,9 +227,7 @@ const inferMethodSignals = (doc: any): string[] => {
     text.includes('molecular biology') || text.includes('cell biology')
       ? 'wet lab'
       : undefined,
-    text.includes('archive') || text.includes('manuscript') || text.includes('collection')
-      ? 'archival research'
-      : undefined,
+    hasArchivalEvidence(text) ? 'archival research' : undefined,
     text.includes('computational text') || text.includes('digital humanities')
       ? 'computational text analysis'
       : undefined,
@@ -246,9 +249,7 @@ const inferConceptSignals = (doc: any): string[] => {
 
   return uniqueStrings([
     text.includes('digital humanities') ? 'digital humanities' : undefined,
-    text.includes('archive') || text.includes('collection')
-      ? 'archives and collections'
-      : undefined,
+    hasArchivalEvidence(text) ? 'archives and collections' : undefined,
     text.includes('climate') ? 'climate policy' : undefined,
     text.includes('public health') || text.includes('epidemiology')
       ? 'public health'

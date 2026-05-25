@@ -68,6 +68,8 @@ const collectText = (candidate: unknown): string =>
       getCandidateValue(candidate, 'name'),
       getCandidateValue(candidate, 'displayName'),
       getCandidateValue(candidate, 'description'),
+      getCandidateValue(candidate, 'shortDescription'),
+      getCandidateValue(candidate, 'fullDescription'),
       getCandidateValue(candidate, 'summary'),
       ...asStringArray(getCandidateValue(candidate, 'researchAreas')),
       ...asStringArray(getCandidateValue(candidate, 'keywords')),
@@ -136,7 +138,12 @@ export function rankResearchEntityCandidates<TCandidate>(
       score += conceptHits.length * 500;
       score += methodHits.length * 400;
       score += expansionHits.length * 120;
-      if (getCandidateValue(candidate, 'description') || getCandidateValue(candidate, 'summary')) {
+      if (
+        getCandidateValue(candidate, 'description') ||
+        getCandidateValue(candidate, 'shortDescription') ||
+        getCandidateValue(candidate, 'fullDescription') ||
+        getCandidateValue(candidate, 'summary')
+      ) {
         score += 180;
       }
       if (sourceCount(candidate) > 0) score += 120;
