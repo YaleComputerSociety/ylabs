@@ -812,9 +812,11 @@ export async function materializeEntity(
     if (entityDoc && entityDoc[f] !== undefined) manualValues[f] = entityDoc[f];
   }
 
-  const materializationObs = obs.filter(
-    (o: any) => !shouldIgnoreObservationForEntityMaterialization(entityType, o),
-  );
+  const materializationObs = obs.filter((o: any) => {
+    if (shouldIgnoreObservationForEntityMaterialization(entityType, o)) return false;
+    if (entityType === 'fellowship') return FELLOWSHIP_MATERIALIZED_FIELDS.has(o.field);
+    return true;
+  });
 
   const resolverObs: ResolverObservation[] = materializationObs.map((o: any) => ({
     field: o.field,

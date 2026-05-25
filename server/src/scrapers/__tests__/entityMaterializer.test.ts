@@ -158,6 +158,26 @@ describe('entityMaterializer post-materialization metrics', () => {
         observedAt,
         superseded: false,
       },
+      {
+        entityType: 'fellowship',
+        entityKey,
+        field: 'sourceKey',
+        value: 'other-key',
+        sourceName: 'official-yale-programs',
+        confidence: 0.9,
+        observedAt,
+        superseded: false,
+      },
+      {
+        entityType: 'fellowship',
+        entityKey,
+        field: 'archived',
+        value: true,
+        sourceName: 'official-yale-programs',
+        confidence: 0.9,
+        observedAt,
+        superseded: false,
+      },
     ];
     const findLean = vi.fn().mockResolvedValue(observations);
     const findOneLean = vi.fn().mockResolvedValue(null);
@@ -179,6 +199,94 @@ describe('entityMaterializer post-materialization metrics', () => {
         programAccessRole: 'MENTOR_MATCHING',
       }),
     );
+    expect(create).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        sourceKey: 'other-key',
+      }),
+    );
+    expect(create).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        archived: true,
+      }),
+    );
+  });
+
+  it('does not write non-allowlisted fellowship observations when updating rows', async () => {
+    const entityKey = 'official-yale-programs:example';
+    const observedAt = new Date('2026-01-01T00:00:00Z');
+    const observations = [
+      {
+        entityType: 'fellowship',
+        entityKey,
+        field: 'title',
+        value: 'Example Program',
+        sourceName: 'official-yale-programs',
+        confidence: 0.9,
+        observedAt,
+        superseded: false,
+      },
+      {
+        entityType: 'fellowship',
+        entityKey,
+        field: 'programAccessRole',
+        value: 'MENTOR_MATCHING',
+        sourceName: 'official-yale-programs',
+        confidence: 0.9,
+        observedAt,
+        superseded: false,
+      },
+      {
+        entityType: 'fellowship',
+        entityKey,
+        field: 'sourceKey',
+        value: 'other-key',
+        sourceName: 'official-yale-programs',
+        confidence: 0.9,
+        observedAt,
+        superseded: false,
+      },
+      {
+        entityType: 'fellowship',
+        entityKey,
+        field: 'archived',
+        value: true,
+        sourceName: 'official-yale-programs',
+        confidence: 0.9,
+        observedAt,
+        superseded: false,
+      },
+    ];
+    const existingDoc = {
+      _id: '64f000000000000000000123',
+      sourceKey: entityKey,
+      manuallyLockedFields: [],
+      confidenceByField: {},
+    };
+    const findLean = vi.fn().mockResolvedValue(observations);
+    const findOneLean = vi.fn().mockResolvedValue(existingDoc);
+    const updateOne = vi.fn().mockResolvedValue({ modifiedCount: 1 });
+
+    vi.spyOn(Observation, 'find').mockReturnValue({ lean: findLean } as any);
+    vi.spyOn(Fellowship, 'findOne').mockReturnValue({ lean: findOneLean } as any);
+    vi.spyOn(Fellowship, 'updateOne').mockImplementation(updateOne as any);
+
+    const result = await materializeEntity('fellowship', { entityKey });
+
+    expect(result.skipped).toBeUndefined();
+    expect(result.created).toBe(false);
+    expect(Fellowship.findOne).toHaveBeenCalledWith({ sourceKey: entityKey });
+    expect(updateOne).toHaveBeenCalledWith(
+      { _id: existingDoc._id },
+      expect.objectContaining({
+        $set: expect.objectContaining({
+          title: 'Example Program',
+          programAccessRole: 'MENTOR_MATCHING',
+        }),
+      }),
+    );
+    const update = updateOne.mock.calls[0][1] as { $set: Record<string, unknown> };
+    expect(update.$set).not.toHaveProperty('sourceKey');
+    expect(update.$set).not.toHaveProperty('archived');
   });
 
   it('ignores untrusted paper-source author ids when building paper updates', () => {
