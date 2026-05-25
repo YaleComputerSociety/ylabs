@@ -1,12 +1,12 @@
 /**
- * Favorites state + optimistic toggle for listings or fellowships.
+ * Favorites state + optimistic toggle for listings, fellowships, or pathways.
  * Keeps load/update endpoints local so the two kinds share all orchestration.
  */
 import { useCallback, useEffect, useState, type MouseEvent } from 'react';
 import axios from '../utils/axios';
 import swal from 'sweetalert';
 
-type FavoritesKind = 'listings' | 'fellowships' | 'pathways';
+type FavoritesKind = 'listings' | 'fellowships' | 'pathways' | 'researchPlans';
 
 interface Endpoints {
   load: string;
@@ -39,6 +39,14 @@ const ENDPOINTS: Record<FavoritesKind, Endpoints> = {
     responseKey: 'favPathwayIds',
     collectionPath: '/users/favPathways',
     payloadKey: 'favPathways',
+    warnOnLoadError: false,
+    warnOnMutationError: false,
+  },
+  researchPlans: {
+    load: '/users/savedResearchPlanIds',
+    responseKey: 'savedResearchPlanIds',
+    collectionPath: '/users/savedResearchPlans',
+    payloadKey: 'savedResearchPlans',
     warnOnLoadError: false,
     warnOnMutationError: false,
   },
