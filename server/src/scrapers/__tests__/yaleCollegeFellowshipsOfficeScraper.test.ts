@@ -12,6 +12,10 @@ const sciencePageUrl =
   'https://science.yalecollege.yale.edu/stem-fellowships/funding-stem-opportunities-yale';
 const detailPageUrl =
   'https://science.yalecollege.yale.edu/yale-undergraduate-research/fellowship-grants/fixture-research-fellowship';
+const staleMellonPageUrl =
+  'https://yalecollege.yale.edu/finances/financial-awards-prizes/mellon-mays-undergraduate-fellowship-program';
+const canonicalMellonPageUrl =
+  'https://college.yale.edu/life-at-yale/student-faculty-awards/mellon-mays-undergraduate-fellowship-program';
 
 describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
   it('extracts funding.yale.edu research fellowship rows without fetching CommunityForce', () => {
@@ -389,5 +393,114 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
     expect(emitted.find((obs) => obs.field === 'links')?.value).toEqual([
       { label: 'Fixture Undergraduate Fellowship Program', url: staleDetailUrl },
     ]);
+  });
+
+  it('canonicalizes the moved Mellon-Mays URL before fetching configured pages', async () => {
+    const fetchPage = vi.fn(async (url: string) => {
+      if (url === staleMellonPageUrl) throw new Error('stale URL should not be fetched');
+      if (url === canonicalMellonPageUrl) {
+        return `
+          <h1>Mellon Mays Undergraduate Fellowship Program</h1>
+          <main>
+            <p>The Mellon Mays Undergraduate Fellowship Program supports undergraduate research.</p>
+            <p>Applications are now open. Deadline: February 19, 2026.</p>
+          </main>
+        `;
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    const emitted: any[] = [];
+    const scraper = new YaleCollegeFellowshipsOfficeScraper({
+      pageUrls: [staleMellonPageUrl],
+      fetchPage,
+    });
+
+    const result = await scraper.run({
+      scrapeRunId: 'run-1',
+      sourceId: 'source-1',
+      sourceName: 'yale-college-fellowships-office',
+      sourceWeight: 0.95,
+      options: { dryRun: false, useCache: false, release: false },
+      emit: async (obs) => {
+        emitted.push(...(Array.isArray(obs) ? obs : [obs]));
+      },
+      log: vi.fn(),
+    });
+
+    expect(fetchPage).toHaveBeenCalledTimes(1);
+    expect(fetchPage).toHaveBeenCalledWith(canonicalMellonPageUrl, false);
+    expect(result.entitiesObserved).toBe(1);
+    expect(emitted.find((obs) => obs.field === 'sourceUrl')?.value).toBe(canonicalMellonPageUrl);
+  });
+
+  it('canonicalizes moved Mellon-Mays links discovered from catalog pages', async () => {
+    const candidates = parseFellowshipCatalogPage(
+      `
+        <main>
+          <p>
+            <a href="${staleMellonPageUrl}">Mellon Mays Undergraduate Fellowship Program</a>
+            Supports undergraduate research.
+          </p>
+        </main>
+      `,
+      fundingPageUrl,
+      new Date('2026-01-01T00:00:00Z'),
+    );
+
+    expect(candidates).toMatchObject([
+      {
+        title: 'Mellon Mays Undergraduate Fellowship Program',
+        links: [{ label: 'Mellon Mays Undergraduate Fellowship Program', url: canonicalMellonPageUrl }],
+      },
+    ]);
+  });
+
+  it('fetches canonical Mellon-Mays detail pages discovered from catalog links', async () => {
+    const fetchPage = vi.fn(async (url: string) => {
+      if (url === fundingPageUrl) {
+        return `
+          <main>
+            <p>
+              <a href="${staleMellonPageUrl}">Mellon Mays Undergraduate Fellowship Program</a>
+              Supports undergraduate research.
+            </p>
+          </main>
+        `;
+      }
+      if (url === canonicalMellonPageUrl) {
+        return `
+          <h1>Mellon Mays Undergraduate Fellowship Program</h1>
+          <main>
+            <p>Students pursue faculty-mentored undergraduate research.</p>
+            <p>Deadline: February 19, 2026.</p>
+          </main>
+        `;
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    const emitted: any[] = [];
+    const scraper = new YaleCollegeFellowshipsOfficeScraper({
+      pageUrls: [fundingPageUrl],
+      fetchPage,
+    });
+
+    const result = await scraper.run({
+      scrapeRunId: 'run-1',
+      sourceId: 'source-1',
+      sourceName: 'yale-college-fellowships-office',
+      sourceWeight: 0.95,
+      options: { dryRun: false, useCache: false, release: false },
+      emit: async (obs) => {
+        emitted.push(...(Array.isArray(obs) ? obs : [obs]));
+      },
+      log: vi.fn(),
+    });
+
+    expect(fetchPage).toHaveBeenCalledWith(fundingPageUrl, false);
+    expect(fetchPage).toHaveBeenCalledWith(canonicalMellonPageUrl, false);
+    expect(fetchPage).not.toHaveBeenCalledWith(staleMellonPageUrl, false);
+    expect(result.entitiesObserved).toBe(1);
+    expect(result.notes).toBeUndefined();
+    expect(emitted.find((obs) => obs.field === 'sourceUrl')?.value).toBe(canonicalMellonPageUrl);
   });
 });

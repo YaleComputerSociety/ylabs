@@ -22,6 +22,7 @@ import { LabMicrositeDescriptionLLMExtractor } from './sources/labMicrositeDescr
 import { LabMicrositeUndergradLLMExtractor } from './sources/labMicrositeUndergradLLMExtractor';
 import { OfficialProfileEnrichmentScraper } from './sources/officialProfileEnrichmentScraper';
 import { YaleResearchOfficialScraper } from './sources/yaleResearchOfficialScraper';
+import { DepartmentUndergradResearchScraper } from './sources/departmentUndergradResearchScraper';
 
 export function buildOrchestrator(): ScraperOrchestrator {
   const o = new ScraperOrchestrator();
@@ -37,6 +38,7 @@ export function buildOrchestrator(): ScraperOrchestrator {
   o.register(new YaleDirectoryCsvScraper());
   o.register(new OfficialProfileEnrichmentScraper());
   o.register(new DepartmentRosterScraper());
+  o.register(new DepartmentUndergradResearchScraper());
   o.register(new NihReporterScraper());
   o.register(new NsfAwardScraper());
   o.register(new CentersInstitutesScraper());
