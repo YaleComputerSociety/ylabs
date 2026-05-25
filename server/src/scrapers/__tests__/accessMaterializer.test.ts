@@ -501,6 +501,66 @@ describe('deriveAccessArtifactsFromObservations', () => {
     expect(result.contactRoutes).toEqual([]);
   });
 
+  it('materializes department undergraduate guidance as exploratory evidence and a public contact route', () => {
+    const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
+      obs({
+        field: 'undergradAccessEvidence',
+        value: {
+          openToUndergrads: 'yes',
+          evidenceSource: 'department_undergrad_research_page',
+        },
+        sourceName: 'department-undergrad-research',
+        sourceUrl: 'https://chem.yale.edu/academics/undergraduate-chemistry-at-yale/undergraduate-research',
+        confidence: 0.8,
+      }),
+      obs({
+        field: 'undergradEvidenceQuote',
+        value:
+          'Students interested in research should contact the faculty member directly via email to explore opportunities.',
+        sourceName: 'department-undergrad-research',
+        sourceUrl: 'https://chem.yale.edu/academics/undergraduate-chemistry-at-yale/undergraduate-research',
+        confidence: 0.8,
+      }),
+      obs({
+        field: 'contactRole',
+        value: 'Faculty member for undergraduate research',
+        sourceName: 'department-undergrad-research',
+        sourceUrl: 'https://chem.yale.edu/academics/undergraduate-chemistry-at-yale/undergraduate-research',
+        confidence: 0.8,
+      }),
+    ]);
+
+    expect(result.entryPathways).toMatchObject([
+      {
+        pathwayType: 'EXPLORATORY_CONTACT',
+        status: 'PLAUSIBLE',
+        evidenceStrength: 'STRONG',
+        bestNextStep:
+          'Use the evidence to plan targeted outreach rather than treating this as an open posting.',
+        compensation: 'UNKNOWN',
+      },
+    ]);
+    expect(result.accessSignals).toMatchObject([
+      {
+        signalType: 'REACH_OUT_PLAUSIBLE',
+        confidence: 'HIGH',
+        sourceName: 'department-undergrad-research',
+        sourceUrl:
+          'https://chem.yale.edu/academics/undergraduate-chemistry-at-yale/undergraduate-research',
+      },
+    ]);
+    expect(result.contactRoutes).toMatchObject([
+      {
+        routeType: 'UNKNOWN',
+        visibility: 'PUBLIC',
+        contactPolicy: 'UNKNOWN',
+        role: 'Faculty member for undergraduate research',
+        sourceName: 'department-undergrad-research',
+      },
+    ]);
+    expect(result.contactRoutes[0].url).toBeUndefined();
+  });
+
   it('derives not-currently-available from a strong constraint quote even when no boolean verdict was emitted', () => {
     const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
       obs({
