@@ -25,9 +25,6 @@ export interface SourceHealthRunInput {
   materializationErrors?: number;
   materializationConflicts?: number;
   invalidated?: boolean;
-  options?: {
-    dryRun?: boolean;
-  };
 }
 
 export interface SourceHealthRow {
@@ -128,10 +125,10 @@ function riskForSource(
       action: 'Materialization errors exist; fix or document before accepting output.',
     };
   }
-  if (latestRun.status === 'partial') {
+  if (latestRun.status === 'partial' || (latestRun.materializationConflicts || 0) > 0) {
     return {
       risk: 'warn',
-      action: 'Inspect partial run before promotion.',
+      action: 'Inspect partial run or materialization conflicts before promotion.',
     };
   }
   return {
@@ -147,7 +144,6 @@ export function buildSourceHealthRows(
   const runsBySource = new Map<string, SourceHealthRunInput[]>();
   for (const run of runs) {
     if (run.invalidated) continue;
-    if (run.options?.dryRun) continue;
     const bucket = runsBySource.get(run.sourceName) || [];
     bucket.push(run);
     runsBySource.set(run.sourceName, bucket);

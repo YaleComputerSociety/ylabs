@@ -164,13 +164,6 @@ export interface UserMatch {
   fname: string;
   lname: string;
   primaryDepartment?: string;
-  departments?: string[];
-  secondaryDepartments?: string[];
-  website?: string;
-  profileUrls?: Record<string, unknown>;
-  topics?: string[];
-  researchInterests?: string[];
-  bio?: string;
   orcid?: string;
 }
 
@@ -583,13 +576,6 @@ async function defaultUserFinder(
     fname: 1,
     lname: 1,
     primaryDepartment: 1,
-    departments: 1,
-    secondaryDepartments: 1,
-    website: 1,
-    profileUrls: 1,
-    topics: 1,
-    researchInterests: 1,
-    bio: 1,
     orcid: 1,
   })
     .limit(10)
@@ -600,13 +586,6 @@ async function defaultUserFinder(
     fname: d.fname,
     lname: d.lname,
     primaryDepartment: d.primaryDepartment,
-    departments: d.departments,
-    secondaryDepartments: d.secondaryDepartments,
-    website: d.website,
-    profileUrls: d.profileUrls,
-    topics: d.topics,
-    researchInterests: d.researchInterests,
-    bio: d.bio,
     orcid: d.orcid,
   }));
 }
@@ -625,13 +604,6 @@ async function defaultOwnerToGroupSlug(owner: UserMatch): Promise<string | null>
       fname: owner.fname,
       lname: owner.lname,
       primaryDepartment: owner.primaryDepartment,
-      departments: owner.departments,
-      secondaryDepartments: owner.secondaryDepartments,
-      website: owner.website,
-      profileUrls: owner.profileUrls,
-      topics: owner.topics,
-      researchInterests: owner.researchInterests,
-      bio: owner.bio,
     });
     return group?.slug || null;
   } catch {

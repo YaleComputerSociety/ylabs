@@ -3,7 +3,12 @@
  */
 import { Request, Response } from 'express';
 import { User } from '../models/user';
-import { getProfileByNetid, updateOwnProfile } from '../services/profileService';
+import { getListingModel } from '../db/connections';
+import {
+  getProfileByNetid,
+  updateOwnProfile,
+  cascadeDepartmentsToListings,
+} from '../services/profileService';
 import { fetchCourseTableData } from '../services/courseTableService';
 
 /**
@@ -72,9 +77,23 @@ export const getPublications = async (req: Request, res: Response) => {
  * GET /profiles/:netid/listings — professor's active listings
  */
 export const getProfileListings = async (req: Request, res: Response) => {
-  res.status(410).json({
-    message: 'Legacy profile listings have been retired. Use research homes and posted opportunities instead.',
-  });
+  try {
+    const { netid } = req.params;
+
+    const listings = await getListingModel()
+      .find({
+        $or: [{ ownerId: netid }, { professorIds: netid }],
+        archived: false,
+      })
+      .select('-embedding')
+      .sort({ createdAt: -1 })
+      .lean();
+
+    res.json({ listings });
+  } catch (error: any) {
+    console.error('Profile: Error fetching listings:', error);
+    res.status(500).json({ error: 'Failed to fetch listings' });
+  }
 };
 
 /**
@@ -114,6 +133,10 @@ export const updateProfile = async (req: Request, res: Response) => {
 
     if (!updated) {
       return res.status(404).json({ error: 'Profile not found' });
+    }
+
+    if (req.body.primaryDepartment !== undefined || req.body.secondaryDepartments !== undefined) {
+      await cascadeDepartmentsToListings(currentUser.netId);
     }
 
     res.json({ profile: updated });

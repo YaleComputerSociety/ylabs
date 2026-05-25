@@ -17,24 +17,12 @@ node_modules/
 
 #Environment files
 .env
-.env.*
-!.env.example
 **/.env
-**/.env.*
-!**/.env.example
 client/.env.local
 client/.env.development.local
 client/.env.test.local
 client/.env.production.local
 client/.env
-
-# Local secrets and credentials
-*.pem
-*.key
-*.p12
-*.pfx
-*.crt
-*.cert
 
 #Log files
 npm-debug.log*
@@ -89,18 +77,5 @@ graphify-out/memory/
 
 # Local agent and browser-driver support files
 .codex/
-.superpowers/
-.worktrees/
-worktrees/
 .playwright-libs/
-.playwright-mcp/
-.audit/
-audit/
 tmp/
-test-results/
-research-detail-*.png
-
-# Root-level local browser screenshots
-/ylabs-*-desktop*.png
-/ylabs-*-mobile*.png
-.gstack/

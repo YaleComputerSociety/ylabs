@@ -1,8 +1,8 @@
 /**
  * Specific active, rolling, closed, or archived research opportunities.
  *
- * Historical rows may still carry a legacy listingId for audit, but runtime
- * opportunity creation no longer uses Listing records.
+ * A PostedOpportunity may wrap an existing Listing while the legacy listing
+ * flow remains in place.
  */
 import mongoose from 'mongoose';
 import { recordReviewSchema } from './modelPrimitives';
@@ -25,6 +25,7 @@ const postedOpportunitySchema = new mongoose.Schema(
     },
     listingId: {
       type: mongoose.Schema.Types.ObjectId,
+      ref: 'Listing',
       required: false,
     },
     title: {

@@ -12,7 +12,6 @@ import mongoose from 'mongoose';
 import { Source } from '../models/source';
 import { getSourceCoverage } from './sourceCoverageRegistry';
 import type { SourceCoverageMetadata } from '../models/sourceCoverageTypes';
-import { assertScriptApplyAllowed } from '../scripts/scriptWriteGuards';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -59,13 +58,13 @@ const SOURCES: SourceSeed[] = [
     cadence: 'event',
   },
   {
-    name: 'research-entity-cache-backfill',
-    displayName: 'ResearchEntity cache backfill',
+    name: 'department-undergrad-research',
+    displayName: 'Department undergraduate research pages',
     description:
-      'One-time recovery of legacy ResearchEntity undergraduate-access cache fields into append-only observations.',
+      'Official department undergraduate research pages that expose faculty projects, structured research routes, contacts, and application links.',
     baseUrl: '',
-    defaultWeight: 0.35,
-    cadence: 'manual-audit',
+    defaultWeight: 0.8,
+    cadence: 'weekly',
   },
   {
     name: 'orcid',
@@ -78,7 +77,7 @@ const SOURCES: SourceSeed[] = [
   {
     name: 'crossref',
     displayName: 'Crossref',
-    description: 'DOI-of-record metadata for compact scholarly-link destination quality.',
+    description: 'DOI-of-record metadata; canonical title/year/venue precision.',
     baseUrl: 'https://api.crossref.org',
     defaultWeight: 0.9,
     cadence: 'as-needed',
@@ -106,15 +105,6 @@ const SOURCES: SourceSeed[] = [
     baseUrl: 'https://directory.yale.edu',
     defaultWeight: 0.9,
     cadence: 'nightly',
-  },
-  {
-    name: 'yale-directory-csv',
-    displayName: 'Yale Directory CSV',
-    description:
-      'Static Yale directory CSV for read-only coverage audit and conservative user identity/affiliation observations.',
-    baseUrl: '',
-    defaultWeight: 0.45,
-    cadence: 'manual-audit',
   },
   {
     name: 'arxiv',
@@ -182,15 +172,6 @@ const SOURCES: SourceSeed[] = [
     cadence: 'weekly',
   },
   {
-    name: 'official-profile-enrichment',
-    displayName: 'Official Yale Profile Enrichment',
-    description:
-      'Fetches known official Yale profile URLs for existing faculty users to fill missing bios, research interests, images, ORCID, and profile URL aliases.',
-    baseUrl: '',
-    defaultWeight: 0.7,
-    cadence: 'weekly',
-  },
-  {
     name: 'lab-microsite-llm',
     displayName: 'Lab microsite LLM extractor',
     description: 'LLM extracts description, members, openness, undergrad fields from lab pages.',
@@ -202,7 +183,7 @@ const SOURCES: SourceSeed[] = [
     name: 'yale-college-fellowships-office',
     displayName: 'Yale College Fellowships Office',
     description: 'Authoritative listing of Yale-internal undergrad fellowships.',
-    baseUrl: 'https://yalecollege.yale.edu/get-know-yale-college/directory/fellowships-funding-directory',
+    baseUrl: 'https://fellowships.yalecollege.yale.edu',
     defaultWeight: 0.95,
     cadence: 'daily-during-cycle',
   },
@@ -239,15 +220,6 @@ const SOURCES: SourceSeed[] = [
     cadence: 'weekly',
   },
   {
-    name: 'yale-research-official',
-    displayName: 'Yale Research official directories',
-    description:
-      'Official research.yale.edu centers, institutes, cores, and resource directories for discovery-only ResearchEntity evidence.',
-    baseUrl: 'https://research.yale.edu',
-    defaultWeight: 0.9,
-    cadence: 'weekly',
-  },
-  {
     name: 'undergrad-fellowships-recipients',
     displayName: 'Yale undergrad fellowship recipient lists',
     description:
@@ -255,15 +227,6 @@ const SOURCES: SourceSeed[] = [
     baseUrl: '',
     defaultWeight: 0.85,
     cadence: 'monthly',
-  },
-  {
-    name: 'lab-microsite-description-llm',
-    displayName: 'Lab microsite LLM (research descriptions)',
-    description:
-      "LLM extraction over official lab sites to fill missing or weak ResearchEntity descriptions and conservative research areas without access claims.",
-    baseUrl: '',
-    defaultWeight: 0.55,
-    cadence: 'weekly',
   },
   {
     name: 'lab-microsite-undergrad-llm',
@@ -285,11 +248,6 @@ const RETIRED_SOURCE_NAMES = [
   'yale-course-catalog',
   'apify-google-scholar-bootstrap',
   'apify-google-scholar',
-  'lab-microsite-llm',
-  'semantic-scholar',
-  'external-fellowship-llm-scraper',
-  'nber',
-  'ssrn',
 ];
 
 async function main(): Promise<void> {
@@ -298,11 +256,6 @@ async function main(): Promise<void> {
     console.error('ERROR: MONGODBURL not set');
     process.exit(1);
   }
-  assertScriptApplyAllowed({
-    apply: true,
-    scriptName: 'scrape:seed-sources',
-    mongoUrl: url,
-  });
   await mongoose.connect(url);
   console.log(`Seeding ${SOURCES_WITH_COVERAGE.length} sources (${RESET ? 'RESET' : 'upsert'})...`);
 

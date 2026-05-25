@@ -25,7 +25,7 @@ const userSchema = new mongoose.Schema(
     },
     email: {
       type: String,
-      required: false,
+      required: true,
     },
     userType: {
       type: String,
@@ -40,6 +40,16 @@ const userSchema = new mongoose.Schema(
         'admin',
       ],
       default: 'unknown',
+    },
+    facultyMemberId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'FacultyMember',
+      required: false,
+    },
+    studentProfileId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'StudentProfile',
+      required: false,
     },
     userConfirmed: {
       type: Boolean,
@@ -240,6 +250,8 @@ const userSchema = new mongoose.Schema(
 
 userSchema.index({ userType: 1, profileVerified: 1 });
 userSchema.index({ primaryDepartment: 1 });
+userSchema.index({ facultyMemberId: 1 }, { sparse: true });
+userSchema.index({ studentProfileId: 1 }, { sparse: true });
 userSchema.index({ orcid: 1 }, { sparse: true });
 
 export const User = mongoose.model('User', userSchema);

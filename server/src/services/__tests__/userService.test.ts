@@ -15,7 +15,7 @@ const pathway = (overrides: Partial<PathwaySearchHit> = {}): PathwaySearchHit =>
   evidenceStrength: 'INDIRECT',
   studentFacingLabel: 'Explore archival climate records',
   bestNextStepCategory: 'plan-outreach',
-  sourceUrls: ['https://example.invalid/pathway', 'mailto:private-contact@example.invalid'],
+  sourceUrls: ['https://example.edu/pathway', 'mailto:private@example.edu'],
   researchEntity: {
     _id: '665f0b0c0b0c0b0c0b0c0b0d',
     slug: 'climate-archive',
@@ -26,20 +26,20 @@ const pathway = (overrides: Partial<PathwaySearchHit> = {}): PathwaySearchHit =>
   activePostedOpportunity: {
     _id: '665f0b0c0b0c0b0c0b0c0b0e',
     title: 'Archive assistant',
-    applicationUrl: 'https://example.invalid/apply',
+    applicationUrl: 'https://example.edu/apply',
     status: 'OPEN',
   },
   evidence: [
     {
       signalType: 'posted_opening',
       confidence: 'HIGH',
-      sourceUrl: 'https://example.invalid/evidence',
+      sourceUrl: 'https://example.edu/evidence',
     },
   ],
   contactRoute: {
     routeType: 'FACULTY_PI',
     label: 'Private contact route',
-    url: 'mailto:private-contact@example.invalid',
+    url: 'mailto:private@example.edu',
     visibility: 'PRIVATE',
   },
   ...overrides,
@@ -147,45 +147,17 @@ describe('buildSavedPathwayPlansExport', () => {
             'ignored-null': false,
           },
           sourceLinks: [
-            'https://example.invalid/pathway',
-            'https://example.invalid/evidence',
-            'https://example.invalid/apply',
+            'https://example.edu/pathway',
+            'https://example.edu/evidence',
+            'https://example.edu/apply',
           ],
           bestNextStepCategory: 'plan-outreach',
         },
       ],
     });
     expect(result.items[0]).not.toHaveProperty('privateNote');
-    expect(JSON.stringify(result)).not.toContain('private-contact@example.invalid');
+    expect(JSON.stringify(result)).not.toContain('private@example.edu');
     expect(JSON.stringify(result)).not.toContain('contactRoute');
-  });
-
-  it('uses the public source URL boundary for exported source links', () => {
-    const blockedUrl =
-      'https://engineering.yale.edu/research-and-faculty/faculty-directory/example-person';
-    const result = buildSavedPathwayPlansExport(
-      [
-        pathway({
-          sourceUrls: [blockedUrl, 'https://example.invalid/pathway'],
-          evidence: [
-            {
-              signalType: 'posted_opening',
-              confidence: 'HIGH',
-              sourceUrl: 'https://example.invalid\n.evil.example/source',
-            },
-          ],
-          activePostedOpportunity: {
-            _id: '665f0b0c0b0c0b0c0b0c0b0e',
-            title: 'Archive assistant',
-            applicationUrl: blockedUrl,
-            status: 'OPEN',
-          },
-        }),
-      ],
-      {},
-    );
-
-    expect(result.items[0].sourceLinks).toEqual(['https://example.invalid/pathway']);
   });
 
   it('includes private notes only when the caller explicitly requests them', () => {

@@ -43,7 +43,7 @@ describe('isFacultyTitle', () => {
     expect(isFacultyTitle(null)).toBe(false);
     expect(isFacultyTitle(undefined)).toBe(false);
     expect(isFacultyTitle('Sophomore')).toBe(false);
-    expect(isFacultyTitle('Administrative Coordinator')).toBe(false);
+    expect(isFacultyTitle('Office Manager')).toBe(false);
   });
 });
 
@@ -109,11 +109,11 @@ describe('isFacultyPerson', () => {
 describe('personToObservations', () => {
   it('maps a realistic faculty record to a complete observation list', () => {
     const sample = {
-      netid: 'mfixture24',
-      first_name: 'Morgan',
-      last_name: 'Fixture',
-      preferred_name: 'Mori',
-      email: 'morgan.fixture@yale.edu',
+      netid: 'jdoe24',
+      first_name: 'Jane',
+      last_name: 'Doe',
+      preferred_name: 'Janie',
+      email: 'jane.doe@yale.edu',
       phone: '+1 203 555 0001',
       title: 'Associate Professor of Molecular Biophysics & Biochemistry',
       school_code: 'GS',
@@ -123,8 +123,8 @@ describe('personToObservations', () => {
       organization_name: 'Yale School of Medicine',
       primary_organization_name: 'Yale School of Medicine',
       unit_name: 'Molecular Biophysics & Biochemistry',
-      image: 'https://yalies.io/images/mfixture24.jpg',
-      url: 'https://yalies.io/mfixture24',
+      image: 'https://yalies.io/images/jdoe24.jpg',
+      url: 'https://yalies.io/jdoe24',
       orcid: '0000-0001-2345-6789',
     };
 
@@ -134,24 +134,24 @@ describe('personToObservations', () => {
     const byField: Record<string, ObservationInput> = {};
     for (const o of obs) byField[o.field] = o;
 
-    expect(byField.netid?.value).toBe('mfixture24');
-    expect(byField.fname?.value).toBe('Mori'); // preferred_name wins
-    expect(byField.lname?.value).toBe('Fixture');
-    expect(byField.email?.value).toBe('morgan.fixture@yale.edu');
+    expect(byField.netid?.value).toBe('jdoe24');
+    expect(byField.fname?.value).toBe('Janie'); // preferred_name wins
+    expect(byField.lname?.value).toBe('Doe');
+    expect(byField.email?.value).toBe('jane.doe@yale.edu');
     expect(byField.userType?.value).toBe('professor');
     expect(byField.title?.value).toContain('Professor');
     expect(byField.primaryDepartment?.value).toBe('Molecular Biophysics & Biochemistry');
     expect(byField.secondaryDepartments?.value).toEqual(['Yale School of Medicine']);
     expect(byField.school?.value).toBe('Yale Graduate School of Arts and Sciences');
-    expect(byField.imageUrl?.value).toBe('https://yalies.io/images/mfixture24.jpg');
+    expect(byField.imageUrl?.value).toBe('https://yalies.io/images/jdoe24.jpg');
     expect(byField.phone?.value).toBe('+1 203 555 0001');
     expect(byField.orcid?.value).toBe('0000-0001-2345-6789');
-    expect(byField.profileUrls?.value).toEqual({ yalies: 'https://yalies.io/mfixture24' });
+    expect(byField.profileUrls?.value).toEqual({ yalies: 'https://yalies.io/jdoe24' });
 
     // All observations should be keyed by netid + entityType=user.
     for (const o of obs) {
       expect(o.entityType).toBe('user');
-      expect(o.entityKey).toBe('mfixture24');
+      expect(o.entityKey).toBe('jdoe24');
       expect(o.sourceUrl).toBe('https://api.yalies.io/v2/people');
     }
 
@@ -276,9 +276,9 @@ describe('YaleDirectoryScraper.run', () => {
     // Build a faculty record we know personToObservations will accept.
     const facultyRecord = {
       netid: 'aa01',
-      first_name: 'Riley',
-      last_name: 'Fixture',
-      email: 'riley.fixture@yale.edu',
+      first_name: 'Ada',
+      last_name: 'Lovelace',
+      email: 'ada@yale.edu',
       title: 'Professor of Computer Science',
       unit_name: 'Computer Science',
     };
@@ -309,9 +309,9 @@ describe('YaleDirectoryScraper.run', () => {
     process.env.YALIES_API_KEY = 'test-key';
     const facultyRecord = {
       netid: 'bb01',
-      first_name: 'Casey',
-      last_name: 'Example',
-      email: 'casey.example@yale.edu',
+      first_name: 'Grace',
+      last_name: 'Hopper',
+      email: 'grace@yale.edu',
       title: 'Professor of Naval Engineering',
       unit_name: 'Engineering',
     };
@@ -332,13 +332,6 @@ describe('YaleDirectoryScraper.run', () => {
     expect(keys.size).toBe(5);
     // Should have stopped after first page (no second call).
     expect(mockedListYalies).toHaveBeenCalledTimes(1);
-    expect(mockedListYalies).toHaveBeenCalledWith(
-      expect.objectContaining({
-        filters: {
-          title: ['Professor'],
-        },
-      }),
-    );
   });
 
   it('skips non-faculty records returned by the API', async () => {

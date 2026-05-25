@@ -54,6 +54,42 @@ describe('opportunityDetailService', () => {
     expect(calls[0].filter.archived).toBe(false);
   });
 
+  it('requires public student visibility for the host research entity', async () => {
+    const opportunityId = new Types.ObjectId();
+    const pathwayId = new Types.ObjectId();
+    const entityId = new Types.ObjectId();
+    const researchEntityCalls: any[] = [];
+
+    const detail = await getOpportunityDetail(opportunityId.toString(), {
+      opportunityModel: leanOneModel({
+        _id: opportunityId,
+        entryPathwayId: pathwayId,
+        researchEntityId: entityId,
+        title: 'Hidden entity role',
+        status: 'OPEN',
+        sourceEvidenceIds: [],
+        sourceUrls: [],
+      }) as any,
+      pathwayModel: leanOneModel({
+        _id: pathwayId,
+        pathwayType: 'POSTED_ROLE',
+        status: 'ACTIVE',
+        studentFacingLabel: 'Posted role',
+        sourceEvidenceIds: [],
+        sourceUrls: [],
+      }) as any,
+      researchEntityModel: leanOneModel(null, researchEntityCalls) as any,
+      observationModel: leanManyModel([]) as any,
+    });
+
+    expect(detail).toBeNull();
+    expect(researchEntityCalls[0].filter).toMatchObject({
+      _id: entityId,
+      archived: { $ne: true },
+      studentVisibilityTier: { $in: ['student_ready', 'limited_but_safe'] },
+    });
+  });
+
   it('maps host entity, pathway, and evidence without exposing contact data', async () => {
     const opportunityId = new Types.ObjectId();
     const pathwayId = new Types.ObjectId();
@@ -66,14 +102,14 @@ describe('opportunityDetailService', () => {
       title: 'Spring RA role',
       term: 'Spring 2026',
       deadline: new Date('2026-02-01T00:00:00.000Z'),
-      applicationUrl: 'https://apply.example.invalid/role',
+      applicationUrl: 'https://apply.example.edu/role',
       status: 'OPEN',
       hoursPerWeek: 8,
       payRate: '$18/hour',
       compensationType: 'PAID',
-      eligibility: 'Open to undergraduates.',
+      eligibility: 'Open to Yale undergraduates.',
       sourceEvidenceIds: [evidenceId],
-      sourceUrls: ['https://source.example.invalid/posting'],
+      sourceUrls: ['https://source.example.edu/posting'],
       listingId: new Types.ObjectId(),
     };
     const pathway = {
@@ -86,7 +122,7 @@ describe('opportunityDetailService', () => {
       bestNextStep: 'Submit the application.',
       compensation: 'PAID',
       confidence: 0.9,
-      sourceUrls: ['https://source.example.invalid/posting'],
+      sourceUrls: ['https://source.example.edu/posting'],
     };
     const researchEntity = {
       _id: entityId,
@@ -96,22 +132,22 @@ describe('opportunityDetailService', () => {
       entityType: 'LAB',
       departments: ['Computer Science'],
       researchAreas: ['AI'],
-      school: 'Example College',
-      websiteUrl: 'https://lab.example.invalid',
+      school: 'Yale College',
+      websiteUrl: 'https://lab.example.edu',
       shortDescription: 'Studies practical systems.',
     };
     const evidence = [
       {
         _id: evidenceId,
         sourceName: 'ylabs-listing',
-        sourceUrl: 'https://source.example.invalid/posting',
+        sourceUrl: 'https://source.example.edu/posting',
         field: 'postedOpportunity',
         value: {
-          quote: 'Apply at the official page. Questions: hidden-contact@example.invalid',
+          quote: 'Apply at the official page. Questions: hidden@example.edu',
         },
         confidence: 0.95,
         observedAt: new Date('2026-01-01T00:00:00.000Z'),
-        email: 'hidden-contact@example.invalid',
+        email: 'hidden@example.edu',
       },
     ];
 
@@ -128,12 +164,12 @@ describe('opportunityDetailService', () => {
       entryPathwayId: pathwayId.toString(),
       researchEntityId: entityId.toString(),
       title: 'Spring RA role',
-      applicationUrl: 'https://apply.example.invalid/role',
+      applicationUrl: 'https://apply.example.edu/role',
       deadlineState: 'UPCOMING',
       applicationState: 'APPLY_NOW',
       applicationLabel: 'Apply now',
       provenance: 'LISTING_BRIDGED',
-      provenanceLabel: 'Legacy YLabs listing signal',
+      provenanceLabel: 'YLabs listing bridge',
       researchEntity: {
         slug: 'example-lab',
         name: 'Example Lab',
@@ -143,76 +179,18 @@ describe('opportunityDetailService', () => {
         pathwayType: 'POSTED_ROLE',
         studentFacingLabel: 'Posted RA role',
       },
-      sourceUrls: ['https://source.example.invalid/posting'],
+      sourceUrls: ['https://source.example.edu/posting'],
     });
-    expect(detail?.evidence[0]).toMatchObject({
+    expect(detail?.evidence[0]).toEqual({
       _id: evidenceId.toString(),
       sourceName: 'ylabs-listing',
-      sourceUrl: 'https://source.example.invalid/posting',
+      sourceUrl: 'https://source.example.edu/posting',
       field: 'postedOpportunity',
       excerpt: 'Apply at the official page. Questions: [email redacted]',
       confidence: 0.95,
       observedAt: new Date('2026-01-01T00:00:00.000Z'),
     });
-    expect(JSON.stringify(detail)).not.toContain('hidden-contact@example.invalid');
-  });
-
-  it('filters forbidden Engineering profile URLs from opportunity detail sources', async () => {
-    const opportunityId = new Types.ObjectId();
-    const pathwayId = new Types.ObjectId();
-    const entityId = new Types.ObjectId();
-    const evidenceId = new Types.ObjectId();
-    const blockedUrl =
-      'https://engineering.yale.edu/research-and-faculty/faculty-directory/example-person';
-    const safeProfileUrl = 'https://example-profile.test/';
-
-    const detail = await getOpportunityDetail(opportunityId.toString(), {
-      opportunityModel: leanOneModel({
-        _id: opportunityId,
-        entryPathwayId: pathwayId,
-        researchEntityId: entityId,
-        title: 'Exploratory route',
-        applicationUrl: blockedUrl,
-        status: 'OPEN',
-        sourceEvidenceIds: [evidenceId],
-        sourceUrls: [blockedUrl, safeProfileUrl],
-      }) as any,
-      pathwayModel: leanOneModel({
-        _id: pathwayId,
-        pathwayType: 'EXPLORATORY_CONTACT',
-        status: 'PLAUSIBLE',
-        studentFacingLabel: 'Explore the PI profile',
-        sourceUrls: [blockedUrl],
-      }) as any,
-      researchEntityModel: leanOneModel({
-        _id: entityId,
-        slug: 'example-research-home',
-        name: 'Example Research Home',
-        departments: ['Computer Science'],
-        researchAreas: ['Algorithms'],
-        websiteUrl: blockedUrl,
-        sourceUrls: [blockedUrl, safeProfileUrl],
-      }) as any,
-      observationModel: leanManyModel([
-        {
-          _id: evidenceId,
-          sourceName: 'dept-faculty-roster',
-          sourceUrl: blockedUrl,
-          field: 'profileUrls',
-          value: { departmental: blockedUrl },
-          confidence: 0.7,
-          observedAt: new Date('2026-05-14T00:00:00.000Z'),
-        },
-      ]) as any,
-      now: new Date('2026-05-15T00:00:00.000Z'),
-    });
-
-    expect(detail?.applicationUrl).toBeUndefined();
-    expect(detail?.applicationState).toBe('NO_APPLICATION_URL');
-    expect(detail?.sourceUrls).toEqual([safeProfileUrl]);
-    expect(detail?.researchEntity.websiteUrl).toBe(safeProfileUrl);
-    expect(detail?.pathway.sourceUrls).toEqual([]);
-    expect(detail?.evidence[0].sourceUrl).toBeUndefined();
+    expect(JSON.stringify(detail)).not.toContain('hidden@example.edu');
   });
 
   it('derives closed and rolling application states from status, deadline, and URL', () => {

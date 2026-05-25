@@ -9,85 +9,27 @@ import { fetchYalie } from './services/yaliesService';
 import { fetchFromDirectory, isFacultyTitle } from './services/directoryService';
 import { logEvent } from './services/analyticsService';
 import { AnalyticsEventType } from './models/index';
-import { assertCanOverwriteWithDevUser } from './utils/devAuthGuard';
-import { effectiveUserType, isAdminNetid } from './services/adminAccessService';
 
 const STALE_THRESHOLD_MS = 30 * 24 * 60 * 60 * 1000;
 
 /**
- * Resolve a caller-supplied redirect to a safe app target.
- * Accepts relative paths, configured app origins, and the local Vite client
- * origin during development.
+ * Resolve a caller-supplied redirect to a safe same-origin target.
+ * Accepts only relative paths ("/foo") or absolute URLs whose host matches
+ * SERVER_BASE_URL. Anything else returns null.
  */
-export function safeRedirectTarget(raw: unknown): string | null {
+function safeRedirectTarget(raw: unknown): string | null {
   if (typeof raw !== 'string' || raw.length === 0) return null;
   if (raw.startsWith('/') && !raw.startsWith('//')) return raw;
   try {
+    const base = process.env.SERVER_BASE_URL ?? '';
+    if (!base) return null;
+    const baseHost = new URL(base).host;
     const target = new URL(raw);
-    const allowedOrigins = [process.env.SERVER_BASE_URL, process.env.CLIENT_BASE_URL]
-      .filter((value): value is string => Boolean(value))
-      .map((value) => new URL(value).origin);
-
-    if (process.env.NODE_ENV === 'development') {
-      allowedOrigins.push('http://localhost:3000');
-    }
-
-    if (allowedOrigins.includes(target.origin)) return target.toString();
+    if (target.host === baseHost) return target.toString();
   } catch {
     return null;
   }
   return null;
-}
-
-const DEV_LOGIN_USER_TYPES = new Set([
-  'undergraduate',
-  'graduate',
-  'professor',
-  'faculty',
-  'admin',
-  'unknown',
-]);
-
-export function buildDevLoginUser({
-  netid,
-  userType,
-  redirect,
-}: {
-  netid?: unknown;
-  userType?: unknown;
-  redirect?: unknown;
-} = {}) {
-  const requestedNetid = typeof netid === 'string' && netid.trim() ? netid.trim() : undefined;
-  const requestedUserType =
-    typeof userType === 'string' && DEV_LOGIN_USER_TYPES.has(userType) ? userType : undefined;
-  const safeRedirect = safeRedirectTarget(redirect);
-  const derivedUserType =
-    requestedUserType || (safeRedirect?.includes('/analytics') ? 'admin' : 'undergraduate');
-  const defaultNetid = derivedUserType === 'admin' ? 'devadmin' : 'test123';
-  const netId = requestedNetid || defaultNetid;
-
-  return {
-    netId,
-    userType: derivedUserType,
-    userConfirmed: true,
-    profileVerified: true,
-  };
-}
-
-export async function upsertDevLoginUser(devUser: ReturnType<typeof buildDevLoginUser>) {
-  const userData = {
-    netid: devUser.netId,
-    fname: 'Dev',
-    lname: devUser.userType === 'admin' ? 'Admin' : 'User',
-    email: `${devUser.netId}@example.test`,
-    userType: devUser.userType,
-    userConfirmed: devUser.userConfirmed,
-    profileVerified: devUser.profileVerified,
-  };
-
-  const existing = await validateUser(devUser.netId);
-  assertCanOverwriteWithDevUser(existing, devUser);
-  return existing ? updateUser(devUser.netId, userData) : createUser(userData);
 }
 
 /**
@@ -186,18 +128,6 @@ async function findOrCreateUser(netid: string) {
   return user;
 }
 
-async function buildSessionUser(user: any, fallbackNetid: string) {
-  const netId = user.netid || fallbackNetid;
-  const isAdmin = await isAdminNetid(netId);
-  return {
-    netId,
-    userType: effectiveUserType(user, isAdmin),
-    userConfirmed: user.userConfirmed,
-    profileVerified: user.profileVerified || false,
-    isAdmin,
-  };
-}
-
 passport.use(
   new Strategy(
     {
@@ -208,7 +138,12 @@ passport.use(
     async function (profile, done) {
       try {
         const user = await findOrCreateUser(profile.user);
-        done(null, await buildSessionUser(user, profile.user));
+        done(null, {
+          netId: user.netid || profile.user,
+          userType: user.userType,
+          userConfirmed: user.userConfirmed,
+          profileVerified: user.profileVerified || false,
+        });
       } catch (error) {
         console.log('Error in CAS login');
         done(error);
@@ -226,7 +161,12 @@ passport.deserializeUser(async (netId: string, done) => {
   try {
     console.log('Deserializing user');
     const user = await findOrCreateUser(netId as string);
-    done(null, await buildSessionUser(user, netId));
+    done(null, {
+      netId: user.netid || netId,
+      userType: user.userType,
+      userConfirmed: user.userConfirmed,
+      profileVerified: user.profileVerified || false,
+    });
   } catch (error) {
     console.log('Deserialize: Error');
     done(error, null);
@@ -322,24 +262,12 @@ router.use(async (req, res, next) => {
   next();
 });
 
-router.get('/check', async (req, res, next) => {
+router.get('/check', (req, res) => {
   if (req.user) {
-    try {
-      const user = req.user as any;
-      const isAdmin = await isAdminNetid(user.netId || user.netid);
-      return res.json({
-        auth: true,
-        user: {
-          ...user,
-          userType: effectiveUserType(user, isAdmin),
-          isAdmin,
-        },
-      });
-    } catch (error) {
-      return next(error);
-    }
+    res.json({ auth: true, user: req.user });
+  } else {
+    res.json({ auth: false });
   }
-  return res.json({ auth: false });
 });
 
 router.get('/cas', casLogin);
@@ -382,15 +310,14 @@ router.get('/logout', async (req, res) => {
 
 if (process.env.NODE_ENV === 'development') {
   router.get('/dev-login', async (req, res) => {
-    const testUser = buildDevLoginUser({
-      netid: req.query?.netid,
-      userType: req.query?.userType,
-      redirect: req.query?.redirect,
-    });
+    const testUser = {
+      netId: 'test123',
+      userType: 'student',
+      userConfirmed: true,
+    };
 
     try {
       console.log('Dev login with hardcoded user:', testUser);
-      await upsertDevLoginUser(testUser);
 
       req.logIn(testUser, async (err) => {
         if (err) {

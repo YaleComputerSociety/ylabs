@@ -1,8 +1,9 @@
 /**
- * Controller for user operations: favorites, saved plans, and profile updates.
+ * Controller for user operations: favorites, listings, and profile updates.
  */
 import { Request, Response, NextFunction } from 'express';
 import mongoose from 'mongoose';
+import { readListings } from '../services/listingService';
 import { readFellowships } from '../services/fellowshipService';
 import { readPrograms } from '../services/programService';
 import { matchFellowshipsForPathways } from '../services/fellowshipMatchingService';
@@ -10,6 +11,8 @@ import { getPathwaysByIds } from '../services/pathwaySearchService';
 import {
   readUser,
   updateUser,
+  addFavListings as addFavListingsService,
+  deleteFavListings as deleteFavListingsService,
   addFavFellowships as addFavFellowshipsService,
   deleteFavFellowships as deleteFavFellowshipsService,
   addFavPathways as addFavPathwaysService,
@@ -21,22 +24,44 @@ import {
   deleteSavedPathwayPlan as deleteSavedPathwayPlanService,
 } from '../services/userService';
 
-const retiredLegacyListings = (_request: Request, response: Response) => {
-  response.status(410).json({
-    message: 'Legacy listing favorites have been retired. Use saved research plans instead.',
-  });
-};
-
 export const getFavListingsIds = async (request: Request, response: Response) => {
-  retiredLegacyListings(request, response);
+  const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
+  const user = await readUser(currentUser.netId);
+  response.status(200).json({ favListingsIds: user.favListings });
 };
 
 export const addFavListings = async (request: Request, response: Response) => {
-  retiredLegacyListings(request, response);
+  const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
+
+  if (!request.body.data.favListings) {
+    const error: any = new Error('No favListings provided');
+    error.status = 400;
+    throw error;
+  }
+
+  const favListingsArray = Array.isArray(request.body.data.favListings)
+    ? request.body.data.favListings
+    : [request.body.data.favListings];
+
+  const user = await addFavListingsService(currentUser.netId, favListingsArray);
+  response.status(200).json({ user });
 };
 
 export const removeFavListings = async (request: Request, response: Response) => {
-  retiredLegacyListings(request, response);
+  const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
+
+  if (!request.body.favListings) {
+    const error: any = new Error('No favListings provided');
+    error.status = 400;
+    throw error;
+  }
+
+  const favListingsArray = Array.isArray(request.body.favListings)
+    ? request.body.favListings
+    : [request.body.favListings];
+
+  const user = await deleteFavListingsService(currentUser.netId, favListingsArray);
+  response.status(200).json({ user });
 };
 
 export const getFavFellowshipIds = async (request: Request, response: Response) => {
@@ -149,6 +174,12 @@ export const getFavPathwayIds = async (request: Request, response: Response) => 
   response.status(200).json({ favPathwayIds: user.favPathways || [] });
 };
 
+export const getSavedResearchPlanIds = async (request: Request, response: Response) => {
+  const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
+  const user = await readUser(currentUser.netId);
+  response.status(200).json({ savedResearchPlanIds: user.favPathways || [] });
+};
+
 export const getFavPathways = async (request: Request, response: Response) => {
   const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
   const user = await readUser(currentUser.netId);
@@ -164,12 +195,6 @@ export const getFavPathways = async (request: Request, response: Response) => {
 
   await updateUser(currentUser.netId, { favPathways: validIds, savedPathwayPlans });
   response.status(200).json({ favPathways });
-};
-
-export const getSavedResearchPlanIds = async (request: Request, response: Response) => {
-  const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
-  const user = await readUser(currentUser.netId);
-  response.status(200).json({ savedResearchPlanIds: user.favPathways || [] });
 };
 
 export const getSavedResearchPlans = async (request: Request, response: Response) => {
@@ -199,21 +224,7 @@ export const getFavPathwayFundingMatches = async (request: Request, response: Re
   response.status(200).json({ matchesByPathwayId });
 };
 
-export const getSavedResearchPlanFundingMatches = async (
-  request: Request,
-  response: Response,
-) => {
-  const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
-  const user = await readUser(currentUser.netId);
-  const savedResearchPlanIds = (user.favPathways || []).map(
-    (id: mongoose.Types.ObjectId | string) => id.toString(),
-  );
-  const matchesByPathwayId = await matchFellowshipsForPathways(savedResearchPlanIds);
-  response.status(200).json({
-    matchesByPathwayId,
-    matchesByResearchPlanId: matchesByPathwayId,
-  });
-};
+export const getSavedResearchPlanFundingMatches = getFavPathwayFundingMatches;
 
 export const addFavPathways = async (request: Request, response: Response) => {
   const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
@@ -234,15 +245,17 @@ export const addFavPathways = async (request: Request, response: Response) => {
 
 export const addSavedResearchPlans = async (request: Request, response: Response) => {
   const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
-  const ids = request.body.data?.savedResearchPlans ?? request.body.data?.favPathways;
 
-  if (!ids) {
+  if (!request.body.data?.savedResearchPlans) {
     const error: any = new Error('No savedResearchPlans provided');
     error.status = 400;
     throw error;
   }
 
-  const savedResearchPlansArray = Array.isArray(ids) ? ids : [ids];
+  const savedResearchPlansArray = Array.isArray(request.body.data.savedResearchPlans)
+    ? request.body.data.savedResearchPlans
+    : [request.body.data.savedResearchPlans];
+
   const user = await addFavPathwaysService(currentUser.netId, savedResearchPlansArray);
   response.status(200).json({ user });
 };
@@ -266,15 +279,17 @@ export const removeFavPathways = async (request: Request, response: Response) =>
 
 export const removeSavedResearchPlans = async (request: Request, response: Response) => {
   const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
-  const ids = request.body.savedResearchPlans ?? request.body.favPathways;
 
-  if (!ids) {
+  if (!request.body.savedResearchPlans) {
     const error: any = new Error('No savedResearchPlans provided');
     error.status = 400;
     throw error;
   }
 
-  const savedResearchPlansArray = Array.isArray(ids) ? ids : [ids];
+  const savedResearchPlansArray = Array.isArray(request.body.savedResearchPlans)
+    ? request.body.savedResearchPlans
+    : [request.body.savedResearchPlans];
+
   const user = await deleteFavPathwaysService(currentUser.netId, savedResearchPlansArray);
   response.status(200).json({ user });
 };
@@ -288,7 +303,7 @@ export const getSavedPathwayPlans = async (request: Request, response: Response)
 export const getSavedResearchPlanDetails = async (request: Request, response: Response) => {
   const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
   const savedResearchPlanDetails = await getSavedPathwayPlansService(currentUser.netId);
-  response.status(200).json({ savedResearchPlanDetails, savedPathwayPlans: savedResearchPlanDetails });
+  response.status(200).json({ savedResearchPlanDetails });
 };
 
 export const exportSavedPathwayPlans = async (request: Request, response: Response) => {
@@ -302,16 +317,7 @@ export const exportSavedPathwayPlans = async (request: Request, response: Respon
   response.status(200).json(exportPayload);
 };
 
-export const exportSavedResearchPlanDetails = async (request: Request, response: Response) => {
-  const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
-  const includePrivateNotes = request.query.includePrivateNotes === 'true';
-  const exportPayload = await exportSavedPathwayPlansService(currentUser.netId, {
-    includePrivateNotes,
-  });
-
-  response.setHeader('Content-Disposition', 'attachment; filename="saved-research-plans.json"');
-  response.status(200).json(exportPayload);
-};
+export const exportSavedResearchPlanDetails = exportSavedPathwayPlans;
 
 export const updateSavedPathwayPlan = async (request: Request, response: Response) => {
   const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
@@ -330,7 +336,7 @@ export const updateSavedResearchPlanDetail = async (request: Request, response: 
     request.params.pathwayId,
     request.body?.data?.plan || request.body?.plan || {},
   );
-  response.status(200).json({ savedResearchPlanDetails, savedPathwayPlans: savedResearchPlanDetails });
+  response.status(200).json({ savedResearchPlanDetails });
 };
 
 export const deleteSavedPathwayPlan = async (request: Request, response: Response) => {
@@ -348,11 +354,27 @@ export const deleteSavedResearchPlanDetail = async (request: Request, response: 
     currentUser.netId,
     request.params.pathwayId,
   );
-  response.status(200).json({ savedResearchPlanDetails, savedPathwayPlans: savedResearchPlanDetails });
+  response.status(200).json({ savedResearchPlanDetails });
 };
 
 export const getUserListings = async (request: Request, response: Response) => {
-  retiredLegacyListings(request, response);
+  const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
+  const user = await readUser(currentUser.netId);
+  const ownListings = await readListings(user.ownListings);
+  const favListings = await readListings(user.favListings);
+
+  const ownIds: mongoose.Types.ObjectId[] = [];
+  for (const listing of ownListings) {
+    ownIds.push(listing._id);
+  }
+
+  const favIds: mongoose.Types.ObjectId[] = [];
+  for (const listing of favListings) {
+    favIds.push(listing._id);
+  }
+
+  await updateUser(currentUser.netId, { ownListings: ownIds, favListings: favIds });
+  response.status(200).json({ ownListings, favListings });
 };
 
 const SELF_UPDATABLE_FIELDS = [

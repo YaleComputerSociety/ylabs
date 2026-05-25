@@ -2,9 +2,108 @@ import { Fellowship } from '../models/fellowship';
 import { ResearchEntity } from '../models/researchEntity';
 import { ScrapeRun } from '../models/scrapeRun';
 import { Source } from '../models/source';
-import type { DuplicatePersonGroup } from '../scrapers/integrityGate';
 import type { StudentVisibilityTier } from '../models/studentVisibility';
-import { buildSourceHealthRows } from './sourceHealthService';
+import { workPlannerSourcePolicies } from '../scrapers/workPlanner';
+import { buildSourceHealthRows, type SourceHealthRisk } from './sourceHealthService';
+
+export type QueueKind = 'blocking' | 'evidence' | 'review';
+export type PromotionStatus = 'ready' | 'watch' | 'blocked';
+
+const evidenceReasons = new Set([
+  'application_route',
+  'concrete_next_step',
+  'official_source',
+  'source_backed_description',
+  'undergraduate_relevant',
+]);
+
+export function classifyOperatorQueueReason(reason: string): QueueKind {
+  if (evidenceReasons.has(reason)) return 'evidence';
+  if (
+    reason.startsWith('missing_') ||
+    reason.endsWith('_only') ||
+    [
+      'application_source_only',
+      'archive_review',
+      'content_page_risk',
+      'duplicate_name_risk',
+      'duplicate_risk',
+      'inactive_at_yale',
+      'not_undergraduate_relevant',
+      'thin_description',
+    ].includes(reason)
+  ) {
+    return 'blocking';
+  }
+  return 'review';
+}
+
+export function summarizeDryRunPosture(runs: any[]) {
+  const sorted = [...runs].sort(
+    (a, b) => new Date(b.startedAt || 0).getTime() - new Date(a.startedAt || 0).getTime(),
+  );
+  const compact = (run: any | undefined) =>
+    run
+      ? {
+          id: String(run._id),
+          sourceName: run.sourceName,
+          status: run.status,
+          startedAt: run.startedAt?.toISOString?.() || run.startedAt,
+          observationCount: run.observationCount || 0,
+          entitiesObserved: run.entitiesObserved || 0,
+        }
+      : null;
+
+  return {
+    latestDryRun: compact(sorted.find((run) => run.options?.dryRun === true)),
+    latestWriteRun: compact(sorted.find((run) => run.options?.dryRun !== true)),
+  };
+}
+
+export function derivePromotionStatus(input: {
+  sourceRiskCounts: Record<SourceHealthRisk, number>;
+  integrityStatus: 'pass' | 'watch' | 'failure' | 'unknown';
+  meiliStatus: PromotionStatus | 'unknown';
+}): PromotionStatus {
+  if (
+    input.sourceRiskCounts.error > 0 ||
+    input.integrityStatus === 'failure' ||
+    input.meiliStatus === 'blocked'
+  ) {
+    return 'blocked';
+  }
+  if (
+    input.sourceRiskCounts.warn > 0 ||
+    input.integrityStatus === 'watch' ||
+    input.integrityStatus === 'unknown' ||
+    input.meiliStatus === 'watch' ||
+    input.meiliStatus === 'unknown'
+  ) {
+    return 'watch';
+  }
+  return 'ready';
+}
+
+export function buildRecommendedNextActions(input: {
+  promotionStatus: PromotionStatus;
+  sourceRiskCounts: Record<SourceHealthRisk, number>;
+  pendingMeiliSync?: boolean;
+}) {
+  const actions: string[] = [];
+  if (input.sourceRiskCounts.error > 0) {
+    actions.push('Inspect failed source runs before promotion.');
+  }
+  if (input.sourceRiskCounts.warn > 0) {
+    actions.push('Run bounded dry runs for warning sources before promotion.');
+  }
+  if (input.pendingMeiliSync) {
+    actions.push('Rebuild Meili after the latest accepted write run.');
+  }
+  actions.push('Run scraper integrity and data-quality gates before any production promotion.');
+  actions.push('Rebuild Meili indexes after accepted data repairs.');
+  if (input.promotionStatus === 'ready') actions.push('Confirm backup and rollback notes.');
+  return actions;
+}
 
 const tierOrder: StudentVisibilityTier[] = [
   'student_ready',
@@ -12,6 +111,36 @@ const tierOrder: StudentVisibilityTier[] = [
   'operator_review',
   'suppressed',
 ];
+
+const normalizeTierCounts = (rows: Array<{ _id: string; count: number }>) =>
+  tierOrder.map((tier) => ({
+    tier,
+    count: rows.find((row) => row._id === tier)?.count || 0,
+  }));
+
+async function countByTier(model: any, match: Record<string, unknown>) {
+  const rows = await model.aggregate([
+    { $match: match },
+    { $group: { _id: '$studentVisibilityTier', count: { $sum: 1 } } },
+  ]);
+  return normalizeTierCounts(rows);
+}
+
+async function reasonCounts(model: any, match: Record<string, unknown>, limit = 12) {
+  const rows = await model.aggregate([
+    { $match: match },
+    { $unwind: '$studentVisibilityReasons' },
+    { $group: { _id: '$studentVisibilityReasons', count: { $sum: 1 } } },
+    { $sort: { count: -1, _id: 1 } },
+    { $limit: limit },
+    { $project: { _id: 0, reason: '$_id', count: 1 } },
+  ]);
+
+  return rows.map((row: { reason: string; count: number }) => ({
+    ...row,
+    kind: classifyOperatorQueueReason(row.reason),
+  }));
+}
 
 const researchReasonActions: Record<string, string> = {
   missing_action_evidence:
@@ -35,126 +164,7 @@ const programReasonActions: Record<string, string> = {
   application_route: 'Verify the route is the official next step, not a generic catalog link.',
 };
 
-const evidenceReasons = new Set([
-  'application_route',
-  'concrete_next_step',
-  'official_source',
-  'source_backed_description',
-  'undergraduate_relevant',
-]);
-
-export type QueueKind = 'blocking' | 'evidence' | 'review';
-
-const DUPLICATE_PERSON_REPAIR_COMMAND =
-  'yarn --cwd server users:dedupe-by-identity --limit=1000 --apply';
-
-type IntegrityRunWithSummary = {
-  postMaterializationIntegrity?: {
-    status?: string;
-    counts?: {
-      duplicatePeople?: number;
-    };
-    samples?: {
-      duplicatePeople?: DuplicatePersonGroup[];
-    };
-    warnings?: Array<{
-      name: string;
-      count: number;
-      message?: string;
-    }>;
-  };
-};
-
-export function buildDuplicatePersonGatePosture(run: IntegrityRunWithSummary | undefined) {
-  const summary = run?.postMaterializationIntegrity;
-  const count = Number(summary?.counts?.duplicatePeople || 0);
-  const duplicatePersonWarnings = (summary?.warnings || []).filter((warning) =>
-    warning.name.toLowerCase().includes('duplicateperson'),
-  );
-  const warningCount = duplicatePersonWarnings.reduce(
-    (total, warning) => total + Number(warning.count || 0),
-    0,
-  );
-  const samples = ((summary?.samples?.duplicatePeople || []) as DuplicatePersonGroup[]).slice(
-    0,
-    5,
-  );
-  const status =
-    count > 0 ? 'failure' : warningCount > 0 ? 'warning' : summary ? 'pass' : 'unknown';
-
-  return {
-    status,
-    count,
-    warningCount,
-    samples,
-    nextRepairCommand: DUPLICATE_PERSON_REPAIR_COMMAND,
-  };
-}
-
-export function classifyOperatorQueueReason(reason: string): QueueKind {
-  if (evidenceReasons.has(reason)) return 'evidence';
-  if (
-    reason.startsWith('missing_') ||
-    reason.endsWith('_only') ||
-    reason === 'application_source_only' ||
-    reason === 'archive_review' ||
-    reason === 'content_page_risk' ||
-    reason === 'duplicate_name_risk' ||
-    reason === 'duplicate_risk' ||
-    reason === 'inactive_at_yale' ||
-    reason === 'missing_application_route' ||
-    reason === 'missing_source_route' ||
-    reason === 'not_undergraduate_relevant' ||
-    reason === 'thin_description'
-  ) {
-    return 'blocking';
-  }
-  return 'review';
-}
-
-const tierAction: Record<StudentVisibilityTier, string> = {
-  student_ready: 'Sample for false positives and copy quality before prominent browse.',
-  limited_but_safe: 'Promote only after source-backed action/contact evidence is added.',
-  operator_review: 'Repair the blocking reason or keep hidden from public browse.',
-  suppressed: 'Keep hidden unless source evidence proves undergraduate relevance.',
-};
-
-interface AggregateCount {
-  _id: string;
-  count: number;
-}
-
-const normalizeCounts = (rows: AggregateCount[]) =>
-  tierOrder.map((tier) => ({
-    tier,
-    count: rows.find((row) => row._id === tier)?.count || 0,
-  }));
-
-async function countByTier(model: any, match: Record<string, unknown>) {
-  const rows = await model.aggregate([
-    { $match: match },
-    { $group: { _id: '$studentVisibilityTier', count: { $sum: 1 } } },
-  ]);
-  return normalizeCounts(rows);
-}
-
-async function reasonCounts(model: any, match: Record<string, unknown>, limit = 12) {
-  const rows = await model.aggregate([
-    { $match: match },
-    { $unwind: '$studentVisibilityReasons' },
-    { $group: { _id: '$studentVisibilityReasons', count: { $sum: 1 } } },
-    { $sort: { count: -1, _id: 1 } },
-    { $limit: limit },
-    { $project: { _id: 0, reason: '$_id', count: 1 } },
-  ]);
-
-  return rows.map((row: { reason: string; count: number }) => ({
-    ...row,
-    kind: classifyOperatorQueueReason(row.reason),
-  }));
-}
-
-async function sampleResearch(match: Record<string, unknown>, limit = 5) {
+async function sampleResearch(match: Record<string, unknown>, limit = 3) {
   return ResearchEntity.find({ archived: { $ne: true }, ...match })
     .select(
       'name slug studentVisibilityTier studentVisibilityReasons sourceUrls websiteUrl shortDescription',
@@ -164,7 +174,7 @@ async function sampleResearch(match: Record<string, unknown>, limit = 5) {
     .lean();
 }
 
-async function samplePrograms(match: Record<string, unknown>, limit = 5) {
+async function samplePrograms(match: Record<string, unknown>, limit = 3) {
   return Fellowship.find({ archived: false, ...match })
     .select(
       'title studentVisibilityTier studentVisibilityReasons sourceUrl summary studentFacingCategory',
@@ -210,7 +220,7 @@ async function buildQueueSummaries() {
       kind: classifyOperatorQueueReason(row.reason),
       count: row.count,
       nextAction: researchReasonActions[row.reason] || 'Review samples and decide repair action.',
-      samples: (await sampleResearch({ studentVisibilityReasons: row.reason }, 3)).map(
+      samples: (await sampleResearch({ studentVisibilityReasons: row.reason })).map(
         compactResearchSample,
       ),
     })),
@@ -223,23 +233,19 @@ async function buildQueueSummaries() {
       kind: classifyOperatorQueueReason(row.reason),
       count: row.count,
       nextAction: programReasonActions[row.reason] || 'Review samples and decide repair action.',
-      samples: (await samplePrograms({ studentVisibilityReasons: row.reason }, 3)).map(
+      samples: (await samplePrograms({ studentVisibilityReasons: row.reason })).map(
         compactProgramSample,
       ),
     })),
   );
 
-  const tierQueues = await Promise.all(
-    tierOrder.map(async (tier) => ({
-      tier,
-      nextAction: tierAction[tier],
-      researchSamples: (await sampleResearch({ studentVisibilityTier: tier }, 2)).map(
-        compactResearchSample,
-      ),
-      programSamples: (await samplePrograms({ studentVisibilityTier: tier }, 2)).map(
-        compactProgramSample,
-      ),
-    })),
+  const queues = [...researchQueues, ...programQueues];
+  const queueKindCounts = queues.reduce(
+    (acc, queue) => {
+      acc[queue.kind] += queue.count;
+      return acc;
+    },
+    { blocking: 0, evidence: 0, review: 0 },
   );
 
   return {
@@ -247,28 +253,34 @@ async function buildQueueSummaries() {
       research: researchReasons,
       programs: programReasons,
     },
-    queues: [...researchQueues, ...programQueues],
-    tierQueues,
+    queueKindCounts,
+    discoveryCandidates: queues
+      .filter((queue) => queue.kind === 'evidence' || queue.reason.includes('official_source'))
+      .slice(0, 6)
+      .map((queue) => ({
+        collection: queue.collection,
+        reason: queue.reason,
+        count: queue.count,
+        nextAction: queue.nextAction,
+        samples: queue.samples.slice(0, 2),
+      })),
+    queues,
   };
 }
 
+const freshnessWindowDays = (windowMs: number) => Math.round(windowMs / (24 * 60 * 60 * 1000));
+
 async function buildSourceFreshness() {
   const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-  const [sources, runs, latestIntegrityRuns] = await Promise.all([
+  const [sources, runs] = await Promise.all([
     Source.find({}).select('name displayName enabled cadence coverage').lean(),
     ScrapeRun.find({ startedAt: { $gte: since } })
       .select(
-        'sourceName status startedAt finishedAt observationCount materializationErrors materializationConflicts invalidated options',
+        'sourceName status startedAt finishedAt observationCount entitiesObserved materializationErrors materializationConflicts invalidated options',
       )
       .sort({ startedAt: -1 })
       .lean(),
-    ScrapeRun.find({ postMaterializationIntegrity: { $exists: true } })
-      .select('sourceName status startedAt finishedAt postMaterializationIntegrity')
-      .sort({ startedAt: -1 })
-      .limit(5)
-      .lean(),
   ]);
-
   const rows = buildSourceHealthRows(sources as any[], runs as any[]);
   const riskCounts = rows.reduce(
     (acc, row) => {
@@ -281,35 +293,60 @@ async function buildSourceFreshness() {
   return {
     windowDays: 30,
     riskCounts,
+    latestRunSummary: summarizeDryRunPosture(runs),
+    freshnessPolicies: workPlannerSourcePolicies.map((policy) => ({
+      sourceName: policy.sourceName,
+      entityType: policy.entityType,
+      targetFields: policy.targetFields,
+      windowDays: freshnessWindowDays(policy.freshnessWindowMs),
+      cadence: policy.defaultRecurringCadence || 'manual',
+      paid: Boolean(policy.paid),
+      notes: policy.notes || '',
+    })),
+    readinessRows: rows.slice(0, 12).map((row) => ({
+      sourceName: row.sourceName,
+      displayName: row.displayName,
+      status:
+        row.risk === 'error'
+          ? 'blocked'
+          : row.latestRun
+            ? row.risk === 'warn'
+              ? 'needs_review'
+              : 'ready'
+            : 'needs_dry_run',
+      nextAction: row.action,
+      expectedArtifactTypes: row.expectedArtifactTypes,
+      latestRun: row.latestRun,
+    })),
     rows: rows.slice(0, 12),
-    latestIntegrityRuns: latestIntegrityRuns.map((run: any) => {
-      const duplicatePeople = buildDuplicatePersonGatePosture(run);
-
-      return {
-        id: String(run._id),
-        sourceName: run.sourceName,
-        status: run.status,
-        startedAt: run.startedAt?.toISOString?.() || run.startedAt,
-        finishedAt: run.finishedAt?.toISOString?.() || run.finishedAt,
-        integrityStatus: run.postMaterializationIntegrity?.status,
-        failureNames: run.postMaterializationIntegrity?.failureNames || [],
-        duplicatePeople,
-      };
-    }),
   };
 }
 
 export async function buildAdminOperatorBoard() {
-  const [researchTierCounts, programTierCounts, queueSummaries, sourceFreshness] =
+  const [sourceFreshness, researchTierCounts, programTierCounts, queueSummaries] =
     await Promise.all([
+      buildSourceFreshness(),
       countByTier(ResearchEntity, { archived: { $ne: true } }),
       countByTier(Fellowship, { archived: false }),
       buildQueueSummaries(),
-      buildSourceFreshness(),
     ]);
+  const integrityStatus: 'unknown' = 'unknown';
+  const pendingMeiliSync = Boolean(sourceFreshness.latestRunSummary.latestWriteRun);
+  const meiliStatus: PromotionStatus | 'unknown' = pendingMeiliSync ? 'watch' : 'unknown';
+  const promotionStatus = derivePromotionStatus({
+    sourceRiskCounts: sourceFreshness.riskCounts,
+    integrityStatus,
+    meiliStatus,
+  });
 
   return {
     generatedAt: new Date().toISOString(),
+    promotionStatus,
+    recommendedNextActions: buildRecommendedNextActions({
+      promotionStatus,
+      sourceRiskCounts: sourceFreshness.riskCounts,
+      pendingMeiliSync,
+    }),
     trustTiers: {
       research: researchTierCounts,
       programs: programTierCounts,
@@ -319,17 +356,19 @@ export async function buildAdminOperatorBoard() {
       dataQuality: {
         status: 'manual',
         command: 'yarn --cwd server beta:data-quality --include-samples',
-        note: 'CLI gate output is not persisted yet; run before promotion and compare with this board.',
+        note: 'Gate output is not persisted in this branch yet; run before promotion.',
       },
       scraperIntegrity: {
-        status:
-          sourceFreshness.latestIntegrityRuns[0]?.integrityStatus ||
-          (sourceFreshness.riskCounts.error > 0 ? 'error' : 'watch'),
+        status: integrityStatus,
         command: 'yarn --cwd server scraper:integrity-gate --include-samples',
-        duplicatePeople:
-          sourceFreshness.latestIntegrityRuns[0]?.duplicatePeople ||
-          buildDuplicatePersonGatePosture(undefined),
-        latestRuns: sourceFreshness.latestIntegrityRuns,
+        note: 'Gate output is not persisted in this branch yet; run before promotion.',
+      },
+      meili: {
+        status: meiliStatus,
+        pendingSync: pendingMeiliSync,
+        note: pendingMeiliSync
+          ? 'A recent non-dry scraper run exists; confirm Mongo changes were rebuilt into Meili before promotion.'
+          : 'Meili index stats are not persisted in this branch yet.',
       },
     },
     sourceFreshness,

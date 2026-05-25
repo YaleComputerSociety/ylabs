@@ -96,11 +96,6 @@ export function buildResearchGroupFilterString(filters: ResearchGroupFilterInput
   const opennessClause = filters.openness ? orEqualsClause('openness', filters.openness) : null;
   if (opennessClause) parts.push(opennessClause);
 
-  const studentVisibilityClause = filters.studentVisibilityTier
-    ? orEqualsClause('studentVisibilityTier', filters.studentVisibilityTier)
-    : null;
-  if (studentVisibilityClause) parts.push(studentVisibilityClause);
-
   if (typeof filters.acceptingUndergrads === 'boolean') {
     parts.push(`acceptingUndergrads = ${filters.acceptingUndergrads}`);
   }
@@ -108,6 +103,11 @@ export function buildResearchGroupFilterString(filters: ResearchGroupFilterInput
   for (const clause of acceptanceLevelClauses(filters.acceptanceLevel)) {
     parts.push(clause);
   }
+
+  const studentVisibilityClause = filters.studentVisibilityTier
+    ? orEqualsClause('studentVisibilityTier', filters.studentVisibilityTier)
+    : null;
+  if (studentVisibilityClause) parts.push(studentVisibilityClause);
 
   return parts.join(' AND ');
 }

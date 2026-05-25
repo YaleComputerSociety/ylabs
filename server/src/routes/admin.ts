@@ -2,15 +2,16 @@
  * Admin-only routes for managing listings, fellowships, users, and profiles.
  */
 import { Router, Request, Response } from 'express';
+import mongoose from 'mongoose';
 import dns from 'dns/promises';
 import net from 'net';
 import { isAuthenticated, isAdmin, validateObjectId, validateNetid } from '../middleware/index';
+import { updateListing, deleteListing } from '../services/listingService';
+import { getListingModel } from '../db/connections';
 import { ResearchArea, ResearchField, fieldColorKeys } from '../models/researchArea';
 import { Department, DepartmentCategory, categoryColorKeys } from '../models/department';
 import { invalidateConfigCache } from '../services/configService';
 import { Fellowship } from '../models/fellowship';
-import { ScrapeRun } from '../models/scrapeRun';
-import { Source } from '../models/source';
 import { User } from '../models/user';
 import {
   updateFellowship,
@@ -18,7 +19,7 @@ import {
   archiveFellowship,
   unarchiveFellowship,
 } from '../services/fellowshipService';
-import { adminUpdateProfile } from '../services/profileService';
+import { adminUpdateProfile, cascadeDepartmentsToListings } from '../services/profileService';
 import { buildSafeSearchRegex } from '../utils/regex';
 import {
   getAccessReviewEntity,
@@ -26,80 +27,11 @@ import {
   updateAccessReviewManualLocks,
   updateAccessReviewRecordReview,
 } from '../services/adminAccessReviewService';
-import { buildSourceHealthRows } from '../services/sourceHealthService';
 import { buildAdminOperatorBoard } from '../services/adminOperatorBoardService';
-import {
-  AdminAccessError,
-  grantAdminAccess,
-  listAdminAccess,
-  revokeAdminAccess,
-} from '../services/adminAccessService';
-import { getScrapeRunReport } from '../scrapers/runReport';
 
 const router = Router();
 
 router.use(isAuthenticated, isAdmin);
-
-const retiredAdminListings = (_req: Request, res: Response) =>
-  res.status(410).json({
-    message:
-      'Legacy listing administration has been retired. Use Yale Labs, Programs, and PostedOpportunity workflows instead.',
-  });
-
-router.all('/listings', retiredAdminListings);
-router.all('/listings/:id', retiredAdminListings);
-
-const NETID_RE = /^[A-Za-z0-9]{2,12}$/;
-
-const currentAdminNetid = (req: Request): string =>
-  String((req.user as any)?.netId || (req.user as any)?.netid || '').trim().toLowerCase();
-
-const sendAdminAccessError = (res: Response, error: unknown, fallback: string) => {
-  if (error instanceof AdminAccessError) {
-    return res.status(error.statusCode).json({ error: error.message });
-  }
-  console.error(`Admin: ${fallback}:`, error);
-  return res.status(500).json({ error: fallback });
-};
-
-router.get('/admin-grants', async (_req: Request, res: Response) => {
-  try {
-    res.json(await listAdminAccess());
-  } catch (error) {
-    console.error('Admin: Error fetching admin grants:', error);
-    res.status(500).json({ error: 'Failed to fetch admin grants' });
-  }
-});
-
-router.post('/admin-grants', async (req: Request, res: Response) => {
-  try {
-    const netid = String(req.body?.netid || '').trim();
-    if (!NETID_RE.test(netid)) {
-      return res.status(400).json({ error: 'Invalid netid' });
-    }
-    const grant = await grantAdminAccess({
-      netid,
-      actorNetid: currentAdminNetid(req),
-      note: req.body?.note,
-    });
-    res.status(201).json({ grant });
-  } catch (error) {
-    sendAdminAccessError(res, error, 'Failed to grant admin access');
-  }
-});
-
-router.post('/admin-grants/:netid/revoke', validateNetid('netid'), async (req: Request, res: Response) => {
-  try {
-    const grant = await revokeAdminAccess({
-      netid: req.params.netid,
-      actorNetid: currentAdminNetid(req),
-      note: req.body?.note,
-    });
-    res.json({ grant });
-  } catch (error) {
-    sendAdminAccessError(res, error, 'Failed to revoke admin access');
-  }
-});
 
 router.get('/operator-board', async (_req: Request, res: Response) => {
   try {
@@ -109,65 +41,6 @@ router.get('/operator-board', async (_req: Request, res: Response) => {
     res.status(500).json({ error: 'Failed to fetch operator board' });
   }
 });
-
-router.get('/scraper-sources/health', async (req: Request, res: Response) => {
-  try {
-    const sourceName = typeof req.query.source === 'string' ? req.query.source.trim() : '';
-    const days = Math.min(
-      365,
-      Math.max(1, Number.parseInt(String(req.query.days || '30'), 10) || 30),
-    );
-    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-    const sourceFilter = sourceName ? { name: sourceName } : {};
-    const runFilter: Record<string, unknown> = { startedAt: { $gte: since } };
-    if (sourceName) runFilter.sourceName = sourceName;
-
-    const [sources, runs] = await Promise.all([
-      Source.find(sourceFilter)
-        .select('name displayName enabled cadence coverage')
-        .lean(),
-      ScrapeRun.find(runFilter)
-        .select(
-          'sourceName status startedAt finishedAt observationCount materializationErrors materializationConflicts invalidated',
-        )
-        .sort({ startedAt: -1 })
-        .lean(),
-    ]);
-    const rows = buildSourceHealthRows(sources as any[], runs as any[]);
-    const riskCounts = rows.reduce(
-      (acc, row) => {
-        acc[row.risk] += 1;
-        return acc;
-      },
-      { ok: 0, warn: 0, error: 0 },
-    );
-
-    res.json({
-      generatedAt: new Date().toISOString(),
-      windowDays: days,
-      source: sourceName || undefined,
-      riskCounts,
-      rows,
-    });
-  } catch (error) {
-    console.error('Admin: Error fetching scraper source health:', error);
-    res.status(500).json({ error: 'Failed to fetch scraper source health' });
-  }
-});
-
-router.get(
-  '/scrape-runs/:id/report',
-  validateObjectId('id'),
-  async (req: Request, res: Response) => {
-    try {
-      res.json(await getScrapeRunReport(req.params.id));
-    } catch (error: any) {
-      const message = error?.message || 'Failed to fetch scrape run report';
-      const status = /not found/i.test(message) ? 404 : 500;
-      res.status(status).json({ error: message });
-    }
-  },
-);
 
 router.get('/access-review', async (req: Request, res: Response) => {
   try {
@@ -234,6 +107,218 @@ router.put(
     }
   },
 );
+
+router.get('/listings', async (req: Request, res: Response) => {
+  try {
+    const {
+      search,
+      sortBy = 'createdAt',
+      sortOrder = 'desc',
+      page = '1',
+      pageSize = '25',
+      archived,
+      confirmed,
+      audited,
+    } = req.query;
+
+    const filter: any = {};
+
+    if (archived === 'true') filter.archived = true;
+    else if (archived === 'false') filter.archived = false;
+
+    if (confirmed === 'true') filter.confirmed = true;
+    else if (confirmed === 'false') filter.confirmed = false;
+
+    if (audited === 'true') filter.audited = true;
+    else if (audited === 'false') filter.audited = { $ne: true };
+
+    if (search && (search as string).trim()) {
+      const searchRegex = buildSafeSearchRegex((search as string).trim());
+      filter.$or = [
+        { title: searchRegex },
+        { ownerFirstName: searchRegex },
+        { ownerLastName: searchRegex },
+        { description: searchRegex },
+        { ownerId: searchRegex },
+      ];
+    }
+
+    const pageNum = Math.max(1, parseInt(page as string, 10) || 1);
+    const pageSizeNum = Math.min(100, Math.max(1, parseInt(pageSize as string, 10) || 25));
+
+    const sort: any = {};
+    const order = sortOrder === 'asc' ? 1 : -1;
+
+    if (sortBy === 'descriptionLength') {
+      const pipeline: any[] = [
+        { $match: filter },
+        {
+          $addFields: {
+            descriptionLength: {
+              $cond: {
+                if: { $isArray: '$description' },
+                then: 0,
+                else: { $strLenCP: { $ifNull: ['$description', ''] } },
+              },
+            },
+          },
+        },
+        { $sort: { descriptionLength: order, _id: 1 } },
+        { $skip: (pageNum - 1) * pageSizeNum },
+        { $limit: pageSizeNum },
+        { $project: { embedding: 0 } },
+      ];
+
+      const [results, countResult] = await Promise.all([
+        getListingModel().aggregate(pipeline),
+        getListingModel().countDocuments(filter),
+      ]);
+
+      return res.json({
+        listings: results,
+        total: countResult,
+        page: pageNum,
+        pageSize: pageSizeNum,
+        totalPages: Math.ceil(countResult / pageSizeNum),
+      });
+    }
+
+    if (sortBy === 'redFlags') {
+      const twoYearsAgo = new Date();
+      twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2);
+
+      const pipeline: any[] = [
+        { $match: filter },
+        {
+          $addFields: {
+            redFlagScore: {
+              $add: [
+                {
+                  $cond: [
+                    {
+                      $or: [
+                        { $eq: [{ $size: { $ifNull: ['$departments', []] } }, 0] },
+                        { $eq: ['$departments', null] },
+                      ],
+                    },
+                    10,
+                    0,
+                  ],
+                },
+                { $cond: [{ $eq: [{ $ifNull: ['$views', 0] }, 0] }, 5, 0] },
+                {
+                  $cond: [
+                    {
+                      $and: [
+                        { $gt: [{ $ifNull: ['$views', 0] }, 0] },
+                        { $lte: [{ $ifNull: ['$views', 0] }, 5] },
+                      ],
+                    },
+                    2,
+                    0,
+                  ],
+                },
+                { $cond: [{ $lt: ['$createdAt', twoYearsAgo] }, 5, 0] },
+                {
+                  $cond: [
+                    {
+                      $or: [
+                        { $eq: [{ $size: { $ifNull: ['$researchAreas', []] } }, 0] },
+                        { $eq: ['$researchAreas', null] },
+                      ],
+                    },
+                    3,
+                    0,
+                  ],
+                },
+                {
+                  $cond: [{ $lt: [{ $strLenCP: { $ifNull: ['$description', ''] } }, 100] }, 2, 0],
+                },
+              ],
+            },
+          },
+        },
+        { $sort: { redFlagScore: order, _id: 1 } },
+        { $skip: (pageNum - 1) * pageSizeNum },
+        { $limit: pageSizeNum },
+        { $project: { embedding: 0 } },
+      ];
+
+      const [results, countResult] = await Promise.all([
+        getListingModel().aggregate(pipeline),
+        getListingModel().countDocuments(filter),
+      ]);
+
+      return res.json({
+        listings: results,
+        total: countResult,
+        page: pageNum,
+        pageSize: pageSizeNum,
+        totalPages: Math.ceil(countResult / pageSizeNum),
+      });
+    }
+
+    sort[sortBy as string] = order;
+    sort._id = 1;
+
+    const [listings, total] = await Promise.all([
+      getListingModel()
+        .find(filter)
+        .select('-embedding')
+        .sort(sort)
+        .skip((pageNum - 1) * pageSizeNum)
+        .limit(pageSizeNum)
+        .lean(),
+      getListingModel().countDocuments(filter),
+    ]);
+
+    res.json({
+      listings,
+      total,
+      page: pageNum,
+      pageSize: pageSizeNum,
+      totalPages: Math.ceil(total / pageSizeNum),
+    });
+  } catch (error) {
+    console.error('Admin: Error fetching listings:', error);
+    res.status(500).json({ error: 'Failed to fetch listings' });
+  }
+});
+
+router.put('/listings/:id', validateObjectId('id'), async (req: Request, res: Response) => {
+  try {
+    const currentUser = req.user as { netId?: string };
+    const { data, resetCreatedAt } = req.body;
+
+    let listing = await updateListing(req.params.id, currentUser.netId as string, data, true);
+
+    if (resetCreatedAt && listing) {
+      const originalDate = new Date(listing.createdAt);
+      const newCreatedAt = new Date(2025, originalDate.getMonth(), originalDate.getDate());
+
+      await getListingModel().collection.updateOne(
+        { _id: new mongoose.Types.ObjectId(req.params.id) },
+        { $set: { createdAt: newCreatedAt } },
+      );
+      listing = await getListingModel().findById(req.params.id).lean();
+    }
+
+    res.json({ listing });
+  } catch (error) {
+    console.error('Admin: Error updating listing:', error);
+    res.status(400).json({ error: 'Request failed' });
+  }
+});
+
+router.delete('/listings/:id', validateObjectId('id'), async (req: Request, res: Response) => {
+  try {
+    await deleteListing(req.params.id);
+    res.json({ message: 'Listing deleted' });
+  } catch (error) {
+    console.error('Admin: Error deleting listing:', error);
+    res.status(400).json({ error: 'Request failed' });
+  }
+});
 
 router.get('/research-areas', async (_req: Request, res: Response) => {
   try {
@@ -573,6 +658,10 @@ router.put('/profiles/:netid', validateNetid('netid'), async (req: Request, res:
 
     if (!profile) {
       return res.status(404).json({ error: 'Profile not found' });
+    }
+
+    if (data.primaryDepartment !== undefined || data.secondaryDepartments !== undefined) {
+      await cascadeDepartmentsToListings(req.params.netid);
     }
 
     res.json({ profile });

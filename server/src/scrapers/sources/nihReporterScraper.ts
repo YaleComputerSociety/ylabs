@@ -16,9 +16,8 @@
  *   - Group grants by contact PI name.
  *   - For each PI:
  *       - Try to resolve to a User by (lname exact + fname exact), then
- *         (lname exact + first initial). If unmatched, keep the funding evidence
- *         on the ResearchEntity only; NIH records alone are not enough to mint
- *         a canonical Yale User identity.
+ *         (lname exact + first initial). If unmatched, emit a User observation
+ *         keyed by `nih-pi:<normalized>` so the materializer can stub a User.
  *       - Compute a deterministic ResearchGroup slug `nih-pi-<normalized>`.
  *       - Emit ResearchGroup observations: name, kind, school (for YSM only),
  *         recentGrants (full array of up to 10 most-recent grants), recentGrantCount,
@@ -30,8 +29,6 @@
  */
 import axios from 'axios';
 import { User } from '../../models/user';
-import { ResearchEntity } from '../../models/researchEntity';
-import { ResearchGroupMember } from '../../models/researchGroupMember';
 import { getCached, setCached } from '../snapshotCache';
 import { normalizeName, slugify, splitName } from '../utils/scraperHelpers';
 import type { IScraper, ScraperContext, ScraperResult, ObservationInput } from '../types';
@@ -41,9 +38,6 @@ const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const PAGE_SIZE = 500;
 const FETCH_TIMEOUT_MS = 60_000;
 const RECENT_GRANTS_PER_PI = 10;
-const SYNTHETIC_FUNDING_NETID_RE = /^(?:nsf|nih)-pi:/i;
-const FUNDING_ENTITY_SLUG_RE = /^(?:nsf|nih)-pi-/i;
-const LEAD_MEMBER_ROLES = ['pi', 'co-pi', 'director', 'co-director'];
 const DEFAULT_FISCAL_YEARS = [
   new Date().getFullYear() - 2,
   new Date().getFullYear() - 1,
@@ -53,16 +47,6 @@ const YALE_ORG_NAMES = ['YALE UNIVERSITY'];
 // Cap how many pages we'll ever request defensively. 30 pages * 500 = 15k records,
 // well above Yale's typical ~3.5k for a 3-year window.
 const MAX_PAGES = 30;
-
-function firstNameCompatible(sourceFirstName: string, candidateFirstName: unknown): boolean {
-  const sourceToken = slugify(sourceFirstName).split('-')[0] || '';
-  const candidateToken = slugify(String(candidateFirstName || '')).split('-')[0] || '';
-  if (!sourceToken || !candidateToken) return false;
-  if (sourceToken === candidateToken) return true;
-  if (sourceToken.length === 1) return candidateToken.startsWith(sourceToken);
-  if (sourceToken.length < 3) return false;
-  return candidateToken.startsWith(sourceToken) || sourceToken.startsWith(candidateToken);
-}
 
 // ---------------------------------------------------------------------------
 // API response shapes (only the fields we use)
@@ -135,22 +119,6 @@ export interface RecentGrantRecord {
   role: 'pi' | 'copi';
 }
 
-export interface MatchedFacultyForFunding {
-  _id: string;
-  netid?: string;
-  userType?: string;
-  primaryDepartment?: string;
-  departments?: string[];
-  secondaryDepartments?: string[];
-  profileUrls?: Record<string, unknown>;
-  website?: string;
-}
-
-export interface FundingResearchEntityTarget {
-  slug: string;
-  createIfMissing: boolean;
-}
-
 // ---------------------------------------------------------------------------
 // Pure helpers (testable in isolation)
 // ---------------------------------------------------------------------------
@@ -188,9 +156,9 @@ function titleCaseToken(token: string): string {
 }
 
 /**
- * Stable, deterministic PI key helper retained for compatibility with tests
- * and legacy references. Funding scrapers do not use this key to mint User
- * observations unless a separate Yale-confirming identity source exists.
+ * Stable, deterministic key for a PI when we can't (yet) match them to a User.
+ * Used as both the emitted ResearchGroup slug seed and the User observation
+ * entityKey. Idempotent across runs.
  */
 export function piEntityKey(canonicalName: string): string {
   const slug = slugify(canonicalName);
@@ -286,7 +254,7 @@ function parseDate(s: string | undefined): Date | undefined {
 export async function findUserForPi(
   canonicalName: string,
   userModel: { find: typeof User.find } = User,
-): Promise<MatchedFacultyForFunding | null> {
+): Promise<{ _id: string; netid?: string } | null> {
   if (!canonicalName) return null;
   const { first, last } = splitName(canonicalName);
   if (!last) return null;
@@ -296,120 +264,33 @@ export async function findUserForPi(
       {
         lname: lnameRe,
         userType: { $in: ['professor', 'faculty', 'admin'] },
-        netid: { $not: SYNTHETIC_FUNDING_NETID_RE },
       },
-      {
-        _id: 1,
-        fname: 1,
-        lname: 1,
-        netid: 1,
-        userType: 1,
-        primaryDepartment: 1,
-        departments: 1,
-        secondaryDepartments: 1,
-        profileUrls: 1,
-        website: 1,
-      },
+      { _id: 1, fname: 1, lname: 1, netid: 1, primaryDepartment: 1 },
     )
     .limit(10)
     .lean();
-  const canonicalCandidates = candidates.filter(
-    (candidate) => !SYNTHETIC_FUNDING_NETID_RE.test(String(candidate.netid || '')),
-  );
-  if (canonicalCandidates.length === 0) return null;
-  if (canonicalCandidates.length === 1) {
-    if (first && !firstNameCompatible(first, canonicalCandidates[0].fname)) return null;
-    return { ...canonicalCandidates[0], _id: String(canonicalCandidates[0]._id) };
+  if (candidates.length === 0) return null;
+  if (candidates.length === 1) {
+    return { _id: String(candidates[0]._id), netid: candidates[0].netid };
   }
   if (!first) return null;
   // Exact first name match wins.
-  const exact = canonicalCandidates.filter(
+  const exact = candidates.filter(
     (c) => (c.fname || '').toLowerCase() === first.toLowerCase(),
   );
   if (exact.length === 1) {
-    return { ...exact[0], _id: String(exact[0]._id) };
+    return { _id: String(exact[0]._id), netid: exact[0].netid };
   }
-  // Fall back to safe first-name compatibility. Avoid bare first-initial
-  // matches for full names; "Maria Martinez" must not match "Michael Martinez".
+  // Fall back to first-initial match.
   const initial = first.charAt(0).toLowerCase();
-  const byInitial = canonicalCandidates.filter(
+  const byInitial = candidates.filter(
     (c) => (c.fname || '').toLowerCase().charAt(0) === initial,
   );
-  const compatibleMatches = byInitial.filter((candidate) =>
-    firstNameCompatible(first, candidate.fname),
-  );
-  if (compatibleMatches.length === 1) {
-    return { ...compatibleMatches[0], _id: String(compatibleMatches[0]._id) };
+  if (byInitial.length === 1) {
+    return { _id: String(byInitial[0]._id), netid: byInitial[0].netid };
   }
   // Ambiguous — refuse to guess.
   return null;
-}
-
-function textValue(value: unknown): string {
-  return typeof value === 'string' ? value.trim() : '';
-}
-
-function arrayHasText(values: unknown): boolean {
-  return Array.isArray(values) && values.some((value) => !!textValue(value));
-}
-
-function hasOfficialYaleProfileUrl(user: MatchedFacultyForFunding): boolean {
-  const urls = [
-    user.website,
-    ...(user.profileUrls && typeof user.profileUrls === 'object'
-      ? Object.values(user.profileUrls)
-      : []),
-  ];
-  return urls.some((value) => {
-    const url = textValue(value);
-    if (!url) return false;
-    try {
-      const parsed = new URL(url);
-      return parsed.hostname === 'yale.edu' || parsed.hostname.endsWith('.yale.edu');
-    } catch {
-      return /(^|[/.])yale\.edu\//i.test(url);
-    }
-  });
-}
-
-export function isHighSignalFundingFacultyMatch(user: MatchedFacultyForFunding): boolean {
-  return (
-    !SYNTHETIC_FUNDING_NETID_RE.test(textValue(user.netid)) &&
-    hasOfficialYaleProfileUrl(user) &&
-    Boolean(textValue(user.primaryDepartment) ||
-      arrayHasText(user.departments) ||
-      arrayHasText(user.secondaryDepartments))
-  );
-}
-
-async function defaultResearchEntityTargetFinder(
-  user: MatchedFacultyForFunding,
-): Promise<FundingResearchEntityTarget | null> {
-  const memberships = await ResearchGroupMember.find({
-    userId: user._id,
-    isCurrentMember: { $ne: false },
-    role: { $in: LEAD_MEMBER_ROLES },
-  })
-    .select('researchEntityId')
-    .lean();
-  const ids = memberships.map((membership: any) => membership.researchEntityId).filter(Boolean);
-  if (ids.length > 0) {
-    const existing = (await ResearchEntity.findOne({
-      _id: { $in: ids },
-      archived: { $ne: true },
-      slug: { $not: FUNDING_ENTITY_SLUG_RE },
-    })
-      .select('slug')
-      .sort({ updatedAt: -1, _id: 1 })
-      .lean()) as { slug?: string } | null;
-    if (existing?.slug) {
-      return { slug: existing.slug, createIfMissing: false };
-    }
-  }
-
-  return isHighSignalFundingFacultyMatch(user)
-    ? { slug: piSlugForResearchGroup(`${user._id}`), createIfMissing: true }
-    : null;
 }
 
 function escapeRegex(s: string): string {
@@ -420,9 +301,10 @@ function escapeRegex(s: string): string {
  * Build the observation list for one PI's grants.
  *
  * Emits:
- *   - ResearchEntity observations keyed by the PI slug.
- *   - A matched Yale User link only when identity resolution found an existing
- *     Yale User. Unmatched funding PIs remain name-scoped grant evidence.
+ *   - User observation keyed by `nih-pi:<slug>` when no Yale User matched, so
+ *     downstream materialization can create a stub.
+ *   - ResearchGroup observations keyed by either the matched User's PI slug
+ *     (legible `nih-pi-<slug>`) or the same slug used by the User stub.
  *   - All recentGrants observations are emitted as a single full array — the
  *     resolver picks the highest-confidence value per field rather than trying
  *     to merge multiple partial arrays.
@@ -430,13 +312,12 @@ function escapeRegex(s: string): string {
 export function piGrantsToObservations(
   canonicalName: string,
   grants: NihGrant[],
-  matchedUser: MatchedFacultyForFunding | null,
-  target?: FundingResearchEntityTarget | null,
+  matchedUser: { _id: string; netid?: string } | null,
 ): ObservationInput[] {
   const out: ObservationInput[] = [];
-  if (!canonicalName || grants.length === 0 || !matchedUser || !target) return out;
+  if (!canonicalName || grants.length === 0) return out;
 
-  const slug = target.slug;
+  const slug = piSlugForResearchGroup(canonicalName);
   if (!slug) return out;
 
   // Sort grants by start date (desc), keep top N for the recentGrants array.
@@ -455,18 +336,41 @@ export function piGrantsToObservations(
     .map((g) => g.project_detail_url)
     .filter((u): u is string => !!u);
 
-  // ResearchEntity observations.
+  // Determine school/department hint from organization.dept_type when present.
+  // We only use it as a soft signal; the resolver will dedupe against other sources.
+  const deptTypes = new Set<string>();
+  for (const g of sorted) {
+    const dt = g.organization?.dept_type;
+    if (dt) deptTypes.add(dt);
+  }
+
+  // 1. User observation — only emit when no existing user was matched. The
+  //    materializer treats `nih-pi:<slug>` as a synthetic key and creates a
+  //    stub User row (lname = surname, fname = first name, userType=unknown).
+  const piEntityKeyValue = piEntityKey(canonicalName);
+  if (!matchedUser && piEntityKeyValue) {
+    const { first, last } = splitName(canonicalName);
+    const userBase = {
+      entityType: 'user' as const,
+      entityKey: piEntityKeyValue,
+      sourceUrl: sorted[0]?.project_detail_url || REPORTER_ENDPOINT,
+    };
+    if (first) out.push({ ...userBase, field: 'fname', value: first });
+    if (last) out.push({ ...userBase, field: 'lname', value: last });
+    out.push({ ...userBase, field: 'userType', value: 'faculty' });
+    out.push({ ...userBase, field: 'dataSources', value: ['nih-reporter'] });
+  }
+
+  // 2. ResearchGroup observations.
   const groupBase = {
     entityType: 'researchEntity' as const,
     entityKey: slug,
     sourceUrl: sorted[0]?.project_detail_url || REPORTER_ENDPOINT,
   };
   const piDisplayName = canonicalName;
-  if (target.createIfMissing) {
-    out.push({ ...groupBase, field: 'slug', value: slug });
-    out.push({ ...groupBase, field: 'name', value: `${piDisplayName} Lab` });
-    out.push({ ...groupBase, field: 'kind', value: 'lab' });
-  }
+  out.push({ ...groupBase, field: 'slug', value: slug });
+  out.push({ ...groupBase, field: 'name', value: `${piDisplayName} Lab` });
+  out.push({ ...groupBase, field: 'kind', value: 'lab' });
   out.push({ ...groupBase, field: 'recentGrants', value: recentRecords });
   out.push({ ...groupBase, field: 'recentGrantCount', value: recentRecords.length });
   out.push({ ...groupBase, field: 'fundingAgencies', value: ['NIH'] });
@@ -476,12 +380,31 @@ export function piGrantsToObservations(
   if (sourceUrls.length > 0) {
     out.push({ ...groupBase, field: 'sourceUrls', value: sourceUrls.slice(0, RECENT_GRANTS_PER_PI) });
   }
-  out.push({
-    ...groupBase,
-    field: 'inferredPiUserId',
-    value: matchedUser._id,
-    confidenceOverride: 0.9, // RePORTER + name match is high-confidence
-  });
+  if (matchedUser) {
+    out.push({
+      ...groupBase,
+      field: 'inferredPiUserId',
+      value: matchedUser._id,
+      confidenceOverride: 0.9, // RePORTER + name match is high-confidence
+    });
+  } else {
+    // Soft link via the synthetic User key the materializer will resolve.
+    out.push({
+      ...groupBase,
+      field: 'inferredPiUserKey',
+      value: piEntityKeyValue,
+      confidenceOverride: 0.6,
+    });
+  }
+  if (deptTypes.size > 0) {
+    out.push({
+      ...groupBase,
+      field: 'departments',
+      value: Array.from(deptTypes),
+      confidenceOverride: 0.4, // dept_type is RePORTER's free-text, not authoritative
+    });
+  }
+
   return out;
 }
 
@@ -548,10 +471,6 @@ export interface NihReporterScraperOptions {
   fiscalYears?: number[];
   /** Inject a custom User model (used by tests to mock the DB). */
   userModel?: { find: typeof User.find };
-  /** Inject target lookup (used by tests to mock ResearchEntity lookup). */
-  researchEntityTargetFinder?: (
-    user: MatchedFacultyForFunding,
-  ) => Promise<FundingResearchEntityTarget | null>;
 }
 
 export class NihReporterScraper implements IScraper {
@@ -563,8 +482,6 @@ export class NihReporterScraper implements IScraper {
   async run(ctx: ScraperContext): Promise<ScraperResult> {
     const fiscalYears = this.opts.fiscalYears || DEFAULT_FISCAL_YEARS;
     const userModel = this.opts.userModel || User;
-    const targetFinder =
-      this.opts.researchEntityTargetFinder || defaultResearchEntityTargetFinder;
     ctx.log(`Querying NIH RePORTER for Yale grants in FY ${fiscalYears.join(', ')}`);
 
     // 1. Paginate through all matching grants.
@@ -608,7 +525,7 @@ export class NihReporterScraper implements IScraper {
     let unmatched = 0;
     let processed = 0;
     for (const [piName, grants] of piEntries) {
-      let matchedUser: MatchedFacultyForFunding | null = null;
+      let matchedUser: { _id: string; netid?: string } | null = null;
       try {
         matchedUser = await findUserForPi(piName, userModel);
       } catch (err: any) {
@@ -617,8 +534,7 @@ export class NihReporterScraper implements IScraper {
       if (matchedUser) matched++;
       else unmatched++;
 
-      const target = matchedUser ? await targetFinder(matchedUser) : null;
-      const observations = piGrantsToObservations(piName, grants, matchedUser, target);
+      const observations = piGrantsToObservations(piName, grants, matchedUser);
       if (observations.length > 0) {
         await ctx.emit(observations);
         totalObs += observations.length;
@@ -634,7 +550,7 @@ export class NihReporterScraper implements IScraper {
     return {
       observationCount: totalObs,
       entitiesObserved: piEntries.length,
-      notes: `Yale NIH grants FY ${fiscalYears.join('-')}: ${allGrants.length} grants → ${groups.size} PIs (matched ${matched}, unmatched ${unmatched})`,
+      notes: `Yale NIH grants FY ${fiscalYears.join('-')}: ${allGrants.length} grants → ${groups.size} PIs (matched ${matched}, stubbed ${unmatched})`,
     };
   }
 }

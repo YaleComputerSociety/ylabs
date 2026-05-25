@@ -8,39 +8,6 @@ function compactText(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, '');
 }
 
-export function stripResearchEntityDescriptionChrome(value: unknown): string {
-  let cleaned = textValue(value);
-  if (!cleaned) return '';
-
-  cleaned = cleaned
-    .replace(/^INFORMATION FOR\s+(?=Copy Link\b|[A-Z])/i, '')
-    .replace(/\bCopy Link\b/gi, ' ')
-    .replace(/([a-z])\.([A-Z])/g, '$1. $2')
-    .replace(/([a-z]),([a-z])/g, '$1, $2')
-    .replace(/([a-z])(?=leading-edge\b)/gi, '$1 ')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-  const tailMarkers = [
-    /\bResearch\/Training Opportunities\b/i,
-    /\bResearch and Training Opportunities\b/i,
-    /\bWe welcome enthusiastic\b/i,
-    /\bContact Us\b/i,
-    /\bContact us\b/i,
-    /\bDepartment of [A-Z][\s\S]*\b(?:United States|New Haven,\s*CT)\b/i,
-  ];
-  const tailIndex = tailMarkers.reduce((best, pattern) => {
-    const match = cleaned.match(pattern);
-    if (!match || match.index === undefined) return best;
-    return best === -1 ? match.index : Math.min(best, match.index);
-  }, -1);
-  if (tailIndex > 0) {
-    cleaned = cleaned.slice(0, tailIndex).trim();
-  }
-
-  return cleaned;
-}
-
 export function isResearchEntitySourceChromeText(value: unknown): boolean {
   const cleaned = textValue(value);
   if (!cleaned) return false;
@@ -75,7 +42,7 @@ export function isResearchEntitySourceChromeText(value: unknown): boolean {
     /\b(?:Common|Related)\s+Publications?\b/i,
     /Yale Co-Authors/i,
     /Streamline Icon/i,
-    /\beduHQ\s*\d/i,
+    /^eduHQ\s*\d/i,
     /\bCitations\b/i,
   ].some((pattern) => pattern.test(cleaned));
 }
@@ -83,19 +50,13 @@ export function isResearchEntitySourceChromeText(value: unknown): boolean {
 export function isBrokenResearchEntityDescriptionFragment(value: unknown): boolean {
   const cleaned = textValue(value);
   if (!cleaned) return false;
-  if (/^Dr[.,]\s+(?:using|with|in|and)\b/i.test(cleaned)) return true;
-  if (
-    /^[a-z]/.test(cleaned) &&
-    /^(?:is|of|focuses?|focused|works|studies|examines|investigates|uses|employs)\b/i.test(
+  return (
+    /^Dr[.,]\s+(?:using|with|in|and)\b/i.test(cleaned) ||
+    /^(?:focuses\s+in|of\s+|is\s+in\s+)/i.test(cleaned) ||
+    /\b(?:and|with|by)\s+(?:[A-Z][a-z]+\s+[A-Z]\.|[A-Z][a-z]+\.|[A-Z]\.|Dr\.)$/i.test(
       cleaned,
     )
-  ) {
-    return true;
-  }
-  if (/(?:\b(?:Dr|Prof|Mr|Ms|Mrs)|\b[A-Z])\.$/.test(cleaned)) {
-    return !/(?:U\.S|U\.K|Ph\.D|M\.D|B\.S|M\.S|Sc\.D)\.$/i.test(cleaned);
-  }
-  return false;
+  );
 }
 
 export function isSyntheticResearchHomeMetadataDescription(value: unknown): boolean {
@@ -157,7 +118,7 @@ export function isRoleOnlyTitleFragment(value: unknown): boolean {
 }
 
 export function publicResearchEntityDescriptionText(value: unknown): string {
-  const cleaned = stripResearchEntityDescriptionChrome(value);
+  const cleaned = textValue(value);
   if (
     !cleaned ||
     isResearchAreaPlaceholderDescription(cleaned) ||
@@ -186,17 +147,6 @@ export function sanitizeResearchEntityPublicDescriptionFields<T extends Record<s
         changed = true;
       }
     }
-  }
-
-  if (
-    typeof next.shortDescription === 'string' &&
-    typeof next.fullDescription === 'string' &&
-    next.shortDescription &&
-    next.fullDescription.startsWith(next.shortDescription) &&
-    !/[.!?]$/.test(next.shortDescription)
-  ) {
-    next.shortDescription = '';
-    changed = true;
   }
 
   if ('summary' in next) {

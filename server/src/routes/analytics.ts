@@ -10,7 +10,6 @@ import {
   getAnalytics,
   getActionNeededAnalytics,
   getFunnelAnalytics,
-  getSearchQueryAnalytics,
   getSearchQualityAnalytics,
   getUserAnalytics,
   getUserAnalyticsDrilldown,
@@ -129,18 +128,6 @@ router.get('/search-quality', isAuthenticated, isAdmin, async (request: Request,
   }
 });
 
-router.get('/search-queries', isAuthenticated, isAdmin, async (request: Request, response: Response) => {
-  try {
-    const analytics = await getSearchQueryAnalytics(parseAnalyticsRange(request.query.range), {
-      limit: typeof request.query.limit === 'string' ? Number(request.query.limit) : undefined,
-    });
-    response.status(200).json(analytics);
-  } catch (error) {
-    console.error('Error fetching search query analytics:', error);
-    handleAnalyticsError(response, error, 'Failed to fetch search query analytics');
-  }
-});
-
 router.get('/funnel', isAuthenticated, isAdmin, async (request: Request, response: Response) => {
   try {
     const analytics = await getFunnelAnalytics(parseAnalyticsRange(request.query.range));
@@ -149,7 +136,7 @@ router.get('/funnel', isAuthenticated, isAdmin, async (request: Request, respons
       { key: 'logins', label: 'Logged In', count: analytics.logins },
       { key: 'searches', label: 'Searched', count: analytics.searches },
       { key: 'views', label: 'Viewed', count: viewerCount },
-      { key: 'favorites', label: 'Saved', count: analytics.favoritesOrSaves },
+      { key: 'favorites', label: 'Favorited', count: analytics.favoritesOrSaves },
       { key: 'outreach', label: 'Outreach Clicked', count: analytics.outreachClicks },
       { key: 'outcomes', label: 'Outcome Reported', count: analytics.outreachOutcomes },
     ];
@@ -190,12 +177,12 @@ router.get('/actions', isAuthenticated, isAdmin, async (request: Request, respon
     }));
     const listingItems = analytics.listingsHighViewsLowFavorites.map((listing) => ({
       id: listing.listingId,
-      type: 'Opportunity conversion',
+      type: 'Listing conversion',
       priority: listing.favoriteRate <= 0.05 ? 'high' : 'medium',
       title: listing.title || listing.listingId,
       owner: [listing.ownerFirstName, listing.ownerLastName].filter(Boolean).join(' '),
       department: listing.departments?.slice(0, 2).join(', '),
-      metric: `${listing.rangeViews} views / ${listing.rangeFavorites} saves`,
+      metric: `${listing.rangeViews} views / ${listing.rangeFavorites} favorites`,
       count: listing.rangeViews,
     }));
 

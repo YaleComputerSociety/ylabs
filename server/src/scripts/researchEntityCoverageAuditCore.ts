@@ -1,5 +1,4 @@
 export interface CoverageAuditCounts {
-  departments: number;
   researchAreas: number;
   sourceUrls: number;
   members: number;
@@ -48,14 +47,12 @@ export interface CoverageAuditRow {
 const ISSUE_SCORES: Record<string, number> = {
   BLANK_DETAIL_RISK: 5,
   MICROSITE_OBSERVED_NO_ACTIONABLE_ARTIFACTS: 4,
-  LEGACY_LISTING_SCRAPER_COVERAGE_SEED: 4,
   INFERRED_PI_WITHOUT_MEMBERSHIP: 3,
   NO_ACTIONABLE_ACCESS: 3,
   MISSING_DESCRIPTION: 2,
   NO_MEMBERS: 2,
   NO_PATHWAYS: 2,
   NO_PUBLIC_CONTACT_ROUTE: 2,
-  NO_DEPARTMENTS: 1,
   SUSPICIOUS_CONSTRAINT_QUOTE_UNCLASSIFIED: 2,
   NO_RESEARCH_AREAS: 1,
   MISSING_WEBSITE_URL: 1,
@@ -80,7 +77,6 @@ export function buildCoverageIssues(facts: CoverageAuditFacts): string[] {
   const fullDescriptionChars = textLength(facts.fullDescription);
   const {
     researchAreas,
-    departments,
     members,
     pathways,
     publicContactRoutes,
@@ -88,30 +84,16 @@ export function buildCoverageIssues(facts: CoverageAuditFacts): string[] {
     postedOpportunities,
     activeListings,
   } = facts.counts;
-  const signals = new Set(facts.signalTypes || []);
-  const hasAvailabilitySignal = signals.has('NOT_CURRENTLY_AVAILABLE');
 
-  const missingDescription =
-    descriptionChars === 0 && shortDescriptionChars === 0 && fullDescriptionChars === 0;
   const noActionableAccess =
     pathways === 0 &&
     publicContactRoutes === 0 &&
     postedOpportunities === 0 &&
-    activeListings === 0 &&
-    !hasAvailabilitySignal;
-  const legacyListingNeedsCoverage =
-    activeListings > 0 &&
-    (missingDescription ||
-      members === 0 ||
-      publicContactRoutes === 0 ||
-      researchAreas === 0);
+    activeListings === 0;
   const issues: string[] = [];
 
-  if (missingDescription) {
+  if (descriptionChars === 0 && shortDescriptionChars === 0 && fullDescriptionChars === 0) {
     issues.push('MISSING_DESCRIPTION');
-  }
-  if (departments === 0) {
-    issues.push('NO_DEPARTMENTS');
   }
   if (researchAreas === 0) {
     issues.push('NO_RESEARCH_AREAS');
@@ -131,10 +113,8 @@ export function buildCoverageIssues(facts: CoverageAuditFacts): string[] {
   if (noActionableAccess) {
     issues.push('NO_ACTIONABLE_ACCESS');
   }
-  if (legacyListingNeedsCoverage) {
-    issues.push('LEGACY_LISTING_SCRAPER_COVERAGE_SEED');
-  }
 
+  const signals = new Set(facts.signalTypes || []);
   const observationFlags = facts.observationFlags;
   if (observationFlags?.hasMicrositeObservation && noActionableAccess) {
     issues.push('MICROSITE_OBSERVED_NO_ACTIONABLE_ARTIFACTS');

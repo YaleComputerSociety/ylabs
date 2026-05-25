@@ -234,7 +234,7 @@ export class ArxivPreprintScraper implements IScraper {
       fname: { $exists: true, $nin: [null, ''] },
       lname: { $exists: true, $nin: [null, ''] },
     };
-    const facultyQuery = this.userModel
+    let facultyQuery = this.userModel
       .find(facultyFilter, {
         _id: 1,
         netid: 1,
@@ -242,26 +242,18 @@ export class ArxivPreprintScraper implements IScraper {
         lname: 1,
       })
       .lean();
+    if (ctx.options.limit && ctx.options.limit > 0) {
+      facultyQuery = facultyQuery.limit(ctx.options.limit);
+    }
 
     const faculty: any[] = await facultyQuery;
-    const eligibleFaculty = faculty.filter((fac) =>
+    const selectedFaculty = faculty.filter((fac) =>
       shouldProcessFaculty(
         { netid: fac.netid, fname: fac.fname, lname: fac.lname },
         ctx.options.only,
       ),
     );
-    const offset =
-      ctx.options.offset && Number.isFinite(ctx.options.offset) && ctx.options.offset > 0
-        ? Math.floor(ctx.options.offset)
-        : 0;
-    const limit =
-      ctx.options.limit && Number.isFinite(ctx.options.limit) && ctx.options.limit > 0
-        ? Math.floor(ctx.options.limit)
-        : undefined;
-    const selectedFaculty = eligibleFaculty.slice(offset, limit ? offset + limit : undefined);
-    ctx.log(
-      `Faculty candidates for arXiv sync: ${selectedFaculty.length} (eligible ${eligibleFaculty.length}, offset ${offset}${limit ? `, limit ${limit}` : ''})`,
-    );
+    ctx.log(`Faculty candidates for arXiv sync: ${selectedFaculty.length}`);
 
     let totalObs = 0;
     let totalEntries = 0;
@@ -371,9 +363,8 @@ export class ArxivPreprintScraper implements IScraper {
         if (!entry.authors.some((author) => isExactNameMatch(author, fname, lname))) {
           continue;
         }
-        if (ctx.options.since) {
-          const recencyDate = entry.updatedAt || entry.publishedAt;
-          if (!recencyDate || recencyDate < ctx.options.since) continue;
+        if (ctx.options.since && entry.updatedAt && entry.updatedAt < ctx.options.since) {
+          continue;
         }
 
         const observations = arxivEntryToObservations(entry);

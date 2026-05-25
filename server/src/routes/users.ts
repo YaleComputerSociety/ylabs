@@ -1,5 +1,5 @@
 /**
- * User routes for saved programs, saved research plans, and profile updates.
+ * User routes for favorites, fellowships, listings, and profile updates.
  */
 import { Router, Request, Response, NextFunction } from 'express';
 import { isAuthenticated } from '../middleware/index';
@@ -8,18 +8,6 @@ import { logEvent } from '../services/analyticsService';
 import { AnalyticsEventType } from '../models/index';
 
 const router = Router();
-
-const deprecateFavPathwayEndpoint = (_req: Request, res: Response, next: NextFunction) => {
-  res.setHeader('Deprecation', 'true');
-  res.setHeader('Link', '</api/users/savedResearchPlans>; rel="successor-version"');
-  next();
-};
-
-const deprecateFavFellowshipEndpoint = (_req: Request, res: Response, next: NextFunction) => {
-  res.setHeader('Deprecation', 'true');
-  res.setHeader('Link', '</api/users/savedPrograms>; rel="successor-version"');
-  next();
-};
 
 const getFavoriteIds = (req: Request, key: string): string[] => {
   const value = req.body?.data?.[key] ?? req.body?.[key];
@@ -73,6 +61,12 @@ const logFavoriteEvent = (
   };
 };
 
+const deprecateFavFellowshipEndpoint = (_req: Request, res: Response, next: NextFunction) => {
+  res.setHeader('Deprecation', 'true');
+  res.setHeader('Link', '</api/users/savedPrograms>; rel="successor-version"');
+  next();
+};
+
 const logProfileUpdateEvent = async (req: Request, res: Response, next: NextFunction) => {
   const originalSend = res.send.bind(res);
 
@@ -98,8 +92,13 @@ const logProfileUpdateEvent = async (req: Request, res: Response, next: NextFunc
 };
 
 router.get('/favListingsIds', isAuthenticated, userController.getFavListingsIds);
-router.put('/favListings', isAuthenticated, userController.addFavListings);
-router.delete('/favListings', isAuthenticated, userController.removeFavListings);
+router.put('/favListings', isAuthenticated, logFavoriteEvent(true), userController.addFavListings);
+router.delete(
+  '/favListings',
+  isAuthenticated,
+  logFavoriteEvent(false),
+  userController.removeFavListings,
+);
 
 router.get('/savedProgramIds', isAuthenticated, userController.getSavedProgramIds);
 router.get('/savedPrograms', isAuthenticated, userController.getSavedPrograms);
@@ -143,15 +142,24 @@ router.delete(
   userController.removeFavFellowships,
 );
 
+router.get('/favPathwayIds', isAuthenticated, userController.getFavPathwayIds);
+router.get('/favPathways', isAuthenticated, userController.getFavPathways);
+router.get(
+  '/favPathwayFundingMatches',
+  isAuthenticated,
+  userController.getFavPathwayFundingMatches,
+);
+router.put('/favPathways', isAuthenticated, userController.addFavPathways);
+router.delete('/favPathways', isAuthenticated, userController.removeFavPathways);
 router.get('/savedResearchPlanIds', isAuthenticated, userController.getSavedResearchPlanIds);
 router.get('/savedResearchPlans', isAuthenticated, userController.getSavedResearchPlans);
+router.put('/savedResearchPlans', isAuthenticated, userController.addSavedResearchPlans);
+router.delete('/savedResearchPlans', isAuthenticated, userController.removeSavedResearchPlans);
 router.get(
   '/savedResearchPlanFundingMatches',
   isAuthenticated,
   userController.getSavedResearchPlanFundingMatches,
 );
-router.put('/savedResearchPlans', isAuthenticated, userController.addSavedResearchPlans);
-router.delete('/savedResearchPlans', isAuthenticated, userController.removeSavedResearchPlans);
 router.get('/savedResearchPlanDetails', isAuthenticated, userController.getSavedResearchPlanDetails);
 router.get(
   '/savedResearchPlanDetails/export',
@@ -168,59 +176,20 @@ router.delete(
   isAuthenticated,
   userController.deleteSavedResearchPlanDetail,
 );
-
-router.get(
-  '/favPathwayIds',
-  isAuthenticated,
-  deprecateFavPathwayEndpoint,
-  userController.getFavPathwayIds,
-);
-router.get(
-  '/favPathways',
-  isAuthenticated,
-  deprecateFavPathwayEndpoint,
-  userController.getFavPathways,
-);
-router.get(
-  '/favPathwayFundingMatches',
-  isAuthenticated,
-  deprecateFavPathwayEndpoint,
-  userController.getFavPathwayFundingMatches,
-);
-router.put(
-  '/favPathways',
-  isAuthenticated,
-  deprecateFavPathwayEndpoint,
-  userController.addFavPathways,
-);
-router.delete(
-  '/favPathways',
-  isAuthenticated,
-  deprecateFavPathwayEndpoint,
-  userController.removeFavPathways,
-);
-router.get(
-  '/favPathwayPlans',
-  isAuthenticated,
-  deprecateFavPathwayEndpoint,
-  userController.getSavedPathwayPlans,
-);
+router.get('/favPathwayPlans', isAuthenticated, userController.getSavedPathwayPlans);
 router.get(
   '/favPathwayPlans/export',
   isAuthenticated,
-  deprecateFavPathwayEndpoint,
   userController.exportSavedPathwayPlans,
 );
 router.put(
   '/favPathwayPlans/:pathwayId',
   isAuthenticated,
-  deprecateFavPathwayEndpoint,
   userController.updateSavedPathwayPlan,
 );
 router.delete(
   '/favPathwayPlans/:pathwayId',
   isAuthenticated,
-  deprecateFavPathwayEndpoint,
   userController.deleteSavedPathwayPlan,
 );
 

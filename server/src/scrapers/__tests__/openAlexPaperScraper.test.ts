@@ -115,20 +115,20 @@ describe('normalizeOrcid', () => {
 
 describe('isExactNameMatch', () => {
   it('matches exact first + last name (case-insensitive)', () => {
-    expect(isExactNameMatch('Fixture Alpha', 'Fixture', 'Alpha')).toBe(true);
-    expect(isExactNameMatch('FIXTURE ALPHA', 'fixture', 'alpha')).toBe(true);
+    expect(isExactNameMatch('Amy Arnsten', 'Amy', 'Arnsten')).toBe(true);
+    expect(isExactNameMatch('AMY ARNSTEN', 'amy', 'arnsten')).toBe(true);
   });
   it('tolerates middle names/initials', () => {
-    expect(isExactNameMatch('Fixture M Alpha', 'Fixture', 'Alpha')).toBe(true);
-    expect(isExactNameMatch('Fixture Middle Alpha', 'Fixture', 'Alpha')).toBe(true);
+    expect(isExactNameMatch('Amy F Arnsten', 'Amy', 'Arnsten')).toBe(true);
+    expect(isExactNameMatch('Amy Frances Arnsten', 'Amy', 'Arnsten')).toBe(true);
   });
   it('rejects different first or last name', () => {
-    expect(isExactNameMatch('Different Alpha', 'Fixture', 'Alpha')).toBe(false);
-    expect(isExactNameMatch('Fixture Beta', 'Fixture', 'Alpha')).toBe(false);
+    expect(isExactNameMatch('Amelia Arnsten', 'Amy', 'Arnsten')).toBe(false);
+    expect(isExactNameMatch('Amy Aronson', 'Amy', 'Arnsten')).toBe(false);
   });
   it('rejects empty inputs', () => {
-    expect(isExactNameMatch(undefined, 'Fixture', 'Alpha')).toBe(false);
-    expect(isExactNameMatch('Fixture Alpha', '', 'Alpha')).toBe(false);
+    expect(isExactNameMatch(undefined, 'Amy', 'Arnsten')).toBe(false);
+    expect(isExactNameMatch('Amy Arnsten', '', 'Arnsten')).toBe(false);
   });
 });
 
@@ -139,7 +139,7 @@ describe('isExactNameMatch', () => {
 describe('lookupAuthorIdByOrcid', () => {
   it('returns the OpenAlex author id when one match is found', async () => {
     const fetcher: HttpFetcher = vi.fn(async () => ({
-      results: [{ id: 'https://openalex.org/A1234', display_name: 'Fixture Alpha' }],
+      results: [{ id: 'https://openalex.org/A1234', display_name: 'Amy Arnsten' }],
     }));
     const id = await lookupAuthorIdByOrcid(
       '0000-0001-2345-6789',
@@ -180,14 +180,14 @@ describe('lookupAuthorIdByOrcid', () => {
 describe('lookupAuthorIdByName', () => {
   it('returns the id when a single Yale-affiliated author exactly matches', async () => {
     const fetcher: HttpFetcher = vi.fn(async () => ({
-      results: [{ id: 'https://openalex.org/A777', display_name: 'Fixture Alpha' }],
+      results: [{ id: 'https://openalex.org/A777', display_name: 'Amy Arnsten' }],
     }));
-    const id = await lookupAuthorIdByName('Fixture', 'Alpha', 'x@y.io', fetcher);
+    const id = await lookupAuthorIdByName('Amy', 'Arnsten', 'x@y.io', fetcher);
     expect(id).toBe('https://openalex.org/A777');
     expect(fetcher).toHaveBeenCalledWith(
       'https://api.openalex.org/authors',
       expect.objectContaining({
-        search: 'Fixture Alpha',
+        search: 'Amy Arnsten',
         filter: 'affiliations.institution.id:I32971472',
       }),
     );
@@ -196,37 +196,37 @@ describe('lookupAuthorIdByName', () => {
   it('returns null when results are ambiguous (multiple exact matches)', async () => {
     const fetcher: HttpFetcher = vi.fn(async () => ({
       results: [
-        { id: 'https://openalex.org/A1', display_name: 'Fixture Alpha' },
-        { id: 'https://openalex.org/A2', display_name: 'Fixture Alpha' },
+        { id: 'https://openalex.org/A1', display_name: 'Amy Arnsten' },
+        { id: 'https://openalex.org/A2', display_name: 'Amy Arnsten' },
       ],
     }));
-    const id = await lookupAuthorIdByName('Fixture', 'Alpha', 'x@y.io', fetcher);
+    const id = await lookupAuthorIdByName('Amy', 'Arnsten', 'x@y.io', fetcher);
     expect(id).toBeNull();
   });
 
   it('returns null when no result has an exactly matching display_name', async () => {
     const fetcher: HttpFetcher = vi.fn(async () => ({
       results: [
-        { id: 'https://openalex.org/A1', display_name: 'Different Alpha' },
-        { id: 'https://openalex.org/A2', display_name: 'Fixture Beta' },
+        { id: 'https://openalex.org/A1', display_name: 'Amelia Arnsten' },
+        { id: 'https://openalex.org/A2', display_name: 'Amy Aronson' },
       ],
     }));
-    const id = await lookupAuthorIdByName('Fixture', 'Alpha', 'x@y.io', fetcher);
+    const id = await lookupAuthorIdByName('Amy', 'Arnsten', 'x@y.io', fetcher);
     expect(id).toBeNull();
   });
 
   it('tolerates a middle initial in the OpenAlex display_name', async () => {
     const fetcher: HttpFetcher = vi.fn(async () => ({
-      results: [{ id: 'https://openalex.org/A777', display_name: 'Fixture M Alpha' }],
+      results: [{ id: 'https://openalex.org/A777', display_name: 'Amy F Arnsten' }],
     }));
-    const id = await lookupAuthorIdByName('Fixture', 'Alpha', 'x@y.io', fetcher);
+    const id = await lookupAuthorIdByName('Amy', 'Arnsten', 'x@y.io', fetcher);
     expect(id).toBe('https://openalex.org/A777');
   });
 
   it('returns null on empty fname/lname without making a request', async () => {
     const fetcher: HttpFetcher = vi.fn();
-    expect(await lookupAuthorIdByName('', 'Alpha', 'x@y.io', fetcher)).toBeNull();
-    expect(await lookupAuthorIdByName('Fixture', '', 'x@y.io', fetcher)).toBeNull();
+    expect(await lookupAuthorIdByName('', 'Arnsten', 'x@y.io', fetcher)).toBeNull();
+    expect(await lookupAuthorIdByName('Amy', '', 'x@y.io', fetcher)).toBeNull();
     expect(fetcher).not.toHaveBeenCalled();
   });
 });
@@ -246,8 +246,8 @@ describe('resolveAuthorIdForFaculty precedence', () => {
     const { ctx } = makeContext();
     const resolved = await resolveAuthorIdForFaculty(
       {
-        fname: 'Fixture',
-        lname: 'Alpha',
+        fname: 'Amy',
+        lname: 'Arnsten',
         orcid: '0000-0001-2345-6789',
         openAlexId: 'A-stale',
       },
@@ -260,7 +260,7 @@ describe('resolveAuthorIdForFaculty precedence', () => {
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
 
-  it('does not fall back to a stale openAlexId when an ORCID is present but unresolved', async () => {
+  it('falls back to openAlexId when ORCID lookup returns nothing', async () => {
     const fetcher: HttpFetcher = vi.fn(async () => ({ results: [] }));
     const { ctx } = makeContext();
     const resolved = await resolveAuthorIdForFaculty(
@@ -269,31 +269,17 @@ describe('resolveAuthorIdForFaculty precedence', () => {
       ctx,
       fetcher,
     );
-    expect(resolved.method).toBe('none');
-    expect(resolved.authorId).toBeNull();
-  });
-
-  it('falls back to openAlexId when no ORCID is available', async () => {
-    const fetcher: HttpFetcher = vi.fn();
-    const { ctx } = makeContext();
-    const resolved = await resolveAuthorIdForFaculty(
-      { fname: 'X', lname: 'Y', openAlexId: 'A-existing' },
-      'x@y.io',
-      ctx,
-      fetcher,
-    );
     expect(resolved.method).toBe('openAlexId');
     expect(resolved.authorId).toBe('https://openalex.org/A-existing');
-    expect(fetcher).not.toHaveBeenCalled();
   });
 
   it('falls back to name search when neither orcid nor openAlexId is present', async () => {
     const fetcher: HttpFetcher = vi.fn(async () => ({
-      results: [{ id: 'https://openalex.org/A-name-found', display_name: 'Fixture Alpha' }],
+      results: [{ id: 'https://openalex.org/A-name-found', display_name: 'Amy Arnsten' }],
     }));
     const { ctx } = makeContext();
     const resolved = await resolveAuthorIdForFaculty(
-      { fname: 'Fixture', lname: 'Alpha' },
+      { fname: 'Amy', lname: 'Arnsten' },
       'x@y.io',
       ctx,
       fetcher,
@@ -328,7 +314,7 @@ describe('OpenAlexPaperScraper.run', () => {
       // ORCID lookup
       if (url === 'https://api.openalex.org/authors' && params.filter?.startsWith('orcid:')) {
         return {
-          results: [{ id: 'https://openalex.org/A-from-orcid', display_name: 'Fixture Alpha' }],
+          results: [{ id: 'https://openalex.org/A-from-orcid', display_name: 'Amy Arnsten' }],
         };
       }
       // /works call
@@ -338,7 +324,6 @@ describe('OpenAlexPaperScraper.run', () => {
             {
               id: 'https://openalex.org/W1',
               title: 'Test paper',
-              doi: 'https://doi.org/10.1234/openalex-fixture',
               publication_year: 2024,
               cited_by_count: 5,
             },
@@ -351,10 +336,10 @@ describe('OpenAlexPaperScraper.run', () => {
 
     const userModel = mockUserModel([
       {
-        _id: 'u-fixture-alpha',
-        netid: 'fixture-alpha',
-        fname: 'Fixture',
-        lname: 'Alpha',
+        _id: 'u-amy',
+        netid: 'aa1',
+        fname: 'Amy',
+        lname: 'Arnsten',
         orcid: '0000-0001-2345-6789',
         openAlexId: 'A-stale-id', // present but should be ignored
       },
@@ -368,24 +353,21 @@ describe('OpenAlexPaperScraper.run', () => {
     const worksCall = calls.find((c) => c.url === 'https://api.openalex.org/works');
     expect(worksCall?.params.filter).toBe('author.id:https://openalex.org/A-from-orcid');
 
-    // ORCID is authoritative, so a stale stored OpenAlex id gets corrected.
+    // No openAlexId lock should fire; the user observation is only a sync marker.
     const userObs = emitted.filter((o) => o.entityType === 'user');
-    expect(userObs.map((obs) => obs.field)).toEqual(['openAlexId', 'openAlexWorksSyncedAt']);
-    expect(userObs.find((obs) => obs.field === 'openAlexId')?.value).toBe(
-      'https://openalex.org/A-from-orcid',
-    );
+    expect(userObs.map((obs) => obs.field)).toEqual(['openAlexWorksSyncedAt']);
 
-    // Scholarly-link observations were emitted without creating direct Paper authorship fields.
-    const linkObs = emitted.filter((o) => o.entityType === 'scholarlyLink');
-    expect(linkObs.length).toBeGreaterThan(0);
-    expect(linkObs.find((o) => o.field === 'userId')?.entityKey).toBe(
-      'user:u-fixture-alpha:https://openalex.org/W1',
-    );
-    expect(linkObs.find((o) => o.field === 'userId')?.value).toBe('u-fixture-alpha');
-    expect(linkObs.find((o) => o.field === 'discoveredVia')?.value).toBe('OPENALEX');
-    expect(emitted.filter((o) => o.field === 'paperAuthorshipEvidence')).toHaveLength(0);
-    expect(emitted.filter((o) => o.field === 'yaleAuthorIds')).toHaveLength(0);
-    expect(emitted.filter((o) => o.field === 'yaleAuthorNetIds')).toHaveLength(0);
+    // Paper observations were emitted.
+    const paperObs = emitted.filter((o) => o.entityType === 'paper');
+    expect(paperObs.length).toBeGreaterThan(0);
+    expect(paperObs.find((o) => o.field === 'paperAuthorshipEvidence')?.value).toMatchObject({
+      userId: 'u-amy',
+      netid: 'aa1',
+      sourceName: 'openalex',
+      method: 'openalex-orcid',
+    });
+    expect(paperObs.filter((o) => o.field === 'yaleAuthorIds')).toHaveLength(0);
+    expect(paperObs.filter((o) => o.field === 'yaleAuthorNetIds')).toHaveLength(0);
 
     expect(result.notes).toContain('orcid:1');
     expect(result.notes).toContain('openAlexId:0');
@@ -397,7 +379,7 @@ describe('OpenAlexPaperScraper.run', () => {
       if (url === 'https://api.openalex.org/authors') {
         // Name search returns one exact match.
         return {
-          results: [{ id: 'https://openalex.org/A-discovered', display_name: 'Review Fixture' }],
+          results: [{ id: 'https://openalex.org/A-discovered', display_name: 'John Smith' }],
         };
       }
       if (url === 'https://api.openalex.org/works') {
@@ -417,10 +399,10 @@ describe('OpenAlexPaperScraper.run', () => {
 
     const userModel = mockUserModel([
       {
-        _id: 'u-review-fixture',
-        netid: 'review-fixture',
-        fname: 'Review',
-        lname: 'Fixture',
+        _id: 'u-john',
+        netid: 'js99',
+        fname: 'John',
+        lname: 'Smith',
         // no orcid, no openAlexId → name path
       },
     ]);
@@ -443,10 +425,10 @@ describe('OpenAlexPaperScraper.run', () => {
     });
     const userModel = mockUserModel([
       {
-        _id: 'u-review-fixture',
-        netid: 'review-fixture',
-        fname: 'Review',
-        lname: 'Fixture',
+        _id: 'u-john',
+        netid: 'js99',
+        fname: 'John',
+        lname: 'Smith',
       },
     ]);
 
@@ -488,10 +470,10 @@ describe('OpenAlexPaperScraper.run', () => {
     });
     const userModel = mockUserModel([
       {
-        _id: 'u-fixture-alpha',
-        netid: 'fixture-alpha',
-        fname: 'Fixture',
-        lname: 'Alpha',
+        _id: 'u-amy',
+        netid: 'aa1',
+        fname: 'Amy',
+        lname: 'Arnsten',
         openAlexId: 'A-existing',
       },
     ]);

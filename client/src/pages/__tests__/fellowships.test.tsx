@@ -158,6 +158,8 @@ const renderPage = (
     setSelectedRegions: vi.fn(),
     selectedCitizenship: [],
     setSelectedCitizenship: vi.fn(),
+    selectedStudentVisibilityTier: [],
+    setSelectedStudentVisibilityTier: vi.fn(),
     sortBy: 'default',
     setSortBy: vi.fn(),
     sortOrder: -1,
@@ -192,7 +194,7 @@ const renderPage = (
   };
 
   return render(
-    <MemoryRouter>
+    <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <UserContext.Provider
         value={{
           isLoading: false,
@@ -220,7 +222,7 @@ const renderStatefulPage = (fellowships: Fellowship[]) => {
     const [quickFilter, setQuickFilter] = useState<string | null>(null);
 
     return (
-      <MemoryRouter>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <UserContext.Provider
           value={{
             isLoading: false,
@@ -252,6 +254,8 @@ const renderStatefulPage = (fellowships: Fellowship[]) => {
                 setSelectedRegions: vi.fn(),
                 selectedCitizenship: [],
                 setSelectedCitizenship: vi.fn(),
+                selectedStudentVisibilityTier: [],
+                setSelectedStudentVisibilityTier: vi.fn(),
                 sortBy,
                 setSortBy,
                 sortOrder: sortDirection === 'asc' ? 1 : -1,

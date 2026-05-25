@@ -1,9 +1,7 @@
 import { randomUUID } from 'crypto';
 import { Source } from '../models/source';
 import { materializeFromRun } from './entityMaterializer';
-import { isIntegrityGateFailure } from './integrityGate';
 import { getScrapeRunReport } from './runReport';
-import { applyScraperPromotionGuards } from './scraperPromotionGuards';
 import {
   acquireScrapeJobLock,
   heartbeatScrapeJobLock,
@@ -76,12 +74,6 @@ export async function runScraperCron(
   if (!input.options.release || input.options.dryRun) {
     throw new Error('Cron scraper command requires --release write mode.');
   }
-  const promotionGuard = applyScraperPromotionGuards({
-    sourceName: input.sourceName,
-    environment: input.environment,
-    options: input.options,
-    autoMaterialize: true,
-  });
 
   const source = await deps.loadSource(input.sourceName);
   if (!source) {
@@ -117,7 +109,7 @@ export async function runScraperCron(
   const heartbeat = startHeartbeat(input, deps, ownerId);
   try {
     const runOptions: ScraperOptions = {
-      ...promotionGuard.options,
+      ...input.options,
       triggeredBy: 'cron',
     };
     const { runId: nextRunId, result: scrapeResult } = await deps.orchestrator.run(
@@ -127,11 +119,7 @@ export async function runScraperCron(
     runId = nextRunId;
     const materializationResult = await deps.materializeFromRun(runId, { dryRun: false });
     const report = await deps.getScrapeRunReport(runId);
-    const exitCode =
-      materializationResult.errors > 0 ||
-      isIntegrityGateFailure(materializationResult.postMaterializationIntegrity)
-        ? 1
-        : 0;
+    const exitCode = materializationResult.errors > 0 ? 1 : 0;
 
     await deps.releaseScrapeJobLock({
       environment: input.environment,

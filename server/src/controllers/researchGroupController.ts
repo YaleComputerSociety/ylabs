@@ -8,14 +8,13 @@ import { Request, Response } from 'express';
 import { NotFoundError } from '../utils/errors';
 import {
   getResearchGroupDetail,
-  listResearchSearchSuggestions,
   searchResearchGroupsViaMeili,
   ResearchGroupSearchSort,
-  ResearchGroupQualityFilter,
 } from '../services/researchGroupService';
 import { ResearchGroupFilterInput } from '../services/researchGroupFilters';
 import {
   isStudentVisibilityTier,
+  publicStudentVisibilityTiers,
   type StudentVisibilityTier,
 } from '../models/studentVisibility';
 
@@ -41,26 +40,6 @@ const ALLOWED_SORT_FIELDS: ResearchGroupSearchSort['sortBy'][] = [
   'createdAt',
   'updatedAt',
 ];
-
-const ALLOWED_QUALITY_FILTERS = new Set<ResearchGroupQualityFilter>([
-  'description-issue',
-  'missing-lead',
-  'profile-fallback',
-]);
-
-const parseQualityFilters = (raw: unknown): ResearchGroupQualityFilter[] => {
-  if (!Array.isArray(raw)) return [];
-  return raw
-    .map((value) => (typeof value === 'string' ? value : String(value)))
-    .filter((value): value is ResearchGroupQualityFilter =>
-      ALLOWED_QUALITY_FILTERS.has(value as ResearchGroupQualityFilter),
-    );
-};
-
-const parseStudentVisibilityTiers = (raw: unknown): StudentVisibilityTier[] => {
-  const values = toStringArray(raw) || [];
-  return values.filter(isStudentVisibilityTier);
-};
 
 const parseFilters = (raw: unknown): ResearchGroupFilterInput => {
   if (!raw || typeof raw !== 'object') return {};
@@ -97,34 +76,39 @@ const parseFilters = (raw: unknown): ResearchGroupFilterInput => {
   return filters;
 };
 
+const parseStudentVisibilityTiers = (value: unknown): StudentVisibilityTier[] => {
+  const values = toStringArray(value) || [];
+  return values.filter(isStudentVisibilityTier);
+};
+
 export const searchResearchGroups = async (request: Request, response: Response) => {
   try {
     const body = (request.body || {}) as {
       q?: string;
-      query?: string;
       page?: number;
       pageSize?: number;
       filters?: unknown;
       sortBy?: string;
       sortOrder?: 'asc' | 'desc';
-      browseQuality?: string;
-      qualityFilters?: unknown;
       studentVisibilityTier?: unknown;
       includeSuppressed?: boolean;
     };
 
-    const q =
-      typeof body.q === 'string'
-        ? body.q
-        : typeof body.query === 'string'
-          ? body.query
-          : '';
+    const q = typeof body.q === 'string' ? body.q : '';
     const page = Number.isFinite(Number(body.page)) ? Number(body.page) : 1;
     const requestedPageSize = Number.isFinite(Number(body.pageSize))
       ? Number(body.pageSize)
       : DEFAULT_PAGE_SIZE;
     const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, requestedPageSize));
     const filters = parseFilters(body.filters);
+    const currentUser = request.user as { userType?: string } | undefined;
+    const isAdmin = currentUser?.userType === 'admin';
+    const requestedTiers = isAdmin ? parseStudentVisibilityTiers(body.studentVisibilityTier) : [];
+    if (requestedTiers.length > 0) {
+      filters.studentVisibilityTier = requestedTiers;
+    } else if (!(isAdmin && body.includeSuppressed === true)) {
+      filters.studentVisibilityTier = publicStudentVisibilityTiers;
+    }
 
     const sort: ResearchGroupSearchSort = {};
     if (
@@ -135,37 +119,12 @@ export const searchResearchGroups = async (request: Request, response: Response)
       sort.sortOrder = body.sortOrder === 'asc' ? 'asc' : 'desc';
     }
 
-    const currentUser = request.user as { userType?: string } | undefined;
-    const canUseAdminBrowseQuality = currentUser?.userType === 'admin';
-    const canUseAdminQualityControls = canUseAdminBrowseQuality && q.trim() === '';
-    const options = {
-      lowQualityFirst:
-        canUseAdminQualityControls && body.browseQuality === 'low-first',
-      includeQualitySummary: canUseAdminQualityControls && body.browseQuality === 'low-first',
-      qualityFilters: canUseAdminQualityControls ? parseQualityFilters(body.qualityFilters) : [],
-      studentVisibilityTiers:
-        canUseAdminBrowseQuality ? parseStudentVisibilityTiers(body.studentVisibilityTier) : [],
-      includeSuppressed: canUseAdminBrowseQuality && body.includeSuppressed === true,
-    };
-
-    const result = await searchResearchGroupsViaMeili(
-      q,
-      filters,
-      page,
-      pageSize,
-      sort,
-      options,
-    );
+    const result = await searchResearchGroupsViaMeili(q, filters, page, pageSize, sort);
     return response.json(result);
   } catch (error) {
     console.error('ResearchEntity search failed:', error);
     return response.status(500).json({ error: 'Search failed' });
   }
-};
-
-export const getResearchSearchSuggestions = async (_request: Request, response: Response) => {
-  const suggestions = await listResearchSearchSuggestions(6);
-  return response.json({ suggestions });
 };
 
 export const getResearchGroupBySlug = async (request: Request, response: Response) => {
@@ -174,10 +133,7 @@ export const getResearchGroupBySlug = async (request: Request, response: Respons
     return response.status(400).json({ error: 'Missing slug' });
   }
 
-  const currentUser = request.user as { userType?: string } | undefined;
-  const detail = await getResearchGroupDetail(slug, {
-    includeQualitySummary: currentUser?.userType === 'admin',
-  });
+  const detail = await getResearchGroupDetail(slug);
   if (!detail) {
     throw new NotFoundError(`Research entity not found with slug: ${slug}`);
   }

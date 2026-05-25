@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   searchPrograms: vi.fn(),
@@ -6,8 +6,8 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../../services/programService', () => ({
   searchPrograms: mocks.searchPrograms,
-  readProgram: vi.fn(),
   getProgramFilterOptions: vi.fn(),
+  readProgram: vi.fn(),
   addProgramView: vi.fn(),
   addProgramFavorite: vi.fn(),
   removeProgramFavorite: vi.fn(),
@@ -15,8 +15,18 @@ vi.mock('../../services/programService', () => ({
 
 import { searchProgramsController } from '../programController';
 
-describe('searchProgramsController', () => {
-  it('passes canonical student-facing program filters through to the service', async () => {
+const response = () => {
+  const res = {
+    json: vi.fn(),
+    status: vi.fn(),
+  };
+  res.status.mockReturnValue(res);
+  return res;
+};
+
+describe('programController search visibility', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
     mocks.searchPrograms.mockResolvedValue({
       programs: [],
       total: 0,
@@ -24,34 +34,55 @@ describe('searchProgramsController', () => {
       pageSize: 20,
       totalPages: 0,
     });
-    const json = vi.fn();
-    const response = { json, status: vi.fn().mockReturnThis() };
+  });
+
+  it('does not pass nonpublic visibility filters for normal student searches', async () => {
+    const res = response();
 
     await searchProgramsController(
       {
         query: {
-          programKind: 'MENTOR_MATCHING|STRUCTURED_PROGRAM',
-          entryMode: 'DIRECT_FACULTY_MATCHING',
-          studentFacingCategory: 'Mentored summer program',
+          studentVisibilityTier: 'operator_review,suppressed',
+          includeOperatorReview: 'true',
+          includeSuppressed: 'true',
         },
-        user: undefined,
+        user: { userType: 'student' },
       } as any,
-      response as any,
+      res as any,
     );
 
     expect(mocks.searchPrograms).toHaveBeenCalledWith(
       expect.objectContaining({
-        programKind: ['MENTOR_MATCHING', 'STRUCTURED_PROGRAM'],
-        entryMode: ['DIRECT_FACULTY_MATCHING'],
-        studentFacingCategory: ['Mentored summer program'],
+        includeNonPublic: false,
+        studentVisibilityTier: [],
+        includeOperatorReview: false,
+        includeSuppressed: false,
       }),
     );
-    expect(json).toHaveBeenCalledWith({
-      results: [],
-      total: 0,
-      page: 1,
-      pageSize: 20,
-      totalPages: 0,
-    });
+  });
+
+  it('passes admin visibility filters for review and suppressed program inspection', async () => {
+    const res = response();
+
+    await searchProgramsController(
+      {
+        query: {
+          studentVisibilityTier: 'operator_review|suppressed',
+          includeOperatorReview: 'true',
+          includeSuppressed: 'true',
+        },
+        user: { userType: 'admin' },
+      } as any,
+      res as any,
+    );
+
+    expect(mocks.searchPrograms).toHaveBeenCalledWith(
+      expect.objectContaining({
+        includeNonPublic: true,
+        studentVisibilityTier: ['operator_review', 'suppressed'],
+        includeOperatorReview: true,
+        includeSuppressed: true,
+      }),
+    );
   });
 });

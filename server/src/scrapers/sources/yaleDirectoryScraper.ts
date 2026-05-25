@@ -2,9 +2,10 @@
  * YaleDirectoryScraper
  *
  * Maintains the User collection (faculty roster) by paginating Yale faculty/staff
- * records from the Yalies API (https://api.yalies.io/v2/people). This scraper replaced
- * the old static faculty JSON bootstrap and can be re-run on a cadence so that new
- * appointments, title changes, and email/phone updates flow through the observation pipeline.
+ * records from the Yalies API (https://api.yalies.io/v2/people). The legacy bootstrap
+ * (`scripts/importFaculty.ts`) reads a static enriched JSON file once; this scraper
+ * is the live equivalent — it can be re-run on a cadence so that new appointments,
+ * title changes, and email/phone updates flow through the observation pipeline.
  *
  * Source choice: the public web directory at https://directory.yale.edu sits behind a
  * search UI (autocomplete + login wall for full records), so it is not a viable bulk
@@ -38,25 +39,6 @@ const SOURCE_NAME = 'yale-directory';
 const SOURCE_URL = 'https://api.yalies.io/v2/people';
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const PAGE_SIZE = 100;
-const LIMITED_RUN_TITLE_FILTERS = [
-  'Professor',
-  'Associate Professor',
-  'Assistant Professor',
-  'Lecturer',
-  'Senior Lecturer',
-  'Lector',
-  'Senior Lector',
-  'Research Scientist',
-  'Senior Research Scientist',
-  'Associate Research Scientist',
-  'Principal Research Scientist',
-  'Research Associate',
-  'Research Fellow',
-  'Postdoctoral Associate',
-  'Postdoctoral Fellow',
-  'Instructor',
-  'Clinical Instructor',
-];
 const FACULTY_KEYWORDS = [
   'professor',
   'lecturer',
@@ -294,75 +276,66 @@ export class YaleDirectoryScraper implements IScraper {
     let pageNum = 1;
     let stop = false;
 
-    // Full runs keep the complete unfiltered pass for maximum coverage. Bounded
-    // audit/apply runs avoid scanning the undergraduate-heavy front of the API by
-    // asking Yalies for exact high-yield title buckets first.
-    const filterSets =
-      limit !== undefined
-        ? LIMITED_RUN_TITLE_FILTERS.map((title) => ({ title: [title] }))
-        : [undefined];
-    let pagesFetched = 0;
-
-    for (const filters of filterSets) {
-      pageNum = 1;
-      while (!stop) {
-        let records: YaliesPerson[];
-        try {
-          records = await fetchYaliesPage(pageNum, filters, ctx.options.useCache);
-          pagesFetched++;
-        } catch (err: unknown) {
-          const errAny = err as { message?: string; response?: { status?: number } };
-          if (axios.isAxiosError(err) && err.response?.status === 401) {
-            ctx.log(`Yalies API returned 401 (auth failed); aborting after page ${pageNum}.`);
-            break;
-          }
-          ctx.log(
-            `error fetching Yalies page ${pageNum}: ${errAny?.message ?? String(err)} — aborting.`,
-          );
+    // Yalies's filter DSL takes arrays like { school_code: ['MD','EN',...] }. We
+    // pass no filter and discriminate faculty vs students client-side via
+    // isFacultyPerson(). This is wasteful in absolute terms but the Yalies dataset
+    // is small (~25k people) and the filter vocabulary varies between schools, so
+    // a single pass is the most robust approach.
+    while (!stop) {
+      let records: YaliesPerson[];
+      try {
+        records = await fetchYaliesPage(pageNum, undefined, ctx.options.useCache);
+      } catch (err: unknown) {
+        const errAny = err as { message?: string; response?: { status?: number } };
+        if (axios.isAxiosError(err) && err.response?.status === 401) {
+          ctx.log(`Yalies API returned 401 (auth failed); aborting after page ${pageNum}.`);
           break;
         }
-
-        if (!records || records.length === 0) {
-          ctx.log(`Page ${pageNum} returned 0 records; reached end of dataset.`);
-          break;
-        }
-
-        ctx.log(`Page ${pageNum}: fetched ${records.length} records.`);
-
-        for (const person of records) {
-          if (limit !== undefined && processed >= limit) {
-            stop = true;
-            break;
-          }
-          const obs = personToObservations(person);
-          if (obs.length === 0) {
-            skippedNonFaculty++;
-            continue;
-          }
-          await ctx.emit(obs);
-          totalObs += obs.length;
-          processed++;
-        }
-
-        if (records.length < PAGE_SIZE) {
-          ctx.log(`Page ${pageNum} returned ${records.length} (<${PAGE_SIZE}); end of dataset.`);
-          break;
-        }
-
-        pageNum++;
+        ctx.log(
+          `error fetching Yalies page ${pageNum}: ${errAny?.message ?? String(err)} — aborting.`,
+        );
+        break;
       }
-      if (stop) break;
+
+      if (!records || records.length === 0) {
+        ctx.log(`Page ${pageNum} returned 0 records; reached end of dataset.`);
+        break;
+      }
+
+      ctx.log(`Page ${pageNum}: fetched ${records.length} records.`);
+
+      for (const person of records) {
+        if (limit !== undefined && processed >= limit) {
+          stop = true;
+          break;
+        }
+        const obs = personToObservations(person);
+        if (obs.length === 0) {
+          skippedNonFaculty++;
+          continue;
+        }
+        await ctx.emit(obs);
+        totalObs += obs.length;
+        processed++;
+      }
+
+      if (records.length < PAGE_SIZE) {
+        ctx.log(`Page ${pageNum} returned ${records.length} (<${PAGE_SIZE}); end of dataset.`);
+        break;
+      }
+
+      pageNum++;
     }
 
     ctx.log(
       `Done. Faculty processed: ${processed}, observations emitted: ${totalObs}, ` +
-        `non-faculty skipped: ${skippedNonFaculty}, pages fetched: ${pagesFetched}.`,
+        `non-faculty skipped: ${skippedNonFaculty}, pages fetched: ${pageNum}.`,
     );
 
     return {
       observationCount: totalObs,
       entitiesObserved: processed,
-      notes: `Yalies faculty sync: ${processed} faculty, ${totalObs} observations across ${pagesFetched} pages`,
+      notes: `Yalies faculty sync: ${processed} faculty, ${totalObs} observations across ${pageNum} pages`,
     };
   }
 }

@@ -17,33 +17,28 @@ runtime research data is canonical `ResearchEntity` data. Related files include:
 - [`server/src/scrapers/accessMaterializer.ts`](../server/src/scrapers/accessMaterializer.ts)
 - [`server/src/services/accessSummaryService.ts`](../server/src/services/accessSummaryService.ts)
 - [`server/src/services/pathwaySearchService.ts`](../server/src/services/pathwaySearchService.ts)
-- [`server/src/routes/programs.ts`](../server/src/routes/programs.ts)
 - [`docs/scraper-audit-guide.md`](./scraper-audit-guide.md)
-- [`client/src/pages/research.tsx`](../client/src/pages/research.tsx)
+- [`server/src/routes/pathways.ts`](../server/src/routes/pathways.ts)
+- [`client/src/pages/labs.tsx`](../client/src/pages/labs.tsx)
 - [`client/src/pages/labDetail.tsx`](../client/src/pages/labDetail.tsx)
 
 `ResearchEntity` is now the canonical runtime model and uses the `research_entities` collection. `server/src/models/researchGroup.ts` retains a reusable legacy-shaped schema for the canonical model, but no runtime `ResearchGroup` model should register `research_groups`.
 
 Public API migration note: `/api/research` is canonical. The hard-pivot migration copies `research_groups` into `research_entities` with stable ids, backfills `researchEntityId`, removes `/api/research-groups` plus `/labs` route compatibility from runtime routing, and supports canonical-only verification after the old source collection is dropped.
 
-Dependent physical collections also use canonical names after migration. `research_entity_members`
-is active; `research_entity_stats`, `paper_entity_links`, `faculty_members`, standalone `grants`,
-and the unused `student_*` workflow collections were empty or superseded and are retired. The old
-`research_group_members`, `research_group_stats`, `paper_group_links`, `applications`, and `listings`
-collections should remain absent after cleanup.
+Dependent physical collections also use canonical names after migration:
+`research_entity_members`, `research_entity_stats`, and `paper_entity_links`.
+The old `research_group_members`, `research_group_stats`, and `paper_group_links`
+collections can be dropped after their data is copied and verified.
 
-Funding-source scrapers may still maintain compact embedded `recentGrants` data on `research_entities`
-for evidence and topic enrichment, but they should not recreate a standalone `grants` collection.
+Legacy student application submissions are preserved in `student_applications`
+before dropping the old `applications` collection. The first cleanup migration
+keeps the raw legacy payload for audit while normalizing known student, listing,
+posted-opportunity, and research-entity references when they can be resolved.
 
 Do not embed every pathway, signal, posted opportunity, and contact route directly inside `ResearchEntity` long term. That will become query-heavy as students filter across plausible homes, access evidence, funding or pay possibilities, summer timing, beginner-friendly paths, thesis fit, Python/coding, archival work, open deadlines, and similar constraints. Prefer first-class collections for `EntryPathway`, `PostedOpportunity`, `AccessSignal`, and `ContactRoute`. Treat course credit as a formalization option after a student has identified a research home, not as an entry pathway by itself.
 
 External researcher identity note: accepted operator inputs should prefer ORCID over Yale netid. ORCID may enrich or disambiguate an existing Yale-confirmed `User`, including `User.orcid` and manually accepted `User.googleScholarId`, but ORCID must not create a Yale person record by itself. Netid remains an internal account/scraper compatibility key and should appear only as diagnostic or converted internal target data in accepted-input workflows.
-
-Faculty profile department note: student-facing profile departments should use canonical `Department.displayName` labels such as `CPSC - Computer Science`. Raw Yale directory, roster, or school-unit labels such as `EASCPS Computer Science` and `EAS School of Engineering and Applied Science` remain in observations for auditability, but profile materialization, profile API output, and reviewed backfills should resolve them before they appear in badges, filters, or student-facing profile summaries. Broad school units should be ignored for department badges when a more specific canonical department is available. Reviewed source-unit families such as Nursing, Law, Architecture, Music, FAS departments, YSPH departments with active rows, and high-confidence Yale School of Medicine department prefixes may resolve through explicit aliases only when they map to active canonical `Department` rows. Source units without an active canonical department row, such as some centers, administrative units, Drama, Divinity, Laboratory Medicine, and Social and Behavioral Sciences, are ignored for student-facing department badges rather than guessed.
-
-Program source metadata note: `Fellowship` rows are the current storage model for the student-facing Programs & Fellowships surface and may carry `programCategory`, `programKind`, `entryMode`, `studentFacingCategory`, mentor/eligibility flags, `bestNextStep`, `prepSteps`, `sourceName`, `sourceUrl`, `sourceKey`, `sourceFingerprint`, `sourceLastVerifiedAt`, and `sourceLastChangedAt`. Official Yale fellowship-office scraper rows upsert by source key, source/application links, then exact title. They should not be archived automatically when a source row disappears; disappearance is a review signal because expired or temporarily unavailable program pages can still be useful next-cycle planning data.
-
-Student visibility note: `ResearchEntity` and `Fellowship` rows now share a Trust Tier projection through `studentVisibilityTier`, `studentVisibilityComputedTier`, optional `studentVisibilityOverrideTier`, `studentVisibilityReasons`, suppression/review metadata, and `studentVisibilityVersion`. The public tiers are `student_ready` and `limited_but_safe`; `operator_review` is for admin/operator review; `suppressed` is not student-visible. Research search and Program search default to the public tiers, while admin filters can inspect review and suppressed rows.
 
 ## Target Conceptual Model
 
@@ -87,7 +82,6 @@ Keep these guardrails as the migration continues:
 - Add structured method, timing, and constraint facets before relying on Pathways filters such as Python, archival research, wet lab, social science data, beginner-friendly, summer, or hours/week. These facets may live on `ResearchEntity`, `EntryPathway`, or `PostedOpportunity` depending on what the evidence actually supports.
 - Keep course credit out of `EntryPathway`. Research for credit is a formalization pathway after the student finds a research home and mentor. Store credit eligibility/instructions as a formalization option, best-next-step hint, or source-backed evidence, not as the route by which the student discovers the home.
 - Treat fellowships similarly by default: most fellowship records are funding/application-cycle formalization after a student has a mentor, project, lab, or research direction. The exception is a structured fellowship program that itself matches students with mentors, supplies a cohort experience, or provides a real application into a hosted research program; those can be `ResearchEntity`, `EntryPathway`, and/or `PostedOpportunity` records depending on the source.
-- Preserve source-backed expired fellowship cycles as planning evidence when the page looks recurring. They are not active applications, but they can be next-cycle signals for students, saved-pathway funding matches, and future scraper refresh targets.
 - Move Explore Research access filters onto first-class `EntryPathway`, `AccessSignal`, and `PostedOpportunity` data before retiring legacy scalar fields such as `acceptingUndergrads`, `openness`, and `acceptanceConfidence`.
 - Keep contact routes fail-closed. Public payloads should prefer official/public URLs, redact direct contact details from excerpts, and withhold non-public scraped contact data unless an authenticated or admin workflow explicitly allows it.
 
@@ -131,8 +125,7 @@ ResearchEntity {
   name: string;
   slug: string;
   entityType: ResearchEntityType;
-  shortDescription?: string;
-  fullDescription?: string;
+  description?: string;
   orgUnitIds: string[];
   people: PersonRole[];
   methods: string[];
@@ -140,32 +133,6 @@ ResearchEntity {
   sourceEvidenceIds: string[];
   confidenceByField?: Record<string, unknown>;
   manuallyLockedFields?: string[];
-}
-```
-
-Description fields use a two-field runtime model. `fullDescription` is the canonical source-backed explanation used first by detail pages and ResearchEntity search/indexing. `shortDescription` is a concise one- or two-sentence summary derived from the full description for cards and quick browsing. The legacy `description` field is deprecated compatibility state only; new scrapers and repair scripts should not emit or refill it.
-
-## ResearchEntityRelationship
-
-How one research home relates to another.
-
-Use `ResearchEntityRelationship` for umbrella-to-specific-home relationships such as an institute pointing to affiliated labs, faculty research areas, hosted programs, or related research groups. This keeps an entity like Yale Quantum Institute useful as a hub without pretending it is itself the direct undergraduate entry point for every affiliated lab.
-
-Initial runtime support lives in [`server/src/models/researchEntityRelationship.ts`](../server/src/models/researchEntityRelationship.ts), [`server/src/services/researchEntityRelationshipService.ts`](../server/src/services/researchEntityRelationshipService.ts), and the centers/institutes scraper. The first supported source family is conservative: YQI, Wu Tsai, and Yale Cancer Center member directories can create/reuse faculty-research-area targets and relate the umbrella entity to them as `MEMBER_RESEARCH_AREA` when no source-backed lab entity exists. Affiliation does not create a posted opportunity, access signal, or accepting-undergrads claim.
-
-Suggested fields:
-
-```ts
-ResearchEntityRelationship {
-  id: string;
-  sourceResearchEntityId: string;
-  targetResearchEntityId: string;
-  relationshipType: 'AFFILIATED_LAB' | 'AFFILIATED_RESEARCH_GROUP' | 'MEMBER_RESEARCH_AREA' | 'HOSTED_PROGRAM';
-  evidenceStrength: 'DIRECT' | 'STRONG' | 'MODERATE' | 'WEAK' | 'NONE';
-  sourceUrl?: string;
-  evidenceQuote?: string;
-  confidence?: number;
-  archived?: boolean;
 }
 ```
 
@@ -177,7 +144,7 @@ Do not model "research for credit" as an `EntryPathway`. Credit is a university 
 
 Examples:
 
-- real posted opening
+- posted role
 - recurring program
 - work-study
 - volunteer outreach
@@ -241,72 +208,50 @@ PostedOpportunity {
 
 Only use `PostedOpportunity` when there is a real active, rolling, or archived instance. Do not create fake posted opportunities for general exploratory outreach.
 
-Initial implementation note: `PostedOpportunity` is a separate collection that belongs to an `EntryPathway`. Historical rows may have referenced an existing legacy `Listing` through optional `listingId`, but new posted opportunities should not carry listing-derived provenance and the Beta `listings` collection has been dropped.
+Initial implementation note: `PostedOpportunity` is a separate collection that belongs to an `EntryPathway` and may reference an existing legacy `Listing` through optional `listingId`. Legacy listing behavior remains unchanged during migration.
 
-Listing bridge note: legacy `Listing` rows were a transition bridge only. As of the 2026-05-15 Beta cleanup, the `listings` collection is absent, listing-backed `PostedOpportunity` rows have been deleted, listing-derived `EntryPathway` and `AccessSignal` rows have been archived, and user listing references have been cleared. Internal pathway search excludes `EntryPathway.derivationKey` values that begin with `listing:`, Meili pathway indexing excludes `postedOpportunityProvenance = LISTING_BRIDGED`, and access summaries ignore listing-derived signals/pathways/opportunities.
+Listing bridge note: legacy `Listing` rows with a `researchGroupId` now materialize into a `POSTED_ROLE` `EntryPathway`, `POSTED_OPENING` `AccessSignal`, and linked `PostedOpportunity`. Open listings with future deadlines become `OPEN`, listings without deadlines become `ROLLING`, expired/unconfirmed listings become `CLOSED`, and archived/deleted listings become `ARCHIVED`. Existing rows can be backfilled with [`data-migration/BackfillPostedOpportunitiesFromListings.ts`](../data-migration/BackfillPostedOpportunitiesFromListings.ts).
 
-Scraper guidance note: legacy listings no longer guide current scraper runs after the table drop. Use source coverage, official profile URLs, reviewed accepted inputs, and admin/manual seeds for sparse-entity prioritization; scraper evidence quotes still come from fetched public pages.
+Opportunity detail note: `/api/opportunities/:id` exposes explicit public state for posted opportunities: `deadlineState`, `applicationState`, `applicationLabel`, and listing-bridged versus scraper-derived provenance. Attached observation evidence may include a short public excerpt, but direct contact details are redacted before the payload reaches the student-facing page.
 
-Department roster fallback note: `dept-faculty-roster` official profile enrichment can backfill blank faculty-lab detail pages from the PI's official Yale profile, but faculty bios remain profile data and must not be copied verbatim into `ResearchEntity.fullDescription` or `ResearchEntity.shortDescription`. PI `researchInterests` and `topics` also remain profile data: materialization should not copy them into `ResearchEntity.researchAreas`. Detail APIs may expose them as a labeled `PI_PROFILE_FALLBACK` (`profileResearchAreas`) when no entity-specific topic evidence exists, and search indexing may use those derived terms for discoverability without treating them as independently sourced entity metadata. When no real entity description exists, detail APIs may expose a separate `profileSynthesisDescription` with `descriptionSource = PI_PROFILE_SYNTHESIS`, synthesized from PI profile topics and recent scholarly-work titles; this remains a faculty-research-area fallback and must not overwrite source-backed entity descriptions or imply undergraduate availability. Official lab-microsite evidence can still identify a real lab name, website, and source-backed homepage description; a sparse lab such as The Faboratory should remain labeled as a Lab, and its own official homepage metadata can populate `fullDescription` and derived `shortDescription` before PI-profile synthesis is used. When a lab has inferred PI ownership but no better public action route, materialization may add a guarded public `FACULTY_PI` route plus a weak `EXPLORATORY_CONTACT` pathway that points students to the official Yale profile rather than inventing an application opening. Use `yarn --cwd server research-entity:repair-copied-profile-descriptions` after profile/roster refreshes to audit and clear stale active observations or current fields where PI bios were previously copied into research-entity descriptions.
+## Pathway Search
 
-Department roster lab-vs-faculty-research note: a professor's personal homepage is not enough evidence for a `LAB` entity. `dept-faculty-roster` should classify personal faculty sites such as CS `/homes/<person>/` pages as `INDIVIDUAL_RESEARCH` / `Faculty Research` unless the link text, hostname, path, or source page explicitly indicates a lab, laboratory, or research group. This keeps discovery honest while still allowing profile-backed exploratory outreach. Use `yarn --cwd server research-entity:repair-personal-homepages` to dry-run existing false-lab rows from personal homepages; add `--apply` only after reviewing the JSON plan or providing an accepted input file.
+The first Pathways API is `POST /api/pathways/search`. It searches `EntryPathway` rows and returns denormalized card data for the student-facing `/pathways` surface.
 
-Best-fit topic note: the detail-page `Best fit for` section is a student-facing decision aid backed by entity-level `ResearchEntity.researchAreas`. Raw PI profile `researchInterests`, `topics`, publication topics, and `PI_PROFILE_FALLBACK` values may support discoverability or profile-synthesis context, but they must not power `Best fit for` unless separately materialized from source-backed entity evidence or admin-reviewed enrichment. Use `yarn --cwd server research-entity:audit-best-fit` to audit active entities for missing, generic-only, or PI-fallback-only best-fit coverage.
+Current behavior:
 
-Faculty profile bio resolution note: scraper observations should preserve competing professor bio candidates instead of choosing a whole-source winner during extraction. `User.bio` materialization uses field-specific scoring: richer research-area prose from faculty-controlled or lab/personal pages can beat thinner official profile prose, while official Yale/directory sources remain preferred for identity, contact, office, title, and department metadata. Generic career biographies should not displace concise research-interest text just because they are longer. Official profile bio extraction should preserve source paragraph breaks as plain-text blank lines, not collapse multi-paragraph bios into one blob or store raw HTML. Contact, office, address, directory-location text, clinical widgets, event blurbs, publication/citation snippets, and voluntary/adjunct faculty boilerplate must not materialize as a bio.
-
-Student-facing source note: department roster/index URLs and faculty profile URLs remain useful scraper provenance, but public research detail pages should prefer action/research websites such as lab homepages, join pages, application pages, and contact pages. Roster/index pages such as `/people/faculty`, Engineering `load_faculty` roster endpoints, or YSM's lab-websites index are internal provenance only: public DTOs and detail-source builders must filter them from `sourceUrls` and must not use them as `websiteUrl`. Faculty profile URLs may remain public evidence, but they should not displace a real lab/research website as the primary website link.
-
-Opportunity detail note: `/api/opportunities/:id` exposes explicit public state for posted opportunities: `deadlineState`, `applicationState`, `applicationLabel`, and source-derived provenance. Attached observation evidence may include a short public excerpt, but direct contact details are redacted before the payload reaches the student-facing page.
-
-## Ways-In Enrichment
-
-`EntryPathway` remains the internal route model for ways into a plausible research home, but public Pathways search is retired. `POST /api/research/search` is the client-facing search contract for Yale Research cards and returns research homes enriched with a small `waysIn` summary derived from `EntryPathway` data. The server may still call `pathwaySearchService` internally for research-card enrichment, research detail, saved planning, matching, admin review, and indexing workflows. Do not describe `/pathways` or `POST /api/pathways/search` as current public/student-facing contracts.
-
-Current internal behavior:
-
-- Live search can run through Mongo aggregation or the reviewed Meilisearch backend. Both paths must preserve the same public filters and listing-retirement guardrails.
+- Live search starts with Mongo aggregation. The first Meilisearch document mapper/settings slice exists, but traffic should switch only after backfill, sync, relevance, parity tests, and rollback checks are ready.
 - Filter across pathway type, compensation, status, evidence strength, entity type, departments, research areas, active posted opportunity, and computed best-next-step category.
-- Research-card enrichment should prefer `ACTION_READY` pathway hits. `REFERENCE_ONLY` pathways may still support Research detail evidence, but should not populate standalone student results.
 - Join host `ResearchGroup` data as the current physical `ResearchEntity` backing.
-- Join active/rolling `PostedOpportunity` rows only when a real posted instance exists; listing-backed legacy artifacts should not satisfy the active posted-opportunity filter and active-opportunity joins exclude `listingId`.
+- Join active/rolling `PostedOpportunity` rows only when a real posted instance exists.
 - Join a small number of supporting `AccessSignal` rows as Evidence.
 - Return only guarded public contact-route summaries in search cards; do not expose non-public scraped emails.
-- Compute `bestNextStepCategory = apply` only for active posted opportunities or official application routes backed by application/opening/program evidence. Official routes without that evidence should fall back to `contact-program` or targeted outreach language.
-
-`ACTION_READY` means the result has at least one concrete public route: an active/rolling `PostedOpportunity`, an official application route with application/opening/program evidence, a recurring or structured program/work-study/internship route with public source evidence, a program/department/fellowship/course contact route with source-backed instructions, or strong undergrad-participation evidence plus a public non-raw contact route. `REFERENCE_ONLY` covers weaker profile-fallback and possible-outreach records such as `FACULTY_PI` official-profile-only routes or `EXPLORATORY_CONTACT` rows backed only by `REACH_OUT_PLAUSIBLE`.
 
 The same contact guardrail applies to public research detail payloads: unauthenticated/public detail responses should include only public route summaries and should not expose authenticated or admin-only scraped contact data.
 
 Contact-route ordering should prefer official applications, program/department/fellowship/course routes, and lab-manager routes before faculty-direct routes. Public pathway cards may link to route URLs, but they should not expose raw scraped emails.
 
-## Saved Research Plans
+## Saved Pathways
 
-Student workflow depth starts with saved research plans. User accounts still store `favPathways` as references to `EntryPathway` records for compatibility, but `/account` now presents them as saved research plans and hydrates them through the same guarded pathway projection used by internal route search.
+Student workflow depth starts with saved Pathways. User accounts can now store `favPathways` as references to `EntryPathway` records, and `/account` hydrates them through the same guarded pathway projection used by search.
 
 First-slice behavior:
 
-- Yale Research and research-detail ways-in cards support save and unsave controls for pathway records.
-- `/api/users/savedResearchPlanIds` returns saved ids for optimistic UI state.
-- `/api/users/savedResearchPlans` returns hydrated saved research plans and prunes archived or otherwise hidden pathways from the saved list.
-- `/api/users/savedResearchPlanDetails` stores per-plan intent, stage, notes, and checklist state.
-- `/api/users/savedResearchPlanFundingMatches` exposes cautious source-backed program/fellowship matches, caveats, public source links, and deadline/application context.
-- Saved research-plan cards link back to `/research/:slug` rather than introducing a dedicated pathway detail route.
-- Authenticated saved research-plan export omits non-public contacts and private notes by default.
+- `/pathways` supports save and unsave controls for pathway cards.
+- `/api/users/favPathwayIds` returns saved ids for optimistic UI state.
+- `/api/users/favPathways` returns hydrated saved pathways and prunes archived or otherwise hidden pathways from the saved list.
+- Saved pathway cards link back to `/research/:slug` rather than introducing a dedicated pathway detail route.
+- User-owned saved pathway plans store intent, stage, notes, and checklist state.
+- Saved pathway fellowship matches expose cautious source-backed reasons, caveats, public source links, and deadline/application context.
+- Authenticated saved pathway export omits non-public contacts and private notes by default.
 
-The older `/api/users/favPathway*` routes are deprecated compatibility aliases during the storage migration. Keep saved research-plan planning and matching separate from the legacy listing/program favorites board.
+Keep saved-pathway planning and matching separate from the legacy listing/fellowship favorites board.
 
-Planning note: saved research plans now support user-owned planning state for intent, stage, note, and checklist data, with best-effort migration from the earlier local browser record. Keep these notes private to the owning account unless a future advising-share flow adds explicit visibility controls.
+Planning note: saved Pathways now support user-owned planning state for intent, stage, note, and checklist data, with best-effort migration from the earlier local browser record. Keep these notes private to the owning account unless a future advising-share flow adds explicit visibility controls.
 
-Saved research-plan cards also include route-specific checklist templates keyed by planning intent. Checklist state uses stable item ids so copy edits do not erase checked state.
+Saved Pathway cards also include route-specific checklist templates keyed by planning intent. Checklist state uses stable item ids so copy edits do not erase checked state.
 
-Saved research-plan program matching should stay source-cautious. The backend normalizes program/fellowship application-cycle evidence from `applicationLink`, official link rows, accepting status, dates, deadlines, and office contact context. Public match payloads may expose source URLs, application route flags, deadline status, next-cycle signal status, and contact office, but should not expose direct contact emails without a guarded contact-route policy. Standalone fellowship rows usually support funding/formalization matches, not entry pathways; structured mentor-matching fellowship programs can support pathways or posted opportunities when the source describes a hosted application into the program. Expired source-backed recurring cycles can remain useful matches with a "verify the next cycle" caveat, but should not be labeled as currently open.
-
-## Programs API
-
-`/api/programs` is canonical for the Programs & Fellowships surface. It uses program-facing route/controller/service wrappers over the current `Fellowship` storage model and supports legacy `programCategory` values plus journey fields such as `programKind`, `entryMode`, `studentFacingCategory`, `requiresMentorBeforeApply`, and `mentorMatching`. `/api/fellowships` remains a temporary compatibility alias with a deprecation header while clients migrate.
-
-Saved program state uses `/api/users/savedProgramIds` and `/api/users/savedPrograms` as the client-facing account APIs, backed by the existing `favFellowships` storage field until a later user-data migration. Canonical client saved-state code should use `programs` and `researchPlans` names rather than fellowship/pathway favorite aliases.
+Saved-pathway fellowship matching should stay source-cautious. The backend normalizes fellowship application-cycle evidence from `applicationLink`, official link rows, accepting status, dates, deadlines, and office contact context. Public match payloads may expose source URLs, application route flags, deadline status, and contact office, but should not expose direct contact emails without a guarded contact-route policy. Standalone fellowship rows usually support funding/formalization matches, not entry pathways; structured mentor-matching fellowship programs can support pathways or posted opportunities when the source describes a hosted application into the program.
 
 ## AccessSignal
 
@@ -350,35 +295,23 @@ AccessSignal {
 
 Absence of evidence should usually be computed from missing signals, not stored as many `NO_EVIDENCE` records. Store negative signals only when a source explicitly states a limitation, such as application-only, not accepting students, or not currently available.
 
-Initial materialization in [`server/src/scrapers/accessMaterializer.ts`](../server/src/scrapers/accessMaterializer.ts) derives first-class access records from raw `Observation` rows using the original observation confidence and source metadata. Independent-study and course-credit evidence now supports `CREDIT_FORMALIZATION_POSSIBLE` signals or best-next-step hints after home/mentor fit, not standalone `EntryPathway` rows. Current undergraduate counts can support `CURRENT_UNDERGRADS` plus `EXPLORATORY_CONTACT`; past undergraduate advisees can support `PAST_UNDERGRADS`, `FELLOWSHIP_COMPATIBLE`, exploratory outreach, and thesis/advising fit. Fellowship funding remains a formalization/funding-planning cue unless a real hosted program or posted opportunity exists. Contact fields can support guarded `ContactRoute` records. Entity-discovery sources such as `ysm-atoz-index`, `yse-centers-index`, and `yale-research-official` should not emit undergraduate-access booleans; legacy observations from those sources are ignored for access derivation unless a more explicit undergraduate evidence observation exists.
-
-Official `research.yale.edu` core facilities are `CORE_FACILITY` ResearchEntities because they represent durable Yale research infrastructure. Individual instruments, equipment, and services discovered from the cores directory remain method/topic context on the parent core in v1 rather than standalone research homes. Resource-directory rows are ingested only when they describe a durable center, institute, program, or initiative; policy/help pages remain source context and should not become pathways or posted opportunities.
-
-Official `research.yale.edu` center/institute rows can overlap with existing official index sources such as YSE centers. The materializer should attach those observations to one unique active exact-name `ResearchEntity` when available, preserve that entity's canonical slug, and merge source provenance instead of creating a parallel `yale-research-center-*` shell.
+Initial materialization in [`server/src/scrapers/accessMaterializer.ts`](../server/src/scrapers/accessMaterializer.ts) derives first-class access records from raw `Observation` rows using the original observation confidence and source metadata. Independent-study and course-credit evidence now supports `CREDIT_FORMALIZATION_POSSIBLE` signals or best-next-step hints after home/mentor fit, not standalone `EntryPathway` rows. Current undergraduate counts can support `CURRENT_UNDERGRADS` plus `EXPLORATORY_CONTACT`; past undergraduate advisees can support `PAST_UNDERGRADS`, `FELLOWSHIP_COMPATIBLE`, exploratory outreach, and thesis/advising fit. Fellowship funding remains a formalization/funding-planning cue unless a real hosted program or posted opportunity exists. Contact fields can support guarded `ContactRoute` records. Entity-discovery sources such as `ysm-atoz-index` and `yse-centers-index` should not emit undergraduate-access booleans; legacy observations from those sources are ignored for access derivation unless a more explicit undergraduate evidence observation exists.
 
 Course-credit evidence is formalization-specific, not entry-specific. The CourseTable-backed `yale-course-catalog` scraper is no longer an active source. Course-specific evidence should not create a generic exploratory outreach pathway or a `COURSE_CREDIT` entry pathway by itself. Thesis evidence should usually support thesis-fit/advising signals, formalization options, or planning next steps after a plausible mentor/home exists.
 
-Lab-microsite LLM evidence is now shaped as observations first. It may emit `undergradAccessEvidence`, `joinPageUrl`, `undergradRoleEvidenceQuote`, `contactInstructionsQuote`, and `undergradConstraintQuote`, while keeping legacy `acceptingUndergrads` only for compatibility. For official YSM lab microsites, the scraper may also emit source-backed `inferredPiUserId` observations when a page-level PI/director profile resolves to an existing Yale user; this is lead/ownership evidence, not an undergraduate-access claim. `accessMaterializer.ts` derives `REACH_OUT_PLAUSIBLE`, `APPLICATION_FORM_EXISTS`, `CONTACT_INSTRUCTIONS_EXIST`, `NOT_CURRENTLY_AVAILABLE`, and guarded official application routes from those evidence observations.
-
-Reviewed lead mappings are allowed only as bounded repair artifacts for current data quality. `research-entity:coverage-repair --accepted-leads=<csv-or-json>` writes append-only `manual-admin-edit` observations for active lab-like Trust Tier missing-lead rows after resolving the supplied Yale netid to an existing `User`; the reviewed `sourceUrl` must be an official Yale page that supports the mapping. This is a current-state repair path, not a blind scraper shortcut.
+Lab-microsite LLM evidence is now shaped as observations first. It may emit `undergradAccessEvidence`, `joinPageUrl`, `undergradRoleEvidenceQuote`, `contactInstructionsQuote`, and `undergradConstraintQuote`, while keeping legacy `acceptingUndergrads` only for compatibility. `accessMaterializer.ts` derives `REACH_OUT_PLAUSIBLE`, `APPLICATION_FORM_EXISTS`, `CONTACT_INSTRUCTIONS_EXIST`, `NOT_CURRENTLY_AVAILABLE`, and guarded official application routes from those evidence observations.
 
 Public access excerpts should redact direct contact details. The scraper may keep raw structured evidence for audit, but materialized public quote fields and `AccessSignal.excerpt` values should replace scraped emails and phone numbers before they reach student-facing payloads.
 
-Publication and preprint evidence should enrich research activity, topics, methods, recency, and readable source context. OpenAlex, ORCID, Google Scholar, and arXiv paper observations should not create undergraduate-access signals by themselves. A paper or preprint supports "this research is active"; it supports access/pathway claims only when combined with separate evidence such as join instructions, course/project supervision, undergrad participation, or official application routes.
+Publication and preprint evidence should enrich research activity, topics, methods, recency, and readable source context. OpenAlex, Google Scholar, and arXiv paper observations should not create undergraduate-access signals by themselves. arXiv preprints are especially useful as early evidence of active research before journal publication, but a preprint only supports access/pathway claims when combined with separate evidence such as join instructions, course/project supervision, undergrad participation, or official application routes.
 
-Student-facing research profiles now use compact `ResearchScholarlyLink` rows instead of treating full `Paper` records as the canonical public surface. OpenAlex is a queryable discovery index, not the cited source shown to students. Public cards should link to the real destination in this order when available: DOI or publisher page, PubMed/PMC, arXiv, ORCID work/profile, then OpenAlex only as a fallback pointer. Because the primary audience is Yale students with likely library subscription access, DOI/publisher links can remain primary; when a readable open-access full text/PDF is known, expose it as a secondary backup link on the same card. Errata, table-of-contents rows, retractions, and similar publication metadata chrome are not student-facing research activity. Store only compact link metadata such as title, URL, destination kind, year, venue, discovery source, confidence, optional free full-text URL/label, and minimal external ids. Do not store abstracts, citation counts, full author lists, embeddings, or paper-level search data unless a future paper-search feature explicitly reintroduces that scope.
-
-Scholarly links are contextual evidence and can be attributed to a `User`, a `ResearchEntity`, or both through `ResearchScholarlyAttribution` rows. Person profiles should show links through `identity_authorship` or profile-publication attribution; research-detail APIs should expose one compact activity object with explicit relationship evidence instead of separate paper types. Direct entity evidence such as `explicit_entity_link` can render as `Related Research`; member-authorship evidence such as PI/profile publications should render as contextual `Recent work by <professor>` with a profile handoff. PI authorship alone is not proof that a paper is lab-specific. Runtime services should not derive public activity cards from legacy `Paper.yaleAuthorIds`, `Paper.researchEntityIds`, embedded `User.publications`, or `paper_entity_links`; those legacy stores have been removed from the active development database after compact-link migration.
-
-Legacy-only migration anchors may exist in `research_scholarly_links` solely to preserve cleanup coverage when a historical paper row lacked a real public destination. Those anchors use low confidence, `discoveredVia = LEGACY`, and internal `legacy-paper:<sourcePaperId>` URLs; public scholarly-link services must keep filtering them out of student-facing research activity.
-
-The active development database and codebase no longer keep Mongoose models or runtime fallbacks for `papers`, `paper_authors`, `paper_entity_links`, or embedded `User.publications`. New OpenAlex and ORCID works syncs should emit `scholarlyLink` observations that materialize into `research_scholarly_links` plus attribution rows; they should not create new canonical paper rows for the public research-profile experience. Crossref is a DOI-backed compact-link hydrator: it may improve title, venue, year, DOI destination, and readable full-text backup metadata for existing compact scholarly links, but it must not create authorship, access, pathway, contact, opportunity, or full local paper records. The legacy cleanup command is retained only as a raw Mongo readiness/drop gate for environments that have not yet completed the destructive legacy collection drop; it must not register Mongoose paper models.
+Professor/lab publication lists use `Paper.yaleAuthorIds` as a fast runtime field, but that field now means "authorship proven." New automatic faculty-paper links must flow through `paper_authors` evidence from identity-backed sources: OpenAlex by accepted ORCID/OpenAlex author ID, ORCID public works, Europe PMC/PubMed by ORCID, accepted Semantic Scholar author profiles, or manual accepted review. arXiv name search, Crossref DOI hydration, and Semantic Scholar paper lookup by DOI/title are metadata-only unless their author ORCID/profile identifier matches an accepted Yale user identity.
 
 ## Source Coverage Metadata
 
 `Source` rows can include optional `coverage` metadata seeded from [`server/src/scrapers/sourceCoverageRegistry.ts`](../server/src/scrapers/sourceCoverageRegistry.ts). Coverage records declare the source priority, source tier, artifact types a source can support, evidence categories it targets, default confidence stance, and planning notes.
 
-This metadata is a planning and review contract, not a substitute for evidence. A source that can emit `Observation` rows should not be treated as access evidence unless the materializer maps specific observations into `EntryPathway`, `AccessSignal`, `ContactRoute`, or `PostedOpportunity` rows. Discovery-only sources such as YSM/YSE indexes and `research.yale.edu` official directories remain entity discovery inputs unless explicit undergraduate-access evidence is present.
+This metadata is a planning and review contract, not a substitute for evidence. A source that can emit `Observation` rows should not be treated as access evidence unless the materializer maps specific observations into `EntryPathway`, `AccessSignal`, `ContactRoute`, or `PostedOpportunity` rows. Discovery-only sources such as YSM/YSE indexes remain entity discovery inputs unless explicit undergraduate-access evidence is present.
 
 ## Researcher Identity Signals
 
@@ -387,8 +320,6 @@ ORCID should help resolve and enrich Yale researchers, not act as an account-cre
 Create or promote `User` records only from Yale-controlled or Yale-corroborated identity evidence such as netid, Yale email, Yalies/Directory records, or an official Yale profile. External sources such as ORCID, OpenAlex, Google Scholar, NIH, and NSF can strengthen confidence, add identifiers, and enrich research activity, but should not by themselves create a Yale user.
 
 Scrapers should emit ORCID and related identifiers as observations with source provenance. Resolver/materializer logic can then persist fields such as `orcid` and `openAlexId`, derive confidence, and use those identifiers to reduce name-match ambiguity.
-
-For faculty scholarly activity, use ORCID as the strongest person-identity anchor and OpenAlex as the activity/enrichment layer behind that anchor. When `User.orcid` exists, resolve the OpenAlex author by ORCID; if the resolved author differs from stored `User.openAlexId`, repair the stored author id; if ORCID does not resolve in OpenAlex, skip OpenAlex enrichment and flag review instead of falling back to a stale stored author or name match. Use stored `openAlexId` only when no ORCID exists. Name-based OpenAlex discovery is review-only and must not write `openAlexId` or authorship evidence. Prefer official Yale profile expertise for public profile topics when available; OpenAlex topics are secondary activity context.
 
 Student-facing UI may surface ORCID as a low-prominence researcher profile link labeled `ORCID`. Do not frame it as "Verified by ORCID", do not use it as undergraduate-access evidence, and do not promote raw ORCID identifiers on search or pathway cards.
 
@@ -452,20 +383,13 @@ Examples:
 
 This supports STEM labs, social science centers, economics RA programs, digital humanities teams, library/museum projects, and fellowship-supervised independent research.
 
-### Lab Ownership vs Lab Membership
-
-Professor/PI-like people can own or lead a `ResearchEntity`. Lab managers, PhD students, graduate students, postdocs, and administrative staff should not create standalone labs or `FACULTY_PI` contact routes by default.
-
-Lab managers may be surfaced as `LAB_MANAGER` contact routes when attached to a professor-led lab and backed by source evidence. PhD students and postdocs may be attached as `research_entity_members`, but should not be treated as lab owners unless a future reviewed source explicitly establishes an independent PI role.
-
 ## Recommended Next Steps
 
 CTA logic may be stored or computed. Start by computing when possible; store only when admins need editorial control.
 
 Examples:
 
-- `POSTED_ROLE` + real active posted opportunity/application URL -> Apply
-- historical listing-derived evidence -> hidden from public Pathways; use source-backed routes or review the research profile
+- `POSTED_ROLE` + open application URL -> Apply
 - credit formalization evidence -> Ask about credit after mentor/home fit
 - fellowship funding formalization evidence -> Ask about funding after mentor/home fit
 - structured mentor-matching fellowship -> Apply to structured research program
@@ -489,22 +413,22 @@ Implementation note: `GET /api/admin/access-review` returns research entities wi
 
 Use precise internal names in code and schema docs, but use warmer labels in the UI:
 
-- `EntryPathway` -> ways in / pathways toward a research home
+- `EntryPathway` -> Pathways / ways toward a research home
 - `AccessSignal` -> Evidence
 - formalization metadata -> Ways to formalize
 - computed CTA / `RecommendedNextStep` -> Best Next Step
 
-Use "Pathways" as internal, advising, and route-comparison vocabulary, but do not make it a public student-facing route or navigation label. Student-facing surfaces should say "Ways in" on Yale Research cards and "saved research plans" in Account. Internally, keep the distinction: `EntryPathway` is a durable route toward a plausible research home, `PostedOpportunity` is a real active/time-bound posting, and course credit/fellowship funding/thesis advising are formalization outcomes after home/mentor fit unless they are attached to a real hosted program, mentor-matching program, or posted application instance.
+Use "Pathways" as the primary student-facing surface and navigation label. Internally, keep the distinction: `EntryPathway` is a durable route toward a plausible research home, `PostedOpportunity` is a real active/time-bound posting, and course credit/fellowship funding/thesis advising are formalization outcomes after home/mentor fit unless they are attached to a real hosted program, mentor-matching program, or posted application instance.
 
 ## Migration Guidance
 
-1. Treat `/research`, `/programs`, `/research/:slug`, `/opportunities/:id`, and `/account` as the canonical student-facing routes. `/pathways` is retired publicly, and `/fellowships` is a temporary redirect/compatibility alias.
+1. Treat `/research`, `/pathways`, and `/opportunities/:id` as the canonical student-facing routes.
 2. Use `ResearchEntity`, `EntryPathway`, `AccessSignal`, `ContactRoute`, and `PostedOpportunity` for new runtime work.
-3. Keep remaining `ResearchGroup` and `lab` naming as code-level migration residue unless a file is explicitly part of rollback or compatibility support; canonical runtime data should use `researchEntityId`, not `researchGroupId`.
+3. Keep remaining `ResearchGroup`, `lab`, and `researchGroupId` naming as migration residue unless a file is explicitly part of rollback or compatibility support.
 4. Add explicit `PostedOpportunity` records only for real openings, deadlines, rolling applications, or archived postings.
 5. Teach scrapers to emit source evidence first, then materialize access signals/pathways/routes only when evidence supports them.
 6. Rename or drop legacy physical fields and lab-named files only after Beta proves the canonical model.
 
-Current physical strategy: hard-pivot to physical `research_entities` and canonical dependent collections. Development has copied and dropped `research_groups`, `research_group_members`, `research_group_stats`, `paper_group_links`, leftover `applications`, legacy listing/paper collections, embedded user publication/listing references, and duplicate `research_entity_members.researchGroupId` fields after verified parity. Repeat the same backup, verify, drop, and smoke-test posture in Beta before production cleanup.
+Current physical strategy: hard-pivot to physical `research_entities` and canonical dependent collections. Development has copied and dropped `research_groups`, `research_group_members`, `research_group_stats`, `paper_group_links`, and leftover `applications` after verified parity. Repeat the same backup, verify, drop, and smoke-test posture in Beta before production cleanup.
 
 The remaining end-to-end work is tracked in [`docs/tasks/priority-roadmap.md`](./tasks/priority-roadmap.md), including Beta seed, Pathway Meili relevance review, source blocker resolution, production scraper rollout, opportunity detail polish, data-quality operations, post-Beta legacy cleanup, and saved/advising workflow expansion.

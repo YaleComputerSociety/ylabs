@@ -10,7 +10,6 @@ import type {
   EntryPathwayStatus,
   PostedOpportunityStatus,
 } from '../models/researchAccessTypes';
-import { publicSourceUrls } from '../utils/publicSourceUrl';
 
 export interface UpsertPostedOpportunityInput {
   entryPathwayId: string;
@@ -139,11 +138,6 @@ export interface ListingPostedOpportunityInput {
   createdAt?: Date | string;
 }
 
-export interface ListingEvidenceMaterializationResult {
-  entryPathwayId?: string;
-  skipped?: string;
-}
-
 function idToString(value?: unknown): string | undefined {
   if (!value) return undefined;
   if (typeof value === 'string') return value;
@@ -195,68 +189,46 @@ export function getEntryPathwayStatusForPostedOpportunity(
   return 'NOT_CURRENTLY_AVAILABLE';
 }
 
-export async function archiveListingBackedPostedOpportunities(
-  listingId: string,
-  deps: PostedOpportunityServiceDeps = {},
-): Promise<number> {
-  const PostedOpportunity = getPostedOpportunityModel(deps);
-  const storedListingId = toStoredId(listingId);
-  const result = await PostedOpportunity.updateMany(
-    {
-      $or: [{ listingId: storedListingId }, { derivationKey: `listing:${listingId}` }],
-      archived: { $ne: true },
-    },
-    {
-      $set: {
-        archived: true,
-        status: 'ARCHIVED',
-      },
-    },
-  );
-
-  return Number((result as any).modifiedCount ?? (result as any).matchedCount ?? 0);
+function firstUrl(urls?: string[]): string | undefined {
+  return (urls || []).find((url) => typeof url === 'string' && url.trim().length > 0)?.trim();
 }
 
 export async function materializePostedOpportunityFromListing(
   listing: ListingPostedOpportunityInput,
 ): Promise<{ entryPathwayId?: string; postedOpportunityId?: string; skipped?: string }> {
-  const result = await materializeListingEvidenceFromListing(listing);
-  return result.skipped
-    ? result
-    : {
-        entryPathwayId: result.entryPathwayId,
-      };
-}
-
-export async function materializeListingEvidenceFromListing(
-  listing: ListingPostedOpportunityInput,
-): Promise<ListingEvidenceMaterializationResult> {
   const listingId = idToString(listing._id);
   const researchEntityId = idToString(listing.researchEntityId || listing.researchGroupId);
 
   if (!listingId) return { skipped: 'missing-listing-id' };
   if (!researchEntityId) return { skipped: 'missing-research-entity-id' };
 
+  const status = getPostedOpportunityStatusForListing(listing);
+  const pathwayStatus = getEntryPathwayStatusForPostedOpportunity(status);
+  const deadline = toDate(listing.expiresAt);
   const observedAt = toDate(listing.updatedAt) || toDate(listing.createdAt) || new Date();
-  const sourceUrls = publicSourceUrls(listing.websites || []);
-  const sourceUrl = sourceUrls[0];
+  const applicationUrl = firstUrl(listing.websites);
+  const sourceUrls = (listing.websites || []).filter(Boolean);
   const compensation = mapListingCompensationToAccessCompensation(listing.compensationType);
-  const pathwayDerivationKey = `listing:${listingId}:EXPLORATORY_CONTACT`;
-  const signalDerivationKey = `listing:${listingId}:REACH_OUT_PLAUSIBLE`;
-  const isArchived = listing.archived === true || listing.confirmed === false;
+  const pathwayDerivationKey = `listing:${listingId}:POSTED_ROLE`;
+  const signalDerivationKey = `listing:${listingId}:POSTED_OPENING`;
+  const opportunityDerivationKey = `listing:${listingId}`;
+  const isArchived = listing.archived === true;
+  const isActive = status === 'OPEN' || status === 'ROLLING';
 
   const pathway = await upsertEntryPathway({
     researchEntityId,
-    pathwayType: 'EXPLORATORY_CONTACT',
-    status: 'PLAUSIBLE',
-    evidenceStrength: 'MODERATE',
-    studentFacingLabel: 'Professor-submitted research profile',
-    explanation: 'A professor-submitted legacy YLabs listing describes this research home.',
-    bestNextStep: 'Review the research profile and use the listed contact route or official site.',
+    pathwayType: 'POSTED_ROLE',
+    status: pathwayStatus,
+    evidenceStrength: 'DIRECT',
+    studentFacingLabel: 'Posted research role',
+    explanation: 'A posted research listing is linked to this research entity.',
+    bestNextStep: isActive
+      ? 'Apply through the posted listing.'
+      : 'This posted listing is not currently available.',
     compensation,
     sourceEvidenceIds: [],
     sourceUrls,
-    confidence: 0.7,
+    confidence: 1,
     derivationKey: pathwayDerivationKey,
     archived: isArchived,
     lastObservedAt: observedAt,
@@ -269,24 +241,37 @@ export async function materializeListingEvidenceFromListing(
   await upsertAccessSignal({
     researchEntityId,
     entryPathwayId: pathway.pathwayId,
-    signalType: 'REACH_OUT_PLAUSIBLE',
-    confidence: 'MEDIUM',
+    signalType: 'POSTED_OPENING',
+    confidence: 'HIGH',
     observedAt,
-    excerpt: listing.title
-      ? `Professor-submitted research profile: ${listing.title}`
-      : 'Professor-submitted research profile',
+    excerpt: listing.title ? `Posted listing: ${listing.title}` : 'Posted research listing',
     sourceName: 'ylabs-listing',
-    sourceUrl,
-    originalConfidence: 0.7,
-    confidenceScore: 0.7,
+    sourceUrl: applicationUrl,
+    originalConfidence: 1,
+    confidenceScore: 1,
     derivationKey: signalDerivationKey,
-    archived: isArchived,
+    archived: !isActive || isArchived,
   });
 
-  await archiveListingBackedPostedOpportunities(listingId);
+  const opportunity = await upsertPostedOpportunity({
+    entryPathwayId: pathway.pathwayId,
+    researchEntityId,
+    listingId,
+    title: listing.title || 'Posted research role',
+    deadline,
+    applicationUrl,
+    status,
+    compensationType: compensation,
+    eligibility: listing.applicantDescription,
+    sourceEvidenceIds: [],
+    sourceUrls,
+    derivationKey: opportunityDerivationKey,
+    archived: isArchived || status === 'ARCHIVED',
+  });
 
   return {
     entryPathwayId: pathway.pathwayId,
+    postedOpportunityId: opportunity.postedOpportunityId,
   };
 }
 

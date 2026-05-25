@@ -1,18 +1,192 @@
 /**
- * Retired legacy Listings routes.
- *
- * The Mongo `listings` collection has been dropped. Keep this router mounted so
- * stale clients receive an explicit response instead of recreating collection
- * data through legacy CRUD paths.
+ * Express routes for listing browsing, search, and CRUD.
  */
-import { Router } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
+import {
+  isAuthenticated,
+  canCreateListing,
+  validateObjectId,
+  validatePagination,
+} from '../middleware/index';
+import * as listingController from '../controllers/listingController';
+import { logEvent } from '../services/analyticsService';
+import { AnalyticsEventType } from '../models/index';
 
 const router = Router();
 
-router.all('*', (_req, res) => {
-  res.status(410).json({
-    message: 'Legacy listings have been retired. Use Yale Labs and Programs instead.',
-  });
+const getStringParam = (value: unknown): string => {
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) return getStringParam(value[0]);
+  return '';
+};
+
+const parseFilterParam = (value: unknown): string[] =>
+  getStringParam(value)
+    .split(/[,|]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+const buildListingSearchFilters = (query: Request['query']) => ({
+  departments: parseFilterParam(query.departments),
+  academicDisciplines: parseFilterParam(query.academicDisciplines),
+  researchAreas: parseFilterParam(query.researchAreas),
+  departmentsMode: getStringParam(query.departmentsMode) || 'union',
+  academicDisciplinesMode: getStringParam(query.academicDisciplinesMode) || 'union',
+  researchAreasMode: getStringParam(query.researchAreasMode) || 'union',
 });
+
+const hasListingSearchFilters = (filters: ReturnType<typeof buildListingSearchFilters>) =>
+  filters.departments.length > 0 ||
+  filters.academicDisciplines.length > 0 ||
+  filters.researchAreas.length > 0;
+
+const logSearchEvent = async (req: Request, res: Response, next: NextFunction) => {
+  const originalJson = res.json.bind(res);
+
+  res.json = function (data: any) {
+    const response = originalJson(data);
+
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      const currentUser = req.user as { netId?: string; userType: string };
+      const searchQuery = getStringParam(req.query.query);
+      const filters = buildListingSearchFilters(req.query);
+
+      if (currentUser?.netId && (searchQuery.trim() !== '' || hasListingSearchFilters(filters))) {
+        const resultCount =
+          typeof data?.totalCount === 'number'
+            ? data.totalCount
+            : Array.isArray(data?.results)
+              ? data.results.length
+              : 0;
+
+        logEvent({
+          eventType: AnalyticsEventType.SEARCH,
+          netid: currentUser.netId,
+          userType: currentUser.userType,
+          searchQuery,
+          searchDepartments: filters.departments,
+          metadata: {
+            entityType: 'listing',
+            resultCount,
+            totalCount: data?.totalCount,
+            filters,
+            page: data?.page,
+            pageSize: data?.pageSize,
+          },
+        }).catch((err) => console.error('Error logging search event:', err));
+      }
+    }
+
+    return response;
+  };
+
+  next();
+};
+
+const logListingEvent = (eventType: AnalyticsEventType) => {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    const originalSend = res.send.bind(res);
+
+    res.send = function (data: any) {
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        const currentUser = req.user as { netId?: string; userType: string };
+        const listingId = req.params.id;
+
+        if (currentUser?.netId && listingId) {
+          logEvent({
+            eventType: eventType,
+            netid: currentUser.netId,
+            userType: currentUser.userType,
+            listingId: listingId,
+          }).catch((err) => console.error(`Error logging ${eventType} event:`, err));
+        }
+      }
+
+      return originalSend(data);
+    };
+
+    next();
+  };
+};
+
+const logListingCreateEvent = async (req: Request, res: Response, next: NextFunction) => {
+  const originalJson = res.json.bind(res);
+
+  res.json = function (data: any) {
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      const currentUser = req.user as { netId?: string; userType: string };
+
+      if (currentUser?.netId && data?.listing?._id) {
+        logEvent({
+          eventType: AnalyticsEventType.LISTING_CREATE,
+          netid: currentUser.netId,
+          userType: currentUser.userType,
+          listingId: data.listing._id,
+        }).catch((err) => console.error('Error logging listing create event:', err));
+      }
+    }
+
+    return originalJson(data);
+  };
+
+  next();
+};
+
+router.get(
+  '/search',
+  isAuthenticated,
+  validatePagination,
+  logSearchEvent,
+  listingController.searchListings,
+);
+
+router.post(
+  '/',
+  isAuthenticated,
+  canCreateListing,
+  logListingCreateEvent,
+  listingController.createListingForCurrentUser,
+);
+
+router.get('/:id', isAuthenticated, validateObjectId('id'), listingController.getListingById);
+
+router.put(
+  '/:id',
+  isAuthenticated,
+  validateObjectId('id'),
+  logListingEvent(AnalyticsEventType.LISTING_UPDATE),
+  listingController.updateListingForCurrentUser,
+);
+
+router.put(
+  '/:id/archive',
+  isAuthenticated,
+  validateObjectId('id'),
+  logListingEvent(AnalyticsEventType.LISTING_ARCHIVE),
+  listingController.archiveListingForCurrentUser,
+);
+
+router.put(
+  '/:id/unarchive',
+  isAuthenticated,
+  validateObjectId('id'),
+  logListingEvent(AnalyticsEventType.LISTING_UNARCHIVE),
+  listingController.unarchiveListingForCurrentUser,
+);
+
+router.put(
+  '/:id/addView',
+  isAuthenticated,
+  validateObjectId('id'),
+  logListingEvent(AnalyticsEventType.LISTING_VIEW),
+  listingController.addViewToListing,
+);
+
+router.delete(
+  '/:id',
+  isAuthenticated,
+  validateObjectId('id'),
+  listingController.deleteListingForCurrentUser,
+);
 
 export default router;

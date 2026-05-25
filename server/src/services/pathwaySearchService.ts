@@ -7,11 +7,7 @@ import type {
   EvidenceStrength,
   ResearchEntityType,
 } from '../models/researchAccessTypes';
-import { sanitizeResearchEntityPublicDescriptionFields } from '../utils/researchEntityDescriptionText';
-import { publicSourceUrl, publicSourceUrls } from '../utils/publicSourceUrl';
-import { firstUsableResearchWebsiteUrl } from '../utils/researchWebsiteUrl';
-import { publicResearchAreaArray } from './researchEntityDto';
-import { redactDirectContactInfo } from '../utils/contactRedaction';
+import { publicStudentVisibilityTiers } from '../models/studentVisibility';
 
 export const pathwayBestNextStepCategories = [
   'apply',
@@ -24,8 +20,6 @@ export const pathwayBestNextStepCategories = [
 
 export type PathwayBestNextStepCategory =
   (typeof pathwayBestNextStepCategories)[number];
-
-export type PathwayActionability = 'ACTION_READY' | 'REFERENCE_ONLY';
 
 export interface PathwaySearchFilters {
   pathwayIds?: string[];
@@ -59,11 +53,9 @@ export interface PathwaySearchResearchEntityHit {
   slug: string;
   name: string;
   displayName?: string;
-  shortDescription?: string;
-  description?: string;
-  fullDescription?: string;
   kind?: string;
   entityType?: string;
+  studentVisibilityTier?: string;
   departments: string[];
   researchAreas: string[];
   school?: string;
@@ -77,7 +69,6 @@ export interface PathwaySearchPostedOpportunityHit {
   applicationUrl?: string;
   status: 'OPEN' | 'ROLLING';
   term?: string;
-  provenance?: 'LISTING_BRIDGED' | 'SCRAPER_DERIVED';
 }
 
 export interface PathwaySearchEvidenceHit {
@@ -86,8 +77,6 @@ export interface PathwaySearchEvidenceHit {
   confidenceScore?: number;
   excerpt?: string;
   sourceUrl?: string;
-  sourceName?: string;
-  derivationKey?: string;
   observedAt?: Date;
 }
 
@@ -111,7 +100,6 @@ export interface PathwaySearchHit {
   bestNextStepCategory: PathwayBestNextStepCategory;
   compensation?: string;
   confidence?: number;
-  derivationKey?: string;
   sourceUrls: string[];
   lastObservedAt?: Date;
   createdAt?: Date;
@@ -119,12 +107,6 @@ export interface PathwaySearchHit {
   activePostedOpportunity?: PathwaySearchPostedOpportunityHit;
   evidence: PathwaySearchEvidenceHit[];
   contactRoute?: PathwaySearchContactRouteHit;
-  qualityScore?: number;
-  evidenceCount?: number;
-  hasMicrositeEvidence?: boolean;
-  hasFellowshipEvidence?: boolean;
-  isProfileFallback?: boolean;
-  actionability?: PathwayActionability;
 }
 
 export interface PathwaySearchResult {
@@ -141,36 +123,6 @@ interface BestNextStepSnapshot {
   contactRoute?: {
     routeType?: string;
   };
-  evidence?: Array<{
-    signalType?: string;
-  }>;
-}
-
-export interface PathwayQualityInput {
-  pathwayType?: string;
-  status?: string;
-  evidenceStrength?: string;
-  compensation?: string;
-  confidence?: number;
-  derivationKey?: string;
-  activePostedOpportunity?: unknown;
-  evidence?: Array<{
-    signalType?: string;
-    sourceName?: string;
-    sourceUrl?: string;
-    derivationKey?: string;
-  }>;
-  contactRoute?: {
-    routeType?: string;
-  };
-}
-
-export interface PathwayQuality {
-  qualityScore: number;
-  evidenceCount: number;
-  hasMicrositeEvidence: boolean;
-  hasFellowshipEvidence: boolean;
-  isProfileFallback: boolean;
 }
 
 const MAX_PAGE_SIZE = 100;
@@ -183,46 +135,6 @@ const FORMALIZATION_ONLY_PATHWAY_TYPES: EntryPathwayType[] = [
 const FORMALIZATION_ONLY_PATHWAY_TYPE_SET = new Set<string>(
   FORMALIZATION_ONLY_PATHWAY_TYPES,
 );
-const PROFILE_FALLBACK_DERIVATION_RE = /^pathway:EXPLORATORY_CONTACT:OFFICIAL_PROFILE:/i;
-const MICROSITE_EVIDENCE_RE = /microsite|lab-microsite|undergrad/i;
-const APPLICATION_ROUTE_SIGNAL_TYPES = [
-  'POSTED_OPENING',
-  'APPLICATION_FORM_EXISTS',
-  'RECURRING_PROGRAM',
-  'APPLICATION_ONLY',
-] as const;
-const CONTACT_INSTRUCTION_SIGNAL_TYPES = [
-  'CONTACT_INSTRUCTIONS_EXIST',
-  'PROGRAM_MANAGER_LISTED',
-  'LAB_MANAGER_LISTED',
-  'APPLICATION_ONLY',
-] as const;
-const STRONG_UNDERGRAD_SIGNAL_TYPES = [
-  'CURRENT_UNDERGRADS',
-  'PAST_UNDERGRADS',
-  'FACULTY_SUPERVISES_STUDENT_PROJECTS',
-] as const;
-const STRUCTURED_ACTION_PATHWAY_TYPES = [
-  'POSTED_ROLE',
-  'RECURRING_PROGRAM',
-  'CENTER_INTERNSHIP',
-  'WORK_STUDY',
-  'INTERNSHIP',
-] as const;
-const PROGRAM_CONTACT_ROUTE_TYPES = [
-  'PROGRAM_MANAGER',
-  'DEPARTMENT_CONTACT',
-  'FELLOWSHIP_OFFICE',
-  'COURSE_INSTRUCTOR',
-] as const;
-const NON_RAW_CONTACT_ROUTE_TYPES = [
-  'OFFICIAL_APPLICATION',
-  'LAB_MANAGER',
-  'PROGRAM_MANAGER',
-  'DEPARTMENT_CONTACT',
-  'FELLOWSHIP_OFFICE',
-  'COURSE_INSTRUCTOR',
-] as const;
 
 const trimValues = (values?: string[]): string[] =>
   (values || []).map((value) => value.trim()).filter(Boolean);
@@ -235,98 +147,22 @@ const toObjectIds = (ids?: string[]): Types.ObjectId[] =>
     .filter((id) => Types.ObjectId.isValid(id))
     .map((id) => new Types.ObjectId(id));
 
-const redactPublicText = (value: unknown): string | undefined =>
-  typeof value === 'string' ? redactDirectContactInfo(value) : undefined;
-
-export function computePathwayQuality(input: PathwayQualityInput): PathwayQuality {
-  const evidence = Array.isArray(input.evidence) ? input.evidence : [];
-  const evidenceCount = evidence.length;
-  const signalTypes = new Set(evidence.map((item) => item.signalType).filter(Boolean));
-  const isProfileFallback = PROFILE_FALLBACK_DERIVATION_RE.test(input.derivationKey || '');
-  const hasMicrositeEvidence = evidence.some((item) =>
-    MICROSITE_EVIDENCE_RE.test(
-      [item.sourceName, item.sourceUrl, item.derivationKey, item.signalType].filter(Boolean).join(' '),
-    ),
-  );
-  const hasFellowshipEvidence =
-    signalTypes.has('FELLOWSHIP_COMPATIBLE') ||
-    input.compensation === 'FELLOWSHIP' ||
-    input.compensation === 'FELLOWSHIP_ELIGIBLE' ||
-    input.contactRoute?.routeType === 'FELLOWSHIP_OFFICE';
-
-  const evidenceStrengthScore: Record<string, number> = {
-    DIRECT: 40,
-    STRONG: 28,
-    MODERATE: 16,
-    WEAK: 4,
-    NONE: 0,
-  };
-  const statusScore: Record<string, number> = {
-    ACTIVE: 35,
-    RECURRING: 25,
-    PLAUSIBLE: 12,
-    HISTORICAL: -10,
-    NOT_CURRENTLY_AVAILABLE: -25,
-    NO_EVIDENCE: -35,
-  };
-
-  let qualityScore = 0;
-  if (input.activePostedOpportunity) qualityScore += 100;
-  if (input.contactRoute?.routeType === 'OFFICIAL_APPLICATION') qualityScore += 45;
-  if (input.pathwayType === 'POSTED_ROLE') qualityScore += 35;
-  if (input.pathwayType === 'RECURRING_PROGRAM' || input.pathwayType === 'CENTER_INTERNSHIP') {
-    qualityScore += 24;
-  }
-  qualityScore += statusScore[input.status || ''] || 0;
-  qualityScore += evidenceStrengthScore[input.evidenceStrength || ''] || 0;
-  qualityScore += Math.min(evidenceCount, 5) * 8;
-  qualityScore += Math.round((input.confidence || 0) * 20);
-  if (signalTypes.has('POSTED_OPENING')) qualityScore += 40;
-  if (signalTypes.has('APPLICATION_FORM_EXISTS')) qualityScore += 30;
-  if (signalTypes.has('CURRENT_UNDERGRADS')) qualityScore += 24;
-  if (signalTypes.has('PAST_UNDERGRADS')) qualityScore += 20;
-  if (signalTypes.has('CONTACT_INSTRUCTIONS_EXIST')) qualityScore += 16;
-  if (hasMicrositeEvidence) qualityScore += 18;
-  if (hasFellowshipEvidence) qualityScore += 14;
-  if (input.derivationKey && !isProfileFallback) qualityScore += 8;
-  if (isProfileFallback) qualityScore -= 80;
-
-  return {
-    qualityScore,
-    evidenceCount,
-    hasMicrositeEvidence,
-    hasFellowshipEvidence,
-    isProfileFallback,
-  };
-}
-
 export function getBestNextStepCategory(
   snapshot: BestNextStepSnapshot,
 ): PathwayBestNextStepCategory {
-  const signalTypes = new Set(
-    (snapshot.evidence || []).map((item) => item.signalType).filter(Boolean),
-  );
-  const hasApplicationRouteEvidence = APPLICATION_ROUTE_SIGNAL_TYPES.some((signalType) =>
-    signalTypes.has(signalType),
-  );
-
   if (snapshot.status === 'NOT_CURRENTLY_AVAILABLE') {
     return 'check-back-later';
   }
 
-  if (snapshot.activePostedOpportunity) {
+  if (snapshot.activePostedOpportunity || snapshot.pathwayType === 'POSTED_ROLE') {
+    return 'apply';
+  }
+
+  if (snapshot.contactRoute?.routeType === 'OFFICIAL_APPLICATION') {
     return 'apply';
   }
 
   if (
-    snapshot.contactRoute?.routeType === 'OFFICIAL_APPLICATION' &&
-    hasApplicationRouteEvidence
-  ) {
-    return 'apply';
-  }
-
-  if (
-    snapshot.contactRoute?.routeType === 'OFFICIAL_APPLICATION' ||
     snapshot.contactRoute?.routeType === 'PROGRAM_MANAGER' ||
     snapshot.contactRoute?.routeType === 'DEPARTMENT_CONTACT' ||
     snapshot.contactRoute?.routeType === 'FELLOWSHIP_OFFICE' ||
@@ -351,20 +187,6 @@ export function getBestNextStepCategory(
 }
 
 function buildBestNextStepCategoryExpression(): Record<string, unknown> {
-  const hasApplicationRouteEvidence = {
-    $gt: [
-      {
-        $size: {
-          $setIntersection: [
-            { $ifNull: ['$evidence.signalType', []] },
-            [...APPLICATION_ROUTE_SIGNAL_TYPES],
-          ],
-        },
-      },
-      0,
-    ],
-  };
-
   return {
     $switch: {
       branches: [
@@ -376,12 +198,8 @@ function buildBestNextStepCategoryExpression(): Record<string, unknown> {
           case: {
             $or: [
               { $ne: [{ $ifNull: ['$activePostedOpportunity', null] }, null] },
-              {
-                $and: [
-                  { $eq: ['$contactRoute.routeType', 'OFFICIAL_APPLICATION'] },
-                  hasApplicationRouteEvidence,
-                ],
-              },
+              { $eq: ['$pathwayType', 'POSTED_ROLE'] },
+              { $eq: ['$contactRoute.routeType', 'OFFICIAL_APPLICATION'] },
             ],
           },
           then: 'apply',
@@ -390,13 +208,7 @@ function buildBestNextStepCategoryExpression(): Record<string, unknown> {
           case: {
             $in: [
               '$contactRoute.routeType',
-              [
-                'OFFICIAL_APPLICATION',
-                'PROGRAM_MANAGER',
-                'DEPARTMENT_CONTACT',
-                'FELLOWSHIP_OFFICE',
-                'COURSE_INSTRUCTOR',
-              ],
+              ['PROGRAM_MANAGER', 'DEPARTMENT_CONTACT', 'FELLOWSHIP_OFFICE', 'COURSE_INSTRUCTOR'],
             ],
           },
           then: 'contact-program',
@@ -417,22 +229,6 @@ function buildBestNextStepCategoryExpression(): Record<string, unknown> {
       ],
       default: 'save-for-later',
     },
-  };
-}
-
-function hasAnySignalExpression(signalTypes: readonly string[]): Record<string, unknown> {
-  return {
-    $gt: [
-      {
-        $size: {
-          $setIntersection: [
-            { $ifNull: ['$evidence.signalType', []] },
-            [...signalTypes],
-          ],
-        },
-      },
-      0,
-    ],
   };
 }
 
@@ -459,7 +255,6 @@ function buildPathwayMatch(filters: PathwaySearchFilters): Record<string, unknow
 
   return compactMatch({
     archived: { $ne: true },
-    $nor: [{ derivationKey: /^listing:/ }],
     _id: hasPathwayIdFilter ? { $in: pathwayIds } : undefined,
     pathwayType,
     compensation:
@@ -482,6 +277,7 @@ function buildEntityMatch(filters: PathwaySearchFilters): Record<string, unknown
 
   return compactMatch({
     'researchEntity.archived': { $ne: true },
+    'researchEntity.studentVisibilityTier': { $in: publicStudentVisibilityTiers },
     'researchEntity._id':
       trimValues(filters.entityIds).length > 0 ? { $in: entityIds } : undefined,
     'researchEntity.entityType':
@@ -510,9 +306,6 @@ function buildTextMatch(query: string): PipelineStage.Match | null {
         { compensation: regex },
         { 'researchEntity.name': regex },
         { 'researchEntity.displayName': regex },
-        { 'researchEntity.shortDescription': regex },
-        { 'researchEntity.description': regex },
-        { 'researchEntity.fullDescription': regex },
         { 'researchEntity.departments': regex },
         { 'researchEntity.researchAreas': regex },
         { 'researchEntity.school': regex },
@@ -526,301 +319,74 @@ function buildSort(sort: PathwaySearchSort, query: string): Record<string, 1 | -
 
   switch (sort.sortBy) {
     case 'confidence':
-      return { confidence: direction, qualityScore: -1, lastObservedAt: -1, createdAt: -1 };
+      return { confidence: direction, lastObservedAt: -1, createdAt: -1 };
     case 'lastObservedAt':
-      return { lastObservedAt: direction, qualityScore: -1, confidence: -1, createdAt: -1 };
+      return { lastObservedAt: direction, confidence: -1, createdAt: -1 };
     case 'deadline':
-      return { 'activePostedOpportunity.deadline': direction, qualityScore: -1, confidence: -1, createdAt: -1 };
+      return { 'activePostedOpportunity.deadline': direction, confidence: -1, createdAt: -1 };
     case 'createdAt':
-      return { createdAt: direction, qualityScore: -1, confidence: -1 };
+      return { createdAt: direction, confidence: -1 };
     case 'relevance':
     default:
       if (query.trim()) {
-        return { qualityScore: -1, evidenceCount: -1, confidence: -1, lastObservedAt: -1, createdAt: -1 };
+        return { confidence: -1, lastObservedAt: -1, createdAt: -1 };
       }
-      return { qualityScore: -1, evidenceCount: -1, confidence: -1, lastObservedAt: -1, createdAt: -1 };
+      return { lastObservedAt: -1, confidence: -1, createdAt: -1 };
   }
 }
 
 function normalizeHit(raw: Record<string, any>): PathwaySearchHit {
-  const contactRouteUrl = publicSourceUrl(raw.contactRoute?.url);
   const contactRoute =
-    raw.contactRoute?.visibility === 'PUBLIC' &&
-    (!raw.contactRoute?.url || Boolean(contactRouteUrl))
+    raw.contactRoute?.visibility === 'PUBLIC'
       ? {
           routeType: raw.contactRoute.routeType,
-          label: redactPublicText(raw.contactRoute.label),
-          url: contactRouteUrl,
+          label: raw.contactRoute.label,
+          url: raw.contactRoute.url,
           contactPolicy: raw.contactRoute.contactPolicy,
           visibility: raw.contactRoute.visibility,
-          rationale: redactPublicText(raw.contactRoute.rationale),
+          rationale: raw.contactRoute.rationale,
         }
       : undefined;
-  const researchEntity = sanitizeResearchEntityPublicDescriptionFields(
-    raw.researchEntity || {},
-  );
 
   return {
     _id: String(raw._id),
     pathwayType: raw.pathwayType,
     status: raw.status,
     evidenceStrength: raw.evidenceStrength,
-    studentFacingLabel: redactPublicText(raw.studentFacingLabel) || '',
-    explanation: redactPublicText(raw.explanation),
-    bestNextStep: redactPublicText(raw.bestNextStep),
+    studentFacingLabel: raw.studentFacingLabel,
+    explanation: raw.explanation,
+    bestNextStep: raw.bestNextStep,
     bestNextStepCategory: raw.bestNextStepCategory,
     compensation: raw.compensation,
     confidence: raw.confidence,
-    derivationKey: raw.derivationKey,
-    sourceUrls: publicSourceUrls(raw.sourceUrls),
+    sourceUrls: raw.sourceUrls || [],
     lastObservedAt: raw.lastObservedAt,
     createdAt: raw.createdAt,
     researchEntity: {
-      _id: String(researchEntity?._id || ''),
-      slug: researchEntity?.slug || '',
-      name: researchEntity?.name || '',
-      displayName: researchEntity?.displayName,
-      shortDescription: researchEntity?.shortDescription,
-      description: researchEntity?.description,
-      fullDescription: researchEntity?.fullDescription,
-      kind: researchEntity?.kind,
-      entityType: researchEntity?.entityType,
-      departments: researchEntity?.departments || [],
-      researchAreas: publicResearchAreaArray(researchEntity?.researchAreas),
-      school: researchEntity?.school,
-      websiteUrl: firstUsableResearchWebsiteUrl([
-        researchEntity?.websiteUrl,
-        researchEntity?.website,
-        researchEntity?.sourceUrls,
-      ]) || undefined,
+      _id: String(raw.researchEntity?._id || ''),
+      slug: raw.researchEntity?.slug || '',
+      name: raw.researchEntity?.name || '',
+      displayName: raw.researchEntity?.displayName,
+      kind: raw.researchEntity?.kind,
+      entityType: raw.researchEntity?.entityType,
+      studentVisibilityTier: raw.researchEntity?.studentVisibilityTier,
+      departments: raw.researchEntity?.departments || [],
+      researchAreas: raw.researchEntity?.researchAreas || [],
+      school: raw.researchEntity?.school,
+      websiteUrl: raw.researchEntity?.websiteUrl || raw.researchEntity?.website,
     },
     activePostedOpportunity: raw.activePostedOpportunity
       ? {
           _id: String(raw.activePostedOpportunity._id),
           title: raw.activePostedOpportunity.title,
           deadline: raw.activePostedOpportunity.deadline,
-          applicationUrl: publicSourceUrl(raw.activePostedOpportunity.applicationUrl),
+          applicationUrl: raw.activePostedOpportunity.applicationUrl,
           status: raw.activePostedOpportunity.status,
           term: raw.activePostedOpportunity.term,
-          provenance:
-            raw.activePostedOpportunity.provenance ||
-            (raw.activePostedOpportunity.listingId ? 'LISTING_BRIDGED' : 'SCRAPER_DERIVED'),
         }
       : undefined,
-    evidence: (raw.evidence || []).map((item: any) => {
-      const excerpt = redactPublicText(item?.excerpt);
-      return {
-        ...item,
-        ...(excerpt !== undefined ? { excerpt } : {}),
-        sourceUrl: publicSourceUrl(item?.sourceUrl),
-      };
-    }),
+    evidence: raw.evidence || [],
     contactRoute,
-    qualityScore: raw.qualityScore,
-    evidenceCount: raw.evidenceCount,
-    hasMicrositeEvidence: raw.hasMicrositeEvidence,
-    hasFellowshipEvidence: raw.hasFellowshipEvidence,
-    isProfileFallback: raw.isProfileFallback,
-    actionability: raw.actionability,
-  };
-}
-
-function buildPathwayQualityFieldsExpression(): Record<string, unknown> {
-  return {
-    evidenceCount: { $size: { $ifNull: ['$evidence', []] } },
-    hasMicrositeEvidence: {
-      $gt: [
-        {
-          $size: {
-            $filter: {
-              input: { $ifNull: ['$evidence', []] },
-              as: 'item',
-              cond: {
-                $regexMatch: {
-                  input: {
-                    $concat: [
-                      { $ifNull: ['$$item.sourceName', ''] },
-                      ' ',
-                      { $ifNull: ['$$item.sourceUrl', ''] },
-                      ' ',
-                      { $ifNull: ['$$item.derivationKey', ''] },
-                      ' ',
-                      { $ifNull: ['$$item.signalType', ''] },
-                    ],
-                  },
-                  regex: 'microsite|lab-microsite|undergrad',
-                  options: 'i',
-                },
-              },
-            },
-          },
-        },
-        0,
-      ],
-    },
-    hasFellowshipEvidence: {
-      $or: [
-        { $in: ['$compensation', ['FELLOWSHIP', 'FELLOWSHIP_ELIGIBLE']] },
-        { $eq: ['$contactRoute.routeType', 'FELLOWSHIP_OFFICE'] },
-        { $in: ['FELLOWSHIP_COMPATIBLE', { $ifNull: ['$evidence.signalType', []] }] },
-      ],
-    },
-    isProfileFallback: {
-      $regexMatch: {
-        input: { $ifNull: ['$derivationKey', ''] },
-        regex: '^pathway:EXPLORATORY_CONTACT:OFFICIAL_PROFILE:',
-        options: 'i',
-      },
-    },
-  };
-}
-
-function buildQualityScoreExpression(): Record<string, unknown> {
-  return {
-    $add: [
-      { $cond: [{ $ne: [{ $ifNull: ['$activePostedOpportunity', null] }, null] }, 100, 0] },
-      { $cond: [{ $eq: ['$contactRoute.routeType', 'OFFICIAL_APPLICATION'] }, 45, 0] },
-      { $cond: [{ $eq: ['$pathwayType', 'POSTED_ROLE'] }, 35, 0] },
-      { $cond: [{ $in: ['$pathwayType', ['RECURRING_PROGRAM', 'CENTER_INTERNSHIP']] }, 24, 0] },
-      {
-        $switch: {
-          branches: [
-            { case: { $eq: ['$status', 'ACTIVE'] }, then: 35 },
-            { case: { $eq: ['$status', 'RECURRING'] }, then: 25 },
-            { case: { $eq: ['$status', 'PLAUSIBLE'] }, then: 12 },
-            { case: { $eq: ['$status', 'HISTORICAL'] }, then: -10 },
-            { case: { $eq: ['$status', 'NOT_CURRENTLY_AVAILABLE'] }, then: -25 },
-            { case: { $eq: ['$status', 'NO_EVIDENCE'] }, then: -35 },
-          ],
-          default: 0,
-        },
-      },
-      {
-        $switch: {
-          branches: [
-            { case: { $eq: ['$evidenceStrength', 'DIRECT'] }, then: 40 },
-            { case: { $eq: ['$evidenceStrength', 'STRONG'] }, then: 28 },
-            { case: { $eq: ['$evidenceStrength', 'MODERATE'] }, then: 16 },
-            { case: { $eq: ['$evidenceStrength', 'WEAK'] }, then: 4 },
-          ],
-          default: 0,
-        },
-      },
-      { $multiply: [{ $min: ['$evidenceCount', 5] }, 8] },
-      { $round: [{ $multiply: [{ $ifNull: ['$confidence', 0] }, 20] }, 0] },
-      { $cond: [{ $in: ['POSTED_OPENING', { $ifNull: ['$evidence.signalType', []] }] }, 40, 0] },
-      { $cond: [{ $in: ['APPLICATION_FORM_EXISTS', { $ifNull: ['$evidence.signalType', []] }] }, 30, 0] },
-      { $cond: [{ $in: ['CURRENT_UNDERGRADS', { $ifNull: ['$evidence.signalType', []] }] }, 24, 0] },
-      { $cond: [{ $in: ['PAST_UNDERGRADS', { $ifNull: ['$evidence.signalType', []] }] }, 20, 0] },
-      { $cond: [{ $in: ['CONTACT_INSTRUCTIONS_EXIST', { $ifNull: ['$evidence.signalType', []] }] }, 16, 0] },
-      { $cond: ['$hasMicrositeEvidence', 18, 0] },
-      { $cond: ['$hasFellowshipEvidence', 14, 0] },
-      {
-        $cond: [
-          {
-            $and: [
-              { $ne: [{ $ifNull: ['$derivationKey', ''] }, ''] },
-              { $not: ['$isProfileFallback'] },
-            ],
-          },
-          8,
-          0,
-        ],
-      },
-      { $cond: ['$isProfileFallback', -80, 0] },
-    ],
-  };
-}
-
-function buildPathwayActionabilityFieldsExpression(): Record<string, unknown> {
-  const activePostedOpportunity = {
-    $ne: [{ $ifNull: ['$activePostedOpportunity', null] }, null],
-  };
-  const hasApplicationRouteEvidence = hasAnySignalExpression(APPLICATION_ROUTE_SIGNAL_TYPES);
-  const hasContactInstructionEvidence = hasAnySignalExpression(CONTACT_INSTRUCTION_SIGNAL_TYPES);
-  const hasStrongUndergradEvidence = hasAnySignalExpression(STRONG_UNDERGRAD_SIGNAL_TYPES);
-  const contactSourceEvidenceCount = {
-    $size: { $ifNull: ['$contactRoute.sourceEvidenceIds', []] },
-  };
-  const evidenceSourceUrlCount = {
-    $size: {
-      $filter: {
-        input: { $ifNull: ['$evidence', []] },
-        as: 'item',
-        cond: { $ne: [{ $ifNull: ['$$item.sourceUrl', ''] }, ''] },
-      },
-    },
-  };
-  const hasPublicSourceEvidence = {
-    $or: [
-      { $gt: [{ $size: { $ifNull: ['$sourceUrls', []] } }, 0] },
-      { $gt: [evidenceSourceUrlCount, 0] },
-      { $ne: [{ $ifNull: ['$contactRoute.sourceUrl', ''] }, ''] },
-      { $gt: [contactSourceEvidenceCount, 0] },
-    ],
-  };
-  const hasPublicContactRoute = {
-    $ne: [{ $ifNull: ['$contactRoute.routeType', null] }, null],
-  };
-  const hasNonRawPublicContactRoute = {
-    $in: ['$contactRoute.routeType', [...NON_RAW_CONTACT_ROUTE_TYPES]],
-  };
-  const isStructuredRoute = {
-    $in: ['$pathwayType', [...STRUCTURED_ACTION_PATHWAY_TYPES]],
-  };
-  const hasActionableStatus = {
-    $in: ['$status', ['ACTIVE', 'RECURRING', 'PLAUSIBLE']],
-  };
-  const isProgramContactRoute = {
-    $in: ['$contactRoute.routeType', [...PROGRAM_CONTACT_ROUTE_TYPES]],
-  };
-
-  return {
-    actionability: {
-      $cond: [
-        {
-          $and: [
-            { $not: ['$isProfileFallback'] },
-            {
-              $or: [
-                activePostedOpportunity,
-                {
-                  $and: [
-                    { $eq: ['$contactRoute.routeType', 'OFFICIAL_APPLICATION'] },
-                    hasApplicationRouteEvidence,
-                    hasPublicSourceEvidence,
-                  ],
-                },
-                {
-                  $and: [
-                    isStructuredRoute,
-                    hasActionableStatus,
-                    hasPublicSourceEvidence,
-                  ],
-                },
-                {
-                  $and: [
-                    isProgramContactRoute,
-                    hasPublicContactRoute,
-                    hasContactInstructionEvidence,
-                    hasPublicSourceEvidence,
-                  ],
-                },
-                {
-                  $and: [
-                    hasStrongUndergradEvidence,
-                    hasNonRawPublicContactRoute,
-                    hasPublicSourceEvidence,
-                  ],
-                },
-              ],
-            },
-          ],
-        },
-        'ACTION_READY',
-        'REFERENCE_ONLY',
-      ],
-    },
   };
 }
 
@@ -861,7 +427,6 @@ export async function searchPathways(
                   { $eq: ['$entryPathwayId', '$$pathwayId'] },
                   { $ne: ['$archived', true] },
                   { $in: ['$status', ['OPEN', 'ROLLING']] },
-                  { $eq: [{ $ifNull: ['$listingId', null] }, null] },
                 ],
               },
             },
@@ -876,10 +441,6 @@ export async function searchPathways(
               applicationUrl: 1,
               status: 1,
               term: 1,
-              listingId: 1,
-              provenance: {
-                $cond: [{ $ifNull: ['$listingId', false] }, 'LISTING_BRIDGED', 'SCRAPER_DERIVED'],
-              },
             },
           },
         ],
@@ -940,8 +501,6 @@ export async function searchPathways(
               confidenceScore: 1,
               excerpt: 1,
               sourceUrl: 1,
-              sourceName: 1,
-              derivationKey: 1,
               observedAt: 1,
             },
           },
@@ -1015,9 +574,6 @@ export async function searchPathways(
               contactPolicy: 1,
               visibility: 1,
               rationale: 1,
-              sourceUrl: 1,
-              sourceEvidenceId: 1,
-              sourceEvidenceIds: 1,
             },
           },
         ],
@@ -1032,22 +588,6 @@ export async function searchPathways(
     {
       $addFields: {
         bestNextStepCategory: buildBestNextStepCategoryExpression(),
-      },
-    },
-    {
-      $addFields: buildPathwayQualityFieldsExpression(),
-    },
-    {
-      $addFields: {
-        qualityScore: buildQualityScoreExpression(),
-      },
-    },
-    {
-      $addFields: buildPathwayActionabilityFieldsExpression(),
-    },
-    {
-      $match: {
-        actionability: 'ACTION_READY',
       },
     },
   );
@@ -1078,7 +618,6 @@ export async function searchPathways(
             bestNextStepCategory: 1,
             compensation: 1,
             confidence: 1,
-            derivationKey: 1,
             sourceUrls: 1,
             lastObservedAt: 1,
             createdAt: 1,
@@ -1087,11 +626,9 @@ export async function searchPathways(
               slug: '$researchEntity.slug',
               name: '$researchEntity.name',
               displayName: '$researchEntity.displayName',
-              shortDescription: '$researchEntity.shortDescription',
-              description: '$researchEntity.description',
-              fullDescription: '$researchEntity.fullDescription',
               kind: '$researchEntity.kind',
               entityType: '$researchEntity.entityType',
+              studentVisibilityTier: '$researchEntity.studentVisibilityTier',
               departments: '$researchEntity.departments',
               researchAreas: '$researchEntity.researchAreas',
               school: '$researchEntity.school',
@@ -1101,12 +638,6 @@ export async function searchPathways(
             activePostedOpportunity: 1,
             evidence: 1,
             contactRoute: 1,
-            qualityScore: 1,
-            evidenceCount: 1,
-            hasMicrositeEvidence: 1,
-            hasFellowshipEvidence: 1,
-            isProfileFallback: 1,
-            actionability: 1,
           },
         },
       ],
@@ -1140,33 +671,4 @@ export async function getPathwaysByIds(ids: string[]): Promise<PathwaySearchHit[
 
   const hitsById = new Map(result.hits.map((hit) => [hit._id, hit]));
   return validIds.map((id) => hitsById.get(id)).filter(Boolean) as PathwaySearchHit[];
-}
-
-export async function listWaysInForResearchEntities(
-  entityIds: string[],
-  limitPerEntity = 3,
-): Promise<Map<string, PathwaySearchHit[]>> {
-  const validEntityIds = Array.from(new Set(trimValues(entityIds))).filter((id) =>
-    Types.ObjectId.isValid(id),
-  );
-  const perEntityLimit = Math.min(5, Math.max(1, Math.floor(limitPerEntity) || 3));
-  const waysIn = new Map<string, PathwaySearchHit[]>();
-
-  if (validEntityIds.length === 0) {
-    return waysIn;
-  }
-
-  await Promise.all(
-    validEntityIds.map(async (entityId) => {
-      const result = await searchPathways({
-        page: 1,
-        pageSize: perEntityLimit,
-        filters: { entityIds: [entityId] },
-        sort: { sortBy: 'relevance', sortOrder: 'desc' },
-      });
-      waysIn.set(entityId, result.hits);
-    }),
-  );
-
-  return waysIn;
 }

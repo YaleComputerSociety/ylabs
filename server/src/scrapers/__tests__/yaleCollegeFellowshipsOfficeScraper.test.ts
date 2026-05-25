@@ -111,6 +111,29 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
     );
   });
 
+  it('canonicalizes moved Yale College financial award URLs', () => {
+    const candidates = parseFellowshipCatalogPage(
+      `
+        <main>
+          <p>
+            <a href="https://yalecollege.yale.edu/finances/financial-awards-prizes/mellon-mays-undergraduate-fellowship-program">
+              Mellon Mays Undergraduate Fellowship Program
+            </a>
+          </p>
+        </main>
+      `,
+      fundingPageUrl,
+      new Date('2026-01-01T00:00:00Z'),
+    );
+
+    expect(candidates[0]?.links).toEqual([
+      {
+        label: 'Mellon Mays Undergraduate Fellowship Program',
+        url: 'https://college.yale.edu/life-at-yale/student-faculty-awards/mellon-mays-undergraduate-fellowship-program',
+      },
+    ]);
+  });
+
   it('ignores nav, admin, generic funding, and download links as fellowship candidates', () => {
     const candidates = parseFellowshipCatalogPage(
       `

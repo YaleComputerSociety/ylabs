@@ -69,6 +69,10 @@ const App = () => {
                         element={<PrivateRoute Component={Fellowships} unknownBlocked={true} />}
                       />
                       <Route
+                        path="/programs"
+                        element={<PrivateRoute Component={Fellowships} unknownBlocked={true} />}
+                      />
+                      <Route
                         path="/research"
                         element={<PrivateRoute Component={Research} unknownBlocked={true} />}
                       />

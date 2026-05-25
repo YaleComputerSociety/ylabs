@@ -64,15 +64,6 @@ const researchGroupSchema = new mongoose.Schema(
       type: String,
       default: '',
     },
-    profileSynthesisDescription: {
-      type: String,
-      default: '',
-    },
-    descriptionSource: {
-      type: String,
-      enum: ['ENTITY_SOURCE', 'PI_PROFILE_SYNTHESIS', 'NONE'],
-      default: 'NONE',
-    },
     website: {
       type: String,
       default: '',
@@ -260,6 +251,7 @@ const researchGroupSchema = new mongoose.Schema(
     },
     featuredPaperIds: {
       type: [mongoose.Schema.Types.ObjectId],
+      ref: 'Paper',
       default: [],
     },
     typicalUndergradRoles: {
@@ -369,13 +361,13 @@ researchGroupSchema.index({ openness: 1, acceptingUndergrads: 1 });
 researchGroupSchema.index({ opennessStatusCache: 1 });
 researchGroupSchema.index({ activeAtYaleCache: 1 });
 researchGroupSchema.index({ archived: 1 });
-researchGroupSchema.index({ studentVisibilityTier: 1, archived: 1 });
-researchGroupSchema.index({ studentVisibilityComputedAt: -1 });
 researchGroupSchema.index({ lastObservedAt: 1 });
 researchGroupSchema.index({ recentGrantCount: -1 });
 researchGroupSchema.index({ recentPaperCount: -1 });
 researchGroupSchema.index({ fundingAgencies: 1 });
 researchGroupSchema.index({ offersIndependentStudy: 1 });
+researchGroupSchema.index({ studentVisibilityTier: 1, archived: 1 });
+researchGroupSchema.index({ studentVisibilityComputedAt: -1 });
 
 export { researchGroupSchema };
 export {

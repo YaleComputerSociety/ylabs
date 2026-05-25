@@ -15,12 +15,12 @@ import {
 import type { ProgramConfig } from '../../scrapers/sources/undergradFellowshipRecipientScraper';
 
 const testConfig: ProgramConfig = {
-  programKey: 'fixture-fellowship',
-  programName: 'Fixture Fellowship',
-  urls: ['https://example.invalid/fixture-2025.pdf'],
+  programKey: 'stars-ii',
+  programName: 'STARS II',
+  urls: ['https://example.yale.edu/2025-stars.pdf'],
   extractor: () => [],
   manualUploadRequired: true,
-  skipReason: 'Fixture PDF review required',
+  skipReason: 'PDF review required',
 };
 
 async function withTempRoot<T>(fn: (root: string) => Promise<T>): Promise<T> {
@@ -42,24 +42,24 @@ describe('candidateRowsFromText', () => {
   it('extracts review candidates from labelled PDF text', () => {
     const rows = candidateRowsFromText(
       [
-        'Student: Fixture Student One',
-        'Project: Synthetic Project',
-        'Advisor: Fixture Advisor One',
+        'Student: Ada Lovelace',
+        'Project: RNA switches',
+        'Advisor: Ronald Breaker',
       ].join('\n'),
       testConfig,
-      'https://example.invalid/fixture-2025.pdf',
+      'https://example.yale.edu/2025-stars.pdf',
       2025,
     );
 
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
       reviewStatus: 'needs-review',
-      programKey: 'fixture-fellowship',
+      programKey: 'stars-ii',
       year: '2025',
-      studentName: 'Fixture Student One',
-      advisorName: 'Fixture Advisor One',
-      projectTitle: 'Synthetic Project',
-      sourceUrl: 'https://example.invalid/fixture-2025.pdf',
+      studentName: 'Ada Lovelace',
+      advisorName: 'Ronald Breaker',
+      projectTitle: 'RNA switches',
+      sourceUrl: 'https://example.yale.edu/2025-stars.pdf',
     });
   });
 });
@@ -71,20 +71,20 @@ describe('generateFellowshipCandidates', () => {
         configs: [testConfig],
         fetchUrl: async () => ({ body: Buffer.from('pdf'), contentType: 'application/pdf' }),
         pdfTextExtractor: async () =>
-          ['Student: Fixture Student One', 'Advisor: Fixture Advisor One'].join('\n'),
+          ['Student: Ada Lovelace', 'Advisor: Ronald Breaker'].join('\n'),
       });
 
       expect(result[0]).toMatchObject({
-        programKey: 'fixture-fellowship',
+        programKey: 'stars-ii',
         status: 'candidates',
         candidateCount: 1,
       });
       const csv = await fs.readFile(
-        path.join(root, FELLOWSHIP_REVIEW_DIR, 'fixture-fellowship.csv'),
+        path.join(root, FELLOWSHIP_REVIEW_DIR, 'stars-ii.csv'),
         'utf8',
       );
       expect(csv).toContain('needs-review');
-      expect(csv).toContain('Fixture Advisor One');
+      expect(csv).toContain('Ronald Breaker');
     });
   });
 
@@ -97,36 +97,33 @@ describe('generateFellowshipCandidates', () => {
       });
 
       expect(result[0]).toMatchObject({
-        programKey: 'fixture-fellowship',
+        programKey: 'stars-ii',
         status: 'manual-required',
         candidateCount: 0,
       });
       const csv = await fs.readFile(
-        path.join(root, FELLOWSHIP_REVIEW_DIR, 'fixture-fellowship.csv'),
+        path.join(root, FELLOWSHIP_REVIEW_DIR, 'stars-ii.csv'),
         'utf8',
       );
       expect(csv).toContain('manual-required');
-      expect(csv).toContain('Fixture PDF review required');
+      expect(csv).toContain('PDF review required');
     });
   });
 });
 
 describe('validateFellowshipRows', () => {
-  const resolved: AdvisorResolver = async () => ({
-    status: 'resolved',
-    label: 'Fixture Advisor One',
-  });
+  const resolved: AdvisorResolver = async () => ({ status: 'resolved', label: 'Ronald Breaker' });
 
   it('reports missing accepted evidence fields', async () => {
     const errors = await validateFellowshipRows(
       [
         {
           reviewStatus: 'accepted',
-          programKey: 'fixture-fellowship',
-          programName: 'Fixture Fellowship',
+          programKey: 'stars-ii',
+          programName: 'STARS II',
           year: '',
-          studentName: 'Fixture Student',
-          advisorName: 'Fixture Advisor One',
+          studentName: 'Ada',
+          advisorName: 'Ronald Breaker',
           advisorOrcid: '',
           projectTitle: '',
           sourceUrl: '',
@@ -135,7 +132,7 @@ describe('validateFellowshipRows', () => {
           extractionStatus: '',
         },
       ],
-      { programKey: 'fixture-fellowship', advisorResolver: resolved },
+      { programKey: 'stars-ii', advisorResolver: resolved },
     );
 
     expect(errors.map((error) => error.message)).toEqual([
@@ -150,22 +147,22 @@ describe('validateFellowshipRows', () => {
       [
         {
           reviewStatus: 'accepted',
-          programKey: 'fixture-fellowship',
-          programName: 'Fixture Fellowship',
+          programKey: 'stars-ii',
+          programName: 'STARS II',
           year: '2025',
-          studentName: 'Fixture Student',
-          advisorName: 'Fixture Advisor One',
+          studentName: 'Ada',
+          advisorName: 'Ronald Breaker',
           advisorOrcid: '',
           projectTitle: '',
-          sourceUrl: 'https://example.invalid/source',
+          sourceUrl: 'https://example.yale.edu/source',
           sourcePage: '',
           reviewNote: 'Reviewed from official source.',
           extractionStatus: '',
         },
       ],
       {
-        programKey: 'fixture-fellowship',
-        advisorResolver: async () => ({ status: 'ambiguous', label: 'Fixture Advisor One' }),
+        programKey: 'stars-ii',
+        advisorResolver: async () => ({ status: 'ambiguous', label: 'Ronald Breaker' }),
       },
     );
 
@@ -177,12 +174,12 @@ describe('validateFellowshipRows', () => {
       [
         {
           reviewStatus: 'accepted',
-          programKey: 'fixture-fellowship',
-          programName: 'Fixture Fellowship',
+          programKey: 'stars-ii',
+          programName: 'STARS II',
           year: '2025',
-          studentName: 'Fixture Student',
+          studentName: 'Ada',
           advisorName: '',
-          advisorOrcid: '0000-0000-0000-001X',
+          advisorOrcid: '0000-0002-1825-0097',
           projectTitle: '',
           sourceUrl: '',
           sourcePage: '',
@@ -191,8 +188,8 @@ describe('validateFellowshipRows', () => {
         },
       ],
       {
-        programKey: 'fixture-fellowship',
-        advisorResolver: async () => ({ status: 'resolved', label: 'Fixture Advisor One' }),
+        programKey: 'stars-ii',
+        advisorResolver: async () => ({ status: 'resolved', label: 'Ada Lovelace' }),
       },
     );
 
@@ -205,28 +202,28 @@ describe('exportAcceptedFellowshipRows and status', () => {
     await withTempRoot(async (root) => {
       await writeReviewCsv(
         root,
-        'fixture-fellowship',
+        'stars-ii',
         [
           'reviewStatus,programKey,programName,year,studentName,advisorName,advisorOrcid,projectTitle,sourceUrl,sourcePage,reviewNote,extractionStatus',
-          'needs-review,fixture-fellowship,Fixture Fellowship,2025,Fixture Student One,Fixture Advisor One,,Synthetic Project A,https://example.invalid/source,block-1,,candidate',
-          'accepted,fixture-fellowship,Fixture Fellowship,2025,Fixture Student Two,Fixture Advisor One,,Synthetic Project B,https://example.invalid/source,block-2,Reviewed from fixture source,candidate',
+          'needs-review,stars-ii,STARS II,2025,Ada Lovelace,Ronald Breaker,,RNA,https://example.yale.edu/source,block-1,,candidate',
+          'accepted,stars-ii,STARS II,2025,Grace Hopper,Ronald Breaker,,Circuits,https://example.yale.edu/source,block-2,Reviewed from official source,candidate',
         ].join('\n'),
       );
 
-      const result = await exportAcceptedFellowshipRows(root, 'fixture-fellowship', {
+      const result = await exportAcceptedFellowshipRows(root, 'stars-ii', {
         configs: [testConfig],
-        advisorResolver: async () => ({ status: 'resolved', label: 'Fixture Advisor One' }),
+        advisorResolver: async () => ({ status: 'resolved', label: 'Ronald Breaker' }),
       });
 
       expect(result.errors).toEqual([]);
       expect(result.acceptedCount).toBe(1);
       const accepted = await fs.readFile(
-        path.join(root, FELLOWSHIP_ACCEPTED_DIR, 'fixture-fellowship.csv'),
+        path.join(root, FELLOWSHIP_ACCEPTED_DIR, 'stars-ii.csv'),
         'utf8',
       );
-      expect(accepted).toContain('Fixture Student Two');
-      expect(accepted).not.toContain('Fixture Student One');
-      expect(accepted).toContain('https://example.invalid/source');
+      expect(accepted).toContain('Grace Hopper');
+      expect(accepted).not.toContain('Ada Lovelace');
+      expect(accepted).toContain('https://example.yale.edu/source');
     });
   });
 
@@ -234,24 +231,24 @@ describe('exportAcceptedFellowshipRows and status', () => {
     await withTempRoot(async (root) => {
       await writeReviewCsv(
         root,
-        'fixture-fellowship',
+        'stars-ii',
         [
           'reviewStatus,programKey,programName,year,studentName,advisorName,advisorOrcid,projectTitle,sourceUrl,sourcePage,reviewNote,extractionStatus',
-          'accepted,fixture-fellowship,Fixture Fellowship,2025,Fixture Student One,,0000-0000-0000-001X,Synthetic Project,,,,candidate',
+          'accepted,stars-ii,STARS II,2025,Ada Lovelace,,0000-0002-1825-0097,RNA,,,,candidate',
         ].join('\n'),
       );
 
-      const result = await exportAcceptedFellowshipRows(root, 'fixture-fellowship', {
+      const result = await exportAcceptedFellowshipRows(root, 'stars-ii', {
         configs: [testConfig],
-        advisorResolver: async () => ({ status: 'resolved', label: 'Fixture Advisor One' }),
+        advisorResolver: async () => ({ status: 'resolved', label: 'Ada Lovelace' }),
       });
 
       expect(result.errors).toEqual([]);
       const accepted = await fs.readFile(
-        path.join(root, FELLOWSHIP_ACCEPTED_DIR, 'fixture-fellowship.csv'),
+        path.join(root, FELLOWSHIP_ACCEPTED_DIR, 'stars-ii.csv'),
         'utf8',
       );
-      expect(accepted).toContain('Fixture Advisor One,0000-0000-0000-001X,2025');
+      expect(accepted).toContain('Ada Lovelace,0000-0002-1825-0097,2025');
     });
   });
 
@@ -265,10 +262,10 @@ describe('exportAcceptedFellowshipRows and status', () => {
       ];
       await fs.mkdir(path.join(root, FELLOWSHIP_ACCEPTED_DIR), { recursive: true });
       await fs.writeFile(
-        path.join(root, FELLOWSHIP_ACCEPTED_DIR, 'fixture-fellowship.csv'),
+        path.join(root, FELLOWSHIP_ACCEPTED_DIR, 'stars-ii.csv'),
         [
           'studentName,advisorName,advisorOrcid,year,projectTitle,sourceUrl,sourcePage,reviewNote',
-          'Fixture Student One,Fixture Advisor One,,2025,Synthetic Project,https://example.invalid/source,,Reviewed',
+          'Ada Lovelace,Ronald Breaker,,2025,RNA,https://example.yale.edu/source,,Reviewed',
         ].join('\n'),
         'utf8',
       );
@@ -276,7 +273,7 @@ describe('exportAcceptedFellowshipRows and status', () => {
         path.join(root, FELLOWSHIP_ACCEPTED_DIR, 'bad.csv'),
         [
           'studentName,advisorName,advisorOrcid,year,projectTitle,sourceUrl,sourcePage,reviewNote',
-          'Fixture Student One,Fixture Advisor One,,2025,Synthetic Project,,,',
+          'Ada Lovelace,Ronald Breaker,,2025,RNA,,,',
         ].join('\n'),
         'utf8',
       );
@@ -285,17 +282,17 @@ describe('exportAcceptedFellowshipRows and status', () => {
         'manual',
         [
           'reviewStatus,programKey,programName,year,studentName,advisorName,advisorOrcid,projectTitle,sourceUrl,sourcePage,reviewNote,extractionStatus',
-          'manual-required,manual,Manual,,,,,,https://example.invalid/manual,,Manual review required,manual-required',
+          'manual-required,manual,Manual,,,,,,https://example.yale.edu/manual,,Manual review required,manual-required',
         ].join('\n'),
       );
 
       const result = await validateAcceptedFellowshipFiles(root, {
         configs,
-        advisorResolver: async () => ({ status: 'resolved', label: 'Fixture Advisor One' }),
+        advisorResolver: async () => ({ status: 'resolved', label: 'Ronald Breaker' }),
       });
 
       expect(Object.fromEntries(result.map((item) => [item.programKey, item.status]))).toEqual({
-        'fixture-fellowship': 'ready',
+        'stars-ii': 'ready',
         bad: 'invalid',
         manual: 'manual-required',
         missing: 'missing',

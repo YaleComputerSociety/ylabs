@@ -13,6 +13,7 @@ import AdminRoutes from './admin';
 import ProfileRoutes from './profiles';
 import SeedRoutes from './seed';
 import ResearchGroupsRoutes from './researchGroups';
+import PathwaysRoutes from './pathways';
 import OpportunitiesRoutes from './opportunities';
 
 const router = Router();
@@ -27,6 +28,7 @@ router.use('/fellowships', (req, res, next) => {
 router.use('/users', UsersRoutes);
 router.use('/profiles', ProfileRoutes);
 router.use('/research', ResearchGroupsRoutes);
+router.use('/pathways', PathwaysRoutes);
 router.use('/opportunities', OpportunitiesRoutes);
 router.use('/analytics', AnalyticsRoutes);
 router.use('/research-areas', ResearchAreasRoutes);

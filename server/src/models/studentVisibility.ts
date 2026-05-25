@@ -55,14 +55,6 @@ export const studentVisibilityFields = {
     ref: 'User',
     required: false,
   },
-  studentVisibilityReviewRuleId: {
-    type: String,
-    default: '',
-  },
-  studentVisibilityReviewNote: {
-    type: String,
-    default: '',
-  },
 };
 
 export const isStudentVisibilityTier = (value: unknown): value is StudentVisibilityTier =>

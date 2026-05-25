@@ -75,32 +75,9 @@ Entity pages should answer what the research structure is, what it studies, who 
 
 When a task is large enough to split safely, use parallel subagents to speed up discovery, implementation, or verification. Prefer subagents for independent workstreams with clear ownership, such as one agent inspecting backend impact while another inspects frontend impact, one agent updating docs while another verifies tests, or separate implementation agents working on disjoint files or modules.
 
-When working on ideas, prototypes, or exploratory implementation with multiple agents, apply the Superpowers worktree workflow before starting agent work so agents do not collide in the same checkout. Agents may intentionally collaborate on the same branch when the work is related, but each agent should still operate from an isolated worktree unless a shared workspace is explicitly required.
-
-To use the worktree workflow correctly:
-
-- First detect whether the current checkout is already a linked worktree. Do not create nested worktrees.
-- Prefer any native worktree tool provided by the harness; use `git worktree` only as the fallback.
-- Use one worktree per implementation agent. Same-branch collaboration is allowed for related work, but separate checkouts are still the default collision-avoidance mechanism.
-- Before creating a project-local worktree, verify `.worktrees/` or `worktrees/` is ignored.
-- Run setup and a narrow baseline verification in the new worktree before editing when the task is substantial enough that pre-existing failures would matter.
-- Have the main Codex thread integrate agent outputs, inspect diffs from each worktree, resolve conflicts, and run final verification before reporting completion.
+When using git worktrees for feature or agent work, treat `new-foundation` as the default integration branch unless the user names a different working branch. Subagents should still work in their own isolated worktrees, but the main Codex thread is responsible for reviewing, testing, and automatically merging or cherry-picking accepted work back into the active integration branch before calling the task done. If integration is unsafe because the target branch has unrelated conflicts or failing baseline checks, stop and report the blocker instead of leaving finished work stranded in a side worktree.
 
 Do not use subagents for tightly coupled changes, tiny tasks, or decisions that require one coherent product judgment. After subagents finish, the main Codex thread must review their outputs, inspect changed files, resolve conflicts, and run or recommend verification. Do not forward subagent conclusions without integration.
-
-## GStack Skill Routing
-
-Use installed gstack skills proactively when their trigger matches the task, especially for work where live evidence, structured review, or end-to-end workflow discipline beats ad hoc commands.
-
-- Use `browse` for browser evidence, screenshots, responsive checks, dogfooding, and verifying user flows.
-- Use `qa` when asked to test and fix a site or when a feature is ready for systematic QA; use `qa-only` when the user wants a report without edits.
-- Use `design-review` for UI/UX polish passes, visual consistency, spacing, hierarchy, and interaction issues.
-- Use `review` before landing non-trivial diffs or when the user asks for code review.
-- Use `ship` for commit/push/PR/deploy requests instead of manually pushing or opening PRs; use `land-and-deploy` after a PR is ready to merge and verify production.
-- Use `canary` for post-deploy production monitoring and `benchmark` for performance regression checks.
-- Use planning review skills such as `autoplan`, `plan-ceo-review`, `plan-eng-review`, `plan-design-review`, or `plan-devex-review` when a plan is large, ambiguous, product-sensitive, architecture-sensitive, design-sensitive, or developer-experience-sensitive.
-
-GStack does not replace Graphify, source inspection, or focused repo tests. Treat gstack outputs as evidence to integrate into the normal task loop: verify important claims against source, keep artifacts under ignored local paths such as `tmp/` or `.gstack/`, update durable docs only with stable conclusions, and refresh Graphify when code or durable docs change.
 
 ## Done Criteria
 
@@ -144,7 +121,6 @@ The client has had pre-existing typecheck issues; do not assume `tsc --noEmit` f
 ## Sensitive Areas
 
 - Never commit `server/.env` or `client/.env`.
-- Do not put real user identifiers, real emails, scraped person data, or other sensitive/production-derived values in tests or fixtures. Use clearly synthetic identifiers such as `fixture-real-user`, `example.invalid`, and `example.test`.
 - Be careful around `server/src/passport.ts`, `server/src/db/connections.ts`, and `server/src/app.ts`; these affect auth, DB routing, sessions, CORS, and rate limits.
 - Production scraper writes require explicit guardrails. Respect `SCRAPER_ENV`, `CONFIRM_PROD_SCRAPE`, and related safety checks.
 

@@ -3,7 +3,7 @@
  */
 import { AnalyticsEvent, AnalyticsEventType } from '../models/analytics';
 import { User } from '../models/index';
-import { PostedOpportunity } from '../models/postedOpportunity';
+import { getListingModel } from '../db/connections';
 import type { PipelineStage } from 'mongoose';
 
 export interface LogEventParams {
@@ -110,31 +110,6 @@ export interface SearchQualityAnalytics {
   topQueries: SearchQualityQueryAnalytics[];
 }
 
-export interface SearchQuerySearcher {
-  netid: string;
-  userType: string;
-  fname?: string;
-  lname?: string;
-  email?: string;
-  searchCount: number;
-  lastSearchedAt?: Date;
-}
-
-export interface SearchQueryAnalyticsRow {
-  query: string;
-  totalSearches: number;
-  uniqueSearchers: number;
-  zeroResultSearches: number;
-  avgResultCount: number;
-  lastSearchedAt?: Date;
-  searchers: SearchQuerySearcher[];
-}
-
-export interface SearchQueryAnalytics {
-  queries: SearchQueryAnalyticsRow[];
-  limit: number;
-}
-
 export interface FunnelAnalytics {
   logins: number;
   searches: number;
@@ -143,40 +118,6 @@ export interface FunnelAnalytics {
   favoritesOrSaves: number;
   outreachClicks: number;
   outreachOutcomes: number;
-}
-
-export interface TrendingOpportunityViewRow {
-  listingId: any;
-  views: number;
-  uniqueViewers: number;
-}
-
-export interface OpportunityViewDataHealth {
-  opportunityViewEventsLast30Days: number;
-  resolvedOpportunityViewEventsLast30Days: number;
-  orphanedOpportunityViewEventsLast30Days: number;
-  orphanedOpportunityIds: string[];
-}
-
-export interface ResolvedTrendingOpportunity {
-  listingId: string;
-  sourceRecordId: string;
-  sourceType: 'postedOpportunity' | 'legacyListing';
-  opportunityId?: string;
-  title: string;
-  ownerFirstName?: string;
-  ownerLastName?: string;
-  departments?: string[];
-  status?: string;
-  archived?: boolean;
-  researchEntityId?: string;
-  views: number;
-  uniqueViewers: number;
-}
-
-export interface TrendingOpportunityResolution {
-  trending: ResolvedTrendingOpportunity[];
-  dataHealth: OpportunityViewDataHealth;
 }
 
 export interface HighSearchLowResultsAction {
@@ -206,105 +147,6 @@ export interface ActionNeededAnalytics {
   highSearchLowResults: HighSearchLowResultsAction[];
   listingsHighViewsLowFavorites: ListingHighViewsLowFavoritesAction[];
 }
-
-const toIdString = (value: any): string => {
-  if (value === undefined || value === null) {
-    return '';
-  }
-
-  return String(value);
-};
-
-export const resolveTrendingOpportunityViews = (
-  rows: TrendingOpportunityViewRow[] = [],
-  legacyListings: any[] = [],
-  postedOpportunities: any[] = [],
-): TrendingOpportunityResolution => {
-  const postedById = new Map<string, any>();
-  const postedByListingId = new Map<string, any>();
-  const legacyById = new Map<string, any>();
-
-  postedOpportunities.forEach((opportunity) => {
-    const id = toIdString(opportunity._id);
-    if (id) {
-      postedById.set(id, opportunity);
-    }
-
-    const listingId = toIdString(opportunity.listingId);
-    if (listingId) {
-      postedByListingId.set(listingId, opportunity);
-    }
-  });
-
-  legacyListings.forEach((listing) => {
-    const id = toIdString(listing._id);
-    if (id) {
-      legacyById.set(id, listing);
-    }
-  });
-
-  const trending: ResolvedTrendingOpportunity[] = [];
-  const orphanedOpportunityIds: string[] = [];
-  let resolvedOpportunityViewEventsLast30Days = 0;
-  let orphanedOpportunityViewEventsLast30Days = 0;
-  let opportunityViewEventsLast30Days = 0;
-
-  rows.forEach((row) => {
-    const sourceRecordId = toIdString(row.listingId);
-    const views = row.views || 0;
-    opportunityViewEventsLast30Days += views;
-
-    const postedOpportunity = postedById.get(sourceRecordId) || postedByListingId.get(sourceRecordId);
-    if (postedOpportunity) {
-      resolvedOpportunityViewEventsLast30Days += views;
-      trending.push({
-        listingId: sourceRecordId,
-        sourceRecordId,
-        opportunityId: toIdString(postedOpportunity._id),
-        sourceType: 'postedOpportunity',
-        title: postedOpportunity.title || sourceRecordId,
-        status: postedOpportunity.status,
-        archived: postedOpportunity.archived,
-        researchEntityId: toIdString(postedOpportunity.researchEntityId) || undefined,
-        views,
-        uniqueViewers: row.uniqueViewers || 0,
-      });
-      return;
-    }
-
-    const legacyListing = legacyById.get(sourceRecordId);
-    if (legacyListing) {
-      resolvedOpportunityViewEventsLast30Days += views;
-      trending.push({
-        listingId: sourceRecordId,
-        sourceRecordId,
-        sourceType: 'legacyListing',
-        title: legacyListing.title || sourceRecordId,
-        ownerFirstName: legacyListing.ownerFirstName,
-        ownerLastName: legacyListing.ownerLastName,
-        departments: legacyListing.departments,
-        views,
-        uniqueViewers: row.uniqueViewers || 0,
-      });
-      return;
-    }
-
-    orphanedOpportunityViewEventsLast30Days += views;
-    if (sourceRecordId) {
-      orphanedOpportunityIds.push(sourceRecordId);
-    }
-  });
-
-  return {
-    trending,
-    dataHealth: {
-      opportunityViewEventsLast30Days,
-      resolvedOpportunityViewEventsLast30Days,
-      orphanedOpportunityViewEventsLast30Days,
-      orphanedOpportunityIds,
-    },
-  };
-};
 
 const USER_ANALYTICS_SORTS = new Set<AnalyticsUserSort>([
   'lastActive',
@@ -723,150 +565,6 @@ export const getSearchQualityAnalytics = async (
   };
 };
 
-export const getSearchQueryAnalytics = async (
-  range: AnalyticsDateRange = {},
-  query: { limit?: number } = {},
-): Promise<SearchQueryAnalytics> => {
-  const limit = clampLimit(query.limit, 25, 100);
-  const queries = await AnalyticsEvent.aggregate([
-    {
-      $match: {
-        eventType: AnalyticsEventType.SEARCH,
-        searchQuery: { $exists: true, $ne: '' },
-        ...buildRangeTimestampMatch(range),
-      },
-    },
-    {
-      $addFields: {
-        normalizedQuery: { $trim: { input: { $ifNull: ['$searchQuery', ''] } } },
-        resultCount: {
-          $convert: {
-            input: '$metadata.resultCount',
-            to: 'double',
-            onError: 0,
-            onNull: 0,
-          },
-        },
-      },
-    },
-    {
-      $match: {
-        normalizedQuery: { $ne: '' },
-      },
-    },
-    {
-      $group: {
-        _id: {
-          query: '$normalizedQuery',
-          netid: '$netid',
-        },
-        userType: { $last: '$userType' },
-        searchCount: { $sum: 1 },
-        zeroResultSearches: {
-          $sum: { $cond: [{ $lte: ['$resultCount', 0] }, 1, 0] },
-        },
-        resultCountTotal: { $sum: '$resultCount' },
-        lastSearchedAt: { $max: '$timestamp' },
-      },
-    },
-    {
-      $lookup: {
-        from: 'users',
-        localField: '_id.netid',
-        foreignField: 'netid',
-        as: 'user',
-      },
-    },
-    {
-      $unwind: {
-        path: '$user',
-        preserveNullAndEmptyArrays: true,
-      },
-    },
-    {
-      $project: {
-        _id: 0,
-        query: '$_id.query',
-        netid: '$_id.netid',
-        userType: { $ifNull: ['$user.userType', '$userType'] },
-        fname: '$user.fname',
-        lname: '$user.lname',
-        email: '$user.email',
-        searchCount: 1,
-        zeroResultSearches: 1,
-        resultCountTotal: 1,
-        lastSearchedAt: 1,
-      },
-    },
-    {
-      $sort: {
-        query: 1,
-        searchCount: -1,
-        lastSearchedAt: -1,
-        netid: 1,
-      },
-    },
-    {
-      $group: {
-        _id: '$query',
-        totalSearches: { $sum: '$searchCount' },
-        uniqueSearchers: { $sum: 1 },
-        zeroResultSearches: { $sum: '$zeroResultSearches' },
-        resultCountTotal: { $sum: '$resultCountTotal' },
-        lastSearchedAt: { $max: '$lastSearchedAt' },
-        searchers: {
-          $push: {
-            netid: '$netid',
-            userType: '$userType',
-            fname: '$fname',
-            lname: '$lname',
-            email: '$email',
-            searchCount: '$searchCount',
-            lastSearchedAt: '$lastSearchedAt',
-          },
-        },
-      },
-    },
-    {
-      $project: {
-        _id: 0,
-        query: '$_id',
-        totalSearches: 1,
-        uniqueSearchers: 1,
-        zeroResultSearches: 1,
-        avgResultCount: {
-          $round: [
-            {
-              $cond: [
-                { $gt: ['$totalSearches', 0] },
-                { $divide: ['$resultCountTotal', '$totalSearches'] },
-                0,
-              ],
-            },
-            2,
-          ],
-        },
-        lastSearchedAt: 1,
-        searchers: { $slice: ['$searchers', 25] },
-      },
-    },
-    {
-      $sort: {
-        totalSearches: -1,
-        uniqueSearchers: -1,
-        lastSearchedAt: -1,
-        query: 1,
-      },
-    },
-    { $limit: limit },
-  ]);
-
-  return {
-    queries: queries as SearchQueryAnalyticsRow[],
-    limit,
-  };
-};
-
 export const getFunnelAnalytics = async (
   range: AnalyticsDateRange = {},
 ): Promise<FunnelAnalytics> => {
@@ -938,7 +636,71 @@ export const getActionNeededAnalytics = async (
     )
     .slice(0, 10);
 
-  const listingsHighViewsLowFavorites: ListingHighViewsLowFavoritesAction[] = [];
+  const listingCollectionName = getListingModel().collection.name;
+  const listingsHighViewsLowFavorites = await AnalyticsEvent.aggregate([
+    {
+      $match: {
+        eventType: {
+          $in: [AnalyticsEventType.LISTING_VIEW, AnalyticsEventType.LISTING_FAVORITE],
+        },
+        listingId: { $exists: true, $ne: null },
+        ...buildRangeTimestampMatch(range),
+      },
+    },
+    {
+      $group: {
+        _id: '$listingId',
+        rangeViews: {
+          $sum: { $cond: [{ $eq: ['$eventType', AnalyticsEventType.LISTING_VIEW] }, 1, 0] },
+        },
+        rangeFavorites: {
+          $sum: {
+            $cond: [{ $eq: ['$eventType', AnalyticsEventType.LISTING_FAVORITE] }, 1, 0],
+          },
+        },
+      },
+    },
+    {
+      $lookup: {
+        from: listingCollectionName,
+        localField: '_id',
+        foreignField: '_id',
+        as: 'listing',
+      },
+    },
+    { $unwind: '$listing' },
+    {
+      $match: {
+        rangeViews: { $gte: 3 },
+        'listing.confirmed': true,
+        'listing.archived': false,
+      },
+    },
+    {
+      $addFields: {
+        favoriteRate: {
+          $cond: [{ $gt: ['$rangeViews', 0] }, { $divide: ['$rangeFavorites', '$rangeViews'] }, 0],
+        },
+      },
+    },
+    { $sort: { favoriteRate: 1, rangeViews: -1, 'listing.views': -1 } },
+    { $limit: 10 },
+    {
+      $project: {
+        _id: 0,
+        listingId: { $toString: '$_id' },
+        title: '$listing.title',
+        ownerFirstName: '$listing.ownerFirstName',
+        ownerLastName: '$listing.ownerLastName',
+        departments: '$listing.departments',
+        rangeViews: 1,
+        rangeFavorites: 1,
+        lifetimeViews: { $ifNull: ['$listing.views', 0] },
+        lifetimeFavorites: { $ifNull: ['$listing.favorites', 0] },
+        favoriteRate: { $round: ['$favoriteRate', 4] },
+      },
+    },
+  ]);
 
   return {
     highSearchLowResults,
@@ -1283,20 +1045,157 @@ export const getAnalytics = async () => {
     },
   ]);
 
-  const listingStats = [
+  const listingStats = await getListingModel().aggregate([
     {
-      overview: [{ total: 0, active: 0, archived: 0, unconfirmed: 0 }],
-      newListingsLast7Days: [{ count: 0 }],
-      newListingsToday: [{ count: 0 }],
-      listingsByDepartment: [],
-      listingsPerProfessor: [],
-      viewsAndFavorites: [{ totalViews: 0, totalFavorites: 0, avgViews: 0, avgFavorites: 0 }],
-      topViewedListings: [],
-      topFavoritedListings: [],
-      viewsByDepartment: [],
-      listingsWithZeroViews: [{ count: 0 }],
+      $facet: {
+        overview: [
+          {
+            $group: {
+              _id: null,
+              total: { $sum: 1 },
+              active: {
+                $sum: {
+                  $cond: [
+                    { $and: [{ $eq: ['$archived', false] }, { $eq: ['$confirmed', true] }] },
+                    1,
+                    0,
+                  ],
+                },
+              },
+              archived: { $sum: { $cond: ['$archived', 1, 0] } },
+              unconfirmed: { $sum: { $cond: ['$confirmed', 0, 1] } },
+            },
+          },
+        ],
+        newListingsLast7Days: [
+          {
+            $match: {
+              createdAt: { $gte: sevenDaysAgo },
+            },
+          },
+          { $count: 'count' },
+        ],
+        newListingsToday: [
+          {
+            $match: {
+              createdAt: { $gte: today },
+            },
+          },
+          { $count: 'count' },
+        ],
+        listingsByDepartment: [
+          { $match: { archived: false, confirmed: true } },
+          { $unwind: '$departments' },
+          {
+            $group: {
+              _id: '$departments',
+              count: { $sum: 1 },
+            },
+          },
+          { $sort: { count: -1 } },
+          {
+            $project: {
+              _id: 0,
+              department: '$_id',
+              count: 1,
+            },
+          },
+        ],
+        listingsPerProfessor: [
+          { $match: { archived: false, confirmed: true } },
+          {
+            $group: {
+              _id: {
+                ownerId: '$ownerId',
+                ownerFirstName: '$ownerFirstName',
+                ownerLastName: '$ownerLastName',
+              },
+              count: { $sum: 1 },
+            },
+          },
+          { $sort: { count: -1 } },
+          { $limit: 20 },
+          {
+            $project: {
+              _id: 0,
+              professorName: {
+                $concat: ['$_id.ownerFirstName', ' ', '$_id.ownerLastName'],
+              },
+              netId: '$_id.ownerId',
+              count: 1,
+            },
+          },
+        ],
+        viewsAndFavorites: [
+          {
+            $group: {
+              _id: null,
+              totalViews: { $sum: '$views' },
+              totalFavorites: { $sum: '$favorites' },
+              avgViews: { $avg: '$views' },
+              avgFavorites: { $avg: '$favorites' },
+            },
+          },
+        ],
+        topViewedListings: [
+          { $match: { confirmed: true, archived: false } },
+          { $sort: { views: -1 } },
+          { $limit: 10 },
+          {
+            $project: {
+              _id: 1,
+              title: 1,
+              ownerFirstName: 1,
+              ownerLastName: 1,
+              views: 1,
+              departments: 1,
+            },
+          },
+        ],
+        topFavoritedListings: [
+          { $match: { confirmed: true, archived: false } },
+          { $sort: { favorites: -1 } },
+          { $limit: 10 },
+          {
+            $project: {
+              _id: 1,
+              title: 1,
+              ownerFirstName: 1,
+              ownerLastName: 1,
+              favorites: 1,
+              departments: 1,
+            },
+          },
+        ],
+        viewsByDepartment: [
+          { $match: { confirmed: true, archived: false } },
+          { $unwind: '$departments' },
+          {
+            $group: {
+              _id: '$departments',
+              totalViews: { $sum: '$views' },
+              listingCount: { $sum: 1 },
+              avgViews: { $avg: '$views' },
+            },
+          },
+          { $sort: { totalViews: -1 } },
+          {
+            $project: {
+              _id: 0,
+              department: '$_id',
+              totalViews: 1,
+              listingCount: 1,
+              avgViews: { $round: ['$avgViews', 2] },
+            },
+          },
+        ],
+        listingsWithZeroViews: [
+          { $match: { views: 0, confirmed: true, archived: false } },
+          { $count: 'count' },
+        ],
+      },
     },
-  ];
+  ]);
 
   const userStats = await User.aggregate([
     {
@@ -1371,16 +1270,21 @@ export const getAnalytics = async () => {
   const users = userStats[0];
 
   const trendingListingIds = engagement.trendingListings.map((t: any) => t.listingId);
-  const trendingListingsData: any[] = [];
-  const trendingPostedOpportunitiesData = await PostedOpportunity.find({
-      $or: [{ _id: { $in: trendingListingIds } }, { listingId: { $in: trendingListingIds } }],
-    }).lean();
-  const { trending: enrichedTrending, dataHealth: opportunityViewDataHealth } =
-    resolveTrendingOpportunityViews(
-      engagement.trendingListings || [],
-      trendingListingsData,
-      trendingPostedOpportunitiesData,
+  const trendingListingsData = await getListingModel()
+    .find({ _id: { $in: trendingListingIds } })
+    .lean();
+  const enrichedTrending = engagement.trendingListings.map((t: any) => {
+    const listing = trendingListingsData.find(
+      (l: any) => l._id.toString() === t.listingId.toString(),
     );
+    return {
+      ...t,
+      title: listing?.title,
+      ownerFirstName: listing?.ownerFirstName,
+      ownerLastName: listing?.ownerLastName,
+      departments: listing?.departments,
+    };
+  });
 
   return {
     visitors: {
@@ -1419,7 +1323,6 @@ export const getAnalytics = async () => {
       avgViews: listings.viewsAndFavorites[0]?.avgViews || 0,
       avgFavorites: listings.viewsAndFavorites[0]?.avgFavorites || 0,
       viewsByDepartment: listings.viewsByDepartment || [],
-      opportunityViewDataHealth,
     },
     listings: {
       overview: listings.overview[0] || { total: 0, active: 0, archived: 0, unconfirmed: 0 },

@@ -17,7 +17,6 @@ import {
   jacksonCentersExtractor,
   jsRenderedStub,
   centerToGroupObservations,
-  centerMemberRelationshipObservations,
   memberToObservations,
   childCenterToObservations,
   type CenterConfig,
@@ -30,18 +29,18 @@ import type { ScraperContext, ObservationInput } from '../types';
 // Sample HTML fixtures
 // ---------------------------------------------------------------------------
 
-/** Drupal node-teaser theme used by several center roster pages. */
+/** Cowles / Tobin / MacMillan all use this Drupal node-teaser theme. */
 const NODE_TEASER_HTML = `
 <html><body>
   <article id="node-person-1" class="node-teaser node-teaser--person">
     <div class="node-teaser__heading">
-      <a href="/people/fixture-director"><span>Fixture Director</span></a>
+      <a href="/people/jane-doe"><span>Jane Doe</span></a>
     </div>
-    <div class="node-teaser__professional-title"><span>Director and Named Professor of Economics</span></div>
+    <div class="node-teaser__professional-title"><span>Director and Sterling Professor of Economics</span></div>
   </article>
   <article id="node-person-2" class="node-teaser node-teaser--person">
     <div class="node-teaser__heading">
-      <a href="/people/fixture-fellow"><span>Fixture Fellow</span></a>
+      <a href="/people/bob-smith"><span>Bob Smith</span></a>
     </div>
     <div class="node-teaser__professional-title"><span>Professor of Economics</span></div>
   </article>
@@ -51,19 +50,19 @@ const NODE_TEASER_HTML = `
 </body></html>
 `;
 
-/** Teaser-card institute roster structure. */
+/** Wu Tsai Institute structure. */
 const WTI_HTML = `
 <html><body>
   <div class="teaser teaser--person">
     <div class="teaser__media"><img alt="x"/></div>
     <div class="teaser__content">
-      <h2 class="teaser__heading">Fixture Mechanist</h2>
+      <h2 class="teaser__heading">Ian Abraham</h2>
       <p class="teaser__text">Faculty Member, Mechanical Engineering</p>
     </div>
   </div>
   <div class="teaser teaser--person">
     <div class="teaser__content">
-      <h2 class="teaser__heading">Fixture Neuroscientist</h2>
+      <h2 class="teaser__heading">Amy Arnsten</h2>
       <p class="teaser__text">Faculty Member, Neuroscience</p>
     </div>
   </div>
@@ -76,30 +75,30 @@ const WTI_HTML = `
 </body></html>
 `;
 
-/** Alphabetical medicine center directory. */
+/** Yale Cancer Center alphabetical directory. */
 const CANCER_HTML = `
 <html><body>
   <div id="A">
-    <a href="/cancer/profile/alpha-analyst/" tabindex="0" class="hyperlink">Analyst, Alpha</a>
-    <a href="/cancer/profile/beta-biologist/" tabindex="0" class="hyperlink">Biologist, Beta</a>
-    <a href="/cancer/profile/alpha-analyst/" tabindex="0" class="hyperlink">Analyst, Alpha</a>
+    <a href="/cancer/profile/fuad-abujarad/" tabindex="0" class="hyperlink">Abujarad, Fuad</a>
+    <a href="/cancer/profile/nita-ahuja/" tabindex="0" class="hyperlink">Ahuja, Nita</a>
+    <a href="/cancer/profile/fuad-abujarad/" tabindex="0" class="hyperlink">Abujarad, Fuad</a>
   </div>
   <div id="B">
-    <a href="/cancer/profile/gamma-clinician/" class="hyperlink">Clinician, Gamma</a>
+    <a href="/cancer/profile/sarah-bell/" class="hyperlink">Bell, Sarah</a>
   </div>
   <a href="/cancer/about/contact" class="hyperlink">Contact Us</a>
 </body></html>
 `;
 
-/** Common views-field roster layout. */
+/** Yale Quantum Institute / Whitney Humanities Center common views-field layout. */
 const VIEWS_FIELD_HTML = `
 <html><body>
   <table>
     <tr>
       <td>
-        <div class="views-field views-field-picture"><a href="/people/quantum-member"><img/></a></div>
+        <div class="views-field views-field-picture"><a href="/people/aleksander-kubica"><img/></a></div>
         <div class="views-field views-field-name">
-          <span class="field-content"><a href="/people/quantum-member" class="username">Quantum Member</a></span>
+          <span class="field-content"><a href="/people/aleksander-kubica" class="username">Aleksander Kubica</a></span>
         </div>
         <div class="views-field views-field-field-title">
           <div class="field-content">Assistant Professor of Applied Physics</div>
@@ -107,10 +106,10 @@ const VIEWS_FIELD_HTML = `
       </td>
       <td>
         <div class="views-field views-field-name">
-          <a href="/people/optics-member" class="username">Optics Member</a>
+          <a href="/people/hui-cao" class="username">Hui Cao</a>
         </div>
         <div class="views-field views-field-field-title">
-          <div class="field-content">Named Professor of Applied Physics</div>
+          <div class="field-content">John C. Malone Professor of Applied Physics</div>
         </div>
       </td>
     </tr>
@@ -130,7 +129,7 @@ const ISPS_HTML = `
     <div class="ds-1col node node-team-member view-mode-isps_teaser_extended">
       <div class="field field-name-field-team-member-photo"><a href="/team/p-m-aronow"><img/></a></div>
       <div class="field field-name-team-list-member-name">
-        <strong><a href="/team/methods-fellow">Methods Fellow</a></strong>
+        <strong><a href="/team/p-m-aronow">P. M. Aronow</a></strong>
       </div>
       <div class="field field-name-field-team-member-creds">
         Associate Professor of Statistics &amp; Data Science
@@ -140,7 +139,7 @@ const ISPS_HTML = `
   <div class="views-row views-row-2">
     <div class="ds-1col node node-team-member">
       <div class="field field-name-team-list-member-name">
-        <strong><a href="/team/program-director">Program Director</a></strong>
+        <strong><a href="/team/jacob-hacker">Jacob Hacker</a></strong>
       </div>
       <div class="field field-name-field-team-member-creds">
         Director, American Political Economy Exchange
@@ -159,17 +158,17 @@ const ISPS_HTML = `
 const YCGA_HTML = `
 <html><body>
   <div class="profile-grid-item">
-    <a href="/genetics/profile/genomics-lead/" class="profile-grid-item__link-details" aria-label="Genomics Lead">
-      <span class="profile-grid-item__name profile-grid-item__name--link">Genomics Lead, PhD</span>
+    <a href="/genetics/profile/shrikant-mane/" class="profile-grid-item__link-details" aria-label="Shrikant Mane">
+      <span class="profile-grid-item__name profile-grid-item__name--link">Shrikant Mane, PhD</span>
     </a>
   </div>
   <div class="profile-grid-item">
-    <a href="/genetics/profile/core-scientist/" class="profile-grid-item__link-details">
-      <span class="profile-grid-item__name">Core Scientist</span>
+    <a href="/genetics/profile/sonia-santana/" class="profile-grid-item__link-details">
+      <span class="profile-grid-item__name">Sonia Santana</span>
     </a>
   </div>
-  <a href="/genetics/profile/genomics-lead/" class="profile-grid-item__link-details">
-    <span class="profile-grid-item__name">Duplicate Genomics Lead</span>
+  <a href="/genetics/profile/shrikant-mane/" class="profile-grid-item__link-details">
+    <span class="profile-grid-item__name">Duplicate Shrikant</span>
   </a>
 </body></html>
 `;
@@ -181,7 +180,7 @@ const JACKSON_HTML = `
     <div class="cta_box">
       <a href="https://jackson.yale.edu/centers-initiatives/blue-center/"><img/></a>
       <div class="cta_box_content">
-        <h3 class="cta_title">Fixture Center for Global Strategic Assessment</h3>
+        <h3 class="cta_title">Blue Center for Global Strategic Assessment</h3>
         <div class="content">Supports interdisciplinary research on statecraft.</div>
       </div>
     </div>
@@ -190,16 +189,16 @@ const JACKSON_HTML = `
     <div class="cta_box">
       <a href="https://jackson.yale.edu/environment/"><img/></a>
       <div class="cta_box_content">
-        <h3 class="cta_title">Fixture Initiative on Environment and Global Affairs</h3>
+        <h3 class="cta_title">Deitz Family Initiative on Environment and Global Affairs</h3>
         <div class="content">Supports environmental change studies.</div>
       </div>
     </div>
   </div>
   <div class="jordan_item">
     <div class="cta_box">
-      <a href="https://jackson.yale.edu/centers-initiatives/fixture-ai-program/"><img/></a>
+      <a href="https://jackson.yale.edu/centers-initiatives/schmidt-program/"><img/></a>
       <div class="cta_box_content">
-        <h3 class="cta_title">Fixture Program on AI and National Power</h3>
+        <h3 class="cta_title">Schmidt Program on AI and National Power</h3>
         <div class="content">AI research program.</div>
       </div>
     </div>
@@ -218,13 +217,13 @@ describe('nodeTeaserPersonExtractor', () => {
     });
     expect(out.members).toHaveLength(2);
     expect(out.members[0]).toMatchObject({
-      name: 'Fixture Director',
-      title: 'Director and Named Professor of Economics',
-      profileUrl: 'https://egc.yale.edu/people/fixture-director',
+      name: 'Jane Doe',
+      title: 'Director and Sterling Professor of Economics',
+      profileUrl: 'https://egc.yale.edu/people/jane-doe',
       role: 'director',
     });
     expect(out.members[1]).toMatchObject({
-      name: 'Fixture Fellow',
+      name: 'Bob Smith',
       title: 'Professor of Economics',
       role: 'core-faculty',
     });
@@ -243,11 +242,11 @@ describe('wuTsaiExtractor', () => {
     const out = wuTsaiExtractor(WTI_HTML, { pageUrl: 'https://wti.yale.edu/humans/faculty' });
     expect(out.members).toHaveLength(2);
     expect(out.members[0]).toMatchObject({
-      name: 'Fixture Mechanist',
+      name: 'Ian Abraham',
       title: 'Faculty Member, Mechanical Engineering',
       role: 'core-faculty',
     });
-    expect(out.members[1].name).toBe('Fixture Neuroscientist');
+    expect(out.members[1].name).toBe('Amy Arnsten');
     expect(out.members[1].profileUrl).toBeUndefined();
   });
 });
@@ -258,14 +257,14 @@ describe('yaleCancerCenterExtractor', () => {
       pageUrl: 'https://medicine.yale.edu/cancer/research/membership/directory',
     });
     expect(out.members).toHaveLength(3);
-    expect(out.members[0].name).toBe('Alpha Analyst');
+    expect(out.members[0].name).toBe('Fuad Abujarad');
     expect(out.members[0].profileUrl).toBe(
-      'https://medicine.yale.edu/cancer/profile/alpha-analyst/',
+      'https://medicine.yale.edu/cancer/profile/fuad-abujarad/',
     );
-    expect(out.members[1].name).toBe('Beta Biologist');
-    expect(out.members[2].name).toBe('Gamma Clinician');
+    expect(out.members[1].name).toBe('Nita Ahuja');
+    expect(out.members[2].name).toBe('Sarah Bell');
     // dedupe
-    expect(out.members.filter((m) => m.name === 'Alpha Analyst')).toHaveLength(1);
+    expect(out.members.filter((m) => m.name === 'Fuad Abujarad')).toHaveLength(1);
   });
 });
 
@@ -276,11 +275,11 @@ describe('viewsFieldNameExtractor', () => {
     });
     expect(out.members).toHaveLength(2);
     expect(out.members[0]).toMatchObject({
-      name: 'Quantum Member',
+      name: 'Aleksander Kubica',
       title: 'Assistant Professor of Applied Physics',
-      profileUrl: 'https://quantuminstitute.yale.edu/people/quantum-member',
+      profileUrl: 'https://quantuminstitute.yale.edu/people/aleksander-kubica',
     });
-    expect(out.members[1].name).toBe('Optics Member');
+    expect(out.members[1].name).toBe('Hui Cao');
     // Advisory Board entry filtered out
     expect(out.members.find((m) => m.name === 'Advisory Board')).toBeUndefined();
   });
@@ -293,12 +292,12 @@ describe('ispsExtractor', () => {
     });
     expect(out.members).toHaveLength(2);
     expect(out.members[0]).toMatchObject({
-      name: 'Methods Fellow',
-      profileUrl: 'https://isps.yale.edu/team/methods-fellow',
+      name: 'P. M. Aronow',
+      profileUrl: 'https://isps.yale.edu/team/p-m-aronow',
       role: 'core-faculty',
     });
     expect(out.members[0].title).toContain('Associate Professor');
-    expect(out.members[1]).toMatchObject({ name: 'Program Director', role: 'director' });
+    expect(out.members[1]).toMatchObject({ name: 'Jacob Hacker', role: 'director' });
   });
 });
 
@@ -309,10 +308,10 @@ describe('ycgaExtractor', () => {
     });
     expect(out.members).toHaveLength(2);
     expect(out.members[0]).toMatchObject({
-      name: 'Genomics Lead, PhD',
-      profileUrl: 'https://medicine.yale.edu/genetics/profile/genomics-lead/',
+      name: 'Shrikant Mane, PhD',
+      profileUrl: 'https://medicine.yale.edu/genetics/profile/shrikant-mane/',
     });
-    expect(out.members[1].name).toBe('Core Scientist');
+    expect(out.members[1].name).toBe('Sonia Santana');
   });
 });
 
@@ -324,7 +323,7 @@ describe('jacksonCentersExtractor', () => {
     expect(out.members).toEqual([]);
     expect(out.childCenters).toHaveLength(3);
     expect(out.childCenters![0]).toMatchObject({
-      name: 'Fixture Center for Global Strategic Assessment',
+      name: 'Blue Center for Global Strategic Assessment',
       url: 'https://jackson.yale.edu/centers-initiatives/blue-center/',
       kind: 'center',
     });
@@ -347,7 +346,7 @@ describe('centerToGroupObservations', () => {
   it('emits ResearchGroup fields keyed by center slug, with affiliatedNames', () => {
     const config: CenterConfig = {
       centerKey: 'wu-tsai',
-      centerName: 'Fixture Neuroscience Institute',
+      centerName: 'Wu Tsai Institute',
       schoolName: '',
       kind: 'institute',
       departments: ['Neuroscience', 'Psychology'],
@@ -355,8 +354,8 @@ describe('centerToGroupObservations', () => {
       extractor: wuTsaiExtractor,
     };
     const members: CenterMember[] = [
-      { name: 'Fixture Mechanist' },
-      { name: 'Fixture Neuroscientist' },
+      { name: 'Ian Abraham' },
+      { name: 'Amy Arnsten' },
     ];
     const { observations, entityKey } = centerToGroupObservations(
       config,
@@ -379,8 +378,8 @@ describe('centerToGroupObservations', () => {
     );
     expect(observations.find((o) => o.field === 'kind')!.value).toBe('institute');
     expect(observations.find((o) => o.field === 'affiliatedNames')!.value).toEqual([
-      'Fixture Mechanist',
-      'Fixture Neuroscientist',
+      'Ian Abraham',
+      'Amy Arnsten',
     ]);
     // school is omitted when empty
     expect(observations.find((o) => o.field === 'school')).toBeUndefined();
@@ -390,7 +389,7 @@ describe('centerToGroupObservations', () => {
   it('includes school when provided and omits departments/affiliatedNames when empty', () => {
     const config: CenterConfig = {
       centerKey: 'whc',
-      centerName: 'Fixture Humanities Center',
+      centerName: 'Whitney Humanities Center',
       schoolName: 'FAS',
       kind: 'center',
       url: 'https://whc.yale.edu/people/our-people',
@@ -402,65 +401,13 @@ describe('centerToGroupObservations', () => {
     expect(fields).not.toContain('departments');
     expect(fields).not.toContain('affiliatedNames');
   });
-
-  it('does not emit access-signal or contact-route artifacts from center identity and membership evidence', () => {
-    const config: CenterConfig = {
-      centerKey: 'wu-tsai',
-      centerName: 'Fixture Neuroscience Institute',
-      schoolName: '',
-      kind: 'institute',
-      departments: ['Neuroscience'],
-      url: 'https://wti.yale.edu/humans/faculty',
-      extractor: wuTsaiExtractor,
-    };
-    const member: CenterMember = {
-      name: 'Fixture Member',
-      title: 'Faculty Member, Neuroscience',
-      profileUrl: 'https://wti.yale.edu/person/fixture-member',
-    };
-    const { observations: centerObservations } = centerToGroupObservations(
-      config,
-      [member],
-      config.url,
-    );
-    const observations = [
-      ...centerObservations,
-      ...memberToObservations(member, config, config.url),
-      ...centerMemberRelationshipObservations(member, config, config.url),
-      ...childCenterToObservations(
-        {
-          name: 'Fixture Child Initiative',
-          url: 'https://jackson.yale.edu/centers-initiatives/child-initiative/',
-          kind: 'initiative',
-        },
-        {
-          ...config,
-          centerKey: 'jackson-centers',
-          schoolName: 'Jackson School of Global Affairs',
-        },
-        'https://jackson.yale.edu/centers-initiatives/',
-      ),
-    ];
-
-    expect(observations.map((o) => o.entityType)).not.toEqual(
-      expect.arrayContaining(['entryPathway', 'accessSignal', 'contactRoute']),
-    );
-    expect(observations.map((o) => o.field)).not.toEqual(
-      expect.arrayContaining([
-        'acceptingUndergrads',
-        'undergradAccessEvidence',
-        'joinPageUrl',
-        'contactInstructionsQuote',
-      ]),
-    );
-  });
 });
 
 describe('memberToObservations', () => {
   it('emits researchGroupMember observations with split name and inferred role', () => {
     const config: CenterConfig = {
       centerKey: 'cowles',
-      centerName: 'Fixture Economics Center',
+      centerName: 'Cowles',
       schoolName: 'FAS',
       kind: 'center',
       url: 'https://egc.yale.edu/people/faculty',
@@ -468,86 +415,26 @@ describe('memberToObservations', () => {
     };
     const obs = memberToObservations(
       {
-        name: 'Fixture Director',
-        title: 'Director and Named Professor of Economics',
+        name: 'Jane Doe',
+        title: 'Director and Sterling Professor of Economics',
         role: 'director',
-        profileUrl: 'https://egc.yale.edu/people/fixture-director',
+        profileUrl: 'https://egc.yale.edu/people/jane-doe',
       },
       config,
       'https://egc.yale.edu/people/faculty',
     );
     expect(obs).toHaveLength(5);
-    expect(obs.every((o) => o.entityKey === 'center-cowles:fixture-director')).toBe(true);
+    expect(obs.every((o) => o.entityKey === 'center-cowles:jane-doe')).toBe(true);
     expect(obs.every((o) => o.entityType === 'researchGroupMember')).toBe(true);
     expect(obs.find((o) => o.field === 'researchGroupKey')!.value).toBe('center-cowles');
     expect(obs.find((o) => o.field === 'role')!.value).toBe('director');
     expect(obs.find((o) => o.field === 'inferredUserName')!.value).toEqual({
-      fname: 'Fixture',
-      lname: 'Director',
+      fname: 'Jane',
+      lname: 'Doe',
     });
     expect(obs.find((o) => o.field === 'profileUrl')!.value).toBe(
-      'https://egc.yale.edu/people/fixture-director',
+      'https://egc.yale.edu/people/jane-doe',
     );
-  });
-});
-
-describe('centerMemberRelationshipObservations', () => {
-  it('emits relationship observations without materializing generated faculty research-area shells', () => {
-    const config: CenterConfig = {
-      centerKey: 'yale-quantum-institute',
-      centerName: 'Fixture Quantum Institute',
-      schoolName: '',
-      kind: 'institute',
-      url: 'https://quantuminstitute.yale.edu/people/members',
-      extractor: viewsFieldNameExtractor,
-    };
-    const obs = centerMemberRelationshipObservations(
-      { name: 'Quantum Member', title: 'Assistant Professor of Applied Physics' },
-      config,
-      'https://quantuminstitute.yale.edu/people/members',
-    );
-
-    expect(obs).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          entityType: 'researchEntityRelationship',
-          entityKey: 'center-yale-quantum-institute:faculty-research-area-quantum-member:MEMBER_RESEARCH_AREA',
-          field: 'sourceEntityKey',
-          value: 'center-yale-quantum-institute',
-        }),
-        expect.objectContaining({
-          entityType: 'researchEntityRelationship',
-          entityKey: 'center-yale-quantum-institute:faculty-research-area-quantum-member:MEMBER_RESEARCH_AREA',
-          field: 'targetEntityKey',
-          value: 'faculty-research-area-quantum-member',
-        }),
-        expect.objectContaining({
-          entityType: 'researchEntityRelationship',
-          field: 'relationshipType',
-          value: 'MEMBER_RESEARCH_AREA',
-        }),
-      ]),
-    );
-    expect(obs.filter((observation) => observation.entityType === 'researchEntity')).toEqual([]);
-  });
-
-  it('does not emit relationship observations for centers outside the first ingestion scope', () => {
-    const config: CenterConfig = {
-      centerKey: 'cowles',
-      centerName: 'Fixture Economics Center',
-      schoolName: 'Yale Faculty of Arts and Sciences',
-      kind: 'center',
-      url: 'https://egc.yale.edu/people/faculty',
-      extractor: nodeTeaserPersonExtractor,
-    };
-
-    expect(
-      centerMemberRelationshipObservations(
-        { name: 'Fixture Economist', title: 'Professor of Economics' },
-        config,
-        'https://egc.yale.edu/people/faculty',
-      ),
-    ).toEqual([]);
   });
 });
 
@@ -563,8 +450,8 @@ describe('childCenterToObservations', () => {
     };
     const obs = childCenterToObservations(
       {
-        name: 'Fixture Program on AI',
-        url: 'https://jackson.yale.edu/centers-initiatives/fixture-ai-program/',
+        name: 'Schmidt Program on AI',
+        url: 'https://jackson.yale.edu/centers-initiatives/schmidt-program/',
         kind: 'program',
         description: 'AI research program.',
       },
@@ -575,7 +462,7 @@ describe('childCenterToObservations', () => {
     expect(fields).toEqual(
       expect.arrayContaining(['slug', 'name', 'kind', 'websiteUrl', 'school', 'description']),
     );
-    expect(obs[0].entityKey).toBe('center-jackson-centers-fixture-program-on-ai');
+    expect(obs[0].entityKey).toBe('center-jackson-centers-schmidt-program-on-ai');
     expect(obs.find((o) => o.field === 'kind')!.value).toBe('program');
   });
 });
@@ -612,24 +499,24 @@ describe('CentersInstitutesScraper.run', () => {
       (): ExtractorResult => ({
         members: [
           {
-            name: 'Fixture Director',
-            title: 'Director and Named Professor of Economics',
-            profileUrl: 'https://egc.yale.edu/people/fixture-director',
+            name: 'Jane Doe',
+            title: 'Director and Sterling Professor of Economics',
+            profileUrl: 'https://egc.yale.edu/people/jane-doe',
             role: 'director',
           },
-          { name: 'Fixture Fellow', title: 'Professor', role: 'core-faculty' },
+          { name: 'Bob Smith', title: 'Professor', role: 'core-faculty' },
         ],
       }),
     );
     const wuTsaiExt = vi.fn(
       (): ExtractorResult => ({
-        members: [{ name: 'Fixture Mechanist', title: 'Faculty Member, Engineering' }],
+        members: [{ name: 'Ian Abraham', title: 'Faculty Member, Engineering' }],
       }),
     );
     const configs: CenterConfig[] = [
       {
         centerKey: 'cowles',
-        centerName: 'Fixture Economics Center',
+        centerName: 'Cowles',
         schoolName: 'FAS',
         kind: 'center',
         url: 'https://example.invalid/cowles',
@@ -637,7 +524,7 @@ describe('CentersInstitutesScraper.run', () => {
       },
       {
         centerKey: 'wu-tsai',
-        centerName: 'Fixture Neuroscience Institute',
+        centerName: 'Wu Tsai Institute',
         schoolName: '',
         kind: 'institute',
         url: 'https://example.invalid/wti',
@@ -660,21 +547,19 @@ describe('CentersInstitutesScraper.run', () => {
 
     const groupObs = emitted.filter((o) => o.entityType === 'researchEntity');
     const cowlesGroup = groupObs.filter((o) => o.entityKey === 'center-cowles');
-    expect(cowlesGroup.find((o) => o.field === 'name')!.value).toBe(
-      'Fixture Economics Center',
-    );
+    expect(cowlesGroup.find((o) => o.field === 'name')!.value).toBe('Cowles');
     expect(cowlesGroup.find((o) => o.field === 'school')!.value).toBe('FAS');
     expect(cowlesGroup.find((o) => o.field === 'affiliatedNames')!.value).toEqual([
-      'Fixture Director',
-      'Fixture Fellow',
+      'Jane Doe',
+      'Bob Smith',
     ]);
 
     const memberObs = emitted.filter((o) => o.entityType === 'researchGroupMember');
-    const janeObs = memberObs.filter((o) => o.entityKey === 'center-cowles:fixture-director');
+    const janeObs = memberObs.filter((o) => o.entityKey === 'center-cowles:jane-doe');
     expect(janeObs.find((o) => o.field === 'role')!.value).toBe('director');
     expect(janeObs.find((o) => o.field === 'inferredUserName')!.value).toEqual({
-      fname: 'Fixture',
-      lname: 'Director',
+      fname: 'Jane',
+      lname: 'Doe',
     });
 
     // wu-tsai has no school configured
@@ -691,7 +576,7 @@ describe('CentersInstitutesScraper.run', () => {
     const configs: CenterConfig[] = [
       {
         centerKey: 'cowles',
-        centerName: 'Fixture Economics Center',
+        centerName: 'Cowles',
         schoolName: 'FAS',
         kind: 'center',
         url: 'https://example.invalid/a',
@@ -824,13 +709,13 @@ describe('CentersInstitutesScraper.run', () => {
         members: [],
         childCenters: [
           {
-            name: 'Fixture Program',
-            url: 'https://jackson.yale.edu/centers-initiatives/fixture-program/',
+            name: 'Schmidt Program',
+            url: 'https://jackson.yale.edu/centers-initiatives/schmidt-program/',
             kind: 'program',
           },
           {
-            name: 'Fixture Blue Center',
-            url: 'https://jackson.yale.edu/centers-initiatives/fixture-blue-center/',
+            name: 'Blue Center',
+            url: 'https://jackson.yale.edu/centers-initiatives/blue-center/',
             kind: 'center',
           },
         ],
@@ -859,8 +744,8 @@ describe('CentersInstitutesScraper.run', () => {
       emitted.filter((o) => o.entityType === 'researchEntity').map((o) => o.entityKey),
     );
     expect(groupKeys.has('center-jackson-centers')).toBe(true);
-    expect(groupKeys.has('center-jackson-centers-fixture-program')).toBe(true);
-    expect(groupKeys.has('center-jackson-centers-fixture-blue-center')).toBe(true);
+    expect(groupKeys.has('center-jackson-centers-schmidt-program')).toBe(true);
+    expect(groupKeys.has('center-jackson-centers-blue-center')).toBe(true);
 
     getSpy.mockRestore();
   });

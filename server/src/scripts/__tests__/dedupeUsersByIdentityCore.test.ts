@@ -5,6 +5,7 @@ import {
   chooseCanonicalUser,
   parseDedupeUsersByIdentityArgs,
 } from '../dedupeUsersByIdentityCore';
+import { buildPostMaterializationIntegritySummary } from '../../scrapers/integrityGate';
 
 describe('parseDedupeUsersByIdentityArgs', () => {
   it('defaults to dry-run with a bounded limit', () => {
@@ -463,5 +464,33 @@ describe('buildUserIdentityDedupeSummary', () => {
     expect(summary.plannedGroups).toBe(1);
     expect(summary.duplicateUsers).toBe(1);
     expect(summary.plan).toHaveLength(1);
+  });
+});
+
+describe('post-materialization identity warning classification', () => {
+  it('classifies duplicate identity conflicts as a promotion blocker with a dry-run command', () => {
+    const summary = buildPostMaterializationIntegritySummary({
+      warnings: [
+        {
+          name: 'duplicatePersonIdentityConflicts',
+          count: 1329,
+          message:
+            'Some user identity values are shared by different names; review or repair source identity fields before merging.',
+        },
+      ],
+    });
+
+    expect(summary.status).toBe('pass');
+    expect(summary.warnings).toEqual([
+      expect.objectContaining({
+        name: 'duplicatePersonIdentityConflicts',
+        classification: 'must_fix_before_promotion',
+        owner: 'identity/account operator',
+        nextCommand: 'yarn --cwd server users:dedupe-by-identity --limit=1000',
+      }),
+    ]);
+    expect(summary.recommendedCommands).toContain(
+      'yarn --cwd server users:dedupe-by-identity --limit=1000',
+    );
   });
 });

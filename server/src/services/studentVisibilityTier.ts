@@ -57,23 +57,15 @@ const withOverride = (
   computedTier: StudentVisibilityTier,
   reasons: string[],
 ): StudentVisibilityResult => {
-  if (
-    computedTier === 'suppressed' &&
-    (reasons.includes('content_page_risk') || reasons.includes('inactive_at_yale'))
-  ) {
-    return { tier: computedTier, computedTier, reasons };
-  }
-
   const override = overrideTier(record);
   if (!override) {
     return { tier: computedTier, computedTier, reasons };
   }
-  const reviewRuleId = textValue(record.studentVisibilityReviewRuleId);
 
   return {
     tier: override,
     computedTier,
-    reasons: Array.from(new Set([...reasons, 'operator_override', reviewRuleId].filter(Boolean))),
+    reasons: Array.from(new Set([...reasons, 'operator_override'])),
   };
 };
 
@@ -120,6 +112,13 @@ export function computeResearchEntityStudentVisibility({
     computedTier = 'student_ready';
   } else if (
     quality.descriptionState === 'source_backed' &&
+    quality.leadState === 'lead_attached' &&
+    !quality.repairFlags.includes('missing_source_url') &&
+    !duplicateRisk
+  ) {
+    computedTier = 'limited_but_safe';
+  } else if (
+    quality.descriptionState === 'thin' &&
     quality.leadState === 'lead_attached' &&
     !quality.repairFlags.includes('missing_source_url') &&
     !duplicateRisk

@@ -3619,9 +3619,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"passport-cas@https://github.com/coursetable/passport-cas/archive/79612f1fb25fea7d62a7c38701494411cf560201.tar.gz":
+"passport-cas@git+https://github.com/coursetable/passport-cas#79612f1":
   version: 0.1.2
-  resolution: "passport-cas@https://github.com/coursetable/passport-cas/archive/79612f1fb25fea7d62a7c38701494411cf560201.tar.gz"
+  resolution: "passport-cas@https://github.com/coursetable/passport-cas.git#commit=79612f1fb25fea7d62a7c38701494411cf560201"
   dependencies:
     "@types/node": "npm:^14.14.14"
     "@types/passport": "npm:^1.0.4"
@@ -3636,7 +3636,7 @@ __metadata:
     uuid: "npm:^8.3.2"
     verror: "npm:^1.10.0"
     xml2js: "npm:^0.4.23"
-  checksum: 10c0/f8ac233accfbe3a52cd3e70509ad6f1a5c8b3ba548402e34970d2387958a773c357c8a589f346436efb4186ed34a145e7b86f08ea9149cbccc49ab79598778f9
+  checksum: 10c0/a845049fd695af544cd4619b82400e605528cbef42a8136c5044aca1bb5141ed8760211de32184544ed4bfca62c9cee45fd42b9289d11c51a64642fcf9f5b4d6
   languageName: node
   linkType: hard
 
@@ -4284,7 +4284,7 @@ __metadata:
     mongoose: "npm:^8.9.5"
     nodemon: "npm:^2.0.15"
     passport: "npm:^0.5.2"
-    passport-cas: "https://github.com/coursetable/passport-cas/archive/79612f1fb25fea7d62a7c38701494411cf560201.tar.gz"
+    passport-cas: "git+https://github.com/coursetable/passport-cas#79612f1"
     passport-strategy: "npm:^1.0.0"
     pdfjs-dist: "npm:^5.4.54"
     ts-node: "npm:^10.9.2"

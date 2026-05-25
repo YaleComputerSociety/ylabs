@@ -37,7 +37,6 @@ export interface ScraperOptions {
   maxOpenAlexPagesPerAuthor?: number;
   manualRecipientCsvDir?: string;
   ignoreWorkPlanner?: boolean;
-  acceptedReviewArtifact?: string;
   triggeredBy?: 'cli' | 'cron' | 'admin';
 }
 
@@ -105,46 +104,18 @@ export interface ScraperFetchMetrics<TFetchMode extends string = ScraperFetchMod
   };
 }
 
-export interface FellowshipCatalogMetrics {
-  discovered: number;
-  emitted: number;
-  created: number;
-  updated: number;
-  unchanged: number;
-  reviewRequired: number;
-  missingPreviouslySeen: number;
-  deadlineParsed: number;
-  deadlineMissing: number;
-}
-
-export interface DescriptionReviewSample {
-  slug: string;
-  name: string;
-  sourceUrl: string;
-  decision: 'accepted' | 'rejected';
-  fullDescription: string;
-  shortDescription: string;
-  evidenceQuote: string;
-  rejectionReasons: string[];
-}
-
-export interface UndergradLlmReviewSample {
-  slug: string;
-  name: string;
-  sourceUrl: string;
-  sourceUrls: string[];
-  quote: string;
-  verdict: 'yes' | 'no' | 'unclear';
-  evidenceSource: 'explicit_text' | 'members_section' | 'none' | (string & {});
-  joinPageUrl: string | null;
-  decision: 'accepted' | 'rejected';
-  rejectionReasons: string[];
-}
-
 export interface ScraperMetrics<TFetchMode extends string = ScraperFetchMode> {
   fetchAttempts?: ScraperFetchAttemptMetrics<TFetchMode>[];
   workPlanner?: WorkPlannerMetrics;
-  fellowshipCatalog?: FellowshipCatalogMetrics;
-  descriptionReviewSamples?: DescriptionReviewSample[];
-  undergradLlmReviewSamples?: UndergradLlmReviewSample[];
+  fellowshipCatalog?: {
+    discovered: number;
+    emitted: number;
+    created: number;
+    updated: number;
+    unchanged: number;
+    reviewRequired: number;
+    missingPreviouslySeen: number;
+    deadlineParsed: number;
+    deadlineMissing: number;
+  };
 }

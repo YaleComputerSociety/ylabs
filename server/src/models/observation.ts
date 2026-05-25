@@ -10,9 +10,7 @@ export type ObservedEntityType =
   | 'user'
   | 'researchEntity'
   | 'researchGroup'
-  | 'researchEntityRelationship'
   | 'researchGroupMember'
-  | 'scholarlyLink'
   | 'paper'
   | 'listing'
   | 'fellowship';
@@ -26,9 +24,7 @@ const observationSchema = new mongoose.Schema(
         'user',
         'researchEntity',
         'researchGroup',
-        'researchEntityRelationship',
         'researchGroupMember',
-        'scholarlyLink',
         'paper',
         'listing',
         'fellowship',
@@ -88,18 +84,6 @@ const observationSchema = new mongoose.Schema(
       ref: 'Observation',
       required: false,
     },
-    cleanupReason: {
-      type: String,
-      required: false,
-    },
-    cleanupAppliedAt: {
-      type: Date,
-      required: false,
-    },
-    cleanupReviewedBy: {
-      type: String,
-      required: false,
-    },
     observationFingerprint: {
       type: String,
       required: false,
@@ -116,7 +100,6 @@ observationSchema.index({ scrapeRunId: 1 });
 observationSchema.index({ sourceId: 1, observedAt: -1 });
 observationSchema.index({ superseded: 1 });
 observationSchema.index({ observationFingerprint: 1, superseded: 1 });
-observationSchema.index({ cleanupAppliedAt: -1 });
 
 export const Observation = mongoose.model('Observation', observationSchema);
 

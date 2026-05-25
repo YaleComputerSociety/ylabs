@@ -19,7 +19,7 @@ Graphify is the shared repo-memory layer for Codex. It helps future sessions nav
    - `graphify update .`
 4. Review:
    - `graphify-out/GRAPH_REPORT.md`
-   - `graphify-out/graph.json`
+   - `graphify-out/graph.html`
 5. Optional: run full semantic extraction when an LLM key is configured:
    - `graphify extract .`
 6. Enable always-on Codex guidance after review:
@@ -31,7 +31,7 @@ Commit useful shared outputs:
 
 - `graphify-out/GRAPH_REPORT.md`
 - `graphify-out/graph.json`
-- `graphify-out/graph.html` only when Graphify generates it; large graphs may skip HTML output and rely on `graph.json` plus `GRAPH_REPORT.md`
+- `graphify-out/graph.html` if the visual graph is useful enough to share
 
 Do not commit local-only state:
 

@@ -1,5 +1,3 @@
-import { isHttpUrl } from '../utils/urlNormalization';
-
 export interface FellowshipApplicationCycleEvidence {
   sourceUrls: string[];
   applicationLink?: string;
@@ -30,7 +28,7 @@ function cleanString(value: unknown): string | undefined {
 
 function cleanHttpUrl(value: unknown): string | undefined {
   const url = cleanString(value);
-  return isHttpUrl(url) ? url : undefined;
+  return url && /^https?:\/\//i.test(url) ? url : undefined;
 }
 
 function dateStatus(
@@ -87,9 +85,7 @@ export function buildFellowshipApplicationCycleEvidence(
   const linkUrls = Array.isArray(fellowship.links)
     ? fellowship.links.map((link: any) => cleanHttpUrl(link?.url)).filter(Boolean)
     : [];
-  const sourceUrls = Array.from(
-    new Set([applicationLink, ...linkUrls].filter(Boolean)),
-  ) as string[];
+  const sourceUrls = Array.from(new Set([applicationLink, ...linkUrls].filter(Boolean))) as string[];
   const sourceBacked = sourceUrls.length > 0;
   const applicationHasOpened = dateStatus(
     fellowship.applicationOpenDate,

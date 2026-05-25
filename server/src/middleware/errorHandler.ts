@@ -3,20 +3,14 @@
  */
 import { Request, Response, NextFunction } from 'express';
 import { NotFoundError, ObjectIdError, IncorrectPermissionsError } from '../utils/errors';
-import { logError } from '../utils/logger';
-import { requestIdFrom } from './requestContext';
 
 /**
  * Global error handler middleware
  * This should be added LAST in your middleware chain
  */
 export const errorHandler = (error: Error, req: Request, res: Response, _next: NextFunction) => {
-  const user = req.user as { netId?: string; netid?: string; _id?: unknown } | undefined;
-  logError('Unhandled request error', error, {
-    requestId: requestIdFrom(req),
-    route: req.originalUrl || req.path,
-    userId: user?.netId || user?.netid || (user?._id ? String(user._id) : undefined),
-  });
+  console.error('Error:', error.message);
+  console.error('Stack:', error.stack);
 
   if (error instanceof NotFoundError) {
     return res.status(error.status).json({ error: error.message });

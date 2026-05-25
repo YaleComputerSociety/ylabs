@@ -37,6 +37,11 @@ const PUBLIC_YALE_HOSTS = new Set([
   'engineering.yale.edu',
 ]);
 
+const MOVED_YALE_COLLEGE_FINANCIAL_AWARD_URLS: Record<string, string> = {
+  '/finances/financial-awards-prizes/mellon-mays-undergraduate-fellowship-program':
+    'https://college.yale.edu/life-at-yale/student-faculty-awards/mellon-mays-undergraduate-fellowship-program',
+};
+
 const MONTHS: Record<string, number> = {
   january: 0,
   february: 1,
@@ -113,6 +118,13 @@ function normalizeLinkUrl(url: string): string {
     const parsed = new URL(url);
     parsed.hostname = parsed.hostname.toLowerCase();
     if (parsed.hostname.endsWith('communityforce.com')) parsed.protocol = 'https:';
+    if (parsed.hostname === 'yalecollege.yale.edu') {
+      const movedUrl =
+        MOVED_YALE_COLLEGE_FINANCIAL_AWARD_URLS[
+          parsed.pathname.toLowerCase().replace(/\/$/, '')
+        ];
+      if (movedUrl) return movedUrl;
+    }
     return parsed.toString();
   } catch {
     return url;

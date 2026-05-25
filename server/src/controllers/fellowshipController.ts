@@ -24,14 +24,6 @@ export const searchFellowshipsController = async (request: Request, response: Re
       purpose,
       globalRegions,
       citizenshipStatus,
-      programCategory,
-      programKind,
-      entryMode,
-      studentFacingCategory,
-      requiresMentorBeforeApply,
-      mentorMatching,
-      undergraduateOnly,
-      yaleCollegeOnly,
     } = request.query;
 
     const parseFilter = (filter: string | undefined): string[] => {
@@ -40,11 +32,6 @@ export const searchFellowshipsController = async (request: Request, response: Re
         .split(/[,|]/)
         .map((s) => s.trim())
         .filter(Boolean);
-    };
-    const parseBoolean = (value: unknown): boolean | undefined => {
-      if (value === 'true') return true;
-      if (value === 'false') return false;
-      return undefined;
     };
 
     const result = await searchFellowships({
@@ -58,14 +45,6 @@ export const searchFellowshipsController = async (request: Request, response: Re
       purpose: parseFilter(purpose as string),
       globalRegions: parseFilter(globalRegions as string),
       citizenshipStatus: parseFilter(citizenshipStatus as string),
-      programCategory: parseFilter(programCategory as string),
-      programKind: parseFilter(programKind as string),
-      entryMode: parseFilter(entryMode as string),
-      studentFacingCategory: parseFilter(studentFacingCategory as string),
-      requiresMentorBeforeApply: parseBoolean(requiresMentorBeforeApply),
-      mentorMatching: parseBoolean(mentorMatching),
-      undergraduateOnly: parseBoolean(undergraduateOnly),
-      yaleCollegeOnly: parseBoolean(yaleCollegeOnly),
     });
 
     response.json({
@@ -83,7 +62,10 @@ export const searchFellowshipsController = async (request: Request, response: Re
 
 export const getFellowshipById = async (request: Request, response: Response) => {
   try {
-    const fellowship = await readFellowship(request.params.id);
+    const currentUser = request.user as { userType?: string } | undefined;
+    const fellowship = await readFellowship(request.params.id, {
+      includeNonPublic: currentUser?.userType === 'admin',
+    });
     response.status(200).json({ fellowship });
   } catch (error: any) {
     if (error.name === 'NotFoundError') {

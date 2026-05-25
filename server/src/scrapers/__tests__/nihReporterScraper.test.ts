@@ -23,47 +23,23 @@ import {
 } from '../sources/nihReporterScraper';
 import type { ScraperContext, ObservationInput } from '../types';
 
-const ACCESS_OR_CONTACT_ARTIFACT_FIELDS = new Set([
-  'acceptingUndergrads',
-  'undergradAccessEvidence',
-  'undergradEvidenceQuote',
-  'undergradRoleEvidenceQuote',
-  'undergradConstraintQuote',
-  'contactInstructionsQuote',
-  'joinPageUrl',
-  'contactName',
-  'contactEmail',
-  'contactRole',
-  'currentUndergradCount',
-  'pastUndergradAdvisees',
-  'offersIndependentStudy',
-  'independentStudyCourses',
-]);
-
-function expectNoAccessOrContactArtifacts(obs: ObservationInput[]) {
-  const artifactFields = obs
-    .filter((o) => ACCESS_OR_CONTACT_ARTIFACT_FIELDS.has(o.field))
-    .map((o) => o.field);
-  expect(artifactFields).toEqual([]);
-}
-
 // ---------------------------------------------------------------------------
 // Sample fixtures (shape matches a real NIH RePORTER `results[i]` record)
 // ---------------------------------------------------------------------------
 
-const grantAvery: NihGrant = {
+const grantArnsten: NihGrant = {
   project_num: '5R01MH123456-03',
   appl_id: 11000001,
   core_project_num: 'R01MH123456',
   project_title: 'Prefrontal cortex circuits in cognitive aging',
   abstract_text: 'We will study PFC circuit dynamics in aging primates.',
-  contact_pi_name: 'STONE, AVERY F',
+  contact_pi_name: 'ARNSTEN, AMY F',
   principal_investigators: [
     {
       profile_id: 1,
-      first_name: 'Avery',
-      last_name: 'Stone',
-      full_name: 'Avery F Stone',
+      first_name: 'Amy',
+      last_name: 'Arnsten',
+      full_name: 'Amy F Arnsten',
       is_contact_pi: true,
     },
   ],
@@ -77,8 +53,8 @@ const grantAvery: NihGrant = {
   project_detail_url: 'https://reporter.nih.gov/project-details/11000001',
 };
 
-const grantAvery2: NihGrant = {
-  ...grantAvery,
+const grantArnsten2: NihGrant = {
+  ...grantArnsten,
   project_num: '5R21AG999999-01',
   appl_id: 11000002,
   core_project_num: 'R21AG999999',
@@ -91,17 +67,17 @@ const grantAvery2: NihGrant = {
   project_detail_url: 'https://reporter.nih.gov/project-details/11000002',
 };
 
-const grantBlake: NihGrant = {
+const grantBreaker: NihGrant = {
   project_num: '1R35GM222222-01',
   appl_id: 12000001,
   project_title: 'Riboswitch discovery and bacterial gene control',
   abstract_text: '',
-  contact_pi_name: 'REED, BLAKE R',
+  contact_pi_name: 'BREAKER, RONALD R',
   principal_investigators: [
     {
       profile_id: 2,
-      first_name: 'Blake',
-      last_name: 'Reed',
+      first_name: 'Ronald',
+      last_name: 'Breaker',
       is_contact_pi: true,
     },
   ],
@@ -131,12 +107,12 @@ const grantOrphan: NihGrant = {
 
 describe('canonicalPiName', () => {
   it('converts "LAST, FIRST MIDDLE" into "First Last"', () => {
-    expect(canonicalPiName('STONE, AVERY F')).toBe('Avery Stone');
-    expect(canonicalPiName('REED, BLAKE R')).toBe('Blake Reed');
+    expect(canonicalPiName('ARNSTEN, AMY F')).toBe('Amy Arnsten');
+    expect(canonicalPiName('BREAKER, RONALD R')).toBe('Ronald Breaker');
   });
 
   it('passes through already-natural-order names with title casing for ALL CAPS', () => {
-    expect(canonicalPiName('AVERY STONE')).toBe('Avery Stone');
+    expect(canonicalPiName('AMY ARNSTEN')).toBe('Amy Arnsten');
   });
 
   it('returns empty string on falsy input', () => {
@@ -148,8 +124,8 @@ describe('canonicalPiName', () => {
 
 describe('piEntityKey / piSlugForResearchGroup', () => {
   it('produces a deterministic, slug-friendly key per PI', () => {
-    expect(piEntityKey('Avery Stone')).toBe('nih-pi:avery-stone');
-    expect(piSlugForResearchGroup('Avery Stone')).toBe('nih-pi-avery-stone');
+    expect(piEntityKey('Amy Arnsten')).toBe('nih-pi:amy-arnsten');
+    expect(piSlugForResearchGroup('Amy Arnsten')).toBe('nih-pi-amy-arnsten');
   });
   it('returns empty string for empty input', () => {
     expect(piEntityKey('')).toBe('');
@@ -163,12 +139,12 @@ describe('piEntityKey / piSlugForResearchGroup', () => {
 
 describe('pickContactPiName', () => {
   it('prefers the structured is_contact_pi entry over the unstructured string', () => {
-    expect(pickContactPiName(grantAvery)).toBe('Avery Stone');
+    expect(pickContactPiName(grantArnsten)).toBe('Amy Arnsten');
   });
 
   it('falls back to contact_pi_name when no structured PI is marked contact', () => {
     const grant: NihGrant = {
-      ...grantAvery,
+      ...grantArnsten,
       principal_investigators: [],
       contact_pi_name: 'SMITH, JOHN',
     };
@@ -186,16 +162,16 @@ describe('pickContactPiName', () => {
 
 describe('groupGrantsByPi', () => {
   it('groups multiple grants for the same PI under a single canonical key', () => {
-    const groups = groupGrantsByPi([grantAvery, grantAvery2, grantBlake]);
+    const groups = groupGrantsByPi([grantArnsten, grantArnsten2, grantBreaker]);
     expect(groups.size).toBe(2);
-    expect(groups.get('Avery Stone')).toHaveLength(2);
-    expect(groups.get('Blake Reed')).toHaveLength(1);
+    expect(groups.get('Amy Arnsten')).toHaveLength(2);
+    expect(groups.get('Ronald Breaker')).toHaveLength(1);
   });
 
   it('drops grants with no resolvable contact PI', () => {
-    const groups = groupGrantsByPi([grantAvery, grantOrphan]);
+    const groups = groupGrantsByPi([grantArnsten, grantOrphan]);
     expect(groups.size).toBe(1);
-    expect(groups.has('Avery Stone')).toBe(true);
+    expect(groups.has('Amy Arnsten')).toBe(true);
   });
 
   it('returns an empty map for an empty input', () => {
@@ -209,7 +185,7 @@ describe('groupGrantsByPi', () => {
 
 describe('grantToRecord', () => {
   it('normalizes the API record to the schema-shaped record', () => {
-    const rec = grantToRecord(grantAvery);
+    const rec = grantToRecord(grantArnsten);
     expect(rec.id).toBe('5R01MH123456-03');
     expect(rec.agency).toBe('NIMH');
     expect(rec.title).toBe('Prefrontal cortex circuits in cognitive aging');
@@ -263,52 +239,38 @@ function mockUserModel(rows: any[]) {
 describe('findUserForPi', () => {
   it('returns null when no candidates match the surname', async () => {
     const um = mockUserModel([]);
-    expect(await findUserForPi('Avery Stone', um)).toBeNull();
+    expect(await findUserForPi('Amy Arnsten', um)).toBeNull();
   });
 
   it('returns the unique candidate when there is exactly one surname match', async () => {
     const um = mockUserModel([
-      { _id: 'u1', fname: 'Avery', lname: 'Stone', netid: 'as1' },
+      { _id: 'u1', fname: 'Amy', lname: 'Arnsten', netid: 'aa1' },
     ]);
-    expect(await findUserForPi('Avery Stone', um)).toMatchObject({ _id: 'u1', netid: 'as1' });
+    expect(await findUserForPi('Amy Arnsten', um)).toEqual({ _id: 'u1', netid: 'aa1' });
   });
 
   it('disambiguates by exact first name when surname has multiple hits', async () => {
     const um = mockUserModel([
-      { _id: 'u1', fname: 'Avery', lname: 'Stone', netid: 'as1' },
-      { _id: 'u2', fname: 'John', lname: 'Stone', netid: 'js1' },
+      { _id: 'u1', fname: 'Amy', lname: 'Arnsten', netid: 'aa1' },
+      { _id: 'u2', fname: 'John', lname: 'Arnsten', netid: 'ja1' },
     ]);
-    expect(await findUserForPi('Avery Stone', um)).toMatchObject({ _id: 'u1', netid: 'as1' });
+    expect(await findUserForPi('Amy Arnsten', um)).toEqual({ _id: 'u1', netid: 'aa1' });
   });
 
-  it('falls back to safe first-name prefix match when exact fname fails', async () => {
+  it('falls back to first-initial match when exact fname fails', async () => {
     const um = mockUserModel([
-      { _id: 'u1', fname: 'Amelia', lname: 'Stone', netid: 'avx1' },
-      { _id: 'u2', fname: 'John', lname: 'Stone', netid: 'js1' },
+      { _id: 'u1', fname: 'Amelia', lname: 'Arnsten', netid: 'ax1' },
+      { _id: 'u2', fname: 'John', lname: 'Arnsten', netid: 'ja1' },
     ]);
-    expect(await findUserForPi('Ame Stone', um)).toMatchObject({ _id: 'u1', netid: 'avx1' });
-  });
-
-  it('does not match unrelated full first names that share only an initial', async () => {
-    const um = mockUserModel([
-      { _id: 'u1', fname: 'Milo', lname: 'Morgan', netid: 'mm1' },
-    ]);
-    expect(await findUserForPi('Mara Rivera Morgan', um)).toBeNull();
+    expect(await findUserForPi('Amy Arnsten', um)).toEqual({ _id: 'u1', netid: 'ax1' });
   });
 
   it('returns null when ambiguity remains after first-initial fallback', async () => {
     const um = mockUserModel([
-      { _id: 'u1', fname: 'Amelia', lname: 'Stone', netid: 'avx1' },
-      { _id: 'u2', fname: 'Anne', lname: 'Stone', netid: 'ans1' },
+      { _id: 'u1', fname: 'Amelia', lname: 'Arnsten', netid: 'ax1' },
+      { _id: 'u2', fname: 'Anne', lname: 'Arnsten', netid: 'an1' },
     ]);
-    expect(await findUserForPi('Avery Stone', um)).toBeNull();
-  });
-
-  it('ignores synthetic funding-only user stubs', async () => {
-    const um = mockUserModel([
-      { _id: 'stub', fname: 'Avery', lname: 'Stone', netid: 'nih-pi:avery-stone' },
-    ]);
-    expect(await findUserForPi('Avery Stone', um)).toBeNull();
+    expect(await findUserForPi('Amy Arnsten', um)).toBeNull();
   });
 
   it('returns null for an empty PI name', async () => {
@@ -324,33 +286,47 @@ describe('findUserForPi', () => {
 // ---------------------------------------------------------------------------
 
 describe('piGrantsToObservations', () => {
-  it('keeps unmatched funding PIs out of canonical user identity observations', () => {
-    const obs = piGrantsToObservations('External Collaborator', [grantAvery], null);
+  it('emits user + research-group observations when no Yale user is matched', () => {
+    const obs = piGrantsToObservations('Amy Arnsten', [grantArnsten, grantArnsten2], null);
 
-    expect(obs).toEqual([]);
-  });
+    const userObs = obs.filter((o) => o.entityType === 'user');
+    expect(userObs.length).toBeGreaterThan(0);
+    expect(userObs.every((o) => o.entityKey === 'nih-pi:amy-arnsten')).toBe(true);
+    expect(userObs.find((o) => o.field === 'fname')?.value).toBe('Amy');
+    expect(userObs.find((o) => o.field === 'lname')?.value).toBe('Arnsten');
+    expect(userObs.find((o) => o.field === 'userType')?.value).toBe('faculty');
 
-  it('does not emit research-entity grant observations when no Yale user is matched', () => {
-    const obs = piGrantsToObservations('Avery Stone', [grantAvery, grantAvery2], null);
+    const groupObs = obs.filter((o) => o.entityType === 'researchEntity');
+    expect(groupObs.every((o) => o.entityKey === 'nih-pi-amy-arnsten')).toBe(true);
+    expect(groupObs.find((o) => o.field === 'slug')?.value).toBe('nih-pi-amy-arnsten');
+    expect(groupObs.find((o) => o.field === 'name')?.value).toBe('Amy Arnsten Lab');
+    expect(groupObs.find((o) => o.field === 'kind')?.value).toBe('lab');
+    expect(groupObs.find((o) => o.field === 'fundingAgencies')?.value).toEqual(['NIH']);
 
-    expect(obs).toEqual([]);
+    const recentGrants = groupObs.find((o) => o.field === 'recentGrants')?.value as any[];
+    expect(recentGrants).toHaveLength(2);
+    // Sorted descending by start_date — Arnsten1 (2025-04-01) before Arnsten2 (2024-08-15).
+    expect(recentGrants[0].id).toBe('5R01MH123456-03');
+    expect(recentGrants[1].id).toBe('5R21AG999999-01');
+
+    expect(groupObs.find((o) => o.field === 'recentGrantCount')?.value).toBe(2);
+    const lastObserved = groupObs.find((o) => o.field === 'lastObservedAt')?.value as Date;
+    expect(lastObserved).toBeInstanceOf(Date);
+    expect(lastObserved.toISOString().slice(0, 10)).toBe('2025-04-01');
+
+    expect(groupObs.find((o) => o.field === 'inferredPiUserKey')?.value).toBe(
+      'nih-pi:amy-arnsten',
+    );
+    expect(groupObs.find((o) => o.field === 'inferredPiUserId')).toBeUndefined();
   });
 
   it('skips the user observation block and emits inferredPiUserId when matched', () => {
-    const obs = piGrantsToObservations(
-      'Blake Reed',
-      [grantBlake],
-      {
-        _id: 'user-abc',
-        netid: 'br1',
-      },
-      { slug: 'reed-lab', createIfMissing: false },
-    );
+    const obs = piGrantsToObservations('Ronald Breaker', [grantBreaker], {
+      _id: 'user-abc',
+      netid: 'rrb1',
+    });
     expect(obs.filter((o) => o.entityType === 'user')).toHaveLength(0);
     const groupObs = obs.filter((o) => o.entityType === 'researchEntity');
-    expect(groupObs.every((o) => o.entityKey === 'reed-lab')).toBe(true);
-    expect(groupObs.find((o) => o.field === 'slug')).toBeUndefined();
-    expect(groupObs.find((o) => o.field === 'name')).toBeUndefined();
     const piId = groupObs.find((o) => o.field === 'inferredPiUserId');
     expect(piId?.value).toBe('user-abc');
     expect(piId?.confidenceOverride).toBeGreaterThanOrEqual(0.8);
@@ -359,20 +335,12 @@ describe('piGrantsToObservations', () => {
 
   it('truncates recentGrants to the configured cap', () => {
     const many: NihGrant[] = Array.from({ length: 20 }, (_v, i) => ({
-      ...grantAvery,
+      ...grantArnsten,
       project_num: `R01-${i}`,
       appl_id: 20000000 + i,
       project_start_date: `2024-${String((i % 12) + 1).padStart(2, '0')}-01T00:00:00`,
     }));
-    const obs = piGrantsToObservations(
-      'Avery Stone',
-      many,
-      {
-        _id: 'user-avery',
-        netid: 'as1',
-      },
-      { slug: 'stone-lab', createIfMissing: false },
-    );
+    const obs = piGrantsToObservations('Amy Arnsten', many, null);
     const recentGrants = obs.find(
       (o) => o.entityType === 'researchEntity' && o.field === 'recentGrants',
     )?.value as any[];
@@ -385,8 +353,8 @@ describe('piGrantsToObservations', () => {
   });
 
   it('returns no observations on empty inputs', () => {
-    expect(piGrantsToObservations('', [grantAvery], null)).toEqual([]);
-    expect(piGrantsToObservations('Avery Stone', [], null)).toEqual([]);
+    expect(piGrantsToObservations('', [grantArnsten], null)).toEqual([]);
+    expect(piGrantsToObservations('Amy Arnsten', [], null)).toEqual([]);
   });
 });
 
@@ -424,24 +392,24 @@ describe('NihReporterScraper.run', () => {
   it('paginates the API, groups by PI, resolves users, and emits observations', async () => {
     const postSpy = vi.spyOn(axios, 'post').mockImplementation(async (_url, body) => {
       const offset = (body as any).offset || 0;
-      // Page 1 returns 2 grants for Stone + 1 for Reed; page 2 returns empty.
+      // Page 1 returns 2 grants for Arnsten + 1 for Breaker; page 2 returns empty.
       if (offset === 0) {
         return {
-          data: { meta: { total: 3, offset: 0, limit: 500 }, results: [grantAvery, grantAvery2, grantBlake] },
+          data: { meta: { total: 3, offset: 0, limit: 500 }, results: [grantArnsten, grantArnsten2, grantBreaker] },
         } as any;
       }
       return { data: { meta: { total: 3, offset, limit: 500 }, results: [] } } as any;
     });
 
-    // Match Reed but not Stone.
+    // Match Breaker but not Arnsten.
     const userModel = {
       find: vi.fn((query: any) => ({
         limit: () => ({
           lean: async () => {
             // The query includes a regex on lname; we just check the source string.
             const src: string = query.lname?.source || '';
-            if (/Reed/i.test(src)) {
-              return [{ _id: 'reed-id', fname: 'Blake', lname: 'Reed', netid: 'br1' }];
+            if (/Breaker/i.test(src)) {
+              return [{ _id: 'breaker-id', fname: 'Ronald', lname: 'Breaker', netid: 'rrb1' }];
             }
             return [];
           },
@@ -449,47 +417,43 @@ describe('NihReporterScraper.run', () => {
       })) as any,
     };
 
-    const researchEntityTargetFinder = vi.fn(async () => ({
-      slug: 'reed-lab',
-      createIfMissing: false,
-    }));
-    const scraper = new NihReporterScraper({ userModel, researchEntityTargetFinder });
+    const scraper = new NihReporterScraper({ userModel });
     const { ctx, emitted } = makeContext();
     const result = await scraper.run(ctx);
 
     expect(postSpy).toHaveBeenCalled();
     expect(result.entitiesObserved).toBe(2); // 2 unique PIs
     expect(result.notes).toContain('matched 1');
-    expect(result.notes).toContain('unmatched 1');
+    expect(result.notes).toContain('stubbed 1');
 
-    // Stone unmatched → no user obs from funding identity alone
-    const averyUserObs = emitted.filter(
-      (o) => o.entityType === 'user' && o.entityKey === 'nih-pi:avery-stone',
+    // Arnsten unmatched → user obs present
+    const arnstenUserObs = emitted.filter(
+      (o) => o.entityType === 'user' && o.entityKey === 'nih-pi:amy-arnsten',
     );
-    expect(averyUserObs).toEqual([]);
+    expect(arnstenUserObs.length).toBeGreaterThan(0);
 
-    // Reed matched → no user obs
-    const blakeUserObs = emitted.filter(
-      (o) => o.entityType === 'user' && o.entityKey === 'nih-pi:blake-reed',
+    // Breaker matched → no user obs
+    const breakerUserObs = emitted.filter(
+      (o) => o.entityType === 'user' && o.entityKey === 'nih-pi:ronald-breaker',
     );
-    expect(blakeUserObs).toHaveLength(0);
+    expect(breakerUserObs).toHaveLength(0);
 
-    // Unmatched PI should not mint a student-facing research profile.
-    const averyGroup = emitted.filter(
-      (o) => o.entityType === 'researchEntity' && o.entityKey === 'nih-pi-avery-stone',
+    // Both should have ResearchGroup observations
+    const arnstenGroup = emitted.filter(
+      (o) => o.entityType === 'researchEntity' && o.entityKey === 'nih-pi-amy-arnsten',
     );
-    expect(averyGroup).toEqual([]);
+    expect(arnstenGroup.length).toBeGreaterThan(0);
+    expect(arnstenGroup.find((o) => o.field === 'recentGrantCount')?.value).toBe(2);
 
-    const blakeGroup = emitted.filter(
-      (o) => o.entityType === 'researchEntity' && o.entityKey === 'reed-lab',
+    const breakerGroup = emitted.filter(
+      (o) => o.entityType === 'researchEntity' && o.entityKey === 'nih-pi-ronald-breaker',
     );
-    expect(blakeGroup.find((o) => o.field === 'inferredPiUserId')?.value).toBe('reed-id');
-    expect(blakeGroup.find((o) => o.field === 'slug')).toBeUndefined();
+    expect(breakerGroup.find((o) => o.field === 'inferredPiUserId')?.value).toBe('breaker-id');
   });
 
   it('honors the limit option (caps PIs processed, not raw grants)', async () => {
     vi.spyOn(axios, 'post').mockResolvedValueOnce({
-      data: { meta: { total: 3, offset: 0, limit: 500 }, results: [grantAvery, grantAvery2, grantBlake] },
+      data: { meta: { total: 3, offset: 0, limit: 500 }, results: [grantArnsten, grantArnsten2, grantBreaker] },
     } as any);
     vi.spyOn(axios, 'post').mockResolvedValueOnce({
       data: { meta: { total: 3, offset: 3, limit: 500 }, results: [] },
@@ -500,13 +464,13 @@ describe('NihReporterScraper.run', () => {
     const { ctx, emitted } = makeContext({ limit: 1 });
     const result = await scraper.run(ctx);
 
-    // Only one PI is processed, but unmatched PIs no longer mint profile rows.
+    // Only one PI should have been emitted observations for.
     const groupKeys = new Set(
       emitted
         .filter((o) => o.entityType === 'researchEntity')
         .map((o) => o.entityKey),
     );
-    expect(groupKeys.size).toBe(0);
+    expect(groupKeys.size).toBe(1);
     expect(result.entitiesObserved).toBe(1);
   });
 });

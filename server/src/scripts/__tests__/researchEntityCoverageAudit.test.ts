@@ -9,16 +9,15 @@ import {
 
 function baseFacts(): CoverageAuditFacts {
   return {
-    slug: 'dept-cs-fixture-chen',
-    name: 'Fixture Chen Lab',
+    slug: 'dept-cs-yuejie-chi',
+    name: 'Yuejie Chi Lab',
     kind: 'lab',
     school: 'Yale School of Engineering & Applied Science',
-    websiteUrl: 'https://fixture-chen-lab.yale.edu/',
+    websiteUrl: 'https://yuejiechi.github.io/',
     description: '',
     shortDescription: '',
     fullDescription: '',
     counts: {
-      departments: 0,
       researchAreas: 0,
       sourceUrls: 2,
       members: 0,
@@ -59,7 +58,6 @@ describe('buildCoverageIssues', () => {
     const issues = buildCoverageIssues(baseFacts());
 
     expect(issues).toContain('MISSING_DESCRIPTION');
-    expect(issues).toContain('NO_DEPARTMENTS');
     expect(issues).toContain('NO_MEMBERS');
     expect(issues).toContain('NO_PATHWAYS');
     expect(issues).toContain('NO_PUBLIC_CONTACT_ROUTE');
@@ -78,54 +76,6 @@ describe('buildCoverageIssues', () => {
 
     expect(buildCoverageIssues(facts)).not.toContain('SUSPICIOUS_CONSTRAINT_QUOTE_UNCLASSIFIED');
   });
-
-  it('treats source-backed negative availability as access coverage, not a missing actionable-access gap', () => {
-    const facts = {
-      ...baseFacts(),
-      observationFlags: {
-        hasMicrositeObservation: true,
-        hasInferredPiObservation: false,
-        suspiciousConstraintQuotes: ['We are not currently accepting undergraduate researchers.'],
-      },
-      signalTypes: ['NOT_CURRENTLY_AVAILABLE'],
-    };
-
-    const issues = buildCoverageIssues(facts);
-
-    expect(issues).not.toContain('NO_ACTIONABLE_ACCESS');
-    expect(issues).not.toContain('MICROSITE_OBSERVED_NO_ACTIONABLE_ARTIFACTS');
-    expect(issues).not.toContain('SUSPICIOUS_CONSTRAINT_QUOTE_UNCLASSIFIED');
-    expect(issues).not.toContain('BLANK_DETAIL_RISK');
-  });
-
-  it('does not flag department context when a research entity has department metadata', () => {
-    const facts = {
-      ...baseFacts(),
-      counts: {
-        ...baseFacts().counts,
-        departments: 1,
-      },
-    };
-
-    expect(buildCoverageIssues(facts)).not.toContain('NO_DEPARTMENTS');
-  });
-
-  it('treats active legacy listings as scraper coverage seeds when canonical coverage is sparse', () => {
-    const facts = {
-      ...baseFacts(),
-      counts: {
-        ...baseFacts().counts,
-        pathways: 1,
-        postedOpportunities: 1,
-        activeListings: 1,
-      },
-    };
-
-    const issues = buildCoverageIssues(facts);
-
-    expect(issues).toContain('LEGACY_LISTING_SCRAPER_COVERAGE_SEED');
-    expect(issues).not.toContain('NO_ACTIONABLE_ACCESS');
-  });
 });
 
 describe('buildCoverageAuditRow', () => {
@@ -142,8 +92,8 @@ describe('summarizeIssueCounts', () => {
     const sparse = buildCoverageAuditRow(baseFacts());
     const healthier = buildCoverageAuditRow({
       ...baseFacts(),
-      slug: 'example-research-institute',
-      name: 'Example Research Institute',
+      slug: 'wu-tsai',
+      name: 'Wu Tsai Institute',
       description: 'Studies neuroscience and computation.',
       shortDescription: 'Neuroscience institute.',
       counts: {

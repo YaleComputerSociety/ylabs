@@ -875,7 +875,25 @@ const Analytics = () => {
         description="Operational tables and lower-priority counts remain below the readout for drilldown."
       />
 
-      <section className="mb-10">
+      <nav
+        aria-label="Analytics detail sections"
+        className="mb-6 flex flex-wrap gap-2 text-sm font-semibold"
+      >
+        <a className="rounded-md border border-[var(--yr-line)] px-3 py-2 text-blue-700" href="#visitor-statistics">
+          Visitors
+        </a>
+        <a className="rounded-md border border-[var(--yr-line)] px-3 py-2 text-blue-700" href="#diagnostics">
+          Diagnostics
+        </a>
+        <a
+          className="rounded-md border border-[var(--yr-line)] px-3 py-2 text-blue-700"
+          href="#posted-opportunities-overview"
+        >
+          Opportunities
+        </a>
+      </nav>
+
+      <section id="visitor-statistics" className="mb-10">
         <h2 className="text-2xl font-semibold mb-4 text-slate-950 border-b border-[var(--yr-line)] pb-2">
           Visitor Statistics
         </h2>
@@ -959,7 +977,7 @@ const Analytics = () => {
         </div>
       </section>
 
-      <section className="mb-10">
+      <section id="diagnostics" className="mb-10">
         <h2 className="text-2xl font-semibold mb-4 text-slate-950 border-b border-[var(--yr-line)] pb-2">
           User Engagement
         </h2>
@@ -1065,7 +1083,7 @@ const Analytics = () => {
         </section>
       )}
 
-      <section className="mb-10">
+      <section id="posted-opportunities-overview" className="mb-10">
         <div className="mb-4 flex flex-col gap-2 border-b border-[var(--yr-line)] pb-2 md:flex-row md:items-end md:justify-between">
           <div>
             <h2 className="text-2xl font-bold text-gray-800">High-Impact Diagnostics</h2>

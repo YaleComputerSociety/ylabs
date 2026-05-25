@@ -28,6 +28,10 @@ const buildProgramSearchFilters = (query: Request['query']) => ({
   globalRegions: parseFilterParam(query.globalRegions),
   citizenshipStatus: parseFilterParam(query.citizenshipStatus),
   programCategory: parseFilterParam(query.programCategory),
+  programKind: parseFilterParam(query.programKind),
+  entryMode: parseFilterParam(query.entryMode),
+  studentFacingCategory: parseFilterParam(query.studentFacingCategory),
+  studentVisibilityTier: parseFilterParam(query.studentVisibilityTier),
 });
 
 const hasProgramSearchFilters = (filters: ReturnType<typeof buildProgramSearchFilters>) =>
@@ -36,7 +40,11 @@ const hasProgramSearchFilters = (filters: ReturnType<typeof buildProgramSearchFi
   filters.purpose.length > 0 ||
   filters.globalRegions.length > 0 ||
   filters.citizenshipStatus.length > 0 ||
-  filters.programCategory.length > 0;
+  filters.programCategory.length > 0 ||
+  filters.programKind.length > 0 ||
+  filters.entryMode.length > 0 ||
+  filters.studentFacingCategory.length > 0 ||
+  filters.studentVisibilityTier.length > 0;
 
 const logProgramSearchEvent = async (req: Request, res: Response, next: NextFunction) => {
   const originalJson = res.json.bind(res);

@@ -10,15 +10,28 @@ import {
 } from '../models/studentVisibility';
 import * as itemOps from './itemOperations';
 
+export interface FellowshipReadOptions {
+  includeNonPublic?: boolean;
+}
+
+const publicFellowshipFilter = (options: FellowshipReadOptions = {}) =>
+  options.includeNonPublic
+    ? {}
+    : { studentVisibilityTier: { $in: publicStudentVisibilityTiers } };
+
 export const createFellowship = async (data: any) => {
   const fellowship = new Fellowship(data);
   await fellowship.save();
   return fellowship.toObject();
 };
 
-export const readFellowship = async (id: any) => {
+export const readFellowship = async (id: any, options: FellowshipReadOptions = {}) => {
   if (mongoose.Types.ObjectId.isValid(id)) {
-    const fellowship = await Fellowship.findById(id);
+    const fellowship = await Fellowship.findOne({
+      _id: id,
+      archived: false,
+      ...publicFellowshipFilter(options),
+    });
     if (!fellowship) {
       throw new NotFoundError(`Fellowship not found with ObjectId: ${id}`);
     }
@@ -28,21 +41,23 @@ export const readFellowship = async (id: any) => {
   }
 };
 
-export const readFellowships = async (ids: any[]) => {
-  const fellowships = [];
-  for (const id of ids) {
-    if (mongoose.Types.ObjectId.isValid(id)) {
-      const fellowship = await Fellowship.findById(id);
-      if (fellowship) {
-        fellowships.push(fellowship.toObject());
-      }
-    }
-  }
-  return fellowships;
+export const readFellowships = async (ids: any[], options: FellowshipReadOptions = {}) => {
+  const validIds = ids.filter((id) => mongoose.Types.ObjectId.isValid(id));
+  if (validIds.length === 0) return [];
+
+  const fellowships = await Fellowship.find({
+    _id: { $in: validIds },
+    archived: false,
+    ...publicFellowshipFilter(options),
+  });
+  return fellowships.map((fellowship: any) => fellowship.toObject());
 };
 
 export const readAllFellowships = async () => {
-  const fellowships = await Fellowship.find({ archived: false });
+  const fellowships = await Fellowship.find({
+    archived: false,
+    ...publicFellowshipFilter(),
+  });
   return fellowships.map((fellowship: any) => fellowship.toObject());
 };
 
@@ -192,6 +207,7 @@ export const searchFellowships = async (params: {
   undergraduateOnly?: boolean;
   yaleCollegeOnly?: boolean;
   studentVisibilityTier?: StudentVisibilityTier[];
+  includeNonPublic?: boolean;
   includeOperatorReview?: boolean;
   includeSuppressed?: boolean;
 }) => {
@@ -215,16 +231,17 @@ export const searchFellowships = async (params: {
     undergraduateOnly,
     yaleCollegeOnly,
     studentVisibilityTier = [],
+    includeNonPublic = false,
     includeOperatorReview = false,
     includeSuppressed = false,
   } = params;
 
   const filter: any = { archived: false };
-  if (studentVisibilityTier.length > 0) {
+  if (includeNonPublic && studentVisibilityTier.length > 0) {
     filter.studentVisibilityTier = { $in: studentVisibilityTier };
-  } else if (includeSuppressed) {
+  } else if (includeNonPublic && includeSuppressed) {
     // Admin/operator mode: keep all archived=false tiers in scope.
-  } else if (includeOperatorReview) {
+  } else if (includeNonPublic && includeOperatorReview) {
     filter.studentVisibilityTier = {
       $in: [...publicStudentVisibilityTiers, 'operator_review'],
     };
@@ -305,6 +322,10 @@ export const searchFellowships = async (params: {
 };
 
 export const getFilterOptions = async () => {
+  const visibleFilter = {
+    archived: false,
+    ...publicFellowshipFilter(),
+  };
   const [
     yearOfStudyOptions,
     termOfAwardOptions,
@@ -316,15 +337,15 @@ export const getFilterOptions = async () => {
     entryModeOptions,
     studentFacingCategoryOptions,
   ] = await Promise.all([
-    Fellowship.distinct('yearOfStudy', { archived: false }),
-    Fellowship.distinct('termOfAward', { archived: false }),
-    Fellowship.distinct('purpose', { archived: false }),
-    Fellowship.distinct('globalRegions', { archived: false }),
-    Fellowship.distinct('citizenshipStatus', { archived: false }),
-    Fellowship.distinct('programCategory', { archived: false }),
-    Fellowship.distinct('programKind', { archived: false }),
-    Fellowship.distinct('entryMode', { archived: false }),
-    Fellowship.distinct('studentFacingCategory', { archived: false }),
+    Fellowship.distinct('yearOfStudy', visibleFilter),
+    Fellowship.distinct('termOfAward', visibleFilter),
+    Fellowship.distinct('purpose', visibleFilter),
+    Fellowship.distinct('globalRegions', visibleFilter),
+    Fellowship.distinct('citizenshipStatus', visibleFilter),
+    Fellowship.distinct('programCategory', visibleFilter),
+    Fellowship.distinct('programKind', visibleFilter),
+    Fellowship.distinct('entryMode', visibleFilter),
+    Fellowship.distinct('studentFacingCategory', visibleFilter),
   ]);
 
   return {
