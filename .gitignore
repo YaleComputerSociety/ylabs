@@ -78,3 +78,4 @@ graphify-out/memory/
 # Local agent and browser-driver support files
 .codex/
 .playwright-libs/
+tmp/
