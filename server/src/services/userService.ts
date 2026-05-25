@@ -410,7 +410,7 @@ export const clearFavListings = async (id: any) => {
   return newUser;
 };
 
-export const addFavFellowships = async (id: any, fellowships: [mongoose.Types.ObjectId]) => {
+export const addFavFellowships = async (id: any, fellowships: mongoose.Types.ObjectId[]) => {
   const user = await readUser(id);
 
   user.favFellowships.unshift(...fellowships);
@@ -429,7 +429,7 @@ export const addFavFellowships = async (id: any, fellowships: [mongoose.Types.Ob
 
 export const deleteFavFellowships = async (
   id: any,
-  removedFellowships: [mongoose.Types.ObjectId],
+  removedFellowships: mongoose.Types.ObjectId[],
 ) => {
   const user = await readUser(id);
 

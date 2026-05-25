@@ -1,6 +1,6 @@
 # Scraper Audit Guide
 
-Last updated: 2026-05-13
+Last updated: 2026-05-25
 
 This guide explains how to audit each scraper before production writes, what each scraper writes, and how the output supports Yale Research.
 
@@ -140,8 +140,9 @@ The reaper defaults to dry-run. Use `--apply` only after reviewing the dry-run o
 1. `dept-faculty-roster`: entity/faculty/lab ownership trunk.
 2. `lab-microsite-undergrad-llm`: high-value pathway evidence, higher risk because it uses LLM and live websites.
 3. `undergrad-fellowships-recipients`: past-undergrad and fellowship-compatible evidence.
-4. `centers-institutes-index`, `ysm-atoz-index`, `yse-centers-index`: entity discovery.
-5. `nih-reporter`, `nsf-award-search`, `openalex`, `arxiv`: enrichment, funding, publication, and preprint context.
+4. `yale-college-fellowships-office`: fellowship program and application-cycle observations.
+5. `centers-institutes-index`, `ysm-atoz-index`, `yse-centers-index`: entity discovery.
+6. `nih-reporter`, `nsf-award-search`, `openalex`, `arxiv`: enrichment, funding, publication, and preprint context.
 
 ## Source Map
 
@@ -150,6 +151,7 @@ The reaper defaults to dry-run. Use `--apply` only after reviewing the dry-run o
 | `dept-faculty-roster`              | Discover faculty, official profile URLs, ORCID, lab/personal sites, Scholar review candidates, inferred PI ownership | `researchEntity`, `user`                                               | `users`, `research_entities`                                                    | Should not create `entry_pathways` or `access_signals`. `contact_routes` are a future decision unless guarded contact materialization is added.                                             | Audit by department when possible. Current configs cover Econ, MCDB, CS, Psych, Math, Physics, Statistics, and Astronomy. Large runs can be slow because profile pages are enriched sequentially.                                                       |
 | `lab-microsite-undergrad-llm`      | Extract evidence from lab/faculty websites: join pages, role language, constraints, contact instructions | `researchEntity`                                                       | `research_entities`, then access records when evidence supports them            | Can create `access_signals`, `entry_pathways`, and guarded `contact_routes` through `accessMaterializer.ts`. Should preserve quotes/source URLs and avoid final claims inside scraper code. | Start with small `--limit`. Requires `OPENAI_API_KEY`. Review quotes and `quoteSourceUrl` carefully.                                                                                                                                                  |
 | `undergrad-fellowships-recipients` | Capture evidence of past undergrad advisees and fellowship-compatible research                           | `researchEntity`                                                       | `research_entities`, `entry_pathways`, `access_signals`                         | Can create exploratory outreach pathways plus `PAST_UNDERGRADS` and `FELLOWSHIP_COMPATIBLE` signals. Fellowship funding remains formalization evidence, not a standalone entry pathway.     | Many programs require manual upload or CSV/PDF handling. Audit skipped/manual-upload programs separately.                                                                                                                                             |
+| `yale-college-fellowships-office`  | Capture official Yale fellowship program titles, deadlines, application links, source metadata, and program classification | `fellowship`                                                           | `observations`, then Fellowship/program records through guarded backfill/materialization flows | Emits program classification and student-visibility input evidence. It does not create `PostedOpportunity`, `EntryPathway`, `AccessSignal`, or `ContactRoute` rows from fellowship funding pages. | Canonicalizes the moved Mellon Mays URL from `yalecollege.yale.edu/finances/...` to `college.yale.edu/life-at-yale/...`; never fetches gated CommunityForce application pages.                                                                         |
 | `centers-institutes-index`         | Discover centers, institutes, child centers, directors/members, official pages                           | `researchEntity`, `user`, `researchGroupMember` depending on extractor | `research_entities`, `users`, `research_entity_members`                         | Entity and membership context. Should not imply undergrad access unless explicit access evidence is added later.                                                                            | Check member/director parsing and skipped JS/gated configs.                                                                                                                                                                                           |
 | `ysm-atoz-index`                   | Discover YSM lab websites from official index                                                            | `researchEntity`                                                       | `research_entities`                                                             | Discovery only. Should not emit or materialize undergraduate-access claims from index rows.                                                                                                 | Useful seed for lab microsite crawling. Audit that it does not create student-facing access claims by itself.                                                                                                                                         |
 | `yse-centers-index`                | Discover YSE centers/programs/initiatives                                                                | `researchEntity`                                                       | `research_entities`                                                             | Discovery only. Should not emit or materialize undergraduate-access claims from index rows.                                                                                                 | Useful seed for broader research entities.                                                                                                                                                                                                            |
@@ -217,6 +219,32 @@ Project impact:
 - Main source for credible non-posted pathways.
 - Helps students answer "what should I do next?" from official lab evidence.
 
+### `department-undergrad-research`
+
+Commands:
+
+```bash
+SCRAPER_ENV=development \
+  npx -y corepack@0.34.7 yarn scrape run --source department-undergrad-research --limit 10 --dry-run
+```
+
+Expected collections after an accepted materialized write:
+
+- `observations`: department-backed research entity, access evidence, contact, and application-route fields.
+- `research_entities`: lab or program-like research homes discovered from official department pages.
+- `entry_pathways`, `access_signals`, and guarded `contact_routes` through access materialization.
+
+Audit focus:
+
+- Treat department pages as evidence, not final claims that a lab is accepting students.
+- Generic department guidance should remain exploratory access evidence, not a posted opening.
+- Structured application pages can create official application routes, but the source must not create `PostedOpportunity` rows by itself.
+- Direct contact details should stay behind the existing guarded contact-route policy.
+
+Project impact:
+
+- Adds official, deterministic undergraduate research routes before any broad LLM or worker automation.
+
 ### `undergrad-fellowships-recipients`
 
 Commands:
@@ -242,6 +270,32 @@ Audit focus:
 Project impact:
 
 - Helps students find plausible fellowship/thesis supervisors with real past undergrad evidence.
+
+### `yale-college-fellowships-office`
+
+Commands:
+
+```bash
+SCRAPER_ENV=development \
+  npx -y corepack@0.34.7 yarn scrape run --source yale-college-fellowships-office --limit 10 --dry-run --use-cache
+```
+
+Expected collections in `new-foundation`:
+
+- `observations`: fellowship title, summary/description, application link, deadline, source URL, source key, source name, source fingerprint, program classification, and visibility input fields.
+- `fellowships`: program/source/student-visibility fields after approved backfill or materialization.
+
+Audit focus:
+
+- Stale Yale College financial-awards links for Mellon Mays must canonicalize to `https://college.yale.edu/life-at-yale/student-faculty-awards/mellon-mays-undergraduate-fellowship-program`.
+- CommunityForce links should be retained as `applicationLink`/`links` values, not fetched.
+- Generic fellowship-administration, advising, navigation, and alternative-funding pages should either be suppressed or kept in operator review rather than becoming student-ready program records.
+- The source should emit program/funding evidence only; it must not create posted opportunities or student-facing research pathways from fellowship funding pages.
+- Run `yarn --cwd server programs:backfill-classification` and `yarn --cwd server student-visibility:backfill` in dry-run mode before applying any DB updates.
+
+Project impact:
+
+- Gives the operator board and canonical `/programs` surface official fellowship URL/deadline evidence with explicit student visibility tiers.
 
 ### Entity Discovery Sources
 

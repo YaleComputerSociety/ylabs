@@ -5,6 +5,7 @@ import { Router } from 'express';
 import UsersRoutes from './users';
 import ListingsRoutes from './listings';
 import FellowshipsRoutes from './fellowships';
+import ProgramsRoutes from './programs';
 import AnalyticsRoutes from './analytics';
 import ResearchAreasRoutes from './researchAreas';
 import ConfigRoutes from './config';
@@ -18,7 +19,12 @@ import OpportunitiesRoutes from './opportunities';
 const router = Router();
 
 router.use('/listings', ListingsRoutes);
-router.use('/fellowships', FellowshipsRoutes);
+router.use('/programs', ProgramsRoutes);
+router.use('/fellowships', (req, res, next) => {
+  res.setHeader('Deprecation', 'true');
+  res.setHeader('Link', '</api/programs>; rel="successor-version"');
+  next();
+}, FellowshipsRoutes);
 router.use('/users', UsersRoutes);
 router.use('/profiles', ProfileRoutes);
 router.use('/research', ResearchGroupsRoutes);

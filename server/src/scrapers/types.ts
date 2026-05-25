@@ -107,4 +107,15 @@ export interface ScraperFetchMetrics<TFetchMode extends string = ScraperFetchMod
 export interface ScraperMetrics<TFetchMode extends string = ScraperFetchMode> {
   fetchAttempts?: ScraperFetchAttemptMetrics<TFetchMode>[];
   workPlanner?: WorkPlannerMetrics;
+  fellowshipCatalog?: {
+    discovered: number;
+    emitted: number;
+    created: number;
+    updated: number;
+    unchanged: number;
+    reviewRequired: number;
+    missingPreviouslySeen: number;
+    deadlineParsed: number;
+    deadlineMissing: number;
+  };
 }

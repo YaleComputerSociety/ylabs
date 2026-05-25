@@ -532,3 +532,17 @@ Consequences:
 - OpenAlex can attach authorship only through accepted ORCID or accepted OpenAlex author ID. Name-only OpenAlex discovery is review-only and no longer writes `User.openAlexId`.
 - ORCID public works and Europe PMC ORCID queries are accepted authorship sources for users with accepted `User.orcid`; Crossref hydrates DOI metadata without creating Yale author links by itself.
 - Beta cleanup backfilled legacy OpenAlex links into `paper_authors`, superseded active arXiv author observations, and cleared arXiv-only faculty links while preserving arXiv paper metadata.
+
+## 2026-05-25: Promote Program And Student Visibility Model On New Foundation
+
+The newer fellowship work contains two separable ideas: URL hygiene for official Yale fellowship pages, and a broader program/student-visibility model. `new-foundation` now promotes both pieces, while keeping legacy `/api/fellowships` and `/fellowships` compatibility aliases during the transition.
+
+Consequences:
+
+- `yale-college-fellowships-office` canonicalizes moved Yale College financial-awards URLs, including Mellon Mays, to the current `college.yale.edu/life-at-yale/student-faculty-awards/...` page.
+- CommunityForce URLs are preserved as official application links but are not fetched as scraper targets.
+- `/api/programs` is the canonical public program contract backed by the existing Fellowship collection while storage is migrated incrementally.
+- The Fellowship schema now carries program classification fields, source metadata, and shared student visibility fields.
+- Student-facing program and research search should default to public visibility tiers only; admin/operator flows can include `operator_review` and `suppressed` when explicitly requested.
+- The Operator Board is read-only and summarizes Trust Tier queues, source health, and gate commands. It does not execute writes or automatic approvals.
+- Before relying on the public program surface after a data import, run dry-run classification and visibility backfills, inspect the report, then apply intentionally.

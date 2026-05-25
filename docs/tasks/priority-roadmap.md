@@ -125,6 +125,11 @@ All accepted Beta source runs below reported `materialization.errors = 0`. This 
 - [x] Expand saved run artifacts where they help reviewed data quality.
 - [x] Add source-health summaries for trusted data-quality review.
 - [x] Add status reaper behavior for expired posted opportunities.
+- [x] Add `department-undergrad-research` as the first deterministic source-expansion scraper for official department undergraduate research pages. It emits research entity/access/contact/application-route evidence and is covered by parser plus access-materializer tests; it must not create posted opportunities from generic department guidance.
+- [x] Merge the `yale-college-fellowships-office` URL-hygiene and program-classification model into `new-foundation`. The scraper canonicalizes the moved Mellon Mays URL, skips gated CommunityForce fetches, emits program/source visibility evidence, and keeps fellowship funding separate from posted opportunity/pathway creation.
+- [x] Add the canonical `/programs` API and Programs & Fellowships route while preserving `/fellowships` compatibility aliases during migration.
+- [x] Add student visibility tiers and dry-run/apply backfill scripts for programs and research entities so student surfaces hide `operator_review` and `suppressed` records by default.
+- [x] Add a read-only Operator Board foundation to the admin panel. It summarizes source health, Trust Tier counts, review queues, latest dry/write runs, gate commands, Meili status placeholders, and a top-level promotion status without adding write buttons or worker execution.
 - [ ] Add PI claim flow, Scholar disambiguation, and broader admin field-lock UI only when the workflow is clear.
 
 ### P2: Post-Beta Legacy Cleanup

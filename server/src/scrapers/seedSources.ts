@@ -58,6 +58,15 @@ const SOURCES: SourceSeed[] = [
     cadence: 'event',
   },
   {
+    name: 'department-undergrad-research',
+    displayName: 'Department undergraduate research pages',
+    description:
+      'Official department undergraduate research pages that expose faculty projects, structured research routes, contacts, and application links.',
+    baseUrl: '',
+    defaultWeight: 0.8,
+    cadence: 'weekly',
+  },
+  {
     name: 'orcid',
     displayName: 'ORCID',
     description: 'Author-curated paper and biographical metadata from ORCID.',

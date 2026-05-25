@@ -12,10 +12,12 @@ import { YsmAtoZScraper } from './sources/ysmAtoZScraper';
 import { YseCentersScraper } from './sources/yseCentersScraper';
 import { YaleDirectoryScraper } from './sources/yaleDirectoryScraper';
 import { DepartmentRosterScraper } from './sources/departmentRosterScraper';
+import { DepartmentUndergradResearchScraper } from './sources/departmentUndergradResearchScraper';
 import { NihReporterScraper } from './sources/nihReporterScraper';
 import { NsfAwardScraper } from './sources/nsfAwardScraper';
 import { CentersInstitutesScraper } from './sources/centersInstitutesScraper';
 import { UndergradFellowshipRecipientScraper } from './sources/undergradFellowshipRecipientScraper';
+import { YaleCollegeFellowshipsOfficeScraper } from './sources/yaleCollegeFellowshipsOfficeScraper';
 import { LabMicrositeUndergradLLMExtractor } from './sources/labMicrositeUndergradLLMExtractor';
 
 export function buildOrchestrator(): ScraperOrchestrator {
@@ -30,10 +32,12 @@ export function buildOrchestrator(): ScraperOrchestrator {
   o.register(new YseCentersScraper());
   o.register(new YaleDirectoryScraper());
   o.register(new DepartmentRosterScraper());
+  o.register(new DepartmentUndergradResearchScraper());
   o.register(new NihReporterScraper());
   o.register(new NsfAwardScraper());
   o.register(new CentersInstitutesScraper());
   o.register(new UndergradFellowshipRecipientScraper());
+  o.register(new YaleCollegeFellowshipsOfficeScraper());
   o.register(new LabMicrositeUndergradLLMExtractor());
   return o;
 }

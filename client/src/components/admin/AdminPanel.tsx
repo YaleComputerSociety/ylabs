@@ -8,8 +8,10 @@ import AdminResearchAreas from './AdminResearchAreas';
 import AdminDepartments from './AdminDepartments';
 import AdminFacultyProfilesTable from './AdminFacultyProfilesTable';
 import AdminAccessReview from './AdminAccessReview';
+import AdminOperatorBoard from './AdminOperatorBoard';
 
 const TABS = [
+  'Operator Board',
   'Listings',
   'Fellowships',
   'Research Areas',
@@ -20,7 +22,7 @@ const TABS = [
 type Tab = (typeof TABS)[number];
 
 const AdminPanel = () => {
-  const [activeTab, setActiveTab] = useState<Tab>('Listings');
+  const [activeTab, setActiveTab] = useState<Tab>('Operator Board');
 
   return (
     <section className="mb-10 mt-16">
@@ -59,6 +61,7 @@ const AdminPanel = () => {
         </nav>
       </div>
 
+      {activeTab === 'Operator Board' && <AdminOperatorBoard />}
       {activeTab === 'Listings' && <AdminListingsTable />}
       {activeTab === 'Fellowships' && <AdminFellowshipsTable />}
       {activeTab === 'Research Areas' && <AdminResearchAreas />}

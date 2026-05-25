@@ -4,6 +4,10 @@
 import { NotFoundError, ObjectIdError } from '../utils/errors';
 import mongoose from 'mongoose';
 import { Fellowship } from '../models/fellowship';
+import {
+  publicStudentVisibilityTiers,
+  type StudentVisibilityTier,
+} from '../models/studentVisibility';
 import * as itemOps from './itemOperations';
 
 export const createFellowship = async (data: any) => {
@@ -53,6 +57,19 @@ export const fellowshipExists = async (id: any) => {
 
 const FELLOWSHIP_ADMIN_UPDATABLE_FIELDS = [
   'title',
+  'programCategory',
+  'programKind',
+  'entryMode',
+  'studentFacingCategory',
+  'requiresMentorBeforeApply',
+  'mentorMatching',
+  'undergraduateOnly',
+  'yaleCollegeOnly',
+  'compensationSummary',
+  'hoursPerWeek',
+  'programDates',
+  'bestNextStep',
+  'prepSteps',
   'competitionType',
   'summary',
   'description',
@@ -75,6 +92,21 @@ const FELLOWSHIP_ADMIN_UPDATABLE_FIELDS = [
   'purpose',
   'globalRegions',
   'citizenshipStatus',
+  'sourceName',
+  'sourceUrl',
+  'sourceKey',
+  'sourceFingerprint',
+  'sourceLastVerifiedAt',
+  'sourceLastChangedAt',
+  'studentVisibilityTier',
+  'studentVisibilityComputedTier',
+  'studentVisibilityOverrideTier',
+  'studentVisibilityReasons',
+  'studentVisibilitySuppressionReason',
+  'studentVisibilityComputedAt',
+  'studentVisibilityVersion',
+  'studentVisibilityReviewedAt',
+  'studentVisibilityReviewedByUserId',
   'archived',
   'audited',
 ] as const;
@@ -151,6 +183,17 @@ export const searchFellowships = async (params: {
   purpose?: string[];
   globalRegions?: string[];
   citizenshipStatus?: string[];
+  programCategory?: string[];
+  programKind?: string[];
+  entryMode?: string[];
+  studentFacingCategory?: string[];
+  requiresMentorBeforeApply?: boolean;
+  mentorMatching?: boolean;
+  undergraduateOnly?: boolean;
+  yaleCollegeOnly?: boolean;
+  studentVisibilityTier?: StudentVisibilityTier[];
+  includeOperatorReview?: boolean;
+  includeSuppressed?: boolean;
 }) => {
   const {
     query = '',
@@ -163,9 +206,31 @@ export const searchFellowships = async (params: {
     purpose = [],
     globalRegions = [],
     citizenshipStatus = [],
+    programCategory = [],
+    programKind = [],
+    entryMode = [],
+    studentFacingCategory = [],
+    requiresMentorBeforeApply,
+    mentorMatching,
+    undergraduateOnly,
+    yaleCollegeOnly,
+    studentVisibilityTier = [],
+    includeOperatorReview = false,
+    includeSuppressed = false,
   } = params;
 
   const filter: any = { archived: false };
+  if (studentVisibilityTier.length > 0) {
+    filter.studentVisibilityTier = { $in: studentVisibilityTier };
+  } else if (includeSuppressed) {
+    // Admin/operator mode: keep all archived=false tiers in scope.
+  } else if (includeOperatorReview) {
+    filter.studentVisibilityTier = {
+      $in: [...publicStudentVisibilityTiers, 'operator_review'],
+    };
+  } else {
+    filter.studentVisibilityTier = { $in: publicStudentVisibilityTiers };
+  }
 
   if (query && query.trim()) {
     filter.$text = { $search: query };
@@ -185,6 +250,30 @@ export const searchFellowships = async (params: {
   }
   if (citizenshipStatus.length > 0) {
     filter.citizenshipStatus = { $in: citizenshipStatus };
+  }
+  if (programCategory.length > 0) {
+    filter.programCategory = { $in: programCategory };
+  }
+  if (programKind.length > 0) {
+    filter.programKind = { $in: programKind };
+  }
+  if (entryMode.length > 0) {
+    filter.entryMode = { $in: entryMode };
+  }
+  if (studentFacingCategory.length > 0) {
+    filter.studentFacingCategory = { $in: studentFacingCategory };
+  }
+  if (typeof requiresMentorBeforeApply === 'boolean') {
+    filter.requiresMentorBeforeApply = requiresMentorBeforeApply;
+  }
+  if (typeof mentorMatching === 'boolean') {
+    filter.mentorMatching = mentorMatching;
+  }
+  if (typeof undergraduateOnly === 'boolean') {
+    filter.undergraduateOnly = undergraduateOnly;
+  }
+  if (typeof yaleCollegeOnly === 'boolean') {
+    filter.yaleCollegeOnly = yaleCollegeOnly;
   }
 
   const sortOptions: any = {};
@@ -222,12 +311,20 @@ export const getFilterOptions = async () => {
     purposeOptions,
     globalRegionsOptions,
     citizenshipStatusOptions,
+    programCategoryOptions,
+    programKindOptions,
+    entryModeOptions,
+    studentFacingCategoryOptions,
   ] = await Promise.all([
     Fellowship.distinct('yearOfStudy', { archived: false }),
     Fellowship.distinct('termOfAward', { archived: false }),
     Fellowship.distinct('purpose', { archived: false }),
     Fellowship.distinct('globalRegions', { archived: false }),
     Fellowship.distinct('citizenshipStatus', { archived: false }),
+    Fellowship.distinct('programCategory', { archived: false }),
+    Fellowship.distinct('programKind', { archived: false }),
+    Fellowship.distinct('entryMode', { archived: false }),
+    Fellowship.distinct('studentFacingCategory', { archived: false }),
   ]);
 
   return {
@@ -236,6 +333,10 @@ export const getFilterOptions = async () => {
     purpose: purposeOptions.filter(Boolean).sort(),
     globalRegions: globalRegionsOptions.filter(Boolean).sort(),
     citizenshipStatus: citizenshipStatusOptions.filter(Boolean).sort(),
+    programCategory: programCategoryOptions.filter(Boolean).sort(),
+    programKind: programKindOptions.filter(Boolean).sort(),
+    entryMode: entryModeOptions.filter(Boolean).sort(),
+    studentFacingCategory: studentFacingCategoryOptions.filter(Boolean).sort(),
   };
 };
 

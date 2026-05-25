@@ -253,6 +253,98 @@ describe('deriveAccessArtifactsFromObservations', () => {
     ]);
   });
 
+  it('treats department undergraduate research pages as access evidence, not posted openings', () => {
+    const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
+      obs({
+        field: 'undergradAccessEvidence',
+        value: {
+          openToUndergrads: 'yes',
+          evidenceSource: 'department_undergrad_research_page',
+        },
+        sourceName: 'department-undergrad-research',
+        sourceUrl: 'https://chem.yale.edu/undergraduate-research',
+        confidence: 0.8,
+      }),
+      obs({
+        field: 'undergradEvidenceQuote',
+        value:
+          'Students interested in research should contact the faculty member directly to explore opportunities.',
+        sourceName: 'department-undergrad-research',
+        sourceUrl: 'https://chem.yale.edu/undergraduate-research',
+        confidence: 0.8,
+      }),
+      obs({
+        field: 'acceptingUndergrads',
+        value: true,
+        sourceName: 'department-undergrad-research',
+        sourceUrl: 'https://chem.yale.edu/undergraduate-research',
+        confidence: 0.75,
+      }),
+    ]);
+
+    expect(result.entryPathways).toMatchObject([
+      {
+        pathwayType: 'EXPLORATORY_CONTACT',
+        status: 'PLAUSIBLE',
+        studentFacingLabel: 'Exploratory outreach',
+        bestNextStep:
+          'Use the evidence to plan targeted outreach rather than treating this as an open posting.',
+      },
+    ]);
+    expect(result.accessSignals).toMatchObject([
+      {
+        signalType: 'REACH_OUT_PLAUSIBLE',
+        excerpt:
+          'Students interested in research should contact the faculty member directly to explore opportunities.',
+      },
+    ]);
+    expect(result.contactRoutes).toEqual([]);
+    expect(result.entryPathways.map((pathway) => pathway.pathwayType)).not.toContain(
+      'POSTED_ROLE',
+    );
+  });
+
+  it('derives department structured application pages as guarded official routes', () => {
+    const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
+      obs({
+        field: 'undergradAccessEvidence',
+        value: {
+          openToUndergrads: 'yes',
+          evidenceSource: 'department_undergrad_research_page',
+        },
+        sourceName: 'department-undergrad-research',
+        sourceUrl: 'https://mcdb.yale.edu/undergraduate/undergraduate-research-opportunities',
+        confidence: 0.8,
+      }),
+      obs({
+        field: 'joinPageUrl',
+        value: 'https://yalesurvey.ca1.qualtrics.com/jfe/form/SV_fixture',
+        sourceName: 'department-undergrad-research',
+        sourceUrl: 'https://mcdb.yale.edu/undergraduate/undergraduate-research-opportunities',
+        confidence: 0.8,
+      }),
+    ]);
+
+    expect(result.entryPathways).toMatchObject([
+      {
+        pathwayType: 'EXPLORATORY_CONTACT',
+        status: 'PLAUSIBLE',
+      },
+    ]);
+    expect(result.accessSignals.map((signal) => signal.signalType).sort()).toEqual([
+      'APPLICATION_FORM_EXISTS',
+      'REACH_OUT_PLAUSIBLE',
+    ]);
+    expect(result.contactRoutes).toMatchObject([
+      {
+        routeType: 'OFFICIAL_APPLICATION',
+        visibility: 'PUBLIC',
+        contactPolicy: 'APPLICATION_ONLY',
+        url: 'https://yalesurvey.ca1.qualtrics.com/jfe/form/SV_fixture',
+      },
+    ]);
+  });
+
   it('redacts direct contact details from public signal excerpts', () => {
     const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
       obs({

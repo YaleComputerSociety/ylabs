@@ -5,6 +5,7 @@ import { Request, Response, NextFunction } from 'express';
 import mongoose from 'mongoose';
 import { readListings } from '../services/listingService';
 import { readFellowships } from '../services/fellowshipService';
+import { readPrograms } from '../services/programService';
 import { matchFellowshipsForPathways } from '../services/fellowshipMatchingService';
 import { getPathwaysByIds } from '../services/pathwaySearchService';
 import {
@@ -69,6 +70,12 @@ export const getFavFellowshipIds = async (request: Request, response: Response) 
   response.status(200).json({ favFellowshipIds: user.favFellowships || [] });
 };
 
+export const getSavedProgramIds = async (request: Request, response: Response) => {
+  const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
+  const user = await readUser(currentUser.netId);
+  response.status(200).json({ savedProgramIds: user.favFellowships || [] });
+};
+
 export const getFavFellowships = async (request: Request, response: Response) => {
   const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
   const user = await readUser(currentUser.netId);
@@ -81,6 +88,20 @@ export const getFavFellowships = async (request: Request, response: Response) =>
 
   await updateUser(currentUser.netId, { favFellowships: validIds });
   response.status(200).json({ favFellowships });
+};
+
+export const getSavedPrograms = async (request: Request, response: Response) => {
+  const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
+  const user = await readUser(currentUser.netId);
+  const savedPrograms = await readPrograms(user.favFellowships || []);
+
+  const validIds: mongoose.Types.ObjectId[] = [];
+  for (const program of savedPrograms) {
+    validIds.push(program._id);
+  }
+
+  await updateUser(currentUser.netId, { favFellowships: validIds });
+  response.status(200).json({ savedPrograms });
 };
 
 export const addFavFellowships = async (request: Request, response: Response) => {
@@ -100,6 +121,21 @@ export const addFavFellowships = async (request: Request, response: Response) =>
   response.status(200).json({ user });
 };
 
+export const addSavedPrograms = async (request: Request, response: Response) => {
+  const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
+  const ids = request.body.data?.savedPrograms ?? request.body.data?.favFellowships;
+
+  if (!ids) {
+    const error: any = new Error('No savedPrograms provided');
+    error.status = 400;
+    throw error;
+  }
+
+  const savedProgramsArray = Array.isArray(ids) ? ids : [ids];
+  const user = await addFavFellowshipsService(currentUser.netId, savedProgramsArray);
+  response.status(200).json({ user });
+};
+
 export const removeFavFellowships = async (request: Request, response: Response) => {
   const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
 
@@ -114,6 +150,21 @@ export const removeFavFellowships = async (request: Request, response: Response)
     : [request.body.favFellowships];
 
   const user = await deleteFavFellowshipsService(currentUser.netId, favFellowshipsArray);
+  response.status(200).json({ user });
+};
+
+export const removeSavedPrograms = async (request: Request, response: Response) => {
+  const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
+  const ids = request.body.savedPrograms ?? request.body.favFellowships;
+
+  if (!ids) {
+    const error: any = new Error('No savedPrograms provided');
+    error.status = 400;
+    throw error;
+  }
+
+  const savedProgramsArray = Array.isArray(ids) ? ids : [ids];
+  const user = await deleteFavFellowshipsService(currentUser.netId, savedProgramsArray);
   response.status(200).json({ user });
 };
 

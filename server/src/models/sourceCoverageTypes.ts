@@ -6,6 +6,7 @@
  * before a scraper is expanded.
  */
 export const sourceCoverageArtifactTypes = [
+  'Fellowship',
   'ResearchEntity',
   'EntryPathway',
   'AccessSignal',
@@ -22,6 +23,8 @@ export const sourceCoverageEvidenceCategories = [
   'TOPICS',
   'METHODS',
   'OFFICIAL_PROFILE',
+  'RESEARCH_INFRASTRUCTURE',
+  'OFFICIAL_RESOURCE',
   'LAB_WEBSITE',
   'JOIN_INSTRUCTIONS',
   'UNDERGRAD_ROLE_LANGUAGE',

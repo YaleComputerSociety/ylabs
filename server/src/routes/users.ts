@@ -19,7 +19,8 @@ const getFavoriteIds = (req: Request, key: string): string[] => {
 
 const logFavoriteEvent = (
   isFavorite: boolean,
-  kind: 'listing' | 'fellowship' = 'listing',
+  kind: 'listing' | 'fellowship' | 'program' = 'listing',
+  payloadKey?: string,
 ) => {
   return async (req: Request, res: Response, next: NextFunction) => {
     const originalSend = res.send.bind(res);
@@ -27,7 +28,10 @@ const logFavoriteEvent = (
     res.send = function (data: any) {
       if (res.statusCode >= 200 && res.statusCode < 300) {
         const currentUser = req.user as { netId?: string; userType: string };
-        const ids = getFavoriteIds(req, kind === 'listing' ? 'favListings' : 'favFellowships');
+        const ids = getFavoriteIds(
+          req,
+          payloadKey || (kind === 'listing' ? 'favListings' : 'favFellowships'),
+        );
 
         if (currentUser?.netId && ids.length > 0) {
           ids.forEach((itemId: string) => {
@@ -43,7 +47,7 @@ const logFavoriteEvent = (
               netid: currentUser.netId!,
               userType: currentUser.userType,
               listingId: kind === 'listing' ? itemId : undefined,
-              fellowshipId: kind === 'fellowship' ? itemId : undefined,
+              fellowshipId: kind !== 'listing' ? itemId : undefined,
               metadata: { entityType: kind },
             }).catch((err) => console.error('Error logging favorite event:', err));
           });
@@ -55,6 +59,12 @@ const logFavoriteEvent = (
 
     next();
   };
+};
+
+const deprecateFavFellowshipEndpoint = (_req: Request, res: Response, next: NextFunction) => {
+  res.setHeader('Deprecation', 'true');
+  res.setHeader('Link', '</api/users/savedPrograms>; rel="successor-version"');
+  next();
 };
 
 const logProfileUpdateEvent = async (req: Request, res: Response, next: NextFunction) => {
@@ -90,17 +100,44 @@ router.delete(
   userController.removeFavListings,
 );
 
-router.get('/favFellowshipIds', isAuthenticated, userController.getFavFellowshipIds);
-router.get('/favFellowships', isAuthenticated, userController.getFavFellowships);
+router.get('/savedProgramIds', isAuthenticated, userController.getSavedProgramIds);
+router.get('/savedPrograms', isAuthenticated, userController.getSavedPrograms);
+router.put(
+  '/savedPrograms',
+  isAuthenticated,
+  logFavoriteEvent(true, 'program', 'savedPrograms'),
+  userController.addSavedPrograms,
+);
+router.delete(
+  '/savedPrograms',
+  isAuthenticated,
+  logFavoriteEvent(false, 'program', 'savedPrograms'),
+  userController.removeSavedPrograms,
+);
+
+router.get(
+  '/favFellowshipIds',
+  isAuthenticated,
+  deprecateFavFellowshipEndpoint,
+  userController.getFavFellowshipIds,
+);
+router.get(
+  '/favFellowships',
+  isAuthenticated,
+  deprecateFavFellowshipEndpoint,
+  userController.getFavFellowships,
+);
 router.put(
   '/favFellowships',
   isAuthenticated,
+  deprecateFavFellowshipEndpoint,
   logFavoriteEvent(true, 'fellowship'),
   userController.addFavFellowships,
 );
 router.delete(
   '/favFellowships',
   isAuthenticated,
+  deprecateFavFellowshipEndpoint,
   logFavoriteEvent(false, 'fellowship'),
   userController.removeFavFellowships,
 );

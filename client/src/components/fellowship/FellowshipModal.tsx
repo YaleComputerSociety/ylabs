@@ -119,7 +119,7 @@ const FellowshipModal = ({
     }
 
     onClose();
-    navigate('/fellowships');
+    navigate('/programs');
   };
 
   const formatDate = (dateStr: string | null) => {

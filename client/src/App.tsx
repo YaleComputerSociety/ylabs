@@ -30,7 +30,7 @@ import ScrollToTop from './components/shared/ScrollToTop';
 
 const App = () => {
   return (
-    <Router>
+    <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <ScrollToTop />
       <ConfigContextProvider>
         <SearchContextProvider>
@@ -53,6 +53,10 @@ const App = () => {
                       />
                       <Route
                         path="/fellowships"
+                        element={<PrivateRoute Component={Fellowships} unknownBlocked={true} />}
+                      />
+                      <Route
+                        path="/programs"
                         element={<PrivateRoute Component={Fellowships} unknownBlocked={true} />}
                       />
                       <Route

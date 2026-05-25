@@ -27,10 +27,20 @@ import {
   updateAccessReviewManualLocks,
   updateAccessReviewRecordReview,
 } from '../services/adminAccessReviewService';
+import { buildAdminOperatorBoard } from '../services/adminOperatorBoardService';
 
 const router = Router();
 
 router.use(isAuthenticated, isAdmin);
+
+router.get('/operator-board', async (_req: Request, res: Response) => {
+  try {
+    res.json(await buildAdminOperatorBoard());
+  } catch (error) {
+    console.error('Admin: Error fetching operator board:', error);
+    res.status(500).json({ error: 'Failed to fetch operator board' });
+  }
+});
 
 router.get('/access-review', async (req: Request, res: Response) => {
   try {

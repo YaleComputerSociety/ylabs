@@ -8,6 +8,7 @@ import {
   researchEntityTypes,
   type ResearchEntityType,
 } from './researchAccessTypes';
+import { studentVisibilityFields } from './studentVisibility';
 
 const researchGroupSchema = new mongoose.Schema(
   {
@@ -340,6 +341,7 @@ const researchGroupSchema = new mongoose.Schema(
       required: false,
       select: false,
     },
+    ...studentVisibilityFields,
   },
   {
     timestamps: true,
@@ -364,6 +366,8 @@ researchGroupSchema.index({ recentGrantCount: -1 });
 researchGroupSchema.index({ recentPaperCount: -1 });
 researchGroupSchema.index({ fundingAgencies: 1 });
 researchGroupSchema.index({ offersIndependentStudy: 1 });
+researchGroupSchema.index({ studentVisibilityTier: 1, archived: 1 });
+researchGroupSchema.index({ studentVisibilityComputedAt: -1 });
 
 export { researchGroupSchema };
 export {

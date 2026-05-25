@@ -75,6 +75,8 @@ Entity pages should answer what the research structure is, what it studies, who 
 
 When a task is large enough to split safely, use parallel subagents to speed up discovery, implementation, or verification. Prefer subagents for independent workstreams with clear ownership, such as one agent inspecting backend impact while another inspects frontend impact, one agent updating docs while another verifies tests, or separate implementation agents working on disjoint files or modules.
 
+When using git worktrees for feature or agent work, treat `new-foundation` as the default integration branch unless the user names a different working branch. Subagents should still work in their own isolated worktrees, but the main Codex thread is responsible for reviewing, testing, and automatically merging or cherry-picking accepted work back into the active integration branch before calling the task done. If integration is unsafe because the target branch has unrelated conflicts or failing baseline checks, stop and report the blocker instead of leaving finished work stranded in a side worktree.
+
 Do not use subagents for tightly coupled changes, tiny tasks, or decisions that require one coherent product judgment. After subagents finish, the main Codex thread must review their outputs, inspect changed files, resolve conflicts, and run or recommend verification. Do not forward subagent conclusions without integration.
 
 ## Done Criteria

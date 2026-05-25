@@ -7,8 +7,10 @@ import {
 import { getSourceCoverage, sourceCoverageRegistry } from '../sourceCoverageRegistry';
 
 const prioritySources = [
+  'lab-microsite-description-llm',
   'lab-microsite-undergrad-llm',
   'dept-faculty-roster',
+  'official-profile-enrichment',
   'undergrad-fellowships-recipients',
   'yale-college-fellowships-office',
   'ylabs-listing',
@@ -50,17 +52,31 @@ describe('sourceCoverageRegistry', () => {
     expect(getSourceCoverage('centers-institutes-index')?.artifactTypes).not.toContain(
       'ContactRoute',
     );
-    expect(getSourceCoverage('dept-faculty-roster')?.artifactTypes).not.toContain(
-      'ContactRoute',
+    expect(getSourceCoverage('dept-faculty-roster')?.artifactTypes).toEqual(
+      expect.arrayContaining(['EntryPathway', 'ContactRoute']),
     );
+    expect(getSourceCoverage('dept-faculty-roster')?.artifactTypes).not.toContain('AccessSignal');
     expect(getSourceCoverage('yale-directory')?.artifactTypes).toEqual(['Observation']);
+    expect(getSourceCoverage('yale-directory-csv')?.artifactTypes).toEqual(['Observation']);
+    expect(getSourceCoverage('official-profile-enrichment')?.artifactTypes).toEqual([
+      'Observation',
+    ]);
+    expect(getSourceCoverage('yale-directory-csv')?.evidenceCategories).toEqual([
+      'ENTITY_MEMBERSHIP',
+    ]);
   });
 
   it('tracks fellowship office records as official application-cycle and route evidence', () => {
     const coverage = getSourceCoverage('yale-college-fellowships-office');
 
     expect(coverage?.artifactTypes).toEqual(
-      expect.arrayContaining(['EntryPathway', 'AccessSignal', 'ContactRoute', 'PostedOpportunity']),
+      expect.arrayContaining([
+        'Fellowship',
+        'EntryPathway',
+        'AccessSignal',
+        'ContactRoute',
+        'PostedOpportunity',
+      ]),
     );
     expect(coverage?.evidenceCategories).toEqual(
       expect.arrayContaining([
@@ -70,5 +86,28 @@ describe('sourceCoverageRegistry', () => {
         'POSTED_OPENING',
       ]),
     );
+  });
+
+  it('classifies legacy YLabs listings as manual audit seeds, not scraper coverage proof', () => {
+    const coverage = getSourceCoverage('ylabs-listing');
+
+    expect(coverage?.tier).toBe('MANUAL_OVERRIDE');
+    expect(coverage?.defaultConfidence).toBe('MEDIUM');
+    expect(coverage?.artifactTypes).toEqual(
+      expect.arrayContaining(['EntryPathway', 'AccessSignal', 'PostedOpportunity']),
+    );
+    expect(coverage?.notes).toMatch(/audit seed/i);
+  });
+
+  it('classifies lab microsite description extraction as entity context, not access evidence', () => {
+    const coverage = getSourceCoverage('lab-microsite-description-llm');
+
+    expect(coverage?.artifactTypes).toEqual(['ResearchEntity', 'Observation']);
+    expect(coverage?.evidenceCategories).toEqual(
+      expect.arrayContaining(['LAB_WEBSITE', 'TOPICS', 'METHODS']),
+    );
+    expect(coverage?.artifactTypes).not.toContain('EntryPathway');
+    expect(coverage?.artifactTypes).not.toContain('PostedOpportunity');
+    expect(coverage?.defaultConfidence).toBe('MEDIUM');
   });
 });

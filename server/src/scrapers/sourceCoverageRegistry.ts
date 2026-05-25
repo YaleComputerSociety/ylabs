@@ -36,6 +36,24 @@ export const sourceCoverageRegistry = {
     defaultConfidence: 'HIGH',
     notes: 'PI edits should remain protected by manual locks where appropriate.',
   },
+  'research-entity-cache-backfill': {
+    priority: 1,
+    tier: 'DERIVED_OFFICIAL',
+    artifactTypes: ['Observation', 'EntryPathway', 'AccessSignal'],
+    evidenceCategories: ['UNDERGRAD_ROLE_LANGUAGE', 'PAST_UNDERGRADS', 'JOIN_INSTRUCTIONS'],
+    defaultConfidence: 'LOW',
+    notes:
+      'One-time provenance recovery from legacy ResearchEntity undergraduate-access cache fields; use only to bridge old scalar cache data into first-class access artifacts.',
+  },
+  'lab-microsite-description-llm': {
+    priority: 1,
+    tier: 'PRIMARY_OFFICIAL',
+    artifactTypes: ['ResearchEntity', 'Observation'],
+    evidenceCategories: ['LAB_WEBSITE', 'TOPICS', 'METHODS'],
+    defaultConfidence: 'MEDIUM',
+    notes:
+      'Official microsite description extraction for research focus, questions, methods, and conservative areas only; must not create access, route, or opportunity evidence.',
+  },
   'lab-microsite-undergrad-llm': {
     priority: 1,
     tier: 'PRIMARY_OFFICIAL',
@@ -50,7 +68,8 @@ export const sourceCoverageRegistry = {
       'PAST_UNDERGRADS',
     ],
     defaultConfidence: 'MEDIUM',
-    notes: 'Bounded lab/faculty microsite extraction; preserve quotes and source URLs.',
+    notes:
+      'Bounded lab/faculty microsite extraction from canonical ResearchEntity websites; evidence remains public-page quotes and source URLs.',
   },
   'lab-microsite-llm': {
     priority: 1,
@@ -69,7 +88,7 @@ export const sourceCoverageRegistry = {
   'dept-faculty-roster': {
     priority: 2,
     tier: 'OFFICIAL_INDEX',
-    artifactTypes: ['ResearchEntity', 'Observation'],
+    artifactTypes: ['ResearchEntity', 'EntryPathway', 'ContactRoute', 'Observation'],
     evidenceCategories: [
       'ENTITY_IDENTITY',
       'ENTITY_MEMBERSHIP',
@@ -77,10 +96,20 @@ export const sourceCoverageRegistry = {
       'LAB_WEBSITE',
       'TOPICS',
       'METHODS',
+      'OFFICIAL_CONTACT_ROUTE',
     ],
     defaultConfidence: 'HIGH',
     notes:
-      'Official department profile/roster joins and lab URL discovery; contact routes require explicit guarded route evidence.',
+      'Official department profile/roster joins and lab URL discovery; can also materialize guarded PI-profile fallback pathways/routes when no stronger public route exists.',
+  },
+  'official-profile-enrichment': {
+    priority: 2,
+    tier: 'OFFICIAL_INDEX',
+    artifactTypes: ['Observation'],
+    evidenceCategories: ['OFFICIAL_PROFILE', 'TOPICS', 'METHODS'],
+    defaultConfidence: 'HIGH',
+    notes:
+      'Known official Yale profile URLs for existing faculty users; fills profile biography, research-interest, image, ORCID, and profile URL observations without creating research entities or access claims.',
   },
   'yale-directory': {
     priority: 2,
@@ -89,6 +118,15 @@ export const sourceCoverageRegistry = {
     evidenceCategories: ['ENTITY_MEMBERSHIP', 'OFFICIAL_PROFILE'],
     defaultConfidence: 'HIGH',
     notes: 'Authoritative Yale appointment metadata, not access evidence by itself.',
+  },
+  'yale-directory-csv': {
+    priority: 3,
+    tier: 'OFFICIAL_INDEX',
+    artifactTypes: ['Observation'],
+    evidenceCategories: ['ENTITY_MEMBERSHIP'],
+    defaultConfidence: 'LOW',
+    notes:
+      'Static Yale directory CSV for coverage denominator and identity/affiliation observations only. Must not create public research entities, pathways, access signals, contact routes, or opportunities by itself.',
   },
   'ysm-atoz-index': {
     priority: 2,
@@ -114,6 +152,21 @@ export const sourceCoverageRegistry = {
     defaultConfidence: 'HIGH',
     notes: 'Center/institute discovery and membership context; contact routes require explicit guarded route evidence.',
   },
+  'yale-research-official': {
+    priority: 2,
+    tier: 'OFFICIAL_INDEX',
+    artifactTypes: ['ResearchEntity', 'Observation'],
+    evidenceCategories: [
+      'ENTITY_IDENTITY',
+      'RESEARCH_INFRASTRUCTURE',
+      'TOPICS',
+      'METHODS',
+      'OFFICIAL_RESOURCE',
+    ],
+    defaultConfidence: 'HIGH',
+    notes:
+      'Official research.yale.edu directories for centers, institutes, cores, and infrastructure resources. Discovery-only; must not imply undergraduate access, contact routes, or posted openings without a more explicit source.',
+  },
   'undergrad-fellowships-recipients': {
     priority: 4,
     tier: 'DERIVED_OFFICIAL',
@@ -126,6 +179,7 @@ export const sourceCoverageRegistry = {
     priority: 4,
     tier: 'PRIMARY_OFFICIAL',
     artifactTypes: [
+      'Fellowship',
       'EntryPathway',
       'AccessSignal',
       'ContactRoute',
@@ -143,11 +197,12 @@ export const sourceCoverageRegistry = {
   },
   'ylabs-listing': {
     priority: 5,
-    tier: 'PRIMARY_OFFICIAL',
+    tier: 'MANUAL_OVERRIDE',
     artifactTypes: ['EntryPathway', 'AccessSignal', 'PostedOpportunity'],
     evidenceCategories: ['POSTED_OPENING', 'APPLICATION_LINK'],
-    defaultConfidence: 'HIGH',
-    notes: 'Legacy YLabs listing rows bridged into posted opportunities.',
+    defaultConfidence: 'MEDIUM',
+    notes:
+      'Legacy YLabs listing rows bridged into opportunity-like records. Treat as audit seeds for scraper coverage, not proof that official scraper coverage is complete.',
   },
   'nih-reporter': {
     priority: 6,
@@ -172,7 +227,7 @@ export const sourceCoverageRegistry = {
     evidenceCategories: ['PUBLICATIONS', 'TOPICS'],
     defaultConfidence: 'MEDIUM',
     notes:
-      'Identity-backed authorship source only when queried by accepted ORCID/OpenAlex author ID; name search is review-only.',
+      'Research-activity enrichment source. ORCID is the identity anchor when present; stored OpenAlex author ids are used only without ORCID; name search is review-only.',
   },
   'orcid': {
     priority: 7,
@@ -199,7 +254,7 @@ export const sourceCoverageRegistry = {
     evidenceCategories: ['PUBLICATIONS'],
     defaultConfidence: 'MEDIUM',
     notes:
-      'DOI metadata hydration. Crossref author ORCIDs may support authorship only when they match an accepted Yale user ORCID.',
+      'DOI-backed compact scholarly-link hydration. Crossref improves real destination metadata and never creates Yale authorship or access evidence by itself.',
   },
   'pubmed': {
     priority: 8,

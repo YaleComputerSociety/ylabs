@@ -30,6 +30,7 @@ const RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS = {
     'acceptanceConfidence',
     'offersIndependentStudy',
     'currentUndergradCount',
+    'studentVisibilityTier',
   ],
   sortableAttributes: ['lastObservedAt', 'name', 'createdAt', 'updatedAt'],
   displayedAttributes: ['*'],

@@ -12,6 +12,11 @@ import {
   ResearchGroupSearchSort,
 } from '../services/researchGroupService';
 import { ResearchGroupFilterInput } from '../services/researchGroupFilters';
+import {
+  isStudentVisibilityTier,
+  publicStudentVisibilityTiers,
+  type StudentVisibilityTier,
+} from '../models/studentVisibility';
 
 const MAX_PAGE_SIZE = 100;
 const DEFAULT_PAGE_SIZE = 24;
@@ -71,6 +76,11 @@ const parseFilters = (raw: unknown): ResearchGroupFilterInput => {
   return filters;
 };
 
+const parseStudentVisibilityTiers = (value: unknown): StudentVisibilityTier[] => {
+  const values = toStringArray(value) || [];
+  return values.filter(isStudentVisibilityTier);
+};
+
 export const searchResearchGroups = async (request: Request, response: Response) => {
   try {
     const body = (request.body || {}) as {
@@ -80,6 +90,8 @@ export const searchResearchGroups = async (request: Request, response: Response)
       filters?: unknown;
       sortBy?: string;
       sortOrder?: 'asc' | 'desc';
+      studentVisibilityTier?: unknown;
+      includeSuppressed?: boolean;
     };
 
     const q = typeof body.q === 'string' ? body.q : '';
@@ -89,6 +101,14 @@ export const searchResearchGroups = async (request: Request, response: Response)
       : DEFAULT_PAGE_SIZE;
     const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, requestedPageSize));
     const filters = parseFilters(body.filters);
+    const currentUser = request.user as { userType?: string } | undefined;
+    const isAdmin = currentUser?.userType === 'admin';
+    const requestedTiers = isAdmin ? parseStudentVisibilityTiers(body.studentVisibilityTier) : [];
+    if (requestedTiers.length > 0) {
+      filters.studentVisibilityTier = requestedTiers;
+    } else if (!(isAdmin && body.includeSuppressed === true)) {
+      filters.studentVisibilityTier = publicStudentVisibilityTiers;
+    }
 
     const sort: ResearchGroupSearchSort = {};
     if (

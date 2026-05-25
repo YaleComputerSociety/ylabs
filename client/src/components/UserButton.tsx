@@ -16,6 +16,7 @@ const UserButton = () => {
   const location = useLocation();
   const { user } = useContext(UserContext);
   const isAdmin = user?.userType === 'admin';
+  const isProfessorUser = user?.userType === 'professor' || user?.userType === 'faculty';
 
   const getInitials = () => {
     if (user?.netId && user.netId.length > 0) {
@@ -69,6 +70,7 @@ const UserButton = () => {
   return (
     <Box>
       <Button
+        aria-label="Open user menu"
         onClick={handleClick}
         sx={{
           minWidth: '36px',
@@ -123,6 +125,28 @@ const UserButton = () => {
             disableRipple
           >
             Analytics
+          </MenuItem>
+        )}
+        {isProfessorUser && (
+          <MenuItem
+            component={Link}
+            to="/account"
+            onClick={handleClose}
+            sx={menuItemStyle}
+            disableRipple
+          >
+            Edit Profile
+          </MenuItem>
+        )}
+        {isProfessorUser && user?.netId && (
+          <MenuItem
+            component={Link}
+            to={`/profile/${user.netId}`}
+            onClick={handleClose}
+            sx={menuItemStyle}
+            disableRipple
+          >
+            Public Profile
           </MenuItem>
         )}
         <MenuItem
