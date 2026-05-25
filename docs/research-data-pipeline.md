@@ -61,11 +61,11 @@ Before production promotion:
 - Source reports must show `materialization.errors = 0`, or any nonzero count must block promotion for that source.
 - Known warnings must be documented in [`docs/tasks/priority-roadmap.md`](./tasks/priority-roadmap.md) before promotion.
 - Production must have a fresh Atlas backup or restore point before any copy or write.
-- The operator must choose exactly one promotion lane: accepted Beta copy or guarded production delta.
+- The current promotion strategy is Lane A: accepted Beta copy. Guarded production deltas are out of scope unless fresh parity cannot be re-established and the operator packet is reopened.
 - Meilisearch must be rebuilt or synced after accepted Mongo writes, with `PATHWAY_SEARCH_BACKEND=mongo` kept as the rollback posture for Pathways.
 - Recurring scraper jobs stay disabled until the manual production gate and smoke checks pass.
 
-The operator decision packet in [`docs/scraper-deployment-runbook.md`](./scraper-deployment-runbook.md) is the promotion record for lane, backup/restore point, rollback owner, smoke owner, Meili backend posture, accepted warnings, run IDs, and rollback drill status. Do not infer a lane from pipeline state alone; the operator must fill the packet before production writes or copy operations.
+The operator decision packet in [`docs/scraper-deployment-runbook.md`](./scraper-deployment-runbook.md) is the promotion record for lane, backup/restore point, rollback owner, smoke owner, Meili backend posture, accepted warnings, run IDs, and rollback drill status. Lane A is the default for the accepted Beta candidate, but the packet must still be completed before production writes or copy operations.
 
 ## Rollback Drill Expectations
 

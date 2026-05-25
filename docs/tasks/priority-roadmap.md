@@ -24,7 +24,7 @@ The roadmap follows the hard-pivot decision: keep runtime centered on canonical 
 ## Current Focus
 
 1. Before copying Beta to production, close the highest-trust Beta audit gaps: stale/broken external profile links, logged-in placeholder account repair, sparse student-facing pathway/contact coverage, and local Meili ResearchEntity query gaps.
-2. Promote the accepted full Beta posture to production deliberately: confirm production backup, decide whether to copy Beta data or rerun guarded production deltas, sync Meili, and smoke-test.
+2. Promote the accepted full Beta posture to production deliberately through Lane A: keep Beta as the production-candidate dataset, confirm production backup/parity, copy the accepted seeded data, sync Meili, and smoke-test. Guarded production deltas are out of scope unless the promotion strategy is reopened.
 3. Keep local validation pointed at the Beta MongoDB and local development Meili for now. The final Beta database audit passed against canonical collections; the old `research_groups` collection is intentionally absent after the hard migration.
 4. Carry forward the publication-authorship rule: professor/lab paper lists should use only identity-backed authorship evidence in `paper_authors`; arXiv/Crossref-style metadata can enrich papers but must not create faculty links from names alone.
 5. Carry forward the OpenAlex storage lesson: full OpenAlex Beta materialized `papers`, but raw OpenAlex observations were pruned after report capture to stay within the current 5GB Atlas storage tier.
@@ -134,9 +134,10 @@ All accepted Beta source runs below reported `materialization.errors = 0`. This 
 
 - [x] Add a reusable read-only production promotion smoke helper. `yarn --cwd client smoke:production-promotion` now checks public Research, Pathways, opportunity discovery/detail, config, and unauthenticated Operator Board API access without secrets or writes; optional Playwright UI checks use route interception instead of `/api/dev-login` so no analytics sessions are created. Current limitation: the Operator Board UI is mounted under admin `/analytics`, not a dedicated `/admin/operator-board` client route.
 - [x] Restore the full client CI promotion gate on `new-foundation`. On 2026-05-25, `yarn --cwd client test:ci` passed with 69 files and 565 tests after aligning stale expectations with current pathway copy, canonical posted-opportunity props, and normalized ResearchEntity payloads; closed-access copy now renders `Not currently available`.
-- [ ] Before any production write or copy, record the runbook gate: backup/restore drill owner and restore point, dataset version, copy-vs-delta lane, privacy payload acceptance, Meili sync/rollback plan, smoke-route owner, and confirmation that production cron/retention/broad paid writes remain off by default.
-- [ ] Decide production promotion mechanism: copy the accepted Beta database to production, or run guarded production deltas only after the gate above is complete.
-- [ ] If using guarded deltas, run production sources one at a time with `SCRAPER_ENV=production`, `CONFIRM_PROD_SCRAPE=true`, and `--release` posture; save each run ID and report under the promotion dataset version.
+- [x] Choose the promotion mechanism for this iteration: Lane A accepted Beta copy. Beta remains the production-candidate dataset, dataset version `beta-production-candidate-2026-05-25`; production writes remain blocked until fresh Beta gates, parity, backup/restore owner, privacy payload acceptance, Meili rebuild/rollback, and smoke owner are recorded.
+- [ ] Rerun read-only Beta gates with a Beta-targeted `MONGODBURL`: `beta:data-quality`, `scraper:integrity-gate`, `source:health`, and `research:quality-search-review`. The current isolated worktree has no `server/.env`, and the main checkout env points at `Development`, so these gates were not rerun on 2026-05-25.
+- [ ] Before any production copy, record the remaining Lane A gate: fresh production Atlas backup/restore point, rollback owner, smoke-route owner, fresh Beta-vs-production base parity, privacy payload acceptance, accepted warning list, Meili rebuild/rollback plan, and confirmation that production cron/retention/broad paid writes remain off by default.
+- [ ] Keep guarded production deltas out of scope unless Lane A parity cannot be re-established; if the strategy changes, reopen the operator packet and choose Lane B explicitly before any production source run.
 - [ ] Accept, materialize, sync Meili or keep Mongo rollback, smoke `/api/config`, `/api/research/search`, `/research/:slug`, `/api/pathways/search`, `/opportunities/:id`, `/programs` or `/fellowships`, unauthenticated admin `401`, and removed legacy routes, then document rollback posture per source or copy.
 - [ ] Add source-specific staggered recurring jobs only after WorkPlanner behavior is trusted for broad or paid sources.
 
@@ -195,7 +196,7 @@ All accepted Beta source runs below reported `materialization.errors = 0`. This 
 
 ### Known Incomplete
 
-- Production copy/rollout has not been run. The accepted full Beta dataset is now the promotion candidate, subject to backup and storage-retention review.
+- Production copy/rollout has not been run. The accepted full Beta dataset is now the Lane A promotion candidate, subject to fresh Beta gates, parity, production backup/restore ownership, privacy payload review, Meili rebuild/rollback review, and storage-retention review.
 - OpenAlex production retention/storage now defaults to compact retention unless an Atlas storage upgrade is deliberately chosen. The retention command is dry-run-first and deletes only old superseded observations while preserving active evidence and recent runs.
 - ORCID, PubMed, and Europe PMC author-proof scrapers plus Crossref DOI hydration are implemented and dry-run smoked against Beta in small batches, but have not been promoted as full non-dry Beta/production chunks. Use `--offset`/`--limit` chunks; do not run full Crossref across all DOI papers as a single broad job.
 - Recurring broad/paid scraper jobs are intentionally not enabled until WorkPlanner behavior is trusted in production posture.

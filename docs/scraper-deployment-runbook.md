@@ -143,19 +143,20 @@ Required before any production copy or write:
 
 ### Operator Decision Packet
 
-Fill this packet before any production copy, guarded production write, Meilisearch backend switch, or recurring cron enablement. Leave undecided items blank until the operator explicitly accepts them; this packet is a gate record, not the lane decision itself.
+Fill this packet before any production copy, guarded production write, Meilisearch backend switch, or recurring cron enablement. The current default strategy is Lane A: keep Beta as the production-candidate dataset and copy the accepted seeded data only after the gate is complete. Leave operational items blank until the operator explicitly accepts them.
 
 | Field | Operator value |
 | --- | --- |
-| Promotion lane | |
+| Promotion lane | Lane A: accepted Beta copy |
+| Dataset version | `beta-production-candidate-2026-05-25` |
 | Atlas backup / restore point | |
 | Rollback owner | |
 | Smoke owner | |
-| Meili backend before gate | |
-| Meili backend after gate | |
-| Accepted warnings | |
-| Run IDs | |
-| Rollback tested | |
+| Meili backend before gate | Mongo rollback posture for Pathways until production Meili relevance is accepted |
+| Meili backend after gate | Rebuild `pathways` and `researchentities`; keep Pathways on Mongo unless production relevance review is accepted |
+| Accepted warnings | Missing/weak descriptions and sparse pathway/contact coverage may be release warnings only after must-fix warnings are closed or explicitly accepted |
+| Run IDs | Accepted Beta source runs recorded in the roadmap; rerun read-only Beta gates before copy |
+| Rollback tested | Not complete; record fresh Atlas restore point and restore owner before production copy |
 
 ### Production Promotion Lanes
 
