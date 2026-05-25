@@ -24,5 +24,11 @@ describe('NotFound', () => {
     ).toBeTruthy();
     const link = screen.getByRole('link', { name: /explore yale research/i });
     expect(link.getAttribute('href')).toBe('/research');
+    expect(screen.getByRole('link', { name: /browse pathways/i }).getAttribute('href')).toBe(
+      '/pathways',
+    );
+    expect(screen.getByRole('link', { name: /posted opportunities/i }).getAttribute('href')).toBe(
+      '/listings',
+    );
   });
 });
