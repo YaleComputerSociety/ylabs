@@ -87,6 +87,54 @@ describe('program search service', () => {
     );
   });
 
+  it('does not let normal program searches request review or suppressed tiers', async () => {
+    await searchPrograms({
+      studentVisibilityTier: ['operator_review', 'suppressed'],
+      includeOperatorReview: true,
+      includeSuppressed: true,
+    });
+
+    expect(mocks.find).toHaveBeenCalledWith(
+      expect.objectContaining({
+        archived: false,
+        studentVisibilityTier: { $in: ['student_ready', 'limited_but_safe'] },
+      }),
+    );
+    expect(mocks.countDocuments).toHaveBeenCalledWith(
+      expect.objectContaining({
+        studentVisibilityTier: { $in: ['student_ready', 'limited_but_safe'] },
+      }),
+    );
+  });
+
+  it('lets admin program searches inspect operator-review rows', async () => {
+    await searchPrograms({
+      includeNonPublic: true,
+      includeOperatorReview: true,
+    });
+
+    expect(mocks.find).toHaveBeenCalledWith(
+      expect.objectContaining({
+        archived: false,
+        studentVisibilityTier: { $in: ['student_ready', 'limited_but_safe', 'operator_review'] },
+      }),
+    );
+  });
+
+  it('lets admin program searches inspect suppressed rows', async () => {
+    await searchPrograms({
+      includeNonPublic: true,
+      studentVisibilityTier: ['suppressed'],
+    });
+
+    expect(mocks.find).toHaveBeenCalledWith(
+      expect.objectContaining({
+        archived: false,
+        studentVisibilityTier: { $in: ['suppressed'] },
+      }),
+    );
+  });
+
   it('requires student-visible trust tiers for normal program detail reads', async () => {
     await readProgram('67d8928150621bcef434a1d5');
 
@@ -94,6 +142,15 @@ describe('program search service', () => {
       _id: '67d8928150621bcef434a1d5',
       archived: false,
       studentVisibilityTier: { $in: ['student_ready', 'limited_but_safe'] },
+    });
+  });
+
+  it('lets admin program detail reads inspect review or suppressed records', async () => {
+    await readProgram('67d8928150621bcef434a1d5', { includeNonPublic: true });
+
+    expect(mocks.findOne).toHaveBeenCalledWith({
+      _id: '67d8928150621bcef434a1d5',
+      archived: false,
     });
   });
 
