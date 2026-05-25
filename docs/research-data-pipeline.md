@@ -15,11 +15,12 @@ Source metadata
   -> entity/materializer resolution
   -> ResearchEntity / User / Paper / Grant / Fellowship records
   -> EntryPathway / AccessSignal / ContactRoute / PostedOpportunity when evidence supports it
+  -> student visibility gate promotes public-safe records or opens release queue items
   -> Meilisearch rebuild or sync
   -> Research, Pathways, Programs, Opportunity detail, and admin/operator surfaces
 ```
 
-Scrapers collect evidence. They should not create unsupported student-facing conclusions such as "accepting undergrads." Materializers derive product records from observed evidence, source confidence, stable keys, and manual locks.
+Scrapers collect evidence. They should not create unsupported student-facing conclusions such as "accepting undergrads." Materializers derive product records from observed evidence, source confidence, stable keys, and manual locks. The student visibility gate is the public-release boundary: it promotes records that satisfy the visibility rules and holds the rest in the release queue with root repair reasons.
 
 ## Read-Only Control Plane
 
@@ -28,11 +29,14 @@ The first control-plane slice is the admin Operator Board. It remains read-only 
 - source readiness from seeded `Source` rows, recent `ScrapeRun` posture, expected artifacts, and next actions
 - latest dry-run and write-run posture so operators can see whether Mongo writes need a follow-up Meili rebuild
 - review queues split into repair blockers, review signals, and positive evidence signals
+- release queue pressure from held visibility records, grouped by blocker and source
 - discovery candidates from high-signal evidence queues that may be promotable after review
 - WorkPlanner freshness policies for broad, paid, API-limited, or stale-sensitive sources
 - manual gate commands for data quality, scraper integrity, and search sync posture
 
 Pending Meili sync is an operator warning, not a worker. Local or VPN jobs may make Mongo current while Render-owned Meili remains stale; production promotion must explicitly rebuild or verify the prefixed production indexes before smoke checks.
+
+The release queue is written by `yarn --cwd server student-visibility:gate`. Scraper `--auto-materialize`, manual materialize, and production cron paths run the gate after clean write materialization. Scheduled or manual global reconciliation should run the same command with `--collection=all --mode=apply` under the existing environment write guards.
 
 ## Canonical Collections
 

@@ -28,6 +28,7 @@ import mongoose from 'mongoose';
 import { buildOrchestrator } from './registry';
 import { materializeFromRun } from './entityMaterializer';
 import { getScrapeRunReport } from './runReport';
+import { runStudentVisibilityGate } from '../services/studentVisibilityGateService';
 import {
   applyObservationPruneEnvironmentGuards,
   applyScraperEnvironmentGuards,
@@ -203,6 +204,20 @@ Environment guardrails:
         console.log(`\nMaterializing observations from run ${runId}...`);
         const matResult = await materializeFromRun(runId, { dryRun: false });
         console.log(JSON.stringify(matResult, null, 2));
+        if (matResult.errors === 0) {
+          console.log(`\nRunning student visibility gate for source ${sourceName}...`);
+          console.log(
+            JSON.stringify(
+              await runStudentVisibilityGate({
+                collection: 'all',
+                mode: 'apply',
+                sourceName,
+              }),
+              null,
+              2,
+            ),
+          );
+        }
       }
       console.log(`\nRun report for ${runId}:`);
       console.log(JSON.stringify(await getScrapeRunReport(runId), null, 2));
@@ -276,7 +291,23 @@ Environment guardrails:
       const result = await materializeFromRun(runId, { dryRun: guard.options.dryRun });
       console.log(JSON.stringify(result, null, 2));
       console.log(`\nRun report for ${runId}:`);
-      console.log(JSON.stringify(await getScrapeRunReport(runId), null, 2));
+      const report = await getScrapeRunReport(runId);
+      if (!guard.options.dryRun && result.errors === 0) {
+        const sourceName = (report as any).run?.sourceName;
+        console.log(`\nRunning student visibility gate${sourceName ? ` for source ${sourceName}` : ''}...`);
+        console.log(
+          JSON.stringify(
+            await runStudentVisibilityGate({
+              collection: 'all',
+              mode: 'apply',
+              sourceName,
+            }),
+            null,
+            2,
+          ),
+        );
+      }
+      console.log(JSON.stringify(report, null, 2));
       return;
     }
 

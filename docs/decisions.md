@@ -581,3 +581,15 @@ Consequences:
 - The promotion dataset version is `beta-production-candidate-2026-05-25` until replaced by a newer accepted Beta snapshot.
 - Production writes, production scraper deltas, compact-retention apply mode, and recurring cron remain blocked until the runbook packet has backup/restore ownership, smoke ownership, fresh parity, accepted warnings, and Meili rollback posture recorded.
 - Pathways keep Mongo as the rollback posture until production Meili rebuild and relevance review are accepted.
+
+## 2026-05-25: Make Student Visibility Promotion A Release Queue Gate
+
+Public research and program visibility is controlled by a reusable student visibility gate rather than ad hoc operator review. The gate applies the existing public-safety rules, promotes `student_ready` and `limited_but_safe` records automatically, and writes held records to `visibility_release_queue_items` with blocker reasons, source pressure, and next repair actions.
+
+Consequences:
+
+- `operator_review` remains the compatibility tier, but admin workflow language should treat those rows as held release queue items.
+- Scraper auto-materialize, manual materialize, and production cron paths run the gate after clean write materialization.
+- `yarn --cwd server student-visibility:gate --collection=all --mode=dry-run|apply` is the global reconciliation command.
+- The admin Operator Board exposes release queue pressure; `/api/admin/release-queue` provides paginated queue details.
+- Held rows should be repaired at the scraper/materializer/source-evidence layer, not manually promoted by weakening visibility rules.

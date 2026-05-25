@@ -128,8 +128,8 @@ export const normalizePublicProfile = (
     research_interests: researchInterests,
     research_interest_summary: user.researchInterestSummary || user.research_interest_summary || '',
     topics: contaminated && researchInterests.length === 0 ? [] : user.topics || [],
-    scholarlyLinks: extras.scholarlyLinks || [],
-    researchEntities: extras.researchEntities || [],
+    scholarlyLinks: contaminated ? [] : extras.scholarlyLinks || [],
+    researchEntities: contaminated ? [] : extras.researchEntities || [],
   };
 };
 
@@ -137,7 +137,10 @@ const loadProfileScholarlyLinks = async (user: Record<string, any>) => {
   const userId = user._id;
   if (!userId) return [];
 
-  const authorRows = await PaperAuthor.find({ userId })
+  const authorIdentityClauses: Record<string, unknown>[] = [{ userId }];
+  if (user.facultyMemberId) authorIdentityClauses.push({ facultyMemberId: user.facultyMemberId });
+
+  const authorRows = await PaperAuthor.find({ $or: authorIdentityClauses })
     .select('paperId')
     .sort({ lastObservedAt: -1, updatedAt: -1 })
     .limit(50)

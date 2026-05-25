@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import * as cheerio from 'cheerio';
-import { labToObservations } from '../sources/ysmAtoZScraper';
+import { extractLabHomepageDescription, labToObservations } from '../sources/ysmAtoZScraper';
 
 const SAMPLE_HTML = `
 <html><body>
@@ -120,5 +120,61 @@ describe('labToObservations', () => {
     );
 
     expect(obs.map((o) => o.field)).not.toContain('acceptingUndergrads');
+  });
+});
+
+describe('extractLabHomepageDescription', () => {
+  it('prefers official GenericContent metadata over truncated meta tags', () => {
+    const officialDescription =
+      'The primary goal of the Ho Lab is to investigate the impact of viral pathogenesis on human health. We investigate viral pathogenesis in the context of genomics, pathophysiology, immunology, and treatment. Specifically, we are interested in how chronic viral infection disrupts host homeostasis and causes chronic diseases, including chronic inflammation and cancer. Our approach involves using advanced molecular biology, genomics, immunology, single-cell multi-omics, spatial transcriptomics, bioinformatics tools on clinical samples and animal models.';
+    const pageData = {
+      mainComponents: [
+        {
+          key: 'GenericContent',
+          model: {
+            metaData: {
+              description: officialDescription,
+            },
+            paragraphs: [
+              {
+                text: `<p>${officialDescription}</p>`,
+              },
+            ],
+          },
+        },
+      ],
+    };
+    const escapedJson = JSON.stringify(pageData).replace(/"/g, '&quot;');
+    const html = `
+      <html>
+        <head>
+          <meta name="description" content="The primary goal of the Ho Lab is truncated," />
+        </head>
+        <body>
+          <script>${escapedJson}</script>
+        </body>
+      </html>
+    `;
+
+    expect(extractLabHomepageDescription(html)).toEqual({
+      description: officialDescription,
+      shortDescription:
+        'The primary goal of the Ho Lab is to investigate the impact of viral pathogenesis on human health. We investigate viral pathogenesis in the context of genomics, pathophysiology, immunology, and treatment. Specifically, we are interested in how chronic viral infection disrupts',
+    });
+  });
+
+  it('falls back to a sufficiently detailed OpenGraph description', () => {
+    const description =
+      'This lab studies mechanisms of infection, immunity, and treatment using clinical samples, animal models, genomics, single-cell methods, spatial transcriptomics, and bioinformatics tools.';
+
+    expect(
+      extractLabHomepageDescription(`
+        <html>
+          <head><meta property="og:description" content="${description}" /></head>
+        </html>
+      `),
+    ).toMatchObject({
+      description,
+    });
   });
 });

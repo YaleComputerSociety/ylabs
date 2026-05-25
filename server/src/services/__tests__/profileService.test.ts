@@ -61,12 +61,17 @@ describe('profileService profile shaping', () => {
 
     expect(isLikelySameNameContaminatedProfile(rawProfile)).toBe(true);
 
-    const profile = normalizePublicProfile(rawProfile);
+    const profile = normalizePublicProfile(rawProfile, {
+      scholarlyLinks: [{ title: 'Wrong paper' }],
+      researchEntities: [{ name: 'Wrong lab' }],
+    });
     expect(profile.bio).toBe('');
     expect(profile.profile_urls).toEqual({});
     expect(profile.topics).toEqual([]);
     expect(profile.openalex_id).toBeUndefined();
     expect(profile.h_index).toBeUndefined();
+    expect(profile.scholarlyLinks).toEqual([]);
+    expect(profile.researchEntities).toEqual([]);
   });
 
   it('turns identity-backed papers into inspectable profile research activity links', () => {

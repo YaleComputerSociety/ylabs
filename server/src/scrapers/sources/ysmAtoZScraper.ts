@@ -27,6 +27,75 @@ interface RawLab {
   slug: string;
 }
 
+const DESCRIPTION_MIN_LENGTH = 100;
+const SHORT_DESCRIPTION_MAX_LENGTH = 280;
+
+function cleanDescriptionText(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  return cheerio.load(value).text().replace(/\s+/g, ' ').trim();
+}
+
+function shortDescription(value: string): string {
+  const clean = cleanDescriptionText(value);
+  if (clean.length <= SHORT_DESCRIPTION_MAX_LENGTH) return clean;
+  return clean.slice(0, SHORT_DESCRIPTION_MAX_LENGTH).replace(/\s+\S*$/, '').trim();
+}
+
+function descriptionCandidate(value: unknown): string {
+  const clean = cleanDescriptionText(value);
+  return clean.length >= DESCRIPTION_MIN_LENGTH ? clean : '';
+}
+
+function officialPageDataDescriptions(html: string): string[] {
+  const $ = cheerio.load(html);
+  const descriptions: string[] = [];
+
+  $('script').each((_index, script) => {
+    const rawScript = $(script).html() || $(script).text();
+    if (!rawScript || !rawScript.includes('GenericContent')) return;
+    const normalizedScript = rawScript.replace(/&quot;/g, '"');
+    const jsonStart = normalizedScript.indexOf('{');
+    const jsonEnd = normalizedScript.lastIndexOf('}');
+    if (jsonStart < 0 || jsonEnd <= jsonStart) return;
+
+    try {
+      const data = JSON.parse(normalizedScript.slice(jsonStart, jsonEnd + 1));
+      const components = Array.isArray(data?.mainComponents) ? data.mainComponents : [];
+      for (const component of components) {
+        if (component?.key !== 'GenericContent') continue;
+        const metadataDescription = descriptionCandidate(component?.model?.metaData?.description);
+        if (metadataDescription) descriptions.push(metadataDescription);
+        const paragraphs = Array.isArray(component?.model?.paragraphs) ? component.model.paragraphs : [];
+        for (const paragraph of paragraphs) {
+          const paragraphDescription = descriptionCandidate(paragraph?.text);
+          if (paragraphDescription) descriptions.push(paragraphDescription);
+        }
+      }
+    } catch {
+      // Ignore unrelated script tags; YSM pages mix structured app data with ordinary scripts.
+    }
+  });
+
+  return descriptions;
+}
+
+export function extractLabHomepageDescription(
+  html: string,
+): { description: string; shortDescription: string } | null {
+  const $ = cheerio.load(html);
+  const candidates = [
+    ...officialPageDataDescriptions(html),
+    descriptionCandidate($('meta[property="og:description"]').attr('content')),
+    descriptionCandidate($('meta[name="description"]').attr('content')),
+  ].filter(Boolean);
+  const description = candidates.sort((a, b) => b.length - a.length)[0];
+  if (!description) return null;
+  return {
+    description,
+    shortDescription: shortDescription(description),
+  };
+}
+
 function slugifyFromUrl(url: string): string | null {
   try {
     const u = new URL(url);
