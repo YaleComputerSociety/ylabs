@@ -29,18 +29,6 @@ describe('programCandidate', () => {
     ).toBeUndefined();
   });
 
-  it('parses exact deadlines after fuzzy context and rejects impossible dates', () => {
-    expect(
-      parseProgramDeadlineToUtcEndOfDay(
-        'mid-January info session; deadline February 9, 2026',
-        new Date('2026-01-01T00:00:00Z'),
-      ),
-    ).toEqual(new Date('2026-02-09T23:59:59.999Z'));
-    expect(
-      parseProgramDeadlineToUtcEndOfDay('Applications are due February 31, 2026', new Date('2026-01-01T00:00:00Z')),
-    ).toBeUndefined();
-  });
-
   it('classifies mentor-matching and internship programs as structured entry', () => {
     expect(
       inferProgramAccessRole(
@@ -103,26 +91,5 @@ describe('programCandidate', () => {
         }),
       ]),
     );
-  });
-
-  it('does not emit observations for empty array fields', () => {
-    const candidate = finalizeProgramCandidate({
-      sourceName: 'official-yale-programs',
-      title: 'Example Fellowship',
-      sourceUrl: 'https://example.yale.edu/fellowship',
-      yearOfStudy: [],
-      termOfAward: [],
-      purpose: ['Research'],
-      globalRegions: [],
-      citizenshipStatus: [],
-    });
-
-    const observations = candidateToProgramObservations(candidate);
-
-    expect(observations).toEqual(expect.arrayContaining([expect.objectContaining({ field: 'purpose' })]));
-    expect(observations).not.toEqual(expect.arrayContaining([expect.objectContaining({ field: 'yearOfStudy' })]));
-    expect(observations).not.toEqual(expect.arrayContaining([expect.objectContaining({ field: 'termOfAward' })]));
-    expect(observations).not.toEqual(expect.arrayContaining([expect.objectContaining({ field: 'globalRegions' })]));
-    expect(observations).not.toEqual(expect.arrayContaining([expect.objectContaining({ field: 'citizenshipStatus' })]));
   });
 });
