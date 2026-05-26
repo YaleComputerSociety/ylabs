@@ -69,6 +69,27 @@ const CENTER_ACTION_ACCESS_SIGNAL_TYPES = new Set([
   'CONTACT_INSTRUCTIONS_EXIST',
   'PROGRAM_MANAGER_LISTED',
 ]);
+const PROGRAM_ACTION_PATHWAY_TYPES = new Set([
+  'POSTED_ROLE',
+  'RECURRING_PROGRAM',
+  'CENTER_INTERNSHIP',
+  'WORK_STUDY',
+  'VOLUNTEER_OUTREACH',
+  'STUDENT_JOB',
+]);
+const PROGRAM_ACTION_CONTACT_ROUTE_TYPES = new Set([
+  'OFFICIAL_APPLICATION',
+  'PROGRAM_MANAGER',
+  'DEPARTMENT_CONTACT',
+  'FELLOWSHIP_OFFICE',
+]);
+const PROGRAM_ACTION_ACCESS_SIGNAL_TYPES = new Set([
+  'POSTED_OPENING',
+  'RECURRING_PROGRAM',
+  'APPLICATION_FORM_EXISTS',
+  'CONTACT_INSTRUCTIONS_EXIST',
+  'PROGRAM_MANAGER_LISTED',
+]);
 const FACULTY_READY_CONTACT_ROUTE_TYPES = new Set([
   'OFFICIAL_APPLICATION',
   'LAB_MANAGER',
@@ -170,6 +191,7 @@ export function computeResearchEntityStudentVisibility({
   if (
     quality.leadState !== 'lead_attached' &&
     !CENTER_LIKE_ENTITY_TYPES.has(entityType) &&
+    entityType !== 'PROGRAM' &&
     entityType !== 'LAB' &&
     entityType !== 'FACULTY_RESEARCH_AREA'
   ) {
@@ -208,6 +230,32 @@ export function computeResearchEntityStudentVisibility({
     if (!duplicateRisk && hasOfficialSource && hasUsefulDescription && hasCenterActionRoute) {
       computedTier = 'student_ready';
     } else if (!duplicateRisk && hasOfficialSource && hasUsefulDescription) {
+      computedTier = 'limited_but_safe';
+    }
+  } else if (entityType === 'PROGRAM') {
+    const hasOfficialSource = !quality.repairFlags.includes('missing_source_url');
+    const hasUsefulDescription =
+      quality.descriptionState === 'source_backed' || quality.descriptionState === 'thin';
+    const hasProgramActionRoute =
+      publicContactRouteCount > 0 ||
+      openPostedOpportunityCount > 0 ||
+      hasTypedValue(actionablePathwayTypes, PROGRAM_ACTION_PATHWAY_TYPES) ||
+      hasTypedValue(publicContactRouteTypes, PROGRAM_ACTION_CONTACT_ROUTE_TYPES) ||
+      hasTypedValue(accessSignalTypes, PROGRAM_ACTION_ACCESS_SIGNAL_TYPES);
+
+    if (hasOfficialSource) reasons.push('program_official_source');
+    else reasons.push('missing_program_official_source');
+    if (hasProgramActionRoute) reasons.push('program_action_route');
+    else reasons.push('missing_program_action_route');
+
+    if (
+      !duplicateRisk &&
+      hasOfficialSource &&
+      quality.descriptionState === 'source_backed' &&
+      hasProgramActionRoute
+    ) {
+      computedTier = 'student_ready';
+    } else if (!duplicateRisk && hasOfficialSource && hasUsefulDescription && hasProgramActionRoute) {
       computedTier = 'limited_but_safe';
     }
   } else if (entityType === 'LAB') {

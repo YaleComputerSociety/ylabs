@@ -72,6 +72,76 @@ describe('computeResearchEntityStudentVisibility', () => {
     );
   });
 
+  it('marks an official program with an application route ready without PI-style lead evidence', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        entityType: 'PROGRAM',
+        shortDescription:
+          'A structured summer research program connecting undergraduates with Yale research mentors, skill-building seminars, and funded project placements.',
+        fullDescription:
+          'The program connects undergraduates with Yale research mentors through funded summer project placements, public application instructions, skill-building seminars, and source-backed program expectations.',
+        sourceUrls: ['https://science.yalecollege.yale.edu/example-program'],
+        activeAtYaleCache: true,
+      },
+      leadMembers: [],
+      actionablePathwayCount: 1,
+      actionablePathwayTypes: ['RECURRING_PROGRAM'],
+      publicContactRouteCount: 1,
+      publicContactRouteTypes: ['OFFICIAL_APPLICATION'],
+    });
+
+    expect(result.tier).toBe('student_ready');
+    expect(result.reasons).toEqual(
+      expect.arrayContaining(['program_official_source', 'program_action_route']),
+    );
+    expect(result.reasons).not.toContain('missing_lab_lead');
+    expect(result.reasons).not.toContain('missing_lead');
+  });
+
+  it('keeps a thin official program with a public contact route limited but safe', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        entityType: 'PROGRAM',
+        shortDescription:
+          'Undergraduate research program with a public program contact and annual project matching.',
+        sourceUrls: ['https://example.yale.edu/research-program'],
+        activeAtYaleCache: true,
+      },
+      leadMembers: [],
+      publicContactRouteCount: 1,
+      publicContactRouteTypes: ['PROGRAM_MANAGER'],
+    });
+
+    expect(result.tier).toBe('limited_but_safe');
+    expect(result.reasons).toEqual(
+      expect.arrayContaining(['program_official_source', 'program_action_route']),
+    );
+    expect(result.reasons).not.toContain('missing_lab_lead');
+    expect(result.reasons).not.toContain('missing_lead');
+  });
+
+  it('keeps official programs without a public action route in review', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        entityType: 'PROGRAM',
+        shortDescription:
+          'A structured undergraduate research program with seminars, cohort support, and faculty-connected project work.',
+        fullDescription:
+          'The program supports undergraduate research through seminars, cohort support, source-backed expectations, and faculty-connected project work across Yale research settings.',
+        sourceUrls: ['https://example.yale.edu/program-overview'],
+        activeAtYaleCache: true,
+      },
+      leadMembers: [],
+      accessSignalCount: 0,
+      actionablePathwayCount: 0,
+      publicContactRouteCount: 0,
+    });
+
+    expect(result.tier).toBe('operator_review');
+    expect(result.reasons).toContain('missing_program_action_route');
+    expect(result.reasons).not.toContain('missing_lab_lead');
+  });
+
   it('keeps a faculty research area limited only when exploratory framing exists', () => {
     const result = computeResearchEntityStudentVisibility({
       entity: {
