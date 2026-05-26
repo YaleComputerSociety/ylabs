@@ -127,6 +127,14 @@ npx -y corepack@0.34.7 yarn --cwd server source:health
 
 The source-health command is read-only. It summarizes enabled sources, recent run status, coverage metadata, materialization errors/conflicts, and the next action needed before promotion.
 
+Useful department repair conflict review:
+
+```bash
+npx -y corepack@0.34.7 yarn --cwd server department-repair:conflict-review --run <scrapeRunId> --output /tmp/ylabs-dept-conflicts.json
+```
+
+The conflict review is read-only. It reconstructs per-field resolver conflicts from persisted observations, buckets malformed URL/parser issues, missing lead repairs, safe existing values, and rows that still need operator review before more department repair writes.
+
 Useful posted-opportunity status reaper:
 
 ```bash
@@ -240,7 +248,7 @@ Audit focus:
 - Use this deterministic department-page lane before targeted LLM repair for action-evidence gaps.
 - Treat department pages as evidence, not final claims that a lab is accepting students.
 - Latest accepted dev/Beta write: run `6a14fb8c884e98ac9070d6b5` wrote 414 observations and materialized 27 research entities, 31 entry pathways, 42 access signals, and 30 contact routes with zero errors.
-- Hold broader applies until the 67 materialization conflicts from that run are reviewed; 18 contact routes were guarded from public exposure as expected.
+- Hold broader applies until the 67 materialization conflicts from that run are reviewed with `yarn --cwd server department-repair:conflict-review --run 6a14fb8c884e98ac9070d6b5`; 18 contact routes were guarded from public exposure as expected.
 - Generic department guidance should remain exploratory access evidence, not a posted opening.
 - Structured application pages can create official application routes, but the source must not create `PostedOpportunity` rows by itself.
 - Direct contact details should stay behind the existing guarded contact-route policy.
