@@ -117,6 +117,80 @@ describe('buildDepartmentRepairConflictReviewReport', () => {
     });
   });
 
+  it('classifies touched programs with missing contact or lead blockers as program contact repairs', () => {
+    const report = buildDepartmentRepairConflictReviewReport({
+      run: { id: 'run-1', sourceName: 'department-undergrad-research' },
+      observations: [observation({ field: 'sourceUrls', value: ['https://physics.yale.edu/research'] })],
+      entities: [
+        entity({
+          recordId: 'entity-1',
+          slug: 'program-without-contact',
+          label: 'Program Without Contact',
+          entityType: 'PROGRAM',
+          kind: 'program',
+        }),
+      ],
+      visibilityPlans: [
+        {
+          collection: 'research',
+          recordId: 'entity-1',
+          label: 'Program Without Contact',
+          slug: 'program-without-contact',
+          entityType: 'PROGRAM',
+          kind: 'program',
+          computedTier: 'operator_review',
+          tier: 'operator_review',
+          reasons: ['missing_program_contact', 'missing_lead'],
+          sourceNames: ['department-undergrad-research'],
+          nextRepairAction: 'repair program contact route',
+        },
+      ],
+    });
+
+    expect(report.buckets.program_contact_lead_repair).toHaveLength(1);
+    expect(report.buckets.lead_repair).toHaveLength(0);
+    expect(report.buckets.needs_operator_review).toHaveLength(0);
+    expect(report.buckets.program_contact_lead_repair[0]).toMatchObject({
+      entityKey: 'program-without-contact',
+      field: 'contactRoute',
+      reasons: ['missing_program_contact', 'missing_lead'],
+    });
+  });
+
+  it('classifies timestamp-only conflicts as noise instead of operator review', () => {
+    const report = buildDepartmentRepairConflictReviewReport({
+      run: { id: 'run-1', sourceName: 'department-undergrad-research' },
+      observations: [
+        observation({
+          field: 'lastObservedAt',
+          value: '2026-05-25T12:00:00.000Z',
+          confidence: 0.8,
+          observedAt: new Date('2026-05-25T12:00:00.000Z'),
+        }),
+        observation({
+          field: 'lastObservedAt',
+          value: '2026-05-26T12:00:00.000Z',
+          confidence: 0.8,
+          observedAt: new Date('2026-05-26T12:00:00.000Z'),
+        }),
+      ],
+      entities: [
+        entity({
+          currentValues: { lastObservedAt: '2026-05-24T12:00:00.000Z' },
+        }),
+      ],
+      generatedAt: '2026-05-26T12:00:00.000Z',
+    });
+
+    expect(report.buckets.timestamp_noise).toHaveLength(1);
+    expect(report.buckets.needs_operator_review).toHaveLength(0);
+    expect(report.buckets.timestamp_noise[0]).toMatchObject({
+      field: 'lastObservedAt',
+      reasons: ['timestamp_or_noise_conflict'],
+    });
+    expect(report.totals.needsOperatorReviewRows).toBe(0);
+  });
+
   it('keeps stronger locked existing values out of operator review', () => {
     const report = buildDepartmentRepairConflictReviewReport({
       run: { id: 'run-1', sourceName: 'department-undergrad-research' },

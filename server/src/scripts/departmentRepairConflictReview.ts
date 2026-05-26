@@ -20,7 +20,9 @@ dotenv.config();
 export type DepartmentRepairConflictReviewBucket =
   | 'parser_bug'
   | 'lead_repair'
+  | 'program_contact_lead_repair'
   | 'safe_existing_value'
+  | 'timestamp_noise'
   | 'needs_operator_review';
 
 export interface DepartmentRepairReviewObservation {
@@ -80,7 +82,9 @@ export interface DepartmentRepairConflictReviewReport {
     affectedEntities: number;
     parserBugRows: number;
     leadRepairRows: number;
+    programContactLeadRepairRows: number;
     safeExistingValueRows: number;
+    timestampNoiseRows: number;
     needsOperatorReviewRows: number;
   };
   buckets: Record<DepartmentRepairConflictReviewBucket, DepartmentRepairConflictReviewRow[]>;
@@ -90,6 +94,21 @@ export interface DepartmentRepairConflictReviewReport {
 const RESEARCH_ENTITY_TYPES = new Set(['researchEntity', 'researchGroup']);
 const MANUAL_SOURCE_NAMES = new Set(['manual', 'manual-admin-edit', 'manual-pi-edit']);
 const LEAD_REPAIR_REASONS = new Set(['missing_lab_lead', 'missing_lead']);
+const PROGRAM_CONTACT_LEAD_REPAIR_REASONS = new Set([
+  'missing_program_action_route',
+  'missing_program_contact',
+  'missing_center_contact_route',
+  'missing_contact_route',
+  'missing_lead',
+]);
+const TIMESTAMP_NOISE_FIELDS = new Set([
+  'createdat',
+  'updatedat',
+  'observedat',
+  'lastobservedat',
+  'lastscrapedat',
+  'scrapedat',
+]);
 
 const uniqueStrings = (values: unknown[]): string[] =>
   Array.from(
@@ -133,6 +152,11 @@ function isUrlishField(field: string): boolean {
   return normalized.includes('url') || normalized.includes('website') || normalized === 'sourceurls';
 }
 
+function isTimestampNoiseField(field: string): boolean {
+  const normalized = normalizeKey(field).replace(/[_\-\s]/g, '');
+  return TIMESTAMP_NOISE_FIELDS.has(normalized) || normalized.endsWith('timestamp');
+}
+
 function hasMalformedUrlLikeValue(value: unknown): boolean {
   return collectStrings(value).some((raw) => {
     const value = raw.trim();
@@ -168,6 +192,9 @@ function classifyConflict(
   field: string,
   resolved: ResolvedField,
 ): DepartmentRepairConflictReviewBucket {
+  if (isTimestampNoiseField(field)) {
+    return 'timestamp_noise';
+  }
   if (resolved.contributingSources.some((sourceName) => MANUAL_SOURCE_NAMES.has(sourceName))) {
     return 'safe_existing_value';
   }
@@ -189,7 +216,11 @@ function classifyConflict(
 function actionForBucket(bucket: DepartmentRepairConflictReviewBucket): string {
   if (bucket === 'parser_bug') return 'Fix department link extraction and rerun before applying broader batches.';
   if (bucket === 'lead_repair') return 'Repair PI/lead evidence before promotion; do not weaken the lab gate.';
+  if (bucket === 'program_contact_lead_repair') {
+    return 'Repair the program contact, lead, or action route before promotion.';
+  }
   if (bucket === 'safe_existing_value') return 'Keep the existing stronger value; document the lower-trust conflict if it repeats.';
+  if (bucket === 'timestamp_noise') return 'Treat as scrape timestamp noise; do not route to operator review.';
   return 'Review the source-backed field conflict before applying more department repair writes.';
 }
 
@@ -239,8 +270,10 @@ function compareRows(
   const bucketOrder: Record<DepartmentRepairConflictReviewBucket, number> = {
     parser_bug: 0,
     lead_repair: 1,
-    safe_existing_value: 2,
-    needs_operator_review: 3,
+    program_contact_lead_repair: 2,
+    safe_existing_value: 3,
+    timestamp_noise: 4,
+    needs_operator_review: 5,
   };
   if (bucketOrder[a.bucket] !== bucketOrder[b.bucket]) return bucketOrder[a.bucket] - bucketOrder[b.bucket];
   const labelCompare = (a.label || a.entityKey).localeCompare(b.label || b.entityKey);
@@ -248,9 +281,18 @@ function compareRows(
   return a.field.localeCompare(b.field);
 }
 
-function isLeadRepairCandidate(entity: DepartmentRepairReviewEntity | undefined): boolean {
+function isLabLeadRepairCandidate(entity: DepartmentRepairReviewEntity | undefined): boolean {
   const type = entityTypeKey(entity);
-  return type === 'lab' || type === 'program';
+  return type === 'lab';
+}
+
+function isProgramContactLeadRepairCandidate(entity: DepartmentRepairReviewEntity | undefined): boolean {
+  const type = entityTypeKey(entity);
+  return type === 'program';
+}
+
+function matchingRepairReasons(plan: StudentVisibilityGatePlan, allowedReasons: Set<string>): string[] {
+  return plan.reasons.filter((reason) => allowedReasons.has(reason));
 }
 
 export function buildDepartmentRepairConflictReviewReport(input: {
@@ -347,7 +389,7 @@ export function buildDepartmentRepairConflictReviewReport(input: {
           conflictingValues: resolvedField.conflictingValues || [],
           contributingSources: resolvedField.contributingSources,
           sourceUrls: sourceUrlsForField(observations, field),
-          reasons: ['materialization_field_conflict'],
+          reasons: bucket === 'timestamp_noise' ? ['timestamp_or_noise_conflict'] : ['materialization_field_conflict'],
         }),
       );
     }
@@ -367,16 +409,20 @@ export function buildDepartmentRepairConflictReviewReport(input: {
 
   for (const plan of input.visibilityPlans || []) {
     if (!touchedRecordIds.has(plan.recordId)) continue;
-    if (!plan.reasons.some((reason) => LEAD_REPAIR_REASONS.has(reason))) continue;
     const entity = entitiesById.get(normalizeKey(plan.recordId));
-    if (!isLeadRepairCandidate(entity)) continue;
+    const labLeadRepairReasons = matchingRepairReasons(plan, LEAD_REPAIR_REASONS);
+    const programContactLeadRepairReasons = matchingRepairReasons(plan, PROGRAM_CONTACT_LEAD_REPAIR_REASONS);
+    const isLabLeadRepair = isLabLeadRepairCandidate(entity) && labLeadRepairReasons.length > 0;
+    const isProgramContactLeadRepair =
+      isProgramContactLeadRepairCandidate(entity) && programContactLeadRepairReasons.length > 0;
+    if (!isLabLeadRepair && !isProgramContactLeadRepair) continue;
     const observation =
       firstObservationByRecordId.get(plan.recordId) ||
       ({
         entityType: 'researchEntity',
         entityId: plan.recordId,
         entityKey: plan.slug,
-        field: 'lead',
+        field: isProgramContactLeadRepair ? 'contactRoute' : 'lead',
         value: undefined,
         sourceName: 'student-visibility-gate',
         confidence: 1,
@@ -384,14 +430,14 @@ export function buildDepartmentRepairConflictReviewReport(input: {
       } satisfies DepartmentRepairReviewObservation);
     addRow(
       makeBaseRow({
-        bucket: 'lead_repair',
+        bucket: isProgramContactLeadRepair ? 'program_contact_lead_repair' : 'lead_repair',
         observation,
         entity,
-        field: 'lead',
+        field: isProgramContactLeadRepair ? 'contactRoute' : 'lead',
         conflictingValues: [],
         contributingSources: plan.sourceNames,
         sourceUrls: sourceUrlsForField(runObservationsByEntity.get(groupKeyForObservation(observation)) || [], 'sourceUrls'),
-        reasons: plan.reasons.filter((reason) => LEAD_REPAIR_REASONS.has(reason)),
+        reasons: isProgramContactLeadRepair ? programContactLeadRepairReasons : labLeadRepairReasons,
       }),
     );
   }
@@ -401,7 +447,9 @@ export function buildDepartmentRepairConflictReviewReport(input: {
   const buckets: Record<DepartmentRepairConflictReviewBucket, DepartmentRepairConflictReviewRow[]> = {
     parser_bug: rows.filter((row) => row.bucket === 'parser_bug'),
     lead_repair: rows.filter((row) => row.bucket === 'lead_repair'),
+    program_contact_lead_repair: rows.filter((row) => row.bucket === 'program_contact_lead_repair'),
     safe_existing_value: rows.filter((row) => row.bucket === 'safe_existing_value'),
+    timestamp_noise: rows.filter((row) => row.bucket === 'timestamp_noise'),
     needs_operator_review: rows.filter((row) => row.bucket === 'needs_operator_review'),
   };
 
@@ -415,7 +463,9 @@ export function buildDepartmentRepairConflictReviewReport(input: {
       affectedEntities: affectedEntities.size,
       parserBugRows: buckets.parser_bug.length,
       leadRepairRows: buckets.lead_repair.length,
+      programContactLeadRepairRows: buckets.program_contact_lead_repair.length,
       safeExistingValueRows: buckets.safe_existing_value.length,
+      timestampNoiseRows: buckets.timestamp_noise.length,
       needsOperatorReviewRows: buckets.needs_operator_review.length,
     },
     buckets,
