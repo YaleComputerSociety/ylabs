@@ -18,6 +18,8 @@ import {
   candidateSubPageUrls,
   candidateCrawlUrls,
   buildLLMPrompt,
+  LAB_UNDERGRAD_RESPONSE_FORMAT,
+  LAB_UNDERGRAD_SYSTEM_PROMPT,
   extractionToObservations,
   sourceUrlForExtraction,
   candidateLabFromResearchEntityDoc,
@@ -250,6 +252,36 @@ describe('buildLLMPrompt', () => {
   });
 });
 
+describe('LLM extraction contract', () => {
+  it('requires conservative source-backed research description fields', () => {
+    const required = (
+      (LAB_UNDERGRAD_RESPONSE_FORMAT as any).json_schema.schema.required
+    ) as string[];
+
+    expect(required).toEqual(
+      expect.arrayContaining(['researchSummary', 'methodsQuote', 'topicsQuote']),
+    );
+    expect(LAB_UNDERGRAD_RESPONSE_FORMAT.json_schema.schema.properties).toHaveProperty(
+      'researchSummary',
+    );
+    expect(LAB_UNDERGRAD_RESPONSE_FORMAT.json_schema.schema.properties).toHaveProperty(
+      'methodsQuote',
+    );
+    expect(LAB_UNDERGRAD_RESPONSE_FORMAT.json_schema.schema.properties).toHaveProperty(
+      'topicsQuote',
+    );
+  });
+
+  it('tells the LLM not to use publication blurbs, generic bios, or unsupported description claims', () => {
+    const prompt = LAB_UNDERGRAD_SYSTEM_PROMPT.toLowerCase();
+
+    expect(prompt).toContain('publication');
+    expect(prompt).toContain('generic faculty bio');
+    expect(prompt).toContain('unsupported');
+    expect(prompt).toContain('lab/faculty site research text');
+  });
+});
+
 describe('sourceUrlForExtraction', () => {
   it('returns the page whose text contains the evidence quote', () => {
     const ext: LLMExtraction = {
@@ -312,6 +344,77 @@ describe('extractionToObservations', () => {
     expect(quote!.sourceUrl).toBe('https://x.example/join');
     // lastObservedAt always emitted
     expect(obs.find((o) => o.field === 'lastObservedAt')!.value).toEqual(fixedDate);
+  });
+
+  it('emits conservative description observations from source-supported researchSummary', () => {
+    const ext: LLMExtraction = {
+      openToUndergrads: 'unclear',
+      currentUndergradCount: 0,
+      evidenceQuote: '',
+      evidenceSource: 'none',
+      joinPageUrl: null,
+      researchSummary:
+        'The lab studies urban climate adaptation using satellite imagery and field sensors.',
+      methodsQuote: 'We combine satellite imagery with field sensors',
+      topicsQuote: 'urban climate adaptation',
+    };
+    const obs = extractionToObservations('lab-desc', 'https://x.example/', ext, fixedDate, {
+      sourceTexts: [
+        'Research: We combine satellite imagery with field sensors to study urban climate adaptation.',
+      ],
+    });
+
+    const shortDescription = obs.find((o) => o.field === 'shortDescription');
+    const fullDescription = obs.find((o) => o.field === 'fullDescription');
+    expect(shortDescription?.value).toBe(
+      'The lab studies urban climate adaptation using satellite imagery and field sensors.',
+    );
+    expect(shortDescription?.confidenceOverride).toBe(0.55);
+    expect(fullDescription?.value).toBe(
+      'The lab studies urban climate adaptation using satellite imagery and field sensors.',
+    );
+    expect(fullDescription?.confidenceOverride).toBe(0.55);
+  });
+
+  it('does not emit description observations when researchSummary is empty', () => {
+    const ext: LLMExtraction = {
+      openToUndergrads: 'unclear',
+      currentUndergradCount: 0,
+      evidenceQuote: '',
+      evidenceSource: 'none',
+      joinPageUrl: null,
+      researchSummary: '',
+      methodsQuote: 'We use interviews and archival sources.',
+      topicsQuote: 'labor history',
+    };
+    const obs = extractionToObservations('lab-empty-desc', 'https://x.example/', ext, fixedDate, {
+      sourceTexts: ['We use interviews and archival sources to study labor history.'],
+    });
+
+    expect(obs.find((o) => o.field === 'shortDescription')).toBeUndefined();
+    expect(obs.find((o) => o.field === 'fullDescription')).toBeUndefined();
+  });
+
+  it('does not invent description observations from unsupported publication or generic bio text', () => {
+    const ext: LLMExtraction = {
+      openToUndergrads: 'unclear',
+      currentUndergradCount: 0,
+      evidenceQuote: '',
+      evidenceSource: 'none',
+      joinPageUrl: null,
+      researchSummary:
+        'The lab studies neural circuits with optogenetics and computational modeling.',
+      methodsQuote: 'Nature Neuroscience 2024',
+      topicsQuote: 'Professor Smith is an award-winning researcher',
+    };
+    const obs = extractionToObservations('lab-unsupported-desc', 'https://x.example/', ext, fixedDate, {
+      sourceTexts: [
+        'Selected publications: Nature Neuroscience 2024. Professor Smith is an award-winning researcher.',
+      ],
+    });
+
+    expect(obs.find((o) => o.field === 'shortDescription')).toBeUndefined();
+    expect(obs.find((o) => o.field === 'fullDescription')).toBeUndefined();
   });
 
   it('emits acceptingUndergrads=false on no', () => {

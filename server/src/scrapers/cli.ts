@@ -17,9 +17,20 @@
  *   --limit <n>     Cap the number of entities the scraper processes
  *   --offset <n>    Skip the first n entities after source-specific ordering
  *   --only <keys>   Comma-separated source-specific keys/netids to process
+ *   --only-file <path>
+ *                  Load `only` keys from a student visibility repair target report
+ *   --target-bucket <name>
+ *                  Bucket inside --only-file to use
+ *   --batch <n>    One-based batch number for --only-file targets
+ *   --batch-size <n>
+ *                  Number of --only-file targets per batch (default 50)
  *   --since <date>  Restrict scrapers that support recency filters
  *   --ignore-work-planner  Bypass freshness skips for full audit/backfill runs
  *   --auto-materialize   After successful run, immediately materialize observations
+ *   --visibility-gate-mode <dry-run|apply>
+ *                  Gate mode after --auto-materialize (default apply)
+ *   --allow-visibility-demotions
+ *                  Allow source-scoped public-to-held gate demotions after materialization
  */
 import dotenv from 'dotenv';
 import fs from 'fs/promises';
@@ -48,6 +59,11 @@ function parseArgs(argv: string[]): { command: string; flags: Record<string, str
   for (let i = 3; i < argv.length; i++) {
     const a = argv[i];
     if (a.startsWith('--')) {
+      const equalsIndex = a.indexOf('=');
+      if (equalsIndex > 2) {
+        flags[a.slice(2, equalsIndex)] = a.slice(equalsIndex + 1);
+        continue;
+      }
       const key = a.slice(2);
       const next = argv[i + 1];
       if (next && !next.startsWith('--')) {
@@ -61,7 +77,7 @@ function parseArgs(argv: string[]): { command: string; flags: Record<string, str
   return { command, flags };
 }
 
-function parseScraperOptions(flags: Record<string, string | boolean>): ScraperOptions {
+export function parseScraperOptions(flags: Record<string, string | boolean>): ScraperOptions {
   const options: ScraperOptions = {
     dryRun: !!flags['dry-run'],
     useCache: !!flags['use-cache'] && !flags.release,
@@ -76,6 +92,15 @@ function parseScraperOptions(flags: Record<string, string | boolean>): ScraperOp
             .map((s) => s.trim())
             .filter(Boolean)
         : undefined,
+    onlyFile: typeof flags['only-file'] === 'string' ? flags['only-file'] : undefined,
+    targetBucket: typeof flags['target-bucket'] === 'string' ? flags['target-bucket'] : undefined,
+    batch: flags.batch ? parseInt(String(flags.batch), 10) : undefined,
+    batchSize: flags['batch-size'] ? parseInt(String(flags['batch-size']), 10) : undefined,
+    visibilityGateMode:
+      flags['visibility-gate-mode'] === 'dry-run' || flags['visibility-gate-mode'] === 'apply'
+        ? flags['visibility-gate-mode']
+        : undefined,
+    allowVisibilityDemotions: !!flags['allow-visibility-demotions'],
     discoverOpenAlexAuthors: !!flags['discover-openalex-authors'],
     maxOpenAlexPagesPerAuthor: flags['max-openalex-pages-per-author']
       ? parseInt(String(flags['max-openalex-pages-per-author']), 10)
@@ -91,8 +116,101 @@ function parseScraperOptions(flags: Record<string, string | boolean>): ScraperOp
   if (flags.since && Number.isNaN(options.since?.getTime())) {
     throw new Error('--since must be a valid date');
   }
+  if (
+    flags['visibility-gate-mode'] !== undefined &&
+    flags['visibility-gate-mode'] !== 'dry-run' &&
+    flags['visibility-gate-mode'] !== 'apply'
+  ) {
+    throw new Error('--visibility-gate-mode must be either dry-run or apply');
+  }
 
   return options;
+}
+
+interface TargetReportBucket {
+  slugs?: unknown;
+}
+
+export function selectOnlyFromTargetReport(
+  report: Record<string, unknown>,
+  options: { targetBucket: string; batch: number; batchSize: number },
+): string[] {
+  if (!Number.isFinite(options.batch) || options.batch < 1) {
+    throw new Error('--batch must be a number greater than or equal to 1');
+  }
+  if (!Number.isFinite(options.batchSize) || options.batchSize < 1) {
+    throw new Error('--batch-size must be a number greater than or equal to 1');
+  }
+  const bucket = (report[options.targetBucket] ||
+    (report.buckets as Record<string, unknown> | undefined)?.[options.targetBucket]) as
+    | TargetReportBucket
+    | undefined;
+  if (!bucket) {
+    throw new Error(`Target bucket "${options.targetBucket}" was not found in --only-file report`);
+  }
+  if (!Array.isArray(bucket.slugs)) {
+    throw new Error(`Target bucket "${options.targetBucket}" must include a slugs array`);
+  }
+  const slugs = bucket.slugs
+    .filter((slug): slug is string => typeof slug === 'string')
+    .map((slug) => slug.trim())
+    .filter(Boolean);
+  const start = (Math.floor(options.batch) - 1) * Math.floor(options.batchSize);
+  return slugs.slice(start, start + Math.floor(options.batchSize));
+}
+
+async function loadOnlyFromTargetFile(flags: Record<string, string | boolean>): Promise<string[] | undefined> {
+  if (flags['only-file'] === undefined) return undefined;
+  if (typeof flags['only-file'] !== 'string' || !flags['only-file'].trim()) {
+    throw new Error('--only-file requires a JSON report path');
+  }
+  if (typeof flags['target-bucket'] !== 'string' || !flags['target-bucket'].trim()) {
+    throw new Error('--target-bucket is required when using --only-file');
+  }
+  const batch = parseIntegerFlag(flags, 'batch', 1, { min: 1 });
+  const batchSize = parseIntegerFlag(flags, 'batch-size', 50, { min: 1 });
+  const onlyFile = flags['only-file'];
+  const targetBucket = flags['target-bucket'];
+  const filePath = path.resolve(onlyFile);
+  let raw: string;
+  try {
+    raw = await fs.readFile(filePath, 'utf8');
+  } catch (error: any) {
+    throw new Error(`Unable to read --only-file ${filePath}: ${error?.message || String(error)}`);
+  }
+  let report: Record<string, unknown>;
+  try {
+    report = JSON.parse(raw) as Record<string, unknown>;
+  } catch (error: any) {
+    throw new Error(`Unable to parse --only-file ${filePath} as JSON: ${error?.message || String(error)}`);
+  }
+  return selectOnlyFromTargetReport(report, {
+    targetBucket: targetBucket.trim(),
+    batch,
+    batchSize,
+  });
+}
+
+async function applyTargetFileOptions(
+  options: ScraperOptions,
+  flags: Record<string, string | boolean>,
+): Promise<ScraperOptions> {
+  const only = await loadOnlyFromTargetFile(flags);
+  if (!only) return options;
+  return { ...options, only };
+}
+
+function publicToHeldDemotionCount(report: Awaited<ReturnType<typeof runStudentVisibilityGate>>): number {
+  const transitions = report.changedTierSummary?.byTransition || {};
+  return Object.entries(transitions).reduce((count, [transition, value]) => {
+    if (
+      /^student_ready->(operator_review|suppressed)$/.test(transition) ||
+      /^limited_but_safe->(operator_review|suppressed)$/.test(transition)
+    ) {
+      return count + value;
+    }
+    return count;
+  }, 0);
 }
 
 function parseIntegerFlag(
@@ -131,6 +249,11 @@ Run flags:
   --limit <n>          Cap entities processed
   --offset <n>         Skip first n ordered entities
   --only <keys>        Comma-separated source-specific keys/netids
+  --only-file <path>   Load --only keys from a repair target JSON report
+  --target-bucket <name>
+                       Bucket inside --only-file to use
+  --batch <n>          One-based batch number for --only-file targets
+  --batch-size <n>     Number of --only-file targets per batch (default 50)
   --since <date>       Restrict scrapers that support recency filters
   --discover-openalex-authors
                        For openalex, allow expensive name-only author discovery
@@ -141,6 +264,10 @@ Run flags:
   --ignore-work-planner
                        Bypass freshness skips for full audit/backfill runs
   --auto-materialize   Materialize immediately after a successful run
+  --visibility-gate-mode <dry-run|apply>
+                       Gate mode after --auto-materialize; use dry-run for repair batches
+  --allow-visibility-demotions
+                       Allow source-scoped public-to-held gate demotions after materialization
 
 Cron flags:
   --force-disabled     Run a disabled source only for manual recovery
@@ -186,7 +313,7 @@ Environment guardrails:
         console.error('ERROR: --source <name> is required');
         process.exit(1);
       }
-      const options = parseScraperOptions(flags);
+      const options = await applyTargetFileOptions(parseScraperOptions(flags), flags);
       const guard = applyScraperEnvironmentGuards({
         command: 'run',
         options,
@@ -208,18 +335,32 @@ Environment guardrails:
         const matResult = await materializeFromRun(runId, { dryRun: false });
         console.log(JSON.stringify(matResult, null, 2));
         if (matResult.errors === 0) {
-          console.log(`\nRunning student visibility gate for source ${sourceName}...`);
-          console.log(
-            JSON.stringify(
-              await runStudentVisibilityGate({
-                collection: 'all',
-                mode: 'apply',
-                sourceName,
-              }),
-              null,
-              2,
-            ),
-          );
+          const visibilityGateMode = guard.options.visibilityGateMode || 'apply';
+          console.log(`\nRunning student visibility gate for source ${sourceName} (${visibilityGateMode})...`);
+          const gateDryRun = await runStudentVisibilityGate({
+            collection: 'all',
+            mode: 'dry-run',
+            sourceName,
+          });
+          const demotionCount = publicToHeldDemotionCount(gateDryRun);
+          if (
+            visibilityGateMode === 'apply' &&
+            demotionCount > 0 &&
+            !guard.options.allowVisibilityDemotions
+          ) {
+            throw new Error(
+              `Refusing to apply student visibility gate for source ${sourceName}: dry-run found ${demotionCount} public-to-held demotion(s). Re-run with --visibility-gate-mode=dry-run to inspect or --allow-visibility-demotions to apply intentionally.`,
+            );
+          }
+          const gateReport =
+            visibilityGateMode === 'apply'
+              ? await runStudentVisibilityGate({
+                  collection: 'all',
+                  mode: 'apply',
+                  sourceName,
+                })
+              : gateDryRun;
+          console.log(JSON.stringify(gateReport, null, 2));
         }
       }
       console.log(`\nRun report for ${runId}:`);
@@ -233,7 +374,7 @@ Environment guardrails:
         console.error('ERROR: --source <name> is required');
         process.exit(1);
       }
-      const options = parseScraperOptions(flags);
+      const options = await applyTargetFileOptions(parseScraperOptions(flags), flags);
       const guard = applyScraperEnvironmentGuards({
         command: 'cron',
         options,
@@ -358,7 +499,9 @@ Environment guardrails:
   }
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
+  main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}

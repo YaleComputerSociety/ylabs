@@ -32,6 +32,12 @@ export interface ScraperOptions {
   limit?: number;
   offset?: number;
   only?: string[];
+  onlyFile?: string;
+  targetBucket?: string;
+  batch?: number;
+  batchSize?: number;
+  visibilityGateMode?: 'dry-run' | 'apply';
+  allowVisibilityDemotions?: boolean;
   since?: Date;
   discoverOpenAlexAuthors?: boolean;
   maxOpenAlexPagesPerAuthor?: number;

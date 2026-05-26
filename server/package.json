@@ -26,6 +26,7 @@
     "programs:backfill-classification": "tsx src/scripts/backfillProgramClassifications.ts",
     "student-visibility:backfill": "tsx src/scripts/backfillStudentVisibilityTiers.ts",
     "student-visibility:gate": "tsx src/scripts/studentVisibilityGate.ts",
+    "student-visibility:repair-targets": "tsx src/scripts/studentVisibilityRepairTargets.ts",
     "beta:readiness": "tsx src/scripts/betaReadinessGate.ts",
     "pathway:relevance-review": "tsx src/scripts/pathwayRelevanceReview.ts",
     "research:quality-search-review": "tsx src/scripts/researchQualitySearchReview.ts",

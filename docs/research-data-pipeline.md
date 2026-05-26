@@ -49,6 +49,8 @@ yarn scrape run --source <source-name> --dry-run --db-review
 
 The dry-run report includes `evidenceCoverageImpact` for affected `ResearchEntity` rows, including resolved blockers, remaining blockers, and rejected fields. This makes "more data" operationally useful only when the new source repairs a specific public claim. Publication/book blurbs may support research-topic context, but they should not satisfy entity-description coverage; listings can support access/action evidence, but they should not by themselves make a research home student-ready.
 
+For action-evidence repair, official deterministic department undergraduate research pages are the first repair lane before targeted LLM extraction. The `department-undergrad-research` source emits program or department-level research entity evidence, undergraduate access evidence, and guarded contact/application-route observations when the page itself supports them; generic guidance pages must not be materialized as active posted opportunities.
+
 ## Read-Only Control Plane
 
 The first control-plane slice is the admin Operator Board. It remains read-only and does not replace CLI or cron execution. It should show:

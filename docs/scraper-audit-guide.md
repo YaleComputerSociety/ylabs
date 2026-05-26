@@ -236,6 +236,7 @@ Expected collections after an accepted materialized write:
 
 Audit focus:
 
+- Use this deterministic department-page lane before targeted LLM repair for action-evidence gaps.
 - Treat department pages as evidence, not final claims that a lab is accepting students.
 - Generic department guidance should remain exploratory access evidence, not a posted opening.
 - Structured application pages can create official application routes, but the source must not create `PostedOpportunity` rows by itself.
@@ -244,6 +245,7 @@ Audit focus:
 Project impact:
 
 - Adds official, deterministic undergraduate research routes before any broad LLM or worker automation.
+- Current deterministic coverage includes Physics, Chemistry, MCDB, Economics, Psychology, Astronomy, Mathematics, Engineering, Cognitive Science, Ecology and Evolutionary Biology, and Yale College Science and Quantitative Reasoning Education.
 
 ### `undergrad-fellowships-recipients`
 

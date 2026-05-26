@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   DEPARTMENT_UNDERGRAD_RESEARCH_SOURCE,
+  DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES,
   DepartmentUndergradResearchScraper,
   departmentUndergradResearchRecordsToObservations,
   parseGeneralDepartmentResearchPage,
@@ -42,6 +43,25 @@ const MCDB_HTML = `
   <p>Students will gain hands-on experience working on clinical research studies in the Yale New Haven Children's Hospital pediatric emergency department.</p>
   <p>Application link: <a href="https://yalesurvey.ca1.qualtrics.com/jfe/form/SV_fixture">Apply here</a></p>
   <p>Contact: paul.aronson@yale.edu</p>
+</main>
+`;
+
+const ASTRONOMY_HTML = `
+<main>
+  <h1>Undergraduate Research</h1>
+  <h2>Independent Senior Research Project</h2>
+  <p>All majors undertake an independent senior research project under the direct supervision of a faculty member.</p>
+  <h2>Summer Research Opportunities</h2>
+  <p>Most undergraduate students take advantage of at least one summer to do research, either in an external REU or working closely with faculty at Yale.</p>
+</main>
+`;
+
+const EEB_HTML = `
+<main>
+  <h1>Undergraduate Research Opportunities</h1>
+  <p>There are many opportunities for students to carry out research in the laboratory of a faculty member.</p>
+  <p>All interested students are encouraged to participate in research.</p>
+  <p>The choice of a research laboratory should be made in consultation with faculty members and the Director of Undergraduate Studies or the Research Coordinator.</p>
 </main>
 `;
 
@@ -192,6 +212,76 @@ describe('departmentUndergradResearchScraper', () => {
       ]),
     );
     expect(fields).not.toContain('joinPageUrl');
+  });
+
+  it('parses new official guidance configs as source-backed entity/access evidence only', () => {
+    const astronomyConfig = DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES.find(
+      (page) => page.key === 'astronomy',
+    );
+    const eebConfig = DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES.find((page) => page.key === 'eeb');
+
+    expect(astronomyConfig).toMatchObject({
+      url: 'https://astronomy.yale.edu/academics/undergraduate-program/undergraduate-research',
+      parser: 'general-guidance',
+    });
+    expect(eebConfig).toMatchObject({
+      url: 'https://eeb.yale.edu/academics/undergraduate-program/undergraduate-research-opportunities',
+      parser: 'general-guidance',
+    });
+
+    const records = [
+      ...parseGeneralDepartmentResearchPage(ASTRONOMY_HTML, astronomyConfig!),
+      ...parseGeneralDepartmentResearchPage(EEB_HTML, eebConfig!),
+    ];
+    const observations = departmentUndergradResearchRecordsToObservations(records);
+    const fields = observations.map((observation) => observation.field);
+
+    expect(records).toMatchObject([
+      {
+        entityKey: 'department-undergrad-research-astronomy',
+        name: 'Astronomy Undergraduate Research',
+        kind: 'program',
+        entityType: 'PROGRAM',
+        sourceUrl: astronomyConfig!.url,
+        description: expect.stringContaining('direct supervision of a faculty member'),
+        undergradAccessEvidence: true,
+      },
+      {
+        entityKey: 'department-undergrad-research-ecology-and-evolutionary-biology',
+        name: 'Ecology and Evolutionary Biology Undergraduate Research Opportunities',
+        kind: 'program',
+        entityType: 'PROGRAM',
+        sourceUrl: eebConfig!.url,
+        description: expect.stringContaining('carry out research in the laboratory'),
+        undergradAccessEvidence: true,
+      },
+    ]);
+    expect(observations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          entityKey: 'department-undergrad-research-astronomy',
+          field: 'fullDescription',
+          sourceUrl: astronomyConfig!.url,
+          value: expect.stringContaining('undergraduate students'),
+        }),
+        expect.objectContaining({
+          entityKey: 'department-undergrad-research-ecology-and-evolutionary-biology',
+          field: 'undergradAccessEvidence',
+          sourceUrl: eebConfig!.url,
+          value: { openToUndergrads: 'yes', evidenceSource: 'department_undergrad_research_page' },
+        }),
+      ]),
+    );
+    expect(fields).not.toEqual(
+      expect.arrayContaining([
+        'postedOpportunityTitle',
+        'opportunityTitle',
+        'listingId',
+        'deadline',
+        'applicationUrl',
+        'compensationType',
+      ]),
+    );
   });
 
   it('runs selected configured pages and honors only filters', async () => {

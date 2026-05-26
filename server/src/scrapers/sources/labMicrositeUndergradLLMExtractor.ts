@@ -99,6 +99,9 @@ export interface LLMExtraction {
   evidenceQuote: string;
   evidenceSource: EvidenceSource;
   joinPageUrl: string | null;
+  researchSummary?: string;
+  methodsQuote?: string;
+  topicsQuote?: string;
   undergradRoleQuote?: string;
   contactInstructionsQuote?: string;
   explicitConstraintQuote?: string;
@@ -125,6 +128,9 @@ export const LAB_UNDERGRAD_RESPONSE_FORMAT = {
           enum: ['explicit_text', 'members_section', 'none'],
         },
         joinPageUrl: { type: ['string', 'null'] },
+        researchSummary: { type: 'string' },
+        methodsQuote: { type: 'string' },
+        topicsQuote: { type: 'string' },
         undergradRoleQuote: { type: 'string' },
         contactInstructionsQuote: { type: 'string' },
         explicitConstraintQuote: { type: 'string' },
@@ -135,6 +141,9 @@ export const LAB_UNDERGRAD_RESPONSE_FORMAT = {
         'evidenceQuote',
         'evidenceSource',
         'joinPageUrl',
+        'researchSummary',
+        'methodsQuote',
+        'topicsQuote',
         'undergradRoleQuote',
         'contactInstructionsQuote',
         'explicitConstraintQuote',
@@ -144,7 +153,7 @@ export const LAB_UNDERGRAD_RESPONSE_FORMAT = {
   },
 };
 
-const SYSTEM_PROMPT = `You are an expert classifier evaluating whether a Yale research lab's website indicates that the lab accepts undergraduate researchers.
+export const LAB_UNDERGRAD_SYSTEM_PROMPT = `You are an expert classifier evaluating whether a Yale research lab's website indicates that the lab accepts undergraduate researchers and contains source-backed research description text.
 
 Your job is to read text scraped from a lab's website (home page plus optionally a "members" or "join" sub-page) and return a JSON object with these fields:
 
@@ -153,11 +162,14 @@ Your job is to read text scraped from a lab's website (home page plus optionally
 - evidenceQuote: a verbatim quote from the page (≤200 characters) that supports your verdict. If openToUndergrads is "unclear" or "no", quote the most relevant text you found, or empty string if there is none.
 - evidenceSource: "explicit_text" if your verdict comes from prose ("we welcome undergraduates"), "members_section" if from a roster listing, "none" if no evidence.
 - joinPageUrl: the URL (absolute) of a "join the lab" or "opportunities" page, if mentioned. Otherwise null.
+- researchSummary: a concise 1-sentence summary of the lab/faculty site research text, only when the site itself describes current research topics, questions, or methods. Otherwise empty string.
+- methodsQuote: a verbatim quote (≤200 characters) naming methods, materials, archives, data, fieldwork, instruments, or approaches that support researchSummary. Otherwise empty string.
+- topicsQuote: a verbatim quote (≤200 characters) naming research topics, questions, populations, organisms, places, periods, systems, or phenomena that support researchSummary. Otherwise empty string.
 - undergradRoleQuote: a verbatim quote that describes undergraduate roles/tasks, if present. Otherwise empty string.
 - contactInstructionsQuote: a verbatim quote with contact/application instructions, if present. Otherwise empty string.
 - explicitConstraintQuote: a verbatim quote with constraints such as "not accepting", eligibility, required courses, or application-only instructions, if present. Otherwise empty string.
 
-Be conservative. Do not infer openness from the mere presence of undergraduates as authors on papers. Quotes must be verbatim — do not paraphrase.`;
+Be conservative. Do not infer openness from the mere presence of undergraduates as authors on papers. Do not use publication blurbs, selected-publication titles, generic faculty bio text, honors/awards, departmental boilerplate, or unsupported claims as descriptions. The researchSummary must be based on lab/faculty site research text and backed by methodsQuote and/or topicsQuote. Quotes must be verbatim — do not paraphrase.`;
 
 // ---------------------------------------------------------------------------
 // Pure helpers (unit-testable, no I/O)
@@ -328,6 +340,8 @@ export function sourceUrlForExtraction(
     extraction.undergradRoleQuote,
     extraction.contactInstructionsQuote,
     extraction.explicitConstraintQuote,
+    extraction.methodsQuote,
+    extraction.topicsQuote,
   ]
     .map((q) => (q || '').trim())
     .filter(Boolean);
@@ -358,7 +372,11 @@ export function extractionToObservations(
   sourceUrl: string,
   extraction: LLMExtraction,
   observedAt: Date = new Date(),
-  sourceContext: { sourceUrls?: string[]; quoteSourceUrl?: string } = {},
+  sourceContext: {
+    sourceUrls?: string[];
+    quoteSourceUrl?: string;
+    sourceTexts?: string[];
+  } = {},
 ): ObservationInput[] {
   const sourceUrls = sourceContext.sourceUrls?.filter(Boolean) ?? [sourceUrl];
   const quoteSourceUrl = sourceContext.quoteSourceUrl || sourceUrl;
@@ -443,6 +461,22 @@ export function extractionToObservations(
     });
   }
 
+  const researchSummary = cleanResearchSummary(extraction.researchSummary);
+  if (researchSummary && sourceSupportsResearchSummary(extraction, sourceContext.sourceTexts)) {
+    out.push({
+      ...base,
+      field: 'shortDescription',
+      value: researchSummary,
+      confidenceOverride: 0.55,
+    });
+    out.push({
+      ...base,
+      field: 'fullDescription',
+      value: researchSummary,
+      confidenceOverride: 0.55,
+    });
+  }
+
   const undergradRoleQuote = (extraction.undergradRoleQuote || '').trim();
   if (undergradRoleQuote) {
     out.push({
@@ -479,6 +513,70 @@ export function extractionToObservations(
   out.push({ ...base, field: 'lastObservedAt', value: observedAt });
 
   return out;
+}
+
+function cleanResearchSummary(raw: string | undefined): string {
+  return (raw || '').replace(/\s+/g, ' ').trim().slice(0, 500);
+}
+
+function sourceSupportsResearchSummary(
+  extraction: LLMExtraction,
+  sourceTexts: string[] | undefined,
+): boolean {
+  const summary = cleanResearchSummary(extraction.researchSummary);
+  if (!summary || !sourceTexts?.length) return false;
+
+  const combined = normalizeSupportText(sourceTexts.join(' '));
+  const supportQuotes = [extraction.methodsQuote, extraction.topicsQuote]
+    .map((quote) => (quote || '').trim())
+    .filter((quote) => quote.length >= 8);
+  const hasSourceBackedQuote = supportQuotes.some((quote) =>
+    combined.includes(normalizeSupportText(quote)),
+  );
+  if (!hasSourceBackedQuote) return false;
+
+  const summaryTokens = contentTokens(summary);
+  if (summaryTokens.length === 0) return false;
+  const sourceTokens = new Set(contentTokens(sourceTexts.join(' ')));
+  const matched = summaryTokens.filter((token) => sourceTokens.has(token));
+  return matched.length / summaryTokens.length >= 0.45;
+}
+
+function normalizeSupportText(text: string): string {
+  return text.replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+function contentTokens(text: string): string[] {
+  const stop = new Set([
+    'the',
+    'and',
+    'with',
+    'using',
+    'uses',
+    'use',
+    'our',
+    'lab',
+    'research',
+    'studies',
+    'study',
+    'studying',
+    'into',
+    'from',
+    'that',
+    'this',
+    'their',
+    'current',
+  ]);
+  const seen = new Set<string>();
+  return text
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((token) => token.length >= 4 && !stop.has(token))
+    .filter((token) => {
+      if (seen.has(token)) return false;
+      seen.add(token);
+      return true;
+    });
 }
 
 /**
@@ -839,7 +937,7 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
         try {
           extraction = await this.callLLM({
             model: this.model,
-            systemPrompt: SYSTEM_PROMPT,
+            systemPrompt: LAB_UNDERGRAD_SYSTEM_PROMPT,
             userPrompt,
             apiKey: this.apiKey,
           });
@@ -875,6 +973,7 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
             subPages,
             extraction,
           ),
+          sourceTexts: [homeText, ...subPages.map((page) => page.text)],
         },
       );
       if (observations.length > 0) {
