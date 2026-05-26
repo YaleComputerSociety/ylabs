@@ -481,12 +481,14 @@ export function buildScrapeRunReport(
       workPlanner.planned;
   const materializationWrites =
     (run.entitiesCreated || 0) + (run.entitiesUpdated || 0) + (run.entitiesArchived || 0);
+  const emittedObservationCount =
+    observations.length > 0 ? observations.length : run.observationCount || 0;
 
   const warnings: string[] = [];
   if (run.status === 'failure') warnings.push('Run failed; do not materialize without inspecting errors.');
   if (run.status === 'partial') warnings.push('Run completed partially; inspect source-level logs/errors.');
   if (run.invalidated) warnings.push('Run has been invalidated.');
-  if (observations.length === 0 && !workPlannerSkippedAll) {
+  if (emittedObservationCount === 0 && !workPlannerSkippedAll) {
     warnings.push('Run produced zero observations.');
   }
   if (missingEntityIdentifierCount > 0) {
@@ -501,32 +503,37 @@ export function buildScrapeRunReport(
   if (supersededCount > 0) {
     warnings.push(`${supersededCount} duplicate observation(s) superseded in this run.`);
   }
+  if ((run.materializationConflicts || 0) > 0) {
+    warnings.push(
+      `${run.materializationConflicts} materialization conflict(s) require review before broader writes.`,
+    );
+  }
   if (!coverageSource) {
     warnings.push(`No Source coverage metadata found for "${run.sourceName}".`);
   } else if (
-    observations.length > 0 &&
+    emittedObservationCount > 0 &&
     !coverageSource.artifactTypes.values.includes('Observation')
   ) {
     warnings.push(
-      `Source coverage metadata does not list Observation artifacts, but run emitted ${observations.length} observation(s).`,
+      `Source coverage metadata does not list Observation artifacts, but run emitted ${emittedObservationCount} observation(s).`,
     );
   }
   if (
     coverageSource &&
-    observations.length === 0 &&
+    emittedObservationCount === 0 &&
     run.status === 'success' &&
     !workPlannerSkippedAll
   ) {
     warnings.push('Source coverage metadata exists, but successful run emitted zero observations.');
   }
-  if (coverageFetch.succeeded > 0 && observations.length === 0) {
+  if (coverageFetch.succeeded > 0 && emittedObservationCount === 0) {
     warnings.push(
       `${coverageFetch.succeeded} fetch(es) succeeded, but run emitted zero observations.`,
     );
   }
-  if (coverageFetch.attempts > 0 && coverageFetch.succeeded === 0 && observations.length > 0) {
+  if (coverageFetch.attempts > 0 && coverageFetch.succeeded === 0 && emittedObservationCount > 0) {
     warnings.push(
-      `Run emitted ${observations.length} observation(s), but fetch metrics report zero successful fetches.`,
+      `Run emitted ${emittedObservationCount} observation(s), but fetch metrics report zero successful fetches.`,
     );
   }
   if (postMaterialization) {
@@ -590,7 +597,7 @@ export function buildScrapeRunReport(
     coverage: {
       source: coverageSource,
       fetch: coverageFetch,
-      observationsEmitted: observations.length,
+      observationsEmitted: emittedObservationCount,
       materializationWrites,
       postMaterialization,
       workPlanner: run.metrics?.workPlanner,

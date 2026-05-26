@@ -102,6 +102,25 @@ export const sourceCoverageRegistry = {
     notes:
       'Official department profile/roster joins and lab URL discovery; can also materialize guarded PI-profile fallback pathways/routes when no stronger public route exists.',
   },
+  'department-undergrad-research': {
+    priority: 2,
+    tier: 'PRIMARY_OFFICIAL',
+    artifactTypes: ['ResearchEntity', 'EntryPathway', 'AccessSignal', 'ContactRoute', 'Observation'],
+    evidenceCategories: [
+      'ENTITY_IDENTITY',
+      'TOPICS',
+      'JOIN_INSTRUCTIONS',
+      'UNDERGRAD_ROLE_LANGUAGE',
+      'OFFICIAL_CONTACT_ROUTE',
+      'APPLICATION_LINK',
+      'COURSE_CREDIT',
+      'SENIOR_THESIS',
+      'RESEARCH_SEMINAR',
+    ],
+    defaultConfidence: 'HIGH',
+    notes:
+      'Official department undergraduate research pages; can support source-backed research homes and access/action evidence, but generic guidance must not create posted opportunities.',
+  },
   'official-profile-enrichment': {
     priority: 2,
     tier: 'OFFICIAL_INDEX',

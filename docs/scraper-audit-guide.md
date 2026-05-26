@@ -139,10 +139,11 @@ The reaper defaults to dry-run. Use `--apply` only after reviewing the dry-run o
 
 1. `dept-faculty-roster`: entity/faculty/lab ownership trunk.
 2. `lab-microsite-undergrad-llm`: high-value pathway evidence, higher risk because it uses LLM and live websites.
-3. `undergrad-fellowships-recipients`: past-undergrad and fellowship-compatible evidence.
-4. `yale-college-fellowships-office`: fellowship program and application-cycle observations.
-5. `centers-institutes-index`, `ysm-atoz-index`, `yse-centers-index`: entity discovery.
-6. `nih-reporter`, `nsf-award-search`, `openalex`, `arxiv`: enrichment, funding, publication, and preprint context.
+3. `department-undergrad-research`: deterministic official undergraduate research pages; pause expansion if materialization conflicts remain unreviewed.
+4. `undergrad-fellowships-recipients`: past-undergrad and fellowship-compatible evidence.
+5. `yale-college-fellowships-office`: fellowship program and application-cycle observations.
+6. `centers-institutes-index`, `ysm-atoz-index`, `yse-centers-index`: entity discovery.
+7. `nih-reporter`, `nsf-award-search`, `openalex`, `arxiv`: enrichment, funding, publication, and preprint context.
 
 ## Source Map
 
@@ -238,6 +239,8 @@ Audit focus:
 
 - Use this deterministic department-page lane before targeted LLM repair for action-evidence gaps.
 - Treat department pages as evidence, not final claims that a lab is accepting students.
+- Latest accepted dev/Beta write: run `6a14fb8c884e98ac9070d6b5` wrote 414 observations and materialized 27 research entities, 31 entry pathways, 42 access signals, and 30 contact routes with zero errors.
+- Hold broader applies until the 67 materialization conflicts from that run are reviewed; 18 contact routes were guarded from public exposure as expected.
 - Generic department guidance should remain exploratory access evidence, not a posted opening.
 - Structured application pages can create official application routes, but the source must not create `PostedOpportunity` rows by itself.
 - Direct contact details should stay behind the existing guarded contact-route policy.

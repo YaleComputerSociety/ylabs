@@ -424,6 +424,64 @@ describe('buildScrapeRunReport', () => {
     expect(report.warnings).toEqual([]);
   });
 
+  it('uses dry-run observationCount as emitted coverage when observations are not persisted', () => {
+    const report = buildScrapeRunReport(
+      {
+        _id: 'run-dry-observations',
+        sourceName: 'department-undergrad-research',
+        status: 'success',
+        observationCount: 12,
+        fetchMetrics: {
+          attempts: [
+            {
+              target: 'https://example.test/undergrad-research',
+              success: true,
+              latencyMs: 42,
+              fetchMode: 'http',
+              blocked: false,
+              selectorBreakage: false,
+            },
+          ],
+          summary: {
+            total: 1,
+            succeeded: 1,
+            failed: 0,
+            blocked: 0,
+            selectorBreakages: 0,
+            averageLatencyMs: 42,
+            byMode: {
+              http: {
+                total: 1,
+                succeeded: 1,
+                blocked: 0,
+                selectorBreakages: 0,
+                averageLatencyMs: 42,
+              },
+            },
+          },
+        },
+      },
+      [],
+      {
+        priority: 2,
+        tier: 'PRIMARY_OFFICIAL',
+        artifactTypes: ['ResearchEntity', 'EntryPathway', 'AccessSignal', 'ContactRoute', 'Observation'],
+        evidenceCategories: ['JOIN_INSTRUCTIONS', 'OFFICIAL_CONTACT_ROUTE'],
+        defaultConfidence: 'HIGH',
+      },
+    );
+
+    expect(report.observations.total).toBe(0);
+    expect(report.coverage.observationsEmitted).toBe(12);
+    expect(report.warnings).not.toContain('Run produced zero observations.');
+    expect(report.warnings).not.toContain(
+      'Source coverage metadata exists, but successful run emitted zero observations.',
+    );
+    expect(report.warnings).not.toContain(
+      '1 fetch(es) succeeded, but run emitted zero observations.',
+    );
+  });
+
   it('warns when source coverage and run output diverge', () => {
     const report = buildScrapeRunReport(
       {
@@ -562,6 +620,38 @@ describe('buildScrapeRunReport', () => {
         '1 contact route(s) were guarded from public exposure.',
         '2 stale evidence item(s) skipped during materialization.',
       ]),
+    );
+  });
+
+  it('warns when materialization conflicts require review', () => {
+    const report = buildScrapeRunReport(
+      {
+        _id: 'run-materialization-conflicts',
+        sourceName: 'department-undergrad-research',
+        status: 'success',
+        materializationConflicts: 3,
+      },
+      [
+        {
+          entityType: 'researchEntity',
+          entityKey: 'fixture-lab',
+          field: 'shortDescription',
+          value: 'Fixture description',
+          sourceUrl: 'https://example.test/fixture-lab',
+        },
+      ],
+      {
+        priority: 2,
+        tier: 'PRIMARY_OFFICIAL',
+        artifactTypes: ['ResearchEntity', 'Observation'],
+        evidenceCategories: ['TOPICS'],
+        defaultConfidence: 'HIGH',
+      },
+    );
+
+    expect(report.materialization.conflicts).toBe(3);
+    expect(report.warnings).toContain(
+      '3 materialization conflict(s) require review before broader writes.',
     );
   });
 

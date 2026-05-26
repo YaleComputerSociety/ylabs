@@ -10,6 +10,7 @@ const prioritySources = [
   'lab-microsite-description-llm',
   'lab-microsite-undergrad-llm',
   'dept-faculty-roster',
+  'department-undergrad-research',
   'official-profile-enrichment',
   'undergrad-fellowships-recipients',
   'yale-college-fellowships-office',
@@ -86,6 +87,26 @@ describe('sourceCoverageRegistry', () => {
         'POSTED_OPENING',
       ]),
     );
+  });
+
+  it('classifies department undergraduate research pages as official access evidence without posted openings', () => {
+    const coverage = getSourceCoverage('department-undergrad-research');
+
+    expect(coverage?.tier).toBe('PRIMARY_OFFICIAL');
+    expect(coverage?.defaultConfidence).toBe('HIGH');
+    expect(coverage?.artifactTypes).toEqual(
+      expect.arrayContaining(['ResearchEntity', 'EntryPathway', 'AccessSignal', 'ContactRoute']),
+    );
+    expect(coverage?.artifactTypes).not.toContain('PostedOpportunity');
+    expect(coverage?.evidenceCategories).toEqual(
+      expect.arrayContaining([
+        'JOIN_INSTRUCTIONS',
+        'UNDERGRAD_ROLE_LANGUAGE',
+        'OFFICIAL_CONTACT_ROUTE',
+        'APPLICATION_LINK',
+      ]),
+    );
+    expect(coverage?.notes).toMatch(/generic guidance must not create posted opportunities/i);
   });
 
   it('classifies legacy YLabs listings as manual audit seeds, not scraper coverage proof', () => {

@@ -51,6 +51,8 @@ The dry-run report includes `evidenceCoverageImpact` for affected `ResearchEntit
 
 For action-evidence repair, official deterministic department undergraduate research pages are the first repair lane before targeted LLM extraction. The `department-undergrad-research` source emits program or department-level research entity evidence, undergraduate access evidence, and guarded contact/application-route observations when the page itself supports them; generic guidance pages must not be materialized as active posted opportunities.
 
+2026-05-26 dev/Beta status: `department-undergrad-research` was seeded and applied in run `6a14fb8c884e98ac9070d6b5`, producing 414 observations, 27 materialized research entities, 31 entry pathways, 42 access signals, and 30 contact routes, with zero materialization errors. The run also produced 67 materialization conflicts and 18 guarded contact routes, so broader write batches should pause for conflict review before expanding additional deterministic or LLM repair applies.
+
 ## Read-Only Control Plane
 
 The first control-plane slice is the admin Operator Board. It remains read-only and does not replace CLI or cron execution. It should show:

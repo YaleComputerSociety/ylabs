@@ -88,7 +88,7 @@ export class ScraperOrchestrator {
             })),
           );
         }
-        observationCount += res.inserted;
+        observationCount += options.dryRun ? inputs.length : res.inserted;
         for (const o of inputs) {
           const key = `${o.entityType}:${o.entityId || o.entityKey || ''}`;
           observedEntityKeys.add(key);
