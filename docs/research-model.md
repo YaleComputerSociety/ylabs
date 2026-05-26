@@ -117,6 +117,12 @@ Examples:
 - fellowship program
 - course sequence
 
+Quality gates treat these entity types differently:
+
+- A lab is a PI- or lab-lead-centered research home. Public readiness requires a source-backed research description, an attached PI/lab lead, a source URL, and action evidence such as access, pathway, contact, or posted-opportunity evidence.
+- A faculty research area is a faculty-centered exploratory record, not automatically a lab. It needs source-backed faculty identity and a useful official profile/research source; without explicit lab/program evidence it should be framed as exploratory outreach rather than an opening.
+- A center, institute, or initiative can be either a research home or an affiliation index. It should not be blocked for missing a PI-style lead, but public readiness requires an official source, useful description, and a public program/contact/action route; otherwise it should stay limited and visibly incomplete.
+
 Suggested fields:
 
 ```ts

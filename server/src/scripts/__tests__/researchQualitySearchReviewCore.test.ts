@@ -112,6 +112,62 @@ describe('buildResearchQualitySearchReviewRow', () => {
     expect(row.warningCodes).toEqual([]);
     expect(row.sourceDomains).toEqual(['medicine.yale.edu']);
   });
+
+  it('flags centers without public routes as index-only rather than missing PI lead', () => {
+    const row = buildResearchQualitySearchReviewRow({
+      ...baseFacts(),
+      entityType: 'CENTER',
+      slug: 'center-yale-cancer-center',
+      name: 'Yale Cancer Center',
+      description:
+        'The center supports cancer research across immunology, prevention, genomics, clinical trials, and precision medicine through affiliated faculty, member labs, shared programs, and source-backed center activity.',
+      shortDescription:
+        'Cancer research center with affiliated faculty, member labs, shared programs, and source-backed center activity.',
+      sourceUrls: ['https://medicine.yale.edu/cancer/research/membership/directory'],
+      websiteUrl: 'https://medicine.yale.edu/cancer/',
+      sourceTitle: 'medicine.yale.edu/cancer/research',
+      members: [],
+      researchAreas: ['Cancer Immunology'],
+      duplicateCandidates: [],
+      pathwayCount: 0,
+      publicContactRouteCount: 0,
+      accessSignalCount: 0,
+      postedOpportunityCount: 0,
+      topSearchReasons: ['description matched cancer research'],
+    });
+
+    expect(row.warningCodes).toContain('CENTER_INDEX_ONLY');
+    expect(row.warningCodes).not.toContain('MISSING_LEAD');
+  });
+
+  it('flags faculty research areas that lack exploratory framing', () => {
+    const row = buildResearchQualitySearchReviewRow({
+      ...baseFacts(),
+      entityType: 'FACULTY_RESEARCH_AREA',
+      slug: 'faculty-research-area-example',
+      name: 'Example Faculty Research',
+      description:
+        'This faculty research area studies computational biology, statistical learning, and translational genomics through faculty-led research projects and public profile context.',
+      shortDescription:
+        'Faculty research area in computational biology, statistical learning, and translational genomics.',
+      sourceUrls: ['https://medicine.yale.edu/profile/example-faculty'],
+      websiteUrl: 'https://medicine.yale.edu/profile/example-faculty',
+      sourceTitle: 'medicine.yale.edu/profile/example-faculty',
+      members: [{ role: 'pi', name: 'Ada Example' }],
+      researchAreas: ['Computational Biology'],
+      duplicateCandidates: [],
+      pathwayCount: 0,
+      pathwayTypes: [],
+      publicContactRouteCount: 0,
+      publicContactRouteTypes: [],
+      accessSignalCount: 0,
+      accessSignalTypes: [],
+      postedOpportunityCount: 0,
+      topSearchReasons: ['description matched computational biology'],
+    });
+
+    expect(row.warningCodes).toContain('MISSING_EXPLORATORY_FRAMING');
+  });
 });
 
 describe('summarizeResearchQualitySearchRows', () => {

@@ -36,6 +36,8 @@ interface EntityRecord {
   _id: unknown;
   slug: string;
   name: string;
+  entityType?: string;
+  kind?: string;
   displayName?: string;
   description?: string;
   shortDescription?: string;
@@ -213,6 +215,10 @@ function countMap(rows: Array<{ _id: unknown; count: number }>): Map<string, num
   return new Map(rows.map((row) => [stringId(row._id), row.count]));
 }
 
+function uniqueStrings(values: unknown[]): string[] {
+  return Array.from(new Set(values.map((value) => String(value || '').trim()).filter(Boolean))).sort();
+}
+
 async function aggregateCountMap(
   model: mongoose.Model<any>,
   entityIds: mongoose.Types.ObjectId[],
@@ -223,6 +229,28 @@ async function aggregateCountMap(
     { $group: { _id: '$researchEntityId', count: { $sum: 1 } } },
   ]);
   return countMap(rows);
+}
+
+async function aggregateCountAndTypes(
+  model: mongoose.Model<any>,
+  entityIds: mongoose.Types.ObjectId[],
+  typeField: string,
+  extraMatch: Record<string, unknown> = {},
+): Promise<{ counts: Map<string, number>; types: Map<string, string[]> }> {
+  const rows = await model.aggregate<{ _id: unknown; count: number; types: unknown[] }>([
+    { $match: { researchEntityId: { $in: entityIds }, ...extraMatch } },
+    {
+      $group: {
+        _id: '$researchEntityId',
+        count: { $sum: 1 },
+        types: { $addToSet: `$${typeField}` },
+      },
+    },
+  ]);
+  return {
+    counts: countMap(rows),
+    types: new Map(rows.map((row) => [stringId(row._id), uniqueStrings(row.types || [])])),
+  };
 }
 
 function duplicateCandidatesFor(entities: EntityRecord[]): Map<string, ResearchQualityDuplicateCandidate[]> {
@@ -264,21 +292,21 @@ async function buildReview(options: CliOptions) {
 
   const entities = (await ResearchEntity.find({ _id: { $in: validIds } })
     .select(
-      '_id slug name displayName description shortDescription fullDescription sourceUrls websiteUrl researchAreas departments',
+      '_id slug name entityType kind displayName description shortDescription fullDescription sourceUrls websiteUrl researchAreas departments',
     )
     .lean()) as unknown as EntityRecord[];
 
-  const [members, pathwayCounts, publicContactRouteCounts, signalCounts, opportunityCounts] =
+  const [members, pathwayStats, publicContactRouteStats, signalStats, opportunityCounts] =
     await Promise.all([
       ResearchGroupMember.find({ researchEntityId: { $in: validIds } })
         .select('researchEntityId role name')
         .lean(),
-      aggregateCountMap(EntryPathway, validIds, { archived: { $ne: true } }),
-      aggregateCountMap(ContactRoute, validIds, {
+      aggregateCountAndTypes(EntryPathway, validIds, 'pathwayType', { archived: { $ne: true } }),
+      aggregateCountAndTypes(ContactRoute, validIds, 'routeType', {
         archived: { $ne: true },
         visibility: 'PUBLIC',
       }),
-      aggregateCountMap(AccessSignal, validIds, { archived: { $ne: true } }),
+      aggregateCountAndTypes(AccessSignal, validIds, 'signalType', { archived: { $ne: true } }),
       aggregateCountMap(PostedOpportunity, validIds, { archived: { $ne: true } }),
     ]);
 
@@ -299,6 +327,8 @@ async function buildReview(options: CliOptions) {
         id,
         slug: entity.slug,
         name: entity.name,
+        entityType: entity.entityType,
+        kind: entity.kind,
         displayName: entity.displayName,
         description: entity.description,
         shortDescription: entity.shortDescription,
@@ -313,9 +343,12 @@ async function buildReview(options: CliOptions) {
         researchAreas: entity.researchAreas || [],
         departments: entity.departments || [],
         duplicateCandidates: duplicateCandidates.get(id) || [],
-        pathwayCount: pathwayCounts.get(id) || 0,
-        publicContactRouteCount: publicContactRouteCounts.get(id) || 0,
-        accessSignalCount: signalCounts.get(id) || 0,
+        pathwayCount: pathwayStats.counts.get(id) || 0,
+        pathwayTypes: pathwayStats.types.get(id) || [],
+        publicContactRouteCount: publicContactRouteStats.counts.get(id) || 0,
+        publicContactRouteTypes: publicContactRouteStats.types.get(id) || [],
+        accessSignalCount: signalStats.counts.get(id) || 0,
+        accessSignalTypes: signalStats.types.get(id) || [],
         postedOpportunityCount: opportunityCounts.get(id) || 0,
         topSearchReasons: Array.from(searchCollection.reasonsByEntityId.get(id) || []),
         matchedQueryNames: Array.from(searchCollection.matchedQueriesByEntityId.get(id) || []),

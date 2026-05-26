@@ -2,6 +2,7 @@ import dotenv from 'dotenv';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { AccessSignal } from '../models/accessSignal';
+import { ContactRoute } from '../models/contactRoute';
 import { EntryPathway } from '../models/entryPathway';
 import { Fellowship } from '../models/fellowship';
 import { PostedOpportunity } from '../models/postedOpportunity';
@@ -77,12 +78,15 @@ const increment = (counts: Record<string, number>, key: string) => {
 const countByEntityId = (rows: Array<{ _id: unknown; count: number }>) =>
   new Map(rows.map((row) => [String(row._id), row.count]));
 
+const uniqueStrings = (values: unknown[]): string[] =>
+  Array.from(new Set(values.map((value) => String(value || '').trim()).filter(Boolean))).sort();
+
 async function planResearchEntityUpdates(limit: number): Promise<PlannedTierUpdate[]> {
   const query = ResearchEntity.find({ archived: { $ne: true } }).sort({ name: 1 });
   if (Number.isFinite(limit)) query.limit(limit);
   const entities = await query.lean();
   const entityIds = entities.map((entity: any) => entity._id);
-  const [leadRows, accessRows, pathwayRows, postedRows] = await Promise.all([
+  const [leadRows, accessRows, pathwayRows, contactRows, postedRows] = await Promise.all([
     ResearchGroupMember.find({
       researchEntityId: { $in: entityIds },
       isCurrentMember: { $ne: false },
@@ -92,7 +96,7 @@ async function planResearchEntityUpdates(limit: number): Promise<PlannedTierUpda
       .lean(),
     AccessSignal.aggregate([
       { $match: { researchEntityId: { $in: entityIds }, archived: false } },
-      { $group: { _id: '$researchEntityId', count: { $sum: 1 } } },
+      { $group: { _id: '$researchEntityId', count: { $sum: 1 }, types: { $addToSet: '$signalType' } } },
     ]),
     EntryPathway.aggregate([
       {
@@ -102,7 +106,17 @@ async function planResearchEntityUpdates(limit: number): Promise<PlannedTierUpda
           pathwayType: { $nin: FORMALIZATION_ONLY_ENTRY_PATHWAY_TYPES },
         },
       },
-      { $group: { _id: '$researchEntityId', count: { $sum: 1 } } },
+      { $group: { _id: '$researchEntityId', count: { $sum: 1 }, types: { $addToSet: '$pathwayType' } } },
+    ]),
+    ContactRoute.aggregate([
+      {
+        $match: {
+          researchEntityId: { $in: entityIds },
+          archived: false,
+          visibility: 'PUBLIC',
+        },
+      },
+      { $group: { _id: '$researchEntityId', count: { $sum: 1 }, types: { $addToSet: '$routeType' } } },
     ]),
     PostedOpportunity.aggregate([
       {
@@ -123,7 +137,13 @@ async function planResearchEntityUpdates(limit: number): Promise<PlannedTierUpda
   }
   const accessCounts = countByEntityId(accessRows as any[]);
   const pathwayCounts = countByEntityId(pathwayRows as any[]);
+  const contactCounts = countByEntityId(contactRows as any[]);
   const postedCounts = countByEntityId(postedRows as any[]);
+  const typeMap = (rows: any[]) =>
+    new Map(rows.map((row) => [String(row._id), uniqueStrings(row.types || [])]));
+  const accessTypes = typeMap(accessRows as any[]);
+  const pathwayTypes = typeMap(pathwayRows as any[]);
+  const contactTypes = typeMap(contactRows as any[]);
 
   return entities.map((entity: any) => {
     const id = String(entity._id);
@@ -131,7 +151,11 @@ async function planResearchEntityUpdates(limit: number): Promise<PlannedTierUpda
       entity,
       leadMembers: leadsByEntityId.get(id) || [],
       accessSignalCount: accessCounts.get(id) || 0,
+      accessSignalTypes: accessTypes.get(id) || [],
       actionablePathwayCount: pathwayCounts.get(id) || 0,
+      actionablePathwayTypes: pathwayTypes.get(id) || [],
+      publicContactRouteCount: contactCounts.get(id) || 0,
+      publicContactRouteTypes: contactTypes.get(id) || [],
       openPostedOpportunityCount: postedCounts.get(id) || 0,
     });
     return {

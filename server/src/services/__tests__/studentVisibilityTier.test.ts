@@ -30,6 +30,7 @@ describe('computeResearchEntityStudentVisibility', () => {
   it('keeps a strong profile without action evidence limited rather than ready', () => {
     const result = computeResearchEntityStudentVisibility({
       entity: {
+        entityType: 'LAB',
         shortDescription:
           'Studies archival collections and early modern book history, with projects on manuscripts, material culture, and public humanities methods.',
         fullDescription:
@@ -45,6 +46,123 @@ describe('computeResearchEntityStudentVisibility', () => {
 
     expect(result.tier).toBe('limited_but_safe');
     expect(result.reasons).toContain('missing_action_evidence');
+  });
+
+  it('keeps a lab with no PI or lead in review even when it has action evidence', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        entityType: 'LAB',
+        shortDescription:
+          'Studies efficient systems for artificial intelligence and quantum computing through model serving, operating systems, and quantum error correction methods.',
+        fullDescription:
+          'The lab studies efficient systems for artificial intelligence and quantum computing through model serving, operating systems, and quantum error correction methods, with source-backed projects and current research directions.',
+        sourceUrls: ['https://engineering.yale.edu/example-lab'],
+        activeAtYaleCache: true,
+      },
+      leadMembers: [{ role: 'affiliate', name: 'Unclear Person' }],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+      publicContactRouteCount: 1,
+      publicContactRouteTypes: ['FACULTY_PI'],
+    });
+
+    expect(result.tier).toBe('operator_review');
+    expect(result.reasons).toEqual(
+      expect.arrayContaining(['missing_lab_lead', 'concrete_next_step']),
+    );
+  });
+
+  it('keeps a faculty research area limited only when exploratory framing exists', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        entityType: 'FACULTY_RESEARCH_AREA',
+        shortDescription:
+          'Studies computational biology, statistical learning, and translational genomics through faculty-led research projects and student-facing research questions.',
+        fullDescription:
+          'This faculty research area studies computational biology, statistical learning, and translational genomics through faculty-led research projects, public profile context, and source-backed research descriptions.',
+        sourceUrls: ['https://medicine.yale.edu/profile/example-faculty'],
+        activeAtYaleCache: true,
+      },
+      leadMembers: [{ userId: 'user-1', role: 'pi' }],
+      actionablePathwayCount: 1,
+      actionablePathwayTypes: ['EXPLORATORY_CONTACT'],
+      publicContactRouteCount: 1,
+      publicContactRouteTypes: ['FACULTY_PI'],
+    });
+
+    expect(result.tier).toBe('limited_but_safe');
+    expect(result.reasons).toEqual(
+      expect.arrayContaining(['faculty_identity_attached', 'exploratory_framing']),
+    );
+  });
+
+  it('keeps profile-only faculty research areas in review without exploratory framing', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        entityType: 'FACULTY_RESEARCH_AREA',
+        shortDescription:
+          'Studies computational biology, statistical learning, and translational genomics through faculty-led research projects and source-backed research descriptions.',
+        fullDescription:
+          'This faculty research area studies computational biology, statistical learning, and translational genomics through faculty-led research projects and public profile context.',
+        sourceUrls: ['https://medicine.yale.edu/profile/example-faculty'],
+        activeAtYaleCache: true,
+      },
+      leadMembers: [{ userId: 'user-1', role: 'pi' }],
+      accessSignalCount: 0,
+      actionablePathwayCount: 0,
+      publicContactRouteCount: 0,
+    });
+
+    expect(result.tier).toBe('operator_review');
+    expect(result.reasons).toContain('missing_exploratory_framing');
+  });
+
+  it('allows an official center to be limited as an affiliation index without PI-style lead evidence', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        entityType: 'CENTER',
+        shortDescription:
+          'The center supports cancer research across immunology, prevention, genomics, clinical trials, and precision medicine through affiliated faculty and programs.',
+        fullDescription:
+          'The center supports cancer research across immunology, prevention, genomics, clinical trials, and precision medicine through affiliated faculty, member labs, shared programs, and source-backed center activity.',
+        sourceUrls: ['https://medicine.yale.edu/cancer/research/membership/directory'],
+        activeAtYaleCache: true,
+      },
+      leadMembers: [],
+      accessSignalCount: 0,
+      actionablePathwayCount: 0,
+      publicContactRouteCount: 0,
+    });
+
+    expect(result.tier).toBe('limited_but_safe');
+    expect(result.reasons).toEqual(
+      expect.arrayContaining(['center_official_source', 'center_affiliation_index']),
+    );
+    expect(result.reasons).not.toContain('missing_lead');
+  });
+
+  it('marks a center ready when it has a public program or contact route', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        entityType: 'CENTER',
+        shortDescription:
+          'The center supports data science research through seminars, research programs, affiliated faculty, and public student-facing project routes.',
+        fullDescription:
+          'The center supports data science research through seminars, research programs, affiliated faculty, public student-facing project routes, and source-backed center activity.',
+        sourceUrls: ['https://datascience.yale.edu/research'],
+        activeAtYaleCache: true,
+      },
+      leadMembers: [],
+      actionablePathwayCount: 1,
+      actionablePathwayTypes: ['CENTER_INTERNSHIP'],
+      publicContactRouteCount: 1,
+      publicContactRouteTypes: ['PROGRAM_MANAGER'],
+    });
+
+    expect(result.tier).toBe('student_ready');
+    expect(result.reasons).toEqual(
+      expect.arrayContaining(['center_official_source', 'center_action_route']),
+    );
   });
 
   it('keeps profile fallback rows without action evidence in operator review', () => {

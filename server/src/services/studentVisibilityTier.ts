@@ -16,7 +16,11 @@ export interface ResearchEntityStudentVisibilityInput {
   entity: Record<string, any>;
   leadMembers?: Array<Record<string, any>>;
   accessSignalCount?: number;
+  accessSignalTypes?: string[];
   actionablePathwayCount?: number;
+  actionablePathwayTypes?: string[];
+  publicContactRouteCount?: number;
+  publicContactRouteTypes?: string[];
   openPostedOpportunityCount?: number;
   duplicateRisk?: boolean;
   contentPageRisk?: boolean;
@@ -38,6 +42,46 @@ const textValue = (value: unknown): string =>
 const hasHttpUrl = (value: unknown): boolean => /^https?:\/\//i.test(textValue(value));
 
 const hasAnyHttpUrl = (values: unknown[]): boolean => values.some(hasHttpUrl);
+
+const LAB_LEAD_ROLES = new Set(['pi', 'co-pi', 'core-faculty']);
+const FACULTY_LEAD_ROLES = new Set(['pi', 'co-pi', 'core-faculty']);
+const CENTER_LEAD_ROLES = new Set(['director', 'co-director', 'program-manager']);
+const EXPLORATORY_PATHWAY_TYPES = new Set(['EXPLORATORY_CONTACT', 'FACULTY_SUPERVISION']);
+const EXPLORATORY_ACCESS_SIGNAL_TYPES = new Set([
+  'REACH_OUT_PLAUSIBLE',
+  'FACULTY_SUPERVISES_STUDENT_PROJECTS',
+]);
+const CENTER_ACTION_PATHWAY_TYPES = new Set([
+  'CENTER_INTERNSHIP',
+  'RECURRING_PROGRAM',
+  'POSTED_ROLE',
+  'EXPLORATORY_CONTACT',
+]);
+const CENTER_ACTION_CONTACT_ROUTE_TYPES = new Set([
+  'PROGRAM_MANAGER',
+  'DEPARTMENT_CONTACT',
+  'OFFICIAL_APPLICATION',
+]);
+const CENTER_ACTION_ACCESS_SIGNAL_TYPES = new Set([
+  'POSTED_OPENING',
+  'RECURRING_PROGRAM',
+  'APPLICATION_FORM_EXISTS',
+  'CONTACT_INSTRUCTIONS_EXIST',
+  'PROGRAM_MANAGER_LISTED',
+]);
+const FACULTY_READY_CONTACT_ROUTE_TYPES = new Set([
+  'OFFICIAL_APPLICATION',
+  'LAB_MANAGER',
+  'PROGRAM_MANAGER',
+  'DEPARTMENT_CONTACT',
+]);
+const FACULTY_READY_ACCESS_SIGNAL_TYPES = new Set([
+  'POSTED_OPENING',
+  'RECURRING_PROGRAM',
+  'APPLICATION_FORM_EXISTS',
+  'CONTACT_INSTRUCTIONS_EXIST',
+]);
+const CENTER_LIKE_ENTITY_TYPES = new Set(['CENTER', 'INSTITUTE', 'INITIATIVE']);
 
 const overrideTier = (record: Record<string, any>): StudentVisibilityTier | null => {
   const tier = record.studentVisibilityOverrideTier;
@@ -72,16 +116,48 @@ const withOverride = (
 export const isPublicStudentVisibilityTier = (tier: unknown): tier is StudentVisibilityTier =>
   publicStudentVisibilityTiers.includes(tier as StudentVisibilityTier);
 
+const normalizedType = (value: unknown): string => textValue(value).toUpperCase();
+
+function entityTypeFor(entity: Record<string, any>): string {
+  const entityType = normalizedType(entity.entityType);
+  if (entityType) return entityType;
+  const kind = textValue(entity.kind).toLowerCase();
+  if (kind === 'lab') return 'LAB';
+  if (kind === 'center') return 'CENTER';
+  if (kind === 'individual' || kind === 'solo') return 'FACULTY_RESEARCH_AREA';
+  return '';
+}
+
+const hasTypedValue = (values: string[] | undefined, allowed: Set<string>): boolean =>
+  (values || []).some((value) => allowed.has(normalizedType(value)));
+
+const hasRoleBackedMember = (
+  members: Array<Record<string, any>>,
+  allowedRoles: Set<string>,
+): boolean =>
+  members.some((member) => {
+    const role = textValue(member.role).toLowerCase();
+    const hasIdentity = Boolean(
+      member.userId || member.user?._id || textValue(member.name) || textValue(member.user?.netid),
+    );
+    return allowedRoles.has(role) && hasIdentity;
+  });
+
 export function computeResearchEntityStudentVisibility({
   entity,
   leadMembers = [],
   accessSignalCount = 0,
+  accessSignalTypes = [],
   actionablePathwayCount = 0,
+  actionablePathwayTypes = [],
+  publicContactRouteCount = 0,
+  publicContactRouteTypes = [],
   openPostedOpportunityCount = 0,
   duplicateRisk = false,
   contentPageRisk = false,
 }: ResearchEntityStudentVisibilityInput): StudentVisibilityResult {
   const quality = buildResearchEntityQualitySummary({ entity, leadMembers });
+  const entityType = entityTypeFor(entity);
   const reasons: string[] = [];
 
   if (entity.activeAtYaleCache === false) reasons.push('inactive_at_yale');
@@ -91,17 +167,113 @@ export function computeResearchEntityStudentVisibility({
   if (quality.descriptionState === 'profile_synthesis') reasons.push('profile_fallback_only');
   if (quality.descriptionState === 'thin') reasons.push('thin_description');
   if (quality.descriptionState === 'missing') reasons.push('missing_description');
-  if (quality.leadState !== 'lead_attached') reasons.push('missing_lead');
+  if (
+    quality.leadState !== 'lead_attached' &&
+    !CENTER_LIKE_ENTITY_TYPES.has(entityType) &&
+    entityType !== 'LAB' &&
+    entityType !== 'FACULTY_RESEARCH_AREA'
+  ) {
+    reasons.push('missing_lead');
+  }
   if (quality.repairFlags.includes('missing_source_url')) reasons.push('missing_source_url');
 
   const hasActionEvidence =
-    openPostedOpportunityCount > 0 || accessSignalCount > 0 || actionablePathwayCount > 0;
+    openPostedOpportunityCount > 0 ||
+    accessSignalCount > 0 ||
+    actionablePathwayCount > 0 ||
+    publicContactRouteCount > 0;
   if (hasActionEvidence) reasons.push('concrete_next_step');
   else reasons.push('missing_action_evidence');
 
   let computedTier: StudentVisibilityTier = 'operator_review';
   if (entity.activeAtYaleCache === false || contentPageRisk) {
     computedTier = 'suppressed';
+  } else if (CENTER_LIKE_ENTITY_TYPES.has(entityType)) {
+    const hasOfficialSource = !quality.repairFlags.includes('missing_source_url');
+    const hasUsefulDescription =
+      quality.descriptionState === 'source_backed' || quality.descriptionState === 'thin';
+    const hasCenterActionRoute =
+      publicContactRouteCount > 0 ||
+      openPostedOpportunityCount > 0 ||
+      hasTypedValue(actionablePathwayTypes, CENTER_ACTION_PATHWAY_TYPES) ||
+      hasTypedValue(publicContactRouteTypes, CENTER_ACTION_CONTACT_ROUTE_TYPES) ||
+      hasTypedValue(accessSignalTypes, CENTER_ACTION_ACCESS_SIGNAL_TYPES);
+
+    if (hasOfficialSource) reasons.push('center_official_source');
+    else reasons.push('missing_center_official_source');
+    if (hasRoleBackedMember(leadMembers, CENTER_LEAD_ROLES)) reasons.push('center_director_attached');
+    if (hasCenterActionRoute) reasons.push('center_action_route');
+    else reasons.push('center_affiliation_index', 'missing_center_contact_route');
+
+    if (!duplicateRisk && hasOfficialSource && hasUsefulDescription && hasCenterActionRoute) {
+      computedTier = 'student_ready';
+    } else if (!duplicateRisk && hasOfficialSource && hasUsefulDescription) {
+      computedTier = 'limited_but_safe';
+    }
+  } else if (entityType === 'LAB') {
+    const hasLabLead = hasRoleBackedMember(leadMembers, LAB_LEAD_ROLES);
+    if (hasLabLead) reasons.push('lab_pi_attached');
+    else reasons.push('missing_lab_lead');
+
+    if (
+      quality.descriptionState === 'source_backed' &&
+      hasLabLead &&
+      !quality.repairFlags.includes('missing_source_url') &&
+      hasActionEvidence &&
+      !duplicateRisk
+    ) {
+      computedTier = 'student_ready';
+    } else if (
+      (quality.descriptionState === 'source_backed' || quality.descriptionState === 'thin') &&
+      hasLabLead &&
+      !quality.repairFlags.includes('missing_source_url') &&
+      !duplicateRisk
+    ) {
+      computedTier = 'limited_but_safe';
+    } else if (
+      quality.descriptionState === 'profile_synthesis' &&
+      hasLabLead &&
+      !quality.repairFlags.includes('missing_source_url') &&
+      hasActionEvidence &&
+      !duplicateRisk
+    ) {
+      computedTier = 'limited_but_safe';
+    }
+  } else if (entityType === 'FACULTY_RESEARCH_AREA') {
+    const hasFacultyIdentity = hasRoleBackedMember(leadMembers, FACULTY_LEAD_ROLES);
+    const hasExploratoryFraming =
+      hasTypedValue(actionablePathwayTypes, EXPLORATORY_PATHWAY_TYPES) ||
+      hasTypedValue(accessSignalTypes, EXPLORATORY_ACCESS_SIGNAL_TYPES) ||
+      hasTypedValue(publicContactRouteTypes, new Set(['FACULTY_PI']));
+    const hasReadyAction =
+      openPostedOpportunityCount > 0 ||
+      hasTypedValue(publicContactRouteTypes, FACULTY_READY_CONTACT_ROUTE_TYPES) ||
+      hasTypedValue(accessSignalTypes, FACULTY_READY_ACCESS_SIGNAL_TYPES);
+
+    if (hasFacultyIdentity) reasons.push('faculty_identity_attached');
+    else reasons.push('missing_faculty_identity');
+    if (hasExploratoryFraming) reasons.push('exploratory_framing');
+    else reasons.push('missing_exploratory_framing');
+
+    if (
+      quality.descriptionState === 'source_backed' &&
+      hasFacultyIdentity &&
+      !quality.repairFlags.includes('missing_source_url') &&
+      hasReadyAction &&
+      !duplicateRisk
+    ) {
+      computedTier = 'student_ready';
+    } else if (
+      (quality.descriptionState === 'source_backed' ||
+        quality.descriptionState === 'thin' ||
+        quality.descriptionState === 'profile_synthesis') &&
+      hasFacultyIdentity &&
+      !quality.repairFlags.includes('missing_source_url') &&
+      hasExploratoryFraming &&
+      !duplicateRisk
+    ) {
+      computedTier = 'limited_but_safe';
+    }
   } else if (
     quality.descriptionState === 'source_backed' &&
     quality.leadState === 'lead_attached' &&

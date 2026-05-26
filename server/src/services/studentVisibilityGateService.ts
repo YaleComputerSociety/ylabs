@@ -1,6 +1,7 @@
 import { AccessSignal } from '../models/accessSignal';
 import { EntryPathway } from '../models/entryPathway';
 import { Fellowship } from '../models/fellowship';
+import { ContactRoute } from '../models/contactRoute';
 import { PostedOpportunity } from '../models/postedOpportunity';
 import { ResearchEntity } from '../models/researchEntity';
 import { ResearchGroupMember } from '../models/researchGroupMember';
@@ -276,7 +277,7 @@ async function planResearchEntityGateUpdates(
   const entities = await query.lean();
   const entityIds = entities.map((entity: any) => entity._id);
 
-  const [leadRows, accessRows, pathwayRows, postedRows] = await Promise.all([
+  const [leadRows, accessRows, pathwayRows, contactRows, postedRows] = await Promise.all([
     ResearchGroupMember.find({
       researchEntityId: { $in: entityIds },
       isCurrentMember: { $ne: false },
@@ -291,6 +292,7 @@ async function planResearchEntityGateUpdates(
           _id: '$researchEntityId',
           count: { $sum: 1 },
           sourceNames: { $addToSet: '$sourceName' },
+          types: { $addToSet: '$signalType' },
         },
       },
     ]),
@@ -302,7 +304,17 @@ async function planResearchEntityGateUpdates(
           pathwayType: { $nin: FORMALIZATION_ONLY_ENTRY_PATHWAY_TYPES },
         },
       },
-      { $group: { _id: '$researchEntityId', count: { $sum: 1 } } },
+      { $group: { _id: '$researchEntityId', count: { $sum: 1 }, types: { $addToSet: '$pathwayType' } } },
+    ]),
+    ContactRoute.aggregate([
+      {
+        $match: {
+          researchEntityId: { $in: entityIds },
+          archived: false,
+          visibility: 'PUBLIC',
+        },
+      },
+      { $group: { _id: '$researchEntityId', count: { $sum: 1 }, types: { $addToSet: '$routeType' } } },
     ]),
     PostedOpportunity.aggregate([
       {
@@ -323,7 +335,13 @@ async function planResearchEntityGateUpdates(
   }
   const accessCounts = countByEntityId(accessRows as any[]);
   const pathwayCounts = countByEntityId(pathwayRows as any[]);
+  const contactCounts = countByEntityId(contactRows as any[]);
   const postedCounts = countByEntityId(postedRows as any[]);
+  const typeMap = (rows: any[]) =>
+    new Map(rows.map((row) => [String(row._id), uniqueStrings(row.types || [])]));
+  const accessTypes = typeMap(accessRows as any[]);
+  const pathwayTypes = typeMap(pathwayRows as any[]);
+  const contactTypes = typeMap(contactRows as any[]);
   const sourceNamesByEntityId = new Map(
     (accessRows as any[]).map((row) => [String(row._id), uniqueStrings(row.sourceNames || [])]),
   );
@@ -334,7 +352,11 @@ async function planResearchEntityGateUpdates(
       entity,
       leadMembers: leadsByEntityId.get(recordId) || [],
       accessSignalCount: accessCounts.get(recordId) || 0,
+      accessSignalTypes: accessTypes.get(recordId) || [],
       actionablePathwayCount: pathwayCounts.get(recordId) || 0,
+      actionablePathwayTypes: pathwayTypes.get(recordId) || [],
+      publicContactRouteCount: contactCounts.get(recordId) || 0,
+      publicContactRouteTypes: contactTypes.get(recordId) || [],
       openPostedOpportunityCount: postedCounts.get(recordId) || 0,
     });
     return {

@@ -605,3 +605,14 @@ Consequences:
 - `student_ready` requires source-backed identity, description/context, and actionable next-step evidence; `limited_but_safe` may be incomplete but must clearly avoid unsupported claims.
 - Private scraped contact data, raw observations, internal queue notes, and release-blocker internals stay out of public payloads.
 - Operators repair held rows by improving source evidence, materialization, identity links, or contact/pathway records before rerunning the visibility gate.
+
+## 2026-05-25: Make Research Entity Trust Gates Type-Aware
+
+Labs, faculty research areas, and centers/institutes/initiatives do not carry the same student promise. The visibility gate now evaluates the same public tiers through entity-type-specific requirements rather than applying one PI-centered rule to every research entity.
+
+Consequences:
+
+- Labs need a PI or lab lead for public release; labs without a PI/lab lead remain held even if they have generic access evidence.
+- Faculty research areas require faculty identity and exploratory framing unless there is stronger lab/program/opening evidence.
+- Centers, institutes, and initiatives can be public without a PI-style lead, but no-contact/no-action records are limited affiliation indexes rather than student-ready homes.
+- Search quality review uses center/index and exploratory-framing warnings instead of treating every center-like entity as missing a PI.

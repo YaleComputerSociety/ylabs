@@ -35,6 +35,12 @@ The contract has five practical rules:
 - Private scraped contact data, raw observations, internal queue notes, and non-public visibility reasons stay out of public payloads.
 - Held rows are repaired at the source/materializer/evidence layer, then released by the student visibility gate; operators should not manually promote by weakening the rules.
 
+Entity type affects the public-release threshold:
+
+- Labs require a PI/lab lead, lab source, useful research description, and action evidence for `student_ready`; source-backed labs with a PI but no action evidence may be `limited_but_safe`.
+- Faculty research areas require source-backed faculty identity plus official profile/research source. Without lab/program evidence, they may be `limited_but_safe` only when exploratory contact, faculty supervision, or reach-out evidence is explicit.
+- Centers, institutes, and initiatives do not require PI-style leads. They need official identity and useful description; with a public program/contact/action route they may be `student_ready`, otherwise they may be `limited_but_safe` as affiliation indexes.
+
 Use DB-backed dry-run review before broad source expansion:
 
 ```bash

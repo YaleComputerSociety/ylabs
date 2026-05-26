@@ -41,6 +41,15 @@ export function nextRepairActionForReasons(reasons: string[]): string {
   if (reasons.includes('inactive_at_yale')) return 'Suppress or repair active-at-Yale evidence.';
   if (reasons.includes('duplicate_risk')) return 'Resolve duplicate or disambiguation risk.';
   if (reasons.includes('content_page_risk')) return 'Suppress content pages or remap to a real research home.';
+  if (reasons.includes('missing_lab_lead')) return 'Attach a source-backed PI or lab lead.';
+  if (reasons.includes('missing_faculty_identity')) return 'Attach the source-backed faculty identity for this research area.';
+  if (reasons.includes('missing_exploratory_framing')) {
+    return 'Add explicit exploratory contact, faculty supervision, or access evidence before public release.';
+  }
+  if (reasons.includes('missing_center_official_source')) return 'Attach the official center, institute, or initiative source.';
+  if (reasons.includes('missing_center_contact_route')) {
+    return 'Attach a public program, department, application, or center contact route if one exists.';
+  }
   if (reasons.includes('missing_lead')) return 'Attach a source-backed PI, director, or lead member.';
   if (reasons.includes('missing_description')) return 'Backfill a source-backed research description.';
   if (reasons.includes('thin_description')) return 'Replace thin copy with a useful source-backed description.';

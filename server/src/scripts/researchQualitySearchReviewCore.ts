@@ -25,6 +25,9 @@ export type ResearchQualitySearchWarningCode =
   | 'DUPLICATE_OR_DISAMBIGUATION_RISK'
   | 'THIN_PATHWAY_EVIDENCE'
   | 'THIN_CONTACT_EVIDENCE'
+  | 'MISSING_CENTER_CONTACT'
+  | 'CENTER_INDEX_ONLY'
+  | 'MISSING_EXPLORATORY_FRAMING'
   | 'SEMANTIC_EXPLAINABILITY_GAP';
 
 export interface ResearchQualitySearchMemberFact {
@@ -41,6 +44,8 @@ export interface ResearchQualitySearchFacts {
   id: string;
   slug: string;
   name: string;
+  entityType?: string;
+  kind?: string;
   displayName?: string;
   description?: string;
   shortDescription?: string;
@@ -53,8 +58,11 @@ export interface ResearchQualitySearchFacts {
   departments?: string[];
   duplicateCandidates?: ResearchQualityDuplicateCandidate[];
   pathwayCount: number;
+  pathwayTypes?: string[];
   publicContactRouteCount: number;
+  publicContactRouteTypes?: string[];
   accessSignalCount: number;
+  accessSignalTypes?: string[];
   postedOpportunityCount: number;
   topSearchReasons?: string[];
   matchedQueryNames?: string[];
@@ -99,10 +107,37 @@ const WARNING_SCORES: Record<ResearchQualitySearchWarningCode, number> = {
   DUPLICATE_OR_DISAMBIGUATION_RISK: 3,
   THIN_PATHWAY_EVIDENCE: 3,
   THIN_CONTACT_EVIDENCE: 2,
+  MISSING_CENTER_CONTACT: 2,
+  CENTER_INDEX_ONLY: 1,
+  MISSING_EXPLORATORY_FRAMING: 2,
   SEMANTIC_EXPLAINABILITY_GAP: 2,
 };
 
 const LEAD_ROLES = new Set(['pi', 'co-pi', 'director', 'co-director', 'core-faculty']);
+const EXPLORATORY_PATHWAY_TYPES = new Set(['EXPLORATORY_CONTACT', 'FACULTY_SUPERVISION']);
+const EXPLORATORY_ACCESS_SIGNAL_TYPES = new Set([
+  'REACH_OUT_PLAUSIBLE',
+  'FACULTY_SUPERVISES_STUDENT_PROJECTS',
+]);
+const CENTER_ACTION_PATHWAY_TYPES = new Set([
+  'CENTER_INTERNSHIP',
+  'RECURRING_PROGRAM',
+  'POSTED_ROLE',
+  'EXPLORATORY_CONTACT',
+]);
+const CENTER_ACTION_CONTACT_ROUTE_TYPES = new Set([
+  'PROGRAM_MANAGER',
+  'DEPARTMENT_CONTACT',
+  'OFFICIAL_APPLICATION',
+]);
+const CENTER_ACTION_ACCESS_SIGNAL_TYPES = new Set([
+  'POSTED_OPENING',
+  'RECURRING_PROGRAM',
+  'APPLICATION_FORM_EXISTS',
+  'CONTACT_INSTRUCTIONS_EXIST',
+  'PROGRAM_MANAGER_LISTED',
+]);
+const CENTER_LIKE_ENTITY_TYPES = new Set(['CENTER', 'INSTITUTE', 'INITIATIVE']);
 
 function compactStrings(values: Array<string | undefined | null> | undefined): string[] {
   return (values || [])
@@ -166,6 +201,20 @@ function warningScore(codes: ResearchQualitySearchWarningCode[]): number {
   return codes.reduce((total, code) => total + WARNING_SCORES[code], 0);
 }
 
+function normalizedEntityType(facts: ResearchQualitySearchFacts): string {
+  const entityType = (facts.entityType || '').trim().toUpperCase();
+  if (entityType) return entityType;
+  const kind = (facts.kind || '').trim().toLowerCase();
+  if (kind === 'lab') return 'LAB';
+  if (kind === 'center') return 'CENTER';
+  if (kind === 'individual' || kind === 'solo') return 'FACULTY_RESEARCH_AREA';
+  return '';
+}
+
+function hasTypedValue(values: string[] | undefined, allowed: Set<string>): boolean {
+  return (values || []).some((value) => allowed.has((value || '').trim().toUpperCase()));
+}
+
 export function buildResearchQualitySearchReviewRow(
   facts: ResearchQualitySearchFacts,
 ): ResearchQualitySearchReviewRow {
@@ -176,6 +225,7 @@ export function buildResearchQualitySearchReviewRow(
   );
   const sourceUrls = compactStrings([...(facts.sourceUrls || []), facts.websiteUrl]);
   const sourceDomains = sourceDomainsFor(facts);
+  const entityType = normalizedEntityType(facts);
   const leadCount = (facts.members || []).filter((member) =>
     LEAD_ROLES.has((member.role || '').trim().toLowerCase()),
   ).length;
@@ -184,10 +234,21 @@ export function buildResearchQualitySearchReviewRow(
   const duplicateCandidates = facts.duplicateCandidates || [];
   const explainabilityReasonCount = compactStrings(facts.topSearchReasons).length;
   const matchedQueryNames = compactStrings(facts.matchedQueryNames);
+  const hasCenterActionRoute =
+    facts.postedOpportunityCount > 0 ||
+    hasTypedValue(facts.pathwayTypes, CENTER_ACTION_PATHWAY_TYPES) ||
+    hasTypedValue(facts.publicContactRouteTypes, CENTER_ACTION_CONTACT_ROUTE_TYPES) ||
+    hasTypedValue(facts.accessSignalTypes, CENTER_ACTION_ACCESS_SIGNAL_TYPES);
+  const hasExploratoryFraming =
+    hasTypedValue(facts.pathwayTypes, EXPLORATORY_PATHWAY_TYPES) ||
+    hasTypedValue(facts.accessSignalTypes, EXPLORATORY_ACCESS_SIGNAL_TYPES) ||
+    hasTypedValue(facts.publicContactRouteTypes, new Set(['FACULTY_PI']));
 
   const warningCodes: ResearchQualitySearchWarningCode[] = [];
   if (descriptionChars < 160) warningCodes.push('SPARSE_DESCRIPTION');
-  if (leadCount === 0) warningCodes.push('MISSING_LEAD');
+  if (leadCount === 0 && !CENTER_LIKE_ENTITY_TYPES.has(entityType)) {
+    warningCodes.push('MISSING_LEAD');
+  }
   if (contextLabelCount === 0) warningCodes.push('MISSING_CONTEXT');
   if (sourceUrls.length === 0 || sourceDomains.length === 0) warningCodes.push('WEAK_SOURCE_URL');
   if (!facts.sourceTitle || facts.sourceTitle.trim().length === 0) {
@@ -195,7 +256,17 @@ export function buildResearchQualitySearchReviewRow(
   }
   if (!hasTrustedSourceDomain(sourceDomains)) warningCodes.push('WEAK_SOURCE_DOMAIN');
   if (duplicateCandidates.length > 0) warningCodes.push('DUPLICATE_OR_DISAMBIGUATION_RISK');
+  if (CENTER_LIKE_ENTITY_TYPES.has(entityType) && facts.publicContactRouteCount === 0) {
+    warningCodes.push('MISSING_CENTER_CONTACT');
+  }
+  if (CENTER_LIKE_ENTITY_TYPES.has(entityType) && !hasCenterActionRoute) {
+    warningCodes.push('CENTER_INDEX_ONLY');
+  }
+  if (entityType === 'FACULTY_RESEARCH_AREA' && !hasExploratoryFraming) {
+    warningCodes.push('MISSING_EXPLORATORY_FRAMING');
+  }
   if (
+    !CENTER_LIKE_ENTITY_TYPES.has(entityType) &&
     facts.pathwayCount < 2 &&
     facts.accessSignalCount === 0 &&
     facts.postedOpportunityCount === 0
