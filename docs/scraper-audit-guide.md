@@ -249,6 +249,8 @@ Audit focus:
 - Treat department pages as evidence, not final claims that a lab is accepting students.
 - Latest accepted dev/Beta write: run `6a14fb8c884e98ac9070d6b5` wrote 414 observations and materialized 27 research entities, 31 entry pathways, 42 access signals, and 30 contact routes with zero errors.
 - Hold broader applies until the 67 materialization conflicts from that run are reviewed with `yarn --cwd server department-repair:conflict-review --run 6a14fb8c884e98ac9070d6b5`; 18 contact routes were guarded from public exposure as expected.
+- The Physics parser rejects malformed encoded anchor fragments before URL materialization. Fresh dry-runs should not emit `%3Ca%20href=` URLs; old persisted malformed rows remain visible in conflict review until superseded or invalidated.
+- Program-like department records use program contact/action-route evidence rather than PI-style lab lead evidence; lab records still require PI/lab lead repair before public promotion.
 - Generic department guidance should remain exploratory access evidence, not a posted opening.
 - Structured application pages can create official application routes, but the source must not create `PostedOpportunity` rows by itself.
 - Direct contact details should stay behind the existing guarded contact-route policy.

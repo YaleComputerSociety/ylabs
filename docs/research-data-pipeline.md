@@ -53,6 +53,8 @@ For action-evidence repair, official deterministic department undergraduate rese
 
 2026-05-26 dev/Beta status: `department-undergrad-research` was seeded and applied in run `6a14fb8c884e98ac9070d6b5`, producing 414 observations, 27 materialized research entities, 31 entry pathways, 42 access signals, and 30 contact routes, with zero materialization errors. The run also produced 67 materialization conflicts and 18 guarded contact routes, so broader write batches should pause for `yarn --cwd server department-repair:conflict-review --run 6a14fb8c884e98ac9070d6b5` before expanding additional deterministic or LLM repair applies. The review is read-only and separates parser bugs, lead repairs, safe existing values, and rows that need operator judgment.
 
+2026-05-26 follow-up: the Physics parser now rejects encoded HTML anchor fragments such as `%3Ca%20href=` before URL materialization. A fresh read-only Physics dry run emitted 272 observations for 17 entities with no scraper quality warnings. The old applied run still contains two malformed persisted URL observations until a reviewed superseding write or invalidation clears them. Program-like research entities now use program action/contact evidence instead of PI-style lab-lead requirements; labs still require source-backed PI/lab lead evidence.
+
 ## Read-Only Control Plane
 
 The first control-plane slice is the admin Operator Board. It remains read-only and does not replace CLI or cron execution. It should show:
