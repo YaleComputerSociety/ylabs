@@ -593,3 +593,15 @@ Consequences:
 - `yarn --cwd server student-visibility:gate --collection=all --mode=dry-run|apply` is the global reconciliation command.
 - The admin Operator Board exposes release queue pressure; `/api/admin/release-queue` provides paginated queue details.
 - Held rows should be repaired at the scraper/materializer/source-evidence layer, not manually promoted by weakening visibility rules.
+
+## 2026-05-25: Define The Student Trust Contract
+
+The visibility tiers are the product trust contract, not just admin labels. Public student surfaces must show only records that are source-backed enough to be useful without implying unsupported access, contact, PI, or research-activity claims.
+
+Consequences:
+
+- Public research, pathway, program, and opportunity routes default to `student_ready` and `limited_but_safe`.
+- `operator_review` and `suppressed` are repair states for operator/admin surfaces and release queues, not public product states.
+- `student_ready` requires source-backed identity, description/context, and actionable next-step evidence; `limited_but_safe` may be incomplete but must clearly avoid unsupported claims.
+- Private scraped contact data, raw observations, internal queue notes, and release-blocker internals stay out of public payloads.
+- Operators repair held rows by improving source evidence, materialization, identity links, or contact/pathway records before rerunning the visibility gate.

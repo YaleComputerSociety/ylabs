@@ -23,6 +23,18 @@ Source metadata
 
 Scrapers collect evidence. They should not create unsupported student-facing conclusions such as "accepting undergrads." Materializers derive product records from observed evidence, source confidence, stable keys, and manual locks. Evidence coverage review is the pre-write/pre-visibility diagnostic layer for research listings: it classifies whether identity, description, lead/contact, access, action route, and freshness claims are missing, weak, or supported. The student visibility gate remains the public-release boundary: it promotes records that satisfy the visibility rules and holds the rest in the release queue with root repair reasons.
 
+## Student Trust Contract
+
+The student-facing contract is: public research, pathway, program, and opportunity surfaces may show only records that are source-backed enough for a student to act on without being misled. `student_ready` means the record has enough identity, description, context, and next-step evidence to be broadly public. `limited_but_safe` means the record is honest and useful but visibly incomplete. `operator_review` and `suppressed` are not public product states; they are repair states that should appear in admin/operator workflows and release queues only.
+
+The contract has five practical rules:
+
+- Public surfaces use only `student_ready` and `limited_but_safe` tiers unless an admin route explicitly requests review/suppressed records.
+- Research entities need source-backed identity, a non-misleading description, and enough context to explain what the research home studies; publication or listing blurbs alone do not satisfy entity-description quality.
+- Access, pathway, contact, and posted-opportunity claims must come from explicit evidence, not inference from a lab existing or a faculty member publishing.
+- Private scraped contact data, raw observations, internal queue notes, and non-public visibility reasons stay out of public payloads.
+- Held rows are repaired at the source/materializer/evidence layer, then released by the student visibility gate; operators should not manually promote by weakening the rules.
+
 Use DB-backed dry-run review before broad source expansion:
 
 ```bash
