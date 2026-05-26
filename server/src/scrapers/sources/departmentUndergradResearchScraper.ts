@@ -161,6 +161,15 @@ function slugify(value: string): string {
 function absoluteUrl(rawUrl: string | undefined, pageUrl: string): string | undefined {
   const trimmed = (rawUrl || '').trim();
   if (!trimmed || trimmed.startsWith('#') || /^mailto:/i.test(trimmed)) return undefined;
+  let decoded = trimmed;
+  try {
+    decoded = decodeURIComponent(trimmed);
+  } catch {
+    decoded = trimmed;
+  }
+  if (/%3c\s*a\b|%3ca%20href|<\s*a\b|<\/a>|href=/i.test(trimmed) || /<\s*a\b|<\/a>|href=/i.test(decoded)) {
+    return undefined;
+  }
   try {
     const url = new URL(trimmed, pageUrl);
     if (!/^https?:$/i.test(url.protocol)) return undefined;

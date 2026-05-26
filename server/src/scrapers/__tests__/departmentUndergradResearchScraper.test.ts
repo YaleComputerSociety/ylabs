@@ -107,6 +107,38 @@ describe('departmentUndergradResearchScraper', () => {
     expect(records[1].description).toContain('In-lab and remote opportunities');
   });
 
+  it('drops malformed encoded anchor fragments from Physics project URLs', () => {
+    const records = parsePhysicsUndergradResearchPage(
+      `
+      <main>
+        <h1>Undergraduate Research</h1>
+        <h2>Active Research in the Yale Physics Department</h2>
+        <h3>Meng Cheng</h3>
+        <p>Contact: Meng Cheng (meng.cheng@yale.edu)</p>
+        <p>Website: <a href="%3Ca%20href=">broken anchor fragment</a></p>
+        <p>Students can work on quantum condensed matter theory research projects.</p>
+      </main>
+      `,
+      {
+        key: 'physics',
+        url: 'https://physics.yale.edu/academics/undergraduate-studies/undergraduate-research',
+        department: 'Physics',
+        school: 'Yale Faculty of Arts and Sciences',
+        parser: 'physics-project-list',
+      },
+    );
+    const observations = departmentUndergradResearchRecordsToObservations(records);
+
+    expect(records).toHaveLength(1);
+    expect(records[0].websiteUrl).toBeUndefined();
+    expect(observations.find((observation) => observation.field === 'websiteUrl')?.value).toBe(
+      'https://physics.yale.edu/academics/undergraduate-studies/undergraduate-research',
+    );
+    expect(observations.find((observation) => observation.field === 'sourceUrls')?.value).toEqual([
+      'https://physics.yale.edu/academics/undergraduate-studies/undergraduate-research',
+    ]);
+  });
+
   it('parses general department guidance without pretending it is a posted opening', () => {
     const records = parseGeneralDepartmentResearchPage(CHEM_HTML, {
       key: 'chemistry',
