@@ -18,7 +18,10 @@ import {
   computeResearchEntityStudentVisibility,
   STUDENT_VISIBILITY_VERSION,
 } from './studentVisibilityTier';
-import { nextRepairActionForReasons } from '../scripts/studentVisibilityBackfillReport';
+import {
+  buildChangedTierSummary,
+  nextRepairActionForReasons,
+} from '../scripts/studentVisibilityBackfillReport';
 
 export type StudentVisibilityGateMode = 'dry-run' | 'apply';
 export type StudentVisibilityGateCollection = VisibilityReleaseQueueCollection | 'all';
@@ -35,6 +38,10 @@ export interface StudentVisibilityGatePlan {
   collection: VisibilityReleaseQueueCollection;
   recordId: string;
   label: string;
+  id?: string;
+  slug?: string;
+  entityType?: string;
+  kind?: string;
   currentTier?: string;
   computedTier: StudentVisibilityTier;
   tier: StudentVisibilityTier;
@@ -85,6 +92,7 @@ export interface StudentVisibilityGateReport {
   reasonCounts: Record<string, number>;
   blockerCounts: Record<string, number>;
   sourceCounts: Record<string, number>;
+  changedTierSummary: ReturnType<typeof buildChangedTierSummary>;
   samples: StudentVisibilityGatePlan[];
 }
 
@@ -253,6 +261,19 @@ export async function runStudentVisibilityGateForPlans(
     reasonCounts,
     blockerCounts,
     sourceCounts,
+    changedTierSummary: buildChangedTierSummary(
+      plans.map((plan) => ({
+        id: plan.id || plan.recordId,
+        label: plan.label,
+        slug: plan.slug,
+        entityType: plan.entityType || plan.collection,
+        kind: plan.kind,
+        currentTier: plan.currentTier,
+        tier: plan.tier,
+        computedTier: plan.computedTier,
+        reasons: plan.reasons,
+      })),
+    ),
     samples: plans.slice(0, 20),
   };
 }
@@ -362,7 +383,11 @@ async function planResearchEntityGateUpdates(
     return {
       collection: 'research' as const,
       recordId,
+      id: recordId,
       label: entity.displayName || entity.name || entity.slug || recordId,
+      slug: entity.slug,
+      entityType: entity.entityType,
+      kind: entity.kind,
       currentTier: entity.studentVisibilityTier,
       tier: result.tier,
       computedTier: result.computedTier,
@@ -389,7 +414,10 @@ async function planProgramGateUpdates(
     return {
       collection: 'programs' as const,
       recordId,
+      id: recordId,
       label: program.title || recordId,
+      slug: program.slug,
+      entityType: 'program',
       currentTier: program.studentVisibilityTier,
       tier: result.tier,
       computedTier: result.computedTier,

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  buildChangedTierSummary,
   buildCollectionReport,
   nextRepairActionForReasons,
   type StudentVisibilityPlannedUpdate,
@@ -104,5 +105,90 @@ describe('studentVisibilityBackfillReport', () => {
     expect(nextRepairActionForReasons(['missing_action_evidence'])).toBe(
       'Add source-backed access or pathway evidence only if it exists.',
     );
+  });
+
+  it('summarizes changed tiers by transition, type, blocker, and repair sample', () => {
+    const report = buildCollectionReport(
+      [
+        update({
+          id: 'faculty-1',
+          label: 'Avery Stone Research',
+          slug: 'faculty-avery-stone',
+          entityType: 'FACULTY_RESEARCH_AREA',
+          currentTier: 'limited_but_safe',
+          tier: 'operator_review',
+          computedTier: 'operator_review',
+          reasons: ['missing_exploratory_framing'],
+        }),
+        update({
+          id: 'center-1',
+          label: 'Synthetic Center',
+          slug: 'center-synthetic',
+          entityType: 'CENTER',
+          currentTier: undefined,
+          tier: 'limited_but_safe',
+          computedTier: 'limited_but_safe',
+          reasons: ['center_affiliation_index'],
+        }),
+        update({
+          id: 'lab-1',
+          entityType: 'LAB',
+          currentTier: 'student_ready',
+          tier: 'student_ready',
+          computedTier: 'student_ready',
+          reasons: ['source_backed_description'],
+        }),
+      ],
+      { collectionName: 'research', minimumPublicCount: 0 },
+    );
+
+    expect(report.changedTierSummary.changedCount).toBe(2);
+    expect(report.changedTierSummary.byTransition).toMatchObject({
+      'limited_but_safe->operator_review': 1,
+      'unset->limited_but_safe': 1,
+    });
+    expect(report.changedTierSummary.byEntityType).toMatchObject({
+      FACULTY_RESEARCH_AREA: 1,
+      CENTER: 1,
+    });
+    expect(report.changedTierSummary.byReason).toMatchObject({
+      missing_exploratory_framing: 1,
+      center_affiliation_index: 1,
+    });
+    expect(report.changedTierSummary.samples).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'faculty-1',
+          slug: 'faculty-avery-stone',
+          label: 'Avery Stone Research',
+          entityType: 'FACULTY_RESEARCH_AREA',
+          currentTier: 'limited_but_safe',
+          tier: 'operator_review',
+          computedTier: 'operator_review',
+          reasons: ['missing_exploratory_framing'],
+          nextRepairAction:
+            'Add explicit exploratory contact, faculty supervision, or access evidence before public release.',
+        }),
+      ]),
+    );
+    expect(report.changedTierSummary.samples.find((sample) => sample.id === 'lab-1')).toBeUndefined();
+  });
+
+  it('limits changed tier samples deterministically', () => {
+    const summary = buildChangedTierSummary(
+      [
+        update({ id: 'b', label: 'B Lab', currentTier: undefined, tier: 'operator_review' }),
+        update({
+          id: 'a',
+          label: 'A Lab',
+          currentTier: 'student_ready',
+          tier: 'operator_review',
+        }),
+      ],
+      1,
+    );
+
+    expect(summary.samples).toHaveLength(1);
+    expect(summary.samples[0]).toMatchObject({ id: 'a' });
   });
 });

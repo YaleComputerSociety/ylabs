@@ -616,3 +616,13 @@ Consequences:
 - Faculty research areas require faculty identity and exploratory framing unless there is stronger lab/program/opening evidence.
 - Centers, institutes, and initiatives can be public without a PI-style lead, but no-contact/no-action records are limited affiliation indexes rather than student-ready homes.
 - Search quality review uses center/index and exploratory-framing warnings instead of treating every center-like entity as missing a PI.
+
+## 2026-05-25: Prefer Official Lab Names Over PI-Generated Labels
+
+Canonical research entity naming should represent the actual Yale research home, not just the person who leads it. When official sources identify a lab/group name and a faculty profile identifies the PI, the entity name should be the lab/group and the person should be represented through membership/leadership.
+
+Consequences:
+
+- `dept-cs-lin-zhong` can be repaired to `Efficient Computing Lab` while preserving the existing slug and Lin Zhong PI relationship.
+- `ResearchEntity.aliases` is intentionally deferred until the schema and search index have a durable alias contract.
+- Naming repair scripts must run dry-run-first and require source evidence before changing canonical names.

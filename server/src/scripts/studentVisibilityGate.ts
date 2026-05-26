@@ -1,4 +1,5 @@
 import dotenv from 'dotenv';
+import { writeFile } from 'node:fs/promises';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { runStudentVisibilityGate, type StudentVisibilityGateCollection } from '../services/studentVisibilityGateService';
@@ -12,6 +13,7 @@ interface CliOptions {
   sourceName?: string;
   recordIds?: string[];
   limit?: number;
+  output?: string;
 }
 
 function parseArgs(argv: string[]): CliOptions {
@@ -20,7 +22,8 @@ function parseArgs(argv: string[]): CliOptions {
     mode: 'dry-run',
   };
 
-  for (const arg of argv) {
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
     if (arg === '--mode=apply' || arg === '--apply') {
       options.mode = 'apply';
     } else if (arg === '--mode=dry-run' || arg === '--dry-run') {
@@ -38,6 +41,14 @@ function parseArgs(argv: string[]): CliOptions {
     } else if (arg.startsWith('--limit=')) {
       const parsed = Number(arg.slice('--limit='.length));
       options.limit = Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+    } else if (arg.startsWith('--output=')) {
+      options.output = arg.slice('--output='.length).trim();
+    } else if (arg === '--output') {
+      index += 1;
+      options.output = argv[index]?.trim();
+      if (!options.output || options.output.startsWith('--')) {
+        throw new Error('--output requires a file path');
+      }
     } else {
       throw new Error(`Unknown argument: ${arg}`);
     }
@@ -46,6 +57,7 @@ function parseArgs(argv: string[]): CliOptions {
   if (options.recordIds) {
     options.recordIds = options.recordIds.filter(Boolean);
   }
+  if (options.output === '') delete options.output;
 
   return options;
 }
@@ -60,18 +72,18 @@ async function main() {
 
   await initializeConnections();
   const report = await runStudentVisibilityGate(options);
+  const payload = {
+    environment: guard.environment,
+    db: guard.dbLabel,
+    ...report,
+  };
+  const json = JSON.stringify(payload, null, 2);
 
-  console.log(
-    JSON.stringify(
-      {
-        environment: guard.environment,
-        db: guard.dbLabel,
-        ...report,
-      },
-      null,
-      2,
-    ),
-  );
+  if (options.output) {
+    await writeFile(options.output, `${json}\n`, 'utf8');
+  }
+
+  console.log(json);
 }
 
 main()

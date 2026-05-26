@@ -31,6 +31,9 @@ interface CliOptions {
 interface PlannedTierUpdate {
   id: string;
   label: string;
+  slug?: string;
+  entityType?: string;
+  kind?: string;
   currentTier?: string;
   tier: StudentVisibilityTier;
   computedTier: StudentVisibilityTier;
@@ -161,6 +164,9 @@ async function planResearchEntityUpdates(limit: number): Promise<PlannedTierUpda
     return {
       id,
       label: entity.displayName || entity.name || entity.slug || id,
+      slug: entity.slug,
+      entityType: entity.entityType,
+      kind: entity.kind,
       currentTier: entity.studentVisibilityTier,
       tier: result.tier,
       computedTier: result.computedTier,

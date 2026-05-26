@@ -26,6 +26,8 @@ runtime research data is canonical `ResearchEntity` data. Related files include:
 
 Public API migration note: `/api/research` is canonical. The hard-pivot migration copies `research_groups` into `research_entities` with stable ids, backfills `researchEntityId`, removes `/api/research-groups` plus `/labs` route compatibility from runtime routing, and supports canonical-only verification after the old source collection is dropped.
 
+Canonical naming note: official entity identity wins over generated PI labels. If Yale or an official lab source identifies a group as `Efficient Computing Lab`, the canonical `ResearchEntity.name` and `displayName` should use that name with Lin Zhong modeled as PI/lead, not as a synthetic `Lin Zhong Lab`. Keep the existing slug stable unless a separate redirect/alias model exists; `ResearchEntity` does not yet have a durable `aliases` field, so old labels are deferred repair notes rather than schema data.
+
 Dependent physical collections also use canonical names after migration:
 `research_entity_members`, `research_entity_stats`, and `paper_entity_links`.
 The old `research_group_members`, `research_group_stats`, and `paper_group_links`

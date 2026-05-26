@@ -3,10 +3,21 @@ import { publicStudentVisibilityTiers, type StudentVisibilityTier } from '../mod
 export interface StudentVisibilityPlannedUpdate {
   id: string;
   label: string;
+  slug?: string;
+  entityType?: string;
+  kind?: string;
   currentTier?: string;
   tier: StudentVisibilityTier;
   computedTier: StudentVisibilityTier;
   reasons: string[];
+}
+
+export interface StudentVisibilityChangedTierSummary {
+  changedCount: number;
+  byTransition: Record<string, number>;
+  byEntityType: Record<string, number>;
+  byReason: Record<string, number>;
+  samples: Array<StudentVisibilityPlannedUpdate & { nextRepairAction: string }>;
 }
 
 export interface StudentVisibilityBackfillCollectionReport {
@@ -18,6 +29,7 @@ export interface StudentVisibilityBackfillCollectionReport {
   changedCount: number;
   publicCount: number;
   currentPublicCount: number;
+  changedTierSummary: StudentVisibilityChangedTierSummary;
   applySafety: {
     safeToApply: boolean;
     recommendation: 'apply' | 'do_not_apply' | 'repair_source_materialization_first';
@@ -31,6 +43,7 @@ export interface StudentVisibilityBackfillCollectionReport {
 }
 
 const PUBLIC_TIERS = new Set<string>(publicStudentVisibilityTiers);
+const REVIEW_TIERS = new Set<string>(['operator_review', 'suppressed']);
 
 export function incrementCount(counts: Record<string, number>, key: string | undefined) {
   const countKey = key || 'unset';
@@ -59,6 +72,54 @@ export function nextRepairActionForReasons(reasons: string[]): string {
     return 'Add source-backed access or pathway evidence only if it exists.';
   }
   return 'Operator review.';
+}
+
+const transitionKey = (currentTier: string | undefined, nextTier: string | undefined) =>
+  `${currentTier || 'unset'}->${nextTier || 'unset'}`;
+
+const changedTierSamplePriority = (update: StudentVisibilityPlannedUpdate): number => {
+  const currentPublic = PUBLIC_TIERS.has(update.currentTier || '');
+  const nextReview = REVIEW_TIERS.has(update.tier);
+  if (currentPublic && nextReview) return 0;
+  if (currentPublic && !PUBLIC_TIERS.has(update.tier)) return 1;
+  if (!currentPublic && PUBLIC_TIERS.has(update.tier)) return 2;
+  return 3;
+};
+
+export function buildChangedTierSummary(
+  updates: StudentVisibilityPlannedUpdate[],
+  sampleSize = 20,
+): StudentVisibilityChangedTierSummary {
+  const changed = updates.filter((update) => update.currentTier !== update.tier);
+  const byTransition: Record<string, number> = {};
+  const byEntityType: Record<string, number> = {};
+  const byReason: Record<string, number> = {};
+
+  for (const update of changed) {
+    incrementCount(byTransition, transitionKey(update.currentTier, update.tier));
+    incrementCount(byEntityType, update.entityType || update.kind || 'unset');
+    for (const reason of update.reasons) incrementCount(byReason, reason);
+  }
+
+  const samples = [...changed]
+    .sort((a, b) => {
+      const priority = changedTierSamplePriority(a) - changedTierSamplePriority(b);
+      if (priority !== 0) return priority;
+      return (a.label || a.id).localeCompare(b.label || b.id);
+    })
+    .slice(0, Math.max(0, Math.floor(sampleSize)))
+    .map((update) => ({
+      ...update,
+      nextRepairAction: nextRepairActionForReasons(update.reasons),
+    }));
+
+  return {
+    changedCount: changed.length,
+    byTransition,
+    byEntityType,
+    byReason,
+    samples,
+  };
 }
 
 export function buildCollectionReport(
@@ -137,6 +198,7 @@ export function buildCollectionReport(
     changedCount,
     publicCount,
     currentPublicCount,
+    changedTierSummary: buildChangedTierSummary(updates),
     applySafety: {
       safeToApply,
       recommendation,
