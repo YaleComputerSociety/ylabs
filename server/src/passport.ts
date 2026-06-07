@@ -19,6 +19,13 @@ const STALE_THRESHOLD_MS = 30 * 24 * 60 * 60 * 1000;
  */
 function safeRedirectTarget(raw: unknown): string | null {
   if (typeof raw !== 'string' || raw.length === 0) return null;
+  // Reject backslashes and control/whitespace chars before the checks below:
+  // browsers normalize "\" to "/", so "/\evil.com" would otherwise slip past
+  // the "//" guard and become a protocol-relative open redirect.
+  for (let i = 0; i < raw.length; i++) {
+    const code = raw.charCodeAt(i);
+    if (code <= 0x20 || code === 0x5c) return null;
+  }
   if (raw.startsWith('/') && !raw.startsWith('//')) return raw;
   try {
     const base = process.env.SERVER_BASE_URL ?? '';
