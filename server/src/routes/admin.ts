@@ -258,7 +258,7 @@ router.get('/listings', async (req: Request, res: Response) => {
       });
     }
 
-    sort[sortBy as string] = order;
+    sort[/^[A-Za-z0-9_]+$/.test(String(sortBy)) ? String(sortBy) : 'createdAt'] = order;
     sort._id = 1;
 
     const [listings, total] = await Promise.all([
@@ -606,7 +606,7 @@ router.get('/profiles', async (req: Request, res: Response) => {
 
     const sort: any = {};
     const order = sortOrder === 'asc' ? 1 : -1;
-    sort[sortBy as string] = order;
+    sort[/^[A-Za-z0-9_]+$/.test(String(sortBy)) ? String(sortBy) : 'lname'] = order;
     sort._id = 1;
 
     const [profiles, total] = await Promise.all([
@@ -706,7 +706,7 @@ router.get('/fellowships', async (req: Request, res: Response) => {
 
     const sort: any = {};
     const order = sortOrder === 'asc' ? 1 : -1;
-    sort[sortBy as string] = order;
+    sort[/^[A-Za-z0-9_]+$/.test(String(sortBy)) ? String(sortBy) : 'createdAt'] = order;
     sort._id = 1;
 
     const [fellowships, total] = await Promise.all([
