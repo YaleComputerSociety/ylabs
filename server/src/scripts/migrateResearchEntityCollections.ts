@@ -1,6 +1,10 @@
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { initializeConnections } from '../db/connections';
+import { assertScriptApplyAllowed } from './scriptWriteGuards';
 
 dotenv.config();
 
@@ -10,6 +14,12 @@ type MigrationDocument = Record<string, unknown> & {
   _id: unknown;
   researchEntityId: unknown;
 };
+
+export interface ResearchEntityCollectionMigrationArgs {
+  mode: Mode;
+  confirmDropLegacy?: boolean;
+  output?: string;
+}
 
 interface CollectionMigration {
   source: string;
@@ -22,6 +32,7 @@ interface CollectionMigration {
 }
 
 const RESEARCH_ENTITY_COLLECTION = 'research_entities';
+const LIVE_MEMBER_FILTER = { archived: { $ne: true }, isCurrentMember: { $ne: false } };
 
 const COLLECTION_MIGRATIONS: CollectionMigration[] = [
   {
@@ -36,43 +47,108 @@ const COLLECTION_MIGRATIONS: CollectionMigration[] = [
       { keys: { facultyMemberId: 1 } },
     ],
   },
-  {
-    source: 'research_group_stats',
-    target: 'research_entity_stats',
-    label: 'ResearchEntity stats',
-    indexes: [
-      { keys: { researchEntityId: 1 }, options: { unique: true, sparse: true } },
-      { keys: { computedAt: -1 } },
-      { keys: { responseRate90dSampleSize: -1 } },
-      { keys: { outreachCount30d: -1 } },
-    ],
-  },
-  {
-    source: 'paper_group_links',
-    target: 'paper_entity_links',
-    label: 'Paper to ResearchEntity links',
-    indexes: [
-      {
-        keys: { paperId: 1, researchEntityId: 1 },
-        options: {
-          unique: true,
-          partialFilterExpression: { researchEntityId: { $exists: true } },
-        },
-      },
-      { keys: { researchEntityId: 1, isFeatured: 1 } },
-      { keys: { paperId: 1 } },
-      { keys: { matchedFacultyMemberIds: 1 } },
-      { keys: { archived: 1 } },
-      { keys: { lastObservedAt: 1 } },
-    ],
-  },
 ];
 
-function parseMode(argv: string[]): Mode {
-  if (argv.includes('--drop-legacy')) return 'drop-legacy';
-  if (argv.includes('--verify')) return 'verify';
-  if (argv.includes('--apply')) return 'apply';
-  return 'dry-run';
+function parseRequiredOutputPath(value: string | undefined): string {
+  const output = value?.trim();
+  if (!output || output.startsWith('--')) {
+    throw new Error('--output requires a path');
+  }
+  return output;
+}
+
+export function parseResearchEntityCollectionMigrationArgs(
+  argv: string[],
+): ResearchEntityCollectionMigrationArgs {
+  const args: ResearchEntityCollectionMigrationArgs = { mode: 'dry-run' };
+
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === '--dry-run') {
+      args.mode = 'dry-run';
+      continue;
+    }
+    if (arg === '--drop-legacy') {
+      args.mode = 'drop-legacy';
+      continue;
+    }
+    if (arg === '--confirm-drop-legacy') {
+      args.confirmDropLegacy = true;
+      continue;
+    }
+    if (arg === '--verify') {
+      args.mode = 'verify';
+      continue;
+    }
+    if (arg === '--apply') {
+      args.mode = 'apply';
+      continue;
+    }
+    if (arg === '--output') {
+      args.output = parseRequiredOutputPath(argv[index + 1]);
+      index += 1;
+      continue;
+    }
+    if (arg.startsWith('--output=')) {
+      args.output = parseRequiredOutputPath(arg.slice('--output='.length));
+      continue;
+    }
+    throw new Error(`Unknown research-entity:cleanup-collections option: ${arg}`);
+  }
+
+  return args;
+}
+
+function collectionMigrationModeWrites(mode: Mode): boolean {
+  return mode === 'apply' || mode === 'drop-legacy';
+}
+
+export function assertResearchEntityCollectionMigrationWriteAllowed(
+  args: Pick<ResearchEntityCollectionMigrationArgs, 'mode' | 'confirmDropLegacy'>,
+  env: NodeJS.ProcessEnv = process.env,
+  mongoUrl?: string,
+) {
+  if (args.mode === 'drop-legacy' && !args.confirmDropLegacy) {
+    throw new Error(
+      '--confirm-drop-legacy is required when --drop-legacy is set for research-entity:cleanup-collections',
+    );
+  }
+
+  return assertScriptApplyAllowed({
+    apply: collectionMigrationModeWrites(args.mode),
+    scriptName: 'research-entity:cleanup-collections',
+    mongoUrl,
+    env,
+  });
+}
+
+export function buildResearchEntityCollectionMigrationOutput<T extends object>(
+  result: T,
+  metadata: {
+    environment?: string;
+    db?: string;
+    options: ResearchEntityCollectionMigrationArgs;
+  },
+): T & {
+  environment?: string;
+  db?: string;
+  options: ResearchEntityCollectionMigrationArgs;
+} {
+  return {
+    ...result,
+    ...(metadata.environment ? { environment: metadata.environment } : {}),
+    ...(metadata.db ? { db: metadata.db } : {}),
+    options: metadata.options,
+  };
+}
+
+export function writeResearchEntityCollectionMigrationOutput(
+  report: unknown,
+  output?: string,
+): void {
+  if (!output) return;
+  fs.mkdirSync(path.dirname(output), { recursive: true });
+  fs.writeFileSync(output, `${JSON.stringify(report, null, 2)}\n`);
 }
 
 async function collectionExists(db: MongoDb, name: string): Promise<boolean> {
@@ -88,6 +164,7 @@ async function countCollection(db: MongoDb, name: string): Promise<number> {
 async function countMissingEntityIds(db: MongoDb, collectionName: string): Promise<number> {
   if (!(await collectionExists(db, collectionName))) return 0;
   return db.collection(collectionName).countDocuments({
+    ...buildCollectionMigrationLiveFilter(collectionName),
     $or: [{ researchEntityId: { $exists: false } }, { researchEntityId: null }],
   });
 }
@@ -113,7 +190,7 @@ async function countDanglingEntityReferences(
   const rows = await db
     .collection(collectionName)
     .aggregate([
-      { $match: { researchEntityId: { $exists: true, $ne: null } } },
+      { $match: buildCollectionMigrationTargetReferenceFilter(collectionName) },
       {
         $lookup: {
           from: RESEARCH_ENTITY_COLLECTION,
@@ -127,6 +204,19 @@ async function countDanglingEntityReferences(
     ])
     .toArray();
   return Number(rows[0]?.count || 0);
+}
+
+function buildCollectionMigrationLiveFilter(collectionName: string): Record<string, unknown> {
+  return collectionName === 'research_entity_members' ? LIVE_MEMBER_FILTER : {};
+}
+
+export function buildCollectionMigrationTargetReferenceFilter(
+  collectionName: string,
+): Record<string, unknown> {
+  return {
+    ...buildCollectionMigrationLiveFilter(collectionName),
+    researchEntityId: { $exists: true, $ne: null },
+  };
 }
 
 async function countDanglingSourceEntityReferences(
@@ -352,7 +442,13 @@ async function dropLegacyCollections(db: MongoDb) {
 }
 
 async function main() {
-  const mode = parseMode(process.argv.slice(2));
+  const args = parseResearchEntityCollectionMigrationArgs(process.argv.slice(2));
+  const guard = assertResearchEntityCollectionMigrationWriteAllowed(
+    args,
+    process.env,
+    process.env.MONGODBURL,
+  );
+  const mode = args.mode;
   await initializeConnections();
   const db = mongoose.connection.db;
   if (!db) throw new Error('MongoDB connection is not initialized');
@@ -376,27 +472,36 @@ async function main() {
     );
   }
 
-  console.log(
-    JSON.stringify(
-      {
-        generatedAt: new Date().toISOString(),
-        mode,
-        migrations: COLLECTION_MIGRATIONS,
-        copy,
-        drop,
-        verification,
-      },
-      null,
-      2,
-    ),
+  const output = buildResearchEntityCollectionMigrationOutput(
+    {
+      generatedAt: new Date().toISOString(),
+      mode,
+      migrations: COLLECTION_MIGRATIONS,
+      copy,
+      drop,
+      verification,
+    },
+    {
+      environment: guard.environment,
+      db: mongoose.connection.db?.databaseName || mongoose.connection.name || guard.dbLabel,
+      options: args,
+    },
   );
+  console.log(JSON.stringify(output, null, 2));
+  writeResearchEntityCollectionMigrationOutput(output, args.output);
 }
 
-main()
-  .catch((error) => {
-    console.error('Failed to migrate dependent ResearchEntity collections:', error);
-    process.exitCode = 1;
-  })
-  .finally(async () => {
-    await mongoose.disconnect();
-  });
+const isDirectRun = process.argv[1]
+  ? fileURLToPath(import.meta.url) === path.resolve(process.argv[1])
+  : false;
+
+if (isDirectRun) {
+  main()
+    .catch((error) => {
+      console.error('Failed to migrate dependent ResearchEntity collections:', error);
+      process.exitCode = 1;
+    })
+    .finally(async () => {
+      await mongoose.disconnect();
+    });
+}

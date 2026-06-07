@@ -6,18 +6,18 @@
  * unless you pass --reset, in which case rows are fully replaced).
  */
 import dotenv from 'dotenv';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { Source } from '../models/source';
+import { assertScriptApplyAllowed } from '../scripts/scriptWriteGuards';
 import { getSourceCoverage } from './sourceCoverageRegistry';
 import type { SourceCoverageMetadata } from '../models/sourceCoverageTypes';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
-
-const RESET = process.argv.includes('--reset');
 
 interface SourceSeed {
   name: string;
@@ -28,6 +28,117 @@ interface SourceSeed {
   isManualLock?: boolean;
   cadence: string;
   coverage?: SourceCoverageMetadata;
+}
+
+export interface SeedSourcesCliOptions {
+  apply: boolean;
+  confirmSeedApply: boolean;
+  reset: boolean;
+  output?: string;
+}
+
+interface SeedSourceRow {
+  name: string;
+  action: 'created' | 'updated' | 'reset' | 'would_create' | 'would_update' | 'would_reset';
+}
+
+interface RetiredSourceSummary {
+  names: string[];
+  matchedCount: number;
+  modifiedCount: number;
+  action: 'retired' | 'would_retire';
+}
+
+export function parseSeedSourcesArgs(argv: string[]): SeedSourcesCliOptions {
+  const options: SeedSourcesCliOptions = {
+    apply: false,
+    confirmSeedApply: false,
+    reset: false,
+  };
+
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+    if (arg === '--reset') {
+      options.reset = true;
+      continue;
+    }
+    if (arg === '--dry-run') {
+      options.apply = false;
+      continue;
+    }
+    if (arg === '--apply') {
+      options.apply = true;
+      continue;
+    }
+    if (arg === '--confirm-seed-apply') {
+      options.confirmSeedApply = true;
+      continue;
+    }
+    if (arg === '--output') {
+      options.output = parseRequiredOutputPath(argv[i + 1]);
+      i += 1;
+      continue;
+    }
+    if (arg.startsWith('--output=')) {
+      options.output = parseRequiredOutputPath(arg.slice('--output='.length));
+      continue;
+    }
+    throw new Error(`Unknown argument: ${arg}`);
+  }
+
+  return options;
+}
+
+function parseRequiredOutputPath(value: string | undefined): string {
+  const output = value?.trim();
+  if (!output || output.startsWith('--')) {
+    throw new Error('--output requires a path');
+  }
+  return output;
+}
+
+export function assertSeedSourcesWriteAllowed(
+  options: Pick<SeedSourcesCliOptions, 'apply' | 'confirmSeedApply'>,
+  env: NodeJS.ProcessEnv = process.env,
+  mongoUrl = process.env.MONGODBURL,
+) {
+  if (options.apply && !options.confirmSeedApply) {
+    throw new Error('--confirm-seed-apply is required when --apply is set for scrape:seed-sources');
+  }
+  return assertScriptApplyAllowed({
+    apply: options.apply,
+    scriptName: 'scrape:seed-sources',
+    env,
+    mongoUrl,
+  });
+}
+
+export function buildSeedSourcesOutput<T extends object>(
+  report: T,
+  metadata: {
+    environment: string;
+    db: string;
+    options: SeedSourcesCliOptions;
+  },
+): T & {
+  generatedAt: string;
+  environment: string;
+  db: string;
+  options: SeedSourcesCliOptions;
+} {
+  return {
+    generatedAt: new Date().toISOString(),
+    environment: metadata.environment,
+    db: metadata.db,
+    options: metadata.options,
+    ...report,
+  };
+}
+
+export function writeSeedSourcesOutput(report: unknown, output?: string): void {
+  if (!output) return;
+  fs.mkdirSync(path.dirname(output), { recursive: true });
+  fs.writeFileSync(output, `${JSON.stringify(report, null, 2)}\n`);
 }
 
 const SOURCES: SourceSeed[] = [
@@ -163,6 +274,15 @@ const SOURCES: SourceSeed[] = [
     cadence: 'weekly',
   },
   {
+    name: 'yale-research-official',
+    displayName: 'Yale Research official directories',
+    description:
+      'Official research.yale.edu centers/institutes and core-facility directories for discovery-only research entity identity and infrastructure context.',
+    baseUrl: 'https://research.yale.edu',
+    defaultWeight: 0.85,
+    cadence: 'weekly',
+  },
+  {
     name: 'dept-faculty-roster',
     displayName: 'Department faculty rosters and official profile enrichment',
     description:
@@ -170,6 +290,15 @@ const SOURCES: SourceSeed[] = [
     baseUrl: '',
     defaultWeight: 0.7,
     cadence: 'weekly',
+  },
+  {
+    name: 'official-profile-pi-backfill',
+    displayName: 'Official profile PI backfill',
+    description:
+      'Targeted official Yale profile fetches for PI identity, profile bio/description repair, and leadership-backed research-home website/name discovery.',
+    baseUrl: 'https://medicine.yale.edu/profile/',
+    defaultWeight: 0.95,
+    cadence: 'manual-repair',
   },
   {
     name: 'lab-microsite-llm',
@@ -194,6 +323,15 @@ const SOURCES: SourceSeed[] = [
     baseUrl: '',
     defaultWeight: 0.6,
     cadence: 'weekly',
+  },
+  {
+    name: 'student-decision-llm',
+    displayName: 'Student decision LLM',
+    description:
+      'Precomputed, source-backed LLM explanations for student-facing Best Next Step decisions.',
+    baseUrl: '',
+    defaultWeight: 0.55,
+    cadence: 'after-materialization',
   },
   {
     name: 'nih-reporter',
@@ -250,22 +388,24 @@ const RETIRED_SOURCE_NAMES = [
   'apify-google-scholar',
 ];
 
-async function main(): Promise<void> {
-  const url = process.env.MONGODBURL;
-  if (!url) {
-    console.error('ERROR: MONGODBURL not set');
-    process.exit(1);
-  }
-  await mongoose.connect(url);
-  console.log(`Seeding ${SOURCES_WITH_COVERAGE.length} sources (${RESET ? 'RESET' : 'upsert'})...`);
+export async function seedSources(options: SeedSourcesCliOptions) {
+  const sources: SeedSourceRow[] = [];
 
   for (const seed of SOURCES_WITH_COVERAGE) {
-    if (RESET) {
-      await Source.replaceOne({ name: seed.name }, seed, { upsert: true });
-      console.log(`  [reset] ${seed.name}`);
-    } else {
-      const existing = await Source.findOne({ name: seed.name }).lean();
-      if (existing) {
+    if (options.reset) {
+      if (options.apply) {
+        await Source.replaceOne({ name: seed.name }, seed, { upsert: true });
+      }
+      sources.push({
+        name: seed.name,
+        action: options.apply ? 'reset' : 'would_reset',
+      });
+      continue;
+    }
+
+    const existing = await Source.findOne({ name: seed.name }).lean();
+    if (existing) {
+      if (options.apply) {
         await Source.updateOne(
           { name: seed.name },
           {
@@ -280,17 +420,27 @@ async function main(): Promise<void> {
             },
           },
         );
-        console.log(`  [updated] ${seed.name}`);
-      } else {
-        await Source.create({ ...seed, enabled: true });
-        console.log(`  [created] ${seed.name}`);
       }
+      sources.push({
+        name: seed.name,
+        action: options.apply ? 'updated' : 'would_update',
+      });
+    } else {
+      if (options.apply) {
+        await Source.create({ ...seed, enabled: true });
+      }
+      sources.push({
+        name: seed.name,
+        action: options.apply ? 'created' : 'would_create',
+      });
     }
   }
 
-  const retired = await Source.updateMany(
-    { name: { $in: RETIRED_SOURCE_NAMES } },
-    {
+  const retiredFilter = { name: { $in: RETIRED_SOURCE_NAMES } };
+  const retiredMatchedCount = await Source.countDocuments(retiredFilter);
+  let retiredModifiedCount = 0;
+  if (options.apply && retiredMatchedCount > 0) {
+    const retired = await Source.updateMany(retiredFilter, {
       $set: {
         enabled: false,
         cadence: 'retired',
@@ -298,17 +448,52 @@ async function main(): Promise<void> {
           'Retired as an active scraper source. Keep historical runs for audit, but do not schedule or seed as active.',
       },
       $unset: { coverage: '' },
-    },
-  );
-  if (retired.matchedCount > 0) {
-    console.log(`  [retired] ${RETIRED_SOURCE_NAMES.join(', ')}`);
+    });
+    retiredModifiedCount = retired.modifiedCount || 0;
   }
 
-  console.log('Done.');
-  await mongoose.disconnect();
+  const retiredSources: RetiredSourceSummary = {
+    names: RETIRED_SOURCE_NAMES,
+    matchedCount: retiredMatchedCount,
+    modifiedCount: retiredModifiedCount,
+    action: options.apply ? 'retired' : 'would_retire',
+  };
+
+  return {
+    mode: options.apply ? 'apply' : 'dry-run',
+    reset: options.reset,
+    sourceCount: SOURCES_WITH_COVERAGE.length,
+    sources,
+    retiredSources,
+  };
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+async function main(): Promise<void> {
+  const options = parseSeedSourcesArgs(process.argv.slice(2));
+  const url = process.env.MONGODBURL;
+  if (!url) {
+    throw new Error('MONGODBURL not set');
+  }
+  const guard = assertSeedSourcesWriteAllowed(options);
+  await mongoose.connect(url);
+  try {
+    const report = await seedSources(options);
+    const output = buildSeedSourcesOutput(report, {
+      environment: guard.environment,
+      db: guard.dbLabel,
+      options,
+    });
+    console.log(JSON.stringify(output, null, 2));
+    writeSeedSourcesOutput(output, options.output);
+  } finally {
+    await mongoose.disconnect();
+  }
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
+  main().catch(async (err) => {
+    console.error(err);
+    await mongoose.disconnect().catch(() => {});
+    process.exitCode = 1;
+  });
+}

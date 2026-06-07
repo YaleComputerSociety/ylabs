@@ -11,8 +11,11 @@ import { Paper } from '../models/paper';
 import { PaperAuthor } from '../models/paperAuthor';
 import { User } from '../models/user';
 import { ResearchEntity } from '../models/researchEntity';
+import { ResearchGroupMember } from '../models/researchGroupMember';
 import { ScrapeRun } from '../models/scrapeRun';
 import { PostedOpportunity } from '../models/postedOpportunity';
+import { ResearchScholarlyLink } from '../models/researchScholarlyLink';
+import { deriveShortDescriptionFromFullDescription } from '../utils/researchEntityDescriptionQuality';
 import {
   resolveAllFields,
   ResolverObservation,
@@ -27,6 +30,7 @@ import {
   PaperAuthorshipEvidence,
   normalizePaperAuthorshipEvidence,
 } from './paperAuthorshipPolicy';
+import { cleanPublicProfileBio } from '../services/profileService';
 
 interface MaterializeOptions {
   dryRun?: boolean;
@@ -51,16 +55,24 @@ interface ListingPostedOpportunityMetricDeps {
 }
 
 const DISCOVERY_ONLY_ACCESS_FIELD_SOURCES = new Set(['ysm-atoz-index', 'yse-centers-index']);
+const OFFICIAL_PROFILE_PI_BACKFILL_SOURCE = 'official-profile-pi-backfill';
+const OFFICIAL_PROFILE_PUBLICATIONS_FIELD = 'officialProfilePublications';
 const PUBLIC_QUOTE_FIELDS = new Set([
   'undergradEvidenceQuote',
   'undergradRoleEvidenceQuote',
   'contactInstructionsQuote',
   'undergradConstraintQuote',
 ]);
+const MATERIALIZER_MANAGED_FIELDS = new Set(['lastObservedAt']);
 
 type MaterializerObservationLike = {
+  _id?: unknown;
   field?: string;
+  value?: unknown;
   sourceName?: string;
+  sourceUrl?: string | null;
+  observedAt?: Date;
+  confidence?: number;
 };
 
 type PaperMaterializationObservation = {
@@ -82,6 +94,74 @@ type PaperMaterializationPatch = {
   skipped?: string;
 };
 
+type InferredPiObservation = {
+  value?: unknown;
+  sourceName?: string;
+  sourceUrl?: string | null;
+  observedAt?: Date;
+  confidence?: number;
+};
+
+type ResearchGroupMemberMaterializationPatch = {
+  filter: Record<string, unknown>;
+  update: { $set: Record<string, unknown>; $setOnInsert: Record<string, unknown> };
+  fieldsWritten: number;
+  conflicts: number;
+  resolved: Record<string, ResolvedField>;
+  skipped?: string;
+};
+
+type ProvenanceResolvedField = ResolvedField & {
+  sourceName?: string;
+  sourceUrl?: string | null;
+  observedAt?: Date;
+};
+
+function isOfficialProfileBioChromeObservation(observation: MaterializerObservationLike): boolean {
+  if (
+    observation.sourceName !== OFFICIAL_PROFILE_PI_BACKFILL_SOURCE ||
+    observation.field !== 'bio' ||
+    typeof observation.value !== 'string'
+  ) {
+    return false;
+  }
+
+  const value = observation.value.replace(/\s+/g, ' ').trim();
+  if (!value) return true;
+  if (!cleanPublicProfileBio({ bio: value })) return true;
+  if (/@yale\.edu\b/i.test(value)) return true;
+  if (
+    /\b(?:po box|new haven,?\s*ct|united states|mailing address|contact info|prospect street|west campus drive|kline tower)\b/i.test(
+      value,
+    )
+  ) {
+    return true;
+  }
+  if (
+    /^(?:see my webpage|this professor is accepting)\b/i.test(value) ||
+    /^medical research interests(?:\b|(?=[A-Z]))/i.test(value)
+  ) {
+    return true;
+  }
+  if (
+    /\b(?:google scholar|pubmed)\s+profile\b/i.test(value) ||
+    /\b(?:for\s+(?:a\s+)?(?:full\s+list|more)|refer\s+to|visit)\b.{0,140}\b(?:google scholar|pubmed|external link)\b/i.test(
+      value,
+    )
+  ) {
+    return true;
+  }
+  if (/^department of\b/i.test(value)) return true;
+  if (
+    value.length < 120 &&
+    /\b(?:selected publications?|wins?|elected|awards?|faculty research awards?)\b/i.test(value) &&
+    !/\b(?:studies|research(?:es)?|investigates|develops|focuses on|works on)\b/i.test(value)
+  ) {
+    return true;
+  }
+  return /^copy link$/i.test(value);
+}
+
 function isResearchEntityObservationType(entityType: ObservedEntityType): boolean {
   return entityType === 'researchEntity' || entityType === 'researchGroup';
 }
@@ -90,12 +170,176 @@ export function shouldIgnoreObservationForEntityMaterialization(
   entityType: ObservedEntityType,
   observation: MaterializerObservationLike,
 ): boolean {
+  if (observation.field && MATERIALIZER_MANAGED_FIELDS.has(observation.field)) {
+    return true;
+  }
+  if (entityType === 'user' && observation.field === OFFICIAL_PROFILE_PUBLICATIONS_FIELD) {
+    return true;
+  }
+  if (entityType === 'user' && isOfficialProfileBioChromeObservation(observation)) {
+    return true;
+  }
   return (
     isResearchEntityObservationType(entityType) &&
     observation.field === 'acceptingUndergrads' &&
     !!observation.sourceName &&
     DISCOVERY_ONLY_ACCESS_FIELD_SOURCES.has(observation.sourceName)
   );
+}
+
+type OfficialProfilePublicationValue = {
+  title?: unknown;
+  year?: unknown;
+  venue?: unknown;
+  url?: unknown;
+  sourceUrl?: unknown;
+};
+
+const MIN_SCHOLARLY_LINK_YEAR = 1800;
+const MAX_SCHOLARLY_LINK_FUTURE_YEARS = 1;
+
+function cleanScholarlyText(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  return value.replace(/\s+/g, ' ').trim();
+}
+
+function cleanScholarlyHttpUrl(value: unknown): string {
+  const text = cleanScholarlyText(value);
+  if (!text) return '';
+  try {
+    const parsed = new URL(text);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? text : '';
+  } catch {
+    return '';
+  }
+}
+
+function isPlausibleScholarlyLinkYear(year: number): boolean {
+  return (
+    Number.isInteger(year) &&
+    year >= MIN_SCHOLARLY_LINK_YEAR &&
+    year <= new Date().getUTCFullYear() + MAX_SCHOLARLY_LINK_FUTURE_YEARS
+  );
+}
+
+function normalizeOfficialProfilePublication(
+  value: OfficialProfilePublicationValue,
+  fallbackSourceUrl: string,
+  fallbackObservedAt: Date,
+): {
+  title: string;
+  year?: number;
+  venue?: string;
+  url: string;
+  sourceUrl: string;
+  observedAt: Date;
+} | null {
+  const title = cleanScholarlyText(value.title);
+  if (!title) return null;
+  const sourceUrl = cleanScholarlyHttpUrl(value.sourceUrl) || cleanScholarlyHttpUrl(fallbackSourceUrl);
+  if (!sourceUrl) return null;
+  const url = cleanScholarlyHttpUrl(value.url);
+  if (!url) return null;
+
+  const trimmedYear = typeof value.year === 'string' ? value.year.trim() : '';
+  const yearNumber =
+    typeof value.year === 'number'
+      ? value.year
+      : trimmedYear && /^\d+$/.test(trimmedYear)
+        ? Number(trimmedYear)
+        : undefined;
+  const year =
+    typeof yearNumber === 'number' && isPlausibleScholarlyLinkYear(yearNumber)
+      ? yearNumber
+      : undefined;
+
+  return {
+    title,
+    year,
+    venue: cleanScholarlyText(value.venue) || undefined,
+    url,
+    sourceUrl,
+    observedAt: fallbackObservedAt,
+  };
+}
+
+function officialProfilePublicationUrl(publication: { title: string; url?: string; sourceUrl: string }): string {
+  if (publication.url) return publication.url;
+  return '';
+}
+
+export function buildOfficialProfileScholarlyLinkUpserts(
+  userId: string,
+  observations: MaterializerObservationLike[],
+): any[] {
+  if (!mongoose.Types.ObjectId.isValid(userId)) return [];
+  const userObjectId = new mongoose.Types.ObjectId(userId);
+  const ops: any[] = [];
+  const seen = new Set<string>();
+
+  for (const observation of observations) {
+    if (observation.field !== OFFICIAL_PROFILE_PUBLICATIONS_FIELD) continue;
+    const values = Array.isArray(observation.value) ? observation.value : [observation.value];
+    const observedAt = observation.observedAt || new Date();
+    const fallbackSourceUrl = observation.sourceUrl || '';
+    const confidence = typeof observation.confidence === 'number' ? observation.confidence : 0.9;
+
+    for (const value of values) {
+      if (!value || typeof value !== 'object') continue;
+      const publication = normalizeOfficialProfilePublication(
+        value as OfficialProfilePublicationValue,
+        fallbackSourceUrl,
+        observedAt,
+      );
+      if (!publication) continue;
+      const key = publication.url.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+
+      ops.push({
+        updateOne: {
+          filter: {
+            userId: userObjectId,
+            url: publication.url,
+          },
+          update: {
+            $set: {
+              userId: userObjectId,
+              title: publication.title,
+              url: officialProfilePublicationUrl(publication),
+              destinationKind: 'OTHER',
+              displaySource: 'Official Yale profile',
+              freeFullTextUrl: '',
+              freeFullTextLabel: '',
+              discoveredVia: 'OFFICIAL_PROFILE',
+              ...(publication.year ? { year: publication.year } : {}),
+              ...(publication.venue ? { venue: publication.venue } : {}),
+              confidence,
+              observedAt: publication.observedAt,
+              sourceUrl: publication.sourceUrl,
+              externalIds: {
+                officialProfileSourceUrl: publication.sourceUrl,
+              },
+              archived: false,
+            },
+          },
+          upsert: true,
+        },
+      });
+    }
+  }
+
+  return ops;
+}
+
+async function materializeOfficialProfileScholarlyLinks(
+  userId: string,
+  observations: MaterializerObservationLike[],
+): Promise<number> {
+  const ops = buildOfficialProfileScholarlyLinkUpserts(userId, observations);
+  if (ops.length === 0) return 0;
+  const result = await ResearchScholarlyLink.bulkWrite(ops, { ordered: false });
+  return result.upsertedCount + result.modifiedCount;
 }
 
 export function shouldClearIgnoredAccessClaimForEntity(
@@ -119,10 +363,675 @@ function materializedFieldValue(
   field: string,
   value: unknown,
 ): unknown {
+  if (isResearchEntityObservationType(entityType) && field === 'sourceUrls') {
+    return sanitizeResearchEntitySourceUrlsForMaterialization(value);
+  }
   if (isResearchEntityObservationType(entityType) && PUBLIC_QUOTE_FIELDS.has(field) && typeof value === 'string') {
     return redactDirectContactInfo(value);
   }
   return value;
+}
+
+const RESEARCH_ENTITY_CONTENT_PAGE_SOURCE_PATH_RE =
+  /(^|[-/])(blog|blogs|news|events|calendar|newsletter|article|stories|press|podcast|video|webinar)([-/]|$)/i;
+
+export function isResearchEntityContentPageSourceUrl(value: unknown): boolean {
+  if (typeof value !== 'string') return false;
+  const raw = value.trim();
+  if (!raw) return false;
+  try {
+    return RESEARCH_ENTITY_CONTENT_PAGE_SOURCE_PATH_RE.test(new URL(raw).pathname);
+  } catch {
+    return RESEARCH_ENTITY_CONTENT_PAGE_SOURCE_PATH_RE.test(raw);
+  }
+}
+
+export function sanitizeResearchEntitySourceUrlsForMaterialization(value: unknown): unknown {
+  if (!Array.isArray(value)) return value;
+  return value.filter((url) => !isResearchEntityContentPageSourceUrl(url));
+}
+
+function isInitialOnlyNameValue(value: unknown): boolean {
+  const raw = textValue(value);
+  if (/^[A-Z]{2,}$/.test(raw)) return false;
+  const tokens = identityTokens(value);
+  return tokens.length === 1 && (tokens[0].length === 1 || raw.includes('.'));
+}
+
+export function shouldPreserveExistingUserIdentityField(
+  field: string,
+  nextValue: unknown,
+  existingDoc: Record<string, unknown> | null,
+): boolean {
+  if (!existingDoc || (field !== 'fname' && field !== 'firstName')) return false;
+  const existingValue = existingDoc[field] || existingDoc.fname || existingDoc.firstName;
+  if (!textValue(existingValue)) return false;
+  return isInitialOnlyNameValue(nextValue) && !isInitialOnlyNameValue(existingValue);
+}
+
+function comparableObservationValue(value: unknown): string {
+  if (typeof value === 'string') return value.trim().toLowerCase();
+  return JSON.stringify(value);
+}
+
+function fieldProvenanceForResolvedObservation(
+  field: string,
+  resolved: ResolvedField,
+  observations: MaterializerObservationLike[],
+): Record<string, unknown> | null {
+  const resolvedValue = comparableObservationValue(resolved.value);
+  const contributingSources = new Set(resolved.contributingSources);
+  const match = observations
+    .filter((obs) => obs.field === field && obs.sourceName && contributingSources.has(obs.sourceName))
+    .find((obs) => comparableObservationValue(obs.value) === resolvedValue);
+  if (!match) return null;
+
+  return {
+    ...(match._id ? { sourceId: match._id } : {}),
+    sourceName: match.sourceName,
+    sourceUrl: match.sourceUrl || '',
+    observedAt: match.observedAt || new Date(),
+    confidence: match.confidence ?? resolved.confidence,
+  };
+}
+
+export function buildInferredPiMemberUpsert(
+  researchEntityId: string,
+  observation: InferredPiObservation,
+):
+  | {
+      filter: Record<string, unknown>;
+      update: { $set: Record<string, unknown>; $setOnInsert: Record<string, unknown> };
+    }
+  | null {
+  const userId = String(observation.value || '').trim();
+  if (!mongoose.Types.ObjectId.isValid(researchEntityId) || !mongoose.Types.ObjectId.isValid(userId)) {
+    return null;
+  }
+  const observedAt = observation.observedAt || new Date();
+  const confidence = typeof observation.confidence === 'number' ? observation.confidence : 0.5;
+  const sourceUrl = observation.sourceUrl || '';
+  const sourceName = observation.sourceName || '';
+
+  return {
+    filter: {
+      researchEntityId,
+      userId,
+      role: 'pi',
+      isCurrentMember: true,
+    },
+    update: {
+      $set: {
+        researchEntityId,
+        researchGroupId: researchEntityId,
+        userId,
+        role: 'pi',
+        isCurrentMember: true,
+        sourceUrl,
+        confidence,
+        lastObservedAt: observedAt,
+        'confidenceByField.role': confidence,
+        'fieldProvenance.role': {
+          sourceName,
+          sourceUrl,
+          observedAt,
+          confidence,
+        },
+      },
+      $setOnInsert: {
+        startedAt: observedAt,
+      },
+    },
+  };
+}
+
+const MEMBER_ROLES = new Set([
+  'pi',
+  'co-pi',
+  'director',
+  'co-director',
+  'core-faculty',
+  'affiliated',
+  'alumni',
+  'postdoc',
+  'grad-student',
+  'undergrad',
+  'staff',
+  'affiliate',
+]);
+
+const objectRecord = (value: unknown): Record<string, unknown> =>
+  value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+
+function memberNameFromInferredUserName(value: unknown): string {
+  const record = objectRecord(value);
+  const first = textValue(record.fname || record.first || record.firstName);
+  const last = textValue(record.lname || record.last || record.lastName);
+  return [first, last].filter(Boolean).join(' ').trim();
+}
+
+function normalizeMemberRole(value: unknown): string {
+  const role = textValue(value).toLowerCase();
+  return MEMBER_ROLES.has(role) ? role : '';
+}
+
+async function findUniqueUserForResearchGroupMember(
+  resolved: Record<string, ResolvedField>,
+): Promise<any | null> {
+  const profileUrl = textValue(resolved.profileUrl?.value);
+  const inferredName = objectRecord(resolved.inferredUserName?.value);
+  const first = textValue(inferredName.fname || inferredName.first || inferredName.firstName);
+  const last = textValue(inferredName.lname || inferredName.last || inferredName.lastName);
+
+  const filters: Record<string, unknown>[] = [];
+  if (profileUrl) {
+    filters.push({
+      $or: [
+        { 'profileUrls.official': profileUrl },
+        { 'profileUrls.medicine': profileUrl },
+        { 'profileUrls.yale': profileUrl },
+        { 'profileUrls.department': profileUrl },
+        { 'profileUrls.directory': profileUrl },
+        { scholarCandidateProfileUrls: profileUrl },
+        { website: profileUrl },
+      ],
+    });
+  }
+  if (first && last) {
+    filters.push({
+      fname: new RegExp(`^${escapeRegex(first)}$`, 'i'),
+      lname: new RegExp(`^${escapeRegex(last)}$`, 'i'),
+    });
+  }
+
+  for (const filter of filters) {
+    const users = await User.find(filter).select('_id facultyMemberId').limit(2).lean();
+    if (users.length === 1) return users[0];
+  }
+  return null;
+}
+
+export function buildResearchGroupMemberUpsert(
+  researchEntityId: string,
+  resolved: Record<string, ProvenanceResolvedField>,
+  user: Record<string, unknown> | null = null,
+):
+  | ResearchGroupMemberMaterializationPatch
+  | null {
+  if (!mongoose.Types.ObjectId.isValid(researchEntityId)) return null;
+  const role = normalizeMemberRole(resolved.role?.value);
+  if (!role) return null;
+  const name = textValue(resolved.name?.value) || memberNameFromInferredUserName(resolved.inferredUserName?.value);
+  const userId = idValue(user?._id);
+  const facultyMemberId = idValue(user?.facultyMemberId);
+  if (!name && !userId && !facultyMemberId) return null;
+
+  const roleSource = resolved.role;
+  const observedAt = roleSource?.observedAt || new Date();
+  const confidence = typeof roleSource?.confidence === 'number' ? roleSource.confidence : 0.5;
+  const sourceUrl = textValue(roleSource?.sourceUrl);
+  const sourceName = textValue(roleSource?.sourceName);
+  const title = textValue(resolved.title?.value);
+  const profileUrl = textValue(resolved.profileUrl?.value);
+
+  const identityFilter: Record<string, unknown> = userId
+    ? { userId }
+    : facultyMemberId
+    ? { facultyMemberId }
+    : { name };
+  const filter = {
+    researchEntityId,
+    role,
+    isCurrentMember: true,
+    ...identityFilter,
+  };
+  const set: Record<string, unknown> = {
+    researchEntityId,
+    researchGroupId: researchEntityId,
+    role,
+    isCurrentMember: true,
+    sourceUrl,
+    confidence,
+    lastObservedAt: observedAt,
+    'confidenceByField.role': confidence,
+    'fieldProvenance.role': {
+      sourceName,
+      sourceUrl,
+      observedAt,
+      confidence,
+    },
+  };
+  if (name) set.name = name;
+  if (userId) set.userId = userId;
+  if (facultyMemberId) set.facultyMemberId = facultyMemberId;
+  if (title) {
+    set.title = title;
+    set['confidenceByField.title'] = resolved.title?.confidence ?? confidence;
+  }
+  if (profileUrl) {
+    set.sourceUrl = profileUrl;
+    set['fieldProvenance.profileUrl'] = {
+      sourceName: textValue(resolved.profileUrl?.sourceName) || sourceName,
+      sourceUrl: profileUrl,
+      observedAt: resolved.profileUrl?.observedAt || observedAt,
+      confidence: resolved.profileUrl?.confidence ?? confidence,
+    };
+  }
+
+  return {
+    filter,
+    update: {
+      $set: set,
+      $setOnInsert: {
+        startedAt: observedAt,
+      },
+    },
+    fieldsWritten: Object.keys(resolved).length,
+    conflicts: Object.values(resolved).filter((field) => field.hasConflict).length,
+    resolved,
+  };
+}
+
+async function materializeResearchGroupMember(
+  identifier: { entityId?: string; entityKey?: string },
+  observations: any[],
+  options: MaterializeOptions,
+): Promise<MaterializeResult> {
+  const resolverObs: ResolverObservation[] = observations.map((o: any) => ({
+    field: o.field,
+    value: o.value,
+    sourceName: o.sourceName,
+    confidence: o.confidence,
+    observedAt: o.observedAt,
+  }));
+  const resolved = withResolvedFieldProvenance(resolveAllFields(resolverObs), observations);
+  const researchGroupKey = textValue(resolved.researchGroupKey?.value);
+  if (!researchGroupKey) {
+    return {
+      entityType: 'researchGroupMember',
+      ...identifier,
+      fieldsWritten: 0,
+      conflicts: 0,
+      created: false,
+      resolved,
+      skipped: 'missing-research-group-key',
+    };
+  }
+
+  const entity: any = await ResearchEntity.findOne({ slug: researchGroupKey, archived: { $ne: true } })
+    .select('_id')
+    .lean();
+  if (!entity?._id) {
+    return {
+      entityType: 'researchGroupMember',
+      ...identifier,
+      fieldsWritten: 0,
+      conflicts: 0,
+      created: false,
+      resolved,
+      skipped: 'missing-research-entity',
+    };
+  }
+
+  const user = await findUniqueUserForResearchGroupMember(resolved);
+  const patch = buildResearchGroupMemberUpsert(String(entity._id), resolved, user);
+  if (!patch) {
+    return {
+      entityType: 'researchGroupMember',
+      entityId: String(entity._id),
+      entityKey: identifier.entityKey,
+      fieldsWritten: 0,
+      conflicts: 0,
+      created: false,
+      resolved,
+      skipped: 'missing-required-fields',
+    };
+  }
+
+  if (options.dryRun) {
+    return {
+      entityType: 'researchGroupMember',
+      entityId: String(entity._id),
+      entityKey: identifier.entityKey,
+      fieldsWritten: patch.fieldsWritten,
+      conflicts: patch.conflicts,
+      created: false,
+      resolved,
+    };
+  }
+
+  const existing = await ResearchGroupMember.findOne(patch.filter).select('_id').lean();
+  await ResearchGroupMember.updateOne(patch.filter, patch.update, { upsert: true });
+  return {
+    entityType: 'researchGroupMember',
+    entityId: String(entity._id),
+    entityKey: identifier.entityKey,
+    fieldsWritten: patch.fieldsWritten,
+    conflicts: patch.conflicts,
+    created: !existing,
+    resolved,
+  };
+}
+
+function withResolvedFieldProvenance(
+  resolved: Record<string, ResolvedField>,
+  observations: MaterializerObservationLike[],
+): Record<string, ProvenanceResolvedField> {
+  const output: Record<string, ProvenanceResolvedField> = {};
+  for (const [field, value] of Object.entries(resolved)) {
+    const source =
+      observations.find((observation) => observation.field === field && observation.value === value.value) ||
+      observations.find((observation) => observation.field === field);
+    output[field] = {
+      ...value,
+      ...(source?.sourceName ? { sourceName: source.sourceName } : {}),
+      ...(source?.sourceUrl ? { sourceUrl: source.sourceUrl } : {}),
+      ...(source?.observedAt ? { observedAt: source.observedAt } : {}),
+    };
+  }
+  return output;
+}
+
+async function materializeInferredPiMembership(
+  researchEntityId: string,
+  observations: MaterializerObservationLike[],
+): Promise<void> {
+  const piObservations = observations.filter((obs) => obs.field === 'inferredPiUserId');
+  for (const observation of piObservations) {
+    const patch = buildInferredPiMemberUpsert(researchEntityId, observation);
+    if (!patch) continue;
+    await ResearchGroupMember.updateOne(patch.filter, patch.update, { upsert: true });
+  }
+
+  const piKeyObservations = observations.filter((obs) => obs.field === 'inferredPiUserKey');
+  const inferredPiDepartments = departmentValuesForInferredPiLookup(observations);
+  for (const observation of piKeyObservations) {
+    const filters = userLookupFiltersForInferredPiUserKey(
+      observation.value,
+      inferredPiDepartments,
+    );
+    if (filters.length === 0) continue;
+    const users = await User.find(filters.length === 1 ? filters[0] : { $or: filters })
+      .select('_id')
+      .limit(2)
+      .lean();
+    if (users.length !== 1) continue;
+    const user = users[0];
+    if (!user?._id) continue;
+    const patch = buildInferredPiMemberUpsert(researchEntityId, {
+      ...observation,
+      value: String(user._id),
+    });
+    if (!patch) continue;
+    await ResearchGroupMember.updateOne(patch.filter, patch.update, { upsert: true });
+  }
+}
+
+export function userLookupValueForInferredPiUserKey(value: unknown): string {
+  const raw = typeof value === 'string' ? value.trim() : '';
+  if (!raw) return '';
+  return uniqueKeyValueForIdentifier('user', raw, []) || '';
+}
+
+function isLikelyYaleEmailLocalPart(value: string): boolean {
+  return value.includes('.') && /^[a-z0-9._-]+$/i.test(value);
+}
+
+const textValue = (value: unknown): string =>
+  typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
+
+const idValue = (value: unknown): string => {
+  if (value === null || value === undefined) return '';
+  return String(value).trim();
+};
+
+const uniqueStrings = (values: unknown[]): string[] =>
+  Array.from(new Set(values.map(textValue).filter(Boolean)));
+
+const DEPT_USER_KEY_PATTERN = /^dept:[^:]+:(.+)$/i;
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function nameRegexFromSlugParts(parts: string[]): RegExp | null {
+  const normalized = parts.map((part) => part.trim()).filter(Boolean);
+  if (normalized.length === 0) return null;
+  return new RegExp(`^${normalized.map(escapeRegex).join('[\\s-]+')}$`, 'i');
+}
+
+function deptUserNameFilters(value: unknown, departments: string[]): Array<Record<string, unknown>> {
+  const raw = typeof value === 'string' ? value.trim() : '';
+  const match = raw.match(DEPT_USER_KEY_PATTERN);
+  if (!match || departments.length === 0) return [];
+
+  const parts = match[1]
+    .toLowerCase()
+    .split(/[^a-z0-9]+/i)
+    .filter(Boolean);
+  if (parts.length < 2) return [];
+
+  const firstName = nameRegexFromSlugParts([parts[0]]);
+  const lastName = nameRegexFromSlugParts(parts.slice(1));
+  if (!firstName || !lastName) return [];
+
+  return departments.flatMap((department) => [
+    { fname: firstName, lname: lastName, departments: department },
+    { fname: firstName, lname: lastName, primaryDepartment: department },
+  ]);
+}
+
+function departmentValuesForInferredPiLookup(
+  observations: MaterializerObservationLike[],
+): string[] {
+  return uniqueStrings(
+    observations.flatMap((observation) => {
+      if (observation.field !== 'departments' && observation.field !== 'primaryDepartment') {
+        return [];
+      }
+      return Array.isArray(observation.value) ? observation.value : [observation.value];
+    }),
+  );
+}
+
+export function userLookupFiltersForInferredPiUserKey(
+  value: unknown,
+  departments: string[] = [],
+): Array<Record<string, unknown>> {
+  const lookupValue = userLookupValueForInferredPiUserKey(value);
+  if (!lookupValue) return [];
+
+  const filters: Array<Record<string, unknown>> = [{ netid: lookupValue }];
+  if (/^[a-z0-9._-]+@yale\.edu$/i.test(lookupValue)) {
+    filters.push({ email: lookupValue.toLowerCase() });
+  } else if (isLikelyYaleEmailLocalPart(lookupValue)) {
+    filters.push({ email: `${lookupValue.toLowerCase()}@yale.edu` });
+  }
+  return [...filters, ...deptUserNameFilters(value, departments)];
+}
+
+function normalizeIdentityText(value: unknown): string {
+  return textValue(value)
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
+
+function identityTokens(value: unknown): string[] {
+  return normalizeIdentityText(value)
+    .replace(/&/g, ' and ')
+    .split(/[^a-z0-9]+/i)
+    .filter(Boolean);
+}
+
+function observationValueForField(
+  observations: MaterializerObservationLike[],
+  field: string,
+): unknown {
+  return observations.find((obs) => obs.field === field)?.value;
+}
+
+function observedUserDepartmentLabels(observations: MaterializerObservationLike[]): string[] {
+  return uniqueStrings(
+    observations.flatMap((observation) => {
+      if (observation.field !== 'departments' && observation.field !== 'primaryDepartment') {
+        return [];
+      }
+      return Array.isArray(observation.value) ? observation.value : [observation.value];
+    }),
+  );
+}
+
+const DEPARTMENT_IDENTITY_STOPWORDS = new Set([
+  'and',
+  'the',
+  'department',
+  'departments',
+  'program',
+  'programs',
+  'school',
+  'faculty',
+  'arts',
+  'sciences',
+  'science',
+  'studies',
+  'yale',
+]);
+
+function departmentIdentityTokens(labels: string[]): string[] {
+  return Array.from(
+    new Set(
+      labels
+        .flatMap(identityTokens)
+        .filter((token) => token.length >= 4 && !DEPARTMENT_IDENTITY_STOPWORDS.has(token)),
+    ),
+  );
+}
+
+function officialUserProfileUrlsFromObservations(
+  observations: MaterializerObservationLike[],
+): string[] {
+  return uniqueStrings(
+    observations.flatMap((observation) => {
+      const urls: unknown[] = [];
+      if (observation.field === 'profileUrls') {
+        if (typeof observation.value === 'string') urls.push(observation.value);
+        else if (observation.value && typeof observation.value === 'object') {
+          urls.push(...Object.values(observation.value));
+        }
+      }
+      if (observation.field === 'profileUrl') urls.push(observation.value);
+      return urls;
+    }),
+  ).filter((url) => {
+    try {
+      const parsed = new URL(url);
+      return (
+        parsed.hostname.toLowerCase().endsWith('yale.edu') &&
+        /\/(?:people|profile)\//i.test(parsed.pathname)
+      );
+    } catch {
+      return false;
+    }
+  });
+}
+
+function observedUserNameParts(observations: MaterializerObservationLike[]): {
+  firstInitial: string;
+  lastToken: string;
+} | null {
+  const firstTokens = identityTokens(observationValueForField(observations, 'fname'));
+  const lastTokens = identityTokens(observationValueForField(observations, 'lname'));
+  const fullNameTokens = identityTokens(
+    uniqueStrings([
+      observationValueForField(observations, 'displayName'),
+      observationValueForField(observations, 'name'),
+    ]).join(' '),
+  );
+  const firstInitial = firstTokens[0]?.charAt(0) || fullNameTokens[0]?.charAt(0) || '';
+  const lastToken = lastTokens.at(-1) || fullNameTokens.at(-1) || '';
+  if (!firstInitial || lastToken.length < 3) return null;
+  return { firstInitial, lastToken };
+}
+
+export function userLookupFiltersForOfficialProfileObservations(
+  observations: MaterializerObservationLike[],
+): Array<Record<string, unknown>> {
+  if (officialUserProfileUrlsFromObservations(observations).length === 0) return [];
+  const nameParts = observedUserNameParts(observations);
+  if (!nameParts) return [];
+  const departmentTokens = departmentIdentityTokens(observedUserDepartmentLabels(observations));
+  if (departmentTokens.length === 0) return [];
+
+  const lastName = new RegExp(escapeRegex(nameParts.lastToken), 'i');
+  const departmentRegexes = departmentTokens.map((token) => new RegExp(escapeRegex(token), 'i'));
+  return departmentRegexes.flatMap((department) => [
+    { lname: lastName, departments: department },
+    { lname: lastName, primaryDepartment: department },
+    { name: lastName, departments: department },
+    { name: lastName, primaryDepartment: department },
+    { displayName: lastName, departments: department },
+    { displayName: lastName, primaryDepartment: department },
+  ]);
+}
+
+export function officialProfileObservationMatchesUser(
+  observations: MaterializerObservationLike[],
+  user: Record<string, unknown>,
+): boolean {
+  if (officialUserProfileUrlsFromObservations(observations).length === 0) return false;
+  const nameParts = observedUserNameParts(observations);
+  if (!nameParts) return false;
+  const departmentTokens = departmentIdentityTokens(observedUserDepartmentLabels(observations));
+  if (departmentTokens.length === 0) return false;
+
+  const userNameTokens = identityTokens(
+    uniqueStrings([user.fname, user.firstName, user.lname, user.lastName, user.name, user.displayName]).join(' '),
+  );
+  if (!userNameTokens.includes(nameParts.lastToken)) return false;
+  if (!userNameTokens.some((token) => token.charAt(0) === nameParts.firstInitial)) return false;
+
+  const userDepartmentText = normalizeIdentityText(
+    uniqueStrings([
+      user.primaryDepartment,
+      ...(Array.isArray(user.departments) ? user.departments : [user.departments]),
+    ]).join(' '),
+  );
+  return departmentTokens.some((token) => userDepartmentText.includes(token));
+}
+
+export function selectOfficialProfileObservationUserMatch(
+  observations: MaterializerObservationLike[],
+  candidates: Array<Record<string, unknown>>,
+  observedKeyValue = '',
+): Record<string, unknown> | null {
+  const verified = candidates.filter((candidate) =>
+    officialProfileObservationMatchesUser(observations, candidate),
+  );
+  if (verified.length <= 1) return verified[0] || null;
+
+  const observedLocalPart = isLikelyYaleEmailLocalPart(observedKeyValue)
+    ? observedKeyValue.toLowerCase()
+    : '';
+  if (observedLocalPart) {
+    const canonicalMatches = verified.filter(
+      (candidate) => textValue(candidate.netid).toLowerCase() !== observedLocalPart,
+    );
+    if (canonicalMatches.length === 1) return canonicalMatches[0];
+  }
+
+  return null;
+}
+
+async function findUserDocByOfficialProfileObservations(
+  Model: mongoose.Model<any>,
+  observations: MaterializerObservationLike[],
+  observedKeyValue = '',
+): Promise<any | null> {
+  const profileFallbackFilters = userLookupFiltersForOfficialProfileObservations(observations);
+  if (profileFallbackFilters.length === 0) return null;
+  const candidates = await Model.find({ $or: profileFallbackFilters }).limit(5).lean();
+  return selectOfficialProfileObservationUserMatch(observations, candidates, observedKeyValue);
 }
 
 export function emptyPostMaterializationMetrics(): Required<ReportPostMaterializationMetrics> {
@@ -318,6 +1227,15 @@ async function findEntityDocByIdentifier(
 
   const keyValue = uniqueKeyValueForIdentifier(entityType, identifier.entityKey, obs);
   if (!keyValue) return null;
+
+  if (entityType === 'user') {
+    const byOfficialProfile = await findUserDocByOfficialProfileObservations(
+      Model,
+      obs,
+      keyValue,
+    );
+    if (byOfficialProfile) return byOfficialProfile;
+  }
 
   const exact = await Model.findOne({ [keyField]: keyValue }).lean();
   if (exact) return exact;
@@ -595,6 +1513,7 @@ export function buildPaperUpdateFromObservations(
   let conflicts = 0;
 
   for (const [field, r] of Object.entries(resolved)) {
+    if (MATERIALIZER_MANAGED_FIELDS.has(field)) continue;
     if (manuallyLockedFields.includes(field)) continue;
     if (PAPER_MATERIALIZATION_ONLY_FIELDS.has(field)) continue;
     if (PAPER_DERIVED_AUTHOR_FIELDS.has(field)) continue;
@@ -688,6 +1607,10 @@ export async function materializeEntity(
     };
   }
 
+  if (entityType === 'researchGroupMember') {
+    return materializeResearchGroupMember(identifier, obs, options);
+  }
+
   const Model = entityModelFor(entityType);
   if (!Model) {
     return {
@@ -754,10 +1677,41 @@ export async function materializeEntity(
       entityType === 'paper' && PAPER_SET_FIELDS.has(field)
         ? mergeUniqueArrayValues(entityDoc?.[field], r.value)
         : r.value;
+    if (entityType === 'user' && shouldPreserveExistingUserIdentityField(field, nextValue, entityDoc)) {
+      continue;
+    }
     set[field] = materializedFieldValue(entityType, field, nextValue);
     confidenceByField[field] = r.confidence;
+    if (isResearchEntityObservationType(entityType)) {
+      const provenance = fieldProvenanceForResolvedObservation(field, r, materializationObs);
+      if (provenance) set[`fieldProvenance.${field}`] = provenance;
+    }
     if (r.hasConflict) conflicts++;
     fieldsWritten++;
+  }
+  if (
+    isResearchEntityObservationType(entityType) &&
+    !manuallyLockedFields.includes('shortDescription') &&
+    !set.shortDescription
+  ) {
+    const fullDescription = set.fullDescription || entityDoc?.fullDescription;
+    const derivedShortDescription = deriveShortDescriptionFromFullDescription(fullDescription);
+    if (derivedShortDescription) {
+      set.shortDescription = derivedShortDescription;
+      const fullDescriptionConfidence = resolved.fullDescription?.confidence;
+      if (typeof fullDescriptionConfidence === 'number') {
+        confidenceByField.shortDescription = fullDescriptionConfidence;
+      }
+      const provenance = resolved.fullDescription
+        ? fieldProvenanceForResolvedObservation(
+            'fullDescription',
+            resolved.fullDescription,
+            materializationObs,
+          )
+        : undefined;
+      if (provenance) set['fieldProvenance.shortDescription'] = provenance;
+      fieldsWritten++;
+    }
   }
   if (entityType === 'paper') {
     const paperObs = materializationObs.map((o: any) => ({
@@ -849,6 +1803,10 @@ export async function materializeEntity(
     created = true;
   }
 
+  if (entityType === 'user' && entityIdString) {
+    await materializeOfficialProfileScholarlyLinks(entityIdString, obs);
+  }
+
   const syncEntityType = entityType === 'researchGroup' ? 'researchEntity' : entityType;
   if (isSyncableEntityType(syncEntityType) && entityIdString) {
     const fresh = await Model.findById(entityIdString).lean();
@@ -857,6 +1815,9 @@ export async function materializeEntity(
 
   let postMaterializationMetrics: ReportPostMaterializationMetrics | undefined;
   if (isResearchEntityObservationType(entityType) && entityIdString) {
+    if (!options.dryRun) {
+      await materializeInferredPiMembership(entityIdString, materializationObs);
+    }
     const accessResult = await materializeAccessForResearchGroup({
       researchEntityId: entityIdString,
       entityKey: identifier.entityKey,
@@ -1028,6 +1989,19 @@ export async function materializeFromRun(
       },
     },
   ]);
+  const materializationOrder: Record<string, number> = {
+    user: 0,
+    researchEntity: 1,
+    researchGroup: 1,
+  };
+  distinct.sort((a, b) => {
+    const left = materializationOrder[a._id?.entityType] ?? 10;
+    const right = materializationOrder[b._id?.entityType] ?? 10;
+    if (left !== right) return left - right;
+    return String(a._id?.entityKey || a._id?.entityId || '').localeCompare(
+      String(b._id?.entityKey || b._id?.entityId || ''),
+    );
+  });
 
   let materialized = paperResult.materialized;
   let created = paperResult.created;

@@ -71,6 +71,22 @@ export const sourceCoverageRegistry = {
     notes:
       'Bounded lab/faculty microsite extraction from canonical ResearchEntity websites; evidence remains public-page quotes and source URLs.',
   },
+  'student-decision-llm': {
+    priority: 1,
+    tier: 'DERIVED_OFFICIAL',
+    artifactTypes: ['ResearchEntity', 'Observation'],
+    evidenceCategories: [
+      'JOIN_INSTRUCTIONS',
+      'UNDERGRAD_ROLE_LANGUAGE',
+      'OFFICIAL_CONTACT_ROUTE',
+      'APPLICATION_LINK',
+      'CONSTRAINTS',
+      'POSTED_OPENING',
+    ],
+    defaultConfidence: 'LOW',
+    notes:
+      'Precomputed LLM explanation of source-backed Ways In evidence for student-facing Best Next Step copy; must not invent opportunities, URLs, or contact details.',
+  },
   'lab-microsite-llm': {
     priority: 1,
     tier: 'PRIMARY_OFFICIAL',
@@ -110,6 +126,15 @@ export const sourceCoverageRegistry = {
     defaultConfidence: 'HIGH',
     notes:
       'Known official Yale profile URLs for existing faculty users; fills profile biography, research-interest, image, ORCID, and profile URL observations without creating research entities or access claims.',
+  },
+  'official-profile-pi-backfill': {
+    priority: 2,
+    tier: 'OFFICIAL_INDEX',
+    artifactTypes: ['ResearchEntity', 'Observation'],
+    evidenceCategories: ['ENTITY_IDENTITY', 'OFFICIAL_PROFILE', 'LAB_WEBSITE'],
+    defaultConfidence: 'HIGH',
+    notes:
+      'Targeted official Yale profile backfill for PI/user identity, visible professor bio repair, profile-derived source descriptions, and leadership-backed research-home websites without creating access claims.',
   },
   'yale-directory': {
     priority: 2,

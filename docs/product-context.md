@@ -6,7 +6,7 @@ Yale Research makes the hidden undergraduate research ecosystem legible: where f
 
 The product is not a simple "find lab openings" job board. It should help Yale students discover and navigate real paths into research, including paths that are not formally posted.
 
-In product shorthand: Yale Research helps students move from curiosity to a credible research home and next step. That relationship may later be formalized as course credit, paid RA work, fellowship-funded research, thesis advising, or an active posted opportunity. Some structured fellowships are exceptions because they match or place students with mentors and therefore also function as discovery programs.
+In product shorthand: Yale Research is research-home-first navigation. It helps students move from a topic, person, method, or question to a credible research home, inspect source-backed evidence, understand possible ways in, and choose the safest next step. Posted opportunities are only the active or time-bound posting subset. Course credit, paid RA work, fellowship funding, thesis advising, and volunteer arrangements are usually later formalization options after home/mentor fit, unless a structured program itself provides the entry route.
 
 ## Product Premise
 
@@ -34,9 +34,9 @@ Curiosity-first browsing of what exists:
 
 This surface should support exploration even when no active position is posted.
 
-### Pathways
+### Ways In
 
-Practical filtering by how a student might participate:
+Practical context for how a student might participate, embedded inside Yale Research rather than split into a separate product surface:
 
 - paid
 - credit-eligible after mentor/home fit
@@ -54,7 +54,7 @@ Practical filtering by how a student might participate:
 - digital humanities
 - policy research
 
-This surface should emphasize concrete next steps toward a plausible research home. "Pathways" is the student-facing umbrella for practical ways to approach or enter research, including durable routes such as exploratory outreach, recurring programs, internships, faculty/lab-manager contact, structured mentor-matching fellowships, and real posted openings. Course credit is not itself an entry pathway; it is a formalization option after the student has found a research home and mentor. Fellowship funding is usually also formalization after mentor/home fit, but a fellowship that matches students with mentors or runs a cohort research program can be a pathway in its own right. Only call something an open or posted opportunity when there is a real active or time-bound posting.
+This context should emphasize concrete next steps toward a plausible research home. "Ways in" is the student-facing umbrella for practical approaches such as official lab or faculty pages, recurring programs, internships, faculty/lab-manager contact, structured mentor-matching fellowships, and real posted openings. Course credit is not itself an entry pathway; it is a formalization option after the student has found a research home and mentor. Fellowship funding is usually also formalization after mentor/home fit, but a fellowship that matches students with mentors or runs a cohort research program can be a pathway in its own right. Only call something an open or posted opportunity when there is a real active or time-bound posting.
 
 ## Navigation Shape
 
@@ -62,16 +62,15 @@ Target surfaces:
 
 - `/`: authenticated default redirect to `/research`.
 - `/research`: explore research entities, even when no opening exists.
-- `/pathways`: browse practical routes toward plausible research homes, with filters for evidence, next step, compensation/funding possibility, structured fellowship program, thesis fit, method, timing, exploratory outreach, internships, and active posted roles.
 - `/research/:slug`: show what the entity does, who is involved, evidence of undergraduate access, pathways, and contact routes.
 - `/opportunities/:id`: show real active/time-bound postings only. These must be backed by `PostedOpportunity`.
 - `/listings`: temporary legacy board for posted roles, preserved for old direct links and professor-created role workflows while the product migrates toward posted opportunities.
 
 The hard-pivot migration removes `/labs` as a runtime compatibility surface; `/research` is the canonical Explore Research route.
 
-Implementation note: `/pathways` now has an MVP client page backed by `POST /api/pathways/search`. It should remain practical and route-focused; real openings appear there as posted-role pathways. `/opportunities/:id` has a first implementation for specific posted instances and should not render generic exploratory pathways.
+Implementation note: the separate practical-routes page has been retired because it degraded the unified research-home experience. Ways-in evidence should now appear inside `/research` results and `/research/:slug` detail pages. `/opportunities/:id` has a first implementation for specific posted instances and should not render generic exploratory pathways.
 
-Implementation note: legacy listings now bridge into `PostedOpportunity` records for the Pathways surface. Public contact CTAs should prefer guarded route URLs and official channels over raw emails. Student-facing navigation should not present Listings as the primary product surface; use Research, Pathways, and Posted Roles/Posted Opportunities language instead.
+Implementation note: legacy listings now bridge into `PostedOpportunity` records. Public contact CTAs should prefer guarded route URLs and official channels over raw emails. Student-facing navigation should not present Listings as the primary product surface; use Research, Evidence, Best Next Step, and Posted Roles/Posted Opportunities language instead.
 
 ## Entity Page Questions
 
@@ -107,13 +106,13 @@ Exploratory outreach should be specific and evidence-based. The product should n
 
 Student-facing labels should use warmer language than internal model names:
 
-- Pathways
+- Ways In
 - Evidence
 - Best Next Step
 
 ## Saved Planning And Advising
 
-Saved Pathways are private student planning space by default. They may include thesis ideas, outreach notes, funding cues, deadlines, and checklist progress, but exports should exclude private notes unless the student explicitly opts in.
+Saved ways in are private student planning space by default. They may include thesis ideas, outreach notes, funding cues, deadlines, and checklist progress, but exports should exclude private notes unless the student explicitly opts in.
 
 Advising-oriented sharing should use source-backed pathway context and explicit visibility choices. It should help a student discuss options with an advisor, not create mass-email or broad outreach behavior.
 

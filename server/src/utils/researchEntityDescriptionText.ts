@@ -1,5 +1,12 @@
 const DESCRIPTION_FIELDS = ['description', 'shortDescription', 'fullDescription'] as const;
 
+type FacultyResearchTextEntity = {
+  displayName?: string | null;
+  name?: string | null;
+  kind?: string | null;
+  entityType?: string | null;
+};
+
 function textValue(value: unknown): string {
   return typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
 }
@@ -53,7 +60,7 @@ export function isBrokenResearchEntityDescriptionFragment(value: unknown): boole
   return (
     /^Dr[.,]\s+(?:using|with|in|and)\b/i.test(cleaned) ||
     /^(?:focuses\s+in|of\s+|is\s+in\s+)/i.test(cleaned) ||
-    /\b(?:and|with|by)\s+(?:[A-Z][a-z]+\s+[A-Z]\.|[A-Z][a-z]+\.|[A-Z]\.|Dr\.)$/i.test(
+    /\b(?:and|with|by)\s+(?:[A-Z][a-z]+\s+[A-Z]\.|[A-Z][a-z]+\.|[A-Z]\.|Dr\.)$/.test(
       cleaned,
     )
   );
@@ -117,10 +124,21 @@ export function isRoleOnlyTitleFragment(value: unknown): boolean {
   return false;
 }
 
+export function isContactRouteDescriptionSnippet(value: unknown): boolean {
+  const cleaned = textValue(value);
+  if (!cleaned) return false;
+  return [
+    /^Contact:\s*.+?\bWebsite:\s*https?:\/\//i,
+    /^Contact:\s*.+?@.+?\b/i,
+    /^Website:\s*https?:\/\/\S+\s+(?:Contact:|We have projects|Students interested)/i,
+  ].some((pattern) => pattern.test(cleaned));
+}
+
 export function publicResearchEntityDescriptionText(value: unknown): string {
   const cleaned = textValue(value);
   if (
     !cleaned ||
+    isContactRouteDescriptionSnippet(cleaned) ||
     isResearchAreaPlaceholderDescription(cleaned) ||
     isAcademicAppointmentDescription(cleaned) ||
     isRoleOnlyTitleFragment(cleaned) ||
@@ -153,6 +171,114 @@ export function sanitizeResearchEntityPublicDescriptionFields<T extends Record<s
     const cleaned = publicResearchEntityDescriptionText(next.summary);
     if (cleaned !== next.summary) {
       next.summary = cleaned;
+      changed = true;
+    }
+  }
+
+  return changed ? (next as T) : entity;
+}
+
+export function isFacultyResearchTextEntity(entity?: FacultyResearchTextEntity | null): boolean {
+  return Boolean(
+    entity &&
+      (entity.kind === 'individual' ||
+        entity.kind === 'solo' ||
+        entity.entityType === 'FACULTY_RESEARCH_AREA' ||
+        entity.entityType === 'INDIVIDUAL_RESEARCH'),
+  );
+}
+
+function facultyResearchLabelBase(entity: FacultyResearchTextEntity): string {
+  return textValue(entity.displayName || entity.name)
+    .replace(/\s+(?:Faculty Research|Lab|Laboratory)$/i, '')
+    .trim();
+}
+
+function possessiveName(name: string): string {
+  return name.endsWith('s') ? `${name}'` : `${name}'s`;
+}
+
+export function sanitizeFacultyResearchEntityText(
+  value: string,
+  entity?: FacultyResearchTextEntity | null,
+): string {
+  if (!isFacultyResearchTextEntity(entity)) return value;
+  const baseName = facultyResearchLabelBase(entity || {});
+  const possessive = baseName ? possessiveName(baseName) : "This faculty member's";
+
+  return value
+    .replace(
+      /^The\s+(.+?)\s+(?:Lab|Laboratory)\s+conducts\s+research\s+(?:focused\s+)?on\b/i,
+      `${possessive} research focuses on`,
+    )
+    .replace(
+      /^The\s+(.+?)\s+(?:Lab|Laboratory)\s+focuses\s+on\b/i,
+      `${possessive} research focuses on`,
+    )
+    .replace(
+      /^The\s+(.+?)\s+(?:Lab|Laboratory)\s+investigates\b/i,
+      `${possessive} research investigates`,
+    )
+    .replace(
+      /^The\s+(.+?)\s+(?:Lab|Laboratory)\s+studies\b/i,
+      `${possessive} research studies`,
+    )
+    .replace(
+      /^The\s+(.+?)\s+(?:Lab|Laboratory)\s+is\s+connected\s+to\b/i,
+      `${possessive} research is connected to`,
+    )
+    .replace(
+      /^Research\s+in\s+the\s+(.+?)\s+(?:Lab|Laboratory)\s+centers\s+on\b/i,
+      `${possessive} research centers on`,
+    )
+    .replace(/\bResearch\s+Lab\b/g, 'research program')
+    .replace(/\b([A-Z][\p{L}.' -]{1,80}?'s)\s+lab\s+studies\b/gu, '$1 research studies')
+    .replace(/\b([A-Z][\p{L}.' -]{1,80}?'s)\s+lab\s+focuses\s+on\b/gu, '$1 research focuses on')
+    .replace(/\b([A-Z][\p{L}.' -]{1,80}?'s)\s+lab\s+uses\b/gu, '$1 research uses')
+    .replace(/\b([A-Z][\p{L}.' -]{1,80}?'s)\s+lab\s+develops\b/gu, '$1 research develops')
+    .replace(/\b([A-Z][\p{L}.' -]{1,80}?'s)\s+lab\s+investigates\b/gu, '$1 research investigates')
+    .replace(/\b([A-Z][\p{L}.' -]{1,80}?(?:'|’))\s+lab\s+studies\b/gu, '$1 research studies')
+    .replace(/\b([A-Z][\p{L}.' -]{1,80}?(?:'|’))\s+lab\s+focuses\s+on\b/gu, '$1 research focuses on')
+    .replace(/\b([A-Z][\p{L}.' -]{1,80}?(?:'|’))\s+lab\s+uses\b/gu, '$1 research uses')
+    .replace(/\b([A-Z][\p{L}.' -]{1,80}?(?:'|’))\s+lab\s+develops\b/gu, '$1 research develops')
+    .replace(/\b([A-Z][\p{L}.' -]{1,80}?(?:'|’))\s+lab\s+investigates\b/gu, '$1 research investigates')
+    .replace(/\b(His|Her|Their|his|her|their)\s+lab\s+studies\b/g, '$1 research studies')
+    .replace(/\b(His|Her|Their|his|her|their)\s+lab\s+focuses\s+on\b/g, '$1 research focuses on')
+    .replace(/\b(His|Her|Their|his|her|their)\s+lab\s+uses\b/g, '$1 research uses')
+    .replace(/\b(His|Her|Their|his|her|their)\s+lab\s+develops\b/g, '$1 research develops')
+    .replace(/\b(His|Her|Their|his|her|their)\s+lab\s+investigates\b/g, '$1 research investigates')
+    .replace(/\b(His|Her|Their|his|her|their)\s+lab\s+is\s+interested\s+in\b/g, '$1 research examines')
+    .replace(/^My\s+lab\s+focuses\s+on\b/i, 'This research focuses on')
+    .replace(/^My\s+lab\s+studies\b/i, 'This research studies')
+    .replace(/\bIn\s+([^.!?]{2,100}?)\s+lab\s+we\s+study\b/i, 'In $1 research, we study')
+    .replace(/\bthe\s+lab['’]s\s+work\s+includes\b/gi, 'This research includes')
+    .replace(/\bthe\s+lab['’]s\s+research\s+addresses\b/gi, 'This research addresses')
+    .replace(/\bthe\s+lab['’]s\s+research\b/gi, 'This research')
+    .replace(/\bthe\s+lab['’]s\s+work\b/gi, 'This work')
+    .replace(/\bLaboratory\b/g, 'research program')
+    .replace(/\blaboratory\b/g, 'research program')
+    .replace(/\b([A-Z][\p{L}.' -]{1,80}?)\s+Lab\b/gu, '$1 research group')
+    .replace(/\blab site\b/gi, 'research website')
+    .replace(/\blab website\b/gi, 'research website')
+    .replace(/\bthe\s+lab\b/gi, 'this research profile')
+    .replace(/\bthis\s+lab\b/gi, 'this research profile')
+    .replace(/\bour\s+lab\b/gi, 'this research profile')
+    .replace(/\byour\s+lab\b/gi, 'this research profile')
+    .replace(/(^|[.!?]\s+)this research\b/g, '$1This research');
+}
+
+export function sanitizeFacultyResearchEntityCopyFields<T extends Record<string, any>>(
+  entity: T,
+): T {
+  if (!isFacultyResearchTextEntity(entity)) return entity;
+  let changed = false;
+  const next: Record<string, any> = { ...entity };
+
+  for (const field of [...DESCRIPTION_FIELDS, 'profileSynthesisDescription'] as const) {
+    if (typeof next[field] !== 'string') continue;
+    const cleaned = sanitizeFacultyResearchEntityText(next[field], next);
+    if (cleaned !== next[field]) {
+      next[field] = cleaned;
       changed = true;
     }
   }

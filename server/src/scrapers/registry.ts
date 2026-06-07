@@ -10,6 +10,7 @@ import { EuropePmcPaperScraper, PubMedPaperScraper } from './sources/europePmcPa
 import { CrossrefPaperScraper } from './sources/crossrefPaperScraper';
 import { YsmAtoZScraper } from './sources/ysmAtoZScraper';
 import { YseCentersScraper } from './sources/yseCentersScraper';
+import { YaleResearchOfficialScraper } from './sources/yaleResearchOfficialScraper';
 import { YaleDirectoryScraper } from './sources/yaleDirectoryScraper';
 import { DepartmentRosterScraper } from './sources/departmentRosterScraper';
 import { DepartmentUndergradResearchScraper } from './sources/departmentUndergradResearchScraper';
@@ -18,7 +19,10 @@ import { NsfAwardScraper } from './sources/nsfAwardScraper';
 import { CentersInstitutesScraper } from './sources/centersInstitutesScraper';
 import { UndergradFellowshipRecipientScraper } from './sources/undergradFellowshipRecipientScraper';
 import { YaleCollegeFellowshipsOfficeScraper } from './sources/yaleCollegeFellowshipsOfficeScraper';
+import { LabMicrositeDescriptionLLMExtractor } from './sources/labMicrositeDescriptionLLMExtractor';
 import { LabMicrositeUndergradLLMExtractor } from './sources/labMicrositeUndergradLLMExtractor';
+import { OfficialProfilePiBackfillScraper } from './sources/officialProfilePiBackfillScraper';
+import { StudentDecisionLLMExtractor } from './sources/studentDecisionLLMExtractor';
 
 export function buildOrchestrator(): ScraperOrchestrator {
   const o = new ScraperOrchestrator();
@@ -30,6 +34,7 @@ export function buildOrchestrator(): ScraperOrchestrator {
   o.register(new CrossrefPaperScraper());
   o.register(new YsmAtoZScraper());
   o.register(new YseCentersScraper());
+  o.register(new YaleResearchOfficialScraper());
   o.register(new YaleDirectoryScraper());
   o.register(new DepartmentRosterScraper());
   o.register(new DepartmentUndergradResearchScraper());
@@ -38,6 +43,9 @@ export function buildOrchestrator(): ScraperOrchestrator {
   o.register(new CentersInstitutesScraper());
   o.register(new UndergradFellowshipRecipientScraper());
   o.register(new YaleCollegeFellowshipsOfficeScraper());
+  o.register(new LabMicrositeDescriptionLLMExtractor());
   o.register(new LabMicrositeUndergradLLMExtractor());
+  o.register(new OfficialProfilePiBackfillScraper());
+  o.register(new StudentDecisionLLMExtractor());
   return o;
 }

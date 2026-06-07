@@ -1,6 +1,6 @@
 import { cleanup, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import FellowshipSearchContext, {
   defaultFellowshipSearchContext,
@@ -8,8 +8,14 @@ import FellowshipSearchContext, {
 import type { Fellowship } from '../../../types/types';
 import FellowshipModal from '../FellowshipModal';
 
+beforeEach(() => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date('2026-05-15T12:00:00.000Z'));
+});
+
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
 });
 
 const fellowship: Fellowship = {
@@ -64,12 +70,12 @@ const fellowship: Fellowship = {
   createdAt: '2026-05-01T00:00:00.000Z',
 };
 
-const renderModal = () =>
+const renderModal = (override: Partial<Fellowship> = {}) =>
   render(
     <MemoryRouter>
       <FellowshipSearchContext.Provider value={defaultFellowshipSearchContext}>
         <FellowshipModal
-          fellowship={fellowship}
+          fellowship={{ ...fellowship, ...override }}
           isOpen
           isFavorite={false}
           onClose={vi.fn()}
@@ -105,5 +111,38 @@ describe('FellowshipModal', () => {
     for (const control of controls) {
       expect(control.className).toContain('min-h-[44px]');
     }
+  });
+
+  it('does not render an application action for unsafe application links', () => {
+    const { container } = renderModal({ applicationLink: 'javascript:alert(1)' });
+
+    expect(
+      screen.getByRole('dialog', {
+        name: 'Example Research Travel Award',
+      }),
+    ).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'Apply' })).toBeNull();
+    expect(screen.queryByRole('link', { name: /Apply Now/i })).toBeNull();
+    expect(container.querySelector('a[aria-label="Apply"]')).toBeNull();
+    expect(container.querySelector('a[href=""]')).toBeNull();
+  });
+
+  it('does not render unsafe supplemental fellowship links', () => {
+    const { container } = renderModal({
+      links: [{ label: 'Unsafe link', url: 'data:text/html,<script>alert(1)</script>' }],
+    });
+
+    expect(screen.queryByText('Unsafe link')).toBeNull();
+    expect(container.querySelector('a[href=""]')).toBeNull();
+  });
+
+  it('does not render mailto actions for unsafe contact email values', () => {
+    const { container } = renderModal({
+      contactEmail: 'program-contact@example.edu?bcc=attacker@example.test',
+    });
+
+    expect(screen.queryByRole('link', { name: 'Email contact' })).toBeNull();
+    expect(screen.queryByText('program-contact@example.edu?bcc=attacker@example.test')).toBeNull();
+    expect(container.querySelector('a[href^="mailto:"]')).toBeNull();
   });
 });

@@ -1,5 +1,8 @@
 import dotenv from 'dotenv';
 import mongoose from 'mongoose';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { initializeConnections } from '../db/connections';
 import { AccessSignal } from '../models/accessSignal';
 import { EntryPathway } from '../models/entryPathway';
@@ -8,12 +11,22 @@ import { PostedOpportunity } from '../models/postedOpportunity';
 import { ResearchEntity } from '../models/researchEntity';
 import { ResearchGroupMember } from '../models/researchGroupMember';
 import type { StudentVisibilityTier } from '../models/studentVisibility';
+import { User } from '../models/user';
 import {
   computeProgramStudentVisibility,
   computeResearchEntityStudentVisibility,
+  hasProfileAreaShellDuplicateRisk,
   STUDENT_VISIBILITY_VERSION,
 } from '../services/studentVisibilityTier';
-import { assertScriptApplyAllowed } from './scriptWriteGuards';
+import { isConcreteResearchHomeEntity } from '../utils/profileAreaDuplicateRisk';
+import {
+  selectSamePiDuplicateRiskEntityIds,
+  type ResearchEntityPiDedupeRow,
+} from './researchEntityPiDedupeCore';
+import {
+  assertScriptApplyAllowed,
+  type ScriptApplyGuardResult,
+} from './scriptWriteGuards';
 import {
   buildCollectionReport,
   nextRepairActionForReasons,
@@ -21,10 +34,23 @@ import {
 
 dotenv.config();
 
-interface CliOptions {
+export interface StudentVisibilityBackfillCliOptions {
   apply: boolean;
+  confirmStudentVisibilityBackfill: boolean;
   limit: number;
   collection: 'all' | 'research' | 'programs';
+  output?: string;
+}
+
+function parsePositiveInteger(value: string, flag: string): number {
+  if (!/^[1-9]\d*$/.test(value)) {
+    throw new Error(`${flag} must be a positive integer`);
+  }
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed)) {
+    throw new Error(`${flag} must be a positive integer`);
+  }
+  return parsed;
 }
 
 interface PlannedTierUpdate {
@@ -43,25 +69,41 @@ const FORMALIZATION_ONLY_ENTRY_PATHWAY_TYPES = [
   'FELLOWSHIP_FUNDED_PROJECT',
 ];
 
-function parseArgs(argv: string[]): CliOptions {
-  const options: CliOptions = {
+export function parseStudentVisibilityBackfillArgs(
+  argv: string[],
+): StudentVisibilityBackfillCliOptions {
+  const options: StudentVisibilityBackfillCliOptions = {
     apply: false,
+    confirmStudentVisibilityBackfill: false,
     limit: Infinity,
     collection: 'all',
   };
 
-  for (const arg of argv) {
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
     if (arg === '--apply') {
       options.apply = true;
+    } else if (arg === '--confirm-student-visibility-backfill') {
+      options.confirmStudentVisibilityBackfill = true;
+    } else if (arg.startsWith('--confirm-student-visibility-backfill=')) {
+      throw new Error('--confirm-student-visibility-backfill does not accept a value');
     } else if (arg.startsWith('--limit=')) {
-      const parsed = Number(arg.slice('--limit='.length));
-      options.limit = Number.isFinite(parsed) && parsed > 0 ? parsed : Infinity;
+      options.limit = parsePositiveInteger(arg.slice('--limit='.length), '--limit');
     } else if (arg === '--collection=research') {
       options.collection = 'research';
     } else if (arg === '--collection=programs') {
       options.collection = 'programs';
     } else if (arg === '--collection=all') {
       options.collection = 'all';
+    } else if (arg === '--output') {
+      const output = argv[i + 1];
+      if (!output || output.startsWith('--')) throw new Error('--output requires a path');
+      options.output = output;
+      i += 1;
+    } else if (arg.startsWith('--output=')) {
+      const output = arg.slice('--output='.length).trim();
+      if (!output || output.startsWith('--')) throw new Error('--output requires a path');
+      options.output = output;
     } else {
       throw new Error(`Unknown argument: ${arg}`);
     }
@@ -70,12 +112,173 @@ function parseArgs(argv: string[]): CliOptions {
   return options;
 }
 
+export function writeStudentVisibilityBackfillOutput(report: unknown, output?: string): void {
+  if (!output) return;
+  fs.mkdirSync(path.dirname(output), { recursive: true });
+  fs.writeFileSync(output, `${JSON.stringify(report, null, 2)}\n`);
+}
+
+export function buildStudentVisibilityBackfillOutput<T extends object>(
+  report: T,
+  metadata: {
+    environment?: string;
+    db?: string;
+    options: StudentVisibilityBackfillCliOptions;
+  },
+): T & {
+  environment?: string;
+  db?: string;
+  options: StudentVisibilityBackfillCliOptions;
+} {
+  return {
+    ...report,
+    ...(metadata.environment ? { environment: metadata.environment } : {}),
+    ...(metadata.db ? { db: metadata.db } : {}),
+    options: metadata.options,
+  };
+}
+
+export function assertStudentVisibilityBackfillApplyAllowed(
+  options: Pick<
+    StudentVisibilityBackfillCliOptions,
+    'apply' | 'confirmStudentVisibilityBackfill' | 'limit'
+  >,
+  env: NodeJS.ProcessEnv = process.env,
+  mongoUrl?: string,
+): ScriptApplyGuardResult {
+  if (options.apply && !Number.isFinite(options.limit)) {
+    throw new Error('--limit is required when --apply is set for student-visibility:backfill');
+  }
+  if (options.apply && !options.confirmStudentVisibilityBackfill) {
+    throw new Error(
+      '--confirm-student-visibility-backfill is required when --apply is set for student-visibility:backfill',
+    );
+  }
+  return assertScriptApplyAllowed({
+    apply: options.apply,
+    scriptName: 'student-visibility:backfill',
+    mongoUrl,
+    env,
+  });
+}
+
 const increment = (counts: Record<string, number>, key: string) => {
   counts[key] = (counts[key] || 0) + 1;
 };
 
 const countByEntityId = (rows: Array<{ _id: unknown; count: number }>) =>
   new Map(rows.map((row) => [String(row._id), row.count]));
+
+function buildSamePiVisibilityDedupeRows(args: {
+  entities: any[];
+  leadRows: any[];
+  extraEntitiesByUserId?: Map<string, any[]>;
+}): ResearchEntityPiDedupeRow[] {
+  const entityById = new Map(args.entities.map((entity) => [String(entity._id), entity]));
+  const leadRowsByUserId = new Map<string, any[]>();
+  for (const row of args.leadRows) {
+    const userId = row.userId === undefined || row.userId === null ? '' : String(row.userId).trim();
+    if (!userId || row.role !== 'pi') continue;
+    leadRowsByUserId.set(userId, [...(leadRowsByUserId.get(userId) || []), row]);
+  }
+
+  return Array.from(leadRowsByUserId.entries())
+    .map(([userId, rows]) => {
+      const entityIds = new Set<string>();
+      const entities = [
+        ...rows.map((row) => entityById.get(String(row.researchEntityId))).filter(Boolean),
+        ...(args.extraEntitiesByUserId?.get(userId) || []),
+      ]
+        .filter((entity: any) => {
+          const id = String(entity._id);
+          if (entityIds.has(id)) return false;
+          entityIds.add(id);
+          return true;
+        })
+        .map(serializeEntityForDedupe);
+      const lead = rows.find((row) => row.user) || rows[0] || {};
+      return {
+        userId,
+        normalizedName: `same-pi:${userId}`,
+        piFirstName: lead.user?.fname,
+        piLastName: lead.user?.lname,
+        entities,
+      };
+    })
+    .filter((row) => row.entities.length > 1);
+}
+
+const normalizedDedupeName = (value: unknown): string =>
+  String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .replace(/\s+/g, ' ');
+
+function isFullPersonLabDedupeName(normalizedName: string): boolean {
+  const tokens = normalizedName
+    .replace(/\s+lab$/i, '')
+    .split(/\s+/)
+    .filter(Boolean);
+  return /\s+lab$/i.test(normalizedName) && tokens.length >= 2;
+}
+
+function serializeEntityForDedupe(entity: any): ResearchEntityPiDedupeRow['entities'][number] {
+  return {
+    id: String(entity._id),
+    slug: entity.slug,
+    name: entity.name,
+    kind: entity.kind,
+    entityType: entity.entityType,
+    websiteUrl: entity.websiteUrl,
+    sourceUrls: entity.sourceUrls,
+    departments: entity.departments,
+    researchAreas: entity.researchAreas,
+  };
+}
+
+function profileAreaNamesForVisibilityPi(firstName: unknown, lastName: unknown): string[] {
+  const first = String(firstName || '').trim();
+  const last = String(lastName || '').trim();
+  if (!first || !last) return [];
+  return [`${first} ${last} Lab`, `${first} ${last} Laboratory`, `${first} ${last} Research`];
+}
+
+function buildNameOnlyVisibilityDedupeRows(args: {
+  entities: any[];
+  leadsByEntityId: Map<string, any[]>;
+}): ResearchEntityPiDedupeRow[] {
+  const entitiesByName = new Map<string, any[]>();
+  for (const entity of args.entities) {
+    const normalizedName = normalizedDedupeName(entity.name);
+    if (!normalizedName) continue;
+    entitiesByName.set(normalizedName, [...(entitiesByName.get(normalizedName) || []), entity]);
+  }
+
+  const rows: Array<ResearchEntityPiDedupeRow | null> = Array.from(entitiesByName.entries())
+    .filter(([, entities]) => entities.length > 1)
+    .map((entry): ResearchEntityPiDedupeRow | null => {
+      const [normalizedName, entities] = entry;
+      const piUserIds = new Set<string>();
+      for (const entity of entities) {
+        for (const lead of args.leadsByEntityId.get(String(entity._id)) || []) {
+          const userId =
+            lead.userId === undefined || lead.userId === null ? '' : String(lead.userId).trim();
+          if (lead.role === 'pi' && userId) piUserIds.add(userId);
+        }
+      }
+      if (piUserIds.size > 1) return null;
+      if (piUserIds.size === 0 && !isFullPersonLabDedupeName(normalizedName)) return null;
+      const userId = Array.from(piUserIds)[0] || `name:${normalizedName}`;
+      return {
+        userId,
+        normalizedName,
+        entities: entities.map(serializeEntityForDedupe),
+      };
+    });
+
+  return rows.filter((row): row is ResearchEntityPiDedupeRow => row !== null);
+}
 
 async function planResearchEntityUpdates(limit: number): Promise<PlannedTierUpdate[]> {
   const query = ResearchEntity.find({ archived: { $ne: true } }).sort({ name: 1 });
@@ -117,22 +320,81 @@ async function planResearchEntityUpdates(limit: number): Promise<PlannedTierUpda
   ]);
 
   const leadsByEntityId = new Map<string, any[]>();
+  const leadUserIds = Array.from(
+    new Set((leadRows as any[]).map((row) => String(row.userId || '')).filter(Boolean)),
+  );
+  const leadUsers = leadUserIds.length
+    ? await User.find({ _id: { $in: leadUserIds } }).select('fname lname').lean()
+    : [];
+  const leadUsersById = new Map((leadUsers as any[]).map((user) => [String(user._id), user]));
+  const profileAreaNamesByUserId = new Map<string, string[]>();
+  const profileAreaNames = Array.from(
+    new Set(
+      (leadUsers as any[])
+        .flatMap((user) => {
+          const names = profileAreaNamesForVisibilityPi(user.fname, user.lname);
+          profileAreaNamesByUserId.set(String(user._id), names);
+          return names;
+        })
+        .filter(Boolean),
+    ),
+  );
+  const profileAreaEntities = profileAreaNames.length
+    ? await ResearchEntity.find({ archived: { $ne: true }, name: { $in: profileAreaNames } })
+        .select('_id slug name kind entityType websiteUrl sourceUrls departments researchAreas')
+        .lean()
+    : [];
+  const profileAreaEntitiesByUserId = new Map<string, any[]>();
+  for (const [userId, names] of profileAreaNamesByUserId.entries()) {
+    const nameSet = new Set(names);
+    const matches = (profileAreaEntities as any[]).filter((entity) => nameSet.has(entity.name));
+    if (matches.length > 0) profileAreaEntitiesByUserId.set(userId, matches);
+  }
   for (const row of leadRows as any[]) {
+    if (row.userId) row.user = leadUsersById.get(String(row.userId));
     const key = String(row.researchEntityId);
     leadsByEntityId.set(key, [...(leadsByEntityId.get(key) || []), row]);
   }
   const accessCounts = countByEntityId(accessRows as any[]);
   const pathwayCounts = countByEntityId(pathwayRows as any[]);
   const postedCounts = countByEntityId(postedRows as any[]);
+  const entityById = new Map((entities as any[]).map((entity) => [String(entity._id), entity]));
+  const samePiDuplicateRiskEntityIds = selectSamePiDuplicateRiskEntityIds(
+    [
+      ...buildSamePiVisibilityDedupeRows({
+        entities: entities as any[],
+        leadRows: leadRows as any[],
+        extraEntitiesByUserId: profileAreaEntitiesByUserId,
+      }),
+      ...buildNameOnlyVisibilityDedupeRows({
+        entities: entities as any[],
+        leadsByEntityId,
+      }),
+    ],
+  );
+  const concreteLeadEntityUserIds = new Set<string>();
+  for (const row of leadRows as any[]) {
+    const entity = entityById.get(String(row.researchEntityId));
+    const userId = row.userId === undefined || row.userId === null ? '' : String(row.userId).trim();
+    if (userId && entity && isConcreteResearchHomeEntity(entity)) {
+      concreteLeadEntityUserIds.add(userId);
+    }
+  }
 
   return entities.map((entity: any) => {
     const id = String(entity._id);
+    const leadMembers = leadsByEntityId.get(id) || [];
     const result = computeResearchEntityStudentVisibility({
       entity,
-      leadMembers: leadsByEntityId.get(id) || [],
+      leadMembers,
       accessSignalCount: accessCounts.get(id) || 0,
       actionablePathwayCount: pathwayCounts.get(id) || 0,
       openPostedOpportunityCount: postedCounts.get(id) || 0,
+      duplicateRisk: hasProfileAreaShellDuplicateRisk({
+        entity,
+        leadMembers,
+        concreteLeadEntityUserIds,
+      }) || samePiDuplicateRiskEntityIds.has(id),
     });
     return {
       id,
@@ -199,12 +461,12 @@ async function applyProgramUpdates(updates: PlannedTierUpdate[]) {
 }
 
 async function main() {
-  const options = parseArgs(process.argv.slice(2));
-  const guard = assertScriptApplyAllowed({
-    apply: options.apply,
-    scriptName: 'backfillStudentVisibilityTiers',
-    mongoUrl: process.env.MONGODBURL,
-  });
+  const options = parseStudentVisibilityBackfillArgs(process.argv.slice(2));
+  const guard = assertStudentVisibilityBackfillApplyAllowed(
+    options,
+    process.env,
+    process.env.MONGODBURL,
+  );
   await initializeConnections();
 
   const research =
@@ -242,45 +504,50 @@ async function main() {
   const counts: Record<string, number> = {};
   for (const update of [...research, ...programs]) increment(counts, update.tier);
 
-  console.log(
-    JSON.stringify(
-      {
-        mode: options.apply ? 'apply' : 'dry-run',
-        environment: guard.environment,
-        db: guard.dbLabel,
-        collection: options.collection,
-        version: STUDENT_VISIBILITY_VERSION,
-        scanned: {
-          research: research.length,
-          programs: programs.length,
-        },
-        counts,
-        diagnostics: {
-          research: researchReport,
-          programs: programReport,
-          applySafety: {
-            safeToApply: applyBlockers.length === 0,
-            recommendation:
-              applyBlockers.length === 0 ? 'apply' : 'repair_source_materialization_first',
-            blockers: applyBlockers,
-          },
-        },
-        samples: {
-          research: research.slice(0, 20),
-          programs: programs.slice(0, 20),
-        },
+  const report = buildStudentVisibilityBackfillOutput({
+    mode: options.apply ? 'apply' : 'dry-run',
+    collection: options.collection,
+    version: STUDENT_VISIBILITY_VERSION,
+    scanned: {
+      research: research.length,
+      programs: programs.length,
+    },
+    counts,
+    diagnostics: {
+      research: researchReport,
+      programs: programReport,
+      applySafety: {
+        safeToApply: applyBlockers.length === 0,
+        recommendation:
+          applyBlockers.length === 0 ? 'apply' : 'repair_source_materialization_first',
+        blockers: applyBlockers,
       },
-      null,
-      2,
-    ),
-  );
+    },
+    samples: {
+      research: research.slice(0, 20),
+      programs: programs.slice(0, 20),
+    },
+  }, {
+    environment: guard.environment,
+    db: guard.dbLabel,
+    options,
+  });
+
+  console.log(JSON.stringify(report, null, 2));
+  writeStudentVisibilityBackfillOutput(report, options.output);
 }
 
-main()
-  .catch((error) => {
-    console.error('Failed to backfill student visibility tiers:', error);
-    process.exitCode = 1;
-  })
-  .finally(async () => {
-    await mongoose.disconnect();
-  });
+const isDirectRun = process.argv[1]
+  ? fileURLToPath(import.meta.url) === path.resolve(process.argv[1])
+  : false;
+
+if (isDirectRun) {
+  main()
+    .catch((error) => {
+      console.error('Failed to backfill student visibility tiers:', error);
+      process.exitCode = 1;
+    })
+    .finally(async () => {
+      await mongoose.disconnect();
+    });
+}

@@ -180,6 +180,21 @@ export function classifyProgram(input: ProgramClassificationInput): ProgramClass
     });
   }
 
+  if (/\byale[- ]uc louvain\b|\buc louvain\b/.test(lower)) {
+    return structuredProgram({
+      programCategory: 'CENTER_INTERNSHIP',
+      programKind: 'CENTER_INTERNSHIP',
+      entryMode: 'APPLY_TO_PROJECT',
+      studentFacingCategory: 'External summer research program',
+      requiresMentorBeforeApply: false,
+      mentorMatching: false,
+      programDates: 'Summer',
+      bestNextStep:
+        'Review the available UC Louvain research subjects, contact relevant faculty, and apply through the official program route.',
+      prepSteps: ['Research subject selection', 'Faculty project fit', 'Official application'],
+    });
+  }
+
   if (/\bycmd\b|center for molecular discovery|summer undergraduate internships/.test(lower)) {
     return structuredProgram({
       programCategory: 'CENTER_INTERNSHIP',

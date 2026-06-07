@@ -1,11 +1,21 @@
 import mongoose, { Types } from 'mongoose';
 import dotenv from 'dotenv';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
+import path from 'path';
 import { initializeConnections } from '../db/connections';
+import { assertScriptApplyAllowed } from './scriptWriteGuards';
 
 dotenv.config();
 
 type MongoDb = NonNullable<typeof mongoose.connection.db>;
 type Mode = 'dry-run' | 'apply' | 'verify' | 'drop-legacy';
+
+export interface LegacyCleanupArgs {
+  mode: Mode;
+  confirmDropLegacy?: boolean;
+  output?: string;
+}
 
 const APPLICATIONS_SOURCE = 'applications';
 const STUDENT_APPLICATIONS_TARGET = 'student_applications';
@@ -16,11 +26,99 @@ const EMPTY_LEGACY_COLLECTIONS = [
   'paper_group_links',
 ];
 
-function parseMode(argv: string[]): Mode {
-  if (argv.includes('--drop-legacy')) return 'drop-legacy';
-  if (argv.includes('--verify')) return 'verify';
-  if (argv.includes('--apply')) return 'apply';
-  return 'dry-run';
+function parseRequiredOutputPath(value: string | undefined): string {
+  const output = value?.trim();
+  if (!output || output.startsWith('--')) {
+    throw new Error('--output requires a path');
+  }
+  return output;
+}
+
+export function parseLegacyCleanupArgs(argv: string[]): LegacyCleanupArgs {
+  const args: LegacyCleanupArgs = { mode: 'dry-run' };
+
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === '--dry-run') {
+      args.mode = 'dry-run';
+      continue;
+    }
+    if (arg === '--drop-legacy') {
+      args.mode = 'drop-legacy';
+      continue;
+    }
+    if (arg === '--confirm-drop-legacy') {
+      args.confirmDropLegacy = true;
+      continue;
+    }
+    if (arg === '--verify') {
+      args.mode = 'verify';
+      continue;
+    }
+    if (arg === '--apply') {
+      args.mode = 'apply';
+      continue;
+    }
+    if (arg === '--output') {
+      args.output = parseRequiredOutputPath(argv[index + 1]);
+      index += 1;
+      continue;
+    }
+    if (arg.startsWith('--output=')) {
+      args.output = parseRequiredOutputPath(arg.slice('--output='.length));
+      continue;
+    }
+    throw new Error(`Unknown legacy:cleanup option: ${arg}`);
+  }
+
+  return args;
+}
+
+function legacyCleanupModeWrites(mode: Mode): boolean {
+  return mode === 'apply' || mode === 'drop-legacy';
+}
+
+export function assertLegacyCleanupWriteAllowed(
+  args: Pick<LegacyCleanupArgs, 'mode' | 'confirmDropLegacy'>,
+  env: NodeJS.ProcessEnv = process.env,
+  mongoUrl?: string,
+) {
+  if (args.mode === 'drop-legacy' && !args.confirmDropLegacy) {
+    throw new Error('--confirm-drop-legacy is required when --drop-legacy is set for legacy:cleanup');
+  }
+
+  return assertScriptApplyAllowed({
+    apply: legacyCleanupModeWrites(args.mode),
+    scriptName: 'legacy:cleanup',
+    mongoUrl,
+    env,
+  });
+}
+
+export function buildLegacyCleanupOutput<T extends object>(
+  result: T,
+  metadata: {
+    environment?: string;
+    db?: string;
+    options: LegacyCleanupArgs;
+  },
+): T & {
+  environment?: string;
+  db?: string;
+  options: LegacyCleanupArgs;
+} {
+  return {
+    ...result,
+    ...(metadata.environment ? { environment: metadata.environment } : {}),
+    ...(metadata.db ? { db: metadata.db } : {}),
+    options: metadata.options,
+  };
+}
+
+export function writeLegacyCleanupOutput(report: unknown, output?: string): void {
+  if (!output) return;
+  fs.mkdirSync(path.dirname(output), { recursive: true });
+  fs.writeFileSync(output, `${JSON.stringify(report, null, 2)}\n`);
 }
 
 async function collectionExists(db: MongoDb, name: string): Promise<boolean> {
@@ -247,7 +345,9 @@ async function dropLegacyCollections(db: MongoDb) {
 }
 
 async function main() {
-  const mode = parseMode(process.argv.slice(2));
+  const args = parseLegacyCleanupArgs(process.argv.slice(2));
+  const guard = assertLegacyCleanupWriteAllowed(args, process.env, process.env.MONGODBURL);
+  const mode = args.mode;
   await initializeConnections();
   const db = mongoose.connection.db;
   if (!db) throw new Error('MongoDB connection is not initialized');
@@ -265,26 +365,35 @@ async function main() {
     throw new Error(`Legacy collection cleanup failed: ${JSON.stringify(verification)}`);
   }
 
-  console.log(
-    JSON.stringify(
-      {
-        generatedAt: new Date().toISOString(),
-        mode,
-        copy,
-        drop,
-        verification,
-      },
-      null,
-      2,
-    ),
+  const output = buildLegacyCleanupOutput(
+    {
+      generatedAt: new Date().toISOString(),
+      mode,
+      copy,
+      drop,
+      verification,
+    },
+    {
+      environment: guard.environment,
+      db: mongoose.connection.db?.databaseName || mongoose.connection.name || guard.dbLabel,
+      options: args,
+    },
   );
+  console.log(JSON.stringify(output, null, 2));
+  writeLegacyCleanupOutput(output, args.output);
 }
 
-main()
-  .catch((error) => {
-    console.error('Failed to clean legacy Mongo collections:', error);
-    process.exitCode = 1;
-  })
-  .finally(async () => {
-    await mongoose.disconnect();
-  });
+const isDirectRun = process.argv[1]
+  ? fileURLToPath(import.meta.url) === path.resolve(process.argv[1])
+  : false;
+
+if (isDirectRun) {
+  main()
+    .catch((error) => {
+      console.error('Failed to clean legacy Mongo collections:', error);
+      process.exitCode = 1;
+    })
+    .finally(async () => {
+      await mongoose.disconnect();
+    });
+}

@@ -46,8 +46,8 @@ yale-research/
 │       ├── passport.ts       # CAS auth strategy + user find-or-create cascade
 │       ├── routes/           # Express routers aggregated in routes/index.ts
 │       ├── controllers/      # Request handlers
-│       ├── services/         # Business logic (25+ services)
-│       ├── models/           # Mongoose schemas: user, listing, fellowship, analytics, department, researchArea, researchEntity, researchGroup, entryPathway, accessSignal, contactRoute, postedOpportunity, observation, source, scrapeRun, scrapeJobLock, scrapeSnapshot, facultyMember, grant, paper, paperAuthor, paperGroupLink, studentApplication, studentProfile, studentTracking, studentOutreach, studentEngagementEvent, and more
+│       ├── services/         # Business logic (40+ services)
+│       ├── models/           # Mongoose schemas: user, listing, fellowship, analytics, department, researchArea, researchEntity, researchEntityRelationship, researchGroup, researchGroupMember, researchScholarlyAttribution, researchScholarlyLink, entryPathway, accessSignal, contactRoute, postedOpportunity, observation, source, scrapeRun, scrapeJobLock, scrapeSnapshot, facultyMember, grant, adminGrant, paper, paperAuthor, studentApplication, studentProfile, studentTracking, studentOutreach, studentEngagementEvent, visibilityReleaseQueueItem, and more (see models/index.ts for the canonical export list)
 │       ├── scrapers/         # Scraper infrastructure: CLI, orchestrator, materializers, sources/, utils/
 │       ├── middleware/        # Auth guards, validation, error handling
 │       ├── db/               # Multi-mode database connections
@@ -73,6 +73,7 @@ yale-research/
 | `yarn --cwd server meili:rebuild-research-entities` | Rebuild the ResearchEntity Meilisearch index |
 | `yarn --cwd server meili:rebuild-pathways` | Rebuild the Pathway Meilisearch index |
 | `yarn --cwd server research-entity:migrate` | Run the ResearchEntity physical migration |
+| `yarn --cwd server research-homes:backfill-faculty-ways-in` | Backfill identified-faculty-lead ways-in for existing research homes (dry-run-first) |
 
 Migration scripts run from `data-migration/` with `npx tsx --transpile-only <script>.ts`.
 
@@ -160,7 +161,7 @@ const logListingEvent = (eventType: AnalyticsEventType) => {
 };
 ```
 
-Event-specific wrappers can inspect the response body before forwarding it, but retired listing creation is no longer an active analytics path.
+Event-specific wrappers can inspect the response body before forwarding it — e.g. `listings.ts` still fires `LISTING_CREATE`/`LISTING_UPDATE`/`LISTING_VIEW`/`SEARCH` events through this pattern on its (legacy but live) CRUD routes.
 
 Analytics events have a 3-year TTL via MongoDB's `expireAfterSeconds` index.
 
@@ -219,7 +220,7 @@ Two rate limiters in `app.ts`, both keyed by authenticated user's `netId` with I
 | Limiter | Scope | Limit |
 |---------|-------|-------|
 | `apiLimiter` | All `/api` routes | 200 req / 15 min |
-| `writeLimiter` | Non-GET API routes, including retired listing/program compatibility routes where mounted | 50 req / 15 min |
+| `writeLimiter` | Non-GET API routes, including the legacy listing/fellowship CRUD routes | 50 req / 15 min |
 
 Both limiters are skipped in CI, development, and test environments.
 
@@ -234,6 +235,7 @@ Defined in `server/src/middleware/auth.ts`:
 | `isProfessor` | `userType` in `['professor', 'faculty', 'admin']` |
 | `isTrustworthy` | `userConfirmed` + admin/professor/faculty |
 | `isConfirmed` | `userConfirmed === true` |
+| `canCreateListing` | professor/faculty/admin + `userConfirmed` + `profileVerified` (used by `POST /api/listings`) |
 
 Client-side route guards: `PrivateRoute` (auth required, redirects unknown users when `unknownBlocked=true`), `AdminRoute` (admin only), `UnprivateRoute` (no auth required, for error pages).
 
@@ -241,11 +243,24 @@ Client-side route guards: `PrivateRoute` (auth required, redirects unknown users
 
 Exported from `server/src/middleware/`:
 - `validateObjectId(paramName?)` — MongoDB ObjectId format check
+- `validateNetid(paramName?)` — Yale-style netId path-parameter validation
 - `requireBody()` — ensures request body exists
 - `requireFields(fields[])` — specific field presence validation
 - `validatePagination()` — page/pageSize within 1–500
 - `validateSort(allowedFields[])` — sortBy/sortOrder validation
 - `validateQuery(allowedParams[])` — query parameter whitelist
+
+## Security Middleware
+
+Applied globally / to `/api` in `app.ts` (in addition to CORS, session, passport, and the rate limiters):
+
+| Middleware | File | Purpose |
+|------------|------|---------|
+| `securityHeaders` | `securityHeaders.ts` | Sets CSP (`connect-src` allowlist), permissions policy, and `X-*` security headers globally. Relaxed in non-production via the environment bypass. |
+| `csrfOriginGuard(allowList)` | `csrfOriginGuard.ts` | Rejects unsafe-method `/api` requests whose `Origin`/`Referer` is not in the allowlist (safe methods GET/HEAD/OPTIONS exempt). |
+| `sanitizeMongo` | `sanitizeMongo.ts` | Strips MongoDB operator (`$`/`.`) and prototype-pollution keys from `/api` request body/query to block injection. |
+| `createCorsOriginHandler` | `corsOrigin.ts` | Builds the dynamic CORS origin handler; throws `CorsOriginError` (403) for disallowed origins. |
+| `errorHandler` / `notFoundHandler` | `errorHandler.ts` | Terminal error + 404 handlers (see Error Handling). |
 
 ## Routes
 
@@ -253,21 +268,19 @@ All routes mount under `/api` in `app.ts`. Route files in `server/src/routes/`:
 
 | Prefix | File | Auth |
 |--------|------|------|
-| `/research` | `researchGroups.ts` | Varies |
-| `/programs` | `programs.ts` | Varies |
-| `/opportunities` | `opportunities.ts` | Varies |
-| `/listings` | `listings.ts` | Retired compatibility route, returns `410 Gone` |
-| `/fellowships` | `fellowships.ts` | Temporary compatibility alias around Programs/Fellowships storage |
+| `/research` | `researchGroups.ts` | Varies (search/detail public) |
+| `/programs` | `programs.ts` | Varies — current Programs & Fellowships surface |
+| `/opportunities` | `opportunities.ts` | Public |
+| `/pathways` | `pathways.ts` | Auth required — internal pathway data |
+| `/listings` | `listings.ts` | Auth required. **Legacy** listing CRUD/search still mounted and functional (search, create, get, update, archive/unarchive, addView, delete). The client `/listings` *path* redirects, but the API is not 410'd. |
+| `/fellowships` | `fellowships.ts` | Auth required. **Legacy** fellowship CRUD/search; the mount sets `Deprecation: true` + `Link: </api/programs>; rel="successor-version"`. Prefer `/programs`. |
 | `/users` | `users.ts` | Yes |
 | `/profiles` | `profiles.ts` | Varies |
 | `/analytics` | `analytics.ts` | Admin |
 | `/config` | `config.ts` | No |
 | `/research-areas` | `researchAreas.ts` | Admin for writes |
-| `/research` | `researchGroups.ts` | Varies (search/detail public) |
-| `/pathways` | `pathways.ts` | Varies (search public, saves require auth) |
-| `/opportunities` | `opportunities.ts` | Public |
 | `/admin` | `admin.ts` | Admin |
-| `/seed` | `seed.ts` | Dev mode only |
+| `/seed` | `seed.ts` | Local development runtime only (`isLocalDevelopmentRuntime()`) |
 
 Passport auth routes (CAS login/logout, dev-login) are mounted separately via `passportRoutes` before the main routes.
 
@@ -281,6 +294,24 @@ User → Yale CAS SSO → passport.ts findOrCreateUser
      → Fallback: fname "NA", userType "unknown"
      → Create/Update User → cookie-session (1 year, httpOnly, secure in production, sameSite lax)
 ```
+
+## Key Services
+
+`server/src/services/` holds 40+ services (all `*Service.ts` plus helper modules). Beyond the obvious CRUD services (`listingService`, `fellowshipService`, `programService`, `profileService`, `userService`, `researchGroupService`), the notable domains a new agent should know:
+
+| Service | Responsibility |
+|---------|----------------|
+| `researchEntityDto.ts` / `researchEntityQuality.ts` | Public ResearchEntity DTO shaping and entity-quality scoring/gating |
+| `researchEntitySearchIndexService.ts` / `pathwaySearchIndexService.ts` / `pathwaySearchService.ts` | Meilisearch index sync + query for research entities and pathways |
+| `meiliSyncService.ts` | Syncs collection upserts into the Meilisearch indexes |
+| `accessSignalService.ts` / `accessSummaryService.ts` / `entryPathwayService.ts` / `contactRouteService.ts` / `postedOpportunityService.ts` | The product-model access layer (signals, summaries, pathways, contact routes, postings) |
+| `adminOperatorBoardService.ts` / `adminAccessReviewService.ts` / `adminGrantService.ts` | Admin operator board + access/grant review workflows |
+| `sourceHealthService.ts` / `scholarlyActivityAuditService.ts` / `paperQualityService.ts` | Scraper/source health, scholarly-activity audit, paper-quality scoring |
+| `studentVisibilityTier.ts` / `studentVisibilityGateService.ts` / `visibilityRepairQueueService.ts` / `studentDecisionExplanationService.ts` | Student visibility tiering, gating, repair queue, and decision explanations |
+| `fellowshipMatchingService.ts` / `fellowshipApplicationCycleEvidenceService.ts` / `programClassifier.ts` | Fellowship matching, application-cycle evidence, program classification |
+| `launchAcquisitionReportService.ts` / `launchTrustContractService.ts` | Launch-gate acquisition reporting and trust-contract checks |
+| `listingResearchEntityProfile.ts` | Keeps legacy listings synced to their ResearchEntity profile |
+| `directoryService.ts` / `yaliesService.ts` / `courseTableService.ts` | External integrations (Yale Directory, Yalies, CourseTable) |
 
 ## Naming Conventions
 
@@ -371,7 +402,7 @@ The scraper system lives in `server/src/scrapers/`. Run via `yarn --cwd server s
 - `registry.ts` — registers all source scrapers
 - `observationStore.ts` — writes `Observation` rows to MongoDB
 - `entityMaterializer.ts` — derives `ResearchEntity`/`ResearchGroupMember` from observations
-- `accessMaterializer.ts` — derives `AccessSignal`, `EntryPathway`, `ContactRoute` from observations
+- `accessMaterializer.ts` — derives `AccessSignal`, `EntryPathway`, `ContactRoute` from observations. When the observation pipeline yields no source-backed (http-URL) entry pathway, it falls back to an evidence-based ways-in: for a concrete faculty/lab home with an attached PI/director lead and an official non-grant source page, a low-confidence `EXPLORATORY_CONTACT` pathway + `FACULTY_PI` route + `REACH_OUT_PLAUSIBLE` signal; for an **organizational home** (CENTER/INSTITUTE/INITIATIVE/CORE_FACILITY) with an official page but no named director, a center-level "Explore this center" `EXPLORATORY_CONTACT` pathway + `DEPARTMENT_CONTACT` route + signal. Both skip duplicates, grant/ORCID-only sources, and programs, and require a supporting source observation (matched by `entityId` or `entityKey`) so the claim gate keeps them. This removes the dominant `missing_action_evidence` blocker for real research homes without manufacturing undergrad-access claims. Backfill existing entities with `yarn --cwd server research-homes:backfill-faculty-ways-in` (dry-run-first; apply requires `--confirm-faculty-ways-in` + explicit `--limit`).
 - `workPlanner.ts` — per-entity field-level work planning (what sources to run, what to skip)
 - `snapshotCache.ts` — caches fetched pages to avoid redundant HTTP requests
 - `scraperEnvironment.ts` — enforces `SCRAPER_ENV` write guards
@@ -383,6 +414,11 @@ The scraper system lives in `server/src/scrapers/`. Run via `yarn --cwd server s
 - `runReport.ts` — generates a structured report for a completed scrape run
 - `scrapeJobLock.ts` — acquire/heartbeat/release helpers wrapping the `ScrapeJobLock` model
 - `seedSources.ts` — populates the `Source` collection from the coverage registry
+- `integrityGate.ts` — post-materialization integrity gate; detects duplicate entities/people/papers, current members on archived entities, duplicate contact routes/access signals, and active artifacts on archived entities, with recommended CLI repair commands
+- `paperAuthorshipPolicy.ts` — policy logic governing which paper authorships are accepted/attributed
+- `cliHelpers.ts` — CLI argument parsing and shared helpers for `cli.ts`
+- `scraperCliOutput.ts` — formatting/styling for scraper CLI output
+- `types.ts` — shared TypeScript types for scraper infrastructure
 - `scraplingBridge.py` — Python bridge for scraper utilities requiring Python tooling
 
 **Active source scrapers** (in `server/src/scrapers/sources/`):
@@ -400,8 +436,13 @@ The scraper system lives in `server/src/scrapers/`. Run via `yarn --cwd server s
 | `orcidWorksScraper.ts` | ORCID public works with identity-backed authorship |
 | `europePmcPaperScraper.ts` | Europe PMC and PubMed ORCID-backed paper metadata |
 | `crossrefPaperScraper.ts` | Crossref DOI metadata hydration |
+| `departmentUndergradResearchScraper.ts` | Department-level undergraduate research opportunity/program pages |
 | `undergradFellowshipRecipientScraper.ts` | Undergrad fellowship recipient lists |
-| `labMicrositeUndergradLLMExtractor.ts` | LLM extraction from lab microsites |
+| `labMicrositeUndergradLLMExtractor.ts` | LLM extraction of undergrad-access signals from lab microsites |
+| `labMicrositeDescriptionLLMExtractor.ts` | LLM extraction of lab description text from microsites |
+| `studentDecisionLLMExtractor.ts` | LLM extraction of student-decision signals from lab microsites |
+| `officialProfilePiBackfillScraper.ts` | Backfill scraper for PI official-profile data |
+| `yaleResearchOfficialScraper.ts` | Yale Research (provost/OVPR) official data |
 | `yaleCollegeFellowshipsOfficeScraper.ts` | Yale College Fellowships Office public catalog |
 | `yaleDirectoryScraper.ts` | Faculty roster via Yalies API (live equivalent of the static bootstrap import) |
 
@@ -424,7 +465,7 @@ See `docs/scraper-audit-guide.md` and `docs/scraper-deployment-runbook.md` for a
 1. Page component in `client/src/pages/<page>.tsx`
 2. Route in `client/src/App.tsx` wrapped with appropriate guard (`PrivateRoute`, `AdminRoute`)
 
-Current student-facing pages: `research` (Yale Labs browse, `/research`), `labDetail` (`/research/:slug`), `programs` (`/programs`), `opportunityDetail` (`/opportunities/:id`), `account`, `profile`, `analytics`, `about`, `login`, `loginError`, `notFound`, `unknown`, and `rootRedirect` (redirects `/` → `/research`). Legacy `/labs`, `/pathways`, `/listings`, and `/fellowships` paths should redirect rather than define new product surfaces.
+Current student-facing pages (files in `client/src/pages/`): `research.tsx` (Yale Labs browse, `/research`), `labDetail.tsx` (`/research/:slug`), `fellowships.tsx` (rendered at `/programs` — the Programs & Fellowships surface; there is no `programs.tsx`), `opportunityDetail.tsx` (`/opportunities/:id`), `account.tsx`, `profile.tsx` (`/profile/:netid`), `analytics.tsx` (admin), `about.tsx`, `login.tsx`, `loginError.tsx`, `notFound.tsx`, `unknown.tsx`, and `rootRedirect.tsx` (redirects `/` → `/research`). The `/listings` and `/fellowships` paths redirect (e.g. `RetiredListingsRedirect`) rather than define new product surfaces. `pathways.tsx` and `home.tsx` are no longer routed in `App.tsx` (`pathways.tsx` was removed; `home.tsx` is legacy residue).
 
 ## Modifying a Schema
 

@@ -10,6 +10,7 @@ runtime research data is canonical `ResearchEntity` data. Related files include:
 - [`server/src/models/accessSignal.ts`](../server/src/models/accessSignal.ts)
 - [`server/src/models/contactRoute.ts`](../server/src/models/contactRoute.ts)
 - [`server/src/models/postedOpportunity.ts`](../server/src/models/postedOpportunity.ts)
+- [`server/src/models/adminGrant.ts`](../server/src/models/adminGrant.ts)
 - [`server/src/models/researchGroupMember.ts`](../server/src/models/researchGroupMember.ts)
 - [`server/src/models/observation.ts`](../server/src/models/observation.ts)
 - [`server/src/models/source.ts`](../server/src/models/source.ts)
@@ -18,7 +19,6 @@ runtime research data is canonical `ResearchEntity` data. Related files include:
 - [`server/src/services/accessSummaryService.ts`](../server/src/services/accessSummaryService.ts)
 - [`server/src/services/pathwaySearchService.ts`](../server/src/services/pathwaySearchService.ts)
 - [`docs/scraper-audit-guide.md`](./scraper-audit-guide.md)
-- [`server/src/routes/pathways.ts`](../server/src/routes/pathways.ts)
 - [`client/src/pages/labs.tsx`](../client/src/pages/labs.tsx)
 - [`client/src/pages/labDetail.tsx`](../client/src/pages/labDetail.tsx)
 
@@ -26,19 +26,37 @@ runtime research data is canonical `ResearchEntity` data. Related files include:
 
 Public API migration note: `/api/research` is canonical. The hard-pivot migration copies `research_groups` into `research_entities` with stable ids, backfills `researchEntityId`, removes `/api/research-groups` plus `/labs` route compatibility from runtime routing, and supports canonical-only verification after the old source collection is dropped.
 
-Dependent physical collections also use canonical names after migration:
-`research_entity_members`, `research_entity_stats`, and `paper_entity_links`.
-The old `research_group_members`, `research_group_stats`, and `paper_group_links`
-collections can be dropped after their data is copied and verified.
+Dependent physical membership data also uses a canonical name after migration:
+`research_entity_members`. The old `research_group_members` collection can be
+dropped after its data is copied and verified. Empty historical stats and
+paper-entity link collections were removed from the runtime model to avoid
+treating unused collections as launch evidence.
+
+Umbrella affiliations use `research_entity_relationships` with
+`sourceResearchEntityId` as the center, institute, or umbrella entity and
+`targetResearchEntityId` as the member lab, faculty research area, or project.
+Research detail payloads expose these as related or affiliated entities so
+students can see source-backed center/institute context without embedding those
+relationships directly inside `ResearchEntity`.
 
 Legacy student application submissions are preserved in `student_applications`
 before dropping the old `applications` collection. The first cleanup migration
 keeps the raw legacy payload for audit while normalizing known student, listing,
 posted-opportunity, and research-entity references when they can be resolved.
 
+Admin authority is represented by explicit `admin_grants` records. The analytics
+admin access section lists active grants as the source of truth and reports
+legacy `User.userType = "admin"` rows separately for cleanup instead of counting
+them as active admins. Runtime admin authorization and authenticated client
+session state must derive admin status from active grants outside local
+localhost development; legacy `User.userType = "admin"` alone is not production
+admin authority.
+
 Do not embed every pathway, signal, posted opportunity, and contact route directly inside `ResearchEntity` long term. That will become query-heavy as students filter across plausible homes, access evidence, funding or pay possibilities, summer timing, beginner-friendly paths, thesis fit, Python/coding, archival work, open deadlines, and similar constraints. Prefer first-class collections for `EntryPathway`, `PostedOpportunity`, `AccessSignal`, and `ContactRoute`. Treat course credit as a formalization option after a student has identified a research home, not as an entry pathway by itself.
 
 External researcher identity note: accepted operator inputs should prefer ORCID over Yale netid. ORCID may enrich or disambiguate an existing Yale-confirmed `User`, including `User.orcid` and manually accepted `User.googleScholarId`, but ORCID must not create a Yale person record by itself. Netid remains an internal account/scraper compatibility key and should appear only as diagnostic or converted internal target data in accepted-input workflows.
+
+User dedupe note: scraper-created same-person user shells should be merged by rewriting active references to the canonical `User` and marking the duplicate with `archived`, `dedupedIntoUserId`, `dedupedAt`, and identity-review metadata. Integrity scans should ignore archived user shells. Same-email rows with different names are a review queue, not automatic merge evidence, unless a reviewer confirms they are the same Yale person.
 
 ## Target Conceptual Model
 
@@ -214,30 +232,30 @@ Listing bridge note: legacy `Listing` rows with a `researchGroupId` now material
 
 Opportunity detail note: `/api/opportunities/:id` exposes explicit public state for posted opportunities: `deadlineState`, `applicationState`, `applicationLabel`, and listing-bridged versus scraper-derived provenance. Attached observation evidence may include a short public excerpt, but direct contact details are redacted before the payload reaches the student-facing page.
 
-## Pathway Search
+## Ways-In Projection
 
-The first Pathways API is `POST /api/pathways/search`. It searches `EntryPathway` rows and returns denormalized card data for the student-facing `/pathways` surface.
+The separate public practical-routes search endpoint and page are retired. `EntryPathway` rows still matter as internal ways-in evidence, saved planning context, and research-detail support, but they should be projected through Yale Research surfaces rather than split into a second student product.
 
 Current behavior:
 
-- Live search starts with Mongo aggregation. The first Meilisearch document mapper/settings slice exists, but traffic should switch only after backfill, sync, relevance, parity tests, and rollback checks are ready.
-- Filter across pathway type, compensation, status, evidence strength, entity type, departments, research areas, active posted opportunity, and computed best-next-step category.
+- Research search and detail payloads can use pathway type, compensation, status, evidence strength, entity type, departments, research areas, active posted opportunity, and computed best-next-step category as enrichment.
 - Join host `ResearchGroup` data as the current physical `ResearchEntity` backing.
 - Join active/rolling `PostedOpportunity` rows only when a real posted instance exists.
 - Join a small number of supporting `AccessSignal` rows as Evidence.
-- Return only guarded public contact-route summaries in search cards; do not expose non-public scraped emails.
+- Return only guarded public contact-route summaries; do not expose non-public scraped emails.
 
 The same contact guardrail applies to public research detail payloads: unauthenticated/public detail responses should include only public route summaries and should not expose authenticated or admin-only scraped contact data.
 
-Contact-route ordering should prefer official applications, program/department/fellowship/course routes, and lab-manager routes before faculty-direct routes. Public pathway cards may link to route URLs, but they should not expose raw scraped emails.
+Contact-route ordering should prefer official applications, program/department/fellowship/course routes, and lab-manager routes before faculty-direct routes. Public ways-in cards or detail sections may link to route URLs, but they should not expose raw scraped emails.
+
+Legacy active listings may still appear inside public research detail payloads for backwards compatibility, but those embedded listing summaries must be field allowlisted. Do not expose listing owner ids, creator ids, owner emails, collaborator emails, view counts, favorite counts, audit flags, or other authenticated/admin-oriented fields through `/api/research/:slug`.
 
 ## Saved Pathways
 
-Student workflow depth starts with saved Pathways. User accounts can now store `favPathways` as references to `EntryPathway` records, and `/account` hydrates them through the same guarded pathway projection used by search.
+Student workflow depth starts with saved ways in. User accounts can now store `favPathways` as references to `EntryPathway` records, and `/account` hydrates them through the same guarded pathway projection used by research surfaces.
 
 First-slice behavior:
 
-- `/pathways` supports save and unsave controls for pathway cards.
 - `/api/users/favPathwayIds` returns saved ids for optimistic UI state.
 - `/api/users/favPathways` returns hydrated saved pathways and prunes archived or otherwise hidden pathways from the saved list.
 - Saved pathway cards link back to `/research/:slug` rather than introducing a dedicated pathway detail route.
@@ -305,7 +323,7 @@ Public access excerpts should redact direct contact details. The scraper may kee
 
 Publication and preprint evidence should enrich research activity, topics, methods, recency, and readable source context. OpenAlex, Google Scholar, and arXiv paper observations should not create undergraduate-access signals by themselves. arXiv preprints are especially useful as early evidence of active research before journal publication, but a preprint only supports access/pathway claims when combined with separate evidence such as join instructions, course/project supervision, undergrad participation, or official application routes.
 
-Professor/lab publication lists use `Paper.yaleAuthorIds` as a fast runtime field, but that field now means "authorship proven." New automatic faculty-paper links must flow through `paper_authors` evidence from identity-backed sources: OpenAlex by accepted ORCID/OpenAlex author ID, ORCID public works, Europe PMC/PubMed by ORCID, accepted Semantic Scholar author profiles, or manual accepted review. arXiv name search, Crossref DOI hydration, and Semantic Scholar paper lookup by DOI/title are metadata-only unless their author ORCID/profile identifier matches an accepted Yale user identity.
+Professor/lab research activity lists read from `research_scholarly_links` plus `research_scholarly_attributions` at runtime. Attribution rows are the launch proof surface for connecting a scholarly link to a Yale faculty/PI profile; entity-linked scholarly links are valid for research-entity activity without a person target. Selected publications extracted from official faculty profile pages should materialize into `research_scholarly_links` with `discoveredVia: OFFICIAL_PROFILE` and are prioritized in profile activity lists. Empty legacy paper/authorship collections, `faculty_members`, or embedded `User.publications` should not be treated as evidence. arXiv name search, Crossref DOI hydration, and Semantic Scholar paper lookup by DOI/title are metadata-only unless a populated attribution row or accepted identity proof connects the work to the Yale person.
 
 ## Source Coverage Metadata
 
@@ -403,6 +421,8 @@ Initial implementation note: `accessSummaryService.ts` computes a compatibility 
 
 2026-05-13 update: client API boundaries now normalize canonical `researchEntities`/`researchEntity` payloads before falling back to legacy `hits`/`group`, and Explore Research cards derive pathway summaries from `accessSummary`.
 
+2026-05-29 update: research detail payloads may include a precomputed `studentDecisionExplanation` generated from existing source-backed pathways, access signals, contact routes, posted opportunities, and source URLs. The explanation is display-only student guidance for "Best Next Step"; it must validate against existing public evidence and must not create opportunities, expose direct scraped contact details, or override canonical access artifacts.
+
 ## Admin Review
 
 Admins need a way to inspect derived access records before deeper editorial workflows are built.
@@ -413,22 +433,22 @@ Implementation note: `GET /api/admin/access-review` returns research entities wi
 
 Use precise internal names in code and schema docs, but use warmer labels in the UI:
 
-- `EntryPathway` -> Pathways / ways toward a research home
+- `EntryPathway` -> Ways In / ways toward a research home
 - `AccessSignal` -> Evidence
 - formalization metadata -> Ways to formalize
 - computed CTA / `RecommendedNextStep` -> Best Next Step
 
-Use "Pathways" as the primary student-facing surface and navigation label. Internally, keep the distinction: `EntryPathway` is a durable route toward a plausible research home, `PostedOpportunity` is a real active/time-bound posting, and course credit/fellowship funding/thesis advising are formalization outcomes after home/mentor fit unless they are attached to a real hosted program, mentor-matching program, or posted application instance.
+Use the unified Yale Research surface as the primary student-facing experience. Internally, keep the distinction: `EntryPathway` is a durable route toward a plausible research home, `PostedOpportunity` is a real active/time-bound posting, and course credit/fellowship funding/thesis advising are formalization outcomes after home/mentor fit unless they are attached to a real hosted program, mentor-matching program, or posted application instance.
 
 ## Migration Guidance
 
-1. Treat `/research`, `/pathways`, and `/opportunities/:id` as the canonical student-facing routes.
+1. Treat `/research` and `/opportunities/:id` as the canonical student-facing research routes.
 2. Use `ResearchEntity`, `EntryPathway`, `AccessSignal`, `ContactRoute`, and `PostedOpportunity` for new runtime work.
 3. Keep remaining `ResearchGroup`, `lab`, and `researchGroupId` naming as migration residue unless a file is explicitly part of rollback or compatibility support.
 4. Add explicit `PostedOpportunity` records only for real openings, deadlines, rolling applications, or archived postings.
 5. Teach scrapers to emit source evidence first, then materialize access signals/pathways/routes only when evidence supports them.
 6. Rename or drop legacy physical fields and lab-named files only after Beta proves the canonical model.
 
-Current physical strategy: hard-pivot to physical `research_entities` and canonical dependent collections. Development has copied and dropped `research_groups`, `research_group_members`, `research_group_stats`, `paper_group_links`, and leftover `applications` after verified parity. Repeat the same backup, verify, drop, and smoke-test posture in Beta before production cleanup.
+Current physical strategy: hard-pivot to physical `research_entities` and canonical dependent collections. Development has copied and dropped `research_groups`, `research_group_members`, `research_group_stats`, `paper_group_links`, and leftover `applications` after verified parity. Runtime paper activity now uses `research_scholarly_links` and `research_scholarly_attributions`; empty stats and paper-entity-link collections are not part of the launch copy set.
 
 The remaining end-to-end work is tracked in [`docs/tasks/priority-roadmap.md`](./tasks/priority-roadmap.md), including Beta seed, Pathway Meili relevance review, source blocker resolution, production scraper rollout, opportunity detail polish, data-quality operations, post-Beta legacy cleanup, and saved/advising workflow expansion.

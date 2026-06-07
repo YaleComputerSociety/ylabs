@@ -3,7 +3,7 @@
  */
 import { Router, Request, Response } from 'express';
 import { getConfig, invalidateConfigCache } from '../services/configService';
-import { isAuthenticated } from '../middleware/index';
+import { isAuthenticated, isAdmin } from '../middleware/index';
 
 const router = Router();
 
@@ -19,7 +19,7 @@ router.get('/', async (req: Request, res: Response) => {
   }
 });
 
-router.get('/refresh', isAuthenticated, async (req: Request, res: Response) => {
+router.post('/refresh', isAuthenticated, isAdmin, async (req: Request, res: Response) => {
   try {
     invalidateConfigCache();
     const config = await getConfig(true);

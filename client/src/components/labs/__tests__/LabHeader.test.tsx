@@ -59,6 +59,24 @@ describe('LabHeader', () => {
     );
     expect(container.textContent).not.toContain('Visit lab website');
   });
+
+  it('uses research website wording for faculty research profiles', () => {
+    const { container } = render(
+      <LabHeader
+        group={{
+          ...baseGroup,
+          name: 'Abraham Silberschatz Faculty Research',
+          kind: 'individual',
+          entityType: 'FACULTY_RESEARCH_AREA',
+          websiteUrl: 'https://codex.cs.yale.edu/avi/',
+        }}
+      />,
+    );
+
+    expect(container.textContent).toContain('Faculty Research');
+    expect(container.textContent).toContain('Visit research website');
+    expect(container.textContent).not.toContain('Visit lab website');
+  });
 });
 
 describe('LabHeader trust-gradient pill', () => {

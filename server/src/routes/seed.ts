@@ -1,7 +1,7 @@
 /**
  * Development-only seed routes for the faculty scraper.
  * These routes have NO user auth — callers must present a matching SEED_TOKEN header.
- * Still only mounted when NODE_ENV=development, but the token is the hard gate.
+ * Still only mounted in a local development runtime, but the token is the hard gate.
  */
 import { Router, Request, Response, NextFunction } from 'express';
 import { createUser, validateUser, updateUser } from '../services/userService';
@@ -9,6 +9,12 @@ import { updateListing, readAllListings } from '../services/listingService';
 import { validateNetid } from '../middleware/validation';
 
 const router = Router();
+
+function setPrivateSeedCacheHeaders(_req: Request, res: Response, next: NextFunction) {
+  res.setHeader('Cache-Control', 'no-store, private, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  next();
+}
 
 const requireSeedToken = (req: Request, res: Response, next: NextFunction) => {
   const expected = process.env.SEED_TOKEN;
@@ -22,7 +28,7 @@ const requireSeedToken = (req: Request, res: Response, next: NextFunction) => {
   next();
 };
 
-router.use(requireSeedToken);
+router.use(setPrivateSeedCacheHeaders, requireSeedToken);
 
 router.post('/users', async (req: Request, res: Response) => {
   try {

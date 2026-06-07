@@ -128,7 +128,7 @@ Risks and mitigations:
 
 ## 11. Implementation Priorities And Migration
 
-**V1 must-have:** rename/brand to Yale Research; replace homepage with topic-first search; refactor search results into grouped clusters, people, papers, entities, pathways; add identity-confidence card; add source rows to claims; preserve existing `/research`, `/pathways`, and entity pages.
+**V1 must-have:** rename/brand to Yale Research; replace homepage with topic-first search; refactor search results into grouped clusters, people, papers, entities, and ways-in evidence; add identity-confidence card; add source rows to claims; preserve `/research` and entity pages while keeping practical routes embedded in Yale Research.
 
 **V1.5 nice-to-have:** richer cluster summaries, adjacent topic browsing, paper-first cards, better mobile tabs, under-discovered cluster module, more explicit "why matched."
 

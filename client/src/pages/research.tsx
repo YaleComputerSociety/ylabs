@@ -91,6 +91,7 @@ interface ActiveResearchSearchRequest {
 
 interface ResearchPageSnapshot {
   key: string;
+  isAdmin: boolean;
   query: string;
   submittedQuery: string;
   departmentSearch: DepartmentSearchTarget | null;
@@ -287,8 +288,12 @@ const Research = () => {
   const { departments } = useConfig();
   const isAdmin = user?.userType === 'admin';
   const pageSnapshotKey = searchParams.toString();
+  const restorableSnapshot =
+    researchPageSnapshot?.key === pageSnapshotKey && researchPageSnapshot.isAdmin === isAdmin
+      ? researchPageSnapshot
+      : null;
   const restoredSnapshotRef = useRef<ResearchPageSnapshot | null>(
-    researchPageSnapshot?.key === pageSnapshotKey ? researchPageSnapshot : null,
+    restorableSnapshot,
   );
   const [query, setQuery] = useState(
     () => restoredSnapshotRef.current?.query ?? searchParams.get('q') ?? '',
@@ -360,6 +365,13 @@ const Research = () => {
     searchAbortRef.current?.abort();
     defaultSearchAbortRef.current?.abort();
   }, []);
+
+  useEffect(() => {
+    if (isAdmin) return;
+    if (showWeakestProfilesFirst) setShowWeakestProfilesFirst(false);
+    if (qualityFilters.length > 0) setQualityFilters([]);
+    if (trustTierFilters.length > 0) setTrustTierFilters([]);
+  }, [isAdmin, showWeakestProfilesFirst, qualityFilters.length, trustTierFilters.length]);
 
   const runDefaultResearchHomeSearch = async (page = 1) => {
     const requestId = ++defaultSearchRequestIdRef.current;
@@ -620,6 +632,7 @@ const Research = () => {
   useEffect(() => {
     researchPageSnapshot = {
       key: pageSnapshotKey,
+      isAdmin,
       query,
       submittedQuery,
       departmentSearch,

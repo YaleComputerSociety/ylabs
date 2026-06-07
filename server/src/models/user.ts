@@ -242,6 +242,32 @@ const userSchema = new mongoose.Schema(
       type: Date,
       index: true,
     },
+    archived: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    dedupedIntoUserId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: false,
+    },
+    dedupedAt: {
+      type: Date,
+      required: false,
+    },
+    dedupeReason: {
+      type: String,
+      required: false,
+    },
+    dedupedIdentityField: {
+      type: String,
+      required: false,
+    },
+    dedupedIdentityValue: {
+      type: String,
+      required: false,
+    },
   },
   {
     timestamps: true,

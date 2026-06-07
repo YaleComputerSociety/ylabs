@@ -581,7 +581,11 @@ export class CentersInstitutesScraper implements IScraper {
       ctx.options.only && ctx.options.only.length > 0
         ? new Set(ctx.options.only.map((s) => s.trim().toLowerCase()))
         : null;
-    const limit = ctx.options.limit && ctx.options.limit > 0 ? ctx.options.limit : Infinity;
+    const limitOption = ctx.options.limit;
+    if (limitOption !== undefined && (!Number.isSafeInteger(limitOption) || limitOption < 1)) {
+      throw new Error('--limit must be a safe positive integer');
+    }
+    const limit = limitOption ?? Infinity;
 
     let totalObs = 0;
     let totalMembers = 0;

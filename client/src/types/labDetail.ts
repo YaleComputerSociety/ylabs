@@ -75,6 +75,7 @@ export interface LabScholarlyLink {
   displaySource: string;
   freeFullTextUrl?: string;
   freeFullTextLabel?: string;
+  openAccessStatus?: string;
   discoveredVia: 'OPENALEX' | 'ORCID' | 'OFFICIAL_PROFILE' | 'MANUAL';
   year?: number;
   venue?: string;
@@ -93,6 +94,7 @@ export type LabResearchActivityRelationshipBasis =
   | 'explicit_entity_link'
   | 'entity_source'
   | 'member_authorship'
+  | 'identity_authorship'
   | 'manual';
 
 export interface LabResearchActivityLink extends LabScholarlyLink {

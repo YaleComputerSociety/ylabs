@@ -125,6 +125,20 @@ describe('orcidWorkSummaryToObservations', () => {
 });
 
 describe('OrcidWorksScraper.run', () => {
+  it.each([
+    [{ offset: 9007199254740992 }, /--offset must be a safe non-negative integer/],
+    [{ limit: 9007199254740992 }, /--limit must be a safe positive integer/],
+  ])('rejects unsafe runtime bounds before querying users: %j', async (options, message) => {
+    const fetcher: OrcidWorksFetcher = vi.fn(async () => ORCID_WORKS_PAYLOAD);
+    const userModel = mockUserModel([]);
+    const scraper = new OrcidWorksScraper({ userModel, fetcher });
+    const { ctx } = makeContext(options);
+
+    await expect(scraper.run(ctx)).rejects.toThrow(message);
+    expect(userModel.find).not.toHaveBeenCalled();
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
   it('fetches accepted ORCID users and emits paper observations', async () => {
     const fetcher: OrcidWorksFetcher = vi.fn(async () => ORCID_WORKS_PAYLOAD);
     const userModel = mockUserModel([

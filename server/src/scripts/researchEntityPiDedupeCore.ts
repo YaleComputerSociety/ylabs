@@ -1,4 +1,8 @@
 import { sanitizeProfileResearchTerms } from '../utils/profileResearchTerms';
+import {
+  isConcreteResearchHomeEntity,
+  isProfileAreaShellEntity,
+} from '../utils/profileAreaDuplicateRisk';
 
 export interface ResearchEntityPiDedupeRow {
   userId: string;
@@ -9,7 +13,11 @@ export interface ResearchEntityPiDedupeRow {
     id: string;
     slug?: string;
     name?: string;
+    kind?: string;
+    entityType?: string;
     websiteUrl?: string;
+    fullDescription?: string;
+    shortDescription?: string;
     sourceUrls?: string[];
     departments?: string[];
     researchAreas?: string[];
@@ -26,6 +34,7 @@ export interface ResearchEntityPiDedupeGroup {
   mergedDepartments: string[];
   mergedResearchAreas: string[];
   mergedSourceUrls: string[];
+  dedupeCategory?: 'profile_area_shell_with_concrete_home';
 }
 
 export interface OfficialLabUrlDedupeRow {
@@ -53,6 +62,8 @@ function timeValue(value: Date | string | null | undefined): number {
 
 function canonicalScore(entity: ResearchEntityPiDedupeRow['entities'][number]): number {
   const slug = entity.slug || '';
+  const hasFullDescription = Boolean((entity.fullDescription || '').trim());
+  const hasShortDescription = Boolean((entity.shortDescription || '').trim());
   const isSpecialShell =
     slug.startsWith('faculty-research-area-') ||
     slug.startsWith('nih-pi-') ||
@@ -63,6 +74,8 @@ function canonicalScore(entity: ResearchEntityPiDedupeRow['entities'][number]): 
     (entity.researchAreas?.length || 0) * 2 +
     (hasYaleEvidence(entity) ? 20 : 0) +
     ((entity.websiteUrl || '').trim() ? 5 : 0) +
+    (hasFullDescription ? 18 : 0) +
+    (hasShortDescription ? 8 : 0) +
     (!isSpecialShell ? 80 : 0) +
     (slug.startsWith('dept-') ? 2 : 0) +
     (slug.startsWith('ysm-') ? 8 : 0) +
@@ -131,6 +144,16 @@ function isOfficialYaleLabUrl(value: string | undefined): boolean {
   }
 }
 
+function isOfficialYaleProfileUrl(value: string | undefined): boolean {
+  try {
+    const parsed = new URL(value || '');
+    const host = parsed.hostname.toLowerCase();
+    return (host === 'yale.edu' || host.endsWith('.yale.edu')) && /\/profile\//i.test(parsed.pathname);
+  } catch {
+    return false;
+  }
+}
+
 function cleanMergedResearchAreas(
   values: Array<string | undefined>,
   options: { sanitizeProfileChrome?: boolean } = {},
@@ -159,28 +182,52 @@ function isFullPersonLabName(value: string | undefined): boolean {
   return words.length >= 2 && /\b(lab|laboratory|research)\b/i.test(value || '');
 }
 
+function isProfileBackedSurnameLabShell(
+  entity: ResearchEntityPiDedupeRow['entities'][number],
+  row: ResearchEntityPiDedupeRow,
+): boolean {
+  if ((entity.websiteUrl || '').trim()) return false;
+  if (![entity.websiteUrl, ...(entity.sourceUrls || [])].some(isOfficialYaleProfileUrl)) {
+    return false;
+  }
+
+  const lastNameWords = normalizedWords(row.piLastName);
+  if (lastNameWords.length === 0) return false;
+
+  const words = normalizedWords(entity.name).filter(
+    (word) => !['the', 'lab', 'laboratory', 'research'].includes(word),
+  );
+  if (words.length !== lastNameWords.length) return false;
+  return words.every((word, index) => word === lastNameWords[index]);
+}
+
 function comparablePiLabName(
   entity: ResearchEntityPiDedupeRow['entities'][number],
   row: ResearchEntityPiDedupeRow,
 ): string | null {
-  const lastName = normalizedWords(row.piLastName).at(-1);
-  if (!lastName) return null;
+  const lastNameWords = normalizedWords(row.piLastName);
+  if (lastNameWords.length === 0) return null;
 
   const firstNameTokens = new Set(normalizedWords(row.piFirstName));
   const words = normalizedWords(entity.name).filter(
     (word) => !['the', 'lab', 'laboratory', 'research'].includes(word),
   );
-  const lastIndex = words.lastIndexOf(lastName);
-  if (lastIndex < 0) return null;
+  if (words.length < lastNameWords.length) return null;
 
-  const personPrefix = words.slice(0, lastIndex);
-  if (personPrefix.length === 0) return null;
-  const hasUnexpectedPrefix = personPrefix.some((word) => !firstNameTokens.has(word));
+  const trailingLastNameWords = words.slice(-lastNameWords.length);
+  const matchesTrailingLastName =
+    trailingLastNameWords.length === lastNameWords.length &&
+    trailingLastNameWords.every((word, index) => word === lastNameWords[index]);
+  if (!matchesTrailingLastName) return null;
+
+  const personPrefix = words.slice(0, words.length - lastNameWords.length);
+  if (personPrefix.length === 0 && !isProfileBackedSurnameLabShell(entity, row)) return null;
+  const hasUnexpectedPrefix = personPrefix.some(
+    (word) => word.length > 1 && !firstNameTokens.has(word),
+  );
   if (hasUnexpectedPrefix) return null;
 
-  const remaining = words.slice(lastIndex);
-  if (remaining.length === 0) return null;
-  return remaining.join(' ');
+  return lastNameWords.join(' ');
 }
 
 function dedupeEntityClusters(
@@ -269,14 +316,82 @@ function buildGroupFromCluster(
   };
 }
 
+function buildProfileAreaShellDuplicateGroup(
+  row: ResearchEntityPiDedupeRow,
+): ResearchEntityPiDedupeGroup | null {
+  const entities = row.entities.filter((entity) => entity.id);
+  if (entities.length <= 1) return null;
+
+  const profileAreaShells = entities.filter((entity) => isProfileAreaShellEntity(entity));
+  const profileBackedSurnameShells = entities.filter((entity) =>
+    isProfileBackedSurnameLabShell(entity, row),
+  );
+  const duplicateShells = [...profileAreaShells, ...profileBackedSurnameShells];
+  const duplicateShellIds = new Set(duplicateShells.map((entity) => entity.id));
+  const concreteHomes = entities.filter(
+    (entity) => {
+      if (duplicateShellIds.has(entity.id)) return false;
+      if (!isConcreteResearchHomeEntity(entity) || isFundingOnlyEntity(entity)) return false;
+      if (profileAreaShells.length > 0) return true;
+      return [entity.websiteUrl, ...(entity.sourceUrls || [])].some(isOfficialYaleLabUrl);
+    },
+  );
+  if (duplicateShells.length === 0 || concreteHomes.length === 0) return null;
+
+  const canonical = [...concreteHomes].sort((a, b) => {
+    const byScore = canonicalScore(b) - canonicalScore(a);
+    if (byScore !== 0) return byScore;
+    return (a.slug || a.id).localeCompare(b.slug || b.id);
+  })[0];
+  const duplicates = duplicateShells.filter((entity) => entity.id !== canonical.id);
+  if (duplicates.length === 0) return null;
+
+  const group = buildGroupFromCluster(
+    row,
+    [canonical, ...duplicates],
+    (entity) => (entity.id === canonical.id ? Number.MAX_SAFE_INTEGER : canonicalScore(entity)),
+  );
+  if (!group) return null;
+  return {
+    ...group,
+    dedupeCategory: 'profile_area_shell_with_concrete_home',
+  };
+}
+
+function dedupePlanGroupsByEntitySet(groups: ResearchEntityPiDedupeGroup[]): ResearchEntityPiDedupeGroup[] {
+  const seen = new Set<string>();
+  return groups.filter((group) => {
+    const key = [group.canonicalEntityId, ...group.duplicateEntityIds].sort().join(':');
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 export function buildResearchEntityPiDedupePlan(
   rows: ResearchEntityPiDedupeRow[],
 ): ResearchEntityPiDedupeGroup[] {
   return rows.flatMap((row) => {
-    return dedupeEntityClusters(row)
+    const profileAreaGroup = buildProfileAreaShellDuplicateGroup(row);
+    const genericGroups = dedupeEntityClusters(row)
       .map((cluster) => buildGroupFromCluster(row, cluster))
       .filter((group): group is ResearchEntityPiDedupeGroup => !!group);
+    const profileAreaGroupShouldWin = profileAreaGroup?.duplicateSlugs.some((slug) =>
+      String(slug || '').startsWith('faculty-research-area-'),
+    );
+    const groups = profileAreaGroupShouldWin
+      ? [profileAreaGroup, ...genericGroups]
+      : [...genericGroups, profileAreaGroup];
+    return dedupePlanGroupsByEntitySet(
+      groups.filter((group): group is ResearchEntityPiDedupeGroup => !!group),
+    );
   });
+}
+
+export function selectSamePiDuplicateRiskEntityIds(rows: ResearchEntityPiDedupeRow[]): Set<string> {
+  return new Set(
+    buildResearchEntityPiDedupePlan(rows).flatMap((group) => group.duplicateEntityIds || []),
+  );
 }
 
 function buildFundingGroupFromCluster(

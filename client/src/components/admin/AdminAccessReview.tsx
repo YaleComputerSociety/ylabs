@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import axios from '../../utils/axios';
 import swal from 'sweetalert';
+import { EXTERNAL_LINK_REL, safeHttpUrl, safeHttpUrlList, safeUrl } from '../../utils/url';
 
 interface AccessReviewCounts {
   entryPathways: number;
@@ -217,7 +218,7 @@ const SourceLinks = ({
   ids?: Array<string | undefined>;
   evidenceItems?: EvidenceItem[];
 }) => {
-  const sourceUrls = Array.from(new Set((urls || []).filter(Boolean)));
+  const sourceUrls = safeHttpUrlList(urls || []);
   const sourceIds = Array.from(new Set((ids || []).filter(Boolean))) as string[];
   const evidence = evidenceItems || [];
 
@@ -233,7 +234,7 @@ const SourceLinks = ({
             key={url}
             href={url}
             target="_blank"
-            rel="noreferrer"
+            rel={EXTERNAL_LINK_REL}
             className="text-xs font-medium text-blue-700 hover:text-blue-900 underline underline-offset-2"
           >
             Source
@@ -255,23 +256,26 @@ const SourceLinks = ({
             Source evidence ({evidence.length})
           </summary>
           <div className="mt-2 space-y-2">
-            {evidence.map((item) => (
-              <div key={item.observationId} className="rounded border border-[var(--yr-line)] bg-[var(--yr-panel)] p-2 text-xs text-gray-600">
-                <div className="flex flex-wrap gap-2">
-                  <span className="font-semibold text-gray-800">{item.sourceName || 'unknown source'}</span>
-                  <span>obs {item.observationId.slice(-6)}</span>
-                  {item.scrapeRunId && <span>run {item.scrapeRunId.slice(-6)}</span>}
-                  {typeof item.confidence === 'number' && <span>{item.confidence.toFixed(2)} confidence</span>}
-                  {item.observedAt && <span>{formatDate(item.observedAt)}</span>}
+            {evidence.map((item) => {
+              const sourceUrl = safeHttpUrl(item.sourceUrl);
+              return (
+                <div key={item.observationId} className="rounded border border-[var(--yr-line)] bg-[var(--yr-panel)] p-2 text-xs text-gray-600">
+                  <div className="flex flex-wrap gap-2">
+                    <span className="font-semibold text-gray-800">{item.sourceName || 'unknown source'}</span>
+                    <span>obs {item.observationId.slice(-6)}</span>
+                    {item.scrapeRunId && <span>run {item.scrapeRunId.slice(-6)}</span>}
+                    {typeof item.confidence === 'number' && <span>{item.confidence.toFixed(2)} confidence</span>}
+                    {item.observedAt && <span>{formatDate(item.observedAt)}</span>}
+                  </div>
+                  {sourceUrl && (
+                    <a href={sourceUrl} target="_blank" rel={EXTERNAL_LINK_REL} className="mt-1 inline-block text-blue-700 underline underline-offset-2">
+                      Open source
+                    </a>
+                  )}
+                  {item.excerpt && <p className="mt-1 text-gray-700">{item.excerpt}</p>}
                 </div>
-                {item.sourceUrl && (
-                  <a href={item.sourceUrl} target="_blank" rel="noreferrer" className="mt-1 inline-block text-blue-700 underline underline-offset-2">
-                    Open source
-                  </a>
-                )}
-                {item.excerpt && <p className="mt-1 text-gray-700">{item.excerpt}</p>}
-              </div>
-            ))}
+              );
+            })}
           </div>
         </details>
       )}
@@ -669,7 +673,7 @@ const AdminAccessReview = () => {
                 <a
                   href={`/research/${detail.group.slug}`}
                   target="_blank"
-                  rel="noreferrer"
+                  rel={EXTERNAL_LINK_REL}
                   className="inline-flex min-h-[44px] items-center px-3 py-2 text-sm font-semibold text-blue-700 border border-blue-200 rounded hover:bg-[var(--yr-blue-soft)]"
                 >
                   Open Research Page
@@ -890,48 +894,51 @@ const AdminAccessReview = () => {
               <div>
                 <h4 className="text-lg font-bold text-gray-900 mb-3">Posted Opportunities</h4>
                 <div className="space-y-3">
-                  {filteredRecords.postedOpportunities.map((opportunity) => (
-                    <div key={opportunity._id} className="border border-[var(--yr-line)] rounded-lg p-4">
-                      <div className="flex flex-wrap items-center gap-2 mb-2">
-                        <span className="font-semibold text-gray-900">{opportunity.title}</span>
-                        <span className="text-xs bg-green-50 text-green-700 rounded px-2 py-1">
-                          {formatToken(opportunity.status)}
-                        </span>
-                        {opportunity.archived && (
-                          <span className="text-xs bg-amber-50 text-amber-700 rounded px-2 py-1">archived</span>
+                  {filteredRecords.postedOpportunities.map((opportunity) => {
+                    const applicationUrl = safeUrl(opportunity.applicationUrl);
+                    return (
+                      <div key={opportunity._id} className="border border-[var(--yr-line)] rounded-lg p-4">
+                        <div className="flex flex-wrap items-center gap-2 mb-2">
+                          <span className="font-semibold text-gray-900">{opportunity.title}</span>
+                          <span className="text-xs bg-green-50 text-green-700 rounded px-2 py-1">
+                            {formatToken(opportunity.status)}
+                          </span>
+                          {opportunity.archived && (
+                            <span className="text-xs bg-amber-50 text-amber-700 rounded px-2 py-1">archived</span>
+                          )}
+                        </div>
+                        <p className="text-sm text-gray-600">
+                          {opportunity.term || 'No term'} · {formatDate(opportunity.deadline)} ·{' '}
+                          {formatToken(opportunity.compensationType)}
+                        </p>
+                        {applicationUrl && (
+                          <a
+                            href={applicationUrl}
+                            target="_blank"
+                            rel={EXTERNAL_LINK_REL}
+                            className="text-sm font-medium text-blue-700 hover:text-blue-900 underline underline-offset-2"
+                          >
+                            Application
+                          </a>
                         )}
-                      </div>
-                      <p className="text-sm text-gray-600">
-                        {opportunity.term || 'No term'} · {formatDate(opportunity.deadline)} ·{' '}
-                        {formatToken(opportunity.compensationType)}
-                      </p>
-                      {opportunity.applicationUrl && (
-                        <a
-                          href={opportunity.applicationUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-sm font-medium text-blue-700 hover:text-blue-900 underline underline-offset-2"
-                        >
-                          Application
-                        </a>
-                      )}
-                      {opportunity.eligibility && (
-                        <p className="text-sm text-gray-700 mt-2">{opportunity.eligibility}</p>
-                      )}
-                      <div className="mt-3">
-                        <SourceLinks
-                          urls={opportunity.sourceUrls}
-                          ids={opportunity.sourceEvidenceIds}
-                          evidenceItems={opportunity.evidenceItems}
+                        {opportunity.eligibility && (
+                          <p className="text-sm text-gray-700 mt-2">{opportunity.eligibility}</p>
+                        )}
+                        <div className="mt-3">
+                          <SourceLinks
+                            urls={opportunity.sourceUrls}
+                            ids={opportunity.sourceEvidenceIds}
+                            evidenceItems={opportunity.evidenceItems}
+                          />
+                        </div>
+                        <RecordReviewControls
+                          recordType="postedOpportunity"
+                          record={opportunity}
+                          onSaved={(record) => updateReviewedRecord('postedOpportunity', record)}
                         />
                       </div>
-                      <RecordReviewControls
-                        recordType="postedOpportunity"
-                        record={opportunity}
-                        onSaved={(record) => updateReviewedRecord('postedOpportunity', record)}
-                      />
-                    </div>
-                  ))}
+                    );
+                  })}
                   {filteredRecords.postedOpportunities.length === 0 && (
                     <EmptyState label="No posted opportunities match this filter." />
                   )}

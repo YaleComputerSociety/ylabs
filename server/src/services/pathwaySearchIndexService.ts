@@ -8,10 +8,12 @@ import {
 import { publicStudentVisibilityTiers } from '../models/studentVisibility';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { getMeiliIndex } from '../utils/meiliClient';
+import { isPublicHttpUrl } from '../utils/urlSafety';
 
 export const PATHWAY_SEARCH_INDEX_NAME = 'pathways';
 export const PATHWAY_SEARCH_INDEX_PRIMARY_KEY = 'id';
 
+const MAX_SEARCH_PAGE = 1000;
 const MAX_EVIDENCE_ITEMS = 3;
 const MAX_EVIDENCE_EXCERPT_LENGTH = 480;
 const FORMALIZATION_ONLY_PATHWAY_TYPES = [
@@ -247,8 +249,7 @@ const toPublicHttpUrl = (value: unknown): string | undefined => {
   if (!stringValue) return undefined;
 
   try {
-    const url = new URL(stringValue);
-    return url.protocol === 'http:' || url.protocol === 'https:' ? stringValue : undefined;
+    return isPublicHttpUrl(stringValue) ? stringValue : undefined;
   } catch {
     return undefined;
   }
@@ -449,9 +450,9 @@ export function buildPathwaySearchIndexDocument(
     status: toStringValue(record.status),
     evidenceStrength: toStringValue(record.evidenceStrength),
     compensation: toStringValue(record.compensation),
-    studentFacingLabel: toStringValue(record.studentFacingLabel),
-    explanation: toStringValue(record.explanation),
-    bestNextStep: toStringValue(record.bestNextStep),
+    studentFacingLabel: redactAndTrim(record.studentFacingLabel),
+    explanation: redactAndTrim(record.explanation),
+    bestNextStep: redactAndTrim(record.bestNextStep),
     bestNextStepCategory: toStringValue(record.bestNextStepCategory),
     confidence: toNumberValue(record.confidence),
     sourceUrls: uniqueStrings(toPublicHttpArray(record.sourceUrls), normalizedEvidence.sourceUrls),
@@ -461,24 +462,24 @@ export function buildPathwaySearchIndexDocument(
     createdAtTimestamp: toTimestamp(record.createdAt),
     entityId: stringifyId(researchEntity._id) || stringifyId(researchEntity.id),
     entitySlug: toStringValue(researchEntity.slug),
-    entityName: toStringValue(researchEntity.name),
-    entityDisplayName: toStringValue(researchEntity.displayName),
+    entityName: redactAndTrim(researchEntity.name),
+    entityDisplayName: redactAndTrim(researchEntity.displayName),
     entityKind: toStringValue(researchEntity.kind),
     entityType: toStringValue(researchEntity.entityType),
     entityStudentVisibilityTier: toStringValue(researchEntity.studentVisibilityTier),
     entityDepartments: toStringArray(researchEntity.departments),
     entityResearchAreas: toStringArray(researchEntity.researchAreas),
-    entitySchool: toStringValue(researchEntity.school),
+    entitySchool: redactAndTrim(researchEntity.school),
     entityWebsiteUrl:
-      toStringValue(researchEntity.websiteUrl) || toStringValue(researchEntity.website),
+      toPublicHttpUrl(researchEntity.websiteUrl) || toPublicHttpUrl(researchEntity.website),
     hasActivePostedOpportunity: Boolean(activePostedOpportunity),
     postedOpportunityId:
       stringifyId(activePostedOpportunity?._id) || stringifyId(activePostedOpportunity?.id),
-    postedOpportunityTitle: toStringValue(activePostedOpportunity?.title),
+    postedOpportunityTitle: redactAndTrim(activePostedOpportunity?.title),
     postedOpportunityDeadline: toIsoString(activePostedOpportunity?.deadline),
     postedOpportunityDeadlineTimestamp: toTimestamp(activePostedOpportunity?.deadline),
     postedOpportunityStatus: toStringValue(activePostedOpportunity?.status),
-    postedOpportunityTerm: toStringValue(activePostedOpportunity?.term),
+    postedOpportunityTerm: redactAndTrim(activePostedOpportunity?.term),
     publicContactRoute,
     publicContactRouteType: publicContactRoute?.routeType,
     publicContactPolicy: publicContactRoute?.contactPolicy,
@@ -505,7 +506,7 @@ export async function searchPathwaysViaMeili(
   input: PathwaySearchInput,
   getIndex: (name: string) => Promise<PathwaySearchIndexSearchAdapter> = getMeiliIndex as any,
 ): Promise<PathwaySearchResult> {
-  const page = Math.max(1, Math.floor(input.page || 1));
+  const page = Math.min(MAX_SEARCH_PAGE, Math.max(1, Math.floor(input.page || 1)));
   const pageSize = Math.max(1, Math.min(100, Math.floor(input.pageSize || 24)));
   const offset = (page - 1) * pageSize;
   const index = await getIndex(PATHWAY_SEARCH_INDEX_NAME);
@@ -529,11 +530,19 @@ export async function searchPathwaysViaMeili(
   };
 }
 
+function normalizeRebuildPageSize(pageSize: number | undefined): number {
+  if (pageSize === undefined) return 100;
+  if (!Number.isSafeInteger(pageSize) || pageSize < 1) {
+    throw new Error('--page-size must be a safe positive integer');
+  }
+  return Math.min(100, pageSize);
+}
+
 export async function rebuildPathwaySearchIndex(
   fetchPage: FetchPathwaySearchIndexPage,
   options: RebuildPathwaySearchIndexOptions = {},
 ): Promise<RebuildPathwaySearchIndexResult> {
-  const pageSize = Math.max(1, Math.min(100, Math.floor(options.pageSize || 100)));
+  const pageSize = normalizeRebuildPageSize(options.pageSize);
   const index = await configurePathwaySearchIndex(options.getIndex || getMeiliIndex);
   const clearExisting = options.clearExisting === true;
   if (clearExisting && index.deleteAllDocuments) {

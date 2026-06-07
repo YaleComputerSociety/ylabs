@@ -6,6 +6,7 @@ import LongText from '../components/shared/LongText';
 import axios from '../utils/axios';
 import { OpportunityDetailPayload } from '../types/opportunity';
 import useDocumentTitle from '../hooks/useDocumentTitle';
+import { EXTERNAL_LINK_REL, safeHttpUrl, safeHttpUrlList, safeUrl } from '../utils/url';
 
 const labelize = (value?: string): string =>
   (value || 'Unknown')
@@ -129,7 +130,7 @@ const OpportunityDetail = () => {
           .filter((item): item is string => typeof item === 'string' && item.length > 0)
       : [];
 
-    return uniq([...opportunitySourceUrls, ...pathwaySourceUrls, ...evidenceSourceUrls]);
+    return safeHttpUrlList([...opportunitySourceUrls, ...pathwaySourceUrls, ...evidenceSourceUrls]);
   }, [opportunity]);
 
   if (loading) {
@@ -162,6 +163,8 @@ const OpportunityDetail = () => {
       </div>
     );
   }
+
+  const applicationUrl = safeUrl(opportunity.applicationUrl);
 
   const entity = opportunity.researchEntity;
   const pathway = opportunity.pathway;
@@ -246,11 +249,11 @@ const OpportunityDetail = () => {
               )}
               {(opportunity.applicationState === 'APPLY_NOW' ||
                 opportunity.applicationState === 'ROLLING') &&
-                opportunity.applicationUrl && (
+                applicationUrl && (
                   <a
-                    href={opportunity.applicationUrl}
+                    href={applicationUrl}
                     target="_blank"
-                    rel="noreferrer"
+                    rel={EXTERNAL_LINK_REL}
                     className="mt-4 inline-flex min-h-[44px] items-center justify-center rounded-md bg-[var(--yr-blue)] px-4 py-2 text-sm font-semibold text-white hover:bg-blue-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
                   >
                     {opportunity.applicationLabel}
@@ -294,36 +297,41 @@ const OpportunityDetail = () => {
             <div className="yr-card rounded-md p-4">
               {evidence.length > 0 ? (
                 <div className="space-y-3">
-                  {evidence.map((item) => (
-                    <div
-                      key={item._id}
-                      className="border-t border-[var(--yr-line)] pt-3 first:border-t-0 first:pt-0"
-                    >
-                      <p className="text-sm font-semibold text-gray-900">
-                        {item.sourceName || 'Source evidence'}
-                      </p>
-                      <p className="text-xs text-gray-500">
-                        {item.field ? labelize(item.field) : 'Posting evidence'}
-                        {typeof item.confidence === 'number'
-                          ? ` | ${Math.round(item.confidence * 100)}% confidence`
-                          : ''}
-                        {item.observedAt ? ` | Observed ${formatDate(item.observedAt)}` : ''}
-                      </p>
-                      {item.excerpt && (
-                        <p className="mt-1 text-sm leading-relaxed text-gray-600">{item.excerpt}</p>
-                      )}
-                      {item.sourceUrl && (
-                        <a
-                          href={item.sourceUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="yr-link mt-1 inline-flex min-h-[44px] items-center rounded-md text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
-                        >
-                          Open source
-                        </a>
-                      )}
-                    </div>
-                  ))}
+                  {evidence.map((item) => {
+                    const evidenceSourceUrl = safeHttpUrl(item.sourceUrl);
+                    return (
+                      <div
+                        key={item._id}
+                        className="border-t border-[var(--yr-line)] pt-3 first:border-t-0 first:pt-0"
+                      >
+                        <p className="text-sm font-semibold text-gray-900">
+                          {item.sourceName || 'Source evidence'}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          {item.field ? labelize(item.field) : 'Posting evidence'}
+                          {typeof item.confidence === 'number'
+                            ? ` | ${Math.round(item.confidence * 100)}% confidence`
+                            : ''}
+                          {item.observedAt ? ` | Observed ${formatDate(item.observedAt)}` : ''}
+                        </p>
+                        {item.excerpt && (
+                          <p className="mt-1 text-sm leading-relaxed text-gray-600">
+                            {item.excerpt}
+                          </p>
+                        )}
+                        {evidenceSourceUrl && (
+                          <a
+                            href={evidenceSourceUrl}
+                            target="_blank"
+                            rel={EXTERNAL_LINK_REL}
+                            className="yr-link mt-1 inline-flex min-h-[44px] items-center rounded-md text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                          >
+                            Open source
+                          </a>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               ) : (
                 <p className="text-sm text-gray-500">
@@ -365,7 +373,7 @@ const OpportunityDetail = () => {
                       key={url}
                       href={url}
                       target="_blank"
-                      rel="noreferrer"
+                      rel={EXTERNAL_LINK_REL}
                       className="yr-link inline-flex min-h-[44px] items-center rounded-md text-sm font-medium break-words focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
                     >
                       Source {index + 1}

@@ -483,7 +483,7 @@ describe('Research page', () => {
     expect(screen.getByRole('heading', { name: 'Default Research Home' })).toBeTruthy();
   });
 
-  it('uses research search enrichment without calling the retired Pathways API', async () => {
+  it('uses research search enrichment from research entities', async () => {
     mockSearchResponses((url) =>
       url === '/research/search'
         ? researchSearchResponse([
@@ -499,9 +499,6 @@ describe('Research page', () => {
 
     await screen.findByRole('heading', { name: 'AI Safety Lab' });
 
-    expect(
-      mockedAxios.post.mock.calls.some(([url]) => url === '/pathways/search'),
-    ).toBe(false);
     expect(container.textContent).toContain('Best next step: Plan targeted outreach');
   });
 
@@ -626,6 +623,56 @@ describe('Research page', () => {
 
     await screen.findByRole('heading', { name: 'AI Safety Lab' });
     expect(screen.queryByLabelText('Show weakest profiles first')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Description issue' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Missing lead' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Profile fallback' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Ready' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Limited' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Review' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Suppressed' })).toBeNull();
+  });
+
+  it('does not restore cached admin-only browse results for a non-admin user', async () => {
+    mockSearchResponses((url, body) => {
+      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
+      return researchSearchResponse([
+        {
+          ...researchEntity,
+          name: body.browseQuality === 'low-first' ? 'Sparse Lab' : 'AI Safety Lab',
+          displayName: body.browseQuality === 'low-first' ? 'Sparse Lab' : 'AI Safety Lab',
+          slug: body.browseQuality === 'low-first' ? 'sparse-lab' : 'ai-safety-lab',
+        },
+      ]);
+    });
+
+    const adminRender = renderResearch(departments, ['/research'], {
+      netId: 'admin1',
+      userType: 'admin',
+      userConfirmed: true,
+    });
+    await screen.findByRole('heading', { name: 'AI Safety Lab' });
+    fireEvent.click(screen.getByLabelText('Show weakest profiles first'));
+    await screen.findByRole('heading', { name: 'Sparse Lab' });
+    adminRender.unmount();
+
+    mockedAxios.post.mockClear();
+    renderResearch(departments, ['/research'], {
+      netId: 'student1',
+      userType: 'student',
+      userConfirmed: true,
+    });
+
+    await screen.findByRole('heading', { name: 'AI Safety Lab' });
+    expect(screen.queryByRole('heading', { name: 'Sparse Lab' })).toBeNull();
+    expect(mockedAxios.post).toHaveBeenLastCalledWith(
+      '/research/search',
+      expect.objectContaining({
+        q: '',
+        filters: {},
+      }),
+      expect.any(Object),
+    );
+    expect(mockedAxios.post.mock.calls.at(-1)?.[1]).not.toHaveProperty('browseQuality');
   });
 
   it('loads and appends more research homes when the browse sentinel is reached', async () => {
@@ -984,7 +1031,6 @@ describe('Research page', () => {
       }),
       expect.any(Object),
     );
-    expect(mockedAxios.post.mock.calls.some(([url]) => url === '/pathways/search')).toBe(false);
   });
 
   it('keeps initial q searches alive under StrictMode effect cleanup', async () => {
@@ -1020,9 +1066,11 @@ describe('Research page', () => {
 
     await screen.findByText("Showing research matches for 'protein folding'");
 
-    expect(screen.getByRole('status').textContent).toContain(
-      '1 research home, 1 way in, 1 contact',
-    );
+    await waitFor(() => {
+      expect(screen.getByRole('status').textContent).toContain(
+        '1 research home, 1 way in, 1 contact',
+      );
+    });
     expect(screen.queryByRole('link', { name: /Compare .*pathway/i })).toBeNull();
     expect(container.textContent).toContain('Research homes');
     expect(container.textContent).not.toContain('How to use this');
@@ -1062,8 +1110,25 @@ describe('Research page', () => {
         expect.any(Object),
         expect.any(Object),
       );
-      expect(mockedAxios.post.mock.calls.some(([url]) => url === '/pathways/search')).toBe(false);
     });
+  });
+
+  it('shows a compact research activity signal on research-home cards', async () => {
+    mockSearchResponses((url) =>
+      url === '/research/search'
+        ? researchSearchResponse([{ ...researchEntity, recentPaperCount: 1 }])
+        : unexpectedSearchEndpoint(url),
+    );
+
+    renderResearch();
+
+    fireEvent.change(screen.getByLabelText('Search Yale research'), {
+      target: { value: 'machine learning' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+
+    expect(await screen.findByRole('heading', { name: 'AI Safety Lab' })).toBeTruthy();
+    expect(screen.getByText('Recent research activity')).toBeTruthy();
   });
 
   it('does not expose unsupported ways-in filters as factual refinements', async () => {
@@ -1238,7 +1303,6 @@ describe('Research page', () => {
     await screen.findByText("Showing research matches for 'protein folding'");
     expect(screen.queryByRole('alert')).toBeNull();
     expect(container.textContent || '').toContain('AI Safety Lab');
-    expect(mockedAxios.post.mock.calls.some(([url]) => url === '/pathways/search')).toBe(false);
   });
 
   it('keeps loaded browse results when returning from a research profile', async () => {

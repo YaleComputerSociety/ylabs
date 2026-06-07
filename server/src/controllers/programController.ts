@@ -11,6 +11,15 @@ import {
   removeProgramFavorite,
 } from '../services/programService';
 import { isStudentVisibilityTier, type StudentVisibilityTier } from '../models/studentVisibility';
+import { publicProgramForReader } from './programPayload';
+
+const sendProgramError = (response: Response, error: any, fallbackMessage: string) => {
+  if (error?.name === 'NotFoundError') {
+    return response.status(404).json({ error: 'Program not found' });
+  }
+
+  return response.status(500).json({ error: fallbackMessage });
+};
 
 const parseFilter = (filter: string | undefined): string[] => {
   if (!filter) return [];
@@ -22,6 +31,27 @@ const parseFilter = (filter: string | undefined): string[] => {
 
 const parseStudentVisibilityFilter = (filter: string | undefined): StudentVisibilityTier[] =>
   parseFilter(filter).filter(isStudentVisibilityTier);
+
+const PUBLIC_PROGRAM_SORT_FIELDS = new Set([
+  'updatedAt',
+  'createdAt',
+  'title',
+  'deadline',
+  'applicationOpenDate',
+  'views',
+  'favorites',
+]);
+const MAX_SEARCH_PAGE = 1000;
+const MAX_SEARCH_PAGE_SIZE = 100;
+
+const publicProgramSortField = (value: unknown): string =>
+  typeof value === 'string' && PUBLIC_PROGRAM_SORT_FIELDS.has(value) ? value : 'updatedAt';
+
+const publicProgramSortOrder = (value: unknown): 1 | -1 => (Number(value) === 1 ? 1 : -1);
+const publicProgramPage = (value: unknown): number =>
+  Math.min(MAX_SEARCH_PAGE, Math.max(1, Math.floor(Number(value)) || 1));
+const publicProgramPageSize = (value: unknown): number =>
+  Math.min(MAX_SEARCH_PAGE_SIZE, Math.max(1, Math.floor(Number(value)) || 20));
 
 export const searchProgramsController = async (request: Request, response: Response) => {
   try {
@@ -49,10 +79,10 @@ export const searchProgramsController = async (request: Request, response: Respo
 
     const result = await searchPrograms({
       query: query as string,
-      page: parseInt(page as string, 10),
-      pageSize: parseInt(pageSize as string, 10),
-      sortBy: sortBy as string,
-      sortOrder: parseInt(sortOrder as string, 10),
+      page: publicProgramPage(page),
+      pageSize: publicProgramPageSize(pageSize),
+      sortBy: publicProgramSortField(sortBy),
+      sortOrder: publicProgramSortOrder(sortOrder),
       yearOfStudy: parseFilter(yearOfStudy as string),
       termOfAward: parseFilter(termOfAward as string),
       purpose: parseFilter(purpose as string),
@@ -69,9 +99,12 @@ export const searchProgramsController = async (request: Request, response: Respo
       includeOperatorReview: isAdmin && includeOperatorReview === 'true',
       includeSuppressed: isAdmin && includeSuppressed === 'true',
     });
+    const programs = isAdmin
+      ? result.programs
+      : result.programs.map(publicProgramForReader);
 
     response.json({
-      results: result.programs,
+      results: programs,
       total: result.total,
       page: result.page,
       pageSize: result.pageSize,
@@ -89,13 +122,11 @@ export const getProgramById = async (request: Request, response: Response) => {
     const program = await readProgram(request.params.id, {
       includeNonPublic: currentUser?.userType === 'admin',
     });
-    response.status(200).json({ program, fellowship: program });
+    const publicProgram =
+      currentUser?.userType === 'admin' ? program : publicProgramForReader(program);
+    response.status(200).json({ program: publicProgram, fellowship: publicProgram });
   } catch (error: any) {
-    if (error.name === 'NotFoundError') {
-      response.status(404).json({ error: error.message });
-    } else {
-      response.status(500).json({ error: error.message });
-    }
+    sendProgramError(response, error, 'Failed to fetch program');
   }
 };
 
@@ -104,45 +135,36 @@ export const getProgramFilterOptions = async (_request: Request, response: Respo
     const options = await readProgramFilterOptions();
     response.status(200).json(options);
   } catch (error: any) {
-    response.status(500).json({ error: error.message });
+    response.status(500).json({ error: 'Failed to fetch program filters' });
   }
 };
 
 export const addViewToProgram = async (request: Request, response: Response) => {
   try {
     const program = await addProgramView(request.params.id);
-    response.status(200).json({ program, fellowship: program });
+    const publicProgram = publicProgramForReader(program);
+    response.status(200).json({ program: publicProgram, fellowship: publicProgram });
   } catch (error: any) {
-    if (error.name === 'NotFoundError') {
-      response.status(404).json({ error: error.message });
-    } else {
-      response.status(500).json({ error: error.message });
-    }
+    sendProgramError(response, error, 'Failed to update program view count');
   }
 };
 
 export const addFavoriteToProgram = async (request: Request, response: Response) => {
   try {
     const program = await addProgramFavorite(request.params.id);
-    response.status(200).json({ program, fellowship: program });
+    const publicProgram = publicProgramForReader(program);
+    response.status(200).json({ program: publicProgram, fellowship: publicProgram });
   } catch (error: any) {
-    if (error.name === 'NotFoundError') {
-      response.status(404).json({ error: error.message });
-    } else {
-      response.status(500).json({ error: error.message });
-    }
+    sendProgramError(response, error, 'Failed to favorite program');
   }
 };
 
 export const removeFavoriteFromProgram = async (request: Request, response: Response) => {
   try {
     const program = await removeProgramFavorite(request.params.id);
-    response.status(200).json({ program, fellowship: program });
+    const publicProgram = publicProgramForReader(program);
+    response.status(200).json({ program: publicProgram, fellowship: publicProgram });
   } catch (error: any) {
-    if (error.name === 'NotFoundError') {
-      response.status(404).json({ error: error.message });
-    } else {
-      response.status(500).json({ error: error.message });
-    }
+    sendProgramError(response, error, 'Failed to remove program favorite');
   }
 };

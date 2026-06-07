@@ -36,6 +36,35 @@ describe('buildObservationFingerprint', () => {
       buildObservationFingerprint({ ...base, sourceName: 'lab-microsite-undergrad-llm' }),
     );
   });
+
+  it('ignores value drift for latest-wins fields so new observations supersede the prior one', () => {
+    const base = {
+      sourceName: 'lab-microsite-description-llm',
+      entityType: 'researchEntity',
+      entityKey: 'smith-lab',
+    };
+    for (const field of ['fullDescription', 'shortDescription', 'researchAreas', 'methods']) {
+      const v1 = buildObservationFingerprint({ ...base, field, value: 'The Smith Lab studies X.' });
+      const v2 = buildObservationFingerprint({
+        ...base,
+        field,
+        value: 'The Smith Lab investigates X and Y.',
+      });
+      expect(v1).toBe(v2);
+    }
+  });
+
+  it('still distinguishes values for non-latest-wins fields', () => {
+    const base = {
+      sourceName: 'centers-institutes-index',
+      entityType: 'researchEntity',
+      entityKey: 'smith-lab',
+      field: 'websiteUrl',
+    };
+    expect(
+      buildObservationFingerprint({ ...base, value: 'https://a.yale.edu' }),
+    ).not.toBe(buildObservationFingerprint({ ...base, value: 'https://b.yale.edu' }));
+  });
 });
 
 describe('appendObservations', () => {

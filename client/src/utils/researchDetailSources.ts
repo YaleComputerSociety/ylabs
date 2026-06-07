@@ -1,3 +1,5 @@
+import { safeHttpUrl } from './url';
+
 interface DetailSourceGroup {
   name?: string;
   websiteUrl?: string;
@@ -44,17 +46,17 @@ export interface ResearchDetailSource {
 }
 
 export const normalizeSourceUrl = (url?: string | null): string | null => {
-  const trimmed = url?.trim();
-  if (!trimmed) return null;
+  const safe = safeHttpUrl(url);
+  if (!safe) return null;
 
   try {
-    const parsed = new URL(trimmed);
+    const parsed = new URL(safe);
     parsed.hash = '';
     parsed.search = '';
     parsed.pathname = parsed.pathname.replace(/\/+$/, '') || '/';
     return parsed.toString().replace(/\/$/, '');
   } catch {
-    return trimmed.replace(/\/+$/, '');
+    return null;
   }
 };
 

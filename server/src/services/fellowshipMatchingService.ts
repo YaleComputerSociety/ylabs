@@ -211,8 +211,8 @@ export function scoreFellowshipForPathway(
     caveats,
     sourceUrls,
     deadline: fellowship.deadline,
-    applicationLink: fellowship.applicationLink,
-    contactOffice: fellowship.contactOffice,
+    applicationLink: publicApplicationCycle.applicationLink,
+    contactOffice: publicApplicationCycle.contactOffice,
     isAcceptingApplications: fellowship.isAcceptingApplications,
     applicationCycle: publicApplicationCycle,
   };

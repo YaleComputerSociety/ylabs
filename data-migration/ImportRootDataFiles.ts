@@ -8,15 +8,159 @@ import dotenv from 'dotenv';
 import fs from 'fs';
 import mongoose from '../server/node_modules/mongoose';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import { Department } from '../server/src/models/department';
 import { FacultyMember } from '../server/src/models/facultyMember';
 import { ResearchGroup } from '../server/src/models/researchGroup';
 import { Source } from '../server/src/models/source';
+import {
+  assertScriptApplyAllowed,
+  type ScriptApplyGuardResult,
+} from '../server/src/scripts/scriptWriteGuards';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 dotenv.config({ path: path.resolve(__dirname, '../server/.env') });
 
-const APPLY = process.argv.includes('--apply') || process.argv.includes('--live');
-const DELETE_SOURCE_FILES = process.argv.includes('--delete-source-files');
+export interface RootDataImportCliOptions {
+  apply: boolean;
+  confirmLegacyRootDataImport?: boolean;
+  deleteSourceFiles: boolean;
+  limit?: number;
+  output?: string;
+}
+
+export function parseRootDataImportArgs(argv: string[]): RootDataImportCliOptions {
+  const options: RootDataImportCliOptions = {
+    apply: false,
+    confirmLegacyRootDataImport: false,
+    deleteSourceFiles: false,
+  };
+  const parseRequiredOutputPath = (value: string | undefined): string => {
+    const output = value?.trim();
+    if (!output || output.startsWith('--')) throw new Error('--output requires a path');
+    return output;
+  };
+
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+    if (arg === '--apply' || arg === '--live') {
+      options.apply = true;
+      continue;
+    }
+    if (arg === '--dry-run') {
+      options.apply = false;
+      continue;
+    }
+    if (arg === '--delete-source-files') {
+      options.deleteSourceFiles = true;
+      continue;
+    }
+    if (arg === '--confirm-legacy-root-data-import') {
+      options.confirmLegacyRootDataImport = true;
+      continue;
+    }
+    if (arg.startsWith('--confirm-legacy-root-data-import=')) {
+      throw new Error('--confirm-legacy-root-data-import does not accept a value');
+    }
+    if (arg === '--limit') {
+      const raw = argv[i + 1];
+      if (!raw || raw.startsWith('--')) {
+        throw new Error('--limit requires a positive integer');
+      }
+      options.limit = parsePositiveInteger(raw, '--limit');
+      i += 1;
+      continue;
+    }
+    if (arg.startsWith('--limit=')) {
+      options.limit = parsePositiveInteger(arg.slice('--limit='.length), '--limit');
+      continue;
+    }
+    if (arg === '--output') {
+      options.output = parseRequiredOutputPath(argv[i + 1]);
+      i += 1;
+      continue;
+    }
+    if (arg.startsWith('--output=')) {
+      options.output = parseRequiredOutputPath(arg.slice('--output='.length));
+      continue;
+    }
+
+    throw new Error(`Unknown legacy root data import argument: ${arg}`);
+  }
+
+  return options;
+}
+
+function parsePositiveInteger(value: string, flag: string): number {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0 || String(parsed) !== value.trim()) {
+    throw new Error(`${flag} requires a positive integer`);
+  }
+  return parsed;
+}
+
+export function assertRootDataImportApplyAllowed(args: {
+  apply: boolean;
+  confirmLegacyRootDataImport?: boolean;
+  limit?: number;
+  mongoUrl?: string;
+  env?: NodeJS.ProcessEnv;
+}): ScriptApplyGuardResult {
+  if (args.apply && !Number.isFinite(args.limit)) {
+    throw new Error('--limit is required when --apply is set for legacy root data import');
+  }
+  if (args.apply && !args.confirmLegacyRootDataImport) {
+    throw new Error(
+      '--confirm-legacy-root-data-import is required when --apply is set for legacy root data import',
+    );
+  }
+
+  return assertScriptApplyAllowed({
+    apply: args.apply,
+    scriptName: 'legacy root data import',
+    mongoUrl: args.mongoUrl,
+    env: args.env,
+  });
+}
+
+export function buildRootDataImportOutput<T extends object>(
+  result: T,
+  metadata: {
+    generatedAt?: string;
+    environment?: string;
+    db?: string;
+    options: RootDataImportCliOptions;
+  },
+): T & {
+  generatedAt: string;
+  environment?: string;
+  db?: string;
+  options: RootDataImportCliOptions;
+} {
+  return {
+    generatedAt: metadata.generatedAt || new Date().toISOString(),
+    ...(metadata.environment ? { environment: metadata.environment } : {}),
+    ...(metadata.db ? { db: metadata.db } : {}),
+    options: metadata.options,
+    ...result,
+  };
+}
+
+function writeRootDataImportOutput(payload: object, outputPath?: string): void {
+  if (!outputPath) return;
+  fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+  fs.writeFileSync(outputPath, `${JSON.stringify(payload, null, 2)}\n`);
+}
+
+const DEFAULT_OPTIONS: RootDataImportCliOptions = {
+  apply: false,
+  confirmLegacyRootDataImport: false,
+  deleteSourceFiles: false,
+};
+let APPLY = DEFAULT_OPTIONS.apply;
+let DELETE_SOURCE_FILES = DEFAULT_OPTIONS.deleteSourceFiles;
 const ROOT = path.resolve(__dirname, '..');
 const OBSERVED_AT = new Date();
 const SOURCE_FILES = [
@@ -101,14 +245,6 @@ function emptyStats(): Stats {
     skipped: 0,
     errors: [],
   };
-}
-
-function parseLimit(): number | undefined {
-  const eq = process.argv.find((arg) => arg.startsWith('--limit='));
-  const raw = eq ? eq.split('=')[1] : process.argv[process.argv.indexOf('--limit') + 1];
-  if (!raw || raw.startsWith('--')) return undefined;
-  const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
 }
 
 function filePath(fileName: string): string {
@@ -650,20 +786,30 @@ function printStats(label: string, stats: Stats): void {
   }
 }
 
-async function main(): Promise<void> {
+export async function importRootDataFiles(
+  options: RootDataImportCliOptions = DEFAULT_OPTIONS,
+): Promise<ReturnType<typeof buildRootDataImportOutput<object>>> {
+  APPLY = options.apply;
+  DELETE_SOURCE_FILES = options.deleteSourceFiles;
   const url = process.env.MONGODBURL;
   if (!url) {
-    console.error('ERROR: MONGODBURL not set in server/.env');
-    process.exit(1);
+    throw new Error('MONGODBURL not set in server/.env');
   }
 
-  const limit = parseLimit();
+  const guard = assertRootDataImportApplyAllowed({
+    apply: options.apply,
+    confirmLegacyRootDataImport: options.confirmLegacyRootDataImport,
+    limit: options.limit,
+    mongoUrl: url,
+  });
+  const limit = options.limit;
   console.log('\n=== Import root JSON/CSV data files ===');
   console.log(`Mode: ${APPLY ? 'APPLY' : 'DRY RUN'}`);
   console.log(`Delete source files: ${DELETE_SOURCE_FILES ? 'yes' : 'no'}`);
   console.log(`Limit: ${limit ?? 'none'}\n`);
 
   await mongoose.connect(url);
+  try {
 
   const specs = sourceSpecs();
   const [physicsSource, historySource, medicineSource] = await Promise.all([
@@ -732,11 +878,35 @@ async function main(): Promise<void> {
     deleteSourceFiles();
   }
 
-  await mongoose.disconnect();
+  const output = buildRootDataImportOutput(
+    {
+      physicsRows: physicsRows.length,
+      historyRows: historyRows.length,
+      medicineRows: medicineRows.length,
+      csvRows,
+      physicsStats,
+      historyStats,
+      medicineStats,
+      verification,
+    },
+    {
+      environment: guard.environment,
+      db: mongoose.connection.db?.databaseName || mongoose.connection.name || guard.dbLabel,
+      options,
+    },
+  );
+  writeRootDataImportOutput(output, options.output);
+  if (options.output) console.log(`Wrote root data import report to ${options.output}`);
+  return output;
+  } finally {
+    await mongoose.disconnect();
+  }
 }
 
-main().catch(async (err) => {
-  console.error(err);
-  await mongoose.disconnect();
-  process.exit(1);
-});
+if (process.argv[1] && __filename === path.resolve(process.argv[1])) {
+  importRootDataFiles(parseRootDataImportArgs(process.argv.slice(2))).catch(async (err) => {
+    console.error(err);
+    await mongoose.disconnect();
+    process.exit(1);
+  });
+}

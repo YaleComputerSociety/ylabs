@@ -242,11 +242,22 @@ describe('findUserForPi', () => {
     expect(await findUserForPi('Amy Arnsten', um)).toBeNull();
   });
 
-  it('returns the unique candidate when there is exactly one surname match', async () => {
+  it('returns the unique candidate when there is exactly one exact first-name surname match', async () => {
     const um = mockUserModel([
       { _id: 'u1', fname: 'Amy', lname: 'Arnsten', netid: 'aa1' },
     ]);
-    expect(await findUserForPi('Amy Arnsten', um)).toEqual({ _id: 'u1', netid: 'aa1' });
+    expect(await findUserForPi('Amy Arnsten', um)).toEqual({
+      _id: 'u1',
+      netid: 'aa1',
+      researchHomeEligible: true,
+    });
+  });
+
+  it('does not match a unique surname candidate when the full first name conflicts', async () => {
+    const um = mockUserModel([
+      { _id: 'u1', fname: 'Frederick', lname: 'Wilson', netid: 'fpw2' },
+    ]);
+    expect(await findUserForPi('Francis Wilson', um)).toBeNull();
   });
 
   it('disambiguates by exact first name when surname has multiple hits', async () => {
@@ -254,15 +265,75 @@ describe('findUserForPi', () => {
       { _id: 'u1', fname: 'Amy', lname: 'Arnsten', netid: 'aa1' },
       { _id: 'u2', fname: 'John', lname: 'Arnsten', netid: 'ja1' },
     ]);
-    expect(await findUserForPi('Amy Arnsten', um)).toEqual({ _id: 'u1', netid: 'aa1' });
+    expect(await findUserForPi('Amy Arnsten', um)).toEqual({
+      _id: 'u1',
+      netid: 'aa1',
+      researchHomeEligible: true,
+    });
   });
 
-  it('falls back to first-initial match when exact fname fails', async () => {
+  it('falls back to given-name prefix match when exact fname fails', async () => {
+    const um = mockUserModel([
+      { _id: 'u1', fname: 'Amylynn', lname: 'Arnsten', netid: 'ax1' },
+      { _id: 'u2', fname: 'John', lname: 'Arnsten', netid: 'ja1' },
+    ]);
+    expect(await findUserForPi('Amy Arnsten', um)).toEqual({
+      _id: 'u1',
+      netid: 'ax1',
+      researchHomeEligible: true,
+    });
+  });
+
+  it('falls back to first-initial match only when the source first name is an initial', async () => {
     const um = mockUserModel([
       { _id: 'u1', fname: 'Amelia', lname: 'Arnsten', netid: 'ax1' },
       { _id: 'u2', fname: 'John', lname: 'Arnsten', netid: 'ja1' },
     ]);
-    expect(await findUserForPi('Amy Arnsten', um)).toEqual({ _id: 'u1', netid: 'ax1' });
+    expect(await findUserForPi('A Arnsten', um)).toEqual({
+      _id: 'u1',
+      netid: 'ax1',
+      researchHomeEligible: true,
+    });
+  });
+
+  it('does not match full first names to different same-initial candidates', async () => {
+    const um = mockUserModel([
+      { _id: 'u1', fname: 'Amelia', lname: 'Arnsten', netid: 'ax1' },
+      { _id: 'u2', fname: 'John', lname: 'Arnsten', netid: 'ja1' },
+    ]);
+    expect(await findUserForPi('Amy Arnsten', um)).toBeNull();
+  });
+
+  it('marks postdoctoral and research-affiliate grant PIs as ineligible research homes', async () => {
+    const postdoc = mockUserModel([
+      {
+        _id: 'u1',
+        fname: 'James',
+        lname: 'Hutchison',
+        netid: 'jh1',
+        title: 'Postdoctoral Associate in Pharmacology',
+      },
+    ]);
+    expect(await findUserForPi('James Hutchison', postdoc)).toEqual({
+      _id: 'u1',
+      netid: 'jh1',
+      researchHomeEligible: false,
+    });
+
+    const affiliate = mockUserModel([
+      {
+        _id: 'u2',
+        fname: 'Seyedmehdi',
+        lname: 'Payabvash',
+        netid: 'sp1',
+        title: 'Research Affiliates',
+      },
+    ]);
+    expect(await findUserForPi('Seyedmehdi Payabvash', affiliate)).toEqual({
+      _id: 'u2',
+      netid: 'sp1',
+      researchHomeEligible: false,
+    });
   });
 
   it('returns null when ambiguity remains after first-initial fallback', async () => {
@@ -331,6 +402,16 @@ describe('piGrantsToObservations', () => {
     expect(piId?.value).toBe('user-abc');
     expect(piId?.confidenceOverride).toBeGreaterThanOrEqual(0.8);
     expect(groupObs.find((o) => o.field === 'inferredPiUserKey')).toBeUndefined();
+  });
+
+  it('emits no research-home observations for known non-owner grant PIs', () => {
+    expect(
+      piGrantsToObservations('James Hutchison', [grantArnsten], {
+        _id: 'user-postdoc',
+        netid: 'jh1',
+        researchHomeEligible: false,
+      }),
+    ).toEqual([]);
   });
 
   it('truncates recentGrants to the configured cap', () => {
@@ -472,5 +553,16 @@ describe('NihReporterScraper.run', () => {
     );
     expect(groupKeys.size).toBe(1);
     expect(result.entitiesObserved).toBe(1);
+  });
+
+  it('rejects unsafe runtime limits before fetching NIH pages', async () => {
+    const postSpy = vi.spyOn(axios, 'post').mockResolvedValue({
+      data: { meta: { total: 0, offset: 0, limit: 500 }, results: [] },
+    } as any);
+    const scraper = new NihReporterScraper({ userModel: mockUserModel([]) });
+    const { ctx } = makeContext({ limit: 9007199254740992 });
+
+    await expect(scraper.run(ctx)).rejects.toThrow(/--limit must be a safe positive integer/);
+    expect(postSpy).not.toHaveBeenCalled();
   });
 });

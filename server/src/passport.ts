@@ -9,12 +9,37 @@ import { fetchYalie } from './services/yaliesService';
 import { fetchFromDirectory, isFacultyTitle } from './services/directoryService';
 import { logEvent } from './services/analyticsService';
 import { AnalyticsEventType } from './models/index';
+import {
+  isLocalDevelopmentRuntime as isLocalDevelopmentEnvironment,
+  requiresDeployedRuntimeSecurity,
+} from './utils/environment';
+import {
+  allowsLegacyAdminUserType,
+  hasActiveAdminGrant,
+} from './services/adminGrantService';
 
 const STALE_THRESHOLD_MS = 30 * 24 * 60 * 60 * 1000;
+type AuthenticatedSessionUser = {
+  netId: string;
+  userType?: string;
+  userConfirmed?: boolean;
+  profileVerified?: boolean;
+};
+
+type PassportAuthInfo = {
+  message?: string;
+};
+
+type PersistedUser = {
+  netid?: string;
+  userType?: string;
+  userConfirmed?: boolean;
+  profileVerified?: boolean;
+};
 
 /**
  * Resolve a caller-supplied redirect to a safe same-origin target.
- * Accepts only relative paths ("/foo") or absolute URLs whose host matches
+ * Accepts only relative paths ("/foo") or absolute URLs whose origin matches
  * SERVER_BASE_URL. Anything else returns null.
  */
 function safeRedirectTarget(raw: unknown): string | null {
@@ -28,15 +53,202 @@ function safeRedirectTarget(raw: unknown): string | null {
   }
   if (raw.startsWith('/') && !raw.startsWith('//')) return raw;
   try {
-    const base = process.env.SERVER_BASE_URL ?? '';
-    if (!base) return null;
-    const baseHost = new URL(base).host;
+    const base = unquoteEnvValue(process.env.SERVER_BASE_URL);
     const target = new URL(raw);
-    if (target.host === baseHost) return target.toString();
+    if (isLocalDevelopmentRuntime() && target.origin === 'http://localhost:3000') {
+      return target.toString();
+    }
+    if (!base) return null;
+    const baseOrigin = new URL(base).origin;
+    if (target.origin === baseOrigin) return target.toString();
   } catch {
     return null;
   }
   return null;
+}
+
+function originFromUrl(value: string | undefined): string {
+  if (!value) return '';
+  try {
+    return new URL(value).origin;
+  } catch {
+    return '';
+  }
+}
+
+function unquoteEnvValue(value: string | undefined): string {
+  return String(value || '')
+    .trim()
+    .replace(/^['"]|['"]$/g, '');
+}
+
+function isLocalDevelopmentRuntime(env: NodeJS.ProcessEnv = process.env): boolean {
+  return isLocalDevelopmentEnvironment(env);
+}
+
+function isDevLoginAllowed(env: NodeJS.ProcessEnv = process.env): boolean {
+  return isLocalDevelopmentRuntime(env);
+}
+
+function isTruthyEnvFlag(value: string | undefined): boolean {
+  return ['1', 'true', 'yes', 'on'].includes(unquoteEnvValue(value).toLowerCase());
+}
+
+function isLocalAuthBypassAllowed(env: NodeJS.ProcessEnv = process.env): boolean {
+  return isLocalDevelopmentRuntime(env) && isTruthyEnvFlag(env.LOCAL_AUTH_BYPASS);
+}
+
+function isTrustedLogoutRequest(req: express.Request): boolean {
+  if (!requiresDeployedRuntimeSecurity()) return true;
+
+  const allowedOrigin = originFromUrl(authConfig.serverBaseURL);
+  if (!allowedOrigin) return false;
+
+  const origin = originFromUrl(req.get('origin'));
+  if (origin) return origin === allowedOrigin;
+
+  const refererOrigin = originFromUrl(req.get('referer'));
+  return refererOrigin === allowedOrigin;
+}
+
+function requireProductionHttpsUrl(
+  env: NodeJS.ProcessEnv,
+  name: 'SSOBASEURL' | 'SERVER_BASE_URL',
+): string {
+  const raw = unquoteEnvValue(env[name]);
+  if (!raw) {
+    throw new Error(`${name} must be set in deployed runtimes.`);
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    throw new Error(`${name} must be a valid HTTPS URL in deployed runtimes.`);
+  }
+
+  if (parsed.protocol !== 'https:') {
+    throw new Error(`${name} must use HTTPS in deployed runtimes.`);
+  }
+
+  if (name === 'SERVER_BASE_URL' && isLocalDevelopmentEnvironment({ ...env, NODE_ENV: 'development' })) {
+    throw new Error('SERVER_BASE_URL must not point to localhost in deployed runtimes.');
+  }
+
+  return raw.replace(/\/+$/g, '');
+}
+
+function resolveAuthConfig(env: NodeJS.ProcessEnv = process.env) {
+  if (requiresDeployedRuntimeSecurity(env)) {
+    return {
+      ssoBaseURL: requireProductionHttpsUrl(env, 'SSOBASEURL'),
+      serverBaseURL: requireProductionHttpsUrl(env, 'SERVER_BASE_URL'),
+    };
+  }
+
+  return {
+    ssoBaseURL: unquoteEnvValue(env.SSOBASEURL),
+    serverBaseURL: unquoteEnvValue(env.SERVER_BASE_URL),
+  };
+}
+
+function validateProductionAuthConfig(env: NodeJS.ProcessEnv = process.env): void {
+  resolveAuthConfig(env);
+}
+
+function normalizedHeaderValue(value: string | string[] | undefined): string | undefined {
+  if (Array.isArray(value)) return value[0];
+  return value;
+}
+
+function normalizeDevUserType(value: string | undefined): string {
+  const normalized = String(value || '').trim().toLowerCase();
+  return ['admin', 'student', 'professor', 'faculty', 'unknown'].includes(normalized)
+    ? normalized
+    : 'admin';
+}
+
+function localAuthBypassUser(
+  env: NodeJS.ProcessEnv = process.env,
+  headers: express.Request['headers'] = {},
+) {
+  const netId =
+    normalizedHeaderValue(headers['x-dev-netid']) ||
+    unquoteEnvValue(env.LOCAL_AUTH_BYPASS_NETID) ||
+    'devadmin';
+  const userType = normalizeDevUserType(
+    normalizedHeaderValue(headers['x-dev-user-type']) ||
+      unquoteEnvValue(env.LOCAL_AUTH_BYPASS_USER_TYPE) ||
+      'admin',
+  );
+
+  return {
+    netId,
+    userType,
+    userConfirmed: true,
+    profileVerified: true,
+  };
+}
+
+function shouldSkipLocalAuthBypass(path: string): boolean {
+  return ['/cas', '/logout', '/dev-login'].some(
+    (prefix) => path === prefix || path.startsWith(`${prefix}/`),
+  );
+}
+
+function placeholderYaleEmail(netid: string): string {
+  return `${netid.trim().toLowerCase()}@yale.edu`;
+}
+
+async function ensureDevLoginUser(userType: string) {
+  if (!isDevLoginAllowed()) {
+    throw new Error('Dev login is disabled for this environment');
+  }
+
+  const normalizedUserType = userType === 'admin' ? 'admin' : 'student';
+  const netId = normalizedUserType === 'admin' ? 'devadmin' : 'test123';
+  const userData = {
+    netid: netId,
+    email: `${netId}@example.invalid`,
+    fname: normalizedUserType === 'admin' ? 'Dev' : 'Test',
+    lname: normalizedUserType === 'admin' ? 'Admin' : 'Student',
+    userType: normalizedUserType,
+    userConfirmed: true,
+    profileVerified: true,
+  };
+  const existing = await validateUser(netId);
+  const user = existing ? await updateUser(netId, userData) : await createUser(userData);
+
+  return {
+    netId,
+    userType: user.userType || normalizedUserType,
+    userConfirmed: user.userConfirmed !== false,
+    profileVerified: user.profileVerified || false,
+  };
+}
+
+async function buildAuthenticatedSessionUser(
+  user: PersistedUser,
+  fallbackNetId: string,
+): Promise<AuthenticatedSessionUser> {
+  const netId = user.netid || fallbackNetId;
+  const persistedUserType = user.userType || 'unknown';
+  const grantBackedAdmin = await hasActiveAdminGrant(netId);
+  const localDevelopmentAdmin =
+    persistedUserType === 'admin' && allowsLegacyAdminUserType(process.env);
+  const userType =
+    grantBackedAdmin || localDevelopmentAdmin
+      ? 'admin'
+      : persistedUserType === 'admin'
+        ? 'unknown'
+        : persistedUserType;
+
+  return {
+    netId,
+    userType,
+    userConfirmed: user.userConfirmed,
+    profileVerified: user.profileVerified || false,
+  };
 }
 
 /**
@@ -128,29 +340,26 @@ async function findOrCreateUser(netid: string) {
   console.log(`findOrCreateUser: Directory also failed, creating default user for ${netid}`);
   user = await createUser({
     netid,
-    fname: 'NA',
-    lname: 'NA',
-    email: 'NA',
+    fname: netid,
+    lname: netid,
+    email: placeholderYaleEmail(netid),
   });
   return user;
 }
+
+const authConfig = resolveAuthConfig();
 
 passport.use(
   new Strategy(
     {
       version: 'CAS1.0',
-      ssoBaseURL: process.env.SSOBASEURL ?? '',
-      serverBaseURL: process.env.SERVER_BASE_URL ?? '',
+      ssoBaseURL: authConfig.ssoBaseURL,
+      serverBaseURL: authConfig.serverBaseURL,
     },
     async function (profile, done) {
       try {
         const user = await findOrCreateUser(profile.user);
-        done(null, {
-          netId: user.netid || profile.user,
-          userType: user.userType,
-          userConfirmed: user.userConfirmed,
-          profileVerified: user.profileVerified || false,
-        });
+        done(null, await buildAuthenticatedSessionUser(user, profile.user));
       } catch (error) {
         console.log('Error in CAS login');
         done(error);
@@ -168,12 +377,7 @@ passport.deserializeUser(async (netId: string, done) => {
   try {
     console.log('Deserializing user');
     const user = await findOrCreateUser(netId as string);
-    done(null, {
-      netId: user.netid || netId,
-      userType: user.userType,
-      userConfirmed: user.userConfirmed,
-      profileVerified: user.profileVerified || false,
-    });
+    done(null, await buildAuthenticatedSessionUser(user, netId));
   } catch (error) {
     console.log('Deserialize: Error');
     done(error, null);
@@ -185,12 +389,16 @@ const casLogin = function (
   res: express.Response,
   next: express.NextFunction,
 ) {
-  passport.authenticate('cas', function (err, user, info) {
+  passport.authenticate('cas', function (
+    err: Error | null,
+    user: AuthenticatedSessionUser | false | null | undefined,
+    info: PassportAuthInfo = {},
+  ) {
     if (err) {
       console.log('Error in authenticate function');
       try {
         console.error('Authentication error details: ', {
-          message: err.messsage,
+          message: err.message,
           stack: err.stack,
           name: err.name,
           fullError: JSON.stringify(err, Object.getOwnPropertyNames(err)),
@@ -239,7 +447,7 @@ const casLogin = function (
       }
 
       const defaultRedirect =
-        process.env.NODE_ENV === 'development' ? 'http://localhost:3000' : '/';
+        isLocalDevelopmentRuntime() ? 'http://localhost:3000' : '/';
       return res.redirect(defaultRedirect);
     });
   })(req, res, next);
@@ -247,7 +455,16 @@ const casLogin = function (
 
 const router = express.Router();
 
+const setPrivateAuthCheckHeaders = (res: express.Response): void => {
+  res.setHeader('Cache-Control', 'no-store, private, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+};
+
 router.use(async (req, res, next) => {
+  if (!req.user && isLocalAuthBypassAllowed() && !shouldSkipLocalAuthBypass(req.path)) {
+    req.user = localAuthBypassUser(process.env, req.headers) as Express.User;
+  }
+
   if (req.isAuthenticated() && !req.session!.visitorLogged) {
     const user = req.user as any;
     try {
@@ -270,6 +487,7 @@ router.use(async (req, res, next) => {
 });
 
 router.get('/check', (req, res) => {
+  setPrivateAuthCheckHeaders(res);
   if (req.user) {
     res.json({ auth: true, user: req.user });
   } else {
@@ -279,8 +497,12 @@ router.get('/check', (req, res) => {
 
 router.get('/cas', casLogin);
 
-router.get('/logout', async (req, res) => {
+const logoutRouteHandler: express.RequestHandler = async (req, res, next) => {
   console.log('Logging out user');
+
+  if (!isTrustedLogoutRequest(req)) {
+    return res.status(403).json({ error: 'Cross-site logout blocked' });
+  }
 
   if (req.user) {
     const user = req.user as any;
@@ -299,32 +521,38 @@ router.get('/logout', async (req, res) => {
     }
   }
 
-  req.logOut();
-
-  const casLogoutUrl = `${process.env.SSOBASEURL}/logout`;
+  const casLogoutUrl = `${authConfig.ssoBaseURL}/logout`;
 
   let serviceUrl;
 
-  if (process.env.NODE_ENV === 'development') {
+  if (isLocalDevelopmentRuntime()) {
     serviceUrl = 'http://localhost:3000/login';
   } else {
-    serviceUrl = `${process.env.SERVER_BASE_URL}/login`;
+    serviceUrl = `${authConfig.serverBaseURL}/login`;
   }
 
   const fullLogoutUrl = `${casLogoutUrl}?service=${encodeURIComponent(serviceUrl)}`;
-  return res.redirect(fullLogoutUrl);
-});
+  req.logOut((logoutError: Error | null) => {
+    if (logoutError) {
+      next(logoutError);
+      return;
+    }
 
-if (process.env.NODE_ENV === 'development') {
+    res.redirect(fullLogoutUrl);
+  });
+};
+
+router.get('/logout', logoutRouteHandler);
+
+if (isDevLoginAllowed()) {
   router.get('/dev-login', async (req, res) => {
-    const testUser = {
-      netId: 'test123',
-      userType: 'student',
-      userConfirmed: true,
-    };
+    if (!isDevLoginAllowed()) {
+      return res.status(403).json({ error: 'Dev login is disabled for this environment' });
+    }
 
     try {
-      console.log('Dev login with hardcoded user:', testUser);
+      const testUser = await ensureDevLoginUser(String(req.query?.userType || 'student'));
+      console.log('Dev login with user:', testUser);
 
       req.logIn(testUser, async (err) => {
         if (err) {
@@ -357,5 +585,15 @@ if (process.env.NODE_ENV === 'development') {
   });
 }
 
+export {
+  isDevLoginAllowed,
+  isLocalAuthBypassAllowed,
+  isLocalDevelopmentRuntime,
+  localAuthBypassUser,
+  logoutRouteHandler,
+  placeholderYaleEmail,
+  shouldSkipLocalAuthBypass,
+  validateProductionAuthConfig,
+};
 export { router as passportRoutes };
 export default passport;

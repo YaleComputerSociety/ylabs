@@ -68,4 +68,25 @@ describe('EvidenceSourceRow', () => {
     expect(container.textContent).toContain('Posted Opening');
     expect(container.textContent).not.toContain('POSTED_OPENING');
   });
+
+  it('omits unsafe source links', () => {
+    const { container } = render(
+      <EvidenceSourceRow
+        evidence={[
+          {
+            claim: 'Unsafe source value should not become a link.',
+            url: 'javascript:alert(1)',
+          },
+          {
+            claim: 'Contact addresses should not be treated as source evidence links.',
+            url: 'mailto:advisor@yale.edu',
+          },
+        ]}
+      />,
+    );
+
+    expect(container.textContent).toContain('Unsafe source value should not become a link.');
+    expect(container.textContent).toContain('Contact addresses should not be treated as source evidence links.');
+    expect(container.querySelector('a')).toBeNull();
+  });
 });

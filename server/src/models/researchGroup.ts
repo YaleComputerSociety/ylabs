@@ -270,6 +270,10 @@ const researchGroupSchema = new mongoose.Schema(
       type: [String],
       default: [],
     },
+    studentDecisionExplanation: {
+      type: mongoose.Schema.Types.Mixed,
+      required: false,
+    },
     timeCommitmentHoursPerWeek: {
       type: {
         min: { type: Number },

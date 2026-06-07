@@ -6,11 +6,28 @@ import type { Collection, Document, Filter } from 'mongodb';
 import { ScrapeRun } from '../models/scrapeRun';
 import { Source } from '../models/source';
 import { pruneSupersededObservations } from '../scrapers/observationRetention';
+import {
+  buildSourceHealthReviewSummary,
+  resolveSourceHealthRowsWithReviewArtifacts,
+} from './sourceHealth';
 import { buildSourceHealthRows, type SourceHealthRow } from '../services/sourceHealthService';
 import {
+  buildArrayRefOrphanSamplePipeline,
+  buildBetaDataQualityDiagnostics,
+  buildBetaDataQualityOutput,
+  buildBetaDataQualityRecommendedCommands,
+  buildBetaDataQualityRetentionOptions,
   buildBetaDataQualitySummary,
+  buildDuplicateEntityPlanReviewSummary,
+  buildDuplicateEntityReviewSummary,
+  buildMissingRequiredRefSamplePipeline,
   buildReferenceIntegritySummary,
   buildResearchEntityContentPageLeakSummary,
+  buildSamePiDedupeReviewSummary,
+  buildScalarRefOrphanSamplePipeline,
+  buildSuspiciousUserEmailScorecardSummary,
+  classifyDuplicateEntityCluster,
+  formatBetaDataQualityProgressEvent,
   isInvalidObservationSourceUrl,
   isInvalidOptionalEmail,
   isInvalidOptionalUrl,
@@ -22,7 +39,15 @@ import {
   type BetaDataQualityScorecard,
   type LinkCandidateInput,
   type ReferenceAuditInput,
+  type ReferenceAuditSample,
+  type SuspiciousUserEmailScorecardSummary,
 } from './betaDataQualityCore';
+import { assertScriptApplyAllowed } from './scriptWriteGuards';
+import {
+  getSuspiciousUserEmailReason,
+  isExcludedByLaneAProductionCopy,
+  isSuspiciousUserEmail,
+} from './userEmailHygieneCore';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -30,9 +55,6 @@ dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 const ACTIVE_FILTER: Filter<Document> = { archived: { $ne: true } };
 const OPEN_OPPORTUNITY_STATUSES = ['OPEN', 'ROLLING'];
-const SUSPICIOUS_USER_EMAIL_PATTERN =
-  /(^test[+@.]|@example\.|placeholder|unknown|invalid|dummy|no-?reply|^none@|^na@)/i;
-
 interface FieldIssueSample {
   collection: string;
   field: string;
@@ -50,9 +72,23 @@ interface FieldIssueSummary {
   samples?: FieldIssueSample[];
 }
 
+interface StudentAnalyticsContaminationSummary {
+  count: number;
+  distinctNetids: number;
+  samples?: Array<{
+    netid: string;
+    userType?: string;
+    eventType?: string;
+    count: number;
+    firstEventAt?: Date;
+    lastEventAt?: Date;
+  }>;
+}
+
 interface DuplicateEntityCluster {
   normalizedName: string;
   count: number;
+  reviewCategory?: ReturnType<typeof classifyDuplicateEntityCluster>;
   entities: Array<{
     id: string;
     name: string;
@@ -92,11 +128,21 @@ async function main(): Promise<void> {
   if (!mongoUrl) {
     throw new Error('MONGODBURL is required for beta:data-quality');
   }
+  const guard = assertScriptApplyAllowed({
+    apply: false,
+    scriptName: 'beta:data-quality',
+    mongoUrl,
+  });
 
   await mongoose.connect(mongoUrl);
   const scorecard = await buildBetaDataQualityScorecard(options, mongoUrl);
-  writeScorecardOutput(scorecard, options.output);
-  console.log(JSON.stringify(scorecard, null, 2));
+  const output = buildBetaDataQualityOutput(scorecard, {
+    environment: guard.environment,
+    db: mongoose.connection.db?.databaseName || mongoose.connection.name || guard.dbLabel,
+    options,
+  });
+  writeScorecardOutput(output, options.output);
+  console.log(JSON.stringify(output, null, 2));
 
   if (options.strict && shouldStrictModeFail(scorecard.summary)) {
     process.exitCode = 1;
@@ -108,6 +154,23 @@ export async function buildBetaDataQualityScorecard(
   mongoUrl: string = process.env.MONGODBURL || '',
 ): Promise<BetaDataQualityScorecard> {
   const generatedAt = new Date();
+  const phaseDurationsMs: Record<string, number> = {};
+  const reportProgress = options.progress
+    ? (event: Parameters<typeof formatBetaDataQualityProgressEvent>[0]) => {
+        console.error(formatBetaDataQualityProgressEvent(event));
+      }
+    : undefined;
+  const timed = async <T>(phaseName: string, fn: () => Promise<T>): Promise<T> => {
+    const startedAt = Date.now();
+    reportProgress?.({ phase: phaseName, status: 'started' });
+    try {
+      return await fn();
+    } finally {
+      const durationMs = Date.now() - startedAt;
+      phaseDurationsMs[phaseName] = durationMs;
+      reportProgress?.({ phase: phaseName, status: 'finished', durationMs });
+    }
+  };
   const [
     counts,
     referenceIntegrity,
@@ -120,22 +183,28 @@ export async function buildBetaDataQualityScorecard(
     descriptionQuality,
     duplicateEntityNames,
     researchEntityContentPageLeaks,
+    studentAnalyticsContamination,
     retention,
     liveLinks,
   ] = await Promise.all([
-    buildCollectionCounts(),
-    buildReferenceIntegrity(),
-    buildUrlHygiene(options.includeSamples),
-    buildEmailHygiene(options.includeSamples),
-    buildOpportunityState(options.includeSamples, generatedAt),
-    buildPaperAuthorshipSummary(options.includeSamples),
-    buildSourceHealthSummary(options.days, options.includeSamples),
-    buildResearchEntityCoverage(),
-    buildDescriptionQuality(options.includeSamples),
-    buildDuplicateEntityNames(options.includeSamples),
-    buildResearchEntityContentPageLeaks(),
-    pruneSupersededObservations({ apply: false, olderThanDays: 30, keepRuns: 3 }),
-    buildLiveLinkCheck(options),
+    timed('collectionCounts', () => buildCollectionCounts()),
+    timed('referenceIntegrity', () => buildReferenceIntegrity(options.includeSamples)),
+    timed('urlHygiene', () => buildUrlHygiene(options.includeSamples)),
+    timed('emailHygiene', () => buildEmailHygiene(options.includeSamples)),
+    timed('opportunityState', () => buildOpportunityState(options.includeSamples, generatedAt)),
+    timed('paperAuthorship', () => buildPaperAuthorshipSummary(options.includeSamples)),
+    timed('sourceHealth', () => buildSourceHealthSummary(options.days, options.includeSamples)),
+    timed('researchEntityCoverage', () => buildResearchEntityCoverage()),
+    timed('descriptionQuality', () => buildDescriptionQuality(options.includeSamples)),
+    timed('duplicateEntityNames', () => buildDuplicateEntityNames(options.includeSamples)),
+    timed('researchEntityContentPageLeaks', () => buildResearchEntityContentPageLeaks()),
+    timed('studentAnalyticsContamination', () =>
+      buildStudentAnalyticsContamination(options.includeSamples),
+    ),
+    timed('scraperRetention', () =>
+      pruneSupersededObservations(buildBetaDataQualityRetentionOptions()),
+    ),
+    timed('liveLinks', () => buildLiveLinkCheck(options)),
   ]);
 
   const summary = buildBetaDataQualitySummary({
@@ -151,6 +220,11 @@ export async function buildBetaDataQualityScorecard(
     missingShortDescriptionCount: descriptionQuality.missingCount,
     weakShortDescriptionCount: descriptionQuality.weakCount,
     suspiciousUserEmailCount: emailHygiene.suspiciousUserEmails.count,
+    suspiciousUserEmailsProductionCopyExclusionComplete:
+      options.includeSamples &&
+      emailHygiene.suspiciousUserEmails.productionCopyExclusion.sampledCoverageComplete &&
+      emailHygiene.suspiciousUserEmails.productionCopyExclusion.sampledNeedsReviewBeforeCopy === 0,
+    betaStudentAnalyticsEventCount: studentAnalyticsContamination.count,
     retentionCandidateCount: retention.candidates,
     liveLinkFailureCount: liveLinks.failed,
     coverageGaps: {
@@ -164,12 +238,14 @@ export async function buildBetaDataQualityScorecard(
     generatedAt: generatedAt.toISOString(),
     mongoTarget: describeMongoTarget(mongoUrl),
     options,
+    diagnostics: buildBetaDataQualityDiagnostics(phaseDurationsMs),
     summary,
     counts,
     referenceIntegrity,
     hygiene: {
       urls: urlHygiene,
       emails: emailHygiene,
+      betaStudentAnalyticsEvents: studentAnalyticsContamination,
     },
     opportunityState,
     paperAuthorship,
@@ -177,15 +253,11 @@ export async function buildBetaDataQualityScorecard(
     researchEntityCoverage: coverage,
     descriptionQuality,
     duplicateEntityNames,
+    samePiDedupeReview: buildSamePiDedupeReviewSummary(),
     researchEntityContentPageLeaks,
     scraperRetention: retention,
     liveLinks,
-    recommendedCommands: {
-      weeklyAudit:
-        'yarn --cwd server beta:data-quality --include-samples --output /tmp/ylabs-beta-quality.json',
-      strictAudit: 'yarn --cwd server beta:data-quality --strict --include-samples',
-      retentionDryRun: 'yarn scrape prune-observations --older-than-days 30 --keep-runs 3',
-    },
+    recommendedCommands: buildBetaDataQualityRecommendedCommands(),
   };
 }
 
@@ -210,22 +282,26 @@ async function buildCollectionCounts(): Promise<Record<string, number>> {
   return Object.fromEntries(counts);
 }
 
-async function buildReferenceIntegrity(): Promise<ReturnType<typeof buildReferenceIntegritySummary>> {
+async function buildReferenceIntegrity(
+  includeSamples: boolean,
+): Promise<ReturnType<typeof buildReferenceIntegritySummary>> {
   const audits: Array<Promise<ReferenceAuditInput>> = [
-    referenceAudit('observations.sourceId', 'observations', 'sourceId', 'sources', true),
-    referenceAudit('scrape_runs.sourceId', 'scrape_runs', 'sourceId', 'sources', true),
-    referenceAudit('research_entities.canonicalGroupId', 'research_entities', 'canonicalGroupId', 'research_entities', false),
-    referenceAudit('research_entities.primaryDepartmentId', 'research_entities', 'primaryDepartmentId', 'departments', false),
-    referenceAudit('research_entities.departmentIds', 'research_entities', 'departmentIds', 'departments', false, true),
-    referenceAudit('research_entities.researchAreaIds', 'research_entities', 'researchAreaIds', 'research_areas', false, true),
-    referenceAudit('research_entities.featuredPaperIds', 'research_entities', 'featuredPaperIds', 'papers', false, true),
-    referenceAudit('research_entities.claimedByUserId', 'research_entities', 'claimedByUserId', 'users', false),
+    referenceAudit('observations.sourceId', 'observations', 'sourceId', 'sources', true, false, includeSamples),
+    referenceAudit('scrape_runs.sourceId', 'scrape_runs', 'sourceId', 'sources', true, false, includeSamples),
+    referenceAudit('research_entities.canonicalGroupId', 'research_entities', 'canonicalGroupId', 'research_entities', false, false, includeSamples),
+    referenceAudit('research_entities.primaryDepartmentId', 'research_entities', 'primaryDepartmentId', 'departments', false, false, includeSamples),
+    referenceAudit('research_entities.departmentIds', 'research_entities', 'departmentIds', 'departments', false, true, includeSamples),
+    referenceAudit('research_entities.researchAreaIds', 'research_entities', 'researchAreaIds', 'research_areas', false, true, includeSamples),
+    referenceAudit('research_entities.featuredPaperIds', 'research_entities', 'featuredPaperIds', 'papers', false, true, includeSamples),
+    referenceAudit('research_entities.claimedByUserId', 'research_entities', 'claimedByUserId', 'users', false, false, includeSamples),
     referenceAudit(
       'research_entities.studentVisibilityReviewedByUserId',
       'research_entities',
       'studentVisibilityReviewedByUserId',
       'users',
       false,
+      false,
+      includeSamples,
     ),
     referenceAudit(
       'fellowships.studentVisibilityReviewedByUserId',
@@ -233,57 +309,78 @@ async function buildReferenceIntegrity(): Promise<ReturnType<typeof buildReferen
       'studentVisibilityReviewedByUserId',
       'users',
       false,
+      false,
+      includeSamples,
     ),
-    referenceAudit('entry_pathways.researchEntityId', 'entry_pathways', 'researchEntityId', 'research_entities', true),
-    referenceAudit('entry_pathways.sourceEvidenceIds', 'entry_pathways', 'sourceEvidenceIds', 'observations', false, true),
+    referenceAudit('entry_pathways.researchEntityId', 'entry_pathways', 'researchEntityId', 'research_entities', true, false, includeSamples),
+    referenceAudit('entry_pathways.sourceEvidenceIds', 'entry_pathways', 'sourceEvidenceIds', 'observations', false, true, includeSamples),
     referenceAudit(
       'entry_pathways.review.reviewedByUserId',
       'entry_pathways',
       'review.reviewedByUserId',
       'users',
       false,
+      false,
+      includeSamples,
     ),
-    referenceAudit('access_signals.researchEntityId', 'access_signals', 'researchEntityId', 'research_entities', true),
-    referenceAudit('access_signals.entryPathwayId', 'access_signals', 'entryPathwayId', 'entry_pathways', false),
-    referenceAudit('access_signals.sourceEvidenceId', 'access_signals', 'sourceEvidenceId', 'observations', false),
-    referenceAudit('access_signals.observationId', 'access_signals', 'observationId', 'observations', false),
+    referenceAudit('access_signals.researchEntityId', 'access_signals', 'researchEntityId', 'research_entities', true, false, includeSamples),
+    referenceAudit('access_signals.entryPathwayId', 'access_signals', 'entryPathwayId', 'entry_pathways', false, false, includeSamples),
+    referenceAudit('access_signals.sourceEvidenceId', 'access_signals', 'sourceEvidenceId', 'observations', false, false, includeSamples),
+    referenceAudit('access_signals.observationId', 'access_signals', 'observationId', 'observations', false, false, includeSamples),
     referenceAudit(
       'access_signals.review.reviewedByUserId',
       'access_signals',
       'review.reviewedByUserId',
       'users',
       false,
+      false,
+      includeSamples,
     ),
-    referenceAudit('contact_routes.researchEntityId', 'contact_routes', 'researchEntityId', 'research_entities', true),
-    referenceAudit('contact_routes.entryPathwayId', 'contact_routes', 'entryPathwayId', 'entry_pathways', false),
-    referenceAudit('contact_routes.personId', 'contact_routes', 'personId', 'users', false),
+    referenceAudit('contact_routes.researchEntityId', 'contact_routes', 'researchEntityId', 'research_entities', true, false, includeSamples),
+    referenceAudit('contact_routes.entryPathwayId', 'contact_routes', 'entryPathwayId', 'entry_pathways', false, false, includeSamples),
+    referenceAudit('contact_routes.personId', 'contact_routes', 'personId', 'users', false, false, includeSamples),
     referenceAudit(
       'contact_routes.review.reviewedByUserId',
       'contact_routes',
       'review.reviewedByUserId',
       'users',
       false,
+      false,
+      includeSamples,
     ),
-    referenceAudit('contact_routes.sourceEvidenceId', 'contact_routes', 'sourceEvidenceId', 'observations', false),
-    referenceAudit('contact_routes.sourceEvidenceIds', 'contact_routes', 'sourceEvidenceIds', 'observations', false, true),
-    referenceAudit('posted_opportunities.entryPathwayId', 'posted_opportunities', 'entryPathwayId', 'entry_pathways', true),
-    referenceAudit('posted_opportunities.researchEntityId', 'posted_opportunities', 'researchEntityId', 'research_entities', false),
-    referenceAudit('posted_opportunities.listingId', 'posted_opportunities', 'listingId', 'listings', false),
+    referenceAudit('contact_routes.sourceEvidenceId', 'contact_routes', 'sourceEvidenceId', 'observations', false, false, includeSamples),
+    referenceAudit('contact_routes.sourceEvidenceIds', 'contact_routes', 'sourceEvidenceIds', 'observations', false, true, includeSamples),
+    referenceAudit('posted_opportunities.entryPathwayId', 'posted_opportunities', 'entryPathwayId', 'entry_pathways', true, false, includeSamples),
+    referenceAudit('posted_opportunities.researchEntityId', 'posted_opportunities', 'researchEntityId', 'research_entities', false, false, includeSamples),
+    referenceAudit('posted_opportunities.listingId', 'posted_opportunities', 'listingId', 'listings', false, false, includeSamples),
     referenceAudit(
       'posted_opportunities.review.reviewedByUserId',
       'posted_opportunities',
       'review.reviewedByUserId',
       'users',
       false,
+      false,
+      includeSamples,
     ),
-    referenceAudit('posted_opportunities.sourceEvidenceIds', 'posted_opportunities', 'sourceEvidenceIds', 'observations', false, true),
-    referenceAudit('research_entity_members.userId', 'research_entity_members', 'userId', 'users', false),
+    referenceAudit('posted_opportunities.sourceEvidenceIds', 'posted_opportunities', 'sourceEvidenceIds', 'observations', false, true, includeSamples),
+    referenceAudit(
+      'research_entity_members.userId',
+      'research_entity_members',
+      'userId',
+      'users',
+      false,
+      false,
+      includeSamples,
+      ACTIVE_FILTER,
+    ),
     referenceAudit(
       'research_scholarly_links.userId',
       'research_scholarly_links',
       'userId',
       'users',
       false,
+      false,
+      includeSamples,
     ),
     referenceAudit(
       'research_scholarly_attributions.targetUserId',
@@ -291,15 +388,17 @@ async function buildReferenceIntegrity(): Promise<ReturnType<typeof buildReferen
       'targetUserId',
       'users',
       false,
+      false,
+      includeSamples,
     ),
-    referenceAudit('paper_authors.paperId', 'paper_authors', 'paperId', 'papers', true),
-    referenceAudit('paper_authors.userId', 'paper_authors', 'userId', 'users', false),
-    referenceAudit('paper_authors.facultyMemberId', 'paper_authors', 'facultyMemberId', 'faculty_members', false),
-    referenceAudit('papers.yaleAuthorIds', 'papers', 'yaleAuthorIds', 'users', false, true),
-    referenceAudit('papers.facultyMemberIds', 'papers', 'facultyMemberIds', 'faculty_members', false, true),
-    referenceAudit('papers.researchEntityIds', 'papers', 'researchEntityIds', 'research_entities', false, true),
-    referenceAudit('listings.researchEntityId', 'listings', 'researchEntityId', 'research_entities', false),
-    referenceAudit('listings.createdByUserId', 'listings', 'createdByUserId', 'users', false),
+    referenceAudit('paper_authors.paperId', 'paper_authors', 'paperId', 'papers', true, false, includeSamples),
+    referenceAudit('paper_authors.userId', 'paper_authors', 'userId', 'users', false, false, includeSamples),
+    referenceAudit('paper_authors.facultyMemberId', 'paper_authors', 'facultyMemberId', 'faculty_members', false, false, includeSamples),
+    referenceAudit('papers.yaleAuthorIds', 'papers', 'yaleAuthorIds', 'users', false, true, includeSamples),
+    referenceAudit('papers.facultyMemberIds', 'papers', 'facultyMemberIds', 'faculty_members', false, true, includeSamples),
+    referenceAudit('papers.researchEntityIds', 'papers', 'researchEntityIds', 'research_entities', false, true, includeSamples),
+    referenceAudit('listings.researchEntityId', 'listings', 'researchEntityId', 'research_entities', false, false, includeSamples),
+    referenceAudit('listings.createdByUserId', 'listings', 'createdByUserId', 'users', false, false, includeSamples),
   ];
 
   return buildReferenceIntegritySummary(await Promise.all(audits));
@@ -312,20 +411,110 @@ async function referenceAudit(
   targetCollectionName: string,
   required: boolean,
   isArray = false,
+  includeSamples = false,
+  ownerFilter: Filter<Document> = {},
 ): Promise<ReferenceAuditInput> {
   const missingRequired = required
     ? await collection(collectionName).countDocuments({
+        ...ownerFilter,
         $or: [{ [localField]: { $exists: false } }, { [localField]: null }],
       })
     : 0;
   const orphanedPresentRefs = isArray
-    ? await countArrayRefOrphans(collectionName, localField, targetCollectionName)
-    : await countScalarRefOrphans(collectionName, localField, targetCollectionName);
+    ? await countArrayRefOrphans(collectionName, localField, targetCollectionName, ownerFilter)
+    : await countScalarRefOrphans(collectionName, localField, targetCollectionName, ownerFilter);
   return {
     name,
     required,
     missingRequired,
     orphanedPresentRefs,
+    ...(includeSamples
+      ? {
+          samples: await buildReferenceAuditSamples({
+            collectionName,
+            localField,
+            targetCollectionName,
+            required,
+            isArray,
+            ownerFilter,
+          }),
+        }
+      : {}),
+  };
+}
+
+async function buildReferenceAuditSamples(input: {
+  collectionName: string;
+  localField: string;
+  targetCollectionName: string;
+  required: boolean;
+  isArray: boolean;
+  ownerFilter: Filter<Document>;
+}): Promise<ReferenceAuditSample[]> {
+  const sampleLimit = 10;
+  const samples: ReferenceAuditSample[] = [];
+
+  if (input.required) {
+    const missingRows = await collection(input.collectionName)
+      .aggregate<{ id?: unknown; value?: unknown }>(
+        buildMissingRequiredRefSamplePipeline(input.localField, sampleLimit, input.ownerFilter),
+      )
+      .toArray();
+    samples.push(
+      ...missingRows.map((row) =>
+        buildReferenceAuditSample(input.collectionName, input.localField, row, 'missing_required'),
+      ),
+    );
+  }
+
+  const remainingLimit = sampleLimit - samples.length;
+  if (remainingLimit <= 0) {
+    return samples;
+  }
+
+  const orphanPipeline = input.isArray
+    ? buildArrayRefOrphanSamplePipeline(
+        input.localField,
+        input.targetCollectionName,
+        remainingLimit,
+        input.ownerFilter,
+      )
+    : buildScalarRefOrphanSamplePipeline(
+        input.localField,
+        input.targetCollectionName,
+        remainingLimit,
+        input.ownerFilter,
+      );
+  const orphanRows = await collection(input.collectionName)
+    .aggregate<{ id?: unknown; value?: unknown }>(orphanPipeline)
+    .toArray();
+
+  samples.push(
+    ...orphanRows.map((row) =>
+      buildReferenceAuditSample(
+        input.collectionName,
+        input.localField,
+        row,
+        'orphaned_present_ref',
+      ),
+    ),
+  );
+
+  return samples;
+}
+
+function buildReferenceAuditSample(
+  collectionName: string,
+  localField: string,
+  row: { id?: unknown; value?: unknown },
+  failureType: ReferenceAuditSample['failureType'],
+): ReferenceAuditSample {
+  return {
+    collection: collectionName,
+    field: localField,
+    id: stringifyId(row.id),
+    failureType,
+    value: stringifyId(row.value),
   };
 }
 
@@ -333,9 +522,10 @@ async function countScalarRefOrphans(
   collectionName: string,
   localField: string,
   targetCollectionName: string,
+  ownerFilter: Filter<Document> = {},
 ): Promise<number> {
   return countFromAggregate(collectionName, [
-    { $match: { [localField]: { $exists: true, $nin: [null, ''] } } },
+    { $match: { ...ownerFilter, [localField]: { $exists: true, $nin: [null, ''] } } },
     {
       $lookup: {
         from: targetCollectionName,
@@ -353,8 +543,9 @@ async function countArrayRefOrphans(
   collectionName: string,
   localField: string,
   targetCollectionName: string,
+  ownerFilter: Filter<Document> = {},
 ): Promise<number> {
-  return countFromAggregate(collectionName, [
+  const pipeline: Document[] = [
     { $project: { ref: { $ifNull: [`$${localField}`, []] } } },
     { $unwind: '$ref' },
     { $match: { ref: { $ne: null } } },
@@ -368,7 +559,11 @@ async function countArrayRefOrphans(
     },
     { $match: { _refTarget: { $size: 0 } } },
     { $count: 'count' },
-  ]);
+  ];
+  return countFromAggregate(
+    collectionName,
+    Object.keys(ownerFilter).length > 0 ? [{ $match: ownerFilter }, ...pipeline] : pipeline,
+  );
 }
 
 async function buildUrlHygiene(includeSamples: boolean): Promise<FieldIssueSummary> {
@@ -398,16 +593,7 @@ async function buildUrlHygiene(includeSamples: boolean): Promise<FieldIssueSumma
 
 async function buildEmailHygiene(includeSamples: boolean): Promise<
   FieldIssueSummary & {
-    suspiciousUserEmails: {
-      count: number;
-      samples?: Array<{
-        id: string;
-        netid?: string;
-        name: string;
-        email: string;
-        reason: string;
-      }>;
-    };
+    suspiciousUserEmails: SuspiciousUserEmailScorecardSummary;
   }
 > {
   const emailSyntax = await scanStringFields({
@@ -421,34 +607,102 @@ async function buildEmailHygiene(includeSamples: boolean): Promise<
     includeSamples,
   });
 
-  const suspiciousSamples: Array<{ id: string; netid?: string; name: string; email: string; reason: string }> = [];
+  const suspiciousSamples: Array<{
+    id: string;
+    netid?: string;
+    name: string;
+    email: string;
+    reason: string;
+    productionCopyExcludedByDefault: boolean;
+  }> = [];
   let suspiciousCount = 0;
   const cursor = collection('users')
     .find({ email: { $exists: true, $ne: '' } })
     .project({ email: 1, netid: 1, fname: 1, lname: 1 });
   for await (const row of cursor) {
     const email = asString(row.email).trim();
-    if (!email || isInvalidOptionalEmail(email) || !SUSPICIOUS_USER_EMAIL_PATTERN.test(email)) {
+    if (!email || !isSuspiciousUserEmail(email)) {
       continue;
     }
     suspiciousCount += 1;
     if (includeSamples && suspiciousSamples.length < 25) {
+      const netid = asString(row.netid) || undefined;
       suspiciousSamples.push({
         id: stringifyId(row._id),
-        netid: asString(row.netid) || undefined,
+        netid,
         name: [asString(row.fname), asString(row.lname)].filter(Boolean).join(' '),
         email,
-        reason: 'placeholder-or-synthetic-pattern',
+        reason: getSuspiciousUserEmailReason(email) || 'placeholder-or-synthetic-pattern',
+        productionCopyExcludedByDefault: isExcludedByLaneAProductionCopy({
+          id: stringifyId(row._id),
+          netid,
+          fname: asString(row.fname),
+          lname: asString(row.lname),
+          email,
+        }),
       });
     }
   }
 
   return {
     ...emailSyntax,
-    suspiciousUserEmails: {
+    suspiciousUserEmails: buildSuspiciousUserEmailScorecardSummary({
       count: suspiciousCount,
-      ...(includeSamples ? { samples: suspiciousSamples } : {}),
-    },
+      includeSamples,
+      samples: suspiciousSamples,
+    }),
+  };
+}
+
+async function buildStudentAnalyticsContamination(
+  includeSamples: boolean,
+): Promise<StudentAnalyticsContaminationSummary> {
+  const filter: Filter<Document> = {
+    userType: { $in: ['student', 'undergraduate', 'graduate'] },
+    netid: { $nin: ['devadmin', 'test123'], $not: /^(dev|test)/i },
+  };
+  const events = collection('analytics_events');
+  const [count, netids, samples] = await Promise.all([
+    events.countDocuments(filter),
+    events.distinct('netid', filter),
+    includeSamples
+      ? events
+          .aggregate([
+            { $match: filter },
+            {
+              $group: {
+                _id: {
+                  netid: '$netid',
+                  userType: '$userType',
+                  eventType: '$eventType',
+                },
+                count: { $sum: 1 },
+                firstEventAt: { $min: '$timestamp' },
+                lastEventAt: { $max: '$timestamp' },
+              },
+            },
+            { $sort: { count: -1, '_id.netid': 1, '_id.eventType': 1 } },
+            { $limit: 25 },
+          ])
+          .toArray()
+      : Promise.resolve([]),
+  ]);
+
+  return {
+    count,
+    distinctNetids: netids.length,
+    ...(includeSamples
+      ? {
+          samples: samples.map((row) => ({
+            netid: asString(row._id?.netid),
+            userType: asString(row._id?.userType) || undefined,
+            eventType: asString(row._id?.eventType) || undefined,
+            count: Number(row.count) || 0,
+            firstEventAt: row.firstEventAt,
+            lastEventAt: row.lastEventAt,
+          })),
+        }
+      : {}),
   };
 }
 
@@ -648,12 +902,17 @@ async function buildSourceHealthSummary(days: number, includeSamples: boolean): 
   windowDays: number;
   sources: number;
   riskCounts: Record<'ok' | 'warn' | 'error', number>;
+  reviewSummary: ReturnType<typeof buildSourceHealthReviewSummary>;
   rows?: SourceHealthRow[];
   queueItems?: Array<{
     sourceName: string;
     risk: string;
     queueType: string;
     action: string;
+    nextCommand?: string;
+    latestRunId?: string;
+    materializationErrors?: number;
+    materializationConflicts?: number;
   }>;
 }> {
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
@@ -671,9 +930,11 @@ async function buildSourceHealthSummary(days: number, includeSamples: boolean): 
     )
     .sort({ sourceName: 1, startedAt: -1 })
     .lean();
-  const rows = buildSourceHealthRows(
-    sources as Parameters<typeof buildSourceHealthRows>[0],
-    runs as Parameters<typeof buildSourceHealthRows>[1],
+  const rows = resolveSourceHealthRowsWithReviewArtifacts(
+    buildSourceHealthRows(
+      sources as Parameters<typeof buildSourceHealthRows>[0],
+      runs as Parameters<typeof buildSourceHealthRows>[1],
+    ),
   );
   const riskCounts = rows.reduce(
     (counts, row) => {
@@ -690,12 +951,21 @@ async function buildSourceHealthSummary(days: number, includeSamples: boolean): 
       risk: row.risk,
       queueType: classifySourceWarning(row),
       action: row.action,
+      ...(row.nextCommand ? { nextCommand: row.nextCommand } : {}),
+      ...(row.latestRun?.id ? { latestRunId: row.latestRun.id } : {}),
+      ...(row.latestRun
+        ? {
+            materializationErrors: row.latestRun.materializationErrors,
+            materializationConflicts: row.latestRun.materializationConflicts,
+          }
+        : {}),
     }));
 
   return {
     windowDays: days,
     sources: rows.length,
     riskCounts,
+    reviewSummary: buildSourceHealthReviewSummary(rows),
     ...(includeSamples ? { rows, queueItems } : { queueItems }),
   };
 }
@@ -835,6 +1105,8 @@ async function buildDescriptionQuality(includeSamples: boolean): Promise<{
 async function buildDuplicateEntityNames(includeSamples: boolean): Promise<{
   clusterCount: number;
   entityCountInClusters: number;
+  reviewSummary: ReturnType<typeof buildDuplicateEntityReviewSummary>;
+  planReview: ReturnType<typeof buildDuplicateEntityPlanReviewSummary>;
   clusters?: DuplicateEntityCluster[];
 }> {
   const rows = (await collection('research_entities')
@@ -871,33 +1143,41 @@ async function buildDuplicateEntityNames(includeSamples: boolean): Promise<{
     ])
     .toArray()) as Array<Document & { _id: string; count: number; entities: Document[] }>;
 
+  const clusters: DuplicateEntityCluster[] = rows.map((row) => {
+    const cluster: DuplicateEntityCluster = {
+      normalizedName: row._id,
+      count: row.count,
+      entities: row.entities.slice(0, 10).map((entity) => ({
+        id: stringifyId(entity._id),
+        name: asString(entity.name),
+        slug: optionalString(entity.slug),
+        kind: optionalString(entity.kind),
+        entityType: optionalString(entity.entityType),
+        school: optionalString(entity.school),
+        schools: asStringArray(entity.schools),
+        departments: asStringArray(entity.departments),
+        researchAreas: asStringArray(entity.researchAreas),
+        website: optionalString(entity.website),
+        websiteUrl: optionalString(entity.websiteUrl),
+        sourceUrls: asStringArray(entity.sourceUrls),
+        contactName: optionalString(entity.contactName),
+        contactEmail: optionalString(entity.contactEmail),
+      })),
+    };
+    return {
+      ...cluster,
+      reviewCategory: classifyDuplicateEntityCluster(cluster),
+    };
+  });
+
+  const reviewSummary = buildDuplicateEntityReviewSummary(clusters);
+
   return {
     clusterCount: rows.length,
     entityCountInClusters: rows.reduce((sum, row) => sum + row.count, 0),
-    ...(includeSamples
-      ? {
-          clusters: rows.slice(0, 50).map((row) => ({
-            normalizedName: row._id,
-            count: row.count,
-            entities: row.entities.slice(0, 10).map((entity) => ({
-              id: stringifyId(entity._id),
-              name: asString(entity.name),
-              slug: optionalString(entity.slug),
-              kind: optionalString(entity.kind),
-              entityType: optionalString(entity.entityType),
-              school: optionalString(entity.school),
-              schools: asStringArray(entity.schools),
-              departments: asStringArray(entity.departments),
-              researchAreas: asStringArray(entity.researchAreas),
-              website: optionalString(entity.website),
-              websiteUrl: optionalString(entity.websiteUrl),
-              sourceUrls: asStringArray(entity.sourceUrls),
-              contactName: optionalString(entity.contactName),
-              contactEmail: optionalString(entity.contactEmail),
-            })),
-          })),
-        }
-      : {}),
+    reviewSummary,
+    planReview: buildDuplicateEntityPlanReviewSummary(reviewSummary),
+    ...(includeSamples ? { clusters: clusters.slice(0, 50) } : {}),
   };
 }
 

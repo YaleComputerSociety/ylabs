@@ -3,69 +3,41 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
-
-const DEFAULT_API_BASE = 'http://localhost:4000/api';
-const DEFAULT_APP_BASE = 'http://localhost:3000';
-const INTERNAL_LABELS = [
-  'operator_review',
-  'suppressed',
-  'studentVisibilityTier',
-  'Operator Board',
-];
-
-const args = new Map();
-for (let index = 2; index < process.argv.length; index += 1) {
-  const raw = process.argv[index];
-  if (!raw.startsWith('--')) continue;
-  const [key, inlineValue] = raw.slice(2).split('=');
-  if (inlineValue !== undefined) {
-    args.set(key, inlineValue);
-  } else {
-    const next = process.argv[index + 1];
-    if (next && !next.startsWith('--')) {
-      args.set(key, next);
-      index += 1;
-    } else {
-      args.set(key, 'true');
-    }
-  }
-}
+import {
+  buildSecurityHeaderChecks,
+  containsInternalLabels,
+  createSmokeReport,
+  deploymentFingerprintCheckFromSmokeConfig,
+  parseSmokeConfig,
+  shouldSendSmokeOrigin,
+  smokeBrowserOrigin,
+  summarizeSmokeReport,
+  validateSmokeConfig,
+} from './productionPromotionSmokeCore.mjs';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, '../..');
 
-const apiBase = String(args.get('api-base') || process.env.SMOKE_API_BASE || DEFAULT_API_BASE)
-  .replace(/\/$/, '');
-const appBase = String(args.get('app-base') || process.env.SMOKE_APP_BASE || DEFAULT_APP_BASE)
-  .replace(/\/$/, '');
-const rawOutDir = String(args.get('out') || process.env.SMOKE_OUT_DIR || 'tmp/ui-smoke');
+const config = parseSmokeConfig(process.argv.slice(2), process.env);
+const { apiBase, appBase, rawOutDir, runUi, explicitOpportunityId, smokeCookie } = config;
 const outDir = path.isAbsolute(rawOutDir) ? rawOutDir : path.resolve(repoRoot, rawOutDir);
-const runUi = args.get('ui') !== 'false';
-
-const report = {
-  generatedAt: new Date().toISOString(),
-  apiBase,
-  appBase,
-  mode: {
-    writes: false,
-    usesDevLogin: false,
-    uiAuth: 'route-interception-only',
-  },
-  checks: [],
-  discovered: {},
-  artifacts: [],
-  limitations: [],
-};
+const report = createSmokeReport(config);
+const smokeOrigin = smokeBrowserOrigin(appBase);
 
 const addCheck = (name, status, details = {}) => {
   report.checks.push({ name, status, ...details });
 };
 
 const request = async (route, options = {}) => {
+  const includeSmokeCookie = options.authenticated === true && smokeCookie;
+  const { authenticated: _authenticated, ...fetchOptions } = options;
+  const method = String(fetchOptions.method || 'GET').toUpperCase();
   const response = await fetch(`${apiBase}${route}`, {
-    ...options,
+    ...fetchOptions,
     headers: {
       'content-type': 'application/json',
+      ...(smokeOrigin && shouldSendSmokeOrigin(method) ? { Origin: smokeOrigin } : {}),
+      ...(includeSmokeCookie ? { cookie: smokeCookie } : {}),
       ...(options.headers || {}),
     },
   });
@@ -79,21 +51,13 @@ const request = async (route, options = {}) => {
   return { response, text, json };
 };
 
-const containsInternalLabels = (value, allowOperatorBoard = false) => {
-  const haystack = typeof value === 'string' ? value : JSON.stringify(value ?? '');
-  return INTERNAL_LABELS.filter((label) => {
-    if (allowOperatorBoard && label === 'Operator Board') return false;
-    return haystack.includes(label);
-  });
-};
-
 const failOnInternalLabels = (name, value, options = {}) => {
-  const labels = containsInternalLabels(value, options.allowOperatorBoard);
+  const labels = containsInternalLabels(value, options);
   addCheck(name, labels.length === 0 ? 'pass' : 'fail', { labels });
 };
 
 const warnOnInternalLabels = (name, value, options = {}) => {
-  const labels = containsInternalLabels(value, options.allowOperatorBoard);
+  const labels = containsInternalLabels(value, options);
   addCheck(name, labels.length === 0 ? 'pass' : 'warn', { labels });
 };
 
@@ -126,41 +90,10 @@ const discoverResearch = async () => {
   }
 };
 
-const discoverPathwaysAndOpportunity = async () => {
-  const body = { q: '', page: 1, pageSize: 10, filters: {}, sortBy: 'relevance', sortOrder: 'desc' };
-  const { response, json } = await request('/pathways/search', {
-    method: 'POST',
-    body: JSON.stringify(body),
-  });
-  addCheck('api.pathways.search.200', response.status === 200 ? 'pass' : 'fail', {
-    statusCode: response.status,
-  });
-  warnOnInternalLabels('api.pathways.search.internalVisibilityLabels', json);
-
-  let hits = Array.isArray(json?.hits) ? json.hits : [];
-  let opportunityId = hits
-    .map((hit) => hit?.activePostedOpportunity?._id || hit?.activePostedOpportunity?.id)
-    .find(Boolean);
-
-  if (!opportunityId) {
-    const fallback = await request('/pathways/search', {
-      method: 'POST',
-      body: JSON.stringify({
-        ...body,
-        filters: { hasActivePostedOpportunity: true },
-      }),
-    });
-    addCheck('api.pathways.search.activeOpportunityFallback.200', fallback.response.status === 200 ? 'pass' : 'fail', {
-      statusCode: fallback.response.status,
-    });
-    warnOnInternalLabels('api.pathways.search.activeOpportunityFallback.internalVisibilityLabels', fallback.json);
-    hits = Array.isArray(fallback.json?.hits) ? fallback.json.hits : [];
-    opportunityId = hits
-      .map((hit) => hit?.activePostedOpportunity?._id || hit?.activePostedOpportunity?.id)
-      .find(Boolean);
-  }
+const checkOpportunityDetail = async () => {
+  const opportunityId = String(explicitOpportunityId || '').trim();
   if (opportunityId) report.discovered.opportunityId = opportunityId;
-  addCheck('api.opportunity.discoverPublicId', opportunityId ? 'pass' : 'warn');
+  addCheck('api.opportunity.explicitPublicId', opportunityId ? 'pass' : 'warn');
 
   if (opportunityId) {
     const detail = await request(`/opportunities/${encodeURIComponent(opportunityId)}`);
@@ -172,14 +105,63 @@ const discoverPathwaysAndOpportunity = async () => {
   }
 };
 
-const runApiSmoke = async () => {
-  const config = await request('/config');
-  addCheck('api.config.200', config.response.status === 200 ? 'pass' : 'fail', {
-    statusCode: config.response.status,
+const checkProgramApis = async () => {
+  const programSearchRoute = '/programs/search?query=&page=1&pageSize=5';
+  const fellowshipSearchRoute = '/fellowships/search?query=&page=1&pageSize=5';
+
+  const unauthProgram = await request(programSearchRoute);
+  addCheck(
+    'api.programs.search.requiresAuth',
+    unauthProgram.response.status === 401 ? 'pass' : 'fail',
+    { statusCode: unauthProgram.response.status },
+  );
+
+  const unauthFellowship = await request(fellowshipSearchRoute);
+  addCheck(
+    'api.fellowships.search.requiresAuth',
+    unauthFellowship.response.status === 401 ? 'pass' : 'fail',
+    { statusCode: unauthFellowship.response.status },
+  );
+
+  if (!smokeCookie) {
+    addCheck('api.programs.search.authenticatedVisibility', 'warn', {
+      reason: 'Set SMOKE_COOKIE or --cookie to run authenticated Programs/Fellowships API visibility checks without using dev-login.',
+    });
+    return;
+  }
+
+  const programSearch = await request(programSearchRoute, { authenticated: true });
+  addCheck('api.programs.search.authenticated200', programSearch.response.status === 200 ? 'pass' : 'fail', {
+    statusCode: programSearch.response.status,
   });
+  failOnInternalLabels('api.programs.search.noInternalVisibilityLabels', programSearch.json);
+
+  const fellowshipSearch = await request(fellowshipSearchRoute, { authenticated: true });
+  addCheck(
+    'api.fellowships.search.authenticated200',
+    fellowshipSearch.response.status === 200 ? 'pass' : 'fail',
+    { statusCode: fellowshipSearch.response.status },
+  );
+  failOnInternalLabels('api.fellowships.search.noInternalVisibilityLabels', fellowshipSearch.json);
+};
+
+const runApiSmoke = async () => {
+  const configResponse = await request('/config');
+  addCheck('api.config.200', configResponse.response.status === 200 ? 'pass' : 'fail', {
+    statusCode: configResponse.response.status,
+  });
+  for (const check of buildSecurityHeaderChecks('api.config.headers', configResponse.response.headers)) {
+    addCheck(check.name, check.status, {
+      header: check.header,
+      present: check.present,
+    });
+  }
+  const deploymentCheck = deploymentFingerprintCheckFromSmokeConfig(config, configResponse.json);
+  addCheck('api.config.deploymentFingerprint', deploymentCheck.status, deploymentCheck);
 
   await discoverResearch();
-  await discoverPathwaysAndOpportunity();
+  await checkOpportunityDetail();
+  await checkProgramApis();
 
   const admin = await request('/admin/operator-board');
   addCheck('api.admin.operatorBoard.requiresAuth', admin.response.status === 401 ? 'pass' : 'fail', {
@@ -309,17 +291,18 @@ const runUiSmoke = async () => {
     const researchPath = report.discovered.researchSlug
       ? `/research/${report.discovered.researchSlug}`
       : '/research';
-    const opportunityPath = report.discovered.opportunityId
-      ? `/opportunities/${report.discovered.opportunityId}`
-      : '/pathways';
     const studentRoutes = [
       ['/research', 'student-research'],
       [researchPath, 'student-research-detail'],
-      ['/pathways', 'student-pathways'],
-      [opportunityPath, 'student-opportunity-detail'],
       ['/programs', 'student-programs'],
       ['/account', 'student-account'],
     ];
+    if (report.discovered.opportunityId) {
+      studentRoutes.splice(2, 0, [
+        `/opportunities/${report.discovered.opportunityId}`,
+        'student-opportunity-detail',
+      ]);
+    }
 
     for (const [routePath, name] of studentRoutes) {
       await runUiRoute(studentPage, routePath, name);
@@ -356,6 +339,18 @@ const runUiSmoke = async () => {
 
 const main = async () => {
   await mkdir(outDir, { recursive: true });
+  const configBlockers = validateSmokeConfig(config);
+  addCheck('smoke.config.validTargets', configBlockers.length === 0 ? 'pass' : 'fail', {
+    blockers: configBlockers,
+  });
+  if (configBlockers.length > 0) {
+    const reportPath = path.join(outDir, 'production-promotion-smoke-report.json');
+    report.artifacts.push(reportPath);
+    await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`);
+    console.log(JSON.stringify(summarizeSmokeReport(report, reportPath), null, 2));
+    process.exit(1);
+  }
+
   await runApiSmoke();
   if (runUi) await runUiSmoke();
 
@@ -363,15 +358,10 @@ const main = async () => {
   report.artifacts.push(reportPath);
   await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`);
 
-  const failures = report.checks.filter((check) => check.status === 'fail');
-  console.log(JSON.stringify({
-    status: failures.length > 0 ? 'fail' : 'pass',
-    failures: failures.map((check) => check.name),
-    warnings: report.checks.filter((check) => check.status === 'warn').map((check) => check.name),
-    reportPath,
-  }, null, 2));
+  const summary = summarizeSmokeReport(report, reportPath);
+  console.log(JSON.stringify(summary, null, 2));
 
-  if (failures.length > 0) process.exit(1);
+  if (summary.failures.length > 0) process.exit(1);
 };
 
 main().catch(async (error) => {

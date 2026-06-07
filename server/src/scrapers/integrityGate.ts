@@ -1,6 +1,7 @@
 import { AccessSignal } from '../models/accessSignal';
 import { ContactRoute } from '../models/contactRoute';
 import { EntryPathway } from '../models/entryPathway';
+import { Paper } from '../models/paper';
 import { PostedOpportunity } from '../models/postedOpportunity';
 import { ResearchEntity } from '../models/researchEntity';
 import { ResearchGroupMember } from '../models/researchGroupMember';
@@ -142,6 +143,11 @@ export interface RunPostMaterializationIntegrityGateOptions {
 
 const DEFAULT_SAMPLE_LIMIT = 25;
 const DUPLICATE_PEOPLE_SCAN_LIMIT_PER_FIELD = 5000;
+const BETA_COMMAND_PREFIX = 'SCRAPER_ENV=beta ';
+
+function betaCommand(command: string): string {
+  return command.startsWith(BETA_COMMAND_PREFIX) ? command : `${BETA_COMMAND_PREFIX}${command}`;
+}
 
 const FAILURE_ORDER: PostMaterializationIntegrityFailureName[] = [
   'samePiSameNameResearchEntities',
@@ -155,14 +161,49 @@ const FAILURE_ORDER: PostMaterializationIntegrityFailureName[] = [
   'activeArtifactsOnArchivedEntities',
 ];
 
-const RECOMMENDED_COMMANDS = [
-  'yarn --cwd server research-entity:dedupe-by-pi --limit=10000 --apply',
-  'yarn --cwd server research-entity:dedupe-by-pi --limit=10000 --official-lab-url-only --apply',
-  'yarn --cwd server users:dedupe-by-identity --limit=1000 --apply',
-  'yarn --cwd server pathways:dedupe-exploratory --limit=1000 --apply',
-  'yarn --cwd server meili:rebuild-pathways --clear',
-  'yarn --cwd server meili:rebuild-research-entities --clear',
-];
+const SAME_PI_DEDUPE_REVIEW_COMMAND =
+  betaCommand(
+    'yarn --cwd server research-entity:dedupe-by-pi --limit=10000 --accepted-decisions=/tmp/ylabs-research-entity-pi-dedupe-accepted-decisions.json --allow-empty-decisions --decision-template-output /tmp/ylabs-research-entity-pi-dedupe-accepted-decisions-template.json --output /tmp/ylabs-research-entity-dedupe.json',
+  );
+
+const RECOMMENDED_COMMANDS_BY_FAILURE: Record<
+  PostMaterializationIntegrityFailureName,
+  string[]
+> = {
+  samePiSameNameResearchEntities: [SAME_PI_DEDUPE_REVIEW_COMMAND],
+  officialLabUrlResearchEntities: [
+    betaCommand(
+      'yarn --cwd server research-entity:dedupe-by-pi --limit=10000 --official-lab-url-only --output /tmp/ylabs-research-entity-dedupe-official-lab-url.json',
+    ),
+  ],
+  duplicatePeople: [betaCommand('yarn --cwd server users:dedupe-by-identity --limit=1000')],
+  duplicateResearchPapers: [
+    betaCommand(
+      'yarn --cwd server scraper:integrity-duplicates-review --type=research-papers --limit=1000 --output /tmp/ylabs-integrity-duplicate-research-papers.json',
+    ),
+  ],
+  duplicateCurrentMembers: [SAME_PI_DEDUPE_REVIEW_COMMAND],
+  currentMembersOnArchivedEntities: [
+    betaCommand(
+      'yarn --cwd server research-entity:dedupe-by-pi --limit=10000 --output /tmp/ylabs-research-entity-dedupe.json',
+    ),
+  ],
+  duplicateExploratoryContactPathways: [
+    betaCommand(
+      'yarn --cwd server pathways:dedupe-exploratory --limit=1000 --output /tmp/ylabs-dedupe-exploratory-pathways.json',
+    ),
+  ],
+  duplicateAccessSignals: [
+    betaCommand(
+      'yarn --cwd server access-signals:repair-duplicates --limit=1000 --output /tmp/ylabs-duplicate-access-signal-repair.json',
+    ),
+  ],
+  activeArtifactsOnArchivedEntities: [
+    betaCommand(
+      'yarn --cwd server research-entity:repair-archived-artifacts --output /tmp/ylabs-archived-entity-artifact-repair.json',
+    ),
+  ],
+};
 const SAME_PI_ENTITY_SCAN_LIMIT = 10000;
 
 const INTEGRITY_WARNING_OPERATOR_METADATA: Record<
@@ -172,7 +213,9 @@ const INTEGRITY_WARNING_OPERATOR_METADATA: Record<
   duplicatePersonIdentityConflicts: {
     classification: 'must_fix_before_promotion',
     owner: 'identity/account operator',
-    nextCommand: 'yarn --cwd server users:dedupe-by-identity --limit=1000',
+    nextCommand: betaCommand(
+      'yarn --cwd server users:repair-mismatched-emails --limit=10000 --output /tmp/ylabs-mismatched-person-email-repair.json',
+    ),
   },
 };
 
@@ -227,10 +270,20 @@ export function buildPostMaterializationIntegritySummary(
     },
     warnings,
     recommendedCommands: [
-      ...(failureNames.length > 0 ? RECOMMENDED_COMMANDS : []),
+      ...recommendedCommandsForFailures(failureNames),
       ...warningCommands,
     ],
   };
+}
+
+function recommendedCommandsForFailures(
+  failureNames: PostMaterializationIntegrityFailureName[],
+): string[] {
+  return [
+    ...new Set(
+      failureNames.flatMap((failureName) => RECOMMENDED_COMMANDS_BY_FAILURE[failureName]),
+    ),
+  ];
 }
 
 function enrichIntegrityWarnings(
@@ -257,6 +310,7 @@ async function loadDuplicatePeopleIntegrity(): Promise<{
 
   for (const field of fields) {
     const rows = await User.aggregate([
+      { $match: { archived: { $ne: true } } },
       {
         $project: {
           identityValue: { $trim: { input: { $toLower: `$${field}` } } },
@@ -329,8 +383,73 @@ async function loadDuplicatePeopleIntegrity(): Promise<{
 async function loadDuplicateResearchPaperGroups(
   limit: number,
 ): Promise<DuplicateResearchPaperGroup[]> {
-  void limit;
-  return [];
+  const fields: DuplicateResearchPaperGroup['identityField'][] = [
+    'openAlexId',
+    'semanticScholarId',
+    'arxivId',
+    'doi',
+  ];
+  const groups: DuplicateResearchPaperGroup[] = [];
+
+  for (const field of fields) {
+    const rows = await Paper.aggregate([
+      {
+        $match: {
+          archived: { $ne: true },
+          [field]: { $exists: true, $nin: [null, ''] },
+        },
+      },
+      {
+        $project: {
+          paperId: { $toString: '$_id' },
+          identityValue: { $toString: `$${field}` },
+        },
+      },
+      { $match: { identityValue: { $nin: ['', 'null', 'undefined'] } } },
+      {
+        $group: {
+          _id: '$identityValue',
+          paperIds: { $addToSet: '$paperId' },
+        },
+      },
+      { $match: { 'paperIds.1': { $exists: true } } },
+      { $limit: Math.max(1, limit - groups.length) },
+    ]);
+
+    groups.push(
+      ...buildDuplicateResearchPaperGroupsFromRows(
+        rows.map((row: any) => ({
+          identityField: field,
+          identityValue: stringId(row._id),
+          paperIds: row.paperIds || [],
+        })),
+      ),
+    );
+    if (groups.length >= limit) return groups.slice(0, limit);
+  }
+
+  return groups;
+}
+
+export function buildDuplicateResearchPaperGroupsFromRows(
+  rows: Array<{
+    identityField: DuplicateResearchPaperGroup['identityField'];
+    identityValue?: unknown;
+    paperIds?: unknown[];
+  }>,
+): DuplicateResearchPaperGroup[] {
+  return rows.flatMap((row) => {
+    const identityValue = stringId(row.identityValue);
+    const paperIds = (row.paperIds || []).map(stringId).filter(Boolean);
+    if (!identityValue || paperIds.length < 2) return [];
+    return [
+      {
+        identityField: row.identityField,
+        identityValue,
+        paperIds,
+      },
+    ];
+  });
 }
 
 async function loadSamePiNameDuplicateGroups(limit: number): Promise<SamePiNameDuplicateGroup[]> {
@@ -371,6 +490,8 @@ async function loadSamePiNameDuplicateGroups(limit: number): Promise<SamePiNameD
           id: { $toString: '$entity._id' },
           slug: '$entity.slug',
           name: '$entity.name',
+          kind: '$entity.kind',
+          entityType: '$entity.entityType',
           websiteUrl: '$entity.websiteUrl',
           sourceUrls: '$entity.sourceUrls',
           departments: '$entity.departments',
@@ -613,19 +734,50 @@ async function loadDuplicateAccessSignalGroups(
       { $limit: Math.max(1, limit - groups.length) },
     ]);
 
-    for (const row of rows) {
-      groups.push({
-        researchEntityId: stringId(row._id?.researchEntityId),
-        signalType: stringId(row._id?.signalType),
-        identityField: field,
-        identityValue: stringId(row._id?.identityValue),
-        signalIds: (row.signalIds || []).map(stringId).filter(Boolean),
-      });
-      if (groups.length >= limit) return groups;
-    }
+    groups.push(
+      ...buildDuplicateAccessSignalGroupsFromRows(
+        rows.map((row: any) => ({
+          researchEntityId: row._id?.researchEntityId,
+          signalType: row._id?.signalType,
+          identityField: field,
+          identityValue: row._id?.identityValue,
+          signalIds: row.signalIds || [],
+        })),
+      ),
+    );
+    if (groups.length >= limit) return groups.slice(0, limit);
   }
 
   return groups;
+}
+
+export function buildDuplicateAccessSignalGroupsFromRows(
+  rows: Array<{
+    researchEntityId?: unknown;
+    signalType?: unknown;
+    identityField: DuplicateAccessSignalGroup['identityField'];
+    identityValue?: unknown;
+    signalIds?: unknown[];
+  }>,
+): DuplicateAccessSignalGroup[] {
+  return rows.flatMap((row) => {
+    const researchEntityId = stringId(row.researchEntityId);
+    const signalType = stringId(row.signalType);
+    const identityValue = stringId(row.identityValue);
+    const signalIds = (row.signalIds || []).map(stringId).filter(Boolean);
+    if (!researchEntityId || !signalType || !identityValue || signalIds.length < 2) {
+      return [];
+    }
+    return [
+      {
+        researchEntityId,
+        signalType,
+        identityField: row.identityField,
+        identityValue,
+        signalIds,
+      },
+    ];
+  });
 }
 
 async function loadActiveArtifactsOnArchivedEntities(
@@ -685,10 +837,18 @@ async function loadAmbiguousSameNameWarning(): Promise<PostMaterializationIntegr
   return [];
 }
 
+function normalizePostMaterializationIntegrityLimit(limit: number | undefined): number {
+  if (limit === undefined) return DEFAULT_SAMPLE_LIMIT;
+  if (!Number.isSafeInteger(limit) || limit < 1) {
+    throw new Error('--limit must be a safe positive integer');
+  }
+  return limit;
+}
+
 export async function runPostMaterializationIntegrityGate(
   options: RunPostMaterializationIntegrityGateOptions = {},
 ): Promise<PostMaterializationIntegritySummary> {
-  const limit = Math.max(1, Math.floor(options.limit || DEFAULT_SAMPLE_LIMIT));
+  const limit = normalizePostMaterializationIntegrityLimit(options.limit);
   const queryLimit = options.includeSamples ? limit : 1;
   const [
     samePiNameDuplicateGroups,

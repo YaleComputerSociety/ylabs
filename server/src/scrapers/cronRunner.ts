@@ -7,6 +7,7 @@ import {
   heartbeatScrapeJobLock,
   releaseScrapeJobLock,
 } from './scrapeJobLock';
+import { runStudentVisibilityGate } from '../services/studentVisibilityGateService';
 import type { ScraperEnvironment } from './scraperEnvironment';
 import type { ScraperOptions } from './types';
 import type { ScraperOrchestrator } from './orchestrator';
@@ -15,6 +16,7 @@ export interface CronRunnerDependencies {
   loadSource: (sourceName: string) => Promise<{ name: string; enabled?: boolean } | null>;
   orchestrator: Pick<ScraperOrchestrator, 'run'>;
   materializeFromRun: typeof materializeFromRun;
+  runStudentVisibilityGate: typeof runStudentVisibilityGate;
   getScrapeRunReport: typeof getScrapeRunReport;
   acquireScrapeJobLock: typeof acquireScrapeJobLock;
   heartbeatScrapeJobLock: typeof heartbeatScrapeJobLock;
@@ -47,6 +49,7 @@ export type RunScraperCronResult =
       ownerId: string;
       scrapeResult: unknown;
       materializationResult: Awaited<ReturnType<typeof materializeFromRun>>;
+      visibilityGateResult?: Awaited<ReturnType<typeof runStudentVisibilityGate>>;
       report: Awaited<ReturnType<typeof getScrapeRunReport>>;
     };
 
@@ -57,6 +60,7 @@ export function createCronRunnerDependencies(
     loadSource: loadCronSource,
     orchestrator,
     materializeFromRun,
+    runStudentVisibilityGate,
     getScrapeRunReport,
     acquireScrapeJobLock,
     heartbeatScrapeJobLock,
@@ -78,7 +82,7 @@ export async function runScraperCron(
   const source = await deps.loadSource(input.sourceName);
   if (!source) {
     throw new Error(
-      `No Source row found with name "${input.sourceName}". Run "yarn scrape:seed-sources" first.`,
+      `No Source row found with name "${input.sourceName}". Run "yarn --cwd server scrape:seed-sources --dry-run --output /tmp/ylabs-seed-sources-dry-run.json" first, then review and apply with "--apply --confirm-seed-apply".`,
     );
   }
   if (source.enabled === false && !input.forceDisabled) {
@@ -118,6 +122,14 @@ export async function runScraperCron(
     );
     runId = nextRunId;
     const materializationResult = await deps.materializeFromRun(runId, { dryRun: false });
+    const visibilityGateResult =
+      materializationResult.errors === 0
+        ? await deps.runStudentVisibilityGate({
+            collection: 'all',
+            mode: 'apply',
+            sourceName: input.sourceName,
+          })
+        : undefined;
     const report = await deps.getScrapeRunReport(runId);
     const exitCode = materializationResult.errors > 0 ? 1 : 0;
 
@@ -137,6 +149,7 @@ export async function runScraperCron(
       ownerId,
       scrapeResult,
       materializationResult,
+      visibilityGateResult,
       report,
     };
   } catch (error) {

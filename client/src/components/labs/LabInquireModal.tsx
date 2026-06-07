@@ -5,42 +5,39 @@
  * Pure presentational — open/close state lives in the page reducer.
  */
 import { ResearchGroup } from '../../types/researchGroup';
-import { LabMember } from '../../types/labDetail';
+import { LabContactRoute, LabMember } from '../../types/labDetail';
+import { isFacultyResearchEntity } from '../../utils/researchEntityCopy';
+import { resolveLabOutreachContact } from '../../utils/labOutreachContact';
+import { safeMailtoHref } from '../../utils/url';
 
 interface LabInquireModalProps {
   isOpen: boolean;
   onClose: () => void;
   group: ResearchGroup;
   members: LabMember[];
+  contactRoutes?: LabContactRoute[];
 }
 
-const resolveContact = (
-  group: ResearchGroup,
-  members: LabMember[],
-): { email: string; lname: string } | null => {
-  if (group.contactEmail) {
-    const piMember = members.find((m) => m.role === 'pi' || m.role === 'director');
-    return {
-      email: group.contactEmail,
-      lname: piMember?.user.lname || group.contactName || '',
-    };
-  }
-  return null;
-};
-
-const LabInquireModal = ({ isOpen, onClose, group, members }: LabInquireModalProps) => {
+const LabInquireModal = ({
+  isOpen,
+  onClose,
+  group,
+  members,
+  contactRoutes = [],
+}: LabInquireModalProps) => {
   if (!isOpen) return null;
 
-  const contact = resolveContact(group, members);
+  const resolvedContact = resolveLabOutreachContact(group, members, contactRoutes);
+  const contactEmailHref = safeMailtoHref(resolvedContact?.email);
+  const contact = contactEmailHref ? resolvedContact : null;
+  const researchHomeLabel = isFacultyResearchEntity(group) ? 'research profile' : 'group';
   const subject = `Inquiry from a Yale undergraduate about research in ${group.name}`;
   const body = contact
-    ? `Hello${contact.lname ? ` ${contact.lname}` : ''},\n\nI'm a Yale undergraduate interested in research in your group. I'd love to learn more about how I might contribute to your work on ${
+    ? `Hello${contact.lname ? ` ${contact.lname}` : ''},\n\nI'm a Yale undergraduate interested in research connected to your ${researchHomeLabel}. I'd love to learn more about how I might contribute to your work on ${
         (group.researchAreas && group.researchAreas[0]) || group.name
-      }.\n\nA bit about me:\n  - Year & major:\n  - Relevant coursework:\n  - Why your lab:\n\nWould you have time to chat in the next couple of weeks?\n\nThank you,\n`
+      }.\n\nA bit about me:\n  - Year & major:\n  - Relevant coursework:\n  - Why this research home:\n\nWould you have time to chat in the next couple of weeks?\n\nThank you,\n`
     : '';
-  const mailto = contact
-    ? `mailto:${contact.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
-    : '';
+  const mailto = contact ? safeMailtoHref(contact.email, { subject, body }) : '';
 
   const handleBackdropClick = (e: React.MouseEvent) => {
     if (e.target === e.currentTarget) onClose();
@@ -84,7 +81,7 @@ const LabInquireModal = ({ isOpen, onClose, group, members }: LabInquireModalPro
         <div className="px-6 py-5 space-y-4">
           {!contact ? (
             <p className="text-sm text-gray-700">
-              We don't have a public contact email for this research group yet. Try the website
+              We don't have a public contact email for this research home yet. Try the website
               or check back later.
             </p>
           ) : (

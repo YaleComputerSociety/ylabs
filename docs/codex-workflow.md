@@ -29,6 +29,22 @@ For any non-trivial codebase task:
 
 Default to acting after inspection. Ask questions only when the answer cannot be inferred from the repo and a wrong assumption would create meaningful rework or risk.
 
+When the user reports a problem, preserve the lesson in the work: identify whether an upstream code, data, test, documentation, or workflow change can prevent the same issue from recurring, and prefer that durable fix over a one-off symptom patch when feasible.
+
+## Browser QA
+
+When using Playwright MCP against the local app, authenticate through the development admin
+session before opening protected routes:
+
+```txt
+http://localhost:4000/api/dev-login?userType=admin&redirect=http%3A%2F%2Flocalhost%3A3000%2Fresearch
+```
+
+Use `devadmin`/admin context for browser audits so route guards do not redirect to `/login` or
+`/unknown`. Dev login is allowed only in local development runtime, with `NODE_ENV=development`
+and `SERVER_BASE_URL` pointing at localhost or loopback. Do not use this helper for production
+or third-party browser checks.
+
 ## Parallel Work
 
 Use parallel subagents when work can be split into independent streams without sacrificing coherence. Good candidates include separate frontend/backend impact checks, docs updates alongside verification, or implementation tasks with disjoint file ownership.
@@ -96,7 +112,9 @@ Use:
 - Reducers should keep state transitions pure; side effects belong in providers/components.
 - Schema changes may require Mongoose model updates, client type updates, migrations, and Meilisearch index updates.
 - Scraper-derived claims should remain evidence-first: store raw observations/source evidence, then materialize derived access signals/pathways.
+- Identity and profile-media repairs must be source-level, not one-off UI patches. Verify same-name profiles, source URLs, observations, public API output, and run the relevant audit script so wrong faces or cross-person data cannot silently reappear.
 - Contact and outreach features need guardrails. Prefer official application/contact routes and avoid encouraging mass outreach.
+- Browser QA should use `devadmin` through `http://localhost:4000/api/dev-login?userType=admin&redirect=http%3A%2F%2Flocalhost%3A3000%2Fresearch`.
 
 ## Useful Commands
 

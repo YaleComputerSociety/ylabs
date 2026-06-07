@@ -1,4 +1,5 @@
 import dotenv from 'dotenv';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
@@ -12,6 +13,7 @@ import {
   buildAcceptedInputsStatus,
   loadAcceptedInputUsers,
 } from './acceptedInputsCore';
+import { assertScriptApplyAllowed } from './scriptWriteGuards';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -62,11 +64,12 @@ const LEGACY_COLLECTIONS = [
   'applications',
 ] as const;
 
-interface CliOptions {
+export interface BetaReadinessGateCliOptions {
   root: string;
   strict: boolean;
   confirmBetaBackup: boolean;
   acceptPathwayMeili: boolean;
+  output?: string;
 }
 
 interface GateStatus {
@@ -76,8 +79,8 @@ interface GateStatus {
   blockedRows?: number;
 }
 
-function parseArgs(argv: string[]): CliOptions {
-  const options: CliOptions = {
+export function parseBetaReadinessGateArgs(argv: string[]): BetaReadinessGateCliOptions {
+  const options: BetaReadinessGateCliOptions = {
     root: DEFAULT_ACCEPTED_INPUT_ROOT,
     strict: false,
     confirmBetaBackup: false,
@@ -99,17 +102,79 @@ function parseArgs(argv: string[]): CliOptions {
       options.acceptPathwayMeili = true;
       continue;
     }
-    if (arg === '--root' && next) {
-      options.root = next;
+    if (arg === '--output') {
+      options.output = parseRequiredPath(next, '--output');
+      i++;
+      continue;
+    }
+    if (arg.startsWith('--output=')) {
+      options.output = parseRequiredPath(arg.slice('--output='.length), '--output');
+      continue;
+    }
+    if (arg === '--root') {
+      options.root = parseRequiredPath(next, '--root');
       i++;
       continue;
     }
     if (arg.startsWith('--root=')) {
-      options.root = arg.slice('--root='.length);
+      options.root = parseRequiredPath(arg.slice('--root='.length), '--root');
+      continue;
     }
+
+    throw new Error(`Unknown Beta readiness gate argument: ${arg}`);
   }
 
   return options;
+}
+
+function parseRequiredPath(value: string | undefined, flag: '--output' | '--root'): string {
+  const pathValue = value?.trim();
+  if (!pathValue || pathValue.startsWith('--')) {
+    throw new Error(`${flag} requires a path`);
+  }
+  return pathValue;
+}
+
+export function writeBetaReadinessGateOutput(result: unknown, output?: string): void {
+  if (!output) return;
+  fs.mkdirSync(path.dirname(output), { recursive: true });
+  fs.writeFileSync(output, `${JSON.stringify(result, null, 2)}\n`);
+}
+
+export function buildBetaReadinessGateOutput<T extends object>(
+  result: T,
+  metadata: {
+    environment?: string;
+    db?: string;
+    options: BetaReadinessGateCliOptions;
+  },
+): T & {
+  environment?: string;
+  db?: string;
+  options: BetaReadinessGateCliOptions;
+} {
+  return {
+    ...result,
+    ...(metadata.environment ? { environment: metadata.environment } : {}),
+    ...(metadata.db ? { db: metadata.db } : {}),
+    options: metadata.options,
+  };
+}
+
+export function buildBetaReadinessCommands() {
+  return {
+    seedSources:
+      'SCRAPER_ENV=beta ALLOW_NON_PROD_SCRAPER_WRITES=true yarn scrape:seed-sources --dry-run --output /tmp/ylabs-seed-sources-dry-run.json',
+    sourceRun:
+      'SCRAPER_ENV=beta ALLOW_NON_PROD_SCRAPER_WRITES=true yarn scrape run --source <source> --auto-materialize',
+    pathwayRelevance:
+      'SCRAPER_ENV=beta PATHWAY_SEARCH_BACKEND=mongo yarn --cwd server pathway:relevance-review',
+    paperAuthorshipAudit: 'SCRAPER_ENV=beta yarn --cwd server papers:authorship-audit',
+    meiliRebuild:
+      'SCRAPER_ENV=beta yarn --cwd server meili:rebuild-pathways --clear --confirm-meili-rebuild && SCRAPER_ENV=beta yarn --cwd server meili:rebuild-research-entities --clear --confirm-meili-rebuild',
+    acceptedMeiliReadiness:
+      'SCRAPER_ENV=beta PATHWAY_SEARCH_BACKEND=meili yarn --cwd server beta:readiness --confirm-beta-backup --accept-pathway-meili --strict',
+  };
 }
 
 function describeMongoTarget(rawUrl: string | undefined): string {
@@ -179,7 +244,12 @@ async function collectionCount(name: string): Promise<number> {
 }
 
 async function main(): Promise<void> {
-  const options = parseArgs(process.argv.slice(2));
+  const options = parseBetaReadinessGateArgs(process.argv.slice(2));
+  const guard = assertScriptApplyAllowed({
+    apply: false,
+    scriptName: 'beta:readiness',
+    mongoUrl: process.env.MONGODBURL,
+  });
   const mongoTarget = describeMongoTarget(process.env.MONGODBURL);
 
   await initializeConnections();
@@ -257,7 +327,7 @@ async function main(): Promise<void> {
     .filter(([, gate]) => gate.status === 'blocked')
     .map(([name]) => name);
 
-  const result = {
+  const result = buildBetaReadinessGateOutput({
     generatedAt: new Date().toISOString(),
     mongoTarget,
     acceptedInputRoot: options.root,
@@ -275,30 +345,27 @@ async function main(): Promise<void> {
       gatedSources: [...GATED_SOURCES],
       note: 'Run sources one at a time, inspect each report, and materialize only accepted runs.',
     },
-    commands: {
-      seedSources: 'SCRAPER_ENV=beta ALLOW_NON_PROD_SCRAPER_WRITES=true yarn scrape:seed-sources',
-      sourceRun:
-        'SCRAPER_ENV=beta ALLOW_NON_PROD_SCRAPER_WRITES=true yarn scrape run --source <source> --auto-materialize',
-      pathwayRelevance: 'PATHWAY_SEARCH_BACKEND=mongo yarn --cwd server pathway:relevance-review',
-      paperAuthorshipAudit: 'yarn --cwd server papers:authorship-audit',
-      meiliRebuild:
-        'yarn --cwd server meili:rebuild-pathways --clear && yarn --cwd server meili:rebuild-research-entities --clear',
-      acceptedMeiliReadiness:
-        'PATHWAY_SEARCH_BACKEND=meili yarn --cwd server beta:readiness --confirm-beta-backup --accept-pathway-meili --strict',
-    },
-  };
+    commands: buildBetaReadinessCommands(),
+  }, {
+    environment: guard.environment,
+    db: mongoose.connection.db?.databaseName || mongoose.connection.name || guard.dbLabel,
+    options,
+  });
 
   console.log(JSON.stringify(result, null, 2));
+  writeBetaReadinessGateOutput(result, options.output);
   if (options.strict && blockingGateNames.length > 0) {
     process.exitCode = 1;
   }
 }
 
-main()
-  .catch((error) => {
-    console.error(error instanceof Error ? error.message : error);
-    process.exitCode = 1;
-  })
-  .finally(async () => {
-    await mongoose.disconnect();
-  });
+if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
+  main()
+    .catch((error) => {
+      console.error(error instanceof Error ? error.message : error);
+      process.exitCode = 1;
+    })
+    .finally(async () => {
+      await mongoose.disconnect();
+    });
+}

@@ -4,23 +4,30 @@
  * Dry-run by default; pass --apply to write. Supports --limit N / --limit=N.
  */
 import mongoose from '../server/node_modules/mongoose';
-import dotenv from 'dotenv';
+import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import { FacultyMember } from '../server/src/models/facultyMember';
 import { Department } from '../server/src/models/department';
 import { User } from '../server/src/models/user';
-import { chunk } from './v4MigrationUtils';
+import { resolveScraperEnvironment } from '../server/src/scrapers/scraperEnvironment';
+import {
+  buildV4MigrationOutput,
+  chunk,
+  connectForMigration,
+  disconnectForMigration,
+  parseMigrationOptions,
+  type MigrationOptions,
+} from './v4MigrationUtils';
 
-dotenv.config({ path: path.resolve(__dirname, '../server/.env') });
+const __filename = fileURLToPath(import.meta.url);
 
-const APPLY = process.argv.includes('--apply') || process.argv.includes('--live');
-
-function parseLimit(): number | undefined {
-  const eq = process.argv.find((arg) => arg.startsWith('--limit='));
-  const raw = eq ? eq.split('=')[1] : process.argv[process.argv.indexOf('--limit') + 1];
-  if (!raw || raw.startsWith('--')) return undefined;
-  const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+interface V4FacultyMemberBackfillResult {
+  usersProcessed: number;
+  facultyRowsUpserted: number;
+  userLinksAdded: number;
+  skipped: number;
+  errorCount: number;
 }
 
 function isFacultyTitle(title?: string): boolean {
@@ -81,21 +88,21 @@ function departmentIdsFor(names: string[], byName: Map<string, mongoose.Types.Ob
   };
 }
 
-async function main(): Promise<void> {
-  const url = process.env.MONGODBURL;
-  if (!url) {
-    console.error('ERROR: MONGODBURL not set');
-    process.exit(1);
-  }
+function writeV4FacultyMemberBackfillOutput(payload: object, outputPath?: string): void {
+  if (!outputPath) return;
+  fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+  fs.writeFileSync(outputPath, `${JSON.stringify(payload, null, 2)}\n`);
+}
 
-  const limit = parseLimit();
-  console.log('\n=== Backfill v4 FacultyMember identity bridge ===');
-  console.log(`Mode: ${APPLY ? 'APPLY' : 'DRY RUN'}`);
-  console.log(`Limit: ${limit ?? 'none'}\n`);
+export async function backfillV4FacultyMembers(
+  options: MigrationOptions = parseMigrationOptions(),
+): Promise<ReturnType<typeof buildV4MigrationOutput<V4FacultyMemberBackfillResult>>> {
+  await connectForMigration('Backfill v4 FacultyMember identity bridge', options);
 
-  await mongoose.connect(url);
+  try {
+    console.log(`Limit: ${options.limit ?? 'none'}\n`);
 
-  const filter = {
+    const filter = {
     $or: [
       { userType: { $in: ['professor', 'faculty'] } },
       { title: /professor|lecturer|instructor|research scientist|research fellow|clinical/i },
@@ -103,7 +110,7 @@ async function main(): Promise<void> {
   };
   const total = await User.countDocuments(filter);
   const query = User.find(filter).sort({ netid: 1 }).lean<any[]>();
-  if (limit) query.limit(limit);
+  if (options.limit) query.limit(options.limit);
   const users = await query;
   const departmentsByName = await buildDepartmentMap();
   const emailCounts = new Map<string, number>();
@@ -163,7 +170,7 @@ async function main(): Promise<void> {
     };
 
     try {
-      if (APPLY) {
+      if (options.apply) {
         facultyOps.push({
           updateOne: {
             filter: { netid: user.netid },
@@ -180,7 +187,7 @@ async function main(): Promise<void> {
     }
   }
 
-  if (APPLY) {
+  if (options.apply) {
     for (const ops of chunk(facultyOps, 1000)) {
       if (ops.length > 0) await FacultyMember.bulkWrite(ops, { ordered: false });
     }
@@ -212,18 +219,40 @@ async function main(): Promise<void> {
     }
   }
 
-  console.log('\nDone.');
-  console.log(`  Users processed:        ${users.length}`);
-  console.log(`  Faculty rows upserted:  ${upserted} ${APPLY ? '' : '(dry run)'}`);
-  console.log(`  User links added:       ${linkedUsers} ${APPLY ? '' : '(dry run)'}`);
-  console.log(`  Skipped:                ${skipped}`);
-  console.log(`  Errors:                 ${errors.length}`);
-  for (const error of errors.slice(0, 10)) console.log(`  ${error.netid}: ${error.error}`);
+    const output = buildV4MigrationOutput(
+      {
+        usersProcessed: users.length,
+        facultyRowsUpserted: upserted,
+        userLinksAdded: linkedUsers,
+        skipped,
+        errorCount: errors.length,
+      },
+      {
+        environment: resolveScraperEnvironment(process.env),
+        db: FacultyMember.db.db?.databaseName || FacultyMember.db.name,
+        options,
+      },
+    );
 
-  await mongoose.disconnect();
+    console.log('\nDone.');
+    console.log(`  Users processed:        ${users.length}`);
+    console.log(`  Faculty rows upserted:  ${upserted} ${options.apply ? '' : '(dry run)'}`);
+    console.log(`  User links added:       ${linkedUsers} ${options.apply ? '' : '(dry run)'}`);
+    console.log(`  Skipped:                ${skipped}`);
+    console.log(`  Errors:                 ${errors.length}`);
+    for (const error of errors.slice(0, 10)) console.log(`  ${error.netid}: ${error.error}`);
+    writeV4FacultyMemberBackfillOutput(output, options.output);
+    if (options.output) console.log(`Wrote v4 faculty member backfill report to ${options.output}`);
+
+    return output;
+  } finally {
+    await disconnectForMigration();
+  }
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+if (process.argv[1] && __filename === path.resolve(process.argv[1])) {
+  backfillV4FacultyMembers().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}

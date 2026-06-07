@@ -46,12 +46,23 @@ import {
   normalizeSourceUrl,
   ResearchDetailSource,
 } from '../utils/researchDetailSources';
+import { EXTERNAL_LINK_REL, safeUrl } from '../utils/url';
 import { formatTitleCaseLabel } from '../utils/displayText';
 import {
   getEvidenceSignalLabel,
   getEvidenceStrengthLabel,
 } from '../utils/researchDiscoveryAdapters';
 import { computeAcceptanceVerdict, verdictLabel } from '../utils/undergradAcceptance';
+import { resolveLabOutreachContact } from '../utils/labOutreachContact';
+import {
+  approachHeadingLabel,
+  decisionHeadingLabel,
+  isFacultyResearchEntity,
+  researchStructureLabel,
+  researchWebsiteLabel,
+  sanitizeFacultyResearchCopy,
+} from '../utils/researchEntityCopy';
+import { getUniqueDepartmentLabels } from '../utils/departmentNames';
 
 const FIRST_RESEARCH_PLAN_SAVE_KEY = 'yale-research.firstResearchPlanSave.v1';
 
@@ -84,7 +95,7 @@ const RelatedResearchEntitiesSection = ({
           const description =
             entity.shortDescription || entity.fullDescription || entity.description || '';
           const tags = uniqueCompact(
-            [relationship?.label, formatEntityKindTag(entity.kind), ...(entity.departments || [])],
+            [relationship?.label, formatEntityKindTag(entity.kind), ...compactDepartmentLabels(entity.departments)],
             3,
           );
           return (
@@ -125,14 +136,11 @@ const AffiliatedResearchEntitiesSection = ({
   <section>
     <SectionHeading>Affiliated with</SectionHeading>
     <div className="grid gap-3 sm:grid-cols-2">
-      {affiliatedResearchEntities.map((entity) => (
-        <Link
-          key={entity.id || entity._id || entity.slug}
-          to={`/research/${entity.slug}`}
-          className="block rounded-lg border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4 transition hover:border-blue-300 hover:shadow-sm"
-        >
+      {affiliatedResearchEntities.map((entity) => {
+        const content = (
+          <>
           <div className="flex flex-wrap gap-2">
-            {uniqueCompact([formatEntityKindTag(entity.kind), ...(entity.departments || [])], 3).map(
+            {uniqueCompact([formatEntityKindTag(entity.kind), ...compactDepartmentLabels(entity.departments)], 3).map(
               (tag) => (
                 <span
                   key={tag}
@@ -144,8 +152,26 @@ const AffiliatedResearchEntitiesSection = ({
             )}
           </div>
           <h3 className="mt-3 text-sm font-semibold text-gray-900">{entity.name}</h3>
-        </Link>
-      ))}
+          </>
+        );
+        const className =
+          'block rounded-lg border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4 transition';
+        const canOpenDetail =
+          !entity.studentVisibilityTier || entity.studentVisibilityTier === 'student_ready';
+        return canOpenDetail ? (
+          <Link
+            key={entity.id || entity._id || entity.slug}
+            to={`/research/${entity.slug}`}
+            className={`${className} hover:border-blue-300 hover:shadow-sm`}
+          >
+            {content}
+          </Link>
+        ) : (
+          <div key={entity.id || entity._id || entity.slug} className={className}>
+            {content}
+          </div>
+        );
+      })}
     </div>
   </section>
 );
@@ -160,6 +186,13 @@ const sourceHost = (url: string): string => {
 
 const uniqueCompact = (values: Array<string | undefined | null>, limit = 6): string[] =>
   Array.from(new Set(values.map((value) => (value || '').trim()).filter(Boolean))).slice(0, limit);
+
+const compactDepartmentLabels = (
+  departments: Array<string | undefined | null> | undefined,
+): string[] =>
+  getUniqueDepartmentLabels(
+    (departments || []).filter((department): department is string => Boolean(department)),
+  );
 
 const BulletList = ({ items }: { items: string[] }) => (
   <ul className="space-y-1.5 text-sm leading-relaxed text-gray-700">
@@ -197,12 +230,6 @@ const isFacultyResearchFallback = (group: any): boolean => {
   );
 };
 
-const isFacultyResearchEntity = (group: any): boolean =>
-  group.kind === 'individual' ||
-  group.kind === 'solo' ||
-  group.entityType === 'FACULTY_RESEARCH_AREA' ||
-  group.entityType === 'INDIVIDUAL_RESEARCH';
-
 const isGenericTopic = (value: string): boolean =>
   /^(yale\s+)?school of\b/i.test(value) ||
   /^yale school\b/i.test(value) ||
@@ -219,14 +246,18 @@ const detailTopics = (group: any, limit = 6): string[] =>
     .slice(0, limit);
 
 const decisionNextStep = ({
+  group,
   pathways,
   contactRoutes,
 }: {
+  group: any;
   pathways: LabEntryPathway[];
   contactRoutes: LabContactRoute[];
 }): string => {
   const pathwayStep = pathways.find((item) => item.bestNextStep)?.bestNextStep;
-  if (pathwayStep) return pathwayStep;
+  if (pathwayStep) {
+    return sanitizeFacultyResearchCopy(pathwayStep, group);
+  }
   const route = contactRoutes[0];
   if (route?.routeType === 'OFFICIAL_APPLICATION') {
     return 'Use the official application route, then verify timing and eligibility on the source page.';
@@ -281,13 +312,29 @@ const ResearchPlanSaveButton = ({
 const resolveDecisionProfileUrl = (
   fallbackSourceUrl: string | undefined,
   contactRoutes: LabContactRoute[],
+  group?: any,
 ): string | undefined => {
+  const labWebsiteDestinations = new Set(
+    [group?.websiteUrl, group?.website]
+      .filter((url) => url && !isProfileLikeWebsiteUrl(url))
+      .map((url) => normalizeActionDestination(url))
+      .filter(Boolean),
+  );
   const facultyProfileRoute = contactRoutes.find(
-    (route) => route.routeType === 'FACULTY_PI' && Boolean(route.url),
+    (route) =>
+      route.routeType === 'FACULTY_PI' &&
+      Boolean(route.url) &&
+      !labWebsiteDestinations.has(normalizeActionDestination(route.url)),
   );
 
-  if (facultyProfileRoute?.url) return facultyProfileRoute.url;
-  if (fallbackSourceUrl && isProfileLikeWebsiteUrl(fallbackSourceUrl)) return fallbackSourceUrl;
+  if (facultyProfileRoute?.url) return normalizeSourceUrl(facultyProfileRoute.url) || undefined;
+  if (
+    fallbackSourceUrl &&
+    isProfileLikeWebsiteUrl(fallbackSourceUrl) &&
+    !labWebsiteDestinations.has(normalizeActionDestination(fallbackSourceUrl))
+  ) {
+    return normalizeSourceUrl(fallbackSourceUrl) || undefined;
+  }
   return undefined;
 };
 
@@ -354,6 +401,9 @@ const adminQualityNotes = (flags: ResearchEntityRepairFlag[] = []): string[] => 
   if (flagSet.has('missing_lead')) {
     notes.push('No lead professor is attached to this research profile.');
   }
+  if (flagSet.has('pi_identity_conflict')) {
+    notes.push('Lead identity needs review before this profile is student-ready.');
+  }
   if (flagSet.has('missing_source_url')) {
     notes.push('No official source URL is attached.');
   }
@@ -383,40 +433,78 @@ const DecisionSummary = ({
   const usesFacultyResearchWording =
     isFacultyResearchEntity(group) || (usesProfileSynthesis && isFacultyResearchFallback(group));
   const sourceBackedDescription = detailDescription(group);
-  const description =
+  const studentDecisionExplanation = group.studentDecisionExplanation;
+  const rawDescription =
     (usesProfileSynthesis ? group.profileSynthesisDescription : '') ||
     sourceBackedDescription ||
     (topics.length > 0
       ? `Research connected to ${topics.slice(0, 3).join(', ')}.`
       : 'A Yale research profile with limited public description.');
+  const description = sanitizeFacultyResearchCopy(rawDescription, group);
   const { verdict } = computeAcceptanceVerdict(group, hasActivePostedOpportunity);
   const evidenceLevel = verdictLabel(verdict);
-  const profileUrl = resolveDecisionProfileUrl(fallbackSourceUrl, contactRoutes);
+  const profileUrl = resolveDecisionProfileUrl(fallbackSourceUrl, contactRoutes, group);
   const officialRoute = resolveDecisionOfficialRoute(profileUrl, contactRoutes, group);
+  const officialRouteUrl = safeUrl(officialRoute?.url);
   const leadProfessorName = leadProfessor ? memberDisplayName(leadProfessor) : '';
   const leadProfessorMeta = uniqueCompact(
     [leadProfessor?.user.title, leadProfessor?.user.primary_department],
     2,
   ).join(' · ');
+  const leadProfessorProfilePath =
+    !profileUrl && leadProfessor?.user.netid ? `/profile/${leadProfessor.user.netid}` : '';
 
   return (
     <section className="rounded-lg border border-blue-100 bg-[var(--yr-panel)] p-4 shadow-sm sm:p-5">
       <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_16rem] md:gap-5">
         <div>
-          <SectionHeading>Student decision</SectionHeading>
+          <SectionHeading>Research summary</SectionHeading>
           <h2 className="text-lg font-semibold text-gray-950">
             {usesFacultyResearchWording
               ? 'What this faculty research area covers'
-              : 'What this lab studies'}
+              : decisionHeadingLabel(group)}
           </h2>
           <LongText
             text={description}
             className="mt-2 text-base leading-relaxed text-gray-800"
           />
+          {studentDecisionExplanation && (
+            <div className="mt-5 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] p-4">
+              <SectionHeading>Student decision</SectionHeading>
+              <h3 className="text-base font-semibold text-gray-950">
+                {studentDecisionExplanation.headline}
+              </h3>
+              <p className="mt-2 text-base leading-relaxed text-gray-800">
+                {studentDecisionExplanation.explanation}
+              </p>
+              {studentDecisionExplanation.why.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-gray-600">
+                    Why
+                  </p>
+                  <div className="mt-2">
+                    <BulletList items={studentDecisionExplanation.why} />
+                  </div>
+                </div>
+              )}
+              {studentDecisionExplanation.notThis && (
+                <div className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] px-3 py-2">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-gray-600">
+                    What this page is
+                  </p>
+                  <p className="mt-1 text-sm leading-relaxed text-gray-800">
+                    {studentDecisionExplanation.notThis === 'Not a posted opening.'
+                      ? 'This page summarizes the research context and entry points, not a posted opening.'
+                      : studentDecisionExplanation.notThis}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
           {usesProfileSynthesis && (
             <p className="mt-3 text-sm leading-relaxed text-gray-600">
-              This is profile-derived context. Yale Research has not found a separate lab
-              description or posted undergraduate opening for this research home.
+              This is profile-derived context. Yale Research has not found a separate research
+              website or posted undergraduate opening for this research home.
             </p>
           )}
 
@@ -490,23 +578,31 @@ const DecisionSummary = ({
               Recommended next step
             </p>
             <p className="mt-1 text-sm leading-relaxed text-gray-800">
-              {decisionNextStep({ pathways, contactRoutes })}
+              {decisionNextStep({ group, pathways, contactRoutes })}
             </p>
             {profileUrl && (
               <a
                 href={profileUrl}
                 target="_blank"
-                rel="noreferrer"
+                rel={EXTERNAL_LINK_REL}
                 className="mt-3 inline-flex min-h-11 items-center justify-center rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
               >
                 Open official profile
               </a>
             )}
-            {officialRoute?.url && (
+            {leadProfessorProfilePath && (
+              <Link
+                to={leadProfessorProfilePath}
+                className="mt-3 inline-flex min-h-11 items-center justify-center rounded-md border border-blue-200 bg-[var(--yr-panel)] px-3 py-2 text-sm font-semibold text-blue-700 transition-colors hover:bg-[var(--yr-blue-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+              >
+                View PI profile
+              </Link>
+            )}
+            {officialRouteUrl && (
               <a
-                href={officialRoute.url}
+                href={officialRouteUrl}
                 target="_blank"
-                rel="noreferrer"
+                rel={EXTERNAL_LINK_REL}
                 className="mt-2 inline-flex min-h-11 items-center justify-center rounded-md border border-blue-200 bg-[var(--yr-panel)] px-3 py-2 text-sm font-semibold text-blue-700 transition-colors hover:bg-[var(--yr-blue-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
               >
                 Open official route
@@ -530,17 +626,16 @@ const ProfileStatusSection = ({
   accessSignals: LabAccessSignal[];
   fallbackSourceUrl?: string;
 }) => {
-  const researchStructureLabel = isFacultyResearchEntity(group)
-    ? 'faculty research profile'
-    : 'lab';
+  const structureLabel = researchStructureLabel(group);
+  const websiteLabel = researchWebsiteLabel(group);
   const knownItems = uniqueCompact([
     group.description || group.shortDescription
-      ? `A public profile describes what this ${researchStructureLabel} covers.`
+      ? `A public profile describes what this ${structureLabel} covers.`
       : '',
     accessSignals.length > 0
       ? `Access signal: ${getEvidenceSignalLabel(accessSignals[0].signalType)}.`
       : '',
-    fallbackSourceUrl ? 'An official profile or lab website is available.' : '',
+    fallbackSourceUrl ? `An official profile or ${websiteLabel} is available.` : '',
   ]);
   const missingProfileItems =
     missingItems.length > 0 ? missingItems : ['No major profile gaps are currently flagged.'];
@@ -582,24 +677,28 @@ const ProfileStatusSection = ({
 };
 
 const WaysToApproachSection = ({
+  group,
   pathways,
   postedOpportunities,
 }: {
+  group: any;
   pathways: LabEntryPathway[];
   postedOpportunities: LabPostedOpportunity[];
 }) => {
   const posted = postedOpportunities[0];
   const pathway = pathways[0];
+  const facultyResearch = isFacultyResearchEntity(group);
 
   return (
     <section>
-      <SectionHeading>Ways to approach this lab</SectionHeading>
+      <SectionHeading>{approachHeadingLabel(group)}</SectionHeading>
       <div className="grid gap-3 md:grid-cols-3">
         <article className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4">
           <h3 className="text-sm font-semibold text-gray-900">Explore first</h3>
           <p className="mt-2 text-sm leading-relaxed text-gray-700">
-            Best if you are unsure whether this lab accepts undergrads. Open the official profile
-            and look for current instructions.
+            {facultyResearch
+              ? 'Best if you are unsure whether this research area has undergraduate routes. Open the official profile and look for current instructions.'
+              : 'Best if you are unsure whether this lab accepts undergrads. Open the official profile and look for current instructions.'}
           </p>
         </article>
         <article className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4">
@@ -639,10 +738,11 @@ const WaysToApproachSection = ({
 
 const OutreachSection = ({ group, onDraft }: { group: any; onDraft: () => void }) => {
   const topics = detailTopics(group, 4);
+  const facultyResearch = isFacultyResearchEntity(group);
   const coursework = uniqueCompact(
     [
-      ...(group.departments || []),
-      ...(topics.some((topic) => /comput|data|stat/i.test(topic)) ? ['statistics or CS'] : []),
+      ...compactDepartmentLabels(group.departments),
+      ...(topics.some((topic) => /comput|data|stat/i.test(topic)) ? ['Statistics and Computer Science'] : []),
       ...(topics.some((topic) => /genetic|dna|biology/i.test(topic)) ? ['genetics or biology'] : []),
     ],
     4,
@@ -653,7 +753,7 @@ const OutreachSection = ({ group, onDraft }: { group: any; onDraft: () => void }
       <SectionHeading>Outreach</SectionHeading>
       <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_13rem]">
         <div>
-          <h3 className="text-sm font-semibold text-gray-900">Recommended outreach angle</h3>
+          <h3 className="text-sm font-semibold text-gray-900">Outreach focus</h3>
           <div className="mt-3 grid gap-4 md:grid-cols-2">
             <div>
               <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-600">
@@ -662,9 +762,9 @@ const OutreachSection = ({ group, onDraft }: { group: any; onDraft: () => void }
               <BulletList
                 items={[
                   topics.length > 0
-                    ? 'one specific Best fit topic above'
-                    : 'the research described on the official profile',
-                  'a question that shows you reviewed the official profile',
+                    ? 'One specific, best-fit topic listed above'
+                    : 'The research described on the official profile',
+                  'A specific question that shows you reviewed the official profile',
                 ]}
               />
             </div>
@@ -676,14 +776,19 @@ const OutreachSection = ({ group, onDraft }: { group: any; onDraft: () => void }
                 items={
                   coursework.length > 0
                     ? coursework
-                    : ['coursework, projects, or reading connected to the lab']
+                    : [
+                        facultyResearch
+                          ? 'Coursework, projects, or reading connected to this research area'
+                          : 'Coursework, projects, or reading connected to the lab',
+                      ]
                 }
               />
             </div>
           </div>
           <p className="mt-4 rounded-md border border-blue-100 bg-[var(--yr-panel)] px-3 py-2 text-sm leading-relaxed text-gray-800">
-            Ask: "Are there any opportunities for undergraduates to get involved with the lab this
-            semester or summer?"
+            {facultyResearch
+              ? 'Ask: "Are there any opportunities for undergraduates to get involved with this research area this semester or summer?"'
+              : 'Ask: "Are there any opportunities for undergraduates to get involved with the lab this semester or summer?"'}
           </p>
         </div>
         <div className="flex items-start md:justify-end">
@@ -736,7 +841,7 @@ const SourcesSection = ({ sources }: { sources: ResearchDetailSource[] }) => {
               <a
                 href={source.url}
                 target="_blank"
-                rel="noreferrer"
+                rel={EXTERNAL_LINK_REL}
                 className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-md border border-[var(--yr-line-strong)] px-3 text-sm font-semibold text-gray-800 hover:bg-[var(--yr-panel-muted)] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
               >
                 Open source
@@ -752,6 +857,25 @@ const SourcesSection = ({ sources }: { sources: ResearchDetailSource[] }) => {
 const PUBLIC_LEAD_ROLES = new Set(['pi', 'co-pi', 'director', 'co-director']);
 
 const hasArrayContent = (values?: unknown[]): boolean => Array.isArray(values) && values.length > 0;
+
+const isLabWebsiteFacultyPiRoute = (route: LabContactRoute, group: any): boolean => {
+  if (route.routeType !== 'FACULTY_PI') return false;
+  const routeDestination = normalizeActionDestination(route.url || route.sourceUrl);
+  if (!routeDestination) return false;
+  const labWebsiteDestinations = [group?.websiteUrl, group?.website]
+    .filter((url) => url && !isProfileLikeWebsiteUrl(url))
+    .map((url) => normalizeActionDestination(url))
+    .filter(Boolean);
+  return labWebsiteDestinations.includes(routeDestination);
+};
+
+const hasPublicContactRoute = (contactRoutes: LabContactRoute[], group: any): boolean =>
+  contactRoutes.some(
+    (route) =>
+      route.visibility === 'PUBLIC' &&
+      (Boolean(route.url) || Boolean(route.email)) &&
+      !isLabWebsiteFacultyPiRoute(route, group),
+  );
 
 const hasPublicPlanningRoute = (contactRoutes: LabContactRoute[]): boolean =>
   contactRoutes.some(
@@ -777,14 +901,14 @@ const hasPlanningSidebarContent = ({
   group: any;
   contactRoutes: LabContactRoute[];
   hasActivePostedOpportunity: boolean;
-}): boolean =>
-  Boolean(
-    group.contactEmail ||
-      hasActivePostedOpportunity ||
-      hasPublicPlanningRoute(contactRoutes) ||
-      hasArrayContent(group.typicalUndergradRoles) ||
-      hasArrayContent(group.prerequisiteCourses) ||
-      hasArrayContent(group.creditOptions) ||
+	}): boolean =>
+	  Boolean(
+	    group.contactEmail ||
+	      hasActivePostedOpportunity ||
+	      hasPublicContactRoute(contactRoutes, group) ||
+	      hasArrayContent(group.typicalUndergradRoles) ||
+	      hasArrayContent(group.prerequisiteCourses) ||
+	      hasArrayContent(group.creditOptions) ||
       hasArrayContent(group.fundingPrograms) ||
       hasArrayContent(group.recentGrants) ||
       hasArrayContent(group.independentStudyCourses) ||
@@ -897,11 +1021,14 @@ const LabDetail = () => {
             evidenceLabel: 'Authored by a listed professor',
           })),
         ];
-  const directRelatedResearchLinks = researchActivityLinks.filter(
-    (link) => link.relationshipBasis !== 'member_authorship',
-  );
   const memberRecentWorkLinks = researchActivityLinks.filter(
-    (link) => link.relationshipBasis === 'member_authorship',
+    (link) =>
+      Boolean(link.userId) ||
+      link.relationshipBasis === 'member_authorship' ||
+      link.relationshipBasis === 'identity_authorship',
+  );
+  const directRelatedResearchLinks = researchActivityLinks.filter(
+    (link) => !memberRecentWorkLinks.includes(link),
   );
   const hasActivePostedOpportunity = postedOpportunities.length > 0;
   const hasDirectRelatedResearch =
@@ -925,7 +1052,7 @@ const LabDetail = () => {
     postedOpportunities,
   });
   const fallbackSourceUrl = group.websiteUrl || sources[0]?.url;
-  const decisionProfileUrl = resolveDecisionProfileUrl(fallbackSourceUrl, contactRoutes);
+  const decisionProfileUrl = resolveDecisionProfileUrl(fallbackSourceUrl, contactRoutes, group);
   const decisionOfficialRoute = resolveDecisionOfficialRoute(
     decisionProfileUrl,
     contactRoutes,
@@ -945,7 +1072,8 @@ const LabDetail = () => {
   const primaryRecentWorkProfilePath = primaryRecentWorkMember?.user.netid
     ? `/profile/${primaryRecentWorkMember.user.netid}?tab=research`
     : '';
-  const showOutreachSection = Boolean(group.contactEmail);
+  const hasOutreachContact = Boolean(resolveLabOutreachContact(group, members, contactRoutes));
+  const showOutreachSection = hasOutreachContact && !hasPublicPlanningRoute(contactRoutes);
   const showPlanningAside = hasPlanningSidebarContent({
     group,
     contactRoutes,
@@ -1044,6 +1172,7 @@ const LabDetail = () => {
 
           {showWaysToApproach && (
             <WaysToApproachSection
+              group={group}
               pathways={entryPathways}
               postedOpportunities={postedOpportunities}
             />
@@ -1104,6 +1233,7 @@ const LabDetail = () => {
         onClose={() => dispatch({ type: 'CLOSE_INQUIRE_MODAL' })}
         group={group}
         members={members}
+        contactRoutes={contactRoutes}
       />
     </div>
   );

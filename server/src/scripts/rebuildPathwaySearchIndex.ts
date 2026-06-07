@@ -1,38 +1,125 @@
 import mongoose from 'mongoose';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { initializeConnections } from '../db/connections';
 import { searchPathways } from '../services/pathwaySearchService';
 import { rebuildPathwaySearchIndex } from '../services/pathwaySearchIndexService';
+import { assertScriptApplyAllowed, type ScriptApplyGuardResult } from './scriptWriteGuards';
 
-interface CliOptions {
+export interface RebuildPathwaySearchIndexCliOptions {
   pageSize: number;
   clearExisting: boolean;
+  confirmMeiliRebuild: boolean;
+  output?: string;
 }
 
-function parseArgs(argv: string[]): CliOptions {
-  const options: CliOptions = {
+export function parseRebuildPathwaySearchIndexArgs(
+  argv: string[],
+): RebuildPathwaySearchIndexCliOptions {
+  const options: RebuildPathwaySearchIndexCliOptions = {
     pageSize: 100,
     clearExisting: false,
+    confirmMeiliRebuild: false,
   };
 
-  for (const arg of argv) {
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
     if (arg === '--clear') {
       options.clearExisting = true;
       continue;
     }
 
-    if (arg.startsWith('--page-size=')) {
-      const parsed = Number(arg.split('=')[1]);
-      if (Number.isFinite(parsed) && parsed > 0) {
-        options.pageSize = parsed;
-      }
+    if (arg === '--confirm-meili-rebuild') {
+      options.confirmMeiliRebuild = true;
+      continue;
     }
+
+    if (arg.startsWith('--page-size=')) {
+      options.pageSize = parsePositiveInteger(arg.slice('--page-size='.length), '--page-size');
+      continue;
+    }
+
+    if (arg === '--output') {
+      options.output = parseRequiredOutputPath(argv[i + 1]);
+      i += 1;
+      continue;
+    }
+
+    if (arg.startsWith('--output=')) {
+      options.output = parseRequiredOutputPath(arg.slice('--output='.length));
+      continue;
+    }
+
+    throw new Error(`Unknown pathway search index rebuild argument: ${arg}`);
   }
 
   return options;
 }
 
+function parseRequiredOutputPath(value: string | undefined): string {
+  const output = value?.trim();
+  if (!output || output.startsWith('--')) {
+    throw new Error('--output requires a path');
+  }
+  return output;
+}
+
+function parsePositiveInteger(value: string, flag: string): number {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isSafeInteger(parsed) || parsed <= 0 || String(parsed) !== value.trim()) {
+    throw new Error(`${flag} requires a positive integer`);
+  }
+  return parsed;
+}
+
+export function writeRebuildPathwaySearchIndexOutput(result: unknown, output?: string): void {
+  if (!output) return;
+  fs.mkdirSync(path.dirname(output), { recursive: true });
+  fs.writeFileSync(output, `${JSON.stringify(result, null, 2)}\n`);
+}
+
+export function assertRebuildPathwaySearchIndexAllowed(args: {
+  env?: NodeJS.ProcessEnv;
+  mongoUrl?: string;
+  confirmMeiliRebuild?: boolean;
+} = {}): ScriptApplyGuardResult {
+  if (!args.confirmMeiliRebuild) {
+    throw new Error('--confirm-meili-rebuild is required when rebuilding Meilisearch indexes');
+  }
+  return assertScriptApplyAllowed({
+    apply: true,
+    scriptName: 'meili:rebuild-pathways',
+    mongoUrl: args.mongoUrl ?? process.env.MONGODBURL,
+    env: args.env,
+  });
+}
+
+export function buildRebuildPathwaySearchIndexOutput<T extends object>(
+  result: T,
+  metadata: {
+    environment?: string;
+    db?: string;
+    options: RebuildPathwaySearchIndexCliOptions;
+  },
+): T & {
+  environment?: string;
+  db?: string;
+  options: RebuildPathwaySearchIndexCliOptions;
+} {
+  return {
+    ...result,
+    ...(metadata.environment ? { environment: metadata.environment } : {}),
+    ...(metadata.db ? { db: metadata.db } : {}),
+    options: metadata.options,
+  };
+}
+
 async function main() {
-  const options = parseArgs(process.argv.slice(2));
+  const options = parseRebuildPathwaySearchIndexArgs(process.argv.slice(2));
+  const guard = assertRebuildPathwaySearchIndexAllowed({
+    confirmMeiliRebuild: options.confirmMeiliRebuild,
+  });
   await initializeConnections();
 
   const result = await rebuildPathwaySearchIndex(
@@ -44,15 +131,27 @@ async function main() {
       }),
     options,
   );
+  const output = buildRebuildPathwaySearchIndexOutput(result, {
+    environment: guard.environment,
+    db: mongoose.connection.db?.databaseName || mongoose.connection.name || guard.dbLabel,
+    options,
+  });
 
-  console.log(JSON.stringify(result, null, 2));
+  console.log(JSON.stringify(output, null, 2));
+  writeRebuildPathwaySearchIndexOutput(output, options.output);
 }
 
-main()
-  .catch((error) => {
-    console.error('Failed to rebuild pathway Meilisearch index:', error);
-    process.exitCode = 1;
-  })
-  .finally(async () => {
-    await mongoose.disconnect();
-  });
+const isDirectRun = process.argv[1]
+  ? fileURLToPath(import.meta.url) === path.resolve(process.argv[1])
+  : false;
+
+if (isDirectRun) {
+  main()
+    .catch((error) => {
+      console.error('Failed to rebuild pathway Meilisearch index:', error);
+      process.exitCode = 1;
+    })
+    .finally(async () => {
+      await mongoose.disconnect();
+    });
+}

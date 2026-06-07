@@ -11,6 +11,9 @@ const prioritySources = [
   'lab-microsite-undergrad-llm',
   'dept-faculty-roster',
   'official-profile-enrichment',
+  'official-profile-pi-backfill',
+  'yale-research-official',
+  'student-decision-llm',
   'undergrad-fellowships-recipients',
   'yale-college-fellowships-office',
   'ylabs-listing',
@@ -51,6 +54,16 @@ describe('sourceCoverageRegistry', () => {
     expect(getSourceCoverage('yse-centers-index')?.artifactTypes).not.toContain('AccessSignal');
     expect(getSourceCoverage('centers-institutes-index')?.artifactTypes).not.toContain(
       'ContactRoute',
+    );
+    expect(getSourceCoverage('yale-research-official')?.artifactTypes).toEqual([
+      'ResearchEntity',
+      'Observation',
+    ]);
+    expect(getSourceCoverage('yale-research-official')?.artifactTypes).not.toContain(
+      'EntryPathway',
+    );
+    expect(getSourceCoverage('yale-research-official')?.artifactTypes).not.toContain(
+      'AccessSignal',
     );
     expect(getSourceCoverage('dept-faculty-roster')?.artifactTypes).toEqual(
       expect.arrayContaining(['EntryPathway', 'ContactRoute']),

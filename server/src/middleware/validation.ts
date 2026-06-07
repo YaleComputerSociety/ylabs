@@ -17,7 +17,7 @@ export const validateObjectId = (paramName: string = 'id') => {
     }
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({ error: `Invalid ${paramName}: ${id}` });
+      return res.status(400).json({ error: `Invalid ${paramName}` });
     }
 
     next();
@@ -117,7 +117,7 @@ export const validateQuery = (allowedParams: string[]) => {
 
     if (invalidParams.length > 0) {
       return res.status(400).json({
-        error: `Invalid query parameters: ${invalidParams.join(', ')}`,
+        error: 'Invalid query parameters',
       });
     }
 

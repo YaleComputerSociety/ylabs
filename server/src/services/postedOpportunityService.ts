@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import { EntryPathway } from '../models/entryPathway';
+import { Listing } from '../models/listing';
 import { PostedOpportunity } from '../models/postedOpportunity';
 import { findReviewLockedRecord, omitReviewLockedFields } from './reviewLockUtils';
 import { syncPathwaySearchIndexDocument } from './pathwaySearchIndexService';
@@ -33,6 +34,8 @@ export interface UpsertPostedOpportunityInput {
 export interface PostedOpportunityServiceDeps {
   model?: mongoose.Model<any>;
   entryPathwayModel?: mongoose.Model<any>;
+  listingModel?: mongoose.Model<any>;
+  materializeListing?: typeof materializePostedOpportunityFromListing;
 }
 
 function getPostedOpportunityModel(deps: PostedOpportunityServiceDeps = {}): mongoose.Model<any> {
@@ -41,6 +44,10 @@ function getPostedOpportunityModel(deps: PostedOpportunityServiceDeps = {}): mon
 
 function getEntryPathwayModel(deps: PostedOpportunityServiceDeps = {}): mongoose.Model<any> {
   return deps.entryPathwayModel || EntryPathway;
+}
+
+function getListingModel(deps: PostedOpportunityServiceDeps = {}): mongoose.Model<any> {
+  return deps.listingModel || Listing;
 }
 
 function toStoredId(value?: string): unknown {
@@ -275,6 +282,100 @@ export async function materializePostedOpportunityFromListing(
   };
 }
 
+export interface BackfillPostedOpportunitiesFromListingsOptions {
+  now?: Date;
+  dryRun?: boolean;
+  limit?: number;
+}
+
+export interface BackfillPostedOpportunitiesFromListingsResult {
+  dryRun: boolean;
+  scanned: number;
+  candidates: number;
+  materialized: number;
+  skipped: number;
+  skippedReasons: Record<string, number>;
+  candidateListingIds: string[];
+  materializedListingIds: string[];
+}
+
+function activeListingBackfillFilter(now: Date): Record<string, unknown> {
+  return {
+    archived: { $ne: true },
+    confirmed: { $ne: false },
+    $or: [{ expiresAt: { $exists: false } }, { expiresAt: null }, { expiresAt: { $gte: now } }],
+  };
+}
+
+function incrementReason(target: Record<string, number>, reason?: string): void {
+  const key = reason || 'unknown';
+  target[key] = (target[key] || 0) + 1;
+}
+
+function normalizeMaintenanceLimit(limit: number | undefined): number {
+  if (limit === undefined) return 500;
+  if (!Number.isSafeInteger(limit) || limit < 1) {
+    throw new Error('--limit must be a safe positive integer');
+  }
+  return limit;
+}
+
+export async function backfillPostedOpportunitiesFromListings(
+  options: BackfillPostedOpportunitiesFromListingsOptions = {},
+  deps: PostedOpportunityServiceDeps = {},
+): Promise<BackfillPostedOpportunitiesFromListingsResult> {
+  const now = options.now || new Date();
+  const dryRun = options.dryRun !== false;
+  const limit = normalizeMaintenanceLimit(options.limit);
+  const listingModel = getListingModel(deps);
+  const postedOpportunityModel = getPostedOpportunityModel(deps);
+  const materialize = deps.materializeListing || materializePostedOpportunityFromListing;
+  const query = listingModel
+    .find(activeListingBackfillFilter(now))
+    .select(
+      '_id researchEntityId researchGroupId title websites expiresAt archived confirmed compensationType applicantDescription updatedAt createdAt',
+    )
+    .sort({ updatedAt: -1, createdAt: -1 })
+    .limit(limit);
+  const listings = typeof (query as any).lean === 'function' ? await (query as any).lean() : await query;
+  const listingIds = (listings as any[]).map((listing) => listing._id).filter(Boolean);
+  const existingListingIds = new Set(
+    (
+      await postedOpportunityModel.distinct('listingId', {
+        listingId: { $in: listingIds },
+        archived: { $ne: true },
+      })
+    ).map(String),
+  );
+  const candidates = (listings as ListingPostedOpportunityInput[]).filter(
+    (listing) => !existingListingIds.has(String(listing._id || '')),
+  );
+  const skippedReasons: Record<string, number> = {};
+  const materializedListingIds: string[] = [];
+
+  if (!dryRun) {
+    for (const listing of candidates) {
+      const result = await materialize(listing);
+      if (result.postedOpportunityId) {
+        materializedListingIds.push(String(listing._id));
+      } else {
+        incrementReason(skippedReasons, result.skipped);
+      }
+    }
+  }
+
+  return {
+    dryRun,
+    scanned: (listings as any[]).length,
+    candidates: candidates.length,
+    materialized: materializedListingIds.length,
+    skipped: dryRun ? 0 : candidates.length - materializedListingIds.length,
+    skippedReasons,
+    candidateListingIds: candidates.map((listing) => String(listing._id)).slice(0, 50),
+    materializedListingIds,
+  };
+}
+
 export interface ReapExpiredPostedOpportunitiesOptions {
   now?: Date;
   dryRun?: boolean;
@@ -304,10 +405,7 @@ export async function reapExpiredPostedOpportunities(
 ): Promise<ReapExpiredPostedOpportunitiesResult> {
   const now = options.now || new Date();
   const dryRun = options.dryRun !== false;
-  const limit =
-    typeof options.limit === 'number' && Number.isFinite(options.limit) && options.limit > 0
-      ? Math.floor(options.limit)
-      : 500;
+  const limit = normalizeMaintenanceLimit(options.limit);
   const postedOpportunityModel = getPostedOpportunityModel(deps);
   const entryPathwayModel = getEntryPathwayModel(deps);
 

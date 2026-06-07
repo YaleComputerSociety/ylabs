@@ -122,6 +122,16 @@ describe('ProfileHeader', () => {
     }
   });
 
+  it('does not render an email link when the profile email contains mailto header injection', () => {
+    const { container } = renderProfileHeader({
+      ...baseProfile,
+      email: 'researcher@example.test?bcc=attacker@example.test',
+    });
+
+    expect(container.querySelector('a[href^="mailto:"]')).toBeNull();
+    expect(container.textContent).not.toContain('researcher@example.test?bcc=attacker@example.test');
+  });
+
   it('does not surface legacy listing counts from faculty profiles', () => {
     const { container } = renderProfileHeader({
       ...baseProfile,

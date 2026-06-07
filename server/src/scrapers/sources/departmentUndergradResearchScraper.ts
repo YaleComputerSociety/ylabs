@@ -9,6 +9,10 @@ import * as cheerio from 'cheerio';
 import { getCached, setCached } from '../snapshotCache';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 import type { ResearchEntityType, ResearchGroupKind } from '../../models/researchAccessTypes';
+import {
+  deriveShortDescriptionFromFullDescription,
+  shortDescriptionQuality,
+} from '../../utils/researchEntityDescriptionQuality';
 
 export const DEPARTMENT_UNDERGRAD_RESEARCH_SOURCE = 'department-undergrad-research';
 
@@ -39,6 +43,7 @@ export interface DepartmentUndergradResearchRecord {
   sourceUrl: string;
   websiteUrl?: string;
   description: string;
+  shortDescription?: string;
   evidenceQuote: string;
   undergradAccessEvidence: boolean;
   contactName?: string;
@@ -94,6 +99,86 @@ export const DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES: DepartmentUndergradRes
     parser: 'general-guidance',
     title: 'Psychology Undergraduate Research Opportunities',
   },
+  {
+    key: 'astronomy',
+    url: 'https://astronomy.yale.edu/academics/undergraduate-program/undergraduate-research',
+    department: 'Astronomy',
+    school: 'Yale Faculty of Arts and Sciences',
+    parser: 'general-guidance',
+    title: 'Astronomy Undergraduate Research',
+  },
+  {
+    key: 'mathematics',
+    url: 'https://math.yale.edu/undergraduates/undergraduate-research',
+    department: 'Mathematics',
+    school: 'Yale Faculty of Arts and Sciences',
+    parser: 'general-guidance',
+    title: 'Mathematics Undergraduate Research',
+  },
+  {
+    key: 'engineering',
+    url: 'https://engineering.yale.edu/academic-study/undergraduate/research',
+    department: 'Engineering',
+    school: 'Yale School of Engineering & Applied Science',
+    parser: 'general-guidance',
+    title: 'Undergraduate Engineering Research',
+  },
+  {
+    key: 'cognitive-science',
+    url: 'https://cogsci.yale.edu/research/undergraduate-research-opportunities',
+    department: 'Cognitive Science',
+    school: 'Yale Faculty of Arts and Sciences',
+    parser: 'general-guidance',
+    title: 'Cognitive Science Undergraduate Research Opportunities',
+  },
+  {
+    key: 'eeb',
+    url: 'https://eeb.yale.edu/academics/undergraduate-program/undergraduate-research-opportunities',
+    department: 'Ecology and Evolutionary Biology',
+    school: 'Yale Faculty of Arts and Sciences',
+    parser: 'general-guidance',
+    title: 'Ecology and Evolutionary Biology Undergraduate Research Opportunities',
+  },
+  {
+    key: 'yale-undergraduate-research-science',
+    url: 'https://science.yalecollege.yale.edu/yale-undergraduate-research/research-opportunities',
+    department: 'Science and Quantitative Reasoning Education',
+    school: 'Yale College',
+    parser: 'general-guidance',
+    title: 'Yale Undergraduate Research in Science and Engineering',
+  },
+  {
+    key: 'anthropology',
+    url: 'https://anthropology.yale.edu/undergraduate-program/undergraduate-research-in-anthropology',
+    department: 'Anthropology',
+    school: 'Yale Faculty of Arts and Sciences',
+    parser: 'general-guidance',
+    title: 'Anthropology Undergraduate Research',
+  },
+  {
+    key: 'earth-planetary-sciences',
+    url: 'https://earth.yale.edu/resources',
+    department: 'Earth and Planetary Sciences',
+    school: 'Yale Faculty of Arts and Sciences',
+    parser: 'general-guidance',
+    title: 'Earth and Planetary Sciences Research Opportunities',
+  },
+  {
+    key: 'political-science',
+    url: 'https://politicalscience.yale.edu/academics/about-undergraduate-program',
+    department: 'Political Science',
+    school: 'Yale Faculty of Arts and Sciences',
+    parser: 'general-guidance',
+    title: 'Political Science Undergraduate Research Opportunities',
+  },
+  {
+    key: 'history',
+    url: 'https://history.yale.edu/academics/undergraduate-program',
+    department: 'History',
+    school: 'Yale Faculty of Arts and Sciences',
+    parser: 'general-guidance',
+    title: 'History Undergraduate Research',
+  },
 ];
 
 function normalizeText(value: string): string {
@@ -113,6 +198,7 @@ function slugify(value: string): string {
 function absoluteUrl(rawUrl: string | undefined, pageUrl: string): string | undefined {
   const trimmed = (rawUrl || '').trim();
   if (!trimmed || trimmed.startsWith('#') || /^mailto:/i.test(trimmed)) return undefined;
+  if (/[<>"\s]/.test(trimmed)) return undefined;
   try {
     const url = new URL(trimmed, pageUrl);
     if (!/^https?:$/i.test(url.protocol)) return undefined;
@@ -129,11 +215,98 @@ function firstEmail(text: string): string | undefined {
 function conciseText(text: string, maxLength = 700): string {
   const normalized = normalizeText(text);
   if (normalized.length <= maxLength) return normalized;
-  return `${normalized.slice(0, maxLength - 1).trim()}...`;
+  const truncated = normalized.slice(0, maxLength).trim();
+  const sentenceEnd = Math.max(
+    truncated.lastIndexOf('.'),
+    truncated.lastIndexOf('!'),
+    truncated.lastIndexOf('?'),
+  );
+  if (sentenceEnd >= 160) return truncated.slice(0, sentenceEnd + 1).trim();
+  return truncated.replace(/\s+\S*$/, '').trim();
+}
+
+const sentenceList = (text: string): string[] =>
+  normalizeText(text)
+    .match(/[^.!?]+[.!?]+(?:\s|$)|[^.!?]+$/g)
+    ?.map((sentence) => normalizeText(sentence))
+    .filter(Boolean) || [];
+
+const sourceChromeTextPattern =
+  /\b(?:show all breadcrumbs|expand all|homeabout|home academics|calendar|applyprizes|recipient|copyright|privacy)\b/i;
+
+const undergradResearchGuidancePattern =
+  /\b(?:undergraduate students?|students?|majors?)\b.{0,180}\bresearch\b|\bresearch\b.{0,180}\b(?:undergraduate students?|students?|majors?|faculty|laborator(?:y|ies)|opportunit(?:y|ies)|assistantships?)\b/i;
+
+function usefulUndergradResearchSentences(text: string): string[] {
+  const seen = new Set<string>();
+  return sentenceList(text)
+    .filter((sentence) => sentence.length >= 40)
+    .filter((sentence) => !sourceChromeTextPattern.test(sentence))
+    .filter((sentence) => undergradResearchGuidancePattern.test(sentence))
+    .filter((sentence) => {
+      const key = sentence.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+function departmentGuidanceDescription(
+  config: DepartmentUndergradResearchPageConfig,
+  text: string,
+): { fullDescription: string; shortDescription: string; evidenceQuote: string } {
+  const sentences = usefulUndergradResearchSentences(text);
+  const sourceBackedBody = sentences.slice(0, 3).join(' ') || text;
+  return {
+    fullDescription: conciseText(
+      `Supports undergraduate research in ${config.department}. ${sourceBackedBody}`,
+    ),
+    shortDescription: conciseText(
+      `Supports undergraduate research in ${config.department} through department guidance on finding faculty research opportunities.`,
+      240,
+    ),
+    evidenceQuote: conciseText(sentences.slice(0, 2).join(' ') || text),
+  };
+}
+
+function projectShortDescription(description: string): string | undefined {
+  const source = normalizeText(description);
+  const focusCandidates = [
+    source.match(/\banalyses that focus on\s+(.+?)(?:[.!?]|$)/i)?.[1],
+    source.match(/\bfocus(?:es)? on\s+(.+?)(?:[.!?]|$)/i)?.[1],
+    source.match(/\binterested in understanding\s+(.+?)(?:[.!?]|$)/i)?.[1],
+    source.match(/\bunderstanding\s+(.+?)(?:[.!?]|$)/i)?.[1],
+    source.match(/\bprojects aiming to test\s+(.+?)(?:[.!?]|$)/i)?.[1],
+  ].filter((value): value is string => Boolean(value?.trim()));
+
+  const candidates = [
+    ...focusCandidates.map((focus) => `Studies ${focus.replace(/[.!?]+$/g, '').trim()}.`),
+    source && !/\b(?:studies|investigates|examines|explores|focuses|develops|uses|employs|researches|analyzes|models|measures|supports)\b/i.test(source)
+      ? `Studies ${source.replace(/[.!?]+$/g, '').trim().replace(/^\w/, (char) => char.toLowerCase())}.`
+      : '',
+    deriveShortDescriptionFromFullDescription(description),
+  ].filter(Boolean);
+
+  return candidates.find((candidate) => shortDescriptionQuality(candidate, description).isUseful);
+}
+
+function stripLeadingContactChrome(text: string): string {
+  return normalizeText(text)
+    .replace(/^Contact:\s*[^()]+?\([^)]*\)\s*/i, '')
+    .replace(/^Contact:\s*[^.]+?\s*/i, '')
+    .replace(/^Website:\s*https?:\/\/\S+\s*/i, '')
+    .trim();
 }
 
 function pageMainText($: cheerio.CheerioAPI): string {
-  return normalizeText($('main').text() || $('body').text());
+  const root = $('main').length ? $('main').first().clone() : $('body').clone();
+  root.find('script, style, nav, header, footer, .breadcrumb, .breadcrumbs').remove();
+  const chunks = root
+    .find('p, li')
+    .toArray()
+    .map((node) => normalizeText($(node).text()))
+    .filter(Boolean);
+  return normalizeText((chunks.length > 0 ? chunks.join(' ') : root.text()) || '');
 }
 
 function departmentEntityKey(config: DepartmentUndergradResearchPageConfig): string {
@@ -194,7 +367,8 @@ export function parsePhysicsUndergradResearchPage(
     if (!pageHasUndergradResearchEvidence(`${pageContext} ${name} ${body}`)) continue;
     const email = firstEmail(body);
     const websiteUrl = links.find((url) => !url.startsWith('mailto:'));
-    const description = body.replace(/^Contact:[^.]+?\)\s*/i, '').replace(/^Website:\s*/i, '');
+    const description = stripLeadingContactChrome(body);
+    const fullDescription = conciseText(description || body);
 
     records.push({
       entityKey: facultyEntityKey(config, name),
@@ -205,7 +379,8 @@ export function parsePhysicsUndergradResearchPage(
       school: config.school,
       sourceUrl: config.url,
       websiteUrl,
-      description: conciseText(description || body),
+      description: fullDescription,
+      shortDescription: projectShortDescription(fullDescription),
       evidenceQuote: conciseText(body),
       undergradAccessEvidence: true,
       contactName: name,
@@ -223,9 +398,11 @@ export function parseGeneralDepartmentResearchPage(
 ): DepartmentUndergradResearchRecord[] {
   const $ = cheerio.load(html);
   const text = pageMainText($);
-  if (!pageHasUndergradResearchEvidence(text)) return [];
+  const pageContext = normalizeText($('h1, h2').text());
+  if (!pageHasUndergradResearchEvidence(`${pageContext} ${text}`)) return [];
 
   const title = config.title || `${config.department} Undergraduate Research`;
+  const description = departmentGuidanceDescription(config, text);
   return [
     {
       entityKey: departmentEntityKey(config),
@@ -236,8 +413,9 @@ export function parseGeneralDepartmentResearchPage(
       school: config.school,
       sourceUrl: config.url,
       websiteUrl: config.url,
-      description: conciseText(text),
-      evidenceQuote: conciseText(text),
+      description: description.fullDescription,
+      shortDescription: description.shortDescription,
+      evidenceQuote: description.evidenceQuote,
       undergradAccessEvidence: true,
       contactRole: 'Faculty member for undergraduate research',
     },
@@ -250,7 +428,8 @@ export function parseStructuredOpportunityPage(
 ): DepartmentUndergradResearchRecord[] {
   const $ = cheerio.load(html);
   const text = pageMainText($);
-  if (!pageHasUndergradResearchEvidence(text)) return [];
+  const pageContext = normalizeText($('h1, h2, h3, h4').text());
+  if (!pageHasUndergradResearchEvidence(`${pageContext} ${text}`)) return [];
 
   const title =
     config.title ||
@@ -258,6 +437,7 @@ export function parseStructuredOpportunityPage(
     `${config.department} Undergraduate Research Opportunity`;
   const contactEmail = firstEmail(text);
   const joinPageUrl = bestApplicationUrl($, config.url);
+  const description = departmentGuidanceDescription(config, text);
 
   return [
     {
@@ -269,8 +449,9 @@ export function parseStructuredOpportunityPage(
       school: config.school,
       sourceUrl: config.url,
       websiteUrl: config.url,
-      description: conciseText(text),
-      evidenceQuote: conciseText(text),
+      description: description.fullDescription,
+      shortDescription: description.shortDescription,
+      evidenceQuote: description.evidenceQuote,
       undergradAccessEvidence: true,
       contactEmail,
       contactRole: contactEmail ? 'Program contact for undergraduate research' : undefined,
@@ -310,7 +491,7 @@ export function departmentUndergradResearchRecordsToObservations(
       { ...base, field: 'websiteUrl', value: record.websiteUrl || record.sourceUrl },
       { ...base, field: 'sourceUrls', value: sourceUrls },
       { ...base, field: 'fullDescription', value: record.description },
-      { ...base, field: 'shortDescription', value: record.description },
+      { ...base, field: 'shortDescription', value: record.shortDescription || record.description },
       {
         ...base,
         field: 'undergradAccessEvidence',
@@ -352,6 +533,18 @@ async function defaultFetchHtml(url: string, useCache: boolean): Promise<string>
   return html;
 }
 
+function parseRuntimeIntegerOption(
+  value: number | undefined,
+  flag: string,
+  options: { min: number; label: 'positive' | 'non-negative'; fallback: number },
+): number {
+  if (value === undefined) return options.fallback;
+  if (!Number.isSafeInteger(value) || value < options.min) {
+    throw new Error(`${flag} must be a safe ${options.label} integer`);
+  }
+  return value;
+}
+
 export class DepartmentUndergradResearchScraper implements IScraper {
   readonly name = DEPARTMENT_UNDERGRAD_RESEARCH_SOURCE;
   readonly displayName = 'Department undergraduate research pages';
@@ -368,8 +561,16 @@ export class DepartmentUndergradResearchScraper implements IScraper {
       ctx.options.only && ctx.options.only.length > 0
         ? new Set(ctx.options.only.map((value) => value.trim().toLowerCase()).filter(Boolean))
         : null;
-    const limit = ctx.options.limit && ctx.options.limit > 0 ? ctx.options.limit : Infinity;
-    const offset = ctx.options.offset && ctx.options.offset > 0 ? ctx.options.offset : 0;
+    const limit = parseRuntimeIntegerOption(ctx.options.limit, '--limit', {
+      min: 1,
+      label: 'positive',
+      fallback: Infinity,
+    });
+    const offset = parseRuntimeIntegerOption(ctx.options.offset, '--offset', {
+      min: 0,
+      label: 'non-negative',
+      fallback: 0,
+    });
     let totalObs = 0;
     let totalEntities = 0;
     const summaries: string[] = [];

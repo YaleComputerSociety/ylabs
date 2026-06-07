@@ -1,13 +1,23 @@
 /**
  * Express routes for research area CRUD operations.
  */
-import { Router, Request, Response } from 'express';
-import { isAuthenticated } from '../middleware/index';
+import { Router, Request, Response, type NextFunction } from 'express';
+import { isAuthenticated, isProfessor } from '../middleware/index';
 import { ResearchArea, ResearchField, fieldColorKeys } from '../models/researchArea';
 import { invalidateConfigCache } from '../services/configService';
 import { escapeRegex, buildSafeSearchRegex } from '../utils/regex';
 
 const router = Router();
+const MAX_RESEARCH_AREA_NAME_LENGTH = 120;
+const MAX_RESEARCH_AREA_SEARCH_QUERY_LENGTH = 120;
+
+function setPrivateResearchAreaCacheHeaders(_req: Request, res: Response, next: NextFunction) {
+  res.setHeader('Cache-Control', 'no-store, private, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  next();
+}
+
+router.use(setPrivateResearchAreaCacheHeaders);
 
 router.get('/', isAuthenticated, async (req: Request, res: Response) => {
   try {
@@ -23,7 +33,7 @@ router.get('/', isAuthenticated, async (req: Request, res: Response) => {
   }
 });
 
-router.post('/', isAuthenticated, async (req: Request, res: Response) => {
+router.post('/', isAuthenticated, isProfessor, async (req: Request, res: Response) => {
   try {
     const { name, field } = req.body;
     const currentUser = req.user as { netId?: string };
@@ -40,6 +50,9 @@ router.post('/', isAuthenticated, async (req: Request, res: Response) => {
     }
 
     const trimmedName = name.trim();
+    if (trimmedName.length > MAX_RESEARCH_AREA_NAME_LENGTH) {
+      return res.status(400).json({ message: 'Research area name is too long' });
+    }
 
     const existing = await ResearchArea.findOne({
       name: { $regex: new RegExp(`^${escapeRegex(trimmedName)}$`, 'i') },
@@ -82,8 +95,17 @@ router.get('/search', isAuthenticated, async (req: Request, res: Response) => {
       return res.status(400).json({ message: 'Search query is required' });
     }
 
+    const trimmedQuery = query.trim();
+    if (!trimmedQuery) {
+      return res.status(400).json({ message: 'Search query is required' });
+    }
+
+    if (trimmedQuery.length > MAX_RESEARCH_AREA_SEARCH_QUERY_LENGTH) {
+      return res.status(400).json({ message: 'Search query is too long' });
+    }
+
     const customAreas = await ResearchArea.find({
-      name: buildSafeSearchRegex(query),
+      name: buildSafeSearchRegex(trimmedQuery),
       isDefault: false,
     })
       .select('name field')

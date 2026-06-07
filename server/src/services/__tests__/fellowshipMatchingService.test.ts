@@ -66,6 +66,24 @@ describe('fellowshipMatchingService', () => {
     );
   });
 
+  it('redacts direct contact text from public fellowship funding matches', () => {
+    const match = scoreFellowshipForPathway(pathway(), {
+      _id: 'fellowship-contact',
+      title: 'Summer RNA Research Fellowship',
+      summary: 'Supports undergraduate research projects in RNA biology.',
+      purpose: ['Research'],
+      applicationLink: 'https://example.edu/apply',
+      contactOffice: 'Office contact: fellowships@example.edu or 203-555-1212.',
+      isAcceptingApplications: true,
+      deadline: '2026-06-01T00:00:00.000Z',
+    }, new Date('2026-05-12T00:00:00.000Z'));
+
+    expect(match?.contactOffice).toBe('Office contact: [email redacted] or [phone redacted].');
+    expect(match?.applicationCycle.contactOffice).toBe(
+      'Office contact: [email redacted] or [phone redacted].',
+    );
+  });
+
   it('does not mark high-scoring matches as source-confirmed without a source URL', () => {
     const match = scoreFellowshipForPathway(pathway(), {
       _id: 'fellowship-no-source',
@@ -107,6 +125,23 @@ describe('fellowshipMatchingService', () => {
     expect(match?.sourceUrls).toEqual(['https://example.edu/program']);
     expect(match?.applicationCycle.sourceUrls).toEqual(['https://example.edu/program']);
     expect(match?.strength).toBe('candidate');
+  });
+
+  it('does not return unsafe raw fellowship application links in matches', () => {
+    const match = scoreFellowshipForPathway(pathway(), {
+      _id: 'fellowship-unsafe-application',
+      title: 'Summer RNA Research Fellowship',
+      summary: 'Supports undergraduate research projects in RNA biology.',
+      purpose: ['Research'],
+      applicationLink: 'javascript:alert(document.cookie)',
+      links: [{ label: 'Program page', url: 'https://example.edu/program' }],
+      isAcceptingApplications: true,
+      deadline: '2026-06-01T00:00:00.000Z',
+    }, new Date('2026-05-12T00:00:00.000Z'));
+
+    expect(match?.sourceUrls).toEqual(['https://example.edu/program']);
+    expect(match?.applicationCycle.applicationLink).toBeUndefined();
+    expect(match?.applicationLink).toBeUndefined();
   });
 
   it('keeps expired official cycles as next-cycle planning candidates', () => {

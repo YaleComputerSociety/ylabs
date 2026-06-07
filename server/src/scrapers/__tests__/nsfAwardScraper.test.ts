@@ -288,14 +288,50 @@ describe('findUserForPi', () => {
     expect(finder).toHaveBeenCalledTimes(1);
   });
 
-  it('falls back to lname + first initial when exact misses', async () => {
+  it('falls back to lname + first-name prefix when exact misses', async () => {
     const finder = vi
       .fn()
       .mockResolvedValueOnce([]) // exact miss
-      .mockResolvedValueOnce([{ _id: 'user-2' }]); // initial hit
+      .mockResolvedValueOnce([{ _id: 'user-2' }]); // prefix hit
     const id = await findUserForPi({ firstName: 'Pat', lastName: 'Holland' }, finder as any);
     expect(id).toBe('user-2');
     expect(finder).toHaveBeenCalledTimes(2);
+    expect(finder).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        fname: /^Pat/i,
+      }),
+    );
+  });
+
+  it('does not match full first names by initial only', async () => {
+    const finder = vi
+      .fn()
+      .mockResolvedValueOnce([]) // exact miss
+      .mockResolvedValueOnce([]); // Leying prefix does not match Lawrence
+    const id = await findUserForPi({ firstName: 'Leying', lastName: 'Guan' }, finder as any);
+
+    expect(id).toBeNull();
+    expect(finder).toHaveBeenCalledTimes(2);
+    expect(finder).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        fname: /^Leying/i,
+      }),
+    );
+  });
+
+  it('uses first-initial fallback only when the source first name is an initial', async () => {
+    const finder = vi
+      .fn()
+      .mockResolvedValueOnce([]) // exact miss
+      .mockResolvedValueOnce([{ _id: 'user-3' }]); // initial hit
+    const id = await findUserForPi({ firstName: 'P.', lastName: 'Holland' }, finder as any);
+
+    expect(id).toBe('user-3');
+    expect(finder).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        fname: /^P/i,
+      }),
+    );
   });
 
   it('returns null on ambiguous exact match (multiple)', async () => {
@@ -520,6 +556,20 @@ describe('NsfAwardScraper.run', () => {
 
     expect(result.entitiesObserved).toBe(3); // 3 PIs because each award is a distinct PI
     expect(fetchPage).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects unsafe runtime limits before fetching NSF pages', async () => {
+    const fetchPage = vi.fn().mockResolvedValue({ awards: [YAN_AWARD], totalCount: 1 });
+    const userFinder = vi.fn(async () => []);
+    const scraper = new NsfAwardScraper({
+      fetchPage: fetchPage as any,
+      userFinder: userFinder as any,
+      dateStart: '01/01/2020',
+    });
+    const { ctx } = buildContext({ limit: 9007199254740992 } as any);
+
+    await expect(scraper.run(ctx)).rejects.toThrow(/--limit must be a safe positive integer/);
+    expect(fetchPage).not.toHaveBeenCalled();
   });
 
   it('aborts pagination cleanly on a network error mid-stream', async () => {

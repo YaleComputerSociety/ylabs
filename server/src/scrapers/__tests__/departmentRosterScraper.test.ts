@@ -13,6 +13,8 @@ import {
   econExtractor,
   mcdbExtractor,
   psychExtractor,
+  viewsRowPersonExtractor,
+  jacksonPersonCardExtractor,
   csJsRenderedStub,
   csRenderedExtractor,
   csFacultyDataExtractor,
@@ -20,6 +22,7 @@ import {
   type FacultyEntry,
 } from '../sources/departmentRosterScraper';
 import {
+  isLikelyPersonSpecificYaleEmail,
   netidFromEmail,
   normalizeName,
   slugify,
@@ -94,6 +97,20 @@ const MCDB_HTML = `
   <div class="directory-listing-card">
     <div class="directory-listing-card__content">
       <h3 class="directory-listing-card__heading">
+        <a class="directory-listing-card__heading-link" href="/profile/hugh-taylor">
+          Hugh Taylor, M.D.
+        </a>
+      </h3>
+      <div class="directory-listing-card__subheading">
+        <div>Professor of Molecular, Cellular &amp; Developmental Biology</div>
+      </div>
+      <a class="directory-listing-card__link" href="mailto:hugh.taylor@yale.edu">Email</a>
+      <a class="directory-listing-card__link" href="https://medicine.yale.edu/about/a-to-z-index/atoz/lab-websites/">Lab Website</a>
+    </div>
+  </div>
+  <div class="directory-listing-card">
+    <div class="directory-listing-card__content">
+      <h3 class="directory-listing-card__heading">
         <a class="directory-listing-card__heading-link" href="/profile/empty"></a>
       </h3>
     </div>
@@ -159,7 +176,9 @@ const PSYCH_PRIMARY_HTML = `
     <tbody>
       <tr class="odd views-row-first">
         <td class="views-field views-field-picture">
-          <a href="/people/woo-kyoung-ahn"><img alt="Woo-kyoung Ahn's picture" /></a>
+          <a href="/people/woo-kyoung-ahn">
+            <img src="/sites/default/files/styles/people_thumbnail/public/pictures/ahn.jpg" alt="Woo-kyoung Ahn's picture" />
+          </a>
         </td>
         <td class="views-field views-field-name">
           <a href="/people/woo-kyoung-ahn" title="View user profile." class="username">Woo-kyoung Ahn</a><br />
@@ -207,6 +226,114 @@ const ASTRONOMY_GRID_HTML = `
 </body></html>
 `;
 
+const ERM_VIEWS_ROW_HTML = `
+<html><body>
+  <div class="views-row">
+    <div class="views-field views-field-picture">
+      <div class="field-content picture">
+        <a href="/people/deb-vargas">
+          <img src="https://erm.yale.edu/sites/default/files/styles/people_directory_image/public/pictures/deb.jpg" alt="Deb Vargas's picture" />
+        </a>
+      </div>
+    </div>
+    <div class="views-field views-field-name">
+      <h4 class="field-content name">
+        <a href="/people/deb-vargas" class="username">Deb Vargas</a>
+      </h4>
+    </div>
+    <div class="views-field views-field-field-title">
+      <div class="field-content position">Director of Undergraduate Studies (ER&amp;M) and Professor of Women's, Gender, and Sexuality Studies</div>
+    </div>
+    <div class="views-field views-field-field-email">
+      <div class="field-content">
+        <span id="email-placeholder"></span>
+        <script type="text/javascript">
+          document.getElementById('email-placeholder').innerHTML = '<a href="&#109;&#97;&#105;&#108;&#116;&#111;&#58;&#100;&#101;&#98;&#46;&#118;&#97;&#114;&#103;&#97;&#115;&#64;&#121;&#97;&#108;&#101;&#46;&#101;&#100;&#117;">&#100;&#101;&#98;&#46;&#118;&#97;&#114;&#103;&#97;&#115;&#64;&#121;&#97;&#108;&#101;&#46;&#101;&#100;&#117;</a>';
+        </script>
+      </div>
+    </div>
+  </div>
+  <div class="views-row">
+    <div class="views-field views-field-name">
+      <h4 class="field-content name"><a href="/people/fatima-el-tayeb">Fatima El-Tayeb</a></h4>
+    </div>
+    <div class="views-field views-field-field-title">
+      <p class="field-content position">Professor of Women's, Gender, and Sexuality Studies and of Ethnicity, Race, and Migration</p>
+    </div>
+  </div>
+</body></html>
+`;
+
+const MACMILLAN_PERSON_HTML = `
+<html><body>
+  <article class="node-teaser node-teaser--person node-teaser--image-size-sm">
+    <header class="node-teaser__header">
+      <div class="node-teaser__groups">Council on African Studies</div>
+      <div class="node-teaser__heading">
+        <a href="/africa/person/oluseye-adesola"><span>Oluseye Adesola</span></a>
+      </div>
+      <div class="node-teaser__title">
+        Senior Lector II in Yoruba &amp; African Studies, Council on African Studies
+      </div>
+    </header>
+    <div class="node-teaser__content">
+      <div class="node-teaser__image">
+        <img loading="lazy" alt="Oluseye Adesola" data-src="/sites/default/files/styles/square_320/public/2024-09/Oluseye%20Adesola.jpg" />
+      </div>
+    </div>
+  </article>
+</body></html>
+`;
+
+const TDPS_DIRECTORY_CARD_HTML = `
+<html><body>
+  <ul class="card-collection__cards">
+    <li class="directory-listing-card">
+      <div class="directory-listing-card__content">
+        <h3 class="directory-listing-card__heading">
+          <a class="directory-listing-card__heading-link" href="/profile/deb-margolin">
+            Deb Margolin
+          </a>
+        </h3>
+        <div class="directory-listing-card__subheading">
+          <div>Professor in the Practice</div>
+        </div>
+        <a class="directory-listing-card__link" href="mailto:deborah.margolin@yale.edu">Email</a>
+      </div>
+      <div class="directory-listing-card__image">
+        <img src="/sites/default/files/styles/1_1_300_/public/2024-06/deb.png" alt="Deb Margolin Headshot" />
+      </div>
+    </li>
+  </ul>
+</body></html>
+`;
+
+const JACKSON_PERSON_CARD_HTML = `
+<html><body>
+  <div class="page-item page-item-person page-item-person-staff-faculty">
+    <div class="page-item-image">
+      <img class="center-block img-responsive" src="https://jackson.yale.edu/wp-content/uploads/2026/05/Eric-Braverman.jpg" alt="Eric Braverman Thumbnail" />
+    </div>
+    <div class="page-item-content">
+      <div class="page-item-person-name">
+        <div class="page-item-person-name-inner">Eric Braverman</div>
+      </div>
+      <div class="page-item-person-bio">
+        <div class="page-item-person-bio-title">Lecturer</div>
+        <div class="page-item-bio-links">
+          <span class="page-item-bio-link">
+            <a class="more" href="mailto:eric.braverman@yale.edu">Email</a>
+          </span>
+          <div class="page-item-person-bio-link hidden-xs">
+            <a class="more" href="https://jackson.yale.edu/person/eric-braverman/">View Bio</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body></html>
+`;
+
 // ---------------------------------------------------------------------------
 // Helper tests
 // ---------------------------------------------------------------------------
@@ -247,6 +374,26 @@ describe('netidFromEmail', () => {
     expect(netidFromEmail('')).toBeNull();
     expect(netidFromEmail(null)).toBeNull();
     expect(netidFromEmail('not-an-email')).toBeNull();
+  });
+});
+
+describe('isLikelyPersonSpecificYaleEmail', () => {
+  it('accepts netid-shaped Yale emails even when the local-part is not name-shaped', () => {
+    expect(isLikelyPersonSpecificYaleEmail('jmg257@yale.edu', 'Joshua Gendron')).toBe(true);
+    expect(isLikelyPersonSpecificYaleEmail('yy259@yale.edu', 'Yang Yang-Hartwich')).toBe(true);
+  });
+
+  it('accepts name-shaped local-parts that match the visible person name', () => {
+    expect(isLikelyPersonSpecificYaleEmail('daniel.dimaio@yale.edu', 'Daniel DiMaio')).toBe(true);
+    expect(isLikelyPersonSpecificYaleEmail('yang.yang@yale.edu', 'Yang Yang-Hartwich')).toBe(true);
+    expect(isLikelyPersonSpecificYaleEmail('anna.zayaruznaya@yale.edu', 'AZ Zayaruznaya')).toBe(true);
+  });
+
+  it('rejects contact or other-person Yale emails near a faculty name', () => {
+    expect(isLikelyPersonSpecificYaleEmail('susan.k.brady@yale.edu', 'Joshua Gendron')).toBe(false);
+    expect(isLikelyPersonSpecificYaleEmail('daniel.dimaio@yale.edu', 'Daniel Mai')).toBe(false);
+    expect(isLikelyPersonSpecificYaleEmail('siyuan.wang@yale.edu', 'Susan Wang')).toBe(false);
+    expect(isLikelyPersonSpecificYaleEmail('ysm.editor@yale.edu', 'Caroline Johnson')).toBe(false);
   });
 });
 
@@ -307,12 +454,28 @@ describe('econExtractor', () => {
     });
     expect(out).toEqual([]);
   });
+
+  it('supports MacMillan person cards with node-teaser titles and lazy images', () => {
+    const out = econExtractor(MACMILLAN_PERSON_HTML, {
+      pageUrl: 'https://macmillan.yale.edu/africa/people',
+    });
+
+    expect(out).toEqual([
+      {
+        name: 'Oluseye Adesola',
+        profileUrl: 'https://macmillan.yale.edu/africa/person/oluseye-adesola',
+        title: 'Senior Lector II in Yoruba & African Studies, Council on African Studies',
+        imageUrl:
+          'https://macmillan.yale.edu/sites/default/files/styles/square_320/public/2024-09/Oluseye%20Adesola.jpg',
+      },
+    ]);
+  });
 });
 
 describe('mcdbExtractor', () => {
   it('extracts cards with name, title, email, optional lab URL', () => {
     const out = mcdbExtractor(MCDB_HTML, { pageUrl: 'https://mcdb.yale.edu/people/faculty' });
-    expect(out).toHaveLength(2); // empty card skipped
+    expect(out).toHaveLength(3); // empty card skipped
     expect(out[0]).toMatchObject({
       name: 'Shirin Bahmanyar, Ph.D.',
       email: 'shirin.bahmanyar@yale.edu',
@@ -325,6 +488,12 @@ describe('mcdbExtractor', () => {
       email: 'ronald.breaker@yale.edu',
     });
     expect(out[1].labUrl).toBeUndefined();
+    expect(out[2]).toMatchObject({
+      name: 'Hugh Taylor, M.D.',
+      email: 'hugh.taylor@yale.edu',
+      profileUrl: 'https://mcdb.yale.edu/profile/hugh-taylor',
+    });
+    expect(out[2].labUrl).toBeUndefined();
   });
 });
 
@@ -360,6 +529,25 @@ describe('official Yale profile-card extractor coverage', () => {
       },
     ]);
   });
+
+  it('supports TDPS directory-listing cards with profile image URLs', () => {
+    const out = mcdbExtractor(TDPS_DIRECTORY_CARD_HTML, {
+      pageUrl: 'https://tdps.yale.edu/people',
+    });
+
+    expect(out).toEqual([
+      {
+        name: 'Deb Margolin',
+        profileUrl: 'https://tdps.yale.edu/profile/deb-margolin',
+        title: 'Professor in the Practice',
+        email: 'deborah.margolin@yale.edu',
+        labUrl: undefined,
+        bio: undefined,
+        imageUrl:
+          'https://tdps.yale.edu/sites/default/files/styles/1_1_300_/public/2024-06/deb.png',
+      },
+    ]);
+  });
 });
 
 describe('psychExtractor', () => {
@@ -389,6 +577,8 @@ describe('psychExtractor', () => {
         title: 'John Hay Whitney Professor of Psychology',
         email: 'woo-kyoung.ahn@yale.edu',
         profileUrl: 'https://psychology.yale.edu/people/woo-kyoung-ahn',
+        imageUrl:
+          'https://psychology.yale.edu/sites/default/files/styles/people_thumbnail/public/pictures/ahn.jpg',
         labUrl: 'http://ahnthinkinglab.yale.edu/',
       },
     ]);
@@ -430,6 +620,36 @@ describe('psychExtractor', () => {
     ]);
   });
 
+  it('splits adjacent Physics field-of-study taxonomy links without concatenating labels', () => {
+    const html = `
+      <html><body>
+        <table class="views-table">
+          <tbody>
+            <tr>
+              <td class="views-field views-field-name">
+                <a href="/people/meng-cheng" class="username">Meng Cheng</a><br />
+                Associate Professor<br />
+                <a href="mailto:m.cheng@yale.edu">m.cheng@yale.edu</a>
+              </td>
+              <td class="views-field views-field-field-field-of-study">
+                <a href="/research/condensed-matter-physics">Condensed Matter Physics</a><a href="/taxonomy/theorist">Theorist</a><a href="/taxonomy/quantum-criticality">Quantum criticality</a>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </body></html>
+    `;
+
+    const out = psychExtractor(html, { pageUrl: 'https://physics.yale.edu/people/faculty' });
+
+    expect(out[0].topics).toEqual([
+      'Condensed Matter Physics',
+      'Theorist',
+      'Quantum criticality',
+    ]);
+    expect(out[0].topics).not.toContain('Condensed Matter PhysicsTheoristQuantum criticality');
+  });
+
   it('supports Astronomy views grid cells with profile picture links and topic fields', () => {
     const out = psychExtractor(ASTRONOMY_GRID_HTML, {
       pageUrl: 'https://astronomy.yale.edu/people/faculty',
@@ -444,6 +664,50 @@ describe('psychExtractor', () => {
         labUrl: undefined,
         topics: ['Star Formation and ISM'],
         researchInterests: ['Star Formation and ISM'],
+      },
+    ]);
+  });
+});
+
+describe('viewsRowPersonExtractor', () => {
+  it('extracts old Drupal views-row faculty rows with obfuscated Yale email addresses', () => {
+    const out = viewsRowPersonExtractor(ERM_VIEWS_ROW_HTML, {
+      pageUrl: 'https://erm.yale.edu/people/faculty',
+    });
+
+    expect(out).toEqual([
+      {
+        name: 'Deb Vargas',
+        profileUrl: 'https://erm.yale.edu/people/deb-vargas',
+        title:
+          "Director of Undergraduate Studies (ER&M) and Professor of Women's, Gender, and Sexuality Studies",
+        email: 'deb.vargas@yale.edu',
+        imageUrl:
+          'https://erm.yale.edu/sites/default/files/styles/people_directory_image/public/pictures/deb.jpg',
+      },
+      {
+        name: 'Fatima El-Tayeb',
+        profileUrl: 'https://erm.yale.edu/people/fatima-el-tayeb',
+        title:
+          "Professor of Women's, Gender, and Sexuality Studies and of Ethnicity, Race, and Migration",
+      },
+    ]);
+  });
+});
+
+describe('jacksonPersonCardExtractor', () => {
+  it('extracts Jackson person cards with email, bio URL, title, and image', () => {
+    const out = jacksonPersonCardExtractor(JACKSON_PERSON_CARD_HTML, {
+      pageUrl: 'https://jackson.yale.edu/about/meet-us/faculty/lecturers/',
+    });
+
+    expect(out).toEqual([
+      {
+        name: 'Eric Braverman',
+        profileUrl: 'https://jackson.yale.edu/person/eric-braverman/',
+        title: 'Lecturer',
+        email: 'eric.braverman@yale.edu',
+        imageUrl: 'https://jackson.yale.edu/wp-content/uploads/2026/05/Eric-Braverman.jpg',
       },
     ]);
   });
@@ -557,6 +821,95 @@ function makeContext(overrides: Partial<ScraperContext['options']> = {}) {
 }
 
 describe('DepartmentRosterScraper.run', () => {
+  it('rejects unsafe runtime limits before fetching department pages', async () => {
+    const htmlFetcher = vi.fn(async () => ECON_HTML);
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'economics',
+        deptName: 'Economics',
+        schoolName: 'Yale Faculty of Arts and Sciences',
+        url: 'https://economics.yale.edu/people/faculty',
+        extractor: econExtractor,
+      },
+    ];
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx } = makeContext({ limit: 9007199254740992 });
+
+    await expect(scraper.run(ctx)).rejects.toThrow(/--limit must be a safe positive integer/);
+
+    expect(htmlFetcher).not.toHaveBeenCalled();
+  });
+
+  it('bundles the expanded official roster config set', () => {
+    const configsByKey = new Map(DEFAULT_DEPT_CONFIGS.map((config) => [config.deptKey, config]));
+
+    expect(configsByKey.get('political-science')).toMatchObject({
+      deptName: 'Political Science',
+      url: 'https://politicalscience.yale.edu/people/faculty',
+      paginated: true,
+      extractor: psychExtractor,
+    });
+    expect(configsByKey.get('history')).toMatchObject({
+      deptName: 'History',
+      url: 'https://history.yale.edu/people/faculty',
+      paginated: true,
+      extractor: psychExtractor,
+    });
+    expect(configsByKey.get('american-studies')).toMatchObject({
+      deptName: 'American Studies',
+      url: 'https://americanstudies.yale.edu/people/faculty',
+      extractor: psychExtractor,
+    });
+    expect(configsByKey.get('african-studies')).toMatchObject({
+      deptName: 'African Studies',
+      url: 'https://macmillan.yale.edu/africa/people',
+      extractor: econExtractor,
+      emitPersonalResearchEntities: false,
+    });
+    expect(configsByKey.get('music')).toMatchObject({
+      deptName: 'Music',
+      url: 'https://yalemusic.yale.edu/people/faculty',
+      extractor: psychExtractor,
+    });
+    expect(configsByKey.get('history-art')).toMatchObject({
+      deptName: 'History of Art',
+      url: 'https://arthistory.yale.edu/people/faculty',
+      extractor: viewsRowPersonExtractor,
+    });
+    expect(configsByKey.get('anthropology')).toMatchObject({
+      deptName: 'Anthropology',
+      url: 'https://anthropology.yale.edu/people/faculty',
+      extractor: mcdbExtractor,
+    });
+    expect(configsByKey.get('earth-planetary-sciences')).toMatchObject({
+      deptName: 'Earth and Planetary Sciences',
+      url: 'https://earth.yale.edu/faculty',
+      extractor: mcdbExtractor,
+    });
+    expect(configsByKey.get('erm')).toMatchObject({
+      deptName: 'Ethnicity, Race, and Migration',
+      url: 'https://erm.yale.edu/people/faculty',
+      extractor: viewsRowPersonExtractor,
+    });
+    expect(configsByKey.get('wgss')).toMatchObject({
+      deptName: "Women's, Gender, and Sexuality Studies",
+      url: 'https://wgss.yale.edu/people/faculty',
+      extractor: viewsRowPersonExtractor,
+    });
+    expect(configsByKey.get('global-affairs')).toMatchObject({
+      deptName: 'Global Affairs',
+      url: 'https://jackson.yale.edu/about/meet-us/faculty/lecturers/',
+      extractor: jacksonPersonCardExtractor,
+      emitPersonalResearchEntities: false,
+    });
+    expect(configsByKey.get('tdps')).toMatchObject({
+      deptName: 'Theater, Dance, and Performance Studies',
+      url: 'https://tdps.yale.edu/people',
+      extractor: mcdbExtractor,
+      emitPersonalResearchEntities: false,
+    });
+  });
+
   it('skips JS-rendered depts and only invokes extractors for matching only-filter', async () => {
     const cannedExtractor = vi.fn(
       (): FacultyEntry[] => [
@@ -612,8 +965,188 @@ describe('DepartmentRosterScraper.run', () => {
     const labObs = emitted.filter((o) => o.entityType === 'researchEntity');
     expect(labObs.find((o) => o.field === 'websiteUrl')?.value).toBe('https://tflab.example.org');
     expect(labObs.find((o) => o.field === 'kind')?.value).toBe('lab');
+    expect(labObs.find((o) => o.field === 'entityType')?.value).toBe('LAB');
     expect(labObs.find((o) => o.field === 'departments')?.value).toEqual(['Economics']);
     expect(labObs[0].entityKey).toMatch(/^dept-econ-test-faculty/);
+
+    getSpy.mockRestore();
+  });
+
+  it('does not derive identity email observations from another person contact on a roster card', async () => {
+    const cannedExtractor = vi.fn(
+      (): FacultyEntry[] => [
+        {
+          name: 'Joshua Gendron',
+          email: 'susan.k.brady@yale.edu',
+          labUrl: 'https://gendronlab.yale.edu',
+        },
+      ],
+    );
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'mcdb',
+        deptName: 'Molecular, Cellular and Developmental Biology',
+        schoolName: 'FAS',
+        url: 'https://example.invalid/mcdb',
+        paginated: false,
+        extractor: cannedExtractor,
+      },
+    ];
+    const axios = (await import('axios')).default;
+    const getSpy = vi.spyOn(axios, 'get').mockResolvedValue({ data: '<html></html>' } as any);
+
+    const scraper = new DepartmentRosterScraper(configs);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    const userObs = emitted.filter((o) => o.entityType === 'user');
+    expect(userObs.some((o) => o.field === 'netid')).toBe(false);
+    expect(userObs.some((o) => o.field === 'email')).toBe(false);
+    expect(userObs.find((o) => o.field === 'fname')?.value).toBe('Joshua');
+    expect(userObs.find((o) => o.field === 'lname')?.value).toBe('Gendron');
+    expect(userObs[0].entityKey).toBe('dept:mcdb:joshua-gendron');
+
+    getSpy.mockRestore();
+  });
+
+  it('models personal research websites as faculty research areas rather than labs', async () => {
+    const cannedExtractor = vi.fn(
+      (): FacultyEntry[] => [
+        {
+          name: 'Abraham Silberschatz',
+          profileUrl: 'https://engineering.yale.edu/research-and-faculty/faculty-directory/abraham-silberschatz',
+          labUrl: 'https://codex.cs.yale.edu/avi/',
+        },
+      ],
+    );
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'cs',
+        deptName: 'Computer Science',
+        schoolName: 'SEAS',
+        url: 'https://example.invalid/cs',
+        paginated: false,
+        extractor: cannedExtractor,
+      },
+    ];
+    const axios = (await import('axios')).default;
+    const getSpy = vi.spyOn(axios, 'get').mockResolvedValue({ data: '<html></html>' } as any);
+
+    const scraper = new DepartmentRosterScraper(configs);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    const entityObs = emitted.filter((o) => o.entityType === 'researchEntity');
+    expect(entityObs.find((o) => o.field === 'name')?.value).toBe(
+      'Abraham Silberschatz Faculty Research',
+    );
+    expect(entityObs.find((o) => o.field === 'kind')?.value).toBe('individual');
+    expect(entityObs.find((o) => o.field === 'entityType')?.value).toBe(
+      'FACULTY_RESEARCH_AREA',
+    );
+    expect(entityObs.find((o) => o.field === 'websiteUrl')?.value).toBe(
+      'https://codex.cs.yale.edu/avi/',
+    );
+
+    getSpy.mockRestore();
+  });
+
+  it('can suppress generic personal-site research entities for broad people rosters', async () => {
+    const cannedExtractor = vi.fn(
+      (): FacultyEntry[] => [
+        {
+          name: 'Deb Margolin',
+          email: 'deborah.margolin@yale.edu',
+          profileUrl: 'https://tdps.yale.edu/profile/deb-margolin',
+          labUrl: 'https://www.debmargolin.com/',
+        },
+        {
+          name: 'Research Lab Owner',
+          email: 'research.owner@yale.edu',
+          labUrl: 'https://researchlab.yale.edu/',
+        },
+      ],
+    );
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'tdps',
+        deptName: 'Theater, Dance, and Performance Studies',
+        schoolName: 'FAS',
+        url: 'https://example.invalid/tdps',
+        paginated: false,
+        extractor: cannedExtractor,
+        emitPersonalResearchEntities: false,
+      },
+    ];
+    const axios = (await import('axios')).default;
+    const getSpy = vi.spyOn(axios, 'get').mockResolvedValue({ data: '<html></html>' } as any);
+
+    const scraper = new DepartmentRosterScraper(configs);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    const entityObs = emitted.filter((o) => o.entityType === 'researchEntity');
+    expect(entityObs.find((o) => o.field === 'name')?.value).toBe('Research Lab Owner Lab');
+    expect(entityObs.some((o) => o.value === 'Deb Margolin Faculty Research')).toBe(false);
+    expect(entityObs.find((o) => o.field === 'websiteUrl')?.value).toBe(
+      'https://researchlab.yale.edu/',
+    );
+
+    getSpy.mockRestore();
+  });
+
+  it('emits conservative source-backed descriptions from roster topic fields', async () => {
+    const cannedExtractor = vi.fn(
+      (): FacultyEntry[] => [
+        {
+          name: 'Hui Cao',
+          email: 'hui.cao@yale.edu',
+          labUrl: 'https://www.eng.yale.edu/caolab/',
+          topics: [
+            'Condensed Matter Physics',
+            'Experimentalist',
+            'Coherent control of light transport and absorption',
+            'Random lasers',
+          ],
+          researchInterests: [
+            'Condensed Matter Physics',
+            'Experimentalist',
+            'Coherent control of light transport and absorption',
+            'Random lasers',
+          ],
+        },
+      ],
+    );
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'physics',
+        deptName: 'Physics',
+        schoolName: 'FAS',
+        url: 'https://example.invalid/physics',
+        paginated: false,
+        extractor: cannedExtractor,
+      },
+    ];
+    const axios = (await import('axios')).default;
+    const getSpy = vi.spyOn(axios, 'get').mockResolvedValue({ data: '<html></html>' } as any);
+
+    const scraper = new DepartmentRosterScraper(configs);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    const entityObs = emitted.filter((o) => o.entityType === 'researchEntity');
+    expect(entityObs.find((o) => o.field === 'researchAreas')?.value).toEqual([
+      'Condensed Matter Physics',
+      'Experimentalist',
+      'Coherent control of light transport and absorption',
+      'Random lasers',
+    ]);
+    expect(entityObs.find((o) => o.field === 'fullDescription')?.value).toBe(
+      'Studies condensed matter physics, including coherent control of light transport and absorption, and random lasers.',
+    );
+    expect(entityObs.find((o) => o.field === 'shortDescription')?.value).toBe(
+      'Studies condensed matter physics, including coherent control of light transport and absorption, and random lasers.',
+    );
 
     getSpy.mockRestore();
   });
@@ -686,11 +1219,16 @@ describe('DepartmentRosterScraper.run', () => {
       </head><body>
         <div class="person-title">Associate Professor of Applied Mathematics</div>
         <div class="profile-body">Ada works on computation, algebraic geometry, and foundations of mathematical modeling.</div>
-        <div class="research-interests">Algebraic Geometry, Topology</div>
+        <div class="research-interests"><a href="/topics/algebraic-geometry">Algebraic Geometry</a><a href="/topics/topology">Topology</a></div>
         <a href="https://orcid.org/0000-0002-1825-0097">ORCID</a>
         <a href="https://scholar.google.com/citations?user=adaCandidate">Google Scholar</a>
         <a href="mailto:ada.lovelace@yale.edu">ada.lovelace@yale.edu</a>
         <a href="https://lovelacelab.yale.edu">Lab Website</a>
+        <h2>Selected Publications</h2>
+        <ul>
+          <li><em>Persons, Roles and Minds</em>. Stanford University Press, 2001.</li>
+          <li><a href="/publications/stone"><em>The Stone in Late Imperial China</em></a>, 2009.</li>
+        </ul>
       </body></html>
     `;
     const htmlFetcher = vi.fn(async (url: string) => {
@@ -755,6 +1293,19 @@ describe('DepartmentRosterScraper.run', () => {
     expect(userObs.find((o) => o.field === 'scholarCandidateProfileUrls')?.value).toEqual([
       'https://scholar.google.com/citations?user=adaCandidate',
     ]);
+    expect(userObs.find((o) => o.field === 'officialProfilePublications')?.value).toEqual([
+      expect.objectContaining({
+        title: 'Persons, Roles and Minds',
+        year: 2001,
+        sourceUrl: 'https://math.yale.edu/people/ada-lovelace',
+      }),
+      expect.objectContaining({
+        title: 'The Stone in Late Imperial China',
+        year: 2009,
+        url: 'https://math.yale.edu/publications/stone',
+        sourceUrl: 'https://math.yale.edu/people/ada-lovelace',
+      }),
+    ]);
     expect(userObs.find((o) => o.field === 'googleScholarId')).toBeUndefined();
     expect(userObs.find((o) => o.field === 'profileUrls')?.value).not.toHaveProperty(
       'googleScholar',
@@ -767,6 +1318,322 @@ describe('DepartmentRosterScraper.run', () => {
     expect(labObs.find((o) => o.field === 'inferredPiUserKey')?.value).toBe(
       'netid:ada.lovelace',
     );
+  });
+
+  it('extracts selected publications from Engineering profile grid columns', async () => {
+    const htmlFetcher = vi.fn(async (url: string) => {
+      if (
+        url ===
+        'https://engineering.yale.edu/research-and-faculty/faculty-directory/leandros-tassiulas'
+      ) {
+        return `
+          <html><head>
+            <link rel="canonical" href="https://engineering.yale.edu/research-and-faculty/faculty-directory/leandros-tassiulas" />
+          </head><body>
+            <a href="mailto:leandros.tassiulas@yale.edu">Email</a>
+            <div class="py-4 grid grid-cols-1 lg:grid-cols-3 gap-4">
+              <div class="col-span-1 mb-2 lg:mb-0">
+                <h3>Selected Publications</h3>
+              </div>
+              <div class="col-span-1 lg:col-span-2">
+                <p><a href="http://scholar.google.gr/citations?user=9qtgcZ8AAAAJ">Complete publication list from Google Scholar</a></p>
+                <ul>
+                  <li>G. Iosifidis, L. Gao, J. Huang, L. Tassiulas, "A Double Auction Mechanism for Mobile Data Offloading Markets", <em>IEEE/ACM Transactions on Networking</em>, 2015.</li>
+                  <li>I. Koutsopoulos, L. Tassiulas, L. Gkatzikis, "Client-server games and their equilibria in peer-to-peer networks", in <em>Computer Networks</em>, vol. 67, pp. 201-218, 2014.</li>
+                </ul>
+              </div>
+            </div>
+          </body></html>
+        `;
+      }
+      return '<html><body>listing</body></html>';
+    });
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'cs',
+        deptName: 'Computer Science',
+        schoolName: 'SEAS',
+        url: 'https://engineering.yale.edu/academic-study/departments/computer-science/faculty',
+        paginated: false,
+        extractor: () => [
+          {
+            name: 'Leandros Tassiulas',
+            profileUrl:
+              'https://engineering.yale.edu/research-and-faculty/faculty-directory/leandros-tassiulas',
+          },
+        ],
+      },
+    ];
+
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    expect(
+      emitted.find((o) => o.entityType === 'user' && o.field === 'officialProfilePublications')
+        ?.value,
+    ).toEqual([
+      expect.objectContaining({
+        title: 'A Double Auction Mechanism for Mobile Data Offloading Markets',
+        year: 2015,
+        venue: 'IEEE/ACM Transactions on Networking',
+        sourceUrl:
+          'https://engineering.yale.edu/research-and-faculty/faculty-directory/leandros-tassiulas',
+      }),
+      expect.objectContaining({
+        title: 'Client-server games and their equilibria in peer-to-peer networks',
+        year: 2014,
+        venue: 'Computer Networks',
+        sourceUrl:
+          'https://engineering.yale.edu/research-and-faculty/faculty-directory/leandros-tassiulas',
+      }),
+    ]);
+  });
+
+  it('follows official profile publication-list website links for featured publications', async () => {
+    const htmlFetcher = vi.fn(async (url: string) => {
+      if (
+        url ===
+        'https://engineering.yale.edu/research-and-faculty/faculty-directory/abhishek-bhattacharjee'
+      ) {
+        return `
+          <html><head>
+            <link rel="canonical" href="https://engineering.yale.edu/research-and-faculty/faculty-directory/abhishek-bhattacharjee" />
+          </head><body>
+            <a href="mailto:abhishek@cs.yale.edu">Email</a>
+            <a href="https://www.cs.yale.edu/homes/abhishek/">Website: Research Website</a>
+            <h3>Selected Publications</h3>
+            <p>For a list of selected publications, <a href="https://www.cs.yale.edu/homes/abhishek/">visit my website</a>.</p>
+          </body></html>
+        `;
+      }
+      if (url === 'https://www.cs.yale.edu/homes/abhishek/') {
+        return `
+          <html><body>
+            <font color="blue"><strong>Selected Publications</strong></font>
+            <br><br>
+            <li>
+              <div>
+                <a class="btn" href="/papers/fiduciary-ai.pdf">PDF</a>
+                <div class="p-desc"><b>Fiduciary AI for the Future of Brain-Technology Interactions</b><br>Embedding fiduciary duties directly into BCI-integrated brain foundation models</div>
+              </div>
+            </li>
+            <li>
+              <div>
+                <a class="btn" href="/papers/scalable-far-memory.pdf">PDF</a>
+                <div class="p-desc"><b>Scalable Far Memory: Balancing Faults and Evictions, SOSP'25</b><br>Optimizations to improve scaling of data movement to far memory</div>
+              </div>
+            </li>
+            <h2>Textbooks</h2>
+            <ul><li>Architectural and Operating System Support for Virtual Memory</li></ul>
+          </body></html>
+        `;
+      }
+      return '<html><body>listing</body></html>';
+    });
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'cs',
+        deptName: 'Computer Science',
+        schoolName: 'SEAS',
+        url: 'https://engineering.yale.edu/academic-study/departments/computer-science/faculty',
+        paginated: false,
+        extractor: () => [
+          {
+            name: 'Abhishek Bhattacharjee',
+            profileUrl:
+              'https://engineering.yale.edu/research-and-faculty/faculty-directory/abhishek-bhattacharjee',
+          },
+        ],
+      },
+    ];
+
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    expect(htmlFetcher).toHaveBeenCalledWith(
+      'https://www.cs.yale.edu/homes/abhishek/',
+      false,
+      'dept-faculty-roster',
+    );
+    expect(
+      emitted.find((o) => o.entityType === 'user' && o.field === 'officialProfilePublications')
+        ?.value,
+    ).toEqual([
+      expect.objectContaining({
+        title: 'Fiduciary AI for the Future of Brain-Technology Interactions',
+        url: 'https://www.cs.yale.edu/papers/fiduciary-ai.pdf',
+        sourceUrl: 'https://www.cs.yale.edu/homes/abhishek/',
+      }),
+      expect.objectContaining({
+        title: "Scalable Far Memory: Balancing Faults and Evictions, SOSP'25",
+        url: 'https://www.cs.yale.edu/papers/scalable-far-memory.pdf',
+        sourceUrl: 'https://www.cs.yale.edu/homes/abhishek/',
+      }),
+    ]);
+    expect(JSON.stringify(emitted)).not.toContain('For a list of selected publications');
+  });
+
+  it('prefers Yale Medicine Biography text over patient card and research overview copy', async () => {
+    const profileHtml = `
+      <html><head>
+        <link rel="canonical" href="https://medicine.yale.edu/profile/mehran-sadeghi/" />
+      </head><body>
+        <main>
+          <section>
+            <h3>Are You a Patient?</h3>
+            <p>View this doctor's clinical profile on the Yale Medicine website for information about services and appointments.</p>
+          </section>
+          <h2>About</h2>
+          <p>Copy Link</p>
+          <h3>Titles</h3>
+          <p>Professor</p>
+          <h3>Biography</h3>
+          <p>Mehran M. Sadeghi, MD, studied medicine at Necker Enfants Malades School of Medicine and earned his medical degree from the University of Paris in 1991.</p>
+          <p>The goal of the Cardiovascular Molecular Imaging Laboratory is to develop novel in vivo imaging approaches.</p>
+          <p>Last Updated on April 07, 2025.</p>
+          <h3>Appointments</h3>
+          <p>Cardiovascular Medicine</p>
+          <h2>Research</h2>
+          <h3>Overview</h3>
+          <p>Despite remarkable recent progress in molecular and vascular biology research, little has been achieved in adapting traditional imaging modalities.</p>
+          <a href="mailto:mehran.sadeghi@yale.edu">mehran.sadeghi@yale.edu</a>
+        </main>
+      </body></html>
+    `;
+    const htmlFetcher = vi.fn(async (url: string) => {
+      if (url === 'https://medicine.yale.edu/profile/mehran-sadeghi/') return profileHtml;
+      return '<html><body>listing</body></html>';
+    });
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'ysm',
+        deptName: 'Yale School of Medicine',
+        schoolName: 'YSM',
+        url: 'https://medicine.yale.edu/faculty',
+        paginated: false,
+        extractor: () => [
+          {
+            name: 'Mehran Sadeghi',
+            profileUrl: 'https://medicine.yale.edu/profile/mehran-sadeghi/',
+          },
+        ],
+      },
+    ];
+
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    const bio = emitted.find((o) => o.entityType === 'user' && o.field === 'bio')?.value;
+    expect(bio).toContain('Mehran M. Sadeghi, MD, studied medicine');
+    expect(bio).toContain('Cardiovascular Molecular Imaging Laboratory');
+    expect(bio).not.toContain("View this doctor's clinical profile");
+    expect(bio).not.toContain('Despite remarkable recent progress');
+    expect(bio).not.toContain('Last Updated');
+  });
+
+  it('keeps adjacent official profile paragraphs together when no Biography heading exists', async () => {
+    const profileHtml = `
+      <html><head>
+        <link rel="canonical" href="https://mcdb.yale.edu/profile/nadya-dimitrova-phd" />
+      </head><body>
+        <main>
+          <div class="text">
+            <p>Originally from Sofia, Bulgaria, Nadya Dimitrova graduated with an Sc.B. in Biochemistry from Brown University in 2002.</p>
+            <p>Nadya Dimitrova is currently an assistant professor in the Department of Molecular, Cellular and Developmental Biology at Yale University and studies long noncoding RNAs in cancer.</p>
+          </div>
+        </main>
+      </body></html>
+    `;
+    const htmlFetcher = vi.fn(async (url: string) => {
+      if (url === 'https://mcdb.yale.edu/profile/nadya-dimitrova-phd') return profileHtml;
+      return '<html><body>listing</body></html>';
+    });
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'mcdb',
+        deptName: 'Molecular, Cellular and Developmental Biology',
+        schoolName: 'FAS',
+        url: 'https://mcdb.yale.edu/people/faculty',
+        paginated: false,
+        extractor: () => [
+          {
+            name: 'Nadya Dimitrova',
+            profileUrl: 'https://mcdb.yale.edu/profile/nadya-dimitrova-phd',
+          },
+        ],
+      },
+    ];
+
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    const bio = emitted.find((o) => o.entityType === 'user' && o.field === 'bio')?.value;
+    expect(bio).toContain('Originally from Sofia');
+    expect(bio).toContain('currently an assistant professor');
+    expect(String(bio)).toBe(
+      'Originally from Sofia, Bulgaria, Nadya Dimitrova graduated with an Sc.B. in Biochemistry from Brown University in 2002. Nadya Dimitrova is currently an assistant professor in the Department of Molecular, Cellular and Developmental Biology at Yale University and studies long noncoding RNAs in cancer.',
+    );
+  });
+
+  it('ignores site chrome homepage links when enriching official profile websites', async () => {
+    const profileHtml = `
+      <html><head>
+        <link rel="canonical" href="https://economics.yale.edu/people/leah-boustan" />
+      </head><body>
+        <header class="site-header">
+          <a href="https://yale.edu" aria-label="Yale University homepage">Yale University</a>
+          <a href="/" aria-label="Yale Department of Economics homepage">Yale Department of Economics</a>
+        </header>
+        <main>
+          <div class="person-title">Professor of Economics</div>
+          <a href="mailto:leah.boustan@yale.edu">leah.boustan@yale.edu</a>
+          <div class="node__website-link">
+            <a href="https://campuspress.yale.edu/leahboustan/">Website</a>
+          </div>
+        </main>
+      </body></html>
+    `;
+    const htmlFetcher = vi.fn(async (url: string) => {
+      if (url === 'https://economics.yale.edu/people/leah-boustan') return profileHtml;
+      return '<html><body>listing</body></html>';
+    });
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'econ',
+        deptName: 'Economics',
+        schoolName: 'FAS',
+        url: 'https://economics.yale.edu/people',
+        paginated: false,
+        extractor: () => [
+          {
+            name: 'Leah Boustan',
+            profileUrl: 'https://economics.yale.edu/people/leah-boustan',
+          },
+        ],
+      },
+    ];
+
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    const userObs = emitted.filter((o) => o.entityType === 'user');
+    expect(userObs.find((o) => o.field === 'website')?.value).toBe(
+      'https://campuspress.yale.edu/leahboustan/',
+    );
+
+    const entityObs = emitted.filter((o) => o.entityType === 'researchEntity');
+    expect(entityObs.find((o) => o.field === 'websiteUrl')?.value).toBe(
+      'https://campuspress.yale.edu/leahboustan/',
+    );
+    expect(entityObs.find((o) => o.field === 'sourceUrls')?.value).toEqual([
+      'https://economics.yale.edu/people',
+      'https://campuspress.yale.edu/leahboustan/',
+    ]);
   });
 
   it('registers the first Math/Physics/Statistics/Astronomy roster batch', () => {
@@ -812,6 +1679,65 @@ describe('DepartmentRosterScraper.run', () => {
     );
     expect(emitted.filter((o) => o.entityType === 'researchEntity' && o.field === 'websiteUrl'))
       .toHaveLength(1);
+  });
+
+  it('extracts year-backed major publications embedded in official profile bios', async () => {
+    const htmlFetcher = vi.fn(async (url: string) => {
+      if (url === 'https://eall.yale.edu/people/tina-lu') {
+        return `
+          <html><head><link rel="canonical" href="/people/tina-lu" /></head>
+          <body>
+            <a href="mailto:tina.lu@yale.edu">Email</a>
+            <div class="field-name-field-bio">
+              My research focuses on late imperial literature. Major publications include
+              Persons, Roles and Minds (Stanford, 2001), Accidental Incest, Filial Cannibalism,
+              and Other Peculiar Encounters in Late Imperial Chinese Literature
+              (Harvard East Asian Monographs, 2009), a book-length chapter on late Ming literary
+              culture, and a co-edited volume. Please see my CV for more current publications.
+            </div>
+          </body></html>
+        `;
+      }
+      return '<html><body>listing</body></html>';
+    });
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'eall',
+        deptName: 'East Asian Languages & Literatures',
+        schoolName: 'FAS',
+        url: 'https://eall.yale.edu/people/professors',
+        paginated: false,
+        extractor: () => [
+          {
+            name: 'Tina Lu',
+            profileUrl: 'https://eall.yale.edu/people/tina-lu',
+          },
+        ],
+      },
+    ];
+
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    expect(
+      emitted.find((o) => o.entityType === 'user' && o.field === 'officialProfilePublications')
+        ?.value,
+    ).toEqual([
+      expect.objectContaining({
+        title: 'Persons, Roles and Minds',
+        year: 2001,
+        venue: 'Stanford',
+        sourceUrl: 'https://eall.yale.edu/people/tina-lu',
+      }),
+      expect.objectContaining({
+        title:
+          'Accidental Incest, Filial Cannibalism, and Other Peculiar Encounters in Late Imperial Chinese Literature',
+        year: 2009,
+        venue: 'Harvard East Asian Monographs',
+        sourceUrl: 'https://eall.yale.edu/people/tina-lu',
+      }),
+    ]);
   });
 
   it('uses an injected rendered fetcher for JS-rendered depts while keeping parsing local', async () => {

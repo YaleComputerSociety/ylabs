@@ -18,7 +18,7 @@
  *      offset/rpp pagination. Stop on an empty page.
  *   2. Group awards by PI (`piFirstName` + `piLastName`).
  *   3. For each PI: try to match an existing User by exact lname+fname, then by
- *      lname + first initial. If matched, use a slug derived from that user; if
+ *      lname + given-name prefix (or first initial when NSF only gives an initial). If matched, use a slug derived from that user; if
  *      not, emit a User observation under entityKey `nsf-pi:<normalized-name>`
  *      so the materializer at least records the person's existence.
  *   4. Emit a ResearchGroup observation per PI:
@@ -298,7 +298,7 @@ export function piSlug(piUserId: string | null, firstName: string, lastName: str
 /**
  * Find an existing Yale User for a given (first, last) name. Two-pass:
  *   1. exact lname + fname (case-insensitive)
- *   2. exact lname + first initial of fname (case-insensitive)
+ *   2. exact lname + given-name prefix, or first initial when the source only gives an initial
  * Both passes only consider professor/faculty/admin user types and return a
  * match only when a single candidate is found (avoids ambiguous attribution).
  *
@@ -332,10 +332,13 @@ export async function findUserForPi(
     if (matches.length > 1) return null;
   }
 
-  // pass 2: lname + first initial of fname
+  // pass 2: exact lname + given-name prefix. Only fall back to a bare initial
+  // when the source itself only provided an initial; otherwise same-initial
+  // matches are too broad (for example Leying Guan vs Lawrence Guan).
   if (first) {
-    const initial = first.charAt(0);
-    const initRe = new RegExp(`^${escapeRe(initial)}`, 'i');
+    const firstToken = first.split(/\s+/)[0]?.replace(/\./g, '') || first;
+    const isInitialOnly = firstToken.length === 1;
+    const initRe = new RegExp(`^${escapeRe(isInitialOnly ? firstToken : first)}`, 'i');
     const matches = await finder({
       lname: lnameRe,
       fname: initRe,
@@ -534,7 +537,11 @@ export class NsfAwardScraper implements IScraper {
     const dateStart = this.deps.dateStart ?? defaultDateStart();
     const finder = this.deps.userFinder ?? defaultUserFinder;
     const fetcher = this.deps.fetchPage ?? fetchPage;
-    const limit = ctx.options.limit && ctx.options.limit > 0 ? ctx.options.limit : Infinity;
+    const limitOption = ctx.options.limit;
+    if (limitOption !== undefined && (!Number.isSafeInteger(limitOption) || limitOption < 1)) {
+      throw new Error('--limit must be a safe positive integer');
+    }
+    const limit = limitOption ?? Infinity;
 
     ctx.log(`Fetching NSF awards for "Yale University" since ${dateStart}`);
 

@@ -171,7 +171,7 @@ describe('computeAcceptanceVerdict — access summary compatibility', () => {
     expect(result.verdict).toBe('not-accepting');
     expect(result.confidence).toBe(0.72);
     expect(result.evidence[0].kind).toBe('closed-evidence');
-    expect(result.evidence[0].label).toBe('Limited access evidence');
+    expect(result.evidence[0].label).toBe('Not currently available');
     expect(result.evidence[0].detail).toBe('Not taking undergraduates this term.');
   });
 });
@@ -354,6 +354,6 @@ describe('verdictBadgeStyles + verdictLabel', () => {
     expect(verdictLabel('verified-accepting')).toBe('Strong evidence');
     expect(verdictLabel('likely-accepting')).toBe('Some evidence');
     expect(verdictLabel('unknown')).toBe('Evidence unknown');
-    expect(verdictLabel('not-accepting')).toBe('Limited access evidence');
+    expect(verdictLabel('not-accepting')).toBe('Not currently available');
   });
 });

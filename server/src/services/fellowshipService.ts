@@ -14,10 +14,85 @@ export interface FellowshipReadOptions {
   includeNonPublic?: boolean;
 }
 
+const PUBLIC_FELLOWSHIP_SORT_FIELDS = new Set([
+  'updatedAt',
+  'createdAt',
+  'title',
+  'deadline',
+  'applicationOpenDate',
+  'views',
+  'favorites',
+]);
+const MAX_SEARCH_PAGE = 1000;
+const MAX_SEARCH_PAGE_SIZE = 100;
+
+const publicFellowshipSortField = (value: unknown): string =>
+  typeof value === 'string' && PUBLIC_FELLOWSHIP_SORT_FIELDS.has(value) ? value : 'updatedAt';
+
+const publicFellowshipSortOrder = (value: unknown): 1 | -1 => (Number(value) === 1 ? 1 : -1);
+
 const publicFellowshipFilter = (options: FellowshipReadOptions = {}) =>
   options.includeNonPublic
     ? {}
     : { studentVisibilityTier: { $in: publicStudentVisibilityTiers } };
+
+const PUBLIC_FELLOWSHIP_FIELDS = [
+  '_id',
+  'id',
+  'programCategory',
+  'programKind',
+  'entryMode',
+  'studentFacingCategory',
+  'requiresMentorBeforeApply',
+  'mentorMatching',
+  'undergraduateOnly',
+  'yaleCollegeOnly',
+  'compensationSummary',
+  'hoursPerWeek',
+  'programDates',
+  'bestNextStep',
+  'prepSteps',
+  'title',
+  'competitionType',
+  'summary',
+  'description',
+  'applicationInformation',
+  'eligibility',
+  'restrictionsToUseOfAward',
+  'additionalInformation',
+  'links',
+  'applicationLink',
+  'awardAmount',
+  'isAcceptingApplications',
+  'applicationOpenDate',
+  'deadline',
+  'contactName',
+  'contactEmail',
+  'contactPhone',
+  'contactOffice',
+  'yearOfStudy',
+  'termOfAward',
+  'purpose',
+  'globalRegions',
+  'citizenshipStatus',
+  'sourceName',
+  'sourceUrl',
+  'createdAt',
+  'updatedAt',
+  'score',
+] as const;
+
+export const publicFellowshipForStudent = (fellowship: any) => {
+  if (!fellowship || typeof fellowship !== 'object') return fellowship;
+
+  const publicFellowship: Record<string, any> = {};
+  for (const field of PUBLIC_FELLOWSHIP_FIELDS) {
+    if (fellowship[field] !== undefined) {
+      publicFellowship[field] = fellowship[field];
+    }
+  }
+  return publicFellowship;
+};
 
 export const createFellowship = async (data: any) => {
   const fellowship = new Fellowship(data);
@@ -35,7 +110,8 @@ export const readFellowship = async (id: any, options: FellowshipReadOptions = {
     if (!fellowship) {
       throw new NotFoundError(`Fellowship not found with ObjectId: ${id}`);
     }
-    return fellowship.toObject();
+    const rawFellowship = fellowship.toObject();
+    return options.includeNonPublic ? rawFellowship : publicFellowshipForStudent(rawFellowship);
   } else {
     throw new ObjectIdError('Did not receive expected id type ObjectId');
   }
@@ -50,7 +126,10 @@ export const readFellowships = async (ids: any[], options: FellowshipReadOptions
     archived: false,
     ...publicFellowshipFilter(options),
   });
-  return fellowships.map((fellowship: any) => fellowship.toObject());
+  const rawFellowships = fellowships.map((fellowship: any) => fellowship.toObject());
+  return options.includeNonPublic
+    ? rawFellowships
+    : rawFellowships.map(publicFellowshipForStudent);
 };
 
 export const readAllFellowships = async () => {
@@ -58,7 +137,7 @@ export const readAllFellowships = async () => {
     archived: false,
     ...publicFellowshipFilter(),
   });
-  return fellowships.map((fellowship: any) => fellowship.toObject());
+  return fellowships.map((fellowship: any) => publicFellowshipForStudent(fellowship.toObject()));
 };
 
 export const fellowshipExists = async (id: any) => {
@@ -164,15 +243,15 @@ export const unarchiveFellowship = async (id: any) => {
 };
 
 export const addView = async (id: any) => {
-  return itemOps.addView(Fellowship, id);
+  return publicFellowshipForStudent(await itemOps.addView(Fellowship, id));
 };
 
 export const addFavorite = async (id: any) => {
-  return itemOps.addFavorite(Fellowship, id);
+  return publicFellowshipForStudent(await itemOps.addFavorite(Fellowship, id));
 };
 
 export const removeFavorite = async (id: any) => {
-  return itemOps.removeFavorite(Fellowship, id);
+  return publicFellowshipForStudent(await itemOps.removeFavorite(Fellowship, id));
 };
 
 export const deleteFellowship = async (id: any) => {
@@ -213,8 +292,8 @@ export const searchFellowships = async (params: {
 }) => {
   const {
     query = '',
-    page = 1,
-    pageSize = 20,
+    page: requestedPage = 1,
+    pageSize: requestedPageSize = 20,
     sortBy = 'updatedAt',
     sortOrder = -1,
     yearOfStudy = [],
@@ -235,6 +314,11 @@ export const searchFellowships = async (params: {
     includeOperatorReview = false,
     includeSuppressed = false,
   } = params;
+  const page = Math.min(MAX_SEARCH_PAGE, Math.max(1, Math.floor(requestedPage || 1)));
+  const pageSize = Math.min(
+    MAX_SEARCH_PAGE_SIZE,
+    Math.max(1, Math.floor(requestedPageSize || 20)),
+  );
 
   const filter: any = { archived: false };
   if (includeNonPublic && studentVisibilityTier.length > 0) {
@@ -297,7 +381,7 @@ export const searchFellowships = async (params: {
   if (query && query.trim()) {
     sortOptions.score = { $meta: 'textScore' };
   }
-  sortOptions[sortBy] = sortOrder;
+  sortOptions[publicFellowshipSortField(sortBy)] = publicFellowshipSortOrder(sortOrder);
 
   const skip = (page - 1) * pageSize;
 
@@ -313,7 +397,7 @@ export const searchFellowships = async (params: {
   ]);
 
   return {
-    fellowships,
+    fellowships: includeNonPublic ? fellowships : fellowships.map(publicFellowshipForStudent),
     total,
     page,
     pageSize,

@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import { EntryPathway } from '../models/entryPathway';
 import { findReviewLockedRecord, omitReviewLockedFields } from './reviewLockUtils';
 import { syncPathwaySearchIndexDocument } from './pathwaySearchIndexService';
+import { publicAccessHttpUrls, publicAccessText } from '../utils/publicAccessArtifact';
 import type {
   CompensationType,
   EntryPathwayStatus,
@@ -71,7 +72,7 @@ export async function upsertEntryPathway(
     .filter(Boolean)
     .map(toStoredObjectId)
     .filter((id): id is mongoose.Types.ObjectId => !!id);
-  const sourceUrls = (input.sourceUrls || []).filter(Boolean);
+  const sourceUrls = publicAccessHttpUrls(input.sourceUrls || []);
   const now = input.lastMaterializedAt || new Date();
   const derivationKey = input.derivationKey || `access-materializer:${input.pathwayType}`;
 
@@ -87,9 +88,9 @@ export async function upsertEntryPathway(
     $set: omitReviewLockedFields(compactObject({
       status: input.status,
       evidenceStrength: input.evidenceStrength,
-      studentFacingLabel: input.studentFacingLabel,
-      explanation: input.explanation,
-      bestNextStep: input.bestNextStep,
+      studentFacingLabel: publicAccessText(input.studentFacingLabel),
+      explanation: publicAccessText(input.explanation),
+      bestNextStep: publicAccessText(input.bestNextStep),
       compensation: input.compensation,
       confidence: input.confidence,
       archived: input.archived,

@@ -41,7 +41,7 @@ Go to **http://localhost:3000**. Use `http://localhost:4000/api/dev-login` for a
 - `/research/:slug`: research-home detail pages with the student decision summary, evidence level, recommended next step, people, sources, and ways-in context.
 - `/opportunities/:id`: detail pages for real active or time-bound posted opportunities only.
 
-The old Listings board and public Pathways page are retired. `/listings` and `/pathways` redirect to `/research`; `/fellowships` redirects to `/programs`. New work should use `ResearchEntity`, `EntryPathway`, `AccessSignal`, `ContactRoute`, and `PostedOpportunity` concepts instead of recreating listing-style flows.
+The old Listings board and public Pathways page are retired. `/listings` redirects to `/research`; the standalone practical-routes URL is gone and should resolve as not found; `/fellowships` redirects to `/programs`. New work should use `ResearchEntity`, `EntryPathway`, `AccessSignal`, `ContactRoute`, and `PostedOpportunity` concepts instead of recreating listing-style flows.
 
 ## Release Posture
 

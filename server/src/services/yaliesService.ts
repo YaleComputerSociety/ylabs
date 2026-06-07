@@ -8,7 +8,8 @@ import { createUser, validateUser } from './userService';
 dotenv.config();
 
 const YALIES_API_URL = 'https://api.yalies.io/v2/people';
-const API_KEY = process.env.YALIES_API_KEY;
+
+const yaliesApiKey = () => String(process.env.YALIES_API_KEY || '').trim();
 
 export interface YaliesPerson {
   netid?: string;
@@ -41,7 +42,7 @@ export interface ListYaliesOptions {
 }
 
 export async function listYalies(options: ListYaliesOptions = {}): Promise<YaliesPerson[]> {
-  const apiKey = process.env.YALIES_API_KEY || API_KEY;
+  const apiKey = yaliesApiKey();
   if (!apiKey) {
     throw new Error('YALIES_API_KEY not set');
   }
@@ -72,13 +73,18 @@ export async function listYalies(options: ListYaliesOptions = {}): Promise<Yalie
 export const fetchYalie = async (netid: any) => {
   try {
     let yaliesResponse;
+    const apiKey = yaliesApiKey();
+    if (!apiKey) {
+      console.error('YALIES_API_KEY not set');
+      return null;
+    }
 
     try {
       console.log('Yalies: making post request');
       yaliesResponse = await axios.post(
         YALIES_API_URL,
         { filters: { netid: [netid] } },
-        { headers: { Authorization: `Bearer ${API_KEY}` } },
+        { headers: { Authorization: `Bearer ${apiKey}` } },
       );
     } catch (error) {
       console.error('Error fetching from Yalies API:', (error as Error).message);

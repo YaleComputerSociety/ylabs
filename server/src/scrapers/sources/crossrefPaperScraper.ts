@@ -106,6 +106,15 @@ export class CrossrefPaperScraper implements IScraper {
   }
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
+    const offsetOption = ctx.options.offset;
+    if (offsetOption !== undefined && (!Number.isSafeInteger(offsetOption) || offsetOption < 0)) {
+      throw new Error('--offset must be a safe non-negative integer');
+    }
+    const limitOption = ctx.options.limit;
+    if (limitOption !== undefined && (!Number.isSafeInteger(limitOption) || limitOption <= 0)) {
+      throw new Error('--limit must be a safe positive integer');
+    }
+
     const filter: any = {
       doi: { $exists: true, $ne: null, $nin: [''] },
     };
@@ -115,8 +124,8 @@ export class CrossrefPaperScraper implements IScraper {
     let query = this.paperModel
       .find(filter, { doi: 1 })
       .sort({ lastObservedAt: 1, _id: 1 });
-    if (ctx.options.offset && ctx.options.offset > 0) query = query.skip(ctx.options.offset);
-    if (ctx.options.limit && ctx.options.limit > 0) query = query.limit(ctx.options.limit);
+    if (offsetOption && offsetOption > 0) query = query.skip(offsetOption);
+    if (limitOption && limitOption > 0) query = query.limit(limitOption);
     const papers: any[] = await query.lean();
     let totalObs = 0;
     let hydrated = 0;

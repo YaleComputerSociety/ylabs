@@ -83,6 +83,27 @@ export async function appendObservations(
   return { inserted: result.length, skipped: 0, superseded };
 }
 
+/**
+ * Fields where a source emits exactly ONE current value per (entity, field) per run.
+ * Their fingerprint omits `value`, so a new observation supersedes the prior one even when
+ * the text drifts run-to-run (e.g. LLM extractors paraphrase the same description each run).
+ *
+ * Including `value` for these caused unbounded accumulation of non-superseded observations:
+ * every paraphrase produced a distinct fingerprint that never superseded its predecessor, so
+ * the resolver saw hundreds of competing active values per field and flagged spurious
+ * materialization conflicts (which in turn tripped sourceHealthWarnings → data-quality block).
+ *
+ * SAFETY: only add a field here if NO source emits it as multiple rows per (entity, field) in a
+ * single run. A value-less fingerprint makes same-run rows share a fingerprint and supersede each
+ * other, which would silently drop data for genuinely multi-row fields.
+ */
+export const LATEST_WINS_FINGERPRINT_FIELDS = new Set<string>([
+  'fullDescription',
+  'shortDescription',
+  'researchAreas',
+  'methods',
+]);
+
 export function buildObservationFingerprint(input: {
   sourceName: string;
   entityType: string;
@@ -96,13 +117,11 @@ export function buildObservationFingerprint(input: {
   const entity = entityId ? `id:${entityId}` : entityKey ? `key:${entityKey}` : undefined;
   if (!entity) return undefined;
 
-  return stableSerialize([
-    input.sourceName,
-    input.entityType,
-    entity,
-    input.field,
-    input.value,
-  ]);
+  const parts: unknown[] = [input.sourceName, input.entityType, entity, input.field];
+  if (!LATEST_WINS_FINGERPRINT_FIELDS.has(input.field)) {
+    parts.push(input.value);
+  }
+  return stableSerialize(parts);
 }
 
 function stringifyIdentifier(value: unknown): string | undefined {

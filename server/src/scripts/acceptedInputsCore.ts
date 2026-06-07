@@ -1,6 +1,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { User } from '../models/user';
+import { isPublicHttpUrl } from '../utils/urlSafety';
 import {
   DEFAULT_PROGRAM_CONFIGS,
   type ProgramConfig,
@@ -1003,15 +1004,11 @@ function isYaleEmail(value: string | undefined): boolean {
 }
 
 function isHttpUrl(value: string | undefined): boolean {
-  try {
-    const url = new URL(String(value || ''));
-    return url.protocol === 'http:' || url.protocol === 'https:';
-  } catch {
-    return false;
-  }
+  return isPublicHttpUrl(value);
 }
 
 function isYaleUrl(value: string | undefined): boolean {
+  if (!isPublicHttpUrl(value)) return false;
   try {
     const host = new URL(String(value || '')).hostname.toLowerCase();
     return host === 'yale.edu' || host.endsWith('.yale.edu');

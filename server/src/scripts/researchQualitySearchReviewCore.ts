@@ -1,3 +1,5 @@
+import { isPublicHttpUrl } from '../utils/urlSafety';
+
 export interface ResearchQualityGoldenQuery {
   name: string;
   q: string;
@@ -115,9 +117,9 @@ function textLength(...values: Array<string | undefined>): number {
 }
 
 function validUrl(value: string): URL | null {
+  if (!isPublicHttpUrl(value)) return null;
   try {
-    const url = new URL(value);
-    return url.protocol === 'http:' || url.protocol === 'https:' ? url : null;
+    return new URL(value);
   } catch {
     return null;
   }

@@ -22,12 +22,6 @@ const Login = () => {
         description: 'Use your Yale account to browse research homes, evidence, and source-backed profiles.',
       };
     }
-    if (returnPath.startsWith('/pathways')) {
-      return {
-        heading: 'Continue to Yale Research',
-        description: 'Use your Yale account to browse labs, evidence, and possible ways in.',
-      };
-    }
     if (returnPath.startsWith('/programs') || returnPath.startsWith('/fellowships')) {
       return {
         heading: 'Continue to Programs & Fellowships',

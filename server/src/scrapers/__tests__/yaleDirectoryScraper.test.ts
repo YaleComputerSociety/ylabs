@@ -334,6 +334,17 @@ describe('YaleDirectoryScraper.run', () => {
     expect(mockedListYalies).toHaveBeenCalledTimes(1);
   });
 
+  it('rejects unsafe runtime limits before fetching directory pages', async () => {
+    process.env.YALIES_API_KEY = 'test-key';
+    const { ctx } = buildContext({
+      options: { dryRun: false, useCache: false, release: false, limit: 9007199254740992 },
+    });
+    const scraper = new YaleDirectoryScraper();
+
+    await expect(scraper.run(ctx)).rejects.toThrow(/--limit must be a safe positive integer/);
+    expect(mockedListYalies).not.toHaveBeenCalled();
+  });
+
   it('skips non-faculty records returned by the API', async () => {
     process.env.YALIES_API_KEY = 'test-key';
     mockedListYalies.mockResolvedValueOnce([

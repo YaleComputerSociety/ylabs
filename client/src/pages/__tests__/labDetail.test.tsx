@@ -182,7 +182,7 @@ describe('LabDetail page', () => {
     expect(screen.getByRole('button', { name: 'Saved to Dashboard' })).toBeTruthy();
   });
 
-  it('shows the research-plan save action with the student decision summary', async () => {
+  it('shows the research-plan save action with the research summary', async () => {
     renderLabDetail({
       ...basePayload,
       entryPathways: [
@@ -202,7 +202,76 @@ describe('LabDetail page', () => {
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
     expect(screen.getByRole('button', { name: 'Save research plan' })).toBeTruthy();
-    expect(screen.getByText('Student decision')).toBeTruthy();
+    expect(screen.getByText('Research summary')).toBeTruthy();
+  });
+
+  it('renders specific ways-to-approach guidance without crashing', async () => {
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        name: 'Specific Route Lab',
+        kind: 'lab',
+        entityType: 'LAB',
+      },
+      entryPathways: [
+        {
+          _id: 'pathway-application',
+          pathwayType: 'POSTED_ROLE',
+          status: 'ACTIVE',
+          evidenceStrength: 'SOURCE_BACKED',
+          studentFacingLabel: 'Apply to a posted role',
+          explanation: 'The lab has an official posted role route.',
+          bestNextStep: 'Use the official application route.',
+          sourceUrls: [JOIN_PAGE_URL],
+        },
+      ],
+    });
+
+    await screen.findByText('Specific Route Lab');
+
+    expect(screen.getByText('Ways to approach this lab')).toBeTruthy();
+    expect(screen.getByText('Explore first')).toBeTruthy();
+    expect(screen.getByText('Send exploratory email')).toBeTruthy();
+  });
+
+  it('renders a precomputed student decision explanation when one is present', async () => {
+    const { container } = renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        description: 'Studies specific mechanisms of neurological disease in source-backed terms.',
+        studentDecisionExplanation: {
+          recommendedAction: 'PLAN_EXPLORATORY_OUTREACH',
+          headline: 'Plan careful exploratory outreach.',
+          explanation:
+            'This profile has source-backed evidence that outreach may be plausible, but no active posted role is attached.',
+          why: ['The access evidence points to an official profile route.'],
+          notThis: 'Not a posted opening.',
+          confidence: 0.72,
+          sourceUrls: [OFFICIAL_PROFILE_URL],
+        },
+      },
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(
+      screen.getByText('Studies specific mechanisms of neurological disease in source-backed terms.'),
+    ).toBeTruthy();
+    expect(screen.getByText('Plan careful exploratory outreach.')).toBeTruthy();
+    expect(
+      screen.getByText(
+        'This profile has source-backed evidence that outreach may be plausible, but no active posted role is attached.',
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText('Why')).toBeTruthy();
+    expect(screen.getByText('The access evidence points to an official profile route.')).toBeTruthy();
+    expect(screen.getByText('What this page is')).toBeTruthy();
+    expect(screen.getByText('This page summarizes the research context and entry points, not a posted opening.')).toBeTruthy();
+    expect(container.textContent?.indexOf('Studies specific mechanisms')).toBeLessThan(
+      container.textContent?.indexOf('Plan careful exploratory outreach.'),
+    );
   });
 
   it('surfaces the lead professor profile in the student decision panel', async () => {
@@ -234,6 +303,37 @@ describe('LabDetail page', () => {
     expect(screen.getByText('Recommended next step')).toBeTruthy();
   });
 
+  it('shows an internal PI profile action when no official external profile URL is available', async () => {
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        websiteUrl: RESEARCH_WEBSITE_URL,
+        sourceUrls: [RESEARCH_WEBSITE_URL],
+      },
+      members: [
+        {
+          role: 'pi',
+          user: {
+            netid: 'fixture.faculty',
+            fname: 'Jordan',
+            lname: 'Researcher',
+            displayName: 'Jordan Researcher',
+            title: 'Professor of Example Studies',
+            primary_department: 'Example Studies',
+          },
+        },
+      ],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(screen.queryByRole('link', { name: 'Open official profile' })).toBeNull();
+    expect(screen.getByRole('link', { name: 'View PI profile' }).getAttribute('href')).toBe(
+      '/profile/fixture.faculty',
+    );
+  });
+
   it('labels the sidebar as a contact route instead of repeating next-step language', async () => {
     renderLabDetail({
       ...basePayload,
@@ -247,6 +347,35 @@ describe('LabDetail page', () => {
 
     expect(screen.getByRole('heading', { name: 'Contact route' })).toBeTruthy();
     expect(screen.queryByRole('heading', { name: 'Plan your next step' })).toBeNull();
+  });
+
+  it('offers a draft outreach email when a PI contact route has an email', async () => {
+    renderLabDetail({
+      ...basePayload,
+      contactRoutes: [
+        {
+          _id: 'derived-pi-outreach-user-1',
+          routeType: 'FACULTY_PI',
+          label: 'Jordan Researcher',
+          name: 'Jordan Researcher',
+          role: 'Principal Investigator',
+          email: 'jordan.researcher@yale.edu',
+          priority: 80,
+          visibility: 'PUBLIC',
+          contactPolicy: 'DIRECT_CONTACT_OK',
+        },
+      ],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(screen.getByRole('heading', { name: 'Contact route' })).toBeTruthy();
+    fireEvent.click(screen.getAllByRole('button', { name: 'Draft outreach email' })[0]);
+
+    expect(screen.getByText('jordan.researcher@yale.edu')).toBeTruthy();
+    expect(
+      screen.getByText(`Inquiry from a Yale undergraduate about research in ${DEFAULT_ENTITY_NAME}`),
+    ).toBeTruthy();
   });
 
   it('falls back to a source URL when no official website is available', async () => {
@@ -370,6 +499,8 @@ describe('LabDetail page', () => {
         ...basePayload.group,
         slug: 'example-roster-filtered-lab',
         name: 'Example Roster Filtered Lab',
+        kind: 'lab',
+        entityType: 'LAB',
         websiteUrl: RESEARCH_WEBSITE_URL,
         sourceUrls: [
           FACULTY_ROSTER_URL,
@@ -394,9 +525,11 @@ describe('LabDetail page', () => {
       return { container: document.body };
     });
 
-    expect(screen.getByRole('link', { name: 'Open official profile' }).getAttribute('href')).toBe(
-      FACULTY_PROFILE_URL,
-    );
+    expect(
+      screen
+        .getAllByRole('link', { name: 'Open official profile' })
+        .every((link) => link.getAttribute('href') === FACULTY_PROFILE_URL),
+    ).toBe(true);
     expect(screen.getByRole('link', { name: 'Visit lab website' }).getAttribute('href')).toBe(
       RESEARCH_WEBSITE_URL,
     );
@@ -478,9 +611,11 @@ describe('LabDetail page', () => {
     expect(text).toContain('Profile status');
     expect(text).not.toContain('Recommended outreach angle');
     expect(text.indexOf('What this lab studies')).toBeLessThan(text.indexOf('Profile status'));
-    expect(screen.getByRole('link', { name: 'Open official profile' }).getAttribute('href')).toBe(
-      FACULTY_PROFILE_URL,
-    );
+    expect(
+      screen
+        .getAllByRole('link', { name: 'Open official profile' })
+        .every((link) => link.getAttribute('href') === FACULTY_PROFILE_URL),
+    ).toBe(true);
     expect(screen.queryByRole('link', { name: 'Example Faculty' })).toBeNull();
   });
 
@@ -541,15 +676,17 @@ describe('LabDetail page', () => {
 
     await screen.findByText('Example Separate Profile Lab');
 
-    expect(screen.getByRole('link', { name: 'Open official profile' }).getAttribute('href')).toBe(
-      FACULTY_PROFILE_URL,
-    );
+    expect(
+      screen
+        .getAllByRole('link', { name: 'Open official profile' })
+        .every((link) => link.getAttribute('href') === FACULTY_PROFILE_URL),
+    ).toBe(true);
     expect(screen.getByRole('link', { name: 'Visit lab website' }).getAttribute('href')).toBe(
       RESEARCH_WEBSITE_URL,
     );
     expect(screen.queryByRole('link', { name: 'Open official route' })).toBeNull();
     expect(screen.queryByText('Co-Director of Graduate Studies')).toBeNull();
-    expect(screen.queryByRole('heading', { name: 'Contact route' })).toBeNull();
+    expect(screen.getByRole('heading', { name: 'Contact route' })).toBeTruthy();
     expect(container.textContent).toContain('What this lab studies');
   });
 
@@ -560,6 +697,8 @@ describe('LabDetail page', () => {
         ...basePayload.group,
         slug: 'example-homepage-route-lab',
         name: 'Example Homepage Route Lab',
+        kind: 'lab',
+        entityType: 'LAB',
         websiteUrl: RESEARCH_WEBSITE_URL,
         sourceUrls: [
           FACULTY_PROFILE_URL,
@@ -599,6 +738,45 @@ describe('LabDetail page', () => {
     expect(screen.queryByRole('link', { name: 'Open official route' })).toBeNull();
   });
 
+  it('does not treat a lab homepage FACULTY_PI route as an official person profile', async () => {
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        slug: 'example-lab-homepage-pi-route',
+        name: 'Example Lab Homepage PI Route',
+        kind: 'lab',
+        entityType: 'LAB',
+        websiteUrl: RESEARCH_WEBSITE_URL,
+        sourceUrls: [
+          FACULTY_PROFILE_URL,
+          RESEARCH_WEBSITE_URL,
+        ],
+        departments: ['Biomedical Engineering'],
+        researchAreas: ['Optical Microscopy'],
+      },
+      contactRoutes: [
+        {
+          _id: 'route-1',
+          routeType: 'FACULTY_PI',
+          label: 'Lead faculty profile',
+          url: RESEARCH_WEBSITE_URL.replace(/\/$/, ''),
+          sourceUrl: RESEARCH_WEBSITE_URL,
+          visibility: 'PUBLIC',
+        },
+      ],
+    } as LabDetailPayload);
+
+    await screen.findByText('Example Lab Homepage PI Route');
+
+    expect(screen.queryByRole('link', { name: 'Open official profile' })).toBeNull();
+    expect(screen.getByRole('link', { name: 'Visit lab website' }).getAttribute('href')).toBe(
+      RESEARCH_WEBSITE_URL,
+    );
+    expect(screen.queryByRole('link', { name: 'Open official route' })).toBeNull();
+    expect(screen.getByText('Research website')).toBeTruthy();
+  });
+
   it('keeps a lab homepage separate from a join page official route', async () => {
     renderLabDetail({
       ...basePayload,
@@ -606,6 +784,8 @@ describe('LabDetail page', () => {
         ...basePayload.group,
         slug: 'example-join-route-lab',
         name: 'Example Join Route Lab',
+        kind: 'lab',
+        entityType: 'LAB',
         websiteUrl: JOIN_LAB_WEBSITE_URL,
         sourceUrls: [
           FACULTY_PROFILE_URL,
@@ -741,6 +921,39 @@ describe('LabDetail page', () => {
     );
   });
 
+  it('renders non-public umbrella affiliations without linking to a hidden detail page', async () => {
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        slug: 'faculty-research-area-example-affiliate',
+        name: 'Example Affiliate Research',
+        kind: 'individual',
+        entityType: 'FACULTY_RESEARCH_AREA',
+      },
+      affiliatedResearchEntities: [
+        {
+          ...basePayload.group,
+          _id: 'entity-umbrella',
+          id: 'entity-umbrella',
+          slug: 'center-yale-quantum-institute',
+          name: 'Yale Quantum Institute',
+          kind: 'institute',
+          entityType: 'INSTITUTE',
+          studentVisibilityTier: 'operator_review',
+          departments: ['Physics'],
+          researchAreas: [],
+          sourceUrls: [],
+        },
+      ],
+    });
+
+    await screen.findByText('Example Affiliate Research');
+
+    expect(screen.getByText('Yale Quantum Institute')).toBeTruthy();
+    expect(screen.queryByRole('link', { name: /Yale Quantum Institute/ })).toBeNull();
+  });
+
   it('does not render inferred student-fit preparation from topic metadata', async () => {
     renderLabDetail({
       ...basePayload,
@@ -812,7 +1025,7 @@ describe('LabDetail page', () => {
 
     expect(text).not.toContain('Active Opportunities');
     expect(text).toContain('No principal investigator is attached yet');
-    expect(text).toContain('Check the official profile for current lab leadership.');
+    expect(text).toContain('Check the official profile for current leadership.');
     expect(principalInvestigatorIndex).toBeGreaterThan(-1);
     expect(sparseProfileIndex).toBeGreaterThan(-1);
     expect(sourcesIndex).toBeGreaterThan(principalInvestigatorIndex);
@@ -898,7 +1111,7 @@ describe('LabDetail page', () => {
       researchActivityLinks: [
         {
           _id: 'profile-pub-1',
-          relationshipBasis: 'member_authorship',
+          relationshipBasis: 'identity_authorship',
           evidenceLabel: 'Authored by a listed professor',
           userId: 'user-1',
           title: 'Example systems publication',
@@ -922,6 +1135,33 @@ describe('LabDetail page', () => {
     expect(
       screen.getByRole('link', { name: 'View all research activity on Fixture Scholar’s profile' }).getAttribute('href'),
     ).toBe('/profile/fixture.scholar?tab=research');
+  });
+
+  it('deduplicates repeated active member rows before rendering profile cards', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const duplicateMember = {
+      role: 'pi' as const,
+      user: {
+        _id: 'user-duplicate',
+        netid: 'fixture.duplicate',
+        fname: 'Fixture',
+        lname: 'Duplicate',
+        title: 'Professor of Astronomy',
+        primary_department: 'Astronomy',
+      },
+    };
+
+    renderLabDetail({
+      ...basePayload,
+      members: [duplicateMember, duplicateMember],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(
+      consoleError.mock.calls.some((call) => String(call[0]).includes('same key')),
+    ).toBe(false);
+    consoleError.mockRestore();
   });
 
   it('does not render YSM publication chrome as research description or area tags', async () => {
@@ -1088,7 +1328,9 @@ describe('LabDetail page', () => {
     expect(text).toContain(
       'It appears to center on High-Dimensional Statistics and Probability Theory.',
     );
-    expect(text).toContain('Yale Research has not found a separate lab description');
+    expect(text).toContain(
+      'Yale Research has not found a separate research website or posted undergraduate opening',
+    );
     expect(text).not.toContain('What this lab studies');
     expect(text).not.toContain('Research connected to High-Dimensional Statistics');
 
@@ -1096,7 +1338,7 @@ describe('LabDetail page', () => {
       'It appears to center on High-Dimensional Statistics and Probability Theory.',
     );
     const disclaimer = screen.getByText(
-      /Yale Research has not found a separate lab description/,
+      /Yale Research has not found a separate research website or posted undergraduate opening/,
     );
     expect(summary.tagName).toBe('P');
     expect(disclaimer.tagName).toBe('P');
@@ -1177,7 +1419,9 @@ describe('LabDetail page', () => {
       return { container: document.body };
     });
 
-    expect(container.textContent).toContain(fullDescription);
+    expect(container.textContent).toContain(
+      'This research profile focuses on fixture social cognition. The group studies how synthetic category knowledge is acquired.',
+    );
   });
 
   it('does not repeat a department as fallback research content on sparse profiles', async () => {

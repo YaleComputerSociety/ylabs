@@ -14,7 +14,9 @@ const DAY = 24 * 60 * 60 * 1000;
 describe('buildEntityWorkPlan', () => {
   it('defines source policies for broad or paid scraper cost control', () => {
     expect(workPlannerSourcePolicies.map((policy) => policy.sourceName)).toEqual([
+      'lab-microsite-description-llm',
       'lab-microsite-undergrad-llm',
+      'student-decision-llm',
       'openalex',
       'orcid',
       'europe-pmc',
@@ -26,8 +28,27 @@ describe('buildEntityWorkPlan', () => {
       paid: true,
       defaultRecurringCadence: 'weekly',
     });
+    expect(getWorkPlannerSourcePolicy('lab-microsite-description-llm')).toMatchObject({
+      entityType: 'researchEntity',
+      paid: true,
+      defaultRecurringCadence: 'manual',
+    });
+    expect(getWorkPlannerSourcePolicy('lab-microsite-description-llm')?.targetFields).toEqual([
+      'fullDescription',
+      'shortDescription',
+      'researchAreas',
+      'methods',
+    ]);
     expect(getWorkPlannerSourcePolicy('lab-microsite-undergrad-llm')?.targetFields).toEqual([
       'lastObservedAt',
+    ]);
+    expect(getWorkPlannerSourcePolicy('student-decision-llm')).toMatchObject({
+      entityType: 'researchEntity',
+      paid: true,
+      defaultRecurringCadence: 'manual',
+    });
+    expect(getWorkPlannerSourcePolicy('student-decision-llm')?.targetFields).toEqual([
+      'studentDecisionExplanation',
     ]);
     expect(getWorkPlannerSourcePolicy('unknown-source')).toBeUndefined();
   });

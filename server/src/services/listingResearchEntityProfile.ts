@@ -1,4 +1,5 @@
 import { redactDirectContactInfo } from '../utils/contactRedaction';
+import { isPublicHttpUrl } from '../utils/urlSafety';
 
 export interface ListingResearchEntityProfileInput {
   entity?: Record<string, any> | null;
@@ -10,7 +11,7 @@ const textValue = (value: unknown): string =>
 
 const hasText = (value: unknown): boolean => textValue(value).length > 0;
 
-const isHttpUrl = (value: unknown): value is string => /^https?:\/\//i.test(textValue(value));
+const isHttpUrl = (value: unknown): value is string => isPublicHttpUrl(textValue(value));
 
 const uniqueStrings = (values: unknown[]): string[] => {
   const seen = new Set<string>();

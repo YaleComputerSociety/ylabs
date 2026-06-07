@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import { AccessSignal } from '../models/accessSignal';
 import { findReviewLockedRecord, omitReviewLockedFields } from './reviewLockUtils';
 import { syncPathwaySearchIndexDocument, syncPathwaySearchIndexDocumentsForEntity } from './pathwaySearchIndexService';
+import { publicAccessHttpUrl, publicAccessText } from '../utils/publicAccessArtifact';
 import type {
   AccessSignalConfidence,
   AccessSignalType,
@@ -88,9 +89,9 @@ export async function upsertAccessSignal(
       confidence: input.confidence,
       confidenceScore: input.confidenceScore ?? input.originalConfidence,
       observedAt: input.observedAt,
-      excerpt: input.excerpt,
+      excerpt: publicAccessText(input.excerpt),
       sourceName: input.sourceName,
-      sourceUrl: input.sourceUrl,
+      sourceUrl: publicAccessHttpUrl(input.sourceUrl),
       originalConfidence: input.originalConfidence,
       archived: input.archived,
       lastMaterializedAt: new Date(),

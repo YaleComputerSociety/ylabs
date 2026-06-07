@@ -206,7 +206,7 @@ yarn install:all
 
 ### Dev login bypass
 
-Visit `http://localhost:4000/api/dev-login` to log in as a test user (`test123` / `student`) without CAS.
+Visit `http://localhost:4000/api/dev-login` to log in as a test user (`test123` / `student`) without CAS. Use `?userType=admin` for the `devadmin` account. Dev login is allowed only when `NODE_ENV=development` and `SERVER_BASE_URL` points at localhost or loopback; the Mongo database name does not control this local-runtime check.
 
 For request-level local testing, set `LOCAL_AUTH_BYPASS=true` in `server/.env`. In `development` or `test` only, protected `/api` requests without a session receive a dev admin user by default:
 
@@ -417,5 +417,5 @@ Client `tsc --noEmit` is still not part of CI; the client has known pre-existing
 | Meilisearch connection refused | Start Docker container or check `MEILISEARCH_HOST` in `.env` |
 | CORS errors | Add origin to `allowList` in `app.ts` or use dev mode |
 | `/api/listings` returns `410` | Expected; Listings is retired. Use Research, Programs, or PostedOpportunity workflows. |
-| `/pathways` redirects to `/research` | Expected; public Pathways search is retired. Ways-in evidence appears inside Yale Labs, research detail, and Dashboard planning. |
-| A client needs pathway data | Use `/api/research/search`, research detail, or saved research-plan APIs. Standalone `/api/pathways/search` is not a public/client contract. |
+| Retired practical-routes URL returns not found | Expected; public Pathways search is retired. Ways-in evidence appears inside Yale Labs, research detail, and Dashboard planning. |
+| A client needs pathway data | Use `/api/research/search`, research detail, or saved research-plan APIs. Standalone pathway search is not a public/client contract. |

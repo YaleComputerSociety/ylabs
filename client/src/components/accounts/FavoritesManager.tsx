@@ -23,6 +23,7 @@ import LoadingSpinner from '../shared/LoadingSpinner';
 import axios from '../../utils/axios';
 import swal from 'sweetalert';
 import { exportToGoogleSheets as createGoogleSheet } from '../../utils/googleSheets';
+import { openSafeUrlInNewTab } from '../../utils/url';
 
 interface FavoritesManagerProps {
   variant?: 'student' | 'professor';
@@ -53,6 +54,14 @@ const validDeadlineDate = (value?: string | null): Date | null => {
 
 const deadlineEndOfUtcDay = (date: Date): Date =>
   new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 23, 59, 59, 999));
+
+const SPREADSHEET_FORMULA_PREFIX = /^[\s\u0000-\u001f]*[=+\-@]/;
+
+const csvCell = (cell: unknown): string => {
+  const value = String(cell ?? '');
+  const neutralizedValue = SPREADSHEET_FORMULA_PREFIX.test(value) ? `'${value}` : value;
+  return `"${neutralizedValue.replace(/"/g, '""')}"`;
+};
 
 export const savedProgramDeadlineSummary = (
   fellowships: Fellowship[],
@@ -252,7 +261,7 @@ const FavoritesManager = ({ variant = 'student', onSummaryChange }: FavoritesMan
               (fellowshipStage[fellowship.id] || 'not_applied') === 'applied'
                 ? 'Applied'
                 : 'Not Applied',
-              (fellowshipNotes[fellowship.id] || '').replace(/"/g, '""'),
+              fellowshipNotes[fellowship.id] || '',
             ]
       ),
       fellowship.applicationLink || '',
@@ -260,7 +269,7 @@ const FavoritesManager = ({ variant = 'student', onSummaryChange }: FavoritesMan
     ]);
 
     const csv = [headers, ...rows]
-      .map((row) => row.map((cell) => `"${cell}"`).join(','))
+      .map((row) => row.map((cell) => csvCell(cell)).join(','))
       .join('\n');
 
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -315,7 +324,7 @@ const FavoritesManager = ({ variant = 'student', onSummaryChange }: FavoritesMan
         headers,
         rows,
       );
-      window.open(url, '_blank');
+      openSafeUrlInNewTab(url);
       swal({ text: 'Google Sheet created!', icon: 'success', timer: 2000 });
     } catch (error) {
       console.error('Google Sheets export failed:', error);

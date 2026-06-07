@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   DEPARTMENT_UNDERGRAD_RESEARCH_SOURCE,
+  DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES,
   DepartmentUndergradResearchScraper,
   departmentUndergradResearchRecordsToObservations,
   parseGeneralDepartmentResearchPage,
@@ -45,6 +46,58 @@ const MCDB_HTML = `
 </main>
 `;
 
+const ASTRONOMY_HTML = `
+<main>
+  <h1>Undergraduate Research</h1>
+  <h2>Independent Senior Research Project</h2>
+  <p>All majors undertake an independent senior research project under the direct supervision of a faculty member.</p>
+  <h2>Summer Research Opportunities</h2>
+  <p>Most undergraduate students take advantage of at least one summer to do research, either in an external REU or working closely with faculty at Yale.</p>
+</main>
+`;
+
+const EEB_HTML = `
+<main>
+  <h1>Undergraduate Research Opportunities</h1>
+  <p>There are many opportunities for students to carry out research in the laboratory of a faculty member.</p>
+  <p>All interested students are encouraged to participate in research.</p>
+  <p>The choice of a research laboratory should be made in consultation with faculty members and the Director of Undergraduate Studies or the Research Coordinator.</p>
+</main>
+`;
+
+const ANTHROPOLOGY_HTML = `
+<main>
+  <h1>Undergraduate Research in Anthropology</h1>
+  <p>The Department of Anthropology encourages undergraduate students to engage in research in a variety of settings: in their courses, in work as research assistants, and in guided inquiries of their own.</p>
+  <p>Some faculty in Anthropology employ undergraduate research assistants in a variety of capacities.</p>
+</main>
+`;
+
+const EARTH_HTML = `
+<main>
+  <h1>Resources</h1>
+  <h2>Research Opportunities</h2>
+  <p>The EPS program strongly encourages undergraduate students to participate in cutting-edge research as early as possible.</p>
+  <p>Students are encouraged to take initiative in seeking out potential advisers for research.</p>
+</main>
+`;
+
+const POLITICAL_SCIENCE_HTML = `
+<main>
+  <h1>About The Undergraduate Program</h1>
+  <p>The Department offers numerous seminars and lecture courses for undergraduates.</p>
+  <p>We also offer research opportunities to students in the major, including resources for fieldwork on senior projects.</p>
+</main>
+`;
+
+const HISTORY_HTML = `
+<main>
+  <h1>Undergraduate Program</h1>
+  <p>History majors make extensive use of Yale's vast library resources and create pioneering original research projects.</p>
+  <p>All majors complete advanced research and writing under faculty guidance.</p>
+</main>
+`;
+
 function buildContext(
   scraper: DepartmentUndergradResearchScraper,
   emitted: ObservationInput[],
@@ -80,11 +133,49 @@ describe('departmentUndergradResearchScraper', () => {
       kind: 'lab',
       entityType: 'LAB',
       websiteUrl: 'https://wlab.yale.edu/research/relativistic-heavy-ions',
+      description: expect.stringContaining('The first set of studies'),
       contactName: 'Helen Caines',
       contactEmail: 'helen.caines@yale.edu',
       undergradAccessEvidence: true,
     });
+    expect(records[0].description).not.toContain('Contact:');
+    expect(records[0].description).not.toContain('Website:');
     expect(records[1].description).toContain('In-lab and remote opportunities');
+  });
+
+  it('keeps Physics contact and website chrome out of project descriptions', () => {
+    const records = parsePhysicsUndergradResearchPage(
+      `
+      <main>
+        <h1>Undergraduate Research</h1>
+        <h2>Active Research in the Yale Physics Department</h2>
+        <h3>Meng Cheng</h3>
+        <p>Contact: Meng Cheng (<a href="mailto:m.cheng@yale.edu">m.cheng@yale.edu</a>)</p>
+        <p>Website: <a href="<a href=">https://meng-cheng.github.io/</a></p>
+        <p>Entanglement entropy and defect in quantum many-body systems</p>
+        <p>Phases and phase transitions in open quantum systems.</p>
+      </main>
+      `,
+      {
+        key: 'physics',
+        url: 'https://physics.yale.edu/academics/undergraduate-studies/undergraduate-research',
+        department: 'Physics',
+        school: 'Yale Faculty of Arts and Sciences',
+        parser: 'physics-project-list',
+      },
+    );
+
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({
+      entityKey: 'dept-physics-meng-cheng',
+      contactEmail: 'm.cheng@yale.edu',
+      websiteUrl: undefined,
+      description:
+        'Entanglement entropy and defect in quantum many-body systems Phases and phase transitions in open quantum systems.',
+    });
+    expect(records[0].description).not.toContain('Contact:');
+    expect(records[0].description).not.toContain('Website:');
+    expect(records[0].description).not.toContain('m.cheng@yale.edu');
   });
 
   it('parses general department guidance without pretending it is a posted opening', () => {
@@ -194,6 +285,142 @@ describe('departmentUndergradResearchScraper', () => {
     expect(fields).not.toContain('joinPageUrl');
   });
 
+  it('parses new official guidance configs as source-backed entity/access evidence only', () => {
+    const astronomyConfig = DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES.find(
+      (page) => page.key === 'astronomy',
+    );
+    const eebConfig = DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES.find((page) => page.key === 'eeb');
+
+    expect(astronomyConfig).toMatchObject({
+      url: 'https://astronomy.yale.edu/academics/undergraduate-program/undergraduate-research',
+      parser: 'general-guidance',
+    });
+    expect(eebConfig).toMatchObject({
+      url: 'https://eeb.yale.edu/academics/undergraduate-program/undergraduate-research-opportunities',
+      parser: 'general-guidance',
+    });
+
+    const records = [
+      ...parseGeneralDepartmentResearchPage(ASTRONOMY_HTML, astronomyConfig!),
+      ...parseGeneralDepartmentResearchPage(EEB_HTML, eebConfig!),
+    ];
+    const observations = departmentUndergradResearchRecordsToObservations(records);
+    const fields = observations.map((observation) => observation.field);
+
+    expect(records).toMatchObject([
+      {
+        entityKey: 'department-undergrad-research-astronomy',
+        name: 'Astronomy Undergraduate Research',
+        kind: 'program',
+        entityType: 'PROGRAM',
+        sourceUrl: astronomyConfig!.url,
+        description: expect.stringContaining('direct supervision of a faculty member'),
+        undergradAccessEvidence: true,
+      },
+      {
+        entityKey: 'department-undergrad-research-ecology-and-evolutionary-biology',
+        name: 'Ecology and Evolutionary Biology Undergraduate Research Opportunities',
+        kind: 'program',
+        entityType: 'PROGRAM',
+        sourceUrl: eebConfig!.url,
+        description: expect.stringContaining('carry out research in the laboratory'),
+        undergradAccessEvidence: true,
+      },
+    ]);
+    expect(observations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          entityKey: 'department-undergrad-research-astronomy',
+          field: 'fullDescription',
+          sourceUrl: astronomyConfig!.url,
+          value: expect.stringContaining('undergraduate students'),
+        }),
+        expect.objectContaining({
+          entityKey: 'department-undergrad-research-ecology-and-evolutionary-biology',
+          field: 'undergradAccessEvidence',
+          sourceUrl: eebConfig!.url,
+          value: { openToUndergrads: 'yes', evidenceSource: 'department_undergrad_research_page' },
+        }),
+      ]),
+    );
+    expect(fields).not.toEqual(
+      expect.arrayContaining([
+        'postedOpportunityTitle',
+        'opportunityTitle',
+        'listingId',
+        'deadline',
+        'applicationUrl',
+        'compensationType',
+      ]),
+    );
+    expect(fields).not.toContain('joinPageUrl');
+  });
+
+  it('includes additional department undergraduate research guidance pages', () => {
+    const configsByKey = new Map(
+      DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES.map((page) => [page.key, page]),
+    );
+
+    expect(configsByKey.get('anthropology')).toMatchObject({
+      url: 'https://anthropology.yale.edu/undergraduate-program/undergraduate-research-in-anthropology',
+      parser: 'general-guidance',
+      department: 'Anthropology',
+    });
+    expect(configsByKey.get('earth-planetary-sciences')).toMatchObject({
+      url: 'https://earth.yale.edu/resources',
+      parser: 'general-guidance',
+      department: 'Earth and Planetary Sciences',
+    });
+    expect(configsByKey.get('political-science')).toMatchObject({
+      url: 'https://politicalscience.yale.edu/academics/about-undergraduate-program',
+      parser: 'general-guidance',
+      department: 'Political Science',
+    });
+    expect(configsByKey.get('history')).toMatchObject({
+      url: 'https://history.yale.edu/academics/undergraduate-program',
+      parser: 'general-guidance',
+      department: 'History',
+    });
+
+    const records = [
+      ...parseGeneralDepartmentResearchPage(ANTHROPOLOGY_HTML, configsByKey.get('anthropology')!),
+      ...parseGeneralDepartmentResearchPage(EARTH_HTML, configsByKey.get('earth-planetary-sciences')!),
+      ...parseGeneralDepartmentResearchPage(POLITICAL_SCIENCE_HTML, configsByKey.get('political-science')!),
+      ...parseGeneralDepartmentResearchPage(HISTORY_HTML, configsByKey.get('history')!),
+    ];
+
+    expect(records).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          entityKey: 'department-undergrad-research-anthropology',
+          name: 'Anthropology Undergraduate Research',
+          sourceUrl:
+            'https://anthropology.yale.edu/undergraduate-program/undergraduate-research-in-anthropology',
+        }),
+        expect.objectContaining({
+          entityKey: 'department-undergrad-research-earth-and-planetary-sciences',
+          name: 'Earth and Planetary Sciences Research Opportunities',
+          sourceUrl: 'https://earth.yale.edu/resources',
+        }),
+        expect.objectContaining({
+          entityKey: 'department-undergrad-research-political-science',
+          name: 'Political Science Undergraduate Research Opportunities',
+          sourceUrl: 'https://politicalscience.yale.edu/academics/about-undergraduate-program',
+        }),
+        expect.objectContaining({
+          entityKey: 'department-undergrad-research-history',
+          name: 'History Undergraduate Research',
+          sourceUrl: 'https://history.yale.edu/academics/undergraduate-program',
+        }),
+      ]),
+    );
+
+    const observations = departmentUndergradResearchRecordsToObservations(records);
+    expect(observations.map((observation) => observation.field)).not.toEqual(
+      expect.arrayContaining(['postedOpportunityTitle', 'applicationUrl', 'deadline']),
+    );
+  });
+
   it('runs selected configured pages and honors only filters', async () => {
     const scraper = new DepartmentUndergradResearchScraper({
       pageConfigs: [
@@ -225,5 +452,33 @@ describe('departmentUndergradResearchScraper', () => {
       new Set(['https://physics.yale.edu/undergrad']),
     );
     expect(scraper.name).toBe(DEPARTMENT_UNDERGRAD_RESEARCH_SOURCE);
+  });
+
+  it('rejects unsafe runtime bounds before fetching department pages', async () => {
+    for (const [option, message] of [
+      [{ offset: 9007199254740992 }, /--offset must be a safe non-negative integer/],
+      [{ limit: 9007199254740992 }, /--limit must be a safe positive integer/],
+    ] as const) {
+      const fetchHtml = vi.fn(async () => PHYSICS_HTML);
+      const scraper = new DepartmentUndergradResearchScraper({
+        pageConfigs: [
+          {
+            key: 'physics',
+            url: 'https://physics.yale.edu/undergrad',
+            department: 'Physics',
+            school: 'Yale Faculty of Arts and Sciences',
+            parser: 'physics-project-list',
+          },
+        ],
+        fetchHtml,
+      });
+      const emitted: ObservationInput[] = [];
+
+      await expect(scraper.run(buildContext(scraper, emitted, option as any))).rejects.toThrow(
+        message,
+      );
+      expect(fetchHtml).not.toHaveBeenCalled();
+      expect(emitted).toEqual([]);
+    }
   });
 });

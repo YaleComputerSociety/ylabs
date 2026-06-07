@@ -84,4 +84,23 @@ describe('PathwayActionCard', () => {
     expect(screen.getByText('Contact the program with a specific question.')).toBeTruthy();
     expect(screen.queryByRole('link', { name: 'Open application' })).toBeNull();
   });
+
+  it('omits unsafe application URLs', () => {
+    render(
+      <MemoryRouter>
+        <PathwayActionCard
+          pathway={pathway({
+            activePostedOpportunity: {
+              _id: 'opportunity-1',
+              title: 'Spring RA role',
+              status: 'OPEN',
+              applicationUrl: 'javascript:alert(1)',
+            },
+          })}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.queryByRole('link', { name: 'Open application' })).toBeNull();
+  });
 });

@@ -28,7 +28,6 @@ import ScrollToTop from './components/shared/ScrollToTop';
 
 const RetiredListingsRedirect = () => <Navigate to="/research" replace />;
 const RetiredFellowshipsRedirect = () => <Navigate to="/programs" replace />;
-const RetiredPathwaysRedirect = () => <Navigate to="/research" replace />;
 
 const App = () => {
   return (
@@ -79,12 +78,6 @@ const App = () => {
                       <Route
                         path="/research/:slug"
                         element={<PrivateRoute Component={ResearchDetail} unknownBlocked={true} />}
-                      />
-                      <Route
-                        path="/pathways"
-                        element={
-                          <PrivateRoute Component={RetiredPathwaysRedirect} unknownBlocked={true} />
-                        }
                       />
                       <Route
                         path="/opportunities/:id"

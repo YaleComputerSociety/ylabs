@@ -48,4 +48,25 @@ describe('DeveloperCard', () => {
       expect(link.className).toContain('min-w-[44px]');
     }
   });
+
+  it('suppresses unsafe developer profile link schemes', () => {
+    render(
+      <DeveloperCard
+        developer={{
+          name: 'Avery Tester',
+          position: 'Developer',
+          location: 'New Haven, CT',
+          website: 'javascript:alert(1)',
+          linkedin: 'data:text/html,<script>alert(1)</script>',
+          github: 'https://github.com/example',
+        }}
+      />,
+    );
+
+    expect(screen.queryByRole('link', { name: 'Avery Tester Website' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Avery Tester LinkedIn' })).toBeNull();
+    expect(screen.getByRole('link', { name: 'Avery Tester GitHub' }).getAttribute('href')).toBe(
+      'https://github.com/example',
+    );
+  });
 });

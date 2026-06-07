@@ -26,6 +26,35 @@ describe('researchEntitySearchIndexService', () => {
     });
   });
 
+  it('filters unsafe URLs and direct contact text from public research entity index documents', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-url-safety',
+      name: 'URL Safety Lab',
+      description: 'Contact pi@example.edu or 203-555-1212 for research roles.',
+      shortDescription: 'Email pi@example.edu for details.',
+      websiteUrl: 'javascript:alert(document.cookie)',
+      website: 'https://safe.example.edu/lab',
+      sourceUrls: [
+        'mailto:pi@example.edu',
+        'https://safe.example.edu/source',
+        'javascript:alert(document.cookie)',
+      ],
+      archived: false,
+    });
+
+    expect(doc).toMatchObject({
+      id: 'entity-url-safety',
+      description: 'Contact [email redacted] or [phone redacted] for research roles.',
+      shortDescription: 'Email [email redacted] for details.',
+      websiteUrl: 'https://safe.example.edu/lab',
+      sourceUrls: ['https://safe.example.edu/source'],
+    });
+    expect(JSON.stringify(doc)).not.toContain('javascript:');
+    expect(JSON.stringify(doc)).not.toContain('mailto:');
+    expect(JSON.stringify(doc)).not.toContain('pi@example.edu');
+    expect(JSON.stringify(doc)).not.toContain('203-555-1212');
+  });
+
   it('exposes clone-safe settings used by the live Research browse filters', () => {
     const settings = getResearchEntitySearchIndexSettings();
 
@@ -95,5 +124,22 @@ describe('researchEntitySearchIndexService', () => {
     expect(calls[2].payload).toMatchObject({
       options: { primaryKey: RESEARCH_ENTITY_SEARCH_INDEX_PRIMARY_KEY },
     });
+  });
+
+  it('rejects unsafe rebuild page sizes before configuring the index', async () => {
+    let getIndexCalls = 0;
+
+    await expect(
+      rebuildResearchEntitySearchIndex({
+        pageSize: 9007199254740992,
+        getIndex: async () => {
+          getIndexCalls += 1;
+          throw new Error('unexpected index setup');
+        },
+        fetchPage: async () => [],
+      }),
+    ).rejects.toThrow('--page-size must be a safe positive integer');
+
+    expect(getIndexCalls).toBe(0);
   });
 });

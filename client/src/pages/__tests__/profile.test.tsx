@@ -220,6 +220,7 @@ describe('Profile page', () => {
       '/research/fixture-research-home',
     );
     expect(screen.getByText('Studies fixture protocols.')).toBeTruthy();
+    expect(screen.getByText('Principal Investigator')).toBeTruthy();
     expect(screen.getByText('Distributed Algorithms')).toBeTruthy();
     expect(screen.queryByText('distributed algorithms')).toBeNull();
   });
@@ -379,5 +380,53 @@ describe('Profile page', () => {
         'The Fixture Research Home builds instruments for synthetic astronomy examples.',
       ),
     ).toBeNull();
+  });
+
+  it('sanitizes linked faculty research descriptions on the research tab', async () => {
+    mockedAxios.get.mockResolvedValue({
+      data: {
+        profile: {
+          ...profile,
+          researchEntities: [
+            {
+              _id: 'entity-1',
+              slug: 'faculty-research',
+              name: 'Fixture Faculty Research',
+              kind: 'individual',
+              entityType: 'FACULTY_RESEARCH_AREA',
+              role: 'pi',
+              description:
+                'The Fixture Lab conducts research focused on synthetic systems. Review the lab site before contacting this lab.',
+              researchAreas: ['Synthetic systems'],
+            },
+          ],
+        },
+      },
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/profile/fixture-profile?tab=research']}>
+        <UserContext.Provider
+          value={{
+            isLoading: false,
+            isAuthenticated: true,
+            user: { netId: 'fixture-student', userType: 'student' } as any,
+            checkContext: vi.fn(),
+          }}
+        >
+          <Routes>
+            <Route path="/profile/:netid" element={<Profile />} />
+          </Routes>
+        </UserContext.Provider>
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('Test Person');
+
+    expect(screen.getByText('Research Homes')).toBeTruthy();
+    expect(screen.getByText(/Fixture's research focuses on synthetic systems/)).toBeTruthy();
+    expect(screen.getByText(/research website before contacting this research profile/)).toBeTruthy();
+    expect(document.body.textContent).not.toContain('lab site');
+    expect(document.body.textContent).not.toContain('this lab');
   });
 });

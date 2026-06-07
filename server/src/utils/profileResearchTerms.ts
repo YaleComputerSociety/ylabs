@@ -28,6 +28,12 @@ const RESEARCH_TERM_NOISE_PATTERNS = [
   /^research\s+topics\b.*\binterested\s+in\s+exploring\.?$/i,
   /[a-z][A-Z]/,
   /^(?:theorist|experimentalist)$/i,
+  /\b(?:assistant|associate|clinical|adjunct|visiting)?\s*professor\b/i,
+  /\b(?:research\s+(?:associate|scientist|faculty|staff)|lecturer|instructor)\b/i,
+  /\bgoogle\s+scholar\s+profile\b/i,
+  /^for\s+a\s+full\s+list\b/i,
+  /^more\s+than\s+\d+.*\bpapers?\s+published\b/i,
+  /^(?:chemicals\s+and\s+drugs|diseases|health\s+care)$/i,
   /^\d{4}\b.*\b(?:award|prize|fellowship|winner|competition)\b/i,
   /^teaching\s+interests?:/i,
   /\b[A-Z&]{2,}\s*\d{3,4}\b/,
@@ -67,10 +73,12 @@ function cleanResearchTerm(value: string): string {
 function extractExplicitResearchInterestPhrases(value: string): string[] {
   const firstSentence = value.split(/\.\s+/)[0]?.trim() || '';
   const cleaned = firstSentence.replace(/^research\s+areas?:\s*/i, '').trim();
-  const match = cleaned.match(/\bresearch\s+interests?\s+include\s+(?:the\s+)?(.+)$/i);
-  if (!match) return [];
+  const includeMatch = cleaned.match(/\bresearch\s+interests?\s+include\s+(?:the\s+)?(.+)$/i);
+  const studiesHowMatch = cleaned.match(/^studies\s+how\s+(.+?)\s+(?:shape|shapes|affect|affects|influence|influences|drive|drives)\b/i);
+  const phraseText = includeMatch?.[1] || studiesHowMatch?.[1] || '';
+  if (!phraseText) return [];
 
-  return match[1]
+  return phraseText
     .split(/\s*,\s*|\s+and\s+/)
     .map((phrase) => phrase.replace(/^(?:the|a|an)\s+/i, '').replace(/[.;:,]+$/g, '').trim())
     .filter((phrase) => {

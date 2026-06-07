@@ -77,5 +77,8 @@ graphify-out/memory/
 
 # Local agent and browser-driver support files
 .codex/
+.gstack/
 .playwright-libs/
 tmp/
+.claude/
+.superpowers/

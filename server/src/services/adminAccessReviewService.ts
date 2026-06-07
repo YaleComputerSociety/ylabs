@@ -42,6 +42,8 @@ export type AccessReviewRecordType =
 
 const DEFAULT_PAGE_SIZE = 25;
 const MAX_PAGE_SIZE = 100;
+const MAX_PAGE = 1000;
+const MAX_ACCESS_REVIEW_SEARCH_QUERY_LENGTH = 120;
 
 function toObjectId(id: unknown): mongoose.Types.ObjectId | null {
   if (!id || !mongoose.Types.ObjectId.isValid(String(id))) return null;
@@ -49,7 +51,7 @@ function toObjectId(id: unknown): mongoose.Types.ObjectId | null {
 }
 
 function normalizePage(input?: number): number {
-  return Math.max(1, Math.floor(Number(input) || 1));
+  return Math.min(MAX_PAGE, Math.max(1, Math.floor(Number(input) || 1)));
 }
 
 function normalizePageSize(input?: number): number {
@@ -57,6 +59,14 @@ function normalizePageSize(input?: number): number {
     MAX_PAGE_SIZE,
     Math.max(1, Math.floor(Number(input) || DEFAULT_PAGE_SIZE)),
   );
+}
+
+export function normalizeAccessReviewSearchTerm(input?: string): string {
+  const searchTerm = input?.trim() || '';
+  if (searchTerm.length > MAX_ACCESS_REVIEW_SEARCH_QUERY_LENGTH) {
+    throw new Error('Search query is too long');
+  }
+  return searchTerm;
 }
 
 async function countByEntity(
@@ -210,8 +220,10 @@ export async function listAccessReviewEntities(input: AccessReviewListInput = {}
   const pageSize = normalizePageSize(input.pageSize);
   const filter: Record<string, unknown> = {};
 
-  if (input.search?.trim()) {
-    const searchRegex = buildSafeSearchRegex(input.search.trim());
+  const searchTerm = normalizeAccessReviewSearchTerm(input.search);
+
+  if (searchTerm) {
+    const searchRegex = buildSafeSearchRegex(searchTerm);
     filter.$or = [
       { name: searchRegex },
       { displayName: searchRegex },

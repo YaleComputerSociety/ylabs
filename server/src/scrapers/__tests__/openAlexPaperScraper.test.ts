@@ -326,6 +326,11 @@ describe('OpenAlexPaperScraper.run', () => {
               title: 'Test paper',
               publication_year: 2024,
               cited_by_count: 5,
+              open_access: {
+                is_oa: true,
+                oa_status: 'green',
+                oa_url: 'https://example.test/open-paper.pdf',
+              },
             },
           ],
           meta: { next_cursor: null },
@@ -366,6 +371,11 @@ describe('OpenAlexPaperScraper.run', () => {
       sourceName: 'openalex',
       method: 'openalex-orcid',
     });
+    expect(paperObs.find((o) => o.field === 'isOpenAccess')?.value).toBe(true);
+    expect(paperObs.find((o) => o.field === 'openAccessStatus')?.value).toBe('green');
+    expect(paperObs.find((o) => o.field === 'openAccessUrl')?.value).toBe(
+      'https://example.test/open-paper.pdf',
+    );
     expect(paperObs.filter((o) => o.field === 'yaleAuthorIds')).toHaveLength(0);
     expect(paperObs.filter((o) => o.field === 'yaleAuthorNetIds')).toHaveLength(0);
 
@@ -582,6 +592,35 @@ describe('OpenAlexPaperScraper.run', () => {
     expect(workCalls).toHaveLength(1);
     expect(workCalls[0].params.filter).toBe('author.id:https://openalex.org/A-two');
     expect(result.notes).toContain('Synced papers for 1 faculty');
+  });
+
+  it('rejects unsafe OpenAlex pagination bounds before work fetches', async () => {
+    const rows = [
+      {
+        _id: 'u1',
+        netid: 'n1',
+        fname: 'First',
+        lname: 'Faculty',
+        openAlexId: 'A-one',
+      },
+    ];
+
+    for (const [option, message] of [
+      [{ offset: 9007199254740992 }, /--offset must be a safe non-negative integer/],
+      [{ limit: 9007199254740992 }, /--limit must be a safe positive integer/],
+      [
+        { maxOpenAlexPagesPerAuthor: 9007199254740992 },
+        /--max-openalex-pages-per-author must be a safe positive integer/,
+      ],
+    ] as const) {
+      const fetcher: HttpFetcher = vi.fn(async () => ({ results: [] }));
+      const userModel = mockUserModel(rows);
+      const scraper = new OpenAlexPaperScraper({ userModel, fetcher });
+      const { ctx } = makeContext(option as any);
+
+      await expect(scraper.run(ctx)).rejects.toThrow(message);
+      expect(fetcher).not.toHaveBeenCalled();
+    }
   });
 
   it('respects --limit (caps total faculty processed)', async () => {

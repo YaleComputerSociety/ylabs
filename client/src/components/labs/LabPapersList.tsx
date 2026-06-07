@@ -6,7 +6,7 @@
  * Pure presentational — receives the papers as a prop.
  */
 import { LabPaper, LabScholarlyLink } from '../../types/labDetail';
-import { ensureHttpPrefix, safeUrl } from '../../utils/url';
+import { ensureHttpPrefix, safeHttpUrl } from '../../utils/url';
 
 type ResearchActivityLink = LabPaper | LabScholarlyLink;
 
@@ -20,11 +20,11 @@ const isScholarlyLink = (paper: ResearchActivityLink): paper is LabScholarlyLink
   'destinationKind' in paper && 'displaySource' in paper;
 
 const resolvePaperLink = (paper: ResearchActivityLink): string => {
-  if (isScholarlyLink(paper)) return safeUrl(paper.url);
+  if (isScholarlyLink(paper)) return safeHttpUrl(paper.url);
   if (paper.doi) return `https://doi.org/${paper.doi}`;
-  const landing = paper.landingPageUrl ? safeUrl(paper.landingPageUrl) : '';
+  const landing = paper.landingPageUrl ? safeHttpUrl(paper.landingPageUrl) : '';
   if (landing) return landing;
-  const oa = paper.openAccessUrl ? safeUrl(paper.openAccessUrl) : '';
+  const oa = paper.openAccessUrl ? safeHttpUrl(paper.openAccessUrl) : '';
   if (oa) return oa;
   return paper.url ? ensureHttpPrefix(paper.url) : '';
 };
@@ -122,6 +122,8 @@ const LabPapersList = ({
       <div className="divide-y divide-slate-200">
         {papers.map((paper, index) => {
           const link = resolvePaperLink(paper);
+          const freeFullTextHref = isScholarlyLink(paper) ? safeHttpUrl(paper.freeFullTextUrl) : '';
+          const pdfHref = showPreprintMeta && !isScholarlyLink(paper) ? safeHttpUrl(paper.pdfUrl) : '';
           const year = resolveYear(paper);
           const displayDate = resolveDisplayDate(paper);
           const title = normalizeResearchActivityTitle(paper.title) || 'Untitled research activity';
@@ -187,9 +189,9 @@ const LabPapersList = ({
                     Open source
                   </a>
                 )}
-                {isScholarlyLink(paper) && paper.freeFullTextUrl && (
+                {freeFullTextHref && (
                   <a
-                    href={safeUrl(paper.freeFullTextUrl)}
+                    href={freeFullTextHref}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="yr-link"
@@ -197,9 +199,9 @@ const LabPapersList = ({
                     {paper.freeFullTextLabel || 'Free full text'}
                   </a>
                 )}
-                {showPreprintMeta && !isScholarlyLink(paper) && paper.pdfUrl && (
+                {pdfHref && (
                   <a
-                    href={safeUrl(paper.pdfUrl)}
+                    href={pdfHref}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="yr-link"
@@ -221,9 +223,9 @@ const LabPapersList = ({
                     Open source
                   </a>
                 )}
-                {isScholarlyLink(paper) && paper.freeFullTextUrl && (
+                {freeFullTextHref && (
                   <a
-                    href={safeUrl(paper.freeFullTextUrl)}
+                    href={freeFullTextHref}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="yr-link rounded-sm"
@@ -231,9 +233,9 @@ const LabPapersList = ({
                     {paper.freeFullTextLabel || 'Free full text'}
                   </a>
                 )}
-                {showPreprintMeta && !isScholarlyLink(paper) && paper.pdfUrl && (
+                {pdfHref && (
                   <a
-                    href={safeUrl(paper.pdfUrl)}
+                    href={pdfHref}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="yr-link rounded-sm"

@@ -501,6 +501,60 @@ describe('selectLabsToProcess', () => {
       websiteUrl: 'https://source.example.edu/lab',
     });
   });
+
+  it('skips grant and identifier source URLs when selecting undergrad crawl targets', () => {
+    expect(
+      candidateLabFromResearchEntityDoc({
+        _id: 'entity-grant',
+        slug: 'nih-pi-grant-only',
+        name: 'Grant Only Lab',
+        sourceUrls: [
+          'https://reporter.nih.gov/project-details/11252534',
+          'https://orcid.org/0000-0001-2345-6789',
+          'https://api.nsf.gov/services/v1/awards/2310836.json',
+          'https://doi.org/10.1000/example',
+          'https://openalex.org/A123',
+          'https://api.crossref.org/works/10.1000/example',
+        ],
+      }),
+    ).toMatchObject({
+      slug: 'nih-pi-grant-only',
+      websiteUrl: '',
+    });
+  });
+
+  it('selects a real lab URL that appears after rejected grant sources', () => {
+    expect(
+      candidateLabFromResearchEntityDoc({
+        _id: 'entity-lab',
+        slug: 'nih-pi-with-lab-page',
+        name: 'Lab Page Entity',
+        websiteUrl: 'https://reporter.nih.gov/project-details/11252534',
+        sourceUrls: [
+          'https://orcid.org/0000-0001-2345-6789',
+          'https://medicine.yale.edu/lab/example/',
+        ],
+      }),
+    ).toMatchObject({
+      slug: 'nih-pi-with-lab-page',
+      websiteUrl: 'https://medicine.yale.edu/lab/example/',
+    });
+  });
+
+  it('canonicalizes the legacy Yan lab host to the current YaleSites host', () => {
+    expect(
+      candidateLabFromResearchEntityDoc({
+        _id: 'entity-3',
+        slug: 'nih-pi-elsa-yan',
+        name: 'Yan Lab',
+        websiteUrl: 'https://ursula.chem.yale.edu/~yanlab/',
+        sourceUrls: ['https://yan.chem.yale.edu/opportunities'],
+      }),
+    ).toMatchObject({
+      slug: 'nih-pi-elsa-yan',
+      websiteUrl: 'https://yan.chem.yale.edu/',
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -531,6 +585,32 @@ function makeFetchPage(pages: Record<string, string>) {
 }
 
 describe('LabMicrositeUndergradLLMExtractor.run', () => {
+  it('rejects unsafe runtime limits before loading candidate labs', async () => {
+    const fetchPage = vi.fn();
+    const callLLM = vi.fn();
+    const labFinder = vi.fn(async (): Promise<CandidateLab[]> => [
+      {
+        _id: '1',
+        slug: 'smith-lab',
+        name: 'Smith Lab',
+        websiteUrl: 'https://smith.example.edu/',
+      },
+    ]);
+    const scraper = newTestScraper({
+      fetchPage,
+      callLLM,
+      labFinder,
+      apiKey: 'sk-test',
+    });
+    const { ctx } = makeContext({ limit: 9007199254740992 });
+
+    await expect(scraper.run(ctx)).rejects.toThrow(/--limit must be a safe positive integer/);
+
+    expect(labFinder).not.toHaveBeenCalled();
+    expect(fetchPage).not.toHaveBeenCalled();
+    expect(callLLM).not.toHaveBeenCalled();
+  });
+
   it('fetches the home page, follows a discovered sub-page, and emits the right observations', async () => {
     const fetchPage = makeFetchPage({
       'https://smith.example.com/': HOME_HTML,
@@ -600,6 +680,58 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
     expect(accepting!.confidenceOverride).toBe(0.5);
     expect(accepting!.entityKey).toBe('smith-lab');
     expect(emitted.find((o) => o.field === 'currentUndergradCount')!.value).toBe(3);
+  });
+
+  it('discovers sub-pages from the resolved final home page URL', async () => {
+    const fetchPage = vi.fn(async (url: string): Promise<FetchedPage | null> => {
+      if (url === 'https://legacy.example.edu/lab') {
+        return {
+          url: 'https://current.example.edu/',
+          html: '<html><body><h1>Current Lab</h1><a href="/opportunities">Opportunities</a></body></html>',
+        };
+      }
+      if (url === 'https://current.example.edu/opportunities') {
+        return {
+          url,
+          html: '<html><body><h1>Opportunities</h1><p>We welcome undergraduate researchers.</p></body></html>',
+        };
+      }
+      return null;
+    });
+    const callLLM = vi.fn(
+      async (
+        input: { model: string; systemPrompt: string; userPrompt: string; apiKey: string },
+      ): Promise<LLMExtraction> => {
+        expect(input.userPrompt).toContain('https://current.example.edu/opportunities');
+        return {
+          openToUndergrads: 'yes',
+          currentUndergradCount: 0,
+          evidenceQuote: 'We welcome undergraduate researchers.',
+          evidenceSource: 'explicit_text',
+          joinPageUrl: 'https://current.example.edu/opportunities',
+        };
+      },
+    );
+
+    const scraper = newTestScraper({
+      fetchPage,
+      callLLM,
+      labFinder: async () => [
+        {
+          _id: '1',
+          slug: 'current-lab',
+          name: 'Current Lab',
+          websiteUrl: 'https://legacy.example.edu/lab',
+        },
+      ],
+      apiKey: 'sk-test',
+    });
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    expect(fetchPage).toHaveBeenCalledWith('https://legacy.example.edu/lab');
+    expect(fetchPage).toHaveBeenCalledWith('https://current.example.edu/opportunities');
+    expect(emitted.some((o) => o.field === 'undergradEvidenceQuote')).toBe(true);
   });
 
   it('uses WorkPlanner to skip fresh labs before fetch or LLM calls', async () => {

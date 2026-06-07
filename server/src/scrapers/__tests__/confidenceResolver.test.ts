@@ -156,6 +156,65 @@ describe('resolveField', () => {
     expect(r?.value).toBe('New');
   });
 
+  it('prefers a recent complete bio over a newer prefix-only bio from the same source', () => {
+    const completeBio =
+      'Originally from Sofia, Bulgaria, Nadya Dimitrova graduated with an Sc.B. in Biochemistry from Brown University in 2002. Nadya Dimitrova is currently an assistant professor studying long noncoding RNAs in cancer.';
+    const prefixOnlyBio =
+      'Originally from Sofia, Bulgaria, Nadya Dimitrova graduated with an Sc.B. in Biochemistry from Brown University in 2002.';
+
+    const r = resolveField(
+      'bio',
+      [
+        {
+          field: 'bio',
+          value: completeBio,
+          sourceName: 'dept-faculty-roster',
+          confidence: 0.7,
+          observedAt: D('2026-05-22'),
+        },
+        {
+          field: 'bio',
+          value: prefixOnlyBio,
+          sourceName: 'dept-faculty-roster',
+          confidence: 0.7,
+          observedAt: D('2026-05-29'),
+        },
+      ],
+      { now: D('2026-05-29'), recencyHalfLifeDays: 90 },
+    );
+
+    expect(r?.value).toBe(completeBio);
+  });
+
+  it('prefers a newer substantial concise bio over an older oversized excerpt from the same source', () => {
+    const conciseBio =
+      'Dr. Abujarad studies digital health tools for public health, clinical care, and health services research. His work develops patient-facing systems and evaluates implementation in real clinical settings.';
+    const oversizedBio = `${conciseBio} ${'Additional official profile background. '.repeat(80)}`;
+
+    const r = resolveField(
+      'bio',
+      [
+        {
+          field: 'bio',
+          value: oversizedBio,
+          sourceName: 'official-profile-pi-backfill',
+          confidence: 0.85,
+          observedAt: D('2026-06-04'),
+        },
+        {
+          field: 'bio',
+          value: conciseBio,
+          sourceName: 'official-profile-pi-backfill',
+          confidence: 0.85,
+          observedAt: D('2026-06-05'),
+        },
+      ],
+      { now: D('2026-06-05'), recencyHalfLifeDays: 90 },
+    );
+
+    expect(r?.value).toBe(conciseBio);
+  });
+
   it('respects manuallyLockedFields and returns the manual value', () => {
     const r = resolveField(
       'description',

@@ -56,6 +56,10 @@ const researchGroupMemberSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    archived: {
+      type: Boolean,
+      default: false,
+    },
     joinedAt: {
       type: Date,
       required: false,
@@ -109,6 +113,7 @@ researchGroupMemberSchema.index({ researchGroupId: 1, userId: 1 });
 researchGroupMemberSchema.index({ researchGroupId: 1, facultyMemberId: 1, role: 1 });
 researchGroupMemberSchema.index({ userId: 1 });
 researchGroupMemberSchema.index({ facultyMemberId: 1 });
+researchGroupMemberSchema.index({ archived: 1 });
 researchGroupMemberSchema.index({ researchGroupId: 1, role: 1 });
 researchGroupMemberSchema.index({ researchEntityId: 1, userId: 1 });
 researchGroupMemberSchema.index({ researchEntityId: 1, facultyMemberId: 1, role: 1 });

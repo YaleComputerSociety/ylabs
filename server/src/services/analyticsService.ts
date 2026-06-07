@@ -110,6 +110,31 @@ export interface SearchQualityAnalytics {
   topQueries: SearchQualityQueryAnalytics[];
 }
 
+export interface SearchQuerySearcherAnalytics {
+  netid: string;
+  userType: string;
+  fname?: string;
+  lname?: string;
+  email?: string;
+  searchCount: number;
+  lastSearchedAt?: Date;
+}
+
+export interface SearchQueryAnalyticsRow {
+  query: string;
+  totalSearches: number;
+  uniqueSearchers: number;
+  zeroResultSearches: number;
+  avgResultCount: number;
+  lastSearchedAt?: Date;
+  searchers: SearchQuerySearcherAnalytics[];
+}
+
+export interface SearchQueryAnalytics {
+  queries: SearchQueryAnalyticsRow[];
+  limit: number;
+}
+
 export interface FunnelAnalytics {
   logins: number;
   searches: number;
@@ -156,6 +181,8 @@ const USER_ANALYTICS_SORTS = new Set<AnalyticsUserSort>([
   'views',
 ]);
 
+export const MAX_USER_ANALYTICS_SEARCH_LENGTH = 120;
+
 const EVENT_COUNT_FIELDS: Record<string, AnalyticsEventType> = {
   logins: AnalyticsEventType.LOGIN,
   searches: AnalyticsEventType.SEARCH,
@@ -174,7 +201,45 @@ const EVENT_COUNT_FIELDS: Record<string, AnalyticsEventType> = {
   profileUpdates: AnalyticsEventType.PROFILE_UPDATE,
 };
 
+const BETA_STUDENT_USER_TYPES = new Set(['student', 'undergraduate', 'graduate']);
+
+const isBetaRuntime = (): boolean => process.env.SCRAPER_ENV === 'beta';
+
+const isFixtureNetid = (netid: string): boolean => {
+  const normalized = netid.trim().toLowerCase();
+  return (
+    normalized === 'devadmin' ||
+    normalized === 'test123' ||
+    normalized.startsWith('dev') ||
+    normalized.startsWith('test')
+  );
+};
+
+export const shouldSuppressBetaAnalyticsEvent = (params: Pick<LogEventParams, 'netid' | 'userType'>): boolean => {
+  if (!isBetaRuntime()) {
+    return false;
+  }
+
+  if (isFixtureNetid(params.netid)) {
+    return false;
+  }
+
+  return BETA_STUDENT_USER_TYPES.has(String(params.userType || '').trim().toLowerCase());
+};
+
 const escapeRegex = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const validateUserAnalyticsSearch = (value?: string): string | undefined => {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (value.length > MAX_USER_ANALYTICS_SEARCH_LENGTH) {
+    throw new Error('Invalid search');
+  }
+
+  return value;
+};
 
 const clampLimit = (value: unknown, defaultValue: number, maxValue: number): number => {
   if (value === undefined || value === null || value === '') {
@@ -242,6 +307,7 @@ const buildEventCountAccumulator = (eventType: AnalyticsEventType) => ({
 const userSummaryPipeline = (netid?: string, query: AnalyticsUsersQuery = {}): PipelineStage[] => {
   const activeSince = parseActiveSince(query.activeSince);
   const limit = clampLimit(query.limit, 50, 200);
+  const search = validateUserAnalyticsSearch(query.search);
   const sort = query.sort && USER_ANALYTICS_SORTS.has(query.sort) ? query.sort : 'lastActive';
   const direction = query.direction === 'asc' ? 1 : -1;
   const match: PipelineStage.Match['$match'] = {};
@@ -303,8 +369,8 @@ const userSummaryPipeline = (netid?: string, query: AnalyticsUsersQuery = {}): P
   if (activeSince) {
     postLookupMatch.lastActive = { $gte: activeSince };
   }
-  if (query.search) {
-    const searchRegex = { $regex: escapeRegex(query.search), $options: 'i' };
+  if (search) {
+    const searchRegex = { $regex: escapeRegex(search), $options: 'i' };
     postLookupMatch.$or = [
       { netid: searchRegex },
       { fname: searchRegex },
@@ -425,6 +491,10 @@ export const getUserAnalyticsDrilldown = async (
 
 export const logEvent = async (params: LogEventParams): Promise<void> => {
   try {
+    if (shouldSuppressBetaAnalyticsEvent(params)) {
+      return;
+    }
+
     await AnalyticsEvent.create({
       eventType: params.eventType,
       netid: params.netid,
@@ -563,6 +633,130 @@ export const getSearchQualityAnalytics = async (
     topZeroResultQueries,
     topQueries,
   };
+};
+
+export const getSearchQueryAnalytics = async (
+  range: AnalyticsDateRange = {},
+  options: { limit?: number } = {},
+): Promise<SearchQueryAnalytics> => {
+  const limit = clampLimit(options.limit, 25, 100);
+  const match: Record<string, any> = {
+    eventType: AnalyticsEventType.SEARCH,
+  };
+  if (range.start || range.end) {
+    match.timestamp = {};
+    if (range.start) match.timestamp.$gte = range.start;
+    if (range.end) match.timestamp.$lte = range.end;
+  }
+
+  const pipeline: PipelineStage[] = [
+    { $match: match },
+    {
+      $project: {
+        netid: { $ifNull: ['$netid', 'unknown'] },
+        userType: { $ifNull: ['$userType', 'unknown'] },
+        normalizedQuery: { $trim: { input: { $ifNull: ['$searchQuery', ''] } } },
+        resultCount: {
+          $convert: {
+            input: '$metadata.resultCount',
+            to: 'double',
+            onError: 0,
+            onNull: 0,
+          },
+        },
+        timestamp: 1,
+      },
+    },
+    {
+      $group: {
+        _id: {
+          query: '$normalizedQuery',
+          netid: '$netid',
+        },
+        userType: { $last: '$userType' },
+        searchCount: { $sum: 1 },
+        zeroResultSearches: {
+          $sum: { $cond: [{ $lte: ['$resultCount', 0] }, 1, 0] },
+        },
+        resultCountTotal: { $sum: '$resultCount' },
+        lastSearchedAt: { $max: '$timestamp' },
+      },
+    },
+    {
+      $lookup: {
+        from: 'users',
+        localField: '_id.netid',
+        foreignField: 'netid',
+        as: 'user',
+      },
+    },
+    {
+      $unwind: {
+        path: '$user',
+        preserveNullAndEmptyArrays: true,
+      },
+    },
+    {
+      $project: {
+        _id: 0,
+        query: '$_id.query',
+        netid: '$_id.netid',
+        userType: { $ifNull: ['$user.userType', '$userType'] },
+        fname: '$user.fname',
+        lname: '$user.lname',
+        email: '$user.email',
+        searchCount: 1,
+        zeroResultSearches: 1,
+        resultCountTotal: 1,
+        lastSearchedAt: 1,
+      },
+    },
+    { $sort: { query: 1, searchCount: -1, lastSearchedAt: -1, netid: 1 } },
+    {
+      $group: {
+        _id: '$query',
+        totalSearches: { $sum: '$searchCount' },
+        zeroResultSearches: { $sum: '$zeroResultSearches' },
+        resultCountTotal: { $sum: '$resultCountTotal' },
+        uniqueSearchers: { $sum: 1 },
+        lastSearchedAt: { $max: '$lastSearchedAt' },
+        searchers: {
+          $push: {
+            netid: '$netid',
+            userType: '$userType',
+            fname: '$fname',
+            lname: '$lname',
+            email: '$email',
+            searchCount: '$searchCount',
+            lastSearchedAt: '$lastSearchedAt',
+          },
+        },
+      },
+    },
+    {
+      $project: {
+        _id: 0,
+        query: '$_id',
+        totalSearches: 1,
+        uniqueSearchers: 1,
+        zeroResultSearches: 1,
+        avgResultCount: {
+          $cond: [
+            { $gt: ['$totalSearches', 0] },
+            { $round: [{ $divide: ['$resultCountTotal', '$totalSearches'] }, 2] },
+            0,
+          ],
+        },
+        lastSearchedAt: 1,
+        searchers: { $slice: ['$searchers', 8] },
+      },
+    },
+    { $sort: { totalSearches: -1, zeroResultSearches: -1, lastSearchedAt: -1, query: 1 } },
+    { $limit: limit },
+  ];
+
+  const queries = (await AnalyticsEvent.aggregate(pipeline)) as SearchQueryAnalyticsRow[];
+  return { queries, limit };
 };
 
 export const getFunnelAnalytics = async (

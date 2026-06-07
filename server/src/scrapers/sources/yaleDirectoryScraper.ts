@@ -268,7 +268,11 @@ export class YaleDirectoryScraper implements IScraper {
       };
     }
 
-    const limit = ctx.options.limit && ctx.options.limit > 0 ? ctx.options.limit : undefined;
+    const limitOption = ctx.options.limit;
+    if (limitOption !== undefined && (!Number.isSafeInteger(limitOption) || limitOption < 1)) {
+      throw new Error('--limit must be a safe positive integer');
+    }
+    const limit = limitOption;
 
     let totalObs = 0;
     let processed = 0;

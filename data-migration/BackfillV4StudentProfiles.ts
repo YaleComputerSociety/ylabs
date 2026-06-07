@@ -4,22 +4,29 @@
  * Dry-run by default; pass --apply to write. Supports --limit N / --limit=N.
  */
 import mongoose from '../server/node_modules/mongoose';
-import dotenv from 'dotenv';
+import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import { Department } from '../server/src/models/department';
 import { StudentProfile } from '../server/src/models/studentProfile';
 import { User } from '../server/src/models/user';
+import { resolveScraperEnvironment } from '../server/src/scrapers/scraperEnvironment';
+import {
+  buildV4MigrationOutput,
+  connectForMigration,
+  disconnectForMigration,
+  parseMigrationOptions,
+  type MigrationOptions,
+} from './v4MigrationUtils';
 
-dotenv.config({ path: path.resolve(__dirname, '../server/.env') });
+const __filename = fileURLToPath(import.meta.url);
 
-const APPLY = process.argv.includes('--apply') || process.argv.includes('--live');
-
-function parseLimit(): number | undefined {
-  const eq = process.argv.find((arg) => arg.startsWith('--limit='));
-  const raw = eq ? eq.split('=')[1] : process.argv[process.argv.indexOf('--limit') + 1];
-  if (!raw || raw.startsWith('--')) return undefined;
-  const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+interface V4StudentProfileBackfillResult {
+  usersProcessed: number;
+  studentRowsUpserted: number;
+  userLinksAdded: number;
+  skipped: number;
+  errorCount: number;
 }
 
 function norm(value?: string): string {
@@ -61,24 +68,24 @@ function departmentIdsFor(
   ).map((id) => new mongoose.Types.ObjectId(id));
 }
 
-async function main(): Promise<void> {
-  const url = process.env.MONGODBURL;
-  if (!url) {
-    console.error('ERROR: MONGODBURL not set');
-    process.exit(1);
-  }
+function writeV4StudentProfileBackfillOutput(payload: object, outputPath?: string): void {
+  if (!outputPath) return;
+  fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+  fs.writeFileSync(outputPath, `${JSON.stringify(payload, null, 2)}\n`);
+}
 
-  const limit = parseLimit();
-  console.log('\n=== Backfill v4 StudentProfile identity bridge ===');
-  console.log(`Mode: ${APPLY ? 'APPLY' : 'DRY RUN'}`);
-  console.log(`Limit: ${limit ?? 'none'}\n`);
+export async function backfillV4StudentProfiles(
+  options: MigrationOptions = parseMigrationOptions(),
+): Promise<ReturnType<typeof buildV4MigrationOutput<V4StudentProfileBackfillResult>>> {
+  await connectForMigration('Backfill v4 StudentProfile identity bridge', options);
 
-  await mongoose.connect(url);
+  try {
+    console.log(`Limit: ${options.limit ?? 'none'}\n`);
 
   const filter = { userType: { $in: ['undergraduate', 'graduate', 'student'] } };
   const total = await User.countDocuments(filter);
   const query = User.find(filter).sort({ netid: 1 }).lean<any[]>();
-  if (limit) query.limit(limit);
+  if (options.limit) query.limit(options.limit);
   const users = await query;
   const departmentsByName = await buildDepartmentMap();
   console.log(`Student users found: ${total}; processing ${users.length}`);
@@ -100,7 +107,7 @@ async function main(): Promise<void> {
     ], departmentsByName);
 
     try {
-      if (APPLY) {
+      if (options.apply) {
         const profile = await StudentProfile.findOneAndUpdate(
           { netid: user.netid },
           {
@@ -129,18 +136,40 @@ async function main(): Promise<void> {
     }
   }
 
-  console.log('\nDone.');
-  console.log(`  Users processed:          ${users.length}`);
-  console.log(`  Student rows upserted:    ${upserted} ${APPLY ? '' : '(dry run)'}`);
-  console.log(`  User links added:         ${linkedUsers} ${APPLY ? '' : '(dry run)'}`);
-  console.log(`  Skipped:                  ${skipped}`);
-  console.log(`  Errors:                   ${errors.length}`);
-  for (const error of errors.slice(0, 10)) console.log(`  ${error.netid}: ${error.error}`);
+    const output = buildV4MigrationOutput(
+      {
+        usersProcessed: users.length,
+        studentRowsUpserted: upserted,
+        userLinksAdded: linkedUsers,
+        skipped,
+        errorCount: errors.length,
+      },
+      {
+        environment: resolveScraperEnvironment(process.env),
+        db: StudentProfile.db.db?.databaseName || StudentProfile.db.name,
+        options,
+      },
+    );
 
-  await mongoose.disconnect();
+    console.log('\nDone.');
+    console.log(`  Users processed:          ${users.length}`);
+    console.log(`  Student rows upserted:    ${upserted} ${options.apply ? '' : '(dry run)'}`);
+    console.log(`  User links added:         ${linkedUsers} ${options.apply ? '' : '(dry run)'}`);
+    console.log(`  Skipped:                  ${skipped}`);
+    console.log(`  Errors:                   ${errors.length}`);
+    for (const error of errors.slice(0, 10)) console.log(`  ${error.netid}: ${error.error}`);
+    writeV4StudentProfileBackfillOutput(output, options.output);
+    if (options.output) console.log(`Wrote v4 student profile backfill report to ${options.output}`);
+
+    return output;
+  } finally {
+    await disconnectForMigration();
+  }
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+if (process.argv[1] && __filename === path.resolve(process.argv[1])) {
+  backfillV4StudentProfiles().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}

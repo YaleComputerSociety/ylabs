@@ -748,7 +748,7 @@ git commit -m "docs: record research page UX direction"
 - Do not remove Pathways from `/research`; make them easier to understand.
 - Do not hide evidence/source links.
 - Do not use “open opportunity” language unless `activePostedOpportunity` exists.
-- Keep `/pathways` unchanged unless Playwright shows a regression caused by shared components.
+- Keep practical-route evidence embedded in `/research` unless Playwright shows a regression caused by shared components.
 - Keep screenshots for before/after comparisons in `docs/ux-screenshots/`.
 
 ## Verification Checklist

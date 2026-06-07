@@ -31,17 +31,63 @@ export interface StudentVisibilityBackfillCollectionReport {
 }
 
 const PUBLIC_TIERS = new Set<string>(publicStudentVisibilityTiers);
+const DEFAULT_REASON_SAMPLE_SIZE = 3;
+const DEFAULT_MINIMUM_PUBLIC_COUNT = 1;
+const DEFAULT_MAX_PUBLIC_COLLAPSE_RATIO = 0.5;
 
 export function incrementCount(counts: Record<string, number>, key: string | undefined) {
   const countKey = key || 'unset';
   counts[countKey] = (counts[countKey] || 0) + 1;
 }
 
+function normalizeReasonSampleSize(reasonSampleSize: number | undefined): number {
+  if (reasonSampleSize === undefined) return DEFAULT_REASON_SAMPLE_SIZE;
+  if (!Number.isSafeInteger(reasonSampleSize) || reasonSampleSize < 1) {
+    throw new Error('--reason-sample-size must be a safe positive integer');
+  }
+  return reasonSampleSize;
+}
+
+function normalizeMinimumPublicCount(minimumPublicCount: number | undefined): number {
+  if (minimumPublicCount === undefined) return DEFAULT_MINIMUM_PUBLIC_COUNT;
+  if (!Number.isSafeInteger(minimumPublicCount) || minimumPublicCount < 0) {
+    throw new Error('--minimum-public-count must be a safe non-negative integer');
+  }
+  return minimumPublicCount;
+}
+
+function normalizeMaxPublicCollapseRatio(maxPublicCollapseRatio: number | undefined): number {
+  if (maxPublicCollapseRatio === undefined) return DEFAULT_MAX_PUBLIC_COLLAPSE_RATIO;
+  if (!Number.isFinite(maxPublicCollapseRatio) || maxPublicCollapseRatio < 0) {
+    throw new Error('--max-public-collapse-ratio must be a finite non-negative number');
+  }
+  return maxPublicCollapseRatio;
+}
+
 export function nextRepairActionForReasons(reasons: string[]): string {
   if (reasons.includes('inactive_at_yale')) return 'Suppress or repair active-at-Yale evidence.';
+  if (reasons.includes('formalization_only')) {
+    return 'Keep capped unless source evidence shows mentor matching, project placement, internship, RA program, or another real entry route.';
+  }
+  if (reasons.includes('exact_url_duplicate_risk')) {
+    return 'Suppress the duplicate shell; preserve the stronger canonical research profile.';
+  }
+  if (reasons.includes('generic_directory_shell')) {
+    return 'Suppress the directory-only shell unless a specific source profile can be attached.';
+  }
+  if (reasons.includes('profile_biography_shell')) {
+    return 'Suppress the profile-only biography shell unless a real research home, lead, or access route can be attached.';
+  }
+  if (reasons.includes('non_owner_grant_shell')) {
+    return 'Suppress the grant shell unless a durable PI-owned research home or student access route is found.';
+  }
   if (reasons.includes('duplicate_risk')) return 'Resolve duplicate or disambiguation risk.';
   if (reasons.includes('content_page_risk')) return 'Suppress content pages or remap to a real research home.';
+  if (reasons.includes('pi_identity_conflict')) return 'Resolve mismatched PI identity before promotion.';
   if (reasons.includes('missing_lead')) return 'Attach a source-backed PI, director, or lead member.';
+  if (reasons.includes('missing_card_description')) {
+    return 'Backfill a student-facing short description from source-backed research text.';
+  }
   if (reasons.includes('missing_description')) return 'Backfill a source-backed research description.';
   if (reasons.includes('thin_description')) return 'Replace thin copy with a useful source-backed description.';
   if (reasons.includes('profile_fallback_only')) return 'Verify the profile-derived description against an entity source.';
@@ -61,9 +107,9 @@ export function buildCollectionReport(
     maxPublicCollapseRatio?: number;
   },
 ): StudentVisibilityBackfillCollectionReport {
-  const reasonSampleSize = Math.max(1, Math.floor(options.reasonSampleSize || 3));
-  const minimumPublicCount = Math.max(0, Math.floor(options.minimumPublicCount ?? 1));
-  const maxPublicCollapseRatio = Math.max(0, options.maxPublicCollapseRatio ?? 0.5);
+  const reasonSampleSize = normalizeReasonSampleSize(options.reasonSampleSize);
+  const minimumPublicCount = normalizeMinimumPublicCount(options.minimumPublicCount);
+  const maxPublicCollapseRatio = normalizeMaxPublicCollapseRatio(options.maxPublicCollapseRatio);
   const counts: Record<string, number> = {};
   const computedCounts: Record<string, number> = {};
   const currentCounts: Record<string, number> = {};

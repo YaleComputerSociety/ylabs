@@ -1,7 +1,7 @@
 /**
  * Custom hook for tracking listing and fellowship view counts.
- * ResearchGroup view tracking will move through ResearchGroupStats; until that
- * endpoint exists, research group cards intentionally no-op.
+ * ResearchEntity view tracking does not have a public endpoint yet, so research
+ * cards intentionally no-op.
  */
 import { useRef, useCallback } from 'react';
 import axios from '../utils/axios';

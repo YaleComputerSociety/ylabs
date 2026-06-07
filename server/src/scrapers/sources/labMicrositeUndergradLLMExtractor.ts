@@ -287,6 +287,46 @@ function normalizeCandidateUrl(rawUrl: string): string {
   }
 }
 
+function normalizeKnownLabWebsiteUrl(rawUrl: string): string {
+  try {
+    const url = new URL(rawUrl);
+    if (
+      url.hostname.toLowerCase() === 'ursula.chem.yale.edu' &&
+      /^\/~yanlab\/?$/i.test(url.pathname)
+    ) {
+      return 'https://yan.chem.yale.edu/';
+    }
+    return rawUrl;
+  } catch {
+    return rawUrl;
+  }
+}
+
+const rejectedUndergradSourcePatterns = [
+  /\/membership\/directory\/?$/i,
+  /\/(?:people|faculty|directory|members)\/?$/i,
+  /(?:^|\.)orcid\.org/i,
+  /(?:^|\.)doi\.org/i,
+  /(?:^|\.)openalex\.org/i,
+  /(?:^|\.)crossref\.org/i,
+  /reporter\.nih\.gov/i,
+  /nsf\.gov/i,
+  /api\.nsf\.gov/i,
+];
+
+function isRejectedUndergradSourceUrl(value: unknown): boolean {
+  if (typeof value !== 'string') return true;
+  const urlText = value.trim();
+  if (!/^https?:\/\//i.test(urlText)) return true;
+  try {
+    const url = new URL(urlText);
+    const hostPath = `${url.hostname}${url.pathname}`.replace(/\/+$/, '');
+    return rejectedUndergradSourcePatterns.some((pattern) => pattern.test(hostPath));
+  } catch {
+    return true;
+  }
+}
+
 /**
  * Pure: assemble the user-facing prompt body the LLM sees.
  */
@@ -508,8 +548,8 @@ function usableWebsiteUrlFromDoc(doc: Record<string, any>): string {
   ];
   for (const candidate of candidates) {
     if (typeof candidate !== 'string') continue;
-    const url = candidate.trim();
-    if (/^https?:\/\//i.test(url)) return url;
+    const url = normalizeKnownLabWebsiteUrl(candidate.trim());
+    if (/^https?:\/\//i.test(url) && !isRejectedUndergradSourceUrl(url)) return url;
   }
   return '';
 }
@@ -571,7 +611,12 @@ export const defaultFetchPage: FetchPageFn = async (url) => {
       responseType: 'text',
       transitional: { clarifyTimeoutError: true } as any,
     });
-    return { url, html: typeof res.data === 'string' ? res.data : String(res.data ?? '') };
+    const responseUrl =
+      typeof res.request?.res?.responseUrl === 'string' ? res.request.res.responseUrl : url;
+    return {
+      url: responseUrl,
+      html: typeof res.data === 'string' ? res.data : String(res.data ?? ''),
+    };
   } catch {
     return null;
   }
@@ -722,15 +767,20 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
       };
     }
 
+    const limitOption = ctx.options.limit;
+    if (limitOption !== undefined && (!Number.isSafeInteger(limitOption) || limitOption < 1)) {
+      throw new Error('--limit must be a safe positive integer');
+    }
+
     const candidates = await this.labFinder();
     ctx.log(`Found ${candidates.length} candidate ResearchEntities with usable website URLs`);
 
     const labs = selectLabsToProcess(candidates, {
       only: ctx.options.only,
-      limit: ctx.options.limit,
+      limit: limitOption,
     });
     ctx.log(
-      `Processing ${labs.length} labs (limit=${ctx.options.limit ?? DEFAULT_LIMIT}, only=${(ctx.options.only || []).join(',') || 'none'})`,
+      `Processing ${labs.length} labs (limit=${limitOption ?? DEFAULT_LIMIT}, only=${(ctx.options.only || []).join(',') || 'none'})`,
     );
 
     let totalObs = 0;

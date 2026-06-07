@@ -2,6 +2,12 @@
  * Authentication guards and role-based access control middleware.
  */
 import express from 'express';
+import {
+  allowsLegacyAdminUserType,
+  hasActiveAdminGrant,
+} from '../services/adminGrantService';
+
+const requestNetid = (user: { netId?: string; netid?: string }) => user.netId || user.netid || '';
 
 /**
  * Middleware to check if user is authenticated
@@ -62,6 +68,10 @@ export const canCreateListing = (
     return res.status(403).json({ error: 'User does not have permission to create listings' });
   }
 
+  if (currentUser.userType !== 'admin' && currentUser.userConfirmed !== true) {
+    return res.status(403).json({ error: 'Account must be confirmed before creating listings' });
+  }
+
   if (currentUser.userType !== 'admin' && !currentUser.profileVerified) {
     return res
       .status(403)
@@ -82,17 +92,26 @@ export const isAdmin = (
   res: express.Response,
   next: express.NextFunction,
 ) => {
-  const currentUser = req.user as { netId?: string; userType?: string; userConfirmed?: boolean };
+  const currentUser = req.user as {
+    netId?: string;
+    netid?: string;
+    userType?: string;
+    userConfirmed?: boolean;
+  };
 
   if (!currentUser) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  if (currentUser.userType !== 'admin') {
-    return res.status(403).json({ error: 'Admin privileges required' });
-  }
+  return Promise.resolve(hasActiveAdminGrant(requestNetid(currentUser)))
+    .then((hasGrant) => {
+      if (hasGrant || (currentUser.userType === 'admin' && allowsLegacyAdminUserType())) {
+        return next();
+      }
 
-  next();
+      return res.status(403).json({ error: 'Admin privileges required' });
+    })
+    .catch(next);
 };
 
 /**
@@ -110,14 +129,14 @@ export const isProfessor = (
   }
 
   if (
-    currentUser.userType !== 'professor' &&
-    currentUser.userType !== 'faculty' &&
-    currentUser.userType !== 'admin'
+    currentUser.userType === 'admin' ||
+    ((currentUser.userType === 'professor' || currentUser.userType === 'faculty') &&
+      currentUser.userConfirmed === true)
   ) {
-    return res.status(403).json({ error: 'Professor privileges required' });
+    return next();
   }
 
-  next();
+  return res.status(403).json({ error: 'Professor privileges required' });
 };
 
 /**

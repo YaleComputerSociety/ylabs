@@ -657,6 +657,11 @@ export class YaleCollegeFellowshipsOfficeScraper implements IScraper {
   }
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
+    const limitOption = ctx.options.limit;
+    if (limitOption !== undefined && (!Number.isSafeInteger(limitOption) || limitOption < 0)) {
+      throw new Error('--limit must be a safe non-negative integer');
+    }
+
     const referenceDate = new Date();
     const candidatesByKey = new Map<string, FellowshipCatalogCandidate>();
     const fetched = new Set<string>();
@@ -716,8 +721,8 @@ export class YaleCollegeFellowshipsOfficeScraper implements IScraper {
       a.title.localeCompare(b.title),
     );
     const selected =
-      typeof ctx.options.limit === 'number' && ctx.options.limit >= 0
-        ? allCandidates.slice(0, ctx.options.limit)
+      limitOption !== undefined
+        ? allCandidates.slice(0, limitOption)
         : allCandidates;
     const observations = selected.flatMap(candidateToObservations);
     if (observations.length > 0) await ctx.emit(observations);

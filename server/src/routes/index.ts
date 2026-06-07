@@ -13,8 +13,9 @@ import AdminRoutes from './admin';
 import ProfileRoutes from './profiles';
 import SeedRoutes from './seed';
 import ResearchGroupsRoutes from './researchGroups';
-import PathwaysRoutes from './pathways';
 import OpportunitiesRoutes from './opportunities';
+import PathwaysRoutes from './pathways';
+import { isLocalDevelopmentRuntime } from '../utils/environment';
 
 const router = Router();
 
@@ -35,7 +36,7 @@ router.use('/research-areas', ResearchAreasRoutes);
 router.use('/config', ConfigRoutes);
 router.use('/admin', AdminRoutes);
 
-if (process.env.NODE_ENV === 'development') {
+if (isLocalDevelopmentRuntime()) {
   router.use('/seed', SeedRoutes);
 }
 

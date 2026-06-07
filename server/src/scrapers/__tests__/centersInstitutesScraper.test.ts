@@ -623,6 +623,24 @@ describe('CentersInstitutesScraper.run', () => {
     getSpy.mockRestore();
   });
 
+  it('rejects unsafe runtime limits before fetching center pages', async () => {
+    const ext = vi.fn((): ExtractorResult => ({ members: [{ name: 'x' }] }));
+    const configs: CenterConfig[] = [
+      { centerKey: 'a', centerName: 'A', schoolName: '', kind: 'center', url: 'https://x/a', extractor: ext },
+    ];
+    const axios = (await import('axios')).default;
+    const getSpy = vi
+      .spyOn(axios, 'get')
+      .mockResolvedValue({ data: '<html></html>' } as any);
+    const scraper = new CentersInstitutesScraper(configs);
+    const { ctx } = makeContext({ limit: 9007199254740992 });
+
+    await expect(scraper.run(ctx)).rejects.toThrow(/--limit must be a safe positive integer/);
+    expect(getSpy).not.toHaveBeenCalled();
+    expect(ext).not.toHaveBeenCalled();
+    getSpy.mockRestore();
+  });
+
   it('records fetch failure status and emits no observations for that center', async () => {
     const failing = vi.fn();
     const working = vi.fn(

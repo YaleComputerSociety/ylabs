@@ -11,17 +11,27 @@ describe('parseDedupeUsersByIdentityArgs', () => {
   it('defaults to dry-run with a bounded limit', () => {
     expect(parseDedupeUsersByIdentityArgs([])).toEqual({
       apply: false,
+      confirmUserIdentityDedupe: false,
       limit: 100,
+      limitProvided: false,
       sampleSize: 25,
     });
   });
 
   it('parses apply, limit, and identity-field flags', () => {
     expect(
-      parseDedupeUsersByIdentityArgs(['--', '--apply', '--limit=25', '--identity-field=email']),
+      parseDedupeUsersByIdentityArgs([
+        '--',
+        '--apply',
+        '--confirm-user-identity-dedupe',
+        '--limit=25',
+        '--identity-field=email',
+      ]),
     ).toEqual({
       apply: true,
+      confirmUserIdentityDedupe: true,
       limit: 25,
+      limitProvided: true,
       identityField: 'email',
       sampleSize: 25,
     });
@@ -31,13 +41,16 @@ describe('parseDedupeUsersByIdentityArgs', () => {
     expect(
       parseDedupeUsersByIdentityArgs([
         '--apply',
+        '--confirm-user-identity-dedupe',
         '--output=tmp/user-dedupe/summary.json',
         '--sample-size=3',
         '--max-apply-groups=2',
       ]),
     ).toEqual({
       apply: true,
+      confirmUserIdentityDedupe: true,
       limit: 100,
+      limitProvided: false,
       output: 'tmp/user-dedupe/summary.json',
       sampleSize: 3,
       maxApplyGroups: 2,
@@ -51,6 +64,34 @@ describe('parseDedupeUsersByIdentityArgs', () => {
     expect(() => parseDedupeUsersByIdentityArgs(['--max-apply-groups=0'])).toThrow(
       '--max-apply-groups must be a positive integer',
     );
+  });
+
+  it('rejects non-literal positive integer bounds before running user dedupe', () => {
+    expect(() => parseDedupeUsersByIdentityArgs(['--limit=1e3'])).toThrow(
+      '--limit must be a positive integer',
+    );
+    expect(() => parseDedupeUsersByIdentityArgs(['--sample-size=1e3'])).toThrow(
+      '--sample-size must be a positive integer',
+    );
+    expect(() => parseDedupeUsersByIdentityArgs(['--max-apply-groups=1e3'])).toThrow(
+      '--max-apply-groups must be a positive integer',
+    );
+  });
+
+  it('rejects malformed paired CLI values before running user dedupe', () => {
+    expect(() => parseDedupeUsersByIdentityArgs(['--output', '--apply'])).toThrow(
+      '--output requires a value',
+    );
+    expect(() => parseDedupeUsersByIdentityArgs(['--identity-field', '--limit=5'])).toThrow(
+      '--identity-field requires a value',
+    );
+    expect(() => parseDedupeUsersByIdentityArgs(['--limit=bad'])).toThrow(
+      '--limit must be a positive integer',
+    );
+    expect(() => parseDedupeUsersByIdentityArgs(['--confirm-user-identity-dedupe=true'])).toThrow(
+      '--confirm-user-identity-dedupe does not accept a value',
+    );
+    expect(() => parseDedupeUsersByIdentityArgs(['prod'])).toThrow('Unknown argument: prod');
   });
 });
 
@@ -468,6 +509,26 @@ describe('buildUserIdentityDedupeSummary', () => {
 });
 
 describe('post-materialization identity warning classification', () => {
+  it('does not recommend apply-mode user identity dedupe from integrity failures', () => {
+    const summary = buildPostMaterializationIntegritySummary({
+      duplicatePersonGroups: [
+        {
+          identityField: 'email',
+          identityValue: 'same.person@example.test',
+          userIds: ['canonical-user', 'duplicate-user'],
+        },
+      ],
+    });
+
+    expect(summary.status).toBe('failure');
+    expect(summary.recommendedCommands).toContain(
+      'SCRAPER_ENV=beta yarn --cwd server users:dedupe-by-identity --limit=1000',
+    );
+    expect(summary.recommendedCommands).not.toContain(
+      'SCRAPER_ENV=beta yarn --cwd server users:dedupe-by-identity --limit=1000 --apply',
+    );
+  });
+
   it('classifies duplicate identity conflicts as a promotion blocker with a dry-run command', () => {
     const summary = buildPostMaterializationIntegritySummary({
       warnings: [
@@ -486,11 +547,12 @@ describe('post-materialization identity warning classification', () => {
         name: 'duplicatePersonIdentityConflicts',
         classification: 'must_fix_before_promotion',
         owner: 'identity/account operator',
-        nextCommand: 'yarn --cwd server users:dedupe-by-identity --limit=1000',
+        nextCommand:
+          'SCRAPER_ENV=beta yarn --cwd server users:repair-mismatched-emails --limit=10000 --output /tmp/ylabs-mismatched-person-email-repair.json',
       }),
     ]);
     expect(summary.recommendedCommands).toContain(
-      'yarn --cwd server users:dedupe-by-identity --limit=1000',
+      'SCRAPER_ENV=beta yarn --cwd server users:repair-mismatched-emails --limit=10000 --output /tmp/ylabs-mismatched-person-email-repair.json',
     );
   });
 });

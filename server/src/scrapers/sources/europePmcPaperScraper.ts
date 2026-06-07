@@ -15,7 +15,7 @@ import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '
 
 const EUROPE_PMC_BASE = 'https://www.ebi.ac.uk/europepmc/webservices/rest/search';
 
-export type EuropePmcFetcher = (orcid: string, pageSize: number) => Promise<unknown>;
+export type EuropePmcFetcher = (query: string, pageSize: number) => Promise<unknown>;
 
 export interface EuropePmcPaperScraperOptions {
   userModel?: { find: typeof User.find };
@@ -28,6 +28,8 @@ interface EuropePmcSourceConfig {
   displayName: string;
   authorshipMethod: 'europepmc-orcid' | 'pubmed-orcid';
   syncField: 'europePmcWorksSyncedAt' | 'pubmedWorksSyncedAt';
+  queryForOrcid: (orcid: string) => string;
+  includeResult: (result: EuropePmcResult) => boolean;
 }
 
 const EUROPE_PMC_SOURCE_CONFIG: EuropePmcSourceConfig = {
@@ -35,6 +37,8 @@ const EUROPE_PMC_SOURCE_CONFIG: EuropePmcSourceConfig = {
   displayName: 'Europe PMC ORCID paper sync',
   authorshipMethod: 'europepmc-orcid',
   syncField: 'europePmcWorksSyncedAt',
+  queryForOrcid: (orcid) => `AUTHORID:"${orcid}"`,
+  includeResult: () => true,
 };
 
 const PUBMED_SOURCE_CONFIG: EuropePmcSourceConfig = {
@@ -42,6 +46,11 @@ const PUBMED_SOURCE_CONFIG: EuropePmcSourceConfig = {
   displayName: 'PubMed ORCID paper sync via Europe PMC',
   authorshipMethod: 'pubmed-orcid',
   syncField: 'pubmedWorksSyncedAt',
+  queryForOrcid: (orcid) => `AUTHORID:"${orcid}" AND SRC:MED`,
+  includeResult: (result) => {
+    const source = String(result.source || '').trim().toUpperCase();
+    return source === 'MED' || Boolean(result.pmid);
+  },
 };
 
 interface EuropePmcResult {
@@ -58,11 +67,11 @@ interface EuropePmcResult {
   fullTextUrlList?: { fullTextUrl?: { url?: string }[] };
 }
 
-const defaultFetcher: EuropePmcFetcher = async (orcid, pageSize) => {
+const defaultFetcher: EuropePmcFetcher = async (query, pageSize) => {
   const res = await axios.get(EUROPE_PMC_BASE, {
     timeout: 30000,
     params: {
-      query: `AUTHORID:"${orcid}"`,
+      query,
       format: 'json',
       pageSize,
     },
@@ -175,6 +184,15 @@ export class EuropePmcPaperScraper implements IScraper {
   }
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
+    const offsetOption = ctx.options.offset;
+    if (offsetOption !== undefined && (!Number.isSafeInteger(offsetOption) || offsetOption < 0)) {
+      throw new Error('--offset must be a safe non-negative integer');
+    }
+    const limitOption = ctx.options.limit;
+    if (limitOption !== undefined && (!Number.isSafeInteger(limitOption) || limitOption <= 0)) {
+      throw new Error('--limit must be a safe positive integer');
+    }
+
     const filter: any = {
       userType: { $in: ['professor', 'faculty'] },
       orcid: { $exists: true, $ne: null, $nin: [''] },
@@ -186,8 +204,8 @@ export class EuropePmcPaperScraper implements IScraper {
     let query = this.userModel
       .find(filter, { _id: 1, netid: 1, fname: 1, lname: 1, orcid: 1 })
       .sort({ netid: 1, _id: 1 });
-    if (ctx.options.offset && ctx.options.offset > 0) query = query.skip(ctx.options.offset);
-    if (ctx.options.limit && ctx.options.limit > 0) query = query.limit(ctx.options.limit);
+    if (offsetOption && offsetOption > 0) query = query.skip(offsetOption);
+    if (limitOption && limitOption > 0) query = query.limit(limitOption);
     const users: any[] = await query.lean();
     let totalObs = 0;
     let totalPapers = 0;
@@ -198,10 +216,11 @@ export class EuropePmcPaperScraper implements IScraper {
       const displayName = `${String(user.fname || '').trim()} ${String(user.lname || '').trim()}`.trim();
       if (!orcid || !displayName) continue;
       try {
-        const payload = (await this.fetcher(orcid, this.pageSize)) as {
+        const query = this.sourceConfig.queryForOrcid(orcid);
+        const payload = (await this.fetcher(query, this.pageSize)) as {
           resultList?: { result?: EuropePmcResult[] };
         };
-        const results = payload?.resultList?.result || [];
+        const results = (payload?.resultList?.result || []).filter(this.sourceConfig.includeResult);
         const observations = results.flatMap((result) =>
           resultToObservations(result, {
             userId: String(user._id),

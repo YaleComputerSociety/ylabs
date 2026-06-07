@@ -30,6 +30,7 @@ export type ResearchEntityRepairFlag =
   | 'thin_description'
   | 'profile_fallback_only'
   | 'missing_lead'
+  | 'pi_identity_conflict'
   | 'missing_source_url';
 
 export interface ResearchEntityQualitySummary {
@@ -95,6 +96,25 @@ const normalizeSearchMatch = (
   };
 };
 
+const normalizeStudentDecisionExplanation = (
+  value: ResearchEntity['studentDecisionExplanation'],
+): ResearchEntity['studentDecisionExplanation'] => {
+  if (!value || typeof value.headline !== 'string' || typeof value.explanation !== 'string') {
+    return undefined;
+  }
+  return {
+    ...value,
+    headline: value.headline.trim(),
+    explanation: value.explanation.trim(),
+    why: Array.isArray(value.why)
+      ? value.why.map((item) => String(item).trim()).filter(Boolean).slice(0, 3)
+      : [],
+    sourceUrls: Array.isArray(value.sourceUrls)
+      ? value.sourceUrls.map((item) => String(item).trim()).filter(Boolean)
+      : [],
+  };
+};
+
 const normalizeResearchEntity = (entity: ResearchEntity): ResearchEntity => ({
   ...entity,
   shortDescription: publicResearchDescriptionText(entity.shortDescription),
@@ -102,6 +122,9 @@ const normalizeResearchEntity = (entity: ResearchEntity): ResearchEntity => ({
   fullDescription: publicResearchDescriptionText(entity.fullDescription),
   researchAreas: normalizeResearchMetadataLabels(entity.researchAreas),
   searchMatch: normalizeSearchMatch(entity.searchMatch),
+  studentDecisionExplanation: normalizeStudentDecisionExplanation(
+    entity.studentDecisionExplanation,
+  ),
 });
 
 export function normalizeResearchEntitySearchResponse(

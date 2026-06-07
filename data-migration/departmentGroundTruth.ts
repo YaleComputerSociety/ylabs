@@ -655,6 +655,22 @@ export function buildResolverKeys(rows: Array<Pick<DepartmentSeedRow, 'abbreviat
     for (const value of [row.abbreviation, row.name, row.displayName, ...(row.aliases || [])]) {
       if (value) keys.add(normalizeDepartmentKey(value));
     }
+
+    const codeCandidates = [row.abbreviation, ...(row.aliases || [])].filter(isDepartmentCodeLike);
+    const labelCandidates = [row.name, ...(row.aliases || [])].filter(
+      (value) => value && !isDepartmentCodeLike(value),
+    );
+    for (const code of codeCandidates) {
+      for (const label of labelCandidates) {
+        keys.add(normalizeDepartmentKey(`${code} - ${label}`));
+      }
+    }
   }
   return keys;
+}
+
+function isDepartmentCodeLike(value: string | undefined): value is string {
+  const trimmed = decodeHtml(value || '');
+  if (!trimmed || trimmed.length > 16) return false;
+  return /^[A-Z0-9&/ -]+$/.test(trimmed) && /[A-Z]/.test(trimmed);
 }
