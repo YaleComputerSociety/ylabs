@@ -316,7 +316,7 @@ User → Yale CAS SSO → passport.ts findOrCreateUser
 
 | Middleware | Check |
 |------------|-------|
-| `applyLocalAuthBypass` | Optional local/test-only `req.user` injection when `LOCAL_AUTH_BYPASS=true`; skips CAS routes |
+| `localAuthBypass` | Optional local/test-only `req.user` injection when `LOCAL_AUTH_BYPASS=true`; skips CAS routes |
 | `isAuthenticated` | `req.user` exists |
 | `isAdmin` | `userType === 'admin'` |
 | `isProfessor` | `userType` in `['professor', 'faculty', 'admin']` |

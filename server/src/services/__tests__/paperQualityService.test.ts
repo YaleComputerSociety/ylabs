@@ -3,6 +3,8 @@ import { buildPaperQualityReportFromCounts } from '../paperQualityService';
 
 const cleanCounts = {
   totalActivePapers: 12,
+  totalActiveScholarlyLinks: 0,
+  totalScholarlyAttributions: 0,
   missingTitle: 0,
   genericTitle: 0,
   htmlTitle: 0,
@@ -21,6 +23,8 @@ describe('paperQualityService', () => {
   it('flags zero active papers as a coverage warning instead of a launch-quality pass', () => {
     const report = buildPaperQualityReportFromCounts({
       totalActivePapers: 0,
+      totalActiveScholarlyLinks: 0,
+      totalScholarlyAttributions: 0,
       missingTitle: 0,
       genericTitle: 0,
       htmlTitle: 0,
@@ -40,6 +44,19 @@ describe('paperQualityService', () => {
     expect(report.fixCommands).toContain(
       'Verify paper materialization target DB and active-paper filter before relying on research activity.',
     );
+  });
+
+  it('passes launch coverage when zero legacy papers have canonical scholarly links', () => {
+    const report = buildPaperQualityReportFromCounts({
+      ...cleanCounts,
+      totalActivePapers: 0,
+      totalActiveScholarlyLinks: 4,
+      totalScholarlyAttributions: 2,
+    });
+
+    expect(report.pass).toBe(true);
+    expect(report.warning).toBe('');
+    expect(report.fixCommands).toEqual([]);
   });
 
   it('passes when active papers have no quality blockers', () => {

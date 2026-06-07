@@ -18,6 +18,8 @@ import { ResearchArea } from '../researchArea';
 import { ResearchEntity } from '../researchEntity';
 import { ResearchGroupMember } from '../researchGroupMember';
 import { ResearchGroupStats } from '../researchGroupStats';
+import { ResearchScholarlyAttribution } from '../researchScholarlyAttribution';
+import { ResearchScholarlyLink } from '../researchScholarlyLink';
 import { ScrapeRun } from '../scrapeRun';
 import { ScrapeSnapshot } from '../scrapeSnapshot';
 import { Source } from '../source';
@@ -47,6 +49,8 @@ const models: Array<[mongoose.Model<any>, string]> = [
   [ResearchEntity, 'research_entities'],
   [ResearchGroupMember, 'research_entity_members'],
   [ResearchGroupStats, 'research_entity_stats'],
+  [ResearchScholarlyAttribution, 'research_scholarly_attributions'],
+  [ResearchScholarlyLink, 'research_scholarly_links'],
   [ScrapeRun, 'scrape_runs'],
   [ScrapeSnapshot, 'scrape_snapshots'],
   [Source, 'sources'],

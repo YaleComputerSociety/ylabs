@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  canonicalScholarlyLinkToProfileLink,
   isLikelySameNameContaminatedProfile,
   normalizePublicProfile,
   paperToScholarlyLink,
@@ -100,6 +101,46 @@ describe('profileService profile shaping', () => {
       discoveredVia: 'OPENALEX',
       year: 2025,
       venue: 'Journal of Examples',
+    });
+  });
+
+  it('turns canonical scholarly links into inspectable profile research activity links', () => {
+    const observedAt = new Date('2026-05-20T12:00:00.000Z');
+    const link = canonicalScholarlyLinkToProfileLink(
+      {
+        _id: 'link-1',
+        title: 'A canonical scholarly activity',
+        url: 'https://doi.org/10.1234/canonical',
+        destinationKind: 'DOI',
+        displaySource: 'DOI',
+        freeFullTextUrl: 'https://example.test/free',
+        year: 2026,
+        venue: 'Canonical Journal',
+        confidence: 0.95,
+        lastObservedAt: observedAt,
+        externalIds: {
+          doi: '10.1234/canonical',
+        },
+      },
+      'user-1',
+    );
+
+    expect(link).toMatchObject({
+      _id: 'link-1',
+      userId: 'user-1',
+      title: 'A canonical scholarly activity',
+      url: 'https://doi.org/10.1234/canonical',
+      destinationKind: 'DOI',
+      displaySource: 'DOI',
+      freeFullTextUrl: 'https://example.test/free',
+      freeFullTextLabel: 'Free full text',
+      year: 2026,
+      venue: 'Canonical Journal',
+      confidence: 0.95,
+      observedAt: observedAt.toISOString(),
+      externalIds: {
+        doi: '10.1234/canonical',
+      },
     });
   });
 });

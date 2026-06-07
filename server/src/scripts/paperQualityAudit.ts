@@ -4,6 +4,8 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { Paper } from '../models/paper';
+import { ResearchScholarlyAttribution } from '../models/researchScholarlyAttribution';
+import { ResearchScholarlyLink } from '../models/researchScholarlyLink';
 import {
   buildPaperQualityReportFromCounts,
   type PaperQualityCounts,
@@ -59,6 +61,8 @@ export async function buildPaperQualityCounts(): Promise<PaperQualityCounts> {
   const currentYear = new Date().getFullYear();
   const [
     totalActivePapers,
+    totalActiveScholarlyLinks,
+    totalScholarlyAttributions,
     missingTitle,
     genericTitle,
     htmlTitle,
@@ -73,6 +77,8 @@ export async function buildPaperQualityCounts(): Promise<PaperQualityCounts> {
     duplicateSemanticScholarGroups,
   ] = await Promise.all([
     Paper.countDocuments(activePaperFilter),
+    ResearchScholarlyLink.countDocuments(activePaperFilter),
+    ResearchScholarlyAttribution.countDocuments(activePaperFilter),
     Paper.countDocuments({
       ...activePaperFilter,
       $or: [{ title: { $exists: false } }, { title: null }, { title: /^\s*$/ }],
@@ -123,6 +129,8 @@ export async function buildPaperQualityCounts(): Promise<PaperQualityCounts> {
 
   return {
     totalActivePapers,
+    totalActiveScholarlyLinks,
+    totalScholarlyAttributions,
     missingTitle,
     genericTitle,
     htmlTitle,

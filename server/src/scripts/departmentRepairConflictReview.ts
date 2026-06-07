@@ -10,6 +10,7 @@ import {
   type ResolverObservation,
   type ResolvedField,
 } from '../scrapers/confidenceResolver';
+import { shouldUnionMaterializedField } from '../scrapers/entityMaterializer';
 import {
   planStudentVisibilityGate,
   type StudentVisibilityGatePlan,
@@ -378,6 +379,7 @@ export function buildDepartmentRepairConflictReviewReport(input: {
 
     for (const [field, resolvedField] of Object.entries(resolved)) {
       if (!resolvedField.hasConflict) continue;
+      if (shouldUnionMaterializedField('researchEntity', field)) continue;
       const bucket = classifyConflict(entity, field, resolvedField);
       addRow(
         makeBaseRow({
@@ -562,7 +564,10 @@ export async function generateDepartmentRepairConflictReviewReport(
     .lean();
   if (!run) throw new Error(`ScrapeRun not found: ${runId}`);
 
-  const observations = await Observation.find({ scrapeRunId: new mongoose.Types.ObjectId(runId) })
+  const observations = await Observation.find({
+    scrapeRunId: new mongoose.Types.ObjectId(runId),
+    superseded: { $ne: true },
+  })
     .select('entityType entityId entityKey field value sourceName confidence sourceUrl observedAt')
     .lean();
   const reviewObservations: DepartmentRepairReviewObservation[] = (observations as any[]).map((observation) => ({

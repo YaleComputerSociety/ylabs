@@ -5,6 +5,7 @@ import {
   buildResearchEntityPiDedupePlan,
   selectCurrentMemberIdsToRetire,
   shouldRetireDuplicateCurrentMembersForDedupeRun,
+  urlAnomaliesForResearchEntityPiDedupeGroup,
 } from '../researchEntityPiDedupeCore';
 import {
   parseResearchEntityPiDedupeArgs,
@@ -338,6 +339,23 @@ describe('buildResearchEntityPiDedupePlan', () => {
   it('relinks dependent artifacts for every applied dedupe mode', () => {
     expect(shouldRelinkReferencesForResearchEntityPiDedupeRun({ apply: true })).toBe(true);
     expect(shouldRelinkReferencesForResearchEntityPiDedupeRun({ apply: false })).toBe(false);
+  });
+
+  it('flags malformed and mismatched profile URLs in dedupe review output', () => {
+    expect(
+      urlAnomaliesForResearchEntityPiDedupeGroup({
+        canonicalSlug: 'dept-physics-charles-brown',
+        duplicateSlugs: ['faculty-research-area-charles-brown'],
+        mergedSourceUrls: [
+          'https://physics.yale.edu/people/keith-baker',
+          'https://physics.yale.edu/people/charles-brown',
+          'https://physics.yale.edu/academics/undergraduate-studies/%3Ca%20href=',
+        ],
+      }),
+    ).toEqual({
+      malformedUrls: ['https://physics.yale.edu/academics/undergraduate-studies/%3Ca%20href='],
+      mismatchedProfileUrls: ['https://physics.yale.edu/people/keith-baker'],
+    });
   });
 });
 

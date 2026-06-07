@@ -222,9 +222,9 @@ Listing bridge note: legacy `Listing` rows with a `researchGroupId` now material
 
 Opportunity detail note: `/api/opportunities/:id` exposes explicit public state for posted opportunities: `deadlineState`, `applicationState`, `applicationLabel`, and listing-bridged versus scraper-derived provenance. Attached observation evidence may include a short public excerpt, but direct contact details are redacted before the payload reaches the student-facing page.
 
-## Pathway Search
+## Ways In Search Infrastructure
 
-The first Pathways API is `POST /api/pathways/search`. It searches `EntryPathway` rows and returns denormalized card data for the student-facing `/pathways` surface.
+The Ways In API is `POST /api/pathways/search`. It searches `EntryPathway` rows and returns denormalized evidence/action data for embedded research discovery surfaces. The public `/pathways` client route is retired and redirects to `/research`; the API remains backend infrastructure.
 
 Current behavior:
 
@@ -239,13 +239,13 @@ The same contact guardrail applies to public research detail payloads: unauthent
 
 Contact-route ordering should prefer official applications, program/department/fellowship/course routes, and lab-manager routes before faculty-direct routes. Public pathway cards may link to route URLs, but they should not expose raw scraped emails.
 
-## Saved Pathways
+## Saved Ways In Notes
 
-Student workflow depth starts with saved Pathways. User accounts can now store `favPathways` as references to `EntryPathway` records, and `/account` hydrates them through the same guarded pathway projection used by search.
+Student workflow depth starts with saved research homes and Ways In notes. User accounts can still store `favPathways` as references to `EntryPathway` records for compatibility, and `/account` hydrates them through the same guarded pathway projection used by search.
 
 First-slice behavior:
 
-- `/pathways` supports save and unsave controls for pathway cards.
+- `/account` supports saved pathway planning; retired public `/pathways` links redirect to `/research`.
 - `/api/users/favPathwayIds` returns saved ids for optimistic UI state.
 - `/api/users/favPathways` returns hydrated saved pathways and prunes archived or otherwise hidden pathways from the saved list.
 - Saved pathway cards link back to `/research/:slug` rather than introducing a dedicated pathway detail route.
@@ -423,16 +423,16 @@ PI quality is part of research-entity quality. Operator review for a lab or facu
 
 Use precise internal names in code and schema docs, but use warmer labels in the UI:
 
-- `EntryPathway` -> Pathways / ways toward a research home
+- `EntryPathway` -> Ways In / routes toward a research home
 - `AccessSignal` -> Evidence
 - formalization metadata -> Ways to formalize
 - computed CTA / `RecommendedNextStep` -> Best Next Step
 
-Use "Pathways" as the primary student-facing surface and navigation label. Internally, keep the distinction: `EntryPathway` is a durable route toward a plausible research home, `PostedOpportunity` is a real active/time-bound posting, and course credit/fellowship funding/thesis advising are formalization outcomes after home/mentor fit unless they are attached to a real hosted program, mentor-matching program, or posted application instance.
+Use "Ways In" as the primary student-facing label for practical routes, embedded in Research and detail surfaces rather than as standalone navigation. Internally, keep the distinction: `EntryPathway` is a durable route toward a plausible research home, `PostedOpportunity` is a real active/time-bound posting, and course credit/fellowship funding/thesis advising are formalization outcomes after home/mentor fit unless they are attached to a real hosted program, mentor-matching program, or posted application instance.
 
 ## Migration Guidance
 
-1. Treat `/research`, `/pathways`, and `/opportunities/:id` as the canonical student-facing routes.
+1. Treat `/research`, `/research/:slug`, `/programs`, `/opportunities/:id`, and `/account` as the canonical student-facing routes. `/pathways`, `/listings`, and `/fellowships` are retired client redirects; `/api/pathways/search` remains backend Ways In infrastructure.
 2. Use `ResearchEntity`, `EntryPathway`, `AccessSignal`, `ContactRoute`, and `PostedOpportunity` for new runtime work.
 3. Keep remaining `ResearchGroup`, `lab`, and `researchGroupId` naming as migration residue unless a file is explicitly part of rollback or compatibility support.
 4. Add explicit `PostedOpportunity` records only for real openings, deadlines, rolling applications, or archived postings.

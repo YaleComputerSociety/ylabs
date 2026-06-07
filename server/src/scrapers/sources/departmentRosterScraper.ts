@@ -234,9 +234,10 @@ export const psychExtractor: FacultyExtractor = (html, ctx) => {
       if (labUrl) return;
       const link = $(a);
       const href = link.attr('href') || '';
-      if (!href || /^mailto:|^tel:|^#|^javascript:/i.test(href)) return;
+      const absolute = safeHttpUrl(href, ctx.pageUrl);
+      if (!absolute) return;
       if (profileHref && href === profileHref) return;
-      if (profileUrl && normalizeUrlForDedupe(absolutize(href, ctx.pageUrl)) === normalizeUrlForDedupe(profileUrl)) {
+      if (profileUrl && normalizeUrlForDedupe(absolute) === normalizeUrlForDedupe(profileUrl)) {
         return;
       }
       const text = link.text().replace(/\s+/g, ' ').trim();
@@ -244,15 +245,17 @@ export const psychExtractor: FacultyExtractor = (html, ctx) => {
       if (!/\b(website|lab|laboratory|homepage|research group)\b/i.test(signal) && !/^https?:\/\//i.test(href)) {
         return;
       }
-      labUrl = absolutize(href, ctx.pageUrl);
+      labUrl = absolute;
     });
 
+    const topicCells = row.find(
+      '.views-field-field-field-of-study, [class*="field-of-study"], .views-field-field-term-reference',
+    );
     const topics = splitTopicText(
-      row
-        .find(
-          '.views-field-field-field-of-study, [class*="field-of-study"], .views-field-field-term-reference',
-        )
-        .text(),
+      topicCells
+        .toArray()
+        .map((cell) => topicTextFromRosterCell($(cell)))
+        .join('; '),
     );
 
     out.push({
@@ -450,8 +453,31 @@ function absolutize(href: string, base: string): string {
   }
 }
 
+function safeHttpUrl(href: string | undefined, base: string): string | undefined {
+  const raw = String(href || '').trim();
+  if (!raw || /^mailto:|^tel:|^#|^javascript:/i.test(raw)) return undefined;
+  if (/[<>]/.test(raw)) return undefined;
+
+  try {
+    const url = new URL(raw, base);
+    if (!/^https?:$/i.test(url.protocol)) return undefined;
+    const decoded = decodeURIComponent(url.toString());
+    if (/[<>]/.test(decoded)) return undefined;
+    return url.toString();
+  } catch {
+    return undefined;
+  }
+}
+
 function cleanText(value: string | undefined | null): string {
   return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function cleanTopicValue(value: string): string {
+  return cleanText(value)
+    .replace(/^(research\s+(areas?|interests?)|fields?\s+of\s+study|topics?)\s*:\s*/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function splitTopicText(value: string | undefined | null): string[] {
@@ -459,9 +485,20 @@ function splitTopicText(value: string | undefined | null): string[] {
   if (!cleaned) return [];
   const parts = cleaned
     .split(/[,;|•\n\r]+/)
-    .map((part) => cleanText(part))
-    .filter((part) => part.length > 1 && !/^[-–—]+$/.test(part));
+    .map((part) => cleanTopicValue(part))
+    .filter((part) => {
+      if (part.length <= 1 || /^[-–—]+$/.test(part)) return false;
+      if (/^(research\s+(areas?|interests?)|fields?\s+of\s+study|topics?)$/i.test(part)) return false;
+      if (/[a-z][A-Z]/.test(part) && !/\s/.test(part)) return false;
+      return true;
+    });
   return uniqueStrings(parts);
+}
+
+function topicTextFromRosterCell(cell: cheerio.Cheerio<any>): string {
+  const clone = cell.clone();
+  clone.find('em, small, script, style').remove();
+  return clone.text();
 }
 
 function uniqueStrings(values: Array<string | undefined>): string[] {
@@ -576,6 +613,16 @@ function extractBioFromHtml($: cheerio.CheerioAPI): string | undefined {
 
 function extractResearchInterestsFromHtml($: cheerio.CheerioAPI): string[] {
   const values: string[] = [];
+  $(
+    [
+      '.field-name-field-field-of-study .field-items .field-item',
+      '.field--name-field-research .field__item',
+      '.field--name-field-interests .field__item',
+    ].join(', '),
+  ).each((_i, el) => {
+    values.push(...splitTopicText($(el).text()));
+  });
+
   const selectors = [
     '[class*="research-interest"]',
     '[class*="field-of-study"]',
@@ -586,6 +633,7 @@ function extractResearchInterestsFromHtml($: cheerio.CheerioAPI): string[] {
 
   for (const selector of selectors) {
     $(selector).each((_i, el) => {
+      if ($(el).find('.field-item, .field__item').length > 0) return;
       const text = cleanText($(el).text());
       values.push(...splitTopicText(text));
     });
@@ -688,7 +736,8 @@ function profileEnrichmentFromHtml(
     const href = link.attr('href') || '';
     if (!href || /^mailto:|^tel:|^#|^javascript:/i.test(href)) return;
 
-    const absolute = absolutize(href, profileUrl);
+    const absolute = safeHttpUrl(href, profileUrl);
+    if (!absolute) return;
     let parsed: URL;
     try {
       parsed = new URL(absolute);
@@ -837,7 +886,8 @@ function entryToUserObservations(
   if (entry.profileUrl) {
     obs.push({ ...profileBase, field: 'profileUrls', value: { departmental: entry.profileUrl } });
   }
-  if (entry.labUrl) obs.push({ ...profileBase, field: 'website', value: entry.labUrl });
+  const safeLabUrl = safeHttpUrl(entry.labUrl, sourceUrl);
+  if (safeLabUrl) obs.push({ ...profileBase, field: 'website', value: safeLabUrl });
   if (entry.orcid) obs.push({ ...profileBase, field: 'orcid', value: entry.orcid });
   if (entry.bio) obs.push({ ...profileBase, field: 'bio', value: entry.bio });
   if (entry.researchInterests && entry.researchInterests.length > 0) {
@@ -864,11 +914,12 @@ function entryToLabObservations(
   sourceUrl: string,
   ownerEntityKey: string,
 ): ObservationInput[] {
-  if (!entry.labUrl) return [];
+  const labUrl = safeHttpUrl(entry.labUrl, sourceUrl);
+  if (!labUrl) return [];
   const cleanedName = normalizeName(entry.name);
-  const nameSlug = slugify(cleanedName) || slugify(entry.labUrl);
+  const nameSlug = slugify(cleanedName) || slugify(labUrl);
   const slug = `dept-${dept.deptKey}-${nameSlug}`.slice(0, 100);
-  const labName = cleanedName ? `${cleanedName} Lab` : entry.labUrl;
+  const labName = cleanedName ? `${cleanedName} Lab` : labUrl;
   const base = { entityType: 'researchEntity' as const, entityKey: slug, sourceUrl };
   return [
     { ...base, field: 'slug', value: slug },
@@ -876,8 +927,8 @@ function entryToLabObservations(
     { ...base, field: 'kind', value: 'lab' },
     { ...base, field: 'school', value: dept.schoolName },
     { ...base, field: 'departments', value: [dept.deptName] },
-    { ...base, field: 'websiteUrl', value: entry.labUrl },
-    { ...base, field: 'sourceUrls', value: [sourceUrl, entry.labUrl] },
+    { ...base, field: 'websiteUrl', value: labUrl },
+    { ...base, field: 'sourceUrls', value: [sourceUrl, labUrl] },
     {
       ...base,
       field: 'inferredPiUserKey',

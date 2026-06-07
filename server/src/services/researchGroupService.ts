@@ -19,6 +19,7 @@ import { ResearchGroupMember } from '../models/researchGroupMember';
 import { Department, DepartmentCategory } from '../models/department';
 import { Paper } from '../models/paper';
 import { PaperGroupLink } from '../models/paperGroupLink';
+import { ResearchScholarlyLink } from '../models/researchScholarlyLink';
 import { Listing } from '../models/listing';
 import { User } from '../models/user';
 import { AccessSignal } from '../models/accessSignal';
@@ -397,6 +398,8 @@ export async function getResearchGroupDetail(slug: string): Promise<{
   const linkedPaperIds = linkedPaperRows.map((row: any) => row.paperId).filter(Boolean);
 
   const [
+    canonicalPublishedLinks,
+    canonicalPreprintLinks,
     recentPapers,
     recentArxivPreprints,
     activeListingsRaw,
@@ -406,6 +409,29 @@ export async function getResearchGroupDetail(slug: string): Promise<{
     postedOpportunities,
     accessSummary,
   ] = await Promise.all([
+    ResearchScholarlyLink.find({
+      researchEntityId: (group as any)._id,
+      archived: { $ne: true },
+      $and: [
+        {
+          $or: [
+            { publicationStage: { $exists: false } },
+            { publicationStage: { $ne: 'PREPRINT' } },
+          ],
+        },
+      ],
+    })
+      .sort({ publishedAt: -1, year: -1, lastObservedAt: -1, updatedAt: -1 })
+      .limit(10)
+      .lean(),
+    ResearchScholarlyLink.find({
+      researchEntityId: (group as any)._id,
+      archived: { $ne: true },
+      $or: [{ preprintServer: 'arxiv' }, { publicationStage: 'PREPRINT' }],
+    })
+      .sort({ postedAt: -1, versionDate: -1, publishedAt: -1, year: -1 })
+      .limit(10)
+      .lean(),
     memberUserIds.length
       ? Paper.find({
           yaleAuthorIds: { $in: memberUserIds },
@@ -466,6 +492,8 @@ export async function getResearchGroupDetail(slug: string): Promise<{
     ...listing,
     id: String(listing._id),
   }));
+  const publicRecentPapers = [...canonicalPublishedLinks, ...recentPapers].slice(0, 10);
+  const publicRecentArxivPreprints = [...canonicalPreprintLinks, ...recentArxivPreprints].slice(0, 10);
 
   return addResearchEntityDetailAlias({
     group: {
@@ -473,8 +501,8 @@ export async function getResearchGroupDetail(slug: string): Promise<{
       accessSummary,
     },
     members,
-    recentPapers,
-    recentArxivPreprints,
+    recentPapers: publicRecentPapers,
+    recentArxivPreprints: publicRecentArxivPreprints,
     activeListings,
     entryPathways,
     accessSignals,

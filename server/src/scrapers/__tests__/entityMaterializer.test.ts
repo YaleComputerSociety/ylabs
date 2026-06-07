@@ -4,10 +4,12 @@ import {
   buildPaperUpdateFromObservations,
   countListingBackedPostedOpportunitiesForRun,
   emptyPostMaterializationMetrics,
+  mergeMaterializedArrayField,
   mergeUniqueArrayValues,
   normalizeDoiForMaterialization,
   shouldClearIgnoredAccessClaimForEntity,
   shouldIgnoreObservationForEntityMaterialization,
+  shouldUnionMaterializedField,
   uniqueKeyValueForIdentifier,
 } from '../entityMaterializer';
 import { redactDirectContactInfo } from '../../utils/contactRedaction';
@@ -40,6 +42,41 @@ describe('entityMaterializer post-materialization metrics', () => {
       'u3',
     ]);
     expect(mergeUniqueArrayValues(undefined, 'arxiv')).toEqual(['arxiv']);
+  });
+
+  it('treats research entity evidence arrays as union fields', () => {
+    expect(shouldUnionMaterializedField('researchEntity', 'sourceUrls')).toBe(true);
+    expect(shouldUnionMaterializedField('researchEntity', 'departments')).toBe(true);
+    expect(shouldUnionMaterializedField('researchGroup', 'researchAreas')).toBe(true);
+    expect(shouldUnionMaterializedField('researchEntity', 'websiteUrl')).toBe(false);
+    expect(shouldUnionMaterializedField('user', 'departments')).toBe(false);
+  });
+
+  it('unions all observed values for materialized additive array fields', () => {
+    expect(
+      mergeMaterializedArrayField(
+        ['https://physics.yale.edu/people/marie-curie'],
+        [
+          {
+            field: 'sourceUrls',
+            value: [
+              'https://physics.yale.edu/people/faculty',
+              'https://curielab.yale.edu/',
+            ],
+          },
+          {
+            field: 'sourceUrls',
+            value: ['https://physics.yale.edu/people/marie-curie'],
+          },
+          { field: 'departments', value: ['Physics'] },
+        ],
+        'sourceUrls',
+      ),
+    ).toEqual([
+      'https://physics.yale.edu/people/marie-curie',
+      'https://physics.yale.edu/people/faculty',
+      'https://curielab.yale.edu/',
+    ]);
   });
 
   it('builds paper bulk updates that union repeated set-like metadata observations', () => {

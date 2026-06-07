@@ -7,6 +7,8 @@ import { Paper } from '../models/paper';
 import { PaperAuthor } from '../models/paperAuthor';
 import { ResearchEntity } from '../models/researchEntity';
 import { ResearchGroupMember } from '../models/researchGroupMember';
+import { ResearchScholarlyAttribution } from '../models/researchScholarlyAttribution';
+import { ResearchScholarlyLink } from '../models/researchScholarlyLink';
 
 const normalizeNameToken = (value: unknown): string =>
   String(value || '')
@@ -105,6 +107,26 @@ export const paperToScholarlyLink = (paper: Record<string, any>, userId?: unknow
   };
 };
 
+export const canonicalScholarlyLinkToProfileLink = (
+  link: Record<string, any>,
+  userId?: unknown,
+) => ({
+  _id: String(link._id || link.id || link.url || link.title),
+  userId: userId ? String(userId) : link.userId ? String(link.userId) : undefined,
+  title: link.title || 'Untitled research activity',
+  url: link.url || '',
+  destinationKind: link.destinationKind || 'OTHER',
+  displaySource: link.displaySource || 'Research activity',
+  freeFullTextUrl: link.freeFullTextUrl || undefined,
+  freeFullTextLabel: link.freeFullTextLabel || (link.freeFullTextUrl ? 'Free full text' : undefined),
+  discoveredVia: link.discoveredVia || '',
+  year: link.year,
+  venue: link.venue,
+  confidence: link.confidence,
+  observedAt: link.lastObservedAt?.toISOString?.() || link.updatedAt?.toISOString?.(),
+  externalIds: link.externalIds || {},
+});
+
 export const normalizePublicProfile = (
   user: Record<string, any>,
   extras: { scholarlyLinks?: any[]; researchEntities?: any[] } = {},
@@ -136,6 +158,31 @@ export const normalizePublicProfile = (
 const loadProfileScholarlyLinks = async (user: Record<string, any>) => {
   const userId = user._id;
   if (!userId) return [];
+
+  const attributions = await ResearchScholarlyAttribution.find({
+    targetUserId: userId,
+    archived: { $ne: true },
+  })
+    .select('scholarlyLinkId')
+    .sort({ lastObservedAt: -1, updatedAt: -1 })
+    .limit(50)
+    .lean();
+  const attributedLinkIds = [
+    ...new Set(attributions.map((row: any) => String(row.scholarlyLinkId)).filter(Boolean)),
+  ];
+
+  const canonicalLinks = await ResearchScholarlyLink.find({
+    archived: { $ne: true },
+    ...(attributedLinkIds.length
+      ? { $or: [{ userId }, { _id: { $in: attributedLinkIds } }] }
+      : { userId }),
+  })
+    .sort({ publishedAt: -1, postedAt: -1, year: -1, lastObservedAt: -1, updatedAt: -1 })
+    .limit(10)
+    .lean();
+  if (canonicalLinks.length > 0) {
+    return canonicalLinks.map((link: any) => canonicalScholarlyLinkToProfileLink(link, userId));
+  }
 
   const authorIdentityClauses: Record<string, unknown>[] = [{ userId }];
   if (user.facultyMemberId) authorIdentityClauses.push({ facultyMemberId: user.facultyMemberId });

@@ -9,9 +9,11 @@ import {
   buildOfficialLabUrlResearchEntityDedupePlan,
   buildResearchEntityPiDedupePlan,
   type OfficialLabUrlDedupeRow,
+  type ResearchEntityPiDedupeGroup,
   type ResearchEntityPiDedupeRow,
   selectCurrentMemberIdsToRetire,
   shouldRetireDuplicateCurrentMembersForDedupeRun,
+  urlAnomaliesForResearchEntityPiDedupeGroup,
 } from './researchEntityPiDedupeCore';
 import {
   buildArchivedEntityArtifactRepairPlan,
@@ -757,6 +759,71 @@ async function countRemainingDuplicateReferences(
   return counts;
 }
 
+async function countDedupeReferencePreview(args: {
+  duplicateIds: mongoose.Types.ObjectId[];
+}): Promise<Record<string, number>> {
+  const db = mongoose.connection.db;
+  const counts: Record<string, number> = {};
+  if (!db) return counts;
+
+  for (const spec of SCALAR_REFERENCE_SPECS) {
+    if (!(await collectionExists(spec.collection))) continue;
+    const count = await db.collection(spec.collection).countDocuments({
+      ...(spec.filter || {}),
+      [spec.field]: { $in: args.duplicateIds },
+    });
+    if (count > 0) counts[`${spec.collection}.${spec.field}`] = count;
+  }
+
+  for (const spec of ARRAY_REFERENCE_SPECS) {
+    if (!(await collectionExists(spec.collection))) continue;
+    const count = await db.collection(spec.collection).countDocuments({
+      [spec.field]: { $in: args.duplicateIds },
+    });
+    if (count > 0) counts[`${spec.collection}.${spec.field}`] = count;
+  }
+
+  return counts;
+}
+
+async function buildDedupeApplyPreview(
+  groups: ResearchEntityPiDedupeGroup[],
+  options: { deleteDuplicates: boolean },
+) {
+  return Promise.all(
+    groups.map(async (group) => {
+      const canonicalId = new mongoose.Types.ObjectId(group.canonicalEntityId);
+      const duplicateIds = group.duplicateEntityIds.map((id) => new mongoose.Types.ObjectId(id));
+      const [scalarAndArrayReferences, remainingReferencesIfDelete, artifacts, duplicateMemberCount] =
+        await Promise.all([
+          countDedupeReferencePreview({ duplicateIds }),
+          options.deleteDuplicates ? countRemainingDuplicateReferences(duplicateIds) : Promise.resolve({}),
+          loadArtifactsForDeleteMode({ canonicalId, duplicateIds }),
+          ResearchGroupMember.countDocuments({ researchEntityId: { $in: duplicateIds } }),
+        ]);
+      const artifactPlan = buildArchivedEntityArtifactRepairPlan(artifacts);
+      return {
+        canonicalSlug: group.canonicalSlug,
+        duplicateSlugs: group.duplicateSlugs,
+        duplicateDisposition: options.deleteDuplicates ? 'delete' : 'archive',
+        duplicateEntityCount: group.duplicateEntityIds.length,
+        duplicateMemberCount,
+        scalarAndArrayReferences,
+        artifactPlan: {
+          duplicateArtifacts: artifacts.artifacts.length,
+          canonicalArtifacts: artifacts.canonicalArtifacts.length,
+          relink: artifactPlan.relink.length,
+          mergeAndArchive: artifactPlan.mergeAndArchive.length,
+          archiveWithoutCanonical: artifactPlan.archiveWithoutCanonical.length,
+          skipped: artifactPlan.skipped.length,
+        },
+        remainingReferencesIfDelete,
+        urlAnomalies: urlAnomaliesForResearchEntityPiDedupeGroup(group),
+      };
+    }),
+  );
+}
+
 async function applyGroup(
   group: ReturnType<typeof buildResearchEntityPiDedupePlan>[number],
   options: { deleteDuplicates: boolean; relinkReferences?: boolean },
@@ -967,6 +1034,7 @@ async function main() {
   const duplicateCurrentMembers = shouldRetireDuplicateCurrentMembersForDedupeRun({ fundingOnly })
     ? await loadDuplicateCurrentMemberRows(limit)
     : [];
+  const applyPreview = await buildDedupeApplyPreview(plan, { deleteDuplicates });
   const retiredDuplicateCurrentMembers = apply
     ? await retireDuplicateCurrentMembers(duplicateCurrentMembers)
     : [];
@@ -992,6 +1060,7 @@ async function main() {
           0,
         ),
         plan: fullPlan ? plan : plan.slice(0, 25),
+        applyPreview: fullPlan ? applyPreview : applyPreview.slice(0, 25),
         currentMemberPlan: duplicateCurrentMembers.slice(0, 25),
         applied,
         retiredDuplicateCurrentMembers,

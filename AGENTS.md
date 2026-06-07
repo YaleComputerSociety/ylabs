@@ -53,11 +53,11 @@ The current implementation is pivoting to canonical `ResearchEntity` runtime sur
 ## Product Surfaces
 
 - Explore Research: curiosity-first browsing of labs, centers, faculty projects, institutes, archives, collections projects, and thesis-adviser-like research areas.
-- Pathways: practical filtering by plausible homes, evidence, next-step route, methods, timing, compensation/funding possibility, thesis fit, beginner-friendly signals, hours/week when known, Python, archival research, wet lab, social science data, and similar constraints.
+- Ways In: practical evidence for plausible homes, next-step route, methods, timing, compensation/funding possibility, thesis fit, beginner-friendly signals, hours/week when known, Python, archival research, wet lab, social science data, and similar constraints. This is embedded in Research and detail surfaces, not a standalone public client route.
 
-Student-facing vocabulary should be warmer than internal model names: use "Pathways", "Evidence", and "Best Next Step" in product surfaces where appropriate.
+Student-facing vocabulary should be warmer than internal model names: use "Ways In", "Evidence", and "Best Next Step" in product surfaces where appropriate.
 
-Iterate on canonical product surfaces instead of creating student-facing versioned routes. Use existing routes such as `/research` and `/pathways`, or a non-URL feature flag when rollout safety is needed; do not add `/v1`, `/v2`, `/research-v2`, or similar route names for normal design iteration.
+Iterate on canonical product surfaces instead of creating student-facing versioned routes. Use existing live routes such as `/research`, `/research/:slug`, `/programs`, `/opportunities/:id`, and `/account`, or a non-URL feature flag when rollout safety is needed; do not add `/v1`, `/v2`, `/research-v2`, or similar route names for normal design iteration. Public `/pathways`, `/listings`, and `/fellowships` are retired client redirects, although `/api/pathways/search` remains backend Ways In infrastructure and `/api/fellowships` remains a deprecated compatibility API.
 
 Entity pages should answer what the research structure is, what it studies, who leads it, who might supervise undergrads day to day, what methods it uses, whether undergrads have participated before, what plausible access evidence exists, what the student should do next, how the relationship might later be formalized, and what source verifies the information.
 

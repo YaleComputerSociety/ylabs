@@ -125,7 +125,7 @@ Record each item in [`docs/tasks/priority-roadmap.md`](./tasks/priority-roadmap.
 - [ ] **Copy-vs-delta decision:** Choose exactly one lane: accepted Beta copy or guarded production delta. Do not mix the lanes in one promotion window.
 - [ ] **Privacy payload gate:** Sample public API payloads before promotion and confirm they exclude non-public scraped contact data, suppressed/operator-review programs, raw observations, internal review notes, and production-only usage/session data.
 - [ ] **Meili sync and rollback:** Decide whether production traffic stays on Mongo or switches to Meili after rebuild; keep `PATHWAY_SEARCH_BACKEND=mongo` as the rollback posture until production relevance review and document counts are accepted.
-- [ ] **Smoke routes:** Assign an owner for `/api/config`, `/api/research/search`, `/research/:slug`, `/api/pathways/search`, `/opportunities/:id`, `/programs` or `/fellowships`, unauthenticated admin `401`, and removed legacy route checks.
+- [ ] **Smoke routes:** Assign an owner for `/api/config`, `/api/research/search`, `/research/:slug`, `/api/pathways/search`, `/opportunities/:id`, `/programs`, unauthenticated admin `401`, and removed legacy route checks. Test `/fellowships` only as a retired redirect/compatibility check.
 - [ ] **No recurring writes by default:** Keep production cron, compact-retention apply mode, and broad/paid source reruns disabled until the manual promotion smoke checklist passes.
 
 Required before any production copy or write:

@@ -15,6 +15,7 @@ import { fileURLToPath } from 'url';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
 import { securityHeaders } from './middleware/securityHeaders';
 import { sanitizeMongo } from './middleware/sanitizeMongo';
+import { localAuthBypass } from './middleware/auth';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -105,6 +106,7 @@ const app = express()
   )
   .use(passport.initialize())
   .use(passport.session())
+  .use(localAuthBypass)
   .use('/api', sanitizeMongo)
   .use('/api', apiLimiter)
   .use('/api/listings', (req, res, next) => {

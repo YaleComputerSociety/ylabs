@@ -1,5 +1,7 @@
 export interface PaperQualityCounts {
   totalActivePapers: number;
+  totalActiveScholarlyLinks: number;
+  totalScholarlyAttributions: number;
   missingTitle: number;
   genericTitle: number;
   htmlTitle: number;
@@ -36,7 +38,9 @@ export function buildPaperQualityReportFromCounts(counts: PaperQualityCounts): P
     counts.duplicateOpenAlexGroups +
     counts.duplicateArxivGroups +
     counts.duplicateSemanticScholarGroups;
-  const zeroActivePaperCoverageGap = counts.totalActivePapers === 0;
+  const hasCanonicalScholarlyCoverage =
+    counts.totalActiveScholarlyLinks > 0 || counts.totalScholarlyAttributions > 0;
+  const zeroActivePaperCoverageGap = counts.totalActivePapers === 0 && !hasCanonicalScholarlyCoverage;
   const fixCommands: string[] = [];
 
   if (zeroActivePaperCoverageGap) {

@@ -21,6 +21,8 @@
     "research-entity:audit-rename": "tsx src/scripts/auditResearchEntityRename.ts",
     "research-entity:coverage-audit": "tsx src/scripts/researchEntityCoverageAudit.ts",
     "research-entity:canonical-name-repair": "tsx src/scripts/repairResearchEntityCanonicalNames.ts",
+    "research-entity:dedupe-by-pi": "tsx src/scripts/dedupeResearchEntitiesByPi.ts",
+    "department-leads:repair-plan": "tsx src/scripts/departmentLeadRepairPlan.ts",
     "accepted-inputs": "tsx src/scripts/acceptedInputs.ts",
     "beta:data-quality": "tsx src/scripts/betaDataQuality.ts",
     "programs:backfill-classification": "tsx src/scripts/backfillProgramClassifications.ts",

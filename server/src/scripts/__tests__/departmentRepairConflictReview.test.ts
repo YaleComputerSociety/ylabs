@@ -87,6 +87,29 @@ describe('buildDepartmentRepairConflictReviewReport', () => {
     });
   });
 
+  it('does not route additive research entity array fields to conflict review', () => {
+    const report = buildDepartmentRepairConflictReviewReport({
+      run: { id: 'run-1', sourceName: 'department-undergrad-research' },
+      observations: [
+        observation({
+          field: 'sourceUrls',
+          value: ['https://physics.yale.edu/people/faculty'],
+          confidence: 0.8,
+        }),
+        observation({
+          field: 'sourceUrls',
+          value: ['https://physics.yale.edu/people/marie-curie'],
+          confidence: 0.79,
+        }),
+      ],
+      entities: [entity({ currentValues: { sourceUrls: ['https://existing.yale.edu/lab'] } })],
+      generatedAt: '2026-05-26T12:00:00.000Z',
+    });
+
+    expect(report.totals.conflictingFields).toBe(0);
+    expect(report.buckets.needs_operator_review).toHaveLength(0);
+  });
+
   it('classifies touched labs with missing lead blockers as lead repairs', () => {
     const report = buildDepartmentRepairConflictReviewReport({
       run: { id: 'run-1', sourceName: 'department-undergrad-research' },

@@ -2,6 +2,61 @@
  * Authentication guards and role-based access control middleware.
  */
 import express from 'express';
+import { isDevelopment, isTest } from '../utils/environment';
+
+const LOCAL_AUTH_BYPASS_SKIPPED_PATHS = new Set(['/api/cas', '/api/logout']);
+
+type AuthUser = {
+  netId: string;
+  userType: string;
+  userConfirmed: boolean;
+  profileVerified: boolean;
+};
+
+const requestPath = (req: express.Request): string => {
+  return (req.originalUrl || req.path || '').split('?')[0].replace(/\/$/, '');
+};
+
+const devHeader = (req: express.Request, name: string): string | undefined => {
+  const value = req.get(name);
+  return value?.trim() || undefined;
+};
+
+/**
+ * Local/test-only auth bypass for developer workflows.
+ *
+ * This intentionally fails closed unless LOCAL_AUTH_BYPASS=true and the runtime
+ * environment is development or test.
+ */
+export function localAuthBypass(
+  req: express.Request,
+  _res: express.Response,
+  next: express.NextFunction,
+) {
+  const enabled = process.env.LOCAL_AUTH_BYPASS === 'true';
+  const allowedEnvironment = isDevelopment() || isTest();
+
+  if (
+    !enabled ||
+    !allowedEnvironment ||
+    req.user ||
+    LOCAL_AUTH_BYPASS_SKIPPED_PATHS.has(requestPath(req))
+  ) {
+    return next();
+  }
+
+  const user: AuthUser = {
+    netId:
+      devHeader(req, 'x-dev-netid') || process.env.LOCAL_AUTH_BYPASS_NETID || 'devadmin',
+    userType:
+      devHeader(req, 'x-dev-user-type') || process.env.LOCAL_AUTH_BYPASS_USER_TYPE || 'admin',
+    userConfirmed: true,
+    profileVerified: true,
+  };
+
+  req.user = user as Express.User;
+  return next();
+}
 
 /**
  * Middleware to check if user is authenticated

@@ -43,6 +43,8 @@ Go to **http://localhost:3000**. Use `http://localhost:4000/api/dev-login` for a
 
 The old Listings board and public Pathways page are retired. `/listings` and `/pathways` redirect to `/research`; `/fellowships` redirects to `/programs`. New work should use `ResearchEntity`, `EntryPathway`, `AccessSignal`, `ContactRoute`, and `PostedOpportunity` concepts instead of recreating listing-style flows.
 
+Backend compatibility remains narrower than the client surface: `POST /api/pathways/search` still powers Ways In infrastructure for research discovery, and `/api/fellowships` remains available only as a deprecated compatibility API with `/api/programs` as its successor.
+
 ## Release Posture
 
 Beta is live testing and the release gate. Production promotion requires a recent Beta data-quality run, scraper integrity gate, semantic Research search readiness when semantic search is enabled, backup/rollback confirmation, Meilisearch sync, and smoke tests.

@@ -28,6 +28,11 @@ export interface ResearchEntityPiDedupeGroup {
   mergedSourceUrls: string[];
 }
 
+export interface ResearchEntityPiDedupeUrlAnomalies {
+  malformedUrls: string[];
+  mismatchedProfileUrls: string[];
+}
+
 export interface OfficialLabUrlDedupeRow {
   url: string;
   entities: ResearchEntityPiDedupeRow['entities'];
@@ -129,6 +134,50 @@ function isOfficialYaleLabUrl(value: string | undefined): boolean {
   } catch {
     return false;
   }
+}
+
+function hasMalformedUrlValue(value: string | undefined): boolean {
+  const text = String(value || '').trim();
+  if (!text) return false;
+  let decoded = text;
+  try {
+    decoded = decodeURIComponent(text);
+  } catch {
+    decoded = text;
+  }
+  return /<\s*a\b|<\/a>|href=|%3c\s*a\b|%3ca%20href/i.test(text) || /<\s*a\b|<\/a>|href=/i.test(decoded);
+}
+
+function profileSlugFromUrl(value: string): string | null {
+  try {
+    const parsed = new URL(value);
+    const host = parsed.hostname.toLowerCase();
+    if (host !== 'yale.edu' && !host.endsWith('.yale.edu')) return null;
+    const match = parsed.pathname.match(/\/people\/([^/?#]+)/i);
+    if (!match) return null;
+    const slug = match[1].toLowerCase();
+    if (!slug || ['faculty', 'people', 'members', 'member'].includes(slug)) return null;
+    return slug;
+  } catch {
+    return null;
+  }
+}
+
+export function urlAnomaliesForResearchEntityPiDedupeGroup(
+  group: Pick<ResearchEntityPiDedupeGroup, 'canonicalSlug' | 'duplicateSlugs' | 'mergedSourceUrls'>,
+): ResearchEntityPiDedupeUrlAnomalies {
+  const slugs = [group.canonicalSlug, ...(group.duplicateSlugs || [])]
+    .map((slug) => String(slug || '').toLowerCase())
+    .filter(Boolean);
+  const malformedUrls = uniqueStrings(group.mergedSourceUrls.filter(hasMalformedUrlValue));
+  const mismatchedProfileUrls = uniqueStrings(
+    group.mergedSourceUrls.filter((url) => {
+      const profileSlug = profileSlugFromUrl(url);
+      if (!profileSlug) return false;
+      return !slugs.some((slug) => slug.includes(profileSlug));
+    }),
+  );
+  return { malformedUrls, mismatchedProfileUrls };
 }
 
 function cleanMergedResearchAreas(

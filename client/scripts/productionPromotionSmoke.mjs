@@ -309,17 +309,18 @@ const runUiSmoke = async () => {
     const researchPath = report.discovered.researchSlug
       ? `/research/${report.discovered.researchSlug}`
       : '/research';
-    const opportunityPath = report.discovered.opportunityId
-      ? `/opportunities/${report.discovered.opportunityId}`
-      : '/pathways';
     const studentRoutes = [
       ['/research', 'student-research'],
       [researchPath, 'student-research-detail'],
-      ['/pathways', 'student-pathways'],
-      [opportunityPath, 'student-opportunity-detail'],
       ['/programs', 'student-programs'],
       ['/account', 'student-account'],
     ];
+    if (report.discovered.opportunityId) {
+      studentRoutes.push([
+        `/opportunities/${report.discovered.opportunityId}`,
+        'student-opportunity-detail',
+      ]);
+    }
 
     for (const [routePath, name] of studentRoutes) {
       await runUiRoute(studentPage, routePath, name);

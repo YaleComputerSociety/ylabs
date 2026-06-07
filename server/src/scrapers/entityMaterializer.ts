@@ -427,6 +427,14 @@ const PAPER_SET_FIELDS = new Set([
   'sources',
 ]);
 
+const RESEARCH_ENTITY_SET_FIELDS = new Set([
+  'departments',
+  'researchAreas',
+  'sourceUrls',
+  'sourceEvidenceIds',
+  'dataSources',
+]);
+
 const PAPER_DERIVED_AUTHOR_FIELDS = new Set(['yaleAuthorIds', 'yaleAuthorNetIds']);
 const PAPER_MATERIALIZATION_ONLY_FIELDS = new Set([PAPER_AUTHORSHIP_EVIDENCE_FIELD]);
 
@@ -446,15 +454,36 @@ export function mergeUniqueArrayValues(existing: unknown, next: unknown): unknow
   return merged;
 }
 
-function valuesFromPaperObservations(
-  observations: PaperMaterializationObservation[],
-  field: string,
-): unknown[] {
+function valuesFromObservations(observations: Array<{ field?: string; value?: unknown }>, field: string): unknown[] {
   const values = observations
     .filter((obs) => obs.field === field)
     .flatMap((obs) => (Array.isArray(obs.value) ? obs.value : [obs.value]))
     .filter((value) => value !== undefined && value !== null && value !== '');
   return mergeUniqueArrayValues(undefined, values);
+}
+
+export function mergeMaterializedArrayField(
+  existing: unknown,
+  observations: Array<{ field?: string; value?: unknown }>,
+  field: string,
+): unknown[] {
+  return mergeUniqueArrayValues(existing, valuesFromObservations(observations, field));
+}
+
+export function shouldUnionMaterializedField(
+  entityType: ObservedEntityType,
+  field: string,
+): boolean {
+  if (entityType === 'paper') return PAPER_SET_FIELDS.has(field);
+  if (isResearchEntityObservationType(entityType)) return RESEARCH_ENTITY_SET_FIELDS.has(field);
+  return false;
+}
+
+function valuesFromPaperObservations(
+  observations: PaperMaterializationObservation[],
+  field: string,
+): unknown[] {
+  return valuesFromObservations(observations, field);
 }
 
 function addUniqueValuesToSet(
@@ -750,13 +779,13 @@ export async function materializeEntity(
       continue;
     }
     if (entityType === 'user' && entityDoc && field === 'netid') continue;
-    const nextValue =
-      entityType === 'paper' && PAPER_SET_FIELDS.has(field)
-        ? mergeUniqueArrayValues(entityDoc?.[field], r.value)
-        : r.value;
+    const isUnionField = shouldUnionMaterializedField(entityType, field);
+    const nextValue = isUnionField
+      ? mergeMaterializedArrayField(entityDoc?.[field], materializationObs, field)
+      : r.value;
     set[field] = materializedFieldValue(entityType, field, nextValue);
     confidenceByField[field] = r.confidence;
-    if (r.hasConflict) conflicts++;
+    if (r.hasConflict && !isUnionField) conflicts++;
     fieldsWritten++;
   }
   if (entityType === 'paper') {

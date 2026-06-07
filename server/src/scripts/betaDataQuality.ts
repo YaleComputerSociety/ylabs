@@ -198,6 +198,8 @@ async function buildCollectionCounts(): Promise<Record<string, number>> {
     'access_signals',
     'contact_routes',
     'posted_opportunities',
+    'research_scholarly_links',
+    'research_scholarly_attributions',
     'papers',
     'paper_authors',
     'observations',
@@ -291,6 +293,13 @@ async function buildReferenceIntegrity(): Promise<ReturnType<typeof buildReferen
       'targetUserId',
       'users',
       false,
+    ),
+    referenceAudit(
+      'research_scholarly_attributions.scholarlyLinkId',
+      'research_scholarly_attributions',
+      'scholarlyLinkId',
+      'research_scholarly_links',
+      true,
     ),
     referenceAudit('paper_authors.paperId', 'paper_authors', 'paperId', 'papers', true),
     referenceAudit('paper_authors.userId', 'paper_authors', 'userId', 'users', false),
@@ -488,6 +497,8 @@ async function buildOpportunityState(includeSamples: boolean, now: Date): Promis
 async function buildPaperAuthorshipSummary(includeSamples: boolean): Promise<{
   totalPapers: number;
   totalPaperAuthors: number;
+  totalScholarlyLinks: number;
+  totalScholarlyAttributions: number;
   papersWithYaleAuthorIds: number;
   papersWithPaperAuthorRows: number;
   invalidPaperAuthorRows: number;
@@ -501,6 +512,8 @@ async function buildPaperAuthorshipSummary(includeSamples: boolean): Promise<{
   const [
     totalPapers,
     totalPaperAuthors,
+    totalScholarlyLinks,
+    totalScholarlyAttributions,
     papersWithYaleAuthorIds,
     papersWithPaperAuthorRows,
     invalidPaperAuthorRows,
@@ -511,6 +524,8 @@ async function buildPaperAuthorshipSummary(includeSamples: boolean): Promise<{
   ] = await Promise.all([
     collection('papers').countDocuments({ archived: { $ne: true } }),
     collection('paper_authors').countDocuments({}),
+    collection('research_scholarly_links').countDocuments({ archived: { $ne: true } }),
+    collection('research_scholarly_attributions').countDocuments({ archived: { $ne: true } }),
     collection('papers').countDocuments({ yaleAuthorIds: { $exists: true, $ne: [] }, archived: { $ne: true } }),
     countFromAggregate('paper_authors', [{ $group: { _id: '$paperId' } }, { $count: 'count' }]),
     collection('paper_authors').countDocuments({
@@ -559,6 +574,8 @@ async function buildPaperAuthorshipSummary(includeSamples: boolean): Promise<{
   return {
     totalPapers,
     totalPaperAuthors,
+    totalScholarlyLinks,
+    totalScholarlyAttributions,
     papersWithYaleAuthorIds,
     papersWithPaperAuthorRows,
     invalidPaperAuthorRows,

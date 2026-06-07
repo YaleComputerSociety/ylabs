@@ -430,6 +430,45 @@ describe('psychExtractor', () => {
     ]);
   });
 
+  it('drops malformed href lab links and strips noisy research-area labels', () => {
+    const html = `
+      <html><body>
+        <table class="views-table">
+          <tbody>
+            <tr>
+              <td class="views-field views-field-name">
+                <a href="/people/meng-cheng" class="username">Meng Cheng</a><br />
+                Associate Professor of Physics<br />
+                <a href="mailto:meng.cheng@yale.edu">meng.cheng@yale.edu</a><br />
+                <a href="<a href=">Research Website</a>
+              </td>
+              <td class="views-field views-field-field-field-of-study">
+                Research Areas: Condensed Matter Physics
+                <p><em>Theorist</em></p>
+                <p><small>Quantum criticality and topological matter projects.</small></p>
+                ; Quantum Materials; PhysicsExperimentalist
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </body></html>
+    `;
+
+    const out = psychExtractor(html, { pageUrl: 'https://physics.yale.edu/people/faculty' });
+
+    expect(out).toEqual([
+      {
+        name: 'Meng Cheng',
+        title: 'Associate Professor of Physics',
+        email: 'meng.cheng@yale.edu',
+        profileUrl: 'https://physics.yale.edu/people/meng-cheng',
+        labUrl: undefined,
+        topics: ['Condensed Matter Physics', 'Quantum Materials'],
+        researchInterests: ['Condensed Matter Physics', 'Quantum Materials'],
+      },
+    ]);
+  });
+
   it('supports Astronomy views grid cells with profile picture links and topic fields', () => {
     const out = psychExtractor(ASTRONOMY_GRID_HTML, {
       pageUrl: 'https://astronomy.yale.edu/people/faculty',
@@ -610,7 +649,7 @@ describe('DepartmentRosterScraper.run', () => {
 
     // lab observations
     const labObs = emitted.filter((o) => o.entityType === 'researchEntity');
-    expect(labObs.find((o) => o.field === 'websiteUrl')?.value).toBe('https://tflab.example.org');
+    expect(labObs.find((o) => o.field === 'websiteUrl')?.value).toBe('https://tflab.example.org/');
     expect(labObs.find((o) => o.field === 'kind')?.value).toBe('lab');
     expect(labObs.find((o) => o.field === 'departments')?.value).toEqual(['Economics']);
     expect(labObs[0].entityKey).toMatch(/^dept-econ-test-faculty/);
@@ -686,7 +725,13 @@ describe('DepartmentRosterScraper.run', () => {
       </head><body>
         <div class="person-title">Associate Professor of Applied Mathematics</div>
         <div class="profile-body">Ada works on computation, algebraic geometry, and foundations of mathematical modeling.</div>
-        <div class="research-interests">Algebraic Geometry, Topology</div>
+        <div class="field-name-field-field-of-study">
+          <div class="field-label">Research Areas:</div>
+          <div class="field-items">
+            <div class="field-item">Algebraic Geometry</div>
+            <div class="field-item">Topology</div>
+          </div>
+        </div>
         <a href="https://orcid.org/0000-0002-1825-0097">ORCID</a>
         <a href="https://scholar.google.com/citations?user=adaCandidate">Google Scholar</a>
         <a href="mailto:ada.lovelace@yale.edu">ada.lovelace@yale.edu</a>
@@ -767,6 +812,33 @@ describe('DepartmentRosterScraper.run', () => {
     expect(labObs.find((o) => o.field === 'inferredPiUserKey')?.value).toBe(
       'netid:ada.lovelace',
     );
+  });
+
+  it('does not emit lab observations for malformed lab URLs from custom extractors', async () => {
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'physics',
+        deptName: 'Physics',
+        schoolName: 'FAS',
+        url: 'https://example.invalid/physics',
+        paginated: false,
+        extractor: () => [
+          {
+            name: 'Meng Cheng',
+            email: 'meng.cheng@yale.edu',
+            labUrl: 'https://physics.yale.edu/academics/undergraduate-studies/<a href=',
+          },
+        ],
+      },
+    ];
+    const htmlFetcher = vi.fn(async () => '<html><body>listing</body></html>');
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx, emitted } = makeContext();
+    const result = await scraper.run(ctx);
+
+    expect(result.entitiesObserved).toBe(1);
+    expect(emitted.filter((o) => o.entityType === 'researchEntity')).toEqual([]);
+    expect(emitted.find((o) => o.entityType === 'user' && o.field === 'website')).toBeUndefined();
   });
 
   it('registers the first Math/Physics/Statistics/Astronomy roster batch', () => {
