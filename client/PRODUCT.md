@@ -46,4 +46,4 @@ Yale Research is not a marketing site, a complete public faculty directory, a so
 
 ## V1 Scope
 
-V1 should rebrand the shell, replace the homepage with topic-first search, refactor search results into clusters plus people/papers/entities/pathways, add identity-confidence cards, and reuse existing Research, Pathways, Evidence, and Best Next Step infrastructure.
+V1 should rebrand the shell, replace the homepage with topic-first search, refactor search results into clusters plus people/papers/entities/ways-in evidence, add identity-confidence cards, and reuse existing Research, Evidence, and Best Next Step infrastructure.

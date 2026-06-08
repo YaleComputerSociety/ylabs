@@ -8,6 +8,8 @@ import type {
   ResearchEntityType,
 } from '../models/researchAccessTypes';
 import { publicStudentVisibilityTiers } from '../models/studentVisibility';
+import { redactDirectContactInfo } from '../utils/contactRedaction';
+import { isPublicHttpUrl } from '../utils/urlSafety';
 
 export const pathwayBestNextStepCategories = [
   'apply',
@@ -127,6 +129,7 @@ interface BestNextStepSnapshot {
 
 const MAX_PAGE_SIZE = 100;
 const DEFAULT_PAGE_SIZE = 24;
+const MAX_PAGE = 1000;
 const FORMALIZATION_ONLY_PATHWAY_TYPES: EntryPathwayType[] = [
   'COURSE_CREDIT',
   'SENIOR_THESIS',
@@ -146,6 +149,37 @@ const toObjectIds = (ids?: string[]): Types.ObjectId[] =>
   Array.from(new Set(trimValues(ids)))
     .filter((id) => Types.ObjectId.isValid(id))
     .map((id) => new Types.ObjectId(id));
+
+const publicText = (value: unknown): string | undefined => {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  return trimmed ? redactDirectContactInfo(trimmed) : undefined;
+};
+
+const publicHttpUrl = (value: unknown): string | undefined => {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  try {
+    return isPublicHttpUrl(trimmed) ? trimmed : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+const publicHttpUrls = (values: unknown): string[] =>
+  Array.from(
+    new Set(
+      (Array.isArray(values) ? values : [])
+        .map(publicHttpUrl)
+        .filter((url): url is string => Boolean(url)),
+    ),
+  );
+
+const omitUndefined = <T extends Record<string, any>>(record: T): T =>
+  Object.fromEntries(
+    Object.entries(record).filter(([, value]) => value !== undefined),
+  ) as T;
 
 export function getBestNextStepCategory(
   snapshot: BestNextStepSnapshot,
@@ -338,14 +372,14 @@ function buildSort(sort: PathwaySearchSort, query: string): Record<string, 1 | -
 function normalizeHit(raw: Record<string, any>): PathwaySearchHit {
   const contactRoute =
     raw.contactRoute?.visibility === 'PUBLIC'
-      ? {
+      ? omitUndefined({
           routeType: raw.contactRoute.routeType,
-          label: raw.contactRoute.label,
-          url: raw.contactRoute.url,
+          label: publicText(raw.contactRoute.label),
+          url: publicHttpUrl(raw.contactRoute.url),
           contactPolicy: raw.contactRoute.contactPolicy,
           visibility: raw.contactRoute.visibility,
-          rationale: raw.contactRoute.rationale,
-        }
+          rationale: publicText(raw.contactRoute.rationale),
+        })
       : undefined;
 
   return {
@@ -353,39 +387,50 @@ function normalizeHit(raw: Record<string, any>): PathwaySearchHit {
     pathwayType: raw.pathwayType,
     status: raw.status,
     evidenceStrength: raw.evidenceStrength,
-    studentFacingLabel: raw.studentFacingLabel,
-    explanation: raw.explanation,
-    bestNextStep: raw.bestNextStep,
+    studentFacingLabel: publicText(raw.studentFacingLabel) || '',
+    explanation: publicText(raw.explanation),
+    bestNextStep: publicText(raw.bestNextStep),
     bestNextStepCategory: raw.bestNextStepCategory,
     compensation: raw.compensation,
     confidence: raw.confidence,
-    sourceUrls: raw.sourceUrls || [],
+    sourceUrls: publicHttpUrls(raw.sourceUrls),
     lastObservedAt: raw.lastObservedAt,
     createdAt: raw.createdAt,
     researchEntity: {
       _id: String(raw.researchEntity?._id || ''),
       slug: raw.researchEntity?.slug || '',
-      name: raw.researchEntity?.name || '',
-      displayName: raw.researchEntity?.displayName,
+      name: publicText(raw.researchEntity?.name) || '',
+      displayName: publicText(raw.researchEntity?.displayName),
       kind: raw.researchEntity?.kind,
       entityType: raw.researchEntity?.entityType,
       studentVisibilityTier: raw.researchEntity?.studentVisibilityTier,
       departments: raw.researchEntity?.departments || [],
       researchAreas: raw.researchEntity?.researchAreas || [],
-      school: raw.researchEntity?.school,
-      websiteUrl: raw.researchEntity?.websiteUrl || raw.researchEntity?.website,
+      school: publicText(raw.researchEntity?.school),
+      websiteUrl: publicHttpUrl(raw.researchEntity?.websiteUrl || raw.researchEntity?.website),
     },
     activePostedOpportunity: raw.activePostedOpportunity
-      ? {
+      ? omitUndefined({
           _id: String(raw.activePostedOpportunity._id),
-          title: raw.activePostedOpportunity.title,
+          title: publicText(raw.activePostedOpportunity.title) || '',
           deadline: raw.activePostedOpportunity.deadline,
-          applicationUrl: raw.activePostedOpportunity.applicationUrl,
+          applicationUrl: publicHttpUrl(raw.activePostedOpportunity.applicationUrl),
           status: raw.activePostedOpportunity.status,
-          term: raw.activePostedOpportunity.term,
-        }
+          term: publicText(raw.activePostedOpportunity.term),
+        })
       : undefined,
-    evidence: raw.evidence || [],
+    evidence: Array.isArray(raw.evidence)
+      ? raw.evidence.map((item: any) =>
+          omitUndefined({
+            signalType: item.signalType,
+            confidence: item.confidence,
+            confidenceScore: item.confidenceScore,
+            excerpt: publicText(item.excerpt),
+            sourceUrl: publicHttpUrl(item.sourceUrl),
+            observedAt: item.observedAt,
+          }),
+        )
+      : [],
     contactRoute,
   };
 }
@@ -394,7 +439,7 @@ export async function searchPathways(
   input: PathwaySearchInput,
 ): Promise<PathwaySearchResult> {
   const filters = input.filters || {};
-  const page = Math.max(1, Math.floor(input.page || 1));
+  const page = Math.min(MAX_PAGE, Math.max(1, Math.floor(input.page || 1)));
   const pageSize = Math.min(
     MAX_PAGE_SIZE,
     Math.max(1, Math.floor(input.pageSize || DEFAULT_PAGE_SIZE)),

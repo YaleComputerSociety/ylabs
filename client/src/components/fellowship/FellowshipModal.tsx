@@ -5,7 +5,7 @@ import React, { useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Fellowship } from '../../types/types';
 import FellowshipSearchContext from '../../contexts/FellowshipSearchContext';
-import { ensureHttpPrefix, safeUrl } from '../../utils/url';
+import { safeMailtoHref, safeUrl } from '../../utils/url';
 import { getFellowshipCycleStatus } from '../../utils/fellowshipCycle';
 import { entryModeLabel, programKindLabel } from '../../utils/programJourney';
 import FavoriteButton from '../shared/FavoriteButton';
@@ -149,6 +149,15 @@ const FellowshipModal = ({
     'inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-[var(--yr-panel-muted)] hover:text-blue-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200';
   const filterChipClass =
     'inline-flex min-h-[44px] items-center rounded-md px-3 py-2 text-xs transition-all hover:ring-2 hover:ring-offset-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200';
+  const applicationActionLabel =
+    cycleStatus.category === 'open' || cycleStatus.category === 'closingSoon'
+      ? 'Apply'
+      : 'Open source';
+  const applicationHref = safeUrl(fellowship.applicationLink);
+  const contactEmailHref = safeMailtoHref(fellowship.contactEmail);
+  const safeLinks = (fellowship.links || [])
+    .map((link) => ({ ...link, href: safeUrl(link.url) }))
+    .filter((link) => link.href);
 
   return (
     <div
@@ -189,14 +198,15 @@ const FellowshipModal = ({
               </div>
 
               <div className="flex flex-shrink-0 flex-wrap items-center gap-1">
-                {fellowship.applicationLink && (
+                {applicationHref && (
                   <a
-                    href={ensureHttpPrefix(fellowship.applicationLink)}
+                    href={applicationHref}
                     target="_blank"
                     rel="noopener noreferrer"
                     onClick={(e) => e.stopPropagation()}
                     className={iconActionClass}
-                    title={cycleStatus.category === 'open' || cycleStatus.category === 'closingSoon' ? 'Apply' : 'Open source'}
+                    aria-label={applicationActionLabel}
+                    title={applicationActionLabel}
                   >
                     <svg
                       xmlns="http://www.w3.org/2000/svg"
@@ -215,9 +225,9 @@ const FellowshipModal = ({
                     </svg>
                   </a>
                 )}
-                {fellowship.contactEmail && (
+                {contactEmailHref && (
                   <a
-                    href={`mailto:${fellowship.contactEmail}`}
+                    href={contactEmailHref}
                     onClick={(e) => e.stopPropagation()}
                     className={iconActionClass}
                     title="Email contact"
@@ -357,9 +367,9 @@ const FellowshipModal = ({
                           {fellowship.contactName}
                         </p>
                       )}
-                      {fellowship.contactEmail && (
+                      {contactEmailHref && (
                         <a
-                          href={`mailto:${fellowship.contactEmail}`}
+                          href={contactEmailHref}
                           className="inline-flex min-h-[44px] max-w-full items-center gap-2 rounded-md px-2 text-sm text-blue-600 hover:text-blue-800 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
                         >
                           <svg
@@ -403,16 +413,16 @@ const FellowshipModal = ({
                   </section>
                 )}
 
-                {fellowship.links && fellowship.links.length > 0 && (
+                {safeLinks.length > 0 && (
                   <section>
                     <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
                       Links
                     </h3>
                     <div className="space-y-1.5">
-                      {fellowship.links.map((link, i) => (
+                      {safeLinks.map((link, i) => (
                         <a
                           key={i}
-                          href={ensureHttpPrefix(link.url)}
+                          href={link.href}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="inline-flex min-h-[44px] max-w-full items-center gap-2 rounded-md px-2 text-sm text-blue-600 hover:text-blue-800 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
@@ -632,10 +642,10 @@ const FellowshipModal = ({
                   </section>
                 )}
 
-                {fellowship.applicationLink && (
+                {applicationHref && (
                   <div className="pt-4 border-t border-[var(--yr-line)]">
                     <a
-                      href={ensureHttpPrefix(fellowship.applicationLink)}
+                      href={applicationHref}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="inline-flex min-h-[44px] items-center rounded-md bg-blue-600 px-6 py-2.5 text-sm font-medium text-white transition-colors hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"

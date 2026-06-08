@@ -2,6 +2,8 @@ import mongoose from 'mongoose';
 import { AccessSignal } from '../models/accessSignal';
 import { EntryPathway } from '../models/entryPathway';
 import { PostedOpportunity } from '../models/postedOpportunity';
+import { redactDirectContactInfo } from '../utils/contactRedaction';
+import { isPublicHttpUrl } from '../utils/urlSafety';
 
 export type AccessSummaryStatus =
   | 'posted-opening'
@@ -40,6 +42,23 @@ const FORMALIZATION_ONLY_PATHWAY_TYPES = new Set([
   'SENIOR_THESIS',
   'FELLOWSHIP_FUNDED_PROJECT',
 ]);
+
+const publicText = (value: unknown): string | undefined => {
+  const text = String(value || '').trim();
+  return text ? redactDirectContactInfo(text) : undefined;
+};
+
+const publicHttpUrl = (value: unknown): string | undefined => {
+  const raw = String(value || '').trim();
+  if (!raw) return undefined;
+
+  try {
+    const url = new URL(raw);
+    return isPublicHttpUrl(raw) ? url.toString() : undefined;
+  } catch {
+    return undefined;
+  }
+};
 
 function confidenceScore(signal: any): number {
   if (typeof signal.confidenceScore === 'number') return signal.confidenceScore;
@@ -149,18 +168,16 @@ export async function listAccessSummariesForResearchEntities(
       evidence: entitySignals.slice(0, 5).map((signal) => ({
         signalType: signal.signalType,
         confidence: signal.confidence,
-        excerpt: signal.excerpt || undefined,
-        sourceUrl: signal.sourceUrl || undefined,
+        excerpt: publicText(signal.excerpt),
+        sourceUrl: publicHttpUrl(signal.sourceUrl),
       })),
       signalTypes: Array.from(signalTypes),
       entryPathwayTypes: Array.from(entryPathwayTypes),
       hasActivePostedOpportunity,
-      bestNextStep: bestNextStepFor(
-        status,
-        entityPathways,
-        signalTypes,
-        hasActivePostedOpportunity,
-      ),
+      bestNextStep:
+        publicText(
+          bestNextStepFor(status, entityPathways, signalTypes, hasActivePostedOpportunity),
+        ) || EMPTY_SUMMARY.bestNextStep,
     });
   }
 

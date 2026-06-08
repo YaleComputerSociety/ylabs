@@ -11,9 +11,27 @@ export const visibilityReleaseQueueStatuses = [
   'suppressed',
 ] as const;
 
+export const visibilityRepairStages = [
+  'source_description',
+  'pi_identity',
+  'action_evidence',
+  'suppression',
+  'review_exception',
+] as const;
+
+export const visibilityRepairStatuses = [
+  'queued',
+  'attempted',
+  'repaired',
+  'blocked',
+  'resolved',
+] as const;
+
 export type VisibilityReleaseQueueCollection =
   (typeof visibilityReleaseQueueCollections)[number];
 export type VisibilityReleaseQueueStatus = (typeof visibilityReleaseQueueStatuses)[number];
+export type VisibilityRepairStage = (typeof visibilityRepairStages)[number];
+export type VisibilityRepairStatus = (typeof visibilityRepairStatuses)[number];
 
 const visibilityReleaseQueueItemSchema = new mongoose.Schema(
   {
@@ -58,6 +76,40 @@ const visibilityReleaseQueueItemSchema = new mongoose.Schema(
       type: String,
       default: '',
     },
+    repairStage: {
+      type: String,
+      enum: [...visibilityRepairStages],
+      default: 'review_exception',
+    },
+    repairStatus: {
+      type: String,
+      enum: [...visibilityRepairStatuses],
+      default: 'queued',
+    },
+    attemptCount: {
+      type: Number,
+      default: 0,
+    },
+    lastAttemptAt: {
+      type: Date,
+      required: false,
+    },
+    nextAttemptAt: {
+      type: Date,
+      required: false,
+    },
+    repairSource: {
+      type: String,
+      default: '',
+    },
+    appliedPatchSummary: {
+      type: [String],
+      default: [],
+    },
+    remainingBlockers: {
+      type: [String],
+      default: [],
+    },
     status: {
       type: String,
       enum: [...visibilityReleaseQueueStatuses],
@@ -89,6 +141,7 @@ const visibilityReleaseQueueItemSchema = new mongoose.Schema(
 visibilityReleaseQueueItemSchema.index({ status: 1, collection: 1, lastSeenAt: -1 });
 visibilityReleaseQueueItemSchema.index({ blockerReasons: 1, status: 1 });
 visibilityReleaseQueueItemSchema.index({ sourceNames: 1, status: 1 });
+visibilityReleaseQueueItemSchema.index({ repairStage: 1, repairStatus: 1, status: 1 });
 visibilityReleaseQueueItemSchema.index(
   { collection: 1, recordId: 1, status: 1 },
   {

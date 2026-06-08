@@ -1,17 +1,20 @@
 /**
- * Public routes for browsing practical ways into Yale research.
- *
- * - POST /search → Mongo-backed pathway search across research entities.
- *
- * The endpoint is read-only and intentionally returns guarded contact-route
- * summaries instead of raw scraped contact data.
+ * Authenticated routes for Ways In / pathway search.
  */
-import { Router } from 'express';
+import { Router, type NextFunction, type Request, type Response } from 'express';
 import * as pathwayController from '../controllers/pathwayController';
-import { asyncHandler } from '../middleware/index';
+import { asyncHandler, isAuthenticated } from '../middleware/index';
 
 const router = Router();
 
-router.post('/search', asyncHandler(pathwayController.searchPathwayResults));
+function setPrivatePathwayCacheHeaders(_req: Request, res: Response, next: NextFunction) {
+  res.setHeader('Cache-Control', 'no-store, private, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  next();
+}
+
+router.use(setPrivatePathwayCacheHeaders);
+
+router.post('/search', isAuthenticated, asyncHandler(pathwayController.searchPathwaysHandler));
 
 export default router;

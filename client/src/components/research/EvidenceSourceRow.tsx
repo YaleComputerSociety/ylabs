@@ -1,4 +1,5 @@
 import type { EvidenceSourceRowData } from '../../utils/researchDiscoveryAdapters';
+import { EXTERNAL_LINK_REL, safeHttpUrl } from '../../utils/url';
 
 interface EvidenceSourceRowProps {
   evidence: EvidenceSourceRowData[];
@@ -61,6 +62,7 @@ const EvidenceSourceRow = ({
         const confidence = compact ? '' : formatConfidence(item.confidence);
         const observedDate = compact ? '' : formatDate(item.observedDate);
         const sourceType = compact ? '' : formatSourceType(item.sourceType);
+        const sourceUrl = safeHttpUrl(item.url);
         return (
           <div
             key={`${item.claim}-${index}`}
@@ -77,11 +79,11 @@ const EvidenceSourceRow = ({
             {item.excerpt && (
               <p className="mt-1 text-sm leading-relaxed text-gray-600">{item.excerpt}</p>
             )}
-            {item.url && (
+            {sourceUrl && (
               <a
-                href={item.url}
+                href={sourceUrl}
                 target="_blank"
-                rel="noreferrer"
+                rel={EXTERNAL_LINK_REL}
                 className="mt-1 inline-flex min-h-[44px] items-center text-xs font-semibold text-blue-700 underline underline-offset-2 hover:text-blue-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
               >
                 Open source

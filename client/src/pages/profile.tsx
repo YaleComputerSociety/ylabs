@@ -24,6 +24,7 @@ import {
   profilePageReducer,
 } from '../reducers/profilePageReducer';
 import { formatTitleCaseLabel } from '../utils/displayText';
+import { sanitizeFacultyResearchCopy } from '../utils/researchEntityCopy';
 
 type Tab = 'bio' | 'research' | 'courses';
 const VALID_TABS: Tab[] = ['bio', 'research', 'courses'];
@@ -34,9 +35,14 @@ const SectionHeading = ({ children }: { children: ReactNode }) => (
   </h2>
 );
 
+const ROLE_LABELS: Record<string, string> = {
+  pi: 'Principal Investigator',
+};
+
 const formatRoleLabel = (role?: string) =>
   role
-    ? role
+    ? ROLE_LABELS[role] ||
+      role
         .split('-')
         .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
         .join(' ')
@@ -235,7 +241,10 @@ const Profile = () => {
                 <div className="space-y-3">
                   {(profile.researchEntities || []).map((entity) => {
                     const title = entity.displayName || entity.name || 'Untitled research home';
-                    const description = entity.shortDescription || entity.description || '';
+                    const description = sanitizeFacultyResearchCopy(
+                      entity.shortDescription || entity.description || '',
+                      entity,
+                    );
                     const roleLabel = formatRoleLabel(entity.role);
                     return (
                       <article

@@ -16,6 +16,8 @@ import {
 import { readUser } from '../services/userService';
 import { getMeiliIndex } from '../utils/meiliClient';
 import { getConfig } from '../services/configService';
+import { redactDirectContactInfo } from '../utils/contactRedaction';
+import { isPublicHttpUrl } from '../utils/urlSafety';
 
 /**
  * Build robust filter match stage for MongoDB aggregation
@@ -152,6 +154,26 @@ const buildRobustFilterMatch = async (params: {
 const splitParam = (value?: string, separator = ','): string[] =>
   value ? value.split(separator).map((item) => item.trim()).filter(Boolean) : [];
 
+const LISTING_SEARCH_SORT_FIELDS = new Set([
+  'createdAt',
+  'updatedAt',
+  'title',
+  'expiresAt',
+]);
+const MAX_LISTING_SEARCH_PAGE = 1000;
+const MAX_LISTING_SEARCH_PAGE_SIZE = 100;
+
+const listingSearchSortField = (value: unknown): string =>
+  typeof value === 'string' && LISTING_SEARCH_SORT_FIELDS.has(value) ? value : 'createdAt';
+
+const listingSearchSortOrder = (value: unknown): 'asc' | 'desc' => (value === '1' ? 'asc' : 'desc');
+
+const normalizedPositiveInteger = (value: unknown, fallback: number, max: number): number => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(1, Math.floor(parsed)));
+};
+
 const listingIncludes = (listing: any, query: string): boolean => {
   if (!query) return true;
   const haystack = [
@@ -174,6 +196,63 @@ const matchesListFilter = (values: string[] = [], selected: string[], mode: stri
   const normalized = new Set(values.map((value) => value.toLowerCase()));
   const checks = selected.map((value) => normalized.has(value.toLowerCase()));
   return mode === 'intersection' ? checks.every(Boolean) : checks.some(Boolean);
+};
+
+const publicHttpUrl = (value: unknown): string | undefined => {
+  if (typeof value !== 'string') return undefined;
+  try {
+    if (!isPublicHttpUrl(value)) return undefined;
+    return value;
+  } catch {
+    return undefined;
+  }
+};
+
+const publicHttpUrls = (values: unknown): string[] =>
+  Array.isArray(values) ? values.flatMap((value) => publicHttpUrl(value) ?? []) : [];
+
+const publicListingText = (value: unknown): unknown =>
+  typeof value === 'string' ? redactDirectContactInfo(value) : value;
+
+const publicListingForAuthenticatedReader = (listing: any) => {
+  const id = listing._id?.toString?.() || listing._id || listing.id;
+  return {
+    _id: id,
+    id,
+    researchEntityId: listing.researchEntityId,
+    researchGroupId: listing.researchGroupId,
+    title: listing.title,
+    hiringStatus: listing.hiringStatus,
+    websites: publicHttpUrls(listing.websites),
+    description: publicListingText(listing.description),
+    applicantDescription: publicListingText(listing.applicantDescription),
+    researchAreas: Array.isArray(listing.researchAreas) ? listing.researchAreas : [],
+    keywords: Array.isArray(listing.keywords) ? listing.keywords : [],
+    established: listing.established,
+    departments: Array.isArray(listing.departments) ? listing.departments : [],
+    type: listing.type,
+    commitment: listing.commitment,
+    compensationType: listing.compensationType,
+    expiresAt: listing.expiresAt,
+    createdAt: listing.createdAt,
+    updatedAt: listing.updatedAt,
+  };
+};
+
+const sendListingError = (response: Response, error: any, fallbackMessage: string) => {
+  const status = error?.status ?? error?.statusCode;
+  if (Number.isInteger(status) && status >= 400 && status < 500) {
+    const body =
+      status === 403
+        ? { error: 'Incorrect permissions', incorrectPermissions: true }
+        : { error: 'Listing not found' };
+    return response.status(status).json(body);
+  }
+  if (error?.name === 'ValidationError') {
+    return response.status(400).json({ error: 'Validation error' });
+  }
+
+  return response.status(500).json({ error: fallbackMessage });
 };
 
 export const searchListings = async (request: Request, response: Response) => {
@@ -201,13 +280,13 @@ export const searchListings = async (request: Request, response: Response) => {
       researchAreasMode: researchAreasMode as string,
     });
 
-    const limit = Number(pageSize);
-    const offset = (Number(page) - 1) * limit;
+    const normalizedPage = normalizedPositiveInteger(page, 1, MAX_LISTING_SEARCH_PAGE);
+    const limit = normalizedPositiveInteger(pageSize, 10, MAX_LISTING_SEARCH_PAGE_SIZE);
+    const offset = (normalizedPage - 1) * limit;
 
     const sortConfig = [];
     if (sortBy) {
-      const order = sortOrder === '1' ? 'asc' : 'desc';
-      sortConfig.push(`${sortBy}:${order}`);
+      sortConfig.push(`${listingSearchSortField(sortBy)}:${listingSearchSortOrder(sortOrder)}`);
     } else if (!query || (query as string).trim() === '') {
       // Just recent if no query
       sortConfig.push(`createdAt:desc`);
@@ -237,13 +316,13 @@ export const searchListings = async (request: Request, response: Response) => {
     const { hits, estimatedTotalHits } = await index.search((query as string) || '', searchParams);
 
     // Map `id` back to `_id` for frontend backward compatibility
-    const results = hits.map((hit: any) => ({ ...hit, _id: hit.id }));
+    const results = hits.map(publicListingForAuthenticatedReader);
 
     return response.json({
       results,
       totalCount: estimatedTotalHits,
-      page: Number(page),
-      pageSize: Number(pageSize),
+      page: normalizedPage,
+      pageSize: limit,
     });
   } catch (error: any) {
     if (error?.cause?.code === 'index_not_found') {
@@ -256,8 +335,9 @@ export const searchListings = async (request: Request, response: Response) => {
         page = 1,
         pageSize = 10,
       } = request.query;
-      const limit = Number(pageSize);
-      const offset = (Number(page) - 1) * limit;
+      const normalizedPage = normalizedPositiveInteger(page, 1, MAX_LISTING_SEARCH_PAGE);
+      const limit = normalizedPositiveInteger(pageSize, 10, MAX_LISTING_SEARCH_PAGE_SIZE);
+      const offset = (normalizedPage - 1) * limit;
       const departmentList = splitParam(departments as string | undefined, '||');
       const researchAreaList = splitParam(researchAreas as string | undefined);
       const trimmedQuery = ((query as string) || '').trim();
@@ -276,16 +356,15 @@ export const searchListings = async (request: Request, response: Response) => {
           (a: any, b: any) =>
             new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime(),
         );
-      const results = filtered.slice(offset, offset + limit).map((listing: any) => ({
-        ...listing,
-        id: listing._id?.toString?.() || listing.id,
-      }));
+      const results = filtered
+        .slice(offset, offset + limit)
+        .map(publicListingForAuthenticatedReader);
 
       return response.json({
         results,
         totalCount: filtered.length,
-        page: Number(page),
-        pageSize: Number(pageSize),
+        page: normalizedPage,
+        pageSize: limit,
       });
     }
 
@@ -305,9 +384,9 @@ export const createListingForCurrentUser = async (request: Request, response: Re
     const user = await readUser(currentUser.netId);
     const listing = await createListing(request.body.data, user);
     response.status(201).json({ listing });
-  } catch (error) {
-    console.log((error as Error).message);
-    response.status(400).json({ error: (error as Error).message });
+  } catch (error: any) {
+    console.error('Listing create failed:', error);
+    sendListingError(response, error, 'Failed to create listing');
   }
 };
 
@@ -321,15 +400,19 @@ export const getSkeletonListingForCurrentUser = async (request: Request, respons
 
     const listing = await getSkeletonListing(currentUser.netId!);
     response.status(201).json({ listing });
-  } catch (error) {
-    console.log((error as Error).message);
-    response.status(400).json({ error: (error as Error).message });
+  } catch (error: any) {
+    console.error('Listing skeleton failed:', error);
+    sendListingError(response, error, 'Failed to initialize listing');
   }
 };
 
 export const getListingById = async (request: Request, response: Response) => {
-  const listing = await readListing(request.params.id);
-  response.status(200).json({ listing });
+  try {
+    const listing = await readListing(request.params.id);
+    response.status(200).json({ listing: publicListingForAuthenticatedReader(listing) });
+  } catch (error: any) {
+    sendListingError(response, error, 'Failed to fetch listing');
+  }
 };
 
 const LISTING_SELF_UPDATABLE_FIELDS = [
@@ -342,9 +425,6 @@ const LISTING_SELF_UPDATABLE_FIELDS = [
   'keywords',
   'established',
   'departments',
-  'emails',
-  'professorIds',
-  'professorNames',
 ] as const;
 
 const filterListingUpdate = (data: any): Record<string, any> => {
@@ -361,7 +441,7 @@ const filterListingUpdate = (data: any): Record<string, any> => {
 export const updateListingForCurrentUser = async (
   request: Request,
   response: Response,
-  next: NextFunction,
+  _next: NextFunction,
 ) => {
   try {
     const currentUser = request.user as {
@@ -373,44 +453,64 @@ export const updateListingForCurrentUser = async (
     const safeData = filterListingUpdate(request.body?.data);
     const listing = await updateListing(request.params.id, currentUser.netId!, safeData);
     response.status(200).json({ listing });
-  } catch (error) {
-    next(error);
+  } catch (error: any) {
+    console.error('Listing update failed:', error);
+    sendListingError(response, error, 'Failed to update listing');
   }
 };
 
 export const archiveListingForCurrentUser = async (request: Request, response: Response) => {
-  const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
+  try {
+    const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
 
-  const listing = await archiveListing(request.params.id, currentUser.netId!);
-  response.status(200).json({ listing });
+    const listing = await archiveListing(request.params.id, currentUser.netId!);
+    response.status(200).json({ listing });
+  } catch (error: any) {
+    console.error('Listing archive failed:', error);
+    sendListingError(response, error, 'Failed to archive listing');
+  }
 };
 
 export const unarchiveListingForCurrentUser = async (request: Request, response: Response) => {
-  const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
+  try {
+    const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
 
-  const listing = await unarchiveListing(request.params.id, currentUser.netId!);
-  response.status(200).json({ listing });
+    const listing = await unarchiveListing(request.params.id, currentUser.netId!);
+    response.status(200).json({ listing });
+  } catch (error: any) {
+    console.error('Listing unarchive failed:', error);
+    sendListingError(response, error, 'Failed to unarchive listing');
+  }
 };
 
 export const addViewToListing = async (request: Request, response: Response) => {
-  const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
+  try {
+    const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
 
-  const listing = await addView(request.params.id, currentUser.netId!);
-  response.status(200).json({ listing });
+    const listing = await addView(request.params.id, currentUser.netId!);
+    response.status(200).json({ listing: publicListingForAuthenticatedReader(listing) });
+  } catch (error: any) {
+    sendListingError(response, error, 'Failed to update listing view count');
+  }
 };
 
 export const deleteListingForCurrentUser = async (request: Request, response: Response) => {
-  const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
+  try {
+    const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
 
-  const currentListing = await readListing(request.params.id);
-  if (currentUser.netId !== currentListing.ownerId) {
-    const error: any = new Error(
-      `User with id ${currentUser.netId} does not have permission to delete listing with id ${request.params.id}`,
-    );
-    error.status = 403;
-    throw error;
+    const currentListing = await readListing(request.params.id);
+    if (currentUser.netId !== currentListing.ownerId) {
+      const error: any = new Error(
+        `User with id ${currentUser.netId} does not have permission to delete listing with id ${request.params.id}`,
+      );
+      error.status = 403;
+      throw error;
+    }
+
+    const deletedListing = await deleteListing(request.params.id);
+    response.status(200).json({ deletedListing });
+  } catch (error: any) {
+    console.error('Listing delete failed:', error);
+    sendListingError(response, error, 'Failed to delete listing');
   }
-
-  const deletedListing = await deleteListing(request.params.id);
-  response.status(200).json({ deletedListing });
 };

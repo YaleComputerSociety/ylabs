@@ -1,44 +1,143 @@
 import dotenv from 'dotenv';
+import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
+import fs from 'fs';
+import path from 'path';
 import { initializeConnections } from '../db/connections';
 import { Fellowship } from '../models/fellowship';
 import { classifyProgram } from '../services/programClassifier';
-import { assertScriptApplyAllowed } from './scriptWriteGuards';
+import {
+  assertScriptApplyAllowed,
+  type ScriptApplyGuardResult,
+} from './scriptWriteGuards';
 
 dotenv.config();
 
-interface CliOptions {
+export interface BackfillProgramClassificationsCliOptions {
   apply: boolean;
+  confirmProgramClassificationBackfill: boolean;
   limit: number;
+  output?: string;
 }
 
-function parseArgs(argv: string[]): CliOptions {
-  const options: CliOptions = {
+function parseRequiredOutputPath(value: string | undefined): string {
+  const output = value?.trim();
+  if (!output || output.startsWith('--')) {
+    throw new Error('--output requires a path');
+  }
+  return output;
+}
+
+export function parseBackfillProgramClassificationsArgs(
+  argv: string[],
+): BackfillProgramClassificationsCliOptions {
+  const options: BackfillProgramClassificationsCliOptions = {
     apply: false,
+    confirmProgramClassificationBackfill: false,
     limit: Infinity,
   };
 
-  for (const arg of argv) {
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
     if (arg === '--apply') {
       options.apply = true;
       continue;
     }
-    if (arg.startsWith('--limit=')) {
-      const parsed = Number(arg.slice('--limit='.length));
-      options.limit = Number.isFinite(parsed) && parsed > 0 ? parsed : Infinity;
+    if (arg === '--confirm-program-classification-backfill') {
+      options.confirmProgramClassificationBackfill = true;
+      continue;
     }
+    if (arg.startsWith('--confirm-program-classification-backfill=')) {
+      throw new Error('--confirm-program-classification-backfill does not accept a value');
+    }
+    if (arg.startsWith('--limit=')) {
+      options.limit = parsePositiveInteger(arg.slice('--limit='.length), '--limit');
+      continue;
+    }
+    if (arg === '--output') {
+      options.output = parseRequiredOutputPath(argv[i + 1]);
+      i += 1;
+      continue;
+    }
+    if (arg.startsWith('--output=')) {
+      options.output = parseRequiredOutputPath(arg.slice('--output='.length));
+      continue;
+    }
+
+    throw new Error(`Unknown program classification backfill argument: ${arg}`);
   }
 
   return options;
 }
 
-async function main() {
-  const options = parseArgs(process.argv.slice(2));
-  const guard = assertScriptApplyAllowed({
+function parsePositiveInteger(value: string, flag: string): number {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isSafeInteger(parsed) || parsed <= 0 || String(parsed) !== value.trim()) {
+    throw new Error(`${flag} requires a positive integer`);
+  }
+  return parsed;
+}
+
+export function writeBackfillProgramClassificationsOutput(
+  report: unknown,
+  output?: string,
+): void {
+  if (!output) return;
+  fs.mkdirSync(path.dirname(output), { recursive: true });
+  fs.writeFileSync(output, `${JSON.stringify(report, null, 2)}\n`);
+}
+
+export function buildBackfillProgramClassificationsOutput<T extends object>(
+  report: T,
+  metadata: {
+    environment?: string;
+    db?: string;
+    options: BackfillProgramClassificationsCliOptions;
+  },
+): T & {
+  environment?: string;
+  db?: string;
+  options: BackfillProgramClassificationsCliOptions;
+} {
+  return {
+    ...report,
+    ...(metadata.environment ? { environment: metadata.environment } : {}),
+    ...(metadata.db ? { db: metadata.db } : {}),
+    options: metadata.options,
+  };
+}
+
+export function assertBackfillProgramClassificationsApplyAllowed(
+  options: Pick<
+    BackfillProgramClassificationsCliOptions,
+    'apply' | 'confirmProgramClassificationBackfill' | 'limit'
+  >,
+  env: NodeJS.ProcessEnv = process.env,
+  mongoUrl?: string,
+): ScriptApplyGuardResult {
+  if (options.apply && !Number.isFinite(options.limit)) {
+    throw new Error('--limit is required when --apply is set for programs:backfill-classification');
+  }
+  if (options.apply && !options.confirmProgramClassificationBackfill) {
+    throw new Error(
+      '--confirm-program-classification-backfill is required when --apply is set for programs:backfill-classification',
+    );
+  }
+  return assertScriptApplyAllowed({
     apply: options.apply,
-    scriptName: 'backfillProgramClassifications',
-    mongoUrl: process.env.MONGODBURL,
+    scriptName: 'programs:backfill-classification',
+    mongoUrl,
+    env,
   });
+}
+
+async function main() {
+  const options = parseBackfillProgramClassificationsArgs(process.argv.slice(2));
+  const guard = assertBackfillProgramClassificationsApplyAllowed(
+    options,
+    process.env,
+    process.env.MONGODBURL,
+  );
   await initializeConnections();
 
   const query = Fellowship.find({ archived: { $ne: true } }).sort({ title: 1 });
@@ -87,27 +186,32 @@ async function main() {
     return acc;
   }, {});
 
-  console.log(
-    JSON.stringify(
-      {
-        mode: options.apply ? 'apply' : 'dry-run',
-        environment: guard.environment,
-        db: guard.dbLabel,
-        scanned: rows.length,
-        counts,
-        sample: updates.slice(0, 20),
-      },
-      null,
-      2,
-    ),
-  );
+  const report = buildBackfillProgramClassificationsOutput({
+    mode: options.apply ? 'apply' : 'dry-run',
+    scanned: rows.length,
+    counts,
+    sample: updates.slice(0, 20),
+  }, {
+    environment: guard.environment,
+    db: guard.dbLabel,
+    options,
+  });
+
+  console.log(JSON.stringify(report, null, 2));
+  writeBackfillProgramClassificationsOutput(report, options.output);
 }
 
-main()
-  .catch((error) => {
-    console.error('Failed to backfill program classifications:', error);
-    process.exitCode = 1;
-  })
-  .finally(async () => {
-    await mongoose.disconnect();
-  });
+const isDirectRun = process.argv[1]
+  ? fileURLToPath(import.meta.url) === path.resolve(process.argv[1])
+  : false;
+
+if (isDirectRun) {
+  main()
+    .catch((error) => {
+      console.error('Failed to backfill program classifications:', error);
+      process.exitCode = 1;
+    })
+    .finally(async () => {
+      await mongoose.disconnect();
+    });
+}

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   deriveAccessArtifactsFromObservations,
+  deriveIdentifiedLeadWaysIn,
+  officialNonGrantSourceUrl,
   type AccessObservation,
 } from '../accessMaterializer';
 
@@ -232,12 +234,20 @@ describe('deriveAccessArtifactsFromObservations', () => {
       }),
     ]);
 
-    expect(result.entryPathways).toMatchObject([
-      {
-        pathwayType: 'EXPLORATORY_CONTACT',
-        status: 'PLAUSIBLE',
-      },
-    ]);
+    expect(result.entryPathways).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          pathwayType: 'EXPLORATORY_CONTACT',
+          status: 'PLAUSIBLE',
+        }),
+        expect.objectContaining({
+          pathwayType: 'VOLUNTEER_OUTREACH',
+          status: 'PLAUSIBLE',
+          derivationKey: 'pathway:OFFICIAL_APPLICATION:JOIN_PAGE',
+          studentFacingLabel: 'Official application route',
+        }),
+      ]),
+    );
     expect(result.accessSignals.map((signal) => signal.signalType).sort()).toEqual([
       'APPLICATION_FORM_EXISTS',
       'CONTACT_INSTRUCTIONS_EXIST',
@@ -325,12 +335,20 @@ describe('deriveAccessArtifactsFromObservations', () => {
       }),
     ]);
 
-    expect(result.entryPathways).toMatchObject([
-      {
-        pathwayType: 'EXPLORATORY_CONTACT',
-        status: 'PLAUSIBLE',
-      },
-    ]);
+    expect(result.entryPathways).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          pathwayType: 'EXPLORATORY_CONTACT',
+          status: 'PLAUSIBLE',
+        }),
+        expect.objectContaining({
+          pathwayType: 'RECURRING_PROGRAM',
+          status: 'RECURRING',
+          derivationKey: 'pathway:OFFICIAL_APPLICATION:JOIN_PAGE',
+          studentFacingLabel: 'Department research application',
+        }),
+      ]),
+    );
     expect(result.accessSignals.map((signal) => signal.signalType).sort()).toEqual([
       'APPLICATION_FORM_EXISTS',
       'REACH_OUT_PLAUSIBLE',
@@ -343,6 +361,21 @@ describe('deriveAccessArtifactsFromObservations', () => {
         url: 'https://yalesurvey.ca1.qualtrics.com/jfe/form/SV_fixture',
       },
     ]);
+  });
+
+  it('does not derive official application artifacts from a bare join page without undergraduate access evidence', () => {
+    const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
+      obs({
+        field: 'joinPageUrl',
+        value: 'https://lab.example.edu/join',
+        sourceName: 'lab-microsite-undergrad-llm',
+        confidence: 0.6,
+      }),
+    ]);
+
+    expect(result.entryPathways).toEqual([]);
+    expect(result.accessSignals).toEqual([]);
+    expect(result.contactRoutes).toEqual([]);
   });
 
   it('redacts direct contact details from public signal excerpts', () => {
@@ -402,6 +435,14 @@ describe('deriveAccessArtifactsFromObservations', () => {
         contactPolicy: 'DIRECT_CONTACT_OK',
       },
     ]);
+    expect(result.accessSignals).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          signalType: 'CONTACT_INSTRUCTIONS_EXIST',
+          excerpt: 'Official contact listed: Ada Manager, Lab Manager.',
+        }),
+      ]),
+    );
   });
 
   it('derives public course-instructor routes from explicit non-CourseTable contact evidence', () => {
@@ -451,5 +492,87 @@ describe('deriveAccessArtifactsFromObservations', () => {
     expect(first.accessSignals.map((signal) => signal.derivationKey)).toEqual(
       second.accessSignals.map((signal) => signal.derivationKey),
     );
+  });
+});
+
+describe('officialNonGrantSourceUrl', () => {
+  it('prefers an official non-grant page over NIH/NSF/ORCID grant URLs', () => {
+    expect(
+      officialNonGrantSourceUrl({
+        sourceUrls: [
+          'https://reporter.nih.gov/project-details/123',
+          'https://medicine.yale.edu/profile/jane-smith/',
+        ],
+      }),
+    ).toBe('https://medicine.yale.edu/profile/jane-smith/');
+  });
+
+  it('returns empty when only grant/orcid sources exist', () => {
+    expect(
+      officialNonGrantSourceUrl({
+        sourceUrls: ['https://reporter.nih.gov/project-details/1', 'https://orcid.org/0000-0002'],
+      }),
+    ).toBe('');
+  });
+});
+
+describe('deriveIdentifiedLeadWaysIn', () => {
+  const supporting: AccessObservation = {
+    _id: 'obs-identity',
+    field: 'profileUrl',
+    value: 'https://medicine.yale.edu/profile/jane-smith/',
+    sourceName: 'dept-faculty-roster',
+    sourceUrl: 'https://medicine.yale.edu/profile/jane-smith/',
+    confidence: 0.6,
+    observedAt: D,
+  };
+
+  const baseInput = {
+    researchEntityId: '64f000000000000000000010',
+    entity: { entityType: 'FACULTY_RESEARCH_AREA', name: 'Jane Smith Research' },
+    officialUrl: 'https://medicine.yale.edu/profile/jane-smith/',
+    leadName: 'Jane Smith',
+    supportingObservations: [supporting],
+  };
+
+  it('derives an exploratory-contact ways-in for an identified faculty lead', () => {
+    const result = deriveIdentifiedLeadWaysIn(baseInput);
+    expect(result.entryPathways.map((p) => p.pathwayType)).toEqual(['EXPLORATORY_CONTACT']);
+    expect(result.entryPathways[0].derivationKey).toBe(
+      'pathway:EXPLORATORY_CONTACT:IDENTIFIED_FACULTY_LEAD',
+    );
+    expect(result.accessSignals.map((s) => s.signalType)).toEqual(['REACH_OUT_PLAUSIBLE']);
+    expect(result.contactRoutes.map((r) => r.routeType)).toEqual(['FACULTY_PI']);
+    // confidence is intentionally conservative (LOW / WEAK)
+    expect(result.accessSignals[0].confidenceScore).toBeLessThanOrEqual(0.4);
+    expect(result.contactRoutes[0].email).toBeUndefined();
+  });
+
+  it('skips entities flagged as duplicates by the visibility gate', () => {
+    const result = deriveIdentifiedLeadWaysIn({
+      ...baseInput,
+      entity: { ...baseInput.entity, studentVisibilityReasons: ['exact_url_duplicate_risk'] },
+    });
+    expect(result.entryPathways).toHaveLength(0);
+    expect(result.contactRoutes).toHaveLength(0);
+  });
+
+  it('skips grant-only source URLs and non-home entity types', () => {
+    expect(
+      deriveIdentifiedLeadWaysIn({
+        ...baseInput,
+        officialUrl: 'https://reporter.nih.gov/project-details/1',
+      }).entryPathways,
+    ).toHaveLength(0);
+    expect(
+      deriveIdentifiedLeadWaysIn({ ...baseInput, entity: { entityType: 'PROGRAM' } }).entryPathways,
+    ).toHaveLength(0);
+  });
+
+  it('requires supporting source evidence so the claim gate keeps the artifacts', () => {
+    const result = deriveIdentifiedLeadWaysIn({ ...baseInput, supportingObservations: [] });
+    expect(result.entryPathways).toHaveLength(0);
+    expect(result.accessSignals).toHaveLength(0);
+    expect(result.contactRoutes).toHaveLength(0);
   });
 });

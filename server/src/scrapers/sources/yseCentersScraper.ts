@@ -8,6 +8,8 @@ import type { IScraper, ScraperContext, ScraperResult, ObservationInput } from '
 
 const PAGE_URL = 'https://environment.yale.edu/research/centers';
 const SOURCE_KEY = 'yse-centers-index';
+const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
+const FETCH_TIMEOUT_MS = 30000;
 
 export type YseEntityKind = 'center' | 'program' | 'initiative' | 'institute' | 'group';
 
@@ -16,6 +18,11 @@ export interface RawYseEntity {
   url: string;
   slug: string;
   kind: YseEntityKind;
+}
+
+interface YseAccessDetailConfig {
+  urls: string[];
+  parse: (htmlByUrl: Map<string, string>) => ObservationInput[];
 }
 
 export function normalizeUrl(href: string): string | null {
@@ -74,11 +81,26 @@ async function fetchPage(useCache: boolean): Promise<string> {
     if (cached) return cached;
   }
   const res = await axios.get(PAGE_URL, {
-    timeout: 30000,
-    headers: { 'User-Agent': 'ylabs-scraper/1.0 (+https://yalelabs.io)' },
+    timeout: FETCH_TIMEOUT_MS,
+    headers: { 'User-Agent': USER_AGENT },
   });
   const html = res.data as string;
   if (useCache) await setCached(SOURCE_KEY, 'page', html);
+  return html;
+}
+
+async function fetchUrl(url: string, useCache: boolean): Promise<string> {
+  const cacheKey = `detail:${url}`;
+  if (useCache) {
+    const cached = await getCached<string>(SOURCE_KEY, cacheKey);
+    if (cached) return cached;
+  }
+  const res = await axios.get(url, {
+    timeout: FETCH_TIMEOUT_MS,
+    headers: { 'User-Agent': USER_AGENT },
+  });
+  const html = res.data as string;
+  if (useCache) await setCached(SOURCE_KEY, cacheKey, html);
   return html;
 }
 
@@ -122,34 +144,149 @@ export function entityToObservations(entity: RawYseEntity, sourceUrl: string): O
   ];
 }
 
+function pageText(html: string): string {
+  const $ = cheerio.load(html);
+  return $('body').text().replace(/\s+/g, ' ').trim();
+}
+
+export function yasspAccessObservations(htmlByUrl: Map<string, string>): ObservationInput[] {
+  const sourceUrl = 'https://synthesis.yale.edu/research-team';
+  const text = pageText(htmlByUrl.get(sourceUrl) || '');
+  if (!/\bFormer Undergraduate Student Researcher\b/i.test(text)) return [];
+
+  return [
+    {
+      entityType: 'researchEntity',
+      entityKey: 'yse-yale-applied-science-synthesis-program-yassp',
+      field: 'undergradEvidenceQuote',
+      value: 'The YASSP research team page lists Nicole Gotthardt as a Former Undergraduate Student Researcher.',
+      sourceUrl,
+      confidenceOverride: 0.72,
+    },
+    {
+      entityType: 'researchEntity',
+      entityKey: 'yse-yale-applied-science-synthesis-program-yassp',
+      field: 'pastUndergradAdvisees',
+      value: [{ name: 'Nicole Gotthardt', role: 'Former Undergraduate Student Researcher', count: 1 }],
+      sourceUrl,
+      confidenceOverride: 0.72,
+    },
+  ];
+}
+
+export function ypcccAccessObservations(htmlByUrl: Map<string, string>): ObservationInput[] {
+  const sourceUrl = 'https://climatecommunication.yale.edu/about/student-employment/';
+  const text = pageText(htmlByUrl.get(sourceUrl) || '');
+  if (!/\bcurrent Yale University students, both grad and undergrad\b/i.test(text)) return [];
+
+  return [
+    {
+      entityType: 'researchEntity',
+      entityKey: 'yse-climate-change-communication',
+      field: 'undergradAccessEvidence',
+      value: { openToUndergrads: 'yes', evidenceSource: 'official_student_employment_page' },
+      sourceUrl,
+      confidenceOverride: 0.86,
+    },
+    {
+      entityType: 'researchEntity',
+      entityKey: 'yse-climate-change-communication',
+      field: 'undergradEvidenceQuote',
+      value:
+        'YPCCC says student jobs are intended for current Yale University students, both grad and undergrad.',
+      sourceUrl,
+      confidenceOverride: 0.86,
+    },
+    {
+      entityType: 'researchEntity',
+      entityKey: 'yse-climate-change-communication',
+      field: 'undergradRoleEvidenceQuote',
+      value:
+        'The YPCCC Student Job List includes Data Team Research Assistant, Experiments Team Research Assistant, Survey Research Assistant, and Partnerships Research Assistant roles.',
+      sourceUrl,
+      confidenceOverride: 0.86,
+    },
+    {
+      entityType: 'researchEntity',
+      entityKey: 'yse-climate-change-communication',
+      field: 'joinPageUrl',
+      value: sourceUrl,
+      sourceUrl,
+      confidenceOverride: 0.86,
+    },
+    {
+      entityType: 'researchEntity',
+      entityKey: 'yse-climate-change-communication',
+      field: 'contactInstructionsQuote',
+      value:
+        'YPCCC states that openings can be found on Yale Student Employment and that jobs listed on the page are not open unless posted there.',
+      sourceUrl,
+      confidenceOverride: 0.86,
+    },
+  ];
+}
+
+const ACCESS_DETAIL_CONFIGS: Record<string, YseAccessDetailConfig> = {
+  'yse-yale-applied-science-synthesis-program-yassp': {
+    urls: ['https://synthesis.yale.edu/research-team'],
+    parse: yasspAccessObservations,
+  },
+  'yse-climate-change-communication': {
+    urls: ['https://climatecommunication.yale.edu/about/student-employment/'],
+    parse: ypcccAccessObservations,
+  },
+};
+
+export async function accessObservationsForEntity(
+  entity: RawYseEntity,
+  useCache: boolean,
+): Promise<ObservationInput[]> {
+  const config = ACCESS_DETAIL_CONFIGS[entity.slug];
+  if (!config) return [];
+  const htmlByUrl = new Map<string, string>();
+  for (const url of config.urls) {
+    htmlByUrl.set(url, await fetchUrl(url, useCache));
+  }
+  return config.parse(htmlByUrl);
+}
+
 export class YseCentersScraper implements IScraper {
   readonly name = 'yse-centers-index';
   readonly displayName = 'YSE Centers, Programs & Initiatives';
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
+    const limitOption = ctx.options.limit;
+    if (limitOption !== undefined && (!Number.isSafeInteger(limitOption) || limitOption < 1)) {
+      throw new Error('--limit must be a safe positive integer');
+    }
+
     ctx.log(`Fetching ${PAGE_URL}`);
     const html = await fetchPage(ctx.options.useCache);
     const entities = parseCenters(html);
     ctx.log(`Parsed ${entities.length} entities from index`);
 
     const limited =
-      ctx.options.limit && ctx.options.limit > 0
-        ? entities.slice(0, ctx.options.limit)
+      limitOption && limitOption > 0
+        ? entities.slice(0, limitOption)
         : entities;
 
     let totalObs = 0;
+    let accessObs = 0;
     for (const entity of limited) {
-      const observations = entityToObservations(entity, PAGE_URL);
+      const entityObservations = entityToObservations(entity, PAGE_URL);
+      const entityAccessObservations = await accessObservationsForEntity(entity, ctx.options.useCache);
+      const observations = [...entityObservations, ...entityAccessObservations];
       await ctx.emit(observations);
       totalObs += observations.length;
+      accessObs += entityAccessObservations.length;
     }
 
-    ctx.log(`Emitted ${totalObs} observations across ${limited.length} entities`);
+    ctx.log(`Emitted ${totalObs} observations across ${limited.length} entities (${accessObs} access observations)`);
 
     return {
       observationCount: totalObs,
       entitiesObserved: limited.length,
-      notes: `Discovered ${limited.length} YSE centers/programs/initiatives`,
+      notes: `Discovered ${limited.length} YSE centers/programs/initiatives; emitted ${accessObs} access observations`,
     };
   }
 }

@@ -1,7 +1,7 @@
 /**
  * Login page with Yale CAS authentication redirect.
  */
-import PulseLoader from 'react-spinners/PulseLoader';
+import { PulseLoader } from 'react-spinners';
 import { useContext } from 'react';
 
 import SignInButton from '../components/SignInButton';
@@ -20,12 +20,6 @@ const Login = () => {
       return {
         heading: 'Continue to Yale Research',
         description: 'Use your Yale account to browse research homes, evidence, and source-backed profiles.',
-      };
-    }
-    if (returnPath.startsWith('/pathways')) {
-      return {
-        heading: 'Continue to Yale Research',
-        description: 'Use your Yale account to browse labs, evidence, and possible ways in.',
       };
     }
     if (returnPath.startsWith('/programs') || returnPath.startsWith('/fellowships')) {

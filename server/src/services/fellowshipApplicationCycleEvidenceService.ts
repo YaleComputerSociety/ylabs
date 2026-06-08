@@ -1,3 +1,6 @@
+import { redactDirectContactInfo } from '../utils/contactRedaction';
+import { isPublicHttpUrl } from '../utils/urlSafety';
+
 export interface FellowshipApplicationCycleEvidence {
   sourceUrls: string[];
   applicationLink?: string;
@@ -28,7 +31,7 @@ function cleanString(value: unknown): string | undefined {
 
 function cleanHttpUrl(value: unknown): string | undefined {
   const url = cleanString(value);
-  return url && /^https?:\/\//i.test(url) ? url : undefined;
+  return url && isPublicHttpUrl(url) ? url : undefined;
 }
 
 function dateStatus(
@@ -138,5 +141,8 @@ export function publicFellowshipApplicationCycleEvidence(
 ): PublicFellowshipApplicationCycleEvidence {
   const publicEvidence = { ...evidence };
   delete publicEvidence.contactEmail;
+  if (publicEvidence.contactOffice) {
+    publicEvidence.contactOffice = redactDirectContactInfo(publicEvidence.contactOffice);
+  }
   return publicEvidence;
 }

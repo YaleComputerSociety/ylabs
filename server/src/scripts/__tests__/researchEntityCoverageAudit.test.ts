@@ -1,3 +1,6 @@
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 import { describe, expect, it } from 'vitest';
 import {
   buildCoverageAuditRow,
@@ -6,6 +9,11 @@ import {
   summarizeIssueCounts,
   type CoverageAuditFacts,
 } from '../researchEntityCoverageAuditCore';
+import {
+  buildResearchEntityCoverageAuditOutput,
+  parseResearchEntityCoverageAuditArgs,
+  writeResearchEntityCoverageAuditOutput,
+} from '../researchEntityCoverageAudit';
 
 function baseFacts(): CoverageAuditFacts {
   return {
@@ -117,5 +125,101 @@ describe('summarizeIssueCounts', () => {
 
     expect(summary.MISSING_DESCRIPTION).toBe(1);
     expect(summary.BLANK_DETAIL_RISK).toBe(1);
+  });
+});
+
+describe('researchEntityCoverageAudit CLI helpers', () => {
+  it('parses slug, all, archived, limit, min-score, and output flags', () => {
+    expect(
+      parseResearchEntityCoverageAuditArgs([
+        '--slug=dept-cs-yuejie-chi',
+        '--all',
+        '--include-archived',
+        '--limit=15',
+        '--min-score=0',
+        '--output',
+        '/tmp/ylabs-research-entity-coverage.json',
+      ]),
+    ).toEqual({
+      slug: 'dept-cs-yuejie-chi',
+      includeAll: true,
+      includeArchived: true,
+      limit: 15,
+      minScore: 0,
+      output: '/tmp/ylabs-research-entity-coverage.json',
+    });
+    expect(() => parseResearchEntityCoverageAuditArgs(['prod'])).toThrow(
+      /Unknown research entity coverage audit argument: prod/,
+    );
+    expect(() => parseResearchEntityCoverageAuditArgs(['--limit=bad'])).toThrow(
+      /--limit requires a positive integer/,
+    );
+    expect(() => parseResearchEntityCoverageAuditArgs(['--limit=9007199254740992'])).toThrow(
+      /--limit requires a positive integer/,
+    );
+    expect(() => parseResearchEntityCoverageAuditArgs(['--min-score=bad'])).toThrow(
+      /--min-score requires a non-negative integer/,
+    );
+    expect(() =>
+      parseResearchEntityCoverageAuditArgs(['--min-score=9007199254740992']),
+    ).toThrow(/--min-score requires a non-negative integer/);
+    expect(() => parseResearchEntityCoverageAuditArgs(['--output', '--all'])).toThrow(
+      /--output requires a path/,
+    );
+    expect(() => parseResearchEntityCoverageAuditArgs(['--output=--all'])).toThrow(
+      /--output requires a path/,
+    );
+  });
+
+  it('writes the coverage audit artifact when output is provided', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ylabs-research-entity-coverage-'));
+    const output = path.join(dir, 'research-entity-coverage.json');
+    writeResearchEntityCoverageAuditOutput(
+      {
+        generatedAt: '2026-05-29T00:00:00.000Z',
+        rows: [{ slug: 'dept-cs-yuejie-chi', issueScore: 3 }],
+      },
+      output,
+    );
+
+    expect(JSON.parse(fs.readFileSync(output, 'utf8'))).toMatchObject({
+      rows: [{ slug: 'dept-cs-yuejie-chi', issueScore: 3 }],
+    });
+  });
+
+  it('wraps coverage audit artifacts with target metadata and parsed options', () => {
+    const output = buildResearchEntityCoverageAuditOutput(
+      {
+        generatedAt: '2026-05-29T00:00:00.000Z',
+        rows: [{ slug: 'dept-cs-yuejie-chi', issueScore: 3 }],
+      },
+      {
+        environment: 'beta',
+        db: 'Beta',
+        options: {
+          slug: 'dept-cs-yuejie-chi',
+          limit: 15,
+          minScore: 0,
+          includeArchived: false,
+          includeAll: false,
+          output: '/tmp/ylabs-research-entity-coverage.json',
+        },
+      },
+    );
+
+    expect(output).toMatchObject({
+      generatedAt: '2026-05-29T00:00:00.000Z',
+      rows: [{ slug: 'dept-cs-yuejie-chi', issueScore: 3 }],
+      environment: 'beta',
+      db: 'Beta',
+      options: {
+        slug: 'dept-cs-yuejie-chi',
+        limit: 15,
+        minScore: 0,
+        includeArchived: false,
+        includeAll: false,
+        output: '/tmp/ylabs-research-entity-coverage.json',
+      },
+    });
   });
 });

@@ -9,6 +9,14 @@ import { AnalyticsEventType } from '../models/index';
 
 const router = Router();
 
+function setPrivateFellowshipCacheHeaders(_req: Request, res: Response, next: NextFunction) {
+  res.setHeader('Cache-Control', 'no-store, private, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  next();
+}
+
+router.use(setPrivateFellowshipCacheHeaders);
+
 const getStringParam = (value: unknown): string => {
   if (typeof value === 'string') return value;
   if (Array.isArray(value)) return getStringParam(value[0]);

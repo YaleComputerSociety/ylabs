@@ -142,6 +142,22 @@ describe('buildResearchDetailSources', () => {
     expect(sources).toHaveLength(0);
   });
 
+  it('drops non-HTTP source URL schemes before rendering public source links', () => {
+    const sources = buildResearchDetailSources({
+      group: {
+        websiteUrl: 'javascript:alert(1)',
+        sourceUrls: ['data:text/html,<script>alert(1)</script>', 'https://safe.example.edu/source'],
+      },
+      pathways: [
+        {
+          sourceUrls: ['mailto:advisor@yale.edu'],
+        },
+      ],
+    });
+
+    expect(sources.map((source) => source.url)).toEqual(['https://safe.example.edu/source']);
+  });
+
   it('never surfaces Engineering load_faculty roster endpoints as detail sources', () => {
     const sources = buildResearchDetailSources({
       group: {

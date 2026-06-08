@@ -1,108 +1,98 @@
 import { Request, Response } from 'express';
 import {
+  CompensationTypes,
+  EntryPathwayStatuses,
+  EntryPathwayTypes,
+  EvidenceStrengths,
+  ResearchEntityTypes,
+} from '../models/researchAccessTypes';
+import {
   pathwayBestNextStepCategories,
   searchPathways,
-  type PathwayBestNextStepCategory,
   type PathwaySearchFilters,
+  type PathwaySearchInput,
   type PathwaySearchSort,
 } from '../services/pathwaySearchService';
 import { searchPathwaysViaMeili } from '../services/pathwaySearchIndexService';
-import {
-  compensationTypes,
-  entryPathwayStatuses,
-  entryPathwayTypes,
-  evidenceStrengths,
-  researchEntityTypes,
-  type CompensationType,
-  type EntryPathwayStatus,
-  type EntryPathwayType,
-  type EvidenceStrength,
-  type ResearchEntityType,
-} from '../models/researchAccessTypes';
 
-const MAX_PAGE_SIZE = 100;
 const DEFAULT_PAGE_SIZE = 24;
-
-const ALLOWED_SORT_FIELDS: NonNullable<PathwaySearchSort['sortBy']>[] = [
-  'relevance',
-  'confidence',
-  'lastObservedAt',
-  'deadline',
-  'createdAt',
-];
+const MAX_PAGE_SIZE = 100;
+const MAX_PAGE = 1000;
+const MAX_SEARCH_QUERY_LENGTH = 512;
+const MAX_FILTER_VALUES = 50;
+const MAX_FILTER_VALUE_LENGTH = 120;
+const SEARCH_FILTER_KEYS = [
+  'pathwayIds',
+  'entityIds',
+  'pathwayType',
+  'compensation',
+  'status',
+  'evidenceStrength',
+  'entityType',
+  'departments',
+  'researchAreas',
+  'bestNextStepCategory',
+] as const;
 
 const toStringArray = (value: unknown): string[] | undefined => {
   if (value === undefined || value === null) return undefined;
   if (Array.isArray(value)) {
-    const values = value
-      .map((v) => (typeof v === 'string' ? v : String(v)))
-      .map((v) => v.trim())
+    return value
+      .map((item) => (typeof item === 'string' ? item : String(item)))
+      .map((item) => item.trim())
       .filter(Boolean);
-    return values.length > 0 ? values : undefined;
   }
-  if (typeof value === 'string' && value.trim().length > 0) {
-    return [value.trim()];
-  }
+  if (typeof value === 'string' && value.trim()) return [value.trim()];
   return undefined;
 };
 
-const filterAllowed = <T extends string>(
-  values: string[] | undefined,
-  allowed: readonly T[],
-): T[] | undefined => {
-  if (!values) return undefined;
+const allowedValues = <T extends readonly string[]>(
+  value: unknown,
+  allowed: T,
+): T[number][] | undefined => {
   const allowedSet = new Set<string>(allowed);
-  const filtered = values.filter((value): value is T => allowedSet.has(value));
-  return filtered.length > 0 ? filtered : undefined;
+  const values = (toStringArray(value) || []).filter((item) => allowedSet.has(item));
+  return values.length > 0 ? (values as T[number][]) : undefined;
 };
 
 const parseFilters = (raw: unknown): PathwaySearchFilters => {
-  if (!raw || typeof raw !== 'object') return {};
-  const r = raw as Record<string, unknown>;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const record = raw as Record<string, unknown>;
   const filters: PathwaySearchFilters = {};
 
-  const pathwayType = filterAllowed<EntryPathwayType>(
-    toStringArray(r.pathwayType),
-    entryPathwayTypes,
-  );
+  const pathwayIds = toStringArray(record.pathwayIds);
+  if (pathwayIds) filters.pathwayIds = pathwayIds;
+
+  const entityIds = toStringArray(record.entityIds);
+  if (entityIds) filters.entityIds = entityIds;
+
+  const pathwayType = allowedValues(record.pathwayType, EntryPathwayTypes);
   if (pathwayType) filters.pathwayType = pathwayType;
 
-  const compensation = filterAllowed<CompensationType>(
-    toStringArray(r.compensation),
-    compensationTypes,
-  );
+  const compensation = allowedValues(record.compensation, CompensationTypes);
   if (compensation) filters.compensation = compensation;
 
-  const status = filterAllowed<EntryPathwayStatus>(
-    toStringArray(r.status),
-    entryPathwayStatuses,
-  );
+  const status = allowedValues(record.status, EntryPathwayStatuses);
   if (status) filters.status = status;
 
-  const evidenceStrength = filterAllowed<EvidenceStrength>(
-    toStringArray(r.evidenceStrength),
-    evidenceStrengths,
-  );
+  const evidenceStrength = allowedValues(record.evidenceStrength, EvidenceStrengths);
   if (evidenceStrength) filters.evidenceStrength = evidenceStrength;
 
-  const entityType = filterAllowed<ResearchEntityType>(
-    toStringArray(r.entityType),
-    researchEntityTypes,
-  );
+  const entityType = allowedValues(record.entityType, ResearchEntityTypes);
   if (entityType) filters.entityType = entityType;
 
-  const departments = toStringArray(r.departments);
+  const departments = toStringArray(record.departments);
   if (departments) filters.departments = departments;
 
-  const researchAreas = toStringArray(r.researchAreas);
+  const researchAreas = toStringArray(record.researchAreas);
   if (researchAreas) filters.researchAreas = researchAreas;
 
-  if (typeof r.hasActivePostedOpportunity === 'boolean') {
-    filters.hasActivePostedOpportunity = r.hasActivePostedOpportunity;
+  if (typeof record.hasActivePostedOpportunity === 'boolean') {
+    filters.hasActivePostedOpportunity = record.hasActivePostedOpportunity;
   }
 
-  const bestNextStepCategory = filterAllowed<PathwayBestNextStepCategory>(
-    toStringArray(r.bestNextStepCategory),
+  const bestNextStepCategory = allowedValues(
+    record.bestNextStepCategory,
     pathwayBestNextStepCategories,
   );
   if (bestNextStepCategory) filters.bestNextStepCategory = bestNextStepCategory;
@@ -110,49 +100,79 @@ const parseFilters = (raw: unknown): PathwaySearchFilters => {
   return filters;
 };
 
-export const searchPathwayResults = async (request: Request, response: Response) => {
-  try {
-    const body = (request.body || {}) as {
-      q?: string;
-      page?: number;
-      pageSize?: number;
-      filters?: unknown;
-      sortBy?: string;
-      sortOrder?: 'asc' | 'desc';
-    };
+const parseSort = (raw: unknown): PathwaySearchSort => {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const record = raw as Record<string, unknown>;
+  const sortBy =
+    record.sortBy === 'relevance' ||
+    record.sortBy === 'confidence' ||
+    record.sortBy === 'lastObservedAt' ||
+    record.sortBy === 'deadline' ||
+    record.sortBy === 'createdAt'
+      ? record.sortBy
+      : undefined;
 
-    const q = typeof body.q === 'string' ? body.q : '';
-    const page = Number.isFinite(Number(body.page)) ? Number(body.page) : 1;
-    const requestedPageSize = Number.isFinite(Number(body.pageSize))
-      ? Number(body.pageSize)
-      : DEFAULT_PAGE_SIZE;
-    const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, requestedPageSize));
-    const filters = parseFilters(body.filters);
+  return {
+    ...(sortBy ? { sortBy } : {}),
+    sortOrder: record.sortOrder === 'asc' ? 'asc' : 'desc',
+  };
+};
 
-    const sort: PathwaySearchSort = {};
-    if (
-      typeof body.sortBy === 'string' &&
-      ALLOWED_SORT_FIELDS.includes(body.sortBy as NonNullable<PathwaySearchSort['sortBy']>)
-    ) {
-      sort.sortBy = body.sortBy as NonNullable<PathwaySearchSort['sortBy']>;
-      sort.sortOrder = body.sortOrder === 'asc' ? 'asc' : 'desc';
+const hasOversizedStringList = (value: unknown): boolean => {
+  if (value === undefined || value === null) return false;
+  const values = Array.isArray(value) ? value : [value];
+  if (values.length > MAX_FILTER_VALUES) return true;
+  return values.some((item) => String(item).trim().length > MAX_FILTER_VALUE_LENGTH);
+};
+
+const isOversizedSearchRequest = (body: Record<string, unknown>): boolean => {
+  if (typeof body.q === 'string' && body.q.length > MAX_SEARCH_QUERY_LENGTH) return true;
+
+  const filters = body.filters;
+  if (filters && typeof filters === 'object' && !Array.isArray(filters)) {
+    for (const key of SEARCH_FILTER_KEYS) {
+      if (hasOversizedStringList((filters as Record<string, unknown>)[key])) return true;
     }
-
-    const searchInput = {
-      q,
-      page,
-      pageSize,
-      filters,
-      sort,
-    };
-    const result =
-      process.env.PATHWAY_SEARCH_BACKEND === 'meili'
-        ? await searchPathwaysViaMeili(searchInput)
-        : await searchPathways(searchInput);
-
-    return response.json(result);
-  } catch (error) {
-    console.error('Pathway search failed:', error);
-    return response.status(500).json({ error: 'Search failed' });
   }
+
+  return false;
+};
+
+const parseSearchInput = (raw: unknown): PathwaySearchInput => {
+  const body = raw && typeof raw === 'object' && !Array.isArray(raw)
+    ? (raw as Record<string, unknown>)
+    : {};
+  const page = Number.isFinite(Number(body.page)) ? Number(body.page) : 1;
+  const requestedPageSize = Number.isFinite(Number(body.pageSize))
+    ? Number(body.pageSize)
+    : DEFAULT_PAGE_SIZE;
+
+  return {
+    q: typeof body.q === 'string' ? body.q : '',
+    page: Math.min(MAX_PAGE, Math.max(1, Math.floor(page) || 1)),
+    pageSize: Math.min(MAX_PAGE_SIZE, Math.max(1, Math.floor(requestedPageSize))),
+    filters: parseFilters(body.filters),
+    sort: parseSort(
+      body.sort && typeof body.sort === 'object' && !Array.isArray(body.sort)
+        ? body.sort
+        : body,
+    ),
+  };
+};
+
+const searchWithConfiguredBackend = (input: PathwaySearchInput) =>
+  process.env.PATHWAY_SEARCH_BACKEND === 'meili'
+    ? searchPathwaysViaMeili(input)
+    : searchPathways(input);
+
+export const searchPathwaysHandler = async (request: Request, response: Response) => {
+  const body = request.body && typeof request.body === 'object' && !Array.isArray(request.body)
+    ? (request.body as Record<string, unknown>)
+    : {};
+  if (isOversizedSearchRequest(body)) {
+    return response.status(400).json({ error: 'Invalid pathway search request' });
+  }
+
+  const result = await searchWithConfiguredBackend(parseSearchInput(body));
+  return response.status(200).json(result);
 };

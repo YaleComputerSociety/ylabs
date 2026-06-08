@@ -102,6 +102,37 @@ describe('ResearchHomeCard', () => {
     expect(container.querySelector('a[href="/research/example-research-home"]')).not.toBeNull();
   });
 
+  it('sanitizes faculty research card descriptions without changing lab names', () => {
+    const { container } = render(
+      <MemoryRouter>
+        <ResearchHomeCard
+          home={researchHome({
+            label: 'Fixture Faculty Research',
+            description:
+              'The Fixture Lab conducts research focused on synthetic systems. Review the lab site before contacting this lab.',
+            entities: [
+              {
+                ...researchHome().entities[0],
+                name: 'Fixture Faculty Research',
+                displayName: 'Fixture Faculty Research',
+                kind: 'individual',
+                entityType: 'FACULTY_RESEARCH_AREA',
+              },
+            ],
+          })}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(container.textContent).toContain('Fixture Faculty Research');
+    expect(container.textContent).toContain("Fixture's research focuses on synthetic systems");
+    expect(container.textContent).toContain(
+      'research website before contacting this research profile',
+    );
+    expect(container.textContent).not.toContain('lab site');
+    expect(container.textContent).not.toContain('this lab');
+  });
+
   it('puts department and topic badges before summary and evidence badges', () => {
     const { container } = render(
       <MemoryRouter>
@@ -121,6 +152,33 @@ describe('ResearchHomeCard', () => {
     expect(text.indexOf('Research description')).toBeLessThan(
       text.indexOf('Official Yale source found'),
     );
+  });
+
+  it('surfaces duplicate review flags for admin quality review', () => {
+    render(
+      <MemoryRouter>
+        <ResearchHomeCard
+          showAdminQuality
+          home={researchHome({
+            entities: [
+              {
+                ...researchHome().entities[0],
+                qualitySummary: {
+                  descriptionState: 'missing',
+                  cardState: 'sparse',
+                  leadState: 'lead_missing',
+                  repairFlags: ['duplicate_risk', 'missing_description'],
+                  score: 94,
+                },
+              },
+            ],
+          })}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText('Duplicate review')).toBeTruthy();
+    expect(screen.getByText('Needs description')).toBeTruthy();
   });
 
   it('uses responsive topic caps with more-count badges', () => {

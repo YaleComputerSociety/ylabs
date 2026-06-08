@@ -54,6 +54,24 @@ export const sourceCoverageRegistry = {
     notes:
       'Official microsite description extraction for research focus, questions, methods, and conservative areas only; must not create access, route, or opportunity evidence.',
   },
+  'center-affiliation-llm': {
+    priority: 2,
+    tier: 'PRIMARY_OFFICIAL',
+    artifactTypes: ['Observation'],
+    evidenceCategories: ['ENTITY_IDENTITY', 'LAB_WEBSITE'],
+    defaultConfidence: 'MEDIUM',
+    notes:
+      'Reads an official center/institute page and emits umbrella → faculty relationship observations for faculty explicitly named on the page. Relationship-only; the materializer resolves each name to an existing lab/faculty entity or skips it (never mints entities or member rows).',
+  },
+  'center-director-llm': {
+    priority: 2,
+    tier: 'PRIMARY_OFFICIAL',
+    artifactTypes: ['Observation'],
+    evidenceCategories: ['ENTITY_IDENTITY', 'ENTITY_MEMBERSHIP'],
+    defaultConfidence: 'MEDIUM',
+    notes:
+      "Reads an organizational home's official site + leadership pages and emits an entity-level inferred-director observation. The materializer resolves the named director to a unique Yale User before promoting them to a `director` member (skips unresolved/ambiguous names; never mints a lead).",
+  },
   'lab-microsite-undergrad-llm': {
     priority: 1,
     tier: 'PRIMARY_OFFICIAL',
@@ -70,6 +88,22 @@ export const sourceCoverageRegistry = {
     defaultConfidence: 'MEDIUM',
     notes:
       'Bounded lab/faculty microsite extraction from canonical ResearchEntity websites; evidence remains public-page quotes and source URLs.',
+  },
+  'student-decision-llm': {
+    priority: 1,
+    tier: 'DERIVED_OFFICIAL',
+    artifactTypes: ['ResearchEntity', 'Observation'],
+    evidenceCategories: [
+      'JOIN_INSTRUCTIONS',
+      'UNDERGRAD_ROLE_LANGUAGE',
+      'OFFICIAL_CONTACT_ROUTE',
+      'APPLICATION_LINK',
+      'CONSTRAINTS',
+      'POSTED_OPENING',
+    ],
+    defaultConfidence: 'LOW',
+    notes:
+      'Precomputed LLM explanation of source-backed Ways In evidence for student-facing Best Next Step copy; must not invent opportunities, URLs, or contact details.',
   },
   'lab-microsite-llm': {
     priority: 1,
@@ -129,6 +163,15 @@ export const sourceCoverageRegistry = {
     defaultConfidence: 'HIGH',
     notes:
       'Known official Yale profile URLs for existing faculty users; fills profile biography, research-interest, image, ORCID, and profile URL observations without creating research entities or access claims.',
+  },
+  'official-profile-pi-backfill': {
+    priority: 2,
+    tier: 'OFFICIAL_INDEX',
+    artifactTypes: ['ResearchEntity', 'Observation'],
+    evidenceCategories: ['ENTITY_IDENTITY', 'OFFICIAL_PROFILE', 'LAB_WEBSITE'],
+    defaultConfidence: 'HIGH',
+    notes:
+      'Targeted official Yale profile backfill for PI/user identity, visible professor bio repair, profile-derived source descriptions, and leadership-backed research-home websites without creating access claims.',
   },
   'yale-directory': {
     priority: 2,

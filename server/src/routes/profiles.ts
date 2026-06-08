@@ -1,7 +1,7 @@
 /**
  * Express routes for faculty profile viewing and self-editing.
  */
-import { Router } from 'express';
+import { Router, type NextFunction, type Request, type Response } from 'express';
 import { isAuthenticated, isProfessor } from '../middleware/index';
 import {
   getProfile,
@@ -13,6 +13,14 @@ import {
 } from '../controllers/profileController';
 
 const router = Router();
+
+function setPrivateProfileCacheHeaders(_req: Request, res: Response, next: NextFunction) {
+  res.setHeader('Cache-Control', 'no-store, private, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  next();
+}
+
+router.use(setPrivateProfileCacheHeaders);
 
 router.get('/:netid', isAuthenticated, getProfile);
 router.get('/:netid/publications', isAuthenticated, getPublications);

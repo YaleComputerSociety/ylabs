@@ -6,6 +6,7 @@ import {
   normalizeResearchInlineText,
   normalizeResearchMetadataLabels,
 } from './researchTextNormalization';
+import { getUniqueDepartmentLabels } from './departmentNames';
 
 export interface EvidenceSourceRowData {
   claim: string;
@@ -463,7 +464,7 @@ export const buildWayInBadges = (
 
 export const buildResearchHomeContextLine = (entity: ResearchEntity | undefined): string => {
   if (!entity) return '';
-  return uniq([...(entity.departments || []), entity.school]).slice(0, 3).join(' · ');
+  return uniq([...getUniqueDepartmentLabels(entity.departments), entity.school]).slice(0, 3).join(' · ');
 };
 
 const hasOfficialYaleSource = (entity: ResearchEntity | undefined): boolean =>
@@ -480,7 +481,7 @@ export const buildResearchHomeEvidenceStatus = (
   pathways: PathwaySearchHit[],
 ): ResearchHomeEvidenceStatus => {
   if ((entity?.recentPaperCount || 0) > 0) {
-    return { label: 'Publications found', state: 'publications' };
+    return { label: 'Recent research activity', state: 'publications' };
   }
   if (hasOfficialYaleSource(entity)) {
     return { label: 'Official Yale source found', state: 'official' };
@@ -616,7 +617,7 @@ const buildProfileDiscoveryClusters = (
       labels: methodLabels.length > 0 ? methodLabels : researchAreaLabels,
       metadataTags: uniq([
         ...(entity.studentVisibilityTier === 'limited_but_safe' ? ['Limited profile'] : []),
-        ...(entity.departments || []).slice(0, 2),
+        ...getUniqueDepartmentLabels(entity.departments).slice(0, 2),
         ...conceptTags,
       ]).slice(0, 5),
       wayInBadges: buildWayInBadges(entity, pathways),

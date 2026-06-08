@@ -9,6 +9,14 @@ import { AnalyticsEventType } from '../models/index';
 
 const router = Router();
 
+function setPrivateUserCacheHeaders(_req: Request, res: Response, next: NextFunction) {
+  res.setHeader('Cache-Control', 'no-store, private, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  next();
+}
+
+router.use(setPrivateUserCacheHeaders);
+
 const getFavoriteIds = (req: Request, key: string): string[] => {
   const value = req.body?.data?.[key] ?? req.body?.[key];
   if (!value) {

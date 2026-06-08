@@ -1,4 +1,5 @@
 import dotenv from 'dotenv';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
@@ -7,15 +8,19 @@ import { Observation } from '../models/observation';
 import { Paper } from '../models/paper';
 import { PaperAuthor } from '../models/paperAuthor';
 import { User } from '../models/user';
+import { assertScriptApplyAllowed } from './scriptWriteGuards';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
-interface CliOptions {
+export interface PaperAuthorshipAuditCliOptions {
   apply: boolean;
+  confirmPaperAuthorshipApply: boolean;
+  maxApply?: number;
   backfillOpenAlex: boolean;
   sampleLimit: number;
+  output?: string;
 }
 
 const AUTHORSHIP_SOURCES = [
@@ -41,6 +46,11 @@ const AUTHORSHIP_METHODS = [
 
 const METADATA_ONLY_SOURCES = ['arxiv', 'crossref'] as const;
 const DIRECT_AUTHOR_FIELD_KEEP_SOURCES = ['manual-admin-edit', 'manual-pi-edit'] as const;
+
+export function paperAuthorshipAuditFixCommand(maxApply?: number): string {
+  const maxApplyArg = typeof maxApply === 'number' ? ` --max-apply=${maxApply}` : '';
+  return `SCRAPER_ENV=beta yarn --cwd server papers:authorship-audit --apply${maxApplyArg} --confirm-paper-authorship-apply`;
+}
 
 async function bulkWriteInChunks(
   model: Pick<typeof PaperAuthor, 'bulkWrite'>,
@@ -100,23 +110,86 @@ function invalidPaperAuthorStaticFilter(): Record<string, unknown> {
   };
 }
 
-function parseArgs(argv: string[]): CliOptions {
-  const options: CliOptions = {
+export function parsePaperAuthorshipAuditArgs(argv: string[]): PaperAuthorshipAuditCliOptions {
+  const options: PaperAuthorshipAuditCliOptions = {
     apply: false,
+    confirmPaperAuthorshipApply: false,
     backfillOpenAlex: true,
     sampleLimit: 20,
   };
 
-  for (const arg of argv) {
-    if (arg === '--apply') options.apply = true;
-    if (arg === '--no-backfill-openalex') options.backfillOpenAlex = false;
-    if (arg.startsWith('--sample-limit=')) {
-      const parsed = Number(arg.slice('--sample-limit='.length));
-      if (Number.isFinite(parsed) && parsed >= 0) options.sampleLimit = Math.floor(parsed);
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+    if (arg === '--apply') {
+      options.apply = true;
+      continue;
     }
+    if (arg === '--confirm-paper-authorship-apply') {
+      options.confirmPaperAuthorshipApply = true;
+      continue;
+    }
+    if (arg.startsWith('--max-apply=')) {
+      options.maxApply = parsePositiveInteger(arg.slice('--max-apply='.length), '--max-apply');
+      continue;
+    }
+    if (arg === '--max-apply') {
+      const maxApply = argv[i + 1];
+      if (!maxApply || maxApply.startsWith('--')) throw new Error('--max-apply requires a value');
+      options.maxApply = parsePositiveInteger(maxApply, '--max-apply');
+      i += 1;
+      continue;
+    }
+    if (arg === '--no-backfill-openalex') {
+      options.backfillOpenAlex = false;
+      continue;
+    }
+    if (arg === '--output') {
+      const output = argv[i + 1];
+      if (!output || output.startsWith('--')) throw new Error('--output requires a path');
+      options.output = output;
+      i += 1;
+      continue;
+    }
+    if (arg.startsWith('--output=')) {
+      const output = arg.slice('--output='.length).trim();
+      if (!output || output.startsWith('--')) throw new Error('--output requires a path');
+      options.output = output;
+      continue;
+    }
+    if (arg.startsWith('--sample-limit=')) {
+      options.sampleLimit = parseNonNegativeInteger(
+        arg.slice('--sample-limit='.length),
+        '--sample-limit',
+      );
+      continue;
+    }
+
+    throw new Error(`Unknown papers:authorship-audit argument: ${arg}`);
   }
 
   return options;
+}
+
+function parsePositiveInteger(value: string, flag: string): number {
+  if (!/^[1-9]\d*$/.test(value)) {
+    throw new Error(`${flag} must be a positive integer`);
+  }
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed)) {
+    throw new Error(`${flag} must be a positive integer`);
+  }
+  return parsed;
+}
+
+function parseNonNegativeInteger(value: string, flag: string): number {
+  if (!/^(0|[1-9]\d*)$/.test(value)) {
+    throw new Error(`${flag} must be a non-negative integer`);
+  }
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed)) {
+    throw new Error(`${flag} must be a non-negative integer`);
+  }
+  return parsed;
 }
 
 async function distinctPaperCountForAuthorshipSource(sourceName: string): Promise<number> {
@@ -665,20 +738,133 @@ export async function buildPaperAuthorshipAudit(sampleLimit = 20) {
       denormalizedAuthorMismatchPapers > 0 ||
       activeDirectAuthorFieldObservations > 0 ||
       unidentifiedUnlinkedPapers > 0
-        ? 'Unsupported paper-author links remain; run with --apply after confirming the target DB.'
+        ? `Unsupported paper-author links remain; run ${paperAuthorshipAuditFixCommand(
+            countPaperAuthorshipAuditPlannedChanges(
+              {
+                counts: {
+                  activeArxivAuthorObservations,
+                  unsupportedLegacyOrNameOnlyLinks: unsupportedLinkedPapers,
+                  invalidPaperAuthorRows,
+                  orphanPaperAuthorRows,
+                  duplicatePaperAuthorRows,
+                  denormalizedAuthorMismatchPapers,
+                  activeDirectAuthorFieldObservations,
+                  unidentifiedUnlinkedPapers,
+                },
+              },
+              { candidates: papersWithYaleAuthors, upserts: 0 },
+            ),
+          )} after reviewing the dry-run artifact and confirming the target DB.`
         : '',
     unsupportedSamples,
   };
 }
 
+export function countPaperAuthorshipAuditPlannedChanges(
+  audit: { counts?: Partial<Record<string, number>> },
+  backfillOpenAlex: { candidates?: number; upserts?: number },
+  options: { includeBackfillOpenAlex?: boolean } = {},
+): number {
+  const counts = audit.counts || {};
+  const invalidPaperAuthorDeletes =
+    Number(counts.invalidPaperAuthorRows || 0) +
+    Number(counts.orphanPaperAuthorRows || 0) +
+    Number(counts.duplicatePaperAuthorRows || 0);
+  const includeBackfillOpenAlex = options.includeBackfillOpenAlex !== false;
+  return (
+    Number(counts.activeArxivAuthorObservations || 0) +
+    Number(counts.unsupportedLegacyOrNameOnlyLinks || 0) +
+    invalidPaperAuthorDeletes +
+    Number(counts.activeDirectAuthorFieldObservations || 0) +
+    Number(counts.unidentifiedUnlinkedPapers || 0) +
+    Number(counts.denormalizedAuthorMismatchPapers || 0) +
+    (includeBackfillOpenAlex ? Number(backfillOpenAlex.candidates || 0) : 0)
+  );
+}
+
+export function writePaperAuthorshipAuditOutput(report: unknown, output?: string): void {
+  if (!output) return;
+  fs.mkdirSync(path.dirname(output), { recursive: true });
+  fs.writeFileSync(output, `${JSON.stringify(report, null, 2)}\n`);
+}
+
+export function assertPaperAuthorshipAuditApplyAllowed(
+  options: PaperAuthorshipAuditCliOptions,
+  env: NodeJS.ProcessEnv = process.env,
+  mongoUrl?: string,
+  plannedChanges?: number,
+) {
+  if (options.apply && !options.confirmPaperAuthorshipApply) {
+    throw new Error(
+      '--confirm-paper-authorship-apply is required when --apply is set for papers:authorship-audit',
+    );
+  }
+  if (options.apply && typeof options.maxApply !== 'number') {
+    throw new Error('--max-apply is required when --apply is set for papers:authorship-audit');
+  }
+  if (
+    options.apply &&
+    typeof options.maxApply === 'number' &&
+    typeof plannedChanges === 'number' &&
+    plannedChanges > options.maxApply
+  ) {
+    throw new Error(`Apply would modify ${plannedChanges} rows, above --max-apply.`);
+  }
+  return assertScriptApplyAllowed({
+    apply: options.apply,
+    scriptName: 'papers:authorship-audit',
+    mongoUrl,
+    env,
+  });
+}
+
+export function buildPaperAuthorshipAuditOutput<T extends object>(
+  result: T,
+  metadata: {
+    environment?: string;
+    db?: string;
+    options: PaperAuthorshipAuditCliOptions;
+  },
+): T & {
+  environment?: string;
+  db?: string;
+  options: PaperAuthorshipAuditCliOptions;
+} {
+  return {
+    ...result,
+    ...(metadata.environment ? { environment: metadata.environment } : {}),
+    ...(metadata.db ? { db: metadata.db } : {}),
+    options: metadata.options,
+  };
+}
+
 async function main(): Promise<void> {
-  const options = parseArgs(process.argv.slice(2));
+  const options = parsePaperAuthorshipAuditArgs(process.argv.slice(2));
+  const guard = assertPaperAuthorshipAuditApplyAllowed(
+    options,
+    process.env,
+    process.env.MONGODBURL,
+  );
   await initializeConnections();
 
   const before = await buildPaperAuthorshipAudit(options.sampleLimit);
+  const backfillPlan = options.backfillOpenAlex
+    ? await backfillOpenAlexPaperAuthors(false)
+    : { candidates: 0, upserts: 0 };
+  const plannedChanges = countPaperAuthorshipAuditPlannedChanges(before, backfillPlan, {
+    includeBackfillOpenAlex: options.backfillOpenAlex,
+  });
+  assertPaperAuthorshipAuditApplyAllowed(
+    options,
+    process.env,
+    process.env.MONGODBURL,
+    plannedChanges,
+  );
   const actions = {
     backfillOpenAlex: options.backfillOpenAlex
-      ? await backfillOpenAlexPaperAuthors(options.apply)
+      ? options.apply
+        ? await backfillOpenAlexPaperAuthors(true)
+        : backfillPlan
       : { candidates: 0, upserts: 0 },
     cleanup: options.apply
       ? await applyCleanup()
@@ -690,25 +876,32 @@ async function main(): Promise<void> {
   };
   const after = options.apply ? await buildPaperAuthorshipAudit(options.sampleLimit) : undefined;
 
-  console.log(
-    JSON.stringify(
-      {
-        mode: options.apply ? 'apply' : 'dry-run',
-        before,
-        actions,
-        ...(after ? { after } : {}),
-      },
-      null,
-      2,
-    ),
-  );
+  const result = {
+    mode: options.apply ? 'apply' : 'dry-run',
+    before,
+    actions,
+    ...(after ? { after } : {}),
+  };
+  const output = buildPaperAuthorshipAuditOutput(result, {
+    environment: guard.environment,
+    db: mongoose.connection.db?.databaseName || mongoose.connection.name || guard.dbLabel,
+    options,
+  });
+  console.log(JSON.stringify(output, null, 2));
+  writePaperAuthorshipAuditOutput(output, options.output);
 }
 
-main()
-  .catch((error) => {
-    console.error(error instanceof Error ? error.message : error);
-    process.exitCode = 1;
-  })
-  .finally(async () => {
-    await mongoose.disconnect();
-  });
+const isDirectRun = process.argv[1]
+  ? fileURLToPath(import.meta.url) === path.resolve(process.argv[1])
+  : false;
+
+if (isDirectRun) {
+  main()
+    .catch((error) => {
+      console.error(error instanceof Error ? error.message : error);
+      process.exitCode = 1;
+    })
+    .finally(async () => {
+      await mongoose.disconnect();
+    });
+}

@@ -29,12 +29,12 @@ afterEach(() => {
 });
 
 describe('Login', () => {
-  it('routes retired Pathways context to Yale Research on the CAS gate', () => {
-    renderLogin('/pathways');
+  it('uses the default Yale Research context for unknown retired surfaces', () => {
+    renderLogin('/old-research-entry');
 
     expect(screen.getByRole('heading', { name: /continue to yale research/i })).toBeTruthy();
     expect(
-      screen.getByText(/browse labs, evidence, and possible ways in/i),
+      screen.getByText(/open the research discovery workspace/i),
     ).toBeTruthy();
   });
 

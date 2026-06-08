@@ -7,9 +7,11 @@ import {
   AnalyticsSortDirection,
   AnalyticsUserSort,
   AnalyticsDateRange,
+  MAX_USER_ANALYTICS_SEARCH_LENGTH,
   getAnalytics,
   getActionNeededAnalytics,
   getFunnelAnalytics,
+  getSearchQueryAnalytics,
   getSearchQualityAnalytics,
   getUserAnalytics,
   getUserAnalyticsDrilldown,
@@ -18,6 +20,14 @@ import { AnalyticsEvent, AnalyticsEventType } from '../models/analytics';
 import { validateNetid } from '../middleware/validation';
 
 const router = Router();
+
+function setPrivateAnalyticsCacheHeaders(_request: Request, response: Response, next: () => void) {
+  response.setHeader('Cache-Control', 'no-store, private, max-age=0');
+  response.setHeader('Pragma', 'no-cache');
+  next();
+}
+
+router.use(setPrivateAnalyticsCacheHeaders);
 
 const parseAnalyticsRange = (range: unknown): AnalyticsDateRange => {
   if (range === 'all') {
@@ -51,9 +61,23 @@ const handleAnalyticsError = (
   error: unknown,
   fallbackMessage: string,
 ) => {
-  const message = error instanceof Error ? error.message : fallbackMessage;
-  const status = message.startsWith('Invalid') ? 400 : 500;
-  response.status(status).json({ error: message });
+  const message = error instanceof Error ? error.message : '';
+  const isValidationFailure = message.startsWith('Invalid');
+  response.status(isValidationFailure ? 400 : 500).json({
+    error: isValidationFailure ? 'Invalid analytics request' : fallbackMessage,
+  });
+};
+
+const parseUserAnalyticsSearch = (search: unknown): string | undefined => {
+  if (typeof search !== 'string') {
+    return undefined;
+  }
+
+  if (search.length > MAX_USER_ANALYTICS_SEARCH_LENGTH) {
+    throw new Error('Invalid search');
+  }
+
+  return search;
 };
 
 router.get('/', isAuthenticated, isAdmin, async (request: Request, response: Response) => {
@@ -72,7 +96,7 @@ router.get('/users', isAuthenticated, isAdmin, async (request: Request, response
     const analytics = await getUserAnalytics({
       userType: typeof userType === 'string' ? userType : undefined,
       activeSince: typeof activeSince === 'string' ? activeSince : undefined,
-      search: typeof search === 'string' ? search : undefined,
+      search: parseUserAnalyticsSearch(search),
       sort: typeof sort === 'string' ? (sort as AnalyticsUserSort) : undefined,
       direction: typeof direction === 'string' ? (direction as AnalyticsSortDirection) : undefined,
       limit: typeof limit === 'string' ? Number(limit) : undefined,
@@ -80,10 +104,12 @@ router.get('/users', isAuthenticated, isAdmin, async (request: Request, response
 
     response.status(200).json(analytics);
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Failed to fetch user analytics';
-    const status = message.startsWith('Invalid') ? 400 : 500;
+    const message = error instanceof Error ? error.message : '';
+    const isValidationFailure = message.startsWith('Invalid');
     console.error('Error fetching user analytics:', error);
-    response.status(status).json({ error: message });
+    response.status(isValidationFailure ? 400 : 500).json({
+      error: isValidationFailure ? 'Invalid analytics request' : 'Failed to fetch user analytics',
+    });
   }
 });
 
@@ -125,6 +151,18 @@ router.get('/search-quality', isAuthenticated, isAdmin, async (request: Request,
   } catch (error) {
     console.error('Error fetching search quality analytics:', error);
     handleAnalyticsError(response, error, 'Failed to fetch search quality analytics');
+  }
+});
+
+router.get('/search-queries', isAuthenticated, isAdmin, async (request: Request, response: Response) => {
+  try {
+    const analytics = await getSearchQueryAnalytics(parseAnalyticsRange(request.query.range), {
+      limit: typeof request.query.limit === 'string' ? Number(request.query.limit) : undefined,
+    });
+    response.status(200).json(analytics);
+  } catch (error) {
+    console.error('Error fetching search query analytics:', error);
+    handleAnalyticsError(response, error, 'Failed to fetch search query analytics');
   }
 });
 
@@ -213,10 +251,12 @@ router.get(
 
       response.status(200).json(analytics);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to fetch user analytics';
-      const status = message.startsWith('Invalid') ? 400 : 500;
+      const message = error instanceof Error ? error.message : '';
+      const isValidationFailure = message.startsWith('Invalid');
       console.error('Error fetching user analytics drilldown:', error);
-      response.status(status).json({ error: message });
+      response.status(isValidationFailure ? 400 : 500).json({
+        error: isValidationFailure ? 'Invalid analytics request' : 'Failed to fetch user analytics',
+      });
     }
   },
 );

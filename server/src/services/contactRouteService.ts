@@ -2,6 +2,11 @@ import mongoose from 'mongoose';
 import { ContactRoute } from '../models/contactRoute';
 import { findReviewLockedRecord, omitReviewLockedFields } from './reviewLockUtils';
 import { syncPathwaySearchIndexDocument, syncPathwaySearchIndexDocumentsForEntity } from './pathwaySearchIndexService';
+import {
+  publicAccessEmail,
+  publicAccessHttpUrl,
+  publicAccessText,
+} from '../utils/publicAccessArtifact';
 import type {
   ContactPolicy,
   ContactRouteType,
@@ -64,8 +69,7 @@ function compactObject<T extends Record<string, unknown>>(value: T): Partial<T> 
 }
 
 function normalizeEmail(email?: string): string | undefined {
-  const trimmed = email?.trim().toLowerCase();
-  return trimmed || undefined;
+  return publicAccessEmail(email);
 }
 
 export async function upsertContactRoute(
@@ -82,10 +86,14 @@ export async function upsertContactRoute(
   const sourceEvidenceId =
     toStoredObjectId(input.sourceEvidenceId) || sourceEvidenceIds[0];
   const email = normalizeEmail(input.email);
+  const name = publicAccessText(input.name);
+  const role = publicAccessText(input.role);
+  const url = publicAccessHttpUrl(input.url);
+  const sourceUrl = publicAccessHttpUrl(input.sourceUrl);
 
   const derivationKey =
     input.derivationKey ||
-    `access-materializer:${input.routeType}:${email || input.url || input.name || input.role || 'unknown'}`;
+    `access-materializer:${input.routeType}:${email || url || name || role || 'unknown'}`;
 
   const filter = compactObject({ researchEntityId, derivationKey });
   const existing = await findReviewLockedRecord(ContactRoute, filter);
@@ -99,19 +107,19 @@ export async function upsertContactRoute(
     $set: omitReviewLockedFields(compactObject({
       entryPathwayId,
       sourceEvidenceId,
-      name: input.name?.trim(),
-      personName: input.name?.trim(),
-      label: input.name?.trim() || input.role?.trim(),
+      name,
+      personName: name,
+      label: name || role,
       email,
-      role: input.role?.trim(),
-      url: input.url?.trim(),
+      role,
+      url,
       priority: input.priority,
       visibility: input.visibility,
       contactPolicy: input.contactPolicy,
-      rationale: input.rationale,
+      rationale: publicAccessText(input.rationale),
       observedAt: input.observedAt,
       sourceName: input.sourceName,
-      sourceUrl: input.sourceUrl,
+      sourceUrl,
       lastMaterializedAt: new Date(),
     }), existing),
     $addToSet: {

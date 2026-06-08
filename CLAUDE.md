@@ -46,8 +46,8 @@ yale-research/
 │       ├── passport.ts       # CAS auth strategy + user find-or-create cascade
 │       ├── routes/           # Express routers aggregated in routes/index.ts
 │       ├── controllers/      # Request handlers
-│       ├── services/         # Business logic (25+ services)
-│       ├── models/           # Mongoose schemas: user, listing, fellowship, analytics, department, researchArea, researchEntity, researchGroup, entryPathway, accessSignal, contactRoute, postedOpportunity, observation, source, scrapeRun, scrapeJobLock, scrapeSnapshot, facultyMember, grant, paper, paperAuthor, paperGroupLink, studentApplication, studentProfile, studentTracking, studentOutreach, studentEngagementEvent, and more
+│       ├── services/         # Business logic (40+ services)
+│       ├── models/           # Mongoose schemas: user, listing, fellowship, analytics, department, researchArea, researchEntity, researchEntityRelationship, researchGroup, researchGroupMember, researchScholarlyAttribution, researchScholarlyLink, entryPathway, accessSignal, contactRoute, postedOpportunity, observation, source, scrapeRun, scrapeJobLock, scrapeSnapshot, facultyMember, grant, adminGrant, paper, paperAuthor, studentApplication, studentProfile, studentTracking, studentOutreach, studentEngagementEvent, visibilityReleaseQueueItem, and more (see models/index.ts for the canonical export list)
 │       ├── scrapers/         # Scraper infrastructure: CLI, orchestrator, materializers, sources/, utils/
 │       ├── middleware/        # Auth guards, validation, error handling
 │       ├── db/               # Multi-mode database connections
@@ -73,6 +73,13 @@ yale-research/
 | `yarn --cwd server meili:rebuild-research-entities` | Rebuild the ResearchEntity Meilisearch index |
 | `yarn --cwd server meili:rebuild-pathways` | Rebuild the Pathway Meilisearch index |
 | `yarn --cwd server research-entity:migrate` | Run the ResearchEntity physical migration |
+| `yarn --cwd server gates:refresh` | Regenerate ALL canonical gate scorecards the operator board reads (single sanctioned writer; `--skip-heavy` skips the data-quality audit, `--only=gate1,gate2` filters) |
+| `yarn --cwd server research-homes:backfill-faculty-ways-in` | Backfill identified-faculty-lead ways-in for existing research homes (dry-run-first) |
+| `yarn --cwd server research-homes:backfill-descriptions` | Grounded LLM rewrite of research-home descriptions from existing source text / grant abstracts (dry-run-first) |
+| `yarn --cwd server research-homes:backfill-center-directors` | Backfill the named **director** for existing organizational homes (CENTER/INSTITUTE/INITIATIVE/CORE_FACILITY) that have an official website but no current lead member. Runs the `center-director-llm` extractor (site + leadership-page crawl, SSRF-safe) and promotes the resolved director to a `director` member via `materializeInferredDirectorMembership`. Dry-run-first (lists eligible homes, no LLM calls); apply requires `--confirm-center-directors` + explicit `--limit` + `OPENAI_API_KEY`. `--only=<slug,name,id>` narrows the set. |
+| `yarn --cwd server research-homes:backfill-browse-rank` | Recompute the `browseRankScore` that orders the default (no-query) `/research` browse "best first" (completeness + strength-weighted undergrad access) for the existing corpus. Dry-run-first; apply requires `--confirm-browse-rank` |
+| `yarn --cwd server profiles:bio-coverage-audit` | Report bio coverage for lead-role professors of student-visible homes, using the real public-profile fallback (read-only) |
+| `yarn --cwd server profiles:backfill-bios-from-official-urls` | For lead-role faculty missing an effective **bio** and/or research-interest **tag chips**: SSRF-safe fetch their official Yale page (URL from the User doc or their student-visible research home's `sourceUrls`) and write a grounded **biography** + interest terms to their User doc. The bio is built in priority order: (1) the page's own "Biography"/"Biographical Sketch" section, sliced deterministically; (2) an LLM-extracted third-person page biography; (3) a title-led composed bio — `{Name} is {article} {title} at Yale. {grounded research summary}`. Page bios must be grounded + pass `profileBioQuality` (a bio-specific gate that ALLOWS biographical sentences — degrees/appointments — unlike `fullDescriptionQuality`, but rejects first-person/chrome/publication-list/truncated text). Bios are written only from a fetched official page; interest chips also fall back to the home's own vetted description text. Bios whose content shares no field word with the person's title/department/home are reported in `suspectedWrong` for **manual review**, never auto-reverted. `--regenerate` refreshes bios this backfill previously wrote (`confidenceByField.bio === 0.7`). Dry-run-first; apply requires `--confirm-profile-bios` + explicit `--limit` |
 
 Migration scripts run from `data-migration/` with `npx tsx --transpile-only <script>.ts`.
 
@@ -102,6 +109,8 @@ Current Meilisearch indexes:
 The Meilisearch client (`server/src/utils/meiliClient.ts`) lazy-loads and caches the connection. Configuration: `MEILISEARCH_HOST` (defaults to `http://localhost:7700`), `MEILISEARCH_API_KEY`, and `MEILISEARCH_INDEX_PREFIX` (optional prefix applied to all index names, e.g. `beta_researchentities`). The module exports `getMeiliIndex(name)` and `resolveIndexName(name)`.
 
 ResearchEntity and pathway index documents are synced via `meiliSyncService.ts` after upserts to their respective collections. Rebuild scripts (`meili:rebuild-research-entities`, `meili:rebuild-pathways`) do a full repopulation.
+
+**Default `/research` ordering ("best first").** When a browse has no query, results are sorted `browseRankScore:desc` then `lastObservedAt:desc` (see `researchGroupService.searchResearchGroupsViaMeili`). `browseRankScore` is a precomputed number persisted on the ResearchEntity doc (and mirrored to the index as a sortable attribute) by `researchEntityBrowseRank.ts` (pure scorer) + `researchEntityBrowseRankService.ts` (joins + persist + re-sync). It rewards completeness (source-backed description, attached identified lead, official source URL) plus **strength-weighted** undergrad access signals — strong evidence (`CURRENT_UNDERGRADS`/`PAST_UNDERGRADS`) outweighs the manufactured `REACH_OUT_PLAUSIBLE` fallback, and `NOT_CURRENTLY_AVAILABLE` is negative. The score is recomputed live in `entityMaterializer` after access signals are derived; backfill existing data with `research-homes:backfill-browse-rank` (dry-run-first). Admin "weakest profiles first" (`browseQuality: 'low-first'`) is a separate Mongo-side path that sorts by the inverse quality score and is unchanged.
 
 The legacy listing Meilisearch migration has been removed. Use the server rebuild scripts for current Research and Pathways indexes.
 
@@ -160,7 +169,7 @@ const logListingEvent = (eventType: AnalyticsEventType) => {
 };
 ```
 
-Event-specific wrappers can inspect the response body before forwarding it, but retired listing creation is no longer an active analytics path.
+Event-specific wrappers can inspect the response body before forwarding it — e.g. `listings.ts` still fires `LISTING_CREATE`/`LISTING_UPDATE`/`LISTING_VIEW`/`SEARCH` events through this pattern on its (legacy but live) CRUD routes.
 
 Analytics events have a 3-year TTL via MongoDB's `expireAfterSeconds` index.
 
@@ -219,7 +228,7 @@ Two rate limiters in `app.ts`, both keyed by authenticated user's `netId` with I
 | Limiter | Scope | Limit |
 |---------|-------|-------|
 | `apiLimiter` | All `/api` routes | 200 req / 15 min |
-| `writeLimiter` | Non-GET API routes, including retired listing/program compatibility routes where mounted | 50 req / 15 min |
+| `writeLimiter` | Non-GET API routes, including the legacy listing/fellowship CRUD routes | 50 req / 15 min |
 
 Both limiters are skipped in CI, development, and test environments.
 
@@ -234,6 +243,7 @@ Defined in `server/src/middleware/auth.ts`:
 | `isProfessor` | `userType` in `['professor', 'faculty', 'admin']` |
 | `isTrustworthy` | `userConfirmed` + admin/professor/faculty |
 | `isConfirmed` | `userConfirmed === true` |
+| `canCreateListing` | professor/faculty/admin + `userConfirmed` + `profileVerified` (used by `POST /api/listings`) |
 
 Client-side route guards: `PrivateRoute` (auth required, redirects unknown users when `unknownBlocked=true`), `AdminRoute` (admin only), `UnprivateRoute` (no auth required, for error pages).
 
@@ -241,11 +251,26 @@ Client-side route guards: `PrivateRoute` (auth required, redirects unknown users
 
 Exported from `server/src/middleware/`:
 - `validateObjectId(paramName?)` — MongoDB ObjectId format check
+- `validateNetid(paramName?)` — Yale-style netId path-parameter validation
 - `requireBody()` — ensures request body exists
 - `requireFields(fields[])` — specific field presence validation
 - `validatePagination()` — page/pageSize within 1–500
 - `validateSort(allowedFields[])` — sortBy/sortOrder validation
 - `validateQuery(allowedParams[])` — query parameter whitelist
+
+## Security Middleware
+
+Applied globally / to `/api` in `app.ts` (in addition to CORS, session, passport, and the rate limiters):
+
+| Middleware | File | Purpose |
+|------------|------|---------|
+| `securityHeaders` | `securityHeaders.ts` | Sets CSP (`connect-src` allowlist), permissions policy, and `X-*` security headers globally. Relaxed in non-production via the environment bypass. |
+| `csrfOriginGuard(allowList)` | `csrfOriginGuard.ts` | Rejects unsafe-method `/api` requests whose `Origin`/`Referer` is not in the allowlist (safe methods GET/HEAD/OPTIONS exempt). |
+| `sanitizeMongo` | `sanitizeMongo.ts` | Strips MongoDB operator (`$`/`.`) and prototype-pollution keys from `/api` request body/query to block injection. |
+| `createCorsOriginHandler` | `corsOrigin.ts` | Builds the dynamic CORS origin handler; throws `CorsOriginError` (403) for disallowed origins. |
+| `errorHandler` / `notFoundHandler` | `errorHandler.ts` | Terminal error + 404 handlers (see Error Handling). |
+
+SSRF protection lives in `utils/ssrfGuard.ts` (the single source of truth): `isPrivateAddress` (IPv4/IPv6 private/loopback/link-local/metadata ranges), `isPublicHostname` (DNS-resolves and rejects if any record is private), `ssrfSafeLookup` (connect-time lookup that blocks private addresses on every redirect hop — defeats DNS rebinding), and `assertPublicHttpUrl` / `ssrfSafeAgents` convenience guards. Any outbound fetch to a host derived from user input or stored data MUST go through it: the admin URL checker (`routes/admin.ts`), the lab-microsite LLM extractors, and the rendered (Python) fetcher all do.
 
 ## Routes
 
@@ -253,21 +278,19 @@ All routes mount under `/api` in `app.ts`. Route files in `server/src/routes/`:
 
 | Prefix | File | Auth |
 |--------|------|------|
-| `/research` | `researchGroups.ts` | Varies |
-| `/programs` | `programs.ts` | Varies |
-| `/opportunities` | `opportunities.ts` | Varies |
-| `/listings` | `listings.ts` | Retired compatibility route, returns `410 Gone` |
-| `/fellowships` | `fellowships.ts` | Temporary compatibility alias around Programs/Fellowships storage |
+| `/research` | `researchGroups.ts` | Varies (search/detail public) |
+| `/programs` | `programs.ts` | Varies — current Programs & Fellowships surface |
+| `/opportunities` | `opportunities.ts` | Public |
+| `/pathways` | `pathways.ts` | Auth required — internal pathway data |
+| `/listings` | `listings.ts` | Auth required. **Legacy** listing CRUD/search still mounted and functional (search, create, get, update, archive/unarchive, addView, delete). The client `/listings` *path* redirects, but the API is not 410'd. |
+| `/fellowships` | `fellowships.ts` | Auth required. **Legacy** fellowship CRUD/search; the mount sets `Deprecation: true` + `Link: </api/programs>; rel="successor-version"`. Prefer `/programs`. |
 | `/users` | `users.ts` | Yes |
 | `/profiles` | `profiles.ts` | Varies |
 | `/analytics` | `analytics.ts` | Admin |
 | `/config` | `config.ts` | No |
 | `/research-areas` | `researchAreas.ts` | Admin for writes |
-| `/research` | `researchGroups.ts` | Varies (search/detail public) |
-| `/pathways` | `pathways.ts` | Varies (search public, saves require auth) |
-| `/opportunities` | `opportunities.ts` | Public |
 | `/admin` | `admin.ts` | Admin |
-| `/seed` | `seed.ts` | Dev mode only |
+| `/seed` | `seed.ts` | Local development runtime only (`isLocalDevelopmentRuntime()`) |
 
 Passport auth routes (CAS login/logout, dev-login) are mounted separately via `passportRoutes` before the main routes.
 
@@ -281,6 +304,25 @@ User → Yale CAS SSO → passport.ts findOrCreateUser
      → Fallback: fname "NA", userType "unknown"
      → Create/Update User → cookie-session (1 year, httpOnly, secure in production, sameSite lax)
 ```
+
+## Key Services
+
+`server/src/services/` holds 40+ services (all `*Service.ts` plus helper modules). Beyond the obvious CRUD services (`listingService`, `fellowshipService`, `programService`, `profileService`, `userService`, `researchGroupService`), the notable domains a new agent should know:
+
+| Service | Responsibility |
+|---------|----------------|
+| `researchEntityDto.ts` / `researchEntityQuality.ts` | Public ResearchEntity DTO shaping and entity-quality scoring/gating |
+| `researchEntityBrowseRank.ts` / `researchEntityBrowseRankService.ts` | Pure "best first" browse-ranking scorer (completeness + strength-weighted access) and its persist/Meilisearch-resync orchestration. Drives the default no-query `/research` order via the `browseRankScore` sortable attribute. |
+| `researchEntitySearchIndexService.ts` / `pathwaySearchIndexService.ts` / `pathwaySearchService.ts` | Meilisearch index sync + query for research entities and pathways |
+| `meiliSyncService.ts` | Syncs collection upserts into the Meilisearch indexes |
+| `accessSignalService.ts` / `accessSummaryService.ts` / `entryPathwayService.ts` / `contactRouteService.ts` / `postedOpportunityService.ts` | The product-model access layer (signals, summaries, pathways, contact routes, postings) |
+| `adminOperatorBoardService.ts` / `adminAccessReviewService.ts` / `adminGrantService.ts` | Admin operator board (the `/programs` Gate Status panel) + access/grant review workflows. The board reads canonical gate scorecard JSON from fixed `/tmp` paths; each carries provenance (`buildGateArtifactFreshness`: generatedAt, DB, age) and is flagged **stale** past `GATE_SCORECARD_MAX_AGE_HOURS` (default 3) so a moved-on status can't masquerade as live. `gates:refresh` is the single sanctioned writer of those paths; `gateRefreshScheduler.ts` can regenerate them in-process on an interval. |
+| `sourceHealthService.ts` / `scholarlyActivityAuditService.ts` / `paperQualityService.ts` | Scraper/source health, scholarly-activity audit, paper-quality scoring. Source-health risk is driven by run health (failure/materializationErrors → error; partial/stale-running/disabled/no-recent-run → warn). **Resolved** materialization conflicts (cross-source value disagreements the confidence resolver already adjudicates) are informational, NOT a warn or promotion blocker. |
+| `studentVisibilityTier.ts` / `studentVisibilityGateService.ts` / `visibilityRepairQueueService.ts` / `studentDecisionExplanationService.ts` | Student visibility tiering, gating, repair queue, and decision explanations |
+| `fellowshipMatchingService.ts` / `fellowshipApplicationCycleEvidenceService.ts` / `programClassifier.ts` | Fellowship matching, application-cycle evidence, program classification |
+| `launchAcquisitionReportService.ts` / `launchTrustContractService.ts` | Launch-gate acquisition reporting and trust-contract checks |
+| `listingResearchEntityProfile.ts` | Keeps legacy listings synced to their ResearchEntity profile |
+| `directoryService.ts` / `yaliesService.ts` / `courseTableService.ts` | External integrations (Yale Directory, Yalies, CourseTable) |
 
 ## Naming Conventions
 
@@ -305,6 +347,7 @@ User → Yale CAS SSO → passport.ts findOrCreateUser
 | `MONGODBURL` | Yes | MongoDB connection string. Points to Development locally, Beta on staging, Production on prod. |
 | `MONGODBURL_MIGRATION` | For migration mode | Secondary DB for dual-DB migrations |
 | `SESSION_SECRET` | Yes | Cookie session signing key |
+| `AUTH_DEBUG` | No | Set to `true` to enable verbose auth tracing in `passport.ts` (per-request deserialization, the find-or-create source cascade, analytics-event confirmations). Off by default; genuine auth errors/anomalies always log regardless. |
 | `API_MODE` | No | Set to `productionMigration` for dual-DB migration mode. Otherwise leave unset. |
 | `SSOBASEURL` | Yes | Yale CAS URL |
 | `SERVER_BASE_URL` | Yes | Public server URL for CAS callbacks |
@@ -317,6 +360,9 @@ User → Yale CAS SSO → passport.ts findOrCreateUser
 | `SCRAPER_ENV` | No (default: `development`) | Controls scraper write guards. `production` requires `CONFIRM_PROD_SCRAPE=true`. Non-production defaults to dry-run unless `ALLOW_NON_PROD_SCRAPER_WRITES=true`. |
 | `ALLOW_NON_PROD_SCRAPER_WRITES` | No | Set to `true` to allow scraper writes to a non-production database. |
 | `CONFIRM_PROD_SCRAPE` | No | Set to `true` to allow scraper writes to production. Required when `SCRAPER_ENV=production`. |
+| `GATE_SCORECARD_MAX_AGE_HOURS` | No (default: 3) | Max age before a saved gate scorecard is treated as stale by the operator board (shown as "rerun", never as a live verdict). Tune to the refresh cadence. |
+| `GATE_REFRESH_INTERVAL_MINUTES` | No (default: off) | When set to a positive number, the server runs `gates:refresh` in-process on that interval so the operator board stays current on a single instance. |
+| `GATE_REFRESH_SKIP_HEAVY` | No | Set to `true` so the in-process gate refresh skips the ~3.5min `beta:data-quality` audit on the frequent cadence. |
 
 ### `client/.env`
 
@@ -369,9 +415,9 @@ The scraper system lives in `server/src/scrapers/`. Run via `yarn --cwd server s
 - `cli.ts` — CLI entrypoint (`scrape run`, `scrape materialize`, `scrape report`, etc.)
 - `orchestrator.ts` — `ScraperOrchestrator` runs registered scrapers sequentially
 - `registry.ts` — registers all source scrapers
-- `observationStore.ts` — writes `Observation` rows to MongoDB
-- `entityMaterializer.ts` — derives `ResearchEntity`/`ResearchGroupMember` from observations
-- `accessMaterializer.ts` — derives `AccessSignal`, `EntryPathway`, `ContactRoute` from observations
+- `observationStore.ts` — writes `Observation` rows to MongoDB. Supersession keys on `observationFingerprint`: a new observation supersedes prior non-superseded ones with the same fingerprint. Fingerprint = `(sourceName, entityType, entity, field)` and, for most fields, `value`. **Latest-wins fields** (`LATEST_WINS_FINGERPRINT_FIELDS`: `fullDescription`, `shortDescription`, `researchAreas`, `methods`) omit `value`, so a fresh observation supersedes the prior one despite text drift — without this, LLM sources that paraphrase each run accumulated unbounded non-superseded values and triggered spurious materialization conflicts. Only add a field there if no source emits it as multiple rows per (entity, field) per run.
+- `entityMaterializer.ts` — derives `ResearchEntity`/`ResearchGroupMember` from observations. `materializeInferredPiMembership` (labs, from grant-inferred PI keys) and `materializeInferredDirectorMembership` (organizational homes, from `center-director-llm`'s entity-level inferred-director observation) attach the entity **lead**: each resolves the name to a unique Yale User and upserts a `pi`/`director` member; the director path also removes the person's superseded non-lead roster row so they surface once as the lead, and the roster path skips writing a non-lead row for someone already a lead of that entity. Promoting a director also lets the access materializer upgrade an organizational home from its "no named director" `DEPARTMENT_CONTACT` fallback to a named-lead `FACULTY_PI` ways-in on the same pass.
+- `accessMaterializer.ts` — derives `AccessSignal`, `EntryPathway`, `ContactRoute` from observations. When the observation pipeline yields no source-backed (http-URL) entry pathway, it falls back to an evidence-based ways-in: for a concrete faculty/lab home with an attached PI/director lead and an official non-grant source page, a low-confidence `EXPLORATORY_CONTACT` pathway + `FACULTY_PI` route + `REACH_OUT_PLAUSIBLE` signal; for an **organizational home** (CENTER/INSTITUTE/INITIATIVE/CORE_FACILITY) with an official page but no named director, a center-level "Explore this center" `EXPLORATORY_CONTACT` pathway + `DEPARTMENT_CONTACT` route + signal. Both skip duplicates, grant/ORCID-only sources, and programs, and require a supporting source observation (matched by `entityId` or `entityKey`) so the claim gate keeps them. This removes the dominant `missing_action_evidence` blocker for real research homes without manufacturing undergrad-access claims. Backfill existing entities with `yarn --cwd server research-homes:backfill-faculty-ways-in` (dry-run-first; apply requires `--confirm-faculty-ways-in` + explicit `--limit`).
 - `workPlanner.ts` — per-entity field-level work planning (what sources to run, what to skip)
 - `snapshotCache.ts` — caches fetched pages to avoid redundant HTTP requests
 - `scraperEnvironment.ts` — enforces `SCRAPER_ENV` write guards
@@ -383,6 +429,11 @@ The scraper system lives in `server/src/scrapers/`. Run via `yarn --cwd server s
 - `runReport.ts` — generates a structured report for a completed scrape run
 - `scrapeJobLock.ts` — acquire/heartbeat/release helpers wrapping the `ScrapeJobLock` model
 - `seedSources.ts` — populates the `Source` collection from the coverage registry
+- `integrityGate.ts` — post-materialization integrity gate; detects duplicate entities/people/papers, current members on archived entities, duplicate contact routes/access signals, and active artifacts on archived entities, with recommended CLI repair commands
+- `paperAuthorshipPolicy.ts` — policy logic governing which paper authorships are accepted/attributed
+- `cliHelpers.ts` — CLI argument parsing and shared helpers for `cli.ts`
+- `scraperCliOutput.ts` — formatting/styling for scraper CLI output
+- `types.ts` — shared TypeScript types for scraper infrastructure
 - `scraplingBridge.py` — Python bridge for scraper utilities requiring Python tooling
 
 **Active source scrapers** (in `server/src/scrapers/sources/`):
@@ -400,8 +451,14 @@ The scraper system lives in `server/src/scrapers/`. Run via `yarn --cwd server s
 | `orcidWorksScraper.ts` | ORCID public works with identity-backed authorship |
 | `europePmcPaperScraper.ts` | Europe PMC and PubMed ORCID-backed paper metadata |
 | `crossrefPaperScraper.ts` | Crossref DOI metadata hydration |
+| `departmentUndergradResearchScraper.ts` | Department-level undergraduate research opportunity/program pages |
 | `undergradFellowshipRecipientScraper.ts` | Undergrad fellowship recipient lists |
-| `labMicrositeUndergradLLMExtractor.ts` | LLM extraction from lab microsites |
+| `labMicrositeUndergradLLMExtractor.ts` | LLM extraction of undergrad-access signals from lab microsites |
+| `labMicrositeDescriptionLLMExtractor.ts` | LLM extraction of lab description text from microsites |
+| `centerDirectorLLMExtractor.ts` | LLM extraction of the single named director of an organizational home (CENTER/INSTITUTE/INITIATIVE/CORE_FACILITY) from its official site + leadership pages; emits an entity-level inferred-director observation the materializer resolves to a Yale User and promotes to a `director` member |
+| `studentDecisionLLMExtractor.ts` | LLM extraction of student-decision signals from lab microsites |
+| `officialProfilePiBackfillScraper.ts` | Backfill scraper for PI official-profile data |
+| `yaleResearchOfficialScraper.ts` | Yale Research (provost/OVPR) official data |
 | `yaleCollegeFellowshipsOfficeScraper.ts` | Yale College Fellowships Office public catalog |
 | `yaleDirectoryScraper.ts` | Faculty roster via Yalies API (live equivalent of the static bootstrap import) |
 
@@ -424,7 +481,7 @@ See `docs/scraper-audit-guide.md` and `docs/scraper-deployment-runbook.md` for a
 1. Page component in `client/src/pages/<page>.tsx`
 2. Route in `client/src/App.tsx` wrapped with appropriate guard (`PrivateRoute`, `AdminRoute`)
 
-Current student-facing pages: `research` (Yale Labs browse, `/research`), `labDetail` (`/research/:slug`), `programs` (`/programs`), `opportunityDetail` (`/opportunities/:id`), `account`, `profile`, `analytics`, `about`, `login`, `loginError`, `notFound`, `unknown`, and `rootRedirect` (redirects `/` → `/research`). Legacy `/labs`, `/pathways`, `/listings`, and `/fellowships` paths should redirect rather than define new product surfaces.
+Current student-facing pages (files in `client/src/pages/`): `research.tsx` (Yale Labs browse, `/research`), `labDetail.tsx` (`/research/:slug`), `fellowships.tsx` (rendered at `/programs` — the Programs & Fellowships surface; there is no `programs.tsx`), `opportunityDetail.tsx` (`/opportunities/:id`), `account.tsx`, `profile.tsx` (`/profile/:netid`), `analytics.tsx` (admin), `about.tsx`, `login.tsx`, `loginError.tsx`, `notFound.tsx`, `unknown.tsx`, and `rootRedirect.tsx` (redirects `/` → `/research`). The `/listings` and `/fellowships` paths redirect (e.g. `RetiredListingsRedirect`) rather than define new product surfaces. `pathways.tsx` and `home.tsx` are no longer routed in `App.tsx` (`pathways.tsx` was removed; `home.tsx` is legacy residue).
 
 ## Modifying a Schema
 

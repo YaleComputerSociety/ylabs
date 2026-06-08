@@ -50,16 +50,29 @@ const LabMembersList = ({ members }: LabMembersListProps) => {
           No principal investigator is attached yet
         </p>
         <p className="mx-auto mt-1 max-w-xl text-sm leading-relaxed text-gray-700">
-          Check the official profile for current lab leadership.
+          Check the official profile for current leadership.
         </p>
       </div>
     );
   }
 
   // Don't mutate the prop.
-  const sorted = [...members].sort(
-    (a, b) => (ROLE_ORDER[a.role] ?? 99) - (ROLE_ORDER[b.role] ?? 99),
-  );
+  const sorted = [...members]
+    .filter(({ user, role }, index, rows) => {
+      const userKey = user.netid || user._id || [user.fname, user.lname].filter(Boolean).join(' ');
+      const key = `${String(userKey).toLowerCase()}:${role}`;
+      return (
+        index ===
+        rows.findIndex(({ user: candidateUser, role: candidateRole }) => {
+          const candidateUserKey =
+            candidateUser.netid ||
+            candidateUser._id ||
+            [candidateUser.fname, candidateUser.lname].filter(Boolean).join(' ');
+          return `${String(candidateUserKey).toLowerCase()}:${candidateRole}` === key;
+        })
+      );
+    })
+    .sort((a, b) => (ROLE_ORDER[a.role] ?? 99) - (ROLE_ORDER[b.role] ?? 99));
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -113,9 +126,11 @@ const LabMembersList = ({ members }: LabMembersListProps) => {
           );
         }
 
+        const memberKey = `${user.netid || user._id || fullName}-${role}`;
+
         return (
           <Link
-            key={user.netid}
+            key={memberKey}
             to={`/profile/${user.netid}`}
             className={`${className} hover:border-blue-300 hover:shadow-sm transition-all`}
           >

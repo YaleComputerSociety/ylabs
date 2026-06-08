@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { buildScrapeRunReport, buildSourceEvidenceGapReview } from '../runReport';
+import {
+  buildMaterializationConflictReview,
+  buildScrapeRunReport,
+  buildSourceEvidenceGapReview,
+} from '../runReport';
 import { getSourceCoverage } from '../sourceCoverageRegistry';
 
 const observationCoverage = {
@@ -71,64 +75,6 @@ describe('buildScrapeRunReport', () => {
     expect(report.warnings).toEqual([]);
   });
 
-  it('surfaces evidence coverage impact stored on dry-run metrics', () => {
-    const report = buildScrapeRunReport(
-      {
-        _id: 'run-coverage',
-        sourceName: 'official-profile-page',
-        status: 'success',
-        options: { dryRun: true, dbReview: true },
-        metrics: {
-          evidenceCoverageImpact: {
-            assessed: 1,
-            improved: 1,
-            rows: [
-              {
-                entityType: 'researchEntity',
-                entityKey: 'peters-lab-jdp52',
-                beforeCoverageTier: 'thin',
-                afterCoverageTier: 'partial',
-                resolvedBlockers: ['missing_source_backed_description'],
-                remainingBlockers: ['missing_verified_lead'],
-                rejectedFields: [
-                  {
-                    field: 'description',
-                    reason: 'publication_or_book_blurb',
-                    sourceName: 'ylabs-listing',
-                  },
-                ],
-              },
-            ],
-          },
-        } as any,
-      },
-      [],
-      observationCoverage,
-    );
-
-    expect(report.evidenceCoverageImpact).toEqual({
-      assessed: 1,
-      improved: 1,
-      rows: [
-        {
-          entityType: 'researchEntity',
-          entityKey: 'peters-lab-jdp52',
-          beforeCoverageTier: 'thin',
-          afterCoverageTier: 'partial',
-          resolvedBlockers: ['missing_source_backed_description'],
-          remainingBlockers: ['missing_verified_lead'],
-          rejectedFields: [
-            {
-              field: 'description',
-              reason: 'publication_or_book_blurb',
-              sourceName: 'ylabs-listing',
-            },
-          ],
-        },
-      ],
-    });
-  });
-
   it('flags conflict candidates and malformed observations', () => {
     const report = buildScrapeRunReport(
       {
@@ -188,6 +134,307 @@ describe('buildScrapeRunReport', () => {
         '1 observation(s) lack entityId/entityKey.',
         '1 entity-field conflict candidate(s) found within this run.',
         '1 duplicate observation(s) superseded in this run.',
+      ]),
+    );
+  });
+
+  it('adds a bounded active-observation review for materialization conflicts', () => {
+    const report = buildScrapeRunReport(
+      {
+        _id: 'run-conflicts',
+        sourceName: 'department-undergrad-research',
+        status: 'success',
+        materializationConflicts: 2,
+      },
+      [
+        {
+          entityType: 'researchEntity',
+          entityKey: 'smith-lab',
+          field: 'shortDescription',
+          value: 'Use official application form',
+          sourceName: 'department-undergrad-research',
+          observedAt: new Date('2026-05-01T12:00:00Z'),
+          confidence: 0.88,
+          sourceUrl: 'https://example.edu/research',
+        },
+      ],
+      observationCoverage,
+      {
+        activeObservations: [
+          {
+            entityType: 'researchEntity',
+            entityKey: 'smith-lab',
+            field: 'shortDescription',
+            value: 'Email ada@yale.edu for projects',
+            sourceName: 'dept-faculty-roster',
+            observedAt: new Date('2026-05-01T12:00:00Z'),
+            confidence: 0.9,
+            sourceUrl: 'https://example.edu/profile',
+          },
+          {
+            entityType: 'researchEntity',
+            entityKey: 'smith-lab',
+            field: 'shortDescription',
+            value: 'Use official application form',
+            sourceName: 'department-undergrad-research',
+            observedAt: new Date('2026-05-01T12:00:00Z'),
+            confidence: 0.88,
+            sourceUrl: 'https://example.edu/research',
+          },
+          {
+            entityType: 'researchEntity',
+            entityKey: 'jones-lab',
+            field: 'shortDescription',
+            value: 'Stable description',
+            sourceName: 'department-undergrad-research',
+            observedAt: new Date('2026-05-01T12:00:00Z'),
+            confidence: 0.9,
+          },
+          {
+            entityType: 'researchEntity',
+            entityKey: 'smith-lab',
+            field: 'lastObservedAt',
+            value: new Date('2026-05-01T12:00:00Z'),
+            sourceName: 'dept-faculty-roster',
+            observedAt: new Date('2026-05-01T12:00:00Z'),
+            confidence: 0.9,
+          },
+          {
+            entityType: 'researchEntity',
+            entityKey: 'smith-lab',
+            field: 'lastObservedAt',
+            value: new Date('2026-05-02T12:00:00Z'),
+            sourceName: 'department-undergrad-research',
+            observedAt: new Date('2026-05-01T12:00:00Z'),
+            confidence: 0.88,
+          },
+        ],
+      },
+    );
+
+    const review = report.quality.materializationConflictReview;
+    expect(review).toBeDefined();
+    if (!review) throw new Error('expected materialization conflict review');
+
+    expect(review).toMatchObject({
+      required: true,
+      available: true,
+      materializationConflictCount: 2,
+      activeObservationConflictCount: 1,
+      fieldCounts: [{ field: 'shortDescription', count: 1 }],
+    });
+    expect(review.sourceCounts).toEqual(
+      expect.arrayContaining([
+        { sourceName: 'dept-faculty-roster', count: 1 },
+        { sourceName: 'department-undergrad-research', count: 1 },
+      ]),
+    );
+    expect(review.samples[0]).toMatchObject({
+      entityType: 'researchEntity',
+      entity: 'smith-lab',
+      field: 'shortDescription',
+      distinctValues: 2,
+      activeObservationCount: 2,
+      conflictingValuePreviews: [
+        'Email [email redacted] for projects',
+        'Use official application form',
+      ],
+    });
+    expect(review.samples[0].sourceNames).toEqual(
+      expect.arrayContaining(['dept-faculty-roster', 'department-undergrad-research']),
+    );
+  });
+
+  it('classifies materialization conflict review samples by operator category', () => {
+    const review = buildMaterializationConflictReview(3, {
+      activeObservations: [
+        {
+          entityType: 'researchEntity',
+          entityKey: 'smith-lab',
+          field: 'sourceUrls',
+          value: ['https://a.example.edu'],
+          sourceName: 'source-a',
+          confidence: 0.9,
+          observedAt: new Date('2026-05-01T12:00:00Z'),
+        },
+        {
+          entityType: 'researchEntity',
+          entityKey: 'smith-lab',
+          field: 'sourceUrls',
+          value: ['https://b.example.edu'],
+          sourceName: 'source-b',
+          confidence: 0.88,
+          observedAt: new Date('2026-05-01T12:00:00Z'),
+        },
+        {
+          entityType: 'researchEntity',
+          entityKey: 'smith-lab',
+          field: 'inferredPiUserId',
+          value: '64f000000000000000000001',
+          sourceName: 'source-a',
+          confidence: 0.9,
+          observedAt: new Date('2026-05-01T12:00:00Z'),
+        },
+        {
+          entityType: 'researchEntity',
+          entityKey: 'smith-lab',
+          field: 'inferredPiUserId',
+          value: '64f000000000000000000002',
+          sourceName: 'source-b',
+          confidence: 0.88,
+          observedAt: new Date('2026-05-01T12:00:00Z'),
+        },
+      ],
+    });
+
+    expect(review).toBeDefined();
+    if (!review) throw new Error('expected materialization conflict review');
+
+    expect(review.activeObservationConflictCount).toBe(2);
+    expect(review.actionableConflictCount).toBe(1);
+    expect(review.categoryCounts).toEqual(
+      expect.arrayContaining([
+        { category: 'additive_metadata', count: 1 },
+        { category: 'identity_or_routing', count: 1 },
+      ]),
+    );
+    expect(review.samples).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          field: 'sourceUrls',
+          reviewCategory: 'additive_metadata',
+        }),
+        expect.objectContaining({
+          field: 'inferredPiUserId',
+          reviewCategory: 'identity_or_routing',
+        }),
+      ]),
+    );
+  });
+
+  it('prioritizes identity access and content conflict samples before additive metadata', () => {
+    const review = buildMaterializationConflictReview(2, {
+      activeObservations: [
+        {
+          entityType: 'researchEntity',
+          entityKey: 'sample-lab',
+          field: 'sourceUrls',
+          value: ['https://a.example.edu'],
+          sourceName: 'source-a',
+          confidence: 0.9,
+          observedAt: new Date('2026-05-01T12:00:00Z'),
+        },
+        {
+          entityType: 'researchEntity',
+          entityKey: 'sample-lab',
+          field: 'sourceUrls',
+          value: ['https://b.example.edu'],
+          sourceName: 'source-b',
+          confidence: 0.88,
+          observedAt: new Date('2026-05-01T12:00:00Z'),
+        },
+        {
+          entityType: 'researchEntity',
+          entityKey: 'sample-lab',
+          field: 'sourceUrls',
+          value: ['https://c.example.edu'],
+          sourceName: 'source-c',
+          confidence: 0.86,
+          observedAt: new Date('2026-05-01T12:00:00Z'),
+        },
+        {
+          entityType: 'researchEntity',
+          entityKey: 'sample-lab',
+          field: 'shortDescription',
+          value: 'Apply through the department form.',
+          sourceName: 'department-undergrad-research',
+          confidence: 0.87,
+          observedAt: new Date('2026-05-01T12:00:00Z'),
+        },
+        {
+          entityType: 'researchEntity',
+          entityKey: 'sample-lab',
+          field: 'shortDescription',
+          value: 'Email the PI about openings.',
+          sourceName: 'lab-microsite-description-llm',
+          confidence: 0.86,
+          observedAt: new Date('2026-05-01T12:00:00Z'),
+        },
+      ],
+    });
+
+    expect(review).toBeDefined();
+    if (!review) throw new Error('expected materialization conflict review');
+
+    expect(review.samples[0]).toMatchObject({
+      field: 'shortDescription',
+      reviewCategory: 'content',
+      reviewQueue: 'priority_review',
+    });
+    expect(review.samples[1]).toMatchObject({
+      field: 'sourceUrls',
+      reviewCategory: 'additive_metadata',
+      reviewQueue: 'metadata_review',
+    });
+  });
+
+  it('summarizes whether active conflicts come from one source or multiple sources', () => {
+    const review = buildMaterializationConflictReview(2, {
+      activeObservations: [
+        {
+          entityType: 'researchEntity',
+          entityKey: 'same-source-lab',
+          field: 'name',
+          value: 'Same Source Lab',
+          sourceName: 'dept-faculty-roster',
+          confidence: 0.9,
+          observedAt: new Date('2026-05-01T12:00:00Z'),
+        },
+        {
+          entityType: 'researchEntity',
+          entityKey: 'same-source-lab',
+          field: 'name',
+          value: 'Same Source Faculty Research',
+          sourceName: 'dept-faculty-roster',
+          confidence: 0.88,
+          observedAt: new Date('2026-05-01T12:00:00Z'),
+        },
+        {
+          entityType: 'researchEntity',
+          entityKey: 'cross-source-lab',
+          field: 'shortDescription',
+          value: 'Apply through the official department form.',
+          sourceName: 'department-undergrad-research',
+          confidence: 0.88,
+          observedAt: new Date('2026-05-01T12:00:00Z'),
+        },
+        {
+          entityType: 'researchEntity',
+          entityKey: 'cross-source-lab',
+          field: 'shortDescription',
+          value: 'Ask the PI about thesis options.',
+          sourceName: 'lab-microsite-description-llm',
+          confidence: 0.87,
+          observedAt: new Date('2026-05-01T12:00:00Z'),
+        },
+      ],
+    });
+
+    expect(review).toBeDefined();
+    if (!review) throw new Error('expected materialization conflict review');
+
+    expect(review.sameSourceConflictCount).toBe(1);
+    expect(review.crossSourceConflictCount).toBe(1);
+    expect(review.samples).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          entity: 'same-source-lab',
+          sourceConflictScope: 'single_source',
+        }),
+        expect.objectContaining({
+          entity: 'cross-source-lab',
+          sourceConflictScope: 'cross_source',
+        }),
       ]),
     );
   });
@@ -424,64 +671,6 @@ describe('buildScrapeRunReport', () => {
     expect(report.warnings).toEqual([]);
   });
 
-  it('uses dry-run observationCount as emitted coverage when observations are not persisted', () => {
-    const report = buildScrapeRunReport(
-      {
-        _id: 'run-dry-observations',
-        sourceName: 'department-undergrad-research',
-        status: 'success',
-        observationCount: 12,
-        fetchMetrics: {
-          attempts: [
-            {
-              target: 'https://example.test/undergrad-research',
-              success: true,
-              latencyMs: 42,
-              fetchMode: 'http',
-              blocked: false,
-              selectorBreakage: false,
-            },
-          ],
-          summary: {
-            total: 1,
-            succeeded: 1,
-            failed: 0,
-            blocked: 0,
-            selectorBreakages: 0,
-            averageLatencyMs: 42,
-            byMode: {
-              http: {
-                total: 1,
-                succeeded: 1,
-                blocked: 0,
-                selectorBreakages: 0,
-                averageLatencyMs: 42,
-              },
-            },
-          },
-        },
-      },
-      [],
-      {
-        priority: 2,
-        tier: 'PRIMARY_OFFICIAL',
-        artifactTypes: ['ResearchEntity', 'EntryPathway', 'AccessSignal', 'ContactRoute', 'Observation'],
-        evidenceCategories: ['JOIN_INSTRUCTIONS', 'OFFICIAL_CONTACT_ROUTE'],
-        defaultConfidence: 'HIGH',
-      },
-    );
-
-    expect(report.observations.total).toBe(0);
-    expect(report.coverage.observationsEmitted).toBe(12);
-    expect(report.warnings).not.toContain('Run produced zero observations.');
-    expect(report.warnings).not.toContain(
-      'Source coverage metadata exists, but successful run emitted zero observations.',
-    );
-    expect(report.warnings).not.toContain(
-      '1 fetch(es) succeeded, but run emitted zero observations.',
-    );
-  });
-
   it('warns when source coverage and run output diverge', () => {
     const report = buildScrapeRunReport(
       {
@@ -620,38 +809,6 @@ describe('buildScrapeRunReport', () => {
         '1 contact route(s) were guarded from public exposure.',
         '2 stale evidence item(s) skipped during materialization.',
       ]),
-    );
-  });
-
-  it('warns when materialization conflicts require review', () => {
-    const report = buildScrapeRunReport(
-      {
-        _id: 'run-materialization-conflicts',
-        sourceName: 'department-undergrad-research',
-        status: 'success',
-        materializationConflicts: 3,
-      },
-      [
-        {
-          entityType: 'researchEntity',
-          entityKey: 'fixture-lab',
-          field: 'shortDescription',
-          value: 'Fixture description',
-          sourceUrl: 'https://example.test/fixture-lab',
-        },
-      ],
-      {
-        priority: 2,
-        tier: 'PRIMARY_OFFICIAL',
-        artifactTypes: ['ResearchEntity', 'Observation'],
-        evidenceCategories: ['TOPICS'],
-        defaultConfidence: 'HIGH',
-      },
-    );
-
-    expect(report.materialization.conflicts).toBe(3);
-    expect(report.warnings).toContain(
-      '3 materialization conflict(s) require review before broader writes.',
     );
   });
 

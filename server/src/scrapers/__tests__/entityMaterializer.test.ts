@@ -1,16 +1,26 @@
 import { describe, expect, it } from 'vitest';
 import {
   addPostMaterializationMetrics,
+  buildInferredPiMemberUpsert,
+  centerRelationshipTypeForResolvedTarget,
+  relationshipLabelForType,
+  buildOfficialProfileScholarlyLinkUpserts,
   buildPaperUpdateFromObservations,
+  buildResearchGroupMemberUpsert,
   countListingBackedPostedOpportunitiesForRun,
   emptyPostMaterializationMetrics,
-  mergeMaterializedArrayField,
   mergeUniqueArrayValues,
   normalizeDoiForMaterialization,
+  officialProfileObservationMatchesUser,
+  sanitizeResearchEntitySourceUrlsForMaterialization,
+  selectOfficialProfileObservationUserMatch,
+  shouldPreserveExistingUserIdentityField,
   shouldClearIgnoredAccessClaimForEntity,
   shouldIgnoreObservationForEntityMaterialization,
-  shouldUnionMaterializedField,
   uniqueKeyValueForIdentifier,
+  userLookupFiltersForOfficialProfileObservations,
+  userLookupFiltersForInferredPiUserKey,
+  userLookupValueForInferredPiUserKey,
 } from '../entityMaterializer';
 import { redactDirectContactInfo } from '../../utils/contactRedaction';
 
@@ -33,6 +43,159 @@ describe('entityMaterializer post-materialization metrics', () => {
     expect(uniqueKeyValueForIdentifier('researchEntity', 'dept-cs-example', [])).toBe(
       'dept-cs-example',
     );
+    expect(userLookupValueForInferredPiUserKey('netid:hc685')).toBe('hc685');
+    expect(userLookupValueForInferredPiUserKey('dept:physics:hui-cao')).toBe(
+      'dept:physics:hui-cao',
+    );
+    expect(userLookupValueForInferredPiUserKey('')).toBe('');
+  });
+
+  it('builds tolerant user lookup filters for inferred PI keys', () => {
+    expect(userLookupFiltersForInferredPiUserKey('netid:hc5')).toEqual([{ netid: 'hc5' }]);
+    expect(userLookupFiltersForInferredPiUserKey('netid:hui.cao')).toEqual([
+      { netid: 'hui.cao' },
+      { email: 'hui.cao@yale.edu' },
+    ]);
+    expect(userLookupFiltersForInferredPiUserKey('')).toEqual([]);
+  });
+
+  it('adds a department-scoped name lookup for inferred department PI keys', () => {
+    const filters = userLookupFiltersForInferredPiUserKey(
+      'dept:econ:timothy-christensen',
+      ['Economics'],
+    );
+
+    expect(filters).toEqual([
+      { netid: 'dept:econ:timothy-christensen' },
+      {
+        fname: /^timothy$/i,
+        lname: /^christensen$/i,
+        departments: 'Economics',
+      },
+      {
+        fname: /^timothy$/i,
+        lname: /^christensen$/i,
+        primaryDepartment: 'Economics',
+      },
+    ]);
+  });
+
+  it('builds conservative official-profile user fallback filters', () => {
+    const observations = [
+      { field: 'fname', value: 'A.' },
+      { field: 'lname', value: 'Zayaruznaya' },
+      { field: 'departments', value: ['Music'] },
+      {
+        field: 'profileUrls',
+        value: { departmental: 'https://yalemusic.yale.edu/people/zayaruznaya' },
+      },
+    ];
+
+    expect(userLookupFiltersForOfficialProfileObservations(observations)).toEqual([
+      { lname: /zayaruznaya/i, departments: /music/i },
+      { lname: /zayaruznaya/i, primaryDepartment: /music/i },
+      { name: /zayaruznaya/i, departments: /music/i },
+      { name: /zayaruznaya/i, primaryDepartment: /music/i },
+      { displayName: /zayaruznaya/i, departments: /music/i },
+      { displayName: /zayaruznaya/i, primaryDepartment: /music/i },
+    ]);
+
+    expect(
+      userLookupFiltersForOfficialProfileObservations(
+        observations.filter((obs) => obs.field !== 'profileUrls'),
+      ),
+    ).toEqual([]);
+  });
+
+  it('matches official-profile observations to existing users by name and department', () => {
+    const observations = [
+      { field: 'fname', value: 'A.' },
+      { field: 'lname', value: 'Zayaruznaya' },
+      { field: 'departments', value: ['Music'] },
+      {
+        field: 'profileUrls',
+        value: { departmental: 'https://yalemusic.yale.edu/people/zayaruznaya' },
+      },
+    ];
+
+    expect(
+      officialProfileObservationMatchesUser(observations, {
+        fname: 'AZ',
+        lname: '(A. Zayaruznaya)',
+        primaryDepartment: 'MUSI - Music',
+        departments: ['MUSI - Music'],
+      }),
+    ).toBe(true);
+    expect(
+      officialProfileObservationMatchesUser(observations, {
+        fname: 'Beth',
+        lname: 'Zayaruznaya',
+        primaryDepartment: 'MUSI - Music',
+        departments: ['MUSI - Music'],
+      }),
+    ).toBe(false);
+    expect(
+      officialProfileObservationMatchesUser(observations, {
+        fname: 'AZ',
+        lname: '(A. Zayaruznaya)',
+        primaryDepartment: 'History',
+        departments: ['History'],
+      }),
+    ).toBe(false);
+  });
+
+  it('prefers a canonical user over an email-local alias duplicate', () => {
+    const observations = [
+      { field: 'fname', value: 'A.' },
+      { field: 'lname', value: 'Zayaruznaya' },
+      { field: 'departments', value: ['Music'] },
+      {
+        field: 'profileUrls',
+        value: { departmental: 'https://yalemusic.yale.edu/people/zayaruznaya' },
+      },
+    ];
+    const canonical = {
+      _id: 'canonical',
+      netid: 'az248',
+      fname: 'AZ',
+      lname: '(A. Zayaruznaya)',
+      primaryDepartment: 'MUSI - Music',
+      departments: ['MUSI - Music'],
+    };
+    const alias = {
+      _id: 'alias',
+      netid: 'anna.zayaruznaya',
+      fname: 'A.',
+      lname: 'Zayaruznaya',
+      primaryDepartment: 'Music',
+      departments: ['Music'],
+    };
+
+    expect(
+      selectOfficialProfileObservationUserMatch(
+        observations,
+        [alias, canonical],
+        'anna.zayaruznaya',
+      ),
+    ).toBe(canonical);
+    expect(
+      selectOfficialProfileObservationUserMatch(observations, [alias, canonical], 'az248'),
+    ).toBeNull();
+  });
+
+  it('preserves existing non-initial user names over roster initials', () => {
+    expect(shouldPreserveExistingUserIdentityField('fname', 'A.', { fname: 'AZ' })).toBe(
+      true,
+    );
+    expect(shouldPreserveExistingUserIdentityField('fname', 'A.', { fname: 'Anna' })).toBe(
+      true,
+    );
+    expect(shouldPreserveExistingUserIdentityField('fname', 'Anna', { fname: 'AZ' })).toBe(
+      false,
+    );
+    expect(shouldPreserveExistingUserIdentityField('lname', 'Zayaruznaya', { fname: 'AZ' })).toBe(
+      false,
+    );
   });
 
   it('unions set-like paper fields without duplicating values', () => {
@@ -44,39 +207,23 @@ describe('entityMaterializer post-materialization metrics', () => {
     expect(mergeUniqueArrayValues(undefined, 'arxiv')).toEqual(['arxiv']);
   });
 
-  it('treats research entity evidence arrays as union fields', () => {
-    expect(shouldUnionMaterializedField('researchEntity', 'sourceUrls')).toBe(true);
-    expect(shouldUnionMaterializedField('researchEntity', 'departments')).toBe(true);
-    expect(shouldUnionMaterializedField('researchGroup', 'researchAreas')).toBe(true);
-    expect(shouldUnionMaterializedField('researchEntity', 'websiteUrl')).toBe(false);
-    expect(shouldUnionMaterializedField('user', 'departments')).toBe(false);
-  });
-
-  it('unions all observed values for materialized additive array fields', () => {
+  it('drops content-page URLs from materialized research entity source URLs', () => {
     expect(
-      mergeMaterializedArrayField(
-        ['https://physics.yale.edu/people/marie-curie'],
-        [
-          {
-            field: 'sourceUrls',
-            value: [
-              'https://physics.yale.edu/people/faculty',
-              'https://curielab.yale.edu/',
-            ],
-          },
-          {
-            field: 'sourceUrls',
-            value: ['https://physics.yale.edu/people/marie-curie'],
-          },
-          { field: 'departments', value: ['Physics'] },
-        ],
-        'sourceUrls',
-      ),
+      sanitizeResearchEntitySourceUrlsForMaterialization([
+        'https://bei-lab.com/',
+        'https://ysph.yale.edu/profile/amy-bei/',
+        'https://reporter.nih.gov/project-details/11380220',
+        'https://ysph.yale.edu/news-article/meeting-malaria-where-it-lives/',
+        'https://example.yale.edu/events/lab-open-house',
+      ]),
     ).toEqual([
-      'https://physics.yale.edu/people/marie-curie',
-      'https://physics.yale.edu/people/faculty',
-      'https://curielab.yale.edu/',
+      'https://bei-lab.com/',
+      'https://ysph.yale.edu/profile/amy-bei/',
+      'https://reporter.nih.gov/project-details/11380220',
     ]);
+    expect(sanitizeResearchEntitySourceUrlsForMaterialization('https://example.yale.edu/news')).toBe(
+      'https://example.yale.edu/news',
+    );
   });
 
   it('builds paper bulk updates that union repeated set-like metadata observations', () => {
@@ -124,6 +271,121 @@ describe('entityMaterializer post-materialization metrics', () => {
       authors: { $each: ['Author One', 'Author Two'] },
       sources: { $each: ['openalex'] },
     });
+  });
+
+  it('does not count materializer-managed paper timestamps as resolved fields', () => {
+    const patch = buildPaperUpdateFromObservations(
+      'https://openalex.org/W1',
+      [
+        {
+          field: 'title',
+          value: 'Timestamp-safe paper',
+          sourceName: 'openalex',
+          confidence: 0.9,
+          observedAt: new Date('2026-05-14T00:00:00Z'),
+        },
+        {
+          field: 'lastObservedAt',
+          value: new Date('2026-05-01T00:00:00Z'),
+          sourceName: 'openalex',
+          confidence: 0.9,
+          observedAt: new Date('2026-05-14T00:00:00Z'),
+        },
+        {
+          field: 'lastObservedAt',
+          value: new Date('2026-05-02T00:00:00Z'),
+          sourceName: 'arxiv',
+          confidence: 0.89,
+          observedAt: new Date('2026-05-14T00:00:00Z'),
+        },
+      ],
+      { manuallyLockedFields: [] },
+    );
+
+    expect(patch.conflicts).toBe(0);
+    expect(patch.fieldsWritten).toBe(1);
+    expect(patch.update.$set.title).toBe('Timestamp-safe paper');
+    expect(patch.update.$set.lastObservedAt).toBeInstanceOf(Date);
+    expect(patch.update.$set).not.toHaveProperty('confidenceByField.lastObservedAt');
+  });
+
+  it('ignores official-profile bio observations that are address or page chrome', () => {
+    expect(
+      shouldIgnoreObservationForEntityMaterialization('user', {
+        field: 'bio',
+        sourceName: 'official-profile-pi-backfill',
+        value: 'Kline Tower Room 1247 219 Prospect Street New Haven, CT 06511',
+      }),
+    ).toBe(true);
+    expect(
+      shouldIgnoreObservationForEntityMaterialization('user', {
+        field: 'bio',
+        sourceName: 'official-profile-pi-backfill',
+        value: 'See my webpage for selected publications.',
+      }),
+    ).toBe(true);
+    expect(
+      shouldIgnoreObservationForEntityMaterialization('user', {
+        field: 'bio',
+        sourceName: 'official-profile-pi-backfill',
+        value: 'Medical Research InterestsMammography; Radiology',
+      }),
+    ).toBe(true);
+    expect(
+      shouldIgnoreObservationForEntityMaterialization('user', {
+        field: 'bio',
+        sourceName: 'official-profile-pi-backfill',
+        value: 'Associate Research Scientist in Psychiatry',
+      }),
+    ).toBe(true);
+    expect(
+      shouldIgnoreObservationForEntityMaterialization('user', {
+        field: 'bio',
+        sourceName: 'official-profile-pi-backfill',
+        value:
+          "Joseph Kim studies translational cancer biology and develops clinical research programs. For more on this research, refer to Dr. Kim's complete Google Scholar profile.",
+      }),
+    ).toBe(true);
+    expect(
+      shouldIgnoreObservationForEntityMaterialization('user', {
+        field: 'bio',
+        sourceName: 'official-profile-pi-backfill',
+        value:
+          'Yale Engineering advances AI innovation with seed funding for high-impact research and workshops',
+      }),
+    ).toBe(true);
+    expect(
+      shouldIgnoreObservationForEntityMaterialization('user', {
+        field: 'bio',
+        sourceName: 'official-profile-pi-backfill',
+        value:
+          'Ph.D., English, University of VirginiaM.A., English, McGill UniversityB.A., English, University of California at Los Angeles',
+      }),
+    ).toBe(true);
+    expect(
+      shouldIgnoreObservationForEntityMaterialization('user', {
+        field: 'bio',
+        sourceName: 'official-profile-pi-backfill',
+        value:
+          'Yingzheng Fan, Yu Yan, Obinna Nwokonkwo, John Kim, Margaret Liu, Leo Chen, Lea R. Winter*. "Tuning membranes for selective separations." Nature Materials 2024.',
+      }),
+    ).toBe(true);
+    expect(
+      shouldIgnoreObservationForEntityMaterialization('user', {
+        field: 'bio',
+        sourceName: 'official-profile-pi-backfill',
+        value:
+          "View this doctor's clinical profile on the Yale Medicine website for information about the services we offer and making an appointment.",
+      }),
+    ).toBe(true);
+    expect(
+      shouldIgnoreObservationForEntityMaterialization('user', {
+        field: 'bio',
+        sourceName: 'official-profile-pi-backfill',
+        value:
+          'Dana Angluin studies algorithmic learning theory, formal languages, and computational models for learning from queries.',
+      }),
+    ).toBe(false);
   });
 
   it('ignores untrusted paper-source author ids when building paper updates', () => {
@@ -319,6 +581,18 @@ describe('entityMaterializer post-materialization metrics', () => {
 
   it('ignores discovery-only acceptingUndergrads observations for research groups', () => {
     expect(
+      shouldIgnoreObservationForEntityMaterialization('researchEntity', {
+        field: 'lastObservedAt',
+        sourceName: 'dept-faculty-roster',
+      }),
+    ).toBe(true);
+    expect(
+      shouldIgnoreObservationForEntityMaterialization('user', {
+        field: 'officialProfilePublications',
+        sourceName: 'dept-faculty-roster',
+      }),
+    ).toBe(true);
+    expect(
       shouldIgnoreObservationForEntityMaterialization('researchGroup', {
         field: 'acceptingUndergrads',
         sourceName: 'ysm-atoz-index',
@@ -364,5 +638,339 @@ describe('entityMaterializer post-materialization metrics', () => {
     expect(redactDirectContactInfo('Email ada@yale.edu or call 203-432-1234.')).toBe(
       'Email [email redacted] or call [phone redacted].',
     );
+  });
+
+  it('builds a PI membership upsert from inferredPiUserId observations', () => {
+    const patch = buildInferredPiMemberUpsert(
+      '64f000000000000000000010',
+      {
+        value: '64f000000000000000000020',
+        sourceUrl: 'https://medicine.yale.edu/lab/yachiho/',
+        sourceName: 'ysm-atoz-index',
+        confidence: 0.84,
+        observedAt: new Date('2026-05-25T00:00:00Z'),
+      },
+    );
+
+    expect(patch).toEqual({
+      filter: {
+        researchEntityId: '64f000000000000000000010',
+        userId: '64f000000000000000000020',
+        role: 'pi',
+        isCurrentMember: true,
+      },
+      update: {
+        $set: {
+          researchEntityId: '64f000000000000000000010',
+          researchGroupId: '64f000000000000000000010',
+          userId: '64f000000000000000000020',
+          role: 'pi',
+          isCurrentMember: true,
+          sourceUrl: 'https://medicine.yale.edu/lab/yachiho/',
+          confidence: 0.84,
+          lastObservedAt: new Date('2026-05-25T00:00:00Z'),
+          'confidenceByField.role': 0.84,
+          'fieldProvenance.role': {
+            sourceName: 'ysm-atoz-index',
+            sourceUrl: 'https://medicine.yale.edu/lab/yachiho/',
+            observedAt: new Date('2026-05-25T00:00:00Z'),
+            confidence: 0.84,
+          },
+        },
+        $setOnInsert: {
+          startedAt: new Date('2026-05-25T00:00:00Z'),
+        },
+      },
+    });
+  });
+
+  it('builds a research entity member upsert from center member observations', () => {
+    const observedAt = new Date('2026-06-06T00:00:00Z');
+    const patch = buildResearchGroupMemberUpsert(
+      '64f000000000000000000010',
+      {
+        researchGroupKey: {
+          value: 'center-cowles',
+          confidence: 0.9,
+          sourceName: 'centers-institutes-index',
+          observedAt,
+          hasConflict: false,
+          contributingSources: ['centers-institutes-index'],
+        },
+        role: {
+          value: 'director',
+          confidence: 0.86,
+          sourceName: 'centers-institutes-index',
+          sourceUrl: 'https://egc.yale.edu/people/faculty',
+          observedAt,
+          hasConflict: false,
+          contributingSources: ['centers-institutes-index'],
+        },
+        inferredUserName: {
+          value: { fname: 'Jane', lname: 'Doe' },
+          confidence: 0.86,
+          sourceName: 'centers-institutes-index',
+          observedAt,
+          hasConflict: false,
+          contributingSources: ['centers-institutes-index'],
+        },
+        title: {
+          value: 'Director, Cowles Foundation',
+          confidence: 0.86,
+          sourceName: 'centers-institutes-index',
+          observedAt,
+          hasConflict: false,
+          contributingSources: ['centers-institutes-index'],
+        },
+      },
+      { _id: '64f000000000000000000020', facultyMemberId: '64f000000000000000000030' },
+    );
+
+    expect(patch).toMatchObject({
+      filter: {
+        researchEntityId: '64f000000000000000000010',
+        userId: '64f000000000000000000020',
+        role: 'director',
+        isCurrentMember: true,
+      },
+      update: {
+        $set: {
+          researchEntityId: '64f000000000000000000010',
+          researchGroupId: '64f000000000000000000010',
+          userId: '64f000000000000000000020',
+          facultyMemberId: '64f000000000000000000030',
+          name: 'Jane Doe',
+          role: 'director',
+          isCurrentMember: true,
+          sourceUrl: 'https://egc.yale.edu/people/faculty',
+          confidence: 0.86,
+          title: 'Director, Cowles Foundation',
+          'confidenceByField.role': 0.86,
+          'confidenceByField.title': 0.86,
+          'fieldProvenance.role': {
+            sourceName: 'centers-institutes-index',
+            sourceUrl: 'https://egc.yale.edu/people/faculty',
+            observedAt,
+            confidence: 0.86,
+          },
+        },
+        $setOnInsert: { startedAt: observedAt },
+      },
+    });
+  });
+
+  it('builds official-profile scholarly link upserts from user observations', () => {
+    const observedAt = new Date('2026-05-25T00:00:00Z');
+    const ops = buildOfficialProfileScholarlyLinkUpserts('64f000000000000000000020', [
+      {
+        field: 'officialProfilePublications',
+        sourceName: 'dept-faculty-roster',
+        sourceUrl: 'https://eall.yale.edu/people/tina-lu',
+        confidence: 0.9,
+        observedAt,
+        value: [
+          {
+            title: 'Persons, Roles and Minds',
+            year: 2001,
+            venue: 'Stanford University Press',
+            url: 'https://example.edu/persons-roles-and-minds.pdf',
+            sourceUrl: 'https://eall.yale.edu/people/tina-lu',
+          },
+        ],
+      },
+    ]);
+
+    expect(ops).toHaveLength(1);
+    expect(ops[0].updateOne.filter).toMatchObject({
+      userId: expect.anything(),
+      url: 'https://example.edu/persons-roles-and-minds.pdf',
+    });
+    expect(String(ops[0].updateOne.filter.userId)).toBe('64f000000000000000000020');
+    expect(ops[0].updateOne.update.$set).toMatchObject({
+      title: 'Persons, Roles and Minds',
+      url: 'https://example.edu/persons-roles-and-minds.pdf',
+      destinationKind: 'OTHER',
+      displaySource: 'Official Yale profile',
+      freeFullTextUrl: '',
+      freeFullTextLabel: '',
+      discoveredVia: 'OFFICIAL_PROFILE',
+      year: 2001,
+      venue: 'Stanford University Press',
+      confidence: 0.9,
+      observedAt,
+      sourceUrl: 'https://eall.yale.edu/people/tina-lu',
+      externalIds: {
+        officialProfileSourceUrl: 'https://eall.yale.edu/people/tina-lu',
+      },
+      archived: false,
+    });
+  });
+
+  it('deduplicates official-profile scholarly link upserts by destination URL', () => {
+    const ops = buildOfficialProfileScholarlyLinkUpserts('64f000000000000000000020', [
+      {
+        field: 'officialProfilePublications',
+        sourceName: 'dept-faculty-roster',
+        sourceUrl: 'https://physics.yale.edu/people/example',
+        confidence: 0.9,
+        observedAt: new Date('2026-05-25T00:00:00Z'),
+        value: [
+          {
+            title: 'First title',
+            url: 'https://www.ncbi.nlm.nih.gov/pubmed/32737322',
+            sourceUrl: 'https://physics.yale.edu/people/example',
+          },
+          {
+            title: 'Second title',
+            url: 'https://www.ncbi.nlm.nih.gov/pubmed/32737322',
+            sourceUrl: 'https://physics.yale.edu/people/example-publications',
+          },
+        ],
+      },
+    ]);
+
+    expect(ops).toHaveLength(1);
+    expect(ops[0].updateOne.filter).toMatchObject({
+      userId: expect.anything(),
+      url: 'https://www.ncbi.nlm.nih.gov/pubmed/32737322',
+    });
+  });
+
+  it('does not materialize partial publication years from malformed strings', () => {
+    const ops = buildOfficialProfileScholarlyLinkUpserts('64f000000000000000000020', [
+      {
+        field: 'officialProfilePublications',
+        sourceName: 'dept-faculty-roster',
+        sourceUrl: 'https://physics.yale.edu/people/example',
+        confidence: 0.9,
+        observedAt: new Date('2026-05-25T00:00:00Z'),
+        value: [
+          {
+            title: 'Malformed year paper',
+            year: '2024abc',
+            url: 'https://example.edu/malformed-year-paper',
+            sourceUrl: 'https://physics.yale.edu/people/example',
+          },
+        ],
+      },
+    ]);
+
+    expect(ops).toHaveLength(1);
+    expect(ops[0].updateOne.update.$set).not.toHaveProperty('year');
+  });
+
+  it('does not materialize implausible future publication years', () => {
+    const ops = buildOfficialProfileScholarlyLinkUpserts('64f000000000000000000020', [
+      {
+        field: 'officialProfilePublications',
+        sourceName: 'dept-faculty-roster',
+        sourceUrl: 'https://physics.yale.edu/people/example',
+        confidence: 0.9,
+        observedAt: new Date('2026-05-25T00:00:00Z'),
+        value: [
+          {
+            title: 'Future year paper',
+            year: '9999',
+            url: 'https://example.edu/future-year-paper',
+            sourceUrl: 'https://physics.yale.edu/people/example',
+          },
+        ],
+      },
+    ]);
+
+    expect(ops).toHaveLength(1);
+    expect(ops[0].updateOne.update.$set).not.toHaveProperty('year');
+  });
+
+  it('does not build official-profile scholarly link upserts for unsafe destination URLs', () => {
+    const ops = buildOfficialProfileScholarlyLinkUpserts('64f000000000000000000020', [
+      {
+        field: 'officialProfilePublications',
+        sourceName: 'dept-faculty-roster',
+        sourceUrl: 'https://physics.yale.edu/people/example',
+        confidence: 0.9,
+        observedAt: new Date('2026-05-25T00:00:00Z'),
+        value: [
+          {
+            title: 'Unsafe destination paper',
+            year: 2024,
+            url: 'javascript:alert(1)',
+            sourceUrl: 'https://physics.yale.edu/people/example',
+          },
+        ],
+      },
+    ]);
+
+    expect(ops).toEqual([]);
+  });
+
+  it('does not build official-profile scholarly link upserts without HTTP source provenance', () => {
+    const ops = buildOfficialProfileScholarlyLinkUpserts('64f000000000000000000020', [
+      {
+        field: 'officialProfilePublications',
+        sourceName: 'dept-faculty-roster',
+        sourceUrl: 'mailto:professor@example.edu',
+        confidence: 0.9,
+        observedAt: new Date('2026-05-25T00:00:00Z'),
+        value: [
+          {
+            title: 'Unsafe provenance paper',
+            year: 2024,
+            url: 'https://example.edu/paper',
+          },
+        ],
+      },
+    ]);
+
+    expect(ops).toEqual([]);
+  });
+
+  it('does not build official-profile scholarly link upserts without destination URLs', () => {
+    const ops = buildOfficialProfileScholarlyLinkUpserts('64f000000000000000000020', [
+      {
+        field: 'officialProfilePublications',
+        sourceName: 'dept-faculty-roster',
+        sourceUrl: 'https://eall.yale.edu/people/tina-lu',
+        confidence: 0.9,
+        observedAt: new Date('2026-05-25T00:00:00Z'),
+        value: [
+          {
+            title: 'Persons, Roles and Minds',
+            year: 2001,
+            venue: 'Stanford University Press',
+            sourceUrl: 'https://eall.yale.edu/people/tina-lu',
+          },
+        ],
+      },
+    ]);
+
+    expect(ops).toEqual([]);
+  });
+});
+
+describe('center relationship type + label resolution', () => {
+  it('chooses AFFILIATED_LAB when the resolved target is a real research home', () => {
+    expect(
+      centerRelationshipTypeForResolvedTarget('amy-arnsten-lab', 'MEMBER_RESEARCH_AREA'),
+    ).toBe('AFFILIATED_LAB');
+  });
+
+  it('keeps the fallback type for a generated faculty-research-area target', () => {
+    expect(
+      centerRelationshipTypeForResolvedTarget('faculty-research-area-amy-arnsten', 'MEMBER_RESEARCH_AREA'),
+    ).toBe('MEMBER_RESEARCH_AREA');
+  });
+
+  it('keeps the fallback type when the slug is empty', () => {
+    expect(centerRelationshipTypeForResolvedTarget('', 'MEMBER_RESEARCH_AREA')).toBe(
+      'MEMBER_RESEARCH_AREA',
+    );
+  });
+
+  it('labels each relationship type, with a generic fallback', () => {
+    expect(relationshipLabelForType('AFFILIATED_LAB')).toBe('Affiliated lab');
+    expect(relationshipLabelForType('MEMBER_RESEARCH_AREA')).toBe('Member');
+    expect(relationshipLabelForType('HOSTED_PROGRAM')).toBe('Hosted program');
+    expect(relationshipLabelForType('SOMETHING_ELSE')).toBe('Related research home');
   });
 });

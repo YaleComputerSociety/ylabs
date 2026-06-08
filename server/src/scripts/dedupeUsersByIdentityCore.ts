@@ -4,7 +4,9 @@ export type UserIdentityField = DuplicatePersonGroup['identityField'];
 
 export interface DedupeUsersByIdentityArgs {
   apply: boolean;
+  confirmUserIdentityDedupe: boolean;
   limit: number;
+  limitProvided: boolean;
   identityField?: UserIdentityField;
   output?: string;
   sampleSize: number;
@@ -83,17 +85,32 @@ function valueAfterEquals(arg: string, flag: string): string | undefined {
   return arg.startsWith(`${flag}=`) ? arg.slice(flag.length + 1) : undefined;
 }
 
+function consumeValue(argv: string[], index: number, flag: string): { value: string; nextIndex: number } {
+  const arg = argv[index];
+  const inline = valueAfterEquals(arg, flag);
+  const value = inline !== undefined ? inline : arg === flag ? argv[index + 1] : undefined;
+  if (value === undefined || value.trim() === '' || value.startsWith('--')) {
+    throw new Error(`${flag} requires a value`);
+  }
+  return { value, nextIndex: inline !== undefined ? index : index + 1 };
+}
+
 export function parseDedupeUsersByIdentityArgs(argv: string[]): DedupeUsersByIdentityArgs {
   let apply = false;
+  let confirmUserIdentityDedupe = false;
   let limit = 100;
+  let limitProvided = false;
   let identityField: UserIdentityField | undefined;
   let output: string | undefined;
   let sampleSize = 25;
   let maxApplyGroups: number | undefined;
 
   const parsePositiveInteger = (value: string, flag: string): number => {
+    if (!/^[1-9]\d*$/.test(value)) {
+      throw new Error(`${flag} must be a positive integer`);
+    }
     const parsed = Number(value);
-    if (!Number.isInteger(parsed) || parsed < 1) {
+    if (!Number.isSafeInteger(parsed)) {
       throw new Error(`${flag} must be a positive integer`);
     }
     return parsed;
@@ -106,46 +123,58 @@ export function parseDedupeUsersByIdentityArgs(argv: string[]): DedupeUsersByIde
       apply = true;
       continue;
     }
+    if (arg === '--confirm-user-identity-dedupe') {
+      confirmUserIdentityDedupe = true;
+      continue;
+    }
+    if (arg.startsWith('--confirm-user-identity-dedupe=')) {
+      throw new Error('--confirm-user-identity-dedupe does not accept a value');
+    }
     if (arg === '--dry-run') {
       apply = false;
       continue;
     }
 
-    const limitValue = valueAfterEquals(arg, '--limit') || (arg === '--limit' ? argv[++index] : '');
-    if (limitValue) {
+    if (arg === '--limit' || arg.startsWith('--limit=')) {
+      const { value: limitValue, nextIndex } = consumeValue(argv, index, '--limit');
       limit = parsePositiveInteger(limitValue, '--limit');
+      limitProvided = true;
+      index = nextIndex;
       continue;
     }
 
-    const fieldValue =
-      valueAfterEquals(arg, '--identity-field') ||
-      (arg === '--identity-field' ? argv[++index] : '');
-    if (fieldValue) {
+    if (arg === '--identity-field' || arg.startsWith('--identity-field=')) {
+      const { value: fieldValue, nextIndex } = consumeValue(argv, index, '--identity-field');
       if (!IDENTITY_FIELDS.includes(fieldValue as UserIdentityField)) {
         throw new Error(`--identity-field must be one of: ${IDENTITY_FIELDS.join(', ')}`);
       }
       identityField = fieldValue as UserIdentityField;
+      index = nextIndex;
       continue;
     }
 
-    const outputValue = valueAfterEquals(arg, '--output') || (arg === '--output' ? argv[++index] : '');
-    if (outputValue) {
+    if (arg === '--output' || arg.startsWith('--output=')) {
+      const { value: outputValue, nextIndex } = consumeValue(argv, index, '--output');
       output = outputValue;
+      index = nextIndex;
       continue;
     }
 
-    const sampleSizeValue =
-      valueAfterEquals(arg, '--sample-size') || (arg === '--sample-size' ? argv[++index] : '');
-    if (sampleSizeValue) {
+    if (arg === '--sample-size' || arg.startsWith('--sample-size=')) {
+      const { value: sampleSizeValue, nextIndex } = consumeValue(argv, index, '--sample-size');
       sampleSize = parsePositiveInteger(sampleSizeValue, '--sample-size');
+      index = nextIndex;
       continue;
     }
 
-    const maxApplyGroupsValue =
-      valueAfterEquals(arg, '--max-apply-groups') ||
-      (arg === '--max-apply-groups' ? argv[++index] : '');
-    if (maxApplyGroupsValue) {
+    if (arg === '--max-apply-groups' || arg.startsWith('--max-apply-groups=')) {
+      const { value: maxApplyGroupsValue, nextIndex } = consumeValue(
+        argv,
+        index,
+        '--max-apply-groups',
+      );
       maxApplyGroups = parsePositiveInteger(maxApplyGroupsValue, '--max-apply-groups');
+      index = nextIndex;
       continue;
     }
 
@@ -154,7 +183,9 @@ export function parseDedupeUsersByIdentityArgs(argv: string[]): DedupeUsersByIde
 
   return {
     apply,
+    confirmUserIdentityDedupe,
     limit,
+    limitProvided,
     ...(identityField ? { identityField } : {}),
     ...(output ? { output } : {}),
     sampleSize,

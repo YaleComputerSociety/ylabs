@@ -1,188 +1,124 @@
 import dotenv from 'dotenv';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
-import { Paper } from '../models/paper';
-import { ResearchScholarlyAttribution } from '../models/researchScholarlyAttribution';
-import { ResearchScholarlyLink } from '../models/researchScholarlyLink';
-import {
-  buildPaperQualityReportFromCounts,
-  type PaperQualityCounts,
-} from '../services/paperQualityService';
+import { buildPaperQualityAudit } from '../services/paperQualityService';
+import { assertScriptApplyAllowed } from './scriptWriteGuards';
+
+dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
-interface CliOptions {
+export interface PaperQualityAuditCliOptions {
   sampleLimit: number;
+  strict: boolean;
+  output?: string;
 }
 
-const activePaperFilter = { archived: { $ne: true } };
-
-function parseArgs(argv: string[]): CliOptions {
-  const options: CliOptions = {
+export function parsePaperQualityAuditArgs(argv: string[]): PaperQualityAuditCliOptions {
+  const options: PaperQualityAuditCliOptions = {
     sampleLimit: 20,
+    strict: false,
   };
 
-  for (const arg of argv) {
-    if (arg.startsWith('--sample-limit=')) {
-      const parsed = Number(arg.slice('--sample-limit='.length));
-      if (Number.isFinite(parsed) && parsed >= 0) options.sampleLimit = Math.floor(parsed);
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+    if (arg === '--strict') {
+      options.strict = true;
+    } else if (arg.startsWith('--sample-limit=')) {
+      options.sampleLimit = parseNonNegativeInteger(
+        arg.slice('--sample-limit='.length),
+        '--sample-limit',
+      );
+    } else if (arg === '--output') {
+      const next = argv[i + 1];
+      if (!next || next.startsWith('--')) throw new Error('--output requires a path');
+      options.output = next;
+      i += 1;
+    } else if (arg.startsWith('--output=')) {
+      const output = arg.slice('--output='.length).trim();
+      if (!output || output.startsWith('--')) throw new Error('--output requires a path');
+      options.output = output;
+    } else {
+      throw new Error(`Unknown argument: ${arg}`);
     }
   }
 
   return options;
 }
 
-async function countDuplicateGroups(field: string): Promise<number> {
-  const rows = await Paper.aggregate([
-    {
-      $match: {
-        ...activePaperFilter,
-        [field]: { $exists: true, $type: 'string', $ne: '' },
-      },
-    },
-    {
-      $group: {
-        _id: { $toLower: `$${field}` },
-        count: { $sum: 1 },
-      },
-    },
-    { $match: { count: { $gt: 1 } } },
-    { $count: 'groups' },
-  ]);
-
-  return rows[0]?.groups || 0;
+function parseNonNegativeInteger(value: string, flag: string): number {
+  if (!/^(0|[1-9]\d*)$/.test(value)) {
+    throw new Error(`${flag} must be a non-negative integer`);
+  }
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed)) {
+    throw new Error(`${flag} must be a non-negative integer`);
+  }
+  return parsed;
 }
 
-export async function buildPaperQualityCounts(): Promise<PaperQualityCounts> {
-  const currentYear = new Date().getFullYear();
-  const [
-    totalActivePapers,
-    totalActiveScholarlyLinks,
-    totalScholarlyAttributions,
-    missingTitle,
-    genericTitle,
-    htmlTitle,
-    missingInspectableLink,
-    missingYearOrDate,
-    invalidYear,
-    negativeCitationCount,
-    missingSourceLabel,
-    duplicateDoiGroups,
-    duplicateOpenAlexGroups,
-    duplicateArxivGroups,
-    duplicateSemanticScholarGroups,
-  ] = await Promise.all([
-    Paper.countDocuments(activePaperFilter),
-    ResearchScholarlyLink.countDocuments(activePaperFilter),
-    ResearchScholarlyAttribution.countDocuments(activePaperFilter),
-    Paper.countDocuments({
-      ...activePaperFilter,
-      $or: [{ title: { $exists: false } }, { title: null }, { title: /^\s*$/ }],
-    }),
-    Paper.countDocuments({
-      ...activePaperFilter,
-      title: /^\s*(untitled|unknown|n\/a|paper|publication|research activity)\s*$/i,
-    }),
-    Paper.countDocuments({
-      ...activePaperFilter,
-      title: /<[^>]+>/,
-    }),
-    Paper.countDocuments({
-      ...activePaperFilter,
-      doi: { $in: [null, ''] },
-      openAlexId: { $in: [null, ''] },
-      semanticScholarId: { $in: [null, ''] },
-      arxivId: { $in: [null, ''] },
-      url: { $in: [null, ''] },
-      openAccessUrl: { $in: [null, ''] },
-      landingPageUrl: { $in: [null, ''] },
-      pdfUrl: { $in: [null, ''] },
-    }),
-    Paper.countDocuments({
-      ...activePaperFilter,
-      year: { $exists: false },
-      publishedAt: { $exists: false },
-      postedAt: { $exists: false },
-      versionDate: { $exists: false },
-    }),
-    Paper.countDocuments({
-      ...activePaperFilter,
-      $or: [{ year: { $lt: 1500 } }, { year: { $gt: currentYear + 1 } }],
-    }),
-    Paper.countDocuments({
-      ...activePaperFilter,
-      citationCount: { $lt: 0 },
-    }),
-    Paper.countDocuments({
-      ...activePaperFilter,
-      $or: [{ sources: { $exists: false } }, { sources: { $size: 0 } }],
-    }),
-    countDuplicateGroups('doi'),
-    countDuplicateGroups('openAlexId'),
-    countDuplicateGroups('arxivId'),
-    countDuplicateGroups('semanticScholarId'),
-  ]);
+export function writePaperQualityAuditOutput(report: unknown, output?: string): void {
+  if (!output) return;
+  fs.mkdirSync(path.dirname(output), { recursive: true });
+  fs.writeFileSync(output, `${JSON.stringify(report, null, 2)}\n`);
+}
 
+export function buildPaperQualityAuditOutput<T extends object>(
+  report: T,
+  metadata: {
+    environment?: string;
+    db?: string;
+    options: PaperQualityAuditCliOptions;
+  },
+): T & {
+  environment?: string;
+  db?: string;
+  options: PaperQualityAuditCliOptions;
+} {
   return {
-    totalActivePapers,
-    totalActiveScholarlyLinks,
-    totalScholarlyAttributions,
-    missingTitle,
-    genericTitle,
-    htmlTitle,
-    missingInspectableLink,
-    missingYearOrDate,
-    invalidYear,
-    negativeCitationCount,
-    missingSourceLabel,
-    duplicateDoiGroups,
-    duplicateOpenAlexGroups,
-    duplicateArxivGroups,
-    duplicateSemanticScholarGroups,
+    ...report,
+    ...(metadata.environment ? { environment: metadata.environment } : {}),
+    ...(metadata.db ? { db: metadata.db } : {}),
+    options: metadata.options,
   };
 }
 
-async function buildSamples(limit: number): Promise<unknown[]> {
-  if (limit <= 0) return [];
+async function main() {
+  const options = parsePaperQualityAuditArgs(process.argv.slice(2));
+  const guard = assertScriptApplyAllowed({
+    apply: false,
+    scriptName: 'scholarlyLinkQualityAudit',
+    mongoUrl: process.env.MONGODBURL,
+  });
 
-  return Paper.find(activePaperFilter)
-    .select('title doi openAlexId semanticScholarId arxivId year publishedAt sources')
-    .sort({ updatedAt: -1 })
-    .limit(limit)
-    .lean();
-}
-
-async function main(): Promise<void> {
-  const options = parseArgs(process.argv.slice(2));
   await initializeConnections();
-
-  const counts = await buildPaperQualityCounts();
-  const report = buildPaperQualityReportFromCounts(counts);
-  const samples = await buildSamples(options.sampleLimit);
+  const report = await buildPaperQualityAudit(options.sampleLimit);
+  const output = buildPaperQualityAuditOutput(report, {
+    environment: guard.environment,
+    db: guard.dbLabel,
+    options,
+  });
 
   console.log(
-    JSON.stringify(
-      {
-        generatedAt: new Date().toISOString(),
-        options,
-        ...report,
-        samples,
-      },
-      null,
-      2,
-    ),
+    JSON.stringify(output, null, 2),
   );
+  writePaperQualityAuditOutput(output, options.output);
+
+  if (options.strict && !report.pass) {
+    process.exitCode = 1;
+  }
 }
 
-main()
-  .catch((error) => {
-    console.error(error instanceof Error ? error.message : error);
-    process.exitCode = 1;
-  })
-  .finally(async () => {
-    await mongoose.disconnect();
-  });
+if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
+  main()
+    .catch((error) => {
+      console.error('Failed to run scholarly link quality audit:', error);
+      process.exitCode = 1;
+    })
+    .finally(async () => {
+      await mongoose.disconnect();
+    });
+}

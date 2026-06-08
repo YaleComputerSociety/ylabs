@@ -92,6 +92,28 @@ describe('ResearchInterests', () => {
     expect(screen.queryByText('No research interests available.')).toBeNull();
   });
 
+  it('renders both the context summary and the tag chips when both are available', () => {
+    render(
+      <ResearchInterests
+        topics={['Middle Eastern Studies', 'Cultural Identity']}
+        interests={['Conflict Dynamics']}
+        summary="Travis Zadeh studies the social and intellectual history of the medieval Islamic world, with attention to the circulation of texts, knowledge, and belief."
+      />,
+    );
+
+    const section = screen.getByText('Research Interests').closest('section');
+    expect(
+      screen.getByText(
+        'Travis Zadeh studies the social and intellectual history of the medieval Islamic world, with attention to the circulation of texts, knowledge, and belief.',
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText('Middle Eastern Studies')).toBeTruthy();
+    expect(screen.getByText('Cultural Identity')).toBeTruthy();
+    expect(screen.getByText('Conflict Dynamics')).toBeTruthy();
+    expect(section?.textContent).toContain('intellectual history of the medieval Islamic world');
+    expect(screen.queryByText('No research interests available.')).toBeNull();
+  });
+
   it('does not render YSM publication widget chrome as research interests', () => {
     render(
       <ResearchInterests

@@ -34,6 +34,7 @@ const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
 const MAX_PAGES_PER_CENTER = 30;
 
+
 export type CenterKind = 'center' | 'institute' | 'program' | 'initiative';
 export type MemberRole = 'director' | 'co-director' | 'core-faculty' | 'affiliated';
 
@@ -496,10 +497,6 @@ export function centerToGroupObservations(
   if (declaredDepts.length > 0) {
     obs.push({ ...base, field: 'departments', value: declaredDepts });
   }
-  if (members.length > 0) {
-    const names = members.map((m) => normalizeName(m.name)).filter(Boolean);
-    obs.push({ ...base, field: 'affiliatedNames', value: names });
-  }
   return { observations: obs, entityKey };
 }
 
@@ -515,14 +512,28 @@ export function memberToObservations(
   config: CenterConfig,
   sourceUrl: string,
 ): ObservationInput[] {
+  return memberObservationsForEntityKey(`center-${config.centerKey}`, member, sourceUrl);
+}
+
+/**
+ * ResearchGroupMember observations for a member of an arbitrary center entity,
+ * keyed by the center's own entity slug (e.g. `center-cowles`, `yse-industrial-ecology`,
+ * `center-jackson-centers-blue-center-...`). Shared by the HTML roster scrapers and
+ * the LLM affiliation extractor so both feed the same materializer path.
+ */
+export function memberObservationsForEntityKey(
+  centerEntityKey: string,
+  member: CenterMember,
+  sourceUrl: string,
+): ObservationInput[] {
   const cleaned = normalizeName(member.name);
   const { first, last } = splitName(cleaned);
   const memberSlug = slugify(cleaned);
-  if (!memberSlug) return [];
-  const entityKey = `center-${config.centerKey}:${memberSlug}`;
+  if (!centerEntityKey || !memberSlug) return [];
+  const entityKey = `${centerEntityKey}:${memberSlug}`;
   const base = { entityType: 'researchGroupMember' as const, entityKey, sourceUrl };
   const obs: ObservationInput[] = [
-    { ...base, field: 'researchGroupKey', value: `center-${config.centerKey}` },
+    { ...base, field: 'researchGroupKey', value: centerEntityKey },
     { ...base, field: 'role', value: member.role || 'core-faculty' },
     { ...base, field: 'inferredUserName', value: { fname: first, lname: last } },
   ];
@@ -533,6 +544,65 @@ export function memberToObservations(
     obs.push({ ...base, field: 'title', value: member.title });
   }
   return obs;
+}
+
+function facultyResearchAreaKey(memberName: string): string {
+  return `faculty-research-area-${slugify(memberName)}`.slice(0, 100);
+}
+
+/**
+ * Conservative institute-to-research-home relationship observations.
+ *
+ * A center member page proves affiliation with the umbrella entity, but not a
+ * lab opening or standalone research home. Emit only the relationship; the
+ * materializer resolves the `faculty-research-area-*` target key to the member's
+ * existing PI-led lab (preferred, as `AFFILIATED_LAB`) or a faculty-research-area
+ * entity (`MEMBER_RESEARCH_AREA`), and skips when nothing resolves — it never
+ * mints a weak duplicate shell. Emitted for every roster center; the
+ * resolve-or-skip gate in the materializer keeps it safe without an allowlist.
+ */
+export function centerMemberRelationshipObservations(
+  member: CenterMember,
+  config: CenterConfig,
+  sourceUrl: string,
+): ObservationInput[] {
+  return centerMemberRelationshipObservationsForEntityKey(
+    `center-${config.centerKey}`,
+    member,
+    sourceUrl,
+  );
+}
+
+/**
+ * Umbrella → faculty relationship observations for an arbitrary center entity,
+ * keyed by the center's own entity slug. Shared by the HTML roster scrapers and
+ * the LLM affiliation extractor. The materializer prefers the member's existing
+ * lab (AFFILIATED_LAB) and skips unresolved members.
+ */
+export function centerMemberRelationshipObservationsForEntityKey(
+  centerEntityKey: string,
+  member: CenterMember,
+  sourceUrl: string,
+): ObservationInput[] {
+  const cleaned = normalizeName(member.name);
+  const targetEntityKey = facultyResearchAreaKey(cleaned);
+  if (!centerEntityKey || !cleaned || !targetEntityKey) return [];
+
+  const relationshipType = 'MEMBER_RESEARCH_AREA';
+  const relationshipKey = `${centerEntityKey}:${targetEntityKey}:${relationshipType}`;
+  const relationshipBase = {
+    entityType: 'researchEntityRelationship' as const,
+    entityKey: relationshipKey,
+    sourceUrl,
+  };
+
+  return [
+    { ...relationshipBase, field: 'sourceEntityKey', value: centerEntityKey },
+    { ...relationshipBase, field: 'targetEntityKey', value: targetEntityKey },
+    { ...relationshipBase, field: 'relationshipType', value: relationshipType },
+    { ...relationshipBase, field: 'evidenceStrength', value: 'MODERATE' },
+    { ...relationshipBase, field: 'confidence', value: 0.72 },
+  ];
 }
 
 /**
@@ -581,7 +651,11 @@ export class CentersInstitutesScraper implements IScraper {
       ctx.options.only && ctx.options.only.length > 0
         ? new Set(ctx.options.only.map((s) => s.trim().toLowerCase()))
         : null;
-    const limit = ctx.options.limit && ctx.options.limit > 0 ? ctx.options.limit : Infinity;
+    const limitOption = ctx.options.limit;
+    if (limitOption !== undefined && (!Number.isSafeInteger(limitOption) || limitOption < 1)) {
+      throw new Error('--limit must be a safe positive integer');
+    }
+    const limit = limitOption ?? Infinity;
 
     let totalObs = 0;
     let totalMembers = 0;
@@ -670,6 +744,13 @@ export class CentersInstitutesScraper implements IScraper {
           await ctx.emit(memberObs);
           totalObs += memberObs.length;
           totalMembers++;
+        }
+
+        // Conservative umbrella → faculty relationship (allowlisted centers only)
+        const relationshipObs = centerMemberRelationshipObservations(member, config, sourceUrl);
+        if (relationshipObs.length > 0) {
+          await ctx.emit(relationshipObs);
+          totalObs += relationshipObs.length;
         }
       }
 

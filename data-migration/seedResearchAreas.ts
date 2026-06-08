@@ -1,9 +1,44 @@
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
+import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
+import {
+  assertScriptApplyAllowed,
+  type ScriptApplyGuardResult,
+} from '../server/src/scripts/scriptWriteGuards';
 
 // Load environment variables from server/.env
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, '../server/.env') });
+
+export interface ResearchAreaSeedCliOptions {
+  apply: boolean;
+  confirmSeedApply?: boolean;
+  output?: string;
+}
+
+interface ResearchAreaSeedRow {
+  name: string;
+  field: ResearchField;
+  colorKey: string;
+  isDefault: boolean;
+  addedBy: null;
+}
+
+interface ResearchAreaSeedDiffSummary {
+  creates: number;
+  matches: number;
+  upserts: number;
+  totalAfter: number;
+}
+
+interface ResearchAreaSeedResult {
+  plannedCount: number;
+  existingDefaultCount: number;
+  diffSummary: ResearchAreaSeedDiffSummary;
+}
 
 // Research Field enum and color mappings
 enum ResearchField {
@@ -702,68 +737,188 @@ const researchAreaSchema = new mongoose.Schema({
 researchAreaSchema.index({ name: 'text' });
 researchAreaSchema.index({ field: 1 });
 
-const ResearchArea = mongoose.model('ResearchArea', researchAreaSchema, 'research_areas');
+const ResearchArea = mongoose.model<any>('ResearchArea', researchAreaSchema, 'research_areas');
 
-async function seedResearchAreas(dbUrl: string, dbName: string) {
-  console.log(`\n=== Seeding Research Areas to ${dbName} ===\n`);
+export function parseResearchAreaSeedArgs(argv: string[]): ResearchAreaSeedCliOptions {
+  const options: ResearchAreaSeedCliOptions = { apply: false };
+  const parseRequiredOutputPath = (value: string | undefined): string => {
+    const output = value?.trim();
+    if (!output || output.startsWith('--')) throw new Error('--output requires a path');
+    return output;
+  };
 
-  try {
-    await mongoose.connect(dbUrl);
-    console.log('Connected to MongoDB');
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+    if (arg === '--apply' || arg === '--live') {
+      options.apply = true;
+      continue;
+    }
+    if (arg === '--confirm-seed-apply') {
+      options.confirmSeedApply = true;
+      continue;
+    }
+    if (arg === '--dry-run') {
+      options.apply = false;
+      continue;
+    }
+    if (arg === '--output') {
+      options.output = parseRequiredOutputPath(argv[i + 1]);
+      i += 1;
+      continue;
+    }
+    if (arg.startsWith('--output=')) {
+      options.output = parseRequiredOutputPath(arg.slice('--output='.length));
+      continue;
+    }
 
-    // Get existing count
-    const existingDefaultCount = await ResearchArea.countDocuments({ isDefault: true });
-    console.log(`Existing default research areas: ${existingDefaultCount}`);
+    throw new Error(`Unknown research-area seed argument: ${arg}`);
+  }
 
-    // Prepare documents with colorKey
-    const areasToInsert = defaultResearchAreas.map(area => ({
-      name: area.name,
-      field: area.field,
-      colorKey: fieldColorKeys[area.field],
-      isDefault: true,
-      addedBy: null
-    }));
+  return options;
+}
 
-    console.log(`Preparing to seed ${areasToInsert.length} research areas...`);
+export function assertResearchAreaSeedApplyAllowed(args: {
+  apply: boolean;
+  confirmSeedApply?: boolean;
+  mongoUrl?: string;
+  env?: NodeJS.ProcessEnv;
+}): ScriptApplyGuardResult {
+  if (args.apply && !args.confirmSeedApply) {
+    throw new Error('--confirm-seed-apply is required when --apply is set for research-area seed');
+  }
 
-    // Use bulkWrite with upsert for idempotent seeding
+  return assertScriptApplyAllowed({
+    apply: args.apply,
+    scriptName: 'research-area seed',
+    mongoUrl: args.mongoUrl,
+    env: args.env,
+  });
+}
+
+export function buildResearchAreaSeedRows(): ResearchAreaSeedRow[] {
+  return defaultResearchAreas.map(area => ({
+    name: area.name,
+    field: area.field,
+    colorKey: fieldColorKeys[area.field],
+    isDefault: true,
+    addedBy: null,
+  }));
+}
+
+export function buildResearchAreaSeedOutput<T extends object>(
+  result: T,
+  metadata: {
+    generatedAt?: string;
+    environment?: string;
+    db?: string;
+    options: ResearchAreaSeedCliOptions;
+  },
+): T & {
+  generatedAt: string;
+  environment?: string;
+  db?: string;
+  options: ResearchAreaSeedCliOptions;
+} {
+  return {
+    generatedAt: metadata.generatedAt || new Date().toISOString(),
+    ...(metadata.environment ? { environment: metadata.environment } : {}),
+    ...(metadata.db ? { db: metadata.db } : {}),
+    options: metadata.options,
+    ...result,
+  };
+}
+
+function writeResearchAreaSeedOutput(result: unknown, output?: string): void {
+  if (!output) return;
+  fs.mkdirSync(path.dirname(output), { recursive: true });
+  fs.writeFileSync(output, `${JSON.stringify(result, null, 2)}\n`);
+}
+
+async function seedResearchAreas(options: ResearchAreaSeedCliOptions): Promise<ResearchAreaSeedResult> {
+  const existingDefaultCount = await ResearchArea.countDocuments({ isDefault: true });
+  console.log(`Existing default research areas: ${existingDefaultCount}`);
+
+  const areasToInsert = buildResearchAreaSeedRows();
+  const existingNames = new Set(
+    (await ResearchArea.find({ name: { $in: areasToInsert.map(area => area.name) } }).select('name').lean())
+      .map((row: any) => row.name),
+  );
+  const creates = areasToInsert.filter(area => !existingNames.has(area.name)).length;
+  const matches = areasToInsert.length - creates;
+
+  console.log(`Preparing to seed ${areasToInsert.length} research areas...`);
+  console.log(`Would create: ${creates}`);
+  console.log(`Already matched: ${matches}`);
+
+  let upserts = 0;
+  if (options.apply) {
     const bulkOps = areasToInsert.map(area => ({
       updateOne: {
         filter: { name: area.name },
         update: { $setOnInsert: area },
-        upsert: true
-      }
+        upsert: true,
+      },
     }));
 
     const result = await ResearchArea.bulkWrite(bulkOps);
-
+    upserts = result.upsertedCount;
     console.log(`Inserted: ${result.upsertedCount}`);
     console.log(`Matched (already existed): ${result.matchedCount}`);
-    console.log(`Total research areas now: ${await ResearchArea.countDocuments()}`);
-
-    await mongoose.disconnect();
-    console.log('Disconnected from MongoDB\n');
-  } catch (error) {
-    console.error('Error seeding research areas:', error);
-    await mongoose.disconnect();
-    throw error;
+  } else {
+    console.log('Dry run only; no research areas were inserted.');
   }
+
+  const totalAfter = options.apply ? await ResearchArea.countDocuments() : await ResearchArea.countDocuments() + creates;
+  console.log(`Projected total research areas after apply: ${totalAfter}`);
+
+  return {
+    plannedCount: areasToInsert.length,
+    existingDefaultCount,
+    diffSummary: {
+      creates,
+      matches,
+      upserts,
+      totalAfter,
+    },
+  };
 }
 
-// Main execution
-async function main() {
+async function main(): Promise<void> {
+  const options = parseResearchAreaSeedArgs(process.argv.slice(2));
   const url = process.env.MONGODBURL;
   if (!url) {
-    console.error('ERROR: MONGODBURL not set in environment');
+    console.error('ERROR: MONGODBURL not set in server/.env');
     process.exit(1);
   }
+  const guard = assertResearchAreaSeedApplyAllowed({
+    apply: options.apply,
+    confirmSeedApply: options.confirmSeedApply,
+    mongoUrl: url,
+  });
 
   console.log('=== Research Areas Seeding Script ===');
-  await seedResearchAreas(url, 'Database');
-  console.log('=== Research Areas Seeding Complete ===\n');
+  console.log(`Mode: ${options.apply ? 'APPLY' : 'DRY RUN'}`);
+
+  try {
+    await mongoose.connect(url);
+    console.log('Connected to MongoDB');
+    const result = await seedResearchAreas(options);
+    const output = buildResearchAreaSeedOutput(result, {
+      environment: guard.environment,
+      db: guard.dbLabel,
+      options,
+    });
+    writeResearchAreaSeedOutput(output, options.output);
+    console.log('=== Research Areas Seeding Complete ===\n');
+  } finally {
+    await mongoose.disconnect();
+    console.log('Disconnected from MongoDB\n');
+  }
 }
 
-main().catch(err => {
-  console.error('Fatal error:', err);
-  process.exit(1);
-});
+if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
+  main().catch(err => {
+    console.error('Fatal error:', err);
+    process.exit(1);
+  });
+}

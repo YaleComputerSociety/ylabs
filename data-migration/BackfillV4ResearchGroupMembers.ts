@@ -4,23 +4,30 @@
  * Dry-run by default; pass --apply to write. Supports --limit N / --limit=N.
  */
 import mongoose from '../server/node_modules/mongoose';
-import dotenv from 'dotenv';
+import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import { FacultyMember } from '../server/src/models/facultyMember';
 import { ResearchGroup } from '../server/src/models/researchGroup';
 import { ResearchGroupMember } from '../server/src/models/researchGroupMember';
 import { User } from '../server/src/models/user';
+import { resolveScraperEnvironment } from '../server/src/scrapers/scraperEnvironment';
+import {
+  buildV4MigrationOutput,
+  connectForMigration,
+  disconnectForMigration,
+  parseMigrationOptions,
+  type MigrationOptions,
+} from './v4MigrationUtils';
 
-dotenv.config({ path: path.resolve(__dirname, '../server/.env') });
+const __filename = fileURLToPath(import.meta.url);
 
-const APPLY = process.argv.includes('--apply') || process.argv.includes('--live');
-
-function parseLimit(): number | undefined {
-  const eq = process.argv.find((arg) => arg.startsWith('--limit='));
-  const raw = eq ? eq.split('=')[1] : process.argv[process.argv.indexOf('--limit') + 1];
-  if (!raw || raw.startsWith('--')) return undefined;
-  const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+interface V4ResearchGroupMemberBackfillResult {
+  membersProcessed: number;
+  memberLinksAdded: number;
+  claimedPiRowsUpserted: number;
+  skipped: number;
+  errorCount: number;
 }
 
 async function facultyIdForMember(member: any): Promise<mongoose.Types.ObjectId | null> {
@@ -42,19 +49,19 @@ async function facultyIdForMember(member: any): Promise<mongoose.Types.ObjectId 
   return null;
 }
 
-async function main(): Promise<void> {
-  const url = process.env.MONGODBURL;
-  if (!url) {
-    console.error('ERROR: MONGODBURL not set');
-    process.exit(1);
-  }
+function writeV4ResearchGroupMemberBackfillOutput(payload: object, outputPath?: string): void {
+  if (!outputPath) return;
+  fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+  fs.writeFileSync(outputPath, `${JSON.stringify(payload, null, 2)}\n`);
+}
 
-  const limit = parseLimit();
-  console.log('\n=== Backfill v4 ResearchGroupMember faculty bridge ===');
-  console.log(`Mode: ${APPLY ? 'APPLY' : 'DRY RUN'}`);
-  console.log(`Limit: ${limit ?? 'none'}\n`);
+export async function backfillV4ResearchGroupMembers(
+  options: MigrationOptions = parseMigrationOptions(),
+): Promise<ReturnType<typeof buildV4MigrationOutput<V4ResearchGroupMemberBackfillResult>>> {
+  await connectForMigration('Backfill v4 ResearchGroupMember faculty bridge', options);
 
-  await mongoose.connect(url);
+  try {
+    console.log(`Limit: ${options.limit ?? 'none'}\n`);
 
   const filter = {
     $or: [{ facultyMemberId: { $exists: false } }, { facultyMemberId: null }],
@@ -62,7 +69,7 @@ async function main(): Promise<void> {
   };
   const total = await ResearchGroupMember.countDocuments(filter);
   const query = ResearchGroupMember.find(filter).sort({ _id: 1 }).lean<any[]>();
-  if (limit) query.limit(limit);
+  if (options.limit) query.limit(options.limit);
   const members = await query;
   console.log(`Members missing facultyMemberId: ${total}; processing ${members.length}`);
 
@@ -77,7 +84,7 @@ async function main(): Promise<void> {
         skipped++;
         continue;
       }
-      if (APPLY) {
+      if (options.apply) {
         await ResearchGroupMember.updateOne(
           { _id: member._id, $or: [{ facultyMemberId: { $exists: false } }, { facultyMemberId: null }] },
           { $set: { facultyMemberId, lastObservedAt: member.lastObservedAt || new Date() } },
@@ -93,7 +100,7 @@ async function main(): Promise<void> {
     claimedByUserId: { $exists: true, $ne: null },
   };
   const claimedQuery = ResearchGroup.find(claimedFilter, { _id: 1, claimedByUserId: 1 }).sort({ _id: 1 }).lean<any[]>();
-  if (limit) claimedQuery.limit(limit);
+  if (options.limit) claimedQuery.limit(options.limit);
   const claimedGroups = await claimedQuery;
 
   let piUpserts = 0;
@@ -106,7 +113,7 @@ async function main(): Promise<void> {
         email: 1,
       }).lean<any>();
       if (!user) continue;
-      if (APPLY) {
+      if (options.apply) {
         await ResearchGroupMember.updateOne(
           { researchGroupId: group._id, userId: group.claimedByUserId, role: 'pi' },
           {
@@ -131,18 +138,40 @@ async function main(): Promise<void> {
     }
   }
 
-  console.log('\nDone.');
-  console.log(`  Members processed:         ${members.length}`);
-  console.log(`  Member links added:        ${linked} ${APPLY ? '' : '(dry run)'}`);
-  console.log(`  Claimed PI rows upserted:  ${piUpserts} ${APPLY ? '' : '(dry run)'}`);
-  console.log(`  Skipped:                   ${skipped}`);
-  console.log(`  Errors:                    ${errors.length}`);
-  for (const error of errors.slice(0, 10)) console.log(`  ${error.memberId}: ${error.error}`);
+    const output = buildV4MigrationOutput(
+      {
+        membersProcessed: members.length,
+        memberLinksAdded: linked,
+        claimedPiRowsUpserted: piUpserts,
+        skipped,
+        errorCount: errors.length,
+      },
+      {
+        environment: resolveScraperEnvironment(process.env),
+        db: ResearchGroupMember.db.db?.databaseName || ResearchGroupMember.db.name,
+        options,
+      },
+    );
 
-  await mongoose.disconnect();
+    console.log('\nDone.');
+    console.log(`  Members processed:         ${members.length}`);
+    console.log(`  Member links added:        ${linked} ${options.apply ? '' : '(dry run)'}`);
+    console.log(`  Claimed PI rows upserted:  ${piUpserts} ${options.apply ? '' : '(dry run)'}`);
+    console.log(`  Skipped:                   ${skipped}`);
+    console.log(`  Errors:                    ${errors.length}`);
+    for (const error of errors.slice(0, 10)) console.log(`  ${error.memberId}: ${error.error}`);
+    writeV4ResearchGroupMemberBackfillOutput(output, options.output);
+    if (options.output) console.log(`Wrote v4 research group member backfill report to ${options.output}`);
+
+    return output;
+  } finally {
+    await disconnectForMigration();
+  }
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+if (process.argv[1] && __filename === path.resolve(process.argv[1])) {
+  backfillV4ResearchGroupMembers().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}

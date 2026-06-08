@@ -1,5 +1,7 @@
-import { describe, it, expect } from 'vitest';
+import axios from 'axios';
+import { describe, it, expect, vi } from 'vitest';
 import {
+  YseCentersScraper,
   parseCenters,
   slugifyFromUrl,
   slugifyFromName,
@@ -7,7 +9,16 @@ import {
   inferKind,
   normalizeUrl,
   entityToObservations,
+  yasspAccessObservations,
+  ypcccAccessObservations,
 } from '../sources/yseCentersScraper';
+import type { ObservationInput, ScraperContext } from '../types';
+
+vi.mock('axios', () => ({
+  default: {
+    get: vi.fn(),
+  },
+}));
 
 const SAMPLE_HTML = `
 <html><body>
@@ -46,6 +57,40 @@ const SAMPLE_HTML = `
 </footer>
 </body></html>
 `;
+
+function makeContext() {
+  const emitted: ObservationInput[] = [];
+  const ctx: ScraperContext = {
+    scrapeRunId: 'test-run',
+    sourceId: 'test-source',
+    sourceName: 'yse-centers-index',
+    sourceWeight: 0.8,
+    options: {
+      dryRun: true,
+      useCache: false,
+      release: false,
+    },
+    emit: async (obs) => {
+      if (Array.isArray(obs)) emitted.push(...obs);
+      else emitted.push(obs);
+    },
+    log: () => {},
+  };
+  return { ctx, emitted };
+}
+
+describe('YseCentersScraper runtime bounds', () => {
+  it('rejects unsafe runtime limits before fetching the index page', async () => {
+    vi.mocked(axios.get).mockResolvedValue({ data: SAMPLE_HTML });
+    const scraper = new YseCentersScraper();
+    const { ctx } = makeContext();
+    ctx.options.limit = 9007199254740992;
+
+    await expect(scraper.run(ctx)).rejects.toThrow(/--limit must be a safe positive integer/);
+
+    expect(axios.get).not.toHaveBeenCalled();
+  });
+});
 
 describe('YseCenters HTML parsing', () => {
   it('extracts entities only from the main wysiwyg list and ignores nav/footer menus', () => {
@@ -173,5 +218,88 @@ describe('entityToObservations', () => {
     expect(obs.every((o) => o.entityType === 'researchEntity')).toBe(true);
     const schoolObs = obs.find((o) => o.field === 'school');
     expect(schoolObs!.value).toBe('Yale School of the Environment');
+  });
+});
+
+describe('YSE access detail parsing', () => {
+  it('emits YASSP past-undergraduate evidence from the official research-team page', () => {
+    const sourceUrl = 'https://synthesis.yale.edu/research-team';
+    const obs = yasspAccessObservations(
+      new Map([
+        [
+          sourceUrl,
+          `
+          <main>
+            <h1>Research Team</h1>
+            <h2>Former Affliated Researchers</h2>
+            <p>Nicole Gotthardt Former Undergraduate Student Researcher</p>
+          </main>
+          `,
+        ],
+      ]),
+    );
+
+    expect(obs.map((o) => o.field)).toEqual([
+      'undergradEvidenceQuote',
+      'pastUndergradAdvisees',
+    ]);
+    expect(obs.every((o) => o.entityKey === 'yse-yale-applied-science-synthesis-program-yassp')).toBe(true);
+    expect(obs.every((o) => o.sourceUrl === sourceUrl)).toBe(true);
+    expect(obs.find((o) => o.field === 'pastUndergradAdvisees')?.value).toEqual([
+      { name: 'Nicole Gotthardt', role: 'Former Undergraduate Student Researcher', count: 1 },
+    ]);
+  });
+
+  it('does not emit YASSP access evidence from a generic team page', () => {
+    const obs = yasspAccessObservations(
+      new Map([['https://synthesis.yale.edu/research-team', '<main><h1>Research Team</h1></main>']]),
+    );
+    expect(obs).toEqual([]);
+  });
+
+  it('emits YPCCC student-employment access evidence from the official page', () => {
+    const sourceUrl = 'https://climatecommunication.yale.edu/about/student-employment/';
+    const obs = ypcccAccessObservations(
+      new Map([
+        [
+          sourceUrl,
+          `
+          <main>
+            <h1>Student Employment</h1>
+            <p>YPCCC jobs are intended for current Yale University students, both grad and undergrad.</p>
+            <p>Openings can be found on Yale Student Employment.</p>
+            <p>Data Team Research Assistant</p>
+            <p>Experiments Team Research Assistant</p>
+          </main>
+          `,
+        ],
+      ]),
+    );
+
+    expect(obs.map((o) => o.field)).toEqual([
+      'undergradAccessEvidence',
+      'undergradEvidenceQuote',
+      'undergradRoleEvidenceQuote',
+      'joinPageUrl',
+      'contactInstructionsQuote',
+    ]);
+    expect(obs.every((o) => o.entityKey === 'yse-climate-change-communication')).toBe(true);
+    expect(obs.find((o) => o.field === 'joinPageUrl')?.value).toBe(sourceUrl);
+    expect(obs.find((o) => o.field === 'undergradAccessEvidence')?.value).toEqual({
+      openToUndergrads: 'yes',
+      evidenceSource: 'official_student_employment_page',
+    });
+  });
+
+  it('does not emit YPCCC access evidence without undergrad student-employment language', () => {
+    const obs = ypcccAccessObservations(
+      new Map([
+        [
+          'https://climatecommunication.yale.edu/about/student-employment/',
+          '<main><h1>Employment</h1><p>Openings will be posted here as available.</p></main>',
+        ],
+      ]),
+    );
+    expect(obs).toEqual([]);
   });
 });

@@ -111,6 +111,38 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
     );
   });
 
+  it('classifies Yale-UC Louvain as a real external summer research entry program', () => {
+    const observations = candidateToObservations({
+      title: 'Yale-UC Louvain Summer Research Program',
+      sourceKey: 'yale-college-fellowships-office:yale-uc-louvain-summer-research-program',
+      sourceUrl:
+        'https://science.yalecollege.yale.edu/yale-uc-louvain-summer-research-program',
+      sourceFingerprint: 'fixture',
+      applicationLink: 'https://yale.communityforce.com/Funds/FundDetails.aspx?fixture=louvain',
+      links: [],
+      purpose: ['Research'],
+      termOfAward: ['Summer'],
+      summary:
+        'Students review available UC Louvain research subjects, contact relevant faculty, and use Tetelman funding only after acceptance.',
+      description:
+        'The Yale-UC Louvain Summer Research Program places students into summer research subjects with UC Louvain faculty.',
+      yearOfStudy: [],
+      globalRegions: [],
+      citizenshipStatus: [],
+      reviewRequired: false,
+      isAcceptingApplications: true,
+    });
+
+    expect(observations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ field: 'programKind', value: 'CENTER_INTERNSHIP' }),
+        expect.objectContaining({ field: 'entryMode', value: 'APPLY_TO_PROJECT' }),
+        expect.objectContaining({ field: 'requiresMentorBeforeApply', value: false }),
+        expect.objectContaining({ field: 'studentFacingCategory', value: 'External summer research program' }),
+      ]),
+    );
+  });
+
   it('canonicalizes moved Yale College financial award URLs', () => {
     const candidates = parseFellowshipCatalogPage(
       `
@@ -323,6 +355,27 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
       reviewRequired: 1,
     });
     expect(emitted.some((obs) => obs.entityType === 'fellowship')).toBe(true);
+  });
+
+  it('rejects unsafe runtime limits before fetching catalog pages', async () => {
+    const fetchPage = vi.fn(async () => '<h3>Yale College Fellowships</h3>');
+    const scraper = new YaleCollegeFellowshipsOfficeScraper({
+      pageUrls: [fundingPageUrl],
+      fetchPage,
+    });
+
+    await expect(
+      scraper.run({
+        scrapeRunId: 'run-1',
+        sourceId: 'source-1',
+        sourceName: 'yale-college-fellowships-office',
+        sourceWeight: 0.95,
+        options: { dryRun: false, useCache: false, release: false, limit: 9007199254740992 },
+        emit: async () => {},
+        log: vi.fn(),
+      }),
+    ).rejects.toThrow(/--limit must be a safe non-negative integer/);
+    expect(fetchPage).not.toHaveBeenCalled();
   });
 
   it('continues when one configured public catalog page is stale', async () => {

@@ -5,6 +5,7 @@ import { PostedOpportunity } from '../models/postedOpportunity';
 import { ResearchEntity } from '../models/researchEntity';
 import { publicStudentVisibilityTiers } from '../models/studentVisibility';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
+import { isPublicHttpUrl } from '../utils/urlSafety';
 
 export type OpportunityDetailProvenance = 'LISTING_BRIDGED' | 'SCRAPER_DERIVED';
 export type OpportunityDetailDeadlineState =
@@ -104,6 +105,40 @@ const compactStrings = (values: unknown[]): string[] =>
     ),
   );
 
+const HTTP_URL_SCHEMES = new Set(['http:', 'https:']);
+
+const publicHttpUrl = (value: unknown): string | undefined => {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+
+  const hasScheme = /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(trimmed);
+  const candidate = trimmed.startsWith('//')
+    ? `https:${trimmed}`
+    : hasScheme
+      ? trimmed
+      : `https://${trimmed}`;
+
+  try {
+    const parsed = new URL(candidate);
+    return HTTP_URL_SCHEMES.has(parsed.protocol) && isPublicHttpUrl(candidate)
+      ? parsed.toString()
+      : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+const publicHttpUrls = (values: unknown[]): string[] =>
+  Array.from(
+    new Set(
+      values
+        .flatMap((value) => (Array.isArray(value) ? value : [value]))
+        .map(publicHttpUrl)
+        .filter((value): value is string => Boolean(value)),
+    ),
+  );
+
 const idString = (value: unknown): string => String(value || '');
 
 const documentId = (record: any): string => idString(record?._id);
@@ -122,6 +157,11 @@ const stringValue = (value: unknown): string | undefined => {
   if (typeof value === 'string') return value.trim() || undefined;
   if (typeof value === 'number' || typeof value === 'boolean') return String(value);
   return undefined;
+};
+
+const publicText = (value: unknown): string | undefined => {
+  const text = stringValue(value);
+  return text ? redactDirectContactInfo(text) : undefined;
 };
 
 const firstEvidenceText = (value: unknown): string | undefined => {
@@ -318,11 +358,14 @@ export async function getOpportunityDetail(
           .lean()
       : [];
 
-  const sourceUrls = compactStrings([
+  const sourceUrls = publicHttpUrls([
     opportunity.sourceUrls || [],
     pathway.sourceUrls || [],
     evidence.map((item: any) => item.sourceUrl),
   ]);
+  const applicationUrl = publicHttpUrl(opportunity.applicationUrl);
+  const researchEntityWebsiteUrl =
+    publicHttpUrl(researchEntity.websiteUrl) || publicHttpUrl(researchEntity.website);
   const deadlineState = getOpportunityDeadlineState(
     opportunity.status,
     opportunity.deadline || undefined,
@@ -331,7 +374,7 @@ export async function getOpportunityDetail(
   const applicationState = getOpportunityApplicationState(
     opportunity.status,
     deadlineState,
-    opportunity.applicationUrl || undefined,
+    applicationUrl,
   );
   const provenance: OpportunityDetailProvenance = opportunity.listingId
     ? 'LISTING_BRIDGED'
@@ -342,11 +385,11 @@ export async function getOpportunityDetail(
     entryPathwayId: idString(opportunity.entryPathwayId),
     researchEntityId: idString(opportunity.researchEntityId),
     listingId: opportunity.listingId ? idString(opportunity.listingId) : undefined,
-    title: opportunity.title,
-    term: opportunity.term || undefined,
+    title: publicText(opportunity.title) || '',
+    term: publicText(opportunity.term),
     deadline: opportunity.deadline || undefined,
     deadlineState,
-    applicationUrl: opportunity.applicationUrl || undefined,
+    applicationUrl,
     applicationState,
     applicationLabel: getOpportunityApplicationLabel(applicationState),
     status: opportunity.status,
@@ -355,39 +398,39 @@ export async function getOpportunityDetail(
       provenance === 'LISTING_BRIDGED' ? 'YLabs listing bridge' : 'Scraper-derived posting',
     hoursPerWeek:
       typeof opportunity.hoursPerWeek === 'number' ? opportunity.hoursPerWeek : undefined,
-    payRate: opportunity.payRate || undefined,
+    payRate: publicText(opportunity.payRate),
     compensationType: opportunity.compensationType,
-    eligibility: opportunity.eligibility || undefined,
+    eligibility: publicText(opportunity.eligibility),
     sourceUrls,
     researchEntity: {
       _id: documentId(researchEntity),
       slug: researchEntity.slug || '',
-      name: researchEntity.name || '',
-      displayName: researchEntity.displayName || undefined,
+      name: publicText(researchEntity.name) || '',
+      displayName: publicText(researchEntity.displayName),
       kind: researchEntity.kind,
       entityType: researchEntity.entityType,
       departments: researchEntity.departments || [],
       researchAreas: researchEntity.researchAreas || [],
-      school: researchEntity.school,
-      websiteUrl: researchEntity.websiteUrl || researchEntity.website,
-      shortDescription: researchEntity.shortDescription,
+      school: publicText(researchEntity.school),
+      websiteUrl: researchEntityWebsiteUrl,
+      shortDescription: publicText(researchEntity.shortDescription),
     },
     pathway: {
       _id: documentId(pathway),
       pathwayType: pathway.pathwayType,
       status: pathway.status,
       evidenceStrength: pathway.evidenceStrength,
-      studentFacingLabel: pathway.studentFacingLabel,
-      explanation: pathway.explanation,
-      bestNextStep: pathway.bestNextStep,
+      studentFacingLabel: publicText(pathway.studentFacingLabel) || '',
+      explanation: publicText(pathway.explanation),
+      bestNextStep: publicText(pathway.bestNextStep),
       compensation: pathway.compensation,
       confidence: pathway.confidence,
-      sourceUrls: compactStrings([pathway.sourceUrls || []]),
+      sourceUrls: publicHttpUrls([pathway.sourceUrls || []]),
     },
     evidence: evidence.map((item: any) => ({
       _id: documentId(item),
       sourceName: item.sourceName,
-      sourceUrl: item.sourceUrl,
+      sourceUrl: publicHttpUrl(item.sourceUrl),
       field: item.field,
       excerpt: evidenceExcerpt(item.value),
       confidence: item.confidence,

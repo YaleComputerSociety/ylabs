@@ -1,0 +1,129 @@
+/**
+ * Service helpers for explicit admin authority grants.
+ */
+import { AdminGrant } from '../models/adminGrant';
+import { User } from '../models/user';
+import { isLocalDevelopmentRuntime } from '../utils/environment';
+
+const NETID_RE = /^[A-Za-z0-9]{2,12}$/;
+
+export interface AdminGrantResponse {
+  activeCount: number;
+  grants: any[];
+  legacyAdminsWithoutGrant: any[];
+}
+
+const normalizeNetid = (netid: unknown) => String(netid || '').trim().toLowerCase();
+
+const assertValidNetid = (netid: string) => {
+  if (!NETID_RE.test(netid)) {
+    throw new Error('Invalid NetID');
+  }
+};
+
+export const allowsLegacyAdminUserType = (env: NodeJS.ProcessEnv = process.env): boolean =>
+  isLocalDevelopmentRuntime(env);
+
+const userSummaryByNetid = async (netids: string[]) => {
+  if (netids.length === 0) return new Map<string, any>();
+  const users = await User.find({ netid: { $in: netids } })
+    .select('netid fname lname email userType profileVerified userConfirmed')
+    .lean();
+  return new Map(users.map((user: any) => [normalizeNetid(user.netid), user]));
+};
+
+export const listAdminGrants = async (): Promise<AdminGrantResponse> => {
+  const grants = await AdminGrant.find({ status: 'active' }).sort({ grantedAt: -1 }).lean();
+  const activeNetids = grants.map((grant: any) => normalizeNetid(grant.netid));
+  const usersByNetid = await userSummaryByNetid(activeNetids);
+
+  const legacyAdminsWithoutGrant = await User.find({
+    userType: 'admin',
+    netid: { $nin: activeNetids },
+  })
+    .select('netid fname lname email userType profileVerified userConfirmed')
+    .sort({ netid: 1 })
+    .lean();
+
+  return {
+    activeCount: grants.length,
+    grants: grants.map((grant: any) => ({
+      ...grant,
+      user: usersByNetid.get(normalizeNetid(grant.netid)),
+    })),
+    legacyAdminsWithoutGrant,
+  };
+};
+
+export const hasActiveAdminGrant = async (netid: unknown): Promise<boolean> => {
+  const normalizedNetid = normalizeNetid(netid);
+  if (!NETID_RE.test(normalizedNetid)) return false;
+
+  const grant = await AdminGrant.exists({ netid: normalizedNetid, status: 'active' });
+  return Boolean(grant);
+};
+
+export const grantAdminAccess = async ({
+  netid,
+  actorNetid,
+  note,
+  source = 'manual',
+}: {
+  netid: unknown;
+  actorNetid: unknown;
+  note?: unknown;
+  source?: 'manual' | 'bootstrap';
+}) => {
+  const normalizedNetid = normalizeNetid(netid);
+  const normalizedActor = normalizeNetid(actorNetid);
+  assertValidNetid(normalizedNetid);
+  assertValidNetid(normalizedActor);
+
+  return AdminGrant.findOneAndUpdate(
+    { netid: normalizedNetid },
+    {
+      $set: {
+        netid: normalizedNetid,
+        status: 'active',
+        source,
+        grantedBy: normalizedActor,
+        grantedAt: new Date(),
+        note: typeof note === 'string' ? note.trim() : '',
+      },
+      $unset: {
+        revokedBy: '',
+        revokedAt: '',
+        revokeNote: '',
+      },
+    },
+    { new: true, upsert: true, setDefaultsOnInsert: true },
+  ).lean();
+};
+
+export const revokeAdminAccess = async ({
+  netid,
+  actorNetid,
+  note,
+}: {
+  netid: unknown;
+  actorNetid: unknown;
+  note?: unknown;
+}) => {
+  const normalizedNetid = normalizeNetid(netid);
+  const normalizedActor = normalizeNetid(actorNetid);
+  assertValidNetid(normalizedNetid);
+  assertValidNetid(normalizedActor);
+
+  return AdminGrant.findOneAndUpdate(
+    { netid: normalizedNetid, status: 'active' },
+    {
+      $set: {
+        status: 'revoked',
+        revokedBy: normalizedActor,
+        revokedAt: new Date(),
+        revokeNote: typeof note === 'string' ? note.trim() : '',
+      },
+    },
+    { new: true },
+  ).lean();
+};

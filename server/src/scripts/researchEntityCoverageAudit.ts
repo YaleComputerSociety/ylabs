@@ -1,4 +1,5 @@
 import dotenv from 'dotenv';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
@@ -20,17 +21,19 @@ import {
   type CoverageAuditFacts,
   type CoverageObservationFlags,
 } from './researchEntityCoverageAuditCore';
+import { assertScriptApplyAllowed } from './scriptWriteGuards';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
-interface CliOptions {
+export interface ResearchEntityCoverageAuditCliOptions {
   slug?: string;
   limit: number;
   minScore: number;
   includeArchived: boolean;
   includeAll: boolean;
+  output?: string;
 }
 
 interface AuditEntityRecord {
@@ -62,15 +65,23 @@ interface ObservationHint {
   confidence?: number;
 }
 
-function parseArgs(argv: string[]): CliOptions {
-  const options: CliOptions = {
+export function parseResearchEntityCoverageAuditArgs(
+  argv: string[],
+): ResearchEntityCoverageAuditCliOptions {
+  const options: ResearchEntityCoverageAuditCliOptions = {
     limit: 50,
     minScore: 1,
     includeArchived: false,
     includeAll: false,
   };
+  const parseRequiredOutputPath = (value: string | undefined): string => {
+    const output = value?.trim();
+    if (!output || output.startsWith('--')) throw new Error('--output requires a path');
+    return output;
+  };
 
-  for (const arg of argv) {
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
     if (arg === '--include-archived') {
       options.includeArchived = true;
       continue;
@@ -85,17 +96,64 @@ function parseArgs(argv: string[]): CliOptions {
       continue;
     }
     if (arg.startsWith('--limit=')) {
-      const parsed = Number(arg.slice('--limit='.length));
-      if (Number.isFinite(parsed) && parsed > 0) options.limit = Math.floor(parsed);
+      options.limit = parseInteger(arg.slice('--limit='.length), '--limit', { min: 1 });
       continue;
     }
     if (arg.startsWith('--min-score=')) {
-      const parsed = Number(arg.slice('--min-score='.length));
-      if (Number.isFinite(parsed) && parsed >= 0) options.minScore = Math.floor(parsed);
+      options.minScore = parseInteger(arg.slice('--min-score='.length), '--min-score', {
+        min: 0,
+      });
+      continue;
     }
+    if (arg === '--output') {
+      options.output = parseRequiredOutputPath(argv[i + 1]);
+      i += 1;
+      continue;
+    }
+    if (arg.startsWith('--output=')) {
+      options.output = parseRequiredOutputPath(arg.slice('--output='.length));
+      continue;
+    }
+
+    throw new Error(`Unknown research entity coverage audit argument: ${arg}`);
   }
 
   return options;
+}
+
+function parseInteger(value: string, flag: string, options: { min: number }): number {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isSafeInteger(parsed) || parsed < options.min || String(parsed) !== value.trim()) {
+    const descriptor = options.min === 0 ? 'a non-negative integer' : 'a positive integer';
+    throw new Error(`${flag} requires ${descriptor}`);
+  }
+  return parsed;
+}
+
+export function writeResearchEntityCoverageAuditOutput(result: unknown, output?: string): void {
+  if (!output) return;
+  fs.mkdirSync(path.dirname(output), { recursive: true });
+  fs.writeFileSync(output, `${JSON.stringify(result, null, 2)}\n`);
+}
+
+export function buildResearchEntityCoverageAuditOutput<T extends object>(
+  result: T,
+  metadata: {
+    environment?: string;
+    db?: string;
+    options: ResearchEntityCoverageAuditCliOptions;
+  },
+): T & {
+  environment?: string;
+  db?: string;
+  options: ResearchEntityCoverageAuditCliOptions;
+} {
+  return {
+    ...result,
+    ...(metadata.environment ? { environment: metadata.environment } : {}),
+    ...(metadata.db ? { db: metadata.db } : {}),
+    options: metadata.options,
+  };
 }
 
 function stringId(value: unknown): string {
@@ -173,7 +231,7 @@ async function fetchEntities(filter: Record<string, unknown>) {
     .lean()) as unknown as AuditEntityRecord[];
 }
 
-async function buildBulkAudit(options: CliOptions) {
+async function buildBulkAudit(options: ResearchEntityCoverageAuditCliOptions) {
   const entityFilter = options.slug
     ? { slug: options.slug }
     : options.includeArchived
@@ -429,21 +487,34 @@ async function buildSlugAudit(slug: string) {
 }
 
 async function main(): Promise<void> {
-  const options = parseArgs(process.argv.slice(2));
+  const options = parseResearchEntityCoverageAuditArgs(process.argv.slice(2));
+  const guard = assertScriptApplyAllowed({
+    apply: false,
+    scriptName: 'research-entity:coverage-audit',
+    mongoUrl: process.env.MONGODBURL,
+  });
   await initializeConnections();
 
   const result = options.slug
     ? await buildSlugAudit(options.slug)
     : await buildBulkAudit(options);
 
-  console.log(JSON.stringify(result, null, 2));
+  const output = buildResearchEntityCoverageAuditOutput(result, {
+    environment: guard.environment,
+    db: mongoose.connection.db?.databaseName || mongoose.connection.name || guard.dbLabel,
+    options,
+  });
+  console.log(JSON.stringify(output, null, 2));
+  writeResearchEntityCoverageAuditOutput(output, options.output);
 }
 
-main()
-  .catch((error) => {
-    console.error(error instanceof Error ? error.message : error);
-    process.exitCode = 1;
-  })
-  .finally(async () => {
-    await mongoose.disconnect();
-  });
+if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
+  main()
+    .catch((error) => {
+      console.error(error instanceof Error ? error.message : error);
+      process.exitCode = 1;
+    })
+    .finally(async () => {
+      await mongoose.disconnect();
+    });
+}

@@ -2,61 +2,12 @@
  * Authentication guards and role-based access control middleware.
  */
 import express from 'express';
-import { isDevelopment, isTest } from '../utils/environment';
+import {
+  allowsLegacyAdminUserType,
+  hasActiveAdminGrant,
+} from '../services/adminGrantService';
 
-const LOCAL_AUTH_BYPASS_SKIPPED_PATHS = new Set(['/api/cas', '/api/logout']);
-
-type AuthUser = {
-  netId: string;
-  userType: string;
-  userConfirmed: boolean;
-  profileVerified: boolean;
-};
-
-const requestPath = (req: express.Request): string => {
-  return (req.originalUrl || req.path || '').split('?')[0].replace(/\/$/, '');
-};
-
-const devHeader = (req: express.Request, name: string): string | undefined => {
-  const value = req.get(name);
-  return value?.trim() || undefined;
-};
-
-/**
- * Local/test-only auth bypass for developer workflows.
- *
- * This intentionally fails closed unless LOCAL_AUTH_BYPASS=true and the runtime
- * environment is development or test.
- */
-export function localAuthBypass(
-  req: express.Request,
-  _res: express.Response,
-  next: express.NextFunction,
-) {
-  const enabled = process.env.LOCAL_AUTH_BYPASS === 'true';
-  const allowedEnvironment = isDevelopment() || isTest();
-
-  if (
-    !enabled ||
-    !allowedEnvironment ||
-    req.user ||
-    LOCAL_AUTH_BYPASS_SKIPPED_PATHS.has(requestPath(req))
-  ) {
-    return next();
-  }
-
-  const user: AuthUser = {
-    netId:
-      devHeader(req, 'x-dev-netid') || process.env.LOCAL_AUTH_BYPASS_NETID || 'devadmin',
-    userType:
-      devHeader(req, 'x-dev-user-type') || process.env.LOCAL_AUTH_BYPASS_USER_TYPE || 'admin',
-    userConfirmed: true,
-    profileVerified: true,
-  };
-
-  req.user = user as Express.User;
-  return next();
-}
+const requestNetid = (user: { netId?: string; netid?: string }) => user.netId || user.netid || '';
 
 /**
  * Middleware to check if user is authenticated
@@ -117,6 +68,10 @@ export const canCreateListing = (
     return res.status(403).json({ error: 'User does not have permission to create listings' });
   }
 
+  if (currentUser.userType !== 'admin' && currentUser.userConfirmed !== true) {
+    return res.status(403).json({ error: 'Account must be confirmed before creating listings' });
+  }
+
   if (currentUser.userType !== 'admin' && !currentUser.profileVerified) {
     return res
       .status(403)
@@ -137,17 +92,26 @@ export const isAdmin = (
   res: express.Response,
   next: express.NextFunction,
 ) => {
-  const currentUser = req.user as { netId?: string; userType?: string; userConfirmed?: boolean };
+  const currentUser = req.user as {
+    netId?: string;
+    netid?: string;
+    userType?: string;
+    userConfirmed?: boolean;
+  };
 
   if (!currentUser) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  if (currentUser.userType !== 'admin') {
-    return res.status(403).json({ error: 'Admin privileges required' });
-  }
+  return Promise.resolve(hasActiveAdminGrant(requestNetid(currentUser)))
+    .then((hasGrant) => {
+      if (hasGrant || (currentUser.userType === 'admin' && allowsLegacyAdminUserType())) {
+        return next();
+      }
 
-  next();
+      return res.status(403).json({ error: 'Admin privileges required' });
+    })
+    .catch(next);
 };
 
 /**
@@ -165,14 +129,14 @@ export const isProfessor = (
   }
 
   if (
-    currentUser.userType !== 'professor' &&
-    currentUser.userType !== 'faculty' &&
-    currentUser.userType !== 'admin'
+    currentUser.userType === 'admin' ||
+    ((currentUser.userType === 'professor' || currentUser.userType === 'faculty') &&
+      currentUser.userConfirmed === true)
   ) {
-    return res.status(403).json({ error: 'Professor privileges required' });
+    return next();
   }
 
-  next();
+  return res.status(403).json({ error: 'Professor privileges required' });
 };
 
 /**

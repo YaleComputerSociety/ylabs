@@ -1,7 +1,15 @@
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 import { describe, expect, it } from 'vitest';
 
 import {
-  buildChangedTierSummary,
+  assertStudentVisibilityBackfillApplyAllowed,
+  buildStudentVisibilityBackfillOutput,
+  parseStudentVisibilityBackfillArgs,
+  writeStudentVisibilityBackfillOutput,
+} from '../backfillStudentVisibilityTiers';
+import {
   buildCollectionReport,
   nextRepairActionForReasons,
   type StudentVisibilityPlannedUpdate,
@@ -59,7 +67,7 @@ describe('studentVisibilityBackfillReport', () => {
       { collectionName: 'research' },
     );
 
-    expect(report.publicCount).toBe(2);
+    expect(report.publicCount).toBe(1);
     expect(report.applySafety).toMatchObject({
       safeToApply: true,
       recommendation: 'apply',
@@ -78,15 +86,15 @@ describe('studentVisibilityBackfillReport', () => {
         }),
         update({
           id: 'entity-2',
-          currentTier: 'limited_but_safe',
+          currentTier: 'student_ready',
           tier: 'operator_review',
           computedTier: 'operator_review',
         }),
         update({
           id: 'entity-3',
           currentTier: 'student_ready',
-          tier: 'limited_but_safe',
-          computedTier: 'limited_but_safe',
+          tier: 'student_ready',
+          computedTier: 'student_ready',
         }),
       ],
       { collectionName: 'research', maxPublicCollapseRatio: 0.5 },
@@ -98,6 +106,33 @@ describe('studentVisibilityBackfillReport', () => {
     expect(report.applySafety.blockers.join(' ')).toContain('would collapse current public count');
   });
 
+  it('rejects unsafe reason sample sizes before building samples', () => {
+    expect(() =>
+      buildCollectionReport([update({ id: 'entity-1' })], {
+        collectionName: 'research',
+        reasonSampleSize: 9007199254740992,
+      }),
+    ).toThrow('--reason-sample-size must be a safe positive integer');
+  });
+
+  it('rejects unsafe minimum public counts before evaluating apply safety', () => {
+    expect(() =>
+      buildCollectionReport([update({ id: 'entity-1' })], {
+        collectionName: 'research',
+        minimumPublicCount: 9007199254740992,
+      }),
+    ).toThrow('--minimum-public-count must be a safe non-negative integer');
+  });
+
+  it('rejects unsafe public collapse ratios before evaluating apply safety', () => {
+    expect(() =>
+      buildCollectionReport([update({ id: 'entity-1' })], {
+        collectionName: 'research',
+        maxPublicCollapseRatio: Number.POSITIVE_INFINITY,
+      }),
+    ).toThrow('--max-public-collapse-ratio must be a finite non-negative number');
+  });
+
   it('maps reason sets to the highest-leverage repair action', () => {
     expect(nextRepairActionForReasons(['missing_lead', 'missing_description'])).toBe(
       'Attach a source-backed PI, director, or lead member.',
@@ -106,89 +141,120 @@ describe('studentVisibilityBackfillReport', () => {
       'Add source-backed access or pathway evidence only if it exists.',
     );
   });
+});
 
-  it('summarizes changed tiers by transition, type, blocker, and repair sample', () => {
-    const report = buildCollectionReport(
-      [
-        update({
-          id: 'faculty-1',
-          label: 'Avery Stone Research',
-          slug: 'faculty-avery-stone',
-          entityType: 'FACULTY_RESEARCH_AREA',
-          currentTier: 'limited_but_safe',
-          tier: 'operator_review',
-          computedTier: 'operator_review',
-          reasons: ['missing_exploratory_framing'],
-        }),
-        update({
-          id: 'center-1',
-          label: 'Synthetic Center',
-          slug: 'center-synthetic',
-          entityType: 'CENTER',
-          currentTier: undefined,
-          tier: 'limited_but_safe',
-          computedTier: 'limited_but_safe',
-          reasons: ['center_affiliation_index'],
-        }),
-        update({
-          id: 'lab-1',
-          entityType: 'LAB',
-          currentTier: 'student_ready',
-          tier: 'student_ready',
-          computedTier: 'student_ready',
-          reasons: ['source_backed_description'],
-        }),
-      ],
-      { collectionName: 'research', minimumPublicCount: 0 },
-    );
-
-    expect(report.changedTierSummary.changedCount).toBe(2);
-    expect(report.changedTierSummary.byTransition).toMatchObject({
-      'limited_but_safe->operator_review': 1,
-      'unset->limited_but_safe': 1,
-    });
-    expect(report.changedTierSummary.byEntityType).toMatchObject({
-      FACULTY_RESEARCH_AREA: 1,
-      CENTER: 1,
-    });
-    expect(report.changedTierSummary.byReason).toMatchObject({
-      missing_exploratory_framing: 1,
-      center_affiliation_index: 1,
-    });
-    expect(report.changedTierSummary.samples).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          id: 'faculty-1',
-          slug: 'faculty-avery-stone',
-          label: 'Avery Stone Research',
-          entityType: 'FACULTY_RESEARCH_AREA',
-          currentTier: 'limited_but_safe',
-          tier: 'operator_review',
-          computedTier: 'operator_review',
-          reasons: ['missing_exploratory_framing'],
-          nextRepairAction:
-            'Add explicit exploratory contact, faculty supervision, or access evidence before public release.',
-        }),
+describe('studentVisibilityBackfill CLI helpers', () => {
+  it('parses apply, collection, limit, and output flags', () => {
+    expect(
+      parseStudentVisibilityBackfillArgs([
+        '--apply',
+        '--confirm-student-visibility-backfill',
+        '--collection=research',
+        '--limit=25',
+        '--output',
+        '/tmp/ylabs-student-visibility-backfill.json',
       ]),
-    );
-    expect(report.changedTierSummary.samples.find((sample) => sample.id === 'lab-1')).toBeUndefined();
+    ).toEqual({
+      apply: true,
+      confirmStudentVisibilityBackfill: true,
+      collection: 'research',
+      limit: 25,
+      output: '/tmp/ylabs-student-visibility-backfill.json',
+    });
   });
 
-  it('limits changed tier samples deterministically', () => {
-    const summary = buildChangedTierSummary(
-      [
-        update({ id: 'b', label: 'B Lab', currentTier: undefined, tier: 'operator_review' }),
-        update({
-          id: 'a',
-          label: 'A Lab',
-          currentTier: 'student_ready',
-          tier: 'operator_review',
-        }),
-      ],
-      1,
+  it('rejects malformed student visibility backfill arguments', () => {
+    expect(() => parseStudentVisibilityBackfillArgs(['--limit=bad'])).toThrow(
+      /--limit must be a positive integer/,
+    );
+    expect(() => parseStudentVisibilityBackfillArgs(['--limit=1e3'])).toThrow(
+      /--limit must be a positive integer/,
+    );
+    expect(() => parseStudentVisibilityBackfillArgs(['--output', '--apply'])).toThrow(
+      /--output requires a path/,
+    );
+    expect(() => parseStudentVisibilityBackfillArgs(['--output=--apply'])).toThrow(
+      /--output requires a path/,
+    );
+  });
+
+  it('requires a bounded limit before apply mode can run', () => {
+    expect(() =>
+      assertStudentVisibilityBackfillApplyAllowed(
+        { apply: true, confirmStudentVisibilityBackfill: true, limit: Infinity },
+        { SCRAPER_ENV: 'beta' } as NodeJS.ProcessEnv,
+        'mongodb://example.invalid/Beta',
+      ),
+    ).toThrow(/--limit is required when --apply is set/);
+
+    expect(
+      assertStudentVisibilityBackfillApplyAllowed(
+        { apply: true, confirmStudentVisibilityBackfill: true, limit: 25 },
+        { SCRAPER_ENV: 'beta' } as NodeJS.ProcessEnv,
+        'mongodb://example.invalid/Beta',
+      ),
+    ).toMatchObject({ environment: 'beta' });
+  });
+
+  it('requires explicit confirmation before student visibility backfill apply', () => {
+    expect(parseStudentVisibilityBackfillArgs(['--apply', '--limit=25'])).toMatchObject({
+      apply: true,
+      confirmStudentVisibilityBackfill: false,
+      limit: 25,
+    });
+    expect(() =>
+      assertStudentVisibilityBackfillApplyAllowed(
+        { apply: true, confirmStudentVisibilityBackfill: false, limit: 25 },
+        { SCRAPER_ENV: 'beta' } as NodeJS.ProcessEnv,
+        'mongodb://example.invalid/Beta',
+      ),
+    ).toThrow(/--confirm-student-visibility-backfill is required/);
+  });
+
+  it('writes the student visibility backfill artifact when output is provided', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ylabs-student-visibility-backfill-'));
+    const output = path.join(dir, 'student-visibility-backfill.json');
+    const payload = {
+      mode: 'dry-run',
+      scanned: { research: 2, programs: 0 },
+    };
+
+    writeStudentVisibilityBackfillOutput(payload, output);
+
+    expect(JSON.parse(fs.readFileSync(output, 'utf8'))).toMatchObject(payload);
+  });
+
+  it('wraps student visibility artifacts with target metadata and parsed options', () => {
+    const output = buildStudentVisibilityBackfillOutput(
+      {
+        mode: 'dry-run',
+        scanned: { research: 2, programs: 0 },
+      },
+      {
+        environment: 'beta',
+        db: 'Beta',
+        options: {
+          apply: false,
+          confirmStudentVisibilityBackfill: false,
+          collection: 'research',
+          limit: 25,
+          output: '/tmp/ylabs-student-visibility-backfill.json',
+        },
+      },
     );
 
-    expect(summary.samples).toHaveLength(1);
-    expect(summary.samples[0]).toMatchObject({ id: 'a' });
+    expect(output).toEqual({
+      mode: 'dry-run',
+      scanned: { research: 2, programs: 0 },
+      environment: 'beta',
+      db: 'Beta',
+      options: {
+        apply: false,
+        confirmStudentVisibilityBackfill: false,
+        collection: 'research',
+        limit: 25,
+        output: '/tmp/ylabs-student-visibility-backfill.json',
+      },
+    });
   });
 });

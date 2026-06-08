@@ -219,6 +219,23 @@ describe('ORCID crosswalk apply', () => {
     expect(updates[0].userId).toBe('u-grace');
     expect(update.$set.orcid).toBe('0000-0001-5109-3700');
   });
+
+  it('does not persist ORCID crosswalk rows backed only by credentialed URLs', async () => {
+    const csv = [
+      'orcid,name,sourceUrl,reviewNote',
+      '0000-0001-5109-3700,Grace Hopper,https://user:pass@directory.yale.edu/people/grace-hopper,official profile match',
+    ].join('\n');
+    const updates: Array<{ userId: unknown; update: Record<string, unknown> }> = [];
+    const result = await applyOrcidCrosswalkCsv(csv, [grace], {
+      dryRun: false,
+      updateUser: async (userId, update) => {
+        updates.push({ userId, update });
+      },
+    });
+
+    expect(result.appliedRows).toBe(0);
+    expect(updates).toEqual([]);
+  });
 });
 
 describe('arXiv accepted ORCID validation', () => {

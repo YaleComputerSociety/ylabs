@@ -233,7 +233,7 @@ const Home = () => {
             <h1 className="mt-1 text-2xl font-bold text-gray-950">Posted Roles</h1>
             <p className="mt-1 max-w-3xl text-sm leading-relaxed text-gray-600">
               Posted roles are now one part of Yale Research. Start with research homes
-              when you want to explore what exists, or use pathways when you want a practical next step.
+              when you want to explore what exists, then use the evidence and next steps on each profile.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -242,12 +242,6 @@ const Home = () => {
               className="inline-flex min-h-11 items-center rounded-md bg-blue-700 px-3 text-sm font-semibold text-white hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
             >
               Explore research homes
-            </Link>
-            <Link
-              to="/pathways"
-              className="inline-flex min-h-11 items-center rounded-md border border-gray-300 px-3 text-sm font-semibold text-gray-800 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-            >
-              Browse pathways
             </Link>
           </div>
         </div>
@@ -285,7 +279,7 @@ const Home = () => {
             </p>
             <p className="mt-2 text-sm leading-relaxed text-white">
               {searchError
-                ? 'Posted-role search is unavailable; use Research or Pathways while the index is restored.'
+                ? 'Posted-role search is unavailable; use Yale Research while the index is restored.'
                 : `${filteredListings.length} visible role${filteredListings.length === 1 ? '' : 's'} from ${listings.length} loaded.`}
             </p>
           </div>
@@ -329,7 +323,7 @@ const Home = () => {
         onClearQuickFilter={() => setQuickFilter(null)}
         emptyMessage={
           searchError
-            ? 'Posted-role search is unavailable. Use Research or Pathways for source-backed routes.'
+            ? 'Posted-role search is unavailable. Use Yale Research for source-backed routes.'
             : 'No results match the search criteria'
         }
         onLoadMore={() => {

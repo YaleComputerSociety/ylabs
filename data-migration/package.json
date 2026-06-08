@@ -5,14 +5,9 @@
   "scripts": {
     "seed:research-areas": "npx tsx seedResearchAreas.ts",
     "seed:departments": "npx tsx seedDepartments.ts",
-    "seed:departments:apply": "npx tsx seedDepartments.ts --apply",
-    "seed:all": "npx tsx seedResearchAreas.ts both && npx tsx seedDepartments.ts both",
-    "seed:dev": "npx tsx seedResearchAreas.ts dev && npx tsx seedDepartments.ts dev",
-    "seed:prod": "npx tsx seedResearchAreas.ts prod && npx tsx seedDepartments.ts prod",
+    "seed:all": "npx tsx seedResearchAreas.ts && npx tsx seedDepartments.ts",
     "migrate:users": "npx tsx MigrateUsers.ts",
-    "migrate:all": "npx tsx MigrateUsers.ts",
     "migrate:departments": "npx tsx MigrateDepartments.ts",
-    "migrate:departments:live": "npx tsx MigrateDepartments.ts --live",
     "import:fellowships": "npx tsx importFellowships.ts",
     "migrate:root-data-files": "npx tsx ImportRootDataFiles.ts",
     "migrate:v4:faculty-members": "npx tsx BackfillV4FacultyMembers.ts",
@@ -20,9 +15,7 @@
     "migrate:v4:research-group-members": "npx tsx BackfillV4ResearchGroupMembers.ts",
     "migrate:v4:paper-graph": "npx tsx BackfillV4PaperGraph.ts",
     "migrate:v4:grants": "npx tsx BackfillV4Grants.ts",
-    "migrate:v4:research-group-stats": "npx tsx BackfillV4ResearchGroupStats.ts",
-    "migrate:v4:identity": "npx tsx BackfillV4FacultyMembers.ts && npx tsx BackfillV4StudentProfiles.ts && npx tsx BackfillV4ResearchGroupMembers.ts",
-    "migrate:v4:all": "npx tsx BackfillV4FacultyMembers.ts && npx tsx BackfillV4StudentProfiles.ts && npx tsx BackfillV4ResearchGroupMembers.ts && npx tsx BackfillV4PaperGraph.ts && npx tsx BackfillV4Grants.ts && npx tsx BackfillV4ResearchGroupStats.ts"
+    "migrate:v4:research-group-stats": "npx tsx BackfillV4ResearchGroupStats.ts"
   },
   "dependencies": {
     "csv-parse": "^5.5.3",

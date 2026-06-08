@@ -43,6 +43,14 @@ const DEFAULTS = {
   conflictThreshold: 0.3,
 };
 
+const PROSE_COMPLETENESS_FIELDS = new Set([
+  'bio',
+  'description',
+  'fullDescription',
+  'researchInterestSummary',
+]);
+const PROSE_EXTENSION_BONUS = 1.25;
+
 function serializeValue(value: unknown): string {
   if (value === null || value === undefined) return '__null__';
   if (typeof value === 'string') return `s:${value.trim().toLowerCase()}`;
@@ -61,6 +69,48 @@ function recencyDecay(observedAt: Date, now: Date, halfLifeDays: number): number
   const ageMs = Math.max(0, now.getTime() - observedAt.getTime());
   const ageDays = ageMs / (1000 * 60 * 60 * 24);
   return Math.pow(0.5, ageDays / halfLifeDays);
+}
+
+function normalizedProse(value: unknown): string {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function sourcesOverlap(a: Set<string>, b: Set<string>): boolean {
+  for (const source of a) {
+    if (b.has(source)) return true;
+  }
+  return false;
+}
+
+function applyProseCompletenessBonus(
+  field: string,
+  groups: Iterable<{ value: unknown; weight: number; sources: Set<string> }>,
+) {
+  if (!PROSE_COMPLETENESS_FIELDS.has(field)) return;
+  const proseGroups = Array.from(groups).filter(
+    (group) => typeof group.value === 'string' && normalizedProse(group.value).length >= 80,
+  );
+
+  for (const candidate of proseGroups) {
+    const candidateText = normalizedProse(candidate.value);
+    const extendsAnotherValue = proseGroups.some((other) => {
+      if (candidate === other || !sourcesOverlap(candidate.sources, other.sources)) return false;
+      const otherText = normalizedProse(other.value);
+      return (
+        candidateText.length >= otherText.length * 1.35 &&
+        otherText.length >= 80 &&
+        otherText.length < 160 &&
+        candidateText.startsWith(otherText)
+      );
+    });
+
+    if (extendsAnotherValue) {
+      candidate.weight *= PROSE_EXTENSION_BONUS;
+    }
+  }
 }
 
 export function resolveField(
@@ -107,6 +157,7 @@ export function resolveField(
       g.weight *= 1 + agreementBonus * (g.sources.size - 1);
     }
   }
+  applyProseCompletenessBonus(field, groups.values());
 
   const ranked = Array.from(groups.values()).sort((a, b) => b.weight - a.weight);
   const winner = ranked[0];

@@ -1,5 +1,7 @@
 import { ResearchEntity } from '../models/researchEntity';
+import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { getMeiliIndex } from '../utils/meiliClient';
+import { isPublicHttpUrl } from '../utils/urlSafety';
 
 export const RESEARCH_ENTITY_SEARCH_INDEX_NAME = 'researchentities';
 export const RESEARCH_ENTITY_SEARCH_INDEX_PRIMARY_KEY = 'id';
@@ -32,7 +34,7 @@ const RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS = {
     'currentUndergradCount',
     'studentVisibilityTier',
   ],
-  sortableAttributes: ['lastObservedAt', 'name', 'createdAt', 'updatedAt'],
+  sortableAttributes: ['browseRankScore', 'lastObservedAt', 'name', 'createdAt', 'updatedAt'],
   displayedAttributes: ['*'],
 };
 
@@ -61,6 +63,56 @@ export function getResearchEntitySearchIndexSettings() {
   };
 }
 
+const SEARCH_INDEX_TEXT_FIELDS = [
+  'name',
+  'displayName',
+  'description',
+  'summary',
+  'shortDescription',
+  'fullDescription',
+  'undergradEvidenceQuote',
+  'undergradAccessEvidence',
+] as const;
+
+const publicHttpUrl = (value: unknown): string | undefined => {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+
+  try {
+    return isPublicHttpUrl(trimmed) ? trimmed : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+const publicHttpUrls = (value: unknown): string[] =>
+  Array.isArray(value)
+    ? value.flatMap((item) => publicHttpUrl(item) ?? [])
+    : [];
+
+const sanitizeResearchEntityIndexDocument = (out: Record<string, any>) => {
+  for (const field of SEARCH_INDEX_TEXT_FIELDS) {
+    if (typeof out[field] === 'string') {
+      out[field] = redactDirectContactInfo(out[field]);
+    }
+  }
+
+  const websiteUrl = publicHttpUrl(out.websiteUrl);
+  const website = publicHttpUrl(out.website);
+  if (websiteUrl || website) out.websiteUrl = websiteUrl || website;
+  else delete out.websiteUrl;
+
+  if (website) out.website = website;
+  else delete out.website;
+
+  if ('sourceUrls' in out) {
+    const sourceUrls = publicHttpUrls(out.sourceUrls);
+    if (sourceUrls.length > 0) out.sourceUrls = sourceUrls;
+    else delete out.sourceUrls;
+  }
+};
+
 export function buildResearchEntitySearchIndexDocument(doc: any): Record<string, any> | null {
   if (!doc) return null;
   const rawId = doc._id ?? doc.id;
@@ -73,6 +125,7 @@ export function buildResearchEntitySearchIndexDocument(doc: any): Record<string,
   delete out._id;
   delete out.__v;
   delete out.embedding;
+  sanitizeResearchEntityIndexDocument(out);
   return out;
 }
 
@@ -90,10 +143,18 @@ async function fetchResearchEntityPage(page: number, pageSize: number): Promise<
     .lean();
 }
 
+function normalizeRebuildPageSize(pageSize: number | undefined): number {
+  if (pageSize === undefined) return 250;
+  if (!Number.isSafeInteger(pageSize) || pageSize < 1) {
+    throw new Error('--page-size must be a safe positive integer');
+  }
+  return pageSize;
+}
+
 export async function rebuildResearchEntitySearchIndex(
   options: ResearchEntitySearchIndexRebuildOptions = {},
 ): Promise<ResearchEntitySearchIndexRebuildResult> {
-  const pageSize = Math.max(1, Math.floor(options.pageSize || 250));
+  const pageSize = normalizeRebuildPageSize(options.pageSize);
   const clearExisting = options.clearExisting ?? false;
   const index = await (options.getIndex || getMeiliIndex)(RESEARCH_ENTITY_SEARCH_INDEX_NAME);
   const fetchPage = options.fetchPage || fetchResearchEntityPage;

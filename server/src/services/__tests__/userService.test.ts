@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildCaseInsensitiveNetidFilter,
   buildSavedPathwayPlanUnsetForIds,
   buildSavedPathwayPlansExport,
+  normalizeObjectIdsForUserMutation,
   pruneSavedPathwayPlansForExistingPathways,
   sanitizeSavedPathwayPlanForStorage,
   type SavedPathwayPlanInput,
@@ -43,6 +45,26 @@ const pathway = (overrides: Partial<PathwaySearchHit> = {}): PathwaySearchHit =>
     visibility: 'PRIVATE',
   },
   ...overrides,
+});
+
+describe('buildCaseInsensitiveNetidFilter', () => {
+  it('escapes netid regex metacharacters before exact case-insensitive lookup', () => {
+    const filter = buildCaseInsensitiveNetidFilter('.*+$[x]');
+    const pattern = filter.netid.$regex;
+    const regex = new RegExp(pattern, filter.netid.$options);
+
+    expect(pattern).toBe('^\\.\\*\\+\\$\\[x\\]$');
+    expect(regex.test('.*+$[x]')).toBe(true);
+    expect(regex.test('abc123')).toBe(false);
+  });
+
+  it('preserves case-insensitive exact netid matching', () => {
+    const filter = buildCaseInsensitiveNetidFilter('Aa123');
+    const regex = new RegExp(filter.netid.$regex, filter.netid.$options);
+
+    expect(regex.test('aa123')).toBe(true);
+    expect(regex.test('xaa123')).toBe(false);
+  });
 });
 
 describe('pruneSavedPathwayPlansForExistingPathways', () => {
@@ -91,6 +113,30 @@ describe('sanitizeSavedPathwayPlanForStorage', () => {
       'bad-value': false,
     });
   });
+
+  it('bounds saved pathway checklist entries before storage', () => {
+    const result = sanitizeSavedPathwayPlanForStorage({
+      checklist: Object.fromEntries(
+        Array.from({ length: 60 }, (_, index) => [`task-${index}`, index % 2 === 0]),
+      ),
+    });
+
+    expect(Object.keys(result.checklist)).toHaveLength(50);
+    expect(result.checklist).toHaveProperty('task-0', true);
+    expect(result.checklist).toHaveProperty('task-49', false);
+    expect(result.checklist).not.toHaveProperty('task-50');
+  });
+
+  it('drops oversized saved pathway checklist keys before storage', () => {
+    const result = sanitizeSavedPathwayPlanForStorage({
+      checklist: {
+        ['a'.repeat(121)]: true,
+        'review-evidence': true,
+      },
+    });
+
+    expect(result.checklist).toEqual({ 'review-evidence': true });
+  });
 });
 
 describe('buildSavedPathwayPlanUnsetForIds', () => {
@@ -104,6 +150,43 @@ describe('buildSavedPathwayPlanUnsetForIds', () => {
       'savedPathwayPlans.665f0b0c0b0c0b0c0b0c0b0c': '',
       'savedPathwayPlans.665f0b0c0b0c0b0c0b0c0b0d': '',
     });
+  });
+});
+
+describe('normalizeObjectIdsForUserMutation', () => {
+  it('normalizes valid ObjectId strings for account mutations', () => {
+    const result = normalizeObjectIdsForUserMutation(
+      ['665f0b0c0b0c0b0c0b0c0b0c'],
+      'savedResearchPlans',
+    );
+
+    expect(result.map((id) => id.toString())).toEqual(['665f0b0c0b0c0b0c0b0c0b0c']);
+  });
+
+  it('rejects malformed ids before they reach Mongo update paths', () => {
+    expect(() => normalizeObjectIdsForUserMutation(['not-an-object-id'], 'favPathways')).toThrow(
+      /Invalid favPathways id/,
+    );
+    try {
+      normalizeObjectIdsForUserMutation(['not-an-object-id'], 'favPathways');
+    } catch (error: any) {
+      expect(error.status).toBe(400);
+    }
+  });
+
+  it('rejects oversized account mutation batches before per-id work', () => {
+    const ids = Array.from({ length: 101 }, (_, index) =>
+      index.toString(16).padStart(24, '0'),
+    );
+
+    expect(() => normalizeObjectIdsForUserMutation(ids, 'favPathways')).toThrow(
+      /Too many favPathways ids/,
+    );
+    try {
+      normalizeObjectIdsForUserMutation(ids, 'favPathways');
+    } catch (error: any) {
+      expect(error.status).toBe(400);
+    }
   });
 });
 

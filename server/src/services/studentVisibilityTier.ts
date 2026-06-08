@@ -2,7 +2,9 @@ import {
   publicStudentVisibilityTiers,
   type StudentVisibilityTier,
 } from '../models/studentVisibility';
+import { isProfileAreaShellEntity } from '../utils/profileAreaDuplicateRisk';
 import { buildResearchEntityQualitySummary } from './researchEntityQuality';
+import { classifyProgramResearchRelevance } from './programResearchRelevance';
 
 export const STUDENT_VISIBILITY_VERSION = 'student-visibility-v1';
 
@@ -16,14 +18,28 @@ export interface ResearchEntityStudentVisibilityInput {
   entity: Record<string, any>;
   leadMembers?: Array<Record<string, any>>;
   accessSignalCount?: number;
-  accessSignalTypes?: string[];
   actionablePathwayCount?: number;
-  actionablePathwayTypes?: string[];
-  publicContactRouteCount?: number;
-  publicContactRouteTypes?: string[];
   openPostedOpportunityCount?: number;
   duplicateRisk?: boolean;
+  exactUrlDuplicateRisk?: boolean;
   contentPageRisk?: boolean;
+}
+
+export function hasProfileAreaShellDuplicateRisk({
+  entity,
+  leadMembers = [],
+  concreteLeadEntityUserIds,
+}: {
+  entity: Record<string, any>;
+  leadMembers?: Array<Record<string, any>>;
+  concreteLeadEntityUserIds: Set<string>;
+}): boolean {
+  if (!isProfileAreaShellEntity(entity)) return false;
+  return leadMembers.some((member) => {
+    const userId =
+      member.userId === undefined || member.userId === null ? '' : String(member.userId).trim();
+    return userId && concreteLeadEntityUserIds.has(userId);
+  });
 }
 
 export interface ProgramStudentVisibilityInput extends Record<string, any> {
@@ -34,6 +50,14 @@ export interface ProgramStudentVisibilityInput extends Record<string, any> {
   links?: Array<{ url?: string }>;
   undergraduateOnly?: boolean;
   yaleCollegeOnly?: boolean;
+  programKind?: string;
+  entryMode?: string;
+  mentorMatching?: boolean;
+  requiresMentorBeforeApply?: boolean;
+  purpose?: string[];
+  summary?: string;
+  description?: string;
+  eligibility?: string;
 }
 
 const textValue = (value: unknown): string =>
@@ -43,66 +67,184 @@ const hasHttpUrl = (value: unknown): boolean => /^https?:\/\//i.test(textValue(v
 
 const hasAnyHttpUrl = (values: unknown[]): boolean => values.some(hasHttpUrl);
 
-const LAB_LEAD_ROLES = new Set(['pi', 'co-pi', 'core-faculty']);
-const FACULTY_LEAD_ROLES = new Set(['pi', 'co-pi', 'core-faculty']);
-const CENTER_LEAD_ROLES = new Set(['director', 'co-director', 'program-manager']);
-const EXPLORATORY_PATHWAY_TYPES = new Set(['EXPLORATORY_CONTACT', 'FACULTY_SUPERVISION']);
-const EXPLORATORY_ACCESS_SIGNAL_TYPES = new Set([
-  'REACH_OUT_PLAUSIBLE',
-  'FACULTY_SUPERVISES_STUDENT_PROJECTS',
+const entityUrls = (entity: Record<string, any>): string[] =>
+  [
+    entity.websiteUrl,
+    entity.website,
+    ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : []),
+  ]
+    .map(textValue)
+    .filter((value) => /^https?:\/\//i.test(value));
+
+const genericDirectoryUrlPathPatterns = [
+  /\/(?:people|faculty|professors|directory|members|membership\/directory|humans\/faculty)\/?$/i,
+];
+
+function isGenericDirectoryUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    const path = url.pathname.replace(/\/+$/g, '') || '/';
+    return genericDirectoryUrlPathPatterns.some((pattern) => pattern.test(path));
+  } catch {
+    return false;
+  }
+}
+
+function isGenericDirectoryOnlyProfileAreaShell(entity: Record<string, any>): boolean {
+  if (!isProfileAreaShellEntity(entity)) return false;
+  const urls = entityUrls(entity);
+  if (urls.length === 0) return false;
+  return urls.every(isGenericDirectoryUrl);
+}
+
+function isYaleProfileOrDirectoryUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    const path = url.pathname.replace(/\/+$/g, '') || '/';
+    if (!/(^|\.)yale\.edu$/i.test(url.hostname)) return false;
+    return isGenericDirectoryUrl(value) || /\/(?:[^/]+\/)?profile\/[^/]+$/i.test(path);
+  } catch {
+    return false;
+  }
+}
+
+function isProfileBiographyShell({
+  entity,
+  leadState,
+  descriptionState,
+  hasActionEvidence,
+}: {
+  entity: Record<string, any>;
+  leadState: string;
+  descriptionState: string;
+  hasActionEvidence: boolean;
+}): boolean {
+  if (!isProfileAreaShellEntity(entity)) return false;
+  if (descriptionState !== 'thin') return false;
+  if (leadState === 'lead_attached') return false;
+  if (hasUsefulResearchAreas(entity)) return false;
+  if (hasActionEvidence) return false;
+
+  const urls = entityUrls(entity);
+  return urls.length > 0 && urls.every(isYaleProfileOrDirectoryUrl);
+}
+
+function hasUsefulResearchAreas(entity: Record<string, any>): boolean {
+  return Array.isArray(entity.researchAreas) && entity.researchAreas.some((area) => textValue(area));
+}
+
+function isProgramLikeResearchEntity(entity: Record<string, any>): boolean {
+  return (
+    textValue(entity.kind).toLowerCase() === 'program' ||
+    textValue(entity.entityType).toUpperCase() === 'PROGRAM'
+  );
+}
+
+const ORGANIZATIONAL_ENTITY_TYPES = new Set([
+  'CENTER',
+  'INSTITUTE',
+  'INITIATIVE',
+  'CORE_FACILITY',
 ]);
-const CENTER_ACTION_PATHWAY_TYPES = new Set([
+
+/**
+ * Organizational research homes (centers, institutes, initiatives, core
+ * facilities) are institutionally contactable: the entity itself — via its
+ * official page and programs — is the way in, so a single named individual lead
+ * is NOT required for student visibility. (Many real Yale centers are dean- or
+ * committee-led and never publish a single "director".) A named director is
+ * still surfaced when known, but its absence should not hide a well-described,
+ * source-backed center from students.
+ */
+function isOrganizationalResearchEntity(entity: Record<string, any>): boolean {
+  return ORGANIZATIONAL_ENTITY_TYPES.has(textValue(entity.entityType).toUpperCase());
+}
+
+function memberUserRecord(member: Record<string, any>): Record<string, any> {
+  if (member.user && typeof member.user === 'object') return member.user;
+  const user = member.userId;
+  return user && typeof user === 'object' ? user : {};
+}
+
+function isNonOwnerResearchTitle(value: unknown): boolean {
+  const title = textValue(value).toLowerCase();
+  if (!title) return false;
+  return (
+    /\bpostdoctoral\b|\bpostdoc\b/.test(title) ||
+    /\bresearch affiliates?\b/.test(title) ||
+    /\bassociate research scientist\b/.test(title)
+  );
+}
+
+function isGrantOrOrcidSourceUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    const host = url.hostname.toLowerCase();
+    return (
+      host === 'reporter.nih.gov' ||
+      host === 'api.reporter.nih.gov' ||
+      host === 'www.nsf.gov' ||
+      host === 'api.nsf.gov' ||
+      host === 'orcid.org'
+    );
+  } catch {
+    return false;
+  }
+}
+
+function isNonOwnerGrantShell({
+  entity,
+  leadMembers,
+  hasActionEvidence,
+}: {
+  entity: Record<string, any>;
+  leadMembers: Array<Record<string, any>>;
+  hasActionEvidence: boolean;
+}): boolean {
+  if (hasActionEvidence) return false;
+  if (!/\blab(?:oratory)?$/i.test(textValue(entity.name || entity.displayName))) return false;
+  const urls = entityUrls(entity);
+  if (urls.length === 0 || !urls.every(isGrantOrOrcidSourceUrl)) return false;
+  return leadMembers.some((member) => {
+    const user = memberUserRecord(member);
+    return isNonOwnerResearchTitle(user.title || member.title);
+  });
+}
+
+const FORMALIZATION_PROGRAM_KINDS = new Set([
+  'FELLOWSHIP_FUNDING',
+  'TRAVEL_RESEARCH_GRANT',
+  'SENIOR_THESIS_FUNDING',
+]);
+
+const ENTRY_PROGRAM_KINDS = new Set([
+  'STRUCTURED_PROGRAM',
   'CENTER_INTERNSHIP',
-  'RECURRING_PROGRAM',
-  'POSTED_ROLE',
-  'EXPLORATORY_CONTACT',
+  'RA_PROGRAM',
+  'MENTOR_MATCHING',
 ]);
-const CENTER_ACTION_CONTACT_ROUTE_TYPES = new Set([
-  'PROGRAM_MANAGER',
-  'DEPARTMENT_CONTACT',
-  'OFFICIAL_APPLICATION',
+
+const ENTRY_PROGRAM_MODES = new Set([
+  'APPLY_TO_PROGRAM',
+  'APPLY_TO_PROJECT',
+  'DIRECT_FACULTY_MATCHING',
 ]);
-const CENTER_ACTION_ACCESS_SIGNAL_TYPES = new Set([
-  'POSTED_OPENING',
-  'RECURRING_PROGRAM',
-  'APPLICATION_FORM_EXISTS',
-  'CONTACT_INSTRUCTIONS_EXIST',
-  'PROGRAM_MANAGER_LISTED',
-]);
-const PROGRAM_ACTION_PATHWAY_TYPES = new Set([
-  'POSTED_ROLE',
-  'RECURRING_PROGRAM',
-  'CENTER_INTERNSHIP',
-  'WORK_STUDY',
-  'VOLUNTEER_OUTREACH',
-  'STUDENT_JOB',
-]);
-const PROGRAM_ACTION_CONTACT_ROUTE_TYPES = new Set([
-  'OFFICIAL_APPLICATION',
-  'PROGRAM_MANAGER',
-  'DEPARTMENT_CONTACT',
-  'FELLOWSHIP_OFFICE',
-]);
-const PROGRAM_ACTION_ACCESS_SIGNAL_TYPES = new Set([
-  'POSTED_OPENING',
-  'RECURRING_PROGRAM',
-  'APPLICATION_FORM_EXISTS',
-  'CONTACT_INSTRUCTIONS_EXIST',
-  'PROGRAM_MANAGER_LISTED',
-]);
-const FACULTY_READY_CONTACT_ROUTE_TYPES = new Set([
-  'OFFICIAL_APPLICATION',
-  'LAB_MANAGER',
-  'PROGRAM_MANAGER',
-  'DEPARTMENT_CONTACT',
-]);
-const FACULTY_READY_ACCESS_SIGNAL_TYPES = new Set([
-  'POSTED_OPENING',
-  'RECURRING_PROGRAM',
-  'APPLICATION_FORM_EXISTS',
-  'CONTACT_INSTRUCTIONS_EXIST',
-]);
-const CENTER_LIKE_ENTITY_TYPES = new Set(['CENTER', 'INSTITUTE', 'INITIATIVE']);
+
+const formalizationCategoryPattern =
+  /\b(funding after mentor|research travel funding|senior research funding|grant|fellowship funding|travel funding|summer research funding|project funding)\b/i;
+
+function isFormalizationOnlyProgram(program: ProgramStudentVisibilityInput): boolean {
+  const kind = textValue(program.programKind).toUpperCase();
+  const entryMode = textValue(program.entryMode).toUpperCase();
+  const category = textValue(program.studentFacingCategory);
+
+  if (program.mentorMatching === true) return false;
+  if (ENTRY_PROGRAM_KINDS.has(kind)) return false;
+  if (ENTRY_PROGRAM_MODES.has(entryMode)) return false;
+  if (FORMALIZATION_PROGRAM_KINDS.has(kind)) return true;
+  if (entryMode === 'SECURE_MENTOR_THEN_APPLY' || program.requiresMentorBeforeApply === true) return true;
+  return formalizationCategoryPattern.test(category);
+}
 
 const overrideTier = (record: Record<string, any>): StudentVisibilityTier | null => {
   const tier = record.studentVisibilityOverrideTier;
@@ -137,194 +279,74 @@ const withOverride = (
 export const isPublicStudentVisibilityTier = (tier: unknown): tier is StudentVisibilityTier =>
   publicStudentVisibilityTiers.includes(tier as StudentVisibilityTier);
 
-const normalizedType = (value: unknown): string => textValue(value).toUpperCase();
-
-function entityTypeFor(entity: Record<string, any>): string {
-  const entityType = normalizedType(entity.entityType);
-  if (entityType) return entityType;
-  const kind = textValue(entity.kind).toLowerCase();
-  if (kind === 'lab') return 'LAB';
-  if (kind === 'center') return 'CENTER';
-  if (kind === 'individual' || kind === 'solo') return 'FACULTY_RESEARCH_AREA';
-  return '';
-}
-
-const hasTypedValue = (values: string[] | undefined, allowed: Set<string>): boolean =>
-  (values || []).some((value) => allowed.has(normalizedType(value)));
-
-const hasRoleBackedMember = (
-  members: Array<Record<string, any>>,
-  allowedRoles: Set<string>,
-): boolean =>
-  members.some((member) => {
-    const role = textValue(member.role).toLowerCase();
-    const hasIdentity = Boolean(
-      member.userId || member.user?._id || textValue(member.name) || textValue(member.user?.netid),
-    );
-    return allowedRoles.has(role) && hasIdentity;
-  });
-
 export function computeResearchEntityStudentVisibility({
   entity,
   leadMembers = [],
   accessSignalCount = 0,
-  accessSignalTypes = [],
   actionablePathwayCount = 0,
-  actionablePathwayTypes = [],
-  publicContactRouteCount = 0,
-  publicContactRouteTypes = [],
   openPostedOpportunityCount = 0,
   duplicateRisk = false,
+  exactUrlDuplicateRisk = false,
   contentPageRisk = false,
 }: ResearchEntityStudentVisibilityInput): StudentVisibilityResult {
   const quality = buildResearchEntityQualitySummary({ entity, leadMembers });
-  const entityType = entityTypeFor(entity);
   const reasons: string[] = [];
+  const hasActionEvidence =
+    openPostedOpportunityCount > 0 || accessSignalCount > 0 || actionablePathwayCount > 0;
+  const requiresLead =
+    !isProgramLikeResearchEntity(entity) && !isOrganizationalResearchEntity(entity);
+  const genericDirectoryShell =
+    isGenericDirectoryOnlyProfileAreaShell(entity) &&
+    quality.descriptionState === 'missing' &&
+    quality.leadState !== 'lead_attached' &&
+    !hasUsefulResearchAreas(entity) &&
+    !hasActionEvidence;
+  const profileBiographyShell = isProfileBiographyShell({
+    entity,
+    leadState: quality.leadState,
+    descriptionState: quality.descriptionState,
+    hasActionEvidence,
+  });
+  const nonOwnerGrantShell = isNonOwnerGrantShell({ entity, leadMembers, hasActionEvidence });
 
   if (entity.activeAtYaleCache === false) reasons.push('inactive_at_yale');
-  if (duplicateRisk) reasons.push('duplicate_risk');
+  if (textValue(entity.studentVisibilitySuppressionReason).includes('research_infrastructure_only')) {
+    reasons.push('research_infrastructure_only');
+  }
+  if (exactUrlDuplicateRisk) reasons.push('exact_url_duplicate_risk');
+  if (duplicateRisk || exactUrlDuplicateRisk) reasons.push('duplicate_risk');
   if (contentPageRisk) reasons.push('content_page_risk');
   if (quality.descriptionState === 'source_backed') reasons.push('source_backed_description');
   if (quality.descriptionState === 'profile_synthesis') reasons.push('profile_fallback_only');
   if (quality.descriptionState === 'thin') reasons.push('thin_description');
   if (quality.descriptionState === 'missing') reasons.push('missing_description');
-  if (
-    quality.leadState !== 'lead_attached' &&
-    !CENTER_LIKE_ENTITY_TYPES.has(entityType) &&
-    entityType !== 'PROGRAM' &&
-    entityType !== 'LAB' &&
-    entityType !== 'FACULTY_RESEARCH_AREA'
-  ) {
-    reasons.push('missing_lead');
-  }
+  if (quality.repairFlags.includes('missing_card_description')) reasons.push('missing_card_description');
+  if (quality.repairFlags.includes('pi_identity_conflict')) reasons.push('pi_identity_conflict');
+  if (requiresLead && quality.leadState !== 'lead_attached') reasons.push('missing_lead');
   if (quality.repairFlags.includes('missing_source_url')) reasons.push('missing_source_url');
+  if (genericDirectoryShell) reasons.push('generic_directory_shell');
+  if (profileBiographyShell) reasons.push('profile_biography_shell');
+  if (nonOwnerGrantShell) reasons.push('non_owner_grant_shell');
 
-  const hasActionEvidence =
-    openPostedOpportunityCount > 0 ||
-    accessSignalCount > 0 ||
-    actionablePathwayCount > 0 ||
-    publicContactRouteCount > 0;
   if (hasActionEvidence) reasons.push('concrete_next_step');
   else reasons.push('missing_action_evidence');
 
   let computedTier: StudentVisibilityTier = 'operator_review';
-  if (entity.activeAtYaleCache === false || contentPageRisk) {
+  if (
+    entity.activeAtYaleCache === false ||
+    contentPageRisk ||
+    exactUrlDuplicateRisk ||
+    genericDirectoryShell ||
+    profileBiographyShell ||
+    nonOwnerGrantShell ||
+    reasons.includes('research_infrastructure_only')
+  ) {
     computedTier = 'suppressed';
-  } else if (CENTER_LIKE_ENTITY_TYPES.has(entityType)) {
-    const hasOfficialSource = !quality.repairFlags.includes('missing_source_url');
-    const hasUsefulDescription =
-      quality.descriptionState === 'source_backed' || quality.descriptionState === 'thin';
-    const hasCenterActionRoute =
-      publicContactRouteCount > 0 ||
-      openPostedOpportunityCount > 0 ||
-      hasTypedValue(actionablePathwayTypes, CENTER_ACTION_PATHWAY_TYPES) ||
-      hasTypedValue(publicContactRouteTypes, CENTER_ACTION_CONTACT_ROUTE_TYPES) ||
-      hasTypedValue(accessSignalTypes, CENTER_ACTION_ACCESS_SIGNAL_TYPES);
-
-    if (hasOfficialSource) reasons.push('center_official_source');
-    else reasons.push('missing_center_official_source');
-    if (hasRoleBackedMember(leadMembers, CENTER_LEAD_ROLES)) reasons.push('center_director_attached');
-    if (hasCenterActionRoute) reasons.push('center_action_route');
-    else reasons.push('center_affiliation_index', 'missing_center_contact_route');
-
-    if (!duplicateRisk && hasOfficialSource && hasUsefulDescription && hasCenterActionRoute) {
-      computedTier = 'student_ready';
-    } else if (!duplicateRisk && hasOfficialSource && hasUsefulDescription) {
-      computedTier = 'limited_but_safe';
-    }
-  } else if (entityType === 'PROGRAM') {
-    const hasOfficialSource = !quality.repairFlags.includes('missing_source_url');
-    const hasUsefulDescription =
-      quality.descriptionState === 'source_backed' || quality.descriptionState === 'thin';
-    const hasProgramActionRoute =
-      publicContactRouteCount > 0 ||
-      openPostedOpportunityCount > 0 ||
-      hasTypedValue(actionablePathwayTypes, PROGRAM_ACTION_PATHWAY_TYPES) ||
-      hasTypedValue(publicContactRouteTypes, PROGRAM_ACTION_CONTACT_ROUTE_TYPES) ||
-      hasTypedValue(accessSignalTypes, PROGRAM_ACTION_ACCESS_SIGNAL_TYPES);
-
-    if (hasOfficialSource) reasons.push('program_official_source');
-    else reasons.push('missing_program_official_source');
-    if (hasProgramActionRoute) reasons.push('program_action_route');
-    else reasons.push('missing_program_action_route');
-
-    if (
-      !duplicateRisk &&
-      hasOfficialSource &&
-      quality.descriptionState === 'source_backed' &&
-      hasProgramActionRoute
-    ) {
-      computedTier = 'student_ready';
-    } else if (!duplicateRisk && hasOfficialSource && hasUsefulDescription && hasProgramActionRoute) {
-      computedTier = 'limited_but_safe';
-    }
-  } else if (entityType === 'LAB') {
-    const hasLabLead = hasRoleBackedMember(leadMembers, LAB_LEAD_ROLES);
-    if (hasLabLead) reasons.push('lab_pi_attached');
-    else reasons.push('missing_lab_lead');
-
-    if (
-      quality.descriptionState === 'source_backed' &&
-      hasLabLead &&
-      !quality.repairFlags.includes('missing_source_url') &&
-      hasActionEvidence &&
-      !duplicateRisk
-    ) {
-      computedTier = 'student_ready';
-    } else if (
-      (quality.descriptionState === 'source_backed' || quality.descriptionState === 'thin') &&
-      hasLabLead &&
-      !quality.repairFlags.includes('missing_source_url') &&
-      !duplicateRisk
-    ) {
-      computedTier = 'limited_but_safe';
-    } else if (
-      quality.descriptionState === 'profile_synthesis' &&
-      hasLabLead &&
-      !quality.repairFlags.includes('missing_source_url') &&
-      hasActionEvidence &&
-      !duplicateRisk
-    ) {
-      computedTier = 'limited_but_safe';
-    }
-  } else if (entityType === 'FACULTY_RESEARCH_AREA') {
-    const hasFacultyIdentity = hasRoleBackedMember(leadMembers, FACULTY_LEAD_ROLES);
-    const hasExploratoryFraming =
-      hasTypedValue(actionablePathwayTypes, EXPLORATORY_PATHWAY_TYPES) ||
-      hasTypedValue(accessSignalTypes, EXPLORATORY_ACCESS_SIGNAL_TYPES) ||
-      hasTypedValue(publicContactRouteTypes, new Set(['FACULTY_PI']));
-    const hasReadyAction =
-      openPostedOpportunityCount > 0 ||
-      hasTypedValue(publicContactRouteTypes, FACULTY_READY_CONTACT_ROUTE_TYPES) ||
-      hasTypedValue(accessSignalTypes, FACULTY_READY_ACCESS_SIGNAL_TYPES);
-
-    if (hasFacultyIdentity) reasons.push('faculty_identity_attached');
-    else reasons.push('missing_faculty_identity');
-    if (hasExploratoryFraming) reasons.push('exploratory_framing');
-    else reasons.push('missing_exploratory_framing');
-
-    if (
-      quality.descriptionState === 'source_backed' &&
-      hasFacultyIdentity &&
-      !quality.repairFlags.includes('missing_source_url') &&
-      hasReadyAction &&
-      !duplicateRisk
-    ) {
-      computedTier = 'student_ready';
-    } else if (
-      (quality.descriptionState === 'source_backed' ||
-        quality.descriptionState === 'thin' ||
-        quality.descriptionState === 'profile_synthesis') &&
-      hasFacultyIdentity &&
-      !quality.repairFlags.includes('missing_source_url') &&
-      hasExploratoryFraming &&
-      !duplicateRisk
-    ) {
-      computedTier = 'limited_but_safe';
-    }
   } else if (
     quality.descriptionState === 'source_backed' &&
-    quality.leadState === 'lead_attached' &&
+    quality.cardState === 'complete' &&
+    (!requiresLead || quality.leadState === 'lead_attached') &&
+    !quality.repairFlags.includes('pi_identity_conflict') &&
     !quality.repairFlags.includes('missing_source_url') &&
     hasActionEvidence &&
     !duplicateRisk
@@ -332,23 +354,10 @@ export function computeResearchEntityStudentVisibility({
     computedTier = 'student_ready';
   } else if (
     quality.descriptionState === 'source_backed' &&
-    quality.leadState === 'lead_attached' &&
+    quality.cardState === 'complete' &&
+    (!requiresLead || quality.leadState === 'lead_attached') &&
+    !quality.repairFlags.includes('pi_identity_conflict') &&
     !quality.repairFlags.includes('missing_source_url') &&
-    !duplicateRisk
-  ) {
-    computedTier = 'limited_but_safe';
-  } else if (
-    quality.descriptionState === 'thin' &&
-    quality.leadState === 'lead_attached' &&
-    !quality.repairFlags.includes('missing_source_url') &&
-    !duplicateRisk
-  ) {
-    computedTier = 'limited_but_safe';
-  } else if (
-    quality.descriptionState === 'profile_synthesis' &&
-    quality.leadState === 'lead_attached' &&
-    !quality.repairFlags.includes('missing_source_url') &&
-    hasActionEvidence &&
     !duplicateRisk
   ) {
     computedTier = 'limited_but_safe';
@@ -376,6 +385,8 @@ export function computeProgramStudentVisibility(
   );
   const isArchiveReview = category === 'Archive / review';
   const graduateOnly = program.undergraduateOnly === false;
+  const formalizationOnly = isFormalizationOnlyProgram(program);
+  const researchRelated = classifyProgramResearchRelevance(program).researchRelated;
   const catalogOrAdmin =
     /\b(administering|alternative funding|find funding|student grants database|faculty staff)\b/i.test(
       title,
@@ -392,9 +403,11 @@ export function computeProgramStudentVisibility(
   if (undergraduateRelevant) {
     reasons.push('undergraduate_relevant');
   }
+  if (formalizationOnly) reasons.push('formalization_only');
+  if (!researchRelated) reasons.push('non_research_program');
 
   let computedTier: StudentVisibilityTier = 'operator_review';
-  if (graduateOnly || catalogOrAdmin) {
+  if (graduateOnly || catalogOrAdmin || !researchRelated) {
     computedTier = 'suppressed';
   } else if (
     !isArchiveReview &&
@@ -403,6 +416,11 @@ export function computeProgramStudentVisibility(
     hasApplicationRoute &&
     !sourceIsApplicationPortal
   ) {
+    // Undergraduate-relevant research programs with a real (non-portal) official source and
+    // an application route are student-ready. This includes research funding (senior thesis,
+    // research travel, fellowship funding): on a research-focused surface, undergrad research
+    // funding is a destination students should see, not a hidden formalization step. The
+    // `formalization_only` reason is still recorded for transparency but no longer caps tier.
     computedTier = 'student_ready';
   } else if (!isArchiveReview && undergraduateRelevant && hasOfficialSource) {
     computedTier = 'limited_but_safe';

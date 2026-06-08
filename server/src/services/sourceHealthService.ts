@@ -1,4 +1,8 @@
 export type SourceHealthRisk = 'ok' | 'warn' | 'error';
+export type SourceHealthReviewArtifactReason =
+  | 'latest_failure'
+  | 'materialization_errors'
+  | 'materialization_conflicts';
 
 export interface SourceHealthSourceInput {
   _id?: unknown;
@@ -51,12 +55,20 @@ export interface SourceHealthRow {
     observationCount: number;
     materializationErrors: number;
     materializationConflicts: number;
+    reportCommand?: string;
+    reportOutputPath?: string;
   };
   risk: SourceHealthRisk;
   action: string;
-  queueType?: string;
-  owner?: string;
   nextCommand?: string;
+  reviewArtifact?: {
+    required: boolean;
+    reason: SourceHealthReviewArtifactReason;
+    command: string;
+    outputPath: string;
+    materializationConflicts: number;
+    materializationErrors: number;
+  };
 }
 
 const stringifyId = (value: unknown): string => {
@@ -78,6 +90,46 @@ const riskRank: Record<SourceHealthRisk, number> = {
   warn: 1,
   ok: 2,
 };
+const BETA_ENV_PREFIX = 'SCRAPER_ENV=beta';
+
+function reportOutputPath(sourceName: string, runId: string): string {
+  const safeSourceName = sourceName.replace(/[^a-z0-9_.-]+/gi, '-').replace(/^-+|-+$/g, '');
+  return `/tmp/ylabs-scraper-reports/${safeSourceName || 'source'}-${runId}.json`;
+}
+
+function reportCommand(sourceName: string, runId: string): string {
+  return betaCommand(
+    `yarn --cwd server scrape report --run ${runId} --output ${reportOutputPath(sourceName, runId)}`,
+  );
+}
+
+function reviewArtifactForRun(args: {
+  sourceName: string;
+  runId: string;
+  reason: SourceHealthReviewArtifactReason;
+  materializationConflicts?: number;
+  materializationErrors?: number;
+}): SourceHealthRow['reviewArtifact'] {
+  return {
+    required: true,
+    reason: args.reason,
+    command: reportCommand(args.sourceName, args.runId),
+    outputPath: reportOutputPath(args.sourceName, args.runId),
+    materializationConflicts: args.materializationConflicts || 0,
+    materializationErrors: args.materializationErrors || 0,
+  };
+}
+
+function noRecentRunCommand(sourceName: string): string {
+  if (sourceName === 'visibility-repair-queue') {
+    return 'SCRAPER_ENV=beta yarn --cwd server beta:repair-queue --collection=all --mode=dry-run --limit=100 --output /tmp/ylabs-visibility-repair-queue-dry-run.json';
+  }
+  return `SCRAPER_ENV=beta yarn --cwd server scrape run --source ${sourceName} --dry-run --limit 25`;
+}
+
+function betaCommand(command: string): string {
+  return command.startsWith(`${BETA_ENV_PREFIX} `) ? command : `${BETA_ENV_PREFIX} ${command}`;
+}
 
 function riskForSource(
   source: SourceHealthSourceInput,
@@ -85,10 +137,25 @@ function riskForSource(
 ): {
   risk: SourceHealthRisk;
   action: string;
-  queueType?: string;
-  owner?: string;
   nextCommand?: string;
 } {
+  const latestRunId = stringifyId(latestRun?._id);
+  const latestRunReportCommand = latestRunId ? reportCommand(source.name, latestRunId) : undefined;
+  const latestRunReviewArtifact = (
+    reason: SourceHealthReviewArtifactReason,
+  ) =>
+    latestRunId
+      ? {
+          reviewArtifact: reviewArtifactForRun({
+            sourceName: source.name,
+            runId: latestRunId,
+            reason,
+            materializationConflicts: latestRun?.materializationConflicts,
+            materializationErrors: latestRun?.materializationErrors,
+          }),
+        }
+      : {};
+
   if (!source.enabled) {
     return {
       risk: 'warn',
@@ -102,6 +169,12 @@ function riskForSource(
     };
   }
   if (!latestRun) {
+    if (source.name === 'visibility-repair-queue') {
+      return {
+        risk: 'ok',
+        action: 'Manual visibility repair queue; no scheduled scraper run is expected.',
+      };
+    }
     if (source.cadence === 'event' || source.coverage.tier === 'MANUAL_OVERRIDE') {
       return {
         risk: 'ok',
@@ -111,12 +184,15 @@ function riskForSource(
     return {
       risk: 'warn',
       action: 'No recent run recorded; run a bounded dry run before seeding.',
+      nextCommand: noRecentRunCommand(source.name),
     };
   }
   if (latestRun.status === 'failure') {
     return {
       risk: 'error',
       action: 'Latest run failed; inspect scraper report before rerunning.',
+      nextCommand: latestRunReportCommand,
+      ...latestRunReviewArtifact('latest_failure'),
     };
   }
   if (latestRun.status === 'running') {
@@ -128,27 +204,30 @@ function riskForSource(
   if ((latestRun.materializationErrors || 0) > 0) {
     return {
       risk: 'error',
-      action: 'Materialization errors exist; fix or document before accepting output.',
-    };
-  }
-  if ((latestRun.materializationConflicts || 0) > 0) {
-    return {
-      risk: 'warn',
-      action: 'Review materialization conflicts before promoting scraper output.',
-      queueType: 'conflict-review',
-      owner: 'scraper-source operator',
-      nextCommand: 'yarn --cwd server source:health',
+      action: 'Materialization errors exist; run the latest scraper report and fix or document before accepting output.',
+      nextCommand: latestRunReportCommand,
+      ...latestRunReviewArtifact('materialization_errors'),
     };
   }
   if (latestRun.status === 'partial') {
     return {
       risk: 'warn',
-      action: 'Inspect partial run before promotion.',
+      action: 'Inspect this partial run with the latest scraper report before promotion.',
+      nextCommand: latestRunReportCommand,
+      ...latestRunReviewArtifact('materialization_conflicts'),
     };
   }
+  // Resolved materialization conflicts are cross-source value disagreements that the confidence
+  // resolver already adjudicates (it picks a winner and flags hasConflict). They are a normal,
+  // expected condition for any entity described by 2+ sources and are surfaced in reviewSummary
+  // as an informational review signal. They are NOT a source-health risk or a promotion blocker.
+  // Only run failures (status:'failure') and materializationErrors gate promotion.
   return {
     risk: 'ok',
-    action: 'Latest run is acceptable for source-health purposes.',
+    action:
+      (latestRun.materializationConflicts || 0) > 0
+        ? 'Latest run resolved cross-source conflicts; see materialization conflict review (informational, non-blocking).'
+        : 'Latest run is acceptable for source-health purposes.',
   };
 }
 
@@ -177,6 +256,7 @@ export function buildSourceHealthRows(
       const sourceRuns = runsBySource.get(source.name) || [];
       const latestRun = sourceRuns[0];
       const risk = riskForSource(source, latestRun);
+      const latestRunId = stringifyId(latestRun?._id);
 
       return {
         sourceName: source.name,
@@ -196,13 +276,19 @@ export function buildSourceHealthRows(
         },
         latestRun: latestRun
           ? {
-              id: stringifyId(latestRun._id),
+              id: latestRunId,
               status: latestRun.status,
               startedAt: iso(latestRun.startedAt),
               finishedAt: iso(latestRun.finishedAt),
               observationCount: latestRun.observationCount || 0,
               materializationErrors: latestRun.materializationErrors || 0,
               materializationConflicts: latestRun.materializationConflicts || 0,
+              ...(latestRunId
+                ? {
+                    reportCommand: reportCommand(source.name, latestRunId),
+                    reportOutputPath: reportOutputPath(source.name, latestRunId),
+                  }
+                : {}),
             }
           : undefined,
         ...risk,

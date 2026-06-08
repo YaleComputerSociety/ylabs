@@ -86,7 +86,7 @@ describe('opportunityDetailService', () => {
     expect(researchEntityCalls[0].filter).toMatchObject({
       _id: entityId,
       archived: { $ne: true },
-      studentVisibilityTier: { $in: ['student_ready', 'limited_but_safe'] },
+      studentVisibilityTier: { $in: ['student_ready'] },
     });
   });
 
@@ -107,7 +107,7 @@ describe('opportunityDetailService', () => {
       hoursPerWeek: 8,
       payRate: '$18/hour',
       compensationType: 'PAID',
-      eligibility: 'Open to Yale undergraduates.',
+      eligibility: 'Open to Yale undergraduates. Questions: hidden@example.edu',
       sourceEvidenceIds: [evidenceId],
       sourceUrls: ['https://source.example.edu/posting'],
       listingId: new Types.ObjectId(),
@@ -119,7 +119,7 @@ describe('opportunityDetailService', () => {
       evidenceStrength: 'DIRECT',
       studentFacingLabel: 'Posted RA role',
       explanation: 'Apply through the official posting.',
-      bestNextStep: 'Submit the application.',
+      bestNextStep: 'Email hidden@example.edu after reviewing the application.',
       compensation: 'PAID',
       confidence: 0.9,
       sourceUrls: ['https://source.example.edu/posting'],
@@ -178,6 +178,7 @@ describe('opportunityDetailService', () => {
         _id: pathwayId.toString(),
         pathwayType: 'POSTED_ROLE',
         studentFacingLabel: 'Posted RA role',
+        bestNextStep: 'Email [email redacted] after reviewing the application.',
       },
       sourceUrls: ['https://source.example.edu/posting'],
     });
@@ -190,7 +191,77 @@ describe('opportunityDetailService', () => {
       confidence: 0.95,
       observedAt: new Date('2026-01-01T00:00:00.000Z'),
     });
+    expect(detail?.eligibility).toBe('Open to Yale undergraduates. Questions: [email redacted]');
     expect(JSON.stringify(detail)).not.toContain('hidden@example.edu');
+  });
+
+  it('filters unsafe public URLs before deriving application state or source links', async () => {
+    const opportunityId = new Types.ObjectId();
+    const pathwayId = new Types.ObjectId();
+    const entityId = new Types.ObjectId();
+    const evidenceId = new Types.ObjectId();
+
+    const detail = await getOpportunityDetail(opportunityId.toString(), {
+      opportunityModel: leanOneModel({
+        _id: opportunityId,
+        entryPathwayId: pathwayId,
+        researchEntityId: entityId,
+        title: 'Unsafe URL role',
+        applicationUrl: 'javascript:alert(1)',
+        status: 'OPEN',
+        sourceEvidenceIds: [evidenceId],
+        sourceUrls: [
+          'javascript:alert(1)',
+          'https://source.example.edu/posting',
+          'mailto:advisor@example.edu',
+        ],
+      }) as any,
+      pathwayModel: leanOneModel({
+        _id: pathwayId,
+        pathwayType: 'POSTED_ROLE',
+        status: 'ACTIVE',
+        studentFacingLabel: 'Posted role',
+        sourceEvidenceIds: [evidenceId],
+        sourceUrls: ['data:text/html,<script>alert(1)</script>', 'https://pathway.example.edu'],
+      }) as any,
+      researchEntityModel: leanOneModel({
+        _id: entityId,
+        slug: 'unsafe-url-lab',
+        name: 'Unsafe URL Lab',
+        departments: [],
+        researchAreas: [],
+        websiteUrl: 'javascript:alert(1)',
+        website: 'https://fallback.example.edu',
+      }) as any,
+      observationModel: leanManyModel([
+        {
+          _id: evidenceId,
+          sourceName: 'scraper',
+          sourceUrl: 'data:text/html,<script>alert(1)</script>',
+          field: 'postedOpportunity',
+          value: 'Apply through the linked posting.',
+          confidence: 0.8,
+        },
+      ]) as any,
+      now: new Date('2026-01-15T00:00:00.000Z'),
+    });
+
+    expect(detail).toMatchObject({
+      applicationUrl: undefined,
+      applicationState: 'NO_APPLICATION_URL',
+      applicationLabel: 'Application route not listed',
+      sourceUrls: ['https://source.example.edu/posting', 'https://pathway.example.edu/'],
+      researchEntity: {
+        websiteUrl: 'https://fallback.example.edu/',
+      },
+      pathway: {
+        sourceUrls: ['https://pathway.example.edu/'],
+      },
+    });
+    expect(detail?.evidence[0]?.sourceUrl).toBeUndefined();
+    expect(JSON.stringify(detail)).not.toContain('javascript:');
+    expect(JSON.stringify(detail)).not.toContain('data:text/html');
+    expect(JSON.stringify(detail)).not.toContain('mailto:');
   });
 
   it('derives closed and rolling application states from status, deadline, and URL', () => {

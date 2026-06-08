@@ -67,9 +67,35 @@ describe('departmentNames', () => {
         departmentTable,
       ),
     ).toEqual([
-      'CPSC - Computer Science',
-      'EEB - Ecology and Evolutionary Biology',
-      'S&DS - Statistics & Data Science',
+      'Computer Science',
+      'Ecology and Evolutionary Biology',
+      'Statistics & Data Science',
     ]);
+  });
+
+  it('can prefer canonical display names for student-facing profile labels', () => {
+    expect(
+      getUniqueDepartmentLabels(
+        ['EASCPS Computer Science', 'Computer Science'],
+        [
+          {
+            abbreviation: 'CPSC',
+            name: 'Computer Science',
+            displayName: 'CPSC - Computer Science',
+            aliases: ['EASCPS Computer Science'],
+          },
+        ],
+        { preferDisplayName: true },
+      ),
+    ).toEqual(['CPSC - Computer Science']);
+  });
+
+  it('collapses MCDB prefixed and plain labels to one readable display label', () => {
+    expect(
+      getUniqueDepartmentLabels([
+        'Molecular, Cellular & Developmental Biology',
+        'MCDB - Molecular, Cellular & Developmental Biology',
+      ]),
+    ).toEqual(['Molecular, Cellular & Developmental Biology']);
   });
 });

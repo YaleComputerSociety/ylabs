@@ -81,6 +81,16 @@ export const WORK_PLANNER_DAY_MS = 24 * 60 * 60 * 1000;
 
 export const workPlannerSourcePolicies = [
   {
+    sourceName: 'lab-microsite-description-llm',
+    entityType: 'researchEntity',
+    targetFields: ['fullDescription', 'shortDescription', 'researchAreas', 'methods'],
+    freshnessWindowMs: 30 * WORK_PLANNER_DAY_MS,
+    paid: true,
+    defaultRecurringCadence: 'manual',
+    notes:
+      'Official microsite description extraction; skip fresh entity descriptions to avoid repeated paid LLM passes and conflicting paraphrase observations.',
+  },
+  {
     sourceName: 'lab-microsite-undergrad-llm',
     entityType: 'researchEntity',
     targetFields: ['lastObservedAt'],
@@ -89,6 +99,16 @@ export const workPlannerSourcePolicies = [
     defaultRecurringCadence: 'weekly',
     notes:
       'Official microsite evidence; use the source-level lastObservedAt heartbeat to skip fresh entities before fetch/LLM calls.',
+  },
+  {
+    sourceName: 'student-decision-llm',
+    entityType: 'researchEntity',
+    targetFields: ['studentDecisionExplanation'],
+    freshnessWindowMs: 30 * WORK_PLANNER_DAY_MS,
+    paid: true,
+    defaultRecurringCadence: 'manual',
+    notes:
+      'Derived student-facing decision guidance; run only as a bounded/manual enrichment after source-backed access evidence exists.',
   },
   {
     sourceName: 'openalex',

@@ -53,17 +53,18 @@ The current implementation is pivoting to canonical `ResearchEntity` runtime sur
 ## Product Surfaces
 
 - Explore Research: curiosity-first browsing of labs, centers, faculty projects, institutes, archives, collections projects, and thesis-adviser-like research areas.
-- Ways In: practical evidence for plausible homes, next-step route, methods, timing, compensation/funding possibility, thesis fit, beginner-friendly signals, hours/week when known, Python, archival research, wet lab, social science data, and similar constraints. This is embedded in Research and detail surfaces, not a standalone public client route.
+- Ways In: practical evidence for plausible homes, next-step route, methods, timing, compensation/funding possibility, thesis fit, beginner-friendly signals, hours/week when known, Python, archival research, wet lab, social science data, and similar constraints. Keep this embedded in Yale Research rather than a separate product surface.
 
 Student-facing vocabulary should be warmer than internal model names: use "Ways In", "Evidence", and "Best Next Step" in product surfaces where appropriate.
 
-Iterate on canonical product surfaces instead of creating student-facing versioned routes. Use existing live routes such as `/research`, `/research/:slug`, `/programs`, `/opportunities/:id`, and `/account`, or a non-URL feature flag when rollout safety is needed; do not add `/v1`, `/v2`, `/research-v2`, or similar route names for normal design iteration. Public `/pathways`, `/listings`, and `/fellowships` are retired client redirects, although `/api/pathways/search` remains backend Ways In infrastructure and `/api/fellowships` remains a deprecated compatibility API.
+Iterate on canonical product surfaces instead of creating student-facing versioned routes. Use existing routes such as `/research`, or a non-URL feature flag when rollout safety is needed; do not add `/v1`, `/v2`, `/research-v2`, or similar route names for normal design iteration.
 
 Entity pages should answer what the research structure is, what it studies, who leads it, who might supervise undergrads day to day, what methods it uses, whether undergrads have participated before, what plausible access evidence exists, what the student should do next, how the relationship might later be formalized, and what source verifies the information.
 
 ## Implementation Rules
 
 - Default to making the requested change after inspecting the code. Ask questions only when the answer cannot be inferred from the repo and a wrong assumption would create meaningful rework or risk.
+- When the user reports a problem, treat it as a signal to fix the upstream cause when feasible. Do not settle for a local symptom patch if a durable code, data, test, or workflow change would prevent the same class of issue from recurring.
 - Follow existing local patterns before adding abstractions.
 - For new endpoints, add route, controller, service, model changes, auth middleware, validation middleware, and tests where risk justifies them.
 - For new pages, add the page under `client/src/pages/`, wire the route in `client/src/App.tsx`, and reuse existing providers/components where appropriate.

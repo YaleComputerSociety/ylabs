@@ -74,7 +74,7 @@ interface OpenAlexWork {
     pdf_url?: string;
     source?: { display_name?: string };
   }[];
-  open_access?: { is_oa?: boolean; oa_url?: string };
+  open_access?: { is_oa?: boolean; oa_status?: string; oa_url?: string };
   abstract_inverted_index?: Record<string, number[]>;
   topics?: { display_name?: string; field?: { display_name?: string } }[];
   concepts?: { display_name?: string; level?: number }[];
@@ -351,6 +351,8 @@ function workToObservations(
     ['citationCount', work.cited_by_count ?? 0],
     ['abstract', reconstructAbstract(work.abstract_inverted_index)],
     ['url', `https://openalex.org/${(openAlexId || '').replace(/^https?:\/\/openalex\.org\//, '')}`],
+    ['isOpenAccess', work.open_access?.is_oa],
+    ['openAccessStatus', work.open_access?.oa_status],
     ['openAccessUrl', work.open_access?.oa_url],
     [
       'authors',
@@ -503,6 +505,18 @@ export interface OpenAlexPaperScraperOptions {
   fetcher?: HttpFetcher;
 }
 
+function parseRunIntegerOption(
+  value: number | undefined,
+  flag: string,
+  options: { min: number; label: 'positive' | 'non-negative' },
+): number | undefined {
+  if (value === undefined) return undefined;
+  if (!Number.isSafeInteger(value) || value < options.min) {
+    throw new Error(`${flag} must be a safe ${options.label} integer`);
+  }
+  return value;
+}
+
 export class OpenAlexPaperScraper implements IScraper {
   readonly name = 'openalex';
   readonly displayName = 'OpenAlex paper sync';
@@ -510,6 +524,19 @@ export class OpenAlexPaperScraper implements IScraper {
   constructor(private readonly opts: OpenAlexPaperScraperOptions = {}) {}
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
+    const offsetOption = parseRunIntegerOption(ctx.options.offset, '--offset', {
+      min: 0,
+      label: 'non-negative',
+    });
+    const limitOption = parseRunIntegerOption(ctx.options.limit, '--limit', {
+      min: 1,
+      label: 'positive',
+    });
+    const maxPagesOption = parseRunIntegerOption(
+      ctx.options.maxOpenAlexPagesPerAuthor,
+      '--max-openalex-pages-per-author',
+      { min: 1, label: 'positive' },
+    );
     const email = process.env.OPENALEX_CONTACT_EMAIL || 'info@yalelabs.io';
     const fetcher = this.opts.fetcher || defaultFetcher;
     const userModel = this.opts.userModel || User;
@@ -565,14 +592,8 @@ export class OpenAlexPaperScraper implements IScraper {
       return aKey.localeCompare(bKey);
     });
     const totalEligibleFaculty = faculty.length;
-    const offset =
-      ctx.options.offset && Number.isFinite(ctx.options.offset) && ctx.options.offset > 0
-        ? Math.floor(ctx.options.offset)
-        : 0;
-    const limit =
-      ctx.options.limit && Number.isFinite(ctx.options.limit) && ctx.options.limit > 0
-        ? Math.floor(ctx.options.limit)
-        : undefined;
+    const offset = offsetOption && offsetOption > 0 ? offsetOption : 0;
+    const limit = limitOption;
     faculty = faculty.slice(offset, limit ? offset + limit : undefined);
     ctx.log(
       `Faculty candidates for OpenAlex sync: ${faculty.length} (eligible ${totalEligibleFaculty}, offset ${offset}${limit ? `, limit ${limit}` : ''})`,
@@ -653,12 +674,7 @@ export class OpenAlexPaperScraper implements IScraper {
       let pages = 0;
       let worksForAuthor = 0;
       const seenCursors = new Set<string>();
-      const maxPages =
-        ctx.options.maxOpenAlexPagesPerAuthor &&
-        Number.isFinite(ctx.options.maxOpenAlexPagesPerAuthor) &&
-        ctx.options.maxOpenAlexPagesPerAuthor > 0
-          ? ctx.options.maxOpenAlexPagesPerAuthor
-          : undefined;
+      const maxPages = maxPagesOption;
 
       while (cursor) {
         if (seenCursors.has(cursor)) {

@@ -1,8 +1,9 @@
 /**
  * Development-only seed routes for the faculty scraper.
  * These routes have NO user auth — callers must present a matching SEED_TOKEN header.
- * Still only mounted when NODE_ENV=development, but the token is the hard gate.
+ * Still only mounted in a local development runtime, but the token is the hard gate.
  */
+import crypto from 'crypto';
 import { Router, Request, Response, NextFunction } from 'express';
 import { createUser, validateUser, updateUser } from '../services/userService';
 import { updateListing, readAllListings } from '../services/listingService';
@@ -10,19 +11,33 @@ import { validateNetid } from '../middleware/validation';
 
 const router = Router();
 
+function setPrivateSeedCacheHeaders(_req: Request, res: Response, next: NextFunction) {
+  res.setHeader('Cache-Control', 'no-store, private, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  next();
+}
+
+// Constant-time, length-independent comparison so the seed token can't be recovered via a
+// timing side-channel (SHA-256 both sides to a fixed length, then timingSafeEqual).
+const tokensMatch = (provided: string, expected: string): boolean => {
+  const a = crypto.createHash('sha256').update(provided).digest();
+  const b = crypto.createHash('sha256').update(expected).digest();
+  return crypto.timingSafeEqual(a, b);
+};
+
 const requireSeedToken = (req: Request, res: Response, next: NextFunction) => {
   const expected = process.env.SEED_TOKEN;
   if (!expected || expected.length < 16) {
     return res.status(503).json({ error: 'Seed routes disabled' });
   }
   const provided = req.get('x-seed-token');
-  if (!provided || provided !== expected) {
+  if (!provided || !tokensMatch(provided, expected)) {
     return res.status(401).json({ error: 'Invalid seed token' });
   }
   next();
 };
 
-router.use(requireSeedToken);
+router.use(setPrivateSeedCacheHeaders, requireSeedToken);
 
 router.post('/users', async (req: Request, res: Response) => {
   try {

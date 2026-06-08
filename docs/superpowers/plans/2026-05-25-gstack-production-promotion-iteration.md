@@ -162,7 +162,7 @@ VITE_APP_SERVER=http://localhost:4000 yarn --cwd client dev --host 127.0.0.1
 ```txt
 /research
 /research/:known-public-slug
-/pathways
+retired practical-routes URL
 /opportunities/:known-public-id
 /programs
 /admin/operator-board

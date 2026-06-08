@@ -82,7 +82,7 @@ export async function runScraperCron(
   const source = await deps.loadSource(input.sourceName);
   if (!source) {
     throw new Error(
-      `No Source row found with name "${input.sourceName}". Run "yarn scrape:seed-sources" first.`,
+      `No Source row found with name "${input.sourceName}". Run "yarn --cwd server scrape:seed-sources --dry-run --output /tmp/ylabs-seed-sources-dry-run.json" first, then review and apply with "--apply --confirm-seed-apply".`,
     );
   }
   if (source.enabled === false && !input.forceDisabled) {

@@ -12,7 +12,10 @@ import * as itemOps from './itemOperations';
 import { materializePostedOpportunityFromListing } from './postedOpportunityService';
 import { findOrCreateForOwner } from './researchGroupService';
 import { ResearchEntity } from '../models/researchEntity';
+import { ResearchGroupMember } from '../models/researchGroupMember';
 import { buildListingResearchEntityProfilePatch } from './listingResearchEntityProfile';
+
+const placeholderYaleEmail = (netid: string): string => `${netid.trim().toLowerCase()}@yale.edu`;
 
 async function syncPostedOpportunityBridge(listing: any): Promise<void> {
   try {
@@ -37,16 +40,137 @@ async function syncResearchEntityProfileFromListing(listing: any): Promise<void>
   }
 }
 
+const LISTING_ENTITY_AUTHOR_ROLES = [
+  'pi',
+  'co-pi',
+  'director',
+  'co-director',
+  'core-faculty',
+];
+
+const hasListingEntityAuthority = async (researchEntityId: unknown, owner: any): Promise<boolean> => {
+  if (!researchEntityId || !mongoose.Types.ObjectId.isValid(researchEntityId as any)) {
+    return false;
+  }
+
+  const identityClauses: Record<string, any>[] = [];
+  if (owner?._id && mongoose.Types.ObjectId.isValid(owner._id)) {
+    identityClauses.push({ userId: owner._id });
+  }
+  if (owner?.facultyMemberId && mongoose.Types.ObjectId.isValid(owner.facultyMemberId)) {
+    identityClauses.push({ facultyMemberId: owner.facultyMemberId });
+  }
+
+  if (identityClauses.length === 0) {
+    return false;
+  }
+
+  const membership = await ResearchGroupMember.findOne({
+    researchEntityId,
+    archived: { $ne: true },
+    isCurrentMember: { $ne: false },
+    role: { $in: LISTING_ENTITY_AUTHOR_ROLES },
+    $or: identityClauses,
+  })
+    .select('_id')
+    .lean();
+
+  return Boolean(membership);
+};
+
+const resolveListingResearchEntityId = async (data: any, owner: any): Promise<any> => {
+  const suppliedResearchEntityId = data?.researchEntityId || data?.researchGroupId;
+  if (await hasListingEntityAuthority(suppliedResearchEntityId, owner)) {
+    return suppliedResearchEntityId;
+  }
+
+  const { group } = await findOrCreateForOwner({
+    _id: owner._id,
+    netid: owner.netid,
+    fname: owner.fname,
+    lname: owner.lname,
+    primaryDepartment: owner.primaryDepartment,
+  });
+  return group?._id;
+};
+
+const LISTING_SELF_CREATABLE_FIELDS = [
+  'title',
+  'hiringStatus',
+  'websites',
+  'description',
+  'applicantDescription',
+  'researchAreas',
+  'keywords',
+  'established',
+  'departments',
+  'type',
+  'commitment',
+  'compensationType',
+  'expiresAt',
+] as const;
+
+const filterListingCreateData = (data: any): Record<string, any> => {
+  const safeData: Record<string, any> = {};
+  if (!data || typeof data !== 'object') return safeData;
+  for (const field of LISTING_SELF_CREATABLE_FIELDS) {
+    if (data[field] !== undefined) {
+      safeData[field] = data[field];
+    }
+  }
+  return safeData;
+};
+
+const LISTING_SELF_UPDATABLE_FIELDS = [
+  'title',
+  'hiringStatus',
+  'websites',
+  'description',
+  'applicantDescription',
+  'researchAreas',
+  'keywords',
+  'established',
+  'departments',
+  'type',
+  'commitment',
+  'compensationType',
+  'expiresAt',
+] as const;
+
+const LISTING_OWNER_STATE_FIELDS = ['archived', 'confirmed'] as const;
+
+const filterSelfServiceListingUpdateData = (
+  data: any,
+  options: { allowOwnerStateFields?: boolean } = {},
+): Record<string, any> => {
+  const safeData: Record<string, any> = {};
+  if (!data || typeof data !== 'object') return safeData;
+  for (const field of LISTING_SELF_UPDATABLE_FIELDS) {
+    if (data[field] !== undefined) {
+      safeData[field] = data[field];
+    }
+  }
+  if (options.allowOwnerStateFields) {
+    for (const field of LISTING_OWNER_STATE_FIELDS) {
+      if (data[field] !== undefined) {
+        safeData[field] = data[field];
+      }
+    }
+  }
+  return safeData;
+};
+
 export const createListing = async (data: any, owner: any) => {
   if (!owner.netid || !owner.email || !owner.fname || !owner.lname) {
     throw new Error('Incomplete user data for owner');
   }
 
+  const safeData = filterListingCreateData(data);
   const processedTitle = await processListingTitle(
-    data.title,
+    safeData.title,
     owner.fname,
     owner.lname,
-    data.departments || [],
+    safeData.departments || [],
   );
 
   const ownerDepts = [owner.primaryDepartment, ...(owner.secondaryDepartments || [])].filter(
@@ -54,28 +178,18 @@ export const createListing = async (data: any, owner: any) => {
   );
 
   const ownerResearchAreas = owner.researchInterests || [];
-  let researchEntityId = data.researchEntityId || data.researchGroupId;
-
-  if (!researchEntityId) {
-    try {
-      const { group } = await findOrCreateForOwner({
-        _id: owner._id,
-        netid: owner.netid,
-        fname: owner.fname,
-        lname: owner.lname,
-        primaryDepartment: owner.primaryDepartment,
-      });
-      researchEntityId = group?._id;
-    } catch (error) {
-      console.error('Failed to attach listing to ResearchEntity:', error);
-    }
+  let researchEntityId;
+  try {
+    researchEntityId = await resolveListingResearchEntityId(data, owner);
+  } catch (error) {
+    console.error('Failed to attach listing to ResearchEntity:', error);
   }
 
   const listing = new (getListingModel())({
-    ...data,
+    ...safeData,
     researchEntityId,
-    researchGroupId: data.researchGroupId || researchEntityId,
-    createdByUserId: owner._id || data.createdByUserId,
+    researchGroupId: researchEntityId,
+    createdByUserId: owner._id,
     title: processedTitle,
     ownerId: owner.netid,
     ownerEmail: owner.email,
@@ -83,15 +197,15 @@ export const createListing = async (data: any, owner: any) => {
     ownerLastName: owner.lname,
     ownerTitle: owner.title || '',
     ownerPrimaryDepartment: owner.primaryDepartment || '',
-    departments: ownerDepts.length > 0 ? ownerDepts : data.departments || [],
+    departments: ownerDepts.length > 0 ? ownerDepts : safeData.departments || [],
     researchAreas:
       ownerResearchAreas.length > 0
         ? ownerResearchAreas
-        : data.researchAreas || data.keywords || [],
+        : safeData.researchAreas || safeData.keywords || [],
     keywords:
       ownerResearchAreas.length > 0
         ? ownerResearchAreas
-        : data.keywords || data.researchAreas || [],
+        : safeData.keywords || safeData.researchAreas || [],
     confirmed: owner.userConfirmed,
   });
 
@@ -106,9 +220,9 @@ export const createListing = async (data: any, owner: any) => {
       if (!user) {
         user = await createUser({
           netid: id,
-          fname: 'NA',
-          lname: 'NA',
-          email: 'NA',
+          fname: id,
+          lname: id,
+          email: placeholderYaleEmail(id),
         });
       }
     }
@@ -204,8 +318,12 @@ export const updateListing = async (
   data: any,
   noAuth: boolean = false,
   useTimestamps: boolean = true,
+  allowOwnerStateFields: boolean = false,
 ) => {
   if (mongoose.Types.ObjectId.isValid(id)) {
+    const safeData = noAuth
+      ? { ...data }
+      : filterSelfServiceListingUpdateData(data, { allowOwnerStateFields });
     const oldListing = await getListingModel().findById(id);
 
     if (!oldListing) {
@@ -214,11 +332,11 @@ export const updateListing = async (
 
     let toUpdate = [...oldListing.professorIds, oldListing.ownerId];
 
-    if (data.professorIds) {
-      toUpdate = [...toUpdate, ...data.professorIds];
+    if (safeData.professorIds) {
+      toUpdate = [...toUpdate, ...safeData.professorIds];
     }
-    if (data.ownerId) {
-      toUpdate.push(data.ownerId);
+    if (safeData.ownerId) {
+      toUpdate.push(safeData.ownerId);
     }
 
     for (const id of toUpdate) {
@@ -229,9 +347,9 @@ export const updateListing = async (
         if (!user) {
           user = await createUser({
             netid: id,
-            fname: 'NA',
-            lname: 'NA',
-            email: 'NA',
+            fname: id,
+            lname: id,
+            email: placeholderYaleEmail(id),
           });
         }
       }
@@ -243,18 +361,18 @@ export const updateListing = async (
       );
     }
 
-    if (data.departments && data.departments.length > 0) {
-      const currentTitle = data.title || oldListing.title;
+    if (safeData.departments && safeData.departments.length > 0) {
+      const currentTitle = safeData.title || oldListing.title;
       const ownerFirstName = oldListing.ownerFirstName;
       const ownerLastName = oldListing.ownerLastName;
 
       if (!isCustomTitle(currentTitle, ownerFirstName, ownerLastName)) {
-        const smartTitleResult = await generateSmartTitle(ownerLastName, data.departments);
-        data.title = smartTitleResult.title;
+        const smartTitleResult = await generateSmartTitle(ownerLastName, safeData.departments);
+        safeData.title = smartTitleResult.title;
       }
     }
 
-    const listing = await getListingModel().findByIdAndUpdate(id, data, {
+    const listing = await getListingModel().findByIdAndUpdate(id, safeData, {
       new: true,
       runValidators: true,
       timestamps: useTimestamps,
@@ -297,22 +415,22 @@ export const updateListing = async (
 };
 
 export const archiveListing = async (id: any, userId: string) => {
-  const listing = await updateListing(id, userId, { archived: true });
+  const listing = await updateListing(id, userId, { archived: true }, false, true, true);
   return listing;
 };
 
 export const unarchiveListing = async (id: any, userId: string) => {
-  const listing = await updateListing(id, userId, { archived: false });
+  const listing = await updateListing(id, userId, { archived: false }, false, true, true);
   return listing;
 };
 
 export const confirmListing = async (id: any, userId: string) => {
-  const listing = await updateListing(id, userId, { confirmed: true });
+  const listing = await updateListing(id, userId, { confirmed: true }, false, true, true);
   return listing;
 };
 
 export const unconfirmListing = async (id: any, userId: string) => {
-  const listing = await updateListing(id, userId, { confirmed: false });
+  const listing = await updateListing(id, userId, { confirmed: false }, false, true, true);
   return listing;
 };
 

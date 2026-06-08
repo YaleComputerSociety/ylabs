@@ -1,6 +1,7 @@
 import type mongoose from 'mongoose';
 import { describe, expect, it } from 'vitest';
 import { AccessSignal } from '../accessSignal';
+import { AdminGrant } from '../adminGrant';
 import { AnalyticsEvent } from '../analytics';
 import { ContactRoute } from '../contactRoute';
 import { Department } from '../department';
@@ -12,14 +13,10 @@ import { Listing } from '../listing';
 import { Observation } from '../observation';
 import { Paper } from '../paper';
 import { PaperAuthor } from '../paperAuthor';
-import { PaperGroupLink } from '../paperGroupLink';
 import { PostedOpportunity } from '../postedOpportunity';
 import { ResearchArea } from '../researchArea';
 import { ResearchEntity } from '../researchEntity';
 import { ResearchGroupMember } from '../researchGroupMember';
-import { ResearchGroupStats } from '../researchGroupStats';
-import { ResearchScholarlyAttribution } from '../researchScholarlyAttribution';
-import { ResearchScholarlyLink } from '../researchScholarlyLink';
 import { ScrapeRun } from '../scrapeRun';
 import { ScrapeSnapshot } from '../scrapeSnapshot';
 import { Source } from '../source';
@@ -32,6 +29,7 @@ import { User } from '../user';
 
 const models: Array<[mongoose.Model<any>, string]> = [
   [AccessSignal, 'access_signals'],
+  [AdminGrant, 'admin_grants'],
   [AnalyticsEvent, 'analytics_events'],
   [ContactRoute, 'contact_routes'],
   [Department, 'departments'],
@@ -43,14 +41,10 @@ const models: Array<[mongoose.Model<any>, string]> = [
   [Observation, 'observations'],
   [Paper, 'papers'],
   [PaperAuthor, 'paper_authors'],
-  [PaperGroupLink, 'paper_entity_links'],
   [PostedOpportunity, 'posted_opportunities'],
   [ResearchArea, 'research_areas'],
   [ResearchEntity, 'research_entities'],
   [ResearchGroupMember, 'research_entity_members'],
-  [ResearchGroupStats, 'research_entity_stats'],
-  [ResearchScholarlyAttribution, 'research_scholarly_attributions'],
-  [ResearchScholarlyLink, 'research_scholarly_links'],
   [ScrapeRun, 'scrape_runs'],
   [ScrapeSnapshot, 'scrape_snapshots'],
   [Source, 'sources'],

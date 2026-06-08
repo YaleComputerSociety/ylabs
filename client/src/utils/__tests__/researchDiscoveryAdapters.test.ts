@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildPathwayEvidenceRows,
   buildGroupedSearchResults,
+  buildResearchHomeContextLine,
   buildIdentityConfidenceRecords,
   getPathwayActionLabel,
   getPathwayTypeLabel,
@@ -154,6 +155,33 @@ describe('buildGroupedSearchResults', () => {
     ]);
     expect(grouped.clusters.every((cluster) => cluster.entityCount === 1)).toBe(true);
     expect(grouped.clusters[0].contextLine).toBe('Neuroscience');
+  });
+
+  it('collapses prefixed and plain department labels in research home cards', () => {
+    const grouped = buildGroupedSearchResults({
+      query: 'odonnell',
+      researchEntities: [
+        entity({
+          _id: 'odonnell',
+          slug: 'odonnell-lab',
+          name: "O'Donnell Lab",
+          departments: [
+            'Molecular, Cellular & Developmental Biology',
+            'MCDB - Molecular, Cellular & Developmental Biology',
+          ],
+        }),
+      ],
+      pathways: [],
+      papers: [],
+    });
+
+    expect(buildResearchHomeContextLine(grouped.clusters[0].entities[0])).toBe(
+      'Molecular, Cellular & Developmental Biology',
+    );
+    expect(grouped.clusters[0].contextLine).toBe('Molecular, Cellular & Developmental Biology');
+    expect(grouped.clusters[0].metadataTags).toEqual([
+      'Molecular, Cellular & Developmental Biology',
+    ]);
   });
 
   it('adds profile links when contact emails identify Yale netids and exposes lab context', () => {

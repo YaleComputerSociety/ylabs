@@ -6,7 +6,7 @@ Last updated: 2026-05-15
 
 ### 1) `/research` search request ordering and cancellation
 - **Observed behavior**
-  - Multiple rapid searches (typeahead/query submit/suggestion clicks) could start concurrent `/research/search` and `/pathways/search` requests.
+  - Multiple rapid searches (typeahead/query submit/suggestion clicks) could start concurrent research and practical-route requests.
   - A slower earlier request could overwrite a newer result.
 - **User impact**
   - Visible result set could jump to an unrelated query, reducing trust and making searches feel unreliable.
@@ -22,7 +22,7 @@ Last updated: 2026-05-15
 - **Status**
   - Fixed.
 
-### 2) `/pathways` debounced search can update from stale payload
+### 2) Retired practical-route search could update from stale payload
 - **Observed behavior**
   - Debounced query/filter/search request started without cancellation/ordering guard.
   - In-flight request could resolve after a newer filter/input change and overwrite state.
@@ -34,7 +34,7 @@ Last updated: 2026-05-15
 - **Severity**
   - Medium to High (high-frequency user action path).
 - **Fix implemented**
-  - Added request-id tracking + abort controller in `client/src/pages/pathways.tsx`.
+  - Added request-id tracking + abort controller to the then-active practical-route page. That page has since been retired.
   - Debounced handler now cancels prior in-flight request and ignores stale completions.
   - Loading/error state updates only apply for the active request.
 - **Status**
@@ -90,7 +90,7 @@ Last updated: 2026-05-15
 
 ### 6) Research search resilience to partial API failures
 - **Observed behavior**
-  - A failure in either `/research/search` or `/pathways/search` could still clear the whole search state or hide available results.
+  - A failure in either the research endpoint or the practical-route endpoint could still clear the whole search state or hide available results.
 - **User impact**
   - Users might see no results even when one endpoint still returns useful data.
 - **Root cause**
@@ -115,7 +115,7 @@ Last updated: 2026-05-15
 - **Severity**
   - Low-Medium (malformed-data resilience).
 - **Fix implemented**
-  - Added defensive fallbacks in `/pathways` and `/research` pathway rendering paths for display label and destination URL.
+  - Added defensive fallbacks in practical-route and `/research` pathway rendering paths for display label and destination URL.
   - Kept missing metadata visible as “Research profile” fallback instead of crashing.
 - **Status**
   - Fixed.
@@ -172,7 +172,7 @@ Last updated: 2026-05-15
 - **Status**
   - Fixed.
 
-### 11) Playwright interaction pass for `/research` and `/pathways` could not run in this environment
+### 11) Playwright interaction pass for research flows could not run in this environment
 - **Observed behavior**
   - We attempted a headless interaction pass against the local frontend for organic-flow validation.
 - **User impact**

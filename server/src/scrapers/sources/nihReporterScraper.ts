@@ -254,7 +254,7 @@ function parseDate(s: string | undefined): Date | undefined {
 export async function findUserForPi(
   canonicalName: string,
   userModel: { find: typeof User.find } = User,
-): Promise<{ _id: string; netid?: string } | null> {
+): Promise<{ _id: string; netid?: string; researchHomeEligible?: boolean } | null> {
   if (!canonicalName) return null;
   const { first, last } = splitName(canonicalName);
   if (!last) return null;
@@ -265,32 +265,52 @@ export async function findUserForPi(
         lname: lnameRe,
         userType: { $in: ['professor', 'faculty', 'admin'] },
       },
-      { _id: 1, fname: 1, lname: 1, netid: 1, primaryDepartment: 1 },
+      { _id: 1, fname: 1, lname: 1, netid: 1, primaryDepartment: 1, title: 1 },
     )
     .limit(10)
     .lean();
-  if (candidates.length === 0) return null;
-  if (candidates.length === 1) {
-    return { _id: String(candidates[0]._id), netid: candidates[0].netid };
-  }
   if (!first) return null;
   // Exact first name match wins.
   const exact = candidates.filter(
     (c) => (c.fname || '').toLowerCase() === first.toLowerCase(),
   );
   if (exact.length === 1) {
-    return { _id: String(exact[0]._id), netid: exact[0].netid };
+    return userPiMatchResult(exact[0]);
   }
-  // Fall back to first-initial match.
-  const initial = first.charAt(0).toLowerCase();
-  const byInitial = candidates.filter(
-    (c) => (c.fname || '').toLowerCase().charAt(0) === initial,
-  );
-  if (byInitial.length === 1) {
-    return { _id: String(byInitial[0]._id), netid: byInitial[0].netid };
+
+  // Fall back to a given-name prefix. Only use a bare first initial when the
+  // source itself only provided an initial; otherwise same-initial matches are
+  // too broad for grant identity linkage.
+  const firstToken = first.split(/\s+/)[0]?.replace(/\./g, '') || first;
+  const isInitialOnly = firstToken.length === 1;
+  const prefix = (isInitialOnly ? firstToken : first).toLowerCase();
+  const byPrefix = candidates.filter((c) => (c.fname || '').toLowerCase().startsWith(prefix));
+  if (byPrefix.length === 1) {
+    return userPiMatchResult(byPrefix[0]);
   }
   // Ambiguous — refuse to guess.
   return null;
+}
+
+function userPiMatchResult(candidate: any): {
+  _id: string;
+  netid?: string;
+  researchHomeEligible?: boolean;
+} {
+  return {
+    _id: String(candidate._id),
+    netid: candidate.netid,
+    researchHomeEligible: researchHomeEligibleUserTitle(candidate.title),
+  };
+}
+
+function researchHomeEligibleUserTitle(title: unknown): boolean {
+  const value = typeof title === 'string' ? title.toLowerCase() : '';
+  if (!value) return true;
+  if (/\bpostdoctoral\b|\bpostdoc\b/.test(value)) return false;
+  if (/\bresearch affiliates?\b/.test(value)) return false;
+  if (/\bassociate research scientist\b/.test(value)) return false;
+  return true;
 }
 
 function escapeRegex(s: string): string {
@@ -312,10 +332,11 @@ function escapeRegex(s: string): string {
 export function piGrantsToObservations(
   canonicalName: string,
   grants: NihGrant[],
-  matchedUser: { _id: string; netid?: string } | null,
+  matchedUser: { _id: string; netid?: string; researchHomeEligible?: boolean } | null,
 ): ObservationInput[] {
   const out: ObservationInput[] = [];
   if (!canonicalName || grants.length === 0) return out;
+  if (matchedUser?.researchHomeEligible === false) return out;
 
   const slug = piSlugForResearchGroup(canonicalName);
   if (!slug) return out;
@@ -482,6 +503,10 @@ export class NihReporterScraper implements IScraper {
   async run(ctx: ScraperContext): Promise<ScraperResult> {
     const fiscalYears = this.opts.fiscalYears || DEFAULT_FISCAL_YEARS;
     const userModel = this.opts.userModel || User;
+    const limitOption = ctx.options.limit;
+    if (limitOption !== undefined && (!Number.isSafeInteger(limitOption) || limitOption < 1)) {
+      throw new Error('--limit must be a safe positive integer');
+    }
     ctx.log(`Querying NIH RePORTER for Yale grants in FY ${fiscalYears.join(', ')}`);
 
     // 1. Paginate through all matching grants.
@@ -516,7 +541,7 @@ export class NihReporterScraper implements IScraper {
     ctx.log(`grouped into ${groups.size} unique contact PIs`);
 
     // 3. Honor --limit (caps PIs processed, NOT raw grants).
-    const piLimit = ctx.options.limit && ctx.options.limit > 0 ? ctx.options.limit : Infinity;
+    const piLimit = limitOption ?? Infinity;
     const piEntries = Array.from(groups.entries()).slice(0, piLimit);
 
     // 4. Resolve each PI to a User (or stub) and emit observations.

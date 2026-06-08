@@ -106,6 +106,10 @@ const paperSchema = new mongoose.Schema(
       type: Boolean,
       required: false,
     },
+    openAccessStatus: {
+      type: String,
+      required: false,
+    },
     citationCount: {
       type: Number,
       default: 0,

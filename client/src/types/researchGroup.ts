@@ -55,6 +55,26 @@ export interface AccessSummary {
   bestNextStep: string;
 }
 
+export type StudentDecisionRecommendedAction =
+  | 'APPLY'
+  | 'OPEN_OFFICIAL_ROUTE'
+  | 'PLAN_EXPLORATORY_OUTREACH'
+  | 'ASK_ABOUT_CREDIT_AFTER_FIT'
+  | 'FIND_FUNDING_AFTER_FIT'
+  | 'SAVE_FOR_THESIS_PLANNING'
+  | 'CHECK_BACK_LATER';
+
+export interface StudentDecisionExplanation {
+  recommendedAction: StudentDecisionRecommendedAction;
+  headline: string;
+  explanation: string;
+  why: string[];
+  notThis?: string;
+  confidence: number;
+  sourceUrls: string[];
+  reviewFlags?: string[];
+}
+
 export interface TimeCommitmentRange {
   min?: number;
   max?: number;
@@ -157,6 +177,7 @@ export interface ResearchGroup {
    */
   hasActiveListing?: boolean;
   accessSummary?: AccessSummary;
+  studentDecisionExplanation?: StudentDecisionExplanation;
 }
 
 /**

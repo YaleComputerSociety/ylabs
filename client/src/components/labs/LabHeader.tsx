@@ -10,7 +10,7 @@
  * `computeAcceptanceVerdict` helper so this surface stays consistent with the
  * browse cards and the inquire CTA.
  */
-import { ResearchGroup, ResearchGroupKind } from '../../types/researchGroup';
+import { ResearchGroup } from '../../types/researchGroup';
 import { getUniqueDepartmentLabels } from '../../utils/departmentNames';
 import { formatTitleCaseLabel } from '../../utils/displayText';
 import { useConfig } from '../../hooks/useConfig';
@@ -20,6 +20,11 @@ import {
   verdictBadgeStyles,
   verdictLabel,
 } from '../../utils/undergradAcceptance';
+import {
+  entityKindLabel,
+  isFacultyResearchEntity as isFacultyResearchEntityCopy,
+  researchWebsiteCtaLabel,
+} from '../../utils/researchEntityCopy';
 
 interface LabHeaderProps {
   group: ResearchGroup;
@@ -31,17 +36,6 @@ interface LabHeaderProps {
    */
   hasActivePostedOpportunity?: boolean;
 }
-
-const KIND_LABELS: Record<ResearchGroupKind, string> = {
-  lab: 'Lab',
-  center: 'Center',
-  institute: 'Institute',
-  program: 'Program',
-  initiative: 'Initiative',
-  group: 'Group',
-  individual: 'Faculty Research',
-  solo: 'Faculty Research',
-};
 
 const normalizeActionUrl = (url?: string | null): string => {
   const href = url ? ensureHttpPrefix(url) : '';
@@ -82,15 +76,12 @@ const LabHeader = ({
   });
   const showProfileResearchAreas =
     visibleProfileResearchAreas.length > 0 && group.researchAreaSource !== 'PI_PROFILE_FALLBACK';
-  const isFacultyResearchEntity =
-    group.kind === 'individual' ||
-    group.kind === 'solo' ||
-    group.entityType === 'FACULTY_RESEARCH_AREA' ||
-    group.entityType === 'INDIVIDUAL_RESEARCH';
+  const isFacultyResearchEntity = isFacultyResearchEntityCopy(group);
   const kindLabel =
     group.descriptionSource === 'PI_PROFILE_SYNTHESIS' && isFacultyResearchEntity
       ? 'Faculty Research'
-      : KIND_LABELS[group.kind] || 'Lab';
+      : entityKindLabel(group);
+  const websiteLinkLabel = researchWebsiteCtaLabel(group);
 
   return (
     <div className="yr-panel flex flex-col gap-4 rounded-md p-4 sm:p-6">
@@ -197,7 +188,7 @@ const LabHeader = ({
             <line x1="2" y1="12" x2="22" y2="12" />
             <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
           </svg>
-          Visit lab website
+          {websiteLinkLabel}
         </a>
       )}
     </div>

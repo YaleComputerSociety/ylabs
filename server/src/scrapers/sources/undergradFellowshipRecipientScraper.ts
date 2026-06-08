@@ -46,14 +46,17 @@
  *   - ctx.options.only — filters to a subset of programKeys, e.g.
  *     `--only stars-ii,deans-research`
  *   - ctx.options.manualRecipientCsvDir — optional directory containing
- *     `<programKey>.csv` files for otherwise manual-upload-required programs
+ *     `<programKey>.csv` files for otherwise manual-upload-required programs.
+ *     When no CSV is present, the scraper also looks for `<programKey>.pdf`
+ *     in the accepted-input fellowship directory and extracts labelled rows.
  *
  * Most Yale fellowship programs do NOT publish recipient lists in scrapable
  * HTML — they're either symposium PDFs (STARS II), hidden behind admin email
  * contact (Mellon Mays, Tetelman, Dean's Research), or not published at all.
  * Configs for those programs are stubbed with `manualUploadRequired=true` and
- * a clear error from their extractor; an admin can drop a CSV / hand-curated
- * recipient list into the system at a later stage. The scraper architecture is
+ * a clear error from their extractor; an admin can drop a CSV, or a reviewed
+ * PDF with labelled recipient/advisor text, into the system at a later stage.
+ * The scraper architecture is
  * built so adding a new program — when a list does become available — is a
  * single config-row change.
  */
@@ -75,6 +78,12 @@ import type {
 
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
+const MIN_FELLOWSHIP_RECIPIENT_YEAR = 1980;
+const MAX_FELLOWSHIP_RECIPIENT_FUTURE_YEARS = 1;
+export const DEFAULT_ACCEPTED_FELLOWSHIP_RECIPIENT_CSV_DIR =
+  '/tmp/ylabs-accepted-inputs/fellowships';
+export const DEFAULT_ACCEPTED_FELLOWSHIP_RECIPIENT_PDF_DIR =
+  DEFAULT_ACCEPTED_FELLOWSHIP_RECIPIENT_CSV_DIR;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -103,6 +112,8 @@ export interface FellowshipRecipient {
 /** Context passed to per-program extractors for URL resolution + year inference. */
 export interface ExtractorCtx {
   pageUrl: string;
+  /** Original official source URL when the input body came from an accepted local file. */
+  sourceUrl?: string;
   /** When the URL implies a single year (e.g. `/recipients/2024/`), the runner
    * pre-computes it and passes it down so the extractor doesn't have to repeat
    * the parse. Extractors are free to override per-row when the page itself
@@ -235,6 +246,16 @@ function valueFor(row: Record<string, string>, names: string[]): string {
   return '';
 }
 
+function parseExactYear(value: string | undefined): number | undefined {
+  const trimmed = value?.trim();
+  if (!trimmed || !/^\d{4}$/.test(trimmed)) return undefined;
+  const year = Number(trimmed);
+  const maxYear = new Date().getFullYear() + MAX_FELLOWSHIP_RECIPIENT_FUTURE_YEARS;
+  return Number.isInteger(year) && year >= MIN_FELLOWSHIP_RECIPIENT_YEAR && year <= maxYear
+    ? year
+    : undefined;
+}
+
 /**
  * Manual recipient CSV extractor for programs whose official pages are
  * PDF-only, gated, or published by an office as a spreadsheet.
@@ -266,9 +287,8 @@ export const manualRecipientCsvExtractor: RecipientExtractor = (csv, ctx) => {
     const advisorName = valueFor(record, ['advisorName', 'advisor', 'facultyAdvisor']);
     if (!advisorName) continue;
 
-    const rawYear = valueFor(record, ['year', 'awardYear', 'fellowshipYear']);
-    const parsedYear = rawYear ? parseInt(rawYear, 10) : undefined;
-    const year = parsedYear && !Number.isNaN(parsedYear) ? parsedYear : ctx.defaultYear;
+    const parsedYear = parseExactYear(valueFor(record, ['year', 'awardYear', 'fellowshipYear']));
+    const year = parsedYear ?? ctx.defaultYear;
     if (!year) continue;
 
     out.push({
@@ -285,6 +305,100 @@ export const manualRecipientCsvExtractor: RecipientExtractor = (csv, ctx) => {
   }
   return out;
 };
+
+function firstLabelValue(block: string, labels: string[]): string {
+  const pattern = labels.map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+  const regex = new RegExp(`(?:^|\\n)\\s*(?:${pattern})\\s*[:-]\\s*([^\\n]+)`, 'i');
+  const match = block.match(regex);
+  return (match?.[1] || '')
+    .replace(/\s+(student|advisor|adviser|mentor|project|title|year)\s*[:-].*$/i, '')
+    .trim();
+}
+
+function likelyProjectTitle(block: string): string | undefined {
+  const explicit = firstLabelValue(block, ['Project', 'Project Title', 'Title', 'Research Title']);
+  if (explicit) return explicit;
+  const lines = block
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => !/^(student|presenter|researcher|advisor|adviser|mentor|year)\s*[:-]/i.test(line));
+  return lines[0] || undefined;
+}
+
+/**
+ * Accepted PDF text extractor for fellowship recipient rows. It expects text
+ * already extracted from a reviewed official PDF and reads conservative labelled
+ * blocks such as `Student: ...`, `Advisor: ...`, `Project: ...`.
+ */
+export const manualRecipientPdfTextExtractor: RecipientExtractor = (text, ctx) => {
+  const normalized = text
+    .replace(/\r/g, '\n')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  if (!normalized) return [];
+
+  const blocks = normalized
+    .split(/\n\s*\n|(?=\n?\s*(?:Student|Presenter|Researcher)\s*[:-])/i)
+    .map((block) => block.trim())
+    .filter(Boolean);
+  const sourceUrl = ctx.sourceUrl || ctx.pageUrl;
+  const out: FellowshipRecipient[] = [];
+
+  for (let index = 0; index < blocks.length; index++) {
+    const block = blocks[index];
+    const advisorName = firstLabelValue(block, [
+      'Advisor',
+      'Adviser',
+      'Advisors',
+      'Advisers',
+      'Faculty Advisor',
+      'Faculty Adviser',
+      'Mentor',
+      'Mentors',
+    ]);
+    if (!advisorName) continue;
+
+    const parsedYear = parseExactYear(firstLabelValue(block, ['Year', 'Award Year', 'Fellowship Year']));
+    const year = parsedYear ?? ctx.defaultYear;
+    if (!year) continue;
+
+    out.push({
+      studentName: firstLabelValue(block, ['Student', 'Presenter', 'Researcher']),
+      advisorName,
+      projectTitle: likelyProjectTitle(block),
+      sourceUrl,
+      sourcePage: `text-block-${index + 1}`,
+      reviewNote: 'Parsed from accepted PDF text',
+      year,
+    });
+  }
+
+  return out;
+};
+
+export async function extractFellowshipPdfText(body: Buffer): Promise<string> {
+  const pdfjs = (await import('pdfjs-dist/legacy/build/pdf.mjs')) as any;
+  const loadingTask = pdfjs.getDocument({
+    data: new Uint8Array(body),
+    disableWorker: true,
+    isEvalSupported: false,
+  });
+  const document = await loadingTask.promise;
+  const pages: string[] = [];
+  for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber++) {
+    const page = await document.getPage(pageNumber);
+    const content = await page.getTextContent();
+    pages.push(
+      (content.items || [])
+        .map((item: any) => (typeof item.str === 'string' ? item.str : ''))
+        .filter(Boolean)
+        .join('\n'),
+    );
+  }
+  return pages.join('\n\n');
+}
 
 /**
  * Generic "year-grouped Drupal recipient list" extractor.
@@ -320,8 +434,7 @@ export const drupalRecipientRowExtractor: RecipientExtractor = (html, ctx) => {
     const yearAttr = row.attr('data-year');
     let year: number | undefined;
     if (yearAttr) {
-      const parsed = parseInt(yearAttr, 10);
-      if (!Number.isNaN(parsed)) year = parsed;
+      year = parseExactYear(yearAttr);
     }
     if (year === undefined) year = ctx.defaultYear;
     if (year === undefined) return; // can't attribute without a year
@@ -684,6 +797,12 @@ export interface UndergradFellowshipScraperDeps {
   userFinder?: (filter: Record<string, unknown>) => Promise<UserMatch[]>;
   /** Override the User → ResearchGroup slug resolver. */
   ownerToGroupSlug?: (owner: UserMatch) => Promise<string | null>;
+  /** Override default accepted-input CSV directory for manual fellowship rows. */
+  defaultManualRecipientCsvDir?: string;
+  /** Override default accepted-input PDF directory for manual fellowship rows. */
+  defaultManualRecipientPdfDir?: string;
+  /** Override local PDF text extraction (tests inject canned text). */
+  pdfTextExtractor?: (body: Buffer) => Promise<string>;
 }
 
 export class UndergradFellowshipRecipientScraper implements IScraper {
@@ -695,6 +814,9 @@ export class UndergradFellowshipRecipientScraper implements IScraper {
     filter: Record<string, unknown>,
   ) => Promise<UserMatch[]>;
   private readonly ownerToGroupSlug: (owner: UserMatch) => Promise<string | null>;
+  private readonly defaultManualRecipientCsvDir: string;
+  private readonly defaultManualRecipientPdfDir: string;
+  private readonly pdfTextExtractor: (body: Buffer) => Promise<string>;
 
   /**
    * Configs are injectable for testing; default to the v1 six-program set.
@@ -709,6 +831,11 @@ export class UndergradFellowshipRecipientScraper implements IScraper {
       deps.fetchPage ?? ((url, useCache) => fetchHtml(url, useCache, sourceName));
     this.userFinder = deps.userFinder ?? defaultUserFinder;
     this.ownerToGroupSlug = deps.ownerToGroupSlug ?? defaultOwnerToGroupSlug;
+    this.defaultManualRecipientCsvDir =
+      deps.defaultManualRecipientCsvDir ?? DEFAULT_ACCEPTED_FELLOWSHIP_RECIPIENT_CSV_DIR;
+    this.defaultManualRecipientPdfDir =
+      deps.defaultManualRecipientPdfDir ?? DEFAULT_ACCEPTED_FELLOWSHIP_RECIPIENT_PDF_DIR;
+    this.pdfTextExtractor = deps.pdfTextExtractor ?? extractFellowshipPdfText;
   }
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
@@ -716,8 +843,11 @@ export class UndergradFellowshipRecipientScraper implements IScraper {
       ctx.options.only && ctx.options.only.length > 0
         ? new Set(ctx.options.only.map((s) => s.trim().toLowerCase()))
         : null;
-    const recipientLimit =
-      ctx.options.limit && ctx.options.limit > 0 ? ctx.options.limit : Infinity;
+    const limitOption = ctx.options.limit;
+    if (limitOption !== undefined && (!Number.isSafeInteger(limitOption) || limitOption < 1)) {
+      throw new Error('--limit must be a safe positive integer');
+    }
+    const recipientLimit = limitOption ?? Infinity;
 
     let totalObs = 0;
     let totalAdvisorsEmitted = 0;
@@ -730,24 +860,54 @@ export class UndergradFellowshipRecipientScraper implements IScraper {
       if (totalRecipientsProcessed >= recipientLimit) break;
 
       let effectiveConfig = config;
-      let manualCsvBody: string | null = null;
-      if (config.manualUploadRequired && ctx.options.manualRecipientCsvDir) {
+      let manualBody: string | null = null;
+      let manualSourceUrl: string | null = null;
+      const manualRecipientCsvDir =
+        ctx.options.manualRecipientCsvDir || this.defaultManualRecipientCsvDir;
+      if (config.manualUploadRequired && manualRecipientCsvDir) {
         const csvPath = path.resolve(
-          ctx.options.manualRecipientCsvDir,
+          manualRecipientCsvDir,
           `${config.programKey}.csv`,
         );
         try {
-          manualCsvBody = await fs.readFile(csvPath, 'utf8');
+          manualBody = await fs.readFile(csvPath, 'utf8');
+          manualSourceUrl = `manual://${config.programKey}.csv`;
           effectiveConfig = {
             ...config,
             manualUploadRequired: false,
-            urls: [`manual://${config.programKey}.csv`],
+            urls: [manualSourceUrl],
             extractor: manualRecipientCsvExtractor,
           };
           ctx.log(`[${config.programKey}] using manual recipient CSV ${csvPath}`);
         } catch (err: any) {
           ctx.log(
             `[${config.programKey}] manual CSV not found/readable at ${csvPath}: ${err?.message || err}`,
+          );
+        }
+      }
+      const manualRecipientPdfDir = this.defaultManualRecipientPdfDir;
+      if (config.manualUploadRequired && !manualBody && manualRecipientPdfDir) {
+        const pdfPath = path.resolve(
+          manualRecipientPdfDir,
+          `${config.programKey}.pdf`,
+        );
+        try {
+          const pdfBody = await fs.readFile(pdfPath);
+          manualBody = await this.pdfTextExtractor(Buffer.from(pdfBody));
+          manualSourceUrl =
+            config.urls.find((url) => /\.pdf(?:$|[?#])/i.test(url)) ||
+            config.urls[0] ||
+            `manual-pdf://${config.programKey}.pdf`;
+          effectiveConfig = {
+            ...config,
+            manualUploadRequired: false,
+            urls: [`manual-pdf://${config.programKey}.pdf`],
+            extractor: manualRecipientPdfTextExtractor,
+          };
+          ctx.log(`[${config.programKey}] using manual recipient PDF ${pdfPath}`);
+        } catch (err: any) {
+          ctx.log(
+            `[${config.programKey}] manual PDF not found/readable at ${pdfPath}: ${err?.message || err}`,
           );
         }
       }
@@ -767,7 +927,7 @@ export class UndergradFellowshipRecipientScraper implements IScraper {
       // Fetch + extract per URL, accumulating recipients across the program's URLs.
       const recipients: FellowshipRecipient[] = [];
       const sourceByRecipient = new Map<FellowshipRecipient, string>();
-      let representativeUrl = effectiveConfig.urls[0] || '';
+      let representativeUrl = manualSourceUrl || effectiveConfig.urls[0] || '';
       let extractFailed = false;
 
       for (const url of effectiveConfig.urls) {
@@ -775,8 +935,8 @@ export class UndergradFellowshipRecipientScraper implements IScraper {
         let html: string;
         try {
           html =
-            manualCsvBody && url.startsWith('manual://')
-              ? manualCsvBody
+            manualBody && /^manual(?:-pdf)?:\/\//i.test(url)
+              ? manualBody
               : await this.fetchPage(url, ctx.options.useCache);
         } catch (err: any) {
           ctx.log(
@@ -784,10 +944,11 @@ export class UndergradFellowshipRecipientScraper implements IScraper {
           );
           continue;
         }
-        const defaultYear = inferYearFromUrl(url);
+        const sourceUrl = manualSourceUrl || url;
+        const defaultYear = inferYearFromUrl(sourceUrl) || inferYearFromUrl(url);
         let pageRecipients: FellowshipRecipient[];
         try {
-          pageRecipients = effectiveConfig.extractor(html, { pageUrl: url, defaultYear });
+          pageRecipients = effectiveConfig.extractor(html, { pageUrl: url, sourceUrl, defaultYear });
         } catch (err: any) {
           ctx.log(
             `[${config.programKey}] extractor error on ${url}: ${err?.message || err}`,

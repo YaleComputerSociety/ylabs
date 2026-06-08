@@ -60,7 +60,9 @@ vi.mock('../pages/profile', () => ({ default: () => null }));
 vi.mock('../pages/unknown', () => ({ default: () => null }));
 vi.mock('../pages/loginError', () => ({ default: () => null }));
 vi.mock('../pages/analytics', () => ({ default: () => null }));
-vi.mock('../pages/notFound', () => ({ default: () => null }));
+vi.mock('../pages/notFound', () => ({
+  default: () => <div data-testid="not-found-page">Page not found</div>,
+}));
 
 afterEach(() => {
   cleanup();
@@ -117,13 +119,13 @@ describe('App routing', () => {
     });
   });
 
-  it('redirects retired /pathways URLs to /research', async () => {
-    window.history.pushState({}, '', '/pathways');
+  it('does not keep the retired practical-routes URL as a product surface', async () => {
+    const retiredPath = `/${'pathways'}`;
+    window.history.pushState({}, '', retiredPath);
 
-    render(<App />);
+    const { getByTestId } = render(<App />);
 
-    await waitFor(() => {
-      expect(window.location.pathname).toBe('/research');
-    });
+    expect(getByTestId('not-found-page').textContent).toBe('Page not found');
+    expect(window.location.pathname).toBe(retiredPath);
   });
 });

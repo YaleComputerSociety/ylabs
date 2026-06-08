@@ -14,6 +14,13 @@ export interface BetaDataQualityOptions {
   liveLinks: boolean;
   linkSampleSize: number;
   includeSamples: boolean;
+  progress: boolean;
+}
+
+export interface BetaDataQualityProgressEvent {
+  phase: string;
+  status: 'started' | 'finished';
+  durationMs?: number;
 }
 
 export interface BetaDataQualityCheck {
@@ -33,15 +40,35 @@ export interface BetaDataQualitySummary {
   warnCount: number;
   errors: BetaDataQualityCheck[];
   warnings: BetaDataQualityCheck[];
+  promotionReady: boolean;
+  promotionBlockerCount: number;
+  promotionBlockers: BetaDataQualityCheck[];
+  promotionBlockersByOwner: Array<{
+    owner: string;
+    count: number;
+    blockerNames: string[];
+  }>;
 }
 
 export interface BetaDataQualityScorecard {
   generatedAt: string;
+  environment?: string;
+  db?: string;
   mongoTarget: string;
   options?: BetaDataQualityOptions;
+  diagnostics?: BetaDataQualityDiagnostics;
   summary: BetaDataQualitySummary;
   counts?: Record<string, number>;
   [key: string]: unknown;
+}
+
+export interface BetaDataQualityDiagnostics {
+  totalMeasuredDurationMs: number;
+  slowestPhase?: {
+    name: string;
+    durationMs: number;
+  };
+  phaseDurationsMs: Record<string, number>;
 }
 
 export interface ReferenceAuditInput {
@@ -49,6 +76,7 @@ export interface ReferenceAuditInput {
   required: boolean;
   missingRequired: number;
   orphanedPresentRefs: number;
+  samples?: ReferenceAuditSample[];
 }
 
 export interface ReferenceAuditItem extends ReferenceAuditInput {
@@ -56,6 +84,16 @@ export interface ReferenceAuditItem extends ReferenceAuditInput {
   orphanedPresentRefs: number;
   failureCount: number;
   severity: BetaDataQualitySeverity;
+}
+
+export type ReferenceAuditFailureType = 'missing_required' | 'orphaned_present_ref';
+
+export interface ReferenceAuditSample {
+  collection: string;
+  field: string;
+  id: string;
+  failureType: ReferenceAuditFailureType;
+  value?: unknown;
 }
 
 export interface ReferenceIntegritySummary {
@@ -78,6 +116,8 @@ export interface BetaDataQualitySummaryInput {
   missingShortDescriptionCount: number;
   weakShortDescriptionCount: number;
   suspiciousUserEmailCount: number;
+  suspiciousUserEmailsProductionCopyExclusionComplete?: boolean;
+  betaStudentAnalyticsEventCount?: number;
   retentionCandidateCount: number;
   liveLinkFailureCount?: number;
   coverageGaps: {
@@ -120,58 +160,288 @@ export interface ResearchEntityContentPageLeakSummary {
   samples: ResearchEntityContentPageLeakSample[];
 }
 
-const BETA_WARNING_OPERATOR_METADATA: Record<
+export type DuplicateEntityReviewCategory =
+  | 'shared_website_merge_review'
+  | 'cross_department_same_person_review'
+  | 'same_label_disambiguation'
+  | 'manual_review';
+
+export interface DuplicateEntityReviewEntity {
+  id: string;
+  name: string;
+  slug?: string;
+  kind?: string;
+  entityType?: string;
+  departments?: string[];
+  website?: string;
+  websiteUrl?: string;
+  sourceUrls?: string[];
+}
+
+export interface DuplicateEntityReviewCluster {
+  normalizedName: string;
+  count: number;
+  entities: DuplicateEntityReviewEntity[];
+}
+
+export interface DuplicateEntityReviewSummary {
+  totalClusters: number;
+  byCategory: Array<{ category: DuplicateEntityReviewCategory; count: number }>;
+}
+
+export interface DuplicateEntityPlanReviewCommand {
+  label: string;
+  category?: DuplicateEntityReviewCategory;
+  clusterCount: number;
+  outputPath: string;
+  command: string;
+}
+
+export interface DuplicateEntityPlanReviewSummary {
+  applyBlocked: true;
+  planLimit: number;
+  totalClusters: number;
+  categoryCounts: Array<{ category: DuplicateEntityReviewCategory; count: number }>;
+  preflightGuidance: DuplicateEntityPlanPreflightGuidance;
+  recommendedCommands: DuplicateEntityPlanReviewCommand[];
+  nextAction: string;
+}
+
+export interface DuplicateEntityPlanReviewOptions {
+  acceptedDecisionValidationInputPath?: string;
+  acceptedDecisionValidationOutputPath?: string;
+}
+
+export interface SamePiDedupeReviewOptions {
+  reviewArtifactPath?: string;
+  acceptedDecisionInputPath?: string;
+  decisionTemplateOutputPath?: string;
+}
+
+export interface SamePiDedupeReviewSummary {
+  applyBlocked: boolean;
+  applyBlockedReason?: string;
+  applyStatus?: string;
+  artifactAvailable: boolean;
+  reviewArtifactPath: string;
+  acceptedDecisionInputPath: string;
+  decisionTemplateOutputPath: string;
+  acceptedDecisionValidationOutputPath: string;
+  command: string;
+  plannedGroups?: number;
+  plannedDuplicateEntities?: number;
+  reviewBreakdown?: Record<string, unknown>;
+  acceptedDecisionValidation: {
+    artifactAvailable: boolean;
+    totalDecisions?: number;
+    validDecisionCount?: number;
+    invalidDecisionCount?: number;
+    unreviewedPlanCount?: number;
+  };
+  nextAction: string;
+}
+
+const SAME_PI_DEDUPE_APPLY_STATUS =
+  'Accepted same-PI dedupe decisions can drive bounded apply mode; only valid merge_into_canonical decisions are applied.';
+const BETA_ENV_PREFIX = 'SCRAPER_ENV=beta';
+
+export interface DuplicateEntityPlanPreflightGuidance {
+  applyBlocked: true;
+  expectedArtifactFields: ['planSummary.preflightSummary', 'plans[].reviewPreflight'];
+  sharedWebsiteReview?: {
+    category: 'shared_website_merge_review';
+    clusterCount: number;
+    outputPath: string;
+    expectedStatus: 'merge_preflight_ready_for_review';
+    requiredReviewerDecisions: string[];
+  };
+  manualReviewCategories: Array<{
+    category: Exclude<DuplicateEntityReviewCategory, 'shared_website_merge_review'>;
+    clusterCount: number;
+    expectedStatus: 'manual_disambiguation_required';
+  }>;
+  acceptedDecisionTemplate: {
+    outputPath: string;
+    expectedArtifactFields: [
+      'decisions[].planId',
+      'decisions[].entityIds',
+      'decisions[].decision',
+      'decisions[].canonicalEntityId',
+    ];
+    command: string;
+  };
+  acceptedDecisionValidation: {
+    inputPath: string;
+    outputPath: string;
+    expectedArtifactField: 'reviewDecisionValidation';
+    acceptedDecisionFields: ['planId', 'decision', 'canonicalEntityId', 'reviewedBy'];
+    command: string;
+    artifactAvailable?: boolean;
+    totalDecisions?: number;
+    validDecisionCount?: number;
+    invalidDecisionCount?: number;
+    unreviewedPlanCount?: number;
+  };
+}
+
+export interface SuspiciousUserEmailScorecardSampleInput {
+  id: string;
+  netid?: string;
+  name: string;
+  email: string;
+  reason: string;
+  productionCopyExcludedByDefault: boolean;
+}
+
+export interface SuspiciousUserEmailScorecardSample
+  extends SuspiciousUserEmailScorecardSampleInput {
+  productionCopyDisposition:
+    | 'excluded_from_lane_a_users_copy'
+    | 'review_before_lane_a_copy';
+}
+
+export interface SuspiciousUserEmailScorecardSummary {
+  count: number;
+  productionCopyExclusion: {
+    lane: 'Lane A accepted Beta copy';
+    strategy: string;
+    sampledExcludedByDefault: number;
+    sampledNeedsReviewBeforeCopy: number;
+    sampledCoverageComplete: boolean;
+    nextAction: string;
+  };
+  samples?: SuspiciousUserEmailScorecardSample[];
+}
+
+const BETA_CHECK_OPERATOR_METADATA: Record<
   string,
   Pick<BetaDataQualityCheck, 'classification' | 'owner' | 'nextCommand'>
 > = {
+  referenceIntegrity: {
+    owner: 'data-quality operator',
+    nextCommand: betaCommand(
+      'yarn --cwd server research-entity-members:audit-user-refs --limit=1000 --output /tmp/ylabs-member-user-ref-audit.json',
+    ),
+  },
   sourceHealthWarnings: {
     classification: 'must_fix_before_promotion',
     owner: 'scraper-source operator',
-    nextCommand:
-      'yarn --cwd server beta:data-quality --include-samples --output /tmp/ylabs-beta-quality.json',
+    nextCommand: betaCommand('yarn --cwd server source:health --output /tmp/ylabs-source-health.json'),
   },
   duplicateEntityNames: {
     classification: 'must_fix_before_promotion',
     owner: 'data-quality operator',
-    nextCommand: 'yarn --cwd server research-entity:dedupe-by-pi --limit=10000',
+    nextCommand: betaCommand(
+      'yarn --cwd server research-entity:duplicate-name-review --limit=10000 --output /tmp/ylabs-duplicate-entity-name-review.json',
+    ),
+  },
+  researchEntityContentPageLeaks: {
+    classification: 'must_fix_before_promotion',
+    owner: 'data-quality operator',
+    nextCommand: betaCommand(
+      'yarn --cwd server beta:data-quality --include-samples --output /tmp/ylabs-beta-quality.json',
+    ),
   },
   missingShortDescriptions: {
     classification: 'accepted_release_warning',
     owner: 'content-quality operator',
-    nextCommand:
+    nextCommand: betaCommand(
       'yarn --cwd server beta:data-quality --include-samples --output /tmp/ylabs-beta-quality.json',
+    ),
   },
   weakShortDescriptions: {
     classification: 'post_promotion_backlog',
     owner: 'content-quality operator',
-    nextCommand:
+    nextCommand: betaCommand(
       'yarn --cwd server beta:data-quality --include-samples --output /tmp/ylabs-beta-quality.json',
+    ),
   },
   coverageWithoutPathways: {
     classification: 'accepted_release_warning',
     owner: 'pathway coverage operator',
-    nextCommand:
+    nextCommand: betaCommand(
       'yarn --cwd server beta:data-quality --include-samples --output /tmp/ylabs-beta-quality.json',
+    ),
   },
   coverageWithoutAccessSignals: {
     classification: 'accepted_release_warning',
     owner: 'pathway coverage operator',
-    nextCommand:
+    nextCommand: betaCommand(
       'yarn --cwd server beta:data-quality --include-samples --output /tmp/ylabs-beta-quality.json',
+    ),
   },
   coverageWithoutContactRoutes: {
     classification: 'accepted_release_warning',
     owner: 'contact coverage operator',
-    nextCommand:
+    nextCommand: betaCommand(
       'yarn --cwd server beta:data-quality --include-samples --output /tmp/ylabs-beta-quality.json',
+    ),
   },
   suspiciousUserEmails: {
     classification: 'must_fix_before_promotion',
     owner: 'identity/account operator',
-    nextCommand:
-      'yarn --cwd server beta:data-quality --include-samples --output /tmp/ylabs-beta-quality.json',
+    nextCommand: betaCommand(
+      'yarn --cwd server users:email-hygiene --limit=1000 --output /tmp/ylabs-user-email-hygiene.json',
+    ),
+  },
+  betaStudentAnalyticsEvents: {
+    classification: 'must_fix_before_promotion',
+    owner: 'identity/account operator',
+    nextCommand: betaCommand(
+      'yarn --cwd server beta:clear-student-analytics --output /tmp/ylabs-beta-student-analytics-cleanup.json',
+    ),
   },
 };
+
+export function buildBetaDataQualityRecommendedCommands() {
+  const retentionOptions = buildBetaDataQualityRetentionOptions();
+  return {
+    weeklyAudit: betaCommand(
+      'yarn --cwd server beta:data-quality --include-samples --progress --output /tmp/ylabs-beta-quality.json',
+    ),
+    strictAudit: betaCommand(
+      'yarn --cwd server beta:data-quality --strict --include-samples --progress',
+    ),
+    retentionDryRun:
+      `SCRAPER_ENV=beta yarn --cwd server scrape prune-observations --source ${retentionOptions.sourceName} --older-than-days ${retentionOptions.olderThanDays} --keep-runs ${retentionOptions.keepRuns} --output /tmp/ylabs-openalex-prune-dry-run.json`,
+  };
+}
+
+export function buildBetaDataQualityDiagnostics(
+  phaseDurationsMs: Record<string, number>,
+): BetaDataQualityDiagnostics {
+  const normalizedDurations = Object.fromEntries(
+    Object.entries(phaseDurationsMs).map(([name, duration]) => [
+      name,
+      Math.max(0, Math.round(Number(duration) || 0)),
+    ]),
+  );
+  const phaseEntries = Object.entries(normalizedDurations);
+  const slowestPhase = phaseEntries.reduce<
+    BetaDataQualityDiagnostics['slowestPhase']
+  >((slowest, [name, durationMs]) => {
+    if (!slowest || durationMs > slowest.durationMs) return { name, durationMs };
+    return slowest;
+  }, undefined);
+
+  return {
+    totalMeasuredDurationMs: phaseEntries.reduce(
+      (total, [, durationMs]) => total + durationMs,
+      0,
+    ),
+    ...(slowestPhase ? { slowestPhase } : {}),
+    phaseDurationsMs: normalizedDurations,
+  };
+}
+
+export function buildBetaDataQualityRetentionOptions() {
+  return {
+    apply: false,
+    olderThanDays: 30,
+    keepRuns: 3,
+    sourceName: 'openalex',
+  };
+}
 
 export function parseBetaDataQualityArgs(argv: string[]): BetaDataQualityOptions {
   const options: BetaDataQualityOptions = {
@@ -180,6 +450,7 @@ export function parseBetaDataQualityArgs(argv: string[]): BetaDataQualityOptions
     liveLinks: false,
     linkSampleSize: 50,
     includeSamples: false,
+    progress: false,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -197,21 +468,17 @@ export function parseBetaDataQualityArgs(argv: string[]): BetaDataQualityOptions
       options.includeSamples = true;
       continue;
     }
+    if (arg === '--progress') {
+      options.progress = true;
+      continue;
+    }
     if (arg === '--output') {
-      const next = argv[index + 1];
-      if (!next) {
-        throw new Error('--output requires a path');
-      }
-      options.output = next;
+      options.output = parseRequiredOutputPath(argv[index + 1]);
       index += 1;
       continue;
     }
     if (arg.startsWith('--output=')) {
-      const output = arg.slice('--output='.length);
-      if (!output) {
-        throw new Error('--output requires a path');
-      }
-      options.output = output;
+      options.output = parseRequiredOutputPath(arg.slice('--output='.length));
       continue;
     }
     if (arg.startsWith('--days=')) {
@@ -244,6 +511,24 @@ export function parseBetaDataQualityArgs(argv: string[]): BetaDataQualityOptions
   }
 
   return options;
+}
+
+export function formatBetaDataQualityProgressEvent(
+  event: BetaDataQualityProgressEvent,
+): string {
+  if (event.status === 'started') {
+    return `[beta:data-quality] ${event.phase} started`;
+  }
+  const durationMs = Math.max(0, Math.round(Number(event.durationMs) || 0));
+  return `[beta:data-quality] ${event.phase} finished in ${durationMs}ms`;
+}
+
+function parseRequiredOutputPath(value: string | undefined): string {
+  const output = value?.trim();
+  if (!output || output.startsWith('--')) {
+    throw new Error('--output requires a path');
+  }
+  return output;
 }
 
 export function isInvalidOptionalUrl(value: unknown): boolean {
@@ -328,6 +613,70 @@ export function buildReferenceIntegritySummary(
     orphanedPresentRefTotal,
     hardFailureTotal: missingRequiredTotal + orphanedPresentRefTotal,
   };
+}
+
+export function buildMissingRequiredRefSamplePipeline(
+  localField: string,
+  sampleLimit: number,
+  ownerFilter: Record<string, unknown> = {},
+): Array<Record<string, unknown>> {
+  return [
+    {
+      $match: {
+        ...ownerFilter,
+        $or: [{ [localField]: { $exists: false } }, { [localField]: null }],
+      },
+    },
+    { $project: { id: { $toString: '$_id' }, value: `$${localField}` } },
+    { $limit: sampleLimit },
+  ];
+}
+
+export function buildScalarRefOrphanSamplePipeline(
+  localField: string,
+  targetCollectionName: string,
+  sampleLimit: number,
+  ownerFilter: Record<string, unknown> = {},
+): Array<Record<string, unknown>> {
+  return [
+    { $match: { ...ownerFilter, [localField]: { $exists: true, $nin: [null, ''] } } },
+    {
+      $lookup: {
+        from: targetCollectionName,
+        localField,
+        foreignField: '_id',
+        as: '_refTarget',
+      },
+    },
+    { $match: { _refTarget: { $size: 0 } } },
+    { $project: { id: { $toString: '$_id' }, value: `$${localField}` } },
+    { $limit: sampleLimit },
+  ];
+}
+
+export function buildArrayRefOrphanSamplePipeline(
+  localField: string,
+  targetCollectionName: string,
+  sampleLimit: number,
+  ownerFilter: Record<string, unknown> = {},
+): Array<Record<string, unknown>> {
+  const pipeline: Array<Record<string, unknown>> = [
+    { $project: { ref: { $ifNull: [`$${localField}`, []] } } },
+    { $unwind: '$ref' },
+    { $match: { ref: { $ne: null } } },
+    {
+      $lookup: {
+        from: targetCollectionName,
+        localField: 'ref',
+        foreignField: '_id',
+        as: '_refTarget',
+      },
+    },
+    { $match: { _refTarget: { $size: 0 } } },
+    { $project: { id: { $toString: '$_id' }, value: '$ref' } },
+    { $limit: sampleLimit },
+  ];
+  return Object.keys(ownerFilter).length > 0 ? [{ $match: ownerFilter }, ...pipeline] : pipeline;
 }
 
 export function buildBetaDataQualitySummary(
@@ -441,6 +790,16 @@ export function buildBetaDataQualitySummary(
       input.suspiciousUserEmailCount,
       'User emails look synthetic, placeholder, or otherwise suspicious.',
       0,
+      input.suspiciousUserEmailsProductionCopyExclusionComplete
+        ? { classification: 'accepted_release_warning' }
+        : undefined,
+    ),
+    buildCheck(
+      'betaStudentAnalyticsEvents',
+      'warn',
+      input.betaStudentAnalyticsEventCount ?? 0,
+      'Beta analytics contains real student telemetry and must be cleared before production-copy review.',
+      0,
     ),
     buildCheck(
       'retentionCandidates',
@@ -458,12 +817,67 @@ export function buildBetaDataQualitySummary(
     ),
   ]);
 
+  const promotionBlockers = warnings.filter(
+    (warning) => warning.classification === 'must_fix_before_promotion',
+  );
+  const promotionBlockersByOwner = Array.from(
+    promotionBlockers.reduce<Map<string, string[]>>((groups, blocker) => {
+      const owner = blocker.owner || 'unassigned operator';
+      groups.set(owner, [...(groups.get(owner) || []), blocker.name]);
+      return groups;
+    }, new Map()),
+  )
+    .map(([owner, blockerNames]) => ({
+      owner,
+      count: blockerNames.length,
+      blockerNames: [...blockerNames].sort(),
+    }))
+    .sort((left, right) => left.owner.localeCompare(right.owner));
+
   return {
     status: errors.length > 0 ? 'error' : warnings.length > 0 ? 'warn' : 'ok',
     errorCount: errors.length,
     warnCount: warnings.length,
     errors,
     warnings,
+    promotionReady: errors.length === 0 && promotionBlockers.length === 0,
+    promotionBlockerCount: promotionBlockers.length,
+    promotionBlockers,
+    promotionBlockersByOwner,
+  };
+}
+
+export function buildSuspiciousUserEmailScorecardSummary(input: {
+  count: number;
+  includeSamples: boolean;
+  samples: SuspiciousUserEmailScorecardSampleInput[];
+}): SuspiciousUserEmailScorecardSummary {
+  const count = Math.max(0, input.count);
+  const samples = input.samples.map((sample) => ({
+    ...sample,
+    productionCopyDisposition: sample.productionCopyExcludedByDefault
+      ? 'excluded_from_lane_a_users_copy'
+      : 'review_before_lane_a_copy',
+  })) satisfies SuspiciousUserEmailScorecardSample[];
+  const sampledExcludedByDefault = samples.filter(
+    (sample) => sample.productionCopyExcludedByDefault,
+  ).length;
+  const sampledNeedsReviewBeforeCopy = samples.length - sampledExcludedByDefault;
+
+  return {
+    count,
+    productionCopyExclusion: {
+      lane: 'Lane A accepted Beta copy',
+      strategy:
+        "The guarded Lane A copy excludes known dev/test users from the users collection and separately blocks copied records that still reference excluded users.",
+      sampledExcludedByDefault,
+      sampledNeedsReviewBeforeCopy,
+      sampledCoverageComplete:
+        count === 0 || (samples.length === count && sampledNeedsReviewBeforeCopy === 0),
+      nextAction:
+        'Review any sampled users not covered by the Lane A copy filter before production copy; do not delete users as part of this data-quality audit.',
+    },
+    ...(input.includeSamples ? { samples } : {}),
   };
 }
 
@@ -548,6 +962,401 @@ export function buildResearchEntityContentPageLeakSummary(
   return { count, samples };
 }
 
+function normalizedWebsiteKey(value: string | undefined): string {
+  if (!value?.trim()) return '';
+  try {
+    const parsed = new URL(value.trim());
+    const host = parsed.hostname.replace(/^www\./i, '').toLowerCase();
+    const urlPath = parsed.pathname.replace(/\/+$/, '').toLowerCase();
+    return `${host}${urlPath}`;
+  } catch {
+    return value.trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '').toLowerCase();
+  }
+}
+
+function normalizedNameTokens(value: string): string[] {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+function hasSingleSharedWebsite(cluster: DuplicateEntityReviewCluster): boolean {
+  const websiteKeys = cluster.entities
+    .map((entity) => normalizedWebsiteKey(entity.websiteUrl) || normalizedWebsiteKey(entity.website))
+    .filter(Boolean);
+  return websiteKeys.length >= 2 && new Set(websiteKeys).size === 1;
+}
+
+function distinctDepartmentCount(cluster: DuplicateEntityReviewCluster): number {
+  return new Set(cluster.entities.flatMap((entity) => entity.departments || []).filter(Boolean))
+    .size;
+}
+
+function isSingleSurnameLabName(normalizedName: string): boolean {
+  const tokens = normalizedNameTokens(normalizedName);
+  return tokens.length === 2 && tokens[1] === 'lab';
+}
+
+function isFullPersonResearchName(normalizedName: string): boolean {
+  const tokens = normalizedNameTokens(normalizedName);
+  if (tokens.length < 3) return false;
+  const suffix = tokens.slice(-2).join(' ');
+  return suffix === 'faculty research' || tokens.at(-1) === 'lab' || tokens.at(-1) === 'laboratory';
+}
+
+export function classifyDuplicateEntityCluster(
+  cluster: DuplicateEntityReviewCluster,
+): DuplicateEntityReviewCategory {
+  if (hasSingleSharedWebsite(cluster)) return 'shared_website_merge_review';
+  if (isSingleSurnameLabName(cluster.normalizedName)) return 'same_label_disambiguation';
+  if (isFullPersonResearchName(cluster.normalizedName) && distinctDepartmentCount(cluster) > 1) {
+    return 'cross_department_same_person_review';
+  }
+  return 'manual_review';
+}
+
+export function buildDuplicateEntityReviewSummary(
+  clusters: DuplicateEntityReviewCluster[],
+): DuplicateEntityReviewSummary {
+  const counts = clusters.reduce<Map<DuplicateEntityReviewCategory, number>>((map, cluster) => {
+    const category = classifyDuplicateEntityCluster(cluster);
+    map.set(category, (map.get(category) || 0) + 1);
+    return map;
+  }, new Map());
+
+  return {
+    totalClusters: clusters.length,
+    byCategory: Array.from(counts.entries())
+      .map(([category, count]) => ({ category, count }))
+      .sort((left, right) => right.count - left.count || left.category.localeCompare(right.category)),
+  };
+}
+
+export function buildDuplicateEntityPlanReviewSummary(
+  reviewSummary: DuplicateEntityReviewSummary,
+  planLimit?: number,
+  options: DuplicateEntityPlanReviewOptions = {},
+): DuplicateEntityPlanReviewSummary {
+  const effectivePlanLimit = planLimit ?? Math.max(reviewSummary.totalClusters, 1);
+  const categoryCounts = reviewSummary.byCategory.filter((item) => item.count > 0);
+  const recommendedCommands: DuplicateEntityPlanReviewCommand[] =
+    reviewSummary.totalClusters > 0
+      ? [
+          duplicateEntityPlanReviewCommand({
+            label: 'all_duplicate_name_plans',
+            clusterCount: reviewSummary.totalClusters,
+            outputPath: '/tmp/ylabs-duplicate-entity-name-review.json',
+            planLimit: effectivePlanLimit,
+          }),
+          ...categoryCounts.map((item) =>
+            duplicateEntityPlanReviewCommand({
+              label: item.category,
+              category: item.category,
+              clusterCount: item.count,
+              outputPath: duplicateEntityCategoryPlanOutputPath(item.category),
+              planLimit: effectivePlanLimit,
+            }),
+          ),
+        ]
+      : [];
+
+  return {
+    applyBlocked: true,
+    planLimit: effectivePlanLimit,
+    totalClusters: reviewSummary.totalClusters,
+    categoryCounts,
+    preflightGuidance: buildDuplicateEntityPlanPreflightGuidance(
+      categoryCounts,
+      effectivePlanLimit,
+      options,
+    ),
+    recommendedCommands,
+    nextAction:
+      reviewSummary.totalClusters > 0
+        ? 'Run the category-specific dry-run review commands and inspect the saved artifacts before designing any guarded merge/archive apply path.'
+        : 'No duplicate-name plan review is needed unless duplicate normalized-name clusters reappear.',
+  };
+}
+
+function buildDuplicateEntityPlanPreflightGuidance(
+  categoryCounts: Array<{ category: DuplicateEntityReviewCategory; count: number }>,
+  planLimit: number,
+  options: DuplicateEntityPlanReviewOptions = {},
+): DuplicateEntityPlanPreflightGuidance {
+  const sharedWebsite = categoryCounts.find(
+    (item) => item.category === 'shared_website_merge_review',
+  );
+  const manualReviewCategories = categoryCounts
+    .filter(
+      (
+        item,
+      ): item is {
+        category: Exclude<DuplicateEntityReviewCategory, 'shared_website_merge_review'>;
+        count: number;
+      } => item.category !== 'shared_website_merge_review',
+    )
+    .map((item) => ({
+      category: item.category,
+      clusterCount: item.count,
+      expectedStatus: 'manual_disambiguation_required' as const,
+    }));
+
+  return {
+    applyBlocked: true,
+    expectedArtifactFields: ['planSummary.preflightSummary', 'plans[].reviewPreflight'],
+    ...(sharedWebsite
+      ? {
+          sharedWebsiteReview: {
+            category: 'shared_website_merge_review' as const,
+            clusterCount: sharedWebsite.count,
+            outputPath: duplicateEntityCategoryPlanOutputPath('shared_website_merge_review'),
+            expectedStatus: 'merge_preflight_ready_for_review' as const,
+            requiredReviewerDecisions: [
+              'Confirm the shared website represents one research home.',
+              'Select the canonical ResearchEntity before any apply path.',
+              'Confirm guarded reference rewrite and archive behavior for active references.',
+            ],
+          },
+        }
+      : {}),
+    manualReviewCategories,
+    acceptedDecisionTemplate: duplicateEntityAcceptedDecisionTemplateCommand(planLimit),
+    acceptedDecisionValidation: duplicateEntityAcceptedDecisionValidationCommand(
+      planLimit,
+      options,
+    ),
+  };
+}
+
+function duplicateEntityAcceptedDecisionTemplateCommand(planLimit: number) {
+  const outputPath = '/tmp/ylabs-duplicate-entity-name-review-accepted-decisions-template.json';
+  return {
+    outputPath,
+    expectedArtifactFields: [
+      'decisions[].planId',
+      'decisions[].entityIds',
+      'decisions[].decision',
+      'decisions[].canonicalEntityId',
+    ] as [
+      'decisions[].planId',
+      'decisions[].entityIds',
+      'decisions[].decision',
+      'decisions[].canonicalEntityId',
+    ],
+    command: betaCommand(
+      `yarn --cwd server research-entity:duplicate-name-review --limit=10000` +
+        ` --plan-limit=${planLimit} --decision-template-output ${outputPath}` +
+        ' --output /tmp/ylabs-duplicate-entity-name-review.json',
+    ),
+  };
+}
+
+function duplicateEntityAcceptedDecisionValidationCommand(
+  planLimit: number,
+  options: DuplicateEntityPlanReviewOptions = {},
+) {
+  const inputPath =
+    options.acceptedDecisionValidationInputPath ||
+    '/tmp/ylabs-duplicate-entity-name-review-accepted-decisions.json';
+  const outputPath =
+    options.acceptedDecisionValidationOutputPath ||
+    '/tmp/ylabs-duplicate-entity-name-review-decision-validation.json';
+  return {
+    inputPath,
+    outputPath,
+    expectedArtifactField: 'reviewDecisionValidation' as const,
+    acceptedDecisionFields: [
+      'planId',
+      'decision',
+      'canonicalEntityId',
+      'reviewedBy',
+    ] as ['planId', 'decision', 'canonicalEntityId', 'reviewedBy'],
+    command: betaCommand(
+      `yarn --cwd server research-entity:duplicate-name-review --limit=10000` +
+        ` --plan-limit=${planLimit} --accepted-decisions=${inputPath}` +
+        ` --allow-empty-decisions --output ${outputPath}`,
+    ),
+    ...readDuplicateEntityDecisionValidationStatus(outputPath),
+  };
+}
+
+function duplicateEntityPlanReviewCommand(input: {
+  label: string;
+  category?: DuplicateEntityReviewCategory;
+  clusterCount: number;
+  outputPath: string;
+  planLimit: number;
+}): DuplicateEntityPlanReviewCommand {
+  const categoryFlag = input.category ? ` --category=${input.category}` : '';
+  return {
+    label: input.label,
+    ...(input.category ? { category: input.category } : {}),
+    clusterCount: input.clusterCount,
+    outputPath: input.outputPath,
+    command: betaCommand(
+      `yarn --cwd server research-entity:duplicate-name-review --limit=10000${categoryFlag}` +
+        ` --plan-limit=${input.planLimit} --output ${input.outputPath}`,
+    ),
+  };
+}
+
+function readDuplicateEntityDecisionValidationStatus(
+  outputPath: string,
+): {
+  artifactAvailable: boolean;
+  totalDecisions?: number;
+  validDecisionCount?: number;
+  invalidDecisionCount?: number;
+  unreviewedPlanCount?: number;
+} {
+  if (!fs.existsSync(outputPath)) {
+    return { artifactAvailable: false };
+  }
+
+  try {
+    const parsed = JSON.parse(fs.readFileSync(outputPath, 'utf8')) as unknown;
+    const validation =
+      parsed &&
+      typeof parsed === 'object' &&
+      'reviewDecisionValidation' in parsed &&
+      (parsed as { reviewDecisionValidation?: unknown }).reviewDecisionValidation &&
+      typeof (parsed as { reviewDecisionValidation?: unknown }).reviewDecisionValidation ===
+        'object'
+        ? ((parsed as { reviewDecisionValidation: Record<string, unknown> })
+            .reviewDecisionValidation)
+        : undefined;
+    if (!validation) {
+      return { artifactAvailable: false };
+    }
+    return {
+      artifactAvailable: true,
+      ...copyFiniteNumericField(validation, 'totalDecisions'),
+      ...copyFiniteNumericField(validation, 'validDecisionCount'),
+      ...copyFiniteNumericField(validation, 'invalidDecisionCount'),
+      ...copyFiniteNumericField(validation, 'unreviewedPlanCount'),
+    };
+  } catch {
+    return { artifactAvailable: false };
+  }
+}
+
+export function buildSamePiDedupeReviewSummary(
+  options: SamePiDedupeReviewOptions = {},
+): SamePiDedupeReviewSummary {
+  const reviewArtifactPath =
+    options.reviewArtifactPath || '/tmp/ylabs-research-entity-dedupe.json';
+  const acceptedDecisionInputPath =
+    options.acceptedDecisionInputPath ||
+    '/tmp/ylabs-research-entity-pi-dedupe-accepted-decisions.json';
+  const decisionTemplateOutputPath =
+    options.decisionTemplateOutputPath ||
+    '/tmp/ylabs-research-entity-pi-dedupe-accepted-decisions-template.json';
+  const base = {
+    applyBlocked: false,
+    applyStatus: SAME_PI_DEDUPE_APPLY_STATUS,
+    reviewArtifactPath,
+    acceptedDecisionInputPath,
+    decisionTemplateOutputPath,
+    acceptedDecisionValidationOutputPath: reviewArtifactPath,
+    command: betaCommand(
+      `yarn --cwd server research-entity:dedupe-by-pi --limit=10000` +
+        ` --accepted-decisions=${acceptedDecisionInputPath}` +
+        ` --allow-empty-decisions --decision-template-output ${decisionTemplateOutputPath}` +
+        ` --output ${reviewArtifactPath}`,
+    ),
+    nextAction:
+      'Review the same-PI dedupe decision template and validate accepted decisions before considering a bounded guarded apply.',
+  };
+
+  if (!fs.existsSync(reviewArtifactPath)) {
+    return {
+      ...base,
+      artifactAvailable: false,
+      acceptedDecisionValidation: { artifactAvailable: false },
+    };
+  }
+
+  try {
+    const parsed = JSON.parse(fs.readFileSync(reviewArtifactPath, 'utf8')) as unknown;
+    if (!parsed || typeof parsed !== 'object') {
+      throw new Error('not an object');
+    }
+    const record = parsed as Record<string, unknown>;
+    const validation = extractValidationCounts(record.reviewDecisionValidation);
+    const applyBlockedReason =
+      extractStringField(record.reviewDecisionValidation, 'applyBlockedReason');
+    const applyStatus =
+      extractStringField(record.reviewDecisionValidation, 'applyStatus') || base.applyStatus;
+    return {
+      ...base,
+      artifactAvailable: true,
+      ...(applyBlockedReason ? { applyBlockedReason } : {}),
+      ...(applyStatus ? { applyStatus } : {}),
+      ...copyFiniteNumericField(record, 'plannedGroups'),
+      ...copyFiniteNumericField(record, 'plannedDuplicateEntities'),
+      ...(record.reviewBreakdown && typeof record.reviewBreakdown === 'object'
+        ? { reviewBreakdown: record.reviewBreakdown as Record<string, unknown> }
+        : {}),
+      acceptedDecisionValidation: validation
+        ? { artifactAvailable: true, ...validation }
+        : { artifactAvailable: false },
+    };
+  } catch {
+    return {
+      ...base,
+      artifactAvailable: false,
+      acceptedDecisionValidation: { artifactAvailable: false },
+    };
+  }
+}
+
+function extractValidationCounts(value: unknown):
+  | {
+      totalDecisions?: number;
+      validDecisionCount?: number;
+      invalidDecisionCount?: number;
+      unreviewedPlanCount?: number;
+    }
+  | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const record = value as Record<string, unknown>;
+  const counts = {
+    ...copyFiniteNumericField(record, 'totalDecisions'),
+    ...copyFiniteNumericField(record, 'validDecisionCount'),
+    ...copyFiniteNumericField(record, 'invalidDecisionCount'),
+    ...copyFiniteNumericField(record, 'unreviewedPlanCount'),
+  };
+  return Object.keys(counts).length > 0 ? counts : undefined;
+}
+
+function extractStringField(value: unknown, field: string): string | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const raw = (value as Record<string, unknown>)[field];
+  return typeof raw === 'string' && raw.trim() ? raw.trim() : undefined;
+}
+
+function copyFiniteNumericField(
+  value: Record<string, unknown>,
+  field: string,
+): Record<string, number> {
+  const raw = value[field];
+  return typeof raw === 'number' && Number.isFinite(raw) ? { [field]: raw } : {};
+}
+
+function duplicateEntityCategoryPlanOutputPath(
+  category: DuplicateEntityReviewCategory,
+): string {
+  const suffixByCategory: Record<DuplicateEntityReviewCategory, string> = {
+    shared_website_merge_review: 'shared-website',
+    cross_department_same_person_review: 'cross-department-same-person',
+    same_label_disambiguation: 'same-label-disambiguation',
+    manual_review: 'manual-review',
+  };
+  return `/tmp/ylabs-duplicate-entity-name-review-${suffixByCategory[category]}-plan.json`;
+}
+
 export function selectLiveLinkCandidates(
   inputs: LinkCandidateInput[],
   sampleSize: number,
@@ -586,6 +1395,26 @@ export function writeScorecardOutput(
   fs.writeFileSync(outputPath, `${JSON.stringify(scorecard, null, 2)}\n`);
 }
 
+export function buildBetaDataQualityOutput<T extends object>(
+  scorecard: T,
+  metadata: {
+    environment?: string;
+    db?: string;
+    options: BetaDataQualityOptions;
+  },
+): T & {
+  environment?: string;
+  db?: string;
+  options: BetaDataQualityOptions;
+} {
+  return {
+    ...scorecard,
+    ...(metadata.environment ? { environment: metadata.environment } : {}),
+    ...(metadata.db ? { db: metadata.db } : {}),
+    options: metadata.options,
+  };
+}
+
 function compactChecks(checks: Array<BetaDataQualityCheck | null>): BetaDataQualityCheck[] {
   return checks.filter((check): check is BetaDataQualityCheck => check !== null);
 }
@@ -596,6 +1425,7 @@ function buildCheck(
   count: number,
   message: string,
   target: number | string,
+  metadataOverride?: Partial<Pick<BetaDataQualityCheck, 'classification' | 'owner' | 'nextCommand'>>,
 ): BetaDataQualityCheck | null {
   if (count <= 0) {
     return null;
@@ -606,8 +1436,13 @@ function buildCheck(
     count,
     message,
     target,
-    ...(severity === 'warn' ? BETA_WARNING_OPERATOR_METADATA[name] : undefined),
+    ...BETA_CHECK_OPERATOR_METADATA[name],
+    ...metadataOverride,
   };
+}
+
+function betaCommand(command: string): string {
+  return command.startsWith(`${BETA_ENV_PREFIX} `) ? command : `${BETA_ENV_PREFIX} ${command}`;
 }
 
 function parsePositiveIntegerFlag(arg: string, prefix: string): number {
@@ -616,7 +1451,7 @@ function parsePositiveIntegerFlag(arg: string, prefix: string): number {
 
 function parsePositiveIntegerValue(value: string, flagName: string): number {
   const parsed = Number.parseInt(value, 10);
-  if (!Number.isFinite(parsed) || parsed <= 0 || parsed.toString() !== value) {
+  if (!Number.isSafeInteger(parsed) || parsed <= 0 || parsed.toString() !== value) {
     throw new Error(`${flagName} must be a positive integer`);
   }
   return parsed;

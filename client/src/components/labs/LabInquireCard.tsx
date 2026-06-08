@@ -21,6 +21,8 @@ import {
   verdictBadgeStyles,
   verdictLabel,
 } from '../../utils/undergradAcceptance';
+import { resolveLabOutreachContact } from '../../utils/labOutreachContact';
+import { EXTERNAL_LINK_REL, safeMailtoHref, safeUrl } from '../../utils/url';
 
 interface LabInquireCardProps {
   group: ResearchGroup;
@@ -30,22 +32,6 @@ interface LabInquireCardProps {
   hasActivePostedOpportunity?: boolean;
   onInquire: () => void;
 }
-
-// Only use an explicit group contact email for direct mailto flows. Public
-// member emails are intentionally not used as fallback CTAs.
-const resolvePiEmail = (
-  group: ResearchGroup,
-  members: LabMember[],
-): { email: string; lname: string } | null => {
-  if (group.contactEmail) {
-    const piMember = members.find((m) => m.role === 'pi' || m.role === 'director');
-    return {
-      email: group.contactEmail,
-      lname: piMember?.user.lname || group.contactName || '',
-    };
-  }
-  return null;
-};
 
 const CONTACT_ROUTE_ORDER: Record<string, number> = {
   OFFICIAL_APPLICATION: 0,
@@ -73,15 +59,23 @@ const contactRouteCtaLabel = (route?: LabContactRoute): string => {
     case 'LAB_MANAGER':
       return 'Contact lab manager';
     case 'FACULTY_PI':
-      return 'Open official profile';
+      return 'Open contact route';
     default:
       return 'Open contact route';
   }
 };
 
-const preferredPublicRoute = (routes?: LabContactRoute[]): LabContactRoute | null =>
+const preferredPublicRoute = (
+  routes?: LabContactRoute[],
+  hasOutreachContact = false,
+): LabContactRoute | null =>
   (routes || [])
-    .filter((route) => route.visibility === 'PUBLIC' && !!route.url)
+    .filter(
+      (route) =>
+        route.visibility === 'PUBLIC' &&
+        !!safeUrl(route.url) &&
+        (!hasOutreachContact || route.routeType !== 'FACULTY_PI'),
+    )
     .sort(
       (a, b) =>
         (CONTACT_ROUTE_ORDER[a.routeType] ?? 9) - (CONTACT_ROUTE_ORDER[b.routeType] ?? 9) ||
@@ -172,20 +166,22 @@ const LabInquireCard = ({
   hasActivePostedOpportunity = false,
   onInquire,
 }: LabInquireCardProps) => {
-  const piContact = resolvePiEmail(group, members);
-  const preferredRoute = preferredPublicRoute(contactRoutes);
+  const resolvedOutreachContact = resolveLabOutreachContact(group, members, contactRoutes);
+  const outreachContactHref = safeMailtoHref(resolvedOutreachContact?.email);
+  const outreachContact = outreachContactHref ? resolvedOutreachContact : null;
+  const preferredRoute = preferredPublicRoute(contactRoutes, Boolean(outreachContact));
+  const preferredRouteUrl = safeUrl(preferredRoute?.url);
   const hours = formatHours(group);
   const { verdict, evidence } = computeAcceptanceVerdict(group, hasActivePostedOpportunity);
   const isUnavailable = verdict === 'not-accepting';
-  const canInquireInline = !preferredRoute && !isUnavailable && !!group.contactEmail;
+  const canInquireInline = !preferredRoute && !isUnavailable && !!outreachContact;
 
   // Mailto for the explicit-contact fallback path (no route URL available).
-  const fallbackMailto = piContact
-    ? `mailto:${piContact.email}?subject=${encodeURIComponent(
-        `Inquiry from a Yale undergraduate about research in ${group.name}`,
-      )}&body=${encodeURIComponent(
-        `Hello${piContact.lname ? ` ${piContact.lname}` : ''},\n\nI'm a Yale undergraduate interested in research in your group. I'd love to learn more about how I might contribute.\n\nThank you,\n`,
-      )}`
+  const fallbackMailto = outreachContact
+    ? safeMailtoHref(outreachContact.email, {
+        subject: `Inquiry from a Yale undergraduate about research in ${group.name}`,
+        body: `Hello${outreachContact.lname ? ` ${outreachContact.lname}` : ''},\n\nI'm a Yale undergraduate interested in research in your group. I'd love to learn more about how I might contribute.\n\nThank you,\n`,
+      })
     : '';
 
   const grantSummary = formatGrantSummary(group);
@@ -316,11 +312,11 @@ const LabInquireCard = ({
       </div>
 
       <div className="mt-5">
-        {preferredRoute ? (
+        {preferredRoute && preferredRouteUrl ? (
           <a
-            href={preferredRoute.url}
+            href={preferredRouteUrl}
             target="_blank"
-            rel="noreferrer"
+            rel={EXTERNAL_LINK_REL}
             className="flex min-h-[44px] w-full items-center justify-center rounded-md bg-blue-600 px-4 py-2.5 text-center text-sm font-semibold text-white transition-colors hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
           >
             {contactRouteCtaLabel(preferredRoute)}
@@ -344,10 +340,10 @@ const LabInquireCard = ({
             No contact information available yet.
           </p>
         )}
-        {group.contactEmail && group.contactName && (
+        {outreachContact?.email && outreachContact.name && (
           <p className="text-xs text-gray-500 text-center mt-2">
-            Contact: {group.contactName}
-            {group.contactRole ? ` (${group.contactRole})` : ''}
+            Contact: {outreachContact.name}
+            {outreachContact.role ? ` (${outreachContact.role})` : ''}
           </p>
         )}
       </div>

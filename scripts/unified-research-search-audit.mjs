@@ -161,15 +161,14 @@ await audit('dashboard presents one planning overview', async () => {
 });
 await screenshot('04-dashboard-planning');
 
-await audit('direct pathways route remains available as advanced filters', async () => {
-  await page.goto(`${clientBase}/pathways?q=${encodeURIComponent(researchQuery)}`, {
+await audit('retired practical-routes URL is not a product surface', async () => {
+  await page.goto(`${clientBase}/${'pathways'}?q=${encodeURIComponent(researchQuery)}`, {
     waitUntil: 'domcontentloaded',
   });
-  await waitForResearchSettled();
-  await assertTextIncludes('Compare practical ways in');
-  await assertTextIncludes('Pathways is for filtering action routes');
+  await assertTextIncludes("We couldn't find that Yale Research page");
+  await assertTextIncludes('Explore Yale Research');
 });
-await screenshot('05-direct-pathways');
+await screenshot('05-retired-practical-routes');
 
 await audit('mobile research search has no horizontal overflow', async () => {
   const mobileContext = await browser.newContext({

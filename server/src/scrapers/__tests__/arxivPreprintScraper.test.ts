@@ -145,6 +145,21 @@ describe('arxivEntryToObservations', () => {
 });
 
 describe('ArxivPreprintScraper.run', () => {
+  it('rejects unsafe runtime limits before querying faculty rows', async () => {
+    const fetcher: ArxivFetcher = vi.fn(async () => SAMPLE_FEED);
+    const userModel = mockUserModel([]);
+    const scraper = new ArxivPreprintScraper({
+      userModel,
+      fetcher,
+      requestDelayMs: 0,
+    });
+    const { ctx } = makeContext({ limit: 9007199254740992 });
+
+    await expect(scraper.run(ctx)).rejects.toThrow(/--limit must be a safe positive integer/);
+    expect(userModel.find).not.toHaveBeenCalled();
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
   it('emits paper metadata only when returned authors exactly match the Yale faculty name', async () => {
     const fetcher: ArxivFetcher = vi.fn(async () => SAMPLE_FEED);
     const userModel = mockUserModel([

@@ -239,10 +239,10 @@ export async function extractPdfText(body: Buffer): Promise<string> {
 
 function firstLabelValue(block: string, labels: string[]): string {
   const pattern = labels.map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
-  const regex = new RegExp(`(?:^|\\n)\\s*(?:${pattern})\\s*[:\\-]\\s*([^\\n]+)`, 'i');
+  const regex = new RegExp(`(?:^|\\n)\\s*(?:${pattern})\\s*[:-]\\s*([^\\n]+)`, 'i');
   const match = block.match(regex);
   return (match?.[1] || '')
-    .replace(/\s+(student|advisor|adviser|mentor|project|title)\s*[:\-].*$/i, '')
+    .replace(/\s+(student|advisor|adviser|mentor|project|title)\s*[:-].*$/i, '')
     .trim();
 }
 
@@ -253,7 +253,7 @@ function likelyProjectTitle(block: string): string {
     .split('\n')
     .map((line) => line.trim())
     .filter(Boolean)
-    .filter((line) => !/^(student|presenter|researcher|advisor|adviser|mentor)\s*[:\-]/i.test(line));
+    .filter((line) => !/^(student|presenter|researcher|advisor|adviser|mentor)\s*[:-]/i.test(line));
   return lines[0] || '';
 }
 
@@ -271,7 +271,7 @@ export function candidateRowsFromText(
   if (!normalized) return [];
 
   const blocks = normalized
-    .split(/\n\s*\n|(?=\n?\s*(?:Student|Presenter|Researcher)\s*[:\-])/i)
+    .split(/\n\s*\n|(?=\n?\s*(?:Student|Presenter|Researcher)\s*[:-])/i)
     .map((block) => block.trim())
     .filter(Boolean);
 

@@ -22,8 +22,8 @@ vi.mock('../../components/accounts/ProfileEditor', () => ({
   default: () => <section>Profile editor</section>,
 }));
 
-vi.mock('../../components/accounts/FavoritesManager', () => ({
-  default: ({
+vi.mock('../../components/accounts/FavoritesManager', () => {
+  const MockFavoritesManager = ({
     onSummaryChange,
     variant = 'student',
   }: {
@@ -38,11 +38,13 @@ vi.mock('../../components/accounts/FavoritesManager', () => ({
       onSummaryChange?.(savedProgramSummary);
     }, [onSummaryChange]);
     return <section>Favorites manager: {variant}</section>;
-  },
-}));
+  };
 
-vi.mock('../../components/accounts/SavedPathwaysSection', () => ({
-  default: ({
+  return { default: MockFavoritesManager };
+});
+
+vi.mock('../../components/accounts/SavedPathwaysSection', () => {
+  const MockSavedPathwaysSection = ({
     onSummaryChange,
   }: {
     onSummaryChange?: (summary: { count: number; nextDeadlineLabel?: string }) => void;
@@ -51,8 +53,10 @@ vi.mock('../../components/accounts/SavedPathwaysSection', () => ({
       onSummaryChange?.(savedPathwaySummary);
     }, [onSummaryChange]);
     return <section>Saved research plans</section>;
-  },
-}));
+  };
+
+  return { default: MockSavedPathwaysSection };
+});
 
 afterEach(() => {
   cleanup();

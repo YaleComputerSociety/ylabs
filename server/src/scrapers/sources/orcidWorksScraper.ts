@@ -241,6 +241,18 @@ export class OrcidWorksScraper implements IScraper {
   }
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
+    const offsetOption = ctx.options.offset;
+    if (
+      offsetOption !== undefined &&
+      (!Number.isSafeInteger(offsetOption) || offsetOption < 0)
+    ) {
+      throw new Error('--offset must be a safe non-negative integer');
+    }
+    const limitOption = ctx.options.limit;
+    if (limitOption !== undefined && (!Number.isSafeInteger(limitOption) || limitOption < 1)) {
+      throw new Error('--limit must be a safe positive integer');
+    }
+
     const filter: any = {
       userType: { $in: ['professor', 'faculty'] },
       orcid: { $exists: true, $ne: null, $nin: [''] },
@@ -262,11 +274,11 @@ export class OrcidWorksScraper implements IScraper {
         orcid: 1,
       })
       .sort({ netid: 1, _id: 1 });
-    if (ctx.options.offset && ctx.options.offset > 0) {
-      query = query.skip(ctx.options.offset);
+    if (offsetOption && offsetOption > 0) {
+      query = query.skip(offsetOption);
     }
-    if (ctx.options.limit && ctx.options.limit > 0) {
-      query = query.limit(ctx.options.limit);
+    if (limitOption) {
+      query = query.limit(limitOption);
     }
 
     const users: any[] = await query.lean();

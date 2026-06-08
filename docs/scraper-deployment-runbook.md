@@ -2,7 +2,7 @@
 
 Status: active runbook
 
-Last updated: 2026-05-25
+Last updated: 2026-05-29
 
 ## Goal
 
@@ -53,21 +53,22 @@ Typical dry-run:
 
 ```bash
 SCRAPER_ENV=development \
-  yarn scrape run --source <source-name> --limit 10 --use-cache
+  yarn --cwd server scrape run --source <source-name> --limit 10 --use-cache --output /tmp/ylabs-<source-name>-dry-run-report.json
 ```
 
 Typical development write:
 
 ```bash
 SCRAPER_ENV=development ALLOW_NON_PROD_SCRAPER_WRITES=true \
-  yarn scrape run --source <source-name> --limit 10 --use-cache --auto-materialize
+  yarn --cwd server scrape run --source <source-name> --limit 10 --use-cache --auto-materialize --output /tmp/ylabs-<source-name>-write-report.json
 ```
 
 Rules:
 
 - Use `--use-cache` only outside production.
 - Start with `--limit`, `--only`, `--since`, or source-specific caps.
-- Run `yarn scrape report --run <scrapeRunId>` after every meaningful write.
+- Use `--output <path>` on `yarn --cwd server scrape run` when a bounded dry-run or write should produce a saved report artifact. If a run was already completed without `--output`, use `yarn --cwd server scrape report --run <scrapeRunId> --output <path>`. Saved scraper CLI artifacts include command, target `environment`, `db`, parsed `options`, and the command-specific report payload.
+- Use `yarn --cwd server scrape materialize --run <scrapeRunId> --dry-run --output <path>` for a saved materialization review artifact before any standalone materialization write. Standalone write materialization requires `--confirm-materialize` in addition to the existing environment write guards. The materialize artifact includes the materialization result, optional visibility-gate result, ScrapeRun report, command, target `environment`, `db`, and parsed `options`.
 - Do not promote a source while materialization errors are nonzero or conflicts are unexplained.
 
 ### 2. Beta Seeding
@@ -78,10 +79,12 @@ Preparation:
 
 ```bash
 yarn --cwd server beta:readiness --confirm-beta-backup --strict
-yarn scrape:seed-sources
+yarn --cwd server scrape:seed-sources --dry-run --output /tmp/ylabs-seed-sources-dry-run.json
+yarn --cwd server scrape:seed-sources --apply --confirm-seed-apply --output /tmp/ylabs-seed-sources-apply.json
 ```
 
 Use `yarn --cwd server beta:readiness` without `--strict` for a diagnostic report. The command is read-only: it reports the Mongo target, accepted-input readiness, gated source posture, source metadata presence, canonical migration residue, and Pathway backend posture.
+Use the seed-source dry-run artifact to confirm the target database and source actions before applying source metadata updates. Apply mode requires `--confirm-seed-apply`; production source seeding also requires `SCRAPER_ENV=production` plus `CONFIRM_PROD_SCRAPE=true`.
 
 Then run accepted sources in rollout order:
 
@@ -118,14 +121,14 @@ Production writes are off by default: no operator should run a production copy, 
 
 ### Production Promotion Gate Checklist
 
-Record each item in [`docs/tasks/priority-roadmap.md`](./tasks/priority-roadmap.md) before changing production data:
+Record each item in [`docs/tasks/priority-roadmap.md`](./tasks/priority-roadmap.md) before changing production data. These unchecked boxes are gate fields, not evidence of completed work. Leave them unchecked until a human operator provides the value and accepts the promotion window.
 
 - [ ] **Backup and restore drill:** Create the fresh Atlas backup or restore point, name its identifier and rollback owner, and confirm the restore drill or exact restore procedure has been exercised for the target cluster.
 - [ ] **Dataset versioning:** Assign a promotion dataset version such as `prod-promote-YYYY-MM-DD-<lane>` and attach it to the accepted Beta snapshot or per-source production run IDs, saved reports, and Meili rebuild outputs.
 - [ ] **Copy-vs-delta decision:** Choose exactly one lane: accepted Beta copy or guarded production delta. Do not mix the lanes in one promotion window.
 - [ ] **Privacy payload gate:** Sample public API payloads before promotion and confirm they exclude non-public scraped contact data, suppressed/operator-review programs, raw observations, internal review notes, and production-only usage/session data.
 - [ ] **Meili sync and rollback:** Decide whether production traffic stays on Mongo or switches to Meili after rebuild; keep `PATHWAY_SEARCH_BACKEND=mongo` as the rollback posture until production relevance review and document counts are accepted.
-- [ ] **Smoke routes:** Assign an owner for `/api/config`, `/api/research/search`, `/research/:slug`, `/api/pathways/search`, `/opportunities/:id`, `/programs`, unauthenticated admin `401`, and removed legacy route checks. Test `/fellowships` only as a retired redirect/compatibility check.
+- [ ] **Smoke routes:** Assign an owner for `/api/config`, `/api/research/search`, `/research/:slug`, `/opportunities/:id` when a known public id is available, `/programs` or `/fellowships`, unauthenticated admin `401`, and removed legacy route checks.
 - [ ] **No recurring writes by default:** Keep production cron, compact-retention apply mode, and broad/paid source reruns disabled until the manual promotion smoke checklist passes.
 
 Required before any production copy or write:
@@ -143,20 +146,78 @@ Required before any production copy or write:
 
 ### Operator Decision Packet
 
-Fill this packet before any production copy, guarded production write, Meilisearch backend switch, or recurring cron enablement. The current default strategy is Lane A: keep Beta as the production-candidate dataset and copy the accepted seeded data only after the gate is complete. Leave operational items blank until the operator explicitly accepts them.
+Fill this packet before any production copy, guarded production write, Meilisearch backend switch, or recurring cron enablement. The human operator delegated the lane/default posture decision to Codex on 2026-05-28; the defaults below are accepted, but blank owner/restore/copy fields still block production writes.
 
 | Field | Operator value |
 | --- | --- |
-| Promotion lane | Lane A: accepted Beta copy |
-| Dataset version | `beta-production-candidate-2026-05-25` |
-| Atlas backup / restore point | |
-| Rollback owner | |
-| Smoke owner | |
-| Meili backend before gate | Mongo rollback posture for Pathways until production Meili relevance is accepted |
-| Meili backend after gate | Rebuild `pathways` and `researchentities`; keep Pathways on Mongo unless production relevance review is accepted |
-| Accepted warnings | Missing/weak descriptions and sparse pathway/contact coverage may be release warnings only after must-fix warnings are closed or explicitly accepted |
-| Run IDs | Accepted Beta source runs recorded in the roadmap; rerun read-only Beta gates before copy |
-| Rollback tested | Not complete; record fresh Atlas restore point and restore owner before production copy |
+| Promotion lane | Lane A accepted Beta copy |
+| Atlas backup / restore point | BLOCKED: fresh Production restore point identifier not recorded |
+| Rollback owner | Codex autonomous operator for routine gate coordination; BLOCKED for actual Atlas restore execution until a fresh restore point and tested restore procedure are recorded |
+| Smoke owner | Codex autonomous operator for routine smoke coordination; BLOCKED until the smoke commands are run against the real target and results are recorded |
+| Guarded copy dry-run reviewer | Codex autonomous operator; BLOCKED until `production:promote-beta-copy` dry-run output exists for the real Production target and is reviewed |
+| Meili backend before gate | Mongo-backed Pathways |
+| Meili backend after gate | Keep Mongo-backed Pathways until production Meili rebuild counts and relevance review are accepted |
+| Accepted warnings | Sparse coverage and missing/weak descriptions are accepted as hidden-row or post-promotion backlog; `devadmin@example.invalid`, `test123`, and any `@example.invalid` synthetic users must be excluded or removed from any production copy path; duplicate-name and source-health promotion blockers are cleared in the latest Beta artifacts |
+| Run IDs | Latest Beta preflight artifacts were refreshed on 2026-06-05: `beta:data-quality` generated 2026-06-05T15:01:14Z, `scraper:integrity-gate` generated 2026-06-05T15:01:17Z, `student-visibility:gate` generated `/tmp/ylabs-student-visibility-gate-after-pi-final-apply.json`, and `launch:trust-contract` generated 2026-06-05T15:01:24Z; dataset version `prod-promote-YYYY-MM-DD-lane-a-beta-copy` should use the actual promotion date |
+| Rollback tested | BLOCKED: restore drill/procedure not recorded or exercised |
+
+True blockers before this packet can be accepted:
+
+- What exact Atlas backup or point-in-time restore identifier is the rollback point?
+- Has the guarded Lane A copy dry-run below been reviewed against the real Production target?
+- Has the rollback restore procedure or drill been exercised and recorded?
+- Have the production smoke commands been run against the real target and recorded?
+- Has the latest strict launch-trust held-row posture been accepted for the chosen release slice, or have the remaining held lanes been cleared: source_description 683, pi_identity 75, action_evidence 2, and review_exception 92? The latest artifact has 0 public visibility violations, passing research activity, and passing paper quality.
+
+Safe pre-gate commands are read-only or local-smoke only:
+
+```bash
+SCRAPER_ENV=beta yarn --cwd server beta:data-quality --include-samples --output /tmp/ylabs-beta-quality.json
+SCRAPER_ENV=beta yarn --cwd server scraper:integrity-gate --include-samples
+SCRAPER_ENV=beta yarn --cwd server launch:trust-contract --collection=all --mode=student-ready-only --include-research-activity --include-paper-quality --strict
+SCRAPER_ENV=beta yarn --cwd server launch:acquisition-report --stage=all --limit=250 --sample-limit=10
+yarn --cwd client smoke:production-promotion --api-base https://<host>/api --app-base https://<host>
+SMOKE_COOKIE='<operator-session-cookie>' yarn --cwd client smoke:production-promotion --api-base https://<host>/api --app-base https://<host> --ui=false
+yarn --cwd client smoke:production-promotion --api-base https://<host>/api --app-base https://<host> --ui=false --expect-commit "$(git rev-parse --short HEAD)"
+```
+
+When `beta:data-quality --include-samples` reports `sourceHealthWarnings`, use each queue item's `nextCommand` to write the latest scraper report for that source. Those commands are read-only and point at `/tmp/ylabs-scraper-reports/<source>-<runId>.json`.
+
+Do not run production copy commands, `SCRAPER_ENV=production` scraper writes, retention `--apply`, or production cron until the packet is complete.
+
+The guarded Lane A copy command is dry-run-first and allowlist-only. It requires separate Beta and Production Mongo URLs, excludes synthetic `devadmin`/`test123`/`@example.invalid` users, and does not copy sessions, analytics, usage logs, or other collections outside the runbook allowlist:
+
+```bash
+BETA_MONGODBURL='<beta-mongodb-url>' \
+PRODUCTION_MONGODBURL='<production-mongodb-url>' \
+PROMOTION_DATASET_VERSION='prod-promote-2026-05-28-lane-a-beta-copy' \
+yarn --cwd server production:promote-beta-copy --output /tmp/ylabs-lane-a-promotion-dry-run.json
+```
+
+The `--output` artifact contains the same redacted dry-run summary printed to stdout, including collection category totals, excluded synthetic-user counts, and synthetic-user reference blockers. Saving the artifact does not verify readiness; the real Production dry-run still needs operator review before apply mode.
+
+The Operator Board reads `/tmp/ylabs-lane-a-promotion-dry-run.json` by default, or `PROMOTION_COPY_DRY_RUN_REPORT_PATH` when set. A blocker-free dry-run appears as `review_required`, not ready, until the restore point, rollback test, and smoke gates are also recorded.
+
+Apply mode is blocked unless the restore point and both production confirmations are present:
+
+```bash
+BETA_MONGODBURL='<beta-mongodb-url>' \
+PRODUCTION_MONGODBURL='<production-mongodb-url>' \
+PROMOTION_DATASET_VERSION='prod-promote-2026-05-28-lane-a-beta-copy' \
+ATLAS_RESTORE_POINT='<fresh-production-restore-point>' \
+CONFIRM_LANE_A_COPY=true \
+CONFIRM_PROD_SCRAPE=true \
+yarn --cwd server production:promote-beta-copy --apply
+```
+
+Integrity cleanup commands are dry-run first and Beta-only unless a production promotion lane explicitly records them:
+
+```bash
+SCRAPER_ENV=beta yarn --cwd server research-entity:dedupe-by-pi --limit=10000
+SCRAPER_ENV=beta yarn --cwd server pathways:dedupe-exploratory --limit=1000
+```
+
+Use `--apply` only after the dry-run output is reviewed and the target database is confirmed.
 
 ### Production Promotion Lanes
 
@@ -177,7 +238,7 @@ Gate:
 
 Minimum copy set for the accepted full Beta posture:
 
-- Research discovery: `research_entities`, `research_entity_members`, `research_entity_stats`, `entry_pathways`, `access_signals`, `contact_routes`, `posted_opportunities`, `papers`, `paper_authors`, `paper_entity_links`, and `grants`.
+- Research discovery: `research_entities`, `research_entity_members`, `entry_pathways`, `access_signals`, `contact_routes`, `posted_opportunities`, `papers`, `paper_authors`, and `grants`.
 - Source audit trail: `sources`, `scrape_runs`, and retained `observations`.
 - Base/support collections only after parity is fresh: `users`, `listings`, `departments`, `research_areas`, and `fellowships`.
 
@@ -188,7 +249,7 @@ Dry-run rollback drill before using Lane A:
 1. Record the Atlas backup or point-in-time restore timestamp that would be used if the copy is rejected.
 2. Name the collections that would be restored: every copied research-discovery, source audit, and base/support collection in the accepted copy set above.
 3. Confirm who has Atlas restore permission and how they will avoid restoring unrelated operational collections unless the incident requires a full database restore.
-4. Record the Meilisearch recovery command sequence: `yarn --cwd server meili:rebuild-pathways`, `yarn --cwd server meili:rebuild-research-entities --clear`, then `yarn --cwd server pathway:relevance-review`.
+4. Record the Meilisearch recovery command sequence: `yarn --cwd server meili:rebuild-pathways --confirm-meili-rebuild`, `yarn --cwd server meili:rebuild-research-entities --clear --confirm-meili-rebuild`, then `yarn --cwd server pathway:relevance-review`.
 5. Confirm `PATHWAY_SEARCH_BACKEND=mongo` is the live rollback posture until the rebuilt Meili indexes pass review.
 
 #### Lane B: Guarded Production Delta
@@ -208,14 +269,14 @@ Production command shape:
 
 ```bash
 SCRAPER_ENV=production CONFIRM_PROD_SCRAPE=true \
-  yarn scrape run --source <source-name> --release --auto-materialize
+  yarn --cwd server scrape run --source <source-name> --release --auto-materialize --output /tmp/ylabs-<source-name>-production-report.json
 ```
 
 Cron command shape after manual acceptance:
 
 ```bash
 SCRAPER_ENV=production CONFIRM_PROD_SCRAPE=true \
-  yarn scrape cron --source <source-name> --release
+  yarn --cwd server scrape cron --source <source-name> --release
 ```
 
 Rules:
@@ -241,16 +302,21 @@ Dry-run rollback drill before using Lane B:
 After accepted production copy or writes, run with production Mongo and Meili environment variables:
 
 ```bash
-yarn --cwd server meili:rebuild-pathways
-yarn --cwd server meili:rebuild-research-entities --clear
-yarn --cwd server pathway:relevance-review
+SCRAPER_ENV=production CONFIRM_PROD_SCRAPE=true \
+  yarn --cwd server meili:rebuild-pathways --confirm-meili-rebuild --output /tmp/ylabs-prod-meili-pathways-rebuild.json
+SCRAPER_ENV=production CONFIRM_PROD_SCRAPE=true \
+  yarn --cwd server meili:rebuild-research-entities --clear --confirm-meili-rebuild --output /tmp/ylabs-prod-meili-researchentities-rebuild.json
+SCRAPER_ENV=production \
+  yarn --cwd server pathway:relevance-review --output /tmp/ylabs-prod-pathway-relevance-review.json
 ```
 
 The pathway rebuild is mandatory after promotion because the production index must include
 the current filterable fields, including `entityStudentVisibilityTier`, before traffic can
 use Meili. Keep `PATHWAY_SEARCH_BACKEND=mongo` until the rebuild completes and
 `yarn --cwd server pathway:relevance-review` has been accepted against that production
-index.
+index. The rebuild commands write to Meili and therefore require
+`SCRAPER_ENV=production` plus `CONFIRM_PROD_SCRAPE=true`; their saved artifacts include
+target `environment`, `db`, and parsed `options` metadata for promotion review.
 
 If Meili rebuild fails after Mongo writes succeeded, keep production traffic on Mongo-backed Pathways and complete the Mongo smoke checklist. Do not switch `PATHWAY_SEARCH_BACKEND=meili` until relevance review is accepted for the production index.
 
@@ -261,21 +327,24 @@ Run these checks against the production app and production API after copy/delta 
 - `/api/config` returns `200` and points at the expected environment.
 - Research search returns real `research_entities` results for broad terms such as `machine learning`, `biology`, and `history`.
 - A known research detail page renders sources, evidence, people, and pathways without legacy `/labs` or `/api/research-groups` dependencies.
-- Pathways search returns evidence-backed cards and does not expose raw non-public scraped contact data.
+- Research detail and opportunity pages show evidence-backed Ways In without exposing raw non-public scraped contact data.
 - Opportunity detail renders a listing-bridged open posting and a scraper-derived closed or historical posting.
-- Programs/Fellowships surface hides `operator_review` and `suppressed` records from public student routes.
+- Pathways and Programs/Fellowships search require authentication when unauthenticated, and authenticated operator smoke checks show payloads without `operator_review` or `suppressed` records.
 - Unauthenticated admin/operator routes return `401`.
 - Legacy `/api/research-groups/search`, `/labs`, and `/labs/:slug` remain unavailable.
 - Source health is `0 error`; any warnings match the accepted warnings in the roadmap.
+- Source-health warning reports have been generated from the `nextCommand` values in `beta:data-quality --include-samples` and reviewed or explicitly accepted.
 - Meili document counts are plausible against the accepted Beta counts in the roadmap or the chosen delta scope.
 
 Reusable read-only helper:
 
 ```bash
 yarn --cwd client smoke:production-promotion --api-base https://<host>/api --app-base https://<host>
+SMOKE_COOKIE='<operator-session-cookie>' yarn --cwd client smoke:production-promotion --api-base https://<host>/api --app-base https://<host> --ui=false
+yarn --cwd client smoke:production-promotion --api-base https://<host>/api --app-base https://<host> --ui=false --expect-commit "$(git rev-parse --short HEAD)"
 ```
 
-The helper writes only local artifacts under `tmp/ui-smoke/` by default. It does not call `/api/dev-login`, does not require secrets, and does not send write-method requests. Public API checks use the configured API base directly. Browser UI checks use read-only route interception for `/api/check`, saved-item endpoints, program list fixtures, and the Operator Board payload so student and admin route guards can be checked without creating sessions or analytics events. If Playwright is not installed in the runner, the helper still runs the public API and unauthenticated admin API checks and records the browser limitation in the JSON report.
+The helper writes only local artifacts under `tmp/ui-smoke/` by default. It does not call `/api/dev-login` and does not send write-method requests. Public API checks use the configured API base directly, and optional authenticated Programs/Fellowships payload checks use `SMOKE_COOKIE` or `--cookie` without printing the cookie. Do not put credentials in `--api-base` or `--app-base`; the helper rejects credentialed target URLs before network calls and strips credentials from any validation-failure report. Browser UI checks use read-only route interception for `/api/check`, saved-item endpoints, program list fixtures, and the Operator Board payload so student and admin route guards can be checked without creating sessions or analytics events. If Playwright is not installed in the runner, the helper still runs the public API and unauthenticated admin API checks and records the browser limitation in the JSON report. Public `/api/config` includes a narrow deployment fingerprint (`deployment.provider`, `deployment.gitCommit`, and `deployment.gitBranch`) from safe provider metadata; pass `--expect-commit` during promotion smoke so stale or wrong-backend deployments fail before production promotion.
 
 Current admin UI limitation: the client does not expose `/admin/operator-board` as a page route. The guarded API is `/api/admin/operator-board`, and the Operator Board UI renders inside the admin `/analytics` route. The smoke helper therefore checks unauthenticated access on `/api/admin/operator-board`, student denial on `/analytics`, and admin rendering on `/analytics` through route interception.
 
@@ -319,7 +388,7 @@ Render Cron Jobs should use the cron-safe entrypoint:
 
 ```bash
 SCRAPER_ENV=production CONFIRM_PROD_SCRAPE=true \
-  yarn scrape cron --source <source-name> --release
+  yarn --cwd server scrape cron --source <source-name> --release
 ```
 
 The cron command:
@@ -327,10 +396,10 @@ The cron command:
 - Acquires a source-level `ScrapeJobLock` keyed by `production + sourceName`.
 - Skips cleanly with exit code `0` if another cron already owns that source lock.
 - Refuses disabled `Source` rows unless `--force-disabled` is passed for manual recovery.
-- Runs the scraper with `triggeredBy=cron`, materializes immediately, prints the run report, and exits nonzero if materialization errors are reported.
+- Runs the scraper with `triggeredBy=cron`, materializes immediately, prints a cron summary plus run report when no output file is requested, and exits nonzero if materialization errors are reported.
 - Heartbeats the lock during long runs and releases it with the last `ScrapeRun` id on success or failure.
 
-Use `--output <path>` to save the run report JSON from a cron run.
+Use `--output <path>` to save the full cron result JSON from a cron run. The artifact includes lock-skip outcomes when a source lock is held, and completed runs include the scrape result, materialization result, optional visibility-gate result, and ScrapeRun report.
 
 Suggested starting cadence:
 
@@ -346,6 +415,7 @@ Suggested starting cadence:
 | `openalex` | weekly after WorkPlanner | Keep name-only discovery opt-in and page-capped. |
 | `arxiv` | weekly with `--since` | Recent research activity only. |
 | `lab-microsite-undergrad-llm` | weekly after WorkPlanner | Paid/LLM source; use stale-only work planning before recurring cron. |
+| `student-decision-llm` | manual after accepted target list | Paid/LLM display enrichment; run bounded after source-backed access evidence exists. |
 | `undergrad-fellowships-recipients` | monthly/manual | Requires accepted real CSV/manual data. |
 
 Use separate Render Cron jobs per source or per source group and stagger start times. If a job needs more than the platform's cron runtime limits, split it into batches or use a background worker temporarily for that backfill only.
@@ -360,6 +430,7 @@ Do not enable recurring cron for a source until its row is accepted. A source ma
 | `department-undergrad-research` | Source metadata exists, output is verified as undergraduate-access evidence rather than generic department discovery, and public contact policy is reviewed. | Manual or low-frequency cron after one accepted guarded run. | It emits unsupported access claims, non-public contact data, or department pages require Yale-network-only access. |
 | `yale-college-fellowships-office` | Fellowship program mapping and public application/contact routes are reviewed; no private recipient or applicant data is required. | Monthly or term-bound cron, aligned to public deadline cycles. | The run depends on manual/private files, creates person-level scraped data, or deadline state cannot be verified. |
 | `lab-microsite-undergrad-llm` | WorkPlanner target list is accepted, paid/LLM cost cap is set, stale-only or bounded scope is enforced, and contact redaction is smoke-tested. | Weekly after WorkPlanner, with saved report and sampled public UI smoke. | Cost cap is missing, source emits raw non-public emails, or materialization conflicts are unexplained. |
+| `student-decision-llm` | Source-backed access evidence exists, target list excludes entities with existing explanations, paid/LLM cost cap is set, and rejected-output samples are reviewed for invented claims. | Manual bounded enrichment only; use `--use-cache` for cache-only replay when possible. | Cost cap is missing, outputs mention unsupported application routes/direct contacts, or validator rejection rate is unexplained. |
 | `openalex` | Production storage posture is accepted, compact-retention/report-save policy is recorded, and identifier-backed candidate rules are confirmed. | Weekly or monthly, bounded by identifiers/offsets; save reports before pruning observations. | Name-only discovery is enabled unintentionally, Atlas storage is insufficient, or materialization creates unsupported authorship links. |
 | `arxiv` | Accepted ORCID/input target list is current, backoff window has cleared, and metadata-only behavior does not create name-only Yale author links. | Weekly with `--since` or bounded accepted targets. | Rate limits/timeouts recur, ORCID input is stale, or the source attempts unsupported faculty links. |
 
@@ -368,17 +439,18 @@ Do not enable recurring cron for a source until its row is accepted. A source ma
 Run retention as its own scheduled job only after inspecting a dry-run:
 
 ```bash
-yarn scrape prune-observations --older-than-days 30 --keep-runs 3
+yarn --cwd server scrape prune-observations --older-than-days 30 --keep-runs 3 --output /tmp/ylabs-observation-retention-dry-run.json
 ```
 
 Apply mode requires an explicit production confirmation:
 
 ```bash
 SCRAPER_ENV=production CONFIRM_PROD_SCRAPE=true \
-  yarn scrape prune-observations --apply --older-than-days 30 --keep-runs 3
+  yarn --cwd server scrape prune-observations --apply --confirm-observation-prune --older-than-days 30 --keep-runs 3
 ```
 
 The retention command deletes only old `superseded: true` observations. It always preserves active observations, recent observations inside the age window, and observations attached to the latest retained runs per source.
+Use `--output <path>` on dry-runs and apply runs so the promotion packet has the exact candidate/deleted counts, retained run ids, command, target `environment`, `db`, and parsed `options`.
 
 ## Cost Controls
 

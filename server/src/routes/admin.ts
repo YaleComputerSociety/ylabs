@@ -3,8 +3,11 @@
  */
 import { Router, Request, Response } from 'express';
 import mongoose from 'mongoose';
-import dns from 'dns/promises';
-import net from 'net';
+import http from 'http';
+import https from 'https';
+import { isPrivateAddress, isPublicHostname, ssrfSafeLookup } from '../utils/ssrfGuard';
+// Re-exported for back-compat with existing imports/tests that reference these from this module.
+export { isPrivateAddress, isPublicHostname, ssrfSafeLookup };
 import { isAuthenticated, isAdmin, validateObjectId, validateNetid } from '../middleware/index';
 import { updateListing, deleteListing } from '../services/listingService';
 import { getListingModel } from '../db/connections';
@@ -27,12 +30,165 @@ import {
   updateAccessReviewManualLocks,
   updateAccessReviewRecordReview,
 } from '../services/adminAccessReviewService';
+import {
+  grantAdminAccess,
+  listAdminGrants,
+  revokeAdminAccess,
+} from '../services/adminGrantService';
 import { buildAdminOperatorBoard } from '../services/adminOperatorBoardService';
 import { listVisibilityReleaseQueue } from '../services/studentVisibilityGateService';
 
 const router = Router();
 
-router.use(isAuthenticated, isAdmin);
+function setPrivateAdminCacheHeaders(_req: Request, res: Response, next: () => void) {
+  res.setHeader('Cache-Control', 'no-store, private, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  next();
+}
+
+router.use(setPrivateAdminCacheHeaders, isAuthenticated, isAdmin);
+
+export const MAX_ADMIN_URL_CHECK_URLS = 25;
+export const MAX_ADMIN_URL_CHECK_URL_LENGTH = 2048;
+export const ADMIN_URL_CHECK_TIMEOUT_MS = 10000;
+const MAX_ADMIN_LIST_PAGE = 1000;
+const MAX_ADMIN_LIST_PAGE_SIZE = 100;
+const ADMIN_URL_CHECK_ALLOWED_PORTS = new Set(['', '80', '443']);
+const ADMIN_LISTING_SORT_FIELDS = new Set([
+  'title',
+  'ownerFirstName',
+  'ownerLastName',
+  'descriptionLength',
+  'views',
+  'favorites',
+  'createdAt',
+  'redFlags',
+]);
+const ADMIN_PROFILE_SORT_FIELDS = new Set(['lname', 'primary_department', 'h_index', 'createdAt']);
+const ADMIN_FELLOWSHIP_SORT_FIELDS = new Set([
+  'title',
+  'deadline',
+  'views',
+  'favorites',
+  'createdAt',
+]);
+const MAX_ADMIN_SEARCH_QUERY_LENGTH = 120;
+
+interface AdminUrlCheckResult {
+  url: string;
+  status: number;
+  reachable: boolean;
+  error?: string;
+}
+
+const adminUrlCheckDisplayUrl = (url: string, parsed?: URL): string => {
+  const candidate = parsed
+    ? new URL(parsed.toString())
+    : (() => {
+        try {
+          const normalized = /^https?:\/\//i.test(url) ? url : `https://${url}`;
+          return new URL(normalized);
+        } catch {
+          return null;
+        }
+      })();
+
+  if (!candidate?.username && !candidate?.password) {
+    return url;
+  }
+
+  candidate.username = '';
+  candidate.password = '';
+  return candidate.toString();
+};
+
+const currentActorNetid = (req: Request) =>
+  String((req.user as any)?.netId || (req.user as any)?.netid || '').trim().toLowerCase();
+
+export const resolveAdminSortField = (
+  value: unknown,
+  allowedFields: ReadonlySet<string>,
+  fallback: string,
+) => (typeof value === 'string' && allowedFields.has(value) ? value : fallback);
+
+export const normalizeAdminPagination = (
+  page: unknown,
+  pageSize: unknown,
+): { page: number; pageSize: number } => ({
+  page: Math.min(MAX_ADMIN_LIST_PAGE, Math.max(1, parseInt(String(page), 10) || 1)),
+  pageSize: Math.min(
+    MAX_ADMIN_LIST_PAGE_SIZE,
+    Math.max(1, parseInt(String(pageSize), 10) || 25),
+  ),
+});
+
+export const normalizeAdminSearchTerm = (
+  value: unknown,
+): { searchTerm: string; error?: string } => {
+  if (value === undefined || value === null) return { searchTerm: '' };
+  if (typeof value !== 'string') {
+    return { searchTerm: '', error: 'Search query must be a string' };
+  }
+
+  const searchTerm = value.trim();
+  if (searchTerm.length > MAX_ADMIN_SEARCH_QUERY_LENGTH) {
+    return { searchTerm: '', error: 'Search query is too long' };
+  }
+
+  return { searchTerm };
+};
+
+const sendAdminGrantError = (
+  res: Response,
+  error: unknown,
+  fallbackMessage: string,
+) => {
+  const message = error instanceof Error ? error.message : '';
+  const isValidationFailure = message.startsWith('Invalid');
+  res.status(isValidationFailure ? 400 : 500).json({
+    error: isValidationFailure ? 'Invalid admin grant request' : fallbackMessage,
+  });
+};
+
+router.get('/admin-grants', async (_req: Request, res: Response) => {
+  try {
+    res.json(await listAdminGrants());
+  } catch (error) {
+    console.error('Admin: Error fetching admin grants:', error);
+    res.status(500).json({ error: 'Failed to fetch admin grants' });
+  }
+});
+
+router.post('/admin-grants', async (req: Request, res: Response) => {
+  try {
+    const grant = await grantAdminAccess({
+      netid: req.body?.netid,
+      actorNetid: currentActorNetid(req),
+      note: req.body?.note,
+    });
+    res.status(201).json({ grant });
+  } catch (error) {
+    sendAdminGrantError(res, error, 'Failed to grant admin access');
+  }
+});
+
+router.post(
+  '/admin-grants/:netid/revoke',
+  validateNetid('netid'),
+  async (req: Request, res: Response) => {
+    try {
+      const grant = await revokeAdminAccess({
+        netid: req.params.netid,
+        actorNetid: currentActorNetid(req),
+        note: req.body?.note,
+      });
+      if (!grant) return res.status(404).json({ error: 'Active admin grant not found' });
+      res.json({ grant });
+    } catch (error) {
+      sendAdminGrantError(res, error, 'Failed to revoke admin access');
+    }
+  },
+);
 
 router.get('/operator-board', async (_req: Request, res: Response) => {
   try {
@@ -73,6 +229,9 @@ router.get('/access-review', async (req: Request, res: Response) => {
     });
     res.json(result);
   } catch (error) {
+    if (error instanceof Error && error.message === 'Search query is too long') {
+      return res.status(400).json({ error: error.message });
+    }
     console.error('Admin: Error fetching access review entities:', error);
     res.status(500).json({ error: 'Failed to fetch access review entities' });
   }
@@ -134,7 +293,7 @@ router.get('/listings', async (req: Request, res: Response) => {
   try {
     const {
       search,
-      sortBy = 'createdAt',
+      sortBy: rawSortBy = 'createdAt',
       sortOrder = 'desc',
       page = '1',
       pageSize = '25',
@@ -154,8 +313,11 @@ router.get('/listings', async (req: Request, res: Response) => {
     if (audited === 'true') filter.audited = true;
     else if (audited === 'false') filter.audited = { $ne: true };
 
-    if (search && (search as string).trim()) {
-      const searchRegex = buildSafeSearchRegex((search as string).trim());
+    const adminSearch = normalizeAdminSearchTerm(search);
+    if (adminSearch.error) return res.status(400).json({ error: adminSearch.error });
+
+    if (adminSearch.searchTerm) {
+      const searchRegex = buildSafeSearchRegex(adminSearch.searchTerm);
       filter.$or = [
         { title: searchRegex },
         { ownerFirstName: searchRegex },
@@ -165,11 +327,11 @@ router.get('/listings', async (req: Request, res: Response) => {
       ];
     }
 
-    const pageNum = Math.max(1, parseInt(page as string, 10) || 1);
-    const pageSizeNum = Math.min(100, Math.max(1, parseInt(pageSize as string, 10) || 25));
+    const { page: pageNum, pageSize: pageSizeNum } = normalizeAdminPagination(page, pageSize);
 
     const sort: any = {};
     const order = sortOrder === 'asc' ? 1 : -1;
+    const sortBy = resolveAdminSortField(rawSortBy, ADMIN_LISTING_SORT_FIELDS, 'createdAt');
 
     if (sortBy === 'descriptionLength') {
       const pipeline: any[] = [
@@ -489,37 +651,82 @@ router.delete('/departments/:id', validateObjectId('id'), async (req: Request, r
   }
 });
 
-const isPrivateAddress = (addr: string): boolean => {
-  const family = net.isIP(addr);
-  if (family === 0) return true;
-  if (family === 4) {
-    const parts = addr.split('.').map(Number);
-    const [a, b] = parts;
-    if (a === 10) return true;
-    if (a === 127) return true;
-    if (a === 0) return true;
-    if (a === 169 && b === 254) return true;
-    if (a === 172 && b >= 16 && b <= 31) return true;
-    if (a === 192 && b === 168) return true;
-    if (a >= 224) return true;
-    return false;
-  }
-  const lower = addr.toLowerCase();
-  if (lower === '::1' || lower === '::') return true;
-  if (lower.startsWith('fc') || lower.startsWith('fd')) return true;
-  if (lower.startsWith('fe80:')) return true;
-  if (lower.startsWith('::ffff:')) return isPrivateAddress(lower.slice(7));
-  return false;
-};
 
-const isPublicHostname = async (hostname: string): Promise<boolean> => {
-  if (net.isIP(hostname)) return !isPrivateAddress(hostname);
+const requestHead = (parsed: URL): Promise<{ status: number; reachable: boolean }> =>
+  new Promise((resolve, reject) => {
+    const client = parsed.protocol === 'https:' ? https : http;
+    const agent =
+      parsed.protocol === 'https:'
+        ? new https.Agent({ lookup: ssrfSafeLookup })
+        : new http.Agent({ lookup: ssrfSafeLookup });
+
+    const req = client.request(
+      parsed,
+      {
+        method: 'HEAD',
+        agent,
+        timeout: ADMIN_URL_CHECK_TIMEOUT_MS,
+        headers: {
+          'User-Agent': 'YaleResearchAdminUrlCheck/1.0',
+        },
+      },
+      (response) => {
+        response.resume();
+        resolve({
+          status: response.statusCode || 0,
+          reachable: Boolean(response.statusCode && response.statusCode >= 200 && response.statusCode < 300),
+        });
+      },
+    );
+
+    req.on('timeout', () => {
+      req.destroy(Object.assign(new Error('Timeout'), { name: 'AbortError' }));
+    });
+    req.on('error', reject);
+    req.end();
+  });
+
+export const checkAdminUrlReachability = async (url: string): Promise<AdminUrlCheckResult> => {
+  let displayUrl = adminUrlCheckDisplayUrl(url);
   try {
-    const records = await dns.lookup(hostname, { all: true });
-    if (records.length === 0) return false;
-    return records.every((r) => !isPrivateAddress(r.address));
-  } catch {
-    return false;
+    let normalizedUrl = url;
+    if (!/^https?:\/\//i.test(normalizedUrl)) {
+      normalizedUrl = 'https://' + normalizedUrl;
+    }
+
+    let parsed: URL;
+    try {
+      parsed = new URL(normalizedUrl);
+      displayUrl = adminUrlCheckDisplayUrl(url, parsed);
+    } catch {
+      return { url: displayUrl, status: 0, reachable: false, error: 'Invalid URL' };
+    }
+
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return { url: displayUrl, status: 0, reachable: false, error: 'Unsupported scheme' };
+    }
+
+    if (parsed.username || parsed.password) {
+      return { url: displayUrl, status: 0, reachable: false, error: 'Credentials not supported' };
+    }
+
+    if (!ADMIN_URL_CHECK_ALLOWED_PORTS.has(parsed.port)) {
+      return { url: displayUrl, status: 0, reachable: false, error: 'Unsupported port' };
+    }
+
+    if (!(await isPublicHostname(parsed.hostname))) {
+      return { url: displayUrl, status: 0, reachable: false, error: 'Blocked host' };
+    }
+
+    const result = await requestHead(parsed);
+    return { url: displayUrl, ...result };
+  } catch (err: any) {
+    return {
+      url: displayUrl,
+      status: 0,
+      reachable: false,
+      error: err.name === 'AbortError' ? 'Timeout' : 'Unreachable',
+    };
   }
 };
 
@@ -531,50 +738,27 @@ router.post('/check-urls', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'urls array is required' });
     }
 
-    const results = await Promise.all(
-      urls.map(async (url: string) => {
-        try {
-          let normalizedUrl = url;
-          if (!/^https?:\/\//.test(normalizedUrl)) {
-            normalizedUrl = 'https://' + normalizedUrl;
-          }
+    if (urls.length > MAX_ADMIN_URL_CHECK_URLS) {
+      return res
+        .status(400)
+        .json({ error: `At most ${MAX_ADMIN_URL_CHECK_URLS} URLs can be checked at once` });
+    }
 
-          let parsed: URL;
-          try {
-            parsed = new URL(normalizedUrl);
-          } catch {
-            return { url, status: 0, reachable: false, error: 'Invalid URL' };
-          }
+    const normalizedInputs: string[] = [];
+    for (const value of urls) {
+      if (typeof value !== 'string') {
+        return res.status(400).json({ error: 'Each URL must be a string' });
+      }
+      const trimmed = value.trim();
+      if (trimmed.length === 0 || trimmed.length > MAX_ADMIN_URL_CHECK_URL_LENGTH) {
+        return res.status(400).json({ error: 'Each URL must be between 1 and 2048 characters' });
+      }
+      normalizedInputs.push(trimmed);
+    }
 
-          if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-            return { url, status: 0, reachable: false, error: 'Unsupported scheme' };
-          }
+    const urlsToCheck = Array.from(new Set(normalizedInputs));
 
-          if (!(await isPublicHostname(parsed.hostname))) {
-            return { url, status: 0, reachable: false, error: 'Blocked host' };
-          }
-
-          const controller = new AbortController();
-          const timeout = setTimeout(() => controller.abort(), 10000);
-
-          const response = await fetch(parsed.toString(), {
-            method: 'HEAD',
-            signal: controller.signal,
-            redirect: 'manual',
-          });
-
-          clearTimeout(timeout);
-          return { url, status: response.status, reachable: response.ok };
-        } catch (err: any) {
-          return {
-            url,
-            status: 0,
-            reachable: false,
-            error: err.name === 'AbortError' ? 'Timeout' : 'Unreachable',
-          };
-        }
-      }),
-    );
+    const results = await Promise.all(urlsToCheck.map(checkAdminUrlReachability));
 
     res.json({ results });
   } catch (error) {
@@ -587,7 +771,7 @@ router.get('/profiles', async (req: Request, res: Response) => {
   try {
     const {
       search,
-      sortBy = 'lname',
+      sortBy: rawSortBy = 'lname',
       sortOrder = 'asc',
       page = '1',
       pageSize = '25',
@@ -606,8 +790,11 @@ router.get('/profiles', async (req: Request, res: Response) => {
     else if (hasListings === 'false')
       filter.$or = [{ ownListings: { $exists: false } }, { ownListings: { $size: 0 } }];
 
-    if (search && (search as string).trim()) {
-      const searchRegex = buildSafeSearchRegex((search as string).trim());
+    const adminSearch = normalizeAdminSearchTerm(search);
+    if (adminSearch.error) return res.status(400).json({ error: adminSearch.error });
+
+    if (adminSearch.searchTerm) {
+      const searchRegex = buildSafeSearchRegex(adminSearch.searchTerm);
       const searchOr = [
         { fname: searchRegex },
         { lname: searchRegex },
@@ -623,11 +810,11 @@ router.get('/profiles', async (req: Request, res: Response) => {
       }
     }
 
-    const pageNum = Math.max(1, parseInt(page as string, 10) || 1);
-    const pageSizeNum = Math.min(100, Math.max(1, parseInt(pageSize as string, 10) || 25));
+    const { page: pageNum, pageSize: pageSizeNum } = normalizeAdminPagination(page, pageSize);
 
     const sort: any = {};
     const order = sortOrder === 'asc' ? 1 : -1;
+    const sortBy = resolveAdminSortField(rawSortBy, ADMIN_PROFILE_SORT_FIELDS, 'lname');
     sort[/^[A-Za-z0-9_]+$/.test(String(sortBy)) ? String(sortBy) : 'lname'] = order;
     sort._id = 1;
 
@@ -697,7 +884,7 @@ router.get('/fellowships', async (req: Request, res: Response) => {
   try {
     const {
       search,
-      sortBy = 'createdAt',
+      sortBy: rawSortBy = 'createdAt',
       sortOrder = 'desc',
       page = '1',
       pageSize = '25',
@@ -713,8 +900,11 @@ router.get('/fellowships', async (req: Request, res: Response) => {
     if (audited === 'true') filter.audited = true;
     else if (audited === 'false') filter.audited = { $ne: true };
 
-    if (search && (search as string).trim()) {
-      const searchRegex = buildSafeSearchRegex((search as string).trim());
+    const adminSearch = normalizeAdminSearchTerm(search);
+    if (adminSearch.error) return res.status(400).json({ error: adminSearch.error });
+
+    if (adminSearch.searchTerm) {
+      const searchRegex = buildSafeSearchRegex(adminSearch.searchTerm);
       filter.$or = [
         { title: searchRegex },
         { summary: searchRegex },
@@ -723,11 +913,11 @@ router.get('/fellowships', async (req: Request, res: Response) => {
       ];
     }
 
-    const pageNum = Math.max(1, parseInt(page as string, 10) || 1);
-    const pageSizeNum = Math.min(100, Math.max(1, parseInt(pageSize as string, 10) || 25));
+    const { page: pageNum, pageSize: pageSizeNum } = normalizeAdminPagination(page, pageSize);
 
     const sort: any = {};
     const order = sortOrder === 'asc' ? 1 : -1;
+    const sortBy = resolveAdminSortField(rawSortBy, ADMIN_FELLOWSHIP_SORT_FIELDS, 'createdAt');
     sort[/^[A-Za-z0-9_]+$/.test(String(sortBy)) ? String(sortBy) : 'createdAt'] = order;
     sort._id = 1;
 

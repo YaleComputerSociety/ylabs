@@ -16,9 +16,9 @@ describe('pathwaySearchIndexService', () => {
       pathwayType: 'POSTED_ROLE',
       status: 'ACTIVE',
       evidenceStrength: 'DIRECT',
-      studentFacingLabel: 'Summer RA role',
-      explanation: 'Work with the lab on imaging analysis.',
-      bestNextStep: 'Apply through the official form.',
+      studentFacingLabel: 'Summer RA role with questions to jane.doe@yale.edu',
+      explanation: 'Work with the lab on imaging analysis. Call 203-555-1212 first.',
+      bestNextStep: 'Apply through the official form, not jane.doe@yale.edu.',
       bestNextStepCategory: 'apply',
       compensation: 'PAID',
       confidence: 0.91,
@@ -90,6 +90,15 @@ describe('pathwaySearchIndexService', () => {
       publicContactRouteType: 'OFFICIAL_APPLICATION',
       publicContactPolicy: 'APPLICATION_ONLY',
     });
+    expect(doc.studentFacingLabel).toBe(
+      'Summer RA role with questions to [email redacted]',
+    );
+    expect(doc.explanation).toBe(
+      'Work with the lab on imaging analysis. Call [phone redacted] first.',
+    );
+    expect(doc.bestNextStep).toBe(
+      'Apply through the official form, not [email redacted].',
+    );
     expect(doc.lastObservedAtTimestamp).toBe(
       new Date('2026-02-03T04:05:06.000Z').getTime(),
     );
@@ -148,6 +157,30 @@ describe('pathwaySearchIndexService', () => {
     expect(publicMailtoDoc.publicContactRoute?.url).toBeUndefined();
   });
 
+  it('indexes only HTTP(S) entity website URLs for public pathway search hits', async () => {
+    const doc = buildPathwaySearchIndexDocument({
+      _id: 'pathway-unsafe-entity-url',
+      researchEntity: {
+        _id: 'entity-unsafe-entity-url',
+        name: 'Unsafe URL Lab',
+        websiteUrl: 'javascript:alert(document.cookie)',
+        website: 'https://safe.example.edu/lab',
+        departments: [],
+      },
+    });
+    const fakeIndex = {
+      updateSettings: async () => undefined,
+      addDocuments: async () => undefined,
+      search: async () => ({ estimatedTotalHits: 1, hits: [doc] }),
+    };
+
+    const result = await searchPathwaysViaMeili({}, async () => fakeIndex as any);
+
+    expect(doc.entityWebsiteUrl).toBe('https://safe.example.edu/lab');
+    expect(result.hits[0].researchEntity.websiteUrl).toBe('https://safe.example.edu/lab');
+    expect(JSON.stringify(result.hits[0])).not.toContain('javascript:');
+  });
+
   it('indexes public entity visibility tiers and gates Meili searches to those tiers', async () => {
     const studentReadyDoc = buildPathwaySearchIndexDocument({
       _id: 'pathway-student-ready',
@@ -182,7 +215,7 @@ describe('pathwaySearchIndexService', () => {
     expect(String(searches[0].params.filter)).toContain(
       'entityStudentVisibilityTier = "student_ready"',
     );
-    expect(String(searches[0].params.filter)).toContain(
+    expect(String(searches[0].params.filter)).not.toContain(
       'entityStudentVisibilityTier = "limited_but_safe"',
     );
     expect(String(searches[0].params.filter)).not.toContain('operator_review');
@@ -288,6 +321,22 @@ describe('pathwaySearchIndexService', () => {
     });
   });
 
+  it('rejects unsafe rebuild page sizes before configuring the index', async () => {
+    let getIndexCalls = 0;
+
+    await expect(
+      rebuildPathwaySearchIndex(async () => ({ hits: [], estimatedTotalHits: 0 }), {
+        pageSize: 9007199254740992,
+        getIndex: async () => {
+          getIndexCalls += 1;
+          throw new Error('unexpected index setup');
+        },
+      }),
+    ).rejects.toThrow('--page-size must be a safe positive integer');
+
+    expect(getIndexCalls).toBe(0);
+  });
+
   it('uses Meili filters and sorts that preserve the Mongo pathway search contract', async () => {
     const searches: Array<{ query: string; params: Record<string, unknown> }> = [];
     const fakeIndex = {
@@ -363,7 +412,7 @@ describe('pathwaySearchIndexService', () => {
     expect(String(searches[0].params.filter)).toContain(
       'entityStudentVisibilityTier = "student_ready"',
     );
-    expect(String(searches[0].params.filter)).toContain(
+    expect(String(searches[0].params.filter)).not.toContain(
       'entityStudentVisibilityTier = "limited_but_safe"',
     );
     expect(String(searches[0].params.filter)).toContain(
@@ -402,5 +451,39 @@ describe('pathwaySearchIndexService', () => {
     expect(String(filters[1])).toContain(
       'pathwayId = "__formalization_only_pathway_filter_miss__"',
     );
+  });
+
+  it('caps page before computing Meili pathway search offsets', async () => {
+    const searches: Array<{ query: string; params: Record<string, unknown> }> = [];
+    const fakeIndex = {
+      search: async (query: string, params: Record<string, unknown>) => {
+        searches.push({ query, params });
+        return { estimatedTotalHits: 0, hits: [] };
+      },
+    };
+
+    const result = await searchPathwaysViaMeili(
+      {
+        q: '',
+        page: 999_999_999,
+        pageSize: 500,
+        filters: {},
+        sort: {},
+      },
+      async () => fakeIndex as any,
+    );
+
+    expect(searches[0].params).toEqual(
+      expect.objectContaining({
+        limit: 100,
+        offset: 99_900,
+      }),
+    );
+    expect(result).toMatchObject({
+      hits: [],
+      estimatedTotalHits: 0,
+      page: 1000,
+      pageSize: 100,
+    });
   });
 });

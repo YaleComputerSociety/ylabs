@@ -1,6 +1,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import mongoose from 'mongoose';
+import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import { initializeConnections } from '../db/connections';
 import {
@@ -20,10 +21,11 @@ import {
   serializeCsv,
   validateArxivOrcidList,
 } from './acceptedInputsCore';
+import { assertScriptApplyAllowed } from './scriptWriteGuards';
 
 dotenv.config();
 
-interface CliOptions {
+export interface CliOptions {
   command: string;
   root: string;
   input?: string;
@@ -31,6 +33,7 @@ interface CliOptions {
   program?: string;
   dryRun: boolean;
   apply: boolean;
+  confirmAcceptedInputsApply: boolean;
   limit: number;
 }
 
@@ -46,13 +49,27 @@ const COMMANDS_REQUIRING_DB = new Set([
   'arxiv:validate',
 ]);
 
-function parseArgs(argv: string[]): CliOptions {
+const COMMANDS_SUPPORTING_APPLY = new Set(['orcid:crosswalk', 'scholar:apply']);
+
+function parsePositiveInteger(value: string, flag: string): number {
+  if (!/^[1-9]\d*$/.test(value)) {
+    throw new Error(`${flag} must be a positive integer`);
+  }
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed)) {
+    throw new Error(`${flag} must be a positive integer`);
+  }
+  return parsed;
+}
+
+export function parseAcceptedInputsArgs(argv: string[]): CliOptions {
   const [command = 'status', ...rest] = argv;
   const options: CliOptions = {
     command,
     root: DEFAULT_ACCEPTED_INPUT_ROOT,
     dryRun: true,
     apply: false,
+    confirmAcceptedInputsApply: false,
     limit: Infinity,
   };
 
@@ -60,11 +77,20 @@ function parseArgs(argv: string[]): CliOptions {
     const arg = rest[i];
     const next = rest[i + 1];
     const consumeValue = (name: string): string | undefined => {
-      if (arg === name && next) {
+      if (arg === name) {
+        if (!next || next.startsWith('--')) {
+          throw new Error(`${name} requires a value`);
+        }
         i++;
         return next;
       }
-      if (arg.startsWith(`${name}=`)) return arg.slice(name.length + 1);
+      if (arg.startsWith(`${name}=`)) {
+        const value = arg.slice(name.length + 1);
+        if (!value || value.startsWith('--')) {
+          throw new Error(`${name} requires a value`);
+        }
+        return value;
+      }
       return undefined;
     };
 
@@ -90,8 +116,7 @@ function parseArgs(argv: string[]): CliOptions {
     }
     const limit = consumeValue('--limit');
     if (limit !== undefined) {
-      const parsed = Number(limit);
-      options.limit = Number.isFinite(parsed) && parsed > 0 ? parsed : Infinity;
+      options.limit = parsePositiveInteger(limit, '--limit');
       continue;
     }
     if (arg === '--apply') {
@@ -99,13 +124,59 @@ function parseArgs(argv: string[]): CliOptions {
       options.dryRun = false;
       continue;
     }
+    if (arg === '--confirm-accepted-inputs-apply') {
+      options.confirmAcceptedInputsApply = true;
+      continue;
+    }
     if (arg === '--dry-run') {
       options.apply = false;
       options.dryRun = true;
+      continue;
     }
+    throw new Error(`Unknown argument: ${arg}`);
   }
 
   return options;
+}
+
+export function assertAcceptedInputsApplyAllowed(
+  options: CliOptions,
+  env: NodeJS.ProcessEnv = process.env,
+  mongoUrl?: string,
+) {
+  if (options.apply && !COMMANDS_SUPPORTING_APPLY.has(options.command)) {
+    throw new Error(`accepted-inputs ${options.command} does not support --apply.`);
+  }
+  if (options.apply && !options.confirmAcceptedInputsApply) {
+    throw new Error('--confirm-accepted-inputs-apply is required when --apply is set.');
+  }
+
+  return assertScriptApplyAllowed({
+    apply: options.apply,
+    scriptName: 'accepted-inputs',
+    mongoUrl,
+    env,
+  });
+}
+
+export function buildAcceptedInputsOutput<T extends object>(
+  payload: T,
+  metadata: {
+    environment?: string;
+    db?: string;
+    options: CliOptions;
+  },
+): T & {
+  environment?: string;
+  db?: string;
+  options: CliOptions;
+} {
+  return {
+    ...payload,
+    ...(metadata.environment ? { environment: metadata.environment } : {}),
+    ...(metadata.db ? { db: metadata.db } : {}),
+    options: metadata.options,
+  };
 }
 
 function printHelp(): void {
@@ -130,25 +201,28 @@ Options:
   --output <path>         Optional command-specific output path
   --dry-run               Preview write commands
   --apply                 Apply write commands where supported
+  --confirm-accepted-inputs-apply
+                          Required with --apply for accepted-file DB writes
   --limit <n>             Limit candidate generation where supported
 `);
 }
 
 async function main() {
-  const options = parseArgs(process.argv.slice(2));
+  const options = parseAcceptedInputsArgs(process.argv.slice(2));
   if (options.command === '--help' || options.command === '-h' || options.command === 'help') {
     printHelp();
     return;
   }
+  const guard = assertAcceptedInputsApplyAllowed(options, process.env, process.env.MONGODBURL);
   const needsDb = COMMANDS_REQUIRING_DB.has(options.command);
   if (needsDb) await initializeConnections();
 
   const users = needsDb ? await loadAcceptedInputUsers() : [];
+  let outputPayload: unknown;
 
   switch (options.command) {
     case 'status': {
-      const status = await buildAcceptedInputsStatus(options.root, users);
-      printJson(status);
+      outputPayload = await buildAcceptedInputsStatus(options.root, users);
       break;
     }
     case 'fellowship:status':
@@ -156,7 +230,7 @@ async function main() {
       const result = await validateAcceptedFellowshipFiles(options.root, {
         advisorResolver: defaultAdvisorResolver,
       });
-      printJson({ root: options.root, programs: result });
+      outputPayload = { root: options.root, programs: result };
       if (result.some((program) => program.status === 'invalid')) {
         process.exitCode = 1;
       }
@@ -168,12 +242,12 @@ async function main() {
       const result = await applyOrcidCrosswalkCsv(csv, users, {
         dryRun: options.dryRun,
       });
-      printJson({ inputPath, mode: options.apply ? 'apply' : 'dry-run', ...result });
+      outputPayload = { inputPath, mode: options.apply ? 'apply' : 'dry-run', ...result };
       break;
     }
     case 'fellowship:candidates': {
       const result = await generateFellowshipCandidates(options.root);
-      printJson({ root: options.root, programs: result });
+      outputPayload = { root: options.root, programs: result };
       break;
     }
     case 'fellowship:export': {
@@ -183,14 +257,13 @@ async function main() {
       const result = await exportAcceptedFellowshipRows(options.root, options.program, {
         advisorResolver: defaultAdvisorResolver,
       });
-      printJson({ root: options.root, ...result });
+      outputPayload = { root: options.root, ...result };
       if (result.errors.length > 0) process.exitCode = 1;
       break;
     }
     case 'scholar:candidates': {
       const outputPath =
-        options.output ||
-        path.join(options.root, 'scholar', 'google-scholar-candidates.csv');
+        options.output || path.join(options.root, 'scholar', 'google-scholar-candidates.csv');
       const rows = buildScholarCandidateRows(users, options.limit);
       await writeText(
         outputPath,
@@ -206,18 +279,20 @@ async function main() {
           'reviewNote',
         ]),
       );
-      printJson({ outputPath, rows: rows.length });
+      outputPayload = {
+        outputPath,
+        rows: rows.length,
+      };
       break;
     }
     case 'scholar:apply': {
       const inputPath =
-        options.input ||
-        path.join(options.root, 'scholar', 'google-scholar-accepted.csv');
+        options.input || path.join(options.root, 'scholar', 'google-scholar-accepted.csv');
       const csv = await readRequired(inputPath);
       const result = await applyScholarAcceptedCsv(csv, users, {
         dryRun: options.dryRun,
       });
-      printJson({ inputPath, mode: options.apply ? 'apply' : 'dry-run', ...result });
+      outputPayload = { inputPath, mode: options.apply ? 'apply' : 'dry-run', ...result };
       break;
     }
     case 'arxiv:candidates': {
@@ -226,12 +301,12 @@ async function main() {
         path.join(options.root, 'arxiv-math-physics-stat-orcids.candidates.txt');
       const text = buildArxivCandidateText(users, options.limit);
       await writeText(outputPath, text);
-      printJson({
+      outputPayload = {
         outputPath,
         rows: text
           .split(/\r?\n/)
           .filter((line) => line.trim() && !line.trim().startsWith('#')).length,
-      });
+      };
       break;
     }
     case 'arxiv:validate': {
@@ -239,7 +314,7 @@ async function main() {
         options.input || path.join(options.root, 'arxiv-math-physics-stat-orcids.txt');
       const text = await readRequired(inputPath);
       const result = validateArxivOrcidList(text, users);
-      printJson({
+      outputPayload = {
         inputPath,
         ...result,
         internalCompatibility: {
@@ -247,11 +322,28 @@ async function main() {
           note:
             'Pass these values to the current arXiv scraper --only flag only after validation.',
         },
-      });
+      };
       break;
     }
     default:
       throw new Error(`Unknown accepted-inputs command: ${options.command}`);
+  }
+
+  if (outputPayload === undefined) {
+    return;
+  }
+
+  const output = buildAcceptedInputsOutput(outputPayload as object, {
+    environment: guard.environment,
+    db: mongoose.connection.db?.databaseName || mongoose.connection.name || guard.dbLabel,
+    options,
+  });
+
+  printJson(output);
+  const hasCommandOutputConflict =
+    options.command === 'scholar:candidates' || options.command === 'arxiv:candidates';
+  if (!hasCommandOutputConflict) {
+    await writeAcceptedInputsOutput(output, options.output);
   }
 }
 
@@ -276,15 +368,28 @@ async function writeText(filePath: string, text: string): Promise<void> {
   await fs.writeFile(filePath, text, 'utf8');
 }
 
+export async function writeAcceptedInputsOutput(
+  report: unknown,
+  output?: string,
+): Promise<void> {
+  if (!output) return;
+  await fs.mkdir(path.dirname(output), { recursive: true });
+  await fs.writeFile(output, `${JSON.stringify(report, null, 2)}\n`, 'utf8');
+}
+
 function printJson(value: unknown): void {
   console.log(JSON.stringify(value, null, 2));
 }
 
-main()
-  .catch((error) => {
-    console.error(error instanceof Error ? error.message : error);
-    process.exitCode = 1;
-  })
-  .finally(async () => {
-    await mongoose.disconnect();
-  });
+const isDirectRun = process.argv[1] ? fileURLToPath(import.meta.url) === path.resolve(process.argv[1]) : false;
+
+if (isDirectRun) {
+  main()
+    .catch((error) => {
+      console.error(error instanceof Error ? error.message : error);
+      process.exitCode = 1;
+    })
+    .finally(async () => {
+      await mongoose.disconnect();
+    });
+}

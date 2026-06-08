@@ -229,6 +229,11 @@ export class ArxivPreprintScraper implements IScraper {
   }
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
+    const limitOption = ctx.options.limit;
+    if (limitOption !== undefined && (!Number.isSafeInteger(limitOption) || limitOption < 1)) {
+      throw new Error('--limit must be a safe positive integer');
+    }
+
     const facultyFilter: any = {
       userType: { $in: ['professor', 'faculty'] },
       fname: { $exists: true, $nin: [null, ''] },
@@ -242,8 +247,8 @@ export class ArxivPreprintScraper implements IScraper {
         lname: 1,
       })
       .lean();
-    if (ctx.options.limit && ctx.options.limit > 0) {
-      facultyQuery = facultyQuery.limit(ctx.options.limit);
+    if (limitOption) {
+      facultyQuery = facultyQuery.limit(limitOption);
     }
 
     const faculty: any[] = await facultyQuery;

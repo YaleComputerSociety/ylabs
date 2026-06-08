@@ -41,6 +41,89 @@ export function netidFromEmail(email: string | undefined | null): string | null 
   return match[1].toLowerCase();
 }
 
+function asciiTokens(input: string): string[] {
+  return input
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((token) => token && !/^\d+$/.test(token));
+}
+
+function givenNameCompatible(a: string, b: string): boolean {
+  if (!a || !b) return false;
+  if (a === b) return true;
+  if (a.length === 1 && b.startsWith(a)) return true;
+  if (b.length === 1 && a.startsWith(b)) return true;
+  return a.length >= 4 && b.length >= 4 && (a.startsWith(b) || b.startsWith(a));
+}
+
+/**
+ * Return true only when a Yale email is plausibly owned by the supplied person.
+ *
+ * Yale pages sometimes include lab managers, admins, or departmental contacts
+ * near a faculty name. Netid-shaped emails are safe enough to keep; name-shaped
+ * local-parts must match the visible person name.
+ */
+export function isLikelyPersonSpecificYaleEmail(
+  email: string | undefined | null,
+  personName: string | undefined | null,
+): boolean {
+  const cleaned = String(email || '').trim().toLowerCase().replace(/^mailto:/, '');
+  const match = cleaned.match(/^([a-z0-9._-]+)(?:\+[a-z0-9._-]+)?@yale\.edu$/i);
+  if (!match) return false;
+
+  const localPart = match[1].toLowerCase();
+  if (/\b(?:editor|web|website|info|communications?|admin|noreply|no-reply)\b/i.test(localPart)) {
+    return false;
+  }
+
+  if (/^[a-z]{2,6}\d{1,5}$/i.test(localPart)) return true;
+
+  const emailTokens = asciiTokens(localPart);
+  const nameTokens = asciiTokens(normalizeName(personName));
+  if (emailTokens.length === 0 || nameTokens.length < 2) return false;
+
+  const nameTokenSet = new Set(nameTokens);
+  if (emailTokens.length >= 2 && emailTokens.every((token) => nameTokenSet.has(token))) {
+    return true;
+  }
+
+  const lastName = nameTokens.at(-1) || '';
+  const givenNames = nameTokens.slice(0, -1);
+  if (!lastName || givenNames.length === 0) return false;
+
+  const compactEmail = emailTokens.join('');
+  const normalCompact = [...givenNames, lastName].join('');
+  const reversedCompact = [lastName, ...givenNames].join('');
+  if (compactEmail.includes(normalCompact) || compactEmail.includes(reversedCompact)) {
+    return true;
+  }
+
+  if (emailTokens.length === 1 && emailTokens[0] === lastName && lastName.length >= 5) {
+    return true;
+  }
+
+  if (
+    !emailTokens.some(
+      (token) => token === lastName || (lastName.length >= 4 && token.includes(lastName)),
+    )
+  ) {
+    return false;
+  }
+
+  return givenNames.some((given) =>
+    emailTokens.some(
+      (token) =>
+        token === given ||
+        token.startsWith(given) ||
+        given.startsWith(token) ||
+        (given.length <= 2 && token.startsWith(given.charAt(0))) ||
+        (token.length === 1 && given.startsWith(token)),
+    ),
+  );
+}
+
 /**
  * Normalize a faculty display name: collapse whitespace, strip trailing
  * credential suffixes (", Ph.D.", ", M.D.", etc.), and remove leading honorifics.

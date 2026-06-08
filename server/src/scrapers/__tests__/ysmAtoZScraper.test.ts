@@ -1,6 +1,23 @@
-import { describe, it, expect } from 'vitest';
+import axios from 'axios';
+import { describe, it, expect, vi } from 'vitest';
 import * as cheerio from 'cheerio';
-import { extractLabHomepageDescription, labToObservations } from '../sources/ysmAtoZScraper';
+import {
+  YsmAtoZScraper,
+  extractLabHomepageDescription,
+  extractProfileContactWidgetProfile,
+  extractResearchFacultyUrl,
+  extractSoleResearchFacultyProfile,
+  inferPiNameFromLabName,
+  labResearchFacultyToObservations,
+  labToObservations,
+} from '../sources/ysmAtoZScraper';
+import type { ObservationInput, ScraperContext } from '../types';
+
+vi.mock('axios', () => ({
+  default: {
+    get: vi.fn(),
+  },
+}));
 
 const SAMPLE_HTML = `
 <html><body>
@@ -16,6 +33,51 @@ const SAMPLE_HTML = `
 </table>
 </body></html>
 `;
+
+function makeContext() {
+  const emitted: ObservationInput[] = [];
+  const ctx: ScraperContext = {
+    scrapeRunId: 'test-run',
+    sourceId: 'test-source',
+    sourceName: 'ysm-atoz-index',
+    sourceWeight: 0.8,
+    options: {
+      dryRun: true,
+      useCache: false,
+      release: false,
+    },
+    emit: async (obs) => {
+      if (Array.isArray(obs)) emitted.push(...obs);
+      else emitted.push(obs);
+    },
+    log: () => {},
+  };
+  return { ctx, emitted };
+}
+
+describe('YsmAtoZScraper runtime bounds', () => {
+  it('rejects unsafe runtime offsets before fetching the index page', async () => {
+    vi.mocked(axios.get).mockResolvedValue({ data: '<html><body><table></table></body></html>' });
+    const scraper = new YsmAtoZScraper();
+    const { ctx } = makeContext();
+    ctx.options.offset = 9007199254740992;
+
+    await expect(scraper.run(ctx)).rejects.toThrow(/--offset must be a safe non-negative integer/);
+
+    expect(axios.get).not.toHaveBeenCalled();
+  });
+
+  it('rejects unsafe runtime limits before fetching the index page', async () => {
+    vi.mocked(axios.get).mockResolvedValue({ data: '<html><body><table></table></body></html>' });
+    const scraper = new YsmAtoZScraper();
+    const { ctx } = makeContext();
+    ctx.options.limit = 9007199254740992;
+
+    await expect(scraper.run(ctx)).rejects.toThrow(/--limit must be a safe positive integer/);
+
+    expect(axios.get).not.toHaveBeenCalled();
+  });
+});
 
 function parseLabsForTest(html: string) {
   const $ = cheerio.load(html);
@@ -49,10 +111,10 @@ function inferPiSurname(name: string): string | null {
   const labIdx = tokens.findIndex((t) => /^lab(oratory)?$/i.test(t));
   if (labIdx > 0) {
     const candidate = tokens[labIdx - 1];
-    if (/^[A-Z][a-zA-Z\-]+$/.test(candidate)) return candidate;
+    if (/^[A-Z][a-zA-Z-]+$/.test(candidate)) return candidate;
     return tokens.slice(0, labIdx).pop() || null;
   }
-  return tokens[0] && /^[A-Z][a-zA-Z\-]+$/.test(tokens[0]) ? tokens[0] : null;
+  return tokens[0] && /^[A-Z][a-zA-Z-]+$/.test(tokens[0]) ? tokens[0] : null;
 }
 
 describe('YsmAtoZ HTML parsing', () => {
@@ -108,6 +170,22 @@ describe('inferPiSurname', () => {
   });
 });
 
+describe('inferPiNameFromLabName', () => {
+  it('keeps first-name context for labs named after a full PI name', () => {
+    expect(inferPiNameFromLabName('Ya-Chi Ho Lab')).toEqual({
+      firstName: 'Ya-Chi',
+      lastName: 'Ho',
+    });
+  });
+
+  it('falls back to surname-only context for surname lab names', () => {
+    expect(inferPiNameFromLabName('Arnsten Lab')).toEqual({
+      firstName: '',
+      lastName: 'Arnsten',
+    });
+  });
+});
+
 describe('labToObservations', () => {
   it('does not emit index-only undergraduate access claims', () => {
     const obs = labToObservations(
@@ -159,7 +237,7 @@ describe('extractLabHomepageDescription', () => {
     expect(extractLabHomepageDescription(html)).toEqual({
       description: officialDescription,
       shortDescription:
-        'The primary goal of the Ho Lab is to investigate the impact of viral pathogenesis on human health. We investigate viral pathogenesis in the context of genomics, pathophysiology, immunology, and treatment. Specifically, we are interested in how chronic viral infection disrupts',
+        'Specifically, we are interested in how chronic viral infection disrupts host homeostasis and causes chronic diseases, including chronic inflammation and cancer.',
     });
   });
 
@@ -176,5 +254,237 @@ describe('extractLabHomepageDescription', () => {
     ).toMatchObject({
       description,
     });
+  });
+});
+
+describe('extractResearchFacultyUrl', () => {
+  it('finds the official Research Faculty page from lab navigation', () => {
+    const html = `
+      <html><body>
+        <a href="/lab/radiology-informatics-and-image-processing/methods/">Methods</a>
+        <a href="/lab/radiology-informatics-and-image-processing/research-faculty/">Research Faculty</a>
+      </body></html>
+    `;
+
+    expect(
+      extractResearchFacultyUrl(
+        html,
+        'https://medicine.yale.edu/lab/radiology-informatics-and-image-processing/',
+      ),
+    ).toBe(
+      'https://medicine.yale.edu/lab/radiology-informatics-and-image-processing/research-faculty/',
+    );
+  });
+});
+
+describe('extractSoleResearchFacultyProfile', () => {
+  it('extracts one profile card and ignores duplicate view-profile links', () => {
+    const html = `
+      <html><body>
+        <a href="/profile/christopher-whitlow/">Christopher Whitlow, MD, PhD, MHA</a>
+        <p>Chair, Department of Radiology and Biomedical Imaging</p>
+        <a href="/profile/christopher-whitlow/">View Full Profile</a>
+      </body></html>
+    `;
+
+    expect(
+      extractSoleResearchFacultyProfile(
+        html,
+        'https://medicine.yale.edu/lab/radiology-informatics-and-image-processing/research-faculty/',
+      ),
+    ).toEqual({
+      name: 'Christopher Whitlow, MD, PhD, MHA',
+      profileUrl: 'https://medicine.yale.edu/profile/christopher-whitlow/',
+      title: '',
+    });
+  });
+
+  it('keeps title text from the profile card container when present', () => {
+    const html = `
+      <html><body>
+        <ul>
+          <li>
+            <a href="profile/christopher-whitlow/">Christopher Whitlow, MD, PhD, MHA</a>
+            Chair, Department of Radiology and Biomedical Imaging
+            <a href="profile/christopher-whitlow/">View Full Profile</a>
+          </li>
+        </ul>
+      </body></html>
+    `;
+
+    expect(
+      extractSoleResearchFacultyProfile(
+        html,
+        'https://medicine.yale.edu/lab/radiology-informatics-and-image-processing/research-faculty/',
+      ),
+    ).toEqual({
+      name: 'Christopher Whitlow, MD, PhD, MHA',
+      profileUrl: 'https://medicine.yale.edu/profile/christopher-whitlow/',
+      title: 'Chair, Department of Radiology and Biomedical Imaging',
+    });
+  });
+
+  it('returns null when a people page has multiple profile cards', () => {
+    const html = `
+      <html><body>
+        <a href="/profile/one-person/">One Person</a>
+        <a href="/profile/two-person/">Two Person</a>
+      </body></html>
+    `;
+
+    expect(
+      extractSoleResearchFacultyProfile(
+        html,
+        'https://medicine.yale.edu/lab/example/research-faculty/',
+      ),
+    ).toBeNull();
+  });
+});
+
+describe('extractProfileContactWidgetProfile', () => {
+  it('extracts a single official profile contact widget from lab page data', () => {
+    const pageData = {
+      sidebarComponents: [
+        {
+          key: 'ProfileContactWidget',
+          model: {
+            title: 'Garg Research Lab',
+            profile: {
+              fullName: 'Shivani Garg',
+              title: 'Director, Yale Lupus Clinical Research Program, Internal Medicine',
+              profileUrl: '/lab/garg/profile/shivani-garg/',
+              generalContacts: {
+                email: 'shivani.garg@yale.edu',
+              },
+            },
+          },
+        },
+      ],
+    };
+    const html = `
+      <html><body>
+        <script id="page-data" type="application/json">${JSON.stringify(pageData).replace(/"/g, '&quot;')}</script>
+      </body></html>
+    `;
+
+    expect(extractProfileContactWidgetProfile(html, 'https://medicine.yale.edu/lab/garg/')).toEqual({
+      name: 'Shivani Garg',
+      profileUrl: 'https://medicine.yale.edu/profile/shivani-garg/',
+      title: 'Director, Yale Lupus Clinical Research Program, Internal Medicine',
+      email: 'shivani.garg@yale.edu',
+    });
+  });
+
+  it('does not infer a lead when multiple profile contact widgets are present', () => {
+    const pageData = {
+      sidebarComponents: [
+        {
+          key: 'ProfileContactWidget',
+          model: {
+            profile: {
+              fullName: 'One Person',
+              profileUrl: '/profile/one-person/',
+            },
+          },
+        },
+        {
+          key: 'ProfileContactWidget',
+          model: {
+            profile: {
+              fullName: 'Two Person',
+              profileUrl: '/profile/two-person/',
+            },
+          },
+        },
+      ],
+    };
+    const html = `
+      <html><body>
+        <script id="page-data" type="application/json">${JSON.stringify(pageData).replace(/"/g, '&quot;')}</script>
+      </body></html>
+    `;
+
+    expect(extractProfileContactWidgetProfile(html, 'https://medicine.yale.edu/lab/example/')).toBeNull();
+  });
+});
+
+describe('labResearchFacultyToObservations', () => {
+  const lab = {
+    name: 'Garg Lupus Lab',
+    url: 'https://medicine.yale.edu/lab/garg/',
+    slug: 'ysm-garg',
+  };
+
+  it('emits official profile user identity and PI key observations for a person-specific widget email', () => {
+    const observations = labResearchFacultyToObservations(
+      lab,
+      {
+        name: 'Shivani Garg',
+        profileUrl: 'https://medicine.yale.edu/profile/shivani-garg/',
+        title: 'Director, Yale Lupus Clinical Research Program, Internal Medicine',
+        email: 'shivani.garg@yale.edu',
+      },
+      lab.url,
+    );
+
+    expect(observations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          entityType: 'researchGroupMember',
+          entityKey: 'ysm-garg:research-faculty:shivani-garg',
+          field: 'profileUrl',
+          value: 'https://medicine.yale.edu/profile/shivani-garg/',
+        }),
+        expect.objectContaining({
+          entityType: 'user',
+          entityKey: 'netid:shivani.garg',
+          field: 'email',
+          value: 'shivani.garg@yale.edu',
+        }),
+        expect.objectContaining({
+          entityType: 'user',
+          entityKey: 'netid:shivani.garg',
+          field: 'profileUrls',
+          value: {
+            medicine: 'https://medicine.yale.edu/profile/shivani-garg/',
+            official: 'https://medicine.yale.edu/profile/shivani-garg/',
+          },
+        }),
+        expect.objectContaining({
+          entityType: 'researchEntity',
+          entityKey: 'ysm-garg',
+          field: 'inferredPiUserKey',
+          value: 'netid:shivani.garg',
+        }),
+        expect.objectContaining({
+          entityType: 'researchEntity',
+          entityKey: 'ysm-garg',
+          field: 'contactName',
+          value: 'Shivani Garg',
+        }),
+        expect.objectContaining({
+          entityType: 'researchEntity',
+          entityKey: 'ysm-garg',
+          field: 'contactEmail',
+          value: 'shivani.garg@yale.edu',
+        }),
+      ]),
+    );
+  });
+
+  it('does not create user or PI-key observations for a generic widget email', () => {
+    const observations = labResearchFacultyToObservations(
+      lab,
+      {
+        name: 'Shivani Garg',
+        profileUrl: 'https://medicine.yale.edu/profile/shivani-garg/',
+        title: 'Director, Yale Lupus Clinical Research Program, Internal Medicine',
+        email: 'ysm.editor@yale.edu',
+      },
+      lab.url,
+    );
+
+    expect(observations.some((observation) => observation.entityType === 'user')).toBe(false);
+    expect(observations.find((observation) => observation.field === 'inferredPiUserKey')).toBeUndefined();
   });
 });

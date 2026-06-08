@@ -11,6 +11,10 @@ export interface DepartmentNameRecord {
   aliases?: string[];
 }
 
+interface DepartmentLabelOptions {
+  preferDisplayName?: boolean;
+}
+
 /**
  * Extract abbreviation from a department string.
  * Handles "ABBR - Name" format or returns first 4 chars uppercase.
@@ -42,11 +46,17 @@ const normalizeDepartmentLabel = (department: string): string =>
 
 const buildDepartmentLabelMap = (
   departmentTable: DepartmentNameRecord[] | undefined,
+  options: DepartmentLabelOptions = {},
 ): Map<string, string> => {
   const map = new Map<string, string>();
 
   for (const row of departmentTable || []) {
-    const canonical = (row.displayName || row.name || '').trim();
+    const canonical = (
+      (options.preferDisplayName ? row.displayName : '') ||
+      row.name ||
+      (row.displayName ? getDepartmentDisplayLabel(row.displayName) : '') ||
+      ''
+    ).trim();
     if (!canonical) continue;
     const values = [
       row.abbreviation,
@@ -69,8 +79,9 @@ const buildDepartmentLabelMap = (
 export const getDepartmentCanonicalLabel = (
   department: string,
   departmentTable?: DepartmentNameRecord[],
+  options?: DepartmentLabelOptions,
 ): string => {
-  const labelMap = buildDepartmentLabelMap(departmentTable);
+  const labelMap = buildDepartmentLabelMap(departmentTable, options);
   const fallback = getDepartmentDisplayLabel(department);
   return labelMap.get(normalizeDepartmentLabel(department)) || fallback;
 };
@@ -78,10 +89,11 @@ export const getDepartmentCanonicalLabel = (
 export const getUniqueDepartmentLabels = (
   departments: string[] | undefined,
   departmentTable?: DepartmentNameRecord[],
+  options?: DepartmentLabelOptions,
 ): string[] => {
   const labels: string[] = [];
   const seen = new Set<string>();
-  const labelMap = buildDepartmentLabelMap(departmentTable);
+  const labelMap = buildDepartmentLabelMap(departmentTable, options);
 
   for (const department of departments || []) {
     const fallback = getDepartmentDisplayLabel(department);

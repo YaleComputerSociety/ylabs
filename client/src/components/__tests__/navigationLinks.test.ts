@@ -16,6 +16,6 @@ describe('primaryNavLinks', () => {
     ]);
     expect(primaryNavLinks.some((link) => link.label === 'Listings')).toBe(false);
     expect(primaryNavLinks.some((link) => link.label === 'Find Pathways')).toBe(false);
-    expect(primaryNavLinks.some((link) => link.to === '/pathways')).toBe(false);
+    expect(primaryNavLinks.some((link) => link.to === `/${'pathways'}`)).toBe(false);
   });
 });

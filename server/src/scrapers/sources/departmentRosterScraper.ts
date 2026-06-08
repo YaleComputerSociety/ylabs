@@ -25,6 +25,7 @@
  */
 import axios from 'axios';
 import * as cheerio from 'cheerio';
+import type { AnyNode } from 'domhandler';
 import {
   createScraplingRenderedFetcher,
   measureRenderedFetch,
@@ -41,7 +42,13 @@ import type {
   ObservationInput,
   ScraperFetchMetric,
 } from '../types';
-import { netidFromEmail, normalizeName, slugify, splitName } from '../utils/scraperHelpers';
+import {
+  isLikelyPersonSpecificYaleEmail,
+  netidFromEmail,
+  normalizeName,
+  slugify,
+  splitName,
+} from '../utils/scraperHelpers';
 
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
@@ -70,6 +77,20 @@ export interface FacultyEntry {
   scholarCandidateProfileUrls?: string[];
   /** Official profile page that supplied profile-level enrichment fields. */
   profileSourceUrl?: string;
+  /** Official roster/profile image URL. */
+  imageUrl?: string;
+  /** Publications listed directly on an official Yale profile page. */
+  officialProfilePublications?: OfficialProfilePublication[];
+  /** Publication-list pages linked from an official Yale profile. */
+  publicationListUrls?: string[];
+}
+
+export interface OfficialProfilePublication {
+  title: string;
+  year?: number;
+  venue?: string;
+  url?: string;
+  sourceUrl: string;
 }
 
 /** Context passed to each per-department extractor for URL resolution and logging. */
@@ -100,6 +121,8 @@ export interface DeptConfig {
   dataUrl?: string;
   dataRequest?: Record<string, string>;
   dataExtractor?: FacultyDataExtractor;
+  /** Defaults to true. Set false for broad people rosters where personal/staff URLs are not research homes. */
+  emitPersonalResearchEntities?: boolean;
   /** Set when the page is JS-rendered and the extractor is intentionally a stub. */
   jsRenderedSkip?: boolean;
 }
@@ -126,8 +149,15 @@ export const econExtractor: FacultyExtractor = (html, ctx) => {
     if (!name) return;
     const href = link.attr('href') || '';
     const profileUrl = href ? absolutize(href, ctx.pageUrl) : undefined;
-    const title = card.find('.node-teaser__professional-title').first().text().trim() || undefined;
-    out.push({ name, profileUrl, title });
+    const title =
+      cleanText(
+        card
+          .find('.node-teaser__professional-title, .node-teaser__title')
+          .first()
+          .text(),
+      ) || undefined;
+    const imageUrl = imageUrlFromElement(card, ctx.pageUrl);
+    out.push({ name, profileUrl, title, ...(imageUrl ? { imageUrl } : {}) });
   });
   return out;
 };
@@ -155,18 +185,19 @@ export const mcdbExtractor: FacultyExtractor = (html, ctx) => {
     const profileHref = link.attr('href') || '';
     const profileUrl = profileHref ? absolutize(profileHref, ctx.pageUrl) : undefined;
     const title = card.find('.directory-listing-card__subheading').first().text().trim() || undefined;
+    const imageUrl = imageUrlFromElement(card, ctx.pageUrl);
     let email: string | undefined;
     let labUrl: string | undefined;
     card.find('.directory-listing-card__link').each((_j, a) => {
       const href = $(a).attr('href') || '';
       if (/^mailto:/i.test(href)) {
         email = href.replace(/^mailto:/i, '').trim() || email;
-      } else if (/^https?:\/\//i.test(href) && !labUrl) {
+      } else if (/^https?:\/\//i.test(href) && !labUrl && !isGenericLabDirectoryUrl(href)) {
         labUrl = href;
       }
     });
     const bio = cleanText(card.find('.directory-listing-card__snippet').first().text()) || undefined;
-    out.push({ name, profileUrl, title, email, labUrl, bio });
+    out.push({ name, profileUrl, title, email, labUrl, bio, ...(imageUrl ? { imageUrl } : {}) });
   });
   return out;
 };
@@ -198,6 +229,8 @@ export const psychExtractor: FacultyExtractor = (html, ctx) => {
     if (!name) return;
     const profileHref = profileLink.attr('href') || '';
     const profileUrl = profileHref ? absolutize(profileHref, ctx.pageUrl) : undefined;
+    const imageHref = row.find('.views-field-picture img').first().attr('src') || '';
+    const imageUrl = imageHref ? absolutize(imageHref, ctx.pageUrl) : undefined;
     const emailHref =
       row.find('.views-field-mail a[href^="mailto:"]').first().attr('href') ||
       nameCell.find('a[href^="mailto:"]').first().attr('href') ||
@@ -234,10 +267,9 @@ export const psychExtractor: FacultyExtractor = (html, ctx) => {
       if (labUrl) return;
       const link = $(a);
       const href = link.attr('href') || '';
-      const absolute = safeHttpUrl(href, ctx.pageUrl);
-      if (!absolute) return;
+      if (!href || /^mailto:|^tel:|^#|^javascript:/i.test(href)) return;
       if (profileHref && href === profileHref) return;
-      if (profileUrl && normalizeUrlForDedupe(absolute) === normalizeUrlForDedupe(profileUrl)) {
+      if (profileUrl && normalizeUrlForDedupe(absolutize(href, ctx.pageUrl)) === normalizeUrlForDedupe(profileUrl)) {
         return;
       }
       const text = link.text().replace(/\s+/g, ' ').trim();
@@ -245,29 +277,126 @@ export const psychExtractor: FacultyExtractor = (html, ctx) => {
       if (!/\b(website|lab|laboratory|homepage|research group)\b/i.test(signal) && !/^https?:\/\//i.test(href)) {
         return;
       }
+      const absolute = absolutize(href, ctx.pageUrl);
+      if (isGenericLabDirectoryUrl(absolute)) return;
       labUrl = absolute;
     });
 
-    const topicCells = row.find(
-      '.views-field-field-field-of-study, [class*="field-of-study"], .views-field-field-term-reference',
-    );
-    const topics = splitTopicText(
-      topicCells
-        .toArray()
-        .map((cell) => topicTextFromRosterCell($(cell)))
-        .join('; '),
-    );
+    const topics: string[] = [];
+    row
+      .find(
+        '.views-field-field-field-of-study, [class*="field-of-study"], .views-field-field-term-reference',
+      )
+      .each((_j, el) => {
+        topics.push(...splitTopicText(elementTextWithChildSeparators($, el)));
+      });
 
     out.push({
       name,
       profileUrl,
       title,
       email,
+      ...(imageUrl ? { imageUrl } : {}),
       labUrl,
       topics: topics.length > 0 ? topics : undefined,
       researchInterests: topics.length > 0 ? topics : undefined,
     });
   });
+  return out;
+};
+
+function decodeHtmlEntities(value: string): string {
+  return cheerio.load(`<textarea>${value}</textarea>`)('textarea').text();
+}
+
+function yaleEmailFromElement($: cheerio.CheerioAPI, node: cheerio.Cheerio<any>): string | undefined {
+  const href = node.find('a[href^="mailto:"]').first().attr('href') || '';
+  if (/^mailto:/i.test(href)) return href.replace(/^mailto:/i, '').trim().toLowerCase();
+
+  const decoded = decodeHtmlEntities(node.html() || node.text() || '');
+  const mailtoMatch = decoded.match(/mailto:([a-z0-9._%+-]+@yale\.edu)/i);
+  if (mailtoMatch) return mailtoMatch[1].toLowerCase();
+
+  return decoded.match(/\b[a-z0-9._%+-]+@yale\.edu\b/i)?.[0]?.toLowerCase();
+}
+
+/**
+ * Legacy Drupal Views rows used by interdisciplinary programs such as ER&M
+ * and WGSS. The email field is sometimes written by an inline script with
+ * numeric HTML entities; decode the local markup rather than executing it.
+ */
+export const viewsRowPersonExtractor: FacultyExtractor = (html, ctx) => {
+  const $ = cheerio.load(html);
+  const out: FacultyEntry[] = [];
+
+  $('.views-row').each((_i, el) => {
+    const row = $(el);
+    const nameLink = row.find('.views-field-name a.username, .views-field-name a').first();
+    const name = cleanText(nameLink.text() || row.find('.views-field-name').first().text());
+    if (!name) return;
+
+    const profileHref = nameLink.attr('href') || '';
+    const profileUrl = profileHref ? absolutize(profileHref, ctx.pageUrl) : undefined;
+    const title =
+      cleanText(
+        row
+          .find(
+            '.views-field-field-title .field-content, .views-field-field-title, [class*="position"]',
+          )
+          .first()
+          .text(),
+      ) || undefined;
+    const email = yaleEmailFromElement($, row.find('.views-field-field-email').first());
+    const imageHref = row.find('.views-field-picture img').first().attr('src') || '';
+    const imageUrl = imageHref ? absolutize(imageHref, ctx.pageUrl) : undefined;
+
+    out.push({
+      name,
+      profileUrl,
+      title,
+      email,
+      ...(imageUrl ? { imageUrl } : {}),
+    });
+  });
+
+  return out;
+};
+
+/**
+ * Yale Jackson School — WordPress person cards used on faculty/lecturer pages.
+ *   <div class="page-item page-item-person">
+ *     <div class="page-item-person-name-inner">Name</div>
+ *     <div class="page-item-person-bio-title">Lecturer</div>
+ *     <a href="mailto:...">Email</a>
+ *     <a href="https://jackson.yale.edu/person/<slug>/">View Bio</a>
+ *   </div>
+ */
+export const jacksonPersonCardExtractor: FacultyExtractor = (html, ctx) => {
+  const $ = cheerio.load(html);
+  const out: FacultyEntry[] = [];
+
+  $('.page-item-person').each((_i, el) => {
+    const card = $(el);
+    const name =
+      cleanText(card.find('.page-item-person-name-inner').first().text()) ||
+      cleanText(card.find('.page-item-person-name').first().text());
+    if (!name) return;
+
+    const profileHref = card.find('a[href*="/person/"]').first().attr('href') || '';
+    const emailHref = card.find('a[href^="mailto:"]').first().attr('href') || '';
+    const email = /^mailto:/i.test(emailHref) ? emailHref.replace(/^mailto:/i, '').trim() : undefined;
+    const title = cleanText(card.find('.page-item-person-bio-title').first().text()) || undefined;
+    const imageUrl = imageUrlFromElement(card, ctx.pageUrl);
+
+    out.push({
+      name,
+      profileUrl: profileHref ? absolutize(profileHref, ctx.pageUrl) : undefined,
+      title,
+      email,
+      ...(imageUrl ? { imageUrl } : {}),
+    });
+  });
+
   return out;
 };
 
@@ -351,7 +480,9 @@ export const csFacultyDataExtractor: FacultyDataExtractor = (payload, ctx) => {
 
       const title = stringValue(member.fullTitle) || stringValue(member.title);
       const labUrl =
-        profileUrl && !isOfficialYaleUrl(profileUrl) ? profileUrl : undefined;
+        profileUrl && !isOfficialYaleUrl(profileUrl) && !isGenericLabDirectoryUrl(profileUrl)
+          ? profileUrl
+          : undefined;
       out.push({ name, profileUrl, title, labUrl });
     }
   }
@@ -439,6 +570,113 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     paginated: false,
     extractor: psychExtractor,
   },
+  {
+    deptKey: 'eall',
+    deptName: 'East Asian Languages & Literatures',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    url: 'https://eall.yale.edu/people/professors',
+    paginated: false,
+    extractor: psychExtractor,
+  },
+  {
+    deptKey: 'american-studies',
+    deptName: 'American Studies',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    url: 'https://americanstudies.yale.edu/people/faculty',
+    paginated: false,
+    extractor: psychExtractor,
+  },
+  {
+    deptKey: 'african-studies',
+    deptName: 'African Studies',
+    schoolName: 'MacMillan Center for International and Area Studies at Yale',
+    url: 'https://macmillan.yale.edu/africa/people',
+    paginated: false,
+    extractor: econExtractor,
+    emitPersonalResearchEntities: false,
+  },
+  {
+    deptKey: 'music',
+    deptName: 'Music',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    url: 'https://yalemusic.yale.edu/people/faculty',
+    paginated: false,
+    extractor: psychExtractor,
+  },
+  {
+    deptKey: 'political-science',
+    deptName: 'Political Science',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    url: 'https://politicalscience.yale.edu/people/faculty',
+    paginated: true,
+    extractor: psychExtractor,
+  },
+  {
+    deptKey: 'history',
+    deptName: 'History',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    url: 'https://history.yale.edu/people/faculty',
+    paginated: true,
+    extractor: psychExtractor,
+  },
+  {
+    deptKey: 'history-art',
+    deptName: 'History of Art',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    url: 'https://arthistory.yale.edu/people/faculty',
+    paginated: false,
+    extractor: viewsRowPersonExtractor,
+  },
+  {
+    deptKey: 'anthropology',
+    deptName: 'Anthropology',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    url: 'https://anthropology.yale.edu/people/faculty',
+    paginated: false,
+    extractor: mcdbExtractor,
+  },
+  {
+    deptKey: 'earth-planetary-sciences',
+    deptName: 'Earth and Planetary Sciences',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    url: 'https://earth.yale.edu/faculty',
+    paginated: false,
+    extractor: mcdbExtractor,
+  },
+  {
+    deptKey: 'erm',
+    deptName: 'Ethnicity, Race, and Migration',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    url: 'https://erm.yale.edu/people/faculty',
+    paginated: false,
+    extractor: viewsRowPersonExtractor,
+  },
+  {
+    deptKey: 'wgss',
+    deptName: "Women's, Gender, and Sexuality Studies",
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    url: 'https://wgss.yale.edu/people/faculty',
+    paginated: false,
+    extractor: viewsRowPersonExtractor,
+  },
+  {
+    deptKey: 'global-affairs',
+    deptName: 'Global Affairs',
+    schoolName: 'Yale Jackson School of Global Affairs',
+    url: 'https://jackson.yale.edu/about/meet-us/faculty/lecturers/',
+    paginated: false,
+    extractor: jacksonPersonCardExtractor,
+    emitPersonalResearchEntities: false,
+  },
+  {
+    deptKey: 'tdps',
+    deptName: 'Theater, Dance, and Performance Studies',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    url: 'https://tdps.yale.edu/people',
+    paginated: false,
+    extractor: mcdbExtractor,
+    emitPersonalResearchEntities: false,
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -453,31 +691,53 @@ function absolutize(href: string, base: string): string {
   }
 }
 
-function safeHttpUrl(href: string | undefined, base: string): string | undefined {
-  const raw = String(href || '').trim();
-  if (!raw || /^mailto:|^tel:|^#|^javascript:/i.test(raw)) return undefined;
-  if (/[<>]/.test(raw)) return undefined;
-
-  try {
-    const url = new URL(raw, base);
-    if (!/^https?:$/i.test(url.protocol)) return undefined;
-    const decoded = decodeURIComponent(url.toString());
-    if (/[<>]/.test(decoded)) return undefined;
-    return url.toString();
-  } catch {
-    return undefined;
-  }
-}
-
 function cleanText(value: string | undefined | null): string {
   return String(value || '').replace(/\s+/g, ' ').trim();
 }
 
-function cleanTopicValue(value: string): string {
-  return cleanText(value)
-    .replace(/^(research\s+(areas?|interests?)|fields?\s+of\s+study|topics?)\s*:\s*/i, '')
-    .replace(/\s+/g, ' ')
-    .trim();
+function firstImageUrlFromSrcset(value: string | undefined | null): string | undefined {
+  const first = String(value || '')
+    .split(',')
+    .map((part) => part.trim().split(/\s+/)[0])
+    .find(Boolean);
+  return first || undefined;
+}
+
+function imageUrlFromElement(node: cheerio.Cheerio<any>, baseUrl: string): string | undefined {
+  const img = node.find('img').first();
+  if (!img.length) return undefined;
+  const src =
+    img.attr('src') ||
+    img.attr('data-src') ||
+    firstImageUrlFromSrcset(img.attr('srcset')) ||
+    firstImageUrlFromSrcset(img.attr('data-srcset')) ||
+    '';
+  return src ? absolutize(src, baseUrl) : undefined;
+}
+
+function isGenericLabDirectoryUrl(value: string | undefined | null): boolean {
+  try {
+    const url = new URL(String(value || ''));
+    const path = url.pathname.replace(/\/+$/, '').toLowerCase();
+    return (
+      url.hostname.toLowerCase() === 'medicine.yale.edu' &&
+      path === '/about/a-to-z-index/atoz/lab-websites'
+    );
+  } catch {
+    return false;
+  }
+}
+
+function elementTextWithChildSeparators(
+  $: cheerio.CheerioAPI,
+  el: AnyNode,
+): string {
+  const parts = $(el)
+    .contents()
+    .map((_i, node) => cleanText($(node).text()))
+    .get()
+    .filter(Boolean);
+  return parts.length > 0 ? parts.join('; ') : cleanText($(el).text());
 }
 
 function splitTopicText(value: string | undefined | null): string[] {
@@ -485,20 +745,39 @@ function splitTopicText(value: string | undefined | null): string[] {
   if (!cleaned) return [];
   const parts = cleaned
     .split(/[,;|•\n\r]+/)
-    .map((part) => cleanTopicValue(part))
-    .filter((part) => {
-      if (part.length <= 1 || /^[-–—]+$/.test(part)) return false;
-      if (/^(research\s+(areas?|interests?)|fields?\s+of\s+study|topics?)$/i.test(part)) return false;
-      if (/[a-z][A-Z]/.test(part) && !/\s/.test(part)) return false;
-      return true;
-    });
+    .map((part) => cleanText(part))
+    .filter((part) => part.length > 1 && !/^[-–—]+$/.test(part));
   return uniqueStrings(parts);
 }
 
-function topicTextFromRosterCell(cell: cheerio.Cheerio<any>): string {
-  const clone = cell.clone();
-  clone.find('em, small, script, style').remove();
-  return clone.text();
+const nonResearchTopicLabels = new Set([
+  'experimentalist',
+  'theorist',
+  'observational',
+  'observer',
+  'emeritus',
+]);
+
+function lowerTopicPhrase(value: string): string {
+  return cleanText(value)
+    .split(/\s+/)
+    .map((word) => (/^[A-Z0-9&-]{2,}$/.test(word) ? word : `${word.charAt(0).toLowerCase()}${word.slice(1)}`))
+    .join(' ');
+}
+
+function rosterTopicDescription(topics: string[] = []): string {
+  const usefulTopics = uniqueStrings(topics)
+    .filter((topic) => !nonResearchTopicLabels.has(topic.toLowerCase()))
+    .slice(0, 5);
+  if (usefulTopics.length === 0) return '';
+
+  const [primary, ...rest] = usefulTopics;
+  if (rest.length === 0) return `Studies ${lowerTopicPhrase(primary)}.`;
+  const restText =
+    rest.length === 1
+      ? lowerTopicPhrase(rest[0])
+      : `${rest.slice(0, -1).map(lowerTopicPhrase).join(', ')}, and ${lowerTopicPhrase(rest.at(-1) || '')}`;
+  return `Studies ${lowerTopicPhrase(primary)}, including ${restText}.`;
 }
 
 function uniqueStrings(values: Array<string | undefined>): string[] {
@@ -558,6 +837,31 @@ function canonicalProfileUrlFromHtml($: cheerio.CheerioAPI, fallbackUrl: string)
   return canonicalHref ? absolutize(canonicalHref, fallbackUrl) : fallbackUrl;
 }
 
+function isSiteChromeLink(link: cheerio.Cheerio<any>): boolean {
+  return (
+    link
+      .closest(
+        [
+          'footer',
+          'nav',
+          '[role="navigation"]',
+          '.site-header',
+          '.site-footer',
+          '.site-navigation',
+          '.menu',
+          '.menu__item',
+          '.menu__link',
+          '.breadcrumb',
+          '[id="site-header"]',
+          '[id="site-footer"]',
+          '[id="site-navigation"]',
+          '[id="breadcrumb"]',
+        ].join(', '),
+      )
+      .length > 0
+  );
+}
+
 function scholarProfileUrlFromHref(href: string, baseUrl: string): string | undefined {
   if (!href) return undefined;
   const absolute = absolutize(href, baseUrl);
@@ -591,13 +895,63 @@ function extractOrcidFromHtml($: cheerio.CheerioAPI): string | undefined {
   return undefined;
 }
 
+function isHeadingTag(node: cheerio.Cheerio<any>): boolean {
+  return /^h[1-6]$/i.test(node.prop('tagName') || '');
+}
+
+function cleanProfileSectionText(value: string): string {
+  return cleanText(value)
+    .replace(/\bCopy Link\b/gi, ' ')
+    .replace(/\bLast Updated on [^.]+\.?/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function extractSectionAfterHeading(
+  $: cheerio.CheerioAPI,
+  headingPattern: RegExp,
+): string | undefined {
+  let sectionText: string | undefined;
+
+  $('h1,h2,h3,h4,h5,h6,strong').each((_i, heading) => {
+    if (sectionText) return false;
+
+    const label = cleanText($(heading).text());
+    if (!headingPattern.test(label)) return;
+
+    const parts: string[] = [];
+    let cursor = $(heading).next();
+    while (cursor.length > 0) {
+      if (isHeadingTag(cursor)) break;
+      const text = cleanProfileSectionText(cursor.text());
+      if (text) parts.push(text);
+      cursor = cursor.next();
+    }
+
+    const text = cleanProfileSectionText(parts.join(' '));
+    if (text.length >= 40) sectionText = text;
+  });
+
+  return sectionText;
+}
+
+function isLikelyProfileChromeBio(value: string): boolean {
+  return /view this doctor's clinical profile|are you a patient|download hi-res photo/i.test(value);
+}
+
 function extractBioFromHtml($: cheerio.CheerioAPI): string | undefined {
+  const biography = extractSectionAfterHeading($, /^biography$/i);
+  if (biography) return biography.slice(0, 2000);
+
   const selectors = [
     '[class*="profile-body"]',
     '[class*="profile"][class*="body"]',
     '[class*="profile"] [class*="body"]',
     '[class*="person"] [class*="bio"]',
     '[class*="biography"]',
+    '[class*="field-name-field-bio"]',
+    'main .text',
+    'article .text',
     '[class*="research"] [class*="summary"]',
     '[class*="field--name-body"]',
     'article [class*="body"]',
@@ -605,24 +959,16 @@ function extractBioFromHtml($: cheerio.CheerioAPI): string | undefined {
   ];
 
   for (const selector of selectors) {
-    const text = cleanText($(selector).first().text());
-    if (text.length >= 40) return text.slice(0, 2000);
+    const text = cleanText($(selector).first().text())
+      .replace(/^CV\s+/i, '')
+      .replace(/\s+Office hours?:.*$/i, '');
+    if (text.length >= 40 && !isLikelyProfileChromeBio(text)) return text.slice(0, 2000);
   }
   return undefined;
 }
 
 function extractResearchInterestsFromHtml($: cheerio.CheerioAPI): string[] {
   const values: string[] = [];
-  $(
-    [
-      '.field-name-field-field-of-study .field-items .field-item',
-      '.field--name-field-research .field__item',
-      '.field--name-field-interests .field__item',
-    ].join(', '),
-  ).each((_i, el) => {
-    values.push(...splitTopicText($(el).text()));
-  });
-
   const selectors = [
     '[class*="research-interest"]',
     '[class*="field-of-study"]',
@@ -633,8 +979,7 @@ function extractResearchInterestsFromHtml($: cheerio.CheerioAPI): string[] {
 
   for (const selector of selectors) {
     $(selector).each((_i, el) => {
-      if ($(el).find('.field-item, .field__item').length > 0) return;
-      const text = cleanText($(el).text());
+      const text = elementTextWithChildSeparators($, el);
       values.push(...splitTopicText(text));
     });
   }
@@ -643,10 +988,207 @@ function extractResearchInterestsFromHtml($: cheerio.CheerioAPI): string[] {
     const label = cleanText($(heading).text()).toLowerCase();
     if (!/\b(research interests?|fields? of study|topics?)\b/.test(label)) return;
     const next = $(heading).next();
-    values.push(...splitTopicText(next.text()));
+    if (next[0]) values.push(...splitTopicText(elementTextWithChildSeparators($, next[0])));
   });
 
   return uniqueStrings(values).slice(0, 20);
+}
+
+function normalizePublicationTitle(value: string | undefined | null): string {
+  return cleanText(value)
+    .replace(/^(?:pdf|link|download|abstract|paper)\s*[:\-–—]?\s*/i, '')
+    .replace(/^["'“”‘’]+|["'“”‘’.,;:]+$/g, '')
+    .replace(/^(book|article|chapter)\s*:\s*/i, '')
+    .trim();
+}
+
+function isGenericPublicationPointer(value: string | undefined | null): boolean {
+  const text = cleanText(value).toLowerCase();
+  if (!text) return true;
+  return (
+    /\bfor a list of (?:selected |latest |recent )?publications\b/.test(text) ||
+    /\b(?:visit|see|view)\s+(?:my|the|our|professor\s+\w+['’]s)\s+(?:website|webpage|site|publication list)\b/.test(text) ||
+    /\bcomplete publication list\b/.test(text) ||
+    /\bgoogle scholar\b/.test(text) ||
+    /^(?:pdf|link|publication page|publications?|selected publications?|books?)$/i.test(text)
+  );
+}
+
+function publicationTitleFromElement(
+  $: cheerio.CheerioAPI,
+  node: cheerio.Cheerio<any>,
+  text: string,
+): string {
+  const quotedTitle = normalizePublicationTitle((text.match(/[“"]([^”"]{8,180})[”"]/) || [])[1]);
+  if (quotedTitle) return quotedTitle;
+
+  const emphasizedText = normalizePublicationTitle(node.find('em, i, cite').first().text());
+  if (emphasizedText) return emphasizedText;
+
+  const boldTitle = normalizePublicationTitle(node.find('.p-desc b, b').first().text());
+  if (boldTitle && !isGenericPublicationPointer(boldTitle)) return boldTitle;
+
+  const segmentedText = elementTextWithChildSeparators($, node[0])
+    .split(/[;\n\r]+/)
+    .map((part) => normalizePublicationTitle(part.replace(/\b(18|19|20)\d{2}\b/g, '')))
+    .filter((part) => part.length >= 8 && !isGenericPublicationPointer(part));
+  if (segmentedText.length > 0) return segmentedText[0];
+
+  return normalizePublicationTitle(text.replace(/\b(18|19|20)\d{2}\b/g, ''));
+}
+
+function publicationFromElement(
+  $: cheerio.CheerioAPI,
+  el: any,
+  profileUrl: string,
+): OfficialProfilePublication | null {
+  const node = $(el);
+  const text = cleanText(node.text());
+  if (text.length < 8) return null;
+  if (isGenericPublicationPointer(text)) return null;
+
+  const title = publicationTitleFromElement($, node, text);
+  if (!title || title.length < 8 || title.length > 240 || isGenericPublicationPointer(title)) return null;
+
+  const yearMatch = text.match(/\b(18|19|20)\d{2}\b/);
+  const year = yearMatch ? Number(yearMatch[0]) : undefined;
+  const href = node.find('a[href]').first().attr('href') || '';
+  const quotedTitle = normalizePublicationTitle((text.match(/[“"]([^”"]{8,180})[”"]/) || [])[1]);
+  const emphasizedText = normalizePublicationTitle(node.find('em, i, cite').first().text());
+  const venue = quotedTitle && emphasizedText
+    ? emphasizedText
+    : emphasizedText && title === emphasizedText
+    ? normalizePublicationTitle(text.replace(emphasizedText, '').replace(/\b(18|19|20)\d{2}\b/g, ''))
+        .replace(/^[-–—,.:;()\s]+|[-–—,.:;()\s]+$/g, '')
+        .slice(0, 180) || undefined
+    : undefined;
+
+  return {
+    title,
+    ...(year ? { year } : {}),
+    ...(venue ? { venue } : {}),
+    ...(href ? { url: absolutize(href, profileUrl) } : {}),
+    sourceUrl: profileUrl,
+  };
+}
+
+function extractOfficialProfilePublicationsFromHtml(
+  $: cheerio.CheerioAPI,
+  profileUrl: string,
+): OfficialProfilePublication[] {
+  const candidates: OfficialProfilePublication[] = [];
+
+  const collectPublicationsFrom = (section: cheerio.Cheerio<any>) => {
+    const items = section.is('ul,ol') ? section.find('li') : section.is('li,p') ? section : section.find('li,p');
+    items.each((_j, el) => {
+      const publication = publicationFromElement($, el, profileUrl);
+      if (publication) candidates.push(publication);
+    });
+  };
+
+  $('[class*="publication"], [id*="publication"]').each((_i, section) => {
+    collectPublicationsFrom($(section));
+  });
+
+  $('h2,h3,h4,strong').each((_i, heading) => {
+    const label = cleanText($(heading).text()).toLowerCase();
+    if (!/\b(selected\s+)?publications?\b|\bbooks?\b/.test(label)) return;
+
+    const scanStartNodes = [$(heading).next(), $(heading).parent().next()].filter((node) => node.length > 0);
+    for (const startNode of scanStartNodes) {
+      let cursor = startNode;
+      while (cursor.length > 0) {
+        if (/^h[2-4]$/i.test(cursor.prop('tagName') || '')) break;
+        collectPublicationsFrom(cursor);
+        cursor = cursor.next();
+      }
+    }
+  });
+
+  const seen = new Set<string>();
+  return candidates.filter((publication) => {
+    const key = `${publication.title.toLowerCase()}|${publication.year || ''}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, 20);
+}
+
+function extractPublicationListUrlsFromHtml(
+  $: cheerio.CheerioAPI,
+  profileUrl: string,
+): string[] {
+  const urls: string[] = [];
+
+  const collectLinksFrom = (section: cheerio.Cheerio<any>) => {
+    section.find('a[href]').each((_i, el) => {
+      const link = $(el);
+      const text = cleanText(link.text());
+      const href = link.attr('href') || '';
+      if (!href || /^mailto:|^tel:|^#|^javascript:/i.test(href)) return;
+      if (!isGenericPublicationPointer(`${text} ${href}`)) return;
+      urls.push(absolutize(href, profileUrl));
+    });
+  };
+
+  $('[class*="publication"], [id*="publication"]').each((_i, section) => {
+    collectLinksFrom($(section));
+  });
+
+  $('h2,h3,h4,strong').each((_i, heading) => {
+    const label = cleanText($(heading).text()).toLowerCase();
+    if (!/\b(selected\s+)?publications?\b|\bbooks?\b/.test(label)) return;
+
+    const scanStartNodes = [$(heading).next(), $(heading).parent().next()].filter((node) => node.length > 0);
+    for (const startNode of scanStartNodes) {
+      let cursor = startNode;
+      while (cursor.length > 0) {
+        if (/^h[2-4]$/i.test(cursor.prop('tagName') || '')) break;
+        collectLinksFrom(cursor);
+        cursor = cursor.next();
+      }
+    }
+  });
+
+  return uniqueStrings(urls).filter((url) => normalizeUrlForDedupe(url) !== normalizeUrlForDedupe(profileUrl));
+}
+
+function extractInlineMajorPublications(
+  text: string | undefined,
+  profileUrl: string,
+): OfficialProfilePublication[] {
+  if (!text) return [];
+  const match = text.match(/\bmajor publications include\b([\s\S]+)/i);
+  if (!match) return [];
+  const section = match[1]
+    .split(/\bPlease see\b|\bI have received\b|\bGrants?\b/i)[0]
+    .trim();
+  if (!section) return [];
+
+  const publications: OfficialProfilePublication[] = [];
+  const pattern = /([^.;]+?)\s*\(([^)]*\b(?:18|19|20)\d{2}\b[^)]*)\)/g;
+  let current: RegExpExecArray | null;
+  while ((current = pattern.exec(section)) && publications.length < 10) {
+    const title = normalizePublicationTitle(
+      current[1].replace(/^(?:,|\band\b|\ba\b|\ban\b|\bthe\b|\s)+/i, ''),
+    );
+    const detail = cleanText(current[2]);
+    const yearMatch = detail.match(/\b(18|19|20)\d{2}\b/);
+    const year = yearMatch ? Number(yearMatch[0]) : undefined;
+    const venue = year
+      ? normalizePublicationTitle(detail.replace(String(year), '').replace(/,\s*$/, ''))
+      : undefined;
+
+    if (!title || !year || title.length < 8 || title.length > 240) continue;
+    publications.push({
+      title,
+      year,
+      ...(venue ? { venue } : {}),
+      sourceUrl: profileUrl,
+    });
+  }
+
+  return publications;
 }
 
 async function fetchHtml(url: string, useCache: boolean, sourceName: string): Promise<string> {
@@ -707,6 +1249,8 @@ function profileEnrichmentFromHtml(
   | 'topics'
   | 'scholarCandidateProfileUrls'
   | 'profileSourceUrl'
+  | 'officialProfilePublications'
+  | 'publicationListUrls'
 >> {
   const $ = cheerio.load(html);
   const canonicalUrl = canonicalProfileUrlFromHtml($, profileUrl);
@@ -733,11 +1277,12 @@ function profileEnrichmentFromHtml(
 
   $('a[href]').each((_i, el) => {
     const link = $(el);
+    if (isSiteChromeLink(link)) return;
+
     const href = link.attr('href') || '';
     if (!href || /^mailto:|^tel:|^#|^javascript:/i.test(href)) return;
 
-    const absolute = safeHttpUrl(href, profileUrl);
-    if (!absolute) return;
+    const absolute = absolutize(href, profileUrl);
     let parsed: URL;
     try {
       parsed = new URL(absolute);
@@ -767,11 +1312,24 @@ function profileEnrichmentFromHtml(
     const isDirectoryPath = /\/(people|person|profile|faculty|directory)\//i.test(parsed.pathname);
     if (isProfileSite && isDirectoryPath) return;
 
+    if (isGenericLabDirectoryUrl(absolute)) return;
     labUrl = absolute;
   });
 
   const researchInterests = extractResearchInterestsFromHtml($);
   const bio = extractBioFromHtml($);
+  const publicationCandidates = [
+    ...extractOfficialProfilePublicationsFromHtml($, canonicalUrl),
+    ...extractInlineMajorPublications(bio, canonicalUrl),
+  ];
+  const publicationKeys = new Set<string>();
+  const officialProfilePublications = publicationCandidates.filter((publication) => {
+    const key = `${publication.title.toLowerCase()}|${publication.year || ''}`;
+    if (publicationKeys.has(key)) return false;
+    publicationKeys.add(key);
+    return true;
+  });
+  const publicationListUrls = extractPublicationListUrlsFromHtml($, canonicalUrl);
 
   return {
     profileUrl: canonicalUrl,
@@ -787,6 +1345,9 @@ function profileEnrichmentFromHtml(
       scholarCandidateProfileUrls.length > 0
         ? uniqueStrings(scholarCandidateProfileUrls)
         : undefined,
+    officialProfilePublications:
+      officialProfilePublications.length > 0 ? officialProfilePublications : undefined,
+    publicationListUrls: publicationListUrls.length > 0 ? publicationListUrls : undefined,
   };
 }
 
@@ -804,6 +1365,9 @@ function mergeProfileEnrichment(
     | 'topics'
     | 'scholarCandidateProfileUrls'
     | 'profileSourceUrl'
+    | 'imageUrl'
+    | 'officialProfilePublications'
+    | 'publicationListUrls'
   >>,
 ): FacultyEntry {
   return {
@@ -824,6 +1388,7 @@ function mergeProfileEnrichment(
       uniqueStrings([...(entry.topics || []), ...(enrichment.topics || [])]).length > 0
         ? uniqueStrings([...(entry.topics || []), ...(enrichment.topics || [])])
         : undefined,
+    imageUrl: entry.imageUrl || enrichment.imageUrl,
     scholarCandidateProfileUrls:
       uniqueStrings([
         ...(entry.scholarCandidateProfileUrls || []),
@@ -834,7 +1399,47 @@ function mergeProfileEnrichment(
             ...(enrichment.scholarCandidateProfileUrls || []),
           ])
         : undefined,
+    officialProfilePublications:
+      [...(entry.officialProfilePublications || []), ...(enrichment.officialProfilePublications || [])]
+        .length > 0
+        ? [...(entry.officialProfilePublications || []), ...(enrichment.officialProfilePublications || [])]
+        : undefined,
+    publicationListUrls:
+      uniqueStrings([...(entry.publicationListUrls || []), ...(enrichment.publicationListUrls || [])])
+        .length > 0
+        ? uniqueStrings([...(entry.publicationListUrls || []), ...(enrichment.publicationListUrls || [])])
+        : undefined,
   };
+}
+
+async function enrichEntryFromPublicationLists(
+  entry: FacultyEntry,
+  sourceName: string,
+  useCache: boolean,
+  htmlFetcher: HtmlFetcher,
+  log: ScraperContext['log'],
+): Promise<FacultyEntry> {
+  const urls = entry.publicationListUrls || [];
+  if (urls.length === 0) return entry;
+
+  const publications: OfficialProfilePublication[] = [];
+  for (const url of urls.slice(0, 2)) {
+    try {
+      const html = await htmlFetcher(url, useCache, sourceName);
+      const $ = cheerio.load(html);
+      publications.push(
+        ...extractOfficialProfilePublicationsFromHtml($, url).map((publication) => ({
+          ...publication,
+          sourceUrl: url,
+        })),
+      );
+    } catch (err: any) {
+      log(`[profile] publication-list fetch failed for ${url}: ${err?.message || err}`);
+    }
+  }
+
+  if (publications.length === 0) return entry;
+  return mergeProfileEnrichment(entry, { officialProfilePublications: publications });
 }
 
 async function enrichEntryFromOfficialProfile(
@@ -849,7 +1454,8 @@ async function enrichEntryFromOfficialProfile(
   try {
     const html = await htmlFetcher(entry.profileUrl, useCache, sourceName);
     const enrichment = profileEnrichmentFromHtml(html, entry.profileUrl);
-    return mergeProfileEnrichment(entry, enrichment);
+    const merged = mergeProfileEnrichment(entry, enrichment);
+    return enrichEntryFromPublicationLists(merged, sourceName, useCache, htmlFetcher, log);
   } catch (err: any) {
     log(`[profile] fetch failed for ${entry.profileUrl}: ${err?.message || err}`);
     return entry;
@@ -863,7 +1469,8 @@ function entryToUserObservations(
 ): { observations: ObservationInput[]; entityKey: string } {
   const cleaned = normalizeName(entry.name);
   const { first, last } = splitName(cleaned);
-  const netid = netidFromEmail(entry.email);
+  const personEmail = isLikelyPersonSpecificYaleEmail(entry.email, cleaned) ? entry.email : undefined;
+  const netid = netidFromEmail(personEmail);
   const slug = slugify(cleaned);
   const entityKey = netid ? `netid:${netid}` : `dept:${dept.deptKey}:${slug || 'unknown'}`;
 
@@ -881,13 +1488,13 @@ function entryToUserObservations(
   obs.push({ ...rosterBase, field: 'userType', value: 'faculty' });
   obs.push({ ...rosterBase, field: 'primaryDepartment', value: dept.deptName });
   obs.push({ ...rosterBase, field: 'departments', value: [dept.deptName] });
-  if (entry.email) obs.push({ ...profileBase, field: 'email', value: entry.email });
+  if (personEmail) obs.push({ ...profileBase, field: 'email', value: personEmail });
   if (entry.title) obs.push({ ...profileBase, field: 'title', value: entry.title });
   if (entry.profileUrl) {
     obs.push({ ...profileBase, field: 'profileUrls', value: { departmental: entry.profileUrl } });
   }
-  const safeLabUrl = safeHttpUrl(entry.labUrl, sourceUrl);
-  if (safeLabUrl) obs.push({ ...profileBase, field: 'website', value: safeLabUrl });
+  if (entry.imageUrl) obs.push({ ...profileBase, field: 'imageUrl', value: entry.imageUrl });
+  if (entry.labUrl) obs.push({ ...profileBase, field: 'website', value: entry.labUrl });
   if (entry.orcid) obs.push({ ...profileBase, field: 'orcid', value: entry.orcid });
   if (entry.bio) obs.push({ ...profileBase, field: 'bio', value: entry.bio });
   if (entry.researchInterests && entry.researchInterests.length > 0) {
@@ -903,32 +1510,53 @@ function entryToUserObservations(
       value: entry.scholarCandidateProfileUrls,
     });
   }
+  if (entry.officialProfilePublications && entry.officialProfilePublications.length > 0) {
+    obs.push({
+      ...profileBase,
+      field: 'officialProfilePublications',
+      value: entry.officialProfilePublications,
+      confidenceOverride: 0.9,
+    });
+  }
   obs.push({ ...rosterBase, field: 'dataSources', value: ['dept-faculty-roster'] });
 
   return { observations: obs, entityKey };
 }
 
-function entryToLabObservations(
+function isLikelyExplicitLabWebsite(entry: FacultyEntry): boolean {
+  const name = normalizeName(entry.name);
+  const url = entry.labUrl || '';
+  const searchable = `${name} ${url}`.toLowerCase();
+  return /\b(lab|laboratory|research[-\s]?group|group)\b/.test(searchable) || /lab[./-]/.test(searchable);
+}
+
+function entryToResearchEntityObservations(
   entry: FacultyEntry,
   dept: DeptConfig,
   sourceUrl: string,
   ownerEntityKey: string,
 ): ObservationInput[] {
-  const labUrl = safeHttpUrl(entry.labUrl, sourceUrl);
-  if (!labUrl) return [];
+  if (!entry.labUrl) return [];
   const cleanedName = normalizeName(entry.name);
-  const nameSlug = slugify(cleanedName) || slugify(labUrl);
+  const nameSlug = slugify(cleanedName) || slugify(entry.labUrl);
   const slug = `dept-${dept.deptKey}-${nameSlug}`.slice(0, 100);
-  const labName = cleanedName ? `${cleanedName} Lab` : labUrl;
+  const isExplicitLab = isLikelyExplicitLabWebsite(entry);
+  if (!isExplicitLab && dept.emitPersonalResearchEntities === false) return [];
+  const entityName = cleanedName
+    ? isExplicitLab
+      ? `${cleanedName} Lab`
+      : `${cleanedName} Faculty Research`
+    : entry.labUrl;
   const base = { entityType: 'researchEntity' as const, entityKey: slug, sourceUrl };
-  return [
+  const observations: ObservationInput[] = [
     { ...base, field: 'slug', value: slug },
-    { ...base, field: 'name', value: labName },
-    { ...base, field: 'kind', value: 'lab' },
+    { ...base, field: 'name', value: entityName },
+    { ...base, field: 'kind', value: isExplicitLab ? 'lab' : 'individual' },
+    { ...base, field: 'entityType', value: isExplicitLab ? 'LAB' : 'FACULTY_RESEARCH_AREA' },
     { ...base, field: 'school', value: dept.schoolName },
     { ...base, field: 'departments', value: [dept.deptName] },
-    { ...base, field: 'websiteUrl', value: labUrl },
-    { ...base, field: 'sourceUrls', value: [sourceUrl, labUrl] },
+    { ...base, field: 'websiteUrl', value: entry.labUrl },
+    { ...base, field: 'sourceUrls', value: [sourceUrl, entry.labUrl] },
     {
       ...base,
       field: 'inferredPiUserKey',
@@ -936,6 +1564,20 @@ function entryToLabObservations(
       confidenceOverride: 0.7,
     },
   ];
+
+  const topics = uniqueStrings([...(entry.researchInterests || []), ...(entry.topics || [])]);
+  if (topics.length > 0) {
+    observations.push({ ...base, field: 'researchAreas', value: topics });
+    const description = rosterTopicDescription(topics);
+    if (description) {
+      observations.push(
+        { ...base, field: 'fullDescription', value: description, confidenceOverride: 0.76 },
+        { ...base, field: 'shortDescription', value: description, confidenceOverride: 0.76 },
+      );
+    }
+  }
+
+  return observations;
 }
 
 // ---------------------------------------------------------------------------
@@ -957,7 +1599,11 @@ export class DepartmentRosterScraper implements IScraper {
     const onlyFilter = ctx.options.only && ctx.options.only.length > 0
       ? new Set(ctx.options.only.map((s) => s.trim().toLowerCase()))
       : null;
-    const limit = ctx.options.limit && ctx.options.limit > 0 ? ctx.options.limit : Infinity;
+    const limitOption = ctx.options.limit;
+    if (limitOption !== undefined && (!Number.isSafeInteger(limitOption) || limitOption < 1)) {
+      throw new Error('--limit must be a safe positive integer');
+    }
+    const limit = limitOption ?? Infinity;
 
     let totalObs = 0;
     let totalFaculty = 0;
@@ -995,7 +1641,7 @@ export class DepartmentRosterScraper implements IScraper {
         await ctx.emit(userObs);
         observations += userObs.length;
 
-        const labObs = entryToLabObservations(entry, dept, sourceUrl, entityKey);
+        const labObs = entryToResearchEntityObservations(entry, dept, sourceUrl, entityKey);
         const labKey = labObs[0]?.entityKey;
         if (labObs.length > 0 && labKey && !seenLabKeys.has(labKey)) {
           seenLabKeys.add(labKey);

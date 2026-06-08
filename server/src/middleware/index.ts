@@ -8,7 +8,6 @@ export {
   isAdmin,
   isProfessor,
   isConfirmed,
-  localAuthBypass,
 } from './auth';
 
 export {

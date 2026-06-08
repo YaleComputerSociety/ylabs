@@ -48,12 +48,6 @@ const analyticsData: AnalyticsData = {
     avgViews: 0,
     avgFavorites: 0,
     viewsByDepartment: [],
-    opportunityViewDataHealth: {
-      opportunityViewEventsLast30Days: 7,
-      resolvedOpportunityViewEventsLast30Days: 0,
-      orphanedOpportunityViewEventsLast30Days: 7,
-      orphanedOpportunityIds: ['stale-1', 'stale-2'],
-    },
   },
   listings: {
     overview: { total: 0, active: 0, archived: 0, unconfirmed: 0 },
@@ -71,6 +65,22 @@ const analyticsData: AnalyticsData = {
     newUsersLast7Days: 0,
     newUsersToday: 0,
     newUsersTodayByType: [],
+  },
+  researchEntities: {
+    overview: { active: 40, archived: 5, total: 45 },
+    byType: [
+      { entityType: 'LAB', count: 30 },
+      { entityType: 'CENTER', count: 10 },
+    ],
+    byVisibilityTier: [{ tier: 'student_ready', count: 12 }],
+    byOpenness: [{ status: 'unknown', count: 25 }],
+    freshness: {
+      observedLast7Days: 8,
+      observedLast30Days: 20,
+      neverObserved: 4,
+      staleOver90Days: 6,
+    },
+    scholarly: { withRecentPapers: 18, withRecentGrants: 9 },
   },
   timestamp: '2026-05-17T00:00:00.000Z',
 };
@@ -97,7 +107,7 @@ describe('Analytics page', () => {
     expect(mockedAxios.get).toHaveBeenCalledWith('/analytics', { withCredentials: true });
   });
 
-  it('uses posted opportunity language instead of legacy listing labels', async () => {
+  it('leads with scraped research coverage instead of posted-opportunity metrics', async () => {
     mockedAxios.get.mockImplementation((url: string) => {
       if (url === '/analytics') {
         return Promise.resolve({ data: analyticsData });
@@ -154,14 +164,17 @@ describe('Analytics page', () => {
     render(<Analytics />);
 
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: 'Posted Opportunities Overview' })).toBeTruthy();
+      expect(screen.getByRole('heading', { name: 'Research Data Coverage' })).toBeTruthy();
     });
 
-    expect(screen.getByText('Opportunity views tracked')).toBeTruthy();
-    expect(screen.getByRole('heading', { name: 'Analytics Data Health' })).toBeTruthy();
-    expect(screen.getByText('Orphaned opportunity view events')).toBeTruthy();
-    expect(screen.getAllByText('7').length).toBeGreaterThan(0);
-    expect(screen.getByText('Total Posted Opportunities')).toBeTruthy();
+    // Scraped-data coverage is the focus; legacy posted-opportunity sections are gone.
+    expect(screen.getByText('Active Research Entities')).toBeTruthy();
+    expect(screen.getByText('Student-Ready')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'By Entity Type' })).toBeTruthy();
+    expect(screen.getByText('Lab')).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Posted Opportunities Overview' })).toBeNull();
+    expect(screen.queryByText('Total Posted Opportunities')).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Analytics Data Health' })).toBeNull();
     expect(screen.getByText('Search Query Analytics')).toBeTruthy();
     await waitFor(() => {
       expect(screen.getByText('machine learning')).toBeTruthy();
@@ -269,8 +282,8 @@ describe('Analytics page', () => {
     expect(screen.getByRole('link', { name: 'Diagnostics' }).getAttribute('href')).toBe(
       '#diagnostics',
     );
-    expect(screen.getByRole('link', { name: 'Opportunities' }).getAttribute('href')).toBe(
-      '#posted-opportunities-overview',
+    expect(screen.getByRole('link', { name: 'Research Coverage' }).getAttribute('href')).toBe(
+      '#research-coverage',
     );
     await waitFor(() => {
       expect(screen.getAllByText('Review zero-result searches').length).toBeGreaterThan(0);

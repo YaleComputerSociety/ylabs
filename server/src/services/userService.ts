@@ -16,9 +16,14 @@ import {
 } from './fellowshipService';
 import { getPathwaysByIds, type PathwaySearchHit } from './pathwaySearchService';
 import mongoose from 'mongoose';
+import { escapeRegex } from '../utils/regex';
+import { isPublicHttpUrl } from '../utils/urlSafety';
 
 const PLANNING_INTENTS = new Set(['thesis', 'outreach', 'credit', 'funding', 'apply', 'later']);
 const PLANNING_STAGES = new Set(['saved', 'researching', 'ready', 'acted', 'archived']);
+const MAX_ACCOUNT_MUTATION_IDS = 100;
+const MAX_SAVED_PATHWAY_CHECKLIST_ITEMS = 50;
+const MAX_SAVED_PATHWAY_CHECKLIST_KEY_LENGTH = 120;
 
 export interface SavedPathwayPlanInput {
   intent?: string;
@@ -67,7 +72,13 @@ export function sanitizeSavedPathwayPlanForStorage(
     plan && typeof plan === 'object' ? (plan as SavedPathwayPlanInput) : {};
   const checklist = Object.fromEntries(
     Object.entries(candidate.checklist || {})
-      .filter(([key]) => typeof key === 'string' && key.length > 0)
+      .filter(
+        ([key]) =>
+          typeof key === 'string' &&
+          key.length > 0 &&
+          key.length <= MAX_SAVED_PATHWAY_CHECKLIST_KEY_LENGTH,
+      )
+      .slice(0, MAX_SAVED_PATHWAY_CHECKLIST_ITEMS)
       .map(([key, value]) => [key, value === true]),
   );
 
@@ -81,16 +92,7 @@ export function sanitizeSavedPathwayPlanForStorage(
 }
 
 const isHttpUrl = (value: unknown): value is string => {
-  if (typeof value !== 'string' || value.trim().length === 0) {
-    return false;
-  }
-
-  try {
-    const url = new URL(value);
-    return url.protocol === 'http:' || url.protocol === 'https:';
-  } catch {
-    return false;
-  }
+  return isPublicHttpUrl(value);
 };
 
 const sourceLinksForPathwayExport = (pathway: PathwaySearchHit): string[] =>
@@ -187,6 +189,29 @@ export function buildSavedPathwayPlanUnsetForIds(
   );
 }
 
+const badRequestError = (message: string) => {
+  const error: any = new Error(message);
+  error.status = 400;
+  return error;
+};
+
+export function normalizeObjectIdsForUserMutation(
+  values: unknown[],
+  fieldName: string,
+): mongoose.Types.ObjectId[] {
+  if (values.length > MAX_ACCOUNT_MUTATION_IDS) {
+    throw badRequestError(`Too many ${fieldName} ids`);
+  }
+
+  return values.map((value) => {
+    const id = String(value || '').trim();
+    if (!/^[a-f0-9]{24}$/i.test(id)) {
+      throw badRequestError(`Invalid ${fieldName} id`);
+    }
+    return new mongoose.Types.ObjectId(id);
+  });
+}
+
 export const createUser = async (userData: any) => {
   const user = new User(userData);
   await user.save();
@@ -198,6 +223,10 @@ export const readAllUsers = async () => {
   return users.map((user: any) => user.toObject());
 };
 
+export const buildCaseInsensitiveNetidFilter = (id: unknown) => ({
+  netid: { $regex: `^${escapeRegex(String(id ?? ''))}$`, $options: 'i' },
+});
+
 export const readUser = async (id: any) => {
   if (mongoose.Types.ObjectId.isValid(id)) {
     const user = await User.findById(id);
@@ -206,7 +235,7 @@ export const readUser = async (id: any) => {
     }
     return user.toObject();
   } else {
-    const user = await User.findOne({ netid: { $regex: `^${id}$`, $options: 'i' } });
+    const user = await User.findOne(buildCaseInsensitiveNetidFilter(id));
     if (!user) {
       throw new NotFoundError(`User not found with NetId: ${id}`);
     }
@@ -222,7 +251,7 @@ export const validateUser = async (id: any) => {
     }
     return user.toObject();
   } else {
-    const user = await User.findOne({ netid: { $regex: `^${id}$`, $options: 'i' } });
+    const user = await User.findOne(buildCaseInsensitiveNetidFilter(id));
     if (!user) {
       return null;
     }
@@ -238,7 +267,7 @@ export const userExists = async (id: any) => {
     }
     return true;
   } else {
-    const user = await User.findOne({ netid: { $regex: `^${id}$`, $options: 'i' } });
+    const user = await User.findOne(buildCaseInsensitiveNetidFilter(id));
     if (!user) {
       return false;
     }
@@ -255,7 +284,7 @@ export const updateUser = async (id: any, data: any) => {
     return user.toObject();
   } else {
     const user = await User.findOneAndUpdate(
-      { netid: { $regex: `^${id}$`, $options: 'i' } },
+      buildCaseInsensitiveNetidFilter(id),
       data,
       { new: true, runValidators: true },
     );
@@ -299,11 +328,11 @@ export const deleteUser = async (id: any) => {
 
     return user.toObject();
   } else {
-    const user = await User.findOne({ netid: { $regex: `^${id}$`, $options: 'i' } });
+    const user = await User.findOne(buildCaseInsensitiveNetidFilter(id));
     if (!user) {
       throw new NotFoundError(`User not found with NetId: ${id}`);
     }
-    await User.findOneAndDelete({ netid: { $regex: `^${id}$`, $options: 'i' } });
+    await User.findOneAndDelete(buildCaseInsensitiveNetidFilter(id));
   }
 };
 
@@ -371,15 +400,16 @@ export const clearOwnListings = async (id: any) => {
 
 export const addFavListings = async (id: any, Listings: [mongoose.Types.ObjectId]) => {
   const user = await readUser(id);
+  const listingIds = normalizeObjectIdsForUserMutation(Listings, 'favListings');
 
-  user.favListings.unshift(...Listings);
+  user.favListings.unshift(...listingIds);
   user.favListings = Array.from(
     new Set(user.favListings.map((listing: any) => listing.toString())),
   ).map((listing: string) => new mongoose.Types.ObjectId(listing));
 
   const newUser = await updateUser(id, { favListings: user.favListings });
 
-  for (const listingId of Listings) {
+  for (const listingId of listingIds) {
     await addFavorite(listingId.toString(), id);
   }
 
@@ -388,8 +418,9 @@ export const addFavListings = async (id: any, Listings: [mongoose.Types.ObjectId
 
 export const deleteFavListings = async (id: any, removedListings: [mongoose.Types.ObjectId]) => {
   const user = await readUser(id);
+  const listingIds = normalizeObjectIdsForUserMutation(removedListings, 'favListings');
 
-  const removedListingsStrings = removedListings.map((listing) => listing.toString());
+  const removedListingsStrings = listingIds.map((listing) => listing.toString());
 
   user.favListings = user.favListings.filter(
     (listing: any) => removedListingsStrings.indexOf(listing.toString()) < 0,
@@ -397,7 +428,7 @@ export const deleteFavListings = async (id: any, removedListings: [mongoose.Type
 
   const newUser = await updateUser(id, { favListings: user.favListings });
 
-  for (const listingId of removedListings) {
+  for (const listingId of listingIds) {
     await removeFavorite(listingId.toString(), id);
   }
 
@@ -412,15 +443,16 @@ export const clearFavListings = async (id: any) => {
 
 export const addFavFellowships = async (id: any, fellowships: mongoose.Types.ObjectId[]) => {
   const user = await readUser(id);
+  const fellowshipIds = normalizeObjectIdsForUserMutation(fellowships, 'favFellowships');
 
-  user.favFellowships.unshift(...fellowships);
+  user.favFellowships.unshift(...fellowshipIds);
   user.favFellowships = Array.from(new Set(user.favFellowships.map((f: any) => f.toString()))).map(
     (f: string) => new mongoose.Types.ObjectId(f),
   ) as mongoose.Types.ObjectId[];
 
   const newUser = await updateUser(id, { favFellowships: user.favFellowships });
 
-  for (const fellowshipId of fellowships) {
+  for (const fellowshipId of fellowshipIds) {
     await addFellowshipFavorite(fellowshipId.toString());
   }
 
@@ -432,8 +464,9 @@ export const deleteFavFellowships = async (
   removedFellowships: mongoose.Types.ObjectId[],
 ) => {
   const user = await readUser(id);
+  const fellowshipIds = normalizeObjectIdsForUserMutation(removedFellowships, 'favFellowships');
 
-  const removedFellowshipsStrings = removedFellowships.map((f) => f.toString());
+  const removedFellowshipsStrings = fellowshipIds.map((f) => f.toString());
 
   user.favFellowships = user.favFellowships.filter(
     (f: any) => removedFellowshipsStrings.indexOf(f.toString()) < 0,
@@ -441,7 +474,7 @@ export const deleteFavFellowships = async (
 
   const newUser = await updateUser(id, { favFellowships: user.favFellowships });
 
-  for (const fellowshipId of removedFellowships) {
+  for (const fellowshipId of fellowshipIds) {
     await removeFellowshipFavorite(fellowshipId.toString());
   }
 
@@ -456,9 +489,10 @@ export const clearFavFellowships = async (id: any) => {
 
 export const addFavPathways = async (id: any, pathways: [mongoose.Types.ObjectId]) => {
   const user = await readUser(id);
+  const pathwayIds = normalizeObjectIdsForUserMutation(pathways, 'favPathways');
 
   user.favPathways = user.favPathways || [];
-  user.favPathways.unshift(...pathways);
+  user.favPathways.unshift(...pathwayIds);
   user.favPathways = Array.from(new Set(user.favPathways.map((p: any) => p.toString()))).map(
     (p: string) => new mongoose.Types.ObjectId(p),
   ) as mongoose.Types.ObjectId[];
@@ -473,8 +507,9 @@ export const deleteFavPathways = async (
   removedPathways: [mongoose.Types.ObjectId],
 ) => {
   const user = await readUser(id);
+  const pathwayIds = normalizeObjectIdsForUserMutation(removedPathways, 'favPathways');
 
-  const removedPathwayStrings = removedPathways.map((p) => p.toString());
+  const removedPathwayStrings = pathwayIds.map((p) => p.toString());
 
   user.favPathways = (user.favPathways || []).filter(
     (p: any) => removedPathwayStrings.indexOf(p.toString()) < 0,
@@ -519,25 +554,23 @@ export const updateSavedPathwayPlan = async (
   pathwayId: string,
   plan: SavedPathwayPlanInput,
 ) => {
-  if (!mongoose.Types.ObjectId.isValid(pathwayId)) {
-    throw new Error('Invalid pathway id');
-  }
+  const [normalizedPathwayId] = normalizeObjectIdsForUserMutation([pathwayId], 'pathway');
+  const pathwayKey = normalizedPathwayId.toString();
   const sanitized = sanitizeSavedPathwayPlanForStorage(plan);
   const user = await updateUser(id, {
     $set: {
-      [`savedPathwayPlans.${pathwayId}`]: sanitized,
+      [`savedPathwayPlans.${pathwayKey}`]: sanitized,
     },
   });
   return user.savedPathwayPlans || {};
 };
 
 export const deleteSavedPathwayPlan = async (id: any, pathwayId: string) => {
-  if (!mongoose.Types.ObjectId.isValid(pathwayId)) {
-    throw new Error('Invalid pathway id');
-  }
+  const [normalizedPathwayId] = normalizeObjectIdsForUserMutation([pathwayId], 'pathway');
+  const pathwayKey = normalizedPathwayId.toString();
   const user = await updateUser(id, {
     $unset: {
-      [`savedPathwayPlans.${pathwayId}`]: '',
+      [`savedPathwayPlans.${pathwayKey}`]: '',
     },
   });
   return user.savedPathwayPlans || {};

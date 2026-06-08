@@ -1,10 +1,12 @@
 import dotenv from 'dotenv';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { searchPathways, type PathwaySearchInput } from '../services/pathwaySearchService';
 import { searchPathwaysViaMeili } from '../services/pathwaySearchIndexService';
+import { assertScriptApplyAllowed } from './scriptWriteGuards';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -33,35 +35,90 @@ const DEFAULT_REVIEW_CASES: ReviewCase[] = [
   },
 ];
 
-interface CliOptions {
+export interface PathwayRelevanceReviewCliOptions {
   pageSize: number;
   topK: number;
   strict: boolean;
+  output?: string;
 }
 
-function parseArgs(argv: string[]): CliOptions {
-  const options: CliOptions = {
+export function parsePathwayRelevanceReviewArgs(argv: string[]): PathwayRelevanceReviewCliOptions {
+  const options: PathwayRelevanceReviewCliOptions = {
     pageSize: 10,
     topK: 5,
     strict: false,
   };
 
-  for (const arg of argv) {
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
     if (arg === '--strict') {
       options.strict = true;
       continue;
     }
     if (arg.startsWith('--page-size=')) {
-      const parsed = Number(arg.slice('--page-size='.length));
-      if (Number.isFinite(parsed) && parsed > 0) options.pageSize = Math.floor(parsed);
+      options.pageSize = parsePositiveInteger(arg.slice('--page-size='.length), '--page-size');
+      continue;
     }
     if (arg.startsWith('--top-k=')) {
-      const parsed = Number(arg.slice('--top-k='.length));
-      if (Number.isFinite(parsed) && parsed > 0) options.topK = Math.floor(parsed);
+      options.topK = parsePositiveInteger(arg.slice('--top-k='.length), '--top-k');
+      continue;
     }
+    if (arg === '--output') {
+      options.output = parseRequiredOutputPath(argv[i + 1]);
+      i += 1;
+      continue;
+    }
+    if (arg.startsWith('--output=')) {
+      options.output = parseRequiredOutputPath(arg.slice('--output='.length));
+      continue;
+    }
+
+    throw new Error(`Unknown pathway relevance review argument: ${arg}`);
   }
 
   return options;
+}
+
+function parseRequiredOutputPath(value: string | undefined): string {
+  const output = value?.trim();
+  if (!output || output.startsWith('--')) {
+    throw new Error('--output requires a path');
+  }
+  return output;
+}
+
+function parsePositiveInteger(value: string, flag: string): number {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isSafeInteger(parsed) || parsed <= 0 || String(parsed) !== value.trim()) {
+    throw new Error(`${flag} requires a positive integer`);
+  }
+  return parsed;
+}
+
+export function writePathwayRelevanceReviewOutput(report: unknown, output?: string): void {
+  if (!output) return;
+  fs.mkdirSync(path.dirname(output), { recursive: true });
+  fs.writeFileSync(output, `${JSON.stringify(report, null, 2)}\n`);
+}
+
+export function buildPathwayRelevanceReviewOutput<T extends object>(
+  report: T,
+  metadata: {
+    environment?: string;
+    db?: string;
+    options: PathwayRelevanceReviewCliOptions;
+  },
+): T & {
+  environment?: string;
+  db?: string;
+  options: PathwayRelevanceReviewCliOptions;
+} {
+  return {
+    ...report,
+    ...(metadata.environment ? { environment: metadata.environment } : {}),
+    ...(metadata.db ? { db: metadata.db } : {}),
+    options: metadata.options,
+  };
 }
 
 function topIds(hits: Array<{ _id: string }>, topK: number): string[] {
@@ -78,29 +135,37 @@ function errorMessage(error: unknown): string {
 }
 
 async function main(): Promise<void> {
-  const options = parseArgs(process.argv.slice(2));
+  const options = parsePathwayRelevanceReviewArgs(process.argv.slice(2));
+  const guard = assertScriptApplyAllowed({
+    apply: false,
+    scriptName: 'pathway:relevance-review',
+    mongoUrl: process.env.MONGODBURL,
+  });
   await initializeConnections();
+  const targetDb = mongoose.connection.db?.databaseName || mongoose.connection.name || guard.dbLabel;
 
   try {
     await searchPathwaysViaMeili({ page: 1, pageSize: 1 });
   } catch (error) {
-    console.log(
-      JSON.stringify(
-        {
-          generatedAt: new Date().toISOString(),
-          runtimeBackend: process.env.PATHWAY_SEARCH_BACKEND || 'mongo',
-          meiliAvailable: false,
-          summary: {
-            recommendation:
-              'Start Meilisearch and rebuild the pathways index before relevance review.',
-            rollback: 'Set PATHWAY_SEARCH_BACKEND=mongo.',
-          },
-          error: errorMessage(error),
+    const result = buildPathwayRelevanceReviewOutput(
+      {
+        generatedAt: new Date().toISOString(),
+        runtimeBackend: process.env.PATHWAY_SEARCH_BACKEND || 'mongo',
+        meiliAvailable: false,
+        summary: {
+          recommendation: 'Start Meilisearch and rebuild the pathways index before relevance review.',
+          rollback: 'Set PATHWAY_SEARCH_BACKEND=mongo.',
         },
-        null,
-        2,
-      ),
+        error: errorMessage(error),
+      },
+      {
+        environment: guard.environment,
+        db: targetDb,
+        options,
+      },
     );
+    console.log(JSON.stringify(result, null, 2));
+    writePathwayRelevanceReviewOutput(result, options.output);
     process.exitCode = 1;
     return;
   }
@@ -149,34 +214,48 @@ async function main(): Promise<void> {
   );
 
   const divergentCases = cases.filter((reviewCase) => reviewCase.needsProductReview);
-  const result = {
-    generatedAt: new Date().toISOString(),
-    runtimeBackend: process.env.PATHWAY_SEARCH_BACKEND || 'mongo',
-    pageSize: options.pageSize,
-    topK: options.topK,
-    summary: {
-      cases: cases.length,
-      divergentCases: divergentCases.length,
-      recommendation:
-        divergentCases.length === 0
-          ? 'Meili relevance is ready for operator acceptance.'
-          : 'Keep PATHWAY_SEARCH_BACKEND=mongo until divergent cases are reviewed.',
-      rollback: 'Set PATHWAY_SEARCH_BACKEND=mongo.',
+  const result = buildPathwayRelevanceReviewOutput(
+    {
+      generatedAt: new Date().toISOString(),
+      runtimeBackend: process.env.PATHWAY_SEARCH_BACKEND || 'mongo',
+      pageSize: options.pageSize,
+      topK: options.topK,
+      summary: {
+        cases: cases.length,
+        divergentCases: divergentCases.length,
+        recommendation:
+          divergentCases.length === 0
+            ? 'Meili relevance is ready for operator acceptance.'
+            : 'Keep PATHWAY_SEARCH_BACKEND=mongo until divergent cases are reviewed.',
+        rollback: 'Set PATHWAY_SEARCH_BACKEND=mongo.',
+      },
+      cases,
     },
-    cases,
-  };
+    {
+      environment: guard.environment,
+      db: targetDb,
+      options,
+    },
+  );
 
   console.log(JSON.stringify(result, null, 2));
+  writePathwayRelevanceReviewOutput(result, options.output);
   if (options.strict && divergentCases.length > 0) {
     process.exitCode = 1;
   }
 }
 
-main()
-  .catch((error) => {
-    console.error('Pathway relevance review failed:', error);
-    process.exitCode = 1;
-  })
-  .finally(async () => {
-    await mongoose.disconnect();
-  });
+const isDirectRun = process.argv[1]
+  ? fileURLToPath(import.meta.url) === path.resolve(process.argv[1])
+  : false;
+
+if (isDirectRun) {
+  main()
+    .catch((error) => {
+      console.error('Pathway relevance review failed:', error);
+      process.exitCode = 1;
+    })
+    .finally(async () => {
+      await mongoose.disconnect();
+    });
+}

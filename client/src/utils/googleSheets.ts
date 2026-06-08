@@ -5,32 +5,63 @@
 
 const SCOPES = 'https://www.googleapis.com/auth/spreadsheets';
 const SHEETS_API = 'https://sheets.googleapis.com/v4/spreadsheets';
+const OAUTH_CHANNEL_NAME = 'google-oauth-token';
 
 let cachedToken: string | null = null;
+
+type GoogleOAuthMessage = {
+  type?: string;
+  token?: string | null;
+  state?: string | null;
+};
+
+function createOAuthState(): string {
+  const bytes = new Uint8Array(16);
+  window.crypto.getRandomValues(bytes);
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
 
 function getAccessToken(clientId: string): Promise<string> {
   if (cachedToken) return Promise.resolve(cachedToken);
 
   return new Promise((resolve, reject) => {
     const redirectUri = `${window.location.origin}/oauth-callback.html`;
+    const oauthState = createOAuthState();
     const authUrl =
       `https://accounts.google.com/o/oauth2/v2/auth?` +
       `client_id=${encodeURIComponent(clientId)}` +
       `&redirect_uri=${encodeURIComponent(redirectUri)}` +
       `&response_type=token` +
-      `&scope=${encodeURIComponent(SCOPES)}`;
+      `&scope=${encodeURIComponent(SCOPES)}` +
+      `&state=${encodeURIComponent(oauthState)}`;
 
-    const popup = window.open(authUrl, 'google-auth', 'width=500,height=600');
+    const channel =
+      typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel(OAUTH_CHANNEL_NAME) : null;
+    if (!channel) {
+      reject(new Error('Google sign-in is not supported in this browser'));
+      return;
+    }
+
+    const popup = window.open('about:blank', 'google-auth', 'width=500,height=600');
     if (!popup) {
+      channel.close();
       reject(new Error('Popup blocked — please allow popups for this site'));
       return;
     }
 
-    const handleMessage = (event: MessageEvent) => {
-      if (event.origin !== window.location.origin) return;
-      if (event.data?.type !== 'google-oauth-token') return;
-      window.removeEventListener('message', handleMessage);
-      const token = event.data.token;
+    let settled = false;
+    let checkClosed: ReturnType<typeof setInterval>;
+    const cleanup = () => {
+      channel.close();
+      clearInterval(checkClosed);
+    };
+
+    const handleMessage = (message: GoogleOAuthMessage) => {
+      if (message?.type !== OAUTH_CHANNEL_NAME) return;
+      if (message?.state !== oauthState) return;
+      settled = true;
+      cleanup();
+      const token = message.token;
       if (token) {
         cachedToken = token;
         resolve(token);
@@ -39,15 +70,16 @@ function getAccessToken(clientId: string): Promise<string> {
       }
     };
 
-    window.addEventListener('message', handleMessage);
+    channel.onmessage = (event) => handleMessage(event.data);
 
-    const checkClosed = setInterval(() => {
-      if (popup.closed) {
-        clearInterval(checkClosed);
-        window.removeEventListener('message', handleMessage);
-        if (!cachedToken) {
-          reject(new Error('Google sign-in was cancelled'));
-        }
+    popup.opener = null;
+    popup.location.href = authUrl;
+
+    checkClosed = setInterval(() => {
+      if (popup.closed && !settled) {
+        settled = true;
+        cleanup();
+        reject(new Error('Google sign-in was cancelled'));
       }
     }, 500);
   });

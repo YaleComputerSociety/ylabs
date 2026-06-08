@@ -2,6 +2,35 @@
 
 Use this file for concise, dated decisions that should outlive an individual chat or implementation session. Do not paste transcripts.
 
+## 2026-05-25: Beta Operator Review Is An Automatic Repair State
+
+Beta is the launch-candidate dataset. `operator_review` records should not become a manual audit backlog or leak into student-facing surfaces; they should enter typed repair lanes, receive deterministic trusted-source repairs where safe, and then be re-gated.
+
+Consequences:
+
+- Student-visible Beta surfaces should continue to show only public visibility tiers.
+- The automatic repair order is source/description first, PI identity second, and action/access evidence third.
+- Deterministic source-backed repairs may run automatically in Beta; PI identity conflicts, same-name risks, suppression decisions, and uncertain action evidence stay queued as exceptions.
+- Production promotion should copy or promote the accepted Beta dataset only after open must-fix repair jobs are cleared or explicitly accepted.
+
+## 2026-05-25: Launch Trust Contract Includes Research Activity
+
+Customer trust is a precondition for launch. The launch gate must verify student-visible profile, pathway, contact, and research-activity claims before production promotion.
+
+Consequences:
+
+- `yarn --cwd server launch:trust-contract --collection=all --mode=student-ready-only --include-research-activity --include-paper-quality --strict` is the launch-grade read-only audit.
+- Strict launch mode requires `student_ready` visibility; `limited_but_safe` can be used only when explicitly running the weaker `--mode=public-safe` audit.
+- Default student-facing APIs expose only `student_ready` records. `limited_but_safe` remains available for operator review and the explicit `--mode=public-safe` audit, but it is not part of the launch-grade public surface.
+- The audit groups held records into repair lanes with concrete commands for source/description, PI identity, action evidence, or exception handling. Explicitly `suppressed` records are a valid non-exposure outcome, not a repair lane.
+- Suppression-stage queue records require an explicit `--suppress-unsafe` operator command; the default repair queue still refuses to suppress them automatically.
+- Research activity attached to faculty/PI records should read from the populated `research_scholarly_links` plus `research_scholarly_attributions` proof surface. Empty legacy paper collections are not launch evidence.
+- Research activity provenance is audited with `yarn --cwd server scholarly-links:provenance-audit`; active person attributions must have target users, links must have an owner, and orphan attribution rows are suppressed before launch.
+- Student surfaces may restore research activity when it is explicit entity-linked work or member-attributed scholarly work backed by attribution rows; browse cards should expose this as a compact currentness/trust signal, not as undergraduate access evidence.
+- Scholarly links shown as research activity must also pass display-quality gates: meaningful title, inspectable source link or stable identifier, usable year/date, source label, no duplicate identifier groups, and no dataset-repository records presented as papers.
+- If the paper-authorship audit fails, run the dry-run first, review the planned mutation count, then apply only with `SCRAPER_ENV=beta yarn --cwd server papers:authorship-audit --apply --no-backfill-openalex --sample-limit=0 --confirm-paper-authorship-apply --max-apply=<plannedChanges>` after confirming the target database.
+- If the scholarly-link quality audit fails, run `yarn --cwd server scholarly-links:quality-audit --sample-limit=20` and follow the returned repair commands before promotion.
+
 ## 2026-05-07: North Star Is Research Navigation, Not Lab Openings
 
 Yale Research should make the hidden undergraduate research ecosystem legible: where formal openings exist, where credible pathways exist, and how students can move from curiosity to a specific, evidence-based next step.
@@ -101,11 +130,11 @@ Consequences:
 
 ## 2026-05-11: Use Pathways As The Student-Facing Surface
 
-Use `Pathways` as the student-facing surface and navigation label instead of `/ways-in` or a broad `/opportunities` surface.
+Superseded on 2026-05-26 by the unified Yale Research route decision. This older decision started from the idea that `Pathways` should be a separate student-facing surface and navigation label.
 
 Consequences:
 
-- `/pathways` is the practical browsing surface for durable routes toward plausible research homes.
+- The standalone practical-routes page is retired.
 - `/opportunities` is reserved for real active/time-bound posted opportunities.
 - `EntryPathway` appears to students as Pathways, but course credit should appear as a later formalization option, not as the route itself.
 - `PostedOpportunity` remains the internal name for real active/time-bound postings.
@@ -125,14 +154,14 @@ Consequences:
 
 ## 2026-05-11: Start Pathways With A Mongo-Backed Read API
 
-Start the student-facing Pathways loop with `POST /api/pathways/search`, backed by Mongo aggregation over `EntryPathway` and related access collections.
+Superseded on 2026-05-26 by the unified Yale Research route decision. The original implementation started a student-facing Pathways loop with a Mongo aggregation over `EntryPathway` and related access collections.
 
 Consequences:
 
 - Do not switch live pathway traffic to Meilisearch until the response shape, filters, and card UI prove stable.
 - Pathway search returns denormalized research entity, evidence, active posted opportunity, and guarded contact-route summaries.
 - Search results should expose public/official route summaries, not raw non-public scraped contact data.
-- `/pathways` can now be built against a stable backend contract while `/opportunities` remains reserved for real posted instances.
+- The standalone route is now removed while `/opportunities` remains reserved for real posted instances.
 
 ## 2026-05-11: Bridge Listings Into PostedOpportunity
 
@@ -187,17 +216,6 @@ Consequences:
 - Admins can inspect one entity's derived access bundle through `/api/admin/access-review/:id`.
 - Admins can update `ResearchGroup.manuallyLockedFields` through `/api/admin/access-review/:id/manual-locks`.
 - A full admin UI/editor remains a later P3 task.
-
-## 2026-05-25: PI Quality Is Part Of Lab Quality
-
-Operator review must not stop at the lab/research-entity record. A lab that has a PI attached is only production-ready if the attached PI/person data is also source-backed and not obviously stale, duplicated, or name-only inferred.
-
-Consequences:
-
-- Production promotion must include PI identity quality in the Beta gate for promoted labs/entities.
-- PI review should check official profile/source URL, title and department context, same-name ambiguity, accepted identifiers such as ORCID/Scholar/OpenAlex where present, and publication authorship proof.
-- Name-only publication links are not acceptable PI quality evidence; professor/lab papers must remain backed by `paper_authors` or other identity-backed authorship evidence.
-- Future operator UI should surface PI/person quality alongside lab/entity access review instead of treating it as a separate cleanup concern.
 
 ## 2026-05-12: Keep A Graphify-Grounded UI/UX Direction Doc
 
@@ -263,7 +281,7 @@ Consequences:
 - `ResearchEntity` lives in `server/src/models/researchEntity.ts`; `server/src/models/researchGroup.ts` retains the shared legacy-shaped schema but should not register a runtime `ResearchGroup` model on `research_groups`.
 - The migration command is `yarn --cwd server research-entity:migrate`.
 - After verified copy parity, `research_groups` can be dropped in that environment; no app runtime path should require it.
-- Dependent legacy collections should also be copied before deletion: `research_group_members` to `research_entity_members`, `research_group_stats` to `research_entity_stats`, and `paper_group_links` to `paper_entity_links`.
+- Dependent legacy membership should be copied before deletion: `research_group_members` to `research_entity_members`. The initially planned stats and paper-entity-link target collections were later removed from runtime because they stayed empty and created audit confusion.
 - Leftover legacy `applications` rows should be copied into `student_applications` with raw legacy payload retained before dropping `applications`; use `yarn --cwd server legacy:cleanup`.
 - Runtime services should use `ResearchEntity` and `researchEntityId`.
 - Legacy `researchGroupId` fields may stay in Mongo as inert residue until post-Beta cleanup.
@@ -299,7 +317,7 @@ The first P3 student workflow slice is saved Pathways, not a full thesis/outreac
 Consequences:
 
 - User accounts store `favPathways` as references to `EntryPathway` records.
-- `/pathways` can save and unsave evidence-backed routes toward research homes.
+- Saved pathway records can still reference evidence-backed routes toward research homes.
 - `/account` hydrates saved pathways with guarded public pathway card data and links students back to `/research/:slug`.
 - Planning notes, stages, outreach helpers, and fellowship matching should be modeled as later pathway-specific workflow fields instead of being folded into the existing listing/fellowship favorites board.
 
@@ -363,7 +381,7 @@ Consequences:
 
 - New multi-word collections should pass an explicit third `mongoose.model` collection argument such as `mongoose.model('EntryPathway', schema, 'entry_pathways')`.
 - New refs should point at PascalCase model names such as `ref: 'ResearchGroup'`, not physical collection names.
-- Legacy compact names such as `researchgroups`, `entrypathways`, and `postedopportunities` should be migrated with [`server/src/scripts/migrateMongoNaming.ts`](../server/src/scripts/migrateMongoNaming.ts).
+- Legacy compact names such as `researchgroups`, `entrypathways`, and `postedopportunities` should be inspected with dry-run-first [`server/src/scripts/migrateMongoNaming.ts`](../server/src/scripts/migrateMongoNaming.ts); any apply against `SCRAPER_ENV=production` requires `CONFIRM_PROD_SCRAPE=true`.
 - Do not rename product-facing routes or model concepts just because the physical Mongo collection is renamed.
 
 ## 2026-05-13: Keep Discovery Indexes Separate From Access Evidence
@@ -428,16 +446,27 @@ Consequences:
 - A fellowship can become a `PostedOpportunity` when there is a concrete application cycle, deadline, eligibility, and application route.
 - Examples: Women’s Health Research at Yale Undergraduate Fellowship and Wu Tsai Undergraduate Fellowships are structured discovery/program pathways; general fellowship databases are usually funding/formalization evidence.
 
+## 2026-05-26: Retire The Standalone Practical-Routes Surface
+
+Yale Research should stay research-home-first. The standalone practical-routes route and public search endpoint are retired because they split the experience and made the product feel less like one interface for finding credible research homes.
+
+Consequences:
+
+- `/research` remains the canonical discovery surface for research homes, evidence, ways in, and best next steps.
+- `EntryPathway` remains an internal model for source-backed ways-in evidence, saved planning, and detail-page enrichment.
+- Public navigation should not expose a separate Pathways product surface.
+- Posted opportunities remain specific active or time-bound instances under `/opportunities/:id`.
+
 ## 2026-05-13: Prepare Pathway Meilisearch Before Switching Traffic
 
 Pathways can have a Meilisearch document mapper and settings metadata before the live search API uses Meilisearch.
 
 Consequences:
 
-- Keep `POST /api/pathways/search` backed by Mongo aggregation until backfill, sync, relevance, parity tests, and rollback checks are ready.
+- Keep pathway Meili work behind internal services until backfill, sync, relevance, parity tests, and rollback checks are ready.
 - Index only public pathway/search fields; do not index raw non-public contact data.
 - Use the mapper as the shared contract for future backfill and sync work so query switching does not reimplement projection logic.
-- `yarn --cwd server meili:rebuild-pathways` is the repeatable rebuild command for parity testing and future cutover prep.
+- `yarn --cwd server meili:rebuild-pathways --confirm-meili-rebuild` is the repeatable rebuild command for parity testing and future cutover prep.
 
 ## 2026-05-13: Complete Pre-Beta Development Before Beta Seed
 
@@ -469,17 +498,17 @@ The `apify-google-scholar-bootstrap` source is retired from active scraping beca
 Consequences:
 
 - `apify-google-scholar-bootstrap` is removed from the active scraper registry, seed metadata, readiness gates, source coverage, and WorkPlanner policies.
-- Existing `Source` rows are marked retired by `yarn scrape:seed-sources`.
+- Existing `Source` rows are marked retired by reviewing `yarn --cwd server scrape:seed-sources --dry-run --output /tmp/ylabs-seed-sources-dry-run.json`, then applying with `--apply --confirm-seed-apply`.
 - Accepted-input/manual review is the supported path for Scholar ID discovery.
 
 ## 2026-05-14: Hard-Retire Apify Scholar Enrichment
 
-The active `apify-google-scholar` source is also retired. Official Yale department rosters and profile pages are the identity backbone for faculty enrichment; Google Scholar links scraped from official pages are review candidates only, and accepted Scholar IDs remain a manual `scholar:apply` workflow.
+The active `apify-google-scholar` source is also retired. Official Yale department rosters and profile pages are the identity backbone for faculty enrichment; Google Scholar links scraped from official pages are review candidates only, and accepted Scholar IDs remain a manual `scholar:apply --apply --confirm-accepted-inputs-apply` workflow.
 
 Consequences:
 
 - `apify-google-scholar` is removed from active scraper code, seed metadata, source coverage, WorkPlanner policies, readiness gates, and operator docs.
-- Existing `apify-google-scholar` `Source` rows are marked retired by `yarn scrape:seed-sources`.
+- Existing `apify-google-scholar` `Source` rows are marked retired by reviewing `yarn --cwd server scrape:seed-sources --dry-run --output /tmp/ylabs-seed-sources-dry-run.json`, then applying with `--apply --confirm-seed-apply`.
 - `dept-faculty-roster` expands first to Math, Physics, Statistics & Data Science, and Astronomy, and official profile enrichment may emit ORCID, research interests, lab URLs, and review-only Scholar candidate URLs.
 
 ## 2026-05-13: Retire Legacy Python Web Scrapers
@@ -555,6 +584,7 @@ Consequences:
 - `/api/programs` is the canonical public program contract backed by the existing Fellowship collection while storage is migrated incrementally.
 - The Fellowship schema now carries program classification fields, source metadata, and shared student visibility fields.
 - Student-facing program and research search should default to public visibility tiers only; admin/operator flows can include `operator_review` and `suppressed` when explicitly requested.
+- Updated 2026-06-06: non-admin program/fellowship service reads and interaction responses return allowlisted student-facing fields only. Public payloads preserve application, eligibility, official contact, source label, and deadline fields while omitting source keys/fingerprints, visibility review internals, archive/audit state, and engagement counters; admin/operator reads with `includeNonPublic` retain the full review payload.
 - The Operator Board is read-only and summarizes Trust Tier queues, source health, and gate commands. It does not execute writes or automatic approvals.
 - Before relying on the public program surface after a data import, run dry-run classification and visibility backfills, inspect the report, then apply intentionally.
 
@@ -571,58 +601,175 @@ Consequences:
 - Render cron is for accepted source-specific recurrence, not initial backfill, VPN-dependent sources, local accepted-input files, or interactive browser checks.
 - `docs/tasks/priority-roadmap.md` records the lane, backup identifier, run IDs, Meili outcome, smoke outcome, rollback posture, and accepted warnings after the gate.
 
-## 2026-05-25: Use Beta As The Production-Candidate Dataset
-
-The current promotion strategy is Lane A: make Beta as close to production as possible, then copy the accepted seeded data into Production only after the promotion gate is complete. Guarded production deltas are deferred unless fresh Beta-vs-production parity cannot be re-established.
-
-Consequences:
-
-- Beta remains the source of truth for final data-quality, source-health, search-quality, and privacy payload review.
-- The promotion dataset version is `beta-production-candidate-2026-05-25` until replaced by a newer accepted Beta snapshot.
-- Production writes, production scraper deltas, compact-retention apply mode, and recurring cron remain blocked until the runbook packet has backup/restore ownership, smoke ownership, fresh parity, accepted warnings, and Meili rollback posture recorded.
-- Pathways keep Mongo as the rollback posture until production Meili rebuild and relevance review are accepted.
-
 ## 2026-05-25: Make Student Visibility Promotion A Release Queue Gate
 
-Public research and program visibility is controlled by a reusable student visibility gate rather than ad hoc operator review. The gate applies the existing public-safety rules, promotes `student_ready` and `limited_but_safe` records automatically, and writes held records to `visibility_release_queue_items` with blocker reasons, source pressure, and next repair actions.
+Public research and program visibility is now controlled by a reusable student visibility gate rather than ad hoc operator review. The gate applies the existing public-safety rules, promotes `student_ready` and `limited_but_safe` records automatically, and writes held records to `visibility_release_queue_items` with blocker reasons, source pressure, and next repair actions.
 
 Consequences:
 
 - `operator_review` remains the compatibility tier, but admin workflow language should treat those rows as held release queue items.
-- Scraper auto-materialize, manual materialize, and production cron paths run the gate after clean write materialization.
+- Scraper auto-materialize, manual materialize, and production cron paths run the gate after clean write materialization. Standalone manual materialize writes require `--confirm-materialize`; dry-run materialization remains the artifact-first review path.
 - `yarn --cwd server student-visibility:gate --collection=all --mode=dry-run|apply` is the global reconciliation command.
 - The admin Operator Board exposes release queue pressure; `/api/admin/release-queue` provides paginated queue details.
 - Held rows should be repaired at the scraper/materializer/source-evidence layer, not manually promoted by weakening visibility rules.
 
-## 2026-05-25: Define The Student Trust Contract
+## 2026-06-05: Fail Closed On Production Auth Config And Audit Every Package Tree
 
-The visibility tiers are the product trust contract, not just admin labels. Public student surfaces must show only records that are source-backed enough to be useful without implying unsupported access, contact, PI, or research-activity claims.
-
-Consequences:
-
-- Public research, pathway, program, and opportunity routes default to `student_ready` and `limited_but_safe`.
-- `operator_review` and `suppressed` are repair states for operator/admin surfaces and release queues, not public product states.
-- `student_ready` requires source-backed identity, description/context, and actionable next-step evidence; `limited_but_safe` may be incomplete but must clearly avoid unsupported claims.
-- Private scraped contact data, raw observations, internal queue notes, and release-blocker internals stay out of public payloads.
-- Operators repair held rows by improving source evidence, materialization, identity links, or contact/pathway records before rerunning the visibility gate.
-
-## 2026-05-25: Make Research Entity Trust Gates Type-Aware
-
-Labs, faculty research areas, and centers/institutes/initiatives do not carry the same student promise. The visibility gate now evaluates the same public tiers through entity-type-specific requirements rather than applying one PI-centered rule to every research entity.
+Yale CAS authentication must not derive production service URLs from request host headers. Production startup now requires explicit HTTPS `SSOBASEURL` and `SERVER_BASE_URL` values, and rejects localhost callback origins.
 
 Consequences:
 
-- Labs need a PI or lab lead for public release; labs without a PI/lab lead remain held even if they have generic access evidence.
-- Faculty research areas require faculty identity and exploratory framing unless there is stronger lab/program/opening evidence.
-- Centers, institutes, and initiatives can be public without a PI-style lead, but no-contact/no-action records are limited affiliation indexes rather than student-ready homes.
-- Search quality review uses center/index and exploratory-framing warnings instead of treating every center-like entity as missing a PI.
+- Deploy configuration must set `SERVER_BASE_URL` to the public HTTPS app origin and `SSOBASEURL` to the Yale CAS HTTPS origin before production boot.
+- `server/src/passport.ts` normalizes quoted env values and fails fast in production rather than allowing `passport-cas` to fall back to `Host` or `X-Forwarded-Host`.
+- CI runs moderate-and-higher production dependency audits for the root, server, and client package trees separately because this repo has independent lockfiles and dependency surfaces.
+- Yarn resolutions pin vulnerable transitive CAS dependencies (`axios`, `underscore`) and Express route parsing (`path-to-regexp`) until upstream package ranges make those pins unnecessary.
 
-## 2026-05-25: Prefer Official Lab Names Over PI-Generated Labels
+## 2026-06-05: Guard Unsafe Browser Mutations By Origin
 
-Canonical research entity naming should represent the actual Yale research home, not just the person who leads it. When official sources identify a lab/group name and a faculty profile identifies the PI, the entity name should be the lab/group and the person should be represented through membership/leadership.
+Yale Research uses session cookies for authenticated API calls, so production unsafe methods must not rely on CORS alone for cross-site request protection. Production API `POST`, `PUT`, `PATCH`, and `DELETE` requests now require a trusted `Origin` or `Referer` from the configured app origins.
 
 Consequences:
 
-- `dept-cs-lin-zhong` can be repaired to `Efficient Computing Lab` while preserving the existing slug and Lin Zhong PI relationship.
-- `ResearchEntity.aliases` is intentionally deferred until the schema and search index have a durable alias contract.
-- Naming repair scripts must run dry-run-first and require source evidence before changing canonical names.
+- `server/src/middleware/csrfOriginGuard.ts` blocks production unsafe `/api` requests with missing or untrusted browser origins before JSON body parsing.
+- Local development, test, and CI keep permissive behavior so scripts and focused tests do not need browser-origin headers.
+- Cache refresh is POST-only at `/api/config/refresh`; the public cacheable `/api/config` GET remains unchanged.
+- Cache refresh is admin-only because it invalidates shared server state and forces fresh database reads.
+- Shared research-area creation is limited to professor/faculty/admin users, matching the profile/listing editor flows and preventing ordinary student accounts from polluting global taxonomy data.
+- Explicitly untrusted CORS origins should fail as intentional `403` client errors, while missing origins from health checks or server-side tools continue without production CORS headers.
+- Production promotion smoke requests derive the browser origin from `--app-base` and send it on unsafe API methods so smoke behavior matches deployed browser requests under the origin guard.
+- `/api/logout` is a state-changing GET because it clears the local session before redirecting to CAS logout, so deployed logout requests require a same-origin `Origin` or `Referer` even though the general CSRF guard treats GET as safe.
+- Admin URL reachability checks reject oversized batches and malformed URL values before doing DNS or outbound fetch work.
+- Admin URL reachability checks resolve hosts before and during connect, block private/special-use IPv4 and IPv6 ranges including metadata, loopback, IPv4-mapped IPv6, and NAT64 forms, reject credentialed URLs and non-web ports, and use no-redirect HEAD requests through guarded HTTP agents.
+- Case-insensitive netid lookups must escape regex metacharacters before building exact-match Mongo filters so user-controlled ids cannot become regex queries or match the wrong account.
+- Runtime admin authority is grant-backed: outside local localhost development, `isAdmin` and Passport session user state must treat active `admin_grants` records as the source of truth and downgrade legacy `User.userType = "admin"` rows without a grant.
+- Third-party identity lookups that require bearer keys must read the current environment at call time and fail closed before outbound requests when the key is absent, avoiding stale imported secrets or `Bearer undefined` authorization headers.
+- `NODE_ENV=prod` is treated as production for auth config and secure cookies, while the package script now sets canonical `NODE_ENV=production`.
+- Deployed runtimes use the `__Host-session` cookie name with `Secure`, `HttpOnly`, `SameSite=Lax`, and `Path=/` so browsers enforce host-only session scope. The legacy `session` cookie name is reserved for true localhost development.
+- Development-labelled remote runtimes must not inherit local security bypasses. CORS bypasses, CSRF origin bypasses, rate-limit skips, weak/missing session-secret tolerance, non-secure session cookies, local CSP connect origins, non-HTTPS CAS/base URL tolerance, internal 500 error-message disclosure, seed routes, dev-login, local auth bypass, and legacy admin fallback are allowed only in CI/test or when `SERVER_BASE_URL` is a localhost development origin.
+- Controller-owned and global API error responses should use generic user-facing messages for unexpected failures and fixed public copy for client-error status codes. Raw internal `error.message` belongs in server logs or local-only middleware diagnostics, not authenticated/public API responses; not-found/object-id failures should not echo ids, slugs, netids, database URLs, or service exception text.
+- CI actions are pinned to immutable commits for `actions/checkout` and `actions/setup-node` to reduce workflow supply-chain drift.
+
+## 2026-06-05: Keep Deploy Dependency Audits Clean At Moderate Severity
+
+Deploy readiness should track moderate-and-higher dependency advisories across all independently locked package trees, not only high severity production findings.
+
+Consequences:
+
+- Root, server, and client dependency audits should run separately because each has its own lockfile and deployment surface.
+- Production audits remain the runtime gate, but all-environment audits should also stay clean because compromised dev/test tooling can affect CI, local verification, and built artifacts.
+- CI should enforce both moderate-and-higher production audits and moderate-and-higher all-environment audits for the root, server, and client package trees.
+- CI should run the repo-local committed-secret scanner before build. The scanner reports only path, line, and rule identifiers for high-confidence tokens/credentialed URIs/private-key blocks, never matched secret text.
+- The server runtime floor is Node `>=20.19.0`, matching the current Cheerio/encoding stack and local deploy build behavior.
+- Passport is on `0.7.0`; logout routes must use the async `req.logOut(callback)` API and forward callback errors through Express error handling.
+- Yarn resolutions pin patched `passport-cas` transitives (`uuid`, `xml2js`), client/server parser transitives (`postcss`, `yaml`, `encoding-sniffer`), and lagging dev-tooling transitives (`glob`, `minimatch`, `brace-expansion`, `picomatch`, `tar`, `ip-address`) until upstream package ranges no longer pull vulnerable or deprecated versions.
+- Operator repair scripts must not bypass Yale TLS verification; certificate failures should fail the bounded repair rather than retry with `rejectUnauthorized: false`.
+
+## 2026-06-05: Enforce Browser Link And Script Execution Guardrails
+
+Student and admin surfaces render many source, application, profile, and evidence links from API data, so browser-link safety must be centralized rather than handled ad hoc in each component. Static HTML should also be compatible with a strict script CSP instead of relying on inline scripts.
+
+Consequences:
+
+- API-sourced external links should pass through `safeUrl` or `safeUrlList` before reaching `href`; invalid or scriptable schemes should suppress the link.
+- New-tab links should use `rel="noopener noreferrer"` or the shared `EXTERNAL_LINK_REL` constant.
+- Programmatic new-tab opening should use `openSafeUrlInNewTab`; OAuth popups that require `window.opener` are the exception and must verify same-origin callback messages, the exact popup window source, and a request-bound OAuth `state`.
+- Express responses set CSP and Permissions-Policy in `server/src/middleware/securityHeaders.ts`; inline scripts are not allowed by `script-src`.
+- Production CSP must not include local development origins such as `http://localhost:4000` in `connect-src`; local origins belong only in non-production policy generation.
+- Production CSP must not use a broad `connect-src https:` wildcard. Browser fetch/beacon destinations should be explicit: Yale Research app/API origins, Google Sheets export API, and the configured Google Analytics endpoints. True local development may add `http://localhost:4000` only when the runtime is local.
+- Production CSP must not use a broad `img-src https:` wildcard. Public profile image DTOs should expose only trusted Yale/Yalies/YSM image hosts, and browser image sources should match that allowlist plus local `self`, `data:`, and `blob:` needs.
+- Analytics and OAuth callback bootstraps live in static files under `client/public/` so production `client/dist` HTML remains CSP-compatible after build.
+
+## 2026-06-05: Allowlist Public Embedded Listing Summaries
+
+Public research detail responses may retain a small `activeListings` bridge for backwards compatibility, but that bridge must not serialize full `Listing` documents. Legacy listing rows contain owner and collaborator contact fields plus internal counters and audit state.
+
+Consequences:
+
+- `server/src/services/researchGroupService.ts` maps active listings through a public field allowlist before returning `/api/research/:slug`.
+- Public research detail payloads can include listing title, description, application websites, departments, research areas, timing, and public role metadata.
+- Public research detail payloads must omit listing owner ids, creator ids, owner emails, collaborator emails, view/favorite counts, confirmation/audit flags, and other authenticated/admin-only fields.
+- Authenticated profile listing payloads follow the same public field boundary; `/api/profiles/:netid/listings` must not return full legacy `Listing` documents.
+- Legacy authenticated reader surfaces such as `/api/listings/search`, `/api/listings/:id`, and favorited listing hydration also use the same reader-safe projection. Owner management and admin routes remain the places where owner/collaborator fields can be returned.
+
+## 2026-06-06: Allowlist Current-User Mutation Responses
+
+Authenticated favorite, saved-program, saved-research-plan, and profile-update mutations should not echo the full `User` document. Those rows include private saved-planning notes, login/activity metadata, scholarly identifiers, scrape confidence maps, manual locks, archive/dedupe state, and other fields unrelated to mutation success.
+
+Consequences:
+
+- `server/src/controllers/userController.ts` maps current-user mutation responses through a small allowlist before returning `{ user }`.
+- Favorite and saved-item mutation responses can include current account identity, public profile fields, and saved id arrays, but must omit `savedPathwayPlans` and internal account/profile maintenance metadata.
+- Explicit saved-plan detail endpoints remain the place where private planning notes are returned to the authenticated account holder.
+
+## 2026-06-06: Allowlist Public Faculty Profile DTOs
+
+Public faculty profile reads and profile self-edit responses should be generated from an explicit DTO, not by spreading full `User` documents. User rows carry saved planning state, login/activity timestamps, scrape confidence maps, manual locks, scholarly candidate ids, archive/dedupe state, and other maintenance metadata that is not part of the profile contract.
+
+Consequences:
+
+- `normalizePublicProfile` starts from an allowlist of intentional profile fields before adding client aliases such as `image_url`, `profile_urls`, `research_interests`, and `scholarlyLinks`.
+- `/api/profiles/:netid`, `/api/profiles/me`, and profile verification responses are defensively projected even when a service or test double returns a broader user-shaped object.
+- Separate profile publication, listing, and saved-plan endpoints remain responsible for their own narrower payloads.
+
+## 2026-06-06: Sanitize Public Opportunity Detail URLs Server-Side
+
+Public opportunity detail responses are an unauthenticated trust boundary. Client-side link guards are still required, but the API should not return scriptable or non-web URL schemes in application routes, source links, evidence links, or host research-home links.
+
+Consequences:
+
+- `server/src/services/opportunityDetailService.ts` normalizes public opportunity URLs through an HTTP(S)-only allowlist before returning `GET /api/opportunities/:id`.
+- Application state is derived from the sanitized application URL, so `javascript:`, `data:`, `mailto:`, and malformed values behave as no public application route.
+- Public opportunity source URLs, pathway source URLs, evidence `sourceUrl`, and research-entity website fallbacks omit non-HTTP(S) schemes even if raw scraper or listing data contains them.
+
+## 2026-06-06: Mark Private Authenticated Payloads No-Store
+
+User account endpoints return private saved ids, favorites, profile mutation results, saved research-plan details, advising notes, checklist state, and planning intent. The auth check endpoint returns the current cookie-derived user summary. Authenticated profile endpoints return profile-bound identity, publication, course, listing, self-update, and verification payloads. Authenticated program, fellowship, pathway, and research-area endpoints can include saved/favorite state, authenticated search context, route evidence, and user-created taxonomy mutations. Authenticated listing endpoints include owner-management and reader-specific listing responses. Admin and analytics endpoints expose operational queues, user behavior aggregates, grants, review records, and internal operator state. These authenticated payloads should not be stored by shared caches, browser history caches, or intermediaries.
+
+Consequences:
+
+- `server/src/routes/users.ts` sets `Cache-Control: no-store, private, max-age=0` and `Pragma: no-cache` on all `/api/users/*` responses.
+- `server/src/passport.ts` sets the same private no-store headers on `/api/check` because it reflects the current session user state.
+- `server/src/routes/profiles.ts` sets the same private no-store headers on all `/api/profiles/*` responses because those routes are authenticated and can include profile-bound course, publication, listing, update, or verification state.
+- `server/src/routes/programs.ts`, `server/src/routes/fellowships.ts`, `server/src/routes/pathways.ts`, and `server/src/routes/researchAreas.ts` set the same private no-store headers on authenticated discovery/search/taxonomy responses.
+- `server/src/routes/listings.ts` sets the same private no-store headers on all `/api/listings/*` responses.
+- `server/src/routes/admin.ts` and `server/src/routes/analytics.ts` set the same private no-store headers on admin/operator and analytics responses.
+- `server/src/controllers/userController.ts` sets `Cache-Control: no-store, private, max-age=0` and `Pragma: no-cache` on saved-plan detail, export, update, and delete responses.
+- Export endpoints keep their explicit private-notes opt-in, but all exports are treated as private account payloads because even note-free exports reveal saved planning state.
+- Public cache headers remain limited to genuinely public config responses.
+
+## 2026-06-05: Constrain Self-Service Listing Identity Claims
+
+Professor-created legacy listings still feed posted-role and `PostedOpportunity` workflows, but self-service listing writes must not let one account claim another research entity or place roles on another professor's profile without a trusted membership relationship.
+
+Consequences:
+
+- New listings may bind to a submitted `researchEntityId`/`researchGroupId` only when the authenticated owner is a current PI, co-PI, director, co-director, or core-faculty member of that entity.
+- If the submitted entity id is missing or unauthorized, listing creation falls back to the owner's own PI research entity through `findOrCreateForOwner`.
+- Self-service listing creation and update strip collaborator identity fields (`professorIds`, `professorNames`, `emails`); collaborator/profile placement remains an admin-owned or future consented-collaboration workflow.
+- Client-supplied owner, creator, confirmation, audit, counter, archive, and embedding fields are not part of the self-service listing creation contract.
+
+## 2026-06-05: Allowlist Public ResearchEntity DTOs And Relationships
+
+Public research search/detail payloads should not spread full Mongo `ResearchEntity` documents. Those documents include operator review state, ownership/claim fields, field provenance, and runtime notification/inquiry caches that are not part of the student-facing contract.
+
+Consequences:
+
+- `server/src/services/researchEntityDto.ts` is the public ResearchEntity boundary and must stay allowlist-based.
+- Public ResearchEntity DTOs may include compatibility fields needed by the research UI, but must omit claim ownership, reviewer ids, visibility override/suppression notes, provenance maps, embeddings, and notification/inquiry caches.
+- Related and affiliated entities on public research detail pages must pass the same `publicStudentVisibilityTiers` allowlist as direct public research search/detail results.
+- Relationship rows on public research detail pages must also be allowlisted; structural metadata and source URL/confidence are allowed, but raw evidence quotes and audit timestamps are not serialized.
+- Public research detail access artifacts (`EntryPathway`, `AccessSignal`, and `PostedOpportunity`) must also be mapped through explicit DTO allowlists rather than returned as raw derived records. Operator review status, derivation keys, source-evidence ids, archive state, and materialization timestamps stay internal.
+- Public evidence-style text in research detail and opportunity detail payloads should pass through direct-contact redaction before reaching clients.
+- `/api/pathways/search` is mounted as an authenticated Ways In endpoint and defaults to Mongo search unless `PATHWAY_SEARCH_BACKEND=meili` is explicitly set.
+
+## 2026-06-05: Require Deploy Fingerprints In Production Smoke
+
+Production promotion should prove that the host is serving the expected backend revision, not merely that a host is reachable. Public `/api/config` now exposes a narrow deployment fingerprint from provider metadata, and promotion smoke can compare it with an expected commit prefix.
+
+Consequences:
+
+- `/api/config` may expose only safe deployment metadata: provider, git commit SHA, and git branch. It must not expose service ids, instance ids, secrets, or arbitrary environment values.
+- Render deployments use `RENDER_GIT_COMMIT` and `RENDER_GIT_BRANCH`, which are documented default runtime variables; local or unknown environments may return empty strings.
+- `yarn --cwd client smoke:production-promotion --expect-commit <sha>` is the release-grade smoke command for deploy drift. Missing or mismatched fingerprints fail the smoke report before production promotion.
+- Production promotion smoke also checks core browser hardening headers on `/api/config`, including CSP, Permissions-Policy, frame denial, MIME-sniffing protection, referrer policy, COOP, and HSTS. Missing CSP or Permissions-Policy is a deploy blocker even if the endpoint returns `200`.
+- A passing `/api/config` status alone is not evidence that the current backend bundle is deployed.

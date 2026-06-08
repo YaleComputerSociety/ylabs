@@ -91,12 +91,28 @@ describe('Navbar', () => {
     });
   });
 
-  it('shows the desktop analytics dashboard link for admin users', () => {
+  it('shows exactly one desktop analytics dashboard link for admin users', () => {
     renderNavbar({ userType: 'admin', netId: 'devadmin' });
 
-    const analyticsLink = screen.getByRole('link', { name: 'Analytics' });
+    const analyticsLinks = screen.getAllByRole('link', { name: 'Analytics' });
+    expect(analyticsLinks).toHaveLength(1);
+    const [analyticsLink] = analyticsLinks;
     expect(analyticsLink.getAttribute('href')).toBe('/analytics');
     expect(analyticsLink.closest('.MuiToolbar-root')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open user menu' }));
+
+    expect(screen.queryByRole('menuitem', { name: 'Analytics' })).toBeNull();
+  });
+
+  it('does not show analytics navigation for student users', () => {
+    renderNavbar({ userType: 'student', netId: 'student1' });
+
+    expect(screen.queryByRole('link', { name: 'Analytics' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open user menu' }));
+
+    expect(screen.queryByRole('menuitem', { name: 'Analytics' })).toBeNull();
   });
 
   it('gives professor users direct profile actions from the account menu', () => {

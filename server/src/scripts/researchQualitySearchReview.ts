@@ -1,4 +1,5 @@
 import dotenv from 'dotenv';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
@@ -20,16 +21,18 @@ import {
   type ResearchQualityGoldenQuery,
   type ResearchQualitySearchFacts,
 } from './researchQualitySearchReviewCore';
+import { assertScriptApplyAllowed } from './scriptWriteGuards';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
-interface CliOptions {
+export interface ResearchQualitySearchReviewCliOptions {
   topK: number;
   limit: number;
   strict: boolean;
   queryNames: string[];
+  output?: string;
 }
 
 interface EntityRecord {
@@ -61,36 +64,91 @@ interface SearchCollection {
   searchErrors: Array<{ query: string; surface: 'research' | 'pathways'; error: string }>;
 }
 
-function parseArgs(argv: string[]): CliOptions {
-  const options: CliOptions = {
+export function parseResearchQualitySearchReviewArgs(
+  argv: string[],
+): ResearchQualitySearchReviewCliOptions {
+  const options: ResearchQualitySearchReviewCliOptions = {
     topK: 5,
     limit: 50,
     strict: false,
     queryNames: [],
   };
 
-  for (const arg of argv) {
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
     if (arg === '--strict') {
       options.strict = true;
       continue;
     }
     if (arg.startsWith('--top-k=')) {
-      const parsed = Number(arg.slice('--top-k='.length));
-      if (Number.isFinite(parsed) && parsed > 0) options.topK = Math.floor(parsed);
+      options.topK = parsePositiveInteger(arg.slice('--top-k='.length), '--top-k');
       continue;
     }
     if (arg.startsWith('--limit=')) {
-      const parsed = Number(arg.slice('--limit='.length));
-      if (Number.isFinite(parsed) && parsed > 0) options.limit = Math.floor(parsed);
+      options.limit = parsePositiveInteger(arg.slice('--limit='.length), '--limit');
       continue;
     }
     if (arg.startsWith('--query=')) {
       const value = arg.slice('--query='.length).trim();
       if (value) options.queryNames.push(value);
+      continue;
     }
+    if (arg === '--output') {
+      options.output = parseRequiredOutputPath(argv[i + 1]);
+      i += 1;
+      continue;
+    }
+    if (arg.startsWith('--output=')) {
+      options.output = parseRequiredOutputPath(arg.slice('--output='.length));
+      continue;
+    }
+
+    throw new Error(`Unknown research quality search review argument: ${arg}`);
   }
 
   return options;
+}
+
+function parseRequiredOutputPath(value: string | undefined): string {
+  const output = value?.trim();
+  if (!output || output.startsWith('--')) {
+    throw new Error('--output requires a path');
+  }
+  return output;
+}
+
+function parsePositiveInteger(value: string, flag: string): number {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isSafeInteger(parsed) || parsed <= 0 || String(parsed) !== value.trim()) {
+    throw new Error(`${flag} requires a positive integer`);
+  }
+  return parsed;
+}
+
+export function writeResearchQualitySearchReviewOutput(result: unknown, output?: string): void {
+  if (!output) return;
+  fs.mkdirSync(path.dirname(output), { recursive: true });
+  fs.writeFileSync(output, `${JSON.stringify(result, null, 2)}\n`);
+}
+
+export function buildResearchQualitySearchReviewOutput<T extends object>(
+  result: T,
+  metadata: {
+    environment?: string;
+    db?: string;
+    options: ResearchQualitySearchReviewCliOptions;
+  },
+): T & {
+  environment?: string;
+  db?: string;
+  options: ResearchQualitySearchReviewCliOptions;
+} {
+  return {
+    ...result,
+    ...(metadata.environment ? { environment: metadata.environment } : {}),
+    ...(metadata.db ? { db: metadata.db } : {}),
+    options: metadata.options,
+  };
 }
 
 function errorMessage(error: unknown): string {
@@ -145,7 +203,7 @@ function buildLexicalReasons(hit: Record<string, unknown>, query: string): strin
     .map(([field]) => `${field} matched "${query}"`);
 }
 
-function selectedQueries(options: CliOptions): ResearchQualityGoldenQuery[] {
+function selectedQueries(options: ResearchQualitySearchReviewCliOptions): ResearchQualityGoldenQuery[] {
   if (options.queryNames.length === 0) return DEFAULT_RESEARCH_QUALITY_GOLDEN_QUERIES;
   const requested = new Set(options.queryNames.map((name) => name.toLowerCase()));
   return DEFAULT_RESEARCH_QUALITY_GOLDEN_QUERIES.filter(
@@ -155,7 +213,7 @@ function selectedQueries(options: CliOptions): ResearchQualityGoldenQuery[] {
 
 async function collectSearchCandidates(
   queries: ResearchQualityGoldenQuery[],
-  options: CliOptions,
+  options: ResearchQualitySearchReviewCliOptions,
 ): Promise<SearchCollection> {
   const collection: SearchCollection = {
     entityIds: new Set<string>(),
@@ -282,7 +340,7 @@ function duplicateCandidatesFor(entities: EntityRecord[]): Map<string, ResearchQ
   return candidates;
 }
 
-async function buildReview(options: CliOptions) {
+async function buildReview(options: ResearchQualitySearchReviewCliOptions) {
   const queries = selectedQueries(options);
   const searchCollection = await collectSearchCandidates(queries, options);
   const validIds = Array.from(searchCollection.entityIds)
@@ -374,25 +432,38 @@ async function buildReview(options: CliOptions) {
 }
 
 async function main(): Promise<void> {
-  const options = parseArgs(process.argv.slice(2));
+  const options = parseResearchQualitySearchReviewArgs(process.argv.slice(2));
+  const guard = assertScriptApplyAllowed({
+    apply: false,
+    scriptName: 'research:quality-search-review',
+    mongoUrl: process.env.MONGODBURL,
+  });
   const queries = selectedQueries(options);
   if (queries.length === 0) {
     throw new Error('No matching golden queries selected.');
   }
 
   await initializeConnections();
-  const result = await buildReview(options);
+  const review = await buildReview(options);
+  const result = buildResearchQualitySearchReviewOutput(review, {
+    environment: guard.environment,
+    db: mongoose.connection.db?.databaseName || mongoose.connection.name || guard.dbLabel,
+    options,
+  });
   console.log(JSON.stringify(result, null, 2));
+  writeResearchQualitySearchReviewOutput(result, options.output);
   if (options.strict && (result.searchErrors.length > 0 || result.summary.maxWarningScore > 0)) {
     process.exitCode = 1;
   }
 }
 
-main()
-  .catch((error) => {
-    console.error('Research quality/search review failed:', errorMessage(error));
-    process.exitCode = 1;
-  })
-  .finally(async () => {
-    await mongoose.disconnect();
-  });
+if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
+  main()
+    .catch((error) => {
+      console.error('Research quality/search review failed:', errorMessage(error));
+      process.exitCode = 1;
+    })
+    .finally(async () => {
+      await mongoose.disconnect();
+    });
+}

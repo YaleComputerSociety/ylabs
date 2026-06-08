@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  backfillPostedOpportunitiesFromListings,
   getEntryPathwayStatusForPostedOpportunity,
   getPostedOpportunityStatusForListing,
   mapListingCompensationToAccessCompensation,
@@ -107,6 +108,30 @@ describe('postedOpportunityService', () => {
     expect(updates).toEqual([]);
   });
 
+  it('rejects unsafe reaping limits before querying posted opportunities', async () => {
+    let findCalls = 0;
+    const model = {
+      find: () => {
+        findCalls += 1;
+        return {
+          select: () => ({
+            sort: () => ({
+              limit: () => ({
+                lean: async () => [],
+              }),
+            }),
+          }),
+        };
+      },
+    };
+
+    await expect(
+      reapExpiredPostedOpportunities({ limit: 9007199254740992 }, { model: model as any }),
+    ).rejects.toThrow('--limit must be a safe positive integer');
+
+    expect(findCalls).toBe(0);
+  });
+
   it('closes expired opportunities and marks posted-role pathways unavailable', async () => {
     const opportunityUpdates: any[] = [];
     const pathwayUpdates: any[] = [];
@@ -161,5 +186,130 @@ describe('postedOpportunityService', () => {
     expect(pathwayUpdates[0][1].$set).toMatchObject({
       status: 'NOT_CURRENTLY_AVAILABLE',
     });
+  });
+
+  it('dry-runs listing backfill without materializing candidates', async () => {
+    const materialized: any[] = [];
+    const listingModel = {
+      find: () => ({
+        select: () => ({
+          sort: () => ({
+            limit: () => ({
+              lean: async () => [
+                {
+                  _id: 'listing-1',
+                  researchEntityId: 'entity-1',
+                  title: 'Research assistant',
+                },
+              ],
+            }),
+          }),
+        }),
+      }),
+    };
+    const postedOpportunityModel = {
+      distinct: async () => [],
+    };
+
+    const result = await backfillPostedOpportunitiesFromListings(
+      { dryRun: true, now: new Date('2026-05-26T00:00:00.000Z') },
+      {
+        listingModel: listingModel as any,
+        model: postedOpportunityModel as any,
+        materializeListing: async (listing) => {
+          materialized.push(listing);
+          return { postedOpportunityId: 'posted-1' };
+        },
+      },
+    );
+
+    expect(result).toMatchObject({
+      dryRun: true,
+      scanned: 1,
+      candidates: 1,
+      materialized: 0,
+      skipped: 0,
+      candidateListingIds: ['listing-1'],
+    });
+    expect(materialized).toEqual([]);
+  });
+
+  it('rejects unsafe listing backfill limits before querying listings', async () => {
+    let findCalls = 0;
+    const listingModel = {
+      find: () => {
+        findCalls += 1;
+        return {
+          select: () => ({
+            sort: () => ({
+              limit: () => ({
+                lean: async () => [],
+              }),
+            }),
+          }),
+        };
+      },
+    };
+
+    await expect(
+      backfillPostedOpportunitiesFromListings(
+        { limit: 9007199254740992 },
+        { listingModel: listingModel as any, model: { distinct: async () => [] } as any },
+      ),
+    ).rejects.toThrow('--limit must be a safe positive integer');
+
+    expect(findCalls).toBe(0);
+  });
+
+  it('applies listing backfill only for listings without posted opportunities', async () => {
+    const materialized: any[] = [];
+    const listingModel = {
+      find: () => ({
+        select: () => ({
+          sort: () => ({
+            limit: () => ({
+              lean: async () => [
+                {
+                  _id: 'listing-1',
+                  researchEntityId: 'entity-1',
+                  title: 'Research assistant',
+                },
+                {
+                  _id: 'listing-2',
+                  researchEntityId: 'entity-2',
+                  title: 'Already bridged',
+                },
+              ],
+            }),
+          }),
+        }),
+      }),
+    };
+    const postedOpportunityModel = {
+      distinct: async () => ['listing-2'],
+    };
+
+    const result = await backfillPostedOpportunitiesFromListings(
+      { dryRun: false, now: new Date('2026-05-26T00:00:00.000Z') },
+      {
+        listingModel: listingModel as any,
+        model: postedOpportunityModel as any,
+        materializeListing: async (listing) => {
+          materialized.push(listing);
+          return { postedOpportunityId: 'posted-1' };
+        },
+      },
+    );
+
+    expect(result).toMatchObject({
+      dryRun: false,
+      scanned: 2,
+      candidates: 1,
+      materialized: 1,
+      skipped: 0,
+      candidateListingIds: ['listing-1'],
+      materializedListingIds: ['listing-1'],
+    });
+    expect(materialized.map((listing) => listing._id)).toEqual(['listing-1']);
   });
 });

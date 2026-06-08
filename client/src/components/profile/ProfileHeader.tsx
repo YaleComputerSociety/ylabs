@@ -4,7 +4,7 @@
 import { FacultyProfile } from '../../types/types';
 import { getUniqueDepartmentLabels } from '../../utils/departmentNames';
 import { useConfig } from '../../hooks/useConfig';
-import { safeUrl } from '../../utils/url';
+import { safeMailtoHref, safeUrl } from '../../utils/url';
 
 interface ProfileHeaderProps {
   profile: FacultyProfile;
@@ -44,6 +44,11 @@ const profileUrlLinks = (profileUrls: FacultyProfile['profile_urls'] | undefined
   });
 };
 
+const shouldHideBroadSchoolLabel = (label: string, labels: string[]): boolean => {
+  if (labels.length <= 1) return false;
+  return /\bschool of\b/i.test(label);
+};
+
 const ProfileHeader = ({ profile }: ProfileHeaderProps) => {
   const { departments } = useConfig();
   const fullName = `${profile.fname} ${profile.lname}`;
@@ -51,15 +56,24 @@ const ProfileHeader = ({ profile }: ProfileHeaderProps) => {
     `${profile.fname?.charAt(0) || ''}${profile.lname?.charAt(0) || ''}`.toUpperCase();
   const orcidProfileHref = orcidHref(profile.orcid, profile.profile_urls?.orcid);
   const websiteHref = safeUrl(profile.website);
+  const emailHref = safeMailtoHref(profile.email);
 
   const building = profile.building_desk
     ? profile.building_desk.split(',')[0].trim()
     : profile.physical_location || '';
 
-  const allDepartments = getUniqueDepartmentLabels([
-    profile.primary_department,
-    ...(profile.secondary_departments || []),
-  ].filter((department): department is string => Boolean(department)), departments);
+  const resolvedDepartments = getUniqueDepartmentLabels(
+    [
+      profile.primary_department,
+      ...(profile.secondary_departments || []),
+      ...(profile.departments || []),
+    ].filter((department): department is string => Boolean(department)),
+    departments,
+    { preferDisplayName: true },
+  );
+  const allDepartments = resolvedDepartments.filter(
+    (department) => !shouldHideBroadSchoolLabel(department, resolvedDepartments),
+  );
   const profileLinkClass =
     'yr-pill inline-flex min-h-[44px] items-center rounded-md px-3 text-xs font-medium transition-colors hover:bg-[var(--yr-panel)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200';
 
@@ -100,9 +114,9 @@ const ProfileHeader = ({ profile }: ProfileHeaderProps) => {
         )}
 
         <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-gray-600">
-          {profile.email && (
+          {emailHref && (
             <a
-              href={`mailto:${profile.email}`}
+              href={emailHref}
               className="yr-link inline-flex min-h-[44px] items-center gap-1.5 rounded-md px-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
             >
               <svg

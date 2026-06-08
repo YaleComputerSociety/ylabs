@@ -10,6 +10,8 @@ import { Observation } from '../models/observation';
 import { ScrapeRun } from '../models/scrapeRun';
 import { Source } from '../models/source';
 import type { ScraperFetchMetrics, ScraperMetrics } from './types';
+import { resolveField, type ResolverObservation } from './confidenceResolver';
+import { redactDirectContactInfo } from '../utils/contactRedaction';
 
 export interface ReportObservation {
   entityType: string;
@@ -17,8 +19,10 @@ export interface ReportObservation {
   entityKey?: string;
   field: string;
   value: unknown;
+  sourceName?: string;
   confidence?: number;
   sourceUrl?: string;
+  observedAt?: Date | string;
   superseded?: boolean;
   observationFingerprint?: string;
 }
@@ -100,6 +104,50 @@ export interface SourceEvidenceGapReviewRow {
   totalAccessArtifacts: number;
   hasGap: boolean;
   coverageKnown: boolean;
+}
+
+export interface MaterializationConflictReviewSample {
+  entityType: string;
+  entity: string;
+  field: string;
+  reviewCategory: string;
+  reviewQueue: MaterializationConflictReviewQueue;
+  sourceConflictScope: 'single_source' | 'cross_source';
+  distinctValues: number;
+  activeObservationCount: number;
+  sourceNames: string[];
+  resolvedConfidence: number;
+  contributingSources: string[];
+  conflictingValuePreviews: string[];
+}
+
+export type MaterializationConflictReviewQueue =
+  | 'priority_review'
+  | 'context_review'
+  | 'metadata_review';
+
+export interface MaterializationConflictReview {
+  required: boolean;
+  available: boolean;
+  materializationConflictCount: number;
+  activeObservationConflictCount: number;
+  actionableConflictCount: number;
+  sameSourceConflictCount: number;
+  crossSourceConflictCount: number;
+  sampledConflictCount: number;
+  fieldCounts: Array<{ field: string; count: number }>;
+  categoryCounts: Array<{ category: string; count: number }>;
+  sourceCounts: Array<{ sourceName: string; count: number }>;
+  samples: MaterializationConflictReviewSample[];
+  truncated?: boolean;
+  unavailableReason?: string;
+}
+
+export interface MaterializationConflictReviewOptions {
+  activeObservations?: ReportObservation[];
+  sampleLimit?: number;
+  truncated?: boolean;
+  unavailableReason?: string;
 }
 
 export interface ScrapeRunReport {
@@ -184,24 +232,61 @@ export interface ScrapeRunReport {
     missingEntityIdentifierCount: number;
     missingSourceUrlCount: number;
     lowConfidenceCount: number;
-  };
-  evidenceCoverageImpact?: {
-    assessed: number;
-    improved: number;
-    rows: Array<{
-      entityType: string;
-      entityId?: string;
-      entityKey?: string;
-      beforeCoverageTier: string;
-      afterCoverageTier: string;
-      resolvedBlockers: string[];
-      remainingBlockers: string[];
-      rejectedFields: Array<{ field: string; reason: string; sourceName?: string }>;
-    }>;
+    materializationConflictReview?: MaterializationConflictReview;
   };
   warnings: string[];
   errors: Array<{ message: string; at?: string; context?: unknown }>;
 }
+
+const MATERIALIZATION_CONFLICT_REVIEW_ENTITY_LIMIT = 2000;
+const MATERIALIZATION_CONFLICT_REVIEW_SAMPLE_LIMIT = 20;
+const MATERIALIZER_MANAGED_CONFLICT_FIELDS = new Set(['lastObservedAt']);
+const ADDITIVE_METADATA_CONFLICT_FIELDS = new Set([
+  'sourceUrls',
+  'profileUrls',
+  'dataSources',
+  'departments',
+  'researchAreas',
+  'fundingAgencies',
+]);
+const IDENTITY_OR_ROUTING_CONFLICT_FIELDS = new Set([
+  'inferredPiUserId',
+  'inferredPiUserKey',
+  'websiteUrl',
+  'profileUrl',
+  'slug',
+  'name',
+  'kind',
+  'entityType',
+  'netid',
+  'email',
+  'fname',
+  'lname',
+  'title',
+  'userType',
+]);
+const CONTENT_CONFLICT_FIELDS = new Set([
+  'description',
+  'fullDescription',
+  'shortDescription',
+]);
+const ACCESS_EVIDENCE_CONFLICT_FIELDS = new Set([
+  'undergradAccessEvidence',
+  'undergradEvidenceQuote',
+  'undergradRoleEvidenceQuote',
+  'contactInstructionsQuote',
+  'undergradConstraintQuote',
+  'acceptingUndergrads',
+  'contactEmail',
+  'contactName',
+  'contactRole',
+  'joinPageUrl',
+  'applicationUrl',
+]);
+const FUNDING_CONTEXT_CONFLICT_FIELDS = new Set([
+  'recentGrants',
+  'recentGrantCount',
+]);
 
 function stringifyId(value: unknown): string | undefined {
   if (value === null || value === undefined || value === '') return undefined;
@@ -238,11 +323,234 @@ function serializeValue(value: unknown): string {
   }
 }
 
+function previewValue(value: unknown): string {
+  let raw: string;
+  if (typeof value === 'string') raw = value;
+  else {
+    try {
+      raw = JSON.stringify(value);
+    } catch {
+      raw = String(value);
+    }
+  }
+  const redacted = redactDirectContactInfo(raw).replace(/\s+/g, ' ').trim();
+  return redacted.length > 240 ? `${redacted.slice(0, 237)}...` : redacted;
+}
+
+function sourceNameForObservation(obs: ReportObservation): string {
+  return obs.sourceName?.trim() || 'unknown';
+}
+
+function observedAtForResolver(value: Date | string | undefined): Date {
+  if (value instanceof Date) return value;
+  if (value) {
+    const parsed = new Date(value);
+    if (!Number.isNaN(parsed.getTime())) return parsed;
+  }
+  return new Date(0);
+}
+
 function topEntries(map: Record<string, number>, limit: number): Array<{ field: string; count: number }> {
   return Object.entries(map)
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
     .slice(0, limit)
     .map(([field, count]) => ({ field, count }));
+}
+
+function topSourceEntries(
+  map: Record<string, number>,
+  limit: number,
+): Array<{ sourceName: string; count: number }> {
+  return Object.entries(map)
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, limit)
+    .map(([sourceName, count]) => ({ sourceName, count }));
+}
+
+function topCategoryEntries(
+  map: Record<string, number>,
+  limit: number,
+): Array<{ category: string; count: number }> {
+  return Object.entries(map)
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, limit)
+    .map(([category, count]) => ({ category, count }));
+}
+
+function entityLabelForObservation(obs: ReportObservation): string | undefined {
+  const entityId = stringifyId(obs.entityId);
+  const entityKey = stringifyId(obs.entityKey);
+  return entityId || entityKey;
+}
+
+function reviewCategoryForConflictField(field: string): string {
+  if (ADDITIVE_METADATA_CONFLICT_FIELDS.has(field)) return 'additive_metadata';
+  if (IDENTITY_OR_ROUTING_CONFLICT_FIELDS.has(field)) return 'identity_or_routing';
+  if (CONTENT_CONFLICT_FIELDS.has(field)) return 'content';
+  if (ACCESS_EVIDENCE_CONFLICT_FIELDS.has(field)) return 'access_evidence';
+  if (FUNDING_CONTEXT_CONFLICT_FIELDS.has(field)) return 'funding_context';
+  return 'other';
+}
+
+function isActionableConflictCategory(category: string): boolean {
+  return category !== 'additive_metadata';
+}
+
+function reviewQueueForConflictCategory(category: string): MaterializationConflictReviewQueue {
+  if (
+    category === 'identity_or_routing' ||
+    category === 'access_evidence' ||
+    category === 'content'
+  ) {
+    return 'priority_review';
+  }
+  if (category === 'additive_metadata') return 'metadata_review';
+  return 'context_review';
+}
+
+function reviewQueueRank(queue: MaterializationConflictReviewQueue): number {
+  if (queue === 'priority_review') return 0;
+  if (queue === 'context_review') return 1;
+  return 2;
+}
+
+export function buildMaterializationConflictReview(
+  materializationConflictCount: number,
+  options: MaterializationConflictReviewOptions = {},
+): MaterializationConflictReview | undefined {
+  const required = materializationConflictCount > 0;
+  const activeObservations = options.activeObservations;
+  if (!required && !activeObservations && !options.unavailableReason) return undefined;
+
+  if (!activeObservations) {
+    return {
+      required,
+      available: false,
+      materializationConflictCount,
+      activeObservationConflictCount: 0,
+      actionableConflictCount: 0,
+      sameSourceConflictCount: 0,
+      crossSourceConflictCount: 0,
+      sampledConflictCount: 0,
+      fieldCounts: [],
+      categoryCounts: [],
+      sourceCounts: [],
+      samples: [],
+      ...(options.truncated ? { truncated: true } : {}),
+      unavailableReason: options.unavailableReason || 'active-observation-scan-not-run',
+    };
+  }
+
+  const groups = new Map<
+    string,
+    {
+      entityType: string;
+      entity: string;
+      field: string;
+      observations: ReportObservation[];
+    }
+  >();
+
+  for (const obs of activeObservations) {
+    if (obs.superseded) continue;
+    if (!obs.entityType || !obs.field) continue;
+    if (MATERIALIZER_MANAGED_CONFLICT_FIELDS.has(obs.field)) continue;
+    const entity = entityLabelForObservation(obs);
+    if (!entity) continue;
+    const key = JSON.stringify([obs.entityType, entity, obs.field]);
+    let group = groups.get(key);
+    if (!group) {
+      group = {
+        entityType: obs.entityType,
+        entity,
+        field: obs.field,
+        observations: [],
+      };
+      groups.set(key, group);
+    }
+    group.observations.push(obs);
+  }
+
+  const conflictSamples: MaterializationConflictReviewSample[] = [];
+  const fieldCountMap: Record<string, number> = {};
+  const categoryCountMap: Record<string, number> = {};
+  const sourceCountMap: Record<string, number> = {};
+  let actionableConflictCount = 0;
+  let sameSourceConflictCount = 0;
+  let crossSourceConflictCount = 0;
+
+  for (const group of groups.values()) {
+    const distinctValues = new Set(group.observations.map((obs) => serializeValue(obs.value)));
+    if (distinctValues.size < 2) continue;
+
+    const resolverObservations: ResolverObservation[] = group.observations.map((obs) => ({
+      field: obs.field,
+      value: obs.value,
+      sourceName: sourceNameForObservation(obs),
+      confidence: typeof obs.confidence === 'number' ? obs.confidence : 0.5,
+      observedAt: observedAtForResolver(obs.observedAt),
+    }));
+    const resolved = resolveField(group.field, resolverObservations);
+    if (!resolved?.hasConflict) continue;
+
+    increment(fieldCountMap, group.field);
+    const reviewCategory = reviewCategoryForConflictField(group.field);
+    const reviewQueue = reviewQueueForConflictCategory(reviewCategory);
+    increment(categoryCountMap, reviewCategory);
+    if (isActionableConflictCategory(reviewCategory)) actionableConflictCount++;
+    const sourceNames = Array.from(new Set(group.observations.map(sourceNameForObservation))).sort();
+    const sourceConflictScope = sourceNames.length > 1 ? 'cross_source' : 'single_source';
+    if (sourceConflictScope === 'cross_source') crossSourceConflictCount++;
+    else sameSourceConflictCount++;
+    for (const sourceName of sourceNames) increment(sourceCountMap, sourceName);
+
+    conflictSamples.push({
+      entityType: group.entityType,
+      entity: group.entity,
+      field: group.field,
+      reviewCategory,
+      reviewQueue,
+      sourceConflictScope,
+      distinctValues: distinctValues.size,
+      activeObservationCount: group.observations.length,
+      sourceNames,
+      resolvedConfidence: resolved.confidence,
+      contributingSources: resolved.contributingSources.slice().sort(),
+      conflictingValuePreviews: (resolved.conflictingValues || [])
+        .slice(0, 3)
+        .map(previewValue),
+    });
+  }
+
+  conflictSamples.sort(
+    (a, b) =>
+      reviewQueueRank(a.reviewQueue) - reviewQueueRank(b.reviewQueue) ||
+      b.distinctValues - a.distinctValues ||
+      b.activeObservationCount - a.activeObservationCount ||
+      a.entityType.localeCompare(b.entityType) ||
+      a.entity.localeCompare(b.entity) ||
+      a.field.localeCompare(b.field),
+  );
+
+  const sampleLimit = options.sampleLimit || MATERIALIZATION_CONFLICT_REVIEW_SAMPLE_LIMIT;
+  const samples = conflictSamples.slice(0, sampleLimit);
+
+  return {
+    required,
+    available: true,
+    materializationConflictCount,
+    activeObservationConflictCount: conflictSamples.length,
+    actionableConflictCount,
+    sameSourceConflictCount,
+    crossSourceConflictCount,
+    sampledConflictCount: samples.length,
+    fieldCounts: topEntries(fieldCountMap, 15),
+    categoryCounts: topCategoryEntries(categoryCountMap, 15),
+    sourceCounts: topSourceEntries(sourceCountMap, 15),
+    samples,
+    ...(options.truncated || conflictSamples.length > samples.length ? { truncated: true } : {}),
+    ...(options.unavailableReason ? { unavailableReason: options.unavailableReason } : {}),
+  };
 }
 
 function uniqueTargetCount(
@@ -401,6 +709,7 @@ export function buildScrapeRunReport(
   run: ReportScrapeRun,
   observations: ReportObservation[],
   sourceCoverage?: ReportSourceCoverage,
+  conflictReviewOptions?: MaterializationConflictReviewOptions,
 ): ScrapeRunReport {
   const byEntityType: Record<string, number> = {};
   const byField: Record<string, number> = {};
@@ -481,14 +790,16 @@ export function buildScrapeRunReport(
       workPlanner.planned;
   const materializationWrites =
     (run.entitiesCreated || 0) + (run.entitiesUpdated || 0) + (run.entitiesArchived || 0);
-  const emittedObservationCount =
-    observations.length > 0 ? observations.length : run.observationCount || 0;
+  const materializationConflictReview = buildMaterializationConflictReview(
+    run.materializationConflicts || 0,
+    conflictReviewOptions,
+  );
 
   const warnings: string[] = [];
   if (run.status === 'failure') warnings.push('Run failed; do not materialize without inspecting errors.');
   if (run.status === 'partial') warnings.push('Run completed partially; inspect source-level logs/errors.');
   if (run.invalidated) warnings.push('Run has been invalidated.');
-  if (emittedObservationCount === 0 && !workPlannerSkippedAll) {
+  if (observations.length === 0 && !workPlannerSkippedAll) {
     warnings.push('Run produced zero observations.');
   }
   if (missingEntityIdentifierCount > 0) {
@@ -503,37 +814,32 @@ export function buildScrapeRunReport(
   if (supersededCount > 0) {
     warnings.push(`${supersededCount} duplicate observation(s) superseded in this run.`);
   }
-  if ((run.materializationConflicts || 0) > 0) {
-    warnings.push(
-      `${run.materializationConflicts} materialization conflict(s) require review before broader writes.`,
-    );
-  }
   if (!coverageSource) {
     warnings.push(`No Source coverage metadata found for "${run.sourceName}".`);
   } else if (
-    emittedObservationCount > 0 &&
+    observations.length > 0 &&
     !coverageSource.artifactTypes.values.includes('Observation')
   ) {
     warnings.push(
-      `Source coverage metadata does not list Observation artifacts, but run emitted ${emittedObservationCount} observation(s).`,
+      `Source coverage metadata does not list Observation artifacts, but run emitted ${observations.length} observation(s).`,
     );
   }
   if (
     coverageSource &&
-    emittedObservationCount === 0 &&
+    observations.length === 0 &&
     run.status === 'success' &&
     !workPlannerSkippedAll
   ) {
     warnings.push('Source coverage metadata exists, but successful run emitted zero observations.');
   }
-  if (coverageFetch.succeeded > 0 && emittedObservationCount === 0) {
+  if (coverageFetch.succeeded > 0 && observations.length === 0) {
     warnings.push(
       `${coverageFetch.succeeded} fetch(es) succeeded, but run emitted zero observations.`,
     );
   }
-  if (coverageFetch.attempts > 0 && coverageFetch.succeeded === 0 && emittedObservationCount > 0) {
+  if (coverageFetch.attempts > 0 && coverageFetch.succeeded === 0 && observations.length > 0) {
     warnings.push(
-      `Run emitted ${emittedObservationCount} observation(s), but fetch metrics report zero successful fetches.`,
+      `Run emitted ${observations.length} observation(s), but fetch metrics report zero successful fetches.`,
     );
   }
   if (postMaterialization) {
@@ -597,7 +903,7 @@ export function buildScrapeRunReport(
     coverage: {
       source: coverageSource,
       fetch: coverageFetch,
-      observationsEmitted: emittedObservationCount,
+      observationsEmitted: observations.length,
       materializationWrites,
       postMaterialization,
       workPlanner: run.metrics?.workPlanner,
@@ -608,10 +914,71 @@ export function buildScrapeRunReport(
       missingEntityIdentifierCount,
       missingSourceUrlCount,
       lowConfidenceCount,
+      ...(materializationConflictReview ? { materializationConflictReview } : {}),
     },
-    evidenceCoverageImpact: (run.metrics as any)?.evidenceCoverageImpact,
     warnings,
     errors,
+  };
+}
+
+function buildMaterializationConflictEntityClauses(
+  observations: ReportObservation[],
+): Array<Record<string, unknown>> {
+  const clauses: Array<Record<string, unknown>> = [];
+  const seen = new Set<string>();
+
+  for (const obs of observations) {
+    if (!obs.entityType) continue;
+    const entityId = stringifyId(obs.entityId);
+    const entityKey = stringifyId(obs.entityKey);
+    let key: string;
+    let clause: Record<string, unknown>;
+    if (entityId) {
+      key = `${obs.entityType}:id:${entityId}`;
+      clause = { entityType: obs.entityType, entityId: obs.entityId };
+    } else if (entityKey) {
+      key = `${obs.entityType}:key:${entityKey}`;
+      clause = { entityType: obs.entityType, entityKey };
+    } else {
+      continue;
+    }
+    if (seen.has(key)) continue;
+    seen.add(key);
+    clauses.push(clause);
+  }
+
+  return clauses;
+}
+
+async function getMaterializationConflictReviewOptions(
+  run: ReportScrapeRun,
+  observations: ReportObservation[],
+): Promise<MaterializationConflictReviewOptions | undefined> {
+  if (!run.materializationConflicts) return undefined;
+
+  const clauses = buildMaterializationConflictEntityClauses(observations);
+  if (clauses.length === 0) {
+    return {
+      activeObservations: [],
+      unavailableReason: 'run-observations-have-no-entity-identifiers',
+    };
+  }
+  if (clauses.length > MATERIALIZATION_CONFLICT_REVIEW_ENTITY_LIMIT) {
+    return {
+      truncated: true,
+      unavailableReason: `run touches ${clauses.length} entities; active conflict review is capped at ${MATERIALIZATION_CONFLICT_REVIEW_ENTITY_LIMIT}`,
+    };
+  }
+
+  const activeObservations = await Observation.find({
+    superseded: false,
+    $or: clauses,
+  })
+    .select('entityType entityId entityKey field value sourceName confidence sourceUrl observedAt superseded observationFingerprint')
+    .lean();
+
+  return {
+    activeObservations: activeObservations as ReportObservation[],
   };
 }
 
@@ -629,7 +996,7 @@ export async function getScrapeRunReport(scrapeRunId: string): Promise<ScrapeRun
 
   const [observations, source] = await Promise.all([
     Observation.find({ scrapeRunId })
-      .select('entityType entityId entityKey field value confidence sourceUrl superseded observationFingerprint')
+      .select('entityType entityId entityKey field value sourceName confidence sourceUrl observedAt superseded observationFingerprint')
       .lean(),
     Source.findOne({
       $or: sourceClauses,
@@ -637,10 +1004,15 @@ export async function getScrapeRunReport(scrapeRunId: string): Promise<ScrapeRun
       .select('coverage')
       .lean(),
   ]);
+  const conflictReviewOptions = await getMaterializationConflictReviewOptions(
+    run as ReportScrapeRun,
+    observations as ReportObservation[],
+  );
 
   return buildScrapeRunReport(
     run as ReportScrapeRun,
     observations as ReportObservation[],
     source?.coverage as ReportSourceCoverage | undefined,
+    conflictReviewOptions,
   );
 }

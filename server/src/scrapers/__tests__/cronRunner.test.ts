@@ -41,6 +41,29 @@ describe('runScraperCron', () => {
     vi.useRealTimers();
   });
 
+  it('points missing source rows at the reviewed source seed workflow', async () => {
+    const deps = makeDeps({
+      loadSource: vi.fn().mockResolvedValue(null),
+    });
+
+    await expect(
+      runScraperCron(
+        {
+          sourceName: 'openalex',
+          environment: 'production',
+          options: { dryRun: false, useCache: false, release: true },
+          ownerId: 'owner-1',
+          now: NOW,
+          heartbeatIntervalMs: 0,
+        },
+        deps,
+      ),
+    ).rejects.toThrow(
+      'Run "yarn --cwd server scrape:seed-sources --dry-run --output /tmp/ylabs-seed-sources-dry-run.json" first, then review and apply with "--apply --confirm-seed-apply".',
+    );
+    expect(deps.acquireScrapeJobLock).not.toHaveBeenCalled();
+  });
+
   it('refuses disabled sources unless forced for manual recovery', async () => {
     const deps = makeDeps({
       loadSource: vi.fn().mockResolvedValue({ name: 'openalex', enabled: false }),

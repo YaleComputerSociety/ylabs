@@ -15,7 +15,6 @@ const UserButton = () => {
   const open = Boolean(anchorEl);
   const location = useLocation();
   const { user } = useContext(UserContext);
-  const isAdmin = user?.userType === 'admin';
   const isProfessorUser = user?.userType === 'professor' || user?.userType === 'faculty';
 
   const getInitials = () => {
@@ -118,17 +117,6 @@ const UserButton = () => {
           },
         }}
       >
-        {isAdmin && (
-          <MenuItem
-            component={Link}
-            to="/analytics"
-            onClick={handleClose}
-            sx={menuItemStyle}
-            disableRipple
-          >
-            Analytics
-          </MenuItem>
-        )}
         {isProfessorUser && (
           <MenuItem
             component={Link}

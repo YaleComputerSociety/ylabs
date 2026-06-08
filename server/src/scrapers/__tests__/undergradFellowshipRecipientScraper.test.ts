@@ -13,9 +13,12 @@ import os from 'os';
 import path from 'path';
 import {
   UndergradFellowshipRecipientScraper,
+  DEFAULT_ACCEPTED_FELLOWSHIP_RECIPIENT_CSV_DIR,
+  DEFAULT_ACCEPTED_FELLOWSHIP_RECIPIENT_PDF_DIR,
   drupalRecipientRowExtractor,
   manualUploadStub,
   manualRecipientCsvExtractor,
+  manualRecipientPdfTextExtractor,
   aggregateAdviseesByAdvisor,
   findUserForAdvisor,
   findUserForAdvisorOrcid,
@@ -109,6 +112,19 @@ describe('drupalRecipientRowExtractor', () => {
     });
     expect(out).toEqual([]);
   });
+
+  it('does not partially parse malformed row year attributes', () => {
+    const html = `
+      <div class="recipient-row" data-year="2024abc">
+        <span class="recipient-name">Bad Year Person</span>
+        <span class="advisor-name">Some Advisor</span>
+      </div>
+    `;
+    const out = drupalRecipientRowExtractor(html, {
+      pageUrl: 'https://example.invalid/recipients/',
+    });
+    expect(out).toEqual([]);
+  });
 });
 
 describe('manualUploadStub', () => {
@@ -116,6 +132,36 @@ describe('manualUploadStub', () => {
     expect(() => manualUploadStub('<html></html>', { pageUrl: 'x' })).toThrow(
       /manual upload required/,
     );
+  });
+});
+
+describe('manualRecipientCsvExtractor', () => {
+  it('does not partially parse malformed manual recipient years', () => {
+    const out = manualRecipientCsvExtractor(
+      [
+        'studentName,advisorName,year,projectTitle',
+        'Bad Year Person,Some Advisor,2024abc,Malformed year project',
+      ].join('\n'),
+      {
+        pageUrl: 'file:///tmp/manual.csv',
+      },
+    );
+
+    expect(out).toEqual([]);
+  });
+
+  it('does not parse implausible manual recipient years', () => {
+    const out = manualRecipientCsvExtractor(
+      [
+        'studentName,advisorName,year,projectTitle',
+        'Bad Year Person,Some Advisor,1000,Implausible year project',
+      ].join('\n'),
+      {
+        pageUrl: 'file:///tmp/manual.csv',
+      },
+    );
+
+    expect(out).toEqual([]);
   });
 });
 
@@ -476,6 +522,47 @@ describe('manualRecipientCsvExtractor', () => {
   });
 });
 
+describe('manualRecipientPdfTextExtractor', () => {
+  it('parses reviewed labelled PDF text into fellowship recipients with source block provenance', () => {
+    const pdfText = [
+      'Student: Ada Lovelace',
+      'Project: RNA switches',
+      'Advisor: Ronald Breaker',
+      '',
+      'Student: Grace Hopper',
+      'Project: Genetic circuits',
+      'Advisor: Ronald Breaker',
+    ].join('\n');
+
+    expect(
+      manualRecipientPdfTextExtractor(pdfText, {
+        pageUrl: 'manual-pdf://stars-ii.pdf',
+        sourceUrl: 'https://example.yale.edu/stars-2025.pdf',
+        defaultYear: 2025,
+      }),
+    ).toEqual([
+      {
+        studentName: 'Ada Lovelace',
+        advisorName: 'Ronald Breaker',
+        year: 2025,
+        projectTitle: 'RNA switches',
+        sourceUrl: 'https://example.yale.edu/stars-2025.pdf',
+        sourcePage: 'text-block-1',
+        reviewNote: 'Parsed from accepted PDF text',
+      },
+      {
+        studentName: 'Grace Hopper',
+        advisorName: 'Ronald Breaker',
+        year: 2025,
+        projectTitle: 'Genetic circuits',
+        sourceUrl: 'https://example.yale.edu/stars-2025.pdf',
+        sourcePage: 'text-block-2',
+        reviewNote: 'Parsed from accepted PDF text',
+      },
+    ]);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // End-to-end orchestration with all I/O mocked
 // ---------------------------------------------------------------------------
@@ -694,6 +781,128 @@ describe('UndergradFellowshipRecipientScraper.run', () => {
         'https://example.yale.edu/stars-2025.pdf',
       );
       expect(result.notes).toContain('stars-ii=1');
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('loads accepted-input fellowship CSVs from the default scraper directory when no override is provided', async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ylabs-fellowship-default-csv-'));
+    try {
+      await fs.writeFile(
+        path.join(tmpDir, 'stars-ii.csv'),
+        [
+          'studentName,advisorName,year,projectTitle,sourceUrl,reviewNote',
+          '"Ada Lovelace","Ronald Breaker",2025,"RNA switches","https://example.yale.edu/stars-2025.pdf","Accepted from official PDF review"',
+        ].join('\n'),
+        'utf8',
+      );
+      const userFinder = vi.fn(async () => [
+        {
+          _id: 'u-breaker',
+          netid: 'rrb1',
+          fname: 'Ronald',
+          lname: 'Breaker',
+          primaryDepartment: 'MCDB',
+        },
+      ]);
+      const ownerToGroupSlug = vi.fn(async () => 'breaker-lab-rrb1');
+      const scraper = new UndergradFellowshipRecipientScraper(
+        [
+          {
+            programKey: 'stars-ii',
+            programName: 'STARS II',
+            urls: ['https://example.invalid/symposium.pdf'],
+            extractor: manualUploadStub,
+            manualUploadRequired: true,
+          },
+        ],
+        {
+          fetchPage: vi.fn(async () => {
+            throw new Error('default accepted CSV should bypass fetchPage');
+          }),
+          userFinder,
+          ownerToGroupSlug,
+          defaultManualRecipientCsvDir: tmpDir,
+        },
+      );
+      const { ctx, emitted } = makeContext();
+
+      const result = await scraper.run(ctx);
+
+      expect(DEFAULT_ACCEPTED_FELLOWSHIP_RECIPIENT_CSV_DIR).toBe(
+        '/tmp/ylabs-accepted-inputs/fellowships',
+      );
+      expect(result.entitiesObserved).toBe(1);
+      expect(emitted.find((o) => o.field === 'pastUndergradAdvisees')?.sourceUrl).toBe(
+        'https://example.yale.edu/stars-2025.pdf',
+      );
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('loads accepted-input fellowship PDFs from the default scraper directory when no CSV is present', async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ylabs-fellowship-default-pdf-'));
+    try {
+      await fs.writeFile(path.join(tmpDir, 'stars-ii.pdf'), Buffer.from('fake pdf bytes'));
+      const userFinder = vi.fn(async () => [
+        {
+          _id: 'u-breaker',
+          netid: 'rrb1',
+          fname: 'Ronald',
+          lname: 'Breaker',
+          primaryDepartment: 'MCDB',
+        },
+      ]);
+      const ownerToGroupSlug = vi.fn(async () => 'breaker-lab-rrb1');
+      const pdfTextExtractor = vi.fn(async () =>
+        [
+          'Student: Ada Lovelace',
+          'Project: RNA switches',
+          'Advisor: Ronald Breaker',
+          '',
+          'Student: Grace Hopper',
+          'Project: Genetic circuits',
+          'Advisor: Ronald Breaker',
+        ].join('\n'),
+      );
+      const scraper = new UndergradFellowshipRecipientScraper(
+        [
+          {
+            programKey: 'stars-ii',
+            programName: 'STARS II',
+            urls: ['https://example.yale.edu/stars-2025.pdf'],
+            extractor: manualUploadStub,
+            manualUploadRequired: true,
+          },
+        ],
+        {
+          fetchPage: vi.fn(async () => {
+            throw new Error('default accepted PDF should bypass fetchPage');
+          }),
+          userFinder,
+          ownerToGroupSlug,
+          defaultManualRecipientCsvDir: tmpDir,
+          defaultManualRecipientPdfDir: tmpDir,
+          pdfTextExtractor,
+        },
+      );
+      const { ctx, emitted } = makeContext();
+
+      const result = await scraper.run(ctx);
+
+      expect(DEFAULT_ACCEPTED_FELLOWSHIP_RECIPIENT_PDF_DIR).toBe(
+        DEFAULT_ACCEPTED_FELLOWSHIP_RECIPIENT_CSV_DIR,
+      );
+      expect(pdfTextExtractor).toHaveBeenCalledWith(Buffer.from('fake pdf bytes'));
+      expect(result.entitiesObserved).toBe(1);
+      expect(emitted.find((o) => o.field === 'pastUndergradAdvisees')?.value).toEqual([
+        { year: 2025, programName: 'STARS II', count: 2 },
+      ]);
+      expect(emitted.find((o) => o.field === 'pastUndergradAdvisees')?.sourceUrl).toBe(
+        'https://example.yale.edu/stars-2025.pdf',
+      );
     } finally {
       await fs.rm(tmpDir, { recursive: true, force: true });
     }
@@ -981,5 +1190,28 @@ describe('UndergradFellowshipRecipientScraper.run', () => {
     // queried (each appears under a distinct lname).
     expect(distinctLnames.size).toBe(2);
     expect(distinctLnames).toEqual(new Set(['Aaa', 'Bbb']));
+  });
+
+  it('rejects unsafe runtime limits before fetching recipient pages', async () => {
+    const fetchPage = vi.fn(async () => RECIPIENTS_HTML_2024);
+    const userFinder = vi.fn(async () => []);
+    const ownerToGroupSlug = vi.fn(async () => null);
+    const configs: ProgramConfig[] = [
+      {
+        programKey: 'big',
+        programName: 'Big Program',
+        urls: ['https://example.invalid/2024/'],
+        extractor: drupalRecipientRowExtractor,
+      },
+    ];
+    const scraper = new UndergradFellowshipRecipientScraper(configs, {
+      fetchPage,
+      userFinder,
+      ownerToGroupSlug,
+    });
+    const { ctx } = makeContext({ limit: 9007199254740992 } as any);
+
+    await expect(scraper.run(ctx)).rejects.toThrow(/--limit must be a safe positive integer/);
+    expect(fetchPage).not.toHaveBeenCalled();
   });
 });

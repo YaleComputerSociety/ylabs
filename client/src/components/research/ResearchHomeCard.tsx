@@ -8,6 +8,8 @@ import {
   type ResearchCluster,
 } from '../../utils/researchDiscoveryAdapters';
 import { formatTitleCaseLabel } from '../../utils/displayText';
+import { sanitizeFacultyResearchCopy } from '../../utils/researchEntityCopy';
+import { EXTERNAL_LINK_REL, safeHttpUrl } from '../../utils/url';
 
 interface ResearchHomeCardProps {
   home: ResearchCluster;
@@ -58,7 +60,9 @@ const adminQualityLabels = (home: ResearchCluster): string[] => {
   }
   if (flags.has('profile_fallback_only')) labels.push('Profile fallback');
   if (flags.has('missing_lead')) labels.push('Missing lead');
+  if (flags.has('pi_identity_conflict')) labels.push('Lead conflict');
   if (flags.has('missing_source_url')) labels.push('Missing source');
+  if (flags.has('duplicate_risk')) labels.push('Duplicate review');
 
   return labels;
 };
@@ -104,6 +108,7 @@ const ResearchHomeCard = ({
     ? getPathwayActionLabel(home.pathways[0].bestNextStepCategory)
     : '';
   const contextLine = home.contextLine || buildResearchHomeContextLine(home.entities[0]);
+  const description = sanitizeFacultyResearchCopy(home.description, home.entities[0]);
   const activePostedOpportunity =
     (home.activePostedOpportunity?.provenance !== 'LISTING_BRIDGED'
       ? home.activePostedOpportunity
@@ -115,6 +120,7 @@ const ResearchHomeCard = ({
     )?.activePostedOpportunity;
   const primaryProfileUrl = primaryLinkedEntity ? `/research/${primaryLinkedEntity.slug}` : '';
   const isCardClickable = Boolean(primaryProfileUrl || onSelect);
+  const primaryEvidenceUrl = safeHttpUrl(home.evidence[0]?.url);
   const qualityLabels = showAdminQuality ? adminQualityLabels(home) : [];
   const activateCard = () => {
     if (primaryProfileUrl) {
@@ -216,7 +222,12 @@ const ResearchHomeCard = ({
               {home.contextLabel}
             </span>
           )}
-          {!isCompact && home.evidenceStatus && (
+          {home.evidenceStatus?.state === 'publications' && (
+            <span className="yr-pill yr-pill-blue min-h-0 rounded px-2 py-0.5">
+              {home.evidenceStatus.label}
+            </span>
+          )}
+          {!isCompact && home.evidenceStatus && home.evidenceStatus.state !== 'publications' && (
             <span
               className={`yr-pill min-h-0 rounded px-2 py-0.5 ${evidenceStatusClass(home.evidenceStatus.state)}`}
             >
@@ -226,7 +237,7 @@ const ResearchHomeCard = ({
         </div>
 
         <p className={`${isCompact ? 'line-clamp-4' : ''} text-sm leading-relaxed text-gray-600`}>
-          {home.description}
+          {description}
         </p>
 
         {nextStepLabel && (
@@ -321,11 +332,11 @@ const ResearchHomeCard = ({
           </p>
           <div className="flex flex-wrap items-center gap-2 text-sm text-gray-600">
             <span>{home.evidenceStatus?.label || 'Evidence limited'}</span>
-            {home.evidence[0]?.url && (
+            {primaryEvidenceUrl && (
               <a
-                href={home.evidence[0].url}
+                href={primaryEvidenceUrl}
                 target="_blank"
-                rel="noreferrer"
+                rel={EXTERNAL_LINK_REL}
                 className="yr-link inline-flex min-h-[44px] items-center text-xs font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
                 onClick={(event) => event.stopPropagation()}
               >

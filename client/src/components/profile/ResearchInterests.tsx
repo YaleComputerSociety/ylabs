@@ -63,18 +63,7 @@ const ResearchInterests = ({ interests, topics, summary }: ResearchInterestsProp
   );
   const researchSummary = (summary || '').trim();
 
-  if (researchInterests.length === 0) {
-    if (researchSummary) {
-      return (
-        <section>
-          <h3 className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-3">
-            Research Interests
-          </h3>
-          <p className="text-sm text-gray-700 leading-relaxed">{researchSummary}</p>
-        </section>
-      );
-    }
-
+  if (researchInterests.length === 0 && !researchSummary) {
     return (
       <p className="text-gray-500 text-sm py-8 text-center">No research interests available.</p>
     );
@@ -85,16 +74,21 @@ const ResearchInterests = ({ interests, topics, summary }: ResearchInterestsProp
       <h3 className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-3">
         Research Interests
       </h3>
-      <div className="flex flex-wrap gap-2">
-        {researchInterests.map((interest, index) => (
-          <Fragment key={interest}>
-            <span className="rounded-md border border-blue-100 bg-[var(--yr-blue-soft)] px-2.5 py-1 text-sm font-medium text-blue-800">
-              {formatTitleCaseLabel(interest)}
-            </span>
-            {index < researchInterests.length - 1 && <span className="sr-only">, </span>}
-          </Fragment>
-        ))}
-      </div>
+      {researchSummary && (
+        <p className="text-sm text-gray-700 leading-relaxed mb-3">{researchSummary}</p>
+      )}
+      {researchInterests.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {researchInterests.map((interest, index) => (
+            <Fragment key={interest}>
+              <span className="rounded-md border border-blue-100 bg-[var(--yr-blue-soft)] px-2.5 py-1 text-sm font-medium text-blue-800">
+                {formatTitleCaseLabel(interest)}
+              </span>
+              {index < researchInterests.length - 1 && <span className="sr-only">, </span>}
+            </Fragment>
+          ))}
+        </div>
+      )}
     </section>
   );
 };

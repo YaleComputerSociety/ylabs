@@ -38,7 +38,7 @@ const analyticsEventSchema = new mongoose.Schema(
     },
     userType: {
       type: String,
-      enum: ['undergraduate', 'graduate', 'professor', 'faculty', 'admin', 'unknown'],
+      enum: ['student', 'undergraduate', 'graduate', 'professor', 'faculty', 'admin', 'unknown'],
       required: true,
       index: true,
     },
@@ -62,7 +62,6 @@ const analyticsEventSchema = new mongoose.Schema(
     timestamp: {
       type: Date,
       default: Date.now,
-      index: true,
     },
   },
   {

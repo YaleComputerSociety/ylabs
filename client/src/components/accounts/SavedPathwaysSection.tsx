@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import LoadingSpinner from '../shared/LoadingSpinner';
 import type { PathwaySearchHit } from '../../types/pathway';
 import axios from '../../utils/axios';
+import { EXTERNAL_LINK_REL, safeHttpUrl, safeHttpUrlList } from '../../utils/url';
 
 type PlanningIntent = 'thesis' | 'outreach' | 'credit' | 'funding' | 'apply' | 'later';
 type PlanningStage = 'saved' | 'researching' | 'ready' | 'acted' | 'archived';
@@ -314,12 +315,10 @@ export const getLocalOnlySavedPathwayPlanIds = (
 };
 
 const sourceUrlsForPathway = (pathway: PathwaySearchHit): string[] =>
-  Array.from(
-    new Set([
-      ...(pathway.sourceUrls || []),
-      ...pathway.evidence.map((item) => item.sourceUrl).filter(Boolean),
-    ]),
-  ) as string[];
+  safeHttpUrlList([
+    ...(pathway.sourceUrls || []),
+    ...pathway.evidence.map((item) => item.sourceUrl).filter(Boolean),
+  ]);
 
 export const fundingCueForPathway = (
   pathway: PathwaySearchHit,
@@ -685,6 +684,7 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
             const fundingCue = fundingCueForPathway(pathway, plan);
             const matches = fundingMatches[pathway._id] || [];
             const deadlineReminder = deadlineReminderForPathway(pathway, matches);
+            const deadlineSourceUrl = safeHttpUrl(deadlineReminder?.sourceUrl);
             const isExpanded = Boolean(expandedPlanIds[pathway._id]);
             const profileName = pathway.researchEntity.displayName || pathway.researchEntity.name;
             const stage = labelForOption(STAGE_OPTIONS, plan.stage);
@@ -741,11 +741,11 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
 
                 {isExpanded && (
                   <div className="mt-4 space-y-4 border-t border-[var(--yr-line)] pt-4">
-                    {deadlineReminder?.sourceUrl && (
+                    {deadlineSourceUrl && (
                       <a
-                        href={deadlineReminder.sourceUrl}
+                        href={deadlineSourceUrl}
                         target="_blank"
-                        rel="noreferrer"
+                        rel={EXTERNAL_LINK_REL}
                         className="inline-flex text-sm font-semibold text-blue-700 underline underline-offset-2 hover:text-blue-900"
                       >
                         Open deadline source
@@ -783,8 +783,9 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
                         <div className="space-y-2">
                           {matches.slice(0, 2).map((match) => {
                             const deadline = formatDeadline(match.deadline);
-                            const fellowshipSourceUrl =
-                              match.applicationLink || match.sourceUrls?.[0];
+                            const fellowshipSourceUrl = safeHttpUrl(
+                              match.applicationLink || match.sourceUrls?.[0],
+                            );
                             return (
                               <div
                                 key={match.fellowshipId}
@@ -818,7 +819,7 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
                                   <a
                                     href={fellowshipSourceUrl}
                                     target="_blank"
-                                    rel="noreferrer"
+                                    rel={EXTERNAL_LINK_REL}
                                     className="mt-1 inline-flex text-xs font-semibold text-cyan-800 underline underline-offset-2 hover:text-cyan-950"
                                   >
                                     Open fellowship source
@@ -923,7 +924,7 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
                           key={url}
                           href={url}
                           target="_blank"
-                          rel="noreferrer"
+                          rel={EXTERNAL_LINK_REL}
                           className="text-xs font-semibold text-blue-700 underline underline-offset-2 hover:text-blue-900"
                         >
                           Source {index + 1}
