@@ -17,6 +17,24 @@ export type ResearchEntityCopyInput = {
   descriptionSource?: string | null;
 };
 
+const researchHomeLabel = (entity?: ResearchEntityCopyInput | null): string =>
+  KIND_LABELS[entity?.kind || '']?.toLowerCase() || 'research home';
+
+const RELATIONSHIP_TYPE_LABELS: Record<string, string> = {
+  AFFILIATED_LAB: 'Affiliated lab',
+  AFFILIATED_RESEARCH_GROUP: 'Related research group',
+  MEMBER_RESEARCH_AREA: 'Member',
+  HOSTED_PROGRAM: 'Hosted program',
+};
+
+/**
+ * Human label for a research-entity relationship edge. Falls back to the
+ * relationshipType map when the stored `label` is empty (older edges predate
+ * label population in the materializer).
+ */
+export const relationshipTypeLabel = (relationshipType?: string | null): string =>
+  (relationshipType && RELATIONSHIP_TYPE_LABELS[relationshipType]) || '';
+
 export const isFacultyResearchEntity = (entity?: ResearchEntityCopyInput | null): boolean =>
   Boolean(
     entity &&
@@ -32,23 +50,25 @@ export const entityKindLabel = (entity?: ResearchEntityCopyInput | null): string
 };
 
 export const researchWebsiteLabel = (entity?: ResearchEntityCopyInput | null): string =>
-  isFacultyResearchEntity(entity) ? 'research website' : 'lab website';
+  isFacultyResearchEntity(entity) ? 'research website' : `${researchHomeLabel(entity)} website`;
 
 export const researchWebsiteCtaLabel = (entity?: ResearchEntityCopyInput | null): string =>
-  isFacultyResearchEntity(entity) ? 'Visit research website' : 'Visit lab website';
+  isFacultyResearchEntity(entity) ? 'Visit research website' : `Visit ${researchWebsiteLabel(entity)}`;
 
 export const researchStructureLabel = (entity?: ResearchEntityCopyInput | null): string =>
-  isFacultyResearchEntity(entity) ? 'faculty research profile' : 'lab';
+  isFacultyResearchEntity(entity) ? 'faculty research profile' : researchHomeLabel(entity);
 
 export const decisionHeadingLabel = (entity?: ResearchEntityCopyInput | null): string =>
   isFacultyResearchEntity(entity)
     ? 'What this faculty research area covers'
-    : 'What this lab studies';
+    : researchStructureLabel(entity) === 'lab'
+      ? 'What this lab studies'
+      : `What this ${researchStructureLabel(entity)} focuses on`;
 
 export const approachHeadingLabel = (entity?: ResearchEntityCopyInput | null): string =>
   isFacultyResearchEntity(entity)
     ? 'Ways to approach this research profile'
-    : 'Ways to approach this lab';
+    : `Ways to approach this ${researchStructureLabel(entity)}`;
 
 const facultyResearchLabelBase = (entity: ResearchEntityCopyInput): string =>
   String(entity.displayName || entity.name || '')

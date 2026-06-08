@@ -309,6 +309,24 @@ const SOURCES: SourceSeed[] = [
     cadence: 'weekly',
   },
   {
+    name: 'center-affiliation-llm',
+    displayName: 'Center affiliation LLM extractor',
+    description:
+      'LLM extracts faculty explicitly named on an official center/institute page and emits umbrella → faculty relationship observations (relationship-only; resolved conservatively by the materializer).',
+    baseUrl: '',
+    defaultWeight: 0.6,
+    cadence: 'weekly',
+  },
+  {
+    name: 'center-director-llm',
+    displayName: 'Center director LLM extractor',
+    description:
+      'Reads an organizational research home\'s official site + leadership pages and emits an entity-level inferred-director observation; the materializer resolves the name to a unique Yale User before promoting them to a director member.',
+    baseUrl: '',
+    defaultWeight: 0.6,
+    cadence: 'weekly',
+  },
+  {
     name: 'yale-college-fellowships-office',
     displayName: 'Yale College Fellowships Office',
     description: 'Authoritative listing of Yale-internal undergrad fellowships.',

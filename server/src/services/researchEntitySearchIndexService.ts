@@ -34,7 +34,7 @@ const RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS = {
     'currentUndergradCount',
     'studentVisibilityTier',
   ],
-  sortableAttributes: ['lastObservedAt', 'name', 'createdAt', 'updatedAt'],
+  sortableAttributes: ['browseRankScore', 'lastObservedAt', 'name', 'createdAt', 'updatedAt'],
   displayedAttributes: ['*'],
 };
 

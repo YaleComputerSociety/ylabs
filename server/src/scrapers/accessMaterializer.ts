@@ -883,8 +883,6 @@ async function deriveIdentifiedLeadWaysInForEntity(
     studentVisibilityReasons: 1,
   }).lean();
   if (!entity) return empty;
-  const officialUrl = officialNonGrantSourceUrl(entity);
-  if (!officialUrl) return empty;
 
   const lead: any = await ResearchGroupMember.findOne({
     researchEntityId: new mongoose.Types.ObjectId(researchEntityId),
@@ -904,12 +902,33 @@ async function deriveIdentifiedLeadWaysInForEntity(
   if (!lead && !isOrganizational) return empty;
 
   let leadName = firstString(lead?.name);
-  if (!leadName && lead?.userId) {
+  let leadProfileUrl = '';
+  if (lead?.userId) {
     const user: any = await mongoose.connection
       .collection('users')
-      .findOne({ _id: lead.userId }, { projection: { fname: 1, lname: 1 } });
-    if (user) leadName = [user.fname, user.lname].map(firstString).filter(Boolean).join(' ');
+      .findOne({ _id: lead.userId }, { projection: { fname: 1, lname: 1, profileUrls: 1 } });
+    if (user) {
+      if (!leadName) leadName = [user.fname, user.lname].map(firstString).filter(Boolean).join(' ');
+      // profileUrls is stored as a source-keyed object; pick a non-grant Yale URL.
+      const candidateUrls = user.profileUrls
+        ? Array.isArray(user.profileUrls)
+          ? user.profileUrls
+          : Object.values(user.profileUrls)
+        : [];
+      leadProfileUrl =
+        candidateUrls
+          .map(firstString)
+          .find(
+            (u: string) => /^https?:\/\//i.test(u) && /yale\.edu/i.test(u) && !isGrantOrOrcidOnlyUrl(u),
+          ) || '';
+    }
   }
+
+  // Prefer the entity's own official page; otherwise (e.g. grant-shell-named
+  // faculty labs whose only entity URL is an NIH/NSF link) point the faculty
+  // ways-in at the lead's own official Yale profile.
+  const officialUrl = officialNonGrantSourceUrl(entity) || leadProfileUrl;
+  if (!officialUrl) return empty;
 
   // Find a supporting source observation (needed so the claim gate keeps the
   // artifacts). Observations may be keyed by entityId OR by entityKey (slug),

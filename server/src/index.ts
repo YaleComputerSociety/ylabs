@@ -4,6 +4,7 @@
 import app from './app';
 import dotenv from 'dotenv';
 import { initializeConnections, getApiMode } from './db/connections';
+import { startGateRefreshScheduler } from './scripts/gateRefreshScheduler';
 
 dotenv.config();
 
@@ -17,6 +18,10 @@ const startApp = async () => {
 
     app.listen(port, () => {
       console.log(`Server is ready at: ${port} 🐶`);
+
+      // Optional: keep the operator-board gate scorecards fresh in-process (off unless
+      // GATE_REFRESH_INTERVAL_MINUTES is set). See gateRefreshScheduler.ts.
+      startGateRefreshScheduler();
 
       if (mode === 'productionMigration') {
         console.log(

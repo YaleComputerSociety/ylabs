@@ -139,8 +139,10 @@ export async function findFacultyWaysInCandidates(limit?: number): Promise<Facul
       : [];
     if (reasons.includes('duplicate_risk') || reasons.includes('exact_url_duplicate_risk')) continue;
 
+    // Entity-level non-grant URL is one path; faculty labs whose only entity URL
+    // is a grant link can still qualify via the lead's own profile URL (resolved
+    // inside materializeAccessForResearchGroup), so don't require it here.
     const officialUrl = officialNonGrantSourceUrl(entity);
-    if (!officialUrl) continue;
 
     const lead = await ResearchGroupMember.findOne({
       researchEntityId: entity._id,
@@ -150,6 +152,7 @@ export async function findFacultyWaysInCandidates(limit?: number): Promise<Facul
     })
       .select('_id')
       .lean();
+    if (!officialUrl && !lead) continue;
     // Faculty/lab homes need a named lead; organizational homes
     // (centers/institutes/initiatives) qualify for a center-level ways-in without one.
     const isOrganizational = ORGANIZATIONAL_ENTITY_TYPES.has(

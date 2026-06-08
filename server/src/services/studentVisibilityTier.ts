@@ -4,6 +4,7 @@ import {
 } from '../models/studentVisibility';
 import { isProfileAreaShellEntity } from '../utils/profileAreaDuplicateRisk';
 import { buildResearchEntityQualitySummary } from './researchEntityQuality';
+import { classifyProgramResearchRelevance } from './programResearchRelevance';
 
 export const STUDENT_VISIBILITY_VERSION = 'student-visibility-v1';
 
@@ -53,6 +54,10 @@ export interface ProgramStudentVisibilityInput extends Record<string, any> {
   entryMode?: string;
   mentorMatching?: boolean;
   requiresMentorBeforeApply?: boolean;
+  purpose?: string[];
+  summary?: string;
+  description?: string;
+  eligibility?: string;
 }
 
 const textValue = (value: unknown): string =>
@@ -381,6 +386,7 @@ export function computeProgramStudentVisibility(
   const isArchiveReview = category === 'Archive / review';
   const graduateOnly = program.undergraduateOnly === false;
   const formalizationOnly = isFormalizationOnlyProgram(program);
+  const researchRelated = classifyProgramResearchRelevance(program).researchRelated;
   const catalogOrAdmin =
     /\b(administering|alternative funding|find funding|student grants database|faculty staff)\b/i.test(
       title,
@@ -398,12 +404,11 @@ export function computeProgramStudentVisibility(
     reasons.push('undergraduate_relevant');
   }
   if (formalizationOnly) reasons.push('formalization_only');
+  if (!researchRelated) reasons.push('non_research_program');
 
   let computedTier: StudentVisibilityTier = 'operator_review';
-  if (graduateOnly || catalogOrAdmin) {
+  if (graduateOnly || catalogOrAdmin || !researchRelated) {
     computedTier = 'suppressed';
-  } else if (!isArchiveReview && undergraduateRelevant && formalizationOnly && hasOfficialSource) {
-    computedTier = 'limited_but_safe';
   } else if (
     !isArchiveReview &&
     undergraduateRelevant &&
@@ -411,6 +416,11 @@ export function computeProgramStudentVisibility(
     hasApplicationRoute &&
     !sourceIsApplicationPortal
   ) {
+    // Undergraduate-relevant research programs with a real (non-portal) official source and
+    // an application route are student-ready. This includes research funding (senior thesis,
+    // research travel, fellowship funding): on a research-focused surface, undergrad research
+    // funding is a destination students should see, not a hidden formalization step. The
+    // `formalization_only` reason is still recorded for transparency but no longer caps tier.
     computedTier = 'student_ready';
   } else if (!isArchiveReview && undergraduateRelevant && hasOfficialSource) {
     computedTier = 'limited_but_safe';

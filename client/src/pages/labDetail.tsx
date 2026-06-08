@@ -58,6 +58,7 @@ import {
   approachHeadingLabel,
   decisionHeadingLabel,
   isFacultyResearchEntity,
+  relationshipTypeLabel,
   researchStructureLabel,
   researchWebsiteLabel,
   sanitizeFacultyResearchCopy,
@@ -95,7 +96,11 @@ const RelatedResearchEntitiesSection = ({
           const description =
             entity.shortDescription || entity.fullDescription || entity.description || '';
           const tags = uniqueCompact(
-            [relationship?.label, formatEntityKindTag(entity.kind), ...compactDepartmentLabels(entity.departments)],
+            [
+              relationship?.label || relationshipTypeLabel(relationship?.relationshipType),
+              formatEntityKindTag(entity.kind),
+              ...compactDepartmentLabels(entity.departments),
+            ],
             3,
           );
           return (
@@ -688,6 +693,7 @@ const WaysToApproachSection = ({
   const posted = postedOpportunities[0];
   const pathway = pathways[0];
   const facultyResearch = isFacultyResearchEntity(group);
+  const structureLabel = researchStructureLabel(group);
 
   return (
     <section>
@@ -698,7 +704,7 @@ const WaysToApproachSection = ({
           <p className="mt-2 text-sm leading-relaxed text-gray-700">
             {facultyResearch
               ? 'Best if you are unsure whether this research area has undergraduate routes. Open the official profile and look for current instructions.'
-              : 'Best if you are unsure whether this lab accepts undergrads. Open the official profile and look for current instructions.'}
+              : `Best if you are unsure whether this ${structureLabel} accepts undergrads. Open the official profile and look for current instructions.`}
           </p>
         </article>
         <article className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4">
@@ -715,7 +721,7 @@ const WaysToApproachSection = ({
         </article>
         <article className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4">
           <h3 className="text-sm font-semibold text-gray-900">
-            {posted ? 'Review posted opportunity' : 'Look for related labs'}
+            {posted ? 'Review posted opportunity' : 'Look for related research homes'}
           </h3>
           <p className="mt-2 text-sm leading-relaxed text-gray-700">
             {posted
@@ -739,6 +745,7 @@ const WaysToApproachSection = ({
 const OutreachSection = ({ group, onDraft }: { group: any; onDraft: () => void }) => {
   const topics = detailTopics(group, 4);
   const facultyResearch = isFacultyResearchEntity(group);
+  const structureLabel = researchStructureLabel(group);
   const coursework = uniqueCompact(
     [
       ...compactDepartmentLabels(group.departments),
@@ -779,7 +786,7 @@ const OutreachSection = ({ group, onDraft }: { group: any; onDraft: () => void }
                     : [
                         facultyResearch
                           ? 'Coursework, projects, or reading connected to this research area'
-                          : 'Coursework, projects, or reading connected to the lab',
+                          : `Coursework, projects, or reading connected to the ${structureLabel}`,
                       ]
                 }
               />
@@ -788,7 +795,7 @@ const OutreachSection = ({ group, onDraft }: { group: any; onDraft: () => void }
           <p className="mt-4 rounded-md border border-blue-100 bg-[var(--yr-panel)] px-3 py-2 text-sm leading-relaxed text-gray-800">
             {facultyResearch
               ? 'Ask: "Are there any opportunities for undergraduates to get involved with this research area this semester or summer?"'
-              : 'Ask: "Are there any opportunities for undergraduates to get involved with the lab this semester or summer?"'}
+              : `Ask: "Are there any opportunities for undergraduates to get involved with this ${structureLabel} this semester or summer?"`}
           </p>
         </div>
         <div className="flex items-start md:justify-end">

@@ -1,7 +1,7 @@
 /**
  * Login page with Yale CAS authentication redirect.
  */
-import PulseLoader from 'react-spinners/PulseLoader';
+import { PulseLoader } from 'react-spinners';
 import { useContext } from 'react';
 
 import SignInButton from '../components/SignInButton';

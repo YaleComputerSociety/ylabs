@@ -179,6 +179,30 @@ export const DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES: DepartmentUndergradRes
     parser: 'general-guidance',
     title: 'History Undergraduate Research',
   },
+  {
+    key: 'neuroscience',
+    url: 'https://neuroscience.yale.edu/research-opportunities',
+    department: 'Neuroscience',
+    school: 'Yale Faculty of Arts and Sciences',
+    parser: 'general-guidance',
+    title: 'Neuroscience Undergraduate Research Opportunities',
+  },
+  {
+    key: 'molecular-biophysics-biochemistry',
+    url: 'https://mbb.yale.edu/introduction-undergraduate-program',
+    department: 'Molecular Biophysics and Biochemistry',
+    school: 'Yale Faculty of Arts and Sciences',
+    parser: 'general-guidance',
+    title: 'Molecular Biophysics and Biochemistry Undergraduate Research',
+  },
+  {
+    key: 'linguistics',
+    url: 'https://ling.yale.edu/academics/undergraduate/research-opportunities/linguistics-research-opportunities-yale',
+    department: 'Linguistics',
+    school: 'Yale Faculty of Arts and Sciences',
+    parser: 'general-guidance',
+    title: 'Linguistics Undergraduate Research Opportunities',
+  },
 ];
 
 function normalizeText(value: string): string {

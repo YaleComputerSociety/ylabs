@@ -152,6 +152,10 @@ yarn --cwd server meili:rebuild-all --clear
 
 This rebuilds local Research and Pathways indexes from MongoDB. Use `--strategy=swap` for beta/production rebuilds that serve live traffic. Semantic Research search is release-gated separately: Meilisearch must report embedded `researchentities` documents before `RESEARCH_SEARCH_SEMANTIC=true` should be used for Beta or production.
 
+When a `/research` browse has no search query, results are ordered "best first" by a precomputed `browseRankScore` (completeness of the profile plus strength-weighted undergraduate access signals), falling back to recency. After importing or migrating data, populate the score with `yarn --cwd server research-homes:backfill-browse-rank --apply --confirm-browse-rank` (it runs in dry-run by default); ongoing scrape/materialize runs keep it fresh automatically.
+
+Organizational research homes (centers, institutes, initiatives, core facilities) have no single PI, so their scraped rosters list everyone as core faculty and the public "Principal Investigator" panel shows nothing. The `center-director-llm` scraper reads each home's official site and leadership pages, extracts the single named **director**, and the materializer resolves that name to a Yale user before promoting them to a director (lead) member. New scrape/materialize runs apply this automatically; to fill in the existing corpus run `yarn --cwd server research-homes:backfill-center-directors --apply --confirm-center-directors --limit <n>` (dry-run by default, lists eligible homes without calling the LLM; apply needs `OPENAI_API_KEY`).
+
 ### 6. Start dev servers
 
 ```bash
@@ -217,6 +221,8 @@ LOCAL_AUTH_BYPASS_USER_TYPE=admin
 
 Per-request overrides are available with `x-dev-netid` and `x-dev-user-type` headers. `/api/cas` and `/api/logout` are not bypassed, so leave `LOCAL_AUTH_BYPASS=false` or visit those routes directly when testing Yale CAS behavior.
 
+The auth flow's verbose tracing (per-request deserialization, the find-or-create source cascade, analytics-event confirmations) is off by default — set `AUTH_DEBUG=true` in `server/.env` to turn it on when debugging an auth issue. Genuine auth errors and anomalies log regardless of the flag.
+
 ---
 
 ## Common Commands
@@ -236,6 +242,24 @@ Per-request overrides are available with `x-dev-netid` and `x-dev-user-type` hea
 | `yarn --cwd server beta:readiness --confirm-beta-backup --strict` | Read-only Beta release gate |
 | `yarn --cwd server beta:data-quality --include-samples` | Read-only Beta data-quality scorecard |
 | `yarn --cwd server scraper:integrity-gate --include-samples` | Read-only scraper materialization integrity gate |
+| `SCRAPER_ENV=beta yarn --cwd server gates:refresh` | Regenerate every canonical gate scorecard the operator board reads (single writer) |
+
+### Operator board Gate Status — keeping it honest and current
+
+The admin operator board (the **Gate Status** panel at `/programs`) reads canonical gate scorecard
+JSON from fixed `/tmp` paths. It does not compute gates live; it shows whatever was last written
+there. Two rules keep it trustworthy:
+
+- **Honesty:** every gate card shows provenance (which DB, how long ago it was generated). A
+  scorecard older than `GATE_SCORECARD_MAX_AGE_HOURS` (default 3) is flagged **stale** and the gate
+  reads "rerun" rather than presenting a possibly-moved-on verdict as live.
+- **Freshness:** run `gates:refresh` to regenerate all canonical scorecards — it is the **only**
+  sanctioned writer of those paths. Ad-hoc audits should write to suffixed scratch files (e.g.
+  `--output /tmp/ylabs-...-scratch.json`), never the canonical paths, so the board never drifts.
+  To keep the board current automatically on a single instance, set `GATE_REFRESH_INTERVAL_MINUTES`
+  (the server then runs `gates:refresh` in-process on that cadence; `GATE_REFRESH_SKIP_HEAVY=true`
+  skips the slow data-quality audit). For multi-instance/production, drive refresh from an external
+  scheduler or persist scorecards to MongoDB.
 
 ### Scraper And Data Scripts
 

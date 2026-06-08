@@ -786,6 +786,107 @@ describe('getResearchGroupDetail', () => {
     expect(unsafeRoute?.url).toBeUndefined();
     expect(unsafeRoute?.sourceUrl).toBeUndefined();
   });
+
+  it('corrects non-PI leading possessive names in public descriptions', async () => {
+    const entityId = '67d8928150621bcef434a1d5';
+    mocks.researchEntityFindOne.mockReturnValue(
+      leanResult({
+        _id: entityId,
+        slug: 'glahn-lab-dcg32',
+        name: 'Glahn Lab',
+        kind: 'lab',
+        entityType: 'LAB',
+        departments: [],
+        researchAreas: [],
+        sourceUrls: ['https://music.yale.edu/people/david-lang'],
+        description: '',
+        profileSynthesisDescription: "David Lang's lab studies how humans process complex sound patterns.",
+        descriptionSource: 'PI_PROFILE_SYNTHESIS',
+        studentVisibilityTier: 'student_ready',
+      }),
+    );
+    mocks.researchGroupMemberFind.mockReturnValue(
+      leanResult([
+        {
+          _id: 'member-1',
+          researchEntityId: entityId,
+          userId: 'dglahn',
+          role: 'pi',
+          archived: false,
+          isCurrentMember: true,
+        },
+      ]),
+    );
+    mocks.userFind.mockReturnValue(
+      leanResult([
+        {
+          _id: 'dglahn',
+          fname: 'David',
+          lname: 'Glahn',
+          displayName: 'David Glahn',
+          primaryDepartment: 'Psychiatry',
+          imageUrl: '',
+          netid: 'dglahn',
+        },
+      ]),
+    );
+
+    const detail = await getResearchGroupDetail('glahn-lab-dcg32');
+
+    expect(detail?.researchEntity.profileSynthesisDescription).toContain(
+      'This lab studies how humans process complex sound patterns.',
+    );
+    expect(detail?.researchEntity.profileSynthesisDescription).not.toContain("David Lang's");
+  });
+
+  it('removes non-research PI profile synthesis content that does not match lead PI names', async () => {
+    const entityId = '67d8928150621bcef434a1d5';
+    mocks.researchEntityFindOne.mockReturnValue(
+      leanResult({
+        _id: entityId,
+        slug: 'glahn-lab-dcg32',
+        name: 'Glahn Lab',
+        kind: 'lab',
+        entityType: 'LAB',
+        departments: [],
+        researchAreas: [],
+        sourceUrls: ['https://music.yale.edu/people/david-lang'],
+        descriptionSource: 'PI_PROFILE_SYNTHESIS',
+        profileSynthesisDescription:
+          "This music has been performed by major music, dance, and theater organizations throughout the world, and in the most renowned concert halls and festivals in the United States and Europe.",
+      },
+      ),
+    );
+    mocks.researchGroupMemberFind.mockReturnValue(
+      leanResult([
+        {
+          _id: 'member-1',
+          researchEntityId: entityId,
+          userId: 'dglahn',
+          role: 'pi',
+          archived: false,
+          isCurrentMember: true,
+        },
+      ]),
+    );
+    mocks.userFind.mockReturnValue(
+      leanResult([
+        {
+          _id: 'dglahn',
+          fname: 'David',
+          lname: 'Glahn',
+          displayName: 'David Glahn',
+          primaryDepartment: 'Psychiatry',
+          imageUrl: '',
+          netid: 'dglahn',
+        },
+      ]),
+    );
+
+    const detail = await getResearchGroupDetail('glahn-lab-dcg32');
+
+    expect(detail?.researchEntity.profileSynthesisDescription).toBe('');
+  });
 });
 
 describe('listResearchEntityRelationshipPayload', () => {

@@ -12,6 +12,7 @@ import { PaperAuthor } from '../models/paperAuthor';
 import { User } from '../models/user';
 import { ResearchEntity } from '../models/researchEntity';
 import { ResearchGroupMember } from '../models/researchGroupMember';
+import { ResearchEntityRelationship } from '../models/researchEntityRelationship';
 import { ScrapeRun } from '../models/scrapeRun';
 import { PostedOpportunity } from '../models/postedOpportunity';
 import { ResearchScholarlyLink } from '../models/researchScholarlyLink';
@@ -22,6 +23,7 @@ import {
   ResolvedField,
 } from './confidenceResolver';
 import { syncEntity, isSyncableEntityType } from '../services/meiliSyncService';
+import { recomputeBrowseRankForEntities } from '../services/researchEntityBrowseRankService';
 import { materializeAccessForResearchGroup } from './accessMaterializer';
 import type { ReportPostMaterializationMetrics } from './runReport';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
@@ -65,7 +67,7 @@ const PUBLIC_QUOTE_FIELDS = new Set([
 ]);
 const MATERIALIZER_MANAGED_FIELDS = new Set(['lastObservedAt']);
 
-type MaterializerObservationLike = {
+export type MaterializerObservationLike = {
   _id?: unknown;
   field?: string;
   value?: unknown;
@@ -500,6 +502,11 @@ const MEMBER_ROLES = new Set([
   'affiliate',
 ]);
 
+/** Roles the public "Principal Investigator" panel renders as the entity lead. */
+const LEAD_MEMBER_ROLES = new Set(['pi', 'co-pi', 'director', 'co-director']);
+/** Non-lead roster roles a promoted director supersedes within an entity. */
+const SUPERSEDED_BY_DIRECTOR_ROLES = ['core-faculty', 'affiliated', 'affiliate'];
+
 const objectRecord = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 
@@ -700,6 +707,44 @@ async function materializeResearchGroupMember(
     };
   }
 
+  // Don't add a non-lead roster row for someone who is already a lead (PI /
+  // director / co-director) of this entity. The director extractor promotes a
+  // roster member to `director` and removes the stale roster row; without this
+  // guard the next roster materialization would re-create the duplicate
+  // (the detail-page dedup keys on user+role, so the person would render twice).
+  const resolvedRole = String(patch.filter.role || '');
+  if (!LEAD_MEMBER_ROLES.has(resolvedRole)) {
+    const identity = patch.filter.userId
+      ? { userId: patch.filter.userId }
+      : patch.filter.facultyMemberId
+      ? { facultyMemberId: patch.filter.facultyMemberId }
+      : patch.filter.name
+      ? { name: patch.filter.name }
+      : null;
+    if (identity) {
+      const existingLead = await ResearchGroupMember.findOne({
+        researchEntityId: patch.filter.researchEntityId,
+        role: { $in: Array.from(LEAD_MEMBER_ROLES) },
+        isCurrentMember: { $ne: false },
+        ...identity,
+      })
+        .select('_id')
+        .lean();
+      if (existingLead) {
+        return {
+          entityType: 'researchGroupMember',
+          entityId: String(entity._id),
+          entityKey: identifier.entityKey,
+          fieldsWritten: 0,
+          conflicts: 0,
+          created: false,
+          resolved,
+          skipped: 'already-lead-member',
+        };
+      }
+    }
+  }
+
   const existing = await ResearchGroupMember.findOne(patch.filter).select('_id').lean();
   await ResearchGroupMember.updateOne(patch.filter, patch.update, { upsert: true });
   return {
@@ -767,6 +812,125 @@ async function materializeInferredPiMembership(
   }
 }
 
+export interface InferredDirectorMaterializationResult {
+  written: boolean;
+  promoted: boolean;
+  removedDuplicates: number;
+  userId?: string;
+  role?: string;
+  skipped?: 'no-observation' | 'unresolved-user';
+}
+
+/**
+ * Promote a center's named director to a `director` member.
+ *
+ * Reads the entity-level `inferredDirector*` observations emitted by
+ * `center-director-llm`, resolves the name (+ profile URL) to a UNIQUE Yale
+ * User, and upserts a lead member row. Resolution is required: an unresolved or
+ * ambiguous name is skipped, never written, so a hallucinated leadership name
+ * cannot mint a lead. Any pre-existing non-lead roster row for the same person
+ * in this entity is removed so they surface once as the lead (the detail-page
+ * dedup keys on user+role). Idempotent: re-running converges on a single
+ * `director` row.
+ */
+export async function materializeInferredDirectorMembership(
+  researchEntityId: string,
+  observations: MaterializerObservationLike[],
+): Promise<InferredDirectorMaterializationResult> {
+  const empty: InferredDirectorMaterializationResult = {
+    written: false,
+    promoted: false,
+    removedDuplicates: 0,
+  };
+  if (!mongoose.Types.ObjectId.isValid(researchEntityId)) return empty;
+
+  const fieldObs = (field: string) => observations.find((obs) => obs.field === field);
+  const nameObs = fieldObs('inferredDirectorUserName');
+  if (!nameObs || !nameObs.value) return { ...empty, skipped: 'no-observation' };
+
+  const profileUrl = textValue(fieldObs('inferredDirectorProfileUrl')?.value);
+  const title = textValue(fieldObs('inferredDirectorTitle')?.value);
+  const roleRaw = textValue(fieldObs('inferredDirectorRole')?.value).toLowerCase();
+  const role = roleRaw === 'co-director' ? 'co-director' : 'director';
+  const name =
+    textValue(fieldObs('inferredDirectorName')?.value) ||
+    memberNameFromInferredUserName(nameObs.value);
+
+  const lookupFields: Record<string, ResolvedField> = {
+    inferredUserName: {
+      value: nameObs.value,
+      confidence: 1,
+      contributingSources: [],
+      hasConflict: false,
+    },
+  };
+  if (profileUrl) {
+    lookupFields.profileUrl = {
+      value: profileUrl,
+      confidence: 1,
+      contributingSources: [],
+      hasConflict: false,
+    };
+  }
+  const user = await findUniqueUserForResearchGroupMember(lookupFields);
+  if (!user?._id) return { ...empty, skipped: 'unresolved-user' };
+
+  const userId = idValue(user._id);
+  const facultyMemberId = idValue(user.facultyMemberId);
+  const roleSource = fieldObs('inferredDirectorRole') || nameObs;
+  const observedAt = roleSource.observedAt || new Date();
+  const confidence = typeof roleSource.confidence === 'number' ? roleSource.confidence : 0.85;
+  const sourceUrl = textValue(roleSource.sourceUrl);
+  const sourceName = textValue(roleSource.sourceName);
+
+  const set: Record<string, unknown> = {
+    researchEntityId,
+    researchGroupId: researchEntityId,
+    userId,
+    role,
+    isCurrentMember: true,
+    sourceUrl: profileUrl || sourceUrl,
+    confidence,
+    lastObservedAt: observedAt,
+    'confidenceByField.role': confidence,
+    'fieldProvenance.role': { sourceName, sourceUrl, observedAt, confidence },
+  };
+  if (name) set.name = name;
+  if (facultyMemberId) set.facultyMemberId = facultyMemberId;
+  if (title) {
+    set.title = title;
+    set['confidenceByField.title'] = confidence;
+  }
+
+  const existing = await ResearchGroupMember.findOne({
+    researchEntityId,
+    userId,
+    role,
+    isCurrentMember: true,
+  })
+    .select('_id')
+    .lean();
+  await ResearchGroupMember.updateOne(
+    { researchEntityId, userId, role, isCurrentMember: true },
+    { $set: set, $setOnInsert: { startedAt: observedAt } },
+    { upsert: true },
+  );
+
+  const removal = await ResearchGroupMember.deleteMany({
+    researchEntityId,
+    userId,
+    role: { $in: SUPERSEDED_BY_DIRECTOR_ROLES },
+  });
+
+  return {
+    written: true,
+    promoted: Boolean(existing) || (removal.deletedCount || 0) > 0,
+    removedDuplicates: removal.deletedCount || 0,
+    userId,
+    role,
+  };
+}
+
 export function userLookupValueForInferredPiUserKey(value: unknown): string {
   const raw = typeof value === 'string' ? value.trim() : '';
   if (!raw) return '';
@@ -784,6 +948,375 @@ const idValue = (value: unknown): string => {
   if (value === null || value === undefined) return '';
   return String(value).trim();
 };
+
+// ---------------------------------------------------------------------------
+// ResearchEntity relationship materialization (umbrella center → faculty).
+//
+// Restored from the new-foundation producer (commit 8e5cc0a) that was dropped
+// during the hallmark merge. The centers/institutes scraper emits
+// `researchEntityRelationship` observations (sourceEntityKey/targetEntityKey/
+// relationshipType). This resolves the `faculty-research-area-*` target key to
+// an existing PI-led ResearchEntity (or mints a profile-backed faculty-research-
+// area member); otherwise the relationship is skipped. It never fabricates a
+// standalone lab shell or an undergraduate-access claim.
+// ---------------------------------------------------------------------------
+
+interface ResolvedRelationshipMaterializationDeps {
+  researchEntityModel?: Pick<typeof ResearchEntity, 'findOne' | 'find' | 'findById'>;
+  relationshipModel?: Pick<typeof ResearchEntityRelationship, 'updateOne' | 'updateMany'>;
+  researchGroupMemberModel?: Pick<typeof ResearchGroupMember, 'findOne' | 'create' | 'updateOne'>;
+}
+
+interface ProfileBackedFacultyResearchAreaMemberDeps {
+  userModel?: Pick<typeof User, 'findById'>;
+  researchGroupMemberModel?: Pick<typeof ResearchGroupMember, 'findOne' | 'create' | 'updateOne'>;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function compactPersonName(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+
+function normalizeResearchEntityName(value: unknown): string {
+  return textValue(value).toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+function personNameFromFacultyResearchArea(value: unknown): string {
+  const text = textValue(value)
+    .replace(/^faculty-research-area-/i, '')
+    .replace(/-/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return text.replace(/\s+research$/i, '').trim();
+}
+
+function isFacultyResearchAreaKey(value: unknown): boolean {
+  return textValue(value).toLowerCase().startsWith('faculty-research-area-');
+}
+
+function piCompatibleResearchEntityNames(firstName: string, lastName: string): Set<string> {
+  const first = firstName.trim();
+  const last = lastName.trim();
+  return new Set(
+    [`${first} ${last} Lab`, `${first} ${last} Laboratory`, `${last} Lab`, `${last} Laboratory`].map(
+      (value) => normalizeResearchEntityName(value),
+    ),
+  );
+}
+
+async function findUniqueUserByPersonName(personName: string): Promise<any | null> {
+  const parts = personName.split(/\s+/).filter(Boolean);
+  if (parts.length < 2) return null;
+  const first = parts.slice(0, -1).join(' ');
+  const last = parts[parts.length - 1];
+  const users = await User.find({
+    lname: { $regex: new RegExp(`^\\s*${escapeRegExp(last)}\\s*$`, 'i') },
+  })
+    .select('_id fname lname')
+    .limit(10)
+    .lean();
+  const expectedFullName = compactPersonName(`${first} ${last}`);
+  const matches = users.filter((user: any) => {
+    const candidateFullName = compactPersonName(`${textValue(user.fname)} ${textValue(user.lname)}`);
+    return candidateFullName === expectedFullName;
+  });
+  return matches.length === 1 && matches[0]?._id ? matches[0] : null;
+}
+
+async function findUniqueUserIdByPersonName(personName: string): Promise<string | null> {
+  const user = await findUniqueUserByPersonName(personName);
+  return user?._id ? String(user._id) : null;
+}
+
+export async function findExistingResearchEntityByFacultyResearchAreaIdentity(
+  Model: mongoose.Model<any>,
+  identity: { entityKey?: string; name?: unknown; entityType?: unknown },
+): Promise<any | null> {
+  const observedEntityType = textValue(identity.entityType);
+  const observedKey = textValue(identity.entityKey);
+  const isFacultyResearchArea =
+    observedEntityType === 'FACULTY_RESEARCH_AREA' || isFacultyResearchAreaKey(observedKey);
+  if (!isFacultyResearchArea) return null;
+
+  const personName =
+    personNameFromFacultyResearchArea(identity.name) ||
+    personNameFromFacultyResearchArea(observedKey);
+  if (!personName) return null;
+
+  const userId = await findUniqueUserIdByPersonName(personName);
+  if (!userId || !mongoose.Types.ObjectId.isValid(userId)) return null;
+
+  const memberships = await ResearchGroupMember.find({
+    userId: new mongoose.Types.ObjectId(userId),
+    role: 'pi',
+    isCurrentMember: { $ne: false },
+    researchEntityId: { $exists: true, $ne: null },
+  })
+    .select('researchEntityId')
+    .lean();
+  const candidateIds = Array.from(
+    new Set(memberships.map((member: any) => String(member.researchEntityId)).filter(Boolean)),
+  );
+  if (candidateIds.length === 0) return null;
+
+  const parts = personName.split(/\s+/).filter(Boolean);
+  const compatibleNames = piCompatibleResearchEntityNames(
+    parts.slice(0, -1).join(' '),
+    parts[parts.length - 1],
+  );
+  const candidates = await Model.find({
+    _id: { $in: candidateIds },
+    archived: { $ne: true },
+  })
+    .select('_id name slug')
+    .lean();
+  const nonGeneratedCandidates = candidates.filter(
+    (candidate: any) => !textValue(candidate.slug).startsWith('faculty-research-area-'),
+  );
+  const compatibleCandidates = nonGeneratedCandidates.filter((candidate: any) =>
+    compatibleNames.has(normalizeResearchEntityName(candidate.name)),
+  );
+  const resolvedCandidates =
+    compatibleCandidates.length > 0 ? compatibleCandidates : nonGeneratedCandidates;
+  if (resolvedCandidates.length !== 1) return null;
+
+  return Model.findById(resolvedCandidates[0]._id).lean();
+}
+
+export async function syncProfileBackedFacultyResearchAreaMemberFromIdentity(
+  researchEntityId: string,
+  identity: {
+    entityKey?: string;
+    name?: unknown;
+    entityType?: unknown;
+    userId?: string;
+    sourceUrl?: string;
+    confidence?: number;
+  },
+  deps: ProfileBackedFacultyResearchAreaMemberDeps = {},
+): Promise<{
+  synced: boolean;
+  created: boolean;
+  researchEntityId?: string;
+  userId?: string;
+  skipped?: 'not-faculty-research-area' | 'user-not-resolved';
+}> {
+  const observedEntityType = textValue(identity.entityType);
+  const observedKey = textValue(identity.entityKey);
+  const isFacultyResearchArea =
+    observedEntityType === 'FACULTY_RESEARCH_AREA' || isFacultyResearchAreaKey(observedKey);
+  if (!isFacultyResearchArea) {
+    return { synced: false, created: false, skipped: 'not-faculty-research-area' };
+  }
+
+  const userModel = deps.userModel || User;
+  const personName =
+    personNameFromFacultyResearchArea(identity.name) ||
+    personNameFromFacultyResearchArea(observedKey);
+  let user =
+    identity.userId && mongoose.Types.ObjectId.isValid(identity.userId)
+      ? await userModel.findById(identity.userId).select('_id fname lname').lean()
+      : null;
+  if (!user) {
+    user = personName ? await findUniqueUserByPersonName(personName) : null;
+  }
+  if (!user?._id) return { synced: false, created: false, skipped: 'user-not-resolved' };
+
+  const memberModel = deps.researchGroupMemberModel || ResearchGroupMember;
+  const userId = String(user._id);
+  const memberLookup = { researchEntityId, userId, role: 'pi' };
+  const existing =
+    (await memberModel.findOne({ ...memberLookup, isCurrentMember: { $ne: false } }).lean()) ||
+    (await memberModel.findOne(memberLookup).lean());
+  const set = {
+    researchEntityId,
+    userId,
+    name: `${textValue(user.fname)} ${textValue(user.lname)}`.trim() || personName,
+    role: 'pi',
+    isCurrentMember: true,
+    sourceUrl: textValue(identity.sourceUrl),
+    confidence: Number(identity.confidence) || 0.8,
+    lastObservedAt: new Date(),
+  };
+
+  if (!existing) {
+    await memberModel.create(set);
+    return { synced: true, created: true, researchEntityId, userId };
+  }
+
+  await memberModel.updateOne({ _id: existing._id }, { $set: set });
+  return { synced: true, created: false, researchEntityId, userId };
+}
+
+function latestObservationDate(observations: Array<{ observedAt?: Date }>): Date {
+  const timestamps = observations
+    .map((observation) => new Date(observation.observedAt || 0).getTime())
+    .filter((time) => Number.isFinite(time));
+  if (timestamps.length === 0) return new Date();
+  return new Date(Math.max(...timestamps));
+}
+
+async function materializeResearchEntityRelationship(
+  identifier: { entityId?: string; entityKey?: string },
+  observations: any[],
+  options: MaterializeOptions,
+  deps: ResolvedRelationshipMaterializationDeps = {},
+): Promise<MaterializeResult> {
+  const resolverObs: ResolverObservation[] = observations.map((o: any) => ({
+    field: o.field,
+    value: o.value,
+    sourceName: o.sourceName,
+    confidence: o.confidence,
+    observedAt: o.observedAt,
+  }));
+  const resolved = withResolvedFieldProvenance(resolveAllFields(resolverObs), observations);
+
+  const skip = (skipped: string): MaterializeResult => ({
+    entityType: 'researchEntityRelationship',
+    ...identifier,
+    fieldsWritten: 0,
+    conflicts: 0,
+    created: false,
+    resolved,
+    skipped,
+  });
+
+  const sourceEntityKey = textValue(resolved.sourceEntityKey?.value);
+  const targetEntityKey = textValue(resolved.targetEntityKey?.value);
+  const relationshipType = textValue(resolved.relationshipType?.value);
+  if (!sourceEntityKey || !targetEntityKey || !relationshipType) {
+    return skip('missing-keys');
+  }
+
+  const researchEntityModel = deps.researchEntityModel || ResearchEntity;
+  const relationshipModel = deps.relationshipModel || ResearchEntityRelationship;
+
+  const source = (await researchEntityModel
+    .findOne({ slug: sourceEntityKey, archived: { $ne: true } }, { _id: 1 })
+    .lean()) as { _id?: unknown } | null;
+  if (!source?._id) return skip('source-not-resolved');
+
+  const canonicalFacultyResearchAreaTarget =
+    (await findExistingResearchEntityByFacultyResearchAreaIdentity(researchEntityModel as any, {
+      entityKey: targetEntityKey,
+      entityType: 'FACULTY_RESEARCH_AREA',
+    })) as { _id?: unknown } | null;
+  const target = (await researchEntityModel
+    .findOne({ slug: targetEntityKey, archived: { $ne: true } }, { _id: 1, name: 1, slug: 1 })
+    .lean()) as { _id?: unknown; name?: unknown; slug?: string } | null;
+  const resolvedTarget = canonicalFacultyResearchAreaTarget || target;
+  if (!resolvedTarget?._id) return skip('target-not-resolved');
+
+  if (options.dryRun) {
+    return {
+      entityType: 'researchEntityRelationship',
+      entityId: String(source._id),
+      entityKey: identifier.entityKey,
+      fieldsWritten: 0,
+      conflicts: 0,
+      created: false,
+      resolved,
+    };
+  }
+
+  if (!canonicalFacultyResearchAreaTarget && target?._id) {
+    await syncProfileBackedFacultyResearchAreaMemberFromIdentity(String(target._id), {
+      entityKey: targetEntityKey,
+      name: target.name,
+      entityType: 'FACULTY_RESEARCH_AREA',
+      sourceUrl: textValue(resolved.sourceUrl?.value),
+      confidence: Math.max(0, ...observations.map((o) => Number(o.confidence) || 0)),
+    });
+  }
+
+  const sourceResearchEntityId = String(source._id);
+  const targetResearchEntityId = String(resolvedTarget._id);
+  // Prefer linking the center to the member's existing PI-led lab (a rich page)
+  // over a thin faculty-research-area stub: a resolved target whose slug is not a
+  // generated `faculty-research-area-*` is a real research home → AFFILIATED_LAB.
+  const resolvedRelationshipType = centerRelationshipTypeForResolvedTarget(
+    textValue((resolvedTarget as { slug?: unknown }).slug),
+    relationshipType,
+  );
+  const label = relationshipLabelForType(resolvedRelationshipType);
+  const evidenceStrength = textValue(resolved.evidenceStrength?.value) || 'MODERATE';
+  const evidenceQuote = textValue(resolved.evidenceQuote?.value);
+  const sourceUrl = textValue(resolved.sourceUrl?.value);
+  const confidence = Math.max(0, ...observations.map((o) => Number(o.confidence) || 0));
+  const observedAt = latestObservationDate(observations);
+
+  const update: Record<string, unknown> = {
+    sourceResearchEntityId,
+    targetResearchEntityId,
+    relationshipType: resolvedRelationshipType,
+    label,
+    evidenceStrength,
+    sourceUrl,
+    confidence: confidence || 0.7,
+    archived: false,
+    lastObservedAt: observedAt,
+  };
+  if (evidenceQuote) update.evidenceQuote = evidenceQuote;
+
+  const result: any = await relationshipModel.updateOne(
+    { sourceResearchEntityId, targetResearchEntityId, relationshipType: resolvedRelationshipType },
+    { $set: update },
+    { upsert: true },
+  );
+
+  // The upsert key includes relationshipType, so a center→target edge that was
+  // previously a different type (e.g. MEMBER_RESEARCH_AREA before a lab resolved)
+  // would survive as a stale duplicate. Archive any sibling with the same
+  // (source, target) but a different type so the page shows exactly one edge.
+  if (relationshipModel.updateMany) {
+    await relationshipModel.updateMany(
+      {
+        sourceResearchEntityId,
+        targetResearchEntityId,
+        relationshipType: { $ne: resolvedRelationshipType },
+        archived: { $ne: true },
+      },
+      { $set: { archived: true } },
+    );
+  }
+
+  return {
+    entityType: 'researchEntityRelationship',
+    entityId: sourceResearchEntityId,
+    entityKey: identifier.entityKey,
+    fieldsWritten: observations.length,
+    conflicts: 0,
+    created: Boolean(result?.upsertedCount),
+    resolved,
+  };
+}
+
+const RESEARCH_ENTITY_RELATIONSHIP_LABELS: Record<string, string> = {
+  AFFILIATED_LAB: 'Affiliated lab',
+  AFFILIATED_RESEARCH_GROUP: 'Related research group',
+  MEMBER_RESEARCH_AREA: 'Member',
+  HOSTED_PROGRAM: 'Hosted program',
+};
+
+export function relationshipLabelForType(relationshipType: string): string {
+  return RESEARCH_ENTITY_RELATIONSHIP_LABELS[relationshipType] || 'Related research home';
+}
+
+/**
+ * Pick the relationship type for a center→target edge. A resolved target whose
+ * slug is a generated `faculty-research-area-*` stub stays MEMBER_RESEARCH_AREA;
+ * anything else is a real research home (the member's PI-led lab) → AFFILIATED_LAB.
+ */
+export function centerRelationshipTypeForResolvedTarget(
+  resolvedTargetSlug: string,
+  fallbackType: string,
+): string {
+  const slug = (resolvedTargetSlug || '').trim();
+  return slug && !slug.startsWith('faculty-research-area-') ? 'AFFILIATED_LAB' : fallbackType;
+}
 
 const uniqueStrings = (values: unknown[]): string[] =>
   Array.from(new Set(values.map(textValue).filter(Boolean)));
@@ -1611,6 +2144,10 @@ export async function materializeEntity(
     return materializeResearchGroupMember(identifier, obs, options);
   }
 
+  if (entityType === 'researchEntityRelationship') {
+    return materializeResearchEntityRelationship(identifier, obs, options);
+  }
+
   const Model = entityModelFor(entityType);
   if (!Model) {
     return {
@@ -1817,6 +2354,7 @@ export async function materializeEntity(
   if (isResearchEntityObservationType(entityType) && entityIdString) {
     if (!options.dryRun) {
       await materializeInferredPiMembership(entityIdString, materializationObs);
+      await materializeInferredDirectorMembership(entityIdString, materializationObs);
     }
     const accessResult = await materializeAccessForResearchGroup({
       researchEntityId: entityIdString,
@@ -1832,6 +2370,16 @@ export async function materializeEntity(
       conflicts: 0,
       errors: accessResult.errors,
     };
+
+    // Recompute the browse-ranking score now that access signals exist, and
+    // re-sync the entity so the default /research ordering stays fresh.
+    if (!options.dryRun) {
+      try {
+        await recomputeBrowseRankForEntities([entityIdString]);
+      } catch (error) {
+        console.error('Failed to recompute browseRankScore for', entityIdString, error);
+      }
+    }
   }
 
   return {

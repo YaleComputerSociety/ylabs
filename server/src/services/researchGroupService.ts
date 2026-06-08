@@ -343,6 +343,28 @@ const isMissingMeiliEmbedderError = (error: unknown): boolean => {
 };
 
 /**
+ * True when Meilisearch rejected the query because a requested sort attribute is
+ * not in the index's sortableAttributes. Lets the default browse degrade
+ * gracefully when a newly-added sortable attribute (e.g. browseRankScore) has
+ * not yet been pushed to the running index's settings.
+ */
+const isUnsortableAttributeError = (error: unknown): boolean => {
+  const maybeError = error as {
+    code?: string;
+    message?: string;
+    cause?: { code?: string; message?: string };
+  };
+  const code = maybeError?.code || maybeError?.cause?.code;
+  const message = maybeError?.message || maybeError?.cause?.message || '';
+
+  return (
+    code === 'invalid_search_sort' ||
+    code === 'invalid_sort' ||
+    /not sortable|sortable attributes/i.test(message)
+  );
+};
+
+/**
  * Hybrid Meilisearch query for ResearchEntity. Mirrors the pattern used in
  * listingService — keyword-only when no query, hybrid (semanticRatio 0.8) when
  * a non-empty query is provided.
@@ -403,6 +425,10 @@ export async function searchResearchGroupsViaMeili(
     const order = sort.sortOrder === 'asc' ? 'asc' : 'desc';
     sortConfig.push(`${sort.sortBy}:${order}`);
   } else if (trimmedQuery === '') {
+    // Default browse: surface the "best" research homes first — those with the
+    // strongest completeness + undergrad-access signal — then fall back to
+    // recency as a tiebreak. See services/researchEntityBrowseRank.ts.
+    sortConfig.push('browseRankScore:desc');
     sortConfig.push('lastObservedAt:desc');
   }
 
@@ -422,18 +448,42 @@ export async function searchResearchGroupsViaMeili(
   }
 
   const index = await getMeiliIndex('researchentities');
-  let searchResult: { hits?: any[]; estimatedTotalHits?: number };
-  try {
-    searchResult = await index.search(trimmedQuery, searchParams);
-  } catch (error) {
-    if (!searchParams.hybrid || !isMissingMeiliEmbedderError(error)) {
-      throw error;
+  // Search, degrading gracefully on recoverable errors: drop the semantic
+  // embedder if it is not configured, and drop the browseRankScore sort key if
+  // the running index has not yet had it added to sortableAttributes. Each
+  // degradation is applied at most once; anything else propagates.
+  const searchWithFallbacks = async (): Promise<{
+    hits?: any[];
+    estimatedTotalHits?: number;
+  }> => {
+    // Each attempt uses an immutable params object; degrading clones rather than
+    // mutating, so already-issued calls keep the params they were sent.
+    let params: Record<string, any> = searchParams;
+    while (true) {
+      try {
+        return await index.search(trimmedQuery, params);
+      } catch (error) {
+        if (params.hybrid && isMissingMeiliEmbedderError(error)) {
+          params = { ...params };
+          delete params.hybrid;
+          continue;
+        }
+        if (Array.isArray(params.sort) && isUnsortableAttributeError(error)) {
+          const filtered = params.sort.filter(
+            (entry: string) => !entry.startsWith('browseRankScore'),
+          );
+          if (filtered.length !== params.sort.length) {
+            params = { ...params };
+            if (filtered.length > 0) params.sort = filtered;
+            else delete params.sort;
+            continue;
+          }
+        }
+        throw error;
+      }
     }
-
-    const keywordOnlyParams = { ...searchParams };
-    delete keywordOnlyParams.hybrid;
-    searchResult = await index.search(trimmedQuery, keywordOnlyParams);
-  }
+  };
+  const searchResult = await searchWithFallbacks();
   const { hits, estimatedTotalHits } = searchResult;
 
   const hitIds = (hits || [])
@@ -1271,6 +1321,10 @@ export async function getResearchGroupDetail(slug: string): Promise<{
   const imageGuardedMembersWithRows = await withPublicMemberImageGuards(membersWithRows);
   const dedupedMembersWithRows = dedupeSameNameLeadMembers(imageGuardedMembersWithRows, group);
   const piOutreachRoute = buildLeadPiOutreachContactRoute(dedupedMembersWithRows, group);
+  const leadMemberNames = dedupedMembersWithRows
+    .filter((member) => PUBLIC_LEAD_ROLES.has(member.role))
+    .map((member) => memberDisplayName(member))
+    .filter((name): name is string => Boolean(name));
   const members = dedupedMembersWithRows.map(({ row, ...member }) => {
     return {
       ...member,
@@ -1406,7 +1460,8 @@ export async function getResearchGroupDetail(slug: string): Promise<{
 
   const activeListings = activeListingsRaw.map(publicListingForResearchDetail);
   const publicGroup = sanitizeFacultyResearchEntityCopyFields(
-    sanitizeResearchEntityPublicDescriptionFields(group as any),
+    sanitizeResearchEntityPublicDescriptionFields(group as any, leadMemberNames),
+    leadMemberNames,
   );
   const publicEntryPathways = (entryPathways as any[]).map((pathway) =>
     publicEntryPathwayForResearchDetail(pathway, publicGroup),

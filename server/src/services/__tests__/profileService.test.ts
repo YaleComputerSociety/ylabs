@@ -823,9 +823,9 @@ describe('profileService profile shaping', () => {
         researchAreas: ['DNA Damage'],
       },
     ]);
-    expect(profile.research_interest_summary).toBe(
-      'Studies DNA damage responses and melanoma biology.',
-    );
+    // The generated "Studies <areas>." shortDescription only restates the tag
+    // chips, so it is not surfaced as the context paragraph.
+    expect(profile.research_interest_summary).toBe('');
     expect(profile.research_interests).toEqual(['DNA Damage']);
   });
 
@@ -958,6 +958,8 @@ describe('profileService profile shaping', () => {
             name: 'Abraham Silberschatz Faculty Research',
             shortDescription:
               'Studies database systems, operating systems, storage systems, and distributed systems.',
+            fullDescription:
+              'The Silberschatz group designs database engines and operating-system storage layers, focusing on transaction processing and crash recovery in distributed settings.',
             researchAreas: ['Database Systems', 'Operating Systems'],
           },
         ],
@@ -965,8 +967,10 @@ describe('profileService profile shaping', () => {
     );
 
     expect(profile.bio).toBe('');
+    // The real fullDescription prose surfaces as the context paragraph (not the
+    // generated "Studies <areas>." restatement of the tag chips).
     expect(profile.research_interest_summary).toBe(
-      'Studies database systems, operating systems, storage systems, and distributed systems.',
+      'The Silberschatz group designs database engines and operating-system storage layers, focusing on transaction processing and crash recovery in distributed settings.',
     );
     expect(profile.research_interests).toEqual(['Database Systems', 'Operating Systems']);
     expect(profile.topics).toEqual([]);
@@ -1033,9 +1037,79 @@ describe('profileService profile shaping', () => {
     );
 
     expect(profile.bio).toBe('');
-    expect(profile.research_interest_summary).toBe(
-      'Studies database systems, operating systems, storage systems, and distributed systems for modern computing infrastructure.',
+    // Only a generated "Studies <areas>." shortDescription is present, so there
+    // is no real prose to show beside the tag chips.
+    expect(profile.research_interest_summary).toBe('');
+  });
+
+  it('suppresses a context summary that merely restates the research-area tags', () => {
+    const profile = normalizePublicProfile(
+      {
+        netid: 'jlp58',
+        fname: 'Jordan',
+        lname: 'Peccia',
+        bio: '',
+        researchInterests: [],
+        topics: [],
+      },
+      {
+        trustedResearchEntities: true,
+        researchEntities: [
+          {
+            name: 'Peccia Lab',
+            kind: 'lab',
+            entityType: 'LAB',
+            role: 'pi',
+            fullDescription:
+              'Research fields include Indoor Air Quality and Microbial Exposure, SARS-CoV-2 detection and testing, and Air Quality and Health Impacts.',
+            researchAreas: [
+              'Indoor Air Quality and Microbial Exposure',
+              'SARS-CoV-2 detection and testing',
+              'Air Quality and Health Impacts',
+            ],
+          },
+        ],
+      },
     );
+
+    expect(profile.research_interest_summary).toBe('');
+    expect(profile.research_interests).toEqual([
+      'Indoor Air Quality and Microbial Exposure',
+      'SARS-CoV-2 detection and testing',
+      'Air Quality and Health Impacts',
+    ]);
+  });
+
+  it('leads the context summary with research, dropping appointment/title preamble', () => {
+    const profile = normalizePublicProfile(
+      {
+        netid: 'bpl2',
+        fname: 'Brian',
+        lname: 'Leaderer',
+        bio: '',
+        researchInterests: [],
+        topics: [],
+      },
+      {
+        trustedResearchEntities: true,
+        researchEntities: [
+          {
+            name: 'Leaderer Lab',
+            kind: 'lab',
+            entityType: 'LAB',
+            role: 'pi',
+            fullDescription:
+              'Dr. Brian Leaderer is the Susan Dwight Bliss Professor Emeritus of Epidemiology at the Yale School of Public Health. He served as Deputy Dean for over 14 years. Dr. Leaderer studies how exposures to indoor and outdoor air contaminants affect respiratory health in epidemiological field studies.',
+            researchAreas: ['Air Quality and Health Impacts'],
+          },
+        ],
+      },
+    );
+
+    expect(profile.research_interest_summary).toBe(
+      'Dr. Leaderer studies how exposures to indoor and outdoor air contaminants affect respiratory health in epidemiological field studies.',
+    );
+    expect(profile.research_interest_summary).not.toContain('Professor Emeritus');
   });
 
   it('rejects first-person research-home snippets as fallback bios', () => {

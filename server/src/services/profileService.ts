@@ -509,18 +509,103 @@ const cleanScholarlyTitle = (value: unknown): string => {
   return cleaned || 'Untitled research activity';
 };
 
-const firstUsefulResearchEntitySummary = (researchEntities: any[]): string => {
+const RESEARCH_CONTEXT_SUMMARY_MAX_LENGTH = 480;
+const RESEARCH_CONTEXT_SUMMARY_MIN_EXTRA_WORDS = 4;
+
+// Generated entity descriptions often just announce the topic list ("Studies
+// X.", "Research fields include X, Y, Z."), which is identical information to
+// the research-area tag chips. Strip that lead-in so we can detect when the
+// remainder adds nothing beyond the tags.
+const RESEARCH_SUMMARY_TAG_RESTATEMENT_LEADIN =
+  /^(?:research(?:\s+(?:fields?|interests?|areas?|focus(?:es)?))?\s*(?:includes?|including|on|in|:)?|studies|specializations?:?|focuses\s+on|investigates|examines|explores|researches|analyzes)\s+/i;
+
+const RESEARCH_SUMMARY_STOPWORDS = new Set([
+  'research', 'studies', 'study', 'field', 'fields', 'interest', 'interests',
+  'area', 'areas', 'include', 'includes', 'including', 'focus', 'focuses',
+  'focused', 'work', 'works', 'with', 'that', 'this', 'their', 'from', 'into',
+  'across', 'using', 'based', 'also', 'such', 'have', 'related', 'various',
+  'particularly', 'broadly', 'generally', 'these', 'those', 'about', 'between',
+]);
+
+const researchSummaryContentTokens = (value: string): Set<string> =>
+  new Set(
+    String(value || '')
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter((word) => word.length >= 4 && !RESEARCH_SUMMARY_STOPWORDS.has(word)),
+  );
+
+// True when a candidate summary, after dropping its lead-in, contributes almost
+// no content words beyond the research-area tags — i.e. it would be redundant
+// shown next to the chips.
+const summaryRestatesResearchAreas = (summary: string, researchAreas: unknown): boolean => {
+  const stripped = summary.replace(RESEARCH_SUMMARY_TAG_RESTATEMENT_LEADIN, '');
+  const summaryTokens = researchSummaryContentTokens(stripped);
+  if (summaryTokens.size === 0) return true;
+  const areaTokens = researchSummaryContentTokens(
+    (Array.isArray(researchAreas) ? researchAreas : []).join(' '),
+  );
+  let extra = 0;
+  for (const token of summaryTokens) {
+    if (!areaTokens.has(token)) extra += 1;
+  }
+  return extra < RESEARCH_CONTEXT_SUMMARY_MIN_EXTRA_WORDS;
+};
+
+const PROFILE_SENTENCE_TITLE_ABBREVIATION =
+  /(?:^|\s)(?:Dr|Prof|Mr|Mrs|Ms|Mx|St|Jr|Sr|Hon|Rev|Fr|Gen|Col|Lt|Capt|Sgt)\.$/i;
+
+// Split prose into sentences without breaking on title abbreviations ("Dr.")
+// or single-letter initials.
+const splitProfileSentences = (text: string): string[] => {
+  const sentenceEnds = Array.from(text.matchAll(/[.!?](?=\s|$)/g)).filter((match) => {
+    if (typeof match.index !== 'number') return false;
+    const candidate = text.slice(0, match.index + 1).trim();
+    return (
+      !PROFILE_SENTENCE_TITLE_ABBREVIATION.test(candidate) && !/(?:^|\s)[A-Z]\.$/.test(candidate)
+    );
+  });
+  const sentences: string[] = [];
+  let start = 0;
+  for (const match of sentenceEnds) {
+    const end = (match.index as number) + 1;
+    const sentence = text.slice(start, end).trim();
+    if (sentence) sentences.push(sentence);
+    start = end;
+  }
+  const tail = text.slice(start).trim();
+  if (tail) sentences.push(tail);
+  return sentences;
+};
+
+// Lead with the research content: when prose opens with appointment/title
+// sentences ("Dr. X is the … Professor of …") and a later sentence actually
+// describes the research, drop the leading credentials so the context
+// paragraph is about the work, not the CV.
+const trimToResearchLead = (text: string): string => {
+  const sentences = splitProfileSentences(text);
+  if (sentences.length < 2) return text;
+  if (!isAppointmentOnlyProfileBio(sentences[0]) || hasResearchDescriptionVerb(sentences[0])) {
+    return text;
+  }
+  const researchIndex = sentences.findIndex((sentence) => hasResearchDescriptionVerb(sentence));
+  if (researchIndex <= 0) return text;
+  return sentences.slice(researchIndex).join(' ').trim();
+};
+
+// A short context paragraph for the Research Interests section: the first
+// entity's REAL descriptive prose (`fullDescription`), never the generated
+// `shortDescription` ("Studies <areas>.") which only restates the tag chips.
+// Returns '' when the only available text just restates the research areas, so
+// the section renders the tags alone rather than a redundant sentence.
+const researchInterestContextSummary = (researchEntities: any[]): string => {
   for (const entity of researchEntities) {
-    const summary = String(
-      entity?.shortDescription ||
-        entity?.fullDescription ||
-        entity?._bioFullDescription ||
-        entity?.description ||
-        '',
-    )
-      .replace(/\s+/g, ' ')
-      .trim();
-    if (summary) return summary;
+    const cleaned = cleanResearchHomeSummaryForBio(
+      String(entity?.fullDescription || entity?._bioFullDescription || entity?.description || ''),
+    );
+    if (cleaned.length < TRUSTED_RESEARCH_HOME_BIO_MIN_SUMMARY_LENGTH) continue;
+    if (summaryRestatesResearchAreas(cleaned, entity?.researchAreas)) continue;
+    return clipPublicProfileBio(trimToResearchLead(cleaned), RESEARCH_CONTEXT_SUMMARY_MAX_LENGTH, 200);
   }
   return '';
 };
@@ -768,11 +853,15 @@ const isNonBiographicalPublicBio = (value: string): boolean => {
   return /^copy link$/i.test(text);
 };
 
-const clipPublicProfileBio = (value: string): string => {
+const clipPublicProfileBio = (
+  value: string,
+  maxLength: number = PUBLIC_PROFILE_BIO_MAX_LENGTH,
+  minSentenceIndex = 300,
+): string => {
   const text = stripTrailingOfficialProfileUpdateMetadata(value.replace(/\s+/g, ' ').trim());
-  if (text.length <= PUBLIC_PROFILE_BIO_MAX_LENGTH) return text;
+  if (text.length <= maxLength) return text;
 
-  const prefix = text.slice(0, PUBLIC_PROFILE_BIO_MAX_LENGTH).trim();
+  const prefix = text.slice(0, maxLength).trim();
   const sentenceEnds = Array.from(prefix.matchAll(/[.!?](?=\s|$)/g)).filter((match) => {
     if (typeof match.index !== 'number') return false;
     const candidate = prefix.slice(0, match.index + 1).trim();
@@ -783,7 +872,11 @@ const clipPublicProfileBio = (value: string): string => {
     );
   });
   const lastSentenceEnd = sentenceEnds.at(-1);
-  if (lastSentenceEnd && typeof lastSentenceEnd.index === 'number' && lastSentenceEnd.index >= 300) {
+  if (
+    lastSentenceEnd &&
+    typeof lastSentenceEnd.index === 'number' &&
+    lastSentenceEnd.index >= minSentenceIndex
+  ) {
     return prefix.slice(0, lastSentenceEnd.index + 1).trim();
   }
 
@@ -1219,7 +1312,7 @@ export const normalizePublicProfile = (
   const researchInterestSummary =
     user.researchInterestSummary ||
     user.research_interest_summary ||
-    firstUsefulResearchEntitySummary(researchEntities);
+    researchInterestContextSummary(researchEntities);
   const hasSupportedResearchIdentity =
     (!contaminated || (extras.trustedResearchEntities && researchEntities.length > 0)) &&
     Boolean(

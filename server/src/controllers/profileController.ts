@@ -115,7 +115,10 @@ export const getProfile = async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Profile not found' });
     }
 
-    res.json({ profile: normalizePublicProfile(profile as any) });
+    // `getProfileByNetid` already returns a normalized public profile (with its
+    // research homes + derived interest tags). Re-normalizing here would drop
+    // the loaded researchEntities and re-derive interests from nothing.
+    res.json({ profile });
   } catch (error: any) {
     console.error('Profile: Error fetching profile:', error);
     res.status(500).json({ error: 'Failed to fetch profile' });

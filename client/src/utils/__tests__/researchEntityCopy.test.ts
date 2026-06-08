@@ -4,6 +4,11 @@ import {
   entityKindLabel,
   isFacultyResearchEntity,
   researchWebsiteLabel,
+  researchWebsiteCtaLabel,
+  researchStructureLabel,
+  decisionHeadingLabel,
+  approachHeadingLabel,
+  relationshipTypeLabel,
   sanitizeFacultyResearchCopy,
 } from '../researchEntityCopy';
 
@@ -30,6 +35,21 @@ describe('researchEntityCopy', () => {
     expect(isFacultyResearchEntity(entity)).toBe(false);
     expect(entityKindLabel(entity)).toBe('Lab');
     expect(researchWebsiteLabel(entity)).toBe('lab website');
+  });
+
+  it('uses research-home wording for programs', () => {
+    const entity = {
+      name: 'Department Undergraduate Research',
+      kind: 'program',
+      entityType: 'PROGRAM',
+    };
+
+    expect(entityKindLabel(entity)).toBe('Program');
+    expect(researchWebsiteLabel(entity)).toBe('program website');
+    expect(researchWebsiteCtaLabel(entity)).toBe('Visit program website');
+    expect(researchStructureLabel(entity)).toBe('program');
+    expect(decisionHeadingLabel(entity)).toBe('What this program focuses on');
+    expect(approachHeadingLabel(entity)).toBe('Ways to approach this program');
   });
 
   it('sanitizes faculty research copy without changing real lab copy', () => {
@@ -67,5 +87,19 @@ describe('researchEntityCopy', () => {
         facultyResearch,
       ),
     ).toBe('This research includes genomic screening. This research addresses cilia.');
+  });
+});
+
+describe('relationshipTypeLabel', () => {
+  it('maps known relationship types', () => {
+    expect(relationshipTypeLabel('AFFILIATED_LAB')).toBe('Affiliated lab');
+    expect(relationshipTypeLabel('MEMBER_RESEARCH_AREA')).toBe('Member');
+    expect(relationshipTypeLabel('HOSTED_PROGRAM')).toBe('Hosted program');
+  });
+
+  it('returns empty string for unknown/missing types so the tag is dropped', () => {
+    expect(relationshipTypeLabel('WHATEVER')).toBe('');
+    expect(relationshipTypeLabel(undefined)).toBe('');
+    expect(relationshipTypeLabel(null)).toBe('');
   });
 });

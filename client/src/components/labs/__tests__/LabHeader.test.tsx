@@ -77,6 +77,24 @@ describe('LabHeader', () => {
     expect(container.textContent).toContain('Visit research website');
     expect(container.textContent).not.toContain('Visit lab website');
   });
+
+  it('uses program wording for program profiles', () => {
+    const { container } = render(
+      <LabHeader
+        group={{
+          ...baseGroup,
+          name: 'Molecular Biophysics and Biochemistry Undergraduate Research',
+          kind: 'program',
+          entityType: 'PROGRAM',
+          websiteUrl: 'https://mbb.yale.edu/introduction-undergraduate-program',
+        }}
+      />,
+    );
+
+    expect(container.textContent).toContain('Program');
+    expect(container.textContent).toContain('Visit program website');
+    expect(container.textContent).not.toContain('Visit lab website');
+  });
 });
 
 describe('LabHeader trust-gradient pill', () => {

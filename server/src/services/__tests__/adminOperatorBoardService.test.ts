@@ -20,6 +20,8 @@ import {
   readPromotionCopyDryRunArtifact,
   derivePromotionCopyGate,
   summarizeDryRunPosture,
+  buildGateArtifactFreshness,
+  GATE_SCORECARD_MAX_AGE_HOURS,
 } from '../adminOperatorBoardService';
 
 describe('adminOperatorBoardService', () => {
@@ -338,7 +340,7 @@ describe('adminOperatorBoardService', () => {
 
     const artifact = readDataQualityGateArtifact(
       artifactPath,
-      new Date('2026-05-30T22:30:00.000Z'),
+      new Date('2026-05-29T23:30:00.000Z'),
     );
 
     expect(artifact).toMatchObject({
@@ -536,6 +538,62 @@ describe('adminOperatorBoardService', () => {
     });
   });
 
+  it('flags an artifact older than the tightened TTL as stale (honesty guard)', () => {
+    expect(GATE_SCORECARD_MAX_AGE_HOURS).toBeLessThanOrEqual(6);
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ylabs-operator-board-'));
+    const artifactPath = path.join(dir, 'beta-quality.json');
+    const generatedAt = '2026-06-07T00:00:00.000Z';
+    fs.writeFileSync(
+      artifactPath,
+      JSON.stringify({
+        generatedAt,
+        summary: { promotionReady: true, promotionBlockerCount: 0, promotionBlockersByOwner: [] },
+      }),
+    );
+    // One hour past the TTL: under the old 48h window this read "loaded"; the tightened TTL must
+    // flag it stale so a status that has moved on cannot masquerade as the live verdict.
+    const justStale = new Date(
+      new Date(generatedAt).getTime() + (GATE_SCORECARD_MAX_AGE_HOURS + 1) * 60 * 60 * 1000,
+    );
+    expect(readDataQualityGateArtifact(artifactPath, justStale)).toMatchObject({
+      artifactStatus: 'stale',
+      ageHours: GATE_SCORECARD_MAX_AGE_HOURS + 1,
+    });
+  });
+
+  it('reports per-gate artifact provenance and missing artifacts honestly', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ylabs-operator-board-'));
+    const dqPath = path.join(dir, 'beta-quality.json');
+    fs.writeFileSync(
+      dqPath,
+      JSON.stringify({ generatedAt: '2026-06-07T00:00:00.000Z', db: 'Beta', environment: 'beta' }),
+    );
+    const missingPath = path.join(dir, 'does-not-exist.json');
+    const prevDq = process.env.BETA_DATA_QUALITY_SCORECARD_PATH;
+    const prevCopy = process.env.PROMOTION_COPY_DRY_RUN_REPORT_PATH;
+    process.env.BETA_DATA_QUALITY_SCORECARD_PATH = dqPath;
+    process.env.PROMOTION_COPY_DRY_RUN_REPORT_PATH = missingPath;
+    try {
+      const freshness = buildGateArtifactFreshness(new Date('2026-06-07T00:30:00.000Z'));
+      expect(freshness.find((f) => f.gate === 'dataQuality')).toMatchObject({
+        status: 'fresh',
+        generatedAt: '2026-06-07T00:00:00.000Z',
+        db: 'Beta',
+        environment: 'beta',
+        ageMinutes: 30,
+      });
+      expect(freshness.find((f) => f.gate === 'productionCopy')).toMatchObject({
+        status: 'missing',
+        exists: false,
+      });
+    } finally {
+      if (prevDq === undefined) delete process.env.BETA_DATA_QUALITY_SCORECARD_PATH;
+      else process.env.BETA_DATA_QUALITY_SCORECARD_PATH = prevDq;
+      if (prevCopy === undefined) delete process.env.PROMOTION_COPY_DRY_RUN_REPORT_PATH;
+      else process.env.PROMOTION_COPY_DRY_RUN_REPORT_PATH = prevCopy;
+    }
+  });
+
   it('surfaces malformed saved data-quality artifacts as manual gate work', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ylabs-operator-board-'));
     const artifactPath = path.join(dir, 'beta-quality.json');
@@ -640,7 +698,7 @@ describe('adminOperatorBoardService', () => {
       }),
     );
 
-    const reviewTime = new Date('2026-05-30T22:30:00.000Z');
+    const reviewTime = new Date('2026-05-29T23:30:00.000Z');
 
     expect(readDataQualityGateArtifact(dataQualityPath, reviewTime)).toMatchObject({
       recommendedCommands: [
@@ -704,7 +762,7 @@ describe('adminOperatorBoardService', () => {
 
     const artifact = readScraperIntegrityGateArtifact(
       artifactPath,
-      new Date('2026-05-30T22:30:00.000Z'),
+      new Date('2026-05-29T23:30:00.000Z'),
     );
 
     expect(artifact).toMatchObject({
@@ -898,11 +956,11 @@ describe('adminOperatorBoardService', () => {
 
     const artifact = readLaunchTrustGateArtifact(
       artifactPath,
-      new Date('2026-05-30T22:30:00.000Z'),
+      new Date('2026-05-29T23:30:00.000Z'),
     );
     const reviewExceptionArtifact = readLaunchReviewExceptionsArtifact(
       reviewExceptionPath,
-      new Date('2026-05-30T22:30:00.000Z'),
+      new Date('2026-05-29T23:30:00.000Z'),
     );
 
     expect(artifact).toMatchObject({

@@ -365,7 +365,88 @@ interface OperatorBoard {
     };
     rows: SourceHealthRow[];
   };
+  artifactFreshness?: GateArtifactFreshness[];
 }
+
+interface GateArtifactFreshness {
+  gate: string;
+  path: string;
+  exists: boolean;
+  status: 'fresh' | 'stale' | 'missing' | 'unreadable';
+  generatedAt?: string;
+  ageMinutes?: number;
+  db?: string;
+  environment?: string;
+  maxAgeHours: number;
+}
+
+const GATE_LABELS: Record<string, string> = {
+  dataQuality: 'Data quality',
+  scraperIntegrity: 'Scraper integrity',
+  launchTrust: 'Launch trust',
+  launchReviewExceptions: 'Review exceptions',
+  launchAcquisition: 'Acquisition',
+  betaRepairQueue: 'Repair queue',
+  productionCopy: 'Production copy',
+};
+
+const formatAge = (ageMinutes?: number): string => {
+  if (ageMinutes === undefined) return 'unknown age';
+  if (ageMinutes < 1) return 'just now';
+  if (ageMinutes < 60) return `${ageMinutes} min ago`;
+  const hours = Math.floor(ageMinutes / 60);
+  if (hours < 24) return `${hours}h ${ageMinutes % 60}m ago`;
+  return `${Math.floor(hours / 24)}d ${hours % 24}h ago`;
+};
+
+const ArtifactFreshnessStrip = ({ items }: { items: GateArtifactFreshness[] }) => {
+  if (!items.length) return null;
+  const anyStale = items.some((i) => i.status === 'stale' || i.status === 'missing' || i.status === 'unreadable');
+  return (
+    <div
+      className={`mt-3 rounded-md border px-3 py-2 ${
+        anyStale ? 'border-red-200 bg-red-50' : 'border-green-200 bg-green-50'
+      }`}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs font-semibold uppercase tracking-wide text-gray-600">
+          Gate data freshness
+        </span>
+        {anyStale && (
+          <span className="text-xs font-semibold text-red-700">
+            Stale/missing inputs — rerun gates:refresh before trusting verdicts
+          </span>
+        )}
+      </div>
+      <div className="mt-2 flex flex-wrap gap-2">
+        {items.map((item) => {
+          const fresh = item.status === 'fresh';
+          const tone = fresh
+            ? 'border-green-200 bg-white text-green-800'
+            : 'border-red-300 bg-white text-red-800';
+          const detail =
+            item.status === 'fresh'
+              ? `${item.db || 'db?'} · ${formatAge(item.ageMinutes)}`
+              : item.status === 'stale'
+                ? `STALE · ${formatAge(item.ageMinutes)} (>${item.maxAgeHours}h)`
+                : item.status === 'missing'
+                  ? 'MISSING'
+                  : 'UNREADABLE';
+          return (
+            <span
+              key={item.gate}
+              title={`${item.path}${item.generatedAt ? ` · generated ${item.generatedAt}` : ''}`}
+              className={`rounded border px-2 py-1 text-xs ${tone}`}
+            >
+              <span className="font-semibold">{GATE_LABELS[item.gate] || item.gate}</span>{' '}
+              <span className="opacity-80">{detail}</span>
+            </span>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
 
 const tierLabel: Record<Tier, string> = {
   student_ready: 'Ready',
@@ -1015,6 +1096,8 @@ const AdminOperatorBoard = () => {
           Refresh
         </button>
       </div>
+
+      {board.artifactFreshness && <ArtifactFreshnessStrip items={board.artifactFreshness} />}
 
       {Boolean(board.recommendedNextActions?.length) && (
         <section className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4">

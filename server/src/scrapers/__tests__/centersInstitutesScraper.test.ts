@@ -18,6 +18,7 @@ import {
   jsRenderedStub,
   centerToGroupObservations,
   memberToObservations,
+  centerMemberRelationshipObservations,
   childCenterToObservations,
   type CenterConfig,
   type CenterMember,
@@ -343,7 +344,7 @@ describe('jsRenderedStub', () => {
 // ---------------------------------------------------------------------------
 
 describe('centerToGroupObservations', () => {
-  it('emits ResearchGroup fields keyed by center slug, with affiliatedNames', () => {
+  it('emits ResearchGroup fields keyed by center slug', () => {
     const config: CenterConfig = {
       centerKey: 'wu-tsai',
       centerName: 'Wu Tsai Institute',
@@ -373,20 +374,17 @@ describe('centerToGroupObservations', () => {
         'sourceUrls',
         'openness',
         'departments',
-        'affiliatedNames',
       ]),
     );
     expect(observations.find((o) => o.field === 'kind')!.value).toBe('institute');
-    expect(observations.find((o) => o.field === 'affiliatedNames')!.value).toEqual([
-      'Ian Abraham',
-      'Amy Arnsten',
-    ]);
+    // affiliatedNames is a dead field — never emitted (member rows carry roster identity).
+    expect(observations.find((o) => o.field === 'affiliatedNames')).toBeUndefined();
     // school is omitted when empty
     expect(observations.find((o) => o.field === 'school')).toBeUndefined();
     expect(observations.every((o) => o.entityKey === 'center-wu-tsai')).toBe(true);
   });
 
-  it('includes school when provided and omits departments/affiliatedNames when empty', () => {
+  it('includes school when provided and omits departments when empty', () => {
     const config: CenterConfig = {
       centerKey: 'whc',
       centerName: 'Whitney Humanities Center',
@@ -435,6 +433,62 @@ describe('memberToObservations', () => {
     expect(obs.find((o) => o.field === 'profileUrl')!.value).toBe(
       'https://egc.yale.edu/people/jane-doe',
     );
+  });
+});
+
+describe('centerMemberRelationshipObservations', () => {
+  const wuTsaiConfig: CenterConfig = {
+    centerKey: 'wu-tsai',
+    centerName: 'Wu Tsai Institute',
+    schoolName: '',
+    kind: 'institute',
+    url: 'https://wti.yale.edu/humans/faculty',
+    extractor: wuTsaiExtractor,
+  };
+
+  it('emits an umbrella → faculty-research-area relationship observation', () => {
+    const obs = centerMemberRelationshipObservations(
+      { name: 'Jane Doe', role: 'core-faculty' },
+      wuTsaiConfig,
+      'https://wti.yale.edu/humans/faculty',
+    );
+    expect(obs.every((o) => o.entityType === 'researchEntityRelationship')).toBe(true);
+    expect(
+      obs.every(
+        (o) =>
+          o.entityKey ===
+          'center-wu-tsai:faculty-research-area-jane-doe:MEMBER_RESEARCH_AREA',
+      ),
+    ).toBe(true);
+    expect(obs.find((o) => o.field === 'sourceEntityKey')!.value).toBe('center-wu-tsai');
+    expect(obs.find((o) => o.field === 'targetEntityKey')!.value).toBe(
+      'faculty-research-area-jane-doe',
+    );
+    expect(obs.find((o) => o.field === 'relationshipType')!.value).toBe('MEMBER_RESEARCH_AREA');
+    expect(obs.find((o) => o.field === 'evidenceStrength')!.value).toBe('MODERATE');
+  });
+
+  it('emits for every roster center now that the allowlist is gone', () => {
+    const cowles: CenterConfig = {
+      centerKey: 'cowles',
+      centerName: 'Cowles',
+      schoolName: 'FAS',
+      kind: 'center',
+      url: 'https://egc.yale.edu/people/faculty',
+      extractor: nodeTeaserPersonExtractor,
+    };
+    const obs = centerMemberRelationshipObservations({ name: 'Jane Doe' }, cowles, 'https://x');
+    expect(obs.length).toBeGreaterThan(0);
+    expect(obs.find((o) => o.field === 'sourceEntityKey')!.value).toBe('center-cowles');
+    expect(obs.find((o) => o.field === 'targetEntityKey')!.value).toBe(
+      'faculty-research-area-jane-doe',
+    );
+  });
+
+  it('emits nothing when the member name is empty', () => {
+    expect(
+      centerMemberRelationshipObservations({ name: '   ' }, wuTsaiConfig, 'https://x'),
+    ).toEqual([]);
   });
 });
 
@@ -549,10 +603,12 @@ describe('CentersInstitutesScraper.run', () => {
     const cowlesGroup = groupObs.filter((o) => o.entityKey === 'center-cowles');
     expect(cowlesGroup.find((o) => o.field === 'name')!.value).toBe('Cowles');
     expect(cowlesGroup.find((o) => o.field === 'school')!.value).toBe('FAS');
-    expect(cowlesGroup.find((o) => o.field === 'affiliatedNames')!.value).toEqual([
-      'Jane Doe',
-      'Bob Smith',
-    ]);
+
+    // Cowles is no longer allowlisted-out: its members now emit relationship obs too.
+    const relationshipObs = emitted.filter((o) => o.entityType === 'researchEntityRelationship');
+    expect(
+      relationshipObs.some((o) => o.entityKey?.startsWith('center-cowles:')),
+    ).toBe(true);
 
     const memberObs = emitted.filter((o) => o.entityType === 'researchGroupMember');
     const janeObs = memberObs.filter((o) => o.entityKey === 'center-cowles:jane-doe');

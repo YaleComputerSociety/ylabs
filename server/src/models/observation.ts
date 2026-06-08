@@ -9,6 +9,7 @@ import mongoose from 'mongoose';
 export type ObservedEntityType =
   | 'user'
   | 'researchEntity'
+  | 'researchEntityRelationship'
   | 'researchGroup'
   | 'researchGroupMember'
   | 'paper'
@@ -23,6 +24,7 @@ const observationSchema = new mongoose.Schema(
       enum: [
         'user',
         'researchEntity',
+        'researchEntityRelationship',
         'researchGroup',
         'researchGroupMember',
         'paper',

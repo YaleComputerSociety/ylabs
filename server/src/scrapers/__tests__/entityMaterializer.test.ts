@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   addPostMaterializationMetrics,
   buildInferredPiMemberUpsert,
+  centerRelationshipTypeForResolvedTarget,
+  relationshipLabelForType,
   buildOfficialProfileScholarlyLinkUpserts,
   buildPaperUpdateFromObservations,
   buildResearchGroupMemberUpsert,
@@ -943,5 +945,32 @@ describe('entityMaterializer post-materialization metrics', () => {
     ]);
 
     expect(ops).toEqual([]);
+  });
+});
+
+describe('center relationship type + label resolution', () => {
+  it('chooses AFFILIATED_LAB when the resolved target is a real research home', () => {
+    expect(
+      centerRelationshipTypeForResolvedTarget('amy-arnsten-lab', 'MEMBER_RESEARCH_AREA'),
+    ).toBe('AFFILIATED_LAB');
+  });
+
+  it('keeps the fallback type for a generated faculty-research-area target', () => {
+    expect(
+      centerRelationshipTypeForResolvedTarget('faculty-research-area-amy-arnsten', 'MEMBER_RESEARCH_AREA'),
+    ).toBe('MEMBER_RESEARCH_AREA');
+  });
+
+  it('keeps the fallback type when the slug is empty', () => {
+    expect(centerRelationshipTypeForResolvedTarget('', 'MEMBER_RESEARCH_AREA')).toBe(
+      'MEMBER_RESEARCH_AREA',
+    );
+  });
+
+  it('labels each relationship type, with a generic fallback', () => {
+    expect(relationshipLabelForType('AFFILIATED_LAB')).toBe('Affiliated lab');
+    expect(relationshipLabelForType('MEMBER_RESEARCH_AREA')).toBe('Member');
+    expect(relationshipLabelForType('HOSTED_PROGRAM')).toBe('Hosted program');
+    expect(relationshipLabelForType('SOMETHING_ELSE')).toBe('Related research home');
   });
 });

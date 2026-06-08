@@ -1,5 +1,15 @@
 import mongoose from 'mongoose';
 
+export const researchEntityRelationshipTypes = [
+  'AFFILIATED_LAB',
+  'AFFILIATED_RESEARCH_GROUP',
+  'MEMBER_RESEARCH_AREA',
+  'HOSTED_PROGRAM',
+] as const;
+
+export type ResearchEntityRelationshipType =
+  (typeof researchEntityRelationshipTypes)[number];
+
 const researchEntityRelationshipSchema = new mongoose.Schema(
   {
     sourceResearchEntityId: {
@@ -14,6 +24,7 @@ const researchEntityRelationshipSchema = new mongoose.Schema(
     },
     relationshipType: {
       type: String,
+      enum: [...researchEntityRelationshipTypes],
       required: true,
     },
     label: {

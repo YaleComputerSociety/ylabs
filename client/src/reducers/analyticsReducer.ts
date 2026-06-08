@@ -87,6 +87,22 @@ export interface AnalyticsData {
     newUsersToday: number;
     newUsersTodayByType: Array<{ userType: string; count: number }>;
   };
+  researchEntities: {
+    overview: { active: number; archived: number; total: number };
+    byType: Array<{ entityType: string; count: number }>;
+    byVisibilityTier: Array<{ tier: string; count: number }>;
+    byOpenness: Array<{ status: string; count: number }>;
+    freshness: {
+      observedLast7Days: number;
+      observedLast30Days: number;
+      neverObserved: number;
+      staleOver90Days: number;
+    };
+    scholarly: {
+      withRecentPapers: number;
+      withRecentGrants: number;
+    };
+  };
   timestamp: string;
 }
 

@@ -27,13 +27,27 @@ export const DEFAULT_LAUNCH_ACQUISITION_REPORT_PATH =
 export const DEFAULT_BETA_REPAIR_QUEUE_REPORT_PATH = '/tmp/ylabs-beta-repair-source-description.json';
 export const DEFAULT_PROMOTION_COPY_DRY_RUN_REPORT_PATH =
   '/tmp/ylabs-lane-a-promotion-dry-run.json';
-export const DATA_QUALITY_SCORECARD_MAX_AGE_HOURS = 48;
-export const SCRAPER_INTEGRITY_SCORECARD_MAX_AGE_HOURS = 48;
-export const LAUNCH_TRUST_SCORECARD_MAX_AGE_HOURS = 48;
-export const LAUNCH_REVIEW_EXCEPTIONS_REPORT_MAX_AGE_HOURS = 48;
-export const LAUNCH_ACQUISITION_REPORT_MAX_AGE_HOURS = 48;
-export const BETA_REPAIR_QUEUE_REPORT_MAX_AGE_HOURS = 48;
-export const PROMOTION_COPY_DRY_RUN_REPORT_MAX_AGE_HOURS = 48;
+/**
+ * Max age before a saved gate scorecard is treated as stale (status downgraded to "rerun",
+ * never shown as a live verdict). This must be tight enough that a status that has materially
+ * moved on cannot masquerade as current: the previous 48h window let a ~2-day-old "BLOCKED"
+ * render as the live gate. Tune via env GATE_SCORECARD_MAX_AGE_HOURS to match the refresh
+ * cadence (e.g. an hourly refresh wants a 2-3h tolerance so a single missed run flags stale).
+ */
+function resolveGateScorecardMaxAgeHours(): number {
+  const raw = Number(process.env.GATE_SCORECARD_MAX_AGE_HOURS);
+  return Number.isFinite(raw) && raw > 0 ? raw : 3;
+}
+
+export const GATE_SCORECARD_MAX_AGE_HOURS = resolveGateScorecardMaxAgeHours();
+// Per-gate constants retained as named exports for back-compat; all derive from the single TTL.
+export const DATA_QUALITY_SCORECARD_MAX_AGE_HOURS = GATE_SCORECARD_MAX_AGE_HOURS;
+export const SCRAPER_INTEGRITY_SCORECARD_MAX_AGE_HOURS = GATE_SCORECARD_MAX_AGE_HOURS;
+export const LAUNCH_TRUST_SCORECARD_MAX_AGE_HOURS = GATE_SCORECARD_MAX_AGE_HOURS;
+export const LAUNCH_REVIEW_EXCEPTIONS_REPORT_MAX_AGE_HOURS = GATE_SCORECARD_MAX_AGE_HOURS;
+export const LAUNCH_ACQUISITION_REPORT_MAX_AGE_HOURS = GATE_SCORECARD_MAX_AGE_HOURS;
+export const BETA_REPAIR_QUEUE_REPORT_MAX_AGE_HOURS = GATE_SCORECARD_MAX_AGE_HOURS;
+export const PROMOTION_COPY_DRY_RUN_REPORT_MAX_AGE_HOURS = GATE_SCORECARD_MAX_AGE_HOURS;
 
 const BETA_COMMAND_PREFIX = 'SCRAPER_ENV=beta ';
 const SAVED_ARTIFACT_READ_ERROR = 'Saved artifact is not readable';
@@ -2066,6 +2080,99 @@ async function buildSourceFreshness() {
   };
 }
 
+export type GateArtifactFreshnessStatus = 'fresh' | 'stale' | 'missing' | 'unreadable';
+
+export interface GateArtifactFreshness {
+  gate: string;
+  path: string;
+  exists: boolean;
+  status: GateArtifactFreshnessStatus;
+  generatedAt?: string;
+  ageMinutes?: number;
+  db?: string;
+  environment?: string;
+  maxAgeHours: number;
+}
+
+const GATE_ARTIFACT_SOURCES: Array<{ gate: string; envVar: string; defaultPath: string }> = [
+  {
+    gate: 'dataQuality',
+    envVar: 'BETA_DATA_QUALITY_SCORECARD_PATH',
+    defaultPath: DEFAULT_DATA_QUALITY_SCORECARD_PATH,
+  },
+  {
+    gate: 'scraperIntegrity',
+    envVar: 'SCRAPER_INTEGRITY_SCORECARD_PATH',
+    defaultPath: DEFAULT_SCRAPER_INTEGRITY_SCORECARD_PATH,
+  },
+  {
+    gate: 'launchTrust',
+    envVar: 'LAUNCH_TRUST_SCORECARD_PATH',
+    defaultPath: DEFAULT_LAUNCH_TRUST_SCORECARD_PATH,
+  },
+  {
+    gate: 'launchReviewExceptions',
+    envVar: 'LAUNCH_REVIEW_EXCEPTIONS_REPORT_PATH',
+    defaultPath: DEFAULT_LAUNCH_REVIEW_EXCEPTIONS_REPORT_PATH,
+  },
+  {
+    gate: 'launchAcquisition',
+    envVar: 'LAUNCH_ACQUISITION_REPORT_PATH',
+    defaultPath: DEFAULT_LAUNCH_ACQUISITION_REPORT_PATH,
+  },
+  {
+    gate: 'betaRepairQueue',
+    envVar: 'BETA_REPAIR_QUEUE_REPORT_PATH',
+    defaultPath: DEFAULT_BETA_REPAIR_QUEUE_REPORT_PATH,
+  },
+  {
+    gate: 'productionCopy',
+    envVar: 'PROMOTION_COPY_DRY_RUN_REPORT_PATH',
+    defaultPath: DEFAULT_PROMOTION_COPY_DRY_RUN_REPORT_PATH,
+  },
+];
+
+/**
+ * Uniform provenance for every gate scorecard the board reads: where it came from, when it was
+ * generated, against which DB, and whether it is now stale. This is what makes the board honest —
+ * the UI can always show "Beta · 7 min ago" instead of presenting a possibly-stale verdict as live.
+ */
+export function buildGateArtifactFreshness(now = new Date()): GateArtifactFreshness[] {
+  const maxAgeHours = GATE_SCORECARD_MAX_AGE_HOURS;
+  return GATE_ARTIFACT_SOURCES.map(({ gate, envVar, defaultPath }) => {
+    const path = process.env[envVar] || defaultPath;
+    const base = { gate, path, maxAgeHours };
+    if (!path || !fs.existsSync(path)) {
+      return { ...base, exists: false, status: 'missing' as const };
+    }
+    try {
+      const stat = fs.statSync(path);
+      const parsed = JSON.parse(fs.readFileSync(path, 'utf8'));
+      const generatedAt = typeof parsed.generatedAt === 'string' ? parsed.generatedAt : undefined;
+      const generatedAtTime = generatedAt ? new Date(generatedAt).getTime() : stat.mtime.getTime();
+      const resolvedTime = Number.isNaN(generatedAtTime) ? stat.mtime.getTime() : generatedAtTime;
+      const ageMinutes = Math.max(0, Math.floor((now.getTime() - resolvedTime) / 60000));
+      const stale = ageMinutes > maxAgeHours * 60;
+      return {
+        ...base,
+        exists: true,
+        status: stale ? ('stale' as const) : ('fresh' as const),
+        generatedAt,
+        ageMinutes,
+        // Audits write `db` inconsistently (some "Beta", some the full mongo URI); show just the
+        // database name so the badge reads uniformly.
+        db:
+          typeof parsed.db === 'string'
+            ? parsed.db.split('/').pop() || parsed.db
+            : undefined,
+        environment: typeof parsed.environment === 'string' ? parsed.environment : undefined,
+      };
+    } catch {
+      return { ...base, exists: true, status: 'unreadable' as const };
+    }
+  });
+}
+
 export async function buildAdminOperatorBoard() {
   const dataQualityArtifact = readDataQualityGateArtifact(
     process.env.BETA_DATA_QUALITY_SCORECARD_PATH || DEFAULT_DATA_QUALITY_SCORECARD_PATH,
@@ -2179,5 +2286,6 @@ export async function buildAdminOperatorBoard() {
       },
     },
     sourceFreshness,
+    artifactFreshness: buildGateArtifactFreshness(),
   };
 }

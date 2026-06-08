@@ -73,7 +73,13 @@ yale-research/
 | `yarn --cwd server meili:rebuild-research-entities` | Rebuild the ResearchEntity Meilisearch index |
 | `yarn --cwd server meili:rebuild-pathways` | Rebuild the Pathway Meilisearch index |
 | `yarn --cwd server research-entity:migrate` | Run the ResearchEntity physical migration |
+| `yarn --cwd server gates:refresh` | Regenerate ALL canonical gate scorecards the operator board reads (single sanctioned writer; `--skip-heavy` skips the data-quality audit, `--only=gate1,gate2` filters) |
 | `yarn --cwd server research-homes:backfill-faculty-ways-in` | Backfill identified-faculty-lead ways-in for existing research homes (dry-run-first) |
+| `yarn --cwd server research-homes:backfill-descriptions` | Grounded LLM rewrite of research-home descriptions from existing source text / grant abstracts (dry-run-first) |
+| `yarn --cwd server research-homes:backfill-center-directors` | Backfill the named **director** for existing organizational homes (CENTER/INSTITUTE/INITIATIVE/CORE_FACILITY) that have an official website but no current lead member. Runs the `center-director-llm` extractor (site + leadership-page crawl, SSRF-safe) and promotes the resolved director to a `director` member via `materializeInferredDirectorMembership`. Dry-run-first (lists eligible homes, no LLM calls); apply requires `--confirm-center-directors` + explicit `--limit` + `OPENAI_API_KEY`. `--only=<slug,name,id>` narrows the set. |
+| `yarn --cwd server research-homes:backfill-browse-rank` | Recompute the `browseRankScore` that orders the default (no-query) `/research` browse "best first" (completeness + strength-weighted undergrad access) for the existing corpus. Dry-run-first; apply requires `--confirm-browse-rank` |
+| `yarn --cwd server profiles:bio-coverage-audit` | Report bio coverage for lead-role professors of student-visible homes, using the real public-profile fallback (read-only) |
+| `yarn --cwd server profiles:backfill-bios-from-official-urls` | For lead-role faculty missing an effective **bio** and/or research-interest **tag chips**: SSRF-safe fetch their official Yale page (URL from the User doc or their student-visible research home's `sourceUrls`) and write a grounded **biography** + interest terms to their User doc. The bio is built in priority order: (1) the page's own "Biography"/"Biographical Sketch" section, sliced deterministically; (2) an LLM-extracted third-person page biography; (3) a title-led composed bio — `{Name} is {article} {title} at Yale. {grounded research summary}`. Page bios must be grounded + pass `profileBioQuality` (a bio-specific gate that ALLOWS biographical sentences — degrees/appointments — unlike `fullDescriptionQuality`, but rejects first-person/chrome/publication-list/truncated text). Bios are written only from a fetched official page; interest chips also fall back to the home's own vetted description text. Bios whose content shares no field word with the person's title/department/home are reported in `suspectedWrong` for **manual review**, never auto-reverted. `--regenerate` refreshes bios this backfill previously wrote (`confidenceByField.bio === 0.7`). Dry-run-first; apply requires `--confirm-profile-bios` + explicit `--limit` |
 
 Migration scripts run from `data-migration/` with `npx tsx --transpile-only <script>.ts`.
 
@@ -103,6 +109,8 @@ Current Meilisearch indexes:
 The Meilisearch client (`server/src/utils/meiliClient.ts`) lazy-loads and caches the connection. Configuration: `MEILISEARCH_HOST` (defaults to `http://localhost:7700`), `MEILISEARCH_API_KEY`, and `MEILISEARCH_INDEX_PREFIX` (optional prefix applied to all index names, e.g. `beta_researchentities`). The module exports `getMeiliIndex(name)` and `resolveIndexName(name)`.
 
 ResearchEntity and pathway index documents are synced via `meiliSyncService.ts` after upserts to their respective collections. Rebuild scripts (`meili:rebuild-research-entities`, `meili:rebuild-pathways`) do a full repopulation.
+
+**Default `/research` ordering ("best first").** When a browse has no query, results are sorted `browseRankScore:desc` then `lastObservedAt:desc` (see `researchGroupService.searchResearchGroupsViaMeili`). `browseRankScore` is a precomputed number persisted on the ResearchEntity doc (and mirrored to the index as a sortable attribute) by `researchEntityBrowseRank.ts` (pure scorer) + `researchEntityBrowseRankService.ts` (joins + persist + re-sync). It rewards completeness (source-backed description, attached identified lead, official source URL) plus **strength-weighted** undergrad access signals — strong evidence (`CURRENT_UNDERGRADS`/`PAST_UNDERGRADS`) outweighs the manufactured `REACH_OUT_PLAUSIBLE` fallback, and `NOT_CURRENTLY_AVAILABLE` is negative. The score is recomputed live in `entityMaterializer` after access signals are derived; backfill existing data with `research-homes:backfill-browse-rank` (dry-run-first). Admin "weakest profiles first" (`browseQuality: 'low-first'`) is a separate Mongo-side path that sorts by the inverse quality score and is unchanged.
 
 The legacy listing Meilisearch migration has been removed. Use the server rebuild scripts for current Research and Pathways indexes.
 
@@ -262,6 +270,8 @@ Applied globally / to `/api` in `app.ts` (in addition to CORS, session, passport
 | `createCorsOriginHandler` | `corsOrigin.ts` | Builds the dynamic CORS origin handler; throws `CorsOriginError` (403) for disallowed origins. |
 | `errorHandler` / `notFoundHandler` | `errorHandler.ts` | Terminal error + 404 handlers (see Error Handling). |
 
+SSRF protection lives in `utils/ssrfGuard.ts` (the single source of truth): `isPrivateAddress` (IPv4/IPv6 private/loopback/link-local/metadata ranges), `isPublicHostname` (DNS-resolves and rejects if any record is private), `ssrfSafeLookup` (connect-time lookup that blocks private addresses on every redirect hop — defeats DNS rebinding), and `assertPublicHttpUrl` / `ssrfSafeAgents` convenience guards. Any outbound fetch to a host derived from user input or stored data MUST go through it: the admin URL checker (`routes/admin.ts`), the lab-microsite LLM extractors, and the rendered (Python) fetcher all do.
+
 ## Routes
 
 All routes mount under `/api` in `app.ts`. Route files in `server/src/routes/`:
@@ -302,11 +312,12 @@ User → Yale CAS SSO → passport.ts findOrCreateUser
 | Service | Responsibility |
 |---------|----------------|
 | `researchEntityDto.ts` / `researchEntityQuality.ts` | Public ResearchEntity DTO shaping and entity-quality scoring/gating |
+| `researchEntityBrowseRank.ts` / `researchEntityBrowseRankService.ts` | Pure "best first" browse-ranking scorer (completeness + strength-weighted access) and its persist/Meilisearch-resync orchestration. Drives the default no-query `/research` order via the `browseRankScore` sortable attribute. |
 | `researchEntitySearchIndexService.ts` / `pathwaySearchIndexService.ts` / `pathwaySearchService.ts` | Meilisearch index sync + query for research entities and pathways |
 | `meiliSyncService.ts` | Syncs collection upserts into the Meilisearch indexes |
 | `accessSignalService.ts` / `accessSummaryService.ts` / `entryPathwayService.ts` / `contactRouteService.ts` / `postedOpportunityService.ts` | The product-model access layer (signals, summaries, pathways, contact routes, postings) |
-| `adminOperatorBoardService.ts` / `adminAccessReviewService.ts` / `adminGrantService.ts` | Admin operator board + access/grant review workflows |
-| `sourceHealthService.ts` / `scholarlyActivityAuditService.ts` / `paperQualityService.ts` | Scraper/source health, scholarly-activity audit, paper-quality scoring |
+| `adminOperatorBoardService.ts` / `adminAccessReviewService.ts` / `adminGrantService.ts` | Admin operator board (the `/programs` Gate Status panel) + access/grant review workflows. The board reads canonical gate scorecard JSON from fixed `/tmp` paths; each carries provenance (`buildGateArtifactFreshness`: generatedAt, DB, age) and is flagged **stale** past `GATE_SCORECARD_MAX_AGE_HOURS` (default 3) so a moved-on status can't masquerade as live. `gates:refresh` is the single sanctioned writer of those paths; `gateRefreshScheduler.ts` can regenerate them in-process on an interval. |
+| `sourceHealthService.ts` / `scholarlyActivityAuditService.ts` / `paperQualityService.ts` | Scraper/source health, scholarly-activity audit, paper-quality scoring. Source-health risk is driven by run health (failure/materializationErrors → error; partial/stale-running/disabled/no-recent-run → warn). **Resolved** materialization conflicts (cross-source value disagreements the confidence resolver already adjudicates) are informational, NOT a warn or promotion blocker. |
 | `studentVisibilityTier.ts` / `studentVisibilityGateService.ts` / `visibilityRepairQueueService.ts` / `studentDecisionExplanationService.ts` | Student visibility tiering, gating, repair queue, and decision explanations |
 | `fellowshipMatchingService.ts` / `fellowshipApplicationCycleEvidenceService.ts` / `programClassifier.ts` | Fellowship matching, application-cycle evidence, program classification |
 | `launchAcquisitionReportService.ts` / `launchTrustContractService.ts` | Launch-gate acquisition reporting and trust-contract checks |
@@ -336,6 +347,7 @@ User → Yale CAS SSO → passport.ts findOrCreateUser
 | `MONGODBURL` | Yes | MongoDB connection string. Points to Development locally, Beta on staging, Production on prod. |
 | `MONGODBURL_MIGRATION` | For migration mode | Secondary DB for dual-DB migrations |
 | `SESSION_SECRET` | Yes | Cookie session signing key |
+| `AUTH_DEBUG` | No | Set to `true` to enable verbose auth tracing in `passport.ts` (per-request deserialization, the find-or-create source cascade, analytics-event confirmations). Off by default; genuine auth errors/anomalies always log regardless. |
 | `API_MODE` | No | Set to `productionMigration` for dual-DB migration mode. Otherwise leave unset. |
 | `SSOBASEURL` | Yes | Yale CAS URL |
 | `SERVER_BASE_URL` | Yes | Public server URL for CAS callbacks |
@@ -348,6 +360,9 @@ User → Yale CAS SSO → passport.ts findOrCreateUser
 | `SCRAPER_ENV` | No (default: `development`) | Controls scraper write guards. `production` requires `CONFIRM_PROD_SCRAPE=true`. Non-production defaults to dry-run unless `ALLOW_NON_PROD_SCRAPER_WRITES=true`. |
 | `ALLOW_NON_PROD_SCRAPER_WRITES` | No | Set to `true` to allow scraper writes to a non-production database. |
 | `CONFIRM_PROD_SCRAPE` | No | Set to `true` to allow scraper writes to production. Required when `SCRAPER_ENV=production`. |
+| `GATE_SCORECARD_MAX_AGE_HOURS` | No (default: 3) | Max age before a saved gate scorecard is treated as stale by the operator board (shown as "rerun", never as a live verdict). Tune to the refresh cadence. |
+| `GATE_REFRESH_INTERVAL_MINUTES` | No (default: off) | When set to a positive number, the server runs `gates:refresh` in-process on that interval so the operator board stays current on a single instance. |
+| `GATE_REFRESH_SKIP_HEAVY` | No | Set to `true` so the in-process gate refresh skips the ~3.5min `beta:data-quality` audit on the frequent cadence. |
 
 ### `client/.env`
 
@@ -400,8 +415,8 @@ The scraper system lives in `server/src/scrapers/`. Run via `yarn --cwd server s
 - `cli.ts` — CLI entrypoint (`scrape run`, `scrape materialize`, `scrape report`, etc.)
 - `orchestrator.ts` — `ScraperOrchestrator` runs registered scrapers sequentially
 - `registry.ts` — registers all source scrapers
-- `observationStore.ts` — writes `Observation` rows to MongoDB
-- `entityMaterializer.ts` — derives `ResearchEntity`/`ResearchGroupMember` from observations
+- `observationStore.ts` — writes `Observation` rows to MongoDB. Supersession keys on `observationFingerprint`: a new observation supersedes prior non-superseded ones with the same fingerprint. Fingerprint = `(sourceName, entityType, entity, field)` and, for most fields, `value`. **Latest-wins fields** (`LATEST_WINS_FINGERPRINT_FIELDS`: `fullDescription`, `shortDescription`, `researchAreas`, `methods`) omit `value`, so a fresh observation supersedes the prior one despite text drift — without this, LLM sources that paraphrase each run accumulated unbounded non-superseded values and triggered spurious materialization conflicts. Only add a field there if no source emits it as multiple rows per (entity, field) per run.
+- `entityMaterializer.ts` — derives `ResearchEntity`/`ResearchGroupMember` from observations. `materializeInferredPiMembership` (labs, from grant-inferred PI keys) and `materializeInferredDirectorMembership` (organizational homes, from `center-director-llm`'s entity-level inferred-director observation) attach the entity **lead**: each resolves the name to a unique Yale User and upserts a `pi`/`director` member; the director path also removes the person's superseded non-lead roster row so they surface once as the lead, and the roster path skips writing a non-lead row for someone already a lead of that entity. Promoting a director also lets the access materializer upgrade an organizational home from its "no named director" `DEPARTMENT_CONTACT` fallback to a named-lead `FACULTY_PI` ways-in on the same pass.
 - `accessMaterializer.ts` — derives `AccessSignal`, `EntryPathway`, `ContactRoute` from observations. When the observation pipeline yields no source-backed (http-URL) entry pathway, it falls back to an evidence-based ways-in: for a concrete faculty/lab home with an attached PI/director lead and an official non-grant source page, a low-confidence `EXPLORATORY_CONTACT` pathway + `FACULTY_PI` route + `REACH_OUT_PLAUSIBLE` signal; for an **organizational home** (CENTER/INSTITUTE/INITIATIVE/CORE_FACILITY) with an official page but no named director, a center-level "Explore this center" `EXPLORATORY_CONTACT` pathway + `DEPARTMENT_CONTACT` route + signal. Both skip duplicates, grant/ORCID-only sources, and programs, and require a supporting source observation (matched by `entityId` or `entityKey`) so the claim gate keeps them. This removes the dominant `missing_action_evidence` blocker for real research homes without manufacturing undergrad-access claims. Backfill existing entities with `yarn --cwd server research-homes:backfill-faculty-ways-in` (dry-run-first; apply requires `--confirm-faculty-ways-in` + explicit `--limit`).
 - `workPlanner.ts` — per-entity field-level work planning (what sources to run, what to skip)
 - `snapshotCache.ts` — caches fetched pages to avoid redundant HTTP requests
@@ -440,6 +455,7 @@ The scraper system lives in `server/src/scrapers/`. Run via `yarn --cwd server s
 | `undergradFellowshipRecipientScraper.ts` | Undergrad fellowship recipient lists |
 | `labMicrositeUndergradLLMExtractor.ts` | LLM extraction of undergrad-access signals from lab microsites |
 | `labMicrositeDescriptionLLMExtractor.ts` | LLM extraction of lab description text from microsites |
+| `centerDirectorLLMExtractor.ts` | LLM extraction of the single named director of an organizational home (CENTER/INSTITUTE/INITIATIVE/CORE_FACILITY) from its official site + leadership pages; emits an entity-level inferred-director observation the materializer resolves to a Yale User and promotes to a `director` member |
 | `studentDecisionLLMExtractor.ts` | LLM extraction of student-decision signals from lab microsites |
 | `officialProfilePiBackfillScraper.ts` | Backfill scraper for PI official-profile data |
 | `yaleResearchOfficialScraper.ts` | Yale Research (provost/OVPR) official data |

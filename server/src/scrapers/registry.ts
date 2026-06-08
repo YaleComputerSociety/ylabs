@@ -21,6 +21,8 @@ import { UndergradFellowshipRecipientScraper } from './sources/undergradFellowsh
 import { YaleCollegeFellowshipsOfficeScraper } from './sources/yaleCollegeFellowshipsOfficeScraper';
 import { LabMicrositeDescriptionLLMExtractor } from './sources/labMicrositeDescriptionLLMExtractor';
 import { LabMicrositeUndergradLLMExtractor } from './sources/labMicrositeUndergradLLMExtractor';
+import { CenterAffiliationLLMExtractor } from './sources/centerAffiliationLLMExtractor';
+import { CenterDirectorLLMExtractor } from './sources/centerDirectorLLMExtractor';
 import { OfficialProfilePiBackfillScraper } from './sources/officialProfilePiBackfillScraper';
 import { StudentDecisionLLMExtractor } from './sources/studentDecisionLLMExtractor';
 
@@ -45,6 +47,8 @@ export function buildOrchestrator(): ScraperOrchestrator {
   o.register(new YaleCollegeFellowshipsOfficeScraper());
   o.register(new LabMicrositeDescriptionLLMExtractor());
   o.register(new LabMicrositeUndergradLLMExtractor());
+  o.register(new CenterAffiliationLLMExtractor());
+  o.register(new CenterDirectorLLMExtractor());
   o.register(new OfficialProfilePiBackfillScraper());
   o.register(new StudentDecisionLLMExtractor());
   return o;

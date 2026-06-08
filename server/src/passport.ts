@@ -18,6 +18,17 @@ import {
   hasActiveAdminGrant,
 } from './services/adminGrantService';
 
+/**
+ * Verbose auth tracing. These logs (per-request deserialization, the
+ * find-or-create source cascade, analytics-event confirmations) are useful
+ * when debugging an auth issue but are pure noise in steady state — many fire
+ * on every authenticated request. Off by default; set `AUTH_DEBUG=true` to
+ * enable. Genuine errors and anomalies stay on unconditional console.error/log.
+ */
+const authDebug = (...args: unknown[]) => {
+  if (process.env.AUTH_DEBUG === 'true') console.log(...args);
+};
+
 const STALE_THRESHOLD_MS = 30 * 24 * 60 * 60 * 1000;
 type AuthenticatedSessionUser = {
   netId: string;
@@ -286,7 +297,7 @@ async function findOrCreateUser(netid: string) {
     const isStale = Date.now() - updatedAt > STALE_THRESHOLD_MS;
 
     if (isStale) {
-      console.log(
+      authDebug(
         `findOrCreateUser: refreshing stale data for ${netid} (last updated: ${user.updatedAt || 'never'})`,
       );
       try {
@@ -298,28 +309,28 @@ async function findOrCreateUser(netid: string) {
             dirUpdate.userConfirmed = true;
           }
           user = await updateUser(netid, dirUpdate);
-          console.log(`findOrCreateUser: refreshed directory data for ${netid}`);
+          authDebug(`findOrCreateUser: refreshed directory data for ${netid}`);
         }
       } catch {
-        console.log(`findOrCreateUser: directory refresh failed for ${netid}, using cached data`);
+        authDebug(`findOrCreateUser: directory refresh failed for ${netid}, using cached data`);
       }
     } else {
-      console.log(`findOrCreateUser: existing user ${netid} (fresh)`);
+      authDebug(`findOrCreateUser: existing user ${netid} (fresh)`);
     }
     return user;
   }
 
-  console.log(`findOrCreateUser: trying Yalies API for ${netid}`);
+  authDebug(`findOrCreateUser: trying Yalies API for ${netid}`);
   user = await fetchYalie(netid);
   if (user) {
-    console.log(`findOrCreateUser: Yalies success for ${netid}, type=${user.userType}`);
+    authDebug(`findOrCreateUser: Yalies success for ${netid}, type=${user.userType}`);
     return user;
   }
 
-  console.log(`findOrCreateUser: Yalies failed, trying Yale Directory for ${netid}`);
+  authDebug(`findOrCreateUser: Yalies failed, trying Yale Directory for ${netid}`);
   const dirPerson = await fetchFromDirectory(netid, 'netid');
   if (dirPerson && dirPerson.name) {
-    console.log(`findOrCreateUser: Directory found ${dirPerson.name}, title="${dirPerson.title}"`);
+    authDebug(`findOrCreateUser: Directory found ${dirPerson.name}, title="${dirPerson.title}"`);
 
     const userType = isFacultyTitle(dirPerson.title) ? 'professor' : 'unknown';
     const dirFields = buildDirectoryUpdate(dirPerson);
@@ -333,11 +344,11 @@ async function findOrCreateUser(netid: string) {
       userConfirmed: userType === 'professor',
       ...dirFields,
     });
-    console.log(`findOrCreateUser: Directory user created, type=${userType}`);
+    authDebug(`findOrCreateUser: Directory user created, type=${userType}`);
     return user;
   }
 
-  console.log(`findOrCreateUser: Directory also failed, creating default user for ${netid}`);
+  authDebug(`findOrCreateUser: Directory also failed, creating default user for ${netid}`);
   user = await createUser({
     netid,
     fname: netid,
@@ -369,13 +380,13 @@ passport.use(
 );
 
 passport.serializeUser(function (user: any, done) {
-  console.log('Serializing user');
+  authDebug('Serializing user');
   done(null, user.netId);
 });
 
 passport.deserializeUser(async (netId: string, done) => {
   try {
-    console.log('Deserializing user');
+    authDebug('Deserializing user');
     const user = await findOrCreateUser(netId as string);
     done(null, await buildAuthenticatedSessionUser(user, netId));
   } catch (error) {
@@ -436,7 +447,7 @@ const casLogin = function (
             loginMethod: 'CAS',
           },
         });
-        console.log('Login event logged to analytics');
+        authDebug('Login event logged to analytics');
       } catch (analyticsError) {
         console.error('Error logging analytics event:', analyticsError);
       }
@@ -477,7 +488,7 @@ router.use(async (req, res, next) => {
           loginMethod: 'cookie',
         },
       });
-      console.log('🍪 Visitor event logged to analytics (cookie login)');
+      authDebug('🍪 Visitor event logged to analytics (cookie login)');
       req.session!.visitorLogged = true;
     } catch (analyticsError) {
       console.error('Error logging visitor analytics event:', analyticsError);
@@ -515,7 +526,7 @@ const logoutRouteHandler: express.RequestHandler = async (req, res, next) => {
           timestamp: new Date(),
         },
       });
-      console.log('Logout event logged to analytics');
+      authDebug('Logout event logged to analytics');
     } catch (analyticsError) {
       console.error('Error logging analytics event:', analyticsError);
     }
@@ -570,7 +581,7 @@ if (isDevLoginAllowed()) {
               loginMethod: 'dev-login',
             },
           });
-          console.log('Dev login event logged to analytics');
+          authDebug('Dev login event logged to analytics');
         } catch (analyticsError) {
           console.error('Error logging dev login analytics event:', analyticsError);
         }

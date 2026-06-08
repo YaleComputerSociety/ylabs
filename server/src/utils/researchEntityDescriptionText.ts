@@ -1,4 +1,10 @@
 const DESCRIPTION_FIELDS = ['description', 'shortDescription', 'fullDescription'] as const;
+const DESCRIPTION_AND_SYNTHESIS_FIELDS = [
+  ...DESCRIPTION_FIELDS,
+  'profileSynthesisDescription',
+] as const;
+const NON_MATCHED_PROFILE_SUMMARY_RESEARCH_HINT =
+  /\b(?:research|lab|laboratory|study|studies|studying|investigate|investigates|investigated|explore|explores|focus|focuses|focusing|works?\s+on|conducts|uses|develops|examines|examining|analysis|method|methods|model|models|projects?|theory|algorithm|algorithms|approach|approaches|data|paper|papers?|publications?)\b/i;
 
 type FacultyResearchTextEntity = {
   displayName?: string | null;
@@ -9,6 +15,65 @@ type FacultyResearchTextEntity = {
 
 function textValue(value: unknown): string {
   return typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
+}
+
+const LEAD_NAME_TOKENIZERS = [
+  /\bdr\.?\b/gi,
+  /\bprof\.?\b/gi,
+  /\bprofessor\b/gi,
+  /\bm\.?d\.?\b/gi,
+];
+
+function normalizePersonNameTokens(value: unknown): string[] {
+  return String(value || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[^a-z0-9\s'-]/g, ' ')
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter(Boolean)
+    .map((token) => LEAD_NAME_TOKENIZERS.reduce((next, pattern) => next.replace(pattern, ''), token))
+    .map((token) => token.trim())
+    .filter(Boolean);
+}
+
+function leadNamesMatchTextValue(
+  candidate: string,
+  leadMemberNames: readonly string[],
+): boolean {
+  const candidateTokens = normalizePersonNameTokens(candidate);
+  if (candidateTokens.length < 2) return false;
+  const lastIndex = candidateTokens[candidateTokens.length - 1];
+  const candidateLastToken = lastIndex.length === 1 ? candidateTokens.at(-2) || '' : lastIndex;
+  if (!candidateLastToken) return false;
+
+  const firstName = candidateTokens[0];
+  return leadMemberNames.some((leadName) => {
+    const leadTokens = normalizePersonNameTokens(leadName);
+    if (leadTokens.length < 2) return false;
+    return leadTokens.includes(firstName) && leadTokens.includes(candidateLastToken);
+  });
+}
+
+function sanitizeLeadingMismatchedPersonNamePrefix(
+  value: string,
+  leadMemberNames: readonly string[] = [],
+): string {
+  if (!leadMemberNames.length) return value;
+  const match = value.match(
+    /^([A-Z][\p{L}.'’-]+(?:\s+[A-Z][\p{L}.'’-]+){1,4})['’]s\s+/u,
+  );
+  if (!match) return value;
+  if (leadNamesMatchTextValue(match[1], leadMemberNames)) return value;
+  const remainder = value.slice(match[0].length);
+  if (!NON_MATCHED_PROFILE_SUMMARY_RESEARCH_HINT.test(remainder)) return '';
+  return `This ${remainder}`;
+}
+
+function isLikelyResearchFocusedText(value: string): boolean {
+  return NON_MATCHED_PROFILE_SUMMARY_RESEARCH_HINT.test(textValue(value));
 }
 
 function compactText(value: string): string {
@@ -153,13 +218,24 @@ export function publicResearchEntityDescriptionText(value: unknown): string {
 
 export function sanitizeResearchEntityPublicDescriptionFields<T extends Record<string, any>>(
   entity: T,
+  leadMemberNames: readonly string[] = [],
 ): T {
   let changed = false;
   const next: Record<string, any> = { ...entity };
 
-  for (const field of DESCRIPTION_FIELDS) {
+  for (const field of DESCRIPTION_AND_SYNTHESIS_FIELDS) {
     if (field in next) {
-      const cleaned = publicResearchEntityDescriptionText(next[field]);
+      if (typeof next[field] !== 'string') continue;
+      const withLeadNameCorrection = sanitizeLeadingMismatchedPersonNamePrefix(
+        next[field],
+        leadMemberNames,
+      );
+      const withLeadNameCorrectionIfResearch =
+        String(next.descriptionSource) === 'PI_PROFILE_SYNTHESIS' &&
+        !isLikelyResearchFocusedText(withLeadNameCorrection)
+          ? ''
+          : withLeadNameCorrection;
+      const cleaned = publicResearchEntityDescriptionText(withLeadNameCorrectionIfResearch);
       if (cleaned !== next[field]) {
         next[field] = cleaned;
         changed = true;
@@ -269,14 +345,24 @@ export function sanitizeFacultyResearchEntityText(
 
 export function sanitizeFacultyResearchEntityCopyFields<T extends Record<string, any>>(
   entity: T,
+  leadMemberNames: readonly string[] = [],
 ): T {
   if (!isFacultyResearchTextEntity(entity)) return entity;
   let changed = false;
   const next: Record<string, any> = { ...entity };
 
-  for (const field of [...DESCRIPTION_FIELDS, 'profileSynthesisDescription'] as const) {
+  for (const field of DESCRIPTION_AND_SYNTHESIS_FIELDS) {
     if (typeof next[field] !== 'string') continue;
-    const cleaned = sanitizeFacultyResearchEntityText(next[field], next);
+    const withLeadNameCorrection = sanitizeLeadingMismatchedPersonNamePrefix(
+      next[field],
+      leadMemberNames,
+    );
+    const withLeadNameCorrectionIfResearch =
+      String(next.descriptionSource) === 'PI_PROFILE_SYNTHESIS' &&
+      !isLikelyResearchFocusedText(withLeadNameCorrection)
+        ? ''
+        : withLeadNameCorrection;
+    const cleaned = sanitizeFacultyResearchEntityText(withLeadNameCorrectionIfResearch, next);
     if (cleaned !== next[field]) {
       next[field] = cleaned;
       changed = true;

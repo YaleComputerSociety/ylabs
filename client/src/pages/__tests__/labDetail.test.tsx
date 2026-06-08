@@ -235,6 +235,43 @@ describe('LabDetail page', () => {
     expect(screen.getByText('Send exploratory email')).toBeTruthy();
   });
 
+  it('renders program page wording instead of lab wording', async () => {
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        slug: 'department-undergrad-research-molecular-biophysics-and-biochemistry',
+        name: 'Molecular Biophysics and Biochemistry Undergraduate Research',
+        kind: 'program',
+        entityType: 'PROGRAM',
+        websiteUrl: 'https://mbb.yale.edu/introduction-undergraduate-program',
+        shortDescription:
+          'Supports undergraduate research in molecular biophysics and biochemistry through department guidance.',
+      },
+      entryPathways: [
+        {
+          _id: 'pathway-program',
+          pathwayType: 'POSTED_ROLE',
+          status: 'ACTIVE',
+          evidenceStrength: 'SOURCE_BACKED',
+          studentFacingLabel: 'Apply to a departmental opportunity',
+          explanation: 'The department has a posted research opportunity route.',
+          bestNextStep: 'Use the official program route.',
+          sourceUrls: ['https://mbb.yale.edu/introduction-undergraduate-program'],
+        },
+      ],
+    });
+
+    await screen.findByText('Molecular Biophysics and Biochemistry Undergraduate Research');
+
+    expect(screen.getByRole('link', { name: 'Visit program website' }).getAttribute('href')).toBe(
+      'https://mbb.yale.edu/introduction-undergraduate-program',
+    );
+    expect(screen.getByText('What this program focuses on')).toBeTruthy();
+    expect(screen.getByText('Ways to approach this program')).toBeTruthy();
+    expect(screen.getByText('Explore first')).toBeTruthy();
+  });
+
   it('renders a precomputed student decision explanation when one is present', async () => {
     const { container } = renderLabDetail({
       ...basePayload,

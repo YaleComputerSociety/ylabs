@@ -98,6 +98,30 @@ const HISTORY_HTML = `
 </main>
 `;
 
+const NEUROSCIENCE_HTML = `
+<main>
+  <h1>Research Opportunities</h1>
+  <p>We encourage all neuroscience majors to conduct research during the semester and over the summer, whether as part of courses, as a volunteer, or as employment.</p>
+  <p>There are more than 100 neuroscientists on campus with whom undergraduates can work in faculty laboratories.</p>
+</main>
+`;
+
+const MBB_HTML = `
+<main>
+  <h1>Introduction to the Undergraduate Program</h1>
+  <p>The B.S. is designed for students with a strong interest in research and includes an intensive introduction to modern laboratory procedures.</p>
+  <p>Undergraduates have opportunities to conduct research in faculty laboratories during their junior and senior years.</p>
+</main>
+`;
+
+const LINGUISTICS_HTML = `
+<main>
+  <h1>Linguistics Research Opportunities at Yale</h1>
+  <p>Undergraduates have many opportunities to do research in the department with individual faculty or research groups.</p>
+  <p>In a lab you receive close mentorship from the lab director, and you may work on projects individually or in groups.</p>
+</main>
+`;
+
 function buildContext(
   scraper: DepartmentUndergradResearchScraper,
   emitted: ObservationInput[],
@@ -415,6 +439,71 @@ describe('departmentUndergradResearchScraper', () => {
       ]),
     );
 
+    const observations = departmentUndergradResearchRecordsToObservations(records);
+    expect(observations.map((observation) => observation.field)).not.toEqual(
+      expect.arrayContaining(['postedOpportunityTitle', 'applicationUrl', 'deadline']),
+    );
+  });
+
+  it('covers neuroscience, MB&B, and linguistics research pages as source-backed guidance', () => {
+    const configsByKey = new Map(
+      DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES.map((page) => [page.key, page]),
+    );
+
+    expect(configsByKey.get('neuroscience')).toMatchObject({
+      url: 'https://neuroscience.yale.edu/research-opportunities',
+      parser: 'general-guidance',
+      department: 'Neuroscience',
+    });
+    expect(configsByKey.get('molecular-biophysics-biochemistry')).toMatchObject({
+      url: 'https://mbb.yale.edu/introduction-undergraduate-program',
+      parser: 'general-guidance',
+      department: 'Molecular Biophysics and Biochemistry',
+    });
+    expect(configsByKey.get('linguistics')).toMatchObject({
+      url: 'https://ling.yale.edu/academics/undergraduate/research-opportunities/linguistics-research-opportunities-yale',
+      parser: 'general-guidance',
+      department: 'Linguistics',
+    });
+
+    const records = [
+      ...parseGeneralDepartmentResearchPage(NEUROSCIENCE_HTML, configsByKey.get('neuroscience')!),
+      ...parseGeneralDepartmentResearchPage(
+        MBB_HTML,
+        configsByKey.get('molecular-biophysics-biochemistry')!,
+      ),
+      ...parseGeneralDepartmentResearchPage(LINGUISTICS_HTML, configsByKey.get('linguistics')!),
+    ];
+
+    expect(records).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          entityKey: 'department-undergrad-research-neuroscience',
+          name: 'Neuroscience Undergraduate Research Opportunities',
+          entityType: 'PROGRAM',
+          undergradAccessEvidence: true,
+          sourceUrl: 'https://neuroscience.yale.edu/research-opportunities',
+        }),
+        expect.objectContaining({
+          entityKey:
+            'department-undergrad-research-molecular-biophysics-and-biochemistry',
+          name: 'Molecular Biophysics and Biochemistry Undergraduate Research',
+          entityType: 'PROGRAM',
+          undergradAccessEvidence: true,
+          sourceUrl: 'https://mbb.yale.edu/introduction-undergraduate-program',
+        }),
+        expect.objectContaining({
+          entityKey: 'department-undergrad-research-linguistics',
+          name: 'Linguistics Undergraduate Research Opportunities',
+          entityType: 'PROGRAM',
+          undergradAccessEvidence: true,
+          sourceUrl:
+            'https://ling.yale.edu/academics/undergraduate/research-opportunities/linguistics-research-opportunities-yale',
+        }),
+      ]),
+    );
+
+    // Guidance pages must not masquerade as posted openings with deadlines/application URLs.
     const observations = departmentUndergradResearchRecordsToObservations(records);
     expect(observations.map((observation) => observation.field)).not.toEqual(
       expect.arrayContaining(['postedOpportunityTitle', 'applicationUrl', 'deadline']),

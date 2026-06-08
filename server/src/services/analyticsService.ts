@@ -2,7 +2,7 @@
  * Analytics event logging and aggregation service.
  */
 import { AnalyticsEvent, AnalyticsEventType } from '../models/analytics';
-import { User } from '../models/index';
+import { User, ResearchEntity } from '../models/index';
 import { getListingModel } from '../db/connections';
 import type { PipelineStage } from 'mongoose';
 
@@ -907,6 +907,7 @@ export const getAnalytics = async () => {
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
 
   const visitorStats = await AnalyticsEvent.aggregate([
     {
@@ -1458,10 +1459,86 @@ export const getAnalytics = async () => {
     },
   ]);
 
+  // Scraped-data coverage. The product's primary value is the materialized
+  // ResearchEntity corpus, not the legacy posted-opportunity (listing) supply,
+  // so the dashboard leads with how complete and fresh that corpus is.
+  // "Active" means not archived (archived: { $ne: true }) — the canonical
+  // active filter for research entities.
+  const researchEntityStats = await ResearchEntity.aggregate([
+    { $match: { archived: { $ne: true } } },
+    {
+      $facet: {
+        overview: [{ $group: { _id: null, total: { $sum: 1 } } }],
+        byType: [
+          { $group: { _id: '$entityType', count: { $sum: 1 } } },
+          { $sort: { count: -1 } },
+          { $project: { _id: 0, entityType: '$_id', count: 1 } },
+        ],
+        byVisibilityTier: [
+          { $group: { _id: '$studentVisibilityTier', count: { $sum: 1 } } },
+          { $project: { _id: 0, tier: '$_id', count: 1 } },
+        ],
+        byOpenness: [
+          { $group: { _id: '$opennessStatusCache', count: { $sum: 1 } } },
+          { $project: { _id: 0, status: '$_id', count: 1 } },
+        ],
+        freshness: [
+          {
+            $group: {
+              _id: null,
+              observedLast7Days: {
+                $sum: { $cond: [{ $gte: ['$lastObservedAt', sevenDaysAgo] }, 1, 0] },
+              },
+              observedLast30Days: {
+                $sum: { $cond: [{ $gte: ['$lastObservedAt', thirtyDaysAgo] }, 1, 0] },
+              },
+              neverObserved: {
+                $sum: {
+                  $cond: [{ $eq: [{ $ifNull: ['$lastObservedAt', null] }, null] }, 1, 0],
+                },
+              },
+              staleOver90Days: {
+                $sum: {
+                  $cond: [
+                    {
+                      $and: [
+                        { $ne: [{ $ifNull: ['$lastObservedAt', null] }, null] },
+                        { $lt: ['$lastObservedAt', ninetyDaysAgo] },
+                      ],
+                    },
+                    1,
+                    0,
+                  ],
+                },
+              },
+            },
+          },
+        ],
+        scholarly: [
+          {
+            $group: {
+              _id: null,
+              withRecentPapers: {
+                $sum: { $cond: [{ $gt: ['$recentPaperCount', 0] }, 1, 0] },
+              },
+              withRecentGrants: {
+                $sum: { $cond: [{ $gt: ['$recentGrantCount', 0] }, 1, 0] },
+              },
+            },
+          },
+        ],
+      },
+    },
+  ]);
+
+  const archivedResearchEntityCount = await ResearchEntity.countDocuments({ archived: true });
+
   const visitors = visitorStats[0];
   const engagement = engagementStats[0];
   const listings = listingStats[0];
   const users = userStats[0];
+  const researchEntities = researchEntityStats[0];
+  const activeResearchEntityCount = researchEntities.overview[0]?.total || 0;
 
   const trendingListingIds = engagement.trendingListings.map((t: any) => t.listingId);
   const trendingListingsData = await getListingModel()
@@ -1534,6 +1611,26 @@ export const getAnalytics = async () => {
       newUsersLast7Days: users.newUsersLast7Days[0]?.count || 0,
       newUsersToday: users.newUsersToday[0]?.count || 0,
       newUsersTodayByType: users.newUsersTodayByType || [],
+    },
+    researchEntities: {
+      overview: {
+        active: activeResearchEntityCount,
+        archived: archivedResearchEntityCount,
+        total: activeResearchEntityCount + archivedResearchEntityCount,
+      },
+      byType: researchEntities.byType || [],
+      byVisibilityTier: researchEntities.byVisibilityTier || [],
+      byOpenness: researchEntities.byOpenness || [],
+      freshness: researchEntities.freshness[0] || {
+        observedLast7Days: 0,
+        observedLast30Days: 0,
+        neverObserved: 0,
+        staleOver90Days: 0,
+      },
+      scholarly: researchEntities.scholarly[0] || {
+        withRecentPapers: 0,
+        withRecentGrants: 0,
+      },
     },
     timestamp: now.toISOString(),
   };

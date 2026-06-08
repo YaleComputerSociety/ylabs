@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
+import { assertPublicHttpUrl } from './../utils/ssrfGuard';
 import type {
   ScraperFetchAttemptMetrics,
   ScraperFetchMetric,
@@ -209,6 +210,10 @@ export function createScraplingRenderedFetcher(
     DEFAULT_TIMEOUT_MS;
 
   return async (request) => {
+    // SSRF guard: request.url originates from DB-stored / scraped values. Block private/metadata
+    // hosts before handing the URL to the headless Python fetcher. (The renderer follows its own
+    // redirects, so this validates the seed host — the injection point — not every hop.)
+    await assertPublicHttpUrl(request.url);
     const timeoutMs = request.timeoutMs || defaultTimeoutMs;
     const args = [
       bridgePath,

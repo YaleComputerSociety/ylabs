@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import * as cheerio from 'cheerio';
 import mongoose from 'mongoose';
 import { ResearchEntity } from '../../models/researchEntity';
@@ -340,9 +341,15 @@ export function descriptionExtractionToObservations(
 }
 
 async function defaultFetchPage(url: string): Promise<FetchedDescriptionPage | null> {
+  // SSRF guard: url is a DB-sourced lab websiteUrl — block private/metadata hosts and validate
+  // redirect hops at connect time.
+  await assertPublicHttpUrl(url);
+  const agents = ssrfSafeAgents();
   const res = await axios.get(url, {
     timeout: 10_000,
     headers: { 'User-Agent': 'ylabs-scraper/1.0 (+https://yalelabs.io)' },
+    httpAgent: agents.httpAgent,
+    httpsAgent: agents.httpsAgent,
   });
   return { url: res.request?.res?.responseUrl || url, html: String(res.data || '') };
 }

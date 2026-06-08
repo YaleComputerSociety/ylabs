@@ -299,24 +299,27 @@ describe('profileController', () => {
     );
   });
 
-  it('does not expose internal user maintenance fields on public profile reads', async () => {
-    mocks.getProfileByNetid.mockResolvedValue({
+  it('forwards the already-normalized profile (research homes + interest tags) without re-normalizing', async () => {
+    // `getProfileByNetid` is the single normalization point and returns a
+    // public-safe profile. Internal-field stripping is owned and tested by
+    // `normalizePublicProfile` (see profileService.test.ts). The controller
+    // must NOT re-normalize, which would drop the loaded research homes and
+    // re-derive interest tags from nothing.
+    const normalized = {
       _id: 'user-1',
       netid: 'owner123',
       fname: 'Owner',
       lname: 'Professor',
       email: 'owner123@yale.edu',
       userType: 'professor',
-      userConfirmed: true,
       profileVerified: true,
-      googleScholarId: 'private-scholar-id',
-      savedPathwayPlans: { pathway: { note: 'private note' } },
-      confidenceByField: { email: 0.99 },
-      manuallyLockedFields: ['email'],
-      lastLoginAt: new Date('2026-01-01T00:00:00.000Z'),
-      archived: false,
-      dedupedIntoUserId: 'user-2',
-    });
+      bio: '',
+      research_interest_summary:
+        'The Owner group studies adaptive optics and wavefront control for ground-based telescopes.',
+      research_interests: ['Adaptive Optics', 'Wavefront Control'],
+      researchEntities: [{ slug: 'owner-lab', name: 'Owner Lab', researchAreas: ['Adaptive Optics'] }],
+    };
+    mocks.getProfileByNetid.mockResolvedValue(normalized);
 
     const req = { params: { netid: 'owner123' } } as any;
     const res = {
@@ -327,22 +330,12 @@ describe('profileController', () => {
     await getProfile(req, res);
 
     const payload = res.json.mock.calls[0][0].profile;
-    expect(payload).toMatchObject({
-      _id: 'user-1',
-      netid: 'owner123',
-      fname: 'Owner',
-      lname: 'Professor',
-      email: 'owner123@yale.edu',
-      userType: 'professor',
-      profileVerified: true,
-    });
-    expect(payload).not.toHaveProperty('googleScholarId');
-    expect(payload).not.toHaveProperty('savedPathwayPlans');
-    expect(payload).not.toHaveProperty('confidenceByField');
-    expect(payload).not.toHaveProperty('manuallyLockedFields');
-    expect(payload).not.toHaveProperty('lastLoginAt');
-    expect(payload).not.toHaveProperty('archived');
-    expect(payload).not.toHaveProperty('dedupedIntoUserId');
+    expect(payload).toBe(normalized);
+    expect(payload.research_interest_summary).toBe(
+      'The Owner group studies adaptive optics and wavefront control for ground-based telescopes.',
+    );
+    expect(payload.research_interests).toEqual(['Adaptive Optics', 'Wavefront Control']);
+    expect(payload.researchEntities).toHaveLength(1);
   });
 
   it('does not expose internal user maintenance fields after profile updates', async () => {

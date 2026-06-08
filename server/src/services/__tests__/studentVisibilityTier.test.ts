@@ -550,23 +550,29 @@ describe('computeProgramStudentVisibility', () => {
     expect(result.reasons).toContain('application_source_only');
   });
 
-  it('caps enriched fellowship funding programs at limited visibility', () => {
+  it('caps fellowship funding to limited when its only source is the application portal', () => {
     const result = computeProgramStudentVisibility({
       title: 'Senior Research Fellowship',
       studentFacingCategory: 'Senior research funding',
       programKind: 'FELLOWSHIP_FUNDING',
-      sourceUrl: 'https://yalecollege.yale.edu/funding/senior-research-fellowship',
+      sourceUrl: 'https://yale.communityforce.com/Funds/FundDetails.aspx?abc123',
       applicationLink: 'https://yale.communityforce.com/Funds/FundDetails.aspx?abc123',
       undergraduateOnly: true,
     });
 
     expect(result.tier).toBe('limited_but_safe');
-    expect(result.reasons).toContain('formalization_only');
-    expect(result.reasons).toContain('official_source');
-    expect(result.reasons).toContain('application_route');
+    expect(result.reasons).toContain('application_source_only');
   });
 
-  it('caps travel and thesis funding programs at limited visibility', () => {
+  it('promotes undergraduate research funding with a real source + application route to student-ready', () => {
+    const fellowship = computeProgramStudentVisibility({
+      title: 'Senior Research Fellowship',
+      studentFacingCategory: 'Senior research funding',
+      programKind: 'FELLOWSHIP_FUNDING',
+      sourceUrl: 'https://yalecollege.yale.edu/funding/senior-research-fellowship',
+      applicationLink: 'https://apply.yale.edu/senior-research-fellowship',
+      undergraduateOnly: true,
+    });
     const travel = computeProgramStudentVisibility({
       title: 'Research Travel Grant',
       studentFacingCategory: 'Research travel funding',
@@ -584,9 +590,10 @@ describe('computeProgramStudentVisibility', () => {
       undergraduateOnly: true,
     });
 
-    expect(travel.tier).toBe('limited_but_safe');
-    expect(travel.reasons).toContain('formalization_only');
-    expect(thesis.tier).toBe('limited_but_safe');
+    expect(fellowship.tier).toBe('student_ready');
+    expect(travel.tier).toBe('student_ready');
+    expect(thesis.tier).toBe('student_ready');
+    // The formalization reason is still recorded for transparency, but no longer caps the tier.
     expect(thesis.reasons).toContain('formalization_only');
   });
 

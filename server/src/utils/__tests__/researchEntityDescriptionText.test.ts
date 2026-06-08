@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   publicResearchEntityDescriptionText,
   sanitizeFacultyResearchEntityText,
+  sanitizeResearchEntityPublicDescriptionFields,
 } from '../researchEntityDescriptionText';
 
 describe('publicResearchEntityDescriptionText', () => {
@@ -98,5 +99,38 @@ describe('sanitizeFacultyResearchEntityText', () => {
         facultyResearch,
       ),
     ).toBe('This research includes genomic screening. This research addresses cilia.');
+  });
+});
+
+describe('sanitizeResearchEntityPublicDescriptionFields', () => {
+  it('drops PI profile synthesis summaries that are not research-focused', () => {
+    const sanitized = sanitizeResearchEntityPublicDescriptionFields(
+      {
+        descriptionSource: 'PI_PROFILE_SYNTHESIS',
+        profileSynthesisDescription:
+          'David Lang has been performed by major music, dance, and theater organizations throughout the world, and in the most renowned concert halls and festivals in the United States and Europe. His works have been performed many times on Yale concert series.',
+      },
+      ['David Glahn'],
+    );
+
+    expect(sanitized).toEqual({
+      descriptionSource: 'PI_PROFILE_SYNTHESIS',
+      profileSynthesisDescription: '',
+    });
+  });
+
+  it('preserves PI profile synthesis summaries that stay research-focused after correction', () => {
+    const sanitized = sanitizeResearchEntityPublicDescriptionFields(
+      {
+        descriptionSource: 'PI_PROFILE_SYNTHESIS',
+        profileSynthesisDescription:
+          "David Lang's lab studies how humans process complex sound patterns.",
+      },
+      ['David Glahn'],
+    );
+
+    expect(sanitized.profileSynthesisDescription).toBe(
+      'This lab studies how humans process complex sound patterns.',
+    );
   });
 });

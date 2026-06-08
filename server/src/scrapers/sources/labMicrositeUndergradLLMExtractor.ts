@@ -29,6 +29,7 @@
  * runtime can be exercised in tests without ever touching the network.
  */
 import axios from 'axios';
+import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import * as cheerio from 'cheerio';
 import { ResearchEntity } from '../../models/researchEntity';
 import { redactDirectContactInfo } from '../../utils/contactRedaction';
@@ -603,10 +604,16 @@ export type FetchPageFn = (url: string) => Promise<FetchedPage | null>;
 
 export const defaultFetchPage: FetchPageFn = async (url) => {
   try {
+    // SSRF guard: the URL is a DB-sourced lab websiteUrl. Reject private/metadata hosts before
+    // fetching, and use connect-time-validating agents so redirect hops can't reach internal IPs.
+    await assertPublicHttpUrl(url);
+    const agents = ssrfSafeAgents();
     const res = await axios.get(url, {
       timeout: FETCH_TIMEOUT_MS,
       headers: { 'User-Agent': USER_AGENT, Accept: 'text/html,*/*' },
       maxRedirects: 5,
+      httpAgent: agents.httpAgent,
+      httpsAgent: agents.httpsAgent,
       validateStatus: (s) => s >= 200 && s < 300,
       responseType: 'text',
       transitional: { clarifyTimeoutError: true } as any,

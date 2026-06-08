@@ -147,6 +147,7 @@ const suppressionRepairReasons = new Set([
   'generic_directory_shell',
   'inactive_at_yale',
   'non_owner_grant_shell',
+  'non_research_program',
   'not_undergraduate_relevant',
   'profile_biography_shell',
   'research_infrastructure_only',
@@ -183,6 +184,7 @@ export function isBlockingVisibilityReason(reason: string): boolean {
       'generic_directory_shell',
       'inactive_at_yale',
       'non_owner_grant_shell',
+      'non_research_program',
       'missing_card_description',
       'not_undergraduate_relevant',
       'pi_identity_conflict',
@@ -206,9 +208,18 @@ const uniqueStrings = (values: unknown[]): string[] =>
   );
 
 const exactDuplicateUrlRejectedPathPatterns = [
-  /\/(?:people|faculty|professors|directory|members|humans\/faculty)\/?$/i,
+  /\/(?:people|faculty|professors|directory|members|humans\/faculty|labs|staff|team)\/?$/i,
   /\/(?:[^/]+\/)*membership\/directory\/?$/i,
+  // Generic index / listing / opportunity / API pages: distinct research homes
+  // legitimately share these, so they are NOT a same-entity duplicate signal.
+  /(?:employment|research|undergraduate|volunteer)[-/]opportunities/i,
+  /\/diversity\//i,
+  /(?:awards?\.json|\/services\/)/i,
 ];
+
+// Hosts that serve generic API/listing endpoints rather than a specific
+// research home, so a shared URL on them is not a duplicate signal.
+const genericDuplicateSignalHosts = new Set(['api.nsf.gov', 'api.reporter.nih.gov']);
 
 function normalizedExactDuplicateUrl(value: unknown): string {
   const raw = typeof value === 'string' ? value.trim() : '';
@@ -235,6 +246,7 @@ function isSpecificDuplicateSignalUrl(value: string): boolean {
     const url = new URL(value);
     const path = url.pathname.replace(/\/+$/g, '') || '/';
     if (path === '/' && /(^|\.)yale\.edu$/i.test(url.hostname)) return false;
+    if (genericDuplicateSignalHosts.has(url.hostname.toLowerCase())) return false;
     if (exactDuplicateUrlRejectedPathPatterns.some((pattern) => pattern.test(path))) return false;
     return true;
   } catch {

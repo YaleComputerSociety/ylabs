@@ -440,6 +440,36 @@ const Analytics = () => {
     );
   };
 
+  const formatEntityType = (type?: string) => {
+    if (!type) {
+      return 'Unknown';
+    }
+    return type
+      .split('_')
+      .map((word) => word.charAt(0) + word.slice(1).toLowerCase())
+      .join(' ');
+  };
+
+  const formatVisibilityTier = (tier?: string) => {
+    const tierMap: Record<string, string> = {
+      student_ready: 'Student-ready',
+      limited_but_safe: 'Limited but safe',
+      operator_review: 'Operator review',
+      suppressed: 'Suppressed',
+    };
+    return tier ? tierMap[tier] || tier : 'Unset';
+  };
+
+  const formatOpenness = (status?: string) => {
+    const statusMap: Record<string, string> = {
+      'verified-accepting': 'Verified accepting',
+      'likely-accepting': 'Likely accepting',
+      unknown: 'Unknown',
+      'not-available': 'Not available',
+    };
+    return status ? statusMap[status] || status : 'Unknown';
+  };
+
   const formatNumber = (value?: number | null, digits = 0) => {
     if (typeof value !== 'number' || Number.isNaN(value)) {
       return '-';
@@ -524,19 +554,20 @@ const Analytics = () => {
   const funnelStages: AnalyticsFunnelStage[] =
     funnel?.stages ||
     fallbackFunnelStages;
-  const opportunityViewDataHealth = data.engagement.opportunityViewDataHealth;
-  const orphanedOpportunityViewEvents =
-    opportunityViewDataHealth?.orphanedOpportunityViewEventsLast30Days || 0;
-  const orphanedOpportunityIds = opportunityViewDataHealth?.orphanedOpportunityIds || [];
   const selectedRangeLabel =
     analyticsRanges.find((range) => range.value === analyticsRange)?.label || 'Selected range';
   const searchSuccessRate = searchTotal > 0 ? searchesWithResults / searchTotal : null;
-  const activeOpportunityRate =
-    data.listings.overview.total > 0
-      ? data.listings.overview.active / data.listings.overview.total
-      : null;
+  const researchCoverage = data.researchEntities;
+  const activeEntities = researchCoverage.overview.active;
+  const studentReadyEntities =
+    researchCoverage.byVisibilityTier.find((tier) => tier.tier === 'student_ready')?.count || 0;
+  const studentReadyShare = activeEntities > 0 ? studentReadyEntities / activeEntities : null;
+  const freshEntities = researchCoverage.freshness.observedLast30Days;
+  const freshShare = activeEntities > 0 ? freshEntities / activeEntities : null;
+  const staleEntities =
+    researchCoverage.freshness.staleOver90Days + researchCoverage.freshness.neverObserved;
   const attentionCount =
-    actionCards.length + zeroResultQueries.length + lowResultQueries.length + orphanedOpportunityIds.length;
+    actionCards.length + zeroResultQueries.length + lowResultQueries.length;
   const healthTone =
     attentionCount > 4 || (searchSuccessRate !== null && searchSuccessRate < 0.75)
       ? 'red'
@@ -602,9 +633,9 @@ const Analytics = () => {
             tone="blue"
           />
           <DashboardMetric
-            title="Active opportunity supply"
-            value={activeOpportunityRate === null ? '-' : formatPercent(activeOpportunityRate)}
-            context={`${formatNumber(data.listings.overview.active)} active out of ${formatNumber(data.listings.overview.total)} posted opportunities.`}
+            title="Student-ready research"
+            value={studentReadyShare === null ? '-' : formatPercent(studentReadyShare)}
+            context={`${formatNumber(studentReadyEntities)} of ${formatNumber(activeEntities)} active research entities are student-ready.`}
             tone="blue"
           />
           <DashboardMetric
@@ -887,11 +918,134 @@ const Analytics = () => {
         </a>
         <a
           className="rounded-md border border-[var(--yr-line)] px-3 py-2 text-blue-700"
-          href="#posted-opportunities-overview"
+          href="#research-coverage"
         >
-          Opportunities
+          Research Coverage
         </a>
       </nav>
+
+      <section id="research-coverage" className="mb-10">
+        <div className="mb-4 flex flex-col gap-2 border-b border-[var(--yr-line)] pb-2 md:flex-row md:items-end md:justify-between">
+          <div>
+            <h2 className="text-2xl font-bold text-gray-800">Research Data Coverage</h2>
+            <p className="text-sm text-gray-500">
+              Scraped ResearchEntity corpus — the primary catalog students browse. Counts cover
+              active (non-archived) entities.
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+          <StatCard
+            title="Active Research Entities"
+            value={researchCoverage.overview.active}
+            subtitle={`${formatNumber(researchCoverage.overview.archived)} archived`}
+          />
+          <StatCard
+            title="Student-Ready"
+            value={studentReadyEntities}
+            subtitle={studentReadyShare === null ? undefined : `${formatPercent(studentReadyShare)} of active`}
+          />
+          <StatCard
+            title="Refreshed (30 Days)"
+            value={freshEntities}
+            subtitle={freshShare === null ? undefined : `${formatPercent(freshShare)} of active`}
+          />
+          <StatCard
+            title="Stale or Never Observed"
+            value={staleEntities}
+            subtitle={`${formatNumber(researchCoverage.freshness.neverObserved)} never observed`}
+          />
+        </div>
+
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+          <div className="bg-[var(--yr-panel)] rounded-lg shadow-md border border-[var(--yr-line)] overflow-hidden">
+            <div className="border-b border-[var(--yr-line)] p-4">
+              <h3 className="text-lg font-semibold text-gray-800">By Entity Type</h3>
+              <p className="text-sm text-gray-500">What kinds of research homes exist</p>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-[var(--yr-panel-muted)]">
+                    <th className="px-4 py-2 text-left font-semibold text-gray-700">Type</th>
+                    <th className="px-4 py-2 text-right font-semibold text-gray-700">Entities</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {researchCoverage.byType.length > 0 ? (
+                    researchCoverage.byType.map((row) => (
+                      <tr
+                        key={row.entityType || 'unknown'}
+                        className="border-b last:border-0 hover:bg-[var(--yr-panel-muted)]"
+                      >
+                        <td className="px-4 py-2 text-gray-800">
+                          {formatEntityType(row.entityType)}
+                        </td>
+                        <td className="px-4 py-2 text-right font-medium">
+                          {formatNumber(row.count)}
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td className="px-4 py-4 text-center text-gray-500" colSpan={2}>
+                        No research entities returned.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="bg-[var(--yr-panel)] rounded-lg shadow-md border border-[var(--yr-line)] overflow-hidden">
+            <div className="border-b border-[var(--yr-line)] p-4">
+              <h3 className="text-lg font-semibold text-gray-800">By Visibility Tier</h3>
+              <p className="text-sm text-gray-500">Student-facing exposure gating</p>
+            </div>
+            <div className="space-y-2 p-4 text-sm">
+              {researchCoverage.byVisibilityTier.length > 0 ? (
+                researchCoverage.byVisibilityTier.map((row) => (
+                  <div key={row.tier || 'unknown'} className="flex items-center justify-between">
+                    <span className="text-gray-600">{formatVisibilityTier(row.tier)}</span>
+                    <span className="font-medium text-gray-900">{formatNumber(row.count)}</span>
+                  </div>
+                ))
+              ) : (
+                <p className="text-gray-500">No tier data returned.</p>
+              )}
+            </div>
+          </div>
+
+          <div className="bg-[var(--yr-panel)] rounded-lg shadow-md border border-[var(--yr-line)] overflow-hidden">
+            <div className="border-b border-[var(--yr-line)] p-4">
+              <h3 className="text-lg font-semibold text-gray-800">Openness & Scholarly Signal</h3>
+              <p className="text-sm text-gray-500">Access posture and recent activity</p>
+            </div>
+            <div className="space-y-2 p-4 text-sm">
+              {researchCoverage.byOpenness.map((row) => (
+                <div key={row.status || 'unknown'} className="flex items-center justify-between">
+                  <span className="text-gray-600">{formatOpenness(row.status)}</span>
+                  <span className="font-medium text-gray-900">{formatNumber(row.count)}</span>
+                </div>
+              ))}
+              <div className="mt-3 flex items-center justify-between border-t border-[var(--yr-line)] pt-3">
+                <span className="text-gray-600">With recent papers</span>
+                <span className="font-medium text-gray-900">
+                  {formatNumber(researchCoverage.scholarly.withRecentPapers)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-gray-600">With recent grants</span>
+                <span className="font-medium text-gray-900">
+                  {formatNumber(researchCoverage.scholarly.withRecentGrants)}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
 
       <section id="visitor-statistics" className="mb-10">
         <h2 className="text-2xl font-semibold mb-4 text-slate-950 border-b border-[var(--yr-line)] pb-2">
@@ -1016,24 +1170,6 @@ const Analytics = () => {
           </div>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-          <StatCard
-            title="Total View Events"
-            value={data.engagement.views.totalViews}
-            subtitle="Opportunity views tracked"
-          />
-          <StatCard
-            title="Views (Last 7 Days)"
-            value={data.engagement.views.viewsLast7Days}
-            subtitle="Recent views"
-          />
-          <StatCard
-            title="Views Today"
-            value={data.engagement.views.viewsToday}
-            subtitle="Views today"
-          />
-        </div>
-
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <StatCard
             title="Active Users (Last 7 Days)"
@@ -1048,42 +1184,7 @@ const Analytics = () => {
         </div>
       </section>
 
-      {opportunityViewDataHealth && (
-        <section className="mb-10">
-          <h2 className="text-2xl font-semibold mb-4 text-slate-950 border-b border-[var(--yr-line)] pb-2">
-            Analytics Data Health
-          </h2>
-
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
-            <StatCard
-              title="Opportunity view events (30 days)"
-              value={formatNumber(opportunityViewDataHealth.opportunityViewEventsLast30Days)}
-              subtitle="Tracked recent view events"
-            />
-            <StatCard
-              title="Resolved opportunity view events"
-              value={formatNumber(
-                opportunityViewDataHealth.resolvedOpportunityViewEventsLast30Days
-              )}
-              subtitle="Mapped to current records"
-            />
-            <StatCard
-              title="Orphaned opportunity view events"
-              value={formatNumber(orphanedOpportunityViewEvents)}
-              subtitle={`${formatNumber(orphanedOpportunityIds.length)} unresolved IDs`}
-            />
-          </div>
-
-          {orphanedOpportunityViewEvents > 0 && (
-            <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-              Some recent opportunity view events reference retired or missing opportunity records.
-              The trending table only shows events that map to current records.
-            </div>
-          )}
-        </section>
-      )}
-
-      <section id="posted-opportunities-overview" className="mb-10">
+      <section id="high-impact-diagnostics" className="mb-10">
         <div className="mb-4 flex flex-col gap-2 border-b border-[var(--yr-line)] pb-2 md:flex-row md:items-end md:justify-between">
           <div>
             <h2 className="text-2xl font-bold text-gray-800">High-Impact Diagnostics</h2>
@@ -1690,245 +1791,6 @@ const Analytics = () => {
                 </div>
               )}
             </aside>
-          </div>
-        </div>
-      </section>
-
-      {data.engagement.trendingListings.length > 0 && (
-        <section className="mb-10">
-          <h2 className="text-2xl font-semibold mb-4 text-slate-950 border-b border-[var(--yr-line)] pb-2">
-            Trending Posted Opportunities (Last 30 Days)
-          </h2>
-          <div className="bg-[var(--yr-panel)] rounded-lg shadow-md p-6 border border-[var(--yr-line)]">
-            <div className="overflow-x-auto">
-              <table className="min-w-full">
-                <thead>
-                  <tr className="border-b">
-                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Title</th>
-                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Owner</th>
-                    <th className="text-right py-3 px-4 font-semibold text-gray-700">Views</th>
-                    <th className="text-right py-3 px-4 font-semibold text-gray-700">
-                      Unique Viewers
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.engagement.trendingListings.map((listing) => (
-                    <tr key={listing.listingId} className="border-b hover:bg-[var(--yr-panel-muted)]">
-                      <td className="py-3 px-4 text-gray-800">{listing.title}</td>
-                      <td className="py-3 px-4 text-gray-600">
-                        {listing.ownerFirstName} {listing.ownerLastName}
-                      </td>
-                      <td className="py-3 px-4 text-right font-medium">{listing.views}</td>
-                      <td className="py-3 px-4 text-right font-medium">{listing.uniqueViewers}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </section>
-      )}
-
-      <section className="mb-10">
-        <h2 className="text-2xl font-semibold mb-4 text-slate-950 border-b border-[var(--yr-line)] pb-2">
-          Posted Opportunities Overview
-        </h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
-          <StatCard title="Total Posted Opportunities" value={data.listings.overview.total} />
-          <StatCard title="Active Posted Opportunities" value={data.listings.overview.active} />
-          <StatCard title="Archived Posted Opportunities" value={data.listings.overview.archived} />
-          <StatCard
-            title="Unconfirmed Posted Opportunities"
-            value={data.listings.overview.unconfirmed}
-          />
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <StatCard
-            title="New Posted Opportunities (Last 7 Days)"
-            value={data.listings.newListingsLast7Days}
-            subtitle="Created in past week"
-          />
-          <StatCard
-            title="New Posted Opportunities Today"
-            value={data.listings.newListingsToday}
-            subtitle="Created today"
-          />
-          <StatCard
-            title="Posted Opportunities with 0 Views"
-            value={data.listings.listingsWithZeroViews}
-            subtitle="May need attention"
-          />
-        </div>
-      </section>
-
-      <section className="mb-10">
-        <h2 className="text-2xl font-semibold mb-4 text-slate-950 border-b border-[var(--yr-line)] pb-2">
-          Cumulative Engagement Metrics
-        </h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          <StatCard title="Total Views (Counter)" value={data.engagement.totalViewsFromCounters} />
-          <StatCard
-            title="Total Saves (Counter)"
-            value={data.engagement.totalFavoritesFromCounters}
-          />
-          <StatCard
-            title="Avg Views per Posted Opportunity"
-            value={data.engagement.avgViews.toFixed(1)}
-          />
-          <StatCard
-            title="Avg Saves per Posted Opportunity"
-            value={data.engagement.avgFavorites.toFixed(1)}
-          />
-        </div>
-      </section>
-
-      <section className="mb-10">
-        <h2 className="text-2xl font-semibold mb-4 text-slate-950 border-b border-[var(--yr-line)] pb-2">
-          Views by Department
-        </h2>
-        <div className="bg-[var(--yr-panel)] rounded-lg shadow-md p-6 border border-[var(--yr-line)]">
-          <div className="overflow-x-auto">
-            <table className="min-w-full">
-              <thead>
-                <tr className="border-b">
-                  <th className="text-left py-3 px-4 font-semibold text-gray-700">Department</th>
-                  <th className="text-right py-3 px-4 font-semibold text-gray-700">Total Views</th>
-                  <th className="text-right py-3 px-4 font-semibold text-gray-700">
-                    Posted Opportunities
-                  </th>
-                  <th className="text-right py-3 px-4 font-semibold text-gray-700">Avg Views</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.engagement.viewsByDepartment.slice(0, 15).map((dept) => (
-                  <tr key={dept.department} className="border-b hover:bg-[var(--yr-panel-muted)]">
-                    <td className="py-3 px-4 text-gray-800">{dept.department}</td>
-                    <td className="py-3 px-4 text-right font-medium">{dept.totalViews}</td>
-                    <td className="py-3 px-4 text-right">{dept.listingCount}</td>
-                    <td className="py-3 px-4 text-right">{dept.avgViews}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </section>
-
-      <section className="mb-10">
-        <h2 className="text-2xl font-semibold mb-4 text-slate-950 border-b border-[var(--yr-line)] pb-2">
-          Posted Opportunities by Department
-        </h2>
-        <div className="bg-[var(--yr-panel)] rounded-lg shadow-md p-6 border border-[var(--yr-line)]">
-          <div className="overflow-x-auto">
-            <table className="min-w-full">
-              <thead>
-                <tr className="border-b">
-                  <th className="text-left py-3 px-4 font-semibold text-gray-700">Department</th>
-                  <th className="text-right py-3 px-4 font-semibold text-gray-700">
-                    Posted Opportunities
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.listings.byDepartment.slice(0, 15).map((dept) => (
-                  <tr key={dept.department} className="border-b hover:bg-[var(--yr-panel-muted)]">
-                    <td className="py-3 px-4 text-gray-800">{dept.department}</td>
-                    <td className="py-3 px-4 text-right font-medium">{dept.count}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </section>
-
-      <section className="mb-10">
-        <h2 className="text-2xl font-semibold mb-4 text-slate-950 border-b border-[var(--yr-line)] pb-2">
-          Top Professors by Posted Opportunities
-        </h2>
-        <div className="bg-[var(--yr-panel)] rounded-lg shadow-md p-6 border border-[var(--yr-line)]">
-          <div className="overflow-x-auto">
-            <table className="min-w-full">
-              <thead>
-                <tr className="border-b">
-                  <th className="text-left py-3 px-4 font-semibold text-gray-700">Professor</th>
-                  <th className="text-left py-3 px-4 font-semibold text-gray-700">NetID</th>
-                  <th className="text-right py-3 px-4 font-semibold text-gray-700">
-                    Posted Opportunities
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.listings.byProfessor.map((prof) => (
-                  <tr key={prof.netId} className="border-b hover:bg-[var(--yr-panel-muted)]">
-                    <td className="py-3 px-4 text-gray-800">{prof.professorName}</td>
-                    <td className="py-3 px-4 text-gray-600">{prof.netId}</td>
-                    <td className="py-3 px-4 text-right font-medium">{prof.count}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </section>
-
-      <section className="mb-10">
-        <h2 className="text-2xl font-semibold mb-4 text-slate-950 border-b border-[var(--yr-line)] pb-2">
-          Top 10 Most Viewed Posted Opportunities (All-Time)
-        </h2>
-        <div className="bg-[var(--yr-panel)] rounded-lg shadow-md p-6 border border-[var(--yr-line)]">
-          <div className="overflow-x-auto">
-            <table className="min-w-full">
-              <thead>
-                <tr className="border-b">
-                  <th className="text-left py-3 px-4 font-semibold text-gray-700">Title</th>
-                  <th className="text-left py-3 px-4 font-semibold text-gray-700">Owner</th>
-                  <th className="text-right py-3 px-4 font-semibold text-gray-700">Views</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.listings.topViewedListings.map((listing) => (
-                  <tr key={listing._id} className="border-b hover:bg-[var(--yr-panel-muted)]">
-                    <td className="py-3 px-4 text-gray-800">{listing.title}</td>
-                    <td className="py-3 px-4 text-gray-600">
-                      {listing.ownerFirstName} {listing.ownerLastName}
-                    </td>
-                    <td className="py-3 px-4 text-right font-medium">{listing.views}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </section>
-
-      <section className="mb-10">
-        <h2 className="text-2xl font-semibold mb-4 text-slate-950 border-b border-[var(--yr-line)] pb-2">
-          Top 10 Most Saved Posted Opportunities
-        </h2>
-        <div className="bg-[var(--yr-panel)] rounded-lg shadow-md p-6 border border-[var(--yr-line)]">
-          <div className="overflow-x-auto">
-            <table className="min-w-full">
-              <thead>
-                <tr className="border-b">
-                  <th className="text-left py-3 px-4 font-semibold text-gray-700">Title</th>
-                  <th className="text-left py-3 px-4 font-semibold text-gray-700">Owner</th>
-                  <th className="text-right py-3 px-4 font-semibold text-gray-700">Saves</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.listings.topFavoritedListings.map((listing) => (
-                  <tr key={listing._id} className="border-b hover:bg-[var(--yr-panel-muted)]">
-                    <td className="py-3 px-4 text-gray-800">{listing.title}</td>
-                    <td className="py-3 px-4 text-gray-600">
-                      {listing.ownerFirstName} {listing.ownerLastName}
-                    </td>
-                    <td className="py-3 px-4 text-right font-medium">{listing.favorites}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
           </div>
         </div>
       </section>

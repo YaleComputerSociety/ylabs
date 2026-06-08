@@ -323,6 +323,18 @@ const researchGroupSchema = new mongoose.Schema(
       type: Date,
       required: false,
     },
+    /**
+     * Precomputed "best first" ranking score for the default (no-query)
+     * /research browse. Higher = better. Combines completeness (description,
+     * lead, source URL) with strength-weighted undergrad access signals.
+     * Materializer- and backfill-maintained; mirrored to the Meilisearch
+     * `researchentities` index as a sortable attribute. See
+     * `services/researchEntityBrowseRank.ts`.
+     */
+    browseRankScore: {
+      type: Number,
+      default: 0,
+    },
     archived: {
       type: Boolean,
       default: false,
@@ -366,6 +378,7 @@ researchGroupSchema.index({ opennessStatusCache: 1 });
 researchGroupSchema.index({ activeAtYaleCache: 1 });
 researchGroupSchema.index({ archived: 1 });
 researchGroupSchema.index({ lastObservedAt: 1 });
+researchGroupSchema.index({ archived: 1, browseRankScore: -1 });
 researchGroupSchema.index({ recentGrantCount: -1 });
 researchGroupSchema.index({ recentPaperCount: -1 });
 researchGroupSchema.index({ fundingAgencies: 1 });
