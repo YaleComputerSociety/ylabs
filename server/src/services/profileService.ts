@@ -372,7 +372,8 @@ const PUBLIC_PROFILE_BASE_FIELDS = [
   'profileVerified',
   'title',
   'bio',
-  'phone',
+  // 'phone' intentionally excluded from public profiles (security audit): email +
+  // office location (physicalLocation/buildingDesk) are public; phone is not.
   'departments',
   'college',
   'year',
@@ -380,7 +381,7 @@ const PUBLIC_PROFILE_BASE_FIELDS = [
   'unit',
   'physicalLocation',
   'buildingDesk',
-  'mailingAddress',
+  // 'mailingAddress' intentionally excluded from public profiles (security audit).
   'primaryDepartment',
   'secondaryDepartments',
   'imageUrl',
