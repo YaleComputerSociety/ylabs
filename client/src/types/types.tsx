@@ -41,6 +41,19 @@ export type FellowshipLink = {
 
 export type Fellowship = {
   id: string;
+  programCategory: string;
+  programKind: string;
+  entryMode: string;
+  studentFacingCategory: string;
+  requiresMentorBeforeApply: boolean;
+  mentorMatching: boolean;
+  undergraduateOnly: boolean | null;
+  yaleCollegeOnly: boolean | null;
+  compensationSummary: string;
+  hoursPerWeek: number | null;
+  programDates: string;
+  bestNextStep: string;
+  prepSteps: string[];
   title: string;
   competitionType: string;
   summary: string;
@@ -64,6 +77,19 @@ export type Fellowship = {
   purpose: string[];
   globalRegions: string[];
   citizenshipStatus: string[];
+  sourceName: string;
+  sourceUrl: string;
+  sourceKey: string;
+  sourceFingerprint: string;
+  sourceLastVerifiedAt: string | null;
+  sourceLastChangedAt: string | null;
+  studentVisibilityTier?: StudentVisibilityTier;
+  studentVisibilityComputedTier?: StudentVisibilityTier;
+  studentVisibilityOverrideTier?: StudentVisibilityTier;
+  studentVisibilityReasons?: string[];
+  studentVisibilitySuppressionReason?: string;
+  studentVisibilityReviewRuleId?: string;
+  studentVisibilityReviewNote?: string;
   archived: boolean;
   audited: boolean;
   views: number;
@@ -72,9 +98,19 @@ export type Fellowship = {
   createdAt: string;
 };
 
+export type StudentVisibilityTier =
+  | 'student_ready'
+  | 'limited_but_safe'
+  | 'operator_review'
+  | 'suppressed';
+
 export type FellowshipStage = 'not_applied' | 'applied';
 
 export type FellowshipFilterOptions = {
+  programCategory: string[];
+  programKind: string[];
+  entryMode: string[];
+  studentFacingCategory: string[];
   yearOfStudy: string[];
   termOfAward: string[];
   purpose: string[];
