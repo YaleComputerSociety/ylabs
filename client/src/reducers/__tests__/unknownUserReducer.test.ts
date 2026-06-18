@@ -20,23 +20,23 @@ describe('unknownUserReducer', () => {
   describe('form value setters', () => {
     it('SET_FIRST_NAME updates firstName', () => {
       const state = createInitialUnknownUserState();
-      const next = unknownUserReducer(state, { type: 'SET_FIRST_NAME', payload: 'Ada' });
-      expect(next.firstName).toBe('Ada');
+      const next = unknownUserReducer(state, { type: 'SET_FIRST_NAME', payload: 'Test' });
+      expect(next.firstName).toBe('Test');
     });
 
     it('SET_LAST_NAME updates lastName', () => {
       const state = createInitialUnknownUserState();
-      const next = unknownUserReducer(state, { type: 'SET_LAST_NAME', payload: 'Lovelace' });
-      expect(next.lastName).toBe('Lovelace');
+      const next = unknownUserReducer(state, { type: 'SET_LAST_NAME', payload: 'Person' });
+      expect(next.lastName).toBe('Person');
     });
 
     it('SET_EMAIL updates email', () => {
       const state = createInitialUnknownUserState();
       const next = unknownUserReducer(state, {
         type: 'SET_EMAIL',
-        payload: 'ada@yale.edu',
+        payload: 'person@example.test',
       });
-      expect(next.email).toBe('ada@yale.edu');
+      expect(next.email).toBe('person@example.test');
     });
 
     it('SET_USER_TYPE updates userType without touching the dropdown', () => {
@@ -130,13 +130,13 @@ describe('unknownUserReducer', () => {
 
   it('does not mutate previous state', () => {
     const state = createInitialUnknownUserState({
-      firstName: 'Ada',
+      firstName: 'Test',
       errors: { email: 'Invalid email format' },
       focusedUserTypeIndex: 1,
       isUserTypeDropdownOpen: true,
     });
     const snapshot = JSON.stringify(state);
-    unknownUserReducer(state, { type: 'SET_FIRST_NAME', payload: 'Grace' });
+    unknownUserReducer(state, { type: 'SET_FIRST_NAME', payload: 'Updated' });
     unknownUserReducer(state, { type: 'CLOSE_DROPDOWN' });
     unknownUserReducer(state, { type: 'SELECT_USER_TYPE', payload: 'faculty' });
     unknownUserReducer(state, {

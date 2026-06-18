@@ -38,7 +38,7 @@ export async function initializeConnections(): Promise<void> {
     migrationConnection = await mongoose.createConnection(migrationUrl).asPromise();
     console.log('Connected to migration database (listings) 🔄');
 
-    MigrationListing = migrationConnection.model('listings', listingSchema);
+    MigrationListing = migrationConnection.model('Listing', listingSchema, 'listings');
   } else {
     const url = process.env.MONGODBURL;
     if (!url) {

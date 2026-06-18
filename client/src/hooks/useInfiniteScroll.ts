@@ -40,8 +40,10 @@ export function useInfiniteScroll({
 
   useEffect(() => {
     if (searchExhausted) return;
+    if (typeof IntersectionObserver !== 'function') return;
     const el = sentinelRef.current;
     if (!el) return;
+    const scrollRoot = el.closest<HTMLElement>('[data-scroll-container]');
 
     const canAdvance = () => {
       if (isLoadingRef.current || searchExhaustedRef.current) return false;
@@ -66,7 +68,7 @@ export function useInfiniteScroll({
       (entries) => {
         if (entries[0].isIntersecting) advance();
       },
-      { threshold: 0, rootMargin },
+      { threshold: 0, root: scrollRoot, rootMargin },
     );
 
     observer.observe(el);
@@ -74,7 +76,8 @@ export function useInfiniteScroll({
     // Re-check when loading transitions false with the sentinel already visible.
     if (!isLoading) {
       const rect = el.getBoundingClientRect();
-      if (rect.top < window.innerHeight + 600) advance();
+      const rootBottom = scrollRoot ? scrollRoot.getBoundingClientRect().bottom : window.innerHeight;
+      if (rect.top < rootBottom + 600) advance();
     }
 
     return () => observer.disconnect();

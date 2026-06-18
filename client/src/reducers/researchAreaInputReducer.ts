@@ -5,8 +5,8 @@
  *   1. The autocomplete combobox UI (open flag, filter text, keyboard focus
  *      index)
  *   2. The "add new research area" modal (open flag, pending name)
- *   3. The async create lifecycle (isLoading while POSTing to
- *      /api/research-areas)
+ *   3. The async create lifecycle (isLoading while POSTing to the configured
+ *      research area API endpoint)
  *
  * Grouping these keeps multi-field transitions atomic — e.g. selecting an
  * area must close the dropdown, clear the search, and reset keyboard focus

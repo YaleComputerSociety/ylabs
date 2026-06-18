@@ -6,9 +6,9 @@ import { createInitialListingFormState, listingFormReducer } from '../listingFor
 const makeListing = (overrides: Partial<Listing> = {}): Listing => ({
   id: 'id-1',
   ownerId: 'owner-1',
-  ownerFirstName: 'Ada',
-  ownerLastName: 'Lovelace',
-  ownerEmail: 'ada@example.com',
+  ownerFirstName: 'Fixture',
+  ownerLastName: 'Owner',
+  ownerEmail: 'fixture.owner@example.com',
   professorIds: ['prof-1'],
   professorNames: ['Prof One'],
   title: 'Initial title',
@@ -37,7 +37,7 @@ describe('listingFormReducer', () => {
       const listing = makeListing();
       const state = createInitialListingFormState(listing);
       expect(state.title).toBe('Initial title');
-      expect(state.ownerName).toBe('Ada Lovelace');
+      expect(state.ownerName).toBe('Fixture Owner');
       expect(state.departments).toEqual(['Computer Science']);
       expect(state.researchAreas).toEqual(['AI']);
       expect(state.loading).toBe(true);

@@ -3,7 +3,7 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "lib": ["es2017"],
+    "lib": ["es2022"],
     "noImplicitAny": true,
     "removeComments": true,
     "preserveConstEnums": true,

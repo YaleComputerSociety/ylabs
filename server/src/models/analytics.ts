@@ -2,6 +2,7 @@
  * Mongoose schema and model for analytics events tracking user activity.
  */
 import mongoose from 'mongoose';
+import { normalizeUserType } from './user';
 
 export enum AnalyticsEventType {
   LOGIN = 'login',
@@ -10,7 +11,12 @@ export enum AnalyticsEventType {
   LISTING_VIEW = 'listing_view',
   LISTING_FAVORITE = 'listing_favorite',
   LISTING_UNFAVORITE = 'listing_unfavorite',
+  FELLOWSHIP_VIEW = 'fellowship_view',
+  FELLOWSHIP_FAVORITE = 'fellowship_favorite',
+  FELLOWSHIP_UNFAVORITE = 'fellowship_unfavorite',
   SEARCH = 'search',
+  OUTREACH_CLICK = 'outreach_click',
+  OUTREACH_OUTCOME = 'outreach_outcome',
   LISTING_CREATE = 'listing_create',
   LISTING_UPDATE = 'listing_update',
   LISTING_ARCHIVE = 'listing_archive',
@@ -33,11 +39,16 @@ const analyticsEventSchema = new mongoose.Schema(
     },
     userType: {
       type: String,
-      enum: ['undergraduate', 'graduate', 'professor', 'faculty', 'admin', 'unknown'],
+      set: normalizeUserType,
+      enum: ['student', 'undergraduate', 'graduate', 'professor', 'admin', 'unknown'],
       required: true,
       index: true,
     },
     listingId: {
+      type: mongoose.Schema.Types.ObjectId,
+      index: true,
+    },
+    fellowshipId: {
       type: mongoose.Schema.Types.ObjectId,
       index: true,
     },
@@ -53,7 +64,6 @@ const analyticsEventSchema = new mongoose.Schema(
     timestamp: {
       type: Date,
       default: Date.now,
-      index: true,
     },
   },
   {
@@ -67,4 +77,8 @@ analyticsEventSchema.index({ eventType: 1, netid: 1, timestamp: -1 });
 analyticsEventSchema.index({ timestamp: -1 });
 
 analyticsEventSchema.index({ timestamp: 1 }, { expireAfterSeconds: 94608000 });
-export const AnalyticsEvent = mongoose.model('analytics_events', analyticsEventSchema);
+export const AnalyticsEvent = mongoose.model(
+  'AnalyticsEvent',
+  analyticsEventSchema,
+  'analytics_events',
+);

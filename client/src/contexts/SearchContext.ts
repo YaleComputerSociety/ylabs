@@ -13,18 +13,18 @@ export interface SearchContextType {
   selectedDepartments: string[];
   setSelectedDepartments: React.Dispatch<React.SetStateAction<string[]>>;
 
-  selectedDisciplines: string[];
-  setSelectedDisciplines: React.Dispatch<React.SetStateAction<string[]>>;
-
   selectedResearchAreas: string[];
   setSelectedResearchAreas: React.Dispatch<React.SetStateAction<string[]>>;
 
+  selectedListingResearchAreas: string[];
+  setSelectedListingResearchAreas: React.Dispatch<React.SetStateAction<string[]>>;
+
   departmentsFilterMode: FilterMode;
   setDepartmentsFilterMode: React.Dispatch<React.SetStateAction<FilterMode>>;
-  disciplinesFilterMode: FilterMode;
-  setDisciplinesFilterMode: React.Dispatch<React.SetStateAction<FilterMode>>;
   researchAreasFilterMode: FilterMode;
   setResearchAreasFilterMode: React.Dispatch<React.SetStateAction<FilterMode>>;
+  listingResearchAreasFilterMode: FilterMode;
+  setListingResearchAreasFilterMode: React.Dispatch<React.SetStateAction<FilterMode>>;
 
   sortBy: string;
   setSortBy: (sortBy: string) => void;
@@ -35,6 +35,7 @@ export interface SearchContextType {
 
   listings: Listing[];
   isLoading: boolean;
+  error: string | null;
   searchExhausted: boolean;
   totalCount: number;
 
@@ -44,9 +45,8 @@ export interface SearchContextType {
 
   allDepartments: string[];
 
-  allDisciplines: string[];
-
   allResearchAreas: string[];
+  allListingResearchAreas: string[];
 
   sortableKeys: string[];
 
@@ -64,16 +64,16 @@ export const defaultSearchContext: SearchContextType = {
   setQueryString: () => {},
   selectedDepartments: [],
   setSelectedDepartments: () => {},
-  selectedDisciplines: [],
-  setSelectedDisciplines: () => {},
   selectedResearchAreas: [],
   setSelectedResearchAreas: () => {},
+  selectedListingResearchAreas: [],
+  setSelectedListingResearchAreas: () => {},
   departmentsFilterMode: 'union',
   setDepartmentsFilterMode: () => {},
-  disciplinesFilterMode: 'union',
-  setDisciplinesFilterMode: () => {},
   researchAreasFilterMode: 'union',
   setResearchAreasFilterMode: () => {},
+  listingResearchAreasFilterMode: 'union',
+  setListingResearchAreasFilterMode: () => {},
   sortBy: 'default',
   setSortBy: () => {},
   sortOrder: 1,
@@ -82,14 +82,15 @@ export const defaultSearchContext: SearchContextType = {
   onToggleSortDirection: () => {},
   listings: [],
   isLoading: false,
+  error: null,
   searchExhausted: false,
   totalCount: 0,
   page: 1,
   setPage: () => {},
   pageSize: 20,
   allDepartments: [],
-  allDisciplines: [],
   allResearchAreas: [],
+  allListingResearchAreas: [],
   sortableKeys: [],
   refreshListings: () => {},
   filterBarHeight: 0,

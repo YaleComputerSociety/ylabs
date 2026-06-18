@@ -18,11 +18,16 @@ export interface AdminProfileShape {
   bio?: string;
   phone?: string;
   primary_department?: string;
+  primaryDepartment?: string;
   secondary_departments?: string[];
+  secondaryDepartments?: string[];
   research_interests?: string[];
+  researchInterests?: string[];
   h_index?: number;
+  hIndex?: number;
   orcid?: string;
   image_url?: string;
+  imageUrl?: string;
   profileVerified?: boolean;
   userType: string;
   userConfirmed: boolean;
@@ -101,23 +106,29 @@ const formFromProfile = (
   | 'profileVerified'
   | 'userType'
   | 'userConfirmed'
-> => ({
-  fname: p.fname || '',
-  lname: p.lname || '',
-  email: p.email || '',
-  title: p.title || '',
-  bio: p.bio || '',
-  phone: p.phone || '',
-  primaryDept: p.primary_department || '',
-  secondaryDepts: (p.secondary_departments || []).join(', '),
-  researchInterests: (p.research_interests || []).join(', '),
-  hIndex: p.h_index?.toString() || '',
-  orcid: p.orcid || '',
-  imageUrl: p.image_url || '',
-  profileVerified: p.profileVerified || false,
-  userType: p.userType || 'professor',
-  userConfirmed: p.userConfirmed || false,
-});
+> => {
+  const secondaryDepartments = p.secondary_departments ?? p.secondaryDepartments ?? [];
+  const researchInterests = p.research_interests ?? p.researchInterests ?? [];
+  const hIndex = p.h_index ?? p.hIndex;
+
+  return {
+    fname: p.fname || '',
+    lname: p.lname || '',
+    email: p.email || '',
+    title: p.title || '',
+    bio: p.bio || '',
+    phone: p.phone || '',
+    primaryDept: p.primary_department ?? p.primaryDepartment ?? '',
+    secondaryDepts: secondaryDepartments.join(', '),
+    researchInterests: researchInterests.join(', '),
+    hIndex: hIndex?.toString() || '',
+    orcid: p.orcid || '',
+    imageUrl: p.image_url ?? p.imageUrl ?? '',
+    profileVerified: p.profileVerified || false,
+    userType: p.userType || 'professor',
+    userConfirmed: p.userConfirmed || false,
+  };
+};
 
 export const createInitialAdminProfileEditState = (
   profile: AdminProfileShape,

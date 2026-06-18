@@ -2,54 +2,59 @@
  * Shared view and favorite operations for listings and fellowships.
  * Uses atomic $inc to avoid lost-update races under concurrent writes.
  */
-import mongoose, { Model } from 'mongoose';
+import { Model } from 'mongoose';
 import { NotFoundError, ObjectIdError } from '../utils/errors';
+import { serializedDocumentId } from '../utils/idSerialization';
 
-const assertValidId = (id: any) => {
-  if (!mongoose.Types.ObjectId.isValid(id)) {
-    throw new ObjectIdError('Did not receive expected id type ObjectId');
-  }
+const OBJECT_ID_RE = /^[a-fA-F0-9]{24}$/;
+
+const normalizeItemObjectId = (id: unknown): string => {
+  const value = serializedDocumentId(id);
+  if (value && OBJECT_ID_RE.test(value)) return value;
+  throw new ObjectIdError('Did not receive expected id type ObjectId');
 };
 
-export const addView = async (model: Model<any>, id: any) => {
-  assertValidId(id);
-  const updated = await model.findByIdAndUpdate(
-    id,
+type ItemMutationFilter = Record<string, unknown>;
+
+export const addView = async (model: Model<any>, id: any, filter: ItemMutationFilter = {}) => {
+  const safeId = normalizeItemObjectId(id);
+  const updated = await model.findOneAndUpdate(
+    { _id: safeId, ...filter },
     { $inc: { views: 1 } },
     { new: true, timestamps: false },
   );
   if (!updated) {
-    throw new NotFoundError(`Item not found with ObjectId: ${id}`);
+    throw new NotFoundError('Item not found');
   }
   return updated.toObject();
 };
 
-export const addFavorite = async (model: Model<any>, id: any) => {
-  assertValidId(id);
-  const updated = await model.findByIdAndUpdate(
-    id,
+export const addFavorite = async (model: Model<any>, id: any, filter: ItemMutationFilter = {}) => {
+  const safeId = normalizeItemObjectId(id);
+  const updated = await model.findOneAndUpdate(
+    { _id: safeId, ...filter },
     { $inc: { favorites: 1 } },
     { new: true, timestamps: false },
   );
   if (!updated) {
-    throw new NotFoundError(`Item not found with ObjectId: ${id}`);
+    throw new NotFoundError('Item not found');
   }
   return updated.toObject();
 };
 
-export const removeFavorite = async (model: Model<any>, id: any) => {
-  assertValidId(id);
+export const removeFavorite = async (model: Model<any>, id: any, filter: ItemMutationFilter = {}) => {
+  const safeId = normalizeItemObjectId(id);
   // Atomic decrement guarded so favorites never drops below 0.
   const updated = await model.findOneAndUpdate(
-    { _id: id, favorites: { $gt: 0 } },
+    { _id: safeId, ...filter, favorites: { $gt: 0 } },
     { $inc: { favorites: -1 } },
     { new: true, timestamps: false },
   );
   if (updated) return updated.toObject();
   // Filter didn't match: either missing, or already at 0. Distinguish.
-  const existing = await model.findById(id);
+  const existing = await model.findOne({ _id: safeId, ...filter });
   if (!existing) {
-    throw new NotFoundError(`Item not found with ObjectId: ${id}`);
+    throw new NotFoundError('Item not found');
   }
   return existing.toObject();
 };

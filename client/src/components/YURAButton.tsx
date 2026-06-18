@@ -9,18 +9,20 @@ const YURAButton = () => {
   };
 
   return (
-    <Button onClick={handleReload} disableRipple={true}>
+    <Button
+      onClick={handleReload}
+      disableRipple={true}
+      sx={{ textTransform: 'none', minHeight: '44px' }}
+    >
       <img
-        src="/assets/logos/paperclip.png"
-        alt="ylabs-logo"
+        src="/brand/yale-research-mark.svg"
+        alt=""
         className="mr-2"
-        style={{ width: '31.65px', height: '27px' }}
+        style={{ width: '32px', height: '32px' }}
       />
-      <img
-        src="/assets/logos/ylabs-blue.png"
-        alt="ylabs-logo"
-        style={{ width: '65.17px', height: '27px' }}
-      />
+      <span className="yr-wordmark text-xl text-[var(--yr-blue)]">
+        Yale Research
+      </span>
     </Button>
   );
 };

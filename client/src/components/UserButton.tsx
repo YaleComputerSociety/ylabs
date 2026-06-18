@@ -7,15 +7,28 @@ import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Menu from '@mui/material/Menu';
 import MenuItem from '@mui/material/MenuItem';
-import axios from '../utils/axios';
 import UserContext from '../contexts/UserContext';
+import { buildApiUrl } from '../utils/apiBaseUrl';
+import { safeRouteSegment } from '../utils/url';
+
+const MAX_LOGOUT_RETURN_PATH_LENGTH = 2048;
+
+const storeLogoutReturnPath = () => {
+  if (window.location.pathname === '/login') return;
+
+  const returnPath = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  localStorage.removeItem('logoutReturnPath');
+  if (returnPath.length <= MAX_LOGOUT_RETURN_PATH_LENGTH) {
+    sessionStorage.setItem('logoutReturnPath', returnPath);
+  }
+};
 
 const UserButton = () => {
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const open = Boolean(anchorEl);
   const location = useLocation();
   const { user } = useContext(UserContext);
-  const isAdmin = user?.userType === 'admin';
+  const isProfessorUser = user?.userType === 'professor' || user?.userType === 'faculty';
 
   const getInitials = () => {
     if (user?.netId && user.netId.length > 0) {
@@ -38,12 +51,8 @@ const UserButton = () => {
 
   const handleLogout = () => {
     handleClose();
-    const currentPath = window.location.pathname;
-    if (currentPath !== '/login') {
-      const returnUrl = window.location.origin + currentPath;
-      localStorage.setItem('logoutReturnPath', returnUrl);
-    }
-    window.location.href = axios.defaults.baseURL + '/logout';
+    storeLogoutReturnPath();
+    window.location.href = buildApiUrl('/logout');
   };
 
   const handleAboutClick = (event: React.MouseEvent) => {
@@ -69,20 +78,27 @@ const UserButton = () => {
   return (
     <Box>
       <Button
+        aria-label="Open user menu"
+        aria-haspopup="menu"
+        aria-expanded={open ? 'true' : undefined}
         onClick={handleClick}
         sx={{
-          minWidth: '36px',
-          width: '36px',
-          height: '36px',
+          minWidth: '44px',
+          width: '44px',
+          height: '44px',
           borderRadius: '50%',
-          backgroundColor: '#257fce',
+          backgroundColor: '#0055A4',
           color: '#FFFFFF',
           fontFamily: 'Inter',
           fontWeight: 600,
           fontSize: '14px',
           padding: 0,
           '&:hover': {
-            backgroundColor: '#1e6ab3',
+            backgroundColor: '#004B93',
+          },
+          '&:focus-visible': {
+            outline: '2px solid #1876D1',
+            outlineOffset: '2px',
           },
         }}
         disableRipple
@@ -110,15 +126,26 @@ const UserButton = () => {
           },
         }}
       >
-        {isAdmin && (
+        {isProfessorUser && (
           <MenuItem
             component={Link}
-            to="/analytics"
+            to="/account"
             onClick={handleClose}
             sx={menuItemStyle}
             disableRipple
           >
-            Analytics
+            Edit Profile
+          </MenuItem>
+        )}
+        {isProfessorUser && user?.netId && (
+          <MenuItem
+            component={Link}
+            to={`/profile/${safeRouteSegment(user.netId)}`}
+            onClick={handleClose}
+            sx={menuItemStyle}
+            disableRipple
+          >
+            Public Profile
           </MenuItem>
         )}
         <MenuItem

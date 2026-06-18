@@ -19,6 +19,7 @@ export interface DepartmentConfig {
   abbreviation: string;
   name: string;
   displayName: string;
+  aliases?: string[];
   categories: string[];
   primaryCategory: string;
   colorKey: number;

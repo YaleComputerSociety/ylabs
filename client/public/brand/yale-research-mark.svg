@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" role="img" aria-label="Yale Research custom pilcrow mark" color="#00356B">
+  <title>Yale Research custom pilcrow mark</title>
+  
+  <g transform="translate(4 0)" color="#00356B"><g fill="none" stroke="currentColor" stroke-width="2.45" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M21.25 5.75v20.5"/>
+  <path d="M15.65 6.05v20.2"/>
+  <path d="M21.25 6.05h-6.15c-5.2 0-8.55 2.85-8.55 6.95s3.35 6.95 8.55 6.95h6.15"/>
+  <path d="M11.45 12.95h9.8"/>
+</g></g>
+</svg>

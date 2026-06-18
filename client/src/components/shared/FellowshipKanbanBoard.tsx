@@ -10,8 +10,8 @@ const COLUMNS: { key: FellowshipStage; label: string; color: string; headerBg: s
   {
     key: 'not_applied',
     label: 'Not Applied',
-    color: 'border-gray-300',
-    headerBg: 'bg-gray-100 text-gray-700',
+    color: 'border-[var(--yr-line-strong)]',
+    headerBg: 'bg-[var(--yr-panel-muted)] text-gray-700',
   },
   {
     key: 'applied',
@@ -79,7 +79,7 @@ const FellowshipKanbanBoard: React.FC<FellowshipKanbanBoardProps> = ({
         <div
           key={col.key}
           className={`flex flex-col rounded-lg border-2 transition-colors min-h-[200px] ${
-            dragOverColumn === col.key ? `${col.color} bg-gray-50` : 'border-gray-200 bg-white'
+            dragOverColumn === col.key ? `${col.color} bg-[var(--yr-panel-muted)]` : 'border-[var(--yr-line)] bg-[var(--yr-panel)]'
           }`}
           onDragOver={(e) => handleDragOver(e, col.key)}
           onDragLeave={handleDragLeave}

@@ -9,6 +9,21 @@ const listingSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+    researchGroupId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'ResearchGroup',
+      required: false,
+    },
+    researchEntityId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'ResearchEntity',
+      required: false,
+    },
+    createdByUserId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: false,
+    },
     ownerFirstName: {
       type: String,
       required: true,
@@ -61,6 +76,20 @@ const listingSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+    type: {
+      type: String,
+      enum: ['ra', 'thesis', 'independent-study', 'volunteer'],
+      required: false,
+    },
+    commitment: {
+      type: String,
+      default: '',
+    },
+    compensationType: {
+      type: String,
+      enum: ['paid', 'volunteer', 'course-credit', 'fellowship-eligible'],
+      required: false,
+    },
     applicantDescription: {
       type: String,
       required: false,
@@ -98,6 +127,14 @@ const listingSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    expiresAt: {
+      type: Date,
+      required: false,
+    },
+    archivedAt: {
+      type: Date,
+      required: false,
+    },
     embedding: {
       type: [Number],
       required: false,
@@ -109,6 +146,10 @@ const listingSchema = new mongoose.Schema(
   },
 );
 
-export const Listing = mongoose.model('listings', listingSchema);
+listingSchema.index({ researchEntityId: 1, archived: 1 });
+listingSchema.index({ researchGroupId: 1, archived: 1 });
+listingSchema.index({ expiresAt: 1 });
+
+export const Listing = mongoose.model('Listing', listingSchema);
 
 export { listingSchema };

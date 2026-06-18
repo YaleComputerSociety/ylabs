@@ -4,10 +4,17 @@
 import React, { useContext, useMemo } from 'react';
 import {
   BrowsableItem,
+  getItemId,
   isItemOpen,
   getItemTags,
   getItemSubtitle,
   getItemSubtitleColor,
+  getResearchGroupDisplayName,
+  getResearchGroupKindLabel,
+  getResearchEntityBestNextStep,
+  getResearchEntityPathwaySummary,
+  getFellowshipJourneySummary,
+  getResearchGroupStatus,
   getDaysUntilDeadline,
   getOrderedDeptAbbrs,
   DEPT_CAP,
@@ -22,24 +29,25 @@ import ArchivedBadge from './ArchivedBadge';
 import ConfigContext from '../../contexts/ConfigContext';
 import UserContext from '../../contexts/UserContext';
 import { useViewTracking } from '../../hooks/useViewTracking';
-import { getDepartmentAbbreviation } from '../../utils/departmentNames';
+import { getDepartmentAbbreviation, getDepartmentCanonicalLabel } from '../../utils/departmentNames';
+import { getFellowshipCycleStatus } from '../../utils/fellowshipCycle';
 
 interface BrowseListItemProps {
   item: BrowsableItem;
   isFavorite: boolean;
-  onToggleFavorite: (e: React.MouseEvent) => void;
+  onToggleFavorite?: (e: React.MouseEvent) => void;
   onOpenModal: () => void;
   onAdminEdit?: () => void;
   isCompact?: boolean;
 }
 
 const BrowseListItem = React.memo(({ item, isFavorite, onToggleFavorite, onOpenModal, onAdminEdit, isCompact }: BrowseListItemProps) => {
-  const { getColorForResearchArea } = useContext(ConfigContext);
+  const { departments, getColorForResearchArea } = useContext(ConfigContext);
   const { user } = useContext(UserContext);
   const isAdmin = user?.userType === 'admin';
   const open = isItemOpen(item);
   const tags = useMemo(() => getItemTags(item, getColorForResearchArea), [item, getColorForResearchArea]);
-  const trackView = useViewTracking(item.type === 'listing' ? 'listing' : 'fellowship', item.data.id);
+  const trackView = useViewTracking(item.type, getItemId(item));
 
   const hasPrerequisites = item.type === 'listing' &&
     !!item.data.applicantDescription && item.data.applicantDescription.trim() !== '';
@@ -48,6 +56,7 @@ const BrowseListItem = React.memo(({ item, isFavorite, onToggleFavorite, onOpenM
   const urgentBadge = item.type === 'fellowship' && daysUntil !== null && daysUntil > 0 && daysUntil <= 14;
 
   const isListing = item.type === 'listing';
+  const isResearchGroup = item.type === 'researchGroup';
   const professorName = isListing
     ? `${item.data.ownerFirstName} ${item.data.ownerLastName}`
     : null;
@@ -55,21 +64,39 @@ const BrowseListItem = React.memo(({ item, isFavorite, onToggleFavorite, onOpenM
 
   const deptInfo = useMemo(() => {
     if (!isListing) return null;
-    return getOrderedDeptAbbrs(item.data.departments, item.data.ownerPrimaryDepartment, DEPT_CAP);
-  }, [item, isListing]);
+    return getOrderedDeptAbbrs(
+      item.data.departments,
+      item.data.ownerPrimaryDepartment,
+      DEPT_CAP,
+      departments,
+    );
+  }, [item, isListing, departments]);
 
   const deptLabel = deptInfo && deptInfo.abbrs.length > 0
     ? deptInfo.abbrs.join(' | ') + (deptInfo.truncated > 0 ? ` +${deptInfo.truncated}` : '')
     : null;
 
   const listingDept = isListing && item.data.departments && item.data.departments.length > 0
-    ? getDepartmentAbbreviation(item.data.departments[0])
+    ? getDepartmentAbbreviation(getDepartmentCanonicalLabel(item.data.departments[0], departments))
     : null;
 
   const subtitle = getItemSubtitle(item);
   const subtitleColor = getItemSubtitleColor(item);
+  const researchStatus = getResearchGroupStatus(item);
+  const researchPathwaySummary = isResearchGroup
+    ? getResearchEntityPathwaySummary(item.data)
+    : null;
+  const researchBestNextStep = isResearchGroup
+    ? getResearchEntityBestNextStep(item.data)
+    : null;
+  const fellowshipCycleStatus = item.type === 'fellowship'
+    ? getFellowshipCycleStatus(item.data)
+    : null;
+  const fellowshipJourneySummary = item.type === 'fellowship'
+    ? getFellowshipJourneySummary(item.data)
+    : null;
 
-  const isAudited = isAdmin && item.data.audited;
+  const isAudited = isAdmin && item.type !== 'researchGroup' && item.data.audited;
 
   const handleClick = () => {
     trackView();
@@ -78,7 +105,7 @@ const BrowseListItem = React.memo(({ item, isFavorite, onToggleFavorite, onOpenM
 
   return (
     <div
-      className={`group bg-white rounded-md border ${isAudited ? 'border-green-400 ring-1 ring-green-200' : 'border-gray-200'} hover:border-blue-400 hover:shadow-sm transition-all duration-200 cursor-pointer ${isArchived ? 'opacity-75' : ''}`}
+      className={`group bg-[var(--yr-panel)] rounded-md border ${isAudited ? 'border-green-400 ring-1 ring-green-200' : 'border-[var(--yr-line)]'} hover:border-blue-400 hover:shadow-sm transition-all duration-200 cursor-pointer ${isArchived ? 'opacity-75' : ''}`}
       onClick={handleClick}
     >
       <div className="p-4 grid grid-cols-12 gap-4 items-start">
@@ -94,7 +121,26 @@ const BrowseListItem = React.memo(({ item, isFavorite, onToggleFavorite, onOpenM
           {urgentBadge && daysUntil !== null && (
             <UrgentBadge daysUntil={daysUntil} variant="inline" />
           )}
-          {isListing ? (
+          {isResearchGroup ? (
+            <>
+              <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+                <span className="text-xs font-semibold text-blue-700 truncate">
+                  {getResearchGroupKindLabel(item.data.kind)}
+                </span>
+                {item.data.accessSummary?.hasActivePostedOpportunity && (
+                  <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-100">
+                    Active opportunity
+                  </span>
+                )}
+              </div>
+              <h3 className="text-sm font-semibold text-gray-900 truncate">
+                {getResearchGroupDisplayName(item.data)}
+              </h3>
+              <p className="text-xs text-gray-500 truncate">
+                {subtitle}
+              </p>
+            </>
+          ) : isListing ? (
             <>
               <h3 className="text-sm font-semibold text-gray-900 truncate">
                 {professorName}
@@ -133,7 +179,11 @@ const BrowseListItem = React.memo(({ item, isFavorite, onToggleFavorite, onOpenM
         {!isCompact && (
           <div className="col-span-6 hidden md:block">
             <p className={`text-sm text-gray-600 ${DESCRIPTION_CLAMP_CLASS}`}>
-              {item.type === 'listing' ? item.data.description : (item.data.summary || item.data.description)}
+              {item.type === 'listing'
+                ? item.data.description
+                : item.type === 'researchGroup'
+                  ? researchPathwaySummary || researchBestNextStep || item.data.description
+                  : item.data.bestNextStep || fellowshipJourneySummary || item.data.summary || item.data.description}
             </p>
           </div>
         )}
@@ -141,13 +191,25 @@ const BrowseListItem = React.memo(({ item, isFavorite, onToggleFavorite, onOpenM
         <div className="col-span-12 md:col-span-2 flex md:flex-col items-center md:items-end gap-2 flex-shrink-0">
           <div className="flex items-center gap-1">
             {hasPrerequisites && <HasPrerequisitesIcon />}
-            <StatusBadge isOpen={open} />
+            {isResearchGroup && researchStatus ? (
+              <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${researchStatus.className}`}>
+                {researchStatus.label}
+              </span>
+            ) : fellowshipCycleStatus ? (
+              <span
+                className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${fellowshipCycleStatus.className}`}
+              >
+                {fellowshipCycleStatus.label}
+              </span>
+            ) : (
+              <StatusBadge isOpen={open} />
+            )}
           </div>
           <div className="flex items-center gap-1">
             {isAdmin && onAdminEdit && (
               <button
                 onClick={(e) => { e.stopPropagation(); onAdminEdit(); }}
-                className="p-1 rounded-full text-gray-500 hover:text-blue-600 hover:bg-gray-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full text-gray-500 hover:text-blue-600 hover:bg-[var(--yr-panel-muted)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                 title="Edit listing (Admin)"
                 aria-label="Admin edit"
               >
@@ -157,7 +219,9 @@ const BrowseListItem = React.memo(({ item, isFavorite, onToggleFavorite, onOpenM
                 </svg>
               </button>
             )}
-            <FavoriteButton isFavorite={isFavorite} onToggle={onToggleFavorite} />
+            {onToggleFavorite && item.type !== 'researchGroup' && (
+              <FavoriteButton isFavorite={isFavorite} onToggle={onToggleFavorite} />
+            )}
           </div>
         </div>
       </div>

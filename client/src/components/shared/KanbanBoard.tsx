@@ -12,14 +12,14 @@ const COLUMNS: { key: LabStage; label: string; color: string; headerBg: string }
   {
     key: 'not_emailed',
     label: 'Not Emailed',
-    color: 'border-gray-300',
-    headerBg: 'bg-gray-100 text-gray-700',
+    color: 'border-[var(--yr-line-strong)]',
+    headerBg: 'bg-[var(--yr-panel-muted)] text-gray-700',
   },
   {
     key: 'emailed',
     label: 'Emailed',
     color: 'border-blue-300',
-    headerBg: 'bg-blue-50 text-blue-700',
+    headerBg: 'bg-[var(--yr-blue-soft)] text-blue-700',
   },
   {
     key: 'responded',
@@ -93,7 +93,7 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
         <div
           key={col.key}
           className={`flex flex-col rounded-lg border-2 transition-colors min-h-[200px] ${
-            dragOverColumn === col.key ? `${col.color} bg-gray-50` : 'border-gray-200 bg-white'
+            dragOverColumn === col.key ? `${col.color} bg-[var(--yr-panel-muted)]` : 'border-[var(--yr-line)] bg-[var(--yr-panel)]'
           }`}
           onDragOver={(e) => handleDragOver(e, col.key)}
           onDragLeave={handleDragLeave}
@@ -109,7 +109,7 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
           <div className="flex-1 p-2 space-y-2 overflow-y-auto max-h-[60vh]">
             {col.listings.length === 0 ? (
               <div className="flex items-center justify-center h-20 text-xs text-gray-400 italic">
-                Drag listings here
+                Drag items here
               </div>
             ) : (
               col.listings.map((listing) => (

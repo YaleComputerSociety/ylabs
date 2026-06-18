@@ -1,15 +1,17 @@
 /**
- * Admin dashboard with tabs for listings, fellowships, users, and config.
+ * Admin dashboard with tabs for access review, fellowships, users, and config.
  */
 import { useState } from 'react';
-import AdminListingsTable from './AdminListingsTable';
 import AdminFellowshipsTable from './AdminFellowshipsTable';
 import AdminResearchAreas from './AdminResearchAreas';
 import AdminDepartments from './AdminDepartments';
 import AdminFacultyProfilesTable from './AdminFacultyProfilesTable';
+import AdminAccessReview from './AdminAccessReview';
+import AdminOperatorBoard from './AdminOperatorBoard';
 
 const TABS = [
-  'Listings',
+  'Operator Board',
+  'Access Review',
   'Fellowships',
   'Research Areas',
   'Departments',
@@ -18,7 +20,7 @@ const TABS = [
 type Tab = (typeof TABS)[number];
 
 const AdminPanel = () => {
-  const [activeTab, setActiveTab] = useState<Tab>('Listings');
+  const [activeTab, setActiveTab] = useState<Tab>('Operator Board');
 
   return (
     <section className="mb-10 mt-16">
@@ -39,16 +41,16 @@ const AdminPanel = () => {
         <h2 className="text-3xl font-bold text-gray-900">Admin Controls</h2>
       </div>
 
-      <div className="border-b border-gray-300 mb-6">
+      <div className="border-b border-[var(--yr-line-strong)] mb-6">
         <nav className="flex gap-1">
           {TABS.map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
-              className={`px-5 py-3 text-sm font-semibold border-b-2 transition-colors ${
+              className={`min-h-[44px] px-5 py-3 text-sm font-semibold border-b-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 ${
                 activeTab === tab
                   ? 'border-blue-600 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-[var(--yr-line-strong)]'
               }`}
             >
               {tab}
@@ -57,7 +59,8 @@ const AdminPanel = () => {
         </nav>
       </div>
 
-      {activeTab === 'Listings' && <AdminListingsTable />}
+      {activeTab === 'Operator Board' && <AdminOperatorBoard />}
+      {activeTab === 'Access Review' && <AdminAccessReview />}
       {activeTab === 'Fellowships' && <AdminFellowshipsTable />}
       {activeTab === 'Research Areas' && <AdminResearchAreas />}
       {activeTab === 'Departments' && <AdminDepartments />}

@@ -7,10 +7,10 @@ import {
 } from '../profilePageReducer';
 
 const sampleProfile: FacultyProfile = {
-  netid: 'abc123',
-  fname: 'Ada',
-  lname: 'Lovelace',
-  email: 'ada@example.com',
+  netid: 'fixture_primary',
+  fname: 'Fixture',
+  lname: 'Primary',
+  email: 'fixture.primary@example.test',
   secondary_departments: [],
   departments: ['Computer Science'],
   profile_urls: {},
@@ -23,10 +23,10 @@ const sampleProfile: FacultyProfile = {
 
 const otherProfile: FacultyProfile = {
   ...sampleProfile,
-  netid: 'xyz789',
-  fname: 'Grace',
-  lname: 'Hopper',
-  email: 'grace@example.com',
+  netid: 'fixture_secondary',
+  fname: 'Fixture',
+  lname: 'Secondary',
+  email: 'fixture.secondary@example.test',
 };
 
 describe('profilePageReducer', () => {

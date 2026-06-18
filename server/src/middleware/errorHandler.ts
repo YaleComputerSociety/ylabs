@@ -3,34 +3,66 @@
  */
 import { Request, Response, NextFunction } from 'express';
 import { NotFoundError, ObjectIdError, IncorrectPermissionsError } from '../utils/errors';
+import { sanitizeErrorForLog } from '../utils/logSanitizer';
+import { requiresDeployedRuntimeSecurity } from '../utils/environment';
+
+const clientErrorStatus = (error: Error): number | null => {
+  const status = (error as any).status ?? (error as any).statusCode;
+  if (Number.isInteger(status) && status >= 400 && status < 500) {
+    return status;
+  }
+
+  return null;
+};
+
+const publicClientErrorMessage = (status: number): string => {
+  if (status === 400) return 'Bad request';
+  if (status === 401) return 'Unauthorized';
+  if (status === 403) return 'Forbidden';
+  if (status === 404) return 'Not found';
+  if (status === 409) return 'Conflict';
+  return 'Request failed';
+};
 
 /**
  * Global error handler middleware
  * This should be added LAST in your middleware chain
  */
-export const errorHandler = (error: Error, req: Request, res: Response, _next: NextFunction) => {
-  console.error('Error:', error.message);
-  console.error('Stack:', error.stack);
+export const errorHandler = (error: Error, req: Request, res: Response, next: NextFunction) => {
+  const sanitizedError = sanitizeErrorForLog(error);
+  console.error('Error:', sanitizedError.message);
+  if (!requiresDeployedRuntimeSecurity() && sanitizedError.stack) {
+    console.error('Stack:', sanitizedError.stack);
+  }
+
+  if (res.headersSent) {
+    return next(error);
+  }
 
   if (error instanceof NotFoundError) {
-    return res.status(error.status).json({ error: error.message });
+    return res.status(error.status).json({ error: 'Not found' });
   }
 
   if (error instanceof ObjectIdError) {
-    return res.status(error.status).json({ error: error.message });
+    return res.status(error.status).json({ error: 'Not found' });
   }
 
   if (error instanceof IncorrectPermissionsError) {
     return res.status(error.status).json({
-      error: error.message,
+      error: 'Incorrect permissions',
       incorrectPermissions: true,
     });
+  }
+
+  const status = clientErrorStatus(error);
+  if (status !== null) {
+    return res.status(status).json({ error: publicClientErrorMessage(status) });
   }
 
   if (error.name === 'ValidationError') {
     return res.status(400).json({
       error: 'Validation error',
-      details: error.message,
+      details: undefined,
     });
   }
 
@@ -44,7 +76,7 @@ export const errorHandler = (error: Error, req: Request, res: Response, _next: N
 
   res.status(500).json({
     error: 'Internal server error',
-    message: process.env.NODE_ENV === 'development' ? error.message : undefined,
+    message: undefined,
   });
 };
 
@@ -55,7 +87,6 @@ export const errorHandler = (error: Error, req: Request, res: Response, _next: N
 export const notFoundHandler = (req: Request, res: Response, _next: NextFunction) => {
   res.status(404).json({
     error: 'Not found',
-    path: req.path,
   });
 };
 

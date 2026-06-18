@@ -5,28 +5,49 @@ on:
     branches:
       - main
       - beta
+      - new-foundation
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   test-and-build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 20
 
       - name: Enable Corepack
         run: corepack enable
 
-      - name: Install dependencies
-        run: yarn install:all
+      - name: Install dependencies from lockfiles
+        run: yarn install:all:immutable
+
+      - name: Run server typecheck
+        run: npx tsc --noEmit -p server/tsconfig.json
+
+      - name: Run server tests
+        run: yarn --cwd server test
 
       - name: Run client tests
         run: yarn --cwd client test:ci
+
+      - name: Run deploy security preflight
+        run: yarn security:preflight
+
+      - name: Check moderate all-environment dependency advisories
+        run: |
+          yarn npm audit --recursive --severity moderate
+          yarn --cwd server npm audit --recursive --severity moderate
+          yarn --cwd client npm audit --recursive --severity moderate
 
       - name: Build server and client
         run: yarn build

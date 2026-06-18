@@ -150,9 +150,10 @@ describe('searchReducer', () => {
 
   describe('search lifecycle', () => {
     it('SEARCH_REQUEST sets isLoading true', () => {
-      const state = createInitialSearchState();
+      const state = createInitialSearchState({ error: 'Old failure' });
       const next = searchReducer(state, { type: 'SEARCH_REQUEST' });
       expect(next.isLoading).toBe(true);
+      expect(next.error).toBeNull();
     });
 
     it('SEARCH_SUCCESS with append=false replaces listings and clears loading', () => {
@@ -214,12 +215,16 @@ describe('searchReducer', () => {
       expect(next.totalCount).toBe(42);
     });
 
-    it('SEARCH_FAILURE clears loading without touching listings', () => {
+    it('SEARCH_FAILURE clears loading, preserves listings, and stores an inline error', () => {
       const original = [makeListing({ id: 'keep' })];
       const state = createInitialSearchState({ listings: original, isLoading: true });
-      const next = searchReducer(state, { type: 'SEARCH_FAILURE' });
+      const next = searchReducer(state, {
+        type: 'SEARCH_FAILURE',
+        payload: 'Legacy listing search is temporarily unavailable.',
+      });
       expect(next.isLoading).toBe(false);
       expect(next.listings).toBe(original);
+      expect(next.error).toBe('Legacy listing search is temporarily unavailable.');
     });
   });
 

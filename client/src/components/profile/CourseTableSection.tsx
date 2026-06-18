@@ -76,7 +76,7 @@ const CourseTableSection = ({ netid, onAvailabilityChange }: CourseTableSectionP
             {bySeason.get(season)!.map((course, i) => (
               <div
                 key={i}
-                className="flex items-start gap-3 p-3 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors"
+                className="flex items-start gap-3 p-3 rounded-lg bg-[var(--yr-panel-muted)] hover:bg-[var(--yr-panel-muted)] transition-colors"
               >
                 <span className="text-xs font-mono text-blue-600 whitespace-nowrap mt-0.5">
                   {course.course_code}

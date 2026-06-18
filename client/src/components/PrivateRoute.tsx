@@ -1,7 +1,7 @@
 /**
  * Route guard that redirects unauthenticated users to login.
  */
-import { Navigate } from 'react-router-dom';
+import { Navigate, useLocation } from 'react-router-dom';
 import { useContext, FunctionComponent } from 'react';
 import UserContext from '../contexts/UserContext';
 
@@ -13,13 +13,15 @@ interface PrivateRouteProps {
 
 const PrivateRoute = ({ Component, unknownBlocked, knownBlocked }: PrivateRouteProps) => {
   const { user, isLoading, isAuthenticated } = useContext(UserContext);
+  const location = useLocation();
 
   if (isLoading) {
     return null;
   }
 
   if (!isAuthenticated) {
-    return <Navigate to="/login" />;
+    const returnPath = `${location.pathname}${location.search}${location.hash}`;
+    return <Navigate to="/login" state={{ from: returnPath }} replace />;
   }
 
   if (user) {

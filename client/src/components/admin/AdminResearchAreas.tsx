@@ -4,6 +4,7 @@
 import { useReducer, useEffect } from 'react';
 import axios from '../../utils/axios';
 import swal from 'sweetalert';
+import { clientErrorMessage } from '../../utils/clientErrorMessage';
 import {
   inlineCrudReducer,
   createInitialInlineCrudState,
@@ -24,7 +25,7 @@ const RESEARCH_FIELDS = [
 ];
 
 const FIELD_COLORS: Record<string, string> = {
-  'Computing & Artificial Intelligence': 'bg-blue-100 text-blue-800',
+  'Computing & Artificial Intelligence': 'bg-[var(--yr-blue-soft)] text-blue-800',
   'Life Sciences & Biology': 'bg-green-100 text-green-800',
   'Physical Sciences & Engineering': 'bg-yellow-100 text-yellow-800',
   'Health & Medicine': 'bg-red-100 text-red-800',
@@ -41,7 +42,6 @@ interface ResearchArea {
   field: string;
   colorKey: string;
   isDefault: boolean;
-  addedBy?: string;
 }
 
 interface NewDraft {
@@ -71,8 +71,8 @@ const AdminResearchAreas = () => {
     try {
       const response = await axios.get('/admin/research-areas', { withCredentials: true });
       dispatch({ type: 'FETCH_SUCCESS', items: response.data.researchAreas });
-    } catch (error) {
-      console.error('Error fetching research areas:', error);
+    } catch {
+      console.error('Error fetching research areas.');
       swal({ text: 'Failed to fetch research areas', icon: 'error' });
       dispatch({ type: 'FETCH_FAILURE' });
     }
@@ -98,7 +98,7 @@ const AdminResearchAreas = () => {
       fetchAreas();
       swal({ text: 'Research area added', icon: 'success', timer: 1500 });
     } catch (error: any) {
-      swal({ text: error.response?.data?.message || 'Failed to add', icon: 'error' });
+      swal({ text: clientErrorMessage(error, 'Failed to add'), icon: 'error' });
     }
   };
 
@@ -118,7 +118,7 @@ const AdminResearchAreas = () => {
       fetchAreas();
       swal({ text: 'Research area updated', icon: 'success', timer: 1500 });
     } catch (error: any) {
-      swal({ text: error.response?.data?.error || 'Failed to update', icon: 'error' });
+      swal({ text: clientErrorMessage(error, 'Failed to update'), icon: 'error' });
     }
   };
 
@@ -158,7 +158,7 @@ const AdminResearchAreas = () => {
 
   return (
     <div>
-      <div className="bg-white rounded-lg shadow-md p-4 border border-gray-200 mb-4">
+      <div className="bg-[var(--yr-panel)] rounded-lg shadow-md p-4 border border-[var(--yr-line)] mb-4">
         <h3 className="text-sm font-semibold text-gray-700 mb-3">Add New Research Area</h3>
         <div className="flex flex-wrap gap-2 items-end">
           <div className="flex-1 min-w-[200px]">
@@ -169,7 +169,7 @@ const AdminResearchAreas = () => {
                 dispatch({ type: 'SET_NEW_DRAFT', payload: { name: e.target.value } })
               }
               placeholder="e.g. Quantum Computing"
-              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="min-h-[44px] w-full border border-[var(--yr-line-strong)] rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               onKeyDown={(e) => {
                 if (e.key === 'Enter') handleAdd();
               }}
@@ -182,7 +182,7 @@ const AdminResearchAreas = () => {
               onChange={(e) =>
                 dispatch({ type: 'SET_NEW_DRAFT', payload: { field: e.target.value } })
               }
-              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="min-h-[44px] w-full border border-[var(--yr-line-strong)] rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               {RESEARCH_FIELDS.map((f) => (
                 <option key={f} value={f}>
@@ -193,7 +193,7 @@ const AdminResearchAreas = () => {
           </div>
           <button
             onClick={handleAdd}
-            className="bg-green-600 text-white px-4 py-2 rounded text-sm hover:bg-green-700 transition-colors"
+            className="min-h-[44px] bg-green-600 text-white px-4 py-2 rounded text-sm hover:bg-green-700 transition-colors"
           >
             Add
           </button>
@@ -205,39 +205,38 @@ const AdminResearchAreas = () => {
           value={search}
           onChange={(e) => dispatch({ type: 'SET_SEARCH', payload: e.target.value })}
           placeholder="Filter research areas..."
-          className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="min-h-[44px] w-full border border-[var(--yr-line-strong)] rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
         <div className="text-xs text-gray-400 mt-1">{filtered.length} research areas</div>
       </div>
 
-      <div className="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden">
+      <div className="bg-[var(--yr-panel)] rounded-lg shadow-md border border-[var(--yr-line)] overflow-hidden">
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm">
             <thead>
-              <tr className="bg-gray-50 border-b">
+              <tr className="bg-[var(--yr-panel-muted)] border-b">
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Name</th>
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Field</th>
                 <th className="text-center py-3 px-4 font-semibold text-gray-700">Default</th>
-                <th className="text-left py-3 px-4 font-semibold text-gray-700">Added By</th>
                 <th className="text-center py-3 px-4 font-semibold text-gray-700">Actions</th>
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={5} className="text-center py-8 text-gray-500">
+                  <td colSpan={4} className="text-center py-8 text-gray-500">
                     Loading...
                   </td>
                 </tr>
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="text-center py-8 text-gray-500">
+                  <td colSpan={4} className="text-center py-8 text-gray-500">
                     No research areas found
                   </td>
                 </tr>
               ) : (
                 filtered.map((area) => (
-                  <tr key={area._id} className="border-b hover:bg-gray-50">
+                  <tr key={area._id} className="border-b hover:bg-[var(--yr-panel-muted)]">
                     <td className="py-2 px-4">
                       {editingId === area._id ? (
                         <input
@@ -248,7 +247,7 @@ const AdminResearchAreas = () => {
                               payload: { name: e.target.value },
                             })
                           }
-                          className="border border-gray-300 rounded px-2 py-1 text-sm w-full focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          className="min-h-[44px] border border-[var(--yr-line-strong)] rounded px-2 py-1 text-sm w-full focus:outline-none focus:ring-1 focus:ring-blue-500"
                           onKeyDown={(e) => {
                             if (e.key === 'Enter') handleUpdate(area._id);
                             if (e.key === 'Escape') dispatch({ type: 'CANCEL_EDIT' });
@@ -269,7 +268,7 @@ const AdminResearchAreas = () => {
                               payload: { field: e.target.value },
                             })
                           }
-                          className="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          className="min-h-[44px] border border-[var(--yr-line-strong)] rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
                         >
                           {RESEARCH_FIELDS.map((f) => (
                             <option key={f} value={f}>
@@ -280,7 +279,7 @@ const AdminResearchAreas = () => {
                       ) : (
                         <span
                           className={`px-2 py-0.5 rounded text-xs font-medium ${
-                            FIELD_COLORS[area.field] || 'bg-gray-100 text-gray-700'
+                            FIELD_COLORS[area.field] || 'bg-[var(--yr-panel-muted)] text-gray-700'
                           }`}
                         >
                           {area.field}
@@ -294,20 +293,19 @@ const AdminResearchAreas = () => {
                         <span className="text-gray-400 text-xs">No</span>
                       )}
                     </td>
-                    <td className="py-2 px-4 text-xs text-gray-500">{area.addedBy || '--'}</td>
                     <td className="py-2 px-4">
                       <div className="flex gap-1 justify-center">
                         {editingId === area._id ? (
                           <>
                             <button
                               onClick={() => handleUpdate(area._id)}
-                              className="text-xs bg-green-600 text-white px-2 py-1 rounded hover:bg-green-700"
+                              className="min-h-[44px] text-xs bg-green-600 text-white px-2 py-1 rounded hover:bg-green-700"
                             >
                               Save
                             </button>
                             <button
                               onClick={() => dispatch({ type: 'CANCEL_EDIT' })}
-                              className="text-xs bg-gray-300 text-gray-700 px-2 py-1 rounded hover:bg-gray-400"
+                              className="min-h-[44px] text-xs bg-gray-300 text-gray-700 px-2 py-1 rounded hover:bg-gray-400"
                             >
                               Cancel
                             </button>
@@ -316,13 +314,13 @@ const AdminResearchAreas = () => {
                           <>
                             <button
                               onClick={() => startEdit(area)}
-                              className="text-xs bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700"
+                              className="min-h-[44px] text-xs bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700"
                             >
                               Edit
                             </button>
                             <button
                               onClick={() => handleDelete(area)}
-                              className="text-xs bg-red-600 text-white px-2 py-1 rounded hover:bg-red-700"
+                              className="min-h-[44px] text-xs bg-red-600 text-white px-2 py-1 rounded hover:bg-red-700"
                             >
                               Delete
                             </button>

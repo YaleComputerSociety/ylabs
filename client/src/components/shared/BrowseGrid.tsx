@@ -3,10 +3,10 @@
  */
 import React, { useContext } from 'react';
 import { Virtuoso } from 'react-virtuoso';
-import { BrowsableItem } from '../../types/browsable';
+import { BrowsableItem, getItemId } from '../../types/browsable';
 import BrowseCard from './BrowseCard';
 import BrowseListItem from './BrowseListItem';
-import LoadingSpinner from './LoadingSpinner';
+import InfiniteScrollLoadingDots from './InfiniteScrollLoadingDots';
 import UIContext from '../../contexts/UIContext';
 
 const VIRTUALIZATION_THRESHOLD = 50;
@@ -14,7 +14,7 @@ const VIRTUALIZATION_THRESHOLD = 50;
 interface BrowseGridProps {
   items: BrowsableItem[];
   favIds: string[];
-  onToggleFavorite: (id: string, e: React.MouseEvent) => void;
+  onToggleFavorite?: (id: string, e: React.MouseEvent) => void;
   onOpenModal: (item: BrowsableItem) => void;
   onAdminEdit?: (item: BrowsableItem) => void;
   sentinelRef?: React.RefObject<HTMLDivElement | null>;
@@ -78,11 +78,13 @@ const BrowseGrid = ({
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {items.map((item) => (
               <BrowseCard
-                key={item.data.id}
+                key={getItemId(item)}
                 item={item}
                 isCompact={isCompact}
-                isFavorite={favIds.includes(item.data.id)}
-                onToggleFavorite={(e) => onToggleFavorite(item.data.id, e)}
+                isFavorite={favIds.includes(getItemId(item))}
+                onToggleFavorite={
+                  onToggleFavorite ? (e) => onToggleFavorite(getItemId(item), e) : undefined
+                }
                 onOpenModal={() => onOpenModal(item)}
                 onAdminEdit={onAdminEdit ? () => onAdminEdit(item) : undefined}
               />
@@ -103,23 +105,27 @@ const BrowseGrid = ({
               <div className="pb-2">
                 <BrowseListItem
                   item={item}
-                  isFavorite={favIds.includes(item.data.id)}
-                  onToggleFavorite={(e) => onToggleFavorite(item.data.id, e)}
+                  isFavorite={favIds.includes(getItemId(item))}
+                  onToggleFavorite={
+                    onToggleFavorite ? (e) => onToggleFavorite(getItemId(item), e) : undefined
+                  }
                   onOpenModal={() => onOpenModal(item)}
                   onAdminEdit={onAdminEdit ? () => onAdminEdit(item) : undefined}
                 />
               </div>
             )}
-            computeItemKey={(_, item) => item.data.id}
+            computeItemKey={(_, item) => getItemId(item)}
           />
         ) : (
           <div className="flex flex-col gap-2">
             {items.map((item) => (
               <BrowseListItem
-                key={item.data.id}
+                key={getItemId(item)}
                 item={item}
-                isFavorite={favIds.includes(item.data.id)}
-                onToggleFavorite={(e) => onToggleFavorite(item.data.id, e)}
+                isFavorite={favIds.includes(getItemId(item))}
+                onToggleFavorite={
+                  onToggleFavorite ? (e) => onToggleFavorite(getItemId(item), e) : undefined
+                }
                 onOpenModal={() => onOpenModal(item)}
                 onAdminEdit={onAdminEdit ? () => onAdminEdit(item) : undefined}
               />
@@ -130,7 +136,7 @@ const BrowseGrid = ({
         {sentinelRef && !searchExhausted && <div ref={sentinelRef} className="h-10 w-full" />}
       </div>
 
-      {showLoader && <LoadingSpinner size="lg" />}
+      {showLoader && <InfiniteScrollLoadingDots label="Loading more results" />}
     </div>
   );
 };

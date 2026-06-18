@@ -3,14 +3,19 @@
  */
 import mongoose from 'mongoose';
 
+export const normalizeUserType = (value: unknown): string => {
+  const normalized = String(value || 'unknown').trim().toLowerCase();
+  return normalized === 'faculty' ? 'professor' : normalized || 'unknown';
+};
+
 const publicationSchema = new mongoose.Schema(
   {
     title: { type: String, required: true },
     doi: { type: String },
     year: { type: Number },
     venue: { type: String },
-    cited_by_count: { type: Number, default: 0 },
-    open_access_url: { type: String },
+    citedByCount: { type: Number, default: 0 },
+    openAccessUrl: { type: String },
     source: { type: String },
   },
   { _id: false },
@@ -29,8 +34,27 @@ const userSchema = new mongoose.Schema(
     },
     userType: {
       type: String,
-      enum: ['undergraduate', 'graduate', 'professor', 'faculty', 'unknown', 'admin'],
+      set: normalizeUserType,
+      enum: [
+        'undergraduate',
+        'graduate',
+        'student',
+        'professor',
+        'staff',
+        'unknown',
+        'admin',
+      ],
       default: 'unknown',
+    },
+    facultyMemberId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'FacultyMember',
+      required: false,
+    },
+    studentProfileId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'StudentProfile',
+      required: false,
     },
     userConfirmed: {
       type: Boolean,
@@ -82,19 +106,19 @@ const userSchema = new mongoose.Schema(
       type: String,
       required: false,
     },
-    physical_location: {
+    physicalLocation: {
       type: String,
       required: false,
     },
-    building_desk: {
+    buildingDesk: {
       type: String,
       required: false,
     },
-    mailing_address: {
+    mailingAddress: {
       type: String,
       required: false,
     },
-    primary_department: {
+    primaryDepartment: {
       type: String,
       required: false,
     },
@@ -110,32 +134,72 @@ const userSchema = new mongoose.Schema(
       type: [mongoose.Schema.ObjectId],
       default: [],
     },
+    favPathways: {
+      type: [mongoose.Schema.ObjectId],
+      default: [],
+    },
+    savedPathwayPlans: {
+      type: mongoose.Schema.Types.Mixed,
+      default: {},
+    },
     publications: {
       type: [publicationSchema],
       default: [],
       select: false,
     },
-    h_index: {
+    hIndex: {
       type: Number,
+      required: false,
+    },
+    googleScholarId: {
+      type: String,
+      required: false,
+      sparse: true,
+      index: true,
+    },
+    googleScholarMetricsUpdatedAt: {
+      type: Date,
       required: false,
     },
     orcid: {
       type: String,
       required: false,
     },
-    openalex_id: {
+    openAlexId: {
       type: String,
       required: false,
     },
-    image_url: {
+    semanticScholarId: {
+      type: String,
+      required: false,
+      sparse: true,
+      index: true,
+    },
+    openAlexWorksSyncedAt: {
+      type: Date,
+      required: false,
+    },
+    orcidWorksSyncedAt: {
+      type: Date,
+      required: false,
+    },
+    europePmcWorksSyncedAt: {
+      type: Date,
+      required: false,
+    },
+    pubmedWorksSyncedAt: {
+      type: Date,
+      required: false,
+    },
+    imageUrl: {
       type: String,
       required: false,
     },
-    secondary_departments: {
+    secondaryDepartments: {
       type: [String],
       default: [],
     },
-    research_interests: {
+    researchInterests: {
       type: [String],
       default: [],
     },
@@ -143,19 +207,35 @@ const userSchema = new mongoose.Schema(
       type: [String],
       default: [],
     },
-    profile_urls: {
+    profileUrls: {
       type: mongoose.Schema.Types.Mixed,
       default: {},
+    },
+    scholarCandidateProfileUrls: {
+      type: [String],
+      default: [],
     },
     profileVerified: {
       type: Boolean,
       default: false,
     },
-    data_sources: {
+    dataSources: {
+      type: [String],
+      default: [],
+    },
+    confidenceByField: {
+      type: mongoose.Schema.Types.Mixed,
+      default: {},
+    },
+    manuallyLockedFields: {
       type: [String],
       default: [],
     },
     lastLogin: {
+      type: Date,
+      index: true,
+    },
+    lastLoginAt: {
       type: Date,
       index: true,
     },
@@ -167,6 +247,32 @@ const userSchema = new mongoose.Schema(
       type: Date,
       index: true,
     },
+    archived: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    dedupedIntoUserId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: false,
+    },
+    dedupedAt: {
+      type: Date,
+      required: false,
+    },
+    dedupeReason: {
+      type: String,
+      required: false,
+    },
+    dedupedIdentityField: {
+      type: String,
+      required: false,
+    },
+    dedupedIdentityValue: {
+      type: String,
+      required: false,
+    },
   },
   {
     timestamps: true,
@@ -174,6 +280,9 @@ const userSchema = new mongoose.Schema(
 );
 
 userSchema.index({ userType: 1, profileVerified: 1 });
-userSchema.index({ primary_department: 1 });
+userSchema.index({ primaryDepartment: 1 });
+userSchema.index({ facultyMemberId: 1 }, { sparse: true });
+userSchema.index({ studentProfileId: 1 }, { sparse: true });
+userSchema.index({ orcid: 1 }, { sparse: true });
 
-export const User = mongoose.model('users', userSchema);
+export const User = mongoose.model('User', userSchema);

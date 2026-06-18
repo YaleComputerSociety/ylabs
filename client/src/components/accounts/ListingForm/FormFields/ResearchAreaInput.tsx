@@ -3,7 +3,7 @@
  */
 import React, { useReducer, useRef, useEffect, useMemo } from 'react';
 import ReactDOM from 'react-dom';
-import axios from 'axios';
+import axios from '../../../../utils/axios';
 import { useConfig } from '../../../../hooks/useConfig';
 import {
   createInitialResearchAreaInputState,
@@ -35,7 +35,7 @@ const colorKeyToTailwind: Record<string, { bg: string; text: string; border: str
   teal: { bg: 'bg-teal-200', text: 'text-teal-800', border: 'border-teal-300' },
   orange: { bg: 'bg-orange-200', text: 'text-orange-800', border: 'border-orange-300' },
   indigo: { bg: 'bg-indigo-200', text: 'text-indigo-800', border: 'border-indigo-300' },
-  gray: { bg: 'bg-gray-200', text: 'text-gray-800', border: 'border-gray-300' },
+  gray: { bg: 'bg-[var(--yr-panel-muted)]', text: 'text-gray-800', border: 'border-[var(--yr-line-strong)]' },
 };
 
 const FieldSelectorModal = ({
@@ -49,8 +49,8 @@ const FieldSelectorModal = ({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999]">
-      <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 overflow-hidden">
-        <div className="p-4 border-b border-gray-200">
+      <div className="bg-[var(--yr-panel)] rounded-lg shadow-xl max-w-md w-full mx-4 overflow-hidden">
+        <div className="p-4 border-b border-[var(--yr-line)]">
           <h3 className="text-lg font-semibold text-gray-900">Add New Research Area</h3>
           <p className="text-sm text-gray-600 mt-1">
             Select a field for "<span className="font-medium">{newAreaName}</span>"
@@ -78,11 +78,11 @@ const FieldSelectorModal = ({
           </div>
         </div>
 
-        <div className="p-4 border-t border-gray-200 bg-gray-50">
+        <div className="p-4 border-t border-[var(--yr-line)] bg-[var(--yr-panel-muted)]">
           <button
             type="button"
             onClick={onClose}
-            className="w-full px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+            className="w-full px-4 py-2 text-gray-700 bg-[var(--yr-panel)] border border-[var(--yr-line-strong)] rounded-lg hover:bg-[var(--yr-panel-muted)] transition-colors"
           >
             Cancel
           </button>
@@ -201,7 +201,7 @@ const ResearchAreaInput = ({
   const handleFieldSelect = async (fieldName: string) => {
     dispatch({ type: 'SUBMIT_START' });
     try {
-      const response = await axios.post('/api/research-areas', {
+      const response = await axios.post('/research-areas', {
         name: pendingNewArea,
         field: fieldName,
       });
@@ -214,7 +214,7 @@ const ResearchAreaInput = ({
       if (error.response?.status === 409) {
         onAddResearchArea(pendingNewArea);
       } else {
-        console.error('Error adding research area:', error);
+        console.error('Error adding research area.');
         alert('Failed to add research area. Please try again.');
       }
     } finally {
@@ -228,7 +228,7 @@ const ResearchAreaInput = ({
     return (
       <div className="mb-4">
         <label className="block text-gray-700 text-sm font-bold mb-2">Research Areas</label>
-        <div className="animate-pulse bg-gray-200 h-10 rounded"></div>
+        <div className="animate-pulse bg-[var(--yr-panel-muted)] h-10 rounded"></div>
       </div>
     );
   }
@@ -308,7 +308,7 @@ const ResearchAreaInput = ({
 
         {isDropdownOpen && searchTerm.trim() && (
           <div
-            className="absolute w-full bg-white rounded-lg z-10 shadow-lg border overflow-hidden mt-1 max-h-[300px] md:max-h-[350px] border-gray-300"
+            className="absolute w-full bg-[var(--yr-panel)] rounded-lg z-10 shadow-lg border overflow-hidden mt-1 max-h-[300px] md:max-h-[350px] border-[var(--yr-line-strong)]"
             tabIndex={-1}
           >
             <ul className="max-h-[350px] p-1 overflow-y-auto" tabIndex={-1}>
@@ -320,7 +320,7 @@ const ResearchAreaInput = ({
                         key={`${area.name}-${index}`}
                         onClick={() => handleSelectArea(area.name)}
                         className={`p-2 cursor-pointer flex items-center justify-between ${
-                          focusedIndex === index ? 'bg-blue-100' : 'hover:bg-gray-50'
+                          focusedIndex === index ? 'bg-blue-100' : 'hover:bg-[var(--yr-panel-muted)]'
                         }`}
                         tabIndex={-1}
                         onMouseDown={(e) => e.preventDefault()}
@@ -337,8 +337,8 @@ const ResearchAreaInput = ({
               {isNewArea && (
                 <li
                   onClick={handleAddNewArea}
-                  className={`p-2 cursor-pointer border-t border-gray-200 ${
-                    focusedIndex === filteredAreas.length ? 'bg-blue-100' : 'hover:bg-gray-50'
+                  className={`p-2 cursor-pointer border-t border-[var(--yr-line)] ${
+                    focusedIndex === filteredAreas.length ? 'bg-blue-100' : 'hover:bg-[var(--yr-panel-muted)]'
                   }`}
                   tabIndex={-1}
                   onMouseDown={(e) => e.preventDefault()}
@@ -415,7 +415,7 @@ const ResearchAreaInput = ({
       {isLoading &&
         ReactDOM.createPortal(
           <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-[9999]">
-            <div className="bg-white rounded-lg p-4 shadow-xl">
+            <div className="bg-[var(--yr-panel)] rounded-lg p-4 shadow-xl">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
               <p className="mt-2 text-sm text-gray-600">Adding research area...</p>
             </div>

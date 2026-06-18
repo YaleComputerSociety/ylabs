@@ -15,6 +15,13 @@ export enum DepartmentCategory {
   MATHEMATICS = 'Mathematics',
 }
 
+export enum DepartmentCodeSystem {
+  YCPS_SUBJECT = 'ycps_subject',
+  YSM_DEPARTMENT = 'ysm_department',
+  YSM_ACRONYM = 'ysm_acronym',
+  APP_LOCAL = 'app_local',
+}
+
 export const categoryColorKeys: Record<DepartmentCategory, number> = {
   [DepartmentCategory.COMPUTING_AI]: 0,
   [DepartmentCategory.LIFE_SCIENCES]: 1,
@@ -26,6 +33,36 @@ export const categoryColorKeys: Record<DepartmentCategory, number> = {
   [DepartmentCategory.ECONOMICS]: 7,
   [DepartmentCategory.MATHEMATICS]: 8,
 };
+
+const sourceRecordSchema = new mongoose.Schema(
+  {
+    sourceKey: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    sourceUrl: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    matchedName: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    matchedCode: {
+      type: String,
+      trim: true,
+    },
+    codeSystem: {
+      type: String,
+      required: true,
+      enum: Object.values(DepartmentCodeSystem),
+    },
+  },
+  { _id: false },
+);
 
 const departmentSchema = new mongoose.Schema(
   {
@@ -59,6 +96,19 @@ const departmentSchema = new mongoose.Schema(
       type: Number,
       required: true,
     },
+    aliases: {
+      type: [String],
+      default: [],
+    },
+    sourceRecords: {
+      type: [sourceRecordSchema],
+      default: [],
+    },
+    codeSystem: {
+      type: String,
+      enum: Object.values(DepartmentCodeSystem),
+      default: DepartmentCodeSystem.APP_LOCAL,
+    },
     isActive: {
       type: Boolean,
       default: true,
@@ -69,8 +119,8 @@ const departmentSchema = new mongoose.Schema(
   },
 );
 
-departmentSchema.index({ abbreviation: 1 });
-departmentSchema.index({ name: 'text', abbreviation: 'text' });
+departmentSchema.index({ name: 'text', abbreviation: 'text', aliases: 'text' });
 departmentSchema.index({ primaryCategory: 1 });
+departmentSchema.index({ aliases: 1 });
 
-export const Department = mongoose.model('departments', departmentSchema);
+export const Department = mongoose.model('Department', departmentSchema);

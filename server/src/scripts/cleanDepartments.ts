@@ -10,6 +10,7 @@
 import mongoose from 'mongoose';
 import { User } from '../models/user';
 import { Department } from '../models/department';
+import { sanitizeLogValue } from '../utils/logSanitizer';
 
 async function cleanDepartments() {
   const mongoUrl = process.env.MONGODBURL;
@@ -29,11 +30,11 @@ async function cleanDepartments() {
   const users = await User.find({
     userType: { $in: ['professor', 'faculty'] },
     $or: [
-      { primary_department: { $exists: true, $ne: '' } },
-      { secondary_departments: { $exists: true, $not: { $size: 0 } } },
+      { primaryDepartment: { $exists: true, $ne: '' } },
+      { secondaryDepartments: { $exists: true, $not: { $size: 0 } } },
     ],
   })
-    .select('netid primary_department secondary_departments departments')
+    .select('netid primaryDepartment secondaryDepartments departments')
     .lean();
 
   console.log(`Checking ${users.length} faculty profiles...`);
@@ -47,30 +48,30 @@ async function cleanDepartments() {
     const updates: Record<string, any> = {};
     let changed = false;
 
-    if (u.primary_department && !validNames.has(u.primary_department)) {
-      updates.primary_department = '';
+    if (u.primaryDepartment && !validNames.has(u.primaryDepartment)) {
+      updates.primaryDepartment = '';
       primaryCleared++;
       changed = true;
     }
 
-    if (u.secondary_departments && u.secondary_departments.length > 0) {
-      const validSecondary = u.secondary_departments.filter((d: string) => validNames.has(d));
-      if (validSecondary.length !== u.secondary_departments.length) {
-        updates.secondary_departments = validSecondary;
-        secondaryCleared += u.secondary_departments.length - validSecondary.length;
+    if (u.secondaryDepartments && u.secondaryDepartments.length > 0) {
+      const validSecondary = u.secondaryDepartments.filter((d: string) => validNames.has(d));
+      if (validSecondary.length !== u.secondaryDepartments.length) {
+        updates.secondaryDepartments = validSecondary;
+        secondaryCleared += u.secondaryDepartments.length - validSecondary.length;
         changed = true;
       }
     }
 
     if (changed) {
       const primary =
-        updates.primary_department !== undefined
-          ? updates.primary_department
-          : u.primary_department;
+        updates.primaryDepartment !== undefined
+          ? updates.primaryDepartment
+          : u.primaryDepartment;
       const secondary =
-        updates.secondary_departments !== undefined
-          ? updates.secondary_departments
-          : u.secondary_departments || [];
+        updates.secondaryDepartments !== undefined
+          ? updates.secondaryDepartments
+          : u.secondaryDepartments || [];
       updates.departments = [primary, ...secondary].filter(Boolean);
 
       await User.updateOne({ _id: u._id }, { $set: updates });
@@ -95,6 +96,6 @@ async function cleanDepartments() {
 }
 
 cleanDepartments().catch((err) => {
-  console.error('Fatal error:', err);
+  console.error('Fatal error:', sanitizeLogValue(err));
   process.exit(1);
 });

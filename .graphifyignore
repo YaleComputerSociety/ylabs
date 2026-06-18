@@ -1,0 +1,59 @@
+# Dependencies and package-manager state
+node_modules/
+**/node_modules/
+.yarn/
+**/.yarn/
+.pnp.*
+
+# Build, coverage, and cache output
+client/build/
+client/dist/
+server/build/
+coverage/
+client/coverage/
+.cache/
+.vite/
+
+# Secrets and local environment
+.env
+**/.env
+*.pem
+*.key
+*.crt
+
+# Local/generated Graphify state that should not shape shared repo memory
+graphify-out/cache/
+graphify-out/cost.json
+graphify-out/manifest.json
+graphify-out/.graphify_root
+graphify-out/.graphify_analysis.json
+graphify-out/.graphify_labels.json
+graphify-out/.rebuild.lock
+graphify-out/memory/
+
+# Large or noisy data snapshots
+*.csv
+*.jsonl
+backup/
+data-migration/tmp/
+
+# Existing raw/scraper workspaces and generated source snapshots
+web-scraper/
+yale-faculty-enricher/
+faculty_data.json
+yale_*_faculty*.json
+yale_*_people*.json
+yale_*_people*.csv
+yale_medicine_labs.json
+
+# OS, logs, and local notes
+.DS_Store
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+notes.txt
+toFix.md
+to-do.txt
+.codex/
+.playwright-libs/

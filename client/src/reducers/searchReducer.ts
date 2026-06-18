@@ -23,6 +23,7 @@ export interface SearchState {
   filterBarHeight: number;
   listings: Listing[];
   isLoading: boolean;
+  error: string | null;
   searchExhausted: boolean;
   totalCount: number;
   queryStringLoaded: boolean;
@@ -61,7 +62,7 @@ export type SearchAction =
       type: 'SEARCH_SUCCESS';
       payload: { listings: Listing[]; totalCount?: number; pageSize: number; append: boolean };
     }
-  | { type: 'SEARCH_FAILURE' }
+  | { type: 'SEARCH_FAILURE'; payload?: string }
   | { type: 'MARK_QUERY_STRING_LOADED' }
   | { type: 'MARK_DEPARTMENTS_LOADED' }
   | { type: 'MARK_INITIAL_SEARCH_DONE' };
@@ -82,6 +83,7 @@ export const createInitialSearchState = (overrides: Partial<SearchState> = {}): 
   filterBarHeight: 0,
   listings: [],
   isLoading: false,
+  error: null,
   searchExhausted: false,
   totalCount: 0,
   queryStringLoaded: false,
@@ -159,7 +161,7 @@ export function searchReducer(state: SearchState, action: SearchAction): SearchS
       return { ...state, filterBarHeight: action.payload };
 
     case 'SEARCH_REQUEST':
-      return { ...state, isLoading: true };
+      return { ...state, isLoading: true, error: null };
 
     case 'SEARCH_SUCCESS': {
       const { listings, totalCount, pageSize, append } = action.payload;
@@ -169,11 +171,16 @@ export function searchReducer(state: SearchState, action: SearchAction): SearchS
         totalCount: totalCount !== undefined ? totalCount : state.totalCount,
         searchExhausted: listings.length < pageSize,
         isLoading: false,
+        error: null,
       };
     }
 
     case 'SEARCH_FAILURE':
-      return { ...state, isLoading: false };
+      return {
+        ...state,
+        isLoading: false,
+        error: action.payload || 'Legacy listing search is temporarily unavailable.',
+      };
 
     case 'MARK_QUERY_STRING_LOADED':
       return { ...state, queryStringLoaded: true };
