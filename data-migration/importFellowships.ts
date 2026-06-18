@@ -3,7 +3,6 @@ import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
-import { parse } from 'csv-parse/sync';
 import { fellowshipSchema } from '../server/src/models/fellowship';
 import {
   assertScriptApplyAllowed,
@@ -275,7 +274,8 @@ function writeFellowshipImportOutput(result: unknown, output?: string): void {
   fs.writeFileSync(output, `${JSON.stringify(result, null, 2)}\n`);
 }
 
-function parseFellowshipCsv(csvPath: string): { rows: FellowshipCSVRow[]; validFellowships: ReturnType<typeof transformFellowshipRow>[]; stats: FellowshipImportStats } {
+async function parseFellowshipCsv(csvPath: string): Promise<{ rows: FellowshipCSVRow[]; validFellowships: ReturnType<typeof transformFellowshipRow>[]; stats: FellowshipImportStats }> {
+  const { parse } = await import('csv-parse/sync');
   const csvContent = fs.readFileSync(csvPath, 'utf-8');
   const rows: FellowshipCSVRow[] = parse(csvContent, {
     columns: true,
@@ -311,7 +311,7 @@ async function importFellowships(options: FellowshipImportCliOptions, mongoUrl: 
   console.log(`Mode: ${options.apply ? 'APPLY' : 'DRY RUN'}`);
 
   console.log('Reading CSV file...');
-  const { rows, validFellowships, stats } = parseFellowshipCsv(csvPath);
+  const { rows, validFellowships, stats } = await parseFellowshipCsv(csvPath);
   console.log(`Found ${rows.length} rows in CSV`);
   console.log(`Valid fellowships to import: ${validFellowships.length}`);
 
