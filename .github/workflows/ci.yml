@@ -33,6 +33,7 @@ jobs:
           yarn install --immutable
           yarn --cwd server install --immutable
           yarn --cwd client install --immutable
+          yarn --cwd data-migration install --immutable
 
       - name: Run server typecheck
         run: npx tsc --noEmit -p server/tsconfig.json
