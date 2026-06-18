@@ -29,7 +29,10 @@ jobs:
         run: corepack enable
 
       - name: Install dependencies from lockfiles
-        run: yarn install:all:immutable
+        run: |
+          yarn install --immutable
+          yarn --cwd server install --immutable
+          yarn --cwd client install --immutable
 
       - name: Run server typecheck
         run: npx tsc --noEmit -p server/tsconfig.json
