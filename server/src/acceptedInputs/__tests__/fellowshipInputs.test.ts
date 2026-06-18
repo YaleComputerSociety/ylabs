@@ -6,6 +6,7 @@ import {
   FELLOWSHIP_ACCEPTED_DIR,
   FELLOWSHIP_REVIEW_DIR,
   candidateRowsFromText,
+  defaultFetchUrl,
   exportAcceptedFellowshipRows,
   generateFellowshipCandidates,
   validateAcceptedFellowshipFiles,
@@ -44,7 +45,7 @@ describe('candidateRowsFromText', () => {
       [
         'Student: Ada Lovelace',
         'Project: RNA switches',
-        'Advisor: Ronald Breaker',
+        'Advisor: Riley Roster',
       ].join('\n'),
       testConfig,
       'https://example.yale.edu/2025-stars.pdf',
@@ -57,7 +58,7 @@ describe('candidateRowsFromText', () => {
       programKey: 'stars-ii',
       year: '2025',
       studentName: 'Ada Lovelace',
-      advisorName: 'Ronald Breaker',
+      advisorName: 'Riley Roster',
       projectTitle: 'RNA switches',
       sourceUrl: 'https://example.yale.edu/2025-stars.pdf',
     });
@@ -65,13 +66,19 @@ describe('candidateRowsFromText', () => {
 });
 
 describe('generateFellowshipCandidates', () => {
+  it('blocks private URLs in the default remote fetcher', async () => {
+    await expect(defaultFetchUrl('http://127.0.0.1:27017/admin')).rejects.toThrow(
+      /private|non-public/i,
+    );
+  });
+
   it('writes candidate CSVs for PDF text extraction', async () => {
     await withTempRoot(async (root) => {
       const result = await generateFellowshipCandidates(root, {
         configs: [testConfig],
         fetchUrl: async () => ({ body: Buffer.from('pdf'), contentType: 'application/pdf' }),
         pdfTextExtractor: async () =>
-          ['Student: Ada Lovelace', 'Advisor: Ronald Breaker'].join('\n'),
+          ['Student: Ada Lovelace', 'Advisor: Riley Roster'].join('\n'),
       });
 
       expect(result[0]).toMatchObject({
@@ -84,7 +91,7 @@ describe('generateFellowshipCandidates', () => {
         'utf8',
       );
       expect(csv).toContain('needs-review');
-      expect(csv).toContain('Ronald Breaker');
+      expect(csv).toContain('Riley Roster');
     });
   });
 
@@ -112,7 +119,7 @@ describe('generateFellowshipCandidates', () => {
 });
 
 describe('validateFellowshipRows', () => {
-  const resolved: AdvisorResolver = async () => ({ status: 'resolved', label: 'Ronald Breaker' });
+  const resolved: AdvisorResolver = async () => ({ status: 'resolved', label: 'Riley Roster' });
 
   it('reports missing accepted evidence fields', async () => {
     const errors = await validateFellowshipRows(
@@ -123,7 +130,7 @@ describe('validateFellowshipRows', () => {
           programName: 'STARS II',
           year: '',
           studentName: 'Ada',
-          advisorName: 'Ronald Breaker',
+          advisorName: 'Riley Roster',
           advisorOrcid: '',
           projectTitle: '',
           sourceUrl: '',
@@ -151,7 +158,7 @@ describe('validateFellowshipRows', () => {
           programName: 'STARS II',
           year: '2025',
           studentName: 'Ada',
-          advisorName: 'Ronald Breaker',
+          advisorName: 'Riley Roster',
           advisorOrcid: '',
           projectTitle: '',
           sourceUrl: 'https://example.yale.edu/source',
@@ -162,7 +169,7 @@ describe('validateFellowshipRows', () => {
       ],
       {
         programKey: 'stars-ii',
-        advisorResolver: async () => ({ status: 'ambiguous', label: 'Ronald Breaker' }),
+        advisorResolver: async () => ({ status: 'ambiguous', label: 'Riley Roster' }),
       },
     );
 
@@ -179,7 +186,7 @@ describe('validateFellowshipRows', () => {
           year: '2025',
           studentName: 'Ada',
           advisorName: '',
-          advisorOrcid: '0000-0002-1825-0097',
+          advisorOrcid: '0000-0000-0000-0003',
           projectTitle: '',
           sourceUrl: '',
           sourcePage: '',
@@ -205,14 +212,14 @@ describe('exportAcceptedFellowshipRows and status', () => {
         'stars-ii',
         [
           'reviewStatus,programKey,programName,year,studentName,advisorName,advisorOrcid,projectTitle,sourceUrl,sourcePage,reviewNote,extractionStatus',
-          'needs-review,stars-ii,STARS II,2025,Ada Lovelace,Ronald Breaker,,RNA,https://example.yale.edu/source,block-1,,candidate',
-          'accepted,stars-ii,STARS II,2025,Grace Hopper,Ronald Breaker,,Circuits,https://example.yale.edu/source,block-2,Reviewed from official source,candidate',
+          'needs-review,stars-ii,STARS II,2025,Ada Lovelace,Riley Roster,,RNA,https://example.yale.edu/source,block-1,,candidate',
+          'accepted,stars-ii,STARS II,2025,Grace Hopper,Riley Roster,,+SUM(1 1),https://example.yale.edu/source,block-2,Reviewed from official source,candidate',
         ].join('\n'),
       );
 
       const result = await exportAcceptedFellowshipRows(root, 'stars-ii', {
         configs: [testConfig],
-        advisorResolver: async () => ({ status: 'resolved', label: 'Ronald Breaker' }),
+        advisorResolver: async () => ({ status: 'resolved', label: 'Riley Roster' }),
       });
 
       expect(result.errors).toEqual([]);
@@ -224,6 +231,7 @@ describe('exportAcceptedFellowshipRows and status', () => {
       expect(accepted).toContain('Grace Hopper');
       expect(accepted).not.toContain('Ada Lovelace');
       expect(accepted).toContain('https://example.yale.edu/source');
+      expect(accepted).toContain("'+SUM(1 1)");
     });
   });
 
@@ -234,7 +242,7 @@ describe('exportAcceptedFellowshipRows and status', () => {
         'stars-ii',
         [
           'reviewStatus,programKey,programName,year,studentName,advisorName,advisorOrcid,projectTitle,sourceUrl,sourcePage,reviewNote,extractionStatus',
-          'accepted,stars-ii,STARS II,2025,Ada Lovelace,,0000-0002-1825-0097,RNA,,,,candidate',
+          'accepted,stars-ii,STARS II,2025,Ada Lovelace,,0000-0000-0000-0003,RNA,,,,candidate',
         ].join('\n'),
       );
 
@@ -248,7 +256,7 @@ describe('exportAcceptedFellowshipRows and status', () => {
         path.join(root, FELLOWSHIP_ACCEPTED_DIR, 'stars-ii.csv'),
         'utf8',
       );
-      expect(accepted).toContain('Ada Lovelace,0000-0002-1825-0097,2025');
+      expect(accepted).toContain('Ada Lovelace,0000-0000-0000-0003,2025');
     });
   });
 
@@ -265,7 +273,7 @@ describe('exportAcceptedFellowshipRows and status', () => {
         path.join(root, FELLOWSHIP_ACCEPTED_DIR, 'stars-ii.csv'),
         [
           'studentName,advisorName,advisorOrcid,year,projectTitle,sourceUrl,sourcePage,reviewNote',
-          'Ada Lovelace,Ronald Breaker,,2025,RNA,https://example.yale.edu/source,,Reviewed',
+          'Ada Lovelace,Riley Roster,,2025,RNA,https://example.yale.edu/source,,Reviewed',
         ].join('\n'),
         'utf8',
       );
@@ -273,7 +281,7 @@ describe('exportAcceptedFellowshipRows and status', () => {
         path.join(root, FELLOWSHIP_ACCEPTED_DIR, 'bad.csv'),
         [
           'studentName,advisorName,advisorOrcid,year,projectTitle,sourceUrl,sourcePage,reviewNote',
-          'Ada Lovelace,Ronald Breaker,,2025,RNA,,,',
+          'Ada Lovelace,Riley Roster,,2025,RNA,,,',
         ].join('\n'),
         'utf8',
       );
@@ -288,7 +296,7 @@ describe('exportAcceptedFellowshipRows and status', () => {
 
       const result = await validateAcceptedFellowshipFiles(root, {
         configs,
-        advisorResolver: async () => ({ status: 'resolved', label: 'Ronald Breaker' }),
+        advisorResolver: async () => ({ status: 'resolved', label: 'Riley Roster' }),
       });
 
       expect(Object.fromEntries(result.map((item) => [item.programKey, item.status]))).toEqual({
@@ -297,6 +305,18 @@ describe('exportAcceptedFellowshipRows and status', () => {
         manual: 'manual-required',
         missing: 'missing',
       });
+    });
+  });
+
+  it('rejects unsafe accepted-input roots and program keys before filesystem work', async () => {
+    await expect(validateAcceptedFellowshipFiles('/etc/ylabs-accepted-inputs', {
+      configs: [testConfig],
+    })).rejects.toThrow(/--root must stay under/);
+
+    await withTempRoot(async (root) => {
+      await expect(exportAcceptedFellowshipRows(root, '../escape', {
+        configs: [{ ...testConfig, programKey: '../escape' }],
+      })).rejects.toThrow(/programKey must contain only/);
     });
   });
 });

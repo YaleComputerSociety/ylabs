@@ -1,9 +1,15 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import LoadingSpinner from '../shared/LoadingSpinner';
 import type { PathwaySearchHit } from '../../types/pathway';
 import axios from '../../utils/axios';
-import { EXTERNAL_LINK_REL, safeHttpUrl, safeHttpUrlList } from '../../utils/url';
+import UserContext from '../../contexts/UserContext';
+import {
+  EXTERNAL_LINK_REL,
+  safeHttpUrl,
+  safeHttpUrlList,
+  safeRouteSegment,
+} from '../../utils/url';
 
 type PlanningIntent = 'thesis' | 'outreach' | 'credit' | 'funding' | 'apply' | 'later';
 type PlanningStage = 'saved' | 'researching' | 'ready' | 'acted' | 'archived';
@@ -60,7 +66,20 @@ export interface DeadlineReminder {
   sourceUrl?: string;
 }
 
-const PLAN_STORAGE_KEY = 'yale-research.savedResearchPlans.v1';
+export const PLAN_STORAGE_KEY = 'yale-research.savedResearchPlans.v1';
+export const MAX_PLAN_STORAGE_VALUE_LENGTH = 100_000;
+const PLAN_STORAGE_OWNER_RE = /^[A-Za-z0-9]{2,12}$/;
+
+export const normalizeSavedPlanStorageOwner = (value: unknown): string | undefined => {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  return PLAN_STORAGE_OWNER_RE.test(trimmed) ? trimmed.toLowerCase() : undefined;
+};
+
+export const savedPlanStorageKeyForOwner = (owner: unknown): string | undefined => {
+  const normalizedOwner = normalizeSavedPlanStorageOwner(owner);
+  return normalizedOwner ? `${PLAN_STORAGE_KEY}.${normalizedOwner}` : undefined;
+};
 
 const INTENT_OPTIONS: Array<{ value: PlanningIntent; label: string }> = [
   { value: 'thesis', label: 'Thesis idea' },
@@ -287,13 +306,97 @@ export const deadlineReminderForPathway = (
   };
 };
 
-const readStoredPlans = (): PathwayPlanMap => {
+const MAX_STORED_PLAN_COUNT = 100;
+const MAX_PLAN_NOTE_LENGTH = 2000;
+const MAX_CHECKLIST_ITEM_COUNT = 40;
+const STORAGE_PLAN_ID_RE = /^[A-Za-z0-9_-]{1,80}$/;
+const STORAGE_CHECKLIST_KEY_RE = /^[A-Za-z0-9_-]{1,80}$/;
+
+const normalizePlanNote = (value: unknown): string =>
+  typeof value === 'string' ? value.slice(0, MAX_PLAN_NOTE_LENGTH) : '';
+
+const normalizePlanChecklist = (value: unknown): Record<string, boolean> => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+
+  const checklist: Record<string, boolean> = {};
+  for (const [key, checked] of Object.entries(value).slice(0, MAX_CHECKLIST_ITEM_COUNT)) {
+    if (STORAGE_CHECKLIST_KEY_RE.test(key) && checked === true) {
+      checklist[key] = true;
+    }
+  }
+  return checklist;
+};
+
+const normalizeStoredPlan = (value: unknown): PathwayPlan | null => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const candidate = value as Partial<PathwayPlan>;
+  return {
+    intent: isPlanningIntent(candidate.intent) ? candidate.intent : 'later',
+    stage: isPlanningStage(candidate.stage) ? candidate.stage : 'saved',
+    note: normalizePlanNote(candidate.note),
+    checklist: normalizePlanChecklist(candidate.checklist),
+  };
+};
+
+const normalizePathwayPlanMap = (value: unknown): PathwayPlanMap => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+
+  const plans: PathwayPlanMap = {};
+  for (const [id, plan] of Object.entries(value).slice(0, MAX_STORED_PLAN_COUNT)) {
+    if (!STORAGE_PLAN_ID_RE.test(id)) continue;
+    const normalizedPlan = normalizeStoredPlan(plan);
+    if (normalizedPlan) plans[id] = normalizedPlan;
+  }
+  return plans;
+};
+
+const localStoragePlanMap = (plans: PathwayPlanMap): PathwayPlanMap =>
+  Object.fromEntries(
+    Object.entries(normalizePathwayPlanMap(plans)).map(([id, plan]) => [
+      id,
+      {
+        intent: plan.intent,
+        stage: plan.stage,
+        note: '',
+        checklist: {},
+      },
+    ]),
+  );
+
+export const readStoredPlans = (owner?: unknown): PathwayPlanMap => {
   try {
-    const raw = window.localStorage.getItem(PLAN_STORAGE_KEY);
-    return raw ? JSON.parse(raw) : {};
-  } catch (err) {
-    console.error('Error reading saved research plans:', err);
+    const storageKey = savedPlanStorageKeyForOwner(owner);
+    window.localStorage.removeItem(PLAN_STORAGE_KEY);
+    if (!storageKey) return {};
+
+    const raw = window.localStorage.getItem(storageKey);
+    if (raw && raw.length > MAX_PLAN_STORAGE_VALUE_LENGTH) {
+      window.localStorage.removeItem(storageKey);
+      return {};
+    }
+    return raw ? normalizePathwayPlanMap(JSON.parse(raw)) : {};
+  } catch {
+    console.error('Error reading saved research plans.');
+    const storageKey = savedPlanStorageKeyForOwner(owner);
+    if (storageKey) window.localStorage.removeItem(storageKey);
     return {};
+  }
+};
+
+export const writeStoredPlans = (plans: PathwayPlanMap, owner?: unknown): void => {
+  try {
+    const storageKey = savedPlanStorageKeyForOwner(owner);
+    window.localStorage.removeItem(PLAN_STORAGE_KEY);
+    if (!storageKey) return;
+
+    const serialized = JSON.stringify(localStoragePlanMap(plans));
+    if (typeof serialized !== 'string' || serialized.length > MAX_PLAN_STORAGE_VALUE_LENGTH) {
+      window.localStorage.removeItem(storageKey);
+      return;
+    }
+    window.localStorage.setItem(storageKey, serialized);
+  } catch {
+    console.error('Error saving saved research plans.');
   }
 };
 
@@ -301,8 +404,8 @@ export const mergeSavedPathwayPlansForHydration = (
   localPlans: PathwayPlanMap,
   serverPlans: PathwayPlanMap,
 ): PathwayPlanMap => ({
-  ...localPlans,
-  ...serverPlans,
+  ...normalizePathwayPlanMap(localPlans),
+  ...normalizePathwayPlanMap(serverPlans),
 });
 
 export const getLocalOnlySavedPathwayPlanIds = (
@@ -312,6 +415,19 @@ export const getLocalOnlySavedPathwayPlanIds = (
 ): string[] => {
   const allowedIds = new Set(savedPathwayIds);
   return Object.keys(localPlans).filter((id) => allowedIds.has(id) && !serverPlans[id]);
+};
+
+export const filterStoredPlansForSavedPathways = (
+  plans: PathwayPlanMap,
+  savedPathwayIds: Iterable<string>,
+): PathwayPlanMap => {
+  const allowedIds = new Set(savedPathwayIds);
+  const filtered: PathwayPlanMap = {};
+  const normalizedPlans = normalizePathwayPlanMap(plans);
+  for (const [id, plan] of Object.entries(normalizedPlans)) {
+    if (allowedIds.has(id)) filtered[id] = plan;
+  }
+  return filtered;
 };
 
 const sourceUrlsForPathway = (pathway: PathwaySearchHit): string[] =>
@@ -387,9 +503,11 @@ interface SavedPathwaysSectionProps {
 }
 
 const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) => {
+  const { user } = useContext(UserContext);
+  const planStorageOwner = normalizeSavedPlanStorageOwner(user?.netId);
   const [pathways, setPathways] = useState<PathwaySearchHit[]>([]);
   const [fundingMatches, setFundingMatches] = useState<FundingMatchesByPathway>({});
-  const [plans, setPlans] = useState<PathwayPlanMap>(() => readStoredPlans());
+  const [plans, setPlans] = useState<PathwayPlanMap>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [exporting, setExporting] = useState(false);
@@ -397,26 +515,44 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
   const [includePrivateNotesInExport, setIncludePrivateNotesInExport] = useState(false);
   const [showExportControls, setShowExportControls] = useState(false);
   const [expandedPlanIds, setExpandedPlanIds] = useState<Record<string, boolean>>({});
+  const [hydratedPlanStorageOwner, setHydratedPlanStorageOwner] = useState<string | undefined>();
+  const activePlanStorageOwnerRef = useRef<string | undefined>(undefined);
 
   const loadPathways = useCallback(async () => {
+    const ownerAtLoad = planStorageOwner;
+    activePlanStorageOwnerRef.current = ownerAtLoad;
+    const isCurrentOwnerLoad = () => activePlanStorageOwnerRef.current === ownerAtLoad;
+
     setLoading(true);
     setError('');
     setExportError('');
+    setHydratedPlanStorageOwner(undefined);
+    setPlans({});
     try {
       const response = await axios.get('/users/savedResearchPlans', { withCredentials: true });
+      if (!isCurrentOwnerLoad()) return;
       const savedPathways = response.data.savedResearchPlans || [];
       setPathways(savedPathways);
       try {
         const plansResponse = await axios.get('/users/savedResearchPlanDetails', {
           withCredentials: true,
         });
+        if (!isCurrentOwnerLoad()) return;
         const serverPlans = plansResponse.data.savedResearchPlanDetails || {};
-        const localPlans = readStoredPlans();
-        const mergedPlans = mergeSavedPathwayPlansForHydration(localPlans, serverPlans);
-        setPlans(mergedPlans);
+        const localPlans = readStoredPlans(ownerAtLoad);
         const savedPathwayIds = savedPathways.map((pathway: PathwaySearchHit) => pathway._id);
-        const localOnlyPlanIds = getLocalOnlySavedPathwayPlanIds(
+        const localPlansForSavedPathways = filterStoredPlansForSavedPathways(
           localPlans,
+          savedPathwayIds,
+        );
+        const mergedPlans = mergeSavedPathwayPlansForHydration(
+          localPlansForSavedPathways,
+          serverPlans,
+        );
+        setPlans(mergedPlans);
+        setHydratedPlanStorageOwner(ownerAtLoad);
+        const localOnlyPlanIds = getLocalOnlySavedPathwayPlanIds(
+          localPlansForSavedPathways,
           serverPlans,
           savedPathwayIds,
         );
@@ -424,40 +560,45 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
           localOnlyPlanIds.map((id) =>
             axios.put(
               `/users/savedResearchPlanDetails/${id}`,
-              { data: { plan: localPlans[id] } },
+              { data: { plan: localPlansForSavedPathways[id] } },
               { withCredentials: true },
             ),
           ),
         );
-      } catch (planErr) {
-        console.error('Error loading saved research plans:', planErr);
+      } catch {
+        console.error('Error loading saved research plan details.');
       }
       try {
         const matchesResponse = await axios.get('/users/savedResearchPlanFundingMatches', {
           withCredentials: true,
         });
+        if (!isCurrentOwnerLoad()) return;
         setFundingMatches(matchesResponse.data.matchesByPathwayId || {});
-      } catch (matchErr) {
-        console.error('Error loading saved research-plan funding matches:', matchErr);
+      } catch {
+        console.error('Error loading saved research-plan funding matches.');
+        if (!isCurrentOwnerLoad()) return;
         setFundingMatches({});
       }
-    } catch (err) {
-      console.error('Error loading saved research plans:', err);
+    } catch {
+      console.error('Error loading saved research plans.');
+      if (!isCurrentOwnerLoad()) return;
       setPathways([]);
       setFundingMatches({});
+      setPlans({});
       setError('Saved research plans could not be loaded.');
     } finally {
-      setLoading(false);
+      if (isCurrentOwnerLoad()) setLoading(false);
     }
-  }, []);
+  }, [planStorageOwner]);
 
   useEffect(() => {
     loadPathways();
   }, [loadPathways]);
 
   useEffect(() => {
-    window.localStorage.setItem(PLAN_STORAGE_KEY, JSON.stringify(plans));
-  }, [plans]);
+    if (!planStorageOwner || hydratedPlanStorageOwner !== planStorageOwner) return;
+    writeStoredPlans(plans, planStorageOwner);
+  }, [hydratedPlanStorageOwner, planStorageOwner, plans]);
 
   useEffect(() => {
     const reminders = pathways
@@ -480,8 +621,8 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
           ? storedPlan.intent
           : defaultIntentForPathway(pathway),
         stage: isPlanningStage(storedPlan.stage) ? storedPlan.stage : 'saved',
-        note: typeof storedPlan.note === 'string' ? storedPlan.note : '',
-        checklist: storedPlan.checklist || {},
+        note: normalizePlanNote(storedPlan.note),
+        checklist: normalizePlanChecklist(storedPlan.checklist),
       };
     }
 
@@ -505,7 +646,7 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
           { data: { plan: nextPlan } },
           { withCredentials: true },
         )
-        .catch((err) => console.error('Error saving research plan:', err));
+        .catch(() => console.error('Error saving research plan.'));
       return {
         ...current,
         [pathwayId]: nextPlan,
@@ -548,8 +689,8 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
         return next;
       });
       await axios.delete(`/users/savedResearchPlanDetails/${pathwayId}`, { withCredentials: true });
-    } catch (err) {
-      console.error('Error removing saved research plan:', err);
+    } catch {
+      console.error('Error removing saved research plan.');
       setPathways(previous);
       setError('Could not remove that saved research plan.');
     }
@@ -566,10 +707,15 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
     setExporting(true);
     setExportError('');
     try {
-      const response = await axios.get('/users/savedResearchPlanDetails/export', {
-        withCredentials: true,
-        params: includePrivateNotesInExport ? { includePrivateNotes: 'true' } : undefined,
-      });
+      const response = includePrivateNotesInExport
+        ? await axios.post(
+            '/users/savedResearchPlanDetails/export',
+            { includePrivateNotes: true },
+            { withCredentials: true },
+          )
+        : await axios.get('/users/savedResearchPlanDetails/export', {
+            withCredentials: true,
+          });
       const blob = new Blob([JSON.stringify(response.data, null, 2)], {
         type: 'application/json',
       });
@@ -583,8 +729,8 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
-    } catch (err) {
-      console.error('Error exporting saved research plans:', err);
+    } catch {
+      console.error('Error exporting saved research plans.');
       setExportError('Saved research plans could not be exported.');
     } finally {
       setExporting(false);
@@ -712,7 +858,7 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
 
                   <div className="flex flex-wrap gap-2 md:justify-end">
 	                    <Link
-	                      to={`/research/${pathway.researchEntity.slug}`}
+	                      to={`/research/${safeRouteSegment(pathway.researchEntity.slug)}`}
 	                      className="inline-flex min-h-[44px] items-center rounded-md border border-blue-200 bg-[var(--yr-panel)] px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-[var(--yr-blue-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
                     >
                       Open profile
@@ -793,7 +939,7 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
                               >
                                 <div className="flex flex-wrap items-center gap-2">
                                   <Link
-                                    to={`/programs?program=${match.fellowshipId}`}
+                                    to={`/programs?program=${safeRouteSegment(match.fellowshipId)}`}
                                     className="font-semibold text-cyan-900 underline underline-offset-2 hover:text-cyan-700"
                                   >
                                     {match.title}
@@ -877,7 +1023,7 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
                       <textarea
                         value={plan.note}
                         onChange={(event) =>
-                          updatePlan(pathway._id, { note: event.target.value })
+                          updatePlan(pathway._id, { note: normalizePlanNote(event.target.value) })
                         }
                         rows={3}
                         placeholder="Why this route matters, what to check next, or who to ask."

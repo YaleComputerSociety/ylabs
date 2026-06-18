@@ -47,6 +47,12 @@ describe('search index rebuild CLI helpers', () => {
     expect(() => parseRebuildPathwaySearchIndexArgs(['--output=--clear'])).toThrow(
       /--output requires a path/,
     );
+    expect(() =>
+      parseRebuildPathwaySearchIndexArgs(['--output', '/var/tmp/rebuild-pathways.json']),
+    ).toThrow(/--output must write under/);
+    expect(() =>
+      parseRebuildPathwaySearchIndexArgs(['--output', '/tmp/rebuild-pathways.txt']),
+    ).toThrow(/--output must point to a \.json report file/);
   });
 
   it('writes the pathway index rebuild artifact when output is provided', () => {
@@ -57,6 +63,12 @@ describe('search index rebuild CLI helpers', () => {
     writeRebuildPathwaySearchIndexOutput(payload, output);
 
     expect(JSON.parse(fs.readFileSync(output, 'utf8'))).toMatchObject(payload);
+  });
+
+  it('rejects unsafe pathway index rebuild artifact writes', () => {
+    expect(() =>
+      writeRebuildPathwaySearchIndexOutput({ indexed: 12 }, '/var/tmp/rebuild-pathways.json'),
+    ).toThrow(/--output must write under/);
   });
 
   it('wraps pathway index rebuild artifacts with target metadata and parsed options', () => {
@@ -141,6 +153,18 @@ describe('search index rebuild CLI helpers', () => {
     expect(() => parseRebuildResearchEntitySearchIndexArgs(['--output=--clear'])).toThrow(
       /--output requires a path/,
     );
+    expect(() =>
+      parseRebuildResearchEntitySearchIndexArgs([
+        '--output',
+        '/var/tmp/rebuild-research-entities.json',
+      ]),
+    ).toThrow(/--output must write under/);
+    expect(() =>
+      parseRebuildResearchEntitySearchIndexArgs([
+        '--output',
+        '/tmp/rebuild-research-entities.txt',
+      ]),
+    ).toThrow(/--output must point to a \.json report file/);
   });
 
   it('writes the research entity index rebuild artifact when output is provided', () => {
@@ -151,6 +175,15 @@ describe('search index rebuild CLI helpers', () => {
     writeRebuildResearchEntitySearchIndexOutput(payload, output);
 
     expect(JSON.parse(fs.readFileSync(output, 'utf8'))).toMatchObject(payload);
+  });
+
+  it('rejects unsafe research entity index rebuild artifact writes', () => {
+    expect(() =>
+      writeRebuildResearchEntitySearchIndexOutput(
+        { indexed: 25 },
+        '/var/tmp/rebuild-research-entities.json',
+      ),
+    ).toThrow(/--output must write under/);
   });
 
   it('wraps research entity index rebuild artifacts with target metadata and parsed options', () => {

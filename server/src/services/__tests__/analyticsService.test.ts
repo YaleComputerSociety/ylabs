@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   analyticsAggregate: vi.fn(),
   analyticsCreate: vi.fn(),
   analyticsFind: vi.fn(),
+  userFindOneAndUpdate: vi.fn(),
 }));
 
 vi.mock('../../models/analytics', () => ({
@@ -36,6 +37,7 @@ vi.mock('../../models/analytics', () => ({
 vi.mock('../../models/index', () => ({
   User: {
     findOne: vi.fn(),
+    findOneAndUpdate: mocks.userFindOneAndUpdate,
   },
 }));
 
@@ -43,7 +45,30 @@ vi.mock('../../db/connections', () => ({
   getListingModel: vi.fn(),
 }));
 
-import { getUserAnalytics, shouldSuppressBetaAnalyticsEvent } from '../analyticsService';
+import {
+  combineAnalyticsUserTypeCounts,
+  getUserAnalytics,
+  getUserAnalyticsDrilldown,
+  logEvent,
+  normalizeAnalyticsUserTypeBucket,
+  shouldSuppressBetaAnalyticsEvent,
+} from '../analyticsService';
+import { AnalyticsEventType } from '../../models/analytics';
+
+describe('analytics user type normalization', () => {
+  it('combines professor and faculty into the canonical professor bucket', () => {
+    expect(normalizeAnalyticsUserTypeBucket('professor')).toBe('professor');
+    expect(normalizeAnalyticsUserTypeBucket('faculty')).toBe('professor');
+    expect(combineAnalyticsUserTypeCounts([
+      { userType: 'professor', count: 10755 },
+      { userType: 'faculty', count: 6701 },
+      { userType: 'undergraduate', count: 1340 },
+    ])).toEqual([
+      { userType: 'professor', count: 17456 },
+      { userType: 'undergraduate', count: 1340 },
+    ]);
+  });
+});
 
 describe('shouldSuppressBetaAnalyticsEvent', () => {
   afterEach(() => {
@@ -82,5 +107,178 @@ describe('getUserAnalytics', () => {
     await expect(getUserAnalytics({ search: 'a'.repeat(121) })).rejects.toThrow('Invalid search');
 
     expect(mocks.analyticsAggregate).not.toHaveBeenCalled();
+  });
+});
+
+describe('getUserAnalyticsDrilldown', () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('rejects malformed netids before building analytics regex filters', async () => {
+    await expect(getUserAnalyticsDrilldown('../not-a-netid')).rejects.toThrow('Invalid netid');
+    await expect(getUserAnalyticsDrilldown('a'.repeat(121))).rejects.toThrow('Invalid netid');
+
+    expect(mocks.analyticsAggregate).not.toHaveBeenCalled();
+    expect(mocks.analyticsFind).not.toHaveBeenCalled();
+  });
+});
+
+describe('logEvent', () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('redacts direct contact details before persisting analytics text and metadata', async () => {
+    mocks.userFindOneAndUpdate.mockReturnValue({ catch: vi.fn() });
+
+    await logEvent({
+      eventType: AnalyticsEventType.SEARCH,
+      netid: 'student123',
+      userType: 'undergraduate',
+      searchQuery: 'email ada@example.edu or call 203-555-1212',
+      searchDepartments: ['Computer Science', 'hidden@example.edu'],
+      metadata: {
+        entityType: 'listing',
+        note: 'Reach ada@example.edu at 203-555-3434',
+        nested: {
+          values: ['visible', 'contact hidden@example.edu'],
+        },
+      },
+    });
+
+    expect(mocks.analyticsCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        searchQuery: 'email [email redacted] or call [phone redacted]',
+        searchDepartments: ['Computer Science', '[email redacted]'],
+        metadata: {
+          entityType: 'listing',
+          note: 'Reach [email redacted] at [phone redacted]',
+          nested: {
+            values: ['visible', 'contact [email redacted]'],
+          },
+        },
+      }),
+    );
+    expect(JSON.stringify(mocks.analyticsCreate.mock.calls[0][0])).not.toContain('ada@example.edu');
+    expect(JSON.stringify(mocks.analyticsCreate.mock.calls[0][0])).not.toContain('hidden@example.edu');
+    expect(JSON.stringify(mocks.analyticsCreate.mock.calls[0][0])).not.toContain('203-555');
+  });
+
+  it('bounds analytics text and metadata before persistence', async () => {
+    mocks.userFindOneAndUpdate.mockReturnValue({ catch: vi.fn() });
+
+    await logEvent({
+      eventType: AnalyticsEventType.SEARCH,
+      netid: 'student123',
+      userType: 'undergraduate',
+      searchQuery: `prefix ${'a'.repeat(800)} hidden@example.edu`,
+      searchDepartments: Array.from({ length: 55 }, (_, index) => `Department ${index}`),
+      metadata: {
+        '$private.key': 'hidden@example.edu',
+        constructor: 'prototype payload',
+        prototype: 'prototype payload',
+        longText: 'x'.repeat(800),
+        wideArray: Array.from({ length: 55 }, (_, index) => index),
+        notFinite: Number.POSITIVE_INFINITY,
+        nested: {
+          values: Array.from({ length: 55 }, (_, index) => `value-${index}`),
+        },
+      },
+    });
+
+    const created = mocks.analyticsCreate.mock.calls[0][0];
+    expect(created.searchQuery).toHaveLength(512);
+    expect(created.searchQuery).not.toContain('hidden@example.edu');
+    expect(created.searchDepartments).toHaveLength(50);
+    expect(created.metadata._private_key).toBe('[email redacted]');
+    expect(Object.prototype.hasOwnProperty.call(created.metadata, 'constructor')).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(created.metadata, 'prototype')).toBe(false);
+    expect(created.metadata.longText).toHaveLength(512);
+    expect(created.metadata.wideArray).toHaveLength(50);
+    expect(created.metadata).not.toHaveProperty('notFinite');
+    expect(created.metadata.nested.values).toHaveLength(50);
+    expect(JSON.stringify(created)).not.toContain('hidden@example.edu');
+  });
+
+  it('rejects malformed analytics actor netids before persistence', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    mocks.userFindOneAndUpdate.mockReturnValue({ catch: vi.fn() });
+
+    await logEvent({
+      eventType: AnalyticsEventType.SEARCH,
+      netid: '../not-a-netid',
+      userType: 'undergraduate',
+    });
+
+    expect(mocks.analyticsCreate).not.toHaveBeenCalled();
+    expect(mocks.userFindOneAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it('rejects malformed analytics event types before persistence', async () => {
+    mocks.userFindOneAndUpdate.mockReturnValue({ catch: vi.fn() });
+
+    await logEvent({
+      eventType: 'search.$where' as AnalyticsEventType,
+      netid: 'student123',
+      userType: 'undergraduate',
+      searchQuery: 'machine learning',
+    });
+
+    expect(mocks.analyticsCreate).not.toHaveBeenCalled();
+    expect(mocks.userFindOneAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it('sanitizes analytics actor fields before persistence and skips non-user buckets for user updates', async () => {
+    mocks.userFindOneAndUpdate.mockReturnValue({ catch: vi.fn() });
+
+    await logEvent({
+      eventType: AnalyticsEventType.VISITOR,
+      netid: ' anonymous ',
+      userType: 'admin<script>',
+    });
+
+    expect(mocks.analyticsCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        netid: 'anonymous',
+        userType: 'unknown',
+      }),
+    );
+    expect(mocks.userFindOneAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it('drops malformed analytics entity ids before persistence', async () => {
+    mocks.userFindOneAndUpdate.mockReturnValue({ catch: vi.fn() });
+
+    await logEvent({
+      eventType: AnalyticsEventType.LISTING_VIEW,
+      netid: 'student123',
+      userType: 'undergraduate',
+      listingId: '../not-an-object-id',
+      fellowshipId: '123',
+    });
+
+    const created = mocks.analyticsCreate.mock.calls[0][0];
+    expect(created).not.toHaveProperty('listingId');
+    expect(created).not.toHaveProperty('fellowshipId');
+  });
+
+  it('keeps valid analytics entity ObjectIds before persistence', async () => {
+    mocks.userFindOneAndUpdate.mockReturnValue({ catch: vi.fn() });
+
+    await logEvent({
+      eventType: AnalyticsEventType.LISTING_VIEW,
+      netid: 'student123',
+      userType: 'undergraduate',
+      listingId: '507f1f77bcf86cd799439011',
+      fellowshipId: '507f1f77bcf86cd799439012',
+    });
+
+    expect(mocks.analyticsCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        listingId: '507f1f77bcf86cd799439011',
+        fellowshipId: '507f1f77bcf86cd799439012',
+      }),
+    );
   });
 });

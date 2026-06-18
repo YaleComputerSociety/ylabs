@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -311,7 +311,7 @@ describe('LabDetail page', () => {
     );
   });
 
-  it('surfaces the lead professor profile in the student decision panel', async () => {
+  it('renders the lead professor name as non-clickable text in the student decision panel', async () => {
     renderLabDetail({
       ...basePayload,
       members: [
@@ -324,6 +324,9 @@ describe('LabDetail page', () => {
             displayName: 'Jordan Researcher',
             title: 'Professor of Example Studies',
             primary_department: 'Example Studies',
+            profileUrls: {
+              official: 'https://medicine.yale.edu/profile/jordan-researcher-fixture/',
+            },
           },
         },
       ],
@@ -331,16 +334,55 @@ describe('LabDetail page', () => {
 
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
-    const leadProfessorLabel = screen.getByText('Lead professor');
-    const profileLinks = screen.getAllByRole('link', { name: /Jordan Researcher/ });
+    const principalInvestigatorSection = screen
+      .getByRole('heading', { name: 'Principal Investigator' })
+      .closest('section');
 
-    expect(leadProfessorLabel).toBeTruthy();
-    expect(profileLinks[0].getAttribute('href')).toBe('/profile/fixture.faculty');
+    expect(screen.getByText('Lead professor')).toBeTruthy();
+    // The professor is reached via the action button(s); the name is not a link.
+    expect(screen.queryAllByRole('link', { name: /Jordan Researcher/ })).toHaveLength(0);
+    expect(screen.getAllByText('Jordan Researcher').length).toBeGreaterThan(0);
+    expect(
+      within(principalInvestigatorSection as HTMLElement).queryByRole('link', {
+        name: /Jordan Researcher/,
+      }),
+    ).toBeNull();
     expect(screen.getByText('Professor of Example Studies · Example Studies')).toBeTruthy();
     expect(screen.getByText('Recommended next step')).toBeTruthy();
   });
 
-  it('shows an internal PI profile action when no official external profile URL is available', async () => {
+  it('does not link principal investigators to official faculty profiles from the detail page', async () => {
+    renderLabDetail({
+      ...basePayload,
+      members: [
+        {
+          role: 'pi',
+          user: {
+            netid: 'fs123',
+            publicKey: 'fixture-scholar-pi',
+            fname: 'Fixture',
+            lname: 'Scholar',
+            displayName: 'Fixture Scholar',
+            title: 'Professor of Example Medicine',
+            primary_department: 'Example Medicine',
+            profileUrls: {
+              official: 'https://medicine.yale.edu/profile/fixture-scholar/',
+            },
+          },
+        },
+      ],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(screen.queryAllByRole('link', { name: /Fixture Scholar/ })).toHaveLength(0);
+    expect(
+      document.querySelector('a[href="https://medicine.yale.edu/profile/fixture-scholar/"]'),
+    ).toBeNull();
+    expect(screen.getAllByText('Fixture Scholar').length).toBeGreaterThan(0);
+  });
+
+  it('does not link the PI name even when only an internal profile fallback exists', async () => {
     renderLabDetail({
       ...basePayload,
       group: {
@@ -358,6 +400,8 @@ describe('LabDetail page', () => {
             displayName: 'Jordan Researcher',
             title: 'Professor of Example Studies',
             primary_department: 'Example Studies',
+            internalProfilePath: '/profile/fixture.faculty',
+            website: 'https://jordan-researcher.example.test/',
           },
         },
       ],
@@ -366,9 +410,9 @@ describe('LabDetail page', () => {
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
     expect(screen.queryByRole('link', { name: 'Open official profile' })).toBeNull();
-    expect(screen.getByRole('link', { name: 'View PI profile' }).getAttribute('href')).toBe(
-      '/profile/fixture.faculty',
-    );
+    expect(screen.queryByRole('link', { name: 'View PI profile' })).toBeNull();
+    expect(screen.queryAllByRole('link', { name: /Jordan Researcher/ })).toHaveLength(0);
+    expect(document.querySelector('a[href="/profile/fixture.faculty"]')).toBeNull();
   });
 
   it('labels the sidebar as a contact route instead of repeating next-step language', async () => {
@@ -382,7 +426,10 @@ describe('LabDetail page', () => {
 
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
-    expect(screen.getByRole('heading', { name: 'Contact route' })).toBeTruthy();
+    // The standalone contact-route sidebar was retired; outreach guidance now
+    // lives in the Outreach section.
+    expect(screen.getByRole('heading', { name: 'Outreach' })).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Contact route' })).toBeNull();
     expect(screen.queryByRole('heading', { name: 'Plan your next step' })).toBeNull();
   });
 
@@ -406,7 +453,7 @@ describe('LabDetail page', () => {
 
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
-    expect(screen.getByRole('heading', { name: 'Contact route' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Outreach' })).toBeTruthy();
     fireEvent.click(screen.getAllByRole('button', { name: 'Draft outreach email' })[0]);
 
     expect(screen.getByText('jordan.researcher@yale.edu')).toBeTruthy();
@@ -723,7 +770,6 @@ describe('LabDetail page', () => {
     );
     expect(screen.queryByRole('link', { name: 'Open official route' })).toBeNull();
     expect(screen.queryByText('Co-Director of Graduate Studies')).toBeNull();
-    expect(screen.getByRole('heading', { name: 'Contact route' })).toBeTruthy();
     expect(container.textContent).toContain('What this lab studies');
   });
 
@@ -859,12 +905,13 @@ describe('LabDetail page', () => {
     expect(screen.getByRole('link', { name: 'Visit lab website' }).getAttribute('href')).toBe(
       JOIN_LAB_WEBSITE_URL,
     );
+    // The join page shows once (decision summary). The contact card no longer
+    // repeats the same destination as a duplicate CTA — it defers to the link
+    // already shown in the research summary.
     const officialRouteLinks = screen.getAllByRole('link', { name: 'Open official route' });
-    expect(officialRouteLinks).toHaveLength(2);
-    expect(officialRouteLinks.map((link) => link.getAttribute('href'))).toEqual(
-      expect.arrayContaining([JOIN_PAGE_URL]),
-    );
+    expect(officialRouteLinks).toHaveLength(1);
     expect(officialRouteLinks.every((link) => link.getAttribute('href') === JOIN_PAGE_URL)).toBe(true);
+    expect(screen.queryByRole('link', { name: 'Open contact route' })).toBeNull();
     expect(screen.queryByRole('link', { name: 'Open official profile' })).toBeNull();
   });
 
@@ -910,7 +957,7 @@ describe('LabDetail page', () => {
     expect(screen.getByRole('link', { name: /Example Member Research/ }).getAttribute('href')).toBe(
       '/research/faculty-research-area-example-member',
     );
-    expect(screen.getByText('Faculty research area')).toBeTruthy();
+    expect(screen.getByText('Individual')).toBeTruthy();
   });
 
   it('renders umbrella affiliations for related faculty research areas', async () => {
@@ -1129,7 +1176,7 @@ describe('LabDetail page', () => {
     expect(document.body.textContent).not.toContain('<p><b><span>');
   });
 
-  it('renders member profile publications as recent professor work with a profile handoff', async () => {
+  it('renders member profile publications without synthesizing an internal profile handoff', async () => {
     renderLabDetail({
       ...basePayload,
       members: [
@@ -1170,8 +1217,10 @@ describe('LabDetail page', () => {
       screen.getByRole('link', { name: 'Example systems publication' }).getAttribute('href'),
     ).toBe(EXAMPLE_SYSTEMS_DOI);
     expect(
-      screen.getByRole('link', { name: 'View all research activity on Fixture Scholar’s profile' }).getAttribute('href'),
-    ).toBe('/profile/fixture.scholar?tab=research');
+      screen.queryByRole('link', {
+        name: 'View all research activity on Fixture Scholar’s profile',
+      }),
+    ).toBeNull();
   });
 
   it('deduplicates repeated active member rows before rendering profile cards', async () => {
@@ -1199,6 +1248,48 @@ describe('LabDetail page', () => {
       consoleError.mock.calls.some((call) => String(call[0]).includes('same key')),
     ).toBe(false);
     consoleError.mockRestore();
+  });
+
+  it('deduplicates the same lead person across PI and director rows', async () => {
+    renderLabDetail({
+      ...basePayload,
+      members: [
+        {
+          role: 'pi',
+          user: {
+            publicKey: 'fixture-lead-pi',
+            fname: 'Fixture',
+            lname: 'Lead',
+            displayName: 'Fixture Lead',
+            title: 'Professor of Example Studies',
+            primary_department: 'Example Studies',
+          },
+        },
+        {
+          role: 'director',
+          user: {
+            publicKey: 'fixture-lead-director',
+            fname: 'Fixture',
+            lname: 'Lead',
+            displayName: 'Fixture Lead',
+            title: 'Professor of Example Studies',
+            primary_department: 'Example Studies',
+          },
+        },
+      ],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    const principalInvestigatorSection = screen
+      .getByRole('heading', { name: 'Principal Investigator' })
+      .closest('section');
+
+    expect(principalInvestigatorSection).toBeTruthy();
+    const section = within(principalInvestigatorSection as HTMLElement);
+    expect(section.getAllByText('Fixture Lead')).toHaveLength(1);
+    expect(section.getAllByText('Principal Investigator').length).toBeGreaterThan(0);
+    expect(section.queryByText('Director')).toBeNull();
   });
 
   it('does not render YSM publication chrome as research description or area tags', async () => {

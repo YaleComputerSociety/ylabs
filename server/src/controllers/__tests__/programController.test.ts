@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   addProgramView: vi.fn(),
   addProgramFavorite: vi.fn(),
   removeProgramFavorite: vi.fn(),
+  hasAdminAuthorityForUser: vi.fn(),
 }));
 
 vi.mock('../../services/programService', () => ({
@@ -15,6 +16,10 @@ vi.mock('../../services/programService', () => ({
   addProgramView: mocks.addProgramView,
   addProgramFavorite: mocks.addProgramFavorite,
   removeProgramFavorite: mocks.removeProgramFavorite,
+}));
+
+vi.mock('../../services/adminGrantService', () => ({
+  hasAdminAuthorityForUser: mocks.hasAdminAuthorityForUser,
 }));
 
 import {
@@ -102,17 +107,18 @@ const expectPublicProgram = (payload: any) => {
     programCategory: 'SUMMER_RESEARCH_PROGRAM',
     applicationLink: 'https://example.yale.edu/apply',
     deadline: new Date('2026-02-01T00:00:00.000Z'),
-    contactEmail: 'program@yale.edu',
     sourceName: 'Official program page',
     sourceUrl: 'https://example.yale.edu/program',
     studentVisibilityTier: 'student_ready',
-    studentVisibilityComputedTier: 'student_ready',
-    studentVisibilityReasons: ['public reason'],
   });
+  expect(payload).not.toHaveProperty('contactEmail');
+  expect(payload).not.toHaveProperty('contactPhone');
   expect(payload).not.toHaveProperty('sourceKey');
   expect(payload).not.toHaveProperty('sourceFingerprint');
   expect(payload).not.toHaveProperty('sourceLastVerifiedAt');
   expect(payload).not.toHaveProperty('sourceLastChangedAt');
+  expect(payload).not.toHaveProperty('studentVisibilityComputedTier');
+  expect(payload).not.toHaveProperty('studentVisibilityReasons');
   expect(payload).not.toHaveProperty('studentVisibilityOverrideTier');
   expect(payload).not.toHaveProperty('studentVisibilitySuppressionReason');
   expect(payload).not.toHaveProperty('studentVisibilityComputedAt');
@@ -123,6 +129,8 @@ const expectPublicProgram = (payload: any) => {
   expect(payload).not.toHaveProperty('views');
   expect(payload).not.toHaveProperty('favorites');
   expect(payload).not.toHaveProperty('internalReviewNotes');
+  expect(payload).not.toHaveProperty('createdAt');
+  expect(payload).not.toHaveProperty('updatedAt');
 };
 
 describe('programController search visibility', () => {
@@ -139,6 +147,7 @@ describe('programController search visibility', () => {
     mocks.addProgramView.mockReset();
     mocks.addProgramFavorite.mockReset();
     mocks.removeProgramFavorite.mockReset();
+    mocks.hasAdminAuthorityForUser.mockResolvedValue(false);
   });
 
   it('does not pass nonpublic visibility filters for normal student searches', async () => {
@@ -190,8 +199,63 @@ describe('programController search visibility', () => {
     );
   });
 
+  it('does not coerce object pagination or sort values for public program search', async () => {
+    const res = response();
+    const page = { toString: vi.fn(() => '999999999') };
+    const pageSize = { toString: vi.fn(() => '500') };
+    const sortOrder = { valueOf: vi.fn(() => 1) };
+
+    await searchProgramsController(
+      {
+        query: {
+          query: 'summer',
+          page,
+          pageSize,
+          sortOrder,
+        },
+        user: { userType: 'student' },
+      } as any,
+      res as any,
+    );
+
+    expect(page.toString).not.toHaveBeenCalled();
+    expect(pageSize.toString).not.toHaveBeenCalled();
+    expect(sortOrder.valueOf).not.toHaveBeenCalled();
+    expect(mocks.searchPrograms).toHaveBeenCalledWith(
+      expect.objectContaining({
+        page: 1,
+        pageSize: 20,
+        sortOrder: -1,
+      }),
+    );
+  });
+
+  it('bounds public program search query and filters before querying', async () => {
+    const res = response();
+    const longPurpose = 'x'.repeat(200);
+
+    await searchProgramsController(
+      {
+        query: {
+          query: [` ${'q'.repeat(700)} `],
+          yearOfStudy: Array.from({ length: 60 }, (_, index) => `Year ${index}`).join('|'),
+          purpose: longPurpose,
+        },
+        user: { userType: 'student' },
+      } as any,
+      res as any,
+    );
+
+    const call = mocks.searchPrograms.mock.calls[0][0];
+    expect(call.query).toBe('q'.repeat(512));
+    expect(call.yearOfStudy).toContain('Year 49');
+    expect(call.yearOfStudy).not.toContain('Year 50');
+    expect(call.purpose).toEqual(['x'.repeat(120)]);
+  });
+
   it('passes admin visibility filters for review and suppressed program inspection', async () => {
     const res = response();
+    mocks.hasAdminAuthorityForUser.mockResolvedValue(true);
 
     await searchProgramsController(
       {
@@ -211,6 +275,31 @@ describe('programController search visibility', () => {
         studentVisibilityTier: ['operator_review', 'suppressed'],
         includeOperatorReview: true,
         includeSuppressed: true,
+      }),
+    );
+  });
+
+  it('does not treat legacy admin userType as nonpublic program search authority', async () => {
+    const res = response();
+
+    await searchProgramsController(
+      {
+        query: {
+          studentVisibilityTier: 'operator_review|suppressed',
+          includeOperatorReview: 'true',
+          includeSuppressed: 'true',
+        },
+        user: { netId: 'legacy1', userType: 'admin' },
+      } as any,
+      res as any,
+    );
+
+    expect(mocks.searchPrograms).toHaveBeenCalledWith(
+      expect.objectContaining({
+        includeNonPublic: false,
+        studentVisibilityTier: [],
+        includeOperatorReview: false,
+        includeSuppressed: false,
       }),
     );
   });
@@ -367,6 +456,46 @@ describe('programController search visibility', () => {
     expect(JSON.stringify(payload)).not.toContain('program@yale.edu?bcc=attacker@example.test');
   });
 
+  it('redacts direct contact details from public program text fields', async () => {
+    const res = response();
+    mocks.searchPrograms.mockResolvedValue({
+      programs: [
+        {
+          ...privateProgram,
+          summary: 'Email prose-contact@yale.edu or call 203-555-1212 before applying.',
+          description: 'Questions: office@example.edu.',
+          applicationInformation: 'Call 203.555.3434 for the form.',
+          eligibility: 'Ask hidden@yale.edu about eligibility.',
+          prepSteps: ['Email prep-contact@yale.edu or call 203-555-7777.'],
+          contactPhone: '203-555-9999',
+          contactOffice: 'Office contact: office@example.edu or 203-555-0000.',
+        },
+      ],
+      total: 1,
+      page: 1,
+      pageSize: 20,
+      totalPages: 1,
+    });
+
+    await searchProgramsController(
+      { query: {}, user: { userType: 'student' } } as any,
+      res as any,
+    );
+
+    const payload = res.json.mock.calls[0][0].results[0];
+    expect(payload.summary).toBe('Email [email redacted] or call [phone redacted] before applying.');
+    expect(payload.description).toBe('Questions: [email redacted].');
+    expect(payload.applicationInformation).toBe('Call [phone redacted] for the form.');
+    expect(payload.eligibility).toBe('Ask [email redacted] about eligibility.');
+    expect(payload.prepSteps).toEqual(['Email [email redacted] or call [phone redacted].']);
+    expect(payload.contactPhone).toBeUndefined();
+    expect(payload.contactOffice).toBe('Office contact: [email redacted] or [phone redacted].');
+    expect(JSON.stringify(payload)).not.toContain('prose-contact@yale.edu');
+    expect(JSON.stringify(payload)).not.toContain('prep-contact@yale.edu');
+    expect(JSON.stringify(payload)).not.toContain('office@example.edu');
+    expect(JSON.stringify(payload)).not.toContain('203-555');
+  });
+
   it('allowlists public program detail payloads for normal readers', async () => {
     const res = response();
     mocks.readProgram.mockResolvedValue(privateProgram);
@@ -379,6 +508,27 @@ describe('programController search visibility', () => {
       res as any,
     );
 
+    const body = res.json.mock.calls[0][0];
+    expectPublicProgram(body.program);
+    expectPublicProgram(body.fellowship);
+  });
+
+  it('does not treat legacy admin userType as nonpublic program detail authority', async () => {
+    const res = response();
+    mocks.readProgram.mockResolvedValue(privateProgram);
+
+    await getProgramById(
+      {
+        params: { id: '64a000000000000000000010' },
+        user: { netId: 'legacy1', userType: 'admin' },
+      } as any,
+      res as any,
+    );
+
+    expect(mocks.readProgram).toHaveBeenCalledWith(
+      '64a000000000000000000010',
+      expect.objectContaining({ includeNonPublic: false }),
+    );
     const body = res.json.mock.calls[0][0];
     expectPublicProgram(body.program);
     expectPublicProgram(body.fellowship);

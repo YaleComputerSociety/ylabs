@@ -25,6 +25,7 @@ import {
 } from '../reducers/profilePageReducer';
 import { formatTitleCaseLabel } from '../utils/displayText';
 import { sanitizeFacultyResearchCopy } from '../utils/researchEntityCopy';
+import { safeRouteSegment } from '../utils/url';
 
 type Tab = 'bio' | 'research' | 'courses';
 const VALID_TABS: Tab[] = ['bio', 'research', 'courses'];
@@ -255,7 +256,7 @@ const Profile = () => {
                           <div className="flex flex-wrap items-center gap-2">
                             {entity.slug ? (
                               <Link
-                                to={`/research/${entity.slug}`}
+                                to={`/research/${safeRouteSegment(entity.slug)}`}
                                 className="text-base font-semibold text-blue-800 hover:text-blue-950 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
                               >
                                 {title}

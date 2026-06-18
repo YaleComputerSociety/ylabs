@@ -6,15 +6,23 @@ import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { buildApiUrl } from '../utils/apiBaseUrl';
 
-const normalizeReturnUrl = (value?: string | null): string => {
+const MAX_CAS_RETURN_PATH_LENGTH = 2048;
+
+const normalizeReturnPath = (value?: string | null): string => {
   if (!value) return '';
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > MAX_CAS_RETURN_PATH_LENGTH) return '';
+  if (/[\u0000-\u0020\u007f\\]/.test(trimmed)) return '';
 
   try {
-    const url = new URL(value, window.location.origin);
-    if (url.origin !== window.location.origin) return window.location.origin;
-    return url.toString();
+    const url = new URL(trimmed, window.location.origin);
+    if (url.origin !== window.location.origin) return '';
+    const path = `${url.pathname}${url.search}${url.hash}`;
+    if (!path.startsWith('/') || path.startsWith('//')) return '';
+    if (/^\/%(?:2f|5c)/i.test(path) || /%(?:0a|0d)/i.test(path)) return '';
+    return path;
   } catch {
-    return window.location.origin;
+    return '';
   }
 };
 
@@ -28,14 +36,13 @@ const SignInButton = ({ label = 'Sign in with Yale CAS' }: SignInButtonProps) =>
   const locationState = location.state as { from?: string } | null;
 
   useEffect(() => {
-    const savedPath = localStorage.getItem('logoutReturnPath');
-    const returnUrl = normalizeReturnUrl(savedPath || locationState?.from);
+    const savedPath = sessionStorage.getItem('logoutReturnPath');
+    const returnPath = normalizeReturnPath(savedPath || locationState?.from);
 
-    if (returnUrl) {
-      setRedirectParam(`?redirect=${encodeURIComponent(returnUrl)}`);
-    }
+    setRedirectParam(returnPath ? `?redirect=${encodeURIComponent(returnPath)}` : '');
 
-    if (savedPath) localStorage.removeItem('logoutReturnPath');
+    if (savedPath) sessionStorage.removeItem('logoutReturnPath');
+    localStorage.removeItem('logoutReturnPath');
   }, [locationState?.from]);
 
   const finalUrl = buildApiUrl(`/cas${redirectParam}`);

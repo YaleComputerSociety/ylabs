@@ -14,6 +14,7 @@ import FavoritesManager from '../components/accounts/FavoritesManager';
 import SavedPathwaysSection from '../components/accounts/SavedPathwaysSection';
 import PlanningOverview from '../components/accounts/PlanningOverview';
 import useDocumentTitle from '../hooks/useDocumentTitle';
+import { safeRouteSegment } from '../utils/url';
 
 type PlanningSummary = {
   count: number;
@@ -86,7 +87,7 @@ const Account = () => {
               </div>
               {user?.netId && (
                 <Link
-                  to={`/profile/${user.netId}`}
+                  to={`/profile/${safeRouteSegment(user.netId)}`}
                   className="inline-flex min-h-[44px] items-center justify-center rounded-md border border-blue-200 bg-[var(--yr-blue-soft)] px-4 py-2 text-sm font-semibold text-[var(--yr-blue)] hover:bg-[var(--yr-panel)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
                 >
                   View public profile

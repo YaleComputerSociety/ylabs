@@ -17,9 +17,6 @@ const mockedAxios = axios as unknown as {
 };
 
 const baseOpportunity: OpportunityDetailPayload = {
-  _id: 'opportunity-1',
-  entryPathwayId: 'pathway-1',
-  researchEntityId: 'entity-1',
   title: 'Spring RA role',
   term: 'Spring 2026',
   deadline: '2026-02-01T00:00:00.000Z',
@@ -36,7 +33,6 @@ const baseOpportunity: OpportunityDetailPayload = {
   eligibility: 'Open to Yale undergraduates.',
   sourceUrls: ['https://source.example.edu/posting'],
   researchEntity: {
-    _id: 'entity-1',
     slug: 'example-lab',
     name: 'Example Lab',
     displayName: 'Example Lab',
@@ -47,7 +43,6 @@ const baseOpportunity: OpportunityDetailPayload = {
     shortDescription: 'Studies practical systems.',
   },
   pathway: {
-    _id: 'pathway-1',
     pathwayType: 'POSTED_ROLE',
     status: 'ACTIVE',
     evidenceStrength: 'DIRECT',
@@ -60,7 +55,6 @@ const baseOpportunity: OpportunityDetailPayload = {
   },
   evidence: [
     {
-      _id: 'evidence-1',
       sourceName: 'legacy-listing',
       sourceUrl: 'https://source.example.edu/posting',
       field: 'postedOpportunity',
@@ -110,8 +104,6 @@ describe('OpportunityDetail page', () => {
     const { container } = renderOpportunity(
       {
         ...baseOpportunity,
-        _id: 'opportunity-2',
-        listingId: undefined,
         status: 'CLOSED',
         deadlineState: 'PAST',
         applicationUrl: undefined,
@@ -143,7 +135,6 @@ describe('OpportunityDetail page', () => {
   it('renders even when optional evidence is missing from payload', async () => {
     const payloadWithoutEvidence = {
       ...baseOpportunity,
-      _id: 'opportunity-3',
       evidence: undefined,
     } as unknown as OpportunityDetailPayload;
 

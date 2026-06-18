@@ -13,6 +13,8 @@ import {
   repairActionForStage,
   type VisibilityRepairPlan,
 } from './visibilityRepairQueueService';
+import { resolveSafeJsonReportOutputPath } from '../scripts/scriptWriteGuards';
+import { serializedDocumentId } from '../utils/idSerialization';
 
 export type QueueKind = 'blocking' | 'evidence' | 'review';
 export type PromotionStatus = 'ready' | 'watch' | 'blocked';
@@ -51,6 +53,36 @@ export const PROMOTION_COPY_DRY_RUN_REPORT_MAX_AGE_HOURS = GATE_SCORECARD_MAX_AG
 
 const BETA_COMMAND_PREFIX = 'SCRAPER_ENV=beta ';
 const SAVED_ARTIFACT_READ_ERROR = 'Saved artifact is not readable';
+const UNSAFE_ARTIFACT_PATH = '[unsafe artifact path]';
+const MAX_GATE_ARTIFACT_BYTES = 2 * 1024 * 1024;
+
+function operatorBoardDocumentId(value: unknown): string {
+  return serializedDocumentId(value) || '';
+}
+
+function resolveGateArtifactReadPath(artifactPath: string): string | undefined {
+  try {
+    return resolveSafeJsonReportOutputPath(artifactPath, 'artifact path');
+  } catch {
+    return undefined;
+  }
+}
+
+function invalidArtifactPath() {
+  return {
+    artifactStatus: 'invalid' as const,
+    artifactPath: UNSAFE_ARTIFACT_PATH,
+    error: 'Saved artifact path is outside the allowed report artifact roots',
+  };
+}
+
+function readGateArtifactJson(safeArtifactPath: string): any {
+  const stat = fs.statSync(safeArtifactPath);
+  if (!stat.isFile() || stat.size > MAX_GATE_ARTIFACT_BYTES) {
+    throw new Error(SAVED_ARTIFACT_READ_ERROR);
+  }
+  return JSON.parse(fs.readFileSync(safeArtifactPath, 'utf8'));
+}
 
 function betaTargetCommand(command: string): string {
   const trimmed = command.trim();
@@ -320,21 +352,27 @@ const evidenceReasons = new Set([
   'undergraduate_relevant',
 ]);
 
+const reviewDecisionReasons = new Set([
+  'application_source_only',
+  'archive_review',
+  'duplicate_name_risk',
+  'duplicate_risk',
+  'exact_url_duplicate_risk',
+  'formalization_only',
+  'not_undergraduate_relevant',
+]);
+
 export function classifyOperatorQueueReason(reason: string): QueueKind {
   if (evidenceReasons.has(reason)) return 'evidence';
+  if (reviewDecisionReasons.has(reason)) return 'review';
   if (
     reason.startsWith('missing_') ||
-    reason.endsWith('_only') ||
     [
-      'application_source_only',
-      'archive_review',
       'content_page_risk',
-      'duplicate_name_risk',
-      'duplicate_risk',
       'inactive_at_yale',
       'missing_card_description',
-      'not_undergraduate_relevant',
       'pi_identity_conflict',
+      'profile_fallback_only',
       'thin_description',
     ].includes(reason)
   ) {
@@ -350,7 +388,7 @@ export function summarizeDryRunPosture(runs: any[]) {
   const compact = (run: any | undefined) =>
     run
       ? {
-          id: String(run._id),
+          id: operatorBoardDocumentId(run._id),
           sourceName: run.sourceName,
           status: run.status,
           startedAt: run.startedAt?.toISOString?.() || run.startedAt,
@@ -663,54 +701,56 @@ export function readPromotionCopyDryRunArtifact(
   artifactPath = DEFAULT_PROMOTION_COPY_DRY_RUN_REPORT_PATH,
   now = new Date(),
 ): PromotionCopyDryRunArtifact | undefined {
-  if (!artifactPath || !fs.existsSync(artifactPath)) {
+  const safeArtifactPath = resolveGateArtifactReadPath(artifactPath);
+  if (!safeArtifactPath) return invalidArtifactPath();
+  if (!fs.existsSync(safeArtifactPath)) {
     return undefined;
   }
 
   try {
-    const stat = fs.statSync(artifactPath);
+    const stat = fs.statSync(safeArtifactPath);
     const ageHours = Math.floor((now.getTime() - stat.mtime.getTime()) / (60 * 60 * 1000));
     if (ageHours > PROMOTION_COPY_DRY_RUN_REPORT_MAX_AGE_HOURS) {
       return {
         artifactStatus: 'stale',
-        artifactPath,
+        artifactPath: safeArtifactPath,
         ageHours,
       };
     }
 
-    const parsed = JSON.parse(fs.readFileSync(artifactPath, 'utf8'));
+    const parsed = readGateArtifactJson(safeArtifactPath);
     if (parsed?.mode !== 'dry-run') {
       return {
         artifactStatus: 'invalid',
-        artifactPath,
+        artifactPath: safeArtifactPath,
         error: 'mode must be dry-run',
       };
     }
     if (typeof parsed.datasetVersion !== 'string') {
       return {
         artifactStatus: 'invalid',
-        artifactPath,
+        artifactPath: safeArtifactPath,
         error: 'datasetVersion is required',
       };
     }
     if (typeof parsed.syntheticReferenceBlockersClear !== 'boolean') {
       return {
         artifactStatus: 'invalid',
-        artifactPath,
+        artifactPath: safeArtifactPath,
         error: 'syntheticReferenceBlockersClear is required',
       };
     }
     if (!Array.isArray(parsed.applyBlockers)) {
       return {
         artifactStatus: 'invalid',
-        artifactPath,
+        artifactPath: safeArtifactPath,
         error: 'applyBlockers must be an array',
       };
     }
 
     return {
       artifactStatus: 'loaded',
-      artifactPath,
+      artifactPath: safeArtifactPath,
       datasetVersion: parsed.datasetVersion,
       syntheticReferenceBlockersClear: parsed.syntheticReferenceBlockersClear,
       applyBlockerCount: parsed.applyBlockers.length,
@@ -722,7 +762,7 @@ export function readPromotionCopyDryRunArtifact(
   } catch (error) {
     return {
       artifactStatus: 'invalid',
-      artifactPath,
+      artifactPath: safeArtifactPath,
       error: SAVED_ARTIFACT_READ_ERROR,
     };
   }
@@ -732,16 +772,18 @@ export function readBetaRepairQueueGateArtifact(
   artifactPath = DEFAULT_BETA_REPAIR_QUEUE_REPORT_PATH,
   now = new Date(),
 ): BetaRepairQueueGateArtifact | undefined {
-  if (!artifactPath || !fs.existsSync(artifactPath)) {
+  const safeArtifactPath = resolveGateArtifactReadPath(artifactPath);
+  if (!safeArtifactPath) return invalidArtifactPath();
+  if (!fs.existsSync(safeArtifactPath)) {
     return undefined;
   }
 
   try {
-    const parsed = JSON.parse(fs.readFileSync(artifactPath, 'utf8'));
+    const parsed = readGateArtifactJson(safeArtifactPath);
     if (parsed?.mode !== 'dry-run' && parsed?.mode !== 'apply') {
       return {
         artifactStatus: 'invalid',
-        artifactPath,
+        artifactPath: safeArtifactPath,
         error: 'mode must be dry-run or apply',
       };
     }
@@ -753,7 +795,7 @@ export function readBetaRepairQueueGateArtifact(
       if (Number.isNaN(generatedAtTime)) {
         return {
           artifactStatus: 'invalid',
-          artifactPath,
+          artifactPath: safeArtifactPath,
           error: 'generatedAt must be an ISO timestamp when present',
         };
       }
@@ -761,7 +803,7 @@ export function readBetaRepairQueueGateArtifact(
       if (ageHours > BETA_REPAIR_QUEUE_REPORT_MAX_AGE_HOURS) {
         return {
           artifactStatus: 'stale',
-          artifactPath,
+          artifactPath: safeArtifactPath,
           generatedAt,
           ageHours,
         };
@@ -770,7 +812,7 @@ export function readBetaRepairQueueGateArtifact(
 
     return {
       artifactStatus: 'loaded',
-      artifactPath,
+      artifactPath: safeArtifactPath,
       generatedAt,
       ageHours,
       mode: parsed.mode,
@@ -785,7 +827,7 @@ export function readBetaRepairQueueGateArtifact(
   } catch (error) {
     return {
       artifactStatus: 'invalid',
-      artifactPath,
+      artifactPath: safeArtifactPath,
       error: SAVED_ARTIFACT_READ_ERROR,
     };
   }
@@ -929,12 +971,14 @@ export function readDataQualityGateArtifact(
   artifactPath = DEFAULT_DATA_QUALITY_SCORECARD_PATH,
   now = new Date(),
 ): DataQualityGateArtifact | undefined {
-  if (!artifactPath || !fs.existsSync(artifactPath)) {
+  const safeArtifactPath = resolveGateArtifactReadPath(artifactPath);
+  if (!safeArtifactPath) return invalidArtifactPath();
+  if (!fs.existsSync(safeArtifactPath)) {
     return undefined;
   }
 
   try {
-    const parsed = JSON.parse(fs.readFileSync(artifactPath, 'utf8'));
+    const parsed = readGateArtifactJson(safeArtifactPath);
     const summary = parsed?.summary;
     if (
       typeof summary?.promotionReady !== 'boolean' ||
@@ -942,7 +986,7 @@ export function readDataQualityGateArtifact(
     ) {
       return {
         artifactStatus: 'invalid',
-        artifactPath,
+        artifactPath: safeArtifactPath,
         error: 'summary.promotionReady and summary.promotionBlockerCount are required',
       };
     }
@@ -952,7 +996,7 @@ export function readDataQualityGateArtifact(
       if (Number.isNaN(generatedAtTime)) {
         return {
           artifactStatus: 'invalid',
-          artifactPath,
+          artifactPath: safeArtifactPath,
           error: 'generatedAt must be an ISO timestamp when present',
         };
       }
@@ -960,7 +1004,7 @@ export function readDataQualityGateArtifact(
       if (ageHours > DATA_QUALITY_SCORECARD_MAX_AGE_HOURS) {
         return {
           artifactStatus: 'stale',
-          artifactPath,
+          artifactPath: safeArtifactPath,
           generatedAt,
           ageHours,
         };
@@ -968,7 +1012,7 @@ export function readDataQualityGateArtifact(
     }
     return {
       artifactStatus: 'loaded',
-      artifactPath,
+      artifactPath: safeArtifactPath,
       generatedAt,
       promotionReady: summary.promotionReady,
       promotionBlockerCount: summary.promotionBlockerCount,
@@ -990,7 +1034,7 @@ export function readDataQualityGateArtifact(
   } catch (error) {
     return {
       artifactStatus: 'invalid',
-      artifactPath,
+      artifactPath: safeArtifactPath,
       error: SAVED_ARTIFACT_READ_ERROR,
     };
   }
@@ -1206,12 +1250,16 @@ function normalizeAcceptedDecisionValidation(
 
   const outputPath = handoff.outputPath;
   if (!outputPath) return handoff;
-  if (!fs.existsSync(outputPath)) {
+  const safeOutputPath = resolveGateArtifactReadPath(outputPath);
+  if (!safeOutputPath) {
+    return { ...handoff, artifactAvailable: false };
+  }
+  if (!fs.existsSync(safeOutputPath)) {
     return { ...handoff, artifactAvailable: false };
   }
 
   try {
-    const parsed = JSON.parse(fs.readFileSync(outputPath, 'utf8'));
+    const parsed = readGateArtifactJson(safeOutputPath);
     const validation = parsed?.reviewDecisionValidation;
     if (!validation || typeof validation !== 'object') {
       return { ...handoff, artifactAvailable: false };
@@ -1297,16 +1345,18 @@ export function readScraperIntegrityGateArtifact(
   artifactPath = DEFAULT_SCRAPER_INTEGRITY_SCORECARD_PATH,
   now = new Date(),
 ): ScraperIntegrityGateArtifact | undefined {
-  if (!artifactPath || !fs.existsSync(artifactPath)) {
+  const safeArtifactPath = resolveGateArtifactReadPath(artifactPath);
+  if (!safeArtifactPath) return invalidArtifactPath();
+  if (!fs.existsSync(safeArtifactPath)) {
     return undefined;
   }
 
   try {
-    const parsed = JSON.parse(fs.readFileSync(artifactPath, 'utf8'));
+    const parsed = readGateArtifactJson(safeArtifactPath);
     if (parsed?.status !== 'pass' && parsed?.status !== 'failure') {
       return {
         artifactStatus: 'invalid',
-        artifactPath,
+        artifactPath: safeArtifactPath,
         error: 'status must be pass or failure',
       };
     }
@@ -1317,7 +1367,7 @@ export function readScraperIntegrityGateArtifact(
       if (Number.isNaN(generatedAtTime)) {
         return {
           artifactStatus: 'invalid',
-          artifactPath,
+          artifactPath: safeArtifactPath,
           error: 'generatedAt must be an ISO timestamp when present',
         };
       }
@@ -1325,7 +1375,7 @@ export function readScraperIntegrityGateArtifact(
       if (ageHours > SCRAPER_INTEGRITY_SCORECARD_MAX_AGE_HOURS) {
         return {
           artifactStatus: 'stale',
-          artifactPath,
+          artifactPath: safeArtifactPath,
           generatedAt,
           ageHours,
         };
@@ -1334,7 +1384,7 @@ export function readScraperIntegrityGateArtifact(
 
     return {
       artifactStatus: 'loaded',
-      artifactPath,
+      artifactPath: safeArtifactPath,
       generatedAt,
       integrityStatus: parsed.status,
       failureNames: Array.isArray(parsed.failureNames)
@@ -1350,7 +1400,7 @@ export function readScraperIntegrityGateArtifact(
   } catch (error) {
     return {
       artifactStatus: 'invalid',
-      artifactPath,
+      artifactPath: safeArtifactPath,
       error: SAVED_ARTIFACT_READ_ERROR,
     };
   }
@@ -1466,16 +1516,18 @@ export function readLaunchTrustGateArtifact(
   artifactPath = DEFAULT_LAUNCH_TRUST_SCORECARD_PATH,
   now = new Date(),
 ): LaunchTrustGateArtifact | undefined {
-  if (!artifactPath || !fs.existsSync(artifactPath)) {
+  const safeArtifactPath = resolveGateArtifactReadPath(artifactPath);
+  if (!safeArtifactPath) return invalidArtifactPath();
+  if (!fs.existsSync(safeArtifactPath)) {
     return undefined;
   }
 
   try {
-    const parsed = JSON.parse(fs.readFileSync(artifactPath, 'utf8'));
+    const parsed = readGateArtifactJson(safeArtifactPath);
     if (typeof parsed?.pass !== 'boolean' || typeof parsed?.counts !== 'object') {
       return {
         artifactStatus: 'invalid',
-        artifactPath,
+        artifactPath: safeArtifactPath,
         error: 'pass and counts are required',
       };
     }
@@ -1486,7 +1538,7 @@ export function readLaunchTrustGateArtifact(
       if (Number.isNaN(generatedAtTime)) {
         return {
           artifactStatus: 'invalid',
-          artifactPath,
+          artifactPath: safeArtifactPath,
           error: 'generatedAt must be an ISO timestamp when present',
         };
       }
@@ -1494,7 +1546,7 @@ export function readLaunchTrustGateArtifact(
       if (ageHours > LAUNCH_TRUST_SCORECARD_MAX_AGE_HOURS) {
         return {
           artifactStatus: 'stale',
-          artifactPath,
+          artifactPath: safeArtifactPath,
           generatedAt,
           ageHours,
         };
@@ -1503,7 +1555,7 @@ export function readLaunchTrustGateArtifact(
 
     return {
       artifactStatus: 'loaded',
-      artifactPath,
+      artifactPath: safeArtifactPath,
       generatedAt,
       pass: parsed.pass,
       heldCount: Number(parsed.counts.held || 0),
@@ -1523,7 +1575,7 @@ export function readLaunchTrustGateArtifact(
   } catch (error) {
     return {
       artifactStatus: 'invalid',
-      artifactPath,
+      artifactPath: safeArtifactPath,
       error: SAVED_ARTIFACT_READ_ERROR,
     };
   }
@@ -1533,12 +1585,14 @@ export function readLaunchReviewExceptionsArtifact(
   artifactPath = DEFAULT_LAUNCH_REVIEW_EXCEPTIONS_REPORT_PATH,
   now = new Date(),
 ): LaunchReviewExceptionsArtifact | undefined {
-  if (!artifactPath || !fs.existsSync(artifactPath)) {
+  const safeArtifactPath = resolveGateArtifactReadPath(artifactPath);
+  if (!safeArtifactPath) return invalidArtifactPath();
+  if (!fs.existsSync(safeArtifactPath)) {
     return undefined;
   }
 
   try {
-    const parsed = JSON.parse(fs.readFileSync(artifactPath, 'utf8'));
+    const parsed = readGateArtifactJson(safeArtifactPath);
     if (
       typeof parsed?.reviewExceptionCount !== 'number' ||
       typeof parsed?.planSummary !== 'object' ||
@@ -1546,7 +1600,7 @@ export function readLaunchReviewExceptionsArtifact(
     ) {
       return {
         artifactStatus: 'invalid',
-        artifactPath,
+        artifactPath: safeArtifactPath,
         error: 'reviewExceptionCount, planSummary, and reviewDecisionValidation are required',
       };
     }
@@ -1557,7 +1611,7 @@ export function readLaunchReviewExceptionsArtifact(
       if (Number.isNaN(generatedAtTime)) {
         return {
           artifactStatus: 'invalid',
-          artifactPath,
+          artifactPath: safeArtifactPath,
           error: 'generatedAt must be an ISO timestamp when present',
         };
       }
@@ -1565,7 +1619,7 @@ export function readLaunchReviewExceptionsArtifact(
       if (ageHours > LAUNCH_REVIEW_EXCEPTIONS_REPORT_MAX_AGE_HOURS) {
         return {
           artifactStatus: 'stale',
-          artifactPath,
+          artifactPath: safeArtifactPath,
           generatedAt,
           ageHours,
         };
@@ -1574,7 +1628,7 @@ export function readLaunchReviewExceptionsArtifact(
 
     return {
       artifactStatus: 'loaded',
-      artifactPath,
+      artifactPath: safeArtifactPath,
       generatedAt,
       reviewExceptionCount: Number(parsed.reviewExceptionCount || 0),
       plannedCount: Number(parsed.planSummary.plannedCount || 0),
@@ -1587,7 +1641,7 @@ export function readLaunchReviewExceptionsArtifact(
   } catch (error) {
     return {
       artifactStatus: 'invalid',
-      artifactPath,
+      artifactPath: safeArtifactPath,
       error: SAVED_ARTIFACT_READ_ERROR,
     };
   }
@@ -1664,16 +1718,18 @@ export function readLaunchAcquisitionGateArtifact(
   artifactPath = DEFAULT_LAUNCH_ACQUISITION_REPORT_PATH,
   now = new Date(),
 ): LaunchAcquisitionGateArtifact | undefined {
-  if (!artifactPath || !fs.existsSync(artifactPath)) {
+  const safeArtifactPath = resolveGateArtifactReadPath(artifactPath);
+  if (!safeArtifactPath) return invalidArtifactPath();
+  if (!fs.existsSync(safeArtifactPath)) {
     return undefined;
   }
 
   try {
-    const parsed = JSON.parse(fs.readFileSync(artifactPath, 'utf8'));
+    const parsed = readGateArtifactJson(safeArtifactPath);
     if (parsed?.mode !== 'read-only' || typeof parsed?.scanned !== 'number') {
       return {
         artifactStatus: 'invalid',
-        artifactPath,
+        artifactPath: safeArtifactPath,
         error: 'mode=read-only and scanned are required',
       };
     }
@@ -1684,7 +1740,7 @@ export function readLaunchAcquisitionGateArtifact(
       if (Number.isNaN(generatedAtTime)) {
         return {
           artifactStatus: 'invalid',
-          artifactPath,
+          artifactPath: safeArtifactPath,
           error: 'generatedAt must be an ISO timestamp when present',
         };
       }
@@ -1692,7 +1748,7 @@ export function readLaunchAcquisitionGateArtifact(
       if (ageHours > LAUNCH_ACQUISITION_REPORT_MAX_AGE_HOURS) {
         return {
           artifactStatus: 'stale',
-          artifactPath,
+          artifactPath: safeArtifactPath,
           generatedAt,
           ageHours,
         };
@@ -1703,7 +1759,7 @@ export function readLaunchAcquisitionGateArtifact(
     const actionGroups = parsed.actionEvidence?.groups || {};
     return {
       artifactStatus: 'loaded',
-      artifactPath,
+      artifactPath: safeArtifactPath,
       generatedAt,
       scanned: Number(parsed.scanned || 0),
       piBlockers: Number(parsed.piIdentity?.total || 0),
@@ -1721,7 +1777,7 @@ export function readLaunchAcquisitionGateArtifact(
   } catch (error) {
     return {
       artifactStatus: 'invalid',
-      artifactPath,
+      artifactPath: safeArtifactPath,
       error: SAVED_ARTIFACT_READ_ERROR,
     };
   }
@@ -1818,9 +1874,10 @@ async function samplePrograms(match: Record<string, unknown>, limit = 3) {
 }
 
 function compactResearchSample(row: any) {
+  const id = operatorBoardDocumentId(row._id);
   return {
-    id: String(row._id),
-    label: row.name || row.slug || String(row._id),
+    id,
+    label: row.name || row.slug || id || '[unknown research]',
     tier: row.studentVisibilityTier,
     reasons: row.studentVisibilityReasons || [],
     sourceUrl: row.websiteUrl || row.sourceUrls?.[0] || '',
@@ -1829,9 +1886,10 @@ function compactResearchSample(row: any) {
 }
 
 function compactProgramSample(row: any) {
+  const id = operatorBoardDocumentId(row._id);
   return {
-    id: String(row._id),
-    label: row.title || String(row._id),
+    id,
+    label: row.title || id || '[unknown program]',
     tier: row.studentVisibilityTier,
     reasons: row.studentVisibilityReasons || [],
     sourceUrl: row.sourceUrl || '',
@@ -1943,7 +2001,7 @@ async function buildReleaseQueueSummary() {
     topBlockers: blockerRows,
     sourcePressure: sourceRows,
     samples: samples.map((sample: any) => ({
-      id: String(sample._id),
+      id: operatorBoardDocumentId(sample._id),
       collection: sample.collection,
       recordId: sample.recordId,
       label: sample.label,
@@ -2006,7 +2064,7 @@ async function buildRepairQueueSummary() {
     samples: samples.map((sample: any, index: number) => {
       const plan = plannedSamples[index];
       return {
-        id: String(sample._id),
+        id: operatorBoardDocumentId(sample._id),
         collection: sample.collection,
         recordId: sample.recordId,
         label: sample.label,
@@ -2140,14 +2198,24 @@ const GATE_ARTIFACT_SOURCES: Array<{ gate: string; envVar: string; defaultPath: 
 export function buildGateArtifactFreshness(now = new Date()): GateArtifactFreshness[] {
   const maxAgeHours = GATE_SCORECARD_MAX_AGE_HOURS;
   return GATE_ARTIFACT_SOURCES.map(({ gate, envVar, defaultPath }) => {
-    const path = process.env[envVar] || defaultPath;
+    const configuredPath = process.env[envVar] || defaultPath;
+    const path = resolveGateArtifactReadPath(configuredPath);
+    if (!path) {
+      return {
+        gate,
+        path: UNSAFE_ARTIFACT_PATH,
+        maxAgeHours,
+        exists: false,
+        status: 'unreadable' as const,
+      };
+    }
     const base = { gate, path, maxAgeHours };
-    if (!path || !fs.existsSync(path)) {
+    if (!fs.existsSync(path)) {
       return { ...base, exists: false, status: 'missing' as const };
     }
     try {
       const stat = fs.statSync(path);
-      const parsed = JSON.parse(fs.readFileSync(path, 'utf8'));
+      const parsed = readGateArtifactJson(path);
       const generatedAt = typeof parsed.generatedAt === 'string' ? parsed.generatedAt : undefined;
       const generatedAtTime = generatedAt ? new Date(generatedAt).getTime() : stat.mtime.getTime();
       const resolvedTime = Number.isNaN(generatedAtTime) ? stat.mtime.getTime() : generatedAtTime;

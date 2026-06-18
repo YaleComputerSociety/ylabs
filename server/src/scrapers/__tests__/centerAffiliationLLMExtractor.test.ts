@@ -6,6 +6,7 @@ import { describe, it, expect, vi } from 'vitest';
 import {
   CenterAffiliationLLMExtractor,
   affiliationExtractionToObservations,
+  normalizeCenterAffiliationObjectId,
   type CandidateCenter,
 } from '../sources/centerAffiliationLLMExtractor';
 import type { ScraperContext, ObservationInput } from '../types';
@@ -75,6 +76,18 @@ describe('affiliationExtractionToObservations', () => {
 });
 
 describe('CenterAffiliationLLMExtractor.run', () => {
+  it('normalizes center affiliation ObjectIds without object-shaped coercion', () => {
+    expect(normalizeCenterAffiliationObjectId(' 507f1f77bcf86cd799439011 ')).toBe(
+      '507f1f77bcf86cd799439011',
+    );
+    expect(normalizeCenterAffiliationObjectId('abcdefghijkl')).toBeUndefined();
+    expect(
+      normalizeCenterAffiliationObjectId({
+        toString: () => '507f1f77bcf86cd799439011',
+      }),
+    ).toBeUndefined();
+  });
+
   const center: CandidateCenter = {
     _id: 'abc',
     slug: 'center-jackson-centers-blue-center',

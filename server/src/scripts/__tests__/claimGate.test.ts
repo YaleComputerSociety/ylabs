@@ -85,6 +85,12 @@ describe('claimGate CLI helpers', () => {
     expect(() => parseClaimGateArgs(['--output', '--include-samples'])).toThrow(
       '--output requires a value',
     );
+    expect(() => parseClaimGateArgs(['--output=/var/tmp/claim-gate.json'])).toThrow(
+      /--output must write under/,
+    );
+    expect(() => parseClaimGateArgs(['--output=/tmp/claim-gate.txt'])).toThrow(
+      /--output must point to a \.json report file/,
+    );
     expect(() => parseClaimGateArgs(['--collection', '--strict'])).toThrow(
       '--collection requires a value',
     );
@@ -95,6 +101,12 @@ describe('claimGate CLI helpers', () => {
       '--limit must be a positive integer',
     );
     expect(() => parseClaimGateArgs(['prod'])).toThrow('Unknown claim-gate option: prod');
+  });
+
+  it('rejects unsafe claim-gate output writes', () => {
+    expect(() => writeClaimGateOutput({ ok: true }, '/var/tmp/claim-gate.json')).toThrow(
+      /--output must write under/,
+    );
   });
 
   it('fails strict mode only when rejected claims exist', () => {

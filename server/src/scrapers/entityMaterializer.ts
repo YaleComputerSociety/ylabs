@@ -9,7 +9,7 @@ import mongoose from 'mongoose';
 import { Observation, ObservedEntityType } from '../models/observation';
 import { Paper } from '../models/paper';
 import { PaperAuthor } from '../models/paperAuthor';
-import { User } from '../models/user';
+import { User, normalizeUserType } from '../models/user';
 import { ResearchEntity } from '../models/researchEntity';
 import { ResearchGroupMember } from '../models/researchGroupMember';
 import { ResearchEntityRelationship } from '../models/researchEntityRelationship';
@@ -33,6 +33,8 @@ import {
   normalizePaperAuthorshipEvidence,
 } from './paperAuthorshipPolicy';
 import { cleanPublicProfileBio } from '../services/profileService';
+import { serializedDocumentId } from '../utils/idSerialization';
+import { sanitizeLogValue } from '../utils/logSanitizer';
 
 interface MaterializeOptions {
   dryRun?: boolean;
@@ -66,6 +68,23 @@ const PUBLIC_QUOTE_FIELDS = new Set([
   'undergradConstraintQuote',
 ]);
 const MATERIALIZER_MANAGED_FIELDS = new Set(['lastObservedAt']);
+const MATERIALIZER_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
+
+export function normalizeMaterializerObjectId(value: unknown): string | undefined {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return MATERIALIZER_OBJECT_ID_RE.test(trimmed) ? trimmed : undefined;
+  }
+  if (value instanceof mongoose.Types.ObjectId) return value.toHexString();
+  return undefined;
+}
+
+const materializerDocumentId = (value: unknown): string => serializedDocumentId(value) || '';
+
+function toMaterializerObjectId(value: unknown): mongoose.Types.ObjectId | undefined {
+  const id = normalizeMaterializerObjectId(value);
+  return id ? new mongoose.Types.ObjectId(id) : undefined;
+}
 
 export type MaterializerObservationLike = {
   _id?: unknown;
@@ -274,8 +293,8 @@ export function buildOfficialProfileScholarlyLinkUpserts(
   userId: string,
   observations: MaterializerObservationLike[],
 ): any[] {
-  if (!mongoose.Types.ObjectId.isValid(userId)) return [];
-  const userObjectId = new mongoose.Types.ObjectId(userId);
+  const userObjectId = toMaterializerObjectId(userId);
+  if (!userObjectId) return [];
   const ops: any[] = [];
   const seen = new Set<string>();
 
@@ -371,6 +390,9 @@ function materializedFieldValue(
   if (isResearchEntityObservationType(entityType) && PUBLIC_QUOTE_FIELDS.has(field) && typeof value === 'string') {
     return redactDirectContactInfo(value);
   }
+  if (entityType === 'user' && field === 'userType') {
+    return normalizeUserType(value);
+  }
   return value;
 }
 
@@ -447,7 +469,9 @@ export function buildInferredPiMemberUpsert(
     }
   | null {
   const userId = String(observation.value || '').trim();
-  if (!mongoose.Types.ObjectId.isValid(researchEntityId) || !mongoose.Types.ObjectId.isValid(userId)) {
+  const safeResearchEntityId = normalizeMaterializerObjectId(researchEntityId);
+  const safeUserId = normalizeMaterializerObjectId(userId);
+  if (!safeResearchEntityId || !safeUserId) {
     return null;
   }
   const observedAt = observation.observedAt || new Date();
@@ -457,16 +481,16 @@ export function buildInferredPiMemberUpsert(
 
   return {
     filter: {
-      researchEntityId,
-      userId,
+      researchEntityId: safeResearchEntityId,
+      userId: safeUserId,
       role: 'pi',
       isCurrentMember: true,
     },
     update: {
       $set: {
-        researchEntityId,
-        researchGroupId: researchEntityId,
-        userId,
+        researchEntityId: safeResearchEntityId,
+        researchGroupId: safeResearchEntityId,
+        userId: safeUserId,
         role: 'pi',
         isCurrentMember: true,
         sourceUrl,
@@ -565,7 +589,7 @@ export function buildResearchGroupMemberUpsert(
 ):
   | ResearchGroupMemberMaterializationPatch
   | null {
-  if (!mongoose.Types.ObjectId.isValid(researchEntityId)) return null;
+  if (!normalizeMaterializerObjectId(researchEntityId)) return null;
   const role = normalizeMemberRole(resolved.role?.value);
   if (!role) return null;
   const name = textValue(resolved.name?.value) || memberNameFromInferredUserName(resolved.inferredUserName?.value);
@@ -680,12 +704,13 @@ async function materializeResearchGroupMember(
     };
   }
 
+  const researchEntityId = normalizeMaterializerObjectId(entity._id) || '';
   const user = await findUniqueUserForResearchGroupMember(resolved);
-  const patch = buildResearchGroupMemberUpsert(String(entity._id), resolved, user);
+  const patch = buildResearchGroupMemberUpsert(researchEntityId, resolved, user);
   if (!patch) {
     return {
       entityType: 'researchGroupMember',
-      entityId: String(entity._id),
+      entityId: materializerDocumentId(entity._id),
       entityKey: identifier.entityKey,
       fieldsWritten: 0,
       conflicts: 0,
@@ -698,7 +723,7 @@ async function materializeResearchGroupMember(
   if (options.dryRun) {
     return {
       entityType: 'researchGroupMember',
-      entityId: String(entity._id),
+      entityId: materializerDocumentId(entity._id),
       entityKey: identifier.entityKey,
       fieldsWritten: patch.fieldsWritten,
       conflicts: patch.conflicts,
@@ -733,7 +758,7 @@ async function materializeResearchGroupMember(
       if (existingLead) {
         return {
           entityType: 'researchGroupMember',
-          entityId: String(entity._id),
+          entityId: materializerDocumentId(entity._id),
           entityKey: identifier.entityKey,
           fieldsWritten: 0,
           conflicts: 0,
@@ -749,7 +774,7 @@ async function materializeResearchGroupMember(
   await ResearchGroupMember.updateOne(patch.filter, patch.update, { upsert: true });
   return {
     entityType: 'researchGroupMember',
-    entityId: String(entity._id),
+    entityId: materializerDocumentId(entity._id),
     entityKey: identifier.entityKey,
     fieldsWritten: patch.fieldsWritten,
     conflicts: patch.conflicts,
@@ -805,7 +830,7 @@ async function materializeInferredPiMembership(
     if (!user?._id) continue;
     const patch = buildInferredPiMemberUpsert(researchEntityId, {
       ...observation,
-      value: String(user._id),
+      value: materializerDocumentId(user._id),
     });
     if (!patch) continue;
     await ResearchGroupMember.updateOne(patch.filter, patch.update, { upsert: true });
@@ -842,7 +867,7 @@ export async function materializeInferredDirectorMembership(
     promoted: false,
     removedDuplicates: 0,
   };
-  if (!mongoose.Types.ObjectId.isValid(researchEntityId)) return empty;
+  if (!normalizeMaterializerObjectId(researchEntityId)) return empty;
 
   const fieldObs = (field: string) => observations.find((obs) => obs.field === field);
   const nameObs = fieldObs('inferredDirectorUserName');
@@ -945,8 +970,7 @@ const textValue = (value: unknown): string =>
   typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
 
 const idValue = (value: unknown): string => {
-  if (value === null || value === undefined) return '';
-  return String(value).trim();
+  return serializedDocumentId(value) || '';
 };
 
 // ---------------------------------------------------------------------------
@@ -1028,7 +1052,7 @@ async function findUniqueUserByPersonName(personName: string): Promise<any | nul
 
 async function findUniqueUserIdByPersonName(personName: string): Promise<string | null> {
   const user = await findUniqueUserByPersonName(personName);
-  return user?._id ? String(user._id) : null;
+  return user?._id ? materializerDocumentId(user._id) || null : null;
 }
 
 export async function findExistingResearchEntityByFacultyResearchAreaIdentity(
@@ -1047,10 +1071,11 @@ export async function findExistingResearchEntityByFacultyResearchAreaIdentity(
   if (!personName) return null;
 
   const userId = await findUniqueUserIdByPersonName(personName);
-  if (!userId || !mongoose.Types.ObjectId.isValid(userId)) return null;
+  const userObjectId = toMaterializerObjectId(userId);
+  if (!userObjectId) return null;
 
   const memberships = await ResearchGroupMember.find({
-    userId: new mongoose.Types.ObjectId(userId),
+    userId: userObjectId,
     role: 'pi',
     isCurrentMember: { $ne: false },
     researchEntityId: { $exists: true, $ne: null },
@@ -1058,7 +1083,7 @@ export async function findExistingResearchEntityByFacultyResearchAreaIdentity(
     .select('researchEntityId')
     .lean();
   const candidateIds = Array.from(
-    new Set(memberships.map((member: any) => String(member.researchEntityId)).filter(Boolean)),
+    new Set(memberships.map((member: any) => normalizeMaterializerObjectId(member.researchEntityId)).filter(Boolean)),
   );
   if (candidateIds.length === 0) return null;
 
@@ -1116,17 +1141,18 @@ export async function syncProfileBackedFacultyResearchAreaMemberFromIdentity(
   const personName =
     personNameFromFacultyResearchArea(identity.name) ||
     personNameFromFacultyResearchArea(observedKey);
-  let user =
-    identity.userId && mongoose.Types.ObjectId.isValid(identity.userId)
-      ? await userModel.findById(identity.userId).select('_id fname lname').lean()
-      : null;
+  const identityUserId = normalizeMaterializerObjectId(identity.userId);
+  let user = identityUserId
+    ? await userModel.findById(identityUserId).select('_id fname lname').lean()
+    : null;
   if (!user) {
     user = personName ? await findUniqueUserByPersonName(personName) : null;
   }
   if (!user?._id) return { synced: false, created: false, skipped: 'user-not-resolved' };
 
   const memberModel = deps.researchGroupMemberModel || ResearchGroupMember;
-  const userId = String(user._id);
+  const userId = normalizeMaterializerObjectId(user._id) || '';
+  if (!userId) return { synced: false, created: false, skipped: 'user-not-resolved' };
   const memberLookup = { researchEntityId, userId, role: 'pi' };
   const existing =
     (await memberModel.findOne({ ...memberLookup, isCurrentMember: { $ne: false } }).lean()) ||
@@ -1213,7 +1239,7 @@ async function materializeResearchEntityRelationship(
   if (options.dryRun) {
     return {
       entityType: 'researchEntityRelationship',
-      entityId: String(source._id),
+      entityId: materializerDocumentId(source._id),
       entityKey: identifier.entityKey,
       fieldsWritten: 0,
       conflicts: 0,
@@ -1223,7 +1249,7 @@ async function materializeResearchEntityRelationship(
   }
 
   if (!canonicalFacultyResearchAreaTarget && target?._id) {
-    await syncProfileBackedFacultyResearchAreaMemberFromIdentity(String(target._id), {
+    await syncProfileBackedFacultyResearchAreaMemberFromIdentity(normalizeMaterializerObjectId(target._id) || '', {
       entityKey: targetEntityKey,
       name: target.name,
       entityType: 'FACULTY_RESEARCH_AREA',
@@ -1232,8 +1258,9 @@ async function materializeResearchEntityRelationship(
     });
   }
 
-  const sourceResearchEntityId = String(source._id);
-  const targetResearchEntityId = String(resolvedTarget._id);
+  const sourceResearchEntityId = normalizeMaterializerObjectId(source._id) || '';
+  const targetResearchEntityId = normalizeMaterializerObjectId(resolvedTarget._id) || '';
+  if (!sourceResearchEntityId || !targetResearchEntityId) return skip('target-not-resolved');
   // Prefer linking the center to the member's existing PI-led lab (a rich page)
   // over a thin faculty-research-area stub: a resolved target whose slug is not a
   // generated `faculty-research-area-*` is a real research home → AFFILIATED_LAB.
@@ -1596,9 +1623,7 @@ export function addPostMaterializationMetrics(
 }
 
 function scrapeRunIdForQuery(scrapeRunId: string): string | mongoose.Types.ObjectId {
-  return mongoose.Types.ObjectId.isValid(scrapeRunId)
-    ? new mongoose.Types.ObjectId(scrapeRunId)
-    : scrapeRunId;
+  return toMaterializerObjectId(scrapeRunId) || scrapeRunId;
 }
 
 export async function countListingBackedPostedOpportunitiesForRun(
@@ -1630,11 +1655,11 @@ export async function countListingBackedPostedOpportunitiesForRun(
   const listingIds = rows
     .map((row: { _id?: unknown }) => row._id)
     .filter((id): id is string | mongoose.Types.ObjectId => {
-      if (!id) return false;
       if (id instanceof mongoose.Types.ObjectId) return true;
-      return typeof id === 'string' && mongoose.Types.ObjectId.isValid(id);
+      return Boolean(normalizeMaterializerObjectId(id));
     })
-    .map((id) => (id instanceof mongoose.Types.ObjectId ? id : new mongoose.Types.ObjectId(id)));
+    .map((id) => toMaterializerObjectId(id))
+    .filter((id): id is mongoose.Types.ObjectId => Boolean(id));
 
   if (listingIds.length === 0) return 0;
 
@@ -1749,8 +1774,9 @@ async function findEntityDocByIdentifier(
   identifier: { entityId?: string; entityKey?: string },
   obs: any[],
 ): Promise<any | null> {
-  if (identifier.entityId && mongoose.Types.ObjectId.isValid(identifier.entityId)) {
-    return Model.findById(identifier.entityId).lean();
+  const entityId = normalizeMaterializerObjectId(identifier.entityId);
+  if (entityId) {
+    return Model.findById(entityId).lean();
   }
 
   if (!identifier.entityKey) return null;
@@ -1972,8 +1998,8 @@ async function materializePaperAuthorEvidenceFromGroups(
   for (const { entityKey, observations, evidence } of evidenceRows) {
     const paper = findPaperForObservationGroup(entityKey, observations, maps);
     if (!paper?._id || !evidence.userId) continue;
-    if (!mongoose.Types.ObjectId.isValid(evidence.userId)) continue;
-    const userObjectId = new mongoose.Types.ObjectId(evidence.userId);
+    const userObjectId = toMaterializerObjectId(evidence.userId);
+    if (!userObjectId) continue;
 
     const observedAt =
       evidence.observedAt instanceof Date
@@ -2336,7 +2362,7 @@ export async function materializeEntity(
       };
     }
     const created_ = await Model.create(insert);
-    entityIdString = String(created_._id);
+    entityIdString = materializerDocumentId(created_._id);
     created = true;
   }
 
@@ -2377,7 +2403,10 @@ export async function materializeEntity(
       try {
         await recomputeBrowseRankForEntities([entityIdString]);
       } catch (error) {
-        console.error('Failed to recompute browseRankScore for', entityIdString, error);
+        console.error(
+          'Failed to recompute browseRankScore:',
+          sanitizeLogValue({ entityId: entityIdString, error }),
+        );
       }
     }
   }
@@ -2408,7 +2437,10 @@ async function materializePaperObservationsFromRun(
   skipped: number;
   errors: number;
 }> {
-  const runObjectId = new mongoose.Types.ObjectId(scrapeRunId);
+  const runObjectId = toMaterializerObjectId(scrapeRunId);
+  if (!runObjectId) {
+    return { materialized: 0, created: 0, updated: 0, conflicts: 0, skipped: 0, errors: 0 };
+  }
   const observations = (await Observation.find({
     scrapeRunId: runObjectId,
     entityType: 'paper',
@@ -2504,7 +2536,7 @@ async function materializePaperObservationsFromRun(
       await materializePaperAuthorEvidenceFromGroups(groups);
     } catch (err) {
       errors += ops.length;
-      console.error('materializePaperObservationsFromRun failed:', (err as Error)?.message || err);
+      console.error('materializePaperObservationsFromRun failed:', sanitizeLogValue(err));
     }
   }
 
@@ -2524,10 +2556,17 @@ export async function materializeFromRun(
   postMaterializationMetrics: Required<ReportPostMaterializationMetrics>;
 }> {
   const paperResult = await materializePaperObservationsFromRun(scrapeRunId, options);
+  const runObjectId = toMaterializerObjectId(scrapeRunId);
+  if (!runObjectId) {
+    return {
+      ...paperResult,
+      postMaterializationMetrics: emptyPostMaterializationMetrics(),
+    };
+  }
   const distinct = await Observation.aggregate([
     {
       $match: {
-        scrapeRunId: new mongoose.Types.ObjectId(scrapeRunId),
+        scrapeRunId: runObjectId,
         entityType: { $ne: 'paper' },
       },
     },
@@ -2574,7 +2613,7 @@ export async function materializeFromRun(
       errors++;
       console.error(
         `materializeFromRun: ${entityType} ${entityKey || entityId} failed:`,
-        err?.message || err,
+        sanitizeLogValue(err),
       );
       continue;
     }

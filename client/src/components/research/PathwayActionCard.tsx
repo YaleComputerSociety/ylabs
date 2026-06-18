@@ -8,7 +8,7 @@ import {
   getPathwayActionLabel,
   getPathwayTypeLabel,
 } from '../../utils/researchDiscoveryAdapters';
-import { EXTERNAL_LINK_REL, safeUrl } from '../../utils/url';
+import { EXTERNAL_LINK_REL, safeHttpUrl, safeRouteSegment } from '../../utils/url';
 
 interface PathwayActionCardProps {
   pathway: PathwaySearchHit;
@@ -30,11 +30,13 @@ const PathwayActionCard = ({ pathway }: PathwayActionCardProps) => {
   const researchEntity = pathway.researchEntity;
   const researchEntityLabel =
     researchEntity?.displayName || researchEntity?.name || 'Research profile';
-  const researchEntityLink = researchEntity?.slug ? `/research/${researchEntity.slug}` : '/research';
+  const researchEntityLink = researchEntity?.slug
+    ? `/research/${safeRouteSegment(researchEntity.slug)}`
+    : '/research';
   const actionLabel = getPathwayActionLabel(pathway.bestNextStepCategory);
   const nextStep = pathway.bestNextStep || pathway.studentFacingLabel || actionLabel;
   const opportunityDeadline = formatDate(pathway.activePostedOpportunity?.deadline);
-  const applicationUrl = safeUrl(pathway.activePostedOpportunity?.applicationUrl);
+  const applicationUrl = safeHttpUrl(pathway.activePostedOpportunity?.applicationUrl);
 
   return (
     <article className="rounded-md border border-gray-200 bg-white p-4">

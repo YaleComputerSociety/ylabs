@@ -261,6 +261,12 @@ describe('application route pathway backfill', () => {
     expect(() => parseApplicationRoutePathwayBackfillArgs(['--output=--apply'])).toThrow(
       /--output requires a path/,
     );
+    expect(() =>
+      parseApplicationRoutePathwayBackfillArgs(['--output', '/var/tmp/application-route.json']),
+    ).toThrow(/--output must write under/);
+    expect(() =>
+      parseApplicationRoutePathwayBackfillArgs(['--output', '/tmp/application-route.txt']),
+    ).toThrow(/--output must point to a \.json report file/);
   });
 
   it('writes the application-route backfill artifact when output is provided', () => {
@@ -283,6 +289,12 @@ describe('application route pathway backfill', () => {
       candidates: 2,
       blocked: 1,
     });
+  });
+
+  it('rejects unsafe application-route backfill artifact writes', () => {
+    expect(() =>
+      writeApplicationRoutePathwayBackfillOutput({ dryRun: true }, '/var/tmp/application-route.json'),
+    ).toThrow(/--output must write under/);
   });
 
   it('adds target metadata to application-route backfill artifacts', () => {

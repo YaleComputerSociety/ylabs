@@ -81,6 +81,18 @@ describe('scholarly link audit CLI helpers', () => {
     expect(() => parseScholarlyLinkProvenanceAuditArgs(['--output=--apply'])).toThrow(
       /--output requires a path/,
     );
+    expect(() =>
+      parseScholarlyLinkProvenanceAuditArgs([
+        '--output',
+        '/var/tmp/scholarly-link-provenance.json',
+      ]),
+    ).toThrow(/--output must write under/);
+    expect(() =>
+      parseScholarlyLinkProvenanceAuditArgs([
+        '--output',
+        '/tmp/scholarly-link-provenance.txt',
+      ]),
+    ).toThrow(/--output must point to a \.json report file/);
   });
 
   it('writes the provenance audit artifact when output is provided', () => {
@@ -100,6 +112,15 @@ describe('scholarly link audit CLI helpers', () => {
       applied: { nullTargetSuppressed: 0 },
       after: { pass: true },
     });
+  });
+
+  it('rejects unsafe provenance audit artifact writes', () => {
+    expect(() =>
+      writeScholarlyLinkProvenanceAuditOutput(
+        { mode: 'dry-run' },
+        '/var/tmp/scholarly-link-provenance.json',
+      ),
+    ).toThrow(/--output must write under/);
   });
 
   it('wraps provenance audit artifacts with target and parsed options metadata', () => {
@@ -200,6 +221,18 @@ describe('scholarly link audit CLI helpers', () => {
     expect(() => parseScholarlyLinkSuppressionAuditArgs(['--output=--apply'])).toThrow(
       /--output requires a path/,
     );
+    expect(() =>
+      parseScholarlyLinkSuppressionAuditArgs([
+        '--output',
+        '/var/tmp/scholarly-link-suppression.json',
+      ]),
+    ).toThrow(/--output must write under/);
+    expect(() =>
+      parseScholarlyLinkSuppressionAuditArgs([
+        '--output',
+        '/tmp/scholarly-link-suppression.txt',
+      ]),
+    ).toThrow(/--output must point to a \.json report file/);
   });
 
   it('writes the suppression audit artifact when output is provided', () => {
@@ -217,6 +250,15 @@ describe('scholarly link audit CLI helpers', () => {
       mode: 'dry-run',
       counts: { datasetSuppressibleBefore: 0, duplicateLinksBefore: 0 },
     });
+  });
+
+  it('rejects unsafe suppression audit artifact writes', () => {
+    expect(() =>
+      writeScholarlyLinkSuppressionAuditOutput(
+        { mode: 'dry-run' },
+        '/var/tmp/scholarly-link-suppression.json',
+      ),
+    ).toThrow(/--output must write under/);
   });
 
   it('builds reviewable suppression audit samples for each planned action', () => {

@@ -60,6 +60,8 @@ const mockedDeleteListing = vi.mocked(deleteListing);
 const privateListing = {
   _id: 'listing-1',
   id: 'listing-1',
+  ownerTitle: 'Professor',
+  ownerPrimaryDepartment: 'Computer Science',
   title: 'Research assistant',
   description: 'Help with a project.',
   applicantDescription: 'Students will learn methods.',
@@ -294,6 +296,64 @@ describe('listingController', () => {
     expect((res.body as any).pageSize).toBe(100);
   });
 
+  it('does not coerce object pagination values for listing search', async () => {
+    const search = vi.fn().mockResolvedValue({ hits: [], estimatedTotalHits: 0 });
+    meiliMocks.getMeiliIndex.mockResolvedValue({ search });
+    const page = { toString: vi.fn(() => '999999999') };
+    const pageSize = { toString: vi.fn(() => '500') };
+    const req = {
+      query: {
+        query: '',
+        page,
+        pageSize,
+      },
+    };
+    const res = responseDouble();
+
+    await searchListings(req as any, res as any);
+
+    expect(page.toString).not.toHaveBeenCalled();
+    expect(pageSize.toString).not.toHaveBeenCalled();
+    expect(search).toHaveBeenCalledWith(
+      '',
+      expect.objectContaining({
+        limit: 10,
+        offset: 0,
+      }),
+    );
+    expect((res.body as any).page).toBe(1);
+    expect((res.body as any).pageSize).toBe(10);
+  });
+
+  it('bounds listing search query and filters before querying Meili', async () => {
+    const search = vi.fn().mockResolvedValue({ hits: [], estimatedTotalHits: 0 });
+    meiliMocks.getMeiliIndex.mockResolvedValue({ search });
+    const longResearchArea = 'x'.repeat(200);
+    const req = {
+      query: {
+        query: ` ${'q'.repeat(700)} `,
+        departments: Array.from({ length: 60 }, (_, index) => `Department ${index}`).join('||'),
+        researchAreas: longResearchArea,
+        page: '1',
+        pageSize: '10',
+      },
+    };
+    const res = responseDouble();
+
+    await searchListings(req as any, res as any);
+
+    expect(search).toHaveBeenCalledWith(
+      'q'.repeat(512),
+      expect.objectContaining({
+        filter: expect.stringContaining('departments = "Department 49"'),
+      }),
+    );
+    const filter = String(search.mock.calls[0][1].filter);
+    expect(filter).not.toContain('Department 50');
+    expect(filter).toContain(`researchAreas = "${'x'.repeat(120)}"`);
+    expect(filter).not.toContain(longResearchArea);
+  });
+
   it('allowlists listing detail payloads for authenticated readers', async () => {
     mockedReadListing.mockResolvedValue(privateListing);
     const req = { params: { id: 'listing-1' } };
@@ -394,6 +454,19 @@ describe('listingController', () => {
 
     expect(res.statusCode).toBe(500);
     expect(res.body).toEqual({ error: 'Failed to create listing' });
+  });
+
+  it('allowlists listing skeleton payloads for authenticated creators', async () => {
+    mockedGetSkeletonListing.mockResolvedValue(privateListing);
+    const req = {
+      user: { netId: 'owner123', userType: 'professor', userConfirmed: true },
+    };
+    const res = responseDouble();
+
+    await getSkeletonListingForCurrentUser(req as any, res as any);
+
+    expect(mockedGetSkeletonListing).toHaveBeenCalledWith('owner123');
+    expectPublicListing((res.body as any).listing);
   });
 
   it('does not leak internal service errors from listing skeleton failures', async () => {
@@ -502,6 +575,12 @@ describe('listingController', () => {
     const res = responseDouble();
 
     await deleteListingForCurrentUser(req as any, res as any);
+
+    expect(mockedDeleteListing).not.toHaveBeenCalled();
+    expect(res.statusCode).toBe(403);
+    expect(res.body).toEqual({ error: 'Forbidden' });
+    expect(JSON.stringify(res.body)).not.toContain('student123');
+    expect(JSON.stringify(res.body)).not.toContain('private-listing-id');
 
     expect(res.statusCode).toBe(403);
     expect(res.body).toEqual({ error: 'Incorrect permissions', incorrectPermissions: true });

@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 
 export type BetaDataQualitySeverity = 'ok' | 'warn' | 'error';
 export type DataQualityWarningClassification =
@@ -524,11 +525,7 @@ export function formatBetaDataQualityProgressEvent(
 }
 
 function parseRequiredOutputPath(value: string | undefined): string {
-  const output = value?.trim();
-  if (!output || output.startsWith('--')) {
-    throw new Error('--output requires a path');
-  }
-  return output;
+  return resolveSafeJsonReportOutputPath(value);
 }
 
 export function isInvalidOptionalUrl(value: unknown): boolean {
@@ -1211,12 +1208,16 @@ function readDuplicateEntityDecisionValidationStatus(
   invalidDecisionCount?: number;
   unreviewedPlanCount?: number;
 } {
-  if (!fs.existsSync(outputPath)) {
+  const safeOutputPath = resolveSafeJsonReportOutputPath(
+    outputPath,
+    '--accepted-decision-validation-output',
+  );
+  if (!fs.existsSync(safeOutputPath)) {
     return { artifactAvailable: false };
   }
 
   try {
-    const parsed = JSON.parse(fs.readFileSync(outputPath, 'utf8')) as unknown;
+    const parsed = JSON.parse(fs.readFileSync(safeOutputPath, 'utf8')) as unknown;
     const validation =
       parsed &&
       typeof parsed === 'object' &&
@@ -1269,8 +1270,12 @@ export function buildSamePiDedupeReviewSummary(
     nextAction:
       'Review the same-PI dedupe decision template and validate accepted decisions before considering a bounded guarded apply.',
   };
+  const safeReviewArtifactPath = resolveSafeJsonReportOutputPath(
+    reviewArtifactPath,
+    '--review-artifact',
+  );
 
-  if (!fs.existsSync(reviewArtifactPath)) {
+  if (!fs.existsSync(safeReviewArtifactPath)) {
     return {
       ...base,
       artifactAvailable: false,
@@ -1279,7 +1284,7 @@ export function buildSamePiDedupeReviewSummary(
   }
 
   try {
-    const parsed = JSON.parse(fs.readFileSync(reviewArtifactPath, 'utf8')) as unknown;
+    const parsed = JSON.parse(fs.readFileSync(safeReviewArtifactPath, 'utf8')) as unknown;
     if (!parsed || typeof parsed !== 'object') {
       throw new Error('not an object');
     }
@@ -1391,8 +1396,9 @@ export function writeScorecardOutput(
   if (!outputPath) {
     return;
   }
-  fs.mkdirSync(path.dirname(outputPath), { recursive: true });
-  fs.writeFileSync(outputPath, `${JSON.stringify(scorecard, null, 2)}\n`);
+  const safeOutput = resolveSafeJsonReportOutputPath(outputPath);
+  fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
+  fs.writeFileSync(safeOutput, `${JSON.stringify(scorecard, null, 2)}\n`);
 }
 
 export function buildBetaDataQualityOutput<T extends object>(

@@ -8,6 +8,11 @@ import { initializeConnections } from '../db/connections';
 import { ResearchGroupMember } from '../models/researchGroupMember';
 import { User } from '../models/user';
 import {
+  resolveSafeJsonReportOutputPath,
+} from './scriptWriteGuards';
+import { serializedDocumentId } from '../utils/idSerialization';
+import { sanitizeLogValue } from '../utils/logSanitizer';
+import {
   assertResearchEntityMemberReferenceApplyAllowed,
   assertResearchEntityMemberReferenceApplyPreflightAllowed,
   assertResearchEntityMemberReferenceTargetAllowed,
@@ -62,6 +67,16 @@ const CURRENT_MEMBER_ON_ARCHIVED_ENTITY_STAGES: PipelineStage[] = [
     },
   },
 ];
+const MEMBER_REFERENCE_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
+
+export function normalizeMemberReferenceObjectId(value: unknown): string | undefined {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return MEMBER_REFERENCE_OBJECT_ID_RE.test(trimmed) ? trimmed : undefined;
+  }
+  if (value instanceof mongoose.Types.ObjectId) return value.toHexString();
+  return undefined;
+}
 
 export function buildOrphanMemberUserReferencePipeline(limit: number): PipelineStage[] {
   return [
@@ -128,7 +143,9 @@ export function buildExistingMemberMatchQuery(
   row: MemberReferenceAuditRow,
   candidateUserIds: string[],
 ): Record<string, unknown> | null {
-  const userIds = candidateUserIds.filter((id) => mongoose.Types.ObjectId.isValid(id));
+  const userIds = candidateUserIds
+    .map((id) => normalizeMemberReferenceObjectId(id))
+    .filter((id): id is string => Boolean(id));
   if (!row.member.researchEntityId || userIds.length === 0) return null;
 
   const query: Record<string, unknown> = {
@@ -148,7 +165,9 @@ export function writeResearchEntityMemberReferenceAuditOutput(
   output?: string,
 ): void {
   if (!output) return;
-  fs.writeFileSync(output, `${JSON.stringify(summary, null, 2)}\n`);
+  const safeOutput = resolveSafeJsonReportOutputPath(output);
+  fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
+  fs.writeFileSync(safeOutput, `${JSON.stringify(summary, null, 2)}\n`);
 }
 
 async function loadOrphanRows(args: ResearchEntityMemberReferenceAuditArgs): Promise<{
@@ -219,7 +238,7 @@ async function loadCandidateUsers(names: string[]): Promise<MemberReferenceAudit
     .exec();
 
   return rows.map((row) => ({
-    id: String(row._id || ''),
+    id: serializedDocumentId(row._id) || '',
     netid: row.netid || undefined,
     name: [row.fname, row.lname].filter(Boolean).join(' '),
     userType: row.userType || undefined,
@@ -242,8 +261,8 @@ async function loadExistingMemberMatches(
     .exec();
 
   return rows.map((row) => ({
-    id: String(row._id || ''),
-    userId: String(row.userId || ''),
+    id: serializedDocumentId(row._id) || '',
+    userId: serializedDocumentId(row.userId) || '',
     role: row.role || undefined,
   }));
 }
@@ -251,17 +270,18 @@ async function loadExistingMemberMatches(
 async function loadExistingCanonicalMemberMatches(
   row: MemberReferenceAuditRow,
 ): Promise<ExistingMemberMatch[]> {
+  const canonicalGroupId = normalizeMemberReferenceObjectId(row.entity?.canonicalGroupId);
+  const userId = normalizeMemberReferenceObjectId(row.member.userId);
   if (
-    !row.entity?.canonicalGroupId ||
-    !mongoose.Types.ObjectId.isValid(row.entity.canonicalGroupId) ||
-    !mongoose.Types.ObjectId.isValid(row.member.userId)
+    !canonicalGroupId ||
+    !userId
   ) {
     return [];
   }
   const query: Record<string, unknown> = {
     _id: { $ne: row.member.id },
-    researchEntityId: row.entity.canonicalGroupId,
-    userId: row.member.userId,
+    researchEntityId: canonicalGroupId,
+    userId,
     archived: { $ne: true },
   };
   if (row.member.role) {
@@ -273,8 +293,8 @@ async function loadExistingCanonicalMemberMatches(
     .lean()
     .exec();
   return rows.map((row) => ({
-    id: String(row._id || ''),
-    userId: String(row.userId || ''),
+    id: serializedDocumentId(row._id) || '',
+    userId: serializedDocumentId(row.userId) || '',
     role: row.role || undefined,
   }));
 }
@@ -311,13 +331,14 @@ async function applyMemberReferenceRepairs(
     }
 
     if (item.action === 'relink_user_id_to_exact_name_match') {
-      if (!item.replacementUserId || !mongoose.Types.ObjectId.isValid(item.replacementUserId)) {
+      const replacementUserId = normalizeMemberReferenceObjectId(item.replacementUserId);
+      if (!replacementUserId) {
         throw new Error(`Cannot relink member ${item.memberId}; replacement user id is invalid.`);
       }
 
       const result = await ResearchGroupMember.updateOne(
         { _id: item.memberId, userId: item.currentUserId },
-        { $set: { userId: new mongoose.Types.ObjectId(item.replacementUserId) } },
+        { $set: { userId: new mongoose.Types.ObjectId(replacementUserId) } },
       );
       if (result.modifiedCount !== 1) {
         throw new Error(`Failed to relink member ${item.memberId}; row may have changed.`);
@@ -333,16 +354,16 @@ async function applyMemberReferenceRepairs(
     }
 
     if (item.action === 'relink_member_to_canonical_entity') {
-      if (
-        !item.replacementResearchEntityId ||
-        !mongoose.Types.ObjectId.isValid(item.replacementResearchEntityId)
-      ) {
+      const replacementResearchEntityIdValue = normalizeMemberReferenceObjectId(
+        item.replacementResearchEntityId,
+      );
+      if (!replacementResearchEntityIdValue) {
         throw new Error(
           `Cannot relink member ${item.memberId}; replacement research entity id is invalid.`,
         );
       }
       const replacementResearchEntityId = new mongoose.Types.ObjectId(
-        item.replacementResearchEntityId,
+        replacementResearchEntityIdValue,
       );
       const result = await ResearchGroupMember.updateOne(
         { _id: item.memberId, userId: item.currentUserId, archived: { $ne: true } },
@@ -432,7 +453,7 @@ const isDirectRun = process.argv[1]
 if (isDirectRun) {
   main()
     .catch((error) => {
-      console.error(error instanceof Error ? error.message : error);
+      console.error(sanitizeLogValue(error));
       process.exitCode = 1;
     })
     .finally(async () => {

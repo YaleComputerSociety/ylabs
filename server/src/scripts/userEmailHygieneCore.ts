@@ -1,4 +1,5 @@
 import { isInvalidOptionalEmail } from './betaDataQualityCore';
+import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 
 export const SUSPICIOUS_USER_EMAIL_PATTERN =
   /(^test(?:\d+|[+@.])|@example\.|placeholder|unknown|invalid|dummy|no-?reply|^none@|^na@)/i;
@@ -111,12 +112,12 @@ export function parseUserEmailHygieneArgs(argv: string[]): UserEmailHygieneArgs 
     }
     if (arg === '--output') {
       const { value, nextIndex } = consumeValue(argv, index, '--output', 'path');
-      args.output = value;
+      args.output = resolveSafeJsonReportOutputPath(value);
       index = nextIndex;
       continue;
     }
     if (arg.startsWith('--output=')) {
-      args.output = consumeInlineValue(arg, '--output', 'path');
+      args.output = resolveSafeJsonReportOutputPath(consumeInlineValue(arg, '--output', 'path'));
       continue;
     }
 

@@ -25,7 +25,9 @@ import {
   materializeAccessForResearchGroup,
   officialNonGrantSourceUrl,
 } from '../scrapers/accessMaterializer';
-import { assertScriptApplyAllowed } from './scriptWriteGuards';
+import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { serializedDocumentId } from '../utils/idSerialization';
+import { sanitizeLogValue } from '../utils/logSanitizer';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -80,14 +82,10 @@ export function parseFacultyWaysInBackfillArgs(argv: string[]): FacultyWaysInBac
       options.explicitLimit = true;
       i += 1;
     } else if (arg === '--output') {
-      const next = argv[i + 1];
-      if (!next || next.startsWith('--')) throw new Error('--output requires a path');
-      options.output = next;
+      options.output = resolveSafeJsonReportOutputPath(argv[i + 1]);
       i += 1;
     } else if (arg.startsWith('--output=')) {
-      const value = arg.slice('--output='.length).trim();
-      if (!value || value.startsWith('--')) throw new Error('--output requires a path');
-      options.output = value;
+      options.output = resolveSafeJsonReportOutputPath(arg.slice('--output='.length));
     } else {
       throw new Error(`Unknown argument: ${arg}`);
     }
@@ -169,7 +167,7 @@ export async function findFacultyWaysInCandidates(limit?: number): Promise<Facul
     if (hasPathway > 0) continue;
 
     candidates.push({
-      researchEntityId: String(entity._id),
+      researchEntityId: serializedDocumentId(entity._id) || '',
       slug: entity.slug,
       name: entity.name,
       entityType: entity.entityType,
@@ -223,7 +221,7 @@ export async function runFacultyWaysInBackfill(options: {
       }
     } catch (error) {
       result.errors += 1;
-      console.error(`Faculty ways-in backfill failed for ${candidate.slug || candidate.researchEntityId}:`, error);
+      console.error(`Faculty ways-in backfill failed for ${candidate.slug || candidate.researchEntityId}:`, sanitizeLogValue(error));
     }
   }
   return result;
@@ -261,8 +259,10 @@ async function main(): Promise<void> {
       result,
     };
     if (options.output) {
-      fs.writeFileSync(options.output, JSON.stringify(payload, null, 2));
-      console.log(`Saved faculty ways-in backfill report to ${options.output}`);
+      const safeOutput = resolveSafeJsonReportOutputPath(options.output);
+      fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
+      fs.writeFileSync(safeOutput, JSON.stringify(payload, null, 2));
+      console.log(`Saved faculty ways-in backfill report to ${safeOutput}`);
     }
     console.log(JSON.stringify(result, null, 2));
   } finally {
@@ -274,7 +274,7 @@ const invokedDirectly =
   process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
 if (invokedDirectly) {
   main().catch((error) => {
-    console.error(error);
+    console.error(sanitizeLogValue(error));
     process.exit(1);
   });
 }

@@ -4,7 +4,8 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { initializeConnections } from '../db/connections';
-import { assertScriptApplyAllowed } from './scriptWriteGuards';
+import { sanitizeLogValue } from '../utils/logSanitizer';
+import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 
 dotenv.config();
 
@@ -248,16 +249,14 @@ export function parseResearchEntityRenameAuditArgs(
 }
 
 function parseRequiredOutputPath(value: string | undefined): string {
-  const output = value?.trim();
-  if (!output || output.startsWith('--')) {
-    throw new Error('--output requires a path');
-  }
-  return output;
+  return resolveSafeJsonReportOutputPath(value);
 }
 
 export function writeResearchEntityRenameAuditOutput(report: unknown, output?: string): void {
   if (!output) return;
-  fs.writeFileSync(output, `${JSON.stringify(report, null, 2)}\n`);
+  const safeOutput = resolveSafeJsonReportOutputPath(output);
+  fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
+  fs.writeFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
 }
 
 export function buildResearchEntityRenameAuditOutput<T extends object>(
@@ -341,7 +340,7 @@ const isDirectRun = process.argv[1]
 if (isDirectRun) {
   main()
     .catch((error) => {
-      console.error('Failed to audit ResearchEntity rename readiness:', error);
+      console.error('Failed to audit ResearchEntity rename readiness:', sanitizeLogValue(error));
       process.exitCode = 1;
     })
     .finally(async () => {

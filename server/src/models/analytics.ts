@@ -2,6 +2,7 @@
  * Mongoose schema and model for analytics events tracking user activity.
  */
 import mongoose from 'mongoose';
+import { normalizeUserType } from './user';
 
 export enum AnalyticsEventType {
   LOGIN = 'login',
@@ -38,7 +39,8 @@ const analyticsEventSchema = new mongoose.Schema(
     },
     userType: {
       type: String,
-      enum: ['student', 'undergraduate', 'graduate', 'professor', 'faculty', 'admin', 'unknown'],
+      set: normalizeUserType,
+      enum: ['student', 'undergraduate', 'graduate', 'professor', 'admin', 'unknown'],
       required: true,
       index: true,
     },

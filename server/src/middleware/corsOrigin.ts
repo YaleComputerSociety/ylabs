@@ -1,4 +1,6 @@
 const CORS_ORIGIN_ERROR_MESSAGE = 'Not allowed by CORS';
+const MAX_CORS_ORIGIN_LENGTH = 2048;
+const UNSAFE_CORS_ORIGIN_RE = /[\u0000-\u0020\u007f\\]/;
 
 export class CorsOriginError extends Error {
   status = 403;
@@ -11,6 +13,22 @@ export class CorsOriginError extends Error {
 }
 
 type CorsOriginCallback = (error: Error | null, allow?: boolean) => void;
+
+const normalizeCorsOrigin = (origin: string | undefined): string => {
+  if (origin === undefined) return '';
+  if (origin.length > MAX_CORS_ORIGIN_LENGTH) return '';
+  if (UNSAFE_CORS_ORIGIN_RE.test(origin)) return '';
+
+  try {
+    const parsed = new URL(origin);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return '';
+    if (parsed.username || parsed.password) return '';
+    if (parsed.origin !== origin) return '';
+    return parsed.origin;
+  } catch {
+    return '';
+  }
+};
 
 export const isAllowedCorsOrigin = ({
   allowedOrigins,
@@ -25,7 +43,10 @@ export const isAllowedCorsOrigin = ({
     return bypassCors;
   }
 
-  return bypassCors || allowedOrigins.has(origin);
+  const normalizedOrigin = normalizeCorsOrigin(origin);
+  if (!normalizedOrigin) return false;
+
+  return bypassCors || allowedOrigins.has(normalizedOrigin);
 };
 
 export const createCorsOriginHandler = (

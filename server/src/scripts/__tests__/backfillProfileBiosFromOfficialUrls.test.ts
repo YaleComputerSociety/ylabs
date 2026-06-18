@@ -73,13 +73,13 @@ describe('selectOfficialBioUrlFromHomes', () => {
         {
           name: 'Paul Bloom — Research',
           websiteUrl: '',
-          sourceUrls: ['https://medicine.yale.edu/profile/paul-bloom/'],
+          sourceUrls: ['https://medicine.yale.edu/profile/fixture-profile-bio/'],
         },
       ],
       'Paul',
       'Bloom',
     );
-    expect(url).toBe('https://medicine.yale.edu/profile/paul-bloom/');
+    expect(url).toBe('https://medicine.yale.edu/profile/fixture-profile-bio/');
   });
 
   it('accepts a Yale /people/ home websiteUrl when it matches the person', () => {
@@ -94,7 +94,7 @@ describe('selectOfficialBioUrlFromHomes', () => {
   it('ignores grant/non-Yale/mismatched sources', () => {
     expect(
       selectOfficialBioUrlFromHomes(
-        [{ sourceUrls: ['https://reporter.nih.gov/project-details/9', 'https://example.com/profile/paul-bloom'] }],
+        [{ sourceUrls: ['https://reporter.nih.gov/project-details/9', 'https://example.com/profile/fixture-profile-bio'] }],
         'Paul',
         'Bloom',
       ),

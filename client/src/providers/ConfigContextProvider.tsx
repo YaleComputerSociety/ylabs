@@ -68,10 +68,9 @@ const ConfigContextProvider: FC<ConfigContextProviderProps> = ({ children }) => 
       const deptCategories = data?.departments?.categories || [];
 
       if (areas.length === 0 || deptList.length === 0) {
-        console.warn('Config loaded but data may be incomplete:', {
+        console.warn('Config loaded but data may be incomplete.', {
           researchAreas: areas.length,
           departments: deptList.length,
-          rawResponse: data,
         });
       }
 
@@ -85,8 +84,8 @@ const ConfigContextProvider: FC<ConfigContextProviderProps> = ({ children }) => 
           departmentCategories: deptCategories,
         },
       });
-    } catch (err) {
-      console.error('Error fetching config:', err);
+    } catch {
+      console.error('Error fetching config.');
       dispatch({
         type: 'FETCH_FAILURE',
         payload: 'Failed to load configuration. Some features may not work correctly.',

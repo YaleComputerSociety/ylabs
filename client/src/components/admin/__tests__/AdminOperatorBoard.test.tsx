@@ -20,7 +20,7 @@ afterEach(() => {
 });
 
 describe('AdminOperatorBoard', () => {
-  it('keeps repair queues ahead of evidence signals without changing the board layout', async () => {
+  it('presents review queues as decision lanes with repair lanes first', async () => {
     mockedAxios.get.mockResolvedValue({
       data: {
         generatedAt: '2026-05-25T15:00:00.000Z',
@@ -127,6 +127,20 @@ describe('AdminOperatorBoard', () => {
                 label: 'Repair Candidate Lab',
                 tier: 'operator_review',
                 reasons: ['missing_action_evidence', 'source_backed_description'],
+              },
+            ],
+          },
+          {
+            collection: 'programs',
+            reason: 'formalization_only',
+            count: 4,
+            nextAction: 'Keep capped unless source evidence shows a real entry route.',
+            samples: [
+              {
+                id: 'sample-formalization',
+                label: 'Formalization Program',
+                tier: 'limited_but_safe',
+                reasons: ['formalization_only', 'official_source'],
               },
             ],
           },
@@ -460,14 +474,28 @@ describe('AdminOperatorBoard', () => {
       ),
     ).toBeTruthy();
 
-    const repairBadge = screen.getByText('Repair queue');
-    const evidenceBadge = screen.getByText('Evidence signal');
-    expect(repairBadge.compareDocumentPosition(evidenceBadge)).toBe(
+    expect(screen.queryByText('Review Queues')).toBeNull();
+    expect(screen.getByText('Decision Lanes')).toBeTruthy();
+    expect(screen.getByText('Must Fix Before Promotion')).toBeTruthy();
+    expect(screen.getByText('Operator Decision Needed')).toBeTruthy();
+    expect(screen.getByText('Promotion Evidence')).toBeTruthy();
+    const repairLane = screen.getByText('Must Fix Before Promotion');
+    const evidenceLane = screen.getByText('Promotion Evidence');
+    expect(repairLane.compareDocumentPosition(evidenceLane)).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     );
+    expect(screen.getByText('Can this record show a source-backed next step?')).toBeTruthy();
+    expect(
+      screen.getByText('Should this stay capped, or is there evidence of a real entry route?'),
+    ).toBeTruthy();
+    expect(screen.getByText('Is this ready to promote from evidence to student-facing copy?')).toBeTruthy();
+    expect(screen.getAllByText('missing_action_evidence').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('formalization_only').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('source_backed_description').length).toBeGreaterThan(0);
     expect(screen.getByText('Likely blockers')).toBeTruthy();
-    expect(screen.getByText('Evidence signals')).toBeTruthy();
+    expect(screen.getAllByText('Evidence signals').length).toBeGreaterThan(0);
     expect(screen.getByText('Repair Candidate Lab')).toBeTruthy();
+    expect(screen.getByText('Formalization Program')).toBeTruthy();
     expect(screen.getByText('Source Backed Lab')).toBeTruthy();
     expect(screen.getByText('Release Queue')).toBeTruthy();
     expect(screen.getByText('Automatic Repair Queue')).toBeTruthy();
@@ -576,11 +604,13 @@ describe('AdminOperatorBoard', () => {
         'Source review: 6/6 report artifacts available · 313 actionable conflicts',
       ),
     ).toBeTruthy();
-    expect(
-      screen.getByText(
-        'Priority review 226 · Context review 87 · Metadata review 132',
-      ),
-    ).toBeTruthy();
+    expect(screen.getByText('Source Conflict Decision Lanes')).toBeTruthy();
+    expect(screen.getByText('Priority review')).toBeTruthy();
+    expect(screen.getByText('Identity, access, or student-facing content')).toBeTruthy();
+    expect(screen.getByText('Context review')).toBeTruthy();
+    expect(screen.getByText('Funding or uncategorized context')).toBeTruthy();
+    expect(screen.getByText('Metadata review')).toBeTruthy();
+    expect(screen.getByText('Additive metadata merge review')).toBeTruthy();
     expect(
       screen.getByText('Conflict scope: 206 single-source · 107 cross-source'),
     ).toBeTruthy();

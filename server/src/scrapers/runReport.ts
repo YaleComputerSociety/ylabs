@@ -12,6 +12,10 @@ import { Source } from '../models/source';
 import type { ScraperFetchMetrics, ScraperMetrics } from './types';
 import { resolveField, type ResolverObservation } from './confidenceResolver';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
+import { serializedDocumentId } from '../utils/idSerialization';
+import { sanitizeLogValue } from '../utils/logSanitizer';
+
+const SCRAPE_RUN_REPORT_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
 
 export interface ReportObservation {
   entityType: string;
@@ -89,6 +93,16 @@ export interface SourceEvidenceGapReviewInput {
   sourceName: string;
   sourceCoverage?: ReportSourceCoverage;
   postMaterializationMetrics?: ReportPostMaterializationMetrics;
+}
+
+export function normalizeScrapeRunReportObjectId(
+  value: unknown,
+): mongoose.Types.ObjectId | undefined {
+  if (value instanceof mongoose.Types.ObjectId) return value;
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  if (!SCRAPE_RUN_REPORT_OBJECT_ID_RE.test(trimmed)) return undefined;
+  return new mongoose.Types.ObjectId(trimmed);
 }
 
 export interface SourceEvidenceGapReviewRow {
@@ -172,6 +186,12 @@ export interface ScrapeRunReport {
     superseded: number;
     duplicateRate: number;
   };
+  dryRunPreview?: {
+    observationCount: number;
+    entitiesObserved: number;
+    persistedObservationCount: number;
+    note: string;
+  };
   materialization: {
     created: number;
     updated: number;
@@ -235,7 +255,7 @@ export interface ScrapeRunReport {
     materializationConflictReview?: MaterializationConflictReview;
   };
   warnings: string[];
-  errors: Array<{ message: string; at?: string; context?: unknown }>;
+  errors: Array<{ message: string; at?: string; context?: string }>;
 }
 
 const MATERIALIZATION_CONFLICT_REVIEW_ENTITY_LIMIT = 2000;
@@ -289,8 +309,7 @@ const FUNDING_CONTEXT_CONFLICT_FIELDS = new Set([
 ]);
 
 function stringifyId(value: unknown): string | undefined {
-  if (value === null || value === undefined || value === '') return undefined;
-  return String(value);
+  return serializedDocumentId(value);
 }
 
 function iso(value: Date | string | undefined): string | undefined {
@@ -705,6 +724,17 @@ export function buildSourceEvidenceGapReview(
   });
 }
 
+const reportErrorMessage = (message: unknown): string => {
+  if (typeof message !== 'string' || message.trim() === '') return 'Unknown scrape error';
+  return sanitizeLogValue(message) || 'Unknown scrape error';
+};
+
+const reportErrorContext = (context: unknown): string | undefined => {
+  if (context === undefined) return undefined;
+  const sanitized = sanitizeLogValue(context);
+  return sanitized || undefined;
+};
+
 export function buildScrapeRunReport(
   run: ReportScrapeRun,
   observations: ReportObservation[],
@@ -769,9 +799,9 @@ export function buildScrapeRunReport(
     .slice(0, 20);
 
   const errors = (run.errors || []).map((err) => ({
-    message: err.message || 'Unknown scrape error',
+    message: reportErrorMessage(err.message),
     at: iso(err.at),
-    context: err.context,
+    context: reportErrorContext(err.context),
   }));
   const coverageFetch = buildCoverageFetchSummary(run.fetchMetrics);
   const coverageSource = buildCoverageSourceSummary(sourceCoverage);
@@ -794,12 +824,36 @@ export function buildScrapeRunReport(
     run.materializationConflicts || 0,
     conflictReviewOptions,
   );
+  const dryRunObservationCount =
+    run.options?.dryRun === true && typeof run.observationCount === 'number'
+      ? run.observationCount
+      : undefined;
+  const dryRunEntitiesObserved =
+    run.options?.dryRun === true && typeof run.entitiesObserved === 'number'
+      ? run.entitiesObserved
+      : undefined;
+  const reportedObservationCount =
+    observations.length > 0 ? observations.length : dryRunObservationCount ?? observations.length;
+  const reportedEntitiesObserved =
+    observations.length > 0 ? entities.size : dryRunEntitiesObserved ?? entities.size;
+  const dryRunPreview =
+    run.options?.dryRun === true && dryRunObservationCount !== undefined
+      ? {
+          observationCount: dryRunObservationCount,
+          entitiesObserved: dryRunEntitiesObserved ?? entities.size,
+          persistedObservationCount: observations.length,
+          note:
+            observations.length === 0 && dryRunObservationCount > 0
+              ? 'Dry-run observations were emitted but intentionally not persisted; field breakdowns only include persisted Observation rows.'
+              : 'Dry-run observation counters are copied from the ScrapeRun record.',
+        }
+      : undefined;
 
   const warnings: string[] = [];
   if (run.status === 'failure') warnings.push('Run failed; do not materialize without inspecting errors.');
   if (run.status === 'partial') warnings.push('Run completed partially; inspect source-level logs/errors.');
   if (run.invalidated) warnings.push('Run has been invalidated.');
-  if (observations.length === 0 && !workPlannerSkippedAll) {
+  if (reportedObservationCount === 0 && !workPlannerSkippedAll) {
     warnings.push('Run produced zero observations.');
   }
   if (missingEntityIdentifierCount > 0) {
@@ -817,29 +871,29 @@ export function buildScrapeRunReport(
   if (!coverageSource) {
     warnings.push(`No Source coverage metadata found for "${run.sourceName}".`);
   } else if (
-    observations.length > 0 &&
+    reportedObservationCount > 0 &&
     !coverageSource.artifactTypes.values.includes('Observation')
   ) {
     warnings.push(
-      `Source coverage metadata does not list Observation artifacts, but run emitted ${observations.length} observation(s).`,
+      `Source coverage metadata does not list Observation artifacts, but run emitted ${reportedObservationCount} observation(s).`,
     );
   }
   if (
     coverageSource &&
-    observations.length === 0 &&
+    reportedObservationCount === 0 &&
     run.status === 'success' &&
     !workPlannerSkippedAll
   ) {
     warnings.push('Source coverage metadata exists, but successful run emitted zero observations.');
   }
-  if (coverageFetch.succeeded > 0 && observations.length === 0) {
+  if (coverageFetch.succeeded > 0 && reportedObservationCount === 0) {
     warnings.push(
       `${coverageFetch.succeeded} fetch(es) succeeded, but run emitted zero observations.`,
     );
   }
-  if (coverageFetch.attempts > 0 && coverageFetch.succeeded === 0 && observations.length > 0) {
+  if (coverageFetch.attempts > 0 && coverageFetch.succeeded === 0 && reportedObservationCount > 0) {
     warnings.push(
-      `Run emitted ${observations.length} observation(s), but fetch metrics report zero successful fetches.`,
+      `Run emitted ${reportedObservationCount} observation(s), but fetch metrics report zero successful fetches.`,
     );
   }
   if (postMaterialization) {
@@ -870,7 +924,7 @@ export function buildScrapeRunReport(
 
   return {
     run: {
-      id: String(run._id),
+      id: stringifyId(run._id) || '',
       sourceName: run.sourceName,
       status: run.status,
       triggeredBy: run.triggeredBy,
@@ -881,15 +935,16 @@ export function buildScrapeRunReport(
       options: run.options || {},
     },
     observations: {
-      total: observations.length,
-      entitiesObserved: entities.size,
+      total: reportedObservationCount,
+      entitiesObserved: reportedEntitiesObserved,
       byEntityType,
       byField,
       topFields: topEntries(byField, 15),
-      active: observations.length - supersededCount,
+      active: reportedObservationCount - supersededCount,
       superseded: supersededCount,
-      duplicateRate: observations.length > 0 ? supersededCount / observations.length : 0,
+      duplicateRate: reportedObservationCount > 0 ? supersededCount / reportedObservationCount : 0,
     },
+    ...(dryRunPreview ? { dryRunPreview } : {}),
     materialization: {
       created: run.entitiesCreated || 0,
       updated: run.entitiesUpdated || 0,
@@ -903,7 +958,7 @@ export function buildScrapeRunReport(
     coverage: {
       source: coverageSource,
       fetch: coverageFetch,
-      observationsEmitted: observations.length,
+      observationsEmitted: reportedObservationCount,
       materializationWrites,
       postMaterialization,
       workPlanner: run.metrics?.workPlanner,
@@ -983,11 +1038,12 @@ async function getMaterializationConflictReviewOptions(
 }
 
 export async function getScrapeRunReport(scrapeRunId: string): Promise<ScrapeRunReport> {
-  if (!mongoose.Types.ObjectId.isValid(scrapeRunId)) {
+  const scrapeRunObjectId = normalizeScrapeRunReportObjectId(scrapeRunId);
+  if (!scrapeRunObjectId) {
     throw new Error(`Invalid ScrapeRun id: ${scrapeRunId}`);
   }
 
-  const run = await ScrapeRun.findById(scrapeRunId).lean();
+  const run = await ScrapeRun.findById(scrapeRunObjectId).lean();
   if (!run) throw new Error(`ScrapeRun not found: ${scrapeRunId}`);
 
   const sourceClauses: Array<Record<string, unknown>> = [{ name: (run as ReportScrapeRun).sourceName }];
@@ -995,7 +1051,7 @@ export async function getScrapeRunReport(scrapeRunId: string): Promise<ScrapeRun
   if (sourceId) sourceClauses.unshift({ _id: sourceId });
 
   const [observations, source] = await Promise.all([
-    Observation.find({ scrapeRunId })
+    Observation.find({ scrapeRunId: scrapeRunObjectId })
       .select('entityType entityId entityKey field value sourceName confidence sourceUrl observedAt superseded observationFingerprint')
       .lean(),
     Source.findOne({

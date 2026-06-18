@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   buildPathwaySearchIndexDocument,
   buildPathwaySearchIndexDocuments,
@@ -12,7 +12,7 @@ import {
 describe('pathwaySearchIndexService', () => {
   it('builds a Meilisearch-ready pathway document with filterable and sortable fields', () => {
     const doc = buildPathwaySearchIndexDocument({
-      _id: { toString: () => 'pathway-1' },
+      _id: 'pathway-1',
       pathwayType: 'POSTED_ROLE',
       status: 'ACTIVE',
       evidenceStrength: 'DIRECT',
@@ -26,7 +26,7 @@ describe('pathwaySearchIndexService', () => {
       lastObservedAt: new Date('2026-02-03T04:05:06.000Z'),
       createdAt: '2026-01-02T03:04:05.000Z',
       researchEntity: {
-        _id: { toString: () => 'entity-1' },
+        _id: 'entity-1',
         slug: 'smith-lab',
         name: 'Smith Lab',
         displayName: 'Smith Neuroimaging Lab',
@@ -39,7 +39,7 @@ describe('pathwaySearchIndexService', () => {
         websiteUrl: 'https://smithlab.yale.edu',
       },
       activePostedOpportunity: {
-        _id: { toString: () => 'opportunity-1' },
+        _id: 'opportunity-1',
         title: 'Summer Research Assistant',
         deadline: '2026-03-15T12:00:00.000Z',
         status: 'OPEN',
@@ -113,6 +113,29 @@ describe('pathwaySearchIndexService', () => {
     );
     expect(doc.publicContactRoute?.url).toBe('https://example.yale.edu/apply');
     expect(doc.publicContactRoute?.rationale).toContain('[phone redacted]');
+  });
+
+  it('does not invoke object-shaped id conversion hooks while building index documents', () => {
+    const unsafeId = {
+      toString: () => {
+        throw new Error('stringified arbitrary pathway index id');
+      },
+      toHexString: () => {
+        throw new Error('called arbitrary pathway index id toHexString');
+      },
+    };
+
+    const doc = buildPathwaySearchIndexDocument({
+      _id: unsafeId,
+      researchEntity: { _id: unsafeId, departments: [] },
+      activePostedOpportunity: { _id: unsafeId },
+    });
+
+    expect(doc.id).toBe('');
+    expect(doc.pathwayId).toBe('');
+    expect(doc.entityId).toBeUndefined();
+    expect(doc.postedOpportunityId).toBeUndefined();
+    expect(buildPathwaySearchIndexDocuments([{ _id: unsafeId }])).toEqual([]);
   });
 
   it('drops non-public routes, no-direct-contact routes, and mailto URLs from the index document', () => {
@@ -451,6 +474,62 @@ describe('pathwaySearchIndexService', () => {
     expect(String(filters[1])).toContain(
       'pathwayId = "__formalization_only_pathway_filter_miss__"',
     );
+  });
+
+  it('bounds direct Meili pathway search query and filter inputs before search', async () => {
+    const searches: Array<{ query: string; params: Record<string, unknown> }> = [];
+    const fakeIndex = {
+      search: async (query: string, params: Record<string, unknown>) => {
+        searches.push({ query, params });
+        return { estimatedTotalHits: 0, hits: [] };
+      },
+    };
+    const longResearchArea = 'x'.repeat(200);
+
+    await searchPathwaysViaMeili(
+      {
+        q: ` ${'q'.repeat(700)} `,
+        page: 1,
+        pageSize: 24,
+        filters: {
+          departments: Array.from({ length: 60 }, (_, index) => `Department ${index}`),
+          researchAreas: [longResearchArea],
+        },
+      },
+      async () => fakeIndex as any,
+    );
+
+    const filter = String(searches[0].params.filter);
+    expect(searches[0].query).toBe('q'.repeat(512));
+    expect(filter).toContain('entityDepartments = "Department 49"');
+    expect(filter).not.toContain('Department 50');
+    expect(filter).toContain(`entityResearchAreas = "${'x'.repeat(120)}"`);
+    expect(filter).not.toContain(longResearchArea);
+  });
+
+  it('drops non-string direct Meili pathway filter values before search', async () => {
+    const searches: Array<{ query: string; params: Record<string, unknown> }> = [];
+    const fakeIndex = {
+      search: async (query: string, params: Record<string, unknown>) => {
+        searches.push({ query, params });
+        return { estimatedTotalHits: 0, hits: [] };
+      },
+    };
+    const badFilter = { toString: vi.fn(() => 'Injected') };
+
+    await searchPathwaysViaMeili(
+      {
+        filters: {
+          departments: [badFilter as any, 'Computer Science'],
+        },
+      },
+      async () => fakeIndex as any,
+    );
+
+    expect(badFilter.toString).not.toHaveBeenCalled();
+    const filter = String(searches[0].params.filter);
+    expect(filter).toContain('entityDepartments = "Computer Science"');
+    expect(filter).not.toContain('Injected');
   });
 
   it('caps page before computing Meili pathway search offsets', async () => {

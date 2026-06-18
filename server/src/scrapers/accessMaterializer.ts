@@ -8,6 +8,7 @@ import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
 import { ResearchGroupMember } from '../models/researchGroupMember';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
+import { serializedDocumentId } from '../utils/idSerialization';
 import type {
   AccessSignalConfidence,
   AccessSignalType,
@@ -44,6 +45,21 @@ const ENTITY_DISCOVERY_ONLY_SOURCES = new Set([
 const PATHWAY_SPECIFIC_ACCEPTING_SOURCES = new Set([
   'undergrad-fellowships-recipients',
 ]);
+const ACCESS_MATERIALIZER_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
+
+export function normalizeAccessMaterializerObjectId(value: unknown): string | undefined {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return ACCESS_MATERIALIZER_OBJECT_ID_RE.test(trimmed) ? trimmed : undefined;
+  }
+  if (value instanceof mongoose.Types.ObjectId) return value.toHexString();
+  return undefined;
+}
+
+function toAccessMaterializerObjectId(value: unknown): mongoose.Types.ObjectId | undefined {
+  const id = normalizeAccessMaterializerObjectId(value);
+  return id ? new mongoose.Types.ObjectId(id) : undefined;
+}
 
 export interface AccessObservation {
   _id?: unknown;
@@ -87,8 +103,7 @@ export interface AccessMaterializationResult {
 }
 
 function observationId(obs: AccessObservation): string | undefined {
-  if (obs._id === undefined || obs._id === null) return undefined;
-  return String(obs._id);
+  return serializedDocumentId(obs._id);
 }
 
 function observationIds(observations: AccessObservation[]): string[] {
@@ -872,7 +887,9 @@ async function deriveIdentifiedLeadWaysInForEntity(
   researchEntityId: string,
 ): Promise<DerivedAccessArtifacts> {
   const empty: DerivedAccessArtifacts = { entryPathways: [], accessSignals: [], contactRoutes: [] };
-  const entity: any = await ResearchEntity.findById(researchEntityId, {
+  const researchEntityObjectId = toAccessMaterializerObjectId(researchEntityId);
+  if (!researchEntityObjectId) return empty;
+  const entity: any = await ResearchEntity.findById(researchEntityObjectId, {
     entityType: 1,
     name: 1,
     displayName: 1,
@@ -885,7 +902,7 @@ async function deriveIdentifiedLeadWaysInForEntity(
   if (!entity) return empty;
 
   const lead: any = await ResearchGroupMember.findOne({
-    researchEntityId: new mongoose.Types.ObjectId(researchEntityId),
+    researchEntityId: researchEntityObjectId,
     role: { $in: Array.from(IDENTIFIED_LEAD_ROLES) },
     isCurrentMember: { $ne: false },
     $or: [
@@ -934,7 +951,7 @@ async function deriveIdentifiedLeadWaysInForEntity(
   // artifacts). Observations may be keyed by entityId OR by entityKey (slug),
   // so match either.
   const identityMatch: Record<string, any>[] = [
-    { entityId: new mongoose.Types.ObjectId(researchEntityId) },
+    { entityId: researchEntityObjectId },
   ];
   if (entity.slug) identityMatch.push({ entityKey: entity.slug });
   const identityObs: any = await Observation.findOne({
@@ -973,15 +990,11 @@ async function resolveResearchEntityId(identifier: {
   researchEntityId?: string;
   entityKey?: string;
 }): Promise<string | null> {
-  if (
-    identifier.researchEntityId &&
-    mongoose.Types.ObjectId.isValid(identifier.researchEntityId)
-  ) {
-    return identifier.researchEntityId;
-  }
+  const researchEntityId = normalizeAccessMaterializerObjectId(identifier.researchEntityId);
+  if (researchEntityId) return researchEntityId;
   if (!identifier.entityKey) return null;
   const group: any = await ResearchEntity.findOne({ slug: identifier.entityKey }, { _id: 1 }).lean();
-  return group?._id ? String(group._id) : null;
+  return normalizeAccessMaterializerObjectId(group?._id) || null;
 }
 
 function pathwayDerivationKeyForSignal(signal: DerivedAccessSignal): string | undefined {
@@ -1024,6 +1037,19 @@ export async function materializeAccessForResearchGroup(
       skipped: 'research-entity-not-found',
     };
   }
+  const researchEntityObjectId = toAccessMaterializerObjectId(researchEntityId);
+  if (!researchEntityObjectId) {
+    return {
+      researchEntityId: undefined,
+      entryPathways: 0,
+      accessSignals: 0,
+      contactRoutes: 0,
+      guardedContactRoutes: 0,
+      staleEvidenceSkipped: 0,
+      errors: 0,
+      skipped: 'research-entity-not-found',
+    };
+  }
 
   const observations =
     inputObservations ||
@@ -1031,7 +1057,7 @@ export async function materializeAccessForResearchGroup(
       entityType: { $in: ['researchEntity', 'researchGroup'] },
       superseded: false,
       $or: [
-        { entityId: new mongoose.Types.ObjectId(researchEntityId) },
+        { entityId: researchEntityObjectId },
         identifier.entityKey ? { entityKey: identifier.entityKey } : {},
       ].filter((clause) => Object.keys(clause).length > 0),
     }).lean()) as unknown as AccessObservation[]);

@@ -31,6 +31,10 @@ Default to acting after inspection. Ask questions only when the answer cannot be
 
 When the user reports a problem, preserve the lesson in the work: identify whether an upstream code, data, test, documentation, or workflow change can prevent the same issue from recurring, and prefer that durable fix over a one-off symptom patch when feasible.
 
+## Data Gate Policy
+
+The goal of source acquisition, Beta repair, and launch readiness work is never to relax data gates. Keep trust gates strict and improve the data instead: scrape more official sources, acquire better evidence, use guarded LLM extraction over source text, repair provenance, or leave rows held until trustworthy evidence exists. Only change a gate when the existing rule is demonstrably wrong for the product model, and document the evidence and safety impact.
+
 ## Browser QA
 
 When using Playwright MCP against the local app, authenticate through the development admin
@@ -112,7 +116,9 @@ Use:
 - Reducers should keep state transitions pure; side effects belong in providers/components.
 - Schema changes may require Mongoose model updates, client type updates, migrations, and Meilisearch index updates.
 - Scraper-derived claims should remain evidence-first: store raw observations/source evidence, then materialize derived access signals/pathways.
+- Launch and visibility gates are trust boundaries, not yield targets. If a row is blocked, prefer better source acquisition, scraper coverage, or grounded LLM extraction over weakening the threshold.
 - Identity and profile-media repairs must be source-level, not one-off UI patches. Verify same-name profiles, source URLs, observations, public API output, and run the relevant audit script so wrong faces or cross-person data cannot silently reappear.
+- Test fixtures must not contain actual user data. Use synthetic names, netids, emails, profile URLs, source snippets, and slugs; preserve parser semantics with fake Yale-shaped fixtures only when the code path specifically requires Yale-domain behavior. Run the fixture privacy guard when adding or modifying tests that include people, profiles, emails, or directory-like HTML.
 - Contact and outreach features need guardrails. Prefer official application/contact routes and avoid encouraging mass outreach.
 - Browser QA should use `devadmin` through `http://localhost:4000/api/dev-login?userType=admin&redirect=http%3A%2F%2Flocalhost%3A3000%2Fresearch`.
 

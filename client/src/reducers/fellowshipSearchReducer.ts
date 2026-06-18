@@ -12,7 +12,6 @@ export type FellowshipQuickFilter =
   | 'nextCycle'
   | 'structured'
   | 'mentorFirst'
-  | 'recent'
   | null;
 
 export interface FellowshipSearchState {

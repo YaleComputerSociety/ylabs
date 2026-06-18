@@ -131,6 +131,12 @@ describe('user email hygiene core', () => {
     expect(() => parseUserEmailHygieneArgs(['--output', '--apply'])).toThrow(
       '--output requires a path',
     );
+    expect(() => parseUserEmailHygieneArgs(['--output=/var/tmp/user-email-hygiene.json'])).toThrow(
+      /--output must write under/,
+    );
+    expect(() => parseUserEmailHygieneArgs(['--output=/tmp/user-email-hygiene.txt'])).toThrow(
+      /--output must point to a \.json report file/,
+    );
     expect(() => parseUserEmailHygieneArgs(['--limit', '--sample-size=5'])).toThrow(
       '--limit requires a number',
     );
@@ -179,6 +185,9 @@ describe('user email hygiene CLI wrapper', () => {
       suspiciousUserEmailCount: 1,
       samples: [{ email: 'devadmin@example.invalid' }],
     });
+    expect(() =>
+      writeUserEmailHygieneOutput(payload, '/var/tmp/user-email-hygiene.json'),
+    ).toThrow(/--output must write under/);
   });
 
   it('wraps review artifacts with target metadata and parsed options', () => {

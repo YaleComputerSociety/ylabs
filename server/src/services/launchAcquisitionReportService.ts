@@ -9,11 +9,20 @@ import {
   VisibilityReleaseQueueItem,
   type VisibilityRepairStage,
 } from '../models/visibilityReleaseQueueItem';
+import { serializedDocumentId } from '../utils/idSerialization';
 
 type LaunchAcquisitionStage = Extract<
   VisibilityRepairStage,
   'pi_identity' | 'action_evidence' | 'source_description'
 >;
+
+const LAUNCH_ACQUISITION_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
+
+function normalizeLaunchAcquisitionObjectId(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  return LAUNCH_ACQUISITION_OBJECT_ID_RE.test(trimmed) ? trimmed : undefined;
+}
 
 export interface LaunchAcquisitionReportOptions {
   stages?: LaunchAcquisitionStage[];
@@ -84,12 +93,33 @@ interface SourceDescriptionGroups {
   candidateOfficialUrlPresent: LaunchAcquisitionGroup;
 }
 
+export type LaunchAcquisitionRootCauseCategory =
+  | 'missing_official_url'
+  | 'profile_not_research_prose'
+  | 'missing_or_ambiguous_lead'
+  | 'grant_not_action_evidence'
+  | 'application_or_formalization_only'
+  | 'manual_review_required';
+
+export interface LaunchAcquisitionManifestRow {
+  recordId: string;
+  label: string;
+  stage: LaunchAcquisitionStage;
+  rootCauseCategory: LaunchAcquisitionRootCauseCategory;
+  currentSourceUrl: string;
+  candidateSourceUrls: string[];
+  requiredFact: string;
+  safeNextCommand: string;
+  blockedBecause: string;
+}
+
 export interface LaunchAcquisitionReport {
   mode: 'read-only';
   generatedAt: string;
   stages: LaunchAcquisitionStage[];
   scanned: number;
   bySource: Record<string, { piIdentity: number; actionEvidence: number; sourceDescription: number }>;
+  manifest: LaunchAcquisitionManifestRow[];
   piIdentity?: {
     total: number;
     groups: PiIdentityGroups;
@@ -148,10 +178,10 @@ const textValue = (value: unknown): string =>
 
 const idValue = (value: unknown): string => {
   if (!value) return '';
-  if (typeof value === 'string') return value.trim();
-  if (typeof (value as any).toHexString === 'function') return (value as any).toHexString();
+  const serialized = serializedDocumentId(value);
+  if (serialized) return serialized.trim();
   if (typeof value === 'object' && '_id' in value) return idValue((value as Record<string, unknown>)._id);
-  return String(value).trim();
+  return '';
 };
 
 const hasHttpUrl = (value: unknown): boolean => /^https?:\/\//i.test(textValue(value));
@@ -272,6 +302,29 @@ const isOfficialCandidateUrl = (value: unknown): boolean =>
 
 const usefulDescriptionText = (value: unknown): boolean => textValue(value).length >= 80;
 
+const currentSourceUrlForEntity = (entity: Record<string, any>): string => sourceUrlsForEntity(entity)[0] || '';
+
+const candidateOfficialSourceUrlsForEntity = (entity: Record<string, any>): string[] =>
+  sourceUrlsForEntity(entity).filter(isOfficialCandidateUrl);
+
+const hasGrantSourceUrl = (entity: Record<string, any>): boolean =>
+  sourceUrlsForEntity(entity).some((url) => /reporter\.nih\.gov|nsf\.gov|api\.nsf\.gov/i.test(url));
+
+const hasApplicationOnlySource = (entity: Record<string, any>, item: LaunchAcquisitionReportQueueItem): boolean =>
+  cleanStrings(item.blockerReasons).includes('application_source_only') ||
+  sourceUrlsForEntity(entity).some((url) => /communityforce\.com/i.test(url));
+
+const sourceDescriptionCommand =
+  'SCRAPER_ENV=beta yarn --cwd server research-homes:backfill-official-urls --dry-run --limit=100 --output /tmp/ylabs-research-home-url-backfill.json';
+const groundedDescriptionCommand =
+  'SCRAPER_ENV=beta yarn --cwd server research-homes:backfill-descriptions --dry-run --limit=100 --output /tmp/ylabs-research-home-description-backfill.json';
+const piIdentityCommand =
+  'SCRAPER_ENV=beta yarn --cwd server launch:acquisition-report --stage=pi_identity --limit=250 --sample-limit=25 --output /tmp/ylabs-pi-identity-acquisition.json';
+const actionEvidenceCommand =
+  'SCRAPER_ENV=beta yarn --cwd server launch:acquisition-report --stage=action_evidence --limit=250 --sample-limit=25 --output /tmp/ylabs-action-evidence-acquisition.json';
+const reviewExceptionCommand =
+  'SCRAPER_ENV=beta yarn --cwd server launch:review-exceptions --collection=all --limit=500 --decision-template-output /tmp/ylabs-launch-review-exceptions-template.json --accepted-decisions=/tmp/ylabs-launch-review-exceptions-decisions.json --allow-empty-decisions --output /tmp/ylabs-launch-review-exceptions.json';
+
 const incrementSource = (
   bySource: LaunchAcquisitionReport['bySource'],
   item: LaunchAcquisitionReportQueueItem,
@@ -346,6 +399,35 @@ async function classifyPiItem(
   }
 }
 
+async function buildPiManifestRow(
+  item: LaunchAcquisitionReportQueueItem,
+  entity: Record<string, any>,
+  deps: LaunchAcquisitionReportDeps,
+): Promise<LaunchAcquisitionManifestRow> {
+  const label = textValue(entity.displayName || entity.name || item.label);
+  const urls = sourceUrlsForEntity(entity);
+  const users = await deps.findUsersByUrls(candidateIdentityUrlsForEntity(entity));
+  const matchingUsers = users.filter((user) => userNameMatchesEntity(user, entity));
+  const hasExactSingleUser = matchingUsers.length === 1 && users.length === 1;
+  const currentSourceUrl = currentSourceUrlForEntity(entity);
+
+  return {
+    recordId: item.recordId,
+    label,
+    stage: 'pi_identity',
+    rootCauseCategory: hasExactSingleUser ? 'manual_review_required' : 'missing_or_ambiguous_lead',
+    currentSourceUrl,
+    candidateSourceUrls: urls,
+    requiredFact: 'Official PI/director identity with a unique Yale user, profile URL, or person-specific Yale email.',
+    safeNextCommand: piIdentityCommand,
+    blockedBecause: hasExactSingleUser
+      ? 'A candidate user exists, but PI attachment still requires the guarded repair path or reviewed source evidence.'
+      : users.length > 1
+        ? 'Official profile or source URL matches multiple/mismatched users; do not attach a lead without disambiguation.'
+        : 'No unique source-backed PI/director user is currently available for this research home.',
+  };
+}
+
 async function classifyActionItem(
   item: LaunchAcquisitionReportQueueItem,
   entity: Record<string, any>,
@@ -374,6 +456,41 @@ async function classifyActionItem(
   if (accessCounts.accessSignals + accessCounts.entryPathways + accessCounts.contactRoutes > 0) {
     addGroup(groups.sourceBackedRouteNotLaunchMaterialized, item, label, sampleLimit);
   }
+}
+
+async function buildActionManifestRow(
+  item: LaunchAcquisitionReportQueueItem,
+  entity: Record<string, any>,
+  deps: LaunchAcquisitionReportDeps,
+): Promise<LaunchAcquisitionManifestRow> {
+  const label = textValue(entity.displayName || entity.name || item.label);
+  const [sourceObservationCount, undergraduateObservationCount, accessCounts] = await Promise.all([
+    deps.countSourceObservations(entity),
+    deps.countUndergraduateAccessObservations(entity),
+    deps.countAccessRecords(item.recordId),
+  ]);
+  const currentSourceUrl = currentSourceUrlForEntity(entity);
+  const grantOnly = hasGrantSourceUrl(entity) && !isYaleUrl(currentSourceUrl);
+  const hasMaterializedAccess =
+    accessCounts.accessSignals + accessCounts.entryPathways + accessCounts.contactRoutes > 0;
+
+  return {
+    recordId: item.recordId,
+    label,
+    stage: 'action_evidence',
+    rootCauseCategory: grantOnly ? 'grant_not_action_evidence' : 'manual_review_required',
+    currentSourceUrl,
+    candidateSourceUrls: candidateOfficialSourceUrlsForEntity(entity),
+    requiredFact: 'Official Yale page with undergraduate access, application, contact, or outreach instructions.',
+    safeNextCommand: actionEvidenceCommand,
+    blockedBecause: grantOnly
+      ? 'Current evidence describes funded research but does not prove a student action route.'
+      : sourceObservationCount === 0
+        ? 'No source observations are available to support an access route.'
+        : undergraduateObservationCount === 0 && !hasMaterializedAccess
+          ? 'Source observations exist, but none contain accepted undergraduate access or next-step evidence.'
+          : 'Access artifacts exist or need review, but the launch gate still does not accept them as concrete action evidence.',
+  };
 }
 
 async function classifySourceDescriptionItem(
@@ -413,6 +530,65 @@ async function classifySourceDescriptionItem(
   }
 }
 
+async function buildSourceDescriptionManifestRow(
+  item: LaunchAcquisitionReportQueueItem,
+  entity: Record<string, any>,
+): Promise<LaunchAcquisitionManifestRow> {
+  const label = textValue(entity.displayName || entity.name || item.label);
+  const reasons = cleanStrings(item.blockerReasons);
+  const urls = sourceUrlsForEntity(entity);
+  const candidateSourceUrls = candidateOfficialSourceUrlsForEntity(entity);
+  const currentSourceUrl = currentSourceUrlForEntity(entity);
+  let rootCauseCategory: LaunchAcquisitionRootCauseCategory = 'manual_review_required';
+  let requiredFact = 'Source-backed research description or card description that passes launch quality checks.';
+  let safeNextCommand = groundedDescriptionCommand;
+  let blockedBecause = 'Current source text did not produce an accepted source-backed description repair.';
+
+  if (urls.length === 0 || reasons.includes('missing_source_url')) {
+    rootCauseCategory = 'missing_official_url';
+    requiredFact = 'Current official Yale or lab page with research-specific prose.';
+    safeNextCommand = sourceDescriptionCommand;
+    blockedBecause = 'No trusted current source URL is attached to this held research home.';
+  } else if (hasApplicationOnlySource(entity, item)) {
+    rootCauseCategory = 'application_or_formalization_only';
+    requiredFact = 'Official source proving a hosted research entry route rather than only a funding or application portal.';
+    safeNextCommand = reviewExceptionCommand;
+    blockedBecause = 'Current source is an application/funding portal and is not enough to prove research-home description quality.';
+  } else if (reasons.includes('profile_fallback_only') || urls.some(isYaleProfileUrl)) {
+    rootCauseCategory = 'profile_not_research_prose';
+    requiredFact = 'Research-focused official prose from a lab, project, research statement, or profile research section.';
+    safeNextCommand = groundedDescriptionCommand;
+    blockedBecause = 'The current official profile source is biography, title, or otherwise too thin for a research description.';
+  } else if (urls.some(isRejectedDescriptionSourceUrl)) {
+    rootCauseCategory = hasGrantSourceUrl(entity) ? 'grant_not_action_evidence' : 'manual_review_required';
+    requiredFact = 'Official research-home page, not ORCID, grant, publication, directory, or generic metadata.';
+    safeNextCommand = sourceDescriptionCommand;
+    blockedBecause = 'Current source host is rejected for launch description evidence.';
+  }
+
+  return {
+    recordId: item.recordId,
+    label,
+    stage: 'source_description',
+    rootCauseCategory,
+    currentSourceUrl,
+    candidateSourceUrls,
+    requiredFact,
+    safeNextCommand,
+    blockedBecause,
+  };
+}
+
+async function buildManifestRow(
+  item: LaunchAcquisitionReportQueueItem,
+  entity: Record<string, any>,
+  deps: LaunchAcquisitionReportDeps,
+): Promise<LaunchAcquisitionManifestRow> {
+  if (item.repairStage === 'pi_identity') return buildPiManifestRow(item, entity, deps);
+  if (item.repairStage === 'action_evidence') return buildActionManifestRow(item, entity, deps);
+  return buildSourceDescriptionManifestRow(item, entity);
+}
+
 const defaultDeps: LaunchAcquisitionReportDeps = {
   async findQueueItems(options) {
     return VisibilityReleaseQueueItem.find({
@@ -425,13 +601,17 @@ const defaultDeps: LaunchAcquisitionReportDeps = {
       .lean() as unknown as LaunchAcquisitionReportQueueItem[];
   },
   async findResearchEntity(id) {
-    return ResearchEntity.findById(id)
+    const safeId = normalizeLaunchAcquisitionObjectId(id);
+    if (!safeId) return null;
+    return ResearchEntity.findById(safeId)
       .select('name displayName slug type category entityType website websiteUrl sourceUrls description fullDescription shortDescription')
       .lean();
   },
   async findResearchEntityMembers(id) {
+    const safeId = normalizeLaunchAcquisitionObjectId(id);
+    if (!safeId) return [];
     return ResearchGroupMember.find({
-      researchEntityId: id,
+      researchEntityId: safeId,
       isCurrentMember: { $ne: false },
       archived: { $ne: true },
     })
@@ -508,10 +688,12 @@ const defaultDeps: LaunchAcquisitionReportDeps = {
     });
   },
   async countAccessRecords(id) {
+    const safeId = normalizeLaunchAcquisitionObjectId(id);
+    if (!safeId) return { accessSignals: 0, entryPathways: 0, contactRoutes: 0 };
     const [accessSignals, entryPathways, contactRoutes] = await Promise.all([
-      AccessSignal.countDocuments({ researchEntityId: id, archived: { $ne: true } }),
-      EntryPathway.countDocuments({ researchEntityId: id, archived: { $ne: true } }),
-      ContactRoute.countDocuments({ researchEntityId: id, archived: { $ne: true } }),
+      AccessSignal.countDocuments({ researchEntityId: safeId, archived: { $ne: true } }),
+      EntryPathway.countDocuments({ researchEntityId: safeId, archived: { $ne: true } }),
+      ContactRoute.countDocuments({ researchEntityId: safeId, archived: { $ne: true } }),
     ]);
     return { accessSignals, entryPathways, contactRoutes };
   },
@@ -542,6 +724,7 @@ export async function buildLaunchAcquisitionReport(
   const limit = normalizeReportLimit(options.limit);
   const items = (await deps.findQueueItems({ stages })).slice(0, limit);
   const bySource: LaunchAcquisitionReport['bySource'] = {};
+  const manifest: LaunchAcquisitionManifestRow[] = [];
   const piGroups = stages.includes('pi_identity') ? buildPiGroups() : undefined;
   const actionGroups = stages.includes('action_evidence') ? buildActionGroups() : undefined;
   const sourceDescriptionGroups = stages.includes('source_description')
@@ -562,6 +745,7 @@ export async function buildLaunchAcquisitionReport(
     if (!entity) continue;
 
     incrementSource(bySource, item, item.repairStage);
+    manifest.push(await buildManifestRow(item, entity, deps));
     if (item.repairStage === 'pi_identity' && piGroups) {
       piTotal += 1;
       await classifyPiItem(item, entity, deps, piGroups, sampleLimit);
@@ -582,6 +766,7 @@ export async function buildLaunchAcquisitionReport(
     stages,
     scanned: items.length,
     bySource,
+    manifest,
     ...(piGroups ? { piIdentity: { total: piTotal, groups: piGroups } } : {}),
     ...(actionGroups ? { actionEvidence: { total: actionTotal, groups: actionGroups } } : {}),
     ...(sourceDescriptionGroups

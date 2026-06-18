@@ -16,7 +16,10 @@ vi.mock('../../models/visibilityReleaseQueueItem', async (importOriginal) => ({
 import {
   isProfileAreaDuplicateCounterpart,
   isBlockingVisibilityReason,
+  isStudentVisibilityGatePlanMateriallyChanged,
   listVisibilityReleaseQueue,
+  normalizeStudentVisibilityGateObjectId,
+  researchEntityGateProjection,
   runStudentVisibilityGateForPlans,
   selectExactUrlDuplicateRiskEntityIds,
   type StudentVisibilityGatePlan,
@@ -49,6 +52,22 @@ const heldPlan = (overrides: Partial<StudentVisibilityGatePlan> = {}): StudentVi
 });
 
 describe('studentVisibilityGateService', () => {
+  it('normalizes gate ObjectIds without object-shaped coercion', () => {
+    expect(normalizeStudentVisibilityGateObjectId(' 507f1f77bcf86cd799439011 ')).toBe(
+      '507f1f77bcf86cd799439011',
+    );
+    expect(normalizeStudentVisibilityGateObjectId('entity-safe')).toBeUndefined();
+    expect(
+      normalizeStudentVisibilityGateObjectId({
+        toString: () => '507f1f77bcf86cd799439011',
+      }),
+    ).toBeUndefined();
+  });
+
+  it('loads manual visibility overrides when planning research entity gates', () => {
+    expect(researchEntityGateProjection.split(/\s+/)).toContain('studentVisibilityOverrideTier');
+  });
+
   it('caps release queue page before building Mongo skip and limit values', async () => {
     const chain = {
       sort: vi.fn().mockReturnThis(),
@@ -70,6 +89,32 @@ describe('studentVisibilityGateService', () => {
       page: 1000,
       pageSize: 100,
       totalPages: 0,
+    });
+  });
+
+  it('bounds release queue filters before building Mongo queries', async () => {
+    const chain = {
+      sort: vi.fn().mockReturnThis(),
+      skip: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockReturnThis(),
+      lean: vi.fn().mockResolvedValue([]),
+    };
+    mocks.queueFind.mockReturnValue(chain);
+    mocks.queueCountDocuments.mockResolvedValue(0);
+
+    await listVisibilityReleaseQueue({
+      status: '$where',
+      reason: 'x'.repeat(121),
+      sourceName: '  ysm-atoz-index  ',
+    });
+
+    expect(mocks.queueFind).toHaveBeenCalledWith({
+      status: 'open',
+      sourceNames: 'ysm-atoz-index',
+    });
+    expect(mocks.queueCountDocuments).toHaveBeenCalledWith({
+      status: 'open',
+      sourceNames: 'ysm-atoz-index',
     });
   });
 
@@ -205,9 +250,9 @@ describe('studentVisibilityGateService', () => {
     const ids = selectExactUrlDuplicateRiskEntityIds(
       [
         {
-          _id: 'hui-cao-lab',
-          slug: 'dept-seas-hui-cao',
-          name: 'Hui Cao Lab',
+          _id: 'hayden-material-lab',
+          slug: 'dept-seas-hayden-material',
+          name: 'Hayden Material Lab',
           entityType: 'LAB',
           studentVisibilityTier: 'student_ready',
           fullDescription:
@@ -216,18 +261,18 @@ describe('studentVisibilityGateService', () => {
           sourceUrls: ['https://www.eng.yale.edu/caolab/'],
         },
         {
-          _id: 'hui-cao-shell',
-          slug: 'dept-physics-hui-cao',
-          name: 'Hui Cao Faculty Research',
+          _id: 'hayden-material-shell',
+          slug: 'dept-physics-hayden-material',
+          name: 'Hayden Material Faculty Research',
           entityType: 'FACULTY_RESEARCH_AREA',
           websiteUrl: 'http://www.eng.yale.edu/caolab',
           sourceUrls: ['https://physics.yale.edu/people/faculty'],
         },
       ],
-      [{ researchEntityId: 'hui-cao-lab', userId: 'user-hui-cao' }],
+      [{ researchEntityId: 'hayden-material-lab', userId: 'user-hayden-material' }],
     );
 
-    expect([...ids]).toEqual(['hui-cao-shell']);
+    expect([...ids]).toEqual(['hayden-material-shell']);
   });
 
   it('prefers a concrete lab over a thin same-URL faculty shell during exact duplicate detection', () => {
@@ -276,6 +321,59 @@ describe('studentVisibilityGateService', () => {
     expect(isBlockingVisibilityReason('formalization_only')).toBe(true);
     expect(isBlockingVisibilityReason('source_backed_description')).toBe(false);
     expect(isBlockingVisibilityReason('concrete_next_step')).toBe(false);
+  });
+
+  it('treats visibility reason and computed tier drift as material changes', () => {
+    expect(
+      isStudentVisibilityGatePlanMateriallyChanged(
+        safePlan({
+          currentTier: 'student_ready',
+          currentComputedTier: 'student_ready',
+          currentReasons: ['concrete_next_step', 'source_backed_description'],
+        }),
+      ),
+    ).toBe(false);
+
+    expect(
+      isStudentVisibilityGatePlanMateriallyChanged(
+        safePlan({
+          currentTier: 'student_ready',
+          currentComputedTier: 'operator_review',
+          currentReasons: ['concrete_next_step', 'source_backed_description'],
+        }),
+      ),
+    ).toBe(true);
+
+    expect(
+      isStudentVisibilityGatePlanMateriallyChanged(
+        safePlan({
+          currentTier: 'student_ready',
+          currentComputedTier: 'student_ready',
+          currentReasons: ['source_backed_description'],
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it('counts changed visibility plans by material persisted state', async () => {
+    const report = await runStudentVisibilityGateForPlans(
+      [
+        safePlan({
+          currentTier: 'student_ready',
+          currentComputedTier: 'student_ready',
+          currentReasons: ['concrete_next_step', 'source_backed_description'],
+        }),
+        safePlan({
+          recordId: 'entity-reasons-changed',
+          currentTier: 'student_ready',
+          currentComputedTier: 'student_ready',
+          currentReasons: ['source_backed_description'],
+        }),
+      ],
+      { mode: 'dry-run' },
+    );
+
+    expect(report.counts.changed).toBe(1);
   });
 
   it('promotes public-safe records and resolves any open release queue item', async () => {

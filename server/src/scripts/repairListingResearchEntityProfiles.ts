@@ -6,7 +6,9 @@ import { fileURLToPath } from 'url';
 import { initializeConnections, getListingModel } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
 import { buildListingResearchEntityProfilePatch } from '../services/listingResearchEntityProfile';
-import { assertScriptApplyAllowed } from './scriptWriteGuards';
+import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { serializedDocumentId } from '../utils/idSerialization';
+import { sanitizeLogValue } from '../utils/logSanitizer';
 
 dotenv.config();
 
@@ -16,6 +18,8 @@ export interface RepairListingResearchEntityProfilesCliOptions {
   limit: number;
   output?: string;
 }
+
+const LISTING_PROFILE_REPAIR_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
 
 interface PlannedRepair {
   listingId: string;
@@ -35,12 +39,22 @@ function parsePositiveInteger(value: string, flag: string): number {
   return parsed;
 }
 
+export function normalizeListingProfileRepairObjectId(
+  value: unknown,
+): mongoose.Types.ObjectId | undefined {
+  if (value instanceof mongoose.Types.ObjectId) return value;
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  if (!LISTING_PROFILE_REPAIR_OBJECT_ID_RE.test(trimmed)) return undefined;
+  return new mongoose.Types.ObjectId(trimmed);
+}
+
+function normalizeListingProfileRepairObjectIdString(value: unknown): string | undefined {
+  return normalizeListingProfileRepairObjectId(value)?.toHexString();
+}
+
 function parseRequiredOutputPath(value: string | undefined): string {
-  const output = value?.trim();
-  if (!output || output.startsWith('--')) {
-    throw new Error('--output requires a path');
-  }
-  return output;
+  return resolveSafeJsonReportOutputPath(value);
 }
 
 export function parseRepairListingResearchEntityProfilesArgs(
@@ -78,8 +92,9 @@ export function writeRepairListingResearchEntityProfilesOutput(
   output?: string,
 ): void {
   if (!output) return;
-  fs.mkdirSync(path.dirname(output), { recursive: true });
-  fs.writeFileSync(output, `${JSON.stringify(report, null, 2)}\n`);
+  const safeOutput = resolveSafeJsonReportOutputPath(output);
+  fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
+  fs.writeFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
 }
 
 export function buildRepairListingResearchEntityProfilesOutput<T extends object>(
@@ -140,22 +155,28 @@ async function planRepairs(limit: number): Promise<PlannedRepair[]> {
     new Set(
       listings
         .map((listing: any) => listing.researchEntityId || listing.researchGroupId)
-        .filter((id: any) => mongoose.Types.ObjectId.isValid(id))
-        .map((id: any) => String(id)),
+        .map((id: any) => normalizeListingProfileRepairObjectIdString(id))
+        .filter((id): id is string => Boolean(id)),
     ),
   );
-  const entities = await ResearchEntity.find({ _id: { $in: entityIds } }).lean();
-  const entityById = new Map(entities.map((entity: any) => [String(entity._id), entity]));
+  const entityObjectIds = entityIds
+    .map((id) => normalizeListingProfileRepairObjectId(id))
+    .filter((id): id is mongoose.Types.ObjectId => Boolean(id));
+  const entities = await ResearchEntity.find({ _id: { $in: entityObjectIds } }).lean();
+  const entityById = new Map(entities.map((entity: any) => [serializedDocumentId(entity._id) || '', entity]));
   const repairs: PlannedRepair[] = [];
 
   for (const listing of listings as any[]) {
-    const researchEntityId = String(listing.researchEntityId || listing.researchGroupId || '');
+    const researchEntityId = normalizeListingProfileRepairObjectIdString(
+      listing.researchEntityId || listing.researchGroupId,
+    );
+    if (!researchEntityId) continue;
     const entity = entityById.get(researchEntityId);
     if (!entity) continue;
     const patch = buildListingResearchEntityProfilePatch({ entity, listing });
     if (Object.keys(patch).length === 0) continue;
     repairs.push({
-      listingId: String(listing._id),
+      listingId: serializedDocumentId(listing._id) || '',
       researchEntityId,
       label: entity.displayName || entity.name || entity.slug || researchEntityId,
       patch,
@@ -167,7 +188,9 @@ async function planRepairs(limit: number): Promise<PlannedRepair[]> {
 
 async function applyRepairs(repairs: PlannedRepair[]) {
   for (const repair of repairs) {
-    await ResearchEntity.updateOne({ _id: repair.researchEntityId }, { $set: repair.patch });
+    const researchEntityId = normalizeListingProfileRepairObjectId(repair.researchEntityId);
+    if (!researchEntityId) continue;
+    await ResearchEntity.updateOne({ _id: researchEntityId }, { $set: repair.patch });
   }
 }
 
@@ -209,7 +232,7 @@ const isDirectRun = process.argv[1]
 if (isDirectRun) {
   main()
     .catch((error) => {
-      console.error('Failed to repair listing research entity profiles:', error);
+      console.error('Failed to repair listing research entity profiles:', sanitizeLogValue(error));
       process.exitCode = 1;
     })
     .finally(async () => {

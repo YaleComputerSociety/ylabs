@@ -7,7 +7,9 @@ import { AccessSignal } from '../models/accessSignal';
 import { ContactRoute } from '../models/contactRoute';
 import { EntryPathway } from '../models/entryPathway';
 import { initializeConnections } from '../db/connections';
-import { assertScriptApplyAllowed } from './scriptWriteGuards';
+import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { serializedDocumentId } from '../utils/idSerialization';
+import { sanitizeLogValue } from '../utils/logSanitizer';
 
 dotenv.config();
 
@@ -44,11 +46,19 @@ interface PathwayPlan {
   relinkedContactRoutes: number;
 }
 
+const DEDUPE_EXPLORATORY_PATHWAY_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
+
+export function normalizeDedupeExploratoryContactPathwayObjectId(value: unknown): string | undefined {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return DEDUPE_EXPLORATORY_PATHWAY_OBJECT_ID_RE.test(trimmed) ? trimmed : undefined;
+  }
+  if (value instanceof mongoose.Types.ObjectId) return value.toHexString();
+  return undefined;
+}
+
 const idString = (value: unknown): string => {
-  if (!value) return '';
-  if (typeof value === 'string') return value;
-  if (typeof (value as any).toHexString === 'function') return (value as any).toHexString();
-  return String(value);
+  return serializedDocumentId(value) || '';
 };
 
 export function parseDedupeExploratoryContactPathwaysArgs(
@@ -82,14 +92,10 @@ export function parseDedupeExploratoryContactPathwaysArgs(
       options.maxApply = parsePositiveInteger(argv[i + 1], '--max-apply');
       i += 1;
     } else if (arg === '--output') {
-      const next = argv[i + 1];
-      if (!next || next.startsWith('--')) throw new Error('--output requires a path');
-      options.output = next;
+      options.output = resolveSafeJsonReportOutputPath(argv[i + 1]);
       i += 1;
     } else if (arg.startsWith('--output=')) {
-      const output = arg.slice('--output='.length).trim();
-      if (!output || output.startsWith('--')) throw new Error('--output requires a path');
-      options.output = output;
+      options.output = resolveSafeJsonReportOutputPath(arg.slice('--output='.length));
     } else {
       throw new Error(`Unknown argument: ${arg}`);
     }
@@ -125,8 +131,9 @@ export function writeDedupeExploratoryContactPathwaysOutput(
   output?: string,
 ): void {
   if (!output) return;
-  fs.mkdirSync(path.dirname(output), { recursive: true });
-  fs.writeFileSync(output, `${JSON.stringify(report, null, 2)}\n`);
+  const safeOutput = resolveSafeJsonReportOutputPath(output);
+  fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
+  fs.writeFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
 }
 
 export function buildDedupeExploratoryContactPathwaysOutput(
@@ -225,8 +232,13 @@ async function buildPlans(limit: number): Promise<PathwayPlan[]> {
 async function applyPlans(plans: PathwayPlan[]) {
   const applied = [];
   for (const plan of plans) {
-    const duplicateIds = plan.duplicatePathwayIds.map((id) => new mongoose.Types.ObjectId(id));
-    const canonicalId = new mongoose.Types.ObjectId(plan.canonicalPathwayId);
+    const canonicalPathwayId = normalizeDedupeExploratoryContactPathwayObjectId(plan.canonicalPathwayId);
+    const duplicatePathwayIds = plan.duplicatePathwayIds
+      .map((id) => normalizeDedupeExploratoryContactPathwayObjectId(id))
+      .filter((id): id is string => Boolean(id));
+    if (!canonicalPathwayId || duplicatePathwayIds.length === 0) continue;
+    const duplicateIds = duplicatePathwayIds.map((id) => new mongoose.Types.ObjectId(id));
+    const canonicalId = new mongoose.Types.ObjectId(canonicalPathwayId);
     const [accessSignals, contactRoutes, pathways] = await Promise.all([
       AccessSignal.updateMany(
         { entryPathwayId: { $in: duplicateIds }, archived: { $ne: true } },
@@ -322,7 +334,7 @@ const isDirectRun = process.argv[1]
 if (isDirectRun) {
   main()
     .catch((error) => {
-      console.error('Failed to dedupe exploratory contact pathways:', error);
+      console.error('Failed to dedupe exploratory contact pathways:', sanitizeLogValue(error));
       process.exitCode = 1;
     })
     .finally(async () => {

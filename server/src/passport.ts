@@ -13,10 +13,12 @@ import {
   isLocalDevelopmentRuntime as isLocalDevelopmentEnvironment,
   requiresDeployedRuntimeSecurity,
 } from './utils/environment';
+import { isPrivateOrLocalHostname } from './utils/urlSafety';
 import {
   allowsLegacyAdminUserType,
   hasActiveAdminGrant,
 } from './services/adminGrantService';
+import { sanitizeLogValue } from './utils/logSanitizer';
 
 /**
  * Verbose auth tracing. These logs (per-request deserialization, the
@@ -26,10 +28,14 @@ import {
  * enable. Genuine errors and anomalies stay on unconditional console.error/log.
  */
 const authDebug = (...args: unknown[]) => {
-  if (process.env.AUTH_DEBUG === 'true') console.log(...args);
+  if (process.env.AUTH_DEBUG === 'true') console.log(...args.map((arg) => sanitizeLogValue(arg)));
 };
 
 const STALE_THRESHOLD_MS = 30 * 24 * 60 * 60 * 1000;
+const AUTH_NETID_RE = /^[A-Za-z0-9]{2,12}$/;
+const MAX_AUTH_REDIRECT_LENGTH = 2048;
+const MAX_AUTH_ORIGIN_HEADER_LENGTH = 2048;
+const RELATIVE_REDIRECT_BASE = 'https://redirect.local';
 type AuthenticatedSessionUser = {
   netId: string;
   userType?: string;
@@ -55,6 +61,7 @@ type PersistedUser = {
  */
 function safeRedirectTarget(raw: unknown): string | null {
   if (typeof raw !== 'string' || raw.length === 0) return null;
+  if (raw.length > MAX_AUTH_REDIRECT_LENGTH) return null;
   // Reject backslashes and control/whitespace chars before the checks below:
   // browsers normalize "\" to "/", so "/\evil.com" would otherwise slip past
   // the "//" guard and become a protocol-relative open redirect.
@@ -62,10 +69,22 @@ function safeRedirectTarget(raw: unknown): string | null {
     const code = raw.charCodeAt(i);
     if (code <= 0x20 || code === 0x5c) return null;
   }
-  if (raw.startsWith('/') && !raw.startsWith('//')) return raw;
+  if (raw.startsWith('/') && !raw.startsWith('//')) {
+    try {
+      const target = new URL(raw, RELATIVE_REDIRECT_BASE);
+      if (target.origin !== RELATIVE_REDIRECT_BASE) return null;
+      const path = `${target.pathname}${target.search}${target.hash}`;
+      if (!path.startsWith('/') || path.startsWith('//')) return null;
+      if (/^\/%(?:2f|5c)/i.test(path) || /%(?:0a|0d)/i.test(path)) return null;
+      return path;
+    } catch {
+      return null;
+    }
+  }
   try {
     const base = unquoteEnvValue(process.env.SERVER_BASE_URL);
     const target = new URL(raw);
+    if (target.username || target.password) return null;
     if (isLocalDevelopmentRuntime() && target.origin === 'http://localhost:3000') {
       return target.toString();
     }
@@ -80,8 +99,12 @@ function safeRedirectTarget(raw: unknown): string | null {
 
 function originFromUrl(value: string | undefined): string {
   if (!value) return '';
+  if (value.length > MAX_AUTH_ORIGIN_HEADER_LENGTH) return '';
+  if (/[\u0000-\u0020\u007f\\]/.test(value)) return '';
   try {
-    return new URL(value).origin;
+    const parsed = new URL(value);
+    if (parsed.username || parsed.password) return '';
+    return parsed.origin;
   } catch {
     return '';
   }
@@ -115,8 +138,10 @@ function isTrustedLogoutRequest(req: express.Request): boolean {
   const allowedOrigin = originFromUrl(authConfig.serverBaseURL);
   if (!allowedOrigin) return false;
 
-  const origin = originFromUrl(req.get('origin'));
-  if (origin) return origin === allowedOrigin;
+  if (req.get('origin') !== undefined) {
+    const origin = originFromUrl(req.get('origin'));
+    return Boolean(origin && origin === allowedOrigin);
+  }
 
   const refererOrigin = originFromUrl(req.get('referer'));
   return refererOrigin === allowedOrigin;
@@ -142,8 +167,16 @@ function requireProductionHttpsUrl(
     throw new Error(`${name} must use HTTPS in deployed runtimes.`);
   }
 
-  if (name === 'SERVER_BASE_URL' && isLocalDevelopmentEnvironment({ ...env, NODE_ENV: 'development' })) {
-    throw new Error('SERVER_BASE_URL must not point to localhost in deployed runtimes.');
+  if (parsed.username || parsed.password) {
+    throw new Error(`${name} must not include credentials in deployed runtimes.`);
+  }
+
+  if (parsed.search || parsed.hash) {
+    throw new Error(`${name} must not include query strings or fragments in deployed runtimes.`);
+  }
+
+  if (isPrivateOrLocalHostname(parsed.hostname)) {
+    throw new Error(`${name} must not point to a private or local host in deployed runtimes.`);
   }
 
   return raw.replace(/\/+$/g, '');
@@ -172,11 +205,36 @@ function normalizedHeaderValue(value: string | string[] | undefined): string | u
   return value;
 }
 
-function normalizeDevUserType(value: string | undefined): string {
-  const normalized = String(value || '').trim().toLowerCase();
+function normalizeDevUserType(value: unknown): string {
+  const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
   return ['admin', 'student', 'professor', 'faculty', 'unknown'].includes(normalized)
     ? normalized
-    : 'admin';
+    : 'student';
+}
+
+function normalizeSessionUserType(value: unknown): string {
+  const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  return ['admin', 'student', 'professor', 'faculty', 'unknown'].includes(normalized)
+    ? normalized
+    : 'unknown';
+}
+
+function normalizeAuthNetId(value: unknown): string | undefined {
+  const normalized = typeof value === 'string' ? value.trim() : '';
+  return AUTH_NETID_RE.test(normalized) ? normalized : undefined;
+}
+
+function publicAuthSessionUser(user: unknown): AuthenticatedSessionUser | null {
+  const source = user && typeof user === 'object' ? (user as Record<string, unknown>) : {};
+  const netId = normalizeAuthNetId(source.netId);
+  if (!netId) return null;
+
+  return {
+    netId,
+    userType: normalizeSessionUserType(source.userType),
+    userConfirmed: source.userConfirmed === true,
+    profileVerified: source.profileVerified === true,
+  };
 }
 
 function localAuthBypassUser(
@@ -184,8 +242,8 @@ function localAuthBypassUser(
   headers: express.Request['headers'] = {},
 ) {
   const netId =
-    normalizedHeaderValue(headers['x-dev-netid']) ||
-    unquoteEnvValue(env.LOCAL_AUTH_BYPASS_NETID) ||
+    normalizeAuthNetId(normalizedHeaderValue(headers['x-dev-netid'])) ||
+    normalizeAuthNetId(unquoteEnvValue(env.LOCAL_AUTH_BYPASS_NETID)) ||
     'devadmin';
   const userType = normalizeDevUserType(
     normalizedHeaderValue(headers['x-dev-user-type']) ||
@@ -211,12 +269,12 @@ function placeholderYaleEmail(netid: string): string {
   return `${netid.trim().toLowerCase()}@yale.edu`;
 }
 
-async function ensureDevLoginUser(userType: string) {
+async function ensureDevLoginUser(userType: unknown) {
   if (!isDevLoginAllowed()) {
     throw new Error('Dev login is disabled for this environment');
   }
 
-  const normalizedUserType = userType === 'admin' ? 'admin' : 'student';
+  const normalizedUserType = normalizeDevUserType(userType) === 'admin' ? 'admin' : 'student';
   const netId = normalizedUserType === 'admin' ? 'devadmin' : 'test123';
   const userData = {
     netid: netId,
@@ -242,7 +300,10 @@ async function buildAuthenticatedSessionUser(
   user: PersistedUser,
   fallbackNetId: string,
 ): Promise<AuthenticatedSessionUser> {
-  const netId = user.netid || fallbackNetId;
+  const netId = normalizeAuthNetId(user.netid || fallbackNetId);
+  if (!netId) {
+    throw new Error('Invalid authentication principal');
+  }
   const persistedUserType = user.userType || 'unknown';
   const grantBackedAdmin = await hasActiveAdminGrant(netId);
   const localDevelopmentAdmin =
@@ -291,6 +352,12 @@ function buildDirectoryUpdate(
  * 4. Fallback: create a default user
  */
 async function findOrCreateUser(netid: string) {
+  const safeNetid = normalizeAuthNetId(netid);
+  if (!safeNetid) {
+    throw new Error('Invalid authentication principal');
+  }
+
+  netid = safeNetid;
   let user = await validateUser(netid);
   if (user) {
     const updatedAt = user.updatedAt ? new Date(user.updatedAt).getTime() : 0;
@@ -298,7 +365,7 @@ async function findOrCreateUser(netid: string) {
 
     if (isStale) {
       authDebug(
-        `findOrCreateUser: refreshing stale data for ${netid} (last updated: ${user.updatedAt || 'never'})`,
+        `findOrCreateUser: refreshing stale data (last updated: ${user.updatedAt || 'never'})`,
       );
       try {
         const dirPerson = await fetchFromDirectory(netid, 'netid');
@@ -309,28 +376,28 @@ async function findOrCreateUser(netid: string) {
             dirUpdate.userConfirmed = true;
           }
           user = await updateUser(netid, dirUpdate);
-          authDebug(`findOrCreateUser: refreshed directory data for ${netid}`);
+          authDebug('findOrCreateUser: refreshed directory data');
         }
       } catch {
-        authDebug(`findOrCreateUser: directory refresh failed for ${netid}, using cached data`);
+        authDebug('findOrCreateUser: directory refresh failed, using cached data');
       }
     } else {
-      authDebug(`findOrCreateUser: existing user ${netid} (fresh)`);
+      authDebug('findOrCreateUser: existing user cache hit');
     }
     return user;
   }
 
-  authDebug(`findOrCreateUser: trying Yalies API for ${netid}`);
+  authDebug('findOrCreateUser: trying Yalies API lookup');
   user = await fetchYalie(netid);
   if (user) {
-    authDebug(`findOrCreateUser: Yalies success for ${netid}, type=${user.userType}`);
+    authDebug(`findOrCreateUser: Yalies success, type=${user.userType}`);
     return user;
   }
 
-  authDebug(`findOrCreateUser: Yalies failed, trying Yale Directory for ${netid}`);
+  authDebug('findOrCreateUser: Yalies failed, trying Yale Directory');
   const dirPerson = await fetchFromDirectory(netid, 'netid');
   if (dirPerson && dirPerson.name) {
-    authDebug(`findOrCreateUser: Directory found ${dirPerson.name}, title="${dirPerson.title}"`);
+    authDebug('findOrCreateUser: Directory record found');
 
     const userType = isFacultyTitle(dirPerson.title) ? 'professor' : 'unknown';
     const dirFields = buildDirectoryUpdate(dirPerson);
@@ -348,7 +415,7 @@ async function findOrCreateUser(netid: string) {
     return user;
   }
 
-  authDebug(`findOrCreateUser: Directory also failed, creating default user for ${netid}`);
+  authDebug('findOrCreateUser: Directory also failed, creating default user');
   user = await createUser({
     netid,
     fname: netid,
@@ -381,25 +448,44 @@ passport.use(
 
 passport.serializeUser(function (user: any, done) {
   authDebug('Serializing user');
-  done(null, user.netId);
+  const safeNetId = normalizeAuthNetId(user?.netId);
+  if (!safeNetId) {
+    done(new Error('Invalid authentication principal'));
+    return;
+  }
+  done(null, safeNetId);
 });
 
 passport.deserializeUser(async (netId: string, done) => {
   try {
     authDebug('Deserializing user');
-    const user = await findOrCreateUser(netId as string);
-    done(null, await buildAuthenticatedSessionUser(user, netId));
+    const safeNetId = normalizeAuthNetId(netId);
+    if (!safeNetId) {
+      done(null, null);
+      return;
+    }
+    const user = await findOrCreateUser(safeNetId);
+    done(null, await buildAuthenticatedSessionUser(user, safeNetId));
   } catch (error) {
     console.log('Deserialize: Error');
     done(error, null);
   }
 });
 
+const setPrivateAuthResponseHeaders = (res: express.Response): void => {
+  res.setHeader('Cache-Control', 'no-store, private, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Surrogate-Control', 'no-store');
+  res.setHeader('Expires', '0');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+};
+
 const casLogin = function (
   req: express.Request,
   res: express.Response,
   next: express.NextFunction,
 ) {
+  setPrivateAuthResponseHeaders(res);
   passport.authenticate('cas', function (
     err: Error | null,
     user: AuthenticatedSessionUser | false | null | undefined,
@@ -407,16 +493,7 @@ const casLogin = function (
   ) {
     if (err) {
       console.log('Error in authenticate function');
-      try {
-        console.error('Authentication error details: ', {
-          message: err.message,
-          stack: err.stack,
-          name: err.name,
-          fullError: JSON.stringify(err, Object.getOwnPropertyNames(err)),
-        });
-      } catch (e) {
-        console.error('Error serializing error object: ', e);
-      }
+      console.error('Authentication error details:', sanitizeLogValue(err));
 
       const errorRedirect = safeRedirectTarget(req.query?.error);
       if (errorRedirect) {
@@ -428,12 +505,12 @@ const casLogin = function (
 
     if (!user) {
       console.log('CAS auth but no user');
-      return res.status(401).json({ error: info.message || 'CAS auth but no user' });
+      return res.status(401).json({ error: 'CAS auth but no user' });
     }
 
     req.logIn(user, async function (err) {
       if (err) {
-        console.error('CAS login failed for netid:', user?.netId);
+        console.error('CAS login failed during session creation');
         return next(err);
       }
 
@@ -449,7 +526,7 @@ const casLogin = function (
         });
         authDebug('Login event logged to analytics');
       } catch (analyticsError) {
-        console.error('Error logging analytics event:', analyticsError);
+        console.error('Error logging analytics event:', sanitizeLogValue(analyticsError));
       }
 
       const safeTarget = safeRedirectTarget(req.query?.redirect);
@@ -465,11 +542,6 @@ const casLogin = function (
 };
 
 const router = express.Router();
-
-const setPrivateAuthCheckHeaders = (res: express.Response): void => {
-  res.setHeader('Cache-Control', 'no-store, private, max-age=0');
-  res.setHeader('Pragma', 'no-cache');
-};
 
 router.use(async (req, res, next) => {
   if (!req.user && isLocalAuthBypassAllowed() && !shouldSkipLocalAuthBypass(req.path)) {
@@ -491,24 +563,35 @@ router.use(async (req, res, next) => {
       authDebug('🍪 Visitor event logged to analytics (cookie login)');
       req.session!.visitorLogged = true;
     } catch (analyticsError) {
-      console.error('Error logging visitor analytics event:', analyticsError);
+      console.error('Error logging visitor analytics event:', sanitizeLogValue(analyticsError));
     }
   }
   next();
 });
 
 router.get('/check', (req, res) => {
-  setPrivateAuthCheckHeaders(res);
+  setPrivateAuthResponseHeaders(res);
   if (req.user) {
-    res.json({ auth: true, user: req.user });
+    const user = publicAuthSessionUser(req.user);
+    if (user) {
+      return res.json({ auth: true, user });
+    }
   } else {
-    res.json({ auth: false });
+    return res.json({ auth: false });
   }
+  return res.json({ auth: false });
 });
 
 router.get('/cas', casLogin);
 
 const logoutRouteHandler: express.RequestHandler = async (req, res, next) => {
+  setPrivateAuthResponseHeaders(res);
+
+  if (req.method !== 'GET') {
+    res.setHeader('Allow', 'GET');
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
   console.log('Logging out user');
 
   if (!isTrustedLogoutRequest(req)) {
@@ -517,19 +600,19 @@ const logoutRouteHandler: express.RequestHandler = async (req, res, next) => {
 
   if (req.user) {
     const user = req.user as any;
-    try {
-      await logEvent({
+      try {
+        await logEvent({
         eventType: AnalyticsEventType.LOGOUT,
         netid: user.netId,
         userType: user.userType || 'unknown',
         metadata: {
           timestamp: new Date(),
         },
-      });
-      authDebug('Logout event logged to analytics');
-    } catch (analyticsError) {
-      console.error('Error logging analytics event:', analyticsError);
-    }
+        });
+        authDebug('Logout event logged to analytics');
+      } catch (analyticsError) {
+        console.error('Error logging analytics event:', sanitizeLogValue(analyticsError));
+      }
   }
 
   const casLogoutUrl = `${authConfig.ssoBaseURL}/logout`;
@@ -557,18 +640,19 @@ router.get('/logout', logoutRouteHandler);
 
 if (isDevLoginAllowed()) {
   router.get('/dev-login', async (req, res) => {
+    setPrivateAuthResponseHeaders(res);
     if (!isDevLoginAllowed()) {
       return res.status(403).json({ error: 'Dev login is disabled for this environment' });
     }
 
     try {
-      const testUser = await ensureDevLoginUser(String(req.query?.userType || 'student'));
-      console.log('Dev login with user:', testUser);
+      const testUser = await ensureDevLoginUser(req.query?.userType);
+      authDebug('Dev login user prepared');
 
       req.logIn(testUser, async (err) => {
         if (err) {
-          console.error('Dev login error:', err);
-          return res.status(500).json({ error: err.message });
+          console.error('Dev login error:', sanitizeLogValue(err));
+          return res.status(500).json({ error: 'Dev login failed' });
         }
 
         try {
@@ -583,14 +667,14 @@ if (isDevLoginAllowed()) {
           });
           authDebug('Dev login event logged to analytics');
         } catch (analyticsError) {
-          console.error('Error logging dev login analytics event:', analyticsError);
+          console.error('Error logging dev login analytics event:', sanitizeLogValue(analyticsError));
         }
 
         const redirectUrl = safeRedirectTarget(req.query?.redirect) ?? 'http://localhost:3000';
         res.redirect(redirectUrl);
       });
     } catch (error) {
-      console.error('Dev login error:', error);
+      console.error('Dev login error:', sanitizeLogValue(error));
       res.status(500).json({ error: 'Dev login failed' });
     }
   });

@@ -28,17 +28,17 @@ import type { ObservationInput, ScraperContext } from '../types';
 // Fixtures
 // ---------------------------------------------------------------------------
 
-const HOLLAND_AWARD: NsfAward = {
+const GRANT_AWARD: NsfAward = {
   id: '2535171',
   title: 'NSF-ANR CHE: Insights into Alkene Hydrofunctionalization',
   abstractText: 'Catalysis project for sustainability.',
   awardeeName: 'Yale University',
-  pdPIName: 'Patrick L Holland',
-  piFirstName: 'Patrick',
-  piLastName: 'Holland',
+  pdPIName: 'Parker L Grant',
+  piFirstName: 'Parker',
+  piLastName: 'Grant',
   piMiddeInitial: 'L',
-  piEmail: 'patrick.holland@yale.edu',
-  pi: ['Patrick L Holland patrick.holland@yale.edu'],
+  piEmail: 'parker.grant@yale.edu',
+  pi: ['Parker L Grant parker.grant@yale.edu'],
   startDate: '01/01/2026',
   expDate: '12/31/2029',
   fundsObligatedAmt: '650151',
@@ -48,10 +48,10 @@ const HOLLAND_AWARD: NsfAward = {
   activeAwd: 'true',
 };
 
-const HOLLAND_AWARD_2: NsfAward = {
-  ...HOLLAND_AWARD,
+const GRANT_AWARD_2: NsfAward = {
+  ...GRANT_AWARD,
   id: '2200001',
-  title: 'Earlier Holland award',
+  title: 'Earlier Grant award',
   startDate: '07/01/2022',
   expDate: '06/30/2025',
   fundsObligatedAmt: '300000',
@@ -62,13 +62,13 @@ const BHATTACHARJEE_AWARD: NsfAward = {
   title: 'Co-PI award with Yale collaborators',
   abstractText: 'Multi-institution collaboration.',
   awardeeName: 'Yale University',
-  pdPIName: 'Abhishek Bhattacharjee',
+  pdPIName: 'Avi Systems',
   piFirstName: 'Abhishek',
   piLastName: 'Bhattacharjee',
-  pi: ['Abhishek Bhattacharjee abhishek.b@princeton.edu'],
+  pi: ['Avi Systems avi.systems@example.edu'],
   coPDPI: [
-    'Rajit Manohar rajit.manohar@yale.edu',
-    'Hitten P Zaveri hitten.zaveri@yale.edu',
+    'Rowan Circuit rowan.circuit@yale.edu',
+    'Harper Signal harper.signal@yale.edu',
     'Raghavendra Pothukuchi raghav@cs.unc.edu',
   ],
   startDate: '08/01/2024',
@@ -81,10 +81,10 @@ const YAN_AWARD: NsfAward = {
   id: '2531367',
   title: 'Bacterial biofilms',
   awardeeName: 'Yale University',
-  pdPIName: 'Jing Yan',
+  pdPIName: 'Jamie Award',
   piFirstName: 'Jing',
   piLastName: 'Yan',
-  pi: ['Jing Yan jing.yan@yale.edu'],
+  pi: ['Jamie Award jamie.award@yale.edu'],
   startDate: '03/01/2025',
   expDate: '02/28/2028',
   fundsObligatedAmt: '275000',
@@ -124,7 +124,7 @@ describe('parseDollarAmount', () => {
 
 describe('piDisplayName', () => {
   it('joins first + last', () => {
-    expect(piDisplayName(HOLLAND_AWARD)).toBe('Patrick Holland');
+    expect(piDisplayName(GRANT_AWARD)).toBe('Parker Grant');
   });
   it('falls back to pdPIName if first/last are missing', () => {
     expect(piDisplayName({ pdPIName: 'Just Pdpi' })).toBe('Just Pdpi');
@@ -136,11 +136,11 @@ describe('piDisplayName', () => {
 
 describe('piGroupKey', () => {
   it('produces a stable lowercase key', () => {
-    expect(piGroupKey('Patrick', 'Holland')).toBe('patrick holland');
-    expect(piGroupKey('PATRICK', 'HOLLAND')).toBe('patrick holland');
+    expect(piGroupKey('Parker', 'Grant')).toBe('parker grant');
+    expect(piGroupKey('PARKER', 'GRANT')).toBe('parker grant');
   });
   it('handles missing first name', () => {
-    expect(piGroupKey('', 'Holland')).toBe('holland');
+    expect(piGroupKey('', 'Grant')).toBe('grant');
   });
   it('returns "unknown" when both blank', () => {
     expect(piGroupKey('', '')).toBe('unknown');
@@ -149,9 +149,9 @@ describe('piGroupKey', () => {
 
 describe('groupAwardsByPi', () => {
   it('groups awards from the same PI together', () => {
-    const groups = groupAwardsByPi([HOLLAND_AWARD, HOLLAND_AWARD_2, YAN_AWARD]);
+    const groups = groupAwardsByPi([GRANT_AWARD, GRANT_AWARD_2, YAN_AWARD]);
     expect(groups).toHaveLength(2);
-    const holland = groups.find((g) => g.piLastName === 'Holland');
+    const holland = groups.find((g) => g.piLastName === 'Grant');
     expect(holland).toBeDefined();
     expect(holland!.awards).toHaveLength(2);
     const hollandIds = holland!.awards.map((a) => a.id).sort();
@@ -163,15 +163,15 @@ describe('groupAwardsByPi', () => {
   it('drops awards with no PI name', () => {
     const groups = groupAwardsByPi([
       { id: 'x', awardeeName: 'Yale University' },
-      HOLLAND_AWARD,
+      GRANT_AWARD,
     ]);
     expect(groups).toHaveLength(1);
-    expect(groups[0].piLastName).toBe('Holland');
+    expect(groups[0].piLastName).toBe('Grant');
   });
 
   it('case-insensitive grouping (key normalized)', () => {
-    const a: NsfAward = { ...HOLLAND_AWARD, id: 'a', piFirstName: 'PATRICK' };
-    const b: NsfAward = { ...HOLLAND_AWARD, id: 'b', piFirstName: 'patrick' };
+    const a: NsfAward = { ...GRANT_AWARD, id: 'a', piFirstName: 'PARKER' };
+    const b: NsfAward = { ...GRANT_AWARD, id: 'b', piFirstName: 'Parker' };
     const groups = groupAwardsByPi([a, b]);
     expect(groups).toHaveLength(1);
     expect(groups[0].awards).toHaveLength(2);
@@ -180,7 +180,7 @@ describe('groupAwardsByPi', () => {
 
 describe('awardToRecord', () => {
   it('normalizes an NSF award into a recentGrants subdocument', () => {
-    const rec = awardToRecord(HOLLAND_AWARD);
+    const rec = awardToRecord(GRANT_AWARD);
     expect(rec).not.toBeNull();
     expect(rec!.id).toBe('2535171');
     expect(rec!.agency).toBe('NSF');
@@ -193,23 +193,23 @@ describe('awardToRecord', () => {
   });
 
   it('falls back to estimatedTotalAmt when fundsObligatedAmt is missing', () => {
-    const rec = awardToRecord({ ...HOLLAND_AWARD, fundsObligatedAmt: undefined });
+    const rec = awardToRecord({ ...GRANT_AWARD, fundsObligatedAmt: undefined });
     expect(rec!.dollarAmount).toBe(650151);
   });
 
   it('returns null when id is missing', () => {
-    expect(awardToRecord({ ...HOLLAND_AWARD, id: undefined })).toBeNull();
+    expect(awardToRecord({ ...GRANT_AWARD, id: undefined })).toBeNull();
   });
 
   it('honors a copi role override', () => {
-    const rec = awardToRecord(HOLLAND_AWARD, 'copi');
+    const rec = awardToRecord(GRANT_AWARD, 'copi');
     expect(rec!.role).toBe('copi');
   });
 });
 
 describe('sortGrantsByRecency', () => {
   it('sorts most-recent-first by startDate', () => {
-    const records = [HOLLAND_AWARD_2, HOLLAND_AWARD, YAN_AWARD]
+    const records = [GRANT_AWARD_2, GRANT_AWARD, YAN_AWARD]
       .map((a) => awardToRecord(a)!)
       .filter(Boolean);
     const sorted = sortGrantsByRecency(records);
@@ -217,7 +217,7 @@ describe('sortGrantsByRecency', () => {
   });
   it('sinks records without a start date to the end', () => {
     const records = [
-      awardToRecord(HOLLAND_AWARD)!,
+      awardToRecord(GRANT_AWARD)!,
       awardToRecord({ ...YAN_AWARD, startDate: undefined })!,
     ];
     const sorted = sortGrantsByRecency(records);
@@ -228,7 +228,7 @@ describe('sortGrantsByRecency', () => {
 
 describe('maxStartDate', () => {
   it('returns the latest startDate', () => {
-    const d = maxStartDate([HOLLAND_AWARD_2, HOLLAND_AWARD, YAN_AWARD]);
+    const d = maxStartDate([GRANT_AWARD_2, GRANT_AWARD, YAN_AWARD]);
     expect(d?.toISOString().slice(0, 10)).toBe('2026-01-01');
   });
   it('returns undefined when no awards have a start date', () => {
@@ -238,15 +238,15 @@ describe('maxStartDate', () => {
 
 describe('parseCoPdpiLine', () => {
   it('extracts name + email when both are present', () => {
-    expect(parseCoPdpiLine('Rajit Manohar rajit.manohar@yale.edu')).toEqual({
-      fullName: 'Rajit Manohar',
-      email: 'rajit.manohar@yale.edu',
+    expect(parseCoPdpiLine('Rowan Circuit rowan.circuit@yale.edu')).toEqual({
+      fullName: 'Rowan Circuit',
+      email: 'rowan.circuit@yale.edu',
     });
   });
   it('handles middle initials in name', () => {
-    expect(parseCoPdpiLine('Hitten P Zaveri hitten.zaveri@yale.edu')).toEqual({
-      fullName: 'Hitten P Zaveri',
-      email: 'hitten.zaveri@yale.edu',
+    expect(parseCoPdpiLine('Harper Signal harper.signal@yale.edu')).toEqual({
+      fullName: 'Harper Signal',
+      email: 'harper.signal@yale.edu',
     });
   });
   it('handles a name-only line (no email)', () => {
@@ -260,12 +260,12 @@ describe('parseCoPdpiLine', () => {
 
 describe('piSlug', () => {
   it('uses user id when matched', () => {
-    expect(piSlug('507f1f77bcf86cd799439011', 'Patrick', 'Holland')).toBe(
+    expect(piSlug('507f1f77bcf86cd799439011', 'Parker', 'Grant')).toBe(
       'nsf-pi-507f1f77bcf86cd799439011',
     );
   });
   it('falls back to a name-based slug when unmatched', () => {
-    expect(piSlug(null, 'Patrick', 'Holland')).toBe('nsf-pi-patrick-holland');
+    expect(piSlug(null, 'Parker', 'Grant')).toBe('nsf-pi-parker-grant');
   });
   it('caps slug length at 100 chars', () => {
     const slug = piSlug(null, 'A'.repeat(80), 'B'.repeat(80));
@@ -281,7 +281,7 @@ describe('findUserForPi', () => {
   it('returns the matched user id on exact lname+fname', async () => {
     const finder = vi.fn(async () => [{ _id: 'user-1' }]);
     const id = await findUserForPi(
-      { firstName: 'Patrick', lastName: 'Holland' },
+      { firstName: 'Parker', lastName: 'Grant' },
       finder as any,
     );
     expect(id).toBe('user-1');
@@ -293,7 +293,7 @@ describe('findUserForPi', () => {
       .fn()
       .mockResolvedValueOnce([]) // exact miss
       .mockResolvedValueOnce([{ _id: 'user-2' }]); // prefix hit
-    const id = await findUserForPi({ firstName: 'Pat', lastName: 'Holland' }, finder as any);
+    const id = await findUserForPi({ firstName: 'Pat', lastName: 'Grant' }, finder as any);
     expect(id).toBe('user-2');
     expect(finder).toHaveBeenCalledTimes(2);
     expect(finder).toHaveBeenLastCalledWith(
@@ -324,7 +324,7 @@ describe('findUserForPi', () => {
       .fn()
       .mockResolvedValueOnce([]) // exact miss
       .mockResolvedValueOnce([{ _id: 'user-3' }]); // initial hit
-    const id = await findUserForPi({ firstName: 'P.', lastName: 'Holland' }, finder as any);
+    const id = await findUserForPi({ firstName: 'P.', lastName: 'Grant' }, finder as any);
 
     expect(id).toBe('user-3');
     expect(finder).toHaveBeenLastCalledWith(
@@ -389,7 +389,7 @@ describe('NsfAwardScraper.run', () => {
       piFirstName: 'PiFirst' + i,
       piLastName: 'PiLast' + i,
     }));
-    const page2 = [HOLLAND_AWARD]; // short page → stop after this
+    const page2 = [GRANT_AWARD]; // short page → stop after this
     const fetchPage = vi
       .fn()
       .mockResolvedValueOnce({ awards: page1, totalCount: 26 })
@@ -413,7 +413,7 @@ describe('NsfAwardScraper.run', () => {
 
   it('groups multiple awards by the same PI into one ResearchGroup observation set', async () => {
     const fetchPage = vi.fn().mockResolvedValueOnce({
-      awards: [HOLLAND_AWARD, HOLLAND_AWARD_2, YAN_AWARD],
+      awards: [GRANT_AWARD, GRANT_AWARD_2, YAN_AWARD],
     });
     const userFinder = vi.fn(async () => []);
 
@@ -425,11 +425,11 @@ describe('NsfAwardScraper.run', () => {
     const { ctx, emitted } = buildContext();
     const result = await scraper.run(ctx);
 
-    expect(result.entitiesObserved).toBe(2); // Holland + Yan
+    expect(result.entitiesObserved).toBe(2); // Grant + Yan
 
-    // Holland's ResearchGroup observations
+    // Grant's ResearchGroup observations
     const hollandRg = emitted.filter(
-      (o) => o.entityType === 'researchEntity' && o.entityKey?.includes('holland'),
+      (o) => o.entityType === 'researchEntity' && o.entityKey?.includes('grant'),
     );
     const grants = hollandRg.find((o) => o.field === 'recentGrants')?.value as Array<{
       id: string;
@@ -451,7 +451,7 @@ describe('NsfAwardScraper.run', () => {
   });
 
   it('emits a User observation under nsf-pi: key when PI is unmatched', async () => {
-    const fetchPage = vi.fn().mockResolvedValueOnce({ awards: [HOLLAND_AWARD] });
+    const fetchPage = vi.fn().mockResolvedValueOnce({ awards: [GRANT_AWARD] });
     const userFinder = vi.fn(async () => []); // no match
     const scraper = new NsfAwardScraper({
       fetchPage: fetchPage as any,
@@ -463,15 +463,15 @@ describe('NsfAwardScraper.run', () => {
 
     const userObs = emitted.filter((o) => o.entityType === 'user');
     expect(userObs.length).toBeGreaterThan(0);
-    expect(userObs[0].entityKey).toBe('nsf-pi:patrick holland');
-    expect(userObs.find((o) => o.field === 'fname')?.value).toBe('Patrick');
-    expect(userObs.find((o) => o.field === 'lname')?.value).toBe('Holland');
-    expect(userObs.find((o) => o.field === 'email')?.value).toBe('patrick.holland@yale.edu');
+    expect(userObs[0].entityKey).toBe('nsf-pi:parker grant');
+    expect(userObs.find((o) => o.field === 'fname')?.value).toBe('Parker');
+    expect(userObs.find((o) => o.field === 'lname')?.value).toBe('Grant');
+    expect(userObs.find((o) => o.field === 'email')?.value).toBe('parker.grant@yale.edu');
     expect(userObs.find((o) => o.field === 'dataSources')?.value).toEqual(['nsf-award-search']);
   });
 
   it('skips emitting User observations and uses user-id slug when PI matches a Yale User', async () => {
-    const fetchPage = vi.fn().mockResolvedValueOnce({ awards: [HOLLAND_AWARD] });
+    const fetchPage = vi.fn().mockResolvedValueOnce({ awards: [GRANT_AWARD] });
     // First call (exact lname+fname) returns one match.
     const userFinder = vi.fn(async () => [{ _id: 'user-holland' }]);
 
@@ -499,8 +499,8 @@ describe('NsfAwardScraper.run', () => {
     // Sequence of finder calls expected:
     //   (a) PI lookup: Bhattacharjee — exact miss (returns []).
     //   (b) PI lookup: Bhattacharjee — initial fallback miss.
-    //   (c) co-PI Rajit Manohar — exact match → user-rajit.
-    //   (d) co-PI Hitten Zaveri — exact match → user-hitten.
+    //   (c) co-PI Rowan Circuit — exact match → user-rajit.
+    //   (d) co-PI Harper Signal — exact match → user-hitten.
     //   (e) co-PI Raghavendra Pothukuchi — exact miss → [].
     //   (f) co-PI Raghavendra Pothukuchi — initial miss → [].
     const userFinder = vi
@@ -530,8 +530,8 @@ describe('NsfAwardScraper.run', () => {
 
     // Each matched co-PI should have an email observation (both have @yale.edu emails)
     const emails = memberObs.filter((o) => o.field === 'email').map((o) => o.value);
-    expect(emails).toContain('rajit.manohar@yale.edu');
-    expect(emails).toContain('hitten.zaveri@yale.edu');
+    expect(emails).toContain('rowan.circuit@yale.edu');
+    expect(emails).toContain('harper.signal@yale.edu');
     // Non-Yale co-PI Raghavendra should NOT appear
     expect(emails.find((e) => typeof e === 'string' && (e as string).includes('cs.unc.edu'))).toBeUndefined();
   });

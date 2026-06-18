@@ -23,11 +23,13 @@ interface FellowshipSearchContextProviderProps {
   children: ReactNode;
 }
 
+const FELLOWSHIP_SORTABLE_KEYS = ['default', 'deadline', 'title'];
+
 const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> = ({
   children,
 }) => {
   const pageSize = 500;
-  const sortableKeys = ['default', 'createdAt', 'deadline', 'title'];
+  const sortableKeys = FELLOWSHIP_SORTABLE_KEYS;
 
   const location = useLocation();
   const isActive = location.pathname === '/programs';
@@ -118,7 +120,10 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
   ) as React.Dispatch<React.SetStateAction<StudentVisibilityTier[]>>;
 
   const setSortBy = useCallback((value: string) => {
-    dispatch({ type: 'SET_SORT_BY', payload: value });
+    dispatch({
+      type: 'SET_SORT_BY',
+      payload: sortableKeys.includes(value) ? value : sortableKeys[0],
+    });
   }, []);
 
   const setSortOrder = useCallback((value: number) => {
@@ -201,8 +206,8 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
         });
         dispatch({ type: 'MARK_FILTER_OPTIONS_LOADED' });
       })
-      .catch((error) => {
-        console.error('Error loading fellowship filter options:', error);
+      .catch(() => {
+        console.error('Error loading fellowship filter options.');
         dispatch({ type: 'MARK_FILTER_OPTIONS_LOADED' });
       });
   }, [isActive, authReady]);
@@ -275,7 +280,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
           });
         })
         .catch((error) => {
-          console.error('Error loading fellowships:', error);
+          console.error('Error loading fellowships.');
           if (error?.response?.status !== 401) {
             swal({
               text: 'Unable to load fellowships. Please try again later.',

@@ -15,9 +15,9 @@ describe('research-detail professor audit core helpers', () => {
     };
 
     expect(
-      hasExpectedEntityName('Hugh Taylor Faculty Research', 'Hugh Taylor Lab', {
-        h1: 'Hugh Taylor Lab',
-        title: 'Hugh Taylor Faculty Research | Yale Research',
+      hasExpectedEntityName('Hadley Roster Faculty Research', 'Hadley Roster Lab', {
+        h1: 'Hadley Roster Lab',
+        title: 'Hadley Roster Faculty Research | Yale Research',
       }),
     ).toBe(true);
   });

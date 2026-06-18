@@ -1,5 +1,5 @@
 import { redactDirectContactInfo } from '../utils/contactRedaction';
-import { publicContactEmail } from '../utils/contactEmail';
+import { serializedDocumentId } from '../utils/idSerialization';
 import { publicHttpUrl } from '../utils/urlSafety';
 
 const publicProgramLinks = (links: unknown): Array<{ label?: string; url: string }> =>
@@ -16,8 +16,18 @@ const publicProgramLinks = (links: unknown): Array<{ label?: string; url: string
       })
     : [];
 
+const publicProgramText = (value: unknown): unknown =>
+  typeof value === 'string' ? redactDirectContactInfo(value) : value;
+
+const publicProgramTextArray = (value: unknown): string[] =>
+  Array.isArray(value)
+    ? value.flatMap((item) =>
+        typeof item === 'string' ? [redactDirectContactInfo(item)] : [],
+      )
+    : [];
+
 export const publicProgramForReader = (program: any) => {
-  const id = program._id?.toString?.() || program._id || program.id;
+  const id = serializedDocumentId(program._id) || serializedDocumentId(program.id) || '';
   return {
     _id: id,
     id,
@@ -29,42 +39,32 @@ export const publicProgramForReader = (program: any) => {
     mentorMatching: program.mentorMatching,
     undergraduateOnly: program.undergraduateOnly,
     yaleCollegeOnly: program.yaleCollegeOnly,
-    compensationSummary: program.compensationSummary,
+    compensationSummary: publicProgramText(program.compensationSummary),
     hoursPerWeek: program.hoursPerWeek,
-    programDates: program.programDates,
-    bestNextStep: program.bestNextStep,
-    prepSteps: Array.isArray(program.prepSteps) ? program.prepSteps : [],
-    title: program.title,
-    competitionType: program.competitionType,
-    summary: program.summary,
-    description: program.description,
-    applicationInformation: program.applicationInformation,
-    eligibility: program.eligibility,
-    restrictionsToUseOfAward: program.restrictionsToUseOfAward,
-    additionalInformation: program.additionalInformation,
+    programDates: publicProgramText(program.programDates),
+    bestNextStep: publicProgramText(program.bestNextStep),
+    prepSteps: publicProgramTextArray(program.prepSteps),
+    title: publicProgramText(program.title),
+    competitionType: publicProgramText(program.competitionType),
+    summary: publicProgramText(program.summary),
+    description: publicProgramText(program.description),
+    applicationInformation: publicProgramText(program.applicationInformation),
+    eligibility: publicProgramText(program.eligibility),
+    restrictionsToUseOfAward: publicProgramText(program.restrictionsToUseOfAward),
+    additionalInformation: publicProgramText(program.additionalInformation),
     links: publicProgramLinks(program.links),
     applicationLink: publicHttpUrl(program.applicationLink),
     awardAmount: program.awardAmount,
     isAcceptingApplications: program.isAcceptingApplications,
     applicationOpenDate: program.applicationOpenDate,
     deadline: program.deadline,
-    contactName: program.contactName,
-    contactEmail: publicContactEmail(program.contactEmail),
-    contactPhone: program.contactPhone,
-    contactOffice: program.contactOffice,
+    contactOffice: publicProgramText(program.contactOffice),
     yearOfStudy: Array.isArray(program.yearOfStudy) ? program.yearOfStudy : [],
     termOfAward: Array.isArray(program.termOfAward) ? program.termOfAward : [],
     purpose: Array.isArray(program.purpose) ? program.purpose : [],
     globalRegions: Array.isArray(program.globalRegions) ? program.globalRegions : [],
     citizenshipStatus: Array.isArray(program.citizenshipStatus) ? program.citizenshipStatus : [],
-    sourceName: program.sourceName,
+    sourceName: publicProgramText(program.sourceName),
     sourceUrl: publicHttpUrl(program.sourceUrl),
-    studentVisibilityTier: program.studentVisibilityTier,
-    studentVisibilityComputedTier: program.studentVisibilityComputedTier,
-    studentVisibilityReasons: Array.isArray(program.studentVisibilityReasons)
-      ? program.studentVisibilityReasons
-      : [],
-    createdAt: program.createdAt,
-    updatedAt: program.updatedAt,
   };
 };

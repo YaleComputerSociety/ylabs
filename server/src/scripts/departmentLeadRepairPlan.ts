@@ -1,5 +1,6 @@
 import dotenv from 'dotenv';
-import { readFile, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { Observation } from '../models/observation';
@@ -12,7 +13,9 @@ import {
   compareDepartmentLeadRepairPlans,
   type DepartmentLeadRepairPlanReport,
 } from './departmentLeadRepairPlanCore';
-import { assertScriptApplyAllowed } from './scriptWriteGuards';
+import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { serializedDocumentId } from '../utils/idSerialization';
+import { sanitizeLogValue } from '../utils/logSanitizer';
 
 dotenv.config();
 
@@ -30,11 +33,15 @@ function valuesForArg(argv: string[], name: string): string[] {
   return values.map((value) => value.trim()).filter(Boolean);
 }
 
-function parseArgs(argv: string[]) {
+export function parseDepartmentLeadRepairPlanArgs(argv: string[]) {
+  const outputValue = valuesForArg(argv, 'output')[0];
+  const expectPlanValue = valuesForArg(argv, 'expect-plan')[0];
   return {
     slugs: [...valuesForArg(argv, 'slug'), ...valuesForArg(argv, 'slugs')],
-    output: valuesForArg(argv, 'output')[0],
-    expectPlan: valuesForArg(argv, 'expect-plan')[0],
+    output: outputValue ? resolveSafeJsonReportOutputPath(outputValue) : undefined,
+    expectPlan: expectPlanValue
+      ? resolveSafeJsonReportOutputPath(expectPlanValue, '--expect-plan')
+      : undefined,
     apply: argv.includes('--apply'),
     confirmPlannedCount: Number(valuesForArg(argv, 'confirm-planned-count')[0] || NaN),
   };
@@ -49,7 +56,7 @@ function normalizeEmail(value: unknown): string {
 }
 
 async function main() {
-  const options = parseArgs(process.argv.slice(2));
+  const options = parseDepartmentLeadRepairPlanArgs(process.argv.slice(2));
   if (options.slugs.length === 0) {
     throw new Error('department-leads:repair-plan requires --slug=<slug> or --slugs=<a,b>');
   }
@@ -147,12 +154,12 @@ async function main() {
 
   const report = buildDepartmentLeadRepairPlan({
     entities: entities.map((entity: any) => ({
-      id: String(entity._id),
+      id: serializedDocumentId(entity._id) || '',
       slug: entity.slug,
       name: entity.displayName || entity.name,
     })),
     observations: observations.map((observation: any) => ({
-      entityId: observation.entityId ? String(observation.entityId) : undefined,
+      entityId: serializedDocumentId(observation.entityId),
       entityKey: observation.entityKey,
       field: observation.field,
       value: observation.value,
@@ -162,7 +169,7 @@ async function main() {
       observedAt: observation.observedAt,
     })),
     users: users.map((user: any) => ({
-      id: String(user._id),
+      id: serializedDocumentId(user._id) || '',
       netid: user.netid,
       email: user.email,
       fname: user.fname,
@@ -172,8 +179,8 @@ async function main() {
         .map(([key]) => key),
     })),
     existingMembers: existingMembers.map((member: any) => ({
-      researchEntityId: String(member.researchEntityId),
-      userId: member.userId ? String(member.userId) : undefined,
+      researchEntityId: serializedDocumentId(member.researchEntityId) || '',
+      userId: serializedDocumentId(member.userId),
       role: member.role,
       isCurrentMember: member.isCurrentMember,
     })),
@@ -181,8 +188,10 @@ async function main() {
 
   const text = JSON.stringify(report, null, 2);
   if (options.output) {
-    await writeFile(options.output, `${text}\n`, 'utf8');
-    console.log(`Wrote department lead repair plan to ${options.output}`);
+    const safeOutput = resolveSafeJsonReportOutputPath(options.output);
+    await mkdir(path.dirname(safeOutput), { recursive: true });
+    await writeFile(safeOutput, `${text}\n`, 'utf8');
+    console.log(`Wrote department lead repair plan to ${safeOutput}`);
   } else {
     console.log(text);
   }
@@ -202,7 +211,8 @@ async function main() {
     if (report.summary.ambiguous > 0 || report.summary.noEvidence > 0) {
       throw new Error('Refusing to apply: repair plan still has ambiguous or no-evidence rows');
     }
-    const expectedPlan = JSON.parse(await readFile(options.expectPlan, 'utf8')) as DepartmentLeadRepairPlanReport;
+    const expectedPlanPath = resolveSafeJsonReportOutputPath(options.expectPlan, '--expect-plan');
+    const expectedPlan = JSON.parse(await readFile(expectedPlanPath, 'utf8')) as DepartmentLeadRepairPlanReport;
     const comparison = compareDepartmentLeadRepairPlans(report, expectedPlan);
     if (!comparison.matches) {
       throw new Error(`Refusing to apply: live plan differs from reviewed plan: ${comparison.reasons.join('; ')}`);
@@ -247,7 +257,7 @@ async function main() {
 
 main()
   .catch((error) => {
-    console.error(error);
+    console.error(sanitizeLogValue(error));
     process.exitCode = 1;
   })
   .finally(async () => {

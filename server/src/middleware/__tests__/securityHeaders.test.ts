@@ -39,6 +39,8 @@ describe('securityHeaders', () => {
   });
 
   it('sets browser hardening headers on every response', () => {
+    process.env.NODE_ENV = 'development';
+    process.env.SERVER_BASE_URL = 'http://localhost:4000';
     const { headers, next, response } = runMiddleware({
       secure: false,
       headers: {},
@@ -48,7 +50,10 @@ describe('securityHeaders', () => {
     expect(headers.get('Permissions-Policy')).toBe(PERMISSIONS_POLICY);
     expect(headers.get('X-Content-Type-Options')).toBe('nosniff');
     expect(headers.get('X-Frame-Options')).toBe('DENY');
-    expect(headers.get('Referrer-Policy')).toBe('strict-origin-when-cross-origin');
+    expect(headers.get('X-XSS-Protection')).toBe('0');
+    expect(headers.get('X-Download-Options')).toBe('noopen');
+    expect(headers.get('X-Permitted-Cross-Domain-Policies')).toBe('none');
+    expect(headers.get('Referrer-Policy')).toBe('no-referrer');
     expect(headers.get('Cross-Origin-Opener-Policy')).toBe('same-origin');
     expect(headers.get('Cross-Origin-Resource-Policy')).toBe('same-origin');
     expect(headers.get('Origin-Agent-Cluster')).toBe('?1');
@@ -64,10 +69,22 @@ describe('securityHeaders', () => {
     );
 
     expect(scriptDirective).toBe("script-src 'self' https://www.googletagmanager.com");
+    expect(CONTENT_SECURITY_POLICY).toContain("base-uri 'none'");
     expect(CONTENT_SECURITY_POLICY).toContain("object-src 'none'");
     expect(CONTENT_SECURITY_POLICY).toContain("frame-ancestors 'none'");
     expect(scriptDirective).not.toContain("'unsafe-inline'");
     expect(scriptDirective).not.toContain("'unsafe-eval'");
+  });
+
+  it('keeps form submissions restricted to self and Yale CAS', () => {
+    const formDirective = CONTENT_SECURITY_POLICY.split('; ').find((directive) =>
+      directive.startsWith('form-action '),
+    );
+
+    expect(formDirective).toBe(
+      "form-action 'self' https://secure.its.yale.edu https://secure.its.yale.edu/cas",
+    );
+    expect(formDirective).not.toContain('accounts.google.com');
   });
 
   it('omits local development connect origins from production CSP', () => {
@@ -86,6 +103,7 @@ describe('securityHeaders', () => {
     );
     expect(csp).not.toContain('http://localhost:4000');
     expect(connectDirective).not.toMatch(/\shttps:(?:\s|$)/);
+    expect(csp).toContain('upgrade-insecure-requests');
   });
 
   it('limits production image sources to self, local data/blob URLs, and trusted image origins', () => {
@@ -120,6 +138,7 @@ describe('securityHeaders', () => {
     expect(connectDirective).not.toContain('http://localhost:4000');
     expect(connectDirective).not.toMatch(/\shttps:(?:\s|$)/);
     expect(csp).not.toContain('http://localhost:4000');
+    expect(csp).toContain('upgrade-insecure-requests');
   });
 
   it('keeps localhost API access only for true local development CSP', () => {
@@ -136,9 +155,10 @@ describe('securityHeaders', () => {
 
     expect(connectDirective).toContain('http://localhost:4000');
     expect(connectDirective).not.toMatch(/\shttps:(?:\s|$)/);
+    expect(csp).not.toContain('upgrade-insecure-requests');
   });
 
-  it('sets HSTS for direct HTTPS and proxied HTTPS requests', () => {
+  it('sets HSTS for direct HTTPS, proxied HTTPS, and deployed runtimes', () => {
     const directHttps = runMiddleware({ secure: true, headers: {} });
     expect(directHttps.headers.get('Strict-Transport-Security')).toBe(
       'max-age=31536000; includeSubDomains',
@@ -149,6 +169,16 @@ describe('securityHeaders', () => {
       headers: { 'x-forwarded-proto': 'https' },
     });
     expect(proxiedHttps.headers.get('Strict-Transport-Security')).toBe(
+      'max-age=31536000; includeSubDomains',
+    );
+
+    process.env.NODE_ENV = 'production';
+    process.env.SERVER_BASE_URL = 'https://yalelabs.io';
+    const deployedHttpShaped = runMiddleware({
+      secure: false,
+      headers: {},
+    });
+    expect(deployedHttpShaped.headers.get('Strict-Transport-Security')).toBe(
       'max-age=31536000; includeSubDomains',
     );
   });

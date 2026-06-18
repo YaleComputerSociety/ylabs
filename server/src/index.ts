@@ -5,6 +5,7 @@ import app from './app';
 import dotenv from 'dotenv';
 import { initializeConnections, getApiMode } from './db/connections';
 import { startGateRefreshScheduler } from './scripts/gateRefreshScheduler';
+import { sanitizeLogValue } from './utils/logSanitizer';
 
 dotenv.config();
 
@@ -29,8 +30,9 @@ const startApp = async () => {
         );
       }
     });
-  } catch (e) {
-    console.error(`Failed to start app with error 💣: ${e}`);
+  } catch (error) {
+    console.error('Failed to start app:', sanitizeLogValue(error));
+    process.exit(1);
   }
 };
 

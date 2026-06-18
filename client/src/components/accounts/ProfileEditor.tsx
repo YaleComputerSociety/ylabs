@@ -8,7 +8,9 @@ import { useEffect, useRef, useMemo, useReducer, useCallback } from 'react';
 import { FacultyProfile } from '../../types/types';
 import axios from '../../utils/axios';
 import { useConfig } from '../../hooks/useConfig';
+import { clientErrorMessage } from '../../utils/clientErrorMessage';
 import { getUniqueDepartmentLabels } from '../../utils/departmentNames';
+import { EXTERNAL_IMAGE_REFERRER_POLICY, safeHttpUrl, safeRouteSegment } from '../../utils/url';
 import DepartmentInput from './ListingForm/FormFields/DepartmentInput';
 import ResearchAreaInput from './ListingForm/FormFields/ResearchAreaInput';
 import {
@@ -88,8 +90,8 @@ const ProfileEditor = ({ netid }: ProfileEditorProps) => {
         const p: FacultyProfile = res.data.profile;
         dispatch({ type: 'FETCH_SUCCESS', profile: p });
       })
-      .catch((err) => {
-        console.error(err);
+      .catch(() => {
+        console.error('Error loading profile editor data.');
         dispatch({ type: 'FETCH_FAILURE' });
       });
   }, [netid]);
@@ -143,7 +145,7 @@ const ProfileEditor = ({ netid }: ProfileEditorProps) => {
     } catch (err: any) {
       dispatch({
         type: 'SAVE_FAILURE',
-        message: { type: 'error', text: err.response?.data?.error || 'Failed to save profile.' },
+        message: { type: 'error', text: clientErrorMessage(err, 'Failed to save profile.') },
       });
     }
   };
@@ -205,6 +207,7 @@ const ProfileEditor = ({ netid }: ProfileEditorProps) => {
   const fullName = `${profile.fname} ${profile.lname}`;
   const initials =
     `${profile.fname?.charAt(0) || ''}${profile.lname?.charAt(0) || ''}`.toUpperCase();
+  const profileImageHref = safeHttpUrl(profile.image_url);
   const primaryDeptError = validationErrors.includes('Primary Department is required.');
   const researchInterestError = validationErrors.includes(
     'At least one Research Interest is required.',
@@ -242,12 +245,13 @@ const ProfileEditor = ({ netid }: ProfileEditorProps) => {
       <div className="bg-[var(--yr-panel)] border border-[var(--yr-line)] rounded-md p-6">
         <div className="flex flex-col gap-4 border-b border-[var(--yr-line)] pb-5 md:flex-row md:items-start md:justify-between">
           <div className="flex items-center gap-4">
-            {profile.image_url ? (
-              <img
-                src={profile.image_url}
-                alt={fullName}
-                className="w-16 h-16 rounded-md object-cover"
-              />
+            {profileImageHref ? (
+                <img
+                  src={profileImageHref}
+                  alt={fullName}
+                  referrerPolicy={EXTERNAL_IMAGE_REFERRER_POLICY}
+                  className="w-16 h-16 rounded-md object-cover"
+                />
             ) : (
               <div className="w-16 h-16 rounded-md bg-[var(--yr-blue-soft)] flex items-center justify-center">
                 <span className="text-xl font-bold text-blue-700">{initials}</span>
@@ -260,7 +264,7 @@ const ProfileEditor = ({ netid }: ProfileEditorProps) => {
               <h3 className="text-lg font-bold text-gray-900">{fullName}</h3>
               {profile.title && <p className="text-sm text-gray-500">{profile.title}</p>}
               <a
-                href={`/profile/${netid}`}
+                href={`/profile/${safeRouteSegment(netid)}`}
                 className="text-xs text-blue-600 hover:underline mt-0.5 inline-block"
               >
                 View full profile

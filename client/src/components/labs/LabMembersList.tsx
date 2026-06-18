@@ -1,11 +1,11 @@
 /**
  * Grid of public lead-investigator cards for a research entity: photo, name,
- * role pill, department, link to /profile/:netid.
+ * role pill, and department.
  *
  * Pure presentational — receives the member list as a prop.
  */
-import { Link } from 'react-router-dom';
 import { LabMember, LabMemberRole } from '../../types/labDetail';
+import { EXTERNAL_IMAGE_REFERRER_POLICY, safeHttpUrl } from '../../utils/url';
 
 interface LabMembersListProps {
   members: LabMember[];
@@ -59,14 +59,13 @@ const LabMembersList = ({ members }: LabMembersListProps) => {
   // Don't mutate the prop.
   const sorted = [...members]
     .filter(({ user, role }, index, rows) => {
-      const userKey = user.netid || user._id || [user.fname, user.lname].filter(Boolean).join(' ');
+      const userKey = user.publicKey || [user.fname, user.lname].filter(Boolean).join(' ');
       const key = `${String(userKey).toLowerCase()}:${role}`;
       return (
         index ===
         rows.findIndex(({ user: candidateUser, role: candidateRole }) => {
           const candidateUserKey =
-            candidateUser.netid ||
-            candidateUser._id ||
+            candidateUser.publicKey ||
             [candidateUser.fname, candidateUser.lname].filter(Boolean).join(' ');
           return `${String(candidateUserKey).toLowerCase()}:${candidateRole}` === key;
         })
@@ -81,13 +80,15 @@ const LabMembersList = ({ members }: LabMembersListProps) => {
         const initials = `${user.fname?.charAt(0) || ''}${
           user.lname?.charAt(0) || ''
         }`.toUpperCase();
+        const profileImageHref = safeHttpUrl(user.image_url);
         const content = (
           <>
             <div className="flex-shrink-0">
-              {user.image_url ? (
+              {profileImageHref ? (
                 <img
-                  src={user.image_url}
+                  src={profileImageHref}
                   alt={fullName}
+                  referrerPolicy={EXTERNAL_IMAGE_REFERRER_POLICY}
                   className="w-14 h-14 rounded-full object-cover"
                 />
               ) : (
@@ -97,7 +98,9 @@ const LabMembersList = ({ members }: LabMembersListProps) => {
               )}
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold text-gray-900 truncate">{fullName}</p>
+              <p className="truncate text-sm font-semibold text-gray-900">
+                {fullName}
+              </p>
               {user.title && (
                 <p className="text-xs text-gray-500 truncate">{user.title}</p>
               )}
@@ -117,25 +120,15 @@ const LabMembersList = ({ members }: LabMembersListProps) => {
           </>
         );
         const className =
-          'flex items-center gap-3 p-3 rounded-lg border border-[var(--yr-line)] bg-[var(--yr-panel)]';
-        if (!user.netid) {
-          return (
-            <div key={`${fullName}-${role}`} className={className}>
-              {content}
-            </div>
-          );
-        }
-
-        const memberKey = `${user.netid || user._id || fullName}-${role}`;
-
+          'flex items-center gap-3 p-3 rounded-lg border border-[var(--yr-line)] bg-[var(--yr-panel)] transition';
+        const key = `${user.publicKey || fullName}-${role}`;
+        // Lead-investigator cards are intentionally non-interactive: the
+        // professor's official profile is reached via the decision-summary
+        // action buttons, so the card name is not a duplicate link.
         return (
-          <Link
-            key={memberKey}
-            to={`/profile/${user.netid}`}
-            className={`${className} hover:border-blue-300 hover:shadow-sm transition-all`}
-          >
+          <div key={key} className={className}>
             {content}
-          </Link>
+          </div>
         );
       })}
     </div>

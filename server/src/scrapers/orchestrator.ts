@@ -7,6 +7,8 @@
  */
 import { ScrapeRun } from '../models/scrapeRun';
 import { buildEvidenceCoverageImpactReportForObservations } from '../services/researchEntityEvidenceCoverage';
+import { serializedDocumentId } from '../utils/idSerialization';
+import { sanitizeLogValue } from '../utils/logSanitizer';
 import { appendObservations, getSourceByName } from './observationStore';
 import type {
   IScraper,
@@ -61,9 +63,10 @@ export class ScraperOrchestrator {
     const observedEntityKeys = new Set<string>();
     const errors: any[] = [];
     const previewObservations: Array<Record<string, unknown>> = [];
+    const scrapeRunId = serializedDocumentId(run._id) || '';
 
     const ctx: ScraperContext = {
-      scrapeRunId: String(run._id),
+      scrapeRunId,
       sourceId: source._id,
       sourceName: source.name,
       sourceWeight: source.defaultWeight,
@@ -72,7 +75,7 @@ export class ScraperOrchestrator {
         const inputs = Array.isArray(input) ? input : [input];
         if (inputs.length === 0) return;
         const res = await appendObservations(inputs, {
-          scrapeRunId: String(run._id),
+          scrapeRunId,
           sourceId: source._id,
           sourceName: source.name,
           sourceWeight: source.defaultWeight,
@@ -97,8 +100,9 @@ export class ScraperOrchestrator {
       },
       log: (msg, meta) => {
         const prefix = `[${name}]`;
-        if (meta) console.log(prefix, msg, JSON.stringify(meta));
-        else console.log(prefix, msg);
+        const safeMessage = sanitizeLogValue(msg);
+        if (meta) console.log(prefix, safeMessage, sanitizeLogValue(meta));
+        else console.log(prefix, safeMessage);
       },
     };
 
@@ -125,7 +129,7 @@ export class ScraperOrchestrator {
         },
       );
       return {
-        runId: String(run._id),
+        runId: scrapeRunId,
         result: evidenceCoverageImpact
           ? {
               ...result,
@@ -134,6 +138,7 @@ export class ScraperOrchestrator {
           : result,
       };
     } catch (err: any) {
+      const errorMessage = sanitizeLogValue(err instanceof Error ? err.message : err);
       await ScrapeRun.updateOne(
         { _id: run._id },
         {
@@ -142,7 +147,10 @@ export class ScraperOrchestrator {
             status: 'failure',
             observationCount,
             entitiesObserved,
-            errors: [...errors, { message: err?.message, stack: err?.stack, at: new Date() }],
+            errors: [
+              ...errors,
+              { message: errorMessage || 'Unknown scrape error', at: new Date() },
+            ],
           },
         },
       );

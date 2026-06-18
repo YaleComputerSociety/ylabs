@@ -107,7 +107,7 @@ const VIEWS_FIELD_HTML = `
       </td>
       <td>
         <div class="views-field views-field-name">
-          <a href="/people/hui-cao" class="username">Hui Cao</a>
+          <a href="/people/hayden-material" class="username">Hayden Material</a>
         </div>
         <div class="views-field views-field-field-title">
           <div class="field-content">John C. Malone Professor of Applied Physics</div>
@@ -140,7 +140,7 @@ const ISPS_HTML = `
   <div class="views-row views-row-2">
     <div class="ds-1col node node-team-member">
       <div class="field field-name-team-list-member-name">
-        <strong><a href="/team/jacob-hacker">Jacob Hacker</a></strong>
+        <strong><a href="/team/jordan-policy-fixture">Jordan Policy</a></strong>
       </div>
       <div class="field field-name-field-team-member-creds">
         Director, American Political Economy Exchange
@@ -280,7 +280,7 @@ describe('viewsFieldNameExtractor', () => {
       title: 'Assistant Professor of Applied Physics',
       profileUrl: 'https://quantuminstitute.yale.edu/people/aleksander-kubica',
     });
-    expect(out.members[1].name).toBe('Hui Cao');
+    expect(out.members[1].name).toBe('Hayden Material');
     // Advisory Board entry filtered out
     expect(out.members.find((m) => m.name === 'Advisory Board')).toBeUndefined();
   });
@@ -298,7 +298,7 @@ describe('ispsExtractor', () => {
       role: 'core-faculty',
     });
     expect(out.members[0].title).toContain('Associate Professor');
-    expect(out.members[1]).toMatchObject({ name: 'Jacob Hacker', role: 'director' });
+    expect(out.members[1]).toMatchObject({ name: 'Jordan Policy', role: 'director' });
   });
 });
 

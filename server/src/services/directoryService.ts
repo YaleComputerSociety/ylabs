@@ -2,8 +2,11 @@
  * Yale directory API integration for faculty data lookup.
  */
 import axios from 'axios';
+import { sanitizeLogValue } from '../utils/logSanitizer';
 
 const DIRECTORY_URL = 'https://directory.yale.edu/api/people';
+const MAX_DIRECTORY_QUERY_LENGTH = 120;
+const DIRECTORY_SEARCH_TYPES = new Set(['netid', 'name']);
 
 interface DirectoryPerson {
   name: string;
@@ -49,9 +52,14 @@ export async function fetchFromDirectory(
   query: string,
   searchType: 'netid' | 'name' = 'netid',
 ): Promise<DirectoryPerson | null> {
+  const safeQuery =
+    typeof query === 'string' ? query.trim().replace(/\s+/g, ' ').slice(0, MAX_DIRECTORY_QUERY_LENGTH) : '';
+  const safeSearchType = DIRECTORY_SEARCH_TYPES.has(searchType) ? searchType : 'netid';
+  if (!safeQuery) return null;
+
   try {
     const response = await axios.get(DIRECTORY_URL, {
-      params: { search: query, searchType },
+      params: { search: safeQuery, searchType: safeSearchType },
       timeout: 8000,
       headers: {
         'User-Agent': 'YLabs/1.0',
@@ -90,7 +98,7 @@ export async function fetchFromDirectory(
     };
   } catch (error: any) {
     if (error.response?.status !== 404) {
-      console.log(`Directory lookup for "${query}" failed: ${error.message}`);
+      console.error('Directory lookup failed:', sanitizeLogValue(error));
     }
     return null;
   }
@@ -102,9 +110,13 @@ export async function fetchFromDirectory(
  * is not available.
  */
 export async function fetchFromDirectoryHTML(name: string): Promise<DirectoryPerson | null> {
+  const safeName =
+    typeof name === 'string' ? name.trim().replace(/\s+/g, ' ').slice(0, MAX_DIRECTORY_QUERY_LENGTH) : '';
+  if (!safeName) return null;
+
   try {
     const response = await axios.get('https://directory.yale.edu', {
-      params: { search: name },
+      params: { search: safeName },
       timeout: 8000,
       headers: {
         'User-Agent': 'YLabs/1.0',
@@ -121,9 +133,9 @@ export async function fetchFromDirectoryHTML(name: string): Promise<DirectoryPer
     if (!emailMatch && !titleMatch) return null;
 
     return {
-      name,
-      firstName: name.split(' ')[0] || '',
-      lastName: name.split(' ').slice(1).join(' ') || '',
+      name: safeName,
+      firstName: safeName.split(' ')[0] || '',
+      lastName: safeName.split(' ').slice(1).join(' ') || '',
       email: emailMatch?.[0] || '',
       department: deptMatch?.[1]?.trim() || '',
       title: titleMatch?.[0]?.trim() || '',

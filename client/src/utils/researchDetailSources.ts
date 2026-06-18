@@ -60,6 +60,29 @@ export const normalizeSourceUrl = (url?: string | null): string | null => {
   }
 };
 
+/**
+ * Reduce a URL to a `host+path` destination key (scheme/www/query/hash/trailing
+ * slash stripped) so two links that point at the same place compare equal. Used
+ * to de-duplicate the professor/contact action links on the research detail page.
+ */
+export const normalizeActionDestination = (url?: string | null): string | null => {
+  const normalized = normalizeSourceUrl(url);
+  if (!normalized) return null;
+
+  try {
+    const parsed = new URL(normalized);
+    const host = parsed.hostname.replace(/^www\./, '').toLowerCase();
+    const path = parsed.pathname.replace(/\/+$/, '') || '/';
+    return `${host}${path}`;
+  } catch {
+    return normalized
+      .replace(/^https?:\/\//i, '')
+      .replace(/^www\./i, '')
+      .replace(/\/+$/, '')
+      .toLowerCase();
+  }
+};
+
 export const labelizeResearchDetailValue = (value?: string): string =>
   (value || 'Unknown')
     .replace(/([a-z])([A-Z])/g, '$1 $2')

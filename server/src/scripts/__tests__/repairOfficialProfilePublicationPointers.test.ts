@@ -3,6 +3,24 @@ import os from 'os';
 import path from 'path';
 import axios from 'axios';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+
+const ssrfGuardMock = vi.hoisted(() => {
+  const agents = {
+    httpAgent: { name: 'ssrf-safe-http-agent' },
+    httpsAgent: { name: 'ssrf-safe-https-agent' },
+  };
+  return {
+    agents,
+    assertPublicHttpUrl: vi.fn(async (url: string) => new URL(url)),
+    ssrfSafeAgents: vi.fn(() => agents),
+  };
+});
+
+vi.mock('../../utils/ssrfGuard', () => ({
+  assertPublicHttpUrl: ssrfGuardMock.assertPublicHttpUrl,
+  ssrfSafeAgents: ssrfGuardMock.ssrfSafeAgents,
+}));
+
 import {
   assertOfficialProfilePublicationPointerRepairApplyAllowed,
   createRepairPageReader,
@@ -18,6 +36,8 @@ import {
 describe('repairOfficialProfilePublicationPointers helpers', () => {
   afterEach(() => {
     vi.restoreAllMocks();
+    ssrfGuardMock.assertPublicHttpUrl.mockClear();
+    ssrfGuardMock.ssrfSafeAgents.mockClear();
   });
 
   it('identifies generic official-profile publication pointer titles', () => {
@@ -173,7 +193,7 @@ describe('repairOfficialProfilePublicationPointers helpers', () => {
     expect(fetchCount).toBe(1);
   });
 
-  it('does not bypass TLS verification for Yale certificate failures', async () => {
+  it('uses the shared SSRF-safe agents without bypassing TLS verification', async () => {
     const certError = Object.assign(new Error('unable to verify certificate'), {
       code: 'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
     });
@@ -182,8 +202,17 @@ describe('repairOfficialProfilePublicationPointers helpers', () => {
     await expect(fetchHtmlForRepair('https://faculty.yale.edu/publications')).rejects.toBe(
       certError,
     );
+    expect(ssrfGuardMock.assertPublicHttpUrl).toHaveBeenCalledWith(
+      'https://faculty.yale.edu/publications',
+    );
+    expect(ssrfGuardMock.ssrfSafeAgents).toHaveBeenCalledTimes(1);
     expect(get).toHaveBeenCalledTimes(1);
-    expect(get.mock.calls[0]?.[1]).not.toHaveProperty('httpsAgent');
+    expect(get.mock.calls[0]?.[0]).toBe('https://faculty.yale.edu/publications');
+    expect(get.mock.calls[0]?.[1]).toMatchObject({
+      httpAgent: ssrfGuardMock.agents.httpAgent,
+      httpsAgent: ssrfGuardMock.agents.httpsAgent,
+    });
+    expect(JSON.stringify(get.mock.calls[0]?.[1])).not.toContain('rejectUnauthorized');
   });
 
   it('parses dry-run and apply options', () => {
@@ -249,5 +278,14 @@ describe('repairOfficialProfilePublicationPointers helpers', () => {
 
     writeOfficialProfilePublicationPointerRepairOutput(payload, output);
     expect(JSON.parse(fs.readFileSync(output, 'utf8'))).toEqual(payload);
+  });
+
+  it('rejects unsafe official-profile publication pointer output paths', () => {
+    expect(() =>
+      parseOfficialProfilePublicationPointerRepairArgs(['--output=/etc/ylabs-report.json']),
+    ).toThrow(/must write under/);
+    expect(() =>
+      writeOfficialProfilePublicationPointerRepairOutput({ mode: 'dry-run' }, '/etc/ylabs-report.json'),
+    ).toThrow(/must write under/);
   });
 });

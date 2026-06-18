@@ -1,5 +1,4 @@
 import dotenv from 'dotenv';
-import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
@@ -10,6 +9,9 @@ import {
 } from '../scrapers/integrityGate';
 import { loadResearchAccessArtifacts } from './claimGate';
 import { buildClaimGateReport } from '../services/claimValidation/accessClaims';
+import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { sanitizeLogValue } from '../utils/logSanitizer';
+import { writeFileSync, mkdirSync } from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -78,7 +80,7 @@ export function parseScraperIntegrityGateArgs(argv: string[]): ScraperIntegrityG
 
     if (arg === '--output' || arg.startsWith('--output=')) {
       const { value: outputValue, nextIndex } = consumeValue(argv, index, '--output');
-      output = outputValue;
+      output = resolveSafeJsonReportOutputPath(outputValue);
       index = nextIndex;
       continue;
     }
@@ -97,8 +99,9 @@ export function parseScraperIntegrityGateArgs(argv: string[]): ScraperIntegrityG
 
 export function writeIntegrityGateOutput(value: unknown, output?: string): void {
   if (!output) return;
-  fs.mkdirSync(path.dirname(output), { recursive: true });
-  fs.writeFileSync(output, `${JSON.stringify(value, null, 2)}\n`);
+  const resolvedOutput = resolveSafeJsonReportOutputPath(output);
+  mkdirSync(path.dirname(resolvedOutput), { recursive: true });
+  writeFileSync(resolvedOutput, `${JSON.stringify(value, null, 2)}\n`);
 }
 
 export function buildScraperIntegrityGateOutput<
@@ -156,7 +159,7 @@ async function main(): Promise<void> {
 if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
   main()
     .catch((error) => {
-      console.error(error);
+      console.error(sanitizeLogValue(error));
       process.exitCode = 1;
     })
     .finally(async () => {

@@ -11,13 +11,16 @@ import {
   type ArchivedEntityArtifactRepairPlan,
   type ArchivedEntityArtifactType,
 } from './repairArchivedEntityArtifactsCore';
-import { assertScriptApplyAllowed } from './scriptWriteGuards';
+import { serializedDocumentId } from '../utils/idSerialization';
+import { sanitizeLogValue } from '../utils/logSanitizer';
+import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 
 dotenv.config();
 
 interface ArtifactSpec {
   artifactType: ArchivedEntityArtifactType;
   collection: string;
+  activeMatch?: Record<string, unknown>;
 }
 
 export interface RepairArchivedEntityArtifactsCliOptions {
@@ -32,11 +35,26 @@ export interface RepairArchivedEntityArtifactsCliOptions {
 const __filename = fileURLToPath(import.meta.url);
 
 const ARTIFACT_SPECS: ArtifactSpec[] = [
+  {
+    artifactType: 'ResearchEntityMember',
+    collection: 'research_entity_members',
+    activeMatch: { isCurrentMember: { $ne: false } },
+  },
   { artifactType: 'EntryPathway', collection: 'entry_pathways' },
   { artifactType: 'AccessSignal', collection: 'access_signals' },
   { artifactType: 'ContactRoute', collection: 'contact_routes' },
   { artifactType: 'PostedOpportunity', collection: 'posted_opportunities' },
 ];
+const ARCHIVED_ARTIFACT_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
+
+export function normalizeArchivedArtifactObjectId(value: unknown): string | undefined {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return ARCHIVED_ARTIFACT_OBJECT_ID_RE.test(trimmed) ? trimmed : undefined;
+  }
+  if (value instanceof mongoose.Types.ObjectId) return value.toHexString();
+  return undefined;
+}
 
 function parsePositiveInteger(value: string, optionName: string) {
   const trimmed = value.trim();
@@ -110,15 +128,11 @@ export function parseRepairArchivedEntityArtifactsArgs(
       continue;
     }
     if (arg.startsWith('--output=')) {
-      const output = arg.slice('--output='.length).trim();
-      if (!output || output.startsWith('--')) throw new Error('--output requires a path');
-      options.output = output;
+      options.output = resolveSafeJsonReportOutputPath(arg.slice('--output='.length));
       continue;
     }
     if (arg === '--output') {
-      const output = argv[index + 1]?.trim();
-      if (!output || output.startsWith('--')) throw new Error('--output requires a path');
-      options.output = output;
+      options.output = resolveSafeJsonReportOutputPath(argv[index + 1]);
       index += 1;
       continue;
     }
@@ -161,8 +175,9 @@ export function writeRepairArchivedEntityArtifactsOutput(
   output?: string,
 ): void {
   if (!output) return;
-  fs.mkdirSync(path.dirname(output), { recursive: true });
-  fs.writeFileSync(output, `${JSON.stringify(report, null, 2)}\n`);
+  const safeOutput = resolveSafeJsonReportOutputPath(output);
+  fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
+  fs.writeFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
 }
 
 export function buildRepairArchivedEntityArtifactsOutput(
@@ -180,16 +195,12 @@ export function buildRepairArchivedEntityArtifactsOutput(
 }
 
 function stringId(value: unknown): string {
-  if (!value) return '';
-  if (typeof value === 'string') return value;
-  if (typeof (value as { toHexString?: () => string }).toHexString === 'function') {
-    return (value as { toHexString: () => string }).toHexString();
-  }
-  return String(value);
+  return serializedDocumentId(value) || '';
 }
 
-function objectId(value: string): mongoose.Types.ObjectId {
-  return new mongoose.Types.ObjectId(value);
+function objectId(value: unknown): mongoose.Types.ObjectId | undefined {
+  const id = normalizeArchivedArtifactObjectId(value);
+  return id ? new mongoose.Types.ObjectId(id) : undefined;
 }
 
 async function collectionExists(collectionName: string): Promise<boolean> {
@@ -206,7 +217,6 @@ async function loadArchivedEntityArtifactPlan(limit: number): Promise<{
 }> {
   const archivedEntities = await ResearchEntity.find({
     archived: true,
-    canonicalGroupId: { $exists: true, $ne: null },
   })
     .select('_id canonicalGroupId')
     .lean();
@@ -214,11 +224,11 @@ async function loadArchivedEntityArtifactPlan(limit: number): Promise<{
     archivedEntities.map((entity: any) => [stringId(entity._id), stringId(entity.canonicalGroupId)]),
   );
   const archivedIds = [...canonicalByArchivedId.keys()]
-    .filter((id) => mongoose.Types.ObjectId.isValid(id))
-    .map(objectId);
+    .map(objectId)
+    .filter((id): id is mongoose.Types.ObjectId => Boolean(id));
   const canonicalIds = [...new Set(canonicalByArchivedId.values())]
-    .filter((id) => mongoose.Types.ObjectId.isValid(id))
-    .map(objectId);
+    .map(objectId)
+    .filter((id): id is mongoose.Types.ObjectId => Boolean(id));
   const artifacts: ArchivedEntityArtifact[] = [];
   const canonicalArtifacts: ArchivedEntityArtifact[] = [];
   const db = mongoose.connection.db;
@@ -239,6 +249,7 @@ async function loadArchivedEntityArtifactPlan(limit: number): Promise<{
       collection
         .find({
           archived: { $ne: true },
+          ...(spec.activeMatch || {}),
           researchEntityId: { $in: archivedIds },
         })
         .limit(remainingLimit)
@@ -248,11 +259,14 @@ async function loadArchivedEntityArtifactPlan(limit: number): Promise<{
           derivationKey: 1,
           signalType: 1,
           entryPathwayId: 1,
+          userId: 1,
+          role: 1,
         })
         .toArray(),
       collection
         .find({
           archived: { $ne: true },
+          ...(spec.activeMatch || {}),
           researchEntityId: { $in: canonicalIds },
         })
         .project({
@@ -261,6 +275,8 @@ async function loadArchivedEntityArtifactPlan(limit: number): Promise<{
           derivationKey: 1,
           signalType: 1,
           entryPathwayId: 1,
+          userId: 1,
+          role: 1,
         })
         .toArray(),
     ]);
@@ -275,6 +291,8 @@ async function loadArchivedEntityArtifactPlan(limit: number): Promise<{
         derivationKey: stringId(row.derivationKey),
         signalType: stringId(row.signalType),
         entryPathwayId: stringId(row.entryPathwayId),
+        userId: stringId(row.userId),
+        role: stringId(row.role),
       });
     }
 
@@ -288,6 +306,8 @@ async function loadArchivedEntityArtifactPlan(limit: number): Promise<{
         derivationKey: stringId(row.derivationKey),
         signalType: stringId(row.signalType),
         entryPathwayId: stringId(row.entryPathwayId),
+        userId: stringId(row.userId),
+        role: stringId(row.role),
       });
     }
   }
@@ -319,15 +339,17 @@ async function archiveArtifact(
   canonicalResearchEntityId?: string,
 ) {
   const db = mongoose.connection.db;
-  if (!db || !mongoose.Types.ObjectId.isValid(id)) return 0;
+  const artifactObjectId = objectId(id);
+  if (!db || !artifactObjectId) return 0;
   const set: Record<string, unknown> = {
     archived: true,
     lastMaterializedAt: now,
   };
-  if (canonicalResearchEntityId && mongoose.Types.ObjectId.isValid(canonicalResearchEntityId)) {
-    set.researchEntityId = objectId(canonicalResearchEntityId);
+  const canonicalObjectId = objectId(canonicalResearchEntityId);
+  if (canonicalObjectId) {
+    set.researchEntityId = canonicalObjectId;
   }
-  const result = await db.collection(collectionName).updateOne({ _id: objectId(id) }, { $set: set });
+  const result = await db.collection(collectionName).updateOne({ _id: artifactObjectId }, { $set: set });
   return result.modifiedCount || 0;
 }
 
@@ -345,13 +367,15 @@ async function applyRepairPlan(plan: ArchivedEntityArtifactRepairPlan) {
 
   for (const item of plan.relink) {
     const spec = ARTIFACT_SPECS.find((candidate) => candidate.artifactType === item.artifactType);
-    if (!spec || !mongoose.Types.ObjectId.isValid(item.id)) continue;
+    const itemObjectId = objectId(item.id);
+    const canonicalObjectId = objectId(item.canonicalResearchEntityId);
+    if (!spec || !itemObjectId || !canonicalObjectId) continue;
     try {
       const result = await db.collection(spec.collection).updateOne(
-        { _id: objectId(item.id), archived: { $ne: true } },
+        { _id: itemObjectId, archived: { $ne: true } },
         {
           $set: {
-            researchEntityId: objectId(item.canonicalResearchEntityId),
+            researchEntityId: canonicalObjectId,
             lastMaterializedAt: now,
           },
         },
@@ -370,10 +394,12 @@ async function applyRepairPlan(plan: ArchivedEntityArtifactRepairPlan) {
 
   for (const item of plan.mergeAndArchive) {
     const spec = ARTIFACT_SPECS.find((candidate) => candidate.artifactType === item.artifactType);
-    if (!spec) continue;
+    const duplicateObjectId = objectId(item.duplicateId);
+    const canonicalObjectId = objectId(item.canonicalId);
+    if (!spec || !duplicateObjectId || !canonicalObjectId) continue;
     const collection = db.collection(spec.collection);
     const duplicate = await collection.findOne(
-      { _id: objectId(item.duplicateId) },
+      { _id: duplicateObjectId },
       { projection: { sourceEvidenceIds: 1, sourceUrls: 1 } },
     );
     const addToSet: Record<string, { $each: unknown[] }> = {};
@@ -385,7 +411,7 @@ async function applyRepairPlan(plan: ArchivedEntityArtifactRepairPlan) {
     }
     if (Object.keys(addToSet).length > 0) {
       const result = await collection.updateOne(
-        { _id: objectId(item.canonicalId) },
+        { _id: canonicalObjectId },
         { $addToSet: addToSet, $set: { lastMaterializedAt: now } },
       );
       counts.mergedCanonicalArtifacts += result.modifiedCount || 0;
@@ -400,8 +426,8 @@ async function applyRepairPlan(plan: ArchivedEntityArtifactRepairPlan) {
       for (const child of childSpecs) {
         if (!(await collectionExists(child.collection))) continue;
         const result = await db.collection(child.collection).updateMany(
-          { [child.field]: objectId(item.duplicateId), archived: { $ne: true } },
-          { $set: { [child.field]: objectId(item.canonicalId), lastMaterializedAt: now } },
+          { [child.field]: duplicateObjectId, archived: { $ne: true } },
+          { $set: { [child.field]: canonicalObjectId, lastMaterializedAt: now } },
         );
         counts.childReferencesRelinked += result.modifiedCount || 0;
       }
@@ -470,7 +496,7 @@ async function main() {
 if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
   main()
     .catch((error) => {
-      console.error('Failed to repair archived entity artifacts:', error);
+      console.error('Failed to repair archived entity artifacts:', sanitizeLogValue(error));
       process.exitCode = 1;
     })
     .finally(async () => {

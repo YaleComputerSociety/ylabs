@@ -15,9 +15,12 @@
 import { spawn } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { sanitizeLogValue } from '../utils/logSanitizer';
 
 const __filenameLocal = fileURLToPath(import.meta.url);
 const SERVER_ROOT = path.resolve(path.dirname(__filenameLocal), '../..');
+const MIN_GATE_REFRESH_INTERVAL_MINUTES = 5;
+const MAX_GATE_REFRESH_INTERVAL_MINUTES = 24 * 60;
 
 let running = false;
 let timer: NodeJS.Timeout | undefined;
@@ -25,7 +28,12 @@ let timer: NodeJS.Timeout | undefined;
 /** Resolve the refresh interval in ms from env; 0 means disabled. */
 export function gateRefreshIntervalMs(env: NodeJS.ProcessEnv = process.env): number {
   const minutes = Number(env.GATE_REFRESH_INTERVAL_MINUTES);
-  return Number.isFinite(minutes) && minutes > 0 ? minutes * 60_000 : 0;
+  if (!Number.isFinite(minutes) || minutes <= 0) return 0;
+  const boundedMinutes = Math.min(
+    Math.max(minutes, MIN_GATE_REFRESH_INTERVAL_MINUTES),
+    MAX_GATE_REFRESH_INTERVAL_MINUTES,
+  );
+  return boundedMinutes * 60_000;
 }
 
 function triggerRefresh(): void {
@@ -36,14 +44,19 @@ function triggerRefresh(): void {
   running = true;
   const args = ['gates:refresh'];
   if (process.env.GATE_REFRESH_SKIP_HEAVY === 'true') args.push('--skip-heavy');
-  const child = spawn('yarn', args, { cwd: SERVER_ROOT, env: process.env, stdio: 'inherit' });
+  const child = spawn('yarn', args, {
+    cwd: SERVER_ROOT,
+    env: process.env,
+    stdio: 'inherit',
+    shell: false,
+  });
   child.on('close', (code) => {
     running = false;
     console.log(`[gate-refresh] cycle finished (exit ${code})`);
   });
   child.on('error', (err) => {
     running = false;
-    console.error('[gate-refresh] failed to spawn gates:refresh:', err);
+    console.error('[gate-refresh] failed to spawn gates:refresh:', sanitizeLogValue(err));
   });
 }
 

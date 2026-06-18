@@ -75,7 +75,7 @@ describe('configService', () => {
     ]);
   });
 
-  it('exposes a narrow public deployment fingerprint without leaking arbitrary env values', () => {
+  it('exposes only the coarse deployment provider without leaking source or env values', () => {
     const fingerprint = buildDeploymentFingerprint({
       RENDER: 'true',
       RENDER_GIT_COMMIT: '852f4a05355bb17dbfce9d1197f4693ddf2ccb2a',
@@ -86,14 +86,14 @@ describe('configService', () => {
 
     expect(fingerprint).toEqual({
       provider: 'render',
-      gitCommit: '852f4a05355bb17dbfce9d1197f4693ddf2ccb2a',
-      gitBranch: 'beta',
     });
+    expect(JSON.stringify(fingerprint)).not.toContain('852f4a05355bb17dbfce9d1197f4693ddf2ccb2a');
+    expect(JSON.stringify(fingerprint)).not.toContain('beta');
     expect(JSON.stringify(fingerprint)).not.toContain('srv-private-id');
     expect(JSON.stringify(fingerprint)).not.toContain('do-not-expose');
   });
 
-  it('adds the deployment fingerprint to the public config payload', async () => {
+  it('adds only the coarse deployment provider to the public config payload', async () => {
     mocks.departmentFind.mockReturnValue(leanChain([]));
 
     const config = await getConfig(true, {
@@ -104,8 +104,8 @@ describe('configService', () => {
 
     expect(config.deployment).toEqual({
       provider: 'render',
-      gitCommit: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-      gitBranch: 'main',
     });
+    expect(JSON.stringify(config.deployment)).not.toContain('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+    expect(JSON.stringify(config.deployment)).not.toContain('main');
   });
 });

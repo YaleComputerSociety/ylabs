@@ -21,7 +21,8 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { VisibilityReleaseQueueItem } from '../models/visibilityReleaseQueueItem';
-import { assertScriptApplyAllowed } from './scriptWriteGuards';
+import { sanitizeLogValue } from '../utils/logSanitizer';
+import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 
 dotenv.config();
 
@@ -39,7 +40,9 @@ export function parseArgs(argv: string[]): CliOptions {
   for (const arg of argv) {
     if (arg === '--apply') options.apply = true;
     else if (arg === '--confirm-accept-formalization-exceptions') options.confirm = true;
-    else if (arg.startsWith('--output=')) options.output = arg.slice('--output='.length).trim();
+    else if (arg.startsWith('--output=')) {
+      options.output = resolveSafeJsonReportOutputPath(arg.slice('--output='.length).trim());
+    }
     else throw new Error(`Unknown argument: ${arg}`);
   }
   if (options.apply && !options.confirm) {
@@ -94,8 +97,9 @@ async function main() {
   };
   console.log(JSON.stringify(output, null, 2));
   if (options.output) {
-    fs.mkdirSync(path.dirname(options.output), { recursive: true });
-    fs.writeFileSync(options.output, `${JSON.stringify(output, null, 2)}\n`);
+    const safeOutput = resolveSafeJsonReportOutputPath(options.output);
+    fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
+    fs.writeFileSync(safeOutput, `${JSON.stringify(output, null, 2)}\n`);
   }
 }
 
@@ -106,7 +110,7 @@ const isDirectRun = process.argv[1]
 if (isDirectRun) {
   main()
     .catch((error) => {
-      console.error('Failed to accept formalization review exceptions:', error);
+      console.error('Failed to accept formalization review exceptions:', sanitizeLogValue(error));
       process.exitCode = 1;
     })
     .finally(async () => {

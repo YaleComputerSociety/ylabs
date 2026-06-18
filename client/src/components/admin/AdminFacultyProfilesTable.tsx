@@ -28,7 +28,7 @@ interface AdminProfile {
   profileVerified?: boolean;
   userType: string;
   userConfirmed: boolean;
-  ownListings?: string[];
+  ownListingCount?: number;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -85,8 +85,8 @@ const AdminFacultyProfilesTable = () => {
         total: res.data.total,
         totalPages: res.data.totalPages,
       });
-    } catch (err) {
-      console.error('Error fetching profiles:', err);
+    } catch {
+      console.error('Error fetching profiles.');
       dispatch({ type: 'FETCH_FAILURE' });
     }
   }, [search, sortBy, sortOrder, page, pageSize, verifiedFilter, hasListingsFilter]);
@@ -221,7 +221,7 @@ const AdminFacultyProfilesTable = () => {
                     {p.createdAt ? new Date(p.createdAt).toLocaleDateString() : '—'}
                   </td>
                   <td className="px-4 py-3 text-gray-600">
-                    <span>{p.ownListings?.length || 0}</span>
+                    <span>{p.ownListingCount || 0}</span>
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex gap-1">

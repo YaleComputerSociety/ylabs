@@ -49,6 +49,12 @@ describe('data migration seed CLI safety helpers', () => {
     expect(() => parseSeedSourcesArgs(['--output=--apply'])).toThrow(
       /--output requires a path/,
     );
+    expect(() => parseSeedSourcesArgs(['--output=/etc/sources.json'])).toThrow(
+      /--output must write under/,
+    );
+    expect(() => parseSeedSourcesArgs(['--output=/tmp/sources.txt'])).toThrow(
+      /--output must point to a \.json report file/,
+    );
     expect(() =>
       assertSeedSourcesWriteAllowed(
         { apply: true, confirmSeedApply: false },

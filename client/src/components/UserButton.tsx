@@ -7,8 +7,21 @@ import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Menu from '@mui/material/Menu';
 import MenuItem from '@mui/material/MenuItem';
-import axios from '../utils/axios';
 import UserContext from '../contexts/UserContext';
+import { buildApiUrl } from '../utils/apiBaseUrl';
+import { safeRouteSegment } from '../utils/url';
+
+const MAX_LOGOUT_RETURN_PATH_LENGTH = 2048;
+
+const storeLogoutReturnPath = () => {
+  if (window.location.pathname === '/login') return;
+
+  const returnPath = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  localStorage.removeItem('logoutReturnPath');
+  if (returnPath.length <= MAX_LOGOUT_RETURN_PATH_LENGTH) {
+    sessionStorage.setItem('logoutReturnPath', returnPath);
+  }
+};
 
 const UserButton = () => {
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
@@ -38,12 +51,8 @@ const UserButton = () => {
 
   const handleLogout = () => {
     handleClose();
-    const currentPath = window.location.pathname;
-    if (currentPath !== '/login') {
-      const returnUrl = window.location.origin + currentPath;
-      localStorage.setItem('logoutReturnPath', returnUrl);
-    }
-    window.location.href = axios.defaults.baseURL + '/logout';
+    storeLogoutReturnPath();
+    window.location.href = buildApiUrl('/logout');
   };
 
   const handleAboutClick = (event: React.MouseEvent) => {
@@ -131,7 +140,7 @@ const UserButton = () => {
         {isProfessorUser && user?.netId && (
           <MenuItem
             component={Link}
-            to={`/profile/${user.netId}`}
+            to={`/profile/${safeRouteSegment(user.netId)}`}
             onClick={handleClose}
             sx={menuItemStyle}
             disableRipple

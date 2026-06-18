@@ -7,12 +7,24 @@ import {
   assertPaperAuthorshipAuditApplyAllowed,
   buildPaperAuthorshipAuditOutput,
   countPaperAuthorshipAuditPlannedChanges,
+  normalizePaperAuthorshipAuditObjectId,
   paperAuthorshipAuditFixCommand,
   parsePaperAuthorshipAuditArgs,
   writePaperAuthorshipAuditOutput,
 } from '../paperAuthorshipAudit';
 
 describe('paperAuthorshipAudit CLI helpers', () => {
+  it('rejects object-shaped ids without coercion', () => {
+    const objectShapedId = {
+      toString: () => '507f1f77bcf86cd799439011',
+    };
+
+    expect(normalizePaperAuthorshipAuditObjectId(objectShapedId)).toBeUndefined();
+    expect(
+      normalizePaperAuthorshipAuditObjectId(' 507f1f77bcf86cd799439011 ')?.toHexString(),
+    ).toBe('507f1f77bcf86cd799439011');
+  });
+
   it('parses apply, backfill, sample-limit, and output flags', () => {
     expect(
       parsePaperAuthorshipAuditArgs([
@@ -98,6 +110,12 @@ describe('paperAuthorshipAudit CLI helpers', () => {
     expect(() => parsePaperAuthorshipAuditArgs(['--output=--apply'])).toThrow(
       /--output requires a path/,
     );
+    expect(() =>
+      parsePaperAuthorshipAuditArgs(['--output', '/var/tmp/paper-authorship-audit.json']),
+    ).toThrow(/--output must write under/);
+    expect(() =>
+      parsePaperAuthorshipAuditArgs(['--output', '/tmp/paper-authorship-audit.txt']),
+    ).toThrow(/--output must point to a \.json report file/);
   });
 
   it('writes the paper authorship audit artifact when output is provided', () => {
@@ -111,6 +129,12 @@ describe('paperAuthorshipAudit CLI helpers', () => {
     writePaperAuthorshipAuditOutput(payload, output);
 
     expect(JSON.parse(fs.readFileSync(output, 'utf8'))).toMatchObject(payload);
+  });
+
+  it('rejects unsafe paper authorship audit artifact writes', () => {
+    expect(() =>
+      writePaperAuthorshipAuditOutput({ mode: 'dry-run' }, '/var/tmp/paper-authorship-audit.json'),
+    ).toThrow(/--output must write under/);
   });
 
   it('counts planned paper authorship apply mutations from the dry-run plan', () => {

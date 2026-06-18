@@ -233,6 +233,57 @@ describe('ResearchHomeCard', () => {
     );
   });
 
+  it('does not link principal investigators to internal profiles from Yale email alone', () => {
+    render(
+      <MemoryRouter>
+        <ResearchHomeCard
+          home={researchHome({
+            peopleCount: 1,
+            entities: [
+              {
+                ...researchHome().entities[0],
+                contactName: 'Fixture Researcher',
+                contactRole: 'Principal investigator',
+                contactEmail: 'fixture.researcher@yale.edu',
+              },
+            ],
+          })}
+          variant="compact"
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText('Principal Investigator:')).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'Fixture Researcher' })).toBeNull();
+  });
+
+  it('links principal investigators to official profile sources when no Yale email is present', () => {
+    render(
+      <MemoryRouter>
+        <ResearchHomeCard
+          home={researchHome({
+            peopleCount: 1,
+            entities: [
+              {
+                ...researchHome().entities[0],
+                contactName: 'Fixture Scholar',
+                contactRole: 'Principal investigator',
+                contactEmail: '',
+                sourceUrls: ['https://medicine.yale.edu/profile/fixture-scholar/'],
+              },
+            ],
+          })}
+          variant="compact"
+        />
+      </MemoryRouter>,
+    );
+
+    const link = screen.getByRole('link', { name: 'Fixture Scholar' });
+    expect(link.getAttribute('href')).toBe(
+      'https://medicine.yale.edu/profile/fixture-scholar/',
+    );
+  });
+
   it('shows ways-in badges from pathway and access-summary data inline', () => {
     const { container } = render(
       <MemoryRouter>

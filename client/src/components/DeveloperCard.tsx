@@ -2,7 +2,7 @@
  * Displays a developer profile card with photo, name, position, and social links.
  */
 import { Developer } from '../types/types';
-import { safeUrl } from '../utils/url';
+import { EXTERNAL_IMAGE_REFERRER_POLICY, safeHttpUrl, safeImageSrc } from '../utils/url';
 
 interface DeveloperCardProps {
   developer: Developer;
@@ -15,16 +15,18 @@ const DeveloperCard = ({ developer }: DeveloperCardProps) => {
 
   const iconLinkClass =
     'inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md transition hover:bg-[var(--yr-panel-muted)] focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2';
-  const websiteHref = safeUrl(developer.website);
-  const linkedinHref = safeUrl(developer.linkedin);
-  const githubHref = safeUrl(developer.github);
+  const websiteHref = safeHttpUrl(developer.website);
+  const linkedinHref = safeHttpUrl(developer.linkedin);
+  const githubHref = safeHttpUrl(developer.github);
+  const imageSrc = safeImageSrc(developer.image) || '/assets/developers/no-user.png';
   const hasProfileLinks = Boolean(websiteHref || linkedinHref || githubHref);
 
   return (
     <div>
       <img
-        src={developer.image ? developer.image : '/assets/developers/no-user.png'}
+        src={imageSrc}
         alt={`${developer.name} Profile Picture`}
+        referrerPolicy={EXTERNAL_IMAGE_REFERRER_POLICY}
         className="aspect-square object-cover w-full rounded-lg mb-2"
         width={500}
         height={500}

@@ -158,9 +158,9 @@ describe('resolveField', () => {
 
   it('prefers a recent complete bio over a newer prefix-only bio from the same source', () => {
     const completeBio =
-      'Originally from Sofia, Bulgaria, Nadya Dimitrova graduated with an Sc.B. in Biochemistry from Brown University in 2002. Nadya Dimitrova is currently an assistant professor studying long noncoding RNAs in cancer.';
+      'Originally from Fixture City, Nora Fixture graduated with an Sc.B. in Biochemistry from Example University in 2002. Nora Fixture is currently an assistant professor studying long noncoding RNAs in cancer.';
     const prefixOnlyBio =
-      'Originally from Sofia, Bulgaria, Nadya Dimitrova graduated with an Sc.B. in Biochemistry from Brown University in 2002.';
+      'Originally from Fixture City, Nora Fixture graduated with an Sc.B. in Biochemistry from Example University in 2002.';
 
     const r = resolveField(
       'bio',

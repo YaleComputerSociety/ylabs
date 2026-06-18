@@ -45,6 +45,12 @@ describe('betaReadinessGate CLI helpers', () => {
     expect(() => parseBetaReadinessGateArgs(['--output=--strict'])).toThrow(
       /--output requires a path/,
     );
+    expect(() => parseBetaReadinessGateArgs(['--output=/var/tmp/beta-readiness.json'])).toThrow(
+      /--output must write under/,
+    );
+    expect(() => parseBetaReadinessGateArgs(['--output=/tmp/beta-readiness.txt'])).toThrow(
+      /--output must point to a \.json report file/,
+    );
   });
 
   it('uses the default accepted-input root when root is omitted', () => {
@@ -75,6 +81,9 @@ describe('betaReadinessGate CLI helpers', () => {
         betaBackup: { status: 'blocked' },
       },
     });
+    expect(() => writeBetaReadinessGateOutput({ ready: true }, '/var/tmp/beta-readiness.json')).toThrow(
+      /--output must write under/,
+    );
   });
 
   it('wraps beta readiness artifacts with target metadata and parsed options', () => {

@@ -9,7 +9,9 @@ import {
   type ResolverObservation,
 } from '../scrapers/confidenceResolver';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
-import { assertScriptApplyAllowed } from './scriptWriteGuards';
+import { serializedDocumentId } from '../utils/idSerialization';
+import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { sanitizeLogValue } from '../utils/logSanitizer';
 
 dotenv.config();
 
@@ -407,16 +409,15 @@ export function parseCrossSourceObservationConflictReviewArgs(
       continue;
     }
     if (arg.startsWith('--accepted-decisions=')) {
-      args.acceptedDecisions = parseRequiredString(
+      args.acceptedDecisions = resolveSafeJsonReportOutputPath(
         arg.slice('--accepted-decisions='.length),
         '--accepted-decisions',
-        'a path',
       );
       continue;
     }
     if (arg === '--accepted-decisions') {
       const next = consumeValue(argv, index, '--accepted-decisions', 'a path');
-      args.acceptedDecisions = parseRequiredString(next, '--accepted-decisions', 'a path');
+      args.acceptedDecisions = resolveSafeJsonReportOutputPath(next, '--accepted-decisions');
       index += 1;
       continue;
     }
@@ -425,30 +426,28 @@ export function parseCrossSourceObservationConflictReviewArgs(
       continue;
     }
     if (arg.startsWith('--decision-template-output=')) {
-      args.decisionTemplateOutput = parseRequiredString(
+      args.decisionTemplateOutput = resolveSafeJsonReportOutputPath(
         arg.slice('--decision-template-output='.length),
         '--decision-template-output',
-        'a path',
       );
       continue;
     }
     if (arg === '--decision-template-output') {
       const next = consumeValue(argv, index, '--decision-template-output', 'a path');
-      args.decisionTemplateOutput = parseRequiredString(
+      args.decisionTemplateOutput = resolveSafeJsonReportOutputPath(
         next,
         '--decision-template-output',
-        'a path',
       );
       index += 1;
       continue;
     }
     if (arg.startsWith('--output=')) {
-      args.output = parseRequiredString(arg.slice('--output='.length), '--output', 'a path');
+      args.output = resolveSafeJsonReportOutputPath(arg.slice('--output='.length));
       continue;
     }
     if (arg === '--output') {
       const next = consumeValue(argv, index, '--output', 'a path');
-      args.output = parseRequiredString(next, '--output', 'a path');
+      args.output = resolveSafeJsonReportOutputPath(next);
       index += 1;
       continue;
     }
@@ -522,8 +521,9 @@ export function writeCrossSourceObservationConflictReviewOutput(
   output?: string,
 ): void {
   if (!output) return;
-  fs.mkdirSync(path.dirname(output), { recursive: true });
-  fs.writeFileSync(output, `${JSON.stringify(summary, null, 2)}\n`);
+  const safeOutput = resolveSafeJsonReportOutputPath(output);
+  fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
+  fs.writeFileSync(safeOutput, `${JSON.stringify(summary, null, 2)}\n`);
 }
 
 export function buildCrossSourceObservationConflictReviewOutput<T extends object>(
@@ -581,18 +581,20 @@ export function writeCrossSourceObservationDecisionTemplate(
   output?: string,
 ): void {
   if (!output) return;
-  fs.mkdirSync(path.dirname(output), { recursive: true });
-  fs.writeFileSync(output, `${JSON.stringify(template, null, 2)}\n`);
+  const safeOutput = resolveSafeJsonReportOutputPath(output, '--decision-template-output');
+  fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
+  fs.writeFileSync(safeOutput, `${JSON.stringify(template, null, 2)}\n`);
 }
 
 export function readCrossSourceObservationReviewDecisions(
   inputPath: string,
   options: { allowEmpty?: boolean } = {},
 ): CrossSourceObservationReviewDecision[] {
-  if (options.allowEmpty && !fs.existsSync(inputPath)) {
+  const safeInputPath = resolveSafeJsonReportOutputPath(inputPath, '--accepted-decisions');
+  if (options.allowEmpty && !fs.existsSync(safeInputPath)) {
     return [];
   }
-  const parsed = JSON.parse(fs.readFileSync(inputPath, 'utf8')) as unknown;
+  const parsed = JSON.parse(fs.readFileSync(safeInputPath, 'utf8')) as unknown;
   const decisions = Array.isArray(parsed)
     ? parsed
     : parsed &&
@@ -1275,12 +1277,7 @@ function observedAtForResolver(value: Date | string | undefined): Date {
 }
 
 function stringifyId(value: unknown): string {
-  if (!value) return '';
-  if (typeof value === 'string') return value;
-  if (typeof value === 'object' && value !== null && 'toString' in value) {
-    return String(value);
-  }
-  return String(value);
+  return serializedDocumentId(value) || '';
 }
 
 function serializeValue(value: unknown): string {
@@ -1326,7 +1323,7 @@ async function main(): Promise<void> {
 if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
   main()
     .catch((error) => {
-      console.error(error instanceof Error ? error.message : error);
+      console.error(sanitizeLogValue(error));
       process.exitCode = 1;
     })
     .finally(async () => {

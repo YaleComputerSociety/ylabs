@@ -6,11 +6,24 @@ import {
   assertDedupeExploratoryContactPathwaysApplyConfirmed,
   buildDedupeExploratoryContactPathwaysOutput,
   countDedupeExploratoryContactPathwaysPlannedChanges,
+  normalizeDedupeExploratoryContactPathwayObjectId,
   parseDedupeExploratoryContactPathwaysArgs,
   writeDedupeExploratoryContactPathwaysOutput,
 } from '../dedupeExploratoryContactPathways';
 
 describe('dedupeExploratoryContactPathways CLI helpers', () => {
+  it('normalizes pathway dedupe ObjectIds without object-shaped coercion', () => {
+    expect(normalizeDedupeExploratoryContactPathwayObjectId(' 507f1f77bcf86cd799439011 ')).toBe(
+      '507f1f77bcf86cd799439011',
+    );
+    expect(normalizeDedupeExploratoryContactPathwayObjectId('abcdefghijkl')).toBeUndefined();
+    expect(
+      normalizeDedupeExploratoryContactPathwayObjectId({
+        toString: () => '507f1f77bcf86cd799439011',
+      }),
+    ).toBeUndefined();
+  });
+
   it('parses dry-run limit and output flags', () => {
     expect(
       parseDedupeExploratoryContactPathwaysArgs([
@@ -103,6 +116,12 @@ describe('dedupeExploratoryContactPathways CLI helpers', () => {
     expect(() => parseDedupeExploratoryContactPathwaysArgs(['--output=--apply'])).toThrow(
       /--output requires a path/,
     );
+    expect(() =>
+      parseDedupeExploratoryContactPathwaysArgs(['--output', '/var/tmp/pathway-dedupe.json']),
+    ).toThrow(/--output must write under/);
+    expect(() =>
+      parseDedupeExploratoryContactPathwaysArgs(['--output', '/tmp/pathway-dedupe.txt']),
+    ).toThrow(/--output must point to a \.json report file/);
   });
 
   it('requires explicit apply bounds before exploratory pathway dedupe apply', () => {
@@ -174,6 +193,15 @@ describe('dedupeExploratoryContactPathways CLI helpers', () => {
       plannedGroups: 1,
       plannedDuplicatePathways: 2,
     });
+  });
+
+  it('rejects unsafe exploratory pathway dedupe writes', () => {
+    expect(() =>
+      writeDedupeExploratoryContactPathwaysOutput(
+        { mode: 'dry-run' },
+        '/var/tmp/pathway-dedupe.json',
+      ),
+    ).toThrow(/--output must write under/);
   });
 
   it('wraps pathway dedupe artifacts with freshness, target, and parsed options metadata', () => {

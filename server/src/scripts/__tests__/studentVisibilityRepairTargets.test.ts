@@ -1,8 +1,13 @@
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 import { describe, expect, it } from 'vitest';
 
 import {
   buildStudentVisibilityRepairTargetReport,
+  parseArgs,
   type RepairTargetEntity,
+  writeStudentVisibilityRepairTargetOutput,
 } from '../studentVisibilityRepairTargets';
 
 const entity = (overrides: Partial<RepairTargetEntity>): RepairTargetEntity => ({
@@ -149,5 +154,28 @@ describe('buildStudentVisibilityRepairTargetReport', () => {
     expect(report.departmentPageCandidates.slugs).toEqual(['physics-program', 'held-lab']);
     expect(report.sourceUrlBackfillCandidates.slugs).toEqual(['no-source-lab']);
     expect(report.leadRepairCandidates.slugs).toEqual(['leadless-lab']);
+  });
+
+  it('constrains output arguments and artifact writes to safe JSON roots', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ylabs-visibility-repair-targets-'));
+    const output = path.join(dir, 'repair-targets.json');
+    const report = buildStudentVisibilityRepairTargetReport({ plans: [], entities: [] });
+
+    expect(parseArgs(['--output', output])).toMatchObject({ output });
+    expect(() => parseArgs(['--output=/etc/repair-targets.json'])).toThrow(
+      /--output must write under/,
+    );
+    expect(() => parseArgs(['--output=/tmp/repair-targets.txt'])).toThrow(
+      /--output must point to a \.json report file/,
+    );
+
+    await writeStudentVisibilityRepairTargetOutput(report, output);
+    expect(JSON.parse(fs.readFileSync(output, 'utf8'))).toMatchObject({
+      scanned: 0,
+      held: 0,
+    });
+    await expect(
+      writeStudentVisibilityRepairTargetOutput(report, '/etc/repair-targets.json'),
+    ).rejects.toThrow(/--output must write under/);
   });
 });

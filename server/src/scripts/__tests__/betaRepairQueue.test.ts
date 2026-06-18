@@ -55,8 +55,20 @@ describe('betaRepairQueue CLI helpers', () => {
     expect(() => parseBetaRepairQueueArgs(['--output=--apply'])).toThrow(
       /--output requires a path/,
     );
+    expect(() => parseBetaRepairQueueArgs(['--output=/var/tmp/beta-repair.json'])).toThrow(
+      /--output must write under/,
+    );
+    expect(() => parseBetaRepairQueueArgs(['--output=/tmp/beta-repair.txt'])).toThrow(
+      /--output must point to a \.json report file/,
+    );
     expect(() => parseBetaRepairQueueArgs(['--apply-from=--output=/tmp/out.json'])).toThrow(
       /--apply-from requires a path/,
+    );
+    expect(() => parseBetaRepairQueueArgs(['--apply-from=/var/tmp/beta-repair.json'])).toThrow(
+      /--apply-from must write under/,
+    );
+    expect(() => parseBetaRepairQueueArgs(['--apply-from=/tmp/beta-repair.txt'])).toThrow(
+      /--apply-from must point to a \.json report file/,
     );
     expect(() => parseBetaRepairQueueArgs(['--record-id='])).toThrow(
       /--record-id requires a value/,
@@ -431,5 +443,8 @@ describe('betaRepairQueue CLI helpers', () => {
       repaired: 0,
       blocked: 2,
     });
+    expect(() => writeBetaRepairQueueOutput({ ok: true }, '/var/tmp/beta-repair.json')).toThrow(
+      /--output must write under/,
+    );
   });
 });

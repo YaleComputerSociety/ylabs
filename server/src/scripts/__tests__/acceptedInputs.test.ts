@@ -9,6 +9,10 @@ import {
   parseAcceptedInputsArgs,
   writeAcceptedInputsOutput,
 } from '../acceptedInputs';
+import {
+  resolveSafeAcceptedInputPath,
+  resolveSafeAcceptedInputRoot,
+} from '../../acceptedInputs/fellowshipInputs';
 
 describe('acceptedInputs CLI helpers', () => {
   it('parses status command, root, limit, and output flags', () => {
@@ -66,6 +70,28 @@ describe('acceptedInputs CLI helpers', () => {
     await writeAcceptedInputsOutput({ status: 'ok', entries: 2 }, output);
 
     expect(JSON.parse(fs.readFileSync(output, 'utf8'))).toEqual({ status: 'ok', entries: 2 });
+  });
+
+  it('rejects unsafe accepted-inputs JSON artifact writes from programmatic callers', async () => {
+    await expect(writeAcceptedInputsOutput({ status: 'ok' }, '/etc/accepted-inputs.json')).rejects.toThrow(
+      /--output must write under/,
+    );
+  });
+
+  it('rejects accepted-input CSV and TXT paths outside safe artifact roots', () => {
+    expect(resolveSafeAcceptedInputRoot('/tmp/ylabs-accepted')).toBe('/tmp/ylabs-accepted');
+    expect(resolveSafeAcceptedInputPath('/tmp/ylabs-accepted/input.csv', '--input')).toBe(
+      '/tmp/ylabs-accepted/input.csv',
+    );
+    expect(() => resolveSafeAcceptedInputRoot('/etc/ylabs-accepted')).toThrow(
+      /--root must stay under/,
+    );
+    expect(() => resolveSafeAcceptedInputPath('/etc/ylabs-accepted/input.csv', '--input')).toThrow(
+      /--input must stay under/,
+    );
+    expect(() => resolveSafeAcceptedInputPath('/tmp/ylabs-accepted/report.json', '--input')).toThrow(
+      /must point to a \.csv or \.txt/,
+    );
   });
 
   it('adds target metadata to accepted-inputs JSON artifacts', () => {

@@ -5,6 +5,10 @@ import {
   type PublicFellowshipApplicationCycleEvidence,
 } from './fellowshipApplicationCycleEvidenceService';
 import { getPathwaysByIds, type PathwaySearchHit } from './pathwaySearchService';
+import { serializedDocumentId } from '../utils/idSerialization';
+
+const MAX_FELLOWSHIP_MATCH_TEXT_LENGTH = 5000;
+const MAX_FELLOWSHIP_MATCH_ARRAY_ITEMS = 50;
 
 export type FellowshipMatchStrength = 'confirmed_by_source' | 'candidate' | 'weak_candidate';
 
@@ -47,7 +51,16 @@ const STOP_WORDS = new Set([
 ]);
 
 function tokens(value: unknown): Set<string> {
-  const text = Array.isArray(value) ? value.join(' ') : String(value || '');
+  const text = Array.isArray(value)
+    ? value
+        .slice(0, MAX_FELLOWSHIP_MATCH_ARRAY_ITEMS)
+        .flatMap((item) =>
+          typeof item === 'string' ? [item.slice(0, MAX_FELLOWSHIP_MATCH_TEXT_LENGTH)] : [],
+        )
+        .join(' ')
+    : typeof value === 'string'
+      ? value.slice(0, MAX_FELLOWSHIP_MATCH_TEXT_LENGTH)
+      : '';
   return new Set(
     text
       .toLowerCase()
@@ -57,28 +70,37 @@ function tokens(value: unknown): Set<string> {
   );
 }
 
+function textPart(value: unknown): string[] {
+  if (typeof value === 'string') {
+    const text = value.slice(0, MAX_FELLOWSHIP_MATCH_TEXT_LENGTH).trim();
+    return text ? [text] : [];
+  }
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, MAX_FELLOWSHIP_MATCH_ARRAY_ITEMS).flatMap(textPart);
+}
+
 function textForFellowship(fellowship: any): string {
   return [
-    fellowship.title,
-    fellowship.competitionType,
-    fellowship.summary,
-    fellowship.description,
-    fellowship.applicationInformation,
-    fellowship.eligibility,
-    fellowship.restrictionsToUseOfAward,
-    fellowship.additionalInformation,
-    ...(fellowship.purpose || []),
-    ...(fellowship.termOfAward || []),
-    ...(fellowship.yearOfStudy || []),
+    ...textPart(fellowship.title),
+    ...textPart(fellowship.competitionType),
+    ...textPart(fellowship.summary),
+    ...textPart(fellowship.description),
+    ...textPart(fellowship.applicationInformation),
+    ...textPart(fellowship.eligibility),
+    ...textPart(fellowship.restrictionsToUseOfAward),
+    ...textPart(fellowship.additionalInformation),
+    ...textPart(fellowship.purpose),
+    ...textPart(fellowship.termOfAward),
+    ...textPart(fellowship.yearOfStudy),
   ]
-    .filter(Boolean)
-    .join(' ');
+    .join(' ')
+    .slice(0, MAX_FELLOWSHIP_MATCH_TEXT_LENGTH);
 }
 
 function overlapCount(values: string[] | undefined, fellowshipTokens: Set<string>): number {
   if (!values || values.length === 0) return 0;
   let count = 0;
-  for (const value of values) {
+  for (const value of values.slice(0, MAX_FELLOWSHIP_MATCH_ARRAY_ITEMS)) {
     const valueTokens = tokens(value);
     if ([...valueTokens].some((token) => fellowshipTokens.has(token))) count++;
   }
@@ -110,7 +132,8 @@ export function scoreFellowshipForPathway(
   fellowship: any,
   now: Date = new Date(),
 ): FellowshipMatch | null {
-  const fellowshipId = String(fellowship._id || fellowship.id || '');
+  const rawFellowshipId = fellowship._id || fellowship.id;
+  const fellowshipId = serializedDocumentId(rawFellowshipId) || '';
   if (!fellowshipId || fellowship.archived === true) return null;
 
   const fellowshipText = textForFellowship(fellowship);

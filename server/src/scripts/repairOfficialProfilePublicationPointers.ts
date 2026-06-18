@@ -7,7 +7,10 @@ import * as cheerio from 'cheerio';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchScholarlyLink } from '../models/researchScholarlyLink';
-import { assertScriptApplyAllowed } from './scriptWriteGuards';
+import { assertPublicHttpUrl, ssrfSafeAgents } from '../utils/ssrfGuard';
+import { serializedDocumentId } from '../utils/idSerialization';
+import { sanitizeLogValue } from '../utils/logSanitizer';
+import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 
 dotenv.config();
 
@@ -474,13 +477,10 @@ export function parseOfficialProfilePublicationPointerRepairArgs(
       );
     } else if (arg === '--output') {
       const next = argv[i + 1];
-      if (!next || next.startsWith('--')) throw new Error('--output requires a path');
-      options.output = next;
+      options.output = resolveSafeJsonReportOutputPath(next);
       i += 1;
     } else if (arg.startsWith('--output=')) {
-      const output = arg.slice('--output='.length).trim();
-      if (!output || output.startsWith('--')) throw new Error('--output requires a path');
-      options.output = output;
+      options.output = resolveSafeJsonReportOutputPath(arg.slice('--output='.length));
     } else {
       throw new Error(`Unknown argument: ${arg}`);
     }
@@ -515,8 +515,9 @@ export function writeOfficialProfilePublicationPointerRepairOutput(
   output?: string,
 ): void {
   if (!output) return;
-  fs.mkdirSync(path.dirname(output), { recursive: true });
-  fs.writeFileSync(output, `${JSON.stringify(report, null, 2)}\n`);
+  const safeOutput = resolveSafeJsonReportOutputPath(output);
+  fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
+  fs.writeFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
 }
 
 async function loadPointerRows(limit: number): Promise<PointerRow[]> {
@@ -563,10 +564,14 @@ async function loadPointerRows(limit: number): Promise<PointerRow[]> {
 }
 
 export async function fetchHtmlForRepair(url: string): Promise<string> {
-  const response = await axios.get(url, {
+  const safeUrl = await assertPublicHttpUrl(url);
+  const agents = ssrfSafeAgents();
+  const response = await axios.get(safeUrl.toString(), {
     timeout: FETCH_TIMEOUT_MS,
     maxRedirects: 5,
     headers: { 'User-Agent': USER_AGENT },
+    httpAgent: agents.httpAgent,
+    httpsAgent: agents.httpsAgent,
   });
   return String(response.data || '');
 }
@@ -601,7 +606,7 @@ async function crawlFeaturedPublications(
       if (publications.length >= maxPublications) break;
       queue.push(...await reader.publicationListUrls(url));
     } catch (err: any) {
-      error = err?.message || String(err);
+      error = sanitizeLogValue(err);
     }
   }
 
@@ -647,7 +652,7 @@ async function findMatchingPublicationFromUrls(
       }
       queue.push(...await reader.publicationListUrls(url));
     } catch (err: any) {
-      error = err?.message || String(err);
+      error = sanitizeLogValue(err);
     }
   }
 
@@ -710,7 +715,7 @@ async function main() {
     if (genericPointer && isExternalIndexPointerTitle(row.title)) {
       report.counts.unresolvedRows += 1;
       report.unresolved.push({
-        id: String(row._id),
+        id: serializedDocumentId(row._id) || '',
         netid: row.user?.netid,
         title: row.title,
         reason: 'external_index_pointer_not_faculty_website_signal',
@@ -729,7 +734,7 @@ async function main() {
     if (urls.length === 0 || !row.userId) {
       report.counts.unresolvedRows += 1;
       report.unresolved.push({
-        id: String(row._id),
+        id: serializedDocumentId(row._id) || '',
         netid: row.user?.netid,
         title: row.title,
         reason: row.userId ? 'no_supported_faculty_website_url' : 'missing_user_id',
@@ -751,7 +756,7 @@ async function main() {
       if (!match.publication) {
         report.counts.unresolvedRows += 1;
         report.unresolved.push({
-          id: String(row._id),
+          id: serializedDocumentId(row._id) || '',
           netid: row.user?.netid,
           title: row.title,
           reason: match.error ? 'fetch_or_parse_failed' : 'no_matching_publication_link_found',
@@ -772,7 +777,7 @@ async function main() {
       report.counts.repairableRows += 1;
       report.counts.extractedPublications += 1;
       report.repaired.push({
-        id: String(row._id),
+        id: serializedDocumentId(row._id) || '',
         netid: row.user?.netid,
         title: row.title,
         repairedFromUrl: match.repairedFromUrl,
@@ -811,7 +816,7 @@ async function main() {
     if (extracted.length === 0) {
       report.counts.unresolvedRows += 1;
       report.unresolved.push({
-        id: String(row._id),
+        id: serializedDocumentId(row._id) || '',
         netid: row.user?.netid,
         title: row.title,
         reason: fetchError ? 'fetch_or_parse_failed' : 'no_featured_publications_found',
@@ -832,7 +837,7 @@ async function main() {
     report.counts.repairableRows += 1;
     report.counts.extractedPublications += extracted.length;
     report.repaired.push({
-      id: String(row._id),
+      id: serializedDocumentId(row._id) || '',
       netid: row.user?.netid,
       title: row.title,
       repairedFromUrl,
@@ -890,7 +895,7 @@ async function main() {
 if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
   main()
     .catch((error) => {
-      console.error('Failed to repair official-profile publication pointers:', error);
+      console.error('Failed to repair official-profile publication pointers:', sanitizeLogValue(error));
       process.exitCode = 1;
     })
     .finally(async () => {

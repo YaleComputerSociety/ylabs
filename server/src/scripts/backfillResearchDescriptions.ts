@@ -29,8 +29,11 @@ import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
 import { appendObservations, getSourceByName } from '../scrapers/observationStore';
+import { serializedDocumentId } from '../utils/idSerialization';
 import { assessResearchEntityDescriptionQuality } from '../utils/researchEntityDescriptionQuality';
-import { assertScriptApplyAllowed } from './scriptWriteGuards';
+import { sanitizeLogValue } from '../utils/logSanitizer';
+import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { redactDirectContactInfo } from '../utils/contactRedaction';
 import type { ObservationInput } from '../scrapers/types';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -47,6 +50,8 @@ const MIN_SOURCE_CHARS = 150;
 const MIN_GROUNDING = 0.6;
 const SOURCE_NAME = 'lab-microsite-description-llm';
 const REWRITE_CONFIDENCE = 0.85;
+const MAX_REWRITE_PROMPT_SOURCE_CHARS = 12000;
+const MAX_REWRITE_PROMPT_NAME_CHARS = 240;
 
 const STOPWORDS = new Set([
   'research',
@@ -102,14 +107,10 @@ export function parseResearchDescriptionBackfillArgs(argv: string[]): ResearchDe
       options.explicitLimit = true;
       i += 1;
     } else if (arg === '--output') {
-      const next = argv[i + 1];
-      if (!next || next.startsWith('--')) throw new Error('--output requires a path');
-      options.output = next;
+      options.output = resolveSafeJsonReportOutputPath(argv[i + 1]);
       i += 1;
     } else if (arg.startsWith('--output=')) {
-      const value = arg.slice('--output='.length).trim();
-      if (!value || value.startsWith('--')) throw new Error('--output requires a path');
-      options.output = value;
+      options.output = resolveSafeJsonReportOutputPath(arg.slice('--output='.length));
     } else {
       throw new Error(`Unknown argument: ${arg}`);
     }
@@ -145,6 +146,8 @@ export type DescriptionRewriter = (input: {
 const defaultRewriter: DescriptionRewriter = async ({ name, sourceText }) => {
   const apiKey = String(process.env.OPENAI_API_KEY || '').trim();
   if (!apiKey) throw new Error('OPENAI_API_KEY not set');
+  const safeName = redactDirectContactInfo(name).slice(0, MAX_REWRITE_PROMPT_NAME_CHARS);
+  const safeSourceText = redactDirectContactInfo(sourceText).slice(0, MAX_REWRITE_PROMPT_SOURCE_CHARS);
   const response = await axios.post(
     'https://api.openai.com/v1/chat/completions',
     {
@@ -160,10 +163,10 @@ const defaultRewriter: DescriptionRewriter = async ({ name, sourceText }) => {
         {
           role: 'user',
           content: [
-            `Research home: ${name}`,
+            `Research home: ${safeName}`,
             'Return JSON {"fullDescription": "...", "shortDescription": "..."}. fullDescription = 1-3 sentences on the research only; shortDescription = one concise card sentence. If no research content exists in the source, return both as "".',
             'SOURCE:',
-            sourceText.slice(0, 12000),
+            safeSourceText,
           ].join('\n\n'),
         },
       ],
@@ -311,10 +314,11 @@ export async function runResearchDescriptionBackfill(options: {
       }
       if (!options.dryRun && source) {
         const sourceUrl = officialSourceUrl(entity);
+        const entityId = serializedDocumentId(entity._id);
         const observations: ObservationInput[] = [
           {
             entityType: 'researchEntity',
-            entityId: String(entity._id),
+            entityId,
             entityKey: entity.slug,
             field: 'fullDescription',
             value: out.fullDescription,
@@ -323,7 +327,7 @@ export async function runResearchDescriptionBackfill(options: {
           },
           {
             entityType: 'researchEntity',
-            entityId: String(entity._id),
+            entityId,
             entityKey: entity.slug,
             field: 'shortDescription',
             value: out.shortDescription,
@@ -348,7 +352,7 @@ export async function runResearchDescriptionBackfill(options: {
       }
     } catch (error) {
       result.errors += 1;
-      console.error(`Rewrite failed for ${entity.slug}:`, (error as Error).message);
+      console.error(`Rewrite failed for ${entity.slug}:`, sanitizeLogValue(error));
     }
   }
   return result;
@@ -381,8 +385,10 @@ async function main(): Promise<void> {
       result,
     };
     if (options.output) {
-      fs.writeFileSync(options.output, JSON.stringify(payload, null, 2));
-      console.log(`Saved research-description backfill report to ${options.output}`);
+      const safeOutput = resolveSafeJsonReportOutputPath(options.output);
+      fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
+      fs.writeFileSync(safeOutput, JSON.stringify(payload, null, 2));
+      console.log(`Saved research-description backfill report to ${safeOutput}`);
     }
     console.log(JSON.stringify(result, null, 2));
   } finally {
@@ -394,7 +400,7 @@ const invokedDirectly =
   process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
 if (invokedDirectly) {
   main().catch((error) => {
-    console.error(error);
+    console.error(sanitizeLogValue(error));
     process.exit(1);
   });
 }

@@ -71,13 +71,13 @@ describe('fullDescriptionQuality', () => {
 
   it('derives card copy from later research interests when biographies start with appointments', () => {
     const fullDescription =
-      'Stephen Darwall is the Andrew Downey Orrick Professor of Philosophy at Yale University and the John Dewey Distinguished University Professor Emeritus at the University of Michigan. He has taught in the Department of Philosophy at Yale University. His research interests include moral philosophy, particularly in the areas of second-personal ethics, moral reasoning, and the relationship between morality and authority.';
+      'Stephen Darwall is the Andrew Downey Orrick Professor of Philosophy at Yale University and the John Dewey Distinguished University Professor Emeritus at the University of Michigan. He has taught in the Department of Philosophy at Yale University. His research interests include moral philosophy, particularly in the areas of second-fixtureal ethics, moral reasoning, and the relationship between morality and authority.';
 
     const shortDescription = deriveShortDescriptionFromFullDescription(fullDescription);
 
     expect(fullDescriptionQuality(fullDescription).flags).not.toContain('appointment-only');
     expect(shortDescription).toBe(
-      'Studies moral philosophy, particularly in the areas of second-personal ethics, moral reasoning, and the relationship between morality and authority.',
+      'Studies moral philosophy, particularly in the areas of second-fixtureal ethics, moral reasoning, and the relationship between morality and authority.',
     );
     expect(shortDescriptionQuality(shortDescription, fullDescription).isUseful).toBe(true);
   });
@@ -369,7 +369,7 @@ describe('fullDescriptionQuality', () => {
 
   it('derives card copy from research contributions include phrasing', () => {
     const fullDescription =
-      'Dr. Shyam Sunder is the James L. Frank Professor of Accounting, Economics, and Finance at the Yale School of Management. His research contributions include financial reporting, information in security markets, statistical theory of valuation, and design of electronic markets. He is a pioneer in experimental finance.';
+      'Dr. Shyam Sunder is the Robin L. Frank Professor of Accounting, Economics, and Finance at the Yale School of Management. His research contributions include financial reporting, information in security markets, statistical theory of valuation, and design of electronic markets. He is a pioneer in experimental finance.';
 
     const shortDescription = deriveShortDescriptionFromFullDescription(fullDescription);
     const fullQuality = fullDescriptionQuality(fullDescription);
@@ -532,7 +532,7 @@ describe('fullDescriptionQuality', () => {
 
   it('derives card copy from substantive-interests profile prose after appointment front matter', () => {
     const fullDescription =
-      'K. Sudhir is James L. Frank Professor of Marketing, Private Enterprise and Management at the Yale School of Management. He served as Visiting Fellow at Microsoft Research for the year 2020. Sudhir’s substantive interests include customer relationship management, digital marketing and artificial intelligence, marketing organizations and emerging markets. His papers use a wide range of methods including machine learning, quasi-experiments, field experiments and game theory.';
+      'K. Sudhir is Robin L. Frank Professor of Marketing, Private Enterprise and Management at the Yale School of Management. He served as Visiting Fellow at Microsoft Research for the year 2020. Sudhir’s substantive interests include customer relationship management, digital marketing and artificial intelligence, marketing organizations and emerging markets. His papers use a wide range of methods including machine learning, quasi-experiments, field experiments and game theory.';
 
     const shortDescription = deriveShortDescriptionFromFullDescription(fullDescription);
     const fullQuality = fullDescriptionQuality(fullDescription);
@@ -634,7 +634,7 @@ describe('fullDescriptionQuality', () => {
 
   it('derives card copy from first-person research-aims prose with profile URL chrome', () => {
     const fullDescription =
-      'My research aims at understanding the RNA molecular mechanisms underlying dysregulation in human diseases, by combining experimental and computational approaches and with focus on alternative splicing events. https://www.researchgate.net/profile/Toma_Tebaldi https://orcid.org/0000-0002-0625-1631 Last Updated on February 11, 2025.';
+      'My research aims at understanding the RNA molecular mechanisms underlying dysregulation in human diseases, by combining experimental and computational approaches and with focus on alternative splicing events. https://www.researchgate.net/profile/Taylor_Testfixture https://orcid.org/0000-0000-0000-0001 Last Updated on February 11, 2025.';
 
     const shortDescription = deriveShortDescriptionFromFullDescription(fullDescription);
     const fullQuality = fullDescriptionQuality(fullDescription);
@@ -777,7 +777,7 @@ describe('fullDescriptionQuality', () => {
 
   it('derives card copy from specializations sections before biography front matter', () => {
     const fullDescription =
-      'Professional website: https://jameshepokoski.com/ Specializations: History and analysis of European art music from ca. 1750 to 1950; historical contexts, musical structure, and hermeneutics. About: James Hepokoski received his M.A. and Ph.D. in musicology from Harvard University.';
+      'Professional website: https://jameshepokoski.com/ Specializations: History and analysis of European art music from ca. 1750 to 1950; historical contexts, musical structure, and hermeneutics. About: Robin Hepokoski received his M.A. and Ph.D. in musicology from Harvard University.';
 
     const shortDescription = deriveShortDescriptionFromFullDescription(fullDescription);
 

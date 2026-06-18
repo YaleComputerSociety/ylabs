@@ -6,7 +6,8 @@ import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { searchPathways, type PathwaySearchInput } from '../services/pathwaySearchService';
 import { searchPathwaysViaMeili } from '../services/pathwaySearchIndexService';
-import { assertScriptApplyAllowed } from './scriptWriteGuards';
+import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { sanitizeLogValue } from '../utils/logSanitizer';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -80,11 +81,7 @@ export function parsePathwayRelevanceReviewArgs(argv: string[]): PathwayRelevanc
 }
 
 function parseRequiredOutputPath(value: string | undefined): string {
-  const output = value?.trim();
-  if (!output || output.startsWith('--')) {
-    throw new Error('--output requires a path');
-  }
-  return output;
+  return resolveSafeJsonReportOutputPath(value);
 }
 
 function parsePositiveInteger(value: string, flag: string): number {
@@ -97,8 +94,9 @@ function parsePositiveInteger(value: string, flag: string): number {
 
 export function writePathwayRelevanceReviewOutput(report: unknown, output?: string): void {
   if (!output) return;
-  fs.mkdirSync(path.dirname(output), { recursive: true });
-  fs.writeFileSync(output, `${JSON.stringify(report, null, 2)}\n`);
+  const safeOutput = resolveSafeJsonReportOutputPath(output);
+  fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
+  fs.writeFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
 }
 
 export function buildPathwayRelevanceReviewOutput<T extends object>(
@@ -131,7 +129,7 @@ function overlap(a: string[], b: string[]): number {
 }
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  return sanitizeLogValue(error);
 }
 
 async function main(): Promise<void> {
@@ -252,7 +250,7 @@ const isDirectRun = process.argv[1]
 if (isDirectRun) {
   main()
     .catch((error) => {
-      console.error('Pathway relevance review failed:', error);
+      console.error('Pathway relevance review failed:', sanitizeLogValue(error));
       process.exitCode = 1;
     })
     .finally(async () => {

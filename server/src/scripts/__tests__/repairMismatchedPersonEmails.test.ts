@@ -12,30 +12,30 @@ describe('repair mismatched person emails core', () => {
         {
           id: 'u1',
           netid: 'jmg257',
-          fname: 'Joshua',
-          lname: 'Gendron',
-          email: 'susan.k.brady@yale.edu',
+          fname: 'Jordan',
+          lname: 'Mismatch',
+          email: 'sage.mismatch@yale.edu',
         },
         {
           id: 'u2',
           netid: 'dimaio',
           fname: 'Daniel',
           lname: 'DiMaio',
-          email: 'daniel.dimaio@yale.edu',
+          email: 'drew.match@yale.edu',
         },
         {
           id: 'u3',
           netid: 'yy259',
           fname: 'Yang',
           lname: 'Yang-Hartwich',
-          email: 'yang.yang@yale.edu',
+          email: 'yarden.match@yale.edu',
         },
       ],
       activeEmailsByUserId: new Map([
-        ['u1', 'susan.k.brady@yale.edu'],
-        ['u0', 'susan.k.brady@yale.edu'],
-        ['u2', 'daniel.dimaio@yale.edu'],
-        ['u3', 'yang.yang@yale.edu'],
+        ['u1', 'sage.mismatch@yale.edu'],
+        ['u0', 'sage.mismatch@yale.edu'],
+        ['u2', 'drew.match@yale.edu'],
+        ['u3', 'yarden.match@yale.edu'],
       ]),
     });
 
@@ -47,9 +47,9 @@ describe('repair mismatched person emails core', () => {
     expect(summary.repairs).toEqual([
       {
         userId: 'u1',
-        name: 'Joshua Gendron',
+        name: 'Jordan Mismatch',
         netid: 'jmg257',
-        currentEmail: 'susan.k.brady@yale.edu',
+        currentEmail: 'sage.mismatch@yale.edu',
         repairEmail: 'jmg257@yale.edu',
         reason: 'email-does-not-match-person-name',
       },
@@ -65,12 +65,12 @@ describe('repair mismatched person emails core', () => {
           netid: 'jm284',
           fname: 'Jacob',
           lname: 'Musser',
-          email: 'susan.k.brady@yale.edu',
+          email: 'sage.mismatch@yale.edu',
         },
       ],
       activeEmailsByUserId: new Map([
-        ['u1', 'susan.k.brady@yale.edu'],
-        ['u0', 'susan.k.brady@yale.edu'],
+        ['u1', 'sage.mismatch@yale.edu'],
+        ['u0', 'sage.mismatch@yale.edu'],
         ['u2', 'jm284@yale.edu'],
       ]),
     });
@@ -82,7 +82,7 @@ describe('repair mismatched person emails core', () => {
         userId: 'u1',
         name: 'Jacob Musser',
         netid: 'jm284',
-        currentEmail: 'susan.k.brady@yale.edu',
+        currentEmail: 'sage.mismatch@yale.edu',
         reason: 'repair-email-already-used',
       },
     ]);
@@ -94,19 +94,19 @@ describe('repair mismatched person emails core', () => {
         {
           id: 'todd',
           netid: 'rtc3',
-          fname: 'Todd',
+          fname: 'Taylor',
           lname: 'Constable',
-          email: 'todd.constable@yale.edu',
+          email: 'taylor.constable@yale.edu',
           orcid: '0000-0001-5661-9521',
           profileUrls: {
-            medicine: 'https://medicine.yale.edu/profile/todd-constable/',
+            medicine: 'https://medicine.yale.edu/profile/taylor-constable/',
           },
         },
         {
           id: 'robert',
           netid: 'rc2442',
-          fname: 'Robert',
-          lname: 'Constable',
+          fname: 'Riley',
+          lname: 'OtherFixture',
           email: 'rc2442@yale.edu',
           orcid: '0000-0001-5661-9521',
           profileUrls: {
@@ -116,32 +116,32 @@ describe('repair mismatched person emails core', () => {
         {
           id: 'jason',
           netid: 'jmc325',
-          fname: 'Jason',
+          fname: 'Jesse',
           lname: 'Crawford',
-          email: 'jason.crawford@yale.edu',
+          email: 'jesse.crawford@yale.edu',
           orcid: '0000-0002-7583-1242',
           profileUrls: {
-            medicine: 'https://medicine.yale.edu/profile/jason-crawford/',
+            medicine: 'https://medicine.yale.edu/profile/jesse-crawford/',
           },
         },
         {
           id: 'juliett',
           netid: 'jc245',
-          fname: 'Juliett',
-          lname: 'Crawford',
-          email: 'juliett.crawford@yale.edu',
+          fname: 'Jordan',
+          lname: 'OtherFixture',
+          email: 'jordan.crawford@yale.edu',
           orcid: '0000-0002-7583-1242',
           profileUrls: {
-            medicine: 'https://medicine.yale.edu/profile/jason-crawford/',
+            medicine: 'https://medicine.yale.edu/profile/jesse-crawford/',
             orcid: 'https://orcid.org/0000-0002-7583-1242',
           },
         },
       ],
       activeEmailsByUserId: new Map([
-        ['todd', 'todd.constable@yale.edu'],
+        ['todd', 'taylor.constable@yale.edu'],
         ['robert', 'rc2442@yale.edu'],
-        ['jason', 'jason.crawford@yale.edu'],
-        ['juliett', 'juliett.crawford@yale.edu'],
+        ['jason', 'jesse.crawford@yale.edu'],
+        ['juliett', 'jordan.crawford@yale.edu'],
       ]),
     });
 
@@ -149,7 +149,7 @@ describe('repair mismatched person emails core', () => {
     expect(summary.externalIdentityRepairs).toEqual([
       {
         userId: 'robert',
-        name: 'Robert Constable',
+        name: 'Riley OtherFixture',
         identityField: 'orcid',
         identityValue: '0000-0001-5661-9521',
         clearOrcid: true,
@@ -159,7 +159,7 @@ describe('repair mismatched person emails core', () => {
       },
       {
         userId: 'juliett',
-        name: 'Juliett Crawford',
+        name: 'Jordan OtherFixture',
         identityField: 'orcid',
         identityValue: '0000-0002-7583-1242',
         clearOrcid: true,
@@ -202,6 +202,12 @@ describe('repair mismatched person emails core', () => {
     expect(() => parseRepairMismatchedPersonEmailsArgs(['--max-apply=1e3'])).toThrow(
       '--max-apply must be a positive integer',
     );
+    expect(() =>
+      parseRepairMismatchedPersonEmailsArgs(['--output=/var/tmp/mismatched-emails.json']),
+    ).toThrow(/--output must write under/);
+    expect(() =>
+      parseRepairMismatchedPersonEmailsArgs(['--output=/tmp/mismatched-emails.txt']),
+    ).toThrow(/--output must point to a \.json report file/);
   });
 });
 

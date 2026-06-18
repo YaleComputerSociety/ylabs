@@ -7,6 +7,7 @@
  */
 import axios from 'axios';
 import { Paper } from '../../models/paper';
+import { sanitizeLogValue } from '../../utils/logSanitizer';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 
 const CROSSREF_BASE = 'https://api.crossref.org/works';
@@ -145,7 +146,7 @@ export class CrossrefPaperScraper implements IScraper {
         hydrated++;
       } catch (error: any) {
         failures++;
-        ctx.log(`Crossref fetch failed for ${doi}: ${error?.message || error}`);
+        ctx.log(`Crossref fetch failed for publication DOI candidate: ${sanitizeLogValue(error)}`);
       }
     }
 

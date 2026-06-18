@@ -256,6 +256,49 @@ describe('ArxivPreprintScraper.run', () => {
     expect(result.fetchMetrics?.summary.failed).toBe(0);
   });
 
+  it('sanitizes retry failure messages in logs and fetch metrics', async () => {
+    let calls = 0;
+    const fetcher: ArxivFetcher = vi.fn(async () => {
+      calls++;
+      const err: any =
+        calls === 1
+          ? new Error('Request failed with status code 429')
+          : new Error('Bearer raw-access-token apiKey=raw-api-key');
+      err.response = { status: calls === 1 ? 429 : 500 };
+      throw err;
+    });
+    const userModel = mockUserModel([
+      {
+        _id: 'u-amy',
+        netid: 'aa1',
+        fname: 'Amy',
+        lname: 'Arnsten',
+      },
+    ]);
+    const sleep = vi.fn(async () => {});
+
+    const scraper = new ArxivPreprintScraper({
+      userModel,
+      fetcher,
+      sleep,
+      requestDelayMs: 0,
+      rateLimitRetryMs: 1,
+    });
+    const { ctx } = makeContext();
+    const log = vi.fn();
+    ctx.log = log;
+
+    const result = await scraper.run(ctx);
+    const serialized = JSON.stringify({ logs: log.mock.calls, result });
+
+    expect(calls).toBe(2);
+    expect(result.fetchMetrics?.summary.failed).toBe(1);
+    expect(serialized).toContain('[token-redacted]');
+    expect(serialized).toContain('[secret-redacted]');
+    expect(serialized).not.toContain('raw-access-token');
+    expect(serialized).not.toContain('raw-api-key');
+  });
+
   it('honors --only before issuing arXiv requests', async () => {
     const fetcher: ArxivFetcher = vi.fn(async () => SAMPLE_FEED);
     const userModel = mockUserModel([

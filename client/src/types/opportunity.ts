@@ -1,5 +1,4 @@
 export interface OpportunityResearchEntitySummary {
-  _id: string;
   slug: string;
   name: string;
   displayName?: string;
@@ -13,7 +12,6 @@ export interface OpportunityResearchEntitySummary {
 }
 
 export interface OpportunityPathwaySummary {
-  _id: string;
   pathwayType: string;
   status: string;
   evidenceStrength?: string;
@@ -26,7 +24,6 @@ export interface OpportunityPathwaySummary {
 }
 
 export interface OpportunityEvidenceSummary {
-  _id: string;
   sourceName?: string;
   sourceUrl?: string;
   field?: string;
@@ -52,10 +49,6 @@ export type OpportunityApplicationState =
 export type OpportunityProvenance = 'LISTING_BRIDGED' | 'SCRAPER_DERIVED';
 
 export interface OpportunityDetailPayload {
-  _id: string;
-  entryPathwayId: string;
-  researchEntityId: string;
-  listingId?: string;
   title: string;
   term?: string;
   deadline?: string;

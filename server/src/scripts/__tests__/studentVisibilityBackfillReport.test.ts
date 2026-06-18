@@ -176,6 +176,9 @@ describe('studentVisibilityBackfill CLI helpers', () => {
     expect(() => parseStudentVisibilityBackfillArgs(['--output=--apply'])).toThrow(
       /--output requires a path/,
     );
+    expect(() => parseStudentVisibilityBackfillArgs(['--output=/etc/ylabs-report.json'])).toThrow(
+      /must write under/,
+    );
   });
 
   it('requires a bounded limit before apply mode can run', () => {
@@ -222,6 +225,12 @@ describe('studentVisibilityBackfill CLI helpers', () => {
     writeStudentVisibilityBackfillOutput(payload, output);
 
     expect(JSON.parse(fs.readFileSync(output, 'utf8'))).toMatchObject(payload);
+  });
+
+  it('rejects unsafe student visibility backfill output writes', () => {
+    expect(() =>
+      writeStudentVisibilityBackfillOutput({ mode: 'dry-run' }, '/etc/ylabs-report.json'),
+    ).toThrow(/must write under/);
   });
 
   it('wraps student visibility artifacts with target metadata and parsed options', () => {

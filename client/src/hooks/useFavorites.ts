@@ -52,8 +52,8 @@ export const useFavorites = (kind: FavoritesKind) => {
     try {
       const res = await axios.get(config.load, { withCredentials: true });
       setFavIds(res.data[config.responseKey] || []);
-    } catch (error) {
-      console.error(`Error fetching user's favorite ${kind}:`, error);
+    } catch {
+      console.error(`Error fetching user's favorite ${kind}.`);
       setFavIds([]);
       if (config.warnOnLoadError) {
         swal({ text: `Could not load your favorite ${kind}`, icon: 'warning' });
@@ -74,8 +74,8 @@ export const useFavorites = (kind: FavoritesKind) => {
       } else {
         await axios.delete(config.collectionPath, { withCredentials: true, data: { [config.payloadKey]: [id] } });
       }
-    } catch (error) {
-      console.error(`Error ${favorite ? 'favoriting' : 'unfavoriting'} ${kind.slice(0, -1)}:`, error);
+    } catch {
+      console.error(`Error ${favorite ? 'favoriting' : 'unfavoriting'} ${kind.slice(0, -1)}.`);
       setFavIds(previous);
       if (config.warnOnMutationError) {
         swal({ text: `Unable to ${favorite ? 'favorite' : 'unfavorite'} ${kind.slice(0, -1)}`, icon: 'warning' });

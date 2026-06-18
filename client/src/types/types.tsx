@@ -138,16 +138,12 @@ export type FacultyProfile = {
   netid: string;
   fname: string;
   lname: string;
-  email: string;
   title?: string;
   bio?: string;
-  phone?: string;
   website?: string;
   primary_department?: string;
   secondary_departments: string[];
   departments: string[];
-  physical_location?: string;
-  building_desk?: string;
   image_url?: string;
   h_index?: number;
   orcid?: string;

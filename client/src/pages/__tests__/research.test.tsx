@@ -351,6 +351,8 @@ describe('Research page', () => {
     expect(browseHeadingRow?.parentElement?.className).toContain('w-full');
     expect(browseHeadingRow?.className).toContain('justify-between');
     expect(within(browseSection).queryByText('1 profile')).toBeNull();
+    expect(container.textContent).not.toContain('profile loaded');
+    expect(container.textContent).not.toContain('indexed profiles');
     const browseLayout = Array.from(browseSection.querySelectorAll('.grid')).find(
       (element) =>
         element.className.includes('grid gap-5') &&
@@ -1184,6 +1186,7 @@ describe('Research page', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Search' }));
 
     await screen.findByText("Showing research matches for 'machine learning'");
+    await screen.findByRole('heading', { name: 'AI Safety Lab' });
     expect(screen.queryByRole('button', { name: 'Open roles' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Paid/funded' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Thesis possible' })).toBeNull();
@@ -1225,10 +1228,10 @@ describe('Research page', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Search' }));
 
     await screen.findByText("Showing research matches for 'machine learning'");
+    expect(await screen.findByRole('heading', { name: 'AI Safety Lab' })).toBeTruthy();
 
     expect(screen.queryByText('No pathways indexed yet')).toBeNull();
     expect(screen.queryByRole('link', { name: 'Compare 0 pathways' })).toBeNull();
-    expect(container.textContent).toContain('AI Safety Lab');
     expect(container.textContent).not.toContain('Evidence sparse');
     expect(container.textContent).not.toContain('People and Contacts');
     expect(container.textContent).not.toContain('People and Contacts0');
@@ -1293,7 +1296,7 @@ describe('Research page', () => {
       return url === '/research/search' ? researchSearchResponse() : unexpectedSearchEndpoint(url);
     });
 
-    const { container } = renderResearch();
+    renderResearch();
 
     fireEvent.change(screen.getByLabelText('Search Yale research'), {
       target: { value: 'protein folding' },
@@ -1302,7 +1305,7 @@ describe('Research page', () => {
 
     await screen.findByText("Showing research matches for 'protein folding'");
     expect(screen.queryByRole('alert')).toBeNull();
-    expect(container.textContent || '').toContain('AI Safety Lab');
+    expect(await screen.findByRole('heading', { name: 'AI Safety Lab' })).toBeTruthy();
   });
 
   it('keeps loaded browse results when returning from a research profile', async () => {

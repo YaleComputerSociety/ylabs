@@ -13,6 +13,7 @@ import {
   deriveShortDescriptionFromFullDescription,
   shortDescriptionQuality,
 } from '../../utils/researchEntityDescriptionQuality';
+import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 
 export const DEPARTMENT_UNDERGRAD_RESEARCH_SOURCE = 'department-undergrad-research';
 
@@ -542,15 +543,20 @@ export function departmentUndergradResearchRecordsToObservations(
 }
 
 async function defaultFetchHtml(url: string, useCache: boolean): Promise<string> {
-  const cacheKey = `page:${url}`;
+  const safeUrl = await assertPublicHttpUrl(url);
+  const safeUrlText = safeUrl.toString();
+  const cacheKey = `page:${safeUrlText}`;
   if (useCache) {
     const cached = await getCached<string>(DEPARTMENT_UNDERGRAD_RESEARCH_SOURCE, cacheKey);
     if (cached) return cached;
   }
-  const response = await axios.get(url, {
+  const agents = ssrfSafeAgents();
+  const response = await axios.get(safeUrlText, {
     timeout: FETCH_TIMEOUT_MS,
     headers: { 'User-Agent': USER_AGENT },
     maxRedirects: 5,
+    httpAgent: agents.httpAgent,
+    httpsAgent: agents.httpsAgent,
   });
   const html = response.data as string;
   if (useCache) await setCached(DEPARTMENT_UNDERGRAD_RESEARCH_SOURCE, cacheKey, html);

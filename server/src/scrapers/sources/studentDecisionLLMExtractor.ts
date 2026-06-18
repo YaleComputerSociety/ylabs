@@ -1,4 +1,7 @@
 import axios from 'axios';
+import { sanitizeLogValue } from '../../utils/logSanitizer';
+import { redactDirectContactInfo } from '../../utils/contactRedaction';
+import { serializedDocumentId } from '../../utils/idSerialization';
 import crypto from 'crypto';
 import { AccessSignal } from '../../models/accessSignal';
 import { ContactRoute } from '../../models/contactRoute';
@@ -68,7 +71,16 @@ export interface StudentDecisionLLMExtractorDeps {
 const DEFAULT_MODEL = 'gpt-4o-mini';
 const DEFAULT_LIMIT = 100;
 const SOURCE_KEY = 'student-decision-llm';
+const studentDecisionDocumentId = (value: unknown): string => serializedDocumentId(value) || '';
 const SCHEMA_VERSION = 'v1';
+const MAX_PROMPT_TEXT_FIELD_LENGTH = 2000;
+const MAX_PROMPT_URL_FIELD_LENGTH = 2048;
+
+const safePromptText = (value: unknown, maxLength = MAX_PROMPT_TEXT_FIELD_LENGTH): string =>
+  redactDirectContactInfo(String(value || '')).slice(0, maxLength);
+
+const safePromptUrl = (value: unknown): string =>
+  redactDirectContactInfo(String(value || '')).slice(0, MAX_PROMPT_URL_FIELD_LENGTH);
 
 export const STUDENT_DECISION_RESPONSE_FORMAT = {
   type: 'json_schema' as const,
@@ -281,29 +293,29 @@ export function selectDecisionCandidates(
 }
 
 export function buildStudentDecisionPrompt(candidate: DecisionCandidate): string {
-  const sourceUrls = compactSourceUrls(candidate);
+  const sourceUrls = compactSourceUrls(candidate).map((url) => safePromptUrl(url));
   const accessSignals = (candidate.accessSignals || [])
     .map(
       (signal) =>
-        `- ${signal.signalType || 'SIGNAL'} (${signal.confidence || 'UNKNOWN'}): ${signal.excerpt || ''} ${signal.sourceUrl || ''}`.trim(),
+        `- ${safePromptText(signal.signalType || 'SIGNAL', 80)} (${safePromptText(signal.confidence || 'UNKNOWN', 80)}): ${safePromptText(signal.excerpt)} ${safePromptUrl(signal.sourceUrl)}`.trim(),
     )
     .join('\n');
   const entryPathways = (candidate.entryPathways || [])
     .map(
       (pathway) =>
-        `- ${pathway.pathwayType || 'PATHWAY'} (${pathway.status || 'UNKNOWN'}): ${pathway.studentFacingLabel || ''} ${(pathway.sourceUrls || []).join(', ')}`.trim(),
+        `- ${safePromptText(pathway.pathwayType || 'PATHWAY', 80)} (${safePromptText(pathway.status || 'UNKNOWN', 80)}): ${safePromptText(pathway.studentFacingLabel)} ${(pathway.sourceUrls || []).map((url) => safePromptUrl(url)).join(', ')}`.trim(),
     )
     .join('\n');
   const contacts = (candidate.contactRoutes || [])
     .map(
       (route) =>
-        `- ${route.routeType || 'CONTACT'} (${route.visibility || 'UNKNOWN'}): ${route.url || route.sourceUrl || ''}`.trim(),
+        `- ${safePromptText(route.routeType || 'CONTACT', 80)} (${safePromptText(route.visibility || 'UNKNOWN', 80)}): ${safePromptUrl(route.url || route.sourceUrl)}`.trim(),
     )
     .join('\n');
   const opportunities = (candidate.postedOpportunities || [])
     .map(
       (opportunity) =>
-        `- ${opportunity.status || 'UNKNOWN'}: ${opportunity.applicationUrl || ''} ${(opportunity.sourceUrls || []).join(', ')}`.trim(),
+        `- ${safePromptText(opportunity.status || 'UNKNOWN', 80)}: ${safePromptUrl(opportunity.applicationUrl)} ${(opportunity.sourceUrls || []).map((url) => safePromptUrl(url)).join(', ')}`.trim(),
     )
     .join('\n');
 
@@ -312,12 +324,12 @@ export function buildStudentDecisionPrompt(candidate: DecisionCandidate): string
     'Return JSON only with recommendedAction, headline, explanation, why, notThis, confidence, sourceUrls, and reviewFlags.',
     'Do not invent active openings, direct emails, or claims not supported by the evidence bundle.',
     'Use the exact research entity name in the headline; do not replace it with a shortened PI-style lab label.',
-    `Research entity: ${candidate.name}`,
-    `Slug: ${candidate.slug}`,
-    `Type: ${candidate.entityType || 'UNKNOWN'}`,
-    `Description: ${candidate.description || ''}`,
-    `Current best next step: ${candidate.accessSummary?.bestNextStep || 'Unknown'}`,
-    `Current access status: ${candidate.accessSummary?.status || 'Unknown'}`,
+    `Research entity: ${safePromptText(candidate.name, 240)}`,
+    `Slug: ${safePromptText(candidate.slug, 240)}`,
+    `Type: ${safePromptText(candidate.entityType || 'UNKNOWN', 80)}`,
+    `Description: ${safePromptText(candidate.description)}`,
+    `Current best next step: ${safePromptText(candidate.accessSummary?.bestNextStep || 'Unknown')}`,
+    `Current access status: ${safePromptText(candidate.accessSummary?.status || 'Unknown', 80)}`,
     `Source URLs: ${sourceUrls.join(', ')}`,
     'Access signals:',
     accessSignals || '- none',
@@ -401,7 +413,7 @@ async function defaultCandidateLoader(): Promise<DecisionCandidate[]> {
   const byEntity = <T extends { researchEntityId?: unknown }>(items: T[]): Map<string, T[]> => {
     const grouped = new Map<string, T[]>();
     for (const item of items) {
-      const key = String((item as any).researchEntityId || '');
+      const key = studentDecisionDocumentId((item as any).researchEntityId);
       if (!key) continue;
       grouped.set(key, [...(grouped.get(key) || []), item]);
     }
@@ -414,7 +426,7 @@ async function defaultCandidateLoader(): Promise<DecisionCandidate[]> {
   const opportunitiesByEntity = byEntity(opportunities as any[]);
 
   return (rows as any[]).map((row) => ({
-    _id: String(row._id),
+    _id: studentDecisionDocumentId(row._id),
     slug: row.slug,
     name: row.name,
     entityType: row.entityType,
@@ -423,10 +435,10 @@ async function defaultCandidateLoader(): Promise<DecisionCandidate[]> {
     sourceUrls: row.sourceUrls || (row.websiteUrl ? [row.websiteUrl] : []),
     studentDecisionExplanation: row.studentDecisionExplanation,
     accessSummary: row.accessSummary,
-    accessSignals: (signalsByEntity.get(String(row._id)) || []).slice(0, 8),
-    entryPathways: (pathwaysByEntity.get(String(row._id)) || []).slice(0, 8),
-    contactRoutes: (routesByEntity.get(String(row._id)) || []).slice(0, 5),
-    postedOpportunities: (opportunitiesByEntity.get(String(row._id)) || []).slice(0, 5),
+    accessSignals: (signalsByEntity.get(studentDecisionDocumentId(row._id)) || []).slice(0, 8),
+    entryPathways: (pathwaysByEntity.get(studentDecisionDocumentId(row._id)) || []).slice(0, 8),
+    contactRoutes: (routesByEntity.get(studentDecisionDocumentId(row._id)) || []).slice(0, 5),
+    postedOpportunities: (opportunitiesByEntity.get(studentDecisionDocumentId(row._id)) || []).slice(0, 5),
   }));
 }
 
@@ -462,7 +474,7 @@ export async function defaultCallLLM(
   try {
     return JSON.parse(content);
   } catch (err: any) {
-    throw new Error(`LLM returned invalid JSON: ${err?.message || err}`);
+    throw new Error(`LLM returned invalid JSON: ${sanitizeLogValue(err)}`);
   }
 }
 
@@ -550,7 +562,7 @@ export class StudentDecisionLLMExtractor implements IScraper {
       } catch (error) {
         llmFailed += 1;
         ctx.log(`[${candidate.slug}] student decision LLM failed`, {
-          error: error instanceof Error ? error.message : String(error),
+          error: sanitizeLogValue(error),
           model: this.model,
         });
       }

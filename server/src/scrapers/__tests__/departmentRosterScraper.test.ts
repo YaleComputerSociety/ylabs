@@ -42,7 +42,7 @@ const ECON_HTML = `
         <a href="/people/samuel-kortum"><span>Samuel Kortum</span></a>
       </div>
       <div class="node-teaser__professional-title">
-        <span>Departmental Chair and James Burrows Moffatt Professor of Economics</span>
+        <span>Departmental Chair and Robin Burrows Moffatt Professor of Economics</span>
       </div>
     </article>
     <article class="node-teaser node-teaser--person node-teaser--vertical">
@@ -70,41 +70,41 @@ const MCDB_HTML = `
   <div class="directory-listing-card">
     <div class="directory-listing-card__content">
       <h3 class="directory-listing-card__heading">
-        <a class="directory-listing-card__heading-link" href="/profile/shirin-bahmanyar-phd">
-          Shirin Bahmanyar, Ph.D.
+        <a class="directory-listing-card__heading-link" href="/profile/shannon-roster-phd">
+          Shannon Roster, Ph.D.
         </a>
       </h3>
       <div class="directory-listing-card__subheading">
         <div>Associate Professor of Molecular, Cellular &amp; Developmental Biology with Tenure</div>
       </div>
-      <a class="directory-listing-card__link" href="mailto:shirin.bahmanyar@yale.edu">Email</a>
+      <a class="directory-listing-card__link" href="mailto:shannon.roster@yale.edu">Email</a>
       <a class="directory-listing-card__link" href="https://bahmanyarlab.yale.edu">Lab Website</a>
     </div>
   </div>
   <div class="directory-listing-card">
     <div class="directory-listing-card__content">
       <h3 class="directory-listing-card__heading">
-        <a class="directory-listing-card__heading-link" href="/profile/ronald-breaker-phd">
-          Ronald Breaker, Ph.D.
+        <a class="directory-listing-card__heading-link" href="/profile/riley-roster-phd">
+          Riley Roster, Ph.D.
         </a>
       </h3>
       <div class="directory-listing-card__subheading">
         <div>Sterling Professor of MCDB</div>
       </div>
-      <a class="directory-listing-card__link" href="mailto:ronald.breaker@yale.edu">Email</a>
+      <a class="directory-listing-card__link" href="mailto:riley.roster@yale.edu">Email</a>
     </div>
   </div>
   <div class="directory-listing-card">
     <div class="directory-listing-card__content">
       <h3 class="directory-listing-card__heading">
-        <a class="directory-listing-card__heading-link" href="/profile/hugh-taylor">
-          Hugh Taylor, M.D.
+        <a class="directory-listing-card__heading-link" href="/profile/hadley-roster">
+          Hadley Roster, M.D.
         </a>
       </h3>
       <div class="directory-listing-card__subheading">
         <div>Professor of Molecular, Cellular &amp; Developmental Biology</div>
       </div>
-      <a class="directory-listing-card__link" href="mailto:hugh.taylor@yale.edu">Email</a>
+      <a class="directory-listing-card__link" href="mailto:hadley.roster@yale.edu">Email</a>
       <a class="directory-listing-card__link" href="https://medicine.yale.edu/about/a-to-z-index/atoz/lab-websites/">Lab Website</a>
     </div>
   </div>
@@ -126,22 +126,22 @@ const PSYCH_HTML = `
     <tbody>
       <tr class="odd views-row-first">
         <td class="views-field views-field-name">
-          <a href="/people/woo-kyoung-ahn" class="username">Woo-kyoung Ahn</a>
+          <a href="/people/wynn-roster" class="username">Woo-kyoung Ahn</a>
         </td>
         <td class="views-field views-field-field-phone">203-432-9626</td>
         <td class="views-field views-field-mail">
-          <a href="mailto:woo-kyoung.ahn@yale.edu">woo-kyoung.ahn@yale.edu</a>
+          <a href="mailto:wynn.roster@yale.edu">wynn.roster@yale.edu</a>
         </td>
         <td class="views-field views-field-field-office">100 College St.</td>
         <td class="views-field views-field-edit-node"></td>
       </tr>
       <tr class="even">
         <td class="views-field views-field-name">
-          <a href="/people/john-bargh">John Bargh</a>
+          <a href="/people/jordan-roster">Jordan Roster</a>
         </td>
         <td class="views-field views-field-field-phone">203-432-1111</td>
         <td class="views-field views-field-mail">
-          <a href="mailto:john.bargh@yale.edu">john.bargh@yale.edu</a>
+          <a href="mailto:jordan.roster@yale.edu">jordan.roster@yale.edu</a>
         </td>
         <td class="views-field views-field-field-office">2 Hillhouse</td>
         <td></td>
@@ -176,15 +176,15 @@ const PSYCH_PRIMARY_HTML = `
     <tbody>
       <tr class="odd views-row-first">
         <td class="views-field views-field-picture">
-          <a href="/people/woo-kyoung-ahn">
+          <a href="/people/wynn-roster">
             <img src="/sites/default/files/styles/people_thumbnail/public/pictures/ahn.jpg" alt="Woo-kyoung Ahn's picture" />
           </a>
         </td>
         <td class="views-field views-field-name">
-          <a href="/people/woo-kyoung-ahn" title="View user profile." class="username">Woo-kyoung Ahn</a><br />
+          <a href="/people/wynn-roster" title="View user profile." class="username">Woo-kyoung Ahn</a><br />
           John Hay Whitney Professor of Psychology<br />
           100 College St.<br />
-          <a href="mailto:woo-kyoung.ahn@yale.edu">woo-kyoung.ahn@yale.edu</a><br />
+          <a href="mailto:wynn.roster@yale.edu">wynn.roster@yale.edu</a><br />
           Phone: 203-432-9626<br />
           <a href="http://ahnthinkinglab.yale.edu/" target="_blank">Website</a>
         </td>
@@ -202,18 +202,18 @@ const ASTRONOMY_GRID_HTML = `
         <td class="col-1 col-first">
           <div class="views-field views-field-picture">
             <span class="field-content">
-              <a href="/people/hector-arce"><img alt="Hector Arce's picture" /></a>
+              <a href="/people/harper-astro"><img alt="Harper Astro's picture" /></a>
             </span>
           </div>
           <div class="views-field views-field-name">
-            <span class="field-content">Hector Arce</span>
+            <span class="field-content">Harper Astro</span>
           </div>
           <div class="views-field views-field-field-title">
             <div class="field-content">Professor of Astronomy</div>
           </div>
           <div class="views-field views-field-mail">
             <span class="field-content">
-              <a href="mailto:hector.arce@yale.edu">hector.arce@yale.edu</a>
+              <a href="mailto:harper.astro@yale.edu">harper.astro@yale.edu</a>
             </span>
           </div>
           <div class="views-field views-field-field-term-reference">
@@ -231,14 +231,14 @@ const ERM_VIEWS_ROW_HTML = `
   <div class="views-row">
     <div class="views-field views-field-picture">
       <div class="field-content picture">
-        <a href="/people/deb-vargas">
-          <img src="https://erm.yale.edu/sites/default/files/styles/people_directory_image/public/pictures/deb.jpg" alt="Deb Vargas's picture" />
+        <a href="/people/avery-rivera-fixture">
+          <img src="https://erm.yale.edu/sites/default/files/styles/people_directory_image/public/pictures/avery-fixture.jpg" alt="Avery Rivera's picture" />
         </a>
       </div>
     </div>
     <div class="views-field views-field-name">
       <h4 class="field-content name">
-        <a href="/people/deb-vargas" class="username">Deb Vargas</a>
+        <a href="/people/avery-rivera-fixture" class="username">Avery Rivera</a>
       </h4>
     </div>
     <div class="views-field views-field-field-title">
@@ -248,14 +248,14 @@ const ERM_VIEWS_ROW_HTML = `
       <div class="field-content">
         <span id="email-placeholder"></span>
         <script type="text/javascript">
-          document.getElementById('email-placeholder').innerHTML = '<a href="&#109;&#97;&#105;&#108;&#116;&#111;&#58;&#100;&#101;&#98;&#46;&#118;&#97;&#114;&#103;&#97;&#115;&#64;&#121;&#97;&#108;&#101;&#46;&#101;&#100;&#117;">&#100;&#101;&#98;&#46;&#118;&#97;&#114;&#103;&#97;&#115;&#64;&#121;&#97;&#108;&#101;&#46;&#101;&#100;&#117;</a>';
+          document.getElementById('email-placeholder').innerHTML = '<a href="&#109;&#97;&#105;&#108;&#116;&#111;&#58;&#97;&#118;&#101;&#114;&#121;&#46;&#114;&#105;&#118;&#101;&#114;&#97;&#64;&#121;&#97;&#108;&#101;&#46;&#101;&#100;&#117;">&#97;&#118;&#101;&#114;&#121;&#46;&#114;&#105;&#118;&#101;&#114;&#97;&#64;&#121;&#97;&#108;&#101;&#46;&#101;&#100;&#117;</a>';
         </script>
       </div>
     </div>
   </div>
   <div class="views-row">
     <div class="views-field views-field-name">
-      <h4 class="field-content name"><a href="/people/fatima-el-tayeb">Fatima El-Tayeb</a></h4>
+      <h4 class="field-content name"><a href="/people/jordan-winter-fixture">Jordan Winter</a></h4>
     </div>
     <div class="views-field views-field-field-title">
       <p class="field-content position">Professor of Women's, Gender, and Sexuality Studies and of Ethnicity, Race, and Migration</p>
@@ -298,7 +298,7 @@ const TDPS_DIRECTORY_CARD_HTML = `
         <div class="directory-listing-card__subheading">
           <div>Professor in the Practice</div>
         </div>
-        <a class="directory-listing-card__link" href="mailto:deborah.margolin@yale.edu">Email</a>
+        <a class="directory-listing-card__link" href="mailto:devon.roster@yale.edu">Email</a>
       </div>
       <div class="directory-listing-card__image">
         <img src="/sites/default/files/styles/1_1_300_/public/2024-06/deb.png" alt="Deb Margolin Headshot" />
@@ -312,20 +312,20 @@ const JACKSON_PERSON_CARD_HTML = `
 <html><body>
   <div class="page-item page-item-person page-item-person-staff-faculty">
     <div class="page-item-image">
-      <img class="center-block img-responsive" src="https://jackson.yale.edu/wp-content/uploads/2026/05/Eric-Braverman.jpg" alt="Eric Braverman Thumbnail" />
+      <img class="center-block img-responsive" src="https://jackson.yale.edu/wp-content/uploads/2026/05/Eric-Braverman.jpg" alt="Emery Roster Thumbnail" />
     </div>
     <div class="page-item-content">
       <div class="page-item-person-name">
-        <div class="page-item-person-name-inner">Eric Braverman</div>
+        <div class="page-item-person-name-inner">Emery Roster</div>
       </div>
       <div class="page-item-person-bio">
         <div class="page-item-person-bio-title">Lecturer</div>
         <div class="page-item-bio-links">
           <span class="page-item-bio-link">
-            <a class="more" href="mailto:eric.braverman@yale.edu">Email</a>
+            <a class="more" href="mailto:emery.roster@yale.edu">Email</a>
           </span>
           <div class="page-item-person-bio-link hidden-xs">
-            <a class="more" href="https://jackson.yale.edu/person/eric-braverman/">View Bio</a>
+            <a class="more" href="https://jackson.yale.edu/person/emery-roster/">View Bio</a>
           </div>
         </div>
       </div>
@@ -358,7 +358,7 @@ describe('slugify', () => {
 
 describe('netidFromEmail', () => {
   it('extracts the local part from a yale.edu address', () => {
-    expect(netidFromEmail('woo-kyoung.ahn@yale.edu')).toBe('woo-kyoung.ahn');
+    expect(netidFromEmail('wynn.roster@yale.edu')).toBe('wynn.roster');
   });
   it('strips a mailto: prefix', () => {
     expect(netidFromEmail('mailto:abc123@yale.edu')).toBe('abc123');
@@ -379,27 +379,27 @@ describe('netidFromEmail', () => {
 
 describe('isLikelyPersonSpecificYaleEmail', () => {
   it('accepts netid-shaped Yale emails even when the local-part is not name-shaped', () => {
-    expect(isLikelyPersonSpecificYaleEmail('jmg257@yale.edu', 'Joshua Gendron')).toBe(true);
-    expect(isLikelyPersonSpecificYaleEmail('yy259@yale.edu', 'Yang Yang-Hartwich')).toBe(true);
+    expect(isLikelyPersonSpecificYaleEmail('jmg257@yale.edu', 'Jordan Mismatch')).toBe(true);
+    expect(isLikelyPersonSpecificYaleEmail('yy259@yale.edu', 'Yarden Match')).toBe(true);
   });
 
   it('accepts name-shaped local-parts that match the visible person name', () => {
-    expect(isLikelyPersonSpecificYaleEmail('daniel.dimaio@yale.edu', 'Daniel DiMaio')).toBe(true);
-    expect(isLikelyPersonSpecificYaleEmail('yang.yang@yale.edu', 'Yang Yang-Hartwich')).toBe(true);
-    expect(isLikelyPersonSpecificYaleEmail('anna.zayaruznaya@yale.edu', 'AZ Zayaruznaya')).toBe(true);
+    expect(isLikelyPersonSpecificYaleEmail('drew.match@yale.edu', 'Drew Match')).toBe(true);
+    expect(isLikelyPersonSpecificYaleEmail('yarden.match@yale.edu', 'Yarden Match')).toBe(true);
+    expect(isLikelyPersonSpecificYaleEmail('ari.match@yale.edu', 'Ari Match')).toBe(true);
   });
 
   it('rejects contact or other-person Yale emails near a faculty name', () => {
-    expect(isLikelyPersonSpecificYaleEmail('susan.k.brady@yale.edu', 'Joshua Gendron')).toBe(false);
-    expect(isLikelyPersonSpecificYaleEmail('daniel.dimaio@yale.edu', 'Daniel Mai')).toBe(false);
-    expect(isLikelyPersonSpecificYaleEmail('siyuan.wang@yale.edu', 'Susan Wang')).toBe(false);
-    expect(isLikelyPersonSpecificYaleEmail('ysm.editor@yale.edu', 'Caroline Johnson')).toBe(false);
+    expect(isLikelyPersonSpecificYaleEmail('sage.mismatch@yale.edu', 'Jordan Mismatch')).toBe(false);
+    expect(isLikelyPersonSpecificYaleEmail('drew.match@yale.edu', 'Dana Mismatch')).toBe(false);
+    expect(isLikelyPersonSpecificYaleEmail('sky.mismatch@yale.edu', 'Different Person')).toBe(false);
+    expect(isLikelyPersonSpecificYaleEmail('ysm.editor@yale.edu', 'Cameron Profile')).toBe(false);
   });
 });
 
 describe('normalizeName', () => {
   it('strips trailing Ph.D. credentials', () => {
-    expect(normalizeName('Ronald Breaker, Ph.D.')).toBe('Ronald Breaker');
+    expect(normalizeName('Riley Roster, Ph.D.')).toBe('Riley Roster');
     expect(normalizeName('Jane Doe, M.D.')).toBe('Jane Doe');
   });
   it('strips leading honorifics', () => {
@@ -440,7 +440,7 @@ describe('econExtractor', () => {
     expect(out).toHaveLength(3);
     expect(out[0]).toMatchObject({
       name: 'Samuel Kortum',
-      title: 'Departmental Chair and James Burrows Moffatt Professor of Economics',
+      title: 'Departmental Chair and Robin Burrows Moffatt Professor of Economics',
       profileUrl: 'https://economics.yale.edu/people/samuel-kortum',
     });
     expect(out[1].name).toBe('Jason Abaluck');
@@ -477,21 +477,21 @@ describe('mcdbExtractor', () => {
     const out = mcdbExtractor(MCDB_HTML, { pageUrl: 'https://mcdb.yale.edu/people/faculty' });
     expect(out).toHaveLength(3); // empty card skipped
     expect(out[0]).toMatchObject({
-      name: 'Shirin Bahmanyar, Ph.D.',
-      email: 'shirin.bahmanyar@yale.edu',
+      name: 'Shannon Roster, Ph.D.',
+      email: 'shannon.roster@yale.edu',
       labUrl: 'https://bahmanyarlab.yale.edu',
-      profileUrl: 'https://mcdb.yale.edu/profile/shirin-bahmanyar-phd',
+      profileUrl: 'https://mcdb.yale.edu/profile/shannon-roster-phd',
     });
     expect(out[0].title).toContain('Associate Professor');
     expect(out[1]).toMatchObject({
-      name: 'Ronald Breaker, Ph.D.',
-      email: 'ronald.breaker@yale.edu',
+      name: 'Riley Roster, Ph.D.',
+      email: 'riley.roster@yale.edu',
     });
     expect(out[1].labUrl).toBeUndefined();
     expect(out[2]).toMatchObject({
-      name: 'Hugh Taylor, M.D.',
-      email: 'hugh.taylor@yale.edu',
-      profileUrl: 'https://mcdb.yale.edu/profile/hugh-taylor',
+      name: 'Hadley Roster, M.D.',
+      email: 'hadley.roster@yale.edu',
+      profileUrl: 'https://mcdb.yale.edu/profile/hadley-roster',
     });
     expect(out[2].labUrl).toBeUndefined();
   });
@@ -540,7 +540,7 @@ describe('official Yale profile-card extractor coverage', () => {
         name: 'Deb Margolin',
         profileUrl: 'https://tdps.yale.edu/profile/deb-margolin',
         title: 'Professor in the Practice',
-        email: 'deborah.margolin@yale.edu',
+        email: 'devon.roster@yale.edu',
         labUrl: undefined,
         bio: undefined,
         imageUrl:
@@ -558,10 +558,10 @@ describe('psychExtractor', () => {
     expect(out).toHaveLength(3);
     expect(out[0]).toMatchObject({
       name: 'Woo-kyoung Ahn',
-      email: 'woo-kyoung.ahn@yale.edu',
-      profileUrl: 'https://psychology.yale.edu/people/woo-kyoung-ahn',
+      email: 'wynn.roster@yale.edu',
+      profileUrl: 'https://psychology.yale.edu/people/wynn-roster',
     });
-    expect(out[1].name).toBe('John Bargh');
+    expect(out[1].name).toBe('Jordan Roster');
     expect(out[2]).toMatchObject({ name: 'Jane Doe' });
     expect(out[2].email).toBeUndefined();
   });
@@ -575,8 +575,8 @@ describe('psychExtractor', () => {
       {
         name: 'Woo-kyoung Ahn',
         title: 'John Hay Whitney Professor of Psychology',
-        email: 'woo-kyoung.ahn@yale.edu',
-        profileUrl: 'https://psychology.yale.edu/people/woo-kyoung-ahn',
+        email: 'wynn.roster@yale.edu',
+        profileUrl: 'https://psychology.yale.edu/people/wynn-roster',
         imageUrl:
           'https://psychology.yale.edu/sites/default/files/styles/people_thumbnail/public/pictures/ahn.jpg',
         labUrl: 'http://ahnthinkinglab.yale.edu/',
@@ -627,9 +627,9 @@ describe('psychExtractor', () => {
           <tbody>
             <tr>
               <td class="views-field views-field-name">
-                <a href="/people/meng-cheng" class="username">Meng Cheng</a><br />
+                <a href="/people/morgan-contact" class="username">Morgan Contact</a><br />
                 Associate Professor<br />
-                <a href="mailto:m.cheng@yale.edu">m.cheng@yale.edu</a>
+                <a href="mailto:m.contact@yale.edu">m.contact@yale.edu</a>
               </td>
               <td class="views-field views-field-field-field-of-study">
                 <a href="/research/condensed-matter-physics">Condensed Matter Physics</a><a href="/taxonomy/theorist">Theorist</a><a href="/taxonomy/quantum-criticality">Quantum criticality</a>
@@ -657,10 +657,10 @@ describe('psychExtractor', () => {
 
     expect(out).toEqual([
       {
-        name: 'Hector Arce',
+        name: 'Harper Astro',
         title: 'Professor of Astronomy',
-        email: 'hector.arce@yale.edu',
-        profileUrl: 'https://astronomy.yale.edu/people/hector-arce',
+        email: 'harper.astro@yale.edu',
+        profileUrl: 'https://astronomy.yale.edu/people/harper-astro',
         labUrl: undefined,
         topics: ['Star Formation and ISM'],
         researchInterests: ['Star Formation and ISM'],
@@ -677,17 +677,17 @@ describe('viewsRowPersonExtractor', () => {
 
     expect(out).toEqual([
       {
-        name: 'Deb Vargas',
-        profileUrl: 'https://erm.yale.edu/people/deb-vargas',
+        name: 'Avery Rivera',
+        profileUrl: 'https://erm.yale.edu/people/avery-rivera-fixture',
         title:
           "Director of Undergraduate Studies (ER&M) and Professor of Women's, Gender, and Sexuality Studies",
-        email: 'deb.vargas@yale.edu',
+        email: 'avery.rivera@yale.edu',
         imageUrl:
-          'https://erm.yale.edu/sites/default/files/styles/people_directory_image/public/pictures/deb.jpg',
+          'https://erm.yale.edu/sites/default/files/styles/people_directory_image/public/pictures/avery-fixture.jpg',
       },
       {
-        name: 'Fatima El-Tayeb',
-        profileUrl: 'https://erm.yale.edu/people/fatima-el-tayeb',
+        name: 'Jordan Winter',
+        profileUrl: 'https://erm.yale.edu/people/jordan-winter-fixture',
         title:
           "Professor of Women's, Gender, and Sexuality Studies and of Ethnicity, Race, and Migration",
       },
@@ -703,10 +703,10 @@ describe('jacksonPersonCardExtractor', () => {
 
     expect(out).toEqual([
       {
-        name: 'Eric Braverman',
-        profileUrl: 'https://jackson.yale.edu/person/eric-braverman/',
+        name: 'Emery Roster',
+        profileUrl: 'https://jackson.yale.edu/person/emery-roster/',
         title: 'Lecturer',
-        email: 'eric.braverman@yale.edu',
+        email: 'emery.roster@yale.edu',
         imageUrl: 'https://jackson.yale.edu/wp-content/uploads/2026/05/Eric-Braverman.jpg',
       },
     ]);
@@ -976,8 +976,8 @@ describe('DepartmentRosterScraper.run', () => {
     const cannedExtractor = vi.fn(
       (): FacultyEntry[] => [
         {
-          name: 'Joshua Gendron',
-          email: 'susan.k.brady@yale.edu',
+          name: 'Jordan Mismatch',
+          email: 'sage.mismatch@yale.edu',
           labUrl: 'https://gendronlab.yale.edu',
         },
       ],
@@ -1002,9 +1002,9 @@ describe('DepartmentRosterScraper.run', () => {
     const userObs = emitted.filter((o) => o.entityType === 'user');
     expect(userObs.some((o) => o.field === 'netid')).toBe(false);
     expect(userObs.some((o) => o.field === 'email')).toBe(false);
-    expect(userObs.find((o) => o.field === 'fname')?.value).toBe('Joshua');
-    expect(userObs.find((o) => o.field === 'lname')?.value).toBe('Gendron');
-    expect(userObs[0].entityKey).toBe('dept:mcdb:joshua-gendron');
+    expect(userObs.find((o) => o.field === 'fname')?.value).toBe('Jordan');
+    expect(userObs.find((o) => o.field === 'lname')?.value).toBe('Mismatch');
+    expect(userObs[0].entityKey).toBe('dept:mcdb:jordan-mismatch');
 
     getSpy.mockRestore();
   });
@@ -1014,7 +1014,7 @@ describe('DepartmentRosterScraper.run', () => {
       (): FacultyEntry[] => [
         {
           name: 'Abraham Silberschatz',
-          profileUrl: 'https://engineering.yale.edu/research-and-faculty/faculty-directory/abraham-silberschatz',
+          profileUrl: 'https://engineering.yale.edu/research-and-faculty/faculty-directory/avery-database-fixture',
           labUrl: 'https://codex.cs.yale.edu/avi/',
         },
       ],
@@ -1056,7 +1056,7 @@ describe('DepartmentRosterScraper.run', () => {
       (): FacultyEntry[] => [
         {
           name: 'Deb Margolin',
-          email: 'deborah.margolin@yale.edu',
+          email: 'devon.roster@yale.edu',
           profileUrl: 'https://tdps.yale.edu/profile/deb-margolin',
           labUrl: 'https://www.debmargolin.com/',
         },
@@ -1099,8 +1099,8 @@ describe('DepartmentRosterScraper.run', () => {
     const cannedExtractor = vi.fn(
       (): FacultyEntry[] => [
         {
-          name: 'Hui Cao',
-          email: 'hui.cao@yale.edu',
+          name: 'Hayden Material',
+          email: 'hayden.material@yale.edu',
           labUrl: 'https://www.eng.yale.edu/caolab/',
           topics: [
             'Condensed Matter Physics',
@@ -1220,7 +1220,7 @@ describe('DepartmentRosterScraper.run', () => {
         <div class="person-title">Associate Professor of Applied Mathematics</div>
         <div class="profile-body">Ada works on computation, algebraic geometry, and foundations of mathematical modeling.</div>
         <div class="research-interests"><a href="/topics/algebraic-geometry">Algebraic Geometry</a><a href="/topics/topology">Topology</a></div>
-        <a href="https://orcid.org/0000-0002-1825-0097">ORCID</a>
+        <a href="https://orcid.org/0000-0000-0000-0003">ORCID</a>
         <a href="https://scholar.google.com/citations?user=adaCandidate">Google Scholar</a>
         <a href="mailto:ada.lovelace@yale.edu">ada.lovelace@yale.edu</a>
         <a href="https://lovelacelab.yale.edu">Lab Website</a>
@@ -1278,7 +1278,7 @@ describe('DepartmentRosterScraper.run', () => {
     expect(userObs.find((o) => o.field === 'website')?.value).toBe(
       'https://lovelacelab.yale.edu/',
     );
-    expect(userObs.find((o) => o.field === 'orcid')?.value).toBe('0000-0002-1825-0097');
+    expect(userObs.find((o) => o.field === 'orcid')?.value).toBe('0000-0000-0000-0003');
     expect(userObs.find((o) => o.field === 'bio')?.sourceUrl).toBe(
       'https://math.yale.edu/people/ada-lovelace',
     );
@@ -1324,13 +1324,13 @@ describe('DepartmentRosterScraper.run', () => {
     const htmlFetcher = vi.fn(async (url: string) => {
       if (
         url ===
-        'https://engineering.yale.edu/research-and-faculty/faculty-directory/leandros-tassiulas'
+        'https://engineering.yale.edu/research-and-faculty/faculty-directory/lane-network'
       ) {
         return `
           <html><head>
-            <link rel="canonical" href="https://engineering.yale.edu/research-and-faculty/faculty-directory/leandros-tassiulas" />
+            <link rel="canonical" href="https://engineering.yale.edu/research-and-faculty/faculty-directory/lane-network" />
           </head><body>
-            <a href="mailto:leandros.tassiulas@yale.edu">Email</a>
+            <a href="mailto:lane.network@yale.edu">Email</a>
             <div class="py-4 grid grid-cols-1 lg:grid-cols-3 gap-4">
               <div class="col-span-1 mb-2 lg:mb-0">
                 <h3>Selected Publications</h3>
@@ -1357,9 +1357,9 @@ describe('DepartmentRosterScraper.run', () => {
         paginated: false,
         extractor: () => [
           {
-            name: 'Leandros Tassiulas',
+            name: 'Lane Network',
             profileUrl:
-              'https://engineering.yale.edu/research-and-faculty/faculty-directory/leandros-tassiulas',
+              'https://engineering.yale.edu/research-and-faculty/faculty-directory/lane-network',
           },
         ],
       },
@@ -1378,14 +1378,14 @@ describe('DepartmentRosterScraper.run', () => {
         year: 2015,
         venue: 'IEEE/ACM Transactions on Networking',
         sourceUrl:
-          'https://engineering.yale.edu/research-and-faculty/faculty-directory/leandros-tassiulas',
+          'https://engineering.yale.edu/research-and-faculty/faculty-directory/lane-network',
       }),
       expect.objectContaining({
         title: 'Client-server games and their equilibria in peer-to-peer networks',
         year: 2014,
         venue: 'Computer Networks',
         sourceUrl:
-          'https://engineering.yale.edu/research-and-faculty/faculty-directory/leandros-tassiulas',
+          'https://engineering.yale.edu/research-and-faculty/faculty-directory/lane-network',
       }),
     ]);
   });
@@ -1394,11 +1394,11 @@ describe('DepartmentRosterScraper.run', () => {
     const htmlFetcher = vi.fn(async (url: string) => {
       if (
         url ===
-        'https://engineering.yale.edu/research-and-faculty/faculty-directory/abhishek-bhattacharjee'
+        'https://engineering.yale.edu/research-and-faculty/faculty-directory/avi-systems-fixture'
       ) {
         return `
           <html><head>
-            <link rel="canonical" href="https://engineering.yale.edu/research-and-faculty/faculty-directory/abhishek-bhattacharjee" />
+            <link rel="canonical" href="https://engineering.yale.edu/research-and-faculty/faculty-directory/avi-systems-fixture" />
           </head><body>
             <a href="mailto:abhishek@cs.yale.edu">Email</a>
             <a href="https://www.cs.yale.edu/homes/abhishek/">Website: Research Website</a>
@@ -1440,9 +1440,9 @@ describe('DepartmentRosterScraper.run', () => {
         paginated: false,
         extractor: () => [
           {
-            name: 'Abhishek Bhattacharjee',
+            name: 'Avi Systems',
             profileUrl:
-              'https://engineering.yale.edu/research-and-faculty/faculty-directory/abhishek-bhattacharjee',
+              'https://engineering.yale.edu/research-and-faculty/faculty-directory/avi-systems-fixture',
           },
         ],
       },
@@ -1478,7 +1478,7 @@ describe('DepartmentRosterScraper.run', () => {
   it('prefers Yale Medicine Biography text over patient card and research overview copy', async () => {
     const profileHtml = `
       <html><head>
-        <link rel="canonical" href="https://medicine.yale.edu/profile/mehran-sadeghi/" />
+        <link rel="canonical" href="https://medicine.yale.edu/profile/mika-imaging/" />
       </head><body>
         <main>
           <section>
@@ -1490,20 +1490,20 @@ describe('DepartmentRosterScraper.run', () => {
           <h3>Titles</h3>
           <p>Professor</p>
           <h3>Biography</h3>
-          <p>Mehran M. Sadeghi, MD, studied medicine at Necker Enfants Malades School of Medicine and earned his medical degree from the University of Paris in 1991.</p>
-          <p>The goal of the Cardiovascular Molecular Imaging Laboratory is to develop novel in vivo imaging approaches.</p>
+          <p>Morgan M. Fixture, MD, studied medicine at Necker Enfants Malades School of Medicine and earned his medical degree from the University of Paris in 1991.</p>
+          <p>The goal of the Cardiovascular Fixture Imaging Laboratory is to develop novel in vivo imaging approaches.</p>
           <p>Last Updated on April 07, 2025.</p>
           <h3>Appointments</h3>
           <p>Cardiovascular Medicine</p>
           <h2>Research</h2>
           <h3>Overview</h3>
           <p>Despite remarkable recent progress in molecular and vascular biology research, little has been achieved in adapting traditional imaging modalities.</p>
-          <a href="mailto:mehran.sadeghi@yale.edu">mehran.sadeghi@yale.edu</a>
+          <a href="mailto:mika.imaging@yale.edu">mika.imaging@yale.edu</a>
         </main>
       </body></html>
     `;
     const htmlFetcher = vi.fn(async (url: string) => {
-      if (url === 'https://medicine.yale.edu/profile/mehran-sadeghi/') return profileHtml;
+      if (url === 'https://medicine.yale.edu/profile/mika-imaging/') return profileHtml;
       return '<html><body>listing</body></html>';
     });
     const configs: DeptConfig[] = [
@@ -1515,8 +1515,8 @@ describe('DepartmentRosterScraper.run', () => {
         paginated: false,
         extractor: () => [
           {
-            name: 'Mehran Sadeghi',
-            profileUrl: 'https://medicine.yale.edu/profile/mehran-sadeghi/',
+            name: 'Mika Imaging',
+            profileUrl: 'https://medicine.yale.edu/profile/mika-imaging/',
           },
         ],
       },
@@ -1527,8 +1527,8 @@ describe('DepartmentRosterScraper.run', () => {
     await scraper.run(ctx);
 
     const bio = emitted.find((o) => o.entityType === 'user' && o.field === 'bio')?.value;
-    expect(bio).toContain('Mehran M. Sadeghi, MD, studied medicine');
-    expect(bio).toContain('Cardiovascular Molecular Imaging Laboratory');
+    expect(bio).toContain('Morgan M. Fixture, MD, studied medicine');
+    expect(bio).toContain('Cardiovascular Fixture Imaging Laboratory');
     expect(bio).not.toContain("View this doctor's clinical profile");
     expect(bio).not.toContain('Despite remarkable recent progress');
     expect(bio).not.toContain('Last Updated');
@@ -1537,18 +1537,18 @@ describe('DepartmentRosterScraper.run', () => {
   it('keeps adjacent official profile paragraphs together when no Biography heading exists', async () => {
     const profileHtml = `
       <html><head>
-        <link rel="canonical" href="https://mcdb.yale.edu/profile/nadya-dimitrova-phd" />
+        <link rel="canonical" href="https://mcdb.yale.edu/profile/nora-fixture-phd" />
       </head><body>
         <main>
           <div class="text">
-            <p>Originally from Sofia, Bulgaria, Nadya Dimitrova graduated with an Sc.B. in Biochemistry from Brown University in 2002.</p>
-            <p>Nadya Dimitrova is currently an assistant professor in the Department of Molecular, Cellular and Developmental Biology at Yale University and studies long noncoding RNAs in cancer.</p>
+            <p>Originally from Fixture City, Nora Fixture graduated with an Sc.B. in Biochemistry from Example University in 2002.</p>
+            <p>Nora Fixture is currently an assistant professor in the Department of Molecular, Cellular and Developmental Biology at Yale University and studies long noncoding RNAs in cancer.</p>
           </div>
         </main>
       </body></html>
     `;
     const htmlFetcher = vi.fn(async (url: string) => {
-      if (url === 'https://mcdb.yale.edu/profile/nadya-dimitrova-phd') return profileHtml;
+      if (url === 'https://mcdb.yale.edu/profile/nora-fixture-phd') return profileHtml;
       return '<html><body>listing</body></html>';
     });
     const configs: DeptConfig[] = [
@@ -1560,8 +1560,8 @@ describe('DepartmentRosterScraper.run', () => {
         paginated: false,
         extractor: () => [
           {
-            name: 'Nadya Dimitrova',
-            profileUrl: 'https://mcdb.yale.edu/profile/nadya-dimitrova-phd',
+            name: 'Nora Fixture',
+            profileUrl: 'https://mcdb.yale.edu/profile/nora-fixture-phd',
           },
         ],
       },
@@ -1572,17 +1572,17 @@ describe('DepartmentRosterScraper.run', () => {
     await scraper.run(ctx);
 
     const bio = emitted.find((o) => o.entityType === 'user' && o.field === 'bio')?.value;
-    expect(bio).toContain('Originally from Sofia');
+    expect(bio).toContain('Originally from Fixture City');
     expect(bio).toContain('currently an assistant professor');
     expect(String(bio)).toBe(
-      'Originally from Sofia, Bulgaria, Nadya Dimitrova graduated with an Sc.B. in Biochemistry from Brown University in 2002. Nadya Dimitrova is currently an assistant professor in the Department of Molecular, Cellular and Developmental Biology at Yale University and studies long noncoding RNAs in cancer.',
+      'Originally from Fixture City, Nora Fixture graduated with an Sc.B. in Biochemistry from Example University in 2002. Nora Fixture is currently an assistant professor in the Department of Molecular, Cellular and Developmental Biology at Yale University and studies long noncoding RNAs in cancer.',
     );
   });
 
   it('ignores site chrome homepage links when enriching official profile websites', async () => {
     const profileHtml = `
       <html><head>
-        <link rel="canonical" href="https://economics.yale.edu/people/leah-boustan" />
+        <link rel="canonical" href="https://economics.yale.edu/people/lee-economics" />
       </head><body>
         <header class="site-header">
           <a href="https://yale.edu" aria-label="Yale University homepage">Yale University</a>
@@ -1590,7 +1590,7 @@ describe('DepartmentRosterScraper.run', () => {
         </header>
         <main>
           <div class="person-title">Professor of Economics</div>
-          <a href="mailto:leah.boustan@yale.edu">leah.boustan@yale.edu</a>
+          <a href="mailto:lee.economics@yale.edu">lee.economics@yale.edu</a>
           <div class="node__website-link">
             <a href="https://campuspress.yale.edu/leahboustan/">Website</a>
           </div>
@@ -1598,7 +1598,7 @@ describe('DepartmentRosterScraper.run', () => {
       </body></html>
     `;
     const htmlFetcher = vi.fn(async (url: string) => {
-      if (url === 'https://economics.yale.edu/people/leah-boustan') return profileHtml;
+      if (url === 'https://economics.yale.edu/people/lee-economics') return profileHtml;
       return '<html><body>listing</body></html>';
     });
     const configs: DeptConfig[] = [
@@ -1610,8 +1610,8 @@ describe('DepartmentRosterScraper.run', () => {
         paginated: false,
         extractor: () => [
           {
-            name: 'Leah Boustan',
-            profileUrl: 'https://economics.yale.edu/people/leah-boustan',
+            name: 'Lee Economics',
+            profileUrl: 'https://economics.yale.edu/people/lee-economics',
           },
         ],
       },
@@ -1683,11 +1683,11 @@ describe('DepartmentRosterScraper.run', () => {
 
   it('extracts year-backed major publications embedded in official profile bios', async () => {
     const htmlFetcher = vi.fn(async (url: string) => {
-      if (url === 'https://eall.yale.edu/people/tina-lu') {
+      if (url === 'https://eall.yale.edu/people/taylor-literature') {
         return `
-          <html><head><link rel="canonical" href="/people/tina-lu" /></head>
+          <html><head><link rel="canonical" href="/people/taylor-literature" /></head>
           <body>
-            <a href="mailto:tina.lu@yale.edu">Email</a>
+            <a href="mailto:taylor.literature@yale.edu">Email</a>
             <div class="field-name-field-bio">
               My research focuses on late imperial literature. Major publications include
               Persons, Roles and Minds (Stanford, 2001), Accidental Incest, Filial Cannibalism,
@@ -1709,8 +1709,8 @@ describe('DepartmentRosterScraper.run', () => {
         paginated: false,
         extractor: () => [
           {
-            name: 'Tina Lu',
-            profileUrl: 'https://eall.yale.edu/people/tina-lu',
+            name: 'Taylor Literature',
+            profileUrl: 'https://eall.yale.edu/people/taylor-literature',
           },
         ],
       },
@@ -1728,14 +1728,14 @@ describe('DepartmentRosterScraper.run', () => {
         title: 'Persons, Roles and Minds',
         year: 2001,
         venue: 'Stanford',
-        sourceUrl: 'https://eall.yale.edu/people/tina-lu',
+        sourceUrl: 'https://eall.yale.edu/people/taylor-literature',
       }),
       expect.objectContaining({
         title:
           'Accidental Incest, Filial Cannibalism, and Other Peculiar Encounters in Late Imperial Chinese Literature',
         year: 2009,
         venue: 'Harvard East Asian Monographs',
-        sourceUrl: 'https://eall.yale.edu/people/tina-lu',
+        sourceUrl: 'https://eall.yale.edu/people/taylor-literature',
       }),
     ]);
   });

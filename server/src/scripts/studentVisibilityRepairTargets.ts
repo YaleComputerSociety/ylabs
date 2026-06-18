@@ -1,5 +1,6 @@
 import dotenv from 'dotenv';
-import { writeFile } from 'node:fs/promises';
+import path from 'node:path';
+import { mkdir, writeFile } from 'node:fs/promises';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
@@ -9,6 +10,9 @@ import {
   type StudentVisibilityGatePlan,
 } from '../services/studentVisibilityGateService';
 import { DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES } from '../scrapers/sources/departmentUndergradResearchScraper';
+import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { serializedDocumentId } from '../utils/idSerialization';
+import { sanitizeLogValue } from '../utils/logSanitizer';
 
 dotenv.config();
 
@@ -262,17 +266,20 @@ async function loadRepairTargetEntities(plans: StudentVisibilityGatePlan[]): Pro
     .select('slug name displayName entityType kind departments sourceUrls websiteUrl website')
     .lean();
 
-  return (docs as any[]).map((doc) => ({
-    recordId: String(doc._id),
+  return (docs as any[]).map((doc) => {
+    const recordId = serializedDocumentId(doc._id) || '';
+    return {
+    recordId,
     slug: doc.slug || '',
-    label: doc.displayName || doc.name || doc.slug || String(doc._id),
+    label: doc.displayName || doc.name || doc.slug || recordId,
     entityType: doc.entityType,
     kind: doc.kind,
     departments: Array.isArray(doc.departments) ? uniqueStrings(doc.departments) : [],
     sourceUrls: Array.isArray(doc.sourceUrls) ? uniqueStrings(doc.sourceUrls) : [],
     websiteUrl: doc.websiteUrl || '',
     website: doc.website || '',
-  }));
+  };
+  });
 }
 
 export async function generateStudentVisibilityRepairTargetReport(): Promise<StudentVisibilityRepairTargetReport> {
@@ -281,26 +288,32 @@ export async function generateStudentVisibilityRepairTargetReport(): Promise<Stu
   return buildStudentVisibilityRepairTargetReport({ plans, entities });
 }
 
-function parseArgs(argv: string[]): { output?: string; collection: 'research' } {
+export function parseArgs(argv: string[]): { output?: string; collection: 'research' } {
   const options: { output?: string; collection: 'research' } = { collection: 'research' };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === '--collection=research' || (arg === '--collection' && argv[index + 1] === 'research')) {
       if (arg === '--collection') index += 1;
     } else if (arg.startsWith('--output=')) {
-      options.output = arg.slice('--output='.length).trim();
+      options.output = resolveSafeJsonReportOutputPath(arg.slice('--output='.length).trim());
     } else if (arg === '--output') {
       index += 1;
-      options.output = argv[index]?.trim();
-      if (!options.output || options.output.startsWith('--')) {
-        throw new Error('--output requires a file path');
-      }
+      options.output = resolveSafeJsonReportOutputPath(argv[index]?.trim());
     } else {
       throw new Error(`Unknown argument: ${arg}`);
     }
   }
-  if (options.output === '') delete options.output;
   return options;
+}
+
+export async function writeStudentVisibilityRepairTargetOutput(
+  report: StudentVisibilityRepairTargetReport,
+  output?: string,
+): Promise<void> {
+  if (!output) return;
+  const safeOutput = resolveSafeJsonReportOutputPath(output);
+  await mkdir(path.dirname(safeOutput), { recursive: true });
+  await writeFile(safeOutput, `${JSON.stringify(report, null, 2)}\n`, 'utf8');
 }
 
 async function main() {
@@ -308,14 +321,14 @@ async function main() {
   await initializeConnections();
   const report = await generateStudentVisibilityRepairTargetReport();
   const json = JSON.stringify(report, null, 2);
-  if (options.output) await writeFile(options.output, `${json}\n`, 'utf8');
+  await writeStudentVisibilityRepairTargetOutput(report, options.output);
   console.log(json);
 }
 
 if (process.argv[1] && pathMatchesScript(process.argv[1], 'studentVisibilityRepairTargets.ts')) {
   main()
     .catch((error) => {
-      console.error('Failed to generate student visibility repair targets:', error);
+      console.error('Failed to generate student visibility repair targets:', sanitizeLogValue(error));
       process.exitCode = 1;
     })
     .finally(async () => {

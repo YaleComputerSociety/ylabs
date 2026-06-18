@@ -7,12 +7,14 @@ import { candidateSecretScanPaths, findSecretFindings } from './check-no-secrets
 
 const repoRoot = execFileSync('git', ['rev-parse', '--show-toplevel'], {
   encoding: 'utf8',
+  shell: false,
 }).trim();
 
 const listFiles = () => {
   const candidates = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard'], {
     cwd: repoRoot,
     encoding: 'utf8',
+    shell: false,
   })
     .split('\n')
     .filter(Boolean);

@@ -5,6 +5,7 @@ import { FormEvent, useCallback, useContext, useEffect, useReducer, useState } f
 import axios from '../utils/axios';
 import swal from 'sweetalert';
 import AdminPanel from '../components/admin/AdminPanel';
+import { clientErrorMessage } from '../utils/clientErrorMessage';
 import useDocumentTitle from '../hooks/useDocumentTitle';
 import UserContext from '../contexts/UserContext';
 import {
@@ -90,15 +91,15 @@ const Analytics = () => {
         type: 'FETCH_SUCCESS',
         payload: { data: response.data, timestamp: new Date().toLocaleString() },
       });
-    } catch (error) {
-      console.error('Error fetching analytics:', error);
+    } catch {
+      console.error('Error fetching analytics.');
       swal({
         text: 'Failed to load analytics data',
         icon: 'error',
       });
       dispatch({
         type: 'FETCH_FAILURE',
-        payload: error instanceof Error ? error.message : 'Failed to load analytics data',
+        payload: 'Failed to load analytics data',
       });
     }
   }, []);
@@ -122,11 +123,9 @@ const Analytics = () => {
         ...response.data,
         users: response.data.users || [],
       });
-    } catch (error) {
-      console.error('Error fetching user analytics:', error);
-      setUserActivityError(
-        error instanceof Error ? error.message : 'Failed to load user activity data'
-      );
+    } catch {
+      console.error('Error fetching user analytics.');
+      setUserActivityError('Failed to load user activity data');
     } finally {
       setIsUserActivityLoading(false);
     }
@@ -144,20 +143,17 @@ const Analytics = () => {
         grants: response.data.grants || [],
         legacyAdminsWithoutGrant: response.data.legacyAdminsWithoutGrant || [],
       });
-    } catch (error) {
-      console.error('Error fetching admin access:', error);
+    } catch {
+      console.error('Error fetching admin access.');
       setAdminAccess(defaultAdminAccess);
-      setAdminAccessError(
-        error instanceof Error ? error.message : 'Failed to load admin access data'
-      );
+      setAdminAccessError('Failed to load admin access data');
     }
   }, []);
 
   const adminActorNetid = (currentUser?.netId || '').trim().toLowerCase();
 
   const adminAccessErrorMessage = (error: unknown, fallback: string) => {
-    const responseError = error as { response?: { data?: { error?: string } }; message?: string };
-    return responseError.response?.data?.error || responseError.message || fallback;
+    return clientErrorMessage(error, fallback);
   };
 
   const handleGrantAdminAccess = useCallback(
@@ -238,12 +234,10 @@ const Analytics = () => {
         ...response.data,
         events: response.data.events || [],
       });
-    } catch (error) {
-      console.error('Error fetching user drilldown:', error);
+    } catch {
+      console.error('Error fetching user drilldown.');
       setSelectedUser(null);
-      setSelectedUserError(
-        error instanceof Error ? error.message : 'Failed to load NetID activity'
-      );
+      setSelectedUserError('Failed to load NetID activity');
     } finally {
       setIsSelectedUserLoading(false);
     }
@@ -277,11 +271,9 @@ const Analytics = () => {
       setSearchQueries(searchQueriesResponse.data);
       setFunnel(funnelResponse.data);
       setActions(actionsResponse.data);
-    } catch (error) {
-      console.error('Error fetching impact analytics:', error);
-      setImpactError(
-        error instanceof Error ? error.message : 'Failed to load impact analytics data'
-      );
+    } catch {
+      console.error('Error fetching impact analytics.');
+      setImpactError('Failed to load impact analytics data');
     } finally {
       setIsImpactLoading(false);
     }
@@ -403,7 +395,7 @@ const Analytics = () => {
     const typeMap: { [key: string]: string } = {
       undergraduate: 'Undergrads',
       graduate: 'Graduates',
-      professor: 'Professors',
+      professor: 'Faculty & Professors',
       faculty: 'Faculty',
       admin: 'Admins',
       unknown: 'Unknown',
@@ -1525,8 +1517,7 @@ const Analytics = () => {
                 <option value="all">All Types</option>
                 <option value="undergraduate">Undergrads</option>
                 <option value="graduate">Graduates</option>
-                <option value="professor">Professors</option>
-                <option value="faculty">Faculty</option>
+                <option value="professor">Faculty & Professors</option>
                 <option value="admin">Admins</option>
                 <option value="unknown">Unknown</option>
               </select>

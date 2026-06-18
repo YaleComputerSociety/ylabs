@@ -13,7 +13,8 @@ import {
   buildAcceptedInputsStatus,
   loadAcceptedInputUsers,
 } from './acceptedInputsCore';
-import { assertScriptApplyAllowed } from './scriptWriteGuards';
+import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { sanitizeLogValue } from '../utils/logSanitizer';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -103,12 +104,12 @@ export function parseBetaReadinessGateArgs(argv: string[]): BetaReadinessGateCli
       continue;
     }
     if (arg === '--output') {
-      options.output = parseRequiredPath(next, '--output');
+      options.output = resolveSafeJsonReportOutputPath(next);
       i++;
       continue;
     }
     if (arg.startsWith('--output=')) {
-      options.output = parseRequiredPath(arg.slice('--output='.length), '--output');
+      options.output = resolveSafeJsonReportOutputPath(arg.slice('--output='.length));
       continue;
     }
     if (arg === '--root') {
@@ -137,8 +138,9 @@ function parseRequiredPath(value: string | undefined, flag: '--output' | '--root
 
 export function writeBetaReadinessGateOutput(result: unknown, output?: string): void {
   if (!output) return;
-  fs.mkdirSync(path.dirname(output), { recursive: true });
-  fs.writeFileSync(output, `${JSON.stringify(result, null, 2)}\n`);
+  const safeOutput = resolveSafeJsonReportOutputPath(output);
+  fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
+  fs.writeFileSync(safeOutput, `${JSON.stringify(result, null, 2)}\n`);
 }
 
 export function buildBetaReadinessGateOutput<T extends object>(
@@ -362,7 +364,7 @@ async function main(): Promise<void> {
 if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
   main()
     .catch((error) => {
-      console.error(error instanceof Error ? error.message : error);
+      console.error(sanitizeLogValue(error));
       process.exitCode = 1;
     })
     .finally(async () => {

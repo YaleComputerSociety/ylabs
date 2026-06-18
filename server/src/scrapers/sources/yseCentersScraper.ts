@@ -5,6 +5,7 @@ import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { getCached, setCached } from '../snapshotCache';
 import type { IScraper, ScraperContext, ScraperResult, ObservationInput } from '../types';
+import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 
 const PAGE_URL = 'https://environment.yale.edu/research/centers';
 const SOURCE_KEY = 'yse-centers-index';
@@ -76,13 +77,18 @@ export function inferKind(name: string, url: string): YseEntityKind {
 }
 
 async function fetchPage(useCache: boolean): Promise<string> {
+  const safeUrl = await assertPublicHttpUrl(PAGE_URL);
+  const agents = ssrfSafeAgents();
   if (useCache) {
     const cached = await getCached<string>(SOURCE_KEY, 'page');
     if (cached) return cached;
   }
-  const res = await axios.get(PAGE_URL, {
+  const res = await axios.get(safeUrl.toString(), {
     timeout: FETCH_TIMEOUT_MS,
     headers: { 'User-Agent': USER_AGENT },
+    maxRedirects: 5,
+    httpAgent: agents.httpAgent,
+    httpsAgent: agents.httpsAgent,
   });
   const html = res.data as string;
   if (useCache) await setCached(SOURCE_KEY, 'page', html);
@@ -90,14 +96,20 @@ async function fetchPage(useCache: boolean): Promise<string> {
 }
 
 async function fetchUrl(url: string, useCache: boolean): Promise<string> {
-  const cacheKey = `detail:${url}`;
+  const safeUrl = await assertPublicHttpUrl(url);
+  const safeUrlText = safeUrl.toString();
+  const cacheKey = `detail:${safeUrlText}`;
   if (useCache) {
     const cached = await getCached<string>(SOURCE_KEY, cacheKey);
     if (cached) return cached;
   }
-  const res = await axios.get(url, {
+  const agents = ssrfSafeAgents();
+  const res = await axios.get(safeUrlText, {
     timeout: FETCH_TIMEOUT_MS,
     headers: { 'User-Agent': USER_AGENT },
+    maxRedirects: 5,
+    httpAgent: agents.httpAgent,
+    httpsAgent: agents.httpsAgent,
   });
   const html = res.data as string;
   if (useCache) await setCached(SOURCE_KEY, cacheKey, html);

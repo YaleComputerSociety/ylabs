@@ -73,6 +73,31 @@ describe('buildListingResearchEntityProfilePatch', () => {
     );
   });
 
+  it('bounds and filters listing URLs before copying them to research entities', () => {
+    const patch = buildListingResearchEntityProfilePatch({
+      entity: {
+        sourceUrls: [],
+        websiteUrl: '',
+      },
+      listing: {
+        websites: [
+          'https://example.yale.edu/lab',
+          'mailto:hidden@example.edu',
+          'data:text/html,<script>alert(1)</script>',
+          { toString: () => 'https://object.example.edu' },
+          ...Array.from({ length: 60 }, (_, index) => `https://example.yale.edu/source-${index}`),
+        ],
+      },
+    });
+
+    expect(patch.websiteUrl).toBe('https://example.yale.edu/lab');
+    expect(patch.sourceUrls).toContain('https://example.yale.edu/lab');
+    expect(patch.sourceUrls).toHaveLength(50);
+    expect(JSON.stringify(patch.sourceUrls)).not.toContain('mailto:');
+    expect(JSON.stringify(patch.sourceUrls)).not.toContain('data:text/html');
+    expect(JSON.stringify(patch.sourceUrls)).not.toContain('object.example.edu');
+  });
+
   it('does not promote person-page publication blurbs into entity descriptions', () => {
     const patch = buildListingResearchEntityProfilePatch({
       entity: {

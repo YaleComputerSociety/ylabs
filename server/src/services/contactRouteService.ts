@@ -7,6 +7,8 @@ import {
   publicAccessHttpUrl,
   publicAccessText,
 } from '../utils/publicAccessArtifact';
+import { sanitizeLogValue } from '../utils/logSanitizer';
+import { serializedDocumentId } from '../utils/idSerialization';
 import type {
   ContactPolicy,
   ContactRouteType,
@@ -52,14 +54,21 @@ function getContactRouteModel(deps: ContactRouteServiceDeps = {}): mongoose.Mode
   return deps.model || ContactRoute;
 }
 
-function toStoredId(value: string): unknown {
-  return mongoose.Types.ObjectId.isValid(value) ? new mongoose.Types.ObjectId(value) : value;
+const STORED_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
+
+function toStoredId(value: unknown): unknown {
+  if (value instanceof mongoose.Types.ObjectId) return value;
+  if (typeof value !== 'string') return undefined;
+  const id = value.trim();
+  if (!id) return undefined;
+  return STORED_OBJECT_ID_RE.test(id) ? new mongoose.Types.ObjectId(id) : id;
 }
 
-function toStoredObjectId(value?: string): mongoose.Types.ObjectId | undefined {
-  return value && mongoose.Types.ObjectId.isValid(value)
-    ? new mongoose.Types.ObjectId(value)
-    : undefined;
+function toStoredObjectId(value?: unknown): mongoose.Types.ObjectId | undefined {
+  if (value instanceof mongoose.Types.ObjectId) return value;
+  if (typeof value !== 'string') return undefined;
+  const id = value.trim();
+  return STORED_OBJECT_ID_RE.test(id) ? new mongoose.Types.ObjectId(id) : undefined;
 }
 
 function compactObject<T extends Record<string, unknown>>(value: T): Partial<T> {
@@ -78,6 +87,7 @@ export async function upsertContactRoute(
 ): Promise<ContactRouteUpsertResult> {
   const ContactRoute = getContactRouteModel(deps);
   const researchEntityId = toStoredId(input.researchEntityId);
+  if (!researchEntityId) return {};
   const entryPathwayId = input.entryPathwayId ? toStoredId(input.entryPathwayId) : undefined;
   const sourceEvidenceIds = input.sourceEvidenceIds
     .filter(Boolean)
@@ -134,16 +144,22 @@ export async function upsertContactRoute(
   });
   const doc = typeof (query as any).lean === 'function' ? await (query as any).lean() : await query;
   if (!deps.model && process.env.PATHWAY_SEARCH_SYNC === 'true') {
-    const sync = doc?.entryPathwayId
-      ? syncPathwaySearchIndexDocument(String(doc.entryPathwayId))
-      : syncPathwaySearchIndexDocumentsForEntity(String(doc?.researchEntityId || ''));
-    await sync.catch((error) => {
-      console.error('Failed to sync pathway search index:', error);
-    });
+    const entryPathwayId = serializedDocumentId(doc?.entryPathwayId);
+    const researchEntityId = serializedDocumentId(doc?.researchEntityId);
+    const sync = entryPathwayId
+      ? syncPathwaySearchIndexDocument(entryPathwayId)
+      : researchEntityId
+        ? syncPathwaySearchIndexDocumentsForEntity(researchEntityId)
+        : undefined;
+    if (sync) {
+      await sync.catch((error) => {
+        console.error('Failed to sync pathway search index:', sanitizeLogValue(error));
+      });
+    }
   }
 
   return {
-    contactRouteId: doc?._id ? String(doc._id) : undefined,
+    contactRouteId: serializedDocumentId(doc?._id),
     doc,
   };
 }

@@ -13,7 +13,8 @@ import type {
   VisibilityReleaseQueueCollection,
   VisibilityRepairStage,
 } from '../models/visibilityReleaseQueueItem';
-import { assertScriptApplyAllowed } from './scriptWriteGuards';
+import { sanitizeLogValue } from '../utils/logSanitizer';
+import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 
 dotenv.config();
 
@@ -85,21 +86,21 @@ export function parseBetaRepairQueueArgs(argv: string[]): BetaRepairQueueCliOpti
     } else if (arg === '--apply-from') {
       const next = argv[i + 1];
       if (!next || next.startsWith('--')) throw new Error('--apply-from requires a path');
-      options.applyFrom = next;
+      options.applyFrom = resolveSafeJsonReportOutputPath(next, '--apply-from');
       i += 1;
     } else if (arg.startsWith('--apply-from=')) {
       const applyFrom = arg.slice('--apply-from='.length).trim();
       if (!applyFrom || applyFrom.startsWith('--')) throw new Error('--apply-from requires a path');
-      options.applyFrom = applyFrom;
+      options.applyFrom = resolveSafeJsonReportOutputPath(applyFrom, '--apply-from');
     } else if (arg === '--output') {
       const next = argv[i + 1];
       if (!next || next.startsWith('--')) throw new Error('--output requires a path');
-      options.output = next;
+      options.output = resolveSafeJsonReportOutputPath(next);
       i += 1;
     } else if (arg.startsWith('--output=')) {
       const output = arg.slice('--output='.length).trim();
       if (!output || output.startsWith('--')) throw new Error('--output requires a path');
-      options.output = output;
+      options.output = resolveSafeJsonReportOutputPath(output);
     } else {
       throw new Error(`Unknown argument: ${arg}`);
     }
@@ -218,8 +219,9 @@ export function buildApplyFromArtifactOptions(
 
 export function writeBetaRepairQueueOutput(report: Record<string, unknown>, output?: string): void {
   if (!output) return;
-  fs.mkdirSync(path.dirname(output), { recursive: true });
-  fs.writeFileSync(output, `${JSON.stringify(report, null, 2)}\n`);
+  const safeOutput = resolveSafeJsonReportOutputPath(output);
+  fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
+  fs.writeFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
 }
 
 export function buildBetaRepairQueueOutput(
@@ -293,7 +295,8 @@ async function main() {
     if (options.mode !== 'apply') {
       throw new Error('--apply-from can only be used with --mode=apply or --apply');
     }
-    const artifact = JSON.parse(fs.readFileSync(options.applyFrom, 'utf8'));
+    const artifactPath = resolveSafeJsonReportOutputPath(options.applyFrom, '--apply-from');
+    const artifact = JSON.parse(fs.readFileSync(artifactPath, 'utf8'));
     const validation = validateBetaRepairQueueApplyArtifact(artifact, options);
     runOptions = buildApplyFromArtifactOptions(validation, options);
   }
@@ -315,7 +318,7 @@ const isDirectRun = process.argv[1]
 if (isDirectRun) {
   main()
     .catch((error) => {
-      console.error('Failed to run beta repair queue:', error);
+      console.error('Failed to run beta repair queue:', sanitizeLogValue(error));
       process.exitCode = 1;
     })
     .finally(async () => {

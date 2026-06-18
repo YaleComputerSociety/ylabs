@@ -5,7 +5,7 @@ import React, { useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Fellowship } from '../../types/types';
 import FellowshipSearchContext from '../../contexts/FellowshipSearchContext';
-import { safeMailtoHref, safeUrl } from '../../utils/url';
+import { safeHttpUrl, safeMailtoHref } from '../../utils/url';
 import { getFellowshipCycleStatus } from '../../utils/fellowshipCycle';
 import { entryModeLabel, programKindLabel } from '../../utils/programJourney';
 import FavoriteButton from '../shared/FavoriteButton';
@@ -31,7 +31,7 @@ const RichText = ({ text }: { text: string }) => {
         <React.Fragment key={`t${lastIndex}`}>{text.slice(lastIndex, match.index)}</React.Fragment>,
       );
     }
-    const linkHref = safeUrl(match[2]);
+    const linkHref = safeHttpUrl(match[2]);
     if (linkHref) {
       elements.push(
         <a
@@ -153,10 +153,10 @@ const FellowshipModal = ({
     cycleStatus.category === 'open' || cycleStatus.category === 'closingSoon'
       ? 'Apply'
       : 'Open source';
-  const applicationHref = safeUrl(fellowship.applicationLink);
+  const applicationHref = safeHttpUrl(fellowship.applicationLink);
   const contactEmailHref = safeMailtoHref(fellowship.contactEmail);
   const safeLinks = (fellowship.links || [])
-    .map((link) => ({ ...link, href: safeUrl(link.url) }))
+    .map((link) => ({ ...link, href: safeHttpUrl(link.url) }))
     .filter((link) => link.href);
 
   return (

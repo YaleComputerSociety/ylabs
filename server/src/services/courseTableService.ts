@@ -3,6 +3,8 @@
  * Fetches course data via the public CourseTable REST API.
  * Caches results for 1 hour to avoid excessive API calls.
  */
+import { sanitizeLogValue } from '../utils/logSanitizer';
+import { redactDirectContactInfo } from '../utils/contactRedaction';
 
 export interface CourseTableCourse {
   course_code: string;
@@ -19,6 +21,84 @@ const cache = new Map<string, { data: CourseTableCourse[]; timestamp: number }>(
 const CACHE_TTL = 60 * 60 * 1000;
 
 const COURSETABLE_API = 'https://coursetable.com/api/catalog/public';
+const COURSETABLE_SEASON_RE = /^\d{4}(?:01|03)$/;
+const MAX_COURSETABLE_PROFESSOR_NAME_LENGTH = 120;
+const MAX_COURSETABLE_PROFESSOR_LAST_NAME_LENGTH = 80;
+const MAX_COURSETABLE_COURSES = 100;
+const MAX_COURSETABLE_TEXT_LENGTH = 500;
+const MAX_COURSETABLE_DESCRIPTION_LENGTH = 2000;
+const MAX_COURSETABLE_ARRAY_ITEMS = 50;
+const MAX_COURSETABLE_ARRAY_TEXT_LENGTH = 120;
+
+const normalizeCourseTableSeason = (value: unknown): string | undefined => {
+  if (typeof value !== 'string') return undefined;
+  const season = value.trim();
+  return COURSETABLE_SEASON_RE.test(season) ? season : undefined;
+};
+
+const normalizeCourseTableProfessorName = (value: unknown): string | undefined => {
+  if (typeof value !== 'string') return undefined;
+  const name = value.trim().replace(/\s+/g, ' ').slice(0, MAX_COURSETABLE_PROFESSOR_NAME_LENGTH);
+  return name && name !== 'NA NA' ? name : undefined;
+};
+
+const publicCourseTableText = (value: unknown, maxLength = MAX_COURSETABLE_TEXT_LENGTH): string => {
+  if (typeof value !== 'string') return '';
+  return redactDirectContactInfo(value.trim().replace(/\s+/g, ' ')).slice(0, maxLength);
+};
+
+const publicCourseTableTextArray = (value: unknown): string[] => {
+  const values = Array.isArray(value)
+    ? value
+    : typeof value === 'string'
+      ? value.split('')
+      : [];
+  return values
+    .slice(0, MAX_COURSETABLE_ARRAY_ITEMS)
+    .flatMap((item) => {
+      const text = publicCourseTableText(item, MAX_COURSETABLE_ARRAY_TEXT_LENGTH);
+      return text ? [text] : [];
+    });
+};
+
+const publicCourseTableCredits = (value: unknown): number | undefined => {
+  const credits = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(credits) || credits < 0 || credits > 20) return undefined;
+  return credits;
+};
+
+const publicCourseTableCourse = (
+  course: any,
+  safeSeason: string,
+  professorFilter?: string,
+): CourseTableCourse | undefined => {
+  const profs = Array.isArray(course.course_professors) ? course.course_professors : [];
+  if (professorFilter) {
+    const match = profs.some((p: any) => {
+      const pName = publicCourseTableText(p?.professor_name).toLowerCase();
+      return pName.includes(professorFilter);
+    });
+    if (!match) return undefined;
+  }
+
+  const listings = Array.isArray(course.listings) ? course.listings : [];
+  const listing = listings[0] || {};
+  const courseCode =
+    listings.length > 0
+      ? publicCourseTableText(`${listing.subject || ''} ${listing.number || ''}`)
+      : publicCourseTableText(course.course_code);
+
+  return {
+    course_code: courseCode,
+    title: publicCourseTableText(course.title),
+    season_code: safeSeason,
+    description: publicCourseTableText(course.description, MAX_COURSETABLE_DESCRIPTION_LENGTH),
+    credits: publicCourseTableCredits(course.credits),
+    areas: publicCourseTableTextArray(course.areas),
+    skills: publicCourseTableTextArray(course.skills),
+    professor_names: publicCourseTableTextArray(profs.map((p: any) => p?.professor_name)),
+  };
+};
 
 /**
  * Get recent season codes (last 3 semesters).
@@ -52,7 +132,10 @@ export function getRecentSeasonCodes(): string[] {
 export async function fetchAllSeasonCourses(
   season: string,
 ): Promise<CourseTableCourse[]> {
-  const cacheKey = `season:${season}`;
+  const safeSeason = normalizeCourseTableSeason(season);
+  if (!safeSeason) return [];
+
+  const cacheKey = `season:${safeSeason}`;
   const cached = cache.get(cacheKey);
   if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
     return cached.data;
@@ -62,7 +145,7 @@ export async function fetchAllSeasonCourses(
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10000);
 
-    const response = await fetch(`${COURSETABLE_API}/${season}`, {
+    const response = await fetch(`${COURSETABLE_API}/${safeSeason}`, {
       signal: controller.signal,
       headers: { Accept: 'application/json' },
     });
@@ -74,30 +157,15 @@ export async function fetchAllSeasonCourses(
     const data = await response.json();
     if (!Array.isArray(data)) return [];
 
-    const courses = data.map((course: any) => {
-      const listings = course.listings || [];
-      const courseCode =
-        listings.length > 0
-          ? `${listings[0].subject} ${listings[0].number}`
-          : course.course_code || '';
-      const profs = course.course_professors || [];
-      return {
-        course_code: courseCode,
-        title: course.title || '',
-        season_code: season,
-        description: course.description || '',
-        credits: course.credits,
-        areas: course.areas ? String(course.areas).split('') : [],
-        skills: course.skills ? String(course.skills).split('') : [],
-        professor_names: profs.map((p: any) => p.professor_name || ''),
-      };
-    });
+    const courses = data
+      .slice(0, MAX_COURSETABLE_COURSES)
+      .flatMap((course: any) => publicCourseTableCourse(course, safeSeason) ?? []);
 
     cache.set(cacheKey, { data: courses, timestamp: Date.now() });
     return courses;
   } catch (err: any) {
     if (err.name !== 'AbortError') {
-      console.error(`CourseTable: Failed to fetch season ${season}:`, err.message);
+      console.error('CourseTable: Failed to fetch season:', sanitizeLogValue(err));
     }
     return [];
   }
@@ -110,9 +178,10 @@ export async function fetchAllSeasonCourses(
 export async function fetchCourseTableData(
   professorName: string,
 ): Promise<CourseTableCourse[] | null> {
-  if (!professorName || professorName === 'NA NA') return null;
+  const safeProfessorName = normalizeCourseTableProfessorName(professorName);
+  if (!safeProfessorName) return null;
 
-  const cacheKey = professorName.toLowerCase();
+  const cacheKey = safeProfessorName.toLowerCase();
   const cached = cache.get(cacheKey);
   if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
     return cached.data;
@@ -126,7 +195,10 @@ export async function fetchCourseTableData(
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 10000);
 
-      const response = await fetch(`${COURSETABLE_API}/${season}`, {
+      const safeSeason = normalizeCourseTableSeason(season);
+      if (!safeSeason) continue;
+
+      const response = await fetch(`${COURSETABLE_API}/${safeSeason}`, {
         signal: controller.signal,
         headers: { Accept: 'application/json' },
       });
@@ -139,38 +211,20 @@ export async function fetchCourseTableData(
 
       if (!Array.isArray(data)) continue;
 
-      const nameParts = professorName.toLowerCase().split(' ');
-      const lastName = nameParts[nameParts.length - 1];
+      const nameParts = safeProfessorName.toLowerCase().split(' ');
+      const lastName = (nameParts[nameParts.length - 1] || '').slice(
+        0,
+        MAX_COURSETABLE_PROFESSOR_LAST_NAME_LENGTH,
+      );
+      if (!lastName) continue;
 
-      for (const course of data) {
-        const profs = course.course_professors || [];
-        const match = profs.some((p: any) => {
-          const pName = (p.professor_name || '').toLowerCase();
-          return pName.includes(lastName);
-        });
-
-        if (match) {
-          const listings = course.listings || [];
-          const courseCode =
-            listings.length > 0
-              ? `${listings[0].subject} ${listings[0].number}`
-              : course.course_code || '';
-
-          allCourses.push({
-            course_code: courseCode,
-            title: course.title || '',
-            season_code: season,
-            description: course.description || '',
-            credits: course.credits,
-            areas: course.areas ? course.areas.split('') : [],
-            skills: course.skills ? course.skills.split('') : [],
-            professor_names: profs.map((p: any) => p.professor_name || ''),
-          });
-        }
+      for (const course of data.slice(0, MAX_COURSETABLE_COURSES)) {
+        const publicCourse = publicCourseTableCourse(course, safeSeason, lastName);
+        if (publicCourse) allCourses.push(publicCourse);
       }
     } catch (err: any) {
       if (err.name !== 'AbortError') {
-        console.error(`CourseTable: Failed to fetch season ${season}:`, err.message);
+        console.error('CourseTable: Failed to fetch season:', sanitizeLogValue(err));
       }
     }
   }

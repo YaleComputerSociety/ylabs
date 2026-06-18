@@ -36,6 +36,12 @@ describe('paperQualityAudit CLI helpers', () => {
     expect(() => parsePaperQualityAuditArgs(['--output=--strict'])).toThrow(
       /--output requires a path/,
     );
+    expect(() => parsePaperQualityAuditArgs(['--output', '/var/tmp/paper-quality.json'])).toThrow(
+      /--output must write under/,
+    );
+    expect(() => parsePaperQualityAuditArgs(['--output', '/tmp/paper-quality.txt'])).toThrow(
+      /--output must point to a \.json report file/,
+    );
   });
 
   it('writes the paper quality audit artifact when output is provided', () => {
@@ -50,6 +56,12 @@ describe('paperQualityAudit CLI helpers', () => {
 
     writePaperQualityAuditOutput(payload, output);
     expect(JSON.parse(fs.readFileSync(output, 'utf8'))).toMatchObject(payload);
+  });
+
+  it('rejects unsafe paper quality audit artifact writes', () => {
+    expect(() =>
+      writePaperQualityAuditOutput({ pass: true }, '/var/tmp/paper-quality.json'),
+    ).toThrow(/--output must write under/);
   });
 
   it('wraps quality audit artifacts with target and parsed options metadata', () => {

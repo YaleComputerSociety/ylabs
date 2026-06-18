@@ -30,6 +30,9 @@ import axios from 'axios';
 import mongoose from 'mongoose';
 import * as cheerio from 'cheerio';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
+import { sanitizeLogValue } from '../../utils/logSanitizer';
+import { redactDirectContactInfo } from '../../utils/contactRedaction';
+import { serializedDocumentId } from '../../utils/idSerialization';
 import { ResearchEntity } from '../../models/researchEntity';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 import { normalizeName, splitName } from '../utils/scraperHelpers';
@@ -39,6 +42,16 @@ const DEFAULT_MODEL = 'gpt-4o-mini';
 const MAX_PROMPT_CHARS = 30_000;
 const MAX_LEADERSHIP_PAGES = 3;
 const ORG_ENTITY_TYPES = ['CENTER', 'INSTITUTE', 'INITIATIVE', 'CORE_FACILITY'];
+const CENTER_DIRECTOR_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
+
+export function normalizeCenterDirectorObjectId(value: unknown): string | undefined {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return CENTER_DIRECTOR_OBJECT_ID_RE.test(trimmed) ? trimmed : undefined;
+  }
+  if (value instanceof mongoose.Types.ObjectId) return value.toHexString();
+  return undefined;
+}
 
 /** Anchor text / href tokens that suggest a page naming the center's leadership. */
 const LEADERSHIP_LINK_PATTERN =
@@ -193,16 +206,17 @@ export function directorExtractionToObservations(
 async function defaultFetchPage(url: string): Promise<{ url: string; html: string } | null> {
   // SSRF guard: url is a DB-sourced center websiteUrl (or a link discovered on
   // it) — block private/metadata hosts and validate redirect hops at connect time.
-  await assertPublicHttpUrl(url);
+  const safeUrl = await assertPublicHttpUrl(url);
+  const safeUrlText = safeUrl.toString();
   const agents = ssrfSafeAgents();
-  const res = await axios.get(url, {
+  const res = await axios.get(safeUrlText, {
     timeout: 15_000,
     headers: { 'User-Agent': 'ylabs-scraper/1.0 (+https://yalelabs.io)' },
     httpAgent: agents.httpAgent,
     httpsAgent: agents.httpsAgent,
     maxRedirects: 5,
   });
-  return { url: res.request?.res?.responseUrl || url, html: String(res.data || '') };
+  return { url: res.request?.res?.responseUrl || safeUrlText, html: String(res.data || '') };
 }
 
 async function defaultCallLLM(input: {
@@ -212,6 +226,9 @@ async function defaultCallLLM(input: {
   sourceUrl: string;
   pageText: string;
 }): Promise<CenterDirectorExtraction> {
+  const safeCenterName = redactDirectContactInfo(input.centerName).slice(0, 240);
+  const safeSourceUrl = redactDirectContactInfo(input.sourceUrl).slice(0, 2048);
+  const safePageText = redactDirectContactInfo(input.pageText).slice(0, MAX_PROMPT_CHARS);
   const response = await axios.post(
     'https://api.openai.com/v1/chat/completions',
     {
@@ -230,10 +247,10 @@ async function defaultCallLLM(input: {
         {
           role: 'user',
           content: [
-            `Center: ${input.centerName}`,
-            `Source URL: ${input.sourceUrl}`,
+            `Center: ${safeCenterName}`,
+            `Source URL: ${safeSourceUrl}`,
             'Return JSON: {"director":{"name":"First Last","title":"optional","profileUrl":"optional","role":"director|co-director"}} or {"director":null}',
-            input.pageText,
+            safePageText,
           ].join('\n\n'),
         },
       ],
@@ -261,7 +278,8 @@ async function defaultCenterFinder(
   const { ResearchGroupMember } = await import('../../models/researchGroupMember');
   const only = Array.from(new Set((options.only || []).map((value) => value.trim()).filter(Boolean)));
   const onlyObjectIds = only
-    .filter((value) => mongoose.Types.ObjectId.isValid(value))
+    .map((value) => normalizeCenterDirectorObjectId(value))
+    .filter((value): value is string => Boolean(value))
     .map((value) => new mongoose.Types.ObjectId(value));
   const identityFilter = only.length
     ? {
@@ -285,7 +303,7 @@ async function defaultCenterFinder(
   ).lean();
 
   let candidates = (docs as any[]).map((doc) => ({
-    _id: doc._id ? String(doc._id) : undefined,
+    _id: serializedDocumentId(doc._id),
     slug: doc.slug,
     name: doc.name,
     websiteUrl: doc.websiteUrl,
@@ -336,7 +354,7 @@ export class CenterDirectorLLMExtractor implements IScraper {
     try {
       landing = await this.fetchPage(center.websiteUrl);
     } catch (error) {
-      log(`[${center.slug}] fetch failed (${center.websiteUrl}): ${errMessage(error)}`);
+      log(`[${center.slug}] fetch failed for configured center URL: ${sanitizeLogValue(error)}`);
       return null;
     }
     if (!landing) return null;
@@ -348,7 +366,7 @@ export class CenterDirectorLLMExtractor implements IScraper {
         try {
           page = await this.fetchPage(url);
         } catch (error) {
-          log(`[${center.slug}] leadership fetch failed (${url}): ${errMessage(error)}`);
+          log(`[${center.slug}] leadership fetch failed for discovered center URL: ${sanitizeLogValue(error)}`);
           continue;
         }
       }
@@ -365,7 +383,7 @@ export class CenterDirectorLLMExtractor implements IScraper {
           pageText,
         });
       } catch (error) {
-        log(`[${center.slug}] director LLM failed (${url}): ${errMessage(error)}`);
+        log(`[${center.slug}] director LLM failed for center page: ${sanitizeLogValue(error)}`);
         continue;
       }
       const sourceUrl = page?.url || url;
@@ -408,9 +426,9 @@ export class CenterDirectorLLMExtractor implements IScraper {
         await ctx.emit(result.observations);
         observationCount += result.observations.length;
         entitiesObserved += 1;
-        ctx.log(`[${center.slug}] director: ${result.director.name} (${result.sourceUrl}).`);
+        ctx.log(`[${center.slug}] director extracted.`);
       } catch (error) {
-        ctx.log(`[${center.slug}] director extraction failed: ${errMessage(error)}`);
+        ctx.log(`[${center.slug}] director extraction failed: ${sanitizeLogValue(error)}`);
       }
     }
 
@@ -420,8 +438,4 @@ export class CenterDirectorLLMExtractor implements IScraper {
       notes: `Extracted directors for ${entitiesObserved} organizational homes.`,
     };
   }
-}
-
-function errMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

@@ -17,7 +17,9 @@ import {
   applyResearchEntityDedupeMergeGroup,
   type ResearchEntityDedupeMergeGroup,
 } from './dedupeResearchEntitiesByPi';
-import { assertScriptApplyAllowed } from './scriptWriteGuards';
+import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { serializedDocumentId } from '../utils/idSerialization';
+import { sanitizeLogValue } from '../utils/logSanitizer';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -32,6 +34,7 @@ const REVIEW_DECISION_APPLY_STATUS =
   'Accepted duplicate-name decisions can drive apply mode for shared-website, zero-reference cross-department, or specific-website cross-department merge_into_canonical plans; ambiguous manual disambiguation decisions remain review-only.';
 const APPLY_BLOCKED_REASON =
   'Apply requires reviewed duplicate-name decisions and is limited to shared-website, zero-reference cross-department, or specific-website cross-department merge_into_canonical plans.';
+const DUPLICATE_ENTITY_NAME_REVIEW_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
 
 const EMPTY_REFERENCE_IMPACT_COUNTS: DuplicateEntityReferenceImpactCounts = {
   entryPathways: 0,
@@ -44,6 +47,16 @@ const EMPTY_REFERENCE_IMPACT_COUNTS: DuplicateEntityReferenceImpactCounts = {
   listings: 0,
   observations: 0,
 };
+
+export function normalizeDuplicateEntityNameReviewObjectId(
+  value: unknown,
+): mongoose.Types.ObjectId | undefined {
+  if (value instanceof mongoose.Types.ObjectId) return value;
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  if (!DUPLICATE_ENTITY_NAME_REVIEW_OBJECT_ID_RE.test(trimmed)) return undefined;
+  return new mongoose.Types.ObjectId(trimmed);
+}
 
 const REFERENCE_IMPACT_COLLECTIONS: Array<{
   key: keyof DuplicateEntityReferenceImpactCounts;
@@ -383,22 +396,25 @@ export function parseDuplicateEntityNameReviewArgs(
     }
     if (arg === '--output') {
       const { value, nextIndex } = consumeValue(argv, index, '--output', 'path');
-      args.output = value;
+      args.output = resolveSafeJsonReportOutputPath(value);
       index = nextIndex;
       continue;
     }
     if (arg.startsWith('--output=')) {
-      args.output = consumeInlineValue(arg, '--output', 'path');
+      args.output = resolveSafeJsonReportOutputPath(consumeInlineValue(arg, '--output', 'path'));
       continue;
     }
     if (arg === '--accepted-decisions') {
       const { value, nextIndex } = consumeValue(argv, index, '--accepted-decisions', 'path');
-      args.acceptedDecisions = value;
+      args.acceptedDecisions = resolveSafeJsonReportOutputPath(value, '--accepted-decisions');
       index = nextIndex;
       continue;
     }
     if (arg.startsWith('--accepted-decisions=')) {
-      args.acceptedDecisions = consumeInlineValue(arg, '--accepted-decisions', 'path');
+      args.acceptedDecisions = resolveSafeJsonReportOutputPath(
+        consumeInlineValue(arg, '--accepted-decisions', 'path'),
+        '--accepted-decisions',
+      );
       continue;
     }
     if (arg === '--allow-empty-decisions') {
@@ -412,15 +428,17 @@ export function parseDuplicateEntityNameReviewArgs(
         '--decision-template-output',
         'path',
       );
-      args.decisionTemplateOutput = value;
+      args.decisionTemplateOutput = resolveSafeJsonReportOutputPath(
+        value,
+        '--decision-template-output',
+      );
       index = nextIndex;
       continue;
     }
     if (arg.startsWith('--decision-template-output=')) {
-      args.decisionTemplateOutput = consumeInlineValue(
-        arg,
+      args.decisionTemplateOutput = resolveSafeJsonReportOutputPath(
+        consumeInlineValue(arg, '--decision-template-output', 'path'),
         '--decision-template-output',
-        'path',
       );
       continue;
     }
@@ -465,8 +483,9 @@ export function writeDuplicateEntityNameReviewOutput(
   output?: string,
 ): void {
   if (!output) return;
-  fs.mkdirSync(path.dirname(output), { recursive: true });
-  fs.writeFileSync(output, `${JSON.stringify(report, null, 2)}\n`);
+  const safeOutput = resolveSafeJsonReportOutputPath(output);
+  fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
+  fs.writeFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
 }
 
 export function buildDuplicateEntityNameReviewOutput(
@@ -494,8 +513,9 @@ export function writeDuplicateEntityNameReviewDecisionTemplate(
   output?: string,
 ): void {
   if (!output) return;
-  fs.mkdirSync(path.dirname(output), { recursive: true });
-  fs.writeFileSync(output, `${JSON.stringify(template, null, 2)}\n`);
+  const safeOutput = resolveSafeJsonReportOutputPath(output, '--decision-template-output');
+  fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
+  fs.writeFileSync(safeOutput, `${JSON.stringify(template, null, 2)}\n`);
 }
 
 export function buildDuplicateEntityNameReviewDecisionTemplate(
@@ -530,10 +550,11 @@ export function readDuplicateEntityNameReviewDecisions(
   inputPath: string,
   options: { allowEmpty?: boolean } = {},
 ): DuplicateEntityNameReviewDecision[] {
-  if (!fs.existsSync(inputPath) && options.allowEmpty) {
+  const safeInputPath = resolveSafeJsonReportOutputPath(inputPath, '--accepted-decisions');
+  if (!fs.existsSync(safeInputPath) && options.allowEmpty) {
     return [];
   }
-  const parsed = JSON.parse(fs.readFileSync(inputPath, 'utf8')) as unknown;
+  const parsed = JSON.parse(fs.readFileSync(safeInputPath, 'utf8')) as unknown;
   const decisions = Array.isArray(parsed)
     ? parsed
     : parsed &&
@@ -1121,9 +1142,10 @@ async function loadReferenceImpactByEntityId(
   entityIds: string[],
 ): Promise<DuplicateEntityReferenceImpactByEntityId> {
   const uniqueEntityIds = Array.from(new Set(entityIds.filter(Boolean)));
-  const objectIds = uniqueEntityIds.flatMap((id) =>
-    mongoose.Types.ObjectId.isValid(id) ? [new mongoose.Types.ObjectId(id)] : [],
-  );
+  const objectIds = uniqueEntityIds.flatMap((id) => {
+    const objectId = normalizeDuplicateEntityNameReviewObjectId(id);
+    return objectId ? [objectId] : [];
+  });
   const impact = Object.fromEntries(
     uniqueEntityIds.map((id) => [id, { ...EMPTY_REFERENCE_IMPACT_COUNTS }]),
   ) as DuplicateEntityReferenceImpactByEntityId;
@@ -1240,11 +1262,7 @@ function describeMongoTarget(url: string): string {
 }
 
 function stringifyId(value: unknown): string {
-  if (!value) return '';
-  if (typeof value === 'string') return value;
-  if (typeof value === 'number') return String(value);
-  if (typeof value === 'object' && 'toString' in value) return value.toString();
-  return String(value);
+  return serializedDocumentId(value) || '';
 }
 
 function asString(value: unknown): string {
@@ -1269,7 +1287,7 @@ function asStringArray(value: unknown): string[] | undefined {
 if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
   main()
     .catch((error) => {
-      console.error(error instanceof Error ? error.message : error);
+      console.error(sanitizeLogValue(error));
       process.exitCode = 1;
     })
     .finally(async () => {

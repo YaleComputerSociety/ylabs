@@ -3,6 +3,11 @@
  */
 import mongoose from 'mongoose';
 
+export const normalizeUserType = (value: unknown): string => {
+  const normalized = String(value || 'unknown').trim().toLowerCase();
+  return normalized === 'faculty' ? 'professor' : normalized || 'unknown';
+};
+
 const publicationSchema = new mongoose.Schema(
   {
     title: { type: String, required: true },
@@ -29,12 +34,12 @@ const userSchema = new mongoose.Schema(
     },
     userType: {
       type: String,
+      set: normalizeUserType,
       enum: [
         'undergraduate',
         'graduate',
         'student',
         'professor',
-        'faculty',
         'staff',
         'unknown',
         'admin',

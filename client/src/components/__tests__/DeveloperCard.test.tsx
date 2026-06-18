@@ -69,4 +69,20 @@ describe('DeveloperCard', () => {
       'https://github.com/example',
     );
   });
+
+  it('falls back instead of rendering unsafe developer image URLs', () => {
+    render(
+      <DeveloperCard
+        developer={{
+          name: 'Avery Tester',
+          position: 'Developer',
+          location: 'New Haven, CT',
+          image: 'data:image/svg+xml,<svg onload=alert(1)>',
+        }}
+      />,
+    );
+
+    const image = screen.getByAltText('Avery Tester Profile Picture') as HTMLImageElement;
+    expect(image.getAttribute('src')).toBe('/assets/developers/no-user.png');
+  });
 });

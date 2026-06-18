@@ -12,8 +12,7 @@ export type PathwaySortBy =
   | 'relevance'
   | 'confidence'
   | 'lastObservedAt'
-  | 'deadline'
-  | 'createdAt';
+  | 'deadline';
 
 export type PathwayActionability = 'ACTION_READY' | 'REFERENCE_ONLY';
 
@@ -86,7 +85,6 @@ export interface PathwaySearchHit {
   confidence?: number;
   sourceUrls: string[];
   lastObservedAt?: string;
-  createdAt?: string;
   researchEntity: PathwayResearchEntitySummary;
   activePostedOpportunity?: PathwayPostedOpportunitySummary;
   evidence: PathwayEvidenceSummary[];

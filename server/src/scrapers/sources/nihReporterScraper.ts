@@ -29,6 +29,8 @@
  */
 import axios from 'axios';
 import { User } from '../../models/user';
+import { serializedDocumentId } from '../../utils/idSerialization';
+import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { getCached, setCached } from '../snapshotCache';
 import { normalizeName, slugify, splitName } from '../utils/scraperHelpers';
 import type { IScraper, ScraperContext, ScraperResult, ObservationInput } from '../types';
@@ -298,7 +300,7 @@ function userPiMatchResult(candidate: any): {
   researchHomeEligible?: boolean;
 } {
   return {
-    _id: String(candidate._id),
+    _id: serializedDocumentId(candidate._id) || '',
     netid: candidate.netid,
     researchHomeEligible: researchHomeEligibleUserTitle(candidate.title),
   };
@@ -525,7 +527,7 @@ export class NihReporterScraper implements IScraper {
           ctx,
         });
       } catch (err: any) {
-        ctx.log(`fetch error at offset=${offset}: ${err?.message || err}`);
+        ctx.log(`fetch error at offset=${offset}: ${sanitizeLogValue(err)}`);
         break;
       }
       pages++;
@@ -554,7 +556,7 @@ export class NihReporterScraper implements IScraper {
       try {
         matchedUser = await findUserForPi(piName, userModel);
       } catch (err: any) {
-        ctx.log(`user-lookup error for "${piName}": ${err?.message || err}`);
+        ctx.log(`user-lookup error for PI candidate: ${sanitizeLogValue(err)}`);
       }
       if (matchedUser) matched++;
       else unmatched++;

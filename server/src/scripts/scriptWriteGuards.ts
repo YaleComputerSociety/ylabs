@@ -1,3 +1,5 @@
+import os from 'os';
+import path from 'path';
 import {
   resolveScraperEnvironment,
   summarizeMongoUrl,
@@ -33,4 +35,33 @@ export function assertScriptApplyAllowed(args: {
   }
 
   return { environment, dbLabel };
+}
+
+const hasPathPrefix = (target: string, root: string): boolean =>
+  target === root || target.startsWith(`${root}${path.sep}`);
+
+export function resolveSafeJsonReportOutputPath(
+  value: string | undefined,
+  flag = '--output',
+): string {
+  const output = value?.trim();
+  if (!output || output.startsWith('--')) {
+    throw new Error(`${flag} requires a path`);
+  }
+  if (/[\u0000-\u001f\u007f]/.test(output)) {
+    throw new Error(`${flag} path contains invalid characters`);
+  }
+
+  const resolved = path.resolve(output);
+  if (path.extname(resolved).toLowerCase() !== '.json') {
+    throw new Error(`${flag} must point to a .json report file`);
+  }
+
+  const tmpRoot = path.resolve(os.tmpdir());
+  const projectTmpRoot = path.resolve(process.cwd(), 'tmp');
+  if (!hasPathPrefix(resolved, tmpRoot) && !hasPathPrefix(resolved, projectTmpRoot)) {
+    throw new Error(`${flag} must write under ${tmpRoot} or ./tmp`);
+  }
+
+  return resolved;
 }

@@ -10,6 +10,7 @@
 import mongoose from 'mongoose';
 import { User } from '../models/user';
 import { Department } from '../models/department';
+import { sanitizeLogValue } from '../utils/logSanitizer';
 
 async function cleanDepartments() {
   const mongoUrl = process.env.MONGODBURL;
@@ -95,6 +96,6 @@ async function cleanDepartments() {
 }
 
 cleanDepartments().catch((err) => {
-  console.error('Fatal error:', err);
+  console.error('Fatal error:', sanitizeLogValue(err));
   process.exit(1);
 });

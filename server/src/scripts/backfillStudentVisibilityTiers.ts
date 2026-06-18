@@ -25,8 +25,11 @@ import {
 } from './researchEntityPiDedupeCore';
 import {
   assertScriptApplyAllowed,
+  resolveSafeJsonReportOutputPath,
   type ScriptApplyGuardResult,
 } from './scriptWriteGuards';
+import { serializedDocumentId } from '../utils/idSerialization';
+import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
   buildCollectionReport,
   nextRepairActionForReasons,
@@ -97,13 +100,10 @@ export function parseStudentVisibilityBackfillArgs(
       options.collection = 'all';
     } else if (arg === '--output') {
       const output = argv[i + 1];
-      if (!output || output.startsWith('--')) throw new Error('--output requires a path');
-      options.output = output;
+      options.output = resolveSafeJsonReportOutputPath(output);
       i += 1;
     } else if (arg.startsWith('--output=')) {
-      const output = arg.slice('--output='.length).trim();
-      if (!output || output.startsWith('--')) throw new Error('--output requires a path');
-      options.output = output;
+      options.output = resolveSafeJsonReportOutputPath(arg.slice('--output='.length));
     } else {
       throw new Error(`Unknown argument: ${arg}`);
     }
@@ -114,8 +114,9 @@ export function parseStudentVisibilityBackfillArgs(
 
 export function writeStudentVisibilityBackfillOutput(report: unknown, output?: string): void {
   if (!output) return;
-  fs.mkdirSync(path.dirname(output), { recursive: true });
-  fs.writeFileSync(output, `${JSON.stringify(report, null, 2)}\n`);
+  const safeOutput = resolveSafeJsonReportOutputPath(output);
+  fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
+  fs.writeFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
 }
 
 export function buildStudentVisibilityBackfillOutput<T extends object>(
@@ -167,17 +168,27 @@ const increment = (counts: Record<string, number>, key: string) => {
 };
 
 const countByEntityId = (rows: Array<{ _id: unknown; count: number }>) =>
-  new Map(rows.map((row) => [String(row._id), row.count]));
+  new Map(
+    rows.flatMap((row) => {
+      const id = serializedDocumentId(row._id);
+      return id ? [[id, row.count] as const] : [];
+    }),
+  );
 
 function buildSamePiVisibilityDedupeRows(args: {
   entities: any[];
   leadRows: any[];
   extraEntitiesByUserId?: Map<string, any[]>;
 }): ResearchEntityPiDedupeRow[] {
-  const entityById = new Map(args.entities.map((entity) => [String(entity._id), entity]));
+  const entityById = new Map(
+    args.entities.flatMap((entity) => {
+      const id = serializedDocumentId(entity._id);
+      return id ? [[id, entity] as const] : [];
+    }),
+  );
   const leadRowsByUserId = new Map<string, any[]>();
   for (const row of args.leadRows) {
-    const userId = row.userId === undefined || row.userId === null ? '' : String(row.userId).trim();
+    const userId = serializedDocumentId(row.userId) || '';
     if (!userId || row.role !== 'pi') continue;
     leadRowsByUserId.set(userId, [...(leadRowsByUserId.get(userId) || []), row]);
   }
@@ -186,12 +197,12 @@ function buildSamePiVisibilityDedupeRows(args: {
     .map(([userId, rows]) => {
       const entityIds = new Set<string>();
       const entities = [
-        ...rows.map((row) => entityById.get(String(row.researchEntityId))).filter(Boolean),
+        ...rows.map((row) => entityById.get(serializedDocumentId(row.researchEntityId) || '')).filter(Boolean),
         ...(args.extraEntitiesByUserId?.get(userId) || []),
       ]
         .filter((entity: any) => {
-          const id = String(entity._id);
-          if (entityIds.has(id)) return false;
+          const id = serializedDocumentId(entity._id);
+          if (!id || entityIds.has(id)) return false;
           entityIds.add(id);
           return true;
         })
@@ -225,7 +236,7 @@ function isFullPersonLabDedupeName(normalizedName: string): boolean {
 
 function serializeEntityForDedupe(entity: any): ResearchEntityPiDedupeRow['entities'][number] {
   return {
-    id: String(entity._id),
+    id: serializedDocumentId(entity._id) || '',
     slug: entity.slug,
     name: entity.name,
     kind: entity.kind,
@@ -261,9 +272,8 @@ function buildNameOnlyVisibilityDedupeRows(args: {
       const [normalizedName, entities] = entry;
       const piUserIds = new Set<string>();
       for (const entity of entities) {
-        for (const lead of args.leadsByEntityId.get(String(entity._id)) || []) {
-          const userId =
-            lead.userId === undefined || lead.userId === null ? '' : String(lead.userId).trim();
+        for (const lead of args.leadsByEntityId.get(serializedDocumentId(entity._id) || '') || []) {
+          const userId = serializedDocumentId(lead.userId) || '';
           if (lead.role === 'pi' && userId) piUserIds.add(userId);
         }
       }
@@ -321,19 +331,25 @@ async function planResearchEntityUpdates(limit: number): Promise<PlannedTierUpda
 
   const leadsByEntityId = new Map<string, any[]>();
   const leadUserIds = Array.from(
-    new Set((leadRows as any[]).map((row) => String(row.userId || '')).filter(Boolean)),
+    new Set((leadRows as any[]).map((row) => serializedDocumentId(row.userId)).filter(Boolean)),
   );
   const leadUsers = leadUserIds.length
     ? await User.find({ _id: { $in: leadUserIds } }).select('fname lname').lean()
     : [];
-  const leadUsersById = new Map((leadUsers as any[]).map((user) => [String(user._id), user]));
+  const leadUsersById = new Map(
+    (leadUsers as any[]).flatMap((user) => {
+      const id = serializedDocumentId(user._id);
+      return id ? [[id, user] as const] : [];
+    }),
+  );
   const profileAreaNamesByUserId = new Map<string, string[]>();
   const profileAreaNames = Array.from(
     new Set(
       (leadUsers as any[])
         .flatMap((user) => {
           const names = profileAreaNamesForVisibilityPi(user.fname, user.lname);
-          profileAreaNamesByUserId.set(String(user._id), names);
+          const id = serializedDocumentId(user._id);
+          if (id) profileAreaNamesByUserId.set(id, names);
           return names;
         })
         .filter(Boolean),
@@ -351,14 +367,21 @@ async function planResearchEntityUpdates(limit: number): Promise<PlannedTierUpda
     if (matches.length > 0) profileAreaEntitiesByUserId.set(userId, matches);
   }
   for (const row of leadRows as any[]) {
-    if (row.userId) row.user = leadUsersById.get(String(row.userId));
-    const key = String(row.researchEntityId);
+    const userId = serializedDocumentId(row.userId);
+    if (userId) row.user = leadUsersById.get(userId);
+    const key = serializedDocumentId(row.researchEntityId);
+    if (!key) continue;
     leadsByEntityId.set(key, [...(leadsByEntityId.get(key) || []), row]);
   }
   const accessCounts = countByEntityId(accessRows as any[]);
   const pathwayCounts = countByEntityId(pathwayRows as any[]);
   const postedCounts = countByEntityId(postedRows as any[]);
-  const entityById = new Map((entities as any[]).map((entity) => [String(entity._id), entity]));
+  const entityById = new Map(
+    (entities as any[]).flatMap((entity) => {
+      const id = serializedDocumentId(entity._id);
+      return id ? [[id, entity] as const] : [];
+    }),
+  );
   const samePiDuplicateRiskEntityIds = selectSamePiDuplicateRiskEntityIds(
     [
       ...buildSamePiVisibilityDedupeRows({
@@ -374,15 +397,15 @@ async function planResearchEntityUpdates(limit: number): Promise<PlannedTierUpda
   );
   const concreteLeadEntityUserIds = new Set<string>();
   for (const row of leadRows as any[]) {
-    const entity = entityById.get(String(row.researchEntityId));
-    const userId = row.userId === undefined || row.userId === null ? '' : String(row.userId).trim();
+    const entity = entityById.get(serializedDocumentId(row.researchEntityId) || '');
+    const userId = serializedDocumentId(row.userId) || '';
     if (userId && entity && isConcreteResearchHomeEntity(entity)) {
       concreteLeadEntityUserIds.add(userId);
     }
   }
 
   return entities.map((entity: any) => {
-    const id = String(entity._id);
+    const id = serializedDocumentId(entity._id) || '';
     const leadMembers = leadsByEntityId.get(id) || [];
     const result = computeResearchEntityStudentVisibility({
       entity,
@@ -414,9 +437,10 @@ async function planProgramUpdates(limit: number): Promise<PlannedTierUpdate[]> {
   const programs = await query.lean();
   return programs.map((program: any) => {
     const result = computeProgramStudentVisibility(program);
+    const id = serializedDocumentId(program._id) || '';
     return {
-      id: String(program._id),
-      label: program.title || String(program._id),
+      id,
+      label: program.title || id,
       currentTier: program.studentVisibilityTier,
       tier: result.tier,
       computedTier: result.computedTier,
@@ -544,7 +568,7 @@ const isDirectRun = process.argv[1]
 if (isDirectRun) {
   main()
     .catch((error) => {
-      console.error('Failed to backfill student visibility tiers:', error);
+      console.error('Failed to backfill student visibility tiers:', sanitizeLogValue(error));
       process.exitCode = 1;
     })
     .finally(async () => {

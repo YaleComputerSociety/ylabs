@@ -1,6 +1,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { User } from '../models/user';
+import { serializedDocumentId } from '../utils/idSerialization';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 import {
   DEFAULT_PROGRAM_CONFIGS,
@@ -223,11 +224,13 @@ export function parseCsvRecords(input: string): CsvRecord[] {
   });
 }
 
+import { safeSpreadsheetCell } from '../utils/spreadsheetSafety';
+
 export function serializeCsv(
   rows: Array<Record<string, unknown>>,
   headers: string[],
 ): string {
-  const lines = [headers.join(',')];
+  const lines = [headers.map((header) => escapeCsvCell(header)).join(',')];
   for (const row of rows) {
     lines.push(headers.map((header) => escapeCsvCell(row[header])).join(','));
   }
@@ -952,7 +955,7 @@ function field(row: CsvRecord, names: string[]): string {
 }
 
 function escapeCsvCell(value: unknown): string {
-  const text = String(value ?? '');
+  const text = safeSpreadsheetCell(value);
   if (!/[",\n\r]/.test(text)) return text;
   return `"${text.replace(/"/g, '""')}"`;
 }
@@ -993,10 +996,7 @@ function normalizePersonName(value: string | undefined): string {
 }
 
 function stringifyId(value: unknown): string {
-  if (value && typeof value === 'object' && 'toString' in value) {
-    return String((value as { toString(): string }).toString());
-  }
-  return String(value || '');
+  return serializedDocumentId(value) || '';
 }
 
 function isYaleEmail(value: string | undefined): boolean {

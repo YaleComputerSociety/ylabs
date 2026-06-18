@@ -61,7 +61,29 @@ describe('yaliesService', () => {
     expect(axios.post).toHaveBeenCalledWith(
       'https://api.yalies.io/v2/people',
       { filters: { netid: ['abc123'] } },
-      { headers: { Authorization: 'Bearer fresh-key' } },
+      { headers: { Authorization: 'Bearer fresh-key' }, timeout: 10_000 },
     );
+  });
+
+  it('rejects malformed NetIDs before validation or outbound Yalies requests', async () => {
+    process.env.YALIES_API_KEY = 'fresh-key';
+    const { fetchYalie } = await import('../yaliesService');
+
+    await expect(fetchYalie('abc-123')).resolves.toBeNull();
+
+    expect(mocks.validateUser).not.toHaveBeenCalled();
+    expect(axios.post).not.toHaveBeenCalled();
+  });
+
+  it('does not log NetIDs when a Yalies lookup misses', async () => {
+    process.env.YALIES_API_KEY = 'fresh-key';
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const { fetchYalie } = await import('../yaliesService');
+    vi.mocked(axios.post).mockResolvedValueOnce({ data: [] });
+
+    await expect(fetchYalie('sensitive-netid')).resolves.toBeNull();
+
+    expect(logSpy.mock.calls.flat().join(' ')).not.toContain('sensitive-netid');
+    logSpy.mockRestore();
   });
 });

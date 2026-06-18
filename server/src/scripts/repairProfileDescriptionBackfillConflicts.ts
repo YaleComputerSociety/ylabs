@@ -9,7 +9,9 @@ import {
   resolveField,
   type ResolverObservation,
 } from '../scrapers/confidenceResolver';
-import { assertScriptApplyAllowed } from './scriptWriteGuards';
+import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { serializedDocumentId } from '../utils/idSerialization';
+import { sanitizeLogValue } from '../utils/logSanitizer';
 
 dotenv.config();
 
@@ -58,6 +60,17 @@ export interface ProfileDescriptionConflictRepairPlan {
   supersedeObservationIds: string[];
 }
 
+const PROFILE_DESCRIPTION_CONFLICT_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
+
+export function normalizeProfileDescriptionConflictObjectId(value: unknown): string | undefined {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return PROFILE_DESCRIPTION_CONFLICT_OBJECT_ID_RE.test(trimmed) ? trimmed : undefined;
+  }
+  if (value instanceof mongoose.Types.ObjectId) return value.toHexString();
+  return undefined;
+}
+
 function parsePositiveInteger(value: string | undefined, flag: string): number {
   if (!value || !/^[1-9]\d*$/.test(value)) {
     throw new Error(`${flag} must be a positive integer`);
@@ -70,9 +83,7 @@ function parsePositiveInteger(value: string | undefined, flag: string): number {
 }
 
 function consumePath(value: string | undefined, flag: string): string {
-  const pathValue = String(value || '').trim();
-  if (!pathValue || pathValue.startsWith('--')) throw new Error(`${flag} requires a path`);
-  return pathValue;
+  return resolveSafeJsonReportOutputPath(value, flag);
 }
 
 export function parseRepairProfileDescriptionBackfillConflictsArgs(
@@ -154,10 +165,7 @@ export function assertRepairProfileDescriptionBackfillConflictsApplyAllowed(
 }
 
 function idValue(value: unknown): string {
-  if (!value) return '';
-  if (typeof value === 'string') return value;
-  if (typeof (value as any).toHexString === 'function') return (value as any).toHexString();
-  return String(value);
+  return serializedDocumentId(value) || '';
 }
 
 function toResolverObservation(
@@ -295,8 +303,13 @@ async function loadConflictGroups(limit: number): Promise<ProfileDescriptionConf
 async function applyPlans(plans: ProfileDescriptionConflictRepairPlan[]) {
   const applied = [];
   for (const plan of plans) {
-    const supersedeIds = plan.supersedeObservationIds.map((id) => new mongoose.Types.ObjectId(id));
-    const keepId = new mongoose.Types.ObjectId(plan.keepObservationId);
+    const keepObservationId = normalizeProfileDescriptionConflictObjectId(plan.keepObservationId);
+    const supersedeObservationIds = plan.supersedeObservationIds
+      .map((id) => normalizeProfileDescriptionConflictObjectId(id))
+      .filter((id): id is string => Boolean(id));
+    if (!keepObservationId || supersedeObservationIds.length === 0) continue;
+    const supersedeIds = supersedeObservationIds.map((id) => new mongoose.Types.ObjectId(id));
+    const keepId = new mongoose.Types.ObjectId(keepObservationId);
     const result = await Observation.updateMany(
       {
         _id: { $in: supersedeIds },
@@ -323,8 +336,9 @@ export function writeProfileDescriptionConflictRepairOutput(
   output?: string,
 ): void {
   if (!output) return;
-  fs.mkdirSync(path.dirname(output), { recursive: true });
-  fs.writeFileSync(output, `${JSON.stringify(report, null, 2)}\n`);
+  const safeOutput = resolveSafeJsonReportOutputPath(output);
+  fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
+  fs.writeFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
 }
 
 async function main() {
@@ -372,7 +386,7 @@ const isDirectRun = process.argv[1]
 if (isDirectRun) {
   main()
     .catch((error) => {
-      console.error('Failed to repair profile description conflicts:', error);
+      console.error('Failed to repair profile description conflicts:', sanitizeLogValue(error));
       process.exitCode = 1;
     })
     .finally(async () => {

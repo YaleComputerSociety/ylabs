@@ -1,4 +1,5 @@
 import { ResearchScholarlyLink } from '../models/researchScholarlyLink';
+import { serializedDocumentId } from '../utils/idSerialization';
 
 export interface PaperQualityCounts {
   totalActiveScholarlyLinks: number;
@@ -31,6 +32,7 @@ type DuplicateGroupField = 'externalIds.openAlexId' | 'externalIds.arxivId' | 'u
 
 const activeScholarlyLinkFilter = { archived: { $ne: true } };
 const BETA_COMMAND_PREFIX = 'SCRAPER_ENV=beta ';
+const paperQualityDocumentId = (value: unknown): string => serializedDocumentId(value) || '';
 
 function betaCommand(command: string): string {
   const trimmed = command.trim();
@@ -165,12 +167,12 @@ export async function buildPaperQualityDuplicateGroupSamples(
   ]);
 
   return groups.map((group: any) => ({
-    ownerId: String(group._id?.owner || ''),
+    ownerId: paperQualityDocumentId(group._id?.owner),
     field,
     value: String(group._id?.value || ''),
     count: Number(group.count) || 0,
     links: (Array.isArray(group.links) ? group.links : []).map((link: any) => ({
-      id: String(link._id || ''),
+      id: paperQualityDocumentId(link._id),
       title: String(link.title || ''),
       ...(link.url ? { url: String(link.url) } : {}),
       ...(link.sourceUrl ? { sourceUrl: String(link.sourceUrl) } : {}),

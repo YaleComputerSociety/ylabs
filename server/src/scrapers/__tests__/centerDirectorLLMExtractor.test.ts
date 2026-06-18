@@ -7,6 +7,7 @@ import {
   CenterDirectorLLMExtractor,
   directorExtractionToObservations,
   discoverLeadershipUrls,
+  normalizeCenterDirectorObjectId,
   type CandidateCenter,
 } from '../sources/centerDirectorLLMExtractor';
 import type { ScraperContext, ObservationInput } from '../types';
@@ -70,7 +71,7 @@ describe('directorExtractionToObservations', () => {
 
   it('emits entity-level director observations with a name split and lifted role confidence', () => {
     const obs = directorExtractionToObservations(
-      { director: { name: 'Eric P. Winer', title: 'Director', profileUrl: 'https://medicine.yale.edu/profile/eric-winer/' } },
+      { director: { name: 'Elliot P. Fixture', title: 'Director', profileUrl: 'https://medicine.yale.edu/profile/fixture-center-director/' } },
       context,
     );
     expect(obs.every((o) => o.entityType === 'researchEntity')).toBe(true);
@@ -80,7 +81,7 @@ describe('directorExtractionToObservations', () => {
     expect(byField.inferredDirectorRole.value).toBe('director');
     expect(byField.inferredDirectorRole.confidenceOverride).toBe(0.85);
     expect(byField.inferredDirectorProfileUrl.value).toBe(
-      'https://medicine.yale.edu/profile/eric-winer/',
+      'https://medicine.yale.edu/profile/fixture-center-director/',
     );
     expect(byField.inferredDirectorTitle.value).toBe('Director');
   });
@@ -118,6 +119,18 @@ describe('directorExtractionToObservations', () => {
 });
 
 describe('CenterDirectorLLMExtractor.run', () => {
+  it('normalizes center director ObjectIds without object-shaped coercion', () => {
+    expect(normalizeCenterDirectorObjectId(' 507f1f77bcf86cd799439011 ')).toBe(
+      '507f1f77bcf86cd799439011',
+    );
+    expect(normalizeCenterDirectorObjectId('abcdefghijkl')).toBeUndefined();
+    expect(
+      normalizeCenterDirectorObjectId({
+        toString: () => '507f1f77bcf86cd799439011',
+      }),
+    ).toBeUndefined();
+  });
+
   const center: CandidateCenter = {
     _id: 'abc',
     slug: 'center-yale-cancer-center',
@@ -132,14 +145,14 @@ describe('CenterDirectorLLMExtractor.run', () => {
     };
     const leadership = {
       url: 'https://medicine.yale.edu/cancer/about-us/leadership/',
-      html: `<html><body>${'Eric P. Winer is the Director of Yale Cancer Center. '.repeat(20)}</body></html>`,
+      html: `<html><body>${'Elliot P. Fixture is the Director of Yale Cancer Center. '.repeat(20)}</body></html>`,
     };
     const fetchPage = vi.fn(async (url: string) =>
       url === landing.url ? landing : leadership,
     );
     const callLLM = vi.fn(async (input: { sourceUrl: string }) =>
       input.sourceUrl === leadership.url
-        ? { director: { name: 'Eric P. Winer', title: 'Director', role: 'director' as const } }
+        ? { director: { name: 'Elliot P. Fixture', title: 'Director', role: 'director' as const } }
         : { director: null },
     );
     const centerFinder = vi.fn(async () => [center]);

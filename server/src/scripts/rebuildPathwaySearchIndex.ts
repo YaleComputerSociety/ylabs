@@ -5,7 +5,12 @@ import { fileURLToPath } from 'url';
 import { initializeConnections } from '../db/connections';
 import { searchPathways } from '../services/pathwaySearchService';
 import { rebuildPathwaySearchIndex } from '../services/pathwaySearchIndexService';
-import { assertScriptApplyAllowed, type ScriptApplyGuardResult } from './scriptWriteGuards';
+import { sanitizeLogValue } from '../utils/logSanitizer';
+import {
+  assertScriptApplyAllowed,
+  resolveSafeJsonReportOutputPath,
+  type ScriptApplyGuardResult,
+} from './scriptWriteGuards';
 
 export interface RebuildPathwaySearchIndexCliOptions {
   pageSize: number;
@@ -58,11 +63,7 @@ export function parseRebuildPathwaySearchIndexArgs(
 }
 
 function parseRequiredOutputPath(value: string | undefined): string {
-  const output = value?.trim();
-  if (!output || output.startsWith('--')) {
-    throw new Error('--output requires a path');
-  }
-  return output;
+  return resolveSafeJsonReportOutputPath(value);
 }
 
 function parsePositiveInteger(value: string, flag: string): number {
@@ -75,8 +76,9 @@ function parsePositiveInteger(value: string, flag: string): number {
 
 export function writeRebuildPathwaySearchIndexOutput(result: unknown, output?: string): void {
   if (!output) return;
-  fs.mkdirSync(path.dirname(output), { recursive: true });
-  fs.writeFileSync(output, `${JSON.stringify(result, null, 2)}\n`);
+  const safeOutput = resolveSafeJsonReportOutputPath(output);
+  fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
+  fs.writeFileSync(safeOutput, `${JSON.stringify(result, null, 2)}\n`);
 }
 
 export function assertRebuildPathwaySearchIndexAllowed(args: {
@@ -127,7 +129,7 @@ async function main() {
       searchPathways({
         page,
         pageSize,
-        sort: { sortBy: 'createdAt', sortOrder: 'desc' },
+        sort: { sortBy: 'lastObservedAt', sortOrder: 'desc' },
       }),
     options,
   );
@@ -148,7 +150,7 @@ const isDirectRun = process.argv[1]
 if (isDirectRun) {
   main()
     .catch((error) => {
-      console.error('Failed to rebuild pathway Meilisearch index:', error);
+      console.error('Failed to rebuild pathway Meilisearch index:', sanitizeLogValue(error));
       process.exitCode = 1;
     })
     .finally(async () => {

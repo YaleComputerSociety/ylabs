@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
 import { assertScriptApplyAllowed } from './scriptWriteGuards';
+import { sanitizeLogValue } from '../utils/logSanitizer';
 
 dotenv.config();
 
@@ -206,7 +207,7 @@ async function main() {
 if (process.env.NODE_ENV !== 'test') {
   main()
     .catch((error) => {
-      console.error('Failed to repair research entity canonical names:', error);
+      console.error('Failed to repair research entity canonical names:', sanitizeLogValue(error));
       process.exitCode = 1;
     })
     .finally(async () => {

@@ -8,11 +8,12 @@ import { Observation } from '../models/observation';
 import { recordReviewStatuses } from '../models/modelPrimitives';
 import { buildSafeSearchRegex } from '../utils/regex';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
+import { serializedDocumentId } from '../utils/idSerialization';
 
 export interface AccessReviewListInput {
   search?: string;
-  page?: number;
-  pageSize?: number;
+  page?: unknown;
+  pageSize?: unknown;
 }
 
 export interface AccessReviewCountSummary {
@@ -44,29 +45,75 @@ const DEFAULT_PAGE_SIZE = 25;
 const MAX_PAGE_SIZE = 100;
 const MAX_PAGE = 1000;
 const MAX_ACCESS_REVIEW_SEARCH_QUERY_LENGTH = 120;
+const MAX_ACCESS_REVIEW_LOCKED_FIELDS = 100;
+const MAX_ACCESS_REVIEW_EVIDENCE_IDS = 100;
+export const MAX_ACCESS_REVIEW_LOCK_FIELD_LENGTH = 120;
+const ACCESS_REVIEW_LOCK_FIELD_PATTERN = /^[A-Za-z0-9_.:-]+$/;
 
-function toObjectId(id: unknown): mongoose.Types.ObjectId | null {
-  if (!id || !mongoose.Types.ObjectId.isValid(String(id))) return null;
-  return new mongoose.Types.ObjectId(String(id));
+export class AccessReviewRequestError extends Error {}
+
+const accessReviewDocumentId = (value: unknown): string => serializedDocumentId(value) || '';
+
+export function normalizeAccessReviewObjectId(id: unknown): mongoose.Types.ObjectId | null {
+  const value =
+    typeof id === 'string'
+      ? id.trim()
+      : id instanceof mongoose.Types.ObjectId
+        ? id.toHexString()
+        : '';
+  if (!/^[a-f0-9]{24}$/i.test(value)) return null;
+  return new mongoose.Types.ObjectId(value);
 }
 
-function normalizePage(input?: number): number {
+function normalizePage(input?: unknown): number {
   return Math.min(MAX_PAGE, Math.max(1, Math.floor(Number(input) || 1)));
 }
 
-function normalizePageSize(input?: number): number {
+function normalizePageSize(input?: unknown): number {
   return Math.min(
     MAX_PAGE_SIZE,
     Math.max(1, Math.floor(Number(input) || DEFAULT_PAGE_SIZE)),
   );
 }
 
+const toObjectId = (value: unknown): mongoose.Types.ObjectId | null => {
+  const id = serializedDocumentId(value);
+  return id ? new mongoose.Types.ObjectId(id) : null;
+};
+
 export function normalizeAccessReviewSearchTerm(input?: string): string {
   const searchTerm = input?.trim() || '';
   if (searchTerm.length > MAX_ACCESS_REVIEW_SEARCH_QUERY_LENGTH) {
-    throw new Error('Search query is too long');
+    throw new AccessReviewRequestError('Search query is too long');
   }
   return searchTerm;
+}
+
+export function normalizeAccessReviewLockedFields(input: unknown): string[] | null {
+  if (!Array.isArray(input)) return null;
+
+  const normalized: string[] = [];
+  const seen = new Set<string>();
+
+  for (const value of input) {
+    if (normalized.length >= MAX_ACCESS_REVIEW_LOCKED_FIELDS) break;
+    if (typeof value !== 'string') continue;
+
+    const field = value.trim();
+    if (
+      field.length === 0 ||
+      field.length > MAX_ACCESS_REVIEW_LOCK_FIELD_LENGTH ||
+      !ACCESS_REVIEW_LOCK_FIELD_PATTERN.test(field) ||
+      seen.has(field)
+    ) {
+      continue;
+    }
+
+    seen.add(field);
+    normalized.push(field);
+  }
+
+  return normalized;
 }
 
 async function countByEntity(
@@ -80,7 +127,7 @@ async function countByEntity(
       { $group: { _id: '$researchEntityId', count: { $sum: 1 } } },
     ])
     .exec();
-  return new Map(rows.map((row: any) => [String(row._id), Number(row.count) || 0]));
+  return new Map(rows.map((row: any) => [accessReviewDocumentId(row._id), Number(row.count) || 0]));
 }
 
 function zeroCounts(): AccessReviewCountSummary {
@@ -118,13 +165,19 @@ function evidenceIdsForRecord(record: any): mongoose.Types.ObjectId[] {
     ...(Array.isArray(record.sourceEvidenceId) ? record.sourceEvidenceId : [record.sourceEvidenceId]),
     ...(Array.isArray(record.observationId) ? record.observationId : [record.observationId]),
   ];
-  return Array.from(
-    new Set(
-      rawIds
-        .map((id) => String(id || ''))
-        .filter((id) => mongoose.Types.ObjectId.isValid(id)),
-    ),
-  ).map((id) => new mongoose.Types.ObjectId(id));
+  const ids: mongoose.Types.ObjectId[] = [];
+  const seen = new Set<string>();
+
+  for (const rawId of rawIds.slice(0, MAX_ACCESS_REVIEW_EVIDENCE_IDS)) {
+    const objectId = normalizeAccessReviewObjectId(rawId);
+    if (!objectId) continue;
+    const key = objectId.toHexString();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    ids.push(objectId);
+  }
+
+  return ids;
 }
 
 function evidenceExcerpt(value: unknown): string {
@@ -138,7 +191,7 @@ function evidenceExcerpt(value: unknown): string {
 }
 
 async function loadEvidenceItems(records: any[]): Promise<Map<string, any[]>> {
-  const recordIds = records.map((record) => String(record._id));
+  const recordIds = records.map((record) => accessReviewDocumentId(record._id));
   const idsByRecordId = new Map<string, mongoose.Types.ObjectId[]>();
   const allIds: mongoose.Types.ObjectId[] = [];
 
@@ -153,19 +206,19 @@ async function loadEvidenceItems(records: any[]): Promise<Map<string, any[]>> {
   const observations = await Observation.find({ _id: { $in: allIds } })
     .select('sourceName sourceUrl scrapeRunId confidence observedAt field value')
     .lean();
-  const byId = new Map(observations.map((obs: any) => [String(obs._id), obs]));
+  const byId = new Map(observations.map((obs: any) => [accessReviewDocumentId(obs._id), obs]));
 
   return new Map(
     recordIds.map((recordId) => [
       recordId,
       (idsByRecordId.get(recordId) || [])
-        .map((id) => byId.get(String(id)))
+        .map((id) => byId.get(accessReviewDocumentId(id)))
         .filter(Boolean)
         .map((obs: any) => ({
-          observationId: String(obs._id),
+          observationId: accessReviewDocumentId(obs._id),
           sourceName: obs.sourceName,
           sourceUrl: obs.sourceUrl,
-          scrapeRunId: obs.scrapeRunId ? String(obs.scrapeRunId) : undefined,
+          scrapeRunId: accessReviewDocumentId(obs.scrapeRunId) || undefined,
           confidence: obs.confidence,
           observedAt: obs.observedAt,
           field: obs.field,
@@ -179,7 +232,7 @@ async function attachEvidenceItems(records: any[]): Promise<any[]> {
   const evidenceByRecordId = await loadEvidenceItems(records);
   return records.map((record) => ({
     ...record,
-    evidenceItems: evidenceByRecordId.get(String(record._id)) || [],
+    evidenceItems: evidenceByRecordId.get(accessReviewDocumentId(record._id)) || [],
   }));
 }
 
@@ -254,7 +307,7 @@ export async function listAccessReviewEntities(input: AccessReviewListInput = {}
   ]);
 
   const entities = groups.map((group: any) => {
-    const id = String(group._id);
+    const id = accessReviewDocumentId(group._id);
     const counts = zeroCounts();
     counts.entryPathways = pathwayCounts.get(id) || 0;
     counts.accessSignals = signalCounts.get(id) || 0;
@@ -321,16 +374,8 @@ export async function updateAccessReviewManualLocks(
   fields: unknown,
 ): Promise<any | null> {
   const id = toObjectId(researchEntityId);
-  if (!id || !Array.isArray(fields)) return null;
-
-  const manuallyLockedFields = Array.from(
-    new Set(
-      fields
-        .map((field) => (typeof field === 'string' ? field.trim() : ''))
-        .filter((field) => field.length > 0)
-        .slice(0, 100),
-    ),
-  );
+  const manuallyLockedFields = normalizeAccessReviewLockedFields(fields);
+  if (!id || !manuallyLockedFields) return null;
 
   return ResearchEntity.findByIdAndUpdate(
     id,
@@ -365,7 +410,7 @@ export async function updateAccessReviewRecordReview(input: {
   reviewerId?: unknown;
 }): Promise<any | null> {
   const model = reviewModelForRecordType(input.type);
-  const id = toObjectId(input.id);
+  const id = normalizeAccessReviewObjectId(input.id);
   if (!model || !id) return null;
 
   const update: Record<string, unknown> = {};
@@ -383,18 +428,12 @@ export async function updateAccessReviewRecordReview(input: {
   }
 
   if (Array.isArray(input.lockedFields)) {
-    update['review.lockedFields'] = Array.from(
-      new Set(
-        input.lockedFields
-          .map((field) => (typeof field === 'string' ? field.trim() : ''))
-          .filter(Boolean)
-          .slice(0, 100),
-      ),
-    );
+    update['review.lockedFields'] = normalizeAccessReviewLockedFields(input.lockedFields) || [];
   }
 
-  if (input.reviewerId && mongoose.Types.ObjectId.isValid(String(input.reviewerId))) {
-    update['review.reviewedByUserId'] = new mongoose.Types.ObjectId(String(input.reviewerId));
+  const reviewerId = normalizeAccessReviewObjectId(input.reviewerId);
+  if (reviewerId) {
+    update['review.reviewedByUserId'] = reviewerId;
   }
 
   if (Object.keys(update).length === 0) return null;

@@ -29,6 +29,8 @@ import * as cheerio from 'cheerio';
 import { getCached, setCached } from '../snapshotCache';
 import type { IScraper, ScraperContext, ScraperResult, ObservationInput } from '../types';
 import { normalizeName, slugify, splitName } from '../utils/scraperHelpers';
+import { sanitizeLogValue } from '../../utils/logSanitizer';
+import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
@@ -448,15 +450,20 @@ function pageUrlForIndex(baseUrl: string, pageIndex: number): string {
 }
 
 async function fetchHtml(url: string, useCache: boolean, sourceName: string): Promise<string> {
-  const cacheKey = `page:${url}`;
+  const safeUrl = await assertPublicHttpUrl(url);
+  const safeUrlText = safeUrl.toString();
+  const cacheKey = `page:${safeUrlText}`;
   if (useCache) {
     const cached = await getCached<string>(sourceName, cacheKey);
     if (cached) return cached;
   }
-  const res = await axios.get(url, {
+  const agents = ssrfSafeAgents();
+  const res = await axios.get(safeUrlText, {
     timeout: FETCH_TIMEOUT_MS,
     headers: { 'User-Agent': USER_AGENT },
     maxRedirects: 5,
+    httpAgent: agents.httpAgent,
+    httpsAgent: agents.httpsAgent,
   });
   const html = res.data as string;
   if (useCache) await setCached(sourceName, cacheKey, html);
@@ -691,7 +698,7 @@ export class CentersInstitutesScraper implements IScraper {
         try {
           html = await fetchHtml(pageUrl, ctx.options.useCache, this.name);
         } catch (err: any) {
-          ctx.log(`[${config.centerKey}] fetch failed for ${pageUrl}: ${err?.message || err}`);
+          ctx.log(`[${config.centerKey}] fetch failed for configured page: ${sanitizeLogValue(err)}`);
           fetchFailed = true;
           break;
         }
@@ -700,7 +707,7 @@ export class CentersInstitutesScraper implements IScraper {
         try {
           result = config.extractor(html, { pageUrl });
         } catch (err: any) {
-          ctx.log(`[${config.centerKey}] extractor error on ${pageUrl}: ${err?.message || err}`);
+          ctx.log(`[${config.centerKey}] extractor error on configured page: ${sanitizeLogValue(err)}`);
           break;
         }
         if (

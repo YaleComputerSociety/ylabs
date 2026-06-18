@@ -16,7 +16,9 @@ import {
   type ProfessorBioAuditResearchHomeInput,
   type ProfessorBioCoverageInput,
 } from './profileBioCoverageAuditCore';
-import { assertScriptApplyAllowed } from './scriptWriteGuards';
+import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { serializedDocumentId } from '../utils/idSerialization';
+import { sanitizeLogValue } from '../utils/logSanitizer';
 
 const VISIBLE_PROFILE_MEMBER_ROLES = ['pi', 'co-pi', 'director', 'co-director', 'core-faculty'];
 
@@ -80,15 +82,14 @@ function parseInteger(value: string, flag: string, options: { min: number }): nu
 }
 
 function parseRequiredOutputPath(value: string | undefined): string {
-  const output = value?.trim();
-  if (!output || output.startsWith('--')) throw new Error('--output requires a path');
-  return output;
+  return resolveSafeJsonReportOutputPath(value);
 }
 
 export function writeProfessorBioCoverageAuditOutput(result: unknown, output?: string): void {
   if (!output) return;
-  fs.mkdirSync(path.dirname(output), { recursive: true });
-  fs.writeFileSync(output, `${JSON.stringify(result, null, 2)}\n`);
+  const safeOutput = resolveSafeJsonReportOutputPath(output);
+  fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
+  fs.writeFileSync(safeOutput, `${JSON.stringify(result, null, 2)}\n`);
 }
 
 export function buildProfessorBioCoverageAuditOutput<T extends object>(
@@ -112,10 +113,7 @@ export function buildProfessorBioCoverageAuditOutput<T extends object>(
 }
 
 const idValue = (value: unknown): string => {
-  if (!value) return '';
-  if (typeof value === 'string') return value;
-  if (typeof (value as any).toHexString === 'function') return (value as any).toHexString();
-  return String(value);
+  return serializedDocumentId(value) || '';
 };
 
 const textValue = (value: unknown): string =>
@@ -262,7 +260,7 @@ async function main() {
 
 if (process.argv[1]?.endsWith('profileBioCoverageAudit.ts')) {
   main().catch(async (error) => {
-    console.error('Failed to run professor bio coverage audit:', error);
+    console.error('Failed to run professor bio coverage audit:', sanitizeLogValue(error));
     await mongoose.disconnect().catch(() => undefined);
     process.exit(1);
   });

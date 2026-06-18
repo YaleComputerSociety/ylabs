@@ -52,7 +52,7 @@ const CORES_HTML = `
     <p>Our core's focus is cutting-edge and high-throughput capability in electron microscopy techniques.</p>
     <div class="card__content__contact">
       <h3>Primary contact</h3>
-      <a href="mailto:shize.yang@yale.edu">shize.yang@yale.edu</a>
+      <a href="mailto:sam.official@yale.edu">sam.official@yale.edu</a>
     </div>
   </article>
   <article class="card">

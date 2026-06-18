@@ -8,6 +8,7 @@ import { useState, useEffect, useReducer, KeyboardEvent } from 'react';
 import { Fellowship } from '../../types/types';
 import axios from '../../utils/axios';
 import swal from 'sweetalert';
+import { clientErrorMessage } from '../../utils/clientErrorMessage';
 import {
   adminFellowshipEditReducer,
   createInitialAdminFellowshipEditState,
@@ -173,8 +174,8 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
       swal({ text: 'Fellowship updated', icon: 'success', timer: 1500 });
       onSave();
     } catch (error: any) {
-      console.error('Error updating fellowship:', error);
-      swal({ text: error.response?.data?.error || 'Failed to update fellowship', icon: 'error' });
+      console.error('Error updating fellowship.');
+      swal({ text: clientErrorMessage(error, 'Failed to update fellowship'), icon: 'error' });
     } finally {
       dispatch({ type: 'SET_SAVING', payload: false });
     }
@@ -435,7 +436,7 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
                 swal({ text: 'Fellowship deleted', icon: 'success', timer: 1500 });
                 onSave();
               } catch (error: any) {
-                swal({ text: error.response?.data?.error || 'Failed to delete', icon: 'error' });
+                swal({ text: clientErrorMessage(error, 'Failed to delete'), icon: 'error' });
               }
             }}
             className="px-4 py-2 text-sm text-red-600 border border-red-200 rounded-md hover:bg-red-50 transition-colors"

@@ -48,7 +48,7 @@ services:
     runtime: node
     plan: starter # pure Node HTTP/API — fits 512MB comfortably
     schedule: "0 6 1 1,3,8 *" # Jan 1, Mar 1, Aug 1 @ 06:00 UTC
-    buildCommand: corepack enable && yarn install:all
+    buildCommand: corepack enable && yarn install:all:immutable
     startCommand: >-
       yarn --cwd server scrape cron --source nih-reporter --release ;
       yarn --cwd server scrape cron --source nsf-award-search --release ;
@@ -74,7 +74,7 @@ services:
     runtime: node
     plan: starter # static HTML parsing — fits 512MB comfortably
     schedule: "0 8 1 1,3,8 *" # Jan 1, Mar 1, Aug 1 @ 08:00 UTC (after the API sweep)
-    buildCommand: corepack enable && yarn install:all
+    buildCommand: corepack enable && yarn install:all:immutable
     startCommand: >-
       yarn --cwd server scrape cron --source centers-institutes-index --release ;
       yarn --cwd server scrape cron --source ysm-atoz-index --release ;
@@ -111,7 +111,7 @@ services:
     # On plain `runtime: node` those two degrade gracefully and `starter` is fine.
     plan: standard
     schedule: "0 10 1 1,3,8 *" # Jan 1, Mar 1, Aug 1 @ 10:00 UTC (after the index sweep)
-    buildCommand: corepack enable && yarn install:all
+    buildCommand: corepack enable && yarn install:all:immutable
     startCommand: >-
       yarn --cwd server scrape cron --source lab-microsite-description-llm --release ;
       yarn --cwd server scrape cron --source lab-microsite-undergrad-llm --release ;

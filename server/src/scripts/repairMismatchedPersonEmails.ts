@@ -5,7 +5,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { initializeConnections } from '../db/connections';
 import { User } from '../models/user';
-import { assertScriptApplyAllowed } from './scriptWriteGuards';
+import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
   buildMismatchedPersonEmailRepairPlan,
   parseRepairMismatchedPersonEmailsArgs,
@@ -57,7 +58,9 @@ export function assertRepairMismatchedPersonEmailsApplyAllowed(
 
 function writeOutput(summary: object, output?: string): void {
   if (!output) return;
-  fs.writeFileSync(output, `${JSON.stringify(summary, null, 2)}\n`);
+  const safeOutput = resolveSafeJsonReportOutputPath(output);
+  fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
+  fs.writeFileSync(safeOutput, `${JSON.stringify(summary, null, 2)}\n`);
 }
 
 async function loadUsers(limit: number): Promise<{
@@ -244,7 +247,7 @@ const isDirectRun = process.argv[1]
 if (isDirectRun) {
   main()
     .catch((error) => {
-      console.error(error instanceof Error ? error.message : error);
+      console.error(sanitizeLogValue(error));
       process.exitCode = 1;
     })
     .finally(async () => {

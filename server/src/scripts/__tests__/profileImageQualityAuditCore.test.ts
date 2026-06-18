@@ -134,6 +134,12 @@ describe('profileImageQualityAudit CLI helpers', () => {
     expect(() => parseProfileImageQualityAuditArgs(['--output=--strict'])).toThrow(
       /--output requires a path/,
     );
+    expect(() =>
+      parseProfileImageQualityAuditArgs(['--output', '/var/tmp/profile-image-quality.json']),
+    ).toThrow(/--output must write under/);
+    expect(() =>
+      parseProfileImageQualityAuditArgs(['--output', '/tmp/profile-image-quality.txt']),
+    ).toThrow(/--output must point to a \.json report file/);
   });
 
   it('writes the profile image quality artifact when output is provided', () => {
@@ -151,6 +157,15 @@ describe('profileImageQualityAudit CLI helpers', () => {
       nonPersonImageCount: 1,
       duplicateImageGroupCount: 0,
     });
+  });
+
+  it('rejects unsafe profile image quality artifact writes', () => {
+    expect(() =>
+      writeProfileImageQualityAuditOutput(
+        { nonPersonImageCount: 1 },
+        '/var/tmp/profile-image-quality.json',
+      ),
+    ).toThrow(/--output must write under/);
   });
 
   it('wraps profile image quality artifacts with target metadata and parsed options', () => {

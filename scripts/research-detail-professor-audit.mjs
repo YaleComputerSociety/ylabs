@@ -3,12 +3,74 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { hasExpectedEntityName, normalizeText } from './research-detail-professor-audit-core.mjs';
 
-const clientBase = process.env.CLIENT_BASE || 'http://localhost:3000';
-const serverBase = process.env.SERVER_BASE || 'http://localhost:4000';
-const outDir = process.env.OUT_DIR || 'tmp/research-detail-professor-audit';
+const LOCAL_AUDIT_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
+const DEPLOYED_AUDIT_HOSTS = new Set([
+  'yalelabs.io',
+  'www.yalelabs.io',
+  'yalelabs.onrender.com',
+  'ylabs-gr4v.onrender.com',
+]);
+
+const isInsidePath = (root, target) => {
+  const relative = path.relative(root, target);
+  return relative === '' || (!!relative && !relative.startsWith('..') && !path.isAbsolute(relative));
+};
+
+const safeAuditBaseUrl = (raw, name) => {
+  const value = String(raw || '').trim();
+  if (!value || value.length > 2048) throw new Error(`${name} must be a bounded URL`);
+  const parsed = new URL(value);
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error(`${name} must use HTTP(S)`);
+  }
+  if (parsed.username || parsed.password) {
+    throw new Error(`${name} must not include credentials`);
+  }
+  if (parsed.search || parsed.hash) {
+    throw new Error(`${name} must not include query or fragment text`);
+  }
+  const hostname = parsed.hostname.toLowerCase();
+  const isLocal = LOCAL_AUDIT_HOSTS.has(hostname);
+  const isDeployed = DEPLOYED_AUDIT_HOSTS.has(hostname);
+  if (!isLocal && !isDeployed) {
+    throw new Error(`${name} must point to localhost or a Yale Research deployment`);
+  }
+  if (isDeployed && parsed.protocol !== 'https:') {
+    throw new Error(`${name} deployed origins must use HTTPS`);
+  }
+  return `${parsed.origin}${parsed.pathname.replace(/\/+$/g, '')}`;
+};
+
+const parsePositiveIntegerEnv = (raw, name, fallback, max) => {
+  const value = String(raw || fallback).trim();
+  if (!/^[1-9]\d*$/.test(value)) throw new Error(`${name} must be a positive integer`);
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed > max) {
+    throw new Error(`${name} must be a safe positive integer <= ${max}`);
+  }
+  return parsed;
+};
+
+const safeAuditOutputDir = (raw) => {
+  const value = String(raw || 'tmp/research-detail-professor-audit').trim();
+  if (!value || value.length > 512 || /[\u0000-\u001f\u007f]/.test(value)) {
+    throw new Error('OUT_DIR must be a bounded path');
+  }
+  const resolved = path.resolve(value);
+  const repoTmp = path.resolve('tmp');
+  const systemTmp = path.resolve('/tmp');
+  if (!isInsidePath(repoTmp, resolved) && !isInsidePath(systemTmp, resolved)) {
+    throw new Error('OUT_DIR must stay under repo tmp/ or /tmp');
+  }
+  return resolved;
+};
+
+const clientBase = safeAuditBaseUrl(process.env.CLIENT_BASE || 'http://localhost:3000', 'CLIENT_BASE');
+const serverBase = safeAuditBaseUrl(process.env.SERVER_BASE || 'http://localhost:4000', 'SERVER_BASE');
+const outDir = safeAuditOutputDir(process.env.OUT_DIR);
 const query = process.env.AUDIT_QUERY || '';
-const limit = Number.parseInt(process.env.AUDIT_LIMIT || '25', 10);
-const pageSize = Math.min(100, Math.max(1, Number.parseInt(process.env.AUDIT_PAGE_SIZE || '50', 10)));
+const limit = parsePositiveIntegerEnv(process.env.AUDIT_LIMIT, 'AUDIT_LIMIT', '25', 500);
+const pageSize = parsePositiveIntegerEnv(process.env.AUDIT_PAGE_SIZE, 'AUDIT_PAGE_SIZE', '50', 100);
 const headless = process.env.HEADLESS !== 'false';
 const screenshotFailures = process.env.SCREENSHOT_FAILURES === 'true';
 const publicLeadRoles = new Set(['pi', 'co-pi', 'director', 'co-director']);

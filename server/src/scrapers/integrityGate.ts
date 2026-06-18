@@ -627,6 +627,7 @@ async function loadCurrentMembersOnArchivedEntities(
   const rows = await ResearchGroupMember.aggregate([
     {
       $match: {
+        archived: { $ne: true },
         isCurrentMember: { $ne: false },
         researchEntityId: { $exists: true, $ne: null },
       },

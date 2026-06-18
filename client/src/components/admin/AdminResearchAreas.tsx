@@ -4,6 +4,7 @@
 import { useReducer, useEffect } from 'react';
 import axios from '../../utils/axios';
 import swal from 'sweetalert';
+import { clientErrorMessage } from '../../utils/clientErrorMessage';
 import {
   inlineCrudReducer,
   createInitialInlineCrudState,
@@ -41,7 +42,6 @@ interface ResearchArea {
   field: string;
   colorKey: string;
   isDefault: boolean;
-  addedBy?: string;
 }
 
 interface NewDraft {
@@ -71,8 +71,8 @@ const AdminResearchAreas = () => {
     try {
       const response = await axios.get('/admin/research-areas', { withCredentials: true });
       dispatch({ type: 'FETCH_SUCCESS', items: response.data.researchAreas });
-    } catch (error) {
-      console.error('Error fetching research areas:', error);
+    } catch {
+      console.error('Error fetching research areas.');
       swal({ text: 'Failed to fetch research areas', icon: 'error' });
       dispatch({ type: 'FETCH_FAILURE' });
     }
@@ -98,7 +98,7 @@ const AdminResearchAreas = () => {
       fetchAreas();
       swal({ text: 'Research area added', icon: 'success', timer: 1500 });
     } catch (error: any) {
-      swal({ text: error.response?.data?.message || 'Failed to add', icon: 'error' });
+      swal({ text: clientErrorMessage(error, 'Failed to add'), icon: 'error' });
     }
   };
 
@@ -118,7 +118,7 @@ const AdminResearchAreas = () => {
       fetchAreas();
       swal({ text: 'Research area updated', icon: 'success', timer: 1500 });
     } catch (error: any) {
-      swal({ text: error.response?.data?.error || 'Failed to update', icon: 'error' });
+      swal({ text: clientErrorMessage(error, 'Failed to update'), icon: 'error' });
     }
   };
 
@@ -218,20 +218,19 @@ const AdminResearchAreas = () => {
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Name</th>
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Field</th>
                 <th className="text-center py-3 px-4 font-semibold text-gray-700">Default</th>
-                <th className="text-left py-3 px-4 font-semibold text-gray-700">Added By</th>
                 <th className="text-center py-3 px-4 font-semibold text-gray-700">Actions</th>
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={5} className="text-center py-8 text-gray-500">
+                  <td colSpan={4} className="text-center py-8 text-gray-500">
                     Loading...
                   </td>
                 </tr>
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="text-center py-8 text-gray-500">
+                  <td colSpan={4} className="text-center py-8 text-gray-500">
                     No research areas found
                   </td>
                 </tr>
@@ -294,7 +293,6 @@ const AdminResearchAreas = () => {
                         <span className="text-gray-400 text-xs">No</span>
                       )}
                     </td>
-                    <td className="py-2 px-4 text-xs text-gray-500">{area.addedBy || '--'}</td>
                     <td className="py-2 px-4">
                       <div className="flex gap-1 justify-center">
                         {editingId === area._id ? (

@@ -8,7 +8,8 @@ import { publicStudentVisibilityTiers } from '../models/studentVisibility';
 import type { StudentVisibilityGateCollection, StudentVisibilityGatePlan } from '../services/studentVisibilityGateService';
 import { planStudentVisibilityGate } from '../services/studentVisibilityGateService';
 import { classifyVisibilityRepairStage } from '../services/visibilityRepairQueueService';
-import { assertScriptApplyAllowed } from './scriptWriteGuards';
+import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { sanitizeLogValue } from '../utils/logSanitizer';
 
 dotenv.config();
 
@@ -128,26 +129,29 @@ export function parseLaunchReviewExceptionArgs(argv: string[]): LaunchReviewExce
     } else if (arg.startsWith('--limit=')) {
       options.limit = parsePositiveInteger(arg.slice('--limit='.length), '--limit');
     } else if (arg === '--output') {
-      options.output = parseRequiredPath(argv[index + 1], '--output');
+      options.output = resolveSafeJsonReportOutputPath(argv[index + 1]);
       index += 1;
     } else if (arg.startsWith('--output=')) {
-      options.output = parseRequiredPath(arg.slice('--output='.length), '--output');
+      options.output = resolveSafeJsonReportOutputPath(arg.slice('--output='.length));
     } else if (arg === '--decision-template-output') {
-      options.decisionTemplateOutput = parseRequiredPath(
+      options.decisionTemplateOutput = resolveSafeJsonReportOutputPath(
         argv[index + 1],
         '--decision-template-output',
       );
       index += 1;
     } else if (arg.startsWith('--decision-template-output=')) {
-      options.decisionTemplateOutput = parseRequiredPath(
+      options.decisionTemplateOutput = resolveSafeJsonReportOutputPath(
         arg.slice('--decision-template-output='.length),
         '--decision-template-output',
       );
     } else if (arg === '--accepted-decisions') {
-      options.acceptedDecisions = parseRequiredPath(argv[index + 1], '--accepted-decisions');
+      options.acceptedDecisions = resolveSafeJsonReportOutputPath(
+        argv[index + 1],
+        '--accepted-decisions',
+      );
       index += 1;
     } else if (arg.startsWith('--accepted-decisions=')) {
-      options.acceptedDecisions = parseRequiredPath(
+      options.acceptedDecisions = resolveSafeJsonReportOutputPath(
         arg.slice('--accepted-decisions='.length),
         '--accepted-decisions',
       );
@@ -159,17 +163,6 @@ export function parseLaunchReviewExceptionArgs(argv: string[]): LaunchReviewExce
   }
 
   return options;
-}
-
-function parseRequiredPath(
-  value: string | undefined,
-  flag: '--output' | '--decision-template-output' | '--accepted-decisions',
-): string {
-  const pathValue = value?.trim();
-  if (!pathValue || pathValue.startsWith('--')) {
-    throw new Error(`${flag} requires a path`);
-  }
-  return pathValue;
 }
 
 export function buildLaunchReviewExceptionCandidates(
@@ -331,11 +324,12 @@ export function readLaunchReviewExceptionDecisions(
   inputPath: string,
   options: { allowEmptyDecisions?: boolean } = {},
 ): LaunchReviewExceptionDecision[] {
-  if (!fs.existsSync(inputPath)) {
+  const safeInputPath = resolveSafeJsonReportOutputPath(inputPath, '--accepted-decisions');
+  if (!fs.existsSync(safeInputPath)) {
     if (options.allowEmptyDecisions) return [];
-    throw new Error(`Accepted decisions file not found: ${inputPath}`);
+    throw new Error(`Accepted decisions file not found: ${safeInputPath}`);
   }
-  const parsed = JSON.parse(fs.readFileSync(inputPath, 'utf8'));
+  const parsed = JSON.parse(fs.readFileSync(safeInputPath, 'utf8'));
   if (Array.isArray(parsed)) return parsed;
   if (Array.isArray(parsed?.decisions)) return parsed.decisions;
   throw new Error('Accepted decisions must be a JSON array or an object with a decisions array');
@@ -343,8 +337,9 @@ export function readLaunchReviewExceptionDecisions(
 
 export function writeLaunchReviewExceptionOutput(value: unknown, output?: string): void {
   if (!output) return;
-  fs.mkdirSync(path.dirname(output), { recursive: true });
-  fs.writeFileSync(output, `${JSON.stringify(value, null, 2)}\n`);
+  const safeOutput = resolveSafeJsonReportOutputPath(output);
+  fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
+  fs.writeFileSync(safeOutput, `${JSON.stringify(value, null, 2)}\n`);
 }
 
 export function buildLaunchReviewExceptionOutput(
@@ -416,7 +411,7 @@ async function main() {
 if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
   main()
     .catch((error) => {
-      console.error('Failed to run launch review-exception audit:', error);
+      console.error('Failed to run launch review-exception audit:', sanitizeLogValue(error));
       process.exitCode = 1;
     })
     .finally(async () => {

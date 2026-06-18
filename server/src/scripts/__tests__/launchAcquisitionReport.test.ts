@@ -19,7 +19,7 @@ describe('launchAcquisitionReport CLI helpers', () => {
         '/tmp/ylabs-launch-acquisition-report.json',
       ]),
     ).toEqual({
-      stages: ['pi_identity', 'action_evidence'],
+      stages: ['pi_identity', 'action_evidence', 'source_description'],
       limit: 250,
       sampleLimit: 10,
       output: '/tmp/ylabs-launch-acquisition-report.json',
@@ -61,6 +61,12 @@ describe('launchAcquisitionReport CLI helpers', () => {
     expect(() => parseLaunchAcquisitionReportArgs(['--output=--stage=all'])).toThrow(
       /--output requires a path/,
     );
+    expect(() => parseLaunchAcquisitionReportArgs(['--output=/var/tmp/launch-acquisition.json'])).toThrow(
+      /--output must write under/,
+    );
+    expect(() => parseLaunchAcquisitionReportArgs(['--output=/tmp/launch-acquisition.txt'])).toThrow(
+      /--output must point to a \.json report file/,
+    );
   });
 
   it('writes the launch acquisition report artifact when output is provided', () => {
@@ -84,6 +90,9 @@ describe('launchAcquisitionReport CLI helpers', () => {
       scanned: 1,
       bySource: { 'ysm-atoz-index': { piIdentity: 1, actionEvidence: 0 } },
     });
+    expect(() =>
+      writeLaunchAcquisitionReportOutput({ mode: 'read-only' }, '/var/tmp/launch-acquisition.json'),
+    ).toThrow(/--output must write under/);
   });
 
   it('wraps launch acquisition artifacts with target metadata and parsed options', () => {

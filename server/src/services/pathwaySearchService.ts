@@ -9,6 +9,7 @@ import type {
 } from '../models/researchAccessTypes';
 import { publicStudentVisibilityTiers } from '../models/studentVisibility';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
+import { serializedDocumentId } from '../utils/idSerialization';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 
 export const pathwayBestNextStepCategories = [
@@ -38,7 +39,7 @@ export interface PathwaySearchFilters {
 }
 
 export interface PathwaySearchSort {
-  sortBy?: 'relevance' | 'confidence' | 'lastObservedAt' | 'deadline' | 'createdAt';
+  sortBy?: 'relevance' | 'confidence' | 'lastObservedAt' | 'deadline';
   sortOrder?: 'asc' | 'desc';
 }
 
@@ -57,7 +58,6 @@ export interface PathwaySearchResearchEntityHit {
   displayName?: string;
   kind?: string;
   entityType?: string;
-  studentVisibilityTier?: string;
   departments: string[];
   researchAreas: string[];
   school?: string;
@@ -104,7 +104,6 @@ export interface PathwaySearchHit {
   confidence?: number;
   sourceUrls: string[];
   lastObservedAt?: Date;
-  createdAt?: Date;
   researchEntity: PathwaySearchResearchEntityHit;
   activePostedOpportunity?: PathwaySearchPostedOpportunityHit;
   evidence: PathwaySearchEvidenceHit[];
@@ -130,6 +129,9 @@ interface BestNextStepSnapshot {
 const MAX_PAGE_SIZE = 100;
 const DEFAULT_PAGE_SIZE = 24;
 const MAX_PAGE = 1000;
+const MAX_SEARCH_QUERY_LENGTH = 512;
+const MAX_FILTER_VALUES = 50;
+const MAX_FILTER_VALUE_LENGTH = 120;
 const FORMALIZATION_ONLY_PATHWAY_TYPES: EntryPathwayType[] = [
   'COURSE_CREDIT',
   'SENIOR_THESIS',
@@ -139,15 +141,54 @@ const FORMALIZATION_ONLY_PATHWAY_TYPE_SET = new Set<string>(
   FORMALIZATION_ONLY_PATHWAY_TYPES,
 );
 
-const trimValues = (values?: string[]): string[] =>
-  (values || []).map((value) => value.trim()).filter(Boolean);
+const trimValues = (values?: unknown[]): string[] =>
+  (values || [])
+    .filter((value): value is string => typeof value === 'string')
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+const boundedSearchQuery = (value: unknown): string => {
+  if (typeof value !== 'string') return '';
+  return value.trim().slice(0, MAX_SEARCH_QUERY_LENGTH);
+};
+
+const boundedFilterValues = (values?: unknown[]): string[] =>
+  Array.from(
+    new Set(
+      trimValues(values)
+        .map((value) => value.slice(0, MAX_FILTER_VALUE_LENGTH))
+        .filter(Boolean),
+    ),
+  ).slice(0, MAX_FILTER_VALUES);
+
+const sanitizePathwaySearchFilters = (
+  filters: PathwaySearchFilters = {},
+): PathwaySearchFilters => ({
+  pathwayIds: boundedFilterValues(filters.pathwayIds),
+  entityIds: boundedFilterValues(filters.entityIds),
+  pathwayType: boundedFilterValues(filters.pathwayType) as EntryPathwayType[],
+  compensation: boundedFilterValues(filters.compensation) as CompensationType[],
+  status: boundedFilterValues(filters.status) as EntryPathwayStatus[],
+  evidenceStrength: boundedFilterValues(filters.evidenceStrength) as EvidenceStrength[],
+  entityType: boundedFilterValues(filters.entityType) as ResearchEntityType[],
+  departments: boundedFilterValues(filters.departments),
+  researchAreas: boundedFilterValues(filters.researchAreas),
+  ...(typeof filters.hasActivePostedOpportunity === 'boolean'
+    ? { hasActivePostedOpportunity: filters.hasActivePostedOpportunity }
+    : {}),
+  bestNextStepCategory: boundedFilterValues(
+    filters.bestNextStepCategory,
+  ) as PathwayBestNextStepCategory[],
+});
 
 const escapeRegExp = (value: string): string =>
   value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+const PATHWAY_SEARCH_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
+
 const toObjectIds = (ids?: string[]): Types.ObjectId[] =>
   Array.from(new Set(trimValues(ids)))
-    .filter((id) => Types.ObjectId.isValid(id))
+    .filter((id) => PATHWAY_SEARCH_OBJECT_ID_RE.test(id))
     .map((id) => new Types.ObjectId(id));
 
 const publicText = (value: unknown): string | undefined => {
@@ -353,21 +394,27 @@ function buildSort(sort: PathwaySearchSort, query: string): Record<string, 1 | -
 
   switch (sort.sortBy) {
     case 'confidence':
-      return { confidence: direction, lastObservedAt: -1, createdAt: -1 };
+      return { confidence: direction, lastObservedAt: -1, studentFacingLabel: 1 };
     case 'lastObservedAt':
-      return { lastObservedAt: direction, confidence: -1, createdAt: -1 };
+      return { lastObservedAt: direction, confidence: -1, studentFacingLabel: 1 };
     case 'deadline':
-      return { 'activePostedOpportunity.deadline': direction, confidence: -1, createdAt: -1 };
-    case 'createdAt':
-      return { createdAt: direction, confidence: -1 };
+      return { 'activePostedOpportunity.deadline': direction, confidence: -1, studentFacingLabel: 1 };
     case 'relevance':
     default:
       if (query.trim()) {
-        return { confidence: -1, lastObservedAt: -1, createdAt: -1 };
+        return { confidence: -1, lastObservedAt: -1, studentFacingLabel: 1 };
       }
-      return { lastObservedAt: -1, confidence: -1, createdAt: -1 };
+      return { lastObservedAt: -1, confidence: -1, studentFacingLabel: 1 };
   }
 }
+
+const publicResearchEntityKey = (entity: Record<string, any> | undefined): string =>
+  publicText(entity?.slug) ||
+  publicText(entity?.displayName) ||
+  publicText(entity?.name) ||
+  '';
+
+const pathwaySearchDocumentId = (value: unknown): string => serializedDocumentId(value) || '';
 
 function normalizeHit(raw: Record<string, any>): PathwaySearchHit {
   const contactRoute =
@@ -383,7 +430,7 @@ function normalizeHit(raw: Record<string, any>): PathwaySearchHit {
       : undefined;
 
   return {
-    _id: String(raw._id),
+    _id: pathwaySearchDocumentId(raw._id),
     pathwayType: raw.pathwayType,
     status: raw.status,
     evidenceStrength: raw.evidenceStrength,
@@ -395,15 +442,13 @@ function normalizeHit(raw: Record<string, any>): PathwaySearchHit {
     confidence: raw.confidence,
     sourceUrls: publicHttpUrls(raw.sourceUrls),
     lastObservedAt: raw.lastObservedAt,
-    createdAt: raw.createdAt,
     researchEntity: {
-      _id: String(raw.researchEntity?._id || ''),
+      _id: publicResearchEntityKey(raw.researchEntity),
       slug: raw.researchEntity?.slug || '',
       name: publicText(raw.researchEntity?.name) || '',
       displayName: publicText(raw.researchEntity?.displayName),
       kind: raw.researchEntity?.kind,
       entityType: raw.researchEntity?.entityType,
-      studentVisibilityTier: raw.researchEntity?.studentVisibilityTier,
       departments: raw.researchEntity?.departments || [],
       researchAreas: raw.researchEntity?.researchAreas || [],
       school: publicText(raw.researchEntity?.school),
@@ -411,7 +456,7 @@ function normalizeHit(raw: Record<string, any>): PathwaySearchHit {
     },
     activePostedOpportunity: raw.activePostedOpportunity
       ? omitUndefined({
-          _id: String(raw.activePostedOpportunity._id),
+          _id: pathwaySearchDocumentId(raw.activePostedOpportunity._id),
           title: publicText(raw.activePostedOpportunity.title) || '',
           deadline: raw.activePostedOpportunity.deadline,
           applicationUrl: publicHttpUrl(raw.activePostedOpportunity.applicationUrl),
@@ -438,14 +483,14 @@ function normalizeHit(raw: Record<string, any>): PathwaySearchHit {
 export async function searchPathways(
   input: PathwaySearchInput,
 ): Promise<PathwaySearchResult> {
-  const filters = input.filters || {};
+  const filters = sanitizePathwaySearchFilters(input.filters || {});
   const page = Math.min(MAX_PAGE, Math.max(1, Math.floor(input.page || 1)));
   const pageSize = Math.min(
     MAX_PAGE_SIZE,
     Math.max(1, Math.floor(input.pageSize || DEFAULT_PAGE_SIZE)),
   );
   const skip = (page - 1) * pageSize;
-  const query = input.q || '';
+  const query = boundedSearchQuery(input.q);
   const sort = input.sort || {};
 
   const pipeline: PipelineStage[] = [
@@ -673,7 +718,6 @@ export async function searchPathways(
               displayName: '$researchEntity.displayName',
               kind: '$researchEntity.kind',
               entityType: '$researchEntity.entityType',
-              studentVisibilityTier: '$researchEntity.studentVisibilityTier',
               departments: '$researchEntity.departments',
               researchAreas: '$researchEntity.researchAreas',
               school: '$researchEntity.school',
@@ -711,7 +755,7 @@ export async function getPathwaysByIds(ids: string[]): Promise<PathwaySearchHit[
     page: 1,
     pageSize: Math.min(MAX_PAGE_SIZE, validIds.length),
     filters: { pathwayIds: validIds },
-    sort: { sortBy: 'createdAt', sortOrder: 'desc' },
+    sort: { sortBy: 'lastObservedAt', sortOrder: 'desc' },
   });
 
   const hitsById = new Map(result.hits.map((hit) => [hit._id, hit]));

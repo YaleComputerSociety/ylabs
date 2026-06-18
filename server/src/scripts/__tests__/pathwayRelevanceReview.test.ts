@@ -46,6 +46,12 @@ describe('pathwayRelevanceReview CLI helpers', () => {
     expect(() => parsePathwayRelevanceReviewArgs(['--output=--strict'])).toThrow(
       /--output requires a path/,
     );
+    expect(() =>
+      parsePathwayRelevanceReviewArgs(['--output', '/var/tmp/pathway-relevance-review.json']),
+    ).toThrow(/--output must write under/);
+    expect(() =>
+      parsePathwayRelevanceReviewArgs(['--output', '/tmp/pathway-relevance-review.txt']),
+    ).toThrow(/--output must point to a \.json report file/);
   });
 
   it('writes the pathway relevance review artifact when output is provided', () => {
@@ -59,6 +65,15 @@ describe('pathwayRelevanceReview CLI helpers', () => {
     writePathwayRelevanceReviewOutput(payload, output);
 
     expect(JSON.parse(fs.readFileSync(output, 'utf8'))).toMatchObject(payload);
+  });
+
+  it('rejects unsafe pathway relevance review artifact writes', () => {
+    expect(() =>
+      writePathwayRelevanceReviewOutput(
+        { runtimeBackend: 'mongo' },
+        '/var/tmp/pathway-relevance-review.json',
+      ),
+    ).toThrow(/--output must write under/);
   });
 
   it('wraps pathway relevance review artifacts with target metadata and parsed options', () => {

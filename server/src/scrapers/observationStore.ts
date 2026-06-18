@@ -7,6 +7,7 @@
  */
 import { Observation } from '../models/observation';
 import { Source } from '../models/source';
+import { serializedDocumentId } from '../utils/idSerialization';
 import type { ObservationInput } from './types';
 
 interface AppendContext {
@@ -125,8 +126,7 @@ export function buildObservationFingerprint(input: {
 }
 
 function stringifyIdentifier(value: unknown): string | undefined {
-  if (value === null || value === undefined || value === '') return undefined;
-  return String(value);
+  return serializedDocumentId(value);
 }
 
 function stableSerialize(value: unknown): string {
@@ -152,7 +152,7 @@ export async function getSourceByName(name: string): Promise<{
   const src = await Source.findOne({ name }).lean();
   if (!src) return null;
   return {
-    _id: String(src._id),
+    _id: serializedDocumentId(src._id) || '',
     name: (src as any).name,
     defaultWeight: (src as any).defaultWeight,
   };

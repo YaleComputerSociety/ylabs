@@ -20,7 +20,8 @@ import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
 import { recomputeBrowseRankForEntities } from '../services/researchEntityBrowseRankService';
-import { assertScriptApplyAllowed } from './scriptWriteGuards';
+import { sanitizeLogValue } from '../utils/logSanitizer';
+import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -68,14 +69,10 @@ export function parseBrowseRankBackfillArgs(argv: string[]): BrowseRankBackfillC
       options.batchSize = parsePositiveInt(argv[i + 1], '--batch-size');
       i += 1;
     } else if (arg === '--output') {
-      const next = argv[i + 1];
-      if (!next || next.startsWith('--')) throw new Error('--output requires a path');
-      options.output = next;
+      options.output = resolveSafeJsonReportOutputPath(argv[i + 1]);
       i += 1;
     } else if (arg.startsWith('--output=')) {
-      const value = arg.slice('--output='.length).trim();
-      if (!value || value.startsWith('--')) throw new Error('--output requires a path');
-      options.output = value;
+      options.output = resolveSafeJsonReportOutputPath(arg.slice('--output='.length));
     } else {
       throw new Error(`Unknown argument: ${arg}`);
     }
@@ -154,8 +151,10 @@ async function main(): Promise<void> {
       result,
     };
     if (options.output) {
-      fs.writeFileSync(options.output, JSON.stringify(payload, null, 2));
-      console.log(`Saved browse-rank backfill report to ${options.output}`);
+      const safeOutput = resolveSafeJsonReportOutputPath(options.output);
+      fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
+      fs.writeFileSync(safeOutput, JSON.stringify(payload, null, 2));
+      console.log(`Saved browse-rank backfill report to ${safeOutput}`);
     }
     console.log(JSON.stringify(result, null, 2));
   } finally {
@@ -167,7 +166,7 @@ const invokedDirectly =
   process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
 if (invokedDirectly) {
   main().catch((error) => {
-    console.error(error);
+    console.error(sanitizeLogValue(error));
     process.exit(1);
   });
 }

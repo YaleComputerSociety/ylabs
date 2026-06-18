@@ -10,7 +10,8 @@ import {
   runStudentVisibilityGateForPlans,
   type StudentVisibilityGateCollection,
 } from '../services/studentVisibilityGateService';
-import { assertScriptApplyAllowed } from './scriptWriteGuards';
+import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { sanitizeLogValue } from '../utils/logSanitizer';
 
 dotenv.config();
 
@@ -73,13 +74,10 @@ export function parseStudentVisibilityGateArgs(argv: string[]): StudentVisibilit
       i += 1;
     } else if (arg === '--output') {
       const next = argv[i + 1];
-      if (!next || next.startsWith('--')) throw new Error('--output requires a path');
-      options.output = next;
+      options.output = resolveSafeJsonReportOutputPath(next);
       i += 1;
     } else if (arg.startsWith('--output=')) {
-      const output = arg.slice('--output='.length).trim();
-      if (!output || output.startsWith('--')) throw new Error('--output requires a path');
-      options.output = output;
+      options.output = resolveSafeJsonReportOutputPath(arg.slice('--output='.length).trim());
     } else {
       throw new Error(`Unknown argument: ${arg}`);
     }
@@ -94,7 +92,7 @@ export function parseStudentVisibilityGateArgs(argv: string[]): StudentVisibilit
 
 export function assertStudentVisibilityGateApplyConfirmed(
   options: StudentVisibilityGateCliOptions,
-  plannedRecords?: number,
+  changedRecords?: number,
 ): void {
   if (options.mode === 'apply' && !options.confirmStudentVisibilityApply) {
     throw new Error(
@@ -104,9 +102,9 @@ export function assertStudentVisibilityGateApplyConfirmed(
   if (options.mode === 'apply' && options.maxApply === undefined) {
     throw new Error('--max-apply is required when --apply is set for student-visibility:gate.');
   }
-  if (options.mode === 'apply' && plannedRecords !== undefined && plannedRecords > options.maxApply!) {
+  if (options.mode === 'apply' && changedRecords !== undefined && changedRecords > options.maxApply!) {
     throw new Error(
-      `Apply would update visibility for ${plannedRecords} records, above --max-apply.`,
+      `Apply would update visibility for ${changedRecords} changed records, above --max-apply.`,
     );
   }
 }
@@ -116,8 +114,9 @@ export function writeStudentVisibilityGateOutput(
   output?: string,
 ): void {
   if (!output) return;
-  fs.mkdirSync(path.dirname(output), { recursive: true });
-  fs.writeFileSync(output, `${JSON.stringify(report, null, 2)}\n`);
+  const safeOutput = resolveSafeJsonReportOutputPath(output);
+  fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
+  fs.writeFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
 }
 
 export function buildStudentVisibilityGateOutput(
@@ -155,7 +154,7 @@ async function main() {
     collection: options.collection,
   });
   report.mode = options.mode;
-  assertStudentVisibilityGateApplyConfirmed(options, report.scanned);
+  assertStudentVisibilityGateApplyConfirmed(options, report.counts.changed);
   if (options.mode === 'apply') {
     await applyStudentVisibilityGatePlans(plans);
   }
@@ -176,7 +175,7 @@ const isDirectRun = process.argv[1]
 if (isDirectRun) {
   main()
     .catch((error) => {
-      console.error('Failed to run student visibility gate:', error);
+      console.error('Failed to run student visibility gate:', sanitizeLogValue(error));
       process.exitCode = 1;
     })
     .finally(async () => {

@@ -1,12 +1,13 @@
 import fs from 'fs/promises';
 import path from 'path';
+import { resolveSafeJsonReportOutputPath } from '../scripts/scriptWriteGuards';
 
 export function hasOutputPath(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
 export async function writeJsonOutputFile(outputPath: string, payload: unknown): Promise<string> {
-  const resolvedPath = path.resolve(outputPath);
+  const resolvedPath = resolveSafeJsonReportOutputPath(outputPath);
   await fs.mkdir(path.dirname(resolvedPath), { recursive: true });
   await fs.writeFile(resolvedPath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
   return resolvedPath;

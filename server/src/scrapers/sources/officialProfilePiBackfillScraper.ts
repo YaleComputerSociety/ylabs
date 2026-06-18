@@ -7,7 +7,10 @@ import { User } from '../../models/user';
 import { VisibilityReleaseQueueItem } from '../../models/visibilityReleaseQueueItem';
 import { publicStudentVisibilityTiers } from '../../models/studentVisibility';
 import { normalizeOrcid } from '../../utils/orcid';
+import { serializedDocumentId } from '../../utils/idSerialization';
 import { sanitizeProfileResearchTerms } from '../../utils/profileResearchTerms';
+import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
+import { sanitizeLogValue } from '../../utils/logSanitizer';
 import {
   assessResearchEntityDescriptionQuality,
   deriveShortDescriptionFromFullDescription,
@@ -52,6 +55,8 @@ const OFFICIAL_PROFILE_MODE_KEYS = new Set([
   LEAD_DIRECT_WEBSITE_BACKFILL_KEY,
   SOURCE_URL_WEBSITE_BACKFILL_KEY,
 ]);
+
+const officialProfileDocumentId = (value: unknown): string => serializedDocumentId(value) || '';
 
 export interface OfficialProfileIdentity {
   canonicalUrl: string;
@@ -121,13 +126,12 @@ const sleep = (ms: number): Promise<void> =>
   ms > 0 ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve();
 
 const idValue = (value: unknown): string => {
-  if (!value) return '';
-  if (typeof value === 'string') return value.trim();
-  if (typeof (value as any).toHexString === 'function') return (value as any).toHexString();
-  if (typeof value === 'object' && '_id' in value) {
+  const directId = serializedDocumentId(value);
+  if (directId) return directId;
+  if (typeof value === 'object' && value !== null && '_id' in value) {
     return idValue((value as Record<string, unknown>)._id);
   }
-  return String(value).trim();
+  return '';
 };
 
 const yaleNetidFromEmail = (value: unknown): string => {
@@ -2103,14 +2107,20 @@ export function identityToResearchEntityPiKeyObservations(
 }
 
 async function fetchHtml(url: string, useCache: boolean, sourceName: string): Promise<string> {
-  const cacheKey = `official-profile-pi-backfill:${url}`;
+  const safeUrl = await assertPublicHttpUrl(url);
+  const safeUrlText = safeUrl.toString();
+  const cacheKey = `official-profile-pi-backfill:${safeUrlText}`;
   if (useCache) {
     const cached = await getCached<string>(sourceName, cacheKey);
     if (cached) return cached;
   }
-  const res = await axios.get(url, {
+  const agents = ssrfSafeAgents();
+  const res = await axios.get(safeUrlText, {
     timeout: FETCH_TIMEOUT_MS,
+    maxRedirects: 5,
     headers: { 'User-Agent': USER_AGENT, Accept: 'text/html,application/xhtml+xml' },
+    httpAgent: agents.httpAgent,
+    httpsAgent: agents.httpsAgent,
   });
   const html = String(res.data || '');
   if (useCache) await setCached(sourceName, cacheKey, html);
@@ -2142,13 +2152,13 @@ async function selectQueuedEntities(limit: number): Promise<Array<Record<string,
       .select('researchEntityId')
       .lean(),
   ]);
-  const entitiesById = new Map((entities as any[]).map((entity) => [String(entity._id), entity]));
-  const hasLead = new Set((leadMembers as any[]).map((member) => String(member.researchEntityId)));
+  const entitiesById = new Map((entities as any[]).map((entity) => [officialProfileDocumentId(entity._id), entity]));
+  const hasLead = new Set((leadMembers as any[]).map((member) => officialProfileDocumentId(member.researchEntityId)));
 
   const annotatedEntities = await annotateEntitiesWithSourceObservationUrls(
     entityIds
       .map((id) => entitiesById.get(id))
-      .filter((entity): entity is Record<string, any> => !!entity && !hasLead.has(String(entity._id))),
+      .filter((entity): entity is Record<string, any> => !!entity && !hasLead.has(officialProfileDocumentId(entity._id))),
   );
 
   return annotatedEntities
@@ -2931,9 +2941,9 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
             break;
           } catch (err: any) {
             ctx.log('Profile fetch failed', {
-              entityId: String(entity._id),
+              entityId: officialProfileDocumentId(entity._id),
               profileUrl: candidateProfileUrl,
-              error: err?.message || String(err),
+              error: sanitizeLogValue(err),
             });
           }
         }
@@ -3050,9 +3060,9 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
         observed += 1;
       } catch (err: any) {
         ctx.log('Profile fetch failed', {
-          entityId: String(entity._id),
+          entityId: officialProfileDocumentId(entity._id),
           profileUrl: preferredOfficialProfileUrl(candidates),
-          error: err?.message || String(err),
+          error: sanitizeLogValue(err),
         });
       }
     }

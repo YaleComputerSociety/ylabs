@@ -2,7 +2,18 @@
  * Request validation middleware using express-validator.
  */
 import { Request, Response, NextFunction } from 'express';
-import mongoose from 'mongoose';
+
+const OBJECT_ID_RE = /^[a-fA-F0-9]{24}$/;
+const COMPACT_POSITIVE_INTEGER_RE = /^[1-9]\d{0,5}$/;
+const MAX_VALIDATED_PAGE_SIZE = 500;
+
+const compactPositiveInteger = (value: unknown): number | undefined => {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  if (!COMPACT_POSITIVE_INTEGER_RE.test(trimmed)) return undefined;
+  const parsed = Number.parseInt(trimmed, 10);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;
+};
 
 /**
  * Middleware to validate MongoDB ObjectId parameters
@@ -16,7 +27,7 @@ export const validateObjectId = (paramName: string = 'id') => {
       return res.status(400).json({ error: `Missing required parameter: ${paramName}` });
     }
 
-    if (!mongoose.Types.ObjectId.isValid(id)) {
+    if (!OBJECT_ID_RE.test(id)) {
       return res.status(400).json({ error: `Invalid ${paramName}` });
     }
 
@@ -55,7 +66,10 @@ export const requireBody = (req: Request, res: Response, next: NextFunction) => 
  */
 export const requireFields = (fields: string[]) => {
   return (req: Request, res: Response, next: NextFunction) => {
-    const missingFields = fields.filter((field) => !(field in req.body));
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    const missingFields = fields.filter(
+      (field) => !Object.prototype.hasOwnProperty.call(body, field),
+    );
 
     if (missingFields.length > 0) {
       return res.status(400).json({
@@ -73,11 +87,15 @@ export const requireFields = (fields: string[]) => {
 export const validatePagination = (req: Request, res: Response, next: NextFunction) => {
   const { page, pageSize } = req.query;
 
-  if (page && (isNaN(Number(page)) || Number(page) < 1)) {
+  if (page !== undefined && compactPositiveInteger(page) === undefined) {
     return res.status(400).json({ error: 'Invalid page number (must be >= 1)' });
   }
 
-  if (pageSize && (isNaN(Number(pageSize)) || Number(pageSize) < 1 || Number(pageSize) > 500)) {
+  const parsedPageSize = pageSize === undefined ? undefined : compactPositiveInteger(pageSize);
+  if (
+    pageSize !== undefined &&
+    (parsedPageSize === undefined || parsedPageSize > MAX_VALIDATED_PAGE_SIZE)
+  ) {
     return res.status(400).json({ error: 'Invalid page size (must be between 1 and 500)' });
   }
 

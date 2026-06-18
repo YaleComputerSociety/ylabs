@@ -118,4 +118,53 @@ describe('buildArchivedEntityArtifactRepairPlan', () => {
       skipped: [],
     });
   });
+
+  it('uses member user and role identity when repairing archived entity members', () => {
+    const artifacts: ArchivedEntityArtifact[] = [
+      {
+        artifactType: 'ResearchEntityMember',
+        id: 'member-duplicate',
+        researchEntityId: 'archived-entity',
+        canonicalResearchEntityId: 'canonical-entity',
+        userId: 'user-1',
+        role: 'pi',
+      },
+      {
+        artifactType: 'ResearchEntityMember',
+        id: 'member-no-canonical',
+        researchEntityId: 'archived-without-canonical',
+        canonicalResearchEntityId: '',
+        userId: 'user-2',
+        role: 'pi',
+      },
+    ];
+    const canonicalArtifacts: ArchivedEntityArtifact[] = [
+      {
+        artifactType: 'ResearchEntityMember',
+        id: 'member-canonical',
+        researchEntityId: 'canonical-entity',
+        canonicalResearchEntityId: 'canonical-entity',
+        userId: 'user-1',
+        role: 'pi',
+      },
+    ];
+
+    expect(buildArchivedEntityArtifactRepairPlan({ artifacts, canonicalArtifacts })).toEqual({
+      relink: [],
+      mergeAndArchive: [
+        {
+          artifactType: 'ResearchEntityMember',
+          duplicateId: 'member-duplicate',
+          canonicalId: 'member-canonical',
+        },
+      ],
+      archiveWithoutCanonical: [
+        {
+          artifactType: 'ResearchEntityMember',
+          id: 'member-no-canonical',
+        },
+      ],
+      skipped: [],
+    });
+  });
 });

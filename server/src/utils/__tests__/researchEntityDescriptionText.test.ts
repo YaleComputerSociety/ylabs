@@ -49,7 +49,7 @@ describe('publicResearchEntityDescriptionText', () => {
   it('suppresses contact-route snippets materialized as descriptions', () => {
     expect(
       publicResearchEntityDescriptionText(
-        'Contact: David Moore ( david.c.moore@yale.edu) Website: https://campuspress.yale.edu/moorelab/ We have projects aiming to test fundamental physics.',
+        'Contact: Dana Fixture ( dana.c.fixture@yale.edu) Website: https://campuspress.yale.edu/moorelab/ We have projects aiming to test fundamental physics.',
       ),
     ).toBe('');
   });

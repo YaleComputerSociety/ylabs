@@ -56,6 +56,18 @@ describe('buildResearchGroupFilterString', () => {
     ).toBe('archived = false');
   });
 
+  it('drops non-string filter values without coercion', () => {
+    const badFilter = {
+      toString() {
+        throw new Error('should not stringify filter objects');
+      },
+    };
+
+    expect(
+      buildResearchGroupFilterString({ departments: [badFilter, 'Computer Science'] as any }),
+    ).toBe('archived = false AND (departments = "Computer Science")');
+  });
+
   it('handles a fully populated filter set', () => {
     const filter = buildResearchGroupFilterString({
       kind: ['lab'],

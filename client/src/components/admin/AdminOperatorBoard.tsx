@@ -469,19 +469,26 @@ const evidenceReasons = new Set([
   'undergraduate_relevant',
 ]);
 
+const reviewDecisionReasons = new Set([
+  'application_source_only',
+  'archive_review',
+  'duplicate_name_risk',
+  'duplicate_risk',
+  'exact_url_duplicate_risk',
+  'formalization_only',
+  'not_undergraduate_relevant',
+]);
+
 const classifyReason = (reason: string): QueueKind => {
   if (evidenceReasons.has(reason)) return 'evidence';
+  if (reviewDecisionReasons.has(reason)) return 'review';
   if (
     reason.startsWith('missing_') ||
-    reason.endsWith('_only') ||
     [
-      'application_source_only',
-      'archive_review',
       'content_page_risk',
-      'duplicate_name_risk',
-      'duplicate_risk',
       'inactive_at_yale',
-      'not_undergraduate_relevant',
+      'pi_identity_conflict',
+      'profile_fallback_only',
       'thin_description',
     ].includes(reason)
   ) {
@@ -518,9 +525,24 @@ const sourceReviewCategoryText = (board: OperatorBoard) =>
     .map((item) => `${item.category} ${item.count}`)
     .join(' · ');
 
-const sourceReviewQueueText = (board: OperatorBoard) => {
+const sourceReviewLaneCopy: Record<string, { label: string; description: string }> = {
+  priority_review: {
+    label: 'Priority review',
+    description: 'Identity, access, or student-facing content',
+  },
+  context_review: {
+    label: 'Context review',
+    description: 'Funding or uncategorized context',
+  },
+  metadata_review: {
+    label: 'Metadata review',
+    description: 'Additive metadata merge review',
+  },
+};
+
+const sourceReviewLanes = (board: OperatorBoard) => {
   const summary = board.sourceFreshness.reviewSummary;
-  if (!summary) return '';
+  if (!summary) return [];
   const queueCounts = {
     priority_review: summary.priorityReviewConflictCount,
     context_review: summary.contextReviewConflictCount,
@@ -528,26 +550,46 @@ const sourceReviewQueueText = (board: OperatorBoard) => {
   };
   const queues = summary.reviewQueues?.length
     ? summary.reviewQueues.map((queue) => ({
-        label:
-          queue.queue === 'priority_review'
-            ? 'Priority review'
-            : queue.queue === 'context_review'
-              ? 'Context review'
-              : queue.queue === 'metadata_review'
-                ? 'Metadata review'
-                : queue.label,
+        queue: queue.queue,
+        label: sourceReviewLaneCopy[queue.queue]?.label || queue.label,
+        description: sourceReviewLaneCopy[queue.queue]?.description || 'Review source conflicts',
         count: queue.count,
+        categories: queue.categories || [],
       }))
     : [
-        { label: 'Priority review', count: queueCounts.priority_review },
-        { label: 'Context review', count: queueCounts.context_review },
-        { label: 'Metadata review', count: queueCounts.metadata_review },
+        {
+          queue: 'priority_review',
+          label: sourceReviewLaneCopy.priority_review.label,
+          description: sourceReviewLaneCopy.priority_review.description,
+          count: queueCounts.priority_review,
+          categories: [],
+        },
+        {
+          queue: 'context_review',
+          label: sourceReviewLaneCopy.context_review.label,
+          description: sourceReviewLaneCopy.context_review.description,
+          count: queueCounts.context_review,
+          categories: [],
+        },
+        {
+          queue: 'metadata_review',
+          label: sourceReviewLaneCopy.metadata_review.label,
+          description: sourceReviewLaneCopy.metadata_review.description,
+          count: queueCounts.metadata_review,
+          categories: [],
+        },
       ];
 
   return queues
-    .filter((queue): queue is { label: string; count: number } => typeof queue.count === 'number')
-    .map((queue) => `${queue.label} ${queue.count}`)
-    .join(' · ');
+    .filter(
+      (queue): queue is {
+        queue: string;
+        label: string;
+        description: string;
+        count: number;
+        categories: Array<{ category: string; count: number }>;
+      } => typeof queue.count === 'number',
+    );
 };
 
 const sourceConflictScopeText = (board: OperatorBoard) => {
@@ -751,6 +793,52 @@ const queueKindRank: Record<QueueKind, number> = {
   blocking: 0,
   review: 1,
   evidence: 2,
+};
+
+const decisionLaneCopy: Record<QueueKind, { title: string; eyebrow: string; description: string }> = {
+  blocking: {
+    title: 'Must Fix Before Promotion',
+    eyebrow: 'Repair queue',
+    description: 'Rows that need source-backed facts before they can safely move up.',
+  },
+  review: {
+    title: 'Operator Decision Needed',
+    eyebrow: 'Review signal',
+    description: 'Rows that need an explicit keep, suppress, merge, or defer decision.',
+  },
+  evidence: {
+    title: 'Promotion Evidence',
+    eyebrow: 'Evidence signal',
+    description: 'Positive signals operators can use when deciding whether a row is ready.',
+  },
+};
+
+const queueDecisionPrompt = (reason: string): string => {
+  switch (reason) {
+    case 'missing_action_evidence':
+      return 'Can this record show a source-backed next step?';
+    case 'missing_lead':
+    case 'pi_identity_conflict':
+      return 'Can ownership or PI identity be verified?';
+    case 'missing_description':
+    case 'missing_card_description':
+    case 'thin_description':
+    case 'profile_fallback_only':
+      return 'Can official source prose support student-facing copy?';
+    case 'source_backed_description':
+      return 'Is this ready to promote from evidence to student-facing copy?';
+    case 'formalization_only':
+    case 'application_source_only':
+      return 'Should this stay capped, or is there evidence of a real entry route?';
+    case 'archive_review':
+    case 'not_undergraduate_relevant':
+      return 'Should this remain hidden or be rewritten as a real undergraduate record?';
+    case 'duplicate_risk':
+    case 'exact_url_duplicate_risk':
+      return 'Should this be merged, archived, or marked as a distinct research home?';
+    default:
+      return 'Review this signal and choose the next operator action.';
+  }
 };
 
 const repairStageLabel: Record<RepairStage, string> = {
@@ -1045,9 +1133,9 @@ const AdminOperatorBoard = () => {
         withCredentials: true,
       });
       setBoard(response.data);
-    } catch (err) {
-      console.error('Error fetching operator board:', err);
-      setError(err instanceof Error ? err.message : 'Failed to load operator board');
+    } catch {
+      console.error('Error fetching operator board.');
+      setError('Failed to load operator board');
     } finally {
       setLoading(false);
     }
@@ -1068,6 +1156,16 @@ const AdminOperatorBoard = () => {
         .slice(0, 10),
     [board],
   );
+  const decisionLanes = useMemo(
+    () =>
+      (['blocking', 'review', 'evidence'] as QueueKind[])
+        .map((kind) => ({
+          kind,
+          queues: topQueues.filter((queue) => (queue.kind || classifyReason(queue.reason)) === kind),
+        })),
+    [topQueues],
+  );
+  const sourceLanes = useMemo(() => (board ? sourceReviewLanes(board) : []), [board]);
 
   if (loading) {
     return <div className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-6">Loading board...</div>;
@@ -1582,67 +1680,89 @@ const AdminOperatorBoard = () => {
       )}
 
       <section className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4">
-        <h4 className="mb-3 font-semibold text-gray-900">Review Queues</h4>
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-[var(--yr-line)] text-sm">
-            <thead className="bg-[var(--yr-panel-muted)] text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
-              <tr>
-                <th className="px-3 py-2">Queue</th>
-                <th className="px-3 py-2 text-right">Count</th>
-                <th className="px-3 py-2">Next action</th>
-                <th className="px-3 py-2">Examples</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {topQueues.map((queue) => (
-                <tr key={`${queue.collection}-${queue.reason}`}>
-                  <td className="px-3 py-3 align-top">
-                    <span
-                      className={`inline-flex rounded-md border px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${
-                        queueKindStyles[queue.kind || classifyReason(queue.reason)]
-                      }`}
-                    >
-                      {queueKindLabel[queue.kind || classifyReason(queue.reason)]}
-                    </span>
-                    <div className="font-semibold text-gray-900">{queue.reason}</div>
-                    <div className="text-xs capitalize text-gray-500">{queue.collection}</div>
-                  </td>
-                  <td className="px-3 py-3 text-right align-top font-semibold text-gray-900">
-                    {queue.count}
-                  </td>
-                  <td className="max-w-sm px-3 py-3 align-top text-gray-700">{queue.nextAction}</td>
-                  <td className="min-w-80 px-3 py-3 align-top text-gray-600">
-                    {queue.samples.length === 0
-                      ? 'No samples'
-                      : queue.samples.slice(0, 3).map((sample) => {
-                          const { blockers, signals } = splitReasons(sample.reasons, queue.reason);
+        <h4 className="mb-1 font-semibold text-gray-900">Decision Lanes</h4>
+        <p className="mb-3 text-sm text-gray-600">
+          Visibility queues grouped by the decision an operator needs to make.
+        </p>
+        <div className="grid gap-3 lg:grid-cols-3">
+          {decisionLanes.map((lane) => {
+            const copy = decisionLaneCopy[lane.kind];
+            return (
+              <div key={lane.kind} className="rounded-md border border-[var(--yr-line)] p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                      {copy.eyebrow}
+                    </div>
+                    <h5 className="mt-1 font-semibold text-gray-900">{copy.title}</h5>
+                    <p className="mt-1 text-xs text-gray-600">{copy.description}</p>
+                  </div>
+                  <span
+                    className={`shrink-0 rounded-md border px-2 py-0.5 text-xs font-semibold ${queueKindStyles[lane.kind]}`}
+                  >
+                    {lane.queues.reduce((sum, queue) => sum + queue.count, 0)}
+                  </span>
+                </div>
 
-                          return (
-                            <div key={sample.id} className="mb-3 last:mb-0">
-                              <div className="font-medium text-gray-900">{sample.label}</div>
-                              <ReasonList
-                                label="Likely blockers"
-                                reasons={blockers}
-                                tone="blocker"
-                              />
-                              <ReasonList
-                                label="Evidence signals"
-                                reasons={signals}
-                                tone="signal"
-                              />
-                            </div>
-                          );
-                        })}
-                    {queue.samples.length > 3 && (
-                      <div className="mt-2 text-xs text-gray-500">
-                        +{queue.samples.length - 3} more samples
+                <div className="mt-3 space-y-3">
+                  {lane.queues.length === 0 && (
+                    <div className="rounded-md bg-[var(--yr-panel-muted)] p-3 text-sm text-gray-500">
+                      No current rows
+                    </div>
+                  )}
+                  {lane.queues.map((queue) => (
+                    <div key={`${queue.collection}-${queue.reason}`} className="rounded-md bg-[var(--yr-panel-muted)] p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="font-medium text-gray-900">
+                            {queueDecisionPrompt(queue.reason)}
+                          </div>
+                          <div className="mt-1 text-xs text-gray-500">
+                            <span>{queue.reason}</span>
+                            <span className="mx-1">·</span>
+                            <span className="capitalize">{queue.collection}</span>
+                          </div>
+                        </div>
+                        <span className="shrink-0 text-sm font-semibold text-gray-900">
+                          {queue.count}
+                        </span>
                       </div>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                      <div className="mt-2 text-sm text-gray-700">{queue.nextAction}</div>
+
+                      <div className="mt-3 text-sm text-gray-600">
+                        {queue.samples.length === 0
+                          ? 'No samples'
+                          : queue.samples.slice(0, 3).map((sample) => {
+                              const { blockers, signals } = splitReasons(sample.reasons, queue.reason);
+
+                              return (
+                                <div key={sample.id} className="mb-3 last:mb-0">
+                                  <div className="font-medium text-gray-900">{sample.label}</div>
+                                  <ReasonList
+                                    label="Likely blockers"
+                                    reasons={blockers}
+                                    tone="blocker"
+                                  />
+                                  <ReasonList
+                                    label="Evidence signals"
+                                    reasons={signals}
+                                    tone="signal"
+                                  />
+                                </div>
+                              );
+                            })}
+                        {queue.samples.length > 3 && (
+                          <div className="mt-2 text-xs text-gray-500">
+                            +{queue.samples.length - 3} more samples
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
         </div>
       </section>
 
@@ -1666,8 +1786,42 @@ const AdminOperatorBoard = () => {
             {sourceReviewCategoryText(board) && (
               <p className="mt-1 text-xs text-amber-800">{sourceReviewCategoryText(board)}</p>
             )}
-            {sourceReviewQueueText(board) && (
-              <p className="mt-1 text-xs text-amber-800">{sourceReviewQueueText(board)}</p>
+            {sourceLanes.length > 0 && (
+              <div className="mt-3">
+                <div className="text-xs font-semibold uppercase tracking-wide text-amber-900">
+                  Source Conflict Decision Lanes
+                </div>
+                <div className="mt-2 grid gap-2 md:grid-cols-3">
+                  {sourceLanes.map((lane) => (
+                    <div
+                      key={lane.queue}
+                      className="rounded-md border border-amber-200 bg-white/50 px-2 py-2"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <div className="text-xs font-semibold text-amber-950">
+                            {lane.label}
+                          </div>
+                          <div className="mt-0.5 text-[11px] text-amber-800">
+                            {lane.description}
+                          </div>
+                        </div>
+                        <span className="shrink-0 text-sm font-semibold text-amber-950">
+                          {lane.count}
+                        </span>
+                      </div>
+                      {lane.categories.length > 0 && (
+                        <div className="mt-1 text-[11px] text-amber-800">
+                          {lane.categories
+                            .slice(0, 2)
+                            .map((category) => `${category.category} ${category.count}`)
+                            .join(' · ')}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
             )}
             {sourceConflictScopeText(board) && (
               <p className="mt-1 text-xs text-amber-800">{sourceConflictScopeText(board)}</p>

@@ -12,12 +12,12 @@ describe('computeResearchEntityStudentVisibility', () => {
       entity: {
         _id: 'profile-shell',
         name: 'Yongli Zhang Research',
-        slug: 'faculty-research-area-yongli-zhang',
+        slug: 'faculty-research-area-fixture-access-lead',
         kind: 'individual',
         entityType: 'FACULTY_RESEARCH_AREA',
         shortDescription: 'Source-backed research profile.',
         fullDescription: 'Source-backed research profile with enough detail for student display.',
-        sourceUrls: ['https://medicine.yale.edu/profile/yongli-zhang/'],
+        sourceUrls: ['https://medicine.yale.edu/profile/fixture-access-lead/'],
       },
       leadMembers: [{ userId: 'yz52', role: 'pi' }],
       accessSignalCount: 1,
@@ -128,7 +128,7 @@ describe('computeResearchEntityStudentVisibility', () => {
       entity: {
         _id: 'directory-shell',
         name: 'Anna Arnal Estape Research',
-        slug: 'faculty-research-area-anna-arnal-estape',
+        slug: 'faculty-research-area-fixture-thesis-mentor',
         kind: 'individual',
         entityType: 'FACULTY_RESEARCH_AREA',
         websiteUrl: 'https://wti.yale.edu/humans/faculty',
@@ -159,7 +159,7 @@ describe('computeResearchEntityStudentVisibility', () => {
     const result = computeResearchEntityStudentVisibility({
       entity: {
         _id: 'grant-shell',
-        name: 'James Hutchison Lab',
+        name: 'Robin Hutchison Lab',
         slug: 'nih-pi-james-hutchison',
         kind: 'lab',
         entityType: 'LAB',
@@ -167,7 +167,7 @@ describe('computeResearchEntityStudentVisibility', () => {
         fullDescription: 'Source-backed grant summary with enough detail for student display.',
         sourceUrls: [
           'https://reporter.nih.gov/project-details/10824067',
-          'https://orcid.org/0000-0002-5529-3248',
+          'https://orcid.org/0000-0000-0000-0002',
         ],
       },
       leadMembers: [
@@ -199,10 +199,10 @@ describe('computeResearchEntityStudentVisibility', () => {
       entity: {
         _id: 'profile-shell',
         name: 'Anna Arnal Estape Research',
-        slug: 'faculty-research-area-anna-arnal-estape',
+        slug: 'faculty-research-area-fixture-thesis-mentor',
         kind: 'individual',
         entityType: 'FACULTY_RESEARCH_AREA',
-        sourceUrls: ['https://medicine.yale.edu/profile/anna-arnal-estape/'],
+        sourceUrls: ['https://medicine.yale.edu/profile/fixture-thesis-mentor/'],
         shortDescription: '',
         fullDescription: '',
         researchAreas: [],
@@ -226,10 +226,10 @@ describe('computeResearchEntityStudentVisibility', () => {
         slug: 'faculty-research-area-harry-sanchez',
         kind: 'individual',
         entityType: 'FACULTY_RESEARCH_AREA',
-        websiteUrl: 'https://medicine.yale.edu/cancer/profile/harold-sanchez/',
+        websiteUrl: 'https://medicine.yale.edu/cancer/profile/harper-sanchez/',
         sourceUrls: [
           'https://medicine.yale.edu/cancer/research/membership/directory',
-          'https://medicine.yale.edu/cancer/profile/harold-sanchez/',
+          'https://medicine.yale.edu/cancer/profile/harper-sanchez/',
         ],
         shortDescription:
           'Dr. Sanchez received his undergraduate degree at Fairfield University, his medical degree at SUNY Stony Brook, and did his residency in anatomic and clinical pathology at Yale New Haven Hospital.',
@@ -259,14 +259,14 @@ describe('computeResearchEntityStudentVisibility', () => {
     const result = computeResearchEntityStudentVisibility({
       entity: {
         _id: 'profile-research-area',
-        name: 'James Hansen Research',
-        slug: 'faculty-research-area-james-e-hansen',
+        name: 'Robin Hansen Research',
+        slug: 'faculty-research-area-fixture-climate-mentor',
         kind: 'individual',
         entityType: 'FACULTY_RESEARCH_AREA',
-        websiteUrl: 'https://medicine.yale.edu/cancer/profile/james-e-hansen/',
+        websiteUrl: 'https://medicine.yale.edu/cancer/profile/fixture-climate-mentor/',
         sourceUrls: [
           'https://medicine.yale.edu/cancer/research/membership/directory',
-          'https://medicine.yale.edu/profile/james-e-hansen/',
+          'https://medicine.yale.edu/profile/fixture-climate-mentor/',
         ],
         shortDescription:
           'Studies neoplasms, parathyroid disorders and treatments, and immunotherapy and immune responses.',
@@ -290,7 +290,7 @@ describe('computeResearchEntityStudentVisibility', () => {
       hasProfileAreaShellDuplicateRisk({
         entity: {
           name: 'Yongli Zhang Research',
-          slug: 'faculty-research-area-yongli-zhang',
+          slug: 'faculty-research-area-fixture-access-lead',
           kind: 'individual',
           entityType: 'FACULTY_RESEARCH_AREA',
         },

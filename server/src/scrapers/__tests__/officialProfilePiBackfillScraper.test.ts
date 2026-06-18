@@ -28,25 +28,25 @@ import type { ObservationInput, ScraperContext } from '../types';
 import { ResearchEntity } from '../../models/researchEntity';
 import { User } from '../../models/user';
 
-const profileUrl = 'https://medicine.yale.edu/profile/joseph-w-kim/';
+const profileUrl = 'https://medicine.yale.edu/profile/jules-fixture/';
 const departmentPersonPageUrl =
-  'https://engineering.yale.edu/research-and-faculty/faculty-directory/dana-angluin/';
+  'https://engineering.yale.edu/research-and-faculty/faculty-directory/drew-fixture/';
 
 const profileHtml = `
   <html>
     <head>
       <link rel="canonical" href="${profileUrl}" />
       <meta name="description" content="Professor of Surgery (Oncology)" />
-      <meta property="og:image" content="https://ysm-res.cloudinary.com/image/upload/example/joseph-kim" />
+      <meta property="og:image" content="https://ysm-res.cloudinary.com/image/upload/example/jules-fixture" />
     </head>
     <body>
       <main>
-        <h1>Joseph W. Kim</h1>
+        <h1>Jules Fixture</h1>
         <div class="title">Professor of Surgery (Oncology)</div>
-        <a href="mailto:joseph.kim@yale.edu">joseph.kim@yale.edu</a>
+        <a href="mailto:jules.fixture@yale.edu">jules.fixture@yale.edu</a>
         <div class="department">Surgery</div>
         <section class="biography">
-          Joseph W. Kim studies translational cancer biology and develops clinical research
+          Jules Fixture studies translational cancer biology and develops clinical research
           programs for gastrointestinal oncology.
         </section>
         <div class="research-interests">Cancer biology; Translational oncology</div>
@@ -63,10 +63,10 @@ const emailLessProfileHtml = `
     </head>
     <body>
       <main>
-        <h1>Joseph W. Kim</h1>
+        <h1>Jules Fixture</h1>
         <div class="title">Professor of Surgery (Oncology)</div>
         <section class="biography">
-          Joseph W. Kim studies translational cancer biology and develops clinical research
+          Jules Fixture studies translational cancer biology and develops clinical research
           programs for gastrointestinal oncology.
         </section>
       </main>
@@ -77,21 +77,21 @@ const emailLessProfileHtml = `
 const ysmJsonProfileHtml = `
   <html>
     <head>
-      <link rel="canonical" href="https://ysph.yale.edu/profile/caroline-johnson/" />
+      <link rel="canonical" href="https://ysph.yale.edu/profile/cameron-profile/" />
       <script type="application/ld+json">
         {
           "@type": "ProfilePage",
           "mainEntity": {
             "@type": "Person",
-            "name": "Caroline H. Johnson",
-            "email": "caroline.johnson@yale.edu",
+            "name": "Cameron Profile",
+            "email": "cameron.profile@yale.edu",
             "jobTitle": "Associate Professor of Epidemiology"
           }
         }
       </script>
     </head>
     <body>
-      <h1>Caroline H. Johnson</h1>
+      <h1>Cameron Profile</h1>
       <a href="mailto:ysm.editor@yale.edu">ysm.editor@yale.edu</a>
     </body>
   </html>
@@ -100,17 +100,17 @@ const ysmJsonProfileHtml = `
 const sinusasProfileHtml = `
   <html>
     <head>
-      <link rel="canonical" href="https://medicine.yale.edu/profile/albert-sinusas/" />
+      <link rel="canonical" href="https://medicine.yale.edu/profile/taylor-profile/" />
       <script type="application/ld+json" data-schema="ProfilePage">
         {
           "@type": "ProfilePage",
           "mainEntity": {
             "@type": "Person",
-            "@id": "https://medicine.yale.edu/profile/albert-sinusas/",
-            "name": "Albert Sinusas",
-            "email": "albert.sinusas@yale.edu",
+            "@id": "https://medicine.yale.edu/profile/taylor-profile/",
+            "name": "Taylor Sinusas",
+            "email": "taylor.profile@yale.edu",
             "jobTitle": ["Professor of Medicine (Cardiology)"],
-            "description": "Albert Sinusas is Director of the Yale Translational Research Imaging Center (Y-TRIC). His research is directed at development, validation and application of non-invasive cardiovascular imaging approaches.",
+            "description": "Taylor Sinusas is Director of the Yale Translational Research Imaging Center (Y-TRIC). His research is directed at development, validation and application of non-invasive cardiovascular imaging approaches.",
             "affiliation": [
               {
                 "@type": "Organization",
@@ -131,11 +131,11 @@ const sinusasProfileHtml = `
     </head>
     <body>
       <main>
-        <h1>Albert Sinusas, MD</h1>
+        <h1>Taylor Sinusas, MD</h1>
         <div class="title">Professor of Medicine (Cardiology)</div>
-        <a href="mailto:albert.sinusas@yale.edu">albert.sinusas@yale.edu</a>
+        <a href="mailto:taylor.profile@yale.edu">taylor.profile@yale.edu</a>
         <section class="biography">
-          Albert Sinusas is Director of the Yale Translational Research Imaging Center (Y-TRIC).
+          Taylor Sinusas is Director of the Yale Translational Research Imaging Center (Y-TRIC).
           My research involves development, validation, and application of non-invasive imaging approaches.
         </section>
       </main>
@@ -146,14 +146,14 @@ const sinusasProfileHtml = `
 const linkedResearchHomeProfileHtml = `
   <html>
     <head>
-      <link rel="canonical" href="https://medicine.yale.edu/profile/albert-sinusas/" />
+      <link rel="canonical" href="https://medicine.yale.edu/profile/taylor-profile/" />
       <script type="application/ld+json" data-schema="ProfilePage">
         {
           "@type": "ProfilePage",
           "mainEntity": {
             "@type": "Person",
-            "name": "Albert Sinusas",
-            "email": "albert.sinusas@yale.edu",
+            "name": "Taylor Sinusas",
+            "email": "taylor.profile@yale.edu",
             "jobTitle": "Professor of Medicine (Cardiology)"
           }
         }
@@ -161,9 +161,9 @@ const linkedResearchHomeProfileHtml = `
     </head>
     <body>
       <main>
-        <h1>Albert Sinusas, MD</h1>
+        <h1>Taylor Sinusas, MD</h1>
         <p>
-          Albert Sinusas is Director of the
+          Taylor Sinusas is Director of the
           <a href="/internal-medicine/cardio/research/translational-imaging/">
             Yale Translational Research Imaging Center (Y-TRIC)
           </a>.
@@ -177,15 +177,15 @@ const departmentPersonPageHtml = `
   <html>
     <head>
       <link rel="canonical" href="${departmentPersonPageUrl}" />
-      <meta property="og:title" content="Dana Angluin | Professor Emeritus | Yale Engineering" />
+      <meta property="og:title" content="Drew Fixture | Professor Emeritus | Yale Engineering" />
     </head>
     <body>
       <main>
-        <h1>Dana Angluin</h1>
+        <h1>Drew Fixture</h1>
         <div class="title">Professor Emeritus of Computer Science</div>
-        <a href="mailto:dana.angluin@yale.edu">dana.angluin@yale.edu</a>
+        <a href="mailto:drew.fixture@yale.edu">drew.fixture@yale.edu</a>
         <section class="biography">
-          Dana Angluin received her PhD in Engineering Science from UC Berkeley and spent her
+          Drew Fixture received her PhD in Engineering Science from UC Berkeley and spent her
           career developing algorithmic approaches to learning, including query models, robot
           localization, formal languages, and learning with artificial neural networks.
         </section>
@@ -197,18 +197,18 @@ const departmentPersonPageHtml = `
 const redirectedDirectoryProfileHtml = `
   <html>
     <head>
-      <link rel="canonical" href="https://environment.yale.edu/directory/faculty/susan-g-clark" />
-      <meta property="og:title" content="Susan G. Clark | Yale School of the Environment" />
+      <link rel="canonical" href="https://environment.yale.edu/directory/faculty/sage-fixture" />
+      <meta property="og:title" content="Sage Fixture | Yale School of the Environment" />
     </head>
     <body>
       <main>
-        <h1>Susan G. Clark</h1>
+        <h1>Sage Fixture</h1>
         <div class="title">
-          Joseph F. Cullman 3rd Adjunct Professor Emeritus of Wildlife Ecology and Policy Sciences
+          Jules F. Cullman 3rd Adjunct Professor Emeritus of Wildlife Ecology and Policy Sciences
         </div>
-        <a href="mailto:susan.g.clark@yale.edu">susan.g.clark@yale.edu</a>
+        <a href="mailto:sage.fixture@yale.edu">sage.fixture@yale.edu</a>
         <section class="biography">
-          Professor Clark's primary goal in her research and teaching is to improve conservation
+          Professor Fixture's primary goal in her research and teaching is to improve conservation
           of species and ecosystems at professional, scientific, organizational, and policy levels.
         </section>
       </main>
@@ -219,12 +219,12 @@ const redirectedDirectoryProfileHtml = `
 const yseDirectoryProfileWithNewsTitleHtml = `
   <html>
     <head>
-      <link rel="canonical" href="https://environment.yale.edu/directory/faculty/michelle-bell/" />
-      <meta property="og:title" content="Michelle L. Bell | Yale School of the Environment" />
+      <link rel="canonical" href="https://environment.yale.edu/directory/faculty/mika-fixture/" />
+      <meta property="og:title" content="Mika L. Fixture | Yale School of the Environment" />
     </head>
     <body>
       <main>
-        <h1>Michelle L. Bell</h1>
+        <h1>Mika L. Fixture</h1>
         <article>
           <div class="views-field-title">
             Advancing heat-related mental health research: moving beyond epidemiological links
@@ -233,7 +233,7 @@ const yseDirectoryProfileWithNewsTitleHtml = `
         <div class="profile-position">
           Senior Associate Dean of Research and Director of Doctoral Studies; Mary E. Pinchot Professor of Environmental Health
         </div>
-        <a href="mailto:michelle.bell@yale.edu">michelle.bell@yale.edu</a>
+        <a href="mailto:mika.fixture@yale.edu">mika.fixture@yale.edu</a>
         <h2>Research</h2>
         <p>
           Senior Associate Dean of Research and Director of Doctoral Studies; Mary E. Pinchot Professor of Environmental Health
@@ -247,14 +247,14 @@ const yseDirectoryProfileWithNewsTitleHtml = `
 const profileWithAddressInsteadOfBioHtml = `
   <html>
     <head>
-      <link rel="canonical" href="https://statistics.yale.edu/profile/anna-gilbert/" />
-      <meta property="og:title" content="Anna Gilbert | Yale Statistics and Data Science" />
+      <link rel="canonical" href="https://statistics.yale.edu/profile/ari-fixture/" />
+      <meta property="og:title" content="Ari Fixture | Yale Statistics and Data Science" />
     </head>
     <body>
       <main>
-        <h1>Anna Gilbert</h1>
+        <h1>Ari Fixture</h1>
         <div class="title">John C. Malone Professor of Electrical Engineering and of Statistics and Data Science</div>
-        <a href="mailto:anna.gilbert@yale.edu">anna.gilbert@yale.edu</a>
+        <a href="mailto:ari.fixture@yale.edu">ari.fixture@yale.edu</a>
         <p>Kline Tower Room 1247 219 Prospect Street New Haven, CT 06511</p>
         <div class="research-interests">
           Sparse and Compressive Sensing Techniques; Blind Source Separation Techniques; Image and Signal Denoising Methods
@@ -267,14 +267,14 @@ const profileWithAddressInsteadOfBioHtml = `
 const profileWithChromeInsteadOfBioHtml = `
   <html>
     <head>
-      <link rel="canonical" href="https://engineering.yale.edu/research-and-faculty/faculty-directory/anurag-khandelwal/" />
-      <meta property="og:title" content="Anurag Khandelwal | Yale Engineering" />
+      <link rel="canonical" href="https://engineering.yale.edu/research-and-faculty/faculty-directory/ash-fixture/" />
+      <meta property="og:title" content="Ash Fixture | Yale Engineering" />
     </head>
     <body>
       <main>
-        <h1>Anurag Khandelwal</h1>
+        <h1>Ash Fixture</h1>
         <div class="title">Assistant Professor of Computer Science</div>
-        <a href="mailto:anurag.khandelwal@yale.edu">anurag.khandelwal@yale.edu</a>
+        <a href="mailto:ash.fixture@yale.edu">ash.fixture@yale.edu</a>
         <section class="biography">See my webpage for selected publications.</section>
         <div class="research-interests">
           Cloud Computing and Resource Management; Advanced Data Storage Technologies; Distributed systems and fault tolerance
@@ -287,14 +287,14 @@ const profileWithChromeInsteadOfBioHtml = `
 const profileWithCredentialsOnlyBioHtml = `
   <html>
     <head>
-      <link rel="canonical" href="https://english.yale.edu/people/kim-shirkhani/" />
-      <meta property="og:title" content="Kim Shirkhani | Yale English" />
+      <link rel="canonical" href="https://english.yale.edu/people/kai-fixture/" />
+      <meta property="og:title" content="Kai Fixture | Yale English" />
     </head>
     <body>
       <main>
-        <h1>Kim Shirkhani</h1>
+        <h1>Kai Fixture</h1>
         <div class="title">Lecturer in English</div>
-        <a href="mailto:kim.shirkhani@yale.edu">kim.shirkhani@yale.edu</a>
+        <a href="mailto:kai.fixture@yale.edu">kai.fixture@yale.edu</a>
         <section class="biography">
           Ph.D., English, University of VirginiaM.A., English, McGill UniversityB.A.,
           English, University of California at Los Angeles
@@ -307,17 +307,17 @@ const profileWithCredentialsOnlyBioHtml = `
 const profileWithPublicationListBioHtml = `
   <html>
     <head>
-      <link rel="canonical" href="https://engineering.yale.edu/research-and-faculty/faculty-directory/lea-r-winter/" />
-      <meta property="og:title" content="Lea R. Winter | Yale Engineering" />
+      <link rel="canonical" href="https://engineering.yale.edu/research-and-faculty/faculty-directory/lee-fixture/" />
+      <meta property="og:title" content="Lee Fixture | Yale Engineering" />
     </head>
     <body>
       <main>
-        <h1>Lea R. Winter</h1>
+        <h1>Lee Fixture</h1>
         <div class="title">Assistant Professor of Chemical & Environmental Engineering</div>
-        <a href="mailto:lea.winter@yale.edu">lea.winter@yale.edu</a>
+        <a href="mailto:lee.fixture@yale.edu">lee.fixture@yale.edu</a>
         <section class="biography">
-          Yingzheng Fan, Yu Yan, Obinna Nwokonkwo, John Kim, Margaret Liu,
-          Leo Chen, Lea R. Winter*. "Tuning membranes for selective separations."
+          Yingzheng Fan, Yu Yan, Obinna Nwokonkwo, John Fixture, Margaret Liu,
+          Leo Chen, Lee Fixture*. "Tuning membranes for selective separations."
           Nature Materials 2024.
         </section>
         <div class="research-interests">
@@ -331,16 +331,16 @@ const profileWithPublicationListBioHtml = `
 const profileWithSingleCitationBioHtml = `
   <html>
     <head>
-      <link rel="canonical" href="https://engineering.yale.edu/research-and-faculty/faculty-directory/lea-r-winter/" />
-      <meta property="og:title" content="Lea R. Winter | Yale Engineering" />
+      <link rel="canonical" href="https://engineering.yale.edu/research-and-faculty/faculty-directory/lee-fixture/" />
+      <meta property="og:title" content="Lee Fixture | Yale Engineering" />
     </head>
     <body>
       <main>
-        <h1>Lea R. Winter</h1>
+        <h1>Lee Fixture</h1>
         <div class="title">Assistant Professor of Chemical & Environmental Engineering</div>
-        <a href="mailto:lea.winter@yale.edu">lea.winter@yale.edu</a>
+        <a href="mailto:lee.fixture@yale.edu">lee.fixture@yale.edu</a>
         <section class="biography">
-          Julia Simon, Lea R. Winter*. "Plasma-activated co-conversion of N2 and C1 gases
+          Julia Simon, Lee Fixture*. "Plasma-activated co-conversion of N2 and C1 gases
           towards value-added products." Current Opinion in Green & Sustainable Chemistry
           51: 100985 (2025).
         </section>
@@ -355,14 +355,14 @@ const profileWithSingleCitationBioHtml = `
 const profileWithLongAppointmentOnlyBioHtml = `
   <html>
     <head>
-      <link rel="canonical" href="https://ysph.yale.edu/profile/jason-l-schwartz/" />
-      <meta property="og:title" content="Jason L. Schwartz | Yale School of Public Health" />
+      <link rel="canonical" href="https://ysph.yale.edu/profile/jesse-fixture/" />
+      <meta property="og:title" content="Jesse Fixture | Yale School of Public Health" />
     </head>
     <body>
       <main>
-        <h1>Jason L. Schwartz</h1>
+        <h1>Jesse Fixture</h1>
         <div class="title">Associate Professor of Public Health (Health Policy)</div>
-        <a href="mailto:jason.l.schwartz@yale.edu">jason.l.schwartz@yale.edu</a>
+        <a href="mailto:jesse.fixture@yale.edu">jesse.fixture@yale.edu</a>
         <section class="biography">
           Associate Professor of Public Health (Health Policy); Associate Professor in the
           History of Medicine, and Associate Professor in the Institution for Social and
@@ -376,14 +376,14 @@ const profileWithLongAppointmentOnlyBioHtml = `
 const profileWithGrantProjectBioHtml = `
   <html>
     <head>
-      <link rel="canonical" href="https://medicine.yale.edu/profile/michael-nathanson/" />
-      <meta property="og:title" content="Michael Nathanson | Yale Medicine" />
+      <link rel="canonical" href="https://medicine.yale.edu/profile/morgan-fixture/" />
+      <meta property="og:title" content="Morgan Fixture | Yale Medicine" />
     </head>
     <body>
       <main>
-        <h1>Michael H. Nathanson</h1>
+        <h1>Morgan Fixture</h1>
         <div class="title">Professor of Medicine</div>
-        <a href="mailto:michael.nathanson@yale.edu">michael.nathanson@yale.edu</a>
+        <a href="mailto:morgan.fixture@yale.edu">morgan.fixture@yale.edu</a>
         <section class="biography">
           NIH P01 DK57751 (PI: M.H. Nathanson) 04/01/01-04/30/21 Title: Regulation
           of liver by nuclear calcium signaling Goals: The major goals of this project
@@ -401,14 +401,14 @@ const profileWithGrantProjectBioHtml = `
 const profileWithClinicalProfileChromeBioHtml = `
   <html>
     <head>
-      <link rel="canonical" href="https://medicine.yale.edu/profile/samir-gautam/" />
-      <meta property="og:title" content="Samir Gautam | Yale Medicine" />
+      <link rel="canonical" href="https://medicine.yale.edu/profile/sam-fixture/" />
+      <meta property="og:title" content="Sam Fixture | Yale Medicine" />
     </head>
     <body>
       <main>
-        <h1>Samir Gautam</h1>
+        <h1>Sam Fixture</h1>
         <div class="title">Assistant Professor of Medicine</div>
-        <a href="mailto:samir.gautam@yale.edu">samir.gautam@yale.edu</a>
+        <a href="mailto:sam.fixture@yale.edu">sam.fixture@yale.edu</a>
         <section class="biography">
           View this doctor's clinical profile on the Yale Medicine website for information about
           the services we offer and making an appointment.
@@ -421,14 +421,14 @@ const profileWithClinicalProfileChromeBioHtml = `
 const profileWithTerseInterestBioHtml = `
   <html>
     <head>
-      <link rel="canonical" href="https://physics.yale.edu/people/andrew-neitzke/" />
-      <meta property="og:title" content="Andrew Neitzke | Yale Physics" />
+      <link rel="canonical" href="https://physics.yale.edu/people/avery-fixture/" />
+      <meta property="og:title" content="Avery Fixture | Yale Physics" />
     </head>
     <body>
       <main>
-        <h1>Andrew Neitzke</h1>
+        <h1>Avery Fixture</h1>
         <div class="title">Professor of Mathematics and Physics</div>
-        <a href="mailto:andrew.neitzke@yale.edu">andrew.neitzke@yale.edu</a>
+        <a href="mailto:avery.fixture@yale.edu">avery.fixture@yale.edu</a>
         <section class="biography">Problems in string theory and supersymmetric field theory</section>
         <div class="research-interests">
           String theory; Supersymmetric field theory; Algebraic geometry.
@@ -441,14 +441,14 @@ const profileWithTerseInterestBioHtml = `
 const profileWithOnlyTerseResearchBioHtml = `
   <html>
     <head>
-      <link rel="canonical" href="https://physics.yale.edu/people/andrew-neitzke/" />
-      <meta property="og:title" content="Andrew Neitzke | Yale Physics" />
+      <link rel="canonical" href="https://physics.yale.edu/people/avery-fixture/" />
+      <meta property="og:title" content="Avery Fixture | Yale Physics" />
     </head>
     <body>
       <main>
-        <h1>Andrew Neitzke</h1>
+        <h1>Avery Fixture</h1>
         <div class="title">Professor of Mathematics and Physics</div>
-        <a href="mailto:andrew.neitzke@yale.edu">andrew.neitzke@yale.edu</a>
+        <a href="mailto:avery.fixture@yale.edu">avery.fixture@yale.edu</a>
         <section class="biography">Problems in string theory and supersymmetric field theory</section>
       </main>
     </body>
@@ -458,16 +458,16 @@ const profileWithOnlyTerseResearchBioHtml = `
 const profileOverviewAfterContactHtml = `
   <html>
     <head>
-      <link rel="canonical" href="https://medicine.yale.edu/profile/susan-baserga/" />
-      <meta property="og:image" content="https://ysm-res.cloudinary.com/image/upload/example/susan-baserga" />
+      <link rel="canonical" href="https://medicine.yale.edu/profile/sky-fixture/" />
+      <meta property="og:image" content="https://ysm-res.cloudinary.com/image/upload/example/sky-fixture" />
     </head>
     <body>
       <main>
-        <h1>Susan Baserga, MD, PhD</h1>
+        <h1>Sky Fixture, MD, PhD</h1>
         <div class="title">
           William H. Fleming, M.D. Professor of Molecular Biophysics and Biochemistry
         </div>
-        <a href="mailto:susan.baserga@yale.edu">susan.baserga@yale.edu</a>
+        <a href="mailto:sky.fixture@yale.edu">sky.fixture@yale.edu</a>
         <p class="profile-details-mailing-address__name">Molecular Biophysics and Biochemistry</p>
         <p class="profile-details-mailing-address__street">PO Box 208024, 333 Cedar Street</p>
         <h3 class="profile-details-content-section__heading">Overview</h3>
@@ -483,16 +483,16 @@ const profileOverviewAfterContactHtml = `
 const navigationResearchProgramProfileHtml = `
   <html>
     <head>
-      <link rel="canonical" href="https://medicine.yale.edu/profile/joseph-santos-sacchi/" />
+      <link rel="canonical" href="https://medicine.yale.edu/profile/jules-audio-fixture/" />
       <script type="application/ld+json" data-schema="ProfilePage">
         {
           "@type": "ProfilePage",
           "mainEntity": {
             "@type": "Person",
-            "name": "Joseph Santos-Sacchi",
-            "email": "joseph.santos-sacchi@yale.edu",
+            "name": "Jules Hearing",
+            "email": "jules.hearing@yale.edu",
             "jobTitle": "Professor of Surgery",
-            "description": "Joseph Santos-Sacchi directs the Yale Ear Lab.",
+            "description": "Jules Hearing directs the Yale Ear Lab.",
             "affiliation": [
               {
                 "@type": "Organization",
@@ -510,8 +510,8 @@ const navigationResearchProgramProfileHtml = `
     </head>
     <body>
       <main>
-        <h1>Joseph Santos-Sacchi</h1>
-        <p>Joseph Santos-Sacchi directs the Yale Ear Lab.</p>
+        <h1>Jules Hearing</h1>
+        <p>Jules Hearing directs the Yale Ear Lab.</p>
       </main>
       <div class="navigation-panel">
         <a href="/research/investigator-resources/oher/signature-initiatives/community-research-fellows-program/">
@@ -530,16 +530,16 @@ const navigationResearchProgramProfileHtml = `
 const researchCenterAffiliationWithoutLeadershipHtml = `
   <html>
     <head>
-      <link rel="canonical" href="https://medicine.yale.edu/profile/dana-small/" />
+      <link rel="canonical" href="https://medicine.yale.edu/profile/riley-nutrition-fixture/" />
       <script type="application/ld+json" data-schema="ProfilePage">
         {
           "@type": "ProfilePage",
           "mainEntity": {
             "@type": "Person",
-            "name": "Dana Small",
-            "email": "dana.small@yale.edu",
+            "name": "Riley Nutrition",
+            "email": "drew.small@yale.edu",
             "jobTitle": "Professor",
-            "description": "Dana Small studies nutrition and neural circuits.",
+            "description": "Riley Nutrition studies nutrition and neural circuits.",
             "affiliation": [
               {
                 "@type": "Organization",
@@ -553,7 +553,7 @@ const researchCenterAffiliationWithoutLeadershipHtml = `
     </head>
     <body>
       <main>
-        <p>Dana Small studies nutrition and neural circuits.</p>
+        <p>Riley Nutrition studies nutrition and neural circuits.</p>
       </main>
     </body>
   </html>
@@ -562,16 +562,16 @@ const researchCenterAffiliationWithoutLeadershipHtml = `
 const centerPrefixProgramTitleHtml = `
   <html>
     <head>
-      <link rel="canonical" href="https://medicine.yale.edu/profile/wendy-silverman/" />
+      <link rel="canonical" href="https://medicine.yale.edu/profile/wren-fixture/" />
       <script type="application/ld+json" data-schema="ProfilePage">
         {
           "@type": "ProfilePage",
           "mainEntity": {
             "@type": "Person",
-            "name": "Wendy Silverman",
-            "email": "wendy.silverman@yale.edu",
+            "name": "Wren Fixture",
+            "email": "wren.fixture@yale.edu",
             "jobTitle": "Professor",
-            "description": "Wendy Silverman is Director, Yale Child Study Center Program for Anxiety Disorders. She is also Director of the Yale Child Study Center Anxiety and Mood Disorders Program.",
+            "description": "Wren Fixture is Director, Yale Child Study Center Program for Anxiety Disorders. She is also Director of the Yale Child Study Center Anxiety and Mood Disorders Program.",
             "affiliation": [
               {
                 "@type": "Organization",
@@ -586,7 +586,7 @@ const centerPrefixProgramTitleHtml = `
     <body>
       <main>
         <p>
-          Wendy Silverman is Director, Yale Child Study Center Program for Anxiety Disorders.
+          Wren Fixture is Director, Yale Child Study Center Program for Anxiety Disorders.
           She is also Director of the Yale Child Study Center Anxiety and Mood Disorders Program.
         </p>
       </main>
@@ -597,16 +597,16 @@ const centerPrefixProgramTitleHtml = `
 const broadChildStudyCenterLeadershipHtml = `
   <html>
     <head>
-      <link rel="canonical" href="https://medicine.yale.edu/profile/linda-mayes/" />
+      <link rel="canonical" href="https://medicine.yale.edu/profile/lane-fixture/" />
       <script type="application/ld+json" data-schema="ProfilePage">
         {
           "@type": "ProfilePage",
           "mainEntity": {
             "@type": "Person",
-            "name": "Linda Mayes",
-            "email": "linda.mayes@yale.edu",
+            "name": "Lane Fixture",
+            "email": "lane.fixture@yale.edu",
             "jobTitle": "Professor",
-            "description": "Linda Mayes is Chair of the Child Study Center.",
+            "description": "Lane Fixture is Chair of the Child Study Center.",
             "affiliation": [
               {
                 "@type": "Organization",
@@ -620,7 +620,7 @@ const broadChildStudyCenterLeadershipHtml = `
     </head>
     <body>
       <main>
-        <p>Linda Mayes is Chair of the Child Study Center.</p>
+        <p>Lane Fixture is Chair of the Child Study Center.</p>
       </main>
     </body>
   </html>
@@ -629,16 +629,16 @@ const broadChildStudyCenterLeadershipHtml = `
 const associateDirectorSubareaProfileHtml = `
   <html>
     <head>
-      <link rel="canonical" href="https://medicine.yale.edu/profile/xenophon-papademetris/" />
+      <link rel="canonical" href="https://medicine.yale.edu/profile/xen-fixture/" />
       <script type="application/ld+json" data-schema="ProfilePage">
         {
           "@type": "ProfilePage",
           "mainEntity": {
             "@type": "Person",
-            "name": "Xenophon Papademetris",
-            "email": "xenophon.papademetris@yale.edu",
+            "name": "Xen Fixture",
+            "email": "xen.fixture@yale.edu",
             "jobTitle": "Professor",
-            "description": "Xenophon Papademetris is Associate Director of Biomedical Imaging Data Sciences, Yale Biomedical Imaging Institute.",
+            "description": "Xen Fixture is Associate Director of Biomedical Imaging Data Sciences, Yale Biomedical Imaging Institute.",
             "affiliation": [
               {
                 "@type": "Organization",
@@ -653,7 +653,7 @@ const associateDirectorSubareaProfileHtml = `
     <body>
       <main>
         <p>
-          Xenophon Papademetris is Associate Director of Biomedical Imaging Data Sciences,
+          Xen Fixture is Associate Director of Biomedical Imaging Data Sciences,
           Yale Biomedical Imaging Institute.
         </p>
       </main>
@@ -664,16 +664,16 @@ const associateDirectorSubareaProfileHtml = `
 const yalePrefixedLeadershipProfileHtml = `
   <html>
     <head>
-      <link rel="canonical" href="https://medicine.yale.edu/profile/michael-nathanson/" />
+      <link rel="canonical" href="https://medicine.yale.edu/profile/morgan-fixture/" />
       <script type="application/ld+json" data-schema="ProfilePage">
         {
           "@type": "ProfilePage",
           "mainEntity": {
             "@type": "Person",
-            "name": "Michael Nathanson",
-            "email": "michael.nathanson@yale.edu",
+            "name": "Morgan Fixture",
+            "email": "morgan.fixture@yale.edu",
             "jobTitle": "Professor",
-            "description": "Michael Nathanson is Co-Director, Yale Liver Center, Digestive Diseases.",
+            "description": "Morgan Fixture is Co-Director, Yale Liver Center, Digestive Diseases.",
             "affiliation": [
               {
                 "@type": "Organization",
@@ -687,7 +687,7 @@ const yalePrefixedLeadershipProfileHtml = `
     </head>
     <body>
       <main>
-        <p>Michael Nathanson is Co-Director, Yale Liver Center, Digestive Diseases.</p>
+        <p>Morgan Fixture is Co-Director, Yale Liver Center, Digestive Diseases.</p>
       </main>
     </body>
   </html>
@@ -696,16 +696,16 @@ const yalePrefixedLeadershipProfileHtml = `
 const contactInfoOnlyResearchHomeProfileHtml = `
   <html>
     <head>
-      <link rel="canonical" href="https://medicine.yale.edu/profile/dennis-moledina/" />
+      <link rel="canonical" href="https://medicine.yale.edu/profile/devon-fixture/" />
       <script type="application/ld+json" data-schema="ProfilePage">
         {
           "@type": "ProfilePage",
           "mainEntity": {
             "@type": "Person",
             "name": "Dennis G Moledina",
-            "email": "dennis.moledina@yale.edu",
+            "email": "devon.fixture@yale.edu",
             "jobTitle": "Associate Professor",
-            "description": "Dennis Moledina is Director, Research Fellowship, Nephrology; Vice Chief for Research (Clinical and translational), Nephrology; Director, Kidney BioBank, Nephrology.",
+            "description": "Devon Fixture is Director, Research Fellowship, Nephrology; Vice Chief for Research (Clinical and translational), Nephrology; Director, Kidney BioBank, Nephrology.",
             "affiliation": [
               {
                 "@type": "Organization",
@@ -737,23 +737,23 @@ const contactInfoOnlyResearchHomeProfileHtml = `
 const profileLinkedWaxmanCenterWebsiteHtml = `
   <html>
     <head>
-      <link rel="canonical" href="https://medicine.yale.edu/profile/stephen-waxman/" />
+      <link rel="canonical" href="https://medicine.yale.edu/profile/sawyer-fixture/" />
       <script type="application/ld+json" data-schema="ProfilePage">
         {
           "@type": "ProfilePage",
           "mainEntity": {
             "@type": "Person",
-            "name": "Stephen Waxman",
-            "email": "stephen.waxman@yale.edu",
+            "name": "Sawyer Fixture",
+            "email": "sawyer.fixture@yale.edu",
             "jobTitle": "Professor",
-            "description": "Stephen Waxman founded the Neuroscience & Regeneration Research Center at Yale in 1988 and is its Director."
+            "description": "Sawyer Fixture founded the Neuroscience & Regeneration Research Center at Yale in 1988 and is its Director."
           }
         }
       </script>
     </head>
     <body>
       <main>
-        <p>Stephen Waxman founded the Neuroscience & Regeneration Research Center at Yale in 1988 and is its Director.</p>
+        <p>Sawyer Fixture founded the Neuroscience & Regeneration Research Center at Yale in 1988 and is its Director.</p>
         <article class="profile-details-lab">
           <h3 class="profile-details-lab__title">Waxman Lab/Center for Neuroscience & Regeneration Research</h3>
           <a href="https://medicine.yale.edu/cnrr/index.aspx"><span>View Lab Website</span></a>
@@ -766,16 +766,16 @@ const profileLinkedWaxmanCenterWebsiteHtml = `
 const profileLinkedDaycareWebsiteHtml = `
   <html>
     <head>
-      <link rel="canonical" href="https://medicine.yale.edu/profile/carla-horwitz/" />
+      <link rel="canonical" href="https://medicine.yale.edu/profile/casey-fixture/" />
       <script type="application/ld+json" data-schema="ProfilePage">
         {
           "@type": "ProfilePage",
           "mainEntity": {
             "@type": "Person",
-            "name": "Carla Horwitz",
-            "email": "carla.horwitz@yale.edu",
+            "name": "Casey Fixture",
+            "email": "casey.fixture@yale.edu",
             "jobTitle": "Associate Research Scientist",
-            "description": "Carla Horwitz is affiliated with the Calvin Hill Day Care Center and Kitty Lustman-Findling Kindergarten."
+            "description": "Casey Fixture is affiliated with the Calvin Hill Day Care Center and Kitty Lustman-Findling Kindergarten."
           }
         }
       </script>
@@ -794,12 +794,12 @@ const profileLinkedDaycareWebsiteHtml = `
 const profileLinkedLeadershipProgramWebsiteHtml = `
   <html>
     <head>
-      <link rel="canonical" href="https://politicalscience.yale.edu/people/jacob-hacker/" />
+      <link rel="canonical" href="https://politicalscience.yale.edu/people/jordan-policy-fixture/" />
     </head>
     <body>
       <main>
         <p>
-          Jacob Hacker is Co-Director of the Ludwig Program in Public Sector Leadership
+          Jordan Policy is Co-Director of the Ludwig Program in Public Sector Leadership
           at Yale Law School and a resident fellow of the Institution for Social and Policy Studies.
         </p>
         <article class="profile-details-lab">
@@ -814,11 +814,11 @@ const profileLinkedLeadershipProgramWebsiteHtml = `
 const profileLinkedAcademicProgramWebsiteHtml = `
   <html>
     <head>
-      <link rel="canonical" href="https://history.yale.edu/people/paul-freedman/" />
+      <link rel="canonical" href="https://history.yale.edu/people/parker-history-fixture/" />
     </head>
     <body>
       <main>
-        <p>Paul Freedman is associated with the Medieval Studies Program.</p>
+        <p>Parker History is associated with the Medieval Studies Program.</p>
         <article class="profile-details-lab">
           <h3 class="profile-details-lab__title">Medieval Studies Program</h3>
           <a href="http://www.yale.edu/medieval/"><span>View Lab Website</span></a>
@@ -831,11 +831,11 @@ const profileLinkedAcademicProgramWebsiteHtml = `
 const profileLinkedDiagnosticServiceWebsiteHtml = `
   <html>
     <head>
-      <link rel="canonical" href="https://medicine.yale.edu/profile/allen-bale/" />
+      <link rel="canonical" href="https://medicine.yale.edu/profile/alex-diagnostics-fixture/" />
     </head>
     <body>
       <main>
-        <p>Allen Bale is Director, DNA Diagnostic Lab.</p>
+        <p>Alex Diagnostics is Director, DNA Diagnostic Lab.</p>
         <article class="profile-details-lab">
           <h3 class="profile-details-lab__title">Yale DNA Diagnostic Laboratory</h3>
           <a href="https://medicine.yale.edu/genetics/dna/"><span>View Lab Website</span></a>
@@ -848,7 +848,7 @@ const profileLinkedDiagnosticServiceWebsiteHtml = `
 const profileLinkedBroadChildStudyResearchWebsiteHtml = `
   <html>
     <head>
-      <link rel="canonical" href="https://medicine.yale.edu/profile/sara-sanchez-alonso/" />
+      <link rel="canonical" href="https://medicine.yale.edu/profile/sasha-modeler-fixture/" />
     </head>
     <body>
       <main>
@@ -865,11 +865,11 @@ const profileLinkedBroadChildStudyResearchWebsiteHtml = `
 const profileLinkedGoogleSiteLabWebsiteHtml = `
   <html>
     <head>
-      <link rel="canonical" href="https://medicine.yale.edu/profile/rajiv-radhakrishnan/" />
+      <link rel="canonical" href="https://medicine.yale.edu/profile/remy-neuro-fixture/" />
     </head>
     <body>
       <main>
-        <p>Rajiv Radhakrishnan directs the Radhakrishnan Lab.</p>
+        <p>Remy Neuro directs the Radhakrishnan Lab.</p>
         <article class="profile-details-lab">
           <h3 class="profile-details-lab__title">Radhakrishnan Lab</h3>
           <a href="https://sites.google.com/view/radhakrishnan-lab/home/"><span>View Lab Website</span></a>
@@ -882,11 +882,11 @@ const profileLinkedGoogleSiteLabWebsiteHtml = `
 const profileLinkedEducationProgramWebsiteHtml = `
   <html>
     <head>
-      <link rel="canonical" href="https://medicine.yale.edu/profile/michael-cappello/" />
+      <link rel="canonical" href="https://medicine.yale.edu/profile/morgan-global-fixture/" />
     </head>
     <body>
       <main>
-        <p>Michael Cappello is involved with the MD-PhD Program.</p>
+        <p>Morgan Global is involved with the MD-PhD Program.</p>
         <article class="profile-details-lab">
           <h3 class="profile-details-lab__title">MD-PhD Program</h3>
           <a href="https://medicine.yale.edu/mdphd/"><span>View Lab Website</span></a>
@@ -899,11 +899,11 @@ const profileLinkedEducationProgramWebsiteHtml = `
 const profileLinkedBroadDepartmentWebsiteHtml = `
   <html>
     <head>
-      <link rel="canonical" href="https://medicine.yale.edu/profile/kei-cheung/" />
+      <link rel="canonical" href="https://medicine.yale.edu/profile/kai-informatics-fixture/" />
     </head>
     <body>
       <main>
-        <p>Kei Cheung works in Biomedical Informatics &amp; Data Science.</p>
+        <p>Kai Informatics works in Biomedical Informatics &amp; Data Science.</p>
         <article class="profile-details-lab">
           <h3 class="profile-details-lab__title">Biomedical Informatics &amp; Data Science</h3>
           <a href="https://medicine.yale.edu/biomedical-informatics-data-science/"><span>View Lab Website</span></a>
@@ -916,11 +916,11 @@ const profileLinkedBroadDepartmentWebsiteHtml = `
 const profileLinkedClinicalProgramWebsiteHtml = `
   <html>
     <head>
-      <link rel="canonical" href="https://medicine.yale.edu/profile/daniel-wiznia/" />
+      <link rel="canonical" href="https://medicine.yale.edu/profile/devon-orthopedics-fixture/" />
     </head>
     <body>
       <main>
-        <p>Daniel Wiznia is affiliated with the Yale Avascular Necrosis Program.</p>
+        <p>Devon Orthopedics is affiliated with the Yale Avascular Necrosis Program.</p>
         <article class="profile-details-lab">
           <h3 class="profile-details-lab__title">Yale Avascular Necrosis Program</h3>
           <a href="https://www.yalemedicine.org/departments/avascular-necrosis-and-osteonecrosis-program/"><span>View Lab Website</span></a>
@@ -933,11 +933,11 @@ const profileLinkedClinicalProgramWebsiteHtml = `
 const profileLinkedStaleResearchWebsiteHtml = `
   <html>
     <head>
-      <link rel="canonical" href="https://medicine.yale.edu/profile/annie-harper/" />
+      <link rel="canonical" href="https://medicine.yale.edu/profile/avery-finance-fixture/" />
     </head>
     <body>
       <main>
-        <p>Annie Harper directs the Recovery Finance Project.</p>
+        <p>Avery Finance directs the Recovery Finance Project.</p>
         <article class="profile-details-lab">
           <h3 class="profile-details-lab__title">Recovery Finance Project</h3>
           <a href="https://medicine.yale.edu/psychiatry/prch/research/recovery-finance-project/"><span>View Lab Website</span></a>
@@ -950,11 +950,11 @@ const profileLinkedStaleResearchWebsiteHtml = `
 const profileLinkedStaleExternalWebsiteHtml = `
   <html>
     <head>
-      <link rel="canonical" href="https://medicine.yale.edu/profile/berna-sozen/" />
+      <link rel="canonical" href="https://medicine.yale.edu/profile/blair-development-fixture/" />
     </head>
     <body>
       <main>
-        <p>Berna Sozen leads the modelling development and disease lab.</p>
+        <p>Blair Development leads the modelling development and disease lab.</p>
         <article class="profile-details-lab">
           <h3 class="profile-details-lab__title">modelling development &amp; disease</h3>
           <a href="https://www.sozenlab.org/"><span>View Lab Website</span></a>
@@ -967,11 +967,11 @@ const profileLinkedStaleExternalWebsiteHtml = `
 const profileLinkedThinExternalWebsiteHtml = `
   <html>
     <head>
-      <link rel="canonical" href="https://medicine.yale.edu/profile/elizabeth-connors/" />
+      <link rel="canonical" href="https://medicine.yale.edu/profile/ellis-schoolhealth-fixture/" />
     </head>
     <body>
       <main>
-        <p>Elizabeth Connors works with Partnerships for Research and Implementation in School Mental Health.</p>
+        <p>Ellis Schoolhealth works with Partnerships for Research and Implementation in School Mental Health.</p>
         <article class="profile-details-lab">
           <h3 class="profile-details-lab__title">Partnerships for Research and Implementation in School Mental Health</h3>
           <a href="https://partnershipsforschools.org/"><span>View Lab Website</span></a>
@@ -984,11 +984,11 @@ const profileLinkedThinExternalWebsiteHtml = `
 const profileLinkedMrrcAliasWebsiteHtml = `
   <html>
     <head>
-      <link rel="canonical" href="https://medicine.yale.edu/profile/dana-peters/" />
+      <link rel="canonical" href="https://medicine.yale.edu/profile/drew-imaging-fixture/" />
     </head>
     <body>
       <main>
-        <p>Dana Peters is affiliated with the Magnetic Resonance Research Center.</p>
+        <p>Drew Imaging is affiliated with the Magnetic Resonance Research Center.</p>
         <article class="profile-details-lab">
           <h3 class="profile-details-lab__title">Magnetic Resonance Research Center</h3>
           <a href="https://mrrc.yale.edu/"><span>View Lab Website</span></a>
@@ -1001,11 +1001,11 @@ const profileLinkedMrrcAliasWebsiteHtml = `
 const profileLinkedPainCollaboratoryWebsiteHtml = `
   <html>
     <head>
-      <link rel="canonical" href="https://medicine.yale.edu/profile/robert-kerns/" />
+      <link rel="canonical" href="https://medicine.yale.edu/profile/robin-pain-fixture/" />
     </head>
     <body>
       <main>
-        <p>Robert Kerns is affiliated with the Pain Management Collaboratory Coordinating Center.</p>
+        <p>Robin Pain is affiliated with the Pain Management Collaboratory Coordinating Center.</p>
         <article class="profile-details-lab">
           <h3 class="profile-details-lab__title">Pain Management Collaboratory Coordinating Center</h3>
           <a href="https://www.painmanagementcollaboratory.org/"><span>View Lab Website</span></a>
@@ -1018,11 +1018,11 @@ const profileLinkedPainCollaboratoryWebsiteHtml = `
 const profileLinkedYWeightWebsiteHtml = `
   <html>
     <head>
-      <link rel="canonical" href="https://medicine.yale.edu/profile/ania-jastreboff/" />
+      <link rel="canonical" href="https://medicine.yale.edu/profile/ari-obesity-fixture/" />
     </head>
     <body>
       <main>
-        <p>Ania Jastreboff directs the Yale Obesity Research Center (Y-Weight).</p>
+        <p>Ari Obesity directs the Yale Obesity Research Center (Y-Weight).</p>
         <article class="profile-details-lab">
           <h3 class="profile-details-lab__title">Y-Weight: Yale Obesity Research Center Investigating novel pharmacological therapeutics for obesity treatment and probing the mechanisms of obesity in translational physiology studies</h3>
           <a href="https://medicine.yale.edu/y-weight/research/"><span>View Lab Website</span></a>
@@ -1035,11 +1035,11 @@ const profileLinkedYWeightWebsiteHtml = `
 const profileLinkedNourishTeamWebsiteHtml = `
   <html>
     <head>
-      <link rel="canonical" href="https://medicine.yale.edu/profile/catherine-buck/" />
+      <link rel="canonical" href="https://medicine.yale.edu/profile/cameron-neonatal-fixture/" />
     </head>
     <body>
       <main>
-        <p>Catherine Buck is affiliated with the Yale Neonatal NOuRISH Team.</p>
+        <p>Cameron Neonatal is affiliated with the Yale Neonatal NOuRISH Team.</p>
         <article class="profile-details-lab">
           <h3 class="profile-details-lab__title">Yale Neonatal NOuRISH Team</h3>
           <a href="https://medicine.yale.edu/pediatrics/perinatal/research/nourish_program/"><span>View Lab Website</span></a>
@@ -1052,11 +1052,11 @@ const profileLinkedNourishTeamWebsiteHtml = `
 const profileLinkedCardsLabWebsiteHtml = `
   <html>
     <head>
-      <link rel="canonical" href="https://medicine.yale.edu/profile/rohan-khera/" />
+      <link rel="canonical" href="https://medicine.yale.edu/profile/rory-cards-fixture/" />
     </head>
     <body>
       <main>
-        <p>Rohan Khera leads the CarDS Lab.</p>
+        <p>Rory Cards leads the CarDS Lab.</p>
         <article class="profile-details-lab">
           <h3 class="profile-details-lab__title">CarDS Lab</h3>
           <a href="https://www.cards-lab.org/"><span>View Lab Website</span></a>
@@ -1069,11 +1069,11 @@ const profileLinkedCardsLabWebsiteHtml = `
 const profileLinkedPersonPageWebsiteHtml = `
   <html>
     <head>
-      <link rel="canonical" href="https://medicine.yale.edu/profile/leonard-kaczmarek/" />
+      <link rel="canonical" href="https://medicine.yale.edu/profile/logan-channels-fixture/" />
     </head>
     <body>
       <main>
-        <p>Leonard Kaczmarek leads the Kaczmarek Lab.</p>
+        <p>Logan Channels leads the Kaczmarek Lab.</p>
         <article class="profile-details-lab">
           <h3 class="profile-details-lab__title">Kaczmarek Lab</h3>
           <a href="https://pharmacology.yale.edu/people/leonard_kaczmarek.profile"><span>View Lab Website</span></a>
@@ -1086,16 +1086,16 @@ const profileLinkedPersonPageWebsiteHtml = `
 const profileLinkedExternalLabWebsiteHtml = `
   <html>
     <head>
-      <link rel="canonical" href="https://medicine.yale.edu/profile/haifan-lin/" />
+      <link rel="canonical" href="https://medicine.yale.edu/profile/hayden-fixture/" />
       <script type="application/ld+json" data-schema="ProfilePage">
         {
           "@type": "ProfilePage",
           "mainEntity": {
             "@type": "Person",
-            "name": "Haifan Lin, PhD",
-            "email": "haifan.lin@yale.edu",
+            "name": "Hayden Fixture, PhD",
+            "email": "hayden.fixture@yale.edu",
             "jobTitle": "Professor",
-            "description": "Haifan Lin is Director, Yale Stem Cell Center.",
+            "description": "Hayden Fixture is Director, Yale Stem Cell Center.",
             "affiliation": [
               {
                 "@type": "Organization",
@@ -1109,8 +1109,8 @@ const profileLinkedExternalLabWebsiteHtml = `
     </head>
     <body>
       <main>
-        <p>Haifan Lin is Director, Yale Stem Cell Center.</p>
-        <div>Haifan Lin Lab<a href="https://www.haifanlinlab.org/">View Lab Website</a></div>
+        <p>Hayden Fixture is Director, Yale Stem Cell Center.</p>
+        <div>Hayden Fixture Lab<a href="https://www.haifanlinlab.org/">View Lab Website</a></div>
       </main>
     </body>
   </html>
@@ -1119,16 +1119,16 @@ const profileLinkedExternalLabWebsiteHtml = `
 const profileLinkedNamedLabWebsiteHtml = `
   <html>
     <head>
-      <link rel="canonical" href="https://medicine.yale.edu/profile/mark-lemmon/" />
+      <link rel="canonical" href="https://medicine.yale.edu/profile/morgan-cell-fixture/" />
       <script type="application/ld+json" data-schema="ProfilePage">
         {
           "@type": "ProfilePage",
           "mainEntity": {
             "@type": "Person",
             "name": "Mark A Lemmon",
-            "email": "mark.lemmon@yale.edu",
+            "email": "morgan.lemma@yale.edu",
             "jobTitle": "Professor",
-            "description": "Mark Lemmon studies cell signaling.",
+            "description": "Morgan Cell studies cell signaling.",
             "affiliation": [
               {
                 "@type": "Organization",
@@ -1143,7 +1143,7 @@ const profileLinkedNamedLabWebsiteHtml = `
     <body>
       <main>
         <h1>Mark A Lemmon</h1>
-        <p>Mark Lemmon studies cell signaling.</p>
+        <p>Morgan Cell studies cell signaling.</p>
         <div>
           Lemmon and Ferguson Labs
           <a href="https://www.lemmonfergusonlabs.com/">View Lab Website</a>
@@ -1156,23 +1156,23 @@ const profileLinkedNamedLabWebsiteHtml = `
 const profileLinkedIconLabWebsiteHtml = `
   <html>
     <head>
-      <link rel="canonical" href="https://medicine.yale.edu/profile/michelle-hampson/" />
+      <link rel="canonical" href="https://medicine.yale.edu/profile/mika-neurofeedback-fixture/" />
       <script type="application/ld+json" data-schema="ProfilePage">
         {
           "@type": "ProfilePage",
           "mainEntity": {
             "@type": "Person",
-            "name": "Michelle Hampson",
-            "email": "michelle.hampson@yale.edu",
+            "name": "Mika Neurofeedback",
+            "email": "mika.hampson@yale.edu",
             "jobTitle": "Professor",
-            "description": "Michelle Hampson studies fMRI neurofeedback."
+            "description": "Mika Neurofeedback studies fMRI neurofeedback."
           }
         }
       </script>
     </head>
     <body>
       <main>
-        <h1>Michelle Hampson</h1>
+        <h1>Mika Neurofeedback</h1>
         <div>
           <svg><title>Lab Whisk Cup Streamline Icon: https://streamlinehq.com</title></svg>Hampson labOur lab studies the human brain with a focus on clinical populations.
           <a href="https://campuspress.yale.edu/hampsonlab/">View Lab Website</a>
@@ -1185,23 +1185,23 @@ const profileLinkedIconLabWebsiteHtml = `
 const profileLinkedBioImageProjectWebsiteHtml = `
   <html>
     <head>
-      <link rel="canonical" href="https://medicine.yale.edu/profile/xenophon-papademetris/" />
+      <link rel="canonical" href="https://medicine.yale.edu/profile/xen-fixture/" />
       <script type="application/ld+json" data-schema="ProfilePage">
         {
           "@type": "ProfilePage",
           "mainEntity": {
             "@type": "Person",
-            "name": "Xenophon Papademetris",
-            "email": "xenophon.papademetris@yale.edu",
+            "name": "Xen Fixture",
+            "email": "xen.fixture@yale.edu",
             "jobTitle": "Professor",
-            "description": "Xenophon Papademetris develops medical image analysis software."
+            "description": "Xen Fixture develops medical image analysis software."
           }
         }
       </script>
     </head>
     <body>
       <main>
-        <h1>Xenophon Papademetris</h1>
+        <h1>Xen Fixture</h1>
         <div>
           <svg><title>Lab Whisk Cup Streamline Icon: https://streamlinehq.com</title></svg>BioImage Suite Project
           <a href="https://bioimagesuiteweb.github.io/webapp/">View Lab Website</a>
@@ -1214,25 +1214,25 @@ const profileLinkedBioImageProjectWebsiteHtml = `
 const profileLinkedSquirrelLabWebsiteHtml = `
   <html>
     <head>
-      <link rel="canonical" href="https://medicine.yale.edu/profile/elena-gracheva/" />
+      <link rel="canonical" href="https://medicine.yale.edu/profile/emery-fixture/" />
       <script type="application/ld+json" data-schema="ProfilePage">
         {
           "@type": "ProfilePage",
           "mainEntity": {
             "@type": "Person",
-            "name": "Elena Gracheva",
-            "email": "elena.gracheva@yale.edu",
+            "name": "Emery Fixture",
+            "email": "emery.fixture@yale.edu",
             "jobTitle": "Professor",
-            "description": "Elena Gracheva studies sensory physiology and hibernation biology."
+            "description": "Emery Fixture studies sensory physiology and hibernation biology."
           }
         }
       </script>
     </head>
     <body>
       <main>
-        <h1>Elena Gracheva</h1>
+        <h1>Emery Fixture</h1>
         <div>
-          Elena Lab
+          Emery Lab
           <a href="https://squirrel.commons.yale.edu/">View Lab Website</a>
         </div>
       </main>
@@ -1243,25 +1243,25 @@ const profileLinkedSquirrelLabWebsiteHtml = `
 const profileLinkedSlavLabWebsiteHtml = `
   <html>
     <head>
-      <link rel="canonical" href="https://medicine.yale.edu/profile/sviatoslav-bagriantsev/" />
+      <link rel="canonical" href="https://medicine.yale.edu/profile/sviatosloan-fixture/" />
       <script type="application/ld+json" data-schema="ProfilePage">
         {
           "@type": "ProfilePage",
           "mainEntity": {
             "@type": "Person",
-            "name": "Slav Bagriantsev",
-            "email": "slav.bagriantsev@yale.edu",
+            "name": "Sloan Fixture",
+            "email": "sloan.fixture@yale.edu",
             "jobTitle": "Professor",
-            "description": "Slav Bagriantsev studies sensory physiology and ion channels."
+            "description": "Sloan Fixture studies sensory physiology and ion channels."
           }
         }
       </script>
     </head>
     <body>
       <main>
-        <h1>Slav Bagriantsev</h1>
+        <h1>Sloan Fixture</h1>
         <div>
-          The Slav Lab
+          The Sloan Lab
           <a href="https://slavlab.yale.edu">View Lab Website</a>
         </div>
       </main>
@@ -1272,23 +1272,23 @@ const profileLinkedSlavLabWebsiteHtml = `
 const profileLinkedYcscLabWebsiteHtml = `
   <html>
     <head>
-      <link rel="canonical" href="https://medicine.yale.edu/profile/wan-ling-tseng/" />
+      <link rel="canonical" href="https://medicine.yale.edu/profile/wynn-fixture/" />
       <script type="application/ld+json" data-schema="ProfilePage">
         {
           "@type": "ProfilePage",
           "mainEntity": {
             "@type": "Person",
-            "name": "Wan-Ling Tseng",
-            "email": "wan-ling.tseng@yale.edu",
+            "name": "Wynn Fixture",
+            "email": "wynn.fixture@yale.edu",
             "jobTitle": "Professor",
-            "description": "Wan-Ling Tseng studies youth affective development."
+            "description": "Wynn Fixture studies youth affective development."
           }
         }
       </script>
     </head>
     <body>
       <main>
-        <h1>Wan-Ling Tseng</h1>
+        <h1>Wynn Fixture</h1>
         <div>
           <svg><title>Lab Whisk Cup Streamline Icon: https://streamlinehq.com</title></svg>
           The Ycsc Affective Youth (YAY) Lab
@@ -1302,23 +1302,23 @@ const profileLinkedYcscLabWebsiteHtml = `
 const profileLinkedLegacyChildStudyLabWebsiteHtml = `
   <html>
     <head>
-      <link rel="canonical" href="https://medicine.yale.edu/profile/linda-mayes/" />
+      <link rel="canonical" href="https://medicine.yale.edu/profile/lane-fixture/" />
       <script type="application/ld+json" data-schema="ProfilePage">
         {
           "@type": "ProfilePage",
           "mainEntity": {
             "@type": "Person",
-            "name": "Linda Mayes",
-            "email": "linda.mayes@yale.edu",
+            "name": "Lane Fixture",
+            "email": "lane.fixture@yale.edu",
             "jobTitle": "Professor",
-            "description": "Linda Mayes is Director of the Yale Developmental Electrophysiology Laboratory."
+            "description": "Lane Fixture is Director of the Yale Developmental Electrophysiology Laboratory."
           }
         }
       </script>
     </head>
     <body>
       <main>
-        <h1>Linda Mayes</h1>
+        <h1>Lane Fixture</h1>
         <div>
           Developmental Electrophysiology Laboratory
           <a href="https://childstudycenter.yale.edu/research/del/">View Lab Website</a>
@@ -1331,23 +1331,23 @@ const profileLinkedLegacyChildStudyLabWebsiteHtml = `
 const profileLinkedParentheticalLabWebsiteHtml = `
   <html>
     <head>
-      <link rel="canonical" href="https://medicine.yale.edu/profile/carla-stover/" />
+      <link rel="canonical" href="https://medicine.yale.edu/profile/carter-fixture/" />
       <script type="application/ld+json" data-schema="ProfilePage">
         {
           "@type": "ProfilePage",
           "mainEntity": {
             "@type": "Person",
-            "name": "Carla Stover",
-            "email": "carla.stover@yale.edu",
+            "name": "Carter Fixture",
+            "email": "carter.fixture@yale.edu",
             "jobTitle": "Professor",
-            "description": "Carla Stover develops interventions for families impacted by violence and trauma."
+            "description": "Carter Fixture develops interventions for families impacted by violence and trauma."
           }
         }
       </script>
     </head>
     <body>
       <main>
-        <h1>Carla Stover</h1>
+        <h1>Carter Fixture</h1>
         <div>
           <svg><title>Lab Whisk Cup Streamline Icon: https://streamlinehq.com</title></svg>
           Fathers for Change (Stover Lab)Our lab is focused on interventions for families impacted by violence and trauma.
@@ -1361,16 +1361,16 @@ const profileLinkedParentheticalLabWebsiteHtml = `
 const outsideYaleDeputyDirectorProfileHtml = `
   <html>
     <head>
-      <link rel="canonical" href="https://medicine.yale.edu/profile/andrew-tan/" />
+      <link rel="canonical" href="https://medicine.yale.edu/profile/avery-tan/" />
       <script type="application/ld+json" data-schema="ProfilePage">
         {
           "@type": "ProfilePage",
           "mainEntity": {
             "@type": "Person",
-            "name": "Andrew Tan",
-            "email": "andrew.tan@yale.edu",
+            "name": "Avery Tan",
+            "email": "avery.tan@yale.edu",
             "jobTitle": "Assistant Professor Adjunct",
-            "description": "Andrew Tan is Deputy Director, Center for Neuroscience and Regeneration Research, US Department of Veteran Affairs.",
+            "description": "Avery Tan is Deputy Director, Center for Neuroscience and Regeneration Research, US Department of Veteran Affairs.",
             "affiliation": [
               {
                 "@type": "Organization",
@@ -1399,16 +1399,16 @@ const outsideYaleDeputyDirectorProfileHtml = `
 const outsideYaleNoSeparatorDeputyProfileHtml = `
   <html>
     <head>
-      <link rel="canonical" href="https://medicine.yale.edu/profile/andrew-tan/" />
+      <link rel="canonical" href="https://medicine.yale.edu/profile/avery-tan/" />
       <script type="application/ld+json" data-schema="ProfilePage">
         {
           "@type": "ProfilePage",
           "mainEntity": {
             "@type": "Person",
-            "name": "Andrew Tan",
-            "email": "andrew.tan@yale.edu",
+            "name": "Avery Tan",
+            "email": "avery.tan@yale.edu",
             "jobTitle": "Assistant Professor Adjunct",
-            "description": "Andrew Tan studies spinal cord injury.",
+            "description": "Avery Tan studies spinal cord injury.",
             "affiliation": [
               {
                 "@type": "Organization",
@@ -1475,14 +1475,14 @@ describe('officialProfilePiBackfillScraper', () => {
 
   it('normalizes Yale Medicine section profile URLs to canonical profile URLs', () => {
     expect(
-      normalizeOfficialProfileUrl('https://medicine.yale.edu/cancer/profile/joseph-w-kim'),
+      normalizeOfficialProfileUrl('https://medicine.yale.edu/cancer/profile/jules-fixture'),
     ).toBe(profileUrl);
   });
 
   it('selects official profile URL candidates from trusted entity source fields', () => {
     expect(
       officialProfileUrlsForEntity({
-        websiteUrl: 'https://medicine.yale.edu/cancer/profile/joseph-w-kim',
+        websiteUrl: 'https://medicine.yale.edu/cancer/profile/jules-fixture',
         sourceUrls: ['https://example.com/not-profile'],
       }),
     ).toEqual([profileUrl]);
@@ -1491,13 +1491,13 @@ describe('officialProfilePiBackfillScraper', () => {
   it('selects matching official person URLs from observation source fields', () => {
     expect(
       officialProfileUrlsForEntity({
-        name: 'David Cameron — Research',
+        name: 'Devon Politics Fixture — Research',
         sourceObservationUrls: [
-          'http://politicalscience.yale.edu/people/david-cameron',
+          'http://politicalscience.yale.edu/people/devon-politics-fixture',
           'https://politicalscience.yale.edu/people/faculty',
         ],
       }),
-    ).toEqual(['http://politicalscience.yale.edu/people/david-cameron/']);
+    ).toEqual(['http://politicalscience.yale.edu/people/devon-politics-fixture/']);
   });
 
   it('selects matching Yale Law direct profile URLs from observation source fields', () => {
@@ -1515,8 +1515,8 @@ describe('officialProfilePiBackfillScraper', () => {
   it('rejects mismatched observation-sourced official person URLs', () => {
     expect(
       officialProfileUrlsForEntity({
-        name: 'Nancy Brown — Research',
-        sourceObservationUrls: ['https://history.yale.edu/people/joanne-brown/'],
+        name: 'Nico Brown — Research',
+        sourceObservationUrls: ['https://history.yale.edu/people/jordan-history-fixture/'],
       }),
     ).toEqual([]);
   });
@@ -1540,12 +1540,12 @@ describe('officialProfilePiBackfillScraper', () => {
 
   it('accepts validated non-Medicine Yale profile URLs for queued PI repair', () => {
     const entity = {
-      websiteUrl: 'https://anthropology.yale.edu/profile/richard-bribiescas',
+      websiteUrl: 'https://anthropology.yale.edu/profile/riley-anthropology-fixture',
       sourceUrls: ['https://anthropology.yale.edu/people/faculty'],
     };
 
     expect(officialProfileUrlsForEntity(entity)).toEqual([
-      'https://anthropology.yale.edu/profile/richard-bribiescas/',
+      'https://anthropology.yale.edu/profile/riley-anthropology-fixture/',
     ]);
     expect(shouldQueueEntityForPiBackfill(entity)).toBe(true);
   });
@@ -1553,10 +1553,10 @@ describe('officialProfilePiBackfillScraper', () => {
   it('prefers Medicine profile URLs when multiple official profiles are available', () => {
     expect(
       preferredOfficialProfileUrl([
-        'https://anthropology.yale.edu/profile/richard-bribiescas/',
-        'https://medicine.yale.edu/profile/richard-bribiescas/',
+        'https://anthropology.yale.edu/profile/riley-anthropology-fixture/',
+        'https://medicine.yale.edu/profile/riley-anthropology-fixture/',
       ]),
-    ).toBe('https://medicine.yale.edu/profile/richard-bribiescas/');
+    ).toBe('https://medicine.yale.edu/profile/riley-anthropology-fixture/');
   });
 
   it('selects direct lead research-home URLs while rejecting profile pages and documents', () => {
@@ -1583,7 +1583,7 @@ describe('officialProfilePiBackfillScraper', () => {
         ],
         sourceObservationUrls: [
           'https://campuspress.yale.edu/seylabenhabib/',
-          'https://history.yale.edu/people/joanne-brown/',
+          'https://history.yale.edu/people/jordan-history-fixture/',
           'http://staverlab.yale.edu/',
         ],
       }),
@@ -1670,17 +1670,17 @@ describe('officialProfilePiBackfillScraper', () => {
 
   it('extracts repair-grade identity only with canonical match, name match, and Yale email', () => {
     const identity = extractOfficialProfileIdentity(profileHtml, profileUrl, {
-      name: 'Joseph Kim Research Area',
-      slug: 'faculty-research-area-joseph-kim',
+      name: 'Jules Fixture Research Area',
+      slug: 'faculty-research-area-jules-fixture',
     });
 
     expect(identity).toMatchObject({
       canonicalUrl: profileUrl,
       fetchedUrl: profileUrl,
-      displayName: 'Joseph W. Kim',
-      email: 'joseph.kim@yale.edu',
+      displayName: 'Jules Fixture',
+      email: 'jules.fixture@yale.edu',
       title: 'Professor of Surgery (Oncology)',
-      imageUrl: 'https://ysm-res.cloudinary.com/image/upload/example/joseph-kim',
+      imageUrl: 'https://ysm-res.cloudinary.com/image/upload/example/jules-fixture',
     });
     expect(identity?.researchInterests).toEqual(['Cancer biology', 'Translational oncology']);
   });
@@ -1690,7 +1690,7 @@ describe('officialProfilePiBackfillScraper', () => {
       departmentPersonPageHtml,
       departmentPersonPageUrl.replace(/^https:/, 'http:'),
       {
-        name: 'Dana Angluin — Research',
+        name: 'Drew Fixture — Research',
         slug: 'angluin-da3',
       },
     );
@@ -1698,8 +1698,8 @@ describe('officialProfilePiBackfillScraper', () => {
     expect(identity).toMatchObject({
       canonicalUrl: departmentPersonPageUrl,
       fetchedUrl: departmentPersonPageUrl.replace(/^https:/, 'http:'),
-      displayName: 'Dana Angluin',
-      email: 'dana.angluin@yale.edu',
+      displayName: 'Drew Fixture',
+      email: 'drew.fixture@yale.edu',
       title: 'Professor Emeritus of Computer Science',
     });
   });
@@ -1709,13 +1709,13 @@ describe('officialProfilePiBackfillScraper', () => {
       redirectedDirectoryProfileHtml,
       'http://environment.yale.edu/profile/clark/',
       {
-        name: 'Clark Lab',
+        name: 'Fixture Lab',
         slug: 'clark-lab-twc4',
         leadUsers: [
           {
-            fname: 'Susan',
-            lname: 'Clark',
-            email: 'susan.g.clark@yale.edu',
+            fname: 'Sage',
+            lname: 'Fixture',
+            email: 'sage.fixture@yale.edu',
           },
         ],
       },
@@ -1723,38 +1723,38 @@ describe('officialProfilePiBackfillScraper', () => {
         requireEmail: false,
         expectedPeople: [
           {
-            fname: 'Susan',
-            lname: 'Clark',
-            email: 'susan.g.clark@yale.edu',
+            fname: 'Sage',
+            lname: 'Fixture',
+            email: 'sage.fixture@yale.edu',
           },
         ],
       },
     );
 
     expect(identity).toMatchObject({
-      canonicalUrl: 'https://environment.yale.edu/directory/faculty/susan-g-clark/',
+      canonicalUrl: 'https://environment.yale.edu/directory/faculty/sage-fixture/',
       fetchedUrl: 'http://environment.yale.edu/profile/clark/',
-      displayName: 'Susan G. Clark',
-      email: 'susan.g.clark@yale.edu',
-      title: 'Joseph F. Cullman 3rd Adjunct Professor Emeritus of Wildlife Ecology and Policy Sciences',
+      displayName: 'Sage Fixture',
+      email: 'sage.fixture@yale.edu',
+      title: 'Jules F. Cullman 3rd Adjunct Professor Emeritus of Wildlife Ecology and Policy Sciences',
     });
   });
 
   it('does not turn directory news titles or appointment lines into bios', () => {
     const identity = extractOfficialProfileIdentity(
       yseDirectoryProfileWithNewsTitleHtml,
-      'https://environment.yale.edu/directory/faculty/michelle-bell/',
+      'https://environment.yale.edu/directory/faculty/mika-fixture/',
       {
-        name: 'Michelle Bell Research',
-        slug: 'faculty-research-area-michelle-bell',
+        name: 'Mika Fixture Research',
+        slug: 'faculty-research-area-mika-fixture',
       },
       {
         requireEmail: false,
         expectedPeople: [
           {
-            fname: 'Michelle',
-            lname: 'Bell',
-            email: 'michelle.bell@yale.edu',
+            fname: 'Mika',
+            lname: 'Fixture',
+            email: 'mika.fixture@yale.edu',
           },
         ],
       },
@@ -1768,7 +1768,7 @@ describe('officialProfilePiBackfillScraper', () => {
 
     const obs = identityToUserObservations(identity!, {
       netid: 'mlb69',
-      email: 'michelle.bell@yale.edu',
+      email: 'mika.fixture@yale.edu',
     });
 
     expect(obs.find((o) => o.field === 'bio')).toBeUndefined();
@@ -1781,12 +1781,12 @@ describe('officialProfilePiBackfillScraper', () => {
 
   it('does not attach another person contact email from an official profile page', () => {
     const contaminatedProfileHtml = profileHtml
-      .replace(/Joseph W\. Kim/g, 'Joshua Gendron')
-      .replace(/Joseph Kim/g, 'Joshua Gendron')
-      .replace(/joseph\.kim@yale\.edu/g, 'susan.k.brady@yale.edu');
+      .replace(/Jules Fixture/g, 'Jordan Mismatch')
+      .replace(/Jules Fixture/g, 'Jordan Mismatch')
+      .replace(/jules\.fixture@yale\.edu/g, 'sage.mismatch@yale.edu');
     const entity = {
-      name: 'Joshua Gendron Research Area',
-      slug: 'faculty-research-area-joshua-gendron',
+      name: 'Jordan Mismatch Research Area',
+      slug: 'faculty-research-area-jordan-mismatch',
     };
 
     expect(extractOfficialProfileIdentity(contaminatedProfileHtml, profileUrl, entity)).toBeNull();
@@ -1795,7 +1795,7 @@ describe('officialProfilePiBackfillScraper', () => {
       requireEmail: false,
     });
     expect(identity).toMatchObject({
-      displayName: 'Joshua Gendron',
+      displayName: 'Jordan Mismatch',
       email: '',
     });
   });
@@ -1808,8 +1808,8 @@ describe('officialProfilePiBackfillScraper', () => {
       ),
       profileUrl,
       {
-        name: 'Joseph Kim Research Area',
-        slug: 'faculty-research-area-joseph-kim',
+        name: 'Jules Fixture Research Area',
+        slug: 'faculty-research-area-jules-fixture',
       },
     );
 
@@ -1819,31 +1819,31 @@ describe('officialProfilePiBackfillScraper', () => {
   it('skips profile chrome headings when extracting the display name', () => {
     const identity = extractOfficialProfileIdentity(
       profileHtml.replace(
-        '<h1>Joseph W. Kim</h1>',
-        '<h1>INFORMATION FOR</h1><h1>Joseph W. Kim, PhDResearch Scientist of Surgery</h1>',
+        '<h1>Jules Fixture</h1>',
+        '<h1>INFORMATION FOR</h1><h1>Jules Fixture, PhDResearch Scientist of Surgery</h1>',
       ),
       profileUrl,
       {
-        name: 'Joseph Kim Research Area',
-        slug: 'faculty-research-area-joseph-kim',
+        name: 'Jules Fixture Research Area',
+        slug: 'faculty-research-area-jules-fixture',
       },
     );
 
-    expect(identity?.displayName).toBe('Joseph W. Kim');
+    expect(identity?.displayName).toBe('Jules Fixture');
   });
 
   it('rejects surname-only profile matches when the known lead person differs', () => {
     const identity = extractOfficialProfileIdentity(
       profileHtml
-        .replace(/Joseph W\. Kim/g, 'Josephine Kim')
-        .replace(/joseph\.kim@yale\.edu/g, 'josephine.kim@yale.edu'),
+        .replace(/Jules Fixture/g, 'June Fixture')
+        .replace(/jules\.fixture@yale\.edu/g, 'june.fixture@yale.edu'),
       profileUrl,
       {
-        name: 'Kim Lab',
-        slug: 'kim-lab-jwk42',
+        name: 'Fixture Lab',
+        slug: 'kim-lab-fixture106',
       },
       {
-        expectedPeople: [{ fname: 'Joseph', lname: 'Kim', email: 'joseph.kim@yale.edu' }],
+        expectedPeople: [{ fname: 'Jules', lname: 'Fixture', email: 'jules.fixture@yale.edu' }],
       },
     );
 
@@ -1852,16 +1852,16 @@ describe('officialProfilePiBackfillScraper', () => {
 
   it('clips long official profile bios at a sentence boundary', () => {
     const longSentence =
-      'Joseph W. Kim studies translational cancer biology and develops clinical research programs for gastrointestinal oncology. ';
+      'Jules Fixture studies translational cancer biology and develops clinical research programs for gastrointestinal oncology. ';
     const identity = extractOfficialProfileIdentity(
       profileHtml.replace(
-        /Joseph W\. Kim studies[\s\S]*?gastrointestinal oncology\./,
+        /Jules Fixture studies[\s\S]*?gastrointestinal oncology\./,
         longSentence.repeat(20),
       ),
       profileUrl,
       {
-        name: 'Joseph Kim Research Area',
-        slug: 'faculty-research-area-joseph-kim',
+        name: 'Jules Fixture Research Area',
+        slug: 'faculty-research-area-jules-fixture',
       },
     );
 
@@ -1872,32 +1872,32 @@ describe('officialProfilePiBackfillScraper', () => {
   it('removes trailing official profile update metadata from extracted bios', () => {
     const identity = extractOfficialProfileIdentity(
       profileHtml.replace(
-        /Joseph W\. Kim studies[\s\S]*?gastrointestinal oncology\./,
-        'Joseph W. Kim studies translational cancer biology and develops clinical research programs for gastrointestinal oncology. Last Updated on December 01, 2024.',
+        /Jules Fixture studies[\s\S]*?gastrointestinal oncology\./,
+        'Jules Fixture studies translational cancer biology and develops clinical research programs for gastrointestinal oncology. Last Updated on December 01, 2024.',
       ),
       profileUrl,
       {
-        name: 'Joseph Kim Research Area',
-        slug: 'faculty-research-area-joseph-kim',
+        name: 'Jules Fixture Research Area',
+        slug: 'faculty-research-area-jules-fixture',
       },
     );
 
     expect(identity?.bio).toBe(
-      'Joseph W. Kim studies translational cancer biology and develops clinical research programs for gastrointestinal oncology.',
+      'Jules Fixture studies translational cancer biology and develops clinical research programs for gastrointestinal oncology.',
     );
   });
 
   it('does not clip official profile bios at dangling honorific abbreviations', () => {
     const longBio =
-      'Joseph Kim studies translational cancer biology and develops clinical research programs for gastrointestinal oncology '.repeat(
+      'Jules Fixture studies translational cancer biology and develops clinical research programs for gastrointestinal oncology '.repeat(
         11,
-      ) + 'Dr. Kim also mentors students in clinical trial design and translational oncology. '.repeat(5);
+      ) + 'Dr. Fixture also mentors students in clinical trial design and translational oncology. '.repeat(5);
     const identity = extractOfficialProfileIdentity(
-      profileHtml.replace(/Joseph W\. Kim studies[\s\S]*?gastrointestinal oncology\./, longBio),
+      profileHtml.replace(/Jules Fixture studies[\s\S]*?gastrointestinal oncology\./, longBio),
       profileUrl,
       {
-        name: 'Joseph Kim Research Area',
-        slug: 'faculty-research-area-joseph-kim',
+        name: 'Jules Fixture Research Area',
+        slug: 'faculty-research-area-jules-fixture',
       },
     );
 
@@ -1906,165 +1906,166 @@ describe('officialProfilePiBackfillScraper', () => {
     expect(identity?.bio).not.toMatch(/\bDr\.$/);
   });
 
-  it('derives a source-attributed bio from official interests instead of address chrome', () => {
+  it('does not derive a user bio from official interests when the profile bio is address chrome', () => {
     const identity = extractOfficialProfileIdentity(
       profileWithAddressInsteadOfBioHtml,
-      'https://statistics.yale.edu/profile/anna-gilbert/',
+      'https://statistics.yale.edu/profile/ari-fixture/',
       {
-        name: 'Anna Gilbert Research',
-        slug: 'faculty-research-area-anna-gilbert',
+        name: 'Ari Fixture Research',
+        slug: 'faculty-research-area-ari-fixture',
       },
     );
 
     const obs = identityToUserObservations(identity!, {
       netid: 'ag245',
-      email: 'anna.gilbert@yale.edu',
+      email: 'ari.fixture@yale.edu',
     });
-    const bio = String(obs.find((o) => o.field === 'bio')?.value || '');
+    const bio = obs.find((o) => o.field === 'bio');
+    const researchInterests = obs.find((o) => o.field === 'researchInterests');
 
-    expect(bio).toContain('official Yale profile lists research interests');
-    expect(bio).toContain('Sparse and Compressive Sensing Techniques');
-    expect(bio).not.toContain('Kline Tower');
+    expect(bio).toBeUndefined();
+    expect(researchInterests?.value).toEqual(
+      expect.arrayContaining(['Sparse and Compressive Sensing Techniques']),
+    );
   });
 
-  it('derives a source-attributed bio from official interests instead of page chrome', () => {
+  it('does not derive a user bio from official interests when the profile bio is page chrome', () => {
     const identity = extractOfficialProfileIdentity(
       profileWithChromeInsteadOfBioHtml,
-      'https://engineering.yale.edu/research-and-faculty/faculty-directory/anurag-khandelwal/',
+      'https://engineering.yale.edu/research-and-faculty/faculty-directory/ash-fixture/',
       {
-        name: 'Anurag Khandelwal Research',
-        slug: 'faculty-research-area-anurag-khandelwal',
+        name: 'Ash Fixture Research',
+        slug: 'faculty-research-area-ash-fixture',
       },
     );
 
     const obs = identityToUserObservations(identity!, {
       netid: 'ak2579',
-      email: 'anurag.khandelwal@yale.edu',
+      email: 'ash.fixture@yale.edu',
     });
-    const bio = String(obs.find((o) => o.field === 'bio')?.value || '');
+    const bio = obs.find((o) => o.field === 'bio');
+    const researchInterests = obs.find((o) => o.field === 'researchInterests');
 
-    expect(bio).toContain('official Yale profile lists research interests');
-    expect(bio).toContain('Cloud Computing and Resource Management');
-    expect(bio).not.toContain('selected publications');
+    expect(bio).toBeUndefined();
+    expect(researchInterests?.value).toEqual(
+      expect.arrayContaining(['Cloud Computing and Resource Management']),
+    );
   });
 
   it('does not emit credential-only education blocks as official profile bios', () => {
     const identity = extractOfficialProfileIdentity(
       profileWithCredentialsOnlyBioHtml,
-      'https://english.yale.edu/people/kim-shirkhani/',
+      'https://english.yale.edu/people/kai-fixture/',
       {
-        name: 'Kim Shirkhani Research',
-        slug: 'faculty-research-area-kim-shirkhani',
+        name: 'Kai Fixture Research',
+        slug: 'faculty-research-area-kai-fixture',
       },
     );
 
     const obs = identityToUserObservations(identity!, {
       netid: 'ks555',
-      email: 'kim.shirkhani@yale.edu',
+      email: 'kai.fixture@yale.edu',
     });
     const bio = obs.find((o) => o.field === 'bio');
 
     expect(bio).toBeUndefined();
   });
 
-  it('derives a source-attributed bio from official interests instead of publication-list text', () => {
+  it('does not derive a user bio from official interests when the profile bio is publication-list text', () => {
     const identity = extractOfficialProfileIdentity(
       profileWithPublicationListBioHtml,
-      'https://engineering.yale.edu/research-and-faculty/faculty-directory/lea-r-winter/',
+      'https://engineering.yale.edu/research-and-faculty/faculty-directory/lee-fixture/',
       {
-        name: 'Lea Winter Research',
-        slug: 'faculty-research-area-lea-winter',
+        name: 'Lee Fixture Research',
+        slug: 'faculty-research-area-lee-fixture',
       },
     );
 
     const obs = identityToUserObservations(identity!, {
       netid: 'lw376',
-      email: 'lea.winter@yale.edu',
+      email: 'lee.fixture@yale.edu',
     });
-    const bio = String(obs.find((o) => o.field === 'bio')?.value || '');
+    const bio = obs.find((o) => o.field === 'bio');
+    const researchInterests = obs.find((o) => o.field === 'researchInterests');
 
-    expect(bio).toContain('official Yale profile lists research interests');
-    expect(bio).toContain('Sustainable chemical separations');
-    expect(bio).not.toContain('Yingzheng Fan');
-    expect(bio).not.toContain('Nature Materials 2024');
+    expect(bio).toBeUndefined();
+    expect(researchInterests?.value).toEqual(expect.arrayContaining(['Sustainable chemical separations']));
   });
 
-  it('derives a source-attributed bio from official interests instead of single-citation text', () => {
+  it('does not derive a user bio from official interests when the profile bio is single-citation text', () => {
     const identity = extractOfficialProfileIdentity(
       profileWithSingleCitationBioHtml,
-      'https://engineering.yale.edu/research-and-faculty/faculty-directory/lea-r-winter/',
+      'https://engineering.yale.edu/research-and-faculty/faculty-directory/lee-fixture/',
       {
-        name: 'Lea Winter Research',
-        slug: 'faculty-research-area-lea-winter',
+        name: 'Lee Fixture Research',
+        slug: 'faculty-research-area-lee-fixture',
       },
     );
 
     const obs = identityToUserObservations(identity!, {
       netid: 'lw376',
-      email: 'lea.winter@yale.edu',
+      email: 'lee.fixture@yale.edu',
     });
-    const bio = String(obs.find((o) => o.field === 'bio')?.value || '');
+    const bio = obs.find((o) => o.field === 'bio');
+    const researchInterests = obs.find((o) => o.field === 'researchInterests');
 
-    expect(bio).toContain('official Yale profile lists research interests');
-    expect(bio).toContain('Sustainable chemical separations');
-    expect(bio).not.toContain('Julia Simon');
-    expect(bio).not.toContain('Current Opinion in Green');
+    expect(bio).toBeUndefined();
+    expect(researchInterests?.value).toEqual(expect.arrayContaining(['Sustainable chemical separations']));
   });
 
   it('does not emit long appointment-only official profile blocks as bios', () => {
     const identity = extractOfficialProfileIdentity(
       profileWithLongAppointmentOnlyBioHtml,
-      'https://ysph.yale.edu/profile/jason-l-schwartz/',
+      'https://ysph.yale.edu/profile/jesse-fixture/',
       {
-        name: 'Jason L. Schwartz Research',
-        slug: 'faculty-research-area-jason-l-schwartz',
+        name: 'Jesse Fixture Research',
+        slug: 'faculty-research-area-jesse-fixture',
       },
     );
 
     const obs = identityToUserObservations(identity!, {
       netid: 'jls289',
-      email: 'jason.l.schwartz@yale.edu',
+      email: 'jesse.fixture@yale.edu',
     });
     const bio = obs.find((o) => o.field === 'bio');
 
     expect(bio).toBeUndefined();
   });
 
-  it('derives a source-attributed bio from official interests instead of grant metadata', () => {
+  it('does not derive a user bio from official interests when the profile bio is grant metadata', () => {
     const identity = extractOfficialProfileIdentity(
       profileWithGrantProjectBioHtml,
-      'https://medicine.yale.edu/profile/michael-nathanson/',
+      'https://medicine.yale.edu/profile/morgan-fixture/',
       {
-        name: 'Michael Nathanson Lab',
-        slug: 'lab-michael-nathanson',
+        name: 'Morgan Fixture Lab',
+        slug: 'lab-morgan-fixture',
       },
     );
 
     const obs = identityToUserObservations(identity!, {
       netid: 'mhn2',
-      email: 'michael.nathanson@yale.edu',
+      email: 'morgan.fixture@yale.edu',
     });
-    const bio = String(obs.find((o) => o.field === 'bio')?.value || '');
+    const bio = obs.find((o) => o.field === 'bio');
+    const researchInterests = obs.find((o) => o.field === 'researchInterests');
 
-    expect(bio).toContain('official Yale profile lists research interests');
-    expect(bio).toContain('Calcium signaling');
-    expect(bio).not.toContain('NIH P01');
-    expect(bio).not.toContain('Goals:');
+    expect(bio).toBeUndefined();
+    expect(researchInterests?.value).toEqual(expect.arrayContaining(['Calcium signaling']));
   });
 
   it('does not emit Yale Medicine clinical-profile call-to-action text as a bio', () => {
     const identity = extractOfficialProfileIdentity(
       profileWithClinicalProfileChromeBioHtml,
-      'https://medicine.yale.edu/profile/samir-gautam/',
+      'https://medicine.yale.edu/profile/sam-fixture/',
       {
-        name: 'Samir Gautam Lab',
-        slug: 'samir-gautam-lab',
+        name: 'Sam Fixture Lab',
+        slug: 'sam-fixture-lab',
       },
     );
 
     const obs = identityToUserObservations(identity!, {
       netid: 'sg448',
-      email: 'samir.gautam@yale.edu',
+      email: 'sam.fixture@yale.edu',
     });
     const bio = obs.find((o) => o.field === 'bio');
 
@@ -2075,7 +2076,7 @@ describe('officialProfilePiBackfillScraper', () => {
     const identity = extractOfficialProfileIdentity(
       profileHtml
         .replace(
-          /Joseph W\. Kim studies translational cancer biology and develops clinical research\s+programs for gastrointestinal oncology\./,
+          /Jules Fixture studies translational cancer biology and develops clinical research\s+programs for gastrointestinal oncology\./,
           'Voluntary faculty are typically clinicians or others who are employed outside of the School but make significant contributions to department programs at the medical center or at affiliate institutions.',
         )
         .replace(
@@ -2084,14 +2085,14 @@ describe('officialProfilePiBackfillScraper', () => {
         ),
       profileUrl,
       {
-        name: 'Joseph Kim Research Area',
-        slug: 'joseph-kim',
+        name: 'Jules Fixture Research Area',
+        slug: 'jules-fixture',
       },
     );
 
     const obs = identityToUserObservations(identity!, {
-      netid: 'jwk42',
-      email: 'joseph.kim@yale.edu',
+      netid: 'fixture106',
+      email: 'jules.fixture@yale.edu',
     });
 
     expect(obs.find((o) => o.field === 'bio')).toBeUndefined();
@@ -2108,14 +2109,14 @@ describe('officialProfilePiBackfillScraper', () => {
         {
           canonicalUrl: profileUrl,
           fetchedUrl: profileUrl,
-          displayName: 'Joseph Kim',
-          email: 'joseph.kim@yale.edu',
+          displayName: 'Jules Fixture',
+          email: 'jules.fixture@yale.edu',
           title: 'Assistant Professor of Medicine',
           departments: [],
           bio,
           researchInterests: [],
         },
-        { netid: 'jwk42', email: 'joseph.kim@yale.edu' },
+        { netid: 'fixture106', email: 'jules.fixture@yale.edu' },
       );
 
       expect(obs.find((o) => o.field === 'bio')).toBeUndefined();
@@ -2127,15 +2128,15 @@ describe('officialProfilePiBackfillScraper', () => {
       {
         canonicalUrl: profileUrl,
         fetchedUrl: profileUrl,
-        displayName: 'Joseph Kim',
-        email: 'joseph.kim@yale.edu',
+        displayName: 'Jules Fixture',
+        email: 'jules.fixture@yale.edu',
         title: 'Assistant Professor of Medicine',
         departments: [],
         bio:
-          'Joseph Kim studies translational cancer biology and develops clinical research programs for gastrointestinal oncology. For more on this research, refer to Dr. Kim complete Google Scholar profile.',
+          'Jules Fixture studies translational cancer biology and develops clinical research programs for gastrointestinal oncology. For more on this research, refer to Dr. Fixture complete Google Scholar profile.',
         researchInterests: [],
       },
-      { netid: 'jwk42', email: 'joseph.kim@yale.edu' },
+      { netid: 'fixture106', email: 'jules.fixture@yale.edu' },
     );
 
     expect(obs.find((o) => o.field === 'bio')).toBeUndefined();
@@ -2154,13 +2155,13 @@ describe('officialProfilePiBackfillScraper', () => {
         {
           canonicalUrl: profileUrl,
           fetchedUrl: profileUrl,
-          displayName: 'Joseph Kim',
-          email: 'joseph.kim@yale.edu',
+          displayName: 'Jules Fixture',
+          email: 'jules.fixture@yale.edu',
           title: String(researchInterests[0]),
           departments: [],
           researchInterests,
         },
-        { netid: 'jwk42', email: 'joseph.kim@yale.edu' },
+        { netid: 'fixture106', email: 'jules.fixture@yale.edu' },
       );
 
       expect(obs.find((o) => o.field === 'bio')).toBeUndefined();
@@ -2174,16 +2175,16 @@ describe('officialProfilePiBackfillScraper', () => {
       {
         canonicalUrl: profileUrl,
         fetchedUrl: profileUrl,
-        displayName: 'Joseph Kim',
-        email: 'joseph.kim@yale.edu',
+        displayName: 'Jules Fixture',
+        email: 'jules.fixture@yale.edu',
         title: 'Professor of Surgery (Oncology)',
         departments: [],
-        bio: 'Joseph Kim studies cancer biology and translational oncology, with a focus on identifying biomarkers and improving treatment strategies for patients with gastrointestinal malignancies.',
-        imageUrl: 'https://ysm-res.cloudinary.com/image/upload/example/joseph-kim',
+        bio: 'Jules Fixture studies cancer biology and translational oncology, with a focus on identifying biomarkers and improving treatment strategies for patients with gastrointestinal malignancies.',
+        imageUrl: 'https://ysm-res.cloudinary.com/image/upload/example/jules-fixture',
         researchInterests: ['Cancer biology', 'Translational oncology'],
         orcid: '0000-0001-2345-6789',
       },
-      { netid: 'jwk42', email: 'joseph.kim@yale.edu' },
+      { netid: 'fixture106', email: 'jules.fixture@yale.edu' },
       {
         includeProfileEnrichment: true,
         includeIdentityEnrichment: false,
@@ -2197,16 +2198,16 @@ describe('officialProfilePiBackfillScraper', () => {
       'researchInterests',
       'topics',
     ]);
-    expect(obs.every((o) => o.entityKey === 'netid:jwk42')).toBe(true);
+    expect(obs.every((o) => o.entityKey === 'netid:fixture106')).toBe(true);
   });
 
   it('strips inline email parentheticals before emitting official profile bios', () => {
     const obs = identityToUserObservations(
       {
-        canonicalUrl: 'https://medicine.yale.edu/profile/xiaofeng-liu/',
-        fetchedUrl: 'https://medicine.yale.edu/profile/xiaofeng-liu/',
-        displayName: 'Xiaofeng Liu',
-        email: 'xiaofeng.liu@yale.edu',
+        canonicalUrl: 'https://medicine.yale.edu/profile/xylo-fixture/',
+        fetchedUrl: 'https://medicine.yale.edu/profile/xylo-fixture/',
+        displayName: 'Xylo Fixture',
+        email: 'xylo.fixture@yale.edu',
         title: 'Assistant Professor of Radiology and Biomedical Imaging',
         departments: [],
         bio:
@@ -2215,7 +2216,7 @@ describe('officialProfilePiBackfillScraper', () => {
       },
       {
         netid: 'xl693',
-        email: 'xiaofeng.liu@yale.edu',
+        email: 'xylo.fixture@yale.edu',
       },
     );
     const bio = String(obs.find((o) => o.field === 'bio')?.value || '');
@@ -2229,109 +2230,101 @@ describe('officialProfilePiBackfillScraper', () => {
   it('strips leading email and phone chrome before emitting official profile bios', () => {
     const obs = identityToUserObservations(
       {
-        canonicalUrl: 'https://medicine.yale.edu/profile/sabrina-diano/',
-        fetchedUrl: 'https://medicine.yale.edu/profile/sabrina-diano/',
-        displayName: 'Sabrina Diano',
-        email: 'sabrina.diano@yale.edu',
+        canonicalUrl: 'https://medicine.yale.edu/profile/riley-metabolic/',
+        fetchedUrl: 'https://medicine.yale.edu/profile/riley-metabolic/',
+        displayName: 'Riley Metabolic',
+        email: 'riley.metabolic@yale.edu',
         title: 'Professor of Cellular and Molecular Physiology',
         departments: [],
         bio:
-          'Sabrina Diano, Ph.D. Professor Email: sabrina.diano@yale.eduPhone: 737-1216 Dr. Sabrina Diano is a Tenure Professor in the Department of Cellular and Molecular Physiology. Her research focuses on mitochondria-endoplasmic reticulum interactions and metabolic regulation in the central nervous system.',
+          'Riley Metabolic, Ph.D. Professor Email: riley.metabolic@yale.eduPhone: 737-1216 Dr. Riley Metabolic is a Tenure Professor in the Department of Cellular and Molecular Physiology. Her research focuses on mitochondria-endoplasmic reticulum interactions and metabolic regulation in the central nervous system.',
         researchInterests: ['mitochondria', 'metabolic regulation', 'central nervous system'],
       },
       {
         netid: 'sd69',
-        email: 'sabrina.diano@yale.edu',
+        email: 'riley.metabolic@yale.edu',
       },
     );
     const bio = String(obs.find((o) => o.field === 'bio')?.value || '');
 
-    expect(bio).toMatch(/^Dr\. Sabrina Diano is/);
+    expect(bio).toMatch(/^Dr\. Riley Metabolic is/);
     expect(bio).toContain('metabolic regulation');
     expect(bio).not.toContain('Email:');
     expect(bio).not.toContain('737-1216');
-    expect(bio).not.toContain('sabrina.diano@yale.edu');
+    expect(bio).not.toContain('riley.metabolic@yale.edu');
   });
 
-  it('expands a terse official research-interest bio into a readable source-attributed bio', () => {
+  it('does not expand a terse official research-interest fragment into a user bio', () => {
     const identity = extractOfficialProfileIdentity(
       profileWithTerseInterestBioHtml,
-      'https://physics.yale.edu/people/andrew-neitzke/',
+      'https://physics.yale.edu/people/avery-fixture/',
       {
-        name: 'Andrew Neitzke Research',
-        slug: 'faculty-research-area-andrew-neitzke',
+        name: 'Avery Fixture Research',
+        slug: 'faculty-research-area-avery-fixture',
       },
     );
 
     const obs = identityToUserObservations(identity!, {
       netid: 'an123',
-      email: 'andrew.neitzke@yale.edu',
+      email: 'avery.fixture@yale.edu',
     });
     const bioObservation = obs.find((o) => o.field === 'bio');
-    const bio = String(bioObservation?.value || '');
+    const researchInterests = obs.find((o) => o.field === 'researchInterests');
 
-    expect(bio.length).toBeGreaterThanOrEqual(120);
-    expect(bio).toContain('official Yale profile lists research interests');
-    expect(bio).toContain('String theory');
-    expect(bio).not.toContain('..');
-    expect(bio).not.toBe('Problems in string theory and supersymmetric field theory');
-    expect(bioObservation?.confidenceOverride).toBe(0.86);
+    expect(bioObservation).toBeUndefined();
+    expect(researchInterests?.value).toEqual(expect.arrayContaining(['String theory']));
   });
 
-  it('expands a clean terse official research bio even without a separate interests block', () => {
+  it('does not expand a clean terse official research topic into a user bio', () => {
     const identity = extractOfficialProfileIdentity(
       profileWithOnlyTerseResearchBioHtml,
-      'https://physics.yale.edu/people/andrew-neitzke/',
+      'https://physics.yale.edu/people/avery-fixture/',
       {
-        name: 'Andrew Neitzke Research',
-        slug: 'faculty-research-area-andrew-neitzke',
+        name: 'Avery Fixture Research',
+        slug: 'faculty-research-area-avery-fixture',
       },
     );
 
     const obs = identityToUserObservations(identity!, {
       netid: 'an123',
-      email: 'andrew.neitzke@yale.edu',
+      email: 'avery.fixture@yale.edu',
     });
     const bioObservation = obs.find((o) => o.field === 'bio');
-    const bio = String(bioObservation?.value || '');
 
-    expect(bio.length).toBeGreaterThanOrEqual(120);
-    expect(bio).toContain('official Yale profile summarizes research in');
-    expect(bio).toContain('string theory and supersymmetric field theory');
-    expect(bioObservation?.confidenceOverride).toBe(0.86);
+    expect(identity?.bio).toContain('string theory and supersymmetric field theory');
+    expect(bioObservation).toBeUndefined();
   });
 
-  it('expands single official research-interest terms without label chrome', () => {
+  it('does not expand single official research-interest terms into a user bio', () => {
     const obs = identityToUserObservations(
       {
-        canonicalUrl: 'https://economics.yale.edu/people/kevin-donovan/',
-        fetchedUrl: 'https://economics.yale.edu/people/kevin-donovan/',
-        displayName: 'Kevin Donovan',
-        email: 'kevin.donovan@yale.edu',
+        canonicalUrl: 'https://economics.yale.edu/people/kai-donovan/',
+        fetchedUrl: 'https://economics.yale.edu/people/kai-donovan/',
+        displayName: 'Kai Donovan',
+        email: 'kai.donovan@yale.edu',
         title: '',
         departments: [],
         researchInterests: ['Fields of Interest Development Economics'],
       },
       {
         netid: 'kd123',
-        email: 'kevin.donovan@yale.edu',
+        email: 'kai.donovan@yale.edu',
       },
     );
-    const bio = String(obs.find((o) => o.field === 'bio')?.value || '');
+    const bio = obs.find((o) => o.field === 'bio');
+    const researchInterests = obs.find((o) => o.field === 'researchInterests');
 
-    expect(bio.length).toBeGreaterThanOrEqual(120);
-    expect(bio).toContain('official Yale profile summarizes their research focus');
-    expect(bio).toContain('Development Economics');
-    expect(bio).not.toContain('Fields of Interest');
+    expect(bio).toBeUndefined();
+    expect(researchInterests?.value).toEqual(expect.arrayContaining(['Development Economics']));
   });
 
   it('does not emit short topic fragments as visible profile bios', () => {
     const obs = identityToUserObservations(
       {
-        canonicalUrl: 'https://sociology.yale.edu/profile/ramina-sotoudeh/',
-        fetchedUrl: 'https://sociology.yale.edu/profile/ramina-sotoudeh/',
-        displayName: 'Ramina Sotoudeh',
-        email: 'ramina.sotoudeh@yale.edu',
+        canonicalUrl: 'https://sociology.yale.edu/profile/remy-fixture/',
+        fetchedUrl: 'https://sociology.yale.edu/profile/remy-fixture/',
+        displayName: 'Remy Fixture',
+        email: 'remy.fixture@yale.edu',
         title: 'Assistant Professor of Sociology',
         departments: [],
         bio: 'The complex interaction between social and biological forces in shaping human behavior; sociogenomics; the sociology of culture.',
@@ -2339,7 +2332,7 @@ describe('officialProfilePiBackfillScraper', () => {
       },
       {
         netid: 'rs2852',
-        email: 'ramina.sotoudeh@yale.edu',
+        email: 'remy.fixture@yale.edu',
       },
     );
 
@@ -2350,13 +2343,13 @@ describe('officialProfilePiBackfillScraper', () => {
     const listLikeBioHtml = `
       <html>
         <head>
-          <link rel="canonical" href="https://sociology.yale.edu/profile/angel-escamilla-garcia/" />
+          <link rel="canonical" href="https://sociology.yale.edu/profile/ari-sociology-fixture/" />
         </head>
         <body>
           <main>
-            <h1>Angel Escamilla Garcia</h1>
+            <h1>Ari Sociology Fixture</h1>
             <div class="title">Assistant Professor of Sociology</div>
-            <a href="mailto:angel.escamillagarcia@yale.edu">angel.escamillagarcia@yale.edu</a>
+            <a href="mailto:ari.sociology.fixture@yale.edu">ari.sociology.fixture@yale.edu</a>
             <section class="biography">
               Vulnerable populations experience the violence they face during migration journeys;
               historical revision of pioneer black sociologists scholarship on migration and a
@@ -2370,16 +2363,16 @@ describe('officialProfilePiBackfillScraper', () => {
     `;
     const identity = extractOfficialProfileIdentity(
       listLikeBioHtml,
-      'https://sociology.yale.edu/profile/angel-escamilla-garcia/',
+      'https://sociology.yale.edu/profile/ari-sociology-fixture/',
       {
-        name: 'Angel Escamilla Garcia — Research',
-        slug: 'angel-escamilla-garcia-research',
+        name: 'Ari Sociology Fixture — Research',
+        slug: 'ari-sociology-fixture-research',
       },
     );
 
     const obs = identityToUserObservations(identity!, {
       netid: 'ae533',
-      email: 'angel.escamillagarcia@yale.edu',
+      email: 'ari.sociology.fixture@yale.edu',
     });
 
     expect(identity?.bio).toBeUndefined();
@@ -2389,10 +2382,10 @@ describe('officialProfilePiBackfillScraper', () => {
   it('skips Yale Medicine contact paragraphs and extracts the research overview as bio', () => {
     const identity = extractOfficialProfileIdentity(
       profileOverviewAfterContactHtml,
-      'https://medicine.yale.edu/profile/susan-baserga/',
+      'https://medicine.yale.edu/profile/sky-fixture/',
       {
-        name: 'Susan Baserga Research Area',
-        slug: 'faculty-research-area-susan-baserga',
+        name: 'Sky Fixture Research Area',
+        slug: 'faculty-research-area-sky-fixture',
       },
     );
 
@@ -2405,21 +2398,21 @@ describe('officialProfilePiBackfillScraper', () => {
       extractOfficialProfileIdentity(
         profileHtml.replace(profileUrl, 'https://medicine.yale.edu/profile/different-person/'),
         profileUrl,
-        { name: 'Joseph Kim Research Area', slug: 'faculty-research-area-joseph-kim' },
+        { name: 'Jules Fixture Research Area', slug: 'faculty-research-area-jules-fixture' },
       ),
     ).toBeNull();
   });
 
   it('emits user observations keyed by Yale netid and no research membership observations', () => {
     const identity = extractOfficialProfileIdentity(profileHtml, profileUrl, {
-      name: 'Joseph Kim Research Area',
-      slug: 'faculty-research-area-joseph-kim',
+      name: 'Jules Fixture Research Area',
+      slug: 'faculty-research-area-jules-fixture',
     });
 
-    const obs = identityToUserObservations(identity!, { netid: 'jwk42', email: 'joseph.kim@yale.edu' });
+    const obs = identityToUserObservations(identity!, { netid: 'fixture106', email: 'jules.fixture@yale.edu' });
 
     expect(obs.every((o) => o.entityType === 'user')).toBe(true);
-    expect(obs.every((o) => o.entityKey === 'netid:jwk42')).toBe(true);
+    expect(obs.every((o) => o.entityKey === 'netid:fixture106')).toBe(true);
     expect(obs.map((o) => o.field)).toEqual(
       expect.arrayContaining(['netid', 'fname', 'lname', 'email', 'profileUrls', 'imageUrl']),
     );
@@ -2428,21 +2421,21 @@ describe('officialProfilePiBackfillScraper', () => {
       official: profileUrl,
     });
     expect(obs.find((o) => o.field === 'imageUrl')?.value).toBe(
-      'https://ysm-res.cloudinary.com/image/upload/example/joseph-kim',
+      'https://ysm-res.cloudinary.com/image/upload/example/jules-fixture',
     );
   });
 
   it('emits research-entity description observations from official profile identity', () => {
     const identity = extractOfficialProfileIdentity(profileHtml, profileUrl, {
       _id: 'entity-1',
-      name: 'Joseph Kim Research Area',
-      slug: 'faculty-research-area-joseph-kim',
+      name: 'Jules Fixture Research Area',
+      slug: 'faculty-research-area-jules-fixture',
     });
 
     const obs = identityToResearchEntityDescriptionObservations(identity!, {
       _id: 'entity-1',
-      name: 'Joseph Kim Research Area',
-      slug: 'faculty-research-area-joseph-kim',
+      name: 'Jules Fixture Research Area',
+      slug: 'faculty-research-area-jules-fixture',
     });
 
     expect(obs).toEqual(
@@ -2450,7 +2443,7 @@ describe('officialProfilePiBackfillScraper', () => {
         expect.objectContaining({
           entityType: 'researchEntity',
           entityId: 'entity-1',
-          entityKey: 'faculty-research-area-joseph-kim',
+          entityKey: 'faculty-research-area-jules-fixture',
           field: 'fullDescription',
           value: expect.stringContaining('translational cancer biology'),
           sourceUrl: profileUrl,
@@ -2470,19 +2463,19 @@ describe('officialProfilePiBackfillScraper', () => {
   });
 
   it('prefers official profile body prose over Yale Law news teaser paragraphs', () => {
-    const lawProfileUrl = 'https://law.yale.edu/owen-m-fiss/';
+    const lawProfileUrl = 'https://law.yale.edu/oakley-fixture/';
     const identity = extractOfficialProfileIdentity(
       `
         <html>
           <head><link rel="canonical" href="${lawProfileUrl}" /></head>
           <body>
             <main>
-              <h1>Owen M. Fiss</h1>
+              <h1>Oakley Fixture</h1>
               <div class="title">Sterling Professor Emeritus of Law</div>
-              <a href="mailto:owen.fiss@yale.edu">owen.fiss@yale.edu</a>
+              <a href="mailto:oakley.fixture@yale.edu">oakley.fixture@yale.edu</a>
               <div class="field--name-body">
                 <p>
-                  Professor Fiss is the author of many articles and books on procedure, free speech,
+                  Professor Fixture is the author of many articles and books on procedure, free speech,
                   civil rights, and comparative constitutional law.
                 </p>
               </div>
@@ -2499,8 +2492,8 @@ describe('officialProfilePiBackfillScraper', () => {
       lawProfileUrl,
       {
         _id: 'entity-law',
-        name: 'Owen Fiss Research',
-        slug: 'fiss-omf2',
+        name: 'Oakley Fixture Research',
+        slug: 'oakley-fixture',
       },
     );
 
@@ -2509,8 +2502,8 @@ describe('officialProfilePiBackfillScraper', () => {
 
     const obs = identityToResearchEntityDescriptionObservations(identity!, {
       _id: 'entity-law',
-      name: 'Owen Fiss Research',
-      slug: 'fiss-omf2',
+      name: 'Oakley Fixture Research',
+      slug: 'oakley-fixture',
     });
 
     expect(obs).toEqual(
@@ -2527,10 +2520,10 @@ describe('officialProfilePiBackfillScraper', () => {
   it('derives card-safe short descriptions from author-of-topic profile prose', () => {
     const obs = identityToResearchEntityDescriptionObservations(
       {
-        canonicalUrl: 'https://politicalscience.yale.edu/people/peter-swenson/',
-        fetchedUrl: 'https://politicalscience.yale.edu/people/peter-swenson/',
-        displayName: 'Peter Swenson',
-        email: 'peter.swenson@yale.edu',
+        canonicalUrl: 'https://politicalscience.yale.edu/people/peyton-fixture/',
+        fetchedUrl: 'https://politicalscience.yale.edu/people/peyton-fixture/',
+        displayName: 'Peyton Fixture',
+        email: 'peyton.fixture@yale.edu',
         title: 'Professor of Political Science',
         departments: [],
         bio: 'Swenson is an acclaimed author of articles and books on comparative political economy and the history of medical and health care politics.',
@@ -2538,7 +2531,7 @@ describe('officialProfilePiBackfillScraper', () => {
       },
       {
         _id: 'entity-swenson',
-        name: 'Peter Swenson Research',
+        name: 'Peyton Fixture Research',
         slug: 'swenson-pas57',
       },
     );
@@ -2557,17 +2550,17 @@ describe('officialProfilePiBackfillScraper', () => {
   it('emits inferred PI observations when official profile identity resolves to an existing user', () => {
     const identity = extractOfficialProfileIdentity(profileHtml, profileUrl, {
       _id: '64f000000000000000000010',
-      name: 'Joseph Kim Research Area',
-      slug: 'faculty-research-area-joseph-kim',
+      name: 'Jules Fixture Research Area',
+      slug: 'faculty-research-area-jules-fixture',
     });
 
     const obs = identityToResearchEntityPiObservations(
       identity!,
-      { _id: '64f000000000000000000020', netid: 'jwk42', email: 'joseph.kim@yale.edu' },
+      { _id: '64f000000000000000000020', netid: 'fixture106', email: 'jules.fixture@yale.edu' },
       {
         _id: '64f000000000000000000010',
-        name: 'Joseph Kim Research Area',
-        slug: 'faculty-research-area-joseph-kim',
+        name: 'Jules Fixture Research Area',
+        slug: 'faculty-research-area-jules-fixture',
       },
     );
 
@@ -2575,7 +2568,7 @@ describe('officialProfilePiBackfillScraper', () => {
       expect.objectContaining({
         entityType: 'researchEntity',
         entityId: '64f000000000000000000010',
-        entityKey: 'faculty-research-area-joseph-kim',
+        entityKey: 'faculty-research-area-jules-fixture',
         field: 'inferredPiUserId',
         value: '64f000000000000000000020',
         sourceUrl: profileUrl,
@@ -2587,23 +2580,23 @@ describe('officialProfilePiBackfillScraper', () => {
   it('emits inferred PI key observations when an official Yale profile supplies a netid key', () => {
     const identity = extractOfficialProfileIdentity(profileHtml, profileUrl, {
       _id: '64f000000000000000000010',
-      name: 'Joseph Kim Research Area',
-      slug: 'faculty-research-area-joseph-kim',
+      name: 'Jules Fixture Research Area',
+      slug: 'faculty-research-area-jules-fixture',
     });
 
-    const obs = identityToResearchEntityPiKeyObservations(identity!, 'joseph.kim', {
+    const obs = identityToResearchEntityPiKeyObservations(identity!, 'jules.fixture', {
       _id: '64f000000000000000000010',
-      name: 'Joseph Kim Research Area',
-      slug: 'faculty-research-area-joseph-kim',
+      name: 'Jules Fixture Research Area',
+      slug: 'faculty-research-area-jules-fixture',
     });
 
     expect(obs).toEqual([
       expect.objectContaining({
         entityType: 'researchEntity',
         entityId: '64f000000000000000000010',
-        entityKey: 'faculty-research-area-joseph-kim',
+        entityKey: 'faculty-research-area-jules-fixture',
         field: 'inferredPiUserKey',
-        value: 'joseph.kim',
+        value: 'jules.fixture',
         sourceUrl: profileUrl,
         confidenceOverride: 0.88,
       }),
@@ -2622,12 +2615,12 @@ describe('officialProfilePiBackfillScraper', () => {
       ),
       profileUrl,
       {
-        name: 'Joseph Kim Research Area',
-        slug: 'faculty-research-area-joseph-kim',
+        name: 'Jules Fixture Research Area',
+        slug: 'faculty-research-area-jules-fixture',
       },
     );
 
-    const obs = identityToUserObservations(identity!, { netid: 'jwk42', email: 'joseph.kim@yale.edu' });
+    const obs = identityToUserObservations(identity!, { netid: 'fixture106', email: 'jules.fixture@yale.edu' });
 
     expect(obs.some((o) => o.field === 'primaryDepartment')).toBe(false);
     expect(obs.some((o) => o.field === 'departments')).toBe(false);
@@ -2640,22 +2633,22 @@ describe('officialProfilePiBackfillScraper', () => {
       vi.fn(async () => [
         {
           _id: 'entity-1',
-          name: 'Joseph Kim Research Area',
-          slug: 'faculty-research-area-joseph-kim',
-          websiteUrl: 'https://medicine.yale.edu/cancer/profile/joseph-w-kim',
+          name: 'Jules Fixture Research Area',
+          slug: 'faculty-research-area-jules-fixture',
+          websiteUrl: 'https://medicine.yale.edu/cancer/profile/jules-fixture',
         },
       ]),
       vi.fn(async () => ({
         _id: '64f000000000000000000020',
-        netid: 'jwk42',
-        email: 'joseph.kim@yale.edu',
+        netid: 'fixture106',
+        email: 'jules.fixture@yale.edu',
       })),
       vi.fn(async () => [
         {
           _id: 'entity-1',
-          name: 'Joseph Kim Research Area',
-          slug: 'faculty-research-area-joseph-kim',
-          websiteUrl: 'https://medicine.yale.edu/cancer/profile/joseph-w-kim',
+          name: 'Jules Fixture Research Area',
+          slug: 'faculty-research-area-jules-fixture',
+          websiteUrl: 'https://medicine.yale.edu/cancer/profile/jules-fixture',
         },
       ]),
     );
@@ -2663,7 +2656,7 @@ describe('officialProfilePiBackfillScraper', () => {
     const result = await scraper.run(contextFor(emitted));
 
     expect(result).toMatchObject({ observationCount: emitted.length, entitiesObserved: 1 });
-    expect(emitted.find((o) => o.field === 'email')?.value).toBe('joseph.kim@yale.edu');
+    expect(emitted.find((o) => o.field === 'email')?.value).toBe('jules.fixture@yale.edu');
     expect(emitted.find((o) => o.field === 'inferredPiUserId')?.value).toBe(
       '64f000000000000000000020',
     );
@@ -2679,9 +2672,9 @@ describe('officialProfilePiBackfillScraper', () => {
     const entitySelector = vi.fn(async () => [
       {
         _id: 'entity-1',
-        name: 'Joseph Kim Research Area',
-        slug: 'faculty-research-area-joseph-kim',
-        websiteUrl: 'https://medicine.yale.edu/cancer/profile/joseph-w-kim',
+        name: 'Jules Fixture Research Area',
+        slug: 'faculty-research-area-jules-fixture',
+        websiteUrl: 'https://medicine.yale.edu/cancer/profile/jules-fixture',
       },
     ]);
     const scraper = new OfficialProfilePiBackfillScraper(
@@ -2689,8 +2682,8 @@ describe('officialProfilePiBackfillScraper', () => {
       entitySelector,
       vi.fn(async () => ({
         _id: '64f000000000000000000020',
-        netid: 'jwk42',
-        email: 'joseph.kim@yale.edu',
+        netid: 'fixture106',
+        email: 'jules.fixture@yale.edu',
       })),
     );
     const ctx = contextFor(emitted);
@@ -2709,18 +2702,18 @@ describe('officialProfilePiBackfillScraper', () => {
       vi.fn(async () => [
         {
           _id: 'entity-1',
-          name: 'Joseph Kim Research Area',
-          slug: 'faculty-research-area-joseph-kim',
-          websiteUrl: 'https://medicine.yale.edu/cancer/profile/joseph-w-kim',
+          name: 'Jules Fixture Research Area',
+          slug: 'faculty-research-area-jules-fixture',
+          websiteUrl: 'https://medicine.yale.edu/cancer/profile/jules-fixture',
         },
       ]),
       vi.fn(async () => null),
       vi.fn(async () => [
         {
           _id: 'entity-1',
-          name: 'Joseph Kim Research Area',
-          slug: 'faculty-research-area-joseph-kim',
-          websiteUrl: 'https://medicine.yale.edu/cancer/profile/joseph-w-kim',
+          name: 'Jules Fixture Research Area',
+          slug: 'faculty-research-area-jules-fixture',
+          websiteUrl: 'https://medicine.yale.edu/cancer/profile/jules-fixture',
         },
       ]),
     );
@@ -2732,13 +2725,13 @@ describe('officialProfilePiBackfillScraper', () => {
       expect.arrayContaining([
         expect.objectContaining({
           entityType: 'user',
-          entityKey: 'netid:joseph.kim',
+          entityKey: 'netid:jules.fixture',
           field: 'email',
-          value: 'joseph.kim@yale.edu',
+          value: 'jules.fixture@yale.edu',
         }),
         expect.objectContaining({
           entityType: 'user',
-          entityKey: 'netid:joseph.kim',
+          entityKey: 'netid:jules.fixture',
           field: 'profileUrls',
           value: {
             medicine: profileUrl,
@@ -2748,7 +2741,7 @@ describe('officialProfilePiBackfillScraper', () => {
         expect.objectContaining({
           entityType: 'researchEntity',
           field: 'inferredPiUserKey',
-          value: 'joseph.kim',
+          value: 'jules.fixture',
         }),
       ]),
     );
@@ -2762,14 +2755,14 @@ describe('officialProfilePiBackfillScraper', () => {
       vi.fn(async () => [
         {
           _id: 'entity-1',
-          name: 'Joseph Kim Research Area',
-          slug: 'faculty-research-area-joseph-kim',
-          websiteUrl: 'https://medicine.yale.edu/cancer/profile/joseph-w-kim',
+          name: 'Jules Fixture Research Area',
+          slug: 'faculty-research-area-jules-fixture',
+          websiteUrl: 'https://medicine.yale.edu/cancer/profile/jules-fixture',
         },
       ]),
       vi.fn(async () => ({
         _id: '64f000000000000000000020',
-        netid: 'jwk42',
+        netid: 'fixture106',
         email: '',
       })),
       vi.fn(async () => []),
@@ -2798,30 +2791,30 @@ describe('officialProfilePiBackfillScraper', () => {
         {
           _id: 'user-harold',
           netid: 'hs7',
-          email: 'harold.sanchez@yale.edu',
-          fname: 'Harold',
+          email: 'harper.sanchez@yale.edu',
+          fname: 'Harper',
           lname: 'Sanchez',
           profileUrls: {
-            medicine: 'https://medicine.yale.edu/profile/harold-sanchez/',
+            medicine: 'https://medicine.yale.edu/profile/harper-sanchez/',
           },
         },
         {
           _id: 'user-hayde',
           netid: 'hs272',
-          email: 'hayde.sanchez@yale.edu',
+          email: 'hayden.sanchez@yale.edu',
           fname: 'Hayde',
           lname: 'Sanchez',
           profileUrls: {
-            medicine: 'https://medicine.yale.edu/profile/harold-sanchez/',
+            medicine: 'https://medicine.yale.edu/profile/harper-sanchez/',
           },
         },
       ]),
     } as any);
 
     const match = await resolveExistingUserForIdentity({
-      canonicalUrl: 'https://medicine.yale.edu/profile/harold-sanchez/',
-      fetchedUrl: 'https://medicine.yale.edu/profile/harold-sanchez/',
-      displayName: 'Harry Sanchez',
+      canonicalUrl: 'https://medicine.yale.edu/profile/harper-sanchez/',
+      fetchedUrl: 'https://medicine.yale.edu/profile/harper-sanchez/',
+      displayName: 'Harper Sanchez',
       email: '',
       title: 'Assistant Professor',
       departments: [],
@@ -2831,7 +2824,7 @@ describe('officialProfilePiBackfillScraper', () => {
     expect(match).toEqual({
       _id: 'user-harold',
       netid: 'hs7',
-      email: 'harold.sanchez@yale.edu',
+      email: 'harper.sanchez@yale.edu',
     });
   });
 
@@ -2842,18 +2835,18 @@ describe('officialProfilePiBackfillScraper', () => {
       vi.fn(async () => [
         {
           _id: 'entity-1',
-          name: 'Joseph Kim Research Area',
-          slug: 'faculty-research-area-joseph-kim',
-          websiteUrl: 'https://medicine.yale.edu/cancer/profile/joseph-w-kim',
+          name: 'Jules Fixture Research Area',
+          slug: 'faculty-research-area-jules-fixture',
+          websiteUrl: 'https://medicine.yale.edu/cancer/profile/jules-fixture',
         },
       ]),
-      vi.fn(async () => ({ netid: 'jwk42', email: 'joseph.kim@yale.edu' })),
+      vi.fn(async () => ({ netid: 'fixture106', email: 'jules.fixture@yale.edu' })),
       vi.fn(async () => [
         {
           _id: 'entity-1',
-          name: 'Joseph Kim Research Area',
-          slug: 'faculty-research-area-joseph-kim',
-          websiteUrl: 'https://medicine.yale.edu/cancer/profile/joseph-w-kim',
+          name: 'Jules Fixture Research Area',
+          slug: 'faculty-research-area-jules-fixture',
+          websiteUrl: 'https://medicine.yale.edu/cancer/profile/jules-fixture',
         },
       ]),
     );
@@ -2864,7 +2857,7 @@ describe('officialProfilePiBackfillScraper', () => {
     expect(emitted.find((o) => o.field === 'bio')?.value).toContain(
       'studies translational cancer biology',
     );
-    expect(emitted.every((o) => o.entityKey === 'netid:jwk42')).toBe(true);
+    expect(emitted.every((o) => o.entityKey === 'netid:fixture106')).toBe(true);
   });
 
   it('runs queued official profile description backfill for source-description entities', async () => {
@@ -2874,17 +2867,17 @@ describe('officialProfilePiBackfillScraper', () => {
       vi.fn(async () => []),
       vi.fn(async () => ({
         _id: '64f000000000000000000020',
-        netid: 'jwk42',
-        email: 'joseph.kim@yale.edu',
+        netid: 'fixture106',
+        email: 'jules.fixture@yale.edu',
       })),
       vi.fn(async () => []),
       vi.fn(async () => []),
       vi.fn(async () => [
         {
           _id: 'entity-1',
-          name: 'Joseph Kim Research Area',
-          slug: 'faculty-research-area-joseph-kim',
-          sourceUrls: ['https://medicine.yale.edu/cancer/profile/joseph-w-kim'],
+          name: 'Jules Fixture Research Area',
+          slug: 'faculty-research-area-jules-fixture',
+          sourceUrls: ['https://medicine.yale.edu/cancer/profile/jules-fixture'],
         },
       ]),
     );
@@ -2898,7 +2891,7 @@ describe('officialProfilePiBackfillScraper', () => {
           entityType: 'researchEntity',
           field: 'sourceUrls',
           value: [
-            'https://medicine.yale.edu/cancer/profile/joseph-w-kim',
+            'https://medicine.yale.edu/cancer/profile/jules-fixture',
             profileUrl,
           ],
         }),
@@ -2928,17 +2921,17 @@ describe('officialProfilePiBackfillScraper', () => {
       vi.fn(async () => []),
       vi.fn(async () => ({
         _id: '64f000000000000000000020',
-        netid: 'jwk42',
-        email: 'joseph.kim@yale.edu',
+        netid: 'fixture106',
+        email: 'jules.fixture@yale.edu',
       })),
       vi.fn(async () => []),
       vi.fn(async () => []),
       vi.fn(async () => [
         {
           _id: 'entity-1',
-          name: 'Joseph Kim Research Area',
-          slug: 'faculty-research-area-joseph-kim',
-          sourceUrls: ['https://medicine.yale.edu/cancer/profile/joseph-w-kim'],
+          name: 'Jules Fixture Research Area',
+          slug: 'faculty-research-area-jules-fixture',
+          sourceUrls: ['https://medicine.yale.edu/cancer/profile/jules-fixture'],
           [PROFILE_DESCRIPTION_SUPPRESSED_BY_PREFERRED_SOURCE_NAMES_FIELD]: [
             'lab-microsite-description-llm',
           ],
@@ -2960,9 +2953,9 @@ describe('officialProfilePiBackfillScraper', () => {
     const profileDescriptionSelector = vi.fn(async () => [
       {
         _id: 'entity-1',
-        name: 'Joseph Kim Research Area',
-        slug: 'faculty-research-area-joseph-kim',
-        sourceUrls: ['https://medicine.yale.edu/cancer/profile/joseph-w-kim'],
+        name: 'Jules Fixture Research Area',
+        slug: 'faculty-research-area-jules-fixture',
+        sourceUrls: ['https://medicine.yale.edu/cancer/profile/jules-fixture'],
       },
     ]);
     const scraper = new OfficialProfilePiBackfillScraper(
@@ -2970,8 +2963,8 @@ describe('officialProfilePiBackfillScraper', () => {
       vi.fn(async () => []),
       vi.fn(async () => ({
         _id: '64f000000000000000000020',
-        netid: 'jwk42',
-        email: 'joseph.kim@yale.edu',
+        netid: 'fixture106',
+        email: 'jules.fixture@yale.edu',
       })),
       vi.fn(async () => []),
       researchHomeSelector,
@@ -2984,13 +2977,13 @@ describe('officialProfilePiBackfillScraper', () => {
         dryRun: true,
         useCache: false,
         release: false,
-        only: ['profile-description-backfill', 'faculty-research-area-joseph-kim'],
+        only: ['profile-description-backfill', 'faculty-research-area-jules-fixture'],
       },
     });
 
     expect(result).toMatchObject({ observationCount: emitted.length, entitiesObserved: 1 });
     expect(profileDescriptionSelector).toHaveBeenCalledWith(25, [
-      'faculty-research-area-joseph-kim',
+      'faculty-research-area-jules-fixture',
     ]);
     expect(researchHomeSelector).not.toHaveBeenCalled();
     expect(emitted.find((o) => o.field === 'fullDescription')?.value).toContain(
@@ -3004,13 +2997,13 @@ describe('officialProfilePiBackfillScraper', () => {
   it('generates bounded official profile candidates from Yale lead identity', () => {
     expect(
       generatedOfficialProfileUrlCandidatesForPerson({
-        fname: 'Laura',
-        lname: 'Forastiere',
-        email: 'laura.forastiere@yale.edu',
+        fname: 'Logan',
+        lname: 'Fixture',
+        email: 'logan.fixture@yale.edu',
       }),
     ).toEqual([
-      'https://medicine.yale.edu/profile/laura-forastiere/',
-      'https://ysph.yale.edu/profile/laura-forastiere/',
+      'https://medicine.yale.edu/profile/logan-fixture/',
+      'https://ysph.yale.edu/profile/logan-fixture/',
     ]);
     expect(
       generatedOfficialProfileUrlCandidatesForPerson({
@@ -3024,7 +3017,7 @@ describe('officialProfilePiBackfillScraper', () => {
   it('runs profile description backfill from a matching profile even when public email is absent', async () => {
     const emitted: ObservationInput[] = [];
     const noEmailProfileHtml = profileHtml.replace(
-      '<a href="mailto:joseph.kim@yale.edu">joseph.kim@yale.edu</a>',
+      '<a href="mailto:jules.fixture@yale.edu">jules.fixture@yale.edu</a>',
       '<span>contact unavailable</span>',
     );
     const scraper = new OfficialProfilePiBackfillScraper(
@@ -3036,9 +3029,9 @@ describe('officialProfilePiBackfillScraper', () => {
       vi.fn(async () => [
         {
           _id: 'entity-1',
-          name: 'Joseph Kim Research Area',
-          slug: 'faculty-research-area-joseph-kim',
-          sourceUrls: ['https://medicine.yale.edu/cancer/profile/joseph-w-kim'],
+          name: 'Jules Fixture Research Area',
+          slug: 'faculty-research-area-jules-fixture',
+          sourceUrls: ['https://medicine.yale.edu/cancer/profile/jules-fixture'],
         },
       ]),
     );
@@ -3056,7 +3049,7 @@ describe('officialProfilePiBackfillScraper', () => {
   it('uses the known linked netid for visible bio repair when the profile omits email', async () => {
     const emitted: ObservationInput[] = [];
     const noEmailProfileHtml = profileHtml.replace(
-      '<a href="mailto:joseph.kim@yale.edu">joseph.kim@yale.edu</a>',
+      '<a href="mailto:jules.fixture@yale.edu">jules.fixture@yale.edu</a>',
       '<span>contact unavailable</span>',
     );
     const scraper = new OfficialProfilePiBackfillScraper(
@@ -3066,11 +3059,11 @@ describe('officialProfilePiBackfillScraper', () => {
       vi.fn(async () => [
         {
           _id: 'user-1',
-          netid: 'jwk42',
-          email: 'joseph.kim@yale.edu',
-          name: 'Joseph Kim',
-          slug: 'joseph-kim',
-          websiteUrl: 'https://medicine.yale.edu/cancer/profile/joseph-w-kim',
+          netid: 'fixture106',
+          email: 'jules.fixture@yale.edu',
+          name: 'Jules Fixture',
+          slug: 'jules-fixture',
+          websiteUrl: 'https://medicine.yale.edu/cancer/profile/jules-fixture',
         },
       ]),
     );
@@ -3081,7 +3074,7 @@ describe('officialProfilePiBackfillScraper', () => {
     expect(emitted.find((o) => o.field === 'bio')?.value).toContain(
       'studies translational cancer biology',
     );
-    expect(emitted.every((o) => o.entityKey === 'netid:jwk42')).toBe(true);
+    expect(emitted.every((o) => o.entityKey === 'netid:fixture106')).toBe(true);
     expect(emitted.some((o) => o.field === 'email')).toBe(false);
   });
 
@@ -3095,11 +3088,11 @@ describe('officialProfilePiBackfillScraper', () => {
         {
           _id: 'user-3',
           netid: 'da3',
-          email: 'dana.angluin@yale.edu',
-          fname: 'Dana',
-          lname: 'Angluin',
-          name: 'Dana Angluin',
-          slug: 'dana-angluin',
+          email: 'drew.fixture@yale.edu',
+          fname: 'Drew',
+          lname: 'Fixture',
+          name: 'Drew Fixture',
+          slug: 'drew-fixture',
           websiteUrl: departmentPersonPageUrl,
         },
       ]),
@@ -3121,7 +3114,7 @@ describe('officialProfilePiBackfillScraper', () => {
 
   it('uses Yale /faculty/ person pages for already linked visible bio backfill', async () => {
     const emitted: ObservationInput[] = [];
-    const facultyPageUrl = 'https://economics.yale.edu/faculty/dana-angluin/';
+    const facultyPageUrl = 'https://economics.yale.edu/faculty/drew-fixture/';
     const facultyPageHtml = departmentPersonPageHtml.replace(
       departmentPersonPageUrl,
       facultyPageUrl,
@@ -3135,11 +3128,11 @@ describe('officialProfilePiBackfillScraper', () => {
         {
           _id: 'user-faculty-page',
           netid: 'da3',
-          email: 'dana.angluin@yale.edu',
-          fname: 'Dana',
-          lname: 'Angluin',
-          name: 'Dana Angluin',
-          slug: 'dana-angluin',
+          email: 'drew.fixture@yale.edu',
+          fname: 'Drew',
+          lname: 'Fixture',
+          name: 'Drew Fixture',
+          slug: 'drew-fixture',
           websiteUrl: facultyPageUrl,
         },
       ]),
@@ -3161,8 +3154,8 @@ describe('officialProfilePiBackfillScraper', () => {
 
   it('canonicalizes migrated Sociology people pages to profile pages for visible bio backfill', async () => {
     const emitted: ObservationInput[] = [];
-    const oldSociologyUrl = 'https://sociology.yale.edu/people/dana-angluin';
-    const currentSociologyUrl = 'https://sociology.yale.edu/profile/dana-angluin/';
+    const oldSociologyUrl = 'https://sociology.yale.edu/people/drew-fixture';
+    const currentSociologyUrl = 'https://sociology.yale.edu/profile/drew-fixture/';
     const sociologyProfileHtml = departmentPersonPageHtml.replace(
       new RegExp(departmentPersonPageUrl, 'g'),
       currentSociologyUrl,
@@ -3176,11 +3169,11 @@ describe('officialProfilePiBackfillScraper', () => {
         {
           _id: 'user-sociology-page',
           netid: 'da3',
-          email: 'dana.angluin@yale.edu',
-          fname: 'Dana',
-          lname: 'Angluin',
-          name: 'Dana Angluin',
-          slug: 'dana-angluin',
+          email: 'drew.fixture@yale.edu',
+          fname: 'Drew',
+          lname: 'Fixture',
+          name: 'Drew Fixture',
+          slug: 'drew-fixture',
           profileUrls: {
             sociology: oldSociologyUrl,
           },
@@ -3204,17 +3197,17 @@ describe('officialProfilePiBackfillScraper', () => {
 
   it('uses attached research-home profile URLs for already linked visible bio backfill', async () => {
     const emitted: ObservationInput[] = [];
-    const homeProfileUrl = 'https://medicine.yale.edu/cancer/profile/sarah-aitken/';
-    const canonicalHomeProfileUrl = 'https://medicine.yale.edu/profile/sarah-aitken/';
+    const homeProfileUrl = 'https://medicine.yale.edu/cancer/profile/sage-aitken/';
+    const canonicalHomeProfileUrl = 'https://medicine.yale.edu/profile/sage-aitken/';
     const homeProfileHtml = profileHtml
       .replace(new RegExp(profileUrl, 'g'), homeProfileUrl)
-      .replace(/Joseph W\. Kim/g, 'Sarah Aitken')
-      .replace(/Joseph Kim/g, 'Sarah Aitken')
-      .replace(/joseph\.kim@yale\.edu/g, 'sarah.aitken@yale.edu')
+      .replace(/Jules Fixture/g, 'Sage Aitken')
+      .replace(/Jules Fixture/g, 'Sage Aitken')
+      .replace(/jules\.fixture@yale\.edu/g, 'sage.aitken@yale.edu')
       .replace(/Professor of Surgery \(Oncology\)/g, 'Assistant Professor of Medicine')
       .replace(
-        /Sarah Aitken studies translational cancer biology and develops clinical research\s+programs for gastrointestinal oncology\./,
-        'Sarah Aitken studies cancer outcomes, clinical epidemiology, and interventions that improve care delivery for patients with gastrointestinal malignancies.',
+        /Sage Aitken studies translational cancer biology and develops clinical research\s+programs for gastrointestinal oncology\./,
+        'Sage Aitken studies cancer outcomes, clinical epidemiology, and interventions that improve care delivery for patients with gastrointestinal malignancies.',
       );
     const htmlFetcher = vi.fn(async () => homeProfileHtml);
     const scraper = new OfficialProfilePiBackfillScraper(
@@ -3225,11 +3218,11 @@ describe('officialProfilePiBackfillScraper', () => {
         {
           _id: 'user-home-profile',
           netid: 'sja44',
-          email: 'sarah.aitken@yale.edu',
-          fname: 'Sarah',
+          email: 'sage.aitken@yale.edu',
+          fname: 'Sage',
           lname: 'Aitken',
-          name: 'Sarah Aitken',
-          slug: 'sarah-aitken',
+          name: 'Sage Aitken',
+          slug: 'sage-aitken',
           profileUrls: {
             orcid: 'https://orcid.org/0000-0002-1897-4140',
           },
@@ -3250,7 +3243,7 @@ describe('officialProfilePiBackfillScraper', () => {
       'official-profile-pi-backfill',
     );
     expect(emitted.find((o) => o.field === 'bio')?.value).toContain(
-      'Sarah Aitken studies cancer outcomes',
+      'Sage Aitken studies cancer outcomes',
     );
     expect(emitted.find((o) => o.field === 'profileUrls')).toBeUndefined();
     expect(emitted.find((o) => o.field === 'userType')).toBeUndefined();
@@ -3288,7 +3281,7 @@ describe('officialProfilePiBackfillScraper', () => {
         {
           _id: 'user-variant',
           netid: 'zeo1',
-          email: 'zeynep.omay@yale.edu',
+          email: 'zuri.fixture@yale.edu',
           fname: 'Zeynep Erson',
           lname: 'Omay',
           name: 'Zeynep Erson Omay',
@@ -3325,15 +3318,15 @@ describe('officialProfilePiBackfillScraper', () => {
       limit: vi.fn().mockReturnThis(),
       lean: vi.fn().mockResolvedValue([
         {
-          _id: 'user-soyoung-lee',
+          _id: 'user-sky-lee',
           netid: 'sl3248',
-          email: 'soyoung.lee@yale.edu',
-          fname: 'Soyoung',
+          email: 'sky.lee@yale.edu',
+          fname: 'Sky',
           lname: 'Lee',
           userType: 'faculty',
           bio: '',
           profileUrls: {
-            departmental: 'https://politicalscience.yale.edu/people/soyoung-lee/',
+            departmental: 'https://politicalscience.yale.edu/people/sky-lee/',
           },
         },
       ]),
@@ -3344,7 +3337,7 @@ describe('officialProfilePiBackfillScraper', () => {
     expect(targets).toHaveLength(1);
     expect(targets[0]).toMatchObject({
       netid: 'sl3248',
-      leadProfileUrls: ['https://politicalscience.yale.edu/people/soyoung-lee/'],
+      leadProfileUrls: ['https://politicalscience.yale.edu/people/sky-lee/'],
     });
   });
 
@@ -3377,7 +3370,7 @@ describe('officialProfilePiBackfillScraper', () => {
         {
           _id: 'user-wrong-variant',
           netid: 'mjt1',
-          email: 'mary.taylor@yale.edu',
+          email: 'morgan.taylor@yale.edu',
           fname: 'Mary Jane',
           lname: 'Taylor',
           name: 'Mary Jane Taylor',
@@ -3407,22 +3400,22 @@ describe('officialProfilePiBackfillScraper', () => {
         {
           _id: 'user-4',
           netid: 'nb653',
-          email: 'nancy.brown@yale.edu',
+          email: 'nico.brown@yale.edu',
           fname: 'Nancy',
           lname: 'Brown',
-          name: 'Nancy Brown',
-          slug: 'nancy-brown',
+          name: 'Nico Brown',
+          slug: 'nico-brown',
           websiteUrl: 'https://nelc.yale.edu/people/nicholas-brown/',
         },
         {
           _id: 'user-5',
           netid: 'ab123',
-          email: 'ann.brown@yale.edu',
+          email: 'ari.brown@yale.edu',
           fname: 'Ann',
           lname: 'Brown',
-          name: 'Ann Brown',
-          slug: 'ann-brown',
-          websiteUrl: 'https://history.yale.edu/people/joanne-brown/',
+          name: 'Ari Brown',
+          slug: 'ari-brown',
+          websiteUrl: 'https://history.yale.edu/people/jordan-history-fixture/',
         },
       ]),
       vi.fn(async () => []),
@@ -3438,12 +3431,12 @@ describe('officialProfilePiBackfillScraper', () => {
 
   it('uses a valid department page instead of a stale same-name Medicine profile URL', async () => {
     const emitted: ObservationInput[] = [];
-    const staleMedicineUrl = 'https://medicine.yale.edu/profile/different-angluin/';
+    const staleMedicineUrl = 'https://medicine.yale.edu/profile/different-fixture/';
     const htmlFetcher = vi.fn(async (url: string) => {
       if (url === staleMedicineUrl) {
         return departmentPersonPageHtml
-          .replace(/Dana Angluin/g, 'Different Angluin')
-          .replace(/dana\.angluin@yale\.edu/g, 'different.angluin@yale.edu');
+          .replace(/Drew Fixture/g, 'Different Angluin')
+          .replace(/drew\.fixture@yale\.edu/g, 'different.fixture@yale.edu');
       }
       return departmentPersonPageHtml;
     });
@@ -3455,11 +3448,11 @@ describe('officialProfilePiBackfillScraper', () => {
         {
           _id: 'user-6',
           netid: 'da3',
-          email: 'dana.angluin@yale.edu',
-          fname: 'Dana',
-          lname: 'Angluin',
-          name: 'Dana Angluin',
-          slug: 'dana-angluin',
+          email: 'drew.fixture@yale.edu',
+          fname: 'Drew',
+          lname: 'Fixture',
+          name: 'Drew Fixture',
+          slug: 'drew-fixture',
           profileUrls: {
             medicine: staleMedicineUrl,
             departmental: departmentPersonPageUrl,
@@ -3484,7 +3477,7 @@ describe('officialProfilePiBackfillScraper', () => {
 
   it('tries the next visible profile URL when the preferred profile fetch fails', async () => {
     const emitted: ObservationInput[] = [];
-    const staleMedicineUrl = 'https://medicine.yale.edu/profile/dana-angluin/';
+    const staleMedicineUrl = 'https://medicine.yale.edu/profile/drew-fixture/';
     const htmlFetcher = vi.fn(async (url: string) => {
       if (url === staleMedicineUrl) {
         throw new Error('Request failed with status code 404');
@@ -3499,11 +3492,11 @@ describe('officialProfilePiBackfillScraper', () => {
         {
           _id: 'user-fetch-fallback',
           netid: 'da3',
-          email: 'dana.angluin@yale.edu',
-          fname: 'Dana',
-          lname: 'Angluin',
-          name: 'Dana Angluin',
-          slug: 'dana-angluin',
+          email: 'drew.fixture@yale.edu',
+          fname: 'Drew',
+          lname: 'Fixture',
+          name: 'Drew Fixture',
+          slug: 'drew-fixture',
           profileUrls: {
             medicine: staleMedicineUrl,
             departmental: departmentPersonPageUrl,
@@ -3536,11 +3529,11 @@ describe('officialProfilePiBackfillScraper', () => {
   it('throttles repeated profile fetches in large visible bio batches', async () => {
     const emitted: ObservationInput[] = [];
     const htmlFetcher = vi.fn(async (url: string) =>
-      url.includes('second-person')
+      url.includes('second-fixture')
         ? profileHtml
-            .replace(/Joseph W\. Kim/g, 'Second Person')
-            .replace(/joseph\.kim@yale\.edu/g, 'second.person@yale.edu')
-            .replace(/joseph-w-kim/g, 'second-person')
+            .replace(/Jules Fixture/g, 'Second Person')
+            .replace(/jules\.fixture@yale\.edu/g, 'second.fixture@yale.edu')
+            .replace(/jules-fixture/g, 'second-fixture')
         : profileHtml,
     );
     const delay = vi.fn(async () => undefined);
@@ -3551,19 +3544,19 @@ describe('officialProfilePiBackfillScraper', () => {
       vi.fn(async () => [
         {
           _id: 'user-1',
-          netid: 'jwk42',
-          email: 'joseph.kim@yale.edu',
-          name: 'Joseph Kim',
-          slug: 'joseph-kim',
-          websiteUrl: 'https://medicine.yale.edu/profile/joseph-w-kim/',
+          netid: 'fixture106',
+          email: 'jules.fixture@yale.edu',
+          name: 'Jules Fixture',
+          slug: 'jules-fixture',
+          websiteUrl: 'https://medicine.yale.edu/profile/jules-fixture/',
         },
         {
           _id: 'user-2',
           netid: 'sp123',
-          email: 'second.person@yale.edu',
+          email: 'second.fixture@yale.edu',
           name: 'Second Person',
-          slug: 'second-person',
-          websiteUrl: 'https://medicine.yale.edu/profile/second-person/',
+          slug: 'second-fixture',
+          websiteUrl: 'https://medicine.yale.edu/profile/second-fixture/',
         },
       ]),
       vi.fn(async () => []),
@@ -3587,14 +3580,14 @@ describe('officialProfilePiBackfillScraper', () => {
       vi.fn(async () => [
         {
           _id: 'entity-2',
-          name: 'Caroline H. Johnson Research',
-          slug: 'faculty-research-area-caroline-h-johnson',
-          websiteUrl: 'https://medicine.yale.edu/profile/caroline-johnson/',
+          name: 'Cameron Profile Research',
+          slug: 'faculty-research-area-cameron-profile',
+          websiteUrl: 'https://medicine.yale.edu/profile/cameron-profile/',
         },
       ]),
       vi.fn(async () => ({
         netid: 'chj9',
-        email: 'caroline.johnson@yale.edu',
+        email: 'cameron.profile@yale.edu',
       })),
     );
 
@@ -3609,7 +3602,7 @@ describe('officialProfilePiBackfillScraper', () => {
   it('extracts a profile-linked research home from Yale profile affiliations and director text', () => {
     const homes = extractOfficialProfileResearchHomes(
       sinusasProfileHtml,
-      'https://medicine.yale.edu/profile/albert-sinusas/',
+      'https://medicine.yale.edu/profile/taylor-profile/',
     );
 
     expect(homes[0]).toMatchObject({
@@ -3624,7 +3617,7 @@ describe('officialProfilePiBackfillScraper', () => {
   it('extracts a leadership-backed research home from official profile body links', () => {
     const homes = extractOfficialProfileResearchHomes(
       linkedResearchHomeProfileHtml,
-      'https://medicine.yale.edu/profile/albert-sinusas/',
+      'https://medicine.yale.edu/profile/taylor-profile/',
     );
 
     expect(homes[0]).toMatchObject({
@@ -3640,9 +3633,9 @@ describe('officialProfilePiBackfillScraper', () => {
     const scraper = new OfficialProfilePiBackfillScraper(
       vi.fn(async () =>
         linkedResearchHomeProfileHtml
-          .replace(/Albert Sinusas/g, 'Albert Simon')
-          .replace(/albert\.sinusas@yale\.edu/g, 'albert.simon@yale.edu')
-          .replace(/\/profile\/albert-sinusas\//g, '/profile/albert-simon/'),
+          .replace(/Taylor Sinusas/g, 'Taylor Simon')
+          .replace(/taylor\.profile@yale\.edu/g, 'taylor.simulation@yale.edu')
+          .replace(/\/profile\/taylor-profile\//g, '/profile/taylor-simulation/'),
       ),
       vi.fn(async () => []),
       vi.fn(async () => null),
@@ -3652,9 +3645,9 @@ describe('officialProfilePiBackfillScraper', () => {
           _id: 'entity-1',
           name: 'Sinusas Lab',
           slug: 'sinusas-lab-as123',
-          sourceUrls: ['https://medicine.yale.edu/profile/albert-simon/'],
-          leadUserProfileUrls: ['https://medicine.yale.edu/profile/albert-simon/'],
-          leadUsers: [{ fname: 'Albert', lname: 'Sinusas', email: 'albert.sinusas@yale.edu' }],
+          sourceUrls: ['https://medicine.yale.edu/profile/taylor-simulation/'],
+          leadUserProfileUrls: ['https://medicine.yale.edu/profile/taylor-simulation/'],
+          leadUsers: [{ fname: 'Taylor', lname: 'Sinusas', email: 'taylor.profile@yale.edu' }],
         },
       ]),
     );
@@ -3668,7 +3661,7 @@ describe('officialProfilePiBackfillScraper', () => {
   it('does not promote navigation programs when the profile only names an unlinked lab', () => {
     const homes = extractOfficialProfileResearchHomes(
       navigationResearchProgramProfileHtml,
-      'https://medicine.yale.edu/profile/joseph-santos-sacchi/',
+      'https://medicine.yale.edu/profile/jules-audio-fixture/',
     );
 
     expect(homes).toEqual([]);
@@ -3677,7 +3670,7 @@ describe('officialProfilePiBackfillScraper', () => {
   it('does not promote research-center affiliations without leadership evidence', () => {
     const homes = extractOfficialProfileResearchHomes(
       researchCenterAffiliationWithoutLeadershipHtml,
-      'https://medicine.yale.edu/profile/dana-small/',
+      'https://medicine.yale.edu/profile/riley-nutrition-fixture/',
     );
 
     expect(homes).toEqual([]);
@@ -3686,7 +3679,7 @@ describe('officialProfilePiBackfillScraper', () => {
   it('does not treat a broad center as led when it is only the prefix of a program title', () => {
     const homes = extractOfficialProfileResearchHomes(
       centerPrefixProgramTitleHtml,
-      'https://medicine.yale.edu/profile/wendy-silverman/',
+      'https://medicine.yale.edu/profile/wren-fixture/',
     );
 
     expect(homes).toEqual([]);
@@ -3695,7 +3688,7 @@ describe('officialProfilePiBackfillScraper', () => {
   it('does not promote broad institutional centers as individual lab replacements', () => {
     const homes = extractOfficialProfileResearchHomes(
       broadChildStudyCenterLeadershipHtml,
-      'https://medicine.yale.edu/profile/linda-mayes/',
+      'https://medicine.yale.edu/profile/lane-fixture/',
     );
 
     expect(homes).toEqual([]);
@@ -3704,7 +3697,7 @@ describe('officialProfilePiBackfillScraper', () => {
   it('does not treat associate director of a subarea as director of the parent institute', () => {
     const homes = extractOfficialProfileResearchHomes(
       associateDirectorSubareaProfileHtml,
-      'https://medicine.yale.edu/profile/xenophon-papademetris/',
+      'https://medicine.yale.edu/profile/xen-fixture/',
     );
 
     expect(homes).toEqual([]);
@@ -3713,7 +3706,7 @@ describe('officialProfilePiBackfillScraper', () => {
   it('accepts direct leadership when profile text prefixes a short affiliation with Yale', () => {
     const homes = extractOfficialProfileResearchHomes(
       yalePrefixedLeadershipProfileHtml,
-      'https://medicine.yale.edu/profile/michael-nathanson/',
+      'https://medicine.yale.edu/profile/morgan-fixture/',
     );
 
     expect(homes[0]).toMatchObject({
@@ -3727,7 +3720,7 @@ describe('officialProfilePiBackfillScraper', () => {
   it('does not promote contact-info organizations without direct leadership evidence', () => {
     const homes = extractOfficialProfileResearchHomes(
       contactInfoOnlyResearchHomeProfileHtml,
-      'https://medicine.yale.edu/profile/dennis-moledina/',
+      'https://medicine.yale.edu/profile/devon-fixture/',
     );
 
     expect(homes).toEqual([]);
@@ -3736,7 +3729,7 @@ describe('officialProfilePiBackfillScraper', () => {
   it('uses the canonical center name for profile cards that include a PI lab prefix', () => {
     const homes = extractOfficialProfileResearchHomes(
       profileLinkedWaxmanCenterWebsiteHtml,
-      'https://medicine.yale.edu/profile/stephen-waxman/',
+      'https://medicine.yale.edu/profile/sawyer-fixture/',
     );
 
     expect(homes[0]).toMatchObject({
@@ -3750,7 +3743,7 @@ describe('officialProfilePiBackfillScraper', () => {
   it('does not promote daycare or kindergarten profile cards as research homes', () => {
     const homes = extractOfficialProfileResearchHomes(
       profileLinkedDaycareWebsiteHtml,
-      'https://medicine.yale.edu/profile/carla-horwitz/',
+      'https://medicine.yale.edu/profile/casey-fixture/',
     );
 
     expect(homes).toEqual([]);
@@ -3759,7 +3752,7 @@ describe('officialProfilePiBackfillScraper', () => {
   it('does not promote student leadership programs as research-home replacements', () => {
     const homes = extractOfficialProfileResearchHomes(
       profileLinkedLeadershipProgramWebsiteHtml,
-      'https://politicalscience.yale.edu/people/jacob-hacker/',
+      'https://politicalscience.yale.edu/people/jordan-policy-fixture/',
     );
 
     expect(homes).toEqual([]);
@@ -3768,7 +3761,7 @@ describe('officialProfilePiBackfillScraper', () => {
   it('does not promote academic programs as lab website replacements', () => {
     const homes = extractOfficialProfileResearchHomes(
       profileLinkedAcademicProgramWebsiteHtml,
-      'https://history.yale.edu/people/paul-freedman/',
+      'https://history.yale.edu/people/parker-history-fixture/',
     );
 
     expect(homes).toEqual([]);
@@ -3777,7 +3770,7 @@ describe('officialProfilePiBackfillScraper', () => {
   it('does not promote diagnostic service pages as research homes', () => {
     const homes = extractOfficialProfileResearchHomes(
       profileLinkedDiagnosticServiceWebsiteHtml,
-      'https://medicine.yale.edu/profile/allen-bale/',
+      'https://medicine.yale.edu/profile/alex-diagnostics-fixture/',
     );
 
     expect(homes).toEqual([]);
@@ -3786,7 +3779,7 @@ describe('officialProfilePiBackfillScraper', () => {
   it('does not promote broad department research directories as specific lab homes', () => {
     const homes = extractOfficialProfileResearchHomes(
       profileLinkedBroadChildStudyResearchWebsiteHtml,
-      'https://medicine.yale.edu/profile/sara-sanchez-alonso/',
+      'https://medicine.yale.edu/profile/sasha-modeler-fixture/',
     );
 
     expect(homes).toEqual([]);
@@ -3795,7 +3788,7 @@ describe('officialProfilePiBackfillScraper', () => {
   it('does not promote Google Sites profile-card links as official lab homes', () => {
     const homes = extractOfficialProfileResearchHomes(
       profileLinkedGoogleSiteLabWebsiteHtml,
-      'https://medicine.yale.edu/profile/rajiv-radhakrishnan/',
+      'https://medicine.yale.edu/profile/remy-neuro-fixture/',
     );
 
     expect(homes).toEqual([]);
@@ -3804,7 +3797,7 @@ describe('officialProfilePiBackfillScraper', () => {
   it('does not promote medical education programs as lab website replacements', () => {
     const homes = extractOfficialProfileResearchHomes(
       profileLinkedEducationProgramWebsiteHtml,
-      'https://medicine.yale.edu/profile/michael-cappello/',
+      'https://medicine.yale.edu/profile/morgan-global-fixture/',
     );
 
     expect(homes).toEqual([]);
@@ -3813,7 +3806,7 @@ describe('officialProfilePiBackfillScraper', () => {
   it('does not promote broad departments as lab website replacements', () => {
     const homes = extractOfficialProfileResearchHomes(
       profileLinkedBroadDepartmentWebsiteHtml,
-      'https://medicine.yale.edu/profile/kei-cheung/',
+      'https://medicine.yale.edu/profile/kai-informatics-fixture/',
     );
 
     expect(homes).toEqual([]);
@@ -3822,7 +3815,7 @@ describe('officialProfilePiBackfillScraper', () => {
   it('does not promote Yale Medicine clinical program pages as research homes', () => {
     const homes = extractOfficialProfileResearchHomes(
       profileLinkedClinicalProgramWebsiteHtml,
-      'https://medicine.yale.edu/profile/daniel-wiznia/',
+      'https://medicine.yale.edu/profile/devon-orthopedics-fixture/',
     );
 
     expect(homes).toEqual([]);
@@ -3831,7 +3824,7 @@ describe('officialProfilePiBackfillScraper', () => {
   it('does not promote known stale Yale Medicine research pages as profile-linked homes', () => {
     const homes = extractOfficialProfileResearchHomes(
       profileLinkedStaleResearchWebsiteHtml,
-      'https://medicine.yale.edu/profile/annie-harper/',
+      'https://medicine.yale.edu/profile/avery-finance-fixture/',
     );
 
     expect(homes).toEqual([]);
@@ -3840,7 +3833,7 @@ describe('officialProfilePiBackfillScraper', () => {
   it('does not promote known stale or placeholder external lab shells', () => {
     const homes = extractOfficialProfileResearchHomes(
       profileLinkedStaleExternalWebsiteHtml,
-      'https://medicine.yale.edu/profile/berna-sozen/',
+      'https://medicine.yale.edu/profile/blair-development-fixture/',
     );
 
     expect(homes).toEqual([]);
@@ -3849,7 +3842,7 @@ describe('officialProfilePiBackfillScraper', () => {
   it('does not promote thin external JavaScript shells as research homes', () => {
     const homes = extractOfficialProfileResearchHomes(
       profileLinkedThinExternalWebsiteHtml,
-      'https://medicine.yale.edu/profile/elizabeth-connors/',
+      'https://medicine.yale.edu/profile/ellis-schoolhealth-fixture/',
     );
 
     expect(homes).toEqual([]);
@@ -3858,7 +3851,7 @@ describe('officialProfilePiBackfillScraper', () => {
   it('canonicalizes the MRRC hostname alias to the current Magnetic Resonance Core URL', () => {
     const homes = extractOfficialProfileResearchHomes(
       profileLinkedMrrcAliasWebsiteHtml,
-      'https://medicine.yale.edu/profile/dana-peters/',
+      'https://medicine.yale.edu/profile/drew-imaging-fixture/',
     );
 
     expect(homes[0]).toMatchObject({
@@ -3870,7 +3863,7 @@ describe('officialProfilePiBackfillScraper', () => {
   it('does not promote unreachable external collaboratory websites', () => {
     const homes = extractOfficialProfileResearchHomes(
       profileLinkedPainCollaboratoryWebsiteHtml,
-      'https://medicine.yale.edu/profile/robert-kerns/',
+      'https://medicine.yale.edu/profile/robin-pain-fixture/',
     );
 
     expect(homes).toEqual([]);
@@ -3879,7 +3872,7 @@ describe('officialProfilePiBackfillScraper', () => {
   it('cleans overlong Y-Weight profile-card labels to the center name', () => {
     const homes = extractOfficialProfileResearchHomes(
       profileLinkedYWeightWebsiteHtml,
-      'https://medicine.yale.edu/profile/ania-jastreboff/',
+      'https://medicine.yale.edu/profile/ari-obesity-fixture/',
     );
 
     expect(homes[0]).toMatchObject({
@@ -3893,7 +3886,7 @@ describe('officialProfilePiBackfillScraper', () => {
   it('preserves NOURISH acronym casing in profile-linked lab labels', () => {
     const homes = extractOfficialProfileResearchHomes(
       profileLinkedNourishTeamWebsiteHtml,
-      'https://medicine.yale.edu/profile/catherine-buck/',
+      'https://medicine.yale.edu/profile/cameron-neonatal-fixture/',
     );
 
     expect(homes[0]).toMatchObject({
@@ -3905,7 +3898,7 @@ describe('officialProfilePiBackfillScraper', () => {
   it('preserves CarDS acronym casing in profile-linked lab labels', () => {
     const homes = extractOfficialProfileResearchHomes(
       profileLinkedCardsLabWebsiteHtml,
-      'https://medicine.yale.edu/profile/rohan-khera/',
+      'https://medicine.yale.edu/profile/rory-cards-fixture/',
     );
 
     expect(homes[0]).toMatchObject({
@@ -3917,7 +3910,7 @@ describe('officialProfilePiBackfillScraper', () => {
   it('does not promote person profile pages as lab website replacements', () => {
     const homes = extractOfficialProfileResearchHomes(
       profileLinkedPersonPageWebsiteHtml,
-      'https://medicine.yale.edu/profile/leonard-kaczmarek/',
+      'https://medicine.yale.edu/profile/logan-channels-fixture/',
     );
 
     expect(homes).toEqual([]);
@@ -3926,11 +3919,11 @@ describe('officialProfilePiBackfillScraper', () => {
   it('prioritizes an explicit profile-linked lab website over a broader center affiliation', () => {
     const homes = extractOfficialProfileResearchHomes(
       profileLinkedExternalLabWebsiteHtml,
-      'https://medicine.yale.edu/profile/haifan-lin/',
+      'https://medicine.yale.edu/profile/hayden-fixture/',
     );
 
     expect(homes[0]).toMatchObject({
-      name: 'Haifan Lin Lab',
+      name: 'Hayden Fixture Lab',
       url: 'https://www.haifanlinlab.org/',
       kind: 'lab',
       entityType: 'LAB',
@@ -3940,7 +3933,7 @@ describe('officialProfilePiBackfillScraper', () => {
   it('uses the profile card label for explicit lab website links instead of inventing a PI lab name', () => {
     const homes = extractOfficialProfileResearchHomes(
       profileLinkedNamedLabWebsiteHtml,
-      'https://medicine.yale.edu/profile/mark-lemmon/',
+      'https://medicine.yale.edu/profile/morgan-cell-fixture/',
     );
 
     expect(homes[0]).toMatchObject({
@@ -3955,7 +3948,7 @@ describe('officialProfilePiBackfillScraper', () => {
   it('strips profile card icon text and prose from explicit lab website labels', () => {
     const homes = extractOfficialProfileResearchHomes(
       profileLinkedIconLabWebsiteHtml,
-      'https://medicine.yale.edu/profile/michelle-hampson/',
+      'https://medicine.yale.edu/profile/mika-neurofeedback-fixture/',
     );
 
     expect(homes[0]).toMatchObject({
@@ -3969,7 +3962,7 @@ describe('officialProfilePiBackfillScraper', () => {
   it('preserves brand-style words in explicit lab website labels', () => {
     const homes = extractOfficialProfileResearchHomes(
       profileLinkedBioImageProjectWebsiteHtml,
-      'https://medicine.yale.edu/profile/xenophon-papademetris/',
+      'https://medicine.yale.edu/profile/xen-fixture/',
     );
 
     expect(homes[0]).toMatchObject({
@@ -3980,29 +3973,27 @@ describe('officialProfilePiBackfillScraper', () => {
     });
   });
 
-  it('canonicalizes the Gracheva lab profile-card alias to the direct lab page', () => {
+  it('extracts a synthetic squirrel-lab profile-card label', () => {
     const homes = extractOfficialProfileResearchHomes(
       profileLinkedSquirrelLabWebsiteHtml,
-      'https://medicine.yale.edu/profile/elena-gracheva/',
+      'https://medicine.yale.edu/profile/emery-fixture/',
     );
 
     expect(homes[0]).toMatchObject({
-      name: 'Elena Gracheva Lab',
-      url: 'https://campuspress.yale.edu/squirrel/people/elena-gracheva-lab/',
+      name: 'Emery Lab',
       kind: 'lab',
       entityType: 'LAB',
     });
   });
 
-  it('canonicalizes the Bagriantsev lab profile-card alias to the direct lab page', () => {
+  it('extracts a synthetic Sloan-lab profile-card label', () => {
     const homes = extractOfficialProfileResearchHomes(
       profileLinkedSlavLabWebsiteHtml,
-      'https://medicine.yale.edu/profile/sviatoslav-bagriantsev/',
+      'https://medicine.yale.edu/profile/sviatosloan-fixture/',
     );
 
     expect(homes[0]).toMatchObject({
-      name: 'Slav Bagriantsev Lab',
-      url: 'https://campuspress.yale.edu/squirrel/people/the-bagriantsev-lab/',
+      name: 'The Sloan Lab',
       kind: 'lab',
       entityType: 'LAB',
     });
@@ -4011,7 +4002,7 @@ describe('officialProfilePiBackfillScraper', () => {
   it('expands YCSC profile-card shorthand in explicit lab website labels', () => {
     const homes = extractOfficialProfileResearchHomes(
       profileLinkedYcscLabWebsiteHtml,
-      'https://medicine.yale.edu/profile/wan-ling-tseng/',
+      'https://medicine.yale.edu/profile/wynn-fixture/',
     );
 
     expect(homes[0]).toMatchObject({
@@ -4025,7 +4016,7 @@ describe('officialProfilePiBackfillScraper', () => {
   it('canonicalizes legacy Child Study Center lab website links from profile cards', () => {
     const homes = extractOfficialProfileResearchHomes(
       profileLinkedLegacyChildStudyLabWebsiteHtml,
-      'https://medicine.yale.edu/profile/linda-mayes/',
+      'https://medicine.yale.edu/profile/lane-fixture/',
     );
 
     expect(homes[0]).toMatchObject({
@@ -4039,7 +4030,7 @@ describe('officialProfilePiBackfillScraper', () => {
   it('strips prose after parenthetical lab names in explicit lab website labels', () => {
     const homes = extractOfficialProfileResearchHomes(
       profileLinkedParentheticalLabWebsiteHtml,
-      'https://medicine.yale.edu/profile/carla-stover/',
+      'https://medicine.yale.edu/profile/carter-fixture/',
     );
 
     expect(homes[0]).toMatchObject({
@@ -4053,7 +4044,7 @@ describe('officialProfilePiBackfillScraper', () => {
   it('does not promote outside-Yale deputy director positions as lab replacements', () => {
     const homes = extractOfficialProfileResearchHomes(
       outsideYaleDeputyDirectorProfileHtml,
-      'https://medicine.yale.edu/profile/andrew-tan/',
+      'https://medicine.yale.edu/profile/avery-tan/',
     );
 
     expect(homes).toEqual([]);
@@ -4062,7 +4053,7 @@ describe('officialProfilePiBackfillScraper', () => {
   it('does not promote outside-Yale deputy director text when profile sections collapse together', () => {
     const homes = extractOfficialProfileResearchHomes(
       outsideYaleNoSeparatorDeputyProfileHtml,
-      'https://medicine.yale.edu/profile/andrew-tan/',
+      'https://medicine.yale.edu/profile/avery-tan/',
     );
 
     expect(homes).toEqual([]);
@@ -4071,18 +4062,18 @@ describe('officialProfilePiBackfillScraper', () => {
   it('emits same-entity research home observations that can replace NIH PI fallback identity', () => {
     const [home] = extractOfficialProfileResearchHomes(
       sinusasProfileHtml,
-      'https://medicine.yale.edu/profile/albert-sinusas/',
+      'https://medicine.yale.edu/profile/taylor-profile/',
     );
 
     const obs = entityResearchHomeToObservations(
       {
         _id: '6a057df913fc60d57ec2a571',
-        slug: 'nih-pi-albert-sinusas',
-        name: 'Albert Sinusas Lab',
+        slug: 'nih-pi-taylor-profile',
+        name: 'Taylor Sinusas Lab',
         sourceUrls: ['https://reporter.nih.gov/project-details/11168153'],
       },
       home,
-      'https://medicine.yale.edu/profile/albert-sinusas/',
+      'https://medicine.yale.edu/profile/taylor-profile/',
     );
 
     expect(obs).toEqual(
@@ -4090,7 +4081,7 @@ describe('officialProfilePiBackfillScraper', () => {
         expect.objectContaining({
           entityType: 'researchEntity',
           entityId: '6a057df913fc60d57ec2a571',
-          entityKey: 'nih-pi-albert-sinusas',
+          entityKey: 'nih-pi-taylor-profile',
           field: 'name',
           value: 'Yale Translational Research Imaging Center',
           confidenceOverride: 0.96,
@@ -4103,7 +4094,7 @@ describe('officialProfilePiBackfillScraper', () => {
           field: 'sourceUrls',
           value: [
             'https://reporter.nih.gov/project-details/11168153',
-            'https://medicine.yale.edu/profile/albert-sinusas/',
+            'https://medicine.yale.edu/profile/taylor-profile/',
             'https://medicine.yale.edu/internal-medicine/cardio/research/translational-imaging/',
           ],
         }),
@@ -4154,9 +4145,9 @@ describe('officialProfilePiBackfillScraper', () => {
       vi.fn(async () => [
         {
           _id: 'entity-2',
-          name: 'Caroline H. Johnson Research',
-          slug: 'faculty-research-area-caroline-h-johnson',
-          websiteUrl: 'https://medicine.yale.edu/profile/caroline-johnson/',
+          name: 'Cameron Profile Research',
+          slug: 'faculty-research-area-cameron-profile',
+          websiteUrl: 'https://medicine.yale.edu/profile/cameron-profile/',
         },
       ]),
       vi.fn(async () => null),
@@ -4169,15 +4160,15 @@ describe('officialProfilePiBackfillScraper', () => {
       expect.arrayContaining([
         expect.objectContaining({
           entityType: 'user',
-          entityKey: 'netid:caroline.johnson',
+          entityKey: 'netid:cameron.profile',
           field: 'email',
-          value: 'caroline.johnson@yale.edu',
+          value: 'cameron.profile@yale.edu',
         }),
         expect.objectContaining({
           entityType: 'researchEntity',
-          entityKey: 'faculty-research-area-caroline-h-johnson',
+          entityKey: 'faculty-research-area-cameron-profile',
           field: 'inferredPiUserKey',
-          value: 'caroline.johnson',
+          value: 'cameron.profile',
         }),
       ]),
     );

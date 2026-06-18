@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildExistingMemberMatchQuery,
   buildOrphanMemberUserReferencePipeline,
+  normalizeMemberReferenceObjectId,
   writeResearchEntityMemberReferenceAuditOutput,
 } from '../researchEntityMemberReferenceAudit';
 import {
@@ -18,14 +19,26 @@ import {
 } from '../researchEntityMemberReferenceAuditCore';
 
 describe('research entity member reference audit core', () => {
+  it('normalizes member reference ObjectIds without object-shaped coercion', () => {
+    expect(normalizeMemberReferenceObjectId(' 507f1f77bcf86cd799439011 ')).toBe(
+      '507f1f77bcf86cd799439011',
+    );
+    expect(normalizeMemberReferenceObjectId('abcdefghijkl')).toBeUndefined();
+    expect(
+      normalizeMemberReferenceObjectId({
+        toString: () => '507f1f77bcf86cd799439011',
+      }),
+    ).toBeUndefined();
+  });
+
   it('infers a candidate person name from faculty research and lab entity names', () => {
     expect(
       inferMemberReferenceNames({
         member: { id: 'member-1', userId: 'missing-user', role: 'pi' },
-        entity: { id: 'entity-1', name: 'Nancy Brown Lab', slug: 'nih-pi-nancy-brown' },
+        entity: { id: 'entity-1', name: 'Nico Brown Lab', slug: 'nih-pi-nico-brown' },
         candidateUsers: [],
       }),
-    ).toEqual(['Nancy Brown']);
+    ).toEqual(['Nico Brown']);
 
     expect(
       inferMemberReferenceNames({
@@ -52,12 +65,12 @@ describe('research entity member reference audit core', () => {
             role: 'pi',
             sourceUrl: 'https://reporter.nih.gov/project-details/10886498',
           },
-          entity: { id: 'entity-1', name: 'Nancy Brown Lab', slug: 'nih-pi-nancy-brown' },
+          entity: { id: 'entity-1', name: 'Nico Brown Lab', slug: 'nih-pi-nico-brown' },
           candidateUsers: [
             {
               id: 'user-1',
               netid: 'nb653',
-              name: 'Nancy Brown',
+              name: 'Nico Brown',
               userType: 'professor',
             },
           ],
@@ -78,8 +91,8 @@ describe('research entity member reference audit core', () => {
           currentUserId: 'missing-user',
           replacementUserId: 'user-1',
           replacementNetid: 'nb653',
-          entitySlug: 'nih-pi-nancy-brown',
-          inferredNames: ['Nancy Brown'],
+          entitySlug: 'nih-pi-nico-brown',
+          inferredNames: ['Nico Brown'],
         },
       ],
     });
@@ -97,12 +110,12 @@ describe('research entity member reference audit core', () => {
             role: 'pi',
             sourceUrl: 'https://reporter.nih.gov/project-details/10886498',
           },
-          entity: { id: 'entity-1', name: 'Nancy Brown Lab', slug: 'nih-pi-nancy-brown' },
+          entity: { id: 'entity-1', name: 'Nico Brown Lab', slug: 'nih-pi-nico-brown' },
           candidateUsers: [
             {
               id: 'user-1',
               netid: 'nb653',
-              name: 'Nancy Brown',
+              name: 'Nico Brown',
               userType: 'professor',
             },
           ],
@@ -130,8 +143,8 @@ describe('research entity member reference audit core', () => {
           existingMemberId: 'existing-member',
           replacementUserId: 'user-1',
           replacementNetid: 'nb653',
-          entitySlug: 'nih-pi-nancy-brown',
-          inferredNames: ['Nancy Brown'],
+          entitySlug: 'nih-pi-nico-brown',
+          inferredNames: ['Nico Brown'],
         },
       ],
     });
@@ -163,6 +176,12 @@ describe('research entity member reference audit core', () => {
       parseResearchEntityMemberReferenceAuditArgs(['--output', '--apply']),
     ).toThrow('--output requires a path');
     expect(() =>
+      parseResearchEntityMemberReferenceAuditArgs(['--output=/etc/members.json']),
+    ).toThrow(/--output must write under/);
+    expect(() =>
+      parseResearchEntityMemberReferenceAuditArgs(['--output=/tmp/members.txt']),
+    ).toThrow(/--output must point to a \.json report file/);
+    expect(() =>
       parseResearchEntityMemberReferenceAuditArgs(['--limit', '--confirm-exact-relink']),
     ).toThrow('--limit requires a number');
     expect(() =>
@@ -185,8 +204,8 @@ describe('research entity member reference audit core', () => {
       rows: [
         {
           member: { id: 'member-1', userId: 'missing-user', role: 'pi' },
-          entity: { id: 'entity-1', name: 'Nancy Brown Lab', slug: 'nih-pi-nancy-brown' },
-          candidateUsers: [{ id: 'user-1', name: 'Nancy Brown' }],
+          entity: { id: 'entity-1', name: 'Nico Brown Lab', slug: 'nih-pi-nico-brown' },
+          candidateUsers: [{ id: 'user-1', name: 'Nico Brown' }],
         },
       ],
     });
@@ -251,8 +270,8 @@ describe('research entity member reference audit core', () => {
       rows: [
         {
           member: { id: 'member-1', userId: 'missing-user', role: 'pi' },
-          entity: { id: 'entity-1', name: 'Nancy Brown Lab', slug: 'nih-pi-nancy-brown' },
-          candidateUsers: [{ id: 'user-1', name: 'Nancy Brown' }],
+          entity: { id: 'entity-1', name: 'Nico Brown Lab', slug: 'nih-pi-nico-brown' },
+          candidateUsers: [{ id: 'user-1', name: 'Nico Brown' }],
         },
       ],
     });
@@ -293,8 +312,8 @@ describe('research entity member reference audit core', () => {
       rows: [
         {
           member: { id: 'orphan-member', userId: 'missing-user', role: 'pi' },
-          entity: { id: 'entity-1', name: 'Nancy Brown Lab', slug: 'nih-pi-nancy-brown' },
-          candidateUsers: [{ id: 'user-1', name: 'Nancy Brown' }],
+          entity: { id: 'entity-1', name: 'Nico Brown Lab', slug: 'nih-pi-nico-brown' },
+          candidateUsers: [{ id: 'user-1', name: 'Nico Brown' }],
           existingMemberMatches: [{ id: 'existing-member', userId: 'user-1', role: 'pi' }],
         },
       ],
@@ -426,7 +445,7 @@ describe('research entity member reference audit CLI wrapper', () => {
             role: 'pi',
           },
           candidateUsers: [
-            { id: '507f1f77bcf86cd799439014', name: 'Nancy Brown' },
+            { id: '507f1f77bcf86cd799439014', name: 'Nico Brown' },
             { id: 'not-object-id', name: 'Nancy B.' },
           ],
         },
@@ -456,6 +475,9 @@ describe('research entity member reference audit CLI wrapper', () => {
       orphanedMemberUserRefs: 0,
       plan: [],
     });
+    expect(() => writeResearchEntityMemberReferenceAuditOutput(payload, '/etc/summary.json')).toThrow(
+      /--output must write under/,
+    );
   });
 
   it('adds target metadata to member-reference audit artifacts', () => {

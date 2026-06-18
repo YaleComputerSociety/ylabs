@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import axios from '../../utils/axios';
 import swal from 'sweetalert';
-import { EXTERNAL_LINK_REL, safeHttpUrl, safeHttpUrlList, safeUrl } from '../../utils/url';
+import { EXTERNAL_LINK_REL, safeHttpUrl, safeHttpUrlList, safeRouteSegment } from '../../utils/url';
 
 interface AccessReviewCounts {
   entryPathways: number;
@@ -173,11 +173,17 @@ const evidenceIds = (...groups: Array<string[] | string | undefined>) =>
     return Array.isArray(group) ? group : [group];
   });
 
-export const hasRecordEvidence = (record: any) =>
-  (record.evidenceItems || []).length > 0 ||
-  evidenceIds(record.sourceEvidenceIds, record.sourceEvidenceId, record.observationId).length > 0 ||
-  (record.sourceUrls || []).filter(Boolean).length > 0 ||
-  Boolean(record.sourceUrl);
+const hasSafeSourceUrl = (value: unknown): boolean => Boolean(safeHttpUrl(value));
+
+export const hasRecordEvidence = (record: any) => {
+  const sourceUrls = Array.isArray(record.sourceUrls) ? record.sourceUrls : [];
+  return (
+    (record.evidenceItems || []).length > 0 ||
+    evidenceIds(record.sourceEvidenceIds, record.sourceEvidenceId, record.observationId).length > 0 ||
+    sourceUrls.some(hasSafeSourceUrl) ||
+    hasSafeSourceUrl(record.sourceUrl)
+  );
+};
 
 export const matchesRecordFilter = (
   record: any,
@@ -310,8 +316,8 @@ const RecordReviewControls = ({
       });
       onSaved(response.data.record);
       swal({ text: 'Review saved', icon: 'success', timer: 1200 });
-    } catch (error) {
-      console.error('Error saving record review:', error);
+    } catch {
+      console.error('Error saving record review.');
       swal({ text: 'Failed to save review', icon: 'error' });
     } finally {
       setIsSaving(false);
@@ -405,8 +411,8 @@ const AdminAccessReview = () => {
       if (!selectedId && response.data.entities?.[0]?._id) {
         setSelectedId(response.data.entities[0]._id);
       }
-    } catch (error) {
-      console.error('Error fetching access review entities:', error);
+    } catch {
+      console.error('Error fetching access review entities.');
       swal({ text: 'Failed to fetch access review entities', icon: 'error' });
     } finally {
       setIsLoadingList(false);
@@ -419,8 +425,8 @@ const AdminAccessReview = () => {
       const response = await axios.get<AccessReviewDetail>(`/admin/access-review/${id}`);
       setDetail(response.data);
       setManualLocksText((response.data.group.manuallyLockedFields || []).join(', '));
-    } catch (error) {
-      console.error('Error fetching access review detail:', error);
+    } catch {
+      console.error('Error fetching access review detail.');
       setDetail(null);
       swal({ text: 'Failed to fetch access review detail', icon: 'error' });
     } finally {
@@ -506,8 +512,8 @@ const AdminAccessReview = () => {
         ),
       );
       swal({ text: 'Manual locks saved', icon: 'success', timer: 1400 });
-    } catch (error) {
-      console.error('Error saving manual locks:', error);
+    } catch {
+      console.error('Error saving manual locks.');
       swal({ text: 'Failed to save manual locks', icon: 'error' });
     } finally {
       setIsSavingLocks(false);
@@ -671,7 +677,7 @@ const AdminAccessReview = () => {
                   </div>
                 </div>
                 <a
-                  href={`/research/${detail.group.slug}`}
+                  href={`/research/${safeRouteSegment(detail.group.slug)}`}
                   target="_blank"
                   rel={EXTERNAL_LINK_REL}
                   className="inline-flex min-h-[44px] items-center px-3 py-2 text-sm font-semibold text-blue-700 border border-blue-200 rounded hover:bg-[var(--yr-blue-soft)]"
@@ -895,7 +901,7 @@ const AdminAccessReview = () => {
                 <h4 className="text-lg font-bold text-gray-900 mb-3">Posted Opportunities</h4>
                 <div className="space-y-3">
                   {filteredRecords.postedOpportunities.map((opportunity) => {
-                    const applicationUrl = safeUrl(opportunity.applicationUrl);
+                    const applicationUrl = safeHttpUrl(opportunity.applicationUrl);
                     return (
                       <div key={opportunity._id} className="border border-[var(--yr-line)] rounded-lg p-4">
                         <div className="flex flex-wrap items-center gap-2 mb-2">

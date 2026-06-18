@@ -14,8 +14,10 @@ import {
 import {
   VisibilityReleaseQueueItem,
   type VisibilityReleaseQueueCollection,
+  type VisibilityReleaseQueueStatus,
   type VisibilityRepairStage,
   type VisibilityRepairStatus,
+  visibilityReleaseQueueStatuses,
 } from '../models/visibilityReleaseQueueItem';
 import {
   computeProgramStudentVisibility,
@@ -28,11 +30,21 @@ import {
   type ResearchEntityPiDedupeRow,
 } from '../scripts/researchEntityPiDedupeCore';
 import { nextRepairActionForReasons } from '../scripts/studentVisibilityBackfillReport';
+import { serializedDocumentId } from '../utils/idSerialization';
 import { isConcreteResearchHomeEntity } from '../utils/profileAreaDuplicateRisk';
 
 export type StudentVisibilityGateMode = 'dry-run' | 'apply';
 export type StudentVisibilityGateCollection = VisibilityReleaseQueueCollection | 'all';
 const MAX_RELEASE_QUEUE_PAGE = 1000;
+const MAX_RELEASE_QUEUE_FILTER_LENGTH = 120;
+const STUDENT_VISIBILITY_GATE_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
+const studentVisibilityGateDocumentId = (value: unknown): string => serializedDocumentId(value) || '';
+const studentVisibilityGateEntityIdKey = (entity: any): string =>
+  studentVisibilityGateDocumentId(entity?._id) || studentVisibilityGateDocumentId(entity?.id);
+const studentVisibilityGateEntitySortKey = (entity: any): string =>
+  typeof entity?.slug === 'string' && entity.slug.trim()
+    ? entity.slug.trim()
+    : studentVisibilityGateEntityIdKey(entity);
 
 export interface StudentVisibilityGateOptions {
   collection: StudentVisibilityGateCollection;
@@ -47,6 +59,8 @@ export interface StudentVisibilityGatePlan {
   recordId: string;
   label: string;
   currentTier?: string;
+  currentComputedTier?: string;
+  currentReasons?: string[];
   computedTier: StudentVisibilityTier;
   tier: StudentVisibilityTier;
   reasons: string[];
@@ -153,6 +167,8 @@ const suppressionRepairReasons = new Set([
   'research_infrastructure_only',
 ]);
 const reviewExceptionReasons = new Set(['formalization_only']);
+export const researchEntityGateProjection =
+  '_id slug name displayName kind entityType website websiteUrl sourceUrls departments researchAreas fullDescription shortDescription studentVisibilityTier studentVisibilityComputedTier studentVisibilityOverrideTier studentVisibilityReasons';
 
 const repairStageForReasons = (reasons: string[]) => {
   if (reasons.some((reason) => reviewExceptionReasons.has(reason))) return 'review_exception';
@@ -207,6 +223,31 @@ const uniqueStrings = (values: unknown[]): string[] =>
     ),
   );
 
+const sortedStrings = (values: string[]): string[] => [...values].sort((a, b) => a.localeCompare(b));
+
+const stringSetsEqual = (left: string[], right: string[]): boolean => {
+  if (left.length !== right.length) return false;
+  const sortedLeft = sortedStrings(left);
+  const sortedRight = sortedStrings(right);
+  return sortedLeft.every((value, index) => value === sortedRight[index]);
+};
+
+export function isStudentVisibilityGatePlanMateriallyChanged(
+  plan: StudentVisibilityGatePlan,
+): boolean {
+  if (plan.currentTier !== plan.tier) return true;
+  if (
+    plan.currentComputedTier !== undefined &&
+    plan.currentComputedTier !== plan.computedTier
+  ) {
+    return true;
+  }
+  if (Array.isArray(plan.currentReasons) && !stringSetsEqual(plan.currentReasons, plan.reasons)) {
+    return true;
+  }
+  return false;
+}
+
 const exactDuplicateUrlRejectedPathPatterns = [
   /\/(?:people|faculty|professors|directory|members|humans\/faculty|labs|staff|team)\/?$/i,
   /\/(?:[^/]+\/)*membership\/directory\/?$/i,
@@ -260,7 +301,7 @@ const entityDuplicateUrls = (entity: any): string[] =>
     .filter(isSpecificDuplicateSignalUrl);
 
 function exactDuplicateCanonicalScore(entity: any, leadCountsByEntityId: Map<string, number>): number {
-  const id = String(entity._id || entity.id || '');
+  const id = studentVisibilityGateEntityIdKey(entity);
   const textScore =
     (typeof entity.fullDescription === 'string' && entity.fullDescription.trim().length >= 80 ? 35 : 0) +
     (typeof entity.shortDescription === 'string' && entity.shortDescription.trim().length >= 40 ? 20 : 0);
@@ -279,7 +320,7 @@ export function selectExactUrlDuplicateRiskEntityIds(
 ): Set<string> {
   const leadCountsByEntityId = new Map<string, number>();
   for (const row of leadRows) {
-    const id = String(row.researchEntityId || '').trim();
+    const id = studentVisibilityGateDocumentId(row.researchEntityId);
     if (!id) continue;
     leadCountsByEntityId.set(id, (leadCountsByEntityId.get(id) || 0) + 1);
   }
@@ -299,11 +340,11 @@ export function selectExactUrlDuplicateRiskEntityIds(
         exactDuplicateCanonicalScore(b, leadCountsByEntityId) -
         exactDuplicateCanonicalScore(a, leadCountsByEntityId);
       if (byScore !== 0) return byScore;
-      return String(a.slug || a._id || '').localeCompare(String(b.slug || b._id || ''));
+      return studentVisibilityGateEntitySortKey(a).localeCompare(studentVisibilityGateEntitySortKey(b));
     })[0];
-    const canonicalId = String(canonical?._id || canonical?.id || '');
+    const canonicalId = studentVisibilityGateEntityIdKey(canonical);
     for (const entity of group) {
-      const id = String(entity._id || entity.id || '');
+      const id = studentVisibilityGateEntityIdKey(entity);
       if (id && id !== canonicalId) duplicateIds.add(id);
     }
   }
@@ -315,7 +356,7 @@ const increment = (counts: Record<string, number>, key: string) => {
 };
 
 const countByEntityId = (rows: Array<{ _id: unknown; count: number }>) =>
-  new Map(rows.map((row) => [String(row._id), row.count]));
+  new Map(rows.map((row) => [studentVisibilityGateDocumentId(row._id), row.count]));
 
 const profileAreaDuplicateCounterpartEntityTypes = new Set([
   'LAB',
@@ -346,10 +387,10 @@ function buildSamePiVisibilityDedupeRows(args: {
   leadRows: any[];
   extraEntitiesByUserId?: Map<string, any[]>;
 }): ResearchEntityPiDedupeRow[] {
-  const entityById = new Map(args.entities.map((entity) => [String(entity._id), entity]));
+  const entityById = new Map(args.entities.map((entity) => [studentVisibilityGateDocumentId(entity._id), entity]));
   const leadRowsByUserId = new Map<string, any[]>();
   for (const row of args.leadRows) {
-    const userId = row.userId === undefined || row.userId === null ? '' : String(row.userId).trim();
+    const userId = studentVisibilityGateDocumentId(row.userId);
     if (!userId || row.role !== 'pi') continue;
     leadRowsByUserId.set(userId, [...(leadRowsByUserId.get(userId) || []), row]);
   }
@@ -358,11 +399,11 @@ function buildSamePiVisibilityDedupeRows(args: {
     .map(([userId, rows]) => {
       const entityIds = new Set<string>();
       const entities = [
-        ...rows.map((row) => entityById.get(String(row.researchEntityId))).filter(Boolean),
+        ...rows.map((row) => entityById.get(studentVisibilityGateDocumentId(row.researchEntityId))).filter(Boolean),
         ...(args.extraEntitiesByUserId?.get(userId) || []),
       ]
         .filter((entity: any) => {
-          const id = String(entity._id);
+          const id = studentVisibilityGateDocumentId(entity._id);
           if (entityIds.has(id)) return false;
           entityIds.add(id);
           return true;
@@ -397,7 +438,7 @@ function isFullPersonLabDedupeName(normalizedName: string): boolean {
 
 function serializeEntityForDedupe(entity: any): ResearchEntityPiDedupeRow['entities'][number] {
   return {
-    id: String(entity._id),
+    id: studentVisibilityGateDocumentId(entity._id),
     slug: entity.slug,
     name: entity.name,
     kind: entity.kind,
@@ -435,9 +476,9 @@ function buildNameOnlyVisibilityDedupeRows(args: {
       const [normalizedName, entities] = entry;
       const piUserIds = new Set<string>();
       for (const entity of entities) {
-        for (const lead of args.leadsByEntityId.get(String(entity._id)) || []) {
+        for (const lead of args.leadsByEntityId.get(studentVisibilityGateDocumentId(entity._id)) || []) {
           const userId =
-            lead.userId === undefined || lead.userId === null ? '' : String(lead.userId).trim();
+            studentVisibilityGateDocumentId(lead.userId);
           if (lead.role === 'pi' && userId) piUserIds.add(userId);
         }
       }
@@ -496,12 +537,26 @@ const defaultGateDeps: StudentVisibilityGateDeps = {
 const archivedQueueResolutionMessage =
   'Archived duplicate or suppressed research entity; no student-visible repair needed.';
 
+export function normalizeStudentVisibilityGateObjectId(value: unknown): string | undefined {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return STUDENT_VISIBILITY_GATE_OBJECT_ID_RE.test(trimmed) ? trimmed : undefined;
+  }
+  if (value instanceof mongoose.Types.ObjectId) return value.toHexString();
+  return undefined;
+}
+
+function toStudentVisibilityGateObjectId(value: unknown): mongoose.Types.ObjectId | undefined {
+  const id = normalizeStudentVisibilityGateObjectId(value);
+  return id ? new mongoose.Types.ObjectId(id) : undefined;
+}
+
 function validObjectIdStrings(values: unknown[]): string[] {
   return Array.from(
     new Set(
       values
-        .map((value) => (typeof value === 'string' ? value.trim() : ''))
-        .filter((value) => /^[a-f0-9]{24}$/i.test(value)),
+        .map((value) => normalizeStudentVisibilityGateObjectId(value))
+        .filter((value): value is string => Boolean(value)),
     ),
   );
 }
@@ -517,12 +572,12 @@ async function resolveArchivedResearchQueueItems(now = new Date()): Promise<numb
   if (recordIds.length === 0) return 0;
 
   const archivedEntities = await ResearchEntity.find({
-    _id: { $in: recordIds.map((id) => new mongoose.Types.ObjectId(id)) },
+    _id: { $in: recordIds.map((id) => toStudentVisibilityGateObjectId(id)).filter(Boolean) },
     archived: true,
   })
     .select('_id')
     .lean();
-  const archivedRecordIds = archivedEntities.map((entity) => String(entity._id));
+  const archivedRecordIds = archivedEntities.map((entity) => studentVisibilityGateDocumentId(entity._id));
   if (archivedRecordIds.length === 0) return 0;
 
   const result = await VisibilityReleaseQueueItem.updateMany(
@@ -575,7 +630,7 @@ export async function runStudentVisibilityGateForPlans(
     } else {
       counts.held += 1;
     }
-    if (plan.currentTier !== plan.tier) counts.changed += 1;
+    if (isStudentVisibilityGatePlanMateriallyChanged(plan)) counts.changed += 1;
     for (const reason of plan.reasons) {
       increment(reasonCounts, reason);
       if (isBlockingVisibilityReason(reason)) increment(blockerCounts, reason);
@@ -651,7 +706,9 @@ export async function applyStudentVisibilityGatePlans(
   const programOps: any[] = [];
   const queueOps: any[] = [];
 
-  for (const plan of plans) {
+  const changedPlans = plans.filter(isStudentVisibilityGatePlanMateriallyChanged);
+
+  for (const plan of changedPlans) {
     const visibilityUpdate = {
       studentVisibilityTier: plan.tier,
       studentVisibilityComputedTier: plan.computedTier,
@@ -775,7 +832,12 @@ async function planResearchEntityGateUpdates(
     if (sourceEntityIds.length > 0) sourceClauses.push({ _id: { $in: sourceEntityIds } });
     if (observationEntityKeys.length > 0) sourceClauses.push({ slug: { $in: observationEntityKeys } });
     if (match._id) {
-      match._id = { $in: sourceEntityIds.filter((id: any) => options.recordIds?.includes(String(id))) };
+      match._id = {
+        $in: sourceEntityIds.filter((id: any) => {
+          const normalizedId = studentVisibilityGateDocumentId(id);
+          return normalizedId && options.recordIds?.includes(normalizedId);
+        }),
+      };
     } else if (sourceClauses.length === 1) {
       Object.assign(match, sourceClauses[0]);
     } else if (sourceClauses.length > 1) {
@@ -785,7 +847,7 @@ async function planResearchEntityGateUpdates(
     }
   }
 
-  const query = ResearchEntity.find(match).sort({ name: 1 });
+  const query = ResearchEntity.find(match).select(researchEntityGateProjection).sort({ name: 1 });
   if (options.limit && Number.isFinite(options.limit)) query.limit(options.limit);
   const entities = await query.lean();
   const needsDuplicateReferenceCorpus =
@@ -794,9 +856,7 @@ async function planResearchEntityGateUpdates(
     Boolean(options.limit && Number.isFinite(options.limit));
   const duplicateReferenceEntities = needsDuplicateReferenceCorpus
     ? await ResearchEntity.find({ archived: { $ne: true } })
-        .select(
-          '_id slug name kind entityType website websiteUrl sourceUrls departments researchAreas fullDescription shortDescription studentVisibilityTier',
-        )
+        .select(researchEntityGateProjection)
         .lean()
     : entities;
   const entityIds = entities.map((entity: any) => entity._id);
@@ -848,16 +908,16 @@ async function planResearchEntityGateUpdates(
     ]),
   ]);
 
-  const leadUserIds = uniqueStrings((leadRows as any[]).map((row) => String(row.userId || '')));
+  const leadUserIds = uniqueStrings((leadRows as any[]).map((row) => studentVisibilityGateDocumentId(row.userId)));
   const leadUsers = leadUserIds.length
     ? await User.find({ _id: { $in: leadUserIds } }).select('facultyMemberId fname lname title').lean()
     : [];
-  const leadUsersById = new Map((leadUsers as any[]).map((user) => [String(user._id), user]));
+  const leadUsersById = new Map((leadUsers as any[]).map((user) => [studentVisibilityGateDocumentId(user._id), user]));
   const profileAreaNamesByUserId = new Map<string, string[]>();
   const profileAreaNames = uniqueStrings(
     (leadUsers as any[]).flatMap((user) => {
       const names = profileAreaNamesForVisibilityPi(user.fname, user.lname);
-      profileAreaNamesByUserId.set(String(user._id), names);
+      profileAreaNamesByUserId.set(studentVisibilityGateDocumentId(user._id), names);
       return names;
     }),
   );
@@ -875,18 +935,18 @@ async function planResearchEntityGateUpdates(
 
   const leadsByEntityId = new Map<string, any[]>();
   for (const row of leadRows as any[]) {
-    const user = row.userId ? leadUsersById.get(String(row.userId)) : undefined;
+    const user = row.userId ? leadUsersById.get(studentVisibilityGateDocumentId(row.userId)) : undefined;
     if (user) row.user = user;
-    const key = String(row.researchEntityId);
+    const key = studentVisibilityGateDocumentId(row.researchEntityId);
     leadsByEntityId.set(key, [...(leadsByEntityId.get(key) || []), row]);
   }
   const accessCounts = countByEntityId(accessRows as any[]);
   const pathwayCounts = countByEntityId(pathwayRows as any[]);
   const postedCounts = countByEntityId(postedRows as any[]);
   const sourceNamesByEntityId = new Map(
-    (accessRows as any[]).map((row) => [String(row._id), uniqueStrings(row.sourceNames || [])]),
+    (accessRows as any[]).map((row) => [studentVisibilityGateDocumentId(row._id), uniqueStrings(row.sourceNames || [])]),
   );
-  const entityById = new Map((entities as any[]).map((entity) => [String(entity._id), entity]));
+  const entityById = new Map((entities as any[]).map((entity) => [studentVisibilityGateDocumentId(entity._id), entity]));
   const samePiDuplicateRiskEntityIds = selectSamePiDuplicateRiskEntityIds(
     [
       ...buildSamePiVisibilityDedupeRows({
@@ -906,8 +966,8 @@ async function planResearchEntityGateUpdates(
   );
   const concreteLeadEntityUserIds = new Set<string>();
   for (const row of leadRows as any[]) {
-    const entity = entityById.get(String(row.researchEntityId));
-    const userId = row.userId === undefined || row.userId === null ? '' : String(row.userId).trim();
+    const entity = entityById.get(studentVisibilityGateDocumentId(row.researchEntityId));
+    const userId = studentVisibilityGateDocumentId(row.userId);
     if (
       userId &&
       entity &&
@@ -919,7 +979,7 @@ async function planResearchEntityGateUpdates(
   }
 
   return entities.map((entity: any) => {
-    const recordId = String(entity._id);
+    const recordId = studentVisibilityGateDocumentId(entity._id);
     const leadMembers = leadsByEntityId.get(recordId) || [];
     const result = computeResearchEntityStudentVisibility({
       entity,
@@ -939,6 +999,10 @@ async function planResearchEntityGateUpdates(
       recordId,
       label: entity.displayName || entity.name || entity.slug || recordId,
       currentTier: entity.studentVisibilityTier,
+      currentComputedTier: entity.studentVisibilityComputedTier,
+      currentReasons: Array.isArray(entity.studentVisibilityReasons)
+        ? entity.studentVisibilityReasons
+        : [],
       tier: result.tier,
       computedTier: result.computedTier,
       reasons: result.reasons,
@@ -959,13 +1023,17 @@ async function planProgramGateUpdates(
   const programs = await query.lean();
 
   return programs.map((program: any) => {
-    const recordId = String(program._id);
+    const recordId = studentVisibilityGateDocumentId(program._id);
     const result = computeProgramStudentVisibility(program);
     return {
       collection: 'programs' as const,
       recordId,
       label: program.title || recordId,
       currentTier: program.studentVisibilityTier,
+      currentComputedTier: program.studentVisibilityComputedTier,
+      currentReasons: Array.isArray(program.studentVisibilityReasons)
+        ? program.studentVisibilityReasons
+        : [],
       tier: result.tier,
       computedTier: result.computedTier,
       reasons: result.reasons,
@@ -1007,18 +1075,20 @@ export async function listVisibilityReleaseQueue(input: {
   reason?: string;
   sourceName?: string;
   status?: string;
-  page?: number;
-  pageSize?: number;
+  page?: unknown;
+  pageSize?: unknown;
 }) {
-  const page = Math.min(MAX_RELEASE_QUEUE_PAGE, Math.max(1, Math.floor(input.page || 1)));
-  const pageSize = Math.min(100, Math.max(1, Math.floor(input.pageSize || 25)));
+  const page = Math.min(MAX_RELEASE_QUEUE_PAGE, Math.max(1, Math.floor(Number(input.page) || 1)));
+  const pageSize = Math.min(100, Math.max(1, Math.floor(Number(input.pageSize) || 25)));
   const filter: Record<string, any> = {};
   if (input.collection === 'research' || input.collection === 'programs') {
     filter.collection = input.collection;
   }
-  filter.status = input.status || 'open';
-  if (input.reason) filter.blockerReasons = input.reason;
-  if (input.sourceName) filter.sourceNames = input.sourceName;
+  filter.status = normalizeReleaseQueueStatus(input.status);
+  const reason = normalizeReleaseQueueFilterValue(input.reason);
+  const sourceName = normalizeReleaseQueueFilterValue(input.sourceName);
+  if (reason) filter.blockerReasons = reason;
+  if (sourceName) filter.sourceNames = sourceName;
 
   const [items, total] = await Promise.all([
     VisibilityReleaseQueueItem.find(filter)
@@ -1037,3 +1107,17 @@ export async function listVisibilityReleaseQueue(input: {
     totalPages: Math.ceil(total / pageSize),
   };
 }
+
+const normalizeReleaseQueueFilterValue = (value: unknown): string | undefined => {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > MAX_RELEASE_QUEUE_FILTER_LENGTH) return undefined;
+  return trimmed;
+};
+
+const normalizeReleaseQueueStatus = (value: unknown): VisibilityReleaseQueueStatus => {
+  const status = normalizeReleaseQueueFilterValue(value);
+  return status && (visibilityReleaseQueueStatuses as readonly string[]).includes(status)
+    ? (status as VisibilityReleaseQueueStatus)
+    : 'open';
+};

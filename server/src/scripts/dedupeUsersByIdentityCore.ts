@@ -1,4 +1,5 @@
 import type { DuplicatePersonGroup } from '../scrapers/integrityGate';
+import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 
 export type UserIdentityField = DuplicatePersonGroup['identityField'];
 
@@ -155,7 +156,7 @@ export function parseDedupeUsersByIdentityArgs(argv: string[]): DedupeUsersByIde
 
     if (arg === '--output' || arg.startsWith('--output=')) {
       const { value: outputValue, nextIndex } = consumeValue(argv, index, '--output');
-      output = outputValue;
+      output = resolveSafeJsonReportOutputPath(outputValue);
       index = nextIndex;
       continue;
     }

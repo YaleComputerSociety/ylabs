@@ -6,6 +6,9 @@ import { User } from '../models/user';
 import { isLocalDevelopmentRuntime } from '../utils/environment';
 
 const NETID_RE = /^[A-Za-z0-9]{2,12}$/;
+export const MAX_ADMIN_GRANT_NOTE_LENGTH = 512;
+
+export class AdminGrantValidationError extends Error {}
 
 export interface AdminGrantResponse {
   activeCount: number;
@@ -13,16 +16,29 @@ export interface AdminGrantResponse {
   legacyAdminsWithoutGrant: any[];
 }
 
-const normalizeNetid = (netid: unknown) => String(netid || '').trim().toLowerCase();
+const normalizeNetid = (netid: unknown) =>
+  typeof netid === 'string' ? netid.trim().toLowerCase() : '';
 
 const assertValidNetid = (netid: string) => {
   if (!NETID_RE.test(netid)) {
-    throw new Error('Invalid NetID');
+    throw new AdminGrantValidationError('Invalid admin grant request');
   }
 };
 
+const normalizeAdminGrantNote = (note: unknown): string =>
+  typeof note === 'string' ? note.trim().slice(0, MAX_ADMIN_GRANT_NOTE_LENGTH) : '';
+
 export const allowsLegacyAdminUserType = (env: NodeJS.ProcessEnv = process.env): boolean =>
   isLocalDevelopmentRuntime(env);
+
+export const hasAdminAuthorityForUser = async (
+  user: { netId?: unknown; netid?: unknown; userType?: unknown } | null | undefined,
+): Promise<boolean> => {
+  if (!user || user.userType !== 'admin') return false;
+
+  const netid = user.netId || user.netid;
+  return (await hasActiveAdminGrant(netid)) || allowsLegacyAdminUserType();
+};
 
 const userSummaryByNetid = async (netids: string[]) => {
   if (netids.length === 0) return new Map<string, any>();
@@ -88,7 +104,7 @@ export const grantAdminAccess = async ({
         source,
         grantedBy: normalizedActor,
         grantedAt: new Date(),
-        note: typeof note === 'string' ? note.trim() : '',
+        note: normalizeAdminGrantNote(note),
       },
       $unset: {
         revokedBy: '',
@@ -121,7 +137,7 @@ export const revokeAdminAccess = async ({
         status: 'revoked',
         revokedBy: normalizedActor,
         revokedAt: new Date(),
-        revokeNote: typeof note === 'string' ? note.trim() : '',
+        revokeNote: normalizeAdminGrantNote(note),
       },
     },
     { new: true },

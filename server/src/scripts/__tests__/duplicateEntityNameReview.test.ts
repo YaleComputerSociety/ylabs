@@ -9,6 +9,7 @@ import {
   buildDuplicateEntityNameReviewPlans,
   buildDuplicateEntityNameMergeGroups,
   assertDuplicateEntityNameReviewApplyAllowed,
+  normalizeDuplicateEntityNameReviewObjectId,
   parseDuplicateEntityNameReviewArgs,
   readDuplicateEntityNameReviewDecisions,
   selectDuplicateEntityNamePlansForAcceptedMergeApply,
@@ -21,6 +22,17 @@ const DUPLICATE_NAME_APPLY_STATUS =
   'Accepted duplicate-name decisions can drive apply mode for shared-website, zero-reference cross-department, or specific-website cross-department merge_into_canonical plans; ambiguous manual disambiguation decisions remain review-only.';
 
 describe('duplicate entity name review CLI helpers', () => {
+  it('rejects object-shaped ids without coercion', () => {
+    const objectShapedId = {
+      toString: () => '507f1f77bcf86cd799439011',
+    };
+
+    expect(normalizeDuplicateEntityNameReviewObjectId(objectShapedId)).toBeUndefined();
+    expect(
+      normalizeDuplicateEntityNameReviewObjectId(' 507f1f77bcf86cd799439011 ')?.toHexString(),
+    ).toBe('507f1f77bcf86cd799439011');
+  });
+
   it('parses bounded dry-run artifact options and guarded apply mode', () => {
     expect(
       parseDuplicateEntityNameReviewArgs([
@@ -112,6 +124,22 @@ describe('duplicate entity name review CLI helpers', () => {
     expect(() => parseDuplicateEntityNameReviewArgs(['--decision-template-output=--apply'])).toThrow(
       '--decision-template-output requires a path',
     );
+    expect(() => parseDuplicateEntityNameReviewArgs(['--output=/var/tmp/duplicate-review.json'])).toThrow(
+      /--output must write under/,
+    );
+    expect(() => parseDuplicateEntityNameReviewArgs(['--output=/tmp/duplicate-review.txt'])).toThrow(
+      /--output must point to a \.json report file/,
+    );
+    expect(() =>
+      parseDuplicateEntityNameReviewArgs([
+        '--accepted-decisions=/var/tmp/duplicate-review-decisions.json',
+      ]),
+    ).toThrow(/--accepted-decisions must write under/);
+    expect(() =>
+      parseDuplicateEntityNameReviewArgs([
+        '--decision-template-output=/var/tmp/duplicate-review-template.json',
+      ]),
+    ).toThrow(/--decision-template-output must write under/);
     for (const flag of ['--limit', '--plan-limit', '--max-apply']) {
       expect(() => parseDuplicateEntityNameReviewArgs([`${flag}=1e3`])).toThrow(
         `${flag} must be a positive integer`,
@@ -328,6 +356,12 @@ describe('duplicate entity name review CLI helpers', () => {
         },
       ],
     });
+    expect(() =>
+      writeDuplicateEntityNameReviewDecisionTemplate(
+        template,
+        '/var/tmp/duplicate-review-template.json',
+      ),
+    ).toThrow(/--decision-template-output must write under/);
   });
 
   it('validates accepted reviewer decisions without enabling apply mode', () => {
@@ -443,25 +477,30 @@ describe('duplicate entity name review CLI helpers', () => {
 
     expect(readDuplicateEntityNameReviewDecisions(missingPath, { allowEmpty: true })).toEqual([]);
     expect(() => readDuplicateEntityNameReviewDecisions(missingPath)).toThrow(/ENOENT/);
+    expect(() =>
+      readDuplicateEntityNameReviewDecisions('/var/tmp/duplicate-review-decisions.json', {
+        allowEmpty: true,
+      }),
+    ).toThrow(/--accepted-decisions must write under/);
   });
 
   it('marks zero-reference cross-department same-person shells as merge-preflight ready', () => {
     const planSummary = buildDuplicateEntityNameReviewPlans(
       [
         {
-          normalizedName: 'andrew neitzke faculty research',
+          normalizedName: 'avery fixture faculty research',
           count: 2,
           reviewCategory: 'cross_department_same_person_review' as const,
           entities: [
             {
               id: 'entity-a',
-              name: 'Andrew Neitzke Faculty Research',
-              slug: 'dept-physics-andrew-neitzke',
+              name: 'Avery Fixture Faculty Research',
+              slug: 'dept-physics-avery-fixture',
             },
             {
               id: 'entity-b',
-              name: 'Andrew Neitzke Faculty Research',
-              slug: 'dept-math-andrew-neitzke',
+              name: 'Avery Fixture Faculty Research',
+              slug: 'dept-math-avery-fixture',
             },
           ],
         },
@@ -501,7 +540,7 @@ describe('duplicate entity name review CLI helpers', () => {
     });
     expect(planSummary.plans[0]).toMatchObject({
       planId:
-        'duplicate-name:cross_department_same_person_review:andrew-neitzke-faculty-research',
+        'duplicate-name:cross_department_same_person_review:avery-fixture-faculty-research',
       reviewPreflight: {
         status: 'merge_preflight_ready_for_review',
         referenceRewriteRequired: true,
@@ -770,6 +809,9 @@ describe('duplicate entity name review CLI helpers', () => {
         byCategory: [{ category: 'shared_website_merge_review', count: 1 }],
       },
     });
+    expect(() =>
+      writeDuplicateEntityNameReviewOutput(payload, '/var/tmp/duplicate-review.json'),
+    ).toThrow(/--output must write under/);
   });
 
   it('exposes the dry-run command in server package scripts', () => {

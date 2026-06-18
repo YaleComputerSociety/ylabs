@@ -4,12 +4,15 @@
  * Legacy listing favorites are no longer a student/faculty-facing surface.
  * Program favorites keep their tracking, export, and detail modal behavior.
  */
-import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { useContext, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Fellowship, FellowshipStage } from '../../types/types';
 import {
   accountTrackingReducer,
+  createInitialAccountTrackingState,
   loadAccountTrackingFromStorage,
+  normalizeAccountTrackingStorageOwner,
+  persistAccountTrackingToStorage,
 } from '../../reducers/accountTrackingReducer';
 import {
   createInitialFavoritesState,
@@ -23,7 +26,9 @@ import LoadingSpinner from '../shared/LoadingSpinner';
 import axios from '../../utils/axios';
 import swal from 'sweetalert';
 import { exportToGoogleSheets as createGoogleSheet } from '../../utils/googleSheets';
+import { safeSpreadsheetCell } from '../../utils/spreadsheetSafety';
 import { openSafeUrlInNewTab } from '../../utils/url';
+import UserContext from '../../contexts/UserContext';
 
 interface FavoritesManagerProps {
   variant?: 'student' | 'professor';
@@ -55,11 +60,8 @@ const validDeadlineDate = (value?: string | null): Date | null => {
 const deadlineEndOfUtcDay = (date: Date): Date =>
   new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 23, 59, 59, 999));
 
-const SPREADSHEET_FORMULA_PREFIX = /^[\s\u0000-\u001f]*[=+\-@]/;
-
 const csvCell = (cell: unknown): string => {
-  const value = String(cell ?? '');
-  const neutralizedValue = SPREADSHEET_FORMULA_PREFIX.test(value) ? `'${value}` : value;
+  const neutralizedValue = safeSpreadsheetCell(cell);
   return `"${neutralizedValue.replace(/"/g, '""')}"`;
 };
 
@@ -86,6 +88,8 @@ export const savedProgramDeadlineSummary = (
 };
 
 const FavoritesManager = ({ variant = 'student', onSummaryChange }: FavoritesManagerProps) => {
+  const { user } = useContext(UserContext);
+  const trackingStorageOwner = normalizeAccountTrackingStorageOwner(user?.netId);
   const isProfessorVariant = variant === 'professor';
   const [favState, favDispatch] = useReducer(favoritesReducer, undefined, () =>
     createInitialFavoritesState(),
@@ -96,7 +100,7 @@ const FavoritesManager = ({ variant = 'student', onSummaryChange }: FavoritesMan
   } = favState;
 
   const [tracking, trackingDispatch] = useReducer(accountTrackingReducer, undefined, () =>
-    loadAccountTrackingFromStorage(localStorage),
+    createInitialAccountTrackingState(),
   );
   const {
     fellowshipStage,
@@ -108,15 +112,40 @@ const FavoritesManager = ({ variant = 'student', onSummaryChange }: FavoritesMan
   const [isFellowshipModalOpen, setIsFellowshipModalOpen] = useState(false);
   const [selectedFellowship, setSelectedFellowship] = useState<Fellowship | null>(null);
   const [showFellowshipExportMenu, setShowFellowshipExportMenu] = useState(false);
+  const [hydratedTrackingOwner, setHydratedTrackingOwner] = useState<string | undefined>(undefined);
   const fellowshipExportMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    localStorage.setItem('yale-research-fellowship-stages', JSON.stringify(fellowshipStage));
-  }, [fellowshipStage]);
+    if (!trackingStorageOwner) {
+      setHydratedTrackingOwner(undefined);
+      return;
+    }
+    trackingDispatch({
+      type: 'HYDRATE',
+      payload: loadAccountTrackingFromStorage(localStorage, trackingStorageOwner),
+    });
+    setHydratedTrackingOwner(trackingStorageOwner);
+  }, [trackingStorageOwner]);
 
   useEffect(() => {
-    localStorage.setItem('yale-research-fellowship-notes', JSON.stringify(fellowshipNotes));
-  }, [fellowshipNotes]);
+    if (!trackingStorageOwner || hydratedTrackingOwner !== trackingStorageOwner) return;
+    persistAccountTrackingToStorage(
+      localStorage,
+      'fellowship-stages',
+      fellowshipStage,
+      trackingStorageOwner,
+    );
+  }, [fellowshipStage, hydratedTrackingOwner, trackingStorageOwner]);
+
+  useEffect(() => {
+    if (!trackingStorageOwner || hydratedTrackingOwner !== trackingStorageOwner) return;
+    persistAccountTrackingToStorage(
+      localStorage,
+      'fellowship-notes',
+      fellowshipNotes,
+      trackingStorageOwner,
+    );
+  }, [fellowshipNotes, hydratedTrackingOwner, trackingStorageOwner]);
 
   useEffect(() => {
     if (!showFellowshipExportMenu) return;
@@ -143,8 +172,8 @@ const FavoritesManager = ({ variant = 'student', onSummaryChange }: FavoritesMan
         favFellowships: fellowships,
         favFellowshipIds: fellowships.map((fellowship) => fellowship.id),
       });
-    } catch (error) {
-      console.error("Error fetching user's favorite programs:", error);
+    } catch {
+      console.error("Error fetching user's favorite programs.");
       favDispatch({
         type: 'SET_FAV_FELLOWSHIPS',
         favFellowships: [],
@@ -193,7 +222,7 @@ const FavoritesManager = ({ variant = 'student', onSummaryChange }: FavoritesMan
           withCredentials: true,
           data: { savedPrograms: [fellowshipId] },
         })
-        .catch((error) => {
+        .catch(() => {
           favDispatch({
             type: 'HYDRATE',
             payload: {
@@ -201,7 +230,7 @@ const FavoritesManager = ({ variant = 'student', onSummaryChange }: FavoritesMan
               favFellowshipIds: prevFavFellowshipIds,
             },
           });
-          console.error('Error saving program:', error);
+          console.error('Error saving program.');
           swal({ text: 'Unable to save program', icon: 'warning' });
           reloadFavorites();
         });
@@ -212,7 +241,7 @@ const FavoritesManager = ({ variant = 'student', onSummaryChange }: FavoritesMan
           withCredentials: true,
           data: { savedPrograms: [fellowshipId] },
         })
-        .catch((error) => {
+        .catch(() => {
           favDispatch({
             type: 'HYDRATE',
             payload: {
@@ -220,7 +249,7 @@ const FavoritesManager = ({ variant = 'student', onSummaryChange }: FavoritesMan
               favFellowshipIds: prevFavFellowshipIds,
             },
           });
-          console.error('Error removing saved program:', error);
+          console.error('Error removing saved program.');
           swal({ text: 'Unable to remove saved program', icon: 'warning' });
           reloadFavorites();
         });
@@ -326,8 +355,8 @@ const FavoritesManager = ({ variant = 'student', onSummaryChange }: FavoritesMan
       );
       openSafeUrlInNewTab(url);
       swal({ text: 'Google Sheet created!', icon: 'success', timer: 2000 });
-    } catch (error) {
-      console.error('Google Sheets export failed:', error);
+    } catch {
+      console.error('Google Sheets export failed.');
       exportFellowshipsToCSV();
       swal({ text: 'Could not create Google Sheet. CSV downloaded instead.', icon: 'info' });
     }

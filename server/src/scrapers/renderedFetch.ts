@@ -1,8 +1,11 @@
 import { execFile } from 'node:child_process';
-import { dirname, join } from 'node:path';
+import http from 'node:http';
+import https from 'node:https';
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
-import { assertPublicHttpUrl } from './../utils/ssrfGuard';
+import { assertPublicHttpUrl, SsrfBlockedError, ssrfSafeAgents } from './../utils/ssrfGuard';
+import { sanitizeLogValue } from '../utils/logSanitizer';
 import type {
   ScraperFetchAttemptMetrics,
   ScraperFetchMetric,
@@ -13,10 +16,51 @@ import type {
 
 const execFileAsync = promisify(execFile);
 const DEFAULT_TIMEOUT_MS = 30_000;
+const MIN_RENDERED_FETCH_TIMEOUT_MS = 1_000;
+const MAX_RENDERED_FETCH_TIMEOUT_MS = 30_000;
 const DEFAULT_BRIDGE_PATH = join(
   dirname(fileURLToPath(import.meta.url)),
   'scraplingBridge.py',
 );
+const SCRAPER_DIR = dirname(fileURLToPath(import.meta.url));
+const PYTHON_COMMAND_RE = /^python(?:3(?:\.\d{1,2})?)?$/;
+const RENDERED_FETCH_MODES = new Set(['dynamic', 'stealthy']);
+const MAX_RENDERED_FETCH_SELECTOR_LENGTH = 256;
+const MAX_RENDERED_SEED_REDIRECT_CHECK_MS = 5_000;
+
+const normalizeRenderedPythonCommand = (value: string): string => {
+  const command = value.trim();
+  if (!command) return 'python3';
+  if (command.includes('/') || command.includes('\\') || !PYTHON_COMMAND_RE.test(command)) {
+    throw new Error('Invalid rendered fetch Python command');
+  }
+  return basename(command);
+};
+
+const normalizeRenderedFetchBridgePath = (value: string): string => {
+  const rawPath = value.trim();
+  const bridgePath = rawPath ? (isAbsolute(rawPath) ? resolve(rawPath) : resolve(SCRAPER_DIR, rawPath)) : DEFAULT_BRIDGE_PATH;
+  const scraperRoot = resolve(SCRAPER_DIR);
+  if (bridgePath !== DEFAULT_BRIDGE_PATH && !bridgePath.startsWith(`${scraperRoot}/`)) {
+    throw new Error('Invalid rendered fetch bridge path');
+  }
+  if (basename(bridgePath) !== 'scraplingBridge.py') {
+    throw new Error('Invalid rendered fetch bridge script');
+  }
+  return bridgePath;
+};
+
+const normalizeRenderedFetchMode = (value: unknown): 'dynamic' | 'stealthy' => {
+  return typeof value === 'string' && RENDERED_FETCH_MODES.has(value)
+    ? (value as 'dynamic' | 'stealthy')
+    : 'dynamic';
+};
+
+const normalizeRenderedFetchSelector = (value: unknown): string | undefined => {
+  if (typeof value !== 'string') return undefined;
+  const selector = value.trim();
+  return selector.length > 0 && selector.length <= MAX_RENDERED_FETCH_SELECTOR_LENGTH ? selector : undefined;
+};
 
 export interface RenderedFetchMetricOverrides {
   blocked?: boolean;
@@ -50,7 +94,42 @@ export interface ScraplingRenderedFetcherOptions {
   bridgePath?: string;
   mode?: 'dynamic' | 'stealthy';
   timeoutMs?: number;
+  seedRedirectCheck?: (url: URL, timeoutMs: number) => Promise<boolean>;
 }
+
+const isHttpRedirectStatus = (statusCode: number | undefined): boolean =>
+  typeof statusCode === 'number' && statusCode >= 300 && statusCode < 400;
+
+const defaultRenderedSeedRedirectCheck = (
+  url: URL,
+  timeoutMs: number,
+): Promise<boolean> =>
+  new Promise((resolvePromise, reject) => {
+    const client = url.protocol === 'https:' ? https : http;
+    const agents = ssrfSafeAgents();
+    const req = client.request(
+      url,
+      {
+        method: 'GET',
+        agent: url.protocol === 'https:' ? agents.httpsAgent : agents.httpAgent,
+        timeout: Math.min(timeoutMs, MAX_RENDERED_SEED_REDIRECT_CHECK_MS),
+        headers: {
+          Range: 'bytes=0-0',
+          'User-Agent': 'YaleResearchRenderedFetchPreflight/1.0',
+        },
+      },
+      (response) => {
+        response.destroy();
+        resolvePromise(isHttpRedirectStatus(response.statusCode));
+      },
+    );
+
+    req.on('timeout', () => {
+      req.destroy(Object.assign(new Error('Timeout'), { name: 'AbortError' }));
+    });
+    req.on('error', reject);
+    req.end();
+  });
 
 export interface MeasuredRenderedFetch<T, TFetchMode extends string = ScraperFetchMode> {
   result: T | null;
@@ -190,46 +269,86 @@ export function fetchAttemptsToMetrics<TFetchMode extends string = ScraperFetchM
 
 export const summarizeFetchMetrics = fetchAttemptsToMetrics;
 
+function boundedRenderedFetchTimeout(value: unknown, fallback: number): number {
+  const parsed = Number(value);
+  const fallbackParsed = Number(fallback);
+  const safeFallback = Number.isFinite(fallbackParsed) && fallbackParsed > 0
+    ? fallbackParsed
+    : DEFAULT_TIMEOUT_MS;
+  const candidate = Number.isFinite(parsed) && parsed > 0 ? parsed : safeFallback;
+  return Math.min(
+    Math.max(Math.floor(candidate), MIN_RENDERED_FETCH_TIMEOUT_MS),
+    MAX_RENDERED_FETCH_TIMEOUT_MS,
+  );
+}
+
 export function createScraplingRenderedFetcher(
   options: ScraplingRenderedFetcherOptions = {},
 ): RenderedFetcher | null {
   const enabled = options.enabled ?? process.env.SCRAPLING_RENDERER_ENABLED === 'true';
   if (!enabled) return null;
 
-  const pythonCommand =
-    options.pythonCommand || process.env.SCRAPLING_PYTHON_COMMAND || 'python3';
-  const bridgePath =
-    options.bridgePath || process.env.SCRAPLING_BRIDGE_PATH || DEFAULT_BRIDGE_PATH;
+  const pythonCommand = normalizeRenderedPythonCommand(
+    options.pythonCommand || process.env.SCRAPLING_PYTHON_COMMAND || 'python3',
+  );
+  const bridgePath = normalizeRenderedFetchBridgePath(
+    options.bridgePath || process.env.SCRAPLING_BRIDGE_PATH || DEFAULT_BRIDGE_PATH,
+  );
   const defaultMode =
-    options.mode ||
-    (process.env.SCRAPLING_FETCH_MODE as 'dynamic' | 'stealthy' | undefined) ||
-    'dynamic';
+    options.mode || normalizeRenderedFetchMode(process.env.SCRAPLING_FETCH_MODE);
   const defaultTimeoutMs =
-    options.timeoutMs ||
-    numberFromEnv(process.env.SCRAPLING_TIMEOUT_MS) ||
-    DEFAULT_TIMEOUT_MS;
+    boundedRenderedFetchTimeout(
+      options.timeoutMs || numberFromEnv(process.env.SCRAPLING_TIMEOUT_MS),
+      DEFAULT_TIMEOUT_MS,
+    );
+  const seedRedirectCheck = options.seedRedirectCheck || defaultRenderedSeedRedirectCheck;
 
   return async (request) => {
     // SSRF guard: request.url originates from DB-stored / scraped values. Block private/metadata
-    // hosts before handing the URL to the headless Python fetcher. (The renderer follows its own
-    // redirects, so this validates the seed host — the injection point — not every hop.)
-    await assertPublicHttpUrl(request.url);
-    const timeoutMs = request.timeoutMs || defaultTimeoutMs;
+    // hosts before handing the URL to the headless Python fetcher. Also fail closed if the seed
+    // URL immediately redirects, because the Python renderer cannot use Node's connect-time
+    // SSRF-safe lookup on redirect hops. The rendered result must still stay public and same-origin
+    // so redirected internal/cross-origin content cannot be materialized.
+    const seedUrl = await assertPublicHttpUrl(request.url);
+    const safeRequestUrl = seedUrl.toString();
+    const timeoutMs = boundedRenderedFetchTimeout(request.timeoutMs, defaultTimeoutMs);
+    try {
+      if (await seedRedirectCheck(seedUrl, timeoutMs)) {
+        return {
+          url: seedUrl.toString(),
+          html: '',
+          blocked: true,
+          blockedReason: 'redirected-before-render',
+          fetchMode: 'scrapling',
+        };
+      }
+    } catch {
+      return {
+        url: seedUrl.toString(),
+        html: '',
+        blocked: true,
+        blockedReason: 'rendered-seed-preflight-failed',
+        fetchMode: 'scrapling',
+      };
+    }
+
     const args = [
       bridgePath,
       '--url',
-      request.url,
+      safeRequestUrl,
       '--mode',
-      request.mode || defaultMode,
+      normalizeRenderedFetchMode(request.mode || defaultMode),
       '--timeout-ms',
       String(timeoutMs),
     ];
-    if (request.waitSelector) args.push('--wait-selector', request.waitSelector);
+    const waitSelector = normalizeRenderedFetchSelector(request.waitSelector);
+    if (waitSelector) args.push('--wait-selector', waitSelector);
 
     try {
       const { stdout } = await execFileAsync(pythonCommand, args, {
         timeout: timeoutMs + 5_000,
         maxBuffer: 10 * 1024 * 1024,
+        shell: false,
       });
       const parsed = JSON.parse(stdout) as {
         url?: string;
@@ -238,8 +357,35 @@ export function createScraplingRenderedFetcher(
         blocked?: boolean;
         blockedReason?: string;
       };
+      const renderedUrl = parsed.url || safeRequestUrl;
+      let finalUrl: URL;
+      try {
+        finalUrl = await assertPublicHttpUrl(renderedUrl);
+      } catch (error) {
+        if (error instanceof SsrfBlockedError) {
+          return {
+            url: seedUrl.toString(),
+            html: '',
+            statusCode: parsed.statusCode,
+            blocked: true,
+            blockedReason: 'rendered-final-url-blocked',
+            fetchMode: 'scrapling',
+          };
+        }
+        throw error;
+      }
+      if (finalUrl.origin !== seedUrl.origin) {
+        return {
+          url: seedUrl.toString(),
+          html: '',
+          statusCode: parsed.statusCode,
+          blocked: true,
+          blockedReason: 'redirected-cross-origin',
+          fetchMode: 'scrapling',
+        };
+      }
       return {
-        url: parsed.url || request.url,
+        url: finalUrl.toString(),
         html: parsed.html || '',
         statusCode: parsed.statusCode,
         blocked: parsed.blocked,
@@ -251,7 +397,7 @@ export function createScraplingRenderedFetcher(
         url: request.url,
         html: '',
         blocked: false,
-        blockedReason: err?.message || String(err),
+        blockedReason: sanitizeLogValue(err),
         fetchMode: 'scrapling',
       };
     }

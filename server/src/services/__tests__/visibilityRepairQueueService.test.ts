@@ -5,6 +5,7 @@ import {
   buildVisibilityRepairPlan,
   buildVisibilityRepairPlans,
   classifyVisibilityRepairStage,
+  normalizeVisibilityRepairObjectId,
   runVisibilityRepairQueue,
   type VisibilityRepairQueueItemInput,
 } from '../visibilityRepairQueueService';
@@ -22,6 +23,18 @@ const queueItem = (
 });
 
 describe('visibilityRepairQueueService', () => {
+  it('normalizes visibility repair ObjectIds without object-shaped coercion', () => {
+    expect(normalizeVisibilityRepairObjectId(' 507f1f77bcf86cd799439011 ')).toBe(
+      '507f1f77bcf86cd799439011',
+    );
+    expect(normalizeVisibilityRepairObjectId('queue-1')).toBeUndefined();
+    expect(
+      normalizeVisibilityRepairObjectId({
+        toString: () => '507f1f77bcf86cd799439011',
+      }),
+    ).toBeUndefined();
+  });
+
   it('builds PI member upserts against current PI rows only', () => {
     const now = new Date('2026-06-05T04:00:00.000Z');
 
@@ -210,9 +223,9 @@ describe('visibilityRepairQueueService', () => {
         fullDescription:
           'Research fields include machine learning, algorithms, data compression, and automata theory.',
         shortDescription: 'Studies machine learning, algorithms, data compression, and automata theory.',
-        websiteUrl: 'https://engineering.yale.edu/research-and-faculty/faculty-directory/dana-angluin',
+        websiteUrl: 'https://engineering.yale.edu/research-and-faculty/faculty-directory/drew-fixture',
         sourceUrls: [
-          'https://engineering.yale.edu/research-and-faculty/faculty-directory/dana-angluin',
+          'https://engineering.yale.edu/research-and-faculty/faculty-directory/drew-fixture',
         ],
       }),
       findResearchEntityMembers: vi.fn().mockResolvedValue([
@@ -260,9 +273,9 @@ describe('visibilityRepairQueueService', () => {
         fullDescription:
           'Research fields include machine learning, algorithms, data compression, and automata theory.',
         shortDescription: '',
-        websiteUrl: 'https://engineering.yale.edu/research-and-faculty/faculty-directory/dana-angluin',
+        websiteUrl: 'https://engineering.yale.edu/research-and-faculty/faculty-directory/drew-fixture',
         sourceUrls: [
-          'https://engineering.yale.edu/research-and-faculty/faculty-directory/dana-angluin',
+          'https://engineering.yale.edu/research-and-faculty/faculty-directory/drew-fixture',
         ],
       }),
       findResearchEntityMembers: vi.fn().mockResolvedValue([
@@ -1129,14 +1142,14 @@ describe('visibilityRepairQueueService', () => {
     const deps = {
       findOpenQueueItems: vi.fn().mockResolvedValue([
         queueItem({
-          label: 'Deborah Margolin — Research',
+          label: 'Devon Roster — Research',
           blockerReasons: ['missing_description', 'missing_source_url'],
         }),
       ]),
       updateQueueItem: vi.fn(),
       findResearchEntity: vi.fn().mockResolvedValue({
         _id: 'entity-1',
-        name: 'Deborah Margolin — Research',
+        name: 'Devon Roster — Research',
         sourceUrls: [],
       }),
       updateResearchEntity: vi.fn(),
@@ -2357,7 +2370,7 @@ describe('visibilityRepairQueueService', () => {
             fname: 'Yongli',
             lname: 'Zhang',
             profileUrls: {
-              medicine: 'https://medicine.yale.edu/profile/yongli-zhang/',
+              medicine: 'https://medicine.yale.edu/profile/fixture-access-lead/',
             },
           },
         },
@@ -2384,13 +2397,13 @@ describe('visibilityRepairQueueService', () => {
     expect(report).toMatchObject({ repaired: 1, blocked: 0, resolvedByGate: 1 });
     expect(deps.upsertEntryPathway).toHaveBeenCalledWith(
       expect.objectContaining({
-        sourceUrls: ['https://medicine.yale.edu/profile/yongli-zhang/'],
+        sourceUrls: ['https://medicine.yale.edu/profile/fixture-access-lead/'],
       }),
     );
     expect(deps.upsertContactRoute).toHaveBeenCalledWith(
       expect.objectContaining({
         name: 'Yongli Zhang',
-        url: 'https://medicine.yale.edu/profile/yongli-zhang/',
+        url: 'https://medicine.yale.edu/profile/fixture-access-lead/',
       }),
     );
   });
@@ -2408,7 +2421,7 @@ describe('visibilityRepairQueueService', () => {
         fullDescription:
           'The lab studies computational biology, machine learning, systems biology, and drug discovery.',
         shortDescription: 'Studies computational biology, machine learning, and drug discovery.',
-        sourceUrls: ['https://medicine.yale.edu/profile/ho-joon-lee/'],
+        sourceUrls: ['https://medicine.yale.edu/profile/jordan-queue/'],
       }),
       updateResearchEntity: vi.fn(),
       findResearchEntityMembers: vi.fn().mockResolvedValue([
@@ -2417,11 +2430,11 @@ describe('visibilityRepairQueueService', () => {
           userId: 'user-1',
           user: {
             _id: 'user-1',
-            fname: 'William',
-            lname: 'Lee',
-            email: 'ho-joon.lee@yale.edu',
+            fname: 'Jordan',
+            lname: 'Queue',
+            email: 'jordan.queue@yale.edu',
             profileUrls: {
-              medicine: 'https://medicine.yale.edu/profile/ho-joon-lee/',
+              medicine: 'https://medicine.yale.edu/profile/jordan-queue/',
             },
           },
         },
@@ -2449,13 +2462,13 @@ describe('visibilityRepairQueueService', () => {
     expect(deps.findActionEvidenceObservationIds).toHaveBeenCalledWith(
       expect.objectContaining({
         userId: 'user-1',
-        sourceUrl: 'https://medicine.yale.edu/profile/ho-joon-lee/',
+        sourceUrl: 'https://medicine.yale.edu/profile/jordan-queue/',
       }),
     );
     expect(deps.upsertContactRoute).toHaveBeenCalledWith(
       expect.objectContaining({
-        name: 'William Lee',
-        url: 'https://medicine.yale.edu/profile/ho-joon-lee/',
+        name: 'Jordan Queue',
+        url: 'https://medicine.yale.edu/profile/jordan-queue/',
       }),
     );
   });
@@ -2473,7 +2486,7 @@ describe('visibilityRepairQueueService', () => {
         fullDescription:
           'The lab studies biostatistics, epidemiologic methods, clinical trials, and longitudinal data analysis.',
         shortDescription: 'Studies biostatistics, epidemiologic methods, and clinical trials.',
-        sourceUrls: ['https://medicine.yale.edu/profile/lawrence-guan/'],
+        sourceUrls: ['https://medicine.yale.edu/profile/fixture-rotation-lead/'],
       }),
       updateResearchEntity: vi.fn(),
       findResearchEntityMembers: vi.fn().mockResolvedValue([
@@ -2484,9 +2497,9 @@ describe('visibilityRepairQueueService', () => {
             _id: 'user-1',
             fname: 'Leying',
             lname: 'Guan',
-            email: 'leying.guan@yale.edu',
+            email: 'lee.queue@yale.edu',
             profileUrls: {
-              medicine: 'https://medicine.yale.edu/profile/lawrence-guan/',
+              medicine: 'https://medicine.yale.edu/profile/fixture-rotation-lead/',
             },
           },
         },
@@ -3014,7 +3027,7 @@ describe('visibilityRepairQueueService', () => {
           'The lab studies B cell dysfunction in inflammatory neuropathies and autoimmune neuromuscular disorders using bioinformatics and molecular biology.',
         shortDescription:
           'Studies B cell dysfunction in inflammatory neuropathies and autoimmune neuromuscular disorders.',
-        sourceUrls: ['https://medicine.yale.edu/profile/br574/'],
+        sourceUrls: ['https://medicine.yale.edu/profile/fx574/'],
       }),
       updateResearchEntity: vi.fn(),
       findResearchEntityMembers: vi.fn().mockResolvedValue([
@@ -3026,7 +3039,7 @@ describe('visibilityRepairQueueService', () => {
             fname: 'Bhaskar',
             lname: 'Roy',
             profileUrls: {
-              medicine: 'https://medicine.yale.edu/profile/br574/',
+              medicine: 'https://medicine.yale.edu/profile/fx574/',
             },
           },
         },
@@ -3054,12 +3067,12 @@ describe('visibilityRepairQueueService', () => {
     expect(deps.findActionEvidenceObservationIds).toHaveBeenCalledWith({
       researchEntityId: 'entity-1',
       userId: 'user-1',
-      sourceUrl: 'https://medicine.yale.edu/profile/br574/',
+      sourceUrl: 'https://medicine.yale.edu/profile/fx574/',
     });
     expect(deps.upsertContactRoute).toHaveBeenCalledWith(
       expect.objectContaining({
         routeType: 'FACULTY_PI',
-        url: 'https://medicine.yale.edu/profile/br574/',
+        url: 'https://medicine.yale.edu/profile/fx574/',
       }),
     );
   });
@@ -3068,18 +3081,18 @@ describe('visibilityRepairQueueService', () => {
     const deps = {
       findOpenQueueItems: vi.fn().mockResolvedValue([
         queueItem({
-          label: 'Leying Guan Lab',
+          label: 'Lee Queue Lab',
           blockerReasons: ['missing_action_evidence'],
         }),
       ]),
       updateQueueItem: vi.fn().mockResolvedValue(undefined),
       findResearchEntity: vi.fn().mockResolvedValue({
         _id: 'entity-1',
-        name: 'Leying Guan Lab',
+        name: 'Lee Queue Lab',
         fullDescription:
           'The lab studies statistical methods for biomedical imaging and public health data.',
         shortDescription: 'Studies statistical methods for biomedical imaging and public health data.',
-        sourceUrls: ['https://medicine.yale.edu/profile/lawrence-guan/'],
+        sourceUrls: ['https://medicine.yale.edu/profile/fixture-rotation-lead/'],
       }),
       updateResearchEntity: vi.fn(),
       findResearchEntityMembers: vi.fn().mockResolvedValue([
@@ -3091,7 +3104,7 @@ describe('visibilityRepairQueueService', () => {
             fname: 'Leying',
             lname: 'Guan',
             profileUrls: {
-              medicine: 'https://medicine.yale.edu/profile/lawrence-guan/',
+              medicine: 'https://medicine.yale.edu/profile/fixture-rotation-lead/',
             },
           },
         },
@@ -3220,7 +3233,7 @@ describe('visibilityRepairQueueService', () => {
         websiteUrl: 'https://cidma.us/',
         sourceUrls: [
           'https://reporter.nih.gov/project-details/10774311',
-          'https://medicine.yale.edu/profile/alison-galvani/',
+          'https://medicine.yale.edu/profile/fixture-modeling-lead/',
           'https://cidma.us/',
         ],
       }),
@@ -3244,7 +3257,7 @@ describe('visibilityRepairQueueService', () => {
       findEntityActionEvidenceObservationIds: vi.fn().mockResolvedValue([
         {
           id: 'obs-1',
-          sourceUrl: 'https://medicine.yale.edu/profile/alison-galvani/',
+          sourceUrl: 'https://medicine.yale.edu/profile/fixture-modeling-lead/',
           sourceName: 'official-profile-pi-backfill',
         },
       ]),
@@ -3267,9 +3280,9 @@ describe('visibilityRepairQueueService', () => {
     expect(deps.findActionEvidenceObservationIds).not.toHaveBeenCalled();
     expect(deps.findEntityActionEvidenceObservationIds).toHaveBeenCalledWith({
       researchEntityId: 'entity-1',
-      sourceUrl: 'https://medicine.yale.edu/profile/alison-galvani/',
+      sourceUrl: 'https://medicine.yale.edu/profile/fixture-modeling-lead/',
       sourceUrls: [
-        'https://medicine.yale.edu/profile/alison-galvani/',
+        'https://medicine.yale.edu/profile/fixture-modeling-lead/',
         'https://cidma.us/',
         'https://reporter.nih.gov/project-details/10774311',
       ],
@@ -3278,7 +3291,7 @@ describe('visibilityRepairQueueService', () => {
       expect.objectContaining({
         routeType: 'UNKNOWN',
         role: 'Research entity source',
-        url: 'https://medicine.yale.edu/profile/alison-galvani/',
+        url: 'https://medicine.yale.edu/profile/fixture-modeling-lead/',
       }),
     );
   });

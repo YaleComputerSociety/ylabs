@@ -13,8 +13,26 @@ const mocks = vi.hoisted(() => ({
   addFavPathways: vi.fn(),
   deleteFavPathways: vi.fn(),
   matchFellowshipsForPathways: vi.fn(),
+  getPathwaysByIds: vi.fn(),
   getSavedPathwayPlans: vi.fn(),
   exportSavedPathwayPlans: vi.fn(),
+  normalizeObjectIdsForUserMutation: vi.fn((values: unknown[], fieldName: string) => {
+    if (values.length > 100) {
+      const error: any = new Error(`Too many ${fieldName} ids`);
+      error.status = 400;
+      throw error;
+    }
+
+    return values.map((value) => {
+      const id = String(value || '').trim();
+      if (!/^[a-f0-9]{24}$/i.test(id)) {
+        const error: any = new Error(`Invalid ${fieldName} id`);
+        error.status = 400;
+        throw error;
+      }
+      return { toString: () => id };
+    });
+  }),
   updateSavedPathwayPlan: vi.fn(),
   deleteSavedPathwayPlan: vi.fn(),
 }));
@@ -36,7 +54,7 @@ vi.mock('../../services/fellowshipMatchingService', () => ({
 }));
 
 vi.mock('../../services/pathwaySearchService', () => ({
-  getPathwaysByIds: vi.fn(),
+  getPathwaysByIds: mocks.getPathwaysByIds,
 }));
 
 vi.mock('../../services/userService', () => ({
@@ -50,6 +68,7 @@ vi.mock('../../services/userService', () => ({
   deleteFavPathways: mocks.deleteFavPathways,
   getSavedPathwayPlans: mocks.getSavedPathwayPlans,
   exportSavedPathwayPlans: mocks.exportSavedPathwayPlans,
+  normalizeObjectIdsForUserMutation: mocks.normalizeObjectIdsForUserMutation,
   pruneSavedPathwayPlansForExistingPathways: vi.fn((plans) => plans),
   updateSavedPathwayPlan: mocks.updateSavedPathwayPlan,
   deleteSavedPathwayPlan: mocks.deleteSavedPathwayPlan,
@@ -176,8 +195,6 @@ const expectPublicProgram = (payload: any) => {
     applicationOpenDate: new Date('2026-01-01T00:00:00.000Z'),
     deadline: new Date('2026-02-01T00:00:00.000Z'),
     contactName: 'Program Office',
-    contactEmail: 'program@yale.edu',
-    contactPhone: '203-555-1212',
     contactOffice: 'Office of Research',
     yearOfStudy: ['First-year'],
     termOfAward: ['Summer'],
@@ -187,15 +204,15 @@ const expectPublicProgram = (payload: any) => {
     sourceName: 'Official program page',
     sourceUrl: 'https://example.yale.edu/program',
     studentVisibilityTier: 'student_ready',
-    studentVisibilityComputedTier: 'student_ready',
-    studentVisibilityReasons: ['public reason'],
-    createdAt: new Date('2026-01-06T00:00:00.000Z'),
-    updatedAt: new Date('2026-01-07T00:00:00.000Z'),
   });
+  expect(payload).not.toHaveProperty('contactEmail');
+  expect(payload).not.toHaveProperty('contactPhone');
   expect(payload).not.toHaveProperty('sourceKey');
   expect(payload).not.toHaveProperty('sourceFingerprint');
   expect(payload).not.toHaveProperty('sourceLastVerifiedAt');
   expect(payload).not.toHaveProperty('sourceLastChangedAt');
+  expect(payload).not.toHaveProperty('studentVisibilityComputedTier');
+  expect(payload).not.toHaveProperty('studentVisibilityReasons');
   expect(payload).not.toHaveProperty('studentVisibilityOverrideTier');
   expect(payload).not.toHaveProperty('studentVisibilitySuppressionReason');
   expect(payload).not.toHaveProperty('studentVisibilityComputedAt');
@@ -206,6 +223,8 @@ const expectPublicProgram = (payload: any) => {
   expect(payload).not.toHaveProperty('views');
   expect(payload).not.toHaveProperty('favorites');
   expect(payload).not.toHaveProperty('internalReviewNotes');
+  expect(payload).not.toHaveProperty('createdAt');
+  expect(payload).not.toHaveProperty('updatedAt');
 };
 
 const privateResponseDouble = () =>
@@ -243,6 +262,7 @@ describe('userController', () => {
       ownerId: 'owner123',
       ownerEmail: 'owner123@yale.edu',
       title: 'Own listing',
+      hiringStatus: 'Hiring now; email owner123@yale.edu before applying.',
       description: 'Private owner draft details.',
       applicantDescription: 'Students will help with experiments.',
       websites: [
@@ -272,6 +292,7 @@ describe('userController', () => {
       _id: '64a000000000000000000002',
       id: '64a000000000000000000002',
       title: 'Favorited listing',
+      hiringStatus: 'Open; call 203-555-0199 first.',
       description: 'Help with a project.',
       applicantDescription: 'Students will learn methods.',
       websites: [
@@ -327,6 +348,7 @@ describe('userController', () => {
       _id: '64a000000000000000000001',
       id: '64a000000000000000000001',
       title: 'Own listing',
+      hiringStatus: expect.any(String),
       description: 'Private owner draft details.',
       applicantDescription: 'Students will help with experiments.',
       websites: ['https://owner.example.yale.edu/apply'],
@@ -338,6 +360,7 @@ describe('userController', () => {
       compensationType: 'Paid',
       expiresAt: new Date('2026-09-01T00:00:00.000Z'),
     });
+    expect(body.ownListings[0].hiringStatus).not.toContain('owner123@yale.edu');
     expect(body.ownListings[0]).not.toHaveProperty('ownerId');
     expect(body.ownListings[0]).not.toHaveProperty('ownerEmail');
     expect(body.ownListings[0]).not.toHaveProperty('professorIds');
@@ -354,6 +377,7 @@ describe('userController', () => {
       _id: '64a000000000000000000002',
       id: '64a000000000000000000002',
       title: 'Favorited listing',
+      hiringStatus: expect.any(String),
       description: 'Help with a project.',
       applicantDescription: 'Students will learn methods.',
       websites: ['https://example.yale.edu/apply'],
@@ -365,6 +389,7 @@ describe('userController', () => {
       compensationType: 'Paid',
       expiresAt: new Date('2026-08-01T00:00:00.000Z'),
     });
+    expect(body.favListings[0].hiringStatus).not.toContain('203-555-0199');
     expect(body.favListings[0]).not.toHaveProperty('ownerId');
     expect(body.favListings[0]).not.toHaveProperty('ownerEmail');
     expect(body.favListings[0]).not.toHaveProperty('professorIds');
@@ -397,6 +422,25 @@ describe('userController', () => {
 
     expect(res.statusCode).toBe(500);
     expect(res.body).toEqual({ error: 'Failed to fetch account listings' });
+  });
+
+  it('validates stored listing ids before account listing fan-out', async () => {
+    mocks.readUser.mockResolvedValue({
+      ownListings: ['not-an-object-id'],
+      favListings: ['64a000000000000000000002'],
+    });
+
+    const req = {
+      user: { netId: 'owner123', userType: 'professor', userConfirmed: true },
+    } as any;
+    const res = privateResponseDouble();
+
+    await getUserListings(req, res);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toEqual({ error: 'Bad request' });
+    expect(mocks.readListings).not.toHaveBeenCalled();
+    expect(mocks.updateUser).not.toHaveBeenCalled();
   });
 
   it('does not leak internal service errors when adding favorited listings fails', async () => {
@@ -545,10 +589,13 @@ describe('userController', () => {
       profileUrls: {
         yale: 'https://example.yale.edu/student123',
       },
-      favFellowships: ['64a000000000000000000010'],
     });
     expect(body.user).not.toHaveProperty('website');
     expect(body.user).not.toHaveProperty('email');
+    expect(body.user).not.toHaveProperty('ownListings');
+    expect(body.user).not.toHaveProperty('favListings');
+    expect(body.user).not.toHaveProperty('favFellowships');
+    expect(body.user).not.toHaveProperty('favPathways');
     expect(body.user).not.toHaveProperty('savedPathwayPlans');
     expect(body.user).not.toHaveProperty('googleScholarId');
     expect(body.user).not.toHaveProperty('confidenceByField');
@@ -683,8 +730,11 @@ describe('userController', () => {
       netid: 'student123',
       userType: 'undergraduate',
       userConfirmed: true,
-      favPathways: ['64a000000000000000000030'],
     });
+    expect(body.user).not.toHaveProperty('ownListings');
+    expect(body.user).not.toHaveProperty('favListings');
+    expect(body.user).not.toHaveProperty('favFellowships');
+    expect(body.user).not.toHaveProperty('favPathways');
     expect(body.user).not.toHaveProperty('savedPathwayPlans');
     expect(body.user).not.toHaveProperty('email');
     expect(body.user).not.toHaveProperty('lastActive');
@@ -804,8 +854,11 @@ describe('userController', () => {
   });
 
   it('does not leak internal service errors when updating the current user fails', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     mocks.updateUser.mockRejectedValue(
-      new Error('mongodb://user:pass@example.invalid leaked'),
+      new Error(
+        'mongodb://user:pass@example.invalid leaked for ada@example.edu with Bearer abc123 and 203-555-1212',
+      ),
     );
 
     const req = {
@@ -820,9 +873,65 @@ describe('userController', () => {
     expect(next).not.toHaveBeenCalled();
     expect(res.statusCode).toBe(500);
     expect(res.body).toEqual({ error: 'Failed to update account profile' });
+    const logged = consoleError.mock.calls.flat().join(' ');
+    expect(logged).not.toContain('user:pass');
+    expect(logged).not.toContain('ada@example.edu');
+    expect(logged).not.toContain('abc123');
+    expect(logged).not.toContain('203-555-1212');
+  });
+
+  it('does not expose internal account join fields after current-user profile updates', async () => {
+    mocks.updateUser.mockResolvedValue({
+      _id: '64a000000000000000000020',
+      netid: 'student123',
+      userType: 'undergraduate',
+      userConfirmed: true,
+      bio: 'I study public health.',
+      facultyMemberId: 'faculty-join-123',
+      studentProfileId: 'student-profile-123',
+      savedPathwayPlans: { private: { note: 'private planning note' } },
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-02T00:00:00.000Z',
+    });
+
+    const req = {
+      user: { netId: 'student123', userType: 'undergraduate', userConfirmed: true },
+      body: { data: { bio: 'I study public health.' } },
+    } as any;
+    const res = privateResponseDouble();
+    const next = vi.fn();
+
+    await updateCurrentUser(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.statusCode).toBe(200);
+    expect(res.body.user).toMatchObject({
+      netid: 'student123',
+      bio: 'I study public health.',
+    });
+    expect(res.body.user).not.toHaveProperty('facultyMemberId');
+    expect(res.body.user).not.toHaveProperty('studentProfileId');
+    expect(res.body.user).not.toHaveProperty('savedPathwayPlans');
+    expect(res.body.user).not.toHaveProperty('createdAt');
+    expect(res.body.user).not.toHaveProperty('updatedAt');
   });
 
   it('sanitizes self-edit profile URLs before persisting the current user', async () => {
+    const profileUrls = Object.create(null);
+    Object.assign(profileUrls, {
+      yale: 'https://example.yale.edu/profile/student123',
+      ' research.profile ': 'https://example.yale.edu/research/student123',
+      '$source': 'https://example.yale.edu/source/student123',
+      constructor: 'https://example.yale.edu/constructor',
+      prototype: 'https://example.yale.edu/prototype',
+      personal: 'mailto:student123@yale.edu',
+      script: 'javascript:alert(document.cookie)',
+    });
+    Object.defineProperty(profileUrls, '__proto__', {
+      value: 'https://example.yale.edu/proto',
+      enumerable: true,
+    });
+
     mocks.updateUser.mockResolvedValue({
       _id: '64a000000000000000000020',
       netid: 'student123',
@@ -832,6 +941,9 @@ describe('userController', () => {
       imageUrl: 'javascript:alert(document.cookie)',
       profileUrls: {
         yale: 'https://example.yale.edu/profile/student123',
+        'research.profile': 'https://example.yale.edu/research/student123',
+        '$source': 'https://example.yale.edu/source/student123',
+        constructor: 'https://example.yale.edu/constructor',
       },
       bio: 'I study public health.',
     });
@@ -843,11 +955,7 @@ describe('userController', () => {
           bio: 'I study public health.',
           website: 'javascript:alert(document.cookie)',
           imageUrl: 'javascript:alert(document.cookie)',
-          profileUrls: {
-            yale: 'https://example.yale.edu/profile/student123',
-            personal: 'mailto:student123@yale.edu',
-            script: 'javascript:alert(document.cookie)',
-          },
+          profileUrls,
         },
       },
     } as any;
@@ -861,6 +969,8 @@ describe('userController', () => {
       bio: 'I study public health.',
       profileUrls: {
         yale: 'https://example.yale.edu/profile/student123',
+        research_profile: 'https://example.yale.edu/research/student123',
+        _source: 'https://example.yale.edu/source/student123',
       },
     });
     expect(res.statusCode).toBe(200);
@@ -868,9 +978,101 @@ describe('userController', () => {
       website: 'https://example.yale.edu/student123',
       profileUrls: {
         yale: 'https://example.yale.edu/profile/student123',
+        research_profile: 'https://example.yale.edu/research/student123',
+        _source: 'https://example.yale.edu/source/student123',
       },
     });
     expect(res.body.user).not.toHaveProperty('imageUrl');
+    expect(Object.prototype.hasOwnProperty.call(res.body.user.profileUrls, 'constructor')).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(res.body.user.profileUrls, 'prototype')).toBe(false);
+  });
+
+  it('bounds self-edit account text and array fields before persisting the current user', async () => {
+    mocks.updateUser.mockResolvedValue({
+      _id: '64a000000000000000000020',
+      netid: 'student123',
+      userType: 'undergraduate',
+      userConfirmed: true,
+      bio: 'a'.repeat(2000),
+      major: ['Computer Science'],
+      researchInterests: ['public health'],
+    });
+
+    const req = {
+      user: { netId: 'student123', userType: 'undergraduate', userConfirmed: true },
+      body: {
+        data: {
+          bio: `  ${'a'.repeat(2100)}  `,
+          phone: 2035551212,
+          college: '  Benjamin Franklin College  ',
+          physicalLocation: `  ${'b'.repeat(600)}  `,
+          major: [
+            'Computer Science',
+            '',
+            123,
+            ...Array.from({ length: 60 }, (_, index) => `Topic ${index}`),
+          ],
+          departments: 'not-an-array',
+          researchInterests: [' public health ', 'x'.repeat(150)],
+          topics: [{ nested: true }],
+        },
+      },
+    } as any;
+    const res = privateResponseDouble();
+    const next = vi.fn();
+
+    await updateCurrentUser(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    const update = mocks.updateUser.mock.calls[0][1];
+    expect(update.bio).toHaveLength(2000);
+    expect(update.phone).toBeUndefined();
+    expect(update.college).toBe('Benjamin Franklin College');
+    expect(update.physicalLocation).toHaveLength(500);
+    expect(update.major).toHaveLength(50);
+    expect(update.major[0]).toBe('Computer Science');
+    expect(update.major).not.toContain('');
+    expect(update.departments).toBeUndefined();
+    expect(update.researchInterests).toEqual(['public health', 'x'.repeat(120)]);
+    expect(update.topics).toEqual([]);
+  });
+
+  it('derives account departments from sanitized primary and secondary department fields', async () => {
+    mocks.readUser.mockResolvedValue({
+      netid: 'student123',
+      primaryDepartment: 'History',
+      secondaryDepartments: ['Statistics'],
+    });
+    mocks.updateUser.mockResolvedValue({
+      _id: '64a000000000000000000020',
+      netid: 'student123',
+      userType: 'undergraduate',
+      userConfirmed: true,
+      primaryDepartment: 'Public Health',
+      secondaryDepartments: ['Statistics'],
+      departments: ['Public Health', 'Statistics'],
+    });
+
+    const req = {
+      user: { netId: 'student123', userType: 'undergraduate', userConfirmed: true },
+      body: {
+        data: {
+          primaryDepartment: '  Public Health  ',
+          departments: ['Forged Department'],
+        },
+      },
+    } as any;
+    const res = privateResponseDouble();
+    const next = vi.fn();
+
+    await updateCurrentUser(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(mocks.readUser).toHaveBeenCalledWith('student123');
+    expect(mocks.updateUser).toHaveBeenCalledWith('student123', {
+      primaryDepartment: 'Public Health',
+      departments: ['Public Health', 'Statistics'],
+    });
   });
 
   it('marks private saved research-plan detail responses as no-store', async () => {
@@ -1072,6 +1274,26 @@ describe('userController', () => {
     expect(res.body).toEqual({ error: message });
   });
 
+  it('bounds stored program ids before program reader fan-out', async () => {
+    mocks.readUser.mockResolvedValue({
+      favFellowships: Array.from({ length: 101 }, (_, index) =>
+        index.toString(16).padStart(24, '0'),
+      ),
+    });
+
+    const req = {
+      user: { netId: 'student123', userType: 'undergraduate', userConfirmed: true },
+    } as any;
+    const res = privateResponseDouble();
+
+    await getFavFellowships(req, res);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toEqual({ error: 'Bad request' });
+    expect(mocks.readFellowships).not.toHaveBeenCalled();
+    expect(mocks.updateUser).not.toHaveBeenCalled();
+  });
+
   it('does not leak internal service errors from pathway funding-match readers', async () => {
     mocks.readUser.mockResolvedValue({
       favPathways: ['64a000000000000000000030'],
@@ -1089,5 +1311,42 @@ describe('userController', () => {
 
     expect(res.statusCode).toBe(500);
     expect(res.body).toEqual({ error: 'Failed to fetch pathway funding matches' });
+  });
+
+  it('bounds stored favorite pathway ids before funding-match fan-out', async () => {
+    mocks.readUser.mockResolvedValue({
+      favPathways: Array.from({ length: 101 }, (_, index) =>
+        index.toString(16).padStart(24, '0'),
+      ),
+    });
+
+    const req = {
+      user: { netId: 'student123', userType: 'undergraduate', userConfirmed: true },
+    } as any;
+    const res = privateResponseDouble();
+
+    await getFavPathwayFundingMatches(req, res);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toEqual({ error: 'Bad request' });
+    expect(mocks.matchFellowshipsForPathways).not.toHaveBeenCalled();
+  });
+
+  it('validates stored favorite pathway ids before pathway search fan-out', async () => {
+    mocks.readUser.mockResolvedValue({
+      favPathways: ['not-an-object-id'],
+      savedPathwayPlans: {},
+    });
+
+    const req = {
+      user: { netId: 'student123', userType: 'undergraduate', userConfirmed: true },
+    } as any;
+    const res = privateResponseDouble();
+
+    await getSavedResearchPlans(req, res);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toEqual({ error: 'Bad request' });
+    expect(mocks.getPathwaysByIds).not.toHaveBeenCalled();
   });
 });

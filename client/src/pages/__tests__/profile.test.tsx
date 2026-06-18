@@ -74,7 +74,6 @@ const profile = {
   netid: 'fixture-profile',
   fname: 'Test',
   lname: 'Person',
-  email: 'profile@example.test',
   title: 'Professor of Computation',
   primary_department: 'Computer Science',
   secondary_departments: [],

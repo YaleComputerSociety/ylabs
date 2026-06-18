@@ -12,6 +12,8 @@ import {
   PAPER_AUTHORSHIP_EVIDENCE_FIELD,
   type PaperAuthorshipEvidence,
 } from '../paperAuthorshipPolicy';
+import { serializedDocumentId } from '../../utils/idSerialization';
+import { sanitizeLogValue } from '../../utils/logSanitizer';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 
 const ORCID_BASE = 'https://pub.orcid.org/v3.0';
@@ -302,7 +304,7 @@ export class OrcidWorksScraper implements IScraper {
         const works = parseOrcidWorks(payload);
         for (const work of works) {
           const observations = orcidWorkSummaryToObservations(work, {
-            userId: String(user._id),
+            userId: serializedDocumentId(user._id) || '',
             netid: user.netid ? String(user.netid) : undefined,
             displayName,
             orcid,
@@ -324,7 +326,7 @@ export class OrcidWorksScraper implements IScraper {
         totalObs++;
       } catch (error: any) {
         failures++;
-        ctx.log(`ORCID works fetch failed for ${user.netid || orcid}: ${error?.message || error}`);
+        ctx.log(`ORCID works fetch failed for Yale author candidate: ${sanitizeLogValue(error)}`);
       }
     }
     await flush();

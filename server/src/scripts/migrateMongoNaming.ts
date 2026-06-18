@@ -14,7 +14,8 @@ import fs from 'fs';
 import mongoose from 'mongoose';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { assertScriptApplyAllowed } from './scriptWriteGuards';
+import { sanitizeLogValue } from '../utils/logSanitizer';
+import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 
 dotenv.config();
 
@@ -83,11 +84,7 @@ interface UserFieldRenameResult {
 }
 
 function parseRequiredOutputPath(value: string | undefined): string {
-  const output = value?.trim();
-  if (!output || output.startsWith('--')) {
-    throw new Error('--output requires a path');
-  }
-  return output;
+  return resolveSafeJsonReportOutputPath(value);
 }
 
 export function parseMongoNamingMigrationArgs(argv: string[]): MongoNamingMigrationCliOptions {
@@ -163,8 +160,9 @@ export function buildMongoNamingMigrationOutput<T extends object>(
 
 export function writeMongoNamingMigrationOutput(report: unknown, output?: string): void {
   if (!output) return;
-  fs.mkdirSync(path.dirname(output), { recursive: true });
-  fs.writeFileSync(output, `${JSON.stringify(report, null, 2)}\n`);
+  const safeOutput = resolveSafeJsonReportOutputPath(output);
+  fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
+  fs.writeFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
 }
 
 async function collectionExists(name: string): Promise<boolean> {
@@ -428,7 +426,7 @@ const isDirectRun = process.argv[1]
 
 if (isDirectRun) {
   main().catch(async (err) => {
-    console.error('Fatal error:', err);
+    console.error('Fatal error:', sanitizeLogValue(err));
     await mongoose.disconnect().catch(() => {});
     process.exitCode = 1;
   });

@@ -8,7 +8,9 @@ import { Observation } from '../models/observation';
 import { Paper } from '../models/paper';
 import { PaperAuthor } from '../models/paperAuthor';
 import { User } from '../models/user';
-import { assertScriptApplyAllowed } from './scriptWriteGuards';
+import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { serializedDocumentId } from '../utils/idSerialization';
+import { sanitizeLogValue } from '../utils/logSanitizer';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -46,10 +48,25 @@ const AUTHORSHIP_METHODS = [
 
 const METADATA_ONLY_SOURCES = ['arxiv', 'crossref'] as const;
 const DIRECT_AUTHOR_FIELD_KEEP_SOURCES = ['manual-admin-edit', 'manual-pi-edit'] as const;
+const PAPER_AUTHORSHIP_AUDIT_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
 
 export function paperAuthorshipAuditFixCommand(maxApply?: number): string {
   const maxApplyArg = typeof maxApply === 'number' ? ` --max-apply=${maxApply}` : '';
   return `SCRAPER_ENV=beta yarn --cwd server papers:authorship-audit --apply${maxApplyArg} --confirm-paper-authorship-apply`;
+}
+
+export function normalizePaperAuthorshipAuditObjectId(
+  value: unknown,
+): mongoose.Types.ObjectId | undefined {
+  if (value instanceof mongoose.Types.ObjectId) return value;
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  if (!PAPER_AUTHORSHIP_AUDIT_OBJECT_ID_RE.test(trimmed)) return undefined;
+  return new mongoose.Types.ObjectId(trimmed);
+}
+
+function normalizePaperAuthorshipAuditObjectIdString(value: unknown): string | undefined {
+  return normalizePaperAuthorshipAuditObjectId(value)?.toHexString();
 }
 
 async function bulkWriteInChunks(
@@ -144,16 +161,12 @@ export function parsePaperAuthorshipAuditArgs(argv: string[]): PaperAuthorshipAu
       continue;
     }
     if (arg === '--output') {
-      const output = argv[i + 1];
-      if (!output || output.startsWith('--')) throw new Error('--output requires a path');
-      options.output = output;
+      options.output = resolveSafeJsonReportOutputPath(argv[i + 1]);
       i += 1;
       continue;
     }
     if (arg.startsWith('--output=')) {
-      const output = arg.slice('--output='.length).trim();
-      if (!output || output.startsWith('--')) throw new Error('--output requires a path');
-      options.output = output;
+      options.output = resolveSafeJsonReportOutputPath(arg.slice('--output='.length));
       continue;
     }
     if (arg.startsWith('--sample-limit=')) {
@@ -508,11 +521,14 @@ async function applyIntegrityCleanup(apply: boolean): Promise<{
     };
   }
 
+  const invalidPaperAuthorObjectIds = Array.from(invalidIds)
+    .map((id) => normalizePaperAuthorshipAuditObjectId(id))
+    .filter((id): id is mongoose.Types.ObjectId => Boolean(id));
   const [paperAuthorDeleteResult, observationResult, unidentifiedPaperResult, reconciliationResult] =
     await Promise.all([
-      invalidIds.size > 0
+      invalidPaperAuthorObjectIds.length > 0
         ? PaperAuthor.deleteMany({
-            _id: { $in: Array.from(invalidIds).map((id) => new mongoose.Types.ObjectId(id)) },
+            _id: { $in: invalidPaperAuthorObjectIds },
           })
         : { deletedCount: 0 },
       directAuthorFieldObservationCount > 0
@@ -551,33 +567,46 @@ async function backfillOpenAlexPaperAuthors(apply: boolean): Promise<{
     new Set(
       papers
         .flatMap((paper: any) => paper.yaleAuthorIds || [])
-        .map(String)
-        .filter((id) => mongoose.Types.ObjectId.isValid(id)),
+        .map((id) => normalizePaperAuthorshipAuditObjectIdString(id))
+        .filter((id): id is string => Boolean(id)),
     ),
   );
-  const users = await User.find({ _id: { $in: userIds } })
+  const userObjectIds = userIds
+    .map((id) => normalizePaperAuthorshipAuditObjectId(id))
+    .filter((id): id is mongoose.Types.ObjectId => Boolean(id));
+  const users = await User.find({
+    _id: { $in: userObjectIds },
+  })
     .select('_id fname lname netid orcid openAlexId')
     .lean();
-  const usersById = new Map(users.map((user: any) => [String(user._id), user]));
+  const usersById = new Map(
+    users.flatMap((user: any) => {
+      const id = serializedDocumentId(user._id);
+      return id ? [[id, user] as const] : [];
+    }),
+  );
   const ops: any[] = [];
 
   for (const paper of papers as any[]) {
     for (const rawUserId of paper.yaleAuthorIds || []) {
-      const userId = String(rawUserId);
+      const userId = normalizePaperAuthorshipAuditObjectIdString(rawUserId);
+      if (!userId) continue;
+      const userObjectId = normalizePaperAuthorshipAuditObjectId(userId);
+      if (!userObjectId) continue;
       const user = usersById.get(userId);
-      if (!user || !mongoose.Types.ObjectId.isValid(userId)) continue;
+      if (!user) continue;
       const displayName = `${String(user.fname || '').trim()} ${String(user.lname || '').trim()}`.trim();
       if (!displayName) continue;
       ops.push({
         updateOne: {
           filter: {
             paperId: paper._id,
-            userId: new mongoose.Types.ObjectId(userId),
+            userId: userObjectId,
           },
           update: {
             $set: {
               paperId: paper._id,
-              userId: new mongoose.Types.ObjectId(userId),
+              userId: userObjectId,
               displayName,
               externalAuthorIds: {
                 ...(user.orcid ? { orcid: user.orcid } : {}),
@@ -784,8 +813,9 @@ export function countPaperAuthorshipAuditPlannedChanges(
 
 export function writePaperAuthorshipAuditOutput(report: unknown, output?: string): void {
   if (!output) return;
-  fs.mkdirSync(path.dirname(output), { recursive: true });
-  fs.writeFileSync(output, `${JSON.stringify(report, null, 2)}\n`);
+  const safeOutput = resolveSafeJsonReportOutputPath(output);
+  fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
+  fs.writeFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
 }
 
 export function assertPaperAuthorshipAuditApplyAllowed(
@@ -898,7 +928,7 @@ const isDirectRun = process.argv[1]
 if (isDirectRun) {
   main()
     .catch((error) => {
-      console.error(error instanceof Error ? error.message : error);
+      console.error(sanitizeLogValue(error));
       process.exitCode = 1;
     })
     .finally(async () => {

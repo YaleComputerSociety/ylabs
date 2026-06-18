@@ -10,7 +10,7 @@ import {
 describe('researchEntitySearchIndexService', () => {
   it('builds Meilisearch-ready research entity documents without internal fields', () => {
     const doc = buildResearchEntitySearchIndexDocument({
-      _id: { toString: () => 'entity-1' },
+      _id: 'entity-1',
       __v: 3,
       embedding: [0.1, 0.2],
       name: 'Smith Lab',
@@ -76,6 +76,9 @@ describe('researchEntitySearchIndexService', () => {
         'currentUndergradCount',
       ]),
     );
+    expect(getResearchEntitySearchIndexSettings().searchableAttributes).toEqual(
+      expect.arrayContaining(['leadProfessorNames', 'professorNames']),
+    );
     expect(getResearchEntitySearchIndexSettings().filterableAttributes).not.toContain(
       'mutated',
     );
@@ -122,6 +125,60 @@ describe('researchEntitySearchIndexService', () => {
     });
     expect(calls.map((call) => call.kind)).toEqual(['settings', 'clear', 'documents']);
     expect(calls[2].payload).toMatchObject({
+      options: { primaryKey: RESEARCH_ENTITY_SEARCH_INDEX_PRIMARY_KEY },
+    });
+  });
+
+  it('enriches rebuilt research entity documents with searchable professor names', async () => {
+    const entityId = '6a0567977c6d4fba869fc03d';
+    const calls: Array<{ kind: string; payload?: unknown }> = [];
+    const fakeIndex = {
+      updateSettings: async (settings: unknown) => {
+        calls.push({ kind: 'settings', payload: settings });
+      },
+      addDocuments: async (documents: unknown, options: unknown) => {
+        calls.push({ kind: 'documents', payload: { documents, options } });
+      },
+    };
+
+    await rebuildResearchEntitySearchIndex({
+      pageSize: 2,
+      getIndex: async () => fakeIndex,
+      fetchPage: async (page: number) =>
+        page === 1
+          ? [
+              {
+                _id: entityId,
+                slug: 'ysm-ynn',
+                name: 'Yale Clinical Neuroscience Neuroanalytics',
+                archived: false,
+              },
+            ]
+          : [],
+      fetchMemberNames: async (entityIds: unknown[]) => {
+        expect(entityIds).toEqual([entityId]);
+        return new Map([
+          [
+            entityId,
+            {
+              leadProfessorNames: ['Dennis Spencer'],
+              professorNames: ['Dennis Spencer', 'Example Core Faculty'],
+            },
+          ],
+        ]);
+      },
+    } as any);
+
+    const documentsCall = calls.find((call) => call.kind === 'documents');
+    expect(documentsCall?.payload).toMatchObject({
+      documents: [
+        {
+          id: entityId,
+          slug: 'ysm-ynn',
+          leadProfessorNames: ['Dennis Spencer'],
+          professorNames: ['Dennis Spencer', 'Example Core Faculty'],
+        },
+      ],
       options: { primaryKey: RESEARCH_ENTITY_SEARCH_INDEX_PRIMARY_KEY },
     });
   });

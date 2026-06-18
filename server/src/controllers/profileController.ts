@@ -12,23 +12,14 @@ import {
 } from '../services/profileService';
 import { fetchCourseTableData } from '../services/courseTableService';
 import { isPublicHttpUrl } from '../utils/urlSafety';
+import { sanitizeLogValue } from '../utils/logSanitizer';
+import { redactDirectContactInfo } from '../utils/contactRedaction';
 
 const MAX_PUBLICATION_PAGE = 1000;
-
-const publicProfileListing = (listing: any) => ({
-  _id: listing._id,
-  title: listing.title,
-  description: listing.description,
-  applicantDescription: listing.applicantDescription,
-  websites: publicHttpUrls(listing.websites),
-  departments: Array.isArray(listing.departments) ? listing.departments : [],
-  researchAreas: Array.isArray(listing.researchAreas) ? listing.researchAreas : [],
-  keywords: Array.isArray(listing.keywords) ? listing.keywords : [],
-  type: listing.type,
-  commitment: listing.commitment,
-  compensationType: listing.compensationType,
-  expiresAt: listing.expiresAt,
-});
+const MAX_PUBLICATION_QUERY_PARAM_LENGTH = 16;
+const MAX_PUBLIC_PROFILE_URLS = 20;
+const MAX_PUBLIC_PROFILE_PUBLICATION_TEXT_LENGTH = 500;
+const POSITIVE_INTEGER_PARAM_RE = /^[1-9]\d*$/;
 
 const addIfDefined = (target: Record<string, any>, key: string, value: any) => {
   if (value !== undefined && value !== null && value !== '') {
@@ -51,22 +42,76 @@ const publicHttpUrl = (value: unknown): string | undefined => {
 
 const publicHttpUrls = (values: unknown): string[] =>
   Array.isArray(values)
-    ? values.map(publicHttpUrl).filter((value): value is string => Boolean(value))
+    ? values.slice(0, MAX_PUBLIC_PROFILE_URLS).map(publicHttpUrl).filter((value): value is string => Boolean(value))
     : [];
+
+const publicProfileListingText = (value: unknown): string | undefined =>
+  typeof value === 'string' ? redactDirectContactInfo(value) : undefined;
+
+const publicProfileListingTextArray = (values: unknown): string[] =>
+  Array.isArray(values)
+    ? values.flatMap((value) => publicProfileListingText(value) ?? [])
+    : [];
+
+const publicProfilePublicationText = (value: unknown): string | undefined => {
+  if (typeof value !== 'string') return undefined;
+  const text = redactDirectContactInfo(value).trim().slice(0, MAX_PUBLIC_PROFILE_PUBLICATION_TEXT_LENGTH);
+  return text || undefined;
+};
+
+const publicProfileListing = (listing: any) => ({
+  _id: listing._id,
+  title: publicProfileListingText(listing.title),
+  description: publicProfileListingText(listing.description),
+  applicantDescription: publicProfileListingText(listing.applicantDescription),
+  websites: publicHttpUrls(listing.websites),
+  departments: publicProfileListingTextArray(listing.departments),
+  researchAreas: publicProfileListingTextArray(listing.researchAreas),
+  keywords: publicProfileListingTextArray(listing.keywords),
+  type: publicProfileListingText(listing.type),
+  commitment: publicProfileListingText(listing.commitment),
+  compensationType: publicProfileListingText(listing.compensationType),
+  expiresAt: listing.expiresAt,
+});
+
+export const normalizePublicationPagination = (
+  page: unknown,
+  pageSize: unknown,
+): { page: number; pageSize: number } => {
+  const parseCompactPositiveInteger = (value: unknown, fallback: number): number => {
+    if (value === undefined || value === null || value === '') return fallback;
+    if (typeof value !== 'string' && typeof value !== 'number') return fallback;
+    if (typeof value === 'number') {
+      return Number.isSafeInteger(value) && value > 0 ? value : fallback;
+    }
+
+    const raw = value.trim();
+    if (!raw || raw.length > MAX_PUBLICATION_QUERY_PARAM_LENGTH) return fallback;
+    if (!POSITIVE_INTEGER_PARAM_RE.test(raw)) return fallback;
+
+    const parsed = Number(raw);
+    return Number.isSafeInteger(parsed) ? parsed : fallback;
+  };
+
+  return {
+    page: Math.min(MAX_PUBLICATION_PAGE, parseCompactPositiveInteger(page, 1)),
+    pageSize: Math.min(100, parseCompactPositiveInteger(pageSize, 20)),
+  };
+};
 
 const publicProfilePublication = (publication: any) => {
   const result: Record<string, any> = {};
-  addIfDefined(result, 'title', publication.title);
-  addIfDefined(result, 'doi', publication.doi);
+  addIfDefined(result, 'title', publicProfilePublicationText(publication.title));
+  addIfDefined(result, 'doi', publicProfilePublicationText(publication.doi));
   addIfDefined(result, 'year', publication.year);
-  addIfDefined(result, 'venue', publication.venue);
+  addIfDefined(result, 'venue', publicProfilePublicationText(publication.venue));
   addIfDefined(result, 'cited_by_count', publication.cited_by_count ?? publication.citedByCount);
   addIfDefined(
     result,
     'open_access_url',
     publicHttpUrl(publication.open_access_url ?? publication.openAccessUrl),
   );
-  addIfDefined(result, 'source', publication.source);
+  addIfDefined(result, 'source', publicProfilePublicationText(publication.source));
   return result;
 };
 
@@ -120,7 +165,7 @@ export const getProfile = async (req: Request, res: Response) => {
     // the loaded researchEntities and re-derive interests from nothing.
     res.json({ profile });
   } catch (error: any) {
-    console.error('Profile: Error fetching profile:', error);
+    console.error('Profile: Error fetching profile:', sanitizeLogValue(error));
     res.status(500).json({ error: 'Failed to fetch profile' });
   }
 };
@@ -131,11 +176,7 @@ export const getProfile = async (req: Request, res: Response) => {
 export const getPublications = async (req: Request, res: Response) => {
   try {
     const { netid } = req.params;
-    const page = Math.min(
-      MAX_PUBLICATION_PAGE,
-      Math.max(1, parseInt(req.query.page as string, 10) || 1),
-    );
-    const pageSize = Math.min(100, Math.max(1, parseInt(req.query.pageSize as string, 10) || 20));
+    const { page, pageSize } = normalizePublicationPagination(req.query.page, req.query.pageSize);
     const sortBy = publicPublicationSortField(req.query.sortBy);
     const sortOrder = publicPublicationSortOrder(req.query.sortBy, req.query.sortOrder);
 
@@ -166,7 +207,7 @@ export const getPublications = async (req: Request, res: Response) => {
       totalPages: Math.ceil(total / pageSize),
     });
   } catch (error: any) {
-    console.error('Profile: Error fetching publications:', error);
+    console.error('Profile: Error fetching publications:', sanitizeLogValue(error));
     res.status(500).json({ error: 'Failed to fetch publications' });
   }
 };
@@ -182,6 +223,7 @@ export const getProfileListings = async (req: Request, res: Response) => {
       .find({
         $or: [{ ownerId: netid }, { professorIds: netid }],
         archived: false,
+        confirmed: true,
       })
       .select(
         '_id title description applicantDescription websites departments researchAreas keywords type commitment compensationType expiresAt',
@@ -191,7 +233,7 @@ export const getProfileListings = async (req: Request, res: Response) => {
 
     res.json({ listings: listings.map(publicProfileListing) });
   } catch (error: any) {
-    console.error('Profile: Error fetching listings:', error);
+    console.error('Profile: Error fetching listings:', sanitizeLogValue(error));
     res.status(500).json({ error: 'Failed to fetch listings' });
   }
 };
@@ -218,7 +260,7 @@ export const getProfileCourses = async (req: Request, res: Response) => {
 
     res.json({ courses, available: true });
   } catch (error: any) {
-    console.error('Profile: Error fetching courses:', error);
+    console.error('Profile: Error fetching courses:', sanitizeLogValue(error));
     res.json({ courses: [], available: false });
   }
 };
@@ -241,7 +283,7 @@ export const updateProfile = async (req: Request, res: Response) => {
 
     res.json({ profile: normalizePublicProfile(updated as any) });
   } catch (error: any) {
-    console.error('Profile: Error updating profile:', error);
+    console.error('Profile: Error updating profile:', sanitizeLogValue(error));
     sendProfileMutationError(res, error, 'Failed to update profile');
   }
 };
@@ -282,7 +324,7 @@ export const verifyProfile = async (req: Request, res: Response) => {
 
     res.json({ profile: normalizePublicProfile(user as any) });
   } catch (error: any) {
-    console.error('Profile: Error verifying profile:', error);
+    console.error('Profile: Error verifying profile:', sanitizeLogValue(error));
     sendProfileMutationError(res, error, 'Failed to verify profile');
   }
 };

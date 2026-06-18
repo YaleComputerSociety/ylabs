@@ -22,6 +22,7 @@ const signInLink = () => screen.getByRole('link', { name: /sign in with yale cas
 afterEach(() => {
   cleanup();
   localStorage.clear();
+  sessionStorage.clear();
   vi.unstubAllEnvs();
 });
 
@@ -30,23 +31,64 @@ describe('SignInButton', () => {
     renderSignInButton({ from: '/research?topic=ai' });
 
     await waitFor(() => {
-      expect(signInHref()).toContain(
-        `redirect=${encodeURIComponent(`${window.location.origin}/research?topic=ai`)}`,
-      );
+      expect(signInHref()).toContain(`redirect=${encodeURIComponent('/research?topic=ai')}`);
     });
   });
 
   it('prefers the saved logout return path and clears it', async () => {
-    localStorage.setItem('logoutReturnPath', '/programs');
+    sessionStorage.setItem('logoutReturnPath', '/programs');
 
     renderSignInButton({ from: '/research' });
 
     await waitFor(() => {
-      expect(signInHref()).toContain(
-        `redirect=${encodeURIComponent(`${window.location.origin}/programs`)}`,
-      );
+      expect(signInHref()).toContain(`redirect=${encodeURIComponent('/programs')}`);
+    });
+    expect(sessionStorage.getItem('logoutReturnPath')).toBeNull();
+  });
+
+  it('normalizes same-origin absolute return targets to path-only CAS redirects', async () => {
+    sessionStorage.setItem('logoutReturnPath', `${window.location.origin}/account#plans`);
+
+    renderSignInButton();
+
+    await waitFor(() => {
+      expect(signInHref()).toContain(`redirect=${encodeURIComponent('/account#plans')}`);
+    });
+    expect(sessionStorage.getItem('logoutReturnPath')).toBeNull();
+  });
+
+  it('drops external or ambiguous return targets before building the CAS redirect', async () => {
+    sessionStorage.setItem('logoutReturnPath', 'https://evil.example.test/phish');
+
+    renderSignInButton({ from: '/research' });
+
+    await waitFor(() => {
+      expect(signInHref()).toBe('http://localhost:4000/api/cas');
+    });
+    expect(sessionStorage.getItem('logoutReturnPath')).toBeNull();
+  });
+
+  it('drops oversized saved logout return paths before building the CAS redirect', async () => {
+    sessionStorage.setItem('logoutReturnPath', `/${'a'.repeat(2049)}`);
+
+    renderSignInButton({ from: '/research' });
+
+    await waitFor(() => {
+      expect(signInHref()).toBe('http://localhost:4000/api/cas');
+    });
+    expect(sessionStorage.getItem('logoutReturnPath')).toBeNull();
+  });
+
+  it('clears legacy durable logout return paths without using them', async () => {
+    localStorage.setItem('logoutReturnPath', '/account?private=1');
+
+    renderSignInButton({ from: '/research' });
+
+    await waitFor(() => {
+      expect(signInHref()).toContain(`redirect=${encodeURIComponent('/research')}`);
     });
     expect(localStorage.getItem('logoutReturnPath')).toBeNull();
+    expect(sessionStorage.getItem('logoutReturnPath')).toBeNull();
   });
 
   it('renders a 44px minimum target for the CAS link', () => {

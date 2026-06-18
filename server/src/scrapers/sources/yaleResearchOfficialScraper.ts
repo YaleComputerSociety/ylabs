@@ -11,6 +11,7 @@ import { getCached, setCached } from '../snapshotCache';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 import { slugify } from '../utils/scraperHelpers';
 import type { ResearchEntityType } from '../../models/researchAccessTypes';
+import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 
 const SOURCE_NAME = 'yale-research-official';
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
@@ -218,15 +219,20 @@ export async function fetchResearchYaleHtml(
   useCache: boolean,
   sourceName: string,
 ): Promise<string> {
-  const cacheKey = `page:${url}`;
+  const safeUrl = await assertPublicHttpUrl(url);
+  const safeUrlText = safeUrl.toString();
+  const cacheKey = `page:${safeUrlText}`;
   if (useCache) {
     const cached = await getCached<string>(sourceName, cacheKey);
     if (cached) return cached;
   }
-  const res = await axios.get(url, {
+  const agents = ssrfSafeAgents();
+  const res = await axios.get(safeUrlText, {
     timeout: FETCH_TIMEOUT_MS,
     headers: { 'User-Agent': USER_AGENT },
     maxRedirects: 5,
+    httpAgent: agents.httpAgent,
+    httpsAgent: agents.httpsAgent,
   });
   const html = res.data as string;
   if (useCache) await setCached(sourceName, cacheKey, html);

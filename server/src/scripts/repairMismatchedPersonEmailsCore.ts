@@ -1,4 +1,5 @@
 import { isLikelyPersonSpecificYaleEmail } from '../scrapers/utils/scraperHelpers';
+import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 
 export interface RepairMismatchedPersonEmailsArgs {
   apply: boolean;
@@ -123,7 +124,7 @@ export function parseRepairMismatchedPersonEmailsArgs(
     }
     if (arg === '--output' || arg.startsWith('--output=')) {
       const { value, nextIndex } = consumeValue(argv, index, '--output');
-      output = value;
+      output = resolveSafeJsonReportOutputPath(value);
       index = nextIndex;
       continue;
     }

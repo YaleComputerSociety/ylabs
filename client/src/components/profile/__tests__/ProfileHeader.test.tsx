@@ -9,7 +9,6 @@ const baseProfile: FacultyProfile = {
   netid: 'fixture-profile',
   fname: 'Example',
   lname: 'Researcher',
-  email: 'researcher@example.test',
   title: 'Professor of Computation',
   primary_department: 'Computer Science',
   secondary_departments: [],
@@ -100,7 +99,46 @@ describe('ProfileHeader', () => {
     expect(link?.textContent).toBe('Website');
   });
 
-  it('keeps profile contact and external links large enough for touch input', () => {
+  it('does not repeat profile URL aliases that match the first-class website link', () => {
+    const { container } = renderProfileHeader({
+      ...baseProfile,
+      website: 'https://medicine.yale.edu/profile/example-researcher/',
+      profile_urls: {
+        medicine: 'https://medicine.yale.edu/profile/example-researcher/',
+        official: 'https://medicine.yale.edu/profile/example-researcher',
+      },
+    });
+
+    const links = container.querySelectorAll(
+      'a[href="https://medicine.yale.edu/profile/example-researcher/"]',
+    );
+    expect(links).toHaveLength(1);
+    expect(links[0].textContent).toBe('Website');
+    expect(container.textContent).not.toContain('medicine');
+    expect(container.textContent).not.toContain('official');
+  });
+
+  it('does not render scriptable, mailto, or non-web profile URL fields as profile links', () => {
+    const { container } = renderProfileHeader({
+      ...baseProfile,
+      website: 'mailto:researcher@example.test',
+      profile_urls: {
+        lab_website: 'javascript:alert(1)',
+        directory: 'mailto:researcher@example.test',
+        source: 'data:text/html,<script>alert(1)</script>',
+      },
+    });
+
+    expect(container.querySelector('a[href^="javascript:"]')).toBeNull();
+    expect(container.querySelector('a[href^="data:"]')).toBeNull();
+    expect(container.querySelectorAll('a[href^="mailto:"]')).toHaveLength(0);
+    expect(container.textContent).not.toContain('Website');
+    expect(container.textContent).not.toContain('lab website');
+    expect(container.textContent).not.toContain('directory');
+    expect(container.textContent).not.toContain('source');
+  });
+
+  it('keeps public external profile links large enough for touch input', () => {
     const { container } = renderProfileHeader({
       ...baseProfile,
       website: 'https://researcher.example.test/',
@@ -111,7 +149,6 @@ describe('ProfileHeader', () => {
     });
 
     const links = [
-      container.querySelector('a[href="mailto:researcher@example.test"]'),
       container.querySelector('a[href="https://researcher.example.test/"]'),
       container.querySelector('a[href="https://orcid.org/0000-0000-0000-001X"]'),
       container.querySelector('a[href="https://department.example.test/example-researcher"]'),
@@ -122,14 +159,11 @@ describe('ProfileHeader', () => {
     }
   });
 
-  it('does not render an email link when the profile email contains mailto header injection', () => {
-    const { container } = renderProfileHeader({
-      ...baseProfile,
-      email: 'researcher@example.test?bcc=attacker@example.test',
-    });
+  it('does not render public profile email links', () => {
+    const { container } = renderProfileHeader(baseProfile);
 
     expect(container.querySelector('a[href^="mailto:"]')).toBeNull();
-    expect(container.textContent).not.toContain('researcher@example.test?bcc=attacker@example.test');
+    expect(container.textContent).not.toContain('researcher@example.test');
   });
 
   it('does not surface legacy listing counts from faculty profiles', () => {
@@ -150,6 +184,16 @@ describe('ProfileHeader', () => {
     const image = container.querySelector('img[alt="Example Researcher"]');
     expect(image?.className).toContain('object-cover');
     expect(image?.className).toContain('object-top');
+  });
+
+  it('does not render unsafe profile image URLs', () => {
+    const { container } = renderProfileHeader({
+      ...baseProfile,
+      image_url: 'data:image/svg+xml,<svg onload=alert(1)>',
+    });
+
+    expect(container.querySelector('img')).toBeNull();
+    expect(container.textContent).toContain('ER');
   });
 
   it('shows canonical CPSC profile department labels without raw Yale org-unit labels', () => {

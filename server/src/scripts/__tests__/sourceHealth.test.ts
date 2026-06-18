@@ -41,6 +41,12 @@ describe('sourceHealth CLI helpers', () => {
     expect(() => parseSourceHealthArgs(['--output=--strict'])).toThrow(
       /--output requires a path/,
     );
+    expect(() => parseSourceHealthArgs(['--output=/var/tmp/source-health.json'])).toThrow(
+      /--output must write under/,
+    );
+    expect(() => parseSourceHealthArgs(['--output=/tmp/source-health.txt'])).toThrow(
+      /--output must point to a \.json report file/,
+    );
   });
 
   it('writes the source health artifact when output is provided', () => {
@@ -62,6 +68,9 @@ describe('sourceHealth CLI helpers', () => {
       sources: 2,
       riskCounts: { ok: 1, warn: 1, error: 0 },
     });
+    expect(() =>
+      writeSourceHealthOutput({ generatedAt: '2026-05-29T23:30:00.000Z' }, '/var/tmp/source-health.json'),
+    ).toThrow(/--output must write under/);
   });
 
   it('wraps source-health artifacts with target metadata and parsed options', () => {

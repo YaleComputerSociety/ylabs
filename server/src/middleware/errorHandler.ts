@@ -3,6 +3,8 @@
  */
 import { Request, Response, NextFunction } from 'express';
 import { NotFoundError, ObjectIdError, IncorrectPermissionsError } from '../utils/errors';
+import { sanitizeErrorForLog } from '../utils/logSanitizer';
+import { requiresDeployedRuntimeSecurity } from '../utils/environment';
 
 const clientErrorStatus = (error: Error): number | null => {
   const status = (error as any).status ?? (error as any).statusCode;
@@ -26,9 +28,16 @@ const publicClientErrorMessage = (status: number): string => {
  * Global error handler middleware
  * This should be added LAST in your middleware chain
  */
-export const errorHandler = (error: Error, req: Request, res: Response, _next: NextFunction) => {
-  console.error('Error:', error.message);
-  console.error('Stack:', error.stack);
+export const errorHandler = (error: Error, req: Request, res: Response, next: NextFunction) => {
+  const sanitizedError = sanitizeErrorForLog(error);
+  console.error('Error:', sanitizedError.message);
+  if (!requiresDeployedRuntimeSecurity() && sanitizedError.stack) {
+    console.error('Stack:', sanitizedError.stack);
+  }
+
+  if (res.headersSent) {
+    return next(error);
+  }
 
   if (error instanceof NotFoundError) {
     return res.status(error.status).json({ error: 'Not found' });

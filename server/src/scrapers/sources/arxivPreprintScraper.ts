@@ -13,6 +13,7 @@ import * as cheerio from 'cheerio';
 import { User } from '../../models/user';
 import { summarizeFetchMetrics } from '../renderedFetch';
 import { getCached, setCached } from '../snapshotCache';
+import { sanitizeLogValue } from '../../utils/logSanitizer';
 import type {
   IScraper,
   ObservationInput,
@@ -320,23 +321,24 @@ export class ArxivPreprintScraper implements IScraper {
                 selectorBreakage: false,
                 statusCode: 200,
               });
-            } catch (retryErr: any) {
-              fetchFailures++;
-              fetchAttempts.push({
-                target: searchQuery,
-                success: false,
-                latencyMs: Date.now() - retryStartedAt,
-                fetchMode: 'api',
+	            } catch (retryErr: any) {
+	              fetchFailures++;
+	              const retryErrorMessage = sanitizeLogValue(retryErr);
+	              fetchAttempts.push({
+	                target: searchQuery,
+	                success: false,
+	                latencyMs: Date.now() - retryStartedAt,
+	                fetchMode: 'api',
                 blocked: retryErr?.response?.status === 429,
-                blockedReason:
-                  retryErr?.response?.status === 429 ? 'rate-limited' : undefined,
-                selectorBreakage: false,
-                statusCode: retryErr?.response?.status,
-                errorMessage: retryErr?.message,
-              });
-              ctx.log(`Skipping ${searchQuery}: ${retryErr?.message || retryErr}`);
-              continue;
-            }
+	                blockedReason:
+	                  retryErr?.response?.status === 429 ? 'rate-limited' : undefined,
+	                selectorBreakage: false,
+	                statusCode: retryErr?.response?.status,
+	                errorMessage: retryErrorMessage,
+	              });
+	              ctx.log(`Skipping ${searchQuery}: ${retryErrorMessage}`);
+	              continue;
+	            }
           } else {
             fetchFailures++;
             fetchAttempts.push({
@@ -348,9 +350,9 @@ export class ArxivPreprintScraper implements IScraper {
               blockedReason: statusCode === 429 ? 'rate-limited' : undefined,
               selectorBreakage: false,
               statusCode,
-              errorMessage: err?.message,
+              errorMessage: sanitizeLogValue(err),
             });
-            ctx.log(`Skipping ${searchQuery}: ${err?.message || err}`);
+            ctx.log(`Skipping ${searchQuery}: ${sanitizeLogValue(err)}`);
             continue;
           }
         }

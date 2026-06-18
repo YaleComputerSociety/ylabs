@@ -10,6 +10,22 @@ describe('AdminAccessReview record filters', () => {
     expect(hasRecordEvidence({ sourceUrls: [''] })).toBe(false);
   });
 
+  it('does not let unsafe source URLs satisfy evidence completeness filters', () => {
+    expect(hasRecordEvidence({ sourceUrl: 'javascript:alert(document.cookie)' })).toBe(false);
+    expect(
+      hasRecordEvidence({
+        sourceUrls: ['data:text/html,<script>alert(1)</script>', 'ftp://example.edu/source'],
+      }),
+    ).toBe(false);
+    expect(
+      matchesRecordFilter(
+        { sourceUrls: ['javascript:alert(document.cookie)'] },
+        'accessSignal',
+        'missing-evidence',
+      ),
+    ).toBe(true);
+  });
+
   it('matches review, evidence, guarded-contact, and archived gaps', () => {
     expect(matchesRecordFilter({ review: { status: 'unreviewed' } }, 'entryPathway', 'unreviewed'))
       .toBe(true);

@@ -10,7 +10,8 @@ import {
   type LaunchTrustMode,
 } from '../services/launchTrustContractService';
 import type { StudentVisibilityGateCollection } from '../services/studentVisibilityGateService';
-import { assertScriptApplyAllowed } from './scriptWriteGuards';
+import { sanitizeLogValue } from '../utils/logSanitizer';
+import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 
 dotenv.config();
 
@@ -75,10 +76,10 @@ export function parseLaunchTrustContractArgs(argv: string[]): CliOptions {
     } else if (arg.startsWith('--limit=')) {
       options.limit = parsePositiveInteger(arg.slice('--limit='.length), '--limit');
     } else if (arg === '--output') {
-      options.output = parseRequiredValue(argv[index + 1], '--output', 'a path');
+      options.output = resolveSafeJsonReportOutputPath(argv[index + 1]);
       index += 1;
     } else if (arg.startsWith('--output=')) {
-      options.output = parseRequiredValue(arg.slice('--output='.length), '--output', 'a path');
+      options.output = resolveSafeJsonReportOutputPath(arg.slice('--output='.length));
     } else {
       throw new Error(`Unknown argument: ${arg}`);
     }
@@ -91,8 +92,9 @@ export function parseLaunchTrustContractArgs(argv: string[]): CliOptions {
 
 export function writeLaunchTrustContractOutput(value: unknown, output?: string): void {
   if (!output) return;
-  fs.mkdirSync(path.dirname(output), { recursive: true });
-  fs.writeFileSync(output, `${JSON.stringify(value, null, 2)}\n`);
+  const safeOutput = resolveSafeJsonReportOutputPath(output);
+  fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
+  fs.writeFileSync(safeOutput, `${JSON.stringify(value, null, 2)}\n`);
 }
 
 export function buildLaunchTrustContractOutput(
@@ -135,7 +137,7 @@ async function main() {
 if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
   main()
     .catch((error) => {
-      console.error('Failed to run launch trust contract audit:', error);
+      console.error('Failed to run launch trust contract audit:', sanitizeLogValue(error));
       process.exitCode = 1;
     })
     .finally(async () => {

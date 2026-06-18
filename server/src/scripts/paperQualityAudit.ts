@@ -5,7 +5,8 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { buildPaperQualityAudit } from '../services/paperQualityService';
-import { assertScriptApplyAllowed } from './scriptWriteGuards';
+import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { sanitizeLogValue } from '../utils/logSanitizer';
 
 dotenv.config();
 
@@ -34,13 +35,10 @@ export function parsePaperQualityAuditArgs(argv: string[]): PaperQualityAuditCli
       );
     } else if (arg === '--output') {
       const next = argv[i + 1];
-      if (!next || next.startsWith('--')) throw new Error('--output requires a path');
-      options.output = next;
+      options.output = resolveSafeJsonReportOutputPath(next);
       i += 1;
     } else if (arg.startsWith('--output=')) {
-      const output = arg.slice('--output='.length).trim();
-      if (!output || output.startsWith('--')) throw new Error('--output requires a path');
-      options.output = output;
+      options.output = resolveSafeJsonReportOutputPath(arg.slice('--output='.length));
     } else {
       throw new Error(`Unknown argument: ${arg}`);
     }
@@ -62,8 +60,9 @@ function parseNonNegativeInteger(value: string, flag: string): number {
 
 export function writePaperQualityAuditOutput(report: unknown, output?: string): void {
   if (!output) return;
-  fs.mkdirSync(path.dirname(output), { recursive: true });
-  fs.writeFileSync(output, `${JSON.stringify(report, null, 2)}\n`);
+  const safeOutput = resolveSafeJsonReportOutputPath(output);
+  fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
+  fs.writeFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
 }
 
 export function buildPaperQualityAuditOutput<T extends object>(
@@ -115,7 +114,7 @@ async function main() {
 if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
   main()
     .catch((error) => {
-      console.error('Failed to run scholarly link quality audit:', error);
+      console.error('Failed to run scholarly link quality audit:', sanitizeLogValue(error));
       process.exitCode = 1;
     })
     .finally(async () => {

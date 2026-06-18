@@ -214,7 +214,7 @@ const ResearchAreaInput = ({
       if (error.response?.status === 409) {
         onAddResearchArea(pendingNewArea);
       } else {
-        console.error('Error adding research area:', error);
+        console.error('Error adding research area.');
         alert('Failed to add research area. Please try again.');
       }
     } finally {

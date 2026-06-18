@@ -2,12 +2,26 @@ import { describe, expect, it } from 'vitest';
 import {
   assertRepairProfileDescriptionBackfillConflictsApplyAllowed,
   buildProfileDescriptionConflictRepairPlan,
+  normalizeProfileDescriptionConflictObjectId,
   parseRepairProfileDescriptionBackfillConflictsArgs,
   PROFILE_DESCRIPTION_BACKFILL_SOURCE_NAME,
   PROFILE_DESCRIPTION_PREFERRED_SOURCE_NAME,
+  writeProfileDescriptionConflictRepairOutput,
 } from '../repairProfileDescriptionBackfillConflicts';
 
 describe('repairProfileDescriptionBackfillConflicts', () => {
+  it('normalizes profile-description conflict ObjectIds without object-shaped coercion', () => {
+    expect(normalizeProfileDescriptionConflictObjectId(' 507f1f77bcf86cd799439011 ')).toBe(
+      '507f1f77bcf86cd799439011',
+    );
+    expect(normalizeProfileDescriptionConflictObjectId('abcdefghijkl')).toBeUndefined();
+    expect(
+      normalizeProfileDescriptionConflictObjectId({
+        toString: () => '507f1f77bcf86cd799439011',
+      }),
+    ).toBeUndefined();
+  });
+
   it('plans supersession of profile description observations when lab evidence wins', () => {
     const plan = buildProfileDescriptionConflictRepairPlan({
       entityType: 'researchEntity',
@@ -111,5 +125,26 @@ describe('repairProfileDescriptionBackfillConflicts', () => {
     expect(() =>
       parseRepairProfileDescriptionBackfillConflictsArgs(['--max-apply=1e3']),
     ).toThrow(/--max-apply must be a positive integer/);
+    expect(() =>
+      parseRepairProfileDescriptionBackfillConflictsArgs([
+        '--output',
+        '/var/tmp/profile-description-conflict.json',
+      ]),
+    ).toThrow(/--output must write under/);
+    expect(() =>
+      parseRepairProfileDescriptionBackfillConflictsArgs([
+        '--output',
+        '/tmp/profile-description-conflict.txt',
+      ]),
+    ).toThrow(/--output must point to a \.json report file/);
+  });
+
+  it('rejects unsafe profile-description conflict repair writes', () => {
+    expect(() =>
+      writeProfileDescriptionConflictRepairOutput(
+        { mode: 'dry-run' },
+        '/var/tmp/profile-description-conflict.json',
+      ),
+    ).toThrow(/--output must write under/);
   });
 });

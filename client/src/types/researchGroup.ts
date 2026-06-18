@@ -156,9 +156,9 @@ export interface ResearchGroup {
   creditOptions: string[];
   fundingPrograms: string[];
   timeCommitmentHoursPerWeek?: TimeCommitmentRange;
-  contactEmail: string;
-  contactName: string;
-  contactRole: string;
+  contactEmail?: string;
+  contactName?: string;
+  contactRole?: string;
   sourceUrls: string[];
   confidenceByField?: Record<string, number>;
   /**

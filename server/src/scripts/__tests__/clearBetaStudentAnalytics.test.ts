@@ -40,6 +40,12 @@ describe('clear beta student analytics core', () => {
     expect(() => parseClearBetaStudentAnalyticsArgs(['--output', '--apply'])).toThrow(
       '--output requires a path',
     );
+    expect(() =>
+      parseClearBetaStudentAnalyticsArgs(['--output=/var/tmp/student-analytics.json']),
+    ).toThrow(/--output must write under/);
+    expect(() =>
+      parseClearBetaStudentAnalyticsArgs(['--output=/tmp/student-analytics.txt']),
+    ).toThrow(/--output must point to a \.json report file/);
     expect(() => parseClearBetaStudentAnalyticsArgs(['--limit', '--sample-size=5'])).toThrow(
       '--limit requires a number',
     );
@@ -201,5 +207,8 @@ describe('clear beta student analytics CLI wrapper', () => {
       mode: 'dry-run',
       candidateEventCount: 1,
     });
+    expect(() =>
+      writeClearBetaStudentAnalyticsOutput(payload, '/var/tmp/student-analytics.json'),
+    ).toThrow(/--output must write under/);
   });
 });

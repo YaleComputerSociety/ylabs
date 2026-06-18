@@ -112,8 +112,6 @@ const Unknown = () => {
     dispatch({ type: 'SET_ERRORS', payload: filteredErrors });
 
     if (Object.keys(filteredErrors).length === 0) {
-      console.log('Submitting user information:', { firstName, lastName, email, userType });
-
       axios
         .put('/users', {
           withCredentials: true,
@@ -134,8 +132,8 @@ const Unknown = () => {
             window.location.href = '/';
           });
         })
-        .catch((error) => {
-          console.error('Failed to update user information:', error);
+        .catch(() => {
+          console.error('Failed to update user information.');
           swal(
             'Error!',
             'An error occurred while updating your information. Please try again.',

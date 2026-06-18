@@ -44,6 +44,18 @@ describe('ssrfGuard', () => {
     await expect(assertPublicHttpUrl('not a url')).rejects.toBeInstanceOf(SsrfBlockedError);
   });
 
+  it('assertPublicHttpUrl rejects raw whitespace, control characters, and backslashes before parsing', async () => {
+    await expect(assertPublicHttpUrl('https://example.com/a b')).rejects.toBeInstanceOf(
+      SsrfBlockedError,
+    );
+    await expect(assertPublicHttpUrl('https://example.com/\n@8.8.8.8/')).rejects.toBeInstanceOf(
+      SsrfBlockedError,
+    );
+    await expect(assertPublicHttpUrl('https://example.com\\@8.8.8.8/')).rejects.toBeInstanceOf(
+      SsrfBlockedError,
+    );
+  });
+
   it('assertPublicHttpUrl allows a public IP-literal URL', async () => {
     const url = await assertPublicHttpUrl('https://8.8.8.8/path');
     expect(url.hostname).toBe('8.8.8.8');

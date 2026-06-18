@@ -12,7 +12,9 @@ import {
   buildDuplicateAccessSignalGroupsFromRows,
   type DuplicateAccessSignalGroup,
 } from '../scrapers/integrityGate';
-import { assertScriptApplyAllowed } from './scriptWriteGuards';
+import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { serializedDocumentId } from '../utils/idSerialization';
+import { sanitizeLogValue } from '../utils/logSanitizer';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -84,6 +86,17 @@ export interface DuplicateAccessSignalRepairPlanResult {
   blocked: BlockedDuplicateAccessSignalRepairGroup[];
 }
 
+const DUPLICATE_ACCESS_SIGNAL_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
+
+export function normalizeDuplicateAccessSignalObjectId(value: unknown): string | undefined {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return DUPLICATE_ACCESS_SIGNAL_OBJECT_ID_RE.test(trimmed) ? trimmed : undefined;
+  }
+  if (value instanceof mongoose.Types.ObjectId) return value.toHexString();
+  return undefined;
+}
+
 function parsePositiveInteger(value: string, optionName: string): number {
   const trimmed = value.trim();
   if (!/^\d+$/.test(trimmed)) {
@@ -152,7 +165,7 @@ export function parseRepairDuplicateAccessSignalsArgs(
     }
     if (arg === '--output' || arg.startsWith('--output=')) {
       const parsed = valueForFlag(argv, index, '--output');
-      options.output = parsed.value;
+      options.output = resolveSafeJsonReportOutputPath(parsed.value);
       index = parsed.nextIndex;
       continue;
     }
@@ -185,16 +198,12 @@ export function assertDuplicateAccessSignalRepairApplyAllowed(args: {
 }
 
 function stringId(value: unknown): string {
-  if (!value) return '';
-  if (typeof value === 'string') return value;
-  if (typeof (value as { toHexString?: () => string }).toHexString === 'function') {
-    return (value as { toHexString: () => string }).toHexString();
-  }
-  return String(value);
+  return serializedDocumentId(value) || '';
 }
 
-function objectId(value: string): mongoose.Types.ObjectId {
-  return new mongoose.Types.ObjectId(value);
+function objectId(value: unknown): mongoose.Types.ObjectId | undefined {
+  const id = normalizeDuplicateAccessSignalObjectId(value);
+  return id ? new mongoose.Types.ObjectId(id) : undefined;
 }
 
 function timestamp(value: Date | string | undefined): number {
@@ -382,8 +391,9 @@ export function writeDuplicateAccessSignalRepairOutput(
   output?: string,
 ): void {
   if (!output) return;
-  fs.mkdirSync(path.dirname(output), { recursive: true });
-  fs.writeFileSync(output, `${JSON.stringify(report, null, 2)}\n`);
+  const safeOutput = resolveSafeJsonReportOutputPath(output);
+  fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
+  fs.writeFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
 }
 
 async function loadDuplicateAccessSignalGroups(limit: number): Promise<DuplicateAccessSignalGroup[]> {
@@ -447,9 +457,11 @@ async function loadDuplicateAccessSignalGroups(limit: number): Promise<Duplicate
 async function loadSignalRecords(groups: DuplicateAccessSignalGroup[]): Promise<DuplicateAccessSignalRecord[]> {
   const signalIds = [
     ...new Set(groups.flatMap((group) => group.signalIds || [])),
-  ].filter((id) => mongoose.Types.ObjectId.isValid(id));
+  ]
+    .map((id) => normalizeDuplicateAccessSignalObjectId(id))
+    .filter((id): id is string => Boolean(id));
   if (signalIds.length === 0) return [];
-  return AccessSignal.find({ _id: { $in: signalIds.map(objectId) } }).lean() as Promise<
+  return AccessSignal.find({ _id: { $in: signalIds.map((id) => new mongoose.Types.ObjectId(id)) } }).lean() as Promise<
     DuplicateAccessSignalRecord[]
   >;
 }
@@ -459,9 +471,11 @@ async function loadPathwayContexts(
 ): Promise<DuplicateAccessSignalPathwayContext[]> {
   const entryPathwayIds = [
     ...new Set(signals.map((signal) => stringId(signal.entryPathwayId)).filter(Boolean)),
-  ].filter((id) => mongoose.Types.ObjectId.isValid(id));
+  ]
+    .map((id) => normalizeDuplicateAccessSignalObjectId(id))
+    .filter((id): id is string => Boolean(id));
   if (entryPathwayIds.length === 0) return [];
-  const objectIds = entryPathwayIds.map(objectId);
+  const objectIds = entryPathwayIds.map((id) => new mongoose.Types.ObjectId(id));
   const pathways = await EntryPathway.find({ _id: { $in: objectIds } })
     .select('_id derivationKey archived review')
     .lean();
@@ -499,18 +513,24 @@ function plannedWriteCount(plans: DuplicateAccessSignalRepairPlan[]): number {
 
 async function applyPlans(plans: DuplicateAccessSignalRepairPlan[]) {
   const now = new Date();
-  const signalIds = plans.flatMap((plan) => plan.duplicateSignalIds);
-  const entryPathwayIds = plans.flatMap((plan) => plan.archiveEntryPathwayIds);
+  const signalIds = plans
+    .flatMap((plan) => plan.duplicateSignalIds)
+    .map((id) => objectId(id))
+    .filter((id): id is mongoose.Types.ObjectId => Boolean(id));
+  const entryPathwayIds = plans
+    .flatMap((plan) => plan.archiveEntryPathwayIds)
+    .map((id) => objectId(id))
+    .filter((id): id is mongoose.Types.ObjectId => Boolean(id));
   const [signals, pathways] = await Promise.all([
     signalIds.length
       ? AccessSignal.updateMany(
-          { _id: { $in: signalIds.map(objectId) }, archived: { $ne: true } },
+          { _id: { $in: signalIds }, archived: { $ne: true } },
           { $set: { archived: true, lastMaterializedAt: now } },
         )
       : Promise.resolve({ modifiedCount: 0 }),
     entryPathwayIds.length
       ? EntryPathway.updateMany(
-          { _id: { $in: entryPathwayIds.map(objectId) }, archived: { $ne: true } },
+          { _id: { $in: entryPathwayIds }, archived: { $ne: true } },
           { $set: { archived: true, lastMaterializedAt: now } },
         )
       : Promise.resolve({ modifiedCount: 0 }),
@@ -576,7 +596,7 @@ async function main(): Promise<void> {
 if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
   main()
     .catch((error) => {
-      console.error(error instanceof Error ? error.message : error);
+      console.error(sanitizeLogValue(error));
       process.exitCode = 1;
     })
     .finally(async () => {

@@ -29,7 +29,9 @@ import {
   type CandidateCenter,
 } from '../scrapers/sources/centerDirectorLLMExtractor';
 import type { MaterializerObservationLike } from '../scrapers/entityMaterializer';
-import { assertScriptApplyAllowed } from './scriptWriteGuards';
+import { serializedDocumentId } from '../utils/idSerialization';
+import { sanitizeLogValue } from '../utils/logSanitizer';
+import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -39,6 +41,7 @@ const SOURCE_NAME = 'center-director-llm';
 const ORG_ENTITY_TYPES = ['CENTER', 'INSTITUTE', 'INITIATIVE', 'CORE_FACILITY'];
 const LEAD_ROLES = ['pi', 'co-pi', 'director', 'co-director'];
 const DEFAULT_OBSERVATION_CONFIDENCE = 0.6;
+const CENTER_DIRECTOR_BACKFILL_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
 
 export interface CenterDirectorsBackfillCliOptions {
   dryRun: boolean;
@@ -78,14 +81,10 @@ export function parseCenterDirectorsBackfillArgs(argv: string[]): CenterDirector
       options.only = splitOnly(argv[i + 1]);
       i += 1;
     } else if (arg === '--output') {
-      const next = argv[i + 1];
-      if (!next || next.startsWith('--')) throw new Error('--output requires a path');
-      options.output = next;
+      options.output = resolveSafeJsonReportOutputPath(argv[i + 1]);
       i += 1;
     } else if (arg.startsWith('--output=')) {
-      const value = arg.slice('--output='.length).trim();
-      if (!value || value.startsWith('--')) throw new Error('--output requires a path');
-      options.output = value;
+      options.output = resolveSafeJsonReportOutputPath(arg.slice('--output='.length));
     } else {
       throw new Error(`Unknown argument: ${arg}`);
     }
@@ -110,6 +109,16 @@ function splitOnly(value: string | undefined): string[] {
     .filter(Boolean);
 }
 
+export function normalizeCenterDirectorBackfillObjectId(
+  value: unknown,
+): mongoose.Types.ObjectId | undefined {
+  if (value instanceof mongoose.Types.ObjectId) return value;
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  if (!CENTER_DIRECTOR_BACKFILL_OBJECT_ID_RE.test(trimmed)) return undefined;
+  return new mongoose.Types.ObjectId(trimmed);
+}
+
 /**
  * Organizational homes with an official website but no current lead member.
  * `--only` (slug / name / id) narrows the set for targeted reruns.
@@ -119,8 +128,8 @@ export async function findCenterDirectorCandidates(
   limit?: number,
 ): Promise<CandidateCenter[]> {
   const onlyObjectIds = only
-    .filter((value) => mongoose.Types.ObjectId.isValid(value))
-    .map((value) => new mongoose.Types.ObjectId(value));
+    .map((value) => normalizeCenterDirectorBackfillObjectId(value))
+    .filter((value): value is mongoose.Types.ObjectId => Boolean(value));
   const identityFilter = only.length
     ? {
         $or: [
@@ -148,13 +157,14 @@ export async function findCenterDirectorCandidates(
     role: { $in: LEAD_ROLES },
     isCurrentMember: { $ne: false },
   });
-  const withLeadSet = new Set(withLead.map((id: any) => String(id)));
+  const withLeadSet = new Set(withLead.map((id: any) => serializedDocumentId(id) || ''));
 
   const candidates: CandidateCenter[] = [];
   for (const doc of docs as any[]) {
-    if (withLeadSet.has(String(doc._id))) continue;
+    const centerId = serializedDocumentId(doc._id) || '';
+    if (withLeadSet.has(centerId)) continue;
     candidates.push({
-      _id: String(doc._id),
+      _id: centerId,
       slug: doc.slug,
       name: doc.name,
       websiteUrl: doc.websiteUrl,
@@ -233,7 +243,7 @@ export async function runCenterDirectorsBackfill(options: {
 
       const observations = toMaterializerObservations(extraction.observations, observedAt);
       const materialized = await materializeInferredDirectorMembership(
-        String(candidate._id),
+        serializedDocumentId(candidate._id) || '',
         observations,
       );
       const outcome = materialized.written
@@ -310,8 +320,10 @@ async function main(): Promise<void> {
       result,
     };
     if (options.output) {
-      fs.writeFileSync(options.output, JSON.stringify(payload, null, 2));
-      console.log(`Saved center directors backfill report to ${options.output}`);
+      const safeOutput = resolveSafeJsonReportOutputPath(options.output);
+      fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
+      fs.writeFileSync(safeOutput, JSON.stringify(payload, null, 2));
+      console.log(`Saved center directors backfill report to ${safeOutput}`);
     }
     console.log(JSON.stringify(result, null, 2));
   } finally {
@@ -323,7 +335,7 @@ const invokedDirectly =
   process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
 if (invokedDirectly) {
   main().catch((error) => {
-    console.error(error);
+    console.error(sanitizeLogValue(error));
     process.exit(1);
   });
 }

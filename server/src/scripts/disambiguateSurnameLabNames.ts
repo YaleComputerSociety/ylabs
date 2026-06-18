@@ -7,7 +7,9 @@ import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
 import { ResearchGroupMember } from '../models/researchGroupMember';
 import { User } from '../models/user';
-import { assertScriptApplyAllowed } from './scriptWriteGuards';
+import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { serializedDocumentId } from '../utils/idSerialization';
+import { sanitizeLogValue } from '../utils/logSanitizer';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -16,6 +18,7 @@ dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 const ACTIVE_FILTER = { archived: { $ne: true } };
 const DEFAULT_LIMIT = 10000;
 const DEFAULT_MAX_APPLY = 25;
+const SURNAME_LAB_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
 
 export interface DisambiguateSurnameLabArgs {
   apply: boolean;
@@ -79,6 +82,14 @@ interface ApplyResult {
   newName: string;
   matchedCount: number;
   modifiedCount: number;
+}
+
+export function normalizeSurnameLabObjectId(value: unknown): mongoose.Types.ObjectId | undefined {
+  if (value instanceof mongoose.Types.ObjectId) return value;
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  if (!SURNAME_LAB_OBJECT_ID_RE.test(trimmed)) return undefined;
+  return new mongoose.Types.ObjectId(trimmed);
 }
 
 function consumeValue(argv: string[], index: number, flag: string): { value: string; nextIndex: number } {
@@ -149,14 +160,12 @@ export function parseDisambiguateSurnameLabArgs(argv: string[]): DisambiguateSur
       continue;
     }
     if (arg.startsWith('--output=')) {
-      const value = arg.slice('--output='.length).trim();
-      if (!value || value.startsWith('--')) throw new Error('--output requires a value');
-      args.output = value;
+      args.output = resolveSafeJsonReportOutputPath(arg.slice('--output='.length).trim());
       continue;
     }
     if (arg === '--output') {
       const { value, nextIndex } = consumeValue(argv, index, '--output');
-      args.output = value;
+      args.output = resolveSafeJsonReportOutputPath(value);
       index = nextIndex;
       continue;
     }
@@ -339,7 +348,9 @@ export function buildSurnameLabDisambiguationPlans(input: {
 function writeOutput(report: unknown, output?: string): void {
   const serialized = JSON.stringify(report, null, 2);
   if (output) {
-    fs.writeFileSync(output, `${serialized}\n`);
+    const safeOutput = resolveSafeJsonReportOutputPath(output);
+    fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
+    fs.writeFileSync(safeOutput, `${serialized}\n`);
   }
   console.log(serialized);
 }
@@ -348,11 +359,23 @@ async function applyPlans(plans: SurnameLabDisambiguationPlan[], maxApply: numbe
   const bounded = plans.slice(0, maxApply);
   const applied: ApplyResult[] = [];
   for (const plan of bounded) {
+    const entityObjectId = normalizeSurnameLabObjectId(plan.entityId);
+    if (!entityObjectId) {
+      applied.push({
+        entityId: plan.entityId,
+        slug: plan.slug,
+        oldName: plan.oldName,
+        newName: plan.newName,
+        matchedCount: 0,
+        modifiedCount: 0,
+      });
+      continue;
+    }
     const $set: Record<string, unknown> = { name: plan.newName };
     if (plan.newDisplayName) $set.displayName = plan.newDisplayName;
     const result = await ResearchEntity.updateOne(
       {
-        _id: new mongoose.Types.ObjectId(plan.entityId),
+        _id: entityObjectId,
         archived: { $ne: true },
         name: plan.oldName,
         manuallyLockedFields: { $ne: 'name' },
@@ -402,21 +425,21 @@ export async function runDisambiguateSurnameLabNames(args: DisambiguateSurnameLa
 
   const result = buildSurnameLabDisambiguationPlans({
     entities: entityRows.map((entity) => ({
-      id: String(entity._id),
+      id: serializedDocumentId(entity._id) || '',
       slug: entity.slug,
       name: entity.name,
       displayName: entity.displayName,
       manuallyLockedFields: entity.manuallyLockedFields || [],
     })),
     members: memberRows.map((member) => ({
-      researchEntityId: String(member.researchEntityId),
-      userId: member.userId ? String(member.userId) : undefined,
+      researchEntityId: serializedDocumentId(member.researchEntityId) || '',
+      userId: serializedDocumentId(member.userId),
       role: member.role,
       isCurrentMember: member.isCurrentMember,
       archived: member.archived,
     })),
     users: userRows.map((user) => ({
-      id: String(user._id),
+      id: serializedDocumentId(user._id) || '',
       fname: user.fname,
       lname: user.lname,
       netid: user.netid,
@@ -455,7 +478,7 @@ export async function main() {
 
 if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
   main().catch((error) => {
-    console.error('Failed to disambiguate surname lab names:', error);
+    console.error('Failed to disambiguate surname lab names:', sanitizeLogValue(error));
     process.exit(1);
   });
 }

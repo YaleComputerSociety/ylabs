@@ -30,8 +30,8 @@ const UserContextProvider = ({ children }: PropsWithChildren) => {
           });
         }
       })
-      .catch((error) => {
-        console.error('Auth check failed:', error);
+      .catch(() => {
+        console.error('Auth check failed.');
         dispatch({ type: 'LOGOUT' });
         dispatch({ type: 'FETCH_FAILURE' });
 

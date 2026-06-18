@@ -25,7 +25,9 @@ import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
 import { ResearchGroupMember } from '../models/researchGroupMember';
 import { User } from '../models/user';
-import { assertScriptApplyAllowed } from './scriptWriteGuards';
+import { sanitizeLogValue } from '../utils/logSanitizer';
+import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { assertPublicHttpUrl, ssrfSafeAgents } from '../utils/ssrfGuard';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -67,14 +69,10 @@ export function parseResearchHomeUrlBackfillArgs(argv: string[]): ResearchHomeUr
       options.explicitLimit = true;
       i += 1;
     } else if (arg === '--output') {
-      const next = argv[i + 1];
-      if (!next || next.startsWith('--')) throw new Error('--output requires a path');
-      options.output = next;
+      options.output = resolveSafeJsonReportOutputPath(argv[i + 1]);
       i += 1;
     } else if (arg.startsWith('--output=')) {
-      const value = arg.slice('--output='.length).trim();
-      if (!value || value.startsWith('--')) throw new Error('--output requires a path');
-      options.output = value;
+      options.output = resolveSafeJsonReportOutputPath(arg.slice('--output='.length));
     } else {
       throw new Error(`Unknown argument: ${arg}`);
     }
@@ -110,15 +108,28 @@ const slugPart = (value: string): string =>
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
 
+const isTrustedYaleProfileUrl = (value: string): boolean => {
+  try {
+    const url = new URL(value);
+    const hostname = url.hostname.toLowerCase();
+    return (
+      (url.protocol === 'https:' || url.protocol === 'http:') &&
+      !url.username &&
+      !url.password &&
+      (hostname === 'yale.edu' || hostname.endsWith('.yale.edu'))
+    );
+  } catch {
+    return false;
+  }
+};
+
 /** Candidate official Yale profile URLs for a lead, most-trusted first. */
 export function candidateProfileUrls(user: {
   profileUrls?: unknown;
   fname?: string;
   lname?: string;
 }): string[] {
-  const stored = profileUrlValues(user.profileUrls).filter(
-    (u) => /^https?:\/\//i.test(u) && /yale\.edu/i.test(u) && !/orcid\.org/i.test(u),
-  );
+  const stored = profileUrlValues(user.profileUrls).filter(isTrustedYaleProfileUrl);
   const first = slugPart(String(user.fname || ''));
   const last = slugPart(String(user.lname || ''));
   const constructed: string[] = [];
@@ -136,13 +147,18 @@ export interface UrlVerifier {
 }
 
 /** HTTP 200 + the page body mentions the lead's last name (anti-wrong-attribution). */
-const defaultVerifier: UrlVerifier = async (url, lastName) => {
+export const defaultVerifier: UrlVerifier = async (url, lastName) => {
   try {
-    const res = await axios.get(url, {
+    if (!isTrustedYaleProfileUrl(url)) return false;
+    const verifiedUrl = await assertPublicHttpUrl(url);
+    const { httpAgent, httpsAgent } = ssrfSafeAgents();
+    const res = await axios.get(verifiedUrl.toString(), {
       timeout: 15000,
       maxRedirects: 3,
       headers: { 'User-Agent': 'Mozilla/5.0 (YaleResearch research-home url backfill)' },
       validateStatus: (s) => s === 200,
+      httpAgent,
+      httpsAgent,
     });
     const html = typeof res.data === 'string' ? res.data : '';
     if (!html) return false;
@@ -242,7 +258,7 @@ export async function runResearchHomeUrlBackfill(options: {
       result.attached += 1;
     } catch (error) {
       result.errors += 1;
-      console.error(`URL backfill failed for ${entity.slug}:`, (error as Error).message);
+      console.error(`URL backfill failed for ${entity.slug}:`, sanitizeLogValue(error));
     }
   }
   return result;
@@ -275,8 +291,10 @@ async function main(): Promise<void> {
       result,
     };
     if (options.output) {
-      fs.writeFileSync(options.output, JSON.stringify(payload, null, 2));
-      console.log(`Saved research-home URL backfill report to ${options.output}`);
+      const safeOutput = resolveSafeJsonReportOutputPath(options.output);
+      fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
+      fs.writeFileSync(safeOutput, JSON.stringify(payload, null, 2));
+      console.log(`Saved research-home URL backfill report to ${safeOutput}`);
     }
     console.log(JSON.stringify(result, null, 2));
   } finally {
@@ -288,7 +306,7 @@ const invokedDirectly =
   process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
 if (invokedDirectly) {
   main().catch((error) => {
-    console.error(error);
+    console.error(sanitizeLogValue(error));
     process.exit(1);
   });
 }

@@ -36,6 +36,9 @@
  */
 import axios from 'axios';
 import { User } from '../../models/user';
+import { serializedDocumentId } from '../../utils/idSerialization';
+import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
+import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { getCached, setCached } from '../snapshotCache';
 import type { IScraper, ScraperContext, ScraperResult, ObservationInput } from '../types';
 import {
@@ -94,7 +97,16 @@ interface OpenAlexAuthorRecord {
 export type HttpFetcher = (url: string, params: Record<string, string>) => Promise<unknown>;
 
 const defaultFetcher: HttpFetcher = async (url, params) => {
-  const res = await axios.get(url, { params, timeout: 30000 });
+  const safeUrl = await assertPublicHttpUrl(url);
+  const safeUrlText = safeUrl.toString();
+  const agents = ssrfSafeAgents();
+  const res = await axios.get(safeUrlText, {
+    params,
+    timeout: 30000,
+    maxRedirects: 5,
+    httpAgent: agents.httpAgent,
+    httpsAgent: agents.httpsAgent,
+  });
   return res.data;
 };
 
@@ -419,7 +431,7 @@ function buildOpenAlexAuthorshipEvidence(
   const displayName = `${String(fac.fname || '').trim()} ${String(fac.lname || '').trim()}`.trim();
   if (!displayName) return undefined;
   return {
-    userId: String(fac._id),
+    userId: serializedDocumentId(fac._id) || '',
     netid: fac.netid ? String(fac.netid) : undefined,
     displayName,
     sourceName: 'openalex',
@@ -702,7 +714,7 @@ export class OpenAlexPaperScraper implements IScraper {
           cursor = nextCursor || '';
           if (!nextCursor) break;
         } catch (err: any) {
-          ctx.log(`error fetching for ${yaleNetId}: ${err?.message || err}`);
+          ctx.log(`error fetching for Yale author candidate: ${sanitizeLogValue(err)}`);
           break;
         }
       }

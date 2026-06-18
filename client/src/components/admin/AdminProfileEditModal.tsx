@@ -3,6 +3,8 @@
  */
 import { useEffect, useReducer } from 'react';
 import axios from '../../utils/axios';
+import { clientErrorMessage } from '../../utils/clientErrorMessage';
+import { safeDoiUrl } from '../../utils/url';
 import {
   adminProfileEditReducer,
   createInitialAdminProfileEditState,
@@ -68,8 +70,8 @@ const AdminProfileEditModal = ({ profile, onClose, onSaved }: AdminProfileEditMo
       .then((res) => {
         dispatch({ type: 'FETCH_SUCCESS', profile: res.data.profile });
       })
-      .catch((err) => {
-        console.error(err);
+      .catch(() => {
+        console.error('Error loading admin profile.');
         dispatch({ type: 'FETCH_FAILURE' });
       });
   }, [profile.netid]);
@@ -104,8 +106,8 @@ const AdminProfileEditModal = ({ profile, onClose, onSaved }: AdminProfileEditMo
       });
       onSaved();
     } catch (err: any) {
-      console.error('Error saving profile:', err);
-      alert(err.response?.data?.error || 'Failed to save');
+      console.error('Error saving profile.');
+      alert(clientErrorMessage(err, 'Failed to save'));
     } finally {
       dispatch({ type: 'SAVE_END' });
     }
@@ -298,9 +300,9 @@ const AdminProfileEditModal = ({ profile, onClose, onSaved }: AdminProfileEditMo
                       <div key={i} className="text-xs text-gray-600 flex items-start gap-2">
                         <span className="text-gray-400 whitespace-nowrap">{pub.year || '—'}</span>
                         <span className="truncate">{pub.title}</span>
-                        {pub.doi && (
+                        {safeDoiUrl(pub.doi) && (
                           <a
-                            href={`https://doi.org/${pub.doi}`}
+                            href={safeDoiUrl(pub.doi)}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="text-blue-500 hover:underline whitespace-nowrap flex-shrink-0"

@@ -4,7 +4,8 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import path from 'path';
 import { initializeConnections } from '../db/connections';
-import { assertScriptApplyAllowed } from './scriptWriteGuards';
+import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { sanitizeLogValue } from '../utils/logSanitizer';
 
 dotenv.config();
 
@@ -19,6 +20,7 @@ export interface LegacyCleanupArgs {
 
 const APPLICATIONS_SOURCE = 'applications';
 const STUDENT_APPLICATIONS_TARGET = 'student_applications';
+const LEGACY_CLEANUP_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
 const EMPTY_LEGACY_COLLECTIONS = [
   'research_groups',
   'research_group_members',
@@ -27,11 +29,7 @@ const EMPTY_LEGACY_COLLECTIONS = [
 ];
 
 function parseRequiredOutputPath(value: string | undefined): string {
-  const output = value?.trim();
-  if (!output || output.startsWith('--')) {
-    throw new Error('--output requires a path');
-  }
-  return output;
+  return resolveSafeJsonReportOutputPath(value);
 }
 
 export function parseLegacyCleanupArgs(argv: string[]): LegacyCleanupArgs {
@@ -117,8 +115,9 @@ export function buildLegacyCleanupOutput<T extends object>(
 
 export function writeLegacyCleanupOutput(report: unknown, output?: string): void {
   if (!output) return;
-  fs.mkdirSync(path.dirname(output), { recursive: true });
-  fs.writeFileSync(output, `${JSON.stringify(report, null, 2)}\n`);
+  const safeOutput = resolveSafeJsonReportOutputPath(output);
+  fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
+  fs.writeFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
 }
 
 async function collectionExists(db: MongoDb, name: string): Promise<boolean> {
@@ -135,9 +134,11 @@ function toString(value: unknown): string {
   return typeof value === 'string' ? value : value == null ? '' : String(value);
 }
 
-function toObjectId(value: unknown): Types.ObjectId | undefined {
-  const raw = toString(value);
-  return Types.ObjectId.isValid(raw) ? new Types.ObjectId(raw) : undefined;
+export function normalizeLegacyCleanupObjectId(value: unknown): Types.ObjectId | undefined {
+  if (value instanceof Types.ObjectId) return value;
+  if (typeof value !== 'string') return undefined;
+  const raw = value.trim();
+  return LEGACY_CLEANUP_OBJECT_ID_RE.test(raw) ? new Types.ObjectId(raw) : undefined;
 }
 
 async function findOneByObjectId(
@@ -145,7 +146,7 @@ async function findOneByObjectId(
   collectionName: string,
   value: unknown,
 ): Promise<Record<string, any> | null> {
-  const id = toObjectId(value);
+  const id = normalizeLegacyCleanupObjectId(value);
   if (!id) return null;
   return db.collection(collectionName).findOne({ _id: id });
 }
@@ -156,7 +157,7 @@ async function normalizeApplication(db: MongoDb, raw: Record<string, any>) {
   const postedOpportunity = listingObjectId
     ? await db.collection('posted_opportunities').findOne({ listingId: listingObjectId })
     : null;
-  const studentObjectId = toObjectId(raw.studentId);
+  const studentObjectId = normalizeLegacyCleanupObjectId(raw.studentId);
   const userById = studentObjectId
     ? await db.collection('users').findOne({ _id: studentObjectId })
     : null;
@@ -390,7 +391,7 @@ const isDirectRun = process.argv[1]
 if (isDirectRun) {
   main()
     .catch((error) => {
-      console.error('Failed to clean legacy Mongo collections:', error);
+      console.error('Failed to clean legacy Mongo collections:', sanitizeLogValue(error));
       process.exitCode = 1;
     })
     .finally(async () => {

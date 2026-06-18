@@ -4,7 +4,7 @@
 import { FacultyProfile } from '../../types/types';
 import { getUniqueDepartmentLabels } from '../../utils/departmentNames';
 import { useConfig } from '../../hooks/useConfig';
-import { safeMailtoHref, safeUrl } from '../../utils/url';
+import { EXTERNAL_IMAGE_REFERRER_POLICY, safeHttpUrl } from '../../utils/url';
 
 interface ProfileHeaderProps {
   profile: FacultyProfile;
@@ -22,7 +22,7 @@ const orcidHref = (orcid: unknown, profileUrl: unknown): string => {
     return `https://orcid.org/${bareOrcid.toUpperCase()}`;
   }
 
-  const href = safeUrl(trimmed);
+  const href = safeHttpUrl(trimmed);
   try {
     const parsed = new URL(href);
     return parsed.hostname === 'orcid.org' ? href : '';
@@ -31,13 +31,18 @@ const orcidHref = (orcid: unknown, profileUrl: unknown): string => {
   }
 };
 
-const profileUrlLinks = (profileUrls: FacultyProfile['profile_urls'] | undefined) => {
-  const seen = new Set<string>();
+const profileLinkDedupeKey = (href: string): string => href.replace(/\/+$/, '').toLowerCase();
+
+const profileUrlLinks = (
+  profileUrls: FacultyProfile['profile_urls'] | undefined,
+  alreadyRenderedHrefs: string[] = [],
+) => {
+  const seen = new Set(alreadyRenderedHrefs.map(profileLinkDedupeKey));
   return Object.entries(profileUrls || {}).flatMap(([key, url]) => {
     if (key === 'orcid') return [];
-    const href = safeUrl(url);
+    const href = safeHttpUrl(url);
     if (!href) return [];
-    const dedupeKey = href.replace(/\/+$/, '').toLowerCase();
+    const dedupeKey = profileLinkDedupeKey(href);
     if (seen.has(dedupeKey)) return [];
     seen.add(dedupeKey);
     return [{ key, href }];
@@ -55,12 +60,8 @@ const ProfileHeader = ({ profile }: ProfileHeaderProps) => {
   const initials =
     `${profile.fname?.charAt(0) || ''}${profile.lname?.charAt(0) || ''}`.toUpperCase();
   const orcidProfileHref = orcidHref(profile.orcid, profile.profile_urls?.orcid);
-  const websiteHref = safeUrl(profile.website);
-  const emailHref = safeMailtoHref(profile.email);
-
-  const building = profile.building_desk
-    ? profile.building_desk.split(',')[0].trim()
-    : profile.physical_location || '';
+  const websiteHref = safeHttpUrl(profile.website);
+  const profileImageHref = safeHttpUrl(profile.image_url);
 
   const resolvedDepartments = getUniqueDepartmentLabels(
     [
@@ -80,10 +81,11 @@ const ProfileHeader = ({ profile }: ProfileHeaderProps) => {
   return (
     <div className="yr-panel flex flex-col items-start gap-6 rounded-md p-4 md:flex-row md:p-6">
       <div className="flex-shrink-0">
-        {profile.image_url ? (
+        {profileImageHref ? (
           <img
-            src={profile.image_url}
+            src={profileImageHref}
             alt={fullName}
+            referrerPolicy={EXTERNAL_IMAGE_REFERRER_POLICY}
             className="h-28 w-28 rounded-md object-cover object-top shadow-sm ring-1 ring-slate-200"
           />
         ) : (
@@ -113,50 +115,6 @@ const ProfileHeader = ({ profile }: ProfileHeaderProps) => {
           </div>
         )}
 
-        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-gray-600">
-          {emailHref && (
-            <a
-              href={emailHref}
-              className="yr-link inline-flex min-h-[44px] items-center gap-1.5 rounded-md px-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <rect x="2" y="4" width="20" height="16" rx="2" />
-                <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
-              </svg>
-              {profile.email}
-            </a>
-          )}
-          {building && (
-            <span className="inline-flex min-h-[44px] items-center gap-1.5">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
-                <circle cx="12" cy="10" r="3" />
-              </svg>
-              {building}
-            </span>
-          )}
-        </div>
-
         <div className="mt-3 flex flex-wrap items-center gap-2">
           {websiteHref && (
             <a
@@ -179,7 +137,7 @@ const ProfileHeader = ({ profile }: ProfileHeaderProps) => {
               ORCID
             </a>
           )}
-          {profileUrlLinks(profile.profile_urls).map(({ key, href }) => (
+          {profileUrlLinks(profile.profile_urls, [websiteHref]).map(({ key, href }) => (
             <a
               key={key}
               href={href}

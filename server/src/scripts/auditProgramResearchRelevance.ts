@@ -22,12 +22,14 @@ import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { Fellowship } from '../models/fellowship';
 import { VisibilityReleaseQueueItem } from '../models/visibilityReleaseQueueItem';
+import { serializedDocumentId } from '../utils/idSerialization';
+import { sanitizeLogValue } from '../utils/logSanitizer';
 import { classifyProgramResearchRelevance } from '../services/programResearchRelevance';
 import {
   applyStudentVisibilityGatePlans,
   planStudentVisibilityGate,
 } from '../services/studentVisibilityGateService';
-import { assertScriptApplyAllowed } from './scriptWriteGuards';
+import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 
 dotenv.config();
 
@@ -59,7 +61,9 @@ function parseArgs(argv: string[]): CliOptions {
       const raw = arg.slice('--limit='.length);
       if (!/^[1-9]\d*$/.test(raw)) throw new Error('--limit must be a positive integer');
       options.limit = Number(raw);
-    } else if (arg.startsWith('--output=')) options.output = arg.slice('--output='.length).trim();
+    } else if (arg.startsWith('--output=')) {
+      options.output = resolveSafeJsonReportOutputPath(arg.slice('--output='.length));
+    }
     else throw new Error(`Unknown argument: ${arg}`);
   }
   if (options.apply && options.archive && !options.confirmDelete) {
@@ -92,7 +96,7 @@ async function main() {
   for (const program of programs) {
     const verdict = classifyProgramResearchRelevance(program);
     const row = {
-      recordId: String(program._id),
+      recordId: serializedDocumentId(program._id) || '',
       title: program.title,
       tier: program.studentVisibilityTier,
       alreadyOverridden: program.studentVisibilityOverrideTier || null,
@@ -187,8 +191,9 @@ async function main() {
   };
   console.log(JSON.stringify(output, null, 2));
   if (options.output) {
-    fs.mkdirSync(path.dirname(options.output), { recursive: true });
-    fs.writeFileSync(options.output, `${JSON.stringify(output, null, 2)}\n`);
+    const safeOutput = resolveSafeJsonReportOutputPath(options.output);
+    fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
+    fs.writeFileSync(safeOutput, `${JSON.stringify(output, null, 2)}\n`);
   }
 }
 
@@ -199,7 +204,7 @@ const isDirectRun = process.argv[1]
 if (isDirectRun) {
   main()
     .catch((error) => {
-      console.error('Failed to audit program research relevance:', error);
+      console.error('Failed to audit program research relevance:', sanitizeLogValue(error));
       process.exitCode = 1;
     })
     .finally(async () => {

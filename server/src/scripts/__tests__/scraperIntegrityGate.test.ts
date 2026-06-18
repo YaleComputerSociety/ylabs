@@ -38,6 +38,12 @@ describe('scraperIntegrityGate CLI helpers', () => {
     expect(() =>
       parseScraperIntegrityGateArgs(['--output', '--include-samples']),
     ).toThrow('--output requires a value');
+    expect(() =>
+      parseScraperIntegrityGateArgs(['--output', path.join(os.tmpdir(), 'integrity.txt')]),
+    ).toThrow('--output must point to a .json report file');
+    expect(() =>
+      parseScraperIntegrityGateArgs(['--output', path.resolve('/etc/ylabs-integrity.json')]),
+    ).toThrow('--output must write under');
     expect(() => parseScraperIntegrityGateArgs(['--source-run', '--limit=5'])).toThrow(
       '--source-run requires a value',
     );
@@ -67,6 +73,12 @@ describe('scraperIntegrityGate CLI helpers', () => {
       failureNames: [],
       warnings: [{ name: 'duplicateEntityNames', count: 2 }],
     });
+  });
+
+  it('rejects unsafe integrity gate output paths before writing', () => {
+    expect(() => writeIntegrityGateOutput({ status: 'pass' }, '/etc/ylabs-integrity.json')).toThrow(
+      '--output must write under',
+    );
   });
 
   it('wraps scraper integrity artifacts with freshness metadata', () => {

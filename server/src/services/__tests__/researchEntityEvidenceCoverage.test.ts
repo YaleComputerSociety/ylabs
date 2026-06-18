@@ -19,7 +19,7 @@ describe('assessResearchEntityEvidenceCoverage', () => {
       },
       listings: [
         {
-          ownerId: 'jdp52',
+          ownerId: 'fx1003',
           title: 'John Durham Peters',
           websites: ['http://filmstudies.yale.edu/people/john-durham-peters'],
         },
@@ -57,7 +57,7 @@ describe('assessResearchEntityEvidenceCoverage', () => {
           'This book explores the materiality of communication and provides a genealogy of the information age.',
         sourceUrls: ['http://filmstudies.yale.edu/people/john-durham-peters'],
       },
-      listings: [{ ownerId: 'jdp52' }],
+      listings: [{ ownerId: 'fx1003' }],
       members: [{ role: 'pi', userId: 'fixture-user' }],
       accessSignals: [{ signalType: 'POSTED_OPENING' }],
       contactRoutes: [],
@@ -110,7 +110,7 @@ describe('buildEvidenceCoverageImpact', () => {
   it('reports resolved and remaining blockers after overlaying dry-run observations', () => {
     const impact = buildEvidenceCoverageImpact({
       entityType: 'researchEntity',
-      entityKey: 'peters-lab-jdp52',
+      entityKey: 'peters-lab-fx1003',
       before: {
         entity: {
           name: 'Peters Lab',
@@ -126,7 +126,7 @@ describe('buildEvidenceCoverageImpact', () => {
       observations: [
         {
           entityType: 'researchEntity',
-          entityKey: 'peters-lab-jdp52',
+          entityKey: 'peters-lab-fx1003',
           field: 'fullDescription',
           value:
             'The Peters project page describes media studies research at Yale with enough official source context to explain the research home.',
@@ -138,7 +138,7 @@ describe('buildEvidenceCoverageImpact', () => {
 
     expect(impact).toMatchObject({
       entityType: 'researchEntity',
-      entityKey: 'peters-lab-jdp52',
+      entityKey: 'peters-lab-fx1003',
       beforeCoverageTier: 'thin',
       afterCoverageTier: 'thin',
       resolvedBlockers: ['missing_source_backed_description', 'listing_only_profile'],
@@ -151,7 +151,7 @@ describe('buildEvidenceCoverageImpact', () => {
       [
         {
           entityType: 'researchEntity',
-          entityKey: 'peters-lab-jdp52',
+          entityKey: 'peters-lab-fx1003',
           field: 'fullDescription',
           value:
             'The Peters project page describes media studies research at Yale with enough official source context to explain the research home.',
@@ -181,11 +181,40 @@ describe('buildEvidenceCoverageImpact', () => {
       rows: [
         {
           entityType: 'researchEntity',
-          entityKey: 'peters-lab-jdp52',
+          entityKey: 'peters-lab-fx1003',
           resolvedBlockers: ['missing_source_backed_description', 'listing_only_profile'],
         },
       ],
     });
+  });
+
+  it('skips object-shaped observation ids without arbitrary string coercion', async () => {
+    const unsafeId = {
+      toString() {
+        throw new Error('evidence coverage stringified an arbitrary observation id');
+      },
+      toHexString() {
+        throw new Error('evidence coverage called an arbitrary observation id');
+      },
+    };
+
+    const report = await buildEvidenceCoverageImpactReportForObservations(
+      [
+        {
+          entityType: 'researchEntity',
+          entityId: unsafeId,
+          field: 'fullDescription',
+          value: 'Official source text.',
+        },
+      ],
+      {
+        loadResearchEntityContext: async () => {
+          throw new Error('unsafe object id should not be loaded');
+        },
+      },
+    );
+
+    expect(report).toEqual({ assessed: 0, improved: 0, rows: [] });
   });
 });
 

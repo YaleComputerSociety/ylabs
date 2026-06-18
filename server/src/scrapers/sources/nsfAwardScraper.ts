@@ -37,6 +37,7 @@
  */
 import axios from 'axios';
 import { User } from '../../models/user';
+import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { getCached, setCached } from '../snapshotCache';
 import { normalizeName, slugify, splitName } from '../utils/scraperHelpers';
 import type {
@@ -554,7 +555,7 @@ export class NsfAwardScraper implements IScraper {
       try {
         payload = await fetcher(offset, dateStart, ctx.options.useCache, this.name);
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
+        const msg = sanitizeLogValue(err);
         ctx.log(`fetch failed at offset ${offset}: ${msg} — aborting pagination`);
         break;
       }

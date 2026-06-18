@@ -13,6 +13,17 @@ describe('AnalyticsEvent model', () => {
     await expect(event.validate()).resolves.toBeUndefined();
   });
 
+  it('stores legacy faculty user types as professor', async () => {
+    const event = new AnalyticsEvent({
+      eventType: AnalyticsEventType.LOGIN,
+      netid: 'faculty.fixture',
+      userType: 'faculty',
+    });
+
+    await expect(event.validate()).resolves.toBeUndefined();
+    expect(event.userType).toBe('professor');
+  });
+
   it('declares one ascending timestamp index for TTL retention', () => {
     const ascendingTimestampIndexes = AnalyticsEvent.schema.indexes().filter(([fields]) => {
       const fieldNames = Object.keys(fields);

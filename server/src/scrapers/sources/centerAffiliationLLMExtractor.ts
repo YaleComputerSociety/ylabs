@@ -19,6 +19,9 @@ import axios from 'axios';
 import mongoose from 'mongoose';
 import * as cheerio from 'cheerio';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
+import { sanitizeLogValue } from '../../utils/logSanitizer';
+import { redactDirectContactInfo } from '../../utils/contactRedaction';
+import { serializedDocumentId } from '../../utils/idSerialization';
 import { ResearchEntity } from '../../models/researchEntity';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 import {
@@ -30,6 +33,16 @@ const SOURCE_KEY = 'center-affiliation-llm';
 const DEFAULT_MODEL = 'gpt-4o-mini';
 const MAX_PROMPT_CHARS = 30_000;
 const ORG_ENTITY_TYPES = ['CENTER', 'INSTITUTE', 'INITIATIVE', 'CORE_FACILITY'];
+const CENTER_AFFILIATION_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
+
+export function normalizeCenterAffiliationObjectId(value: unknown): string | undefined {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return CENTER_AFFILIATION_OBJECT_ID_RE.test(trimmed) ? trimmed : undefined;
+  }
+  if (value instanceof mongoose.Types.ObjectId) return value.toHexString();
+  return undefined;
+}
 
 export interface CenterAffiliationPerson {
   name: string;
@@ -122,16 +135,17 @@ export function affiliationExtractionToObservations(
 async function defaultFetchPage(url: string): Promise<{ url: string; html: string } | null> {
   // SSRF guard: url is a DB-sourced center websiteUrl — block private/metadata hosts
   // and validate redirect hops at connect time.
-  await assertPublicHttpUrl(url);
+  const safeUrl = await assertPublicHttpUrl(url);
+  const safeUrlText = safeUrl.toString();
   const agents = ssrfSafeAgents();
-  const res = await axios.get(url, {
+  const res = await axios.get(safeUrlText, {
     timeout: 15_000,
     headers: { 'User-Agent': 'ylabs-scraper/1.0 (+https://yalelabs.io)' },
     httpAgent: agents.httpAgent,
     httpsAgent: agents.httpsAgent,
     maxRedirects: 5,
   });
-  return { url: res.request?.res?.responseUrl || url, html: String(res.data || '') };
+  return { url: res.request?.res?.responseUrl || safeUrlText, html: String(res.data || '') };
 }
 
 async function defaultCallLLM(input: {
@@ -141,6 +155,9 @@ async function defaultCallLLM(input: {
   sourceUrl: string;
   pageText: string;
 }): Promise<CenterAffiliationExtraction> {
+  const safeCenterName = redactDirectContactInfo(input.centerName).slice(0, 240);
+  const safeSourceUrl = redactDirectContactInfo(input.sourceUrl).slice(0, 2048);
+  const safePageText = redactDirectContactInfo(input.pageText).slice(0, MAX_PROMPT_CHARS);
   const response = await axios.post(
     'https://api.openai.com/v1/chat/completions',
     {
@@ -158,10 +175,10 @@ async function defaultCallLLM(input: {
         {
           role: 'user',
           content: [
-            `Center: ${input.centerName}`,
-            `Source URL: ${input.sourceUrl}`,
+            `Center: ${safeCenterName}`,
+            `Source URL: ${safeSourceUrl}`,
             'Return JSON: {"affiliatedPeople":[{"name":"First Last","role":"director|faculty|affiliated","title":"optional","profileUrl":"optional"}]}',
-            input.pageText,
+            safePageText,
           ].join('\n\n'),
         },
       ],
@@ -184,7 +201,8 @@ async function defaultCallLLM(input: {
 async function defaultCenterFinder(options: { only?: string[] } = {}): Promise<CandidateCenter[]> {
   const only = Array.from(new Set((options.only || []).map((value) => value.trim()).filter(Boolean)));
   const onlyObjectIds = only
-    .filter((value) => mongoose.Types.ObjectId.isValid(value))
+    .map((value) => normalizeCenterAffiliationObjectId(value))
+    .filter((value): value is string => Boolean(value))
     .map((value) => new mongoose.Types.ObjectId(value));
   const identityFilter = only.length
     ? {
@@ -207,7 +225,7 @@ async function defaultCenterFinder(options: { only?: string[] } = {}): Promise<C
     { _id: 1, slug: 1, name: 1, websiteUrl: 1 },
   ).lean();
   return (docs as any[]).map((doc) => ({
-    _id: doc._id ? String(doc._id) : undefined,
+    _id: serializedDocumentId(doc._id),
     slug: doc.slug,
     name: doc.name,
     websiteUrl: doc.websiteUrl,
@@ -254,8 +272,7 @@ export class CenterAffiliationLLMExtractor implements IScraper {
         try {
           page = await this.fetchPage(center.websiteUrl as string);
         } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          ctx.log(`[${center.slug}] fetch failed (${center.websiteUrl}): ${message}`);
+          ctx.log(`[${center.slug}] fetch failed for configured center URL: ${sanitizeLogValue(error)}`);
           continue;
         }
         const pageText = htmlToText(page?.html || '');
@@ -284,8 +301,7 @@ export class CenterAffiliationLLMExtractor implements IScraper {
         entitiesObserved += 1;
         ctx.log(`[${center.slug}] emitted ${observations.length} affiliation relationship observations.`);
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        ctx.log(`[${center.slug}] affiliation extraction failed: ${message}`);
+        ctx.log(`[${center.slug}] affiliation extraction failed: ${sanitizeLogValue(error)}`);
       }
     }
 

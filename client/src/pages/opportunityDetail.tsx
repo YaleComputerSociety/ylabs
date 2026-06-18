@@ -6,7 +6,7 @@ import LongText from '../components/shared/LongText';
 import axios from '../utils/axios';
 import { OpportunityDetailPayload } from '../types/opportunity';
 import useDocumentTitle from '../hooks/useDocumentTitle';
-import { EXTERNAL_LINK_REL, safeHttpUrl, safeHttpUrlList, safeUrl } from '../utils/url';
+import { EXTERNAL_LINK_REL, safeHttpUrl, safeHttpUrlList } from '../utils/url';
 
 const labelize = (value?: string): string =>
   (value || 'Unknown')
@@ -164,7 +164,7 @@ const OpportunityDetail = () => {
     );
   }
 
-  const applicationUrl = safeUrl(opportunity.applicationUrl);
+  const applicationUrl = safeHttpUrl(opportunity.applicationUrl);
 
   const entity = opportunity.researchEntity;
   const pathway = opportunity.pathway;
@@ -297,11 +297,11 @@ const OpportunityDetail = () => {
             <div className="yr-card rounded-md p-4">
               {evidence.length > 0 ? (
                 <div className="space-y-3">
-                  {evidence.map((item) => {
+                  {evidence.map((item, index) => {
                     const evidenceSourceUrl = safeHttpUrl(item.sourceUrl);
                     return (
                       <div
-                        key={item._id}
+                        key={`${item.sourceUrl || item.sourceName || 'evidence'}-${index}`}
                         className="border-t border-[var(--yr-line)] pt-3 first:border-t-0 first:pt-0"
                       >
                         <p className="text-sm font-semibold text-gray-900">

@@ -3,6 +3,8 @@ import { EntryPathway } from '../models/entryPathway';
 import { findReviewLockedRecord, omitReviewLockedFields } from './reviewLockUtils';
 import { syncPathwaySearchIndexDocument } from './pathwaySearchIndexService';
 import { publicAccessHttpUrls, publicAccessText } from '../utils/publicAccessArtifact';
+import { sanitizeLogValue } from '../utils/logSanitizer';
+import { serializedDocumentId } from '../utils/idSerialization';
 import type {
   CompensationType,
   EntryPathwayStatus,
@@ -48,12 +50,21 @@ function getEntryPathwayModel(deps: EntryPathwayServiceDeps = {}): mongoose.Mode
   return deps.model || EntryPathway;
 }
 
-function toStoredId(value: string): unknown {
-  return mongoose.Types.ObjectId.isValid(value) ? new mongoose.Types.ObjectId(value) : value;
+const STORED_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
+
+function toStoredId(value: unknown): unknown {
+  if (value instanceof mongoose.Types.ObjectId) return value;
+  if (typeof value !== 'string') return undefined;
+  const id = value.trim();
+  if (!id) return undefined;
+  return STORED_OBJECT_ID_RE.test(id) ? new mongoose.Types.ObjectId(id) : id;
 }
 
-function toStoredObjectId(value: string): mongoose.Types.ObjectId | undefined {
-  return mongoose.Types.ObjectId.isValid(value) ? new mongoose.Types.ObjectId(value) : undefined;
+function toStoredObjectId(value: unknown): mongoose.Types.ObjectId | undefined {
+  if (value instanceof mongoose.Types.ObjectId) return value;
+  if (typeof value !== 'string') return undefined;
+  const id = value.trim();
+  return STORED_OBJECT_ID_RE.test(id) ? new mongoose.Types.ObjectId(id) : undefined;
 }
 
 function compactObject<T extends Record<string, unknown>>(value: T): Partial<T> {
@@ -68,6 +79,7 @@ export async function upsertEntryPathway(
 ): Promise<EntryPathwayUpsertResult> {
   const EntryPathway = getEntryPathwayModel(deps);
   const researchEntityId = toStoredId(input.researchEntityId);
+  if (!researchEntityId) return {};
   const sourceEvidenceIds = input.sourceEvidenceIds
     .filter(Boolean)
     .map(toStoredObjectId)
@@ -109,14 +121,15 @@ export async function upsertEntryPathway(
     setDefaultsOnInsert: true,
   });
   const doc = typeof (query as any).lean === 'function' ? await (query as any).lean() : await query;
-  if (!deps.model && process.env.PATHWAY_SEARCH_SYNC === 'true' && doc?._id) {
-    await syncPathwaySearchIndexDocument(String(doc._id)).catch((error) => {
-      console.error('Failed to sync pathway search index:', error);
+  const pathwayId = serializedDocumentId(doc?._id);
+  if (!deps.model && process.env.PATHWAY_SEARCH_SYNC === 'true' && pathwayId) {
+    await syncPathwaySearchIndexDocument(pathwayId).catch((error) => {
+      console.error('Failed to sync pathway search index:', sanitizeLogValue(error));
     });
   }
 
   return {
-    pathwayId: doc?._id ? String(doc._id) : undefined,
+    pathwayId,
     doc,
   };
 }

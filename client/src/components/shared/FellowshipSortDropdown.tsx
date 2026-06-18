@@ -7,7 +7,6 @@ import FellowshipSearchContext from '../../contexts/FellowshipSearchContext';
 const sortOptions = [
   { value: 'default', label: 'Recommended' },
   { value: 'deadline', label: 'Deadline' },
-  { value: 'createdAt', label: 'Recently added' },
   { value: 'title', label: 'Name' },
 ];
 

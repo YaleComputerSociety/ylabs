@@ -11,7 +11,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { Source } from '../models/source';
-import { assertScriptApplyAllowed } from '../scripts/scriptWriteGuards';
+import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from '../scripts/scriptWriteGuards';
+import { sanitizeLogValue } from '../utils/logSanitizer';
 import { getSourceCoverage } from './sourceCoverageRegistry';
 import type { SourceCoverageMetadata } from '../models/sourceCoverageTypes';
 
@@ -90,11 +91,7 @@ export function parseSeedSourcesArgs(argv: string[]): SeedSourcesCliOptions {
 }
 
 function parseRequiredOutputPath(value: string | undefined): string {
-  const output = value?.trim();
-  if (!output || output.startsWith('--')) {
-    throw new Error('--output requires a path');
-  }
-  return output;
+  return resolveSafeJsonReportOutputPath(value);
 }
 
 export function assertSeedSourcesWriteAllowed(
@@ -137,8 +134,9 @@ export function buildSeedSourcesOutput<T extends object>(
 
 export function writeSeedSourcesOutput(report: unknown, output?: string): void {
   if (!output) return;
-  fs.mkdirSync(path.dirname(output), { recursive: true });
-  fs.writeFileSync(output, `${JSON.stringify(report, null, 2)}\n`);
+  const safeOutput = resolveSafeJsonReportOutputPath(output);
+  fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
+  fs.writeFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
 }
 
 const SOURCES: SourceSeed[] = [
@@ -510,7 +508,7 @@ async function main(): Promise<void> {
 
 if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
   main().catch(async (err) => {
-    console.error(err);
+    console.error(sanitizeLogValue(err));
     await mongoose.disconnect().catch(() => {});
     process.exitCode = 1;
   });

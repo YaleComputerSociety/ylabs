@@ -8,6 +8,8 @@ import {
   defaultAdvisorResolver,
   exportAcceptedFellowshipRows,
   generateFellowshipCandidates,
+  resolveSafeAcceptedInputPath,
+  resolveSafeAcceptedInputRoot,
   validateAcceptedFellowshipFiles,
 } from '../acceptedInputs/fellowshipInputs';
 import {
@@ -21,7 +23,8 @@ import {
   serializeCsv,
   validateArxivOrcidList,
 } from './acceptedInputsCore';
-import { assertScriptApplyAllowed } from './scriptWriteGuards';
+import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { sanitizeLogValue } from '../utils/logSanitizer';
 
 dotenv.config();
 
@@ -213,6 +216,7 @@ async function main() {
     printHelp();
     return;
   }
+  options.root = resolveSafeAcceptedInputRoot(options.root);
   const guard = assertAcceptedInputsApplyAllowed(options, process.env, process.env.MONGODBURL);
   const needsDb = COMMANDS_REQUIRING_DB.has(options.command);
   if (needsDb) await initializeConnections();
@@ -238,7 +242,7 @@ async function main() {
     }
     case 'orcid:crosswalk': {
       const inputPath = options.input || path.join(options.root, 'orcid-crosswalk.csv');
-      const csv = await readRequired(inputPath);
+      const csv = await readRequired(inputPath, '--input');
       const result = await applyOrcidCrosswalkCsv(csv, users, {
         dryRun: options.dryRun,
       });
@@ -288,7 +292,7 @@ async function main() {
     case 'scholar:apply': {
       const inputPath =
         options.input || path.join(options.root, 'scholar', 'google-scholar-accepted.csv');
-      const csv = await readRequired(inputPath);
+      const csv = await readRequired(inputPath, '--input');
       const result = await applyScholarAcceptedCsv(csv, users, {
         dryRun: options.dryRun,
       });
@@ -312,7 +316,7 @@ async function main() {
     case 'arxiv:validate': {
       const inputPath =
         options.input || path.join(options.root, 'arxiv-math-physics-stat-orcids.txt');
-      const text = await readRequired(inputPath);
+      const text = await readRequired(inputPath, '--input');
       const result = validateArxivOrcidList(text, users);
       outputPayload = {
         inputPath,
@@ -347,9 +351,10 @@ async function main() {
   }
 }
 
-async function readRequired(filePath: string): Promise<string> {
+async function readRequired(filePath: string, flag = 'accepted input path'): Promise<string> {
+  const safePath = resolveSafeAcceptedInputPath(filePath, flag);
   try {
-    return await fs.readFile(filePath, 'utf8');
+    return await fs.readFile(safePath, 'utf8');
   } catch (error: unknown) {
     if (
       error &&
@@ -357,15 +362,16 @@ async function readRequired(filePath: string): Promise<string> {
       'code' in error &&
       (error as { code?: string }).code === 'ENOENT'
     ) {
-      throw new Error(`Required accepted-input file is missing: ${filePath}`);
+      throw new Error(`Required accepted-input file is missing: ${safePath}`);
     }
     throw error;
   }
 }
 
 async function writeText(filePath: string, text: string): Promise<void> {
-  await fs.mkdir(path.dirname(filePath), { recursive: true });
-  await fs.writeFile(filePath, text, 'utf8');
+  const safePath = resolveSafeAcceptedInputPath(filePath, '--output');
+  await fs.mkdir(path.dirname(safePath), { recursive: true });
+  await fs.writeFile(safePath, text, 'utf8');
 }
 
 export async function writeAcceptedInputsOutput(
@@ -373,8 +379,9 @@ export async function writeAcceptedInputsOutput(
   output?: string,
 ): Promise<void> {
   if (!output) return;
-  await fs.mkdir(path.dirname(output), { recursive: true });
-  await fs.writeFile(output, `${JSON.stringify(report, null, 2)}\n`, 'utf8');
+  const safeOutput = resolveSafeJsonReportOutputPath(output);
+  await fs.mkdir(path.dirname(safeOutput), { recursive: true });
+  await fs.writeFile(safeOutput, `${JSON.stringify(report, null, 2)}\n`, 'utf8');
 }
 
 function printJson(value: unknown): void {
@@ -386,7 +393,7 @@ const isDirectRun = process.argv[1] ? fileURLToPath(import.meta.url) === path.re
 if (isDirectRun) {
   main()
     .catch((error) => {
-      console.error(error instanceof Error ? error.message : error);
+      console.error(sanitizeLogValue(error));
       process.exitCode = 1;
     })
     .finally(async () => {

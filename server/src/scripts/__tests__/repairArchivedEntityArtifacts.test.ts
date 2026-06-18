@@ -5,11 +5,24 @@ import { describe, expect, it } from 'vitest';
 import {
   assertArchivedEntityArtifactRepairApplyAllowed,
   buildRepairArchivedEntityArtifactsOutput,
+  normalizeArchivedArtifactObjectId,
   parseRepairArchivedEntityArtifactsArgs,
   writeRepairArchivedEntityArtifactsOutput,
 } from '../repairArchivedEntityArtifacts';
 
 describe('repairArchivedEntityArtifacts CLI helpers', () => {
+  it('normalizes archived artifact ObjectIds without object-shaped coercion', () => {
+    expect(normalizeArchivedArtifactObjectId(' 507f1f77bcf86cd799439011 ')).toBe(
+      '507f1f77bcf86cd799439011',
+    );
+    expect(normalizeArchivedArtifactObjectId('abcdefghijkl')).toBeUndefined();
+    expect(
+      normalizeArchivedArtifactObjectId({
+        toString: () => '507f1f77bcf86cd799439011',
+      }),
+    ).toBeUndefined();
+  });
+
   it('parses dry-run/apply safety and output flags', () => {
     expect(
       parseRepairArchivedEntityArtifactsArgs([
@@ -49,6 +62,12 @@ describe('repairArchivedEntityArtifacts CLI helpers', () => {
     expect(() => parseRepairArchivedEntityArtifactsArgs(['--output=--apply'])).toThrow(
       /--output requires a path/,
     );
+    expect(() =>
+      parseRepairArchivedEntityArtifactsArgs(['--output', '/var/tmp/archived-artifact-repair.json']),
+    ).toThrow(/--output must write under/);
+    expect(() =>
+      parseRepairArchivedEntityArtifactsArgs(['--output', '/tmp/archived-artifact-repair.txt']),
+    ).toThrow(/--output must point to a \.json report file/);
   });
 
   it('blocks apply when the planned artifact writes exceed max apply', () => {
@@ -172,5 +191,14 @@ describe('repairArchivedEntityArtifacts CLI helpers', () => {
       scannedArtifacts: 4,
       planSummary: { relink: 2, mergeAndArchive: 1, archiveWithoutCanonical: 1, skipped: 0 },
     });
+  });
+
+  it('rejects unsafe archived artifact repair writes', () => {
+    expect(() =>
+      writeRepairArchivedEntityArtifactsOutput(
+        { mode: 'dry-run' },
+        '/var/tmp/archived-artifact-repair.json',
+      ),
+    ).toThrow(/--output must write under/);
   });
 });

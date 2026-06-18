@@ -3,11 +3,23 @@ import { describe, expect, it } from 'vitest';
 import {
   assertDisambiguateSurnameLabApplyAllowed,
   buildSurnameLabDisambiguationPlans,
+  normalizeSurnameLabObjectId,
   parseDisambiguateSurnameLabArgs,
   singleSurnameLabName,
 } from '../disambiguateSurnameLabNames';
 
 describe('disambiguate surname lab names', () => {
+  it('rejects object-shaped ids without coercion', () => {
+    const objectShapedId = {
+      toString: () => '507f1f77bcf86cd799439011',
+    };
+
+    expect(normalizeSurnameLabObjectId(objectShapedId)).toBeUndefined();
+    expect(normalizeSurnameLabObjectId(' 507f1f77bcf86cd799439011 ')?.toHexString()).toBe(
+      '507f1f77bcf86cd799439011',
+    );
+  });
+
   it('parses dry-run and bounded apply options', () => {
     expect(
       parseDisambiguateSurnameLabArgs([
@@ -40,6 +52,12 @@ describe('disambiguate surname lab names', () => {
     expect(() =>
       parseDisambiguateSurnameLabArgs(['--confirm-surname-lab-disambiguation=false']),
     ).toThrow('--confirm-surname-lab-disambiguation does not accept a value');
+    expect(() => parseDisambiguateSurnameLabArgs(['--output=/etc/out.json'])).toThrow(
+      /--output must write under/,
+    );
+    expect(() => parseDisambiguateSurnameLabArgs(['--output=/tmp/out.txt'])).toThrow(
+      /--output must point to a \.json report file/,
+    );
   });
 
   it('requires explicit bounds and confirmation before apply mode can connect', () => {
@@ -73,17 +91,17 @@ describe('disambiguate surname lab names', () => {
   });
 
   it('detects only simple single-surname lab names', () => {
-    expect(singleSurnameLabName('Lin Lab')).toBe('Lin');
+    expect(singleSurnameLabName('Roster Lab')).toBe('Roster');
     expect(singleSurnameLabName('Higgins-Chen Lab')).toBe('Higgins-Chen');
-    expect(singleSurnameLabName('Haifan Lin Lab')).toBeNull();
+    expect(singleSurnameLabName('Hayden Roster Lab')).toBeNull();
     expect(singleSurnameLabName('3D Tumor Lab')).toBeNull();
   });
 
   it('renames duplicate single-surname labs using exact PI member evidence', () => {
     const result = buildSurnameLabDisambiguationPlans({
       entities: [
-        { id: 'entity-a', name: 'Lin Lab', slug: 'lin-lab-hl379' },
-        { id: 'entity-b', name: 'Lin Lab', slug: 'lin-lab-hl249', displayName: 'Lin Lab' },
+        { id: 'entity-a', name: 'Roster Lab', slug: 'lin-lab-hl379' },
+        { id: 'entity-b', name: 'Roster Lab', slug: 'lin-lab-hl249', displayName: 'Roster Lab' },
         { id: 'entity-c', name: 'Unique Lab', slug: 'unique-lab' },
       ],
       members: [
@@ -92,25 +110,25 @@ describe('disambiguate surname lab names', () => {
         { researchEntityId: 'entity-c', userId: 'user-c', role: 'pi' },
       ],
       users: [
-        { id: 'user-a', fname: 'Haifan', lname: 'Lin' },
-        { id: 'user-b', fname: 'Haiqun', lname: 'Lin' },
+        { id: 'user-a', fname: 'Hayden', lname: 'Roster' },
+        { id: 'user-b', fname: 'Harper', lname: 'Roster' },
         { id: 'user-c', fname: 'Una', lname: 'Unique' },
       ],
-      existingActiveNames: ['Lin Lab', 'Lin Lab', 'Unique Lab'],
+      existingActiveNames: ['Roster Lab', 'Roster Lab', 'Unique Lab'],
     });
 
     expect(result.plans).toEqual([
       expect.objectContaining({
-        entityId: 'entity-a',
-        oldName: 'Lin Lab',
-        newName: 'Haifan Lin Lab',
-        newDisplayName: 'Haifan Lin Lab',
+        entityId: 'entity-b',
+        oldName: 'Roster Lab',
+        newName: 'Harper Roster Lab',
+        newDisplayName: 'Harper Roster Lab',
       }),
       expect.objectContaining({
-        entityId: 'entity-b',
-        oldName: 'Lin Lab',
-        newName: 'Haiqun Lin Lab',
-        newDisplayName: 'Haiqun Lin Lab',
+        entityId: 'entity-a',
+        oldName: 'Roster Lab',
+        newName: 'Hayden Roster Lab',
+        newDisplayName: 'Hayden Roster Lab',
       }),
     ]);
   });

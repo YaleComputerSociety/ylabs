@@ -9,7 +9,8 @@ import {
 } from '../../utils/researchDiscoveryAdapters';
 import { formatTitleCaseLabel } from '../../utils/displayText';
 import { sanitizeFacultyResearchCopy } from '../../utils/researchEntityCopy';
-import { EXTERNAL_LINK_REL, safeHttpUrl } from '../../utils/url';
+import { EXTERNAL_LINK_REL, safeHttpUrl, safeRouteSegment } from '../../utils/url';
+import { principalInvestigatorLinkFromResearchEntity } from '../../utils/principalInvestigatorLinks';
 
 interface ResearchHomeCardProps {
   home: ResearchCluster;
@@ -48,6 +49,12 @@ const evidenceStatusClass = (state?: string): string => {
 
 const isInteractiveElement = (target: EventTarget | null): boolean =>
   target instanceof HTMLElement && Boolean(target.closest('a, button'));
+
+const titleCaseContactRole = (role?: string): string => {
+  const trimmed = (role || '').trim();
+  if (!trimmed) return 'Principal investigator';
+  return formatTitleCaseLabel(trimmed);
+};
 
 const adminQualityLabels = (home: ResearchCluster): string[] => {
   const flags = new Set(
@@ -118,9 +125,13 @@ const ResearchHomeCard = ({
         pathway.activePostedOpportunity &&
         pathway.activePostedOpportunity.provenance !== 'LISTING_BRIDGED',
     )?.activePostedOpportunity;
-  const primaryProfileUrl = primaryLinkedEntity ? `/research/${primaryLinkedEntity.slug}` : '';
+  const primaryProfileUrl = primaryLinkedEntity ? `/research/${safeRouteSegment(primaryLinkedEntity.slug)}` : '';
   const isCardClickable = Boolean(primaryProfileUrl || onSelect);
   const primaryEvidenceUrl = safeHttpUrl(home.evidence[0]?.url);
+  const leadEntity = home.entities.find((entity) => (entity.contactName || '').trim());
+  const leadName = leadEntity?.contactName?.trim();
+  const leadProfileLink = principalInvestigatorLinkFromResearchEntity(leadEntity);
+  const leadRole = titleCaseContactRole(leadEntity?.contactRole);
   const qualityLabels = showAdminQuality ? adminQualityLabels(home) : [];
   const activateCard = () => {
     if (primaryProfileUrl) {
@@ -151,7 +162,7 @@ const ResearchHomeCard = ({
           >
             {singleLinkedEntity ? (
               <Link
-                to={`/research/${singleLinkedEntity.slug}`}
+                to={`/research/${safeRouteSegment(singleLinkedEntity.slug)}`}
                 className="yr-link yr-focus-ring rounded-sm"
                 onClick={(event) => event.stopPropagation()}
               >
@@ -165,6 +176,33 @@ const ResearchHomeCard = ({
 
         {contextLine && (
           <p className="text-xs font-medium leading-relaxed text-gray-500">{contextLine}</p>
+        )}
+
+        {leadName && (
+          <p className="text-xs font-medium leading-relaxed text-gray-600">
+            {leadRole}:{' '}
+            {leadProfileLink?.external ? (
+              <a
+                href={leadProfileLink.href}
+                target="_blank"
+                rel={EXTERNAL_LINK_REL}
+                className="yr-link yr-focus-ring rounded-sm"
+                onClick={(event) => event.stopPropagation()}
+              >
+                {leadName}
+              </a>
+            ) : leadProfileLink ? (
+              <Link
+                to={leadProfileLink.href}
+                className="yr-link yr-focus-ring rounded-sm"
+                onClick={(event) => event.stopPropagation()}
+              >
+                {leadName}
+              </Link>
+            ) : (
+              <span>{leadName}</span>
+            )}
+          </p>
         )}
 
         {qualityLabels.length > 0 && (
@@ -313,7 +351,7 @@ const ResearchHomeCard = ({
               return (
                 <Link
                   key={entity.slug}
-                  to={`/research/${entity.slug}`}
+                  to={`/research/${safeRouteSegment(entity.slug)}`}
                   className="yr-link inline-flex min-h-[44px] items-center text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
                   onClick={(event) => event.stopPropagation()}
                 >
@@ -350,7 +388,7 @@ const ResearchHomeCard = ({
       {primaryLinkedEntity ? (
         <div className="mt-4 flex flex-wrap gap-2">
           <Link
-            to={`/research/${primaryLinkedEntity.slug}`}
+            to={`/research/${safeRouteSegment(primaryLinkedEntity.slug)}`}
             className={`yr-focus-ring inline-flex min-h-[44px] items-center rounded-md px-3 py-2 text-sm font-semibold transition-colors ${
               isCompact
                 ? 'border border-[var(--yr-blue)] bg-[var(--yr-blue)] text-white hover:bg-blue-900'
@@ -362,7 +400,7 @@ const ResearchHomeCard = ({
           </Link>
           {activePostedOpportunity?._id && (
             <Link
-              to={`/opportunities/${activePostedOpportunity._id}`}
+              to={`/opportunities/${safeRouteSegment(activePostedOpportunity._id)}`}
               className="yr-focus-ring inline-flex min-h-[44px] items-center rounded-md bg-[var(--yr-blue)] px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-900"
               onClick={(event) => event.stopPropagation()}
             >

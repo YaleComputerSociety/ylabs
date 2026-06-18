@@ -144,6 +144,71 @@ describe('fellowshipMatchingService', () => {
     expect(match?.applicationLink).toBeUndefined();
   });
 
+  it('bounds polluted fellowship match text before tokenization', () => {
+    const purpose = Array.from({ length: 50 }, (_, index) =>
+      index === 0 ? 'RNA biology research project' : `Purpose ${index}`,
+    );
+    Object.defineProperty(purpose, '50', {
+      get: () => {
+        throw new Error('fellowship matching read past the text array cap');
+      },
+      enumerable: true,
+    });
+
+    const researchAreas = Array.from({ length: 50 }, (_, index) =>
+      index === 0 ? 'RNA Biology' : `Area ${index}`,
+    );
+    Object.defineProperty(researchAreas, '50', {
+      get: () => {
+        throw new Error('fellowship matching read past the pathway array cap');
+      },
+      enumerable: true,
+    });
+
+    const match = scoreFellowshipForPathway(
+      pathway({
+        researchEntity: {
+          _id: 'entity-1',
+          slug: 'smith-lab',
+          name: 'Smith Lab',
+          departments: [],
+          researchAreas,
+        },
+      }),
+      {
+        _id: 'fellowship-bounded-match',
+        title: 'Summer RNA Research Fellowship',
+        summary: 'x'.repeat(6000),
+        purpose,
+        applicationLink: 'https://example.edu/apply',
+        isAcceptingApplications: true,
+        deadline: '2026-06-01T00:00:00.000Z',
+      },
+      new Date('2026-05-12T00:00:00.000Z'),
+    );
+
+    expect(match?.fellowshipId).toBe('fellowship-bounded-match');
+    expect(match?.score).toBeGreaterThanOrEqual(70);
+  });
+
+  it('does not stringify arbitrary fellowship ids while matching', () => {
+    const match = scoreFellowshipForPathway(pathway(), {
+      _id: {
+        toString: () => {
+          throw new Error('fellowship matcher stringified an arbitrary object id');
+        },
+        toHexString: () => {
+          throw new Error('fellowship matcher called arbitrary object id toHexString');
+        },
+      },
+      title: 'Summer RNA Research Fellowship',
+      summary: 'Supports undergraduate research projects in RNA biology.',
+      applicationLink: 'https://example.edu/apply',
+    });
+
+    expect(match).toBeNull();
+  });
+
   it('keeps expired official cycles as next-cycle planning candidates', () => {
     const match = scoreFellowshipForPathway(pathway(), {
       _id: 'fellowship-expired',

@@ -28,8 +28,13 @@ describe('adminOperatorBoardService', () => {
   it('separates blocking repair reasons from positive evidence signals', () => {
     expect(classifyOperatorQueueReason('missing_action_evidence')).toBe('blocking');
     expect(classifyOperatorQueueReason('profile_fallback_only')).toBe('blocking');
-    expect(classifyOperatorQueueReason('not_undergraduate_relevant')).toBe('blocking');
     expect(classifyOperatorQueueReason('pi_identity_conflict')).toBe('blocking');
+    expect(classifyOperatorQueueReason('not_undergraduate_relevant')).toBe('review');
+    expect(classifyOperatorQueueReason('formalization_only')).toBe('review');
+    expect(classifyOperatorQueueReason('application_source_only')).toBe('review');
+    expect(classifyOperatorQueueReason('archive_review')).toBe('review');
+    expect(classifyOperatorQueueReason('duplicate_risk')).toBe('review');
+    expect(classifyOperatorQueueReason('exact_url_duplicate_risk')).toBe('review');
     expect(classifyOperatorQueueReason('concrete_next_step')).toBe('evidence');
     expect(classifyOperatorQueueReason('source_backed_description')).toBe('evidence');
     expect(classifyOperatorQueueReason('operator_override')).toBe('review');
@@ -66,6 +71,34 @@ describe('adminOperatorBoardService', () => {
       sourceName: 'source-a',
       status: 'success',
       observationCount: 9,
+    });
+  });
+
+  it('does not stringify object-shaped dry-run ids while summarizing operator posture', () => {
+    const unsafeId = {
+      toString() {
+        throw new Error('unsafe id toString should not run');
+      },
+      toHexString() {
+        throw new Error('unsafe id toHexString should not run');
+      },
+    };
+
+    const summary = summarizeDryRunPosture([
+      {
+        _id: unsafeId,
+        sourceName: 'source-a',
+        status: 'partial',
+        startedAt: '2026-05-25T13:00:00.000Z',
+        observationCount: 3,
+        options: { dryRun: true },
+      },
+    ]);
+
+    expect(summary.latestDryRun).toMatchObject({
+      id: '',
+      sourceName: 'source-a',
+      status: 'partial',
     });
   });
 
@@ -618,6 +651,76 @@ describe('adminOperatorBoardService', () => {
       error: 'Saved artifact is not readable',
     });
     expect(JSON.stringify(artifact)).not.toContain('mongodb://user:pass@example.invalid');
+  });
+
+  it('refuses to read operator gate artifacts outside safe JSON artifact roots', () => {
+    const unsafePath = '/etc/ylabs-operator-board.json';
+    const expected = {
+      artifactStatus: 'invalid',
+      artifactPath: '[unsafe artifact path]',
+      error: 'Saved artifact path is outside the allowed report artifact roots',
+    };
+
+    expect(readDataQualityGateArtifact(unsafePath)).toMatchObject(expected);
+    expect(readScraperIntegrityGateArtifact(unsafePath)).toMatchObject(expected);
+    expect(readLaunchTrustGateArtifact(unsafePath)).toMatchObject(expected);
+    expect(readLaunchReviewExceptionsArtifact(unsafePath)).toMatchObject(expected);
+    expect(readLaunchAcquisitionGateArtifact(unsafePath)).toMatchObject(expected);
+    expect(readBetaRepairQueueGateArtifact(unsafePath)).toMatchObject(expected);
+    expect(readPromotionCopyDryRunArtifact(unsafePath)).toMatchObject(expected);
+  });
+
+  it('refuses to read nested duplicate decision validation artifacts outside safe roots', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ylabs-operator-board-'));
+    const artifactPath = path.join(dir, 'beta-quality.json');
+    const unsafeNestedPath = '/etc/ylabs-duplicate-decision-validation.json';
+    fs.writeFileSync(
+      artifactPath,
+      JSON.stringify({
+        generatedAt: '2026-05-29T22:30:00.000Z',
+        summary: {
+          promotionReady: false,
+          promotionBlockerCount: 1,
+        },
+        duplicateEntityNames: {
+          planReview: {
+            preflightGuidance: {
+              acceptedDecisionValidation: {
+                outputPath: unsafeNestedPath,
+                expectedArtifactField: 'reviewDecisionValidation',
+              },
+            },
+          },
+        },
+      }),
+    );
+
+    expect(readDataQualityGateArtifact(artifactPath, new Date('2026-05-29T22:31:00.000Z'))).toMatchObject({
+      artifactStatus: 'loaded',
+      duplicateNamePreflight: {
+        acceptedDecisionValidation: {
+          outputPath: unsafeNestedPath,
+          expectedArtifactField: 'reviewDecisionValidation',
+          artifactAvailable: false,
+        },
+      },
+    });
+  });
+
+  it('reports unsafe operator gate freshness paths without touching arbitrary files', () => {
+    const prevDq = process.env.BETA_DATA_QUALITY_SCORECARD_PATH;
+    process.env.BETA_DATA_QUALITY_SCORECARD_PATH = '/etc/ylabs-operator-board.json';
+    try {
+      const freshness = buildGateArtifactFreshness(new Date('2026-06-07T00:30:00.000Z'));
+      expect(freshness.find((f) => f.gate === 'dataQuality')).toMatchObject({
+        path: '[unsafe artifact path]',
+        exists: false,
+        status: 'unreadable',
+      });
+    } finally {
+      if (prevDq === undefined) delete process.env.BETA_DATA_QUALITY_SCORECARD_PATH;
+      else process.env.BETA_DATA_QUALITY_SCORECARD_PATH = prevDq;
+    }
   });
 
   it('normalizes saved Beta handoff commands to explicit Beta targets', () => {

@@ -6,12 +6,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PathwaySearchHit } from '../../../types/pathway';
 import axios from '../../../utils/axios';
 import SavedPathwaysSection, {
+  MAX_PLAN_STORAGE_VALUE_LENGTH,
+  PLAN_STORAGE_KEY,
   deadlineReminderForPathway,
   defaultIntentForPathway,
   fundingCueForPathway,
+  readStoredPlans,
   type FellowshipFundingMatch,
+  writeStoredPlans,
 } from '../SavedPathwaysSection';
 import {
+  filterStoredPlansForSavedPathways,
   getLocalOnlySavedPathwayPlanIds,
   mergeSavedPathwayPlansForHydration,
   type PathwayPlan,
@@ -124,6 +129,66 @@ describe('saved research plan hydration helpers', () => {
     });
   });
 
+  it('normalizes untrusted local saved-plan payloads before hydration merge', () => {
+    const oversizedNote = 'a'.repeat(2500);
+    const unsafeLocalPlans = {
+      valid_plan: {
+        intent: 'funding',
+        stage: 'ready',
+        note: oversizedNote,
+        checklist: {
+          safe_key: true,
+          unchecked_key: false,
+          '$unsafe': true,
+        },
+      },
+      '../bad': plan({ note: 'should be dropped' }),
+    } as unknown as Record<string, PathwayPlan>;
+
+    const merged = mergeSavedPathwayPlansForHydration(unsafeLocalPlans, {});
+
+    expect(Object.keys(merged)).toEqual(['valid_plan']);
+    expect(merged.valid_plan.note).toHaveLength(2000);
+    expect(merged.valid_plan.checklist).toEqual({ safe_key: true });
+  });
+
+  it('drops oversized local saved-plan payloads before parsing', () => {
+    localStorage.setItem(PLAN_STORAGE_KEY, 'x'.repeat(MAX_PLAN_STORAGE_VALUE_LENGTH + 1));
+
+    expect(readStoredPlans()).toEqual({});
+    expect(localStorage.getItem(PLAN_STORAGE_KEY)).toBeNull();
+  });
+
+  it('drops malformed local saved-plan payloads after parse failure', () => {
+    localStorage.setItem(PLAN_STORAGE_KEY, 'not json');
+
+    expect(readStoredPlans()).toEqual({});
+    expect(localStorage.getItem(PLAN_STORAGE_KEY)).toBeNull();
+  });
+
+  it('does not persist private saved-plan notes or checklist state to localStorage', () => {
+    writeStoredPlans(
+      {
+        valid_plan: plan({
+          intent: 'outreach',
+          stage: 'ready',
+          note: 'Private advising note',
+          checklist: { outreach_question: true },
+        }),
+      },
+      'avery1',
+    );
+
+    expect(JSON.parse(localStorage.getItem(`${PLAN_STORAGE_KEY}.avery1`) || '{}')).toEqual({
+      valid_plan: plan({
+        intent: 'outreach',
+        stage: 'ready',
+        note: '',
+        checklist: {},
+      }),
+    });
+  });
+
   it('migrates only local plans for currently saved research plans', () => {
     expect(
       getLocalOnlySavedPathwayPlanIds(
@@ -138,6 +203,20 @@ describe('saved research plan hydration helpers', () => {
         ['localOnlySaved', 'alreadyOnServer'],
       ),
     ).toEqual(['localOnlySaved']);
+  });
+
+  it('filters local saved-plan drafts to pathways saved by the current account', () => {
+    expect(
+      filterStoredPlansForSavedPathways(
+        {
+          currentUserPathway: plan({ note: 'current account draft' }),
+          previousUserPathway: plan({ note: 'previous account draft' }),
+        },
+        ['currentUserPathway'],
+      ),
+    ).toEqual({
+      currentUserPathway: plan({ note: 'current account draft' }),
+    });
   });
 });
 
@@ -302,7 +381,7 @@ describe('SavedPathwaysSection advising export', () => {
   it('requires an explicit opt-in before private notes are requested for export', async () => {
     const user = userEvent.setup();
 
-    mockedAxios.get.mockImplementation((url, config) => {
+    mockedAxios.get.mockImplementation((url) => {
       if (url === '/users/savedResearchPlans') {
         return Promise.resolve({ data: { savedResearchPlans: [pathway()] } });
       }
@@ -325,7 +404,20 @@ describe('SavedPathwaysSection advising export', () => {
         return Promise.resolve({
           data: {
             privacy: {
-              includesPrivateNotes: config?.params?.includePrivateNotes === 'true',
+              includesPrivateNotes: false,
+            },
+            items: [],
+          },
+        });
+      }
+      return Promise.reject(new Error(`Unexpected URL: ${url}`));
+    });
+    mockedAxios.post.mockImplementation((url, data) => {
+      if (url === '/users/savedResearchPlanDetails/export') {
+        return Promise.resolve({
+          data: {
+            privacy: {
+              includesPrivateNotes: data?.includePrivateNotes === true,
             },
             items: [],
           },
@@ -343,11 +435,11 @@ describe('SavedPathwaysSection advising export', () => {
     await user.click(screen.getByRole('button', { name: 'Export for advising' }));
 
     await waitFor(() => {
-      expect(mockedAxios.get).toHaveBeenCalledWith(
+      expect(mockedAxios.post).toHaveBeenCalledWith(
         '/users/savedResearchPlanDetails/export',
+        { includePrivateNotes: true },
         expect.objectContaining({
           withCredentials: true,
-          params: { includePrivateNotes: 'true' },
         }),
       );
     });

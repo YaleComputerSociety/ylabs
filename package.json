@@ -11,6 +11,7 @@
     "build:server": "cd server && yarn build",
     "clean:all": "rm -rf node_modules && cd server && rm -rf node_modules && cd ../client && rm -rf node_modules",
     "install:all": "yarn && cd server && yarn && cd ../client && yarn",
+    "install:all:immutable": "yarn install --immutable && cd server && yarn install --immutable && cd ../client && yarn install --immutable",
     "install:client": "cd client && yarn",
     "install:server": "cd server && yarn",
     "dev:client": "cd client && yarn dev",
@@ -26,9 +27,11 @@
     "start:server": "cd server && yarn start",
     "test": "yarn install:all && yarn build && yarn start",
     "test:ci": "yarn --cwd client test:ci",
+    "security:policy": "node --test scripts/security-preflight.test.mjs",
     "security:secrets": "node scripts/check-no-secrets.mjs",
     "security:audit:production": "yarn npm audit --severity moderate --environment production && yarn --cwd server npm audit --severity moderate --environment production && yarn --cwd client npm audit --severity moderate --environment production",
-    "security:preflight": "yarn security:secrets && yarn security:audit:production",
+    "security:preflight": "yarn security:policy && yarn security:secrets && yarn security:audit:production",
+    "security:smoke:production": "node client/scripts/productionPromotionSmoke.mjs --api-base ${SMOKE_API_BASE:-https://yalelabs.io/api} --app-base ${SMOKE_APP_BASE:-https://yalelabs.io} --ui=false",
     "lint": "eslint \"client/src/**/*.{ts,tsx}\" \"server/src/**/*.ts\"",
     "lint:fix": "eslint --fix \"client/src/**/*.{ts,tsx}\" \"server/src/**/*.ts\"",
     "format": "prettier --write \"client/src/**/*.{ts,tsx,css}\" \"server/src/**/*.ts\"",
@@ -56,7 +59,8 @@
     "underscore": "1.13.8",
     "path-to-regexp": "0.1.13",
     "uuid": "11.1.1",
-    "xml2js": "0.6.2"
+    "xml2js": "0.6.2",
+    "shell-quote": "1.8.4"
   },
   "devDependencies": {
     "@types/react": "^19.2.2",

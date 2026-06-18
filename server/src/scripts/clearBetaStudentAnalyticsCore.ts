@@ -1,3 +1,5 @@
+import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+
 export interface ClearBetaStudentAnalyticsArgs {
   apply: boolean;
   confirmClearStudentAnalytics?: boolean;
@@ -50,11 +52,7 @@ export function buildClearBetaStudentAnalyticsApplyCommand(limit: number): strin
 }
 
 function parseRequiredPath(value: string | undefined, flag: '--output'): string {
-  const pathValue = value?.trim();
-  if (!pathValue || pathValue.startsWith('--')) {
-    throw new Error(`${flag} requires a path`);
-  }
-  return pathValue;
+  return resolveSafeJsonReportOutputPath(value, flag);
 }
 
 function parsePositiveIntegerOption(

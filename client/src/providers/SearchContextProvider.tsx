@@ -31,7 +31,7 @@ interface SearchContextProviderProps {
 
 const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => {
   const pageSize = 20;
-  const sortableKeys = ['default', 'createdAt', 'ownerLastName', 'ownerFirstName', 'title'];
+  const sortableKeys = ['default', 'title'];
 
   const { isAuthenticated, isLoading: authLoading } = useContext(UserContext);
   const isListingsRoute = false;
@@ -121,7 +121,7 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
   ) as React.Dispatch<React.SetStateAction<FilterMode>>;
 
   const setSortBy = useCallback((value: string) => {
-    dispatch({ type: 'SET_SORT_BY', payload: value });
+    dispatch({ type: 'SET_SORT_BY', payload: sortableKeys.includes(value) ? value : sortableKeys[0] });
   }, []);
 
   const setSortOrder = useCallback((value: number) => {
@@ -215,7 +215,7 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
           });
         })
         .catch((error) => {
-          console.error('Error loading listings:', error);
+          console.error('Error loading listings.');
           const message =
             error?.response?.status === 401
               ? 'Please sign in again to view saved search results.'

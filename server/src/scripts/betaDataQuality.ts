@@ -1,4 +1,5 @@
 import dotenv from 'dotenv';
+import axios from 'axios';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
@@ -11,6 +12,7 @@ import {
   resolveSourceHealthRowsWithReviewArtifacts,
 } from './sourceHealth';
 import { buildSourceHealthRows, type SourceHealthRow } from '../services/sourceHealthService';
+import { serializedDocumentId } from '../utils/idSerialization';
 import {
   buildArrayRefOrphanSamplePipeline,
   buildBetaDataQualityDiagnostics,
@@ -43,6 +45,8 @@ import {
   type SuspiciousUserEmailScorecardSummary,
 } from './betaDataQualityCore';
 import { assertScriptApplyAllowed } from './scriptWriteGuards';
+import { sanitizeLogValue } from '../utils/logSanitizer';
+import { assertPublicHttpUrl, ssrfSafeAgents } from '../utils/ssrfGuard';
 import {
   getSuspiciousUserEmailReason,
   isExcludedByLaneAProductionCopy,
@@ -1290,21 +1294,29 @@ async function collectLinkCandidateInputs(limit: number): Promise<LinkCandidateI
 
 async function checkLiveLink(url: string): Promise<{ ok: boolean; status?: number; error?: string }> {
   try {
-    let response = await fetch(url, {
-      method: 'HEAD',
-      redirect: 'follow',
-      signal: AbortSignal.timeout(7000),
+    const safeUrl = await assertPublicHttpUrl(url);
+    const agents = ssrfSafeAgents();
+    const request = async (method: 'HEAD' | 'GET') => axios.request({
+      url: safeUrl.toString(),
+      method,
+      maxRedirects: 5,
+      timeout: 7000,
+      httpAgent: agents.httpAgent,
+      httpsAgent: agents.httpsAgent,
+      responseType: method === 'GET' ? 'stream' : 'json',
+      validateStatus: () => true,
     });
+
+    let response = await request('HEAD');
     if (response.status === 405 || response.status === 403) {
-      response = await fetch(url, {
-        method: 'GET',
-        redirect: 'follow',
-        signal: AbortSignal.timeout(7000),
-      });
+      response = await request('GET');
+      if (response.data && typeof response.data.destroy === 'function') {
+        response.data.destroy();
+      }
     }
     return { ok: response.status >= 200 && response.status < 400, status: response.status };
   } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    return { ok: false, error: String(sanitizeLogValue(error)) };
   }
 }
 
@@ -1427,11 +1439,7 @@ function describeMongoTarget(url: string): string {
 }
 
 function stringifyId(value: unknown): string {
-  if (!value) return '';
-  if (typeof value === 'string') return value;
-  if (typeof value === 'number') return String(value);
-  if (typeof value === 'object' && 'toString' in value) return value.toString();
-  return String(value);
+  return serializedDocumentId(value) || '';
 }
 
 function asString(value: unknown): string {
@@ -1454,7 +1462,7 @@ function asStringArray(value: unknown): string[] | undefined {
 if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
   main()
     .catch((error) => {
-      console.error(error instanceof Error ? error.message : error);
+      console.error(sanitizeLogValue(error));
       process.exitCode = 1;
     })
     .finally(async () => {

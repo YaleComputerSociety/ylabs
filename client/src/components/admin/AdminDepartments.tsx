@@ -4,6 +4,7 @@
 import { useReducer, useEffect } from 'react';
 import axios from '../../utils/axios';
 import swal from 'sweetalert';
+import { clientErrorMessage } from '../../utils/clientErrorMessage';
 import {
   inlineCrudReducer,
   createInitialInlineCrudState,
@@ -88,8 +89,8 @@ const AdminDepartments = () => {
     try {
       const response = await axios.get('/admin/departments', { withCredentials: true });
       dispatch({ type: 'FETCH_SUCCESS', items: response.data.departments });
-    } catch (error) {
-      console.error('Error fetching departments:', error);
+    } catch {
+      console.error('Error fetching departments.');
       dispatch({ type: 'FETCH_FAILURE' });
       swal({ text: 'Failed to fetch departments', icon: 'error' });
     }
@@ -120,7 +121,7 @@ const AdminDepartments = () => {
       fetchDepartments();
       swal({ text: 'Department added', icon: 'success', timer: 1500 });
     } catch (error: any) {
-      swal({ text: error.response?.data?.error || 'Failed to add department', icon: 'error' });
+      swal({ text: clientErrorMessage(error, 'Failed to add department'), icon: 'error' });
     }
   };
 
@@ -147,7 +148,7 @@ const AdminDepartments = () => {
       fetchDepartments();
       swal({ text: 'Department updated', icon: 'success', timer: 1500 });
     } catch (error: any) {
-      swal({ text: error.response?.data?.error || 'Failed to update department', icon: 'error' });
+      swal({ text: clientErrorMessage(error, 'Failed to update department'), icon: 'error' });
     }
   };
 

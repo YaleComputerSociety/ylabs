@@ -335,8 +335,8 @@ describe('duplicate research entity review classification', () => {
         normalizedName: 'andrew neitzke faculty research',
         count: 2,
         entities: [
-          { id: 'physics', name: 'Andrew Neitzke Faculty Research', departments: ['Physics'] },
-          { id: 'math', name: 'Andrew Neitzke Faculty Research', departments: ['Mathematics'] },
+          { id: 'physics', name: 'Avery Fixture Faculty Research', departments: ['Physics'] },
+          { id: 'math', name: 'Avery Fixture Faculty Research', departments: ['Mathematics'] },
         ],
       }),
     ).toBe('cross_department_same_person_review');
@@ -535,6 +535,21 @@ describe('duplicate research entity review classification', () => {
       unreviewedPlanCount: 19,
     });
   });
+
+  it('rejects unsafe duplicate-name accepted-decision validation artifact paths before read', () => {
+    expect(() =>
+      buildDuplicateEntityPlanReviewSummary(
+        {
+          totalClusters: 1,
+          byCategory: [{ category: 'manual_review', count: 1 }],
+        },
+        1,
+        {
+          acceptedDecisionValidationOutputPath: '/var/tmp/decision-validation.json',
+        },
+      ),
+    ).toThrow(/--accepted-decision-validation-output must write under/);
+  });
 });
 
 describe('buildSamePiDedupeReviewSummary', () => {
@@ -615,6 +630,14 @@ describe('buildSamePiDedupeReviewSummary', () => {
         artifactAvailable: false,
       },
     });
+  });
+
+  it('rejects unsafe same-PI review artifact paths before read', () => {
+    expect(() =>
+      buildSamePiDedupeReviewSummary({
+        reviewArtifactPath: '/var/tmp/same-pi-dedupe.json',
+      }),
+    ).toThrow(/--review-artifact must write under/);
   });
 });
 
@@ -1006,6 +1029,12 @@ describe('parseBetaDataQualityArgs', () => {
     expect(() => parseBetaDataQualityArgs(['--output=--strict'])).toThrow(
       /--output requires a path/,
     );
+    expect(() => parseBetaDataQualityArgs(['--output=/var/tmp/beta-quality.json'])).toThrow(
+      /--output must write under/,
+    );
+    expect(() => parseBetaDataQualityArgs(['--output=/tmp/beta-quality.txt'])).toThrow(
+      /--output must point to a \.json report file/,
+    );
   });
 
   it('rejects unsafe numeric bounds before Mongo setup', () => {
@@ -1125,6 +1154,9 @@ describe('writeScorecardOutput', () => {
       mongoTarget: 'example.mongodb.net/Beta',
       summary: { status: 'ok' },
     });
+    expect(() => writeScorecardOutput(scorecard, '/var/tmp/beta-quality.json')).toThrow(
+      /--output must write under/,
+    );
     await rm(dir, { recursive: true, force: true });
   });
 });

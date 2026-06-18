@@ -19,8 +19,10 @@ import {
   type ArchivedEntityArtifact,
   type ArchivedEntityArtifactType,
 } from './repairArchivedEntityArtifactsCore';
-import { assertScriptApplyAllowed } from './scriptWriteGuards';
+import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { runStudentVisibilityGate } from '../services/studentVisibilityGateService';
+import { serializedDocumentId } from '../utils/idSerialization';
+import { sanitizeLogValue } from '../utils/logSanitizer';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -29,6 +31,7 @@ dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 const REVIEW_DECISION_APPLY_STATUS =
   'Accepted same-PI dedupe decisions can drive apply mode; only valid merge_into_canonical decisions are applied.';
 const BETA_ENV_PREFIX = 'SCRAPER_ENV=beta';
+const RESEARCH_ENTITY_PI_DEDUPE_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
 
 type ResearchEntityPiDedupePlanGroup = ReturnType<typeof buildResearchEntityPiDedupePlan>[number];
 
@@ -214,26 +217,29 @@ export function parseResearchEntityPiDedupeArgs(argv: string[]) {
       continue;
     }
     if (arg.startsWith('--accepted-decisions=')) {
-      args.acceptedDecisions = parseRequiredPath(
+      args.acceptedDecisions = resolveSafeJsonReportOutputPath(
         arg.slice('--accepted-decisions='.length),
         '--accepted-decisions',
       );
       continue;
     }
     if (arg === '--accepted-decisions') {
-      args.acceptedDecisions = parseRequiredPath(argv[index + 1], '--accepted-decisions');
+      args.acceptedDecisions = resolveSafeJsonReportOutputPath(
+        argv[index + 1],
+        '--accepted-decisions',
+      );
       index += 1;
       continue;
     }
     if (arg.startsWith('--decision-template-output=')) {
-      args.decisionTemplateOutput = parseRequiredPath(
+      args.decisionTemplateOutput = resolveSafeJsonReportOutputPath(
         arg.slice('--decision-template-output='.length),
         '--decision-template-output',
       );
       continue;
     }
     if (arg === '--decision-template-output') {
-      args.decisionTemplateOutput = parseRequiredPath(
+      args.decisionTemplateOutput = resolveSafeJsonReportOutputPath(
         argv[index + 1],
         '--decision-template-output',
       );
@@ -241,11 +247,11 @@ export function parseResearchEntityPiDedupeArgs(argv: string[]) {
       continue;
     }
     if (arg.startsWith('--output=')) {
-      args.output = parseRequiredPath(arg.slice('--output='.length), '--output');
+      args.output = resolveSafeJsonReportOutputPath(arg.slice('--output='.length));
       continue;
     }
     if (arg === '--output') {
-      args.output = parseRequiredPath(argv[index + 1], '--output');
+      args.output = resolveSafeJsonReportOutputPath(argv[index + 1]);
       index += 1;
       continue;
     }
@@ -253,17 +259,6 @@ export function parseResearchEntityPiDedupeArgs(argv: string[]) {
   }
 
   return args;
-}
-
-function parseRequiredPath(
-  value: string | undefined,
-  flag: '--output' | '--accepted-decisions' | '--decision-template-output',
-): string {
-  const pathValue = value?.trim();
-  if (!pathValue || pathValue.startsWith('--')) {
-    throw new Error(`${flag} requires a path`);
-  }
-  return pathValue;
 }
 
 function parsePositiveIntegerOption(
@@ -321,8 +316,9 @@ export function writeResearchEntityPiDedupeOutput(
   output?: string,
 ): void {
   if (!output) return;
-  fs.mkdirSync(path.dirname(output), { recursive: true });
-  fs.writeFileSync(output, `${JSON.stringify(report, null, 2)}\n`);
+  const safeOutput = resolveSafeJsonReportOutputPath(output);
+  fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
+  fs.writeFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
 }
 
 export function buildResearchEntityPiDedupeOutput<T extends Record<string, unknown>>(
@@ -352,8 +348,9 @@ export function writeResearchEntityPiDedupeDecisionTemplate(
   output?: string,
 ): void {
   if (!output) return;
-  fs.mkdirSync(path.dirname(output), { recursive: true });
-  fs.writeFileSync(output, `${JSON.stringify(template, null, 2)}\n`);
+  const safeOutput = resolveSafeJsonReportOutputPath(output, '--decision-template-output');
+  fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
+  fs.writeFileSync(safeOutput, `${JSON.stringify(template, null, 2)}\n`);
 }
 
 function researchEntityPiDedupePlanId(group: {
@@ -397,10 +394,11 @@ export function readResearchEntityPiDedupeDecisions(
   inputPath: string,
   options: { allowEmpty?: boolean } = {},
 ): ResearchEntityPiDedupeDecision[] {
-  if (!fs.existsSync(inputPath) && options.allowEmpty) {
+  const safeInputPath = resolveSafeJsonReportOutputPath(inputPath, '--accepted-decisions');
+  if (!fs.existsSync(safeInputPath) && options.allowEmpty) {
     return [];
   }
-  const parsed = JSON.parse(fs.readFileSync(inputPath, 'utf8')) as unknown;
+  const parsed = JSON.parse(fs.readFileSync(safeInputPath, 'utf8')) as unknown;
   const decisions = Array.isArray(parsed)
     ? parsed
     : parsed &&
@@ -839,7 +837,7 @@ async function loadSamePiCandidateRows(limit: number, options: { includeRetiredM
           ...(row.entities || []),
           ...profileAreaEntities
             .map((entity: any) => ({
-              id: String(entity._id),
+              id: serializedDocumentId(entity._id) || '',
               slug: entity.slug,
               name: entity.name,
               kind: entity.kind,
@@ -1046,8 +1044,8 @@ async function loadDuplicateCurrentMemberRows(limit: number) {
     { $limit: limit },
   ]).then((rows) =>
     rows.map((row: any) => ({
-      researchEntityId: String(row._id.researchEntityId),
-      userId: String(row._id.userId),
+      researchEntityId: serializedDocumentId(row._id.researchEntityId) || '',
+      userId: serializedDocumentId(row._id.userId) || '',
       role: row._id.role,
       memberIdsToRetire: selectCurrentMemberIdsToRetire(row.members || []),
       memberCount: (row.members || []).length,
@@ -1055,8 +1053,18 @@ async function loadDuplicateCurrentMemberRows(limit: number) {
   );
 }
 
-function objectId(value: string): mongoose.Types.ObjectId {
-  return new mongoose.Types.ObjectId(value);
+export function normalizeResearchEntityPiDedupeObjectId(
+  value: unknown,
+): mongoose.Types.ObjectId | undefined {
+  if (value instanceof mongoose.Types.ObjectId) return value;
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  if (!RESEARCH_ENTITY_PI_DEDUPE_OBJECT_ID_RE.test(trimmed)) return undefined;
+  return new mongoose.Types.ObjectId(trimmed);
+}
+
+function objectId(value: unknown): mongoose.Types.ObjectId | undefined {
+  return normalizeResearchEntityPiDedupeObjectId(value);
 }
 
 async function collectionExists(name: string): Promise<boolean> {
@@ -1150,9 +1158,9 @@ async function archiveOrDeleteDuplicateDocument(args: {
   allowDeleteOnConflict?: boolean;
 }): Promise<'archived' | 'deleted' | 'skipped'> {
   const db = mongoose.connection.db;
-  if (!db || !mongoose.Types.ObjectId.isValid(args.id)) return 'skipped';
-  const collection = db.collection(args.collectionName);
   const id = objectId(args.id);
+  if (!db || !id) return 'skipped';
+  const collection = db.collection(args.collectionName);
   const existing = await collection.findOne({ _id: id }, { projection: { archived: 1 } });
   if (!existing) return 'skipped';
   if (Object.prototype.hasOwnProperty.call(existing, 'archived')) {
@@ -1224,10 +1232,11 @@ async function applyDeleteModeArtifactPlan(args: {
 
   for (const item of plan.relink) {
     const spec = ARTIFACT_SPECS.find((candidate) => candidate.artifactType === item.artifactType);
-    if (!spec || !mongoose.Types.ObjectId.isValid(item.id)) continue;
+    const itemId = objectId(item.id);
+    if (!spec || !itemId) continue;
     try {
       const result = await db.collection(spec.collection).updateOne(
-        { _id: objectId(item.id), archived: { $ne: true } },
+        { _id: itemId, archived: { $ne: true } },
         {
           $set: {
             researchEntityId: args.canonicalId,
@@ -1253,16 +1262,12 @@ async function applyDeleteModeArtifactPlan(args: {
 
   for (const item of plan.mergeAndArchive) {
     const spec = ARTIFACT_SPECS.find((candidate) => candidate.artifactType === item.artifactType);
-    if (
-      !spec ||
-      !mongoose.Types.ObjectId.isValid(item.duplicateId) ||
-      !mongoose.Types.ObjectId.isValid(item.canonicalId)
-    ) {
-      continue;
-    }
+    const duplicateId = objectId(item.duplicateId);
+    const canonicalArtifactId = objectId(item.canonicalId);
+    if (!spec || !duplicateId || !canonicalArtifactId) continue;
     const collection = db.collection(spec.collection);
     const duplicate = await collection.findOne(
-      { _id: objectId(item.duplicateId) },
+      { _id: duplicateId },
       { projection: { sourceEvidenceIds: 1, sourceUrls: 1 } },
     );
     const addToSet: Record<string, { $each: unknown[] }> = {};
@@ -1274,7 +1279,7 @@ async function applyDeleteModeArtifactPlan(args: {
     }
     if (Object.keys(addToSet).length > 0) {
       const result = await collection.updateOne(
-        { _id: objectId(item.canonicalId) },
+        { _id: canonicalArtifactId },
         {
           $addToSet: addToSet,
           $set: { lastMaterializedAt: args.now },
@@ -1355,16 +1360,16 @@ async function relinkScalarReferences(args: {
         });
         if (action === 'throw') {
           throw new Error(
-            `Relinking ${spec.collection}.${spec.field} hit a duplicate key for ${String(
-              row._id,
-            )}; archive-mode dedupe will not delete reference rows.`,
+            `Relinking ${spec.collection}.${spec.field} hit a duplicate key for ${
+              serializedDocumentId(row._id) || ''
+            }; archive-mode dedupe will not delete reference rows.`,
           );
         }
         const outcome =
           action === 'archive'
             ? await archiveOrDeleteDuplicateDocument({
                 collectionName: spec.collection,
-                id: String(row._id),
+                id: serializedDocumentId(row._id) || '',
                 now: args.now,
                 relinkField: spec.field,
                 relinkValue: args.canonicalId,
@@ -1469,8 +1474,25 @@ export async function applyResearchEntityDedupeMergeGroup(
   group: ResearchEntityDedupeMergeGroup,
   options: { deleteDuplicates: boolean; relinkReferences?: boolean },
 ) {
-  const canonicalId = new mongoose.Types.ObjectId(group.canonicalEntityId);
-  const duplicateIds = group.duplicateEntityIds.map((id) => new mongoose.Types.ObjectId(id));
+  const canonicalId = objectId(group.canonicalEntityId);
+  const duplicateIds = group.duplicateEntityIds
+    .map((id) => objectId(id))
+    .filter((id): id is mongoose.Types.ObjectId => Boolean(id));
+  if (!canonicalId || duplicateIds.length !== group.duplicateEntityIds.length || duplicateIds.length === 0) {
+    return {
+      canonicalEntityId: group.canonicalEntityId,
+      duplicateEntityIds: group.duplicateEntityIds,
+      canonicalUpdated: 0,
+      archivedEntities: 0,
+      deletedEntities: 0,
+      retiredConflictingMembers: 0,
+      relinkedMembers: 0,
+      artifactRelink: {},
+      scalarRelink: {},
+      arrayRelink: {},
+      remainingReferencesBeforeDelete: {},
+    };
+  }
   const now = new Date();
 
   const canonicalUpdate = await ResearchEntity.updateOne(
@@ -1593,8 +1615,8 @@ async function retireDuplicateCurrentMembers(
   const results = await Promise.all(
     groups.map(async (group) => {
       const memberIds = group.memberIdsToRetire
-        .filter((id) => mongoose.Types.ObjectId.isValid(id))
-        .map((id) => new mongoose.Types.ObjectId(id));
+        .map((id) => objectId(id))
+        .filter((id): id is mongoose.Types.ObjectId => Boolean(id));
       if (memberIds.length === 0) {
         return {
           researchEntityId: group.researchEntityId,
@@ -1791,7 +1813,7 @@ async function main() {
 if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
   main()
     .catch((error) => {
-      console.error(error);
+      console.error(sanitizeLogValue(error));
       process.exitCode = 1;
     })
     .finally(async () => {

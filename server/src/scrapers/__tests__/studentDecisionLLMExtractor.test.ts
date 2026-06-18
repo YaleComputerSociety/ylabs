@@ -151,18 +151,18 @@ describe('studentDecisionLLMExtractor', () => {
         {
           ...candidate,
           _id: 'entity-mismatch',
-          slug: 'ysm-jschwartz',
-          name: 'Jason L. Schwartz, Ph.D.',
+          slug: 'ysm-jfixture',
+          name: 'Jesse Fixture, Ph.D.',
           sourceUrls: [
-            'https://medicine.yale.edu/lab/jschwartz/',
-            'https://medicine.yale.edu/profile/jeffrey-schwartz/',
+            'https://medicine.yale.edu/lab/jfixture/',
+            'https://medicine.yale.edu/profile/jamie-fixture/',
           ],
           accessSignals: [
             {
               signalType: 'REACH_OUT_PLAUSIBLE',
               confidence: 'LOW',
               excerpt: 'Official Yale profile identifies the lead faculty member.',
-              sourceUrl: 'https://medicine.yale.edu/profile/jeffrey-schwartz/',
+              sourceUrl: 'https://medicine.yale.edu/profile/jamie-fixture/',
             },
           ],
           entryPathways: [
@@ -170,7 +170,7 @@ describe('studentDecisionLLMExtractor', () => {
               pathwayType: 'EXPLORATORY_CONTACT',
               status: 'PLAUSIBLE',
               studentFacingLabel: 'Explore this research area through the official faculty profile',
-              sourceUrls: ['https://medicine.yale.edu/profile/jeffrey-schwartz/'],
+              sourceUrls: ['https://medicine.yale.edu/profile/jamie-fixture/'],
             },
           ],
         },

@@ -8,6 +8,9 @@ import {
   deriveShortDescriptionFromFullDescription,
   shortDescriptionQuality,
 } from '../../utils/researchEntityDescriptionQuality';
+import { redactDirectContactInfo } from '../../utils/contactRedaction';
+import { serializedDocumentId } from '../../utils/idSerialization';
+import { sanitizeLogValue } from '../../utils/logSanitizer';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 import {
   createWorkPlannerMetrics,
@@ -23,6 +26,16 @@ import { extractLabHomepageDescription } from './ysmAtoZScraper';
 const SOURCE_KEY = 'lab-microsite-description-llm';
 const DEFAULT_MODEL = 'gpt-4o-mini';
 const MAX_PROMPT_CHARS = 40_000;
+const DESCRIPTION_LLM_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
+
+export function normalizeDescriptionLlmObjectId(value: unknown): string | undefined {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return DESCRIPTION_LLM_OBJECT_ID_RE.test(trimmed) ? trimmed : undefined;
+  }
+  if (value instanceof mongoose.Types.ObjectId) return value.toHexString();
+  return undefined;
+}
 
 export interface CandidateDescriptionLab {
   _id?: unknown;
@@ -130,13 +143,12 @@ function isRejectedDescriptionSourceUrl(value: unknown): boolean {
 }
 
 const idValue = (value: unknown): string => {
-  if (!value) return '';
-  if (typeof value === 'string') return value.trim();
-  if (typeof (value as any).toHexString === 'function') return (value as any).toHexString();
-  if (typeof value === 'object' && '_id' in value) {
+  const directId = serializedDocumentId(value);
+  if (directId) return directId;
+  if (typeof value === 'object' && value !== null && '_id' in value) {
     return idValue((value as Record<string, unknown>)._id);
   }
-  return String(value).trim();
+  return '';
 };
 
 const candidateKeyMatches = (candidate: CandidateDescriptionLab, keys: string[]): boolean => {
@@ -343,15 +355,17 @@ export function descriptionExtractionToObservations(
 async function defaultFetchPage(url: string): Promise<FetchedDescriptionPage | null> {
   // SSRF guard: url is a DB-sourced lab websiteUrl — block private/metadata hosts and validate
   // redirect hops at connect time.
-  await assertPublicHttpUrl(url);
+  const safeUrl = await assertPublicHttpUrl(url);
+  const safeUrlText = safeUrl.toString();
   const agents = ssrfSafeAgents();
-  const res = await axios.get(url, {
+  const res = await axios.get(safeUrlText, {
     timeout: 10_000,
     headers: { 'User-Agent': 'ylabs-scraper/1.0 (+https://yalelabs.io)' },
+    maxRedirects: 5,
     httpAgent: agents.httpAgent,
     httpsAgent: agents.httpsAgent,
   });
-  return { url: res.request?.res?.responseUrl || url, html: String(res.data || '') };
+  return { url: res.request?.res?.responseUrl || safeUrlText, html: String(res.data || '') };
 }
 
 async function defaultCallLLM(input: {
@@ -361,6 +375,9 @@ async function defaultCallLLM(input: {
   sourceUrl: string;
   pageText: string;
 }): Promise<DescriptionExtraction> {
+  const safeLabName = redactDirectContactInfo(input.labName).slice(0, 240);
+  const safeSourceUrl = redactDirectContactInfo(input.sourceUrl).slice(0, 2048);
+  const safePageText = redactDirectContactInfo(input.pageText).slice(0, MAX_PROMPT_CHARS);
   const response = await axios.post(
     'https://api.openai.com/v1/chat/completions',
     {
@@ -375,10 +392,10 @@ async function defaultCallLLM(input: {
         {
           role: 'user',
           content: [
-            `Lab: ${input.labName}`,
-            `Source URL: ${input.sourceUrl}`,
+            `Lab: ${safeLabName}`,
+            `Source URL: ${safeSourceUrl}`,
             'Return JSON with fullDescription, shortDescription, topics, methods.',
-            input.pageText,
+            safePageText,
           ].join('\n\n'),
         },
       ],
@@ -400,7 +417,8 @@ async function defaultCallLLM(input: {
 async function defaultLabFinder(options: { only?: string[] } = {}): Promise<CandidateDescriptionLab[]> {
   const only = uniqueStrings(options.only || []);
   const onlyObjectIds = only
-    .filter((value) => mongoose.Types.ObjectId.isValid(value))
+    .map((value) => normalizeDescriptionLlmObjectId(value))
+    .filter((value): value is string => Boolean(value))
     .map((value) => new mongoose.Types.ObjectId(value));
   const queueItems = only.length
     ? []
@@ -526,14 +544,14 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
         if (workPlannerPolicy) {
           if (!idValue(lab._id) && !lab.slug) {
             recordWorkPlannerNoIdentifier(workPlannerMetrics);
-            ctx.log(`[${lab.name}] skipped by WorkPlanner — missing entity identifier.`);
+            ctx.log('[candidate] skipped by WorkPlanner — missing entity identifier.');
             continue;
           }
           const plan = await this.workPlanLoader(lab, workPlannerPolicy, ctx);
           recordWorkPlannerDecision(workPlannerMetrics, plan);
           if (!plan.shouldFetch) {
             const reasons = Array.from(new Set(plan.fields.map((field) => field.reason))).join(',');
-            ctx.log(`[${lab.slug || lab.name}] skipped by WorkPlanner — ${reasons || 'fresh'}.`);
+            ctx.log(`[${lab.slug || 'candidate'}] skipped by WorkPlanner — ${reasons || 'fresh'}.`);
             continue;
           }
         }
@@ -546,9 +564,9 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
           try {
             page = await this.fetchPage(sourceUrl);
           } catch (error) {
-            lastFetchError = error instanceof Error ? error.message : String(error);
+            lastFetchError = sanitizeLogValue(error);
             ctx.log(
-              `Description extraction source failed for ${lab.name} (${sourceUrl}): ${lastFetchError}`,
+              `[${lab.slug || 'candidate'}] description extraction source failed: ${lastFetchError}`,
             );
             continue;
           }
@@ -556,7 +574,7 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
         }
         if (!page?.html && lastFetchError) {
           ctx.log(
-            `Skipping description extraction for ${lab.name} (${lab.websiteUrl}): ${lastFetchError}`,
+            `[${lab.slug || 'candidate'}] skipping description extraction: ${lastFetchError}`,
           );
         }
         if (!page?.html) continue;
@@ -584,7 +602,7 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
                 methods: [],
               },
               {
-                entityId: lab._id ? String(lab._id) : undefined,
+                entityId: serializedDocumentId(lab._id),
                 entityKey: lab.slug,
                 sourceUrl: page.url,
               },
@@ -609,7 +627,7 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
           pageText,
         });
         const observations = descriptionExtractionToObservations(extraction, {
-          entityId: lab._id ? String(lab._id) : undefined,
+          entityId: serializedDocumentId(lab._id),
           entityKey: lab.slug,
           sourceUrl: page.url,
         });
@@ -619,9 +637,9 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
         observationCount += observations.length;
         entitiesObserved += 1;
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = sanitizeLogValue(error);
         ctx.log(
-          `Skipping description extraction for ${lab.name} (${lab.websiteUrl}): ${message}`,
+          `[${lab.slug || 'candidate'}] skipping description extraction: ${message}`,
         );
       }
     }

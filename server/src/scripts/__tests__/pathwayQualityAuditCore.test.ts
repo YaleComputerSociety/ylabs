@@ -105,6 +105,12 @@ describe('buildPathwayQualityAudit', () => {
     expect(() => parsePathwayQualityAuditArgs(['--output=--sample-limit=0'])).toThrow(
       /--output requires a path/,
     );
+    expect(() =>
+      parsePathwayQualityAuditArgs(['--output', '/var/tmp/pathway-quality.json']),
+    ).toThrow(/--output must write under/);
+    expect(() =>
+      parsePathwayQualityAuditArgs(['--output', '/tmp/pathway-quality.txt']),
+    ).toThrow(/--output must point to a \.json report file/);
   });
 
   it('writes the pathway quality artifact when output is provided', () => {
@@ -126,6 +132,12 @@ describe('buildPathwayQualityAudit', () => {
         weakPathwaysNeedingEvidence: 1,
       },
     });
+  });
+
+  it('rejects unsafe pathway quality artifact writes', () => {
+    expect(() =>
+      writePathwayQualityAuditOutput({ summary: {} }, '/var/tmp/pathway-quality.json'),
+    ).toThrow(/--output must write under/);
   });
 
   it('wraps pathway quality artifacts with target metadata and parsed options', () => {

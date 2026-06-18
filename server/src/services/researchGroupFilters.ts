@@ -37,8 +37,11 @@ const VERIFIED_CONFIDENCE_FLOOR = 0.7;
 const escapeMeiliFilterValue = (value: string): string =>
   value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 
-const orEqualsClause = (field: string, values: string[]): string | null => {
-  const cleaned = values.map((v) => v.trim()).filter((v) => v.length > 0);
+const orEqualsClause = (field: string, values: unknown[]): string | null => {
+  const cleaned = values
+    .filter((value): value is string => typeof value === 'string')
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
   if (cleaned.length === 0) return null;
   const inner = cleaned.map((v) => `${field} = "${escapeMeiliFilterValue(v)}"`).join(' OR ');
   return `(${inner})`;

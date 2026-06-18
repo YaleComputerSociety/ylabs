@@ -11,6 +11,7 @@ import {
 import * as listingController from '../controllers/listingController';
 import { logEvent } from '../services/analyticsService';
 import { AnalyticsEventType } from '../models/index';
+import { sanitizeLogValue } from '../utils/logSanitizer';
 
 const router = Router();
 
@@ -81,7 +82,7 @@ const logSearchEvent = async (req: Request, res: Response, next: NextFunction) =
             page: data?.page,
             pageSize: data?.pageSize,
           },
-        }).catch((err) => console.error('Error logging search event:', err));
+        }).catch((err) => console.error('Error logging search event:', sanitizeLogValue(err)));
       }
     }
 
@@ -106,7 +107,7 @@ const logListingEvent = (eventType: AnalyticsEventType) => {
             netid: currentUser.netId,
             userType: currentUser.userType,
             listingId: listingId,
-          }).catch((err) => console.error(`Error logging ${eventType} event:`, err));
+          }).catch((err) => console.error(`Error logging ${eventType} event:`, sanitizeLogValue(err)));
         }
       }
 
@@ -130,7 +131,7 @@ const logListingCreateEvent = async (req: Request, res: Response, next: NextFunc
           netid: currentUser.netId,
           userType: currentUser.userType,
           listingId: data.listing._id,
-        }).catch((err) => console.error('Error logging listing create event:', err));
+        }).catch((err) => console.error('Error logging listing create event:', sanitizeLogValue(err)));
       }
     }
 

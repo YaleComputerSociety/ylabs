@@ -59,6 +59,12 @@ describe('Mongo naming migration CLI safety helpers', () => {
     expect(() => parseMongoNamingMigrationArgs(['--output=--apply'])).toThrow(
       /--output requires a path/,
     );
+    expect(() => parseMongoNamingMigrationArgs(['--output', '/var/tmp/mongo-naming.json'])).toThrow(
+      /--output must write under/,
+    );
+    expect(() => parseMongoNamingMigrationArgs(['--output', '/tmp/mongo-naming.txt'])).toThrow(
+      /--output must point to a \.json report file/,
+    );
   });
 
   it('blocks production Mongo naming migration applies without confirmation', () => {
@@ -112,6 +118,12 @@ describe('Mongo naming migration CLI safety helpers', () => {
     writeMongoNamingMigrationOutput(payload, output);
     expect(JSON.parse(fs.readFileSync(output, 'utf8'))).toMatchObject(payload);
   });
+
+  it('rejects unsafe Mongo naming migration artifact writes', () => {
+    expect(() =>
+      writeMongoNamingMigrationOutput({ mode: 'dry-run' }, '/var/tmp/mongo-naming.json'),
+    ).toThrow(/--output must write under/);
+  });
 });
 
 describe('legacy cleanup CLI safety helpers', () => {
@@ -139,6 +151,12 @@ describe('legacy cleanup CLI safety helpers', () => {
     );
     expect(() => parseLegacyCleanupArgs(['--output=--drop-legacy'])).toThrow(
       /--output requires a path/,
+    );
+    expect(() => parseLegacyCleanupArgs(['--output', '/var/tmp/legacy-cleanup.json'])).toThrow(
+      /--output must write under/,
+    );
+    expect(() => parseLegacyCleanupArgs(['--output', '/tmp/legacy-cleanup.txt'])).toThrow(
+      /--output must point to a \.json report file/,
     );
   });
 
@@ -193,6 +211,12 @@ describe('legacy cleanup CLI safety helpers', () => {
     writeLegacyCleanupOutput(payload, output);
     expect(JSON.parse(fs.readFileSync(output, 'utf8'))).toMatchObject(payload);
   });
+
+  it('rejects unsafe legacy cleanup artifact writes', () => {
+    expect(() =>
+      writeLegacyCleanupOutput({ mode: 'verify' }, '/var/tmp/legacy-cleanup.json'),
+    ).toThrow(/--output must write under/);
+  });
 });
 
 describe('research entity migration CLI safety helpers', () => {
@@ -220,6 +244,12 @@ describe('research entity migration CLI safety helpers', () => {
     expect(() => parseResearchEntityMigrationArgs(['--output=--apply'])).toThrow(
       /--output requires a path/,
     );
+    expect(() =>
+      parseResearchEntityMigrationArgs(['--output', '/var/tmp/research-entity-migrate.json']),
+    ).toThrow(/--output must write under/);
+    expect(() =>
+      parseResearchEntityMigrationArgs(['--output', '/tmp/research-entity-migrate.txt']),
+    ).toThrow(/--output must point to a \.json report file/);
     expect(() => parseResearchEntityMigrationArgs(['--limit=bad'])).toThrow(
       /--limit requires a positive integer/,
     );
@@ -293,6 +323,15 @@ describe('research entity migration CLI safety helpers', () => {
     expect(JSON.parse(fs.readFileSync(output, 'utf8'))).toMatchObject(payload);
   });
 
+  it('rejects unsafe research entity migration artifact writes', () => {
+    expect(() =>
+      writeResearchEntityMigrationOutput(
+        { mode: 'verify' },
+        '/var/tmp/research-entity-migrate.json',
+      ),
+    ).toThrow(/--output must write under/);
+  });
+
   it('scopes member reference migration checks to live current memberships', () => {
     const memberCheck = RESEARCH_ENTITY_MIGRATION_REFERENCE_CHECKS.find(
       (check) => check.collection === 'research_entity_members',
@@ -330,6 +369,18 @@ describe('research entity collection migration CLI safety helpers', () => {
     expect(() =>
       parseResearchEntityCollectionMigrationArgs(['--output=--drop-legacy']),
     ).toThrow(/--output requires a path/);
+    expect(() =>
+      parseResearchEntityCollectionMigrationArgs([
+        '--output',
+        '/var/tmp/research-entity-collections.json',
+      ]),
+    ).toThrow(/--output must write under/);
+    expect(() =>
+      parseResearchEntityCollectionMigrationArgs([
+        '--output',
+        '/tmp/research-entity-collections.txt',
+      ]),
+    ).toThrow(/--output must point to a \.json report file/);
   });
 
   it('blocks production dependent collection drops without confirmation', () => {
@@ -382,6 +433,15 @@ describe('research entity collection migration CLI safety helpers', () => {
     const output = path.join(dir, 'summary.json');
     writeResearchEntityCollectionMigrationOutput(payload, output);
     expect(JSON.parse(fs.readFileSync(output, 'utf8'))).toMatchObject(payload);
+  });
+
+  it('rejects unsafe dependent collection migration artifact writes', () => {
+    expect(() =>
+      writeResearchEntityCollectionMigrationOutput(
+        { mode: 'verify' },
+        '/var/tmp/research-entity-collections.json',
+      ),
+    ).toThrow(/--output must write under/);
   });
 
   it('scopes dependent member collection reference checks to live current memberships', () => {

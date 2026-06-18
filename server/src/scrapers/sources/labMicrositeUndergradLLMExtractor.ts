@@ -29,6 +29,7 @@
  * runtime can be exercised in tests without ever touching the network.
  */
 import axios from 'axios';
+import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import * as cheerio from 'cheerio';
 import { ResearchEntity } from '../../models/researchEntity';
@@ -351,22 +352,26 @@ export function buildLLMPrompt(
   subPageText: string | null,
   additionalSubPages: PromptSourcePage[] = [],
 ): string {
+  const safeGroupName = redactDirectContactInfo(groupName).slice(0, 240);
+  const safeHomeUrl = redactDirectContactInfo(homeUrl).slice(0, 2048);
   const parts: string[] = [];
-  parts.push(`Lab name: ${groupName}`);
-  parts.push(`Home page URL: ${homeUrl}`);
+  parts.push(`Lab name: ${safeGroupName}`);
+  parts.push(`Home page URL: ${safeHomeUrl}`);
   parts.push('');
   parts.push('--- HOME PAGE TEXT ---');
-  parts.push(homeText || '(empty)');
+  parts.push(redactDirectContactInfo(homeText) || '(empty)');
   if (subPageUrl && subPageText) {
+    const safeSubPageUrl = redactDirectContactInfo(subPageUrl).slice(0, 2048);
     parts.push('');
-    parts.push(`--- SUB-PAGE TEXT (${subPageUrl}) ---`);
-    parts.push(subPageText);
+    parts.push(`--- SUB-PAGE TEXT (${safeSubPageUrl}) ---`);
+    parts.push(redactDirectContactInfo(subPageText));
   }
   for (const page of additionalSubPages) {
     if (!page.url || !page.text) continue;
+    const safePageUrl = redactDirectContactInfo(page.url).slice(0, 2048);
     parts.push('');
-    parts.push(`--- SUB-PAGE TEXT (${page.url}) ---`);
-    parts.push(page.text);
+    parts.push(`--- SUB-PAGE TEXT (${safePageUrl}) ---`);
+    parts.push(redactDirectContactInfo(page.text));
   }
   return parts.join('\n').slice(0, MAX_PROMPT_CHARS);
 }
@@ -704,9 +709,10 @@ export const defaultFetchPage: FetchPageFn = async (url) => {
   try {
     // SSRF guard: the URL is a DB-sourced lab websiteUrl. Reject private/metadata hosts before
     // fetching, and use connect-time-validating agents so redirect hops can't reach internal IPs.
-    await assertPublicHttpUrl(url);
+    const safeUrl = await assertPublicHttpUrl(url);
+    const safeUrlText = safeUrl.toString();
     const agents = ssrfSafeAgents();
-    const res = await axios.get(url, {
+    const res = await axios.get(safeUrlText, {
       timeout: FETCH_TIMEOUT_MS,
       headers: { 'User-Agent': USER_AGENT, Accept: 'text/html,*/*' },
       maxRedirects: 5,
@@ -777,7 +783,7 @@ export const defaultCallLLM: CallLLMFn = async ({
   try {
     parsed = JSON.parse(content) as LLMExtraction;
   } catch (err: any) {
-    throw new Error(`LLM returned invalid JSON: ${err?.message || err}`);
+    throw new Error(`LLM returned invalid JSON: ${sanitizeLogValue(err)}`);
   }
   return parsed;
 };
@@ -904,7 +910,7 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
       if (workPlannerPolicy) {
         if (!lab.slug) {
           recordWorkPlannerNoIdentifier(workPlannerMetrics);
-          ctx.log(`[${lab.name}] skipped by WorkPlanner — missing slug/entity key.`);
+          ctx.log('[candidate] skipped by WorkPlanner — missing slug/entity key.');
           continue;
         }
         const plan = await this.workPlanLoader(lab, workPlannerPolicy, ctx);
@@ -1000,7 +1006,7 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
           });
         } catch (err: any) {
           ctx.log(
-            `[${lab.slug}] LLM call failed: ${err?.message || err}; skipping.`,
+            `[${lab.slug}] LLM call failed: ${sanitizeLogValue(err)}; skipping.`,
           );
           llmFailed++;
           continue;

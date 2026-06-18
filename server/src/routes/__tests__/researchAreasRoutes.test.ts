@@ -139,6 +139,47 @@ describe('research area routes', () => {
     expect(mocks.researchAreaFindOne).not.toHaveBeenCalled();
   });
 
+  it('normalizes research area names before duplicate lookup and persistence', async () => {
+    mocks.researchAreaFindOne.mockResolvedValue(null);
+
+    const res = await invokeRouteHandler('/', 'post', {
+      body: {
+        name: '  Applied\n\nPrivacy\tResearch  ',
+        field: 'Computing & Artificial Intelligence',
+      },
+    });
+
+    expect(res.statusCode).toBe(201);
+    expect(mocks.researchAreaFindOne).toHaveBeenCalledWith({
+      name: { $regex: /^Applied Privacy Research$/i },
+    });
+    expect(mocks.researchAreaSave.mock.instances?.[0]).toMatchObject({
+      name: 'Applied Privacy Research',
+      field: 'Computing & Artificial Intelligence',
+    });
+    expect(res.body).toMatchObject({
+      researchArea: {
+        name: 'Applied Privacy Research',
+        field: 'Computing & Artificial Intelligence',
+      },
+    });
+  });
+
+  it('rejects research area names that embed direct contact information', async () => {
+    const res = await invokeRouteHandler('/', 'post', {
+      body: {
+        name: 'AI outreach ada@example.edu',
+        field: 'Computing & Artificial Intelligence',
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toEqual({
+      message: 'Research area name cannot include contact information',
+    });
+    expect(mocks.researchAreaFindOne).not.toHaveBeenCalled();
+  });
+
   it('rejects oversized research area search queries before lookup', async () => {
     const res = await invokeRouteHandler('/search', 'get', {
       query: { query: 'a'.repeat(121) },

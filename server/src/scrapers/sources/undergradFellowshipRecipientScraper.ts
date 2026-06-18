@@ -63,10 +63,13 @@
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import fs from 'fs/promises';
+import os from 'os';
 import path from 'path';
 import { User } from '../../models/user';
 import { findOrCreateForOwner } from '../../services/researchGroupService';
 import { normalizeOrcid } from '../../utils/orcid';
+import { sanitizeLogValue } from '../../utils/logSanitizer';
+import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { getCached, setCached } from '../snapshotCache';
 import { normalizeName, slugify, splitName } from '../utils/scraperHelpers';
 import type {
@@ -84,6 +87,38 @@ export const DEFAULT_ACCEPTED_FELLOWSHIP_RECIPIENT_CSV_DIR =
   '/tmp/ylabs-accepted-inputs/fellowships';
 export const DEFAULT_ACCEPTED_FELLOWSHIP_RECIPIENT_PDF_DIR =
   DEFAULT_ACCEPTED_FELLOWSHIP_RECIPIENT_CSV_DIR;
+const SAFE_MANUAL_RECIPIENT_SEGMENT_RE = /^[A-Za-z0-9._-]{1,120}$/;
+const MANUAL_RECIPIENT_FILE_EXTENSIONS = new Set(['.csv', '.pdf']);
+
+const hasPathPrefix = (target: string, root: string): boolean =>
+  target === root || target.startsWith(`${root}${path.sep}`);
+
+export function resolveSafeManualRecipientInputPath(
+  root: string,
+  programKey: string,
+  extension: '.csv' | '.pdf',
+): string {
+  if (!SAFE_MANUAL_RECIPIENT_SEGMENT_RE.test(programKey)) {
+    throw new Error('Invalid manual recipient program key');
+  }
+  if (!MANUAL_RECIPIENT_FILE_EXTENSIONS.has(extension)) {
+    throw new Error('Invalid manual recipient file extension');
+  }
+
+  const resolvedRoot = path.resolve(root);
+  const resolvedPath = path.resolve(resolvedRoot, `${programKey}${extension}`);
+  const tmpRoot = path.resolve(os.tmpdir());
+  const projectTmpRoot = path.resolve(process.cwd(), 'tmp');
+
+  if (!hasPathPrefix(resolvedRoot, tmpRoot) && !hasPathPrefix(resolvedRoot, projectTmpRoot)) {
+    throw new Error('Manual recipient input root must be under system temp or ./tmp');
+  }
+  if (!hasPathPrefix(resolvedPath, resolvedRoot)) {
+    throw new Error('Manual recipient input path escapes root');
+  }
+
+  return resolvedPath;
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -770,15 +805,20 @@ async function fetchHtml(
   useCache: boolean,
   sourceName: string,
 ): Promise<string> {
-  const cacheKey = `page:${url}`;
+  const safeUrl = await assertPublicHttpUrl(url);
+  const safeUrlText = safeUrl.toString();
+  const cacheKey = `page:${safeUrlText}`;
   if (useCache) {
     const cached = await getCached<string>(sourceName, cacheKey);
     if (cached) return cached;
   }
-  const res = await axios.get(url, {
+  const agents = ssrfSafeAgents();
+  const res = await axios.get(safeUrlText, {
     timeout: FETCH_TIMEOUT_MS,
     headers: { 'User-Agent': USER_AGENT },
     maxRedirects: 5,
+    httpAgent: agents.httpAgent,
+    httpsAgent: agents.httpsAgent,
   });
   const html = res.data as string;
   if (useCache) await setCached(sourceName, cacheKey, html);
@@ -865,9 +905,10 @@ export class UndergradFellowshipRecipientScraper implements IScraper {
       const manualRecipientCsvDir =
         ctx.options.manualRecipientCsvDir || this.defaultManualRecipientCsvDir;
       if (config.manualUploadRequired && manualRecipientCsvDir) {
-        const csvPath = path.resolve(
+        const csvPath = resolveSafeManualRecipientInputPath(
           manualRecipientCsvDir,
-          `${config.programKey}.csv`,
+          config.programKey,
+          '.csv',
         );
         try {
           manualBody = await fs.readFile(csvPath, 'utf8');
@@ -881,15 +922,16 @@ export class UndergradFellowshipRecipientScraper implements IScraper {
           ctx.log(`[${config.programKey}] using manual recipient CSV ${csvPath}`);
         } catch (err: any) {
           ctx.log(
-            `[${config.programKey}] manual CSV not found/readable at ${csvPath}: ${err?.message || err}`,
+            `[${config.programKey}] manual CSV not found/readable: ${sanitizeLogValue(err)}`,
           );
         }
       }
       const manualRecipientPdfDir = this.defaultManualRecipientPdfDir;
       if (config.manualUploadRequired && !manualBody && manualRecipientPdfDir) {
-        const pdfPath = path.resolve(
+        const pdfPath = resolveSafeManualRecipientInputPath(
           manualRecipientPdfDir,
-          `${config.programKey}.pdf`,
+          config.programKey,
+          '.pdf',
         );
         try {
           const pdfBody = await fs.readFile(pdfPath);
@@ -907,7 +949,7 @@ export class UndergradFellowshipRecipientScraper implements IScraper {
           ctx.log(`[${config.programKey}] using manual recipient PDF ${pdfPath}`);
         } catch (err: any) {
           ctx.log(
-            `[${config.programKey}] manual PDF not found/readable at ${pdfPath}: ${err?.message || err}`,
+            `[${config.programKey}] manual PDF not found/readable: ${sanitizeLogValue(err)}`,
           );
         }
       }
@@ -940,7 +982,7 @@ export class UndergradFellowshipRecipientScraper implements IScraper {
               : await this.fetchPage(url, ctx.options.useCache);
         } catch (err: any) {
           ctx.log(
-            `[${config.programKey}] fetch failed for ${url}: ${err?.message || err}`,
+            `[${config.programKey}] fetch failed for configured source: ${sanitizeLogValue(err)}`,
           );
           continue;
         }
@@ -951,7 +993,7 @@ export class UndergradFellowshipRecipientScraper implements IScraper {
           pageRecipients = effectiveConfig.extractor(html, { pageUrl: url, sourceUrl, defaultYear });
         } catch (err: any) {
           ctx.log(
-            `[${config.programKey}] extractor error on ${url}: ${err?.message || err}`,
+            `[${config.programKey}] extractor error on configured source: ${sanitizeLogValue(err)}`,
           );
           extractFailed = true;
           break;
@@ -998,7 +1040,7 @@ export class UndergradFellowshipRecipientScraper implements IScraper {
           user = await findUserForAdvisorRow(row, this.userFinder);
         } catch (err: any) {
           ctx.log(
-            `[${config.programKey}] user lookup failed for "${row.rawName}": ${err?.message || err}`,
+            `[${config.programKey}] user lookup failed for recipient advisor: ${sanitizeLogValue(err)}`,
           );
           continue;
         }

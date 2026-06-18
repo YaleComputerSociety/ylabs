@@ -17,7 +17,9 @@ import {
   type UserIdentityDedupeSummary,
   type UserIdentityField,
 } from './dedupeUsersByIdentityCore';
-import { assertScriptApplyAllowed } from './scriptWriteGuards';
+import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { serializedDocumentId } from '../utils/idSerialization';
+import { sanitizeLogValue } from '../utils/logSanitizer';
 
 dotenv.config();
 
@@ -57,6 +59,8 @@ const USER_ARRAY_OBJECT_ID_REFERENCE_FIELDS: Array<{ collection: string; field: 
 const USER_ARRAY_STRING_REFERENCE_FIELDS: Array<{ collection: string; field: string }> = [
   { collection: 'listings', field: 'professorIds' },
 ];
+
+const USER_IDENTITY_DEDUPE_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
 
 export function buildUserIdentityCollisionPipeline(
   field: UserIdentityField,
@@ -109,7 +113,9 @@ export function writeDedupeUsersByIdentityOutput(
   output?: string,
 ): void {
   if (!output) return;
-  fs.writeFileSync(output, `${JSON.stringify(summary, null, 2)}\n`);
+  const safeOutput = resolveSafeJsonReportOutputPath(output);
+  fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
+  fs.writeFileSync(safeOutput, `${JSON.stringify(summary, null, 2)}\n`);
 }
 
 export function assertDedupeUsersByIdentityApplyAllowed(
@@ -455,7 +461,7 @@ async function rewriteResearchEntityMemberReferences(
         },
       );
       if (result.modifiedCount !== 1) {
-        throw new Error(`Failed to archive duplicate member ${String(member._id)}.`);
+        throw new Error(`Failed to archive duplicate member ${serializedDocumentId(member._id) || ''}.`);
       }
       archivedDuplicateCount += 1;
       continue;
@@ -466,7 +472,7 @@ async function rewriteResearchEntityMemberReferences(
       { $set: { userId: canonicalObjectId } },
     );
     if (result.modifiedCount !== 1) {
-      throw new Error(`Failed to relink member ${String(member._id)}.`);
+      throw new Error(`Failed to relink member ${serializedDocumentId(member._id) || ''}.`);
     }
     relinkedCount += 1;
   }
@@ -534,7 +540,7 @@ async function archiveDuplicateUniqueUserReferences(
       },
     );
     if (result.modifiedCount !== 1) {
-      throw new Error(`Failed to archive duplicate scholarly link ${String(row._id)}.`);
+      throw new Error(`Failed to archive duplicate scholarly link ${serializedDocumentId(row._id) || ''}.`);
     }
     archivedDuplicateCount += 1;
   }
@@ -631,11 +637,22 @@ function requireMongoDb() {
   return db;
 }
 
-function objectIdOrThrow(value: string, label: string): mongoose.Types.ObjectId {
-  if (!mongoose.Types.ObjectId.isValid(value)) {
+export function normalizeUserIdentityDedupeObjectId(
+  value: unknown,
+): mongoose.Types.ObjectId | undefined {
+  if (value instanceof mongoose.Types.ObjectId) return value;
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  if (!USER_IDENTITY_DEDUPE_OBJECT_ID_RE.test(trimmed)) return undefined;
+  return new mongoose.Types.ObjectId(trimmed);
+}
+
+function objectIdOrThrow(value: unknown, label: string): mongoose.Types.ObjectId {
+  const objectId = normalizeUserIdentityDedupeObjectId(value);
+  if (!objectId) {
     throw new Error(`Invalid ${label}: ${value}`);
   }
-  return new mongoose.Types.ObjectId(value);
+  return objectId;
 }
 
 function isMissing(value: unknown): boolean {
@@ -679,7 +696,7 @@ const isDirectRun = process.argv[1]
 if (isDirectRun) {
   main()
     .catch((error) => {
-      console.error(error instanceof Error ? error.message : error);
+      console.error(sanitizeLogValue(error));
       process.exitCode = 1;
     })
     .finally(async () => {

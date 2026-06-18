@@ -12,8 +12,10 @@ import { ResearchGroupMember } from '../models/researchGroupMember';
 import { AccessSignal } from '../models/accessSignal';
 import { computeResearchEntityBrowseRank } from './researchEntityBrowseRank';
 import { syncEntity } from './meiliSyncService';
+import { serializedDocumentId } from '../utils/idSerialization';
 
 const LEAD_ROLES = ['pi', 'principal_investigator', 'lead', 'faculty_lead'];
+const browseRankDocumentId = (value: unknown): string => serializedDocumentId(value) || '';
 
 const leadMembersByEntityId = async (entityIds: any[]): Promise<Map<string, any[]>> => {
   if (entityIds.length === 0) return new Map();
@@ -23,7 +25,8 @@ const leadMembersByEntityId = async (entityIds: any[]): Promise<Map<string, any[
   }).lean();
   const byId = new Map<string, any[]>();
   for (const member of members as any[]) {
-    const key = String(member.researchEntityId || member.researchGroupId || '');
+    const key =
+      browseRankDocumentId(member.researchEntityId) || browseRankDocumentId(member.researchGroupId);
     if (!key) continue;
     byId.set(key, [...(byId.get(key) || []), member]);
   }
@@ -40,7 +43,7 @@ const accessSignalTypesByEntityId = async (entityIds: any[]): Promise<Map<string
     .lean();
   const byId = new Map<string, string[]>();
   for (const signal of signals as any[]) {
-    const key = String(signal.researchEntityId || '');
+    const key = browseRankDocumentId(signal.researchEntityId);
     if (!key || !signal.signalType) continue;
     byId.set(key, [...(byId.get(key) || []), String(signal.signalType)]);
   }
@@ -83,7 +86,8 @@ export async function recomputeBrowseRankForEntities(
 
   let updated = 0;
   for (const entity of entities) {
-    const id = String(entity._id);
+    const id = browseRankDocumentId(entity._id);
+    if (!id) continue;
     const score = computeResearchEntityBrowseRank({
       entity,
       leadMembers: leadMembers.get(id) || [],

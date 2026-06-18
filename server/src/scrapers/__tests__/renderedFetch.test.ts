@@ -1,87 +1,162 @@
-import { describe, expect, it } from 'vitest';
-import {
-  buildFetchAttemptMetrics,
-  fetchAttemptsToMetrics,
-  measureRenderedFetch,
-} from '../renderedFetch';
+import { describe, expect, it, vi } from 'vitest';
 
-describe('measureRenderedFetch', () => {
-  it('records successful rendered fetch attempts', async () => {
-    const measured = await measureRenderedFetch(
-      'browser',
-      async () => ({ html: '<main>ok</main>' }),
-    );
+const mocks = vi.hoisted(() => ({
+  execFile: vi.fn(),
+}));
 
-    expect(measured.result).toEqual({ html: '<main>ok</main>' });
-    expect(measured.metrics).toMatchObject({
-      success: true,
-      fetchMode: 'browser',
-      blocked: false,
-      selectorBreakage: false,
-    });
-    expect(measured.metrics.latencyMs).toBeGreaterThanOrEqual(0);
-    expect(typeof measured.metrics.memoryDeltaBytes).toBe('number');
+vi.mock('node:child_process', () => ({
+  execFile: mocks.execFile,
+}));
+
+import { createScraplingRenderedFetcher } from '../renderedFetch';
+
+const execFileSuccess = (payload: unknown) => {
+  mocks.execFile.mockImplementationOnce((_command, _args, _options, callback) => {
+    callback(null, { stdout: JSON.stringify(payload), stderr: '' });
   });
+};
 
-  it('lets callers classify blocking and selector breakage without renderer coupling', async () => {
-    const blocked = await measureRenderedFetch(
-      'pilot-renderer',
-      async () => ({ status: 403, html: '' }),
-      (result) => ({
-        blocked: result.status === 403,
-        blockedReason: result.status === 403 ? 'http-403' : undefined,
-      }),
-    );
+const noSeedRedirect = async () => false;
 
-    expect(blocked.metrics).toMatchObject({
-      success: false,
-      fetchMode: 'pilot-renderer',
+describe('createScraplingRenderedFetcher', () => {
+  it('blocks before invoking the Python renderer when the seed URL redirects', async () => {
+    const fetcher = createScraplingRenderedFetcher({
+      enabled: true,
+      pythonCommand: 'python3',
+      bridgePath: '/tmp/scraplingBridge.py',
+      seedRedirectCheck: async () => true,
+    });
+
+    const result = await fetcher?.({ url: 'https://8.8.8.8/source' });
+
+    expect(mocks.execFile).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      url: 'https://8.8.8.8/source',
+      html: '',
       blocked: true,
-      blockedReason: 'http-403',
-      selectorBreakage: false,
-    });
-
-    const brokenSelector = await measureRenderedFetch(
-      'pilot-renderer',
-      async () => ({ html: '<main></main>', matched: 0 }),
-      (result) => ({ selectorBreakage: result.matched === 0 }),
-    );
-
-    expect(brokenSelector.metrics).toMatchObject({
-      success: false,
-      blocked: false,
-      selectorBreakage: true,
+      blockedReason: 'redirected-before-render',
+      fetchMode: 'scrapling',
     });
   });
-});
 
-describe('buildFetchAttemptMetrics', () => {
-  it('builds the common metrics shape and compatibility wrappers', () => {
-    const attempt = buildFetchAttemptMetrics({
-      fetchMode: 'rendered',
-      success: true,
-      startedAt: performance.now() - 10,
-      memoryStartBytes: process.memoryUsage().rss,
+  it('blocks rendered content when the final browser URL redirects cross-origin', async () => {
+    execFileSuccess({
+      url: 'https://1.1.1.1/private',
+      statusCode: 200,
+      html: '<html>internal content</html>',
+    });
+    const fetcher = createScraplingRenderedFetcher({
+      enabled: true,
+      pythonCommand: 'python3',
+      bridgePath: '/tmp/scraplingBridge.py',
+      seedRedirectCheck: noSeedRedirect,
     });
 
-    expect(attempt).toMatchObject({
-      success: true,
-      fetchMode: 'rendered',
-      blocked: false,
-      selectorBreakage: false,
-    });
-    expect(attempt.latencyMs).toBeGreaterThanOrEqual(0);
+    const result = await fetcher?.({ url: 'https://8.8.8.8/source' });
 
-    expect(fetchAttemptsToMetrics([attempt])).toMatchObject({
-      fetchAttempts: [attempt],
-      attempts: [attempt],
-      summary: {
-        total: 1,
-        succeeded: 1,
-        failed: 0,
-        blocked: 0,
-        selectorBreakages: 0,
-      },
+    expect(result).toMatchObject({
+      url: 'https://8.8.8.8/source',
+      html: '',
+      statusCode: 200,
+      blocked: true,
+      blockedReason: 'redirected-cross-origin',
+      fetchMode: 'scrapling',
     });
+  });
+
+  it('classifies private final browser URLs as SSRF blocks', async () => {
+    execFileSuccess({
+      url: 'http://127.0.0.1/private',
+      statusCode: 200,
+      html: '<html>internal content</html>',
+    });
+    const fetcher = createScraplingRenderedFetcher({
+      enabled: true,
+      pythonCommand: 'python3',
+      bridgePath: '/tmp/scraplingBridge.py',
+      seedRedirectCheck: noSeedRedirect,
+    });
+
+    const result = await fetcher?.({ url: 'https://8.8.8.8/source' });
+
+    expect(result).toMatchObject({
+      url: 'https://8.8.8.8/source',
+      html: '',
+      statusCode: 200,
+      blocked: true,
+      blockedReason: 'rendered-final-url-blocked',
+      fetchMode: 'scrapling',
+    });
+  });
+
+  it('returns rendered content when the final browser URL remains same-origin', async () => {
+    execFileSuccess({
+      url: 'https://8.8.8.8/redirected',
+      statusCode: 200,
+      html: '<html>public content</html>',
+    });
+    const fetcher = createScraplingRenderedFetcher({
+      enabled: true,
+      pythonCommand: 'python3',
+      bridgePath: '/tmp/scraplingBridge.py',
+      seedRedirectCheck: noSeedRedirect,
+    });
+
+    const result = await fetcher?.({ url: 'https://8.8.8.8/source' });
+
+    expect(result).toMatchObject({
+      url: 'https://8.8.8.8/redirected',
+      html: '<html>public content</html>',
+      statusCode: 200,
+      fetchMode: 'scrapling',
+    });
+  });
+
+  it('bounds rendered fetch child-process timeouts', async () => {
+    execFileSuccess({
+      url: 'https://8.8.8.8/source',
+      statusCode: 200,
+      html: '<html>public content</html>',
+    });
+    const fetcher = createScraplingRenderedFetcher({
+      enabled: true,
+      pythonCommand: 'python3',
+      bridgePath: '/tmp/scraplingBridge.py',
+      timeoutMs: 250_000,
+      seedRedirectCheck: noSeedRedirect,
+    });
+
+    await fetcher?.({ url: 'https://8.8.8.8/source', timeoutMs: 900_000 });
+
+    expect(mocks.execFile).toHaveBeenCalledWith(
+      'python3',
+      expect.arrayContaining(['--timeout-ms', '30000']),
+      expect.objectContaining({ timeout: 35_000 }),
+      expect.any(Function),
+    );
+  });
+
+  it('uses a sane minimum for tiny rendered fetch timeouts', async () => {
+    execFileSuccess({
+      url: 'https://8.8.8.8/source',
+      statusCode: 200,
+      html: '<html>public content</html>',
+    });
+    const fetcher = createScraplingRenderedFetcher({
+      enabled: true,
+      pythonCommand: 'python3',
+      bridgePath: '/tmp/scraplingBridge.py',
+      timeoutMs: 10,
+      seedRedirectCheck: noSeedRedirect,
+    });
+
+    await fetcher?.({ url: 'https://8.8.8.8/source', timeoutMs: 1 });
+
+    expect(mocks.execFile).toHaveBeenCalledWith(
+      'python3',
+      expect.arrayContaining(['--timeout-ms', '1000']),
+      expect.objectContaining({ timeout: 6_000 }),
+      expect.any(Function),
+    );
   });
 });

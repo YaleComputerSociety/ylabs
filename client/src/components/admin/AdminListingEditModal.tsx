@@ -8,6 +8,7 @@ import { useEffect, useReducer, useCallback } from 'react';
 import axios from '../../utils/axios';
 import swal from 'sweetalert';
 import { useConfig } from '../../hooks/useConfig';
+import { clientErrorMessage } from '../../utils/clientErrorMessage';
 import {
   adminListingEditReducer,
   createInitialAdminListingEditState,
@@ -140,9 +141,9 @@ const AdminListingEditModal = ({ listing, onClose, onSave, onDelete }: Props) =>
       swal({ text: 'Legacy listing evidence updated', icon: 'success', timer: 1500 });
       onSave();
     } catch (error: any) {
-      console.error('Error updating listing:', error);
+      console.error('Error updating listing.');
       swal({
-        text: error.response?.data?.error || 'Failed to update legacy listing evidence',
+        text: clientErrorMessage(error, 'Failed to update legacy listing evidence'),
         icon: 'error',
       });
     } finally {
@@ -608,7 +609,7 @@ const AdminListingEditModal = ({ listing, onClose, onSave, onDelete }: Props) =>
                 if (onDelete) onDelete();
                 else onSave();
               } catch (error: any) {
-                swal({ text: error.response?.data?.error || 'Failed to delete', icon: 'error' });
+                swal({ text: clientErrorMessage(error, 'Failed to delete'), icon: 'error' });
               }
             }}
             className="px-4 py-2 text-sm text-red-600 border border-red-200 rounded-md hover:bg-red-50 transition-colors"

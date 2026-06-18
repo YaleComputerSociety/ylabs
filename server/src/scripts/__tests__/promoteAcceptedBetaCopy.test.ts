@@ -77,6 +77,15 @@ describe('promote accepted Beta copy guards', () => {
     );
   });
 
+  it('rejects promotion artifacts outside safe JSON roots before environment validation', () => {
+    expect(() => parsePromotionOptions(['--output=/etc/lane-a.json'], baseEnv)).toThrow(
+      /--output must write under/,
+    );
+    expect(() => parsePromotionOptions(['--output=/tmp/lane-a.txt'], baseEnv)).toThrow(
+      /--output must point to a \.json report file/,
+    );
+  });
+
   it('rejects ambiguous promotion copy arguments before environment validation', () => {
     expect(() => parsePromotionOptions(['prod'], baseEnv)).toThrow(
       /Unknown production:promote-beta-copy argument: prod/,
@@ -253,5 +262,11 @@ describe('promote accepted Beta copy guards', () => {
     writePromotionOutput(payload, output);
 
     expect(JSON.parse(fs.readFileSync(output, 'utf8'))).toMatchObject(payload);
+  });
+
+  it('rejects unsafe promotion artifact writes from programmatic callers', () => {
+    expect(() => writePromotionOutput({ mode: 'dry-run' }, '/etc/lane-a.json')).toThrow(
+      /--output must write under/,
+    );
   });
 });

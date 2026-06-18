@@ -5,6 +5,7 @@ import { Listing } from '../models/listing';
 import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
 import { ResearchGroupMember } from '../models/researchGroupMember';
+import { serializedDocumentId } from '../utils/idSerialization';
 
 export type EvidenceCoverageTier = 'thin' | 'partial' | 'ready_candidate';
 export type EvidenceClaimState = 'missing' | 'weak' | 'supported';
@@ -87,6 +88,14 @@ export interface EvidenceCoverageImpactDeps {
 }
 
 const LISTING_SOURCE_NAMES = new Set(['ylabs-listing', 'listing', 'legacy-listing']);
+
+const evidenceCoverageDocumentId = (value: unknown): string => serializedDocumentId(value) || '';
+
+const evidenceCoverageKeyText = (value: unknown): string => {
+  if (typeof value === 'string') return value.trim();
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  return '';
+};
 
 const textValue = (value: unknown): string =>
   typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
@@ -352,8 +361,10 @@ export function buildEvidenceCoverageImpact(
 }
 
 const entityIdentifierKey = (observation: Record<string, any>): string | null => {
-  if (observation.entityId) return `id:${String(observation.entityId)}`;
-  if (observation.entityKey) return `key:${String(observation.entityKey)}`;
+  const entityId = evidenceCoverageDocumentId(observation.entityId);
+  if (entityId) return `id:${entityId}`;
+  const entityKey = evidenceCoverageKeyText(observation.entityKey);
+  if (entityKey) return `key:${entityKey}`;
   return null;
 };
 
@@ -369,7 +380,8 @@ async function loadResearchEntityContext({
     archived: { $ne: true },
   }).lean();
   if (!entity) return null;
-  const id = String((entity as any)._id);
+  const id = evidenceCoverageDocumentId((entity as any)._id);
+  if (!id) return null;
   const [listings, members, accessSignals, contactRoutes, observations] = await Promise.all([
     Listing.find({ researchEntityId: id, archived: { $ne: true } }).lean(),
     ResearchGroupMember.find({ researchEntityId: id, isCurrentMember: { $ne: false } }).lean(),
@@ -406,8 +418,8 @@ export async function buildEvidenceCoverageImpactReportForObservations(
   const rows: EvidenceCoverageImpactRow[] = [];
   for (const group of groups.values()) {
     const first = group[0];
-    const entityId = first.entityId ? String(first.entityId) : undefined;
-    const entityKey = first.entityKey ? String(first.entityKey) : undefined;
+    const entityId = evidenceCoverageDocumentId(first.entityId) || undefined;
+    const entityKey = evidenceCoverageKeyText(first.entityKey) || undefined;
     const before = await deps.loadResearchEntityContext({ entityId, entityKey });
     if (!before) continue;
     rows.push(

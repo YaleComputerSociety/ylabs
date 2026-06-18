@@ -67,17 +67,17 @@ const grantArnsten2: NihGrant = {
   project_detail_url: 'https://reporter.nih.gov/project-details/11000002',
 };
 
-const grantBreaker: NihGrant = {
+const grantRoster: NihGrant = {
   project_num: '1R35GM222222-01',
   appl_id: 12000001,
   project_title: 'Riboswitch discovery and bacterial gene control',
   abstract_text: '',
-  contact_pi_name: 'BREAKER, RONALD R',
+  contact_pi_name: 'ROSTER, RILEY R',
   principal_investigators: [
     {
       profile_id: 2,
-      first_name: 'Ronald',
-      last_name: 'Breaker',
+      first_name: 'Riley',
+      last_name: 'Roster',
       is_contact_pi: true,
     },
   ],
@@ -108,7 +108,7 @@ const grantOrphan: NihGrant = {
 describe('canonicalPiName', () => {
   it('converts "LAST, FIRST MIDDLE" into "First Last"', () => {
     expect(canonicalPiName('ARNSTEN, AMY F')).toBe('Amy Arnsten');
-    expect(canonicalPiName('BREAKER, RONALD R')).toBe('Ronald Breaker');
+    expect(canonicalPiName('ROSTER, RILEY R')).toBe('Riley Roster');
   });
 
   it('passes through already-natural-order names with title casing for ALL CAPS', () => {
@@ -162,10 +162,10 @@ describe('pickContactPiName', () => {
 
 describe('groupGrantsByPi', () => {
   it('groups multiple grants for the same PI under a single canonical key', () => {
-    const groups = groupGrantsByPi([grantArnsten, grantArnsten2, grantBreaker]);
+    const groups = groupGrantsByPi([grantArnsten, grantArnsten2, grantRoster]);
     expect(groups.size).toBe(2);
     expect(groups.get('Amy Arnsten')).toHaveLength(2);
-    expect(groups.get('Ronald Breaker')).toHaveLength(1);
+    expect(groups.get('Riley Roster')).toHaveLength(1);
   });
 
   it('drops grants with no resolvable contact PI', () => {
@@ -308,13 +308,13 @@ describe('findUserForPi', () => {
     const postdoc = mockUserModel([
       {
         _id: 'u1',
-        fname: 'James',
+        fname: 'Robin',
         lname: 'Hutchison',
         netid: 'jh1',
         title: 'Postdoctoral Associate in Pharmacology',
       },
     ]);
-    expect(await findUserForPi('James Hutchison', postdoc)).toEqual({
+    expect(await findUserForPi('Robin Hutchison', postdoc)).toEqual({
       _id: 'u1',
       netid: 'jh1',
       researchHomeEligible: false,
@@ -392,7 +392,7 @@ describe('piGrantsToObservations', () => {
   });
 
   it('skips the user observation block and emits inferredPiUserId when matched', () => {
-    const obs = piGrantsToObservations('Ronald Breaker', [grantBreaker], {
+    const obs = piGrantsToObservations('Riley Roster', [grantRoster], {
       _id: 'user-abc',
       netid: 'rrb1',
     });
@@ -406,7 +406,7 @@ describe('piGrantsToObservations', () => {
 
   it('emits no research-home observations for known non-owner grant PIs', () => {
     expect(
-      piGrantsToObservations('James Hutchison', [grantArnsten], {
+      piGrantsToObservations('Robin Hutchison', [grantArnsten], {
         _id: 'user-postdoc',
         netid: 'jh1',
         researchHomeEligible: false,
@@ -473,24 +473,24 @@ describe('NihReporterScraper.run', () => {
   it('paginates the API, groups by PI, resolves users, and emits observations', async () => {
     const postSpy = vi.spyOn(axios, 'post').mockImplementation(async (_url, body) => {
       const offset = (body as any).offset || 0;
-      // Page 1 returns 2 grants for Arnsten + 1 for Breaker; page 2 returns empty.
+      // Page 1 returns 2 grants for Arnsten + 1 for Roster; page 2 returns empty.
       if (offset === 0) {
         return {
-          data: { meta: { total: 3, offset: 0, limit: 500 }, results: [grantArnsten, grantArnsten2, grantBreaker] },
+          data: { meta: { total: 3, offset: 0, limit: 500 }, results: [grantArnsten, grantArnsten2, grantRoster] },
         } as any;
       }
       return { data: { meta: { total: 3, offset, limit: 500 }, results: [] } } as any;
     });
 
-    // Match Breaker but not Arnsten.
+    // Match Roster but not Arnsten.
     const userModel = {
       find: vi.fn((query: any) => ({
         limit: () => ({
           lean: async () => {
             // The query includes a regex on lname; we just check the source string.
             const src: string = query.lname?.source || '';
-            if (/Breaker/i.test(src)) {
-              return [{ _id: 'breaker-id', fname: 'Ronald', lname: 'Breaker', netid: 'rrb1' }];
+            if (/Roster/i.test(src)) {
+              return [{ _id: 'breaker-id', fname: 'Riley', lname: 'Roster', netid: 'rrb1' }];
             }
             return [];
           },
@@ -513,9 +513,9 @@ describe('NihReporterScraper.run', () => {
     );
     expect(arnstenUserObs.length).toBeGreaterThan(0);
 
-    // Breaker matched → no user obs
+    // Roster matched → no user obs
     const breakerUserObs = emitted.filter(
-      (o) => o.entityType === 'user' && o.entityKey === 'nih-pi:ronald-breaker',
+      (o) => o.entityType === 'user' && o.entityKey === 'nih-pi:riley-roster',
     );
     expect(breakerUserObs).toHaveLength(0);
 
@@ -527,14 +527,14 @@ describe('NihReporterScraper.run', () => {
     expect(arnstenGroup.find((o) => o.field === 'recentGrantCount')?.value).toBe(2);
 
     const breakerGroup = emitted.filter(
-      (o) => o.entityType === 'researchEntity' && o.entityKey === 'nih-pi-ronald-breaker',
+      (o) => o.entityType === 'researchEntity' && o.entityKey === 'nih-pi-riley-roster',
     );
     expect(breakerGroup.find((o) => o.field === 'inferredPiUserId')?.value).toBe('breaker-id');
   });
 
   it('honors the limit option (caps PIs processed, not raw grants)', async () => {
     vi.spyOn(axios, 'post').mockResolvedValueOnce({
-      data: { meta: { total: 3, offset: 0, limit: 500 }, results: [grantArnsten, grantArnsten2, grantBreaker] },
+      data: { meta: { total: 3, offset: 0, limit: 500 }, results: [grantArnsten, grantArnsten2, grantRoster] },
     } as any);
     vi.spyOn(axios, 'post').mockResolvedValueOnce({
       data: { meta: { total: 3, offset: 3, limit: 500 }, results: [] },

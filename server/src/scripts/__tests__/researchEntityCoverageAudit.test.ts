@@ -169,6 +169,12 @@ describe('researchEntityCoverageAudit CLI helpers', () => {
     expect(() => parseResearchEntityCoverageAuditArgs(['--output=--all'])).toThrow(
       /--output requires a path/,
     );
+    expect(() =>
+      parseResearchEntityCoverageAuditArgs(['--output', '/var/tmp/research-entity-coverage.json']),
+    ).toThrow(/--output must write under/);
+    expect(() =>
+      parseResearchEntityCoverageAuditArgs(['--output', '/tmp/research-entity-coverage.txt']),
+    ).toThrow(/--output must point to a \.json report file/);
   });
 
   it('writes the coverage audit artifact when output is provided', () => {
@@ -185,6 +191,15 @@ describe('researchEntityCoverageAudit CLI helpers', () => {
     expect(JSON.parse(fs.readFileSync(output, 'utf8'))).toMatchObject({
       rows: [{ slug: 'dept-cs-yuejie-chi', issueScore: 3 }],
     });
+  });
+
+  it('rejects unsafe research entity coverage artifact writes', () => {
+    expect(() =>
+      writeResearchEntityCoverageAuditOutput(
+        { rows: [] },
+        '/var/tmp/research-entity-coverage.json',
+      ),
+    ).toThrow(/--output must write under/);
   });
 
   it('wraps coverage audit artifacts with target metadata and parsed options', () => {

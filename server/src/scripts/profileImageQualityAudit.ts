@@ -6,7 +6,8 @@ import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { User } from '../models/user';
 import { buildProfileImageQualitySummary } from './profileImageQualityAuditCore';
-import { assertScriptApplyAllowed } from './scriptWriteGuards';
+import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { sanitizeLogValue } from '../utils/logSanitizer';
 
 export interface ProfileImageQualityAuditCliOptions {
   strict: boolean;
@@ -52,11 +53,7 @@ export function parseProfileImageQualityAuditArgs(
 }
 
 function parseRequiredOutputPath(value: string | undefined): string {
-  const output = value?.trim();
-  if (!output || output.startsWith('--')) {
-    throw new Error('--output requires a path');
-  }
-  return output;
+  return resolveSafeJsonReportOutputPath(value);
 }
 
 function parseNonNegativeInteger(value: string, flag: string): number {
@@ -69,8 +66,9 @@ function parseNonNegativeInteger(value: string, flag: string): number {
 
 export function writeProfileImageQualityAuditOutput(summary: unknown, output?: string): void {
   if (!output) return;
-  fs.mkdirSync(path.dirname(output), { recursive: true });
-  fs.writeFileSync(output, `${JSON.stringify(summary, null, 2)}\n`);
+  const safeOutput = resolveSafeJsonReportOutputPath(output);
+  fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
+  fs.writeFileSync(safeOutput, `${JSON.stringify(summary, null, 2)}\n`);
 }
 
 export function buildProfileImageQualityAuditOutput<T extends object>(
@@ -144,7 +142,7 @@ const isDirectRun = process.argv[1]
 
 if (isDirectRun) {
   main().catch(async (error) => {
-    console.error('Failed to run profile image quality audit:', error);
+    console.error('Failed to run profile image quality audit:', sanitizeLogValue(error));
     await mongoose.disconnect().catch(() => undefined);
     process.exit(1);
   });

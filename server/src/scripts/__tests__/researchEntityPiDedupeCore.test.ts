@@ -24,19 +24,34 @@ import {
   buildResearchEntityPiDedupeDecisionTemplate,
   readResearchEntityPiDedupeDecisions,
   buildResearchEntityPiDedupeReviewBreakdown,
+  normalizeResearchEntityPiDedupeObjectId,
   validateResearchEntityPiDedupeDecisions,
   selectResearchEntityPiDedupePlansForAcceptedMergeApply,
   shouldRelinkReferencesForResearchEntityPiDedupeRun,
   buildResearchEntityPiDedupeOutput,
   writeResearchEntityPiDedupeOutput,
+  writeResearchEntityPiDedupeDecisionTemplate,
 } from '../dedupeResearchEntitiesByPi';
+
+describe('normalizeResearchEntityPiDedupeObjectId', () => {
+  it('rejects object-shaped ids without coercion', () => {
+    const objectShapedId = {
+      toString: () => '507f1f77bcf86cd799439011',
+    };
+
+    expect(normalizeResearchEntityPiDedupeObjectId(objectShapedId)).toBeUndefined();
+    expect(
+      normalizeResearchEntityPiDedupeObjectId(' 507f1f77bcf86cd799439011 ')?.toHexString(),
+    ).toBe('507f1f77bcf86cd799439011');
+  });
+});
 
 describe('buildResearchEntityPiDedupePlan', () => {
   it('plans a faculty profile-area shell as a duplicate when the same PI has a concrete research home', () => {
     const plan = buildResearchEntityPiDedupePlan([
       {
-        userId: 'yongli-zhang-user',
-        normalizedName: 'same-pi:yongli-zhang-user',
+        userId: 'fixture-access-lead-user',
+        normalizedName: 'same-pi:fixture-access-lead-user',
         piFirstName: 'Yongli',
         piLastName: 'Zhang',
         entities: [
@@ -52,11 +67,11 @@ describe('buildResearchEntityPiDedupePlan', () => {
           },
           {
             id: 'profile-shell',
-            slug: 'faculty-research-area-yongli-zhang',
+            slug: 'faculty-research-area-fixture-access-lead',
             name: 'Yongli Zhang Research',
             kind: 'individual',
             entityType: 'FACULTY_RESEARCH_AREA',
-            sourceUrls: ['https://medicine.yale.edu/profile/yongli-zhang/'],
+            sourceUrls: ['https://medicine.yale.edu/profile/fixture-access-lead/'],
             departments: ['Internal Medicine'],
           },
         ],
@@ -69,7 +84,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
         canonicalEntityId: 'concrete-lab',
         duplicateEntityIds: ['profile-shell'],
         canonicalSlug: 'ysm-zhang',
-        duplicateSlugs: ['faculty-research-area-yongli-zhang'],
+        duplicateSlugs: ['faculty-research-area-fixture-access-lead'],
       },
     ]);
   });
@@ -278,13 +293,13 @@ describe('buildResearchEntityPiDedupePlan', () => {
       {
         userId: 'albert-higgins-chen-user',
         normalizedName: 'same-pi:albert-higgins-chen-user',
-        piFirstName: 'Albert',
+        piFirstName: 'Taylor',
         piLastName: 'Higgins-Chen',
         entities: [
           {
             id: 'funding-shell',
             slug: 'nih-pi-albert-higgins-chen',
-            name: 'Albert Higgins-Chen Lab',
+            name: 'Taylor Higgins-Chen Lab',
             sourceUrls: ['https://reporter.nih.gov/project-details/10845546'],
             kind: 'lab',
             entityType: 'LAB',
@@ -293,7 +308,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
             id: 'profile-backed-lab',
             slug: 'higgins-chen-lab-at799',
             name: 'Higgins-Chen Lab',
-            sourceUrls: ['https://medicine.yale.edu/profile/a-higginschen/'],
+            sourceUrls: ['https://medicine.yale.edu/profile/fixture-hybrid-lead/'],
             kind: 'lab',
             entityType: 'LAB',
           },
@@ -314,8 +329,8 @@ describe('buildResearchEntityPiDedupePlan', () => {
   it('plans profile-backed surname lab shells as duplicates of concrete same-PI homes', () => {
     const plan = buildResearchEntityPiDedupePlan([
       {
-        userId: 'yongli-zhang-user',
-        normalizedName: 'same-pi:yongli-zhang-user',
+        userId: 'fixture-access-lead-user',
+        normalizedName: 'same-pi:fixture-access-lead-user',
         piFirstName: 'Yongli',
         piLastName: 'Zhang',
         entities: [
@@ -332,7 +347,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
             id: 'profile-backed-shell',
             slug: 'zhang-lab-yz52',
             name: 'Zhang Lab',
-            sourceUrls: ['https://medicine.yale.edu/profile/yongli-zhang/'],
+            sourceUrls: ['https://medicine.yale.edu/profile/fixture-access-lead/'],
             kind: 'lab',
             entityType: 'LAB',
           },
@@ -356,13 +371,13 @@ describe('buildResearchEntityPiDedupePlan', () => {
       {
         userId: 'albert-higgins-chen-user',
         normalizedName: 'same-pi:albert-higgins-chen-user',
-        piFirstName: 'Albert',
+        piFirstName: 'Taylor',
         piLastName: 'Higgins-Chen',
         entities: [
           {
             id: 'funding-shell',
             slug: 'nih-pi-albert-higgins-chen',
-            name: 'Albert Higgins-Chen Lab',
+            name: 'Taylor Higgins-Chen Lab',
             sourceUrls: ['https://reporter.nih.gov/project-details/10845546'],
             kind: 'lab',
             entityType: 'LAB',
@@ -371,7 +386,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
             id: 'profile-backed-lab',
             slug: 'higgins-chen-lab-at799',
             name: 'Higgins-Chen Lab',
-            sourceUrls: ['https://medicine.yale.edu/profile/a-higginschen/'],
+            sourceUrls: ['https://medicine.yale.edu/profile/fixture-hybrid-lead/'],
             kind: 'lab',
             entityType: 'LAB',
           },
@@ -418,30 +433,30 @@ describe('buildResearchEntityPiDedupePlan', () => {
   it('prefers described profile rows over empty same-PI directory shells', () => {
     const plan = buildResearchEntityPiDedupePlan([
       {
-        userId: 'john-tsang-user',
-        normalizedName: 'same-pi:john-tsang-user',
+        userId: 'fixture-systems-lead-user',
+        normalizedName: 'same-pi:fixture-systems-lead-user',
         piFirstName: 'John',
         piLastName: 'Tsang',
         entities: [
           {
             id: 'empty-directory-shell',
-            slug: 'faculty-research-area-john-tsang',
+            slug: 'faculty-research-area-fixture-systems-lead',
             name: 'John Tsang Research',
             websiteUrl: 'https://wti.yale.edu/humans/faculty',
             sourceUrls: [
               'https://wti.yale.edu/humans/faculty',
               'https://reporter.nih.gov/project-details/11010692',
-              'https://medicine.yale.edu/profile/john-tsang/',
+              'https://medicine.yale.edu/profile/fixture-systems-lead/',
             ],
           },
           {
             id: 'described-profile-shell',
             slug: 'faculty-research-area-john-s-tsang',
             name: 'John S. Tsang Research',
-            websiteUrl: 'https://medicine.yale.edu/cancer/profile/john-tsang/',
+            websiteUrl: 'https://medicine.yale.edu/cancer/profile/fixture-systems-lead/',
             sourceUrls: [
-              'https://medicine.yale.edu/cancer/profile/john-tsang/',
-              'https://medicine.yale.edu/profile/john-tsang/',
+              'https://medicine.yale.edu/cancer/profile/fixture-systems-lead/',
+              'https://medicine.yale.edu/profile/fixture-systems-lead/',
             ],
             fullDescription: 'Research fields include systems immunology, maternal-infant dyads, and vaccines.',
             shortDescription: 'Studies systems immunology, maternal-infant dyads, and vaccines.',
@@ -455,7 +470,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
         canonicalEntityId: 'described-profile-shell',
         duplicateEntityIds: ['empty-directory-shell'],
         canonicalSlug: 'faculty-research-area-john-s-tsang',
-        duplicateSlugs: ['faculty-research-area-john-tsang'],
+        duplicateSlugs: ['faculty-research-area-fixture-systems-lead'],
       }),
     ]);
   });
@@ -463,27 +478,27 @@ describe('buildResearchEntityPiDedupePlan', () => {
   it('prefers a profile-backed NIH fallback over an empty faculty directory shell', () => {
     const plan = buildResearchEntityPiDedupePlan([
       {
-        userId: 'lucila-ohno-machado-user',
-        normalizedName: 'same-pi:lucila-ohno-machado-user',
+        userId: 'fixture-informatics-lead-user',
+        normalizedName: 'same-pi:fixture-informatics-lead-user',
         piFirstName: 'Lucila',
         piLastName: 'Ohno-Machado',
         entities: [
           {
             id: 'nih-profile-fallback',
-            slug: 'nih-pi-lucila-ohno-machado',
+            slug: 'nih-pi-fixture-informatics-lead',
             name: 'Lucila OHNO-MACHADO Lab',
             kind: 'lab',
             entityType: 'LAB',
             sourceUrls: [
               'https://reporter.nih.gov/project-details/11225779',
-              'https://medicine.yale.edu/profile/lucila-ohno-machado/',
+              'https://medicine.yale.edu/profile/fixture-informatics-lead/',
             ],
             departments: ['BIDS - Biomedical Informatics and Data Science'],
             researchAreas: ['Machine Learning', 'Data Science'],
           },
           {
             id: 'directory-shell',
-            slug: 'faculty-research-area-lucila-ohno-machado',
+            slug: 'faculty-research-area-fixture-informatics-lead',
             name: 'Lucila Ohno-Machado Research',
             kind: 'individual',
             entityType: 'FACULTY_RESEARCH_AREA',
@@ -500,8 +515,8 @@ describe('buildResearchEntityPiDedupePlan', () => {
         dedupeCategory: 'profile_area_shell_with_concrete_home',
         canonicalEntityId: 'nih-profile-fallback',
         duplicateEntityIds: ['directory-shell'],
-        canonicalSlug: 'nih-pi-lucila-ohno-machado',
-        duplicateSlugs: ['faculty-research-area-lucila-ohno-machado'],
+        canonicalSlug: 'nih-pi-fixture-informatics-lead',
+        duplicateSlugs: ['faculty-research-area-fixture-informatics-lead'],
       }),
     ]);
   });
@@ -540,7 +555,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
             slug: 'zhu-lab-tz324',
             name: 'Zhu Lab',
             departments: ['Chemistry'],
-            sourceUrls: ['https://medicine.yale.edu/profile/t-zhu/'],
+            sourceUrls: ['https://medicine.yale.edu/profile/fixture-tzhu/'],
           },
           {
             id: 'full-person-lab',
@@ -548,7 +563,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
             name: 'Tianyu Zhu Lab',
             sourceUrls: [
               'https://www.nsf.gov/awardsearch/showAward?AWD_ID=2513473',
-              'https://medicine.yale.edu/profile/t-zhu/',
+              'https://medicine.yale.edu/profile/fixture-tzhu/',
             ],
           },
         ],
@@ -780,6 +795,22 @@ describe('buildResearchEntityPiDedupePlan', () => {
     expect(() =>
       parseResearchEntityPiDedupeArgs(['--decision-template-output=--apply']),
     ).toThrow(/--decision-template-output requires a path/);
+    expect(() => parseResearchEntityPiDedupeArgs(['--output=/var/tmp/entity-dedupe.json'])).toThrow(
+      /--output must write under/,
+    );
+    expect(() => parseResearchEntityPiDedupeArgs(['--output=/tmp/entity-dedupe.txt'])).toThrow(
+      /--output must point to a \.json report file/,
+    );
+    expect(() =>
+      parseResearchEntityPiDedupeArgs([
+        '--accepted-decisions=/var/tmp/entity-dedupe-decisions.json',
+      ]),
+    ).toThrow(/--accepted-decisions must write under/);
+    expect(() =>
+      parseResearchEntityPiDedupeArgs([
+        '--decision-template-output=/var/tmp/entity-dedupe-template.json',
+      ]),
+    ).toThrow(/--decision-template-output must write under/);
   });
 
   it('blocks entity-dedupe apply batches above the explicit max apply bound', () => {
@@ -975,8 +1006,8 @@ describe('buildResearchEntityPiDedupePlan', () => {
         {
           canonicalEntityId: 'canonical-grant',
           duplicateEntityIds: ['duplicate-grant'],
-          canonicalSlug: 'dept-mcdb-jing-yan',
-          duplicateSlugs: ['nsf-pi-jing-yan'],
+          canonicalSlug: 'dept-mcdb-jamie-award',
+          duplicateSlugs: ['nsf-pi-jamie-award'],
           mergedDepartments: [
             'Molecular, Cellular and Developmental Biology',
             'Molecular, Cellular & Developmental Biology',
@@ -1028,6 +1059,9 @@ describe('buildResearchEntityPiDedupePlan', () => {
       plannedGroups: 1,
       plannedDuplicateEntities: 2,
     });
+    expect(() =>
+      writeResearchEntityPiDedupeOutput(payload, '/var/tmp/entity-dedupe.json'),
+    ).toThrow(/--output must write under/);
   });
 
   it('builds same-PI dedupe reviewer decision templates without enabling apply', () => {
@@ -1065,6 +1099,12 @@ describe('buildResearchEntityPiDedupePlan', () => {
         },
       ],
     });
+    expect(() =>
+      writeResearchEntityPiDedupeDecisionTemplate(
+        template,
+        '/var/tmp/entity-dedupe-template.json',
+      ),
+    ).toThrow(/--decision-template-output must write under/);
   });
 
   it('validates accepted same-PI dedupe decisions against generated plans', () => {
@@ -1187,6 +1227,11 @@ describe('buildResearchEntityPiDedupePlan', () => {
     const missing = path.join(os.tmpdir(), `missing-${Date.now()}.json`);
     expect(readResearchEntityPiDedupeDecisions(missing, { allowEmpty: true })).toEqual([]);
     expect(() => readResearchEntityPiDedupeDecisions(missing)).toThrow();
+    expect(() =>
+      readResearchEntityPiDedupeDecisions('/var/tmp/entity-dedupe-decisions.json', {
+        allowEmpty: true,
+      }),
+    ).toThrow(/--accepted-decisions must write under/);
   });
 
   it('parses reviewed profile-area cleanup mode separately from funding cleanup', () => {

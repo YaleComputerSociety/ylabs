@@ -68,6 +68,90 @@ describe('postedOpportunityService', () => {
     expect(capturedUpdate.$setOnInsert.archived).toBeUndefined();
   });
 
+  it('does not upsert when required entry pathway ids are object-shaped', async () => {
+    const model = {
+      findOneAndUpdate: () => {
+        throw new Error('should not query');
+      },
+    };
+
+    const result = await upsertPostedOpportunity(
+      {
+        entryPathwayId: { toString: () => '64f111111111111111111111' } as any,
+        title: 'Research role',
+        status: 'ROLLING',
+      },
+      { model: model as any },
+    );
+
+    expect(result).toEqual({});
+  });
+
+  it('skips object-shaped source evidence ids before Mongo update construction', async () => {
+    let capturedUpdate: any;
+    const model = {
+      findOneAndUpdate: (_filter: any, update: any) => {
+        capturedUpdate = update;
+        return {
+          lean: async () => ({ _id: 'posted-1' }),
+        };
+      },
+    };
+
+    await upsertPostedOpportunity(
+      {
+        entryPathwayId: 'entry-1',
+        title: 'Research role',
+        status: 'ROLLING',
+        sourceEvidenceIds: [
+          { toString: () => '64f111111111111111111111' },
+          '64f222222222222222222222',
+        ] as any,
+      },
+      { model: model as any },
+    );
+
+    expect(capturedUpdate.$addToSet.sourceEvidenceIds.$each.map(String)).toEqual([
+      '64f222222222222222222222',
+    ]);
+  });
+
+  it('filters posted opportunity URLs before Mongo update construction', async () => {
+    let capturedUpdate: any;
+    const model = {
+      findOneAndUpdate: (_filter: any, update: any) => {
+        capturedUpdate = update;
+        return {
+          lean: async () => ({ _id: 'posted-1' }),
+        };
+      },
+    };
+
+    await upsertPostedOpportunity(
+      {
+        entryPathwayId: 'entry-1',
+        title: 'Research role',
+        status: 'OPEN',
+        applicationUrl: 'javascript:alert(document.cookie)',
+        sourceUrls: [
+          'https://source.example.test/role',
+          'mailto:hidden@example.edu',
+          'data:text/html,<script>alert(1)</script>',
+          { toString: () => 'https://object.example.test' } as any,
+          ...Array.from({ length: 60 }, (_, index) => `https://source.example.test/${index}`),
+        ],
+      },
+      { model: model as any },
+    );
+
+    expect(capturedUpdate.$set.applicationUrl).toBeUndefined();
+    expect(capturedUpdate.$addToSet.sourceUrls.$each).toContain('https://source.example.test/role');
+    expect(capturedUpdate.$addToSet.sourceUrls.$each.length).toBeLessThanOrEqual(50);
+    expect(JSON.stringify(capturedUpdate.$addToSet.sourceUrls.$each)).not.toContain('mailto:');
+    expect(JSON.stringify(capturedUpdate.$addToSet.sourceUrls.$each)).not.toContain('data:text/html');
+    expect(JSON.stringify(capturedUpdate.$addToSet.sourceUrls.$each)).not.toContain('object.example.test');
+  });
+
   it('dry-runs expired opportunity status reaping without writes', async () => {
     const updates: any[] = [];
     const model = {
@@ -259,6 +343,48 @@ describe('postedOpportunityService', () => {
     ).rejects.toThrow('--limit must be a safe positive integer');
 
     expect(findCalls).toBe(0);
+  });
+
+  it('skips object-shaped listing ids during backfill planning without coercion', async () => {
+    const listingId = {
+      toString: () => {
+        throw new Error('posted opportunity backfill stringified arbitrary listing id');
+      },
+      toHexString: () => {
+        throw new Error('posted opportunity backfill called arbitrary listing id toHexString');
+      },
+    };
+    const listingModel = {
+      find: () => ({
+        select: () => ({
+          sort: () => ({
+            limit: () => ({
+              lean: async () => [
+                {
+                  _id: listingId,
+                  researchEntityId: 'entity-1',
+                  title: 'Research assistant',
+                },
+              ],
+            }),
+          }),
+        }),
+      }),
+    };
+
+    const result = await backfillPostedOpportunitiesFromListings(
+      { dryRun: true, now: new Date('2026-05-26T00:00:00.000Z') },
+      {
+        listingModel: listingModel as any,
+        model: { distinct: async () => [] } as any,
+      },
+    );
+
+    expect(result).toMatchObject({
+      scanned: 1,
+      candidates: 0,
+      candidateListingIds: [],
+    });
   });
 
   it('applies listing backfill only for listings without posted opportunities', async () => {

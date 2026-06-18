@@ -6,7 +6,7 @@ export default defineConfig({
   target: 'node20',
   outDir: 'build',
   clean: true,
-  sourcemap: true,
+  sourcemap: false,
   splitting: false,
   bundle: true,
   external: [

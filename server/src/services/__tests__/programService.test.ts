@@ -22,6 +22,7 @@ import {
   addProgramFavorite,
   getProgramFilterOptions,
   readProgram,
+  readPrograms,
   searchPrograms,
 } from '../programService';
 
@@ -150,6 +151,76 @@ describe('program search service', () => {
     expect(chain.sort).toHaveBeenCalledWith({ deadline: -1 });
   });
 
+  it('does not stringify arbitrary program ids before detail lookup', async () => {
+    await expect(
+      readProgram({
+        toString: () => {
+          throw new Error('program detail stringified an arbitrary id');
+        },
+      }),
+    ).rejects.toThrow('Did not receive expected id type ObjectId');
+
+    expect(mocks.findOne).not.toHaveBeenCalled();
+  });
+
+  it('caps bulk program id reads before Mongo fan-out', async () => {
+    const ids = Array.from({ length: 100 }, (_, index) =>
+      `67d8928150621bcef434a${index.toString(16).padStart(3, '0')}`.slice(0, 24),
+    );
+    Object.defineProperty(ids, '100', {
+      get: () => {
+        throw new Error('program bulk read inspected ids beyond the cap');
+      },
+      enumerable: true,
+    });
+    mocks.find.mockResolvedValueOnce([
+      {
+        toObject: () => ({ _id: ids[0], title: 'Visible program' }),
+      },
+    ]);
+
+    const programs = await readPrograms(ids);
+
+    expect(mocks.find).toHaveBeenCalledWith(
+      expect.objectContaining({
+        _id: { $in: ids },
+        archived: false,
+      }),
+    );
+    expect(programs).toHaveLength(1);
+  });
+
+  it('redacts direct contact details in public program service results', async () => {
+    const chain = mockFindChain();
+    chain.lean.mockResolvedValue([
+      {
+        _id: '67d8928150621bcef434a1d5',
+        title: 'Visible program',
+        summary: 'Email prose-contact@yale.edu or call 203-555-1212.',
+        description: 'Questions: office@example.edu.',
+        prepSteps: ['Email prep-contact@yale.edu or call 203-555-7777.'],
+        contactPhone: '203-555-9999',
+        contactOffice: 'Office contact: office@example.edu or 203-555-0000.',
+        studentVisibilityTier: 'student_ready',
+      },
+    ]);
+    mocks.countDocuments.mockResolvedValue(1);
+
+    const result = await searchPrograms({});
+
+    expect(result.programs[0]).toMatchObject({
+      summary: 'Email [email redacted] or call [phone redacted].',
+      description: 'Questions: [email redacted].',
+      prepSteps: ['Email [email redacted] or call [phone redacted].'],
+      contactOffice: 'Office contact: [email redacted] or [phone redacted].',
+    });
+    expect(result.programs[0].contactPhone).toBeUndefined();
+    expect(JSON.stringify(result.programs[0])).not.toContain('prose-contact@yale.edu');
+    expect(JSON.stringify(result.programs[0])).not.toContain('prep-contact@yale.edu');
+    expect(JSON.stringify(result.programs[0])).not.toContain('office@example.edu');
+    expect(JSON.stringify(result.programs[0])).not.toContain('203-555');
+  });
+
   it('caps program search pagination before building Mongo skip and limit', async () => {
     const chain = mockFindChain();
 
@@ -164,6 +235,49 @@ describe('program search service', () => {
       page: 1000,
       pageSize: 100,
       totalPages: 0,
+    });
+  });
+
+  it('bounds direct program search query and filters before building Mongo filters', async () => {
+    await searchPrograms({
+      query: ` ${'q'.repeat(700)} `,
+      yearOfStudy: Array.from({ length: 60 }, (_, index) => `Year ${index}`),
+      purpose: ['x'.repeat(200)],
+    });
+
+    const filter = mocks.find.mock.calls[0][0];
+    expect(filter.$text).toEqual({ $search: 'q'.repeat(512) });
+    expect(filter.yearOfStudy.$in).toHaveLength(50);
+    expect(filter.yearOfStudy.$in).toContain('Year 49');
+    expect(filter.yearOfStudy.$in).not.toContain('Year 50');
+    expect(filter.purpose.$in).toEqual(['x'.repeat(120)]);
+    expect(mocks.countDocuments).toHaveBeenCalledWith(
+      expect.objectContaining({
+        $text: { $search: 'q'.repeat(512) },
+        purpose: { $in: ['x'.repeat(120)] },
+      }),
+    );
+  });
+
+  it('drops non-string direct program filter values and avoids object pagination coercion', async () => {
+    const page = { toString: vi.fn(() => '999999999') };
+    const pageSize = { toString: vi.fn(() => '500') };
+    const badFilter = { toString: vi.fn(() => 'Injected') };
+
+    const result = await searchPrograms({
+      page: page as any,
+      pageSize: pageSize as any,
+      yearOfStudy: [badFilter as any, 'First-year'],
+    });
+
+    const filter = mocks.find.mock.calls[0][0];
+    expect(page.toString).not.toHaveBeenCalled();
+    expect(pageSize.toString).not.toHaveBeenCalled();
+    expect(badFilter.toString).not.toHaveBeenCalled();
+    expect(filter.yearOfStudy.$in).toEqual(['First-year']);
+    expect(result).toMatchObject({
+      page: 1,
+      pageSize: 20,
     });
   });
 
@@ -330,6 +444,18 @@ describe('program search service', () => {
     expect(program).not.toHaveProperty('audited');
     expect(program).not.toHaveProperty('views');
     expect(program).not.toHaveProperty('favorites');
+  });
+
+  it('does not stringify arbitrary program ids before favorite mutations', async () => {
+    await expect(
+      addProgramFavorite({
+        toString: () => {
+          throw new Error('program favorite stringified an arbitrary id');
+        },
+      }),
+    ).rejects.toThrow('Did not receive expected id type ObjectId');
+
+    expect(mocks.findByIdAndUpdate).not.toHaveBeenCalled();
   });
 
   it('lets admin program detail reads inspect review or suppressed records', async () => {

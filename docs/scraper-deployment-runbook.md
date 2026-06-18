@@ -8,6 +8,23 @@ Last updated: 2026-05-29
 
 Move scraper data safely from development testing to Beta seeding and then production refresh jobs without overpaying for compute or creating unsupported student-facing access claims.
 
+Web service security is part of the production gate. The currently deployed
+site must pass the production security smoke before any Beta launch or
+production-copy claim is accepted:
+
+```bash
+yarn security:smoke:production
+```
+
+The same check is also available as the `Production Security Smoke` GitHub
+Actions workflow. It fails if the deployed app is stale, if `/api/config` is
+missing CSP or Permissions-Policy, if current API routes are absent, or if
+authenticated/private surfaces no longer enforce the expected boundary.
+Scheduled and manually dispatched workflow runs default the expected deployment
+fingerprint to `github.sha`; override `SMOKE_API_BASE`, `SMOKE_APP_BASE`, or
+`--expect-commit <prefix>` only when intentionally checking a non-default host
+or a known deployment revision.
+
 Use this with:
 
 - [`docs/research-data-pipeline.md`](./research-data-pipeline.md) for the stable evidence-to-product data flow.
@@ -86,6 +103,24 @@ yarn --cwd server scrape:seed-sources --apply --confirm-seed-apply --output /tmp
 Use `yarn --cwd server beta:readiness` without `--strict` for a diagnostic report. The command is read-only: it reports the Mongo target, accepted-input readiness, gated source posture, source metadata presence, canonical migration residue, and Pathway backend posture.
 Use the seed-source dry-run artifact to confirm the target database and source actions before applying source metadata updates. Apply mode requires `--confirm-seed-apply`; production source seeding also requires `SCRAPER_ENV=production` plus `CONFIRM_PROD_SCRAPE=true`.
 
+The canonical Beta operator wrapper is:
+
+```bash
+SCRAPER_ENV=beta yarn --cwd server beta:seed-meili
+SCRAPER_ENV=beta yarn --cwd server beta:seed --output /tmp/ylabs-beta-seed-plan.json
+SCRAPER_ENV=beta yarn --cwd server beta:seed --apply --confirm-beta-seed --output /tmp/ylabs-beta-seed-result.json
+```
+
+Use `beta:seed-meili` on the Beta server when Mongo is already populated and the launch task is to rebuild Meilisearch plus run the related checks. The broader `beta:seed` wrapper plans or runs Beta readiness, Source registry seeding, Meilisearch rebuilds, Pathway relevance review, and final Meili readiness acceptance. It does not run broad scrapers unless the operator explicitly names sources:
+
+```bash
+SCRAPER_ENV=beta yarn --cwd server beta:seed --apply --confirm-beta-seed \
+  --sources=ysm-atoz-index,yse-centers-index,centers-institutes-index \
+  --output /tmp/ylabs-beta-seed-result.json
+```
+
+Use `--skip-meili`, `--skip-source-metadata`, `--skip-readiness`, or `--skip-pathway-relevance` only for a targeted recovery run after the omitted phase already has a fresh accepted artifact.
+
 Then run accepted sources in rollout order:
 
 1. Entity discovery: `ysm-atoz-index`, `yse-centers-index`, `centers-institutes-index`, selected `dept-faculty-roster` departments.
@@ -148,18 +183,18 @@ Required before any production copy or write:
 
 Fill this packet before any production copy, guarded production write, Meilisearch backend switch, or recurring cron enablement. The human operator delegated the lane/default posture decision to Codex on 2026-05-28; the defaults below are accepted, but blank owner/restore/copy fields still block production writes.
 
-| Field | Operator value |
-| --- | --- |
-| Promotion lane | Lane A accepted Beta copy |
-| Atlas backup / restore point | BLOCKED: fresh Production restore point identifier not recorded |
-| Rollback owner | Codex autonomous operator for routine gate coordination; BLOCKED for actual Atlas restore execution until a fresh restore point and tested restore procedure are recorded |
-| Smoke owner | Codex autonomous operator for routine smoke coordination; BLOCKED until the smoke commands are run against the real target and results are recorded |
-| Guarded copy dry-run reviewer | Codex autonomous operator; BLOCKED until `production:promote-beta-copy` dry-run output exists for the real Production target and is reviewed |
-| Meili backend before gate | Mongo-backed Pathways |
-| Meili backend after gate | Keep Mongo-backed Pathways until production Meili rebuild counts and relevance review are accepted |
-| Accepted warnings | Sparse coverage and missing/weak descriptions are accepted as hidden-row or post-promotion backlog; `devadmin@example.invalid`, `test123`, and any `@example.invalid` synthetic users must be excluded or removed from any production copy path; duplicate-name and source-health promotion blockers are cleared in the latest Beta artifacts |
-| Run IDs | Latest Beta preflight artifacts were refreshed on 2026-06-05: `beta:data-quality` generated 2026-06-05T15:01:14Z, `scraper:integrity-gate` generated 2026-06-05T15:01:17Z, `student-visibility:gate` generated `/tmp/ylabs-student-visibility-gate-after-pi-final-apply.json`, and `launch:trust-contract` generated 2026-06-05T15:01:24Z; dataset version `prod-promote-YYYY-MM-DD-lane-a-beta-copy` should use the actual promotion date |
-| Rollback tested | BLOCKED: restore drill/procedure not recorded or exercised |
+| Field                         | Operator value                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Promotion lane                | Lane A accepted Beta copy                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| Atlas backup / restore point  | BLOCKED: fresh Production restore point identifier not recorded                                                                                                                                                                                                                                                                                                                                                                            |
+| Rollback owner                | Codex autonomous operator for routine gate coordination; BLOCKED for actual Atlas restore execution until a fresh restore point and tested restore procedure are recorded                                                                                                                                                                                                                                                                  |
+| Smoke owner                   | Codex autonomous operator for routine smoke coordination; BLOCKED until the smoke commands are run against the real target and results are recorded                                                                                                                                                                                                                                                                                        |
+| Guarded copy dry-run reviewer | Codex autonomous operator; BLOCKED because the 2026-06-11 dry-run attempt could not start without `BETA_MONGODBURL` and `PRODUCTION_MONGODBURL`; rerun `production:promote-beta-copy --output /tmp/ylabs-lane-a-promotion-dry-run.json` after those separate targets are configured, then review the artifact before apply mode                                                                                                                                               |
+| Meili backend before gate     | Mongo-backed Pathways                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| Meili backend after gate      | Keep Mongo-backed Pathways until production Meili rebuild counts and relevance review are accepted                                                                                                                                                                                                                                                                                                                                         |
+| Accepted warnings             | Sparse coverage and missing/weak descriptions are accepted as hidden-row or post-promotion backlog; the latest strict Beta audit reports 70 active research entities without pathways, 62 without access signals, 553 without contact routes, 53 missing short descriptions, 186 weak short descriptions, and 2 synthetic/dev user emails that are excluded from Lane A copy; duplicate-name, source-health, launch-trust, and scraper-integrity promotion blockers are cleared in the latest Beta artifacts |
+| Run IDs                       | Latest Beta preflight artifacts were refreshed on 2026-06-11: `launch:trust-contract --strict` wrote `/tmp/ylabs-launch-trust-final-after-dedupe.json` with `launchEligible=2291`, `limitedButSafe=0`, `held=0`, `suppressed=160`, and `publicVisibilityViolations=0`; `scraper:integrity-gate --include-samples` wrote `/tmp/ylabs-scraper-integrity-final-after-dedupe.json` with every hard count at 0; strict `beta:data-quality --include-samples` wrote `/tmp/ylabs-beta-data-quality-final-after-dedupe.json` with `promotionReady=true` and `promotionBlockerCount=0`; `student-visibility:gate --collection=all --mode=dry-run` wrote `/tmp/ylabs-student-visibility-gate-final-dryrun.json` with `changed=0`; dataset version should be `prod-promote-2026-06-11-lane-a-beta-copy` if copied today |
+| Rollback tested               | BLOCKED: restore drill/procedure not recorded or exercised                                                                                                                                                                                                                                                                                                                                                                                 |
 
 True blockers before this packet can be accepted:
 
@@ -167,7 +202,7 @@ True blockers before this packet can be accepted:
 - Has the guarded Lane A copy dry-run below been reviewed against the real Production target?
 - Has the rollback restore procedure or drill been exercised and recorded?
 - Have the production smoke commands been run against the real target and recorded?
-- Has the latest strict launch-trust held-row posture been accepted for the chosen release slice, or have the remaining held lanes been cleared: source_description 683, pi_identity 75, action_evidence 2, and review_exception 92? The latest artifact has 0 public visibility violations, passing research activity, and passing paper quality.
+- Has the latest strict launch-trust posture stayed green immediately before copy? The 2026-06-11 artifact has no held rows, no repair lanes, 0 public visibility violations, and passing data-quality/scraper-integrity gates; rerun the safe pre-gate commands below if Beta changes again.
 
 Safe pre-gate commands are read-only or local-smoke only:
 
@@ -403,20 +438,20 @@ Use `--output <path>` to save the full cron result JSON from a cron run. The art
 
 Suggested starting cadence:
 
-| Source | Cadence | Notes |
-| --- | --- | --- |
-| `ysm-atoz-index` | weekly | Entity discovery only. |
-| `yse-centers-index` | weekly | Entity discovery only. |
-| `centers-institutes-index` | weekly or biweekly | Broad member extraction; stagger separately. |
-| `dept-faculty-roster` | weekly by department group | Use source-specific `--only`/config where available. |
-| `yale-directory` | weekly | Broad directory paging; watch runtime. |
-| `nih-reporter` | weekly or monthly | Enrichment only; conflicts should remain understood aggregate churn. |
-| `nsf-award-search` | weekly or monthly | Enrichment only. |
-| `openalex` | weekly after WorkPlanner | Keep name-only discovery opt-in and page-capped. |
-| `arxiv` | weekly with `--since` | Recent research activity only. |
-| `lab-microsite-undergrad-llm` | weekly after WorkPlanner | Paid/LLM source; use stale-only work planning before recurring cron. |
-| `student-decision-llm` | manual after accepted target list | Paid/LLM display enrichment; run bounded after source-backed access evidence exists. |
-| `undergrad-fellowships-recipients` | monthly/manual | Requires accepted real CSV/manual data. |
+| Source                             | Cadence                           | Notes                                                                                |
+| ---------------------------------- | --------------------------------- | ------------------------------------------------------------------------------------ |
+| `ysm-atoz-index`                   | weekly                            | Entity discovery only.                                                               |
+| `yse-centers-index`                | weekly                            | Entity discovery only.                                                               |
+| `centers-institutes-index`         | weekly or biweekly                | Broad member extraction; stagger separately.                                         |
+| `dept-faculty-roster`              | weekly by department group        | Use source-specific `--only`/config where available.                                 |
+| `yale-directory`                   | weekly                            | Broad directory paging; watch runtime.                                               |
+| `nih-reporter`                     | weekly or monthly                 | Enrichment only; conflicts should remain understood aggregate churn.                 |
+| `nsf-award-search`                 | weekly or monthly                 | Enrichment only.                                                                     |
+| `openalex`                         | weekly after WorkPlanner          | Keep name-only discovery opt-in and page-capped.                                     |
+| `arxiv`                            | weekly with `--since`             | Recent research activity only.                                                       |
+| `lab-microsite-undergrad-llm`      | weekly after WorkPlanner          | Paid/LLM source; use stale-only work planning before recurring cron.                 |
+| `student-decision-llm`             | manual after accepted target list | Paid/LLM display enrichment; run bounded after source-backed access evidence exists. |
+| `undergrad-fellowships-recipients` | monthly/manual                    | Requires accepted real CSV/manual data.                                              |
 
 Use separate Render Cron jobs per source or per source group and stagger start times. If a job needs more than the platform's cron runtime limits, split it into batches or use a background worker temporarily for that backfill only.
 
@@ -424,15 +459,15 @@ Use separate Render Cron jobs per source or per source group and stagger start t
 
 Do not enable recurring cron for a source until its row is accepted. A source may be accepted for manual guarded runs while remaining unaccepted for unattended cron.
 
-| Source | Cron acceptance prerequisites | First cron posture | Hold if |
-| --- | --- | --- | --- |
-| `ysm-atoz-index` | Manual production or accepted Beta evidence shows entity discovery is stable, `materialization.errors = 0`, and source health has no unexplained errors. | Weekly, one source-specific cron, report saved with run ID. | Selector/fetch failures, duplicate entity churn, or unexpected access artifacts. |
-| `department-undergrad-research` | Source metadata exists, output is verified as undergraduate-access evidence rather than generic department discovery, and public contact policy is reviewed. | Manual or low-frequency cron after one accepted guarded run. | It emits unsupported access claims, non-public contact data, or department pages require Yale-network-only access. |
-| `yale-college-fellowships-office` | Fellowship program mapping and public application/contact routes are reviewed; no private recipient or applicant data is required. | Monthly or term-bound cron, aligned to public deadline cycles. | The run depends on manual/private files, creates person-level scraped data, or deadline state cannot be verified. |
-| `lab-microsite-undergrad-llm` | WorkPlanner target list is accepted, paid/LLM cost cap is set, stale-only or bounded scope is enforced, and contact redaction is smoke-tested. | Weekly after WorkPlanner, with saved report and sampled public UI smoke. | Cost cap is missing, source emits raw non-public emails, or materialization conflicts are unexplained. |
-| `student-decision-llm` | Source-backed access evidence exists, target list excludes entities with existing explanations, paid/LLM cost cap is set, and rejected-output samples are reviewed for invented claims. | Manual bounded enrichment only; use `--use-cache` for cache-only replay when possible. | Cost cap is missing, outputs mention unsupported application routes/direct contacts, or validator rejection rate is unexplained. |
-| `openalex` | Production storage posture is accepted, compact-retention/report-save policy is recorded, and identifier-backed candidate rules are confirmed. | Weekly or monthly, bounded by identifiers/offsets; save reports before pruning observations. | Name-only discovery is enabled unintentionally, Atlas storage is insufficient, or materialization creates unsupported authorship links. |
-| `arxiv` | Accepted ORCID/input target list is current, backoff window has cleared, and metadata-only behavior does not create name-only Yale author links. | Weekly with `--since` or bounded accepted targets. | Rate limits/timeouts recur, ORCID input is stale, or the source attempts unsupported faculty links. |
+| Source                            | Cron acceptance prerequisites                                                                                                                                                           | First cron posture                                                                           | Hold if                                                                                                                                 |
+| --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `ysm-atoz-index`                  | Manual production or accepted Beta evidence shows entity discovery is stable, `materialization.errors = 0`, and source health has no unexplained errors.                                | Weekly, one source-specific cron, report saved with run ID.                                  | Selector/fetch failures, duplicate entity churn, or unexpected access artifacts.                                                        |
+| `department-undergrad-research`   | Source metadata exists, output is verified as undergraduate-access evidence rather than generic department discovery, and public contact policy is reviewed.                            | Manual or low-frequency cron after one accepted guarded run.                                 | It emits unsupported access claims, non-public contact data, or department pages require Yale-network-only access.                      |
+| `yale-college-fellowships-office` | Fellowship program mapping and public application/contact routes are reviewed; no private recipient or applicant data is required.                                                      | Monthly or term-bound cron, aligned to public deadline cycles.                               | The run depends on manual/private files, creates person-level scraped data, or deadline state cannot be verified.                       |
+| `lab-microsite-undergrad-llm`     | WorkPlanner target list is accepted, paid/LLM cost cap is set, stale-only or bounded scope is enforced, and contact redaction is smoke-tested.                                          | Weekly after WorkPlanner, with saved report and sampled public UI smoke.                     | Cost cap is missing, source emits raw non-public emails, or materialization conflicts are unexplained.                                  |
+| `student-decision-llm`            | Source-backed access evidence exists, target list excludes entities with existing explanations, paid/LLM cost cap is set, and rejected-output samples are reviewed for invented claims. | Manual bounded enrichment only; use `--use-cache` for cache-only replay when possible.       | Cost cap is missing, outputs mention unsupported application routes/direct contacts, or validator rejection rate is unexplained.        |
+| `openalex`                        | Production storage posture is accepted, compact-retention/report-save policy is recorded, and identifier-backed candidate rules are confirmed.                                          | Weekly or monthly, bounded by identifiers/offsets; save reports before pruning observations. | Name-only discovery is enabled unintentionally, Atlas storage is insufficient, or materialization creates unsupported authorship links. |
+| `arxiv`                           | Accepted ORCID/input target list is current, backoff window has cleared, and metadata-only behavior does not create name-only Yale author links.                                        | Weekly with `--since` or bounded accepted targets.                                           | Rate limits/timeouts recur, ORCID input is stale, or the source attempts unsupported faculty links.                                     |
 
 ### Compact Observation Retention
 

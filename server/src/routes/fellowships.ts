@@ -6,6 +6,7 @@ import { isAuthenticated, validateObjectId, validatePagination } from '../middle
 import * as fellowshipController from '../controllers/fellowshipController';
 import { logEvent } from '../services/analyticsService';
 import { AnalyticsEventType } from '../models/index';
+import { sanitizeLogValue } from '../utils/logSanitizer';
 
 const router = Router();
 
@@ -77,7 +78,7 @@ const logFellowshipSearchEvent = async (req: Request, res: Response, next: NextF
             pageSize: data?.pageSize,
             totalPages: data?.totalPages,
           },
-        }).catch((err) => console.error('Error logging fellowship search event:', err));
+        }).catch((err) => console.error('Error logging fellowship search event:', sanitizeLogValue(err)));
       }
     }
 
@@ -107,7 +108,7 @@ const logFellowshipEvent = (eventType: AnalyticsEventType) => {
             metadata: {
               entityType: 'fellowship',
             },
-          }).catch((err: unknown) => console.error(`Error logging ${eventType} event:`, err));
+          }).catch((err: unknown) => console.error(`Error logging ${eventType} event:`, sanitizeLogValue(err)));
         }
       }
 

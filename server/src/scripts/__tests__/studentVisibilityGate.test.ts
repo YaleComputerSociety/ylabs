@@ -106,6 +106,12 @@ describe('studentVisibilityGate CLI helpers', () => {
     expect(() => parseStudentVisibilityGateArgs(['--output=--apply'])).toThrow(
       /--output requires a path/,
     );
+    expect(() => parseStudentVisibilityGateArgs(['--output=/etc/passwd.json'])).toThrow(
+      /--output must write under/,
+    );
+    expect(() => parseStudentVisibilityGateArgs(['--output=/tmp/visibility-gate.txt'])).toThrow(
+      /--output must point to a \.json report file/,
+    );
   });
 
   it('requires and enforces max apply before student visibility gate writes', () => {
@@ -127,7 +133,7 @@ describe('studentVisibilityGate CLI helpers', () => {
         },
         3,
       ),
-    ).toThrow(/Apply would update visibility for 3 records, above --max-apply/);
+    ).toThrow(/Apply would update visibility for 3 changed records, above --max-apply/);
   });
 
   it('writes the student visibility gate artifact when output is provided', () => {
@@ -153,6 +159,22 @@ describe('studentVisibilityGate CLI helpers', () => {
       scanned: 2,
       changed: 0,
     });
+  });
+
+  it('rejects unsafe student visibility gate artifact writes from programmatic callers', () => {
+    expect(() =>
+      writeStudentVisibilityGateOutput(
+        {
+          environment: 'beta',
+          db: 'Beta',
+          collection: 'all',
+          mode: 'dry-run',
+          scanned: 2,
+          changed: 0,
+        },
+        '/etc/visibility-gate.json',
+      ),
+    ).toThrow(/--output must write under/);
   });
 
   it('wraps gate artifacts with target metadata and parsed options', () => {

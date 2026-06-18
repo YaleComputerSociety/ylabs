@@ -8,6 +8,7 @@ export interface ListingResearchEntityProfileInput {
 
 const textValue = (value: unknown): string =>
   typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
+const MAX_LISTING_RESEARCH_ENTITY_PROFILE_URLS = 50;
 
 const hasText = (value: unknown): boolean => textValue(value).length > 0;
 
@@ -27,6 +28,9 @@ const uniqueStrings = (values: unknown[]): string[] => {
 };
 
 const stringArray = (value: unknown): string[] => (Array.isArray(value) ? uniqueStrings(value) : []);
+
+const publicListingProfileUrls = (values: unknown[]): string[] =>
+  uniqueStrings(values).filter(isHttpUrl).slice(0, MAX_LISTING_RESEARCH_ENTITY_PROFILE_URLS);
 
 const missingArray = (value: unknown): boolean => !Array.isArray(value) || value.length === 0;
 
@@ -62,11 +66,11 @@ export function buildListingResearchEntityProfilePatch({
   listing = {},
 }: ListingResearchEntityProfileInput): Record<string, any> {
   const patch: Record<string, any> = {};
-  const urls = uniqueStrings([
+  const urls = publicListingProfileUrls([
     ...(Array.isArray(listing?.websites) ? listing.websites : []),
     listing?.websiteUrl,
     listing?.website,
-  ]).filter(isHttpUrl);
+  ]);
   const firstUrl = urls[0];
   const description = usableProfileDescription(
     listing,

@@ -1,20 +1,25 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import mongoose from 'mongoose';
 
 const mocks = vi.hoisted(() => ({
   researchEntityFind: vi.fn(),
   researchEntityCountDocuments: vi.fn(),
+  researchEntityFindByIdAndUpdate: vi.fn(),
+  entryPathwayFindByIdAndUpdate: vi.fn(),
 }));
 
 vi.mock('../../models/researchEntity', () => ({
   ResearchEntity: {
     find: mocks.researchEntityFind,
     countDocuments: mocks.researchEntityCountDocuments,
+    findByIdAndUpdate: mocks.researchEntityFindByIdAndUpdate,
   },
 }));
 
 vi.mock('../../models/entryPathway', () => ({
   EntryPathway: {
     aggregate: vi.fn(),
+    findByIdAndUpdate: mocks.entryPathwayFindByIdAndUpdate,
   },
 }));
 
@@ -42,7 +47,13 @@ vi.mock('../../models/observation', () => ({
   },
 }));
 
-import { listAccessReviewEntities } from '../adminAccessReviewService';
+import {
+  normalizeAccessReviewObjectId,
+  normalizeAccessReviewLockedFields,
+  updateAccessReviewManualLocks,
+  updateAccessReviewRecordReview,
+  listAccessReviewEntities,
+} from '../adminAccessReviewService';
 
 const findChain = () => {
   const chain = {
@@ -90,5 +101,97 @@ describe('adminAccessReviewService', () => {
 
     expect(mocks.researchEntityFind).not.toHaveBeenCalled();
     expect(mocks.researchEntityCountDocuments).not.toHaveBeenCalled();
+  });
+
+  it('normalizes access review locked fields as bounded identifiers', () => {
+    const normalized = normalizeAccessReviewLockedFields([
+      ' summary ',
+      'summary',
+      'review.lockedFields',
+      'field-name:ok_1',
+      'bad$field',
+      'x'.repeat(121),
+      '',
+      123,
+    ]);
+
+    expect(normalized).toEqual(['summary', 'review.lockedFields', 'field-name:ok_1']);
+  });
+
+  it('normalizes access review ObjectIds without arbitrary object coercion', () => {
+    const id = '64f111111111111111111111';
+
+    expect(normalizeAccessReviewObjectId(id)?.toHexString()).toBe(id);
+    expect(normalizeAccessReviewObjectId(new mongoose.Types.ObjectId(id))?.toHexString()).toBe(id);
+    expect(
+      normalizeAccessReviewObjectId({
+        toString: () => id,
+      }),
+    ).toBeNull();
+  });
+
+  it('normalizes manual lock fields before persisting research entities', async () => {
+    const id = '64f111111111111111111111';
+    const chain = {
+      select: vi.fn().mockReturnThis(),
+      lean: vi.fn().mockResolvedValue({ _id: id, manuallyLockedFields: ['summary'] }),
+    };
+    mocks.researchEntityFindByIdAndUpdate.mockReturnValue(chain);
+
+    await updateAccessReviewManualLocks(id, [
+      ' summary ',
+      'bad$field',
+      'x'.repeat(121),
+      'review.lockedFields',
+    ]);
+
+    const [updatedId, update] = mocks.researchEntityFindByIdAndUpdate.mock.calls[0];
+    expect(String(updatedId)).toBe(id);
+    expect(update).toEqual({
+      $set: { manuallyLockedFields: ['summary', 'review.lockedFields'] },
+    });
+  });
+
+  it('normalizes record review lock fields before persisting review metadata', async () => {
+    const id = '64f222222222222222222222';
+    const chain = {
+      lean: vi.fn().mockResolvedValue({ _id: id }),
+    };
+    mocks.entryPathwayFindByIdAndUpdate.mockReturnValue(chain);
+
+    await updateAccessReviewRecordReview({
+      type: 'entryPathway',
+      id,
+      lockedFields: [' sourceUrl ', 'bad$field', 'x'.repeat(121), 'sourceUrl'],
+    });
+
+    const [updatedId, update] = mocks.entryPathwayFindByIdAndUpdate.mock.calls[0];
+    expect(String(updatedId)).toBe(id);
+    expect(update).toEqual({
+      $set: { 'review.lockedFields': ['sourceUrl'] },
+    });
+  });
+
+  it('ignores object-shaped reviewer ids before persisting review metadata', async () => {
+    const id = '64f222222222222222222222';
+    const chain = {
+      lean: vi.fn().mockResolvedValue({ _id: id }),
+    };
+    mocks.entryPathwayFindByIdAndUpdate.mockReturnValue(chain);
+
+    await updateAccessReviewRecordReview({
+      type: 'entryPathway',
+      id,
+      status: 'approved',
+      reviewerId: {
+        toString: () => '64f333333333333333333333',
+      },
+    });
+
+    const [, update] = mocks.entryPathwayFindByIdAndUpdate.mock.calls[0];
+    expect(update.$set).toMatchObject({
+      'review.status': 'approved',
+    });
+    expect(update.$set).not.toHaveProperty('review.reviewedByUserId');
   });
 });

@@ -41,6 +41,24 @@ describe('opportunityDetailService', () => {
     expect(calls).toEqual([]);
   });
 
+  it('returns null for object-shaped ids without invoking arbitrary toHexString', async () => {
+    const calls: any[] = [];
+
+    const detail = await getOpportunityDetail(
+      {
+        toHexString: () => {
+          throw new Error('opportunity detail invoked arbitrary toHexString');
+        },
+      } as any,
+      {
+        opportunityModel: leanOneModel({}, calls) as any,
+      },
+    );
+
+    expect(detail).toBeNull();
+    expect(calls).toEqual([]);
+  });
+
   it('queries only non-archived PostedOpportunity records and returns null when missing', async () => {
     const calls: any[] = [];
     const id = new Types.ObjectId().toString();
@@ -160,9 +178,6 @@ describe('opportunityDetailService', () => {
     });
 
     expect(detail).toMatchObject({
-      _id: opportunityId.toString(),
-      entryPathwayId: pathwayId.toString(),
-      researchEntityId: entityId.toString(),
       title: 'Spring RA role',
       applicationUrl: 'https://apply.example.edu/role',
       deadlineState: 'UPCOMING',
@@ -175,15 +190,19 @@ describe('opportunityDetailService', () => {
         name: 'Example Lab',
       },
       pathway: {
-        _id: pathwayId.toString(),
         pathwayType: 'POSTED_ROLE',
         studentFacingLabel: 'Posted RA role',
         bestNextStep: 'Email [email redacted] after reviewing the application.',
       },
       sourceUrls: ['https://source.example.edu/posting'],
     });
+    expect(detail).not.toHaveProperty('_id');
+    expect(detail).not.toHaveProperty('entryPathwayId');
+    expect(detail).not.toHaveProperty('researchEntityId');
+    expect(detail).not.toHaveProperty('listingId');
+    expect(detail?.researchEntity).not.toHaveProperty('_id');
+    expect(detail?.pathway).not.toHaveProperty('_id');
     expect(detail?.evidence[0]).toEqual({
-      _id: evidenceId.toString(),
       sourceName: 'ylabs-listing',
       sourceUrl: 'https://source.example.edu/posting',
       field: 'postedOpportunity',
@@ -191,8 +210,11 @@ describe('opportunityDetailService', () => {
       confidence: 0.95,
       observedAt: new Date('2026-01-01T00:00:00.000Z'),
     });
+    expect(detail?.evidence[0]).not.toHaveProperty('_id');
     expect(detail?.eligibility).toBe('Open to Yale undergraduates. Questions: [email redacted]');
     expect(JSON.stringify(detail)).not.toContain('hidden@example.edu');
+    expect(JSON.stringify(detail)).not.toContain(pathwayId.toString());
+    expect(JSON.stringify(detail)).not.toContain(entityId.toString());
   });
 
   it('filters unsafe public URLs before deriving application state or source links', async () => {
@@ -228,8 +250,8 @@ describe('opportunityDetailService', () => {
         _id: entityId,
         slug: 'unsafe-url-lab',
         name: 'Unsafe URL Lab',
-        departments: [],
-        researchAreas: [],
+        departments: ['Contact hidden-dept@example.edu', 'History'],
+        researchAreas: ['Call 203-555-1212', 'Archives'],
         websiteUrl: 'javascript:alert(1)',
         website: 'https://fallback.example.edu',
       }) as any,
@@ -253,6 +275,8 @@ describe('opportunityDetailService', () => {
       sourceUrls: ['https://source.example.edu/posting', 'https://pathway.example.edu/'],
       researchEntity: {
         websiteUrl: 'https://fallback.example.edu/',
+        departments: ['Contact [email redacted]', 'History'],
+        researchAreas: ['Call [phone redacted]', 'Archives'],
       },
       pathway: {
         sourceUrls: ['https://pathway.example.edu/'],
@@ -262,6 +286,146 @@ describe('opportunityDetailService', () => {
     expect(JSON.stringify(detail)).not.toContain('javascript:');
     expect(JSON.stringify(detail)).not.toContain('data:text/html');
     expect(JSON.stringify(detail)).not.toContain('mailto:');
+    expect(JSON.stringify(detail)).not.toContain('hidden-dept@example.edu');
+    expect(JSON.stringify(detail)).not.toContain('203-555-1212');
+  });
+
+  it('bounds public detail shaping without stringifying polluted stored values', async () => {
+    const opportunityId = new Types.ObjectId();
+    const pathwayId = new Types.ObjectId();
+    const entityId = new Types.ObjectId();
+    const evidenceId = new Types.ObjectId();
+    const sourceUrls = Array.from(
+      { length: 50 },
+      (_, index) => `https://source.example.edu/posting/${index}`,
+    );
+    Object.defineProperty(sourceUrls, '50', {
+      get: () => {
+        throw new Error('opportunity detail read past the source URL cap');
+      },
+      enumerable: true,
+    });
+    const departments = Array.from({ length: 50 }, (_, index) => `Department ${index}`);
+    Object.defineProperty(departments, '50', {
+      get: () => {
+        throw new Error('opportunity detail read past the taxonomy cap');
+      },
+      enumerable: true,
+    });
+    const evidenceArray = Array.from({ length: 50 }, (_, index) => `Evidence ${index}`);
+    Object.defineProperty(evidenceArray, '50', {
+      get: () => {
+        throw new Error('opportunity detail read past the evidence cap');
+      },
+      enumerable: true,
+    });
+
+    const detail = await getOpportunityDetail(opportunityId.toString(), {
+      opportunityModel: leanOneModel({
+        _id: opportunityId,
+        entryPathwayId: {
+          toString: () => {
+            throw new Error('opportunity detail stringified an arbitrary entryPathwayId');
+          },
+        },
+        researchEntityId: entityId,
+        title: 'x'.repeat(6000),
+        applicationUrl: {
+          toString: () => {
+            throw new Error('opportunity detail stringified an arbitrary applicationUrl');
+          },
+        },
+        status: 'OPEN',
+        sourceEvidenceIds: [evidenceId],
+        sourceUrls,
+      }) as any,
+      pathwayModel: leanOneModel({
+        _id: pathwayId,
+        pathwayType: 'POSTED_ROLE',
+        status: 'ACTIVE',
+        studentFacingLabel: 'Posted role',
+        sourceEvidenceIds: [evidenceId],
+        sourceUrls: [],
+      }) as any,
+      researchEntityModel: leanOneModel({
+        _id: entityId,
+        slug: 'bounded-detail-lab',
+        name: 'Bounded Detail Lab',
+        departments,
+        researchAreas: [],
+        websiteUrl: {
+          toString: () => {
+            throw new Error('opportunity detail stringified an arbitrary websiteUrl');
+          },
+        },
+      }) as any,
+      observationModel: leanManyModel([
+        {
+          _id: evidenceId,
+          sourceName: 'scraper',
+          sourceUrl: 'https://source.example.edu/evidence',
+          field: 'postedOpportunity',
+          value: evidenceArray,
+          confidence: 0.8,
+        },
+      ]) as any,
+      now: new Date('2026-01-15T00:00:00.000Z'),
+    });
+
+    expect(detail).not.toHaveProperty('_id');
+    expect(detail).not.toHaveProperty('entryPathwayId');
+    expect(detail?.title).toHaveLength(5000);
+    expect(detail?.applicationUrl).toBeUndefined();
+    expect(detail?.sourceUrls).toHaveLength(50);
+    expect(detail?.researchEntity.departments).toHaveLength(50);
+    expect(detail?.researchEntity.websiteUrl).toBeUndefined();
+    expect(detail?.evidence[0].excerpt).toContain('Evidence 0 Evidence 1');
+    expect(detail?.evidence[0].excerpt?.length).toBeLessThanOrEqual(360);
+  });
+
+  it('skips object-shaped evidence ids without invoking arbitrary toHexString', async () => {
+    const opportunityId = new Types.ObjectId();
+    const pathwayId = new Types.ObjectId();
+    const entityId = new Types.ObjectId();
+    const evidenceId = new Types.ObjectId();
+    const observationCalls: any[] = [];
+
+    await getOpportunityDetail(opportunityId.toString(), {
+      opportunityModel: leanOneModel({
+        _id: opportunityId,
+        entryPathwayId: pathwayId,
+        researchEntityId: entityId,
+        title: 'Evidence role',
+        status: 'OPEN',
+        sourceEvidenceIds: [
+          {
+            toHexString: () => {
+              throw new Error('opportunity detail invoked arbitrary evidence toHexString');
+            },
+          },
+          evidenceId,
+        ],
+        sourceUrls: [],
+      }) as any,
+      pathwayModel: leanOneModel({
+        _id: pathwayId,
+        pathwayType: 'POSTED_ROLE',
+        status: 'ACTIVE',
+        studentFacingLabel: 'Posted role',
+        sourceEvidenceIds: [],
+        sourceUrls: [],
+      }) as any,
+      researchEntityModel: leanOneModel({
+        _id: entityId,
+        slug: 'evidence-lab',
+        name: 'Evidence Lab',
+        studentVisibilityTier: 'student_ready',
+      }) as any,
+      observationModel: leanManyModel([], observationCalls) as any,
+      now: new Date('2026-01-15T00:00:00.000Z'),
+    });
+
+    expect(observationCalls[0].filter._id.$in.map(String)).toEqual([evidenceId.toString()]);
   });
 
   it('derives closed and rolling application states from status, deadline, and URL', () => {

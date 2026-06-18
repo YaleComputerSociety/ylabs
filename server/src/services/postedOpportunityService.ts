@@ -6,6 +6,9 @@ import { findReviewLockedRecord, omitReviewLockedFields } from './reviewLockUtil
 import { syncPathwaySearchIndexDocument } from './pathwaySearchIndexService';
 import { upsertAccessSignal } from './accessSignalService';
 import { upsertEntryPathway } from './entryPathwayService';
+import { sanitizeLogValue } from '../utils/logSanitizer';
+import { serializedDocumentId } from '../utils/idSerialization';
+import { publicHttpUrl } from '../utils/urlSafety';
 import type {
   CompensationType,
   EntryPathwayStatus,
@@ -50,15 +53,22 @@ function getListingModel(deps: PostedOpportunityServiceDeps = {}): mongoose.Mode
   return deps.listingModel || Listing;
 }
 
-function toStoredId(value?: string): unknown {
-  if (!value) return undefined;
-  return mongoose.Types.ObjectId.isValid(value) ? new mongoose.Types.ObjectId(value) : value;
+const STORED_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
+const MAX_POSTED_OPPORTUNITY_SOURCE_URLS = 50;
+
+function toStoredId(value?: unknown): unknown {
+  if (value instanceof mongoose.Types.ObjectId) return value;
+  if (typeof value !== 'string') return undefined;
+  const id = value.trim();
+  if (!id) return undefined;
+  return STORED_OBJECT_ID_RE.test(id) ? new mongoose.Types.ObjectId(id) : id;
 }
 
-function toStoredObjectId(value?: string): mongoose.Types.ObjectId | undefined {
-  return value && mongoose.Types.ObjectId.isValid(value)
-    ? new mongoose.Types.ObjectId(value)
-    : undefined;
+function toStoredObjectId(value?: unknown): mongoose.Types.ObjectId | undefined {
+  if (value instanceof mongoose.Types.ObjectId) return value;
+  if (typeof value !== 'string') return undefined;
+  const id = value.trim();
+  return STORED_OBJECT_ID_RE.test(id) ? new mongoose.Types.ObjectId(id) : undefined;
 }
 
 function compactObject<T extends Record<string, unknown>>(value: T): Partial<T> {
@@ -67,17 +77,28 @@ function compactObject<T extends Record<string, unknown>>(value: T): Partial<T> 
   ) as Partial<T>;
 }
 
+function publicPostedOpportunityUrls(values?: unknown): string[] {
+  if (!Array.isArray(values)) return [];
+  return values.slice(0, MAX_POSTED_OPPORTUNITY_SOURCE_URLS).flatMap((value) => {
+    const url = publicHttpUrl(value);
+    return url ? [url] : [];
+  });
+}
+
 export async function upsertPostedOpportunity(
   input: UpsertPostedOpportunityInput,
   deps: PostedOpportunityServiceDeps = {},
 ): Promise<{ postedOpportunityId?: string; doc?: any }> {
   const PostedOpportunity = getPostedOpportunityModel(deps);
   const entryPathwayId = toStoredId(input.entryPathwayId);
+  if (!entryPathwayId) return {};
   const researchEntityId = toStoredId(input.researchEntityId);
   const listingId = toStoredId(input.listingId);
   const sourceEvidenceIds = (input.sourceEvidenceIds || [])
     .map(toStoredObjectId)
     .filter((id): id is mongoose.Types.ObjectId => !!id);
+  const applicationUrl = publicHttpUrl(input.applicationUrl);
+  const sourceUrls = publicPostedOpportunityUrls(input.sourceUrls);
 
   const filter = input.derivationKey
     ? compactObject({ entryPathwayId, derivationKey: input.derivationKey })
@@ -96,7 +117,7 @@ export async function upsertPostedOpportunity(
         title: input.title,
         term: input.term,
         deadline: input.deadline,
-        applicationUrl: input.applicationUrl,
+        applicationUrl,
         status: input.status,
         hoursPerWeek: input.hoursPerWeek,
         payRate: input.payRate,
@@ -108,7 +129,7 @@ export async function upsertPostedOpportunity(
     ),
     $addToSet: {
       sourceEvidenceIds: { $each: sourceEvidenceIds },
-      sourceUrls: { $each: input.sourceUrls || [] },
+      sourceUrls: { $each: sourceUrls },
     },
   };
 
@@ -119,13 +140,14 @@ export async function upsertPostedOpportunity(
   });
   const doc = typeof (query as any).lean === 'function' ? await (query as any).lean() : await query;
   if (!deps.model && process.env.PATHWAY_SEARCH_SYNC === 'true' && doc?.entryPathwayId) {
-    await syncPathwaySearchIndexDocument(String(doc.entryPathwayId)).catch((error) => {
-      console.error('Failed to sync pathway search index:', error);
+    const entryPathwayId = serializedDocumentId(doc.entryPathwayId);
+    if (entryPathwayId) await syncPathwaySearchIndexDocument(entryPathwayId).catch((error) => {
+      console.error('Failed to sync pathway search index:', sanitizeLogValue(error));
     });
   }
 
   return {
-    postedOpportunityId: doc?._id ? String(doc._id) : undefined,
+    postedOpportunityId: serializedDocumentId(doc?._id),
     doc,
   };
 }
@@ -146,12 +168,7 @@ export interface ListingPostedOpportunityInput {
 }
 
 function idToString(value?: unknown): string | undefined {
-  if (!value) return undefined;
-  if (typeof value === 'string') return value;
-  if (typeof (value as { toString?: unknown }).toString === 'function') {
-    return String(value);
-  }
-  return undefined;
+  return serializedDocumentId(value);
 }
 
 function toDate(value?: Date | string | null): Date | undefined {
@@ -338,17 +355,21 @@ export async function backfillPostedOpportunitiesFromListings(
     .sort({ updatedAt: -1, createdAt: -1 })
     .limit(limit);
   const listings = typeof (query as any).lean === 'function' ? await (query as any).lean() : await query;
-  const listingIds = (listings as any[]).map((listing) => listing._id).filter(Boolean);
+  const listingIds = (listings as any[])
+    .flatMap((listing) => idToString(listing._id) ?? []);
   const existingListingIds = new Set(
     (
       await postedOpportunityModel.distinct('listingId', {
         listingId: { $in: listingIds },
         archived: { $ne: true },
       })
-    ).map(String),
+    ).flatMap((id) => idToString(id) ?? []),
   );
   const candidates = (listings as ListingPostedOpportunityInput[]).filter(
-    (listing) => !existingListingIds.has(String(listing._id || '')),
+    (listing) => {
+      const listingId = idToString(listing._id);
+      return Boolean(listingId && !existingListingIds.has(listingId));
+    },
   );
   const skippedReasons: Record<string, number> = {};
   const materializedListingIds: string[] = [];
@@ -357,7 +378,8 @@ export async function backfillPostedOpportunitiesFromListings(
     for (const listing of candidates) {
       const result = await materialize(listing);
       if (result.postedOpportunityId) {
-        materializedListingIds.push(String(listing._id));
+        const listingId = idToString(listing._id);
+        if (listingId) materializedListingIds.push(listingId);
       } else {
         incrementReason(skippedReasons, result.skipped);
       }
@@ -371,7 +393,7 @@ export async function backfillPostedOpportunitiesFromListings(
     materialized: materializedListingIds.length,
     skipped: dryRun ? 0 : candidates.length - materializedListingIds.length,
     skippedReasons,
-    candidateListingIds: candidates.map((listing) => String(listing._id)).slice(0, 50),
+    candidateListingIds: candidates.flatMap((listing) => idToString(listing._id) ?? []).slice(0, 50),
     materializedListingIds,
   };
 }
@@ -431,7 +453,7 @@ export async function reapExpiredPostedOpportunities(
       continue;
     }
 
-    const pathwayId = String(opportunity.entryPathwayId || '');
+    const pathwayId = idToString(opportunity.entryPathwayId);
     if (pathwayId) affectedPathwayIds.add(pathwayId);
     if (dryRun) {
       closedOpportunities++;
@@ -479,7 +501,7 @@ export async function reapExpiredPostedOpportunities(
     if (!deps.model && process.env.PATHWAY_SEARCH_SYNC === 'true') {
       for (const pathwayId of affectedPathwayIds) {
         await syncPathwaySearchIndexDocument(pathwayId).catch((error) => {
-          console.error('Failed to sync pathway search index:', error);
+          console.error('Failed to sync pathway search index:', sanitizeLogValue(error));
         });
       }
     }

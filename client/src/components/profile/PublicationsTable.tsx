@@ -4,7 +4,7 @@
 import { useReducer, useEffect } from 'react';
 import { Publication } from '../../types/types';
 import axios from '../../utils/axios';
-import { safeUrl } from '../../utils/url';
+import { safeDoiUrl, safeHttpUrl } from '../../utils/url';
 import {
   PublicationsSortField,
   createInitialPublicationsTableState,
@@ -51,8 +51,8 @@ const PublicationsTable = ({ netid }: PublicationsTableProps) => {
           totalPages: Math.ceil(fetchedTotal / pageSize),
         });
       })
-      .catch((err) => {
-        console.error(err);
+      .catch(() => {
+        console.error('Error loading profile publications.');
         dispatch({ type: 'FETCH_FAILURE' });
       });
   }, [netid, page, pageSize, sortBy, sortOrder]);
@@ -135,9 +135,9 @@ const PublicationsTable = ({ netid }: PublicationsTableProps) => {
                 <td className="py-2 px-2">
                   <div className="flex items-start gap-1.5">
                     <span className="text-gray-800">{pub.title}</span>
-                    {pub.doi && (
+                    {safeDoiUrl(pub.doi) && (
                       <a
-                        href={`https://doi.org/${pub.doi}`}
+                        href={safeDoiUrl(pub.doi)}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="flex-shrink-0 text-blue-500 hover:text-blue-700"
@@ -160,9 +160,9 @@ const PublicationsTable = ({ netid }: PublicationsTableProps) => {
                         </svg>
                       </a>
                     )}
-                    {pub.open_access_url && !pub.doi && safeUrl(pub.open_access_url) && (
+                    {pub.open_access_url && !pub.doi && safeHttpUrl(pub.open_access_url) && (
                       <a
-                        href={safeUrl(pub.open_access_url)}
+                        href={safeHttpUrl(pub.open_access_url)}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="flex-shrink-0 text-green-500 hover:text-green-700"

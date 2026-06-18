@@ -24,18 +24,13 @@ const lastToken = (value: string): string => {
 
 const matchingLeadMemberLastName = (members: LabMember[], route: LabContactRoute): string => {
   const routeName = routeDisplayName(route).toLowerCase();
-  const routeEmail = String(route.email || '').trim().toLowerCase();
   const match = members.find((member) => {
     const memberName = [member.user?.fname, member.user?.lname]
       .filter(Boolean)
       .join(' ')
       .trim()
       .toLowerCase();
-    const memberEmail = String(member.user?.email || '').trim().toLowerCase();
-    return (
-      (routeName && memberName && routeName === memberName) ||
-      (routeEmail && memberEmail && routeEmail === memberEmail)
-    );
+    return routeName && memberName && routeName === memberName;
   });
   return memberLastName(match);
 };

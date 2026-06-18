@@ -21,6 +21,7 @@ import { upsertAccessSignal, type UpsertAccessSignalInput } from './accessSignal
 import { upsertContactRoute, type UpsertContactRouteInput } from './contactRouteService';
 import { upsertEntryPathway, type UpsertEntryPathwayInput } from './entryPathwayService';
 import { runStudentVisibilityGate } from './studentVisibilityGateService';
+import { serializedDocumentId } from '../utils/idSerialization';
 
 export type VisibilityRepairMode = 'dry-run' | 'apply';
 
@@ -80,6 +81,22 @@ export interface VisibilityRepairQueueReport {
   resolvedByGate: number;
   plans: VisibilityRepairPlan[];
   attempts: VisibilityRepairAttempt[];
+}
+
+const VISIBILITY_REPAIR_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
+
+export function normalizeVisibilityRepairObjectId(value: unknown): string | undefined {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return VISIBILITY_REPAIR_OBJECT_ID_RE.test(trimmed) ? trimmed : undefined;
+  }
+  if (value instanceof mongoose.Types.ObjectId) return value.toHexString();
+  return undefined;
+}
+
+function toVisibilityRepairObjectId(value: unknown): mongoose.Types.ObjectId | undefined {
+  const id = normalizeVisibilityRepairObjectId(value);
+  return id ? new mongoose.Types.ObjectId(id) : undefined;
 }
 
 interface RepairDeps {
@@ -759,16 +776,11 @@ const leadProfileDescriptionCandidates = (
     });
 
 const idValue = (value: unknown): string => {
-  if (!value) return '';
-  if (typeof value === 'string') return value.trim();
-  if (typeof (value as any).toHexString === 'function') return (value as any).toHexString();
-  if (typeof value === 'object' && '_id' in value) {
+  const directId = serializedDocumentId(value);
+  if (directId) return directId;
+  if (typeof value === 'object' && value !== null && '_id' in value) {
     const nestedId = (value as Record<string, unknown>)._id;
     return nestedId === value ? '' : idValue(nestedId);
-  }
-  if (typeof (value as any).toString === 'function') {
-    const stringValue = (value as any).toString();
-    return stringValue === '[object Object]' ? '' : stringValue.trim();
   }
   return '';
 };
@@ -1648,7 +1660,7 @@ async function attemptResearchRepair(
       };
     }
 
-    const userId = String(user._id);
+    const userId = normalizeVisibilityRepairObjectId(user._id) || '';
     if (mode === 'apply') {
       await deps.upsertResearchEntityMember(plan.recordId, userId, {
         sourceUrl,
@@ -1976,7 +1988,7 @@ const defaultRepairDeps: RepairDeps = {
     if (options.recordIds?.length) filter.recordId = { $in: options.recordIds };
     if (options.queueItemIds?.length) {
       const ids = options.queueItemIds
-        .map((id) => (mongoose.Types.ObjectId.isValid(id) ? new mongoose.Types.ObjectId(id) : id))
+        .map((id) => toVisibilityRepairObjectId(id))
         .filter(Boolean);
       filter._id = { $in: ids };
     }
@@ -1989,10 +2001,13 @@ const defaultRepairDeps: RepairDeps = {
     return query as unknown as VisibilityRepairQueueItemInput[];
   },
   async updateQueueItem(id, patch) {
-    await VisibilityReleaseQueueItem.updateOne({ _id: id }, { $set: patch, $inc: { attemptCount: 1 } });
+    const safeId = toVisibilityRepairObjectId(id);
+    if (!safeId) return;
+    await VisibilityReleaseQueueItem.updateOne({ _id: safeId }, { $set: patch, $inc: { attemptCount: 1 } });
   },
   async findResearchEntity(id) {
-    return ResearchEntity.findById(id).lean();
+    const safeId = normalizeVisibilityRepairObjectId(id);
+    return safeId ? ResearchEntity.findById(safeId).lean() : null;
   },
   async findUserByProfileUrl(urls) {
     const variants = urlVariants(urls);
@@ -2062,9 +2077,8 @@ const defaultRepairDeps: RepairDeps = {
     return upsertEntryPathway(input);
   },
   async findReusableExploratoryContactPathway(researchEntityId) {
-    const storedResearchEntityId = mongoose.Types.ObjectId.isValid(researchEntityId)
-      ? new mongoose.Types.ObjectId(researchEntityId)
-      : researchEntityId;
+    const storedResearchEntityId = toVisibilityRepairObjectId(researchEntityId);
+    if (!storedResearchEntityId) return null;
     const pathway = await EntryPathway.findOne({
       researchEntityId: storedResearchEntityId,
       pathwayType: 'EXPLORATORY_CONTACT',
@@ -2088,9 +2102,7 @@ const defaultRepairDeps: RepairDeps = {
   async findActionEvidenceObservationIds({ researchEntityId, userId, sourceUrl }) {
     const variants = urlVariants([sourceUrl]).filter(hasHttpUrl);
     const evidenceIds = new Set<string>();
-    const toObjectId = (value: string): mongoose.Types.ObjectId | undefined =>
-      mongoose.Types.ObjectId.isValid(value) ? new mongoose.Types.ObjectId(value) : undefined;
-    const userObjectId = toObjectId(userId);
+    const userObjectId = toVisibilityRepairObjectId(userId);
     const canonicalSourceUrl = variants[0];
     const fingerprintInput = [userId, canonicalSourceUrl].filter(Boolean).join('|');
     const fingerprint = fingerprintInput ? `visibility-repair:action:${fingerprintInput}` : '';
@@ -2172,9 +2184,7 @@ const defaultRepairDeps: RepairDeps = {
     return createdId ? [createdId] : [];
   },
   async findEntityActionEvidenceObservationIds({ researchEntityId, sourceUrl, sourceUrls }) {
-    const entityObjectId = mongoose.Types.ObjectId.isValid(researchEntityId)
-      ? new mongoose.Types.ObjectId(researchEntityId)
-      : null;
+    const entityObjectId = toVisibilityRepairObjectId(researchEntityId);
     if (!entityObjectId) return [];
 
     const variants = urlVariants([sourceUrl, ...(Array.isArray(sourceUrls) ? sourceUrls : [])]).filter(hasHttpUrl);
@@ -2201,8 +2211,10 @@ const defaultRepairDeps: RepairDeps = {
       .filter((observation) => observation.id && hasHttpUrl(observation.sourceUrl));
   },
   async findResearchEntityMembers(id) {
+    const safeId = normalizeVisibilityRepairObjectId(id);
+    if (!safeId) return [];
     return ResearchGroupMember.find({
-      researchEntityId: id,
+      researchEntityId: safeId,
       archived: { $ne: true },
       role: { $in: ['pi', 'principal-investigator', 'principal investigator', 'director', 'lead'] },
     })
@@ -2218,13 +2230,18 @@ const defaultRepairDeps: RepairDeps = {
       );
   },
   async updateResearchEntity(id, patch) {
-    await ResearchEntity.updateOne({ _id: id }, { $set: patch });
+    const safeId = normalizeVisibilityRepairObjectId(id);
+    if (!safeId) return;
+    await ResearchEntity.updateOne({ _id: safeId }, { $set: patch });
   },
   async findProgram(id) {
-    return Fellowship.findById(id).lean();
+    const safeId = normalizeVisibilityRepairObjectId(id);
+    return safeId ? Fellowship.findById(safeId).lean() : null;
   },
   async updateProgram(id, patch) {
-    await Fellowship.updateOne({ _id: id }, { $set: patch });
+    const safeId = normalizeVisibilityRepairObjectId(id);
+    if (!safeId) return;
+    await Fellowship.updateOne({ _id: safeId }, { $set: patch });
   },
   async runGate(collection, recordIds, mode) {
     return runStudentVisibilityGate({ collection, recordIds, mode });

@@ -11,6 +11,7 @@ import {
   emptyPostMaterializationMetrics,
   mergeUniqueArrayValues,
   normalizeDoiForMaterialization,
+  normalizeMaterializerObjectId,
   officialProfileObservationMatchesUser,
   sanitizeResearchEntitySourceUrlsForMaterialization,
   selectOfficialProfileObservationUserMatch,
@@ -25,6 +26,18 @@ import {
 import { redactDirectContactInfo } from '../../utils/contactRedaction';
 
 describe('entityMaterializer post-materialization metrics', () => {
+  it('normalizes materializer ObjectIds without object-shaped coercion', () => {
+    expect(normalizeMaterializerObjectId(' 507f1f77bcf86cd799439011 ')).toBe(
+      '507f1f77bcf86cd799439011',
+    );
+    expect(normalizeMaterializerObjectId('abcdefghijkl')).toBeUndefined();
+    expect(
+      normalizeMaterializerObjectId({
+        toString: () => '507f1f77bcf86cd799439011',
+      }),
+    ).toBeUndefined();
+  });
+
   it('normalizes DOI values for paper identity matching', () => {
     expect(normalizeDoiForMaterialization(' https://doi.org/10.1000/ABC ')).toBe(
       '10.1000/abc',
@@ -44,17 +57,17 @@ describe('entityMaterializer post-materialization metrics', () => {
       'dept-cs-example',
     );
     expect(userLookupValueForInferredPiUserKey('netid:hc685')).toBe('hc685');
-    expect(userLookupValueForInferredPiUserKey('dept:physics:hui-cao')).toBe(
-      'dept:physics:hui-cao',
+    expect(userLookupValueForInferredPiUserKey('dept:physics:hayden-material')).toBe(
+      'dept:physics:hayden-material',
     );
     expect(userLookupValueForInferredPiUserKey('')).toBe('');
   });
 
   it('builds tolerant user lookup filters for inferred PI keys', () => {
     expect(userLookupFiltersForInferredPiUserKey('netid:hc5')).toEqual([{ netid: 'hc5' }]);
-    expect(userLookupFiltersForInferredPiUserKey('netid:hui.cao')).toEqual([
-      { netid: 'hui.cao' },
-      { email: 'hui.cao@yale.edu' },
+    expect(userLookupFiltersForInferredPiUserKey('netid:hayden.material')).toEqual([
+      { netid: 'hayden.material' },
+      { email: 'hayden.material@yale.edu' },
     ]);
     expect(userLookupFiltersForInferredPiUserKey('')).toEqual([]);
   });
@@ -164,7 +177,7 @@ describe('entityMaterializer post-materialization metrics', () => {
     };
     const alias = {
       _id: 'alias',
-      netid: 'anna.zayaruznaya',
+      netid: 'ari.match',
       fname: 'A.',
       lname: 'Zayaruznaya',
       primaryDepartment: 'Music',
@@ -175,7 +188,7 @@ describe('entityMaterializer post-materialization metrics', () => {
       selectOfficialProfileObservationUserMatch(
         observations,
         [alias, canonical],
-        'anna.zayaruznaya',
+        'ari.match',
       ),
     ).toBe(canonical);
     expect(
@@ -343,7 +356,7 @@ describe('entityMaterializer post-materialization metrics', () => {
         field: 'bio',
         sourceName: 'official-profile-pi-backfill',
         value:
-          "Joseph Kim studies translational cancer biology and develops clinical research programs. For more on this research, refer to Dr. Kim's complete Google Scholar profile.",
+          "Jules Fixture studies translational cancer biology and develops clinical research programs. For more on this research, refer to Dr. Kim's complete Google Scholar profile.",
       }),
     ).toBe(true);
     expect(
@@ -383,7 +396,7 @@ describe('entityMaterializer post-materialization metrics', () => {
         field: 'bio',
         sourceName: 'official-profile-pi-backfill',
         value:
-          'Dana Angluin studies algorithmic learning theory, formal languages, and computational models for learning from queries.',
+          'Drew Fixture studies algorithmic learning theory, formal languages, and computational models for learning from queries.',
       }),
     ).toBe(false);
   });
@@ -765,7 +778,7 @@ describe('entityMaterializer post-materialization metrics', () => {
       {
         field: 'officialProfilePublications',
         sourceName: 'dept-faculty-roster',
-        sourceUrl: 'https://eall.yale.edu/people/tina-lu',
+        sourceUrl: 'https://eall.yale.edu/people/taylor-literature',
         confidence: 0.9,
         observedAt,
         value: [
@@ -774,7 +787,7 @@ describe('entityMaterializer post-materialization metrics', () => {
             year: 2001,
             venue: 'Stanford University Press',
             url: 'https://example.edu/persons-roles-and-minds.pdf',
-            sourceUrl: 'https://eall.yale.edu/people/tina-lu',
+            sourceUrl: 'https://eall.yale.edu/people/taylor-literature',
           },
         ],
       },
@@ -798,9 +811,9 @@ describe('entityMaterializer post-materialization metrics', () => {
       venue: 'Stanford University Press',
       confidence: 0.9,
       observedAt,
-      sourceUrl: 'https://eall.yale.edu/people/tina-lu',
+      sourceUrl: 'https://eall.yale.edu/people/taylor-literature',
       externalIds: {
-        officialProfileSourceUrl: 'https://eall.yale.edu/people/tina-lu',
+        officialProfileSourceUrl: 'https://eall.yale.edu/people/taylor-literature',
       },
       archived: false,
     });
@@ -930,7 +943,7 @@ describe('entityMaterializer post-materialization metrics', () => {
       {
         field: 'officialProfilePublications',
         sourceName: 'dept-faculty-roster',
-        sourceUrl: 'https://eall.yale.edu/people/tina-lu',
+        sourceUrl: 'https://eall.yale.edu/people/taylor-literature',
         confidence: 0.9,
         observedAt: new Date('2026-05-25T00:00:00Z'),
         value: [
@@ -938,7 +951,7 @@ describe('entityMaterializer post-materialization metrics', () => {
             title: 'Persons, Roles and Minds',
             year: 2001,
             venue: 'Stanford University Press',
-            sourceUrl: 'https://eall.yale.edu/people/tina-lu',
+            sourceUrl: 'https://eall.yale.edu/people/taylor-literature',
           },
         ],
       },

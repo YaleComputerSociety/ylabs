@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   deriveAccessArtifactsFromObservations,
   deriveIdentifiedLeadWaysIn,
+  normalizeAccessMaterializerObjectId,
   officialNonGrantSourceUrl,
   type AccessObservation,
 } from '../accessMaterializer';
@@ -22,6 +23,18 @@ function obs(overrides: Partial<AccessObservation>): AccessObservation {
 }
 
 describe('deriveAccessArtifactsFromObservations', () => {
+  it('normalizes access materializer ObjectIds without object-shaped coercion', () => {
+    expect(normalizeAccessMaterializerObjectId(' 64f000000000000000000001 ')).toBe(
+      '64f000000000000000000001',
+    );
+    expect(normalizeAccessMaterializerObjectId('abcdefghijkl')).toBeUndefined();
+    expect(
+      normalizeAccessMaterializerObjectId({
+        toString: () => '64f000000000000000000001',
+      }),
+    ).toBeUndefined();
+  });
+
   it('keeps independent-study evidence as formalization signals when explicit', () => {
     const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
       obs({ field: 'offersIndependentStudy', value: true, confidence: 0.7 }),

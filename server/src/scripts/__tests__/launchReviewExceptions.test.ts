@@ -75,6 +75,12 @@ describe('launchReviewExceptions CLI helpers', () => {
     expect(() => parseLaunchReviewExceptionArgs(['--output=--collection=all'])).toThrow(
       /--output requires a path/,
     );
+    expect(() => parseLaunchReviewExceptionArgs(['--output=/var/tmp/launch-review.json'])).toThrow(
+      /--output must write under/,
+    );
+    expect(() => parseLaunchReviewExceptionArgs(['--output=/tmp/launch-review.txt'])).toThrow(
+      /--output must point to a \.json report file/,
+    );
     expect(() =>
       parseLaunchReviewExceptionArgs(['--decision-template-output', '--collection=all']),
     ).toThrow(/--decision-template-output requires a path/);
@@ -82,11 +88,19 @@ describe('launchReviewExceptions CLI helpers', () => {
       parseLaunchReviewExceptionArgs(['--decision-template-output=--collection=all']),
     ).toThrow(/--decision-template-output requires a path/);
     expect(() =>
+      parseLaunchReviewExceptionArgs([
+        '--decision-template-output=/var/tmp/launch-review-template.json',
+      ]),
+    ).toThrow(/--decision-template-output must write under/);
+    expect(() =>
       parseLaunchReviewExceptionArgs(['--accepted-decisions', '--allow-empty-decisions']),
     ).toThrow(/--accepted-decisions requires a path/);
     expect(() =>
       parseLaunchReviewExceptionArgs(['--accepted-decisions=--allow-empty-decisions']),
     ).toThrow(/--accepted-decisions requires a path/);
+    expect(() =>
+      parseLaunchReviewExceptionArgs(['--accepted-decisions=/var/tmp/launch-review-decisions.json']),
+    ).toThrow(/--accepted-decisions must write under/);
   });
 
   it('builds a dry-run review artifact with apply blocked', () => {
@@ -291,6 +305,9 @@ describe('launchReviewExceptions CLI helpers', () => {
       mode: 'dry-run',
       reviewExceptionCount: 1,
     });
+    expect(() =>
+      writeLaunchReviewExceptionOutput({ mode: 'dry-run' }, '/var/tmp/launch-review.json'),
+    ).toThrow(/--output must write under/);
   });
 
   it('wraps review artifacts with target metadata and parsed options', () => {

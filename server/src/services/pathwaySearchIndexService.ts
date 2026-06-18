@@ -7,6 +7,7 @@ import {
 } from './pathwaySearchService';
 import { publicStudentVisibilityTiers } from '../models/studentVisibility';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
+import { serializedDocumentId } from '../utils/idSerialization';
 import { getMeiliIndex } from '../utils/meiliClient';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 
@@ -14,6 +15,10 @@ export const PATHWAY_SEARCH_INDEX_NAME = 'pathways';
 export const PATHWAY_SEARCH_INDEX_PRIMARY_KEY = 'id';
 
 const MAX_SEARCH_PAGE = 1000;
+const MAX_SEARCH_PAGE_SIZE = 100;
+const MAX_SEARCH_QUERY_LENGTH = 512;
+const MAX_FILTER_VALUES = 50;
+const MAX_FILTER_VALUE_LENGTH = 120;
 const MAX_EVIDENCE_ITEMS = 3;
 const MAX_EVIDENCE_EXCERPT_LENGTH = 480;
 const FORMALIZATION_ONLY_PATHWAY_TYPES = [
@@ -62,8 +67,6 @@ export interface PathwaySearchIndexDocument {
   sourceUrls: string[];
   lastObservedAt?: string;
   lastObservedAtTimestamp?: number;
-  createdAt?: string;
-  createdAtTimestamp?: number;
   entityId?: string;
   entitySlug?: string;
   entityName?: string;
@@ -168,7 +171,6 @@ export const PATHWAY_SEARCH_INDEX_SETTINGS: PathwaySearchIndexSettings = {
   sortableAttributes: [
     'confidence',
     'lastObservedAtTimestamp',
-    'createdAtTimestamp',
     'postedOpportunityDeadlineTimestamp',
   ],
   displayedAttributes: ['*'],
@@ -187,14 +189,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
 const stringifyId = (value: unknown): string | undefined => {
-  if (value === undefined || value === null) return undefined;
-  if (typeof value === 'string') return value;
-  if (typeof value === 'number') return String(value);
-  if (isRecord(value) && typeof value.toString === 'function') {
-    const stringified = value.toString();
-    return stringified === '[object Object]' ? undefined : stringified;
-  }
-  return undefined;
+  return serializedDocumentId(value);
 };
 
 const toStringValue = (value: unknown): string | undefined => {
@@ -318,6 +313,55 @@ const uniqueStrings = (...groups: string[][]): string[] =>
 
 const quoteFilterValue = (value: string): string => `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
 
+const boundedSearchQuery = (value: unknown): string => {
+  if (typeof value !== 'string') return '';
+  return value.trim().slice(0, MAX_SEARCH_QUERY_LENGTH);
+};
+
+const boundedFilterValues = <T extends string>(values?: T[]): T[] => {
+  if (!Array.isArray(values)) return [];
+
+  const seen = new Set<string>();
+  const clean: string[] = [];
+  for (const value of values) {
+    if (typeof value !== 'string') continue;
+    const boundedValue = value.trim().slice(0, MAX_FILTER_VALUE_LENGTH);
+    if (!boundedValue || seen.has(boundedValue)) continue;
+    seen.add(boundedValue);
+    clean.push(boundedValue);
+    if (clean.length >= MAX_FILTER_VALUES) break;
+  }
+
+  return clean as T[];
+};
+
+const sanitizePathwayMeiliFilters = (
+  filters: PathwaySearchInput['filters'] = {},
+): PathwaySearchInput['filters'] => ({
+  pathwayIds: boundedFilterValues(filters.pathwayIds),
+  entityIds: boundedFilterValues(filters.entityIds),
+  pathwayType: boundedFilterValues(filters.pathwayType),
+  compensation: boundedFilterValues(filters.compensation),
+  status: boundedFilterValues(filters.status),
+  evidenceStrength: boundedFilterValues(filters.evidenceStrength),
+  entityType: boundedFilterValues(filters.entityType),
+  departments: boundedFilterValues(filters.departments),
+  researchAreas: boundedFilterValues(filters.researchAreas),
+  bestNextStepCategory: boundedFilterValues(filters.bestNextStepCategory),
+  hasActivePostedOpportunity:
+    typeof filters.hasActivePostedOpportunity === 'boolean'
+      ? filters.hasActivePostedOpportunity
+      : undefined,
+});
+
+const sanitizePathwayMeiliSearchInput = (
+  input: PathwaySearchInput,
+): PathwaySearchInput => ({
+  ...input,
+  q: boundedSearchQuery(input.q),
+  filters: sanitizePathwayMeiliFilters(input.filters || {}),
+});
+
 const anyFilter = (field: string, values?: string[]): string | undefined => {
   const clean = toStringArray(values);
   if (clean.length === 0) return undefined;
@@ -362,14 +406,15 @@ function buildPathwayMeiliSort(input: PathwaySearchInput): string[] | undefined 
       return [`lastObservedAtTimestamp:${direction}`, 'confidence:desc'];
     case 'deadline':
       return [`postedOpportunityDeadlineTimestamp:${direction}`, 'confidence:desc'];
-    case 'createdAt':
-      return [`createdAtTimestamp:${direction}`, 'confidence:desc'];
     default:
       return input.q?.trim() ? undefined : ['lastObservedAtTimestamp:desc', 'confidence:desc'];
   }
 }
 
 function indexDocumentToHit(doc: PathwaySearchIndexDocument): PathwaySearchHit {
+  const publicResearchEntityKey =
+    doc.entitySlug || doc.entityDisplayName || doc.entityName || '';
+
   return {
     _id: doc.pathwayId || doc.id,
     pathwayType: doc.pathwayType || '',
@@ -383,15 +428,13 @@ function indexDocumentToHit(doc: PathwaySearchIndexDocument): PathwaySearchHit {
     confidence: doc.confidence,
     sourceUrls: doc.sourceUrls || [],
     lastObservedAt: doc.lastObservedAt ? new Date(doc.lastObservedAt) : undefined,
-    createdAt: doc.createdAt ? new Date(doc.createdAt) : undefined,
     researchEntity: {
-      _id: doc.entityId || '',
+      _id: publicResearchEntityKey,
       slug: doc.entitySlug || '',
       name: doc.entityName || '',
       displayName: doc.entityDisplayName,
       kind: doc.entityKind,
       entityType: doc.entityType,
-      studentVisibilityTier: doc.entityStudentVisibilityTier,
       departments: doc.entityDepartments || [],
       researchAreas: doc.entityResearchAreas || [],
       school: doc.entitySchool,
@@ -458,8 +501,6 @@ export function buildPathwaySearchIndexDocument(
     sourceUrls: uniqueStrings(toPublicHttpArray(record.sourceUrls), normalizedEvidence.sourceUrls),
     lastObservedAt: toIsoString(record.lastObservedAt),
     lastObservedAtTimestamp: toTimestamp(record.lastObservedAt),
-    createdAt: toIsoString(record.createdAt),
-    createdAtTimestamp: toTimestamp(record.createdAt),
     entityId: stringifyId(researchEntity._id) || stringifyId(researchEntity.id),
     entitySlug: toStringValue(researchEntity.slug),
     entityName: redactAndTrim(researchEntity.name),
@@ -506,12 +547,13 @@ export async function searchPathwaysViaMeili(
   input: PathwaySearchInput,
   getIndex: (name: string) => Promise<PathwaySearchIndexSearchAdapter> = getMeiliIndex as any,
 ): Promise<PathwaySearchResult> {
-  const page = Math.min(MAX_SEARCH_PAGE, Math.max(1, Math.floor(input.page || 1)));
-  const pageSize = Math.max(1, Math.min(100, Math.floor(input.pageSize || 24)));
+  const safeInput = sanitizePathwayMeiliSearchInput(input);
+  const page = Math.min(MAX_SEARCH_PAGE, Math.max(1, Math.floor(safeInput.page || 1)));
+  const pageSize = Math.max(1, Math.min(MAX_SEARCH_PAGE_SIZE, Math.floor(safeInput.pageSize || 24)));
   const offset = (page - 1) * pageSize;
   const index = await getIndex(PATHWAY_SEARCH_INDEX_NAME);
-  const filter = buildPathwayMeiliFilter(input.filters);
-  const sort = buildPathwayMeiliSort(input);
+  const filter = buildPathwayMeiliFilter(safeInput.filters);
+  const sort = buildPathwayMeiliSort(safeInput);
   const params: Record<string, unknown> = {
     limit: pageSize,
     offset,
@@ -519,7 +561,7 @@ export async function searchPathwaysViaMeili(
   if (filter) params.filter = filter;
   if (sort && sort.length > 0) params.sort = sort;
 
-  const result = await index.search((input.q || '').trim(), params);
+  const result = await index.search(safeInput.q || '', params);
   const hits = (result.hits || []).map(indexDocumentToHit);
 
   return {
@@ -616,7 +658,7 @@ export async function syncPathwaySearchIndexDocumentsForEntity(
       page,
       pageSize,
       filters: { entityIds: [researchEntityId] },
-      sort: { sortBy: 'createdAt', sortOrder: 'desc' },
+      sort: { sortBy: 'lastObservedAt', sortOrder: 'desc' },
     });
     const documents = buildPathwaySearchIndexDocuments(result.hits);
     if (documents.length > 0) {

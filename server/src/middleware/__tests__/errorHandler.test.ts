@@ -37,6 +37,34 @@ describe('errorHandler', () => {
 
     expect(response.status).toHaveBeenCalledWith(403);
     expect(response.json).toHaveBeenCalledWith({ error: 'Forbidden' });
+    expect(consoleError.mock.calls.flat().join(' ')).not.toContain('user:pass');
+  });
+
+  it('redacts credentials, tokens, contact data, and secrets before logging errors', () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const response = createResponse();
+    const error = new Error(
+      'Failed mongodb://user:pass@example.invalid/db?api_key=secret-key for ada@example.edu with Bearer abc123 and 203-555-1212',
+    );
+
+    errorHandler(
+      error,
+      {} as Request,
+      response,
+      vi.fn() as unknown as NextFunction,
+    );
+
+    const logged = consoleError.mock.calls.flat().join(' ');
+    expect(logged).not.toContain('user:pass');
+    expect(logged).not.toContain('secret-key');
+    expect(logged).not.toContain('ada@example.edu');
+    expect(logged).not.toContain('abc123');
+    expect(logged).not.toContain('203-555-1212');
+    expect(logged).toContain('[credentials-redacted]');
+    expect(logged).toContain('[secret-redacted]');
+    expect(logged).toContain('[email redacted]');
+    expect(logged).toContain('[token-redacted]');
+    expect(logged).toContain('[phone redacted]');
   });
 
   it('does not leak object ids from not-found errors', () => {
@@ -138,6 +166,22 @@ describe('errorHandler', () => {
       error: 'Internal server error',
       message: undefined,
     });
+  });
+
+  it('delegates late errors after headers are sent instead of writing another response', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const response = {
+      ...createResponse(),
+      headersSent: true,
+    };
+    const next = vi.fn() as unknown as NextFunction;
+    const error = new Error('late stream failure with token=secret-value');
+
+    errorHandler(error, {} as Request, response as unknown as Response, next);
+
+    expect(next).toHaveBeenCalledWith(error);
+    expect(response.status).not.toHaveBeenCalled();
+    expect(response.json).not.toHaveBeenCalled();
   });
 });
 

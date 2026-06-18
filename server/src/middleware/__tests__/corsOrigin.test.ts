@@ -71,4 +71,41 @@ describe('corsOrigin', () => {
     expect(corsError.status).toBe(403);
     expect(corsError.message).toBe('Not allowed by CORS');
   });
+
+  it('rejects oversized origins before allowlist comparison', () => {
+    const oversizedOrigin = `https://yalelabs.io/${'a'.repeat(2049)}`;
+    const { callbackError, callbackAllow } = runOriginHandler(oversizedOrigin, true);
+
+    expect(
+      isAllowedCorsOrigin({
+        allowedOrigins,
+        bypassCors: true,
+        origin: oversizedOrigin,
+      }),
+    ).toBe(false);
+    expect(callbackAllow).toBeUndefined();
+    expect(callbackError).toBeInstanceOf(CorsOriginError);
+  });
+
+  it('rejects malformed origins before allowlist or local bypass decisions', () => {
+    for (const origin of [
+      'https://attacker:secret@yalelabs.io',
+      ' https://yalelabs.io',
+      'https://yalelabs.io/path',
+      'https:\\\\yalelabs.io',
+      'null',
+    ]) {
+      expect(
+        isAllowedCorsOrigin({
+          allowedOrigins,
+          bypassCors: true,
+          origin,
+        }),
+      ).toBe(false);
+
+      const { callbackError, callbackAllow } = runOriginHandler(origin, true);
+      expect(callbackAllow).toBeUndefined();
+      expect(callbackError).toBeInstanceOf(CorsOriginError);
+    }
+  });
 });

@@ -19,7 +19,7 @@ const ada: AcceptedInputUser = {
   fname: 'Ada',
   lname: 'Lovelace',
   userType: 'faculty',
-  orcid: '0000-0002-1825-0097',
+  orcid: '0000-0000-0000-0003',
   primaryDepartment: 'Mathematics',
   profileVerified: true,
   profileUrls: {
@@ -52,10 +52,10 @@ const noYaleEvidence: AcceptedInputUser = {
 
 describe('normalizeOrcid', () => {
   it('normalizes ORCID URLs and compact strings', () => {
-    expect(normalizeOrcid('https://orcid.org/0000-0002-1825-0097')).toBe(
-      '0000-0002-1825-0097',
+    expect(normalizeOrcid('https://orcid.org/0000-0000-0000-0003')).toBe(
+      '0000-0000-0000-0003',
     );
-    expect(normalizeOrcid('0000000218250097')).toBe('0000-0002-1825-0097');
+    expect(normalizeOrcid('0000000218250097')).toBe('0000-0000-0000-0003');
   });
 
   it('rejects invalid checksum values', () => {
@@ -69,14 +69,14 @@ describe('normalizeOrcid', () => {
 
 describe('resolveOrcidCrosswalk', () => {
   it('matches an ORCID already attached to one Yale-confirmed user', () => {
-    const result = resolveOrcidCrosswalk('0000-0002-1825-0097', [ada]);
+    const result = resolveOrcidCrosswalk('0000-0000-0000-0003', [ada]);
     expect(result.status).toBe('matched-existing');
     expect(result.userSummary?.name).toBe('Ada Lovelace');
     expect(result.canPersist).toBe(false);
   });
 
   it('reports ambiguous ORCID matches', () => {
-    const result = resolveOrcidCrosswalk('0000-0002-1825-0097', [
+    const result = resolveOrcidCrosswalk('0000-0000-0000-0003', [
       ada,
       { ...ada, _id: 'u-ada-duplicate', netid: 'ada2' },
     ]);
@@ -85,13 +85,13 @@ describe('resolveOrcidCrosswalk', () => {
   });
 
   it('reports missing crosswalks without creating users', () => {
-    const result = resolveOrcidCrosswalk('0000-0001-5109-3700', [ada]);
+    const result = resolveOrcidCrosswalk('0000-0000-0000-0004', [ada]);
     expect(result.status).toBe('unresolved');
     expect(result.user).toBeUndefined();
   });
 
   it('finds a newly persistable ORCID through Yale-backed email evidence', () => {
-    const result = resolveOrcidCrosswalk('0000-0001-5109-3700', [grace], {
+    const result = resolveOrcidCrosswalk('0000-0000-0000-0004', [grace], {
       email: 'grace@yale.edu',
       sourceUrl: 'https://directory.yale.edu/people/grace-hopper',
       reviewNote: 'ORCID listed on official profile evidence',
@@ -102,7 +102,7 @@ describe('resolveOrcidCrosswalk', () => {
   });
 
   it('does not persist ORCID to non-Yale identities', () => {
-    const result = resolveOrcidCrosswalk('0000-0001-5109-3700', [noYaleEvidence], {
+    const result = resolveOrcidCrosswalk('0000-0000-0000-0004', [noYaleEvidence], {
       email: 'outside@example.edu',
       sourceUrl: 'https://example.edu/people/outside',
     });
@@ -115,7 +115,7 @@ describe('fellowship accepted CSV validation', () => {
   it('accepts advisorOrcid rows that resolve to Yale users', () => {
     const csv = [
       'advisorOrcid,year,studentName,projectTitle',
-      'https://orcid.org/0000-0002-1825-0097,2024,Alice Liu,Riboswitch dynamics',
+      'https://orcid.org/0000-0000-0000-0003,2024,Alice Liu,Riboswitch dynamics',
     ].join('\n');
     const result = validateFellowshipAcceptedCsv('stars-ii', csv, [ada]);
     expect(result.status).toBe('ready');
@@ -142,11 +142,12 @@ describe('fellowship accepted CSV validation', () => {
   it('exports scraper-compatible rows and fills advisorName from resolved ORCID', () => {
     const csv = [
       'advisorOrcid,year,studentName',
-      '0000-0002-1825-0097,2024,Alice Liu',
+      '0000-0000-0000-0003,2024,=Alice Liu',
     ].join('\n');
     const result = exportFellowshipAcceptedCsv('stars-ii', csv, [ada]);
     expect(result.exportedRows).toBe(1);
-    expect(result.csv).toContain('Ada Lovelace,0000-0002-1825-0097,2024');
+    expect(result.csv).toContain('Ada Lovelace,0000-0000-0000-0003,2024');
+    expect(result.csv).toContain("'=Alice Liu");
   });
 });
 
@@ -155,7 +156,7 @@ describe('Scholar accepted CSV', () => {
     const rows = buildScholarCandidateRows([ada]);
 
     expect(rows[0]).toMatchObject({
-      orcid: '0000-0002-1825-0097',
+      orcid: '0000-0000-0000-0003',
       name: 'Ada Lovelace',
       primaryDepartment: 'Mathematics',
       yaleProfileUrl: 'https://math.yale.edu/people/ada-lovelace',
@@ -169,7 +170,7 @@ describe('Scholar accepted CSV', () => {
   it('validates Scholar accepted rows by ORCID', () => {
     const csv = [
       'orcid,googleScholarId,profileUrl,reviewNote',
-      '0000-0002-1825-0097,abc123,https://scholar.google.com/citations?user=abc123,manual ORCID match',
+      '0000-0000-0000-0003,abc123,https://scholar.google.com/citations?user=abc123,manual ORCID match',
     ].join('\n');
     const result = validateScholarAcceptedCsv(csv, [ada]);
     expect(result.status).toBe('ready');
@@ -179,7 +180,7 @@ describe('Scholar accepted CSV', () => {
   it('applies accepted Scholar IDs as manual locks', async () => {
     const csv = [
       'orcid,googleScholarId,profileUrl,reviewNote',
-      '0000-0002-1825-0097,abc123,https://scholar.google.com/citations?user=abc123,manual ORCID match',
+      '0000-0000-0000-0003,abc123,https://scholar.google.com/citations?user=abc123,manual ORCID match',
     ].join('\n');
     const updates: Array<{ userId: unknown; update: Record<string, unknown> }> = [];
     const result = await applyScholarAcceptedCsv(csv, [ada], {
@@ -204,7 +205,7 @@ describe('ORCID crosswalk apply', () => {
   it('persists ORCID only when crosswalk evidence is unambiguous and Yale-backed', async () => {
     const csv = [
       'orcid,yaleEmail,sourceUrl,reviewNote',
-      '0000-0001-5109-3700,grace@yale.edu,https://directory.yale.edu/people/grace-hopper,official profile match',
+      '0000-0000-0000-0004,grace@yale.edu,https://directory.yale.edu/people/grace-hopper,official profile match',
     ].join('\n');
     const updates: Array<{ userId: unknown; update: Record<string, unknown> }> = [];
     const result = await applyOrcidCrosswalkCsv(csv, [grace], {
@@ -217,13 +218,13 @@ describe('ORCID crosswalk apply', () => {
 
     expect(result.appliedRows).toBe(1);
     expect(updates[0].userId).toBe('u-grace');
-    expect(update.$set.orcid).toBe('0000-0001-5109-3700');
+    expect(update.$set.orcid).toBe('0000-0000-0000-0004');
   });
 
   it('does not persist ORCID crosswalk rows backed only by credentialed URLs', async () => {
     const csv = [
       'orcid,name,sourceUrl,reviewNote',
-      '0000-0001-5109-3700,Grace Hopper,https://user:pass@directory.yale.edu/people/grace-hopper,official profile match',
+      '0000-0000-0000-0004,Grace Hopper,https://user:pass@directory.yale.edu/people/grace-hopper,official profile match',
     ].join('\n');
     const updates: Array<{ userId: unknown; update: Record<string, unknown> }> = [];
     const result = await applyOrcidCrosswalkCsv(csv, [grace], {
@@ -242,14 +243,14 @@ describe('arXiv accepted ORCID validation', () => {
   it('converts accepted ORCIDs to current scraper-compatible internal targets', () => {
     const graceWithOrcid: AcceptedInputUser = {
       ...grace,
-      orcid: '0000-0001-5109-3700',
+      orcid: '0000-0000-0000-0004',
       primaryDepartment: 'Physics',
     };
     const result = validateArxivOrcidList(
       [
         '# comments allowed',
-        '0000-0002-1825-0097 # Ada Lovelace',
-        '0000-0001-5109-3700',
+        '0000-0000-0000-0003 # Ada Lovelace',
+        '0000-0000-0000-0004',
       ].join('\n'),
       [ada, graceWithOrcid],
     );
@@ -260,7 +261,7 @@ describe('arXiv accepted ORCID validation', () => {
   });
 
   it('blocks unresolved ORCIDs instead of creating users', () => {
-    const result = validateArxivOrcidList('0000-0001-5109-3700', [ada]);
+    const result = validateArxivOrcidList('0000-0000-0000-0004', [ada]);
     expect(result.status).toBe('blocked');
     expect(result.issues[0].status).toBe('unresolved');
   });

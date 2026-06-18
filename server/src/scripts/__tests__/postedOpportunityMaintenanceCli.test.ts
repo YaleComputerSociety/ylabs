@@ -47,6 +47,12 @@ describe('posted opportunity maintenance CLIs', () => {
     expect(() => parsePostedOpportunityBackfillArgs(['--output=--apply'])).toThrow(
       /--output requires a path/,
     );
+    expect(() =>
+      parsePostedOpportunityBackfillArgs(['--output', '/var/tmp/posted-opportunity-backfill.json']),
+    ).toThrow(/--output must write under/);
+    expect(() =>
+      parsePostedOpportunityBackfillArgs(['--output', '/tmp/posted-opportunity-backfill.txt']),
+    ).toThrow(/--output must point to a \.json report file/);
   });
 
   it('writes the posted-opportunity backfill artifact when output is provided', () => {
@@ -66,6 +72,12 @@ describe('posted opportunity maintenance CLIs', () => {
       scanned: 10,
       created: 0,
     });
+  });
+
+  it('rejects unsafe posted-opportunity backfill artifact writes', () => {
+    expect(() =>
+      writePostedOpportunityBackfillOutput({ dryRun: true }, '/var/tmp/posted-opportunity.json'),
+    ).toThrow(/--output must write under/);
   });
 
   it('adds target metadata to posted-opportunity backfill artifacts', () => {
@@ -189,6 +201,15 @@ describe('posted opportunity maintenance CLIs', () => {
     expect(() => parsePostedOpportunityStatusReaperArgs(['--output=--apply'])).toThrow(
       /--output requires a path/,
     );
+    expect(() =>
+      parsePostedOpportunityStatusReaperArgs([
+        '--output',
+        '/var/tmp/posted-opportunity-reaper.json',
+      ]),
+    ).toThrow(/--output must write under/);
+    expect(() =>
+      parsePostedOpportunityStatusReaperArgs(['--output', '/tmp/posted-opportunity-reaper.txt']),
+    ).toThrow(/--output must point to a \.json report file/);
   });
 
   it('writes the posted-opportunity status reaper artifact when output is provided', () => {
@@ -208,6 +229,15 @@ describe('posted opportunity maintenance CLIs', () => {
       scanned: 5,
       expired: 1,
     });
+  });
+
+  it('rejects unsafe posted-opportunity status reaper artifact writes', () => {
+    expect(() =>
+      writePostedOpportunityStatusReaperOutput(
+        { dryRun: true },
+        '/var/tmp/posted-opportunity-reaper.json',
+      ),
+    ).toThrow(/--output must write under/);
   });
 
   it('adds target metadata to posted-opportunity status reaper artifacts', () => {

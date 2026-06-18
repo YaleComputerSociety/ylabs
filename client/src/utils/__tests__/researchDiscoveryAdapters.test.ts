@@ -3,8 +3,10 @@ import { describe, expect, it } from 'vitest';
 import {
   buildPathwayEvidenceRows,
   buildGroupedSearchResults,
+  buildResearchHomeEvidenceStatus,
   buildResearchHomeContextLine,
   buildIdentityConfidenceRecords,
+  formatSourceLabel,
   getPathwayActionLabel,
   getPathwayTypeLabel,
   parseQueryInterpretationChips,
@@ -93,6 +95,32 @@ describe('pathway display helpers', () => {
     });
     expect(JSON.stringify(evidenceRows)).not.toContain('POSTED_OPENING');
     expect(JSON.stringify(evidenceRows)).not.toContain('POSTED_ROLE');
+  });
+
+  it('does not trust credential-bearing Yale-looking source URLs', () => {
+    expect(formatSourceLabel('https://operator:secret@medicine.yale.edu/profile/example')).toBe(
+      'Source',
+    );
+    expect(formatSourceLabel('https://medicine.yale.edu/profile/example')).toBe(
+      'medicine.yale.edu',
+    );
+
+    expect(
+      buildResearchHomeEvidenceStatus(
+        entity({
+          sourceUrls: ['https://operator:secret@medicine.yale.edu/profile/example'],
+        }),
+        [],
+      ),
+    ).toEqual({ label: 'Evidence limited', state: 'limited' });
+    expect(
+      buildResearchHomeEvidenceStatus(
+        entity({
+          sourceUrls: ['https://medicine.yale.edu/profile/example'],
+        }),
+        [],
+      ),
+    ).toEqual({ label: 'Official Yale source found', state: 'official' });
   });
 });
 

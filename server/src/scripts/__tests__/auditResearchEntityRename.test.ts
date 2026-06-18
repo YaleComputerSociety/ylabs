@@ -33,6 +33,12 @@ describe('auditResearchEntityRename CLI helpers', () => {
     expect(() => parseResearchEntityRenameAuditArgs(['--output=--strict'])).toThrow(
       /--output requires a path/,
     );
+    expect(() => parseResearchEntityRenameAuditArgs(['--output=/etc/rename-audit.json'])).toThrow(
+      /--output must write under/,
+    );
+    expect(() => parseResearchEntityRenameAuditArgs(['--output=/tmp/rename-audit.txt'])).toThrow(
+      /--output must point to a \.json report file/,
+    );
   });
 
   it('writes the rename audit artifact when output is provided', () => {
@@ -50,6 +56,12 @@ describe('auditResearchEntityRename CLI helpers', () => {
     writeResearchEntityRenameAuditOutput(payload, output);
 
     expect(JSON.parse(fs.readFileSync(output, 'utf8'))).toMatchObject(payload);
+  });
+
+  it('rejects unsafe rename audit artifact writes from programmatic callers', () => {
+    expect(() => writeResearchEntityRenameAuditOutput({ status: 'ok' }, '/etc/rename-audit.json')).toThrow(
+      /--output must write under/,
+    );
   });
 
   it('wraps rename audit artifacts with target metadata and parsed options', () => {

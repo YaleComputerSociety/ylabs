@@ -181,6 +181,53 @@ describe('pathwaySearchService', () => {
     expect(JSON.stringify(hit)).not.toContain('user:pass');
   });
 
+  it('does not stringify object-shaped Mongo result ids while shaping public hits', async () => {
+    const unsafeId = {
+      toString() {
+        throw new Error('pathway search stringified an arbitrary result id');
+      },
+      toHexString() {
+        throw new Error('pathway search called a duck-typed result id');
+      },
+    };
+
+    mocks.aggregate.mockReturnValue({
+      exec: async () => [
+        {
+          hits: [
+            {
+              _id: unsafeId,
+              pathwayType: 'POSTED_ROLE',
+              status: 'PLAUSIBLE',
+              evidenceStrength: 'MODERATE',
+              studentFacingLabel: 'Apply through the program site',
+              bestNextStepCategory: 'apply',
+              sourceUrls: [],
+              researchEntity: {
+                slug: 'example-lab',
+                name: 'Example Lab',
+                departments: [],
+                researchAreas: [],
+              },
+              activePostedOpportunity: {
+                _id: unsafeId,
+                title: 'Apply now',
+                status: 'OPEN',
+              },
+              evidence: [],
+            },
+          ],
+          total: [{ count: 1 }],
+        },
+      ],
+    });
+
+    const result = await searchPathways({ page: 1, pageSize: 10 });
+
+    expect(result.hits[0]._id).toBe('');
+    expect(result.hits[0].activePostedOpportunity?._id).toBe('');
+  });
+
   it('caps page before building Mongo pathway search skip stages', async () => {
     mocks.aggregate.mockReturnValue({
       exec: async () => [{ hits: [], total: [{ count: 0 }] }],
@@ -202,5 +249,91 @@ describe('pathwaySearchService', () => {
       page: 1000,
       pageSize: 100,
     });
+  });
+
+  it('bounds direct service search query and filter arrays before building Mongo stages', async () => {
+    mocks.aggregate.mockReturnValue({
+      exec: async () => [{ hits: [], total: [{ count: 0 }] }],
+    });
+
+    await searchPathways({
+      q: `  ${'q'.repeat(600)}  `,
+      page: 1,
+      pageSize: 10,
+      filters: {
+        departments: [
+          ' Computer Science ',
+          ...Array.from({ length: 60 }, (_, index) => `Department ${index}`),
+        ],
+        researchAreas: ['x'.repeat(200)],
+      },
+    });
+
+    const pipeline = mocks.aggregate.mock.calls[0][0];
+    const entityMatch = pipeline.find(
+      (stage: any) => stage.$match?.['researchEntity.departments'],
+    );
+    const textMatch = pipeline.find((stage: any) =>
+      Array.isArray(stage.$match?.$or),
+    );
+    const labelRegex = textMatch.$match.$or.find((clause: any) => clause.studentFacingLabel)
+      .studentFacingLabel;
+
+    expect(entityMatch.$match['researchEntity.departments'].$in).toHaveLength(50);
+    expect(entityMatch.$match['researchEntity.departments'].$in[0]).toBe('Computer Science');
+    expect(entityMatch.$match['researchEntity.researchAreas'].$in).toEqual([
+      'x'.repeat(120),
+    ]);
+    expect(labelRegex.source).toHaveLength(512);
+  });
+
+  it('drops non-string direct service filter values before Mongo stage construction', async () => {
+    mocks.aggregate.mockReturnValue({
+      exec: async () => [{ hits: [], total: [{ count: 0 }] }],
+    });
+    const badFilter = { toString: vi.fn(() => 'Injected') };
+
+    await searchPathways({
+      page: 1,
+      pageSize: 10,
+      filters: {
+        departments: [badFilter as any, 'Computer Science'],
+      },
+    });
+
+    const pipeline = mocks.aggregate.mock.calls[0][0];
+    const entityMatch = pipeline.find(
+      (stage: any) => stage.$match?.['researchEntity.departments'],
+    );
+
+    expect(badFilter.toString).not.toHaveBeenCalled();
+    expect(entityMatch.$match['researchEntity.departments'].$in).toEqual([
+      'Computer Science',
+    ]);
+  });
+
+  it('drops object-shaped pathway id filters before Mongo ObjectId construction', async () => {
+    mocks.aggregate.mockReturnValue({
+      exec: async () => [{ hits: [], total: [{ count: 0 }] }],
+    });
+
+    await searchPathways({
+      page: 1,
+      pageSize: 10,
+      filters: {
+        pathwayIds: [
+          {
+            toString: () => {
+              throw new Error('pathway search stringified an arbitrary id');
+            },
+          } as any,
+          '67d8928150621bcef434a1d5',
+        ],
+      },
+    });
+
+    const pipeline = mocks.aggregate.mock.calls[0][0];
+    const idMatch = pipeline.find((stage: any) => stage.$match?._id);
+    expect(idMatch.$match._id.$in.map(String)).toEqual(['67d8928150621bcef434a1d5']);
   });
 });

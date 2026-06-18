@@ -32,6 +32,7 @@ import { resolveScraperEnvironment, summarizeMongoUrl } from './scraperEnvironme
 import { createCronRunnerDependencies, runScraperCron } from './cronRunner';
 import { pruneSupersededObservations } from './observationRetention';
 import { writeOptionalJsonOutput } from './scraperCliOutput';
+import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
   buildCronOutputPayload,
   buildMaterializeOutputPayload,
@@ -377,7 +378,7 @@ Environment guardrails:
 
 if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
   main().catch((err) => {
-    console.error(err);
+    console.error(sanitizeLogValue(err));
     process.exit(1);
   });
 }

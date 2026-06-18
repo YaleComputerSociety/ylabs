@@ -1,3 +1,5 @@
+import { serializedDocumentId } from '../utils/idSerialization';
+
 export type SourceHealthRisk = 'ok' | 'warn' | 'error';
 export type SourceHealthReviewArtifactReason =
   | 'latest_failure'
@@ -72,16 +74,16 @@ export interface SourceHealthRow {
 }
 
 const stringifyId = (value: unknown): string => {
-  if (!value) return '';
-  if (typeof value === 'string') return value;
-  if (typeof value === 'number') return String(value);
-  if (typeof value === 'object' && 'toString' in value) return String(value.toString());
-  return '';
+  return serializedDocumentId(value) || '';
 };
+
+const MAX_SOURCE_HEALTH_DATE_LENGTH = 64;
+const MAX_SOURCE_HEALTH_COMMAND_ARG_LENGTH = 160;
+const SAFE_BARE_COMMAND_ARG = /^[A-Za-z0-9_.:-]+$/;
 
 const iso = (value: Date | string | undefined): string | undefined => {
   if (!value) return undefined;
-  const date = value instanceof Date ? value : new Date(value);
+  const date = value instanceof Date ? value : new Date(value.slice(0, MAX_SOURCE_HEALTH_DATE_LENGTH));
   return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
 };
 
@@ -99,7 +101,7 @@ function reportOutputPath(sourceName: string, runId: string): string {
 
 function reportCommand(sourceName: string, runId: string): string {
   return betaCommand(
-    `yarn --cwd server scrape report --run ${runId} --output ${reportOutputPath(sourceName, runId)}`,
+    `yarn --cwd server scrape report --run ${commandArg(runId)} --output ${commandArg(reportOutputPath(sourceName, runId))}`,
   );
 }
 
@@ -124,11 +126,17 @@ function noRecentRunCommand(sourceName: string): string {
   if (sourceName === 'visibility-repair-queue') {
     return 'SCRAPER_ENV=beta yarn --cwd server beta:repair-queue --collection=all --mode=dry-run --limit=100 --output /tmp/ylabs-visibility-repair-queue-dry-run.json';
   }
-  return `SCRAPER_ENV=beta yarn --cwd server scrape run --source ${sourceName} --dry-run --limit 25`;
+  return `SCRAPER_ENV=beta yarn --cwd server scrape run --source ${commandArg(sourceName)} --dry-run --limit 25`;
 }
 
 function betaCommand(command: string): string {
   return command.startsWith(`${BETA_ENV_PREFIX} `) ? command : `${BETA_ENV_PREFIX} ${command}`;
+}
+
+function commandArg(value: string): string {
+  const bounded = value.slice(0, MAX_SOURCE_HEALTH_COMMAND_ARG_LENGTH);
+  if (SAFE_BARE_COMMAND_ARG.test(bounded)) return bounded;
+  return `'${bounded.replace(/'/g, `'\\''`)}'`;
 }
 
 function riskForSource(

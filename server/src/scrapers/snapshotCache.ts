@@ -5,8 +5,10 @@
  * during dev. Production runs (--release) bypass the cache by default.
  */
 import { ScrapeSnapshot } from '../models/scrapeSnapshot';
+import { escapeRegex } from '../utils/regex';
 
 const DEFAULT_TTL_MS = 24 * 60 * 60 * 1000;
+const MAX_REQUEST_KEY_PREFIX_LENGTH = 512;
 
 export async function getCached<T = unknown>(
   sourceName: string,
@@ -37,7 +39,12 @@ export async function setCached<T = unknown>(
 
 export async function invalidateCache(sourceName: string, requestKeyPrefix?: string): Promise<number> {
   const filter: any = { sourceName };
-  if (requestKeyPrefix) filter.requestKey = { $regex: `^${requestKeyPrefix}` };
+  if (requestKeyPrefix) {
+    if (requestKeyPrefix.length > MAX_REQUEST_KEY_PREFIX_LENGTH) {
+      throw new Error('Cache request key prefix is too long');
+    }
+    filter.requestKey = { $regex: `^${escapeRegex(requestKeyPrefix)}` };
+  }
   const res = await ScrapeSnapshot.deleteMany(filter);
   return res.deletedCount || 0;
 }

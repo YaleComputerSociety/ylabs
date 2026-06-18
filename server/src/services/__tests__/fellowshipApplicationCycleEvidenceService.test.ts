@@ -111,4 +111,48 @@ describe('fellowshipApplicationCycleEvidenceService', () => {
 
     expect(publicFellowshipApplicationCycleEvidence(evidence)).not.toHaveProperty('contactEmail');
   });
+
+  it('bounds polluted fellowship evidence values before normalization', () => {
+    const links = Array.from({ length: 50 }, (_, index) => ({
+      label: index === 0 ? 'Apply' : 'Program page',
+      url: `https://example.edu/source/${index}`,
+    }));
+    Object.defineProperty(links, '50', {
+      get: () => {
+        throw new Error('fellowship evidence read past the link cap');
+      },
+      enumerable: true,
+    });
+
+    const purpose = Array.from({ length: 50 }, (_, index) =>
+      index === 0 ? 'Research project funding' : `Purpose ${index}`,
+    );
+    Object.defineProperty(purpose, '50', {
+      get: () => {
+        throw new Error('fellowship evidence read past the text array cap');
+      },
+      enumerable: true,
+    });
+
+    const evidence = buildFellowshipApplicationCycleEvidence(
+      {
+        title: 'Summer Research Fellowship',
+        summary: 'x'.repeat(6000),
+        purpose,
+        applicationOpenDate: { toString: () => '2026-04-01T00:00:00.000Z' },
+        deadline: { toString: () => '2026-06-01T00:00:00.000Z' },
+        applicationLink: { toString: () => 'https://example.edu/apply' },
+        links,
+        contactOffice: { toString: () => 'Fellowships Office' },
+      },
+      now,
+    );
+
+    expect(evidence.sourceUrls).toHaveLength(50);
+    expect(evidence.applicationLink).toBeUndefined();
+    expect(evidence.contactOffice).toBeUndefined();
+    expect(evidence.applicationHasOpened).toBeUndefined();
+    expect(evidence.deadlineHasNotPassed).toBeUndefined();
+    expect(evidence.supportsFellowshipFundedProject).toBe(true);
+  });
 });

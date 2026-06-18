@@ -95,8 +95,8 @@ export function useSearchCore<TItem, TFilters>({
         setSearchExhausted(parsed.length < pageSize);
         setIsLoading(false);
       })
-      .catch((error) => {
-        console.error(`Error loading ${endpoint}:`, error);
+      .catch(() => {
+        console.error(`Error loading ${endpoint}.`);
         swal({ text: errorMessage, icon: 'warning' });
         setIsLoading(false);
       });

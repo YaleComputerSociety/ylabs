@@ -35,6 +35,8 @@ import {
 } from '../renderedFetch';
 import { getCached, setCached } from '../snapshotCache';
 import { normalizeOrcid } from '../../utils/orcid';
+import { sanitizeLogValue } from '../../utils/logSanitizer';
+import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import type {
   IScraper,
   ScraperContext,
@@ -1192,15 +1194,20 @@ function extractInlineMajorPublications(
 }
 
 async function fetchHtml(url: string, useCache: boolean, sourceName: string): Promise<string> {
-  const cacheKey = `page:${url}`;
+  const safeUrl = await assertPublicHttpUrl(url);
+  const safeUrlText = safeUrl.toString();
+  const cacheKey = `page:${safeUrlText}`;
   if (useCache) {
     const cached = await getCached<string>(sourceName, cacheKey);
     if (cached) return cached;
   }
-  const res = await axios.get(url, {
+  const agents = ssrfSafeAgents();
+  const res = await axios.get(safeUrlText, {
     timeout: FETCH_TIMEOUT_MS,
     headers: { 'User-Agent': USER_AGENT },
     maxRedirects: 5,
+    httpAgent: agents.httpAgent,
+    httpsAgent: agents.httpsAgent,
   });
   const html = res.data as string;
   if (useCache) await setCached(sourceName, cacheKey, html);
@@ -1213,21 +1220,26 @@ async function fetchDeptData(
   sourceName: string,
 ): Promise<unknown | null> {
   if (!dept.dataUrl || !dept.dataExtractor) return null;
+  const safeDataUrl = await assertPublicHttpUrl(dept.dataUrl);
+  const safeDataUrlText = safeDataUrl.toString();
   const request = dept.dataRequest || {};
-  const cacheKey = `data:${dept.dataUrl}:${JSON.stringify(request)}`;
+  const cacheKey = `data:${safeDataUrlText}:${JSON.stringify(request)}`;
   if (useCache) {
     const cached = await getCached<unknown>(sourceName, cacheKey);
     if (cached) return cached;
   }
 
   const body = new URLSearchParams(request);
-  const res = await axios.post(dept.dataUrl, body, {
+  const agents = ssrfSafeAgents();
+  const res = await axios.post(safeDataUrlText, body, {
     timeout: FETCH_TIMEOUT_MS,
     headers: {
       'User-Agent': USER_AGENT,
       'Content-Type': 'application/x-www-form-urlencoded',
     },
     maxRedirects: 5,
+    httpAgent: agents.httpAgent,
+    httpsAgent: agents.httpsAgent,
   });
   const data = res.data;
   if (useCache) await setCached(sourceName, cacheKey, data);
@@ -1434,7 +1446,7 @@ async function enrichEntryFromPublicationLists(
         })),
       );
     } catch (err: any) {
-      log(`[profile] publication-list fetch failed for ${url}: ${err?.message || err}`);
+      log(`[profile] publication-list fetch failed: ${sanitizeLogValue(err)}`);
     }
   }
 
@@ -1457,7 +1469,7 @@ async function enrichEntryFromOfficialProfile(
     const merged = mergeProfileEnrichment(entry, enrichment);
     return enrichEntryFromPublicationLists(merged, sourceName, useCache, htmlFetcher, log);
   } catch (err: any) {
-    log(`[profile] fetch failed for ${entry.profileUrl}: ${err?.message || err}`);
+    log(`[profile] fetch failed: ${sanitizeLogValue(err)}`);
     return entry;
   }
 }
@@ -1674,7 +1686,7 @@ export class DepartmentRosterScraper implements IScraper {
           }
           ctx.log(`[${dept.deptKey}] data endpoint returned no faculty; trying rendered page`);
         } catch (err: any) {
-          ctx.log(`[${dept.deptKey}] data endpoint failed: ${err?.message || err}`);
+          ctx.log(`[${dept.deptKey}] data endpoint failed: ${sanitizeLogValue(err)}`);
         }
       }
 
@@ -1712,7 +1724,7 @@ export class DepartmentRosterScraper implements IScraper {
         try {
           entries = (dept.renderedExtractor || dept.extractor)(rendered.result.html, { pageUrl });
         } catch (err: any) {
-          ctx.log(`[${dept.deptKey}] rendered extractor error on ${pageUrl}: ${err?.message || err}`);
+          ctx.log(`[${dept.deptKey}] rendered extractor error: ${sanitizeLogValue(err)}`);
           perDept.push({ deptKey: dept.deptKey, count: 0, status: 'rendered-extractor-error' });
           continue;
         }
@@ -1734,7 +1746,7 @@ export class DepartmentRosterScraper implements IScraper {
         try {
           html = await this.htmlFetcher(pageUrl, ctx.options.useCache, this.name);
         } catch (err: any) {
-          ctx.log(`[${dept.deptKey}] fetch failed for ${pageUrl}: ${err?.message || err}`);
+          ctx.log(`[${dept.deptKey}] fetch failed for configured page: ${sanitizeLogValue(err)}`);
           break;
         }
         pagesFetched++;
@@ -1742,7 +1754,7 @@ export class DepartmentRosterScraper implements IScraper {
         try {
           entries = dept.extractor(html, { pageUrl });
         } catch (err: any) {
-          ctx.log(`[${dept.deptKey}] extractor error on ${pageUrl}: ${err?.message || err}`);
+          ctx.log(`[${dept.deptKey}] extractor error on configured page: ${sanitizeLogValue(err)}`);
           break;
         }
         if (entries.length === 0) {

@@ -1,6 +1,7 @@
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import fs from 'fs/promises';
+import os from 'os';
 import path from 'path';
 import { User } from '../models/user';
 import {
@@ -11,10 +12,13 @@ import {
 } from '../scrapers/sources/undergradFellowshipRecipientScraper';
 import { normalizeName, splitName } from '../scrapers/utils/scraperHelpers';
 import { normalizeOrcid } from '../utils/orcid';
+import { assertPublicHttpUrl, ssrfSafeAgents } from '../utils/ssrfGuard';
 
 export const DEFAULT_ACCEPTED_INPUT_ROOT = '/tmp/ylabs-accepted-inputs';
 export const FELLOWSHIP_REVIEW_DIR = 'fellowship-review';
 export const FELLOWSHIP_ACCEPTED_DIR = 'fellowships';
+const SAFE_ACCEPTED_INPUT_SEGMENT_RE = /^[A-Za-z0-9._-]{1,120}$/;
+const ACCEPTED_INPUT_FILE_EXTENSIONS = new Set(['.csv', '.txt']);
 
 export const FELLOWSHIP_REVIEW_HEADERS = [
   'reviewStatus',
@@ -80,6 +84,56 @@ export interface FellowshipInputDeps {
 }
 
 const USER_AGENT = 'ylabs-accepted-inputs/1.0 (+https://yalelabs.io)';
+const MAX_ACCEPTED_INPUT_FETCH_BYTES = 20_000_000;
+const MAX_ACCEPTED_INPUT_PDF_PAGES = 200;
+const MAX_ACCEPTED_INPUT_PDF_TEXT_CHARS = 1_000_000;
+const hasPathPrefix = (target: string, root: string): boolean =>
+  target === root || target.startsWith(`${root}${path.sep}`);
+
+function assertSafeAcceptedInputPathText(value: string, flag: string): string {
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.startsWith('--')) {
+    throw new Error(`${flag} requires a path`);
+  }
+  if (/[\u0000-\u001f\u007f]/.test(trimmed)) {
+    throw new Error(`${flag} path contains invalid characters`);
+  }
+  return trimmed;
+}
+
+function assertAcceptedInputPathRoot(resolved: string, flag: string): string {
+  const tmpRoot = path.resolve(os.tmpdir());
+  const projectTmpRoot = path.resolve(process.cwd(), 'tmp');
+  if (!hasPathPrefix(resolved, tmpRoot) && !hasPathPrefix(resolved, projectTmpRoot)) {
+    throw new Error(`${flag} must stay under ${tmpRoot} or ./tmp`);
+  }
+  return resolved;
+}
+
+export function resolveSafeAcceptedInputRoot(value = DEFAULT_ACCEPTED_INPUT_ROOT): string {
+  return assertAcceptedInputPathRoot(
+    path.resolve(assertSafeAcceptedInputPathText(value, '--root')),
+    '--root',
+  );
+}
+
+export function resolveSafeAcceptedInputPath(filePath: string, flag = 'accepted input path'): string {
+  const resolved = assertAcceptedInputPathRoot(
+    path.resolve(assertSafeAcceptedInputPathText(filePath, flag)),
+    flag,
+  );
+  if (!ACCEPTED_INPUT_FILE_EXTENSIONS.has(path.extname(resolved).toLowerCase())) {
+    throw new Error(`${flag} must point to a .csv or .txt accepted-input file`);
+  }
+  return resolved;
+}
+
+function safeAcceptedInputSegment(value: string, label: string): string {
+  if (!SAFE_ACCEPTED_INPUT_SEGMENT_RE.test(value)) {
+    throw new Error(`${label} must contain only letters, numbers, dots, underscores, or dashes`);
+  }
+  return value;
+}
 
 function parseCsvRows(input: string): string[][] {
   const rows: string[][] = [];
@@ -116,15 +170,17 @@ function parseCsvRows(input: string): string[][] {
   return rows;
 }
 
+import { safeSpreadsheetCell } from '../utils/spreadsheetSafety';
+
 function escapeCsvCell(value: unknown): string {
-  const stringValue = value == null ? '' : String(value);
+  const stringValue = safeSpreadsheetCell(value);
   if (!/[",\n\r]/.test(stringValue)) return stringValue;
   return `"${stringValue.replace(/"/g, '""')}"`;
 }
 
 export function stringifyCsv(rows: Array<Record<string, any>>, headers: readonly string[]): string {
   return [
-    headers.join(','),
+    headers.map((header) => escapeCsvCell(header)).join(','),
     ...rows.map((row) => headers.map((header) => escapeCsvCell(row[header])).join(',')),
   ].join('\n');
 }
@@ -158,11 +214,23 @@ export function parseCsv(input: string): Record<string, string>[] {
 }
 
 function reviewPath(root: string, programKey: string): string {
-  return path.join(root, FELLOWSHIP_REVIEW_DIR, `${programKey}.csv`);
+  return resolveSafeAcceptedInputPath(
+    path.join(
+      resolveSafeAcceptedInputRoot(root),
+      FELLOWSHIP_REVIEW_DIR,
+      `${safeAcceptedInputSegment(programKey, 'programKey')}.csv`,
+    ),
+  );
 }
 
 function acceptedPath(root: string, programKey: string): string {
-  return path.join(root, FELLOWSHIP_ACCEPTED_DIR, `${programKey}.csv`);
+  return resolveSafeAcceptedInputPath(
+    path.join(
+      resolveSafeAcceptedInputRoot(root),
+      FELLOWSHIP_ACCEPTED_DIR,
+      `${safeAcceptedInputSegment(programKey, 'programKey')}.csv`,
+    ),
+  );
 }
 
 async function pathExists(filePath: string): Promise<boolean> {
@@ -193,21 +261,28 @@ function coerceReviewRow(row: Record<string, string>, config?: ProgramConfig): F
 }
 
 async function readReviewRows(filePath: string, config?: ProgramConfig): Promise<FellowshipReviewRow[]> {
-  const body = await fs.readFile(filePath, 'utf8');
+  const body = await fs.readFile(resolveSafeAcceptedInputPath(filePath), 'utf8');
   return parseCsv(body).map((row) => coerceReviewRow(row, config));
 }
 
 async function writeRows(filePath: string, rows: FellowshipReviewRow[], headers: readonly string[]) {
-  await fs.mkdir(path.dirname(filePath), { recursive: true });
-  await fs.writeFile(filePath, `${stringifyCsv(rows, headers)}\n`, 'utf8');
+  const safePath = resolveSafeAcceptedInputPath(filePath);
+  await fs.mkdir(path.dirname(safePath), { recursive: true });
+  await fs.writeFile(safePath, `${stringifyCsv(rows, headers)}\n`, 'utf8');
 }
 
-async function defaultFetchUrl(url: string): Promise<{ body: Buffer; contentType?: string }> {
-  const response = await axios.get<ArrayBuffer>(url, {
+export async function defaultFetchUrl(url: string): Promise<{ body: Buffer; contentType?: string }> {
+  const parsedUrl = await assertPublicHttpUrl(url);
+  const { httpAgent, httpsAgent } = ssrfSafeAgents();
+  const response = await axios.get<ArrayBuffer>(parsedUrl.toString(), {
     responseType: 'arraybuffer',
     timeout: 30_000,
     headers: { 'User-Agent': USER_AGENT },
     maxRedirects: 5,
+    maxContentLength: MAX_ACCEPTED_INPUT_FETCH_BYTES,
+    maxBodyLength: MAX_ACCEPTED_INPUT_FETCH_BYTES,
+    httpAgent,
+    httpsAgent,
   });
   return {
     body: Buffer.from(response.data),
@@ -223,16 +298,23 @@ export async function extractPdfText(body: Buffer): Promise<string> {
     isEvalSupported: false,
   });
   const document = await loadingTask.promise;
+  if (document.numPages > MAX_ACCEPTED_INPUT_PDF_PAGES) {
+    throw new Error('Accepted-input PDF exceeds page limit');
+  }
   const pages: string[] = [];
+  let extractedChars = 0;
   for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber++) {
     const page = await document.getPage(pageNumber);
     const content = await page.getTextContent();
-    pages.push(
-      (content.items || [])
-        .map((item: any) => (typeof item.str === 'string' ? item.str : ''))
-        .filter(Boolean)
-        .join('\n'),
-    );
+    const pageText = (content.items || [])
+      .map((item: any) => (typeof item.str === 'string' ? item.str : ''))
+      .filter(Boolean)
+      .join('\n');
+    extractedChars += pageText.length;
+    if (extractedChars > MAX_ACCEPTED_INPUT_PDF_TEXT_CHARS) {
+      throw new Error('Accepted-input PDF exceeds text extraction limit');
+    }
+    pages.push(pageText);
   }
   return pages.join('\n\n');
 }

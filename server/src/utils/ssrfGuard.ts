@@ -10,6 +10,9 @@ import http from 'http';
 import https from 'https';
 import type { LookupFunction } from 'net';
 
+const MAX_SSRF_PUBLIC_HTTP_URL_LENGTH = 2048;
+const UNSAFE_SSRF_PUBLIC_HTTP_URL_RE = /[\u0000-\u001f\u007f\s\\]/;
+
 export const stripIpv6Brackets = (addr: string): string =>
   addr.replace(/^\[/, '').replace(/\]$/, '');
 
@@ -160,15 +163,32 @@ export class SsrfBlockedError extends Error {
   }
 }
 
+const isAllowedPublicHttpPort = (url: URL): boolean =>
+  !url.port ||
+  (url.protocol === 'http:' && url.port === '80') ||
+  (url.protocol === 'https:' && url.port === '443');
+
 /**
  * Validate an outbound URL before fetching: must be http(s), carry no embedded credentials, and
  * resolve to a public address. Throws SsrfBlockedError otherwise. Pair with ssrfSafeAgents() so
  * redirect hops are re-validated at connect time.
  */
 export const assertPublicHttpUrl = async (rawUrl: string): Promise<URL> => {
+  if (typeof rawUrl !== 'string') {
+    throw new SsrfBlockedError('Invalid URL');
+  }
+
+  const trimmed = rawUrl.trim();
+  if (!trimmed || trimmed.length > MAX_SSRF_PUBLIC_HTTP_URL_LENGTH) {
+    throw new SsrfBlockedError('Invalid URL');
+  }
+  if (UNSAFE_SSRF_PUBLIC_HTTP_URL_RE.test(trimmed)) {
+    throw new SsrfBlockedError('Invalid URL');
+  }
+
   let parsed: URL;
   try {
-    parsed = new URL(rawUrl);
+    parsed = new URL(trimmed);
   } catch {
     throw new SsrfBlockedError('Invalid URL');
   }
@@ -177,6 +197,9 @@ export const assertPublicHttpUrl = async (rawUrl: string): Promise<URL> => {
   }
   if (parsed.username || parsed.password) {
     throw new SsrfBlockedError('URL credentials are not allowed');
+  }
+  if (!isAllowedPublicHttpPort(parsed)) {
+    throw new SsrfBlockedError('URL port is not allowed');
   }
   if (!(await isPublicHostname(parsed.hostname))) {
     throw new SsrfBlockedError('URL resolves to a private or non-public address');

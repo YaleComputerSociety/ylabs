@@ -119,6 +119,7 @@ import {
   dedupeSameNameLeadMembers,
   getResearchGroupDetail,
   listResearchEntityRelationshipPayload,
+  normalizeResearchGroupObjectId,
   publicMemberUserForRow,
   searchResearchGroupsViaMeili,
 } from '../researchGroupService';
@@ -145,6 +146,16 @@ const selectLeanResult = <T,>(value: T) => ({
   select: () => leanResult(value),
 });
 
+const queryResult = <T,>(value: T) => {
+  const query: any = {
+    lean: async () => value,
+  };
+  query.sort = () => query;
+  query.limit = () => query;
+  query.select = () => query;
+  return query;
+};
+
 beforeEach(() => {
   mocks.search.mockReset();
   mocks.listingDistinct.mockReset();
@@ -165,26 +176,39 @@ beforeEach(() => {
   mocks.postedOpportunityFind.mockReset();
   mocks.getAccessSummaryForResearchEntity.mockReset();
   mocks.listingDistinct.mockResolvedValue([]);
-  mocks.listingFind.mockReturnValue(leanResult([]));
+  mocks.listingFind.mockReturnValue(queryResult([]));
   mocks.researchEntityFind.mockReturnValue({
     lean: async () => [],
   });
-  mocks.researchEntityRelationshipFind.mockReturnValue(leanResult([]));
-  mocks.researchGroupMemberFind.mockReturnValue(leanResult([]));
+  mocks.researchEntityRelationshipFind.mockReturnValue(queryResult([]));
+  mocks.researchGroupMemberFind.mockReturnValue(queryResult([]));
   mocks.userFind.mockReturnValue(leanResult([]));
   mocks.facultyMemberFind.mockReturnValue(selectLeanResult([]));
   mocks.paperFind.mockReturnValue(sortLimitLeanResult([]));
   mocks.researchScholarlyAttributionFind.mockReturnValue(selectSortLimitLeanResult([]));
   mocks.researchScholarlyLinkFind.mockReturnValue(sortLimitLeanResult([]));
-  mocks.entryPathwayFind.mockReturnValue(leanResult([]));
-  mocks.accessSignalFind.mockReturnValue(sortLeanResult([]));
-  mocks.contactRouteFind.mockReturnValue(sortLeanResult([]));
-  mocks.postedOpportunityFind.mockReturnValue(sortLeanResult([]));
+  mocks.entryPathwayFind.mockReturnValue(queryResult([]));
+  mocks.accessSignalFind.mockReturnValue(queryResult([]));
+  mocks.contactRouteFind.mockReturnValue(queryResult([]));
+  mocks.postedOpportunityFind.mockReturnValue(queryResult([]));
   mocks.getAccessSummaryForResearchEntity.mockResolvedValue(undefined);
   mocks.listAccessSummariesForResearchEntities.mockResolvedValue(new Map());
 });
 
 describe('searchResearchGroupsViaMeili', () => {
+  it('normalizes research group ObjectIds without arbitrary object coercion', () => {
+    const entityId = '67d8928150621bcef434a1d5';
+
+    expect(normalizeResearchGroupObjectId(entityId)).toBe(entityId);
+    expect(
+      normalizeResearchGroupObjectId({
+        toString: () => {
+          throw new Error('research group service stringified arbitrary id');
+        },
+      }),
+    ).toBeUndefined();
+  });
+
   it('falls back to keyword search when a local Meili index lacks the hybrid embedder', async () => {
     const entityId = '67d8928150621bcef434a1d5';
     mocks.search
@@ -243,6 +267,53 @@ describe('searchResearchGroupsViaMeili', () => {
       pageSize: 1,
       researchEntities: [{ _id: entityId, slug: 'reilly-lab', name: 'Reilly Lab' }],
     });
+  });
+
+  it('drops object-shaped Meili hit ids before Mongo visibility filtering', async () => {
+    const entityId = '67d8928150621bcef434a1d5';
+    mocks.search.mockResolvedValueOnce({
+      hits: [
+        {
+          id: {
+            toString: () => {
+              throw new Error('research search stringified arbitrary hit id');
+            },
+          },
+        },
+        {
+          id: entityId,
+          slug: 'safe-lab',
+          name: 'Safe Lab',
+          kind: 'lab',
+          departments: [],
+          researchAreas: [],
+          sourceUrls: [],
+        },
+      ],
+      estimatedTotalHits: 2,
+    });
+    mocks.researchEntityFind.mockReturnValue({
+      lean: async () => [
+        {
+          _id: entityId,
+          slug: 'safe-lab',
+          name: 'Safe Lab',
+          kind: 'lab',
+          departments: [],
+          researchAreas: [],
+          sourceUrls: [],
+          studentVisibilityTier: 'student_ready',
+        },
+      ],
+    });
+
+    await searchResearchGroupsViaMeili('', {}, 1, 24);
+
+    expect(mocks.researchEntityFind).toHaveBeenCalledWith(
+      expect.objectContaining({
+        _id: { $in: [entityId] },
+      }),
+    );
   });
 
   it('filters stale Meili hits that no longer resolve to public ResearchEntity documents', async () => {
@@ -314,6 +385,63 @@ describe('searchResearchGroupsViaMeili', () => {
       pageSize: 100,
       researchEntities: [],
     });
+  });
+
+  it('bounds direct Meili research search query and filter inputs before search', async () => {
+    mocks.search.mockResolvedValueOnce({
+      hits: [],
+      estimatedTotalHits: 0,
+    });
+    const longResearchArea = 'x'.repeat(200);
+
+    const result = await searchResearchGroupsViaMeili(
+      ` ${'q'.repeat(700)} `,
+      {
+        departments: Array.from({ length: 60 }, (_, index) => `Department ${index}`),
+        researchAreas: [longResearchArea],
+      },
+      1,
+      24,
+    );
+
+    expect(mocks.search).toHaveBeenCalledWith(
+      'q'.repeat(512),
+      expect.objectContaining({
+        filter: expect.stringContaining('departments = "Department 49"'),
+      }),
+    );
+    const filter = String(mocks.search.mock.calls[0][1].filter);
+    expect(filter).not.toContain('Department 50');
+    expect(filter).toContain(`researchAreas = "${'x'.repeat(120)}"`);
+    expect(filter).not.toContain(longResearchArea);
+    expect(result).toMatchObject({
+      estimatedTotalHits: 0,
+      page: 1,
+      pageSize: 24,
+      researchEntities: [],
+    });
+  });
+
+  it('drops non-string direct Meili research filter values before search', async () => {
+    const badFilter = { toString: vi.fn(() => 'Injected') };
+    mocks.search.mockResolvedValueOnce({
+      hits: [],
+      estimatedTotalHits: 0,
+    });
+
+    await searchResearchGroupsViaMeili(
+      '',
+      {
+        departments: [badFilter as any, 'Computer Science'],
+      },
+      1,
+      24,
+    );
+
+    expect(badFilter.toString).not.toHaveBeenCalled();
+    const filter = String(mocks.search.mock.calls[0][1].filter);
+    expect(filter).toContain('departments = "Computer Science"');
+    expect(filter).not.toContain('Injected');
   });
 
   it('allows admin searches to resolve explicitly requested non-public visibility tiers', async () => {
@@ -407,6 +535,13 @@ describe('searchResearchGroupsViaMeili', () => {
 });
 
 describe('getResearchGroupDetail', () => {
+  it('rejects malformed public detail slugs before querying research entities', async () => {
+    const result = await getResearchGroupDetail('../hidden-lab');
+
+    expect(result).toBeNull();
+    expect(mocks.researchEntityFindOne).not.toHaveBeenCalled();
+  });
+
   it('requires public student visibility when resolving a public research detail slug', async () => {
     mocks.researchEntityFindOne.mockReturnValue({
       lean: async () => null,
@@ -640,7 +775,7 @@ describe('getResearchGroupDetail', () => {
       }),
     );
     mocks.researchGroupMemberFind.mockReturnValue(
-      leanResult([
+      sortLimitLeanResult([
         {
           _id: 'member-1',
           researchEntityId: entityId,
@@ -656,17 +791,17 @@ describe('getResearchGroupDetail', () => {
         {
           _id: 'user-1',
           netid: 'abc123',
-          fname: 'Ada',
-          lname: 'Lovelace',
-          displayName: 'Ada Lovelace',
-          email: 'ada.lovelace@yale.edu',
+          fname: 'Fixture',
+          lname: 'Advisor',
+          displayName: 'Fixture Advisor',
+          email: 'fixture.advisor@example.edu',
           imageUrl: '',
           primaryDepartment: 'Computer Science',
           title: 'Professor of Computer Science',
           secondaryDepartments: ['Mathematics'],
           facultyMemberId: 'faculty-1',
           profileUrls: {
-            official: 'https://cs.yale.edu/people/ada-lovelace',
+            official: 'https://cs.yale.edu/people/fixture-advisor',
             orcid: 'https://orcid.org/0000-0000-0000-0000',
           },
           googleScholarId: 'private-scholar-id',
@@ -682,26 +817,207 @@ describe('getResearchGroupDetail', () => {
 
     expect(detail?.members).toHaveLength(1);
     expect(detail?.members[0].user).toEqual({
-      _id: 'user-1',
-      netid: 'abc123',
-      fname: 'Ada',
-      lname: 'Lovelace',
-      displayName: 'Ada Lovelace',
+      fname: 'Fixture',
+      lname: 'Advisor',
+      displayName: 'Fixture Advisor',
       imageUrl: '',
       image_url: '',
       primaryDepartment: 'Computer Science',
       primary_department: 'Computer Science',
       title: 'Professor of Computer Science',
+      profileUrls: {
+        official: 'https://cs.yale.edu/people/fixture-advisor',
+      },
+      profile_urls: {
+        official: 'https://cs.yale.edu/people/fixture-advisor',
+      },
+      publicKey: 'fixture-advisor-affiliated',
     });
+    expect(detail?.members[0].user).not.toHaveProperty('_id');
+    expect(detail?.members[0].user).not.toHaveProperty('netid');
     expect(detail?.members[0].user).not.toHaveProperty('email');
     expect(detail?.members[0].user).not.toHaveProperty('secondaryDepartments');
     expect(detail?.members[0].user).not.toHaveProperty('facultyMemberId');
-    expect(detail?.members[0].user).not.toHaveProperty('profileUrls');
+    expect(detail?.members[0].user.profileUrls).not.toHaveProperty('orcid');
     expect(detail?.members[0].user).not.toHaveProperty('googleScholarId');
     expect(detail?.members[0].user).not.toHaveProperty('openAlexId');
     expect(detail?.members[0].user).not.toHaveProperty('userConfirmed');
     expect(detail?.members[0].user).not.toHaveProperty('userType');
     expect(detail?.members[0].user).not.toHaveProperty('raw');
+  });
+
+  it('preserves internal profile path fallbacks through public detail member shaping', async () => {
+    const entityId = '67d8928150621bcef434a1d5';
+    mocks.researchEntityFindOne.mockReturnValue(
+      leanResult({
+        _id: entityId,
+        slug: 'member-internal-profile-lab',
+        name: 'Member Internal Profile Lab',
+        departments: [],
+        researchAreas: [],
+        sourceUrls: [],
+        studentVisibilityTier: 'student_ready',
+      }),
+    );
+    mocks.researchGroupMemberFind.mockReturnValue(
+      sortLimitLeanResult([
+        {
+          _id: 'member-1',
+          researchEntityId: entityId,
+          userId: 'user-1',
+          role: 'pi',
+          archived: false,
+          isCurrentMember: true,
+        },
+      ]),
+    );
+    mocks.userFind.mockReturnValue(
+      leanResult([
+        {
+          _id: 'user-1',
+          netid: 'fx1001',
+          fname: 'Fixture',
+          lname: 'Scholar',
+          imageUrl: '',
+          primaryDepartment: 'Example Studies',
+          title: 'Professor',
+        },
+      ]),
+    );
+
+    const detail = await getResearchGroupDetail('member-internal-profile-lab');
+
+    expect(detail?.members[0].user).toMatchObject({
+      fname: 'Fixture',
+      lname: 'Scholar',
+      internalProfilePath: '/profile/fx1001',
+      internal_profile_path: '/profile/fx1001',
+      publicKey: 'fixture-scholar-pi',
+    });
+    expect(detail?.members[0].user).not.toHaveProperty('netid');
+  });
+
+  it('minimizes public research detail paper payloads', async () => {
+    const entityId = '67d8928150621bcef434a1d5';
+    mocks.researchEntityFindOne.mockReturnValue(
+      leanResult({
+        _id: entityId,
+        slug: 'paper-privacy-lab',
+        name: 'Paper Privacy Lab',
+        departments: [],
+        researchAreas: [],
+        sourceUrls: [],
+        studentVisibilityTier: 'student_ready',
+      }),
+    );
+    mocks.researchGroupMemberFind.mockReturnValue(
+      sortLimitLeanResult([
+        {
+          _id: 'member-1',
+          researchEntityId: entityId,
+          userId: '67d8928150621bcef434a1d6',
+          role: 'pi',
+          archived: false,
+          isCurrentMember: true,
+        },
+      ]),
+    );
+    mocks.userFind.mockReturnValue(
+      leanResult([
+        {
+          _id: '67d8928150621bcef434a1d6',
+          fname: 'Fixture',
+          lname: 'Analyst',
+          imageUrl: '',
+          primaryDepartment: 'Computer Science',
+          title: 'Professor',
+        },
+      ]),
+    );
+    mocks.paperFind
+      .mockReturnValueOnce(
+        sortLimitLeanResult([
+          {
+            _id: 'internal-paper-id',
+            title: 'Email fixture.person@example.edu about this paper',
+            authors: ['Fixture Analyst', 'Call 203-555-1212'],
+            year: 2025,
+            venue: 'Journal of Privacy',
+            tldr: 'Questions to hidden@example.edu.',
+            doi: '10.1000/privacy',
+            url: 'javascript:alert(document.cookie)',
+            openAccessUrl: 'https://example.edu/open',
+            landingPageUrl: 'https://example.edu/landing',
+            pdfUrl: 'https://example.edu/paper.pdf',
+            citationCount: 12,
+            publishedAt: new Date('2025-01-01T00:00:00.000Z'),
+            publicationStage: 'PUBLISHED',
+            yaleAuthorIds: ['67d8928150621bcef434a1d6'],
+            yaleAuthorNetIds: ['abc123'],
+            facultyMemberIds: ['faculty-1'],
+            researchEntityIds: [entityId],
+            sourceIds: ['source-1'],
+            fieldProvenance: { title: { source: 'scraper' } },
+            confidenceByField: { title: 0.9 },
+            manuallyLockedFields: ['title'],
+            externalIds: { secret: 'raw' },
+            createdAt: new Date('2026-01-01T00:00:00.000Z'),
+            updatedAt: new Date('2026-01-02T00:00:00.000Z'),
+          },
+        ]),
+      )
+      .mockReturnValueOnce(
+        sortLimitLeanResult([
+          {
+            _id: 'internal-preprint-id',
+            title: 'Preprint',
+            arxivId: '2501.12345',
+            pdfUrl: 'https://arxiv.org/pdf/2501.12345',
+            postedAt: new Date('2025-02-01T00:00:00.000Z'),
+            publicationStage: 'PREPRINT',
+            preprintServer: 'arxiv',
+            yaleAuthorNetIds: ['abc123'],
+          },
+        ]),
+      );
+
+    const detail = await getResearchGroupDetail('paper-privacy-lab');
+
+    expect(detail?.recentPapers[0]).toMatchObject({
+      _id: '10-1000-privacy-2025',
+      title: 'Email [email redacted] about this paper',
+      authors: ['Fixture Analyst', 'Call [phone redacted]'],
+      tldr: 'Questions to [email redacted].',
+      doi: '10.1000/privacy',
+      openAccessUrl: 'https://example.edu/open',
+      landingPageUrl: 'https://example.edu/landing',
+      pdfUrl: 'https://example.edu/paper.pdf',
+      citationCount: 12,
+      publishedAt: '2025-01-01T00:00:00.000Z',
+      publicationStage: 'PUBLISHED',
+    });
+    expect(detail?.recentPapers[0]).not.toHaveProperty('url');
+    expect(detail?.recentPapers[0]).not.toHaveProperty('yaleAuthorIds');
+    expect(detail?.recentPapers[0]).not.toHaveProperty('yaleAuthorNetIds');
+    expect(detail?.recentPapers[0]).not.toHaveProperty('facultyMemberIds');
+    expect(detail?.recentPapers[0]).not.toHaveProperty('researchEntityIds');
+    expect(detail?.recentPapers[0]).not.toHaveProperty('sourceIds');
+    expect(detail?.recentPapers[0]).not.toHaveProperty('fieldProvenance');
+    expect(detail?.recentPapers[0]).not.toHaveProperty('confidenceByField');
+    expect(detail?.recentPapers[0]).not.toHaveProperty('manuallyLockedFields');
+    expect(detail?.recentPapers[0]).not.toHaveProperty('externalIds');
+    expect(detail?.recentPapers[0]).not.toHaveProperty('createdAt');
+    expect(detail?.recentPapers[0]).not.toHaveProperty('updatedAt');
+    expect(detail?.recentArxivPreprints[0]).toMatchObject({
+      _id: '2501-12345',
+      title: 'Preprint',
+      arxivId: '2501.12345',
+      pdfUrl: 'https://arxiv.org/pdf/2501.12345',
+      postedAt: '2025-02-01T00:00:00.000Z',
+      publicationStage: 'PREPRINT',
+      preprintServer: 'arxiv',
+    });
+    expect(detail?.recentArxivPreprints[0]).not.toHaveProperty('yaleAuthorNetIds');
   });
 
   it('dedupes repeated stored public contact routes before returning detail payloads', async () => {
@@ -810,7 +1126,7 @@ describe('getResearchGroupDetail', () => {
         {
           _id: 'member-1',
           researchEntityId: entityId,
-          userId: 'dglahn',
+          userId: 'fx1001',
           role: 'pi',
           archived: false,
           isCurrentMember: true,
@@ -820,13 +1136,13 @@ describe('getResearchGroupDetail', () => {
     mocks.userFind.mockReturnValue(
       leanResult([
         {
-          _id: 'dglahn',
+          _id: 'fx1001',
           fname: 'David',
           lname: 'Glahn',
           displayName: 'David Glahn',
           primaryDepartment: 'Psychiatry',
           imageUrl: '',
-          netid: 'dglahn',
+          netid: 'fx1001',
         },
       ]),
     );
@@ -862,7 +1178,7 @@ describe('getResearchGroupDetail', () => {
         {
           _id: 'member-1',
           researchEntityId: entityId,
-          userId: 'dglahn',
+          userId: 'fx1001',
           role: 'pi',
           archived: false,
           isCurrentMember: true,
@@ -872,13 +1188,13 @@ describe('getResearchGroupDetail', () => {
     mocks.userFind.mockReturnValue(
       leanResult([
         {
-          _id: 'dglahn',
+          _id: 'fx1001',
           fname: 'David',
           lname: 'Glahn',
           displayName: 'David Glahn',
           primaryDepartment: 'Psychiatry',
           imageUrl: '',
-          netid: 'dglahn',
+          netid: 'fx1001',
         },
       ]),
     );
@@ -890,6 +1206,22 @@ describe('getResearchGroupDetail', () => {
 });
 
 describe('listResearchEntityRelationshipPayload', () => {
+  it('returns an empty payload for object-shaped entity ids before relationship lookup', async () => {
+    const result = await listResearchEntityRelationshipPayload({
+      toString: () => {
+        throw new Error('relationship payload stringified arbitrary entity id');
+      },
+    });
+
+    expect(result).toEqual({
+      entityRelationships: [],
+      relatedResearchEntities: [],
+      affiliatedRelationships: [],
+      affiliatedResearchEntities: [],
+    });
+    expect(mocks.researchEntityRelationshipFind).not.toHaveBeenCalled();
+  });
+
   it('returns only launch-public umbrella affiliations for public research detail payloads', async () => {
     const currentEntityId = '67d8928150621bcef434a1d5';
     const publicInstituteId = '67d8928150621bcef434a1d6';
@@ -1078,7 +1410,7 @@ describe('buildResearchActivityLinkPayload', () => {
         title: 'Member authored paper',
       }),
     ]);
-    expect(result.researchActivityLinks.map((link) => link._id)).toEqual([
+    expect(result.researchActivityLinks.map((link: any) => link._id)).toEqual([
       'paper-entity',
       'paper-member',
     ]);
@@ -1086,7 +1418,132 @@ describe('buildResearchActivityLinkPayload', () => {
 });
 
 describe('publicMemberUserForRow', () => {
-  it('uses faculty identity when a member row points at a mismatched user account', () => {
+  it('preserves official profile URLs without exposing user netids', () => {
+    const row = {
+      userId: 'internal-user',
+    };
+    const usersById = new Map([
+      [
+        'internal-user',
+        {
+          _id: 'internal-user',
+          netid: 'fx1001',
+          fname: 'Jordan',
+          lname: 'Researcher',
+          title: 'Professor of Example Studies',
+          profileUrls: {
+            official: 'https://medicine.yale.edu/profile/jordan-researcher-fixture/',
+          },
+        },
+      ],
+    ]);
+
+    const publicUser = publicMemberUserForRow(row, usersById, new Map());
+    expect(publicUser).toMatchObject({
+      fname: 'Jordan',
+      lname: 'Researcher',
+      profileUrls: {
+        official: 'https://medicine.yale.edu/profile/jordan-researcher-fixture/',
+      },
+    });
+    expect(publicUser).not.toHaveProperty('netid');
+  });
+
+  it('exposes an internal profile path fallback without exposing user netids', () => {
+    const row = {
+      userId: 'internal-user',
+    };
+    const usersById = new Map([
+      [
+        'internal-user',
+        {
+          _id: 'internal-user',
+          netid: 'fx1001',
+          fname: 'Fixture',
+          lname: 'Scholar',
+          title: 'Professor of Example Studies',
+        },
+      ],
+    ]);
+
+    const publicUser = publicMemberUserForRow(row, usersById, new Map());
+
+    expect(publicUser).toMatchObject({
+      fname: 'Fixture',
+      lname: 'Scholar',
+      internalProfilePath: '/profile/fx1001',
+      internal_profile_path: '/profile/fx1001',
+    });
+    expect(publicUser).not.toHaveProperty('netid');
+  });
+
+  it('uses an internal profile path before generic website fallbacks', () => {
+    const row = {
+      userId: 'internal-user',
+    };
+    const usersById = new Map([
+      [
+        'internal-user',
+        {
+          _id: 'internal-user',
+          netid: 'fx1002',
+          fname: 'Fixture',
+          lname: 'Website',
+          title: 'Professor of Example Studies',
+          website: 'https://fixture-website.example.test/',
+        },
+      ],
+    ]);
+
+    const publicUser = publicMemberUserForRow(row, usersById, new Map());
+
+    expect(publicUser).toMatchObject({
+      fname: 'Fixture',
+      lname: 'Website',
+      internalProfilePath: '/profile/fx1002',
+      internal_profile_path: '/profile/fx1002',
+    });
+    expect(publicUser).not.toHaveProperty('website');
+    expect(publicUser).not.toHaveProperty('websiteUrl');
+    expect(publicUser).not.toHaveProperty('netid');
+  });
+
+  it('prefers official profile URLs over website fallbacks', () => {
+    const row = {
+      userId: 'internal-user',
+    };
+    const usersById = new Map([
+      [
+        'internal-user',
+        {
+          _id: 'internal-user',
+          netid: 'fx1003',
+          fname: 'Fixture',
+          lname: 'Official',
+          title: 'Professor of Example Studies',
+          website: 'https://fixture-official.example.test/',
+          profileUrls: {
+            official: 'https://medicine.yale.edu/profile/fixture-official/',
+          },
+        },
+      ],
+    ]);
+
+    const publicUser = publicMemberUserForRow(row, usersById, new Map());
+
+    expect(publicUser).toMatchObject({
+      fname: 'Fixture',
+      lname: 'Official',
+      profileUrls: {
+        official: 'https://medicine.yale.edu/profile/fixture-official/',
+      },
+    });
+    expect(publicUser).not.toHaveProperty('website');
+    expect(publicUser).not.toHaveProperty('internalProfilePath');
+    expect(publicUser).not.toHaveProperty('netid');
+  });
+
+  it('uses faculty identity and official profile URLs when a member row points at a mismatched user account', () => {
     const row = {
       userId: 'wrong-user',
       facultyMemberId: 'correct-faculty',
@@ -1096,9 +1553,9 @@ describe('publicMemberUserForRow', () => {
         'wrong-user',
         {
           _id: 'wrong-user',
-          netid: 'jp2492',
-          fname: 'John',
-          lname: 'Peters',
+          netid: 'fx1002',
+          fname: 'Wrong',
+          lname: 'Person',
           title: 'Assistant Professor of Neurology',
           facultyMemberId: 'wrong-faculty',
         },
@@ -1109,18 +1566,48 @@ describe('publicMemberUserForRow', () => {
         'correct-faculty',
         {
           _id: 'correct-faculty',
-          netid: 'jdp52',
-          firstName: 'John',
-          lastName: 'Peters',
-          title: 'Maria Rosa Menocal Professor of English and of Film and Media Studies',
+          netid: 'fx1003',
+          firstName: 'Correct',
+          lastName: 'Scholar',
+          title: 'Professor of Example Studies',
+          profileUrls: {
+            official: 'https://medicine.yale.edu/profile/correct-scholar-fixture/',
+          },
         },
       ],
     ]);
 
-    expect(publicMemberUserForRow(row, usersById, facultyMembersById)).toMatchObject({
-      netid: 'jdp52',
-      title: 'Maria Rosa Menocal Professor of English and of Film and Media Studies',
+    const publicUser = publicMemberUserForRow(row, usersById, facultyMembersById);
+    expect(publicUser).toMatchObject({
+      title: 'Professor of Example Studies',
+      profileUrls: {
+        official: 'https://medicine.yale.edu/profile/correct-scholar-fixture/',
+      },
     });
+    expect(publicUser).not.toHaveProperty('netid');
+  });
+
+  it('applies the public email policy to faculty fallback member identities', () => {
+    const row = {
+      facultyMemberId: 'faculty-with-unsafe-email',
+    };
+    const facultyMembersById = new Map([
+      [
+        'faculty-with-unsafe-email',
+        {
+          _id: 'faculty-with-unsafe-email',
+          name: 'External Collaborator',
+          email: 'external.collaborator@example.com',
+        },
+      ],
+    ]);
+
+    const publicUser = publicMemberUserForRow(row, new Map(), facultyMembersById);
+    expect(publicUser).toMatchObject({
+      fname: 'External',
+      lname: 'Collaborator',
+    });
+    expect(publicUser).not.toHaveProperty('email');
   });
 });
 
@@ -1198,6 +1685,30 @@ describe('buildLeadPiOutreachContactRoute', () => {
       url: 'https://medicine.yale.edu/profile/jordan-researcher/',
       sourceUrl: 'https://medicine.yale.edu/profile/jordan-researcher/',
     });
+  });
+
+  it('does not use credential-bearing official profile URLs in public PI routes', () => {
+    const route = buildLeadPiOutreachContactRoute(
+      [
+        {
+          role: 'pi',
+          user: {
+            _id: 'user-1',
+            fname: 'Jordan',
+            lname: 'Researcher',
+            profileUrls: {
+              official: 'https://operator:secret@medicine.yale.edu/profile/jordan-researcher/',
+            },
+          },
+          row: {
+            sourceUrl: 'https://operator:secret@medicine.yale.edu/profile/jordan-researcher/',
+          },
+        },
+      ],
+      { websiteUrl: 'https://operator:secret@lab.example.test', contactEmail: '' },
+    );
+
+    expect(route).toBeNull();
   });
 
   it('uses an attached PI official profile URL even when the email is unavailable', () => {
@@ -1280,6 +1791,25 @@ describe('buildLeadPiOutreachContactRoute', () => {
     expect(route).not.toHaveProperty('url');
   });
 
+  it('does not promote a generic Yale faculty category URL as the official profile action', () => {
+    const route = buildLeadPiOutreachContactRoute(
+      [
+        {
+          role: 'pi',
+          user: {
+            _id: 'user-1',
+            fname: 'Jordan',
+            lname: 'Researcher',
+          },
+          row: { sourceUrl: 'https://example.yale.edu/people/faculty/primary' },
+        },
+      ],
+      { websiteUrl: 'https://lab.example.test', contactEmail: '' },
+    );
+
+    expect(route).toBeNull();
+  });
+
   it('uses person-scoped Yale Engineering faculty-directory pages as official profile actions', () => {
     const route = buildLeadPiOutreachContactRoute(
       [
@@ -1335,8 +1865,8 @@ describe('dedupeSameNameLeadMembers', () => {
         row: { confidence: 0.8, sourceUrl: '' },
         user: {
           _id: 'psych-user',
-          netid: 'dtm27',
-          email: 'david.moore@yale.edu',
+          netid: 'fx1004',
+          email: 'dana.fixture@yale.edu',
           fname: 'David',
           lname: 'Moore',
           primaryDepartment: 'PSYT - Psychiatry',
@@ -1348,8 +1878,8 @@ describe('dedupeSameNameLeadMembers', () => {
         row: { confidence: 0.7, sourceUrl: 'https://physics.yale.edu/people/faculty' },
         user: {
           _id: 'physics-user',
-          netid: 'david.c.moore',
-          email: 'david.c.moore@yale.edu',
+          netid: 'dana.c.fixture',
+          email: 'dana.c.fixture@yale.edu',
           fname: 'David',
           lname: 'Moore',
           primaryDepartment: 'PHYS - Physics',
@@ -1360,7 +1890,7 @@ describe('dedupeSameNameLeadMembers', () => {
 
     expect(
       dedupeSameNameLeadMembers(members, {
-        contactEmail: 'david.c.moore@yale.edu',
+        contactEmail: 'dana.c.fixture@yale.edu',
         departments: ['Physics'],
         sourceUrls: ['https://physics.yale.edu/people/faculty'],
       }),
@@ -1369,11 +1899,40 @@ describe('dedupeSameNameLeadMembers', () => {
 
   it('does not collapse distinct roles or different names', () => {
     const members = [
-      { role: 'pi', user: { _id: 'a', fname: 'Ada', lname: 'Lovelace' } },
-      { role: 'co-pi', user: { _id: 'b', fname: 'Ada', lname: 'Lovelace' } },
-      { role: 'pi', user: { _id: 'c', fname: 'Grace', lname: 'Hopper' } },
+      { role: 'pi', user: { _id: 'a', fname: 'Fixture', lname: 'Scholar' } },
+      { role: 'co-pi', user: { _id: 'b', fname: 'Fixture', lname: 'Scholar' } },
+      { role: 'pi', user: { _id: 'c', fname: 'Example', lname: 'Analyst' } },
     ];
 
     expect(dedupeSameNameLeadMembers(members, {})).toEqual(members);
+  });
+
+  it('collapses same-person PI and director rows while keeping the PI role', () => {
+    const members = [
+      {
+        role: 'pi',
+        user: {
+          publicKey: 'ryan-b-jensen-pi',
+          fname: 'Ryan B.',
+          lname: 'Jensen',
+          title: 'Associate Professor of Therapeutic Radiology and Pathology',
+          primaryDepartment: 'TRAD - Therapeutic Radiology/Radiation Oncology',
+          imageUrl: 'https://ysm-res.cloudinary.com/ryan-jensen',
+        },
+      },
+      {
+        role: 'director',
+        user: {
+          publicKey: 'ryan-b-jensen-director',
+          fname: 'Ryan B.',
+          lname: 'Jensen',
+          title: 'Associate Professor of Therapeutic Radiology and Pathology',
+          primaryDepartment: 'TRAD - Therapeutic Radiology/Radiation Oncology',
+          imageUrl: 'https://ysm-res.cloudinary.com/ryan-jensen',
+        },
+      },
+    ];
+
+    expect(dedupeSameNameLeadMembers(members, {})).toEqual([members[0]]);
   });
 });

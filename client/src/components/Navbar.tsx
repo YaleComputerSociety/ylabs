@@ -30,6 +30,7 @@ import ViewModeToggle from './shared/ViewModeToggle';
 import { getColorForResearchArea } from '../utils/researchAreas';
 import { useConfig } from '../hooks/useConfig';
 import { isPrimaryNavLinkActive, primaryNavLinks } from './navigationLinks';
+import { safeRouteSegment } from '../utils/url';
 
 import { ThemeProvider } from '@mui/material/styles';
 import theme from '../utils/muiTheme';
@@ -116,26 +117,6 @@ const listingQuickFilters: QuickFilterDef[] = [
       >
         <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
         <polyline points="22 4 12 14.01 9 11.01" />
-      </svg>
-    ),
-  },
-  {
-    label: 'Recently Added',
-    value: 'recent',
-    icon: (
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        width="12"
-        height="12"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <circle cx="12" cy="12" r="10" />
-        <polyline points="12 6 12 12 16 14" />
       </svg>
     ),
   },
@@ -404,7 +385,7 @@ export default function Navbar() {
                 <ListItem sx={listItemStyle}>
                   <Button
                     component={Link}
-                    to={`/profile/${user.netId}`}
+                    to={`/profile/${safeRouteSegment(user.netId)}`}
                     sx={{
                       textTransform: 'none',
                       color:

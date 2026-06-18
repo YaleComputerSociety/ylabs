@@ -10,6 +10,7 @@ vi.mock('../../models/user', () => ({
 }));
 
 import {
+  adminUpdateProfile,
   buildProfileResearchMembershipFilter,
   cleanPublicProfileBio,
   dedupeProfileResearchEntities,
@@ -38,6 +39,7 @@ describe('profileService profile shaping', () => {
       secondaryDepartments: ['Statistics and Data Science'],
       physicalLocation: '17 Hillhouse',
       buildingDesk: '17 Hillhouse, room 101',
+      email: 'ada.lovelace@yale.edu',
       researchInterests: ['computing history'],
       profileUrls: {
         yale: 'https://cs.yale.edu/people/ada-lovelace',
@@ -52,8 +54,9 @@ describe('profileService profile shaping', () => {
     );
     expect(profile.primary_department).toBe('Computer Science');
     expect(profile.secondary_departments).toEqual(['Statistics and Data Science']);
-    expect(profile.physical_location).toBe('17 Hillhouse');
-    expect(profile.building_desk).toBe('17 Hillhouse, room 101');
+    expect(profile).not.toHaveProperty('email');
+    expect(profile).not.toHaveProperty('physical_location');
+    expect(profile).not.toHaveProperty('building_desk');
     expect(profile.research_interests).toEqual(['computing history']);
     expect(profile.profile_urls).toEqual({
       yale: 'https://cs.yale.edu/people/ada-lovelace',
@@ -97,12 +100,12 @@ describe('profileService profile shaping', () => {
       netid: 'abc123',
       fname: 'Ada',
       lname: 'Lovelace',
-      email: 'ada.lovelace@yale.edu',
       userType: 'professor',
       userConfirmed: true,
       profileVerified: true,
       orcid: '0000-0000-0000-0000',
     });
+    expect(profile).not.toHaveProperty('email');
     expect(profile).not.toHaveProperty('googleScholarId');
     expect(profile).not.toHaveProperty('semanticScholarId');
     expect(profile).not.toHaveProperty('confidenceByField');
@@ -131,13 +134,13 @@ describe('profileService profile shaping', () => {
 
   it('keeps same-person profile URLs when the URL omits a middle name', () => {
     const rawProfile = {
-      netid: 'fga7',
-      fname: 'Fadi Gabriel',
-      lname: 'Akar',
+      netid: 'fixture101',
+      fname: 'Avery Cardio',
+      lname: 'Cardio',
       bio:
-        'Dr. Akar studies mechanisms that promote arrhythmias and develops translational cardiovascular imaging approaches.',
+        'Dr. Cardio studies mechanisms that promote arrhythmias and develops translational cardiovascular imaging approaches.',
       profileUrls: {
-        medicine: 'https://medicine.yale.edu/profile/fadi-akar/',
+        medicine: 'https://medicine.yale.edu/profile/avery-cardio/',
       },
       researchInterests: ['Cardiovascular electrophysiology'],
     };
@@ -147,7 +150,7 @@ describe('profileService profile shaping', () => {
     const profile = normalizePublicProfile(rawProfile);
     expect(profile.bio).toContain('studies mechanisms that promote arrhythmias');
     expect(profile.profile_urls).toEqual({
-      medicine: 'https://medicine.yale.edu/profile/fadi-akar/',
+      medicine: 'https://medicine.yale.edu/profile/avery-cardio/',
     });
   });
 
@@ -197,7 +200,172 @@ describe('profileService profile shaping', () => {
     expect(safeProfile.website).toBe('https://ada-lovelace.example.test/');
   });
 
+  it('prefers an official Yale profile as the public website when the raw website is a lab group', () => {
+    const profile = normalizePublicProfile({
+      netid: 'fixture102',
+      fname: 'Morgan',
+      lname: 'Vector',
+      email: 'morgan.vector@yale.edu',
+      website: 'http://volga.eng.yale.edu/',
+      profileUrls: {
+        departmental: 'https://physics.yale.edu/people/morgan-vector',
+      },
+      researchInterests: ['Condensed Matter Physics'],
+    });
+
+    expect(profile.website).toBe('https://physics.yale.edu/people/morgan-vector');
+    expect(profile.profile_urls).toEqual({
+      departmental: 'https://physics.yale.edu/people/morgan-vector',
+    });
+  });
+
+  it('uses an official Yale profile as the public website when no raw website exists', () => {
+    const profile = normalizePublicProfile({
+      netid: 'fixture103',
+      fname: 'Robin',
+      lname: 'Mayer',
+      email: 'robin.catalyst@yale.edu',
+      profileUrls: {
+        chemistry: 'https://chem.yale.edu/profile/robin-mayer',
+        orcid: 'https://orcid.org/0000-0002-3943-5250',
+      },
+      researchInterests: ['Electrocatalysts for Energy Conversion'],
+    });
+
+    expect(profile.website).toBe('https://chem.yale.edu/profile/robin-mayer');
+  });
+
+  it('does not use a mismatched Yale profile URL as the public website', () => {
+    const profile = normalizePublicProfile({
+      netid: 'fixture105',
+      fname: 'Morgan',
+      lname: 'Vector',
+      email: 'morgan.vector@yale.edu',
+      profileUrls: {
+        medicine: 'https://medicine.yale.edu/profile/riley-vector/',
+      },
+      researchInterests: ['Epidemiology'],
+    });
+
+    expect(profile.website).toBeUndefined();
+    expect(profile.profile_urls).toEqual({});
+  });
+
+  it('accepts an opaque Yale Medicine profile URL only when it matches the user netid', () => {
+    const profile = normalizePublicProfile({
+      netid: 'mv123',
+      fname: 'Morgan',
+      lname: 'Vector',
+      email: 'morgan.vector@yale.edu',
+      profileUrls: {
+        medicine: 'https://medicine.yale.edu/profile/MV123/',
+      },
+      researchInterests: ['Epidemiology'],
+    });
+
+    expect(profile.website).toBe('https://medicine.yale.edu/profile/MV123/');
+  });
+
+  it('keeps Yale profile URLs for known given-name transliteration variants', () => {
+    const profile = normalizePublicProfile({
+      netid: 'fixture106',
+      fname: 'Yulia',
+      lname: 'Vector',
+      email: 'yulia.vector@yale.edu',
+      profileUrls: {
+        medicine: 'https://medicine.yale.edu/profile/julia-vector/',
+      },
+      researchInterests: ['Translational Methods'],
+    });
+
+    expect(profile.website).toBe('https://medicine.yale.edu/profile/julia-vector/');
+    expect(profile.profile_urls).toEqual({
+      medicine: 'https://medicine.yale.edu/profile/julia-vector/',
+    });
+  });
+
+  it('keeps Yale profile URLs when an official page uses a common nickname', () => {
+    const profile = normalizePublicProfile({
+      netid: 'fixture108',
+      fname: 'James',
+      lname: 'Vector',
+      email: 'james.vector@yale.edu',
+      profileUrls: {
+        divinity: 'https://divinity.yale.edu/profile/jim-vector',
+      },
+      researchInterests: ['Applied Ethics'],
+    });
+
+    expect(profile.website).toBe('https://divinity.yale.edu/profile/jim-vector');
+    expect(profile.profile_urls).toEqual({
+      divinity: 'https://divinity.yale.edu/profile/jim-vector',
+    });
+  });
+
+  it('keeps Yale profile URLs when a formal given name maps to a common nickname', () => {
+    const profile = normalizePublicProfile({
+      netid: 'fixture110',
+      fname: 'Kathleen',
+      lname: 'Vector',
+      email: 'kathy.vector@yale.edu',
+      profileUrls: {
+        medicine: 'https://medicine.yale.edu/profile/kathy-vector/',
+      },
+      researchInterests: ['Clinical Methods'],
+    });
+
+    expect(profile.website).toBe('https://medicine.yale.edu/profile/kathy-vector/');
+    expect(profile.profile_urls).toEqual({
+      medicine: 'https://medicine.yale.edu/profile/kathy-vector/',
+    });
+  });
+
+  it('does not present first-person lab research prose as a faculty personal bio', () => {
+    const profile = normalizePublicProfile(
+      {
+        netid: 'fixture104',
+        fname: 'Casey',
+        lname: 'Quantum',
+        email: 'casey.quantum@yale.edu',
+        website: 'https://qiugroup.yale.edu/',
+        profileUrls: {
+          departmental: 'https://physics.yale.edu/people/casey-quantum',
+        },
+        bio:
+          'One of the grand challenges of materials research is the ability to engineer and tune quantum degrees of freedom. Our group uses and develops first principles quantum physics methods.',
+        researchInterests: ['Condensed Matter Physics', 'Quantum Physics'],
+      },
+      {
+        researchEntities: [
+          {
+            name: 'Quantum Fixture Group',
+            role: 'pi',
+            websiteUrl: 'https://qiugroup.yale.edu/',
+            fullDescription:
+              'The Quantum Fixture Group uses and develops first principles quantum physics methods to calculate many-electron interaction effects and make quantitatively accurate predictions about real materials.',
+            researchAreas: ['Condensed Matter Physics', 'Quantum Physics'],
+          },
+        ],
+        trustedResearchEntities: true,
+      },
+    );
+
+    expect(profile.bio).toBe('');
+    expect(profile.research_interest_summary).toBe(
+      'The Quantum Fixture Group uses and develops first principles quantum physics methods to calculate many-electron interaction effects and make quantitatively accurate predictions about real materials.',
+    );
+  });
+
   it('sanitizes linked research-home payloads before exposing them on public profiles', () => {
+    const unsafeId = {
+      toString() {
+        throw new Error('profile research entity id toString should not run');
+      },
+      toHexString() {
+        throw new Error('profile research entity id toHexString should not run');
+      },
+    };
+
     const profile = normalizePublicProfile(
       {
         netid: 'ada123',
@@ -208,7 +376,7 @@ describe('profileService profile shaping', () => {
       {
         researchEntities: [
           {
-            _id: 'entity-1',
+            _id: unsafeId,
             slug: 'ada-lab',
             name: 'Ada Lab',
             displayName: 'Ada Lab',
@@ -224,23 +392,95 @@ describe('profileService profile shaping', () => {
               'https://source.example.test/profile',
             ],
             departments: ['Computer Science'],
-            researchAreas: ['Computing History'],
+            researchAreas: [
+              'Computing History',
+              'Quantum PhysicsTheoristExciton Transport & Diffusion',
+              'usually the solid state',
+            ],
           },
         ],
       },
     );
 
     expect(profile.researchEntities[0]).toMatchObject({
+      _id: 'ada-lab',
+      id: 'ada-lab',
       website: 'https://ada-lab.example.test/',
       sourceUrls: ['https://source.example.test/profile'],
       shortDescription: 'Studies computing history. Questions: [email redacted]',
       description: 'Call [phone redacted] before applying.',
+      researchAreas: ['Computing History'],
     });
     expect(profile.researchEntities[0]).not.toHaveProperty('websiteUrl');
     expect(JSON.stringify(profile.researchEntities)).not.toContain('hidden@example.edu');
     expect(JSON.stringify(profile.researchEntities)).not.toContain('javascript:');
     expect(JSON.stringify(profile.researchEntities)).not.toContain('data:text/html');
     expect(JSON.stringify(profile.researchEntities)).not.toContain('mailto:');
+  });
+
+  it('suppresses weak research-home summaries from public profile cards', () => {
+    const profile = normalizePublicProfile(
+      {
+        netid: 'mv123',
+        fname: 'Morgan',
+        lname: 'Vector',
+        bio: '',
+        researchInterestSummary:
+          'Research fields include Research Areas: synthetic policy and Teaching Interests: seminars.',
+      },
+      {
+        researchEntities: [
+          {
+            slug: 'morgan-vector-research',
+            name: 'Morgan Vector Faculty Research',
+            shortDescription:
+              'Studies synthetic policy and Research Areas: synthetic policy.',
+            description:
+              'Morgan Vector is affiliated with the Example Center and the Program in Synthetic Studies.',
+            researchAreas: ['Synthetic Policy'],
+          },
+        ],
+      },
+    );
+
+    expect(profile.research_interest_summary).toBe('');
+    expect(profile.researchEntities[0]).not.toHaveProperty('shortDescription');
+    expect(profile.researchEntities[0]).not.toHaveProperty('description');
+    expect(profile.researchEntities[0]).toMatchObject({
+      name: 'Morgan Vector Faculty Research',
+      researchAreas: ['Synthetic Policy'],
+    });
+  });
+
+  it('keeps direct research-home summaries on public profile cards', () => {
+    const profile = normalizePublicProfile(
+      {
+        netid: 'rv123',
+        fname: 'Riley',
+        lname: 'Vector',
+        bio: '',
+      },
+      {
+        researchEntities: [
+          {
+            slug: 'riley-vector-lab',
+            name: 'Riley Vector Lab',
+            shortDescription:
+              'Studies archival evidence and computational methods for public systems.',
+            description:
+              'The lab develops mixed-method approaches for evaluating public systems.',
+            researchAreas: ['Public Systems'],
+          },
+        ],
+      },
+    );
+
+    expect(profile.researchEntities[0]).toMatchObject({
+      shortDescription:
+        'Studies archival evidence and computational methods for public systems.',
+      description:
+        'The lab develops mixed-method approaches for evaluating public systems.',
+    });
   });
 
   it('keeps same-person profile URLs for compact compound last-name slugs', () => {
@@ -258,6 +498,23 @@ describe('profileService profile shaping', () => {
 
     expect(isLikelySameNameContaminatedProfile(rawProfile)).toBe(false);
     expect(normalizePublicProfile(rawProfile).bio).toContain('develop novel therapeutics');
+  });
+
+  it('does not treat one-token compound last-name profile slugs as wrong-person contamination', () => {
+    const rawProfile = {
+      netid: 'av123',
+      fname: 'Avery Middle',
+      lname: 'River Stone',
+      bio:
+        'Avery Stone studies clinical imaging methods and develops translational models for patient care.',
+      profileUrls: {
+        medicine: 'https://medicine.yale.edu/profile/avery-stone/',
+      },
+      researchInterests: ['Clinical imaging'],
+    };
+
+    expect(isLikelySameNameContaminatedProfile(rawProfile)).toBe(false);
+    expect(normalizePublicProfile(rawProfile).profile_urls).toEqual({});
   });
 
   it('keeps same-person profile URLs for standalone first-initial slugs', () => {
@@ -347,6 +604,90 @@ describe('profileService profile shaping', () => {
     expect(normalizePublicProfile(rawProfile).profile_urls).toEqual({
       medicine: 'https://medicine.yale.edu/profile/jon-koff/',
     });
+  });
+
+  it('keeps last-name-only directory URLs outside opaque profile paths', () => {
+    const rawProfile = {
+      netid: 'rd265',
+      fname: 'Riley',
+      lname: 'Domain',
+      bio: 'Riley Domain writes about literary history and twentieth-century poetics.',
+      profileUrls: {
+        english: 'https://english.yale.edu/people/full-part-time-lecturers/domain',
+      },
+      researchInterests: ['Literary history'],
+    };
+
+    expect(isLikelySameNameContaminatedProfile(rawProfile)).toBe(false);
+    expect(normalizePublicProfile(rawProfile).profile_urls).toEqual({
+      english: 'https://english.yale.edu/people/full-part-time-lecturers/domain',
+    });
+  });
+
+  it('keeps surname-only profile paths when the path has no competing given-name token', () => {
+    const rawProfile = {
+      netid: 'ds123',
+      fname: 'Drew',
+      lname: 'Signal',
+      bio: 'Drew Signal studies environmental science and museum collections.',
+      profileUrls: {
+        environment: 'https://environment.yale.edu/profile/signal/',
+      },
+      researchInterests: ['Environmental science'],
+    };
+
+    expect(isLikelySameNameContaminatedProfile(rawProfile)).toBe(false);
+    expect(normalizePublicProfile(rawProfile).profile_urls).toEqual({
+      environment: 'https://environment.yale.edu/profile/signal/',
+    });
+  });
+
+  it('keeps explicit nickname/alias profile URLs when the last name also matches', () => {
+    const profileWithShortName = {
+      netid: 'jh123',
+      fname: 'Jacob',
+      lname: 'North',
+      bio: 'Jacob North writes essays and narrative nonfiction.',
+      profileUrls: {
+        english: 'https://english.yale.edu/people/full-part-time-lecturers/jake-north',
+      },
+      researchInterests: ['Narrative nonfiction'],
+    };
+    const profileWithInitialName = {
+      netid: 'lj123',
+      fname: 'LJ',
+      lname: 'Jensen',
+      bio: 'LJ Jensen teaches public-sector leadership and nonprofit governance.',
+      profileUrls: {
+        som: 'https://som.yale.edu/faculty-research/faculty-directory/laura-jensen',
+      },
+      researchInterests: ['Leadership'],
+    };
+    const profileWithRomanizedName = {
+      netid: 'ip123',
+      fname: 'Ian',
+      lname: 'Park',
+      bio: 'Ian Park teaches clinical practice and biomedical methods.',
+      profileUrls: {
+        medicine: 'https://medicine.yale.edu/profile/inhyun-park/',
+      },
+      researchInterests: ['Biomedical methods'],
+    };
+    const profileWithFormalName = {
+      netid: 'jb123',
+      fname: 'Jim',
+      lname: 'Barlow',
+      bio: 'Jim Barlow studies organizations, work, and labor markets.',
+      profileUrls: {
+        som: 'https://som.yale.edu/faculty-research/faculty-directory/james-barlow',
+      },
+      researchInterests: ['Organizations'],
+    };
+
+    expect(isLikelySameNameContaminatedProfile(profileWithShortName)).toBe(false);
+    expect(isLikelySameNameContaminatedProfile(profileWithInitialName)).toBe(false);
+    expect(isLikelySameNameContaminatedProfile(profileWithRomanizedName)).toBe(false);
+    expect(isLikelySameNameContaminatedProfile(profileWithFormalName)).toBe(false);
   });
 
   it('keeps exact-name official bio prose even when the profile URL uses a partial previous surname', () => {
@@ -547,9 +888,9 @@ describe('profileService profile shaping', () => {
     );
 
     const leadingContactBio =
-      'Sabrina Diano, Ph.D. Professor Email: sabrina.diano@yale.eduPhone: 737-1216 Dr. Sabrina Diano is a Tenure Professor in the Department of Cellular and Molecular Physiology. Her research focuses on mitochondria-endoplasmic reticulum interactions and metabolic regulation in the central nervous system.';
+      'Riley Metabolic, Ph.D. Professor Email: riley.metabolic@yale.eduPhone: 737-1216 Dr. Riley Metabolic is a Tenure Professor in the Department of Cellular and Molecular Physiology. Her research focuses on mitochondria-endoplasmic reticulum interactions and metabolic regulation in the central nervous system.';
     expect(cleanPublicProfileBio({ bio: leadingContactBio })).toBe(
-      'Dr. Sabrina Diano is a Tenure Professor in the Department of Cellular and Molecular Physiology. Her research focuses on mitochondria-endoplasmic reticulum interactions and metabolic regulation in the central nervous system.',
+      'Dr. Riley Metabolic is a Tenure Professor in the Department of Cellular and Molecular Physiology. Her research focuses on mitochondria-endoplasmic reticulum interactions and metabolic regulation in the central nervous system.',
     );
   });
 
@@ -626,7 +967,7 @@ describe('profileService profile shaping', () => {
     );
   });
 
-  it('expands stored official research-area blocks into readable public bios', () => {
+  it('does not turn stored official research-area blocks into public bios', () => {
     const rawProfile = {
       fname: 'Sam',
       lname: 'Raskin',
@@ -639,13 +980,10 @@ describe('profileService profile shaping', () => {
 
     const bio = cleanPublicProfileBio(rawProfile);
 
-    expect(bio.length).toBeGreaterThanOrEqual(120);
-    expect(bio).toContain("Sam Raskin's official Yale profile lists research areas");
-    expect(bio).toContain('Langlands duality');
-    expect(bio).not.toMatch(/^Research Areas\b/);
+    expect(bio).toBe('');
   });
 
-  it('uses official profile research-interest terms when the stored bio is appointment-only', () => {
+  it('does not use official profile research-interest terms as public bios when the stored bio is appointment-only', () => {
     const profile = normalizePublicProfile({
       netid: 'kag67',
       fname: 'Kathleen',
@@ -657,12 +995,67 @@ describe('profileService profile shaping', () => {
       researchInterests: ['Smoking Cessation', 'Smoking', 'Stroke'],
     });
 
-    expect(profile.bio).toBe(
-      "Kathleen Garrison's official Yale profile lists research interests in Smoking Cessation, Smoking, and Stroke, based on Yale's official profile data.",
-    );
+    expect(profile.bio).toBe('');
   });
 
-  it('uses official research-interest terms from same-person Yale people pages', () => {
+  it('suppresses stored generated official research-interest summaries as public bios', () => {
+    const profile = normalizePublicProfile({
+      netid: 'mv123',
+      fname: 'Morgan',
+      lname: 'Vector',
+      bio:
+        "Morgan Vector's official Yale profile lists research interests in Data Systems, Public Health, and Example Methods, based on Yale's official profile data.",
+      profileUrls: {
+        medicine: 'https://medicine.yale.edu/profile/morgan-vector/',
+      },
+      researchInterests: ['Data Systems', 'Public Health', 'Example Methods'],
+    });
+
+    expect(profile.bio).toBe('');
+  });
+
+  it('suppresses title chrome and pasted contact blocks from public profiles', () => {
+    expect(
+      normalizePublicProfile({
+        netid: 'mv123',
+        fname: 'Morgan',
+        lname: 'Vector',
+        title: 'Research / Faculty',
+      }).title,
+    ).toBeUndefined();
+
+    expect(
+      normalizePublicProfile({
+        netid: 'rv123',
+        fname: 'Riley',
+        lname: 'Vector',
+        title: 'Home About Research Academics People Media Events Outreach Opportunities',
+      }).title,
+    ).toBeUndefined();
+
+    expect(
+      normalizePublicProfile({
+        netid: 'av123',
+        fname: 'Alex',
+        lname: 'Vector',
+        title:
+          'Professor of Example Studies Bio Alex Vector studies synthetic policy. Contact 115 Prospect Street alex.vector@yale.edu',
+      }).title,
+    ).toBeUndefined();
+  });
+
+  it('keeps normal public profile titles', () => {
+    expect(
+      normalizePublicProfile({
+        netid: 'sv123',
+        fname: 'Sage',
+        lname: 'Vector',
+        title: 'Associate Professor of Example Methods',
+      }).title,
+    ).toBe('Associate Professor of Example Methods');
+  });
+
+  it('does not use official research-interest terms from same-person Yale people pages as public bios', () => {
     const profile = normalizePublicProfile({
       netid: 'asa1',
       fname: 'Alicia',
@@ -674,20 +1067,18 @@ describe('profileService profile shaping', () => {
       researchInterests: ['Migration', 'Borderlands', 'Latinx literature'],
     });
 
-    expect(profile.bio).toBe(
-      "Alicia Schmidt Camacho's official Yale profile lists research interests in Migration, Borderlands, and Latinx literature, based on Yale's official profile data.",
-    );
+    expect(profile.bio).toBe('');
   });
 
-  it('omits short acronym-only profile terms from official interest fallback bios', () => {
+  it('does not derive public bios from official interest fallback terms', () => {
     const profile = normalizePublicProfile({
       netid: 'jls289',
-      fname: 'Jason L.',
-      lname: 'Schwartz',
+      fname: 'Jesse',
+      lname: 'Fixture',
       bio:
         'Associate Professor of Public Health (Health Policy); Associate Professor in the History of Medicine',
       profileUrls: {
-        official: 'https://ysph.yale.edu/profile/jason-l-schwartz/',
+        official: 'https://ysph.yale.edu/profile/jesse-fixture/',
       },
       researchInterests: [
         'Advisory Committees',
@@ -698,9 +1089,7 @@ describe('profileService profile shaping', () => {
       ],
     });
 
-    expect(profile.bio).toContain('Advisory Committees');
-    expect(profile.bio).toContain('Evidence-Based Medicine');
-    expect(profile.bio).not.toContain('U.S.');
+    expect(profile.bio).toBe('');
   });
 
   it('does not derive research-interest bios without an official Yale profile URL', () => {
@@ -756,9 +1145,9 @@ describe('profileService profile shaping', () => {
   it('suppresses obvious same-name contamination from another faculty member', () => {
     const rawProfile = {
       netid: 'tl324',
-      fname: 'Tina',
-      lname: 'Lu',
-      bio: "Lu Lu's website\n\nKline Tower Room 106",
+      fname: 'Taylor',
+      lname: 'Literature',
+      bio: "Literature Literature's website\n\nKline Tower Room 106",
       profileUrls: {
         statistics_data_science: 'https://statistics.yale.edu/profile/lu-lu',
       },
@@ -842,7 +1231,7 @@ describe('profileService profile shaping', () => {
         },
         {
           _id: 'faculty-area-1',
-          slug: 'faculty-research-area-yongli-zhang',
+          slug: 'faculty-research-area-fixture-access-lead',
           name: 'Yongli Zhang Research',
           kind: 'individual',
           entityType: 'FACULTY_RESEARCH_AREA',
@@ -890,11 +1279,11 @@ describe('profileService profile shaping', () => {
   it('hides stale metric topics when no research identity supports them', () => {
     const profile = normalizePublicProfile({
       netid: 'tl324',
-      fname: 'Tina',
-      lname: 'Lu',
+      fname: 'Taylor',
+      lname: 'Literature',
       bio: 'My research and teaching focus on late imperial Chinese literature.',
       profileUrls: {
-        departmental: 'https://eall.yale.edu/people/tina-lu',
+        departmental: 'https://eall.yale.edu/people/taylor-literature',
       },
       topics: ['Legume Nitrogen Fixing Symbiosis'],
       hIndex: 2,
@@ -903,7 +1292,7 @@ describe('profileService profile shaping', () => {
 
     expect(profile.bio).toBe('My research and teaching focus on late imperial Chinese literature.');
     expect(profile.profile_urls).toEqual({
-      departmental: 'https://eall.yale.edu/people/tina-lu',
+      departmental: 'https://eall.yale.edu/people/taylor-literature',
     });
     expect(profile.topics).toEqual([]);
     expect(profile.h_index).toBeUndefined();
@@ -976,12 +1365,45 @@ describe('profileService profile shaping', () => {
     expect(profile.topics).toEqual([]);
   });
 
-  it('uses trusted source-backed lead research homes as a concise fallback bio', () => {
+  it('cleans public topics with the same research-term guardrails as interests', () => {
     const profile = normalizePublicProfile(
       {
-        netid: 'saitken',
-        fname: 'Sarah',
-        lname: 'Aitken',
+        netid: 'fixture106',
+        fname: 'Alex',
+        lname: 'Vaccine',
+        bio: '',
+        researchInterests: ['Infectious Diseases', 'Health Economics', 'Global Health'],
+        topics: [
+          'Health Economics',
+          'Fish Diseases',
+          'Avian Pathogenic Escherichia coli',
+          'Cassava mosaic virus',
+          'using stochastic simulation models.',
+        ],
+      },
+      {
+        trustedResearchEntities: true,
+        researchEntities: [
+          {
+            name: 'Center for Infectious Disease Modeling and Analysis',
+            kind: 'center',
+            entityType: 'CENTER',
+            role: 'pi',
+            researchAreas: ['Infectious Disease Modeling'],
+          },
+        ],
+      },
+    );
+
+    expect(profile.topics).toEqual(['Health Economics']);
+  });
+
+  it('prefers lead lab prose over broad center prose for the research context summary', () => {
+    const profile = normalizePublicProfile(
+      {
+        netid: 'fixture105',
+        fname: 'Taylor',
+        lname: 'Signal',
         bio: '',
         researchInterests: [],
         topics: [],
@@ -990,22 +1412,99 @@ describe('profileService profile shaping', () => {
         trustedResearchEntities: true,
         researchEntities: [
           {
-            name: 'Aitken Lab',
+            name: 'Wu Tsai Institute',
+            kind: 'center',
+            entityType: 'INSTITUTE',
+            role: 'core-faculty',
+            fullDescription:
+              'The Wu Tsai Institute accelerates interdisciplinary research into cognition, computation, and human behavior across Yale.',
+            researchAreas: ['Cognition', 'Computation'],
+          },
+          {
+            name: 'Signal Lab',
             kind: 'lab',
             entityType: 'LAB',
             role: 'pi',
-            websiteUrl: 'https://medicine.yale.edu/lab/aitken/',
+            fullDescription:
+              'The Signal Lab studies perception, decision making, and computational psychiatry through neuroimaging, behavioral modeling, and clinical experiments.',
+            researchAreas: ['Psychosis', 'Computational Psychiatry'],
+          },
+        ],
+      },
+    );
+
+    expect(profile.research_interest_summary).toBe(
+      'The Signal Lab studies perception, decision making, and computational psychiatry through neuroimaging, behavioral modeling, and clinical experiments.',
+    );
+  });
+
+  it('does not use broad affiliation prose as the research context summary when lead prose is thin', () => {
+    const profile = normalizePublicProfile(
+      {
+        netid: 'fixture109',
+        fname: 'Taylor',
+        lname: 'Signal',
+        bio: '',
+        researchInterests: [],
+        topics: [],
+      },
+      {
+        trustedResearchEntities: true,
+        researchEntities: [
+          {
+            name: 'Signal Research',
+            kind: 'individual',
+            entityType: 'FACULTY_RESEARCH_AREA',
+            role: 'pi',
+            fullDescription: 'Research fields include Signal Processing and Cognition.',
+            researchAreas: ['Signal Processing', 'Cognition'],
+          },
+          {
+            name: 'Cognition Institute',
+            kind: 'center',
+            entityType: 'INSTITUTE',
+            role: 'core-faculty',
+            fullDescription:
+              'The Cognition Institute advances interdisciplinary research in computation, behavior, and neural systems through collaborative projects across many departments.',
+            researchAreas: ['Cognition', 'Computation'],
+          },
+        ],
+      },
+    );
+
+    expect(profile.research_interest_summary).toBe('');
+  });
+
+  it('uses trusted source-backed lead research homes as a concise fallback bio', () => {
+    const profile = normalizePublicProfile(
+      {
+        netid: 'fixture107',
+        fname: 'Sage',
+        lname: 'Repair',
+        bio: '',
+        researchInterests: [],
+        topics: [],
+      },
+      {
+        trustedResearchEntities: true,
+        researchEntities: [
+          {
+            name: 'Repair Lab',
+            kind: 'lab',
+            entityType: 'LAB',
+            role: 'pi',
+            websiteUrl: 'https://medicine.yale.edu/lab/repair/',
             shortDescription:
-              'The Aitken Lab studies DNA damage mechanisms and their contributions to cancer evolution using genomic pathology, molecular biology, and image analysis.',
+              'The Repair Lab studies DNA damage mechanisms and their contributions to cancer evolution using genomic pathology, molecular biology, and image analysis.',
             researchAreas: ['DNA Damage', 'Cancer Evolution'],
           },
         ],
       },
     );
 
-    expect(profile.bio).toContain('Sarah Aitken leads the Aitken Lab.');
+    expect(profile.bio).toContain('Sage Repair leads the Repair Lab.');
     expect(profile.bio).toContain(
-      'The Aitken Lab studies DNA damage mechanisms and their contributions to cancer evolution',
+      'The Repair Lab studies DNA damage mechanisms and their contributions to cancer evolution',
     );
     expect(profile.bio.length).toBeGreaterThanOrEqual(120);
   });
@@ -1256,7 +1755,7 @@ describe('profileService profile shaping', () => {
         title: 'A Double Auction Mechanism for Mobile Data Offloading Markets',
         url: 'https://faculty.example.test/papers/double-auction.pdf',
         sourceUrl:
-          'https://engineering.yale.edu/research-and-faculty/faculty-directory/leandros-tassiulas',
+          'https://engineering.yale.edu/research-and-faculty/faculty-directory/lane-network',
         destinationKind: 'OTHER',
         displaySource: 'Official Yale profile',
         discoveredVia: 'OFFICIAL_PROFILE',
@@ -1389,7 +1888,7 @@ describe('profileService profile shaping', () => {
   it('excludes supplemental figure records from public research paper activity', () => {
     const link = scholarlyLinkToPublicLink({
       _id: 'figure-1',
-      title: 'Figure S1 from ASCL1 Drives Tolerance to Osimertinib in <i>EGFR</i> Mutant Lung Cancer',
+      title: 'Figure S1 from ASCL1 Drives Tolerance to Osimertinib in <i>EGFR</i> Mutant Literatureng Cancer',
       url: 'https://doi.org/10.1158/0008-5472.25785287',
       destinationKind: 'DOI',
       displaySource: 'DOI',
@@ -1397,7 +1896,7 @@ describe('profileService profile shaping', () => {
       year: 2025,
     });
 
-    expect(link.title).toBe('Figure S1 from ASCL1 Drives Tolerance to Osimertinib in EGFR Mutant Lung Cancer');
+    expect(link.title).toBe('Figure S1 from ASCL1 Drives Tolerance to Osimertinib in EGFR Mutant Literatureng Cancer');
     expect(isPublicResearchPaperLink(link)).toBe(false);
   });
 
@@ -1484,6 +1983,71 @@ describe('profileService profile shaping', () => {
   });
 });
 
+describe('profileService admin profile update persistence', () => {
+  it('bounds and allowlists admin profile update payloads before persistence', async () => {
+    userModelMock.findOne.mockReturnValue({
+      lean: vi.fn().mockResolvedValue({
+        primaryDepartment: 'Existing Department',
+        secondaryDepartments: ['Existing Secondary'],
+      }),
+    });
+    userModelMock.findOneAndUpdate.mockReturnValue({
+      select: vi.fn(() => ({
+        lean: vi.fn().mockResolvedValue({ netid: 'ada123' }),
+      })),
+    });
+
+    await adminUpdateProfile('ada123', {
+      bio: `Reach me at hidden@example.edu or 203-432-1234. ${'x'.repeat(20_000)}`,
+      primaryDepartment: 'Computer Science',
+      secondaryDepartments: Array.from({ length: 200 }, (_, index) => `Dept ${index} dept${index}@example.edu`),
+      researchInterests: ['Machine learning admin@example.edu', { nested: true }],
+      topics: ['Systems 203-432-1234'],
+      website: 'javascript:alert(document.cookie)',
+      profileUrls: {
+        official: 'https://profiles.example.edu/ada',
+        unsafe: 'data:text/html,<script>alert(1)</script>',
+      },
+      fname: `Ada hidden@example.edu ${'x'.repeat(500)}`,
+      lname: { nested: true },
+      email: 'ada@example.edu\nBcc: hidden@example.edu',
+      title: `Professor 203-432-1234 ${'x'.repeat(500)}`,
+      hIndex: 2_000_000,
+      profileVerified: 'true',
+      userConfirmed: true,
+      userType: 'superadmin',
+      publications: 'not an array',
+      arbitraryNested: { $set: { admin: true } },
+    });
+
+    const update = userModelMock.findOneAndUpdate.mock.calls[0][1];
+
+    expect(update.bio.length).toBeLessThanOrEqual(5_000);
+    expect(update.bio).not.toContain('hidden@example.edu');
+    expect(update.bio).not.toContain('203-432-1234');
+    expect(update.primaryDepartment).toBe('Computer Science');
+    expect(update.secondaryDepartments.length).toBeLessThanOrEqual(100);
+    expect(JSON.stringify(update.secondaryDepartments)).not.toContain('@example.edu');
+    expect(update.researchInterests).toEqual(['Machine learning [email redacted]']);
+    expect(update.topics).toEqual(['Systems [phone redacted]']);
+    expect(update.website).toBeUndefined();
+    expect(update.profileUrls.official).toMatch(/^https:\/\/profiles\.example\.edu\/ada\/?$/);
+    expect(update.profileUrls).not.toHaveProperty('unsafe');
+    expect(update.fname.length).toBeLessThanOrEqual(120);
+    expect(update.fname).not.toContain('hidden@example.edu');
+    expect(update).not.toHaveProperty('lname');
+    expect(update).not.toHaveProperty('email');
+    expect(update.title.length).toBeLessThanOrEqual(300);
+    expect(update.title).not.toContain('203-432-1234');
+    expect(update).not.toHaveProperty('hIndex');
+    expect(update).not.toHaveProperty('profileVerified');
+    expect(update.userConfirmed).toBe(true);
+    expect(update).not.toHaveProperty('userType');
+    expect(update.publications).toEqual([]);
+    expect(update).not.toHaveProperty('arbitraryNested');
+  });
+});
+
 describe('updateOwnProfile', () => {
   it('sanitizes self-edit URL fields before persisting a faculty profile', async () => {
     userModelMock.findOneAndUpdate.mockReturnValue({
@@ -1520,6 +2084,92 @@ describe('updateOwnProfile', () => {
     );
   });
 
+  it('sanitizes admin profile URL fields before persisting a faculty profile', async () => {
+    userModelMock.findOneAndUpdate.mockReturnValue({
+      select: vi.fn().mockReturnValue({
+        lean: vi.fn().mockResolvedValue({
+          netid: 'prof123',
+          website: 'https://faculty.example.test/',
+          profileUrls: { yale: 'https://faculty.example.test/profile' },
+        }),
+      }),
+    });
+
+    await adminUpdateProfile('prof123', {
+      title: 'Professor of Security',
+      website: 'javascript:alert(document.cookie)',
+      imageUrl: 'https://user:pass@example.yale.edu/profile.jpg',
+      profileUrls: {
+        yale: 'https://faculty.example.test/profile',
+        mail: 'mailto:prof123@yale.edu',
+        script: 'javascript:alert(document.cookie)',
+      },
+    });
+
+    expect(userModelMock.findOneAndUpdate).toHaveBeenCalledWith(
+      { netid: 'prof123' },
+      {
+        title: 'Professor of Security',
+        profileUrls: {
+          yale: 'https://faculty.example.test/profile',
+        },
+      },
+      {
+        new: true,
+        runValidators: true,
+      },
+    );
+  });
+
+  it('bounds and allowlists admin profile publications before persistence', async () => {
+    userModelMock.findOneAndUpdate.mockReturnValue({
+      select: vi.fn().mockReturnValue({
+        lean: vi.fn().mockResolvedValue({
+          netid: 'prof123',
+          publications: [],
+        }),
+      }),
+    });
+
+    await adminUpdateProfile('prof123', {
+      publications: [
+        {
+          title: `Contact ada@example.edu about ${'A'.repeat(800)}`,
+          doi: '10.1234/example ada@example.edu',
+          year: '2026',
+          venue: 'Journal phone 203-555-1212',
+          cited_by_count: '42',
+          open_access_url: 'https://example.yale.edu/paper.pdf',
+          source: 'official-profile ada@example.edu',
+          ownerEmail: 'ada@example.edu',
+          raw: { private: true },
+        },
+        {
+          title: '',
+          raw: { private: true },
+        },
+        {
+          title: 'Unsafe URL paper',
+          openAccessUrl: 'javascript:alert(document.cookie)',
+        },
+      ],
+    });
+
+    const update = userModelMock.findOneAndUpdate.mock.calls[0][1];
+    expect(update.publications).toHaveLength(2);
+    expect(update.publications[0]).toMatchObject({
+      year: 2026,
+      citedByCount: 42,
+      openAccessUrl: 'https://example.yale.edu/paper.pdf',
+    });
+    expect(update.publications[0].title.length).toBeLessThanOrEqual(500);
+    expect(JSON.stringify(update.publications)).not.toContain('ada@example.edu');
+    expect(JSON.stringify(update.publications)).not.toContain('203-555-1212');
+    expect(JSON.stringify(update.publications)).not.toContain('ownerEmail');
+    expect(JSON.stringify(update.publications)).not.toContain('raw');
+    expect(update.publications[1]).toEqual({ title: 'Unsafe URL paper' });
+  });
+
   it('bounds self-editable profile payload size before persisting a faculty profile', async () => {
     userModelMock.findOne.mockReturnValue({
       lean: vi.fn().mockResolvedValue({
@@ -1534,20 +2184,45 @@ describe('updateOwnProfile', () => {
       }),
     });
 
-    const profileUrls = Object.fromEntries(
-      Array.from({ length: 80 }, (_, index) => [
-        index % 2 === 0 ? `url${index}` : `oversized-${'x'.repeat(200)}-${index}`,
+    const profileUrls: Record<string, unknown> = Object.fromEntries(
+      Array.from({ length: 20 }, (_, index) => [
+        `url${index}`,
         `https://faculty.example.test/profile/${index}`,
       ]),
     );
+    Object.defineProperty(profileUrls, 'late', {
+      get: () => {
+        throw new Error('profile URL sanitizer read past the self-edit URL cap');
+      },
+      enumerable: true,
+    });
+
+    const secondaryDepartments = Array.from(
+      { length: 50 },
+      (_, index) => ` Department ${index} `,
+    );
+    Object.defineProperty(secondaryDepartments, '50', {
+      get: () => {
+        throw new Error('profile array sanitizer read past the self-edit array cap');
+      },
+      enumerable: true,
+    });
+
+    const researchInterests = Array.from({ length: 50 }, (_, index) =>
+      index === 0 ? 'x'.repeat(500) : ` Interest ${index} `,
+    );
+    Object.defineProperty(researchInterests, '50', {
+      get: () => {
+        throw new Error('profile interest sanitizer read past the self-edit array cap');
+      },
+      enumerable: true,
+    });
 
     await updateOwnProfile('prof123', {
       bio: 'a'.repeat(6000),
       primaryDepartment: '  Computer Science  ',
-      secondaryDepartments: Array.from({ length: 80 }, (_, index) => ` Department ${index} `),
-      researchInterests: Array.from({ length: 80 }, (_, index) =>
-        index === 0 ? 'x'.repeat(500) : ` Interest ${index} `,
-      ),
+      secondaryDepartments,
+      researchInterests,
       topics: Array.from({ length: 80 }, (_, index) => ` Topic ${index} `),
       profileUrls,
     });

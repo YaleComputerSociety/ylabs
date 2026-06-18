@@ -3,6 +3,7 @@ import { AccessSignal } from '../models/accessSignal';
 import { EntryPathway } from '../models/entryPathway';
 import { PostedOpportunity } from '../models/postedOpportunity';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
+import { serializedDocumentId } from '../utils/idSerialization';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 
 export type AccessSummaryStatus =
@@ -37,19 +38,32 @@ const EMPTY_SUMMARY: AccessSummary = {
   bestNextStep: 'Check back later',
 };
 
+const ACCESS_SUMMARY_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
+
 const FORMALIZATION_ONLY_PATHWAY_TYPES = new Set([
   'COURSE_CREDIT',
   'SENIOR_THESIS',
   'FELLOWSHIP_FUNDED_PROJECT',
 ]);
 
+const MAX_ACCESS_SUMMARY_ENTITY_IDS = 100;
+const MAX_ACCESS_SUMMARY_TEXT_LENGTH = 2000;
+const MAX_ACCESS_SUMMARY_TYPE_LENGTH = 120;
+const MAX_ACCESS_SUMMARY_URL_LENGTH = 2048;
+
+const boundedString = (value: unknown, maxLength: number): string | undefined => {
+  if (typeof value !== 'string') return undefined;
+  const text = value.slice(0, maxLength).trim();
+  return text || undefined;
+};
+
 const publicText = (value: unknown): string | undefined => {
-  const text = String(value || '').trim();
+  const text = boundedString(value, MAX_ACCESS_SUMMARY_TEXT_LENGTH);
   return text ? redactDirectContactInfo(text) : undefined;
 };
 
 const publicHttpUrl = (value: unknown): string | undefined => {
-  const raw = String(value || '').trim();
+  const raw = boundedString(value, MAX_ACCESS_SUMMARY_URL_LENGTH);
   if (!raw) return undefined;
 
   try {
@@ -58,6 +72,11 @@ const publicHttpUrl = (value: unknown): string | undefined => {
   } catch {
     return undefined;
   }
+};
+
+const accessSummaryEntityId = (value: unknown): string | undefined => {
+  const id = serializedDocumentId(value);
+  return id && ACCESS_SUMMARY_OBJECT_ID_RE.test(id) ? id : undefined;
 };
 
 function confidenceScore(signal: any): number {
@@ -97,7 +116,7 @@ function bestNextStepFor(
 ): string {
   if (hasActivePostedOpportunity || status === 'posted-opening') return 'Apply';
   const exploratory = pathways.find((p) => p.pathwayType === 'EXPLORATORY_CONTACT');
-  if (exploratory) return exploratory.bestNextStep || 'Plan exploratory outreach';
+  if (exploratory) return boundedString(exploratory.bestNextStep, MAX_ACCESS_SUMMARY_TEXT_LENGTH) || 'Plan exploratory outreach';
   if (status === 'not-currently-available') return 'Check back later';
   if (
     signalTypes.has('CREDIT_FORMALIZATION_POSSIBLE') ||
@@ -116,8 +135,11 @@ export async function listAccessSummariesForResearchEntities(
   researchEntityIds: Array<string | mongoose.Types.ObjectId>,
 ): Promise<Map<string, AccessSummary>> {
   const validIds = researchEntityIds
-    .map((id) => String(id))
-    .filter((id) => mongoose.Types.ObjectId.isValid(id));
+    .slice(0, MAX_ACCESS_SUMMARY_ENTITY_IDS)
+    .flatMap((id) => {
+      const normalized = accessSummaryEntityId(id);
+      return normalized ? [normalized] : [];
+    })
   if (validIds.length === 0) return new Map();
 
   const objectIds = validIds.map((id) => new mongoose.Types.ObjectId(id));
@@ -135,28 +157,46 @@ export async function listAccessSummariesForResearchEntities(
 
   const signalsByEntity = new Map<string, any[]>();
   for (const signal of signals as any[]) {
-    const key = String(signal.researchEntityId);
+    const key = accessSummaryEntityId(signal.researchEntityId);
+    if (!key) continue;
     signalsByEntity.set(key, [...(signalsByEntity.get(key) || []), signal]);
   }
 
   const pathwaysByEntity = new Map<string, any[]>();
   for (const pathway of pathways as any[]) {
-    const key = String(pathway.researchEntityId);
+    const key = accessSummaryEntityId(pathway.researchEntityId);
+    if (!key) continue;
     pathwaysByEntity.set(key, [...(pathwaysByEntity.get(key) || []), pathway]);
   }
 
   const activeOpportunityEntityIds = new Set(
-    (opportunities as any[]).map((opportunity) => String(opportunity.researchEntityId)),
+    (opportunities as any[]).flatMap((opportunity) => {
+      const id = accessSummaryEntityId(opportunity.researchEntityId);
+      return id ? [id] : [];
+    }),
   );
 
   const out = new Map<string, AccessSummary>();
   for (const id of validIds) {
     const entitySignals = signalsByEntity.get(id) || [];
     const entityPathways = (pathwaysByEntity.get(id) || []).filter(
-      (pathway) => !FORMALIZATION_ONLY_PATHWAY_TYPES.has(String(pathway.pathwayType)),
+      (pathway) => {
+        const pathwayType = boundedString(pathway.pathwayType, MAX_ACCESS_SUMMARY_TYPE_LENGTH);
+        return pathwayType && !FORMALIZATION_ONLY_PATHWAY_TYPES.has(pathwayType);
+      },
     );
-    const signalTypes = new Set(entitySignals.map((signal) => String(signal.signalType)));
-    const entryPathwayTypes = new Set(entityPathways.map((pathway) => String(pathway.pathwayType)));
+    const signalTypes = new Set(
+      entitySignals.flatMap((signal) => {
+        const signalType = boundedString(signal.signalType, MAX_ACCESS_SUMMARY_TYPE_LENGTH);
+        return signalType ? [signalType] : [];
+      }),
+    );
+    const entryPathwayTypes = new Set(
+      entityPathways.flatMap((pathway) => {
+        const pathwayType = boundedString(pathway.pathwayType, MAX_ACCESS_SUMMARY_TYPE_LENGTH);
+        return pathwayType ? [pathwayType] : [];
+      }),
+    );
     const hasActivePostedOpportunity = activeOpportunityEntityIds.has(id);
     const status = computeStatus(signalTypes, hasActivePostedOpportunity);
     const confidence =
@@ -166,8 +206,8 @@ export async function listAccessSummariesForResearchEntities(
       status,
       confidence,
       evidence: entitySignals.slice(0, 5).map((signal) => ({
-        signalType: signal.signalType,
-        confidence: signal.confidence,
+        signalType: boundedString(signal.signalType, MAX_ACCESS_SUMMARY_TYPE_LENGTH) || '',
+        confidence: boundedString(signal.confidence, MAX_ACCESS_SUMMARY_TYPE_LENGTH) || '',
         excerpt: publicText(signal.excerpt),
         sourceUrl: publicHttpUrl(signal.sourceUrl),
       })),
@@ -188,5 +228,6 @@ export async function getAccessSummaryForResearchEntity(
   researchEntityId: string | mongoose.Types.ObjectId,
 ): Promise<AccessSummary> {
   const summaries = await listAccessSummariesForResearchEntities([researchEntityId]);
-  return summaries.get(String(researchEntityId)) || EMPTY_SUMMARY;
+  const id = accessSummaryEntityId(researchEntityId);
+  return (id ? summaries.get(id) : undefined) || EMPTY_SUMMARY;
 }

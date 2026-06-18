@@ -30,6 +30,7 @@
 import axios from 'axios';
 import dotenv from 'dotenv';
 import { listYalies, YaliesPerson } from '../../services/yaliesService';
+import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { getCached, setCached } from '../snapshotCache';
 import type { IScraper, ScraperContext, ScraperResult, ObservationInput } from '../types';
 
@@ -296,7 +297,9 @@ export class YaleDirectoryScraper implements IScraper {
           break;
         }
         ctx.log(
-          `error fetching Yalies page ${pageNum}: ${errAny?.message ?? String(err)} — aborting.`,
+          `error fetching Yalies page ${pageNum}: ${sanitizeLogValue(
+            err instanceof Error ? err.message : String(err),
+          )} — aborting.`,
         );
         break;
       }

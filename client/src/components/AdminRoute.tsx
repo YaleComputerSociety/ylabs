@@ -6,9 +6,25 @@ import { useContext, FunctionComponent, useEffect } from 'react';
 import UserContext from '../contexts/UserContext';
 import { buildApiUrl } from '../utils/apiBaseUrl';
 
+const MAX_LOCAL_ADMIN_REDIRECT_URL_LENGTH = 2048;
+
 interface AdminRouteProps {
   Component: FunctionComponent;
 }
+
+const getSafeLocalAdminRedirectTarget = () => {
+  const fallback = window.location.origin;
+  if (window.location.href.length > MAX_LOCAL_ADMIN_REDIRECT_URL_LENGTH) {
+    return fallback;
+  }
+
+  try {
+    const parsed = new URL(window.location.href);
+    return parsed.origin === window.location.origin ? parsed.toString() : fallback;
+  } catch {
+    return fallback;
+  }
+};
 
 const getLocalAdminDevLoginUrl = () => {
   const isLocalDevHost =
@@ -19,7 +35,7 @@ const getLocalAdminDevLoginUrl = () => {
   }
 
   return buildApiUrl(`/dev-login?userType=admin&redirect=${encodeURIComponent(
-    window.location.href,
+    getSafeLocalAdminRedirectTarget(),
   )}`);
 };
 

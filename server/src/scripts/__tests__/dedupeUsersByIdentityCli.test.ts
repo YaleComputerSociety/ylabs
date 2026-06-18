@@ -47,6 +47,9 @@ describe('dedupeUsersByIdentity CLI wrapper', () => {
     writeDedupeUsersByIdentityOutput(payload, output);
 
     expect(JSON.parse(fs.readFileSync(output, 'utf8'))).toMatchObject(payload);
+    expect(() =>
+      writeDedupeUsersByIdentityOutput(payload, '/var/tmp/user-identity-dedupe.json'),
+    ).toThrow(/--output must write under/);
   });
 
   it('adds target metadata to user identity dedupe artifacts', () => {

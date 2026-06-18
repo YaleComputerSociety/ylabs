@@ -10,6 +10,8 @@ import * as cheerio from 'cheerio';
 import { getCached, setCached } from '../snapshotCache';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 import { classifyProgram } from '../../services/programClassifier';
+import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
+import { sanitizeLogValue } from '../../utils/logSanitizer';
 
 export const YALE_COLLEGE_FELLOWSHIPS_OFFICE_SOURCE = 'yale-college-fellowships-office';
 
@@ -627,17 +629,23 @@ export function candidateToObservations(candidate: FellowshipCatalogCandidate): 
 }
 
 async function fetchHtml(url: string, useCache: boolean): Promise<string> {
-  const cacheKey = `page:${url}`;
+  const safeUrl = await assertPublicHttpUrl(url);
+  const safeUrlText = safeUrl.toString();
+  const cacheKey = `page:${safeUrlText}`;
   if (useCache) {
     const cached = await getCached<string>(YALE_COLLEGE_FELLOWSHIPS_OFFICE_SOURCE, cacheKey);
     if (cached) return cached;
   }
-  const res = await axios.get(url, {
+  const agents = ssrfSafeAgents();
+  const res = await axios.get(safeUrlText, {
     timeout: 30000,
     headers: {
       'User-Agent': 'YLabsBot/1.0 (+https://ylabs.yale.edu)',
       Accept: 'text/html,application/xhtml+xml',
     },
+    maxRedirects: 5,
+    httpAgent: agents.httpAgent,
+    httpsAgent: agents.httpsAgent,
   });
   const html = String(res.data || '');
   if (useCache) await setCached(YALE_COLLEGE_FELLOWSHIPS_OFFICE_SOURCE, cacheKey, html);
@@ -684,7 +692,7 @@ export class YaleCollegeFellowshipsOfficeScraper implements IScraper {
         failedUrls.push(url);
         ctx.log('Skipping fellowship catalog page after fetch/parse failure', {
           url,
-          error: error instanceof Error ? error.message : String(error),
+          error: sanitizeLogValue(error),
         });
         return false;
       }

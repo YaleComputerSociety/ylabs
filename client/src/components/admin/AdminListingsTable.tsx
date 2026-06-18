@@ -107,8 +107,8 @@ const AdminListingsTable = () => {
         total: response.data.total,
         totalPages: response.data.totalPages,
       });
-    } catch (error) {
-      console.error('Error fetching admin listings:', error);
+    } catch {
+      console.error('Error fetching admin listings.');
       swal({ text: 'Failed to fetch legacy listing evidence', icon: 'error' });
       dispatch({ type: 'FETCH_FAILURE' });
     }
@@ -139,8 +139,8 @@ const AdminListingsTable = () => {
       await axios.delete(`/admin/listings/${listing._id}`, { withCredentials: true });
       swal({ text: 'Legacy listing evidence deleted', icon: 'success', timer: 1500 });
       fetchListings();
-    } catch (error) {
-      console.error('Error deleting listing:', error);
+    } catch {
+      console.error('Error deleting listing.');
       swal({ text: 'Failed to delete legacy listing evidence', icon: 'error' });
     }
   };
@@ -163,8 +163,8 @@ const AdminListingsTable = () => {
         listingId: listing._id,
         results: response.data.results,
       });
-    } catch (error) {
-      console.error('Error checking URLs:', error);
+    } catch {
+      console.error('Error checking URLs.');
       swal({ text: 'Failed to check URLs', icon: 'error' });
       dispatch({ type: 'URL_CHECK_FAILURE' });
     }

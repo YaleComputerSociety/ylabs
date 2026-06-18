@@ -1,4 +1,5 @@
 export type ArchivedEntityArtifactType =
+  | 'ResearchEntityMember'
   | 'EntryPathway'
   | 'AccessSignal'
   | 'ContactRoute'
@@ -12,6 +13,8 @@ export interface ArchivedEntityArtifact {
   derivationKey?: string;
   signalType?: string;
   entryPathwayId?: string;
+  userId?: string;
+  role?: string;
 }
 
 export interface ArchivedEntityArtifactRepairPlan {
@@ -37,6 +40,12 @@ export interface ArchivedEntityArtifactRepairPlan {
 }
 
 function artifactIdentityKey(artifact: ArchivedEntityArtifact): string {
+  if (artifact.artifactType === 'ResearchEntityMember') {
+    const userId = (artifact.userId || '').trim();
+    const role = (artifact.role || '').trim();
+    return userId && role ? `${artifact.artifactType}:${role}:${userId}` : '';
+  }
+
   const derivationKey = (artifact.derivationKey || '').trim();
   if (!derivationKey) return '';
 

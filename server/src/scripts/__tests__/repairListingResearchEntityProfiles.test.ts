@@ -6,11 +6,23 @@ import { describe, expect, it } from 'vitest';
 import {
   assertRepairListingResearchEntityProfilesApplyAllowed,
   buildRepairListingResearchEntityProfilesOutput,
+  normalizeListingProfileRepairObjectId,
   parseRepairListingResearchEntityProfilesArgs,
   writeRepairListingResearchEntityProfilesOutput,
 } from '../repairListingResearchEntityProfiles';
 
 describe('repairListingResearchEntityProfiles CLI helpers', () => {
+  it('rejects object-shaped ids without coercion', () => {
+    const objectShapedId = {
+      toString: () => '507f1f77bcf86cd799439011',
+    };
+
+    expect(normalizeListingProfileRepairObjectId(objectShapedId)).toBeUndefined();
+    expect(
+      normalizeListingProfileRepairObjectId(' 507f1f77bcf86cd799439011 ')?.toHexString(),
+    ).toBe('507f1f77bcf86cd799439011');
+  });
+
   it('parses apply, limit, and output flags', () => {
     expect(
       parseRepairListingResearchEntityProfilesArgs([
@@ -41,6 +53,9 @@ describe('repairListingResearchEntityProfiles CLI helpers', () => {
     expect(() =>
       parseRepairListingResearchEntityProfilesArgs(['--output=--apply']),
     ).toThrow(/--output requires a path/);
+    expect(() =>
+      parseRepairListingResearchEntityProfilesArgs(['--output=/etc/ylabs-report.json']),
+    ).toThrow(/must write under/);
   });
 
   it('writes the repair artifact when output is provided', () => {
@@ -55,6 +70,12 @@ describe('repairListingResearchEntityProfiles CLI helpers', () => {
     writeRepairListingResearchEntityProfilesOutput(payload, output);
 
     expect(JSON.parse(fs.readFileSync(output, 'utf8'))).toMatchObject(payload);
+  });
+
+  it('rejects unsafe listing profile repair output writes', () => {
+    expect(() =>
+      writeRepairListingResearchEntityProfilesOutput({ mode: 'dry-run' }, '/etc/ylabs-report.json'),
+    ).toThrow(/must write under/);
   });
 
   it('wraps repair artifacts with target metadata and parsed options', () => {

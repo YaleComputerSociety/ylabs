@@ -3,18 +3,24 @@
  */
 import Button from '@mui/material/Button';
 
-import axios from '../utils/axios';
+import { buildApiUrl } from '../utils/apiBaseUrl';
+
+const MAX_LOGOUT_RETURN_PATH_LENGTH = 2048;
+
+const storeLogoutReturnPath = () => {
+  if (window.location.pathname === '/login') return;
+
+  const returnPath = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  localStorage.removeItem('logoutReturnPath');
+  if (returnPath.length <= MAX_LOGOUT_RETURN_PATH_LENGTH) {
+    sessionStorage.setItem('logoutReturnPath', returnPath);
+  }
+};
 
 const SignOutButton = () => {
   const handleLogout = () => {
-    const currentPath = window.location.pathname;
-
-    if (currentPath !== '/login') {
-      const returnUrl = window.location.origin + currentPath;
-      localStorage.setItem('logoutReturnPath', returnUrl);
-    }
-
-    window.location.href = axios.defaults.baseURL + '/logout';
+    storeLogoutReturnPath();
+    window.location.href = buildApiUrl('/logout');
   };
 
   return (

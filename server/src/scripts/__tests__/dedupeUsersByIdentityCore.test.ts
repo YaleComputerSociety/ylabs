@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import path from 'path';
 import {
   buildUserIdentityDedupeSummary,
   buildUserIdentityDedupePlan,
@@ -38,6 +39,7 @@ describe('parseDedupeUsersByIdentityArgs', () => {
   });
 
   it('parses output, sample-size, and max-apply-groups flags', () => {
+    const output = path.resolve('tmp/user-dedupe/summary.json');
     expect(
       parseDedupeUsersByIdentityArgs([
         '--apply',
@@ -51,7 +53,7 @@ describe('parseDedupeUsersByIdentityArgs', () => {
       confirmUserIdentityDedupe: true,
       limit: 100,
       limitProvided: false,
-      output: 'tmp/user-dedupe/summary.json',
+      output,
       sampleSize: 3,
       maxApplyGroups: 2,
     });
@@ -81,6 +83,12 @@ describe('parseDedupeUsersByIdentityArgs', () => {
   it('rejects malformed paired CLI values before running user dedupe', () => {
     expect(() => parseDedupeUsersByIdentityArgs(['--output', '--apply'])).toThrow(
       '--output requires a value',
+    );
+    expect(() => parseDedupeUsersByIdentityArgs(['--output=/var/tmp/user-dedupe.json'])).toThrow(
+      /--output must write under/,
+    );
+    expect(() => parseDedupeUsersByIdentityArgs(['--output=/tmp/user-dedupe.txt'])).toThrow(
+      /--output must point to a \.json report file/,
     );
     expect(() => parseDedupeUsersByIdentityArgs(['--identity-field', '--limit=5'])).toThrow(
       '--identity-field requires a value',
@@ -366,39 +374,39 @@ describe('buildUserIdentityDedupePlan', () => {
     const plan = buildUserIdentityDedupePlan([
       {
         identityField: 'email',
-        identityValue: 'coifman-ronald@yale.edu',
+        identityValue: 'fixture-dedupe@yale.edu',
         users: [
           {
             id: 'coifman-a',
-            email: 'coifman-ronald@yale.edu',
-            fname: 'Ronald',
-            lname: 'Coifman',
+            email: 'fixture-dedupe@yale.edu',
+            fname: 'Dedupe',
+            lname: 'Fixture',
             userConfirmed: true,
           },
           {
             id: 'coifman-b',
-            email: 'coifman-ronald@yale.edu',
-            fname: 'Ronald',
-            lname: 'Coifman',
+            email: 'fixture-dedupe@yale.edu',
+            fname: 'Dedupe',
+            lname: 'Fixture',
           },
         ],
       },
       {
         identityField: 'email',
-        identityValue: 'd.silverman@yale.edu',
+        identityValue: 'd.fixture@yale.edu',
         users: [
           {
             id: 'silverman-a',
-            email: 'd.silverman@yale.edu',
-            fname: 'David',
-            lname: 'Silverman',
+            email: 'd.fixture@yale.edu',
+            fname: 'Drew',
+            lname: 'Fixture',
             userConfirmed: true,
           },
           {
             id: 'silverman-b',
-            email: 'd.silverman@yale.edu',
-            fname: 'David',
-            lname: 'Silverman',
+            email: 'd.fixture@yale.edu',
+            fname: 'Drew',
+            lname: 'Fixture',
           },
         ],
       },
@@ -406,14 +414,14 @@ describe('buildUserIdentityDedupePlan', () => {
 
     expect(plan.groups).toEqual([
       expect.objectContaining({
-        identityValue: 'coifman-ronald@yale.edu',
-        canonicalUserId: 'coifman-a',
-        duplicateUserIds: ['coifman-b'],
-      }),
-      expect.objectContaining({
-        identityValue: 'd.silverman@yale.edu',
+        identityValue: 'd.fixture@yale.edu',
         canonicalUserId: 'silverman-a',
         duplicateUserIds: ['silverman-b'],
+      }),
+      expect.objectContaining({
+        identityValue: 'fixture-dedupe@yale.edu',
+        canonicalUserId: 'coifman-a',
+        duplicateUserIds: ['coifman-b'],
       }),
     ]);
     expect(plan.warningGroups).toEqual([]);
@@ -486,7 +494,7 @@ describe('buildUserIdentityDedupeSummary', () => {
       },
       {
         identityField: 'email',
-        identityValue: 'second.person@example.test',
+        identityValue: 'second.fixture@example.test',
         users: [
           { id: 'second-canonical', fname: 'Second', lname: 'Person', userConfirmed: true },
           { id: 'second-duplicate', fname: 'S.', lname: 'Person' },

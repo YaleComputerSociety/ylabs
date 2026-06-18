@@ -308,6 +308,12 @@ describe('professor bio coverage audit CLI helpers', () => {
     expect(() => parseProfessorBioCoverageAuditArgs(['--output', '--strict'])).toThrow(
       /--output requires a path/,
     );
+    expect(() =>
+      parseProfessorBioCoverageAuditArgs(['--output', '/var/tmp/profile-bio-coverage.json']),
+    ).toThrow(/--output must write under/);
+    expect(() =>
+      parseProfessorBioCoverageAuditArgs(['--output', '/tmp/profile-bio-coverage.txt']),
+    ).toThrow(/--output must point to a \.json report file/);
   });
 
   it('writes JSON artifacts and wraps metadata', () => {
@@ -339,6 +345,15 @@ describe('professor bio coverage audit CLI helpers', () => {
       counts: { total: 1, weakBio: 0 },
       options: { minBioLength: 120 },
     });
+  });
+
+  it('rejects unsafe professor bio coverage artifact writes', () => {
+    expect(() =>
+      writeProfessorBioCoverageAuditOutput(
+        { generatedAt: '2026-06-05T00:00:00.000Z' },
+        '/var/tmp/profile-bio-coverage.json',
+      ),
+    ).toThrow(/--output must write under/);
   });
 
   it('exposes the read-only audit command in server package scripts', () => {

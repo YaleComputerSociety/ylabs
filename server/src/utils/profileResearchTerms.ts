@@ -38,6 +38,7 @@ const RESEARCH_TERM_NOISE_PATTERNS = [
   /^teaching\s+interests?:/i,
   /\b[A-Z&]{2,}\s*\d{3,4}\b/,
   /^(?:i|we)\s+/i,
+  /^(?:usually|using|with|and|hence|clarify)\b/i,
   /^(?:although|as opposed to|they|much of|known to|in contrast|rather than)\b/i,
   /\bin their\b/i,
 ];
@@ -93,6 +94,7 @@ function isProseResearchBlurb(value: string): boolean {
     (/^research\s+areas?:/i.test(value) && wordCount > 12) ||
     /^our\s+work\b/i.test(value) ||
     /^(?:we use|in its sum|our research attempts)\b/i.test(value) ||
+    /[.!?]$/.test(value) ||
     wordCount > 10
   );
 }

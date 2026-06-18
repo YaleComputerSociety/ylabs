@@ -11,6 +11,7 @@ import {
   readCrossSourceObservationReviewDecisions,
   validateCrossSourceObservationReviewDecisions,
   writeCrossSourceObservationConflictReviewOutput,
+  writeCrossSourceObservationDecisionTemplate,
 } from '../crossSourceObservationConflictReview';
 
 describe('cross-source observation conflict review', () => {
@@ -208,6 +209,23 @@ describe('cross-source observation conflict review', () => {
       ]),
     ).toThrow('--decision-template-output requires a path');
 
+    expect(() =>
+      parseCrossSourceObservationConflictReviewArgs(['--output=/var/tmp/cross-source.json']),
+    ).toThrow(/--output must write under/);
+    expect(() =>
+      parseCrossSourceObservationConflictReviewArgs(['--output=/tmp/cross-source.txt']),
+    ).toThrow(/--output must point to a \.json report file/);
+    expect(() =>
+      parseCrossSourceObservationConflictReviewArgs([
+        '--accepted-decisions=/var/tmp/cross-source-decisions.json',
+      ]),
+    ).toThrow(/--accepted-decisions must write under/);
+    expect(() =>
+      parseCrossSourceObservationConflictReviewArgs([
+        '--decision-template-output=/var/tmp/cross-source-template.json',
+      ]),
+    ).toThrow(/--decision-template-output must write under/);
+
     expect(() => parseCrossSourceObservationConflictReviewArgs(['prod'])).toThrow(
       'Unknown cross-source observation conflict review option: prod',
     );
@@ -400,6 +418,21 @@ describe('cross-source observation conflict review', () => {
       candidateGroups: 0,
       applyBlocked: true,
     });
+    expect(() =>
+      writeCrossSourceObservationConflictReviewOutput(payload, '/var/tmp/cross-source.json'),
+    ).toThrow(/--output must write under/);
+  });
+
+  it('rejects unsafe cross-source observation decision template writes and reads', () => {
+    const template = buildCrossSourceObservationDecisionTemplate([]);
+    expect(() =>
+      writeCrossSourceObservationDecisionTemplate(template, '/var/tmp/cross-source-template.json'),
+    ).toThrow(/--decision-template-output must write under/);
+    expect(() =>
+      readCrossSourceObservationReviewDecisions('/var/tmp/cross-source-decisions.json', {
+        allowEmpty: true,
+      }),
+    ).toThrow(/--accepted-decisions must write under/);
   });
 
   it('wraps review artifacts with target metadata and parsed options', () => {

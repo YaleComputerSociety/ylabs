@@ -22,7 +22,6 @@ export type OpportunityDetailApplicationState =
   | 'NO_APPLICATION_URL';
 
 export interface OpportunityDetailResearchEntity {
-  _id: string;
   slug: string;
   name: string;
   displayName?: string;
@@ -36,7 +35,6 @@ export interface OpportunityDetailResearchEntity {
 }
 
 export interface OpportunityDetailPathway {
-  _id: string;
   pathwayType: string;
   status: string;
   evidenceStrength?: string;
@@ -49,7 +47,6 @@ export interface OpportunityDetailPathway {
 }
 
 export interface OpportunityDetailEvidence {
-  _id: string;
   sourceName?: string;
   sourceUrl?: string;
   field?: string;
@@ -59,10 +56,6 @@ export interface OpportunityDetailEvidence {
 }
 
 export interface OpportunityDetail {
-  _id: string;
-  entryPathwayId: string;
-  researchEntityId: string;
-  listingId?: string;
   title: string;
   term?: string;
   deadline?: Date;
@@ -81,8 +74,6 @@ export interface OpportunityDetail {
   researchEntity: OpportunityDetailResearchEntity;
   pathway: OpportunityDetailPathway;
   evidence: OpportunityDetailEvidence[];
-  createdAt?: Date;
-  updatedAt?: Date;
 }
 
 export interface OpportunityDetailServiceDeps {
@@ -94,14 +85,21 @@ export interface OpportunityDetailServiceDeps {
 }
 
 const MAX_EVIDENCE_EXCERPT_LENGTH = 360;
+const MAX_OPPORTUNITY_DETAIL_ARRAY_ITEMS = 50;
+const MAX_OPPORTUNITY_DETAIL_TEXT_LENGTH = 5000;
+const MAX_OPPORTUNITY_DETAIL_URL_LENGTH = 2048;
+const MAX_OPPORTUNITY_DETAIL_EVIDENCE_DEPTH = 4;
+const MAX_OPPORTUNITY_DETAIL_OBJECT_KEYS = 20;
+const OPPORTUNITY_DETAIL_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
 
 const compactStrings = (values: unknown[]): string[] =>
   Array.from(
     new Set(
       values
+        .slice(0, MAX_OPPORTUNITY_DETAIL_ARRAY_ITEMS)
         .flatMap((value) => (Array.isArray(value) ? value : [value]))
         .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
-        .map((value) => value.trim()),
+        .map((value) => value.slice(0, MAX_OPPORTUNITY_DETAIL_TEXT_LENGTH).trim()),
     ),
   );
 
@@ -109,7 +107,7 @@ const HTTP_URL_SCHEMES = new Set(['http:', 'https:']);
 
 const publicHttpUrl = (value: unknown): string | undefined => {
   if (typeof value !== 'string') return undefined;
-  const trimmed = value.trim();
+  const trimmed = value.slice(0, MAX_OPPORTUNITY_DETAIL_URL_LENGTH).trim();
   if (!trimmed) return undefined;
 
   const hasScheme = /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(trimmed);
@@ -133,28 +131,38 @@ const publicHttpUrls = (values: unknown[]): string[] =>
   Array.from(
     new Set(
       values
+        .slice(0, MAX_OPPORTUNITY_DETAIL_ARRAY_ITEMS)
         .flatMap((value) => (Array.isArray(value) ? value : [value]))
         .map(publicHttpUrl)
         .filter((value): value is string => Boolean(value)),
     ),
   );
 
-const idString = (value: unknown): string => String(value || '');
-
-const documentId = (record: any): string => idString(record?._id);
+const objectIdString = (value: unknown): string => {
+  const id =
+    typeof value === 'string'
+      ? value.trim()
+      : value instanceof Types.ObjectId
+        ? value.toHexString()
+        : '';
+  return OPPORTUNITY_DETAIL_OBJECT_ID_RE.test(id) ? id : '';
+};
 
 const toEvidenceIds = (values: unknown[]): Types.ObjectId[] =>
   values
+    .slice(0, MAX_OPPORTUNITY_DETAIL_ARRAY_ITEMS)
     .flatMap((value) => (Array.isArray(value) ? value : [value]))
-    .map((value) => idString(value))
-    .filter((value) => Types.ObjectId.isValid(value))
+    .map((value) => objectIdString(value))
+    .filter(Boolean)
     .map((value) => new Types.ObjectId(value));
 
 const truncate = (value: string, maxLength: number): string =>
   value.length <= maxLength ? value : `${value.slice(0, maxLength - 3).trimEnd()}...`;
 
 const stringValue = (value: unknown): string | undefined => {
-  if (typeof value === 'string') return value.trim() || undefined;
+  if (typeof value === 'string') {
+    return value.slice(0, MAX_OPPORTUNITY_DETAIL_TEXT_LENGTH).trim() || undefined;
+  }
   if (typeof value === 'number' || typeof value === 'boolean') return String(value);
   return undefined;
 };
@@ -164,14 +172,21 @@ const publicText = (value: unknown): string | undefined => {
   return text ? redactDirectContactInfo(text) : undefined;
 };
 
-const firstEvidenceText = (value: unknown): string | undefined => {
+const publicTextArray = (values: unknown): string[] =>
+  Array.isArray(values)
+    ? compactStrings(values).map((value) => redactDirectContactInfo(value))
+    : [];
+
+const firstEvidenceText = (value: unknown, depth = 0): string | undefined => {
+  if (depth > MAX_OPPORTUNITY_DETAIL_EVIDENCE_DEPTH) return undefined;
   const direct = stringValue(value);
   if (direct) return direct;
 
   if (Array.isArray(value)) {
     return (
       value
-        .map(firstEvidenceText)
+        .slice(0, MAX_OPPORTUNITY_DETAIL_ARRAY_ITEMS)
+        .map((item) => firstEvidenceText(item, depth + 1))
         .filter((item): item is string => Boolean(item))
         .join(' ')
         .trim() || undefined
@@ -192,8 +207,8 @@ const firstEvidenceText = (value: unknown): string | undefined => {
       'title',
       'text',
     ];
-    for (const key of preferredKeys) {
-      const text = firstEvidenceText(record[key]);
+    for (const key of preferredKeys.slice(0, MAX_OPPORTUNITY_DETAIL_OBJECT_KEYS)) {
+      const text = firstEvidenceText(record[key], depth + 1);
       if (text) return text;
     }
   }
@@ -258,7 +273,8 @@ export async function getOpportunityDetail(
   id: string,
   deps: OpportunityDetailServiceDeps = {},
 ): Promise<OpportunityDetail | null> {
-  if (!Types.ObjectId.isValid(id)) {
+  const safeId = objectIdString(id);
+  if (!safeId) {
     return null;
   }
 
@@ -270,7 +286,7 @@ export async function getOpportunityDetail(
 
   const opportunity = await opportunityModel
     .findOne(
-      { _id: new Types.ObjectId(id), archived: false },
+      { _id: new Types.ObjectId(safeId), archived: false },
       [
         'entryPathwayId',
         'researchEntityId',
@@ -286,8 +302,6 @@ export async function getOpportunityDetail(
         'eligibility',
         'sourceEvidenceIds',
         'sourceUrls',
-        'createdAt',
-        'updatedAt',
       ].join(' '),
     )
     .lean();
@@ -381,10 +395,6 @@ export async function getOpportunityDetail(
     : 'SCRAPER_DERIVED';
 
   return {
-    _id: documentId(opportunity),
-    entryPathwayId: idString(opportunity.entryPathwayId),
-    researchEntityId: idString(opportunity.researchEntityId),
-    listingId: opportunity.listingId ? idString(opportunity.listingId) : undefined,
     title: publicText(opportunity.title) || '',
     term: publicText(opportunity.term),
     deadline: opportunity.deadline || undefined,
@@ -403,20 +413,18 @@ export async function getOpportunityDetail(
     eligibility: publicText(opportunity.eligibility),
     sourceUrls,
     researchEntity: {
-      _id: documentId(researchEntity),
       slug: researchEntity.slug || '',
       name: publicText(researchEntity.name) || '',
       displayName: publicText(researchEntity.displayName),
       kind: researchEntity.kind,
       entityType: researchEntity.entityType,
-      departments: researchEntity.departments || [],
-      researchAreas: researchEntity.researchAreas || [],
+      departments: publicTextArray(researchEntity.departments),
+      researchAreas: publicTextArray(researchEntity.researchAreas),
       school: publicText(researchEntity.school),
       websiteUrl: researchEntityWebsiteUrl,
       shortDescription: publicText(researchEntity.shortDescription),
     },
     pathway: {
-      _id: documentId(pathway),
       pathwayType: pathway.pathwayType,
       status: pathway.status,
       evidenceStrength: pathway.evidenceStrength,
@@ -428,15 +436,12 @@ export async function getOpportunityDetail(
       sourceUrls: publicHttpUrls([pathway.sourceUrls || []]),
     },
     evidence: evidence.map((item: any) => ({
-      _id: documentId(item),
-      sourceName: item.sourceName,
+      sourceName: publicText(item.sourceName),
       sourceUrl: publicHttpUrl(item.sourceUrl),
-      field: item.field,
+      field: publicText(item.field),
       excerpt: evidenceExcerpt(item.value),
       confidence: item.confidence,
       observedAt: item.observedAt,
     })),
-    createdAt: opportunity.createdAt,
-    updatedAt: opportunity.updatedAt,
   };
 }

@@ -20,13 +20,22 @@ export type LabMemberRole =
 export interface LabMemberUser {
   _id?: string;
   netid?: string;
+  email?: string;
+  publicKey?: string;
   fname: string;
   lname: string;
   displayName?: string;
+  imageUrl?: string;
   image_url?: string;
+  primaryDepartment?: string;
   primary_department?: string;
+  profileUrls?: Record<string, string>;
+  profile_urls?: Record<string, string>;
+  internalProfilePath?: string;
+  internal_profile_path?: string;
+  website?: string;
+  websiteUrl?: string;
   title?: string;
-  email?: string;
 }
 
 export interface LabMember {
@@ -58,8 +67,7 @@ export interface LabPaper {
 
 export interface LabScholarlyLink {
   _id: string;
-  researchEntityId?: string;
-  userId?: string;
+  memberKey?: string;
   title: string;
   url: string;
   destinationKind:
@@ -116,7 +124,6 @@ export interface LabEntryPathway {
 }
 
 export interface LabAccessSignal {
-  _id: string;
   signalType: string;
   confidence: string;
   confidenceScore?: number;
@@ -126,7 +133,7 @@ export interface LabAccessSignal {
 }
 
 export interface LabContactRoute {
-  _id: string;
+  _id?: string;
   routeType: string;
   label?: string;
   name?: string;
@@ -142,8 +149,6 @@ export interface LabContactRoute {
 
 export interface LabPostedOpportunity {
   _id: string;
-  entryPathwayId: string;
-  listingId?: string;
   title: string;
   term?: string;
   deadline?: string;
@@ -153,9 +158,8 @@ export interface LabPostedOpportunity {
 }
 
 export interface LabEntityRelationship {
-  _id: string;
-  sourceResearchEntityId: string;
-  targetResearchEntityId: string;
+  relatedResearchEntityId?: string;
+  relatedResearchEntitySlug?: string;
   relationshipType: string;
   label: string;
   evidenceStrength?: string;

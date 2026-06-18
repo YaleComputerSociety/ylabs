@@ -1,6 +1,11 @@
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 
+const MAX_FELLOWSHIP_EVIDENCE_TEXT_LENGTH = 5000;
+const MAX_FELLOWSHIP_EVIDENCE_ARRAY_ITEMS = 50;
+const MAX_FELLOWSHIP_EVIDENCE_URLS = 50;
+const MAX_FELLOWSHIP_EVIDENCE_DATE_LENGTH = 64;
+
 export interface FellowshipApplicationCycleEvidence {
   sourceUrls: string[];
   applicationLink?: string;
@@ -25,7 +30,8 @@ export type PublicFellowshipApplicationCycleEvidence = Omit<
 >;
 
 function cleanString(value: unknown): string | undefined {
-  const text = String(value || '').trim();
+  if (typeof value !== 'string') return undefined;
+  const text = value.slice(0, MAX_FELLOWSHIP_EVIDENCE_TEXT_LENGTH).trim();
   return text || undefined;
 }
 
@@ -40,27 +46,38 @@ function dateStatus(
   predicate: (dateTime: number, nowTime: number) => boolean,
 ): boolean | undefined {
   if (!value) return undefined;
-  const date = value instanceof Date ? value : new Date(String(value));
+  if (!(value instanceof Date) && typeof value !== 'string') return undefined;
+  const raw = value instanceof Date ? value : value.slice(0, MAX_FELLOWSHIP_EVIDENCE_DATE_LENGTH);
+  const date = raw instanceof Date ? raw : new Date(raw);
   if (Number.isNaN(date.getTime())) return undefined;
   return predicate(date.getTime(), now.getTime());
 }
 
+function textPart(value: unknown): string[] {
+  if (typeof value === 'string') {
+    const text = value.slice(0, MAX_FELLOWSHIP_EVIDENCE_TEXT_LENGTH).trim();
+    return text ? [text] : [];
+  }
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, MAX_FELLOWSHIP_EVIDENCE_ARRAY_ITEMS).flatMap(textPart);
+}
+
 function textForFellowship(fellowship: any): string {
   return [
-    fellowship.title,
-    fellowship.competitionType,
-    fellowship.summary,
-    fellowship.description,
-    fellowship.applicationInformation,
-    fellowship.eligibility,
-    fellowship.restrictionsToUseOfAward,
-    fellowship.additionalInformation,
-    ...(fellowship.purpose || []),
-    ...(fellowship.termOfAward || []),
-    ...(fellowship.yearOfStudy || []),
+    ...textPart(fellowship.title),
+    ...textPart(fellowship.competitionType),
+    ...textPart(fellowship.summary),
+    ...textPart(fellowship.description),
+    ...textPart(fellowship.applicationInformation),
+    ...textPart(fellowship.eligibility),
+    ...textPart(fellowship.restrictionsToUseOfAward),
+    ...textPart(fellowship.additionalInformation),
+    ...textPart(fellowship.purpose),
+    ...textPart(fellowship.termOfAward),
+    ...textPart(fellowship.yearOfStudy),
   ]
-    .filter(Boolean)
-    .join(' ');
+    .join(' ')
+    .slice(0, MAX_FELLOWSHIP_EVIDENCE_TEXT_LENGTH);
 }
 
 function looksRecurring(fellowshipText: string): boolean {
@@ -73,10 +90,11 @@ function hasApplicationRoute(fellowship: any, sourceUrls: string[]): boolean {
   if (cleanHttpUrl(fellowship.applicationLink)) return true;
   if (!Array.isArray(fellowship.links)) return false;
 
-  return fellowship.links.some((link: any) => {
+  return fellowship.links.slice(0, MAX_FELLOWSHIP_EVIDENCE_URLS).some((link: any) => {
     const url = cleanHttpUrl(link?.url);
     if (!url || !sourceUrls.includes(url)) return false;
-    return /apply|application/i.test(`${link?.label || ''} ${url}`);
+    const label = cleanString(link?.label) || '';
+    return /apply|application/i.test(`${label} ${url}`);
   });
 }
 
@@ -86,7 +104,10 @@ export function buildFellowshipApplicationCycleEvidence(
 ): FellowshipApplicationCycleEvidence {
   const applicationLink = cleanHttpUrl(fellowship.applicationLink);
   const linkUrls = Array.isArray(fellowship.links)
-    ? fellowship.links.map((link: any) => cleanHttpUrl(link?.url)).filter(Boolean)
+    ? fellowship.links
+        .slice(0, MAX_FELLOWSHIP_EVIDENCE_URLS)
+        .map((link: any) => cleanHttpUrl(link?.url))
+        .filter(Boolean)
     : [];
   const sourceUrls = Array.from(new Set([applicationLink, ...linkUrls].filter(Boolean))) as string[];
   const sourceBacked = sourceUrls.length > 0;

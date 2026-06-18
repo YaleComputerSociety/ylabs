@@ -6,6 +6,7 @@ import { isAuthenticated, validateObjectId, validatePagination } from '../middle
 import * as programController from '../controllers/programController';
 import { logEvent } from '../services/analyticsService';
 import { AnalyticsEventType } from '../models/index';
+import { sanitizeLogValue } from '../utils/logSanitizer';
 
 const router = Router();
 
@@ -87,7 +88,7 @@ const logProgramSearchEvent = async (req: Request, res: Response, next: NextFunc
             pageSize: data?.pageSize,
             totalPages: data?.totalPages,
           },
-        }).catch((err) => console.error('Error logging program search event:', err));
+        }).catch((err) => console.error('Error logging program search event:', sanitizeLogValue(err)));
       }
     }
 
@@ -118,7 +119,7 @@ const logProgramEvent = (eventType: AnalyticsEventType) => {
               entityType: 'program',
               programId,
             },
-          }).catch((err: unknown) => console.error(`Error logging ${eventType} event:`, err));
+          }).catch((err: unknown) => console.error(`Error logging ${eventType} event:`, sanitizeLogValue(err)));
         }
       }
 

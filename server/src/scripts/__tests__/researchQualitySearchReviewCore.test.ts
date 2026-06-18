@@ -246,6 +246,18 @@ describe('researchQualitySearchReview CLI helpers', () => {
     expect(() => parseResearchQualitySearchReviewArgs(['--output=--strict'])).toThrow(
       /--output requires a path/,
     );
+    expect(() =>
+      parseResearchQualitySearchReviewArgs([
+        '--output',
+        '/var/tmp/research-quality-search-review.json',
+      ]),
+    ).toThrow(/--output must write under/);
+    expect(() =>
+      parseResearchQualitySearchReviewArgs([
+        '--output',
+        '/tmp/research-quality-search-review.txt',
+      ]),
+    ).toThrow(/--output must point to a \.json report file/);
   });
 
   it('writes the research quality search review artifact when output is provided', () => {
@@ -265,6 +277,15 @@ describe('researchQualitySearchReview CLI helpers', () => {
       reviewedEntities: 2,
       summary: { rows: 2, maxWarningScore: 1 },
     });
+  });
+
+  it('rejects unsafe research quality search review artifact writes', () => {
+    expect(() =>
+      writeResearchQualitySearchReviewOutput(
+        { readOnly: true },
+        '/var/tmp/research-quality-search-review.json',
+      ),
+    ).toThrow(/--output must write under/);
   });
 
   it('wraps research quality search artifacts with target metadata and parsed options', () => {

@@ -5,7 +5,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { initializeConnections } from '../db/connections';
 import { mapResearchGroupKindToEntityType } from '../models/researchAccessTypes';
-import { assertScriptApplyAllowed } from './scriptWriteGuards';
+import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { sanitizeLogValue } from '../utils/logSanitizer';
 
 dotenv.config();
 
@@ -80,11 +81,7 @@ const BACKFILL_ARRAY_FIELD_PAIRS = [
 ] as const;
 
 function parseRequiredOutputPath(value: string | undefined): string {
-  const output = value?.trim();
-  if (!output || output.startsWith('--')) {
-    throw new Error('--output requires a path');
-  }
-  return output;
+  return resolveSafeJsonReportOutputPath(value);
 }
 
 function parsePositiveInteger(value: string | undefined, flag: string): number {
@@ -194,8 +191,9 @@ export function buildResearchEntityMigrationOutput<T extends object>(
 
 export function writeResearchEntityMigrationOutput(report: unknown, output?: string): void {
   if (!output) return;
-  fs.mkdirSync(path.dirname(output), { recursive: true });
-  fs.writeFileSync(output, `${JSON.stringify(report, null, 2)}\n`);
+  const safeOutput = resolveSafeJsonReportOutputPath(output);
+  fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
+  fs.writeFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
 }
 
 async function collectionExists(db: MongoDb, name: string): Promise<boolean> {
@@ -562,7 +560,7 @@ const isDirectRun = process.argv[1]
 if (isDirectRun) {
   main()
     .catch((error) => {
-      console.error('Failed to migrate ResearchEntity collection:', error);
+      console.error('Failed to migrate ResearchEntity collection:', sanitizeLogValue(error));
       process.exitCode = 1;
     })
     .finally(async () => {

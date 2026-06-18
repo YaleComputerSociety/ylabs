@@ -116,7 +116,6 @@ const fellowshipQuickFilters: QuickFilterDef[] = [
   { label: 'Structured', value: 'structured' },
   { label: 'Mentor First', value: 'mentorFirst' },
   { label: 'Next Cycle', value: 'nextCycle' },
-  { label: 'Recently Added', value: 'recent' },
 ];
 
 const trustTierFilterOptions: Array<{ value: StudentVisibilityTier; label: string }> = [
@@ -179,14 +178,6 @@ const sortFellowshipsForDisplay = (
       if (da === null && db === null) return 0;
       if (da === null) return 1;
       if (db === null) return -1;
-      return (da - db) * direction;
-    });
-  }
-
-  if (sortBy === 'createdAt') {
-    return sorted.sort((a, b) => {
-      const da = dateValue(a.createdAt) ?? 0;
-      const db = dateValue(b.createdAt) ?? 0;
       return (da - db) * direction;
     });
   }
@@ -264,8 +255,8 @@ const Fellowships = () => {
       .then((response) => {
         dispatch({ type: 'SET_FAVORITES', ids: response.data.savedProgramIds || [] });
       })
-      .catch((error) => {
-        console.error("Error fetching user's saved programs:", error);
+      .catch(() => {
+        console.error("Error fetching user's saved programs.");
         dispatch({ type: 'SET_FAVORITES', ids: [] });
       });
   };
@@ -285,8 +276,8 @@ const Fellowships = () => {
             dispatch({ type: 'OPEN_DETAIL_MODAL', item: program });
           }
         })
-        .catch((error) => {
-          console.error('Error fetching direct fellowship link:', error);
+        .catch(() => {
+          console.error('Error fetching direct fellowship link.');
           setSearchParams((params) => {
             params.delete('program');
             params.delete('fellowship');
@@ -435,13 +426,6 @@ const Fellowships = () => {
   const toBrowsable = (fs: Fellowship[]): BrowsableItem[] =>
     fs.map((f) => ({ type: 'fellowship' as const, data: f }));
 
-  const recentFilter = (fs: Fellowship[]) => {
-    if (quickFilter !== 'recent') return fs;
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    return fs.filter((f) => new Date(f.createdAt) >= thirtyDaysAgo);
-  };
-
   const journeyItems = useMemo(() => {
     const byKey = {} as Record<ProgramJourneyCategory, BrowsableItem[]>;
     for (const key of Object.keys(journeyGroups) as ProgramJourneyCategory[]) {
@@ -464,13 +448,13 @@ const Fellowships = () => {
       if (quickFilter === 'mentorFirst') {
         rows = rows.filter((f) => f.requiresMentorBeforeApply);
       }
-      byKey[key] = toBrowsable(recentFilter(rows));
+      byKey[key] = toBrowsable(rows);
     }
     return byKey;
   }, [journeyGroups, quickFilter]);
 
   const showSection = (section: ProgramJourneyCategory) => {
-    if (quickFilter === null || quickFilter === 'recent') return true;
+    if (quickFilter === null) return true;
     if (quickFilter === 'open') return section === 'applyNow';
     if (quickFilter === 'closingSoon') return section === 'applyNow';
     if (quickFilter === 'nextCycle') return section === 'nextCycle';
@@ -490,17 +474,17 @@ const Fellowships = () => {
       }
       axios
         .put('/users/savedPrograms', { data: { savedPrograms: [fellowshipId] } })
-        .catch((error) => {
+        .catch(() => {
           dispatch({ type: 'SET_FAVORITES', ids: prevFavIds });
-          console.error('Error saving program:', error);
+          console.error('Error saving program.');
         });
     } else {
       dispatch({ type: 'SET_FAVORITES', ids: prevFavIds.filter((id) => id !== fellowshipId) });
       axios
         .delete('/users/savedPrograms', { data: { savedPrograms: [fellowshipId] } })
-        .catch((error) => {
+        .catch(() => {
           dispatch({ type: 'SET_FAVORITES', ids: prevFavIds });
-          console.error('Error removing saved program:', error);
+          console.error('Error removing saved program.');
         });
     }
   };

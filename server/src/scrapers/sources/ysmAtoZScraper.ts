@@ -16,7 +16,9 @@
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { User } from '../../models/user';
+import { serializedDocumentId } from '../../utils/idSerialization';
 import { deriveShortDescriptionFromFullDescription } from '../../utils/researchEntityDescriptionQuality';
+import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { getCached, setCached } from '../snapshotCache';
 import {
   isLikelyPersonSpecificYaleEmail,
@@ -112,13 +114,18 @@ function escapeRegex(value: string): string {
 }
 
 async function fetchPage(useCache: boolean): Promise<string> {
+  const safeUrl = await assertPublicHttpUrl(PAGE_URL);
+  const agents = ssrfSafeAgents();
   if (useCache) {
     const cached = await getCached<string>('ysm-atoz-index', 'page');
     if (cached) return cached;
   }
-  const res = await axios.get(PAGE_URL, {
+  const res = await axios.get(safeUrl.toString(), {
     timeout: 30000,
     headers: { 'User-Agent': 'ylabs-scraper/1.0 (+https://yalelabs.io)' },
+    maxRedirects: 5,
+    httpAgent: agents.httpAgent,
+    httpsAgent: agents.httpsAgent,
   });
   const html = res.data as string;
   if (useCache) await setCached('ysm-atoz-index', 'page', html);
@@ -126,16 +133,22 @@ async function fetchPage(useCache: boolean): Promise<string> {
 }
 
 async function fetchLabHomepage(url: string, useCache: boolean): Promise<string | null> {
-  const cacheKey = `lab-homepage:${url}`;
+  const safeUrl = await assertPublicHttpUrl(url);
+  const safeUrlText = safeUrl.toString();
+  const cacheKey = `lab-homepage:${safeUrlText}`;
   if (useCache) {
     const cached = await getCached<string>('ysm-atoz-index', cacheKey);
     if (cached) return cached;
   }
 
   try {
-    const res = await axios.get(url, {
+    const agents = ssrfSafeAgents();
+    const res = await axios.get(safeUrlText, {
       timeout: 30000,
       headers: { 'User-Agent': 'ylabs-scraper/1.0 (+https://yalelabs.io)' },
+      maxRedirects: 5,
+      httpAgent: agents.httpAgent,
+      httpsAgent: agents.httpsAgent,
     });
     const html = res.data as string;
     if (useCache) await setCached('ysm-atoz-index', cacheKey, html);
@@ -416,9 +429,9 @@ async function findPiUserId(nameHint: PiNameHint | null): Promise<string | null>
   if (matches.length !== 1) return null;
   const m: any = matches[0];
   if (m.primaryDepartment && /medicine|health|nursing|public health/i.test(m.primaryDepartment)) {
-    return String(m._id);
+    return serializedDocumentId(m._id) || null;
   }
-  return String(m._id);
+  return serializedDocumentId(m._id) || null;
 }
 
 export function labToObservations(lab: RawLab, sourceUrl: string): ObservationInput[] {

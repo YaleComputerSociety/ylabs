@@ -40,4 +40,31 @@ describe('LabPapersList', () => {
     expect(screen.queryByRole('link', { name: 'PDF' })).toBeNull();
     expect(container.querySelector('a')).toBeNull();
   });
+
+  it('does not render malformed DOI links', () => {
+    const paper: LabPaper = {
+      _id: 'paper-unsafe-doi',
+      title: 'Paper with unsafe DOI',
+      doi: '10.1145/3368089.3409745?next=https://evil.example',
+    };
+
+    const { container } = render(<LabPapersList papers={[paper]} />);
+
+    expect(screen.getByText('Paper with unsafe DOI')).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'Paper with unsafe DOI' })).toBeNull();
+    expect(container.querySelector('a')).toBeNull();
+  });
+
+  it('normalizes encoded titles without rendering embedded markup', () => {
+    const paper: LabPaper = {
+      _id: 'paper-encoded-title',
+      title: 'Safe &amp; Sound &#x3c;img src=x onerror=alert(1)&#x3e;',
+      url: 'https://example.edu/paper',
+    };
+
+    const { container } = render(<LabPapersList papers={[paper]} />);
+
+    expect(screen.getByRole('link', { name: 'Safe & Sound' })).toBeTruthy();
+    expect(container.querySelector('img')).toBeNull();
+  });
 });

@@ -4,6 +4,8 @@ import { MongoClient, type AnyBulkWriteOperation, type Db, type Document } from 
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { summarizeMongoUrl } from '../scrapers/scraperEnvironment';
+import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { sanitizeLogValue } from '../utils/logSanitizer';
 
 dotenv.config();
 
@@ -175,14 +177,12 @@ export function parsePromotionOptions(
       continue;
     }
     if (arg.startsWith('--output=')) {
-      output = arg.slice('--output='.length).trim();
-      if (!output || output.startsWith('--')) throw new Error('--output requires a path');
+      output = resolveSafeJsonReportOutputPath(arg.slice('--output='.length).trim());
       continue;
     }
     if (arg === '--output') {
       const next = argv[index + 1]?.trim();
-      if (!next || next.startsWith('--')) throw new Error('--output requires a path');
-      output = next;
+      output = resolveSafeJsonReportOutputPath(next);
       index += 1;
       continue;
     }
@@ -286,7 +286,9 @@ export function assertPromotionSummaryCanApply(summary: PromotionSummary) {
 
 export function writePromotionOutput(report: unknown, output?: string): void {
   if (!output) return;
-  fs.writeFileSync(output, `${JSON.stringify(report, null, 2)}\n`);
+  const safeOutput = resolveSafeJsonReportOutputPath(output);
+  fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
+  fs.writeFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
 }
 
 function promotionCollectionsForOptions(options: PromotionOptions): PromotionCollection[] {
@@ -458,7 +460,7 @@ const isDirectRun = process.argv[1]
 
 if (isDirectRun) {
   main().catch((error) => {
-    console.error(error instanceof Error ? error.message : error);
+    console.error(sanitizeLogValue(error));
     process.exitCode = 1;
   });
 }

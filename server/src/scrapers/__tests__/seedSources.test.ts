@@ -28,6 +28,12 @@ describe('seedSources CLI helpers', () => {
       reset: true,
       output: '/tmp/sources.json',
     });
+    expect(() => parseSeedSourcesArgs(['--output=/etc/sources.json'])).toThrow(
+      /--output must write under/,
+    );
+    expect(() => parseSeedSourcesArgs(['--output=/tmp/sources.txt'])).toThrow(
+      /--output must point to a \.json report file/,
+    );
   });
 
   it('blocks apply source seeding without explicit confirmation', () => {
@@ -93,5 +99,8 @@ describe('seedSources CLI helpers', () => {
     const output = path.join(dir, 'sources.json');
     writeSeedSourcesOutput(payload, output);
     expect(JSON.parse(fs.readFileSync(output, 'utf8'))).toMatchObject(payload);
+    expect(() => writeSeedSourcesOutput(payload, '/etc/sources.json')).toThrow(
+      /--output must write under/,
+    );
   });
 });

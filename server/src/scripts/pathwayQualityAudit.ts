@@ -18,7 +18,8 @@ import {
   type PathwayQualityPathwayFact,
   type PathwayQualityRouteFact,
 } from './pathwayQualityAuditCore';
-import { assertScriptApplyAllowed } from './scriptWriteGuards';
+import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { sanitizeLogValue } from '../utils/logSanitizer';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -29,12 +30,12 @@ export interface PathwayQualityAuditCliOptions {
   output?: string;
 }
 
+const PATHWAY_QUALITY_AUDIT_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
+
 export function parsePathwayQualityAuditArgs(argv: string[]): PathwayQualityAuditCliOptions {
   const options: PathwayQualityAuditCliOptions = { sampleLimit: 20 };
   const parseRequiredOutputPath = (value: string | undefined): string => {
-    const output = value?.trim();
-    if (!output || output.startsWith('--')) throw new Error('--output requires a path');
-    return output;
+    return resolveSafeJsonReportOutputPath(value);
   };
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -69,8 +70,9 @@ export function writePathwayQualityAuditOutput(
   output?: string,
 ): void {
   if (!output) return;
-  fs.mkdirSync(path.dirname(output), { recursive: true });
-  fs.writeFileSync(output, `${JSON.stringify(report, null, 2)}\n`);
+  const safeOutput = resolveSafeJsonReportOutputPath(output);
+  fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
+  fs.writeFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
 }
 
 export function buildPathwayQualityAuditOutput<T extends object>(
@@ -113,6 +115,16 @@ function activeListingFilter(now = new Date()): Record<string, unknown> {
 
 function countMap(rows: Array<{ _id: unknown; count: number }>): Map<string, number> {
   return new Map(rows.map((row) => [stringId(row._id), row.count]));
+}
+
+export function normalizePathwayQualityAuditObjectId(
+  value: unknown,
+): mongoose.Types.ObjectId | undefined {
+  if (value instanceof mongoose.Types.ObjectId) return value;
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  if (!PATHWAY_QUALITY_AUDIT_OBJECT_ID_RE.test(trimmed)) return undefined;
+  return new mongoose.Types.ObjectId(trimmed);
 }
 
 async function aggregateCountMap(
@@ -197,10 +209,11 @@ async function main(): Promise<void> {
       ...(pathwayDocs as any[]).map((pathway) => stringId(pathway.researchEntityId)),
       ...(routeDocs as any[]).map((route) => stringId(route.researchEntityId)),
     ]),
-  ).filter((id) => mongoose.Types.ObjectId.isValid(id));
-  const contexts = await buildEntityContexts(
-    entityIds.map((id) => new mongoose.Types.ObjectId(id)),
   );
+  const entityObjectIds = entityIds
+    .map((id) => normalizePathwayQualityAuditObjectId(id))
+    .filter((id): id is mongoose.Types.ObjectId => Boolean(id));
+  const contexts = await buildEntityContexts(entityObjectIds);
 
   const pathways: PathwayQualityPathwayFact[] = (pathwayDocs as any[]).map((pathway) => ({
     id: stringId(pathway._id),
@@ -246,7 +259,7 @@ async function main(): Promise<void> {
 if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
   main()
     .catch((error) => {
-      console.error(error instanceof Error ? error.message : error);
+      console.error(sanitizeLogValue(error));
       process.exitCode = 1;
     })
     .finally(async () => {

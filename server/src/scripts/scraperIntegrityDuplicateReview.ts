@@ -1,8 +1,8 @@
 import dotenv from 'dotenv';
-import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
+import { mkdirSync, writeFileSync } from 'fs';
 import { initializeConnections } from '../db/connections';
 import { AccessSignal } from '../models/accessSignal';
 import { Paper } from '../models/paper';
@@ -12,7 +12,8 @@ import {
   type DuplicateAccessSignalGroup,
   type DuplicateResearchPaperGroup,
 } from '../scrapers/integrityGate';
-import { assertScriptApplyAllowed } from './scriptWriteGuards';
+import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { sanitizeLogValue } from '../utils/logSanitizer';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -107,7 +108,7 @@ export function parseScraperIntegrityDuplicateReviewArgs(
 
     if (arg === '--output' || arg.startsWith('--output=')) {
       const { value: outputValue, nextIndex } = consumeValue(argv, index, '--output');
-      options.output = outputValue;
+      options.output = resolveSafeJsonReportOutputPath(outputValue);
       index = nextIndex;
       continue;
     }
@@ -123,8 +124,9 @@ export function writeScraperIntegrityDuplicateReviewOutput(
   output?: string,
 ): void {
   if (!output) return;
-  fs.mkdirSync(path.dirname(output), { recursive: true });
-  fs.writeFileSync(output, `${JSON.stringify(value, null, 2)}\n`);
+  const resolvedOutput = resolveSafeJsonReportOutputPath(output);
+  mkdirSync(path.dirname(resolvedOutput), { recursive: true });
+  writeFileSync(resolvedOutput, `${JSON.stringify(value, null, 2)}\n`);
 }
 
 export function buildScraperIntegrityDuplicateReviewReport(
@@ -322,7 +324,7 @@ async function main(): Promise<void> {
 if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
   main()
     .catch((error) => {
-      console.error('Failed to run scraper integrity duplicate review:', error);
+      console.error('Failed to run scraper integrity duplicate review:', sanitizeLogValue(error));
       process.exitCode = 1;
     })
     .finally(async () => {

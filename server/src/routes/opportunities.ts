@@ -8,10 +8,10 @@
  */
 import { Router } from 'express';
 import * as opportunityController from '../controllers/opportunityController';
-import { asyncHandler } from '../middleware/index';
+import { asyncHandler, validateObjectId } from '../middleware/index';
 
 const router = Router();
 
-router.get('/:id', asyncHandler(opportunityController.getOpportunityById));
+router.get('/:id', validateObjectId('id'), asyncHandler(opportunityController.getOpportunityById));
 
 export default router;

@@ -281,9 +281,9 @@ describe('extractSoleResearchFacultyProfile', () => {
   it('extracts one profile card and ignores duplicate view-profile links', () => {
     const html = `
       <html><body>
-        <a href="/profile/christopher-whitlow/">Christopher Whitlow, MD, PhD, MHA</a>
+        <a href="/profile/fixture-lab-director/">Christopher Whitlow, MD, PhD, MHA</a>
         <p>Chair, Department of Radiology and Biomedical Imaging</p>
-        <a href="/profile/christopher-whitlow/">View Full Profile</a>
+        <a href="/profile/fixture-lab-director/">View Full Profile</a>
       </body></html>
     `;
 
@@ -294,7 +294,7 @@ describe('extractSoleResearchFacultyProfile', () => {
       ),
     ).toEqual({
       name: 'Christopher Whitlow, MD, PhD, MHA',
-      profileUrl: 'https://medicine.yale.edu/profile/christopher-whitlow/',
+      profileUrl: 'https://medicine.yale.edu/profile/fixture-lab-director/',
       title: '',
     });
   });
@@ -304,9 +304,9 @@ describe('extractSoleResearchFacultyProfile', () => {
       <html><body>
         <ul>
           <li>
-            <a href="profile/christopher-whitlow/">Christopher Whitlow, MD, PhD, MHA</a>
+            <a href="profile/fixture-lab-director/">Christopher Whitlow, MD, PhD, MHA</a>
             Chair, Department of Radiology and Biomedical Imaging
-            <a href="profile/christopher-whitlow/">View Full Profile</a>
+            <a href="profile/fixture-lab-director/">View Full Profile</a>
           </li>
         </ul>
       </body></html>
@@ -319,7 +319,7 @@ describe('extractSoleResearchFacultyProfile', () => {
       ),
     ).toEqual({
       name: 'Christopher Whitlow, MD, PhD, MHA',
-      profileUrl: 'https://medicine.yale.edu/profile/christopher-whitlow/',
+      profileUrl: 'https://medicine.yale.edu/profile/fixture-lab-director/',
       title: 'Chair, Department of Radiology and Biomedical Imaging',
     });
   });
@@ -350,11 +350,11 @@ describe('extractProfileContactWidgetProfile', () => {
           model: {
             title: 'Garg Research Lab',
             profile: {
-              fullName: 'Shivani Garg',
+              fullName: 'Skylar Lab',
               title: 'Director, Yale Lupus Clinical Research Program, Internal Medicine',
-              profileUrl: '/lab/garg/profile/shivani-garg/',
+              profileUrl: '/lab/garg/profile/skylar-lab/',
               generalContacts: {
-                email: 'shivani.garg@yale.edu',
+                email: 'skylar.lab@yale.edu',
               },
             },
           },
@@ -368,10 +368,10 @@ describe('extractProfileContactWidgetProfile', () => {
     `;
 
     expect(extractProfileContactWidgetProfile(html, 'https://medicine.yale.edu/lab/garg/')).toEqual({
-      name: 'Shivani Garg',
-      profileUrl: 'https://medicine.yale.edu/profile/shivani-garg/',
+      name: 'Skylar Lab',
+      profileUrl: 'https://medicine.yale.edu/profile/skylar-lab/',
       title: 'Director, Yale Lupus Clinical Research Program, Internal Medicine',
-      email: 'shivani.garg@yale.edu',
+      email: 'skylar.lab@yale.edu',
     });
   });
 
@@ -419,10 +419,10 @@ describe('labResearchFacultyToObservations', () => {
     const observations = labResearchFacultyToObservations(
       lab,
       {
-        name: 'Shivani Garg',
-        profileUrl: 'https://medicine.yale.edu/profile/shivani-garg/',
+        name: 'Skylar Lab',
+        profileUrl: 'https://medicine.yale.edu/profile/skylar-lab/',
         title: 'Director, Yale Lupus Clinical Research Program, Internal Medicine',
-        email: 'shivani.garg@yale.edu',
+        email: 'skylar.lab@yale.edu',
       },
       lab.url,
     );
@@ -431,42 +431,42 @@ describe('labResearchFacultyToObservations', () => {
       expect.arrayContaining([
         expect.objectContaining({
           entityType: 'researchGroupMember',
-          entityKey: 'ysm-garg:research-faculty:shivani-garg',
+          entityKey: 'ysm-garg:research-faculty:skylar-lab',
           field: 'profileUrl',
-          value: 'https://medicine.yale.edu/profile/shivani-garg/',
+          value: 'https://medicine.yale.edu/profile/skylar-lab/',
         }),
         expect.objectContaining({
           entityType: 'user',
-          entityKey: 'netid:shivani.garg',
+          entityKey: 'netid:skylar.lab',
           field: 'email',
-          value: 'shivani.garg@yale.edu',
+          value: 'skylar.lab@yale.edu',
         }),
         expect.objectContaining({
           entityType: 'user',
-          entityKey: 'netid:shivani.garg',
+          entityKey: 'netid:skylar.lab',
           field: 'profileUrls',
           value: {
-            medicine: 'https://medicine.yale.edu/profile/shivani-garg/',
-            official: 'https://medicine.yale.edu/profile/shivani-garg/',
+            medicine: 'https://medicine.yale.edu/profile/skylar-lab/',
+            official: 'https://medicine.yale.edu/profile/skylar-lab/',
           },
         }),
         expect.objectContaining({
           entityType: 'researchEntity',
           entityKey: 'ysm-garg',
           field: 'inferredPiUserKey',
-          value: 'netid:shivani.garg',
+          value: 'netid:skylar.lab',
         }),
         expect.objectContaining({
           entityType: 'researchEntity',
           entityKey: 'ysm-garg',
           field: 'contactName',
-          value: 'Shivani Garg',
+          value: 'Skylar Lab',
         }),
         expect.objectContaining({
           entityType: 'researchEntity',
           entityKey: 'ysm-garg',
           field: 'contactEmail',
-          value: 'shivani.garg@yale.edu',
+          value: 'skylar.lab@yale.edu',
         }),
       ]),
     );
@@ -476,8 +476,8 @@ describe('labResearchFacultyToObservations', () => {
     const observations = labResearchFacultyToObservations(
       lab,
       {
-        name: 'Shivani Garg',
-        profileUrl: 'https://medicine.yale.edu/profile/shivani-garg/',
+        name: 'Skylar Lab',
+        profileUrl: 'https://medicine.yale.edu/profile/skylar-lab/',
         title: 'Director, Yale Lupus Clinical Research Program, Internal Medicine',
         email: 'ysm.editor@yale.edu',
       },

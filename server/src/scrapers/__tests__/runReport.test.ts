@@ -3,6 +3,7 @@ import {
   buildMaterializationConflictReview,
   buildScrapeRunReport,
   buildSourceEvidenceGapReview,
+  normalizeScrapeRunReportObjectId,
 } from '../runReport';
 import { getSourceCoverage } from '../sourceCoverageRegistry';
 
@@ -15,6 +16,17 @@ const observationCoverage = {
 };
 
 describe('buildScrapeRunReport', () => {
+  it('rejects object-shaped ScrapeRun ids without coercion', () => {
+    const objectShapedId = {
+      toString: () => '507f1f77bcf86cd799439011',
+    };
+
+    expect(normalizeScrapeRunReportObjectId(objectShapedId)).toBeUndefined();
+    expect(normalizeScrapeRunReportObjectId(' 507f1f77bcf86cd799439011 ')?.toHexString()).toBe(
+      '507f1f77bcf86cd799439011',
+    );
+  });
+
   it('summarizes observations and materialization counters', () => {
     const report = buildScrapeRunReport(
       {
@@ -73,6 +85,45 @@ describe('buildScrapeRunReport', () => {
       errors: 0,
     });
     expect(report.warnings).toEqual([]);
+  });
+
+  it('uses ScrapeRun counters for dry-run reports without persisted observations', () => {
+    const report = buildScrapeRunReport(
+      {
+        _id: 'run-dry',
+        sourceName: 'ysm-atoz-index',
+        status: 'success',
+        triggeredBy: 'cli',
+        startedAt: new Date('2026-06-01T10:00:00Z'),
+        finishedAt: new Date('2026-06-01T10:00:10Z'),
+        observationCount: 56,
+        entitiesObserved: 3,
+        options: { dryRun: true, limit: 3 },
+      },
+      [],
+      {
+        priority: 1,
+        tier: 'PRIMARY_OFFICIAL',
+        artifactTypes: ['ResearchEntity', 'Observation'],
+        evidenceCategories: ['OFFICIAL_SOURCE'],
+        defaultConfidence: 'HIGH',
+      },
+    );
+
+    expect(report.observations.total).toBe(56);
+    expect(report.observations.entitiesObserved).toBe(3);
+    expect(report.coverage.observationsEmitted).toBe(56);
+    expect(report.dryRunPreview).toEqual({
+      observationCount: 56,
+      entitiesObserved: 3,
+      persistedObservationCount: 0,
+      note:
+        'Dry-run observations were emitted but intentionally not persisted; field breakdowns only include persisted Observation rows.',
+    });
+    expect(report.warnings).not.toContain('Run produced zero observations.');
+    expect(report.warnings).not.toContain(
+      'Source coverage metadata exists, but successful run emitted zero observations.',
+    );
   });
 
   it('flags conflict candidates and malformed observations', () => {
@@ -482,10 +533,48 @@ describe('buildScrapeRunReport', () => {
       {
         message: 'Fetch failed',
         at: '2026-05-01T12:01:00.000Z',
-        context: { url: 'https://example.test/feed' },
+        context: '{"url":"https://example.test/feed"}',
       },
       { message: 'Unknown scrape error', at: undefined, context: undefined },
     ]);
+  });
+
+  it('sanitizes scrape error messages and context before report serialization', () => {
+    const report = buildScrapeRunReport(
+      {
+        _id: 'run-sensitive-errors',
+        sourceName: 'openalex',
+        status: 'failure',
+        errors: [
+          {
+            message:
+              'Fetch failed for https://user:pass@example.test/feed?access_token=secret-token and ada@example.edu',
+            context: {
+              Authorization: 'Bearer source-access-token',
+              cookie: 'session=abc123; Path=/; HttpOnly',
+              contact: '203-555-1212',
+            },
+          },
+        ],
+      },
+      [],
+      observationCoverage,
+    );
+
+    const serialized = JSON.stringify(report.errors);
+
+    expect(serialized).toContain('https://[credentials-redacted]@example.test');
+    expect(serialized).toContain('access_token=[secret-redacted]');
+    expect(serialized).toContain('[email redacted]');
+    expect(serialized).toContain('Authorization":"[secret-redacted]"');
+    expect(serialized).toContain('cookie":"[secret-redacted]"');
+    expect(serialized).toContain('[phone redacted]');
+    expect(serialized).not.toContain('user:pass');
+    expect(serialized).not.toContain('secret-token');
+    expect(serialized).not.toContain('ada@example.edu');
+    expect(serialized).not.toContain('source-access-token');
+    expect(serialized).not.toContain('abc123');
+    expect(serialized).not.toContain('203-555-1212');
   });
 
   it('adds source-level coverage and fetch coverage metrics', () => {

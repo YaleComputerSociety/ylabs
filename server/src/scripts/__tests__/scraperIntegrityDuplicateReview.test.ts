@@ -29,6 +29,18 @@ describe('scraperIntegrityDuplicateReview CLI helpers', () => {
     expect(() =>
       parseScraperIntegrityDuplicateReviewArgs(['--output', '--type=all']),
     ).toThrow('--output requires a value');
+    expect(() =>
+      parseScraperIntegrityDuplicateReviewArgs([
+        '--output',
+        path.join(os.tmpdir(), 'duplicate-review.txt'),
+      ]),
+    ).toThrow('--output must point to a .json report file');
+    expect(() =>
+      parseScraperIntegrityDuplicateReviewArgs([
+        '--output',
+        path.resolve('/etc/ylabs-duplicate-review.json'),
+      ]),
+    ).toThrow('--output must write under');
     expect(() => parseScraperIntegrityDuplicateReviewArgs(['--type', '--limit=5'])).toThrow(
       '--type requires a value',
     );
@@ -127,6 +139,12 @@ describe('scraperIntegrityDuplicateReview CLI helpers', () => {
     writeScraperIntegrityDuplicateReviewOutput(payload, output);
 
     expect(JSON.parse(fs.readFileSync(output, 'utf8'))).toMatchObject(payload);
+  });
+
+  it('rejects unsafe duplicate review output paths before writing', () => {
+    expect(() =>
+      writeScraperIntegrityDuplicateReviewOutput({ mode: 'dry-run' }, '/etc/ylabs-review.json'),
+    ).toThrow('--output must write under');
   });
 
   it('exposes the read-only duplicate review command in server package scripts', () => {

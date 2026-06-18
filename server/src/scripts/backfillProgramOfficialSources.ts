@@ -25,7 +25,8 @@ import {
   applyStudentVisibilityGatePlans,
   planStudentVisibilityGate,
 } from '../services/studentVisibilityGateService';
-import { assertScriptApplyAllowed } from './scriptWriteGuards';
+import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { sanitizeLogValue } from '../utils/logSanitizer';
 
 dotenv.config();
 
@@ -60,6 +61,16 @@ const isCommunityForcePortal = (value: unknown): boolean =>
   typeof value === 'string' &&
   /^https:\/\/yale\.communityforce\.com\/Funds\/FundDetails\.aspx\?/i.test(value.trim());
 
+function resolveProgramOfficialSourceInputPath(value: string | undefined): string {
+  const input = value?.trim();
+  if (!input || input.startsWith('--')) {
+    throw new Error('--input requires a path');
+  }
+  const resolved = path.resolve(input);
+  if (resolved === path.resolve(DEFAULT_INPUT)) return resolved;
+  return resolveSafeJsonReportOutputPath(input, '--input');
+}
+
 export function parseArgs(argv: string[]): CliOptions {
   const options: CliOptions = {
     apply: false,
@@ -75,8 +86,11 @@ export function parseArgs(argv: string[]): CliOptions {
       const raw = arg.slice('--limit='.length);
       if (!/^[1-9]\d*$/.test(raw)) throw new Error('--limit must be a positive integer');
       options.limit = Number(raw);
-    } else if (arg.startsWith('--input=')) options.input = arg.slice('--input='.length).trim();
-    else if (arg.startsWith('--output=')) options.output = arg.slice('--output='.length).trim();
+    } else if (arg.startsWith('--input=')) {
+      options.input = resolveProgramOfficialSourceInputPath(arg.slice('--input='.length));
+    } else if (arg.startsWith('--output=')) {
+      options.output = resolveSafeJsonReportOutputPath(arg.slice('--output='.length));
+    }
     else throw new Error(`Unknown argument: ${arg}`);
   }
   if (options.apply && !options.confirm) {
@@ -89,7 +103,8 @@ export function parseArgs(argv: string[]): CliOptions {
 }
 
 function loadEntries(input: string): BackfillEntry[] {
-  const parsed = JSON.parse(fs.readFileSync(input, 'utf8'));
+  const safeInput = resolveProgramOfficialSourceInputPath(input);
+  const parsed = JSON.parse(fs.readFileSync(safeInput, 'utf8'));
   const entries: BackfillEntry[] = Array.isArray(parsed) ? parsed : parsed.entries;
   if (!Array.isArray(entries)) throw new Error('Change-set must be an array or { entries: [...] }.');
   return entries;
@@ -197,8 +212,9 @@ async function main() {
   const output = { summary, entries: report };
   console.log(JSON.stringify(output, null, 2));
   if (options.output) {
-    fs.mkdirSync(path.dirname(options.output), { recursive: true });
-    fs.writeFileSync(options.output, `${JSON.stringify(output, null, 2)}\n`);
+    const safeOutput = resolveSafeJsonReportOutputPath(options.output);
+    fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
+    fs.writeFileSync(safeOutput, `${JSON.stringify(output, null, 2)}\n`);
   }
 }
 
@@ -209,7 +225,7 @@ const isDirectRun = process.argv[1]
 if (isDirectRun) {
   main()
     .catch((error) => {
-      console.error('Failed to backfill program official sources:', error);
+      console.error('Failed to backfill program official sources:', sanitizeLogValue(error));
       process.exitCode = 1;
     })
     .finally(async () => {

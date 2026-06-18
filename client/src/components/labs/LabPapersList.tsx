@@ -6,7 +6,7 @@
  * Pure presentational — receives the papers as a prop.
  */
 import { LabPaper, LabScholarlyLink } from '../../types/labDetail';
-import { ensureHttpPrefix, safeHttpUrl } from '../../utils/url';
+import { ensureHttpPrefix, safeDoiUrl, safeHttpUrl } from '../../utils/url';
 
 type ResearchActivityLink = LabPaper | LabScholarlyLink;
 
@@ -21,7 +21,7 @@ const isScholarlyLink = (paper: ResearchActivityLink): paper is LabScholarlyLink
 
 const resolvePaperLink = (paper: ResearchActivityLink): string => {
   if (isScholarlyLink(paper)) return safeHttpUrl(paper.url);
-  if (paper.doi) return `https://doi.org/${paper.doi}`;
+  if (paper.doi) return safeDoiUrl(paper.doi);
   const landing = paper.landingPageUrl ? safeHttpUrl(paper.landingPageUrl) : '';
   if (landing) return landing;
   const oa = paper.openAccessUrl ? safeHttpUrl(paper.openAccessUrl) : '';
@@ -55,20 +55,23 @@ const sourceTone = (paper: ResearchActivityLink, showPreprintMeta: boolean): str
   return 'yr-pill-blue';
 };
 
-const decodeHtmlEntities = (value: string): string => {
-  if (typeof document !== 'undefined') {
-    const textarea = document.createElement('textarea');
-    textarea.innerHTML = value;
-    return textarea.value;
-  }
+const decodeNumericEntity = (value: string, radix: number): string => {
+  const codePoint = Number.parseInt(value, radix);
+  return Number.isInteger(codePoint) && codePoint >= 0 && codePoint <= 0x10ffff
+    ? String.fromCodePoint(codePoint)
+    : '';
+};
 
+const decodeHtmlEntities = (value: string): string => {
   return value
     .replace(/&nbsp;/gi, ' ')
     .replace(/&amp;/gi, '&')
     .replace(/&lt;/gi, '<')
     .replace(/&gt;/gi, '>')
     .replace(/&quot;/gi, '"')
-    .replace(/&#39;/gi, "'");
+    .replace(/&#39;/gi, "'")
+    .replace(/&#x([0-9a-f]{1,6});/gi, (_match, hex: string) => decodeNumericEntity(hex, 16))
+    .replace(/&#(\d{1,7});/g, (_match, decimal: string) => decodeNumericEntity(decimal, 10));
 };
 
 const normalizeResearchActivityTitle = (value: unknown): string => {

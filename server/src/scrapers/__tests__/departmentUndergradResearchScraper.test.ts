@@ -16,12 +16,12 @@ const PHYSICS_HTML = `
   <h1>Undergraduate Research</h1>
   <h2>Active Research in the Yale Physics Department</h2>
   <h3>Research Opportunities</h3>
-  <h3>Helen Caines</h3>
-  <p>Contact: Helen Caines (helen.caines@yale.edu)</p>
+  <h3>Harper Contact</h3>
+  <p>Contact: Harper Contact (harper.contact@yale.edu)</p>
   <p>Website: <a href="https://wlab.yale.edu/research/relativistic-heavy-ions">https://wlab.yale.edu/research/relativistic-heavy-ions</a></p>
   <p>The first set of studies are analyses that focus on measurements of matter created when ultra-relativistic heavy-ions are collided.</p>
-  <h3>Christopher Lynn</h3>
-  <p>Contact: Christopher Lynn (christopher.lynn@yale.edu)</p>
+  <h3>Casey Contact</h3>
+  <p>Contact: Casey Contact (casey.contact@yale.edu)</p>
   <p>Website: <a href="https://lynnlab.yale.edu/">https://lynnlab.yale.edu/</a></p>
   <p>In-lab and remote opportunities. We are interested in understanding how structure and function emerge in complex living systems.</p>
 </main>
@@ -42,7 +42,7 @@ const MCDB_HTML = `
   <p>The Yale Section of Pediatric Emergency Medicine is recruiting students to join the Undergraduate Research Associate Program.</p>
   <p>Students will gain hands-on experience working on clinical research studies in the Yale New Haven Children's Hospital pediatric emergency department.</p>
   <p>Application link: <a href="https://yalesurvey.ca1.qualtrics.com/jfe/form/SV_fixture">Apply here</a></p>
-  <p>Contact: paul.aronson@yale.edu</p>
+  <p>Contact: parker.contact@yale.edu</p>
 </main>
 `;
 
@@ -152,14 +152,14 @@ describe('departmentUndergradResearchScraper', () => {
 
     expect(records).toHaveLength(2);
     expect(records[0]).toMatchObject({
-      entityKey: 'dept-physics-helen-caines',
-      name: 'Helen Caines Lab',
+      entityKey: 'dept-physics-harper-contact',
+      name: 'Harper Contact Lab',
       kind: 'lab',
       entityType: 'LAB',
       websiteUrl: 'https://wlab.yale.edu/research/relativistic-heavy-ions',
       description: expect.stringContaining('The first set of studies'),
-      contactName: 'Helen Caines',
-      contactEmail: 'helen.caines@yale.edu',
+      contactName: 'Harper Contact',
+      contactEmail: 'harper.contact@yale.edu',
       undergradAccessEvidence: true,
     });
     expect(records[0].description).not.toContain('Contact:');
@@ -173,9 +173,9 @@ describe('departmentUndergradResearchScraper', () => {
       <main>
         <h1>Undergraduate Research</h1>
         <h2>Active Research in the Yale Physics Department</h2>
-        <h3>Meng Cheng</h3>
-        <p>Contact: Meng Cheng (<a href="mailto:m.cheng@yale.edu">m.cheng@yale.edu</a>)</p>
-        <p>Website: <a href="<a href=">https://meng-cheng.github.io/</a></p>
+        <h3>Morgan Contact</h3>
+        <p>Contact: Morgan Contact (<a href="mailto:m.contact@yale.edu">m.contact@yale.edu</a>)</p>
+        <p>Website: <a href="<a href=">https://morgan-contact.github.io/</a></p>
         <p>Entanglement entropy and defect in quantum many-body systems</p>
         <p>Phases and phase transitions in open quantum systems.</p>
       </main>
@@ -191,15 +191,15 @@ describe('departmentUndergradResearchScraper', () => {
 
     expect(records).toHaveLength(1);
     expect(records[0]).toMatchObject({
-      entityKey: 'dept-physics-meng-cheng',
-      contactEmail: 'm.cheng@yale.edu',
+      entityKey: 'dept-physics-morgan-contact',
+      contactEmail: 'm.contact@yale.edu',
       websiteUrl: undefined,
       description:
         'Entanglement entropy and defect in quantum many-body systems Phases and phase transitions in open quantum systems.',
     });
     expect(records[0].description).not.toContain('Contact:');
     expect(records[0].description).not.toContain('Website:');
-    expect(records[0].description).not.toContain('m.cheng@yale.edu');
+    expect(records[0].description).not.toContain('m.contact@yale.edu');
   });
 
   it('parses general department guidance without pretending it is a posted opening', () => {
@@ -241,7 +241,7 @@ describe('departmentUndergradResearchScraper', () => {
           'department-undergrad-research-pediatric-emergency-medicine-undergraduate-research-associate-program',
         kind: 'program',
         entityType: 'PROGRAM',
-        contactEmail: 'paul.aronson@yale.edu',
+        contactEmail: 'parker.contact@yale.edu',
         joinPageUrl: 'https://yalesurvey.ca1.qualtrics.com/jfe/form/SV_fixture',
       },
     ]);

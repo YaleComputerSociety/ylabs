@@ -7,6 +7,7 @@ import {
   normalizeResearchMetadataLabels,
 } from './researchTextNormalization';
 import { getUniqueDepartmentLabels } from './departmentNames';
+import { safeHttpUrl } from './url';
 
 export interface EvidenceSourceRowData {
   claim: string;
@@ -181,10 +182,12 @@ export const getStudentFacingPathwayLabel = (value?: string): string => {
 
 export const formatSourceLabel = (url?: string): string => {
   if (!url) return 'Source';
+  const safe = safeHttpUrl(url);
+  if (!safe) return 'Source';
   try {
-    return new URL(url).hostname.replace(/^www\./, '');
+    return new URL(safe).hostname.replace(/^www\./, '');
   } catch {
-    return url;
+    return 'Source';
   }
 };
 
@@ -469,10 +472,13 @@ export const buildResearchHomeContextLine = (entity: ResearchEntity | undefined)
 
 const hasOfficialYaleSource = (entity: ResearchEntity | undefined): boolean =>
   (entity?.sourceUrls || []).some((url) => {
+    const safe = safeHttpUrl(url);
+    if (!safe) return false;
     try {
-      return new URL(url).hostname.endsWith('yale.edu');
+      const host = new URL(safe).hostname.toLowerCase();
+      return host === 'yale.edu' || host.endsWith('.yale.edu');
     } catch {
-      return /(^|\.)yale\.edu\//i.test(url);
+      return false;
     }
   });
 

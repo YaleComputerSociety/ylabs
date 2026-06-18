@@ -9,9 +9,48 @@
 
 import mongoose from 'mongoose';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 
 import { User } from '../models/user';
+import { sanitizeLogValue } from '../utils/logSanitizer';
+
+const MAX_FACULTY_IMPORT_JSON_BYTES = 25 * 1024 * 1024;
+
+const hasPathPrefix = (target: string, root: string): boolean =>
+  target === root || target.startsWith(`${root}${path.sep}`);
+
+function resolveSafeFacultyImportJsonPath(value: string): string {
+  const resolved = path.resolve(value);
+  if (path.extname(resolved).toLowerCase() !== '.json') {
+    throw new Error('Faculty import input must be a .json file');
+  }
+
+  const repoRoot = path.resolve(__dirname, '../../..');
+  const tmpRoot = path.resolve(os.tmpdir());
+  const projectTmpRoot = path.resolve(repoRoot, 'tmp');
+  if (
+    !hasPathPrefix(resolved, repoRoot) &&
+    !hasPathPrefix(resolved, tmpRoot) &&
+    !hasPathPrefix(resolved, projectTmpRoot)
+  ) {
+    throw new Error('Faculty import input must be under the repo root, system temp, or ./tmp');
+  }
+
+  if (!fs.existsSync(resolved)) {
+    throw new Error(`Faculty import input not found: ${resolved}`);
+  }
+
+  const stat = fs.statSync(resolved);
+  if (!stat.isFile()) {
+    throw new Error('Faculty import input must be a file');
+  }
+  if (stat.size > MAX_FACULTY_IMPORT_JSON_BYTES) {
+    throw new Error('Faculty import input is too large');
+  }
+
+  return resolved;
+}
 
 /** Strip ALL-CAPS code prefix from department names (e.g., "SPHDPT Environmental Health Sciences (EHS)" -> "Environmental Health Sciences (EHS)") */
 function cleanPrimaryDepartment(dept: string): string {
@@ -199,14 +238,10 @@ async function importFaculty() {
     process.exit(1);
   }
 
-  const jsonPath =
+  const rawJsonPath =
     process.argv[2] ||
     path.resolve(__dirname, '../../../yale-faculty-enricher/enriched_faculty.json');
-
-  if (!fs.existsSync(jsonPath)) {
-    console.error(`Error: File not found: ${jsonPath}`);
-    process.exit(1);
-  }
+  const jsonPath = resolveSafeFacultyImportJsonPath(rawJsonPath);
 
   console.log(`Reading faculty data from: ${jsonPath}`);
   const raw: RawFacultyEntry[] = JSON.parse(fs.readFileSync(jsonPath, 'utf-8'));
@@ -300,7 +335,7 @@ async function importFaculty() {
           updated += err.result.nModified || 0;
           errors += err.writeErrors?.length || 0;
         } else {
-          console.error(`Batch error at offset ${i}:`, err.message);
+          console.error(`Batch error at offset ${i}:`, sanitizeLogValue(err));
           errors += batch.length;
         }
       }
@@ -339,6 +374,6 @@ async function importFaculty() {
 }
 
 importFaculty().catch((err) => {
-  console.error('Fatal error:', err);
+  console.error('Fatal error:', sanitizeLogValue(err));
   process.exit(1);
 });

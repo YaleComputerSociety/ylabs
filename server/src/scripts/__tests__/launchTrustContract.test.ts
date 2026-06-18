@@ -49,6 +49,12 @@ describe('launchTrustContract CLI helpers', () => {
     expect(() => parseLaunchTrustContractArgs(['--output=--strict'])).toThrow(
       /--output requires a path/,
     );
+    expect(() => parseLaunchTrustContractArgs(['--output=/var/tmp/launch-trust.json'])).toThrow(
+      /--output must write under/,
+    );
+    expect(() => parseLaunchTrustContractArgs(['--output=/tmp/launch-trust.txt'])).toThrow(
+      /--output must point to a \.json report file/,
+    );
     expect(() => parseLaunchTrustContractArgs(['--source='])).toThrow(
       /--source requires a value/,
     );
@@ -114,5 +120,8 @@ describe('launchTrustContract CLI helpers', () => {
       pass: false,
       counts: { scanned: 2, launchEligible: 1 },
     });
+    expect(() =>
+      writeLaunchTrustContractOutput({ pass: true }, '/var/tmp/launch-trust.json'),
+    ).toThrow(/--output must write under/);
   });
 });

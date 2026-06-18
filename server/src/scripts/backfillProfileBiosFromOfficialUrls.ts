@@ -58,9 +58,12 @@ import {
   isLikelySameNameContaminatedProfile,
   normalizePublicProfile,
 } from '../services/profileService';
+import { redactDirectContactInfo } from '../utils/contactRedaction';
+import { serializedDocumentId } from '../utils/idSerialization';
+import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../utils/ssrfGuard';
 import { groundingScore } from './backfillResearchDescriptions';
-import { assertScriptApplyAllowed } from './scriptWriteGuards';
+import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -75,6 +78,9 @@ const MIN_BIO_LENGTH = 120;
 // for presentation, so we keep the stored bio generous but bounded.
 const MAX_BIO_LENGTH = 3000;
 const MAX_PROMPT_CHARS = 40_000;
+const MAX_PROMPT_NAME_CHARS = 240;
+const MAX_PROMPT_TITLE_CHARS = 500;
+const MAX_PROMPT_SOURCE_URL_CHARS = 2048;
 const DEFAULT_MODEL = 'gpt-4o-mini';
 const BIO_CONFIDENCE = 0.7;
 const MAX_INTEREST_TERMS = 8;
@@ -83,10 +89,7 @@ const textValue = (value: unknown): string =>
   typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
 
 const idValue = (value: unknown): string => {
-  if (!value) return '';
-  if (typeof value === 'string') return value;
-  if (typeof (value as any).toHexString === 'function') return (value as any).toHexString();
-  return String(value);
+  return serializedDocumentId(value) || '';
 };
 
 function displayName(user: Record<string, any>): string {
@@ -425,10 +428,12 @@ export type ProfileBioRewriter = (input: {
 }) => Promise<ProfileBioRewrite>;
 
 const defaultFetcher: ProfileBioFetcher = async (url) => {
-  await assertPublicHttpUrl(url);
+  const safeUrl = await assertPublicHttpUrl(url);
+  const safeUrlText = safeUrl.toString();
   const agents = ssrfSafeAgents();
-  const res = await axios.get(url, {
+  const res = await axios.get(safeUrlText, {
     timeout: 12_000,
+    maxRedirects: 5,
     maxContentLength: 5_000_000,
     headers: { 'User-Agent': 'ylabs-scraper/1.0 (+https://yalelabs.io)' },
     httpAgent: agents.httpAgent,
@@ -440,6 +445,10 @@ const defaultFetcher: ProfileBioFetcher = async (url) => {
 const defaultRewriter: ProfileBioRewriter = async ({ name, title, sourceUrl, pageText }) => {
   const apiKey = String(process.env.OPENAI_API_KEY || '').trim();
   if (!apiKey) throw new Error('OPENAI_API_KEY not set');
+  const safeName = redactDirectContactInfo(name).slice(0, MAX_PROMPT_NAME_CHARS);
+  const safeTitle = redactDirectContactInfo(title).slice(0, MAX_PROMPT_TITLE_CHARS);
+  const safeSourceUrl = redactDirectContactInfo(sourceUrl).slice(0, MAX_PROMPT_SOURCE_URL_CHARS);
+  const safePageText = redactDirectContactInfo(pageText).slice(0, MAX_PROMPT_CHARS);
   const response = await axios.post(
     'https://api.openai.com/v1/chat/completions',
     {
@@ -455,15 +464,15 @@ const defaultRewriter: ProfileBioRewriter = async ({ name, title, sourceUrl, pag
         {
           role: 'user',
           content: [
-            `Faculty member: ${name}`,
-            `Known title (authoritative): ${title || '(unknown)'}`,
-            `Source URL: ${sourceUrl}`,
+            `Faculty member: ${safeName}`,
+            `Known title (authoritative): ${safeTitle || '(unknown)'}`,
+            `Source URL: ${safeSourceUrl}`,
             'Return JSON with exactly these keys:',
             '- "biography": A 2-6 sentence third-person biography of THIS person taken from the page\'s biographical narrative — who they are, their role/appointments, their education or training, and their research focus. Copy the page\'s wording closely; do not loosely paraphrase. OMIT navigation menus, contact details, "last updated" notes, course catalogs, and long publication or award lists. Start with the person\'s name or "Dr."/their title. Return "" if the page has no real biographical narrative about this person.',
             '- "researchSummary": Exactly ONE sentence describing what this person studies. It MUST start with the word "Research" (e.g. "Research focuses on…", "Research centers on…", "Research examines…") and contain NO name and NO pronoun. Return "" if the page has no research content.',
             '- "interests": up to 8 short research-topic phrases that appear on the page.',
             'PAGE TEXT:',
-            pageText,
+            safePageText,
           ].join('\n\n'),
         },
       ],
@@ -767,8 +776,8 @@ export async function runProfileBioBackfill(options: {
         fromOfficialPage = true;
       } catch (error) {
         console.error(
-          `Fetch failed for ${candidate.netid} (${candidate.url}):`,
-          (error as Error).message,
+          'Fetch failed for profile-bio candidate:',
+          sanitizeLogValue(error),
         );
       }
     }
@@ -797,7 +806,7 @@ export async function runProfileBioBackfill(options: {
       });
     } catch (error) {
       result.fetchErrors += 1;
-      console.error(`Rewrite failed for ${candidate.netid}:`, (error as Error).message);
+      console.error('Rewrite failed for profile-bio candidate:', sanitizeLogValue(error));
       continue;
     }
 
@@ -834,7 +843,7 @@ export async function runProfileBioBackfill(options: {
         });
         chipTerms = groundedInterestTerms(homeRewrite.interests, candidate.homeText);
       } catch (error) {
-        console.error(`Home-text interest retry failed for ${candidate.netid}:`, (error as Error).message);
+        console.error('Home-text interest retry failed for profile-bio candidate:', sanitizeLogValue(error));
       }
     }
 
@@ -934,14 +943,10 @@ export function parseProfileBioBackfillArgs(argv: string[]): ProfileBioBackfillO
       options.explicitLimit = true;
       i += 1;
     } else if (arg === '--output') {
-      const next = argv[i + 1];
-      if (!next || next.startsWith('--')) throw new Error('--output requires a path');
-      options.output = next;
+      options.output = resolveSafeJsonReportOutputPath(argv[i + 1]);
       i += 1;
     } else if (arg.startsWith('--output=')) {
-      const value = arg.slice('--output='.length).trim();
-      if (!value || value.startsWith('--')) throw new Error('--output requires a path');
-      options.output = value;
+      options.output = resolveSafeJsonReportOutputPath(arg.slice('--output='.length));
     } else {
       throw new Error(`Unknown argument: ${arg}`);
     }
@@ -992,8 +997,10 @@ async function main(): Promise<void> {
       result,
     };
     if (options.output) {
-      fs.writeFileSync(options.output, JSON.stringify(payload, null, 2));
-      console.log(`Saved profile-bio backfill report to ${options.output}`);
+      const safeOutput = resolveSafeJsonReportOutputPath(options.output);
+      fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
+      fs.writeFileSync(safeOutput, JSON.stringify(payload, null, 2));
+      console.log(`Saved profile-bio backfill report to ${safeOutput}`);
     }
     console.log(JSON.stringify(result, null, 2));
   } finally {
@@ -1005,7 +1012,7 @@ const invokedDirectly =
   process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
 if (invokedDirectly) {
   main().catch((error) => {
-    console.error(error);
+    console.error(sanitizeLogValue(error));
     process.exit(1);
   });
 }

@@ -8,6 +8,7 @@ import {
   releaseScrapeJobLock,
 } from './scrapeJobLock';
 import { runStudentVisibilityGate } from '../services/studentVisibilityGateService';
+import { sanitizeLogValue } from '../utils/logSanitizer';
 import type { ScraperEnvironment } from './scraperEnvironment';
 import type { ScraperOptions } from './types';
 import type { ScraperOrchestrator } from './orchestrator';
@@ -185,7 +186,7 @@ function startHeartbeat(
       .catch((error) => {
         console.error(
           `Failed to heartbeat scraper cron lock for ${input.sourceName}:`,
-          error instanceof Error ? error.message : error,
+          sanitizeLogValue(error),
         );
       });
   }, intervalMs);

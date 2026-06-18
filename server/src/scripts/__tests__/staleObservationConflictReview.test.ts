@@ -9,6 +9,7 @@ import {
   buildStaleObservationDecisionTemplate,
   buildStaleObservationConflictSummary,
   buildStaleObservationConflictReviewOutput,
+  normalizeStaleObservationObjectId,
   parseStaleObservationConflictReviewArgs,
   readStaleObservationReviewDecisions,
   validateStaleObservationReviewDecisions,
@@ -17,6 +18,17 @@ import {
 } from '../staleObservationConflictReview';
 
 describe('stale observation conflict review', () => {
+  it('rejects object-shaped observation ids without coercion', () => {
+    const objectShapedId = {
+      toString: () => '507f1f77bcf86cd799439011',
+    };
+
+    expect(normalizeStaleObservationObjectId(objectShapedId)).toBeUndefined();
+    expect(
+      normalizeStaleObservationObjectId(' 507f1f77bcf86cd799439011 ')?.toHexString(),
+    ).toBe('507f1f77bcf86cd799439011');
+  });
+
   it('builds a dry-run plan that keeps the latest same-source value', () => {
     const summary = buildStaleObservationConflictSummary({
       sourceName: 'dept-faculty-roster',
@@ -256,6 +268,23 @@ describe('stale observation conflict review', () => {
     ).toThrow('--decision-template-output requires a path');
 
     expect(() =>
+      parseStaleObservationConflictReviewArgs(['--output=/var/tmp/stale-review.json']),
+    ).toThrow(/--output must write under/);
+    expect(() =>
+      parseStaleObservationConflictReviewArgs(['--output=/tmp/stale-review.txt']),
+    ).toThrow(/--output must point to a \.json report file/);
+    expect(() =>
+      parseStaleObservationConflictReviewArgs([
+        '--accepted-decisions=/var/tmp/stale-decisions.json',
+      ]),
+    ).toThrow(/--accepted-decisions must write under/);
+    expect(() =>
+      parseStaleObservationConflictReviewArgs([
+        '--decision-template-output=/var/tmp/stale-template.json',
+      ]),
+    ).toThrow(/--decision-template-output must write under/);
+
+    expect(() =>
       parseStaleObservationConflictReviewArgs(['--max-apply', '--source=dept-faculty-roster']),
     ).toThrow('--max-apply requires a number');
 
@@ -355,6 +384,11 @@ describe('stale observation conflict review', () => {
     );
 
     expect(readStaleObservationReviewDecisions(missingPath, { allowEmpty: true })).toEqual([]);
+    expect(() =>
+      readStaleObservationReviewDecisions('/var/tmp/stale-decisions.json', {
+        allowEmpty: true,
+      }),
+    ).toThrow(/--accepted-decisions must write under/);
   });
 
   it('builds templates and validates accepted supersession decisions without applying', () => {
@@ -682,6 +716,16 @@ describe('stale observation conflict review', () => {
       candidateGroups: 0,
       applyBlocked: true,
     });
+    expect(() =>
+      writeStaleObservationConflictReviewOutput(payload, '/var/tmp/stale-review.json'),
+    ).toThrow(/--output must write under/);
+  });
+
+  it('rejects unsafe stale observation decision template writes', () => {
+    const template = buildStaleObservationDecisionTemplate([]);
+    expect(() =>
+      writeStaleObservationDecisionTemplate(template, '/var/tmp/stale-template.json'),
+    ).toThrow(/--decision-template-output must write under/);
   });
 
   it('wraps review artifacts with target metadata and parsed options', () => {

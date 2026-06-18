@@ -11,6 +11,8 @@ import {
   PAPER_AUTHORSHIP_EVIDENCE_FIELD,
   type PaperAuthorshipEvidence,
 } from '../paperAuthorshipPolicy';
+import { serializedDocumentId } from '../../utils/idSerialization';
+import { sanitizeLogValue } from '../../utils/logSanitizer';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 
 const EUROPE_PMC_BASE = 'https://www.ebi.ac.uk/europepmc/webservices/rest/search';
@@ -223,7 +225,7 @@ export class EuropePmcPaperScraper implements IScraper {
         const results = (payload?.resultList?.result || []).filter(this.sourceConfig.includeResult);
         const observations = results.flatMap((result) =>
           resultToObservations(result, {
-            userId: String(user._id),
+            userId: serializedDocumentId(user._id) || '',
             netid: user.netid ? String(user.netid) : undefined,
             displayName,
             orcid,
@@ -244,7 +246,7 @@ export class EuropePmcPaperScraper implements IScraper {
         totalObs++;
       } catch (error: any) {
         failures++;
-        ctx.log(`${this.displayName} failed for ${user.netid || orcid}: ${error?.message || error}`);
+        ctx.log(`${this.displayName} failed for Yale author candidate: ${sanitizeLogValue(error)}`);
       }
     }
 

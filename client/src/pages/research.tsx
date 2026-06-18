@@ -846,11 +846,6 @@ const Research = () => {
                   Open a profile to see people, evidence, sources, and possible ways in.
                 </p>
               </div>
-              {defaultSearchTotal > 0 && (
-                <span className="yr-pill yr-pill-blue shrink-0 rounded-md px-3 py-2">
-                  {defaultSearchTotal.toLocaleString()} indexed profiles
-                </span>
-              )}
               {isAdmin && (
                 <label className="yr-card inline-flex min-h-11 shrink-0 items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-slate-700">
                   <input

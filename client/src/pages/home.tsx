@@ -62,8 +62,8 @@ const Home = () => {
       .then((response) => {
         dispatch({ type: 'SET_FAVORITES', ids: response.data.favListingsIds });
       })
-      .catch((error) => {
-        console.error("Error fetching user's favorite posted roles:", error);
+      .catch(() => {
+        console.error("Error fetching user's favorite posted roles.");
         dispatch({ type: 'SET_FAVORITES', ids: [] });
         swal({ text: 'Could not load your favorite posted roles', icon: 'warning' });
       });
@@ -85,8 +85,8 @@ const Home = () => {
             dispatch({ type: 'OPEN_DETAIL_MODAL', item: listing });
           }
         })
-        .catch((error) => {
-          console.error('Error fetching direct listing link:', error);
+        .catch(() => {
+          console.error('Error fetching direct listing link.');
           setSearchParams((params) => {
             params.delete('listing');
             return params;
@@ -98,11 +98,6 @@ const Home = () => {
   const filteredListings = useMemo(() => {
     if (quickFilter === 'open') {
       return listings.filter((l) => l.hiringStatus >= 0);
-    }
-    if (quickFilter === 'recent') {
-      const thirtyDaysAgo = new Date();
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-      return listings.filter((l) => new Date(l.createdAt) >= thirtyDaysAgo);
     }
     if (quickFilter === 'ysm') {
       return listings.filter((l) => getInstitutionAffiliation(l.departments || []) === 'YSM');
@@ -124,15 +119,9 @@ const Home = () => {
     () => listings.filter((l) => l.hiringStatus >= 0).length,
     [listings],
   );
-  const recentListingCount = useMemo(() => {
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    return listings.filter((l) => new Date(l.createdAt) >= thirtyDaysAgo).length;
-  }, [listings]);
   const roleBoardModes = [
     { key: null, label: 'All roles', value: listings.length },
     { key: 'open', label: 'Open', value: openListingCount },
-    { key: 'recent', label: 'Recent', value: recentListingCount },
     { key: 'ysm', label: 'Medicine', value: listings.filter((l) => getInstitutionAffiliation(l.departments || []) === 'YSM').length },
     { key: 'ysph', label: 'Public Health', value: listings.filter((l) => getInstitutionAffiliation(l.departments || []) === 'YSPH').length },
     { key: 'yc', label: 'Yale College', value: listings.filter((l) => getInstitutionAffiliation(l.departments || []) === 'YC').length },
@@ -154,9 +143,9 @@ const Home = () => {
       dispatch({ type: 'SET_FAVORITES', ids: [listingId, ...prevFavListingsIds] });
       axios
         .put('/users/favListings', { withCredentials: true, data: { favListings: [listingId] } })
-        .catch((error) => {
+        .catch(() => {
           dispatch({ type: 'SET_FAVORITES', ids: prevFavListingsIds });
-          console.error('Error favoriting listing:', error);
+          console.error('Error favoriting listing.');
           swal({ text: 'Unable to favorite listing', icon: 'warning' });
           reloadFavorites();
         });
@@ -167,9 +156,9 @@ const Home = () => {
       });
       axios
         .delete('/users/favListings', { withCredentials: true, data: { favListings: [listingId] } })
-        .catch((error) => {
+        .catch(() => {
           dispatch({ type: 'SET_FAVORITES', ids: prevFavListingsIds });
-          console.error('Error unfavoriting listing:', error);
+          console.error('Error unfavoriting listing.');
           swal({ text: 'Unable to unfavorite listing', icon: 'warning' });
           reloadFavorites();
         });

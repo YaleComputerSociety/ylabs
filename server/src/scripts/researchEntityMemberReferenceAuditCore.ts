@@ -1,4 +1,4 @@
-import { assertScriptApplyAllowed } from './scriptWriteGuards';
+import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 
 export interface ResearchEntityMemberReferenceAuditArgs {
   apply: boolean;
@@ -163,12 +163,12 @@ export function parseResearchEntityMemberReferenceAuditArgs(
     }
     if (arg === '--output') {
       const { value, nextIndex } = consumeValue(argv, index, '--output', 'path');
-      args.output = value;
+      args.output = resolveSafeJsonReportOutputPath(value);
       index = nextIndex;
       continue;
     }
     if (arg.startsWith('--output=')) {
-      args.output = consumeInlineValue(arg, '--output', 'path');
+      args.output = resolveSafeJsonReportOutputPath(consumeInlineValue(arg, '--output', 'path'));
       continue;
     }
     throw new Error(`Unknown research-entity-members:audit-user-refs option: ${arg}`);

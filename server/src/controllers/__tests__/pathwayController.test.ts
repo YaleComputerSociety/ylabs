@@ -173,6 +173,29 @@ describe('pathwayController', () => {
     expect(res.body).toEqual({ error: 'Invalid pathway search request' });
   });
 
+  it('rejects non-string pathway filter values before coercion', async () => {
+    const res = response();
+    const badFilter = { toString: vi.fn(() => 'Department') };
+
+    await searchPathwaysHandler(
+      {
+        body: {
+          q: '',
+          filters: {
+            departments: [badFilter],
+          },
+        },
+      } as any,
+      res as any,
+    );
+
+    expect(badFilter.toString).not.toHaveBeenCalled();
+    expect(mocks.searchPathways).not.toHaveBeenCalled();
+    expect(mocks.searchPathwaysViaMeili).not.toHaveBeenCalled();
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toEqual({ error: 'Invalid pathway search request' });
+  });
+
   it('uses Meili only when PATHWAY_SEARCH_BACKEND is meili', async () => {
     process.env.PATHWAY_SEARCH_BACKEND = 'meili';
     const res = response();

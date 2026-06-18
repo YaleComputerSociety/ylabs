@@ -12,6 +12,7 @@ import { ResearchEntity } from '../models/researchEntity';
 import { ResearchGroupMember } from '../models/researchGroupMember';
 import { searchPathwaysViaMeili } from '../services/pathwaySearchIndexService';
 import { searchResearchGroupsViaMeili } from '../services/researchGroupService';
+import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
   DEFAULT_RESEARCH_QUALITY_GOLDEN_QUERIES,
   buildResearchQualitySearchReviewRow,
@@ -21,7 +22,7 @@ import {
   type ResearchQualityGoldenQuery,
   type ResearchQualitySearchFacts,
 } from './researchQualitySearchReviewCore';
-import { assertScriptApplyAllowed } from './scriptWriteGuards';
+import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -34,6 +35,8 @@ export interface ResearchQualitySearchReviewCliOptions {
   queryNames: string[];
   output?: string;
 }
+
+const RESEARCH_QUALITY_SEARCH_REVIEW_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
 
 interface EntityRecord {
   _id: unknown;
@@ -110,11 +113,7 @@ export function parseResearchQualitySearchReviewArgs(
 }
 
 function parseRequiredOutputPath(value: string | undefined): string {
-  const output = value?.trim();
-  if (!output || output.startsWith('--')) {
-    throw new Error('--output requires a path');
-  }
-  return output;
+  return resolveSafeJsonReportOutputPath(value);
 }
 
 function parsePositiveInteger(value: string, flag: string): number {
@@ -127,8 +126,9 @@ function parsePositiveInteger(value: string, flag: string): number {
 
 export function writeResearchQualitySearchReviewOutput(result: unknown, output?: string): void {
   if (!output) return;
-  fs.mkdirSync(path.dirname(output), { recursive: true });
-  fs.writeFileSync(output, `${JSON.stringify(result, null, 2)}\n`);
+  const safeOutput = resolveSafeJsonReportOutputPath(output);
+  fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
+  fs.writeFileSync(safeOutput, `${JSON.stringify(result, null, 2)}\n`);
 }
 
 export function buildResearchQualitySearchReviewOutput<T extends object>(
@@ -152,7 +152,7 @@ export function buildResearchQualitySearchReviewOutput<T extends object>(
 }
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  return sanitizeLogValue(error);
 }
 
 function stringId(value: unknown): string {
@@ -273,6 +273,16 @@ function countMap(rows: Array<{ _id: unknown; count: number }>): Map<string, num
   return new Map(rows.map((row) => [stringId(row._id), row.count]));
 }
 
+export function normalizeResearchQualitySearchReviewObjectId(
+  value: unknown,
+): mongoose.Types.ObjectId | undefined {
+  if (value instanceof mongoose.Types.ObjectId) return value;
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  if (!RESEARCH_QUALITY_SEARCH_REVIEW_OBJECT_ID_RE.test(trimmed)) return undefined;
+  return new mongoose.Types.ObjectId(trimmed);
+}
+
 function uniqueStrings(values: unknown[]): string[] {
   return Array.from(new Set(values.map((value) => String(value || '').trim()).filter(Boolean))).sort();
 }
@@ -344,8 +354,8 @@ async function buildReview(options: ResearchQualitySearchReviewCliOptions) {
   const queries = selectedQueries(options);
   const searchCollection = await collectSearchCandidates(queries, options);
   const validIds = Array.from(searchCollection.entityIds)
-    .filter((id) => mongoose.Types.ObjectId.isValid(id))
-    .map((id) => new mongoose.Types.ObjectId(id))
+    .map((id) => normalizeResearchQualitySearchReviewObjectId(id))
+    .filter((id): id is mongoose.Types.ObjectId => Boolean(id))
     .slice(0, options.limit);
 
   const entities = (await ResearchEntity.find({ _id: { $in: validIds } })
@@ -460,7 +470,7 @@ async function main(): Promise<void> {
 if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
   main()
     .catch((error) => {
-      console.error('Research quality/search review failed:', errorMessage(error));
+      console.error('Research quality/search review failed:', sanitizeLogValue(error));
       process.exitCode = 1;
     })
     .finally(async () => {

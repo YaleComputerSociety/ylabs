@@ -22,6 +22,7 @@ import { spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { sanitizeLogValue } from '../utils/logSanitizer';
 
 const __filenameLocal = fileURLToPath(import.meta.url);
 const SERVER_ROOT = path.resolve(path.dirname(__filenameLocal), '../..');
@@ -110,7 +111,7 @@ function runFeeder(feeder: Feeder, startedAt: number): Promise<FeederResult> {
     const child = spawn(
       'yarn',
       [feeder.script, ...feeder.args, '--output', feeder.output],
-      { cwd: SERVER_ROOT, env: process.env, stdio: 'inherit' },
+      { cwd: SERVER_ROOT, env: process.env, stdio: 'inherit', shell: false },
     );
     child.on('close', (code) => {
       // Success = the canonical artifact was written/updated during this run. A gate script that
@@ -179,7 +180,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === __filenameLocal) {
   runGateRefresh()
     .then((results) => process.exit(results.every((r) => r.ok) ? 0 : 1))
     .catch((err) => {
-      console.error(err);
+      console.error(sanitizeLogValue(err));
       process.exit(1);
     });
 }

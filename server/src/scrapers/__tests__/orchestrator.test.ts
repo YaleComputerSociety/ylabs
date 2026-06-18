@@ -94,4 +94,79 @@ describe('ScraperOrchestrator', () => {
       }),
     );
   });
+
+  it('sanitizes scraper failure details before persisting run errors', async () => {
+    const scraper: IScraper = {
+      name: 'fixture-source',
+      displayName: 'Fixture source',
+      async run() {
+        throw new Error(
+          'Failed https://user:pass@example.test/source?access_token=secret-token for ada@example.edu',
+        );
+      },
+    };
+    const orchestrator = new ScraperOrchestrator();
+    orchestrator.register(scraper);
+
+    await expect(
+      orchestrator.run('fixture-source', {
+        dryRun: false,
+        dbReview: false,
+        useCache: false,
+        release: true,
+      }),
+    ).rejects.toThrow('Failed https://user:pass@example.test/source');
+
+    const failureUpdate = mocks.scrapeRunUpdateOne.mock.calls.at(-1)?.[1] as {
+      $set?: { errors?: Array<{ message?: string; stack?: string }> };
+    };
+    const persistedError = failureUpdate.$set?.errors?.at(-1);
+
+    expect(persistedError?.message).toContain('https://[credentials-redacted]@example.test');
+    expect(persistedError?.message).toContain('access_token=[secret-redacted]');
+    expect(persistedError?.message).toContain('[email redacted]');
+    expect(persistedError?.message).not.toContain('user:pass');
+    expect(persistedError?.message).not.toContain('secret-token');
+    expect(persistedError?.message).not.toContain('ada@example.edu');
+    expect(persistedError).not.toHaveProperty('stack');
+  });
+
+  it('sanitizes scraper log messages and metadata before console output', async () => {
+    const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const scraper: IScraper = {
+      name: 'fixture-source',
+      displayName: 'Fixture source',
+      async run(ctx) {
+        ctx.log('Fetch failed for https://user:pass@example.test?access_token=secret-token', {
+          Authorization: 'Bearer source-access-token',
+          cookie: 'session=abc123; Path=/; HttpOnly',
+          contact: 'ada@example.edu',
+        });
+        return { observationCount: 0, entitiesObserved: 0 };
+      },
+    };
+    const orchestrator = new ScraperOrchestrator();
+    orchestrator.register(scraper);
+
+    await orchestrator.run('fixture-source', {
+      dryRun: false,
+      dbReview: false,
+      useCache: false,
+      release: true,
+    });
+
+    const logged = consoleLog.mock.calls.flat().join(' ');
+    expect(logged).toContain('https://[credentials-redacted]@example.test');
+    expect(logged).toContain('access_token=[secret-redacted]');
+    expect(logged).toContain('Authorization":"[secret-redacted]"');
+    expect(logged).toContain('cookie":"[secret-redacted]"');
+    expect(logged).toContain('[email redacted]');
+    expect(logged).not.toContain('user:pass');
+    expect(logged).not.toContain('secret-token');
+    expect(logged).not.toContain('source-access-token');
+    expect(logged).not.toContain('abc123');
+    expect(logged).not.toContain('ada@example.edu');
+
+    consoleLog.mockRestore();
+  });
 });

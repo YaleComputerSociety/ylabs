@@ -3,6 +3,7 @@ import {
   LabMicrositeDescriptionLLMExtractor,
   candidateDescriptionLabsFromDocs,
   descriptionExtractionToObservations,
+  normalizeDescriptionLlmObjectId,
   type DescriptionExtraction,
 } from '../sources/labMicrositeDescriptionLLMExtractor';
 import type { ObservationInput, ScraperContext } from '../types';
@@ -34,6 +35,18 @@ function makeContext(): { ctx: ScraperContext; emitted: ObservationInput[]; logs
 }
 
 describe('LabMicrositeDescriptionLLMExtractor', () => {
+  it('normalizes description LLM ObjectIds without object-shaped coercion', () => {
+    expect(normalizeDescriptionLlmObjectId(' 507f1f77bcf86cd799439011 ')).toBe(
+      '507f1f77bcf86cd799439011',
+    );
+    expect(normalizeDescriptionLlmObjectId('abcdefghijkl')).toBeUndefined();
+    expect(
+      normalizeDescriptionLlmObjectId({
+        toString: () => '507f1f77bcf86cd799439011',
+      }),
+    ).toBeUndefined();
+  });
+
   it('builds targeted candidates from sourceUrls and visibility queue order', () => {
     const candidates = candidateDescriptionLabsFromDocs(
       [
@@ -78,11 +91,11 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
     const candidates = candidateDescriptionLabsFromDocs([
       {
         _id: 'entity-drc',
-        slug: 'nih-pi-gerald-shulman',
+        slug: 'nih-pi-gray-metabolism-fixture',
         displayName: 'Diabetes Research Center',
         websiteUrl: 'https://medicine.yale.edu/internal-medicine/drc/',
         sourceUrls: [
-          'https://medicine.yale.edu/profile/gerald-shulman/',
+          'https://medicine.yale.edu/profile/gray-metabolism-fixture/',
           'https://reporter.nih.gov/project-details/11252534',
         ],
       },
@@ -101,18 +114,18 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
       {
         _id: 'entity-adams',
         slug: 'adams-ja372',
-        displayName: 'Julia Adams — Research',
-        sourceUrls: ['https://sociology.yale.edu/people/julia-adams'],
+        displayName: 'Jules Sociology — Research',
+        sourceUrls: ['https://sociology.yale.edu/people/jules-sociology-fixture'],
       },
     ]);
 
     expect(candidates).toEqual([
       expect.objectContaining({
         _id: 'entity-adams',
-        websiteUrl: 'https://sociology.yale.edu/profile/julia-adams',
+        websiteUrl: 'https://sociology.yale.edu/profile/jules-sociology-fixture',
         sourceUrls: [
-          'https://sociology.yale.edu/profile/julia-adams',
-          'https://sociology.yale.edu/people/julia-adams',
+          'https://sociology.yale.edu/profile/jules-sociology-fixture',
+          'https://sociology.yale.edu/people/jules-sociology-fixture',
         ],
       }),
     ]);
@@ -506,7 +519,7 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
       descriptionExtractionToObservations(extraction, {
         entityId: 'entity-1',
         entityKey: 'diabetes-research-center',
-        sourceUrl: 'https://medicine.yale.edu/profile/gerald-shulman/',
+        sourceUrl: 'https://medicine.yale.edu/profile/gray-metabolism-fixture/',
       })[0],
     ).toEqual(expect.objectContaining({ confidenceOverride: 0.55 }));
   });

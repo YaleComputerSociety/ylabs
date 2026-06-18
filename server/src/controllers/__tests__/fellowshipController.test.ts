@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   addView: vi.fn(),
   addFavorite: vi.fn(),
   removeFavorite: vi.fn(),
+  hasAdminAuthorityForUser: vi.fn(),
 }));
 
 vi.mock('../../services/fellowshipService', () => ({
@@ -15,6 +16,10 @@ vi.mock('../../services/fellowshipService', () => ({
   addView: mocks.addView,
   addFavorite: mocks.addFavorite,
   removeFavorite: mocks.removeFavorite,
+}));
+
+vi.mock('../../services/adminGrantService', () => ({
+  hasAdminAuthorityForUser: mocks.hasAdminAuthorityForUser,
 }));
 
 import {
@@ -67,17 +72,18 @@ const expectPublicFellowship = (payload: any) => {
     programCategory: 'SUMMER_RESEARCH_PROGRAM',
     applicationLink: 'https://example.yale.edu/apply',
     deadline: new Date('2026-02-01T00:00:00.000Z'),
-    contactEmail: 'program@yale.edu',
     sourceName: 'Official program page',
     sourceUrl: 'https://example.yale.edu/program',
     studentVisibilityTier: 'student_ready',
-    studentVisibilityComputedTier: 'student_ready',
-    studentVisibilityReasons: ['public reason'],
   });
+  expect(payload).not.toHaveProperty('contactEmail');
+  expect(payload).not.toHaveProperty('contactPhone');
   expect(payload).not.toHaveProperty('sourceKey');
   expect(payload).not.toHaveProperty('sourceFingerprint');
   expect(payload).not.toHaveProperty('sourceLastVerifiedAt');
   expect(payload).not.toHaveProperty('sourceLastChangedAt');
+  expect(payload).not.toHaveProperty('studentVisibilityComputedTier');
+  expect(payload).not.toHaveProperty('studentVisibilityReasons');
   expect(payload).not.toHaveProperty('studentVisibilityOverrideTier');
   expect(payload).not.toHaveProperty('studentVisibilitySuppressionReason');
   expect(payload).not.toHaveProperty('studentVisibilityReviewedByUserId');
@@ -102,6 +108,7 @@ describe('fellowshipController', () => {
     mocks.addView.mockReset();
     mocks.addFavorite.mockReset();
     mocks.removeFavorite.mockReset();
+    mocks.hasAdminAuthorityForUser.mockResolvedValue(false);
   });
 
   it('allowlists public fellowship search results', async () => {
@@ -161,6 +168,58 @@ describe('fellowshipController', () => {
         pageSize: 100,
       }),
     );
+  });
+
+  it('does not coerce object pagination or sort values for public fellowship search', async () => {
+    const res = response();
+    const page = { toString: vi.fn(() => '999999999') };
+    const pageSize = { toString: vi.fn(() => '500') };
+    const sortOrder = { valueOf: vi.fn(() => 1) };
+
+    await searchFellowshipsController(
+      {
+        query: {
+          query: 'summer',
+          page,
+          pageSize,
+          sortOrder,
+        },
+      } as any,
+      res as any,
+    );
+
+    expect(page.toString).not.toHaveBeenCalled();
+    expect(pageSize.toString).not.toHaveBeenCalled();
+    expect(sortOrder.valueOf).not.toHaveBeenCalled();
+    expect(mocks.searchFellowships).toHaveBeenCalledWith(
+      expect.objectContaining({
+        page: 1,
+        pageSize: 20,
+        sortOrder: -1,
+      }),
+    );
+  });
+
+  it('bounds public fellowship search query and filters before querying', async () => {
+    const res = response();
+    const longPurpose = 'x'.repeat(200);
+
+    await searchFellowshipsController(
+      {
+        query: {
+          query: [` ${'q'.repeat(700)} `],
+          yearOfStudy: Array.from({ length: 60 }, (_, index) => `Year ${index}`).join('|'),
+          purpose: longPurpose,
+        },
+      } as any,
+      res as any,
+    );
+
+    const call = mocks.searchFellowships.mock.calls[0][0];
+    expect(call.query).toBe('q'.repeat(512));
+    expect(call.yearOfStudy).toContain('Year 49');
+    expect(call.yearOfStudy).not.toContain('Year 50');
+    expect(call.purpose).toEqual(['x'.repeat(120)]);
   });
 
   it('keeps allowed fellowship search sort fields', async () => {
@@ -227,6 +286,43 @@ describe('fellowshipController', () => {
     expect(JSON.stringify(payload)).not.toContain('program@yale.edu?bcc=attacker@example.test');
   });
 
+  it('redacts direct contact details from public fellowship text fields', async () => {
+    const res = response();
+    mocks.searchFellowships.mockResolvedValue({
+      fellowships: [
+        {
+          ...privateFellowship,
+          summary: 'Email prose-contact@yale.edu or call 203-555-1212 before applying.',
+          description: 'Questions: office@example.edu.',
+          applicationInformation: 'Call 203.555.3434 for the form.',
+          eligibility: 'Ask hidden@yale.edu about eligibility.',
+          prepSteps: ['Email prep-contact@yale.edu or call 203-555-7777.'],
+          contactPhone: '203-555-9999',
+          contactOffice: 'Office contact: office@example.edu or 203-555-0000.',
+        },
+      ],
+      total: 1,
+      page: 1,
+      pageSize: 20,
+      totalPages: 1,
+    });
+
+    await searchFellowshipsController({ query: {} } as any, res as any);
+
+    const payload = res.json.mock.calls[0][0].results[0];
+    expect(payload.summary).toBe('Email [email redacted] or call [phone redacted] before applying.');
+    expect(payload.description).toBe('Questions: [email redacted].');
+    expect(payload.applicationInformation).toBe('Call [phone redacted] for the form.');
+    expect(payload.eligibility).toBe('Ask [email redacted] about eligibility.');
+    expect(payload.prepSteps).toEqual(['Email [email redacted] or call [phone redacted].']);
+    expect(payload.contactPhone).toBeUndefined();
+    expect(payload.contactOffice).toBe('Office contact: [email redacted] or [phone redacted].');
+    expect(JSON.stringify(payload)).not.toContain('prose-contact@yale.edu');
+    expect(JSON.stringify(payload)).not.toContain('prep-contact@yale.edu');
+    expect(JSON.stringify(payload)).not.toContain('office@example.edu');
+    expect(JSON.stringify(payload)).not.toContain('203-555');
+  });
+
   it('allowlists public fellowship detail payloads for normal readers', async () => {
     const res = response();
     mocks.readFellowship.mockResolvedValue(privateFellowship);
@@ -239,6 +335,25 @@ describe('fellowshipController', () => {
       res as any,
     );
 
+    expectPublicFellowship(res.json.mock.calls[0][0].fellowship);
+  });
+
+  it('does not treat legacy admin userType as nonpublic fellowship detail authority', async () => {
+    const res = response();
+    mocks.readFellowship.mockResolvedValue(privateFellowship);
+
+    await getFellowshipById(
+      {
+        params: { id: '64a000000000000000000010' },
+        user: { netId: 'legacy1', userType: 'admin' },
+      } as any,
+      res as any,
+    );
+
+    expect(mocks.readFellowship).toHaveBeenCalledWith(
+      '64a000000000000000000010',
+      expect.objectContaining({ includeNonPublic: false }),
+    );
     expectPublicFellowship(res.json.mock.calls[0][0].fellowship);
   });
 

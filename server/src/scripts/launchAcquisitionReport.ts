@@ -9,7 +9,8 @@ import {
   type LaunchAcquisitionReport,
   type LaunchAcquisitionReportOptions,
 } from '../services/launchAcquisitionReportService';
-import { assertScriptApplyAllowed } from './scriptWriteGuards';
+import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { sanitizeLogValue } from '../utils/logSanitizer';
 
 dotenv.config();
 
@@ -48,7 +49,7 @@ export function parseLaunchAcquisitionReportArgs(argv: string[]): LaunchAcquisit
     } else if (arg === '--stage=source_description') {
       options.stages = ['source_description'];
     } else if (arg === '--stage=all') {
-      options.stages = ['pi_identity', 'action_evidence'];
+      options.stages = ['pi_identity', 'action_evidence', 'source_description'];
     } else if (arg.startsWith('--limit=')) {
       options.limit = parsePositiveInteger(arg.slice('--limit='.length), '--limit');
     } else if (arg.startsWith('--sample-limit=')) {
@@ -57,10 +58,10 @@ export function parseLaunchAcquisitionReportArgs(argv: string[]): LaunchAcquisit
         '--sample-limit',
       );
     } else if (arg === '--output') {
-      options.output = parseRequiredValue(argv[i + 1], '--output', 'a path');
+      options.output = resolveSafeJsonReportOutputPath(argv[i + 1]);
       i += 1;
     } else if (arg.startsWith('--output=')) {
-      options.output = parseRequiredValue(arg.slice('--output='.length), '--output', 'a path');
+      options.output = resolveSafeJsonReportOutputPath(arg.slice('--output='.length));
     } else {
       throw new Error(`Unknown argument: ${arg}`);
     }
@@ -74,8 +75,9 @@ export function writeLaunchAcquisitionReportOutput(
   output?: string,
 ): void {
   if (!output) return;
-  fs.mkdirSync(path.dirname(output), { recursive: true });
-  fs.writeFileSync(output, `${JSON.stringify(report, null, 2)}\n`);
+  const safeOutput = resolveSafeJsonReportOutputPath(output);
+  fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
+  fs.writeFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
 }
 
 export function buildLaunchAcquisitionReportOutput<T extends object>(
@@ -127,7 +129,7 @@ const isDirectRun = process.argv[1]
 if (isDirectRun) {
   main()
     .catch((error) => {
-      console.error('Failed to run launch acquisition report:', error);
+      console.error('Failed to run launch acquisition report:', sanitizeLogValue(error));
       process.exitCode = 1;
     })
     .finally(async () => {

@@ -104,8 +104,8 @@ const AdminFellowshipsTable = () => {
         total: response.data.total,
         totalPages: response.data.totalPages,
       });
-    } catch (error) {
-      console.error('Error fetching admin fellowships:', error);
+    } catch {
+      console.error('Error fetching admin fellowships.');
       swal({ text: 'Failed to fetch fellowships', icon: 'error' });
       dispatch({ type: 'FETCH_FAILURE' });
     }
@@ -136,8 +136,8 @@ const AdminFellowshipsTable = () => {
       await axios.delete(`/admin/fellowships/${fellowship._id}`, { withCredentials: true });
       swal({ text: 'Fellowship deleted', icon: 'success', timer: 1500 });
       fetchFellowships();
-    } catch (error) {
-      console.error('Error deleting fellowship:', error);
+    } catch {
+      console.error('Error deleting fellowship.');
       swal({ text: 'Failed to delete fellowship', icon: 'error' });
     }
   };
@@ -152,8 +152,8 @@ const AdminFellowshipsTable = () => {
       );
       swal({ text: `Fellowship ${action}d`, icon: 'success', timer: 1500 });
       fetchFellowships();
-    } catch (error) {
-      console.error(`Error ${action}ing fellowship:`, error);
+    } catch {
+      console.error(`Error ${action}ing fellowship.`);
       swal({ text: `Failed to ${action} fellowship`, icon: 'error' });
     }
   };
@@ -170,8 +170,8 @@ const AdminFellowshipsTable = () => {
       swal({ text: 'Fellowship updated', icon: 'success', timer: 1500 });
       dispatch({ type: 'CLOSE_EDIT' });
       fetchFellowships();
-    } catch (error) {
-      console.error('Error updating fellowship:', error);
+    } catch {
+      console.error('Error updating fellowship.');
       swal({ text: 'Failed to update fellowship', icon: 'error' });
     }
   };

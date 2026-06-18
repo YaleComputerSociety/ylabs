@@ -44,6 +44,15 @@ describe('backfillProgramClassifications CLI helpers', () => {
     expect(() => parseBackfillProgramClassificationsArgs(['--output=--apply'])).toThrow(
       /--output requires a path/,
     );
+    expect(() =>
+      parseBackfillProgramClassificationsArgs([
+        '--output',
+        '/var/tmp/program-classifications.json',
+      ]),
+    ).toThrow(/--output must write under/);
+    expect(() =>
+      parseBackfillProgramClassificationsArgs(['--output', '/tmp/program-classifications.txt']),
+    ).toThrow(/--output must point to a \.json report file/);
   });
 
   it('requires a bounded limit before apply mode can run', () => {
@@ -91,6 +100,15 @@ describe('backfillProgramClassifications CLI helpers', () => {
     writeBackfillProgramClassificationsOutput(payload, output);
 
     expect(JSON.parse(fs.readFileSync(output, 'utf8'))).toMatchObject(payload);
+  });
+
+  it('rejects unsafe program classification artifact writes', () => {
+    expect(() =>
+      writeBackfillProgramClassificationsOutput(
+        { mode: 'dry-run' },
+        '/var/tmp/program-classifications.json',
+      ),
+    ).toThrow(/--output must write under/);
   });
 
   it('wraps program classification artifacts with target metadata and parsed options', () => {

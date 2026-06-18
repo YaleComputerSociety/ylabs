@@ -42,6 +42,7 @@ import {
   getProfile,
   getProfileListings,
   getPublications,
+  normalizePublicationPagination,
   updateProfile,
   verifyProfile,
 } from '../profileController';
@@ -232,6 +233,36 @@ describe('profileController', () => {
     expect(JSON.stringify(res.json.mock.calls[0][0])).not.toContain('user:pass');
   });
 
+  it('redacts and bounds embedded profile publication text for authenticated readers', async () => {
+    const publication = {
+      title: `Contact ada@example.edu about ${'A'.repeat(800)}`,
+      doi: '10.1234/example ada@example.edu',
+      year: 2026,
+      venue: 'Journal phone 203-555-1212',
+      source: 'official-profile ada@example.edu',
+    };
+    mocks.userFindOne.mockReturnValue({
+      select: vi.fn().mockReturnThis(),
+      lean: vi.fn().mockResolvedValue({ netid: 'owner123', publications: [publication] }),
+    });
+
+    const req = {
+      params: { netid: 'owner123' },
+      query: { page: '1', pageSize: '20', sortBy: 'year', sortOrder: 'desc' },
+    } as any;
+    const res = {
+      json: vi.fn(),
+      status: vi.fn().mockReturnThis(),
+    } as any;
+
+    await getPublications(req, res);
+
+    const payload = res.json.mock.calls[0][0].publications[0];
+    expect(payload.title.length).toBeLessThanOrEqual(500);
+    expect(JSON.stringify(payload)).not.toContain('ada@example.edu');
+    expect(JSON.stringify(payload)).not.toContain('203-555-1212');
+  });
+
   it('normalizes unsafe profile publication sort fields before ordering raw rows', async () => {
     mocks.userFindOne.mockReturnValue({
       select: vi.fn().mockReturnThis(),
@@ -297,6 +328,17 @@ describe('profileController', () => {
         publications: [],
       }),
     );
+  });
+
+  it('rejects non-primitive and oversized profile publication pagination before parsing', () => {
+    expect(normalizePublicationPagination({ toString: () => '999999999' }, ['500'])).toEqual({
+      page: 1,
+      pageSize: 20,
+    });
+    expect(normalizePublicationPagination('9'.repeat(17), '5'.repeat(17))).toEqual({
+      page: 1,
+      pageSize: 20,
+    });
   });
 
   it('forwards the already-normalized profile (research homes + interest tags) without re-normalizing', async () => {

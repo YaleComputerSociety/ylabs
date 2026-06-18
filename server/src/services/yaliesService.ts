@@ -4,12 +4,30 @@
 import axios from 'axios';
 import dotenv from 'dotenv';
 import { createUser, validateUser } from './userService';
+import { sanitizeLogValue } from '../utils/logSanitizer';
 
 dotenv.config();
 
 const YALIES_API_URL = 'https://api.yalies.io/v2/people';
+const YALIES_API_TIMEOUT_MS = 10_000;
+const YALIES_NETID_RE = /^[A-Za-z0-9]{2,12}$/;
 
 const yaliesApiKey = () => String(process.env.YALIES_API_KEY || '').trim();
+
+const normalizeYaliesNetid = (value: unknown): string | undefined => {
+  if (typeof value !== 'string') return undefined;
+  const netid = value.trim().toLowerCase();
+  return YALIES_NETID_RE.test(netid) ? netid : undefined;
+};
+
+const yaliesRequestError = (error: unknown): Error => {
+  if (axios.isAxiosError(error)) {
+    const status = error.response?.status;
+    const suffix = status ? ` with status ${status}` : '';
+    return new Error(`Yalies API request failed${suffix}`);
+  }
+  return error instanceof Error ? error : new Error('Yalies API request failed');
+};
 
 export interface YaliesPerson {
   netid?: string;
@@ -47,22 +65,27 @@ export async function listYalies(options: ListYaliesOptions = {}): Promise<Yalie
     throw new Error('YALIES_API_KEY not set');
   }
 
-  const response = await axios.post(
-    YALIES_API_URL,
-    {
-      page: options.page,
-      page_size: options.pageSize,
-      filters: options.filters || {},
-    },
-    {
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        ...(options.userAgent ? { 'User-Agent': options.userAgent } : {}),
+  try {
+    const response = await axios.post(
+      YALIES_API_URL,
+      {
+        page: options.page,
+        page_size: options.pageSize,
+        filters: options.filters || {},
       },
-    },
-  );
+      {
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          ...(options.userAgent ? { 'User-Agent': options.userAgent } : {}),
+        },
+        timeout: YALIES_API_TIMEOUT_MS,
+      },
+    );
 
-  return Array.isArray(response.data) ? response.data : [];
+    return Array.isArray(response.data) ? response.data : [];
+  } catch (error) {
+    throw yaliesRequestError(error);
+  }
 }
 
 /**
@@ -72,6 +95,14 @@ export async function listYalies(options: ListYaliesOptions = {}): Promise<Yalie
  */
 export const fetchYalie = async (netid: any) => {
   try {
+    const normalizedNetid = normalizeYaliesNetid(netid);
+    if (!normalizedNetid) return null;
+
+    const existingUser = await validateUser(normalizedNetid);
+    if (existingUser) {
+      return existingUser;
+    }
+
     let yaliesResponse;
     const apiKey = yaliesApiKey();
     if (!apiKey) {
@@ -83,22 +114,23 @@ export const fetchYalie = async (netid: any) => {
       console.log('Yalies: making post request');
       yaliesResponse = await axios.post(
         YALIES_API_URL,
-        { filters: { netid: [netid] } },
-        { headers: { Authorization: `Bearer ${apiKey}` } },
+        { filters: { netid: [normalizedNetid] } },
+        { headers: { Authorization: `Bearer ${apiKey}` }, timeout: YALIES_API_TIMEOUT_MS },
       );
     } catch (error) {
-      console.error('Error fetching from Yalies API:', (error as Error).message);
+      console.error('Error fetching from Yalies API:', sanitizeLogValue(yaliesRequestError(error)));
       return null;
     }
     console.log('Yalies: done making post request');
     const yaliesData = yaliesResponse.data;
 
     if (!yaliesData || yaliesData.length === 0) {
-      console.log(`No Yalie found for netid: ${netid}`);
+      console.log('No Yalie found for requested NetID');
       return null;
     }
 
     const yalie = yaliesData[0];
+    const responseNetid = normalizeYaliesNetid(yalie.netid) || normalizedNetid;
 
     if (
       !yalie.first_name ||
@@ -107,7 +139,7 @@ export const fetchYalie = async (netid: any) => {
       !yalie.year ||
       !yalie.school_code
     ) {
-      console.log(`Missing required fields from Yalies API response for netid: ${netid}`);
+      console.log('Missing required fields from Yalies API response');
       return null;
     }
 
@@ -120,7 +152,7 @@ export const fetchYalie = async (netid: any) => {
     }
 
     const userData = {
-      netid: yalie.netid,
+      netid: responseNetid,
       fname: yalie.first_name || '',
       lname: yalie.last_name || '',
       email: yalie.email,
@@ -133,19 +165,12 @@ export const fetchYalie = async (netid: any) => {
 
     console.log('Yalies: saving user to mongoDB');
 
-    console.log('Yalies: validating user');
-    let user = await validateUser(netid);
-    if (user) {
-      return user;
-    }
-    console.log('Yalies: done validating user');
-
-    user = await createUser(userData);
+    const user = await createUser(userData);
     console.log('Yalies: user saved, returning user');
 
     return user;
   } catch (error) {
-    console.error('Error fetching user:', (error as Error).message);
+    console.error('Error fetching user:', sanitizeLogValue(error));
     return null;
   }
 };

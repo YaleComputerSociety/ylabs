@@ -13,6 +13,7 @@ import { ResearchScholarlyLink } from '../models/researchScholarlyLink';
 import { publicStudentVisibilityTiers } from '../models/studentVisibility';
 import { sanitizeProfileResearchTerms } from '../utils/profileResearchTerms';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
+import { serializedDocumentId } from '../utils/idSerialization';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 import {
   isLikelyPublicProfileImageUrl,
@@ -46,7 +47,91 @@ const safeObject = (value: unknown): Record<string, string> => {
   ) as Record<string, string>;
 };
 
-export const isLikelyPersonUrl = (url: string, firstName: string, lastName: string): boolean => {
+const GIVEN_NAME_ALIASES: Record<string, string[]> = {
+  chie: ['christina'],
+  debbie: ['deborah'],
+  ian: ['inhyun'],
+  jacob: ['jake'],
+  james: ['jim'],
+  jim: ['james'],
+  bill: ['william'],
+  julia: ['yulia'],
+  yulia: ['julia'],
+  kathleen: ['kathy'],
+  kathy: ['kathleen'],
+  lj: ['laura'],
+  magdalena: ['maggie'],
+  maggie: ['magdalena', 'margaret'],
+  margaret: ['maggie'],
+  maripaz: ['maria'],
+  william: ['bill'],
+};
+
+const givenNameAliasMatches = (firstTokens: string[], allUrlTokens: string[]): boolean =>
+  firstTokens.some((token) =>
+    (GIVEN_NAME_ALIASES[token] || []).some((alias) => allUrlTokens.includes(alias)),
+  );
+
+const allowsLastNameOnlyPersonUrl = (url: string): boolean => {
+  try {
+    const parsed = new URL(url);
+    return !/\/profile\//i.test(parsed.pathname);
+  } catch {
+    return false;
+  }
+};
+
+const hasSurnameOnlyProfilePath = (url: string, lastTokens: string[]): boolean => {
+  try {
+    const pathTokens = allNameTokens(new URL(url).pathname).filter(
+      (token) => !['profile', 'profiles'].includes(token),
+    );
+    return pathTokens.length === 1 && lastTokens.includes(pathTokens[0]);
+  } catch {
+    return false;
+  }
+};
+
+const compoundLastNameMatchedTokens = (url: string, lastTokens: string[]): string[] => {
+  if (lastTokens.length <= 1) return [];
+  try {
+    const pathTokens = allNameTokens(new URL(url).pathname).filter(
+      (token) => !['profile', 'profiles'].includes(token),
+    );
+    return lastTokens.filter((token) => pathTokens.includes(token));
+  } catch {
+    return [];
+  }
+};
+
+const hasPartialCompoundLastNameProfilePath = (
+  url: string,
+  firstName: string,
+  lastName: string,
+): boolean => {
+  const lastTokens = nameTokens(lastName);
+  const matchedLastTokens = compoundLastNameMatchedTokens(url, lastTokens);
+  if (matchedLastTokens.length !== 1) return false;
+  const firstInitials = allNameTokens(firstName).map((token) => token[0]).filter(Boolean);
+  const pathTokens = (() => {
+    try {
+      return allNameTokens(new URL(url).pathname);
+    } catch {
+      return [];
+    }
+  })();
+  if (firstInitials.some((initial) => pathTokens.includes(initial))) return false;
+  const lastCompact = lastTokens.join('');
+  const urlCompact = allNameTokens(url).join('');
+  return lastCompact.length >= 4 && !urlCompact.includes(lastCompact);
+};
+
+export const isLikelyPersonUrl = (
+  url: string,
+  firstName: string,
+  lastName: string,
+  options: { allowSurnameOnly?: boolean } = {},
+): boolean => {
   const tokens = nameTokens(url);
   const allUrlTokens = allNameTokens(url);
   const urlCompact = allUrlTokens.join('');
@@ -67,14 +152,16 @@ export const isLikelyPersonUrl = (url: string, firstName: string, lastName: stri
         (token.length >= 4 && urlToken.startsWith(token)),
     ),
   );
+  const pathTokens = profilePathTokens(url);
   const explicitInitialMatches =
     hasExplicitFirstInitial &&
     firstInitials.some((initial) =>
       allUrlTokens.some((urlToken) => urlToken === initial || urlToken.startsWith(initial)),
     );
-  const standaloneInitialMatches = firstInitials.some((initial) => allUrlTokens.includes(initial));
+  const standaloneInitialMatches = firstInitials.some((initial) => pathTokens[0] === initial);
   const firstMatches =
     firstVariantMatches ||
+    givenNameAliasMatches(firstTokens, allUrlTokens) ||
     firstTokens.some((token) => urlCompact.includes(token)) ||
     standaloneInitialMatches ||
     explicitInitialMatches;
@@ -83,14 +170,49 @@ export const isLikelyPersonUrl = (url: string, firstName: string, lastName: stri
   const allLastTokensMatch = lastTokens.every((token) => tokens.includes(token));
   const compactLastMatches = lastCompact.length >= 4 && urlCompact.includes(lastCompact);
   const longestLastToken = [...lastTokens].sort((a, b) => b.length - a.length)[0] || '';
+  const matchedCompoundLastTokens = compoundLastNameMatchedTokens(url, lastTokens);
+  const substantiveCompoundLastTokenMatches =
+    lastTokens.length > 1 &&
+    matchedCompoundLastTokens.length === 1 &&
+    matchedCompoundLastTokens[0].length >= 5;
   const initialPlusLongestLastMatches =
     longestLastToken.length >= 5 &&
     tokens.includes(longestLastToken) &&
     firstInitials.some((initial) => allUrlTokens.includes(initial));
+  const pathCompact = (() => {
+    try {
+      return allNameTokens(new URL(url).pathname)
+        .filter((token) => !['profile', 'profiles', 'people', 'faculty', 'directory'].includes(token))
+        .join('');
+    } catch {
+      return urlCompact;
+    }
+  })();
+  const compactUrlWithoutTrailingDigits = pathCompact.replace(/\d+$/g, '');
+  const compactInitialPlusLastMatches =
+    longestLastToken.length >= 4 &&
+    compactUrlWithoutTrailingDigits.endsWith(longestLastToken) &&
+    (() => {
+      const prefix = compactUrlWithoutTrailingDigits.slice(0, -longestLastToken.length);
+      return (
+        prefix.length >= 1 &&
+        prefix.length <= 3 &&
+        firstInitials.some((initial) => prefix.includes(initial))
+      );
+    })();
 
-  const lastMatches = allLastTokensMatch || compactLastMatches || initialPlusLongestLastMatches;
+  const lastMatches =
+    allLastTokensMatch ||
+    compactLastMatches ||
+    (firstMatches && substantiveCompoundLastTokenMatches) ||
+    initialPlusLongestLastMatches ||
+    compactInitialPlusLastMatches;
 
-  return firstMatches && lastMatches;
+  if ((firstMatches && lastMatches) || compactInitialPlusLastMatches) return true;
+
+  if (options.allowSurnameOnly !== false && hasSurnameOnlyProfilePath(url, lastTokens)) return true;
+
+  return options.allowSurnameOnly !== false && lastMatches && allowsLastNameOnlyPersonUrl(url);
 };
 
 const profilePathTokens = (urlValue: string): string[] => {
@@ -217,7 +339,7 @@ export const isLikelySameNameContaminatedProfile = (user: Record<string, any>): 
     if (bio.length === 0 && allProfileUrlsAreAmbiguousInitialLast) return true;
 
     const allProfileUrlsFailNameMatch = profileUrlValues.every(
-      (url) => !isLikelyPersonUrl(url, firstName, lastName),
+      (url) => !isLikelyPersonUrl(url, firstName, lastName, { allowSurnameOnly: false }),
     );
     return (
       allProfileUrlsFailNameMatch &&
@@ -236,7 +358,9 @@ export const cleanProfileUrlsForPerson = (user: Record<string, any>): Record<str
       .map(([key, url]) => [key, cleanPublicHttpUrl(url)] as const)
       .filter(([key, url]) =>
         Boolean(url) &&
-        (key === 'orcid' || isLikelyPersonUrl(url, user.fname || '', user.lname || '')),
+        (key === 'orcid' ||
+          (isLikelyPersonUrl(url, user.fname || '', user.lname || '') &&
+            !hasPartialCompoundLastNameProfilePath(url, user.fname || '', user.lname || ''))),
       ),
   );
 };
@@ -262,7 +386,7 @@ const withPublicProfileImageGuards = async (user: Record<string, any>) => {
   return { ...user, imageUrl, image_url: imageUrl };
 };
 
-export const paperToScholarlyLink = (paper: Record<string, any>, userId?: unknown) => {
+export const paperToScholarlyLink = (paper: Record<string, any>, _userId?: unknown) => {
   const doi = typeof paper.doi === 'string' ? paper.doi.replace(/^https?:\/\/(dx\.)?doi\.org\//i, '') : '';
   const doiUrl = doi ? `https://doi.org/${doi}` : '';
   const url = doiUrl || paper.landingPageUrl || paper.openAccessUrl || paper.url || paper.pdfUrl || '';
@@ -272,10 +396,20 @@ export const paperToScholarlyLink = (paper: Record<string, any>, userId?: unknow
       : paper.openAccessUrl && paper.openAccessUrl !== url
         ? paper.openAccessUrl
         : undefined;
+  const scholarlyLinkIdSource =
+    serializedDocumentId(doiUrl) ||
+    serializedDocumentId(url) ||
+    serializedDocumentId(paper.openAlexId) ||
+    serializedDocumentId(paper.arxivId) ||
+    serializedDocumentId(paper.title) ||
+    'research-activity';
 
   return {
-    _id: String(paper._id || paper.id || paper.openAlexId || paper.title),
-    userId: userId ? String(userId) : undefined,
+    _id: scholarlyLinkIdSource
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 160),
     title: paper.title || 'Untitled research activity',
     url,
     destinationKind: doiUrl ? 'DOI' : paper.openAccessUrl || paper.pdfUrl ? 'OPENALEX' : 'OTHER',
@@ -352,6 +486,42 @@ const normalizedDoiUrl = (value: unknown): string => {
   return doi ? `https://doi.org/${doi}` : '';
 };
 
+const publicScholarlyLinkId = (link: Record<string, any>, url?: string, doiUrl?: string): string =>
+  String(
+    doiUrl ||
+      url ||
+      cleanPublicHttpUrl(link.freeFullTextUrl) ||
+      link.externalIds?.openAlexId ||
+      link.externalIds?.arxivId ||
+      link.externalIds?.pmid ||
+      link.externalIds?.pmcid ||
+      cleanScholarlyTitle(link.title) ||
+      'scholarly-link',
+  )
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 160);
+
+const publicScholarlyExternalIds = (externalIds: unknown): Record<string, string | undefined> => {
+  const source =
+    externalIds && typeof externalIds === 'object' && !Array.isArray(externalIds)
+      ? (externalIds as Record<string, unknown>)
+      : {};
+  const publicId = (value: unknown): string | undefined => {
+    if (typeof value !== 'string') return undefined;
+    const text = redactDirectContactInfo(value).trim().slice(0, 200);
+    return text || undefined;
+  };
+  return {
+    doi: publicId(source.doi),
+    openAlexId: publicId(source.openAlexId),
+    arxivId: publicId(source.arxivId),
+    pmid: publicId(source.pmid),
+    pmcid: publicId(source.pmcid),
+  };
+};
+
 const isGeneratedOfficialProfilePublicationAnchor = (link: Record<string, any>): boolean => {
   const url = cleanUrl(link.url);
   if (!url || !/^#publication-/i.test(urlHash(url))) return false;
@@ -361,27 +531,20 @@ const isGeneratedOfficialProfilePublicationAnchor = (link: Record<string, any>):
 };
 
 const PUBLIC_PROFILE_BASE_FIELDS = [
-  '_id',
-  'id',
   'netid',
   'fname',
   'lname',
-  'email',
   'userType',
-  'userConfirmed',
   'profileVerified',
   'title',
   'bio',
-  // 'phone' intentionally excluded from public profiles (security audit): email +
-  // office location (physicalLocation/buildingDesk) are public; phone is not.
+  // Direct contact/location fields are intentionally excluded from public
+  // profiles: email, phone, physicalLocation, buildingDesk, and mailingAddress.
   'departments',
   'college',
   'year',
   'major',
   'unit',
-  'physicalLocation',
-  'buildingDesk',
-  // 'mailingAddress' intentionally excluded from public profiles (security audit).
   'primaryDepartment',
   'secondaryDepartments',
   'imageUrl',
@@ -390,32 +553,88 @@ const PUBLIC_PROFILE_BASE_FIELDS = [
   'hIndex',
   'orcid',
   'openAlexId',
-  'ownListings',
-  'createdAt',
-  'updatedAt',
 ] as const;
 
-const publicProfileBase = (user: Record<string, any>): Record<string, any> => {
-  const profile: Record<string, any> = {};
-  for (const field of PUBLIC_PROFILE_BASE_FIELDS) {
-    if (user[field] !== undefined) {
-      profile[field] = user[field];
-    }
-  }
-  return profile;
-};
+const MAX_PUBLIC_PROFILE_BASE_TEXT_LENGTH = 500;
+const MAX_PUBLIC_PROFILE_BASE_ARRAY_ITEMS = 50;
+const PUBLIC_PROFILE_BASE_TEXT_FIELDS = new Set<string>([
+  'netid',
+  'fname',
+  'lname',
+  'userType',
+  'title',
+  'bio',
+  'college',
+  'year',
+  'major',
+  'unit',
+  'primaryDepartment',
+  'orcid',
+  'openAlexId',
+]);
+const PUBLIC_PROFILE_BASE_ARRAY_FIELDS = new Set<string>([
+  'departments',
+  'secondaryDepartments',
+  'researchInterests',
+  'topics',
+]);
 
 const publicProfileText = (value: unknown): string | undefined => {
   const text = String(value || '').trim();
-  return text ? redactDirectContactInfo(text) : undefined;
+  const redacted = redactDirectContactInfo(text).slice(0, MAX_PUBLIC_PROFILE_BASE_TEXT_LENGTH);
+  return redacted ? redacted : undefined;
+};
+
+const publicProfileTitleText = (value: unknown): string | undefined => {
+  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  if (!text) return undefined;
+  if (/^(?:Research\s*\/\s*Faculty|Related Research|Faculty Research)$/i.test(text)) return undefined;
+  const navMatches = text.match(
+    /\b(?:home|about|research|academics|people|media|events|outreach|opportunities|belonging|prospectives|contact|news)\b/gi,
+  );
+  if ((navMatches?.length || 0) >= 5 && !/\b(?:professor|lecturer|instructor|scientist|investigator|director|dean)\b/i.test(text)) {
+    return undefined;
+  }
+  if (
+    /(?:[\w.+-]+@[\w.-]+\.[a-z]{2,}|new haven,?\s*ct|po box|room\s+\w+|prospect street|phone|fax|\+\d[\d\s().-]{6,})/i.test(
+      text,
+    )
+  ) {
+    return undefined;
+  }
+  return publicProfileText(text);
 };
 
 const publicProfileTextArray = (value: unknown): string[] =>
   Array.isArray(value)
     ? value
+        .slice(0, MAX_PUBLIC_PROFILE_BASE_ARRAY_ITEMS)
         .map(publicProfileText)
         .filter((item): item is string => Boolean(item))
     : [];
+
+const publicProfileBase = (user: Record<string, any>): Record<string, any> => {
+  const profile: Record<string, any> = {};
+  for (const field of PUBLIC_PROFILE_BASE_FIELDS) {
+    const value = user[field];
+    if (value === undefined) continue;
+    if (PUBLIC_PROFILE_BASE_TEXT_FIELDS.has(field)) {
+      const text = field === 'title' ? publicProfileTitleText(value) : publicProfileText(value);
+      if (text !== undefined) profile[field] = text;
+    } else if (PUBLIC_PROFILE_BASE_ARRAY_FIELDS.has(field)) {
+      profile[field] = publicProfileTextArray(value);
+    } else if (field === 'profileVerified') {
+      profile[field] = value === true;
+    } else if (field === 'hIndex') {
+      const hIndex = typeof value === 'number' ? value : Number(value);
+      if (Number.isFinite(hIndex) && hIndex >= 0) profile[field] = Math.trunc(hIndex);
+    } else if (field === 'imageUrl') {
+      const imageUrl = publicProfileImageUrl(user);
+      if (imageUrl) profile[field] = imageUrl;
+    }
+  }
+  return profile;
+};
 
 const publicProfileHttpUrls = (value: unknown): string[] =>
   Array.from(
@@ -426,6 +645,23 @@ const publicProfileHttpUrls = (value: unknown): string[] =>
     ),
   );
 
+const profileDocumentId = (value: unknown): string => serializedDocumentId(value) || '';
+
+const hasProfileDirectoryLabelContamination = (value: string): boolean =>
+  /\b(?:research areas?|teaching interests?|fields? of interest|interests)\s*:/i.test(value);
+
+const isAffiliationOnlyResearchSummary = (value: string): boolean =>
+  /\b(?:is|was)\s+affiliated\s+with\b/i.test(value) &&
+  !hasResearchDescriptionVerb(textWithoutAcademicStudiesUnitNames(value));
+
+const publicResearchSummaryText = (value: unknown): string | undefined => {
+  const text = publicProfileText(value);
+  if (!text) return undefined;
+  if (hasProfileDirectoryLabelContamination(text)) return undefined;
+  if (isAffiliationOnlyResearchSummary(text)) return undefined;
+  return text;
+};
+
 const publicProfileResearchEntity = (entity: Record<string, any>): Record<string, any> => {
   const {
     _bioFullDescription,
@@ -434,6 +670,20 @@ const publicProfileResearchEntity = (entity: Record<string, any>): Record<string
     _bioWebsiteUrl,
     ...publicEntity
   } = entity || {};
+  const publicId = (
+    publicProfileText(publicEntity.slug) || publicProfileText(publicEntity.name) || ''
+  )
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 120);
+  if (publicId) {
+    publicEntity._id = publicId;
+    publicEntity.id = publicId;
+  } else {
+    delete publicEntity._id;
+    delete publicEntity.id;
+  }
   const textFields = [
     'name',
     'displayName',
@@ -446,7 +696,9 @@ const publicProfileResearchEntity = (entity: Record<string, any>): Record<string
 
   for (const field of textFields) {
     if (publicEntity[field] !== undefined) {
-      const text = publicProfileText(publicEntity[field]);
+      const text = ['shortDescription', 'description'].includes(field)
+        ? publicResearchSummaryText(publicEntity[field])
+        : publicProfileText(publicEntity[field]);
       if (text) publicEntity[field] = text;
       else delete publicEntity[field];
     }
@@ -454,7 +706,8 @@ const publicProfileResearchEntity = (entity: Record<string, any>): Record<string
 
   for (const field of ['departments', 'researchAreas']) {
     if (publicEntity[field] !== undefined) {
-      publicEntity[field] = publicProfileTextArray(publicEntity[field]);
+      const values = publicProfileTextArray(publicEntity[field]);
+      publicEntity[field] = field === 'researchAreas' ? sanitizeProfileResearchTerms(values) : values;
     }
   }
 
@@ -508,6 +761,15 @@ const cleanScholarlyTitle = (value: unknown): string => {
     .replace(/\s+/g, ' ')
     .trim();
   return cleaned || 'Untitled research activity';
+};
+
+const cleanPublicSourceLabel = (value: unknown): string | undefined => {
+  if (typeof value !== 'string') return undefined;
+  const cleaned = redactDirectContactInfo(value)
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 160);
+  return cleaned || undefined;
 };
 
 const RESEARCH_CONTEXT_SUMMARY_MAX_LENGTH = 480;
@@ -600,7 +862,12 @@ const trimToResearchLead = (text: string): string => {
 // Returns '' when the only available text just restates the research areas, so
 // the section renders the tags alone rather than a redundant sentence.
 const researchInterestContextSummary = (researchEntities: any[]): string => {
-  for (const entity of researchEntities) {
+  const leadEntities = researchEntities.filter((entity) => isLeadRole(entity?.role));
+  const orderedEntities = leadEntities.length > 0
+    ? leadEntities
+    : researchEntities;
+
+  for (const entity of orderedEntities) {
     const cleaned = cleanResearchHomeSummaryForBio(
       String(entity?.fullDescription || entity?._bioFullDescription || entity?.description || ''),
     );
@@ -620,6 +887,14 @@ const researchAreasFromResearchEntities = (researchEntities: any[]): string[] =>
         .filter(Boolean),
     ),
   );
+
+const supportedPublicProfileTopics = (topics: unknown, supportedTerms: string[]): string[] => {
+  const cleanedTopics = sanitizeProfileResearchTerms(topics);
+  if (cleanedTopics.length === 0 || supportedTerms.length === 0) return [];
+
+  const supportedKeys = new Set(supportedTerms.map((term) => term.toLowerCase()));
+  return cleanedTopics.filter((topic) => supportedKeys.has(topic.toLowerCase()));
+};
 
 const isIndividualResearchEntity = (entity: Record<string, any>): boolean =>
   entity.kind === 'individual' ||
@@ -781,11 +1056,16 @@ const stripOfficialProfileCtaChromeFromPublicProfileBio = (value: string): strin
       .replace(/\bLearn\s+more\s+about\s+Dr\.?\s+[^>]{2,120}>>\s*/gi, ''),
   );
 
+const isGroupResearchPublicBio = (value: string): boolean =>
+  /\b(?:our|the)\s+(?:group|lab|laboratory)\b/i.test(value.replace(/\s+/g, ' ').trim());
+
 const isNonBiographicalPublicBio = (value: string): boolean => {
   const text = value.replace(/\s+/g, ' ').trim();
   const compact = text.toLowerCase().replace(/[^a-z0-9]+/g, '');
 
   if (!text) return true;
+  if (isGroupResearchPublicBio(text)) return true;
+  if (/\bofficial Yale profile (?:lists research (?:interests|areas)|summarizes (?:their )?research(?: focus)?(?: in)?)\b/i.test(text)) return true;
   if (hasPublicProfileEmail(text)) return true;
   if (
     /(po box|mailing address|contact info)/i.test(text) ||
@@ -922,11 +1202,17 @@ const hasPersonScopedYaleDirectoryPath = (url: URL): boolean => {
 const isOfficialYaleProfileUrlForUser = (value: unknown, user: Record<string, any>): boolean => {
   const url = parseProfileUrl(value);
   if (!url || !isYaleHost(url)) return false;
-  if (/\/profile\//i.test(url.pathname)) return true;
 
   const firstName = user.fname || user.firstName || '';
   const lastName = user.lname || user.lastName || '';
-  if (!firstName || !lastName || !hasPersonScopedYaleDirectoryPath(url)) return false;
+  if (!firstName || !lastName) return false;
+  if (/\/profile\//i.test(url.pathname)) {
+    const lastSegment = decodeURIComponent(pathSegments(url).at(-1) || '').toLowerCase();
+    const netid = String(user.netid || '').toLowerCase();
+    if (netid && lastSegment === netid) return true;
+    return isLikelyPersonUrl(String(value || ''), firstName, lastName);
+  }
+  if (!hasPersonScopedYaleDirectoryPath(url)) return false;
   return isLikelyPersonUrl(String(value || ''), firstName, lastName);
 };
 
@@ -939,6 +1225,43 @@ const hasOfficialYaleProfileUrl = (user: Record<string, any>): boolean => {
     ...profileUrls,
   ].map((url) => String(url || ''));
   return urls.some((url) => isOfficialYaleProfileUrlForUser(url, user));
+};
+
+const officialYaleProfileUrlForUser = (user: Record<string, any>): string => {
+  const profileUrls = Object.values(safeObject(user.profileUrls || user.profile_urls));
+  return (
+    profileUrls
+      .map(cleanPublicHttpUrl)
+      .find((url) => isOfficialYaleProfileUrlForUser(url, user)) || ''
+  );
+};
+
+const isLabOrResearchGroupUrl = (value: unknown): boolean => {
+  const url = parseProfileUrl(value);
+  if (!url) return false;
+  const text = `${url.hostname} ${url.pathname}`.toLowerCase();
+  return /\b(?:lab|laboratory|research[-\s]?group|group)\b/.test(text) || /lab[./-]/.test(text);
+};
+
+const websiteUrlMatchesUserName = (value: unknown, user: Record<string, any>): boolean =>
+  isLikelyPersonUrl(
+    String(value || ''),
+    user.fname || user.firstName || '',
+    user.lname || user.lastName || '',
+  );
+
+const publicProfileWebsiteUrl = (user: Record<string, any>): string | undefined => {
+  const website = cleanPublicHttpUrl(user.website);
+  const officialProfileUrl = officialYaleProfileUrlForUser(user);
+  if (!user.website && officialProfileUrl) return officialProfileUrl;
+  if (
+    officialProfileUrl &&
+    website &&
+    (isLabOrResearchGroupUrl(website) || !websiteUrlMatchesUserName(website, user))
+  ) {
+    return officialProfileUrl;
+  }
+  return website || undefined;
 };
 
 const publicProfileDisplayName = (user: Record<string, any>): string =>
@@ -1124,11 +1447,10 @@ const officialProfileResearchInterestTermsBio = (user: Record<string, any>): str
 
 export const cleanPublicProfileBio = (user: Record<string, any>): string => {
   const rawBioText = String(user.bio || '').trim();
-  const officialResearchInterestsBio = officialProfileResearchInterestTermsBio(user);
-  if (!rawBioText) return officialResearchInterestsBio ? clipPublicProfileBio(officialResearchInterestsBio) : '';
+  if (!rawBioText) return '';
 
   const expandedResearchAreasBio = expandedResearchAreasPublicBio(user, rawBioText);
-  if (expandedResearchAreasBio) return clipPublicProfileBio(expandedResearchAreasBio);
+  if (expandedResearchAreasBio) return '';
 
   const rawBio = stripOfficialProfileCtaChromeFromPublicProfileBio(
     stripContactChromeFromPublicProfileBio(stripTrailingOfficialProfileUpdateMetadata(rawBioText)),
@@ -1140,14 +1462,15 @@ export const cleanPublicProfileBio = (user: Record<string, any>): string => {
   const hadResponsibilitiesPrefix = /^responsibilities\s*:/i.test(withoutBioPrefix);
   const cleaned = withoutBioPrefix.replace(/^responsibilities\s*:\s*/i, '').trim();
   if (!cleaned) return '';
+  if (isGroupResearchPublicBio(cleaned)) return '';
   if (isNonBiographicalPublicBio(cleaned)) {
-    return officialResearchInterestsBio ? clipPublicProfileBio(officialResearchInterestsBio) : '';
+    return '';
   }
 
   const normalizedCleaned = normalizeNameToken(cleaned);
   const normalizedTitle = normalizeNameToken(user.title || '');
   if (normalizedTitle && normalizedCleaned === normalizedTitle) {
-    return officialResearchInterestsBio ? clipPublicProfileBio(officialResearchInterestsBio) : '';
+    return '';
   }
 
   if (
@@ -1155,7 +1478,7 @@ export const cleanPublicProfileBio = (user: Record<string, any>): string => {
     isAppointmentOnlyProfileBio(cleaned) &&
     !hasResearchDescriptionVerb(cleaned)
   ) {
-    return officialResearchInterestsBio ? clipPublicProfileBio(officialResearchInterestsBio) : '';
+    return '';
   }
 
   return clipPublicProfileBio(cleaned);
@@ -1225,6 +1548,53 @@ const isOfficialProfileScholarlyLink = (link: Record<string, any>): boolean =>
   String(link.destinationKind || '').toUpperCase() === 'OFFICIAL_PROFILE' ||
   /\bofficial\b.*\bprofile\b/i.test(String(link.displaySource || link.sourceName || ''));
 
+const publicScholarlyLinkText = (value: unknown): string | undefined => {
+  const text = redactDirectContactInfo(String(value || '').trim()).slice(0, 500);
+  return text || undefined;
+};
+
+const publicScholarlyLinkYear = (value: unknown): number | undefined => {
+  const year = typeof value === 'number' ? value : Number(value);
+  if (!Number.isInteger(year) || year < 1800 || year > 2200) return undefined;
+  return year;
+};
+
+const publicScholarlyLinkConfidence = (value: unknown): number | undefined => {
+  const confidence = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(confidence) || confidence < 0 || confidence > 1) return undefined;
+  return confidence;
+};
+
+const PUBLIC_SCHOLARLY_DESTINATION_KINDS = new Set([
+  'DOI',
+  'OPENALEX',
+  'ORCID',
+  'ARXIV',
+  'PMID',
+  'PMCID',
+  'OFFICIAL_PROFILE',
+  'OTHER',
+]);
+const PUBLIC_OPEN_ACCESS_STATUSES = new Set([
+  'open',
+  'closed',
+  'gold',
+  'green',
+  'hybrid',
+  'bronze',
+  'unknown',
+]);
+
+const publicScholarlyDestinationKind = (value: unknown): string => {
+  const kind = String(value || '').trim().toUpperCase();
+  return PUBLIC_SCHOLARLY_DESTINATION_KINDS.has(kind) ? kind : 'OTHER';
+};
+
+const publicOpenAccessStatus = (link: Record<string, any>): string | undefined => {
+  const status = normalizeOpenAccessStatus(link);
+  return PUBLIC_OPEN_ACCESS_STATUSES.has(status) ? status : undefined;
+};
+
 export const orderProfileScholarlyLinks = (links: Record<string, any>[]): Record<string, any>[] =>
   [...links].sort((a, b) => {
     const officialDelta = Number(isOfficialProfileScholarlyLink(b)) - Number(isOfficialProfileScholarlyLink(a));
@@ -1257,33 +1627,29 @@ export const scholarlyLinkToPublicLink = (
       ? rawUrl || doiUrl
       : doiUrl;
   const freeFullTextUrl = cleanPublicHttpUrl(link.freeFullTextUrl);
-  const confidence = options.confidence ?? link.confidence;
+  const confidence = publicScholarlyLinkConfidence(options.confidence ?? link.confidence);
   const observedAt = dateToIso(options.observedAt || link.observedAt || link.updatedAt);
   return {
-    _id: String(link._id || link.id || link.url || link.title),
-    userId: options.userId ? String(options.userId) : link.userId ? String(link.userId) : undefined,
-    researchEntityId: options.researchEntityId
-      ? String(options.researchEntityId)
-      : link.researchEntityId
-        ? String(link.researchEntityId)
-        : undefined,
+    _id: publicScholarlyLinkId(link, url, doiUrl),
     title: cleanScholarlyTitle(link.title),
     url,
-    destinationKind: link.destinationKind || 'OTHER',
-    displaySource: link.displaySource || options.sourceName || link.destinationKind || 'Scholarly link',
+    destinationKind: publicScholarlyDestinationKind(link.destinationKind),
+    displaySource:
+      cleanPublicSourceLabel(link.displaySource || options.sourceName || link.destinationKind) ||
+      'Scholarly link',
     freeFullTextUrl: freeFullTextUrl || undefined,
     freeFullTextLabel: freeFullTextUrl
-      ? link.freeFullTextLabel || 'Free full text'
+      ? publicScholarlyLinkText(link.freeFullTextLabel) || 'Free full text'
       : undefined,
-    discoveredVia: normalizeDiscoveredVia(link.discoveredVia || options.sourceName),
-    openAccessStatus: normalizeOpenAccessStatus(link) || undefined,
-    year: link.year,
-    venue: link.venue,
+    discoveredVia: normalizeDiscoveredVia(cleanPublicSourceLabel(link.discoveredVia || options.sourceName)),
+    openAccessStatus: publicOpenAccessStatus(link),
+    year: publicScholarlyLinkYear(link.year),
+    venue: publicScholarlyLinkText(link.venue),
     confidence,
     observedAt,
-    externalIds: link.externalIds || {},
-    relationshipBasis: options.relationshipBasis,
-    evidenceLabel: options.evidenceLabel,
+    externalIds: publicScholarlyExternalIds(link.externalIds),
+    relationshipBasis: publicScholarlyLinkText(options.relationshipBasis),
+    evidenceLabel: publicScholarlyLinkText(options.evidenceLabel),
   };
 };
 
@@ -1294,7 +1660,7 @@ export const normalizePublicProfile = (
     researchEntities?: any[];
     trustedResearchEntities?: boolean;
   } = {},
-) => {
+): Record<string, any> => {
   const contaminated = isLikelySameNameContaminatedProfile(user);
   const rawResearchInterests = user.researchInterests || user.research_interests || [];
   const researchInterests = sanitizeProfileResearchTerms(rawResearchInterests);
@@ -1302,18 +1668,21 @@ export const normalizePublicProfile = (
   const researchEntities =
     contaminated && !extras.trustedResearchEntities ? [] : extras.researchEntities || [];
   const cleanedBio = contaminated ? '' : cleanPublicProfileBio(user);
+  const rawBioWasGroupResearchProse = isGroupResearchPublicBio(String(user.bio || ''));
   const bio =
     cleanedBio ||
-    (!contaminated && extras.trustedResearchEntities
+    (!contaminated && extras.trustedResearchEntities && !rawBioWasGroupResearchProse
       ? trustedLeadResearchHomeBioFallback(user, researchEntities)
       : '');
   const publicResearchEntities = researchEntities.map(publicProfileResearchEntity);
   const derivedResearchInterests =
     researchInterests.length > 0 ? researchInterests : researchAreasFromResearchEntities(researchEntities);
-  const researchInterestSummary =
+  const publicTopics = supportedPublicProfileTopics(user.topics, derivedResearchInterests);
+  const rawResearchInterestSummary =
     user.researchInterestSummary ||
     user.research_interest_summary ||
     researchInterestContextSummary(researchEntities);
+  const researchInterestSummary = publicResearchSummaryText(rawResearchInterestSummary) || '';
   const hasSupportedResearchIdentity =
     (!contaminated || (extras.trustedResearchEntities && researchEntities.length > 0)) &&
     Boolean(
@@ -1330,20 +1699,18 @@ export const normalizePublicProfile = (
   return {
     ...publicProfileBase(user),
     bio,
-    website: cleanPublicHttpUrl(user.website) || undefined,
+    website: publicProfileWebsiteUrl(user),
     imageUrl,
     image_url: imageUrl,
     primary_department: user.primaryDepartment || user.primary_department || '',
     secondary_departments: user.secondaryDepartments || user.secondary_departments || [],
-    physical_location: user.physicalLocation || user.physical_location || '',
-    building_desk: user.buildingDesk || user.building_desk || '',
     h_index: !hasSupportedResearchIdentity ? undefined : user.hIndex || user.h_index,
     openalex_id:
       !hasSupportedResearchIdentity ? undefined : user.openAlexId || user.openalex_id,
     profile_urls: contaminated ? {} : cleanProfileUrlsForPerson(user),
     research_interests: derivedResearchInterests,
     research_interest_summary: researchInterestSummary,
-    topics: !hasSupportedResearchIdentity ? [] : user.topics || [],
+    topics: !hasSupportedResearchIdentity ? [] : publicTopics,
     scholarlyLinks,
     researchEntities: publicResearchEntities,
   };
@@ -1362,7 +1729,7 @@ const loadProfileScholarlyLinks = async (user: Record<string, any>) => {
     .limit(50)
     .lean();
   const scholarlyLinkIds = [
-    ...new Set(attributionRows.map((row: any) => String(row.scholarlyLinkId)).filter(Boolean)),
+    ...new Set(attributionRows.map((row: any) => profileDocumentId(row.scholarlyLinkId)).filter(Boolean)),
   ];
 
   const [attributedLinks, directLinks] = await Promise.all([
@@ -1383,12 +1750,17 @@ const loadProfileScholarlyLinks = async (user: Record<string, any>) => {
       .lean(),
   ]);
 
-  const linksById = new Map((attributedLinks as any[]).map((link) => [String(link._id), link]));
+  const linksById = new Map(
+    (attributedLinks as any[]).flatMap((link) => {
+      const id = profileDocumentId(link._id);
+      return id ? [[id, link] as const] : [];
+    }),
+  );
   const seen = new Set<string>();
   const scholarlyLinks = [
     ...attributionRows
       .flatMap((row: any) => {
-        const link = linksById.get(String(row.scholarlyLinkId));
+        const link = linksById.get(profileDocumentId(row.scholarlyLinkId));
         if (!link) return [];
         return [scholarlyLinkToPublicLink(link, {
           userId,
@@ -1408,7 +1780,7 @@ const loadProfileScholarlyLinks = async (user: Record<string, any>) => {
       }),
     ),
   ].filter((link: any) => {
-    const key = String(link?._id || '');
+    const key = profileDocumentId(link?._id);
     if (!key || seen.has(key) || !isPublicResearchPaperLink(link)) return false;
     seen.add(key);
     return true;
@@ -1424,7 +1796,7 @@ const loadProfileScholarlyLinks = async (user: Record<string, any>) => {
     .sort({ lastObservedAt: -1, updatedAt: -1 })
     .limit(50)
     .lean();
-  const paperIds = [...new Set(authorRows.map((row: any) => String(row.paperId)).filter(Boolean))];
+  const paperIds = [...new Set(authorRows.map((row: any) => profileDocumentId(row.paperId)).filter(Boolean))];
   if (paperIds.length === 0) return [];
 
   const papers = await Paper.find({ _id: { $in: paperIds }, archived: { $ne: true } })
@@ -1451,7 +1823,7 @@ export const buildProfileResearchMembershipFilter = (
     user.facultyMemberId,
     ...facultyMemberIds,
   ]
-    .map((id) => String(id || '').trim())
+    .map((id) => profileDocumentId(id))
     .filter(Boolean);
   const uniqueFacultyMemberIds = [...new Set(linkedFacultyMemberIds)];
   if (uniqueFacultyMemberIds.length > 0) {
@@ -1494,12 +1866,19 @@ const loadProfileResearchEntities = async (user: Record<string, any>) => {
     .select('researchEntityId role')
     .lean();
   const entityIds = [
-    ...new Set(memberships.map((membership: any) => String(membership.researchEntityId)).filter(Boolean)),
+    ...new Set(
+      memberships
+        .map((membership: any) => profileDocumentId(membership.researchEntityId))
+        .filter(Boolean),
+    ),
   ];
   if (entityIds.length === 0) return [];
 
   const roleByEntityId = new Map(
-    memberships.map((membership: any) => [String(membership.researchEntityId), membership.role]),
+    memberships.map((membership: any) => [
+      profileDocumentId(membership.researchEntityId),
+      membership.role,
+    ]),
   );
   const entities = await ResearchEntity.find({
     _id: { $in: entityIds },
@@ -1514,7 +1893,7 @@ const loadProfileResearchEntities = async (user: Record<string, any>) => {
 
   return dedupeProfileResearchEntities(
     entities.map((entity: any) => ({
-      _id: String(entity._id),
+      _id: profileDocumentId(entity._id),
       slug: entity.slug || '',
       name: entity.name || '',
       displayName: entity.displayName || '',
@@ -1528,7 +1907,7 @@ const loadProfileResearchEntities = async (user: Record<string, any>) => {
       _bioSourceUrls: entity.sourceUrls || [],
       _bioWebsite: entity.website || '',
       _bioWebsiteUrl: entity.websiteUrl || '',
-      role: roleByEntityId.get(String(entity._id)) || '',
+      role: roleByEntityId.get(profileDocumentId(entity._id)) || '',
     })),
     user,
   );
@@ -1656,6 +2035,19 @@ const MAX_SELF_PROFILE_ARRAY_VALUE_LENGTH = 120;
 const MAX_SELF_PROFILE_URLS = 20;
 const MAX_SELF_PROFILE_URL_KEY_LENGTH = 80;
 const MAX_SELF_PROFILE_URL_LENGTH = 2048;
+const MAX_ADMIN_PROFILE_PUBLICATIONS = 100;
+const MAX_ADMIN_PROFILE_PUBLICATION_TEXT_LENGTH = 500;
+const MAX_ADMIN_PROFILE_PUBLICATION_CITATIONS = 1_000_000;
+const SAFE_PROFILE_URL_KEY_RE = /^[A-Za-z0-9 _-]{1,80}$/;
+
+const selfProfileValidationError = (message: string): Error => {
+  const error = new Error(message);
+  error.name = 'ValidationError';
+  return error;
+};
+
+const isProfileUpdatePayload = (value: unknown): value is Record<string, unknown> =>
+  !!value && typeof value === 'object' && !Array.isArray(value);
 
 const boundedProfileString = (value: unknown, maxLength: number): string | undefined => {
   if (typeof value !== 'string') return undefined;
@@ -1665,23 +2057,69 @@ const boundedProfileString = (value: unknown, maxLength: number): string | undef
 const boundedProfileStringArray = (value: unknown): string[] => {
   if (!Array.isArray(value)) return [];
   return value
+    .slice(0, MAX_SELF_PROFILE_ARRAY_ITEMS)
     .flatMap((item) => {
       const normalized = boundedProfileString(item, MAX_SELF_PROFILE_ARRAY_VALUE_LENGTH);
       return normalized ? [normalized] : [];
-    })
-    .slice(0, MAX_SELF_PROFILE_ARRAY_ITEMS);
+    });
 };
 
 const boundedProfileUrlKey = (value: unknown): string | undefined => {
   if (typeof value !== 'string') return undefined;
   const normalized = value.trim();
   if (!normalized || normalized.length > MAX_SELF_PROFILE_URL_KEY_LENGTH) return undefined;
+  if (!SAFE_PROFILE_URL_KEY_RE.test(normalized)) return undefined;
   return normalized;
 };
 
 const boundedPublicProfileUrl = (value: unknown): string | undefined => {
   const url = cleanPublicHttpUrl(value);
   return url && url.length <= MAX_SELF_PROFILE_URL_LENGTH ? url : undefined;
+};
+
+const boundedPublicationText = (value: unknown): string | undefined => {
+  if (typeof value !== 'string') return undefined;
+  const text = redactDirectContactInfo(value).trim().slice(0, MAX_ADMIN_PROFILE_PUBLICATION_TEXT_LENGTH);
+  return text || undefined;
+};
+
+const boundedPublicationNumber = (
+  value: unknown,
+  { min = 0, max = Number.MAX_SAFE_INTEGER }: { min?: number; max?: number } = {},
+): number | undefined => {
+  const number = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
+  if (!Number.isFinite(number) || number < min || number > max) return undefined;
+  return Math.trunc(number);
+};
+
+const normalizeAdminProfilePublications = (value: unknown): Record<string, any>[] => {
+  if (!Array.isArray(value)) return [];
+
+  return value.slice(0, MAX_ADMIN_PROFILE_PUBLICATIONS).flatMap((item) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return [];
+    const record = item as Record<string, unknown>;
+    const title = boundedPublicationText(record.title);
+    if (!title) return [];
+
+    const publication: Record<string, any> = { title };
+    const doi = boundedPublicationText(record.doi);
+    const venue = boundedPublicationText(record.venue);
+    const source = boundedPublicationText(record.source);
+    const year = boundedPublicationNumber(record.year, { min: 1700, max: 2200 });
+    const citedByCount = boundedPublicationNumber(record.citedByCount ?? record.cited_by_count, {
+      max: MAX_ADMIN_PROFILE_PUBLICATION_CITATIONS,
+    });
+    const openAccessUrl = boundedPublicProfileUrl(record.openAccessUrl ?? record.open_access_url);
+
+    if (doi !== undefined) publication.doi = doi;
+    if (year !== undefined) publication.year = year;
+    if (venue !== undefined) publication.venue = venue;
+    if (citedByCount !== undefined) publication.citedByCount = citedByCount;
+    if (openAccessUrl !== undefined) publication.openAccessUrl = openAccessUrl;
+    if (source !== undefined) publication.source = source;
+
+    return [publication];
+  });
 };
 
 const sanitizeSelfEditableProfileTextFields = (update: Record<string, any>) => {
@@ -1719,16 +2157,21 @@ const sanitizeSelfEditableProfileUrlFields = (update: Record<string, any>) => {
   }
 
   if ('profileUrls' in update) {
-    const profileUrls =
+    const profileUrlsSource =
       update.profileUrls && typeof update.profileUrls === 'object' && !Array.isArray(update.profileUrls)
+        ? (update.profileUrls as Record<string, unknown>)
+        : undefined;
+    const profileUrls =
+      profileUrlsSource
         ? Object.fromEntries(
-            Object.entries(update.profileUrls as Record<string, unknown>)
-              .flatMap(([key, url]) => {
+            Object.keys(profileUrlsSource)
+              .slice(0, MAX_SELF_PROFILE_URLS)
+              .flatMap((key) => {
+                const url = profileUrlsSource[key];
                 const normalizedKey = boundedProfileUrlKey(key);
                 const normalizedUrl = boundedPublicProfileUrl(url);
                 return normalizedKey && normalizedUrl ? [[normalizedKey, normalizedUrl] as const] : [];
               })
-              .slice(0, MAX_SELF_PROFILE_URLS),
           )
         : {};
 
@@ -1738,11 +2181,16 @@ const sanitizeSelfEditableProfileUrlFields = (update: Record<string, any>) => {
 };
 
 export const updateOwnProfile = async (netid: string, data: any) => {
+  if (!isProfileUpdatePayload(data)) {
+    throw selfProfileValidationError('Invalid profile update payload');
+  }
+
   const update: Record<string, any> = {};
 
   for (const field of ALLOWED_SELF_UPDATE_FIELDS) {
-    if (data[field] !== undefined) {
-      update[field] = data[field];
+    const value = (data as Record<string, unknown>)[field];
+    if (value !== undefined) {
+      update[field] = value;
     }
   }
   sanitizeSelfEditableProfileTextFields(update);
@@ -1780,14 +2228,117 @@ const ADMIN_UPDATE_FIELDS = [
   'userConfirmed',
 ];
 
+const MAX_ADMIN_PROFILE_NAME_LENGTH = 120;
+const MAX_ADMIN_PROFILE_EMAIL_LENGTH = 254;
+const MAX_ADMIN_PROFILE_TITLE_LENGTH = 300;
+const MAX_ADMIN_PROFILE_IDENTIFIER_LENGTH = 300;
+const MAX_ADMIN_PROFILE_H_INDEX = 1_000_000;
+const ADMIN_PROFILE_USER_TYPES = new Set(['admin', 'professor', 'student']);
+
+const boundedAdminProfileText = (value: unknown, maxLength: number): string | undefined => {
+  const text = boundedProfileString(value, maxLength);
+  return text === undefined ? undefined : redactDirectContactInfo(text);
+};
+
+const boundedAdminProfileNumber = (
+  value: unknown,
+  { min = 0, max = MAX_ADMIN_PROFILE_H_INDEX }: { min?: number; max?: number } = {},
+): number | undefined => {
+  const number = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
+  if (!Number.isFinite(number) || number < min || number > max) return undefined;
+  return Math.trunc(number);
+};
+
+const boundedAdminProfileEmail = (value: unknown): string | undefined => {
+  const email = boundedProfileString(value, MAX_ADMIN_PROFILE_EMAIL_LENGTH);
+  if (!email || /[\r\n]/.test(email)) return undefined;
+  return email.toLowerCase();
+};
+
+const sanitizeAdminProfileTextFields = (update: Record<string, any>) => {
+  if ('bio' in update) {
+    const bio = boundedAdminProfileText(update.bio, MAX_SELF_PROFILE_TEXT_LENGTH);
+    if (bio !== undefined) update.bio = bio;
+    else delete update.bio;
+  }
+
+  if ('primaryDepartment' in update) {
+    const primaryDepartment = boundedAdminProfileText(
+      update.primaryDepartment,
+      MAX_SELF_PROFILE_ARRAY_VALUE_LENGTH,
+    );
+    if (primaryDepartment !== undefined) update.primaryDepartment = primaryDepartment;
+    else delete update.primaryDepartment;
+  }
+
+  for (const field of ['secondaryDepartments', 'researchInterests', 'topics']) {
+    if (field in update) {
+      update[field] = boundedProfileStringArray(update[field])
+        .map((value) => redactDirectContactInfo(value))
+        .filter(Boolean);
+    }
+  }
+};
+
+const sanitizeAdminProfileScalarFields = (update: Record<string, any>) => {
+  for (const field of ['fname', 'lname']) {
+    if (field in update) {
+      const value = boundedAdminProfileText(update[field], MAX_ADMIN_PROFILE_NAME_LENGTH);
+      if (value !== undefined) update[field] = value;
+      else delete update[field];
+    }
+  }
+
+  if ('email' in update) {
+    const email = boundedAdminProfileEmail(update.email);
+    if (email !== undefined) update.email = email;
+    else delete update.email;
+  }
+
+  if ('title' in update) {
+    const title = boundedAdminProfileText(update.title, MAX_ADMIN_PROFILE_TITLE_LENGTH);
+    if (title !== undefined) update.title = title;
+    else delete update.title;
+  }
+
+  for (const field of ['orcid', 'openAlexId']) {
+    if (field in update) {
+      const value = boundedProfileString(update[field], MAX_ADMIN_PROFILE_IDENTIFIER_LENGTH);
+      if (value !== undefined) update[field] = value;
+      else delete update[field];
+    }
+  }
+
+  if ('hIndex' in update) {
+    const hIndex = boundedAdminProfileNumber(update.hIndex);
+    if (hIndex !== undefined) update.hIndex = hIndex;
+    else delete update.hIndex;
+  }
+
+  for (const field of ['profileVerified', 'userConfirmed']) {
+    if (field in update && typeof update[field] !== 'boolean') delete update[field];
+  }
+
+  if ('userType' in update) {
+    const userType = boundedProfileString(update.userType, MAX_ADMIN_PROFILE_NAME_LENGTH)?.toLowerCase();
+    if (userType && ADMIN_PROFILE_USER_TYPES.has(userType)) update.userType = userType;
+    else delete update.userType;
+  }
+};
+
 export const adminUpdateProfile = async (netid: string, data: any) => {
+  const source =
+    data && typeof data === 'object' && !Array.isArray(data) ? (data as Record<string, any>) : {};
   const update: Record<string, any> = {};
 
   for (const field of ADMIN_UPDATE_FIELDS) {
-    if (data[field] !== undefined) {
-      update[field] = data[field];
+    if (source[field] !== undefined) {
+      update[field] = source[field];
     }
   }
+  sanitizeAdminProfileTextFields(update);
+  sanitizeSelfEditableProfileUrlFields(update);
+  sanitizeAdminProfileScalarFields(update);
 
   if (update.primaryDepartment !== undefined || update.secondaryDepartments !== undefined) {
     const current = await User.findOne({ netid }).lean();
@@ -1796,8 +2347,8 @@ export const adminUpdateProfile = async (netid: string, data: any) => {
     update.departments = [primary, ...secondary].filter(Boolean);
   }
 
-  if (data.publications !== undefined) {
-    update.publications = data.publications;
+  if (source.publications !== undefined) {
+    update.publications = normalizeAdminProfilePublications(source.publications);
   }
 
   const user = await User.findOneAndUpdate({ netid }, update, {
