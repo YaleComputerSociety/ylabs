@@ -23,7 +23,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const API_BODY_LIMIT = '64kb';
 const API_URLENCODED_PARAMETER_LIMIT = 100;
 const SAFE_RATE_LIMIT_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
-const WRITE_LIKE_SAFE_METHOD_API_PATHS = new Set(['/logout']);
+// No GET routes currently need write-limiter treatment; logout is protected by
+// isTrustedLogoutRequest (Sec-Fetch-Site + Origin/Referer) inside its own handler.
+const WRITE_LIKE_SAFE_METHOD_API_PATHS = new Set<string>();
 
 dotenv.config();
 

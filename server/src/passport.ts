@@ -136,6 +136,12 @@ function isLocalAuthBypassAllowed(env: NodeJS.ProcessEnv = process.env): boolean
 function isTrustedLogoutRequest(req: express.Request): boolean {
   if (!requiresDeployedRuntimeSecurity()) return true;
 
+  // Sec-Fetch-Site is set by the browser and cannot be forged by JavaScript.
+  // Referrer-Policy: no-referrer strips Referer on navigation, but Sec-Fetch-Site
+  // is always present for same-origin navigations (e.g. window.location.href).
+  const secFetchSite = req.get('sec-fetch-site');
+  if (secFetchSite === 'same-origin') return true;
+
   const allowedOrigin = originFromUrl(authConfig.serverBaseURL);
   if (!allowedOrigin) return false;
 
