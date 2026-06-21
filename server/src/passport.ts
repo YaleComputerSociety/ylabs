@@ -500,6 +500,13 @@ const casLogin = function (
         return res.redirect(errorRedirect);
       }
 
+      const isInfraError =
+        err.name === 'MongoNotConnectedError' ||
+        (err as any).cause?.name === 'MongoNotConnectedError';
+      if (isInfraError) {
+        return res.status(503).json({ error: 'Service temporarily unavailable, please try again' });
+      }
+
       return res.status(401).json({ error: 'Error in authentication' });
     }
 

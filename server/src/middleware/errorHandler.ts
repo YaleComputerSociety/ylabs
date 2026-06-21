@@ -74,6 +74,10 @@ export const errorHandler = (error: Error, req: Request, res: Response, next: Ne
     return res.status(409).json({ error: 'Duplicate key error' });
   }
 
+  if (error.name === 'MongoNotConnectedError') {
+    return res.status(503).json({ error: 'Service temporarily unavailable' });
+  }
+
   res.status(500).json({
     error: 'Internal server error',
     message: undefined,
