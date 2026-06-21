@@ -23,7 +23,12 @@ export async function initializeConnections(): Promise<void> {
   const mongoOptions = {
     serverSelectionTimeoutMS: 30000,
     socketTimeoutMS: 60000,
-    maxIdleTimeMS: 60000,
+    // Close idle connections after 3.5 min so we beat the ~4-min AWS NAT TCP
+    // idle timeout before the NAT silently kills them under us.
+    maxIdleTimeMS: 210000,
+    // Keep at least one connection alive so the topology is never fully torn
+    // down between requests on a low-traffic server (Beta).
+    minPoolSize: 1,
   };
 
   if (mode === 'productionMigration') {

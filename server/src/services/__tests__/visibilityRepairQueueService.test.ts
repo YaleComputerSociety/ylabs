@@ -1776,7 +1776,7 @@ describe('visibilityRepairQueueService', () => {
       findResearchEntityMembers: vi.fn().mockResolvedValue([]),
       findUserByProfileUrl: vi.fn().mockResolvedValue(null),
       findUserByExactWebsiteUrl: vi.fn().mockResolvedValue({
-        _id: 'user-1',
+        _id: '000000000000000000000001',
         fname: 'Ian',
         lname: 'Moult',
         netid: 'im375',
@@ -1804,7 +1804,7 @@ describe('visibilityRepairQueueService', () => {
     );
     expect(deps.upsertResearchEntityMember).toHaveBeenCalledWith(
       'entity-1',
-      'user-1',
+      '000000000000000000000001',
       expect.objectContaining({
         sourceUrl: 'https://physics.yale.edu/ian-moult',
         sourceName: 'visibility-repair-queue',
@@ -2370,7 +2370,7 @@ describe('visibilityRepairQueueService', () => {
             fname: 'Yongli',
             lname: 'Zhang',
             profileUrls: {
-              medicine: 'https://medicine.yale.edu/profile/fixture-access-lead/',
+              medicine: 'https://medicine.yale.edu/profile/yongli-zhang/',
             },
           },
         },
@@ -2397,13 +2397,13 @@ describe('visibilityRepairQueueService', () => {
     expect(report).toMatchObject({ repaired: 1, blocked: 0, resolvedByGate: 1 });
     expect(deps.upsertEntryPathway).toHaveBeenCalledWith(
       expect.objectContaining({
-        sourceUrls: ['https://medicine.yale.edu/profile/fixture-access-lead/'],
+        sourceUrls: ['https://medicine.yale.edu/profile/yongli-zhang/'],
       }),
     );
     expect(deps.upsertContactRoute).toHaveBeenCalledWith(
       expect.objectContaining({
         name: 'Yongli Zhang',
-        url: 'https://medicine.yale.edu/profile/fixture-access-lead/',
+        url: 'https://medicine.yale.edu/profile/yongli-zhang/',
       }),
     );
   });
@@ -3027,7 +3027,7 @@ describe('visibilityRepairQueueService', () => {
           'The lab studies B cell dysfunction in inflammatory neuropathies and autoimmune neuromuscular disorders using bioinformatics and molecular biology.',
         shortDescription:
           'Studies B cell dysfunction in inflammatory neuropathies and autoimmune neuromuscular disorders.',
-        sourceUrls: ['https://medicine.yale.edu/profile/fx574/'],
+        sourceUrls: ['https://medicine.yale.edu/profile/br574/'],
       }),
       updateResearchEntity: vi.fn(),
       findResearchEntityMembers: vi.fn().mockResolvedValue([
@@ -3039,7 +3039,7 @@ describe('visibilityRepairQueueService', () => {
             fname: 'Bhaskar',
             lname: 'Roy',
             profileUrls: {
-              medicine: 'https://medicine.yale.edu/profile/fx574/',
+              medicine: 'https://medicine.yale.edu/profile/br574/',
             },
           },
         },
@@ -3067,12 +3067,12 @@ describe('visibilityRepairQueueService', () => {
     expect(deps.findActionEvidenceObservationIds).toHaveBeenCalledWith({
       researchEntityId: 'entity-1',
       userId: 'user-1',
-      sourceUrl: 'https://medicine.yale.edu/profile/fx574/',
+      sourceUrl: 'https://medicine.yale.edu/profile/br574/',
     });
     expect(deps.upsertContactRoute).toHaveBeenCalledWith(
       expect.objectContaining({
         routeType: 'FACULTY_PI',
-        url: 'https://medicine.yale.edu/profile/fx574/',
+        url: 'https://medicine.yale.edu/profile/br574/',
       }),
     );
   });
