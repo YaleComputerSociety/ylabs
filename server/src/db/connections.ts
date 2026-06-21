@@ -20,6 +20,12 @@ export function getApiMode(): ApiMode {
 export async function initializeConnections(): Promise<void> {
   const mode = getApiMode();
 
+  const mongoOptions = {
+    serverSelectionTimeoutMS: 30000,
+    socketTimeoutMS: 60000,
+    maxIdleTimeMS: 60000,
+  };
+
   if (mode === 'productionMigration') {
     const primaryUrl = process.env.MONGODBURL;
     const migrationUrl = process.env.MONGODBURL_MIGRATION;
@@ -31,11 +37,11 @@ export async function initializeConnections(): Promise<void> {
       throw new Error('MONGODBURL_MIGRATION is required for ProductionMigration mode');
     }
 
-    await mongoose.connect(primaryUrl);
+    await mongoose.connect(primaryUrl, mongoOptions);
     productionConnection = mongoose.connection;
     console.log('Connected to primary database (default) 🚀');
 
-    migrationConnection = await mongoose.createConnection(migrationUrl).asPromise();
+    migrationConnection = await mongoose.createConnection(migrationUrl, mongoOptions).asPromise();
     console.log('Connected to migration database (listings) 🔄');
 
     MigrationListing = migrationConnection.model('Listing', listingSchema, 'listings');
@@ -44,7 +50,7 @@ export async function initializeConnections(): Promise<void> {
     if (!url) {
       throw new Error('MONGODBURL is required');
     }
-    await mongoose.connect(url);
+    await mongoose.connect(url, mongoOptions);
     console.log(`Connected to database 🚀`);
   }
 }
