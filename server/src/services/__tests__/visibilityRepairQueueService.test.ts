@@ -708,7 +708,7 @@ describe('visibilityRepairQueueService', () => {
   });
 
   it('repairs source description from an attached lead profile bio', async () => {
-    const sourceUrl = 'https://erm.yale.edu/people/alicia-schmidt-camacho';
+    const sourceUrl = 'https://erm.yale.edu/people/fiona-castellan-moreau';
     const deps = {
       findOpenQueueItems: vi.fn().mockResolvedValue([
         queueItem({
@@ -718,7 +718,7 @@ describe('visibilityRepairQueueService', () => {
       updateQueueItem: vi.fn().mockResolvedValue(undefined),
       findResearchEntity: vi.fn().mockResolvedValue({
         _id: 'entity-1',
-        name: 'Alicia Schmidt Camacho Lab',
+        name: 'Fiona Castellan Moreau Lab',
         sourceUrls: [],
       }),
       updateResearchEntity: vi.fn().mockResolvedValue(undefined),
@@ -728,10 +728,10 @@ describe('visibilityRepairQueueService', () => {
           userId: 'user-1',
           user: {
             _id: 'user-1',
-            fname: 'Alicia',
-            lname: 'Schmidt Camacho',
+            fname: 'Fiona',
+            lname: 'Castellan Moreau',
             bio:
-              "Alicia Schmidt Camacho's research examines migration, borderlands, Latinx literature, and social movements across the Americas. Her work analyzes cultural politics, state power, and community organizing through literary, historical, and media evidence.",
+              "Fiona Castellan Moreau's research examines migration, borderlands, Latinx literature, and social movements across the Americas. Her work analyzes cultural politics, state power, and community organizing through literary, historical, and media evidence.",
             profileUrls: {
               departmental: sourceUrl,
             },
@@ -775,21 +775,21 @@ describe('visibilityRepairQueueService', () => {
   });
 
   it('does not repair source description from teaching-only lead profile chrome', async () => {
-    const sourceUrl = 'https://english.yale.edu/people/full-part-time-lecturers/andrew-ehrgood';
+    const sourceUrl = 'https://english.yale.edu/people/full-part-time-lecturers/samuel-prescott';
     const deps = {
       findOpenQueueItems: vi.fn().mockResolvedValue([
         queueItem({
-          label: 'Andrew Ehrgood — Research',
+          label: 'Samuel Prescott — Research',
           blockerReasons: ['missing_card_description'],
         }),
       ]),
       updateQueueItem: vi.fn(),
       findResearchEntity: vi.fn().mockResolvedValue({
         _id: 'entity-1',
-        name: 'Andrew Ehrgood — Research',
+        name: 'Samuel Prescott — Research',
         sourceUrls: [sourceUrl],
         fullDescription:
-          'Andrew Ehrgood teaches expository writing in the English Department. A former trusts and estates lawyer, Andrew also teaches an undergraduate introduction to legal reasoning and writing.',
+          'Samuel Prescott teaches expository writing in the English Department. A former trusts and estates lawyer, Samuel also teaches an undergraduate introduction to legal reasoning and writing.',
       }),
       updateResearchEntity: vi.fn(),
       findResearchEntityMembers: vi.fn().mockResolvedValue([
@@ -798,10 +798,10 @@ describe('visibilityRepairQueueService', () => {
           userId: 'user-1',
           user: {
             _id: 'user-1',
-            fname: 'Andrew',
-            lname: 'Ehrgood',
+            fname: 'Samuel',
+            lname: 'Prescott',
             bio:
-              'Interests Andrew Ehrgood teaches expository writing in the English Department. A former trusts and estates lawyer, Andrew also teaches an undergraduate introduction to legal reasoning and writing. Courses Undergraduate: Reading and Writing the Modern Essay; Thinking and Writing about the Law',
+              'Interests Samuel Prescott teaches expository writing in the English Department. A former trusts and estates lawyer, Samuel also teaches an undergraduate introduction to legal reasoning and writing. Courses Undergraduate: Reading and Writing the Modern Essay; Thinking and Writing about the Law',
             profileUrls: {
               departmental: sourceUrl,
             },
@@ -882,32 +882,32 @@ describe('visibilityRepairQueueService', () => {
     expect(deps.updateResearchEntity).not.toHaveBeenCalled();
   });
 
-  it('keeps full-description-only profile repairs blocked when the card description is still missing', async () => {
+  it(‘keeps full-description-only profile repairs blocked when the card description is still missing’, async () => {
     const sourceUrl =
-      'https://english.yale.edu/people/adjunct-professors-and-senior-lecturers-full-part-time-lecturers-creative-writers/adam-sexton';
+      ‘https://english.yale.edu/people/adjunct-professors-and-senior-lecturers-full-part-time-lecturers-creative-writers/jordan-oakes’;
     const deps = {
       findOpenQueueItems: vi.fn().mockResolvedValue([
         queueItem({
-          blockerReasons: ['profile_fallback_only'],
+          blockerReasons: [‘profile_fallback_only’],
         }),
       ]),
       updateQueueItem: vi.fn().mockResolvedValue(undefined),
       findResearchEntity: vi.fn().mockResolvedValue({
-        _id: 'entity-1',
-        name: 'Adam Sexton — Research',
+        _id: ‘entity-1’,
+        name: ‘Jordan Oakes — Research’,
         sourceUrls: [sourceUrl],
       }),
       updateResearchEntity: vi.fn().mockResolvedValue(undefined),
       findResearchEntityMembers: vi.fn().mockResolvedValue([
         {
-          role: 'pi',
-          userId: 'user-1',
+          role: ‘pi’,
+          userId: ‘user-1’,
           user: {
-            _id: 'user-1',
-            fname: 'Adam',
-            lname: 'Sexton',
+            _id: ‘user-1’,
+            fname: ‘Jordan’,
+            lname: ‘Oakes’,
             bio:
-              'Adam Reid Sexton’s writing has been published in the Bellevue Literary Review, the Baltimore Sun, the Boston Phoenix, the Mississippi Review, the New York Times, Off Assignment, Post Road, the Village Voice, and other publications. His books include Difficult Listening and Master Class in Fiction Writing. With a team of visual artists he adapted four of Shakespeare’s tragedies as manga, and his anthology Rap on Rap was acquired by Harvard’s W.E.B. DuBois Institute for African and African American Research.',
+              ‘Jordan Oakes’s writing has been published in the Bellevue Literary Review, the Baltimore Sun, the Boston Phoenix, the Mississippi Review, the New York Times, Off Assignment, Post Road, the Village Voice, and other publications. His books include Difficult Listening and Master Class in Fiction Writing. With a team of visual artists he adapted four of Shakespeare’s tragedies as manga, and his anthology Rap on Rap was acquired by Harvard’s W.E.B. DuBois Institute for African and African American Research.’,
             profileUrls: {
               departmental: sourceUrl,
             },
@@ -942,8 +942,8 @@ describe('visibilityRepairQueueService', () => {
   });
 
   it('repairs source description from research-focused sentences inside appointment-heavy lead bios', async () => {
-    const profileUrl = 'https://politicalscience.yale.edu/people/h-l-ne-landemore';
-    const website = 'http://www.helenelandemore.com/';
+    const profileUrl = 'https://politicalscience.yale.edu/people/lise-beaumont';
+    const website = 'http://www.elisebeaumont.com/';
     const deps = {
       findOpenQueueItems: vi.fn().mockResolvedValue([
         queueItem({
@@ -953,7 +953,7 @@ describe('visibilityRepairQueueService', () => {
       updateQueueItem: vi.fn(),
       findResearchEntity: vi.fn().mockResolvedValue({
         _id: 'entity-1',
-        name: 'Helene Landemore-Jelaca — Research',
+        name: 'Elise Beaumont-Leclair — Research',
         sourceUrls: [],
       }),
       updateResearchEntity: vi.fn(),
@@ -963,11 +963,11 @@ describe('visibilityRepairQueueService', () => {
           userId: 'user-1',
           user: {
             _id: 'user-1',
-            fname: 'Hélène',
-            lname: 'Landemore',
+            fname: 'Élise',
+            lname: 'Beaumont',
             website,
             bio:
-              'Bio Hélène Landemore is a Professor of Political Science at Yale University, with a secondary appointment in Philosophy. Her research and teaching interests include democratic theory, political epistemology, and the ethics and politics of artificial intelligence.',
+              'Bio Élise Beaumont is a Professor of Political Science at Yale University, with a secondary appointment in Philosophy. Her research and teaching interests include democratic theory, political epistemology, and the ethics and politics of artificial intelligence.',
             profileUrls: {
               departmental: profileUrl,
             },
@@ -1004,7 +1004,7 @@ describe('visibilityRepairQueueService', () => {
   });
 
   it('repairs mixed source-description rows with entity-level action evidence fallback', async () => {
-    const profileUrl = 'https://politicalscience.yale.edu/people/h-l-ne-landemore';
+    const profileUrl = 'https://politicalscience.yale.edu/people/lise-beaumont';
     const deps = {
       findOpenQueueItems: vi.fn().mockResolvedValue([
         queueItem({
@@ -1014,7 +1014,7 @@ describe('visibilityRepairQueueService', () => {
       updateQueueItem: vi.fn(),
       findResearchEntity: vi.fn().mockResolvedValue({
         _id: 'entity-1',
-        name: 'Helene Landemore-Jelaca — Research',
+        name: 'Elise Beaumont-Leclair — Research',
         sourceUrls: [],
       }),
       updateResearchEntity: vi.fn(),
@@ -1024,10 +1024,10 @@ describe('visibilityRepairQueueService', () => {
           userId: 'user-1',
           user: {
             _id: 'user-1',
-            fname: 'Hélène',
-            lname: 'Landemore',
+            fname: 'Élise',
+            lname: 'Beaumont',
             bio:
-              'Bio Hélène Landemore is a Professor of Political Science at Yale University, with a secondary appointment in Philosophy. Her research and teaching interests include democratic theory, political epistemology, and the ethics and politics of artificial intelligence.',
+              'Bio Élise Beaumont is a Professor of Political Science at Yale University, with a secondary appointment in Philosophy. Her research and teaching interests include democratic theory, political epistemology, and the ethics and politics of artificial intelligence.',
             profileUrls: {
               departmental: profileUrl,
             },
@@ -1080,7 +1080,7 @@ describe('visibilityRepairQueueService', () => {
   });
 
   it('derives card-safe summaries from scholarship-focused lead profile bios', async () => {
-    const profileUrl = 'https://erm.yale.edu/people/leigh-anna-hidalgo';
+    const profileUrl = 'https://erm.yale.edu/people/sonya-claire-fontaine';
     const deps = {
       findOpenQueueItems: vi.fn().mockResolvedValue([
         queueItem({
@@ -1090,7 +1090,7 @@ describe('visibilityRepairQueueService', () => {
       updateQueueItem: vi.fn(),
       findResearchEntity: vi.fn().mockResolvedValue({
         _id: 'entity-1',
-        name: 'Leigh-Anna Hidalgo — Research',
+        name: 'Sonya-Claire Fontaine — Research',
         sourceUrls: [],
       }),
       updateResearchEntity: vi.fn(),
@@ -1100,10 +1100,10 @@ describe('visibilityRepairQueueService', () => {
           userId: 'user-1',
           user: {
             _id: 'user-1',
-            fname: 'Leigh-Anna',
-            lname: 'Hidalgo',
+            fname: 'Sonya-Claire',
+            lname: 'Fontaine',
             bio:
-              'Leigh-Anna Hidalgo is Assistant Professor of Ethnicity, Race, and Migration. She received her PhD in Chicana/o and Central American Studies from University of California Los Angeles. She is an interdisciplinary scholar whose scholarship integrates ethnographic methods, digital humanities, and Latinx geographies in analyzing contemporary urban labor struggles and resistance.',
+              'Sonya-Claire Fontaine is Assistant Professor of Ethnicity, Race, and Migration. She received her PhD in Chicana/o and Central American Studies from University of California Los Angeles. She is an interdisciplinary scholar whose scholarship integrates ethnographic methods, digital humanities, and Latinx geographies in analyzing contemporary urban labor struggles and resistance.',
             profileUrls: {
               departmental: profileUrl,
             },
@@ -1138,7 +1138,7 @@ describe('visibilityRepairQueueService', () => {
   });
 
   it('derives card-safe summaries from playwright creative-practice bios', async () => {
-    const profileUrl = 'https://tdps.yale.edu/profile/deb-margolin';
+    const profileUrl = 'https://tdps.yale.edu/profile/faye-hollister';
     const deps = {
       findOpenQueueItems: vi.fn().mockResolvedValue([
         queueItem({
@@ -1159,10 +1159,10 @@ describe('visibilityRepairQueueService', () => {
           userId: 'user-1',
           user: {
             _id: 'user-1',
-            fname: 'Deb',
-            lname: 'Margolin',
+            fname: 'Faye',
+            lname: 'Hollister',
             bio:
-              'Deb Margolin is a playwright, actor, and founding member of Split Britches Theater Company. She is the author of numerous plays, including Imagining Madoff and Turquoise.',
+              'Faye Hollister is a playwright, actor, and founding member of Split Britches Theater Company. She is the author of numerous plays, including Imagining Madoff and Turquoise.',
             profileUrls: {
               departmental: profileUrl,
             },
@@ -1196,31 +1196,31 @@ describe('visibilityRepairQueueService', () => {
   });
 
   it('derives card-safe summaries from dance-performance creative-practice bios', async () => {
-    const profileUrl = 'https://tdps.yale.edu/profile/emily-coates';
+    const profileUrl = ‘https://tdps.yale.edu/profile/grace-ellery’;
     const deps = {
       findOpenQueueItems: vi.fn().mockResolvedValue([
         queueItem({
-          label: 'Emily Coates — Research',
-          blockerReasons: ['missing_description', 'missing_source_url'],
+          label: ‘Grace Ellery — Research’,
+          blockerReasons: [‘missing_description’, ‘missing_source_url’],
         }),
       ]),
       updateQueueItem: vi.fn(),
       findResearchEntity: vi.fn().mockResolvedValue({
-        _id: 'entity-1',
-        name: 'Emily Coates — Research',
+        _id: ‘entity-1’,
+        name: ‘Grace Ellery — Research’,
         sourceUrls: [],
       }),
       updateResearchEntity: vi.fn(),
       findResearchEntityMembers: vi.fn().mockResolvedValue([
         {
-          role: 'pi',
-          userId: 'user-1',
+          role: ‘pi’,
+          userId: ‘user-1’,
           user: {
-            _id: 'user-1',
-            fname: 'Emily',
-            lname: 'Coates',
+            _id: ‘user-1’,
+            fname: ‘Grace’,
+            lname: ‘Ellery’,
             bio:
-              'Emily Coates has performed internationally with New York City Ballet, Mikhail Baryshnikov’s White Oak Dance Project, Twyla Tharp, and Yvonne Rainer. Career highlights include three duets with Baryshnikov.',
+              ‘Grace Ellery has performed internationally with New York City Ballet, Mikhail Baryshnikov’s White Oak Dance Project, Twyla Tharp, and Yvonne Rainer. Career highlights include three duets with Baryshnikov.’,
             profileUrls: {
               departmental: profileUrl,
             },
@@ -1254,18 +1254,18 @@ describe('visibilityRepairQueueService', () => {
   });
 
   it('derives summaries from publication-focused lead profile bios', async () => {
-    const profileUrl = 'https://yalemusic.yale.edu/people/zayaruznaya';
+    const profileUrl = 'https://yalemusic.yale.edu/people/kazimierczak';
     const deps = {
       findOpenQueueItems: vi.fn().mockResolvedValue([
         queueItem({
-          label: 'AZ A. Zayaruznaya — Research',
+          label: 'RS R. Kazimierczak — Research',
           blockerReasons: ['missing_description', 'missing_source_url', 'missing_action_evidence'],
         }),
       ]),
       updateQueueItem: vi.fn(),
       findResearchEntity: vi.fn().mockResolvedValue({
         _id: 'entity-1',
-        name: 'AZ A. Zayaruznaya — Research',
+        name: 'RS R. Kazimierczak — Research',
         sourceUrls: [],
       }),
       updateResearchEntity: vi.fn(),
@@ -1275,10 +1275,10 @@ describe('visibilityRepairQueueService', () => {
           userId: 'user-1',
           user: {
             _id: 'user-1',
-            fname: 'AZ',
-            lname: 'Zayaruznaya',
+            fname: 'RS',
+            lname: 'Kazimierczak',
             bio:
-              "AZ (A. Zayaruznaya) received their Ph.D. in historical musicology from Harvard University in 2010. Bringing the history of musical forms and notation into dialogue with medieval literature, iconography, and the history of ideas, AZ's publications have focused on French and northern Italian music of the fourteenth and fifteenth centuries.",
+              "RS (R. Kazimierczak) received their Ph.D. in historical musicology from Harvard University in 2010. Bringing the history of musical forms and notation into dialogue with medieval literature, iconography, and the history of ideas, RS's publications have focused on French and northern Italian music of the fourteenth and fifteenth centuries.",
             profileUrls: {
               departmental: profileUrl,
             },
@@ -1313,18 +1313,18 @@ describe('visibilityRepairQueueService', () => {
   });
 
   it('does not use uncorroborated lead interests when an official profile bio is available', async () => {
-    const profileUrl = 'https://yalemusic.yale.edu/people/michael-veal';
+    const profileUrl = 'https://yalemusic.yale.edu/people/peter-walden';
     const deps = {
       findOpenQueueItems: vi.fn().mockResolvedValue([
         queueItem({
-          label: 'Michael Veal — Research',
+          label: 'Peter Walden — Research',
           blockerReasons: ['missing_description', 'missing_source_url', 'missing_action_evidence'],
         }),
       ]),
       updateQueueItem: vi.fn(),
       findResearchEntity: vi.fn().mockResolvedValue({
         _id: 'entity-1',
-        name: 'Michael Veal — Research',
+        name: 'Peter Walden — Research',
         sourceUrls: [],
       }),
       updateResearchEntity: vi.fn(),
@@ -1334,10 +1334,10 @@ describe('visibilityRepairQueueService', () => {
           userId: 'user-1',
           user: {
             _id: 'user-1',
-            fname: 'Michael',
-            lname: 'Veal',
+            fname: 'Peter',
+            lname: 'Walden',
             bio:
-              "Michael E. Veal received his Ph.D in ethnomusicology from Wesleyan University. A self-described musical pan-Africanist, Veal's work has typically addressed musical topics within the black Atlantic cultural sphere of Africa and the African diaspora.",
+              "Peter Walden received his Ph.D in ethnomusicology from Wesleyan University. A self-described musical pan-Africanist, Walden's work has typically addressed musical topics within the black Atlantic cultural sphere of Africa and the African diaspora.",
             researchInterests: [
               'Health Systems',
               'Economic Evaluations',
@@ -1380,14 +1380,14 @@ describe('visibilityRepairQueueService', () => {
     const deps = {
       findOpenQueueItems: vi.fn().mockResolvedValue([
         queueItem({
-          label: 'Yongli Zhang Lab',
+          label: 'Mei Chen Lab',
           blockerReasons: ['missing_description', 'missing_source_url'],
         }),
       ]),
       updateQueueItem: vi.fn(),
       findResearchEntity: vi.fn().mockResolvedValue({
         _id: 'entity-1',
-        name: 'Yongli Zhang Lab',
+        name: 'Mei Chen Lab',
         sourceUrls: [],
       }),
       updateResearchEntity: vi.fn(),
@@ -1397,15 +1397,15 @@ describe('visibilityRepairQueueService', () => {
           userId: 'user-1',
           user: {
             _id: 'user-1',
-            fname: 'Yongli',
-            lname: 'Zhang',
+            fname: 'Mei',
+            lname: 'Chen',
             researchInterests: [
               'tumor immunology',
               'immune-cell engineering',
               'translational oncology',
             ],
             profileUrls: {
-              east_asian_languages: 'https://eall.yale.edu/people/yongtao-zhang',
+              east_asian_languages: 'https://eall.yale.edu/people/jiahao-chen',
             },
           },
         },
@@ -1439,14 +1439,14 @@ describe('visibilityRepairQueueService', () => {
     const deps = {
       findOpenQueueItems: vi.fn().mockResolvedValue([
         queueItem({
-          label: 'Yongli Zhang Lab',
+          label: 'Mei Chen Lab',
           blockerReasons: ['missing_description', 'missing_source_url'],
         }),
       ]),
       updateQueueItem: vi.fn(),
       findResearchEntity: vi.fn().mockResolvedValue({
         _id: 'entity-1',
-        name: 'Yongli Zhang Lab',
+        name: 'Mei Chen Lab',
         sourceUrls: [],
       }),
       updateResearchEntity: vi.fn(),
@@ -1456,15 +1456,15 @@ describe('visibilityRepairQueueService', () => {
           userId: 'user-1',
           user: {
             _id: 'user-1',
-            fname: 'Yongli',
-            lname: 'Zhang',
+            fname: 'Mei',
+            lname: 'Chen',
             researchInterests: [
               'tumor immunology',
               'immune-cell engineering',
               'translational oncology',
             ],
             profileUrls: {
-              departmental: 'https://eall.yale.edu/faculty/yongtao-zhang',
+              departmental: 'https://eall.yale.edu/faculty/jiahao-chen',
             },
           },
         },
@@ -1495,18 +1495,18 @@ describe('visibilityRepairQueueService', () => {
   });
 
   it('derives summaries from scholarship-employs lead profile bios', async () => {
-    const profileUrl = 'https://erm.yale.edu/people/tarren-andrews';
+    const profileUrl = 'https://erm.yale.edu/people/oona-delacroix';
     const deps = {
       findOpenQueueItems: vi.fn().mockResolvedValue([
         queueItem({
-          label: 'Tarren Andrews — Research',
+          label: 'Oona Delacroix — Research',
           blockerReasons: ['missing_description', 'missing_source_url'],
         }),
       ]),
       updateQueueItem: vi.fn(),
       findResearchEntity: vi.fn().mockResolvedValue({
         _id: 'entity-1',
-        name: 'Tarren Andrews — Research',
+        name: 'Oona Delacroix — Research',
         sourceUrls: [],
       }),
       updateResearchEntity: vi.fn(),
@@ -1516,10 +1516,10 @@ describe('visibilityRepairQueueService', () => {
           userId: 'user-1',
           user: {
             _id: 'user-1',
-            fname: 'Tarren',
-            lname: 'Andrews',
+            fname: 'Oona',
+            lname: 'Delacroix',
             bio:
-              'Tarren Andrews is Assistant Professor in Ethnicity, Race, and Migration. Her scholarship employs critical Indigenous studies to re-evaluate and re-narrativize stories of the early medieval North Atlantic.',
+              'Oona Delacroix is Assistant Professor in Ethnicity, Race, and Migration. Her scholarship employs critical Indigenous studies to re-evaluate and re-narrativize stories of the early medieval North Atlantic.',
             profileUrls: {
               departmental: profileUrl,
             },
@@ -1762,14 +1762,14 @@ describe('visibilityRepairQueueService', () => {
       findOpenQueueItems: vi.fn().mockResolvedValue([
         queueItem({
           blockerReasons: ['missing_lead'],
-          label: 'Ian Moult Lab',
+          label: 'Fixture Lead Lab',
         }),
       ]),
       updateQueueItem: vi.fn().mockResolvedValue(undefined),
       findResearchEntity: vi.fn().mockResolvedValue({
         _id: 'entity-1',
-        name: 'Ian Moult Lab',
-        websiteUrl: 'https://physics.yale.edu/ian-moult',
+        name: 'Fixture Lead Lab',
+        websiteUrl: 'https://physics.yale.edu/fixture-lead',
         sourceUrls: ['https://physics.yale.edu/faculty'],
       }),
       updateResearchEntity: vi.fn(),
@@ -1777,10 +1777,10 @@ describe('visibilityRepairQueueService', () => {
       findUserByProfileUrl: vi.fn().mockResolvedValue(null),
       findUserByExactWebsiteUrl: vi.fn().mockResolvedValue({
         _id: '000000000000000000000001',
-        fname: 'Ian',
-        lname: 'Moult',
-        netid: 'im375',
-        website: 'https://physics.yale.edu/ian-moult',
+        fname: 'Fixture',
+        lname: 'Lead',
+        netid: 'fl000',
+        website: 'https://physics.yale.edu/fixture-lead',
       }),
       upsertResearchEntityMember: vi.fn().mockResolvedValue(undefined),
       findProgram: vi.fn(),
@@ -1800,13 +1800,13 @@ describe('visibilityRepairQueueService', () => {
 
     expect(report).toMatchObject({ repaired: 1, blocked: 0, resolvedByGate: 1 });
     expect(deps.findUserByExactWebsiteUrl).toHaveBeenCalledWith(
-      expect.arrayContaining(['https://physics.yale.edu/ian-moult']),
+      expect.arrayContaining(['https://physics.yale.edu/fixture-lead']),
     );
     expect(deps.upsertResearchEntityMember).toHaveBeenCalledWith(
       'entity-1',
       '000000000000000000000001',
       expect.objectContaining({
-        sourceUrl: 'https://physics.yale.edu/ian-moult',
+        sourceUrl: 'https://physics.yale.edu/fixture-lead',
         sourceName: 'visibility-repair-queue',
       }),
     );
@@ -1817,24 +1817,24 @@ describe('visibilityRepairQueueService', () => {
       findOpenQueueItems: vi.fn().mockResolvedValue([
         queueItem({
           blockerReasons: ['missing_lead'],
-          label: 'Laura Havener Lab',
+          label: 'Fixture Researcher Lab',
         }),
       ]),
       updateQueueItem: vi.fn().mockResolvedValue(undefined),
       findResearchEntity: vi.fn().mockResolvedValue({
         _id: 'entity-1',
-        name: 'Laura Havener Lab',
-        websiteUrl: 'https://physics.yale.edu/laura-havener',
+        name: 'Fixture Researcher Lab',
+        websiteUrl: 'https://physics.yale.edu/fixture-researcher',
       }),
       updateResearchEntity: vi.fn(),
       findResearchEntityMembers: vi.fn().mockResolvedValue([]),
       findUserByProfileUrl: vi.fn().mockResolvedValue(null),
       findUserByExactWebsiteUrl: vi.fn().mockResolvedValue({
         _id: 'user-1',
-        fname: 'Thomas',
-        lname: 'Ullrich',
-        netid: 'tu12',
-        website: 'https://physics.yale.edu/laura-havener',
+        fname: 'Sample',
+        lname: 'Person',
+        netid: 'sp000',
+        website: 'https://physics.yale.edu/fixture-researcher',
       }),
       upsertResearchEntityMember: vi.fn().mockResolvedValue(undefined),
       findProgram: vi.fn(),
@@ -2209,27 +2209,27 @@ describe('visibilityRepairQueueService', () => {
       updateQueueItem: vi.fn().mockResolvedValue(undefined),
       findResearchEntity: vi.fn().mockResolvedValue({
         _id: 'entity-1',
-        name: 'Adati Tarfa Lab',
+        name: 'Priya Mehta Lab',
         sourceUrls: [
           'https://reporter.nih.gov/project-details/11283508',
-          'https://medicine.yale.edu/profile/adati-tarfa/',
+          'https://medicine.yale.edu/profile/priya-mehta/',
         ],
       }),
       updateResearchEntity: vi.fn().mockResolvedValue(undefined),
       findResearchEntityMembers: vi.fn().mockResolvedValue([]),
       findUserByProfileUrl: vi.fn().mockResolvedValue({
         _id: 'user-1',
-        fname: 'Adati',
-        lname: 'Tarfa',
+        fname: 'Priya',
+        lname: 'Mehta',
         bio:
-          'Adati Tarfa studies pediatric hematology, inherited blood disorders, and clinical outcomes for children with complex diseases.',
+          'Priya Mehta studies pediatric hematology, inherited blood disorders, and clinical outcomes for children with complex diseases.',
         researchInterests: [
           'Pediatric hematology',
           'Inherited blood disorders',
           'Clinical outcomes research',
         ],
         profileUrls: {
-          medicine: 'https://medicine.yale.edu/profile/adati-tarfa/',
+          medicine: 'https://medicine.yale.edu/profile/priya-mehta/',
         },
       }),
       upsertResearchEntityMember: vi.fn().mockResolvedValue(undefined),
@@ -2264,7 +2264,7 @@ describe('visibilityRepairQueueService', () => {
       'entity-1',
       'user-1',
       expect.objectContaining({
-        sourceUrl: 'https://medicine.yale.edu/profile/adati-tarfa/',
+        sourceUrl: 'https://medicine.yale.edu/profile/priya-mehta/',
         sourceName: 'visibility-repair-queue',
       }),
     );
@@ -2272,14 +2272,14 @@ describe('visibilityRepairQueueService', () => {
       expect.objectContaining({
         researchEntityId: 'entity-1',
         pathwayType: 'EXPLORATORY_CONTACT',
-        sourceUrls: ['https://medicine.yale.edu/profile/adati-tarfa/'],
+        sourceUrls: ['https://medicine.yale.edu/profile/priya-mehta/'],
         sourceEvidenceIds: ['obs-1'],
       }),
     );
     expect(deps.upsertContactRoute).toHaveBeenCalledWith(
       expect.objectContaining({
-        name: 'Adati Tarfa',
-        url: 'https://medicine.yale.edu/profile/adati-tarfa/',
+        name: 'Priya Mehta',
+        url: 'https://medicine.yale.edu/profile/priya-mehta/',
         sourceEvidenceIds: ['obs-1'],
       }),
     );
@@ -2299,8 +2299,8 @@ describe('visibilityRepairQueueService', () => {
           'The lab studies translational immunology, tumor microenvironments, and immune-cell engineering for cancer therapy.',
         shortDescription:
           'Studies translational immunology, tumor microenvironments, and immune-cell engineering for cancer therapy.',
-        websiteUrl: 'https://medicine.yale.edu/lab/zhang/',
-        sourceUrls: ['https://medicine.yale.edu/lab/zhang/'],
+        websiteUrl: 'https://medicine.yale.edu/lab/chen/',
+        sourceUrls: ['https://medicine.yale.edu/lab/chen/'],
       }),
       updateResearchEntity: vi.fn(),
       findResearchEntityMembers: vi.fn().mockResolvedValue([
@@ -2309,10 +2309,10 @@ describe('visibilityRepairQueueService', () => {
           userId: 'user-1',
           user: {
             _id: 'user-1',
-            fname: 'Yongli',
-            lname: 'Zhang',
+            fname: 'Mei',
+            lname: 'Chen',
             profileUrls: {
-              east_asian_languages: 'https://eall.yale.edu/people/yongtao-zhang',
+              east_asian_languages: 'https://eall.yale.edu/people/jiahao-chen',
             },
           },
         },
@@ -2357,8 +2357,8 @@ describe('visibilityRepairQueueService', () => {
           'The lab studies translational immunology, tumor microenvironments, and immune-cell engineering for cancer therapy.',
         shortDescription:
           'Studies translational immunology, tumor microenvironments, and immune-cell engineering for cancer therapy.',
-        websiteUrl: 'https://medicine.yale.edu/lab/zhang/',
-        sourceUrls: ['https://medicine.yale.edu/lab/zhang/'],
+        websiteUrl: 'https://medicine.yale.edu/lab/chen/',
+        sourceUrls: ['https://medicine.yale.edu/lab/chen/'],
       }),
       updateResearchEntity: vi.fn(),
       findResearchEntityMembers: vi.fn().mockResolvedValue([
@@ -2367,10 +2367,10 @@ describe('visibilityRepairQueueService', () => {
           userId: 'user-1',
           user: {
             _id: 'user-1',
-            fname: 'Yongli',
-            lname: 'Zhang',
+            fname: 'Mei',
+            lname: 'Chen',
             profileUrls: {
-              medicine: 'https://medicine.yale.edu/profile/yongli-zhang/',
+              medicine: 'https://medicine.yale.edu/profile/mei-chen/',
             },
           },
         },
@@ -2397,13 +2397,13 @@ describe('visibilityRepairQueueService', () => {
     expect(report).toMatchObject({ repaired: 1, blocked: 0, resolvedByGate: 1 });
     expect(deps.upsertEntryPathway).toHaveBeenCalledWith(
       expect.objectContaining({
-        sourceUrls: ['https://medicine.yale.edu/profile/yongli-zhang/'],
+        sourceUrls: ['https://medicine.yale.edu/profile/mei-chen/'],
       }),
     );
     expect(deps.upsertContactRoute).toHaveBeenCalledWith(
       expect.objectContaining({
-        name: 'Yongli Zhang',
-        url: 'https://medicine.yale.edu/profile/yongli-zhang/',
+        name: 'Mei Chen',
+        url: 'https://medicine.yale.edu/profile/mei-chen/',
       }),
     );
   });
@@ -3015,14 +3015,14 @@ describe('visibilityRepairQueueService', () => {
     const deps = {
       findOpenQueueItems: vi.fn().mockResolvedValue([
         queueItem({
-          label: 'Bhaskar Roy Lab',
+          label: 'Bradley Reeves Lab',
           blockerReasons: ['missing_action_evidence'],
         }),
       ]),
       updateQueueItem: vi.fn().mockResolvedValue(undefined),
       findResearchEntity: vi.fn().mockResolvedValue({
         _id: 'entity-1',
-        name: 'Bhaskar Roy Lab',
+        name: 'Bradley Reeves Lab',
         fullDescription:
           'The lab studies B cell dysfunction in inflammatory neuropathies and autoimmune neuromuscular disorders using bioinformatics and molecular biology.',
         shortDescription:
@@ -3036,8 +3036,8 @@ describe('visibilityRepairQueueService', () => {
           userId: 'user-1',
           user: {
             _id: 'user-1',
-            fname: 'Bhaskar',
-            lname: 'Roy',
+            fname: 'Bradley',
+            lname: 'Reeves',
             profileUrls: {
               medicine: 'https://medicine.yale.edu/profile/br574/',
             },

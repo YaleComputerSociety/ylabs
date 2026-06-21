@@ -19,6 +19,7 @@ import {
   hasActiveAdminGrant,
 } from './services/adminGrantService';
 import { sanitizeLogValue } from './utils/logSanitizer';
+import { triggerReconnect } from './db/connections';
 
 /**
  * Verbose auth tracing. These logs (per-request deserialization, the
@@ -510,6 +511,7 @@ const casLogin = function (
         return checkInfra(cause);
       })(err);
       if (isInfraError) {
+        triggerReconnect();
         return res.status(503).json({ error: 'Service temporarily unavailable, please try again' });
       }
 

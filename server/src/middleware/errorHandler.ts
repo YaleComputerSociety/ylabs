@@ -5,6 +5,7 @@ import { Request, Response, NextFunction } from 'express';
 import { NotFoundError, ObjectIdError, IncorrectPermissionsError } from '../utils/errors';
 import { sanitizeErrorForLog } from '../utils/logSanitizer';
 import { requiresDeployedRuntimeSecurity } from '../utils/environment';
+import { triggerReconnect } from '../db/connections';
 
 const clientErrorStatus = (error: Error): number | null => {
   const status = (error as any).status ?? (error as any).statusCode;
@@ -75,6 +76,7 @@ export const errorHandler = (error: Error, req: Request, res: Response, next: Ne
   }
 
   if (error.name === 'MongoNotConnectedError') {
+    triggerReconnect();
     return res.status(503).json({ error: 'Service temporarily unavailable' });
   }
 
