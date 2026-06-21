@@ -500,9 +500,15 @@ const casLogin = function (
         return res.redirect(errorRedirect);
       }
 
-      const isInfraError =
-        err.name === 'MongoNotConnectedError' ||
-        (err as any).cause?.name === 'MongoNotConnectedError';
+      // VError 1.x exposes cause as .cause() method, not a property.
+      // Walk the chain via both APIs to catch the wrapped MongoNotConnectedError.
+      const isInfraError = (function checkInfra(e: any): boolean {
+        if (!e) return false;
+        if (e.name === 'MongoNotConnectedError') return true;
+        if (typeof e.message === 'string' && e.message.includes('Client must be connected before running operations')) return true;
+        const cause = typeof e.cause === 'function' ? e.cause() : e.cause;
+        return checkInfra(cause);
+      })(err);
       if (isInfraError) {
         return res.status(503).json({ error: 'Service temporarily unavailable, please try again' });
       }
