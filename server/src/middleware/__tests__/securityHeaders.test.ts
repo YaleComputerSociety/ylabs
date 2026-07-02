@@ -118,7 +118,7 @@ describe('securityHeaders', () => {
       .find((directive) => directive.startsWith('img-src '));
 
     expect(imageDirective).toBe(
-      "img-src 'self' data: blob: https://yale.edu https://*.yale.edu https://ysm-res.cloudinary.com https://yalies.io https://www.google-analytics.com https://stats.g.doubleclick.net",
+      "img-src 'self' data: blob: https://yale.edu https://*.yale.edu https://ysm-res.cloudinary.com https://yalies.io https://*.yalies.io https://www.google-analytics.com https://stats.g.doubleclick.net",
     );
     expect(imageDirective).not.toMatch(/\shttps:(?:\s|$)/);
   });

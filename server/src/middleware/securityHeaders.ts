@@ -25,6 +25,7 @@ const IMG_SRC_ORIGINS = [
   'https://*.yale.edu',
   'https://ysm-res.cloudinary.com',
   'https://yalies.io',
+  'https://*.yalies.io',
   'https://www.google-analytics.com',
   'https://stats.g.doubleclick.net',
 ];

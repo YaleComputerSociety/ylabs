@@ -336,6 +336,10 @@ User → Yale CAS SSO → passport.ts findOrCreateUser
      → Create/Update User → cookie-session
 ```
 
+The find-or-create cascade runs at login time only. Per-request session restore (`deserializeUser`) is a plain user read plus the admin-grant check — no user creation and no Yalies/Directory calls — so a hiccup in those external sources can't fail already-authenticated requests. The CAS login callback (`/api/cas`) is also exempt from the general API rate limiter: it's always unauthenticated, so it keys by IP, and many users behind one campus NAT egress IP could otherwise exhaust the shared budget and be locked out of login.
+
+The public browse surfaces (`/api/research`, `/api/opportunities`) follow the same principle: they are exempt from both the general and the write limiter (`POST /api/research/search` is a pure read despite its method) and are governed solely by `publicDiscoveryLimiter` (300 req / 15 min), sized for anonymous IP-keyed traffic — debounced search-as-you-type, filters, infinite scroll, and detail views, potentially from several users behind one NAT egress IP. The `PUT …/addView` view-telemetry routes are likewise exempt from the write limiter so ordinary browsing can't 429 a user's real mutations. Sessions last 30 days; the per-request admin-grant check is cached in-memory for 60s (invalidated immediately on grant/revoke). Public detail endpoints (research entity by slug, opportunity by id) and `/api/config` allow brief HTTP caching instead of the global `/api` no-store.
+
 ### Auth Middleware (`server/src/middleware/auth.ts`)
 
 | Middleware | Check |

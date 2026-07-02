@@ -87,7 +87,9 @@ function isTrustedPublicProfileImageHost(value: unknown): boolean {
     const hostname = url.hostname.toLowerCase();
     if (url.protocol !== 'https:') return false;
     if (hostname === 'yale.edu' || hostname.endsWith('.yale.edu')) return true;
-    if (hostname === 'yalies.io') return true;
+    // Yalies serves photos from subdomains (e.g. images.yalies.io); an
+    // exact-host match would silently strip every Yalies-hosted photo.
+    if (hostname === 'yalies.io' || hostname.endsWith('.yalies.io')) return true;
     if (hostname === 'ysm-res.cloudinary.com') return true;
   } catch {
     return false;

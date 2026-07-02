@@ -26,6 +26,19 @@ const SAFE_RATE_LIMIT_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 // No GET routes currently need write-limiter treatment; logout is protected by
 // isTrustedLogoutRequest (Sec-Fetch-Site + Origin/Referer) inside its own handler.
 const WRITE_LIKE_SAFE_METHOD_API_PATHS = new Set<string>();
+// POST routes that are pure reads (search bodies too rich for a query string).
+// They stay behind the CSRF origin guard and their surface limiter, but must
+// not consume the write budget: research search is public and IP-keyed for
+// anonymous visitors, so 50/15min shared across a campus NAT egress IP would
+// throttle the main browse page.
+const READ_ONLY_UNSAFE_METHOD_API_PATHS = new Set<string>(['/research/search']);
+// View-telemetry PUTs fired on every detail-page open. Billing them as writes
+// lets ordinary browsing exhaust the 50/15min budget and 429 the user's real
+// mutations (favorites, tracking, profile edits). They remain under the
+// general per-user limiter.
+const READ_ONLY_UNSAFE_METHOD_API_PATH_PATTERNS = [
+  /^\/(?:programs|listings)\/[0-9a-fA-F]{24}\/addView$/,
+];
 
 dotenv.config();
 
@@ -85,6 +98,22 @@ const getRateLimitKey = (req: express.Request): string => {
   return `ip:${ipKeyGenerator(req.ip || '')}`;
 };
 
+// The CAS login callback is always unauthenticated, so it keys by IP —
+// and Yale campus NAT can put many users behind one egress IP, letting the
+// shared budget lock people out of login. CAS ticket validation already
+// gates the endpoint, so it is exempt from the general limiter.
+const isCasLoginCallback = (req: express.Request): boolean => req.path === '/cas';
+
+// Surfaces governed by publicDiscoveryLimiter below; exempt from the general
+// limiter so the discovery budget is the single, deliberately sized cap for
+// the anonymous (IP-keyed) browse experience. Both mounts hold only public
+// search/detail reads.
+const isPublicDiscoveryPath = (req: express.Request): boolean =>
+  req.path === '/research' ||
+  req.path.startsWith('/research/') ||
+  req.path === '/opportunities' ||
+  req.path.startsWith('/opportunities/');
+
 // General rate limiter: 200 requests per 15 minutes per user (falls back to IP for unauthenticated requests)
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -93,7 +122,7 @@ const apiLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests, please try again later.' },
-  skip: () => bypassRuntimeSecurity,
+  skip: (req) => bypassRuntimeSecurity || isCasLoginCallback(req) || isPublicDiscoveryPath(req),
 });
 
 // Write limiter for API mutations
@@ -107,10 +136,15 @@ const writeLimiter = rateLimit({
   skip: () => bypassRuntimeSecurity,
 });
 
-// Public discovery endpoints perform search/detail fan-out and get a narrower budget than cheap API reads.
+// Public discovery endpoints (research/opportunity search + detail) are the
+// sole rate budget for the anonymous browse surface, which keys by IP — often
+// a shared campus NAT egress. The ceiling must absorb debounced
+// search-as-you-type, filter toggles, infinite scroll, and detail views from
+// several concurrent users on one IP; the fan-out behind it is Meilisearch,
+// which is cheap.
 const publicDiscoveryLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 60,
+  max: 300,
   keyGenerator: getRateLimitKey,
   standardHeaders: true,
   legacyHeaders: false,
@@ -118,8 +152,13 @@ const publicDiscoveryLimiter = rateLimit({
   skip: () => bypassRuntimeSecurity,
 });
 
-const shouldApplyWriteLimiter = (req: express.Request): boolean =>
-  WRITE_LIKE_SAFE_METHOD_API_PATHS.has(req.path) || !SAFE_RATE_LIMIT_METHODS.has(req.method);
+const shouldApplyWriteLimiter = (req: express.Request): boolean => {
+  if (READ_ONLY_UNSAFE_METHOD_API_PATHS.has(req.path)) return false;
+  if (READ_ONLY_UNSAFE_METHOD_API_PATH_PATTERNS.some((pattern) => pattern.test(req.path))) {
+    return false;
+  }
+  return WRITE_LIKE_SAFE_METHOD_API_PATHS.has(req.path) || !SAFE_RATE_LIMIT_METHODS.has(req.method);
+};
 
 const deployedBrowserOrigins = new Set([
   'https://yalelabs.onrender.com',
@@ -217,7 +256,9 @@ const app = express()
     cookieSession({
       name: sessionCookieName(),
       keys: [sessionSecret],
-      maxAge: 72 * 60 * 60 * 1000,
+      // 30 days: long enough that students aren't silently logged out
+      // mid-semester workflows, short enough to bound stale sessions.
+      maxAge: 30 * 24 * 60 * 60 * 1000,
       httpOnly: true,
       secure: requiresSecureSessionCookie(),
       path: '/',

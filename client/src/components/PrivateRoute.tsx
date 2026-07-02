@@ -4,6 +4,7 @@
 import { Navigate, useLocation } from 'react-router-dom';
 import { useContext, FunctionComponent } from 'react';
 import UserContext from '../contexts/UserContext';
+import LoadingSpinner from './shared/LoadingSpinner';
 
 interface PrivateRouteProps {
   Component: FunctionComponent;
@@ -16,7 +17,11 @@ const PrivateRoute = ({ Component, unknownBlocked, knownBlocked }: PrivateRouteP
   const location = useLocation();
 
   if (isLoading) {
-    return null;
+    return (
+      <div className="flex min-h-[50vh] items-center justify-center">
+        <LoadingSpinner size="lg" inline />
+      </div>
+    );
   }
 
   if (!isAuthenticated) {

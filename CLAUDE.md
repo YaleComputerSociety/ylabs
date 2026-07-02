@@ -223,14 +223,15 @@ The only other workflow is `keep-alive.yml`, which pings the Beta Render service
 
 ## Rate Limiting
 
-Two rate limiters in `app.ts`, both keyed by authenticated user's `netId` with IP fallback for unauthenticated requests:
+Three rate limiters in `app.ts`, all keyed by authenticated user's `netId` with IP fallback for unauthenticated requests:
 
 | Limiter | Scope | Limit |
 |---------|-------|-------|
-| `apiLimiter` | All `/api` routes | 200 req / 15 min |
-| `writeLimiter` | Non-GET API routes, including the legacy listing/fellowship CRUD routes | 50 req / 15 min |
+| `apiLimiter` | All `/api` routes except `/api/cas` (the CAS login callback is always unauthenticated → keys by IP; campus NAT could exhaust a shared budget and lock users out of login) and the public discovery mounts below (which get their own deliberately sized budget) | 200 req / 15 min |
+| `publicDiscoveryLimiter` | `/api/research` + `/api/opportunities` — the sole budget for the anonymous, IP-keyed browse surface (debounced search-as-you-type, filters, infinite scroll, detail views, possibly several users behind one NAT egress IP) | 300 req / 15 min |
+| `writeLimiter` | Non-GET API routes, including the legacy listing/fellowship CRUD routes — except read-shaped traffic that must not consume the write budget: `READ_ONLY_UNSAFE_METHOD_API_PATHS` (`POST /api/research/search`, a pure read whose body is too rich for a query string) and `READ_ONLY_UNSAFE_METHOD_API_PATH_PATTERNS` (the `PUT …/addView` view-telemetry routes fired on every detail-page open) | 50 req / 15 min |
 
-Both limiters are skipped in CI, development, and test environments.
+All limiters are skipped in CI, development, and test environments.
 
 ## Auth Middleware
 
@@ -302,8 +303,10 @@ User → Yale CAS SSO → passport.ts findOrCreateUser
      → Yalies API (student/grad detection)
      → Yale Directory (faculty detection)
      → Fallback: fname "NA", userType "unknown"
-     → Create/Update User → cookie-session (1 year, httpOnly, secure in production, sameSite lax)
+     → Create/Update User → cookie-session (30 days, httpOnly, secure in production, sameSite lax)
 ```
+
+The find-or-create cascade above runs at **login time only**. Per-request session restore (`deserializeUser`) is a plain `validateUser` read plus the admin-grant check (cached in-memory for 60s in `adminGrantService`, invalidated immediately on grant/revoke) — no user creation, no Yalies/Directory calls — so external API or DB blips on those sources cannot fail steady-state requests. A session whose user doc no longer exists deserializes to unauthenticated.
 
 ## Key Services
 
