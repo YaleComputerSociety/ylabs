@@ -71,12 +71,33 @@ export const listAdminGrants = async (): Promise<AdminGrantResponse> => {
   };
 };
 
+// Session deserialization checks admin authority on every authenticated
+// request, so the grant lookup is cached briefly to keep it off the hot path.
+// Grant/revoke invalidate this instance immediately; the TTL bounds staleness
+// anywhere else.
+const ADMIN_GRANT_CACHE_TTL_MS = 60 * 1000;
+const ADMIN_GRANT_CACHE_MAX_ENTRIES = 10_000;
+const adminGrantCache = new Map<string, { value: boolean; expiresAt: number }>();
+
+export const clearAdminGrantCache = (): void => {
+  adminGrantCache.clear();
+};
+
 export const hasActiveAdminGrant = async (netid: unknown): Promise<boolean> => {
   const normalizedNetid = normalizeNetid(netid);
   if (!NETID_RE.test(normalizedNetid)) return false;
 
+  const cached = adminGrantCache.get(normalizedNetid);
+  if (cached && cached.expiresAt > Date.now()) return cached.value;
+
   const grant = await AdminGrant.exists({ netid: normalizedNetid, status: 'active' });
-  return Boolean(grant);
+  const value = Boolean(grant);
+  if (adminGrantCache.size >= ADMIN_GRANT_CACHE_MAX_ENTRIES) adminGrantCache.clear();
+  adminGrantCache.set(normalizedNetid, {
+    value,
+    expiresAt: Date.now() + ADMIN_GRANT_CACHE_TTL_MS,
+  });
+  return value;
 };
 
 export const grantAdminAccess = async ({
@@ -94,6 +115,7 @@ export const grantAdminAccess = async ({
   const normalizedActor = normalizeNetid(actorNetid);
   assertValidNetid(normalizedNetid);
   assertValidNetid(normalizedActor);
+  adminGrantCache.delete(normalizedNetid);
 
   return AdminGrant.findOneAndUpdate(
     { netid: normalizedNetid },
@@ -129,6 +151,7 @@ export const revokeAdminAccess = async ({
   const normalizedActor = normalizeNetid(actorNetid);
   assertValidNetid(normalizedNetid);
   assertValidNetid(normalizedActor);
+  adminGrantCache.delete(normalizedNetid);
 
   return AdminGrant.findOneAndUpdate(
     { netid: normalizedNetid, status: 'active' },

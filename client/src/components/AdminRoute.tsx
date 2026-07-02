@@ -5,6 +5,7 @@ import { Navigate } from 'react-router-dom';
 import { useContext, FunctionComponent, useEffect } from 'react';
 import UserContext from '../contexts/UserContext';
 import { buildApiUrl } from '../utils/apiBaseUrl';
+import LoadingSpinner from './shared/LoadingSpinner';
 
 const MAX_LOCAL_ADMIN_REDIRECT_URL_LENGTH = 2048;
 
@@ -54,7 +55,11 @@ const AdminRoute = ({ Component }: AdminRouteProps) => {
   }, [isAuthenticated, isLoading, localAdminDevLoginUrl, user]);
 
   if (isLoading) {
-    return null;
+    return (
+      <div className="flex min-h-[50vh] items-center justify-center">
+        <LoadingSpinner size="lg" inline />
+      </div>
+    );
   }
 
   if (!isAuthenticated) {

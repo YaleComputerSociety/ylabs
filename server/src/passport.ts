@@ -463,6 +463,10 @@ passport.serializeUser(function (user: any, done) {
   done(null, safeNetId);
 });
 
+// Runs on every authenticated request, so it must stay a plain read:
+// the find-or-create cascade (user creation, Yalies/Directory refresh)
+// belongs at login time only. A missing user doc means the session
+// references someone we no longer know — treat as unauthenticated.
 passport.deserializeUser(async (netId: string, done) => {
   try {
     authDebug('Deserializing user');
@@ -471,7 +475,11 @@ passport.deserializeUser(async (netId: string, done) => {
       done(null, null);
       return;
     }
-    const user = await findOrCreateUser(safeNetId);
+    const user = await validateUser(safeNetId);
+    if (!user) {
+      done(null, null);
+      return;
+    }
     done(null, await buildAuthenticatedSessionUser(user, safeNetId));
   } catch (error) {
     console.log('Deserialize: Error');
