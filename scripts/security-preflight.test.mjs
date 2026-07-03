@@ -624,8 +624,13 @@ test('production dependency audit covers root, server, and client workspaces', (
 
 test('CI runs immutable installs and the same deploy security preflight used locally', () => {
   assert.match(ciWorkflow, /name:\s*Install dependencies from lockfiles/);
-  assert.match(ciWorkflow, /run:\s*yarn install:all:immutable/);
-  assert.doesNotMatch(ciWorkflow, /run:\s*yarn install:all(?:\s|$)/);
+  // Installs are invoked as yarn builtins (a fresh runner cannot execute
+  // package.json scripts before an install exists); all three workspaces
+  // must stay immutable and no mutable install may sneak in.
+  assert.match(ciWorkflow, /yarn install --immutable/);
+  assert.match(ciWorkflow, /yarn --cwd server install --immutable/);
+  assert.match(ciWorkflow, /yarn --cwd client install --immutable/);
+  assert.doesNotMatch(ciWorkflow, /run:\s*yarn install:all(?::immutable)?(?:\s|$)/);
   assert.match(ciWorkflow, /name:\s*Run deploy security preflight/);
   assert.match(ciWorkflow, /run:\s*yarn security:preflight/);
 });
