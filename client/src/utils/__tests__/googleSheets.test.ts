@@ -224,9 +224,10 @@ describe('Google Sheets OAuth popup', () => {
       state: authUrl.searchParams.get('state'),
     });
 
+    const rejection = expect(exportPromise).rejects.toThrow('Google Sheets request timed out');
     await vi.advanceTimersByTimeAsync(15000);
 
-    await expect(exportPromise).rejects.toThrow('Google Sheets request timed out');
+    await rejection;
     expect(fetchMock).toHaveBeenCalledWith(
       'https://sheets.googleapis.com/v4/spreadsheets',
       expect.objectContaining({

@@ -106,8 +106,11 @@ describe('accessSummaryService', () => {
         throw new Error('access summary called arbitrary returned entity id toHexString');
       },
     };
-    const extraEntityIds = Array.from({ length: 100 }, () => new Types.ObjectId());
-    Object.defineProperty(extraEntityIds, '100', {
+    const queryEntityIds = [
+      entityId,
+      ...Array.from({ length: 99 }, () => new Types.ObjectId()),
+    ];
+    Object.defineProperty(queryEntityIds, '100', {
       get: () => {
         throw new Error('access summary read past the entity id cap');
       },
@@ -174,7 +177,7 @@ describe('accessSummaryService', () => {
       ]),
     );
 
-    const summaries = await listAccessSummariesForResearchEntities([entityId, ...extraEntityIds]);
+    const summaries = await listAccessSummariesForResearchEntities(queryEntityIds);
     const summary = summaries.get(entityId.toString());
 
     expect(summary?.evidence[0]).toMatchObject({

@@ -1208,7 +1208,7 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
     expect(slugs.has('happy')).toBe(true);
     expect(slugs.has('crashy')).toBe(false);
     expect(result.entitiesObserved).toBe(1);
-    expect(logs.some((l) => /LLM call failed: rate limited/.test(l))).toBe(true);
+    expect(logs.some((l) => /LLM call failed: .*rate limited/.test(l))).toBe(true);
   });
 
   it('skips labs whose home page returns 404 (fetchPage returns null) and logs nothing scary', async () => {

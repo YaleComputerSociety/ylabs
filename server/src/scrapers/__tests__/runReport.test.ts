@@ -566,8 +566,8 @@ describe('buildScrapeRunReport', () => {
     expect(serialized).toContain('https://[credentials-redacted]@example.test');
     expect(serialized).toContain('access_token=[secret-redacted]');
     expect(serialized).toContain('[email redacted]');
-    expect(serialized).toContain('Authorization":"[secret-redacted]"');
-    expect(serialized).toContain('cookie":"[secret-redacted]"');
+    expect(serialized).toContain('Authorization\\":\\"[secret-redacted]');
+    expect(serialized).toContain('cookie\\":\\"[secret-redacted]');
     expect(serialized).toContain('[phone redacted]');
     expect(serialized).not.toContain('user:pass');
     expect(serialized).not.toContain('secret-token');

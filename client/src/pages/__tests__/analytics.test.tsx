@@ -100,7 +100,7 @@ describe('Analytics page', () => {
       expect(screen.getByRole('heading', { name: 'Analytics unavailable' })).toBeTruthy();
     });
 
-    expect(screen.getByText('Request failed with status code 500')).toBeTruthy();
+    expect(screen.getByText('Failed to load analytics data')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Retry Analytics' })).toBeTruthy();
     expect(screen.queryByText('Loading analytics...')).toBeNull();
     expect(mockedAxios.get).toHaveBeenCalledTimes(1);

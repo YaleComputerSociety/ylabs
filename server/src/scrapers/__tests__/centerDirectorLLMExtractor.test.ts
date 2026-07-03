@@ -77,7 +77,7 @@ describe('directorExtractionToObservations', () => {
     expect(obs.every((o) => o.entityType === 'researchEntity')).toBe(true);
     expect(obs.every((o) => o.entityKey === context.centerEntityKey)).toBe(true);
     const byField = Object.fromEntries(obs.map((o) => [o.field, o]));
-    expect(byField.inferredDirectorUserName.value).toEqual({ fname: 'Eric', lname: 'Winer' });
+    expect(byField.inferredDirectorUserName.value).toEqual({ fname: 'Elliot', lname: 'Fixture' });
     expect(byField.inferredDirectorRole.value).toBe('director');
     expect(byField.inferredDirectorRole.confidenceOverride).toBe(0.85);
     expect(byField.inferredDirectorProfileUrl.value).toBe(
@@ -168,8 +168,8 @@ describe('CenterDirectorLLMExtractor.run', () => {
     expect(result.entitiesObserved).toBe(1);
     expect(emitted.every((o) => o.entityKey === center.slug)).toBe(true);
     expect(emitted.find((o) => o.field === 'inferredDirectorUserName')!.value).toEqual({
-      fname: 'Eric',
-      lname: 'Winer',
+      fname: 'Elliot',
+      lname: 'Fixture',
     });
     // the finder is asked only for homes missing a lead
     expect(centerFinder).toHaveBeenCalledWith(

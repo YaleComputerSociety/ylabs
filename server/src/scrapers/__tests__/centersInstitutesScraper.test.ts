@@ -6,6 +6,14 @@
  * actually emits. All network is mocked via `vi.spyOn(axios, 'get')`.
  */
 import { describe, it, expect, vi } from 'vitest';
+
+// The scraper SSRF-guards every center URL with a real DNS resolution; tests
+// must stay offline, so the guard is reduced to URL parsing here.
+vi.mock('../../utils/ssrfGuard', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../utils/ssrfGuard')>()),
+  assertPublicHttpUrl: vi.fn(async (rawUrl: string) => new URL(rawUrl)),
+}));
+
 import {
   CentersInstitutesScraper,
   nodeTeaserPersonExtractor,

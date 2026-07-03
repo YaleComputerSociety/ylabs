@@ -44,6 +44,8 @@ vi.mock('../../models/fellowship', async (importOriginal) => ({
   },
 }));
 
+import { AccessReviewRequestError } from '../../services/adminAccessReviewService';
+import { AdminGrantValidationError } from '../../services/adminGrantService';
 import router, {
   checkAdminUrlReachability,
   isPrivateAddress,
@@ -175,7 +177,7 @@ describe('admin routes', () => {
 
   it('does not leak raw validation text from admin grant failures', async () => {
     mocks.grantAdminAccess.mockRejectedValue(
-      new Error('Invalid netid mongodb://user:pass@example.invalid leaked'),
+      new AdminGrantValidationError('Invalid admin grant request'),
     );
 
     const res = await invokeRouteHandler('/admin-grants', {
@@ -745,7 +747,7 @@ describe('admin routes', () => {
   });
 
   it('returns a client error for oversized access-review search terms', async () => {
-    mocks.listAccessReviewEntities.mockRejectedValue(new Error('Search query is too long'));
+    mocks.listAccessReviewEntities.mockRejectedValue(new AccessReviewRequestError('Search query is too long'));
 
     const res = await invokeRouteHandler(
       '/access-review',

@@ -71,15 +71,15 @@ describe('selectOfficialBioUrlFromHomes', () => {
     const url = selectOfficialBioUrlFromHomes(
       [
         {
-          name: 'Paul Bloom — Research',
+          name: 'Pat Fixture — Research',
           websiteUrl: '',
-          sourceUrls: ['https://medicine.yale.edu/profile/fixture-profile-bio/'],
+          sourceUrls: ['https://medicine.yale.edu/profile/pat-fixture/'],
         },
       ],
-      'Paul',
-      'Bloom',
+      'Pat',
+      'Fixture',
     );
-    expect(url).toBe('https://medicine.yale.edu/profile/fixture-profile-bio/');
+    expect(url).toBe('https://medicine.yale.edu/profile/pat-fixture/');
   });
 
   it('accepts a Yale /people/ home websiteUrl when it matches the person', () => {
@@ -95,15 +95,15 @@ describe('selectOfficialBioUrlFromHomes', () => {
     expect(
       selectOfficialBioUrlFromHomes(
         [{ sourceUrls: ['https://reporter.nih.gov/project-details/9', 'https://example.com/profile/fixture-profile-bio'] }],
-        'Paul',
-        'Bloom',
+        'Pat',
+        'Fixture',
       ),
     ).toBe('');
     expect(
       selectOfficialBioUrlFromHomes(
         [{ sourceUrls: ['https://medicine.yale.edu/profile/someone-else/'] }],
-        'Paul',
-        'Bloom',
+        'Pat',
+        'Fixture',
       ),
     ).toBe('');
   });

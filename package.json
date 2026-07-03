@@ -55,6 +55,8 @@
     "passport-strategy": "^1.0.0"
   },
   "resolutions": {
+    "form-data": "4.0.6",
+    "undici": "6.27.0",
     "axios": "1.17.0",
     "underscore": "1.13.8",
     "path-to-regexp": "0.1.13",

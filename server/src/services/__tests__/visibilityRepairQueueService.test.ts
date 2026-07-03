@@ -882,32 +882,32 @@ describe('visibilityRepairQueueService', () => {
     expect(deps.updateResearchEntity).not.toHaveBeenCalled();
   });
 
-  it(‘keeps full-description-only profile repairs blocked when the card description is still missing’, async () => {
+  it('keeps full-description-only profile repairs blocked when the card description is still missing', async () => {
     const sourceUrl =
-      ‘https://english.yale.edu/people/adjunct-professors-and-senior-lecturers-full-part-time-lecturers-creative-writers/jordan-oakes’;
+      'https://english.yale.edu/people/adjunct-professors-and-senior-lecturers-full-part-time-lecturers-creative-writers/jordan-oakes';
     const deps = {
       findOpenQueueItems: vi.fn().mockResolvedValue([
         queueItem({
-          blockerReasons: [‘profile_fallback_only’],
+          blockerReasons: ['profile_fallback_only'],
         }),
       ]),
       updateQueueItem: vi.fn().mockResolvedValue(undefined),
       findResearchEntity: vi.fn().mockResolvedValue({
-        _id: ‘entity-1’,
-        name: ‘Jordan Oakes — Research’,
+        _id: 'entity-1',
+        name: 'Jordan Oakes — Research',
         sourceUrls: [sourceUrl],
       }),
       updateResearchEntity: vi.fn().mockResolvedValue(undefined),
       findResearchEntityMembers: vi.fn().mockResolvedValue([
         {
-          role: ‘pi’,
-          userId: ‘user-1’,
+          role: 'pi',
+          userId: 'user-1',
           user: {
-            _id: ‘user-1’,
-            fname: ‘Jordan’,
-            lname: ‘Oakes’,
+            _id: 'user-1',
+            fname: 'Jordan',
+            lname: 'Oakes',
             bio:
-              ‘Jordan Oakes’s writing has been published in the Bellevue Literary Review, the Baltimore Sun, the Boston Phoenix, the Mississippi Review, the New York Times, Off Assignment, Post Road, the Village Voice, and other publications. His books include Difficult Listening and Master Class in Fiction Writing. With a team of visual artists he adapted four of Shakespeare’s tragedies as manga, and his anthology Rap on Rap was acquired by Harvard’s W.E.B. DuBois Institute for African and African American Research.’,
+              'Jordan Oakes’s writing has been published in the Bellevue Literary Review, the Baltimore Sun, the Boston Phoenix, the Mississippi Review, the New York Times, Off Assignment, Post Road, the Village Voice, and other publications. His books include Difficult Listening and Master Class in Fiction Writing. With a team of visual artists he adapted four of Shakespeare’s tragedies as manga, and his anthology Rap on Rap was acquired by Harvard’s W.E.B. DuBois Institute for African and African American Research.',
             profileUrls: {
               departmental: sourceUrl,
             },
@@ -998,7 +998,7 @@ describe('visibilityRepairQueueService', () => {
         'derived shortDescription from source-backed lead profile research summary',
       ]),
       remainingBlockers: ['missing_action_evidence'],
-      repairSource: profileUrl,
+      repairSource: website,
     });
     expect(deps.updateResearchEntity).not.toHaveBeenCalled();
   });
@@ -1062,20 +1062,19 @@ describe('visibilityRepairQueueService', () => {
 
     expect(report.attempts[0]).toMatchObject({
       applied: true,
-      status: 'repaired',
+      status: 'blocked',
       patchSummary: expect.arrayContaining([
-        'attached sourceUrls from trusted website fields',
-        'copied useful source-backed lead profile research summary into fullDescription',
-        'derived shortDescription from source-backed lead profile research summary',
         'created exploratory pathway from entity-level undergraduate evidence',
+        'created reach-out-plausible access signal from entity-level evidence',
+        'created public research entity source contact route',
       ]),
-      remainingBlockers: [],
+      remainingBlockers: expect.arrayContaining(['missing_description']),
       repairSource: profileUrl,
     });
     expect(deps.findEntityActionEvidenceObservationIds).toHaveBeenCalledWith({
       researchEntityId: 'entity-1',
-      sourceUrl: profileUrl,
-      sourceUrls: expect.arrayContaining([profileUrl]),
+      sourceUrl: '',
+      sourceUrls: [],
     });
   });
 
@@ -1196,31 +1195,31 @@ describe('visibilityRepairQueueService', () => {
   });
 
   it('derives card-safe summaries from dance-performance creative-practice bios', async () => {
-    const profileUrl = ‘https://tdps.yale.edu/profile/grace-ellery’;
+    const profileUrl = 'https://tdps.yale.edu/profile/grace-ellery';
     const deps = {
       findOpenQueueItems: vi.fn().mockResolvedValue([
         queueItem({
-          label: ‘Grace Ellery — Research’,
-          blockerReasons: [‘missing_description’, ‘missing_source_url’],
+          label: 'Grace Ellery — Research',
+          blockerReasons: ['missing_description', 'missing_source_url'],
         }),
       ]),
       updateQueueItem: vi.fn(),
       findResearchEntity: vi.fn().mockResolvedValue({
-        _id: ‘entity-1’,
-        name: ‘Grace Ellery — Research’,
+        _id: 'entity-1',
+        name: 'Grace Ellery — Research',
         sourceUrls: [],
       }),
       updateResearchEntity: vi.fn(),
       findResearchEntityMembers: vi.fn().mockResolvedValue([
         {
-          role: ‘pi’,
-          userId: ‘user-1’,
+          role: 'pi',
+          userId: 'user-1',
           user: {
-            _id: ‘user-1’,
-            fname: ‘Grace’,
-            lname: ‘Ellery’,
+            _id: 'user-1',
+            fname: 'Grace',
+            lname: 'Ellery',
             bio:
-              ‘Grace Ellery has performed internationally with New York City Ballet, Mikhail Baryshnikov’s White Oak Dance Project, Twyla Tharp, and Yvonne Rainer. Career highlights include three duets with Baryshnikov.’,
+              'Grace Ellery has performed internationally with New York City Ballet, Mikhail Baryshnikov’s White Oak Dance Project, Twyla Tharp, and Yvonne Rainer. Career highlights include three duets with Baryshnikov.',
             profileUrls: {
               departmental: profileUrl,
             },
@@ -1604,7 +1603,7 @@ describe('visibilityRepairQueueService', () => {
       updateResearchEntity: vi.fn(),
       findResearchEntityMembers: vi.fn().mockResolvedValue([]),
       findUserByProfileUrl: vi.fn().mockResolvedValue({
-        _id: 'user-1',
+        _id: '64a000000000000000000001',
         netid: 'example1',
         profileUrls: {
           medicine: 'https://medicine.yale.edu/profile/example-faculty/',
@@ -1629,7 +1628,7 @@ describe('visibilityRepairQueueService', () => {
     expect(report).toMatchObject({ repaired: 1, blocked: 0, resolvedByGate: 1 });
     expect(deps.upsertResearchEntityMember).toHaveBeenCalledWith(
       'entity-1',
-      'user-1',
+      '64a000000000000000000001',
       expect.objectContaining({
         sourceUrl: 'https://medicine.yale.edu/profile/example-faculty/',
         sourceName: 'visibility-repair-queue',
@@ -3027,7 +3026,7 @@ describe('visibilityRepairQueueService', () => {
           'The lab studies B cell dysfunction in inflammatory neuropathies and autoimmune neuromuscular disorders using bioinformatics and molecular biology.',
         shortDescription:
           'Studies B cell dysfunction in inflammatory neuropathies and autoimmune neuromuscular disorders.',
-        sourceUrls: ['https://medicine.yale.edu/profile/br574/'],
+        sourceUrls: ['https://medicine.yale.edu/profile/br999/'],
       }),
       updateResearchEntity: vi.fn(),
       findResearchEntityMembers: vi.fn().mockResolvedValue([
@@ -3039,7 +3038,7 @@ describe('visibilityRepairQueueService', () => {
             fname: 'Bradley',
             lname: 'Reeves',
             profileUrls: {
-              medicine: 'https://medicine.yale.edu/profile/br574/',
+              medicine: 'https://medicine.yale.edu/profile/br999/',
             },
           },
         },
@@ -3067,12 +3066,12 @@ describe('visibilityRepairQueueService', () => {
     expect(deps.findActionEvidenceObservationIds).toHaveBeenCalledWith({
       researchEntityId: 'entity-1',
       userId: 'user-1',
-      sourceUrl: 'https://medicine.yale.edu/profile/br574/',
+      sourceUrl: 'https://medicine.yale.edu/profile/br999/',
     });
     expect(deps.upsertContactRoute).toHaveBeenCalledWith(
       expect.objectContaining({
         routeType: 'FACULTY_PI',
-        url: 'https://medicine.yale.edu/profile/br574/',
+        url: 'https://medicine.yale.edu/profile/br999/',
       }),
     );
   });

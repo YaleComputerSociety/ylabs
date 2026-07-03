@@ -25,6 +25,7 @@ import {
 vi.mock('../../../utils/axios', () => ({
   default: {
     get: vi.fn(),
+    post: vi.fn(),
     put: vi.fn(),
     delete: vi.fn(),
   },
@@ -32,6 +33,7 @@ vi.mock('../../../utils/axios', () => ({
 
 const mockedAxios = axios as unknown as {
   get: ReturnType<typeof vi.fn>;
+  post: ReturnType<typeof vi.fn>;
   put: ReturnType<typeof vi.fn>;
   delete: ReturnType<typeof vi.fn>;
 };
@@ -89,6 +91,7 @@ const fellowshipMatch = (
 beforeEach(() => {
   localStorage.clear();
   mockedAxios.get.mockReset();
+  mockedAxios.post.mockReset();
   mockedAxios.put.mockReset();
   mockedAxios.delete.mockReset();
   mockedAxios.put.mockResolvedValue({ data: {} });

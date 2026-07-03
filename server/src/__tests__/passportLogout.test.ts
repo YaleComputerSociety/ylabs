@@ -41,6 +41,7 @@ describe('logoutRouteHandler', () => {
     const logoutRouteHandler = await importLogoutHandler();
     const logOut = vi.fn((callback: (error?: Error) => void) => callback());
     const req = {
+      method: 'GET',
       user: undefined,
       logOut,
       get: vi.fn((header: string) =>
@@ -70,6 +71,7 @@ describe('logoutRouteHandler', () => {
     const logoutError = new Error('logout failed');
     const logOut = vi.fn((callback: (error?: Error) => void) => callback(logoutError));
     const req = {
+      method: 'GET',
       user: undefined,
       logOut,
       get: vi.fn((header: string) =>
@@ -90,6 +92,7 @@ describe('logoutRouteHandler', () => {
     const logoutRouteHandler = await importLogoutHandler();
     const logOut = vi.fn((callback: (error?: Error) => void) => callback());
     const req = {
+      method: 'GET',
       user: undefined,
       logOut,
       get: vi.fn(() => undefined),
@@ -110,6 +113,7 @@ describe('logoutRouteHandler', () => {
     const logoutRouteHandler = await importLogoutHandler();
     const logOut = vi.fn((callback: (error?: Error) => void) => callback());
     const req = {
+      method: 'GET',
       user: undefined,
       logOut,
       get: vi.fn((header: string) =>
@@ -134,6 +138,7 @@ describe('logoutRouteHandler', () => {
     const logoutRouteHandler = await importLogoutHandler();
     const logOut = vi.fn((callback: (error?: Error) => void) => callback());
     const req = {
+      method: 'GET',
       user: undefined,
       logOut,
       get: vi.fn((header: string) => {

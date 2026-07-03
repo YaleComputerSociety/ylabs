@@ -2176,7 +2176,7 @@ describe('updateOwnProfile', () => {
       ],
     });
 
-    const update = userModelMock.findOneAndUpdate.mock.lastCall[1];
+    const update = userModelMock.findOneAndUpdate.mock.lastCall![1];
     expect(update.publications).toHaveLength(2);
     expect(update.publications[0]).toMatchObject({
       year: 2026,

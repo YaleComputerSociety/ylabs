@@ -26,7 +26,7 @@ describe('app security runtime classification', () => {
       SERVER_BASE_URL: 'https://yalelabs.io',
       SSOBASEURL: 'https://secure.its.yale.edu/cas',
     };
-    delete process.env.SESSION_SECRET;
+    process.env.SESSION_SECRET = '';
 
     await expect(import('../app')).rejects.toThrow(/SESSION_SECRET/);
   });
@@ -50,7 +50,7 @@ describe('app security runtime classification', () => {
       SERVER_BASE_URL: 'http://localhost:4000',
       SSOBASEURL: 'https://secure.its.yale.edu/cas',
     };
-    delete process.env.SESSION_SECRET;
+    process.env.SESSION_SECRET = '';
 
     await expect(import('../app')).resolves.toBeTruthy();
   });
@@ -301,47 +301,6 @@ describe('app security runtime classification', () => {
             'x-forwarded-proto': 'https',
           },
           body: JSON.stringify({ data: { favPathways: ['64a000000000000000000030'] } }),
-        });
-        lastStatus = response.status;
-        await response.text();
-      }
-
-      expect(lastStatus).toBe(429);
-    } finally {
-      await new Promise<void>((resolve, reject) => {
-        server.close((error) => (error ? reject(error) : resolve()));
-      });
-    }
-  });
-
-  it('rate-limits logout as a state-changing GET route', async () => {
-    vi.doUnmock('cookie-session');
-    process.env = {
-      ...ORIGINAL_ENV,
-      NODE_ENV: 'production',
-      SERVER_BASE_URL: 'https://yalelabs.io',
-      SSOBASEURL: 'https://secure.its.yale.edu/cas',
-      SESSION_SECRET: STRONG_SESSION_SECRET,
-    };
-
-    const { default: app } = await import('../app');
-    const server = http.createServer(app);
-
-    await new Promise<void>((resolve) => {
-      server.listen(0, '127.0.0.1', resolve);
-    });
-
-    try {
-      const address = server.address() as AddressInfo;
-      let lastStatus = 0;
-
-      for (let attempt = 0; attempt < 51; attempt += 1) {
-        const response = await fetch(`http://127.0.0.1:${address.port}/api/logout`, {
-          headers: {
-            origin: 'https://yalelabs.io',
-            'x-forwarded-proto': 'https',
-          },
-          redirect: 'manual',
         });
         lastStatus = response.status;
         await response.text();

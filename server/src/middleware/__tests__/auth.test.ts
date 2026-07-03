@@ -88,6 +88,7 @@ const invokeSyncMiddleware = (middleware: (req: any, res: any, next: any) => unk
 
 describe('isAdmin', () => {
   afterEach(() => {
+    vi.clearAllMocks();
     vi.restoreAllMocks();
     delete process.env.SERVER_BASE_URL;
     process.env.NODE_ENV = 'test';
@@ -129,6 +130,7 @@ describe('isAdmin', () => {
 
 describe('authenticated principal shape', () => {
   afterEach(() => {
+    vi.clearAllMocks();
     vi.restoreAllMocks();
   });
 

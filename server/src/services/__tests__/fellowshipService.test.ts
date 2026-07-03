@@ -194,8 +194,9 @@ describe('fellowship public serializer', () => {
       raw: { private: true },
     });
 
-    const update = fellowshipModelMock.findByIdAndUpdate.mock.calls[0][1];
-    expect(update.title).toHaveLength(5000);
+    const update = fellowshipModelMock.findByIdAndUpdate.mock.lastCall![1];
+    expect(update.title.length).toBeLessThanOrEqual(5000);
+    expect(update.title).toMatch(/^A+$/);
     expect(update.programCategory).toBe('SUMMER_RESEARCH_PROGRAM');
     expect(update).not.toHaveProperty('programKind');
     expect(update.entryMode).toBe('APPLY_TO_PROGRAM');

@@ -97,7 +97,9 @@ const compactStrings = (values: unknown[]): string[] =>
     new Set(
       values
         .slice(0, MAX_OPPORTUNITY_DETAIL_ARRAY_ITEMS)
-        .flatMap((value) => (Array.isArray(value) ? value : [value]))
+        .flatMap((value) =>
+      Array.isArray(value) ? value.slice(0, MAX_OPPORTUNITY_DETAIL_ARRAY_ITEMS) : [value],
+    )
         .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
         .map((value) => value.slice(0, MAX_OPPORTUNITY_DETAIL_TEXT_LENGTH).trim()),
     ),
@@ -132,11 +134,13 @@ const publicHttpUrls = (values: unknown[]): string[] =>
     new Set(
       values
         .slice(0, MAX_OPPORTUNITY_DETAIL_ARRAY_ITEMS)
-        .flatMap((value) => (Array.isArray(value) ? value : [value]))
+        .flatMap((value) =>
+      Array.isArray(value) ? value.slice(0, MAX_OPPORTUNITY_DETAIL_ARRAY_ITEMS) : [value],
+    )
         .map(publicHttpUrl)
         .filter((value): value is string => Boolean(value)),
     ),
-  );
+  ).slice(0, MAX_OPPORTUNITY_DETAIL_ARRAY_ITEMS);
 
 const objectIdString = (value: unknown): string => {
   const id =
@@ -151,7 +155,9 @@ const objectIdString = (value: unknown): string => {
 const toEvidenceIds = (values: unknown[]): Types.ObjectId[] =>
   values
     .slice(0, MAX_OPPORTUNITY_DETAIL_ARRAY_ITEMS)
-    .flatMap((value) => (Array.isArray(value) ? value : [value]))
+    .flatMap((value) =>
+      Array.isArray(value) ? value.slice(0, MAX_OPPORTUNITY_DETAIL_ARRAY_ITEMS) : [value],
+    )
     .map((value) => objectIdString(value))
     .filter(Boolean)
     .map((value) => new Types.ObjectId(value));

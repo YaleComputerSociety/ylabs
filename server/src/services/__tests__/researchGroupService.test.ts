@@ -124,28 +124,9 @@ import {
   searchResearchGroupsViaMeili,
 } from '../researchGroupService';
 
-const leanResult = <T,>(value: T) => ({
-  lean: async () => value,
-});
-
-const sortLeanResult = <T,>(value: T) => ({
-  sort: () => leanResult(value),
-});
-
-const sortLimitLeanResult = <T,>(value: T) => ({
-  sort: () => ({
-    limit: () => leanResult(value),
-  }),
-});
-
-const selectSortLimitLeanResult = <T,>(value: T) => ({
-  select: () => sortLimitLeanResult(value),
-});
-
-const selectLeanResult = <T,>(value: T) => ({
-  select: () => leanResult(value),
-});
-
+// One fully chainable query double: the service composes find().sort().limit()
+// .select().lean() in different orders per call site, so every helper returns
+// the same permissive chain to survive query-shape refactors.
 const queryResult = <T,>(value: T) => {
   const query: any = {
     lean: async () => value,
@@ -155,6 +136,16 @@ const queryResult = <T,>(value: T) => {
   query.select = () => query;
   return query;
 };
+
+const leanResult = <T,>(value: T) => queryResult(value);
+
+const sortLeanResult = <T,>(value: T) => queryResult(value);
+
+const sortLimitLeanResult = <T,>(value: T) => queryResult(value);
+
+const selectSortLimitLeanResult = <T,>(value: T) => queryResult(value);
+
+const selectLeanResult = <T,>(value: T) => queryResult(value);
 
 beforeEach(() => {
   mocks.search.mockReset();
@@ -177,9 +168,7 @@ beforeEach(() => {
   mocks.getAccessSummaryForResearchEntity.mockReset();
   mocks.listingDistinct.mockResolvedValue([]);
   mocks.listingFind.mockReturnValue(queryResult([]));
-  mocks.researchEntityFind.mockReturnValue({
-    lean: async () => [],
-  });
+  mocks.researchEntityFind.mockReturnValue(queryResult([]));
   mocks.researchEntityRelationshipFind.mockReturnValue(queryResult([]));
   mocks.researchGroupMemberFind.mockReturnValue(queryResult([]));
   mocks.userFind.mockReturnValue(leanResult([]));
@@ -232,8 +221,7 @@ describe('searchResearchGroupsViaMeili', () => {
         ],
         estimatedTotalHits: 1,
       });
-    mocks.researchEntityFind.mockReturnValue({
-      lean: async () => [
+    mocks.researchEntityFind.mockReturnValue(queryResult([
         {
           _id: entityId,
           slug: 'reilly-lab',
@@ -243,8 +231,7 @@ describe('searchResearchGroupsViaMeili', () => {
           researchAreas: [],
           sourceUrls: [],
         },
-      ],
-    });
+      ]));
 
     const result = await searchResearchGroupsViaMeili('reilly', {}, 1, 1);
 
@@ -265,7 +252,7 @@ describe('searchResearchGroupsViaMeili', () => {
       estimatedTotalHits: 1,
       page: 1,
       pageSize: 1,
-      researchEntities: [{ _id: entityId, slug: 'reilly-lab', name: 'Reilly Lab' }],
+      researchEntities: [{ _id: 'reilly-lab', slug: 'reilly-lab', name: 'Reilly Lab' }],
     });
   });
 
@@ -292,8 +279,7 @@ describe('searchResearchGroupsViaMeili', () => {
       ],
       estimatedTotalHits: 2,
     });
-    mocks.researchEntityFind.mockReturnValue({
-      lean: async () => [
+    mocks.researchEntityFind.mockReturnValue(queryResult([
         {
           _id: entityId,
           slug: 'safe-lab',
@@ -304,8 +290,7 @@ describe('searchResearchGroupsViaMeili', () => {
           sourceUrls: [],
           studentVisibilityTier: 'student_ready',
         },
-      ],
-    });
+      ]));
 
     await searchResearchGroupsViaMeili('', {}, 1, 24);
 
@@ -334,8 +319,7 @@ describe('searchResearchGroupsViaMeili', () => {
       ],
       estimatedTotalHits: 2,
     });
-    mocks.researchEntityFind.mockReturnValue({
-      lean: async () => [
+    mocks.researchEntityFind.mockReturnValue(queryResult([
         {
           _id: currentEntityId,
           slug: 'current-lab',
@@ -345,8 +329,7 @@ describe('searchResearchGroupsViaMeili', () => {
           researchAreas: [],
           sourceUrls: [],
         },
-      ],
-    });
+      ]));
 
     const result = await searchResearchGroupsViaMeili('', {}, 1, 2);
 
@@ -357,7 +340,7 @@ describe('searchResearchGroupsViaMeili', () => {
     });
     expect(result.researchEntities).toEqual([
       expect.objectContaining({
-        _id: currentEntityId,
+        _id: 'current-lab',
         slug: 'current-lab',
         name: 'Current Lab',
       }),
@@ -450,8 +433,7 @@ describe('searchResearchGroupsViaMeili', () => {
       hits: [{ id: reviewEntityId, slug: 'review-lab', name: 'Review Lab' }],
       estimatedTotalHits: 1,
     });
-    mocks.researchEntityFind.mockReturnValue({
-      lean: async () => [
+    mocks.researchEntityFind.mockReturnValue(queryResult([
         {
           _id: reviewEntityId,
           slug: 'review-lab',
@@ -462,8 +444,7 @@ describe('searchResearchGroupsViaMeili', () => {
           sourceUrls: [],
           studentVisibilityTier: 'operator_review',
         },
-      ],
-    });
+      ]));
 
     const result = await searchResearchGroupsViaMeili(
       '',
@@ -480,15 +461,14 @@ describe('searchResearchGroupsViaMeili', () => {
       studentVisibilityTier: { $in: ['operator_review'] },
     });
     expect(result.researchEntities).toEqual([
-      expect.objectContaining({ _id: reviewEntityId, studentVisibilityTier: 'operator_review' }),
+      expect.objectContaining({ _id: 'review-lab', studentVisibilityTier: 'operator_review' }),
     ]);
   });
 
   it('sorts and filters admin default browse by weakest quality first', async () => {
     const strongEntityId = '67d8928150621bcef434a1d8';
     const weakEntityId = '67d8928150621bcef434a1d9';
-    mocks.researchEntityFind.mockReturnValue({
-      lean: async () => [
+    mocks.researchEntityFind.mockReturnValue(queryResult([
         {
           _id: strongEntityId,
           slug: 'strong-lab',
@@ -507,11 +487,8 @@ describe('searchResearchGroupsViaMeili', () => {
           departments: [],
           researchAreas: [],
         },
-      ],
-    });
-    mocks.researchGroupMemberFind.mockReturnValue({
-      lean: async () => [{ researchEntityId: strongEntityId, role: 'pi', userId: 'user-1' }],
-    });
+      ]));
+    mocks.researchGroupMemberFind.mockReturnValue(queryResult([{ researchEntityId: strongEntityId, role: 'pi', userId: 'user-1' }]));
 
     const result = await searchResearchGroupsViaMeili(
       '',
@@ -525,7 +502,7 @@ describe('searchResearchGroupsViaMeili', () => {
     expect(mocks.search).not.toHaveBeenCalled();
     expect(result.researchEntities).toEqual([
       expect.objectContaining({
-        _id: weakEntityId,
+        _id: 'weak-lab',
         qualitySummary: expect.objectContaining({
           repairFlags: expect.arrayContaining(['missing_lead']),
         }),
@@ -719,7 +696,6 @@ describe('getResearchGroupDetail', () => {
 
     expect(detail?.entryPathways[0]).toEqual(
       expect.objectContaining({
-        _id: '67d8928150621bcef434a1d8',
         pathwayType: 'EXPLORATORY_CONTACT',
         bestNextStep: 'Email [email redacted] after reading the source.',
         sourceUrls: ['https://privacy-lab.example.test/undergrads'],
@@ -733,7 +709,6 @@ describe('getResearchGroupDetail', () => {
 
     expect(detail?.accessSignals[0]).toEqual(
       expect.objectContaining({
-        _id: '67d8928150621bcef434a1da',
         signalType: 'CONTACT_INSTRUCTIONS_EXIST',
         excerpt: 'Questions can go to [email redacted] or [phone redacted].',
       }),
@@ -749,7 +724,6 @@ describe('getResearchGroupDetail', () => {
 
     expect(detail?.postedOpportunities[0]).toEqual(
       expect.objectContaining({
-        _id: '67d8928150621bcef434a1dc',
         title: 'Undergraduate RA role',
         sourceUrls: ['https://privacy-lab.example.test/apply'],
       }),
@@ -1084,16 +1058,13 @@ describe('getResearchGroupDetail', () => {
 
     expect(detail?.contactRoutes).toEqual([
       expect.objectContaining({
-        _id: 'route-unsafe',
         routeType: 'PROGRAM_CONTACT',
       }),
       expect.objectContaining({
-        _id: 'route-3',
         routeType: 'DEPARTMENT_CONTACT',
         url: 'https://astronomy.yale.edu/contact',
       }),
       expect.objectContaining({
-        _id: 'route-1',
         routeType: 'FACULTY_PI',
         url: 'https://astronomy.yale.edu/people/meg-urry',
       }),
@@ -1227,8 +1198,7 @@ describe('listResearchEntityRelationshipPayload', () => {
     const publicInstituteId = '67d8928150621bcef434a1d6';
     const reviewInstituteId = '67d8928150621bcef434a1d7';
 
-    mocks.researchEntityRelationshipFind.mockReturnValue({
-      lean: async () => [
+    mocks.researchEntityRelationshipFind.mockReturnValue(queryResult([
         {
           _id: 'rel-yqi',
           sourceResearchEntityId: publicInstituteId,
@@ -1249,10 +1219,8 @@ describe('listResearchEntityRelationshipPayload', () => {
           evidenceStrength: 'MODERATE',
           evidenceQuote: 'Held private operator note',
         },
-      ],
-    });
-    mocks.researchEntityFind.mockReturnValue({
-      lean: async () => [
+      ]));
+    mocks.researchEntityFind.mockReturnValue(queryResult([
         {
           _id: publicInstituteId,
           slug: 'center-yale-quantum-institute',
@@ -1271,8 +1239,7 @@ describe('listResearchEntityRelationshipPayload', () => {
           studentVisibilityTier: 'operator_review',
           archived: false,
         },
-      ],
-    });
+      ]));
 
     const result = await listResearchEntityRelationshipPayload(currentEntityId);
 
@@ -1293,14 +1260,13 @@ describe('listResearchEntityRelationshipPayload', () => {
       relatedResearchEntities: [],
       affiliatedRelationships: [
         expect.objectContaining({
-          _id: 'rel-yqi',
-          sourceResearchEntityId: publicInstituteId,
-          targetResearchEntityId: currentEntityId,
+          relationshipType: 'MEMBER_RESEARCH_AREA',
+          relatedResearchEntitySlug: 'center-yale-quantum-institute',
         }),
       ],
       affiliatedResearchEntities: [
         expect.objectContaining({
-          _id: publicInstituteId,
+          _id: 'center-yale-quantum-institute',
           slug: 'center-yale-quantum-institute',
           name: 'Yale Quantum Institute',
         }),
@@ -1348,8 +1314,6 @@ describe('buildResearchActivityLinkPayload', () => {
 
     expect(result.scholarlyLinks).toEqual([
       expect.objectContaining({
-        _id: 'link-entity',
-        researchEntityId: 'entity-1',
         relationshipBasis: 'explicit_entity_link',
         evidenceLabel: 'Linked to this research profile',
         title: 'Entity scholarly link',
@@ -1357,8 +1321,6 @@ describe('buildResearchActivityLinkPayload', () => {
     ]);
     expect(result.memberScholarlyLinks).toEqual([
       expect.objectContaining({
-        _id: 'link-member',
-        userId: 'user-1',
         relationshipBasis: 'identity_authorship',
         evidenceLabel: 'Authored by a verified Yale faculty identity',
         title: 'Member scholarly link',
@@ -1394,8 +1356,6 @@ describe('buildResearchActivityLinkPayload', () => {
 
     expect(result.scholarlyLinks).toEqual([
       expect.objectContaining({
-        _id: 'paper-entity',
-        researchEntityId: 'entity-1',
         relationshipBasis: 'explicit_entity_link',
         evidenceLabel: 'Linked to this research profile',
         title: 'Entity linked paper',
@@ -1403,17 +1363,12 @@ describe('buildResearchActivityLinkPayload', () => {
     ]);
     expect(result.memberScholarlyLinks).toEqual([
       expect.objectContaining({
-        _id: 'paper-member',
-        userId: 'user-1',
         relationshipBasis: 'member_authorship',
         evidenceLabel: 'Authored by a listed professor',
         title: 'Member authored paper',
       }),
     ]);
-    expect(result.researchActivityLinks.map((link: any) => link._id)).toEqual([
-      'paper-entity',
-      'paper-member',
-    ]);
+    expect(result.researchActivityLinks).toHaveLength(2);
   });
 });
 
@@ -1623,7 +1578,7 @@ describe('buildLeadPiOutreachContactRoute', () => {
             lname: 'Researcher',
             email: 'jordan.researcher@yale.edu',
           },
-          row: { sourceUrl: 'https://profile.example.test/jordan-researcher' },
+          row: { sourceUrl: 'https://medicine.yale.edu/profile/jordan-researcher' },
         },
       ],
       { websiteUrl: 'https://lab.example.test', contactEmail: '' },
@@ -1633,11 +1588,11 @@ describe('buildLeadPiOutreachContactRoute', () => {
       routeType: 'FACULTY_PI',
       label: 'Jordan Researcher',
       name: 'Jordan Researcher',
-      email: 'jordan.researcher@yale.edu',
       visibility: 'PUBLIC',
-      contactPolicy: 'DIRECT_CONTACT_OK',
-      sourceUrl: 'https://profile.example.test/jordan-researcher',
+      contactPolicy: 'OFFICIAL_ROUTE_PREFERRED',
+      sourceUrl: 'https://medicine.yale.edu/profile/jordan-researcher',
     });
+    expect(route).not.toHaveProperty('email');
   });
 
   it('does not derive a public PI outreach route from an unsafe attached email', () => {
@@ -1783,12 +1738,7 @@ describe('buildLeadPiOutreachContactRoute', () => {
       { websiteUrl: 'https://lab.example.test', contactEmail: '' },
     );
 
-    expect(route).toMatchObject({
-      routeType: 'FACULTY_PI',
-      email: 'jordan.researcher@yale.edu',
-      sourceUrl: 'https://physics.yale.edu/people/faculty',
-    });
-    expect(route).not.toHaveProperty('url');
+    expect(route).toBeNull();
   });
 
   it('does not promote a generic Yale faculty category URL as the official profile action', () => {

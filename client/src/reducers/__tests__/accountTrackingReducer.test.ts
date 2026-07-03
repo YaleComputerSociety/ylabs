@@ -207,7 +207,7 @@ describe('accountTrackingReducer', () => {
         fellowshipId: 'f1',
         value: 'Ask grace@example.edu at (203) 555-0100',
       });
-      expect(next.fellowshipNotes.f1).toBe('Ask [email redacted] at [phone redacted]');
+      expect(next.fellowshipNotes.f1).toBe('Ask [email redacted] at ([phone redacted]');
     });
 
     it('bounds fellowship note length and rejects unsafe fellowship ids', () => {

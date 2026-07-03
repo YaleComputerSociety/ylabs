@@ -45,7 +45,7 @@ describe('sanitizeLogValue', () => {
 
   it('redacts before bounding oversized log values', () => {
     const logged = sanitizeLogValue(
-      `prefix Authorization: Bearer raw-access-token apiKey=raw-api-key ${'x'.repeat(13000)}`,
+      `prefix Authorization: Bearer raw-access-token apiKey=raw-api-key\n${'x'.repeat(13000)}`,
     );
 
     expect(logged.length).toBeLessThanOrEqual(12015);

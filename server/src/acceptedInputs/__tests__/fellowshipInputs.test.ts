@@ -68,7 +68,7 @@ describe('candidateRowsFromText', () => {
 describe('generateFellowshipCandidates', () => {
   it('blocks private URLs in the default remote fetcher', async () => {
     await expect(defaultFetchUrl('http://127.0.0.1:27017/admin')).rejects.toThrow(
-      /private|non-public/i,
+      /private|non-public|port is not allowed/i,
     );
   });
 
@@ -186,7 +186,7 @@ describe('validateFellowshipRows', () => {
           year: '2025',
           studentName: 'Ada',
           advisorName: '',
-          advisorOrcid: '0000-0000-0000-0003',
+          advisorOrcid: '0000-0000-0000-0001',
           projectTitle: '',
           sourceUrl: '',
           sourcePage: '',
@@ -242,7 +242,7 @@ describe('exportAcceptedFellowshipRows and status', () => {
         'stars-ii',
         [
           'reviewStatus,programKey,programName,year,studentName,advisorName,advisorOrcid,projectTitle,sourceUrl,sourcePage,reviewNote,extractionStatus',
-          'accepted,stars-ii,STARS II,2025,Ada Lovelace,,0000-0000-0000-0003,RNA,,,,candidate',
+          'accepted,stars-ii,STARS II,2025,Ada Lovelace,,0000-0000-0000-0001,RNA,,,,candidate',
         ].join('\n'),
       );
 
@@ -256,7 +256,7 @@ describe('exportAcceptedFellowshipRows and status', () => {
         path.join(root, FELLOWSHIP_ACCEPTED_DIR, 'stars-ii.csv'),
         'utf8',
       );
-      expect(accepted).toContain('Ada Lovelace,0000-0000-0000-0003,2025');
+      expect(accepted).toContain('Ada Lovelace,0000-0000-0000-0001,2025');
     });
   });
 

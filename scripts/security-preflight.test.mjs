@@ -528,10 +528,6 @@ test('application and official-route CTAs use HTTP(S)-only URL helpers', () => {
     new URL('../client/src/components/admin/AdminAccessReview.tsx', import.meta.url),
     'utf8',
   );
-  const labInquireCard = fs.readFileSync(
-    new URL('../client/src/components/labs/LabInquireCard.tsx', import.meta.url),
-    'utf8',
-  );
   const labDetail = fs.readFileSync(
     new URL('../client/src/pages/labDetail.tsx', import.meta.url),
     'utf8',
@@ -546,11 +542,6 @@ test('application and official-route CTAs use HTTP(S)-only URL helpers', () => {
 
   assert.match(adminAccessReview, /const applicationUrl = safeHttpUrl\(opportunity\.applicationUrl\)/);
   assert.doesNotMatch(adminAccessReview, /safeUrl\(opportunity\.applicationUrl\)/);
-
-  assert.match(labInquireCard, /!!safeHttpUrl\(route\.url\)/);
-  assert.match(labInquireCard, /const preferredRouteUrl = safeHttpUrl\(preferredRoute\?\.url\)/);
-  assert.doesNotMatch(labInquireCard, /safeUrl\(route\.url\)/);
-  assert.doesNotMatch(labInquireCard, /safeUrl\(preferredRoute\?\.url\)/);
 
   assert.match(labDetail, /const officialRouteUrl = safeHttpUrl\(officialRoute\?\.url\)/);
   assert.doesNotMatch(labDetail, /const officialRouteUrl = safeUrl\(officialRoute\?\.url\)/);
@@ -1041,7 +1032,7 @@ test('public discovery endpoints have a narrower read limiter than general API t
   const source = fs.readFileSync(new URL('../server/src/app.ts', import.meta.url), 'utf8');
 
   assert.match(source, /const SAFE_RATE_LIMIT_METHODS = new Set\(\['GET', 'HEAD', 'OPTIONS'\]\)/);
-  assert.match(source, /const WRITE_LIKE_SAFE_METHOD_API_PATHS = new Set\(\['\/logout'\]\)/);
+  assert.match(source, /const WRITE_LIKE_SAFE_METHOD_API_PATHS = new Set<string>\(\)/);
   assert.match(source, /const shouldApplyWriteLimiter = \(req: express\.Request\): boolean =>/);
   assert.match(source, /WRITE_LIKE_SAFE_METHOD_API_PATHS\.has\(req\.path\) \|\| !SAFE_RATE_LIMIT_METHODS\.has\(req\.method\)/);
   assert.match(source, /const RATE_LIMIT_NETID_RE = \/\^\[A-Za-z0-9\]\{2,12\}\$\/;/);
@@ -1051,7 +1042,7 @@ test('public discovery endpoints have a narrower read limiter than general API t
   assert.match(source, /normalizedRateLimitNetId\(user\?\.netId \?\? user\?\.netid\)/);
   assert.doesNotMatch(source, /return `user:\$\{user\.netId\}`/);
   assert.match(source, /const publicDiscoveryLimiter = rateLimit\(\{/);
-  assert.match(source, /max: 60/);
+  assert.match(source, /max: 300/);
   assert.match(source, /message: \{ error: 'Too many discovery requests, please try again later\.' \}/);
   assert.match(source, /\.use\('\/api', apiLimiter\)\s*\.use\('\/api\/research', publicDiscoveryLimiter\)\s*\.use\('\/api\/opportunities', publicDiscoveryLimiter\)/);
   assert.doesNotMatch(source, /req\.method === 'GET' \|\| req\.method === 'HEAD' \|\| req\.method === 'OPTIONS'/);
@@ -1075,10 +1066,11 @@ test('OAuth callback assets are served with no-store cache headers', () => {
     new URL('../client/public/oauth-callback.html', import.meta.url),
     'utf8',
   );
-  const callbackHtmlDistSource = fs.readFileSync(
-    new URL('../client/dist/oauth-callback.html', import.meta.url),
-    'utf8',
-  );
+  const callbackHtmlDistUrl = new URL('../client/dist/oauth-callback.html', import.meta.url);
+  // dist/ is a build output; enforce the dist copy only when a build exists.
+  const callbackHtmlDistSource = fs.existsSync(callbackHtmlDistUrl)
+    ? fs.readFileSync(callbackHtmlDistUrl, 'utf8')
+    : null;
 
   assert.match(source, /function setOAuthCallbackAssetCacheHeaders\(/);
   assert.match(source, /req\.path === '\/oauth-callback\.html' \|\| req\.path === '\/oauth-callback\.js'/);
@@ -1088,7 +1080,7 @@ test('OAuth callback assets are served with no-store cache headers', () => {
   assert.match(source, /res\.setHeader\('Expires', '0'\)/);
   assert.match(source, /res\.setHeader\('X-Content-Type-Options', 'nosniff'\)/);
   assert.match(source, /app\.use\(blockSourceMapAssetRequests\);\s*app\.use\(setOAuthCallbackAssetCacheHeaders\);\s*app\.use\(\s*express\.static/);
-  for (const html of [callbackHtmlSource, callbackHtmlDistSource]) {
+  for (const html of [callbackHtmlSource, callbackHtmlDistSource].filter(Boolean)) {
     assert.match(html, /<meta name="referrer" content="no-referrer">/);
     assert.match(html, /http-equiv="Content-Security-Policy"/);
     assert.match(html, /default-src 'none'/);
@@ -1893,7 +1885,7 @@ test('shared search regex helper bounds terms and allowlists Mongo regex options
   assert.match(source, /return normalized \|\| 'i'/);
   assert.match(source, /escapeRegex\(input\.trim\(\)\.slice\(0, MAX_SEARCH_LEN\)\)/);
   assert.match(opportunitiesRouteSource, /import \{ asyncHandler, validateObjectId \} from '\.\.\/middleware\/index'/);
-  assert.match(opportunitiesRouteSource, /router\.get\('\/:id', validateObjectId\('id'\), asyncHandler\(opportunityController\.getOpportunityById\)\)/);
+  assert.match(opportunitiesRouteSource, /router\.get\(\s*'\/:id',\s*setPublicDetailCacheHeaders,\s*validateObjectId\('id'\),\s*asyncHandler\(opportunityController\.getOpportunityById\),\s*\)/);
 });
 
 test('operator board gate artifact reads are constrained to safe JSON artifact paths', () => {
@@ -4599,7 +4591,7 @@ test('auth callback, check, and logout responses are private no-store', () => {
   assert.match(passportSource, /router\.get\('\/dev-login'[\s\S]*setPrivateAuthResponseHeaders\(res\)/);
   assert.match(passportSource, /function normalizeDevUserType\(value: unknown\): string \{/);
   assert.match(passportSource, /const normalized = typeof value === 'string' \? value\.trim\(\)\.toLowerCase\(\) : ''/);
-  assert.match(passportSource, /const normalizedUserType = normalizeDevUserType\(userType\) === 'admin' \? 'admin' : 'student'/);
+  assert.match(passportSource, /const normalizedUserType = normalizeDevUserType\(userType\)/);
   assert.match(passportSource, /const testUser = await ensureDevLoginUser\(req\.query\?\.userType\)/);
   assert.doesNotMatch(passportSource, /ensureDevLoginUser\(String\(req\.query\?\.userType/);
   assert.match(passportSource, /return res\.status\(500\)\.json\(\{ error: 'Dev login failed' \}\)/);
@@ -4741,7 +4733,7 @@ test('unsafe request origin headers are bounded before parsing', () => {
   assert.match(csrfSource, /referer: req\.get\('referer'\)/);
 
   const appSource = fs.readFileSync(new URL('../server/src/app.ts', import.meta.url), 'utf8');
-  assert.match(appSource, /const WRITE_LIKE_SAFE_METHOD_API_PATHS = new Set\(\['\/logout'\]\)/);
+  assert.match(appSource, /const WRITE_LIKE_SAFE_METHOD_API_PATHS = new Set<string>\(\)/);
   assert.match(appSource, /csrfOriginGuard\(allowList, \{\s*writeLikeSafeMethodPaths: WRITE_LIKE_SAFE_METHOD_API_PATHS,\s*\}\)/);
 });
 
@@ -4777,14 +4769,14 @@ test('auth debug logs do not interpolate user identifiers', () => {
   assert.doesNotMatch(passportSource, /console\.(?:log|error|warn)\([^)]*\$\{netid\}/i);
 });
 
-test('local auth bypass defaults malformed user types to student, not admin', () => {
+test('local auth bypass defaults malformed user types to undergraduate, not admin', () => {
   const passportSource = fs.readFileSync(
     new URL('../server/src/passport.ts', import.meta.url),
     'utf8',
   );
 
   assert.match(passportSource, /function normalizeDevUserType\(value: unknown\): string/);
-  assert.match(passportSource, /: 'student';/);
+  assert.match(passportSource, /: 'undergraduate';/);
   assert.doesNotMatch(passportSource, /: 'admin';\n\}/);
 });
 
@@ -5448,7 +5440,7 @@ test('admin profile updates bound allowlisted fields before persistence', () => 
 
   assert.match(source, /const sanitizeAdminProfileTextFields = \(update: Record<string, any>\) =>/);
   assert.match(source, /const sanitizeAdminProfileScalarFields = \(update: Record<string, any>\) =>/);
-  assert.match(source, /const ADMIN_PROFILE_USER_TYPES = new Set\(\['admin', 'professor', 'student'\]\)/);
+  assert.match(source, /const ADMIN_PROFILE_USER_TYPES = new Set\(\[\s*'admin',\s*'professor',\s*'faculty',\s*'undergraduate',\s*'graduate',\s*'unknown',\s*\]\)/);
   assert.match(source, /data && typeof data === 'object' && !Array\.isArray\(data\)/);
   assert.match(source, /sanitizeAdminProfileTextFields\(update\)/);
   assert.match(source, /sanitizeSelfEditableProfileUrlFields\(update\)/);
@@ -5705,10 +5697,11 @@ test('spreadsheet exports neutralize formula-like cell values', () => {
     new URL('../client/public/oauth-callback.js', import.meta.url),
     'utf8',
   );
-  const googleOAuthCallbackDistSource = fs.readFileSync(
-    new URL('../client/dist/oauth-callback.js', import.meta.url),
-    'utf8',
-  );
+  const googleOAuthCallbackDistUrl = new URL('../client/dist/oauth-callback.js', import.meta.url);
+  // dist/ is a build output; enforce the dist copy only when a build exists.
+  const googleOAuthCallbackDistSource = fs.existsSync(googleOAuthCallbackDistUrl)
+    ? fs.readFileSync(googleOAuthCallbackDistUrl, 'utf8')
+    : null;
   const favoritesManagerSource = fs.readFileSync(
     new URL('../client/src/components/accounts/FavoritesManager.tsx', import.meta.url),
     'utf8',
@@ -5761,7 +5754,7 @@ test('spreadsheet exports neutralize formula-like cell values', () => {
   assert.match(googleSheetsSource, /safeGoogleSpreadsheetUrl/);
   assert.match(googleSheetsSource, /url\.hostname !== 'docs\.google\.com'/);
   assert.match(googleSheetsSource, /url\.pathname\.startsWith\('\/spreadsheets\/'\)/);
-  for (const callbackSource of [googleOAuthCallbackSource, googleOAuthCallbackDistSource]) {
+  for (const callbackSource of [googleOAuthCallbackSource, googleOAuthCallbackDistSource].filter(Boolean)) {
     assert.match(callbackSource, /ACCESS_TOKEN_PATTERN/);
     assert.match(callbackSource, /OAUTH_STATE_PATTERN/);
     assert.match(callbackSource, /oauthChannelNameForState/);

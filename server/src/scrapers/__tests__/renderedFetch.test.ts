@@ -23,7 +23,7 @@ describe('createScraplingRenderedFetcher', () => {
     const fetcher = createScraplingRenderedFetcher({
       enabled: true,
       pythonCommand: 'python3',
-      bridgePath: '/tmp/scraplingBridge.py',
+      bridgePath: 'scraplingBridge.py',
       seedRedirectCheck: async () => true,
     });
 
@@ -48,7 +48,7 @@ describe('createScraplingRenderedFetcher', () => {
     const fetcher = createScraplingRenderedFetcher({
       enabled: true,
       pythonCommand: 'python3',
-      bridgePath: '/tmp/scraplingBridge.py',
+      bridgePath: 'scraplingBridge.py',
       seedRedirectCheck: noSeedRedirect,
     });
 
@@ -73,7 +73,7 @@ describe('createScraplingRenderedFetcher', () => {
     const fetcher = createScraplingRenderedFetcher({
       enabled: true,
       pythonCommand: 'python3',
-      bridgePath: '/tmp/scraplingBridge.py',
+      bridgePath: 'scraplingBridge.py',
       seedRedirectCheck: noSeedRedirect,
     });
 
@@ -98,7 +98,7 @@ describe('createScraplingRenderedFetcher', () => {
     const fetcher = createScraplingRenderedFetcher({
       enabled: true,
       pythonCommand: 'python3',
-      bridgePath: '/tmp/scraplingBridge.py',
+      bridgePath: 'scraplingBridge.py',
       seedRedirectCheck: noSeedRedirect,
     });
 
@@ -121,7 +121,7 @@ describe('createScraplingRenderedFetcher', () => {
     const fetcher = createScraplingRenderedFetcher({
       enabled: true,
       pythonCommand: 'python3',
-      bridgePath: '/tmp/scraplingBridge.py',
+      bridgePath: 'scraplingBridge.py',
       timeoutMs: 250_000,
       seedRedirectCheck: noSeedRedirect,
     });
@@ -145,7 +145,7 @@ describe('createScraplingRenderedFetcher', () => {
     const fetcher = createScraplingRenderedFetcher({
       enabled: true,
       pythonCommand: 'python3',
-      bridgePath: '/tmp/scraplingBridge.py',
+      bridgePath: 'scraplingBridge.py',
       timeoutMs: 10,
       seedRedirectCheck: noSeedRedirect,
     });

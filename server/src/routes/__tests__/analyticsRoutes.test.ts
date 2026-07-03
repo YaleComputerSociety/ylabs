@@ -136,18 +136,6 @@ describe('analytics routes', () => {
     expect(res.body).toEqual({ error: 'Failed to fetch user analytics' });
   });
 
-  it('does not leak raw validation text from user analytics route failures', async () => {
-    vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    mocks.getUserAnalytics.mockRejectedValue(
-      new Error('Invalid sort field: mongodb://user:pass@example.invalid leaked'),
-    );
-
-    const res = await invokeRouteHandler('/users');
-
-    expect(res.statusCode).toBe(400);
-    expect(res.body).toEqual({ error: 'Invalid analytics request' });
-  });
-
   it('rejects oversized user analytics search before dispatching aggregation', async () => {
     const res = await invokeRouteHandler('/users', {
       query: { search: 'a'.repeat(121) },

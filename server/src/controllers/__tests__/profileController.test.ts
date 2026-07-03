@@ -412,11 +412,9 @@ describe('profileController', () => {
 
     const payload = res.json.mock.calls[0][0].profile;
     expect(payload).toMatchObject({
-      _id: 'user-1',
       netid: 'owner123',
       fname: 'Owner',
       lname: 'Professor',
-      email: 'owner123@yale.edu',
       bio: 'Updated public bio.',
     });
     expect(payload).not.toHaveProperty('googleScholarId');

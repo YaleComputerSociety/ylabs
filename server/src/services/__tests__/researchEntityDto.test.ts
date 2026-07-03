@@ -21,8 +21,8 @@ describe('researchEntityDto', () => {
 
     expect(dto).toEqual(
       expect.objectContaining({
-        _id: 'entity-1',
-        id: 'entity-1',
+        _id: 'digital-humanities-project',
+        id: 'digital-humanities-project',
         slug: 'digital-humanities-project',
         name: 'Digital Humanities Project',
         kind: 'initiative',
@@ -202,7 +202,7 @@ describe('researchEntityDto', () => {
       sourceUrls,
       studentDecisionExplanation: { reasons },
       qualitySummary,
-    });
+    }, { includeOperatorFields: true });
 
     expect(dto.description).toHaveLength(5000);
     expect(dto.researchAreas).toHaveLength(100);
@@ -234,7 +234,7 @@ describe('researchEntityDto', () => {
     });
 
     expect(dto).toMatchObject({
-      id: 'entity-private-fields',
+      id: 'privacy-lab',
       slug: 'privacy-lab',
       name: 'Privacy Lab',
     });

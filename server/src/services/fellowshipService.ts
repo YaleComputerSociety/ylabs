@@ -239,8 +239,10 @@ const publicFellowshipField = (field: string, value: unknown): unknown => {
 
   if (field === 'links') return publicFellowshipLinks(value);
 
-  if (PUBLIC_FELLOWSHIP_TEXT_FIELDS.has(field) && typeof value === 'string') {
-    return redactDirectContactInfo(boundedPublicText(value));
+  if (PUBLIC_FELLOWSHIP_TEXT_FIELDS.has(field)) {
+    return typeof value === 'string'
+      ? redactDirectContactInfo(boundedPublicText(value))
+      : undefined;
   }
 
   if (field === 'prepSteps' && Array.isArray(value)) {
