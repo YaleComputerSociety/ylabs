@@ -5,7 +5,6 @@ on:
     branches:
       - main
       - beta
-      - new-foundation
   workflow_dispatch:
 
 permissions:
@@ -28,8 +27,16 @@ jobs:
       - name: Enable Corepack
         run: corepack enable
 
+      # Invoke the immutable installs as yarn builtins, not via the
+      # install:all:immutable script: on a fresh checkout Yarn cannot run
+      # package.json scripts before an install has created its state file
+      # ("Couldn't find the node_modules state file"), so the script form
+      # fails on every CI runner.
       - name: Install dependencies from lockfiles
-        run: yarn install:all:immutable
+        run: |
+          yarn install --immutable
+          yarn --cwd server install --immutable
+          yarn --cwd client install --immutable
 
       - name: Run server typecheck
         run: npx tsc --noEmit -p server/tsconfig.json
