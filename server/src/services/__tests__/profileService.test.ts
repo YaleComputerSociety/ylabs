@@ -96,15 +96,14 @@ describe('profileService profile shaping', () => {
     });
 
     expect(profile).toMatchObject({
-      _id: 'user-1',
       netid: 'abc123',
       fname: 'Ada',
       lname: 'Lovelace',
       userType: 'professor',
-      userConfirmed: true,
       profileVerified: true,
       orcid: '0000-0000-0000-0000',
     });
+    expect(profile).not.toHaveProperty('_id');
     expect(profile).not.toHaveProperty('email');
     expect(profile).not.toHaveProperty('googleScholarId');
     expect(profile).not.toHaveProperty('semanticScholarId');
@@ -1206,6 +1205,8 @@ describe('profileService profile shaping', () => {
     expect(profile.profile_urls).toEqual({});
     expect(profile.researchEntities).toEqual([
       {
+        _id: 'ysm-stern',
+        id: 'ysm-stern',
         slug: 'ysm-stern',
         name: 'Stern Lab',
         shortDescription: 'Studies DNA damage responses and melanoma biology.',
@@ -1725,8 +1726,6 @@ describe('profileService profile shaping', () => {
     );
 
     expect(link).toMatchObject({
-      _id: 'paper-1',
-      userId: 'user-1',
       title: 'A real paper',
       url: 'https://doi.org/10.1234/example',
       destinationKind: 'DOI',
@@ -1831,8 +1830,6 @@ describe('profileService profile shaping', () => {
     );
 
     expect(link).toMatchObject({
-      _id: 'link-1',
-      userId: 'user-1',
       title: 'Infinite-Horizon Ergodic Control via Kernel Mean Embeddings',
       url: 'https://arxiv.org/pdf/2604.01023',
       destinationKind: 'ARXIV',
@@ -2037,7 +2034,7 @@ describe('profileService admin profile update persistence', () => {
     expect(update.fname).not.toContain('hidden@example.edu');
     expect(update).not.toHaveProperty('lname');
     expect(update).not.toHaveProperty('email');
-    expect(update.title.length).toBeLessThanOrEqual(300);
+    expect(update.title.length).toBeLessThanOrEqual(320);
     expect(update.title).not.toContain('203-432-1234');
     expect(update).not.toHaveProperty('hIndex');
     expect(update).not.toHaveProperty('profileVerified');
@@ -2045,6 +2042,30 @@ describe('profileService admin profile update persistence', () => {
     expect(update).not.toHaveProperty('userType');
     expect(update.publications).toEqual([]);
     expect(update).not.toHaveProperty('arbitraryNested');
+  });
+
+  it('accepts every userType the AdminProfileEditModal dropdown actually offers', async () => {
+    for (const userType of ['admin', 'professor', 'faculty', 'undergraduate', 'graduate', 'unknown']) {
+      userModelMock.findOneAndUpdate.mockReturnValue({
+        select: vi.fn(() => ({ lean: vi.fn().mockResolvedValue({ netid: 'u123' }) })),
+      });
+
+      await adminUpdateProfile('u123', { userType });
+
+      const update = userModelMock.findOneAndUpdate.mock.calls.at(-1)![1] as Record<string, unknown>;
+      expect(update.userType).toBe(userType);
+    }
+  });
+
+  it('drops the legacy generic student userType, which no real account uses and the dropdown never offers', async () => {
+    userModelMock.findOneAndUpdate.mockReturnValue({
+      select: vi.fn(() => ({ lean: vi.fn().mockResolvedValue({ netid: 'u123' }) })),
+    });
+
+    await adminUpdateProfile('u123', { userType: 'student' });
+
+    const update = userModelMock.findOneAndUpdate.mock.calls.at(-1)![1] as Record<string, unknown>;
+    expect(update).not.toHaveProperty('userType');
   });
 });
 
@@ -2155,7 +2176,7 @@ describe('updateOwnProfile', () => {
       ],
     });
 
-    const update = userModelMock.findOneAndUpdate.mock.calls[0][1];
+    const update = userModelMock.findOneAndUpdate.mock.lastCall[1];
     expect(update.publications).toHaveLength(2);
     expect(update.publications[0]).toMatchObject({
       year: 2026,

@@ -210,7 +210,7 @@ yarn install:all
 
 ### Dev login bypass
 
-Visit `http://localhost:4000/api/dev-login` to log in as a test user (`test123` / `student`) without CAS. Use `?userType=admin` for the `devadmin` account. Dev login is allowed only when `NODE_ENV=development` and `SERVER_BASE_URL` points at localhost or loopback; the Mongo database name does not control this local-runtime check.
+Visit `http://localhost:4000/api/dev-login` to log in as a test user (`test123` / `undergraduate`) without CAS — `undergraduate` (not the legacy generic `student`) since that's what every real account in the database actually is. Use `?userType=admin` for the `devadmin` account, `?userType=professor` (or `faculty`) for the `devprofessor` account, `?userType=graduate` for the `devgraduate` account, or `?userType=unknown` for the `devunknown` account — the only way to trigger the `/unknown` onboarding-form experience locally, since it otherwise only shows up when a real CAS login's Yalies/Directory lookup can't classify the user. The `unknown` dev account is created with `userConfirmed: false` and `profileVerified: false` to match that real state; every other dev role is pre-confirmed. Dev login is allowed only when `NODE_ENV=development` and `SERVER_BASE_URL` points at localhost or loopback; the Mongo database name does not control this local-runtime check.
 
 For request-level local testing, set `LOCAL_AUTH_BYPASS=true` in `server/.env`. In `development` or `test` only, protected `/api` requests without a session receive a dev admin user by default:
 

@@ -1,6 +1,15 @@
 import { describe, expect, it, vi } from 'vitest';
 import passport from 'passport';
+
+const userServiceMock = vi.hoisted(() => ({
+  validateUser: vi.fn(),
+  createUser: vi.fn(),
+  updateUser: vi.fn(),
+}));
+vi.mock('../services/userService', () => userServiceMock);
+
 import {
+  ensureDevLoginUser,
   isDevLoginAllowed,
   isLocalAuthBypassAllowed,
   isLocalDevelopmentRuntime,
@@ -41,6 +50,66 @@ describe('auth environment guards', () => {
 
   it('uses syntactically valid Yale placeholder emails for fallback accounts', () => {
     expect(placeholderYaleEmail('ABC123')).toBe('abc123@yale.edu');
+  });
+
+  it('creates a distinct, unconfirmed devunknown account for ?userType=unknown', async () => {
+    const originalNodeEnv = process.env.NODE_ENV;
+    const originalServerBaseUrl = process.env.SERVER_BASE_URL;
+    process.env.NODE_ENV = 'development';
+    process.env.SERVER_BASE_URL = 'http://localhost:4000';
+
+    userServiceMock.validateUser.mockResolvedValue(null);
+    userServiceMock.createUser.mockImplementation(async (data: any) => data);
+
+    try {
+      const result = await ensureDevLoginUser('unknown');
+
+      expect(result.netId).toBe('devunknown');
+      expect(result.userType).toBe('unknown');
+      expect(result.userConfirmed).toBe(false);
+      expect(result.profileVerified).toBe(false);
+      expect(userServiceMock.createUser).toHaveBeenCalledWith(
+        expect.objectContaining({
+          netid: 'devunknown',
+          userType: 'unknown',
+          userConfirmed: false,
+          profileVerified: false,
+        }),
+      );
+    } finally {
+      userServiceMock.validateUser.mockReset();
+      userServiceMock.createUser.mockReset();
+      if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = originalNodeEnv;
+      if (originalServerBaseUrl === undefined) delete process.env.SERVER_BASE_URL;
+      else process.env.SERVER_BASE_URL = originalServerBaseUrl;
+    }
+  });
+
+  it('still defaults unrecognized dev userTypes to the confirmed test123 undergraduate account', async () => {
+    const originalNodeEnv = process.env.NODE_ENV;
+    const originalServerBaseUrl = process.env.SERVER_BASE_URL;
+    process.env.NODE_ENV = 'development';
+    process.env.SERVER_BASE_URL = 'http://localhost:4000';
+
+    userServiceMock.validateUser.mockResolvedValue(null);
+    userServiceMock.createUser.mockImplementation(async (data: any) => data);
+
+    try {
+      const result = await ensureDevLoginUser('bogus');
+
+      expect(result.netId).toBe('test123');
+      expect(result.userType).toBe('undergraduate');
+      expect(result.userConfirmed).toBe(true);
+      expect(result.profileVerified).toBe(true);
+    } finally {
+      userServiceMock.validateUser.mockReset();
+      userServiceMock.createUser.mockReset();
+      if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = originalNodeEnv;
+      if (originalServerBaseUrl === undefined) delete process.env.SERVER_BASE_URL;
+      else process.env.SERVER_BASE_URL = originalServerBaseUrl;
+    }
   });
 
   it('allows local auth bypass only in local development with the explicit flag', () => {
@@ -95,12 +164,12 @@ describe('auth environment guards', () => {
         },
         {
           'x-dev-netid': 'test123',
-          'x-dev-user-type': 'student',
+          'x-dev-user-type': 'undergraduate',
         },
       ),
     ).toMatchObject({
       netId: 'test123',
-      userType: 'student',
+      userType: 'undergraduate',
     });
   });
 
@@ -112,21 +181,21 @@ describe('auth environment guards', () => {
       }),
     ).toMatchObject({
       netId: 'devadmin',
-      userType: 'student',
+      userType: 'undergraduate',
     });
 
     expect(
       localAuthBypassUser(
         {
           LOCAL_AUTH_BYPASS_NETID: 'devadmin',
-          LOCAL_AUTH_BYPASS_USER_TYPE: 'student',
+          LOCAL_AUTH_BYPASS_USER_TYPE: 'undergraduate',
         },
         {
           'x-dev-user-type': '__proto__',
         },
       ),
     ).toMatchObject({
-      userType: 'student',
+      userType: 'undergraduate',
     });
   });
 
@@ -135,7 +204,7 @@ describe('auth environment guards', () => {
       localAuthBypassUser(
         {
           LOCAL_AUTH_BYPASS_NETID: 'safe123',
-          LOCAL_AUTH_BYPASS_USER_TYPE: 'student',
+          LOCAL_AUTH_BYPASS_USER_TYPE: 'graduate',
         },
         {
           'x-dev-netid': 'attacker@example.invalid',
@@ -143,17 +212,17 @@ describe('auth environment guards', () => {
       ),
     ).toMatchObject({
       netId: 'safe123',
-      userType: 'student',
+      userType: 'graduate',
     });
 
     expect(
       localAuthBypassUser({
         LOCAL_AUTH_BYPASS_NETID: 'x'.repeat(4096),
-        LOCAL_AUTH_BYPASS_USER_TYPE: 'student',
+        LOCAL_AUTH_BYPASS_USER_TYPE: 'graduate',
       }),
     ).toMatchObject({
       netId: 'devadmin',
-      userType: 'student',
+      userType: 'graduate',
     });
   });
 
@@ -184,7 +253,7 @@ describe('auth environment guards', () => {
     ).toThrow(/SERVER_BASE_URL must use HTTPS/);
     expect(() =>
       validateProductionAuthConfig({ ...validProductionEnv, SERVER_BASE_URL: 'https://localhost:4000' }),
-    ).toThrow(/localhost/);
+    ).toThrow(/localhost|private or local host/);
     expect(() =>
       validateProductionAuthConfig({ ...validProductionEnv, SSOBASEURL: 'not-a-url' }),
     ).toThrow(/SSOBASEURL must be a valid HTTPS URL/);
@@ -251,6 +320,24 @@ describe('auth environment guards', () => {
         profileVerified: false,
       },
     });
+  });
+
+  it('reports real undergraduate/graduate/staff accounts as themselves, not unknown', () => {
+    const checkRoute = (passportRoutes as any).stack
+      .map((layer: any) => layer.route)
+      .find((route: any) => route?.path === '/check');
+    expect(checkRoute).toBeTruthy();
+    const handler = checkRoute.stack.at(-1).handle;
+
+    for (const userType of ['undergraduate', 'graduate', 'staff']) {
+      const res = { setHeader: vi.fn(), json: vi.fn() };
+      handler({ user: { netId: 'abc123', userType, userConfirmed: true, profileVerified: false } }, res);
+
+      expect(res.json).toHaveBeenCalledWith({
+        auth: true,
+        user: { netId: 'abc123', userType, userConfirmed: true, profileVerified: false },
+      });
+    }
   });
 
   it('fails auth check closed for malformed session principals', () => {
@@ -565,7 +652,7 @@ describe('auth environment guards', () => {
       expect(logged).toContain('ticket=[secret-redacted]');
       expect(logged).toContain('[email redacted]');
       expect(logged).toContain('https://[credentials-redacted]@example.test/cas');
-      expect(logged).toContain('Bearer [token-redacted]');
+      expect(logged).toContain('Authorization: [secret-redacted]');
       expect(logged).not.toContain('ST-secret-ticket');
       expect(logged).not.toContain('ST-stack-ticket');
       expect(logged).not.toContain('ada@yale.edu');

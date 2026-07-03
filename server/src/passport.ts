@@ -212,18 +212,39 @@ function normalizedHeaderValue(value: string | string[] | undefined): string | u
   return value;
 }
 
+// Every real account in the database is 'undergraduate' or 'graduate' —
+// bare 'student' is never actually assigned (Yalies and the /unknown
+// bootstrap form both only ever produce undergraduate/graduate) — so
+// dev/local-bypass tooling defaults to 'undergraduate' to match reality.
 function normalizeDevUserType(value: unknown): string {
   const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
-  return ['admin', 'student', 'professor', 'faculty', 'unknown'].includes(normalized)
+  return ['admin', 'undergraduate', 'graduate', 'professor', 'faculty', 'unknown'].includes(normalized)
     ? normalized
-    : 'student';
+    : 'undergraduate';
 }
+
+// Mirrors the full User schema userType enum (models/user.ts). Unlike
+// normalizeDevUserType (a narrow allowlist for the dev-login query param),
+// this runs on an already-persisted user's real userType for the client-
+// facing /check payload, so it must accept every value the schema can
+// actually store — 'undergraduate'/'graduate' most of all, since that's
+// nearly every real account. Missing one here silently reports every such
+// user as 'unknown' to the client on every request, regardless of what's
+// in the database.
+const SESSION_USER_TYPES = [
+  'admin',
+  'professor',
+  'faculty',
+  'student',
+  'undergraduate',
+  'graduate',
+  'staff',
+  'unknown',
+];
 
 function normalizeSessionUserType(value: unknown): string {
   const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
-  return ['admin', 'student', 'professor', 'faculty', 'unknown'].includes(normalized)
-    ? normalized
-    : 'unknown';
+  return SESSION_USER_TYPES.includes(normalized) ? normalized : 'unknown';
 }
 
 function normalizeAuthNetId(value: unknown): string | undefined {
@@ -276,21 +297,35 @@ function placeholderYaleEmail(netid: string): string {
   return `${netid.trim().toLowerCase()}@yale.edu`;
 }
 
+const DEV_LOGIN_PROFILES: Record<string, { netId: string; fname: string; lname: string }> = {
+  admin: { netId: 'devadmin', fname: 'Dev', lname: 'Admin' },
+  undergraduate: { netId: 'test123', fname: 'Test', lname: 'Student' },
+  graduate: { netId: 'devgraduate', fname: 'Dev', lname: 'Graduate' },
+  professor: { netId: 'devprofessor', fname: 'Dev', lname: 'Professor' },
+  faculty: { netId: 'devprofessor', fname: 'Dev', lname: 'Professor' },
+  unknown: { netId: 'devunknown', fname: 'NA', lname: 'NA' },
+};
+
 async function ensureDevLoginUser(userType: unknown) {
   if (!isDevLoginAllowed()) {
     throw new Error('Dev login is disabled for this environment');
   }
 
-  const normalizedUserType = normalizeDevUserType(userType) === 'admin' ? 'admin' : 'student';
-  const netId = normalizedUserType === 'admin' ? 'devadmin' : 'test123';
+  const normalizedUserType = normalizeDevUserType(userType);
+  const profile = DEV_LOGIN_PROFILES[normalizedUserType] ?? DEV_LOGIN_PROFILES.undergraduate;
+  // A real 'unknown' user is unconfirmed/unverified until they complete the
+  // /unknown bootstrap form; every other dev role is pre-confirmed so it can
+  // exercise the rest of the app immediately.
+  const isBootstrappedType = normalizedUserType !== 'unknown';
+  const netId = profile.netId;
   const userData = {
     netid: netId,
     email: `${netId}@example.invalid`,
-    fname: normalizedUserType === 'admin' ? 'Dev' : 'Test',
-    lname: normalizedUserType === 'admin' ? 'Admin' : 'Student',
+    fname: profile.fname,
+    lname: profile.lname,
     userType: normalizedUserType,
-    userConfirmed: true,
-    profileVerified: true,
+    userConfirmed: isBootstrappedType,
+    profileVerified: isBootstrappedType,
   };
   const existing = await validateUser(netId);
   const user = existing ? await updateUser(netId, userData) : await createUser(userData);
@@ -710,6 +745,7 @@ if (isDevLoginAllowed()) {
 }
 
 export {
+  ensureDevLoginUser,
   isDevLoginAllowed,
   isLocalAuthBypassAllowed,
   isLocalDevelopmentRuntime,

@@ -83,7 +83,7 @@ yale-research/
 
 Migration scripts run from `data-migration/` with `npx tsx --transpile-only <script>.ts`.
 
-Dev login bypass: `GET http://localhost:4000/api/dev-login` creates a test session (`test123` / `student`) without CAS.
+Dev login bypass: `GET http://localhost:4000/api/dev-login` creates a test session (`test123` / `undergraduate`) without CAS — `undergraduate` matches every real account in the database; bare `'student'` is legacy residue no real account ever has. Pass `?userType=admin|professor|faculty|graduate|unknown` to log in as a different dev account (`devadmin`, `devprofessor`, `devgraduate`, `devunknown`) — the `unknown` type is the only way to reach the `/unknown` onboarding-form experience locally, since real CAS logins only land there when Yalies/Directory lookups fail to classify the user.
 
 ## TypeScript Configuration
 

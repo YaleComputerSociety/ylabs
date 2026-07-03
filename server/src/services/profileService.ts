@@ -2233,7 +2233,20 @@ const MAX_ADMIN_PROFILE_EMAIL_LENGTH = 254;
 const MAX_ADMIN_PROFILE_TITLE_LENGTH = 300;
 const MAX_ADMIN_PROFILE_IDENTIFIER_LENGTH = 300;
 const MAX_ADMIN_PROFILE_H_INDEX = 1_000_000;
-const ADMIN_PROFILE_USER_TYPES = new Set(['admin', 'professor', 'student']);
+// Must match the AdminProfileEditModal <select> options exactly (admin/
+// professor/faculty/graduate/undergraduate/unknown) — 'student' was never
+// actually offered by that UI and is never assigned to a real account
+// (every real student is 'undergraduate' or 'graduate'), so keeping it here
+// instead of the real values silently dropped every admin edit that picked
+// faculty/graduate/undergraduate/unknown from the dropdown.
+const ADMIN_PROFILE_USER_TYPES = new Set([
+  'admin',
+  'professor',
+  'faculty',
+  'undergraduate',
+  'graduate',
+  'unknown',
+]);
 
 const boundedAdminProfileText = (value: unknown, maxLength: number): string | undefined => {
   const text = boundedProfileString(value, maxLength);
