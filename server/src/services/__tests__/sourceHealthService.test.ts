@@ -87,7 +87,7 @@ describe('sourceHealthService', () => {
     expect(rows[0].risk).toBe('error');
     expect(rows[0].action).toMatch(/Materialization errors/i);
     expect(rows[0].nextCommand).toBe(
-      'SCRAPER_ENV=beta yarn --cwd server scrape report --run latest --output /tmp/ylabs-scraper-reports/access-source-latest.json',
+      "SCRAPER_ENV=beta yarn --cwd server scrape report --run latest --output '/tmp/ylabs-scraper-reports/access-source-latest.json'",
     );
     expect(rows[0].latestRun?.reportCommand).toBe(rows[0].nextCommand);
     expect(rows[0].expectedArtifactTypes).toEqual(['EntryPathway', 'AccessSignal']);

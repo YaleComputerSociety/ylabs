@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   readFellowships: vi.fn(),
   readListings: vi.fn(),
+  readPublicListings: vi.fn(),
   readPrograms: vi.fn(),
   readUser: vi.fn(),
   updateUser: vi.fn(),
@@ -39,6 +40,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../../services/listingService', () => ({
   readListings: mocks.readListings,
+  readPublicListings: mocks.readPublicListings,
 }));
 
 vi.mock('../../services/fellowshipService', () => ({
@@ -194,7 +196,6 @@ const expectPublicProgram = (payload: any) => {
     isAcceptingApplications: true,
     applicationOpenDate: new Date('2026-01-01T00:00:00.000Z'),
     deadline: new Date('2026-02-01T00:00:00.000Z'),
-    contactName: 'Program Office',
     contactOffice: 'Office of Research',
     yearOfStudy: ['First-year'],
     termOfAward: ['Summer'],
@@ -203,7 +204,6 @@ const expectPublicProgram = (payload: any) => {
     citizenshipStatus: ['Any'],
     sourceName: 'Official program page',
     sourceUrl: 'https://example.yale.edu/program',
-    studentVisibilityTier: 'student_ready',
   });
   expect(payload).not.toHaveProperty('contactEmail');
   expect(payload).not.toHaveProperty('contactPhone');
@@ -327,9 +327,8 @@ describe('userController', () => {
       ownListings: ['64a000000000000000000001'],
       favListings: ['64a000000000000000000002'],
     });
-    mocks.readListings
-      .mockResolvedValueOnce([ownListing])
-      .mockResolvedValueOnce([favListing]);
+    mocks.readListings.mockResolvedValue([ownListing]);
+    mocks.readPublicListings.mockResolvedValue([favListing]);
     mocks.updateUser.mockResolvedValue({});
 
     const req = {
@@ -969,8 +968,6 @@ describe('userController', () => {
       bio: 'I study public health.',
       profileUrls: {
         yale: 'https://example.yale.edu/profile/student123',
-        research_profile: 'https://example.yale.edu/research/student123',
-        _source: 'https://example.yale.edu/source/student123',
       },
     });
     expect(res.statusCode).toBe(200);
@@ -978,8 +975,6 @@ describe('userController', () => {
       website: 'https://example.yale.edu/student123',
       profileUrls: {
         yale: 'https://example.yale.edu/profile/student123',
-        research_profile: 'https://example.yale.edu/research/student123',
-        _source: 'https://example.yale.edu/source/student123',
       },
     });
     expect(res.body.user).not.toHaveProperty('imageUrl');

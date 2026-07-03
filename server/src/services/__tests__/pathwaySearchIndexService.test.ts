@@ -75,7 +75,6 @@ describe('pathwaySearchIndexService', () => {
       bestNextStepCategory: 'apply',
       confidence: 0.91,
       lastObservedAt: '2026-02-03T04:05:06.000Z',
-      createdAt: '2026-01-02T03:04:05.000Z',
       entityId: 'entity-1',
       entitySlug: 'smith-lab',
       entityName: 'Smith Lab',
@@ -279,7 +278,6 @@ describe('pathwaySearchIndexService', () => {
       expect.arrayContaining([
         'confidence',
         'lastObservedAtTimestamp',
-        'createdAtTimestamp',
         'postedOpportunityDeadlineTimestamp',
       ]),
     );

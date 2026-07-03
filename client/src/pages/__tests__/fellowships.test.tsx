@@ -390,13 +390,13 @@ describe('Programs page', () => {
         id: 'zeta',
         title: 'Zeta Open Fellowship',
         isAcceptingApplications: true,
-        deadline: '2026-07-01T00:00:00.000Z',
+        deadline: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
       }),
       baseFellowship({
         id: 'alpha',
         title: 'Alpha Open Fellowship',
         isAcceptingApplications: true,
-        deadline: '2026-08-01T00:00:00.000Z',
+        deadline: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString(),
       }),
     ]);
 

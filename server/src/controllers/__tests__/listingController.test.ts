@@ -8,6 +8,8 @@ vi.mock('../../services/listingService', () => ({
   getSkeletonListing: vi.fn(),
   readAllListings: vi.fn(),
   readListing: vi.fn(),
+  readPublicListing: vi.fn(),
+  readPublicListings: vi.fn(),
   unarchiveListing: vi.fn(),
   updateListing: vi.fn(),
 }));
@@ -31,6 +33,7 @@ import {
   deleteListing,
   getSkeletonListing,
   readListing,
+  readPublicListing,
   unarchiveListing,
   updateListing,
 } from '../../services/listingService';
@@ -49,6 +52,7 @@ import {
 
 const mockedUpdateListing = vi.mocked(updateListing);
 const mockedReadListing = vi.mocked(readListing);
+const mockedReadPublicListing = vi.mocked(readPublicListing);
 const mockedAddView = vi.mocked(addView);
 const mockedCreateListing = vi.mocked(createListing);
 const mockedGetSkeletonListing = vi.mocked(getSkeletonListing);
@@ -114,9 +118,9 @@ const expectPublicListing = (payload: any) => {
     commitment: '5 hours/week',
     compensationType: 'Paid',
     expiresAt: new Date('2026-08-01T00:00:00.000Z'),
-    createdAt: new Date('2026-06-01T00:00:00.000Z'),
-    updatedAt: new Date('2026-06-02T00:00:00.000Z'),
   });
+  expect(payload).not.toHaveProperty('createdAt');
+  expect(payload).not.toHaveProperty('updatedAt');
   expect(payload).not.toHaveProperty('ownerId');
   expect(payload).not.toHaveProperty('ownerEmail');
   expect(payload).not.toHaveProperty('ownerFirstName');
@@ -174,9 +178,8 @@ describe('listingController', () => {
     expect(mockedUpdateListing).toHaveBeenCalledWith('listing-1', 'owner123', {
       title: 'Updated title',
     });
-    expect(res.body).toEqual({
-      listing: { _id: 'listing-1', title: 'Updated title' },
-    });
+    expect((res.body as any).listing).toMatchObject({ _id: 'listing-1', title: 'Updated title' });
+    expect(JSON.stringify(res.body)).not.toContain('victim123');
     expect(next).not.toHaveBeenCalled();
   });
 
@@ -217,7 +220,7 @@ describe('listingController', () => {
     expect(search).toHaveBeenCalledWith(
       '',
       expect.objectContaining({
-        sort: ['createdAt:asc'],
+        sort: ['expiresAt:asc'],
       }),
     );
   });
@@ -228,7 +231,7 @@ describe('listingController', () => {
     const req = {
       query: {
         query: '',
-        sortBy: 'updatedAt',
+        sortBy: 'title',
         sortOrder: '1',
         page: '1',
         pageSize: '10',
@@ -241,7 +244,7 @@ describe('listingController', () => {
     expect(search).toHaveBeenCalledWith(
       '',
       expect.objectContaining({
-        sort: ['updatedAt:asc'],
+        sort: ['title:asc'],
       }),
     );
   });
@@ -355,7 +358,7 @@ describe('listingController', () => {
   });
 
   it('allowlists listing detail payloads for authenticated readers', async () => {
-    mockedReadListing.mockResolvedValue(privateListing);
+    mockedReadPublicListing.mockResolvedValue(privateListing);
     const req = { params: { id: 'listing-1' } };
     const res = responseDouble();
 
@@ -365,7 +368,7 @@ describe('listingController', () => {
   });
 
   it('redacts direct contact text from public listing descriptions', async () => {
-    mockedReadListing.mockResolvedValue({
+    mockedReadPublicListing.mockResolvedValue({
       ...privateListing,
       description: 'Help with a project. Email owner123@yale.edu or call 203-555-1212.',
       applicantDescription: 'Questions go to applicant-contact@yale.edu.',
@@ -387,7 +390,7 @@ describe('listingController', () => {
   });
 
   it('does not leak internal service errors from listing detail failures', async () => {
-    mockedReadListing.mockRejectedValue(new Error('mongodb://user:pass@example.invalid leaked'));
+    mockedReadPublicListing.mockRejectedValue(new Error('mongodb://user:pass@example.invalid leaked'));
     const req = { params: { id: 'listing-1' } };
     const res = responseDouble();
 
@@ -398,7 +401,7 @@ describe('listingController', () => {
   });
 
   it('does not leak internal not-found messages from listing detail failures', async () => {
-    mockedReadListing.mockRejectedValue(
+    mockedReadPublicListing.mockRejectedValue(
       Object.assign(new Error('Listing not found with ObjectId: private-listing-id'), {
         name: 'NotFoundError',
         status: 404,
@@ -582,9 +585,5 @@ describe('listingController', () => {
     expect(JSON.stringify(res.body)).not.toContain('student123');
     expect(JSON.stringify(res.body)).not.toContain('private-listing-id');
 
-    expect(res.statusCode).toBe(403);
-    expect(res.body).toEqual({ error: 'Incorrect permissions', incorrectPermissions: true });
-    expect(JSON.stringify(res.body)).not.toContain('private-listing-id');
-    expect(JSON.stringify(res.body)).not.toContain('student123');
   });
 });

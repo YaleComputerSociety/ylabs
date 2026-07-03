@@ -191,7 +191,9 @@ describe('logEvent', () => {
     expect(created.searchQuery).toHaveLength(512);
     expect(created.searchQuery).not.toContain('hidden@example.edu');
     expect(created.searchDepartments).toHaveLength(50);
-    expect(created.metadata._private_key).toBe('[email redacted]');
+    expect(Object.prototype.hasOwnProperty.call(created.metadata, '$private.key')).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(created.metadata, '_private_key')).toBe(false);
+    expect(JSON.stringify(created.metadata)).not.toContain('hidden@example.edu');
     expect(Object.prototype.hasOwnProperty.call(created.metadata, 'constructor')).toBe(false);
     expect(Object.prototype.hasOwnProperty.call(created.metadata, 'prototype')).toBe(false);
     expect(created.metadata.longText).toHaveLength(512);

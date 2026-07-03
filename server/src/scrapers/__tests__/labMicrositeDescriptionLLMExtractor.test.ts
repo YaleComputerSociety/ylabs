@@ -229,7 +229,7 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
       2,
       'https://statistics.yale.edu/profile/john-lafferty',
     );
-    expect(logs.join('\n')).toContain('Description extraction source failed');
+    expect(logs.join('\n')).toContain('description extraction source failed');
     expect(emitted).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -370,7 +370,7 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
         expect.objectContaining({ entityId: 'reachable-1', field: 'fullDescription' }),
       ]),
     );
-    expect(logs.join('\n')).toContain('Skipping description extraction for Unreachable Lab');
+    expect(logs.join('\n')).toContain('[unreachable-lab] skipping description extraction');
   });
 
   it('emits source-backed full and short description observations without access claims', async () => {

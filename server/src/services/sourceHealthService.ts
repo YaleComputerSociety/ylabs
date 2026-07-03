@@ -81,9 +81,13 @@ const MAX_SOURCE_HEALTH_DATE_LENGTH = 64;
 const MAX_SOURCE_HEALTH_COMMAND_ARG_LENGTH = 160;
 const SAFE_BARE_COMMAND_ARG = /^[A-Za-z0-9_.:-]+$/;
 
-const iso = (value: Date | string | undefined): string | undefined => {
+const iso = (value: unknown): string | undefined => {
   if (!value) return undefined;
-  const date = value instanceof Date ? value : new Date(value.slice(0, MAX_SOURCE_HEALTH_DATE_LENGTH));
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? undefined : value.toISOString();
+  }
+  if (typeof value !== 'string') return undefined;
+  const date = new Date(value.slice(0, MAX_SOURCE_HEALTH_DATE_LENGTH));
   return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
 };
 

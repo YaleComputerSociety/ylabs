@@ -74,7 +74,6 @@ const expectPublicFellowship = (payload: any) => {
     deadline: new Date('2026-02-01T00:00:00.000Z'),
     sourceName: 'Official program page',
     sourceUrl: 'https://example.yale.edu/program',
-    studentVisibilityTier: 'student_ready',
   });
   expect(payload).not.toHaveProperty('contactEmail');
   expect(payload).not.toHaveProperty('contactPhone');
@@ -141,7 +140,7 @@ describe('fellowshipController', () => {
 
     expect(mocks.searchFellowships).toHaveBeenCalledWith(
       expect.objectContaining({
-        sortBy: 'updatedAt',
+        sortBy: 'deadline',
         sortOrder: 1,
       }),
     );

@@ -4,15 +4,18 @@ const mocks = vi.hoisted(() => ({
   find: vi.fn(),
   findOne: vi.fn(),
   findByIdAndUpdate: vi.fn(),
+  findOneAndUpdate: vi.fn(),
   countDocuments: vi.fn(),
   distinct: vi.fn(),
 }));
 
-vi.mock('../../models/fellowship', () => ({
+vi.mock('../../models/fellowship', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../models/fellowship')>()),
   Fellowship: {
     find: mocks.find,
     findOne: mocks.findOne,
     findByIdAndUpdate: mocks.findByIdAndUpdate,
+    findOneAndUpdate: mocks.findOneAndUpdate,
     countDocuments: mocks.countDocuments,
     distinct: mocks.distinct,
   },
@@ -126,7 +129,7 @@ describe('program search service', () => {
       sortOrder: 1,
     });
 
-    expect(chain.sort).toHaveBeenCalledWith({ updatedAt: 1 });
+    expect(chain.sort).toHaveBeenCalledWith({ deadline: 1 });
   });
 
   it('keeps allowed program search sort fields before building Mongo sort objects', async () => {
@@ -183,7 +186,7 @@ describe('program search service', () => {
 
     expect(mocks.find).toHaveBeenCalledWith(
       expect.objectContaining({
-        _id: { $in: ids },
+        _id: { $in: ids.slice(0, 100) },
         archived: false,
       }),
     );
@@ -409,7 +412,7 @@ describe('program search service', () => {
   });
 
   it('strips internal review metadata from public program favorite responses', async () => {
-    mocks.findByIdAndUpdate.mockResolvedValueOnce({
+    mocks.findOneAndUpdate.mockResolvedValueOnce({
       toObject: () => ({
         _id: '67d8928150621bcef434a1d5',
         title: 'Visible program',
@@ -456,6 +459,7 @@ describe('program search service', () => {
     ).rejects.toThrow('Did not receive expected id type ObjectId');
 
     expect(mocks.findByIdAndUpdate).not.toHaveBeenCalled();
+    expect(mocks.findOneAndUpdate).not.toHaveBeenCalled();
   });
 
   it('lets admin program detail reads inspect review or suppressed records', async () => {
