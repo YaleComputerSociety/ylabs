@@ -67,6 +67,7 @@ ylabs/
 | `yarn clean:all` | Remove all node_modules directories |
 | `yarn --cwd client test` | Run Vitest in watch mode |
 | `yarn --cwd client test:ci` | Run Vitest once (used by CI) |
+| `yarn --cwd server test:search-degrade` | Run focused listing-search degradation tests |
 
 Migration scripts run from `data-migration/` with `npx ts-node --transpile-only <script>.ts`.
 
@@ -90,7 +91,8 @@ Current search flow:
 1. Client sends query + filters to `/api/listings/search`
 2. Controller builds Meilisearch filter strings from query params (`departments`, `researchAreas`, `archived`, `confirmed`)
 3. When a text query is present, hybrid search is enabled with `semanticRatio: 0.8` using the Meilisearch-configured OpenAI embedder
-4. Results are returned with `estimatedTotalHits` for pagination
+4. If hybrid search fails, the controller retries keyword-only Meilisearch; if Meilisearch is unavailable, it falls back to MongoDB filtering
+5. Results are returned with `totalCount` for pagination and a `degraded` boolean indicating whether fallback behavior was used
 
 The Meilisearch client (`server/src/utils/meiliClient.ts`) lazy-loads and caches the connection. Configuration: `MEILISEARCH_HOST` (defaults to `http://localhost:7700`), `MEILISEARCH_API_KEY`, and `MEILISEARCH_INDEX_PREFIX` (optional, for multi-environment isolation on a shared instance). The module exports `getMeiliIndex(name)` which resolves prefixed index names and `resolveIndexName(name)` for use in migration scripts.
 
@@ -159,7 +161,7 @@ Analytics events have a 3-year TTL via MongoDB's `expireAfterSeconds` index.
 
 ## Testing
 
-Client-side tests run under **Vitest 3** with a `jsdom` environment. Config lives in the `test` block of `client/vite.config.js`; tests are discovered from `client/src/**/*.{test,spec}.{ts,tsx}`. The server has no test framework configured.
+Client-side tests run under **Vitest 3** with a `jsdom` environment. Config lives in the `test` block of `client/vite.config.js`; tests are discovered from `client/src/**/*.{test,spec}.{ts,tsx}`. The server has a focused Node test script for listing-search degradation (`yarn --cwd server test:search-degrade`), but no general server-side test suite is wired into CI.
 
 Coverage focuses on pure reducer modules in `client/src/reducers/`, with matching test files in `client/src/reducers/__tests__/`. The pattern extracts state transitions out of providers/components (as `createInitial<Name>State()` + `<name>Reducer(state, action)`) so they can be tested without mounting React or mocking network. Side effects (axios, localStorage, timers) stay in the component that uses `useReducer`.
 
@@ -312,7 +314,7 @@ User → Yale CAS SSO → passport.ts findOrCreateUser
 
 | Issue | Location | Status |
 |-------|----------|--------|
-| No server-side tests | `server/` | No test framework configured server-side. Client uses Vitest; reducer modules in `client/src/reducers/` are covered. |
+| No general server-side test suite | `server/` | A focused Node test covers listing-search degradation; broader server coverage is not wired into CI. Client uses Vitest; reducer modules in `client/src/reducers/` are covered. |
 | ESLint/Prettier configured but not in CI | `eslint.config.js`, `.prettierrc` | Flat-config ESLint + Prettier set up at repo root. Currently reports ~15 errors / ~55 warnings across the codebase; not wired to CI until pre-existing violations are triaged. Run `yarn lint`, `yarn lint:fix`, `yarn format`. |
 | Console-only logging | Server | No structured logging (Winston/Pino) |
 

@@ -136,6 +136,7 @@ Visit `http://localhost:4000/api/dev-login` to log in as a test user (`test123` 
 | `yarn clean:all` | Remove all node_modules |
 | `yarn --cwd client test` | Run Vitest in watch mode |
 | `yarn --cwd client test:ci` | Run Vitest once (used by CI) |
+| `yarn --cwd server test:search-degrade` | Run the focused listing-search degradation tests |
 
 ### Migration Scripts
 
@@ -193,7 +194,8 @@ Search uses **Meilisearch** with hybrid mode (80% semantic, 20% keyword).
 1. Client sends query + filters to `/api/listings/search`
 2. Controller builds Meilisearch filter strings from query params
 3. Hybrid search uses the Meilisearch-configured OpenAI embedder
-4. Results returned with `estimatedTotalHits` for pagination
+4. If hybrid search fails, the controller retries keyword-only Meilisearch; if Meilisearch is unavailable, it falls back to MongoDB filtering
+5. Results are returned with `totalCount` for pagination and a `degraded` boolean indicating whether fallback behavior was used
 
 Listing CRUD in `listingService.ts` automatically syncs to Meilisearch after MongoDB writes.
 
@@ -246,7 +248,7 @@ All mount under `/api`.
 
 ## Testing
 
-Client-side tests run under **Vitest 3** with a `jsdom` environment. Configuration lives in the `test` block of [client/vite.config.js](client/vite.config.js). There is currently **no server-side test framework**.
+Client-side tests run under **Vitest 3** with a `jsdom` environment. Configuration lives in the `test` block of [client/vite.config.js](client/vite.config.js). The server has a focused Node test script for listing-search degradation, but no general server-side test suite is wired into CI.
 
 ### Running tests
 
@@ -254,6 +256,9 @@ Client-side tests run under **Vitest 3** with a `jsdom` environment. Configurati
 cd client
 yarn test        # watch mode — reruns on file changes
 yarn test:ci     # single run — used by CI
+
+cd ../server
+yarn test:search-degrade  # listing-search fallback coverage
 ```
 
 Tests are discovered from `client/src/**/*.{test,spec}.{ts,tsx}`.
