@@ -19,6 +19,11 @@ import {
 import { AnalyticsEvent, AnalyticsEventType } from '../models/analytics';
 import { validateNetid } from '../middleware/validation';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import {
+  emitResearchEvent,
+  isResearchEntityType,
+  isResearchEventType,
+} from '../services/researchAnalytics';
 
 const router = Router();
 const ANALYTICS_USER_SORTS: readonly AnalyticsUserSort[] = [
@@ -42,6 +47,36 @@ function setPrivateAnalyticsCacheHeaders(_request: Request, response: Response, 
 router.use(setPrivateAnalyticsCacheHeaders);
 
 class AnalyticsRequestError extends Error {}
+
+router.post('/research', isAuthenticated, async (request: Request, response: Response) => {
+  const { eventType, entityType, entityId, payload } = request.body || {};
+
+  if (!isResearchEventType(eventType)) {
+    return response.status(400).json({ error: 'Invalid research analytics eventType' });
+  }
+
+  if (!isResearchEntityType(entityType)) {
+    return response.status(400).json({ error: 'Invalid research analytics entityType' });
+  }
+
+  if (typeof entityId !== 'string' || entityId.trim() === '') {
+    return response.status(400).json({ error: 'Invalid research analytics entityId' });
+  }
+
+  const emitted = await emitResearchEvent({
+    eventType,
+    entityType,
+    entityId,
+    payload,
+    user: request.user as { netId?: string; userType?: string },
+  });
+
+  if (!emitted) {
+    return response.status(400).json({ error: 'Unable to record research analytics event' });
+  }
+
+  return response.status(202).json({ ok: true });
+});
 
 const parseAnalyticsRange = (range: unknown): AnalyticsDateRange => {
   if (range === 'all') {

@@ -11,6 +11,8 @@ import {
   updateProfile,
   verifyProfile,
 } from '../controllers/profileController';
+import { AnalyticsEventType } from '../models/index';
+import { logResearchEventOnSuccess } from '../services/researchAnalytics';
 
 const router = Router();
 
@@ -25,7 +27,13 @@ function setPrivateProfileCacheHeaders(_req: Request, res: Response, next: NextF
 
 router.use(setPrivateProfileCacheHeaders);
 
-router.get('/:netid', isAuthenticated, validateNetid('netid'), getProfile);
+router.get(
+  '/:netid',
+  isAuthenticated,
+  validateNetid('netid'),
+  logResearchEventOnSuccess(AnalyticsEventType.RESEARCH_VIEW, 'profile', (req) => req.params.netid),
+  getProfile,
+);
 router.get('/:netid/publications', isAuthenticated, validateNetid('netid'), getPublications);
 router.get('/:netid/listings', isAuthenticated, validateNetid('netid'), getProfileListings);
 router.get('/:netid/courses', isAuthenticated, validateNetid('netid'), getProfileCourses);

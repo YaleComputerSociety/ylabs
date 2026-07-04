@@ -1,7 +1,11 @@
 /**
  * Analytics event logging and aggregation service.
  */
-import { AnalyticsEvent, AnalyticsEventType } from '../models/analytics';
+import {
+  AnalyticsEvent,
+  AnalyticsEventType,
+  RESEARCH_ENTITY_TYPES,
+} from '../models/analytics';
 import { User, ResearchEntity } from '../models/index';
 import { getListingModel } from '../db/connections';
 import { Types, type PipelineStage } from 'mongoose';
@@ -14,6 +18,8 @@ export interface LogEventParams {
   userType: string;
   listingId?: string;
   fellowshipId?: string;
+  entityType?: string;
+  entityId?: string;
   searchQuery?: string;
   searchDepartments?: string[];
   metadata?: any;
@@ -29,6 +35,7 @@ const ANALYTICS_USER_TYPE_RE = /^[A-Za-z0-9_-]{1,40}$/;
 const ANALYTICS_METADATA_KEY_RE = /^[A-Za-z0-9_-]{1,80}$/;
 const ANALYTICS_OBJECT_ID_RE = /^[a-fA-F0-9]{24}$/;
 const ANALYTICS_EVENT_TYPES = new Set<AnalyticsEventType>(Object.values(AnalyticsEventType));
+const ANALYTICS_RESEARCH_ENTITY_TYPES = new Set<string>(RESEARCH_ENTITY_TYPES);
 
 const sanitizeAnalyticsEventType = (value: unknown): AnalyticsEventType | undefined =>
   typeof value === 'string' && ANALYTICS_EVENT_TYPES.has(value as AnalyticsEventType)
@@ -414,6 +421,14 @@ const normalizeAnalyticsObjectIdString = (value: unknown): string | undefined =>
 const sanitizeAnalyticsObjectId = (value: unknown): string | undefined =>
   normalizeAnalyticsObjectIdString(value);
 
+const sanitizeResearchEntityType = (value: unknown): string | undefined =>
+  typeof value === 'string' && ANALYTICS_RESEARCH_ENTITY_TYPES.has(value) ? value : undefined;
+
+const sanitizeResearchEntityId = (value: unknown): string | undefined => {
+  const sanitized = sanitizeAnalyticsText(value);
+  return sanitized && sanitized.trim() !== '' ? sanitized.slice(0, 128) : undefined;
+};
+
 const normalizeAnalyticsStoredObjectIdString = (value: unknown): string | undefined => {
   if (value instanceof Types.ObjectId) {
     return value.toHexString();
@@ -688,6 +703,8 @@ export const logEvent = async (params: LogEventParams): Promise<void> => {
 
     const listingId = sanitizeAnalyticsObjectId(params.listingId);
     const fellowshipId = sanitizeAnalyticsObjectId(params.fellowshipId);
+    const entityType = sanitizeResearchEntityType(params.entityType);
+    const entityId = sanitizeResearchEntityId(params.entityId);
     const eventPayload: Record<string, unknown> = {
       eventType,
       netid,
@@ -699,6 +716,8 @@ export const logEvent = async (params: LogEventParams): Promise<void> => {
     };
     if (listingId) eventPayload.listingId = listingId;
     if (fellowshipId) eventPayload.fellowshipId = fellowshipId;
+    if (entityType) eventPayload.entityType = entityType;
+    if (entityId) eventPayload.entityId = entityId;
 
     await AnalyticsEvent.create(eventPayload);
 
