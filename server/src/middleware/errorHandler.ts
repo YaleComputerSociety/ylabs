@@ -3,6 +3,7 @@
  */
 import { Request, Response, NextFunction } from 'express';
 import { NotFoundError, ObjectIdError, IncorrectPermissionsError } from '../utils/errors';
+import { captureServerError } from '../utils/errorTracking';
 
 /**
  * Global error handler middleware
@@ -11,6 +12,7 @@ import { NotFoundError, ObjectIdError, IncorrectPermissionsError } from '../util
 export const errorHandler = (error: Error, req: Request, res: Response, _next: NextFunction) => {
   console.error('Error:', error.message);
   console.error('Stack:', error.stack);
+  captureServerError(error, req);
 
   if (error instanceof NotFoundError) {
     return res.status(error.status).json({ error: error.message });
