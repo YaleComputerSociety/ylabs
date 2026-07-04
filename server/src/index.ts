@@ -6,8 +6,10 @@ import dotenv from 'dotenv';
 import { initializeConnections, getApiMode } from './db/connections';
 import { startGateRefreshScheduler } from './scripts/gateRefreshScheduler';
 import { sanitizeLogValue } from './utils/logSanitizer';
+import { captureStartupError, initializeErrorTracking } from './utils/errorTracking';
 
 dotenv.config();
+initializeErrorTracking();
 
 const port = process.env.PORT || 4000;
 
@@ -31,6 +33,7 @@ const startApp = async () => {
       }
     });
   } catch (error) {
+    await captureStartupError(error);
     console.error('Failed to start app:', sanitizeLogValue(error));
     process.exit(1);
   }

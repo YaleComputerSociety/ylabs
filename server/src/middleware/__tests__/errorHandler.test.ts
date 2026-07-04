@@ -2,6 +2,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { NextFunction, Request, Response } from 'express';
 import { errorHandler, notFoundHandler } from '../errorHandler';
 import { NotFoundError, ObjectIdError } from '../../utils/errors';
+import { captureServerError } from '../../utils/errorTracking';
+
+vi.mock('../../utils/errorTracking', () => ({
+  captureServerError: vi.fn(),
+}));
 
 const ORIGINAL_ENV = { ...process.env };
 
@@ -28,15 +33,11 @@ describe('errorHandler', () => {
     const response = createResponse();
     const error = Object.assign(new Error('mongodb://user:pass@example.invalid leaked'), { status: 403 });
 
-    errorHandler(
-      error,
-      {} as Request,
-      response,
-      vi.fn() as unknown as NextFunction,
-    );
+    errorHandler(error, {} as Request, response, vi.fn() as unknown as NextFunction);
 
     expect(response.status).toHaveBeenCalledWith(403);
     expect(response.json).toHaveBeenCalledWith({ error: 'Forbidden' });
+    expect(captureServerError).not.toHaveBeenCalled();
     expect(consoleError.mock.calls.flat().join(' ')).not.toContain('user:pass');
   });
 
@@ -47,12 +48,7 @@ describe('errorHandler', () => {
       'Failed mongodb://user:pass@example.invalid/db?api_key=secret-key for ada@example.edu with Bearer abc123 and 203-555-1212',
     );
 
-    errorHandler(
-      error,
-      {} as Request,
-      response,
-      vi.fn() as unknown as NextFunction,
-    );
+    errorHandler(error, {} as Request, response, vi.fn() as unknown as NextFunction);
 
     const logged = consoleError.mock.calls.flat().join(' ');
     expect(logged).not.toContain('user:pass');
@@ -65,6 +61,7 @@ describe('errorHandler', () => {
     expect(logged).toContain('[email redacted]');
     expect(logged).toContain('[token-redacted]');
     expect(logged).toContain('[phone redacted]');
+    expect(captureServerError).toHaveBeenCalledWith(error, {});
   });
 
   it('does not leak object ids from not-found errors', () => {
@@ -80,6 +77,7 @@ describe('errorHandler', () => {
 
     expect(response.status).toHaveBeenCalledWith(404);
     expect(response.json).toHaveBeenCalledWith({ error: 'Not found' });
+    expect(captureServerError).not.toHaveBeenCalled();
   });
 
   it('does not leak cast/object-id details from object-id errors', () => {
@@ -95,6 +93,7 @@ describe('errorHandler', () => {
 
     expect(response.status).toHaveBeenCalledWith(404);
     expect(response.json).toHaveBeenCalledWith({ error: 'Not found' });
+    expect(captureServerError).not.toHaveBeenCalled();
   });
 
   it('hides internal messages for remote development-labelled runtimes', () => {
@@ -105,19 +104,16 @@ describe('errorHandler', () => {
       SERVER_BASE_URL: 'https://yalelabs.io',
     };
     const response = createResponse();
+    const error = new Error('database password appeared in stack context');
 
-    errorHandler(
-      new Error('database password appeared in stack context'),
-      {} as Request,
-      response,
-      vi.fn() as unknown as NextFunction,
-    );
+    errorHandler(error, {} as Request, response, vi.fn() as unknown as NextFunction);
 
     expect(response.status).toHaveBeenCalledWith(500);
     expect(response.json).toHaveBeenCalledWith({
       error: 'Internal server error',
       message: undefined,
     });
+    expect(captureServerError).toHaveBeenCalledWith(error, {});
   });
 
   it('does not leak validation details in local test responses', () => {
@@ -132,18 +128,14 @@ describe('errorHandler', () => {
       { name: 'ValidationError' },
     );
 
-    errorHandler(
-      error,
-      {} as Request,
-      response,
-      vi.fn() as unknown as NextFunction,
-    );
+    errorHandler(error, {} as Request, response, vi.fn() as unknown as NextFunction);
 
     expect(response.status).toHaveBeenCalledWith(400);
     expect(response.json).toHaveBeenCalledWith({
       error: 'Validation error',
       details: undefined,
     });
+    expect(captureServerError).not.toHaveBeenCalled();
   });
 
   it('does not leak internal messages in local test 500 responses', () => {
@@ -153,19 +145,16 @@ describe('errorHandler', () => {
       NODE_ENV: 'test',
     };
     const response = createResponse();
+    const error = new Error('mongodb://user:pass@example.invalid local test context');
 
-    errorHandler(
-      new Error('mongodb://user:pass@example.invalid local test context'),
-      {} as Request,
-      response,
-      vi.fn() as unknown as NextFunction,
-    );
+    errorHandler(error, {} as Request, response, vi.fn() as unknown as NextFunction);
 
     expect(response.status).toHaveBeenCalledWith(500);
     expect(response.json).toHaveBeenCalledWith({
       error: 'Internal server error',
       message: undefined,
     });
+    expect(captureServerError).toHaveBeenCalledWith(error, {});
   });
 
   it('delegates late errors after headers are sent instead of writing another response', () => {
@@ -182,6 +171,7 @@ describe('errorHandler', () => {
     expect(next).toHaveBeenCalledWith(error);
     expect(response.status).not.toHaveBeenCalled();
     expect(response.json).not.toHaveBeenCalled();
+    expect(captureServerError).not.toHaveBeenCalled();
   });
 });
 
