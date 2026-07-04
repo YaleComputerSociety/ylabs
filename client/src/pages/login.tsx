@@ -4,13 +4,14 @@
 import PulseLoader from 'react-spinners/PulseLoader';
 import styled from 'styled-components';
 import { useContext } from 'react';
+import Button from '@mui/material/Button';
 
 import SignInButton from '../components/SignInButton';
 import UserContext from '../contexts/UserContext';
 import { Navigate } from 'react-router-dom';
 
 const Login = () => {
-  const { isLoading, isAuthenticated, user, authError } = useContext(UserContext);
+  const { isLoading, isAuthenticated, user, authError, checkContext } = useContext(UserContext);
 
   const getRedirectPath = () => {
     if (user?.userType === 'professor') {
@@ -45,15 +46,17 @@ const Login = () => {
           <PulseLoader color="#66CCFF" size={10} />
         ) : isAuthenticated ? (
           <Navigate to={getRedirectPath()} replace />
-        ) : (
+        ) : authError ? (
           <>
-            {authError && (
-              <AuthError role="status">
-                {authError} If this keeps happening, refresh the page or try again later.
-              </AuthError>
-            )}
-            <SignInButton />
+            <AuthError role="status">
+              {authError} Check your connection and try again before signing in.
+            </AuthError>
+            <Button variant="outlined" onClick={checkContext}>
+              Retry Connection
+            </Button>
           </>
+        ) : (
+          <SignInButton />
         )}
       </AuthContainer>
     </Container>
