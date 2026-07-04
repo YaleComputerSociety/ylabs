@@ -10,7 +10,7 @@ import { Navigate, useLocation } from 'react-router-dom';
 import useDocumentTitle from '../hooks/useDocumentTitle';
 
 const Login = () => {
-  const { isLoading, isAuthenticated, user } = useContext(UserContext);
+  const { isLoading, isAuthenticated, user, authError, checkContext } = useContext(UserContext);
   useDocumentTitle('Sign in');
   const location = useLocation();
   const locationState = location.state as { from?: string } | null;
@@ -57,7 +57,6 @@ const Login = () => {
       description: 'Use your Yale account to open the research discovery workspace.',
     };
   })();
-
   const getRedirectPath = () => {
     if (user?.userType === 'professor') {
       return '/account';
@@ -114,13 +113,28 @@ const Login = () => {
               Authentication is handled by Yale CAS. Yale Research does not ask for your password.
             </p>
           </div>
+          {authError && (
+            <div
+              role="status"
+              className="mt-5 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm leading-relaxed text-blue-900"
+            >
+              <p>{authError}</p>
+              <button
+                type="button"
+                onClick={checkContext}
+                className="mt-3 rounded-md border border-blue-600 px-3 py-2 text-sm font-semibold text-blue-700 transition-colors hover:bg-blue-100"
+              >
+                Retry connection
+              </button>
+            </div>
+          )}
           <div className="mt-5 flex min-h-[44px] items-center">
             {isLoading ? (
               <PulseLoader color="#00356b" size={10} />
             ) : isAuthenticated ? (
               <Navigate to={getRedirectPath()} replace />
             ) : (
-              <SignInButton />
+              !authError && <SignInButton />
             )}
           </div>
         </section>

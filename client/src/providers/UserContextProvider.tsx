@@ -2,7 +2,6 @@
  * Provider component managing user authentication and session state.
  */
 import { PropsWithChildren, useCallback, useEffect, useReducer } from 'react';
-import swal from 'sweetalert';
 
 import axios from '../utils/axios';
 import UserContext from '../contexts/UserContext';
@@ -11,7 +10,7 @@ import { createInitialUserState, userReducer } from '../reducers/userReducer';
 
 const UserContextProvider = ({ children }: PropsWithChildren) => {
   const [state, dispatch] = useReducer(userReducer, undefined, createInitialUserState);
-  const { isLoading, isAuthenticated, user } = state;
+  const { isLoading, isAuthenticated, user, authError } = state;
 
   const checkContext = useCallback(() => {
     dispatch({ type: 'FETCH_START' });
@@ -30,14 +29,11 @@ const UserContextProvider = ({ children }: PropsWithChildren) => {
           });
         }
       })
-      .catch(() => {
-        console.error('Auth check failed.');
-        dispatch({ type: 'LOGOUT' });
-        dispatch({ type: 'FETCH_FAILURE' });
-
-        swal({
-          text: 'Something went wrong while checking authentication status.',
-          icon: 'warning',
+      .catch((error) => {
+        console.error('Auth check failed:', error);
+        dispatch({
+          type: 'FETCH_FAILURE',
+          error: 'Unable to reach Yale Labs right now. Please try again in a moment.',
         });
       });
   }, []);
@@ -47,7 +43,7 @@ const UserContextProvider = ({ children }: PropsWithChildren) => {
   }, [checkContext]);
 
   return (
-    <UserContext.Provider value={{ isLoading, isAuthenticated, user, checkContext }}>
+    <UserContext.Provider value={{ isLoading, isAuthenticated, user, authError, checkContext }}>
       {children}
     </UserContext.Provider>
   );
