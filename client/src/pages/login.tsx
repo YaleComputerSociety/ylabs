@@ -57,6 +57,7 @@ const Login = () => {
       description: 'Use your Yale account to open the research discovery workspace.',
     };
   })();
+
   const getRedirectPath = () => {
     if (user?.userType === 'professor') {
       return '/account';
