@@ -2,6 +2,7 @@
  * Main listings browse page with search, filters, and grid/list view.
  */
 import { useReducer, useEffect, useContext, useMemo } from 'react';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import SearchContext from '../contexts/SearchContext';
 import UserContext from '../contexts/UserContext';
 import { useInfiniteScroll } from '../hooks/useInfiniteScroll';
@@ -11,12 +12,10 @@ import AdminListingEditModal from '../components/admin/AdminListingEditModal';
 import { BrowsableItem } from '../types/browsable';
 import { Listing } from '../types/types';
 import axios from '../utils/axios';
+import { createListing } from '../utils/apiCleaner';
 import swal from 'sweetalert';
 import { getInstitutionAffiliation } from '../utils/institutionAffiliation';
-import {
-  browsePageReducer,
-  createInitialBrowsePageState,
-} from '../reducers/browsePageReducer';
+import { browsePageReducer, createInitialBrowsePageState } from '../reducers/browsePageReducer';
 
 const Home = () => {
   const {
@@ -33,8 +32,13 @@ const Home = () => {
     setSelectedListingResearchAreas,
   } = useContext(SearchContext);
 
-  const { user } = useContext(UserContext);
+  const { user, isAuthenticated, isLoading: authLoading } = useContext(UserContext);
   const isAdmin = user?.userType === 'admin';
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { slug } = useParams();
+  const isResearchRoute =
+    location.pathname === '/research' || location.pathname.startsWith('/research/');
 
   const [state, dispatch] = useReducer(
     browsePageReducer<Listing>,
@@ -52,7 +56,18 @@ const Home = () => {
     setQueryString('');
   }, []);
 
+  const requireLogin = () => {
+    const returnUrl = window.location.origin + location.pathname + location.search;
+    localStorage.setItem('logoutReturnPath', returnUrl);
+    navigate('/login');
+  };
+
   const reloadFavorites = async () => {
+    if (!isAuthenticated) {
+      dispatch({ type: 'SET_FAVORITES', ids: [] });
+      return;
+    }
+
     axios
       .get('/users/favListingsIds', { withCredentials: true })
       .then((response) => {
@@ -67,8 +82,30 @@ const Home = () => {
 
   useEffect(() => {
     refreshListings();
-    reloadFavorites();
-  }, []);
+    if (!authLoading) {
+      reloadFavorites();
+    }
+  }, [authLoading, isAuthenticated]);
+
+  useEffect(() => {
+    if (!slug) return;
+
+    const listingId = slug.match(/[a-fA-F0-9]{24}/)?.[0] || slug;
+    const endpoint = isAuthenticated ? `/listings/${listingId}` : `/research/${slug}`;
+    axios
+      .get(endpoint, { withCredentials: true })
+      .then((response) => {
+        dispatch({
+          type: 'OPEN_DETAIL_MODAL',
+          item: createListing(response.data.listing),
+        });
+      })
+      .catch((error) => {
+        console.error('Error loading research listing:', error);
+        swal({ text: 'Unable to load this research listing.', icon: 'warning' });
+        navigate('/research', { replace: true });
+      });
+  }, [slug, isAuthenticated, navigate]);
 
   const filteredListings = useMemo(() => {
     if (quickFilter === 'open') {
@@ -106,6 +143,11 @@ const Home = () => {
   });
 
   const updateFavorite = (listingId: string, favorite: boolean) => {
+    if (!isAuthenticated) {
+      requireLogin();
+      return;
+    }
+
     const prevFavListingsIds = favListingsIds;
 
     if (favorite) {
@@ -142,6 +184,9 @@ const Home = () => {
   const handleOpenModal = (item: BrowsableItem) => {
     if (item.type === 'listing') {
       dispatch({ type: 'OPEN_DETAIL_MODAL', item: item.data });
+      if (isResearchRoute) {
+        navigate(`/research/${item.data.id}`, { replace: false });
+      }
     }
   };
 
@@ -189,6 +234,9 @@ const Home = () => {
           isOpen={isModalOpen}
           onClose={() => {
             dispatch({ type: 'CLOSE_DETAIL_MODAL' });
+            if (slug) {
+              navigate('/research');
+            }
           }}
           listing={selectedListing}
           isFavorite={favListingsIds.includes(selectedListing.id)}
@@ -196,6 +244,7 @@ const Home = () => {
             e.stopPropagation();
             updateFavorite(selectedListing.id, !favListingsIds.includes(selectedListing.id));
           }}
+          onRequireAuth={requireLogin}
           onNavigateToResearchArea={handleNavigateToResearchArea}
           onNavigateToDepartment={handleNavigateToDepartment}
         />

@@ -36,6 +36,39 @@ import { buildSafeSearchRegex } from '../utils/regex';
 const escapeMeiliFilterValue = (value: string): string =>
   value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 
+const getIdFromSlug = (slug: string): string | null => {
+  const match = slug.match(/[a-fA-F0-9]{24}/);
+  return match ? match[0] : null;
+};
+
+const redactPublicListing = (listing: any) => {
+  const source = typeof listing?.toObject === 'function' ? listing.toObject() : listing;
+  const redacted = { ...(source || {}) };
+  const rawId = redacted._id?.toString?.() || redacted.id;
+  delete redacted.__v;
+  delete redacted.ownerEmail;
+  delete redacted.emails;
+  delete redacted.views;
+  delete redacted.favorites;
+  delete redacted.archived;
+  delete redacted.confirmed;
+  delete redacted.audited;
+
+  return {
+    ...redacted,
+    _id: rawId,
+    id: rawId,
+    ownerId: undefined,
+    ownerEmail: undefined,
+    professorIds: [],
+    emails: [],
+    views: 0,
+    favorites: 0,
+    archived: false,
+    confirmed: true,
+  };
+};
+
 const buildRobustFilterMatch = async (params: {
   departments?: string;
   departmentsMode: string;
@@ -452,6 +485,91 @@ export const searchListings = async (request: Request, response: Response) => {
     console.error('Listing search failed:', error);
     return response.status(500).json({ error: 'Search failed', degraded: true });
   }
+};
+
+export const searchPublicResearch = async (request: Request, response: Response) => {
+  try {
+    const {
+      query,
+      sortBy,
+      sortOrder,
+      departments,
+      academicDisciplines,
+      researchAreas,
+      departmentsMode = 'union',
+      academicDisciplinesMode = 'union',
+      researchAreasMode = 'union',
+      page = 1,
+      pageSize = 10,
+    } = request.query;
+
+    const filterString = await buildRobustFilterMatch({
+      departments: departments as string,
+      departmentsMode: departmentsMode as string,
+      academicDisciplines: academicDisciplines as string,
+      academicDisciplinesMode: academicDisciplinesMode as string,
+      researchAreas: researchAreas as string,
+      researchAreasMode: researchAreasMode as string,
+    });
+
+    const limit = Number(pageSize);
+    const offset = (Number(page) - 1) * limit;
+    const sortConfig = [];
+    if (sortBy) {
+      const order = sortOrder === '1' ? 'asc' : 'desc';
+      sortConfig.push(`${sortBy}:${order}`);
+    } else if (!query || (query as string).trim() === '') {
+      sortConfig.push('createdAt:desc');
+    }
+
+    const searchParams: any = {
+      filter: filterString,
+      limit,
+      offset,
+    };
+
+    if (sortConfig.length > 0) {
+      searchParams.sort = sortConfig;
+    }
+
+    const trimmedQuery = ((query as string) || '').trim();
+    if (trimmedQuery !== '' && trimmedQuery.split(/\s+/).length > 1) {
+      searchParams.hybrid = {
+        semanticRatio: 0.8,
+        embedder: 'default',
+      };
+    }
+
+    const index = await getMeiliIndex('listings');
+    const { hits, estimatedTotalHits } = await index.search((query as string) || '', searchParams);
+
+    return response.json({
+      results: hits.map((hit: any) => redactPublicListing({ ...hit, _id: hit.id })),
+      totalCount: estimatedTotalHits,
+      page: Number(page),
+      pageSize: Number(pageSize),
+    });
+  } catch (error) {
+    console.error('Public research search failed:', error);
+    return response.status(500).json({ error: 'Search failed' });
+  }
+};
+
+export const getPublicResearchBySlug = async (request: Request, response: Response) => {
+  const id = getIdFromSlug(request.params.slug);
+  if (!id) {
+    return response.status(404).json({ error: 'Research listing not found' });
+  }
+
+  const listing = await getListingModel()
+    .findOne({ _id: id, archived: false, confirmed: true })
+    .lean();
+
+  if (!listing) {
+    return response.status(404).json({ error: 'Research listing not found' });
+  }
+
+  return response.status(200).json({ listing: redactPublicListing(listing) });
 };
 
 export const createListingForCurrentUser = async (request: Request, response: Response) => {

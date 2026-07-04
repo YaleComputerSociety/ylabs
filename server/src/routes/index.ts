@@ -11,10 +11,12 @@ import ConfigRoutes from './config';
 import AdminRoutes from './admin';
 import ProfileRoutes from './profiles';
 import SeedRoutes from './seed';
+import ResearchRoutes from './research';
 
 const router = Router();
 
 router.use('/listings', ListingsRoutes);
+router.use('/research', ResearchRoutes);
 router.use('/fellowships', FellowshipsRoutes);
 router.use('/users', UsersRoutes);
 router.use('/profiles', ProfileRoutes);

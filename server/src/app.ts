@@ -63,6 +63,17 @@ const writeLimiter = rateLimit({
   skip: () => isCI() || isDevelopment() || isTest(),
 });
 
+// Public research discovery limiter for anonymous browse/detail traffic.
+export const publicDiscoveryLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 120,
+  keyGenerator: getRateLimitKey,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many discovery requests, please try again later.' },
+  skip: () => isCI() || isDevelopment() || isTest(),
+});
+
 const allowList = new Set([
   'http://localhost:3000',
   'https://yalelabs.onrender.com',
@@ -107,6 +118,7 @@ const app = express()
   .use(passport.session())
   .use('/api', sanitizeMongo)
   .use('/api', apiLimiter)
+  .use('/api/research', publicDiscoveryLimiter)
   .use('/api/listings', (req, res, next) => {
     if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') {
       return next();
