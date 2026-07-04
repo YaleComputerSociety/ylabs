@@ -22,13 +22,13 @@ The server follows: **Routes → Middleware → Controllers → Services → Mod
 
 ### Tech Stack
 
-| Layer | Technology |
-|-------|-----------|
-| Client | React 19, TypeScript, Vite 6, React Router v6, MUI v7, styled-components, TailwindCSS v3 |
-| Server | Express 4, TypeScript, Passport.js (CAS strategy), Mongoose 8 |
-| Search | Meilisearch (hybrid search: keyword + semantic via OpenAI `text-embedding-3-small`) |
-| Database | MongoDB Atlas (single cluster, separate databases per environment) |
-| Package Manager | Yarn 4 via Corepack |
+| Layer           | Technology                                                                               |
+| --------------- | ---------------------------------------------------------------------------------------- |
+| Client          | React 19, TypeScript, Vite 6, React Router v6, MUI v7, styled-components, TailwindCSS v3 |
+| Server          | Express 4, TypeScript, Passport.js (CAS strategy), Mongoose 8                            |
+| Search          | Meilisearch (hybrid search: keyword + semantic via OpenAI `text-embedding-3-small`)      |
+| Database        | MongoDB Atlas (single cluster, separate databases per environment)                       |
+| Package Manager | Yarn 4 via Corepack                                                                      |
 
 ---
 
@@ -36,11 +36,11 @@ The server follows: **Routes → Middleware → Controllers → Services → Mod
 
 Code flows **Local → Beta → Prod**. Beta is the staging gate.
 
-| Environment | Hosting | MongoDB Database | Meilisearch | `MEILISEARCH_INDEX_PREFIX` |
-|-------------|---------|-----------------|-------------|---------------------------|
-| Local | localhost | `Development` | Docker (`localhost:7700`) | *(unset)* → bare `listings` |
-| Beta | Render (free tier) | `Beta` | Shared Render private service | `beta` → `beta_listings` |
-| Prod | Render (starter) | `Production` | Shared Render private service | `prod` → `prod_listings` |
+| Environment | Hosting            | MongoDB Database | Meilisearch                   | `MEILISEARCH_INDEX_PREFIX`  |
+| ----------- | ------------------ | ---------------- | ----------------------------- | --------------------------- |
+| Local       | localhost          | `Development`    | Docker (`localhost:7700`)     | _(unset)_ → bare `listings` |
+| Beta        | Render (free tier) | `Beta`           | Shared Render private service | `beta` → `beta_listings`    |
+| Prod        | Render (starter)   | `Production`     | Shared Render private service | `prod` → `prod_listings`    |
 
 - MongoDB: one Atlas cluster, three databases. `MONGODBURL` points to the right one per environment.
 - Meilisearch: beta and prod share one Render private service, isolated by index prefixes. Local uses its own Docker container.
@@ -71,12 +71,14 @@ cp server/.env.example server/.env
 ```
 
 Your local `.env` should point to:
+
 - `MONGODBURL` → the `Development` database on Atlas
 - `MEILISEARCH_HOST` → `http://localhost:7700`
 - `MEILISEARCH_API_KEY` → your local master key (e.g., `testkey`)
 - No `MEILISEARCH_INDEX_PREFIX` (local uses bare `listings` index)
 
 For the client:
+
 ```bash
 # client/.env
 VITE_APP_SERVER=http://localhost:4000
@@ -95,6 +97,7 @@ docker run -d -p 7700:7700 \
 ```
 
 Verify it's running:
+
 ```bash
 curl http://localhost:7700/health
 # Should return: {"status":"available"}
@@ -126,16 +129,17 @@ Visit `http://localhost:4000/api/dev-login` to log in as a test user (`test123` 
 
 ## Common Commands
 
-| Command | Description |
-|---------|-------------|
-| `yarn install:all` | Install deps in root + server + client |
-| `yarn dev:client` | Vite dev server (port 3000) |
-| `yarn dev:server` | Express with nodemon (port 4000) |
-| `yarn build` | Full production build |
-| `yarn start` | Run both servers in production mode |
-| `yarn clean:all` | Remove all node_modules |
-| `yarn --cwd client test` | Run Vitest in watch mode |
-| `yarn --cwd client test:ci` | Run Vitest once (used by CI) |
+| Command                                 | Description                                      |
+| --------------------------------------- | ------------------------------------------------ |
+| `yarn install:all`                      | Install deps in root + server + client           |
+| `yarn dev:client`                       | Vite dev server (port 3000)                      |
+| `yarn dev:server`                       | Express with nodemon (port 4000)                 |
+| `yarn build`                            | Full production build                            |
+| `yarn start`                            | Run both servers in production mode              |
+| `yarn clean:all`                        | Remove all node_modules                          |
+| `yarn --cwd client test`                | Run Vitest in watch mode                         |
+| `yarn --cwd client test:ci`             | Run Vitest once (used by CI)                     |
+| `yarn --cwd server test:search-degrade` | Run the focused listing-search degradation tests |
 
 ### Migration Scripts
 
@@ -145,11 +149,11 @@ Run from `data-migration/`:
 npx ts-node --transpile-only <script>.ts
 ```
 
-| Script | Purpose |
-|--------|---------|
+| Script                    | Purpose                                 |
+| ------------------------- | --------------------------------------- |
 | `MigrateToMeilisearch.ts` | Populate Meilisearch index from MongoDB |
-| `seedDepartments.ts` | Seed department taxonomy |
-| `seedResearchAreas.ts` | Seed research area taxonomy |
+| `seedDepartments.ts`      | Seed department taxonomy                |
+| `seedResearchAreas.ts`    | Seed research area taxonomy             |
 
 ---
 
@@ -193,11 +197,13 @@ Search uses **Meilisearch** with hybrid mode (80% semantic, 20% keyword).
 1. Client sends query + filters to `/api/listings/search`
 2. Controller builds Meilisearch filter strings from query params
 3. Hybrid search uses the Meilisearch-configured OpenAI embedder
-4. Results returned with `estimatedTotalHits` for pagination
+4. If hybrid search fails, the controller retries keyword-only Meilisearch; if Meilisearch is unavailable, it falls back to MongoDB filtering
+5. Results are returned with `totalCount` for pagination and a `degraded` boolean indicating whether fallback behavior was used
 
 Listing CRUD in `listingService.ts` automatically syncs to Meilisearch after MongoDB writes.
 
 The Meilisearch client (`server/src/utils/meiliClient.ts`) exports:
+
 - `getMeiliClient()` — lazy-loaded singleton
 - `getMeiliIndex(name)` — returns a prefixed index (e.g., `prod_listings`)
 - `resolveIndexName(name)` — pure function for prefix resolution
@@ -217,11 +223,11 @@ User → Yale CAS SSO → passport.ts findOrCreateUser
 
 ### Auth Middleware (`server/src/middleware/auth.ts`)
 
-| Middleware | Check |
-|------------|-------|
-| `isAuthenticated` | `req.user` exists |
-| `isAdmin` | `userType === 'admin'` |
-| `isProfessor` | `userType` in `['professor', 'faculty', 'admin']` |
+| Middleware         | Check                                                 |
+| ------------------ | ----------------------------------------------------- |
+| `isAuthenticated`  | `req.user` exists                                     |
+| `isAdmin`          | `userType === 'admin'`                                |
+| `isProfessor`      | `userType` in `['professor', 'faculty', 'admin']`     |
 | `canCreateListing` | professor/faculty + `profileVerified` (admins bypass) |
 
 ---
@@ -230,23 +236,23 @@ User → Yale CAS SSO → passport.ts findOrCreateUser
 
 All mount under `/api`.
 
-| Prefix | Description | Auth |
-|--------|-------------|------|
-| `/listings` | Listing CRUD and search | Varies |
-| `/fellowships` | Fellowship CRUD and search | Varies |
-| `/users` | User CRUD | Yes |
-| `/profiles` | Faculty profiles | Varies |
-| `/analytics` | Analytics dashboards | Admin |
-| `/config` | Departments + research areas | No |
-| `/research-areas` | Research area CRUD | Admin for writes |
-| `/admin` | Admin operations | Admin |
-| `/seed` | Dev seeding routes | Dev mode only |
+| Prefix            | Description                  | Auth             |
+| ----------------- | ---------------------------- | ---------------- |
+| `/listings`       | Listing CRUD and search      | Varies           |
+| `/fellowships`    | Fellowship CRUD and search   | Varies           |
+| `/users`          | User CRUD                    | Yes              |
+| `/profiles`       | Faculty profiles             | Varies           |
+| `/analytics`      | Analytics dashboards         | Admin            |
+| `/config`         | Departments + research areas | No               |
+| `/research-areas` | Research area CRUD           | Admin for writes |
+| `/admin`          | Admin operations             | Admin            |
+| `/seed`           | Dev seeding routes           | Dev mode only    |
 
 ---
 
 ## Testing
 
-Client-side tests run under **Vitest 3** with a `jsdom` environment. Configuration lives in the `test` block of [client/vite.config.js](client/vite.config.js). There is currently **no server-side test framework**.
+Client-side tests run under **Vitest 3** with a `jsdom` environment. Configuration lives in the `test` block of [client/vite.config.js](client/vite.config.js). The server has a focused Node test script for listing-search degradation, but no general server-side test suite is wired into CI.
 
 ### Running tests
 
@@ -254,15 +260,19 @@ Client-side tests run under **Vitest 3** with a `jsdom` environment. Configurati
 cd client
 yarn test        # watch mode — reruns on file changes
 yarn test:ci     # single run — used by CI
+
+cd ../server
+yarn test:search-degrade  # listing-search fallback coverage
 ```
 
 Tests are discovered from `client/src/**/*.{test,spec}.{ts,tsx}`.
 
 ### What is tested
 
-Pure reducer modules under [client/src/reducers/](client/src/reducers/) have unit-test coverage in [client/src/reducers/__tests__/](client/src/reducers/__tests__/). Each reducer file has a matching `*.test.ts`. The reducers back the search, fellowship-search, config, listing-form, and account-tracking (kanban/notes) flows — extracting state transitions from providers/components into pure functions makes them testable without mounting React or mocking network.
+Pure reducer modules under [client/src/reducers/](client/src/reducers/) have unit-test coverage in [client/src/reducers/**tests**/](client/src/reducers/__tests__/). Each reducer file has a matching `*.test.ts`. The reducers back the search, fellowship-search, config, listing-form, and account-tracking (kanban/notes) flows — extracting state transitions from providers/components into pure functions makes them testable without mounting React or mocking network.
 
 When adding a new reducer:
+
 1. Place the reducer in [client/src/reducers/](client/src/reducers/) with an exported `createInitial<Name>State()` factory.
 2. Add `client/src/reducers/__tests__/<name>.test.ts` covering each action type, the initial state, and a purity check (reducer does not mutate prior state).
 3. Import the reducer in the provider/component via `useReducer`; keep side effects (network, localStorage, timers) in the component, not the reducer.
@@ -306,10 +316,10 @@ The workflow also accepts `workflow_dispatch` so it can be run manually from the
 
 ## Troubleshooting
 
-| Issue | Solution |
-|-------|----------|
-| CAS login not working locally | Use dev-login: `http://localhost:4000/api/dev-login` |
-| Search returns no results | Check Meilisearch is running: `curl http://localhost:7700/health` |
-| Meilisearch connection refused | Start Docker container or check `MEILISEARCH_HOST` in `.env` |
-| CORS errors | Add origin to `allowList` in `app.ts` or use dev mode |
-| "Forbidden" on listing creation | Professor needs `profileVerified: true` |
+| Issue                           | Solution                                                          |
+| ------------------------------- | ----------------------------------------------------------------- |
+| CAS login not working locally   | Use dev-login: `http://localhost:4000/api/dev-login`              |
+| Search returns no results       | Check Meilisearch is running: `curl http://localhost:7700/health` |
+| Meilisearch connection refused  | Start Docker container or check `MEILISEARCH_HOST` in `.env`      |
+| CORS errors                     | Add origin to `allowList` in `app.ts` or use dev mode             |
+| "Forbidden" on listing creation | Professor needs `profileVerified: true`                           |
