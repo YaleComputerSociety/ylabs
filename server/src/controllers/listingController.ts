@@ -15,7 +15,7 @@ import {
 import { readUser } from '../services/userService';
 import { getMeiliIndex } from '../utils/meiliClient';
 import { getConfig } from '../services/configService';
-import { Listing } from '../models/listing';
+import { getListingModel } from '../db/connections';
 import { buildSafeSearchRegex } from '../utils/regex';
 
 /**
@@ -297,9 +297,10 @@ export const searchListingsViaMongo = async (
     sort.updatedAt = -1;
   }
 
+  const ListingModel = getListingModel();
   const [hits, totalCount] = await Promise.all([
-    Listing.find(filter).sort(sort).skip(params.offset).limit(params.limit).lean(),
-    Listing.countDocuments(filter),
+    ListingModel.find(filter).sort(sort).skip(params.offset).limit(params.limit).lean(),
+    ListingModel.countDocuments(filter),
   ]);
 
   return {
