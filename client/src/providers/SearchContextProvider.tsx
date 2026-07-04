@@ -169,7 +169,7 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
       const f = filtersRef.current;
       const formattedQuery = f.queryString.trim();
 
-      const endpoint = isResearchRoute && !isAuthenticated ? '/research' : '/listings/search';
+      const endpoint = isResearchRoute ? '/research' : '/listings/search';
       let url = `${endpoint}?query=${encodeURIComponent(formattedQuery)}&page=${searchPage}&pageSize=${pageSize}`;
 
       if (f.sortBy !== 'default') {
@@ -222,7 +222,7 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
           dispatch({ type: 'SEARCH_FAILURE' });
         });
     },
-    [isAuthenticated, isResearchRoute, pageSize],
+    [isResearchRoute, pageSize],
   );
 
   const refreshListings = useCallback(() => {

@@ -540,18 +540,36 @@ export const searchPublicResearch = async (request: Request, response: Response)
       };
     }
 
-    const index = await getMeiliIndex('listings');
-    const { hits, estimatedTotalHits } = await index.search((query as string) || '', searchParams);
+    const mongoParams = {
+      query: query as string,
+      sortBy: sortBy as string,
+      sortOrder: sortOrder as string,
+      departments: departments as string,
+      academicDisciplines: academicDisciplines as string,
+      researchAreas: researchAreas as string,
+      departmentsMode: departmentsMode as string,
+      academicDisciplinesMode: academicDisciplinesMode as string,
+      researchAreasMode: researchAreasMode as string,
+      limit,
+      offset,
+    };
+
+    const searchResult = await searchListingsWithDegradation({
+      query: (query as string) || '',
+      searchParams,
+      mongoParams,
+    });
 
     return response.json({
-      results: hits.map((hit: any) => redactPublicListing({ ...hit, _id: hit.id })),
-      totalCount: estimatedTotalHits,
+      results: searchResult.results.map((hit: any) => redactPublicListing(hit)),
+      totalCount: searchResult.totalCount,
       page: Number(page),
       pageSize: Number(pageSize),
+      degraded: searchResult.degraded,
     });
   } catch (error) {
     console.error('Public research search failed:', error);
-    return response.status(500).json({ error: 'Search failed' });
+    return response.status(500).json({ error: 'Search failed', degraded: true });
   }
 };
 

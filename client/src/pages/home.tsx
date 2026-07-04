@@ -90,10 +90,8 @@ const Home = () => {
   useEffect(() => {
     if (!slug) return;
 
-    const listingId = slug.match(/[a-fA-F0-9]{24}/)?.[0] || slug;
-    const endpoint = isAuthenticated ? `/listings/${listingId}` : `/research/${slug}`;
     axios
-      .get(endpoint, { withCredentials: true })
+      .get(`/research/${slug}`, { withCredentials: true })
       .then((response) => {
         dispatch({
           type: 'OPEN_DETAIL_MODAL',
@@ -105,7 +103,7 @@ const Home = () => {
         swal({ text: 'Unable to load this research listing.', icon: 'warning' });
         navigate('/research', { replace: true });
       });
-  }, [slug, isAuthenticated, navigate]);
+  }, [slug, navigate]);
 
   const filteredListings = useMemo(() => {
     if (quickFilter === 'open') {
