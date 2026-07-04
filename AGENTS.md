@@ -14,14 +14,14 @@ The server follows a layered architecture: **Routes → Middleware → Controlle
 
 ## Tech Stack
 
-| Layer | Technology |
-|-------|-----------|
-| Client | React 19, TypeScript 5.3, Vite 6.3, React Router v6, MUI v7, styled-components, TailwindCSS v3 |
-| Server | Express 4, TypeScript 5.3, Passport.js 0.5 (CAS strategy), Mongoose 8 |
-| Search | Meilisearch 0.57 (hybrid search with OpenAI `text-embedding-3-small` embedder) |
-| Database | MongoDB Atlas (single cluster, separate databases per environment) |
-| Package Manager | Yarn 4 via Corepack |
-| Tooling | concurrently, nodemon, ts-node, cross-env |
+| Layer           | Technology                                                                                     |
+| --------------- | ---------------------------------------------------------------------------------------------- |
+| Client          | React 19, TypeScript 5.3, Vite 6.3, React Router v6, MUI v7, styled-components, TailwindCSS v3 |
+| Server          | Express 4, TypeScript 5.3, Passport.js 0.5 (CAS strategy), Mongoose 8                          |
+| Search          | Meilisearch 0.57 (hybrid search with OpenAI `text-embedding-3-small` embedder)                 |
+| Database        | MongoDB Atlas (single cluster, separate databases per environment)                             |
+| Package Manager | Yarn 4 via Corepack                                                                            |
+| Tooling         | concurrently, nodemon, ts-node, cross-env                                                      |
 
 ## Monorepo Structure
 
@@ -57,17 +57,17 @@ ylabs/
 
 ## Commands
 
-| Command | Effect |
-|---------|--------|
-| `yarn install:all` | Install deps in root, server, and client |
-| `yarn dev:client` | Vite dev server on port 3000 |
-| `yarn dev:server` | Express with nodemon on port 4000 |
-| `yarn build` | Corepack enable + install all + build server + build client |
-| `yarn start` | Run both servers in production (concurrently) |
-| `yarn clean:all` | Remove all node_modules directories |
-| `yarn --cwd client test` | Run Vitest in watch mode |
-| `yarn --cwd client test:ci` | Run Vitest once (used by CI) |
-| `yarn --cwd server test:search-degrade` | Run focused listing-search degradation tests |
+| Command                                 | Effect                                                      |
+| --------------------------------------- | ----------------------------------------------------------- |
+| `yarn install:all`                      | Install deps in root, server, and client                    |
+| `yarn dev:client`                       | Vite dev server on port 3000                                |
+| `yarn dev:server`                       | Express with nodemon on port 4000                           |
+| `yarn build`                            | Corepack enable + install all + build server + build client |
+| `yarn start`                            | Run both servers in production (concurrently)               |
+| `yarn clean:all`                        | Remove all node_modules directories                         |
+| `yarn --cwd client test`                | Run Vitest in watch mode                                    |
+| `yarn --cwd client test:ci`             | Run Vitest once (used by CI)                                |
+| `yarn --cwd server test:search-degrade` | Run focused listing-search degradation tests                |
 
 Migration scripts run from `data-migration/` with `npx ts-node --transpile-only <script>.ts`.
 
@@ -88,6 +88,7 @@ MongoDB via Mongoose 8. All environments use `MONGODBURL` — the connection str
 Search has migrated from MongoDB Atlas Vector Search to **Meilisearch**. The old `embeddingService.ts` (OpenAI client-side embedding generation + in-memory LRU cache) has been removed.
 
 Current search flow:
+
 1. Client sends query + filters to `/api/listings/search`
 2. Controller builds Meilisearch filter strings from query params (`departments`, `researchAreas`, `archived`, `confirmed`)
 3. When a text query is present, hybrid search is enabled with `semanticRatio: 0.8` using the Meilisearch-configured OpenAI embedder
@@ -104,22 +105,24 @@ The migration script `data-migration/MigrateToMeilisearch.ts` configures the Mei
 
 Code flows Local → Beta → Prod. Beta is the staging gate where infrastructure and code changes are validated before production.
 
-| Environment | Hosting | `MEILISEARCH_INDEX_PREFIX` | Data source |
-|-------------|---------|---------------------------|-------------|
-| Local | localhost | *(unset)* | Seed script / local MongoDB |
-| Beta | Render (`ylabs-dev.onrender.com`) | `beta` | Seeded via `MigrateToMeilisearch.ts` |
-| Prod | Render (`yalelabs.onrender.com`) | `prod` | Real data |
+| Environment | Hosting                           | `MEILISEARCH_INDEX_PREFIX` | Data source                          |
+| ----------- | --------------------------------- | -------------------------- | ------------------------------------ |
+| Local       | localhost                         | _(unset)_                  | Seed script / local MongoDB          |
+| Beta        | Render (`ylabs-dev.onrender.com`) | `beta`                     | Seeded via `MigrateToMeilisearch.ts` |
+| Prod        | Render (`yalelabs.onrender.com`)  | `prod`                     | Real data                            |
 
 Meilisearch is a single Render Private Service shared by both beta and prod, isolated by index prefixes. MongoDB is a single Atlas cluster with separate databases per environment.
 
 ## Error Handling
 
 Three custom error classes in `server/src/utils/errors.ts`:
+
 - `NotFoundError` → 404
 - `ObjectIdError` → 404
 - `IncorrectPermissionsError` → 403
 
 The error handler middleware (`server/src/middleware/errorHandler.ts`) also maps:
+
 - Mongoose `ValidationError` → 400
 - Mongoose `CastError` → 400
 - MongoDB duplicate key (code 11000) → 409
@@ -128,6 +131,7 @@ The error handler middleware (`server/src/middleware/errorHandler.ts`) also maps
 Full error details are exposed in development; production responses are generic.
 
 The `asyncHandler` wrapper catches promise rejections in route handlers:
+
 ```typescript
 export const asyncHandler = (fn: Function) => {
   return (req: Request, res: Response, next: NextFunction) => {
@@ -144,7 +148,7 @@ Analytics events are logged by intercepting `res.send` or `res.json` in route-le
 const logListingEvent = (eventType: AnalyticsEventType) => {
   return async (req: Request, res: Response, next: NextFunction) => {
     const originalSend = res.send.bind(res);
-    res.send = function(data: any) {
+    res.send = function (data: any) {
       if (res.statusCode >= 200 && res.statusCode < 300) {
         // fire-and-forget event logging
       }
@@ -167,29 +171,29 @@ Coverage focuses on pure reducer modules in `client/src/reducers/`, with matchin
 
 Current reducers with test coverage (all in `client/src/reducers/`, tests in `client/src/reducers/__tests__/`):
 
-| Reducer | Consumer | What it models |
-|---------|----------|----------------|
-| `searchReducer` | `SearchContextProvider` | Listing search query, filters, sort, pagination, results lifecycle |
-| `fellowshipSearchReducer` | `FellowshipSearchContextProvider` | Fellowship equivalent with filter-options fetch lifecycle |
-| `browsePageReducer` | `pages/home`, `pages/fellowships` | Generic over `<T>`. Browse-page UI: favorites, detail-modal selection, admin-edit modal. Open/close modal flips `selectedItem` and `isDetailModalOpen` atomically. |
-| `configReducer` | `ConfigContextProvider` | Config fetch (idle → loading → loaded/error) |
-| `userReducer` | `UserContextProvider` | Auth-check lifecycle (loading → authenticated/unauthenticated) + explicit LOGOUT |
-| `favoritesReducer` | `components/accounts/FavoritesManager` | Favorited listings + fellowships, sort/filter/view state, optimistic add/remove |
-| `ownListingsReducer` | `components/accounts/ListingEditor` | Professor's own listings + edit/create lifecycle (isEditing/isCreating), skeleton-listing handling |
-| `unknownUserReducer` | Unknown-user flow | State for the "unknown user" verification path |
-| `listingFormReducer` | `components/accounts/ListingForm` | Form fields, errors, hydrate/reset, department add/remove |
-| `profileEditorReducer` | Profile editor | Profile form state |
-| `publicationsTableReducer` | Publications table | Publication CRUD/table state |
-| `inlineCrudReducer` | Inline CRUD components | Generic add/edit/delete row state |
-| `accountTrackingReducer` | `components/accounts/FavoritesManager` | Kanban stage + notes per lab/fellowship; includes `loadAccountTrackingFromStorage()` with legacy-key migration |
-| `adminTableReducer` | Admin tables | Generic admin table sort/filter/pagination |
-| `adminListingsTableReducer` | Admin listings table | Listing-specific admin table state |
-| `adminFellowshipsTableReducer` | Admin fellowships table | Fellowship-specific admin table state |
-| `adminFacultyProfilesTableReducer` | Admin faculty profiles table | Faculty profile admin table state |
-| `adminListingEditReducer` | Admin listing edit | Edit form for an admin-managed listing |
-| `adminFellowshipEditReducer` | Admin fellowship edit | Edit form for an admin-managed fellowship |
-| `adminFellowshipFormReducer` | Admin fellowship form | Fellowship create/edit form fields and errors |
-| `adminProfileEditReducer` | Admin profile edit | Edit form for an admin-managed faculty profile |
+| Reducer                            | Consumer                               | What it models                                                                                                                                                     |
+| ---------------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `searchReducer`                    | `SearchContextProvider`                | Listing search query, filters, sort, pagination, results lifecycle                                                                                                 |
+| `fellowshipSearchReducer`          | `FellowshipSearchContextProvider`      | Fellowship equivalent with filter-options fetch lifecycle                                                                                                          |
+| `browsePageReducer`                | `pages/home`, `pages/fellowships`      | Generic over `<T>`. Browse-page UI: favorites, detail-modal selection, admin-edit modal. Open/close modal flips `selectedItem` and `isDetailModalOpen` atomically. |
+| `configReducer`                    | `ConfigContextProvider`                | Config fetch (idle → loading → loaded/error)                                                                                                                       |
+| `userReducer`                      | `UserContextProvider`                  | Auth-check lifecycle (loading → authenticated/unauthenticated) + explicit LOGOUT                                                                                   |
+| `favoritesReducer`                 | `components/accounts/FavoritesManager` | Favorited listings + fellowships, sort/filter/view state, optimistic add/remove                                                                                    |
+| `ownListingsReducer`               | `components/accounts/ListingEditor`    | Professor's own listings + edit/create lifecycle (isEditing/isCreating), skeleton-listing handling                                                                 |
+| `unknownUserReducer`               | Unknown-user flow                      | State for the "unknown user" verification path                                                                                                                     |
+| `listingFormReducer`               | `components/accounts/ListingForm`      | Form fields, errors, hydrate/reset, department add/remove                                                                                                          |
+| `profileEditorReducer`             | Profile editor                         | Profile form state                                                                                                                                                 |
+| `publicationsTableReducer`         | Publications table                     | Publication CRUD/table state                                                                                                                                       |
+| `inlineCrudReducer`                | Inline CRUD components                 | Generic add/edit/delete row state                                                                                                                                  |
+| `accountTrackingReducer`           | `components/accounts/FavoritesManager` | Kanban stage + notes per lab/fellowship; includes `loadAccountTrackingFromStorage()` with legacy-key migration                                                     |
+| `adminTableReducer`                | Admin tables                           | Generic admin table sort/filter/pagination                                                                                                                         |
+| `adminListingsTableReducer`        | Admin listings table                   | Listing-specific admin table state                                                                                                                                 |
+| `adminFellowshipsTableReducer`     | Admin fellowships table                | Fellowship-specific admin table state                                                                                                                              |
+| `adminFacultyProfilesTableReducer` | Admin faculty profiles table           | Faculty profile admin table state                                                                                                                                  |
+| `adminListingEditReducer`          | Admin listing edit                     | Edit form for an admin-managed listing                                                                                                                             |
+| `adminFellowshipEditReducer`       | Admin fellowship edit                  | Edit form for an admin-managed fellowship                                                                                                                          |
+| `adminFellowshipFormReducer`       | Admin fellowship form                  | Fellowship create/edit form fields and errors                                                                                                                      |
+| `adminProfileEditReducer`          | Admin profile edit                     | Edit form for an admin-managed faculty profile                                                                                                                     |
 
 ## CI
 
@@ -203,10 +207,10 @@ The only other workflow is `keep-alive.yml`, which pings the Beta Render service
 
 Two rate limiters in `app.ts`, both keyed by authenticated user's `netId` with IP fallback for unauthenticated requests:
 
-| Limiter | Scope | Limit |
-|---------|-------|-------|
-| `apiLimiter` | All `/api` routes | 200 req / 15 min |
-| `writeLimiter` | Non-GET requests to `/api/listings` and `/api/fellowships` | 50 req / 15 min |
+| Limiter        | Scope                                                      | Limit            |
+| -------------- | ---------------------------------------------------------- | ---------------- |
+| `apiLimiter`   | All `/api` routes                                          | 200 req / 15 min |
+| `writeLimiter` | Non-GET requests to `/api/listings` and `/api/fellowships` | 50 req / 15 min  |
 
 Both limiters are skipped in CI, development, and test environments.
 
@@ -214,20 +218,21 @@ Both limiters are skipped in CI, development, and test environments.
 
 Defined in `server/src/middleware/auth.ts`:
 
-| Middleware | Check |
-|------------|-------|
-| `isAuthenticated` | `req.user` exists |
-| `isAdmin` | `userType === 'admin'` |
-| `isProfessor` | `userType` in `['professor', 'faculty', 'admin']` |
+| Middleware         | Check                                                 |
+| ------------------ | ----------------------------------------------------- |
+| `isAuthenticated`  | `req.user` exists                                     |
+| `isAdmin`          | `userType === 'admin'`                                |
+| `isProfessor`      | `userType` in `['professor', 'faculty', 'admin']`     |
 | `canCreateListing` | professor/faculty + `profileVerified` (admins bypass) |
-| `isTrustworthy` | `userConfirmed` + admin/professor/faculty |
-| `isConfirmed` | `userConfirmed === true` |
+| `isTrustworthy`    | `userConfirmed` + admin/professor/faculty             |
+| `isConfirmed`      | `userConfirmed === true`                              |
 
 Client-side route guards: `PrivateRoute` (auth required, redirects unknown users when `unknownBlocked=true`), `AdminRoute` (admin only), `UnprivateRoute` (no auth required, for error pages).
 
 ## Validation Middleware
 
 Exported from `server/src/middleware/`:
+
 - `validateObjectId(paramName?)` — MongoDB ObjectId format check
 - `requireBody()` — ensures request body exists
 - `requireFields(fields[])` — specific field presence validation
@@ -239,17 +244,17 @@ Exported from `server/src/middleware/`:
 
 All routes mount under `/api` in `app.ts`. Route files in `server/src/routes/`:
 
-| Prefix | File | Auth |
-|--------|------|------|
-| `/listings` | `listings.ts` | Varies (search public, mutations require auth) |
-| `/fellowships` | `fellowships.ts` | Varies |
-| `/users` | `users.ts` | Yes |
-| `/profiles` | `profiles.ts` | Varies |
-| `/analytics` | `analytics.ts` | Admin |
-| `/config` | `config.ts` | No |
-| `/research-areas` | `researchAreas.ts` | Admin for writes |
-| `/admin` | `admin.ts` | Admin |
-| `/seed` | `seed.ts` | Dev mode only |
+| Prefix            | File               | Auth                                           |
+| ----------------- | ------------------ | ---------------------------------------------- |
+| `/listings`       | `listings.ts`      | Varies (search public, mutations require auth) |
+| `/fellowships`    | `fellowships.ts`   | Varies                                         |
+| `/users`          | `users.ts`         | Yes                                            |
+| `/profiles`       | `profiles.ts`      | Varies                                         |
+| `/analytics`      | `analytics.ts`     | Admin                                          |
+| `/config`         | `config.ts`        | No                                             |
+| `/research-areas` | `researchAreas.ts` | Admin for writes                               |
+| `/admin`          | `admin.ts`         | Admin                                          |
+| `/seed`           | `seed.ts`          | Dev mode only                                  |
 
 Passport auth routes (CAS login/logout, dev-login) are mounted separately via `passportRoutes` before the main routes.
 
@@ -266,42 +271,42 @@ User → Yale CAS SSO → passport.ts findOrCreateUser
 
 ## Naming Conventions
 
-| Element | Convention | Examples |
-|---------|-----------|----------|
-| Services | camelCase + "Service" suffix | `listingService.ts`, `analyticsService.ts` |
-| Models | PascalCase exports | `User`, `Listing`, `Fellowship` |
-| Controllers | camelCase descriptive | `createListingForCurrentUser`, `searchListings` |
-| Routes | Resource-based files | `listings.ts`, `users.ts` |
-| DB fields | camelCase | `ownerPrimaryDepartment`, `primaryCategory` |
-| Enums | PascalCase | `AnalyticsEventType`, `DepartmentCategory` |
-| React components | PascalCase | `PrivateRoute`, `ListingForm` |
-| React hooks | camelCase with `use` prefix | `useConfig`, `useInfiniteScroll` |
-| Contexts | PascalCase + "Context" suffix | `UserContext`, `SearchContext` |
+| Element          | Convention                    | Examples                                        |
+| ---------------- | ----------------------------- | ----------------------------------------------- |
+| Services         | camelCase + "Service" suffix  | `listingService.ts`, `analyticsService.ts`      |
+| Models           | PascalCase exports            | `User`, `Listing`, `Fellowship`                 |
+| Controllers      | camelCase descriptive         | `createListingForCurrentUser`, `searchListings` |
+| Routes           | Resource-based files          | `listings.ts`, `users.ts`                       |
+| DB fields        | camelCase                     | `ownerPrimaryDepartment`, `primaryCategory`     |
+| Enums            | PascalCase                    | `AnalyticsEventType`, `DepartmentCategory`      |
+| React components | PascalCase                    | `PrivateRoute`, `ListingForm`                   |
+| React hooks      | camelCase with `use` prefix   | `useConfig`, `useInfiniteScroll`                |
+| Contexts         | PascalCase + "Context" suffix | `UserContext`, `SearchContext`                  |
 
 ## Environment Variables
 
 ### `server/.env`
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `MONGODBURL` | Yes | MongoDB connection string. Points to Development locally, Beta on staging, Production on prod. |
-| `MONGODBURL_MIGRATION` | For migration mode | Secondary DB for dual-DB migrations |
-| `SESSION_SECRET` | Yes | Cookie session signing key |
-| `API_MODE` | No | Set to `productionMigration` for dual-DB migration mode. Otherwise leave unset. |
-| `SSOBASEURL` | Yes | Yale CAS URL |
-| `SERVER_BASE_URL` | Yes | Public server URL for CAS callbacks |
-| `YALIES_API_KEY` | No | API key for yalies.io |
-| `OPENAI_API_KEY` | No | OpenAI API key (used by Meilisearch embedder config) |
-| `MEILISEARCH_HOST` | No (default: `http://localhost:7700`) | Meilisearch instance URL |
-| `MEILISEARCH_API_KEY` | No | Meilisearch API key |
-| `MEILISEARCH_INDEX_PREFIX` | No | Environment prefix for index names (e.g., `prod`, `beta`). When set, indexes become `{prefix}_listings`. Allows prod and beta to share one Meilisearch instance. |
-| `PORT` | No (default: 4000) | Server port |
+| Variable                   | Required                              | Description                                                                                                                                                      |
+| -------------------------- | ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MONGODBURL`               | Yes                                   | MongoDB connection string. Points to Development locally, Beta on staging, Production on prod.                                                                   |
+| `MONGODBURL_MIGRATION`     | For migration mode                    | Secondary DB for dual-DB migrations                                                                                                                              |
+| `SESSION_SECRET`           | Yes                                   | Cookie session signing key                                                                                                                                       |
+| `API_MODE`                 | No                                    | Set to `productionMigration` for dual-DB migration mode. Otherwise leave unset.                                                                                  |
+| `SSOBASEURL`               | Yes                                   | Yale CAS URL                                                                                                                                                     |
+| `SERVER_BASE_URL`          | Yes                                   | Public server URL for CAS callbacks                                                                                                                              |
+| `YALIES_API_KEY`           | No                                    | API key for yalies.io                                                                                                                                            |
+| `OPENAI_API_KEY`           | No                                    | OpenAI API key (used by Meilisearch embedder config)                                                                                                             |
+| `MEILISEARCH_HOST`         | No (default: `http://localhost:7700`) | Meilisearch instance URL                                                                                                                                         |
+| `MEILISEARCH_API_KEY`      | No                                    | Meilisearch API key                                                                                                                                              |
+| `MEILISEARCH_INDEX_PREFIX` | No                                    | Environment prefix for index names (e.g., `prod`, `beta`). When set, indexes become `{prefix}_listings`. Allows prod and beta to share one Meilisearch instance. |
+| `PORT`                     | No (default: 4000)                    | Server port                                                                                                                                                      |
 
 ### `client/.env`
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `VITE_APP_SERVER` | Yes | Backend API URL (e.g., `http://localhost:4000`) |
+| Variable          | Required | Description                                     |
+| ----------------- | -------- | ----------------------------------------------- |
+| `VITE_APP_SERVER` | Yes      | Backend API URL (e.g., `http://localhost:4000`) |
 
 ## Sensitive Files
 
@@ -312,11 +317,11 @@ User → Yale CAS SSO → passport.ts findOrCreateUser
 
 ## Known Technical Debt
 
-| Issue | Location | Status |
-|-------|----------|--------|
-| No general server-side test suite | `server/` | A focused Node test covers listing-search degradation; broader server coverage is not wired into CI. Client uses Vitest; reducer modules in `client/src/reducers/` are covered. |
+| Issue                                    | Location                          | Status                                                                                                                                                                                                                          |
+| ---------------------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| No general server-side test suite        | `server/`                         | A focused Node test covers listing-search degradation; broader server coverage is not wired into CI. Client uses Vitest; reducer modules in `client/src/reducers/` are covered.                                                 |
 | ESLint/Prettier configured but not in CI | `eslint.config.js`, `.prettierrc` | Flat-config ESLint + Prettier set up at repo root. Currently reports ~15 errors / ~55 warnings across the codebase; not wired to CI until pre-existing violations are triaged. Run `yarn lint`, `yarn lint:fix`, `yarn format`. |
-| Console-only logging | Server | No structured logging (Winston/Pino) |
+| Console-only logging                     | Server                            | No structured logging (Winston/Pino)                                                                                                                                                                                            |
 
 ## Adding a New Endpoint
 
@@ -339,14 +344,14 @@ User → Yale CAS SSO → passport.ts findOrCreateUser
 
 ## External Integrations
 
-| Service | Purpose | Auth | Location |
-|---------|---------|------|----------|
-| Yale CAS SSO | Authentication | CAS server URL | `passport.ts` |
-| Yalies API (`api.yalies.io`) | Student/grad data lookup | API key | `yaliesService.ts` |
-| Yale Directory (`directory.yale.edu`) | Faculty data lookup | None | `directoryService.ts` |
-| CourseTable (`coursetable.com/api/catalog/public`) | Professor course data | None | `courseTableService.ts` |
-| Meilisearch | Hybrid search (keyword + semantic) | API key | `meiliClient.ts` |
-| OpenAI | Embeddings via Meilisearch embedder | API key (in Meilisearch config) | Configured in migration script |
+| Service                                            | Purpose                             | Auth                            | Location                       |
+| -------------------------------------------------- | ----------------------------------- | ------------------------------- | ------------------------------ |
+| Yale CAS SSO                                       | Authentication                      | CAS server URL                  | `passport.ts`                  |
+| Yalies API (`api.yalies.io`)                       | Student/grad data lookup            | API key                         | `yaliesService.ts`             |
+| Yale Directory (`directory.yale.edu`)              | Faculty data lookup                 | None                            | `directoryService.ts`          |
+| CourseTable (`coursetable.com/api/catalog/public`) | Professor course data               | None                            | `courseTableService.ts`        |
+| Meilisearch                                        | Hybrid search (keyword + semantic)  | API key                         | `meiliClient.ts`               |
+| OpenAI                                             | Embeddings via Meilisearch embedder | API key (in Meilisearch config) | Configured in migration script |
 
 ## Maintenance
 
