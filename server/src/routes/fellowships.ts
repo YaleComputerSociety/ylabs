@@ -4,6 +4,8 @@
 import { Router } from 'express';
 import { isAuthenticated, validateObjectId, validatePagination } from '../middleware/index';
 import * as fellowshipController from '../controllers/fellowshipController';
+import { AnalyticsEventType } from '../models/index';
+import { logResearchEventOnSuccess } from '../services/researchAnalytics';
 
 const router = Router();
 
@@ -22,6 +24,7 @@ router.put(
   '/:id/addView',
   isAuthenticated,
   validateObjectId('id'),
+  logResearchEventOnSuccess(AnalyticsEventType.RESEARCH_VIEW, 'fellowship'),
   fellowshipController.addViewToFellowship,
 );
 

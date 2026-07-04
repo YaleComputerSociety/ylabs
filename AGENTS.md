@@ -67,6 +67,7 @@ ylabs/
 | `yarn clean:all`                        | Remove all node_modules directories                         |
 | `yarn --cwd client test`                | Run Vitest in watch mode                                    |
 | `yarn --cwd client test:ci`             | Run Vitest once (used by CI)                                |
+| `yarn --cwd server test`                | Run server-side Node test files                             |
 | `yarn --cwd server test:search-degrade` | Run focused listing-search degradation tests                |
 
 Migration scripts run from `data-migration/` with `npx ts-node --transpile-only <script>.ts`.
@@ -165,7 +166,7 @@ Analytics events have a 3-year TTL via MongoDB's `expireAfterSeconds` index.
 
 ## Testing
 
-Client-side tests run under **Vitest 3** with a `jsdom` environment. Config lives in the `test` block of `client/vite.config.js`; tests are discovered from `client/src/**/*.{test,spec}.{ts,tsx}`. The server has a focused Node test script for listing-search degradation (`yarn --cwd server test:search-degrade`), but no general server-side test suite is wired into CI.
+Client-side tests run under **Vitest 3** with a `jsdom` environment. Config lives in the `test` block of `client/vite.config.js`; tests are discovered from `client/src/**/*.{test,spec}.{ts,tsx}`. Server tests run with Node's test runner via `tsx` (`yarn --cwd server test`), with a focused listing-search degradation script available as `yarn --cwd server test:search-degrade`.
 
 Coverage focuses on pure reducer modules in `client/src/reducers/`, with matching test files in `client/src/reducers/__tests__/`. The pattern extracts state transitions out of providers/components (as `createInitial<Name>State()` + `<name>Reducer(state, action)`) so they can be tested without mounting React or mocking network. Side effects (axios, localStorage, timers) stay in the component that uses `useReducer`.
 
@@ -319,7 +320,7 @@ User → Yale CAS SSO → passport.ts findOrCreateUser
 
 | Issue                                    | Location                          | Status                                                                                                                                                                                                                          |
 | ---------------------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| No general server-side test suite        | `server/`                         | A focused Node test covers listing-search degradation; broader server coverage is not wired into CI. Client uses Vitest; reducer modules in `client/src/reducers/` are covered.                                                 |
+| Limited server-side test coverage        | `server/`                         | Node tests cover focused server behavior, including listing-search degradation. Client uses Vitest; reducer modules in `client/src/reducers/` are covered.                                                                       |
 | ESLint/Prettier configured but not in CI | `eslint.config.js`, `.prettierrc` | Flat-config ESLint + Prettier set up at repo root. Currently reports ~15 errors / ~55 warnings across the codebase; not wired to CI until pre-existing violations are triaged. Run `yarn lint`, `yarn lint:fix`, `yarn format`. |
 | Console-only logging                     | Server                            | No structured logging (Winston/Pino)                                                                                                                                                                                            |
 

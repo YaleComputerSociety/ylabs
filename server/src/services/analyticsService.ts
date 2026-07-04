@@ -10,6 +10,8 @@ export interface LogEventParams {
   netid: string;
   userType: string;
   listingId?: string;
+  entityType?: string;
+  entityId?: string;
   searchQuery?: string;
   searchDepartments?: string[];
   metadata?: any;
@@ -22,6 +24,8 @@ export const logEvent = async (params: LogEventParams): Promise<void> => {
       netid: params.netid,
       userType: params.userType,
       listingId: params.listingId,
+      entityType: params.entityType,
+      entityId: params.entityId,
       searchQuery: params.searchQuery,
       searchDepartments: params.searchDepartments,
       metadata: params.metadata,
@@ -383,6 +387,116 @@ export const getAnalytics = async () => {
     },
   ]);
 
+  const researchEventTypes = [
+    AnalyticsEventType.RESEARCH_VIEW,
+    AnalyticsEventType.PATHWAY_SAVE,
+    AnalyticsEventType.WAYS_IN_CLICK,
+    AnalyticsEventType.CONTACT_ROUTE_CLICK,
+    AnalyticsEventType.SOURCE_LINK_CLICK,
+  ];
+
+  const researchStats = await AnalyticsEvent.aggregate([
+    {
+      $match: {
+        eventType: { $in: researchEventTypes },
+      },
+    },
+    {
+      $facet: {
+        // Per-event-type totals with rolling windows: the core segmentation
+        // for the research product surfaces.
+        byEventType: [
+          {
+            $group: {
+              _id: '$eventType',
+              total: { $sum: 1 },
+              last7Days: {
+                $sum: { $cond: [{ $gte: ['$timestamp', sevenDaysAgo] }, 1, 0] },
+              },
+              today: {
+                $sum: { $cond: [{ $gte: ['$timestamp', today] }, 1, 0] },
+              },
+            },
+          },
+          {
+            $project: {
+              _id: 0,
+              eventType: '$_id',
+              total: 1,
+              last7Days: 1,
+              today: 1,
+            },
+          },
+          { $sort: { total: -1 } },
+        ],
+        // Which research entity kind (profile / listing / fellowship) drives
+        // engagement.
+        byEntityType: [
+          { $match: { entityType: { $exists: true, $ne: null } } },
+          {
+            $group: {
+              _id: { entityType: '$entityType', eventType: '$eventType' },
+              count: { $sum: 1 },
+            },
+          },
+          {
+            $project: {
+              _id: 0,
+              entityType: '$_id.entityType',
+              eventType: '$_id.eventType',
+              count: 1,
+            },
+          },
+          { $sort: { count: -1 } },
+        ],
+        byUserType: [
+          {
+            $group: {
+              _id: '$userType',
+              count: { $sum: 1 },
+            },
+          },
+          {
+            $project: {
+              _id: 0,
+              userType: '$_id',
+              count: 1,
+            },
+          },
+          { $sort: { count: -1 } },
+        ],
+        // Most-viewed research entities over the trailing 30 days.
+        topEntities: [
+          {
+            $match: {
+              eventType: AnalyticsEventType.RESEARCH_VIEW,
+              timestamp: { $gte: thirtyDaysAgo },
+              entityId: { $exists: true, $ne: null },
+            },
+          },
+          {
+            $group: {
+              _id: { entityType: '$entityType', entityId: '$entityId' },
+              views: { $sum: 1 },
+              uniqueViewers: { $addToSet: '$netid' },
+            },
+          },
+          {
+            $project: {
+              _id: 0,
+              entityType: '$_id.entityType',
+              entityId: '$_id.entityId',
+              views: 1,
+              uniqueViewers: { $size: '$uniqueViewers' },
+            },
+          },
+          { $sort: { views: -1 } },
+          { $limit: 10 },
+        ],
+      },
+    },
+  ]);
+
   const listingStats = await getListingModel().aggregate([
     {
       $facet: {
@@ -604,6 +718,7 @@ export const getAnalytics = async () => {
 
   const visitors = visitorStats[0];
   const engagement = engagementStats[0];
+  const research = researchStats[0];
   const listings = listingStats[0];
   const users = userStats[0];
 
@@ -661,6 +776,12 @@ export const getAnalytics = async () => {
       avgViews: listings.viewsAndFavorites[0]?.avgViews || 0,
       avgFavorites: listings.viewsAndFavorites[0]?.avgFavorites || 0,
       viewsByDepartment: listings.viewsByDepartment || [],
+    },
+    research: {
+      byEventType: research.byEventType || [],
+      byEntityType: research.byEntityType || [],
+      byUserType: research.byUserType || [],
+      topEntities: research.topEntities || [],
     },
     listings: {
       overview: listings.overview[0] || { total: 0, active: 0, archived: 0, unconfirmed: 0 },

@@ -11,6 +11,7 @@ import {
 import * as listingController from '../controllers/listingController';
 import { logEvent } from '../services/analyticsService';
 import { AnalyticsEventType } from '../models/index';
+import { logResearchEventOnSuccess } from '../services/researchAnalytics';
 
 const router = Router();
 
@@ -132,6 +133,7 @@ router.put(
   isAuthenticated,
   validateObjectId('id'),
   logListingEvent(AnalyticsEventType.LISTING_VIEW),
+  logResearchEventOnSuccess(AnalyticsEventType.RESEARCH_VIEW, 'listing'),
   listingController.addViewToListing,
 );
 
