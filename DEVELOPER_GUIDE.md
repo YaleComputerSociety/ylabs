@@ -1,4 +1,4 @@
-# Yale Research — Developer Guide
+# Yale Research - Developer Guide
 
 > **Live site:** [yalelabs.io](https://yalelabs.io/) · **Beta:** [ylabs-gr4v.onrender.com](https://ylabs-gr4v.onrender.com) · **Repo:** [YaleComputerSociety/ylabs](https://github.com/YaleComputerSociety/ylabs)
 
@@ -140,7 +140,7 @@ curl http://localhost:7700/health
 # Should return: {"status":"available"}
 ```
 
-Data persists in the `meili_data` volume — you only need to seed once.
+Data persists in the `meili_data` volume - you only need to seed once.
 
 On Windows, install Docker Desktop on Windows and enable WSL integration for your Linux distribution. Run the `docker` commands from inside WSL.
 
@@ -210,7 +210,7 @@ yarn install:all
 
 ### Dev login bypass
 
-Visit `http://localhost:4000/api/dev-login` to log in as a test user (`test123` / `undergraduate`) without CAS — `undergraduate` (not the legacy generic `student`) since that's what every real account in the database actually is. Use `?userType=admin` for the `devadmin` account, `?userType=professor` (or `faculty`) for the `devprofessor` account, `?userType=graduate` for the `devgraduate` account, or `?userType=unknown` for the `devunknown` account — the only way to trigger the `/unknown` onboarding-form experience locally, since it otherwise only shows up when a real CAS login's Yalies/Directory lookup can't classify the user. The `unknown` dev account is created with `userConfirmed: false` and `profileVerified: false` to match that real state; every other dev role is pre-confirmed. Dev login is allowed only when `NODE_ENV=development` and `SERVER_BASE_URL` points at localhost or loopback; the Mongo database name does not control this local-runtime check.
+Visit `http://localhost:4000/api/dev-login` to log in as a test user (`test123` / `undergraduate`) without CAS - `undergraduate` (not the legacy generic `student`) since that's what every real account in the database actually is. Use `?userType=admin` for the `devadmin` account, `?userType=professor` (or `faculty`) for the `devprofessor` account, `?userType=graduate` for the `devgraduate` account, or `?userType=unknown` for the `devunknown` account - the only way to trigger the `/unknown` onboarding-form experience locally, since it otherwise only shows up when a real CAS login's Yalies/Directory lookup can't classify the user. The `unknown` dev account is created with `userConfirmed: false` and `profileVerified: false` to match that real state; every other dev role is pre-confirmed. Dev login is allowed only when `NODE_ENV=development` and `SERVER_BASE_URL` points at localhost or loopback; the Mongo database name does not control this local-runtime check.
 
 For request-level local testing, set `LOCAL_AUTH_BYPASS=true` in `server/.env`. In `development` or `test` only, protected `/api` requests without a session receive a dev admin user by default:
 
@@ -221,7 +221,7 @@ LOCAL_AUTH_BYPASS_USER_TYPE=admin
 
 Per-request overrides are available with `x-dev-netid` and `x-dev-user-type` headers. `/api/cas` and `/api/logout` are not bypassed, so leave `LOCAL_AUTH_BYPASS=false` or visit those routes directly when testing Yale CAS behavior.
 
-The auth flow's verbose tracing (per-request deserialization, the find-or-create source cascade, analytics-event confirmations) is off by default — set `AUTH_DEBUG=true` in `server/.env` to turn it on when debugging an auth issue. Genuine auth errors and anomalies log regardless of the flag.
+The auth flow's verbose tracing (per-request deserialization, the find-or-create source cascade, analytics-event confirmations) is off by default - set `AUTH_DEBUG=true` in `server/.env` to turn it on when debugging an auth issue. Genuine auth errors and anomalies log regardless of the flag.
 
 ---
 
@@ -244,7 +244,7 @@ The auth flow's verbose tracing (per-request deserialization, the find-or-create
 | `yarn --cwd server scraper:integrity-gate --include-samples` | Read-only scraper materialization integrity gate |
 | `SCRAPER_ENV=beta yarn --cwd server gates:refresh` | Regenerate every canonical gate scorecard the operator board reads (single writer) |
 
-### Operator board Gate Status — keeping it honest and current
+### Operator board Gate Status - keeping it honest and current
 
 The admin operator board (the **Gate Status** panel at `/programs`) reads canonical gate scorecard
 JSON from fixed `/tmp` paths. It does not compute gates live; it shows whatever was last written
@@ -253,7 +253,7 @@ there. Two rules keep it trustworthy:
 - **Honesty:** every gate card shows provenance (which DB, how long ago it was generated). A
   scorecard older than `GATE_SCORECARD_MAX_AGE_HOURS` (default 3) is flagged **stale** and the gate
   reads "rerun" rather than presenting a possibly-moved-on verdict as live.
-- **Freshness:** run `gates:refresh` to regenerate all canonical scorecards — it is the **only**
+- **Freshness:** run `gates:refresh` to regenerate all canonical scorecards - it is the **only**
   sanctioned writer of those paths. Ad-hoc audits should write to suffixed scratch files (e.g.
   `--output /tmp/ylabs-...-scratch.json`), never the canonical paths, so the board never drifts.
   To keep the board current automatically on a single instance, set `GATE_REFRESH_INTERVAL_MINUTES`
@@ -279,8 +279,9 @@ Historical `data-migration/` scripts remain for one-off migrations only. Do not 
 ```
 yale-research/
 ├── package.json              # Root scripts: install:all, dev:client, dev:server, build, start
-├── DEVELOPER_GUIDE.md        # This file — developer guide
-├── CLAUDE.md                 # Agent-facing codebase context
+├── DEVELOPER_GUIDE.md        # This file - developer guide
+├── AGENTS.md                 # Compact agent-facing entry point
+├── skills/                   # On-demand agent skills for product, architecture, search, auth, scrapers, and workflow
 ├── client/                   # React frontend (Vite, port 3000)
 │   └── src/
 │       ├── pages/            # Route-level components
@@ -319,9 +320,9 @@ Search uses **Meilisearch** for Research, with internal pathway enrichment and M
 Listing CRUD is retired and must not be used as the search sync path.
 
 The Meilisearch client (`server/src/utils/meiliClient.ts`) exports:
-- `getMeiliClient()` — lazy-loaded singleton
-- `getMeiliIndex(name)` — returns a prefixed index (e.g., `prod_researchentities`)
-- `resolveIndexName(name)` — pure function for prefix resolution
+- `getMeiliClient()` - lazy-loaded singleton
+- `getMeiliIndex(name)` - returns a prefixed index (e.g., `prod_researchentities`)
+- `resolveIndexName(name)` - pure function for prefix resolution
 
 ---
 
@@ -336,9 +337,9 @@ User → Yale CAS SSO → passport.ts findOrCreateUser
      → Create/Update User → cookie-session
 ```
 
-The find-or-create cascade runs at login time only. Per-request session restore (`deserializeUser`) is a plain user read plus the admin-grant check — no user creation and no Yalies/Directory calls — so a hiccup in those external sources can't fail already-authenticated requests. The CAS login callback (`/api/cas`) is also exempt from the general API rate limiter: it's always unauthenticated, so it keys by IP, and many users behind one campus NAT egress IP could otherwise exhaust the shared budget and be locked out of login.
+The find-or-create cascade runs at login time only. Per-request session restore (`deserializeUser`) is a plain user read plus the admin-grant check - no user creation and no Yalies/Directory calls - so a hiccup in those external sources can't fail already-authenticated requests. The CAS login callback (`/api/cas`) is also exempt from the general API rate limiter: it's always unauthenticated, so it keys by IP, and many users behind one campus NAT egress IP could otherwise exhaust the shared budget and be locked out of login.
 
-The public browse surfaces (`/api/research`, `/api/opportunities`) follow the same principle: they are exempt from both the general and the write limiter (`POST /api/research/search` is a pure read despite its method) and are governed solely by `publicDiscoveryLimiter` (300 req / 15 min), sized for anonymous IP-keyed traffic — debounced search-as-you-type, filters, infinite scroll, and detail views, potentially from several users behind one NAT egress IP. The `PUT …/addView` view-telemetry routes are likewise exempt from the write limiter so ordinary browsing can't 429 a user's real mutations. Sessions last 30 days; the per-request admin-grant check is cached in-memory for 60s (invalidated immediately on grant/revoke). Public detail endpoints (research entity by slug, opportunity by id) and `/api/config` allow brief HTTP caching instead of the global `/api` no-store.
+The public browse surfaces (`/api/research`, `/api/opportunities`) follow the same principle: they are exempt from both the general and the write limiter (`POST /api/research/search` is a pure read despite its method) and are governed solely by `publicDiscoveryLimiter` (300 req / 15 min), sized for anonymous IP-keyed traffic - debounced search-as-you-type, filters, infinite scroll, and detail views, potentially from several users behind one NAT egress IP. The `PUT .../addView` view-telemetry routes are likewise exempt from the write limiter so ordinary browsing can't 429 a user's real mutations. Sessions last 30 days; the per-request admin-grant check is cached in-memory for 60s (invalidated immediately on grant/revoke). Public detail endpoints (research entity by slug, opportunity by id) and `/api/config` allow brief HTTP caching instead of the global `/api` no-store.
 
 ### Auth Middleware (`server/src/middleware/auth.ts`)
 
@@ -379,8 +380,8 @@ Client-side tests run under **Vitest 3** with a `jsdom` environment. Server-side
 ### Running tests
 
 ```bash
-yarn --cwd client test        # watch mode — reruns on file changes
-yarn --cwd client test:ci     # single run — used by CI
+yarn --cwd client test        # watch mode - reruns on file changes
+yarn --cwd client test:ci     # single run - used by CI
 yarn --cwd server test        # server Vitest tests
 npx tsc --noEmit -p server/tsconfig.json
 ```
@@ -389,7 +390,7 @@ Tests are discovered from `client/src/**/*.{test,spec}.{ts,tsx}`.
 
 ### What is tested
 
-Pure reducer modules under [client/src/reducers/](client/src/reducers/) have unit-test coverage in [client/src/reducers/__tests__/](client/src/reducers/__tests__/). Each reducer file has a matching `*.test.ts`. The reducers back the search, fellowship-search, config, listing-form, and account-tracking (kanban/notes) flows — extracting state transitions from providers/components into pure functions makes them testable without mounting React or mocking network.
+Pure reducer modules under [client/src/reducers/](client/src/reducers/) have unit-test coverage in [client/src/reducers/__tests__/](client/src/reducers/__tests__/). Each reducer file has a matching `*.test.ts`. The reducers back the search, fellowship-search, config, listing-form, and account-tracking (kanban/notes) flows - extracting state transitions from providers/components into pure functions makes them testable without mounting React or mocking network.
 
 When adding a new reducer:
 1. Place the reducer in [client/src/reducers/](client/src/reducers/) with an exported `createInitial<Name>State()` factory.
