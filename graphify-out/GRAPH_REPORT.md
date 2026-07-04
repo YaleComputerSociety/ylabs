@@ -1,2249 +1,4590 @@
-# Graph Report - ylabs  (2026-06-12)
+# Graph Report - ylabs  (2026-07-04)
 
 ## Corpus Check
-- 802 files · ~1,742,900 words
+- 816 files · ~1,674,807 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 13759 nodes · 28709 edges · 501 communities (488 shown, 13 thin omitted)
-- Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS · INFERRED: 32 edges (avg confidence: 0.8)
+- 12503 nodes · 21522 edges · 4008 communities (927 shown, 3081 thin omitted)
+- Extraction: 98% EXTRACTED · 2% INFERRED · 0% AMBIGUOUS · INFERRED: 447 edges (avg confidence: 0.62)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `228d73ad`
+- Built from commit: `f8d476fc`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
 ## Community Hubs (Navigation)
-- [[_COMMUNITY_Community 0|Community 0]]
-- [[_COMMUNITY_Community 1|Community 1]]
-- [[_COMMUNITY_Community 2|Community 2]]
-- [[_COMMUNITY_Community 3|Community 3]]
-- [[_COMMUNITY_Community 4|Community 4]]
-- [[_COMMUNITY_Community 5|Community 5]]
-- [[_COMMUNITY_Community 6|Community 6]]
-- [[_COMMUNITY_Community 7|Community 7]]
-- [[_COMMUNITY_Community 8|Community 8]]
-- [[_COMMUNITY_Community 9|Community 9]]
-- [[_COMMUNITY_Community 10|Community 10]]
-- [[_COMMUNITY_Community 11|Community 11]]
-- [[_COMMUNITY_Community 12|Community 12]]
-- [[_COMMUNITY_Community 13|Community 13]]
-- [[_COMMUNITY_Community 14|Community 14]]
-- [[_COMMUNITY_Community 15|Community 15]]
-- [[_COMMUNITY_Community 16|Community 16]]
-- [[_COMMUNITY_Community 17|Community 17]]
-- [[_COMMUNITY_Community 18|Community 18]]
-- [[_COMMUNITY_Community 19|Community 19]]
-- [[_COMMUNITY_Community 20|Community 20]]
-- [[_COMMUNITY_Community 21|Community 21]]
-- [[_COMMUNITY_Community 22|Community 22]]
-- [[_COMMUNITY_Community 23|Community 23]]
-- [[_COMMUNITY_Community 24|Community 24]]
-- [[_COMMUNITY_Community 25|Community 25]]
-- [[_COMMUNITY_Community 26|Community 26]]
-- [[_COMMUNITY_Community 27|Community 27]]
-- [[_COMMUNITY_Community 28|Community 28]]
-- [[_COMMUNITY_Community 29|Community 29]]
-- [[_COMMUNITY_Community 30|Community 30]]
-- [[_COMMUNITY_Community 31|Community 31]]
-- [[_COMMUNITY_Community 32|Community 32]]
-- [[_COMMUNITY_Community 33|Community 33]]
-- [[_COMMUNITY_Community 34|Community 34]]
-- [[_COMMUNITY_Community 35|Community 35]]
-- [[_COMMUNITY_Community 36|Community 36]]
-- [[_COMMUNITY_Community 37|Community 37]]
-- [[_COMMUNITY_Community 38|Community 38]]
-- [[_COMMUNITY_Community 39|Community 39]]
-- [[_COMMUNITY_Community 40|Community 40]]
-- [[_COMMUNITY_Community 41|Community 41]]
-- [[_COMMUNITY_Community 42|Community 42]]
-- [[_COMMUNITY_Community 43|Community 43]]
-- [[_COMMUNITY_Community 44|Community 44]]
-- [[_COMMUNITY_Community 45|Community 45]]
-- [[_COMMUNITY_Community 46|Community 46]]
-- [[_COMMUNITY_Community 47|Community 47]]
-- [[_COMMUNITY_Community 48|Community 48]]
-- [[_COMMUNITY_Community 49|Community 49]]
-- [[_COMMUNITY_Community 50|Community 50]]
-- [[_COMMUNITY_Community 51|Community 51]]
-- [[_COMMUNITY_Community 52|Community 52]]
-- [[_COMMUNITY_Community 53|Community 53]]
-- [[_COMMUNITY_Community 54|Community 54]]
-- [[_COMMUNITY_Community 55|Community 55]]
-- [[_COMMUNITY_Community 56|Community 56]]
-- [[_COMMUNITY_Community 57|Community 57]]
-- [[_COMMUNITY_Community 58|Community 58]]
-- [[_COMMUNITY_Community 59|Community 59]]
-- [[_COMMUNITY_Community 60|Community 60]]
-- [[_COMMUNITY_Community 61|Community 61]]
-- [[_COMMUNITY_Community 62|Community 62]]
-- [[_COMMUNITY_Community 63|Community 63]]
-- [[_COMMUNITY_Community 64|Community 64]]
-- [[_COMMUNITY_Community 65|Community 65]]
-- [[_COMMUNITY_Community 66|Community 66]]
-- [[_COMMUNITY_Community 67|Community 67]]
-- [[_COMMUNITY_Community 68|Community 68]]
-- [[_COMMUNITY_Community 69|Community 69]]
-- [[_COMMUNITY_Community 70|Community 70]]
-- [[_COMMUNITY_Community 71|Community 71]]
-- [[_COMMUNITY_Community 72|Community 72]]
-- [[_COMMUNITY_Community 73|Community 73]]
-- [[_COMMUNITY_Community 74|Community 74]]
-- [[_COMMUNITY_Community 75|Community 75]]
-- [[_COMMUNITY_Community 76|Community 76]]
-- [[_COMMUNITY_Community 77|Community 77]]
-- [[_COMMUNITY_Community 78|Community 78]]
-- [[_COMMUNITY_Community 79|Community 79]]
-- [[_COMMUNITY_Community 80|Community 80]]
-- [[_COMMUNITY_Community 81|Community 81]]
-- [[_COMMUNITY_Community 82|Community 82]]
-- [[_COMMUNITY_Community 83|Community 83]]
-- [[_COMMUNITY_Community 84|Community 84]]
-- [[_COMMUNITY_Community 85|Community 85]]
-- [[_COMMUNITY_Community 86|Community 86]]
-- [[_COMMUNITY_Community 87|Community 87]]
-- [[_COMMUNITY_Community 88|Community 88]]
-- [[_COMMUNITY_Community 89|Community 89]]
-- [[_COMMUNITY_Community 90|Community 90]]
-- [[_COMMUNITY_Community 91|Community 91]]
-- [[_COMMUNITY_Community 92|Community 92]]
-- [[_COMMUNITY_Community 93|Community 93]]
-- [[_COMMUNITY_Community 94|Community 94]]
-- [[_COMMUNITY_Community 95|Community 95]]
-- [[_COMMUNITY_Community 96|Community 96]]
-- [[_COMMUNITY_Community 97|Community 97]]
-- [[_COMMUNITY_Community 98|Community 98]]
-- [[_COMMUNITY_Community 99|Community 99]]
-- [[_COMMUNITY_Community 100|Community 100]]
-- [[_COMMUNITY_Community 101|Community 101]]
-- [[_COMMUNITY_Community 102|Community 102]]
-- [[_COMMUNITY_Community 103|Community 103]]
-- [[_COMMUNITY_Community 104|Community 104]]
-- [[_COMMUNITY_Community 105|Community 105]]
-- [[_COMMUNITY_Community 106|Community 106]]
-- [[_COMMUNITY_Community 107|Community 107]]
-- [[_COMMUNITY_Community 108|Community 108]]
-- [[_COMMUNITY_Community 109|Community 109]]
-- [[_COMMUNITY_Community 110|Community 110]]
-- [[_COMMUNITY_Community 111|Community 111]]
-- [[_COMMUNITY_Community 112|Community 112]]
-- [[_COMMUNITY_Community 113|Community 113]]
-- [[_COMMUNITY_Community 114|Community 114]]
-- [[_COMMUNITY_Community 115|Community 115]]
-- [[_COMMUNITY_Community 116|Community 116]]
-- [[_COMMUNITY_Community 117|Community 117]]
-- [[_COMMUNITY_Community 118|Community 118]]
-- [[_COMMUNITY_Community 119|Community 119]]
-- [[_COMMUNITY_Community 120|Community 120]]
-- [[_COMMUNITY_Community 121|Community 121]]
-- [[_COMMUNITY_Community 122|Community 122]]
-- [[_COMMUNITY_Community 123|Community 123]]
-- [[_COMMUNITY_Community 124|Community 124]]
-- [[_COMMUNITY_Community 125|Community 125]]
-- [[_COMMUNITY_Community 126|Community 126]]
-- [[_COMMUNITY_Community 127|Community 127]]
-- [[_COMMUNITY_Community 128|Community 128]]
-- [[_COMMUNITY_Community 129|Community 129]]
-- [[_COMMUNITY_Community 130|Community 130]]
-- [[_COMMUNITY_Community 131|Community 131]]
-- [[_COMMUNITY_Community 132|Community 132]]
-- [[_COMMUNITY_Community 133|Community 133]]
-- [[_COMMUNITY_Community 134|Community 134]]
-- [[_COMMUNITY_Community 135|Community 135]]
-- [[_COMMUNITY_Community 136|Community 136]]
-- [[_COMMUNITY_Community 137|Community 137]]
-- [[_COMMUNITY_Community 138|Community 138]]
-- [[_COMMUNITY_Community 139|Community 139]]
-- [[_COMMUNITY_Community 140|Community 140]]
-- [[_COMMUNITY_Community 141|Community 141]]
-- [[_COMMUNITY_Community 142|Community 142]]
-- [[_COMMUNITY_Community 143|Community 143]]
-- [[_COMMUNITY_Community 144|Community 144]]
-- [[_COMMUNITY_Community 145|Community 145]]
-- [[_COMMUNITY_Community 146|Community 146]]
-- [[_COMMUNITY_Community 147|Community 147]]
-- [[_COMMUNITY_Community 148|Community 148]]
-- [[_COMMUNITY_Community 149|Community 149]]
-- [[_COMMUNITY_Community 150|Community 150]]
-- [[_COMMUNITY_Community 151|Community 151]]
-- [[_COMMUNITY_Community 152|Community 152]]
-- [[_COMMUNITY_Community 153|Community 153]]
-- [[_COMMUNITY_Community 154|Community 154]]
-- [[_COMMUNITY_Community 155|Community 155]]
-- [[_COMMUNITY_Community 156|Community 156]]
-- [[_COMMUNITY_Community 157|Community 157]]
-- [[_COMMUNITY_Community 158|Community 158]]
-- [[_COMMUNITY_Community 159|Community 159]]
-- [[_COMMUNITY_Community 160|Community 160]]
-- [[_COMMUNITY_Community 161|Community 161]]
-- [[_COMMUNITY_Community 162|Community 162]]
-- [[_COMMUNITY_Community 163|Community 163]]
-- [[_COMMUNITY_Community 164|Community 164]]
-- [[_COMMUNITY_Community 165|Community 165]]
-- [[_COMMUNITY_Community 166|Community 166]]
-- [[_COMMUNITY_Community 167|Community 167]]
-- [[_COMMUNITY_Community 168|Community 168]]
-- [[_COMMUNITY_Community 169|Community 169]]
-- [[_COMMUNITY_Community 170|Community 170]]
-- [[_COMMUNITY_Community 171|Community 171]]
-- [[_COMMUNITY_Community 172|Community 172]]
-- [[_COMMUNITY_Community 173|Community 173]]
-- [[_COMMUNITY_Community 174|Community 174]]
-- [[_COMMUNITY_Community 175|Community 175]]
-- [[_COMMUNITY_Community 176|Community 176]]
-- [[_COMMUNITY_Community 177|Community 177]]
-- [[_COMMUNITY_Community 178|Community 178]]
-- [[_COMMUNITY_Community 179|Community 179]]
-- [[_COMMUNITY_Community 180|Community 180]]
-- [[_COMMUNITY_Community 181|Community 181]]
-- [[_COMMUNITY_Community 182|Community 182]]
-- [[_COMMUNITY_Community 183|Community 183]]
-- [[_COMMUNITY_Community 184|Community 184]]
-- [[_COMMUNITY_Community 185|Community 185]]
-- [[_COMMUNITY_Community 186|Community 186]]
-- [[_COMMUNITY_Community 187|Community 187]]
-- [[_COMMUNITY_Community 188|Community 188]]
-- [[_COMMUNITY_Community 189|Community 189]]
-- [[_COMMUNITY_Community 190|Community 190]]
-- [[_COMMUNITY_Community 191|Community 191]]
-- [[_COMMUNITY_Community 192|Community 192]]
-- [[_COMMUNITY_Community 193|Community 193]]
-- [[_COMMUNITY_Community 194|Community 194]]
-- [[_COMMUNITY_Community 195|Community 195]]
-- [[_COMMUNITY_Community 196|Community 196]]
-- [[_COMMUNITY_Community 197|Community 197]]
-- [[_COMMUNITY_Community 198|Community 198]]
-- [[_COMMUNITY_Community 199|Community 199]]
-- [[_COMMUNITY_Community 200|Community 200]]
-- [[_COMMUNITY_Community 201|Community 201]]
-- [[_COMMUNITY_Community 202|Community 202]]
-- [[_COMMUNITY_Community 203|Community 203]]
-- [[_COMMUNITY_Community 204|Community 204]]
-- [[_COMMUNITY_Community 205|Community 205]]
-- [[_COMMUNITY_Community 206|Community 206]]
-- [[_COMMUNITY_Community 207|Community 207]]
-- [[_COMMUNITY_Community 208|Community 208]]
-- [[_COMMUNITY_Community 209|Community 209]]
-- [[_COMMUNITY_Community 210|Community 210]]
-- [[_COMMUNITY_Community 211|Community 211]]
-- [[_COMMUNITY_Community 212|Community 212]]
-- [[_COMMUNITY_Community 213|Community 213]]
-- [[_COMMUNITY_Community 214|Community 214]]
-- [[_COMMUNITY_Community 215|Community 215]]
-- [[_COMMUNITY_Community 216|Community 216]]
-- [[_COMMUNITY_Community 217|Community 217]]
-- [[_COMMUNITY_Community 218|Community 218]]
-- [[_COMMUNITY_Community 219|Community 219]]
-- [[_COMMUNITY_Community 220|Community 220]]
-- [[_COMMUNITY_Community 221|Community 221]]
-- [[_COMMUNITY_Community 222|Community 222]]
-- [[_COMMUNITY_Community 223|Community 223]]
-- [[_COMMUNITY_Community 224|Community 224]]
-- [[_COMMUNITY_Community 225|Community 225]]
-- [[_COMMUNITY_Community 226|Community 226]]
-- [[_COMMUNITY_Community 227|Community 227]]
-- [[_COMMUNITY_Community 228|Community 228]]
-- [[_COMMUNITY_Community 229|Community 229]]
-- [[_COMMUNITY_Community 230|Community 230]]
-- [[_COMMUNITY_Community 231|Community 231]]
-- [[_COMMUNITY_Community 232|Community 232]]
-- [[_COMMUNITY_Community 233|Community 233]]
-- [[_COMMUNITY_Community 234|Community 234]]
-- [[_COMMUNITY_Community 235|Community 235]]
-- [[_COMMUNITY_Community 236|Community 236]]
-- [[_COMMUNITY_Community 237|Community 237]]
-- [[_COMMUNITY_Community 238|Community 238]]
-- [[_COMMUNITY_Community 239|Community 239]]
-- [[_COMMUNITY_Community 240|Community 240]]
-- [[_COMMUNITY_Community 241|Community 241]]
-- [[_COMMUNITY_Community 242|Community 242]]
-- [[_COMMUNITY_Community 243|Community 243]]
-- [[_COMMUNITY_Community 244|Community 244]]
-- [[_COMMUNITY_Community 245|Community 245]]
-- [[_COMMUNITY_Community 246|Community 246]]
-- [[_COMMUNITY_Community 247|Community 247]]
-- [[_COMMUNITY_Community 248|Community 248]]
-- [[_COMMUNITY_Community 249|Community 249]]
-- [[_COMMUNITY_Community 250|Community 250]]
-- [[_COMMUNITY_Community 251|Community 251]]
-- [[_COMMUNITY_Community 252|Community 252]]
-- [[_COMMUNITY_Community 253|Community 253]]
-- [[_COMMUNITY_Community 254|Community 254]]
-- [[_COMMUNITY_Community 255|Community 255]]
-- [[_COMMUNITY_Community 256|Community 256]]
-- [[_COMMUNITY_Community 257|Community 257]]
-- [[_COMMUNITY_Community 258|Community 258]]
-- [[_COMMUNITY_Community 259|Community 259]]
-- [[_COMMUNITY_Community 260|Community 260]]
-- [[_COMMUNITY_Community 261|Community 261]]
-- [[_COMMUNITY_Community 262|Community 262]]
-- [[_COMMUNITY_Community 263|Community 263]]
-- [[_COMMUNITY_Community 264|Community 264]]
-- [[_COMMUNITY_Community 265|Community 265]]
-- [[_COMMUNITY_Community 266|Community 266]]
-- [[_COMMUNITY_Community 267|Community 267]]
-- [[_COMMUNITY_Community 268|Community 268]]
-- [[_COMMUNITY_Community 269|Community 269]]
-- [[_COMMUNITY_Community 270|Community 270]]
-- [[_COMMUNITY_Community 271|Community 271]]
-- [[_COMMUNITY_Community 272|Community 272]]
-- [[_COMMUNITY_Community 273|Community 273]]
-- [[_COMMUNITY_Community 274|Community 274]]
-- [[_COMMUNITY_Community 275|Community 275]]
-- [[_COMMUNITY_Community 276|Community 276]]
-- [[_COMMUNITY_Community 277|Community 277]]
-- [[_COMMUNITY_Community 278|Community 278]]
-- [[_COMMUNITY_Community 279|Community 279]]
-- [[_COMMUNITY_Community 280|Community 280]]
-- [[_COMMUNITY_Community 281|Community 281]]
-- [[_COMMUNITY_Community 282|Community 282]]
-- [[_COMMUNITY_Community 283|Community 283]]
-- [[_COMMUNITY_Community 284|Community 284]]
-- [[_COMMUNITY_Community 285|Community 285]]
-- [[_COMMUNITY_Community 286|Community 286]]
-- [[_COMMUNITY_Community 287|Community 287]]
-- [[_COMMUNITY_Community 288|Community 288]]
-- [[_COMMUNITY_Community 289|Community 289]]
-- [[_COMMUNITY_Community 290|Community 290]]
-- [[_COMMUNITY_Community 291|Community 291]]
-- [[_COMMUNITY_Community 292|Community 292]]
-- [[_COMMUNITY_Community 293|Community 293]]
-- [[_COMMUNITY_Community 294|Community 294]]
-- [[_COMMUNITY_Community 295|Community 295]]
-- [[_COMMUNITY_Community 296|Community 296]]
-- [[_COMMUNITY_Community 297|Community 297]]
-- [[_COMMUNITY_Community 298|Community 298]]
-- [[_COMMUNITY_Community 299|Community 299]]
-- [[_COMMUNITY_Community 300|Community 300]]
-- [[_COMMUNITY_Community 301|Community 301]]
-- [[_COMMUNITY_Community 302|Community 302]]
-- [[_COMMUNITY_Community 303|Community 303]]
-- [[_COMMUNITY_Community 304|Community 304]]
-- [[_COMMUNITY_Community 305|Community 305]]
-- [[_COMMUNITY_Community 306|Community 306]]
-- [[_COMMUNITY_Community 307|Community 307]]
-- [[_COMMUNITY_Community 308|Community 308]]
-- [[_COMMUNITY_Community 309|Community 309]]
-- [[_COMMUNITY_Community 310|Community 310]]
-- [[_COMMUNITY_Community 311|Community 311]]
-- [[_COMMUNITY_Community 312|Community 312]]
-- [[_COMMUNITY_Community 313|Community 313]]
-- [[_COMMUNITY_Community 314|Community 314]]
-- [[_COMMUNITY_Community 315|Community 315]]
-- [[_COMMUNITY_Community 316|Community 316]]
-- [[_COMMUNITY_Community 317|Community 317]]
-- [[_COMMUNITY_Community 318|Community 318]]
-- [[_COMMUNITY_Community 319|Community 319]]
-- [[_COMMUNITY_Community 320|Community 320]]
-- [[_COMMUNITY_Community 321|Community 321]]
-- [[_COMMUNITY_Community 322|Community 322]]
-- [[_COMMUNITY_Community 323|Community 323]]
-- [[_COMMUNITY_Community 324|Community 324]]
-- [[_COMMUNITY_Community 325|Community 325]]
-- [[_COMMUNITY_Community 326|Community 326]]
-- [[_COMMUNITY_Community 327|Community 327]]
-- [[_COMMUNITY_Community 328|Community 328]]
-- [[_COMMUNITY_Community 329|Community 329]]
-- [[_COMMUNITY_Community 330|Community 330]]
-- [[_COMMUNITY_Community 331|Community 331]]
-- [[_COMMUNITY_Community 332|Community 332]]
-- [[_COMMUNITY_Community 333|Community 333]]
-- [[_COMMUNITY_Community 334|Community 334]]
-- [[_COMMUNITY_Community 335|Community 335]]
-- [[_COMMUNITY_Community 336|Community 336]]
-- [[_COMMUNITY_Community 337|Community 337]]
-- [[_COMMUNITY_Community 338|Community 338]]
-- [[_COMMUNITY_Community 339|Community 339]]
-- [[_COMMUNITY_Community 340|Community 340]]
-- [[_COMMUNITY_Community 341|Community 341]]
-- [[_COMMUNITY_Community 342|Community 342]]
-- [[_COMMUNITY_Community 343|Community 343]]
-- [[_COMMUNITY_Community 344|Community 344]]
-- [[_COMMUNITY_Community 345|Community 345]]
-- [[_COMMUNITY_Community 346|Community 346]]
-- [[_COMMUNITY_Community 347|Community 347]]
-- [[_COMMUNITY_Community 348|Community 348]]
-- [[_COMMUNITY_Community 349|Community 349]]
-- [[_COMMUNITY_Community 350|Community 350]]
-- [[_COMMUNITY_Community 351|Community 351]]
-- [[_COMMUNITY_Community 352|Community 352]]
-- [[_COMMUNITY_Community 353|Community 353]]
-- [[_COMMUNITY_Community 354|Community 354]]
-- [[_COMMUNITY_Community 355|Community 355]]
-- [[_COMMUNITY_Community 356|Community 356]]
-- [[_COMMUNITY_Community 357|Community 357]]
-- [[_COMMUNITY_Community 358|Community 358]]
-- [[_COMMUNITY_Community 359|Community 359]]
-- [[_COMMUNITY_Community 360|Community 360]]
-- [[_COMMUNITY_Community 361|Community 361]]
-- [[_COMMUNITY_Community 362|Community 362]]
-- [[_COMMUNITY_Community 363|Community 363]]
-- [[_COMMUNITY_Community 364|Community 364]]
-- [[_COMMUNITY_Community 365|Community 365]]
-- [[_COMMUNITY_Community 366|Community 366]]
-- [[_COMMUNITY_Community 367|Community 367]]
-- [[_COMMUNITY_Community 368|Community 368]]
-- [[_COMMUNITY_Community 369|Community 369]]
-- [[_COMMUNITY_Community 370|Community 370]]
-- [[_COMMUNITY_Community 371|Community 371]]
-- [[_COMMUNITY_Community 372|Community 372]]
-- [[_COMMUNITY_Community 373|Community 373]]
-- [[_COMMUNITY_Community 374|Community 374]]
-- [[_COMMUNITY_Community 375|Community 375]]
-- [[_COMMUNITY_Community 376|Community 376]]
-- [[_COMMUNITY_Community 377|Community 377]]
-- [[_COMMUNITY_Community 378|Community 378]]
-- [[_COMMUNITY_Community 379|Community 379]]
-- [[_COMMUNITY_Community 380|Community 380]]
-- [[_COMMUNITY_Community 381|Community 381]]
-- [[_COMMUNITY_Community 382|Community 382]]
-- [[_COMMUNITY_Community 383|Community 383]]
-- [[_COMMUNITY_Community 384|Community 384]]
-- [[_COMMUNITY_Community 385|Community 385]]
-- [[_COMMUNITY_Community 386|Community 386]]
-- [[_COMMUNITY_Community 387|Community 387]]
-- [[_COMMUNITY_Community 388|Community 388]]
-- [[_COMMUNITY_Community 389|Community 389]]
-- [[_COMMUNITY_Community 390|Community 390]]
-- [[_COMMUNITY_Community 391|Community 391]]
-- [[_COMMUNITY_Community 392|Community 392]]
-- [[_COMMUNITY_Community 393|Community 393]]
-- [[_COMMUNITY_Community 394|Community 394]]
-- [[_COMMUNITY_Community 395|Community 395]]
-- [[_COMMUNITY_Community 396|Community 396]]
-- [[_COMMUNITY_Community 397|Community 397]]
-- [[_COMMUNITY_Community 398|Community 398]]
-- [[_COMMUNITY_Community 399|Community 399]]
-- [[_COMMUNITY_Community 400|Community 400]]
-- [[_COMMUNITY_Community 401|Community 401]]
-- [[_COMMUNITY_Community 402|Community 402]]
-- [[_COMMUNITY_Community 403|Community 403]]
-- [[_COMMUNITY_Community 404|Community 404]]
-- [[_COMMUNITY_Community 405|Community 405]]
-- [[_COMMUNITY_Community 406|Community 406]]
-- [[_COMMUNITY_Community 407|Community 407]]
-- [[_COMMUNITY_Community 408|Community 408]]
-- [[_COMMUNITY_Community 409|Community 409]]
-- [[_COMMUNITY_Community 410|Community 410]]
-- [[_COMMUNITY_Community 411|Community 411]]
-- [[_COMMUNITY_Community 412|Community 412]]
-- [[_COMMUNITY_Community 413|Community 413]]
-- [[_COMMUNITY_Community 415|Community 415]]
-- [[_COMMUNITY_Community 416|Community 416]]
-- [[_COMMUNITY_Community 417|Community 417]]
-- [[_COMMUNITY_Community 418|Community 418]]
-- [[_COMMUNITY_Community 419|Community 419]]
-- [[_COMMUNITY_Community 420|Community 420]]
-- [[_COMMUNITY_Community 421|Community 421]]
-- [[_COMMUNITY_Community 422|Community 422]]
-- [[_COMMUNITY_Community 423|Community 423]]
-- [[_COMMUNITY_Community 424|Community 424]]
-- [[_COMMUNITY_Community 425|Community 425]]
-- [[_COMMUNITY_Community 426|Community 426]]
-- [[_COMMUNITY_Community 427|Community 427]]
-- [[_COMMUNITY_Community 428|Community 428]]
-- [[_COMMUNITY_Community 429|Community 429]]
-- [[_COMMUNITY_Community 430|Community 430]]
-- [[_COMMUNITY_Community 431|Community 431]]
-- [[_COMMUNITY_Community 432|Community 432]]
-- [[_COMMUNITY_Community 433|Community 433]]
-- [[_COMMUNITY_Community 434|Community 434]]
-- [[_COMMUNITY_Community 435|Community 435]]
-- [[_COMMUNITY_Community 436|Community 436]]
-- [[_COMMUNITY_Community 437|Community 437]]
-- [[_COMMUNITY_Community 438|Community 438]]
-- [[_COMMUNITY_Community 439|Community 439]]
-- [[_COMMUNITY_Community 440|Community 440]]
-- [[_COMMUNITY_Community 441|Community 441]]
-- [[_COMMUNITY_Community 442|Community 442]]
-- [[_COMMUNITY_Community 443|Community 443]]
-- [[_COMMUNITY_Community 444|Community 444]]
-- [[_COMMUNITY_Community 445|Community 445]]
-- [[_COMMUNITY_Community 446|Community 446]]
-- [[_COMMUNITY_Community 451|Community 451]]
+- [[_COMMUNITY_Decisions|Decisions]]
+- [[_COMMUNITY_labDetail.tsx|labDetail.tsx]]
+- [[_COMMUNITY_browsable.ts|browsable.ts]]
+- [[_COMMUNITY_security-preflight.test.mjs|security-preflight.test.mjs]]
+- [[_COMMUNITY_departmentRosterScraper.ts|departmentRosterScraper.ts]]
+- [[_COMMUNITY_index.ts|index.ts]]
+- [[_COMMUNITY_App.tsx|App.tsx]]
+- [[_COMMUNITY_assertScriptApplyAllowed|assertScriptApplyAllowed]]
+- [[_COMMUNITY_adminListingsTableReducer.ts|adminListingsTableReducer.ts]]
+- [[_COMMUNITY_profileService.ts|profileService.ts]]
+- [[_COMMUNITY_labMicrositeUndergradLLMExtractor.ts|labMicrositeUndergradLLMExtractor.ts]]
+- [[_COMMUNITY_safeHttpUrl|safeHttpUrl]]
+- [[_COMMUNITY_entityMaterializer.ts|entityMaterializer.ts]]
+- [[_COMMUNITY_researchGroupService.ts|researchGroupService.ts]]
+- [[_COMMUNITY_labMicrositeDescriptionLLMExtractor.ts|labMicrositeDescriptionLLMExtractor.ts]]
+- [[_COMMUNITY_accessMaterializer.ts|accessMaterializer.ts]]
+- [[_COMMUNITY_research.test.tsx|research.test.tsx]]
+- [[_COMMUNITY_sanitizeLogValue|sanitizeLogValue]]
+- [[_COMMUNITY_integrityGate.ts|integrityGate.ts]]
+- [[_COMMUNITY_passport.ts|passport.ts]]
+- [[_COMMUNITY_Navbar.tsx|Navbar.tsx]]
+- [[_COMMUNITY_undergradFellowshipRecipientScraper.ts|undergradFellowshipRecipientScraper.ts]]
+- [[_COMMUNITY_duplicateEntityNameReview.ts|duplicateEntityNameReview.ts]]
+- [[_COMMUNITY_app.ts|app.ts]]
+- [[_COMMUNITY_dedupeResearchEntitiesByPi.ts|dedupeResearchEntitiesByPi.ts]]
+- [[_COMMUNITY_admin.ts|admin.ts]]
+- [[_COMMUNITY_BackfillV4ResearchGroupMembers.ts|BackfillV4ResearchGroupMembers.ts]]
+- [[_COMMUNITY_researchDiscoveryAdapters.ts|researchDiscoveryAdapters.ts]]
+- [[_COMMUNITY_ysmAtoZScraper.ts|ysmAtoZScraper.ts]]
+- [[_COMMUNITY_advisees|advisees]]
+- [[_COMMUNITY_launchAcquisitionReportService.ts|launchAcquisitionReportService.ts]]
+- [[_COMMUNITY_profileDataQualityAudit.ts|profileDataQualityAudit.ts]]
+- [[_COMMUNITY_centersInstitutesScraper.ts|centersInstitutesScraper.ts]]
+- [[_COMMUNITY_types.tsx|types.tsx]]
+- [[_COMMUNITY_nihReporterScraper.ts|nihReporterScraper.ts]]
+- [[_COMMUNITY_studentVisibilityGateService.ts|studentVisibilityGateService.ts]]
+- [[_COMMUNITY_ScraperContext|ScraperContext]]
+- [[_COMMUNITY_userService.ts|userService.ts]]
+- [[_COMMUNITY_serializedDocumentId|serializedDocumentId]]
+- [[_COMMUNITY_AdminDepartments.tsx|AdminDepartments.tsx]]
+- [[_COMMUNITY_profile.tsx|profile.tsx]]
+- [[_COMMUNITY_researchEntityCoverageAudit.ts|researchEntityCoverageAudit.ts]]
+- [[_COMMUNITY_LabHeader.tsx|LabHeader.tsx]]
+- [[_COMMUNITY_sourceHealth.ts|sourceHealth.ts]]
+- [[_COMMUNITY_research.tsx|research.tsx]]
+- [[_COMMUNITY_entityMaterializer.test.ts|entityMaterializer.test.ts]]
+- [[_COMMUNITY_ScrapeRun|ScrapeRun]]
+- [[_COMMUNITY_listingService.ts|listingService.ts]]
+- [[_COMMUNITY_fellowshipService.ts|fellowshipService.ts]]
+- [[_COMMUNITY_betaDataQualityCore.ts|betaDataQualityCore.ts]]
+- [[_COMMUNITY_scripts|scripts]]
+- [[_COMMUNITY_productionPromotionSmoke.mjs|productionPromotionSmoke.mjs]]
+- [[_COMMUNITY_researchEntity.ts|researchEntity.ts]]
+- [[_COMMUNITY_runReport.ts|runReport.ts]]
+- [[_COMMUNITY_redactDirectContactInfo|redactDirectContactInfo]]
+- [[_COMMUNITY_staleObservationConflictReview.ts|staleObservationConflictReview.ts]]
+- [[_COMMUNITY_researchEntityDescriptionQuality.ts|researchEntityDescriptionQuality.ts]]
+- [[_COMMUNITY_betaDataQuality.ts|betaDataQuality.ts]]
+- [[_COMMUNITY_studentVisibilityTier.ts|studentVisibilityTier.ts]]
+- [[_COMMUNITY_listingController.ts|listingController.ts]]
+- [[_COMMUNITY_researchEntityBrowseRankService.ts|researchEntityBrowseRankService.ts]]
+- [[_COMMUNITY_analyticsService.ts|analyticsService.ts]]
+- [[_COMMUNITY_BOOLEAN_FLAGS|BOOLEAN_FLAGS]]
+- [[_COMMUNITY_acceptedInputsCore.ts|acceptedInputsCore.ts]]
+- [[_COMMUNITY_entryPathwayService.ts|entryPathwayService.ts]]
+- [[_COMMUNITY_yaleCollegeFellowshipsOfficeScraper.ts|yaleCollegeFellowshipsOfficeScraper.ts]]
+- [[_COMMUNITY_fellowshipMatchingService.ts|fellowshipMatchingService.ts]]
+- [[_COMMUNITY_AdminOperatorBoard.tsx|AdminOperatorBoard.tsx]]
+- [[_COMMUNITY_repairOfficialProfilePublicationPointers.ts|repairOfficialProfilePublicationPointers.ts]]
+- [[_COMMUNITY_fellowshipInputs.ts|fellowshipInputs.ts]]
+- [[_COMMUNITY_OfficialProfilePublicationValue|OfficialProfilePublicationValue]]
+- [[_COMMUNITY_postedOpportunityService.ts|postedOpportunityService.ts]]
+- [[_COMMUNITY_profileController.ts|profileController.ts]]
+- [[_COMMUNITY_analytics.ts|analytics.ts]]
+- [[_COMMUNITY_openAlexPaperScraper.ts|openAlexPaperScraper.ts]]
+- [[_COMMUNITY_errorHandler.ts|errorHandler.ts]]
+- [[_COMMUNITY_researchEntityMemberReferenceAudit.ts|researchEntityMemberReferenceAudit.ts]]
+- [[_COMMUNITY_SavedPathwaysSection.tsx|SavedPathwaysSection.tsx]]
+- [[_COMMUNITY_getUniqueDepartmentLabels|getUniqueDepartmentLabels]]
+- [[_COMMUNITY_pathwaySearchIndexService.ts|pathwaySearchIndexService.ts]]
+- [[_COMMUNITY_2. Install dependencies|2. Install dependencies]]
+- [[_COMMUNITY_adminOperatorBoardService.ts|adminOperatorBoardService.ts]]
+- [[_COMMUNITY_Listing|Listing]]
+- [[_COMMUNITY_promoteAcceptedBetaCopy.ts|promoteAcceptedBetaCopy.ts]]
+- [[_COMMUNITY_Yale Research — Developer Guide|Yale Research — Developer Guide]]
+- [[_COMMUNITY_paperAuthorshipAudit.ts|paperAuthorshipAudit.ts]]
+- [[_COMMUNITY_Observation|Observation]]
+- [[_COMMUNITY_Environment Progression|Environment Progression]]
+- [[_COMMUNITY_devDependencies|devDependencies]]
+- [[_COMMUNITY_Per-Source Audit Playbooks|Per-Source Audit Playbooks]]
+- [[_COMMUNITY_dependencies|dependencies]]
+- [[_COMMUNITY_studentDecisionLLMExtractor.ts|studentDecisionLLMExtractor.ts]]
+- [[_COMMUNITY_AdminFellowshipsTable.tsx|AdminFellowshipsTable.tsx]]
+- [[_COMMUNITY_yaleResearchOfficialScraper.ts|yaleResearchOfficialScraper.ts]]
+- [[_COMMUNITY_backfillProfileBiosFromOfficialUrls.ts|backfillProfileBiosFromOfficialUrls.ts]]
+- [[_COMMUNITY_resolveSafeJsonReportOutputPath|resolveSafeJsonReportOutputPath]]
+- [[_COMMUNITY_accessClaims.ts|accessClaims.ts]]
+- [[_COMMUNITY_Beta Repair Lanes Audit Implementation Plan|Beta Repair Lanes Audit Implementation Plan]]
+- [[_COMMUNITY_axios.ts|axios.ts]]
+- [[_COMMUNITY_attempt|attempt]]
+- [[_COMMUNITY_assertPublicHttpUrl|assertPublicHttpUrl]]
+- [[_COMMUNITY_labDetail.ts|labDetail.ts]]
+- [[_COMMUNITY_analytics.tsx|analytics.tsx]]
+- [[_COMMUNITY_officialProfilePiBackfillScraper.ts|officialProfilePiBackfillScraper.ts]]
+- [[_COMMUNITY_pathwaySearchService.ts|pathwaySearchService.ts]]
+- [[_COMMUNITY_researchEntityDto.ts|researchEntityDto.ts]]
+- [[_COMMUNITY_Authentication Flow|Authentication Flow]]
+- [[_COMMUNITY_repairArchivedEntityArtifacts.ts|repairArchivedEntityArtifacts.ts]]
+- [[_COMMUNITY_Adding a New Page|Adding a New Page]]
+- [[_COMMUNITY_brianFeed|brianFeed]]
+- [[_COMMUNITY_smartTitle.ts|smartTitle.ts]]
+- [[_COMMUNITY_assessment|assessment]]
+- [[_COMMUNITY_centerDirectorLLMExtractor.ts|centerDirectorLLMExtractor.ts]]
+- [[_COMMUNITY_scripts|scripts]]
+- [[_COMMUNITY_pathwayQualityAudit.ts|pathwayQualityAudit.ts]]
+- [[_COMMUNITY_base|base]]
+- [[_COMMUNITY_Adding a New Endpoint|Adding a New Endpoint]]
+- [[_COMMUNITY_researchEntitySearchIndexService.ts|researchEntitySearchIndexService.ts]]
+- [[_COMMUNITY_Adding a New Endpoint|Adding a New Endpoint]]
+- [[_COMMUNITY_Adding a New Endpoint|Adding a New Endpoint]]
+- [[_COMMUNITY_Adding a New Endpoint|Adding a New Endpoint]]
+- [[_COMMUNITY_Adding a New Endpoint|Adding a New Endpoint]]
+- [[_COMMUNITY_Adding a New Endpoint|Adding a New Endpoint]]
+- [[_COMMUNITY_Adding a New Endpoint|Adding a New Endpoint]]
+- [[_COMMUNITY_Adding a New Endpoint|Adding a New Endpoint]]
+- [[_COMMUNITY_buildAdminOperatorBoard|buildAdminOperatorBoard]]
+- [[_COMMUNITY_dir|dir]]
+- [[_COMMUNITY_launchReviewExceptions.ts|launchReviewExceptions.ts]]
+- [[_COMMUNITY_adminRender|adminRender]]
+- [[_COMMUNITY_Session Notes|Session Notes]]
+- [[_COMMUNITY_Current Execution Plan|Current Execution Plan]]
+- [[_COMMUNITY_File Structure|File Structure]]
+- [[_COMMUNITY_research-detail-professor-audit.mjs|research-detail-professor-audit.mjs]]
+- [[_COMMUNITY_dedupeUsersByIdentity.ts|dedupeUsersByIdentity.ts]]
+- [[_COMMUNITY_ImportRootDataFiles.ts|ImportRootDataFiles.ts]]
+- [[_COMMUNITY_officialProfilePiBackfillScraper.test.ts|officialProfilePiBackfillScraper.test.ts]]
+- [[_COMMUNITY_applicationRoutePathwayBackfillCore.ts|applicationRoutePathwayBackfillCore.ts]]
+- [[_COMMUNITY_launchTrustContractService.ts|launchTrustContractService.ts]]
+- [[_COMMUNITY_fellowshipController.ts|fellowshipController.ts]]
+- [[_COMMUNITY_department.ts|department.ts]]
+- [[_COMMUNITY_FavoritesManager.tsx|FavoritesManager.tsx]]
+- [[_COMMUNITY_departmentGroundTruth.ts|departmentGroundTruth.ts]]
+- [[_COMMUNITY_profileBioCoverageAudit.ts|profileBioCoverageAudit.ts]]
+- [[_COMMUNITY_Research Model|Research Model]]
+- [[_COMMUNITY_useFavorites.ts|useFavorites.ts]]
+- [[_COMMUNITY_Beta SourcePIAction Audit Implementation Plan|Beta Source/PI/Action Audit Implementation Plan]]
+- [[_COMMUNITY_cli.ts|cli.ts]]
+- [[_COMMUNITY_crossSourceObservationConflictReview.ts|crossSourceObservationConflictReview.ts]]
+- [[_COMMUNITY_migrateResearchEntities.ts|migrateResearchEntities.ts]]
+- [[_COMMUNITY_visibilityRepairQueueService.ts|visibilityRepairQueueService.ts]]
+- [[_COMMUNITY_abstractBios|abstractBios]]
+- [[_COMMUNITY_researchQualitySearchReview.ts|researchQualitySearchReview.ts]]
+- [[_COMMUNITY_{ container }|{ container }]]
+- [[_COMMUNITY_migrateResearchEntityCollections.ts|migrateResearchEntityCollections.ts]]
+- [[_COMMUNITY_researchGroupController.ts|researchGroupController.ts]]
+- [[_COMMUNITY_GStack Production Promotion Iteration Implementation Plan|GStack Production Promotion Iteration Implementation Plan]]
+- [[_COMMUNITY_externalIdsSchema|externalIdsSchema]]
+- [[_COMMUNITY_sanitizeProfileResearchTerms|sanitizeProfileResearchTerms]]
+- [[_COMMUNITY_disambiguateSurnameLabNames.ts|disambiguateSurnameLabNames.ts]]
+- [[_COMMUNITY_repairDuplicateAccessSignals.ts|repairDuplicateAccessSignals.ts]]
+- [[_COMMUNITY_ResearchHomeCard.tsx|ResearchHomeCard.tsx]]
+- [[_COMMUNITY_LIVE|LIVE]]
+- [[_COMMUNITY_clientErrorMessage|clientErrorMessage]]
+- [[_COMMUNITY_dedupeUsersByIdentityCore.ts|dedupeUsersByIdentityCore.ts]]
+- [[_COMMUNITY_logSanitizer.ts|logSanitizer.ts]]
+- [[_COMMUNITY_programController.ts|programController.ts]]
+- [[_COMMUNITY_seedDepartments.ts|seedDepartments.ts]]
+- [[_COMMUNITY_Active Detail Docs|Active Detail Docs]]
+- [[_COMMUNITY_repairMismatchedPersonEmailsCore.ts|repairMismatchedPersonEmailsCore.ts]]
+- [[_COMMUNITY_betaReadinessGate.ts|betaReadinessGate.ts]]
+- [[_COMMUNITY_pathwayController.ts|pathwayController.ts]]
+- [[_COMMUNITY_callLLM|callLLM]]
+- [[_COMMUNITY_adminAccessReviewService.ts|adminAccessReviewService.ts]]
+- [[_COMMUNITY_studentVisibilityRepairTargets.ts|studentVisibilityRepairTargets.ts]]
+- [[_COMMUNITY_scripts|scripts]]
+- [[_COMMUNITY_v4MigrationUtils.ts|v4MigrationUtils.ts]]
+- [[_COMMUNITY_scholarlyLinkSuppressionAudit.ts|scholarlyLinkSuppressionAudit.ts]]
+- [[_COMMUNITY_cleanupLegacyMongoCollections.ts|cleanupLegacyMongoCollections.ts]]
+- [[_COMMUNITY_seedSources.ts|seedSources.ts]]
+- [[_COMMUNITY_auditProgramResearchRelevance.ts|auditProgramResearchRelevance.ts]]
+- [[_COMMUNITY_researchAreas.ts|researchAreas.ts]]
+- [[_COMMUNITY_BackfillV4StudentProfiles.ts|BackfillV4StudentProfiles.ts]]
+- [[_COMMUNITY_migrateMongoNaming.ts|migrateMongoNaming.ts]]
+- [[_COMMUNITY_researchEntityPiDedupeCore.ts|researchEntityPiDedupeCore.ts]]
+- [[_COMMUNITY_staleObservationConflictReview.test.ts|staleObservationConflictReview.test.ts]]
+- [[_COMMUNITY_listings.ts|listings.ts]]
+- [[_COMMUNITY_EvidenceSourceRow.tsx|EvidenceSourceRow.tsx]]
+- [[_COMMUNITY_1. Fresh machine setup|1. Fresh machine setup]]
+- [[_COMMUNITY_3. Configure environment|3. Configure environment]]
+- [[_COMMUNITY_1. Fresh machine setup|1. Fresh machine setup]]
+- [[_COMMUNITY_1. Fresh machine setup|1. Fresh machine setup]]
+- [[_COMMUNITY_unified-research-search-audit.mjs|unified-research-search-audit.mjs]]
+- [[_COMMUNITY_Technical Due Diligence Review — Yale Research (yalelabs)|Technical Due Diligence Review — Yale Research (yalelabs)]]
+- [[_COMMUNITY_userEmailHygiene.ts|userEmailHygiene.ts]]
+- [[_COMMUNITY_departmentUndergradResearchScraper.ts|departmentUndergradResearchScraper.ts]]
+- [[_COMMUNITY_Adding Things|Adding Things]]
+- [[_COMMUNITY_Adding Things|Adding Things]]
+- [[_COMMUNITY_Adding Things|Adding Things]]
+- [[_COMMUNITY_Adding Things|Adding Things]]
+- [[_COMMUNITY_meiliSyncService.ts|meiliSyncService.ts]]
+- [[_COMMUNITY_acceptedInputs.ts|acceptedInputs.ts]]
+- [[_COMMUNITY_textValue|textValue]]
+- [[_COMMUNITY_accessSummaryService.ts|accessSummaryService.ts]]
+- [[_COMMUNITY_repairProfileDescriptionBackfillConflicts.ts|repairProfileDescriptionBackfillConflicts.ts]]
+- [[_COMMUNITY_clearBetaStudentAnalytics.ts|clearBetaStudentAnalytics.ts]]
+- [[_COMMUNITY_scraperIntegrityDuplicateReview.ts|scraperIntegrityDuplicateReview.ts]]
+- [[_COMMUNITY_betaDataQualityCore.test.ts|betaDataQualityCore.test.ts]]
+- [[_COMMUNITY_departmentLeadRepairPlanCore.ts|departmentLeadRepairPlanCore.ts]]
+- [[_COMMUNITY_auditResearchEntityRename.ts|auditResearchEntityRename.ts]]
+- [[_COMMUNITY_betaRepairQueue.ts|betaRepairQueue.ts]]
+- [[_COMMUNITY_authorshipEvidence|authorshipEvidence]]
+- [[_COMMUNITY_actor|actor]]
+- [[_COMMUNITY_compilerOptions|compilerOptions]]
+- [[_COMMUNITY_1. Fresh machine setup|1. Fresh machine setup]]
+- [[_COMMUNITY_acronymExpansion|acronymExpansion]]
+- [[_COMMUNITY_paperQualityService.ts|paperQualityService.ts]]
+- [[_COMMUNITY_importFellowships.ts|importFellowships.ts]]
+- [[_COMMUNITY_actionabilityMatch|actionabilityMatch]]
+- [[_COMMUNITY_pathwayRelevanceReview.ts|pathwayRelevanceReview.ts]]
+- [[_COMMUNITY_profileImageQualityAudit.ts|profileImageQualityAudit.ts]]
+- [[_COMMUNITY_fellowships.tsx|fellowships.tsx]]
+- [[_COMMUNITY_programs.ts|programs.ts]]
+- [[_COMMUNITY_bare|bare]]
+- [[_COMMUNITY_compilerOptions|compilerOptions]]
+- [[_COMMUNITY_AdminFacultyProfilesTable.tsx|AdminFacultyProfilesTable.tsx]]
+- [[_COMMUNITY_scriptWriteGuards.ts|scriptWriteGuards.ts]]
+- [[_COMMUNITY_sourceHealthService.ts|sourceHealthService.ts]]
+- [[_COMMUNITY_backfillCenterDirectors.ts|backfillCenterDirectors.ts]]
+- [[_COMMUNITY_confidenceResolver.ts|confidenceResolver.ts]]
+- [[_COMMUNITY_facultyResearch|facultyResearch]]
+- [[_COMMUNITY_authenticatedRouteDoc|authenticatedRouteDoc]]
+- [[_COMMUNITY_normalizePublicProfile|normalizePublicProfile]]
+- [[_COMMUNITY_UIUX Direction|UI/UX Direction]]
+- [[_COMMUNITY_LEGACY_EXPLORATORY_CONTACT_PATHWAY_DERIVATION_KEYS|LEGACY_EXPLORATORY_CONTACT_PATHWAY_DERIVATION_KEYS]]
+- [[_COMMUNITY_source.ts|source.ts]]
+- [[_COMMUNITY_backfillResearchHomeOfficialUrls.ts|backfillResearchHomeOfficialUrls.ts]]
+- [[_COMMUNITY_fellowship.ts|fellowship.ts]]
+- [[_COMMUNITY_seed.ts|seed.ts]]
+- [[_COMMUNITY_adminGrantService.ts|adminGrantService.ts]]
+- [[_COMMUNITY_seedResearchAreas.ts|seedResearchAreas.ts]]
+- [[_COMMUNITY_researchTextNormalization.ts|researchTextNormalization.ts]]
+- [[_COMMUNITY_claimGate.ts|claimGate.ts]]
+- [[_COMMUNITY_dir|dir]]
+- [[_COMMUNITY_environment.ts|environment.ts]]
+- [[_COMMUNITY_configService.ts|configService.ts]]
+- [[_COMMUNITY_dependencies|dependencies]]
+- [[_COMMUNITY_users.ts|users.ts]]
+- [[_COMMUNITY_departmentGroundTruth.test.ts|departmentGroundTruth.test.ts]]
+- [[_COMMUNITY_csv|csv]]
+- [[_COMMUNITY_dir|dir]]
+- [[_COMMUNITY_repairListingResearchEntityProfiles.ts|repairListingResearchEntityProfiles.ts]]
+- [[_COMMUNITY_CanonicalDepartmentListResult|CanonicalDepartmentListResult]]
+- [[_COMMUNITY_departmentLeadRepairPlan.ts|departmentLeadRepairPlan.ts]]
+- [[_COMMUNITY_MockBroadcastChannel|MockBroadcastChannel]]
+- [[_COMMUNITY_Product Context|Product Context]]
+- [[_COMMUNITY_1. Admin And Search Gates|1. Admin And Search Gates]]
+- [[_COMMUNITY_dependencies|dependencies]]
+- [[_COMMUNITY_resolutions|resolutions]]
+- [[_COMMUNITY_extractOfficialProfileResearchHomes|extractOfficialProfileResearchHomes]]
+- [[_COMMUNITY_summary|summary]]
+- [[_COMMUNITY_visibilityReleaseQueueItem.ts|visibilityReleaseQueueItem.ts]]
+- [[_COMMUNITY_upsertFaculty|upsertFaculty]]
+- [[_COMMUNITY_paragraphs|paragraphs]]
+- [[_COMMUNITY_Codex Guide|Codex Guide]]
+- [[_COMMUNITY_README|README.md]]
+- [[_COMMUNITY_LabInquireModal.tsx|LabInquireModal.tsx]]
+- [[_COMMUNITY_isLikelyPersonUrl|isLikelyPersonUrl]]
+- [[_COMMUNITY_sanitizeMongo.ts|sanitizeMongo.ts]]
+- [[_COMMUNITY_index.ts|index.ts]]
+- [[_COMMUNITY_Codex Guide|Codex Guide]]
+- [[_COMMUNITY_Codex Guide|Codex Guide]]
+- [[_COMMUNITY_Codex Guide|Codex Guide]]
+- [[_COMMUNITY_Codex Guide|Codex Guide]]
+- [[_COMMUNITY_Codex Guide|Codex Guide]]
+- [[_COMMUNITY_Codex Guide|Codex Guide]]
+- [[_COMMUNITY_Core Modeling Direction|Core Modeling Direction]]
+- [[_COMMUNITY_Codex Guide|Codex Guide]]
+- [[_COMMUNITY_backfillFacultyWaysIn.ts|backfillFacultyWaysIn.ts]]
+- [[_COMMUNITY_dedupeExploratoryContactPathways.ts|dedupeExploratoryContactPathways.ts]]
+- [[_COMMUNITY_args|args]]
+- [[_COMMUNITY_compilerOptions|compilerOptions]]
+- [[_COMMUNITY_devDependencies|devDependencies]]
+- [[_COMMUNITY_CliOptions|CliOptions]]
+- [[_COMMUNITY_testFixturePrivacy.test.ts|testFixturePrivacy.test.ts]]
+- [[_COMMUNITY_{ ctx }|{ ctx }]]
+- [[_COMMUNITY_Yale Research V1 Redesign Proposal|Yale Research V1 Redesign Proposal]]
+- [[_COMMUNITY_MigratePublicationsToPapers.ts|MigratePublicationsToPapers.ts]]
+- [[_COMMUNITY_2. Install dependencies|2. Install dependencies]]
+- [[_COMMUNITY_officialProfileObservationMatchesUser|officialProfileObservationMatchesUser]]
+- [[_COMMUNITY_normalizeOfficialProfileUrl|normalizeOfficialProfileUrl]]
+- [[_COMMUNITY_corsOrigin.ts|corsOrigin.ts]]
+- [[_COMMUNITY_astronomyConfig|astronomyConfig]]
+- [[_COMMUNITY_Agent Workflow|Agent Workflow]]
+- [[_COMMUNITY_AdminOperatorBoard|AdminOperatorBoard]]
+- [[_COMMUNITY_securityHeaders.ts|securityHeaders.ts]]
+- [[_COMMUNITY_Acknowledgements|Acknowledgements]]
+- [[_COMMUNITY_materializePaperObservationsFromRun|materializePaperObservationsFromRun]]
+- [[_COMMUNITY_ensure-server-build-fresh.mjs|ensure-server-build-fresh.mjs]]
+- [[_COMMUNITY_researchGroupFilters.ts|researchGroupFilters.ts]]
+- [[_COMMUNITY_createRoutes|createRoutes]]
+- [[_COMMUNITY_Yale Research Product Context|Yale Research Product Context]]
+- [[_COMMUNITY_10. P2 Fellowship, Course, And Contact Materialization|10. P2 Fellowship, Course, And Contact Materialization]]
+- [[_COMMUNITY_Priority Roadmap|Priority Roadmap]]
+- [[_COMMUNITY_2. Install dependencies|2. Install dependencies]]
+- [[_COMMUNITY_API Routes|API Routes]]
+- [[_COMMUNITY_API Routes|API Routes]]
+- [[_COMMUNITY_2. Install dependencies|2. Install dependencies]]
+- [[_COMMUNITY_API Routes|API Routes]]
+- [[_COMMUNITY_scraperIntegrityGate.ts|scraperIntegrityGate.ts]]
+- [[_COMMUNITY_Legacy CSV-to-JSON update script retired.  Department ground truth no longer com|Legacy CSV-to-JSON update script retired.  Department ground truth no longer com]]
+- [[_COMMUNITY_adminFellowshipsTableReducer.ts|adminFellowshipsTableReducer.ts]]
+- [[_COMMUNITY_importFaculty.ts|importFaculty.ts]]
+- [[_COMMUNITY_1. M1.2 Client API-Boundary Vocabulary|1. M1.2 Client API-Boundary Vocabulary]]
+- [[_COMMUNITY_codebash (git fetch --all)|code:bash (git fetch --all)]]
+- [[_COMMUNITY_AdminListingsTable.tsx|AdminListingsTable.tsx]]
+- [[_COMMUNITY_BackfillV4FacultyMembers.ts|BackfillV4FacultyMembers.ts]]
+- [[_COMMUNITY_devDependencies|devDependencies]]
+- [[_COMMUNITY_refreshGateScorecards.ts|refreshGateScorecards.ts]]
+- [[_COMMUNITY_next|next]]
+- [[_COMMUNITY_appSecurityRuntime.test.ts|appSecurityRuntime.test.ts]]
+- [[_COMMUNITY_dir|dir]]
+- [[_COMMUNITY_searchRoute|searchRoute]]
+- [[_COMMUNITY_chain|chain]]
+- [[_COMMUNITY_codetxt (Source metadata)|code:txt (Source metadata)]]
+- [[_COMMUNITY_codetsx (SectionHeading count={activeResults.clusters.length}Matchi)|code:tsx (<SectionHeading count={activeResults.clusters.length}>Matchi)]]
+- [[_COMMUNITY_codets (it('presents research-home labels without internal cluster b)|code:ts (it('presents research-home labels without internal cluster b)]]
+- [[_COMMUNITY_codetsx (import { render, screen } from '@testing-libraryreact';)|code:tsx (import { render, screen } from '@testing-library/react';)]]
+- [[_COMMUNITY_codebash ( Terminal 1)|code:bash (# Terminal 1)]]
+- [[_COMMUNITY_Acknowledgements|Acknowledgements]]
+- [[_COMMUNITY_Acknowledgements|Acknowledgements]]
+- [[_COMMUNITY_Acknowledgements|Acknowledgements]]
+- [[_COMMUNITY_Acknowledgements|Acknowledgements]]
+- [[_COMMUNITY_Acknowledgements|Acknowledgements]]
+- [[_COMMUNITY_Acknowledgements|Acknowledgements]]
+- [[_COMMUNITY_fellowships.ts|fellowships.ts]]
+- [[_COMMUNITY_cleanPublicProfileBio|cleanPublicProfileBio]]
+- [[_COMMUNITY_codets (expect(container.textContent).toContain('Evidence-backed gro)|code:ts (expect(container.textContent).toContain('Evidence-backed gro)]]
+- [[_COMMUNITY_codets (it('flags zero active papers as a coverage warning instead o)|code:ts (it('flags zero active papers as a coverage warning instead o)]]
+- [[_COMMUNITY_codets (nextCommand 'yarn --cwd server sourcehealth')|code:ts (nextCommand: 'yarn --cwd server source:health')]]
+- [[_COMMUNITY_codets (sourceRiskCounts.warn = 6;)|code:ts (sourceRiskCounts.warn = 6;)]]
+- [[_COMMUNITY_Available Scripts|Available Scripts]]
+- [[_COMMUNITY_Auth and Security|Auth and Security]]
+- [[_COMMUNITY_ResearchGroupMember|ResearchGroupMember]]
+- [[_COMMUNITY_isPublicHttpUrl|isPublicHttpUrl]]
+- [[_COMMUNITY_Architecture|Architecture]]
+- [[_COMMUNITY_csrfOriginGuard.ts|csrfOriginGuard.ts]]
+- [[_COMMUNITY_codebash (yarn --cwd server researchquality-search-review --output t)|code:bash (yarn --cwd server research:quality-search-review --output /t)]]
+- [[_COMMUNITY_GStack Data Quality Coverage Implementation Plan|GStack Data Quality Coverage Implementation Plan]]
+- [[_COMMUNITY_backfillProgramOfficialSources.ts|backfillProgramOfficialSources.ts]]
+- [[_COMMUNITY_researchAreaResolver.ts|researchAreaResolver.ts]]
+- [[_COMMUNITY_Yale Research - Agent Guide|Yale Research - Agent Guide]]
+- [[_COMMUNITY_resolutions|resolutions]]
+- [[_COMMUNITY_copyBetaToProd.ts|copyBetaToProd.ts]]
+- [[_COMMUNITY_parseStaleObservationConflictReviewArgs|parseStaleObservationConflictReviewArgs]]
+- [[_COMMUNITY_AdminOperatorBoard.test.tsx|AdminOperatorBoard.test.tsx]]
+- [[_COMMUNITY_package.json|package.json]]
+- [[_COMMUNITY_classifyDuplicateEntityCluster|classifyDuplicateEntityCluster]]
+- [[_COMMUNITY_buildCandidateSample|buildCandidateSample]]
+- [[_COMMUNITY_Graphify Onboarding|Graphify Onboarding]]
+- [[_COMMUNITY_codemd ( 14) `research` hierarchy now prioritizes homes, evidenc)|code:md (### 14) `/research` hierarchy now prioritizes homes, evidenc)]]
+- [[_COMMUNITY_Research Page UX Redesign Implementation Plan|Research Page UX Redesign Implementation Plan]]
+- [[_COMMUNITY_codebash (git worktree list)|code:bash (git worktree list)]]
+- [[_COMMUNITY_buildStaleObservationConflictSummary|buildStaleObservationConflictSummary]]
+- [[_COMMUNITY_manifest.json|manifest.json]]
+- [[_COMMUNITY_BackfillV4Grants.ts|BackfillV4Grants.ts]]
+- [[_COMMUNITY_package.json|package.json]]
+- [[_COMMUNITY_itemOperations.ts|itemOperations.ts]]
+- [[_COMMUNITY_Finishing work|Finishing work]]
+- [[_COMMUNITY_dataMigrationV4GrantBackfill.test.ts|dataMigrationV4GrantBackfill.test.ts]]
+- [[_COMMUNITY_dataMigrationPackageScripts.test.ts|dataMigrationPackageScripts.test.ts]]
+- [[_COMMUNITY_userMigrationCliSafety.test.ts|userMigrationCliSafety.test.ts]]
+- [[_COMMUNITY_publicationMigrationCliSafety.test.ts|publicationMigrationCliSafety.test.ts]]
+- [[_COMMUNITY_departmentMigrationCliSafety.test.ts|departmentMigrationCliSafety.test.ts]]
+- [[_COMMUNITY_rootDataImportCliSafety.test.ts|rootDataImportCliSafety.test.ts]]
+- [[_COMMUNITY_useSearchCore.ts|useSearchCore.ts]]
+- [[_COMMUNITY_useDebouncedLocalStorage.test.tsx|useDebouncedLocalStorage.test.tsx]]
+- [[_COMMUNITY_check-no-secrets-core.mjs|check-no-secrets-core.mjs]]
+- [[_COMMUNITY_codebash (SCRAPER_ENV=beta yarn --cwd server betadata-quality --inclu)|code:bash (SCRAPER_ENV=beta yarn --cwd server beta:data-quality --inclu)]]
+- [[_COMMUNITY_codetsx (import { render, screen, waitFor } from '@testing-libraryre)|code:tsx (import { render, screen, waitFor } from '@testing-library/re)]]
+- [[_COMMUNITY_codetxt (You are in the gstack-source-conflict-lane worktree. Impleme)|code:txt (You are in the gstack-source-conflict-lane worktree. Impleme)]]
+- [[_COMMUNITY_1. Fresh machine setup|1. Fresh machine setup]]
+- [[_COMMUNITY_codetxt (Usage Error Couldn't find the node_modules state file - run)|code:txt (Usage Error: Couldn't find the node_modules state file - run)]]
+- [[_COMMUNITY_codebash (which node)|code:bash (which node)]]
+- [[_COMMUNITY_CI|CI]]
+- [[_COMMUNITY_1. Fresh machine setup|1. Fresh machine setup]]
+- [[_COMMUNITY_CI|CI]]
+- [[_COMMUNITY_1. Fresh machine setup|1. Fresh machine setup]]
+- [[_COMMUNITY_codetxt (Usage Error Couldn't find the node_modules state file - run)|code:txt (Usage Error: Couldn't find the node_modules state file - run)]]
+- [[_COMMUNITY_1. Fresh machine setup|1. Fresh machine setup]]
+- [[_COMMUNITY_CI|CI]]
+- [[_COMMUNITY_codetxt (Usage Error Couldn't find the node_modules state file - run)|code:txt (Usage Error: Couldn't find the node_modules state file - run)]]
+- [[_COMMUNITY_runStaleObservationConflictReview|runStaleObservationConflictReview]]
+- [[_COMMUNITY_Graphify repo memory|Graphify repo memory]]
+- [[_COMMUNITY_adminTableReducer.test.ts|adminTableReducer.test.ts]]
+- [[_COMMUNITY_dataMigrationV4DeprecatedBackfills.test.ts|dataMigrationV4DeprecatedBackfills.test.ts]]
+- [[_COMMUNITY_completedCronResult|completedCronResult]]
+- [[_COMMUNITY_yaliesService.test.ts|yaliesService.test.ts]]
+- [[_COMMUNITY_vite-env.d.ts|vite-env.d.ts]]
+- [[_COMMUNITY_normalizeAcceptedDecisionValidation|normalizeAcceptedDecisionValidation]]
+- [[_COMMUNITY_Contributing endpoints, pages, schema|Contributing: endpoints, pages, schema]]
+- [[_COMMUNITY_Modifying a Schema|Modifying a Schema]]
+- [[_COMMUNITY_Adding Things|Adding Things]]
+- [[_COMMUNITY_Adding Things|Adding Things]]
+- [[_COMMUNITY_Scrapers|Scrapers]]
+- [[_COMMUNITY_Search and Data|Search and Data]]
+- [[_COMMUNITY_dataMigrationV4IdentityBackfills.test.ts|dataMigrationV4IdentityBackfills.test.ts]]
+- [[_COMMUNITY_13. M5.1 Pathway Meilisearch RebuildSync Foundation|13. M5.1 Pathway Meilisearch Rebuild/Sync Foundation]]
+- [[_COMMUNITY_14. Advising-Share And Outreach Helpers|14. Advising-Share And Outreach Helpers]]
+- [[_COMMUNITY_15. M10 Final Migration Rollout And Cleanup|15. M10 Final Migration Rollout And Cleanup]]
+- [[_COMMUNITY_checker.py|checker.py]]
+- [[_COMMUNITY_normalizeStaleObservationReviewDecision|normalizeStaleObservationReviewDecision]]
+- [[_COMMUNITY_Product Model|Product Model]]
+- [[_COMMUNITY_3. Configure environment|3. Configure environment]]
+- [[_COMMUNITY_codebash (npx ts-node --transpile-only script.ts)|code:bash (npx ts-node --transpile-only <script>.ts)]]
+- [[_COMMUNITY_Architecture|Architecture]]
+- [[_COMMUNITY_codebash (curl httplocalhost7700health)|code:bash (curl http://localhost:7700/health)]]
+- [[_COMMUNITY_Architecture|Architecture]]
+- [[_COMMUNITY_Auth Middleware (`serversrcmiddlewareauth.ts`)|Auth Middleware (`server/src/middleware/auth.ts`)]]
+- [[_COMMUNITY_4. Start local Meilisearch|4. Start local Meilisearch]]
+- [[_COMMUNITY_Common Commands|Common Commands]]
+- [[_COMMUNITY_3. Configure environment|3. Configure environment]]
+- [[_COMMUNITY_{ hasExpectedEntityName }|{ hasExpectedEntityName }]]
+- [[_COMMUNITY_postcss.config.js|postcss.config.js]]
+- [[_COMMUNITY_splitReasons|splitReasons]]
+- [[_COMMUNITY_with-playwright-libs.sh|with-playwright-libs.sh]]
+- [[_COMMUNITY_researchEntityRelationship.ts|researchEntityRelationship.ts]]
+- [[_COMMUNITY_ArtifactFreshnessStrip|ArtifactFreshnessStrip]]
+- [[_COMMUNITY_sourceReviewDecisionValidationLines|sourceReviewDecisionValidationLines]]
+- [[_COMMUNITY_diffDepartmentRows|diffDepartmentRows]]
+- [[_COMMUNITY_update_rdb.py|update_rdb.py]]
+- [[_COMMUNITY_apiBase|apiBase]]
+- [[_COMMUNITY_appBase|appBase]]
+- [[_COMMUNITY_args|args]]
+- [[_COMMUNITY_INTERNAL_LABELS|INTERNAL_LABELS]]
+- [[_COMMUNITY_key, inlineValue|[key, inlineValue]]]
+- [[_COMMUNITY_rawOutDir|rawOutDir]]
+- [[_COMMUNITY_reportPath|reportPath]]
+- [[_COMMUNITY_smokeCookie|smokeCookie]]
+- [[_COMMUNITY_clickSpy|clickSpy]]
+- [[_COMMUNITY_createObjectURL|createObjectURL]]
+- [[_COMMUNITY_onSummaryChange|onSummaryChange]]
+- [[_COMMUNITY_revokeObjectURL|revokeObjectURL]]
+- [[_COMMUNITY_merged|merged]]
+- [[_COMMUNITY_onSummaryChange|onSummaryChange]]
+- [[_COMMUNITY_oversizedNote|oversizedNote]]
+- [[_COMMUNITY_result|result]]
+- [[_COMMUNITY_unsafeLocalPlans|unsafeLocalPlans]]
+- [[_COMMUNITY_user|user]]
+- [[_COMMUNITY_FreshnessPolicy|FreshnessPolicy]]
+- [[_COMMUNITY_PromotionStatus|PromotionStatus]]
+- [[_COMMUNITY_readinessStyles|readinessStyles]]
+- [[_COMMUNITY_SourceReadinessRow|SourceReadinessRow]]
+- [[_COMMUNITY_statusStyle|statusStyle]]
+- [[_COMMUNITY_evidenceBadge|evidenceBadge]]
+- [[_COMMUNITY_evidenceLane|evidenceLane]]
+- [[_COMMUNITY_repairBadge|repairBadge]]
+- [[_COMMUNITY_repairLane|repairLane]]
+- [[_COMMUNITY_{ container }|{ container }]]
+- [[_COMMUNITY_controls|controls]]
+- [[_COMMUNITY_KIND_LABELS|KIND_LABELS]]
+- [[_COMMUNITY_{ container }|{ container }]]
+- [[_COMMUNITY_h1|h1]]
+- [[_COMMUNITY_pill|pill]]
+- [[_COMMUNITY_websiteLink|websiteLink]]
+- [[_COMMUNITY_{ container }|{ container }]]
+- [[_COMMUNITY_{ container }|{ container }]]
+- [[_COMMUNITY_{ container, unmount }|{ container, unmount }]]
+- [[_COMMUNITY_image|image]]
+- [[_COMMUNITY_unsafeCases|unsafeCases]]
+- [[_COMMUNITY_{ container }|{ container }]]
+- [[_COMMUNITY_paper|paper]]
+- [[_COMMUNITY_fellowshipQuickFilters|fellowshipQuickFilters]]
+- [[_COMMUNITY_{ container }|{ container }]]
+- [[_COMMUNITY_duplicateLinks|duplicateLinks]]
+- [[_COMMUNITY_image|image]]
+- [[_COMMUNITY_link|link]]
+- [[_COMMUNITY_links|links]]
+- [[_COMMUNITY_interestSection|interestSection]]
+- [[_COMMUNITY_section|section]]
+- [[_COMMUNITY_{ container }|{ container }]]
+- [[_COMMUNITY_card|card]]
+- [[_COMMUNITY_{ container }|{ container }]]
+- [[_COMMUNITY_description|description]]
+- [[_COMMUNITY_link|link]]
+- [[_COMMUNITY_onSelect|onSelect]]
+- [[_COMMUNITY_button|button]]
+- [[_COMMUNITY_button|button]]
+- [[_COMMUNITY_scrollContainer|scrollContainer]]
+- [[_COMMUNITY_github|github]]
+- [[_COMMUNITY_image|image]]
+- [[_COMMUNITY_link|link]]
+- [[_COMMUNITY_link|link]]
+- [[_COMMUNITY_analyticsLink|analyticsLink]]
+- [[_COMMUNITY_analyticsLinks|analyticsLinks]]
+- [[_COMMUNITY_links|links]]
+- [[_COMMUNITY_primaryNav|primaryNav]]
+- [[_COMMUNITY_locationMock|locationMock]]
+- [[_COMMUNITY_locationMock|locationMock]]
+- [[_COMMUNITY_removeItem|removeItem]]
+- [[_COMMUNITY_setItem|setItem]]
+- [[_COMMUNITY_{ result }|{ result }]]
+- [[_COMMUNITY_{ container }|{ container }]]
+- [[_COMMUNITY_onAdvance|onAdvance]]
+- [[_COMMUNITY_aboutBenefits|aboutBenefits]]
+- [[_COMMUNITY_aboutLinks|aboutLinks]]
+- [[_COMMUNITY_analyticsDetailNav|analyticsDetailNav]]
+- [[_COMMUNITY_SectionNavItem|SectionNavItem]]
+- [[_COMMUNITY_AuthContainer|AuthContainer]]
+- [[_COMMUNITY_Container|Container]]
+- [[_COMMUNITY_Description|Description]]
+- [[_COMMUNITY_ACTION_FILTER_OPTION_BY_KEY|ACTION_FILTER_OPTION_BY_KEY]]
+- [[_COMMUNITY_ACTION_FILTER_OPTIONS|ACTION_FILTER_OPTIONS]]
+- [[_COMMUNITY_ActionFilterKey|ActionFilterKey]]
+- [[_COMMUNITY_ActionFilterOption|ActionFilterOption]]
+- [[_COMMUNITY_CURIOSITY_PROMPTS|CURIOSITY_PROMPTS]]
+- [[_COMMUNITY_EXAMPLE_TOPICS|EXAMPLE_TOPICS]]
+- [[_COMMUNITY_HOME_QUERIES|HOME_QUERIES]]
+- [[_COMMUNITY_HomeClusterRow|HomeClusterRow]]
+- [[_COMMUNITY_IntentChip|IntentChip]]
+- [[_COMMUNITY_PROFILE_DECISION_CUES|PROFILE_DECISION_CUES]]
+- [[_COMMUNITY_ResearchSearchSuggestion|ResearchSearchSuggestion]]
+- [[_COMMUNITY_SEARCH_LENSES|SEARCH_LENSES]]
+- [[_COMMUNITY_SearchFilterState|SearchFilterState]]
+- [[_COMMUNITY_SOURCE_CHROME_SUGGESTION_PATTERNS|SOURCE_CHROME_SUGGESTION_PATTERNS]]
+- [[_COMMUNITY_STARTING_POINT_CHIPS|STARTING_POINT_CHIPS]]
+- [[_COMMUNITY_SUGGESTED_REFINEMENT_OPTIONS|SUGGESTED_REFINEMENT_OPTIONS]]
+- [[_COMMUNITY_SUGGESTED_SEARCH_FALLBACK|SUGGESTED_SEARCH_FALLBACK]]
+- [[_COMMUNITY_detailNav|detailNav]]
+- [[_COMMUNITY_openSection|openSection]]
+- [[_COMMUNITY_searchInput|searchInput]]
+- [[_COMMUNITY_setSelectedYearOfStudy|setSelectedYearOfStudy]]
+- [[_COMMUNITY_consoleError|consoleError]]
+- [[_COMMUNITY_{ container }|{ container }]]
+- [[_COMMUNITY_disclaimer|disclaimer]]
+- [[_COMMUNITY_duplicateMember|duplicateMember]]
+- [[_COMMUNITY_leadProfessorLabel|leadProfessorLabel]]
+- [[_COMMUNITY_link|link]]
+- [[_COMMUNITY_officialRouteLinks|officialRouteLinks]]
+- [[_COMMUNITY_peopleIndex|peopleIndex]]
+- [[_COMMUNITY_principalInvestigatorIndex|principalInvestigatorIndex]]
+- [[_COMMUNITY_principalInvestigatorSection|principalInvestigatorSection]]
+- [[_COMMUNITY_profileLinks|profileLinks]]
+- [[_COMMUNITY_recentPapersIndex|recentPapersIndex]]
+- [[_COMMUNITY_recentResearchIndex|recentResearchIndex]]
+- [[_COMMUNITY_recommendedNextStep|recommendedNextStep]]
+- [[_COMMUNITY_researchActivityIndex|researchActivityIndex]]
+- [[_COMMUNITY_saveButton|saveButton]]
+- [[_COMMUNITY_section|section]]
+- [[_COMMUNITY_sourcesIndex|sourcesIndex]]
+- [[_COMMUNITY_sparseProfileIndex|sparseProfileIndex]]
+- [[_COMMUNITY_studentDecisionHeading|studentDecisionHeading]]
+- [[_COMMUNITY_summary|summary]]
+- [[_COMMUNITY_waysInIndex|waysInIndex]]
+- [[_COMMUNITY_retryLink|retryLink]]
+- [[_COMMUNITY_link|link]]
+- [[_COMMUNITY_applicationLink|applicationLink]]
+- [[_COMMUNITY_{ container }|{ container }]]
+- [[_COMMUNITY_payloadWithoutEvidence|payloadWithoutEvidence]]
+- [[_COMMUNITY_sourceLinks|sourceLinks]]
+- [[_COMMUNITY_bioTab|bioTab]]
+- [[_COMMUNITY_amthCard|amthCard]]
+- [[_COMMUNITY_browseGrid|browseGrid]]
+- [[_COMMUNITY_browseLayout|browseLayout]]
+- [[_COMMUNITY_browseSection|browseSection]]
+- [[_COMMUNITY_{ container }|{ container }]]
+- [[_COMMUNITY_containerScrollTo|containerScrollTo]]
+- [[_COMMUNITY_firstPage|firstPage]]
+- [[_COMMUNITY_manyDepartments|manyDepartments]]
+- [[_COMMUNITY_nextPage|nextPage]]
+- [[_COMMUNITY_nextResearchEntity|nextResearchEntity]]
+- [[_COMMUNITY_nonMatchingEntity|nonMatchingEntity]]
+- [[_COMMUNITY_postedPathway|postedPathway]]
+- [[_COMMUNITY_querySelector|querySelector]]
+- [[_COMMUNITY_searchGrid|searchGrid]]
+- [[_COMMUNITY_searchSection|searchSection]]
+- [[_COMMUNITY_toggle|toggle]]
+- [[_COMMUNITY_windowScrollTo|windowScrollTo]]
+- [[_COMMUNITY_user|user]]
+- [[_COMMUNITY_legacyPrefix|legacyPrefix]]
+- [[_COMMUNITY_next|next]]
+- [[_COMMUNITY_snapshot|snapshot]]
+- [[_COMMUNITY_state|state]]
+- [[_COMMUNITY_storage|storage]]
+- [[_COMMUNITY_unsafe|unsafe]]
+- [[_COMMUNITY_next|next]]
+- [[_COMMUNITY_row|row]]
+- [[_COMMUNITY_state|state]]
+- [[_COMMUNITY_next|next]]
+- [[_COMMUNITY_snapshot|snapshot]]
+- [[_COMMUNITY_source|source]]
+- [[_COMMUNITY_state|state]]
+- [[_COMMUNITY_afterCompType|afterCompType]]
+- [[_COMMUNITY_links|links]]
+- [[_COMMUNITY_minimal|minimal]]
+- [[_COMMUNITY_next|next]]
+- [[_COMMUNITY_result|result]]
+- [[_COMMUNITY_snapshot|snapshot]]
+- [[_COMMUNITY_state|state]]
+- [[_COMMUNITY_next|next]]
+- [[_COMMUNITY_row|row]]
+- [[_COMMUNITY_state|state]]
+- [[_COMMUNITY_afterEmail|afterEmail]]
+- [[_COMMUNITY_afterProfName|afterProfName]]
+- [[_COMMUNITY_next|next]]
+- [[_COMMUNITY_snapshot|snapshot]]
+- [[_COMMUNITY_state|state]]
+- [[_COMMUNITY_next|next]]
+- [[_COMMUNITY_results|results]]
+- [[_COMMUNITY_state|state]]
+- [[_COMMUNITY_edited|edited]]
+- [[_COMMUNITY_full|full]]
+- [[_COMMUNITY_initial|initial]]
+- [[_COMMUNITY_minimal|minimal]]
+- [[_COMMUNITY_next|next]]
+- [[_COMMUNITY_snapshot|snapshot]]
+- [[_COMMUNITY_state|state]]
+- [[_COMMUNITY_withHIndex|withHIndex]]
+- [[_COMMUNITY_withoutHIndex|withoutHIndex]]
+- [[_COMMUNITY_extended|extended]]
+- [[_COMMUNITY_filters|filters]]
+- [[_COMMUNITY_next|next]]
+- [[_COMMUNITY_opened|opened]]
+- [[_COMMUNITY_snapshot|snapshot]]
+- [[_COMMUNITY_state|state]]
+- [[_COMMUNITY_withData|withData]]
+- [[_COMMUNITY_first|first]]
+- [[_COMMUNITY_loaded|loaded]]
+- [[_COMMUNITY_next|next]]
+- [[_COMMUNITY_second|second]]
+- [[_COMMUNITY_snapshot|snapshot]]
+- [[_COMMUNITY_state|state]]
+- [[_COMMUNITY_closed|closed]]
+- [[_COMMUNITY_initial|initial]]
+- [[_COMMUNITY_next|next]]
+- [[_COMMUNITY_opened|opened]]
+- [[_COMMUNITY_optimistic|optimistic]]
+- [[_COMMUNITY_rolledBack|rolledBack]]
+- [[_COMMUNITY_snapshot|snapshot]]
+- [[_COMMUNITY_state|state]]
+- [[_COMMUNITY_withDetail|withDetail]]
+- [[_COMMUNITY_withModal|withModal]]
+- [[_COMMUNITY_loaded|loaded]]
+- [[_COMMUNITY_next|next]]
+- [[_COMMUNITY_snapshot|snapshot]]
+- [[_COMMUNITY_state|state]]
+- [[_COMMUNITY_next|next]]
+- [[_COMMUNITY_snapshot|snapshot]]
+- [[_COMMUNITY_state|state]]
+- [[_COMMUNITY_a|a]]
+- [[_COMMUNITY_added|added]]
+- [[_COMMUNITY_b|b]]
+- [[_COMMUNITY_base|base]]
+- [[_COMMUNITY_card|card]]
+- [[_COMMUNITY_cleared|cleared]]
+- [[_COMMUNITY_deduped|deduped]]
+- [[_COMMUNITY_existing|existing]]
+- [[_COMMUNITY_fellowship|fellowship]]
+- [[_COMMUNITY_filtered|filtered]]
+- [[_COMMUNITY_incoming|incoming]]
+- [[_COMMUNITY_legacy|legacy]]
+- [[_COMMUNITY_list|list]]
+- [[_COMMUNITY_listing|listing]]
+- [[_COMMUNITY_next|next]]
+- [[_COMMUNITY_state|state]]
+- [[_COMMUNITY_updated|updated]]
+- [[_COMMUNITY_fellowships|fellowships]]
+- [[_COMMUNITY_next|next]]
+- [[_COMMUNITY_once|once]]
+- [[_COMMUNITY_snapshot|snapshot]]
+- [[_COMMUNITY_state|state]]
+- [[_COMMUNITY_twice|twice]]
+- [[_COMMUNITY_draft|draft]]
+- [[_COMMUNITY_edited|edited]]
+- [[_COMMUNITY_next|next]]
+- [[_COMMUNITY_snapshot|snapshot]]
+- [[_COMMUNITY_started|started]]
+- [[_COMMUNITY_state|state]]
+- [[_COMMUNITY_withData|withData]]
+- [[_COMMUNITY_closed|closed]]
+- [[_COMMUNITY_loaded|loaded]]
+- [[_COMMUNITY_next|next]]
+- [[_COMMUNITY_opened|opened]]
+- [[_COMMUNITY_snapshot|snapshot]]
+- [[_COMMUNITY_state|state]]
+- [[_COMMUNITY_edited|edited]]
+- [[_COMMUNITY_fetched|fetched]]
+- [[_COMMUNITY_initial|initial]]
+- [[_COMMUNITY_listing|listing]]
+- [[_COMMUNITY_next|next]]
+- [[_COMMUNITY_original|original]]
+- [[_COMMUNITY_reset|reset]]
+- [[_COMMUNITY_snapshot|snapshot]]
+- [[_COMMUNITY_state|state]]
+- [[_COMMUNITY_withAvailable|withAvailable]]
+- [[_COMMUNITY_a|a]]
+- [[_COMMUNITY_b|b]]
+- [[_COMMUNITY_existing|existing]]
+- [[_COMMUNITY_fresh|fresh]]
+- [[_COMMUNITY_initial|initial]]
+- [[_COMMUNITY_keeper|keeper]]
+- [[_COMMUNITY_listing|listing]]
+- [[_COMMUNITY_next|next]]
+- [[_COMMUNITY_skeleton|skeleton]]
+- [[_COMMUNITY_snapshot|snapshot]]
+- [[_COMMUNITY_state|state]]
+- [[_COMMUNITY_updated|updated]]
+- [[_COMMUNITY_next|next]]
+- [[_COMMUNITY_profile|profile]]
+- [[_COMMUNITY_snapshot|snapshot]]
+- [[_COMMUNITY_state|state]]
+- [[_COMMUNITY_withDept|withDept]]
+- [[_COMMUNITY_withInterest|withInterest]]
+- [[_COMMUNITY_loaded|loaded]]
+- [[_COMMUNITY_next|next]]
+- [[_COMMUNITY_nulled|nulled]]
+- [[_COMMUNITY_snapshot|snapshot]]
+- [[_COMMUNITY_state|state]]
+- [[_COMMUNITY_flipped|flipped]]
+- [[_COMMUNITY_next|next]]
+- [[_COMMUNITY_paged|paged]]
+- [[_COMMUNITY_seeded|seeded]]
+- [[_COMMUNITY_state|state]]
+- [[_COMMUNITY_next|next]]
+- [[_COMMUNITY_snapshot|snapshot]]
+- [[_COMMUNITY_state|state]]
+- [[_COMMUNITY_afterOrder|afterOrder]]
+- [[_COMMUNITY_afterSortBy|afterSortBy]]
+- [[_COMMUNITY_newListings|newListings]]
+- [[_COMMUNITY_next|next]]
+- [[_COMMUNITY_once|once]]
+- [[_COMMUNITY_original|original]]
+- [[_COMMUNITY_page|page]]
+- [[_COMMUNITY_snapshot|snapshot]]
+- [[_COMMUNITY_state|state]]
+- [[_COMMUNITY_twice|twice]]
+- [[_COMMUNITY_next|next]]
+- [[_COMMUNITY_snapshot|snapshot]]
+- [[_COMMUNITY_state|state]]
+- [[_COMMUNITY_next|next]]
+- [[_COMMUNITY_prior|prior]]
+- [[_COMMUNITY_snapshot|snapshot]]
+- [[_COMMUNITY_state|state]]
+- [[_COMMUNITY_futureWarnings|futureWarnings]]
+- [[_COMMUNITY_{ getByTestId }|{ getByTestId }]]
+- [[_COMMUNITY_warnSpy|warnSpy]]
+- [[_COMMUNITY_PathwaySearchRequest|PathwaySearchRequest]]
+- [[_COMMUNITY_PathwaySortOrder|PathwaySortOrder]]
+- [[_COMMUNITY_ResearchEntitySearchFilters|ResearchEntitySearchFilters]]
+- [[_COMMUNITY_ResearchEntitySearchRequest|ResearchEntitySearchRequest]]
+- [[_COMMUNITY_ResearchEntitySortBy|ResearchEntitySortBy]]
+- [[_COMMUNITY_ResearchEntitySortOrder|ResearchEntitySortOrder]]
+- [[_COMMUNITY_SOURCE_CHROME_PATTERNS|SOURCE_CHROME_PATTERNS]]
+- [[_COMMUNITY_AcceptanceLevelFilter|AcceptanceLevelFilter]]
+- [[_COMMUNITY_ResearchGroupSearchFilters|ResearchGroupSearchFilters]]
+- [[_COMMUNITY_ResearchGroupSearchRequest|ResearchGroupSearchRequest]]
+- [[_COMMUNITY_ResearchGroupSortBy|ResearchGroupSortBy]]
+- [[_COMMUNITY_ResearchGroupSortOrder|ResearchGroupSortOrder]]
+- [[_COMMUNITY_item|item]]
+- [[_COMMUNITY_canonical|canonical]]
+- [[_COMMUNITY_legacy|legacy]]
+- [[_COMMUNITY_result|result]]
+- [[_COMMUNITY_ClusterMatchType|ClusterMatchType]]
+- [[_COMMUNITY_GENERIC_CONTEXT_DESCRIPTION_PATTERNS|GENERIC_CONTEXT_DESCRIPTION_PATTERNS]]
+- [[_COMMUNITY_GENERIC_SUGGESTION_LABELS|GENERIC_SUGGESTION_LABELS]]
+- [[_COMMUNITY_MATCH_LABEL_BY_TYPE|MATCH_LABEL_BY_TYPE]]
+- [[_COMMUNITY_SearchSuggestionOptions|SearchSuggestionOptions]]
+- [[_COMMUNITY_SOURCE_CHROME_PATTERNS|SOURCE_CHROME_PATTERNS]]
+- [[_COMMUNITY_fellowship|fellowship]]
+- [[_COMMUNITY_authUrl|authUrl]]
+- [[_COMMUNITY_callbackScript|callbackScript]]
+- [[_COMMUNITY_exportPromise|exportPromise]]
+- [[_COMMUNITY_fakeWindow|fakeWindow]]
+- [[_COMMUNITY_fetchMock|fetchMock]]
+- [[_COMMUNITY_otherPopup|otherPopup]]
+- [[_COMMUNITY_popup|popup]]
+- [[_COMMUNITY_rejection|rejection]]
+- [[_COMMUNITY_requestBody|requestBody]]
+- [[_COMMUNITY_runCallback|runCallback]]
+- [[_COMMUNITY_state|state]]
+- [[_COMMUNITY_text|text]]
+- [[_COMMUNITY_config|config]]
+- [[_COMMUNITY_credentialed|credentialed]]
+- [[_COMMUNITY_goodHeaders|goodHeaders]]
+- [[_COMMUNITY_malformed|malformed]]
+- [[_COMMUNITY_missingHeaders|missingHeaders]]
+- [[_COMMUNITY_payload|payload]]
+- [[_COMMUNITY_placeholder|placeholder]]
+- [[_COMMUNITY_report|report]]
+- [[_COMMUNITY_smokeConfig|smokeConfig]]
+- [[_COMMUNITY_sources|sources]]
+- [[_COMMUNITY_clusters|clusters]]
+- [[_COMMUNITY_duplicatePostedRole|duplicatePostedRole]]
+- [[_COMMUNITY_duplicateProfile|duplicateProfile]]
+- [[_COMMUNITY_evidenceRows|evidenceRows]]
+- [[_COMMUNITY_firstProfile|firstProfile]]
+- [[_COMMUNITY_grouped|grouped]]
+- [[_COMMUNITY_identities|identities]]
+- [[_COMMUNITY_outreach|outreach]]
+- [[_COMMUNITY_postedRole|postedRole]]
+- [[_COMMUNITY_preview|preview]]
+- [[_COMMUNITY_sameLabOutreach|sameLabOutreach]]
+- [[_COMMUNITY_springPostedRole|springPostedRole]]
+- [[_COMMUNITY_suggestions|suggestions]]
+- [[_COMMUNITY_summerPostedRole|summerPostedRole]]
+- [[_COMMUNITY_entity|entity]]
+- [[_COMMUNITY_facultyResearch|facultyResearch]]
+- [[_COMMUNITY_lab|lab]]
+- [[_COMMUNITY_kinds|kinds]]
+- [[_COMMUNITY_plural|plural]]
+- [[_COMMUNITY_result|result]]
+- [[_COMMUNITY_single|single]]
+- [[_COMMUNITY_verdicts|verdicts]]
+- [[_COMMUNITY_open|open]]
+- [[_COMMUNITY_popup|popup]]
+- [[_COMMUNITY_options|options]]
+- [[_COMMUNITY_options|options]]
+- [[_COMMUNITY_options|options]]
+- [[_COMMUNITY_ChangeRecord|ChangeRecord]]
+- [[_COMMUNITY_EntityCorrection|EntityCorrection]]
+- [[_COMMUNITY_ListingCorrection|ListingCorrection]]
+- [[_COMMUNITY_CSVRow|CSVRow]]
+- [[_COMMUNITY_CLI_OPTIONS|CLI_OPTIONS]]
+- [[_COMMUNITY_DELETE_SOURCE_FILES|DELETE_SOURCE_FILES]]
+- [[_COMMUNITY_Paper|Paper]]
+- [[_COMMUNITY_User|User]]
+- [[_COMMUNITY_categoryColorKeys|categoryColorKeys]]
+- [[_COMMUNITY_DepartmentCategory|DepartmentCategory]]
+- [[_COMMUNITY_departments|departments]]
+- [[_COMMUNITY_2026-05-12 Standardize Mongo Collection Names|2026-05-12: Standardize Mongo Collection Names]]
+- [[_COMMUNITY_2026-05-15 Keep Fellowships Fresh From Public Official Yale Sources|2026-05-15: Keep Fellowships Fresh From Public Official Yale Sources]]
+- [[_COMMUNITY_2026-05-15 Keep Microsite Descriptions Separate From Access Extraction|2026-05-15: Keep Microsite Descriptions Separate From Access Extraction]]
+- [[_COMMUNITY_2026-05-15 Keep Professor Posting Profile-First|2026-05-15: Keep Professor Posting Profile-First]]
+- [[_COMMUNITY_2026-05-15 Preserve Expired Fellowship Cycles As Next-Cycle Signals|2026-05-15: Preserve Expired Fellowship Cycles As Next-Cycle Signals]]
+- [[_COMMUNITY_2026-05-15 Retire Listings As A Public UI Surface|2026-05-15: Retire Listings As A Public UI Surface]]
+- [[_COMMUNITY_2026-05-15 Treat Papers As Scholarly Links, Not Canonical Local Records|2026-05-15: Treat Papers As Scholarly Links, Not Canonical Local Records]]
+- [[_COMMUNITY_2026-05-15 Use Guarded Official PI Profiles to Repair Sparse Faculty Labs|2026-05-15: Use Guarded Official PI Profiles to Repair Sparse Faculty Labs]]
+- [[_COMMUNITY_2026-05-17 Keep Scrapers As Jobs, Not A Separate Server|2026-05-17: Keep Scrapers As Jobs, Not A Separate Server]]
+- [[_COMMUNITY_2026-05-17 Retire Public Pathways And Canonicalize Programs|2026-05-17: Retire Public Pathways And Canonicalize Programs]]
+- [[_COMMUNITY_2026-05-17 Treat Beta As The Live Production Gate|2026-05-17: Treat Beta As The Live Production Gate]]
+- [[_COMMUNITY_2026-05-17 Unified Research Search Is The Student Front Door|2026-05-17: Unified Research Search Is The Student Front Door]]
+- [[_COMMUNITY_2026-05-19 Use Crossref As A Compact Scholarly-Link Hydrator|2026-05-19: Use Crossref As A Compact Scholarly-Link Hydrator]]
+- [[_COMMUNITY_2026-05-25 Keep Fellowship URL Hygiene Model-Compatible On New Foundation|2026-05-25: Keep Fellowship URL Hygiene Model-Compatible On New Foundation]]
+- [[_COMMUNITY_2026-06-06 Mark Private Account And Listing Payloads No-Store|2026-06-06: Mark Private Account And Listing Payloads No-Store]]
+- [[_COMMUNITY_2026-06-06 Mark Private Account Payloads No-Store|2026-06-06: Mark Private Account Payloads No-Store]]
+- [[_COMMUNITY_2026-06-06 Mark Private Saved-Plan Payloads No-Store|2026-06-06: Mark Private Saved-Plan Payloads No-Store]]
+- [[_COMMUNITY_2026-06-11 - Bound Accepted-Input Source Fetch Bodies|2026-06-11 - Bound Accepted-Input Source Fetch Bodies]]
+- [[_COMMUNITY_2026-06-11 CSP Blocks Inline Script Attributes|2026-06-11: CSP Blocks Inline Script Attributes]]
+- [[_COMMUNITY_2026-06-11 Mongo Gate and Import Fatal Errors Are Sanitized|2026-06-11: Mongo Gate and Import Fatal Errors Are Sanitized]]
+- [[_COMMUNITY_2026-06-11 Public Opportunity Detail Taxonomy Text Is Contact-Redacted|2026-06-11: Public Opportunity Detail Taxonomy Text Is Contact-Redacted]]
+- [[_COMMUNITY_2026-06-11 Public Research Detail Subdocuments Omit Persistence Timestamps|2026-06-11: Public Research Detail Subdocuments Omit Persistence Timestamps]]
+- [[_COMMUNITY_2026-06-11 Server Start Refuses Stale Build Artifacts|2026-06-11: Server Start Refuses Stale Build Artifacts]]
+- [[_COMMUNITY_2026-06-11 Stored Account Pathway IDs Are Revalidated on Read|2026-06-11: Stored Account Pathway IDs Are Revalidated on Read]]
+- [[_COMMUNITY_2026-06-12 Public PI Links Prefer Official Faculty Profiles|2026-06-12: Public PI Links Prefer Official Faculty Profiles]]
+- [[_COMMUNITY_Description Quality Bar|Description Quality Bar]]
+- [[_COMMUNITY_Pathways|Pathways]]
+- [[_COMMUNITY_Programs & Fellowships|Programs & Fellowships]]
+- [[_COMMUNITY_Search Research|Search Research]]
+- [[_COMMUNITY_Yale Labs|Yale Labs]]
+- [[_COMMUNITY_codetxt (ResearchEntity)|code:txt (ResearchEntity)]]
+- [[_COMMUNITY_codets (ResearchEntity {)|code:ts (ResearchEntity {)]]
+- [[_COMMUNITY_codets (EntryPathway {)|code:ts (EntryPathway {)]]
+- [[_COMMUNITY_codets (PostedOpportunity {)|code:ts (PostedOpportunity {)]]
+- [[_COMMUNITY_codets (AccessSignal {)|code:ts (AccessSignal {)]]
+- [[_COMMUNITY_codets (ContactRoute {)|code:ts (ContactRoute {)]]
+- [[_COMMUNITY_Lab Ownership vs Lab Membership|Lab Ownership vs Lab Membership]]
+- [[_COMMUNITY_Pathway Search|Pathway Search]]
+- [[_COMMUNITY_Programs API|Programs API]]
+- [[_COMMUNITY_ResearchEntityRelationship|ResearchEntityRelationship]]
+- [[_COMMUNITY_Route Search|Route Search]]
+- [[_COMMUNITY_Saved Research Plans|Saved Research Plans]]
+- [[_COMMUNITY_Ways-In Enrichment|Ways-In Enrichment]]
+- [[_COMMUNITY_Backfill Promotion Gate|Backfill Promotion Gate]]
+- [[_COMMUNITY_codetxt (Source metadata)|code:txt (Source metadata)]]
+- [[_COMMUNITY_codebash (npx -y corepack@0.34.7 yarn --cwd server sourcehealth)|code:bash (npx -y corepack@0.34.7 yarn --cwd server source:health)]]
+- [[_COMMUNITY_codebash (npx -y corepack@0.34.7 yarn --cwd server opportunitiesreap-)|code:bash (npx -y corepack@0.34.7 yarn --cwd server opportunities:reap-)]]
+- [[_COMMUNITY_codebash (npx -y corepack@0.34.7 yarn --cwd server scraperclaim-gate )|code:bash (npx -y corepack@0.34.7 yarn --cwd server scraper:claim-gate )]]
+- [[_COMMUNITY_codebash (SCRAPER_ENV=development ALLOW_NON_PROD_SCRAPER_WRITES=true )|code:bash (SCRAPER_ENV=development ALLOW_NON_PROD_SCRAPER_WRITES=true \)]]
+- [[_COMMUNITY_codebash (SCRAPER_ENV=beta )|code:bash (SCRAPER_ENV=beta \)]]
+- [[_COMMUNITY_codebash (SCRAPER_ENV=beta ALLOW_NON_PROD_SCRAPER_WRITES=true )|code:bash (SCRAPER_ENV=beta ALLOW_NON_PROD_SCRAPER_WRITES=true \)]]
+- [[_COMMUNITY_codebash (SCRAPER_ENV=development )|code:bash (SCRAPER_ENV=development \)]]
+- [[_COMMUNITY_codebash (npx -y corepack@0.34.7 yarn --cwd server scrape list)|code:bash (npx -y corepack@0.34.7 yarn --cwd server scrape list)]]
+- [[_COMMUNITY_codebash (SCRAPER_ENV=development )|code:bash (SCRAPER_ENV=development \)]]
+- [[_COMMUNITY_codebash (SCRAPER_ENV=development )|code:bash (SCRAPER_ENV=development \)]]
+- [[_COMMUNITY_codebash (SCRAPER_ENV=development ALLOW_NON_PROD_SCRAPER_WRITES=true )|code:bash (SCRAPER_ENV=development ALLOW_NON_PROD_SCRAPER_WRITES=true \)]]
+- [[_COMMUNITY_codebash (SCRAPER_ENV=development ALLOW_NON_PROD_SCRAPER_WRITES=true )|code:bash (SCRAPER_ENV=development ALLOW_NON_PROD_SCRAPER_WRITES=true \)]]
+- [[_COMMUNITY_codebash (SCRAPER_ENV=development ALLOW_NON_PROD_SCRAPER_WRITES=true )|code:bash (SCRAPER_ENV=development ALLOW_NON_PROD_SCRAPER_WRITES=true \)]]
+- [[_COMMUNITY_codebash (SCRAPER_ENV=production CONFIRM_PROD_SCRAPE=true )|code:bash (SCRAPER_ENV=production CONFIRM_PROD_SCRAPE=true \)]]
+- [[_COMMUNITY_codebash (npx -y corepack@0.34.7 yarn --cwd server scrape report --run)|code:bash (npx -y corepack@0.34.7 yarn --cwd server scrape report --run)]]
+- [[_COMMUNITY_Old Observation Replay Cleanup|Old Observation Replay Cleanup]]
+- [[_COMMUNITY_`yale-course-catalog`|`yale-course-catalog`]]
+- [[_COMMUNITY_Beta Data Quality Scorecard|Beta Data Quality Scorecard]]
+- [[_COMMUNITY_codebash (yarn securitysmokeproduction)|code:bash (yarn security:smoke:production)]]
+- [[_COMMUNITY_codebash (BETA_MONGODBURL='beta-mongodb-url' )|code:bash (BETA_MONGODBURL='<beta-mongodb-url>' \)]]
+- [[_COMMUNITY_codebash (SCRAPER_ENV=beta yarn --cwd server research-entitydedupe-by)|code:bash (SCRAPER_ENV=beta yarn --cwd server research-entity:dedupe-by)]]
+- [[_COMMUNITY_codebash (SCRAPER_ENV=production CONFIRM_PROD_SCRAPE=true )|code:bash (SCRAPER_ENV=production CONFIRM_PROD_SCRAPE=true \)]]
+- [[_COMMUNITY_codebash (SCRAPER_ENV=production CONFIRM_PROD_SCRAPE=true )|code:bash (SCRAPER_ENV=production CONFIRM_PROD_SCRAPE=true \)]]
+- [[_COMMUNITY_codebash (SCRAPER_ENV=production CONFIRM_PROD_SCRAPE=true )|code:bash (SCRAPER_ENV=production CONFIRM_PROD_SCRAPE=true \)]]
+- [[_COMMUNITY_codebash (yarn --cwd client smokeproduction-promotion --api-base http)|code:bash (yarn --cwd client smoke:production-promotion --api-base http)]]
+- [[_COMMUNITY_codebash (yarn --cwd server scrape prune-observations --older-than-day)|code:bash (yarn --cwd server scrape prune-observations --older-than-day)]]
+- [[_COMMUNITY_codetxt (Source metadata)|code:txt (Source metadata)]]
+- [[_COMMUNITY_codebash (SCRAPER_ENV=development )|code:bash (SCRAPER_ENV=development \)]]
+- [[_COMMUNITY_codebash (SCRAPER_ENV=development ALLOW_NON_PROD_SCRAPER_WRITES=true )|code:bash (SCRAPER_ENV=development ALLOW_NON_PROD_SCRAPER_WRITES=true \)]]
+- [[_COMMUNITY_codebash (yarn --cwd server betareadiness --confirm-beta-backup --str)|code:bash (yarn --cwd server beta:readiness --confirm-beta-backup --str)]]
+- [[_COMMUNITY_codebash (SCRAPER_ENV=beta yarn --cwd server betaseed-meili)|code:bash (SCRAPER_ENV=beta yarn --cwd server beta:seed-meili)]]
+- [[_COMMUNITY_codebash (SCRAPER_ENV=beta yarn --cwd server betaseed --apply --confi)|code:bash (SCRAPER_ENV=beta yarn --cwd server beta:seed --apply --confi)]]
+- [[_COMMUNITY_codebash (PATHWAY_SEARCH_BACKEND=mongo yarn --cwd server pathwayrelev)|code:bash (PATHWAY_SEARCH_BACKEND=mongo yarn --cwd server pathway:relev)]]
+- [[_COMMUNITY_codebash (SCRAPER_ENV=beta yarn --cwd server betadata-quality --inclu)|code:bash (SCRAPER_ENV=beta yarn --cwd server beta:data-quality --inclu)]]
+- [[_COMMUNITY_Storage And Repeated-Work Policy|Storage And Repeated-Work Policy]]
+- [[_COMMUNITY_codetsx (Search by idea, method, paper, professor, or pathway. Cluste)|code:tsx (Search by idea, method, paper, professor, or pathway. Cluste)]]
+- [[_COMMUNITY_codetsx (Search by topic, method, professor, program, or question. Re)|code:tsx (Search by topic, method, professor, program, or question. Re)]]
+- [[_COMMUNITY_codetsx (Same names are not merged. Identity, source evidence, and cl)|code:tsx (Same names are not merged. Identity, source evidence, and cl)]]
+- [[_COMMUNITY_codetsx (Every suggestion keeps its source context visible, so you ca)|code:tsx (Every suggestion keeps its source context visible, so you ca)]]
+- [[_COMMUNITY_codebash (NODE_PATH=tmppw-drivernode_modules bash scriptswith-play)|code:bash (NODE_PATH=/tmp/pw-driver/node_modules bash scripts/with-play)]]
+- [[_COMMUNITY_codebash (git add clientsrcpagesresearch.tsx docsux-screenshots do)|code:bash (git add client/src/pages/research.tsx docs/ux-screenshots do)]]
+- [[_COMMUNITY_codetsx (import { Link } from 'react-router-dom';)|code:tsx (import { Link } from 'react-router-dom';)]]
+- [[_COMMUNITY_codets (import PathwayActionCard from '..componentsresearchPathwa)|code:ts (import PathwayActionCard from '../components/research/Pathwa)]]
+- [[_COMMUNITY_codebash (yarn --cwd client test --run srccomponentsresearch__tests)|code:bash (yarn --cwd client test --run src/components/research/__tests)]]
+- [[_COMMUNITY_codetxt (docsux-screenshotsresearch-next-steps-desktop.png)|code:txt (docs/ux-screenshots/research-next-steps-desktop.png)]]
+- [[_COMMUNITY_codebash (git add clientsrccomponentsresearchPathwayActionCard.tsx)|code:bash (git add client/src/components/research/PathwayActionCard.tsx)]]
+- [[_COMMUNITY_codets (expect(container.textContent).toContain('Why this matches');)|code:ts (expect(container.textContent).toContain('Why this matches');)]]
+- [[_COMMUNITY_codebash (yarn --cwd client test --run srccomponentsresearch__tests)|code:bash (yarn --cwd client test --run src/components/research/__tests)]]
+- [[_COMMUNITY_codetsx (Profiles in this cluster)|code:tsx (Profiles in this cluster)]]
+- [[_COMMUNITY_codetsx (Research homes)|code:tsx (Research homes)]]
+- [[_COMMUNITY_codets (export const CLUSTER_EXPERIMENTAL_LABEL = 'Cluster experime)|code:ts (export const CLUSTER_EXPERIMENTAL_LABEL = 'Cluster: experime)]]
+- [[_COMMUNITY_codebash (git add clientsrccomponentsresearchTopicClusterCard.tsx )|code:bash (git add client/src/components/research/TopicClusterCard.tsx )]]
+- [[_COMMUNITY_codebash (yarn --cwd client test --run srcpages__tests__research.te)|code:bash (yarn --cwd client test --run src/pages/__tests__/research.te)]]
+- [[_COMMUNITY_codebash (git add clientsrcpages__tests__research.test.tsx)|code:bash (git add client/src/pages/__tests__/research.test.tsx)]]
+- [[_COMMUNITY_codemd ( Research Page Language)|code:md (## Research Page Language)]]
+- [[_COMMUNITY_codebash (yarn --cwd client build)|code:bash (yarn --cwd client build)]]
+- [[_COMMUNITY_codebash (graphify update .)|code:bash (graphify update .)]]
+- [[_COMMUNITY_codets (export const RESEARCH_HOME_GROUPING_LABEL = 'Evidence-backed)|code:ts (export const RESEARCH_HOME_GROUPING_LABEL = 'Evidence-backed)]]
+- [[_COMMUNITY_codebash (git add docsux-audit-log.md docsui-ux-direction.md graphif)|code:bash (git add docs/ux-audit-log.md docs/ui-ux-direction.md graphif)]]
+- [[_COMMUNITY_codets (labels RESEARCH_HOME_GROUPING_LABEL,)|code:ts (labels: [RESEARCH_HOME_GROUPING_LABEL],)]]
+- [[_COMMUNITY_codets (description)|code:ts (description:)]]
+- [[_COMMUNITY_codebash (yarn --cwd client test --run srcutils__tests__researchDis)|code:bash (yarn --cwd client test --run src/utils/__tests__/researchDis)]]
+- [[_COMMUNITY_codebash (git add clientsrcutilsresearchDiscoveryAdapters.ts client)|code:bash (git add client/src/utils/researchDiscoveryAdapters.ts client)]]
+- [[_COMMUNITY_codebash (SCRAPER_ENV=beta yarn --cwd server launchtrust-contract --c)|code:bash (SCRAPER_ENV=beta yarn --cwd server launch:trust-contract --c)]]
+- [[_COMMUNITY_codebash (SCRAPER_ENV=beta yarn --cwd server betarepair-queue --colle)|code:bash (SCRAPER_ENV=beta yarn --cwd server beta:repair-queue --colle)]]
+- [[_COMMUNITY_codets (it('materializes an official inferred PI into a research ent)|code:ts (it('materializes an official inferred PI into a research ent)]]
+- [[_COMMUNITY_codebash (yarn --cwd server test srcscrapers__tests__entityMaterial)|code:bash (yarn --cwd server test src/scrapers/__tests__/entityMaterial)]]
+- [[_COMMUNITY_codets (const hasOfficialSource = httpsyale.edui.tes)|code:ts (const hasOfficialSource = /^https:\/\/[^/]*yale\.edu\//i.tes)]]
+- [[_COMMUNITY_codebash (node -e 'require(dotenv).config({pathserver.env}); pro)|code:bash (node -e 'require("dotenv").config({path:"server/.env"}); pro)]]
+- [[_COMMUNITY_codebash (SCRAPER_ENV=beta yarn --cwd server betarepair-queue --colle)|code:bash (SCRAPER_ENV=beta yarn --cwd server beta:repair-queue --colle)]]
+- [[_COMMUNITY_codets (it('materializes official undergraduate access evidence into)|code:ts (it('materializes official undergraduate access evidence into)]]
+- [[_COMMUNITY_codets (const officialSourceUrl = typeof observation.sourceUrl === ')|code:ts (const officialSourceUrl = typeof observation.sourceUrl === ')]]
+- [[_COMMUNITY_codebash (SCRAPER_ENV=beta yarn --cwd server betarepair-queue --colle)|code:bash (SCRAPER_ENV=beta yarn --cwd server beta:repair-queue --colle)]]
+- [[_COMMUNITY_codebash (SCRAPER_ENV=beta yarn --cwd server betarepair-queue --colle)|code:bash (SCRAPER_ENV=beta yarn --cwd server beta:repair-queue --colle)]]
+- [[_COMMUNITY_codemarkdown (Review exceptions are accepted only when they are hidden fro)|code:markdown (Review exceptions are accepted only when they are hidden fro)]]
+- [[_COMMUNITY_codebash (SCRAPER_ENV=beta yarn --cwd server betadata-quality --inclu)|code:bash (SCRAPER_ENV=beta yarn --cwd server beta:data-quality --inclu)]]
+- [[_COMMUNITY_codebash (yarn --cwd server meilirebuild-research-entities --clear)|code:bash (yarn --cwd server meili:rebuild-research-entities --clear)]]
+- [[_COMMUNITY_codebash (yarn --cwd server test srcservices__tests__visibilityRepa)|code:bash (yarn --cwd server test src/services/__tests__/visibilityRepa)]]
+- [[_COMMUNITY_codemarkdown (-   Continue Beta repair-lane closeout from `tmpylabs-la)|code:markdown (- [ ] Continue Beta repair-lane closeout from `/tmp/ylabs-la)]]
+- [[_COMMUNITY_codemarkdown (- x Completed the Beta repair-lane audit pass. Sourcedesc)|code:markdown (- [x] Completed the Beta repair-lane audit pass. Source/desc)]]
+- [[_COMMUNITY_codebash (graphify update .)|code:bash (graphify update .)]]
+- [[_COMMUNITY_codebash (git diff -- docstaskspriority-roadmap.md)|code:bash (git diff -- docs/tasks/priority-roadmap.md)]]
+- [[_COMMUNITY_codets (it('repairs source description from source-backed profile fi)|code:ts (it('repairs source description from source-backed profile fi)]]
+- [[_COMMUNITY_codets (const sourceBackedTextCandidates = (entity Recordstring, a)|code:ts (const sourceBackedTextCandidates = (entity: Record<string, a)]]
+- [[_COMMUNITY_codets (for (const candidate of sourceBackedTextCandidates(entity)) )|code:ts (for (const candidate of sourceBackedTextCandidates(entity)) )]]
+- [[_COMMUNITY_codebash (yarn --cwd server sourcehealth)|code:bash (yarn --cwd server source:health)]]
+- [[_COMMUNITY_codebash (git add serversrcservicessourceHealthService.ts serversr)|code:bash (git add server/src/services/sourceHealthService.ts server/sr)]]
+- [[_COMMUNITY_codetxt (title)|code:txt (title)]]
+- [[_COMMUNITY_codets (expect(row.facts.leadCount).toBe(0);)|code:ts (expect(row.facts.leadCount).toBe(0);)]]
+- [[_COMMUNITY_codebash (yarn --cwd server test srcscripts__tests__researchQuality)|code:bash (yarn --cwd server test src/scripts/__tests__/researchQuality)]]
+- [[_COMMUNITY_codebash (git add serversrcscriptsresearchQualitySearchReviewCore.t)|code:bash (git add server/src/scripts/researchQualitySearchReviewCore.t)]]
+- [[_COMMUNITY_codebash (yarn --cwd server test srcservices__tests__paperQualitySe)|code:bash (yarn --cwd server test src/services/__tests__/paperQualitySe)]]
+- [[_COMMUNITY_codets (const zeroActivePaperCoverageGap = counts.totalActivePapers )|code:ts (const zeroActivePaperCoverageGap = counts.totalActivePapers )]]
+- [[_COMMUNITY_codets (if (zeroActivePaperCoverageGap) {)|code:ts (if (zeroActivePaperCoverageGap) {)]]
+- [[_COMMUNITY_codets (warning zeroActivePaperCoverageGap)|code:ts (warning: zeroActivePaperCoverageGap)]]
+- [[_COMMUNITY_codebash (git add serversrcservicespaperQualityService.ts serversr)|code:bash (git add server/src/services/paperQualityService.ts server/sr)]]
+- [[_COMMUNITY_codets (expect(actions).toContain('Run bounded dry runs for warning )|code:ts (expect(actions).toContain('Run bounded dry runs for warning )]]
+- [[_COMMUNITY_codebash (yarn --cwd server test srcservices__tests__adminOperatorB)|code:bash (yarn --cwd server test src/services/__tests__/adminOperatorB)]]
+- [[_COMMUNITY_codets (gstackNextLane {)|code:ts (gstackNextLane: {)]]
+- [[_COMMUNITY_codets (expect(screen.getByText(source-conflict-reviewi)).toBeInTh)|code:ts (expect(screen.getByText(/source-conflict-review/i)).toBeInTh)]]
+- [[_COMMUNITY_codebash (yarn --cwd client testci srccomponentsadmin__tests__Adm)|code:bash (yarn --cwd client test:ci src/components/admin/__tests__/Adm)]]
+- [[_COMMUNITY_codebash (git add serversrcservicesadminOperatorBoardService.ts ser)|code:bash (git add server/src/services/adminOperatorBoardService.ts ser)]]
+- [[_COMMUNITY_codebash (git merge --no-ff gstack-source-conflict-lane)|code:bash (git merge --no-ff gstack-source-conflict-lane)]]
+- [[_COMMUNITY_codetxt (httplocalhost3000researchysm-yachiho)|code:txt (http://localhost:3000/research/ysm-yachiho)]]
+- [[_COMMUNITY_codetxt (title Ya-Chi Ho Lab  Yale Research)|code:txt (title: Ya-Chi Ho Lab | Yale Research)]]
+- [[_COMMUNITY_codetxt (2026-05-25 Added the gstack data-quality loop source confl)|code:txt (2026-05-25: Added the gstack data-quality loop: source confl)]]
+- [[_COMMUNITY_codetxt (source health - data quality - dry-run repair yield - Pla)|code:txt (source health -> data quality -> dry-run repair yield -> Pla)]]
+- [[_COMMUNITY_codebash (graphify update .)|code:bash (graphify update .)]]
+- [[_COMMUNITY_codebash (git status --short --branch)|code:bash (git status --short --branch)]]
+- [[_COMMUNITY_codetxt (You are in the gstack-search-ux-lane worktree. Implement Tas)|code:txt (You are in the gstack-search-ux-lane worktree. Implement Tas)]]
+- [[_COMMUNITY_codetxt (You are in the gstack-paper-activity-lane worktree. Implemen)|code:txt (You are in the gstack-paper-activity-lane worktree. Implemen)]]
+- [[_COMMUNITY_codetxt (You are in the gstack-operator-loop-lane worktree. Implement)|code:txt (You are in the gstack-operator-loop-lane worktree. Implement)]]
+- [[_COMMUNITY_codebash (git worktree add homequntaoz.configsuperpowersworktrees)|code:bash (git worktree add /home/quntaoz/.config/superpowers/worktrees)]]
+- [[_COMMUNITY_codebash (git worktree add homequntaoz.configsuperpowersworktrees)|code:bash (git worktree add /home/quntaoz/.config/superpowers/worktrees)]]
+- [[_COMMUNITY_codets (expect(row.queueType).toBe('conflict-review');)|code:ts (expect(row.queueType).toBe('conflict-review');)]]
+- [[_COMMUNITY_codebash (yarn --cwd server test srcservices__tests__sourceHealthSe)|code:bash (yarn --cwd server test src/services/__tests__/sourceHealthSe)]]
+- [[_COMMUNITY_codets ({)|code:ts ({)]]
+- [[_COMMUNITY_codebash (git status --short)|code:bash (git status --short)]]
+- [[_COMMUNITY_codebash (yarn devserver)|code:bash (yarn dev:server)]]
+- [[_COMMUNITY_codetxt (research)|code:txt (/research)]]
+- [[_COMMUNITY_codetxt (operator_review)|code:txt (operator_review)]]
+- [[_COMMUNITY_codebash (git add docsscraper-deployment-runbook.md docstaskspriori)|code:bash (git add docs/scraper-deployment-runbook.md docs/tasks/priori)]]
+- [[_COMMUNITY_codetxt (Promotion lane)|code:txt (Promotion lane:)]]
+- [[_COMMUNITY_codetxt (Lane A rollback drill identify backup, identify collections)|code:txt (Lane A rollback drill: identify backup, identify collections)]]
+- [[_COMMUNITY_codetxt (ysm-atoz-index)|code:txt (ysm-atoz-index)]]
+- [[_COMMUNITY_codebash (git add docsscraper-deployment-runbook.md docsresearch-dat)|code:bash (git add docs/scraper-deployment-runbook.md docs/research-dat)]]
+- [[_COMMUNITY_codebash (git diff new-foundation..prod-promo-data-repair --stat)|code:bash (git diff new-foundation..prod-promo-data-repair --stat)]]
+- [[_COMMUNITY_codebash (npx tsc --noEmit -p servertsconfig.json --pretty false)|code:bash (npx tsc --noEmit -p server/tsconfig.json --pretty false)]]
+- [[_COMMUNITY_codebash (graphify update .)|code:bash (graphify update .)]]
+- [[_COMMUNITY_codebash (git add docs server client graphify-out)|code:bash (git add docs server client graphify-out)]]
+- [[_COMMUNITY_codetxt (sourceHealthWarnings 12)|code:txt (sourceHealthWarnings: 12)]]
+- [[_COMMUNITY_codebash (yarn --cwd server test srcscripts__tests__betaDataQuality)|code:bash (yarn --cwd server test src/scripts/__tests__/betaDataQuality)]]
+- [[_COMMUNITY_codebash (git add serversrcscriptsbetaDataQualityCore.ts serversrc)|code:bash (git add server/src/scripts/betaDataQualityCore.ts server/src)]]
+- [[_COMMUNITY_codebash (rg -n meilirebuild-pathwayspathwayrelevance-reviewPATHW)|code:bash (rg -n "meili:rebuild-pathways|pathway:relevance-review|PATHW)]]
+- [[_COMMUNITY_codebash (yarn --cwd server test srcservices__tests__pathwaySearchI)|code:bash (yarn --cwd server test src/services/__tests__/pathwaySearchI)]]
+- [[_COMMUNITY_codebash (node -e require('dotenv').config({path'homequntaozylabs)|code:bash (node -e "require('dotenv').config({path:'/home/quntaoz/ylabs)]]
+- [[_COMMUNITY_codebash (git add serversrcservicespathwaySearchIndexService.ts ser)|code:bash (git add server/src/services/pathwaySearchIndexService.ts ser)]]
+- [[_COMMUNITY_codebash (grep -n 'MONGODBURLSCRAPER_ENVCONFIRM_PROD_SCRAPE' se)|code:bash (grep -n '^MONGODBURL\|^SCRAPER_ENV\|^CONFIRM_PROD_SCRAPE' se)]]
+- [[_COMMUNITY_codebash (yarn --cwd server meilirebuild-research-entities)|code:bash (yarn --cwd server meili:rebuild-research-entities)]]
+- [[_COMMUNITY_codebash (yarn --cwd server meilirebuild-pathways)|code:bash (yarn --cwd server meili:rebuild-pathways)]]
+- [[_COMMUNITY_codebash (curl -sS httplocalhost4000apiconfig tmpylabs-config)|code:bash (curl -sS http://localhost:4000/api/config >/tmp/ylabs-config)]]
+- [[_COMMUNITY_codebash (yarn --cwd server tsx -e 'import dotenv from dotenv; impor)|code:bash (yarn --cwd server tsx -e 'import dotenv from "dotenv"; impor)]]
+- [[_COMMUNITY_codebash (yarn --cwd server papersauthorship-audit --sample-limit=0)|code:bash (yarn --cwd server papers:authorship-audit --sample-limit=0)]]
+- [[_COMMUNITY_codebash (yarn --cwd server scrape run --source openalex --dry-run --o)|code:bash (yarn --cwd server scrape run --source openalex --dry-run --o)]]
+- [[_COMMUNITY_codebash (yarn --cwd server betadata-quality --include-samples --stri)|code:bash (yarn --cwd server beta:data-quality --include-samples --stri)]]
+- [[_COMMUNITY_codebash (yarn --cwd server test srcservices__tests__profileService)|code:bash (yarn --cwd server test src/services/__tests__/profileService)]]
+- [[_COMMUNITY_codebash (npx tsc --noEmit -p servertsconfig.json)|code:bash (npx tsc --noEmit -p server/tsconfig.json)]]
+- [[_COMMUNITY_codemarkdown (- x Run the Beta launch-candidate repairgate pass after t)|code:markdown (- [x] Run the Beta launch-candidate repair/gate pass after t)]]
+- [[_COMMUNITY_codemarkdown (-   Add identity-backed humanitiesprofile publication ext)|code:markdown (- [ ] Add identity-backed humanities/profile publication ext)]]
+- [[_COMMUNITY_codebash (graphify update .)|code:bash (graphify update .)]]
+- [[_COMMUNITY_codebash (git status --short)|code:bash (git status --short)]]
+- [[_COMMUNITY_codebash (yarn --cwd server student-visibilitygate --mode=dry-run --c)|code:bash (yarn --cwd server student-visibility:gate --mode=dry-run --c)]]
+- [[_COMMUNITY_codebash (yarn --cwd server launchtrust-contract --collection=all --m)|code:bash (yarn --cwd server launch:trust-contract --collection=all --m)]]
+- [[_COMMUNITY_codebash (yarn --cwd server tsx -e 'import dotenv from dotenv; impor)|code:bash (yarn --cwd server tsx -e 'import dotenv from "dotenv"; impor)]]
+- [[_COMMUNITY_codebash (yarn --cwd server betarepair-queue --collection=all --stage)|code:bash (yarn --cwd server beta:repair-queue --collection=all --stage)]]
+- [[_COMMUNITY_codebash (yarn --cwd server student-visibilitygate --mode=apply --col)|code:bash (yarn --cwd server student-visibility:gate --mode=apply --col)]]
+- [[_COMMUNITY_codebash (SCRAPER_ENV=beta yarn --cwd server launchtrust-contract --c)|code:bash (SCRAPER_ENV=beta yarn --cwd server launch:trust-contract --c)]]
+- [[_COMMUNITY_codets (it('matches Yale Medicine subspecialty profile URLs to canon)|code:ts (it('matches Yale Medicine subspecialty profile URLs to canon)]]
+- [[_COMMUNITY_codets (expect(deps.upsertResearchEntityMember).not.toHaveBeenCalled)|code:ts (expect(deps.upsertResearchEntityMember).not.toHaveBeenCalled)]]
+- [[_COMMUNITY_codebash (node - 'NODE')|code:bash (node - <<'NODE')]]
+- [[_COMMUNITY_codets (expect(deps.upsertEntryPathway).not.toHaveBeenCalled();)|code:ts (expect(deps.upsertEntryPathway).not.toHaveBeenCalled();)]]
+- [[_COMMUNITY_codets ({)|code:ts ({)]]
+- [[_COMMUNITY_codebash (yarn --cwd server test srcservices__tests__visibilityRepa)|code:bash (yarn --cwd server test src/services/__tests__/visibilityRepa)]]
+- [[_COMMUNITY_codebash (SCRAPER_ENV=beta yarn --cwd server meilirebuild-research-en)|code:bash (SCRAPER_ENV=beta yarn --cwd server meili:rebuild-research-en)]]
+- [[_COMMUNITY_codebash (SCRAPER_ENV=beta yarn --cwd server betadata-quality  tmp)|code:bash (SCRAPER_ENV=beta yarn --cwd server beta:data-quality > /tmp/)]]
+- [[_COMMUNITY_codebash (node - 'NODE')|code:bash (node - <<'NODE')]]
+- [[_COMMUNITY_codebash (graphify update .)|code:bash (graphify update .)]]
+- [[_COMMUNITY_codets (it('repairs source description from a trusted source-backed )|code:ts (it('repairs source description from a trusted source-backed )]]
+- [[_COMMUNITY_codets (const sourceEligible = sourceUrls.length  0;)|code:ts (const sourceEligible = sourceUrls.length > 0;)]]
+- [[_COMMUNITY_codets (const candidateQuality = assessResearchEntityDescriptionQual)|code:ts (const candidateQuality = assessResearchEntityDescriptionQual)]]
+- [[_COMMUNITY_codebash (yarn --cwd server test srcservices__tests__visibilityRepa)|code:bash (yarn --cwd server test src/services/__tests__/visibilityRepa)]]
+- [[_COMMUNITY_codebash (SCRAPER_ENV=beta yarn --cwd server betarepair-queue --colle)|code:bash (SCRAPER_ENV=beta yarn --cwd server beta:repair-queue --colle)]]
+- [[_COMMUNITY_codebash (yarn --cwd server test srcservices__tests__adminOperatorB)|code:bash (yarn --cwd server test src/services/__tests__/adminOperatorB)]]
+- [[_COMMUNITY_codebash (SCRAPER_ENV=beta yarn --cwd server betadata-quality --inclu)|code:bash (SCRAPER_ENV=beta yarn --cwd server beta:data-quality --inclu)]]
+- [[_COMMUNITY_codebash (SCRAPER_ENV=beta yarn --cwd server betadata-quality --inclu)|code:bash (SCRAPER_ENV=beta yarn --cwd server beta:data-quality --inclu)]]
+- [[_COMMUNITY_codebash (SCRAPER_ENV=beta yarn --cwd server betadata-quality --inclu)|code:bash (SCRAPER_ENV=beta yarn --cwd server beta:data-quality --inclu)]]
+- [[_COMMUNITY_codebash (SCRAPER_ENV=beta yarn --cwd server betadata-quality --inclu)|code:bash (SCRAPER_ENV=beta yarn --cwd server beta:data-quality --inclu)]]
+- [[_COMMUNITY_codebash (SCRAPER_ENV=beta yarn --cwd server betadata-quality --inclu)|code:bash (SCRAPER_ENV=beta yarn --cwd server beta:data-quality --inclu)]]
+- [[_COMMUNITY_codebash (SCRAPER_ENV=beta yarn --cwd server betadata-quality --inclu)|code:bash (SCRAPER_ENV=beta yarn --cwd server beta:data-quality --inclu)]]
+- [[_COMMUNITY_codebash (SCRAPER_ENV=beta yarn --cwd server betadata-quality --inclu)|code:bash (SCRAPER_ENV=beta yarn --cwd server beta:data-quality --inclu)]]
+- [[_COMMUNITY_Completed Work|Completed Work]]
+- [[_COMMUNITY_Current Stop Reason|Current Stop Reason]]
+- [[_COMMUNITY_Current Stop Reason|Current Stop Reason]]
+- [[_COMMUNITY_Next Actions|Next Actions]]
+- [[_COMMUNITY_Stop Reason|Stop Reason]]
+- [[_COMMUNITY_11. S3 WorkPlanner And Recurring Scraper Cost Controls|11. S3 WorkPlanner And Recurring Scraper Cost Controls]]
+- [[_COMMUNITY_12. S4 Beta And Staged Production Scraper Rollout|12. S4 Beta And Staged Production Scraper Rollout]]
+- [[_COMMUNITY_1. Beta Readiness|1. Beta Readiness]]
+- [[_COMMUNITY_1. Course-Credit And Formalization Cleanup|1. Course-Credit And Formalization Cleanup]]
+- [[_COMMUNITY_1. Hard-Pivot Migration|1. Hard-Pivot Migration]]
+- [[_COMMUNITY_1. M6.2 Admin Review Implementation|1. M6.2 Admin Review Implementation]]
+- [[_COMMUNITY_2. Admin And Search Gates|2. Admin And Search Gates]]
+- [[_COMMUNITY_2. Beta Seed|2. Beta Seed]]
+- [[_COMMUNITY_2. Development Data Population|2. Development Data Population]]
+- [[_COMMUNITY_2. M7.2 Physical ResearchEntity Migration Gates|2. M7.2 Physical ResearchEntity Migration Gates]]
+- [[_COMMUNITY_2. M8.2 Retire Scalar Access From Primary Explore UX|2. M8.2 Retire Scalar Access From Primary Explore UX]]
+- [[_COMMUNITY_3. Development Data Population|3. Development Data Population]]
+- [[_COMMUNITY_3. Development Verification|3. Development Verification]]
+- [[_COMMUNITY_3. M2.1 Research Cards And Detail Polish|3. M2.1 Research Cards And Detail Polish]]
+- [[_COMMUNITY_3. Production Rollout|3. Production Rollout]]
+- [[_COMMUNITY_4. Beta Seed|4. Beta Seed]]
+- [[_COMMUNITY_4. Development Verification|4. Development Verification]]
+- [[_COMMUNITY_4. M3.1 PostedOpportunity Linking And Detail Polish|4. M3.1 PostedOpportunity Linking And Detail Polish]]
+- [[_COMMUNITY_4. Post-Beta Cleanup|4. Post-Beta Cleanup]]
+- [[_COMMUNITY_5. Beta Seed|5. Beta Seed]]
+- [[_COMMUNITY_5. M9.1 Saved Pathway Hardening|5. M9.1 Saved Pathway Hardening]]
+- [[_COMMUNITY_6. M6.1 Admin Review Readiness Audit|6. M6.1 Admin Review Readiness Audit]]
+- [[_COMMUNITY_7. M7.1 Physical Rename Dry-Run Plan|7. M7.1 Physical Rename Dry-Run Plan]]
+- [[_COMMUNITY_8. S1 Scraper Inventory And Audit Harness|8. S1 Scraper Inventory And Audit Harness]]
+- [[_COMMUNITY_9. S2 Source Validation And Blockers|9. S2 Source Validation And Blockers]]
+- [[_COMMUNITY_Advising-Share And Outreach Helpers|Advising-Share And Outreach Helpers]]
+- [[_COMMUNITY_codebash (npx -y corepack@0.34.7 yarn --cwd server test)|code:bash (npx -y corepack@0.34.7 yarn --cwd server test)]]
+- [[_COMMUNITY_Completed Baseline|Completed Baseline]]
+- [[_COMMUNITY_Completed Formalization Cleanup|Completed Formalization Cleanup]]
+- [[_COMMUNITY_Current Execution Notes|Current Execution Notes]]
+- [[_COMMUNITY_Current Next Task Order|Current Next Task Order]]
+- [[_COMMUNITY_Current Starting Point|Current Starting Point]]
+- [[_COMMUNITY_Defer For Now|Defer For Now]]
+- [[_COMMUNITY_Evidence And Scraper Tasks|Evidence And Scraper Tasks]]
+- [[_COMMUNITY_Execution Order|Execution Order]]
+- [[_COMMUNITY_Final Rollout Tasks|Final Rollout Tasks]]
+- [[_COMMUNITY_M10 Final Migration Rollout And Cleanup|M10 Final Migration Rollout And Cleanup]]
+- [[_COMMUNITY_M5.2 Pathway Meilisearch SyncParityCutover|M5.2 Pathway Meilisearch Sync/Parity/Cutover]]
+- [[_COMMUNITY_P0 Stabilize The Model Foundation|P0: Stabilize The Model Foundation]]
+- [[_COMMUNITY_P0 Stabilize The Model Foundation - Static Pass Complete|P0: Stabilize The Model Foundation - Static Pass Complete]]
+- [[_COMMUNITY_P0 Stabilize The Model Foundation - Verified|P0: Stabilize The Model Foundation - Verified]]
+- [[_COMMUNITY_P1 Beta Seed Acceptance Snapshot|P1: Beta Seed Acceptance Snapshot]]
+- [[_COMMUNITY_P1 Build The First Pathways Loop|P1: Build The First Pathways Loop]]
+- [[_COMMUNITY_P2 Broaden Evidence And Opportunity Coverage|P2: Broaden Evidence And Opportunity Coverage]]
+- [[_COMMUNITY_P2 Broaden Evidence And Opportunity Coverage - Next Scraper Priority Added|P2: Broaden Evidence And Opportunity Coverage - Next Scraper Priority Added]]
+- [[_COMMUNITY_P2 Broaden Evidence And Opportunity Coverage - Static Pass Complete|P2: Broaden Evidence And Opportunity Coverage - Static Pass Complete]]
+- [[_COMMUNITY_P2 Fellowship, Course, And Contact Materialization|P2 Fellowship, Course, And Contact Materialization]]
+- [[_COMMUNITY_P3 Product Migration And Scale|P3: Product Migration And Scale]]
+- [[_COMMUNITY_Parallelization Notes|Parallelization Notes]]
+- [[_COMMUNITY_Product Migration Tasks|Product Migration Tasks]]
+- [[_COMMUNITY_Production Gate|Production Gate]]
+- [[_COMMUNITY_Ranked Outstanding Tasks|Ranked Outstanding Tasks]]
+- [[_COMMUNITY_Remaining Follow-Ups|Remaining Follow-Ups]]
+- [[_COMMUNITY_Remaining Verification And Follow-Ups|Remaining Verification And Follow-Ups]]
+- [[_COMMUNITY_S1 Scraper Inventory And Audit Harness|S1 Scraper Inventory And Audit Harness]]
+- [[_COMMUNITY_S2 Source Validation And Blockers|S2 Source Validation And Blockers]]
+- [[_COMMUNITY_S3 WorkPlanner And Recurring Scraper Cost Controls|S3 WorkPlanner And Recurring Scraper Cost Controls]]
+- [[_COMMUNITY_S4 Beta And Staged Production Scraper Rollout|S4 Beta And Staged Production Scraper Rollout]]
+- [[_COMMUNITY_Search Tasks|Search Tasks]]
+- [[_COMMUNITY_Student Workflow Tasks|Student Workflow Tasks]]
+- [[_COMMUNITY_Suggested Next Sprint|Suggested Next Sprint]]
+- [[_COMMUNITY_Temporary Yale Directory CSV SeedAudit|Temporary Yale Directory CSV Seed/Audit]]
+- [[_COMMUNITY_Verification|Verification]]
+- [[_COMMUNITY_`account`|`/account`]]
+- [[_COMMUNITY_codesh (graphify explain BrowseCard)|code:sh (graphify explain "BrowseCard")]]
+- [[_COMMUNITY_`fellowships`|`/fellowships`]]
+- [[_COMMUNITY_`pathways`|`/pathways`]]
+- [[_COMMUNITY_Playwright UX Findings 2026-05-15|Playwright UX Findings: 2026-05-15]]
+- [[_COMMUNITY_Playwright UX Findings 2026-05-15 To 2026-05-17|Playwright UX Findings: 2026-05-15 To 2026-05-17]]
+- [[_COMMUNITY_`profilenetid`|`/profile/:netid`]]
+- [[_COMMUNITY_`programs`|`/programs`]]
+- [[_COMMUNITY_11) Playwright interaction pass for `research` and `pathways` could not run in this environment|11) Playwright interaction pass for `/research` and `/pathways` could not run in this environment]]
+- [[_COMMUNITY_13) `research` showed duplicate Neuroscience concepts and undersized touch targets|13) `/research` showed duplicate Neuroscience concepts and undersized touch targets]]
+- [[_COMMUNITY_14) `research` hierarchy exposed clusters before student decisions|14) `/research` hierarchy exposed clusters before student decisions]]
+- [[_COMMUNITY_17) Shared navbarfooter chrome used undersized targets|17) Shared navbar/footer chrome used undersized targets]]
+- [[_COMMUNITY_18) ResearchPathways audit follow-up found residual overload, target-size, and wording issues|18) Research/Pathways audit follow-up found residual overload, target-size, and wording issues]]
+- [[_COMMUNITY_19) Post-remediation ResearchPathways audit pass|19) Post-remediation Research/Pathways audit pass]]
+- [[_COMMUNITY_2026-05-15 `research` UX Audit Archive|2026-05-15 `/research` UX Audit Archive]]
+- [[_COMMUNITY_2026-05-17 UX Coherence Follow-Up|2026-05-17 UX Coherence Follow-Up]]
+- [[_COMMUNITY_2026-05-17 UX Plan First-Time Clarity Pass|2026-05-17 UX Plan: First-Time Clarity Pass]]
+- [[_COMMUNITY_2026-05-22 Analytics Dashboard Decision-Readout Pass|2026-05-22 Analytics Dashboard Decision-Readout Pass]]
+- [[_COMMUNITY_2026-05-22 Hallmark Direction Merge Pass|2026-05-22 Hallmark Direction Merge Pass]]
+- [[_COMMUNITY_2026-05-22 Professor Experience Redesign Pass|2026-05-22 Professor Experience Redesign Pass]]
+- [[_COMMUNITY_2026-05-22 Research Discovery Compactness Pass|2026-05-22 Research Discovery Compactness Pass]]
+- [[_COMMUNITY_2026-05-22 Route-Wide Touch Target And Semantics Pass|2026-05-22 Route-Wide Touch Target And Semantics Pass]]
+- [[_COMMUNITY_2026-05-22 Student Experience MCP Fix Pass|2026-05-22 Student Experience MCP Fix Pass]]
+- [[_COMMUNITY_2) `pathways` debounced search can update from stale payload|2) `/pathways` debounced search can update from stale payload]]
+- [[_COMMUNITY_Commands|Commands]]
+- [[_COMMUNITY_Current Stack|Current Stack]]
+- [[_COMMUNITY_Documentation Maintenance|Documentation Maintenance]]
+- [[_COMMUNITY_Done Criteria|Done Criteria]]
+- [[_COMMUNITY_graphify|graphify]]
+- [[_COMMUNITY_Graphify Repo Memory|Graphify Repo Memory]]
+- [[_COMMUNITY_Parallel Work|Parallel Work]]
+- [[_COMMUNITY_Product North Star|Product North Star]]
+- [[_COMMUNITY_Product Surfaces|Product Surfaces]]
+- [[_COMMUNITY_Sensitive Areas|Sensitive Areas]]
+- [[_COMMUNITY_Auth Middleware|Auth Middleware]]
+- [[_COMMUNITY_Authentication Flow|Authentication Flow]]
+- [[_COMMUNITY_CI|CI]]
+- [[_COMMUNITY_`client.env`|`client/.env`]]
+- [[_COMMUNITY_codeblock2 (ylabs)|code:block2 (ylabs/)]]
+- [[_COMMUNITY_codetypescript (export const asyncHandler = (fn Function) = {)|code:typescript (export const asyncHandler = (fn: Function) => {)]]
+- [[_COMMUNITY_codetypescript (const logListingEvent = (eventType AnalyticsEventType) = {)|code:typescript (const logListingEvent = (eventType: AnalyticsEventType) => {)]]
+- [[_COMMUNITY_codeblock5 (User → Yale CAS SSO → passport.ts findOrCreateUser)|code:block5 (User → Yale CAS SSO → passport.ts findOrCreateUser)]]
+- [[_COMMUNITY_Commands|Commands]]
+- [[_COMMUNITY_Database|Database]]
+- [[_COMMUNITY_Environment Variables|Environment Variables]]
+- [[_COMMUNITY_Error Handling|Error Handling]]
+- [[_COMMUNITY_External Integrations|External Integrations]]
+- [[_COMMUNITY_Graphify Repo Memory|Graphify Repo Memory]]
+- [[_COMMUNITY_Known Technical Debt|Known Technical Debt]]
+- [[_COMMUNITY_Maintenance|Maintenance]]
+- [[_COMMUNITY_Modifying a Schema|Modifying a Schema]]
+- [[_COMMUNITY_Monorepo Structure|Monorepo Structure]]
+- [[_COMMUNITY_Naming Conventions|Naming Conventions]]
+- [[_COMMUNITY_Product Model|Product Model]]
+- [[_COMMUNITY_Rate Limiting|Rate Limiting]]
+- [[_COMMUNITY_Routes|Routes]]
+- [[_COMMUNITY_Scrapers|Scrapers]]
+- [[_COMMUNITY_Search|Search]]
+- [[_COMMUNITY_Sensitive Files|Sensitive Files]]
+- [[_COMMUNITY_Testing|Testing]]
+- [[_COMMUNITY_TypeScript Configuration|TypeScript Configuration]]
+- [[_COMMUNITY_Validation Middleware|Validation Middleware]]
+- [[_COMMUNITY_YLabs Codebase Reference|Y/Labs Codebase Reference]]
+- [[_COMMUNITY_6. Start dev servers|6. Start dev servers]]
+- [[_COMMUNITY_7. Verify setup|7. Verify setup]]
+- [[_COMMUNITY_codeblock1 (React (Vite) → Express (Passport.js) → MongoDB Atlas + Meili)|code:block1 (React (Vite) → Express (Passport.js) → MongoDB Atlas + Meili)]]
+- [[_COMMUNITY_codebash (curl httplocalhost7700health)|code:bash (curl http://localhost:7700/health)]]
+- [[_COMMUNITY_codebash (cd data-migration)|code:bash (cd data-migration)]]
+- [[_COMMUNITY_codebash (yarn devclient     Vite on port 3000)|code:bash (yarn dev:client    # Vite on port 3000)]]
+- [[_COMMUNITY_codebash (curl httplocalhost7700health)|code:bash (curl http://localhost:7700/health)]]
+- [[_COMMUNITY_codebash (which node)|code:bash (which node)]]
+- [[_COMMUNITY_codebash (yarn install)|code:bash (yarn install)]]
+- [[_COMMUNITY_codebash (npx ts-node --transpile-only script.ts)|code:bash (npx ts-node --transpile-only <script>.ts)]]
+- [[_COMMUNITY_codebash (sudo apt update)|code:bash (sudo apt update)]]
+- [[_COMMUNITY_codeblock20 (User → Yale CAS SSO → passport.ts findOrCreateUser)|code:block20 (User → Yale CAS SSO → passport.ts findOrCreateUser)]]
+- [[_COMMUNITY_codebash (cd client)|code:bash (cd client)]]
+- [[_COMMUNITY_codebash (curl -o- httpsraw.githubusercontent.comnvm-shnvmmaster)|code:bash (curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/master)]]
+- [[_COMMUNITY_codebash (nvm install 20)|code:bash (nvm install 20)]]
+- [[_COMMUNITY_codebash (yarn installall)|code:bash (yarn install:all)]]
+- [[_COMMUNITY_codebash (cp server.env.example server.env)|code:bash (cp server/.env.example server/.env)]]
+- [[_COMMUNITY_codebash ( client.env)|code:bash (# client/.env)]]
+- [[_COMMUNITY_codebash (docker pull getmeilimeilisearchlatest)|code:bash (docker pull getmeili/meilisearch:latest)]]
+- [[_COMMUNITY_Dev login bypass|Dev login bypass]]
+- [[_COMMUNITY_Environments|Environments]]
+- [[_COMMUNITY_Migration Scripts|Migration Scripts]]
+- [[_COMMUNITY_Modifying a Schema|Modifying a Schema]]
+- [[_COMMUNITY_Prerequisites|Prerequisites]]
+- [[_COMMUNITY_Project Structure|Project Structure]]
+- [[_COMMUNITY_Search|Search]]
+- [[_COMMUNITY_Tech Stack|Tech Stack]]
+- [[_COMMUNITY_Testing|Testing]]
+- [[_COMMUNITY_Troubleshooting|Troubleshooting]]
+- [[_COMMUNITY_Troubleshooting Yarn setup|Troubleshooting Yarn setup]]
+- [[_COMMUNITY_What is tested|What is tested]]
+- [[_COMMUNITY_YLabs — Developer Guide|Y/Labs — Developer Guide]]
+- [[_COMMUNITY_codebash (yarn playwrightrun screenshot httpsexample.com tmpexam)|code:bash (yarn playwright:run screenshot https://example.com /tmp/exam)]]
+- [[_COMMUNITY_Documentation|Documentation]]
+- [[_COMMUNITY_Playwright environment fix (no root required)|Playwright environment fix (no root required)]]
+- [[_COMMUNITY_Quick Start|Quick Start]]
+- [[_COMMUNITY_Tech Stack|Tech Stack]]
+- [[_COMMUNITY_YURA Research Database|YURA Research Database]]
+- [[_COMMUNITY_Commands|Commands]]
+- [[_COMMUNITY_Current Stack|Current Stack]]
+- [[_COMMUNITY_Done Criteria|Done Criteria]]
+- [[_COMMUNITY_graphify|graphify]]
+- [[_COMMUNITY_Graphify Repo Memory|Graphify Repo Memory]]
+- [[_COMMUNITY_Implementation Rules|Implementation Rules]]
+- [[_COMMUNITY_Product North Star|Product North Star]]
+- [[_COMMUNITY_Product Surfaces|Product Surfaces]]
+- [[_COMMUNITY_Rule Evolution|Rule Evolution]]
+- [[_COMMUNITY_Sensitive Areas|Sensitive Areas]]
+- [[_COMMUNITY_Architecture|Architecture]]
+- [[_COMMUNITY_Auth Middleware|Auth Middleware]]
+- [[_COMMUNITY_Authentication Flow|Authentication Flow]]
+- [[_COMMUNITY_CI|CI]]
+- [[_COMMUNITY_`client.env`|`client/.env`]]
+- [[_COMMUNITY_codeblock1 (React (Vite) → Express (Passport.js) → MongoDB Atlas + Meili)|code:block1 (React (Vite) → Express (Passport.js) → MongoDB Atlas + Meili)]]
+- [[_COMMUNITY_codetypescript (export const asyncHandler = (fn Function) = {)|code:typescript (export const asyncHandler = (fn: Function) => {)]]
+- [[_COMMUNITY_codetypescript (const logListingEvent = (eventType AnalyticsEventType) = {)|code:typescript (const logListingEvent = (eventType: AnalyticsEventType) => {)]]
+- [[_COMMUNITY_Commands|Commands]]
+- [[_COMMUNITY_Database|Database]]
+- [[_COMMUNITY_External Integrations|External Integrations]]
+- [[_COMMUNITY_Graphify Repo Memory|Graphify Repo Memory]]
+- [[_COMMUNITY_Modifying a Schema|Modifying a Schema]]
+- [[_COMMUNITY_Naming Conventions|Naming Conventions]]
+- [[_COMMUNITY_Product Model|Product Model]]
+- [[_COMMUNITY_Rate Limiting|Rate Limiting]]
+- [[_COMMUNITY_Routes|Routes]]
+- [[_COMMUNITY_Scrapers|Scrapers]]
+- [[_COMMUNITY_Sensitive Files|Sensitive Files]]
+- [[_COMMUNITY_`server.env`|`server/.env`]]
+- [[_COMMUNITY_Tech Stack|Tech Stack]]
+- [[_COMMUNITY_Testing|Testing]]
+- [[_COMMUNITY_Validation Middleware|Validation Middleware]]
+- [[_COMMUNITY_2. Install dependencies|2. Install dependencies]]
+- [[_COMMUNITY_3. Configure environment|3. Configure environment]]
+- [[_COMMUNITY_4. Start local Meilisearch|4. Start local Meilisearch]]
+- [[_COMMUNITY_5. Seed Meilisearch|5. Seed Meilisearch]]
+- [[_COMMUNITY_7. Verify setup|7. Verify setup]]
+- [[_COMMUNITY_Architecture|Architecture]]
+- [[_COMMUNITY_Auth Middleware (`serversrcmiddlewareauth.ts`)|Auth Middleware (`server/src/middleware/auth.ts`)]]
+- [[_COMMUNITY_Authentication|Authentication]]
+- [[_COMMUNITY_CI|CI]]
+- [[_COMMUNITY_codeblock1 (React (Vite) → Express (Passport.js) → MongoDB Atlas + Meili)|code:block1 (React (Vite) → Express (Passport.js) → MongoDB Atlas + Meili)]]
+- [[_COMMUNITY_codebash (curl httplocalhost7700health)|code:bash (curl http://localhost:7700/health)]]
+- [[_COMMUNITY_codebash (cd data-migration)|code:bash (cd data-migration)]]
+- [[_COMMUNITY_codebash (yarn devclient     Vite on port 3000)|code:bash (yarn dev:client    # Vite on port 3000)]]
+- [[_COMMUNITY_codebash (curl httplocalhost7700health)|code:bash (curl http://localhost:7700/health)]]
+- [[_COMMUNITY_codetxt (Usage Error Couldn't find the node_modules state file - run)|code:txt (Usage Error: Couldn't find the node_modules state file - run)]]
+- [[_COMMUNITY_codebash (which node)|code:bash (which node)]]
+- [[_COMMUNITY_codebash (nvm install 20)|code:bash (nvm install 20)]]
+- [[_COMMUNITY_codebash (yarn install)|code:bash (yarn install)]]
+- [[_COMMUNITY_codebash (sudo apt update)|code:bash (sudo apt update)]]
+- [[_COMMUNITY_codeblock20 (User → Yale CAS SSO → passport.ts findOrCreateUser)|code:block20 (User → Yale CAS SSO → passport.ts findOrCreateUser)]]
+- [[_COMMUNITY_codebash (cd client)|code:bash (cd client)]]
+- [[_COMMUNITY_codebash (nvm install 20)|code:bash (nvm install 20)]]
+- [[_COMMUNITY_codebash (corepack enable)|code:bash (corepack enable)]]
+- [[_COMMUNITY_codebash (yarn installall)|code:bash (yarn install:all)]]
+- [[_COMMUNITY_codebash (cp server.env.example server.env)|code:bash (cp server/.env.example server/.env)]]
+- [[_COMMUNITY_codebash ( client.env)|code:bash (# client/.env)]]
+- [[_COMMUNITY_Dev login bypass|Dev login bypass]]
+- [[_COMMUNITY_Environments|Environments]]
+- [[_COMMUNITY_Migration Scripts|Migration Scripts]]
+- [[_COMMUNITY_Modifying a Schema|Modifying a Schema]]
+- [[_COMMUNITY_New API Endpoint|New API Endpoint]]
+- [[_COMMUNITY_New Page|New Page]]
+- [[_COMMUNITY_Prerequisites|Prerequisites]]
+- [[_COMMUNITY_Project Structure|Project Structure]]
+- [[_COMMUNITY_Running tests|Running tests]]
+- [[_COMMUNITY_Search|Search]]
+- [[_COMMUNITY_Tech Stack|Tech Stack]]
+- [[_COMMUNITY_Testing|Testing]]
+- [[_COMMUNITY_Troubleshooting|Troubleshooting]]
+- [[_COMMUNITY_Troubleshooting Yarn setup|Troubleshooting Yarn setup]]
+- [[_COMMUNITY_What is tested|What is tested]]
+- [[_COMMUNITY_What Is This|What Is This?]]
+- [[_COMMUNITY_YLabs — Developer Guide|Y/Labs — Developer Guide]]
+- [[_COMMUNITY_codebash (corepack enable)|code:bash (corepack enable)]]
+- [[_COMMUNITY_codebash (yarn playwrightrun screenshot httpsexample.com tmpexam)|code:bash (yarn playwright:run screenshot https://example.com /tmp/exam)]]
+- [[_COMMUNITY_Documentation|Documentation]]
+- [[_COMMUNITY_Playwright environment fix (no root required)|Playwright environment fix (no root required)]]
+- [[_COMMUNITY_Quick Start|Quick Start]]
+- [[_COMMUNITY_Tech Stack|Tech Stack]]
+- [[_COMMUNITY_Commands|Commands]]
+- [[_COMMUNITY_Core Modeling Direction|Core Modeling Direction]]
+- [[_COMMUNITY_Default Task Loop|Default Task Loop]]
+- [[_COMMUNITY_Done Criteria|Done Criteria]]
+- [[_COMMUNITY_graphify|graphify]]
+- [[_COMMUNITY_Graphify Repo Memory|Graphify Repo Memory]]
+- [[_COMMUNITY_Implementation Rules|Implementation Rules]]
+- [[_COMMUNITY_Parallel Work|Parallel Work]]
+- [[_COMMUNITY_Product North Star|Product North Star]]
+- [[_COMMUNITY_Rule Evolution|Rule Evolution]]
+- [[_COMMUNITY_Adding a New Page|Adding a New Page]]
+- [[_COMMUNITY_Analytics Interception|Analytics Interception]]
+- [[_COMMUNITY_Architecture|Architecture]]
+- [[_COMMUNITY_Auth Middleware|Auth Middleware]]
+- [[_COMMUNITY_Authentication Flow|Authentication Flow]]
+- [[_COMMUNITY_CI|CI]]
+- [[_COMMUNITY_`client.env`|`client/.env`]]
+- [[_COMMUNITY_codeblock1 (React (Vite) → Express (Passport.js) → MongoDB Atlas + Meili)|code:block1 (React (Vite) → Express (Passport.js) → MongoDB Atlas + Meili)]]
+- [[_COMMUNITY_codetypescript (export const asyncHandler = (fn Function) = {)|code:typescript (export const asyncHandler = (fn: Function) => {)]]
+- [[_COMMUNITY_Commands|Commands]]
+- [[_COMMUNITY_Environment Variables|Environment Variables]]
+- [[_COMMUNITY_Environments|Environments]]
+- [[_COMMUNITY_Error Handling|Error Handling]]
+- [[_COMMUNITY_External Integrations|External Integrations]]
+- [[_COMMUNITY_Graphify Repo Memory|Graphify Repo Memory]]
+- [[_COMMUNITY_Known Technical Debt|Known Technical Debt]]
+- [[_COMMUNITY_Maintenance|Maintenance]]
+- [[_COMMUNITY_Monorepo Structure|Monorepo Structure]]
+- [[_COMMUNITY_Naming Conventions|Naming Conventions]]
+- [[_COMMUNITY_Product Model|Product Model]]
+- [[_COMMUNITY_Routes|Routes]]
+- [[_COMMUNITY_Search|Search]]
+- [[_COMMUNITY_Tech Stack|Tech Stack]]
+- [[_COMMUNITY_Testing|Testing]]
+- [[_COMMUNITY_TypeScript Configuration|TypeScript Configuration]]
+- [[_COMMUNITY_YLabs Codebase Reference|Y/Labs Codebase Reference]]
+- [[_COMMUNITY_2. Install dependencies|2. Install dependencies]]
+- [[_COMMUNITY_3. Configure environment|3. Configure environment]]
+- [[_COMMUNITY_4. Start local Meilisearch|4. Start local Meilisearch]]
+- [[_COMMUNITY_6. Start dev servers|6. Start dev servers]]
+- [[_COMMUNITY_7. Verify setup|7. Verify setup]]
+- [[_COMMUNITY_API Routes|API Routes]]
+- [[_COMMUNITY_Architecture|Architecture]]
+- [[_COMMUNITY_Auth Middleware (`serversrcmiddlewareauth.ts`)|Auth Middleware (`server/src/middleware/auth.ts`)]]
+- [[_COMMUNITY_Authentication|Authentication]]
+- [[_COMMUNITY_CI|CI]]
+- [[_COMMUNITY_codebash (curl httplocalhost7700health)|code:bash (curl http://localhost:7700/health)]]
+- [[_COMMUNITY_codebash (cd data-migration)|code:bash (cd data-migration)]]
+- [[_COMMUNITY_codebash (yarn devclient     Vite on port 3000)|code:bash (yarn dev:client    # Vite on port 3000)]]
+- [[_COMMUNITY_codebash (curl httplocalhost7700health)|code:bash (curl http://localhost:7700/health)]]
+- [[_COMMUNITY_codetxt (Usage Error Couldn't find the node_modules state file - run)|code:txt (Usage Error: Couldn't find the node_modules state file - run)]]
+- [[_COMMUNITY_codebash (nvm install 20)|code:bash (nvm install 20)]]
+- [[_COMMUNITY_codebash (yarn install)|code:bash (yarn install)]]
+- [[_COMMUNITY_codebash (npx ts-node --transpile-only script.ts)|code:bash (npx ts-node --transpile-only <script>.ts)]]
+- [[_COMMUNITY_codeblock19 (ylabs)|code:block19 (ylabs/)]]
+- [[_COMMUNITY_codeblock20 (User → Yale CAS SSO → passport.ts findOrCreateUser)|code:block20 (User → Yale CAS SSO → passport.ts findOrCreateUser)]]
+- [[_COMMUNITY_codebash (cd client)|code:bash (cd client)]]
+- [[_COMMUNITY_codebash (curl -o- httpsraw.githubusercontent.comnvm-shnvmmaster)|code:bash (curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/master)]]
+- [[_COMMUNITY_codebash (nvm install 20)|code:bash (nvm install 20)]]
+- [[_COMMUNITY_codebash (yarn installall)|code:bash (yarn install:all)]]
+- [[_COMMUNITY_codebash (cp server.env.example server.env)|code:bash (cp server/.env.example server/.env)]]
+- [[_COMMUNITY_codebash (docker pull getmeilimeilisearchlatest)|code:bash (docker pull getmeili/meilisearch:latest)]]
+- [[_COMMUNITY_Common Commands|Common Commands]]
+- [[_COMMUNITY_Dev login bypass|Dev login bypass]]
+- [[_COMMUNITY_Environments|Environments]]
+- [[_COMMUNITY_Local Development Setup|Local Development Setup]]
+- [[_COMMUNITY_Migration Scripts|Migration Scripts]]
+- [[_COMMUNITY_New API Endpoint|New API Endpoint]]
+- [[_COMMUNITY_New Page|New Page]]
+- [[_COMMUNITY_Running tests|Running tests]]
+- [[_COMMUNITY_Search|Search]]
+- [[_COMMUNITY_Testing|Testing]]
+- [[_COMMUNITY_Troubleshooting Yarn setup|Troubleshooting Yarn setup]]
+- [[_COMMUNITY_What Is This|What Is This?]]
+- [[_COMMUNITY_codebash (corepack enable)|code:bash (corepack enable)]]
+- [[_COMMUNITY_codebash ( Terminal 1)|code:bash (# Terminal 1)]]
+- [[_COMMUNITY_codebash (yarn playwrightrun screenshot httpsexample.com tmpexam)|code:bash (yarn playwright:run screenshot https://example.com /tmp/exam)]]
+- [[_COMMUNITY_Documentation|Documentation]]
+- [[_COMMUNITY_Playwright environment fix (no root required)|Playwright environment fix (no root required)]]
+- [[_COMMUNITY_Tech Stack|Tech Stack]]
+- [[_COMMUNITY_YURA Research Database|YURA Research Database]]
+- [[_COMMUNITY_Legacy CSV-to-JSON update script retired.  Department ground truth no longer com|Legacy CSV-to-JSON update script retired.  Department ground truth no longer com]]
+- [[_COMMUNITY_Commands|Commands]]
+- [[_COMMUNITY_Core Modeling Direction|Core Modeling Direction]]
+- [[_COMMUNITY_Current Stack|Current Stack]]
+- [[_COMMUNITY_Default Task Loop|Default Task Loop]]
+- [[_COMMUNITY_Documentation Maintenance|Documentation Maintenance]]
+- [[_COMMUNITY_graphify|graphify]]
+- [[_COMMUNITY_Graphify Repo Memory|Graphify Repo Memory]]
+- [[_COMMUNITY_Implementation Rules|Implementation Rules]]
+- [[_COMMUNITY_Parallel Work|Parallel Work]]
+- [[_COMMUNITY_Product North Star|Product North Star]]
+- [[_COMMUNITY_Product Surfaces|Product Surfaces]]
+- [[_COMMUNITY_Sensitive Areas|Sensitive Areas]]
+- [[_COMMUNITY_Adding a New Page|Adding a New Page]]
+- [[_COMMUNITY_Analytics Interception|Analytics Interception]]
+- [[_COMMUNITY_Architecture|Architecture]]
+- [[_COMMUNITY_Auth Middleware|Auth Middleware]]
+- [[_COMMUNITY_CI|CI]]
+- [[_COMMUNITY_`client.env`|`client/.env`]]
+- [[_COMMUNITY_codeblock1 (React (Vite) → Express (Passport.js) → MongoDB Atlas + Meili)|code:block1 (React (Vite) → Express (Passport.js) → MongoDB Atlas + Meili)]]
+- [[_COMMUNITY_codeblock2 (ylabs)|code:block2 (ylabs/)]]
+- [[_COMMUNITY_codeblock5 (User → Yale CAS SSO → passport.ts findOrCreateUser)|code:block5 (User → Yale CAS SSO → passport.ts findOrCreateUser)]]
+- [[_COMMUNITY_Commands|Commands]]
+- [[_COMMUNITY_Database|Database]]
+- [[_COMMUNITY_Environment Variables|Environment Variables]]
+- [[_COMMUNITY_Environments|Environments]]
+- [[_COMMUNITY_Known Technical Debt|Known Technical Debt]]
+- [[_COMMUNITY_Maintenance|Maintenance]]
+- [[_COMMUNITY_Modifying a Schema|Modifying a Schema]]
+- [[_COMMUNITY_Monorepo Structure|Monorepo Structure]]
+- [[_COMMUNITY_Product Model|Product Model]]
+- [[_COMMUNITY_Rate Limiting|Rate Limiting]]
+- [[_COMMUNITY_Routes|Routes]]
+- [[_COMMUNITY_Search|Search]]
+- [[_COMMUNITY_Sensitive Files|Sensitive Files]]
+- [[_COMMUNITY_`server.env`|`server/.env`]]
+- [[_COMMUNITY_Tech Stack|Tech Stack]]
+- [[_COMMUNITY_Testing|Testing]]
+- [[_COMMUNITY_TypeScript Configuration|TypeScript Configuration]]
+- [[_COMMUNITY_Validation Middleware|Validation Middleware]]
+- [[_COMMUNITY_5. Seed Meilisearch|5. Seed Meilisearch]]
+- [[_COMMUNITY_6. Start dev servers|6. Start dev servers]]
+- [[_COMMUNITY_Authentication|Authentication]]
+- [[_COMMUNITY_codeblock1 (React (Vite) → Express (Passport.js) → MongoDB Atlas + Meili)|code:block1 (React (Vite) → Express (Passport.js) → MongoDB Atlas + Meili)]]
+- [[_COMMUNITY_codebash (cd data-migration)|code:bash (cd data-migration)]]
+- [[_COMMUNITY_codebash (curl httplocalhost7700health)|code:bash (curl http://localhost:7700/health)]]
+- [[_COMMUNITY_codebash (nvm install 20)|code:bash (nvm install 20)]]
+- [[_COMMUNITY_codebash (yarn install)|code:bash (yarn install)]]
+- [[_COMMUNITY_codeblock19 (ylabs)|code:block19 (ylabs/)]]
+- [[_COMMUNITY_codebash (sudo apt update)|code:bash (sudo apt update)]]
+- [[_COMMUNITY_codebash (cd client)|code:bash (cd client)]]
+- [[_COMMUNITY_codebash (curl -o- httpsraw.githubusercontent.comnvm-shnvmmaster)|code:bash (curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/master)]]
+- [[_COMMUNITY_codebash (corepack enable)|code:bash (corepack enable)]]
+- [[_COMMUNITY_codebash ( client.env)|code:bash (# client/.env)]]
+- [[_COMMUNITY_codebash (docker pull getmeilimeilisearchlatest)|code:bash (docker pull getmeili/meilisearch:latest)]]
+- [[_COMMUNITY_Common Commands|Common Commands]]
+- [[_COMMUNITY_Dev login bypass|Dev login bypass]]
+- [[_COMMUNITY_Environments|Environments]]
+- [[_COMMUNITY_Local Development Setup|Local Development Setup]]
+- [[_COMMUNITY_Migration Scripts|Migration Scripts]]
+- [[_COMMUNITY_New API Endpoint|New API Endpoint]]
+- [[_COMMUNITY_New Page|New Page]]
+- [[_COMMUNITY_Prerequisites|Prerequisites]]
+- [[_COMMUNITY_Project Structure|Project Structure]]
+- [[_COMMUNITY_Running tests|Running tests]]
+- [[_COMMUNITY_Tech Stack|Tech Stack]]
+- [[_COMMUNITY_Testing|Testing]]
+- [[_COMMUNITY_Troubleshooting|Troubleshooting]]
+- [[_COMMUNITY_Troubleshooting Yarn setup|Troubleshooting Yarn setup]]
+- [[_COMMUNITY_What is tested|What is tested]]
+- [[_COMMUNITY_YLabs — Developer Guide|Y/Labs — Developer Guide]]
+- [[_COMMUNITY_codebash (corepack enable)|code:bash (corepack enable)]]
+- [[_COMMUNITY_codebash ( Terminal 1)|code:bash (# Terminal 1)]]
+- [[_COMMUNITY_codebash (yarn playwrightrun screenshot httpsexample.com tmpexam)|code:bash (yarn playwright:run screenshot https://example.com /tmp/exam)]]
+- [[_COMMUNITY_Playwright environment fix (no root required)|Playwright environment fix (no root required)]]
+- [[_COMMUNITY_Quick Start|Quick Start]]
+- [[_COMMUNITY_YURA Research Database|YURA Research Database]]
+- [[_COMMUNITY_Commands|Commands]]
+- [[_COMMUNITY_Core Modeling Direction|Core Modeling Direction]]
+- [[_COMMUNITY_Current Stack|Current Stack]]
+- [[_COMMUNITY_Default Task Loop|Default Task Loop]]
+- [[_COMMUNITY_Documentation Maintenance|Documentation Maintenance]]
+- [[_COMMUNITY_Done Criteria|Done Criteria]]
+- [[_COMMUNITY_graphify|graphify]]
+- [[_COMMUNITY_Implementation Rules|Implementation Rules]]
+- [[_COMMUNITY_Product North Star|Product North Star]]
+- [[_COMMUNITY_Product Surfaces|Product Surfaces]]
+- [[_COMMUNITY_Rule Evolution|Rule Evolution]]
+- [[_COMMUNITY_Sensitive Areas|Sensitive Areas]]
+- [[_COMMUNITY_Adding a New Page|Adding a New Page]]
+- [[_COMMUNITY_Analytics Interception|Analytics Interception]]
+- [[_COMMUNITY_Architecture|Architecture]]
+- [[_COMMUNITY_Auth Middleware|Auth Middleware]]
+- [[_COMMUNITY_Authentication Flow|Authentication Flow]]
+- [[_COMMUNITY_CI|CI]]
+- [[_COMMUNITY_`client.env`|`client/.env`]]
+- [[_COMMUNITY_codeblock1 (React (Vite) → Express (Passport.js) → MongoDB Atlas + Meili)|code:block1 (React (Vite) → Express (Passport.js) → MongoDB Atlas + Meili)]]
+- [[_COMMUNITY_codeblock2 (ylabs)|code:block2 (ylabs/)]]
+- [[_COMMUNITY_codetypescript (export const asyncHandler = (fn Function) = {)|code:typescript (export const asyncHandler = (fn: Function) => {)]]
+- [[_COMMUNITY_codetypescript (const logListingEvent = (eventType AnalyticsEventType) = {)|code:typescript (const logListingEvent = (eventType: AnalyticsEventType) => {)]]
+- [[_COMMUNITY_codeblock5 (User → Yale CAS SSO → passport.ts findOrCreateUser)|code:block5 (User → Yale CAS SSO → passport.ts findOrCreateUser)]]
+- [[_COMMUNITY_Commands|Commands]]
+- [[_COMMUNITY_Environment Variables|Environment Variables]]
+- [[_COMMUNITY_Environments|Environments]]
+- [[_COMMUNITY_Error Handling|Error Handling]]
+- [[_COMMUNITY_External Integrations|External Integrations]]
+- [[_COMMUNITY_Graphify Repo Memory|Graphify Repo Memory]]
+- [[_COMMUNITY_Known Technical Debt|Known Technical Debt]]
+- [[_COMMUNITY_Modifying a Schema|Modifying a Schema]]
+- [[_COMMUNITY_Naming Conventions|Naming Conventions]]
+- [[_COMMUNITY_Scrapers|Scrapers]]
+- [[_COMMUNITY_Search|Search]]
+- [[_COMMUNITY_`server.env`|`server/.env`]]
+- [[_COMMUNITY_TypeScript Configuration|TypeScript Configuration]]
+- [[_COMMUNITY_Validation Middleware|Validation Middleware]]
+- [[_COMMUNITY_YLabs Codebase Reference|Y/Labs Codebase Reference]]
+- [[_COMMUNITY_4. Start local Meilisearch|4. Start local Meilisearch]]
+- [[_COMMUNITY_5. Seed Meilisearch|5. Seed Meilisearch]]
+- [[_COMMUNITY_6. Start dev servers|6. Start dev servers]]
+- [[_COMMUNITY_7. Verify setup|7. Verify setup]]
+- [[_COMMUNITY_API Routes|API Routes]]
+- [[_COMMUNITY_Architecture|Architecture]]
+- [[_COMMUNITY_Auth Middleware (`serversrcmiddlewareauth.ts`)|Auth Middleware (`server/src/middleware/auth.ts`)]]
+- [[_COMMUNITY_Authentication|Authentication]]
+- [[_COMMUNITY_CI|CI]]
+- [[_COMMUNITY_codeblock1 (React (Vite) → Express (Passport.js) → MongoDB Atlas + Meili)|code:block1 (React (Vite) → Express (Passport.js) → MongoDB Atlas + Meili)]]
+- [[_COMMUNITY_codebash (curl httplocalhost7700health)|code:bash (curl http://localhost:7700/health)]]
+- [[_COMMUNITY_codebash (cd data-migration)|code:bash (cd data-migration)]]
+- [[_COMMUNITY_codebash (yarn devclient     Vite on port 3000)|code:bash (yarn dev:client    # Vite on port 3000)]]
+- [[_COMMUNITY_codebash (which node)|code:bash (which node)]]
+- [[_COMMUNITY_codebash (nvm install 20)|code:bash (nvm install 20)]]
+- [[_COMMUNITY_codebash (yarn install)|code:bash (yarn install)]]
+- [[_COMMUNITY_codebash (npx ts-node --transpile-only script.ts)|code:bash (npx ts-node --transpile-only <script>.ts)]]
+- [[_COMMUNITY_codeblock19 (ylabs)|code:block19 (ylabs/)]]
+- [[_COMMUNITY_codebash (sudo apt update)|code:bash (sudo apt update)]]
+- [[_COMMUNITY_codeblock20 (User → Yale CAS SSO → passport.ts findOrCreateUser)|code:block20 (User → Yale CAS SSO → passport.ts findOrCreateUser)]]
+- [[_COMMUNITY_codebash (curl -o- httpsraw.githubusercontent.comnvm-shnvmmaster)|code:bash (curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/master)]]
+- [[_COMMUNITY_codebash (nvm install 20)|code:bash (nvm install 20)]]
+- [[_COMMUNITY_codebash (corepack enable)|code:bash (corepack enable)]]
+- [[_COMMUNITY_codebash (yarn installall)|code:bash (yarn install:all)]]
+- [[_COMMUNITY_codebash (cp server.env.example server.env)|code:bash (cp server/.env.example server/.env)]]
+- [[_COMMUNITY_codebash ( client.env)|code:bash (# client/.env)]]
+- [[_COMMUNITY_codebash (docker pull getmeilimeilisearchlatest)|code:bash (docker pull getmeili/meilisearch:latest)]]
+- [[_COMMUNITY_Common Commands|Common Commands]]
+- [[_COMMUNITY_Dev login bypass|Dev login bypass]]
+- [[_COMMUNITY_Local Development Setup|Local Development Setup]]
+- [[_COMMUNITY_Modifying a Schema|Modifying a Schema]]
+- [[_COMMUNITY_New API Endpoint|New API Endpoint]]
+- [[_COMMUNITY_New Page|New Page]]
+- [[_COMMUNITY_Prerequisites|Prerequisites]]
+- [[_COMMUNITY_Running tests|Running tests]]
+- [[_COMMUNITY_Search|Search]]
+- [[_COMMUNITY_Tech Stack|Tech Stack]]
+- [[_COMMUNITY_Troubleshooting|Troubleshooting]]
+- [[_COMMUNITY_What Is This|What Is This?]]
+- [[_COMMUNITY_YLabs — Developer Guide|Y/Labs — Developer Guide]]
+- [[_COMMUNITY_codebash (corepack enable)|code:bash (corepack enable)]]
+- [[_COMMUNITY_codebash ( Terminal 1)|code:bash (# Terminal 1)]]
+- [[_COMMUNITY_codebash (yarn playwrightrun screenshot httpsexample.com tmpexam)|code:bash (yarn playwright:run screenshot https://example.com /tmp/exam)]]
+- [[_COMMUNITY_Documentation|Documentation]]
+- [[_COMMUNITY_Playwright environment fix (no root required)|Playwright environment fix (no root required)]]
+- [[_COMMUNITY_Quick Start|Quick Start]]
+- [[_COMMUNITY_Tech Stack|Tech Stack]]
+- [[_COMMUNITY_YURA Research Database|YURA Research Database]]
+- [[_COMMUNITY_Legacy CSV-to-JSON update script retired.  Department ground truth no longer com|Legacy CSV-to-JSON update script retired.  Department ground truth no longer com]]
+- [[_COMMUNITY_Current Stack|Current Stack]]
+- [[_COMMUNITY_Default Task Loop|Default Task Loop]]
+- [[_COMMUNITY_Documentation Maintenance|Documentation Maintenance]]
+- [[_COMMUNITY_Done Criteria|Done Criteria]]
+- [[_COMMUNITY_Graphify Repo Memory|Graphify Repo Memory]]
+- [[_COMMUNITY_Implementation Rules|Implementation Rules]]
+- [[_COMMUNITY_Parallel Work|Parallel Work]]
+- [[_COMMUNITY_Product North Star|Product North Star]]
+- [[_COMMUNITY_Rule Evolution|Rule Evolution]]
+- [[_COMMUNITY_Sensitive Areas|Sensitive Areas]]
+- [[_COMMUNITY_Adding a New Page|Adding a New Page]]
+- [[_COMMUNITY_Analytics Interception|Analytics Interception]]
+- [[_COMMUNITY_Architecture|Architecture]]
+- [[_COMMUNITY_Auth Middleware|Auth Middleware]]
+- [[_COMMUNITY_Authentication Flow|Authentication Flow]]
+- [[_COMMUNITY_CI|CI]]
+- [[_COMMUNITY_`client.env`|`client/.env`]]
+- [[_COMMUNITY_codeblock2 (ylabs)|code:block2 (ylabs/)]]
+- [[_COMMUNITY_codetypescript (export const asyncHandler = (fn Function) = {)|code:typescript (export const asyncHandler = (fn: Function) => {)]]
+- [[_COMMUNITY_codetypescript (const logListingEvent = (eventType AnalyticsEventType) = {)|code:typescript (const logListingEvent = (eventType: AnalyticsEventType) => {)]]
+- [[_COMMUNITY_codeblock5 (User → Yale CAS SSO → passport.ts findOrCreateUser)|code:block5 (User → Yale CAS SSO → passport.ts findOrCreateUser)]]
+- [[_COMMUNITY_Commands|Commands]]
+- [[_COMMUNITY_Database|Database]]
+- [[_COMMUNITY_Environment Variables|Environment Variables]]
+- [[_COMMUNITY_Environments|Environments]]
+- [[_COMMUNITY_Error Handling|Error Handling]]
+- [[_COMMUNITY_External Integrations|External Integrations]]
+- [[_COMMUNITY_Graphify Repo Memory|Graphify Repo Memory]]
+- [[_COMMUNITY_Known Technical Debt|Known Technical Debt]]
+- [[_COMMUNITY_Maintenance|Maintenance]]
+- [[_COMMUNITY_Modifying a Schema|Modifying a Schema]]
+- [[_COMMUNITY_Monorepo Structure|Monorepo Structure]]
+- [[_COMMUNITY_Naming Conventions|Naming Conventions]]
+- [[_COMMUNITY_Product Model|Product Model]]
+- [[_COMMUNITY_Rate Limiting|Rate Limiting]]
+- [[_COMMUNITY_Routes|Routes]]
+- [[_COMMUNITY_Scrapers|Scrapers]]
+- [[_COMMUNITY_Search|Search]]
+- [[_COMMUNITY_Sensitive Files|Sensitive Files]]
+- [[_COMMUNITY_`server.env`|`server/.env`]]
+- [[_COMMUNITY_Tech Stack|Tech Stack]]
+- [[_COMMUNITY_TypeScript Configuration|TypeScript Configuration]]
+- [[_COMMUNITY_Validation Middleware|Validation Middleware]]
+- [[_COMMUNITY_YLabs Codebase Reference|Y/Labs Codebase Reference]]
+- [[_COMMUNITY_5. Seed Meilisearch|5. Seed Meilisearch]]
+- [[_COMMUNITY_6. Start dev servers|6. Start dev servers]]
+- [[_COMMUNITY_7. Verify setup|7. Verify setup]]
+- [[_COMMUNITY_codeblock1 (React (Vite) → Express (Passport.js) → MongoDB Atlas + Meili)|code:block1 (React (Vite) → Express (Passport.js) → MongoDB Atlas + Meili)]]
+- [[_COMMUNITY_codebash (yarn devclient     Vite on port 3000)|code:bash (yarn dev:client    # Vite on port 3000)]]
+- [[_COMMUNITY_codebash (curl httplocalhost7700health)|code:bash (curl http://localhost:7700/health)]]
+- [[_COMMUNITY_codebash (which node)|code:bash (which node)]]
+- [[_COMMUNITY_codebash (nvm install 20)|code:bash (nvm install 20)]]
+- [[_COMMUNITY_codebash (yarn install)|code:bash (yarn install)]]
+- [[_COMMUNITY_codeblock19 (ylabs)|code:block19 (ylabs/)]]
+- [[_COMMUNITY_codebash (sudo apt update)|code:bash (sudo apt update)]]
+- [[_COMMUNITY_codeblock20 (User → Yale CAS SSO → passport.ts findOrCreateUser)|code:block20 (User → Yale CAS SSO → passport.ts findOrCreateUser)]]
+- [[_COMMUNITY_codebash (curl -o- httpsraw.githubusercontent.comnvm-shnvmmaster)|code:bash (curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/master)]]
+- [[_COMMUNITY_codebash (nvm install 20)|code:bash (nvm install 20)]]
+- [[_COMMUNITY_codebash (corepack enable)|code:bash (corepack enable)]]
+- [[_COMMUNITY_codebash (cp server.env.example server.env)|code:bash (cp server/.env.example server/.env)]]
+- [[_COMMUNITY_codebash (docker pull getmeilimeilisearchlatest)|code:bash (docker pull getmeili/meilisearch:latest)]]
+- [[_COMMUNITY_Dev login bypass|Dev login bypass]]
+- [[_COMMUNITY_Local Development Setup|Local Development Setup]]
+- [[_COMMUNITY_Migration Scripts|Migration Scripts]]
+- [[_COMMUNITY_Modifying a Schema|Modifying a Schema]]
+- [[_COMMUNITY_New API Endpoint|New API Endpoint]]
+- [[_COMMUNITY_Prerequisites|Prerequisites]]
+- [[_COMMUNITY_Project Structure|Project Structure]]
+- [[_COMMUNITY_Running tests|Running tests]]
+- [[_COMMUNITY_Search|Search]]
+- [[_COMMUNITY_Troubleshooting|Troubleshooting]]
+- [[_COMMUNITY_Troubleshooting Yarn setup|Troubleshooting Yarn setup]]
+- [[_COMMUNITY_What is tested|What is tested]]
+- [[_COMMUNITY_What Is This|What Is This?]]
+- [[_COMMUNITY_YLabs — Developer Guide|Y/Labs — Developer Guide]]
+- [[_COMMUNITY_Documentation|Documentation]]
+- [[_COMMUNITY_Playwright environment fix (no root required)|Playwright environment fix (no root required)]]
+- [[_COMMUNITY_Quick Start|Quick Start]]
+- [[_COMMUNITY_Tech Stack|Tech Stack]]
+- [[_COMMUNITY_YURA Research Database|YURA Research Database]]
+- [[_COMMUNITY_Legacy CSV-to-JSON update script retired.  Department ground truth no longer com|Legacy CSV-to-JSON update script retired.  Department ground truth no longer com]]
+- [[_COMMUNITY_Commands|Commands]]
+- [[_COMMUNITY_Core Modeling Direction|Core Modeling Direction]]
+- [[_COMMUNITY_Default Task Loop|Default Task Loop]]
+- [[_COMMUNITY_Documentation Maintenance|Documentation Maintenance]]
+- [[_COMMUNITY_Done Criteria|Done Criteria]]
+- [[_COMMUNITY_graphify|graphify]]
+- [[_COMMUNITY_Graphify Repo Memory|Graphify Repo Memory]]
+- [[_COMMUNITY_Implementation Rules|Implementation Rules]]
+- [[_COMMUNITY_Parallel Work|Parallel Work]]
+- [[_COMMUNITY_Product North Star|Product North Star]]
+- [[_COMMUNITY_Product Surfaces|Product Surfaces]]
+- [[_COMMUNITY_Rule Evolution|Rule Evolution]]
+- [[_COMMUNITY_Analytics Interception|Analytics Interception]]
+- [[_COMMUNITY_Architecture|Architecture]]
+- [[_COMMUNITY_codeblock1 (React (Vite) → Express (Passport.js) → MongoDB Atlas + Meili)|code:block1 (React (Vite) → Express (Passport.js) → MongoDB Atlas + Meili)]]
+- [[_COMMUNITY_codeblock2 (yale-research)|code:block2 (yale-research/)]]
+- [[_COMMUNITY_codetypescript (const logListingEvent = (eventType AnalyticsEventType) = {)|code:typescript (const logListingEvent = (eventType: AnalyticsEventType) => {)]]
+- [[_COMMUNITY_codeblock5 (User → Yale CAS SSO → passport.ts findOrCreateUser)|code:block5 (User → Yale CAS SSO → passport.ts findOrCreateUser)]]
+- [[_COMMUNITY_Database|Database]]
+- [[_COMMUNITY_Environment Variables|Environment Variables]]
+- [[_COMMUNITY_Environments|Environments]]
+- [[_COMMUNITY_Error Handling|Error Handling]]
+- [[_COMMUNITY_External Integrations|External Integrations]]
+- [[_COMMUNITY_Key Services|Key Services]]
+- [[_COMMUNITY_Known Technical Debt|Known Technical Debt]]
+- [[_COMMUNITY_Maintenance|Maintenance]]
+- [[_COMMUNITY_Modifying a Schema|Modifying a Schema]]
+- [[_COMMUNITY_Monorepo Structure|Monorepo Structure]]
+- [[_COMMUNITY_Naming Conventions|Naming Conventions]]
+- [[_COMMUNITY_Rate Limiting|Rate Limiting]]
+- [[_COMMUNITY_Routes|Routes]]
+- [[_COMMUNITY_Scrapers|Scrapers]]
+- [[_COMMUNITY_Security Middleware|Security Middleware]]
+- [[_COMMUNITY_Sensitive Files|Sensitive Files]]
+- [[_COMMUNITY_`server.env`|`server/.env`]]
+- [[_COMMUNITY_Tech Stack|Tech Stack]]
+- [[_COMMUNITY_Testing|Testing]]
+- [[_COMMUNITY_Validation Middleware|Validation Middleware]]
+- [[_COMMUNITY_YLabs Codebase Reference|Y/Labs Codebase Reference]]
+- [[_COMMUNITY_Yale Research Codebase Reference|Yale Research Codebase Reference]]
+- [[_COMMUNITY_3. Configure environment|3. Configure environment]]
+- [[_COMMUNITY_4. Start local Meilisearch|4. Start local Meilisearch]]
+- [[_COMMUNITY_5. Seed Meilisearch|5. Seed Meilisearch]]
+- [[_COMMUNITY_6. Start dev servers|6. Start dev servers]]
+- [[_COMMUNITY_7. Verify setup|7. Verify setup]]
+- [[_COMMUNITY_API Routes|API Routes]]
+- [[_COMMUNITY_Architecture|Architecture]]
+- [[_COMMUNITY_Auth Middleware (`serversrcmiddlewareauth.ts`)|Auth Middleware (`server/src/middleware/auth.ts`)]]
+- [[_COMMUNITY_Authentication|Authentication]]
+- [[_COMMUNITY_codebash (curl httplocalhost7700health)|code:bash (curl http://localhost:7700/health)]]
+- [[_COMMUNITY_codebash (yarn devclient     Vite on port 3000)|code:bash (yarn dev:client    # Vite on port 3000)]]
+- [[_COMMUNITY_codebash (curl httplocalhost7700health)|code:bash (curl http://localhost:7700/health)]]
+- [[_COMMUNITY_codebash (which node)|code:bash (which node)]]
+- [[_COMMUNITY_codebash (nvm install 20)|code:bash (nvm install 20)]]
+- [[_COMMUNITY_codeblock20 (yale-research)|code:block20 (yale-research/)]]
+- [[_COMMUNITY_codebash (nvm install 20)|code:bash (nvm install 20)]]
+- [[_COMMUNITY_codebash (corepack enable)|code:bash (corepack enable)]]
+- [[_COMMUNITY_codebash (yarn installall)|code:bash (yarn install:all)]]
+- [[_COMMUNITY_codebash (cp server.env.example server.env)|code:bash (cp server/.env.example server/.env)]]
+- [[_COMMUNITY_codebash ( client.env)|code:bash (# client/.env)]]
+- [[_COMMUNITY_Common Commands|Common Commands]]
+- [[_COMMUNITY_Dev login bypass|Dev login bypass]]
+- [[_COMMUNITY_Environments|Environments]]
+- [[_COMMUNITY_Local Development Setup|Local Development Setup]]
+- [[_COMMUNITY_Migration Scripts|Migration Scripts]]
+- [[_COMMUNITY_Modifying a Schema|Modifying a Schema]]
+- [[_COMMUNITY_New API Endpoint|New API Endpoint]]
+- [[_COMMUNITY_New Page|New Page]]
+- [[_COMMUNITY_Operator board Gate Status — keeping it honest and current|Operator board Gate Status — keeping it honest and current]]
+- [[_COMMUNITY_Project Structure|Project Structure]]
+- [[_COMMUNITY_Running tests|Running tests]]
+- [[_COMMUNITY_Tech Stack|Tech Stack]]
+- [[_COMMUNITY_Testing|Testing]]
+- [[_COMMUNITY_Troubleshooting Yarn setup|Troubleshooting Yarn setup]]
+- [[_COMMUNITY_What is tested|What is tested]]
+- [[_COMMUNITY_What Is This|What Is This?]]
+- [[_COMMUNITY_YLabs — Developer Guide|Y/Labs — Developer Guide]]
+- [[_COMMUNITY_Acknowledgements|Acknowledgements]]
+- [[_COMMUNITY_codebash (corepack enable)|code:bash (corepack enable)]]
+- [[_COMMUNITY_codebash ( Terminal 1)|code:bash (# Terminal 1)]]
+- [[_COMMUNITY_codebash (yarn playwrightrun screenshot httpsexample.com tmpexam)|code:bash (yarn playwright:run screenshot https://example.com /tmp/exam)]]
+- [[_COMMUNITY_codebash (codex mcp add playwright -- reposcriptswith-playwright-l)|code:bash (codex mcp add playwright -- <repo>/scripts/with-playwright-l)]]
+- [[_COMMUNITY_Documentation|Documentation]]
+- [[_COMMUNITY_Playwright environment fix (no root required)|Playwright environment fix (no root required)]]
+- [[_COMMUNITY_Quick Start|Quick Start]]
+- [[_COMMUNITY_YURA Research Database|YURA Research Database]]
+- [[_COMMUNITY_Legacy CSV-to-JSON update script retired.  Department ground truth no longer com|Legacy CSV-to-JSON update script retired.  Department ground truth no longer com]]
+- [[_COMMUNITY_summary|summary]]
+- [[_COMMUNITY_acceptedInputsCoreSource|acceptedInputsCoreSource]]
+- [[_COMMUNITY_acceptedInputsSource|acceptedInputsSource]]
+- [[_COMMUNITY_accessSignalSerializer|accessSignalSerializer]]
+- [[_COMMUNITY_accountListingSerializer|accountListingSerializer]]
+- [[_COMMUNITY_adminAccessReview|adminAccessReview]]
+- [[_COMMUNITY_adminGrantService|adminGrantService]]
+- [[_COMMUNITY_adminRouteSource|adminRouteSource]]
+- [[_COMMUNITY_adminSource|adminSource]]
+- [[_COMMUNITY_analyticsServiceSource|analyticsServiceSource]]
+- [[_COMMUNITY_applicationRouteBackfill|applicationRouteBackfill]]
+- [[_COMMUNITY_appSource|appSource]]
+- [[_COMMUNITY_betaDataQualityCore|betaDataQualityCore]]
+- [[_COMMUNITY_betaRepairQueue|betaRepairQueue]]
+- [[_COMMUNITY_betaSeedEnvironment|betaSeedEnvironment]]
+- [[_COMMUNITY_callbackHtmlDistSource|callbackHtmlDistSource]]
+- [[_COMMUNITY_callbackHtmlSource|callbackHtmlSource]]
+- [[_COMMUNITY_clientFiles|clientFiles]]
+- [[_COMMUNITY_clientSource|clientSource]]
+- [[_COMMUNITY_clientTypeSource|clientTypeSource]]
+- [[_COMMUNITY_clientUrlSource|clientUrlSource]]
+- [[_COMMUNITY_cliSource|cliSource]]
+- [[_COMMUNITY_configProvider|configProvider]]
+- [[_COMMUNITY_contactRouteSerializer|contactRouteSerializer]]
+- [[_COMMUNITY_controller|controller]]
+- [[_COMMUNITY_controllerSource|controllerSource]]
+- [[_COMMUNITY_courseTableSource|courseTableSource]]
+- [[_COMMUNITY_csrfSource|csrfSource]]
+- [[_COMMUNITY_cycleService|cycleService]]
+- [[_COMMUNITY_debounceStorageSource|debounceStorageSource]]
+- [[_COMMUNITY_denied|denied]]
+- [[_COMMUNITY_departmentLeadRepairPlan|departmentLeadRepairPlan]]
+- [[_COMMUNITY_developerCardSource|developerCardSource]]
+- [[_COMMUNITY_directorySource|directorySource]]
+- [[_COMMUNITY_doiRenderers|doiRenderers]]
+- [[_COMMUNITY_dtoSerializer|dtoSerializer]]
+- [[_COMMUNITY_dtoSource|dtoSource]]
+- [[_COMMUNITY_duplicateReview|duplicateReview]]
+- [[_COMMUNITY_favoritesManagerSource|favoritesManagerSource]]
+- [[_COMMUNITY_fellowshipController|fellowshipController]]
+- [[_COMMUNITY_fellowshipControllerSource|fellowshipControllerSource]]
+- [[_COMMUNITY_fellowshipModal|fellowshipModal]]
+- [[_COMMUNITY_fellowshipService|fellowshipService]]
+- [[_COMMUNITY_fellowshipServiceSource|fellowshipServiceSource]]
+- [[_COMMUNITY_fellowshipSource|fellowshipSource]]
+- [[_COMMUNITY_fetcherFiles|fetcherFiles]]
+- [[_COMMUNITY_files|files]]
+- [[_COMMUNITY_googleOAuthCallbackDistSource|googleOAuthCallbackDistSource]]
+- [[_COMMUNITY_googleOAuthCallbackSource|googleOAuthCallbackSource]]
+- [[_COMMUNITY_googleSheetsSource|googleSheetsSource]]
+- [[_COMMUNITY_guards|guards]]
+- [[_COMMUNITY_guardSource|guardSource]]
+- [[_COMMUNITY_helperSource|helperSource]]
+- [[_COMMUNITY_homePageSource|homePageSource]]
+- [[_COMMUNITY_idSerializationSource|idSerializationSource]]
+- [[_COMMUNITY_imageRenderers|imageRenderers]]
+- [[_COMMUNITY_indexSource|indexSource]]
+- [[_COMMUNITY_integrityGate|integrityGate]]
+- [[_COMMUNITY_itemOpsSource|itemOpsSource]]
+- [[_COMMUNITY_labDetail|labDetail]]
+- [[_COMMUNITY_labInquireCard|labInquireCard]]
+- [[_COMMUNITY_labMembersSource|labMembersSource]]
+- [[_COMMUNITY_launchReviewExceptions|launchReviewExceptions]]
+- [[_COMMUNITY_listingController|listingController]]
+- [[_COMMUNITY_listingControllerSource|listingControllerSource]]
+- [[_COMMUNITY_listingProfileRepair|listingProfileRepair]]
+- [[_COMMUNITY_listingSource|listingSource]]
+- [[_COMMUNITY_matchingService|matchingService]]
+- [[_COMMUNITY_meiliResearchEntitySerializer|meiliResearchEntitySerializer]]
+- [[_COMMUNITY_memberSerializer|memberSerializer]]
+- [[_COMMUNITY_mongoResearchEntitySerializer|mongoResearchEntitySerializer]]
+- [[_COMMUNITY_navbarSource|navbarSource]]
+- [[_COMMUNITY_opportunitiesRouteSource|opportunitiesRouteSource]]
+- [[_COMMUNITY_opportunityDetail|opportunityDetail]]
+- [[_COMMUNITY_orchestratorSource|orchestratorSource]]
+- [[_COMMUNITY_paperSerializerMatch|paperSerializerMatch]]
+- [[_COMMUNITY_passportSource|passportSource]]
+- [[_COMMUNITY_pathwayRebuild|pathwayRebuild]]
+- [[_COMMUNITY_postedOpportunityBackfill|postedOpportunityBackfill]]
+- [[_COMMUNITY_postedOpportunityReaper|postedOpportunityReaper]]
+- [[_COMMUNITY_profileEditorSource|profileEditorSource]]
+- [[_COMMUNITY_profileHeaderSource|profileHeaderSource]]
+- [[_COMMUNITY_profileServiceSource|profileServiceSource]]
+- [[_COMMUNITY_programClassifications|programClassifications]]
+- [[_COMMUNITY_programController|programController]]
+- [[_COMMUNITY_programControllerSource|programControllerSource]]
+- [[_COMMUNITY_programOfficialSources|programOfficialSources]]
+- [[_COMMUNITY_programPayloadSource|programPayloadSource]]
+- [[_COMMUNITY_programResearchRelevance|programResearchRelevance]]
+- [[_COMMUNITY_publicationPointerRepair|publicationPointerRepair]]
+- [[_COMMUNITY_publicationsTableSource|publicationsTableSource]]
+- [[_COMMUNITY_publicFellowshipControllerSortFields|publicFellowshipControllerSortFields]]
+- [[_COMMUNITY_publicFellowshipServiceSortFields|publicFellowshipServiceSortFields]]
+- [[_COMMUNITY_publicFields|publicFields]]
+- [[_COMMUNITY_publicProgramSortFields|publicProgramSortFields]]
+- [[_COMMUNITY_publicSortFields|publicSortFields]]
+- [[_COMMUNITY_rawPageTextExtractors|rawPageTextExtractors]]
+- [[_COMMUNITY_realFixtureIdentifiers|realFixtureIdentifiers]]
+- [[_COMMUNITY_relationshipSerializer|relationshipSerializer]]
+- [[_COMMUNITY_reportSource|reportSource]]
+- [[_COMMUNITY_researchAreaClientSource|researchAreaClientSource]]
+- [[_COMMUNITY_researchEntityRebuild|researchEntityRebuild]]
+- [[_COMMUNITY_researchGroupController|researchGroupController]]
+- [[_COMMUNITY_researchHomeCardSource|researchHomeCardSource]]
+- [[_COMMUNITY_responseFieldsMatch|responseFieldsMatch]]
+- [[_COMMUNITY_roots|roots]]
+- [[_COMMUNITY_routeFiles|routeFiles]]
+- [[_COMMUNITY_routeSource|routeSource]]
+- [[_COMMUNITY_sanitizerSource|sanitizerSource]]
+- [[_COMMUNITY_scraperCliOutput|scraperCliOutput]]
+- [[_COMMUNITY_scraperEntrypoints|scraperEntrypoints]]
+- [[_COMMUNITY_searchIndexSource|searchIndexSource]]
+- [[_COMMUNITY_searchProviderSource|searchProviderSource]]
+- [[_COMMUNITY_serializer|serializer]]
+- [[_COMMUNITY_serializerMatch|serializerMatch]]
+- [[_COMMUNITY_serverUrlSafetySource|serverUrlSafetySource]]
+- [[_COMMUNITY_serverUrlSource|serverUrlSource]]
+- [[_COMMUNITY_service|service]]
+- [[_COMMUNITY_serviceResearchEntityInterface|serviceResearchEntityInterface]]
+- [[_COMMUNITY_serviceSource|serviceSource]]
+- [[_COMMUNITY_sessionCookieSource|sessionCookieSource]]
+- [[_COMMUNITY_signInButton|signInButton]]
+- [[_COMMUNITY_signInButtonSource|signInButtonSource]]
+- [[_COMMUNITY_signOutButton|signOutButton]]
+- [[_COMMUNITY_signOutButtonSource|signOutButtonSource]]
+- [[_COMMUNITY_sortDropdownSource|sortDropdownSource]]
+- [[_COMMUNITY_source|source]]
+- [[_COMMUNITY_spreadsheetSafetySource|spreadsheetSafetySource]]
+- [[_COMMUNITY_studentVisibilityBackfill|studentVisibilityBackfill]]
+- [[_COMMUNITY_syncSource|syncSource]]
+- [[_COMMUNITY_tableSource|tableSource]]
+- [[_COMMUNITY_tsupSource|tsupSource]]
+- [[_COMMUNITY_undergradSource|undergradSource]]
+- [[_COMMUNITY_urlSource|urlSource]]
+- [[_COMMUNITY_userButton|userButton]]
+- [[_COMMUNITY_userButtonSource|userButtonSource]]
+- [[_COMMUNITY_userController|userController]]
+- [[_COMMUNITY_userControllerSource|userControllerSource]]
+- [[_COMMUNITY_userProvider|userProvider]]
+- [[_COMMUNITY_userServiceSource|userServiceSource]]
+- [[_COMMUNITY_firstProfileLink|firstProfileLink]]
+- [[_COMMUNITY_configs|configs]]
+- [[_COMMUNITY_rows|rows]]
+- [[_COMMUNITY_ALLOWED_SORT_FIELDS|ALLOWED_SORT_FIELDS]]
+- [[_COMMUNITY_ALLOWED_SORT_FIELDS|ALLOWED_SORT_FIELDS]]
+- [[_COMMUNITY_longPurpose|longPurpose]]
+- [[_COMMUNITY_page|page]]
+- [[_COMMUNITY_pageSize|pageSize]]
+- [[_COMMUNITY_res|res]]
+- [[_COMMUNITY_sortOrder|sortOrder]]
+- [[_COMMUNITY_filter|filter]]
+- [[_COMMUNITY_longResearchArea|longResearchArea]]
+- [[_COMMUNITY_next|next]]
+- [[_COMMUNITY_page|page]]
+- [[_COMMUNITY_pageSize|pageSize]]
+- [[_COMMUNITY_req|req]]
+- [[_COMMUNITY_res|res]]
+- [[_COMMUNITY_search|search]]
+- [[_COMMUNITY_req|req]]
+- [[_COMMUNITY_res|res]]
+- [[_COMMUNITY_badFilter|badFilter]]
+- [[_COMMUNITY_res|res]]
+- [[_COMMUNITY_listing|listing]]
+- [[_COMMUNITY_normalized|normalized]]
+- [[_COMMUNITY_publication|publication]]
+- [[_COMMUNITY_req|req]]
+- [[_COMMUNITY_res|res]]
+- [[_COMMUNITY_longPurpose|longPurpose]]
+- [[_COMMUNITY_page|page]]
+- [[_COMMUNITY_pageSize|pageSize]]
+- [[_COMMUNITY_res|res]]
+- [[_COMMUNITY_sortOrder|sortOrder]]
+- [[_COMMUNITY_badFilter|badFilter]]
+- [[_COMMUNITY_nonAdminResponse|nonAdminResponse]]
+- [[_COMMUNITY_req|req]]
+- [[_COMMUNITY_res|res]]
+- [[_COMMUNITY_searchResponse|searchResponse]]
+- [[_COMMUNITY_trimmed|trimmed]]
+- [[_COMMUNITY_consoleError|consoleError]]
+- [[_COMMUNITY_favListing|favListing]]
+- [[_COMMUNITY_logged|logged]]
+- [[_COMMUNITY_next|next]]
+- [[_COMMUNITY_ownListing|ownListing]]
+- [[_COMMUNITY_profileUrls|profileUrls]]
+- [[_COMMUNITY_req|req]]
+- [[_COMMUNITY_res|res]]
+- [[_COMMUNITY_getSavedResearchPlanFundingMatches|getSavedResearchPlanFundingMatches]]
+- [[_COMMUNITY_{ res, next }|{ res, next }]]
+- [[_COMMUNITY_{ callbackError, callbackAllow }|{ callbackError, callbackAllow }]]
+- [[_COMMUNITY_corsError|corsError]]
+- [[_COMMUNITY_guard|guard]]
+- [[_COMMUNITY_next|next]]
+- [[_COMMUNITY_req|req]]
+- [[_COMMUNITY_res|res]]
+- [[_COMMUNITY_writeLikeSafeMethodPaths|writeLikeSafeMethodPaths]]
+- [[_COMMUNITY_consoleError|consoleError]]
+- [[_COMMUNITY_error|error]]
+- [[_COMMUNITY_logged|logged]]
+- [[_COMMUNITY_next|next]]
+- [[_COMMUNITY_response|response]]
+- [[_COMMUNITY_body|body]]
+- [[_COMMUNITY_bodyItems|bodyItems]]
+- [[_COMMUNITY_bodyMap|bodyMap]]
+- [[_COMMUNITY_req|req]]
+- [[_COMMUNITY_connectDirective|connectDirective]]
+- [[_COMMUNITY_deployedHttpShaped|deployedHttpShaped]]
+- [[_COMMUNITY_directHttps|directHttps]]
+- [[_COMMUNITY_formDirective|formDirective]]
+- [[_COMMUNITY_{ headers }|{ headers }]]
+- [[_COMMUNITY_{ headers, next, response }|{ headers, next, response }]]
+- [[_COMMUNITY_imageDirective|imageDirective]]
+- [[_COMMUNITY_proxiedHttps|proxiedHttps]]
+- [[_COMMUNITY_scriptDirective|scriptDirective]]
+- [[_COMMUNITY_inheritedBody|inheritedBody]]
+- [[_COMMUNITY_next|next]]
+- [[_COMMUNITY_request|request]]
+- [[_COMMUNITY_response|response]]
+- [[_COMMUNITY_ResearchEntityRelationship|ResearchEntityRelationship]]
+- [[_COMMUNITY_ResearchScholarlyLink|ResearchScholarlyLink]]
+- [[_COMMUNITY_scholarlyLinkDestinationKinds|scholarlyLinkDestinationKinds]]
+- [[_COMMUNITY_scholarlyLinkDiscoverySources|scholarlyLinkDiscoverySources]]
+- [[_COMMUNITY_ascendingTimestampIndexes|ascendingTimestampIndexes]]
+- [[_COMMUNITY_event|event]]
+- [[_COMMUNITY_activeCollectionNames|activeCollectionNames]]
+- [[_COMMUNITY_duplicateIndexes|duplicateIndexes]]
+- [[_COMMUNITY_retiredCollectionNames|retiredCollectionNames]]
+- [[_COMMUNITY_doc|doc]]
+- [[_COMMUNITY_user|user]]
+- [[_COMMUNITY_DEV_LOGIN_USER_TYPES|DEV_LOGIN_USER_TYPES]]
+- [[_COMMUNITY_errorRedirect|errorRedirect]]
+- [[_COMMUNITY_LOCAL_DEV_HOSTS|LOCAL_DEV_HOSTS]]
+- [[_COMMUNITY_safeNetId|safeNetId]]
+- [[_COMMUNITY_safeTarget|safeTarget]]
+- [[_COMMUNITY_testUser|testUser]]
+- [[_COMMUNITY_user|user]]
+- [[_COMMUNITY_adminSearch|adminSearch]]
+- [[_COMMUNITY_controller|controller]]
+- [[_COMMUNITY_currentUser|currentUser]]
+- [[_COMMUNITY_days|days]]
+- [[_COMMUNITY_dept|dept]]
+- [[_COMMUNITY_filter|filter]]
+- [[_COMMUNITY_newCreatedAt|newCreatedAt]]
+- [[_COMMUNITY_normalizedAbbreviation|normalizedAbbreviation]]
+- [[_COMMUNITY_normalizedCategories|normalizedCategories]]
+- [[_COMMUNITY_normalizedInputs|normalizedInputs]]
+- [[_COMMUNITY_normalizedName|normalizedName]]
+- [[_COMMUNITY_normalizedPrimaryCategory|normalizedPrimaryCategory]]
+- [[_COMMUNITY_originalDate|originalDate]]
+- [[_COMMUNITY_{ page pageNum, pageSize pageSizeNum }|{ page: pageNum, pageSize: pageSizeNum }]]
+- [[_COMMUNITY_pageNum|pageNum]]
+- [[_COMMUNITY_pageSizeNum|pageSizeNum]]
+- [[_COMMUNITY_pipeline|pipeline]]
+- [[_COMMUNITY_riskCounts|riskCounts]]
+- [[_COMMUNITY_rows|rows]]
+- [[_COMMUNITY_runFilter|runFilter]]
+- [[_COMMUNITY_safeId|safeId]]
+- [[_COMMUNITY_searchOr|searchOr]]
+- [[_COMMUNITY_searchRegex|searchRegex]]
+- [[_COMMUNITY_since|since]]
+- [[_COMMUNITY_sort|sort]]
+- [[_COMMUNITY_sortBy|sortBy]]
+- [[_COMMUNITY_timeout|timeout]]
+- [[_COMMUNITY_trimmed|trimmed]]
+- [[_COMMUNITY_twoYearsAgo|twoYearsAgo]]
+- [[_COMMUNITY_update|update]]
+- [[_COMMUNITY_urlsToCheck|urlsToCheck]]
+- [[_COMMUNITY_isValidationFailure|isValidationFailure]]
+- [[_COMMUNITY_limit|limit]]
+- [[_COMMUNITY_listingItems|listingItems]]
+- [[_COMMUNITY_searchCards|searchCards]]
+- [[_COMMUNITY_stages|stages]]
+- [[_COMMUNITY_currentUser|currentUser]]
+- [[_COMMUNITY_newArea|newArea]]
+- [[_COMMUNITY_trimmedName|trimmedName]]
+- [[_COMMUNITY_trimmedQuery|trimmedQuery]]
+- [[_COMMUNITY_netid|netid]]
+- [[_COMMUNITY_safeData|safeData]]
+- [[_COMMUNITY_allowed|allowed]]
+- [[_COMMUNITY_areaPayload|areaPayload]]
+- [[_COMMUNITY_deptPayload|deptPayload]]
+- [[_COMMUNITY_guardNames|guardNames]]
+- [[_COMMUNITY_lookup|lookup]]
+- [[_COMMUNITY_maliciousId|maliciousId]]
+- [[_COMMUNITY_payload|payload]]
+- [[_COMMUNITY_rawFellowship|rawFellowship]]
+- [[_COMMUNITY_rawListing|rawListing]]
+- [[_COMMUNITY_serialized|serialized]]
+- [[_COMMUNITY_handlerNames|handlerNames]]
+- [[_COMMUNITY_route|route]]
+- [[_COMMUNITY_refreshRoutes|refreshRoutes]]
+- [[_COMMUNITY_res|res]]
+- [[_COMMUNITY_handlers|handlers]]
+- [[_COMMUNITY_next|next]]
+- [[_COMMUNITY_req|req]]
+- [[_COMMUNITY_res|res]]
+- [[_COMMUNITY_postRoute|postRoute]]
+- [[_COMMUNITY_ResearchArea|ResearchArea]]
+- [[_COMMUNITY_ResearchField|ResearchField]]
+- [[_COMMUNITY_maliciousId|maliciousId]]
+- [[_COMMUNITY_originalEnv|originalEnv]]
+- [[_COMMUNITY_res|res]]
+- [[_COMMUNITY_routeLayer|routeLayer]]
+- [[_COMMUNITY_route|route]]
+- [[_COMMUNITY_EntryPathwayMergeSnapshot|EntryPathwayMergeSnapshot]]
+- [[_COMMUNITY_LegacyExploratoryContactPathwayMergeResult|LegacyExploratoryContactPathwayMergeResult]]
+- [[_COMMUNITY_MergedEntryPathwayData|MergedEntryPathwayData]]
+- [[_COMMUNITY_ScraperCliOutputMetadata|ScraperCliOutputMetadata]]
+- [[_COMMUNITY_ScraperCliPreflight|ScraperCliPreflight]]
+- [[_COMMUNITY_VALUE_FLAGS|VALUE_FLAGS]]
+- [[_COMMUNITY_ACCESS_MATERIALIZING_FIELDS|ACCESS_MATERIALIZING_FIELDS]]
+- [[_COMMUNITY_ACCESS_MATERIALIZING_SOURCES|ACCESS_MATERIALIZING_SOURCES]]
+- [[_COMMUNITY_FELLOWSHIP_MATERIALIZED_FIELDS|FELLOWSHIP_MATERIALIZED_FIELDS]]
+- [[_COMMUNITY_FellowshipMaterializationObservation|FellowshipMaterializationObservation]]
+- [[_COMMUNITY_FellowshipMaterializationPatch|FellowshipMaterializationPatch]]
+- [[_COMMUNITY_InferredPiMembershipDeps|InferredPiMembershipDeps]]
+- [[_COMMUNITY_InferredPiMembershipResult|InferredPiMembershipResult]]
+- [[_COMMUNITY_InferredPiProfileContext|InferredPiProfileContext]]
+- [[_COMMUNITY_OFFICIAL_PROFILE_FALLBACK_BLOCKED_OWNER_SOURCES|OFFICIAL_PROFILE_FALLBACK_BLOCKED_OWNER_SOURCES]]
+- [[_COMMUNITY_OfficialProfileCoverageDeps|OfficialProfileCoverageDeps]]
+- [[_COMMUNITY_OfficialProfileCoverageResult|OfficialProfileCoverageResult]]
+- [[_COMMUNITY_ResolvedMemberMaterializationDeps|ResolvedMemberMaterializationDeps]]
+- [[_COMMUNITY_ResolvedMemberMaterializationResult|ResolvedMemberMaterializationResult]]
+- [[_COMMUNITY_ResolvedRelationshipMaterializationResult|ResolvedRelationshipMaterializationResult]]
+- [[_COMMUNITY_USER_MATERIALIZATION_BLOCKED_SOURCES|USER_MATERIALIZATION_BLOCKED_SOURCES]]
+- [[_COMMUNITY_USER_PROFILE_URL_LOOKUP_KEYS|USER_PROFILE_URL_LOOKUP_KEYS]]
+- [[_COMMUNITY_UserIdentityObservation|UserIdentityObservation]]
+- [[_COMMUNITY_RECOMMENDED_COMMANDS|RECOMMENDED_COMMANDS]]
+- [[_COMMUNITY_buildFetchMetric|buildFetchMetric]]
+- [[_COMMUNITY_ACCESS_MATERIALIZATION_EVIDENCE_FIELDS|ACCESS_MATERIALIZATION_EVIDENCE_FIELDS]]
+- [[_COMMUNITY_RESET|RESET]]
+- [[_COMMUNITY_RELATIONSHIP_CENTER_KEYS|RELATIONSHIP_CENTER_KEYS]]
+- [[_COMMUNITY_SleepFn|SleepFn]]
+- [[_COMMUNITY_ENGINEERING_DEPARTMENT_LABELS|ENGINEERING_DEPARTMENT_LABELS]]
+- [[_COMMUNITY_TOPIC_NOISE_PATTERNS|TOPIC_NOISE_PATTERNS]]
+- [[_COMMUNITY_DESCRIPTION_FIELDS|DESCRIPTION_FIELDS]]
+- [[_COMMUNITY_DESCRIPTION_SUBPAGE_PATH_HINTS|DESCRIPTION_SUBPAGE_PATH_HINTS]]
+- [[_COMMUNITY_DescriptionCandidateEntity|DescriptionCandidateEntity]]
+- [[_COMMUNITY_DescriptionField|DescriptionField]]
+- [[_COMMUNITY_DescriptionLLMExtraction|DescriptionLLMExtraction]]
+- [[_COMMUNITY_LAB_DESCRIPTION_RESPONSE_FORMAT|LAB_DESCRIPTION_RESPONSE_FORMAT]]
+- [[_COMMUNITY_SelectDescriptionTargetsOptions|SelectDescriptionTargetsOptions]]
+- [[_COMMUNITY_SOURCE_CHROME_PATTERNS|SOURCE_CHROME_PATTERNS]]
+- [[_COMMUNITY_TOPIC_HINTS|TOPIC_HINTS]]
+- [[_COMMUNITY_WorkPlanLoaderFn|WorkPlanLoaderFn]]
+- [[_COMMUNITY_ListingGuidance|ListingGuidance]]
+- [[_COMMUNITY_LLMQuoteField|LLMQuoteField]]
+- [[_COMMUNITY_LLMQuoteSourceUrls|LLMQuoteSourceUrls]]
+- [[_COMMUNITY_FundingResearchEntityTarget|FundingResearchEntityTarget]]
+- [[_COMMUNITY_LEAD_MEMBER_ROLES|LEAD_MEMBER_ROLES]]
+- [[_COMMUNITY_MatchedFacultyForFunding|MatchedFacultyForFunding]]
+- [[_COMMUNITY_FundingResearchEntityTarget|FundingResearchEntityTarget]]
+- [[_COMMUNITY_LEAD_MEMBER_ROLES|LEAD_MEMBER_ROLES]]
+- [[_COMMUNITY_MatchedFacultyForFunding|MatchedFacultyForFunding]]
+- [[_COMMUNITY_LIMITED_RUN_TITLE_FILTERS|LIMITED_RUN_TITLE_FILTERS]]
+- [[_COMMUNITY_ResearchYaleDirectoryConfig|ResearchYaleDirectoryConfig]]
+- [[_COMMUNITY_ResearchYaleEntity|ResearchYaleEntity]]
+- [[_COMMUNITY_ResearchYaleEntityType|ResearchYaleEntityType]]
+- [[_COMMUNITY_ResearchYaleKind|ResearchYaleKind]]
+- [[_COMMUNITY_ResearchYaleSourceCategory|ResearchYaleSourceCategory]]
+- [[_COMMUNITY_FacultyUserCandidate|FacultyUserCandidate]]
+- [[_COMMUNITY_PrincipalInvestigatorProfile|PrincipalInvestigatorProfile]]
+- [[_COMMUNITY_archiveLegacy|archiveLegacy]]
+- [[_COMMUNITY_baseInput|baseInput]]
+- [[_COMMUNITY_first|first]]
+- [[_COMMUNITY_legacyPathwayIds|legacyPathwayIds]]
+- [[_COMMUNITY_now|now]]
+- [[_COMMUNITY_relinkRoutes|relinkRoutes]]
+- [[_COMMUNITY_relinkSignals|relinkSignals]]
+- [[_COMMUNITY_result|result]]
+- [[_COMMUNITY_second|second]]
+- [[_COMMUNITY_supporting|supporting]]
+- [[_COMMUNITY_updateOne|updateOne]]
+- [[_COMMUNITY_{ ctx }|{ ctx }]]
+- [[_COMMUNITY_{ ctx, emitted }|{ ctx, emitted }]]
+- [[_COMMUNITY_entries|entries]]
+- [[_COMMUNITY_entry|[entry]]]
+- [[_COMMUNITY_fac|fac]]
+- [[_COMMUNITY_feed|feed]]
+- [[_COMMUNITY_fetcher|fetcher]]
+- [[_COMMUNITY_log|log]]
+- [[_COMMUNITY_obs|obs]]
+- [[_COMMUNITY_scraper|scraper]]
+- [[_COMMUNITY_serialized|serialized]]
+- [[_COMMUNITY_sleep|sleep]]
+- [[_COMMUNITY_userModel|userModel]]
+- [[_COMMUNITY_center|center]]
+- [[_COMMUNITY_centerFinder|centerFinder]]
+- [[_COMMUNITY_{ ctx, emitted }|{ ctx, emitted }]]
+- [[_COMMUNITY_fetchPage|fetchPage]]
+- [[_COMMUNITY_obs|obs]]
+- [[_COMMUNITY_scraper|scraper]]
+- [[_COMMUNITY_targets|targets]]
+- [[_COMMUNITY_byField|byField]]
+- [[_COMMUNITY_callLLM|callLLM]]
+- [[_COMMUNITY_center|center]]
+- [[_COMMUNITY_centerFinder|centerFinder]]
+- [[_COMMUNITY_context|context]]
+- [[_COMMUNITY_{ ctx, emitted }|{ ctx, emitted }]]
+- [[_COMMUNITY_fetchPage|fetchPage]]
+- [[_COMMUNITY_landing|landing]]
+- [[_COMMUNITY_leadership|leadership]]
+- [[_COMMUNITY_obs|obs]]
+- [[_COMMUNITY_role|role]]
+- [[_COMMUNITY_scraper|scraper]]
+- [[_COMMUNITY_urls|urls]]
+- [[_COMMUNITY_a|a]]
+- [[_COMMUNITY_b|b]]
+- [[_COMMUNITY_config|config]]
+- [[_COMMUNITY_configs|configs]]
+- [[_COMMUNITY_cowles|cowles]]
+- [[_COMMUNITY_cowlesExt|cowlesExt]]
+- [[_COMMUNITY_cowlesGroup|cowlesGroup]]
+- [[_COMMUNITY_{ ctx }|{ ctx }]]
+- [[_COMMUNITY_{ ctx, emitted }|{ ctx, emitted }]]
+- [[_COMMUNITY_ext|ext]]
+- [[_COMMUNITY_failing|failing]]
+- [[_COMMUNITY_fields|fields]]
+- [[_COMMUNITY_getSpy|getSpy]]
+- [[_COMMUNITY_groupKeys|groupKeys]]
+- [[_COMMUNITY_groupObs|groupObs]]
+- [[_COMMUNITY_janeObs|janeObs]]
+- [[_COMMUNITY_liveExt|liveExt]]
+- [[_COMMUNITY_member|member]]
+- [[_COMMUNITY_memberObs|memberObs]]
+- [[_COMMUNITY_members|members]]
+- [[_COMMUNITY_metaExt|metaExt]]
+- [[_COMMUNITY_obs|obs]]
+- [[_COMMUNITY_{ observations }|{ observations }]]
+- [[_COMMUNITY_{ observations centerObservations }|{ observations: centerObservations }]]
+- [[_COMMUNITY_{ observations, entityKey }|{ observations, entityKey }]]
+- [[_COMMUNITY_out|out]]
+- [[_COMMUNITY_parent|parent]]
+- [[_COMMUNITY_relationshipObs|relationshipObs]]
+- [[_COMMUNITY_scraper|scraper]]
+- [[_COMMUNITY_stubExt|stubExt]]
+- [[_COMMUNITY_working|working]]
+- [[_COMMUNITY_wtGroup|wtGroup]]
+- [[_COMMUNITY_wuTsaiConfig|wuTsaiConfig]]
+- [[_COMMUNITY_wuTsaiExt|wuTsaiExt]]
+- [[_COMMUNITY_log|log]]
+- [[_COMMUNITY_output|output]]
+- [[_COMMUNITY_agreed|agreed]]
+- [[_COMMUNITY_out|out]]
+- [[_COMMUNITY_r|r]]
+- [[_COMMUNITY_single|single]]
+- [[_COMMUNITY_deps|deps]]
+- [[_COMMUNITY_{ ctx, emitted }|{ ctx, emitted }]]
+- [[_COMMUNITY_{ ctx, emitted, logs }|{ ctx, emitted, logs }]]
+- [[_COMMUNITY_fetcher|fetcher]]
+- [[_COMMUNITY_linkModel|linkModel]]
+- [[_COMMUNITY_paperModel|paperModel]]
+- [[_COMMUNITY_scraper|scraper]]
+- [[_COMMUNITY_sleep|sleep]]
+- [[_COMMUNITY_urlClause|urlClause]]
+- [[_COMMUNITY_cannedExtractor|cannedExtractor]]
+- [[_COMMUNITY_configs|configs]]
+- [[_COMMUNITY_configsByKey|configsByKey]]
+- [[_COMMUNITY_{ ctx }|{ ctx }]]
+- [[_COMMUNITY_{ ctx, emitted }|{ ctx, emitted }]]
+- [[_COMMUNITY_dataExtractor|dataExtractor]]
+- [[_COMMUNITY_econExt|econExt]]
+- [[_COMMUNITY_enrichment|enrichment]]
+- [[_COMMUNITY_entityObs|entityObs]]
+- [[_COMMUNITY_getSpy|getSpy]]
+- [[_COMMUNITY_htmlFetcher|htmlFetcher]]
+- [[_COMMUNITY_labNames|labNames]]
+- [[_COMMUNITY_labObs|labObs]]
+- [[_COMMUNITY_memberObs|memberObs]]
+- [[_COMMUNITY_observations|observations]]
+- [[_COMMUNITY_out|out]]
+- [[_COMMUNITY_postSpy|postSpy]]
+- [[_COMMUNITY_profileFetchUrls|profileFetchUrls]]
+- [[_COMMUNITY_psychExt|psychExt]]
+- [[_COMMUNITY_renderedExtractor|renderedExtractor]]
+- [[_COMMUNITY_renderedFetcher|renderedFetcher]]
+- [[_COMMUNITY_scraper|scraper]]
+- [[_COMMUNITY_stubExtractor|stubExtractor]]
+- [[_COMMUNITY_userKeys|userKeys]]
+- [[_COMMUNITY_userObs|userObs]]
+- [[_COMMUNITY_configsByKey|configsByKey]]
+- [[_COMMUNITY_eebConfig|eebConfig]]
+- [[_COMMUNITY_emitted|emitted]]
+- [[_COMMUNITY_fetchHtml|fetchHtml]]
+- [[_COMMUNITY_fields|fields]]
+- [[_COMMUNITY_observations|observations]]
+- [[_COMMUNITY_record|[record]]]
+- [[_COMMUNITY_records|records]]
+- [[_COMMUNITY_scraper|scraper]]
+- [[_COMMUNITY_aggregate|aggregate]]
+- [[_COMMUNITY_alias|alias]]
+- [[_COMMUNITY_canonical|canonical]]
+- [[_COMMUNITY_canonicalTarget|canonicalTarget]]
+- [[_COMMUNITY_created|created]]
+- [[_COMMUNITY_creates|creates]]
+- [[_COMMUNITY_entityFind|entityFind]]
+- [[_COMMUNITY_entityFindById|entityFindById]]
+- [[_COMMUNITY_entityFindOne|entityFindOne]]
+- [[_COMMUNITY_entityUpdateOne|entityUpdateOne]]
+- [[_COMMUNITY_filters|filters]]
+- [[_COMMUNITY_findOne|findOne]]
+- [[_COMMUNITY_inputs|inputs]]
+- [[_COMMUNITY_memberFind|memberFind]]
+- [[_COMMUNITY_memberFindOne|memberFindOne]]
+- [[_COMMUNITY_model|model]]
+- [[_COMMUNITY_observationFind|observationFind]]
+- [[_COMMUNITY_observationModel|observationModel]]
+- [[_COMMUNITY_observations|observations]]
+- [[_COMMUNITY_observedAt|observedAt]]
+- [[_COMMUNITY_ops|ops]]
+- [[_COMMUNITY_patch|patch]]
+- [[_COMMUNITY_postedOpportunityModel|postedOpportunityModel]]
+- [[_COMMUNITY_relationshipModel|relationshipModel]]
+- [[_COMMUNITY_researchEntityModel|researchEntityModel]]
+- [[_COMMUNITY_resolved|resolved]]
+- [[_COMMUNITY_shellTarget|shellTarget]]
+- [[_COMMUNITY_source|source]]
+- [[_COMMUNITY_supplements|supplements]]
+- [[_COMMUNITY_target|target]]
+- [[_COMMUNITY_update|update]]
+- [[_COMMUNITY_updateOne|updateOne]]
+- [[_COMMUNITY_updates|updates]]
+- [[_COMMUNITY_userFind|userFind]]
+- [[_COMMUNITY_userFindById|userFindById]]
+- [[_COMMUNITY_userLookups|userLookups]]
+- [[_COMMUNITY_{ ctx }|{ ctx }]]
+- [[_COMMUNITY_{ ctx, emitted }|{ ctx, emitted }]]
+- [[_COMMUNITY_europe|europe]]
+- [[_COMMUNITY_europeFetcher|europeFetcher]]
+- [[_COMMUNITY_europeScraper|europeScraper]]
+- [[_COMMUNITY_evidence|evidence]]
+- [[_COMMUNITY_fetcher|fetcher]]
+- [[_COMMUNITY_paperObs|paperObs]]
+- [[_COMMUNITY_pubmed|pubmed]]
+- [[_COMMUNITY_pubmedFetcher|pubmedFetcher]]
+- [[_COMMUNITY_pubmedScraper|pubmedScraper]]
+- [[_COMMUNITY_scraper|scraper]]
+- [[_COMMUNITY_userModel|userModel]]
+- [[_COMMUNITY_groups|groups]]
+- [[_COMMUNITY_summary|summary]]
+- [[_COMMUNITY_callLLM|callLLM]]
+- [[_COMMUNITY_candidate|candidate]]
+- [[_COMMUNITY_candidates|candidates]]
+- [[_COMMUNITY_{ ctx }|{ ctx }]]
+- [[_COMMUNITY_{ ctx, emitted }|{ ctx, emitted }]]
+- [[_COMMUNITY_{ ctx, emitted, logs }|{ ctx, emitted, logs }]]
+- [[_COMMUNITY_david|david]]
+- [[_COMMUNITY_emittedFields|emittedFields]]
+- [[_COMMUNITY_extraction|extraction]]
+- [[_COMMUNITY_fetchPage|fetchPage]]
+- [[_COMMUNITY_normalized|normalized]]
+- [[_COMMUNITY_obs|obs]]
+- [[_COMMUNITY_observations|observations]]
+- [[_COMMUNITY_out|out]]
+- [[_COMMUNITY_scott|scott]]
+- [[_COMMUNITY_scraper|scraper]]
+- [[_COMMUNITY_accepting|accepting]]
+- [[_COMMUNITY_callLLM|callLLM]]
+- [[_COMMUNITY_candidates|candidates]]
+- [[_COMMUNITY_count1|count1]]
+- [[_COMMUNITY_{ ctx }|{ ctx }]]
+- [[_COMMUNITY_{ ctx, emitted }|{ ctx, emitted }]]
+- [[_COMMUNITY_{ ctx, emitted, logs }|{ ctx, emitted, logs }]]
+- [[_COMMUNITY_{ ctx, logs }|{ ctx, logs }]]
+- [[_COMMUNITY_evidence|evidence]]
+- [[_COMMUNITY_ext|ext]]
+- [[_COMMUNITY_fetchPage|fetchPage]]
+- [[_COMMUNITY_fields|fields]]
+- [[_COMMUNITY_fixedDate|fixedDate]]
+- [[_COMMUNITY_fromMembers|fromMembers]]
+- [[_COMMUNITY_fromProse|fromProse]]
+- [[_COMMUNITY_fullDescription|fullDescription]]
+- [[_COMMUNITY_genericMembersHeading|genericMembersHeading]]
+- [[_COMMUNITY_guidance|guidance]]
+- [[_COMMUNITY_labFinder|labFinder]]
+- [[_COMMUNITY_labs|labs]]
+- [[_COMMUNITY_normalized|normalized]]
+- [[_COMMUNITY_obs|obs]]
+- [[_COMMUNITY_obs1|obs1]]
+- [[_COMMUNITY_obs2|obs2]]
+- [[_COMMUNITY_observations|observations]]
+- [[_COMMUNITY_out|out]]
+- [[_COMMUNITY_prompt|prompt]]
+- [[_COMMUNITY_quote|quote]]
+- [[_COMMUNITY_renderedFetcher|renderedFetcher]]
+- [[_COMMUNITY_required|required]]
+- [[_COMMUNITY_scraper|scraper]]
+- [[_COMMUNITY_shortDescription|shortDescription]]
+- [[_COMMUNITY_slugs|slugs]]
+- [[_COMMUNITY_sourceUrl|sourceUrl]]
+- [[_COMMUNITY_text|text]]
+- [[_COMMUNITY_traineeHistory|traineeHistory]]
+- [[_COMMUNITY_url|url]]
+- [[_COMMUNITY_urls|urls]]
+- [[_COMMUNITY_ACCESS_OR_CONTACT_ARTIFACT_FIELDS|ACCESS_OR_CONTACT_ARTIFACT_FIELDS]]
+- [[_COMMUNITY_affiliate|affiliate]]
+- [[_COMMUNITY_arnstenGroup|arnstenGroup]]
+- [[_COMMUNITY_arnstenUserObs|arnstenUserObs]]
+- [[_COMMUNITY_breakerGroup|breakerGroup]]
+- [[_COMMUNITY_breakerUserObs|breakerUserObs]]
+- [[_COMMUNITY_{ ctx }|{ ctx }]]
+- [[_COMMUNITY_{ ctx, emitted }|{ ctx, emitted }]]
+- [[_COMMUNITY_grant|grant]]
+- [[_COMMUNITY_grantBreaker|grantBreaker]]
+- [[_COMMUNITY_groupKeys|groupKeys]]
+- [[_COMMUNITY_groupObs|groupObs]]
+- [[_COMMUNITY_groups|groups]]
+- [[_COMMUNITY_lastObserved|lastObserved]]
+- [[_COMMUNITY_many|many]]
+- [[_COMMUNITY_obs|obs]]
+- [[_COMMUNITY_piId|piId]]
+- [[_COMMUNITY_postdoc|postdoc]]
+- [[_COMMUNITY_postSpy|postSpy]]
+- [[_COMMUNITY_rec|rec]]
+- [[_COMMUNITY_recentGrants|recentGrants]]
+- [[_COMMUNITY_researchEntityTargetFinder|researchEntityTargetFinder]]
+- [[_COMMUNITY_scraper|scraper]]
+- [[_COMMUNITY_um|um]]
+- [[_COMMUNITY_userModel|userModel]]
+- [[_COMMUNITY_userObs|userObs]]
+- [[_COMMUNITY_a|a]]
+- [[_COMMUNITY_ACCESS_OR_CONTACT_ARTIFACT_FIELDS|ACCESS_OR_CONTACT_ARTIFACT_FIELDS]]
+- [[_COMMUNITY_b|b]]
+- [[_COMMUNITY_{ ctx }|{ ctx }]]
+- [[_COMMUNITY_{ ctx, emitted }|{ ctx, emitted }]]
+- [[_COMMUNITY_{ ctx, emitted, logs }|{ ctx, emitted, logs }]]
+- [[_COMMUNITY_d|d]]
+- [[_COMMUNITY_emailObservations|emailObservations]]
+- [[_COMMUNITY_emails|emails]]
+- [[_COMMUNITY_fetchPage|fetchPage]]
+- [[_COMMUNITY_finder|finder]]
+- [[_COMMUNITY_grants|grants]]
+- [[_COMMUNITY_groups|groups]]
+- [[_COMMUNITY_holland|holland]]
+- [[_COMMUNITY_HOLLAND_AWARD|HOLLAND_AWARD]]
+- [[_COMMUNITY_HOLLAND_AWARD_2|HOLLAND_AWARD_2]]
+- [[_COMMUNITY_hollandIds|hollandIds]]
+- [[_COMMUNITY_hollandRg|hollandRg]]
+- [[_COMMUNITY_inferredObs|inferredObs]]
+- [[_COMMUNITY_lastObserved|lastObserved]]
+- [[_COMMUNITY_memberObs|memberObs]]
+- [[_COMMUNITY_page|page]]
+- [[_COMMUNITY_page1|page1]]
+- [[_COMMUNITY_page2|page2]]
+- [[_COMMUNITY_rec|rec]]
+- [[_COMMUNITY_records|records]]
+- [[_COMMUNITY_researchEntityTargetFinder|researchEntityTargetFinder]]
+- [[_COMMUNITY_rgObs|rgObs]]
+- [[_COMMUNITY_roles|roles]]
+- [[_COMMUNITY_scraper|scraper]]
+- [[_COMMUNITY_slug|slug]]
+- [[_COMMUNITY_sorted|sorted]]
+- [[_COMMUNITY_userFinder|userFinder]]
+- [[_COMMUNITY_userIds|userIds]]
+- [[_COMMUNITY_userObs|userObs]]
+- [[_COMMUNITY_yan|yan]]
+- [[_COMMUNITY_countDocuments|countDocuments]]
+- [[_COMMUNITY_deleteMany|deleteMany]]
+- [[_COMMUNITY_a|a]]
+- [[_COMMUNITY_b|b]]
+- [[_COMMUNITY_base|base]]
+- [[_COMMUNITY_bulkWrite|bulkWrite]]
+- [[_COMMUNITY_insertMany|insertMany]]
+- [[_COMMUNITY_updateMany|updateMany]]
+- [[_COMMUNITY_v1|v1]]
+- [[_COMMUNITY_v2|v2]]
+- [[_COMMUNITY_bio|bio]]
+- [[_COMMUNITY_bioObservation|bioObservation]]
+- [[_COMMUNITY_contaminatedProfileHtml|contaminatedProfileHtml]]
+- [[_COMMUNITY_ctx|ctx]]
+- [[_COMMUNITY_delay|delay]]
+- [[_COMMUNITY_emitted|emitted]]
+- [[_COMMUNITY_entity|entity]]
+- [[_COMMUNITY_entitySelector|entitySelector]]
+- [[_COMMUNITY_facultyPageHtml|facultyPageHtml]]
+- [[_COMMUNITY_fetcher|fetcher]]
+- [[_COMMUNITY_home|[home]]]
+- [[_COMMUNITY_homeProfileHtml|homeProfileHtml]]
+- [[_COMMUNITY_homes|homes]]
+- [[_COMMUNITY_htmlFetcher|htmlFetcher]]
+- [[_COMMUNITY_identity|identity]]
+- [[_COMMUNITY_noEmailProfileHtml|noEmailProfileHtml]]
+- [[_COMMUNITY_obs|obs]]
+- [[_COMMUNITY_profileDescriptionSelector|profileDescriptionSelector]]
+- [[_COMMUNITY_pseudoInterestSets|pseudoInterestSets]]
+- [[_COMMUNITY_researchHomeSelector|researchHomeSelector]]
+- [[_COMMUNITY_researchInterests|researchInterests]]
+- [[_COMMUNITY_scraper|scraper]]
+- [[_COMMUNITY_sociologyProfileHtml|sociologyProfileHtml]]
+- [[_COMMUNITY_calls|calls]]
+- [[_COMMUNITY_{ ctx }|{ ctx }]]
+- [[_COMMUNITY_{ ctx, emitted }|{ ctx, emitted }]]
+- [[_COMMUNITY_fetcher|fetcher]]
+- [[_COMMUNITY_linkObs|linkObs]]
+- [[_COMMUNITY_lookupCalls|lookupCalls]]
+- [[_COMMUNITY_paperObs|paperObs]]
+- [[_COMMUNITY_rows|rows]]
+- [[_COMMUNITY_scraper|scraper]]
+- [[_COMMUNITY_userModel|userModel]]
+- [[_COMMUNITY_userObs|userObs]]
+- [[_COMMUNITY_workCalls|workCalls]]
+- [[_COMMUNITY_worksCall|worksCall]]
+- [[_COMMUNITY_consoleLog|consoleLog]]
+- [[_COMMUNITY_failureUpdate|failureUpdate]]
+- [[_COMMUNITY_logged|logged]]
+- [[_COMMUNITY_orchestrator|orchestrator]]
+- [[_COMMUNITY_persistedError|persistedError]]
+- [[_COMMUNITY_scraper|scraper]]
+- [[_COMMUNITY_{ ctx }|{ ctx }]]
+- [[_COMMUNITY_{ ctx, emitted }|{ ctx, emitted }]]
+- [[_COMMUNITY_fetcher|fetcher]]
+- [[_COMMUNITY_observations|observations]]
+- [[_COMMUNITY_scraper|scraper]]
+- [[_COMMUNITY_userModel|userModel]]
+- [[_COMMUNITY_work|[work]]]
+- [[_COMMUNITY_fetcher|fetcher]]
+- [[_COMMUNITY_objectShapedId|objectShapedId]]
+- [[_COMMUNITY_report|report]]
+- [[_COMMUNITY_review|review]]
+- [[_COMMUNITY_serialized|serialized]]
+- [[_COMMUNITY_create|create]]
+- [[_COMMUNITY_filter, update|[filter, update]]]
+- [[_COMMUNITY_findOneAndUpdate|findOneAndUpdate]]
+- [[_COMMUNITY_lock|lock]]
+- [[_COMMUNITY_updateOne|updateOne]]
+- [[_COMMUNITY_dir|dir]]
+- [[_COMMUNITY_logger|logger]]
+- [[_COMMUNITY_outputPath|outputPath]]
+- [[_COMMUNITY_baseOptions|baseOptions]]
+- [[_COMMUNITY_guarded|guarded]]
+- [[_COMMUNITY_dir|dir]]
+- [[_COMMUNITY_output|output]]
+- [[_COMMUNITY_payload|payload]]
+- [[_COMMUNITY_artifactTypes|artifactTypes]]
+- [[_COMMUNITY_coverage|coverage]]
+- [[_COMMUNITY_evidenceCategories|evidenceCategories]]
+- [[_COMMUNITY_tiers|tiers]]
+- [[_COMMUNITY_callLLM|callLLM]]
+- [[_COMMUNITY_candidateLoader|candidateLoader]]
+- [[_COMMUNITY_{ ctx }|{ ctx }]]
+- [[_COMMUNITY_{ ctx, emitted }|{ ctx, emitted }]]
+- [[_COMMUNITY_{ ctx, emitted, logs }|{ ctx, emitted, logs }]]
+- [[_COMMUNITY_observation|observation]]
+- [[_COMMUNITY_prompt|prompt]]
+- [[_COMMUNITY_scraper|scraper]]
+- [[_COMMUNITY_arnstenObs|arnstenObs]]
+- [[_COMMUNITY_atlasObs|atlasObs]]
+- [[_COMMUNITY_breakerAdvisees|breakerAdvisees]]
+- [[_COMMUNITY_breakerObs|breakerObs]]
+- [[_COMMUNITY_configs|configs]]
+- [[_COMMUNITY_csv|csv]]
+- [[_COMMUNITY_{ ctx }|{ ctx }]]
+- [[_COMMUNITY_{ ctx, emitted }|{ ctx, emitted }]]
+- [[_COMMUNITY_distinctLnames|distinctLnames]]
+- [[_COMMUNITY_ext|ext]]
+- [[_COMMUNITY_extA|extA]]
+- [[_COMMUNITY_extB|extB]]
+- [[_COMMUNITY_failing|failing]]
+- [[_COMMUNITY_fetchedUrls|fetchedUrls]]
+- [[_COMMUNITY_fetchPage|fetchPage]]
+- [[_COMMUNITY_finder|finder]]
+- [[_COMMUNITY_keys|keys]]
+- [[_COMMUNITY_liveExt|liveExt]]
+- [[_COMMUNITY_out|out]]
+- [[_COMMUNITY_ownerToGroupSlug|ownerToGroupSlug]]
+- [[_COMMUNITY_pdfText|pdfText]]
+- [[_COMMUNITY_pdfTextExtractor|pdfTextExtractor]]
+- [[_COMMUNITY_r1|r1]]
+- [[_COMMUNITY_r2|r2]]
+- [[_COMMUNITY_recipients|recipients]]
+- [[_COMMUNITY_recipientToUrl|recipientToUrl]]
+- [[_COMMUNITY_rosterAdvisees|rosterAdvisees]]
+- [[_COMMUNITY_rosterObs|rosterObs]]
+- [[_COMMUNITY_safeRoot|safeRoot]]
+- [[_COMMUNITY_scraper|scraper]]
+- [[_COMMUNITY_stubExt|stubExt]]
+- [[_COMMUNITY_userFinder|userFinder]]
+- [[_COMMUNITY_working|working]]
+- [[_COMMUNITY_metrics|metrics]]
+- [[_COMMUNITY_plan|plan]]
+- [[_COMMUNITY_candidates|candidates]]
+- [[_COMMUNITY_emitted|emitted]]
+- [[_COMMUNITY_fetchPage|fetchPage]]
+- [[_COMMUNITY_genericTitles|genericTitles]]
+- [[_COMMUNITY_log|log]]
+- [[_COMMUNITY_observations|observations]]
+- [[_COMMUNITY_scraper|scraper]]
+- [[_COMMUNITY_byField|byField]]
+- [[_COMMUNITY_{ ctx }|{ ctx }]]
+- [[_COMMUNITY_{ ctx, emitted }|{ ctx, emitted }]]
+- [[_COMMUNITY_{ ctx, emitted, logs }|{ ctx, emitted, logs }]]
+- [[_COMMUNITY_facultyRecord|facultyRecord]]
+- [[_COMMUNITY_fields|fields]]
+- [[_COMMUNITY_fillerPage|fillerPage]]
+- [[_COMMUNITY_keys|keys]]
+- [[_COMMUNITY_obs|obs]]
+- [[_COMMUNITY_page1|page1]]
+- [[_COMMUNITY_page2|page2]]
+- [[_COMMUNITY_sample|sample]]
+- [[_COMMUNITY_scraper|scraper]]
+- [[_COMMUNITY_{ ctx }|{ ctx }]]
+- [[_COMMUNITY_{ ctx, emitted }|{ ctx, emitted }]]
+- [[_COMMUNITY_entities|entities]]
+- [[_COMMUNITY_entity|[entity]]]
+- [[_COMMUNITY_fetchHtml|fetchHtml]]
+- [[_COMMUNITY_observations|observations]]
+- [[_COMMUNITY_scraper|scraper]]
+- [[_COMMUNITY_{ ctx }|{ ctx }]]
+- [[_COMMUNITY_eds|eds]]
+- [[_COMMUNITY_entities|entities]]
+- [[_COMMUNITY_fields|fields]]
+- [[_COMMUNITY_names|names]]
+- [[_COMMUNITY_obs|obs]]
+- [[_COMMUNITY_schoolObs|schoolObs]]
+- [[_COMMUNITY_scraper|scraper]]
+- [[_COMMUNITY_yibs|yibs]]
+- [[_COMMUNITY_{ ctx }|{ ctx }]]
+- [[_COMMUNITY_escapedJson|escapedJson]]
+- [[_COMMUNITY_lab|lab]]
+- [[_COMMUNITY_labs|labs]]
+- [[_COMMUNITY_obs|obs]]
+- [[_COMMUNITY_observations|observations]]
+- [[_COMMUNITY_pageData|pageData]]
+- [[_COMMUNITY_scraper|scraper]]
+- [[_COMMUNITY_userId|userId]]
+- [[_COMMUNITY_userIds|userIds]]
+- [[_COMMUNITY_DescriptionReviewSample|DescriptionReviewSample]]
+- [[_COMMUNITY_FellowshipCatalogMetrics|FellowshipCatalogMetrics]]
+- [[_COMMUNITY_UndergradLlmReviewSample|UndergradLlmReviewSample]]
+- [[_COMMUNITY_CliOptions|CliOptions]]
+- [[_COMMUNITY_CliOptions|CliOptions]]
+- [[_COMMUNITY_CliOptions|CliOptions]]
+- [[_COMMUNITY_CliOptions|CliOptions]]
+- [[_COMMUNITY_BETA_WARNING_OPERATOR_METADATA|BETA_WARNING_OPERATOR_METADATA]]
+- [[_COMMUNITY_CliOptions|CliOptions]]
+- [[_COMMUNITY_CliOptions|CliOptions]]
+- [[_COMMUNITY___dirname|__dirname]]
+- [[_COMMUNITY___filename|__filename]]
+- [[_COMMUNITY_SIMPLE_USER_REF_SPECS|SIMPLE_USER_REF_SPECS]]
+- [[_COMMUNITY_BackfillFieldPair|BackfillFieldPair]]
+- [[_COMMUNITY_REFERENCE_CHECKS|REFERENCE_CHECKS]]
+- [[_COMMUNITY_CliOptions|CliOptions]]
+- [[_COMMUNITY_CliOptions|CliOptions]]
+- [[_COMMUNITY_CliOptions|CliOptions]]
+- [[_COMMUNITY_Options|Options]]
+- [[_COMMUNITY_CliOptions|CliOptions]]
+- [[_COMMUNITY_CliOptions|CliOptions]]
+- [[_COMMUNITY_CliOptions|CliOptions]]
+- [[_COMMUNITY___dirname|__dirname]]
+- [[_COMMUNITY_CliOptions|CliOptions]]
+- [[_COMMUNITY_insecureYaleHttpsAgent|insecureYaleHttpsAgent]]
+- [[_COMMUNITY_CliOptions|CliOptions]]
+- [[_COMMUNITY_CliOptions|CliOptions]]
+- [[_COMMUNITY_CliOptions|CliOptions]]
+- [[_COMMUNITY_CliOptions|CliOptions]]
+- [[_COMMUNITY_CliOptions|CliOptions]]
+- [[_COMMUNITY_CliOptions|CliOptions]]
+- [[_COMMUNITY_dir|dir]]
+- [[_COMMUNITY_output|output]]
+- [[_COMMUNITY_payload|payload]]
+- [[_COMMUNITY_graceWithOrcid|graceWithOrcid]]
+- [[_COMMUNITY_result|result]]
+- [[_COMMUNITY_rows|rows]]
+- [[_COMMUNITY_update|update]]
+- [[_COMMUNITY_updates|updates]]
+- [[_COMMUNITY_deps|deps]]
+- [[_COMMUNITY_dir|dir]]
+- [[_COMMUNITY_output|output]]
+- [[_COMMUNITY_payload|payload]]
+- [[_COMMUNITY_dir|dir]]
+- [[_COMMUNITY_output|output]]
+- [[_COMMUNITY_payload|payload]]
+- [[_COMMUNITY_objectShapedId|objectShapedId]]
+- [[_COMMUNITY_bio|bio]]
+- [[_COMMUNITY_decision|decision]]
+- [[_COMMUNITY_options|options]]
+- [[_COMMUNITY_section|section]]
+- [[_COMMUNITY_terms|terms]]
+- [[_COMMUNITY_text|text]]
+- [[_COMMUNITY_url|url]]
+- [[_COMMUNITY_dir|dir]]
+- [[_COMMUNITY_output|output]]
+- [[_COMMUNITY_payload|payload]]
+- [[_COMMUNITY_urls|urls]]
+- [[_COMMUNITY_acceptedDecisionInputPath|acceptedDecisionInputPath]]
+- [[_COMMUNITY_acceptedDecisionsPath|acceptedDecisionsPath]]
+- [[_COMMUNITY_activeFilter|activeFilter]]
+- [[_COMMUNITY_decisionTemplateOutputPath|decisionTemplateOutputPath]]
+- [[_COMMUNITY_dir|dir]]
+- [[_COMMUNITY_output|output]]
+- [[_COMMUNITY_planReview|planReview]]
+- [[_COMMUNITY_reviewArtifactPath|reviewArtifactPath]]
+- [[_COMMUNITY_rows|rows]]
+- [[_COMMUNITY_scorecard|scorecard]]
+- [[_COMMUNITY_summary|summary]]
+- [[_COMMUNITY_validationOutputPath|validationOutputPath]]
+- [[_COMMUNITY_dir|dir]]
+- [[_COMMUNITY_output|output]]
+- [[_COMMUNITY_dir|dir]]
+- [[_COMMUNITY_options|options]]
+- [[_COMMUNITY_output|output]]
+- [[_COMMUNITY_validation|validation]]
+- [[_COMMUNITY_packageJson|packageJson]]
+- [[_COMMUNITY_plan|plan]]
+- [[_COMMUNITY_dir|dir]]
+- [[_COMMUNITY_output|output]]
+- [[_COMMUNITY_outputPayload|outputPayload]]
+- [[_COMMUNITY_objectShapedId|objectShapedId]]
+- [[_COMMUNITY_args|args]]
+- [[_COMMUNITY_dir|dir]]
+- [[_COMMUNITY_output|output]]
+- [[_COMMUNITY_payload|payload]]
+- [[_COMMUNITY_summary|summary]]
+- [[_COMMUNITY_invalid|invalid]]
+- [[_COMMUNITY_missingPath|missingPath]]
+- [[_COMMUNITY_output|output]]
+- [[_COMMUNITY_packageJson|packageJson]]
+- [[_COMMUNITY_payload|payload]]
+- [[_COMMUNITY_summary|summary]]
+- [[_COMMUNITY_template|template]]
+- [[_COMMUNITY_valid|valid]]
+- [[_COMMUNITY_scripts|scripts]]
+- [[_COMMUNITY_output|output]]
+- [[_COMMUNITY_output|output]]
+- [[_COMMUNITY_output|output]]
+- [[_COMMUNITY_dir|dir]]
+- [[_COMMUNITY_output|output]]
+- [[_COMMUNITY_plans|plans]]
+- [[_COMMUNITY_objectShapedId|objectShapedId]]
+- [[_COMMUNITY_dir|dir]]
+- [[_COMMUNITY_output|output]]
+- [[_COMMUNITY_packageJson|packageJson]]
+- [[_COMMUNITY_payload|payload]]
+- [[_COMMUNITY_pipeline|pipeline]]
+- [[_COMMUNITY_output|output]]
+- [[_COMMUNITY_plan|plan]]
+- [[_COMMUNITY_summary|summary]]
+- [[_COMMUNITY_changed|changed]]
+- [[_COMMUNITY_expected|expected]]
+- [[_COMMUNITY_ops|ops]]
+- [[_COMMUNITY_report|report]]
+- [[_COMMUNITY_output|output]]
+- [[_COMMUNITY_objectShapedId|objectShapedId]]
+- [[_COMMUNITY_result|result]]
+- [[_COMMUNITY_clusters|clusters]]
+- [[_COMMUNITY_decisions|decisions]]
+- [[_COMMUNITY_decisionsPath|decisionsPath]]
+- [[_COMMUNITY_dir|dir]]
+- [[_COMMUNITY_groups|groups]]
+- [[_COMMUNITY_missingPath|missingPath]]
+- [[_COMMUNITY_objectShapedId|objectShapedId]]
+- [[_COMMUNITY_output|output]]
+- [[_COMMUNITY_packageJson|packageJson]]
+- [[_COMMUNITY_payload|payload]]
+- [[_COMMUNITY_planSummary|planSummary]]
+- [[_COMMUNITY_selections|selections]]
+- [[_COMMUNITY_template|template]]
+- [[_COMMUNITY_validation|validation]]
+- [[_COMMUNITY_dir|dir]]
+- [[_COMMUNITY_output|output]]
+- [[_COMMUNITY_dir|dir]]
+- [[_COMMUNITY_invalid|invalid]]
+- [[_COMMUNITY_options|options]]
+- [[_COMMUNITY_output|output]]
+- [[_COMMUNITY_review|review]]
+- [[_COMMUNITY_template|template]]
+- [[_COMMUNITY_valid|valid]]
+- [[_COMMUNITY_validation|validation]]
+- [[_COMMUNITY_dir|dir]]
+- [[_COMMUNITY_output|output]]
+- [[_COMMUNITY_dir|dir]]
+- [[_COMMUNITY_memberCheck|memberCheck]]
+- [[_COMMUNITY_output|output]]
+- [[_COMMUNITY_payload|payload]]
+- [[_COMMUNITY_dir|dir]]
+- [[_COMMUNITY_objectShapedId|objectShapedId]]
+- [[_COMMUNITY_output|output]]
+- [[_COMMUNITY_payload|payload]]
+- [[_COMMUNITY_dir|dir]]
+- [[_COMMUNITY_output|output]]
+- [[_COMMUNITY_payload|payload]]
+- [[_COMMUNITY_objectShapedId|objectShapedId]]
+- [[_COMMUNITY_dir|dir]]
+- [[_COMMUNITY_output|output]]
+- [[_COMMUNITY_report|report]]
+- [[_COMMUNITY_dir|dir]]
+- [[_COMMUNITY_output|output]]
+- [[_COMMUNITY_payload|payload]]
+- [[_COMMUNITY_dir|dir]]
+- [[_COMMUNITY_output|output]]
+- [[_COMMUNITY_payload|payload]]
+- [[_COMMUNITY_audit|audit]]
+- [[_COMMUNITY_dir|dir]]
+- [[_COMMUNITY_output|output]]
+- [[_COMMUNITY_summary|summary]]
+- [[_COMMUNITY_emptyTitleFindings|emptyTitleFindings]]
+- [[_COMMUNITY_facts|facts]]
+- [[_COMMUNITY_facultyTitleFindings|facultyTitleFindings]]
+- [[_COMMUNITY_finding|finding]]
+- [[_COMMUNITY_findings|findings]]
+- [[_COMMUNITY_postdocTitleFindings|postdocTitleFindings]]
+- [[_COMMUNITY_recruitingTitleFindings|recruitingTitleFindings]]
+- [[_COMMUNITY_staffTitleFindings|staffTitleFindings]]
+- [[_COMMUNITY_urls|urls]]
+- [[_COMMUNITY_user|user]]
+- [[_COMMUNITY_visitingTitleFindings|visitingTitleFindings]]
+- [[_COMMUNITY_dir|dir]]
+- [[_COMMUNITY_leapman|leapman]]
+- [[_COMMUNITY_output|output]]
+- [[_COMMUNITY_summary|summary]]
+- [[_COMMUNITY_allowed|allowed]]
+- [[_COMMUNITY_blockedSummary|blockedSummary]]
+- [[_COMMUNITY_clearSummary|clearSummary]]
+- [[_COMMUNITY_defaultNames|defaultNames]]
+- [[_COMMUNITY_dir|dir]]
+- [[_COMMUNITY_missingConfirmations|missingConfirmations]]
+- [[_COMMUNITY_options|options]]
+- [[_COMMUNITY_output|output]]
+- [[_COMMUNITY_payload|payload]]
+- [[_COMMUNITY_skipObservationNames|skipObservationNames]]
+- [[_COMMUNITY_summary|summary]]
+- [[_COMMUNITY_output|output]]
+- [[_COMMUNITY_dir|dir]]
+- [[_COMMUNITY_options|options]]
+- [[_COMMUNITY_output|output]]
+- [[_COMMUNITY_artifacts|artifacts]]
+- [[_COMMUNITY_canonicalArtifacts|canonicalArtifacts]]
+- [[_COMMUNITY_result|result]]
+- [[_COMMUNITY_dir|dir]]
+- [[_COMMUNITY_objectShapedId|objectShapedId]]
+- [[_COMMUNITY_options|options]]
+- [[_COMMUNITY_output|output]]
+- [[_COMMUNITY_payload|payload]]
+- [[_COMMUNITY_summary|summary]]
+- [[_COMMUNITY_certError|certError]]
+- [[_COMMUNITY_dir|dir]]
+- [[_COMMUNITY_get|get]]
+- [[_COMMUNITY_htmlByUrl|htmlByUrl]]
+- [[_COMMUNITY_options|options]]
+- [[_COMMUNITY_output|output]]
+- [[_COMMUNITY_payload|payload]]
+- [[_COMMUNITY_publications|publications]]
+- [[_COMMUNITY_reader|reader]]
+- [[_COMMUNITY_args|args]]
+- [[_COMMUNITY_plan|plan]]
+- [[_COMMUNITY_plan|plan]]
+- [[_COMMUNITY_dir|dir]]
+- [[_COMMUNITY_facts|facts]]
+- [[_COMMUNITY_healthier|healthier]]
+- [[_COMMUNITY_issues|issues]]
+- [[_COMMUNITY_output|output]]
+- [[_COMMUNITY_quotes|quotes]]
+- [[_COMMUNITY_row|row]]
+- [[_COMMUNITY_sparse|sparse]]
+- [[_COMMUNITY_summary|summary]]
+- [[_COMMUNITY_args|args]]
+- [[_COMMUNITY_dir|dir]]
+- [[_COMMUNITY_exactSummary|exactSummary]]
+- [[_COMMUNITY_manualSummary|manualSummary]]
+- [[_COMMUNITY_output|output]]
+- [[_COMMUNITY_packageJson|packageJson]]
+- [[_COMMUNITY_payload|payload]]
+- [[_COMMUNITY_summary|summary]]
+- [[_COMMUNITY_args|args]]
+- [[_COMMUNITY_dir|dir]]
+- [[_COMMUNITY_duplicateId|duplicateId]]
+- [[_COMMUNITY_duplicateIds|duplicateIds]]
+- [[_COMMUNITY_missing|missing]]
+- [[_COMMUNITY_now|now]]
+- [[_COMMUNITY_objectShapedId|objectShapedId]]
+- [[_COMMUNITY_output|output]]
+- [[_COMMUNITY_payload|payload]]
+- [[_COMMUNITY_plan|plan]]
+- [[_COMMUNITY_plans|plans]]
+- [[_COMMUNITY_started|started]]
+- [[_COMMUNITY_template|template]]
+- [[_COMMUNITY_validation|validation]]
+- [[_COMMUNITY_objectShapedId|objectShapedId]]
+- [[_COMMUNITY_names|names]]
+- [[_COMMUNITY_output|output]]
+- [[_COMMUNITY_row|row]]
+- [[_COMMUNITY_sourced|sourced]]
+- [[_COMMUNITY_sparse|sparse]]
+- [[_COMMUNITY_summary|summary]]
+- [[_COMMUNITY_output|output]]
+- [[_COMMUNITY_dir|dir]]
+- [[_COMMUNITY_output|output]]
+- [[_COMMUNITY_dir|dir]]
+- [[_COMMUNITY_output|output]]
+- [[_COMMUNITY_packageJson|packageJson]]
+- [[_COMMUNITY_payload|payload]]
+- [[_COMMUNITY_dir|dir]]
+- [[_COMMUNITY_output|output]]
+- [[_COMMUNITY_summary|summary]]
+- [[_COMMUNITY_dir|dir]]
+- [[_COMMUNITY_output|output]]
+- [[_COMMUNITY_payload|payload]]
+- [[_COMMUNITY_dir|dir]]
+- [[_COMMUNITY_output|output]]
+- [[_COMMUNITY_rows|rows]]
+- [[_COMMUNITY_summary|summary]]
+- [[_COMMUNITY_decisionsPath|decisionsPath]]
+- [[_COMMUNITY_dir|dir]]
+- [[_COMMUNITY_missingPath|missingPath]]
+- [[_COMMUNITY_objectShapedId|objectShapedId]]
+- [[_COMMUNITY_output|output]]
+- [[_COMMUNITY_packageJson|packageJson]]
+- [[_COMMUNITY_payload|payload]]
+- [[_COMMUNITY_summary|summary]]
+- [[_COMMUNITY_superseded|superseded]]
+- [[_COMMUNITY_template|template]]
+- [[_COMMUNITY_templatePath|templatePath]]
+- [[_COMMUNITY_validation|validation]]
+- [[_COMMUNITY_writtenTemplate|writtenTemplate]]
+- [[_COMMUNITY_output|output]]
+- [[_COMMUNITY_payload|payload]]
+- [[_COMMUNITY_report|report]]
+- [[_COMMUNITY_dir|dir]]
+- [[_COMMUNITY_options|options]]
+- [[_COMMUNITY_output|output]]
+- [[_COMMUNITY_output|output]]
+- [[_COMMUNITY_report|report]]
+- [[_COMMUNITY_localPart|localPart]]
+- [[_COMMUNITY_lower|lower]]
+- [[_COMMUNITY_relative|relative]]
+- [[_COMMUNITY_text|text]]
+- [[_COMMUNITY_violations|violations]]
+- [[_COMMUNITY_dir|dir]]
+- [[_COMMUNITY_output|output]]
+- [[_COMMUNITY_packageJson|packageJson]]
+- [[_COMMUNITY_payload|payload]]
+- [[_COMMUNITY_summary|summary]]
+- [[_COMMUNITY_output|output]]
+- [[_COMMUNITY_LOCAL_DEV_HOSTS|LOCAL_DEV_HOSTS]]
+- [[_COMMUNITY_BETA_REPAIR_QUEUE_REPORT_MAX_AGE_HOURS|BETA_REPAIR_QUEUE_REPORT_MAX_AGE_HOURS]]
+- [[_COMMUNITY_DATA_QUALITY_SCORECARD_MAX_AGE_HOURS|DATA_QUALITY_SCORECARD_MAX_AGE_HOURS]]
+- [[_COMMUNITY_LAUNCH_ACQUISITION_REPORT_MAX_AGE_HOURS|LAUNCH_ACQUISITION_REPORT_MAX_AGE_HOURS]]
+- [[_COMMUNITY_LAUNCH_REVIEW_EXCEPTIONS_REPORT_MAX_AGE_HOURS|LAUNCH_REVIEW_EXCEPTIONS_REPORT_MAX_AGE_HOURS]]
+- [[_COMMUNITY_LAUNCH_TRUST_SCORECARD_MAX_AGE_HOURS|LAUNCH_TRUST_SCORECARD_MAX_AGE_HOURS]]
+- [[_COMMUNITY_PROMOTION_COPY_DRY_RUN_REPORT_MAX_AGE_HOURS|PROMOTION_COPY_DRY_RUN_REPORT_MAX_AGE_HOURS]]
+- [[_COMMUNITY_SCRAPER_INTEGRITY_SCORECARD_MAX_AGE_HOURS|SCRAPER_INTEGRITY_SCORECARD_MAX_AGE_HOURS]]
+- [[_COMMUNITY_ACADEMIC_USER_TYPES|ACADEMIC_USER_TYPES]]
+- [[_COMMUNITY_OpportunityViewDataHealth|OpportunityViewDataHealth]]
+- [[_COMMUNITY_ResolvedTrendingOpportunity|ResolvedTrendingOpportunity]]
+- [[_COMMUNITY_SearchQuerySearcher|SearchQuerySearcher]]
+- [[_COMMUNITY_TrendingOpportunityResolution|TrendingOpportunityResolution]]
+- [[_COMMUNITY_TrendingOpportunityViewRow|TrendingOpportunityViewRow]]
+- [[_COMMUNITY_BROAD_UNIT_KEYS|BROAD_UNIT_KEYS]]
+- [[_COMMUNITY_SOURCE_UNIT_ABBREVIATION_ALIASES|SOURCE_UNIT_ABBREVIATION_ALIASES]]
+- [[_COMMUNITY_AcquisitionStage|AcquisitionStage]]
+- [[_COMMUNITY_activePaperFilter|activePaperFilter]]
+- [[_COMMUNITY_IndexablePathwayInput|IndexablePathwayInput]]
+- [[_COMMUNITY_APPLICATION_ROUTE_SIGNAL_TYPES|APPLICATION_ROUTE_SIGNAL_TYPES]]
+- [[_COMMUNITY_CONTACT_INSTRUCTION_SIGNAL_TYPES|CONTACT_INSTRUCTION_SIGNAL_TYPES]]
+- [[_COMMUNITY_NON_RAW_CONTACT_ROUTE_TYPES|NON_RAW_CONTACT_ROUTE_TYPES]]
+- [[_COMMUNITY_PathwayActionability|PathwayActionability]]
+- [[_COMMUNITY_PathwayQuality|PathwayQuality]]
+- [[_COMMUNITY_PathwayQualityInput|PathwayQualityInput]]
+- [[_COMMUNITY_PROGRAM_CONTACT_ROUTE_TYPES|PROGRAM_CONTACT_ROUTE_TYPES]]
+- [[_COMMUNITY_STRONG_UNDERGRAD_SIGNAL_TYPES|STRONG_UNDERGRAD_SIGNAL_TYPES]]
+- [[_COMMUNITY_STRUCTURED_ACTION_PATHWAY_TYPES|STRUCTURED_ACTION_PATHWAY_TYPES]]
+- [[_COMMUNITY_ListingEvidenceMaterializationResult|ListingEvidenceMaterializationResult]]
+- [[_COMMUNITY_KNOWN_COMPOUND_RESEARCH_TERM_SETS|KNOWN_COMPOUND_RESEARCH_TERM_SETS]]
+- [[_COMMUNITY_NormalizeProfileForClientOptions|NormalizeProfileForClientOptions]]
+- [[_COMMUNITY_RESEARCH_TERM_CHROME_REPLACEMENTS|RESEARCH_TERM_CHROME_REPLACEMENTS]]
+- [[_COMMUNITY_RESEARCH_TERM_NOISE_PATTERNS|RESEARCH_TERM_NOISE_PATTERNS]]
+- [[_COMMUNITY_archiveProgram|archiveProgram]]
+- [[_COMMUNITY_bulkCreatePrograms|bulkCreatePrograms]]
+- [[_COMMUNITY_createProgram|createProgram]]
+- [[_COMMUNITY_deleteProgram|deleteProgram]]
+- [[_COMMUNITY_readAllPrograms|readAllPrograms]]
+- [[_COMMUNITY_unarchiveProgram|unarchiveProgram]]
+- [[_COMMUNITY_updateProgram|updateProgram]]
+- [[_COMMUNITY_EVIDENCE_TEXT_FIELDS|EVIDENCE_TEXT_FIELDS]]
+- [[_COMMUNITY_ResearchEntitySearchIndexSettingsOptions|ResearchEntitySearchIndexSettingsOptions]]
+- [[_COMMUNITY_ResearchEntitySemanticIndexReadiness|ResearchEntitySemanticIndexReadiness]]
+- [[_COMMUNITY_ResearchEntitySemanticStatsAdapter|ResearchEntitySemanticStatsAdapter]]
+- [[_COMMUNITY_DEFAULT_RESEARCH_SEARCH_SUGGESTIONS|DEFAULT_RESEARCH_SEARCH_SUGGESTIONS]]
+- [[_COMMUNITY_DIRECT_ACCESS_SIGNAL_TYPES|DIRECT_ACCESS_SIGNAL_TYPES]]
+- [[_COMMUNITY_evidenceScoreExpression|evidenceScoreExpression]]
+- [[_COMMUNITY_FORMALIZATION_ONLY_ENTRY_PATHWAY_TYPES|FORMALIZATION_ONLY_ENTRY_PATHWAY_TYPES]]
+- [[_COMMUNITY_LEAD_RESEARCH_AREA_ROLES|LEAD_RESEARCH_AREA_ROLES]]
+- [[_COMMUNITY_ResearchSearchSuggestion|ResearchSearchSuggestion]]
+- [[_COMMUNITY_model|model]]
+- [[_COMMUNITY_unsafeId|unsafeId]]
+- [[_COMMUNITY_entityId|entityId]]
+- [[_COMMUNITY_extraEntityIds|extraEntityIds]]
+- [[_COMMUNITY_summary|summary]]
+- [[_COMMUNITY_unsafeEntityId|unsafeEntityId]]
+- [[_COMMUNITY_capturedUpdates|capturedUpdates]]
+- [[_COMMUNITY_model|model]]
+- [[_COMMUNITY_chain|chain]]
+- [[_COMMUNITY_normalized|normalized]]
+- [[_COMMUNITY_exists|exists]]
+- [[_COMMUNITY_findOneAndUpdate|findOneAndUpdate]]
+- [[_COMMUNITY_update|update]]
+- [[_COMMUNITY_artifact|artifact]]
+- [[_COMMUNITY_artifactPath|artifactPath]]
+- [[_COMMUNITY_dataQualityPath|dataQualityPath]]
+- [[_COMMUNITY_dir|dir]]
+- [[_COMMUNITY_dqPath|dqPath]]
+- [[_COMMUNITY_expected|expected]]
+- [[_COMMUNITY_freshness|freshness]]
+- [[_COMMUNITY_justStale|justStale]]
+- [[_COMMUNITY_launchTrustPath|launchTrustPath]]
+- [[_COMMUNITY_missingPath|missingPath]]
+- [[_COMMUNITY_reviewExceptionArtifact|reviewExceptionArtifact]]
+- [[_COMMUNITY_reviewExceptionPath|reviewExceptionPath]]
+- [[_COMMUNITY_reviewTime|reviewTime]]
+- [[_COMMUNITY_scraperIntegrityPath|scraperIntegrityPath]]
+- [[_COMMUNITY_summary|summary]]
+- [[_COMMUNITY_unsafeId|unsafeId]]
+- [[_COMMUNITY_validationPath|validationPath]]
+- [[_COMMUNITY_aggregate|aggregate]]
+- [[_COMMUNITY_result|result]]
+- [[_COMMUNITY_artifacts|artifacts]]
+- [[_COMMUNITY_report|report]]
+- [[_COMMUNITY_result|result]]
+- [[_COMMUNITY_fingerprint|fingerprint]]
+- [[_COMMUNITY_model|model]]
+- [[_COMMUNITY_unsafeId|unsafeId]]
+- [[_COMMUNITY_changed|changed]]
+- [[_COMMUNITY_computerScience|computerScience]]
+- [[_COMMUNITY_diff|diff]]
+- [[_COMMUNITY_duplicate|duplicate]]
+- [[_COMMUNITY_errors|errors]]
+- [[_COMMUNITY_invalid|invalid]]
+- [[_COMMUNITY_noOp|noOp]]
+- [[_COMMUNITY_output|output]]
+- [[_COMMUNITY_publicHealth|publicHealth]]
+- [[_COMMUNITY_publicHealthAliasKeys|publicHealthAliasKeys]]
+- [[_COMMUNITY_resolverKeys|resolverKeys]]
+- [[_COMMUNITY_rows|rows]]
+- [[_COMMUNITY_stale|stale]]
+- [[_COMMUNITY_model|model]]
+- [[_COMMUNITY_unsafeId|unsafeId]]
+- [[_COMMUNITY_evidence|evidence]]
+- [[_COMMUNITY_futureOpenEvidence|futureOpenEvidence]]
+- [[_COMMUNITY_links|links]]
+- [[_COMMUNITY_pastDeadlineEvidence|pastDeadlineEvidence]]
+- [[_COMMUNITY_purpose|purpose]]
+- [[_COMMUNITY_match|match]]
+- [[_COMMUNITY_purpose|purpose]]
+- [[_COMMUNITY_researchAreas|researchAreas]]
+- [[_COMMUNITY_links|links]]
+- [[_COMMUNITY_payload|payload]]
+- [[_COMMUNITY_prepSteps|prepSteps]]
+- [[_COMMUNITY_purpose|purpose]]
+- [[_COMMUNITY_unsafeId|unsafeId]]
+- [[_COMMUNITY_id|id]]
+- [[_COMMUNITY_model|model]]
+- [[_COMMUNITY_unsafeId|unsafeId]]
+- [[_COMMUNITY_deps|deps]]
+- [[_COMMUNITY_result|result]]
+- [[_COMMUNITY_patch|patch]]
+- [[_COMMUNITY_cappedResearchAreas|cappedResearchAreas]]
+- [[_COMMUNITY_cappedWebsites|cappedWebsites]]
+- [[_COMMUNITY_professorIds|professorIds]]
+- [[_COMMUNITY_unsafeId|unsafeId]]
+- [[_COMMUNITY_addDocumentsMock|addDocumentsMock]]
+- [[_COMMUNITY_deleteDocumentMock|deleteDocumentMock]]
+- [[_COMMUNITY_doc|doc]]
+- [[_COMMUNITY_docs|docs]]
+- [[_COMMUNITY_getMeiliIndexMock|getMeiliIndexMock]]
+- [[_COMMUNITY_unsafeId|unsafeId]]
+- [[_COMMUNITY_calls|calls]]
+- [[_COMMUNITY_departments|departments]]
+- [[_COMMUNITY_entityId|entityId]]
+- [[_COMMUNITY_evidence|evidence]]
+- [[_COMMUNITY_evidenceArray|evidenceArray]]
+- [[_COMMUNITY_evidenceId|evidenceId]]
+- [[_COMMUNITY_id|id]]
+- [[_COMMUNITY_now|now]]
+- [[_COMMUNITY_observationCalls|observationCalls]]
+- [[_COMMUNITY_opportunity|opportunity]]
+- [[_COMMUNITY_opportunityId|opportunityId]]
+- [[_COMMUNITY_pathway|pathway]]
+- [[_COMMUNITY_pathwayId|pathwayId]]
+- [[_COMMUNITY_researchEntity|researchEntity]]
+- [[_COMMUNITY_researchEntityCalls|researchEntityCalls]]
+- [[_COMMUNITY_sourceUrls|sourceUrls]]
+- [[_COMMUNITY_dir|dir]]
+- [[_COMMUNITY_output|output]]
+- [[_COMMUNITY_report|report]]
+- [[_COMMUNITY_badFilter|badFilter]]
+- [[_COMMUNITY_calls|calls]]
+- [[_COMMUNITY_doc|doc]]
+- [[_COMMUNITY_docs|docs]]
+- [[_COMMUNITY_fakeIndex|fakeIndex]]
+- [[_COMMUNITY_fallback|fallback]]
+- [[_COMMUNITY_filter|filter]]
+- [[_COMMUNITY_filters|filters]]
+- [[_COMMUNITY_limitedSafeDoc|limitedSafeDoc]]
+- [[_COMMUNITY_longResearchArea|longResearchArea]]
+- [[_COMMUNITY_noDirectContactDoc|noDirectContactDoc]]
+- [[_COMMUNITY_publicMailtoDoc|publicMailtoDoc]]
+- [[_COMMUNITY_richer|richer]]
+- [[_COMMUNITY_searches|searches]]
+- [[_COMMUNITY_settings|settings]]
+- [[_COMMUNITY_studentReadyDoc|studentReadyDoc]]
+- [[_COMMUNITY_unsafeId|unsafeId]]
+- [[_COMMUNITY_aggregate|aggregate]]
+- [[_COMMUNITY_badFilter|badFilter]]
+- [[_COMMUNITY_defaultPipeline|defaultPipeline]]
+- [[_COMMUNITY_descriptionCondition|descriptionCondition]]
+- [[_COMMUNITY_entityMatch|entityMatch]]
+- [[_COMMUNITY_facetStage|facetStage]]
+- [[_COMMUNITY_fallback|fallback]]
+- [[_COMMUNITY_fullDescriptionCondition|fullDescriptionCondition]]
+- [[_COMMUNITY_idMatch|idMatch]]
+- [[_COMMUNITY_legacyListingGuard|legacyListingGuard]]
+- [[_COMMUNITY_pipeline|pipeline]]
+- [[_COMMUNITY_posted|posted]]
+- [[_COMMUNITY_queryPipeline|queryPipeline]]
+- [[_COMMUNITY_queryTextMatch|queryTextMatch]]
+- [[_COMMUNITY_richer|richer]]
+- [[_COMMUNITY_shortDescriptionCondition|shortDescriptionCondition]]
+- [[_COMMUNITY_textMatch|textMatch]]
+- [[_COMMUNITY_unsafeId|unsafeId]]
+- [[_COMMUNITY_entryPathwayModel|entryPathwayModel]]
+- [[_COMMUNITY_listingId|listingId]]
+- [[_COMMUNITY_listingModel|listingModel]]
+- [[_COMMUNITY_materialized|materialized]]
+- [[_COMMUNITY_mocks|mocks]]
+- [[_COMMUNITY_model|model]]
+- [[_COMMUNITY_now|now]]
+- [[_COMMUNITY_opportunityUpdates|opportunityUpdates]]
+- [[_COMMUNITY_pathwayUpdates|pathwayUpdates]]
+- [[_COMMUNITY_postedOpportunityModel|postedOpportunityModel]]
+- [[_COMMUNITY_updates|updates]]
+- [[_COMMUNITY_badBios|badBios]]
+- [[_COMMUNITY_bio|bio]]
+- [[_COMMUNITY_deduped|deduped]]
+- [[_COMMUNITY_doiLink|doiLink]]
+- [[_COMMUNITY_freeTextLink|freeTextLink]]
+- [[_COMMUNITY_link|link]]
+- [[_COMMUNITY_links|links]]
+- [[_COMMUNITY_profile|profile]]
+- [[_COMMUNITY_profileUrls|profileUrls]]
+- [[_COMMUNITY_profileWithFormalName|profileWithFormalName]]
+- [[_COMMUNITY_profileWithInitialName|profileWithInitialName]]
+- [[_COMMUNITY_profileWithRomanizedName|profileWithRomanizedName]]
+- [[_COMMUNITY_profileWithShortName|profileWithShortName]]
+- [[_COMMUNITY_rawProfile|rawProfile]]
+- [[_COMMUNITY_researchInterests|researchInterests]]
+- [[_COMMUNITY_safeProfile|safeProfile]]
+- [[_COMMUNITY_secondaryDepartments|secondaryDepartments]]
+- [[_COMMUNITY_unsafeId|unsafeId]]
+- [[_COMMUNITY_unsafeProfile|unsafeProfile]]
+- [[_COMMUNITY_update|update]]
+- [[_COMMUNITY_result|result]]
+- [[_COMMUNITY_badFilter|badFilter]]
+- [[_COMMUNITY_chain|chain]]
+- [[_COMMUNITY_ids|ids]]
+- [[_COMMUNITY_page|page]]
+- [[_COMMUNITY_pageSize|pageSize]]
+- [[_COMMUNITY_visibleFilter|visibleFilter]]
+- [[_COMMUNITY_base|base]]
+- [[_COMMUNITY_both|both]]
+- [[_COMMUNITY_strong|strong]]
+- [[_COMMUNITY_weak|weak]]
+- [[_COMMUNITY_withLead|withLead]]
+- [[_COMMUNITY_withoutLead|withoutLead]]
+- [[_COMMUNITY_withoutUrl|withoutUrl]]
+- [[_COMMUNITY_withUrl|withUrl]]
+- [[_COMMUNITY_detail|detail]]
+- [[_COMMUNITY_dto|dto]]
+- [[_COMMUNITY_qualitySummary|qualitySummary]]
+- [[_COMMUNITY_reasons|reasons]]
+- [[_COMMUNITY_researchAreas|researchAreas]]
+- [[_COMMUNITY_result|result]]
+- [[_COMMUNITY_sourceUrls|sourceUrls]]
+- [[_COMMUNITY_impact|impact]]
+- [[_COMMUNITY_summary|summary]]
+- [[_COMMUNITY_unsafeId|unsafeId]]
+- [[_COMMUNITY_calls|calls]]
+- [[_COMMUNITY_doc|doc]]
+- [[_COMMUNITY_document|document]]
+- [[_COMMUNITY_documentsCall|documentsCall]]
+- [[_COMMUNITY_fakeIndex|fakeIndex]]
+- [[_COMMUNITY_semanticText|semanticText]]
+- [[_COMMUNITY_settings|settings]]
+- [[_COMMUNITY_badFilter|badFilter]]
+- [[_COMMUNITY_filter|filter]]
+- [[_COMMUNITY_accessSummary|accessSummary]]
+- [[_COMMUNITY_badFilter|badFilter]]
+- [[_COMMUNITY_facultyMembersById|facultyMembersById]]
+- [[_COMMUNITY_filter|filter]]
+- [[_COMMUNITY_group|group]]
+- [[_COMMUNITY_longResearchArea|longResearchArea]]
+- [[_COMMUNITY_members|members]]
+- [[_COMMUNITY_publicUser|publicUser]]
+- [[_COMMUNITY_result|result]]
+- [[_COMMUNITY_route|route]]
+- [[_COMMUNITY_row|row]]
+- [[_COMMUNITY_sanitized|sanitized]]
+- [[_COMMUNITY_sorted|sorted]]
+- [[_COMMUNITY_splitJetzAreas|splitJetzAreas]]
+- [[_COMMUNITY_synthesis|synthesis]]
+- [[_COMMUNITY_unsafeRoute|unsafeRoute]]
+- [[_COMMUNITY_usersById|usersById]]
+- [[_COMMUNITY_visible|visible]]
+- [[_COMMUNITY_wayIn|wayIn]]
+- [[_COMMUNITY_report|report]]
+- [[_COMMUNITY_row|row]]
+- [[_COMMUNITY_rows|rows]]
+- [[_COMMUNITY_chain|chain]]
+- [[_COMMUNITY_deps|deps]]
+- [[_COMMUNITY_ids|ids]]
+- [[_COMMUNITY_fellowship|fellowship]]
+- [[_COMMUNITY_mentorMatching|mentorMatching]]
+- [[_COMMUNITY_result|result]]
+- [[_COMMUNITY_structured|structured]]
+- [[_COMMUNITY_thesis|thesis]]
+- [[_COMMUNITY_travel|travel]]
+- [[_COMMUNITY_filter|filter]]
+- [[_COMMUNITY_ids|ids]]
+- [[_COMMUNITY_objectId|objectId]]
+- [[_COMMUNITY_objectIdLike|objectIdLike]]
+- [[_COMMUNITY_objectNetid|objectNetid]]
+- [[_COMMUNITY_regex|regex]]
+- [[_COMMUNITY_result|result]]
+- [[_COMMUNITY_savedPlans|savedPlans]]
+- [[_COMMUNITY_deps|deps]]
+- [[_COMMUNITY_now|now]]
+- [[_COMMUNITY_openItems|openItems]]
+- [[_COMMUNITY_plan|plan]]
+- [[_COMMUNITY_plans|plans]]
+- [[_COMMUNITY_upsert|upsert]]
+- [[_COMMUNITY_logSpy|logSpy]]
+- [[_COMMUNITY_address|address]]
+- [[_COMMUNITY_body|body]]
+- [[_COMMUNITY_cookieSession|cookieSession]]
+- [[_COMMUNITY_ipKeyGenerator|ipKeyGenerator]]
+- [[_COMMUNITY_limiters|limiters]]
+- [[_COMMUNITY_objectNetId|objectNetId]]
+- [[_COMMUNITY_server|server]]
+- [[_COMMUNITY_authenticateSpy|authenticateSpy]]
+- [[_COMMUNITY_authError|authError]]
+- [[_COMMUNITY_casRoute|casRoute]]
+- [[_COMMUNITY_checkRoute|checkRoute]]
+- [[_COMMUNITY_errorSpy|errorSpy]]
+- [[_COMMUNITY_logged|logged]]
+- [[_COMMUNITY_logSpy|logSpy]]
+- [[_COMMUNITY_next|next]]
+- [[_COMMUNITY_remoteDevelopmentEnv|remoteDevelopmentEnv]]
+- [[_COMMUNITY_req|req]]
+- [[_COMMUNITY_res|res]]
+- [[_COMMUNITY_validProductionEnv|validProductionEnv]]
+- [[_COMMUNITY_logOut|logOut]]
+- [[_COMMUNITY_logoutError|logoutError]]
+- [[_COMMUNITY_next|next]]
+- [[_COMMUNITY_req|req]]
+- [[_COMMUNITY_res|res]]
+- [[_COMMUNITY_KNOWN_COMPOUND_RESEARCH_TERM_SETS|KNOWN_COMPOUND_RESEARCH_TERM_SETS]]
+- [[_COMMUNITY_value|value]]
+- [[_COMMUNITY_logged|logged]]
+- [[_COMMUNITY_regex|regex]]
+- [[_COMMUNITY_brokenShort|brokenShort]]
+- [[_COMMUNITY_footerChrome|footerChrome]]
+- [[_COMMUNITY_fullQuality|fullQuality]]
+- [[_COMMUNITY_homepageWelcome|homepageWelcome]]
+- [[_COMMUNITY_malformedMethod|malformedMethod]]
+- [[_COMMUNITY_missionStatement|missionStatement]]
+- [[_COMMUNITY_profileChrome|profileChrome]]
+- [[_COMMUNITY_quality|quality]]
+- [[_COMMUNITY_questionQuality|questionQuality]]
+- [[_COMMUNITY_repeatedMethodJoin|repeatedMethodJoin]]
+- [[_COMMUNITY_shortDescription|shortDescription]]
+- [[_COMMUNITY_lab|lab]]
+- [[_COMMUNITY_sanitized|sanitized]]
+- [[_COMMUNITY_agents|agents]]
+- [[_COMMUNITY_Commands|Commands]]
+- [[_COMMUNITY_Core Modeling Direction|Core Modeling Direction]]
+- [[_COMMUNITY_Current Stack|Current Stack]]
+- [[_COMMUNITY_Default Task Loop|Default Task Loop]]
+- [[_COMMUNITY_Documentation Maintenance|Documentation Maintenance]]
+- [[_COMMUNITY_Done Criteria|Done Criteria]]
+- [[_COMMUNITY_graphify|graphify]]
+- [[_COMMUNITY_Graphify Repo Memory|Graphify Repo Memory]]
+- [[_COMMUNITY_Parallel Work|Parallel Work]]
+- [[_COMMUNITY_Product Surfaces|Product Surfaces]]
+- [[_COMMUNITY_Rule Evolution|Rule Evolution]]
+- [[_COMMUNITY_Sensitive Areas|Sensitive Areas]]
+- [[_COMMUNITY_Adding a New Page|Adding a New Page]]
+- [[_COMMUNITY_Analytics Interception|Analytics Interception]]
+- [[_COMMUNITY_CI|CI]]
+- [[_COMMUNITY_`client.env`|`client/.env`]]
+- [[_COMMUNITY_codeblock1 (React (Vite) → Express (Passport.js) → MongoDB Atlas + Meili)|code:block1 (React (Vite) → Express (Passport.js) → MongoDB Atlas + Meili)]]
+- [[_COMMUNITY_codetypescript (export const asyncHandler = (fn Function) = {)|code:typescript (export const asyncHandler = (fn: Function) => {)]]
+- [[_COMMUNITY_codetypescript (const logListingEvent = (eventType AnalyticsEventType) = {)|code:typescript (const logListingEvent = (eventType: AnalyticsEventType) => {)]]
+- [[_COMMUNITY_codeblock5 (User → Yale CAS SSO → passport.ts findOrCreateUser)|code:block5 (User → Yale CAS SSO → passport.ts findOrCreateUser)]]
+- [[_COMMUNITY_Database|Database]]
+- [[_COMMUNITY_Environment Variables|Environment Variables]]
+- [[_COMMUNITY_Environments|Environments]]
+- [[_COMMUNITY_Error Handling|Error Handling]]
+- [[_COMMUNITY_External Integrations|External Integrations]]
+- [[_COMMUNITY_Graphify Repo Memory|Graphify Repo Memory]]
+- [[_COMMUNITY_Known Technical Debt|Known Technical Debt]]
+- [[_COMMUNITY_Maintenance|Maintenance]]
+- [[_COMMUNITY_Modifying a Schema|Modifying a Schema]]
+- [[_COMMUNITY_Monorepo Structure|Monorepo Structure]]
+- [[_COMMUNITY_Product Model|Product Model]]
+- [[_COMMUNITY_Rate Limiting|Rate Limiting]]
+- [[_COMMUNITY_Scrapers|Scrapers]]
+- [[_COMMUNITY_Search|Search]]
+- [[_COMMUNITY_Sensitive Files|Sensitive Files]]
+- [[_COMMUNITY_`server.env`|`server/.env`]]
+- [[_COMMUNITY_Tech Stack|Tech Stack]]
+- [[_COMMUNITY_Testing|Testing]]
+- [[_COMMUNITY_TypeScript Configuration|TypeScript Configuration]]
+- [[_COMMUNITY_YLabs Codebase Reference|Y/Labs Codebase Reference]]
+- [[_COMMUNITY_1. Install dependencies|1. Install dependencies]]
+- [[_COMMUNITY_2. Configure environment|2. Configure environment]]
+- [[_COMMUNITY_2. Install dependencies|2. Install dependencies]]
+- [[_COMMUNITY_3. Configure environment|3. Configure environment]]
+- [[_COMMUNITY_3. Start local Meilisearch|3. Start local Meilisearch]]
+- [[_COMMUNITY_4. Seed Meilisearch|4. Seed Meilisearch]]
+- [[_COMMUNITY_4. Start local Meilisearch|4. Start local Meilisearch]]
+- [[_COMMUNITY_5. Seed Meilisearch|5. Seed Meilisearch]]
+- [[_COMMUNITY_5. Start dev servers|5. Start dev servers]]
+- [[_COMMUNITY_6. Start dev servers|6. Start dev servers]]
+- [[_COMMUNITY_7. Verify setup|7. Verify setup]]
+- [[_COMMUNITY_Adding Things|Adding Things]]
+- [[_COMMUNITY_Architecture|Architecture]]
+- [[_COMMUNITY_Auth Middleware (`serversrcmiddlewareauth.ts`)|Auth Middleware (`server/src/middleware/auth.ts`)]]
+- [[_COMMUNITY_Authentication|Authentication]]
+- [[_COMMUNITY_CI|CI]]
+- [[_COMMUNITY_codeblock1 (React (Vite) → Express (Passport.js) → MongoDB Atlas + Meili)|code:block1 (React (Vite) → Express (Passport.js) → MongoDB Atlas + Meili)]]
+- [[_COMMUNITY_codebash (curl httplocalhost7700health)|code:bash (curl http://localhost:7700/health)]]
+- [[_COMMUNITY_codebash (yarn --cwd server meilirebuild-all --clear)|code:bash (yarn --cwd server meili:rebuild-all --clear)]]
+- [[_COMMUNITY_codebash (curl httplocalhost7700health)|code:bash (curl http://localhost:7700/health)]]
+- [[_COMMUNITY_codetxt (Usage Error Couldn't find the node_modules state file - run)|code:txt (Usage Error: Couldn't find the node_modules state file - run)]]
+- [[_COMMUNITY_codebash (nvm install 20)|code:bash (nvm install 20)]]
+- [[_COMMUNITY_codebash (LOCAL_AUTH_BYPASS_NETID=devadmin)|code:bash (LOCAL_AUTH_BYPASS_NETID=devadmin)]]
+- [[_COMMUNITY_codebash (yarn scrape help)|code:bash (yarn scrape help)]]
+- [[_COMMUNITY_codebash (sudo apt update)|code:bash (sudo apt update)]]
+- [[_COMMUNITY_codeblock21 (User → Yale CAS SSO → passport.ts findOrCreateUser)|code:block21 (User → Yale CAS SSO → passport.ts findOrCreateUser)]]
+- [[_COMMUNITY_codebash (yarn --cwd client test         watch mode — reruns on file )|code:bash (yarn --cwd client test        # watch mode — reruns on file )]]
+- [[_COMMUNITY_codebash (curl -o- httpsraw.githubusercontent.comnvm-shnvmmaster)|code:bash (curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/master)]]
+- [[_COMMUNITY_codebash (nvm install 20)|code:bash (nvm install 20)]]
+- [[_COMMUNITY_codebash (corepack enable)|code:bash (corepack enable)]]
+- [[_COMMUNITY_codebash (yarn installall)|code:bash (yarn install:all)]]
+- [[_COMMUNITY_codebash ( client.env)|code:bash (# client/.env)]]
+- [[_COMMUNITY_codebash (docker pull getmeilimeilisearchlatest)|code:bash (docker pull getmeili/meilisearch:latest)]]
+- [[_COMMUNITY_Common Commands|Common Commands]]
+- [[_COMMUNITY_Environments|Environments]]
+- [[_COMMUNITY_Local Development Setup|Local Development Setup]]
+- [[_COMMUNITY_Modifying a Schema|Modifying a Schema]]
+- [[_COMMUNITY_New API Endpoint|New API Endpoint]]
+- [[_COMMUNITY_New Page|New Page]]
+- [[_COMMUNITY_Prerequisites|Prerequisites]]
+- [[_COMMUNITY_Project Structure|Project Structure]]
+- [[_COMMUNITY_Running tests|Running tests]]
+- [[_COMMUNITY_Search|Search]]
+- [[_COMMUNITY_Tech Stack|Tech Stack]]
+- [[_COMMUNITY_Testing|Testing]]
+- [[_COMMUNITY_Troubleshooting|Troubleshooting]]
+- [[_COMMUNITY_What is tested|What is tested]]
+- [[_COMMUNITY_What Is This|What Is This?]]
+- [[_COMMUNITY_Yale Research — Developer Guide|Yale Research — Developer Guide]]
+- [[_COMMUNITY_codebash (corepack enable)|code:bash (corepack enable)]]
+- [[_COMMUNITY_codebash ( Terminal 1)|code:bash (# Terminal 1)]]
+- [[_COMMUNITY_codebash (yarn playwrightrun screenshot httpsexample.com tmpexam)|code:bash (yarn playwright:run screenshot https://example.com /tmp/exam)]]
+- [[_COMMUNITY_Documentation|Documentation]]
+- [[_COMMUNITY_Tech Stack|Tech Stack]]
+- [[_COMMUNITY_Legacy CSV-to-JSON update script retired.  Department ground truth no longer com|Legacy CSV-to-JSON update script retired.  Department ground truth no longer com]]
+- [[_COMMUNITY_Core Modeling Direction|Core Modeling Direction]]
+- [[_COMMUNITY_Current Stack|Current Stack]]
+- [[_COMMUNITY_Default Task Loop|Default Task Loop]]
+- [[_COMMUNITY_Documentation Maintenance|Documentation Maintenance]]
+- [[_COMMUNITY_Implementation Rules|Implementation Rules]]
+- [[_COMMUNITY_Parallel Work|Parallel Work]]
+- [[_COMMUNITY_Product Surfaces|Product Surfaces]]
+- [[_COMMUNITY_Rule Evolution|Rule Evolution]]
+- [[_COMMUNITY_Sensitive Areas|Sensitive Areas]]
+- [[_COMMUNITY_Adding a New Page|Adding a New Page]]
+- [[_COMMUNITY_Analytics Interception|Analytics Interception]]
+- [[_COMMUNITY_Architecture|Architecture]]
+- [[_COMMUNITY_Auth Middleware|Auth Middleware]]
+- [[_COMMUNITY_Authentication Flow|Authentication Flow]]
+- [[_COMMUNITY_codeblock1 (React (Vite) → Express (Passport.js) → MongoDB Atlas + Meili)|code:block1 (React (Vite) → Express (Passport.js) → MongoDB Atlas + Meili)]]
+- [[_COMMUNITY_codeblock2 (ylabs)|code:block2 (ylabs/)]]
+- [[_COMMUNITY_codetypescript (export const asyncHandler = (fn Function) = {)|code:typescript (export const asyncHandler = (fn: Function) => {)]]
+- [[_COMMUNITY_codetypescript (const logListingEvent = (eventType AnalyticsEventType) = {)|code:typescript (const logListingEvent = (eventType: AnalyticsEventType) => {)]]
+- [[_COMMUNITY_codeblock5 (User → Yale CAS SSO → passport.ts findOrCreateUser)|code:block5 (User → Yale CAS SSO → passport.ts findOrCreateUser)]]
+- [[_COMMUNITY_Commands|Commands]]
+- [[_COMMUNITY_Database|Database]]
+- [[_COMMUNITY_Environments|Environments]]
+- [[_COMMUNITY_Error Handling|Error Handling]]
+- [[_COMMUNITY_Graphify Repo Memory|Graphify Repo Memory]]
+- [[_COMMUNITY_Maintenance|Maintenance]]
+- [[_COMMUNITY_Monorepo Structure|Monorepo Structure]]
+- [[_COMMUNITY_Naming Conventions|Naming Conventions]]
+- [[_COMMUNITY_Product Model|Product Model]]
+- [[_COMMUNITY_Rate Limiting|Rate Limiting]]
+- [[_COMMUNITY_Routes|Routes]]
+- [[_COMMUNITY_Scrapers|Scrapers]]
+- [[_COMMUNITY_Search|Search]]
+- [[_COMMUNITY_Sensitive Files|Sensitive Files]]
+- [[_COMMUNITY_`server.env`|`server/.env`]]
+- [[_COMMUNITY_Tech Stack|Tech Stack]]
+- [[_COMMUNITY_Testing|Testing]]
+- [[_COMMUNITY_TypeScript Configuration|TypeScript Configuration]]
+- [[_COMMUNITY_Validation Middleware|Validation Middleware]]
+- [[_COMMUNITY_YLabs Codebase Reference|Y/Labs Codebase Reference]]
+- [[_COMMUNITY_4. Start local Meilisearch|4. Start local Meilisearch]]
+- [[_COMMUNITY_5. Seed Meilisearch|5. Seed Meilisearch]]
+- [[_COMMUNITY_API Routes|API Routes]]
+- [[_COMMUNITY_Auth Middleware (`serversrcmiddlewareauth.ts`)|Auth Middleware (`server/src/middleware/auth.ts`)]]
+- [[_COMMUNITY_Authentication|Authentication]]
+- [[_COMMUNITY_codeblock1 (React (Vite) → Express (Passport.js) → MongoDB Atlas + Meili)|code:block1 (React (Vite) → Express (Passport.js) → MongoDB Atlas + Meili)]]
+- [[_COMMUNITY_codebash (curl httplocalhost7700health)|code:bash (curl http://localhost:7700/health)]]
+- [[_COMMUNITY_codebash (yarn devclient     Vite on port 3000)|code:bash (yarn dev:client    # Vite on port 3000)]]
+- [[_COMMUNITY_codebash (curl httplocalhost7700health)|code:bash (curl http://localhost:7700/health)]]
+- [[_COMMUNITY_codetxt (Usage Error Couldn't find the node_modules state file - run)|code:txt (Usage Error: Couldn't find the node_modules state file - run)]]
+- [[_COMMUNITY_codebash (which node)|code:bash (which node)]]
+- [[_COMMUNITY_codebash (nvm install 20)|code:bash (nvm install 20)]]
+- [[_COMMUNITY_codebash (yarn install)|code:bash (yarn install)]]
+- [[_COMMUNITY_codebash (npx ts-node --transpile-only script.ts)|code:bash (npx ts-node --transpile-only <script>.ts)]]
+- [[_COMMUNITY_codeblock19 (ylabs)|code:block19 (ylabs/)]]
+- [[_COMMUNITY_codebash (sudo apt update)|code:bash (sudo apt update)]]
+- [[_COMMUNITY_codebash (cd client)|code:bash (cd client)]]
+- [[_COMMUNITY_codebash (curl -o- httpsraw.githubusercontent.comnvm-shnvmmaster)|code:bash (curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/master)]]
+- [[_COMMUNITY_codebash (nvm install 20)|code:bash (nvm install 20)]]
+- [[_COMMUNITY_codebash (corepack enable)|code:bash (corepack enable)]]
+- [[_COMMUNITY_codebash (yarn installall)|code:bash (yarn install:all)]]
+- [[_COMMUNITY_codebash (cp server.env.example server.env)|code:bash (cp server/.env.example server/.env)]]
+- [[_COMMUNITY_codebash ( client.env)|code:bash (# client/.env)]]
+- [[_COMMUNITY_codebash (docker pull getmeilimeilisearchlatest)|code:bash (docker pull getmeili/meilisearch:latest)]]
+- [[_COMMUNITY_Common Commands|Common Commands]]
+- [[_COMMUNITY_Environments|Environments]]
+- [[_COMMUNITY_Local Development Setup|Local Development Setup]]
+- [[_COMMUNITY_Migration Scripts|Migration Scripts]]
+- [[_COMMUNITY_Modifying a Schema|Modifying a Schema]]
+- [[_COMMUNITY_New Page|New Page]]
+- [[_COMMUNITY_Prerequisites|Prerequisites]]
+- [[_COMMUNITY_Project Structure|Project Structure]]
+- [[_COMMUNITY_Search|Search]]
+- [[_COMMUNITY_Tech Stack|Tech Stack]]
+- [[_COMMUNITY_Testing|Testing]]
+- [[_COMMUNITY_Troubleshooting|Troubleshooting]]
+- [[_COMMUNITY_Troubleshooting Yarn setup|Troubleshooting Yarn setup]]
+- [[_COMMUNITY_What is tested|What is tested]]
+- [[_COMMUNITY_What Is This|What Is This?]]
+- [[_COMMUNITY_YLabs — Developer Guide|Y/Labs — Developer Guide]]
+- [[_COMMUNITY_codebash (corepack enable)|code:bash (corepack enable)]]
+- [[_COMMUNITY_codebash ( Terminal 1)|code:bash (# Terminal 1)]]
+- [[_COMMUNITY_Quick Start|Quick Start]]
+- [[_COMMUNITY_Tech Stack|Tech Stack]]
+- [[_COMMUNITY_YURA Research Database|YURA Research Database]]
+- [[_COMMUNITY_Legacy CSV-to-JSON update script retired.  Department ground truth no longer com|Legacy CSV-to-JSON update script retired.  Department ground truth no longer com]]
 
 ## God Nodes (most connected - your core abstractions)
-1. `Decisions` - 532 edges
-2. `sanitizeLogValue()` - 229 edges
-3. `resolveSafeJsonReportOutputPath()` - 214 edges
-4. `initializeConnections()` - 168 edges
-5. `assertScriptApplyAllowed()` - 152 edges
-6. `serializedDocumentId()` - 152 edges
-7. `redactDirectContactInfo()` - 88 edges
-8. `User` - 79 edges
-9. `NsfAwardScraper` - 75 edges
-10. `NihReporterScraper` - 66 edges
+1. `Decisions` - 507 edges
+2. `sanitizeLogValue()` - 249 edges
+3. `resolveSafeJsonReportOutputPath()` - 220 edges
+4. `serializedDocumentId()` - 167 edges
+5. `assertScriptApplyAllowed()` - 144 edges
+6. `initializeConnections()` - 122 edges
+7. `redactDirectContactInfo()` - 90 edges
+8. `ResearchGroupMember` - 77 edges
+9. `scripts` - 75 edges
+10. `ScraperContext` - 69 edges
 
 ## Surprising Connections (you probably didn't know these)
-- `buildProfileSynthesisDescription()` --calls--> `isProfileLikeWebsiteUrl()`  [INFERRED]
-  server/src/services/researchGroupService.ts → client/src/pages/labDetail.tsx
-- `assertResearchAreaSeedApplyAllowed()` --calls--> `assertScriptApplyAllowed()`  [EXTRACTED]
-  data-migration/seedResearchAreas.ts → server/src/scripts/scriptWriteGuards.ts
-- `assertDepartmentMigrationApplyAllowed()` --calls--> `assertScriptApplyAllowed()`  [EXTRACTED]
-  data-migration/MigrateDepartments.ts → server/src/scripts/scriptWriteGuards.ts
-- `assertPublicationMigrationApplyAllowed()` --calls--> `assertScriptApplyAllowed()`  [EXTRACTED]
-  data-migration/MigratePublicationsToPapers.ts → server/src/scripts/scriptWriteGuards.ts
-- `assertDepartmentSeedApplyAllowed()` --calls--> `assertScriptApplyAllowed()`  [EXTRACTED]
-  data-migration/seedDepartments.ts → server/src/scripts/scriptWriteGuards.ts
+- `checkLiveLink()` --calls--> `request()`  [INFERRED]
+  server/src/scripts/betaDataQuality.ts → client/scripts/productionPromotionSmoke.mjs
+- `AdminAccessReview()` --indirect_call--> `record()`  [INFERRED]
+  client/src/components/admin/AdminAccessReview.tsx → scripts/unified-research-search-audit.mjs
+- `AdminFacultyProfilesTable()` --indirect_call--> `field()`  [INFERRED]
+  client/src/components/admin/AdminFacultyProfilesTable.tsx → server/src/scripts/acceptedInputsCore.ts
+- `AdminFellowshipsTable()` --indirect_call--> `field()`  [INFERRED]
+  client/src/components/admin/AdminFellowshipsTable.tsx → server/src/scripts/acceptedInputsCore.ts
+- `AdminListingsTable()` --indirect_call--> `field()`  [INFERRED]
+  client/src/components/admin/AdminListingsTable.tsx → server/src/scripts/acceptedInputsCore.ts
 
-## Communities (501 total, 13 thin omitted)
+## Import Cycles
+- None detected.
 
-### Community 0 - "Community 0"
-Cohesion: 0.0
-Nodes (521): 2026-05-11: Bridge Listings Into PostedOpportunity, 2026-05-11: Make Lab Microsite Evidence More Granular, 2026-05-11: Start Admin Access Review With API Foundation, 2026-05-11: Start Pathways With A Mongo-Backed Read API, 2026-05-11: Tighten Contact Route Guardrails, 2026-05-12: Add Route-Specific Checklists Locally First, 2026-05-12: Add Source Coverage Metadata Before Expanding Scrapers, 2026-05-12: Keep A Graphify-Grounded UI/UX Direction Doc (+513 more)
+## Communities (4008 total, 3081 thin omitted)
 
-### Community 1 - "Community 1"
-Cohesion: 0.02
-Nodes (135): LabInquireModal(), LabInquireModalProps, resolveContact(), LabMembersListProps, officialProfileHrefFromPublicKey(), ROLE_LABELS, ROLE_ORDER, ROLE_PILL_CLASSES (+127 more)
+### Community 0 - "Decisions"
+Cohesion: 0.00
+Nodes (507): 2026-05-07: Add Access Materializer Beside Legacy Materializer, 2026-05-07: Add Access Summary Compatibility Payload, 2026-05-07: Add First-Class Access Model Collections, 2026-05-07: Compute Recommended Next Steps First, 2026-05-07: Evolve Current ResearchGroup Conservatively, 2026-05-07: North Star Is Research Navigation, Not Lab Openings, 2026-05-07: Replace Binary Acceptance With Access Signals, 2026-05-07: Separate EntryPathway From PostedOpportunity (+499 more)
 
-### Community 2 - "Community 2"
-Cohesion: 0.03
-Nodes (114): dateFormatter, FavoritesManager(), FavoritesManagerProps, ListingCard(), ListingCardProps, defaultUserContext, FellowshipModal(), FellowshipModalProps (+106 more)
-
-### Community 3 - "Community 3"
-Cohesion: 0.01
-Nodes (145): acceptedInputsCoreSource, acceptedInputsSource, accessSignalSerializer, accountListingSerializer, adminAccessReview, adminGrantService, adminRouteSource, adminSource (+137 more)
-
-### Community 4 - "Community 4"
-Cohesion: 0.03
-Nodes (126): absolutize(), addDepartmentalProfileUrl(), buildPublicationLinkIndex(), canonicalProfileUrlFromHtml(), chooseDepartmentRosterScalarObservation(), classifyDiscoveredResearchWebsite(), cleanExtractedProfileBio(), cleanProfileSectionText() (+118 more)
-
-### Community 5 - "Community 5"
-Cohesion: 0.03
-Nodes (94): backfillV4PaperGraph(), buildV4PaperGraphBlockedOutput(), DeprecatedV4BackfillMetadata, DeprecatedV4BackfillOutput, options, writeV4PaperGraphBlockedOutput(), AccessSignal, accessSignalSchema (+86 more)
-
-### Community 6 - "Community 6"
-Cohesion: 0.02
-Nodes (61): PlanningOverview(), PlanningOverviewProps, pluralize(), AdminRoute(), AdminRouteProps, getLocalAdminDevLoginUrl(), getSafeLocalAdminRedirectTarget(), PrivateRoute() (+53 more)
-
-### Community 7 - "Community 7"
-Cohesion: 0.03
-Nodes (107): Fellowship, CliOptions, FILTER, main(), parseArgs(), CliOptions, main(), parseArgs() (+99 more)
-
-### Community 8 - "Community 8"
-Cohesion: 0.03
-Nodes (94): AdminProfile, PAGE_SIZES, SortField, TABLE_COLUMNS, AdminListing, AdminListingEditModal(), Props, AdminListing (+86 more)
-
-### Community 9 - "Community 9"
-Cohesion: 0.04
-Nodes (108): ADMIN_PROFILE_USER_TYPES, ADMIN_UPDATE_FIELDS, ALLOWED_SELF_UPDATE_FIELDS, appointmentTitleCount(), boundedPublicProfileUrl(), capitalizeSentenceStart(), cleanProfileUrlsForPerson(), cleanPublicHttpUrl() (+100 more)
-
-### Community 10 - "Community 10"
-Cohesion: 0.03
-Nodes (97): applyPrincipalInvestigatorWebsiteFallback(), isDescriptionResearchHomeUrl(), applyListingGuidanceToCandidateLabs(), CallLLMFn, candidateCrawlUrls(), CandidateLab, candidateLabFromResearchEntityDoc(), candidateSubPageUrls() (+89 more)
-
-### Community 11 - "Community 11"
-Cohesion: 0.03
-Nodes (83): sourceUrlsForPathway(), AccessReviewCounts, AccessReviewDetail, AccessReviewEntitySummary, AccessSignal, AdminAccessReview(), ContactRoute, EntryPathway (+75 more)
-
-### Community 12 - "Community 12"
-Cohesion: 0.04
-Nodes (93): ACCESS_MATERIALIZING_FIELDS, ACCESS_MATERIALIZING_SOURCES, addPostMaterializationMetrics(), addUniqueValuesToSet(), authorshipEvidenceFromPaperObservations(), buildFellowshipLookupClauses(), buildOfficialProfileScholarlyLinkUpserts(), buildPaperUpdateFromObservations() (+85 more)
-
-### Community 13 - "Community 13"
-Cohesion: 0.04
-Nodes (89): listWaysInForResearchEntities(), addResearchEntitySearchAliases(), addPublicMemberField(), addPublicMemberInternalProfilePath(), addPublicMemberProfileUrls(), addPublicPaperField(), boundedResearchFilterValues(), boundedResearchSearchQuery() (+81 more)
-
-### Community 14 - "Community 14"
-Cohesion: 0.05
-Nodes (87): CallDescriptionLLMFn, CandidateDescriptionLab, CandidateDescriptionLabDoc, candidateDescriptionLabsFromDocs(), candidateDescriptionSupplementalUrls(), candidateUrlsForDoc(), cleanTextValue(), dedupeRepeatedSentences() (+79 more)
-
-### Community 15 - "Community 15"
-Cohesion: 0.04
-Nodes (84): validateAccessArtifactBundle(), EvidenceStrength, accessArtifactCandidatesFromDerived(), AccessMaterializationResult, AccessObservation, bestObservation(), buildMergedEntryPathwayData(), confidenceLabel() (+76 more)
-
-### Community 16 - "Community 16"
-Cohesion: 0.03
-Nodes (76): ConfigContextType, defaultConfigContext, DepartmentConfig, FieldConfig, ResearchAreaConfig, DepartmentInput(), DepartmentInputProps, Unknown() (+68 more)
-
-### Community 17 - "Community 17"
-Cohesion: 0.04
-Nodes (70): ApiMode, getApiMode(), initializeConnections(), Source, normalizeUserType(), publicationSchema, User, __dirname (+62 more)
-
-### Community 18 - "Community 18"
-Cohesion: 0.07
-Nodes (78): addFavFellowships(), addFavListings(), addFavPathways(), addSavedPrograms(), addSavedResearchPlans(), ALLOWED_SELF_USER_TYPES, boundedAccountString(), boundedAccountStringArray() (+70 more)
-
-### Community 19 - "Community 19"
-Cohesion: 0.04
-Nodes (78): ActiveArtifactOnArchivedEntity, buildDuplicateAccessSignalGroupsFromRows(), buildDuplicateResearchPaperGroupsFromRows(), BuildPostMaterializationIntegrityInput, buildPostMaterializationIntegritySummary(), buildSamePiNameDuplicateGroupsFromDedupeRows(), CurrentMemberOnArchivedEntity, DuplicateAccessSignalGroup (+70 more)
-
-### Community 20 - "Community 20"
-Cohesion: 0.04
-Nodes (74): allowsLegacyAdminUserType(), DIRECTORY_SEARCH_TYPES, DirectoryPerson, fetchFromDirectory(), createUser(), validateUser(), fetchYalie(), ListYaliesOptions (+66 more)
-
-### Community 21 - "Community 21"
-Cohesion: 0.04
-Nodes (51): HomeButton(), listingQuickFilters, Navbar(), isPrimaryNavLinkActive(), PrimaryNavLink, primaryNavLinks, YURAButton(), defaultSearchContext (+43 more)
-
-### Community 22 - "Community 22"
-Cohesion: 0.05
-Nodes (75): arrayHasText(), awardToRecord(), buildCoPiObservations(), buildPiUserObservations(), buildResearchGroupObservations(), defaultDateStart(), defaultResearchEntityTargetFinder(), defaultUserFinder() (+67 more)
-
-### Community 23 - "Community 23"
-Cohesion: 0.04
-Nodes (75): DuplicateEntityReviewCategory, DuplicateEntityReviewEntity, DuplicateEntityReviewSummary, ResearchEntityDedupeMergeGroup, ACTIVE_FILTER, assertDuplicateEntityNameReviewApplyAllowed(), asString(), buildDuplicateEntityNameMergeGroups() (+67 more)
-
-### Community 24 - "Community 24"
-Cohesion: 0.04
-Nodes (60): csrfOriginGuard(), isTrustedUnsafeRequestOrigin(), originFromUrl(), SAFE_METHODS, buildContentSecurityPolicy(), CONNECT_SRC_ORIGINS, connectSrcDirective(), CONTENT_SECURITY_POLICY (+52 more)
-
-### Community 25 - "Community 25"
-Cohesion: 0.05
-Nodes (72): applyDeleteModeArtifactPlan(), applyGroup(), applyResearchEntityDedupeMergeGroup(), applyResearchEntityPiDedupeGroupsSequentially(), archiveOrDeleteDuplicateDocument(), ARRAY_REFERENCE_SPECS, ARTIFACT_SPECS, assertResearchEntityPiDedupeApplyAllowed() (+64 more)
-
-### Community 26 - "Community 26"
-Cohesion: 0.03
-Nodes (69): ACCESS_REVIEW_RECORD_TYPES, ADMIN_FELLOWSHIP_SORT_FIELDS, ADMIN_LISTING_SORT_FIELDS, ADMIN_PROFILE_SORT_FIELDS, ADMIN_SEARCH_ERROR_MESSAGES, ADMIN_URL_CHECK_ALLOWED_PORTS, adminAccessReviewLockedFields(), adminAccessReviewRecordUpdateDto() (+61 more)
-
-### Community 27 - "Community 27"
+### Community 1 - "labDetail.tsx"
 Cohesion: 0.06
-Nodes (64): backfillV4Grants(), buildV4GrantBackfillOutput(), __dirname, __filename, main(), normalizeAgency(), options, V4GrantBackfillResult (+56 more)
+Nodes (60): mockedAxios, mockedSwal, Endpoints, FavoritesKind, useFavorites(), AffiliatedResearchEntitiesSection(), compactDepartmentLabels(), decisionNextStep() (+52 more)
 
-### Community 28 - "Community 28"
-Cohesion: 0.04
-Nodes (60): emptyGroupedResults(), IdentityConfidenceCardProps, { container }, buildClusterContextSummary(), buildCompleteContextSummary(), buildGroupedSearchResults(), buildIdentityConfidenceRecords(), buildMetadataClusters() (+52 more)
-
-### Community 29 - "Community 29"
-Cohesion: 0.06
-Nodes (60): absoluteUrl(), absolutizeUrl(), addProfileUrlValue(), cleanDescription(), clippedDescription(), compactNameKey(), decodeHtmlEntities(), escapeRegex() (+52 more)
-
-### Community 30 - "Community 30"
-Cohesion: 0.05
-Nodes (65): AdvisorAggregateRow, aggregateAdviseesByAdvisor(), buildObservationsForAdvisor(), DEFAULT_PROGRAM_CONFIGS, drupalRecipientRowExtractor(), escapeRegex(), ExtractorCtx, FellowshipRecipient (+57 more)
-
-### Community 31 - "Community 31"
-Cohesion: 0.06
-Nodes (67): buildLaunchAcquisitionReportOutput(), LaunchAcquisitionReportCliOptions, main(), parseArgs(), parseLaunchAcquisitionReportArgs(), parsePositiveInteger(), parseRequiredValue(), writeLaunchAcquisitionReportOutput() (+59 more)
-
-### Community 32 - "Community 32"
-Cohesion: 0.07
-Nodes (70): auditProfileRecord(), candidateOfficialProfileUrls(), candidateProfileFactsMatchUser(), classifyStoredBioIssue(), classifyStoredTitleIssue(), collectObjects(), compareOfficialProfileFacts(), corpusForProfile() (+62 more)
-
-### Community 33 - "Community 33"
-Cohesion: 0.04
-Nodes (64): CenterConfig, CenterExtractor, CenterKind, CenterMember, centerMemberRelationshipObservations(), centerMemberRelationshipObservationsForEntityKey(), CentersInstitutesScraper, centerToGroupObservations() (+56 more)
-
-### Community 34 - "Community 34"
-Cohesion: 0.04
-Nodes (39): fellowshipQuickFilters, defaultFellowshipSearchContext, FellowshipSearchContextType, defaultUIContext, UIContextType, ViewMode, FELLOWSHIP_SORTABLE_KEYS, FellowshipSearchContextProviderProps (+31 more)
-
-### Community 35 - "Community 35"
-Cohesion: 0.05
-Nodes (66): arrayHasText(), canonicalPiName(), DEFAULT_FISCAL_YEARS, defaultResearchEntityTargetFinder(), escapeRegex(), fetchPage(), FetchPageOpts, findUserForPi() (+58 more)
-
-### Community 36 - "Community 36"
-Cohesion: 0.05
-Nodes (62): VisibilityReleaseQueueCollection, visibilityReleaseQueueCollections, visibilityReleaseQueueItemSchema, VisibilityReleaseQueueStatus, visibilityReleaseQueueStatuses, VisibilityRepairStage, visibilityRepairStages, VisibilityRepairStatus (+54 more)
-
-### Community 37 - "Community 37"
-Cohesion: 0.07
-Nodes (63): buildUserBioObservationScore(), cleanProfileText(), isFacultyControlledProfileObservation(), isMaterializableUserBioCandidate(), isOfficialYaleProfileObservation(), profileWordCount(), researchNarrativeScore(), sourceUrlHostname() (+55 more)
-
-### Community 38 - "Community 38"
-Cohesion: 0.06
-Nodes (59): ScrapeSnapshot, scrapeSnapshotSchema, getCached(), invalidateCache(), ScraperContext, ScraperResult, isFacultyTitle(), listYalies() (+51 more)
-
-### Community 39 - "Community 39"
-Cohesion: 0.06
-Nodes (61): confirmListing(), unconfirmListing(), addDepartments(), addFavFellowships(), addFavListings(), addFavoriteObjectIdIfMissing(), assertSafeUserUpdateDocument(), badRequestError() (+53 more)
-
-### Community 40 - "Community 40"
-Cohesion: 0.05
-Nodes (60): seedListingSummary(), seedUserSummary(), MaterializerObservationLike, CenterDirectorsBackfillCliOptions, CenterDirectorsBackfillResult, __dirname, __filename, findCenterDirectorCandidates() (+52 more)
-
-### Community 41 - "Community 41"
-Cohesion: 0.06
-Nodes (59): AdminDepartments(), CATEGORY_COLORS, DEPARTMENT_CATEGORIES, DepartmentAction, DepartmentDoc, DepartmentState, EditDraft, INITIAL_NEW_DRAFT (+51 more)
-
-### Community 42 - "Community 42"
-Cohesion: 0.05
-Nodes (49): ProfileEditor(), ProfileEditorProps, formatEntityKindTag(), ROLE_LABELS, VALID_TABS, CourseTableCourse, CourseTableSection(), CourseTableSectionProps (+41 more)
-
-### Community 43 - "Community 43"
-Cohesion: 0.06
-Nodes (55): aggregateCountMap(), aggregateSignalTypesMap(), AuditEntityRecord, buildBulkAudit(), buildObservationFlags(), buildResearchEntityCoverageAuditOutput(), buildSlugAudit(), CliOptions (+47 more)
-
-### Community 44 - "Community 44"
-Cohesion: 0.06
-Nodes (54): KIND_LABELS, LabHeader(), LabHeaderProps, normalizeActionUrl(), CONTACT_ROUTE_ORDER, contactRouteCtaLabel(), EvidenceChip(), EvidenceChipProps (+46 more)
-
-### Community 45 - "Community 45"
-Cohesion: 0.05
-Nodes (58): buildSourceHealthSummary(), AcceptedDecisionValidationCommandInput, attachAcceptedDecisionValidationSummary(), attachReviewArtifactSummary(), buildCrossSourceObservationReviewCommand(), buildReviewArtifactRollups(), buildReviewArtifactStatus(), buildReviewDecisionValidationStatus() (+50 more)
-
-### Community 46 - "Community 46"
-Cohesion: 0.04
-Nodes (43): ACTION_FILTER_OPTION_BY_KEY, ACTION_FILTER_OPTIONS, ActionFilterKey, ActionFilterOption, ActiveResearchSearchRequest, addArrayFilter(), buildPathwayQuery(), buildPathwaysLink() (+35 more)
-
-### Community 47 - "Community 47"
-Cohesion: 0.04
-Nodes (60): buildInferredPiMemberUpsert(), buildResearchGroupMemberUpsert(), centerRelationshipTypeForResolvedTarget(), escapeRegex(), findExistingResearchEntityByOfficialLabUrl(), findUniqueUserForResearchGroupMember(), findUserDocByOfficialProfileObservations(), idValue() (+52 more)
-
-### Community 48 - "Community 48"
-Cohesion: 0.05
-Nodes (46): ScrapeRun, scrapeRunSchema, buildSupersededObservationPruneFilter(), findKeptRunIds(), nonNegativeInteger(), positiveInteger(), pruneSupersededObservations(), SupersededObservationPruneOptions (+38 more)
-
-### Community 49 - "Community 49"
+### Community 2 - "browsable.ts"
 Cohesion: 0.08
-Nodes (56): getListingById(), getProfileListings(), getListingModel(), addFavorite(), addView(), assertValidId(), ItemMutationFilter, normalizeItemObjectId() (+48 more)
+Nodes (42): ArchivedBadge(), BrowseCard, BrowseCardProps, BrowseGrid(), BrowseGridProps, BrowseListItem, BrowseListItemProps, FavoriteButton (+34 more)
 
-### Community 50 - "Community 50"
-Cohesion: 0.06
-Nodes (55): isStudentVisibilityTier(), addFavorite(), addView(), adminFellowshipDate(), adminFellowshipLinks(), adminFellowshipNumber(), adminFellowshipStringArray(), adminFellowshipText() (+47 more)
+### Community 3 - "security-preflight.test.mjs"
+Cohesion: 0.29
+Nodes (6): ciWorkflow, keepAliveWorkflow, packageJson, productionSecuritySmokeWorkflow, renderBlueprint, yarnrc
 
-### Community 51 - "Community 51"
-Cohesion: 0.05
-Nodes (57): BETA_CHECK_OPERATOR_METADATA, BETA_WARNING_OPERATOR_METADATA, betaCommand(), BetaDataQualityCheck, BetaDataQualityDiagnostics, BetaDataQualityOptions, BetaDataQualityProgressEvent, BetaDataQualitySeverity (+49 more)
+### Community 4 - "departmentRosterScraper.ts"
+Cohesion: 0.10
+Nodes (53): absolutize(), canonicalProfileUrlFromHtml(), cleanProfileSectionText(), cleanText(), csFacultyDataExtractor(), csJsRenderedStub(), decodeHtmlEntities(), DEFAULT_DEPT_CONFIGS (+45 more)
 
-### Community 52 - "Community 52"
-Cohesion: 0.07
-Nodes (51): buildTargetedProfessorBioRepair(), cleanText(), normalizedNameTokens(), observationFor(), parseTargetedProfessorBioRepairArgs(), profileNameMatchesUser(), profileUrlSetPath(), profileUrlStorageKey() (+43 more)
-
-### Community 53 - "Community 53"
-Cohesion: 0.08
-Nodes (55): addCheck(), apiBase, appBase, args, checkOpportunityDetail(), checkProgramApis(), config, containsInternalLabels() (+47 more)
-
-### Community 54 - "Community 54"
-Cohesion: 0.06
-Nodes (50): defaultLabSearchContext, LabSearchContextType, searchResearchEntities(), LabSearchContextProviderProps, createInitialLabSearchState(), LabSearchAction, labSearchReducer(), LabSearchState (+42 more)
-
-### Community 55 - "Community 55"
-Cohesion: 0.05
-Nodes (51): ACCESS_ARTIFACT_TYPES, ACCESS_EVIDENCE_CONFLICT_FIELDS, ACCESS_MATERIALIZATION_EVIDENCE_FIELDS, ADDITIVE_METADATA_CONFLICT_FIELDS, buildCoverageFetchSummary(), buildCoverageSourceSummary(), buildMaterializationConflictEntityClauses(), buildMaterializationConflictReview() (+43 more)
-
-### Community 56 - "Community 56"
-Cohesion: 0.05
-Nodes (51): compactStrings(), documentId(), evidenceExcerpt(), firstEvidenceText(), getOpportunityApplicationLabel(), getOpportunityApplicationState(), getOpportunityDeadlineState(), getOpportunityDetail() (+43 more)
-
-### Community 57 - "Community 57"
-Cohesion: 0.05
-Nodes (54): ACCESS_EVIDENCE_CONFLICT_FIELDS, ADDITIVE_METADATA_CONFLICT_FIELDS, AggregatedObservationConflictGroup, ALL_KNOWN_CONFLICT_FIELDS, asString(), asStringArray(), buildCandidateSample(), buildCategoryCounts() (+46 more)
-
-### Community 58 - "Community 58"
+### Community 5 - "index.ts"
 Cohesion: 0.11
-Nodes (55): activeAreasOfResearchSummary(), deriveShortDescriptionFromFullDescription(), DescriptionQualityFlag, FieldQuality, fullDescriptionQuality(), hasBrokenTemplate(), hasDuplicatedLongFragment(), hasExplicitProfileResearchFocus() (+47 more)
+Nodes (24): AccessSignal, accessSignalSchema, contactRouteSchema, entryPathwaySchema, fieldProvenanceSchema, opennessSignalSchema, recordReviewSchema, recordReviewStatuses (+16 more)
 
-### Community 59 - "Community 59"
-Cohesion: 0.08
-Nodes (52): ACTIVE_FILTER, asString(), buildBetaDataQualityScorecard(), buildCollectionCounts(), buildDescriptionQuality(), buildDuplicateEntityNames(), buildEmailHygiene(), buildLiveLinkCheck() (+44 more)
-
-### Community 60 - "Community 60"
-Cohesion: 0.06
-Nodes (47): classifyProgramResearchRelevance(), ProgramResearchRelevanceInput, ProgramResearchRelevanceResult, RESEARCH_PROGRAM_KINDS, RESEARCH_PURPOSES, text(), computeProgramStudentVisibility(), computeResearchEntityStudentVisibility() (+39 more)
-
-### Community 61 - "Community 61"
-Cohesion: 0.07
-Nodes (48): addViewToListing(), archiveListingForCurrentUser(), boundedListingSearchQuery(), buildRobustFilterMatch(), createListingForCurrentUser(), deleteListingForCurrentUser(), filterListingUpdate(), getSkeletonListingForCurrentUser() (+40 more)
-
-### Community 62 - "Community 62"
-Cohesion: 0.06
-Nodes (47): BrowseRankBackfillCliOptions, BrowseRankBackfillResult, __dirname, __filename, main(), parseBrowseRankBackfillArgs(), parsePositiveInt(), runBrowseRankBackfill() (+39 more)
-
-### Community 63 - "Community 63"
-Cohesion: 0.06
-Nodes (49): ACADEMIC_USER_TYPES, ActionNeededAnalytics, ANALYTICS_EVENT_TYPES, ANALYTICS_NON_USER_NETIDS, AnalyticsUserDrilldownResult, AnalyticsUsersQuery, AnalyticsUsersResult, AnalyticsUserSummary (+41 more)
-
-### Community 64 - "Community 64"
-Cohesion: 0.09
-Nodes (46): BOOLEAN_FLAGS, buildCronOutputPayload(), buildMaterializeOutputPayload(), buildScraperCliOutputPayload(), buildScraperCliPreflight(), __dirname, main(), parseArgs() (+38 more)
-
-### Community 65 - "Community 65"
-Cohesion: 0.06
-Nodes (44): AcceptedInputIssue, ArxivResolvedTarget, ArxivValidationResult, asString(), asStringArray(), buildArxivCandidateRows(), buildArxivCandidateText(), canonicalUrl() (+36 more)
-
-### Community 66 - "Community 66"
-Cohesion: 0.08
-Nodes (41): EntryPathwayStatus, AccessSignalServiceDeps, AccessSignalUpsertResult, compactObject(), getAccessSignalModel(), toStoredId(), toStoredObjectId(), upsertAccessSignal() (+33 more)
-
-### Community 67 - "Community 67"
-Cohesion: 0.08
-Nodes (47): absoluteUrl(), bestDeadlineText(), candidateFromDetailPage(), candidateFromLink(), candidateToObservations(), compactTitleIdentity(), DEFAULT_PAGE_URLS, existingKeyForCandidate() (+39 more)
-
-### Community 68 - "Community 68"
-Cohesion: 0.07
-Nodes (45): publicHttpUrl(), isHttpUrl(), buildFellowshipApplicationCycleEvidence(), cleanHttpUrl(), cleanString(), dateStatus(), FellowshipApplicationCycleEvidence, hasApplicationRoute() (+37 more)
-
-### Community 69 - "Community 69"
-Cohesion: 0.04
-Nodes (38): DataQualityDuplicateNamePreflight, DataQualitySamePiDedupeReview, DataQualitySuspiciousUserEmailCopy, decisionLaneCopy, evidenceReasons, FreshnessPolicy, GATE_LABELS, GateArtifactFreshness (+30 more)
-
-### Community 70 - "Community 70"
-Cohesion: 0.09
-Nodes (49): absolutize(), archivePointerRow(), assertOfficialProfilePublicationPointerRepairApplyAllowed(), candidateRepairUrls(), cleanText(), crawlFeaturedPublications(), createRepairPageReader(), ExtractedFeaturedPublication (+41 more)
-
-### Community 71 - "Community 71"
-Cohesion: 0.08
-Nodes (44): ACCEPTED_INPUT_FILE_EXTENSIONS, acceptedPath(), AdvisorResolution, AdvisorResolver, assertAcceptedInputPathRoot(), assertSafeAcceptedInputPathText(), candidateRowsFromText(), coerceReviewRow() (+36 more)
-
-### Community 72 - "Community 72"
-Cohesion: 0.09
-Nodes (51): bestContextString(), bestContextStringArray(), bestObservationForField(), bestOfficialProfileUrl(), buildFellowshipUpdateFromObservations(), buildOfficialProfileCoverageInputs(), buildResearchEntityProfileSupplementObservations(), buildUserProfileUrlLookupClauses() (+43 more)
-
-### Community 73 - "Community 73"
-Cohesion: 0.08
-Nodes (47): main(), parseLimit(), CompensationType, PostedOpportunityStatus, syncPathwaySearchIndexDocument(), activeListingBackfillFilter(), archiveListingBackedPostedOpportunities(), backfillPostedOpportunitiesFromListings() (+39 more)
-
-### Community 74 - "Community 74"
-Cohesion: 0.06
-Nodes (41): addIfDefined(), getProfile(), getProfileCourses(), getPublications(), normalizePublicationPagination(), PUBLICATION_SORT_FIELDS, publicHttpUrl(), publicHttpUrls() (+33 more)
-
-### Community 75 - "Community 75"
-Cohesion: 0.07
-Nodes (39): AnalyticsEvent, analyticsEventSchema, AnalyticsEventType, Analytics(), AnalyticsActionNeededItem, AnalyticsSearchQualityResponse, ANALYTICS_SORT_DIRECTIONS, ANALYTICS_USER_SORTS (+31 more)
-
-### Community 76 - "Community 76"
-Cohesion: 0.08
-Nodes (41): arxivIdFromUrl(), buildExternalIds(), buildOpenAlexAuthorshipEvidence(), defaultFetcher(), extractArxivId(), FacultyRecord, fetchPage(), HttpFetcher (+33 more)
-
-### Community 77 - "Community 77"
-Cohesion: 0.07
-Nodes (36): getOpportunityById(), normalizeOpportunityIdParam(), asyncHandler(), AsyncRequestHandler, clientErrorStatus(), errorHandler(), notFoundHandler(), publicClientErrorMessage() (+28 more)
-
-### Community 78 - "Community 78"
-Cohesion: 0.08
-Nodes (45): applyMemberReferenceRepairs(), buildCurrentMemberOnArchivedEntityPipeline(), buildExistingMemberMatchQuery(), buildOrphanMemberUserReferencePipeline(), CURRENT_MEMBER_ON_ARCHIVED_ENTITY_STAGES, escapeRegExp(), exactCaseInsensitive(), loadExistingCanonicalMemberMatches() (+37 more)
-
-### Community 79 - "Community 79"
-Cohesion: 0.06
-Nodes (41): CHECKLIST_TEMPLATES, DeadlineReminder, deadlineReminderForPathway(), defaultIntentForPathway(), FellowshipFundingMatch, filterStoredPlansForSavedPathways(), formatDeadline(), fundingCueForPathway() (+33 more)
-
-### Community 80 - "Community 80"
-Cohesion: 0.06
-Nodes (36): main(), parseArgs(), AuditEntityLinkedRecord, AuditFacultyMember, AuditResearchEntity, AuditResearchEntityMember, AuditUser, buildYaleDirectoryCoverageAudit() (+28 more)
-
-### Community 81 - "Community 81"
-Cohesion: 0.08
-Nodes (45): anyFilter(), boundedFilterValues(), boundedSearchQuery(), buildPathwayMeiliFilter(), buildPathwayMeiliSort(), buildPathwaySearchIndexDocument(), buildPathwaySearchIndexDocuments(), configurePathwaySearchIndex() (+37 more)
-
-### Community 82 - "Community 82"
-Cohesion: 0.06
-Nodes (47): 2. Install dependencies, 3. Configure environment, 4. Start local Meilisearch, 5. Seed Meilisearch, 6. Start dev servers, 7. Verify setup, Adding Things, API Routes (+39 more)
-
-### Community 83 - "Community 83"
-Cohesion: 0.06
-Nodes (42): BetaRepairQueueGateArtifact, buildQueueSummaries(), compactProgramSample(), compactResearchSample(), copyFiniteNumber(), countByTier(), DataQualityBlockerOwnerSummary, DataQualityDuplicateNamePreflightSummary (+34 more)
-
-### Community 84 - "Community 84"
+### Community 6 - "App.tsx"
 Cohesion: 0.05
-Nodes (37): CreateButtonProps, ListingEditorProps, createInitialOwnListingsState(), OwnListingsAction, ownListingsReducer(), OwnListingsState, update, a (+29 more)
+Nodes (33): PlanningOverview(), PlanningOverviewProps, pluralize(), scrollPositions, ScrollToTop(), normalizeReturnPath(), SignInButton(), SignInButtonProps (+25 more)
 
-### Community 85 - "Community 85"
+### Community 7 - "assertScriptApplyAllowed"
 Cohesion: 0.06
-Nodes (44): applyCopy(), argValue(), assertPromotionSummaryCanApply(), assertSafeOptions(), buildApplyBlockers(), buildPlan(), buildPromotionSummary(), COLLECTION_CATEGORY_ORDER (+36 more)
+Nodes (39): ApiMode, getApiMode(), initializeConnections(), mongoOptions, startApp(), CliOptions, FILTER, main() (+31 more)
 
-### Community 86 - "Community 86"
-Cohesion: 0.05
-Nodes (46): Audit Order, Chunked Apply Sequence, code:bash (yarn scrape list), code:bash (SCRAPER_ENV=beta ALLOW_NON_PROD_SCRAPER_WRITES=true yarn scr), code:bash (SCRAPER_ENV=beta ALLOW_NON_PROD_SCRAPER_WRITES=true yarn scr), code:bash (yarn --cwd server test src/scrapers/__tests__/yaleCollegeFel), code:bash (SCRAPER_ENV=beta yarn scrape run --source yale-college-fello), code:bash (SCRAPER_ENV=beta yarn scrape run --source undergrad-fellowsh) (+38 more)
-
-### Community 87 - "Community 87"
-Cohesion: 0.09
-Nodes (44): applyCleanup(), applyIntegrityCleanup(), assertPaperAuthorshipAuditApplyAllowed(), AUTHORSHIP_METHODS, AUTHORSHIP_SOURCES, backfillOpenAlexPaperAuthors(), buildPaperAuthorshipAudit(), buildPaperAuthorshipAuditOutput() (+36 more)
-
-### Community 88 - "Community 88"
+### Community 8 - "adminListingsTableReducer.ts"
 Cohesion: 0.08
-Nodes (39): Observation, observationSchema, ObservedEntityType, runScraperPreview(), applyAcceptedReview(), applyFieldCleanupTarget(), archiveAccessArtifactsForSupersededObservations(), buildObservationReplayCandidateFilter() (+31 more)
+Nodes (28): AdminFacultyProfilesFilter, AdminFacultyProfilesSortField, AdminFacultyProfilesTableAction, adminFacultyProfilesTableReducer(), AdminFacultyProfilesTableState, createInitialAdminFacultyProfilesTableState(), AdminFellowshipsFilter, AdminFellowshipsSortField (+20 more)
 
-### Community 89 - "Community 89"
+### Community 9 - "profileService.ts"
+Cohesion: 0.10
+Nodes (41): ADMIN_UPDATE_FIELDS, ALLOWED_SELF_UPDATE_FIELDS, cleanPublicHttpUrl(), cleanPublicSourceLabel(), cleanScholarlyTitle(), cleanUrl(), dateToIso(), GIVEN_NAME_ALIASES (+33 more)
+
+### Community 10 - "labMicrositeUndergradLLMExtractor.ts"
 Cohesion: 0.09
-Nodes (45): 1. Development Testing, 2. Beta Seeding, 3. Production Seeding, Beta Data Quality Scorecard, code:bash (yarn security:smoke:production), code:bash (BETA_MONGODBURL='<beta-mongodb-url>' \), code:bash (BETA_MONGODBURL='<beta-mongodb-url>' \), code:bash (SCRAPER_ENV=beta yarn --cwd server research-entity:dedupe-by) (+37 more)
+Nodes (37): RenderedFetcher, buildLLMPrompt(), CallLLMFn, candidateCrawlUrls(), CandidateLab, candidateLabFromResearchEntityDoc(), candidateSubPageUrls(), cleanResearchSummary() (+29 more)
 
-### Community 90 - "Community 90"
-Cohesion: 0.04
-Nodes (45): code:ts (import { describe, expect, it } from 'vitest';), code:bash (yarn --cwd server test src/scripts/__tests__/observationRepl), code:ts (import dotenv from 'dotenv';), code:ts (async function main(): Promise<void> {), code:ts (async function loadCandidates(args: ObservationReplayCleanup), code:json ("observations:replay-cleanup": "tsx src/scripts/observationR), code:bash (yarn --cwd server test src/scripts/__tests__/observationRepl), code:ts (cleanupReason: {) (+37 more)
+### Community 11 - "safeHttpUrl"
+Cohesion: 0.10
+Nodes (34): DeveloperCard(), DeveloperCardProps, FellowshipModal(), RichText(), orcidHref(), ProfileHeader(), profileLinkDedupeKey(), profileUrlLinks() (+26 more)
 
-### Community 91 - "Community 91"
-Cohesion: 0.1
-Nodes (44): Audit Checklist, Backfill Promotion Gate, code:txt (Source metadata), code:bash (npx -y corepack@0.34.7 yarn --cwd server source:health), code:bash (npx -y corepack@0.34.7 yarn --cwd server opportunities:reap-), code:bash (npx -y corepack@0.34.7 yarn --cwd server scraper:claim-gate ), code:bash (SCRAPER_ENV=development ALLOW_NON_PROD_SCRAPER_WRITES=true \), code:bash (SCRAPER_ENV=development ALLOW_NON_PROD_SCRAPER_WRITES=true \) (+36 more)
-
-### Community 92 - "Community 92"
+### Community 12 - "entityMaterializer.ts"
 Cohesion: 0.09
-Nodes (39): addIdentity(), BackfillScholarlyLinksOptions, findAmbiguousExternalIdentityUserIds(), normalizeOpenAlexId(), normalizeOrcid(), parseBackfillScholarlyLinksArgs(), ScholarlyLinkIdentityUser, selectScholarlyLinkCandidates() (+31 more)
+Nodes (45): ResolvedField, addUniqueValuesToSet(), authorshipEvidenceFromPaperObservations(), buildOfficialProfileScholarlyLinkUpserts(), buildPaperUpdateFromObservations(), cleanScholarlyHttpUrl(), cleanScholarlyText(), comparableObservationValue() (+37 more)
 
-### Community 93 - "Community 93"
+### Community 13 - "researchGroupService.ts"
+Cohesion: 0.08
+Nodes (61): addPublicMemberField(), addPublicMemberInternalProfilePath(), addPublicMemberProfileUrls(), addPublicPaperField(), buildLeadPiOutreachContactRoute(), buildResearchActivityLinkPayload(), contactRouteDedupeKey(), contactRouteRank() (+53 more)
+
+### Community 14 - "labMicrositeDescriptionLLMExtractor.ts"
+Cohesion: 0.08
+Nodes (51): ObservedEntityType, CallDescriptionLLMFn, CandidateDescriptionLab, CandidateDescriptionLabDoc, candidateDescriptionLabsFromDocs(), candidateKeyMatches(), candidateUrlsForDoc(), defaultCallLLM() (+43 more)
+
+### Community 15 - "accessMaterializer.ts"
+Cohesion: 0.08
+Nodes (54): AccessSignalConfidence, ContactPolicy, ContactRouteVisibility, accessArtifactCandidatesFromDerived(), AccessMaterializationResult, AccessObservation, bestObservation(), confidenceLabel() (+46 more)
+
+### Community 16 - "research.test.tsx"
+Cohesion: 0.09
+Nodes (23): baseProfile, ResizeObserverMock, ConfigContextType, defaultConfigContext, DepartmentConfig, FieldConfig, ResearchAreaConfig, defaultSearchContext (+15 more)
+
+### Community 18 - "sanitizeLogValue"
+Cohesion: 0.09
+Nodes (73): mocks, privateProgram, addFavFellowships(), addFavListings(), addFavPathways(), addSavedPrograms(), addSavedResearchPlans(), ALLOWED_SELF_USER_TYPES (+65 more)
+
+### Community 19 - "integrityGate.ts"
+Cohesion: 0.08
+Nodes (38): ActiveArtifactOnArchivedEntity, buildDuplicateAccessSignalGroupsFromRows(), buildDuplicateResearchPaperGroupsFromRows(), BuildPostMaterializationIntegrityInput, buildPostMaterializationIntegritySummary(), buildSamePiNameDuplicateGroupsFromDedupeRows(), CurrentMemberOnArchivedEntity, DuplicateCurrentMemberGroup (+30 more)
+
+### Community 20 - "passport.ts"
 Cohesion: 0.07
-Nodes (32): studentDecisionRecommendedActions, buildStudentDecisionPrompt(), compactSourceUrls(), DecisionCandidate, DecisionCandidateLoader, DecisionCandidateSelectionOptions, decisionExtractionToObservation(), defaultCallLLM() (+24 more)
+Nodes (49): authConfig, authDebug(), AuthenticatedSessionUser, buildDirectoryUpdate(), casLogin(), DEV_LOGIN_PROFILES, ensureDevLoginUser(), findOrCreateUser() (+41 more)
 
-### Community 94 - "Community 94"
+### Community 21 - "Navbar.tsx"
 Cohesion: 0.07
-Nodes (34): Props, TagInput(), AdminFellowship, ArrayFieldEditor(), FellowshipLink, LinksEditor(), PAGE_SIZES, SortField (+26 more)
+Nodes (22): AboutButton(), AnalyticsButton(), FeedbackButton(), getAcademicDisciplineColor(), getResearchAreaChipColor(), listingQuickFilters, Navbar(), NavbarSearchBar() (+14 more)
 
-### Community 95 - "Community 95"
-Cohesion: 0.08
-Nodes (38): absoluteUrl(), absolutize(), cleanText(), DEFAULT_YALE_RESEARCH_DIRECTORY_CONFIGS, descriptionFrom(), entityFromRecord(), entityFromRow(), entityToObservations() (+30 more)
-
-### Community 96 - "Community 96"
-Cohesion: 0.06
-Nodes (36): applyProfileResearchAreaFallback(), buildProfileSynthesisDescription(), buildResearchActivityLinkPayload(), currentResearchEntityMemberFilter(), getResearchGroupDetail(), isCopiedProfileBioText(), normalizedComparableText(), profileSourceUrlsForUser() (+28 more)
-
-### Community 97 - "Community 97"
-Cohesion: 0.09
-Nodes (41): articleForFacultyTitle(), BioBackfillCandidate, BioBackfillDecision, buildCandidates(), composeTitleLedBio(), decideBioBackfill(), defaultFetcher(), defaultRewriter() (+33 more)
-
-### Community 98 - "Community 98"
-Cohesion: 0.08
-Nodes (39): assertPublicationMigrationApplyAllowed(), buildPublicationMigrationOutput(), dedupeKey(), __dirname, EmbeddedPub, __filename, main(), migratePublicationsToPapers() (+31 more)
-
-### Community 99 - "Community 99"
-Cohesion: 0.08
-Nodes (37): AccessArtifactCandidate, AccessArtifactType, buildClaimGateReport(), ClaimGateReport, ClaimGateStatus, ClaimValidationBundleResult, ClaimValidationResult, classifyCandidate() (+29 more)
-
-### Community 100 - "Community 100"
-Cohesion: 0.05
-Nodes (42): Acceptance Criteria, Beta Repair Lanes Audit Implementation Plan, code:bash (SCRAPER_ENV=beta yarn --cwd server launch:trust-contract --c), code:bash (SCRAPER_ENV=beta yarn --cwd server beta:repair-queue --colle), code:bash (yarn --cwd server meili:rebuild-research-entities --clear), code:bash (SCRAPER_ENV=beta yarn --cwd server beta:repair-queue --colle), code:bash (node -e 'require("dotenv").config({path:"server/.env"}); pro), code:ts (it('materializes an official inferred PI into a research ent) (+34 more)
-
-### Community 101 - "Community 101"
-Cohesion: 0.05
-Nodes (41): Best Fit Coverage Implementation Plan, code:ts (it('keeps mixed entity-backed and PI-profile terms usable wh), code:ts (const filteredRows = options.status ? rows.filter((row) => r), code:bash (yarn --cwd server research-entity:audit-best-fit -- --json -), code:ts (bestFitCoverage: {), code:ts (`Best-fit coverage is ${usablePercent}% usable; inspect yarn), code:bash (yarn --cwd server test src/scripts/__tests__/betaDataQuality), code:ts (if (researchAreas.length === 0) return false;) (+33 more)
-
-### Community 102 - "Community 102"
-Cohesion: 0.07
-Nodes (34): average(), boundedRenderedFetchTimeout(), buildFetchAttemptMetrics(), createScraplingRenderedFetcher(), currentMemoryBytes(), DEFAULT_BRIDGE_PATH, execFileAsync, fetchAttemptsToMetrics() (+26 more)
-
-### Community 103 - "Community 103"
-Cohesion: 0.1
-Nodes (38): defaultFetchUrl(), setCached(), defaultVerifier(), isTrustedYaleProfileUrl(), checkLiveLink(), defaultFetchPage(), defaultFetchPage(), fetchHtml() (+30 more)
-
-### Community 104 - "Community 104"
-Cohesion: 0.09
-Nodes (37): applyRepairs(), __dirname, __filename, loadOfficialProfileTopics(), loadStoredAuthorWorks(), loadUsers(), mailto(), main() (+29 more)
-
-### Community 105 - "Community 105"
-Cohesion: 0.07
-Nodes (38): analyticsDetailNav, analyticsRanges, defaultAdminAccess, defaultUserActivity, SortOrder, UserActivitySort, AdminAccessGrant, AdminAccessResponse (+30 more)
-
-### Community 106 - "Community 106"
-Cohesion: 0.09
-Nodes (37): absolutize(), affiliationValuesFromProfiles(), canonicalLegacyResearchHomeUrl(), canonicalUrlFromHtml(), classifyResearchHome(), cleanResearchHomeName(), disallowedProfileLinkedResearchHome(), entityLeadDirectWebsiteToObservations() (+29 more)
-
-### Community 107 - "Community 107"
-Cohesion: 0.08
-Nodes (40): APPLICATION_ROUTE_SIGNAL_TYPES, BestNextStepSnapshot, boundedFilterValues(), boundedSearchQuery(), buildBestNextStepCategoryExpression(), buildEntityMatch(), buildPathwayActionabilityFieldsExpression(), buildPathwayMatch() (+32 more)
-
-### Community 108 - "Community 108"
-Cohesion: 0.09
-Nodes (36): mapResearchGroupKindToEntityType(), evidenceExcerpt(), boundedPublicationText(), addResearchEntityDetailAlias(), departmentDisplayLabel(), EVIDENCE_TEXT_FIELDS, isPollutedResearchAreaLabel(), normalizedDepartmentLabel() (+28 more)
-
-### Community 109 - "Community 109"
-Cohesion: 0.07
-Nodes (41): Authentication Flow, code:block5 (User → Yale CAS SSO → passport.ts findOrCreateUser), 4. Start local Meilisearch, Adding Things, API Routes, Architecture, Auth Middleware (`server/src/middleware/auth.ts`), Authentication (+33 more)
-
-### Community 110 - "Community 110"
-Cohesion: 0.1
-Nodes (36): applyPlan(), applyRepairPlan(), archiveArtifact(), ARTIFACT_SPECS, ArtifactSpec, assertArchivedEntityArtifactRepairApplyAllowed(), buildRepairArchivedEntityArtifactsOutput(), collectionExists() (+28 more)
-
-### Community 111 - "Community 111"
-Cohesion: 0.09
-Nodes (40): Adding a New Endpoint, Adding a New Page, Analytics Interception, Architecture, Auth Middleware, Authentication Flow, CI, `client/.env` (+32 more)
-
-### Community 112 - "Community 112"
-Cohesion: 0.07
-Nodes (27): buildOrchestrator(), arxivEntryToObservations(), ArxivFetcher, ArxivPreprintScraper, ArxivPreprintScraperOptions, buildAuthorSearchQuery(), normalizeArxivId(), parseArxivFeed() (+19 more)
-
-### Community 113 - "Community 113"
-Cohesion: 0.09
-Nodes (35): args, ARTS_DEPARTMENT_ABBRS, CATEGORY_PRIORITY, CATEGORY_SUFFIXES, DepartmentCategory, DepartmentDoc, determineSuffix(), escapeRegex() (+27 more)
-
-### Community 114 - "Community 114"
-Cohesion: 0.09
-Nodes (35): assessResearchEntityEvidenceCoverage(), buildEvidenceCoverageImpact(), buildEvidenceCoverageImpactReportForObservations(), descriptionObservationSources(), descriptionState(), entityIdentifierKey(), EvidenceClaimState, EvidenceCoverageAssessment (+27 more)
-
-### Community 115 - "Community 115"
-Cohesion: 0.08
-Nodes (31): CallCenterDirectorLLMFn, CandidateCenter, CenterDirector, CenterDirectorExtraction, CenterDirectorLLMExtractor, CenterDirectorLLMExtractorDeps, CenterFinderFn, defaultCallLLM() (+23 more)
-
-### Community 116 - "Community 116"
-Cohesion: 0.08
-Nodes (32): buildResearchSearchQuerySemantics(), matchesTerm(), normalizedTokens(), normalizeSearchText(), QUERY_SEMANTIC_RULES, QuerySemanticRule, ResearchSearchQuerySemantics, unique() (+24 more)
-
-### Community 117 - "Community 117"
-Cohesion: 0.09
-Nodes (32): activeListingFilter(), aggregateCountMap(), buildEntityContexts(), buildPathwayQualityAuditOutput(), CliOptions, countMap(), __dirname, __filename (+24 more)
-
-### Community 118 - "Community 118"
-Cohesion: 0.08
-Nodes (32): HiringStatus(), HiringStatusProps, ListingForm(), ListingFormProps, createInitialListingFormState(), ListingFormAction, ListingFormErrors, listingFormReducer() (+24 more)
-
-### Community 119 - "Community 119"
-Cohesion: 0.09
-Nodes (37): Adding a New Endpoint, Adding a New Page, Analytics Interception, Architecture, Auth Middleware, CI, `client/.env`, code:block1 (React (Vite) → Express (Passport.js) → MongoDB Atlas + Meili) (+29 more)
-
-### Community 120 - "Community 120"
-Cohesion: 0.1
-Nodes (34): buildResearchEntitySearchIndexDocument(), buildSemanticText(), cleanPersonName(), collectSemanticSourceText(), emptyMemberNameFields(), facultyDisplayName(), fetchResearchEntitySearchMemberNames(), inferConceptSignals() (+26 more)
-
-### Community 121 - "Community 121"
-Cohesion: 0.06
-Nodes (36): adminUpdateProfile(), boundedAdminProfileEmail(), boundedAdminProfileNumber(), boundedAdminProfileText(), boundedProfileString(), boundedProfileStringArray(), isProfileUpdatePayload(), normalizeAdminProfilePublications() (+28 more)
-
-### Community 122 - "Community 122"
-Cohesion: 0.05
-Nodes (37): Adding a New Endpoint, Adding a New Page, Analytics Interception, Architecture, Auth Middleware, Authentication Flow, CI, `client/.env` (+29 more)
-
-### Community 123 - "Community 123"
-Cohesion: 0.05
-Nodes (37): Adding a New Endpoint, Adding a New Page, Analytics Interception, Architecture, Auth Middleware, Authentication Flow, CI, `client/.env` (+29 more)
-
-### Community 124 - "Community 124"
-Cohesion: 0.05
-Nodes (37): Adding a New Endpoint, Adding a New Page, Analytics Interception, Architecture, Auth Middleware, Authentication Flow, CI, `client/.env` (+29 more)
-
-### Community 125 - "Community 125"
-Cohesion: 0.05
-Nodes (37): Adding a New Endpoint, Adding a New Page, Analytics Interception, Architecture, Auth Middleware, Authentication Flow, CI, `client/.env` (+29 more)
-
-### Community 126 - "Community 126"
-Cohesion: 0.05
-Nodes (37): Adding a New Endpoint, Adding a New Page, Analytics Interception, Architecture, Auth Middleware, Authentication Flow, CI, `client/.env` (+29 more)
-
-### Community 127 - "Community 127"
-Cohesion: 0.05
-Nodes (37): Adding a New Endpoint, Adding a New Page, Analytics Interception, Architecture, Auth Middleware, Authentication Flow, CI, `client/.env` (+29 more)
-
-### Community 128 - "Community 128"
-Cohesion: 0.05
-Nodes (37): Adding a New Endpoint, Adding a New Page, Analytics Interception, Architecture, Auth Middleware, Authentication Flow, CI, `client/.env` (+29 more)
-
-### Community 129 - "Community 129"
-Cohesion: 0.08
-Nodes (35): betaTargetCommand(), buildAdminOperatorBoard(), buildGateArtifactFreshness(), buildRecommendedNextActions(), buildReleaseQueueSummary(), buildRepairQueueSummary(), buildSourceFreshness(), classifyOperatorQueueReason() (+27 more)
-
-### Community 130 - "Community 130"
-Cohesion: 0.08
-Nodes (33): buildResearchQualitySearchReviewRow(), CENTER_ACTION_ACCESS_SIGNAL_TYPES, CENTER_ACTION_CONTACT_ROUTE_TYPES, CENTER_ACTION_PATHWAY_TYPES, CENTER_LIKE_ENTITY_TYPES, compactStrings(), DEFAULT_RESEARCH_QUALITY_GOLDEN_QUERIES, deriveResearchEntitySourceTitleFromUrls() (+25 more)
-
-### Community 131 - "Community 131"
-Cohesion: 0.09
-Nodes (29): buildLaunchReviewExceptionCandidates(), buildLaunchReviewExceptionDecisionTemplate(), buildLaunchReviewExceptionOutput(), buildLaunchReviewExceptionReview(), buildOutput(), __filename, LAUNCH_REVIEW_EXCEPTION_DECISION_VALUES, LaunchReviewExceptionCandidateInput (+21 more)
-
-### Community 132 - "Community 132"
-Cohesion: 0.06
-Nodes (26): __resetResearchPageSnapshotForTests(), adminRender, amthCard, browseGrid, browseLayout, browseSection, { container }, containerScrollTo (+18 more)
-
-### Community 133 - "Community 133"
-Cohesion: 0.06
-Nodes (35): 10) `/research` cluster profile links should avoid broken routes on malformed data, 11) Playwright interaction pass for `/research` and `/pathways` could not run in this environment, 11) Playwright interaction pass for research flows could not run in this environment, 12) `/research` was blocked by an unrelated Listings error modal, 13) `/research` showed duplicate Neuroscience concepts and undersized touch targets, 13) `/research/:slug` repeated the same official source link across pathways, evidence, and CTAs, 14) Listings load failure used a blocking modal instead of inline recovery, 14) `/research` hierarchy exposed clusters before student decisions (+27 more)
-
-### Community 134 - "Community 134"
-Cohesion: 0.07
-Nodes (35): Blocked Work, Checks Run, code:bash (yarn --cwd server test src/services/__tests__/adminOperatorB), code:bash (SCRAPER_ENV=beta yarn --cwd server beta:data-quality --inclu), code:bash (SCRAPER_ENV=beta yarn --cwd server beta:data-quality --inclu), code:bash (SCRAPER_ENV=beta yarn --cwd server beta:data-quality --inclu), code:bash (SCRAPER_ENV=beta yarn --cwd server beta:data-quality --inclu), code:bash (SCRAPER_ENV=beta yarn --cwd server beta:data-quality --inclu) (+27 more)
-
-### Community 135 - "Community 135"
-Cohesion: 0.06
-Nodes (35): code:bash (grep -n '^MONGODBURL\|^SCRAPER_ENV\|^CONFIRM_PROD_SCRAPE' se), code:bash (yarn --cwd server launch:trust-contract --collection=all --m), code:bash (yarn --cwd server meili:rebuild-research-entities), code:bash (yarn --cwd server meili:rebuild-pathways), code:bash (curl -sS http://localhost:4000/api/config >/tmp/ylabs-config), code:bash (yarn --cwd server tsx -e 'import dotenv from "dotenv"; impor), code:bash (yarn --cwd server papers:authorship-audit --sample-limit=0), code:bash (yarn --cwd server scrape run --source openalex --dry-run --o) (+27 more)
-
-### Community 136 - "Community 136"
-Cohesion: 0.1
-Nodes (29): absoluteApiUrl(), absoluteClientUrl(), addFinding(), artifacts, auditEntity(), auditProfileLink(), clientBase, collectResearchEntities() (+21 more)
-
-### Community 137 - "Community 137"
-Cohesion: 0.1
-Nodes (33): applyGroup(), applyUserIdentityDedupeGroups(), archiveDuplicateUniqueUserReferences(), __dirname, __filename, firstMeaningful(), IDENTITY_FIELDS, isMissing() (+25 more)
-
-### Community 138 - "Community 138"
+### Community 22 - "undergradFellowshipRecipientScraper.ts"
 Cohesion: 0.11
-Nodes (34): assertRootDataImportApplyAllowed(), buildDepartmentMap(), buildRootDataImportOutput(), CLI_OPTIONS, countCsvRows(), DEFAULT_OPTIONS, DELETE_SOURCE_FILES, deleteSourceFiles() (+26 more)
+Nodes (32): AdvisorAggregateRow, aggregateAdviseesByAdvisor(), buildObservationsForAdvisor(), DEFAULT_ACCEPTED_FELLOWSHIP_RECIPIENT_PDF_DIR, DEFAULT_PROGRAM_CONFIGS, drupalRecipientRowExtractor(), escapeRegex(), ExtractorCtx (+24 more)
 
-### Community 139 - "Community 139"
+### Community 23 - "duplicateEntityNameReview.ts"
 Cohesion: 0.06
-Nodes (29): candidateDescriptionCrawlUrls(), DescriptionCandidateEntity, DescriptionExtraction, DescriptionLLMExtraction, discoverDescriptionSubPageUrls(), discoverSameSiteFrameUrls(), LabMicrositeDescriptionLLMExtractor, LabMicrositeDescriptionLLMExtractorDeps (+21 more)
+Nodes (67): DuplicateEntityReviewCategory, DuplicateEntityReviewEntity, DuplicateEntityReviewSummary, applyResearchEntityDedupeGroupsSequentially, ResearchEntityDedupeMergeGroup, ACTIVE_FILTER, assertDuplicateEntityNameReviewApplyAllowed(), asString() (+59 more)
 
-### Community 140 - "Community 140"
+### Community 24 - "app.ts"
+Cohesion: 0.07
+Nodes (26): allowList, apiLimiter, app, bypassRuntimeSecurity, corsOptions, deployedBrowserOrigins, __dirname, getRateLimitKey() (+18 more)
+
+### Community 25 - "dedupeResearchEntitiesByPi.ts"
+Cohesion: 0.07
+Nodes (60): applyDeleteModeArtifactPlan(), applyResearchEntityDedupeMergeGroup(), applyResearchEntityPiDedupeGroupsSequentially(), archiveOrDeleteDuplicateDocument(), ARRAY_REFERENCE_SPECS, ARTIFACT_SPECS, assertResearchEntityPiDedupeApplyAllowed(), assertResearchEntityPiDedupeApplyBounded() (+52 more)
+
+### Community 26 - "admin.ts"
+Cohesion: 0.07
+Nodes (44): ACCESS_REVIEW_RECORD_TYPES, ADMIN_FELLOWSHIP_SORT_FIELDS, ADMIN_LISTING_SORT_FIELDS, ADMIN_PROFILE_SORT_FIELDS, ADMIN_SEARCH_ERROR_MESSAGES, ADMIN_URL_CHECK_ALLOWED_PORTS, adminAccessReviewLockedFields(), adminAccessReviewRecordUpdateDto() (+36 more)
+
+### Community 27 - "BackfillV4ResearchGroupMembers.ts"
 Cohesion: 0.11
-Nodes (33): annotateEntitiesWithLeadUsers(), annotateEntitiesWithSourceObservationUrls(), annotateProfileDescriptionPreferredSourceEvidence(), entityResearchHomeToObservations(), extractDepartments(), extractResearchInterests(), firstNonDuplicateLeadDirectWebsiteUrl(), generatedOfficialProfileUrlCandidatesForPerson() (+25 more)
+Nodes (33): observation(), assessResearchEntityEvidenceCoverage(), buildEvidenceCoverageImpact(), buildEvidenceCoverageImpactReportForObservations(), descriptionObservationSources(), descriptionState(), entityIdentifierKey(), EvidenceClaimState (+25 more)
 
-### Community 141 - "Community 141"
-Cohesion: 0.11
-Nodes (29): applicationRouteBackfillDerivationKey(), ApplicationRoutePathwayBackfillDeps, ApplicationRoutePathwayBackfillEntity, ApplicationRoutePathwayBackfillOptions, ApplicationRoutePathwayBackfillResult, ApplicationRoutePathwayBackfillRoute, backfillApplicationRoutePathways(), classifyApplicationRoutePathway() (+21 more)
+### Community 28 - "researchDiscoveryAdapters.ts"
+Cohesion: 0.05
+Nodes (72): formatDate(), PathwayActionCard(), PathwayActionCardProps, ResearchHomeCardProps, emptyGroupedResults(), ResearchEntitySearchPage, ResearchPageSnapshot, PathwayActionability (+64 more)
 
-### Community 142 - "Community 142"
-Cohesion: 0.1
-Nodes (30): StudentVisibilityTier, buildLaunchTrustContractOutput(), CliOptions, __filename, main(), parseArgs(), parseLaunchTrustContractArgs(), parsePositiveInteger() (+22 more)
-
-### Community 143 - "Community 143"
-Cohesion: 0.11
-Nodes (30): addFavoriteToFellowship(), addViewToFellowship(), boundedSearchQuery(), getFellowshipById(), getFellowshipFilterOptions(), numericSearchParam(), parseFilter(), PUBLIC_FELLOWSHIP_SORT_FIELDS (+22 more)
-
-### Community 144 - "Community 144"
-Cohesion: 0.11
-Nodes (29): load_env(), main(), normalize(), Lowercase, strip whitespace and punctuation for fuzzy matching., addDepartment(), BROAD_UNIT_KEYS, buildDepartmentRowLookup(), cache (+21 more)
-
-### Community 145 - "Community 145"
-Cohesion: 0.11
-Nodes (31): AccountTrackingAction, accountTrackingReducer(), AccountTrackingState, createInitialAccountTrackingState(), FELLOWSHIP_STAGES, isSafeTrackingId(), LAB_STAGES, LEGACY_STORAGE_PREFIX (+23 more)
-
-### Community 146 - "Community 146"
-Cohesion: 0.11
-Nodes (31): addSourceRecord(), buildDepartmentGroundTruth(), buildRowsFromSources(), categoryColorKeys, comparableRow(), CuratedDepartment, curatedDepartments, decodeHtml() (+23 more)
-
-### Community 147 - "Community 147"
-Cohesion: 0.1
-Nodes (29): buildProfessorBioCoverageAudit(), emptySourceBuckets(), hasUsefulResearchSummary(), homeFallbackBucketForProfile(), isIndividualResearchHome(), isTrustedResearchHomeWebsite(), isYaleHost(), isYalePeopleOrFacultyUrl() (+21 more)
-
-### Community 148 - "Community 148"
-Cohesion: 0.08
-Nodes (33): 2026-05-13 External Yale Validation, 2026-05-13 Model Audit, AccessSignal, Admin Review, code:txt (ResearchEntity), code:ts (ResearchEntity {), code:ts (EntryPathway {), code:ts (PostedOpportunity {) (+25 more)
-
-### Community 149 - "Community 149"
-Cohesion: 0.09
-Nodes (24): savedProgramDeadlineSummary(), UseFellowshipModalParams, useListingModal(), UseListingModalParams, Endpoints, FavoritesKind, useFavorites(), SearchResponse (+16 more)
-
-### Community 150 - "Community 150"
-Cohesion: 0.06
-Nodes (33): Beta Source/PI/Action Audit Implementation Plan, code:bash (SCRAPER_ENV=beta yarn --cwd server launch:trust-contract --c), code:bash (node - <<'NODE'), code:ts (it('matches Yale Medicine subspecialty profile URLs to canon), code:ts (expect(deps.upsertResearchEntityMember).not.toHaveBeenCalled), code:bash (yarn --cwd server test src/services/__tests__/visibilityRepa), code:bash (SCRAPER_ENV=beta yarn --cwd server beta:repair-queue --colle), code:bash (node - <<'NODE') (+25 more)
-
-### Community 151 - "Community 151"
-Cohesion: 0.09
-Nodes (27): ScrapeJobLock, scrapeJobLockSchema, createCronOwnerId(), createCronRunnerDependencies(), CronRunnerDependencies, runScraperCron(), RunScraperCronInput, RunScraperCronResult (+19 more)
-
-### Community 152 - "Community 152"
-Cohesion: 0.06
-Nodes (29): ACCESS_EVIDENCE_CONFLICT_FIELDS, ADDITIVE_METADATA_CONFLICT_FIELDS, AggregatedCrossSourceObservationConflictGroup, compareSamplesForReview(), CONTENT_CONFLICT_FIELDS, CrossSourceObservationConflictGroup, CrossSourceObservationConflictObservation, CrossSourceObservationConflictPlan (+21 more)
-
-### Community 153 - "Community 153"
+### Community 29 - "ysmAtoZScraper.ts"
 Cohesion: 0.12
-Nodes (32): assertResearchEntityMigrationWriteAllowed(), BACKFILL_ARRAY_FIELD_PAIRS, BACKFILL_FIELD_PAIRS, BackfillFieldPair, backfillReferences(), buildResearchEntityMigrationOutput(), buildResearchEntityMigrationReferenceMatch(), collectionExists() (+24 more)
+Nodes (30): absoluteUrl(), cleanDescription(), cleanProfileTitle(), clippedDescription(), decodeHtmlEntities(), escapeRegex(), extractLabHomepageDescription(), extractProfileContactWidgetProfile() (+22 more)
 
-### Community 154 - "Community 154"
-Cohesion: 0.1
-Nodes (31): actionReasons, attemptResearchRepair(), defaultRepairDeps, findOfficialProfileUserMatch(), interestCorroboratedByBio(), leadProfileDescriptionCandidates(), leadResearchInterestCandidates(), meaningfulInterestTokens() (+23 more)
+### Community 31 - "launchAcquisitionReportService.ts"
+Cohesion: 0.09
+Nodes (53): AccessRecordCounts, ActionEvidenceGroups, addGroup(), buildActionGroups(), buildActionManifestRow(), buildLaunchAcquisitionReport(), buildManifestRow(), buildPiGroups() (+45 more)
 
-### Community 155 - "Community 155"
-Cohesion: 0.07
-Nodes (32): officialProfileUrlsForEntity(), selectDirectVisibleProfileBioUserTargets(), selectVisibleProfileBioTargets(), shouldQueueEntityForPiBackfill(), abstractBios, bio, bioObservation, contaminatedProfileHtml (+24 more)
+### Community 32 - "profileDataQualityAudit.ts"
+Cohesion: 0.10
+Nodes (58): auditProfileRecord(), candidateOfficialProfileUrls(), candidateProfileFactsMatchUser(), classifyStoredBioIssue(), classifyStoredTitleIssue(), collectObjects(), compareOfficialProfileFacts(), corpusForProfile() (+50 more)
 
-### Community 156 - "Community 156"
-Cohesion: 0.1
-Nodes (27): applyRepairs(), assertRepairListingResearchEntityProfilesApplyAllowed(), buildRepairListingResearchEntityProfilesOutput(), CliOptions, main(), normalizeListingProfileRepairObjectId(), normalizeListingProfileRepairObjectIdString(), parseArgs() (+19 more)
-
-### Community 157 - "Community 157"
-Cohesion: 0.11
-Nodes (30): addMapSet(), aggregateCountAndTypes(), aggregateCountMap(), buildLexicalReasons(), buildResearchQualitySearchReviewOutput(), buildReview(), CliOptions, collectSearchCandidates() (+22 more)
-
-### Community 158 - "Community 158"
+### Community 33 - "centersInstitutesScraper.ts"
 Cohesion: 0.08
-Nodes (27): ArrayFilterKey, CheckboxFilterProps, compact(), COMPENSATION_OPTIONS, contactRouteLabel(), EVIDENCE_OPTIONS, isPostedRole(), labelize() (+19 more)
+Nodes (44): affiliationExtractionToObservations(), CallCenterAffiliationLLMFn, CandidateCenter, CenterAffiliationExtraction, CenterAffiliationLLMExtractorDeps, CenterAffiliationPerson, CenterFinderFn, defaultCallLLM() (+36 more)
 
-### Community 159 - "Community 159"
+### Community 34 - "types.tsx"
+Cohesion: 0.07
+Nodes (31): AdminFellowshipEditModal(), Props, FellowshipModalProps, fellowship, COLUMNS, FellowshipKanbanBoardProps, defaultFellowshipSearchContext, FellowshipSearchContextType (+23 more)
+
+### Community 35 - "nihReporterScraper.ts"
+Cohesion: 0.11
+Nodes (29): canonicalPiName(), DEFAULT_FISCAL_YEARS, escapeRegex(), fetchPage(), FetchPageOpts, findUserForPi(), grantToRecord(), groupGrantsByPi() (+21 more)
+
+### Community 36 - "studentVisibilityGateService.ts"
+Cohesion: 0.07
+Nodes (51): actionRepairReasons, applyStudentVisibilityGatePlans(), buildNameOnlyVisibilityDedupeRows(), buildSamePiVisibilityDedupeRows(), countByEntityId(), defaultGateDeps, entityDuplicateUrls(), evidenceReasons (+43 more)
+
+### Community 38 - "ScraperContext"
+Cohesion: 0.05
+Nodes (47): ScraperOrchestrator, ArxivPreprintScraper, CenterAffiliationLLMExtractor, CrossrefFetcher, CrossrefMessage, crossrefMessageToObservations(), CrossrefPaperScraper, CrossrefPaperScraperOptions (+39 more)
+
+### Community 39 - "userService.ts"
+Cohesion: 0.08
+Nodes (51): readListing(), addDepartments(), assertSafeUserUpdateDocument(), badRequestError(), buildCaseInsensitiveNetidFilter(), buildSavedPathwayPlansExport(), buildSavedPathwayPlanUnsetForIds(), clearDepartments() (+43 more)
+
+### Community 40 - "serializedDocumentId"
+Cohesion: 0.10
+Nodes (38): publicSafeStudentVisibilityTiers, studentVisibilityFields, StudentVisibilityTier, studentVisibilityTiers, applyProgramUpdates(), applyResearchUpdates(), assertStudentVisibilityBackfillApplyAllowed(), buildNameOnlyVisibilityDedupeRows() (+30 more)
+
+### Community 41 - "AdminDepartments.tsx"
+Cohesion: 0.09
+Nodes (30): AdminDepartments(), CATEGORY_COLORS, DEPARTMENT_CATEGORIES, DepartmentAction, DepartmentDoc, DepartmentState, EditDraft, INITIAL_NEW_DRAFT (+22 more)
+
+### Community 42 - "profile.tsx"
+Cohesion: 0.11
+Nodes (24): ProfileEditor(), ProfileEditorProps, ProfileHeaderProps, formatRoleLabel(), Profile(), ROLE_LABELS, Tab, VALID_TABS (+16 more)
+
+### Community 43 - "researchEntityCoverageAudit.ts"
 Cohesion: 0.13
-Nodes (31): assertResearchEntityCollectionMigrationWriteAllowed(), buildCollectionMigrationLiveFilter(), buildCollectionMigrationTargetReferenceFilter(), buildResearchEntityCollectionMigrationOutput(), COLLECTION_MIGRATIONS, collectionExists(), CollectionMigration, collectionMigrationModeWrites() (+23 more)
+Nodes (28): aggregateCountMap(), AuditEntityRecord, buildBulkAudit(), buildObservationFlags(), buildResearchEntityCoverageAuditOutput(), buildSlugAudit(), countMap(), __dirname (+20 more)
 
-### Community 160 - "Community 160"
-Cohesion: 0.09
-Nodes (28): ALLOWED_SORT_FIELDS, getResearchGroupBySlug(), getResearchSearchSuggestions(), hasOversizedStringList(), isOversizedSearchRequest(), OPERATOR_ALLOWED_SORT_FIELDS, parseFilters(), parsePositiveIntegerParam() (+20 more)
-
-### Community 161 - "Community 161"
-Cohesion: 0.06
-Nodes (31): Agent A: Data Repair And Gate Classification, Agent B: Meili Rebuild And Search Parity Gate, Agent C: Live UI And API Smoke Gate, Agent D: Operator Decision Packet And Rollback Drill, Branch And Worktree Setup, code:bash (git status --short), code:bash (yarn dev:server), code:txt (/research) (+23 more)
-
-### Community 162 - "Community 162"
-Cohesion: 0.1
-Nodes (26): researchScholarlyAttributionSchema, externalIdsSchema, ResearchScholarlyLink, researchScholarlyLinkSchema, scholarlyLinkDestinationKinds, scholarlyLinkDiscoverySources, buildScholarlyLinkProvenanceAuditOutput(), CliOptions (+18 more)
-
-### Community 163 - "Community 163"
-Cohesion: 0.09
-Nodes (22): Args, __dirname, __filename, main(), parseArgs(), planProfileResearchTermCleanup(), ProfileResearchTermCleanupPlan, ProfileResearchTermUser (+14 more)
-
-### Community 164 - "Community 164"
+### Community 44 - "LabHeader.tsx"
 Cohesion: 0.11
-Nodes (28): ACTIVE_FILTER, applyPlans(), ApplyResult, assertDisambiguateSurnameLabApplyAllowed(), buildSurnameLabDisambiguationPlans(), cleanNamePart(), consumeValue(), __dirname (+20 more)
+Nodes (35): LabHeader(), normalizeActionUrl(), adminQualityNotes(), ProfileStatusSection(), WaysToApproachSection(), getResearchGroupStatus(), approachHeadingLabel(), decisionHeadingLabel() (+27 more)
 
-### Community 165 - "Community 165"
-Cohesion: 0.12
-Nodes (28): applyPlans(), assertDuplicateAccessSignalRepairApplyAllowed(), BlockedDuplicateAccessSignalRepairGroup, buildDuplicateAccessSignalRepairPlans(), __dirname, DuplicateAccessSignalPathwayContext, DuplicateAccessSignalRecord, DuplicateAccessSignalRepairPlan (+20 more)
-
-### Community 166 - "Community 166"
-Cohesion: 0.13
-Nodes (27): ResearchHomePreview(), adminQualityLabels(), contextLabelClass(), countLabel(), evidenceStatusClass(), profileUrlFromYaleEmail(), ResearchHomeCard(), ResearchHomeCardProps (+19 more)
-
-### Community 167 - "Community 167"
-Cohesion: 0.09
-Nodes (27): EvidenceQualitySection(), formatDate(), PathwayActionCard(), PathwayActionCardProps, clusters, duplicatePostedRole, duplicateProfile, evidenceRows (+19 more)
-
-### Community 168 - "Community 168"
-Cohesion: 0.1
-Nodes (29): __dirname, __filename, Listing, LIVE, main(), User, existingGroupIdForOwner(), findOrCreateGroupForOwner() (+21 more)
-
-### Community 169 - "Community 169"
-Cohesion: 0.1
-Nodes (28): buildResult(), classifyObservationReplayCandidate(), compactText(), defaultObservationQualityRules, evidenceQuoteText(), FieldCleanupTarget, fieldCleanupTargetForCandidate(), isCancerCenterPageChrome() (+20 more)
-
-### Community 170 - "Community 170"
-Cohesion: 0.1
-Nodes (27): DuplicatePersonGroup, buildUserIdentityDedupePlan(), canonicalScore(), chooseCanonicalUser(), clusterUsersByCompatibleName(), comparePlannedGroups(), compareStrings(), compareWarningGroups() (+19 more)
-
-### Community 171 - "Community 171"
-Cohesion: 0.11
-Nodes (23): entityKeyForWork(), normalizeArxivId(), normalizeDoi(), normalizeOrcid(), OrcidOwner, OrcidWorksFetcher, OrcidWorksScraper, OrcidWorksScraperOptions (+15 more)
-
-### Community 172 - "Community 172"
-Cohesion: 0.12
-Nodes (25): addFavoriteToProgram(), addViewToProgram(), boundedSearchQuery(), getProgramById(), numericSearchParam(), OPERATOR_PROGRAM_SORT_FIELDS, parseFilter(), parseStudentVisibilityFilter() (+17 more)
-
-### Community 173 - "Community 173"
-Cohesion: 0.09
-Nodes (29): buildResolverKeys(), DepartmentCategory, DepartmentSeedRow, applyDepartmentRows(), assertDepartmentSeedApplyAllowed(), auditUnresolvedDepartmentStrings(), buildDepartmentSeedOutput(), categoryColorKeys (+21 more)
-
-### Community 174 - "Community 174"
+### Community 45 - "sourceHealth.ts"
 Cohesion: 0.07
-Nodes (29): Active Detail Docs, Active Priority Queue, Completed Milestones, Current Execution Notes, Current Focus, Current Next Task Order, Current Starting Point, Defer For Now (+21 more)
+Nodes (55): AcceptedDecisionValidationCommandInput, attachAcceptedDecisionValidationSummary(), attachReviewArtifactSummary(), buildCrossSourceObservationReviewCommand(), buildReviewArtifactRollups(), buildReviewArtifactStatus(), buildReviewDecisionValidationStatus(), buildReviewQueues() (+47 more)
 
-### Community 175 - "Community 175"
+### Community 46 - "research.tsx"
+Cohesion: 0.10
+Nodes (21): ActiveResearchSearchRequest, buildDepartmentSearchTargets(), DepartmentResearchHomeConfig, DepartmentSearchTarget, hasStructuredFilters(), isResearchEntitySearchExhausted(), pluralize(), QUALITY_FILTER_OPTIONS (+13 more)
+
+### Community 47 - "entityMaterializer.test.ts"
+Cohesion: 0.13
+Nodes (27): resolveAllFields(), buildResearchGroupMemberUpsert(), centerRelationshipTypeForResolvedTarget(), findExistingResearchEntityByFacultyResearchAreaIdentity(), findUniqueUserForResearchGroupMember(), findUniqueUserIdByPersonName(), idValue(), isFacultyResearchAreaKey() (+19 more)
+
+### Community 48 - "ScrapeRun"
+Cohesion: 0.10
+Nodes (24): sortOptions, copy, FirstSaveCallout(), FirstSaveCalloutProps, dateValue(), fellowshipQuickFilters, Fellowships(), journeySections (+16 more)
+
+### Community 49 - "listingService.ts"
+Cohesion: 0.13
+Nodes (36): addFavorite(), archiveListing(), boundedListingDate(), boundedListingNetid(), boundedListingNetidArray(), boundedListingNumber(), boundedListingString(), boundedListingStringArray() (+28 more)
+
+### Community 50 - "fellowshipService.ts"
+Cohesion: 0.11
+Nodes (31): adminFellowshipDate(), adminFellowshipLinks(), adminFellowshipNumber(), adminFellowshipStringArray(), adminFellowshipText(), archiveFellowship(), boundedSearchFilterValues(), boundedSearchQuery() (+23 more)
+
+### Community 51 - "betaDataQualityCore.ts"
+Cohesion: 0.06
+Nodes (56): DuplicateEntityCluster, BETA_CHECK_OPERATOR_METADATA, betaCommand(), BetaDataQualityCheck, BetaDataQualityDiagnostics, BetaDataQualityProgressEvent, BetaDataQualitySeverity, BetaDataQualitySummary (+48 more)
+
+### Community 52 - "scripts"
+Cohesion: 0.03
+Nodes (75): scripts, accepted-inputs, access-signals:repair-duplicates, application-routes:backfill-pathways, beta:clear-student-analytics, beta:data-quality, beta:readiness, beta:repair-queue (+67 more)
+
+### Community 53 - "productionPromotionSmoke.mjs"
+Cohesion: 0.13
+Nodes (37): addCheck(), checkOpportunityDetail(), checkProgramApis(), config, discoverResearch(), failOnInternalLabels(), installRoutes(), main() (+29 more)
+
+### Community 54 - "researchEntity.ts"
+Cohesion: 0.10
+Nodes (26): LongText(), LongTextProps, applicationStateTone(), deadlineStateLabel(), formatDate(), labelize(), OpportunityDetail(), uniq() (+18 more)
+
+### Community 55 - "runReport.ts"
+Cohesion: 0.07
+Nodes (51): ACCESS_ARTIFACT_TYPES, ACCESS_EVIDENCE_CONFLICT_FIELDS, ADDITIVE_METADATA_CONFLICT_FIELDS, buildCoverageFetchSummary(), buildCoverageSourceSummary(), buildMaterializationConflictEntityClauses(), buildMaterializationConflictReview(), buildPostMaterializationSummary() (+43 more)
+
+### Community 56 - "redactDirectContactInfo"
+Cohesion: 0.11
+Nodes (27): getOpportunityById(), normalizeOpportunityIdParam(), mocks, compactStrings(), evidenceExcerpt(), firstEvidenceText(), getOpportunityApplicationLabel(), getOpportunityApplicationState() (+19 more)
+
+### Community 57 - "staleObservationConflictReview.ts"
+Cohesion: 0.08
+Nodes (25): ACCESS_EVIDENCE_CONFLICT_FIELDS, ADDITIVE_METADATA_CONFLICT_FIELDS, AggregatedObservationConflictGroup, ALL_KNOWN_CONFLICT_FIELDS, CONTENT_CONFLICT_FIELDS, __filename, FUNDING_CONTEXT_CONFLICT_FIELDS, IDENTITY_OR_ROUTING_CONFLICT_FIELDS (+17 more)
+
+### Community 58 - "researchEntityDescriptionQuality.ts"
+Cohesion: 0.13
+Nodes (47): activeAreasOfResearchSummary(), assessResearchEntityDescriptionQuality(), deriveShortDescriptionFromFullDescription(), DescriptionQualityFlag, FieldQuality, fullDescriptionQuality(), hasBrokenTemplate(), hasDuplicatedLongFragment() (+39 more)
+
+### Community 59 - "betaDataQuality.ts"
+Cohesion: 0.08
+Nodes (61): ACTIVE_FILTER, asString(), asStringArray(), buildBetaDataQualityScorecard(), buildCollectionCounts(), buildDescriptionQuality(), buildDuplicateEntityNames(), buildLiveLinkCheck() (+53 more)
+
+### Community 60 - "studentVisibilityTier.ts"
+Cohesion: 0.11
+Nodes (35): computeProgramStudentVisibility(), computeResearchEntityStudentVisibility(), entityUrls(), ENTRY_PROGRAM_KINDS, ENTRY_PROGRAM_MODES, FORMALIZATION_PROGRAM_KINDS, genericDirectoryUrlPathPatterns, hasAnyHttpUrl() (+27 more)
+
+### Community 61 - "listingController.ts"
+Cohesion: 0.08
+Nodes (46): addViewToListing(), archiveListingForCurrentUser(), boundedListingSearchQuery(), buildRobustFilterMatch(), createListingForCurrentUser(), deleteListingForCurrentUser(), escapeMeiliFilterValue(), filterListingUpdate() (+38 more)
+
+### Community 62 - "researchEntityBrowseRankService.ts"
+Cohesion: 0.10
+Nodes (28): average(), boundedRenderedFetchTimeout(), buildFetchAttemptMetrics(), createScraplingRenderedFetcher(), currentMemoryBytes(), DEFAULT_BRIDGE_PATH, defaultRenderedSeedRedirectCheck(), execFileAsync (+20 more)
+
+### Community 63 - "analyticsService.ts"
+Cohesion: 0.06
+Nodes (63): AnalyticsEvent, analyticsEventSchema, AnalyticsEventType, ActionNeededAnalytics, ANALYTICS_EVENT_TYPES, ANALYTICS_NON_USER_NETIDS, AnalyticsUserDrilldownQuery, AnalyticsUserDrilldownResult (+55 more)
+
+### Community 65 - "acceptedInputsCore.ts"
+Cohesion: 0.07
+Nodes (61): AcceptedInputIssue, AcceptedInputUser, applyOrcidCrosswalkCsv(), applyScholarAcceptedCsv(), ArxivResolvedTarget, ArxivValidationResult, asString(), asStringArray() (+53 more)
+
+### Community 66 - "entryPathwayService.ts"
+Cohesion: 0.11
+Nodes (34): AccessSignalServiceDeps, AccessSignalUpsertResult, compactObject(), getAccessSignalModel(), toStoredId(), toStoredObjectId(), upsertAccessSignal(), compactObject() (+26 more)
+
+### Community 67 - "yaleCollegeFellowshipsOfficeScraper.ts"
+Cohesion: 0.11
+Nodes (41): absoluteUrl(), bestDeadlineText(), candidateFromDetailPage(), candidateFromLink(), candidateToObservations(), compactTitleIdentity(), DEFAULT_PAGE_URLS, existingKeyForCandidate() (+33 more)
+
+### Community 68 - "fellowshipMatchingService.ts"
 Cohesion: 0.14
+Nodes (24): buildFellowshipApplicationCycleEvidence(), cleanHttpUrl(), cleanString(), dateStatus(), FellowshipApplicationCycleEvidence, hasApplicationRoute(), looksRecurring(), publicFellowshipApplicationCycleEvidence (+16 more)
+
+### Community 69 - "AdminOperatorBoard.tsx"
+Cohesion: 0.05
+Nodes (33): DataQualityDuplicateNamePreflight, DataQualitySamePiDedupeReview, DataQualitySuspiciousUserEmailCopy, decisionLaneCopy, evidenceReasons, GATE_LABELS, GateArtifactFreshness, LaunchReviewExceptionDecisionValidation (+25 more)
+
+### Community 70 - "repairOfficialProfilePublicationPointers.ts"
+Cohesion: 0.13
+Nodes (26): awardToRecord(), buildCoPiObservations(), buildPiUserObservations(), buildResearchGroupObservations(), defaultDateStart(), fetchPage(), findUserForPi(), groupAwardsByPi() (+18 more)
+
+### Community 71 - "fellowshipInputs.ts"
+Cohesion: 0.08
+Nodes (41): ACCEPTED_INPUT_FILE_EXTENSIONS, acceptedPath(), AdvisorResolution, AdvisorResolver, assertAcceptedInputPathRoot(), candidateRowsFromText(), coerceReviewRow(), escapeCsvCell() (+33 more)
+
+### Community 72 - "OfficialProfilePublicationValue"
+Cohesion: 0.38
+Nodes (7): compactPersonName(), deptUserNameFilters(), escapeRegex(), escapeRegExp(), findUniqueUserByPersonName(), nameRegexFromSlugParts(), OfficialProfilePublicationValue
+
+### Community 73 - "postedOpportunityService.ts"
+Cohesion: 0.13
+Nodes (30): CompensationType, PostedOpportunityStatus, activeListingBackfillFilter(), backfillPostedOpportunitiesFromListings(), BackfillPostedOpportunitiesFromListingsOptions, BackfillPostedOpportunitiesFromListingsResult, compactObject(), firstUrl() (+22 more)
+
+### Community 74 - "profileController.ts"
+Cohesion: 0.12
+Nodes (27): addIfDefined(), getProfile(), getProfileCourses(), getProfileListings(), getPublications(), normalizePublicationPagination(), PUBLICATION_SORT_FIELDS, publicationSortValue() (+19 more)
+
+### Community 75 - "analytics.ts"
+Cohesion: 0.10
+Nodes (12): ANALYTICS_SORT_DIRECTIONS, ANALYTICS_USER_SORTS, AnalyticsRequestError, parseAnalyticsSortDirection(), parseAnalyticsUserSort(), router, invokeRouteHandler(), mocks (+4 more)
+
+### Community 76 - "openAlexPaperScraper.ts"
+Cohesion: 0.13
+Nodes (29): arxivIdFromUrl(), buildExternalIds(), buildOpenAlexAuthorshipEvidence(), extractArxivId(), FacultyRecord, fetchPage(), HttpFetcher, isExactNameMatch() (+21 more)
+
+### Community 77 - "errorHandler.ts"
+Cohesion: 0.14
+Nodes (16): triggerReconnect(), AsyncRequestHandler, clientErrorStatus(), errorHandler(), notFoundHandler(), publicClientErrorMessage(), ORIGINAL_ENV, addFavorite() (+8 more)
+
+### Community 78 - "researchEntityMemberReferenceAudit.ts"
+Cohesion: 0.12
+Nodes (38): applyMemberReferenceRepairs(), buildCurrentMemberOnArchivedEntityPipeline(), buildExistingMemberMatchQuery(), buildOrphanMemberUserReferencePipeline(), CURRENT_MEMBER_ON_ARCHIVED_ENTITY_STAGES, escapeRegExp(), exactCaseInsensitive(), loadCandidateUsers() (+30 more)
+
+### Community 79 - "SavedPathwaysSection.tsx"
+Cohesion: 0.09
+Nodes (40): CHECKLIST_TEMPLATES, daysUntil(), DeadlineReminder, deadlineReminderForPathway(), defaultIntentForPathway(), FellowshipFundingMatch, filterStoredPlansForSavedPathways(), formatDeadline() (+32 more)
+
+### Community 80 - "getUniqueDepartmentLabels"
+Cohesion: 0.14
+Nodes (18): DepartmentInput(), DepartmentInputProps, AdminListing, AdminListingEditModal(), Props, useConfig(), AdminListingEditAction, adminListingEditReducer() (+10 more)
+
+### Community 81 - "pathwaySearchIndexService.ts"
+Cohesion: 0.10
+Nodes (43): anyFilter(), boundedFilterValues(), boundedSearchQuery(), buildPathwayMeiliFilter(), buildPathwayMeiliSort(), buildPathwaySearchIndexDocument(), buildPathwaySearchIndexDocuments(), configurePathwaySearchIndex() (+35 more)
+
+### Community 83 - "adminOperatorBoardService.ts"
+Cohesion: 0.06
+Nodes (43): BetaRepairQueueGateArtifact, buildQueueSummaries(), buildReleaseQueueSummary(), buildRepairQueueSummary(), buildSourceFreshness(), classifyOperatorQueueReason(), compactProgramSample(), compactResearchSample() (+35 more)
+
+### Community 84 - "Listing"
+Cohesion: 0.09
+Nodes (21): COLUMNS, KanbanBoardProps, DashboardView, FavoritesAction, favoritesReducer(), FavoritesState, FavSortKey, FavStatusFilter (+13 more)
+
+### Community 85 - "promoteAcceptedBetaCopy.ts"
+Cohesion: 0.11
+Nodes (30): applyCopy(), assertPromotionSummaryCanApply(), assertSafeOptions(), buildApplyBlockers(), buildPlan(), buildPromotionSummary(), COLLECTION_CATEGORY_ORDER, CollectionCategorySummary (+22 more)
+
+### Community 86 - "Yale Research — Developer Guide"
+Cohesion: 0.09
+Nodes (22): Adding Things, API Routes, Architecture, Auth Middleware (`server/src/middleware/auth.ts`), Authentication, CI, Common Commands, Environments (+14 more)
+
+### Community 87 - "paperAuthorshipAudit.ts"
+Cohesion: 0.11
+Nodes (41): Paper, paperSchema, PaperAuthor, applyCleanup(), applyIntegrityCleanup(), assertPaperAuthorshipAuditApplyAllowed(), AUTHORSHIP_METHODS, AUTHORSHIP_SOURCES (+33 more)
+
+### Community 88 - "Observation"
+Cohesion: 0.13
+Nodes (25): entityKeyFor(), GroupRow, LATEST_WINS, Result, run(), Observation, observationSchema, ScrapeRun (+17 more)
+
+### Community 89 - "Environment Progression"
+Cohesion: 0.14
+Nodes (14): 1. Development Testing, 2. Beta Seeding, 3. Production Seeding, Environment Progression, Known Accepted Warnings To Recheck, Lane A: Accepted Beta Copy, Lane B: Guarded Production Delta, Local, VPN, And Render Constraints (+6 more)
+
+### Community 90 - "devDependencies"
+Cohesion: 0.17
+Nodes (11): browserslist, development, production, engines, node, eslintConfig, extends, name (+3 more)
+
+### Community 91 - "Per-Source Audit Playbooks"
+Cohesion: 0.11
+Nodes (18): Audit Checklist, `department-undergrad-research`, `dept-faculty-roster`, Entity Discovery Sources, Funding And Publication Enrichment, `lab-microsite-description-llm`, `lab-microsite-undergrad-llm`, Mental Model (+10 more)
+
+### Community 92 - "dependencies"
+Cohesion: 0.10
+Nodes (20): dependencies, axios, @emotion/react, @emotion/styled, @mui/material, react, react-is, react-router-dom (+12 more)
+
+### Community 93 - "studentDecisionLLMExtractor.ts"
+Cohesion: 0.07
+Nodes (52): ScrapeSnapshot, scrapeSnapshotSchema, getCached(), invalidateCache(), buildStudentDecisionPrompt(), candidateMatchesOnly(), clean(), compactSourceUrls() (+44 more)
+
+### Community 94 - "AdminFellowshipsTable.tsx"
+Cohesion: 0.14
+Nodes (16): AdminFellowship, AdminFellowshipsTable(), FellowshipEditModal(), FellowshipLink, PAGE_SIZES, SortField, TABLE_COLUMNS, AdminFellowshipFormAction (+8 more)
+
+### Community 95 - "yaleResearchOfficialScraper.ts"
+Cohesion: 0.16
+Nodes (21): ResearchEntityType, absoluteUrl(), cleanText(), DEFAULT_YALE_RESEARCH_DIRECTORY_CONFIGS, entityFromRecord(), entityToObservations(), inferResearchYaleKind(), pageUrlForIndex() (+13 more)
+
+### Community 97 - "backfillProfileBiosFromOfficialUrls.ts"
+Cohesion: 0.12
+Nodes (35): articleForFacultyTitle(), BioBackfillCandidate, BioBackfillDecision, buildCandidates(), composeTitleLedBio(), decideBioBackfill(), defaultFetcher(), detectFieldMismatch() (+27 more)
+
+### Community 98 - "resolveSafeJsonReportOutputPath"
+Cohesion: 0.22
+Nodes (16): assertRebuildPathwaySearchIndexAllowed(), buildRebuildPathwaySearchIndexOutput(), main(), parsePositiveInteger(), parseRebuildPathwaySearchIndexArgs(), parseRequiredOutputPath(), RebuildPathwaySearchIndexCliOptions, writeRebuildPathwaySearchIndexOutput() (+8 more)
+
+### Community 99 - "accessClaims.ts"
+Cohesion: 0.16
+Nodes (18): AccessSignalType, AccessArtifactCandidate, AccessArtifactType, buildClaimGateReport(), ClaimGateReport, ClaimGateStatus, ClaimValidationBundleResult, ClaimValidationResult (+10 more)
+
+### Community 100 - "Beta Repair Lanes Audit Implementation Plan"
+Cohesion: 0.17
+Nodes (11): Acceptance Criteria, Beta Repair Lanes Audit Implementation Plan, Current Baseline, Files, Parallelization, Task 1: Snapshot And Freeze The Beta Queue Baseline, Task 2: Expand Deterministic Source/Description Repair, Task 3: PI Identity Repair From Official Evidence (+3 more)
+
+### Community 101 - "axios.ts"
+Cohesion: 0.06
+Nodes (32): AdminRoute(), AdminRouteProps, getLocalAdminDevLoginUrl(), getSafeLocalAdminRedirectTarget(), PrivateRoute(), PrivateRouteProps, InfiniteScrollLoadingDots(), InfiniteScrollLoadingDotsProps (+24 more)
+
+### Community 103 - "assertPublicHttpUrl"
+Cohesion: 0.12
+Nodes (38): defaultFetchUrl(), setCached(), defaultFetchPage(), defaultFetchPage(), fetchHtml(), fetchDeptData(), fetchHtml(), defaultFetchHtml() (+30 more)
+
+### Community 104 - "labDetail.ts"
+Cohesion: 0.05
+Nodes (55): LabInquireModal(), LabInquireModalProps, LabMembersList(), LabMembersListProps, ROLE_LABELS, ROLE_ORDER, ROLE_PILL_CLASSES, decodeHtmlEntities() (+47 more)
+
+### Community 105 - "analytics.tsx"
+Cohesion: 0.09
+Nodes (32): Analytics(), analyticsRanges, defaultAdminAccess, defaultUserActivity, SortOrder, UserActivitySort, analyticsData, mockedAxios (+24 more)
+
+### Community 106 - "officialProfilePiBackfillScraper.ts"
+Cohesion: 0.07
+Nodes (76): absolutize(), affiliationValuesFromProfiles(), canonicalLegacyResearchHomeUrl(), canonicalResearchHomeName(), canonicalUrlFromHtml(), classifyResearchHome(), cleanInterestForBio(), cleanOfficialProfileDisplayName() (+68 more)
+
+### Community 107 - "pathwaySearchService.ts"
+Cohesion: 0.09
+Nodes (38): EntryPathwayStatus, EntryPathwayType, EvidenceStrength, DerivedEntryPathway, RouteClassification, UpsertEntryPathwayInput, BestNextStepSnapshot, boundedFilterValues() (+30 more)
+
+### Community 108 - "researchEntityDto.ts"
+Cohesion: 0.13
+Nodes (26): mapResearchGroupKindToEntityType(), defaultOwnerToGroupSlug(), addResearchEntityDetailAlias(), addResearchEntitySearchAliases(), departmentDisplayLabel(), normalizedDepartmentLabel(), OPERATOR_PUBLIC_RESEARCH_ENTITY_FIELDS, OPTIONAL_PUBLIC_RESEARCH_ENTITY_FIELDS (+18 more)
+
+### Community 110 - "repairArchivedEntityArtifacts.ts"
+Cohesion: 0.15
+Nodes (24): applyRepairPlan(), archiveArtifact(), ARTIFACT_SPECS, ArtifactSpec, assertArchivedEntityArtifactRepairApplyAllowed(), buildRepairArchivedEntityArtifactsOutput(), collectionExists(), __filename (+16 more)
+
+### Community 113 - "smartTitle.ts"
+Cohesion: 0.18
+Nodes (16): DepartmentCategory, ARTS_DEPARTMENT_ABBRS, buildDepartmentLookup(), CATEGORY_PRIORITY, CATEGORY_SUFFIXES, DepartmentDoc, determineSuffix(), escapeRegex() (+8 more)
+
+### Community 115 - "centerDirectorLLMExtractor.ts"
+Cohesion: 0.16
+Nodes (18): CallCenterDirectorLLMFn, CandidateCenter, CenterDirector, CenterDirectorExtraction, CenterDirectorLLMExtractor, CenterDirectorLLMExtractorDeps, CenterFinderFn, defaultCallLLM() (+10 more)
+
+### Community 116 - "scripts"
+Cohesion: 0.06
+Nodes (31): scripts, audit:research-detail-professors, audit:unified-research, build, build:client, build:server, clean:all, dev:client (+23 more)
+
+### Community 117 - "pathwayQualityAudit.ts"
+Cohesion: 0.13
+Nodes (28): activeListingFilter(), aggregateCountMap(), buildEntityContexts(), buildPathwayQualityAuditOutput(), countMap(), __dirname, __filename, main() (+20 more)
+
+### Community 120 - "researchEntitySearchIndexService.ts"
+Cohesion: 0.13
+Nodes (28): buildResearchEntitySearchIndexDocument(), buildResearchEntitySearchIndexDocuments(), buildResearchEntitySearchIndexDocumentsWithMemberNames(), cleanPersonName(), emptyMemberNameFields(), facultyDisplayName(), fetchResearchEntitySearchMemberNames(), getResearchEntitySearchIndexSettings() (+20 more)
+
+### Community 124 - "Adding a New Endpoint"
+Cohesion: 0.10
+Nodes (25): AccessReviewCounts, AccessReviewDetail, AccessReviewEntitySummary, AccessSignal, AdminAccessReview(), ContactRoute, EntryPathway, evidenceIds() (+17 more)
+
+### Community 129 - "buildAdminOperatorBoard"
+Cohesion: 0.16
+Nodes (27): betaTargetCommand(), buildAdminOperatorBoard(), buildGateArtifactFreshness(), buildRecommendedNextActions(), deriveDataQualityGate(), deriveLaunchAcquisitionGate(), deriveLaunchTrustGate(), derivePromotionCopyGate() (+19 more)
+
+### Community 131 - "launchReviewExceptions.ts"
+Cohesion: 0.15
+Nodes (22): buildLaunchReviewExceptionCandidates(), buildLaunchReviewExceptionDecisionTemplate(), buildLaunchReviewExceptionOutput(), buildLaunchReviewExceptionPlan(), buildLaunchReviewExceptionReview(), __filename, isStudentReadyLaunchViolation(), LAUNCH_REVIEW_EXCEPTION_DECISION_VALUES (+14 more)
+
+### Community 133 - "Session Notes"
+Cohesion: 0.10
+Nodes (19): 10) `/research` cluster profile links should avoid broken routes on malformed data, 11) Playwright interaction pass for research flows could not run in this environment, 12) `/research` was blocked by an unrelated Listings error modal, 13) `/research/:slug` repeated the same official source link across pathways, evidence, and CTAs, 14) Listings load failure used a blocking modal instead of inline recovery, 15) `/research` showed duplicate Neuroscience concepts and undersized touch targets, 16) `/research` hierarchy exposed clusters before student decisions, 1) `/research` search request ordering and cancellation (+11 more)
+
+### Community 134 - "Current Execution Plan"
+Cohesion: 0.10
+Nodes (20): Blocked Work, Checks Run, Current Execution Plan, Current Stop Reason, Current Stop Reason, Current Stop Reason, Current Understanding, Currently In Progress (+12 more)
+
+### Community 135 - "File Structure"
+Cohesion: 0.15
+Nodes (12): Completion Criteria, File Structure, Next Beta Data Quality Pass Implementation Plan, Self-Review, Task 1: Confirm Target And Baseline State, Task 2: Repair Deterministic Identity Hygiene, Task 3: Run Automatic Source-Description Repair, Task 4: Re-Gate Public Visibility (+4 more)
+
+### Community 136 - "research-detail-professor-audit.mjs"
+Cohesion: 0.11
+Nodes (27): absoluteApiUrl(), absoluteClientUrl(), addFinding(), artifacts, auditEntity(), auditProfileLink(), clientBase, collectResearchEntities() (+19 more)
+
+### Community 137 - "dedupeUsersByIdentity.ts"
+Cohesion: 0.13
+Nodes (30): field(), applyUserIdentityDedupeGroups(), archiveDuplicateUniqueUserReferences(), assertDedupeUsersByIdentityApplyAllowed(), buildDedupeUsersByIdentityOutput(), buildUserIdentityCollisionPipeline(), IDENTITY_FIELDS, isMissing() (+22 more)
+
+### Community 138 - "ImportRootDataFiles.ts"
+Cohesion: 0.09
+Nodes (47): LabHeaderProps, ResearchGroup, asPlainObject(), assertRootDataImportApplyAllowed(), buildDepartmentMap(), buildRootDataImportOutput(), cleanText(), confidenceFor() (+39 more)
+
+### Community 140 - "officialProfilePiBackfillScraper.test.ts"
+Cohesion: 0.12
+Nodes (39): annotateEntitiesWithLeadUsers(), annotateEntitiesWithSourceObservationUrls(), annotateProfileDescriptionPreferredSourceEvidence(), entityLeadDirectWebsiteToObservations(), entityResearchHomeToObservations(), firstNonDuplicateLeadDirectWebsiteUrl(), identityToResearchEntityDescriptionObservations(), identityToResearchEntityPiKeyObservations() (+31 more)
+
+### Community 141 - "applicationRoutePathwayBackfillCore.ts"
+Cohesion: 0.11
+Nodes (38): ContactRoute, ContactRouteType, applicationRouteBackfillDerivationKey(), ApplicationRoutePathwayBackfillDeps, ApplicationRoutePathwayBackfillEntity, ApplicationRoutePathwayBackfillOptions, ApplicationRoutePathwayBackfillResult, ApplicationRoutePathwayBackfillRoute (+30 more)
+
+### Community 142 - "launchTrustContractService.ts"
+Cohesion: 0.09
+Nodes (35): VisibilityReleaseQueueCollection, visibilityReleaseQueueCollections, visibilityReleaseQueueItemSchema, VisibilityReleaseQueueStatus, visibilityReleaseQueueStatuses, VisibilityRepairStage, visibilityRepairStages, VisibilityRepairStatus (+27 more)
+
+### Community 143 - "fellowshipController.ts"
+Cohesion: 0.14
+Nodes (26): addFavoriteToFellowship(), addViewToFellowship(), boundedSearchQuery(), getFellowshipById(), getFellowshipFilterOptions(), numericSearchParam(), parseFilter(), PUBLIC_FELLOWSHIP_SORT_FIELDS (+18 more)
+
+### Community 144 - "department.ts"
+Cohesion: 0.31
+Nodes (8): cache, canonicalizeDepartment(), CanonicalizeResult, DepartmentRow, loadCache(), normalize(), registerDepartmentAlias(), tokenJaccard()
+
+### Community 145 - "FavoritesManager.tsx"
+Cohesion: 0.12
+Nodes (37): csvCell(), dateFormatter, deadlineEndOfUtcDay(), FavoritesManager(), FavoritesManagerProps, fellowshipToBrowsable(), savedProgramDeadlineSummary(), validDeadlineDate() (+29 more)
+
+### Community 146 - "departmentGroundTruth.ts"
+Cohesion: 0.14
+Nodes (29): addSourceRecord(), buildDepartmentGroundTruth(), buildResolverKeys(), buildRowsFromSources(), categoryColorKeys, chooseCodeSystem(), CuratedDepartment, curatedDepartments (+21 more)
+
+### Community 147 - "profileBioCoverageAudit.ts"
+Cohesion: 0.10
+Nodes (40): buildProfessorBioCoverageAuditOutput(), buildProfessorBioCoverageInputs(), idValue(), main(), parseInteger(), parseProfessorBioCoverageAuditArgs(), parseRequiredOutputPath(), ProfessorBioCoverageAuditCliOptions (+32 more)
+
+### Community 148 - "Research Model"
+Cohesion: 0.11
+Nodes (19): 2026-05-13 External Yale Validation, 2026-05-13 Model Audit, AccessSignal, Admin Review, ContactRoute, Current Implementation Context, EntryPathway, Migration Guidance (+11 more)
+
+### Community 149 - "useFavorites.ts"
+Cohesion: 0.14
+Nodes (21): ACCESS_SIGNAL_POINTS, accessPoints(), computeResearchEntityBrowseRank(), descriptionPoints(), leadPoints(), ResearchEntityBrowseRankInput, __testing, buildResearchEntityQualitySummary() (+13 more)
+
+### Community 150 - "Beta Source/PI/Action Audit Implementation Plan"
+Cohesion: 0.17
+Nodes (11): Beta Source/PI/Action Audit Implementation Plan, Completion Criteria, Current Beta Baseline, File Map, Guardrails, Self-Review, Task 1: Rebuild the Source/Description Audit Dataset, Task 2: Implement Source/Description Repairs First (+3 more)
+
+### Community 151 - "cli.ts"
+Cohesion: 0.09
+Nodes (43): ensureSource(), ScrapeJobLock, scrapeJobLockSchema, Source, __dirname, __filename, main(), BOOLEAN_FLAGS (+35 more)
+
+### Community 152 - "crossSourceObservationConflictReview.ts"
+Cohesion: 0.06
+Nodes (56): ACCESS_EVIDENCE_CONFLICT_FIELDS, ADDITIVE_METADATA_CONFLICT_FIELDS, AggregatedCrossSourceObservationConflictGroup, asString(), asStringArray(), buildCategoryCounts(), buildConflictPlan(), buildCrossSourceObservationConflictReviewOutput() (+48 more)
+
+### Community 153 - "migrateResearchEntities.ts"
+Cohesion: 0.13
+Nodes (29): assertResearchEntityMigrationWriteAllowed(), BACKFILL_ARRAY_FIELD_PAIRS, BACKFILL_FIELD_PAIRS, backfillReferences(), buildResearchEntityMigrationOutput(), buildResearchEntityMigrationReferenceMatch(), collectionExists(), copyResearchEntities() (+21 more)
+
+### Community 154 - "visibilityRepairQueueService.ts"
+Cohesion: 0.10
+Nodes (68): member(), actionReasons, archivedResearchEntityRepairBlock(), attemptProgramRepair(), attemptResearchActionEvidenceRepair(), attemptResearchRepair(), attemptVisibilityRepair(), buildResearchSourceDescriptionPatch() (+60 more)
+
+### Community 157 - "researchQualitySearchReview.ts"
+Cohesion: 0.07
+Nodes (54): addMapSet(), aggregateCountAndTypes(), aggregateCountMap(), buildLexicalReasons(), buildResearchQualitySearchReviewOutput(), buildReview(), collectSearchCandidates(), countMap() (+46 more)
+
+### Community 159 - "migrateResearchEntityCollections.ts"
+Cohesion: 0.14
+Nodes (30): assertResearchEntityCollectionMigrationWriteAllowed(), buildCollectionMigrationLiveFilter(), buildCollectionMigrationTargetReferenceFilter(), buildResearchEntityCollectionMigrationOutput(), COLLECTION_MIGRATIONS, collectionExists(), CollectionMigration, collectionMigrationModeWrites() (+22 more)
+
+### Community 160 - "researchGroupController.ts"
+Cohesion: 0.12
+Nodes (23): getResearchGroupBySlug(), hasOversizedStringList(), isOversizedSearchRequest(), OPERATOR_ALLOWED_SORT_FIELDS, parseFilters(), parsePositiveIntegerParam(), parseQualityFilters(), parseStudentVisibilityTiers() (+15 more)
+
+### Community 161 - "GStack Production Promotion Iteration Implementation Plan"
+Cohesion: 0.20
+Nodes (9): Agent A: Data Repair And Gate Classification, Agent B: Meili Rebuild And Search Parity Gate, Agent C: Live UI And API Smoke Gate, Agent D: Operator Decision Packet And Rollback Drill, Branch And Worktree Setup, Go / No-Go Criteria, GStack Production Promotion Iteration Implementation Plan, Main Integration Thread (+1 more)
+
+### Community 163 - "sanitizeProfileResearchTerms"
+Cohesion: 0.23
+Nodes (12): expandedResearchAreasPublicBio(), formatPublicBioList(), hasOfficialYaleProfileUrl(), officialProfileResearchInterestTermsBio(), publicProfileDisplayName(), supportedPublicProfileTopics(), cleanResearchTerm(), extractExplicitResearchInterestPhrases() (+4 more)
+
+### Community 164 - "disambiguateSurnameLabNames.ts"
+Cohesion: 0.12
+Nodes (27): ACTIVE_FILTER, applyPlans(), ApplyResult, assertDisambiguateSurnameLabApplyAllowed(), buildSurnameLabDisambiguationPlans(), cleanNamePart(), consumeValue(), __dirname (+19 more)
+
+### Community 165 - "repairDuplicateAccessSignals.ts"
+Cohesion: 0.13
+Nodes (29): DuplicateAccessSignalGroup, applyPlans(), assertDuplicateAccessSignalRepairApplyAllowed(), BlockedDuplicateAccessSignalRepairGroup, buildDuplicateAccessSignalRepairPlans(), __dirname, DuplicateAccessSignalPathwayContext, DuplicateAccessSignalRecord (+21 more)
+
+### Community 166 - "ResearchHomeCard.tsx"
+Cohesion: 0.12
+Nodes (25): cleanResearchInterest(), ResearchInterests(), ResearchInterestsProps, SOURCE_CHROME_PATTERNS, splitCleanResearchInterest(), adminQualityLabels(), contextLabelClass(), countLabel() (+17 more)
+
+### Community 169 - "clientErrorMessage"
+Cohesion: 0.25
+Nodes (12): AdminProfile, AdminProfileEditModal(), AdminProfileEditModalProps, AdminProfileEditAction, adminProfileEditReducer(), AdminProfileEditState, AdminProfileShape, createInitialAdminProfileEditState() (+4 more)
+
+### Community 170 - "dedupeUsersByIdentityCore.ts"
+Cohesion: 0.11
+Nodes (32): DuplicatePersonGroup, loadDuplicatePeopleIntegrity(), buildUserIdentityDedupePlan(), buildUserIdentityDedupeSummary(), canonicalScore(), chooseCanonicalUser(), clusterUsersByCompatibleName(), comparePlannedGroups() (+24 more)
+
+### Community 171 - "logSanitizer.ts"
+Cohesion: 0.08
+Nodes (31): normalizeUserType(), publicationSchema, User, userSchema, ProfileBackedFacultyResearchAreaMemberDeps, arxivEntryToObservations(), ArxivFetcher, ArxivPreprintScraperOptions (+23 more)
+
+### Community 172 - "programController.ts"
+Cohesion: 0.11
+Nodes (27): addFavoriteToProgram(), addViewToProgram(), boundedSearchQuery(), getProgramById(), numericSearchParam(), OPERATOR_PROGRAM_SORT_FIELDS, parseFilter(), parseStudentVisibilityFilter() (+19 more)
+
+### Community 173 - "seedDepartments.ts"
+Cohesion: 0.12
+Nodes (24): DepartmentSeedRow, applyDepartmentRows(), assertDepartmentSeedApplyAllowed(), auditUnresolvedDepartmentStrings(), buildDepartmentSeedOutput(), classifyUnresolvedDepartmentString(), Department, DepartmentDiffSummary (+16 more)
+
+### Community 175 - "repairMismatchedPersonEmailsCore.ts"
+Cohesion: 0.15
 Nodes (25): applyRepairs(), assertRepairMismatchedPersonEmailsApplyAllowed(), loadUsers(), main(), runRepairMismatchedPersonEmails(), writeOutput(), buildMismatchedExternalIdentityRepairs(), buildMismatchedPersonEmailRepairPlan() (+17 more)
 
-### Community 176 - "Community 176"
-Cohesion: 0.11
-Nodes (26): parseFellowshipImportArgs(), BETA_ROLLOUT_ORDER, BetaReadinessGateCliOptions, buildBetaReadinessCommands(), buildBetaReadinessGateOutput(), CliOptions, describeMongoTarget(), __dirname (+18 more)
-
-### Community 177 - "Community 177"
-Cohesion: 0.1
-Nodes (25): buildEntityWorkPlan(), BuildEntityWorkPlanOptions, BuildFieldPlanOptions, createWorkPlannerMetrics(), EntityWorkPlan, FieldPlan, getWorkPlannerSourcePolicy(), loadEntityWorkPlan() (+17 more)
-
-### Community 178 - "Community 178"
-Cohesion: 0.1
-Nodes (25): ALLOWED_SORT_FIELDS, allowedValues(), filterAllowed(), hasOversizedStringList(), isOversizedSearchRequest(), parseFilters(), parseSearchInput(), parseSort() (+17 more)
-
-### Community 179 - "Community 179"
-Cohesion: 0.09
-Nodes (23): affiliationExtractionToObservations(), CallCenterAffiliationLLMFn, CandidateCenter, CenterAffiliationExtraction, CenterAffiliationLLMExtractor, CenterAffiliationLLMExtractorDeps, CenterAffiliationPerson, CenterFinderFn (+15 more)
-
-### Community 180 - "Community 180"
-Cohesion: 0.12
-Nodes (24): AccessReviewCountSummary, AccessReviewEntitySummary, AccessReviewListInput, AccessReviewRecordType, attachEvidenceItems(), buildReviewSummary(), countByEntity(), evidenceIdsForRecord() (+16 more)
-
-### Community 181 - "Community 181"
-Cohesion: 0.11
-Nodes (25): buildBucket(), buildStudentVisibilityRepairTargetReport(), compactSample(), compareByLabel(), compareDepartmentCandidates(), compareLlmCandidates(), DEPARTMENT_REPAIR_REASONS, DEPARTMENT_UNDERGRAD_RESEARCH_DEPARTMENTS (+17 more)
-
-### Community 182 - "Community 182"
-Cohesion: 0.12
-Nodes (26): artifactTextSet(), artifactUpdates(), baseNameFromGeneratedNames(), buildPersonalHomepageResearchEntityRepairPlan(), changedDescriptionSet(), currentWebsiteUrl(), entityHasPersonalHomepageCandidate(), escapeRegExp() (+18 more)
-
-### Community 183 - "Community 183"
-Cohesion: 0.21
-Nodes (27): buildTwoFieldDescriptionRepair(), entityContext(), entityLabel(), entityTopics(), hasSourceBackedDescriptionContext(), isWeakFullDescription(), isWeakShortDescription(), normalizeTopic() (+19 more)
-
-### Community 184 - "Community 184"
-Cohesion: 0.12
-Nodes (26): assertScholarlyLinkProvenanceAuditApplyAllowed(), activeOwnedFilter, assertScholarlyLinkSuppressionAuditApplyAllowed(), betaCommand(), buildScholarlyLinkSuppressionAuditOutput(), buildScholarlyLinkSuppressionAuditSamples(), cleanTitle(), CliOptions (+18 more)
-
-### Community 185 - "Community 185"
-Cohesion: 0.15
-Nodes (26): assertLegacyCleanupWriteAllowed(), buildLegacyCleanupOutput(), collectionExists(), copyApplications(), countCollection(), countMissingStudentApplications(), createStudentApplicationIndexes(), dropLegacyCollections() (+18 more)
-
-### Community 186 - "Community 186"
-Cohesion: 0.1
-Nodes (23): assertSeedSourcesWriteAllowed(), buildSeedSourcesOutput(), __dirname, __filename, main(), parseRequiredOutputPath(), parseSeedSourcesArgs(), RETIRED_SOURCE_NAMES (+15 more)
-
-### Community 187 - "Community 187"
-Cohesion: 0.12
-Nodes (22): asArray(), buildFacts(), buildPiProfileTermMap(), CliOptions, __dirname, __filename, ISSUE_STATUSES, LEAD_RESEARCH_AREA_ROLES (+14 more)
-
-### Community 188 - "Community 188"
-Cohesion: 0.12
-Nodes (21): ResearchArea, researchAreaSchema, ResearchField, currentUser, currentUser, hasDirectContactInfo(), newArea, router (+13 more)
-
-### Community 189 - "Community 189"
-Cohesion: 0.15
-Nodes (25): backfillV4FacultyMembers(), buildDepartmentMap(), compact(), departmentIdsFor(), __filename, isFacultyTitle(), main(), norm() (+17 more)
-
-### Community 190 - "Community 190"
-Cohesion: 0.12
-Nodes (25): assertMongoNamingMigrationWriteAllowed(), buildMongoNamingMigrationOutput(), buildUserFieldSetStage(), COLLECTION_RENAMES, collectionExists(), CollectionRenameResult, main(), migrateMongoNaming() (+17 more)
-
-### Community 191 - "Community 191"
-Cohesion: 0.13
-Nodes (20): buildFundingGroupFromCluster(), buildGroupFromCluster(), buildProfileAreaShellDuplicateGroup(), canonicalScore(), cleanMergedResearchAreas(), comparablePiLabName(), CurrentMemberDedupeRow, dedupeEntityClusters() (+12 more)
-
-### Community 192 - "Community 192"
-Cohesion: 0.09
-Nodes (24): applyStaleObservationSupersessions(), assertStaleObservationConflictReviewApplyAllowed(), buildStaleObservationConflictReviewOutput(), buildStaleObservationDecisionTemplate(), defaultStaleObservationApplyDeps(), main(), readStaleObservationReviewDecisions(), runStaleObservationConflictReview() (+16 more)
-
-### Community 193 - "Community 193"
-Cohesion: 0.11
-Nodes (16): buildFellowshipSearchFilters(), getStringParam(), hasFellowshipSearchFilters(), logFellowshipEvent(), logFellowshipSearchEvent(), parseFilterParam(), router, buildListingSearchFilters() (+8 more)
-
-### Community 194 - "Community 194"
-Cohesion: 0.08
-Nodes (18): EvidenceSourceRowProps, formatConfidence(), formatSourceType(), labelize(), countLabel(), TopicClusterCard(), TopicClusterCardProps, { container } (+10 more)
-
-### Community 195 - "Community 195"
-Cohesion: 0.07
-Nodes (27): 1. Fresh machine setup, 2. Install dependencies, 3. Configure environment, 4. Start local Meilisearch, 5. Seed Meilisearch, 6. Start dev servers, 7. Verify setup, code:bash (curl http://localhost:7700/health) (+19 more)
-
-### Community 196 - "Community 196"
-Cohesion: 0.07
-Nodes (27): 1. Fresh machine setup, 2. Install dependencies, 3. Configure environment, 4. Start local Meilisearch, 5. Seed Meilisearch, 6. Start dev servers, 7. Verify setup, code:bash (curl http://localhost:7700/health) (+19 more)
-
-### Community 197 - "Community 197"
-Cohesion: 0.07
-Nodes (27): 1. Fresh machine setup, 2. Install dependencies, 3. Configure environment, 4. Start local Meilisearch, 5. Seed Meilisearch, 6. Start dev servers, 7. Verify setup, code:bash (curl http://localhost:7700/health) (+19 more)
-
-### Community 198 - "Community 198"
-Cohesion: 0.07
-Nodes (27): 1. Fresh machine setup, 2. Install dependencies, 3. Configure environment, 4. Start local Meilisearch, 5. Seed Meilisearch, 6. Start dev servers, 7. Verify setup, code:bash (curl http://localhost:7700/health) (+19 more)
-
-### Community 199 - "Community 199"
-Cohesion: 0.11
-Nodes (23): artifacts, assert(), assertTextExcludes(), assertTextIncludes(), assertTextMatches(), audit(), bodyText(), clientBase (+15 more)
-
-### Community 200 - "Community 200"
+### Community 176 - "betaReadinessGate.ts"
 Cohesion: 0.17
-Nodes (25): buildExternalIds(), buildScholarlyLinkFromPaper(), chooseBestScholarlyDestination(), decodeBasicHtmlEntities(), destinationFromUrl(), externalId(), freeFullTextLabelForDestination(), inferDiscoverySource() (+17 more)
+Nodes (18): BETA_ROLLOUT_ORDER, BetaReadinessGateCliOptions, buildBetaReadinessCommands(), buildBetaReadinessGateOutput(), collectionCount(), describeMongoTarget(), __dirname, EXPECTED_SOURCE_NAMES (+10 more)
 
-### Community 201 - "Community 201"
-Cohesion: 0.15
-Nodes (23): assertUserEmailHygieneApplyAllowed(), buildSuspiciousUserEmailFilter(), buildUserEmailHygieneOutput(), loadSuspiciousUsers(), main(), runUserEmailHygiene(), writeUserEmailHygieneOutput(), buildUserEmailHygieneSummary() (+15 more)
-
-### Community 202 - "Community 202"
+### Community 178 - "pathwayController.ts"
 Cohesion: 0.18
-Nodes (24): ResearchEntityType, ResearchGroupKind, bestApplicationUrl(), conciseText(), departmentEntityKey(), departmentGuidanceDescription(), DepartmentUndergradResearchPageConfig, DepartmentUndergradResearchParser (+16 more)
+Nodes (16): allowedValues(), hasOversizedStringList(), isOversizedSearchRequest(), parseFilters(), parseSearchInput(), parseSort(), publicPathwayResearchEntity(), publicPathwaySearchResult() (+8 more)
 
-### Community 203 - "Community 203"
-Cohesion: 0.08
-Nodes (26): Adding Things, API Routes, Architecture, Auth Middleware (`server/src/middleware/auth.ts`), Authentication, CI, code:block1 (React (Vite) → Express (Passport.js) → MongoDB Atlas + Meili), code:bash (npx ts-node --transpile-only <script>.ts) (+18 more)
-
-### Community 204 - "Community 204"
-Cohesion: 0.08
-Nodes (26): Adding Things, API Routes, Architecture, Auth Middleware (`server/src/middleware/auth.ts`), Authentication, CI, code:block1 (React (Vite) → Express (Passport.js) → MongoDB Atlas + Meili), code:bash (npx ts-node --transpile-only <script>.ts) (+18 more)
-
-### Community 205 - "Community 205"
-Cohesion: 0.08
-Nodes (26): Adding Things, API Routes, Architecture, Auth Middleware (`server/src/middleware/auth.ts`), Authentication, CI, code:block1 (React (Vite) → Express (Passport.js) → MongoDB Atlas + Meili), code:bash (npx ts-node --transpile-only <script>.ts) (+18 more)
-
-### Community 206 - "Community 206"
-Cohesion: 0.08
-Nodes (26): Adding Things, API Routes, Architecture, Auth Middleware (`server/src/middleware/auth.ts`), Authentication, CI, code:block1 (React (Vite) → Express (Passport.js) → MongoDB Atlas + Meili), code:bash (npx ts-node --transpile-only <script>.ts) (+18 more)
-
-### Community 207 - "Community 207"
-Cohesion: 0.15
-Nodes (22): getConfig(), deleteFromIndex(), ENTITY_REGISTRY, EntityIndexConfig, getConfig(), isSyncableEntityType(), MaybePromise, stripInternalFields() (+14 more)
-
-### Community 208 - "Community 208"
-Cohesion: 0.15
-Nodes (23): assertAcceptedInputsApplyAllowed(), buildAcceptedInputsOutput(), CliOptions, COMMANDS_REQUIRING_DB, COMMANDS_SUPPORTING_APPLY, main(), parseAcceptedInputsArgs(), parseArgs() (+15 more)
-
-### Community 209 - "Community 209"
-Cohesion: 0.13
-Nodes (25): canonicalResearchHomeName(), cleanInterestForBio(), cleanOfficialProfileDisplayName(), cleanOfficialProfileTitle(), cleanProfileCardLabWebsiteLabel(), dedupeRepeatedProfileCardLabel(), extractBio(), extractEmail() (+17 more)
-
-### Community 210 - "Community 210"
-Cohesion: 0.11
-Nodes (17): AccessSummary, accessSummaryEntityId(), AccessSummaryStatus, bestNextStepFor(), boundedString(), EMPTY_SUMMARY, FORMALIZATION_ONLY_PATHWAY_TYPES, getAccessSummaryForResearchEntity() (+9 more)
-
-### Community 211 - "Community 211"
-Cohesion: 0.13
-Nodes (22): applyPlans(), assertRepairProfileDescriptionBackfillConflictsApplyAllowed(), buildProfileDescriptionConflictRepairPlan(), buildProfileDescriptionConflictRepairPlans(), chooseKeepObservation(), consumePath(), DESCRIPTION_FIELDS, __dirname (+14 more)
-
-### Community 212 - "Community 212"
-Cohesion: 0.16
-Nodes (21): assertClearBetaStudentAnalyticsApplyAllowed(), buildBetaStudentAnalyticsEventFilter(), buildClearBetaStudentAnalyticsOutput(), loadCandidateSummary(), main(), runClearBetaStudentAnalytics(), writeClearBetaStudentAnalyticsOutput(), BETA_STUDENT_ANALYTICS_USER_TYPES (+13 more)
-
-### Community 213 - "Community 213"
+### Community 180 - "adminAccessReviewService.ts"
 Cohesion: 0.14
-Nodes (22): fetchHtml(), planPhotoUpdate(), absolutize(), buildFacultyPhotoUpdate(), extractOfficialProfileImageUrl(), extractOfficialProfileMetadata(), FacultyPhotoCoverageOptions, FacultyPhotoUpdatePlan (+14 more)
+Nodes (26): AccessReviewCountSummary, accessReviewDocumentId(), AccessReviewEntitySummary, AccessReviewListInput, AccessReviewRecordType, attachEvidenceItems(), buildReviewSummary(), countByEntity() (+18 more)
 
-### Community 214 - "Community 214"
-Cohesion: 0.1
-Nodes (23): main(), BetaDataQualityScorecard, buildBetaDataQualityOutput(), buildBetaDataQualityRecommendedCommands(), buildBetaDataQualityRetentionOptions(), formatBetaDataQualityProgressEvent(), isInvalidObservationSourceUrl(), isInvalidOptionalUrl() (+15 more)
-
-### Community 215 - "Community 215"
+### Community 181 - "studentVisibilityRepairTargets.ts"
 Cohesion: 0.12
-Nodes (19): DepartmentLeadRepairApplyOperation, DepartmentLeadRepairEntity, DepartmentLeadRepairExistingMember, DepartmentLeadRepairObservation, DepartmentLeadRepairPlanComparison, DepartmentLeadRepairPlanReport, DepartmentLeadRepairPlanRow, DepartmentLeadRepairStatus (+11 more)
+Nodes (31): buildBucket(), buildStudentVisibilityRepairTargetReport(), compactSample(), compareByLabel(), compareDepartmentCandidates(), compareLlmCandidates(), DEPARTMENT_REPAIR_REASONS, DEPARTMENT_UNDERGRAD_RESEARCH_DEPARTMENTS (+23 more)
 
-### Community 216 - "Community 216"
-Cohesion: 0.13
-Nodes (22): buildLegacyResidueSummary(), buildResearchEntityRenameAuditOutput(), collectionExists(), countCollection(), countDanglingReferences(), countLegacyResidue(), LEGACY_RESIDUE_CHECKS, LegacyResidueCheck (+14 more)
+### Community 182 - "scripts"
+Cohesion: 0.07
+Nodes (28): dependencies, csv-parse, dotenv, meilisearch, mongoose, openai, description, devDependencies (+20 more)
 
-### Community 217 - "Community 217"
-Cohesion: 0.16
-Nodes (22): arrayValue(), assertBetaRepairQueueApplyReviewedArtifact(), BetaRepairQueueApplyArtifactValidation, BetaRepairQueueCliOptions, blockedReasonsForAttempt(), buildApplyFromArtifactOptions(), buildBetaRepairQueueOutput(), main() (+14 more)
-
-### Community 218 - "Community 218"
-Cohesion: 0.08
-Nodes (17): PubMedPaperScraper, authorshipEvidence, { ctx }, { ctx, emitted }, europe, europeFetcher, europeScraper, evidence (+9 more)
-
-### Community 219 - "Community 219"
+### Community 183 - "v4MigrationUtils.ts"
 Cohesion: 0.09
-Nodes (20): normalizeAdminDepartmentCategories(), normalizeAdminObjectId(), normalizeAdminPagination(), normalizeAdminTaxonomyLabel(), resolveAdminSortField(), actor, allowed, areaPayload (+12 more)
+Nodes (40): backfillV4Grants(), buildV4GrantBackfillOutput(), __dirname, __filename, normalizeAgency(), V4GrantBackfillResult, writeV4GrantBackfillOutput(), backfillV4PaperGraph() (+32 more)
 
-### Community 220 - "Community 220"
-Cohesion: 0.14
-Nodes (21): applyPlan(), CliOptions, compactPersonName(), DEFAULT_UMBRELLA_SLUGS, __dirname, escapeRegExp(), __filename, generatedFacultyResearchArea() (+13 more)
+### Community 184 - "scholarlyLinkSuppressionAudit.ts"
+Cohesion: 0.05
+Nodes (77): researchScholarlyAttributionSchema, researchScholarlyLinkSchema, absolutize(), archivePointerRow(), assertOfficialProfilePublicationPointerRepairApplyAllowed(), candidateRepairUrls(), cleanText(), crawlFeaturedPublications() (+69 more)
 
-### Community 221 - "Community 221"
-Cohesion: 0.11
-Nodes (24): 1. Fresh machine setup, 1. Install dependencies, 2. Configure environment, 2. Install dependencies, 3. Configure environment, 3. Start local Meilisearch, 4. Seed Meilisearch, 5. Seed Meilisearch (+16 more)
+### Community 185 - "cleanupLegacyMongoCollections.ts"
+Cohesion: 0.17
+Nodes (23): assertLegacyCleanupWriteAllowed(), buildLegacyCleanupOutput(), collectionExists(), copyApplications(), countCollection(), countMissingStudentApplications(), createStudentApplicationIndexes(), dropLegacyCollections() (+15 more)
 
-### Community 222 - "Community 222"
-Cohesion: 0.11
-Nodes (21): CliOptions, __dirname, __filename, main(), parseArgs(), sentenceList(), shortDescriptionFlags(), textValue() (+13 more)
+### Community 186 - "seedSources.ts"
+Cohesion: 0.08
+Nodes (31): sourceSchema, SourceCoverageArtifactType, sourceCoverageArtifactTypes, sourceCoverageEvidenceCategories, SourceCoverageEvidenceCategory, SourceCoverageMetadata, SourceCoverageTier, sourceCoverageTiers (+23 more)
 
-### Community 223 - "Community 223"
+### Community 187 - "auditProgramResearchRelevance.ts"
 Cohesion: 0.13
-Nodes (20): activePaperFilter, activeScholarlyLinkFilter, betaCommand(), buildPaperQualityAudit(), buildPaperQualityDuplicateGroupSamples(), buildPaperQualityReportFromCounts(), countDuplicateGroups(), countDuplicateLoserRows() (+12 more)
+Nodes (29): Fellowship, CliOptions, main(), parseArgs(), assertBackfillProgramClassificationsApplyAllowed(), BackfillProgramClassificationsCliOptions, buildBackfillProgramClassificationsOutput(), main() (+21 more)
 
-### Community 224 - "Community 224"
-Cohesion: 0.16
-Nodes (21): assertFellowshipImportApplyAllowed(), buildFellowshipImportOutput(), cleanEmail(), cleanText(), CSVRow, __dirname, FellowshipCSVRow, FellowshipImportCliOptions (+13 more)
-
-### Community 225 - "Community 225"
+### Community 188 - "researchAreas.ts"
 Cohesion: 0.09
-Nodes (21): getBestNextStepCategory(), actionabilityMatch, aggregate, badFilter, defaultPipeline, descriptionCondition, entityMatch, facetStage (+13 more)
+Nodes (26): fieldColorKeys, ResearchArea, researchAreaSchema, ResearchField, hasDirectContactInfo(), router, invokeRouteHandler(), mocks (+18 more)
 
-### Community 226 - "Community 226"
-Cohesion: 0.13
-Nodes (18): buildPathwayRelevanceReviewOutput(), CliOptions, DEFAULT_REVIEW_CASES, __dirname, errorMessage(), __filename, main(), parseArgs() (+10 more)
+### Community 189 - "BackfillV4StudentProfiles.ts"
+Cohesion: 0.27
+Nodes (11): backfillV4StudentProfiles(), buildDepartmentMap(), compact(), departmentIdsFor(), __filename, graduationYear(), norm(), V4StudentProfileBackfillResult (+3 more)
 
-### Community 227 - "Community 227"
-Cohesion: 0.18
-Nodes (20): buildProfileImageQualitySummary(), DuplicateProfileImageFinding, isLikelyPublicProfileImageUrl(), isNonPersonProfileImageUrl(), isSharedProfileImageAcrossDifferentNames(), isTrustedPublicProfileImageHost(), normalizedIdentityKey(), normalizedName() (+12 more)
-
-### Community 228 - "Community 228"
-Cohesion: 0.11
-Nodes (15): useInfiniteScroll(), UseInfiniteScrollOptions, Fellowships(), Home(), ACCEPTANCE_LEVEL_OPTIONS, CheckboxGroupProps, KIND_OPTIONS, LabsPageBody() (+7 more)
-
-### Community 229 - "Community 229"
-Cohesion: 0.13
-Nodes (12): router, buildProgramSearchFilters(), getStringParam(), hasProgramSearchFilters(), logProgramSearchEvent(), parseFilterParam(), router, hasResearchSearchFilters() (+4 more)
-
-### Community 230 - "Community 230"
-Cohesion: 0.12
-Nodes (17): ACCESS_SIGNAL_POINTS, accessPoints(), computeResearchEntityBrowseRank(), descriptionPoints(), leadPoints(), ResearchEntityBrowseRankInput, __testing, ResearchEntityQualitySummary (+9 more)
-
-### Community 231 - "Community 231"
+### Community 190 - "migrateMongoNaming.ts"
 Cohesion: 0.15
-Nodes (14): isDisplayableResearchActivityLink(), CrossrefFetcher, crossrefFreeFullText(), CrossrefMessage, crossrefMessageToObservations(), CrossrefPaperScraper, CrossrefPaperScraperOptions, dateFromParts() (+6 more)
+Nodes (21): assertMongoNamingMigrationWriteAllowed(), buildMongoNamingMigrationOutput(), buildUserFieldSetStage(), COLLECTION_RENAMES, collectionExists(), CollectionRenameResult, main(), migrateMongoNaming() (+13 more)
 
-### Community 232 - "Community 232"
-Cohesion: 0.12
-Nodes (19): listLegacyPaperLinksForResearchEntity(), listLegacyPaperLinksForUser(), listLegacyProfilePublicationLinksForResearchEntity(), listPublicMemberScholarlyLinks(), listPublicScholarlyLinksForResearchEntity(), listPublicScholarlyLinksForUser(), mergePublicLinks(), toObjectId() (+11 more)
+### Community 191 - "researchEntityPiDedupeCore.ts"
+Cohesion: 0.19
+Nodes (26): buildFundingGroupFromCluster(), buildFundingResearchEntityDedupePlan(), buildGroupFromCluster(), buildOfficialLabUrlResearchEntityDedupePlan(), buildProfileAreaShellDuplicateGroup(), buildResearchEntityPiDedupePlan(), canonicalScore(), cleanMergedResearchAreas() (+18 more)
 
-### Community 233 - "Community 233"
-Cohesion: 0.22
-Nodes (20): archiveChildArtifacts(), CliOptions, __dirname, __filename, firstNameCompatible(), hasSourceBackedProfileEvidence(), inferredPiNameMatchesEntity(), inferredPiUserIdFor() (+12 more)
+### Community 192 - "staleObservationConflictReview.test.ts"
+Cohesion: 0.25
+Nodes (8): assertStaleObservationConflictReviewApplyAllowed(), buildStaleObservationConflictReviewOutput(), buildStaleObservationDecisionTemplate(), main(), normalizeStaleObservationObjectId(), toObjectId(), writeStaleObservationConflictReviewOutput(), writeStaleObservationDecisionTemplate()
 
-### Community 234 - "Community 234"
-Cohesion: 0.16
-Nodes (19): BetaSeedEnvironmentCliOptions, BetaSeedPlan, BetaSeedPlanStep, BetaSeedRunResult, BetaSeedTargetMetadata, buildBetaSeedPlan(), __filename, main() (+11 more)
-
-### Community 235 - "Community 235"
-Cohesion: 0.15
-Nodes (17): betaCommand(), buildSourceHealthRows(), commandArg(), noRecentRunCommand(), reportCommand(), reportOutputPath(), reviewArtifactForRun(), riskForSource() (+9 more)
-
-### Community 236 - "Community 236"
-Cohesion: 0.15
-Nodes (15): Args, __dirname, __filename, IDENTITY_FIELDS, parseArgs(), run(), valueAfterEquals(), buildConflictingUserIdentityCleanupPlan() (+7 more)
-
-### Community 237 - "Community 237"
-Cohesion: 0.16
-Nodes (16): applyProseCompletenessBonus(), DEFAULTS, normalizedProse(), PROSE_COMPLETENESS_FIELDS, recencyDecay(), resolveAllFields(), ResolvedField, resolveField() (+8 more)
-
-### Community 238 - "Community 238"
-Cohesion: 0.17
-Nodes (18): facultyResearch, lab, sanitized, compactText(), DESCRIPTION_AND_SYNTHESIS_FIELDS, DESCRIPTION_FIELDS, facultyResearchLabelBase(), FacultyResearchTextEntity (+10 more)
-
-### Community 239 - "Community 239"
-Cohesion: 0.14
-Nodes (16): entityKeyForResult(), EUROPE_PMC_SOURCE_CONFIG, EuropePmcFetcher, EuropePmcPaperScraper, EuropePmcPaperScraperOptions, EuropePmcResult, EuropePmcSourceConfig, filterDuplicateRunObservations() (+8 more)
-
-### Community 240 - "Community 240"
-Cohesion: 0.1
-Nodes (18): authenticatedRouteDoc, badFilter, calls, doc, docs, fakeIndex, fallback, filter (+10 more)
-
-### Community 241 - "Community 241"
-Cohesion: 0.14
-Nodes (20): buildProfileResearchMembershipFilter(), firstUsefulResearchEntitySummary(), getProfileByNetid(), hasProfileDirectoryLabelContamination(), loadProfileResearchEntities(), loadProfileScholarlyLinks(), normalizePublicProfile(), orderProfileScholarlyLinks() (+12 more)
-
-### Community 242 - "Community 242"
-Cohesion: 0.17
-Nodes (17): AdminGrant, adminGrantSchema, AdminGrantResponse, AdminGrantValidationError, assertValidNetid(), grantAdminAccess(), isLocalHostValue(), listAdminGrants() (+9 more)
-
-### Community 243 - "Community 243"
-Cohesion: 0.1
-Nodes (19): `/account`, Canonical Product Frame, code:sh (graphify explain "BrowseCard"), Current Interface Shape, `/fellowships`, Graphify Grounding, `/listings`, Near-Term UX Moves (+11 more)
-
-### Community 244 - "Community 244"
-Cohesion: 0.16
-Nodes (17): LEGACY_EXPLORATORY_CONTACT_PATHWAY_DERIVATION_KEYS, __dirname, __filename, loadCandidateRows(), main(), RELEVANT_DERIVATION_KEYS, buildExploratoryPathwayDedupePlan(), DedupeExploratoryPathwaysArgs (+9 more)
-
-### Community 245 - "Community 245"
-Cohesion: 0.2
-Nodes (19): archivedResearchEntityRepairBlock(), attemptResearchActionEvidenceRepair(), buildResearchSourceDescriptionPatch(), createEntitySourceActionEvidenceRepair(), createOfficialProfileActionEvidenceRepair(), entityActionEvidenceSourceUrl(), entityActionEvidenceSourceUrls(), firstSentence() (+11 more)
-
-### Community 246 - "Community 246"
-Cohesion: 0.15
-Nodes (18): assertDedupeUsersByIdentityApplyAllowed(), buildDedupeUsersByIdentityOutput(), buildUserIdentityCollisionPipeline(), loadCandidateCollisions(), loadCollisions(), main(), runDedupeUsersByIdentity(), writeDedupeUsersByIdentityOutput() (+10 more)
-
-### Community 247 - "Community 247"
-Cohesion: 0.16
-Nodes (15): sourceSchema, SourceCoverageArtifactType, sourceCoverageArtifactTypes, sourceCoverageEvidenceCategories, SourceCoverageEvidenceCategory, SourceCoverageMetadata, SourceCoverageTier, sourceCoverageTiers (+7 more)
-
-### Community 248 - "Community 248"
-Cohesion: 0.2
-Nodes (17): actionSet, cleanHttpUrl(), cleanText(), containsDirectEmail(), hasActivePostedOpportunity(), hasPublicOfficialApplicationRoute(), hasPublicRoute(), hasUndergraduateAccessEvidence() (+9 more)
-
-### Community 249 - "Community 249"
-Cohesion: 0.16
-Nodes (16): fellowshipSchema, programCategories, ProgramCategory, ProgramEntryMode, programEntryModes, ProgramKind, programKinds, studentVisibilityFields (+8 more)
-
-### Community 250 - "Community 250"
-Cohesion: 0.12
-Nodes (11): netid, normalizeSeedNetid(), requireSeedToken(), safeData, SEED_USER_FIELDS, seedUserPayload(), tokensMatch(), maliciousId (+3 more)
-
-### Community 251 - "Community 251"
+### Community 193 - "listings.ts"
 Cohesion: 0.24
-Nodes (15): AuthenticatedUser, canCreateListing(), hasAdminAuthority(), hasAuthenticatedPrincipal(), isAdmin(), isAuthenticated(), isConfirmed(), isProfessor() (+7 more)
+Nodes (8): buildListingSearchFilters(), getStringParam(), hasListingSearchFilters(), logListingCreateEvent(), logListingEvent(), logSearchEvent(), parseFilterParam(), router
 
-### Community 252 - "Community 252"
+### Community 194 - "EvidenceSourceRow.tsx"
+Cohesion: 0.39
+Nodes (7): EvidenceSourceRow(), EvidenceSourceRowProps, formatConfidence(), formatDate(), formatSourceType(), labelize(), EvidenceSourceRowData
+
+### Community 199 - "unified-research-search-audit.mjs"
+Cohesion: 0.12
+Nodes (22): artifacts, assert(), assertTextExcludes(), assertTextIncludes(), assertTextMatches(), audit(), bodyText(), clientBase (+14 more)
+
+### Community 200 - "Technical Due Diligence Review — Yale Research (yalelabs)"
+Cohesion: 0.10
+Nodes (19): 1. Executive Summary, 2. Top 20 Highest-ROI Improvements, 3. File-by-File Review (load-bearing files), 4. Architecture, 5. Technical Debt Log, 6. Production Readiness Checklist, 7. Closing judgment, Client (+11 more)
+
+### Community 201 - "userEmailHygiene.ts"
+Cohesion: 0.18
+Nodes (23): buildEmailHygiene(), buildSuspiciousUserEmailScorecardSummary(), isInvalidOptionalEmail(), assertUserEmailHygieneApplyAllowed(), buildSuspiciousUserEmailFilter(), buildUserEmailHygieneOutput(), loadSuspiciousUsers(), main() (+15 more)
+
+### Community 202 - "departmentUndergradResearchScraper.ts"
+Cohesion: 0.15
+Nodes (30): ResearchGroupKind, absoluteUrl(), bestApplicationUrl(), conciseText(), DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES, departmentEntityKey(), departmentGuidanceDescription(), DepartmentUndergradResearchPageConfig (+22 more)
+
+### Community 207 - "meiliSyncService.ts"
+Cohesion: 0.13
+Nodes (21): deleteFromIndex(), ENTITY_REGISTRY, EntityIndexConfig, getConfig(), MaybePromise, stripInternalFields(), SyncableEntityType, syncEntities() (+13 more)
+
+### Community 208 - "acceptedInputs.ts"
+Cohesion: 0.20
+Nodes (20): assertSafeAcceptedInputPathText(), defaultAdvisorResolver(), resolveSafeAcceptedInputPath(), resolveSafeAcceptedInputRoot(), assertAcceptedInputsApplyAllowed(), buildAcceptedInputsOutput(), CliOptions, COMMANDS_REQUIRING_DB (+12 more)
+
+### Community 209 - "textValue"
+Cohesion: 0.17
+Nodes (22): summarizeFetchMetrics, memberObservationsForEntityKey(), csRenderedExtractor(), DepartmentRosterScraper, DeptConfig, entryToResearchEntityObservations(), entryToUserObservations(), fetchRenderedDeptPage() (+14 more)
+
+### Community 210 - "accessSummaryService.ts"
+Cohesion: 0.13
+Nodes (22): AccessSummary, accessSummaryEntityId(), AccessSummaryStatus, bestNextStepFor(), boundedString(), computeStatus(), confidenceScore(), EMPTY_SUMMARY (+14 more)
+
+### Community 211 - "repairProfileDescriptionBackfillConflicts.ts"
+Cohesion: 0.16
+Nodes (21): applyPlans(), assertRepairProfileDescriptionBackfillConflictsApplyAllowed(), buildProfileDescriptionConflictRepairPlan(), buildProfileDescriptionConflictRepairPlans(), chooseKeepObservation(), consumePath(), DESCRIPTION_FIELDS, __dirname (+13 more)
+
+### Community 212 - "clearBetaStudentAnalytics.ts"
+Cohesion: 0.24
+Nodes (17): assertClearBetaStudentAnalyticsApplyAllowed(), buildBetaStudentAnalyticsEventFilter(), buildClearBetaStudentAnalyticsOutput(), loadCandidateSummary(), main(), runClearBetaStudentAnalytics(), writeClearBetaStudentAnalyticsOutput(), BETA_STUDENT_ANALYTICS_USER_TYPES (+9 more)
+
+### Community 213 - "scraperIntegrityDuplicateReview.ts"
+Cohesion: 0.20
+Nodes (16): DuplicateResearchPaperGroup, buildScraperIntegrityDuplicateReviewReport(), consumeValue(), __dirname, __filename, loadDuplicateAccessSignalReviewGroups(), loadDuplicateResearchPaperReviewGroups(), main() (+8 more)
+
+### Community 214 - "betaDataQualityCore.test.ts"
+Cohesion: 0.18
+Nodes (24): compactText(), DESCRIPTION_AND_SYNTHESIS_FIELDS, DESCRIPTION_FIELDS, facultyResearchLabelBase(), FacultyResearchTextEntity, isAcademicAppointmentDescription(), isBrokenResearchEntityDescriptionFragment(), isContactRouteDescriptionSnippet() (+16 more)
+
+### Community 215 - "departmentLeadRepairPlanCore.ts"
+Cohesion: 0.11
+Nodes (32): escapeRegExp(), main(), normalizeEmail(), parseDepartmentLeadRepairPlanArgs(), valuesForArg(), buildDepartmentLeadRepairApplyOperations(), buildDepartmentLeadRepairPlan(), compareDepartmentLeadRepairPlans() (+24 more)
+
+### Community 216 - "auditResearchEntityRename.ts"
+Cohesion: 0.18
+Nodes (19): buildLegacyResidueSummary(), buildResearchEntityRenameAuditOutput(), collectionExists(), countCollection(), countDanglingReferences(), countLegacyResidue(), LEGACY_RESIDUE_CHECKS, LegacyResidueCheck (+11 more)
+
+### Community 217 - "betaRepairQueue.ts"
+Cohesion: 0.17
+Nodes (19): arrayValue(), assertBetaRepairQueueApplyReviewedArtifact(), BetaRepairQueueApplyArtifactValidation, blockedReasonsForAttempt(), buildApplyFromArtifactOptions(), buildBetaRepairQueueOutput(), main(), objectValue() (+11 more)
+
+### Community 220 - "compilerOptions"
+Cohesion: 0.11
+Nodes (18): compilerOptions, allowJs, allowSyntheticDefaultImports, esModuleInterop, forceConsistentCasingInFileNames, isolatedModules, jsx, lib (+10 more)
+
+### Community 221 - "1. Fresh machine setup"
+Cohesion: 0.18
+Nodes (18): assertPostedOpportunityBackfillApplyAllowed(), buildPostedOpportunityBackfillOutput(), __dirname, __filename, main(), parsePositiveInteger(), parsePostedOpportunityBackfillArgs(), PostedOpportunityBackfillCliOptions (+10 more)
+
+### Community 223 - "paperQualityService.ts"
+Cohesion: 0.10
+Nodes (30): buildLaunchTrustContractOutput(), __filename, main(), parseLaunchTrustContractArgs(), parsePositiveInteger(), parseRequiredValue(), writeLaunchTrustContractOutput(), buildPaperQualityAuditOutput() (+22 more)
+
+### Community 224 - "importFellowships.ts"
+Cohesion: 0.16
+Nodes (20): assertFellowshipImportApplyAllowed(), buildFellowshipImportOutput(), cleanEmail(), cleanText(), __dirname, FellowshipCSVRow, FellowshipImportCliOptions, FellowshipImportResult (+12 more)
+
+### Community 226 - "pathwayRelevanceReview.ts"
+Cohesion: 0.21
+Nodes (15): buildPathwayRelevanceReviewOutput(), DEFAULT_REVIEW_CASES, __dirname, errorMessage(), __filename, main(), overlap(), parsePathwayRelevanceReviewArgs() (+7 more)
+
+### Community 227 - "profileImageQualityAudit.ts"
+Cohesion: 0.26
+Nodes (17): buildProfileImageQualitySummary(), DuplicateProfileImageFinding, isLikelyPublicProfileImageUrl(), isNonPersonProfileImageUrl(), isSharedProfileImageAcrossDifferentNames(), isTrustedPublicProfileImageHost(), normalizedIdentityKey(), normalizedName() (+9 more)
+
+### Community 228 - "fellowships.tsx"
+Cohesion: 0.07
+Nodes (33): VennDiagramToggle(), VennDiagramToggleProps, CombinedFilterDropdown(), CombinedFilterDropdownProps, FilterTabConfig, FilterMode, SearchContextType, MockIntersectionObserver (+25 more)
+
+### Community 229 - "programs.ts"
+Cohesion: 0.22
+Nodes (9): buildProgramSearchFilters(), getStringParam(), hasProgramSearchFilters(), logProgramEvent(), logProgramSearchEvent(), parseFilterParam(), router, routeByPath() (+1 more)
+
+### Community 232 - "compilerOptions"
+Cohesion: 0.11
+Nodes (18): compilerOptions, esModuleInterop, forceConsistentCasingInFileNames, lib, module, moduleResolution, noImplicitAny, outDir (+10 more)
+
+### Community 233 - "AdminFacultyProfilesTable.tsx"
+Cohesion: 0.18
+Nodes (9): AdminFacultyProfilesTable(), AdminProfile, getHIndex(), getPrimaryDepartment(), PAGE_SIZES, SortField, TABLE_COLUMNS, Tab (+1 more)
+
+### Community 234 - "scriptWriteGuards.ts"
+Cohesion: 0.07
+Nodes (48): assertPublicationMigrationApplyAllowed(), buildPublicationMigrationOutput(), dedupeKey(), __dirname, EmbeddedPub, __filename, migratePublicationsToPapers(), parsePositiveInteger() (+40 more)
+
+### Community 235 - "sourceHealthService.ts"
+Cohesion: 0.24
+Nodes (15): betaCommand(), buildSourceHealthRows(), commandArg(), iso(), noRecentRunCommand(), reportCommand(), reportOutputPath(), reviewArtifactForRun() (+7 more)
+
+### Community 236 - "backfillCenterDirectors.ts"
+Cohesion: 0.15
+Nodes (19): ADMIN_PROFILE_USER_TYPES, adminUpdateProfile(), boundedAdminProfileEmail(), boundedAdminProfileNumber(), boundedAdminProfileText(), boundedProfileString(), boundedProfileStringArray(), boundedProfileUrlKey() (+11 more)
+
+### Community 237 - "confidenceResolver.ts"
+Cohesion: 0.24
+Nodes (10): applyProseCompletenessBonus(), DEFAULTS, normalizedProse(), PROSE_COMPLETENESS_FIELDS, recencyDecay(), resolveField(), ResolverObservation, ResolverOptions (+2 more)
+
+### Community 241 - "normalizePublicProfile"
+Cohesion: 0.27
+Nodes (12): hasProfileDirectoryLabelContamination(), normalizePublicProfile(), PUBLIC_PROFILE_BASE_ARRAY_FIELDS, PUBLIC_PROFILE_BASE_TEXT_FIELDS, publicProfileBase(), publicProfileImageUrl(), publicProfileResearchEntity(), publicProfileText() (+4 more)
+
+### Community 243 - "UI/UX Direction"
+Cohesion: 0.18
+Nodes (11): Canonical Product Frame, Current Interface Shape, Graphify Grounding, `/listings`, Near-Term UX Moves, Open UX Questions, `/research`, `/research/:slug` (+3 more)
+
+### Community 247 - "source.ts"
+Cohesion: 0.16
+Nodes (17): getSourceByName(), defaultRewriter(), DESC_BLOCK_REASONS, DescriptionRewriter, __dirname, entityHttpUrls(), fetchGrantAbstract(), __filename (+9 more)
+
+### Community 248 - "backfillResearchHomeOfficialUrls.ts"
+Cohesion: 0.05
+Nodes (58): ResearchGroupMember, researchGroupMemberSchema, MaterializerObservationLike, ResolvedRelationshipMaterializationDeps, defaultCenterFinder(), BrowseRankBackfillCliOptions, BrowseRankBackfillResult, __dirname (+50 more)
+
+### Community 249 - "fellowship.ts"
+Cohesion: 0.20
+Nodes (15): fellowshipSchema, programCategories, ProgramCategory, ProgramEntryMode, programEntryModes, ProgramKind, programKinds, archiveReviewClassification() (+7 more)
+
+### Community 250 - "seed.ts"
+Cohesion: 0.12
+Nodes (13): normalizeSeedNetid(), requireSeedToken(), router, SEED_USER_FIELDS, seedListingSummary(), seedUserPayload(), seedUserSummary(), tokensMatch() (+5 more)
+
+### Community 251 - "adminGrantService.ts"
+Cohesion: 0.11
+Nodes (31): AuthenticatedUser, canCreateListing(), hasAdminAuthority(), hasAuthenticatedPrincipal(), isAdmin(), isAuthenticated(), isConfirmed(), isProfessor() (+23 more)
+
+### Community 252 - "seedResearchAreas.ts"
 Cohesion: 0.14
 Nodes (18): assertResearchAreaSeedApplyAllowed(), buildResearchAreaSeedOutput(), buildResearchAreaSeedRows(), defaultResearchAreas, __dirname, fieldColorKeys, __filename, main() (+10 more)
 
-### Community 253 - "Community 253"
-Cohesion: 0.23
-Nodes (17): GENERIC_CONTEXT_DESCRIPTION_PATTERNS, GENERIC_RESEARCH_METADATA_LABELS, hasRepeatedSourceChromePhrase(), hasResearchVerb(), isAcademicAppointmentDescription(), isDescriptionPlaceholder(), isGenericResearchHomeDescription(), isGenericResearchMetadataLabel() (+9 more)
-
-### Community 254 - "Community 254"
+### Community 253 - "researchTextNormalization.ts"
 Cohesion: 0.13
-Nodes (17): buildCopiedProfileDescriptionRepairPlan(), chooseReplacementDescriptionValue(), CopiedProfileDescriptionRepair, CopiedProfileDescriptionRepairPlan, isCopiedProfileBioText(), LEAD_ROLES, normalizedComparableText(), RepairProfileDescriptionEntity (+9 more)
+Nodes (29): MaybeResearchEntityDetailPayload, NormalizedResearchEntitySearchResponse, normalizeResearchEntity(), normalizeSearchMatch(), normalizeStudentDecisionExplanation(), ResearchEntityDescriptionState, ResearchEntityLeadState, ResearchEntityQualitySummary (+21 more)
 
-### Community 255 - "Community 255"
-Cohesion: 0.14
-Nodes (17): buildCrossSourceObservationConflictReviewOutput(), buildCrossSourceObservationDecisionTemplate(), main(), readCrossSourceObservationReviewDecisions(), runCrossSourceObservationConflictReview(), validateCrossSourceObservationReviewDecisions(), writeCrossSourceObservationConflictReviewOutput(), writeCrossSourceObservationDecisionTemplate() (+9 more)
-
-### Community 256 - "Community 256"
+### Community 254 - "claimGate.ts"
 Cohesion: 0.22
-Nodes (18): attemptProgramRepair(), cleanResearchInterest(), entityPersonDisplayName(), hasHttpUrl(), isDescriptionEligibleSourceUrl(), isLeadMember(), isLikelyPersonProfileUrl(), isListingOrDirectoryUrl() (+10 more)
+Nodes (15): buildClaimGateOutput(), ClaimGateCliOptions, ClaimGateCollection, consumeValue(), __dirname, __filename, loadResearchAccessArtifacts(), main() (+7 more)
 
-### Community 257 - "Community 257"
+### Community 257 - "environment.ts"
 Cohesion: 0.16
-Nodes (18): derivedBioFromOfficialProfile(), derivedBioFromOfficialProfileInterests(), escapeRegex(), formatInterestList(), hasExternalScholarProfileCallout(), hasSuppressedProfileBioText(), identityToUserObservations(), isAppointmentOnlyOfficialProfileBio() (+10 more)
+Nodes (20): csrfOriginGuard(), isTrustedUnsafeRequestOrigin(), originFromUrl(), SAFE_METHODS, allowedOrigins, ORIGINAL_ENV, requireLocalSeedRuntime(), allowsNonProductionSecurityBypass() (+12 more)
 
-### Community 258 - "Community 258"
-Cohesion: 0.15
-Nodes (12): buildDeploymentFingerprint(), ConfigData, DeploymentEnv, DeploymentEnvKey, DeploymentFingerprint, invalidateConfigCache(), normalizeCommitSha(), normalizePublicText() (+4 more)
-
-### Community 259 - "Community 259"
-Cohesion: 0.16
-Nodes (17): ALIAS_MAP, args, buildSystemPrompt(), buildUserPrompt(), callOpenAI(), classifyExistingAreas(), classifyNovelAreas(), classifyOnly (+9 more)
-
-### Community 260 - "Community 260"
+### Community 258 - "configService.ts"
 Cohesion: 0.14
-Nodes (8): getFavoriteIds(), logProfileUpdateEvent(), normalizeFavoriteAnalyticsIds(), parseFavoriteAnalyticsResponse(), profileUpdateAnalyticsFields(), router, visibleFavoriteAnalyticsIdsFromResponse(), route
+Nodes (10): __resetResearchPageSnapshotForTests(), departments, mockedAxios, mockEmptySearchResponses(), MockIntersectionObserver, mockSearchResponses(), pathwayHit, researchEntity (+2 more)
 
-### Community 261 - "Community 261"
-Cohesion: 0.11
-Nodes (16): departmentSourceUrls, changed, computerScience, diff, __dirname, duplicate, errors, fixtureByUrl (+8 more)
-
-### Community 262 - "Community 262"
-Cohesion: 0.13
-Nodes (15): applyProfileResearchAreasForIndexDocument(), buildResearchEntitySearchIndexDocuments(), buildResearchEntitySearchIndexDocumentsWithMemberNames(), getResearchEntitySearchIndexSettings(), normalizeRebuildPageSize(), rebuildResearchEntitySearchIndex(), taskUidFromResponse(), waitForTaskResponse() (+7 more)
-
-### Community 263 - "Community 263"
-Cohesion: 0.15
-Nodes (16): AcceptedInputUser, applyScholarAcceptedCsv(), exportFellowshipAcceptedCsv(), parseCsvRecords(), parseCsvRows(), validateFellowshipAcceptedCsv(), validateScholarAcceptedCsv(), ada (+8 more)
-
-### Community 264 - "Community 264"
-Cohesion: 0.15
-Nodes (15): ContactRouteType, ADMIN_PATTERNS, canOwnResearchEntity(), canSurfaceAsContactRoute(), canSurfaceAsMember(), classifyResearchPersonRole(), LAB_MANAGER_PATTERNS, normalizeTitle() (+7 more)
-
-### Community 265 - "Community 265"
-Cohesion: 0.18
-Nodes (14): buildStudentVisibilityBackfillOutput(), buildCollectionReport(), incrementCount(), nextRepairActionForReasons(), normalizeMaxPublicCollapseRatio(), normalizeMinimumPublicCount(), normalizeReasonSampleSize(), PUBLIC_TIERS (+6 more)
-
-### Community 266 - "Community 266"
-Cohesion: 0.25
-Nodes (15): buildListingResearchEntityProfilePatch(), hasText(), isHttpUrl(), ListingResearchEntityProfileInput, looksLikeOwnerTitle(), looksLikePublicationBlurb(), missingArray(), missingText() (+7 more)
-
-### Community 267 - "Community 267"
-Cohesion: 0.16
-Nodes (14): Args, __dirname, __filename, main(), parseArgs(), arraysEqual(), DepartmentBackfillEntity, DepartmentBackfillPlan (+6 more)
-
-### Community 268 - "Community 268"
-Cohesion: 0.2
-Nodes (13): escapeRegExp(), main(), parseArgs(), parseDepartmentLeadRepairPlanArgs(), valuesForArg(), buildDepartmentLeadRepairApplyOperations(), buildDepartmentLeadRepairPlan(), compareDepartmentLeadRepairPlans() (+5 more)
-
-### Community 269 - "Community 269"
+### Community 259 - "dependencies"
 Cohesion: 0.12
-Nodes (13): authUrl, callbackScript, exportPromise, fakeWindow, fetchMock, MockBroadcastChannel, MockPopup, otherPopup (+5 more)
+Nodes (16): dependencies, axios, concurrently, cookie-session, cors, cross, cross-env, dotenv (+8 more)
 
-### Community 270 - "Community 270"
-Cohesion: 0.17
-Nodes (16): CTA Vocabulary, Description Quality Bar, Entity Page Questions, Explore Research, Navigation Shape, North Star, Pathways, Primary Surfaces (+8 more)
-
-### Community 271 - "Community 271"
-Cohesion: 0.12
-Nodes (17): 1. Admin And Search Gates, 1. Beta Readiness, 1. Course-Credit And Formalization Cleanup, 1. Hard-Pivot Migration, 2. Admin And Search Gates, 2. Beta Seed, 2. Development Data Population, 3. Development Data Population (+9 more)
-
-### Community 272 - "Community 272"
+### Community 260 - "users.ts"
 Cohesion: 0.19
-Nodes (16): Browser Automation, Browser QA, code:txt (http://localhost:4000/api/dev-login?userType=admin&redirect=), code:bash (codex mcp add mongodb-ylabs -- /home/quntaoz/.codex/bin/mong), Codex Workflow, Data Gate Policy, Documentation Rules, Done Criteria (+8 more)
+Nodes (8): getFavoriteIds(), logFavoriteEvent(), logProfileUpdateEvent(), normalizeFavoriteAnalyticsIds(), parseFavoriteAnalyticsResponse(), profileUpdateAnalyticsFields(), router, visibleFavoriteAnalyticsIdsFromResponse()
 
-### Community 273 - "Community 273"
-Cohesion: 0.14
-Nodes (13): FOCUSABLE_SELECTOR, useModalBehavior(), ModalCloseButton(), ModalCloseButtonProps, ModalShell(), ModalShellProps, sizeClasses, Button (+5 more)
+### Community 261 - "departmentGroundTruth.test.ts"
+Cohesion: 0.32
+Nodes (6): DepartmentCategory, DepartmentCodeSystem, departmentSourceUrls, validateDepartmentRows(), __dirname, fixtureByUrl
 
-### Community 274 - "Community 274"
-Cohesion: 0.21
-Nodes (15): ScraperEnvironment, applyAcceptedReviewSlugs(), applyScraperPromotionGuards(), hasBroadLlmScope(), isBetaOrProduction(), isNonDryApply(), LLM_REVIEW_GATED_SOURCES, normalizedSourceName() (+7 more)
-
-### Community 275 - "Community 275"
-Cohesion: 0.17
-Nodes (8): exportToGoogleSheets(), getAccessToken(), GoogleOAuthMessage, oauthPopupNameForState(), openOAuthPopup(), safeGoogleSpreadsheetUrl(), safeSheetTitle(), safeSpreadsheetCell()
-
-### Community 276 - "Community 276"
-Cohesion: 0.21
-Nodes (14): buildResearchEntityQualitySummary(), descriptionQualityForEntity(), descriptionStateForEntity(), hasLeadIdentityConflict(), hasSourceUrl(), hasStrongLead(), leadStateForMembers(), ResearchEntityDescriptionState (+6 more)
-
-### Community 277 - "Community 277"
+### Community 266 - "repairListingResearchEntityProfiles.ts"
 Cohesion: 0.15
-Nodes (14): attemptVisibilityRepair(), buildVisibilityRepairPiMemberUpsert(), buildVisibilityRepairPlan(), buildVisibilityRepairPlans(), classifyVisibilityRepairStage(), repairActionForStage(), runVisibilityRepairQueue(), VisibilityRepairQueueItemInput (+6 more)
+Nodes (27): applyRepairs(), assertRepairListingResearchEntityProfilesApplyAllowed(), buildRepairListingResearchEntityProfilesOutput(), main(), normalizeListingProfileRepairObjectId(), normalizeListingProfileRepairObjectIdString(), parsePositiveInteger(), parseRepairListingResearchEntityProfilesArgs() (+19 more)
 
-### Community 278 - "Community 278"
-Cohesion: 0.24
-Nodes (16): asPlainObject(), cleanText(), confidenceFor(), departmentIdsFor(), emptyStats(), findExistingFaculty(), findExistingResearchGroup(), importFacultyRows() (+8 more)
+### Community 268 - "departmentLeadRepairPlan.ts"
+Cohesion: 0.15
+Nodes (16): capitalizeSentenceStart(), cleanResearchHomeSummaryForBio(), isGrantOrCitationSourceUrl(), isLeadRole(), isTrustedResearchHomeWebsiteUrl(), isUsefulResearchHomeBioSummary(), looksLikePersonOnlyResearchHomeName(), publicResearchHomeName() (+8 more)
 
-### Community 279 - "Community 279"
-Cohesion: 0.2
-Nodes (12): LongText(), LongTextProps, paragraphs, text, LongTextOptions, longTextParagraphs(), normalizeCommonAcademicAbbreviations(), normalizeInlineWhitespace() (+4 more)
-
-### Community 280 - "Community 280"
-Cohesion: 0.12
-Nodes (15): Codex Guide, Commands, Core Modeling Direction, Current Stack, Default Task Loop, Documentation Maintenance, Done Criteria, graphify (+7 more)
-
-### Community 281 - "Community 281"
-Cohesion: 0.17
-Nodes (14): Purpose of Data Migration, Acknowledgements, code:bash (corepack enable), code:bash (# Terminal 1), code:bash (yarn playwright:run screenshot https://example.com /tmp/exam), code:bash (codex mcp add playwright -- <repo>/scripts/with-playwright-l), Documentation, Playwright environment fix (no root required) (+6 more)
-
-### Community 282 - "Community 282"
+### Community 270 - "Product Context"
 Cohesion: 0.18
-Nodes (12): PublicResearchEntityDto, listAffiliatedResearchEntitiesForDetail(), listRelatedResearchEntitiesForDetail(), PublicResearchEntityRelationshipDto, RelatedResearchEntitiesPayload, RELATIONSHIP_LABELS, relationshipLabel(), RelationshipServiceDeps (+4 more)
+Nodes (11): CTA Vocabulary, Entity Page Questions, Explore Research, Navigation Shape, North Star, Primary Surfaces, Product Context, Product Premise (+3 more)
 
-### Community 283 - "Community 283"
+### Community 272 - "dependencies"
+Cohesion: 0.12
+Nodes (16): dependencies, axios, cheerio, cookie-session, cors, cross-env, dotenv, express (+8 more)
+
+### Community 273 - "resolutions"
+Cohesion: 0.12
+Nodes (16): resolutions, axios, brace-expansion, braces, encoding-sniffer, form-data, glob, ip-address (+8 more)
+
+### Community 274 - "extractOfficialProfileResearchHomes"
+Cohesion: 0.18
+Nodes (15): dedupeSameNameLeadMembers(), departmentMatchScore(), memberEvidenceScore(), normalizedMemberName(), normalizedWordsForMatch(), SAME_PERSON_LEAD_ROLE_PRIORITY, samePersonLeadRoleKey(), shouldCollapseSamePersonLeadRoles() (+7 more)
+
+### Community 277 - "visibilityReleaseQueueItem.ts"
 Cohesion: 0.24
-Nodes (15): allNameTokens(), allowsLastNameOnlyPersonUrl(), compoundLastNameMatchedTokens(), entityNameMatchesUser(), givenNameAliasMatches(), hasPartialCompoundLastNameProfilePath(), hasSurnameOnlyProfilePath(), isAmbiguousInitialLastProfileUrl() (+7 more)
+Nodes (10): container, root, UserContextProvider(), sampleUser, createInitialUserState(), UserAction, userReducer(), UserState (+2 more)
 
-### Community 284 - "Community 284"
-Cohesion: 0.23
-Nodes (13): hasUnsafeMongoShape(), isPlainObject(), isUnsafeMongoKey(), PROTOTYPE_POLLUTION_KEYS, sanitizeMongo(), scrub(), body, bodyItems (+5 more)
-
-### Community 285 - "Community 285"
-Cohesion: 0.17
-Nodes (10): compactPositiveInteger(), requireFields(), validateNetid(), validateObjectId(), validatePagination(), validateQuery(), inheritedBody, next (+2 more)
-
-### Community 286 - "Community 286"
-Cohesion: 0.13
-Nodes (15): Codex Guide, Commands, Core Modeling Direction, Current Stack, Default Task Loop, Documentation Maintenance, Done Criteria, graphify (+7 more)
-
-### Community 287 - "Community 287"
-Cohesion: 0.13
-Nodes (15): Codex Guide, Commands, Core Modeling Direction, Current Stack, Default Task Loop, Documentation Maintenance, Done Criteria, graphify (+7 more)
-
-### Community 288 - "Community 288"
-Cohesion: 0.13
-Nodes (15): Codex Guide, Commands, Core Modeling Direction, Current Stack, Default Task Loop, Documentation Maintenance, Done Criteria, graphify (+7 more)
-
-### Community 289 - "Community 289"
-Cohesion: 0.13
-Nodes (15): Codex Guide, Commands, Core Modeling Direction, Current Stack, Default Task Loop, Documentation Maintenance, Done Criteria, graphify (+7 more)
-
-### Community 290 - "Community 290"
-Cohesion: 0.13
-Nodes (15): Codex Guide, Commands, Core Modeling Direction, Current Stack, Default Task Loop, Documentation Maintenance, Done Criteria, graphify (+7 more)
-
-### Community 291 - "Community 291"
-Cohesion: 0.13
-Nodes (15): Codex Guide, Commands, Core Modeling Direction, Current Stack, Default Task Loop, Documentation Maintenance, Done Criteria, graphify (+7 more)
-
-### Community 292 - "Community 292"
-Cohesion: 0.13
-Nodes (15): Codex Guide, Commands, Core Modeling Direction, Current Stack, Default Task Loop, Documentation Maintenance, Done Criteria, graphify (+7 more)
-
-### Community 293 - "Community 293"
-Cohesion: 0.13
-Nodes (15): Codex Guide, Commands, Core Modeling Direction, Current Stack, Default Task Loop, Documentation Maintenance, Done Criteria, graphify (+7 more)
-
-### Community 294 - "Community 294"
-Cohesion: 0.13
-Nodes (14): Accessibility Scan Summary, code:json ([), code:html (<a class="text-blue-800 hover:text-blue-950 hover:underline ), code:html (<h2 class="text-xs font-semibold text-gray-400 uppercase tra), code:json ({ "text": "Compare 0 pathways", "href": "/pathways?departmen), code:html (<div class="MuiPaper-root MuiPap..." role="dialog" aria-moda), code:text (React Router will begin wrapping state updates in `React.sta), Department Browse (+6 more)
-
-### Community 295 - "Community 295"
-Cohesion: 0.13
-Nodes (14): Biggest Normalization Problems, Coverage By Broad Category, Department Coverage Audit, Engineering, Executive Summary, Low-Coverage Departments, Official-Source Missing Coverage Candidates, Recommended Next Steps (+6 more)
-
-### Community 296 - "Community 296"
-Cohesion: 0.16
-Nodes (13): args, assertDepartmentMigrationApplyAllowed(), buildDepartmentMigrationOutput(), ChangeLog, DepartmentDoc, DepartmentMigrationCliOptions, DepartmentMigrationResult, __dirname (+5 more)
-
-### Community 297 - "Community 297"
-Cohesion: 0.13
-Nodes (14): Biggest Normalization Problems, Coverage By Broad Category, Department Coverage Audit, Engineering, Executive Summary, Low-Coverage Departments, Official-Source Missing Coverage Candidates, Recommended Next Steps (+6 more)
-
-### Community 298 - "Community 298"
+### Community 278 - "upsertFaculty"
 Cohesion: 0.25
-Nodes (14): groupCount(), invalidArtifactPath(), normalizeBlockedReasonCounts(), normalizeRepairArtifactOptions(), readBetaRepairQueueGateArtifact(), readGateArtifactJson(), readLaunchAcquisitionGateArtifact(), readLaunchReviewExceptionsArtifact() (+6 more)
+Nodes (12): createOAuthState(), exportToGoogleSheets(), getAccessToken(), GoogleOAuthMessage, normalizeOAuthAccessToken(), oauthChannelNameForState(), oauthPopupNameForState(), openOAuthPopup() (+4 more)
 
-### Community 299 - "Community 299"
+### Community 280 - "Codex Guide"
 Cohesion: 0.23
-Nodes (12): buildPaperQualityAuditOutput(), CliOptions, __filename, main(), PaperQualityAuditCliOptions, parseArgs(), parseNonNegativeInteger(), parsePaperQualityAuditArgs() (+4 more)
+Nodes (10): react-dom, colorKeyToTailwind, FieldSelectorModalProps, ResearchAreaInput(), ResearchAreaInputProps, createInitialResearchAreaInputState(), ResearchAreaInputAction, researchAreaInputReducer() (+2 more)
 
-### Community 300 - "Community 300"
+### Community 282 - "LabInquireModal.tsx"
+Cohesion: 0.18
+Nodes (12): assertDepartmentMigrationApplyAllowed(), buildDepartmentMigrationOutput(), ChangeLog, DepartmentDoc, DepartmentMigrationCliOptions, DepartmentMigrationResult, __dirname, __filename (+4 more)
+
+### Community 283 - "isLikelyPersonUrl"
+Cohesion: 0.24
+Nodes (17): initial(), allNameTokens(), allowsLastNameOnlyPersonUrl(), cleanProfileUrlsForPerson(), compoundLastNameMatchedTokens(), givenNameAliasMatches(), hasPartialCompoundLastNameProfilePath(), hasSurnameOnlyProfilePath() (+9 more)
+
+### Community 284 - "sanitizeMongo.ts"
+Cohesion: 0.40
+Nodes (9): hasUnsafeMongoShape(), isPlainObject(), isUnsafeMongoKey(), PROTOTYPE_POLLUTION_KEYS, sanitizeMongo(), scrub(), invokeRejected(), invokeSanitize() (+1 more)
+
+### Community 285 - "index.ts"
+Cohesion: 0.08
+Nodes (20): asyncHandler(), compactPositiveInteger(), requireBody(), requireFields(), validateObjectId(), validatePagination(), validateQuery(), validateSort() (+12 more)
+
+### Community 294 - "backfillFacultyWaysIn.ts"
+Cohesion: 0.18
+Nodes (14): buildCandidateSample(), buildValuePreviewsBySource(), CrossSourceObservationConflictSample, loadCrossSourceConflictGroups(), loadObservationsForGroupKey(), observationCollection(), observedAtForResolver(), policyBucketForConflict() (+6 more)
+
+### Community 295 - "dedupeExploratoryContactPathways.ts"
+Cohesion: 0.30
+Nodes (13): applyPlans(), assertDedupeExploratoryContactPathwaysApplyConfirmed(), buildDedupeExploratoryContactPathwaysOutput(), buildPlans(), countDedupeExploratoryContactPathwaysPlannedChanges(), DedupeExploratoryContactPathwaysCliOptions, idString(), main() (+5 more)
+
+### Community 297 - "compilerOptions"
 Cohesion: 0.14
-Nodes (10): localPart, lower, REAL_FIXTURE_PATTERNS, relative, ROOT, SELF, SOURCE_ROOTS, SYNTHETIC_YALE_TOKENS (+2 more)
+Nodes (13): compilerOptions, esModuleInterop, forceConsistentCasingInFileNames, lib, module, outDir, resolveJsonModule, rootDir (+5 more)
 
-### Community 301 - "Community 301"
+### Community 298 - "devDependencies"
 Cohesion: 0.14
-Nodes (10): crossrefPayload, { ctx }, { ctx, emitted }, { ctx, emitted, logs }, fetcher, linkModel, paperModel, scraper (+2 more)
+Nodes (14): devDependencies, nodemon, ts-node, tsup, tsx, @types/cookie-session, @types/cors, @types/express (+6 more)
 
-### Community 302 - "Community 302"
+### Community 300 - "testFixturePrivacy.test.ts"
+Cohesion: 0.31
+Nodes (8): localPartIsSynthetic(), REAL_FIXTURE_PATTERNS, ROOT, SELF, SOURCE_ROOTS, SYNTHETIC_YALE_TOKENS, testFiles(), walk()
+
+### Community 302 - "Yale Research V1 Redesign Proposal"
 Cohesion: 0.14
 Nodes (13): 0. Critique, 10. Trade-Offs And Risks, 11. Implementation Priorities And Migration, 1. Current-State Diagnosis, 2. Rebrand Stakes, 3. Design Principles, 4. IA And Key Flows, 5. Page-Level Wireframes (+5 more)
 
-### Community 303 - "Community 303"
-Cohesion: 0.16
-Nodes (6): TextArea, TextAreaProps, ArrayInputProps, ErrorMessage(), TextAreaProps, TextInputProps
+### Community 303 - "MigratePublicationsToPapers.ts"
+Cohesion: 0.19
+Nodes (11): buildProfileResearchMembershipFilter(), dedupeProfileResearchEntities(), entityNameMatchesUser(), isIndividualResearchEntity(), isOfficialProfileScholarlyLink(), loadProfileResearchEntities(), loadProfileScholarlyLinks(), orderProfileScholarlyLinks() (+3 more)
 
-### Community 304 - "Community 304"
-Cohesion: 0.14
-Nodes (14): 2. Install dependencies, 4. Start local Meilisearch, 5. Seed Meilisearch, 6. Start dev servers, 7. Verify setup, code:bash (curl http://localhost:7700/health), code:bash (cd data-migration), code:bash (yarn dev:client    # Vite on port 3000) (+6 more)
+### Community 305 - "officialProfileObservationMatchesUser"
+Cohesion: 0.25
+Nodes (14): DEPARTMENT_IDENTITY_STOPWORDS, departmentIdentityTokens(), findUserDocByOfficialProfileObservations(), identityTokens(), isLikelyYaleEmailLocalPart(), normalizeIdentityText(), observationValueForField(), observedUserDepartmentLabels() (+6 more)
 
-### Community 305 - "Community 305"
+### Community 306 - "normalizeOfficialProfileUrl"
 Cohesion: 0.26
-Nodes (13): departmentIdentityTokens(), departmentValuesForInferredPiLookup(), identityTokens(), isInitialOnlyNameValue(), normalizeIdentityText(), observationValueForField(), observedUserDepartmentLabels(), observedUserNameParts() (+5 more)
+Nodes (14): entityExpectedPeople(), isOfficialYalePersonPageUrl(), isOfficialYaleProfileUrl(), isPotentialDirectYalePersonPageUrl(), normalizeOfficialProfileUrl(), officialPersonUrlMatchesEntity(), officialProfileUrlsForUser(), publicBioNeedsBackfill() (+6 more)
 
-### Community 306 - "Community 306"
-Cohesion: 0.24
-Nodes (13): entityExpectedPeople(), entityNameAsUser(), isOfficialYalePersonPageUrl(), isOfficialYaleProfileUrl(), isPotentialDirectYalePersonPageUrl(), normalizeOfficialProfileUrl(), officialPersonUrlMatchesEntity(), officialProfileSlugMatchesGivenNameVariant() (+5 more)
+### Community 307 - "corsOrigin.ts"
+Cohesion: 0.27
+Nodes (12): addPostMaterializationMetrics(), buildInferredPiMemberUpsert(), countListingBackedPostedOpportunitiesForRun(), departmentValuesForInferredPiLookup(), emptyPostMaterializationMetrics(), materializeFromRun(), materializeInferredPiMembership(), normalizeMaterializerObjectId() (+4 more)
 
-### Community 307 - "Community 307"
-Cohesion: 0.22
-Nodes (10): CorsOriginCallback, CorsOriginError, createCorsOriginHandler(), isAllowedCorsOrigin(), normalizeCorsOrigin(), allowedOrigins, { callbackError, callbackAllow }, corsError (+2 more)
+### Community 309 - "Agent Workflow"
+Cohesion: 0.32
+Nodes (10): ipv4ToNumber(), isAllowedPublicHttpPort(), isIpv4InCidr(), isIpv6InCidr(), isPrivateAddress(), isPublicHostname(), parseIpv6ToBigInt(), SsrfBlockedError (+2 more)
 
-### Community 308 - "Community 308"
-Cohesion: 0.15
-Nodes (11): DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES, astronomyConfig, configsByKey, eebConfig, emitted, fetchHtml, fields, observations (+3 more)
-
-### Community 309 - "Community 309"
-Cohesion: 0.15
-Nodes (12): Aesthetic Anchors, Color Usage, Component Priorities, Confidence Labels, Interaction Principles, Metadata And Citation Treatment, Spacing And Density, Typography (+4 more)
-
-### Community 310 - "Community 310"
-Cohesion: 0.18
-Nodes (12): AdminOperatorBoard(), formatCountList(), formatDate(), formatRun(), sourceConflictScopeText(), sourceReviewArtifactRollupLines(), sourceReviewCategoryText(), sourceReviewDecisionValidationLine() (+4 more)
-
-### Community 311 - "Community 311"
+### Community 310 - "AdminOperatorBoard"
 Cohesion: 0.17
-Nodes (11): 2026-05-07: Add Access Materializer Beside Legacy Materializer, 2026-05-07: Add Access Summary Compatibility Payload, 2026-05-07: Add First-Class Access Model Collections, 2026-05-07: Compute Recommended Next Steps First, 2026-05-07: Evolve Current ResearchGroup Conservatively, 2026-05-07: North Star Is Research Navigation, Not Lab Openings, 2026-05-07: Replace Binary Acceptance With Access Signals, 2026-05-07: Separate EntryPathway From PostedOpportunity (+3 more)
+Nodes (13): AdminOperatorBoard(), formatCountList(), formatDate(), queueDecisionPrompt(), sourceConflictScopeText(), sourceDecisionValidationStatusText(), sourceReviewArtifactRollupLines(), sourceReviewCategoryText() (+5 more)
 
-### Community 312 - "Community 312"
-Cohesion: 0.23
-Nodes (12): Acknowledgements, code:bash (# Terminal 1), code:bash (yarn playwright:run screenshot https://example.com /tmp/exam), code:bash (codex mcp add playwright -- <repo>/scripts/with-playwright-l), Documentation, Playwright environment fix (no root required), Product Surfaces, Quick Start (+4 more)
+### Community 311 - "securityHeaders.ts"
+Cohesion: 0.27
+Nodes (11): buildContentSecurityPolicy(), CONNECT_SRC_ORIGINS, connectSrcDirective(), CONTENT_SECURITY_POLICY, IMG_SRC_ORIGINS, imgSrcDirective(), PERMISSIONS_POLICY, securityHeaders() (+3 more)
 
-### Community 313 - "Community 313"
-Cohesion: 0.17
-Nodes (12): code:ts (import { describe, expect, it } from 'vitest';), code:bash (yarn --cwd server test src/scripts/__tests__/facultyProfileD), code:ts (import { canonicalizeProfileDepartmentsFromRows } from '../s), code:ts (import dotenv from 'dotenv';), code:bash (yarn --cwd server test src/scripts/__tests__/facultyProfileD), code:bash (yarn --cwd server tsx src/scripts/facultyProfileDepartmentBa), code:json ({), code:bash (yarn --cwd server tsx src/scripts/facultyProfileDepartmentBa) (+4 more)
+### Community 313 - "materializePaperObservationsFromRun"
+Cohesion: 0.35
+Nodes (13): findEntityDocByIdentifier(), findPaperForObservationGroup(), isArxivPaperKey(), isDoiPaperKey(), mapExistingPapers(), materializePaperAuthorEvidenceFromGroups(), materializePaperObservationsFromRun(), normalizeDoiForMaterialization() (+5 more)
 
-### Community 314 - "Community 314"
+### Community 314 - "ensure-server-build-fresh.mjs"
 Cohesion: 0.18
 Nodes (8): buildDir, buildEntrypoint, forbiddenBuildArtifacts, freshnessInputs, repoRoot, serverRoot, sourceFileExtensions, sourceMtimeMs
 
-### Community 315 - "Community 315"
-Cohesion: 0.24
-Nodes (9): filter, acceptanceLevelClauses(), AcceptanceLevelInput, buildResearchGroupFilterString(), escapeMeiliFilterValue(), orEqualsClause(), ResearchGroupFilterInput, badFilter (+1 more)
+### Community 315 - "researchGroupFilters.ts"
+Cohesion: 0.17
+Nodes (12): devDependencies, agentation, autoprefixer, jsdom, postcss, tailwindcss, @testing-library/dom, @testing-library/jest-dom (+4 more)
 
-### Community 316 - "Community 316"
-Cohesion: 0.2
-Nodes (7): createRoutes, invokeRouteHandler(), mocks, postRoute, ResearchArea, ResearchField, routesByPath()
-
-### Community 317 - "Community 317"
+### Community 317 - "Yale Research Product Context"
 Cohesion: 0.18
 Nodes (10): Author-Disambiguation Rules, Core Flows, Data-Quality Caveats, Not Optimizing For, Primary User Jobs, Product Thesis, Target User, Trust Constraints (+2 more)
 
-### Community 318 - "Community 318"
-Cohesion: 0.18
-Nodes (11): 10. P2 Fellowship, Course, And Contact Materialization, 11. S3 WorkPlanner And Recurring Scraper Cost Controls, 12. S4 Beta And Staged Production Scraper Rollout, 8. S1 Scraper Inventory And Audit Harness, 9. S2 Source Validation And Blockers, Evidence And Scraper Tasks, P2 Fellowship, Course, And Contact Materialization, S1 Scraper Inventory And Audit Harness (+3 more)
+### Community 319 - "Priority Roadmap"
+Cohesion: 0.14
+Nodes (14): Active Priority Queue, Completed Milestones, Current Focus, Current Operating Baseline, Development Scraper Validation Snapshot, How To Use, Immediate Next Steps, Known Incomplete (+6 more)
 
-### Community 319 - "Community 319"
-Cohesion: 0.18
-Nodes (11): P1: Baseline Beta Seed Acceptance Snapshot, P1: Beta Readiness Gate, P1: Beta Seed, P1: Beta Seed Acceptance Snapshot, P1: Full Beta Scraper Soak, P1: Pathway Meili Traffic Switch, P2: Post-Beta Legacy Cleanup, P2: Product And Admin Polish (+3 more)
+### Community 325 - "scraperIntegrityGate.ts"
+Cohesion: 0.27
+Nodes (11): isIntegrityGateFailure(), PostMaterializationIntegritySummary, buildScraperIntegrityGateOutput(), consumeValue(), __dirname, __filename, main(), parseScraperIntegrityGateArgs() (+3 more)
 
-### Community 320 - "Community 320"
-Cohesion: 0.18
-Nodes (11): 2. Install dependencies, 5. Seed Meilisearch, 6. Start dev servers, 7. Verify setup, code:bash (cd data-migration), code:bash (yarn dev:client    # Vite on port 3000), code:bash (curl http://localhost:7700/health), code:bash (yarn install:all) (+3 more)
+### Community 327 - "adminFellowshipsTableReducer.ts"
+Cohesion: 0.32
+Nodes (11): cache, CourseTableCourse, fetchAllSeasonCourses(), fetchCourseTableData(), getRecentSeasonCodes(), normalizeCourseTableProfessorName(), normalizeCourseTableSeason(), publicCourseTableCourse() (+3 more)
 
-### Community 321 - "Community 321"
-Cohesion: 0.18
-Nodes (11): API Routes, Auth Middleware (`server/src/middleware/auth.ts`), Authentication, code:block19 (ylabs/), code:block20 (User → Yale CAS SSO → passport.ts findOrCreateUser), Environments, Project Structure, Search (+3 more)
-
-### Community 322 - "Community 322"
-Cohesion: 0.18
-Nodes (11): API Routes, code:bash (npx ts-node --transpile-only <script>.ts), code:block19 (ylabs/), Common Commands, Environments, Migration Scripts, Project Structure, Search (+3 more)
-
-### Community 323 - "Community 323"
-Cohesion: 0.18
-Nodes (11): 2. Install dependencies, 5. Seed Meilisearch, 6. Start dev servers, 7. Verify setup, code:bash (cd data-migration), code:bash (yarn dev:client    # Vite on port 3000), code:bash (curl http://localhost:7700/health), code:bash (yarn install:all) (+3 more)
-
-### Community 324 - "Community 324"
-Cohesion: 0.18
-Nodes (11): API Routes, Architecture, code:block1 (React (Vite) → Express (Passport.js) → MongoDB Atlas + Meili), code:block19 (ylabs/), Environments, Project Structure, Search, Tech Stack (+3 more)
-
-### Community 325 - "Community 325"
-Cohesion: 0.25
-Nodes (9): assertUserMigrationApplyAllowed(), assertUserMigrationReplacementAllowed(), buildUserMigrationOutput(), __dirname, __filename, migrateUsers(), UserMigrationCliOptions, UserMigrationResult (+1 more)
-
-### Community 326 - "Community 326"
-Cohesion: 0.2
-Nodes (9): Legacy CSV-to-JSON update script retired.  Department ground truth no longer com, Legacy CSV-to-JSON update script retired.  Department ground truth no longer com, Legacy CSV-to-JSON update script retired.  Department ground truth no longer com, Legacy CSV-to-JSON update script retired.  Department ground truth no longer com, Legacy CSV-to-JSON update script retired.  Department ground truth no longer com, Legacy CSV-to-JSON update script retired.  Department ground truth no longer com, Legacy CSV-to-JSON update script retired.  Department ground truth no longer com, Legacy CSV-to-JSON update script retired.  Department ground truth no longer com (+1 more)
-
-### Community 327 - "Community 327"
-Cohesion: 0.24
-Nodes (8): isPaperAuthorshipEvidence(), isPaperAuthorshipSource(), normalizePaperAuthorshipEvidence(), PAPER_AUTHORSHIP_METHODS, PAPER_AUTHORSHIP_SOURCE_NAMES, PAPER_METADATA_ONLY_SOURCE_NAMES, PaperAuthorshipEvidence, PaperAuthorshipMethod
-
-### Community 328 - "Community 328"
+### Community 328 - "importFaculty.ts"
 Cohesion: 0.31
 Nodes (9): cleanPrimaryDepartment(), cleanSecondaryDepartments(), hasPathPrefix(), importFaculty(), KNOWN_DEPARTMENTS, RawFacultyEntry, resolveSafeFacultyImportJsonPath(), SORTED_KNOWN_DEPTS (+1 more)
 
-### Community 329 - "Community 329"
-Cohesion: 0.2
-Nodes (10): 1. M1.2 Client API-Boundary Vocabulary, 1. M6.2 Admin Review Implementation, 2. M7.2 Physical ResearchEntity Migration Gates, 2. M8.2 Retire Scalar Access From Primary Explore UX, 3. M2.1 Research Cards And Detail Polish, 4. M3.1 PostedOpportunity Linking And Detail Polish, 5. M9.1 Saved Pathway Hardening, 6. M6.1 Admin Review Readiness Audit (+2 more)
+### Community 331 - "AdminListingsTable.tsx"
+Cohesion: 0.14
+Nodes (14): AdminListing, AdminListingsTable(), PAGE_SIZES, SORT_OPTIONS, SortField, TABLE_COLUMNS, AdminListingsFilter, AdminListingsSortField (+6 more)
 
-### Community 330 - "Community 330"
-Cohesion: 0.2
-Nodes (10): code:bash (git fetch --all), code:bash (git merge --no-ff gstack-source-conflict-lane), code:bash (yarn --cwd server test src/services/__tests__/sourceHealthSe), code:txt (http://localhost:3000/research/ysm-yachiho), code:txt (title: Ya-Chi Ho Lab | Yale Research), code:txt (2026-05-25: Added the gstack data-quality loop: source confl), code:txt (source health -> data quality -> dry-run repair yield -> Pla), code:bash (graphify update .) (+2 more)
+### Community 332 - "BackfillV4FacultyMembers.ts"
+Cohesion: 0.25
+Nodes (13): backfillV4FacultyMembers(), buildDepartmentMap(), compact(), departmentIdsFor(), __filename, isFacultyTitle(), norm(), slugify() (+5 more)
 
-### Community 331 - "Community 331"
-Cohesion: 0.2
-Nodes (6): mockedListLinks, mockedResearchEntity, mockedResearchGroupMember, mockedUser, researchEntityId, userId
+### Community 333 - "devDependencies"
+Cohesion: 0.17
+Nodes (12): devDependencies, eslint, eslint-config-prettier, eslint-plugin-react, eslint-plugin-react-hooks, globals, playwright, prettier (+4 more)
 
-### Community 332 - "Community 332"
-Cohesion: 0.2
-Nodes (9): code:bash (yarn --cwd server filter:coverage-audit), code:bash (./node_modules/.bin/tsx src/scripts/filterCoverageAudit.ts), Current Data Posture, Data Needed Before Reintroducing Removed Filters, Filter Decision Table, Filter/Search Data Quality Audit, Recommended Scraping Targets, V1 UX Decision (+1 more)
-
-### Community 333 - "Community 333"
-Cohesion: 0.2
-Nodes (10): code:ts (it('prefers canonical department display labels for public p), code:bash (yarn --cwd server test src/services/__tests__/profileService), code:ts (import {), code:ts (interface NormalizeProfileForClientOptions {), code:ts (const canonicalDepartments = options.canonicalProfileDepartm), code:ts (primary_department: primaryDepartment,), code:ts (const canonicalProfileDepartments = await canonicalizeProfil), code:ts ({) (+2 more)
-
-### Community 334 - "Community 334"
+### Community 334 - "refreshGateScorecards.ts"
 Cohesion: 0.28
 Nodes (8): argValue(), Feeder, FeederResult, FEEDERS, __filenameLocal, runFeeder(), runGateRefresh(), SERVER_ROOT
 
-### Community 335 - "Community 335"
-Cohesion: 0.25
-Nodes (6): router, next, refreshRoutes, res, routeHandlerNames(), routesByPath()
+### Community 345 - "Acknowledgements"
+Cohesion: 0.20
+Nodes (12): boundedResearchFilterValues(), boundedResearchSearchQuery(), isAcceptanceLevelInput(), isMissingMeiliEmbedderError(), isResearchGroupQualityFilter(), isUnsortableAttributeError(), matchesQualityFilters(), mongoFilterFromResearchFilters() (+4 more)
 
-### Community 336 - "Community 336"
-Cohesion: 0.22
-Nodes (7): address, body, cookieSession, limiters, objectNetId, ORIGINAL_ENV, server
+### Community 351 - "fellowships.ts"
+Cohesion: 0.18
+Nodes (11): resolutions, brace-expansion, form-data, glob, ip-address, minimatch, picomatch, postcss (+3 more)
 
-### Community 337 - "Community 337"
-Cohesion: 0.25
-Nodes (7): main(), parseArgs(), RepairTargetEntity, writeStudentVisibilityRepairTargetOutput(), dir, output, report
+### Community 352 - "cleanPublicProfileBio"
+Cohesion: 0.12
+Nodes (24): appointmentTitleCount(), cleanPublicProfileBio(), clipPublicProfileBio(), degreeTokenCount(), hasPublicProfileEmail(), hasResearchDescriptionVerb(), isAffiliationOnlyResearchSummary(), isAppointmentListOnlyProfileBio() (+16 more)
 
-### Community 339 - "Community 339"
-Cohesion: 0.25
-Nodes (6): chain, handlerNames, invokeRouteHandler(), mocks, route, routeByPath()
-
-### Community 340 - "Community 340"
-Cohesion: 0.22
-Nodes (8): Canonical Collections, code:txt (Source metadata), Pipeline Shape, Promotion Invariants, Read-Only Control Plane, Research Data Pipeline, Retention Posture, Rollback Drill Expectations
-
-### Community 341 - "Community 341"
-Cohesion: 0.22
-Nodes (8): code:tsx (<SectionHeading count={activeResults.clusters.length}>Matchi), code:tsx (Search by idea, method, paper, professor, or pathway. Cluste), code:tsx (Search by topic, method, professor, program, or question. Re), code:tsx (Same names are not merged. Identity, source evidence, and cl), code:tsx (Every suggestion keeps its source context visible, so you ca), code:bash (NODE_PATH=/tmp/pw-driver/node_modules bash scripts/with-play), code:bash (git add client/src/pages/research.tsx docs/ux-screenshots do), Task 2: Make Search Results Hierarchy Student-First
-
-### Community 342 - "Community 342"
-Cohesion: 0.22
-Nodes (9): code:ts (it('presents research-home labels without internal cluster b), code:bash (yarn --cwd client test --run src/utils/__tests__/researchDis), code:ts (export const CLUSTER_EXPERIMENTAL_LABEL = 'Cluster: experime), code:ts (export const RESEARCH_HOME_GROUPING_LABEL = 'Evidence-backed), code:ts (labels: [RESEARCH_HOME_GROUPING_LABEL],), code:ts (description:), code:bash (yarn --cwd client test --run src/utils/__tests__/researchDis), code:bash (git add client/src/utils/researchDiscoveryAdapters.ts client) (+1 more)
-
-### Community 343 - "Community 343"
-Cohesion: 0.22
-Nodes (8): code:tsx (import { render, screen } from '@testing-library/react';), code:bash (yarn --cwd client test --run src/components/research/__tests), code:tsx (import { Link } from 'react-router-dom';), code:ts (import PathwayActionCard from '../components/research/Pathwa), code:bash (yarn --cwd client test --run src/components/research/__tests), code:txt (docs/ux-screenshots/research-next-steps-desktop.png), code:bash (git add client/src/components/research/PathwayActionCard.tsx), Task 3: Introduce A Student-Facing Pathway Action Card
-
-### Community 344 - "Community 344"
-Cohesion: 0.22
-Nodes (9): Acknowledgements, code:bash (corepack enable), code:bash (# Terminal 1), code:bash (yarn playwright:run screenshot https://example.com /tmp/exam), Documentation, Playwright environment fix (no root required), Quick Start, Tech Stack (+1 more)
-
-### Community 345 - "Community 345"
-Cohesion: 0.22
-Nodes (9): Acknowledgements, code:bash (corepack enable), code:bash (# Terminal 1), code:bash (yarn playwright:run screenshot https://example.com /tmp/exam), Documentation, Playwright environment fix (no root required), Quick Start, Tech Stack (+1 more)
-
-### Community 346 - "Community 346"
-Cohesion: 0.22
-Nodes (9): Acknowledgements, code:bash (corepack enable), code:bash (# Terminal 1), code:bash (yarn playwright:run screenshot https://example.com /tmp/exam), Documentation, Playwright environment fix (no root required), Quick Start, Tech Stack (+1 more)
-
-### Community 347 - "Community 347"
-Cohesion: 0.22
-Nodes (9): Acknowledgements, code:bash (corepack enable), code:bash (# Terminal 1), code:bash (yarn playwright:run screenshot https://example.com /tmp/exam), Documentation, Playwright environment fix (no root required), Quick Start, Tech Stack (+1 more)
-
-### Community 348 - "Community 348"
-Cohesion: 0.22
-Nodes (9): Acknowledgements, code:bash (corepack enable), code:bash (# Terminal 1), code:bash (yarn playwright:run screenshot https://example.com /tmp/exam), Documentation, Playwright environment fix (no root required), Quick Start, Tech Stack (+1 more)
-
-### Community 349 - "Community 349"
-Cohesion: 0.22
-Nodes (9): Acknowledgements, code:bash (corepack enable), code:bash (# Terminal 1), code:bash (yarn playwright:run screenshot https://example.com /tmp/exam), Documentation, Playwright environment fix (no root required), Quick Start, Tech Stack (+1 more)
-
-### Community 350 - "Community 350"
-Cohesion: 0.22
-Nodes (9): Acknowledgements, code:bash (corepack enable), code:bash (# Terminal 1), code:bash (yarn playwright:run screenshot https://example.com /tmp/exam), Documentation, Playwright environment fix (no root required), Quick Start, Tech Stack (+1 more)
-
-### Community 351 - "Community 351"
-Cohesion: 0.36
-Nodes (4): __filenameLocal, gateRefreshIntervalMs(), SERVER_ROOT, startGateRefreshScheduler()
-
-### Community 352 - "Community 352"
-Cohesion: 0.29
-Nodes (8): cleanPublicProfileBio(), clipPublicProfileBio(), stripTrailingOfficialProfileUpdateMetadata(), clipOfficialProfileBio(), firstTerseResearchFocusText(), identityToResearchEntityDescriptionObservations(), publicBioNeedsBackfill(), shortOfficialProfileBio()
-
-### Community 353 - "Community 353"
-Cohesion: 0.25
-Nodes (8): code:ts (expect(container.textContent).toContain('Evidence-backed gro), code:ts (expect(container.textContent).toContain('Why this matches');), code:bash (yarn --cwd client test --run src/components/research/__tests), code:tsx (Profiles in this cluster), code:tsx (Research homes), code:bash (yarn --cwd client test --run src/components/research/__tests), code:bash (git add client/src/components/research/TopicClusterCard.tsx ), Task 4: Reframe Research Home Cards
-
-### Community 354 - "Community 354"
-Cohesion: 0.25
-Nodes (8): code:ts (it('flags zero active papers as a coverage warning instead o), code:bash (yarn --cwd server test src/services/__tests__/paperQualitySe), code:ts (const zeroActivePaperCoverageGap = counts.totalActivePapers ), code:ts (if (zeroActivePaperCoverageGap) {), code:ts (warning: zeroActivePaperCoverageGap), code:bash (yarn --cwd server test src/services/__tests__/paperQualitySe), code:bash (git add server/src/services/paperQualityService.ts server/sr), Task 4: Paper Activity Sanity Lane
-
-### Community 355 - "Community 355"
-Cohesion: 0.25
-Nodes (8): code:ts (nextCommand: 'yarn --cwd server source:health'), code:bash (yarn --cwd server test src/services/__tests__/sourceHealthSe), code:bash (yarn --cwd server source:health), code:bash (git add server/src/services/sourceHealthService.ts server/sr), code:ts (expect(row.queueType).toBe('conflict-review');), code:bash (yarn --cwd server test src/services/__tests__/sourceHealthSe), code:ts ({), Task 2: Source Conflict Lane
-
-### Community 356 - "Community 356"
-Cohesion: 0.25
-Nodes (8): code:ts (sourceRiskCounts.warn = 6;), code:ts (expect(actions).toContain('Run bounded dry runs for warning ), code:bash (yarn --cwd server test src/services/__tests__/adminOperatorB), code:ts (gstackNextLane: {), code:ts (expect(screen.getByText(/source-conflict-review/i)).toBeInTh), code:bash (yarn --cwd client test:ci src/components/admin/__tests__/Adm), code:bash (git add server/src/services/adminOperatorBoardService.ts ser), Task 5: Operator Loop Lane
-
-### Community 357 - "Community 357"
+### Community 357 - "Available Scripts"
 Cohesion: 0.25
 Nodes (7): Available Scripts, Getting Started with Create React App, Learn More, `npm run build`, `npm run eject`, `npm start`, `npm test`
 
-### Community 358 - "Community 358"
-Cohesion: 0.46
-Nodes (6): audit, main(), names, output, rows, textValue()
+### Community 358 - "Auth and Security"
+Cohesion: 0.17
+Nodes (11): Auth and Security, Auth middleware, Authentication flow, Client, Environment variables, Error handling, Rate limits, Security middleware (+3 more)
 
-### Community 359 - "Community 359"
-Cohesion: 0.25
-Nodes (8): code:md (Faculty profile departments shown to students should use can), code:bash (yarn --cwd server test src/services/__tests__/departmentReso), code:bash (yarn --cwd server test src/scrapers/__tests__/entityMaterial), code:bash (yarn --cwd client test:ci src/components/profile/__tests__/P), code:bash (npx tsc --noEmit -p server/tsconfig.json), code:bash (graphify update .), code:bash (git diff -- server/src/services/departmentResolver.ts server), Task 8: Documentation and Verification
+### Community 359 - "ResearchGroupMember"
+Cohesion: 0.18
+Nodes (11): 1. Fresh machine setup, 2. Install dependencies, 3. Configure environment, 4. Start local Meilisearch, 5. Seed Meilisearch, 6. Start dev servers, 7. Verify setup, Dev login bypass (+3 more)
 
-### Community 360 - "Community 360"
-Cohesion: 0.25
-Nodes (7): Canonical Profile Departments Implementation Plan, code:tsx (it('shows canonical CPSC profile department labels without r), code:bash (yarn --cwd client test:ci src/components/profile/__tests__/P), Display Decision, Execution Notes, File Structure, Task 7: Client Profile Header Guardrail
+### Community 360 - "isPublicHttpUrl"
+Cohesion: 0.36
+Nodes (10): publicProgramForReader(), publicProgramLinks(), publicProgramText(), publicProgramTextArray(), defaultRewriter(), boundedPublicText(), publicFellowshipField(), publicFellowshipLinks() (+2 more)
 
-### Community 361 - "Community 361"
-Cohesion: 0.29
-Nodes (5): departmentUndergradResearchRecordsToObservations(), DepartmentUndergradResearchScraper, FetchHtml, parsePage(), parseRuntimeIntegerOption()
+### Community 361 - "Architecture"
+Cohesion: 0.18
+Nodes (10): Architecture, Commands, Environments, External integrations, Key services, Naming conventions, Repo map, Routes (+2 more)
 
-### Community 362 - "Community 362"
-Cohesion: 0.29
-Nodes (6): group, leadMemberNames, members, publicGroup1, publicGroup2, userById
-
-### Community 363 - "Community 363"
-Cohesion: 0.29
-Nodes (7): code:bash (yarn --cwd server research:quality-search-review --output /t), code:txt (http://localhost:3000/research/ysm-yachiho), code:txt (title), code:ts (expect(row.facts.leadCount).toBe(0);), code:bash (yarn --cwd server test src/scripts/__tests__/researchQuality), code:bash (git add server/src/scripts/researchQualitySearchReviewCore.t), Task 3: Search And Lab UX Review Lane
-
-### Community 364 - "Community 364"
-Cohesion: 0.29
-Nodes (6): Acceptance Criteria, code:bash (yarn --cwd server source:health), Coordination Rules, Current Evidence Snapshot, Files And Responsibilities, GStack Data Quality Coverage Implementation Plan
-
-### Community 365 - "Community 365"
-Cohesion: 0.29
-Nodes (6): Current Problem, Design, Goal, Interaction Model, Student Dashboard Command Center Design, Verification
-
-### Community 366 - "Community 366"
+### Community 362 - "csrfOriginGuard.ts"
 Cohesion: 0.33
-Nodes (6): buildCandidateSample(), buildReviewQueues(), buildValuePreviewsBySource(), policyBucketForConflict(), reviewCategoryForField(), reviewQueueForCategory()
+Nodes (8): buildLaunchAcquisitionReportOutput(), LaunchAcquisitionReportCliOptions, main(), parseLaunchAcquisitionReportArgs(), parsePositiveInteger(), writeLaunchAcquisitionReportOutput(), LaunchAcquisitionReport, LaunchAcquisitionReportOptions
 
-### Community 367 - "Community 367"
-Cohesion: 0.33
-Nodes (6): consumeValue(), parseCrossSourceObservationConflictReviewArgs(), parsePositiveIntegerValue(), parseRequiredString(), parseReviewCategory(), parseReviewQueue()
+### Community 364 - "GStack Data Quality Coverage Implementation Plan"
+Cohesion: 0.15
+Nodes (12): Acceptance Criteria, Agent Handoff Prompts, Coordination Rules, Current Evidence Snapshot, Files And Responsibilities, GStack Data Quality Coverage Implementation Plan, Task 1: Create Clean Worktree Lanes, Task 2: Source Conflict Lane (+4 more)
 
-### Community 368 - "Community 368"
-Cohesion: 0.33
-Nodes (4): __dirname, modulePath, output, transformed
+### Community 365 - "backfillProgramOfficialSources.ts"
+Cohesion: 0.20
+Nodes (10): Compact Observation Retention, Cost Controls, Data Flow, Goal, Operating Model, Recurring Refresh, Report Checklist, Rollback (+2 more)
 
-### Community 369 - "Community 369"
-Cohesion: 0.53
-Nodes (5): closeAll(), DEFAULT_EXCLUDED, flush(), main(), parseList()
+### Community 366 - "researchAreaResolver.ts"
+Cohesion: 0.31
+Nodes (8): cache, canonicalizeResearchArea(), CanonicalizeResult, loadCache(), normalize(), registerResearchAreaAlias(), ResearchAreaRow, tokenJaccard()
 
-### Community 370 - "Community 370"
+### Community 367 - "Yale Research - Agent Guide"
+Cohesion: 0.11
+Nodes (15): Core Rules, Default Task Loop, Implementation Rules, On-Demand Skills, Parallel Work, Yale Research - Agent Guide, Yale Research, Acknowledgements (+7 more)
+
+### Community 368 - "resolutions"
+Cohesion: 0.22
+Nodes (9): resolutions, axios, form-data, path-to-regexp, shell-quote, underscore, undici, uuid (+1 more)
+
+### Community 369 - "copyBetaToProd.ts"
+Cohesion: 0.10
+Nodes (27): closeAll(), DEFAULT_EXCLUDED, flush(), main(), parseList(), isPaperAuthorshipEvidence(), isPaperAuthorshipSource(), isPaperMetadataOnlySource() (+19 more)
+
+### Community 370 - "parseStaleObservationConflictReviewArgs"
 Cohesion: 0.47
 Nodes (6): consumeValue(), parsePositiveIntegerValue(), parseRequiredString(), parseReviewCategory(), parseReviewQueue(), parseStaleObservationConflictReviewArgs()
 
-### Community 371 - "Community 371"
+### Community 372 - "package.json"
+Cohesion: 0.22
+Nodes (8): engines, node, license, main, name, proxy, type, version
+
+### Community 373 - "classifyDuplicateEntityCluster"
+Cohesion: 0.20
+Nodes (10): P1: Baseline Beta Seed Acceptance Snapshot, P1: Beta Readiness Gate, P1: Beta Seed, P1: Full Beta Scraper Soak, P1: Pathway Meili Traffic Switch, P2: Post-Beta Legacy Cleanup, P2: Product And Admin Polish, P2: Production Scraper Rollout (+2 more)
+
+### Community 374 - "buildCandidateSample"
+Cohesion: 0.22
+Nodes (9): buildCandidateSample(), buildReviewQueues(), compareObservationsByNewest(), formatOptionalDate(), observedAtMs(), previewValue(), reviewCategoryForField(), reviewQueueForCategory() (+1 more)
+
+### Community 375 - "Graphify Onboarding"
+Cohesion: 0.39
+Nodes (6): classifyProgramResearchRelevance(), ProgramResearchRelevanceInput, ProgramResearchRelevanceResult, RESEARCH_PROGRAM_KINDS, RESEARCH_PURPOSES, text()
+
+### Community 377 - "Research Page UX Redesign Implementation Plan"
+Cohesion: 0.17
+Nodes (11): Files And Responsibilities, Product Direction, Research Page UX Redesign Implementation Plan, Rollout Guardrails, Task 1: Lock Student-Facing Vocabulary In Adapter Tests, Task 2: Make Search Results Hierarchy Student-First, Task 3: Introduce A Student-Facing Pathway Action Card, Task 4: Reframe Research Home Cards (+3 more)
+
+### Community 379 - "buildStaleObservationConflictSummary"
+Cohesion: 0.22
+Nodes (9): buildCategoryCounts(), buildFieldCounts(), buildPolicyBucketCounts(), buildStaleObservationConflictSummary(), buildSupersessionPlan(), compareSamplesForReview(), matchesReviewFilters(), policyBucketForCategory() (+1 more)
+
+### Community 380 - "manifest.json"
+Cohesion: 0.25
+Nodes (7): background_color, display, icons, name, short_name, start_url, theme_color
+
+### Community 381 - "BackfillV4Grants.ts"
+Cohesion: 0.29
+Nodes (7): scripts, build, dev, preview, smoke:production-promotion, test, test:ci
+
+### Community 382 - "package.json"
+Cohesion: 0.25
+Nodes (7): author, license, main, name, packageManager, repository, version
+
+### Community 383 - "itemOperations.ts"
+Cohesion: 0.29
+Nodes (7): Canonical Collections, Pipeline Shape, Promotion Invariants, Read-Only Control Plane, Research Data Pipeline, Retention Posture, Rollback Drill Expectations
+
+### Community 384 - "Finishing work"
+Cohesion: 0.25
+Nodes (7): Finishing work, Fold durable changes into docs, Refresh Graphify, Review the final diff, Rule evolution, Task roadmap, Verify
+
+### Community 391 - "useSearchCore.ts"
+Cohesion: 0.29
+Nodes (7): applyStaleObservationSupersessions(), buildMongoFieldFilter(), defaultStaleObservationApplyDeps(), loadSameSourceConflictGroups(), mongoFieldFilterForCategory(), runStaleObservationConflictReview(), stringifyId()
+
+### Community 393 - "check-no-secrets-core.mjs"
+Cohesion: 0.43
+Nodes (5): findSecretFindings(), isAllowedPlaceholder(), lineNumberForIndex(), PLACEHOLDER_PATTERNS, SECRET_RULES
+
+### Community 408 - "runStaleObservationConflictReview"
+Cohesion: 0.50
+Nodes (4): sameStringSet(), StaleObservationConflictObservation, validateStaleObservationReviewDecision(), validateStaleObservationReviewDecisions()
+
+### Community 409 - "Graphify repo memory"
+Cohesion: 0.15
+Nodes (11): Canonical Sources, Graphify Onboarding, Refresh Policy, Setup Tasks, Shared Output Policy, Committed vs ignored outputs, Graphify repo memory, Installation (+3 more)
+
+### Community 410 - "adminTableReducer.test.ts"
+Cohesion: 0.50
+Nodes (4): CourseTableCourse, CourseTableSection(), CourseTableSectionProps, formatSeason()
+
+### Community 416 - "normalizeAcceptedDecisionValidation"
+Cohesion: 0.53
+Nodes (6): copyFiniteNumber(), normalizeAcceptedDecisionValidation(), normalizeDecisionHandoff(), normalizeDuplicateNamePreflight(), normalizeSamePiDedupeReview(), normalizeSamePiDedupeReviewBreakdown()
+
+### Community 417 - "Contributing: endpoints, pages, schema"
 Cohesion: 0.33
-Nodes (5): evidenceBadge, evidenceLane, mockedAxios, repairBadge, repairLane
+Nodes (5): Adding a new endpoint, Adding a new page, Contributing: endpoints, pages, schema, General implementation rules, Modifying a schema
 
-### Community 372 - "Community 372"
-Cohesion: 0.47
-Nodes (5): lead, leadNamesMatchTextValue(), normalizePersonNameTokens(), out, sanitizeLeadingMismatchedPersonNamePrefix()
+### Community 418 - "Modifying a Schema"
+Cohesion: 0.90
+Nodes (3): hasOutputPath(), writeJsonOutputFile(), writeOptionalJsonOutput()
 
-### Community 373 - "Community 373"
+### Community 421 - "Scrapers"
 Cohesion: 0.33
-Nodes (5): group, lead, out, userById, val
+Nodes (5): Active source scrapers (`server/src/scrapers/sources/`), Core rule: evidence-first, Infrastructure files, Safety rules (write guards), Scrapers
 
-### Community 374 - "Community 374"
+### Community 422 - "Search and Data"
 Cohesion: 0.33
-Nodes (5): group, lead, p1, p2, userById
+Nodes (5): Data shape rules, Default `/research` ordering, Meilisearch indexes, Rebuild commands, Search and Data
 
-### Community 375 - "Community 375"
-Cohesion: 0.6
-Nodes (5): Canonical Sources, Graphify Onboarding, Refresh Policy, Setup Tasks, Shared Output Policy
+### Community 428 - "checker.py"
+Cohesion: 0.60
+Nodes (4): load_env(), main(), normalize(), Lowercase, strip whitespace and punctuation for fuzzy matching.
 
-### Community 376 - "Community 376"
-Cohesion: 0.33
-Nodes (6): code:md (### 14) `/research` hierarchy now prioritizes homes, evidenc), code:md (## Research Page Language), code:bash (yarn --cwd client build), code:bash (graphify update .), code:bash (git add docs/ux-audit-log.md docs/ui-ux-direction.md graphif), Task 6: Final Browser Audit And Documentation
+### Community 429 - "normalizeStaleObservationReviewDecision"
+Cohesion: 0.50
+Nodes (5): asString(), asStringArray(), normalizeStaleObservationReviewDecision(), optionalString(), readStaleObservationReviewDecisions()
 
-### Community 377 - "Community 377"
-Cohesion: 0.33
-Nodes (5): Files And Responsibilities, Product Direction, Research Page UX Redesign Implementation Plan, Rollout Guardrails, Verification Checklist
+### Community 430 - "Product Model"
+Cohesion: 0.17
+Nodes (8): Agent Workflow, Durable Notes, Read Order, Skill Index, Canonical runtime model, Modeling rules, Product Model, Student-facing surfaces
 
-### Community 378 - "Community 378"
-Cohesion: 0.33
-Nodes (6): code:bash (git worktree list), code:bash (git worktree add /home/quntaoz/.config/superpowers/worktrees), code:bash (git worktree add /home/quntaoz/.config/superpowers/worktrees), code:bash (git worktree add /home/quntaoz/.config/superpowers/worktrees), code:bash (git worktree add /home/quntaoz/.config/superpowers/worktrees), Task 1: Create Clean Worktree Lanes
-
-### Community 379 - "Community 379"
-Cohesion: 0.33
-Nodes (6): code:ts (import {), code:ts (it('returns profile-facing display names from canonical rows), code:bash (yarn --cwd server test src/services/__tests__/departmentReso), code:ts (export interface CanonicalProfileDepartmentsInput {), code:bash (yarn --cwd server test src/services/__tests__/departmentReso), Task 2: Add Profile Department Canonicalization Helpers
-
-### Community 380 - "Community 380"
-Cohesion: 0.33
-Nodes (5): code:ts (it('keeps denormalized departments aligned with canonical pr), code:bash (yarn --cwd server test src/services/__tests__/profileService), code:ts (if (update.primaryDepartment !== undefined || update.seconda), code:bash (yarn --cwd server test src/services/__tests__/profileService), Task 5: Canonicalize Self/Admin Profile Updates
-
-### Community 381 - "Community 381"
-Cohesion: 0.33
-Nodes (6): code:ts (it('materializes user profile departments through canonical ), code:bash (yarn --cwd server test src/scrapers/__tests__/entityMaterial), code:ts (import { canonicalizeDepartmentList, canonicalizeProfileDepa), code:ts (if (entityType === 'user' && ['primaryDepartment', 'secondar), code:bash (yarn --cwd server test src/scrapers/__tests__/entityMaterial), Task 4: Canonicalize Future User Materialization
-
-### Community 382 - "Community 382"
-Cohesion: 0.33
-Nodes (5): Student Dashboard Command Center Implementation Plan, Task 1: Command-Center Overview, Task 2: Compact Saved Research Plans, Task 3: Program Watchlist, Task 4: Verification And Docs
-
-### Community 383 - "Community 383"
-Cohesion: 0.5
-Nodes (5): asString(), asStringArray(), normalizeCrossSourceReviewDecision(), normalizeObservationIdsBySource(), optionalString()
-
-### Community 384 - "Community 384"
-Cohesion: 0.4
-Nodes (5): buildCategoryCounts(), buildCrossSourceObservationConflictSummary(), buildFieldCounts(), buildPolicyBucketCounts(), buildSourcePairCounts()
-
-### Community 385 - "Community 385"
-Cohesion: 0.4
-Nodes (3): __dirname, modulePath, output
-
-### Community 386 - "Community 386"
-Cohesion: 0.4
-Nodes (3): dataMigrationPackageJsonPath, __dirname, scripts
-
-### Community 387 - "Community 387"
-Cohesion: 0.4
-Nodes (3): __dirname, modulePath, output
-
-### Community 388 - "Community 388"
-Cohesion: 0.4
-Nodes (3): __dirname, modulePath, output
-
-### Community 389 - "Community 389"
-Cohesion: 0.4
-Nodes (3): __dirname, modulePath, output
-
-### Community 390 - "Community 390"
-Cohesion: 0.4
-Nodes (3): __dirname, modulePath, output
-
-### Community 391 - "Community 391"
-Cohesion: 0.7
-Nodes (4): ClosedIcon(), OpenIcon(), StatusBadge, StatusBadgeProps
-
-### Community 392 - "Community 392"
-Cohesion: 0.5
-Nodes (3): useDebouncedLocalStorage(), removeItem, setItem
-
-### Community 393 - "Community 393"
-Cohesion: 0.4
-Nodes (4): group, m, match, val
-
-### Community 394 - "Community 394"
-Cohesion: 0.4
-Nodes (5): code:bash (SCRAPER_ENV=beta yarn --cwd server beta:data-quality --inclu), code:bash (npx -y corepack@0.34.7 yarn --cwd server test), Production Promotion Gate Status, Verification, Verification Commands
-
-### Community 395 - "Community 395"
-Cohesion: 0.4
-Nodes (5): code:tsx (import { render, screen, waitFor } from '@testing-library/re), code:bash (yarn --cwd client test --run src/pages/__tests__/research.te), code:bash (yarn --cwd client test --run src/pages/__tests__/research.te), code:bash (git add client/src/pages/__tests__/research.test.tsx), Task 5: Add Focused Page-Level Regression Coverage
-
-### Community 396 - "Community 396"
-Cohesion: 0.4
-Nodes (5): Agent Handoff Prompts, code:txt (You are in the gstack-source-conflict-lane worktree. Impleme), code:txt (You are in the gstack-search-ux-lane worktree. Implement Tas), code:txt (You are in the gstack-paper-activity-lane worktree. Implemen), code:txt (You are in the gstack-operator-loop-lane worktree. Implement)
-
-### Community 397 - "Community 397"
-Cohesion: 0.4
-Nodes (5): 1. Fresh machine setup, code:bash (sudo apt update), code:bash (curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/master), code:bash (nvm install 20), code:bash (corepack enable)
-
-### Community 398 - "Community 398"
-Cohesion: 0.4
-Nodes (5): code:txt (Usage Error: Couldn't find the node_modules state file - run), code:bash (which node), code:bash (nvm install 20), code:bash (yarn install), Troubleshooting Yarn setup
-
-### Community 399 - "Community 399"
-Cohesion: 0.4
-Nodes (5): code:txt (Usage Error: Couldn't find the node_modules state file - run), code:bash (which node), code:bash (nvm install 20), code:bash (yarn install), Troubleshooting Yarn setup
-
-### Community 400 - "Community 400"
-Cohesion: 0.4
-Nodes (5): CI, code:bash (cd client), Running tests, Testing, What is tested
-
-### Community 401 - "Community 401"
-Cohesion: 0.4
-Nodes (5): 1. Fresh machine setup, code:bash (sudo apt update), code:bash (curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/master), code:bash (nvm install 20), code:bash (corepack enable)
-
-### Community 402 - "Community 402"
-Cohesion: 0.4
-Nodes (5): CI, code:bash (cd client), Running tests, Testing, What is tested
-
-### Community 403 - "Community 403"
-Cohesion: 0.4
-Nodes (5): 1. Fresh machine setup, code:bash (sudo apt update), code:bash (curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/master), code:bash (nvm install 20), code:bash (corepack enable)
-
-### Community 404 - "Community 404"
-Cohesion: 0.4
-Nodes (5): code:txt (Usage Error: Couldn't find the node_modules state file - run), code:bash (which node), code:bash (nvm install 20), code:bash (yarn install), Troubleshooting Yarn setup
-
-### Community 405 - "Community 405"
-Cohesion: 0.4
-Nodes (5): 1. Fresh machine setup, code:bash (sudo apt update), code:bash (curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/master), code:bash (nvm install 20), code:bash (corepack enable)
-
-### Community 406 - "Community 406"
-Cohesion: 0.4
-Nodes (5): CI, code:bash (cd client), Running tests, Testing, What is tested
-
-### Community 407 - "Community 407"
-Cohesion: 0.4
-Nodes (5): code:txt (Usage Error: Couldn't find the node_modules state file - run), code:bash (which node), code:bash (nvm install 20), code:bash (yarn install), Troubleshooting Yarn setup
-
-### Community 408 - "Community 408"
-Cohesion: 0.4
-Nodes (5): code:ts (it('maps Yale directory Computer Science org-unit labels to ), code:bash (yarn --cwd server test src/services/__tests__/departmentReso), code:ts ('EASCPS Computer Science': 'CPSC',), code:bash (yarn --cwd server test src/services/__tests__/departmentReso), Task 1: Extend Department Resolver Coverage
-
-### Community 409 - "Community 409"
-Cohesion: 0.5
-Nodes (4): normalizedObservationIdRows(), sameObservationIdsBySource(), sameStringSet(), validateCrossSourceObservationReviewDecision()
-
-### Community 410 - "Community 410"
+### Community 444 - "splitReasons"
 Cohesion: 0.67
-Nodes (4): loadCrossSourceConflictGroups(), loadObservationsForGroupKey(), observationCollection(), stringifyId()
+Nodes (3): classifyReason(), splitReasons(), uniqueReasons()
 
-### Community 412 - "Community 412"
-Cohesion: 0.5
-Nodes (3): completedCronResult, log, output
-
-### Community 413 - "Community 413"
-Cohesion: 0.5
-Nodes (3): logSpy, mocks, ORIGINAL_ENV
-
-### Community 415 - "Community 415"
-Cohesion: 0.5
-Nodes (3): ImportMeta, ImportMeta, ImportMetaEnv
-
-### Community 417 - "Community 417"
-Cohesion: 0.5
-Nodes (3): Select, SelectOption, SelectProps
-
-### Community 418 - "Community 418"
-Cohesion: 0.5
-Nodes (4): Adding Things, Modifying a Schema, New API Endpoint, New Page
-
-### Community 419 - "Community 419"
-Cohesion: 0.5
-Nodes (4): Adding Things, Modifying a Schema, New API Endpoint, New Page
-
-### Community 420 - "Community 420"
-Cohesion: 0.5
-Nodes (4): Adding Things, Modifying a Schema, New API Endpoint, New Page
-
-### Community 421 - "Community 421"
-Cohesion: 0.5
-Nodes (3): Answer, Q: How were ylabs task docs cleaned up on 2026-05-13?, Source Nodes
-
-### Community 422 - "Community 422"
-Cohesion: 0.5
-Nodes (3): Answer, Q: How should Codex close out completed tasks in ylabs?, Source Nodes
-
-### Community 424 - "Community 424"
+### Community 445 - "with-playwright-libs.sh"
 Cohesion: 0.67
-Nodes (3): 13. M5.1 Pathway Meilisearch Rebuild/Sync Foundation, M5.2 Pathway Meilisearch Sync/Parity/Cutover, Search Tasks
+Nodes (3): install_libs(), LD_LIBRARY_PATH, with-playwright-libs.sh script
 
-### Community 425 - "Community 425"
-Cohesion: 0.67
-Nodes (3): Current Operating Baseline, Known Incomplete, Verified Foundation
-
-### Community 426 - "Community 426"
-Cohesion: 0.67
-Nodes (3): 14. Advising-Share And Outreach Helpers, Advising-Share And Outreach Helpers, Student Workflow Tasks
-
-### Community 427 - "Community 427"
-Cohesion: 0.67
-Nodes (3): 15. M10 Final Migration Rollout And Cleanup, Final Rollout Tasks, M10 Final Migration Rollout And Cleanup
-
-### Community 431 - "Community 431"
-Cohesion: 0.67
-Nodes (3): 3. Configure environment, code:bash (cp server/.env.example server/.env), code:bash (# client/.env)
-
-### Community 432 - "Community 432"
-Cohesion: 0.67
-Nodes (3): code:bash (npx ts-node --transpile-only <script>.ts), Common Commands, Migration Scripts
-
-### Community 433 - "Community 433"
-Cohesion: 0.67
-Nodes (3): Architecture, code:block1 (React (Vite) → Express (Passport.js) → MongoDB Atlas + Meili), Tech Stack
-
-### Community 434 - "Community 434"
-Cohesion: 0.67
-Nodes (3): 4. Start local Meilisearch, code:bash (curl http://localhost:7700/health), code:bash (docker pull getmeili/meilisearch:latest)
-
-### Community 435 - "Community 435"
-Cohesion: 0.67
-Nodes (3): Architecture, code:block1 (React (Vite) → Express (Passport.js) → MongoDB Atlas + Meili), Tech Stack
-
-### Community 436 - "Community 436"
-Cohesion: 0.67
-Nodes (3): Auth Middleware (`server/src/middleware/auth.ts`), Authentication, code:block20 (User → Yale CAS SSO → passport.ts findOrCreateUser)
-
-### Community 437 - "Community 437"
-Cohesion: 0.67
-Nodes (3): 4. Start local Meilisearch, code:bash (curl http://localhost:7700/health), code:bash (docker pull getmeili/meilisearch:latest)
-
-### Community 438 - "Community 438"
-Cohesion: 0.67
-Nodes (3): 3. Configure environment, code:bash (cp server/.env.example server/.env), code:bash (# client/.env)
-
-### Community 439 - "Community 439"
-Cohesion: 0.67
-Nodes (3): code:bash (npx ts-node --transpile-only <script>.ts), Common Commands, Migration Scripts
-
-### Community 440 - "Community 440"
-Cohesion: 0.67
-Nodes (3): 3. Configure environment, code:bash (cp server/.env.example server/.env), code:bash (# client/.env)
-
-### Community 441 - "Community 441"
-Cohesion: 0.67
-Nodes (3): Auth Middleware (`server/src/middleware/auth.ts`), Authentication, code:block20 (User → Yale CAS SSO → passport.ts findOrCreateUser)
+### Community 446 - "researchEntityRelationship.ts"
+Cohesion: 0.09
+Nodes (24): categoryColorKeys, Department, DepartmentCodeSystem, departmentSchema, sourceRecordSchema, EntryPathway, Listing, listingSchema (+16 more)
 
 ## Knowledge Gaps
-- **5596 isolated node(s):** `Legacy CSV-to-JSON update script retired.  Department ground truth no longer com`, `LOCAL_AUDIT_HOSTS`, `DEPLOYED_AUDIT_HOSTS`, `clientBase`, `serverBase` (+5591 more)
+- **5768 isolated node(s):** `name`, `version`, `private`, `node`, `@emotion/react` (+5763 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **13 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **3081 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `Search` connect `Community 119` to `Community 26`, `Community 109`?**
-  _High betweenness centrality (0.127) - this node is a cross-community bridge._
-- **Why does `sanitizeLogValue()` connect `Community 18` to `Community 4`, `Community 7`, `Community 10`, `Community 12`, `Community 14`, `Community 15`, `Community 17`, `Community 19`, `Community 20`, `Community 22`, `Community 23`, `Community 25`, `Community 26`, `Community 30`, `Community 31`, `Community 32`, `Community 33`, `Community 35`, `Community 38`, `Community 39`, `Community 40`, `Community 43`, `Community 45`, `Community 48`, `Community 49`, `Community 55`, `Community 57`, `Community 59`, `Community 61`, `Community 62`, `Community 63`, `Community 64`, `Community 66`, `Community 67`, `Community 70`, `Community 73`, `Community 74`, `Community 75`, `Community 76`, `Community 77`, `Community 78`, `Community 85`, `Community 87`, `Community 93`, `Community 97`, `Community 98`, `Community 99`, `Community 102`, `Community 103`, `Community 106`, `Community 110`, `Community 112`, `Community 115`, `Community 117`, `Community 131`, `Community 137`, `Community 140`, `Community 142`, `Community 143`, `Community 151`, `Community 152`, `Community 153`, `Community 156`, `Community 157`, `Community 159`, `Community 160`, `Community 162`, `Community 164`, `Community 165`, `Community 171`, `Community 172`, `Community 175`, `Community 176`, `Community 177`, `Community 179`, `Community 181`, `Community 184`, `Community 185`, `Community 186`, `Community 188`, `Community 190`, `Community 193`, `Community 201`, `Community 207`, `Community 208`, `Community 211`, `Community 212`, `Community 216`, `Community 217`, `Community 226`, `Community 229`, `Community 231`, `Community 234`, `Community 239`, `Community 250`, `Community 260`, `Community 268`, `Community 299`, `Community 328`, `Community 334`, `Community 335`, `Community 351`?**
-  _High betweenness centrality (0.079) - this node is a cross-community bridge._
-- **Why does `Y/Labs — Developer Guide` connect `Community 109` to `Community 24`, `Community 82`, `Community 221`, `Community 119`?**
-  _High betweenness centrality (0.078) - this node is a cross-community bridge._
-- **What connects `Legacy CSV-to-JSON update script retired.  Department ground truth no longer com`, `LOCAL_AUDIT_HOSTS`, `DEPLOYED_AUDIT_HOSTS` to the rest of the system?**
-  _5596 weakly-connected nodes found - possible documentation gaps or missing edges._
-- **Should `Community 0` be split into smaller, more focused modules?**
-  _Cohesion score 0.0 - nodes in this community are weakly interconnected._
-- **Should `Community 1` be split into smaller, more focused modules?**
-  _Cohesion score 0.02 - nodes in this community are weakly interconnected._
-- **Should `Community 2` be split into smaller, more focused modules?**
-  _Cohesion score 0.03 - nodes in this community are weakly interconnected._
+- **Why does `sanitizeLogValue()` connect `sanitizeLogValue` to `departmentRosterScraper.ts`, `assertScriptApplyAllowed`, `labMicrositeUndergradLLMExtractor.ts`, `entityMaterializer.ts`, `labMicrositeDescriptionLLMExtractor.ts`, `passport.ts`, `undergradFellowshipRecipientScraper.ts`, `duplicateEntityNameReview.ts`, `dedupeResearchEntitiesByPi.ts`, `admin.ts`, `profileDataQualityAudit.ts`, `centersInstitutesScraper.ts`, `nihReporterScraper.ts`, `ScraperContext`, `userService.ts`, `serializedDocumentId`, `researchEntityCoverageAudit.ts`, `sourceHealth.ts`, `listingService.ts`, `runReport.ts`, `redactDirectContactInfo`, `staleObservationConflictReview.ts`, `betaDataQuality.ts`, `listingController.ts`, `researchEntityBrowseRankService.ts`, `analyticsService.ts`, `entryPathwayService.ts`, `yaleCollegeFellowshipsOfficeScraper.ts`, `repairOfficialProfilePublicationPointers.ts`, `postedOpportunityService.ts`, `profileController.ts`, `analytics.ts`, `openAlexPaperScraper.ts`, `errorHandler.ts`, `researchEntityMemberReferenceAudit.ts`, `promoteAcceptedBetaCopy.ts`, `paperAuthorshipAudit.ts`, `studentDecisionLLMExtractor.ts`, `backfillProfileBiosFromOfficialUrls.ts`, `resolveSafeJsonReportOutputPath`, `assertPublicHttpUrl`, `officialProfilePiBackfillScraper.ts`, `repairArchivedEntityArtifacts.ts`, `centerDirectorLLMExtractor.ts`, `pathwayQualityAudit.ts`, `launchReviewExceptions.ts`, `dedupeUsersByIdentity.ts`, `officialProfilePiBackfillScraper.test.ts`, `applicationRoutePathwayBackfillCore.ts`, `fellowshipController.ts`, `profileBioCoverageAudit.ts`, `cli.ts`, `crossSourceObservationConflictReview.ts`, `migrateResearchEntities.ts`, `researchQualitySearchReview.ts`, `migrateResearchEntityCollections.ts`, `researchGroupController.ts`, `disambiguateSurnameLabNames.ts`, `repairDuplicateAccessSignals.ts`, `logSanitizer.ts`, `programController.ts`, `repairMismatchedPersonEmailsCore.ts`, `betaReadinessGate.ts`, `studentVisibilityRepairTargets.ts`, `scholarlyLinkSuppressionAudit.ts`, `cleanupLegacyMongoCollections.ts`, `seedSources.ts`, `auditProgramResearchRelevance.ts`, `researchAreas.ts`, `migrateMongoNaming.ts`, `listings.ts`, `userEmailHygiene.ts`, `meiliSyncService.ts`, `acceptedInputs.ts`, `textValue`, `repairProfileDescriptionBackfillConflicts.ts`, `clearBetaStudentAnalytics.ts`, `scraperIntegrityDuplicateReview.ts`, `departmentLeadRepairPlanCore.ts`, `auditResearchEntityRename.ts`, `betaRepairQueue.ts`, `1. Fresh machine setup`, `paperQualityService.ts`, `pathwayRelevanceReview.ts`, `programs.ts`, `scriptWriteGuards.ts`, `source.ts`, `backfillResearchHomeOfficialUrls.ts`, `seed.ts`, `adminGrantService.ts`, `claimGate.ts`, `users.ts`, `repairListingResearchEntityProfiles.ts`, `index.ts`, `dedupeExploratoryContactPathways.ts`, `corsOrigin.ts`, `materializePaperObservationsFromRun`, `scraperIntegrityGate.ts`, `adminFellowshipsTableReducer.ts`, `importFaculty.ts`, `refreshGateScorecards.ts`, `csrfOriginGuard.ts`, `copyBetaToProd.ts`, `researchEntityRelationship.ts`?**
+  _High betweenness centrality (0.060) - this node is a cross-community bridge._
+- **Why does `ResearchGroup` connect `ImportRootDataFiles.ts` to `labDetail.tsx`, `browsable.ts`, `labDetail.ts`, `LabHeader.tsx`, `v4MigrationUtils.ts`?**
+  _High betweenness centrality (0.038) - this node is a cross-community bridge._
+- **Why does `ResearchGroupMember` connect `backfillResearchHomeOfficialUrls.ts` to `profileService.ts`, `entityMaterializer.ts`, `officialProfilePiBackfillScraper.test.ts`, `researchGroupService.ts`, `accessMaterializer.ts`, `integrityGate.ts`, `profileBioCoverageAudit.ts`, `dedupeResearchEntitiesByPi.ts`, `visibilityRepairQueueService.ts`, `BackfillV4ResearchGroupMembers.ts`, `researchQualitySearchReview.ts`, `launchAcquisitionReportService.ts`, `profileDataQualityAudit.ts`, `disambiguateSurnameLabNames.ts`, `studentVisibilityGateService.ts`, `serializedDocumentId`, `logSanitizer.ts`, `researchEntityCoverageAudit.ts`, `entityMaterializer.test.ts`, `MigratePublicationsToPapers.ts`, `listingService.ts`, `normalizeOfficialProfileUrl`, `corsOrigin.ts`, `v4MigrationUtils.ts`, `researchEntityRelationship.ts`, `researchEntityMemberReferenceAudit.ts`, `meiliSyncService.ts`, `departmentLeadRepairPlanCore.ts`, `backfillProfileBiosFromOfficialUrls.ts`, `officialProfilePiBackfillScraper.ts`, `researchEntityDto.ts`, `pathwayQualityAudit.ts`, `researchEntitySearchIndexService.ts`?**
+  _High betweenness centrality (0.033) - this node is a cross-community bridge._
+- **What connects `name`, `version`, `private` to the rest of the system?**
+  _5777 weakly-connected nodes found - possible documentation gaps or missing edges._
+- **Should `Decisions` be split into smaller, more focused modules?**
+  _Cohesion score 0.0039447731755424065 - nodes in this community are weakly interconnected._
+- **Should `labDetail.tsx` be split into smaller, more focused modules?**
+  _Cohesion score 0.055130784708249496 - nodes in this community are weakly interconnected._
+- **Should `browsable.ts` be split into smaller, more focused modules?**
+  _Cohesion score 0.0777323202805377 - nodes in this community are weakly interconnected._

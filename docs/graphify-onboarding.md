@@ -1,10 +1,12 @@
 # Graphify Onboarding
 
-Graphify is the shared repo-memory layer for Codex. It helps future sessions navigate architecture, schema, scraper, and product-model context without rediscovering the repo from scratch.
+Graphify is the shared repo-memory layer for any coding agent.
+It helps future sessions navigate architecture, schema, scraper, and product-model context without rediscovering the repo from scratch.
+For day-to-day agent usage, read [`skills/graphify/SKILL.md`](../skills/graphify/SKILL.md).
 
 ## Canonical Sources
 
-- Source code, tests, `AGENTS.md`, and `docs/*.md` remain canonical.
+- Source code, tests, `AGENTS.md`, skills, and `docs/*.md` remain canonical.
 - Graphify output is a navigation layer. Verify important claims against source files before editing or summarizing.
 - `.graphifyignore` controls what enters shared repo memory.
 
@@ -13,8 +15,8 @@ Graphify is the shared repo-memory layer for Codex. It helps future sessions nav
 1. Install the official package:
    - Preferred: `uv tool install graphifyy`
    - Alternative: `pipx install graphifyy`
-2. Install Codex integration:
-   - `graphify install --platform codex`
+2. Install the agent integration for your platform:
+   - `graphify install --platform <codex|claude|...>`
 3. Build the no-cost code graph:
    - `graphify update .`
 4. Review:
@@ -22,8 +24,8 @@ Graphify is the shared repo-memory layer for Codex. It helps future sessions nav
    - `graphify-out/graph.html`
 5. Optional: run full semantic extraction when an LLM key is configured:
    - `graphify extract .`
-6. Enable always-on Codex guidance after review:
-   - `graphify codex install`
+6. Enable always-on agent guidance after review (platform-specific):
+   - `graphify <platform> install`
 
 ## Shared Output Policy
 

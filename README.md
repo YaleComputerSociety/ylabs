@@ -21,7 +21,7 @@ corepack enable
 yarn install:all
 ```
 
-Create `server/.env` and `client/.env` — see the [Developer Guide](DEVELOPER_GUIDE.md) for required variables.
+Create `server/.env` and `client/.env` - see the [Developer Guide](DEVELOPER_GUIDE.md) for required variables.
 
 ```bash
 # Terminal 1
@@ -61,7 +61,7 @@ yarn playwright:run screenshot https://example.com /tmp/example.png
 
 This command downloads the required shared libraries into `./.playwright-libs` and launches Playwright with `LD_LIBRARY_PATH` pointed to that local copy.
 
-For Codex browser exploration, register Playwright MCP through the same shim:
+For agent-driven browser exploration, register Playwright MCP through the same shim:
 
 ```bash
 codex mcp add playwright -- <repo>/scripts/with-playwright-libs.sh npx -y @playwright/mcp@latest --output-dir <repo>/tmp/playwright-mcp
@@ -71,7 +71,9 @@ Use Playwright MCP for exploratory browser passes, then codify durable findings 
 
 ## Documentation
 
-See **[DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md)** for full setup instructions, architecture details, environment configuration, and contribution guidelines. See **[docs/scraper-deployment-runbook.md](docs/scraper-deployment-runbook.md)** for scraper rollout and cron posture.
+See **[DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md)** for full setup instructions, architecture details, environment configuration, and contribution guidelines.
+Agents should start with **[AGENTS.md](AGENTS.md)** and the focused skills in **[skills/](skills/)**.
+See **[docs/scraper-deployment-runbook.md](docs/scraper-deployment-runbook.md)** for scraper rollout and cron posture.
 
 ## Acknowledgements
 
