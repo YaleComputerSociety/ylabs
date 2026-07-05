@@ -8,7 +8,7 @@ import Autocomplete from '@mui/material/Autocomplete';
 import Stack from '@mui/material/Stack';
 import { Listing } from '../types/types';
 import { useConfig } from '../hooks/useConfig';
-import axios from 'axios';
+import axios from '../utils/axios';
 import swal from 'sweetalert';
 
 type SearchProps = {
@@ -38,17 +38,8 @@ export default function Search(props: SearchProps) {
       return;
     }
     setIsLoading(true);
-    const backendBaseURL = window.location.host.includes('yalelabs.io')
-      ? 'https://yalelabs.io/api'
-      : import.meta.env.VITE_APP_SERVER + '/api';
     const url =
-      backendBaseURL +
-      '/listings?dept=' +
-      selectedDepartments +
-      '&keywords=' +
-      keywords +
-      '&lname=' +
-      lastNamePI;
+      '/listings?dept=' + selectedDepartments + '&keywords=' + keywords + '&lname=' + lastNamePI;
     axios.get(url).then((response) => {
       const responseListings: Listing[] = response.data.map(function (elem: any) {
         return {

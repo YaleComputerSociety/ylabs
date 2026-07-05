@@ -2,7 +2,12 @@
  * Global error handling middleware for Express.
  */
 import { Request, Response, NextFunction } from 'express';
-import { NotFoundError, ObjectIdError, IncorrectPermissionsError } from '../utils/errors';
+import {
+  BadRequestError,
+  NotFoundError,
+  ObjectIdError,
+  IncorrectPermissionsError,
+} from '../utils/errors';
 import { captureServerError } from '../utils/errorTracking';
 
 type ErrorResponse = {
@@ -11,6 +16,10 @@ type ErrorResponse = {
 };
 
 const getErrorResponse = (error: Error): ErrorResponse => {
+  if (error instanceof BadRequestError) {
+    return { status: error.status, body: { error: error.message } };
+  }
+
   if (error instanceof NotFoundError) {
     return { status: error.status, body: { error: error.message } };
   }

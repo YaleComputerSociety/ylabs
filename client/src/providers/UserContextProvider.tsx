@@ -7,6 +7,7 @@ import axios from '../utils/axios';
 import UserContext from '../contexts/UserContext';
 import { User } from '../types/types';
 import { createInitialUserState, userReducer } from '../reducers/userReducer';
+import { AUTH_FAILURE_EVENT } from '../utils/httpStatusEvents';
 
 const UserContextProvider: FC = ({ children }) => {
   const [state, dispatch] = useReducer(userReducer, undefined, createInitialUserState);
@@ -41,6 +42,17 @@ const UserContextProvider: FC = ({ children }) => {
   useEffect(() => {
     checkContext();
   }, [checkContext]);
+
+  useEffect(() => {
+    const handleAuthFailure = (_event: Event) => {
+      dispatch({ type: 'LOGOUT' });
+    };
+
+    window.addEventListener(AUTH_FAILURE_EVENT, handleAuthFailure as EventListener);
+    return () => {
+      window.removeEventListener(AUTH_FAILURE_EVENT, handleAuthFailure as EventListener);
+    };
+  }, []);
 
   return (
     <UserContext.Provider value={{ isLoading, isAuthenticated, user, authError, checkContext }}>

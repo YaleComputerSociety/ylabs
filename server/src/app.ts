@@ -56,7 +56,7 @@ const apiLimiter = rateLimit({
   keyGenerator: getRateLimitKey,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: 'Too many requests, please try again later.' },
+  handler: createRateLimitHandler('Too many requests, please try again later.'),
   skip: () => isCI() || isDevelopment() || isTest(),
 });
 
@@ -67,7 +67,7 @@ const writeLimiter = rateLimit({
   keyGenerator: getRateLimitKey,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: 'Too many write requests, please try again later.' },
+  handler: createRateLimitHandler('Too many write requests, please try again later.'),
   skip: () => isCI() || isDevelopment() || isTest(),
 });
 
@@ -78,7 +78,7 @@ export const publicDiscoveryLimiter = rateLimit({
   keyGenerator: getRateLimitKey,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: 'Too many discovery requests, please try again later.' },
+  handler: createRateLimitHandler('Too many discovery requests, please try again later.'),
   skip: () => isCI() || isDevelopment() || isTest(),
 });
 

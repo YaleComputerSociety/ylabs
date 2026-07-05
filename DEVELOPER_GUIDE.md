@@ -6,7 +6,7 @@
 
 ## What Is This?
 
-Y/Labs is a **Yale research lab discovery platform**. Visitors can browse public research listings with supporting evidence/source metadata, students find labs and fellowships, professors create and manage listings, and admins oversee everything.
+Y/Labs is a **Yale research lab discovery platform**. Visitors can browse public research listings with supporting evidence/source metadata, students find labs and fellowships, trusted faculty/staff can submit listing claim or correction requests for admin review, professors create and manage listings, and admins oversee everything.
 
 ---
 
@@ -187,7 +187,7 @@ ylabs/
 │       ├── routes/           # Express routers
 │       ├── controllers/      # Request handlers
 │       ├── services/         # Business logic
-│       ├── models/           # Mongoose schemas
+│       ├── models/           # Mongoose schemas, including untrusted listing claim requests
 │       ├── middleware/        # Auth guards, validation, error handling
 │       ├── db/               # Database connections
 │       └── utils/            # smartTitle, errors, environment, meiliClient, error tracking, public research SEO
@@ -248,7 +248,7 @@ User → Yale CAS SSO → passport.ts findOrCreateUser
      → Create/Update User → cookie-session
 ```
 
-Client auth state is owned by `UserContextProvider` and `userReducer`. Failed auth refreshes set `authError` for inline UI, clear loading, and preserve any previously authenticated user so a transient outage does not blank the session; retrying `checkContext()` clears the stale error while the next auth check runs.
+Client auth state is owned by `UserContextProvider` and `userReducer`. Failed auth refreshes set `authError` for inline UI, clear loading, and preserve any previously authenticated user so a transient outage does not blank the session; retrying `checkContext()` clears the stale error while the next auth check runs. The shared client in `client/src/utils/axios.ts` also emits an app-wide auth failure event for any API `401`; `UserContextProvider` handles it by clearing auth state without disturbing the login page's inline retry flow.
 
 ### Auth Middleware (`server/src/middleware/auth.ts`)
 
@@ -258,6 +258,9 @@ Client auth state is owned by `UserContextProvider` and `userReducer`. Failed au
 | `isAdmin`          | `userType === 'admin'`                                |
 | `isProfessor`      | `userType` in `['professor', 'faculty', 'admin']`     |
 | `canCreateListing` | professor/faculty + `profileVerified` (admins bypass) |
+| `canSubmitListingClaimRequest` | confirmed admin/professor/faculty/staff account |
+
+Missing-session responses from auth guards use a stable JSON shape: `401` with `{ error: "Unauthorized", code: "AUTH_REQUIRED" }`.
 
 ---
 
@@ -265,7 +268,19 @@ Client auth state is owned by `UserContextProvider` and `userReducer`. Failed au
 
 The client root is wrapped in `ErrorBoundary`, which shows a recovery screen for unexpected render errors and reports them through `client/src/utils/errorTracking.ts` when `VITE_SENTRY_DSN` is configured.
 
+The shared client in `client/src/utils/axios.ts` centralizes API response handling. It dispatches browser events for `401` responses so auth state is cleared consistently, and for `429` responses so `HttpStatusNotifier` can show the server message plus retry guidance.
+
 The server initializes Sentry from `server/src/utils/errorTracking.ts` during startup when `SENTRY_DSN` is configured. Startup failures and 500-level errors handled by `server/src/middleware/errorHandler.ts` are captured with environment and release tags when provided.
+
+Rate-limit blocks use `server/src/middleware/rateLimitResponse.ts` to return `429` JSON with `{ error, code: "RATE_LIMITED", retryAfterSeconds }` and a `Retry-After` header when reset metadata is available.
+
+---
+
+## Rate Limiting
+
+Three rate limiters in `app.ts` protect all `/api` routes, public `/api/research` browse/detail traffic, and write requests to `/api/listings` and `/api/fellowships`. They are keyed by authenticated user's `netId` with IP fallback for unauthenticated requests, and are skipped in CI, development, and test environments.
+
+When a limiter blocks a request, the server returns `429` with `code: "RATE_LIMITED"`, the limiter-specific message, `retryAfterSeconds` when available, and a matching `Retry-After` header. The client displays those responses through the app-wide `HttpStatusNotifier` snackbar.
 
 ---
 
@@ -283,7 +298,7 @@ All mount under `/api`.
 
 | Prefix            | Description                                                  | Auth                                             |
 | ----------------- | ------------------------------------------------------------ | ------------------------------------------------ |
-| `/listings`       | Listing CRUD and authenticated search                        | Varies                                           |
+| `/listings`       | Listing CRUD, authenticated search, and listing claim/correction submission | Varies; `/:id/claim` requires a confirmed admin/professor/faculty/staff account |
 | `/research`       | Public listing discovery, contact reveal, and outreach events | Public; `/research/:slug/contact` and `/research/:slug/outreach` require login |
 | `/fellowships`    | Fellowship CRUD and search                                   | Varies                                           |
 | `/users`          | User CRUD                                                    | Yes                                              |
@@ -291,16 +306,24 @@ All mount under `/api`.
 | `/analytics`      | Analytics dashboards                                         | Admin                                            |
 | `/config`         | Departments + research areas                                 | No                                               |
 | `/research-areas` | Research area CRUD                                           | Admin for writes                                 |
-| `/admin`          | Admin operations                                             | Admin                                            |
+| `/admin`          | Admin operations, including listing claim/correction request review | Admin                                            |
 | `/seed`           | Dev seeding routes                                           | Dev mode only                                    |
 
 The public HTML routes `/research` and `/research/:slug` are mounted separately in `server/src/app.ts` after static assets so shared research URLs can receive crawler-visible metadata before the SPA hydrates.
 
 ---
 
+### Listing Claim Requests
+
+Confirmed admin, professor, faculty, and staff accounts can submit untrusted claim/correction work items with `POST /api/listings/:id/claim`. The body accepts `requestType` (`claim` or `correction`, default `correction`), a required `message`, optional allowlisted `proposedChanges`, and optional `http`/`https` `evidenceUrls`; submissions are stored as `pending` records and do not mutate listings.
+
+Admins review these records through `GET /api/admin/listing-claims`, `GET /api/admin/listing-claims/:id`, and `PUT /api/admin/listing-claims/:id`. The list route accepts `status`, `requestType`, `listingId`, `page`, and `pageSize`; the review route accepts `status` (`approved` or `rejected`) and optional `adminNotes`, then records `reviewedBy` and `reviewedAt`.
+
+---
+
 ## Testing
 
-Client-side tests run under **Vitest 3** with a `jsdom` environment. Configuration lives in the `test` block of [client/vite.config.js](client/vite.config.js), and [client/src/setupTests.ts](client/src/setupTests.ts) loads shared Testing Library matchers. The server uses Vitest for focused middleware and utility tests, plus a focused Node test script for listing-search degradation, but no general server-side test suite is wired into CI.
+Client-side tests run under **Vitest 3** with a `jsdom` environment. Configuration lives in the `test` block of [client/vite.config.js](client/vite.config.js), and [client/src/setupTests.ts](client/src/setupTests.ts) loads shared Testing Library matchers. The server uses Vitest for focused middleware, service, and utility tests, plus a focused Node test script for listing-search degradation, but no general server-side test suite is wired into CI.
 
 ### Running tests
 
@@ -310,7 +333,7 @@ yarn test        # watch mode — reruns on file changes
 yarn test:ci     # single run — used by CI
 
 cd ../server
-yarn test                 # focused middleware and utility coverage
+yarn test                 # focused middleware, service, and utility coverage
 yarn test:search-degrade  # listing-search fallback coverage
 ```
 
@@ -320,7 +343,7 @@ Client tests are discovered from `client/src/**/*.{test,spec}.{ts,tsx}`. Server 
 
 Pure reducer modules under [client/src/reducers/](client/src/reducers/) have unit-test coverage in [client/src/reducers/**tests**/](client/src/reducers/__tests__/). Each reducer file has a matching `*.test.ts`. The reducers back the auth, search, fellowship-search, config, listing-form, and account-tracking (kanban/notes) flows — extracting state transitions from providers/components into pure functions makes them testable without mounting React or mocking network.
 
-Focused component accessibility coverage also exists for the research discovery/listing flows: [BrowseGrid.a11y.test.tsx](client/src/components/shared/__tests__/BrowseGrid.a11y.test.tsx) verifies keyboard-openable browse cards/list rows and separate favorite controls, [ListingDetailModal.public.test.tsx](client/src/components/shared/__tests__/ListingDetailModal.public.test.tsx) covers the public listing dialog name, Escape close behavior, focus trapping/restoration, and redacted contact actions, and [ResearchAreaInput.a11y.test.tsx](client/src/components/accounts/ListingForm/FormFields/__tests__/ResearchAreaInput.a11y.test.tsx) covers the listing-form research-area field selector dialog focus behavior.
+Focused component accessibility coverage also exists for the research discovery/listing flows: [BrowseGrid.a11y.test.tsx](client/src/components/shared/__tests__/BrowseGrid.a11y.test.tsx) verifies keyboard-openable browse cards/list rows and separate favorite controls, [ListingDetailModal.public.test.tsx](client/src/components/shared/__tests__/ListingDetailModal.public.test.tsx) covers the public listing dialog name, Escape close behavior, focus trapping/restoration, and redacted contact actions, and [ResearchAreaInput.a11y.test.tsx](client/src/components/accounts/ListingForm/FormFields/__tests__/ResearchAreaInput.a11y.test.tsx) covers the listing-form research-area field selector dialog focus behavior. Focused HTTP handling tests cover rate-limit event parsing, the global rate-limit notifier, and auth-state clearing on app-wide `401` events.
 
 Public research SEO coverage lives in [client/src/utils/__tests__/seo.test.ts](client/src/utils/__tests__/seo.test.ts), [client/src/pages/__tests__/home.publicResearch.test.tsx](client/src/pages/__tests__/home.publicResearch.test.tsx), and [server/src/utils/__tests__/publicResearchSeo.test.ts](server/src/utils/__tests__/publicResearchSeo.test.ts). These tests cover public-safe metadata construction, client head updates/restoration, and server injection into the built SPA shell.
 
@@ -369,6 +392,8 @@ Public pages that should work for logged-out visitors must not use `PrivateRoute
 
 Listing evidence metadata lives under `listing.evidence` in MongoDB. Keep any analyst-only notes in `evidence.internalNotes`; that field is excluded by default from Mongoose query results, stripped from Meilisearch indexing, and never returned by public research endpoints.
 
+Listing claim/correction requests live in the `listingClaimRequests` collection. They snapshot requester and listing metadata, keep submitted proposed changes separate from canonical listings, and remain untrusted until an admin marks the request approved or rejected.
+
 ---
 
 ## Troubleshooting
@@ -381,3 +406,4 @@ Listing evidence metadata lives under `listing.evidence` in MongoDB. Keep any an
 | Meilisearch connection refused  | Start Docker container or check `MEILISEARCH_HOST` in `.env`                |
 | CORS errors                     | Add origin to `allowList` in `app.ts` or use dev mode                       |
 | "Forbidden" on listing creation | Professor needs `profileVerified: true`                                     |
+| "Forbidden" on listing claim/correction | User must be confirmed and have `admin`, `professor`, `faculty`, or `staff` type |

@@ -3,7 +3,7 @@
  */
 import React, { useReducer, useRef, useEffect, useMemo } from 'react';
 import ReactDOM from 'react-dom';
-import axios from 'axios';
+import axios from '../../../../utils/axios';
 import { useConfig } from '../../../../hooks/useConfig';
 import {
   createInitialResearchAreaInputState,
@@ -271,7 +271,7 @@ const ResearchAreaInput = ({
   const handleFieldSelect = async (fieldName: string) => {
     dispatch({ type: 'SUBMIT_START' });
     try {
-      const response = await axios.post('/api/research-areas', {
+      const response = await axios.post('/research-areas', {
         name: pendingNewArea,
         field: fieldName,
       });
