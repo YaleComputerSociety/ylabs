@@ -260,6 +260,14 @@ The server initializes Sentry from `server/src/utils/errorTracking.ts` during st
 
 ---
 
+## Analytics
+
+Listing events are logged through route-level response interception in `server/src/routes/listings.ts`. Public research contact events are logged from the contact controller paths: contact detail reveal, email click attempts, and reported outreach outcomes. The admin analytics dashboard includes an Outreach Loop section with reveal/click/outcome totals, outcome breakdowns, top contacted listings, and recent outreach events.
+
+Outreach analytics intentionally avoid raw private contact data. Metadata is limited to channel, source, contact count, action, and the selected outcome.
+
+---
+
 ## API Routes
 
 All mount under `/api`.
@@ -267,7 +275,7 @@ All mount under `/api`.
 | Prefix            | Description                                                  | Auth                                             |
 | ----------------- | ------------------------------------------------------------ | ------------------------------------------------ |
 | `/listings`       | Listing CRUD and authenticated search                        | Varies                                           |
-| `/research`       | Public read-only listing discovery and shareable detail URLs | Public; `/research/:slug/contact` requires login |
+| `/research`       | Public listing discovery, contact reveal, and outreach events | Public; `/research/:slug/contact` and `/research/:slug/outreach` require login |
 | `/fellowships`    | Fellowship CRUD and search                                   | Varies                                           |
 | `/users`          | User CRUD                                                    | Yes                                              |
 | `/profiles`       | Faculty profiles                                             | Varies                                           |

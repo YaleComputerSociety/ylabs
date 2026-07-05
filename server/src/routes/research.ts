@@ -56,6 +56,11 @@ router.get(
   isAuthenticated,
   asyncHandler(listingController.getAuthenticatedPublicResearchBySlug),
 );
+router.post(
+  '/:slug/outreach',
+  isAuthenticated,
+  asyncHandler(listingController.recordPublicResearchOutreach),
+);
 router.get('/:slug', asyncHandler(listingController.getPublicResearchBySlug));
 
 export default router;

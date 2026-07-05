@@ -150,7 +150,7 @@ export const asyncHandler = (fn: Function) => {
 
 ## Analytics Interception
 
-Analytics events are logged by intercepting `res.send` or `res.json` in route-level middleware (`server/src/routes/listings.ts`). The original method is bound, replaced with a wrapper that fires a log event on 2xx responses, then calls the original. This keeps analytics logic out of controllers and services.
+Listing analytics events are logged by intercepting `res.send` or `res.json` in route-level middleware (`server/src/routes/listings.ts`). The original method is bound, replaced with a wrapper that fires a log event on 2xx responses, then calls the original. This keeps listing analytics logic out of controllers and services.
 
 ```typescript
 const logListingEvent = (eventType: AnalyticsEventType) => {
@@ -168,6 +168,8 @@ const logListingEvent = (eventType: AnalyticsEventType) => {
 ```
 
 Listing creation uses the same pattern but intercepts `res.json` to extract the created listing's `_id` from the response body.
+
+Public research outreach analytics are logged from the contact controller paths because they depend on contact reveal/click/outcome actions rather than listing mutation responses. The admin analytics dashboard exposes an Outreach Loop section with reveal/click/outcome totals, outcome breakdowns, top contacted listings, and recent outreach events.
 
 Analytics events have a 3-year TTL via MongoDB's `expireAfterSeconds` index.
 
@@ -258,7 +260,7 @@ All routes mount under `/api` in `app.ts`. Route files in `server/src/routes/`:
 | Prefix            | File               | Auth                                                  |
 | ----------------- | ------------------ | ----------------------------------------------------- |
 | `/listings`       | `listings.ts`      | Varies (authenticated search, mutations require auth) |
-| `/research`       | `research.ts`      | Public browse/detail; contact detail requires auth    |
+| `/research`       | `research.ts`      | Public browse/detail; contact detail and outreach logging require auth |
 | `/fellowships`    | `fellowships.ts`   | Varies                                                |
 | `/users`          | `users.ts`         | Yes                                                   |
 | `/profiles`       | `profiles.ts`      | Varies                                                |
