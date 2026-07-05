@@ -60,6 +60,11 @@ export type CreateListingClaimRequestInput = {
   evidenceUrls?: unknown;
 };
 
+const normalizeRequestBody = (input: unknown): Record<string, unknown> => {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return {};
+  return input as Record<string, unknown>;
+};
+
 const trimString = (value: unknown, maxLength = MAX_STRING_LENGTH): string | undefined => {
   if (typeof value !== 'string') return undefined;
   const trimmed = value.trim();
@@ -122,7 +127,7 @@ export const sanitizeEvidenceUrls = (input: unknown): string[] => {
 
 export const createListingClaimRequest = async (
   listingId: string,
-  input: CreateListingClaimRequestInput,
+  input: unknown,
   requester: ListingClaimRequestUser,
 ) => {
   if (!mongoose.Types.ObjectId.isValid(listingId)) {
@@ -135,12 +140,13 @@ export const createListingClaimRequest = async (
     throw error;
   }
 
-  const requestType = input.requestType || 'correction';
-  if (!REQUEST_TYPES.has(requestType)) {
+  const body = normalizeRequestBody(input);
+  const requestType = body.requestType === undefined ? 'correction' : body.requestType;
+  if (typeof requestType !== 'string' || !REQUEST_TYPES.has(requestType)) {
     throw new BadRequestError('Invalid request type');
   }
 
-  const message = trimString(input.message);
+  const message = trimString(body.message);
   if (!message) {
     throw new BadRequestError('Message is required');
   }
@@ -168,8 +174,8 @@ export const createListingClaimRequest = async (
       ownerName: [listing.ownerFirstName, listing.ownerLastName].filter(Boolean).join(' '),
     },
     message,
-    proposedChanges: sanitizeProposedChanges(input.proposedChanges),
-    evidenceUrls: sanitizeEvidenceUrls(input.evidenceUrls),
+    proposedChanges: sanitizeProposedChanges(body.proposedChanges),
+    evidenceUrls: sanitizeEvidenceUrls(body.evidenceUrls),
   });
 
   console.info(
@@ -236,21 +242,23 @@ export const readListingClaimRequest = async (id: string) => {
 export const reviewListingClaimRequest = async (
   id: string,
   reviewerNetId: string,
-  input: { status?: string; adminNotes?: unknown },
+  input: unknown,
 ) => {
   if (!mongoose.Types.ObjectId.isValid(id)) {
     throw new ObjectIdError('Did not received expected id type ObjectId');
   }
 
-  if (!input.status || !REQUEST_STATUSES.has(input.status) || input.status === 'pending') {
+  const body = normalizeRequestBody(input);
+  const status = body.status;
+  if (typeof status !== 'string' || !REQUEST_STATUSES.has(status) || status === 'pending') {
     throw new BadRequestError('Status must be approved or rejected');
   }
 
   const request = await ListingClaimRequest.findByIdAndUpdate(
     id,
     {
-      status: input.status,
-      adminNotes: trimString(input.adminNotes) || '',
+      status,
+      adminNotes: trimString(body.adminNotes) || '',
       reviewedBy: reviewerNetId,
       reviewedAt: new Date(),
     },
