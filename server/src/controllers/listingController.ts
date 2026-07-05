@@ -639,6 +639,26 @@ export const getPublicResearchBySlug = async (request: Request, response: Respon
   return response.status(200).json({ listing: redactPublicListing(listing) });
 };
 
+export const getAuthenticatedPublicResearchBySlug = async (
+  request: Request,
+  response: Response,
+) => {
+  const id = getIdFromSlug(request.params.slug);
+  if (!id) {
+    return response.status(404).json({ error: 'Research listing not found' });
+  }
+
+  const listing = await getListingModel()
+    .findOne({ _id: id, archived: false, confirmed: true })
+    .lean();
+
+  if (!listing) {
+    return response.status(404).json({ error: 'Research listing not found' });
+  }
+
+  return response.status(200).json({ listing });
+};
+
 export const createListingForCurrentUser = async (request: Request, response: Response) => {
   try {
     const currentUser = request.user as {

@@ -43,6 +43,18 @@ describe('Home public research detail route', () => {
         return Promise.resolve({ data: { favListingsIds: [] } });
       }
 
+      if (url.endsWith('/contact')) {
+        return Promise.resolve({
+          data: {
+            listing: {
+              _id: '507f1f77bcf86cd799439011',
+              title: 'Public research listing',
+              ownerEmail: 'ada@yale.edu',
+            },
+          },
+        });
+      }
+
       return Promise.resolve({
         data: {
           listing: {
@@ -84,6 +96,12 @@ describe('Home public research detail route', () => {
 
     await waitFor(() => {
       expect(mockedAxiosGet).toHaveBeenCalledWith(`/research/${slug}`, { withCredentials: true });
+    });
+
+    await waitFor(() => {
+      expect(mockedAxiosGet).toHaveBeenCalledWith(`/research/${slug}/contact`, {
+        withCredentials: true,
+      });
     });
 
     expect(mockedAxiosGet).not.toHaveBeenCalledWith('/listings/507f1f77bcf86cd799439011', {

@@ -89,21 +89,42 @@ const Home = () => {
 
   useEffect(() => {
     if (!slug) return;
+    let cancelled = false;
 
     axios
       .get(`/research/${slug}`, { withCredentials: true })
-      .then((response) => {
+      .then(async (response) => {
+        if (cancelled) return;
+        let listing = response.data.listing;
+
+        if (isAuthenticated) {
+          try {
+            const authenticatedResponse = await axios.get(`/research/${slug}/contact`, {
+              withCredentials: true,
+            });
+            if (cancelled) return;
+            listing = authenticatedResponse.data.listing;
+          } catch (error) {
+            console.error('Error loading authenticated research listing details:', error);
+          }
+        }
+
         dispatch({
           type: 'OPEN_DETAIL_MODAL',
-          item: createListing(response.data.listing),
+          item: createListing(listing),
         });
       })
       .catch((error) => {
+        if (cancelled) return;
         console.error('Error loading research listing:', error);
         swal({ text: 'Unable to load this research listing.', icon: 'warning' });
         navigate('/research', { replace: true });
       });
-  }, [slug, navigate]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [slug, navigate, isAuthenticated]);
 
   const filteredListings = useMemo(() => {
     if (quickFilter === 'open') {

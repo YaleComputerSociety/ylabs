@@ -2,12 +2,17 @@
  * Public read-only routes for research discovery.
  */
 import { Router } from 'express';
-import { validatePagination } from '../middleware/index';
+import { asyncHandler, isAuthenticated, validatePagination } from '../middleware/index';
 import * as listingController from '../controllers/listingController';
 
 const router = Router();
 
 router.get('/', validatePagination, listingController.searchPublicResearch);
-router.get('/:slug', listingController.getPublicResearchBySlug);
+router.get(
+  '/:slug/contact',
+  isAuthenticated,
+  asyncHandler(listingController.getAuthenticatedPublicResearchBySlug),
+);
+router.get('/:slug', asyncHandler(listingController.getPublicResearchBySlug));
 
 export default router;

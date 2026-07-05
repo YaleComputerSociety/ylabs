@@ -36,13 +36,14 @@ const listing: Listing = {
   audited: false,
 };
 
-const renderModal = (onRequireAuth = vi.fn()) =>
+const renderModal = (options: { isAuthenticated?: boolean; onRequireAuth?: () => void } = {}) =>
   render(
     <MemoryRouter>
       <UserContext.Provider
         value={{
           isLoading: false,
-          isAuthenticated: false,
+          isAuthenticated: options.isAuthenticated || false,
+          user: options.isAuthenticated ? ({ userType: 'student' } as any) : undefined,
           checkContext: vi.fn(),
         }}
       >
@@ -71,7 +72,7 @@ const renderModal = (onRequireAuth = vi.fn()) =>
             listing={listing}
             isFavorite={false}
             onToggleFavorite={vi.fn()}
-            onRequireAuth={onRequireAuth}
+            onRequireAuth={options.onRequireAuth}
           />
         </ConfigContext.Provider>
       </UserContext.Provider>
@@ -81,12 +82,19 @@ const renderModal = (onRequireAuth = vi.fn()) =>
 describe('ListingDetailModal public discovery behavior', () => {
   it('prompts login for inquiry instead of rendering redacted mail links', () => {
     const onRequireAuth = vi.fn();
-    renderModal(onRequireAuth);
+    renderModal({ onRequireAuth });
 
     expect(screen.queryByRole('link', { name: /@/ })).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: /sign in to inquire/i }));
 
     expect(onRequireAuth).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows an authenticated fallback when contact fields are redacted', () => {
+    renderModal({ isAuthenticated: true });
+
+    expect(screen.queryByRole('link', { name: /@/ })).toBeNull();
+    expect(screen.getByText(/contact details unavailable/i)).toBeTruthy();
   });
 });
