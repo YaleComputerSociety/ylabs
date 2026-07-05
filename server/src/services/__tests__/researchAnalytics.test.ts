@@ -1,13 +1,12 @@
-import assert from 'node:assert/strict';
-import { describe, it } from 'node:test';
+import { describe, expect, it } from 'vitest';
 import { AnalyticsEventType } from '../../models/analytics';
 import { emitResearchEvent } from '../researchAnalytics';
 import type { LogEventParams } from '../analyticsService';
 
 const user = { netId: 'abc123', userType: 'undergraduate' };
 
-void describe('research analytics event emission', () => {
-  void it('emits research view events for canonical entities', async () => {
+describe('research analytics event emission', () => {
+  it('emits research view events for canonical entities', async () => {
     const events: LogEventParams[] = [];
 
     const emitted = await emitResearchEvent(
@@ -23,8 +22,8 @@ void describe('research analytics event emission', () => {
       },
     );
 
-    assert.equal(emitted, true);
-    assert.deepEqual(events[0], {
+    expect(emitted).toBe(true);
+    expect(events[0]).toEqual({
       eventType: AnalyticsEventType.RESEARCH_VIEW,
       netid: 'abc123',
       userType: 'undergraduate',
@@ -36,7 +35,7 @@ void describe('research analytics event emission', () => {
     });
   });
 
-  void it('emits canonical research surface events with safe common fields', async () => {
+  it('emits canonical research surface events with safe common fields', async () => {
     const events: LogEventParams[] = [];
 
     const emitted = await emitResearchEvent(
@@ -56,9 +55,9 @@ void describe('research analytics event emission', () => {
       },
     );
 
-    assert.equal(emitted, true);
-    assert.equal(events.length, 1);
-    assert.deepEqual(events[0], {
+    expect(emitted).toBe(true);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toEqual({
       eventType: AnalyticsEventType.WAYS_IN_CLICK,
       netid: 'abc123',
       userType: 'undergraduate',
@@ -71,7 +70,7 @@ void describe('research analytics event emission', () => {
     });
   });
 
-  void it('reduces contact-route clicks to method categories without private addresses', async () => {
+  it('reduces contact-route clicks to method categories without private addresses', async () => {
     const events: LogEventParams[] = [];
 
     await emitResearchEvent(
@@ -82,8 +81,8 @@ void describe('research analytics event emission', () => {
         user,
         payload: {
           contactMethod: 'email',
-          email: 'mentor@yale.edu',
-          label: 'Email mentor@yale.edu',
+          email: 'fixture-mentor@yale.edu',
+          label: 'Email fixture-mentor@yale.edu',
         },
       },
       async (event) => {
@@ -91,11 +90,11 @@ void describe('research analytics event emission', () => {
       },
     );
 
-    assert.deepEqual(events[0].metadata, { contactMethod: 'email' });
-    assert.equal(JSON.stringify(events[0]).includes('mentor@yale.edu'), false);
+    expect(events[0].metadata).toEqual({ contactMethod: 'email' });
+    expect(JSON.stringify(events[0])).not.toContain('fixture-mentor@yale.edu');
   });
 
-  void it('stores only source category and hostname for source-link clicks', async () => {
+  it('stores only source category and hostname for source-link clicks', async () => {
     const events: LogEventParams[] = [];
 
     await emitResearchEvent(
@@ -114,15 +113,15 @@ void describe('research analytics event emission', () => {
       },
     );
 
-    assert.deepEqual(events[0].metadata, {
+    expect(events[0].metadata).toEqual({
       sourceCategory: 'publication',
       sourceHost: 'example.edu',
     });
-    assert.equal(JSON.stringify(events[0]).includes('/private/path'), false);
-    assert.equal(JSON.stringify(events[0]).includes('secret'), false);
+    expect(JSON.stringify(events[0])).not.toContain('/private/path');
+    expect(JSON.stringify(events[0])).not.toContain('secret');
   });
 
-  void it('emits pathway save events and rejects invalid research event inputs', async () => {
+  it('emits pathway save events and rejects invalid research event inputs', async () => {
     const events: LogEventParams[] = [];
 
     const emitted = await emitResearchEvent(
@@ -153,10 +152,10 @@ void describe('research analytics event emission', () => {
       },
     );
 
-    assert.equal(emitted, true);
-    assert.equal(invalidEmitted, false);
-    assert.equal(events.length, 1);
-    assert.deepEqual(events[0].metadata, {
+    expect(emitted).toBe(true);
+    expect(invalidEmitted).toBe(false);
+    expect(events).toHaveLength(1);
+    expect(events[0].metadata).toEqual({
       action: 'stage_change',
       stage: 'Interviewing',
     });

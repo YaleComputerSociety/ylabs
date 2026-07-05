@@ -26,7 +26,13 @@ vi.mock('../../models/analytics', () => ({
     LISTING_ARCHIVE: 'listing_archive',
     LISTING_UNARCHIVE: 'listing_unarchive',
     PROFILE_UPDATE: 'profile_update',
+    RESEARCH_VIEW: 'research_view',
+    PATHWAY_SAVE: 'pathway_save',
+    WAYS_IN_CLICK: 'ways_in_click',
+    CONTACT_ROUTE_CLICK: 'contact_route_click',
+    SOURCE_LINK_CLICK: 'source_link_click',
   },
+  RESEARCH_ENTITY_TYPES: ['profile', 'listing', 'fellowship'],
   AnalyticsEvent: {
     aggregate: mocks.analyticsAggregate,
     create: mocks.analyticsCreate,

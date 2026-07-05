@@ -5,7 +5,7 @@ export { User } from './user';
 export { AdminGrant } from './adminGrant';
 export { Listing } from './listing';
 export { Fellowship } from './fellowship';
-export * from './analytics';
+export { AnalyticsEvent, AnalyticsEventType, RESEARCH_ENTITY_TYPES } from './analytics';
 export { ResearchArea, ResearchField, fieldColorKeys } from './researchArea';
 export {
   Department,
