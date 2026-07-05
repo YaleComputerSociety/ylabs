@@ -1,5 +1,5 @@
 /**
- * Configured Axios instance with base URL and credentials.
+ * Configured Axios instance with base URL, credentials, and global HTTP events.
  */
 import axios from 'axios';
 import { dispatchAuthFailure, dispatchRateLimit, getRateLimitDetail } from './httpStatusEvents';

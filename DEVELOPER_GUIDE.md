@@ -241,7 +241,7 @@ User → Yale CAS SSO → passport.ts findOrCreateUser
      → Create/Update User → cookie-session
 ```
 
-Client auth state is owned by `UserContextProvider` and `userReducer`. Failed auth refreshes set `authError` for inline UI, clear loading, and preserve any previously authenticated user so a transient outage does not blank the session; retrying `checkContext()` clears the stale error while the next auth check runs.
+Client auth state is owned by `UserContextProvider` and `userReducer`. Failed auth refreshes set `authError` for inline UI, clear loading, and preserve any previously authenticated user so a transient outage does not blank the session; retrying `checkContext()` clears the stale error while the next auth check runs. The shared client in `client/src/utils/axios.ts` also emits an app-wide auth failure event for any API `401`; `UserContextProvider` handles it by clearing auth state without disturbing the login page's inline retry flow.
 
 ### Auth Middleware (`server/src/middleware/auth.ts`)
 
@@ -252,13 +252,27 @@ Client auth state is owned by `UserContextProvider` and `userReducer`. Failed au
 | `isProfessor`      | `userType` in `['professor', 'faculty', 'admin']`     |
 | `canCreateListing` | professor/faculty + `profileVerified` (admins bypass) |
 
+Missing-session responses from auth guards use a stable JSON shape: `401` with `{ error: "Unauthorized", code: "AUTH_REQUIRED" }`.
+
 ---
 
 ## Error Handling
 
 The client root is wrapped in `ErrorBoundary`, which shows a recovery screen for unexpected render errors and reports them through `client/src/utils/errorTracking.ts` when `VITE_SENTRY_DSN` is configured.
 
+The shared client in `client/src/utils/axios.ts` centralizes API response handling. It dispatches browser events for `401` responses so auth state is cleared consistently, and for `429` responses so `HttpStatusNotifier` can show the server message plus retry guidance.
+
 The server initializes Sentry from `server/src/utils/errorTracking.ts` during startup when `SENTRY_DSN` is configured. Startup failures and 500-level errors handled by `server/src/middleware/errorHandler.ts` are captured with environment and release tags when provided.
+
+Rate-limit blocks use `server/src/middleware/rateLimitResponse.ts` to return `429` JSON with `{ error, code: "RATE_LIMITED", retryAfterSeconds }` and a `Retry-After` header when reset metadata is available.
+
+---
+
+## Rate Limiting
+
+Three rate limiters in `app.ts` protect all `/api` routes, public `/api/research` browse/detail traffic, and write requests to `/api/listings` and `/api/fellowships`. They are keyed by authenticated user's `netId` with IP fallback for unauthenticated requests, and are skipped in CI, development, and test environments.
+
+When a limiter blocks a request, the server returns `429` with `code: "RATE_LIMITED"`, the limiter-specific message, `retryAfterSeconds` when available, and a matching `Retry-After` header. The client displays those responses through the app-wide `HttpStatusNotifier` snackbar.
 
 ---
 
@@ -305,13 +319,13 @@ yarn test                 # focused middleware and utility coverage
 yarn test:search-degrade  # listing-search fallback coverage
 ```
 
-Client tests are discovered from `client/src/**/*.{test,spec}.{ts,tsx}`. Server Vitest coverage currently includes error handling and error tracking utilities.
+Client tests are discovered from `client/src/**/*.{test,spec}.{ts,tsx}`. Server Vitest coverage currently includes auth middleware, rate-limit response handling, error handling, and error tracking utilities.
 
 ### What is tested
 
 Pure reducer modules under [client/src/reducers/](client/src/reducers/) have unit-test coverage in [client/src/reducers/**tests**/](client/src/reducers/__tests__/). Each reducer file has a matching `*.test.ts`. The reducers back the auth, search, fellowship-search, config, listing-form, and account-tracking (kanban/notes) flows — extracting state transitions from providers/components into pure functions makes them testable without mounting React or mocking network.
 
-Focused component accessibility coverage also exists for the research discovery/listing flows: [BrowseGrid.a11y.test.tsx](client/src/components/shared/__tests__/BrowseGrid.a11y.test.tsx) verifies keyboard-openable browse cards/list rows and separate favorite controls, [ListingDetailModal.public.test.tsx](client/src/components/shared/__tests__/ListingDetailModal.public.test.tsx) covers the public listing dialog name, Escape close behavior, focus trapping/restoration, and redacted contact actions, and [ResearchAreaInput.a11y.test.tsx](client/src/components/accounts/ListingForm/FormFields/__tests__/ResearchAreaInput.a11y.test.tsx) covers the listing-form research-area field selector dialog focus behavior.
+Focused component accessibility coverage also exists for the research discovery/listing flows: [BrowseGrid.a11y.test.tsx](client/src/components/shared/__tests__/BrowseGrid.a11y.test.tsx) verifies keyboard-openable browse cards/list rows and separate favorite controls, [ListingDetailModal.public.test.tsx](client/src/components/shared/__tests__/ListingDetailModal.public.test.tsx) covers the public listing dialog name, Escape close behavior, focus trapping/restoration, and redacted contact actions, and [ResearchAreaInput.a11y.test.tsx](client/src/components/accounts/ListingForm/FormFields/__tests__/ResearchAreaInput.a11y.test.tsx) covers the listing-form research-area field selector dialog focus behavior. Focused HTTP handling tests cover rate-limit event parsing, the global rate-limit notifier, and auth-state clearing on app-wide `401` events.
 
 When adding a new reducer:
 

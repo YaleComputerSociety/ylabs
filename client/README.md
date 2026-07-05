@@ -1,6 +1,6 @@
 # Y/Labs Client
 
-React 19 + TypeScript client built with Vite. The app talks to the Express API configured by `VITE_APP_SERVER`.
+React 19 + TypeScript client built with Vite. The app talks to the Express API configured by `VITE_APP_SERVER` through the shared client in `src/utils/axios.ts`.
 
 ## Environment
 
@@ -15,6 +15,10 @@ VITE_APP_SERVER=http://localhost:4000
 ```
 
 When `VITE_SENTRY_DSN` is set, `src/utils/errorTracking.ts` initializes Sentry and the root `ErrorBoundary` reports unexpected render errors.
+
+## API Handling
+
+Use `src/utils/axios.ts` for app API calls so base URL, credentials, and global HTTP handling stay consistent. The shared client emits app-wide events for `401` responses, which clear auth state through `UserContextProvider`, and for `429` responses, which display the server rate-limit message and retry guidance through `HttpStatusNotifier`.
 
 ## Scripts
 
