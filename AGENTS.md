@@ -20,7 +20,7 @@ The server follows a layered architecture: **Routes → Middleware → Controlle
 | Server          | Express 4, TypeScript 5.3, Passport.js 0.5 (CAS strategy), Mongoose 8                          |
 | Search          | Meilisearch 0.57 (hybrid search with OpenAI `text-embedding-3-small` embedder)                 |
 | Database        | MongoDB Atlas (single cluster, separate databases per environment)                             |
-| Error Tracking  | Sentry for client and server runtime exception reporting                                        |
+| Error Tracking  | Sentry for client and server runtime exception reporting                                       |
 | Package Manager | Yarn 4 via Corepack                                                                            |
 | Tooling         | concurrently, nodemon, ts-node, cross-env                                                      |
 
@@ -314,19 +314,19 @@ User → Yale CAS SSO → passport.ts findOrCreateUser
 | `MEILISEARCH_HOST`         | No (default: `http://localhost:7700`) | Meilisearch instance URL                                                                                                                                         |
 | `MEILISEARCH_API_KEY`      | No                                    | Meilisearch API key                                                                                                                                              |
 | `MEILISEARCH_INDEX_PREFIX` | No                                    | Environment prefix for index names (e.g., `prod`, `beta`). When set, indexes become `{prefix}_listings`. Allows prod and beta to share one Meilisearch instance. |
-| `SENTRY_DSN`               | No                                    | Enables server-side Sentry error tracking when set                                                                                                                |
-| `SENTRY_ENVIRONMENT`       | No                                    | Sentry environment label; falls back to `NODE_ENV`                                                                                                                |
-| `SENTRY_RELEASE`           | No                                    | Sentry release identifier                                                                                                                                         |
+| `SENTRY_DSN`               | No                                    | Enables server-side Sentry error tracking when set                                                                                                               |
+| `SENTRY_ENVIRONMENT`       | No                                    | Sentry environment label; falls back to `NODE_ENV`                                                                                                               |
+| `SENTRY_RELEASE`           | No                                    | Sentry release identifier                                                                                                                                        |
 | `PORT`                     | No (default: 4000)                    | Server port                                                                                                                                                      |
 
 ### `client/.env`
 
-| Variable                   | Required | Description                                                |
-| -------------------------- | -------- | ---------------------------------------------------------- |
-| `VITE_APP_SERVER`          | Yes      | Backend API URL (e.g., `http://localhost:4000`)            |
-| `VITE_SENTRY_DSN`          | No       | Enables client-side Sentry error tracking when set         |
-| `VITE_SENTRY_ENVIRONMENT`  | No       | Sentry environment label; falls back to Vite mode          |
-| `VITE_SENTRY_RELEASE`      | No       | Sentry release identifier                                  |
+| Variable                  | Required | Description                                        |
+| ------------------------- | -------- | -------------------------------------------------- |
+| `VITE_APP_SERVER`         | Yes      | Backend API URL (e.g., `http://localhost:4000`)    |
+| `VITE_SENTRY_DSN`         | No       | Enables client-side Sentry error tracking when set |
+| `VITE_SENTRY_ENVIRONMENT` | No       | Sentry environment label; falls back to Vite mode  |
+| `VITE_SENTRY_RELEASE`     | No       | Sentry release identifier                          |
 
 ## Sensitive Files
 
@@ -337,11 +337,11 @@ User → Yale CAS SSO → passport.ts findOrCreateUser
 
 ## Known Technical Debt
 
-| Issue                                    | Location                          | Status                                                                                                                                                                                                                          |
-| ---------------------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Issue                                    | Location                          | Status                                                                                                                                                                                                                                         |
+| ---------------------------------------- | --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | No general server-side test suite        | `server/`                         | Focused Vitest coverage exists for error handling/tracking and a focused Node test covers listing-search degradation; broader server coverage is not wired into CI. Client uses Vitest; reducer modules in `client/src/reducers/` are covered. |
-| ESLint/Prettier configured but not in CI | `eslint.config.js`, `.prettierrc` | Flat-config ESLint + Prettier set up at repo root. Currently reports ~15 errors / ~55 warnings across the codebase; not wired to CI until pre-existing violations are triaged. Run `yarn lint`, `yarn lint:fix`, `yarn format`. |
-| Console-only logging                     | Server                            | No structured logging (Winston/Pino)                                                                                                                                                                                            |
+| ESLint/Prettier configured but not in CI | `eslint.config.js`, `.prettierrc` | Flat-config ESLint + Prettier set up at repo root. Currently reports ~15 errors / ~55 warnings across the codebase; not wired to CI until pre-existing violations are triaged. Run `yarn lint`, `yarn lint:fix`, `yarn format`.                |
+| Console-only logging                     | Server                            | No structured logging (Winston/Pino)                                                                                                                                                                                                           |
 
 ## Adding a New Endpoint
 
