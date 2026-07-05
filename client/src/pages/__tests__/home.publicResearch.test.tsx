@@ -1,7 +1,7 @@
 import React from 'react';
-import { render, waitFor } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
+import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest';
 import SearchContext, { defaultSearchContext } from '../../contexts/SearchContext';
 import UserContext from '../../contexts/UserContext';
 import axios from '../../utils/axios';
@@ -22,7 +22,12 @@ vi.mock('../../components/shared/BrowseGrid', () => ({
 }));
 
 vi.mock('../../components/shared/ListingDetailModal', () => ({
-  default: () => <div />,
+  default: ({ isOpen, onNavigateToResearchArea }: any) =>
+    isOpen ? (
+      <button type="button" onClick={() => onNavigateToResearchArea('Artificial Intelligence')}>
+        Artificial Intelligence
+      </button>
+    ) : null,
 }));
 
 vi.mock('../../components/admin/AdminListingEditModal', () => ({
@@ -35,7 +40,16 @@ vi.mock('sweetalert', () => ({
 
 const mockedAxiosGet = vi.mocked(axios.get);
 
+const LocationDisplay = () => {
+  const location = useLocation();
+  return <div data-testid="location">{location.pathname}</div>;
+};
+
 describe('Home public research detail route', () => {
+  afterEach(() => {
+    cleanup();
+  });
+
   beforeEach(() => {
     mockedAxiosGet.mockReset();
     mockedAxiosGet.mockImplementation((url: string) => {
@@ -106,6 +120,64 @@ describe('Home public research detail route', () => {
 
     expect(mockedAxiosGet).not.toHaveBeenCalledWith('/listings/507f1f77bcf86cd799439011', {
       withCredentials: true,
+    });
+  });
+
+  it('clears share URL slug when navigating to a research area from the modal', async () => {
+    const slug = 'public-research-507f1f77bcf86cd799439011';
+    const setSelectedListingResearchAreas = vi.fn();
+
+    render(
+      <MemoryRouter initialEntries={[`/research/${slug}`]}>
+        <UserContext.Provider
+          value={{
+            isLoading: false,
+            isAuthenticated: false,
+            user: null,
+            checkContext: vi.fn(),
+          }}
+        >
+          <SearchContext.Provider
+            value={{
+              ...defaultSearchContext,
+              refreshListings: vi.fn(),
+              setQueryString: vi.fn(),
+              setSelectedDepartments: vi.fn(),
+              setSelectedResearchAreas: vi.fn(),
+              setSelectedListingResearchAreas,
+            }}
+          >
+            <Routes>
+              <Route
+                path="/research/:slug"
+                element={
+                  <>
+                    <LocationDisplay />
+                    <Home />
+                  </>
+                }
+              />
+              <Route
+                path="/research"
+                element={
+                  <>
+                    <LocationDisplay />
+                    <Home />
+                  </>
+                }
+              />
+            </Routes>
+          </SearchContext.Provider>
+        </UserContext.Provider>
+      </MemoryRouter>,
+    );
+
+    await screen.findByRole('button', { name: 'Artificial Intelligence' });
+    fireEvent.click(screen.getByRole('button', { name: 'Artificial Intelligence' }));
+
+    expect(setSelectedListingResearchAreas).toHaveBeenCalledWith(['Artificial Intelligence']);
+    await waitFor(() => {
+      expect(screen.getByTestId('location').textContent).toBe('/research');
     });
   });
 });

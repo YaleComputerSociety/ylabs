@@ -215,12 +215,19 @@ const Home = () => {
     }
   };
 
+  const closeDetailModal = () => {
+    dispatch({ type: 'CLOSE_DETAIL_MODAL' });
+    if (slug) {
+      navigate('/research');
+    }
+  };
+
   const handleNavigateToResearchArea = (area: string) => {
     setQueryString('');
     setSelectedDepartments([]);
     setSelectedResearchAreas([]);
     setSelectedListingResearchAreas([area]);
-    dispatch({ type: 'CLOSE_DETAIL_MODAL' });
+    closeDetailModal();
   };
 
   const handleNavigateToDepartment = (dept: string) => {
@@ -228,7 +235,7 @@ const Home = () => {
     setSelectedDepartments([dept]);
     setSelectedResearchAreas([]);
     setSelectedListingResearchAreas([]);
-    dispatch({ type: 'CLOSE_DETAIL_MODAL' });
+    closeDetailModal();
   };
 
   return (
@@ -251,12 +258,7 @@ const Home = () => {
       {selectedListing && (
         <ListingDetailModal
           isOpen={isModalOpen}
-          onClose={() => {
-            dispatch({ type: 'CLOSE_DETAIL_MODAL' });
-            if (slug) {
-              navigate('/research');
-            }
-          }}
+          onClose={closeDetailModal}
           listing={selectedListing}
           isFavorite={favListingsIds.includes(selectedListing.id)}
           onToggleFavorite={(e) => {
