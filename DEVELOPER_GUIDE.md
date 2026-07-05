@@ -6,7 +6,7 @@
 
 ## What Is This?
 
-Y/Labs is a **Yale research lab discovery platform**. Visitors can browse public research listings, students find labs and fellowships, professors create and manage listings, and admins oversee everything.
+Y/Labs is a **Yale research lab discovery platform**. Visitors can browse public research listings with supporting evidence/source metadata, students find labs and fellowships, professors create and manage listings, and admins oversee everything.
 
 ---
 
@@ -115,7 +115,7 @@ cd data-migration
 npx ts-node --transpile-only MigrateToMeilisearch.ts
 ```
 
-This reads listings from your `Development` MongoDB and pushes them to the local Meilisearch with the OpenAI embedder configured.
+This reads listings from your `Development` MongoDB and pushes them to the local Meilisearch with the OpenAI embedder configured. Listing evidence is indexed with public-safe source metadata only; `evidence.internalNotes` is stripped before documents are sent to Meilisearch.
 
 ### 5. Start dev servers
 
@@ -210,11 +210,13 @@ Logged-out visitors use the public research discovery path instead:
 
 - Client routes `/research` and `/research/:slug` render the listings browse page without the `PrivateRoute` guard.
 - The client sends public browse requests to `/api/research` and public detail requests to `/api/research/:slug`.
-- Public responses include only confirmed, unarchived listings and redact contact/private fields such as owner email, additional emails, owner/professor IDs, view counts, favorites, and audit fields.
-- Authenticated users opening a public detail modal also request `/api/research/:slug/contact` to load the full listing, including contact fields.
+- Public responses include only confirmed, unarchived listings and redact contact/private fields such as owner email, additional emails, owner/professor IDs, view counts, favorites, and audit fields. They retain sanitized evidence metadata so the detail modal can show why a listing appears and which public sources support it.
+- Authenticated users opening a public detail modal also request `/api/research/:slug/contact` to load the full listing, including contact fields. Evidence metadata on this response is still sanitized through the public evidence allowlist.
 - Public research search only allows `createdAt` and `updatedAt` sort fields and searches a contact-redacted field set.
 
-Listing CRUD in `listingService.ts` automatically syncs to Meilisearch after MongoDB writes.
+Listing detail modals render an evidence rail for listings, including an empty state when source metadata is unavailable. The public evidence payload supports `status`, `summary`, `confidence`, `generatedAt`, `lastVerifiedAt`, and up to eight sources with `label`, `url`, `sourceType`, `description`, and `lastCheckedAt`. Loading and error states are handled in the same rail. Public source URLs are limited to `http`/`https`; credentials, query strings, and fragments are removed before they are returned by the API or rendered by the client.
+
+Listing CRUD in `listingService.ts` automatically syncs to Meilisearch after MongoDB writes. Indexed listing documents strip `_id`, `__v`, legacy `embedding`, and private `evidence.internalNotes` fields.
 
 On the authenticated Find Labs page, an empty unfiltered result set is treated as "no research labs are available right now" and includes a link to `/fellowships`; empty filtered/search results instead tell the user no labs match the current search or filters.
 
@@ -341,6 +343,8 @@ Public pages that should work for logged-out visitors must not use `PrivateRoute
 2. TypeScript interfaces in `client/src/types/`
 3. Migration script in `data-migration/` if existing data needs transformation
 4. If the model is `listing`, update Meilisearch index config if new fields need filtering/sorting
+
+Listing evidence metadata lives under `listing.evidence` in MongoDB. Keep any analyst-only notes in `evidence.internalNotes`; that field is excluded by default from Mongoose query results, stripped from Meilisearch indexing, and never returned by public research endpoints.
 
 ---
 
