@@ -14,7 +14,10 @@
  * hostname (no path, query, or fragment, which can carry identifying tokens).
  */
 import { Request, Response, NextFunction } from 'express';
+import mongoose from 'mongoose';
 import { AnalyticsEventType, RESEARCH_ENTITY_TYPES, ResearchEntityType } from '../models/analytics';
+import { Fellowship, User } from '../models/index';
+import { getListingModel } from '../db/connections';
 import { logEvent } from './analyticsService';
 import type { LogEventParams } from './analyticsService';
 
@@ -167,6 +170,27 @@ export const isResearchEventType = (value: unknown): value is AnalyticsEventType
 export const isResearchEntityType = (value: unknown): value is ResearchEntityType =>
   isPlainString(value) && (RESEARCH_ENTITY_TYPES as readonly string[]).includes(value);
 
+export const researchEntityExists = async (
+  entityType: ResearchEntityType,
+  entityId: string,
+): Promise<boolean> => {
+  const id = entityId.trim();
+
+  if (entityType === 'profile') {
+    return Boolean(await User.exists({ netid: id }));
+  }
+
+  if (!mongoose.isValidObjectId(id)) {
+    return false;
+  }
+
+  if (entityType === 'listing') {
+    return Boolean(await getListingModel().exists({ _id: id }));
+  }
+
+  return Boolean(await Fellowship.exists({ _id: id }));
+};
+
 export interface BuildResearchEventInput {
   eventType: AnalyticsEventType;
   netid: string;
@@ -237,6 +261,7 @@ export const logResearchEventOnSuccess = (
   eventType: AnalyticsEventType,
   entityType: ResearchEntityType,
   getEntityId: (req: Request) => string | undefined = (req) => req.params.id,
+  getPayload: (req: Request) => unknown = () => ({ surface: entityType }),
 ) => {
   return (req: Request, res: Response, next: NextFunction) => {
     const originalSend = res.send.bind(res);
@@ -248,7 +273,7 @@ export const logResearchEventOnSuccess = (
           entityType,
           entityId: getEntityId(req),
           user: req.user as AnalyticsUser | undefined,
-          payload: { surface: entityType },
+          payload: getPayload(req),
         }).catch((err) => console.error(`Error logging ${eventType} event:`, err));
       }
 

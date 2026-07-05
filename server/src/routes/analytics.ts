@@ -23,6 +23,7 @@ import {
   emitResearchEvent,
   isResearchEntityType,
   isResearchEventType,
+  researchEntityExists,
 } from '../services/researchAnalytics';
 
 const router = Router();
@@ -61,6 +62,10 @@ router.post('/research', isAuthenticated, async (request: Request, response: Res
 
   if (typeof entityId !== 'string' || entityId.trim() === '') {
     return response.status(400).json({ error: 'Invalid research analytics entityId' });
+  }
+
+  if (!(await researchEntityExists(entityType, entityId))) {
+    return response.status(404).json({ error: 'Research analytics entity not found' });
   }
 
   const emitted = await emitResearchEvent({

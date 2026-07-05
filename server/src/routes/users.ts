@@ -7,6 +7,7 @@ import * as userController from '../controllers/userController';
 import { logEvent } from '../services/analyticsService';
 import { AnalyticsEventType } from '../models/index';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { emitResearchEvent } from '../services/researchAnalytics';
 
 const router = Router();
 const FAVORITE_ANALYTICS_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
@@ -135,6 +136,20 @@ const logFavoriteEvent = (
               metadata: { entityType: kind, itemIdsRedacted: true },
             }).catch((err) => console.error('Error logging favorite event:', sanitizeLogValue(err)));
           }
+
+          const researchEntityType = kind === 'listing' ? 'listing' : 'fellowship';
+          const pathwayIds = isFavorite ? visibleIds : requestedIds;
+          pathwayIds.forEach((itemId: string) => {
+            emitResearchEvent({
+              eventType: AnalyticsEventType.PATHWAY_SAVE,
+              entityType: researchEntityType,
+              entityId: itemId,
+              user: currentUser,
+              payload: { action: isFavorite ? 'save' : 'unsave' },
+            }).catch((err) =>
+              console.error('Error logging pathway save event:', sanitizeLogValue(err)),
+            );
+          });
 
           visibleIds.forEach((itemId: string) => {
             logEvent({

@@ -146,6 +146,12 @@ router.put(
   isAuthenticated,
   validateObjectId('id'),
   logFellowshipEvent(AnalyticsEventType.FELLOWSHIP_FAVORITE),
+  logResearchEventOnSuccess(
+    AnalyticsEventType.PATHWAY_SAVE,
+    'fellowship',
+    (req) => req.params.id,
+    () => ({ action: 'save' }),
+  ),
   fellowshipController.addFavoriteToFellowship,
 );
 
@@ -154,6 +160,12 @@ router.put(
   isAuthenticated,
   validateObjectId('id'),
   logFellowshipEvent(AnalyticsEventType.FELLOWSHIP_UNFAVORITE),
+  logResearchEventOnSuccess(
+    AnalyticsEventType.PATHWAY_SAVE,
+    'fellowship',
+    (req) => req.params.id,
+    () => ({ action: 'unsave' }),
+  ),
   fellowshipController.removeFavoriteFromFellowship,
 );
 
