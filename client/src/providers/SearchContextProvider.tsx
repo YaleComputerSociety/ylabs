@@ -15,6 +15,7 @@ import {
   useContext,
   ReactNode,
 } from 'react';
+import { useLocation } from 'react-router-dom';
 import axios from '../utils/axios';
 import swal from 'sweetalert';
 
@@ -29,11 +30,17 @@ interface SearchContextProviderProps {
   children: ReactNode;
 }
 
+const LISTING_SORTABLE_KEYS = ['default', 'createdAt', 'ownerLastName', 'ownerFirstName', 'title'];
+const PUBLIC_RESEARCH_SORTABLE_KEYS = ['default', 'createdAt', 'updatedAt'];
+
 const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => {
   const pageSize = 20;
-  const sortableKeys = ['default', 'createdAt', 'ownerLastName', 'ownerFirstName', 'title'];
 
   const { isAuthenticated, isLoading: authLoading } = useContext(UserContext);
+  const location = useLocation();
+  const isResearchRoute =
+    location.pathname === '/research' || location.pathname.startsWith('/research/');
+  const sortableKeys = isResearchRoute ? PUBLIC_RESEARCH_SORTABLE_KEYS : LISTING_SORTABLE_KEYS;
 
   const { departments, departmentCategories, researchAreas, isLoaded: configLoaded } = useConfig();
 
@@ -74,10 +81,10 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
     page,
     filterBarHeight,
     quickFilter,
-    queryStringLoaded,
-    departmentsLoaded,
     initialSearchDone,
   } = state;
+  const queryStringLoadedRef = useRef(false);
+  const departmentsLoadedRef = useRef(false);
 
   // Context setter API preserved for compatibility with existing call sites
   // (some pass a value, some pass an updater function).
@@ -136,6 +143,12 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
     dispatch({ type: 'TOGGLE_SORT_DIRECTION' });
   }, []);
 
+  useEffect(() => {
+    if (!sortableKeys.includes(sortBy)) {
+      dispatch({ type: 'SET_SORT_BY', payload: sortableKeys[0] });
+    }
+  }, [sortBy, sortableKeys]);
+
   // Keep latest filter values in a ref so handleSearch can remain stable.
   const filtersRef = useRef({
     queryString,
@@ -165,7 +178,8 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
       const f = filtersRef.current;
       const formattedQuery = f.queryString.trim();
 
-      let url = `/listings/search?query=${encodeURIComponent(formattedQuery)}&page=${searchPage}&pageSize=${pageSize}`;
+      const endpoint = isResearchRoute ? '/research' : '/listings/search';
+      let url = `${endpoint}?query=${encodeURIComponent(formattedQuery)}&page=${searchPage}&pageSize=${pageSize}`;
 
       if (f.sortBy !== 'default') {
         url += `&sortBy=${f.sortBy}&sortOrder=${f.sortOrder}`;
@@ -217,7 +231,7 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
           dispatch({ type: 'SEARCH_FAILURE' });
         });
     },
-    [pageSize],
+    [isResearchRoute, pageSize],
   );
 
   const refreshListings = useCallback(() => {
@@ -226,36 +240,50 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
   }, [handleSearch]);
 
   useEffect(() => {
-    if (configLoaded && !authLoading && isAuthenticated && !initialSearchDone) {
+    if (
+      configLoaded &&
+      !authLoading &&
+      (isAuthenticated || isResearchRoute) &&
+      !initialSearchDone
+    ) {
       dispatch({ type: 'SET_PAGE', payload: 1 });
       handleSearch(1);
       dispatch({ type: 'MARK_INITIAL_SEARCH_DONE' });
     }
-  }, [configLoaded, authLoading, isAuthenticated, initialSearchDone, handleSearch]);
+  }, [
+    configLoaded,
+    authLoading,
+    isAuthenticated,
+    isResearchRoute,
+    initialSearchDone,
+    handleSearch,
+  ]);
 
   useEffect(() => {
-    if (!configLoaded) return;
+    if (!configLoaded || authLoading || (!isAuthenticated && !isResearchRoute)) return;
 
     const debounceTimeout = setTimeout(() => {
-      if (queryStringLoaded) {
+      if (queryStringLoadedRef.current) {
         dispatch({ type: 'SET_PAGE', payload: 1 });
         handleSearch(1);
       }
+      queryStringLoadedRef.current = true;
       dispatch({ type: 'MARK_QUERY_STRING_LOADED' });
     }, 500);
 
     return () => {
       clearTimeout(debounceTimeout);
     };
-  }, [queryString, configLoaded]);
+  }, [queryString, configLoaded, authLoading, isAuthenticated, isResearchRoute, handleSearch]);
 
   useEffect(() => {
-    if (!configLoaded) return;
+    if (!configLoaded || authLoading || (!isAuthenticated && !isResearchRoute)) return;
 
-    if (departmentsLoaded) {
+    if (departmentsLoadedRef.current) {
       dispatch({ type: 'SET_PAGE', payload: 1 });
       handleSearch(1);
     }
+    departmentsLoadedRef.current = true;
     dispatch({ type: 'MARK_DEPARTMENTS_LOADED' });
   }, [
     selectedDepartments,
@@ -267,13 +295,17 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
     sortBy,
     sortOrder,
     configLoaded,
+    authLoading,
+    isAuthenticated,
+    isResearchRoute,
+    handleSearch,
   ]);
 
   useEffect(() => {
-    if (page > 1 && configLoaded) {
+    if (page > 1 && configLoaded && !authLoading && (isAuthenticated || isResearchRoute)) {
       handleSearch(page);
     }
-  }, [page, configLoaded]);
+  }, [page, configLoaded, authLoading, isAuthenticated, isResearchRoute, handleSearch]);
 
   return (
     <SearchContext.Provider

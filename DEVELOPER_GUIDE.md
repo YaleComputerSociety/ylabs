@@ -6,7 +6,7 @@
 
 ## What Is This?
 
-Y/Labs is a **Yale research lab discovery platform**. Students find labs and fellowships, professors create and manage listings, admins oversee everything.
+Y/Labs is a **Yale research lab discovery platform**. Visitors can browse public research listings, students find labs and fellowships, professors create and manage listings, and admins oversee everything.
 
 ---
 
@@ -125,6 +125,8 @@ yarn dev:server    # Express with nodemon on port 4000
 
 Visit `http://localhost:4000/api/dev-login` to log in as a test user (`test123` / `student`) without CAS.
 
+If the client cannot reach the auth endpoint, `/login` shows an inline retry state and hides the Yale CAS sign-in link until the auth check succeeds.
+
 ---
 
 ## Common Commands
@@ -193,15 +195,25 @@ ylabs/
 
 ## Search
 
-Search uses **Meilisearch** with hybrid mode (80% semantic, 20% keyword).
+Search uses **Meilisearch** with keyword search and hybrid mode (80% semantic, 20% keyword) for multi-word queries.
 
 1. Client sends query + filters to `/api/listings/search`
 2. Controller builds Meilisearch filter strings from query params
-3. Hybrid search uses the Meilisearch-configured OpenAI embedder
+3. Multi-word queries use hybrid search with the Meilisearch-configured OpenAI embedder; single-word queries use keyword search to avoid semantic drift
 4. If hybrid search fails, the controller retries keyword-only Meilisearch; if Meilisearch is unavailable, it falls back to MongoDB filtering
 5. Results are returned with `totalCount` for pagination and a `degraded` boolean indicating whether fallback behavior was used
 
+Logged-out visitors use the public research discovery path instead:
+
+- Client routes `/research` and `/research/:slug` render the listings browse page without the `PrivateRoute` guard.
+- The client sends public browse requests to `/api/research` and public detail requests to `/api/research/:slug`.
+- Public responses include only confirmed, unarchived listings and redact contact/private fields such as owner email, additional emails, owner/professor IDs, view counts, favorites, and audit fields.
+- Authenticated users opening a public detail modal also request `/api/research/:slug/contact` to load the full listing, including contact fields.
+- Public research search only allows `createdAt` and `updatedAt` sort fields and searches a contact-redacted field set.
+
 Listing CRUD in `listingService.ts` automatically syncs to Meilisearch after MongoDB writes.
+
+On the authenticated Find Labs page, an empty unfiltered result set is treated as "no research labs are available right now" and includes a link to `/fellowships`; empty filtered/search results instead tell the user no labs match the current search or filters.
 
 The Meilisearch client (`server/src/utils/meiliClient.ts`) exports:
 
@@ -241,6 +253,8 @@ User → Yale CAS SSO → passport.ts findOrCreateUser
      → Fallback: userType "unknown"
      → Create/Update User → cookie-session
 ```
+
+Client auth state is owned by `UserContextProvider` and `userReducer`. Failed auth refreshes set `authError` for inline UI, clear loading, and preserve any previously authenticated user so a transient outage does not blank the session; retrying `checkContext()` clears the stale error while the next auth check runs.
 
 ### Auth Middleware (`server/src/middleware/auth.ts`)
 
@@ -291,7 +305,7 @@ Client tests are discovered from `client/src/**/*.{test,spec}.{ts,tsx}`. Server 
 
 ### What is tested
 
-Pure reducer modules under [client/src/reducers/](client/src/reducers/) have unit-test coverage in [client/src/reducers/**tests**/](client/src/reducers/__tests__/). Each reducer file has a matching `*.test.ts`. The reducers back the search, fellowship-search, config, listing-form, and account-tracking (kanban/notes) flows — extracting state transitions from providers/components into pure functions makes them testable without mounting React or mocking network.
+Pure reducer modules under [client/src/reducers/](client/src/reducers/) have unit-test coverage in [client/src/reducers/**tests**/](client/src/reducers/__tests__/). Each reducer file has a matching `*.test.ts`. The reducers back the auth, search, fellowship-search, config, listing-form, and account-tracking (kanban/notes) flows — extracting state transitions from providers/components into pure functions makes them testable without mounting React or mocking network.
 
 When adding a new reducer:
 
@@ -327,6 +341,8 @@ The workflow also accepts `workflow_dispatch` so it can be run manually from the
 1. Page component in `client/src/pages/<page>.tsx`
 2. Route in `client/src/App.tsx` with appropriate guard (`PrivateRoute`, `AdminRoute`)
 
+Public pages that should work for logged-out visitors must not use `PrivateRoute`; protected actions from those pages should route users to `/login` and preserve the return path.
+
 ### Modifying a Schema
 
 1. Mongoose schema in `server/src/models/<model>.ts`
@@ -338,10 +354,11 @@ The workflow also accepts `workflow_dispatch` so it can be run manually from the
 
 ## Troubleshooting
 
-| Issue                           | Solution                                                          |
-| ------------------------------- | ----------------------------------------------------------------- |
-| CAS login not working locally   | Use dev-login: `http://localhost:4000/api/dev-login`              |
-| Search returns no results       | Check Meilisearch is running: `curl http://localhost:7700/health` |
-| Meilisearch connection refused  | Start Docker container or check `MEILISEARCH_HOST` in `.env`      |
-| CORS errors                     | Add origin to `allowList` in `app.ts` or use dev mode             |
-| "Forbidden" on listing creation | Professor needs `profileVerified: true`                           |
+| Issue                           | Solution                                                                    |
+| ------------------------------- | --------------------------------------------------------------------------- |
+| CAS login not working locally   | Use dev-login: `http://localhost:4000/api/dev-login`                        |
+| Find Labs has no local results  | Seed Development listings or use the empty-state link to browse fellowships |
+| Search is degraded or stale     | Check Meilisearch is running: `curl http://localhost:7700/health`           |
+| Meilisearch connection refused  | Start Docker container or check `MEILISEARCH_HOST` in `.env`                |
+| CORS errors                     | Add origin to `allowList` in `app.ts` or use dev mode                       |
+| "Forbidden" on listing creation | Professor needs `profileVerified: true`                                     |

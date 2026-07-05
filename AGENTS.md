@@ -2,7 +2,7 @@
 
 ## Architecture
 
-Monorepo with a React client and Express server communicating over REST. MongoDB Atlas is the primary data store. Meilisearch handles search (semantic + keyword) with an OpenAI embedder configured server-side. Yale CAS provides SSO authentication.
+Monorepo with a React client and Express server communicating over REST. MongoDB Atlas is the primary data store. Meilisearch handles search (semantic + keyword) with an OpenAI embedder configured server-side. Yale CAS provides SSO authentication, while the public research discovery flow exposes redacted confirmed listings to logged-out visitors.
 
 ```
 React (Vite) → Express (Passport.js) → MongoDB Atlas + Meilisearch
@@ -74,6 +74,8 @@ Migration scripts run from `data-migration/` with `npx ts-node --transpile-only 
 
 Dev login bypass: `GET http://localhost:4000/api/dev-login` creates a test session (`test123` / `student`) without CAS.
 
+If the client cannot reach the auth endpoint, `/login` renders an inline retry state and hides the Yale CAS sign-in link until a retry succeeds.
+
 ## TypeScript Configuration
 
 **Server**: target ES2022, module NodeNext, moduleResolution NodeNext, strict true, output to `build/`.
@@ -88,13 +90,17 @@ MongoDB via Mongoose 8. All environments use `MONGODBURL` — the connection str
 
 Search has migrated from MongoDB Atlas Vector Search to **Meilisearch**. The old `embeddingService.ts` (OpenAI client-side embedding generation + in-memory LRU cache) has been removed.
 
-Current search flow:
+Current authenticated listing search flow:
 
 1. Client sends query + filters to `/api/listings/search`
 2. Controller builds Meilisearch filter strings from query params (`departments`, `researchAreas`, `archived`, `confirmed`)
-3. When a text query is present, hybrid search is enabled with `semanticRatio: 0.8` using the Meilisearch-configured OpenAI embedder
+3. When a multi-word text query is present, hybrid search is enabled with `semanticRatio: 0.8` using the Meilisearch-configured OpenAI embedder; single-word queries remain keyword-only to avoid semantic drift
 4. If hybrid search fails, the controller retries keyword-only Meilisearch; if Meilisearch is unavailable, it falls back to MongoDB filtering
 5. Results are returned with `totalCount` for pagination and a `degraded` boolean indicating whether fallback behavior was used
+
+Public research discovery uses the same degradation path through `/api/research`, but only returns confirmed, unarchived listings after redacting contact/private fields (`ownerEmail`, `emails`, owner/professor IDs, views, favorites, archived/confirmed/audit internals). Client routes `/research` and `/research/:slug` render the browse page without `PrivateRoute`; opening a card updates the URL to a shareable modal route. Authenticated users on those public routes additionally call `/api/research/:slug/contact` to retrieve the full listing with contact fields. Public research search uses a contact-redacted searchable field set and only accepts `createdAt` or `updatedAt` sort fields.
+
+The authenticated Find Labs page distinguishes an empty local/unfiltered dataset from an empty search result: no unfiltered listings shows "No research labs are available right now" with a `/fellowships` action, while active searches or filters show "No labs match your current search or filters."
 
 The Meilisearch client (`server/src/utils/meiliClient.ts`) lazy-loads and caches the connection. Configuration: `MEILISEARCH_HOST` (defaults to `http://localhost:7700`), `MEILISEARCH_API_KEY`, and `MEILISEARCH_INDEX_PREFIX` (optional, for multi-environment isolation on a shared instance). The module exports `getMeiliIndex(name)` which resolves prefixed index names and `resolveIndexName(name)` for use in migration scripts.
 
@@ -182,7 +188,7 @@ Current reducers with test coverage (all in `client/src/reducers/`, tests in `cl
 | `fellowshipSearchReducer`          | `FellowshipSearchContextProvider`      | Fellowship equivalent with filter-options fetch lifecycle                                                                                                          |
 | `browsePageReducer`                | `pages/home`, `pages/fellowships`      | Generic over `<T>`. Browse-page UI: favorites, detail-modal selection, admin-edit modal. Open/close modal flips `selectedItem` and `isDetailModalOpen` atomically. |
 | `configReducer`                    | `ConfigContextProvider`                | Config fetch (idle → loading → loaded/error)                                                                                                                       |
-| `userReducer`                      | `UserContextProvider`                  | Auth-check lifecycle (loading → authenticated/unauthenticated) + explicit LOGOUT                                                                                   |
+| `userReducer`                      | `UserContextProvider`                  | Auth-check lifecycle, inline `authError` retry state, stale-user preservation on fetch failure, and explicit LOGOUT                                                |
 | `favoritesReducer`                 | `components/accounts/FavoritesManager` | Favorited listings + fellowships, sort/filter/view state, optimistic add/remove                                                                                    |
 | `ownListingsReducer`               | `components/accounts/ListingEditor`    | Professor's own listings + edit/create lifecycle (isEditing/isCreating), skeleton-listing handling                                                                 |
 | `unknownUserReducer`               | Unknown-user flow                      | State for the "unknown user" verification path                                                                                                                     |
@@ -210,14 +216,15 @@ The only other workflow is `keep-alive.yml`, which pings the Beta Render service
 
 ## Rate Limiting
 
-Two rate limiters in `app.ts`, both keyed by authenticated user's `netId` with IP fallback for unauthenticated requests:
+Three rate limiters in `app.ts`, all keyed by authenticated user's `netId` with IP fallback for unauthenticated requests:
 
-| Limiter        | Scope                                                      | Limit            |
-| -------------- | ---------------------------------------------------------- | ---------------- |
-| `apiLimiter`   | All `/api` routes                                          | 200 req / 15 min |
-| `writeLimiter` | Non-GET requests to `/api/listings` and `/api/fellowships` | 50 req / 15 min  |
+| Limiter                  | Scope                                                      | Limit            |
+| ------------------------ | ---------------------------------------------------------- | ---------------- |
+| `apiLimiter`             | All `/api` routes                                          | 200 req / 15 min |
+| `publicDiscoveryLimiter` | `/api/research` public browse/detail traffic               | 120 req / 15 min |
+| `writeLimiter`           | Non-GET requests to `/api/listings` and `/api/fellowships` | 50 req / 15 min  |
 
-Both limiters are skipped in CI, development, and test environments.
+All three limiters are skipped in CI, development, and test environments.
 
 ## Auth Middleware
 
@@ -232,7 +239,9 @@ Defined in `server/src/middleware/auth.ts`:
 | `isTrustworthy`    | `userConfirmed` + admin/professor/faculty             |
 | `isConfirmed`      | `userConfirmed === true`                              |
 
-Client-side route guards: `PrivateRoute` (auth required, redirects unknown users when `unknownBlocked=true`), `AdminRoute` (admin only), `UnprivateRoute` (no auth required, for error pages).
+Client-side route guards: `PrivateRoute` (auth required, redirects unknown users when `unknownBlocked=true`), `AdminRoute` (admin only), `UnprivateRoute` (no auth required, for error pages). Public `/research` routes intentionally bypass `PrivateRoute`; favorites, contact actions, and other authenticated actions preserve the return path and send logged-out users to `/login`.
+
+`UserContext` exposes `authError` alongside `isLoading`, `isAuthenticated`, `user`, and `checkContext()`. `UserContextProvider` sets `authError` when the `/users/context` check fails, preserves the prior authenticated user if one exists, and relies on `/login` to show the retry UI instead of firing a global SweetAlert.
 
 ## Validation Middleware
 
