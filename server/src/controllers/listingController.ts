@@ -17,6 +17,8 @@ import { getMeiliIndex } from '../utils/meiliClient';
 import { getConfig } from '../services/configService';
 import { getListingModel } from '../db/connections';
 import { buildSafeSearchRegex } from '../utils/regex';
+import { logEvent } from '../services/analyticsService';
+import { AnalyticsEventType } from '../models/analytics';
 
 /**
  * Build robust filter match stage for MongoDB aggregation
@@ -55,6 +57,53 @@ const PUBLIC_LISTING_SORT_FIELDS = new Set(['createdAt', 'updatedAt']);
 const getIdFromSlug = (slug: string): string | null => {
   const match = slug.match(/[a-fA-F0-9]{24}/);
   return match ? match[0] : null;
+};
+
+const PUBLIC_RESEARCH_OUTREACH_OUTCOMES = new Set(['emailed', 'will_contact_later', 'not_a_fit']);
+
+const PUBLIC_RESEARCH_OUTREACH_ACTIONS = new Set(['email_click', 'outcome']);
+
+export const buildPublicResearchOutreachEvent = (params: {
+  action?: unknown;
+  outcome?: unknown;
+  source?: unknown;
+  contactCount?: number;
+}) => {
+  const action = typeof params.action === 'string' ? params.action : '';
+  if (!PUBLIC_RESEARCH_OUTREACH_ACTIONS.has(action)) {
+    return null;
+  }
+
+  const source = typeof params.source === 'string' ? params.source.slice(0, 80) : 'research_detail';
+  const baseMetadata = {
+    channel: 'email',
+    source,
+    contactCount: params.contactCount || 0,
+  };
+
+  if (action === 'email_click') {
+    return {
+      eventType: AnalyticsEventType.OUTREACH_CONTACT_ATTEMPT,
+      metadata: {
+        ...baseMetadata,
+        action,
+      },
+    };
+  }
+
+  const outcome = typeof params.outcome === 'string' ? params.outcome : '';
+  if (!PUBLIC_RESEARCH_OUTREACH_OUTCOMES.has(outcome)) {
+    return null;
+  }
+
+  return {
+    eventType: AnalyticsEventType.OUTREACH_OUTCOME,
+    metadata: {
+      ...baseMetadata,
+      action,
+      outcome,
+    },
+  };
 };
 
 const redactPublicListing = (listing: any) => {
@@ -653,7 +702,66 @@ export const getAuthenticatedPublicResearchBySlug = async (
     return response.status(404).json({ error: 'Research listing not found' });
   }
 
+  const currentUser = request.user as { netId?: string; userType: string };
+  if (currentUser?.netId) {
+    const contactCount = [listing.ownerEmail, ...(listing.emails || [])].filter(Boolean).length;
+    logEvent({
+      eventType: AnalyticsEventType.OUTREACH_CONTACT_REVEAL,
+      netid: currentUser.netId,
+      userType: currentUser.userType,
+      listingId: id,
+      metadata: {
+        channel: 'email',
+        source: 'research_detail',
+        contactCount,
+      },
+    }).catch((error) => console.error('Error logging research contact reveal:', error));
+  }
+
   return response.status(200).json({ listing });
+};
+
+export const recordPublicResearchOutreach = async (request: Request, response: Response) => {
+  const id = getIdFromSlug(request.params.slug);
+  if (!id) {
+    return response.status(404).json({ error: 'Research listing not found' });
+  }
+
+  const listing = await getListingModel()
+    .findOne({ _id: id, archived: false, confirmed: true })
+    .select('ownerEmail emails')
+    .lean();
+
+  if (!listing) {
+    return response.status(404).json({ error: 'Research listing not found' });
+  }
+
+  const contactCount = [listing.ownerEmail, ...(listing.emails || [])].filter(Boolean).length;
+  const event = buildPublicResearchOutreachEvent({
+    action: request.body?.action,
+    outcome: request.body?.outcome,
+    source: request.body?.source,
+    contactCount,
+  });
+
+  if (!event) {
+    return response.status(400).json({ error: 'Invalid outreach event' });
+  }
+
+  const currentUser = request.user as { netId?: string; userType: string };
+  if (!currentUser?.netId) {
+    return response.status(401).json({ error: 'Authentication required' });
+  }
+
+  await logEvent({
+    eventType: event.eventType,
+    netid: currentUser.netId,
+    userType: currentUser.userType,
+    listingId: id,
+    metadata: event.metadata,
+  });
+
+  return response.status(204).send();
 };
 
 export const createListingForCurrentUser = async (request: Request, response: Response) => {

@@ -48,6 +48,41 @@ export interface AnalyticsData {
       avgEventsPerUser: number;
     };
     mostActiveUsers: Array<{ userId: string; userType: string; eventCount: number }>;
+    outreach: {
+      summary: {
+        totalReveals: number;
+        totalAttempts: number;
+        totalOutcomes: number;
+        revealsLast7Days: number;
+        attemptsLast7Days: number;
+        outcomesLast7Days: number;
+      };
+      byOutcome: Array<{ outcome: string; count: number; last7Days: number }>;
+      topListings: Array<{
+        listingId: string;
+        title?: string;
+        ownerFirstName?: string;
+        ownerLastName?: string;
+        departments: string[];
+        reveals: number;
+        attempts: number;
+        outcomes: number;
+        uniqueUsers: number;
+        lastEventAt: string;
+      }>;
+      recentEvents: Array<{
+        eventType: string;
+        netid: string;
+        userType: string;
+        listingId: string;
+        title?: string;
+        ownerFirstName?: string;
+        ownerLastName?: string;
+        outcome?: string;
+        channel?: string;
+        timestamp: string;
+      }>;
+    };
     totalViewsFromCounters: number;
     totalFavoritesFromCounters: number;
     avgViews: number;
@@ -97,7 +132,7 @@ export type AnalyticsAction =
   | { type: 'FETCH_FAILURE'; payload: string };
 
 export const createInitialAnalyticsState = (
-  overrides: Partial<AnalyticsState> = {}
+  overrides: Partial<AnalyticsState> = {},
 ): AnalyticsState => ({
   data: null,
   isLoading: true,

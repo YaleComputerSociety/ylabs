@@ -535,6 +535,196 @@ export const getAnalytics = async () => {
     },
   ]);
 
+  const outreachEventTypes = [
+    AnalyticsEventType.OUTREACH_CONTACT_REVEAL,
+    AnalyticsEventType.OUTREACH_CONTACT_ATTEMPT,
+    AnalyticsEventType.OUTREACH_OUTCOME,
+  ];
+  const outreachStats = await AnalyticsEvent.aggregate([
+    {
+      $match: {
+        eventType: { $in: outreachEventTypes },
+      },
+    },
+    {
+      $facet: {
+        summary: [
+          {
+            $group: {
+              _id: null,
+              totalReveals: {
+                $sum: {
+                  $cond: [
+                    { $eq: ['$eventType', AnalyticsEventType.OUTREACH_CONTACT_REVEAL] },
+                    1,
+                    0,
+                  ],
+                },
+              },
+              totalAttempts: {
+                $sum: {
+                  $cond: [
+                    { $eq: ['$eventType', AnalyticsEventType.OUTREACH_CONTACT_ATTEMPT] },
+                    1,
+                    0,
+                  ],
+                },
+              },
+              totalOutcomes: {
+                $sum: {
+                  $cond: [{ $eq: ['$eventType', AnalyticsEventType.OUTREACH_OUTCOME] }, 1, 0],
+                },
+              },
+              revealsLast7Days: {
+                $sum: {
+                  $cond: [
+                    {
+                      $and: [
+                        { $eq: ['$eventType', AnalyticsEventType.OUTREACH_CONTACT_REVEAL] },
+                        { $gte: ['$timestamp', sevenDaysAgo] },
+                      ],
+                    },
+                    1,
+                    0,
+                  ],
+                },
+              },
+              attemptsLast7Days: {
+                $sum: {
+                  $cond: [
+                    {
+                      $and: [
+                        { $eq: ['$eventType', AnalyticsEventType.OUTREACH_CONTACT_ATTEMPT] },
+                        { $gte: ['$timestamp', sevenDaysAgo] },
+                      ],
+                    },
+                    1,
+                    0,
+                  ],
+                },
+              },
+              outcomesLast7Days: {
+                $sum: {
+                  $cond: [
+                    {
+                      $and: [
+                        { $eq: ['$eventType', AnalyticsEventType.OUTREACH_OUTCOME] },
+                        { $gte: ['$timestamp', sevenDaysAgo] },
+                      ],
+                    },
+                    1,
+                    0,
+                  ],
+                },
+              },
+            },
+          },
+        ],
+        byOutcome: [
+          {
+            $match: {
+              eventType: AnalyticsEventType.OUTREACH_OUTCOME,
+              'metadata.outcome': { $exists: true },
+            },
+          },
+          {
+            $group: {
+              _id: '$metadata.outcome',
+              count: { $sum: 1 },
+              last7Days: {
+                $sum: { $cond: [{ $gte: ['$timestamp', sevenDaysAgo] }, 1, 0] },
+              },
+            },
+          },
+          { $sort: { count: -1 } },
+          {
+            $project: {
+              _id: 0,
+              outcome: '$_id',
+              count: 1,
+              last7Days: 1,
+            },
+          },
+        ],
+        topListings: [
+          {
+            $match: {
+              listingId: { $exists: true },
+            },
+          },
+          {
+            $group: {
+              _id: '$listingId',
+              reveals: {
+                $sum: {
+                  $cond: [
+                    { $eq: ['$eventType', AnalyticsEventType.OUTREACH_CONTACT_REVEAL] },
+                    1,
+                    0,
+                  ],
+                },
+              },
+              attempts: {
+                $sum: {
+                  $cond: [
+                    { $eq: ['$eventType', AnalyticsEventType.OUTREACH_CONTACT_ATTEMPT] },
+                    1,
+                    0,
+                  ],
+                },
+              },
+              outcomes: {
+                $sum: {
+                  $cond: [{ $eq: ['$eventType', AnalyticsEventType.OUTREACH_OUTCOME] }, 1, 0],
+                },
+              },
+              uniqueUsers: { $addToSet: '$netid' },
+              lastEventAt: { $max: '$timestamp' },
+            },
+          },
+          {
+            $project: {
+              listingId: '$_id',
+              reveals: 1,
+              attempts: 1,
+              outcomes: 1,
+              uniqueUsers: { $size: '$uniqueUsers' },
+              lastEventAt: 1,
+            },
+          },
+          { $sort: { attempts: -1, reveals: -1, lastEventAt: -1 } },
+          { $limit: 10 },
+        ],
+        recentEvents: [
+          {
+            $match: {
+              eventType: {
+                $in: [
+                  AnalyticsEventType.OUTREACH_CONTACT_ATTEMPT,
+                  AnalyticsEventType.OUTREACH_OUTCOME,
+                ],
+              },
+            },
+          },
+          { $sort: { timestamp: -1 } },
+          { $limit: 20 },
+          {
+            $project: {
+              _id: 0,
+              eventType: 1,
+              netid: 1,
+              userType: 1,
+              listingId: 1,
+              outcome: '$metadata.outcome',
+              channel: '$metadata.channel',
+              timestamp: 1,
+            },
+          },
+        ],
+      },
+    },
+  ]);
+
   const userStats = await User.aggregate([
     {
       $facet: {
@@ -605,6 +795,7 @@ export const getAnalytics = async () => {
   const visitors = visitorStats[0];
   const engagement = engagementStats[0];
   const listings = listingStats[0];
+  const outreach = outreachStats[0] || {};
   const users = userStats[0];
 
   const trendingListingIds = engagement.trendingListings.map((t: any) => t.listingId);
@@ -623,6 +814,28 @@ export const getAnalytics = async () => {
       departments: listing?.departments,
     };
   });
+
+  const outreachListingIds = [
+    ...(outreach.topListings || []).map((item: any) => item.listingId),
+    ...(outreach.recentEvents || []).map((item: any) => item.listingId),
+  ].filter(Boolean);
+  const outreachListingsData = await getListingModel()
+    .find({ _id: { $in: outreachListingIds } })
+    .select('title ownerFirstName ownerLastName departments')
+    .lean();
+  const findOutreachListing = (listingId: any) =>
+    outreachListingsData.find((listing: any) => listing._id.toString() === listingId.toString());
+  const enrichOutreachListing = (item: any) => {
+    const listing = findOutreachListing(item.listingId);
+    return {
+      ...item,
+      listingId: item.listingId?.toString(),
+      title: listing?.title,
+      ownerFirstName: listing?.ownerFirstName,
+      ownerLastName: listing?.ownerLastName,
+      departments: listing?.departments || [],
+    };
+  };
 
   return {
     visitors: {
@@ -656,6 +869,19 @@ export const getAnalytics = async () => {
       trendingListings: enrichedTrending || [],
       userActivity: engagement.userActivityStats[0] || { activeUsers: 0, avgEventsPerUser: 0 },
       mostActiveUsers: engagement.mostActiveUsers || [],
+      outreach: {
+        summary: outreach.summary?.[0] || {
+          totalReveals: 0,
+          totalAttempts: 0,
+          totalOutcomes: 0,
+          revealsLast7Days: 0,
+          attemptsLast7Days: 0,
+          outcomesLast7Days: 0,
+        },
+        byOutcome: outreach.byOutcome || [],
+        topListings: (outreach.topListings || []).map(enrichOutreachListing),
+        recentEvents: (outreach.recentEvents || []).map(enrichOutreachListing),
+      },
       totalViewsFromCounters: listings.viewsAndFavorites[0]?.totalViews || 0,
       totalFavoritesFromCounters: listings.viewsAndFavorites[0]?.totalFavorites || 0,
       avgViews: listings.viewsAndFavorites[0]?.avgViews || 0,
