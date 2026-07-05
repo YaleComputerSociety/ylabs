@@ -2,7 +2,7 @@
 
 ## Architecture
 
-Monorepo with a React client and Express server communicating over REST. MongoDB Atlas is the primary data store. Meilisearch handles search (semantic + keyword) with an OpenAI embedder configured server-side. Yale CAS provides SSO authentication, while the public research discovery flow exposes redacted confirmed listings to logged-out visitors.
+Monorepo with a React client and Express server communicating over REST. MongoDB Atlas is the primary data store. Meilisearch handles search (semantic + keyword) with an OpenAI embedder configured server-side. Yale CAS provides SSO authentication, while the public research discovery flow exposes redacted confirmed listings and public-safe evidence/source metadata to logged-out visitors.
 
 ```
 React (Vite) → Express (Passport.js) → MongoDB Atlas + Meilisearch
@@ -20,7 +20,7 @@ The server follows a layered architecture: **Routes → Middleware → Controlle
 | Server          | Express 4, TypeScript 5.3, Passport.js 0.5 (CAS strategy), Mongoose 8                          |
 | Search          | Meilisearch 0.57 (hybrid search with OpenAI `text-embedding-3-small` embedder)                 |
 | Database        | MongoDB Atlas (single cluster, separate databases per environment)                             |
-| Error Tracking  | Sentry for client and server runtime exception reporting                                        |
+| Error Tracking  | Sentry for client and server runtime exception reporting                                       |
 | Package Manager | Yarn 4 via Corepack                                                                            |
 | Tooling         | concurrently, nodemon, ts-node, cross-env                                                      |
 
@@ -87,6 +87,8 @@ If the client cannot reach the auth endpoint, `/login` renders an inline retry s
 
 MongoDB via Mongoose 8. All environments use `MONGODBURL` — the connection string determines which database (Production, Beta, or Development) is used. An optional `productionMigration` mode (via `API_MODE=productionMigration`) adds a second connection to `MONGODBURL_MIGRATION` for dual-DB migrations; `getListingModel()` returns the migration model in this mode.
 
+Listing documents may include an `evidence` object with `status`, `summary`, `confidence`, generation/verification timestamps, public `sources`, and optional `internalNotes`. `internalNotes` is `select: false`, is removed before Meilisearch indexing, and is not exposed by public research responses.
+
 ## Search
 
 Search has migrated from MongoDB Atlas Vector Search to **Meilisearch**. The old `embeddingService.ts` (OpenAI client-side embedding generation + in-memory LRU cache) has been removed.
@@ -99,15 +101,15 @@ Current authenticated listing search flow:
 4. If hybrid search fails, the controller retries keyword-only Meilisearch; if Meilisearch is unavailable, it falls back to MongoDB filtering
 5. Results are returned with `totalCount` for pagination and a `degraded` boolean indicating whether fallback behavior was used
 
-Public research discovery uses the same degradation path through `/api/research`, but only returns confirmed, unarchived listings after redacting contact/private fields (`ownerEmail`, `emails`, owner/professor IDs, views, favorites, archived/confirmed/audit internals). Client routes `/research` and `/research/:slug` render the browse page without `PrivateRoute`; the public search state is URL-backed and restored on page load/back-forward navigation (`query`, `departments`, `academicDisciplines`, `researchAreas`, each `*Mode`, `sortBy`, `sortOrder`, and client-only `quickFilter`). Opening a card updates the URL to a shareable modal route while preserving current search params. Authenticated users on those public routes additionally call `/api/research/:slug/contact` to retrieve the full listing with contact fields. Public research search uses a contact-redacted searchable field set, accepts public facet params and `union`/`intersection` filter modes, rejects unknown query params, and only allows `createdAt` or `updatedAt` sort fields.
+Public research discovery uses the same degradation path through `/api/research`, but only returns confirmed, unarchived listings after redacting contact/private fields (`ownerEmail`, `emails`, owner/professor IDs, views, favorites, archived/confirmed/audit internals). Public responses keep sanitized `evidence` metadata for the listing detail evidence rail, limited to status/summary/confidence/timestamps and up to eight source records; source URLs are restricted to `http`/`https` and stripped of credentials, query strings, and fragments. Client routes `/research` and `/research/:slug` render the browse page without `PrivateRoute`; opening a card updates the URL to a shareable modal route. Authenticated users on those public routes additionally call `/api/research/:slug/contact` to retrieve the full listing with contact fields, while evidence remains sanitized through the public evidence allowlist. Public research search uses a contact-redacted searchable field set and only accepts `createdAt` or `updatedAt` sort fields.
 
 The authenticated Find Labs page distinguishes an empty local/unfiltered dataset from an empty search result: no unfiltered listings shows "No research labs are available right now" with a `/fellowships` action, while active searches or filters show "No labs match your current search or filters."
 
 The Meilisearch client (`server/src/utils/meiliClient.ts`) lazy-loads and caches the connection. Configuration: `MEILISEARCH_HOST` (defaults to `http://localhost:7700`), `MEILISEARCH_API_KEY`, and `MEILISEARCH_INDEX_PREFIX` (optional, for multi-environment isolation on a shared instance). The module exports `getMeiliIndex(name)` which resolves prefixed index names and `resolveIndexName(name)` for use in migration scripts.
 
-Listing mutations in `listingService.ts` sync to Meilisearch after MongoDB writes — create uses `addDocuments()`, update uses `updateDocuments()`, delete uses `deleteDocument()`. Documents are indexed with `primaryKey: 'id'` (string-cast `_id`), with `embedding`, `_id`, and `__v` fields stripped.
+Listing mutations in `listingService.ts` sync to Meilisearch after MongoDB writes — create uses `addDocuments()`, update uses `updateDocuments()`, delete uses `deleteDocument()`. Documents are indexed with `primaryKey: 'id'` (string-cast `_id`), with `embedding`, `_id`, `__v`, and private `evidence.internalNotes` fields stripped.
 
-The migration script `data-migration/MigrateToMeilisearch.ts` configures the Meilisearch index with filterable attributes (`departments`, `researchAreas`, `archived`, `confirmed`), sortable attributes (`createdAt`, `updatedAt`, `searchScore`), and the OpenAI embedder. Run it with `MEILISEARCH_INDEX_PREFIX` set to populate the correct index per environment.
+The migration script `data-migration/MigrateToMeilisearch.ts` configures the Meilisearch index with filterable attributes (`departments`, `researchAreas`, `archived`, `confirmed`), sortable attributes (`createdAt`, `updatedAt`, `searchScore`), and the OpenAI embedder. It also strips private `evidence.internalNotes` from migrated documents. Run it with `MEILISEARCH_INDEX_PREFIX` set to populate the correct index per environment.
 
 ## Environments
 
@@ -316,19 +318,19 @@ User → Yale CAS SSO → passport.ts findOrCreateUser
 | `MEILISEARCH_HOST`         | No (default: `http://localhost:7700`) | Meilisearch instance URL                                                                                                                                         |
 | `MEILISEARCH_API_KEY`      | No                                    | Meilisearch API key                                                                                                                                              |
 | `MEILISEARCH_INDEX_PREFIX` | No                                    | Environment prefix for index names (e.g., `prod`, `beta`). When set, indexes become `{prefix}_listings`. Allows prod and beta to share one Meilisearch instance. |
-| `SENTRY_DSN`               | No                                    | Enables server-side Sentry error tracking when set                                                                                                                |
-| `SENTRY_ENVIRONMENT`       | No                                    | Sentry environment label; falls back to `NODE_ENV`                                                                                                                |
-| `SENTRY_RELEASE`           | No                                    | Sentry release identifier                                                                                                                                         |
+| `SENTRY_DSN`               | No                                    | Enables server-side Sentry error tracking when set                                                                                                               |
+| `SENTRY_ENVIRONMENT`       | No                                    | Sentry environment label; falls back to `NODE_ENV`                                                                                                               |
+| `SENTRY_RELEASE`           | No                                    | Sentry release identifier                                                                                                                                        |
 | `PORT`                     | No (default: 4000)                    | Server port                                                                                                                                                      |
 
 ### `client/.env`
 
-| Variable                   | Required | Description                                                |
-| -------------------------- | -------- | ---------------------------------------------------------- |
-| `VITE_APP_SERVER`          | Yes      | Backend API URL (e.g., `http://localhost:4000`)            |
-| `VITE_SENTRY_DSN`          | No       | Enables client-side Sentry error tracking when set         |
-| `VITE_SENTRY_ENVIRONMENT`  | No       | Sentry environment label; falls back to Vite mode          |
-| `VITE_SENTRY_RELEASE`      | No       | Sentry release identifier                                  |
+| Variable                  | Required | Description                                        |
+| ------------------------- | -------- | -------------------------------------------------- |
+| `VITE_APP_SERVER`         | Yes      | Backend API URL (e.g., `http://localhost:4000`)    |
+| `VITE_SENTRY_DSN`         | No       | Enables client-side Sentry error tracking when set |
+| `VITE_SENTRY_ENVIRONMENT` | No       | Sentry environment label; falls back to Vite mode  |
+| `VITE_SENTRY_RELEASE`     | No       | Sentry release identifier                          |
 
 ## Sensitive Files
 
