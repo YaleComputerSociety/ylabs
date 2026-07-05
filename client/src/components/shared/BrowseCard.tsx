@@ -13,6 +13,11 @@ import ConfigContext from '../../contexts/ConfigContext';
 import UserContext from '../../contexts/UserContext';
 import { useViewTracking } from '../../hooks/useViewTracking';
 import { getDepartmentAbbreviation } from '../../utils/departmentNames';
+import {
+  getEligibilitySummary,
+  getFellowshipApplicationStatus,
+  URGENT_DEADLINE_DAYS,
+} from '../../utils/fellowshipStatus';
 
 interface BrowseCardProps {
   item: BrowsableItem;
@@ -35,7 +40,10 @@ const BrowseCard = React.memo(
 
     const daysUntil = getDaysUntilDeadline(item);
     const showUrgentBanner =
-      item.type === 'fellowship' && daysUntil !== null && daysUntil > 0 && daysUntil <= 14;
+      item.type === 'fellowship' &&
+      daysUntil !== null &&
+      daysUntil > 0 &&
+      daysUntil <= URGENT_DEADLINE_DAYS;
 
     const hasPrerequisites =
       item.type === 'listing' &&
@@ -76,15 +84,9 @@ const BrowseCard = React.memo(
         })()
       : null;
 
-    const fellowshipSubtitle = !isListing
-      ? (() => {
-          const { deadline } = item.data;
-          if (!deadline) return 'No deadline';
-          const d = new Date(deadline);
-          if (d < new Date()) return 'Deadline passed';
-          return `Due ${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
-        })()
-      : null;
+    const fellowshipStatus = !isListing ? getFellowshipApplicationStatus(item.data) : null;
+    const fellowshipSubtitle = fellowshipStatus?.detail || null;
+    const fellowshipEligibility = !isListing ? getEligibilitySummary(item.data) : null;
     const subtitleColor = getItemSubtitleColor(item);
 
     const isAudited = isAdmin && item.data.audited;
@@ -151,6 +153,28 @@ const BrowseCard = React.memo(
                 </h3>
 
                 <p className={`text-sm mb-2 ${subtitleColor}`}>{fellowshipSubtitle}</p>
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {fellowshipStatus && (
+                    <span
+                      className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                        fellowshipStatus.isCurrentlyRelevant
+                          ? 'bg-green-50 text-green-700'
+                          : 'bg-gray-100 text-gray-600'
+                      }`}
+                    >
+                      {fellowshipStatus.label}
+                    </span>
+                  )}
+                  <span
+                    className={`text-xs px-2 py-0.5 rounded-full ${
+                      fellowshipStatus?.needsEligibilityReview
+                        ? 'bg-amber-50 text-amber-700'
+                        : 'bg-slate-100 text-slate-700'
+                    }`}
+                  >
+                    {fellowshipEligibility}
+                  </span>
+                </div>
 
                 <div className="flex-1" />
 

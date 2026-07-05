@@ -12,6 +12,7 @@ import {
   adminFellowshipFormReducer,
   createInitialAdminFellowshipFormState,
 } from '../../reducers/adminFellowshipFormReducer';
+import { getFellowshipApplicationStatus } from '../../utils/fellowshipStatus';
 
 interface FellowshipLink {
   label: string;
@@ -181,6 +182,9 @@ const AdminFellowshipsTable = () => {
     return new Date(dateStr).toLocaleDateString();
   };
 
+  const formatStatus = (fellowship: AdminFellowship) =>
+    getFellowshipApplicationStatus(fellowship).label;
+
   const handleSort = (field: SortField) => {
     dispatch({ type: 'TOGGLE_SORT', field });
   };
@@ -297,6 +301,9 @@ const AdminFellowshipsTable = () => {
                       {fellowship.archived && (
                         <span className="text-xs text-red-600">(Archived)</span>
                       )}
+                      <span className="block text-xs text-gray-500">
+                        {formatStatus(fellowship)}
+                      </span>
                     </div>
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-500">
@@ -574,6 +581,15 @@ const FellowshipEditModal = ({
     audited,
     archived,
   } = formState;
+  const statusPreview = getFellowshipApplicationStatus({
+    isAcceptingApplications,
+    applicationOpenDate: applicationOpenDate || null,
+    deadline: deadline || null,
+    eligibility,
+    yearOfStudy,
+    termOfAward,
+    citizenshipStatus,
+  });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -682,6 +698,11 @@ const FellowshipEditModal = ({
               rows={3}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg"
             />
+            {statusPreview.needsEligibilityReview && (
+              <p className="mt-1 text-xs text-amber-700">
+                Add eligibility text or structured filters so students can judge fit.
+              </p>
+            )}
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -836,6 +857,21 @@ const FellowshipEditModal = ({
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                 />
               </div>
+            </div>
+            <div
+              className={`mt-3 rounded-lg border p-3 text-sm ${
+                statusPreview.isCurrentlyRelevant
+                  ? 'bg-blue-50 border-blue-100 text-blue-800'
+                  : 'bg-red-50 border-red-100 text-red-700'
+              }`}
+            >
+              <p className="font-semibold">{statusPreview.label}</p>
+              <p>{statusPreview.detail}</p>
+              {statusPreview.needsDateReview && (
+                <p className="mt-1 text-amber-700">
+                  This is marked accepting applications without a deadline.
+                </p>
+              )}
             </div>
           </div>
 

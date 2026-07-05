@@ -12,23 +12,13 @@ import { BrowsableItem } from '../types/browsable';
 import { Fellowship } from '../types/types';
 import axios from '../utils/axios';
 import { browsePageReducer, createInitialBrowsePageState } from '../reducers/browsePageReducer';
-
-const CLOSING_SOON_DAYS = 30;
+import { getFellowshipApplicationStatus } from '../utils/fellowshipStatus';
 
 function categorizeFellowship(f: Fellowship, now: Date): 'closingSoon' | 'open' | 'closed' {
-  const deadlinePassed = f.deadline ? new Date(f.deadline) < now : false;
-  const isOpen = f.isAcceptingApplications && !deadlinePassed;
-
-  if (!isOpen) return 'closed';
-
-  if (f.deadline) {
-    const daysUntil = Math.ceil(
-      (new Date(f.deadline).getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
-    );
-    if (daysUntil <= CLOSING_SOON_DAYS && daysUntil > 0) return 'closingSoon';
-  }
-
-  return 'open';
+  const status = getFellowshipApplicationStatus(f, now);
+  if (status.kind === 'closingSoon') return 'closingSoon';
+  if (status.isCurrentlyRelevant) return 'open';
+  return 'closed';
 }
 
 const SectionHeader = ({
@@ -191,7 +181,7 @@ const Fellowships = () => {
         <LoadingSpinner size="lg" />
       ) : noResults ? (
         <div className="text-center py-8 text-gray-500">
-          <p>No fellowships match the search criteria</p>
+          <p>No fellowships match the current search criteria or eligibility filters</p>
         </div>
       ) : (
         <>

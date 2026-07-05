@@ -7,6 +7,11 @@ import { Fellowship } from '../../types/types';
 import FellowshipSearchContext from '../../contexts/FellowshipSearchContext';
 import { ensureHttpPrefix, safeUrl } from '../../utils/url';
 import FavoriteButton from '../shared/FavoriteButton';
+import {
+  formatFellowshipDate,
+  getEligibilitySummary,
+  getFellowshipApplicationStatus,
+} from '../../utils/fellowshipStatus';
 
 interface FellowshipModalProps {
   fellowship: Fellowship;
@@ -120,17 +125,14 @@ const FellowshipModal = ({
     navigate('/fellowships');
   };
 
-  const formatDate = (dateStr: string | null) => {
-    if (!dateStr) return 'Not specified';
-    const date = new Date(dateStr);
-    return date.toLocaleDateString('en-US', {
-      month: 'long',
-      day: 'numeric',
-      year: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-    });
-  };
+  const status = getFellowshipApplicationStatus(fellowship);
+  const eligibilitySummary = getEligibilitySummary(fellowship);
+  const hasEligibilityFilters =
+    fellowship.yearOfStudy.length > 0 ||
+    fellowship.termOfAward.length > 0 ||
+    fellowship.purpose.length > 0 ||
+    fellowship.globalRegions.length > 0 ||
+    fellowship.citizenshipStatus.length > 0;
 
   const hasContactInfo =
     fellowship.contactName ||
@@ -163,14 +165,12 @@ const FellowshipModal = ({
                   )}
                   <span
                     className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                      fellowship.isAcceptingApplications
+                      status.isCurrentlyRelevant
                         ? 'bg-green-50 text-green-700'
                         : 'bg-red-50 text-red-600'
                     }`}
                   >
-                    {fellowship.isAcceptingApplications
-                      ? 'Accepting Applications'
-                      : 'Not Accepting'}
+                    {status.label}
                   </span>
                 </div>
 
@@ -283,21 +283,82 @@ const FellowshipModal = ({
 
                 <section>
                   <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-                    Key Dates
+                    Application Timing
                   </h3>
-                  <div className="bg-blue-50 rounded-lg p-3 space-y-3">
+                  <div
+                    className={`rounded-lg p-3 space-y-3 ${
+                      status.isCurrentlyRelevant
+                        ? 'bg-blue-50'
+                        : 'bg-red-50 border border-red-100'
+                    }`}
+                  >
+                    <div>
+                      <span
+                        className={`text-xs ${
+                          status.isCurrentlyRelevant ? 'text-blue-600' : 'text-red-600'
+                        }`}
+                      >
+                        Current Status
+                      </span>
+                      <p
+                        className={`text-sm font-semibold ${
+                          status.isCurrentlyRelevant ? 'text-blue-900' : 'text-red-800'
+                        }`}
+                      >
+                        {status.label}
+                      </p>
+                      <p
+                        className={`text-xs ${
+                          status.isCurrentlyRelevant ? 'text-blue-700' : 'text-red-700'
+                        }`}
+                      >
+                        {status.detail}
+                      </p>
+                    </div>
                     <div>
                       <span className="text-xs text-blue-600">Application Opens</span>
                       <p className="text-sm font-medium text-blue-900">
-                        {formatDate(fellowship.applicationOpenDate)}
+                        {formatFellowshipDate(fellowship.applicationOpenDate)}
                       </p>
                     </div>
                     <div>
                       <span className="text-xs text-blue-600">Deadline</span>
                       <p className="text-sm font-medium text-blue-900">
-                        {formatDate(fellowship.deadline)}
+                        {formatFellowshipDate(fellowship.deadline)}
                       </p>
                     </div>
+                    {status.needsDateReview && (
+                      <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded p-2">
+                        This opportunity is marked open, but no deadline is listed. Confirm timing
+                        on the application page before planning around it.
+                      </p>
+                    )}
+                  </div>
+                </section>
+
+                <section>
+                  <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+                    Eligibility Snapshot
+                  </h3>
+                  <div
+                    className={`rounded-lg p-3 ${
+                      status.needsEligibilityReview
+                        ? 'bg-amber-50 border border-amber-100'
+                        : 'bg-slate-50'
+                    }`}
+                  >
+                    <p
+                      className={`text-sm font-medium ${
+                        status.needsEligibilityReview ? 'text-amber-800' : 'text-slate-800'
+                      }`}
+                    >
+                      {eligibilitySummary}
+                    </p>
+                    {status.needsEligibilityReview && (
+                      <p className="text-xs text-amber-700 mt-1">
+                        Eligibility has not been specified for this opportunity.
+                      </p>
+                    )}
                   </div>
                 </section>
 
@@ -468,6 +529,9 @@ const FellowshipModal = ({
                         </div>
                       </div>
                     )}
+                    {!hasEligibilityFilters && (
+                      <p className="text-sm text-gray-500">No eligibility filters listed.</p>
+                    )}
                   </div>
                 </section>
               </div>
@@ -509,17 +573,21 @@ const FellowshipModal = ({
                   </section>
                 )}
 
-                {fellowship.eligibility && (
-                  <section>
-                    <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-                      Eligibility Requirements
-                    </h3>
+                <section>
+                  <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+                    Eligibility Requirements
+                  </h3>
+                  {fellowship.eligibility ? (
                     <RichTextBlock
                       text={fellowship.eligibility}
                       className="text-sm text-gray-700 leading-relaxed"
                     />
-                  </section>
-                )}
+                  ) : (
+                    <p className="text-sm text-gray-500 bg-amber-50 border border-amber-100 rounded-lg p-4">
+                      Eligibility requirements have not been specified.
+                    </p>
+                  )}
+                </section>
 
                 {fellowship.restrictionsToUseOfAward && (
                   <section>
@@ -547,13 +615,23 @@ const FellowshipModal = ({
 
                 {fellowship.applicationLink && (
                   <div className="pt-4 border-t border-gray-100">
+                    {!status.isCurrentlyRelevant && (
+                      <p className="text-sm text-red-700 bg-red-50 border border-red-100 rounded-lg p-3 mb-3">
+                        This opportunity is not currently marked as open. Check the program page
+                        before starting an application.
+                      </p>
+                    )}
                     <a
                       href={ensureHttpPrefix(fellowship.applicationLink)}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center px-6 py-2.5 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors text-sm"
+                      className={`inline-flex items-center px-6 py-2.5 text-white font-medium rounded-lg transition-colors text-sm ${
+                        status.isCurrentlyRelevant
+                          ? 'bg-blue-600 hover:bg-blue-700'
+                          : 'bg-gray-600 hover:bg-gray-700'
+                      }`}
                     >
-                      Apply Now
+                      {status.isCurrentlyRelevant ? 'Apply Now' : 'Visit Program Page'}
                       <svg
                         xmlns="http://www.w3.org/2000/svg"
                         width="16"
