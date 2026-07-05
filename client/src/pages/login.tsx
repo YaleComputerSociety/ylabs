@@ -88,7 +88,6 @@ const Description = styled.div`
   }
 `;
 
-
 const TitleText = styled.h1`
   color: #000000;
   font-size: 32px;

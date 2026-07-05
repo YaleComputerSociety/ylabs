@@ -213,11 +213,11 @@ The only other workflow is `keep-alive.yml`, which pings the Beta Render service
 
 Three rate limiters in `app.ts`, all keyed by authenticated user's `netId` with IP fallback for unauthenticated requests:
 
-| Limiter        | Scope                                                      | Limit            |
-| -------------- | ---------------------------------------------------------- | ---------------- |
-| `apiLimiter`   | All `/api` routes                                          | 200 req / 15 min |
-| `publicDiscoveryLimiter` | `/api/research` public browse/detail traffic      | 120 req / 15 min |
-| `writeLimiter` | Non-GET requests to `/api/listings` and `/api/fellowships` | 50 req / 15 min  |
+| Limiter                  | Scope                                                      | Limit            |
+| ------------------------ | ---------------------------------------------------------- | ---------------- |
+| `apiLimiter`             | All `/api` routes                                          | 200 req / 15 min |
+| `publicDiscoveryLimiter` | `/api/research` public browse/detail traffic               | 120 req / 15 min |
+| `writeLimiter`           | Non-GET requests to `/api/listings` and `/api/fellowships` | 50 req / 15 min  |
 
 All three limiters are skipped in CI, development, and test environments.
 
@@ -253,18 +253,18 @@ Exported from `server/src/middleware/`:
 
 All routes mount under `/api` in `app.ts`. Route files in `server/src/routes/`:
 
-| Prefix            | File               | Auth                                           |
-| ----------------- | ------------------ | ---------------------------------------------- |
+| Prefix            | File               | Auth                                                  |
+| ----------------- | ------------------ | ----------------------------------------------------- |
 | `/listings`       | `listings.ts`      | Varies (authenticated search, mutations require auth) |
-| `/research`       | `research.ts`      | Public browse/detail; contact detail requires auth |
-| `/fellowships`    | `fellowships.ts`   | Varies                                         |
-| `/users`          | `users.ts`         | Yes                                            |
-| `/profiles`       | `profiles.ts`      | Varies                                         |
-| `/analytics`      | `analytics.ts`     | Admin                                          |
-| `/config`         | `config.ts`        | No                                             |
-| `/research-areas` | `researchAreas.ts` | Admin for writes                               |
-| `/admin`          | `admin.ts`         | Admin                                          |
-| `/seed`           | `seed.ts`          | Dev mode only                                  |
+| `/research`       | `research.ts`      | Public browse/detail; contact detail requires auth    |
+| `/fellowships`    | `fellowships.ts`   | Varies                                                |
+| `/users`          | `users.ts`         | Yes                                                   |
+| `/profiles`       | `profiles.ts`      | Varies                                                |
+| `/analytics`      | `analytics.ts`     | Admin                                                 |
+| `/config`         | `config.ts`        | No                                                    |
+| `/research-areas` | `researchAreas.ts` | Admin for writes                                      |
+| `/admin`          | `admin.ts`         | Admin                                                 |
+| `/seed`           | `seed.ts`          | Dev mode only                                         |
 
 Passport auth routes (CAS login/logout, dev-login) are mounted separately via `passportRoutes` before the main routes.
 

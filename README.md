@@ -6,13 +6,13 @@ A research lab and fellowship discovery platform for Yale University, with publi
 
 ## Tech Stack
 
-| Layer | Tech |
-|-------|------|
-| Client | React 19, TypeScript, Vite, TailwindCSS, MUI |
-| Server | Express 4, TypeScript, Passport.js (Yale CAS) |
-| Database | MongoDB Atlas (Mongoose 8) |
-| Search | Meilisearch (hybrid: keyword + semantic via OpenAI embedder) |
-| Package Manager | Yarn 4 via Corepack |
+| Layer           | Tech                                                         |
+| --------------- | ------------------------------------------------------------ |
+| Client          | React 19, TypeScript, Vite, TailwindCSS, MUI                 |
+| Server          | Express 4, TypeScript, Passport.js (Yale CAS)                |
+| Database        | MongoDB Atlas (Mongoose 8)                                   |
+| Search          | Meilisearch (hybrid: keyword + semantic via OpenAI embedder) |
+| Package Manager | Yarn 4 via Corepack                                          |
 
 ## Quick Start
 

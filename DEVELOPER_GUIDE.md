@@ -250,18 +250,18 @@ Client auth state is owned by `UserContextProvider` and `userReducer`. Failed au
 
 All mount under `/api`.
 
-| Prefix            | Description                                             | Auth                                            |
-| ----------------- | ------------------------------------------------------- | ----------------------------------------------- |
-| `/listings`       | Listing CRUD and authenticated search                   | Varies                                          |
+| Prefix            | Description                                                  | Auth                                             |
+| ----------------- | ------------------------------------------------------------ | ------------------------------------------------ |
+| `/listings`       | Listing CRUD and authenticated search                        | Varies                                           |
 | `/research`       | Public read-only listing discovery and shareable detail URLs | Public; `/research/:slug/contact` requires login |
-| `/fellowships`    | Fellowship CRUD and search                              | Varies                                          |
-| `/users`          | User CRUD                                               | Yes                                             |
-| `/profiles`       | Faculty profiles                                        | Varies                                          |
-| `/analytics`      | Analytics dashboards                                    | Admin                                           |
-| `/config`         | Departments + research areas                            | No                                              |
-| `/research-areas` | Research area CRUD                                      | Admin for writes                                |
-| `/admin`          | Admin operations                                        | Admin                                           |
-| `/seed`           | Dev seeding routes                                      | Dev mode only                                   |
+| `/fellowships`    | Fellowship CRUD and search                                   | Varies                                           |
+| `/users`          | User CRUD                                                    | Yes                                              |
+| `/profiles`       | Faculty profiles                                             | Varies                                           |
+| `/analytics`      | Analytics dashboards                                         | Admin                                            |
+| `/config`         | Departments + research areas                                 | No                                               |
+| `/research-areas` | Research area CRUD                                           | Admin for writes                                 |
+| `/admin`          | Admin operations                                             | Admin                                            |
+| `/seed`           | Dev seeding routes                                           | Dev mode only                                    |
 
 ---
 
@@ -333,11 +333,11 @@ Public pages that should work for logged-out visitors must not use `PrivateRoute
 
 ## Troubleshooting
 
-| Issue                           | Solution                                                          |
-| ------------------------------- | ----------------------------------------------------------------- |
-| CAS login not working locally   | Use dev-login: `http://localhost:4000/api/dev-login`              |
+| Issue                           | Solution                                                                    |
+| ------------------------------- | --------------------------------------------------------------------------- |
+| CAS login not working locally   | Use dev-login: `http://localhost:4000/api/dev-login`                        |
 | Find Labs has no local results  | Seed Development listings or use the empty-state link to browse fellowships |
-| Search is degraded or stale     | Check Meilisearch is running: `curl http://localhost:7700/health` |
-| Meilisearch connection refused  | Start Docker container or check `MEILISEARCH_HOST` in `.env`      |
-| CORS errors                     | Add origin to `allowList` in `app.ts` or use dev mode             |
-| "Forbidden" on listing creation | Professor needs `profileVerified: true`                           |
+| Search is degraded or stale     | Check Meilisearch is running: `curl http://localhost:7700/health`           |
+| Meilisearch connection refused  | Start Docker container or check `MEILISEARCH_HOST` in `.env`                |
+| CORS errors                     | Add origin to `allowList` in `app.ts` or use dev mode                       |
+| "Forbidden" on listing creation | Professor needs `profileVerified: true`                                     |
