@@ -3,6 +3,13 @@
  */
 import express from 'express';
 
+const sendUnauthorized = (res: express.Response) => {
+  return res.status(401).json({
+    error: 'Unauthorized',
+    code: 'AUTH_REQUIRED',
+  });
+};
+
 /**
  * Middleware to check if user is authenticated
  */
@@ -14,7 +21,7 @@ export const isAuthenticated = (
   if (req.user) {
     return next();
   }
-  res.status(401).json({ error: 'Unauthorized' });
+  sendUnauthorized(res);
 };
 
 /**
@@ -54,7 +61,7 @@ export const canCreateListing = (
   };
 
   if (!currentUser) {
-    return res.status(401).json({ error: 'Unauthorized' });
+    return sendUnauthorized(res);
   }
 
   const allowedTypes = ['admin', 'professor', 'faculty'];
@@ -85,7 +92,7 @@ export const isAdmin = (
   const currentUser = req.user as { netId?: string; userType?: string; userConfirmed?: boolean };
 
   if (!currentUser) {
-    return res.status(401).json({ error: 'Unauthorized' });
+    return sendUnauthorized(res);
   }
 
   if (currentUser.userType !== 'admin') {
@@ -106,7 +113,7 @@ export const isProfessor = (
   const currentUser = req.user as { netId?: string; userType?: string; userConfirmed?: boolean };
 
   if (!currentUser) {
-    return res.status(401).json({ error: 'Unauthorized' });
+    return sendUnauthorized(res);
   }
 
   if (
@@ -131,7 +138,7 @@ export const isConfirmed = (
   const currentUser = req.user as { netId?: string; userType?: string; userConfirmed?: boolean };
 
   if (!currentUser) {
-    return res.status(401).json({ error: 'Unauthorized' });
+    return sendUnauthorized(res);
   }
 
   if (!currentUser.userConfirmed) {

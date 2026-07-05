@@ -92,6 +92,12 @@ describe('userReducer', () => {
     expect(next.authError).toBeUndefined();
   });
 
+  it('LOGOUT clears loading so route guards can redirect after session loss', () => {
+    const next = userReducer(createInitialUserState({ isLoading: true }), { type: 'LOGOUT' });
+    expect(next.isLoading).toBe(false);
+    expect(next.isAuthenticated).toBe(false);
+  });
+
   it('reducer does not mutate prior state', () => {
     const state = createInitialUserState();
     const snapshot = JSON.stringify(state);
