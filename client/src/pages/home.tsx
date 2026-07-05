@@ -1,7 +1,7 @@
 /**
  * Main listings browse page with search, filters, and grid/list view.
  */
-import { useReducer, useEffect, useContext, useMemo } from 'react';
+import { useReducer, useEffect, useContext, useMemo, useCallback } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import SearchContext from '../contexts/SearchContext';
 import UserContext from '../contexts/UserContext';
@@ -54,7 +54,7 @@ const Home = () => {
 
   useEffect(() => {
     setQueryString('');
-  }, []);
+  }, [setQueryString]);
 
   const requireLogin = () => {
     const returnUrl = window.location.origin + location.pathname + location.search;
@@ -62,7 +62,7 @@ const Home = () => {
     navigate('/login');
   };
 
-  const reloadFavorites = async () => {
+  const reloadFavorites = useCallback(async () => {
     if (!isAuthenticated) {
       dispatch({ type: 'SET_FAVORITES', ids: [] });
       return;
@@ -78,14 +78,14 @@ const Home = () => {
         dispatch({ type: 'SET_FAVORITES', ids: [] });
         swal({ text: 'Could not load your favorite listings', icon: 'warning' });
       });
-  };
+  }, [isAuthenticated]);
 
   useEffect(() => {
     refreshListings();
     if (!authLoading) {
       reloadFavorites();
     }
-  }, [authLoading, isAuthenticated]);
+  }, [authLoading, isAuthenticated, refreshListings, reloadFavorites]);
 
   useEffect(() => {
     if (!slug) return;

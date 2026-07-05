@@ -81,10 +81,10 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
     page,
     filterBarHeight,
     quickFilter,
-    queryStringLoaded,
-    departmentsLoaded,
     initialSearchDone,
   } = state;
+  const queryStringLoadedRef = useRef(false);
+  const departmentsLoadedRef = useRef(false);
 
   // Context setter API preserved for compatibility with existing call sites
   // (some pass a value, some pass an updater function).
@@ -263,25 +263,27 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
     if (!configLoaded || authLoading || (!isAuthenticated && !isResearchRoute)) return;
 
     const debounceTimeout = setTimeout(() => {
-      if (queryStringLoaded) {
+      if (queryStringLoadedRef.current) {
         dispatch({ type: 'SET_PAGE', payload: 1 });
         handleSearch(1);
       }
+      queryStringLoadedRef.current = true;
       dispatch({ type: 'MARK_QUERY_STRING_LOADED' });
     }, 500);
 
     return () => {
       clearTimeout(debounceTimeout);
     };
-  }, [queryString, configLoaded, authLoading, isAuthenticated, isResearchRoute]);
+  }, [queryString, configLoaded, authLoading, isAuthenticated, isResearchRoute, handleSearch]);
 
   useEffect(() => {
     if (!configLoaded || authLoading || (!isAuthenticated && !isResearchRoute)) return;
 
-    if (departmentsLoaded) {
+    if (departmentsLoadedRef.current) {
       dispatch({ type: 'SET_PAGE', payload: 1 });
       handleSearch(1);
     }
+    departmentsLoadedRef.current = true;
     dispatch({ type: 'MARK_DEPARTMENTS_LOADED' });
   }, [
     selectedDepartments,
@@ -296,13 +298,14 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
     authLoading,
     isAuthenticated,
     isResearchRoute,
+    handleSearch,
   ]);
 
   useEffect(() => {
     if (page > 1 && configLoaded && !authLoading && (isAuthenticated || isResearchRoute)) {
       handleSearch(page);
     }
-  }, [page, configLoaded, authLoading, isAuthenticated, isResearchRoute]);
+  }, [page, configLoaded, authLoading, isAuthenticated, isResearchRoute, handleSearch]);
 
   return (
     <SearchContext.Provider

@@ -50,10 +50,7 @@ const PUBLIC_LISTING_SEARCHABLE_FIELDS = [
   'keywords',
 ];
 
-const PUBLIC_LISTING_SORT_FIELDS = new Set([
-  'createdAt',
-  'updatedAt',
-]);
+const PUBLIC_LISTING_SORT_FIELDS = new Set(['createdAt', 'updatedAt']);
 
 const getIdFromSlug = (slug: string): string | null => {
   const match = slug.match(/[a-fA-F0-9]{24}/);
@@ -344,11 +341,14 @@ export const searchListingsViaMongo = async (
   if (params.sortBy) {
     sort[params.sortBy] = params.sortOrder === '1' ? 1 : -1;
   } else if (!params.query || params.query.trim() === '') {
-    Object.assign(sort, params.defaultSort || {
-      browseRankScore: -1,
-      lastObservedAt: -1,
-      createdAt: -1,
-    });
+    Object.assign(
+      sort,
+      params.defaultSort || {
+        browseRankScore: -1,
+        lastObservedAt: -1,
+        createdAt: -1,
+      },
+    );
   } else {
     sort.updatedAt = -1;
   }
