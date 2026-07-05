@@ -30,6 +30,8 @@ const startApp = async () => {
   } catch (e) {
     await captureStartupError(e);
     console.error(`Failed to start app with error 💣: ${e}`);
+    process.exitCode = 1;
+    throw e;
   }
 };
 
