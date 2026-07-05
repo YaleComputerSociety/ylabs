@@ -6,6 +6,7 @@ import { Link } from 'react-router-dom';
 import { Listing } from '../../types/types';
 import UserContext from '../../contexts/UserContext';
 import ConfigContext from '../../contexts/ConfigContext';
+import axios from '../../utils/axios';
 import { getDepartmentAbbreviation } from '../../utils/departmentNames';
 import { ensureHttpPrefix } from '../../utils/url';
 import { getInstitutionAffiliation, getInstitutionLabel } from '../../utils/institutionAffiliation';
@@ -34,6 +35,10 @@ const ListingDetailModal = ({
 }: ListingDetailModalProps) => {
   const isCreated = listing.id === 'create';
   const [restrictedStats, setRestrictedStats] = useState(true);
+  const [outreachPrompt, setOutreachPrompt] = useState<{
+    status: 'idle' | 'saving' | 'saved' | 'error';
+    outcome?: string;
+  } | null>(null);
   const { user, isAuthenticated } = useContext(UserContext);
   const { getColorForResearchArea, getDepartmentByAbbr } = useContext(ConfigContext);
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -52,6 +57,47 @@ const ListingDetailModal = ({
 
   const handleBackdropClick = (e: React.MouseEvent) => {
     if (e.target === e.currentTarget) onClose();
+  };
+
+  const recordOutreach = async (action: 'email_click' | 'outcome', outcome?: string) => {
+    await axios.post(
+      `/research/${listing.id}/outreach`,
+      {
+        action,
+        outcome,
+        source: 'listing_detail_modal',
+      },
+      { withCredentials: true },
+    );
+  };
+
+  const handleEmailClick = (e: React.MouseEvent, email?: string) => {
+    e.stopPropagation();
+    if (!email) {
+      e.preventDefault();
+      return;
+    }
+    if (!isAuthenticated) {
+      e.preventDefault();
+      onRequireAuth?.();
+      return;
+    }
+
+    setOutreachPrompt({ status: 'idle' });
+    recordOutreach('email_click').catch((error) => {
+      console.error('Error recording outreach contact attempt:', error);
+    });
+  };
+
+  const handleOutcome = async (outcome: string) => {
+    setOutreachPrompt({ status: 'saving', outcome });
+    try {
+      await recordOutreach('outcome', outcome);
+      setOutreachPrompt({ status: 'saved', outcome });
+    } catch (error) {
+      console.error('Error recording outreach outcome:', error);
+      setOutreachPrompt({ status: 'error', outcome });
+    }
   };
 
   useEffect(() => {
@@ -125,6 +171,10 @@ const ListingDetailModal = ({
       firstElement.focus();
     }
   };
+
+  useEffect(() => {
+    setOutreachPrompt(null);
+  }, [listing.id, isOpen]);
 
   if (!isOpen || !listing) return null;
 
@@ -230,7 +280,7 @@ const ListingDetailModal = ({
                     {canEmailContact ? (
                       <a
                         href={`mailto:${contactEmails[0]}`}
-                        onClick={(e) => e.stopPropagation()}
+                        onClick={(e) => handleEmailClick(e, contactEmails[0])}
                         className="p-2 rounded-lg hover:bg-gray-100 transition-colors text-gray-500 hover:text-blue-600"
                         aria-label={`Email ${professorName}`}
                         title="Send email"
@@ -453,6 +503,7 @@ const ListingDetailModal = ({
                         <a
                           key={i}
                           href={`mailto:${email}`}
+                          onClick={(e) => handleEmailClick(e, email)}
                           className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800 hover:underline"
                         >
                           <svg
@@ -517,6 +568,43 @@ const ListingDetailModal = ({
                           <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
                         </svg>
                         <span>Contact details unavailable</span>
+                      </div>
+                    )}
+                    {outreachPrompt && (
+                      <div className="mt-3 rounded-lg border border-blue-100 bg-blue-50/70 p-3">
+                        <p className="text-xs font-medium text-blue-900 mb-2">
+                          What happened with this contact?
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          {[
+                            ['emailed', 'Emailed'],
+                            ['will_contact_later', 'Later'],
+                            ['not_a_fit', 'Not a fit'],
+                          ].map(([outcome, label]) => (
+                            <button
+                              key={outcome}
+                              type="button"
+                              onClick={() => handleOutcome(outcome)}
+                              disabled={outreachPrompt.status === 'saving'}
+                              className={`rounded-md border px-2.5 py-1 text-xs font-medium transition-colors ${
+                                outreachPrompt.outcome === outcome &&
+                                outreachPrompt.status === 'saved'
+                                  ? 'border-green-300 bg-green-50 text-green-700'
+                                  : 'border-blue-200 bg-white text-blue-700 hover:bg-blue-100'
+                              } disabled:cursor-not-allowed disabled:opacity-60`}
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                        {outreachPrompt.status === 'saved' && (
+                          <p className="mt-2 text-xs text-green-700">Outcome saved</p>
+                        )}
+                        {outreachPrompt.status === 'error' && (
+                          <p className="mt-2 text-xs text-red-600">
+                            Outcome could not be saved. Try again.
+                          </p>
+                        )}
                       </div>
                     )}
                     {listing.websites &&

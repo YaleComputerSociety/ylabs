@@ -2,11 +2,19 @@ import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ConfigContext, { defaultConfigContext } from '../../../contexts/ConfigContext';
 import UserContext from '../../../contexts/UserContext';
 import ListingDetailModal from '../ListingDetailModal';
 import { Listing } from '../../../types/types';
+
+const postMock = vi.hoisted(() => vi.fn());
+
+vi.mock('../../../utils/axios', () => ({
+  default: {
+    post: postMock,
+  },
+}));
 
 const listing: Listing = {
   id: '507f1f77bcf86cd799439011',
@@ -37,7 +45,13 @@ const listing: Listing = {
   audited: false,
 };
 
-const renderModal = (options: { isAuthenticated?: boolean; onRequireAuth?: () => void } = {}) =>
+const renderModal = (
+  options: {
+    isAuthenticated?: boolean;
+    onRequireAuth?: () => void;
+    listingOverride?: Partial<Listing>;
+  } = {},
+) =>
   render(
     <MemoryRouter>
       <UserContext.Provider
@@ -70,7 +84,7 @@ const renderModal = (options: { isAuthenticated?: boolean; onRequireAuth?: () =>
           <ListingDetailModal
             isOpen
             onClose={vi.fn()}
-            listing={listing}
+            listing={{ ...listing, ...options.listingOverride }}
             isFavorite={false}
             onToggleFavorite={vi.fn()}
             onRequireAuth={options.onRequireAuth}
@@ -81,6 +95,10 @@ const renderModal = (options: { isAuthenticated?: boolean; onRequireAuth?: () =>
   );
 
 describe('ListingDetailModal public discovery behavior', () => {
+  beforeEach(() => {
+    postMock.mockReset();
+  });
+
   it('prompts login for inquiry instead of rendering redacted mail links', async () => {
     const user = userEvent.setup();
     const onRequireAuth = vi.fn();
@@ -270,5 +288,44 @@ describe('ListingDetailModal public discovery behavior', () => {
     dialog.focus();
     await user.tab();
     expect(websiteLink).toHaveFocus();
+  });
+
+  it('records a privacy-safe contact attempt and outcome for authenticated email clicks', async () => {
+    postMock.mockResolvedValue({ data: {} });
+    renderModal({
+      isAuthenticated: true,
+      listingOverride: {
+        ownerEmail: 'ada@yale.edu',
+        emails: ['lab@yale.edu'],
+      },
+    });
+
+    const emailLink = screen.getByRole('link', { name: /ada@yale.edu/i });
+    emailLink.addEventListener('click', (event) => event.preventDefault());
+    fireEvent.click(emailLink);
+
+    expect(postMock).toHaveBeenCalledWith(
+      '/research/507f1f77bcf86cd799439011/outreach',
+      {
+        action: 'email_click',
+        outcome: undefined,
+        source: 'listing_detail_modal',
+      },
+      { withCredentials: true },
+    );
+    expect(JSON.stringify(postMock.mock.calls)).not.toContain('ada@yale.edu');
+
+    fireEvent.click(screen.getByRole('button', { name: /emailed/i }));
+
+    await screen.findByText(/outcome saved/i);
+    expect(postMock).toHaveBeenLastCalledWith(
+      '/research/507f1f77bcf86cd799439011/outreach',
+      {
+        action: 'outcome',
+        outcome: 'emailed',
+        source: 'listing_detail_modal',
+      },
+      { withCredentials: true },
+    );
   });
 });

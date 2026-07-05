@@ -99,7 +99,7 @@ Current authenticated listing search flow:
 4. If hybrid search fails, the controller retries keyword-only Meilisearch; if Meilisearch is unavailable, it falls back to MongoDB filtering
 5. Results are returned with `totalCount` for pagination and a `degraded` boolean indicating whether fallback behavior was used
 
-Public research discovery uses the same degradation path through `/api/research`, but only returns confirmed, unarchived listings after redacting contact/private fields (`ownerEmail`, `emails`, owner/professor IDs, views, favorites, archived/confirmed/audit internals). Client routes `/research` and `/research/:slug` render the browse page without `PrivateRoute`; opening a card updates the URL to a shareable modal route. Authenticated users on those public routes additionally call `/api/research/:slug/contact` to retrieve the full listing with contact fields. Public research search uses a contact-redacted searchable field set and only accepts `createdAt` or `updatedAt` sort fields.
+Public research discovery uses the same degradation path through `/api/research`, but only returns confirmed, unarchived listings after redacting contact/private fields (`ownerEmail`, `emails`, owner/professor IDs, views, favorites, archived/confirmed/audit internals). Client routes `/research` and `/research/:slug` render the browse page without `PrivateRoute`; the public search state is URL-backed and restored on page load/back-forward navigation (`query`, `departments`, `academicDisciplines`, `researchAreas`, each `*Mode`, `sortBy`, `sortOrder`, and client-only `quickFilter`). Opening a card updates the URL to a shareable modal route while preserving current search params. Authenticated users on those public routes additionally call `/api/research/:slug/contact` to retrieve the full listing with contact fields. Public research search uses a contact-redacted searchable field set, accepts public facet params and `union`/`intersection` filter modes, rejects unknown query params, and only allows `createdAt` or `updatedAt` sort fields.
 
 The authenticated Find Labs page distinguishes an empty local/unfiltered dataset from an empty search result: no unfiltered listings shows "No research labs are available right now" with a `/fellowships` action, while active searches or filters show "No labs match your current search or filters."
 
@@ -150,7 +150,7 @@ export const asyncHandler = (fn: Function) => {
 
 ## Analytics Interception
 
-Analytics events are logged by intercepting `res.send` or `res.json` in route-level middleware (`server/src/routes/listings.ts`). The original method is bound, replaced with a wrapper that fires a log event on 2xx responses, then calls the original. This keeps analytics logic out of controllers and services.
+Listing analytics events are logged by intercepting `res.send` or `res.json` in route-level middleware (`server/src/routes/listings.ts`). The original method is bound, replaced with a wrapper that fires a log event on 2xx responses, then calls the original. This keeps listing analytics logic out of controllers and services.
 
 ```typescript
 const logListingEvent = (eventType: AnalyticsEventType) => {
@@ -168,6 +168,8 @@ const logListingEvent = (eventType: AnalyticsEventType) => {
 ```
 
 Listing creation uses the same pattern but intercepts `res.json` to extract the created listing's `_id` from the response body.
+
+Public research outreach analytics are logged from the contact controller paths because they depend on contact reveal/click/outcome actions rather than listing mutation responses. The admin analytics dashboard exposes an Outreach Loop section with reveal/click/outcome totals, outcome breakdowns, top contacted listings, and recent outreach events.
 
 Analytics events have a 3-year TTL via MongoDB's `expireAfterSeconds` index.
 
@@ -260,7 +262,7 @@ All routes mount under `/api` in `app.ts`. Route files in `server/src/routes/`:
 | Prefix            | File               | Auth                                                  |
 | ----------------- | ------------------ | ----------------------------------------------------- |
 | `/listings`       | `listings.ts`      | Varies (authenticated search, mutations require auth) |
-| `/research`       | `research.ts`      | Public browse/detail; contact detail requires auth    |
+| `/research`       | `research.ts`      | Public browse/detail; contact detail and outreach logging require auth |
 | `/fellowships`    | `fellowships.ts`   | Varies                                                |
 | `/users`          | `users.ts`         | Yes                                                   |
 | `/profiles`       | `profiles.ts`      | Varies                                                |
