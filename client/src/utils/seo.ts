@@ -16,6 +16,8 @@ export type SeoMetadata = {
 };
 
 const SITE_NAME = 'YaleLabs';
+const DEFAULT_SITE_TITLE = 'YaleLabs';
+const DEFAULT_SITE_DESCRIPTION = 'Find research labs at Yale University';
 const DEFAULT_RESEARCH_TITLE = 'YaleLabs Research';
 const DEFAULT_RESEARCH_DESCRIPTION =
   'Discover confirmed Yale research labs and opportunities by topic, department, and faculty mentor.';
@@ -93,6 +95,22 @@ export const buildResearchSeoMetadata = (params: {
     canonicalUrl,
     imageUrl,
     type: 'article',
+  };
+};
+
+export const buildDefaultSeoMetadata = (params: {
+  origin: string;
+  pathname: string;
+}): SeoMetadata => {
+  const origin = params.origin.replace(/\/+$/, '');
+  const canonicalUrl = `${origin}${params.pathname.startsWith('/') ? params.pathname : `/${params.pathname}`}`;
+
+  return {
+    title: DEFAULT_SITE_TITLE,
+    description: DEFAULT_SITE_DESCRIPTION,
+    canonicalUrl,
+    imageUrl: `${origin}/logo192.png`,
+    type: 'website',
   };
 };
 
