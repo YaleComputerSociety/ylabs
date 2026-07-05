@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { applySeoMetadata, buildResearchSeoMetadata } from '../seo';
+import { applySeoMetadata, buildDefaultSeoMetadata, buildResearchSeoMetadata } from '../seo';
 
 describe('research SEO client fallback', () => {
   afterEach(() => {
@@ -46,6 +46,40 @@ describe('research SEO client fallback', () => {
     );
     expect(document.querySelector('meta[name="twitter:card"]')?.getAttribute('content')).toBe(
       'summary',
+    );
+  });
+
+  it('restores default Yale Research metadata after research metadata has been applied', () => {
+    applySeoMetadata(
+      buildResearchSeoMetadata({
+        origin: 'https://yalelabs.io',
+        pathname: '/research/evidence-backed-lab',
+        researchEntity: {
+          name: 'Evidence-backed lab',
+          description: 'Study immune signaling in public datasets.',
+        } as any,
+      }),
+    );
+
+    applySeoMetadata(
+      buildDefaultSeoMetadata({
+        origin: 'https://yalelabs.io',
+        pathname: '/fellowships',
+      }),
+    );
+
+    expect(document.title).toBe('Yale Research');
+    expect(document.querySelector('link[rel="canonical"]')?.getAttribute('href')).toBe(
+      'https://yalelabs.io/fellowships',
+    );
+    expect(document.querySelector('meta[name="description"]')?.getAttribute('content')).toBe(
+      'Find research pathways, labs, programs, and evidence-backed next steps at Yale University.',
+    );
+    expect(document.querySelector('meta[property="og:title"]')?.getAttribute('content')).toBe(
+      'Yale Research',
+    );
+    expect(document.querySelector('meta[name="twitter:title"]')?.getAttribute('content')).toBe(
+      'Yale Research',
     );
   });
 });

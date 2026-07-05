@@ -17,6 +17,9 @@ export type SeoMetadata = {
 
 const SITE_NAME = 'Yale Research';
 const DEFAULT_RESEARCH_TITLE = 'Yale Research';
+const DEFAULT_SITE_TITLE = 'Yale Research';
+const DEFAULT_SITE_DESCRIPTION =
+  'Find research pathways, labs, programs, and evidence-backed next steps at Yale University.';
 const DEFAULT_RESEARCH_DESCRIPTION =
   'Find research pathways, labs, programs, and evidence-backed next steps at Yale University.';
 
@@ -95,6 +98,22 @@ export const buildResearchSeoMetadata = (params: {
     canonicalUrl,
     imageUrl,
     type: 'article',
+  };
+};
+
+export const buildDefaultSeoMetadata = (params: {
+  origin: string;
+  pathname: string;
+}): SeoMetadata => {
+  const origin = params.origin.replace(/\/+$/, '');
+  const canonicalUrl = `${origin}${params.pathname.startsWith('/') ? params.pathname : `/${params.pathname}`}`;
+
+  return {
+    title: DEFAULT_SITE_TITLE,
+    description: DEFAULT_SITE_DESCRIPTION,
+    canonicalUrl,
+    imageUrl: `${origin}/brand/apple-touch-icon.svg`,
+    type: 'website',
   };
 };
 
