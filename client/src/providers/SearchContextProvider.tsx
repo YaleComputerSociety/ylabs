@@ -68,7 +68,14 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
   const [state, dispatch] = useReducer(searchReducer, undefined, () =>
     createInitialSearchState({ sortBy: sortableKeys[0] }),
   );
-  const [urlStateReady, setUrlStateReady] = useState(!isResearchRoute);
+  const currentPublicResearchUrl = isResearchRoute
+    ? `${location.pathname}${location.search}`
+    : null;
+  const [hydratedPublicResearchUrl, setHydratedPublicResearchUrl] = useState<string | null>(
+    null,
+  );
+  const urlStateReady =
+    !isResearchRoute || hydratedPublicResearchUrl === currentPublicResearchUrl;
 
   const {
     queryString,
@@ -159,13 +166,13 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
 
   useEffect(() => {
     if (!isResearchRoute) {
-      setUrlStateReady(true);
+      setHydratedPublicResearchUrl(null);
       lastSerializedPublicResearchUrlRef.current = null;
       return;
     }
 
     const urlState = parsePublicResearchUrlState(location.search);
-    lastSerializedPublicResearchUrlRef.current = location.search;
+    lastSerializedPublicResearchUrlRef.current = serializePublicResearchUrlState(urlState);
     dispatch({
       type: 'HYDRATE_SEARCH_STATE',
       payload: {
@@ -173,8 +180,8 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
         page: 1,
       },
     });
-    setUrlStateReady(true);
-  }, [isResearchRoute, location.search]);
+    setHydratedPublicResearchUrl(currentPublicResearchUrl);
+  }, [isResearchRoute, location.search, currentPublicResearchUrl]);
 
   // Keep latest filter values in a ref so handleSearch can remain stable.
   const filtersRef = useRef({
@@ -307,9 +314,11 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
   );
 
   const refreshListings = useCallback(() => {
+    if (!urlStateReady) return;
+
     dispatch({ type: 'SET_PAGE', payload: 1 });
     handleSearch(1);
-  }, [handleSearch]);
+  }, [handleSearch, urlStateReady]);
 
   useEffect(() => {
     if (

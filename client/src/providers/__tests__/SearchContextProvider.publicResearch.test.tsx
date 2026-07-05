@@ -1,6 +1,6 @@
 import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter, useLocation } from 'react-router-dom';
+import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import SearchContext from '../../contexts/SearchContext';
 import UserContext from '../../contexts/UserContext';
@@ -80,7 +80,34 @@ const PublicResearchControls = () => {
   );
 };
 
-const renderProvider = (initialEntry: string, isAuthenticated = true) =>
+const RefreshOnMount = () => {
+  const { refreshListings } = React.useContext(SearchContext);
+
+  React.useEffect(() => {
+    refreshListings();
+  }, [refreshListings]);
+
+  return null;
+};
+
+const NavigateToResearch = () => {
+  const navigate = useNavigate();
+
+  return (
+    <button
+      type="button"
+      onClick={() => navigate('/research?query=cell%20signaling&departments=Biology')}
+    >
+      research
+    </button>
+  );
+};
+
+const renderProvider = (
+  initialEntry: string,
+  isAuthenticated = true,
+  children: React.ReactNode = <PublicResearchControls />,
+) =>
   render(
     <MemoryRouter initialEntries={[initialEntry]}>
       <UserContext.Provider
@@ -91,9 +118,7 @@ const renderProvider = (initialEntry: string, isAuthenticated = true) =>
           checkContext: vi.fn(),
         }}
       >
-        <SearchContextProvider>
-          <PublicResearchControls />
-        </SearchContextProvider>
+        <SearchContextProvider>{children}</SearchContextProvider>
       </UserContext.Provider>
     </MemoryRouter>,
   );
@@ -135,6 +160,48 @@ describe('SearchContextProvider public research route', () => {
         '/research?query=cell%20signaling&page=1&pageSize=20&sortBy=updatedAt&sortOrder=-1&departments=Computer%20Science%7C%7CBiology&researchAreas=Genomics%2CAI&departmentsMode=union&academicDisciplinesMode=union&researchAreasMode=intersection',
       );
     });
+  });
+
+  it('does not clobber an incoming research URL after entering from another route', async () => {
+    renderProvider(
+      '/listings',
+      true,
+      <>
+        <NavigateToResearch />
+        <PublicResearchControls />
+      </>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'research' }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('query').textContent).toBe('cell signaling');
+    });
+    expect(screen.getByTestId('departments').textContent).toBe('Biology');
+    expect(screen.getByTestId('search').textContent).toBe(
+      '?query=cell%20signaling&departments=Biology',
+    );
+  });
+
+  it('does not refresh public research results before URL hydration', async () => {
+    renderProvider(
+      '/research?query=cell%20signaling&departments=Biology',
+      false,
+      <>
+        <RefreshOnMount />
+        <PublicResearchControls />
+      </>,
+    );
+
+    await waitFor(() => {
+      expect(mockedAxiosGet).toHaveBeenCalledWith(
+        '/research?query=cell%20signaling&page=1&pageSize=20&departments=Biology&departmentsMode=union&academicDisciplinesMode=union&researchAreasMode=union',
+      );
+    });
+
+    expect(mockedAxiosGet).not.toHaveBeenCalledWith(
+      '/research?query=&page=1&pageSize=20&departmentsMode=union&academicDisciplinesMode=union&researchAreasMode=union',
+    );
   });
 
   it('mirrors public research search state into the URL', async () => {
