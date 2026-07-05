@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { getListingEmptyMessage } from '../home';
+import { getListingEmptyMessage, hasListingSearchCriteria } from '../home';
 
 const baseParams = {
   queryString: '',
@@ -32,5 +32,21 @@ describe('getListingEmptyMessage', () => {
     expect(getListingEmptyMessage({ ...baseParams, quickFilter: 'open' })).toBe(
       'No labs match your current search or filters',
     );
+  });
+});
+
+describe('hasListingSearchCriteria', () => {
+  it('returns false when the user has not searched or filtered', () => {
+    expect(hasListingSearchCriteria(baseParams)).toBe(false);
+  });
+
+  it('returns true when the user has searched or filtered', () => {
+    expect(hasListingSearchCriteria({ ...baseParams, queryString: 'biology' })).toBe(true);
+    expect(
+      hasListingSearchCriteria({
+        ...baseParams,
+        selectedListingResearchAreas: ['Genomics'],
+      }),
+    ).toBe(true);
   });
 });
