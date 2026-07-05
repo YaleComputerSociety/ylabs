@@ -13,7 +13,7 @@
     "build:clean": "rm -rf build",
     "dev": "cross-env NODE_ENV=development tsx watch src/index.ts",
     "start": "node build/index.js",
-    "test": "cross-env NODE_ENV=test vitest run",
+    "test": "cross-env NODE_ENV=test vitest run --exclude src/controllers/listingController.search.test.ts",
     "test:search-degrade": "cross-env NODE_ENV=test node --import tsx --test src/controllers/listingController.search.test.ts",
     "prod": "cross-env NODE_ENV=prod tsx watch src/index.ts"
   },

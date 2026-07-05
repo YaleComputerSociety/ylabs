@@ -53,3 +53,12 @@ export const captureServerError = (error: Error, req: Request) => {
     },
   });
 };
+
+export const captureStartupError = async (error: unknown) => {
+  if (!initializeErrorTracking()) {
+    return;
+  }
+
+  Sentry.captureException(error);
+  await Sentry.flush(2000);
+};

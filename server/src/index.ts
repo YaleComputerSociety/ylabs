@@ -3,7 +3,7 @@
  */
 import dotenv from 'dotenv';
 import { initializeConnections, getApiMode } from './db/connections';
-import { initializeErrorTracking } from './utils/errorTracking';
+import { captureStartupError, initializeErrorTracking } from './utils/errorTracking';
 
 dotenv.config();
 initializeErrorTracking();
@@ -28,6 +28,7 @@ const startApp = async () => {
       }
     });
   } catch (e) {
+    await captureStartupError(e);
     console.error(`Failed to start app with error 💣: ${e}`);
   }
 };
