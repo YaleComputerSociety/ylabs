@@ -3,7 +3,8 @@
  *
  * State transitions live in reducers/searchReducer.ts so they are pure and
  * unit-testable. This component owns side effects (network, debounced effects)
- * and maps the reducer state/dispatch onto the existing SearchContext API.
+ * public research URL hydration/sync, and maps the reducer state/dispatch onto
+ * the existing SearchContext API.
  */
 import {
   FC,
