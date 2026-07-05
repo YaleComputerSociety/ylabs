@@ -139,6 +139,7 @@ Visit `http://localhost:4000/api/dev-login` to log in as a test user (`test123` 
 | `yarn clean:all`                        | Remove all node_modules                          |
 | `yarn --cwd client test`                | Run Vitest in watch mode                         |
 | `yarn --cwd client test:ci`             | Run Vitest once (used by CI)                     |
+| `yarn --cwd server test`                | Run server-side Node test files                  |
 | `yarn --cwd server test:search-degrade` | Run the focused listing-search degradation tests |
 
 ### Migration Scripts
@@ -210,6 +211,26 @@ The Meilisearch client (`server/src/utils/meiliClient.ts`) exports:
 
 ---
 
+## Analytics
+
+Analytics events are stored in MongoDB with a 3-year TTL. Route-level middleware logs successful server-observed events by wrapping `res.send` or `res.json`, so analytics stay outside controller and service business logic.
+
+Research-surface analytics cover the canonical research entities (`profile`, `listing`, and `fellowship`) and use these event types:
+
+| Event type            | Meaning                                                  |
+| --------------------- | -------------------------------------------------------- |
+| `research_view`       | A profile, listing, or fellowship detail surface opened  |
+| `pathway_save`        | A listing or fellowship was saved, unsaved, or re-staged |
+| `ways_in_click`       | A best-next-step, apply, listings, courses, or similar action was clicked |
+| `contact_route_click` | A contact route such as email or phone was clicked       |
+| `source_link_click`   | A source link such as a lab site, publication, or application was clicked |
+
+Client-only interactions are sent to `POST /api/analytics/research` for authenticated users. Server-observed views and save/favorite actions are emitted from route middleware in listings, fellowships, profiles, and users.
+
+Research analytics sanitize payloads before persistence: contact clicks keep only a coarse `contactMethod`, source clicks keep only `sourceCategory` plus the bare hostname, and labels reject raw contact addresses or URL-like values. The admin analytics dashboard segments research engagement by event type, entity type, user type, and top viewed entities over the trailing 30 days.
+
+---
+
 ## Authentication
 
 ```
@@ -236,23 +257,23 @@ User → Yale CAS SSO → passport.ts findOrCreateUser
 
 All mount under `/api`.
 
-| Prefix            | Description                  | Auth             |
-| ----------------- | ---------------------------- | ---------------- |
-| `/listings`       | Listing CRUD and search      | Varies           |
-| `/fellowships`    | Fellowship CRUD and search   | Varies           |
-| `/users`          | User CRUD                    | Yes              |
-| `/profiles`       | Faculty profiles             | Varies           |
-| `/analytics`      | Analytics dashboards         | Admin            |
-| `/config`         | Departments + research areas | No               |
-| `/research-areas` | Research area CRUD           | Admin for writes |
-| `/admin`          | Admin operations             | Admin            |
-| `/seed`           | Dev seeding routes           | Dev mode only    |
+| Prefix            | Description                                 | Auth                                             |
+| ----------------- | ------------------------------------------- | ------------------------------------------------ |
+| `/listings`       | Listing CRUD and search                     | Varies                                           |
+| `/fellowships`    | Fellowship CRUD and search                  | Varies                                           |
+| `/users`          | User CRUD                                   | Yes                                              |
+| `/profiles`       | Faculty profiles                            | Varies                                           |
+| `/analytics`      | Analytics dashboard + research event writes | Admin for dashboard, authenticated for research writes |
+| `/config`         | Departments + research areas                | No                                               |
+| `/research-areas` | Research area CRUD                          | Admin for writes                                 |
+| `/admin`          | Admin operations                            | Admin                                            |
+| `/seed`           | Dev seeding routes                          | Dev mode only                                    |
 
 ---
 
 ## Testing
 
-Client-side tests run under **Vitest 3** with a `jsdom` environment. Configuration lives in the `test` block of [client/vite.config.js](client/vite.config.js). The server has a focused Node test script for listing-search degradation, but no general server-side test suite is wired into CI.
+Client-side tests run under **Vitest 3** with a `jsdom` environment. Configuration lives in the `test` block of [client/vite.config.js](client/vite.config.js). Server tests run with Node's test runner via `tsx`; the focused listing-search degradation script is available separately.
 
 ### Running tests
 
@@ -262,10 +283,11 @@ yarn test        # watch mode — reruns on file changes
 yarn test:ci     # single run — used by CI
 
 cd ../server
+yarn test                 # server-side Node test files
 yarn test:search-degrade  # listing-search fallback coverage
 ```
 
-Tests are discovered from `client/src/**/*.{test,spec}.{ts,tsx}`.
+Client tests are discovered from `client/src/**/*.{test,spec}.{ts,tsx}`. Server tests are discovered from `server/src/**/*.test.ts`.
 
 ### What is tested
 

@@ -143,7 +143,7 @@ export const asyncHandler = (fn: Function) => {
 
 ## Analytics Interception
 
-Analytics events are logged by intercepting `res.send` or `res.json` in route-level middleware (`server/src/routes/listings.ts`). The original method is bound, replaced with a wrapper that fires a log event on 2xx responses, then calls the original. This keeps analytics logic out of controllers and services.
+Analytics events are logged by intercepting `res.send` or `res.json` in route-level middleware (`server/src/routes/listings.ts`, `server/src/routes/fellowships.ts`, `server/src/routes/profiles.ts`, and `server/src/routes/users.ts`). The original method is bound, replaced with a wrapper that fires a log event on 2xx responses, then calls the original. This keeps analytics logic out of controllers and services.
 
 ```typescript
 const logListingEvent = (eventType: AnalyticsEventType) => {
@@ -161,6 +161,10 @@ const logListingEvent = (eventType: AnalyticsEventType) => {
 ```
 
 Listing creation uses the same pattern but intercepts `res.json` to extract the created listing's `_id` from the response body.
+
+Research-surface analytics use the same fire-and-forget pattern through `server/src/services/researchAnalytics.ts`. The canonical research events are `research_view`, `pathway_save`, `ways_in_click`, `contact_route_click`, and `source_link_click`, targeted at `profile`, `listing`, or `fellowship` entities. Client-only interactions post to `POST /api/analytics/research`; server-observed views and favorite/save actions are emitted from route middleware.
+
+Research analytics payloads are sanitized before persistence: contact clicks keep only a coarse `contactMethod`, source clicks keep only `sourceCategory` plus a bare hostname, and free-text labels reject raw contact addresses and URL-like values. The admin analytics dashboard segments research engagement by event type, entity type, user type, and top viewed entities over 30 days.
 
 Analytics events have a 3-year TTL via MongoDB's `expireAfterSeconds` index.
 
@@ -251,7 +255,7 @@ All routes mount under `/api` in `app.ts`. Route files in `server/src/routes/`:
 | `/fellowships`    | `fellowships.ts`   | Varies                                         |
 | `/users`          | `users.ts`         | Yes                                            |
 | `/profiles`       | `profiles.ts`      | Varies                                         |
-| `/analytics`      | `analytics.ts`     | Admin                                          |
+| `/analytics`      | `analytics.ts`     | Admin for dashboard, authenticated for research event writes |
 | `/config`         | `config.ts`        | No                                             |
 | `/research-areas` | `researchAreas.ts` | Admin for writes                               |
 | `/admin`          | `admin.ts`         | Admin                                          |
