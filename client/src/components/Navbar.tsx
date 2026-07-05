@@ -328,6 +328,9 @@ export default function Navbar() {
 
   const isAdmin = user?.userType === 'admin';
   const isHomePage = location.pathname === '/';
+  const isResearchPage =
+    location.pathname === '/research' || location.pathname.startsWith('/research/');
+  const isLabsBrowsePage = isHomePage || isResearchPage;
   const isFellowshipsPage = location.pathname === '/fellowships';
   const isAccountPage = location.pathname === '/account';
 
@@ -670,7 +673,7 @@ export default function Navbar() {
           <Toolbar sx={{ height: '64px', width: '100%', justifyContent: 'flex-start' }}>
             <Box sx={{ flexShrink: 0 }}>{isAuthenticated ? <HomeButton /> : <YURAButton />}</Box>
 
-            {isAuthenticated && isHomePage && (
+            {isLabsBrowsePage && (
               <Box
                 sx={{
                   display: { xs: 'none', md: 'flex' },
@@ -711,13 +714,13 @@ export default function Navbar() {
             {isAuthenticated && (
               <>
                 <Box sx={{ display: 'flex', gap: '8px', alignItems: 'center', ml: 'auto' }}>
-                  {(isHomePage || isFellowshipsPage) && isMobile && (
+                  {(isLabsBrowsePage || isFellowshipsPage) && isMobile && (
                     <IconButton
                       size="small"
                       color="inherit"
                       aria-label="search"
                       onClick={() => {
-                        if (isHomePage) setMobileSearchOpen(!mobileSearchOpen);
+                        if (isLabsBrowsePage) setMobileSearchOpen(!mobileSearchOpen);
                         if (isFellowshipsPage)
                           setMobileFellowshipSearchOpen(!mobileFellowshipSearchOpen);
                       }}
@@ -752,10 +755,27 @@ export default function Navbar() {
                 </Drawer>
               </>
             )}
+            {!isAuthenticated && isResearchPage && isMobile && (
+              <Box sx={{ display: 'flex', gap: '8px', alignItems: 'center', ml: 'auto' }}>
+                <IconButton
+                  size="small"
+                  color="inherit"
+                  aria-label="search"
+                  onClick={() => setMobileSearchOpen(!mobileSearchOpen)}
+                  sx={{
+                    borderRadius: '4px',
+                    padding: '8px',
+                    '&:hover': { backgroundColor: 'transparent' },
+                  }}
+                >
+                  <SearchIcon />
+                </IconButton>
+              </Box>
+            )}
           </Toolbar>
         </AppBar>
 
-        {isAuthenticated && isHomePage && isMobile && (
+        {isLabsBrowsePage && isMobile && (
           <Collapse in={mobileSearchOpen}>
             <Box
               sx={{
@@ -797,7 +817,7 @@ export default function Navbar() {
           </Collapse>
         )}
 
-        {isAuthenticated && isHomePage && (
+        {isLabsBrowsePage && (
           <ActiveFilters
             quickFilters={listingQuickFilters}
             activeQuickFilter={quickFilter}

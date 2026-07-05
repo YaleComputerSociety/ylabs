@@ -2,7 +2,7 @@
 
 ## Architecture
 
-Monorepo with a React client and Express server communicating over REST. MongoDB Atlas is the primary data store. Meilisearch handles search (semantic + keyword) with an OpenAI embedder configured server-side. Yale CAS provides SSO authentication.
+Monorepo with a React client and Express server communicating over REST. MongoDB Atlas is the primary data store. Meilisearch handles search (semantic + keyword) with an OpenAI embedder configured server-side. Yale CAS provides SSO authentication, while the public research discovery flow exposes redacted confirmed listings to logged-out visitors.
 
 ```
 React (Vite) → Express (Passport.js) → MongoDB Atlas + Meilisearch
@@ -87,13 +87,15 @@ MongoDB via Mongoose 8. All environments use `MONGODBURL` — the connection str
 
 Search has migrated from MongoDB Atlas Vector Search to **Meilisearch**. The old `embeddingService.ts` (OpenAI client-side embedding generation + in-memory LRU cache) has been removed.
 
-Current search flow:
+Current authenticated listing search flow:
 
 1. Client sends query + filters to `/api/listings/search`
 2. Controller builds Meilisearch filter strings from query params (`departments`, `researchAreas`, `archived`, `confirmed`)
-3. When a text query is present, hybrid search is enabled with `semanticRatio: 0.8` using the Meilisearch-configured OpenAI embedder
+3. When a multi-word text query is present, hybrid search is enabled with `semanticRatio: 0.8` using the Meilisearch-configured OpenAI embedder; single-word queries remain keyword-only to avoid semantic drift
 4. If hybrid search fails, the controller retries keyword-only Meilisearch; if Meilisearch is unavailable, it falls back to MongoDB filtering
 5. Results are returned with `totalCount` for pagination and a `degraded` boolean indicating whether fallback behavior was used
+
+Public research discovery uses the same degradation path through `/api/research`, but only returns confirmed, unarchived listings after redacting contact/private fields (`ownerEmail`, `emails`, owner/professor IDs, views, favorites, archived/confirmed/audit internals). Client routes `/research` and `/research/:slug` render the browse page without `PrivateRoute`; opening a card updates the URL to a shareable modal route. Authenticated users on those public routes additionally call `/api/research/:slug/contact` to retrieve the full listing with contact fields. Public research search uses a contact-redacted searchable field set and only accepts `createdAt` or `updatedAt` sort fields.
 
 The Meilisearch client (`server/src/utils/meiliClient.ts`) lazy-loads and caches the connection. Configuration: `MEILISEARCH_HOST` (defaults to `http://localhost:7700`), `MEILISEARCH_API_KEY`, and `MEILISEARCH_INDEX_PREFIX` (optional, for multi-environment isolation on a shared instance). The module exports `getMeiliIndex(name)` which resolves prefixed index names and `resolveIndexName(name)` for use in migration scripts.
 
@@ -205,14 +207,15 @@ The only other workflow is `keep-alive.yml`, which pings the Beta Render service
 
 ## Rate Limiting
 
-Two rate limiters in `app.ts`, both keyed by authenticated user's `netId` with IP fallback for unauthenticated requests:
+Three rate limiters in `app.ts`, all keyed by authenticated user's `netId` with IP fallback for unauthenticated requests:
 
 | Limiter        | Scope                                                      | Limit            |
 | -------------- | ---------------------------------------------------------- | ---------------- |
 | `apiLimiter`   | All `/api` routes                                          | 200 req / 15 min |
+| `publicDiscoveryLimiter` | `/api/research` public browse/detail traffic      | 120 req / 15 min |
 | `writeLimiter` | Non-GET requests to `/api/listings` and `/api/fellowships` | 50 req / 15 min  |
 
-Both limiters are skipped in CI, development, and test environments.
+All three limiters are skipped in CI, development, and test environments.
 
 ## Auth Middleware
 
@@ -227,7 +230,7 @@ Defined in `server/src/middleware/auth.ts`:
 | `isTrustworthy`    | `userConfirmed` + admin/professor/faculty             |
 | `isConfirmed`      | `userConfirmed === true`                              |
 
-Client-side route guards: `PrivateRoute` (auth required, redirects unknown users when `unknownBlocked=true`), `AdminRoute` (admin only), `UnprivateRoute` (no auth required, for error pages).
+Client-side route guards: `PrivateRoute` (auth required, redirects unknown users when `unknownBlocked=true`), `AdminRoute` (admin only), `UnprivateRoute` (no auth required, for error pages). Public `/research` routes intentionally bypass `PrivateRoute`; favorites, contact actions, and other authenticated actions preserve the return path and send logged-out users to `/login`.
 
 ## Validation Middleware
 
@@ -246,7 +249,8 @@ All routes mount under `/api` in `app.ts`. Route files in `server/src/routes/`:
 
 | Prefix            | File               | Auth                                           |
 | ----------------- | ------------------ | ---------------------------------------------- |
-| `/listings`       | `listings.ts`      | Varies (search public, mutations require auth) |
+| `/listings`       | `listings.ts`      | Varies (authenticated search, mutations require auth) |
+| `/research`       | `research.ts`      | Public browse/detail; contact detail requires auth |
 | `/fellowships`    | `fellowships.ts`   | Varies                                         |
 | `/users`          | `users.ts`         | Yes                                            |
 | `/profiles`       | `profiles.ts`      | Varies                                         |
