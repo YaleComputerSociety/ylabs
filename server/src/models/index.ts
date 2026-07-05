@@ -3,6 +3,7 @@
  */
 export { User } from './user';
 export { Listing } from './listing';
+export { ListingClaimRequest } from './listingClaimRequest';
 export { Fellowship } from './fellowship';
 export * from './analytics';
 export { ResearchArea, ResearchField, fieldColorKeys } from './researchArea';
