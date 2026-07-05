@@ -170,6 +170,23 @@ describe('listingClaimRequestService', () => {
     expect(ListingClaimRequest.create).not.toHaveBeenCalled();
   });
 
+  it.each([undefined, null, 'invalid', []])(
+    'rejects malformed claim request bodies with a 400-level error',
+    async (body) => {
+      await expect(
+        createListingClaimRequest(listingId, body, {
+          netId: 'fac1',
+        }),
+      ).rejects.toMatchObject({
+        message: 'Message is required',
+        status: 400,
+      });
+
+      expect(getListingModel).not.toHaveBeenCalled();
+      expect(ListingClaimRequest.create).not.toHaveBeenCalled();
+    },
+  );
+
   it('reviews a request by updating only request review metadata', async () => {
     const lean = vi.fn().mockResolvedValue({
       _id: requestId,
@@ -214,4 +231,16 @@ describe('listingClaimRequestService', () => {
     ).rejects.toBeInstanceOf(BadRequestError);
     expect(ListingClaimRequest.findByIdAndUpdate).not.toHaveBeenCalled();
   });
+
+  it.each([undefined, null, 'invalid', []])(
+    'rejects malformed review request bodies with a 400-level error',
+    async (body) => {
+      await expect(reviewListingClaimRequest(requestId, 'admin1', body)).rejects.toMatchObject({
+        message: 'Status must be approved or rejected',
+        status: 400,
+      });
+
+      expect(ListingClaimRequest.findByIdAndUpdate).not.toHaveBeenCalled();
+    },
+  );
 });
