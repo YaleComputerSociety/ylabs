@@ -1,6 +1,9 @@
 # UX/UI Audit Log
 
-Last updated: 2026-05-15
+Last updated: 2026-07-04
+
+Screenshot artifacts from earlier audits were retired on 2026-07-04.
+This log keeps the durable findings and fixes; new ad hoc screenshots should live outside `docs/` unless they are explicitly part of a durable product record.
 
 ## Session Notes
 
@@ -203,9 +206,6 @@ Last updated: 2026-05-15
 - **Observed behavior**
   - Using mock auth and opening `/research` triggered a background `/listings/search` request.
   - When that request failed locally, SweetAlert covered the Research page with “Unable to load listings. Please try again later.”
-  - Screenshots:
-    - `docs/ux-screenshots/06-research-desktop-initial.png`
-    - `docs/ux-screenshots/09-research-api-login-clean-after-fix.png`
 - **User impact**
   - A user trying to explore research gets interrupted by an unrelated Listings failure and has no way to know Research itself loaded correctly.
 - **Root cause**
@@ -221,10 +221,6 @@ Last updated: 2026-05-15
 ### 13) `/research/:slug` repeated the same official source link across pathways, evidence, and CTAs
 - **Observed behavior**
   - On `/research/center-wu-tsai`, the same Wu Tsai undergraduate initiatives URL appeared repeatedly as `Source 1`, per-evidence `Source`, and official-route CTAs.
-  - Screenshots:
-    - `docs/ux-screenshots/wu-tsai-sources-before.png`
-    - `docs/ux-screenshots/wu-tsai-sources-after-desktop.png`
-    - `docs/ux-screenshots/wu-tsai-sources-after-mobile.png`
 - **User impact**
   - The repetition made evidence feel noisy and less trustworthy; users could reasonably wonder whether multiple independent sources existed when the page was really citing one official page.
 - **Root cause**
@@ -259,10 +255,6 @@ Last updated: 2026-05-15
   - The Suggested searches row showed both `NEUROSCIENCES` and `Neuroscience`.
   - After searching `Neuroscience`, the cluster label was `Neuroscience` but the same concept appeared again as a `NEUROSCIENCES` metadata tag.
   - Mobile chip/button targets were 34px tall, below the common 44px touch target guideline.
-  - Screenshots:
-    - `docs/ux-screenshots/13-research-mobile-before-suggestion-fix.png`
-    - `docs/ux-screenshots/14-research-mobile-after-suggestion-fix.png`
-    - `docs/ux-screenshots/16-research-neuroscience-after-tag-fix.png`
 - **User impact**
   - The taxonomy looked inconsistent and less trustworthy, especially for the neuroscience department/topic distinction the user flagged.
   - Mobile users had smaller, less forgiving tap targets for the main suggested-search actions.
@@ -282,10 +274,6 @@ Last updated: 2026-05-15
 ### 16) `/research` hierarchy exposed clusters before student decisions
 - **Observed behavior**
   - The first viewport and searched results used terms like `Clusters`, `Cluster: experimental`, `Cluster: metadata-grouped`, `Profiles in this cluster`, and raw pathway signal labels such as `POSTED_OPENING`.
-  - Baseline screenshots:
-    - `docs/ux-screenshots/research-baseline-desktop.png`
-    - `docs/ux-screenshots/research-baseline-desktop-neuroscience.png`
-    - `docs/ux-screenshots/research-baseline-mobile.png`
 - **User impact**
   - First-time students had to translate internal grouping mechanics before deciding what to click or trust.
   - The page looked closer to a debug/search prototype than a Yale research discovery surface.
@@ -299,10 +287,6 @@ Last updated: 2026-05-15
   - Centralized pathway/evidence label mapping in `client/src/utils/researchDiscoveryAdapters.ts`.
   - Made `EvidenceSourceRow` defensive against enum-like source labels.
   - Verified with Playwright across desktop, tablet, and 375px mobile.
-  - After screenshots:
-    - `docs/ux-screenshots/research-homes-desktop.png`
-    - `docs/ux-screenshots/research-homes-desktop-neuroscience.png`
-    - `docs/ux-screenshots/research-homes-mobile.png`
 - **Residual notes**
   - Shared navbar/footer chrome still has a few sub-44px targets outside the redesigned `/research` content area.
 - **Status**

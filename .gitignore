@@ -7,6 +7,8 @@ sample_updates.json
 notes.txt
 valid_departments_cpy.txt
 toFix.md
+__pycache__/
+*.pyc
 
 #Ignore node modules across full project
 node_modules/
@@ -82,3 +84,12 @@ graphify-out/memory/
 tmp/
 .claude/
 .superpowers/
+
+# Transient agent execution and review artifacts
+docs/tasks/current-execution-plan.md
+docs/superpowers/
+docs/ux-screenshots/
+client/PROPOSAL.md
+
+fix.md
+due-diligence-review.md
