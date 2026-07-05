@@ -306,7 +306,7 @@ export type AnalyticsAction =
   | { type: 'FETCH_FAILURE'; payload: string };
 
 export const createInitialAnalyticsState = (
-  overrides: Partial<AnalyticsState> = {}
+  overrides: Partial<AnalyticsState> = {},
 ): AnalyticsState => ({
   data: null,
   isLoading: true,

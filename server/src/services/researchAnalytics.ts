@@ -80,9 +80,7 @@ const cleanLabel = (value: unknown): string | undefined => {
 
 /** Pick a value only if it is one of the allowed enum members. */
 const oneOf = <T extends string>(value: unknown, allowed: readonly T[]): T | undefined =>
-  isPlainString(value) && (allowed as readonly string[]).includes(value)
-    ? (value as T)
-    : undefined;
+  isPlainString(value) && (allowed as readonly string[]).includes(value) ? (value as T) : undefined;
 
 /**
  * Extract only the bare hostname from a raw URL. Returns undefined if the value
@@ -156,7 +154,10 @@ export const sanitizeResearchPayload = (
 /** A hostname supplied directly (not a full URL): validate it is host-shaped. */
 const cleanHost = (value: unknown): string | undefined => {
   if (!isPlainString(value)) return undefined;
-  const trimmed = value.trim().toLowerCase().replace(/^www\./, '');
+  const trimmed = value
+    .trim()
+    .toLowerCase()
+    .replace(/^www\./, '');
   if (trimmed === '' || trimmed.length > 253) return undefined;
   // A hostname has no scheme, path, whitespace, or '@'.
   if (/[\s/@?#]/.test(trimmed) || trimmed.includes('://')) return undefined;

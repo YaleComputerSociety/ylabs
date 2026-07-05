@@ -49,10 +49,8 @@ const defaultAdminAccess: AdminAccessResponse = {
 const Analytics = () => {
   useDocumentTitle('Analytics');
   const { user: currentUser } = useContext(UserContext);
-  const [state, dispatch] = useReducer(
-    analyticsReducer,
-    undefined,
-    () => createInitialAnalyticsState()
+  const [state, dispatch] = useReducer(analyticsReducer, undefined, () =>
+    createInitialAnalyticsState(),
   );
   const { data, isLoading, lastUpdated, error } = state;
   const [userActivity, setUserActivity] =
