@@ -29,6 +29,24 @@ export type Listing = {
   createdAt: string;
   confirmed: boolean;
   audited: boolean;
+  evidence?: ListingEvidence;
+};
+
+export type ListingEvidenceSource = {
+  label?: string;
+  url?: string;
+  sourceType?: string;
+  description?: string;
+  lastCheckedAt?: string;
+};
+
+export type ListingEvidence = {
+  status?: 'available' | 'unavailable' | 'loading' | 'error' | string;
+  summary?: string;
+  confidence?: number;
+  generatedAt?: string;
+  lastVerifiedAt?: string;
+  sources?: ListingEvidenceSource[];
 };
 
 export type FellowshipLink = {

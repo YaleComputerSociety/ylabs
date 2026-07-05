@@ -29,11 +29,14 @@ vi.mock('../../components/shared/BrowseGrid', () => ({
 }));
 
 vi.mock('../../components/shared/ListingDetailModal', () => ({
-  default: ({ isOpen, onNavigateToResearchArea }: any) =>
+  default: ({ isOpen, listing, onNavigateToResearchArea }: any) =>
     isOpen ? (
-      <button type="button" onClick={() => onNavigateToResearchArea('Artificial Intelligence')}>
-        Artificial Intelligence
-      </button>
+      <div>
+        {listing?.evidence?.summary && <span>{listing.evidence.summary}</span>}
+        <button type="button" onClick={() => onNavigateToResearchArea('Artificial Intelligence')}>
+          Artificial Intelligence
+        </button>
+      </div>
     ) : null,
 }));
 
@@ -128,6 +131,57 @@ describe('Home public research detail route', () => {
     expect(mockedAxiosGet).not.toHaveBeenCalledWith('/listings/507f1f77bcf86cd799439011', {
       withCredentials: true,
     });
+  });
+
+  it('preserves public evidence metadata from detail responses for the modal', async () => {
+    const slug = 'public-research-507f1f77bcf86cd799439011';
+
+    mockedAxiosGet.mockImplementation((url: string) => {
+      if (url === '/users/favListingsIds') {
+        return Promise.resolve({ data: { favListingsIds: [] } });
+      }
+
+      return Promise.resolve({
+        data: {
+          listing: {
+            _id: '507f1f77bcf86cd799439011',
+            title: 'Public research listing',
+            evidence: {
+              status: 'available',
+              summary: 'Matched from public source metadata.',
+              sources: [{ label: 'Faculty profile', url: 'https://example.edu/profile' }],
+            },
+          },
+        },
+      });
+    });
+
+    render(
+      <MemoryRouter initialEntries={[`/research/${slug}`]}>
+        <UserContext.Provider
+          value={{
+            isLoading: false,
+            isAuthenticated: false,
+            user: null,
+            checkContext: vi.fn(),
+          }}
+        >
+          <SearchContext.Provider
+            value={{
+              ...defaultSearchContext,
+              refreshListings: vi.fn(),
+              setQueryString: vi.fn(),
+            }}
+          >
+            <Routes>
+              <Route path="/research/:slug" element={<Home />} />
+            </Routes>
+          </SearchContext.Provider>
+        </UserContext.Provider>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('Matched from public source metadata.')).toBeTruthy();
   });
 
   it('clears share URL slug when navigating to a research area from the modal', async () => {
