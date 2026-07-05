@@ -14,6 +14,7 @@ const HiringStatus = ({ hiringStatus, setHiringStatus }: HiringStatusProps) => {
 
   const hiringRef = useRef<HTMLDivElement>(null);
   const hiringInputRef = useRef<HTMLInputElement>(null);
+  const hiringInputId = 'listing-hiring-status';
 
   const hiringOptions = [
     { value: 0, label: 'Open to Applicants' },
@@ -64,11 +65,14 @@ const HiringStatus = ({ hiringStatus, setHiringStatus }: HiringStatusProps) => {
 
   return (
     <div className="mb-4" ref={hiringRef}>
-      <label className="block text-gray-700 text-sm font-bold mb-2">Status</label>
+      <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor={hiringInputId}>
+        Status
+      </label>
 
       <div className="relative">
         <div className="relative">
           <input
+            id={hiringInputId}
             ref={hiringInputRef}
             type="text"
             readOnly
@@ -87,7 +91,8 @@ const HiringStatus = ({ hiringStatus, setHiringStatus }: HiringStatusProps) => {
             }}
             className="shadow appearance-none border rounded w-full py-2 px-3 pr-10 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
           />
-          <div
+          <button
+            type="button"
             className="absolute inset-y-0 right-0 flex items-center px-2 text-gray-700 cursor-pointer"
             onClick={() => {
               setIsHiringDropdownOpen(!isHiringDropdownOpen);
@@ -96,15 +101,17 @@ const HiringStatus = ({ hiringStatus, setHiringStatus }: HiringStatusProps) => {
                 hiringInputRef.current.focus();
               }
             }}
+            aria-label="Toggle status options"
           >
             <svg
+              aria-hidden="true"
               className="fill-current h-4 w-4"
               xmlns="http://www.w3.org/2000/svg"
               viewBox="0 0 20 20"
             >
               <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" />
             </svg>
-          </div>
+          </button>
         </div>
 
         {isHiringDropdownOpen && (
@@ -127,6 +134,7 @@ const HiringStatus = ({ hiringStatus, setHiringStatus }: HiringStatusProps) => {
                   {((option.value === 0 && hiringStatus >= 0) ||
                     (option.value === -1 && hiringStatus < 0)) && (
                     <svg
+                      aria-hidden="true"
                       className="h-4 w-4 text-blue-500"
                       fill="none"
                       stroke="currentColor"

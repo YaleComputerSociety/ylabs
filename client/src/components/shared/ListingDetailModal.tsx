@@ -1,7 +1,7 @@
 /**
  * Detail modal for viewing full listing information.
  */
-import React, { useEffect, useState, useContext } from 'react';
+import React, { useEffect, useState, useContext, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { Listing } from '../../types/types';
 import UserContext from '../../contexts/UserContext';
@@ -181,6 +181,8 @@ const ListingDetailModal = ({
   } | null>(null);
   const { user, isAuthenticated } = useContext(UserContext);
   const { getColorForResearchArea, getDepartmentByAbbr } = useContext(ConfigContext);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const previouslyFocusedElement = useRef<HTMLElement | null>(null);
 
   const researchAreas =
     listing.researchAreas?.length > 0 ? listing.researchAreas : listing.keywords || [];
@@ -190,6 +192,8 @@ const ListingDetailModal = ({
   const professorName = `${listing.ownerFirstName} ${listing.ownerLastName}`;
   const contactEmails = [listing.ownerEmail, ...(listing.emails || [])].filter(Boolean);
   const canEmailContact = isAuthenticated && contactEmails.length > 0;
+  const titleId = `listing-detail-title-${listing.id}`;
+  const descriptionId = `listing-detail-description-${listing.id}`;
 
   const handleBackdropClick = (e: React.MouseEvent) => {
     if (e.target === e.currentTarget) onClose();
@@ -252,6 +256,63 @@ const ListingDetailModal = ({
   }, [isOpen]);
 
   useEffect(() => {
+    if (!isOpen) return;
+
+    previouslyFocusedElement.current = document.activeElement as HTMLElement | null;
+    dialogRef.current?.focus();
+
+    return () => {
+      previouslyFocusedElement.current?.focus?.();
+    };
+  }, [isOpen]);
+
+  const getFocusableElements = () => {
+    if (!dialogRef.current) return [];
+    return Array.from(
+      dialogRef.current.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])',
+      ),
+    ).filter(
+      (element) =>
+        !element.hasAttribute('disabled') &&
+        element.getAttribute('aria-hidden') !== 'true' &&
+        element.tabIndex !== -1,
+    );
+  };
+
+  const handleDialogKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === 'Escape') {
+      e.stopPropagation();
+      onClose();
+      return;
+    }
+
+    if (e.key !== 'Tab') return;
+
+    const focusableElements = getFocusableElements();
+    if (focusableElements.length === 0) {
+      e.preventDefault();
+      dialogRef.current?.focus();
+      return;
+    }
+
+    const firstElement = focusableElements[0];
+    const lastElement = focusableElements[focusableElements.length - 1];
+    const activeElement = document.activeElement;
+
+    if (e.shiftKey && (activeElement === firstElement || activeElement === dialogRef.current)) {
+      e.preventDefault();
+      lastElement.focus();
+    } else if (
+      !e.shiftKey &&
+      (activeElement === lastElement || activeElement === dialogRef.current)
+    ) {
+      e.preventDefault();
+      firstElement.focus();
+    }
+  };
+
+  useEffect(() => {
     setOutreachPrompt(null);
   }, [listing.id, isOpen]);
 
@@ -263,8 +324,15 @@ const ListingDetailModal = ({
       onClick={handleBackdropClick}
     >
       <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        aria-describedby={descriptionId}
+        tabIndex={-1}
         className="bg-white rounded-xl shadow-2xl w-full max-w-4xl h-[85vh] flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
+        onKeyDown={handleDialogKeyDown}
       >
         <div className="flex-shrink-0 border-b border-gray-100">
           <div
@@ -309,7 +377,9 @@ const ListingDetailModal = ({
                   </span>
                 </div>
 
-                <h2 className="text-xl font-bold text-gray-900 leading-tight">{professorName}</h2>
+                <h2 id={titleId} className="text-xl font-bold text-gray-900 leading-tight">
+                  {professorName}
+                </h2>
                 {listing.ownerTitle && (
                   <p className="text-sm text-gray-500 mt-0.5">{listing.ownerTitle}</p>
                 )}
@@ -326,9 +396,11 @@ const ListingDetailModal = ({
                         target="_blank"
                         rel="noopener noreferrer"
                         className="p-2 rounded-lg hover:bg-gray-100 transition-colors text-gray-500 hover:text-blue-600"
+                        aria-label={`Visit ${professorName}'s website`}
                         title="Visit website"
                       >
                         <svg
+                          aria-hidden="true"
                           xmlns="http://www.w3.org/2000/svg"
                           width="18"
                           height="18"
@@ -345,33 +417,65 @@ const ListingDetailModal = ({
                         </svg>
                       </a>
                     )}
-                    <a
-                      href={canEmailContact ? `mailto:${contactEmails[0]}` : undefined}
-                      onClick={(e) => handleEmailClick(e, contactEmails[0])}
-                      className="p-2 rounded-lg hover:bg-gray-100 transition-colors text-gray-500 hover:text-blue-600"
-                      title={
-                        canEmailContact
-                          ? 'Send email'
-                          : isAuthenticated
-                            ? 'Contact details unavailable'
-                            : 'Sign in to inquire'
-                      }
-                    >
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        width="18"
-                        height="18"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
+                    {canEmailContact ? (
+                      <a
+                        href={`mailto:${contactEmails[0]}`}
+                        onClick={(e) => handleEmailClick(e, contactEmails[0])}
+                        className="p-2 rounded-lg hover:bg-gray-100 transition-colors text-gray-500 hover:text-blue-600"
+                        aria-label={`Email ${professorName}`}
+                        title="Send email"
                       >
-                        <rect x="2" y="4" width="20" height="16" rx="2" />
-                        <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
-                      </svg>
-                    </a>
+                        <svg
+                          aria-hidden="true"
+                          xmlns="http://www.w3.org/2000/svg"
+                          width="18"
+                          height="18"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <rect x="2" y="4" width="20" height="16" rx="2" />
+                          <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
+                        </svg>
+                      </a>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (!isAuthenticated) {
+                            onRequireAuth?.();
+                          }
+                        }}
+                        disabled={isAuthenticated}
+                        className="p-2 rounded-lg hover:bg-gray-100 transition-colors text-gray-500 hover:text-blue-600 disabled:text-gray-400 disabled:hover:bg-transparent disabled:cursor-not-allowed"
+                        aria-label={
+                          isAuthenticated ? 'Contact details unavailable' : 'Sign in to inquire'
+                        }
+                        title={
+                          isAuthenticated ? 'Contact details unavailable' : 'Sign in to inquire'
+                        }
+                      >
+                        <svg
+                          aria-hidden="true"
+                          xmlns="http://www.w3.org/2000/svg"
+                          width="18"
+                          height="18"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <rect x="2" y="4" width="20" height="16" rx="2" />
+                          <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
+                        </svg>
+                      </button>
+                    )}
                     <span className="px-1">
                       <FavoriteButton
                         isFavorite={isFavorite}
@@ -383,10 +487,11 @@ const ListingDetailModal = ({
                 )}
                 <button
                   onClick={onClose}
-                  className="p-2 rounded-lg hover:bg-gray-100 transition-colors text-gray-400 hover:text-gray-600"
-                  aria-label="Close"
+                  className="p-2 rounded-lg hover:bg-gray-100 transition-colors text-gray-500 hover:text-gray-700"
+                  aria-label="Close listing details"
                 >
                   <svg
+                    aria-hidden="true"
                     xmlns="http://www.w3.org/2000/svg"
                     className="h-5 w-5"
                     fill="none"
@@ -411,7 +516,7 @@ const ListingDetailModal = ({
             <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
               <div className="col-span-1 space-y-6">
                 <section>
-                  <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+                  <h3 className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-3">
                     Investigators
                   </h3>
                   <div className="space-y-2.5">
@@ -444,11 +549,11 @@ const ListingDetailModal = ({
 
                 {researchAreas.length > 0 && (
                   <section>
-                    <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+                    <h3 className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-3">
                       Research Areas
                     </h3>
                     {onNavigateToResearchArea && (
-                      <p className="text-xs text-gray-400 mb-2">Click to find similar labs</p>
+                      <p className="text-xs text-gray-600 mb-2">Find similar labs</p>
                     )}
                     <div className="flex flex-wrap gap-1.5">
                       {researchAreas.map((area: string) => {
@@ -479,7 +584,7 @@ const ListingDetailModal = ({
 
                 {listing.departments && listing.departments.length > 0 && (
                   <section>
-                    <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+                    <h3 className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-3">
                       Departments
                     </h3>
                     <div className="flex flex-wrap gap-1.5">
@@ -529,7 +634,7 @@ const ListingDetailModal = ({
                 )}
 
                 <section>
-                  <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+                  <h3 className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-3">
                     Contact
                   </h3>
                   <div className="space-y-2">
@@ -542,6 +647,7 @@ const ListingDetailModal = ({
                           className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800 hover:underline"
                         >
                           <svg
+                            aria-hidden="true"
                             xmlns="http://www.w3.org/2000/svg"
                             width="14"
                             height="14"
@@ -566,6 +672,7 @@ const ListingDetailModal = ({
                         className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800 hover:underline"
                       >
                         <svg
+                          aria-hidden="true"
                           xmlns="http://www.w3.org/2000/svg"
                           width="14"
                           height="14"
@@ -585,6 +692,7 @@ const ListingDetailModal = ({
                     ) : (
                       <div className="flex items-center gap-2 text-sm text-gray-500">
                         <svg
+                          aria-hidden="true"
                           xmlns="http://www.w3.org/2000/svg"
                           width="14"
                           height="14"
@@ -650,6 +758,7 @@ const ListingDetailModal = ({
                           className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800 hover:underline"
                         >
                           <svg
+                            aria-hidden="true"
                             xmlns="http://www.w3.org/2000/svg"
                             width="14"
                             height="14"
@@ -672,7 +781,7 @@ const ListingDetailModal = ({
                 </section>
 
                 <section>
-                  <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+                  <h3 className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-3">
                     Details
                   </h3>
                   <div className="space-y-1.5 text-sm">
@@ -708,16 +817,19 @@ const ListingDetailModal = ({
 
               <div className="col-span-1 md:col-span-2 space-y-6">
                 <section>
-                  <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+                  <h3 className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-3">
                     Research Description
                   </h3>
-                  <div className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
+                  <div
+                    id={descriptionId}
+                    className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap"
+                  >
                     {listing.description}
                   </div>
                 </section>
                 {listing.applicantDescription && listing.applicantDescription.trim() !== '' && (
                   <section>
-                    <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+                    <h3 className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-3">
                       Applicant Prerequisites
                     </h3>
                     <div className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap bg-amber-50/50 border border-amber-100 rounded-lg p-4">

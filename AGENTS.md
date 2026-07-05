@@ -181,6 +181,8 @@ Client-side tests run under **Vitest 3** with a `jsdom` environment. Config live
 
 Coverage focuses on pure reducer modules in `client/src/reducers/`, with matching test files in `client/src/reducers/__tests__/`. The pattern extracts state transitions out of providers/components (as `createInitial<Name>State()` + `<name>Reducer(state, action)`) so they can be tested without mounting React or mocking network. Side effects (axios, localStorage, timers) stay in the component that uses `useReducer`.
 
+Focused component accessibility tests cover research discovery/listing behavior outside the reducer pattern: `client/src/components/shared/__tests__/BrowseGrid.a11y.test.tsx` verifies keyboard-openable browse cards/list rows and separate favorite controls, `client/src/components/shared/__tests__/ListingDetailModal.public.test.tsx` covers public listing dialog naming, Escape close behavior, focus trapping/restoration, and redacted contact actions, and `client/src/components/accounts/ListingForm/FormFields/__tests__/ResearchAreaInput.a11y.test.tsx` covers listing-form research-area field selector dialog focus behavior.
+
 Current reducers with test coverage (all in `client/src/reducers/`, tests in `client/src/reducers/__tests__/`):
 
 | Reducer                            | Consumer                               | What it models                                                                                                                                                     |
@@ -339,11 +341,11 @@ User → Yale CAS SSO → passport.ts findOrCreateUser
 
 ## Known Technical Debt
 
-| Issue                                    | Location                          | Status                                                                                                                                                                                                                                         |
-| ---------------------------------------- | --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| No general server-side test suite        | `server/`                         | Focused Vitest coverage exists for error handling/tracking and a focused Node test covers listing-search degradation; broader server coverage is not wired into CI. Client uses Vitest; reducer modules in `client/src/reducers/` are covered. |
-| ESLint/Prettier configured but not in CI | `eslint.config.js`, `.prettierrc` | Flat-config ESLint + Prettier set up at repo root. Currently reports ~15 errors / ~55 warnings across the codebase; not wired to CI until pre-existing violations are triaged. Run `yarn lint`, `yarn lint:fix`, `yarn format`.                |
-| Console-only logging                     | Server                            | No structured logging (Winston/Pino)                                                                                                                                                                                                           |
+| Issue                                    | Location                          | Status                                                                                                                                                                                                                          |
+| ---------------------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| No general server-side test suite        | `server/`                         | Focused Vitest coverage exists for error handling/tracking and a focused Node test covers listing-search degradation; broader server coverage is not wired into CI. Client uses Vitest; reducer modules in `client/src/reducers/` and focused research/listing accessibility flows are covered. |
+| ESLint/Prettier configured but not in CI | `eslint.config.js`, `.prettierrc` | Flat-config ESLint + Prettier set up at repo root. Currently reports ~15 errors / ~55 warnings across the codebase; not wired to CI until pre-existing violations are triaged. Run `yarn lint`, `yarn lint:fix`, `yarn format`. |
+| Console-only logging                     | Server                            | No structured logging (Winston/Pino)                                                                                                                                                                                            |
 
 ## Adding a New Endpoint
 
