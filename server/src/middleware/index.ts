@@ -5,6 +5,7 @@ export {
   isAuthenticated,
   isTrustworthy,
   canCreateListing,
+  canSubmitListingClaimRequest,
   isAdmin,
   isProfessor,
   isConfirmed,
