@@ -124,30 +124,27 @@ Ask a project maintainer for the development MongoDB and API credentials. Do not
 
 ### 4. Start local Meilisearch
 
-Pull the latest Meilisearch image and start a container:
+Start the local Docker Compose service:
 
 ```bash
-docker pull getmeili/meilisearch:latest
-docker run -d -p 7700:7700 \
-  -e MEILI_MASTER_KEY=testkey \
-  -v meili_data:/meili_data \
-  getmeili/meilisearch:latest
+yarn meili:up
 ```
 
 Verify it's running:
 ```bash
-curl http://localhost:7700/health
+yarn meili:health
 # Should return: {"status":"available"}
 ```
 
 Data persists in the `meili_data` volume - you only need to seed once.
+The local Compose service uses `local_development_master_key`, matching `server/.env.example`.
 
 On Windows, install Docker Desktop on Windows and enable WSL integration for your Linux distribution. Run the `docker` commands from inside WSL.
 
 ### 5. Seed Meilisearch
 
 ```bash
-yarn --cwd server meili:rebuild-all --clear
+yarn meili:seed
 ```
 
 This rebuilds local Research and Pathways indexes from MongoDB. Use `--strategy=swap` for beta/production rebuilds that serve live traffic. Semantic Research search is release-gated separately: Meilisearch must report embedded `researchentities` documents before `RESEARCH_SEARCH_SEMANTIC=true` should be used for Beta or production.
@@ -267,7 +264,7 @@ Use the server workspace scripts for current data flows:
 
 ```bash
 yarn scrape help
-yarn --cwd server meili:rebuild-all --clear
+yarn meili:seed
 ```
 
 Historical `data-migration/` scripts remain for one-off migrations only. Do not use the old listing Meilisearch migration for current Research or Pathways indexes.
