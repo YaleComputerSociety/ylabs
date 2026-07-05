@@ -17,8 +17,28 @@ import swal from 'sweetalert';
 import { getInstitutionAffiliation } from '../utils/institutionAffiliation';
 import { browsePageReducer, createInitialBrowsePageState } from '../reducers/browsePageReducer';
 
+export const getListingEmptyMessage = (params: {
+  queryString: string;
+  selectedDepartments: string[];
+  selectedResearchAreas: string[];
+  selectedListingResearchAreas: string[];
+  quickFilter: string | null;
+}) => {
+  const hasSearchCriteria =
+    params.queryString.trim() !== '' ||
+    params.selectedDepartments.length > 0 ||
+    params.selectedResearchAreas.length > 0 ||
+    params.selectedListingResearchAreas.length > 0 ||
+    Boolean(params.quickFilter);
+
+  return hasSearchCriteria
+    ? 'No labs match your current search or filters'
+    : 'No research labs are available right now';
+};
+
 const Home = () => {
   const {
+    queryString,
     listings,
     isLoading,
     searchExhausted,
@@ -27,8 +47,11 @@ const Home = () => {
     setQuickFilter,
     refreshListings,
     setQueryString,
+    selectedDepartments,
     setSelectedDepartments,
+    selectedResearchAreas,
     setSelectedResearchAreas,
+    selectedListingResearchAreas,
     setSelectedListingResearchAreas,
   } = useContext(SearchContext);
 
@@ -161,6 +184,14 @@ const Home = () => {
     quickFilterActive: !!quickFilter,
   });
 
+  const emptyMessage = getListingEmptyMessage({
+    queryString,
+    selectedDepartments,
+    selectedResearchAreas,
+    selectedListingResearchAreas,
+    quickFilter,
+  });
+
   const updateFavorite = (listingId: string, favorite: boolean) => {
     if (!isAuthenticated) {
       requireLogin();
@@ -252,7 +283,7 @@ const Home = () => {
         searchExhausted={searchExhausted}
         quickFilter={quickFilter}
         onClearQuickFilter={() => setQuickFilter(null)}
-        emptyMessage="No results match the search criteria"
+        emptyMessage={emptyMessage}
       />
 
       {selectedListing && (
