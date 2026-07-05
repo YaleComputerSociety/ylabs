@@ -48,7 +48,7 @@ describe('profile routes', () => {
     for (const path of ['/:netid', '/:netid/publications', '/:netid/listings', '/:netid/courses']) {
       const handlers = routeHandlers(path);
       expect(handlers[0].name).toBe('isAuthenticated');
-      expect(handlers).toHaveLength(3);
+      expect(handlers.length).toBe(path === '/:netid' ? 4 : 3);
 
       const req = { params: { netid: 'not valid because spaces' } };
       const res = {

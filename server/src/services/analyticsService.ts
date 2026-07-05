@@ -1,7 +1,11 @@
 /**
  * Analytics event logging and aggregation service.
  */
-import { AnalyticsEvent, AnalyticsEventType } from '../models/analytics';
+import {
+  AnalyticsEvent,
+  AnalyticsEventType,
+  RESEARCH_ENTITY_TYPES,
+} from '../models/analytics';
 import { User, ResearchEntity } from '../models/index';
 import { getListingModel } from '../db/connections';
 import { Types, type PipelineStage } from 'mongoose';
@@ -14,6 +18,8 @@ export interface LogEventParams {
   userType: string;
   listingId?: string;
   fellowshipId?: string;
+  entityType?: string;
+  entityId?: string;
   searchQuery?: string;
   searchDepartments?: string[];
   metadata?: any;
@@ -29,6 +35,7 @@ const ANALYTICS_USER_TYPE_RE = /^[A-Za-z0-9_-]{1,40}$/;
 const ANALYTICS_METADATA_KEY_RE = /^[A-Za-z0-9_-]{1,80}$/;
 const ANALYTICS_OBJECT_ID_RE = /^[a-fA-F0-9]{24}$/;
 const ANALYTICS_EVENT_TYPES = new Set<AnalyticsEventType>(Object.values(AnalyticsEventType));
+const ANALYTICS_RESEARCH_ENTITY_TYPES = new Set<string>(RESEARCH_ENTITY_TYPES);
 
 const sanitizeAnalyticsEventType = (value: unknown): AnalyticsEventType | undefined =>
   typeof value === 'string' && ANALYTICS_EVENT_TYPES.has(value as AnalyticsEventType)
@@ -414,6 +421,14 @@ const normalizeAnalyticsObjectIdString = (value: unknown): string | undefined =>
 const sanitizeAnalyticsObjectId = (value: unknown): string | undefined =>
   normalizeAnalyticsObjectIdString(value);
 
+const sanitizeResearchEntityType = (value: unknown): string | undefined =>
+  typeof value === 'string' && ANALYTICS_RESEARCH_ENTITY_TYPES.has(value) ? value : undefined;
+
+const sanitizeResearchEntityId = (value: unknown): string | undefined => {
+  const sanitized = sanitizeAnalyticsText(value);
+  return sanitized && sanitized.trim() !== '' ? sanitized.slice(0, 128) : undefined;
+};
+
 const normalizeAnalyticsStoredObjectIdString = (value: unknown): string | undefined => {
   if (value instanceof Types.ObjectId) {
     return value.toHexString();
@@ -688,6 +703,8 @@ export const logEvent = async (params: LogEventParams): Promise<void> => {
 
     const listingId = sanitizeAnalyticsObjectId(params.listingId);
     const fellowshipId = sanitizeAnalyticsObjectId(params.fellowshipId);
+    const entityType = sanitizeResearchEntityType(params.entityType);
+    const entityId = sanitizeResearchEntityId(params.entityId);
     const eventPayload: Record<string, unknown> = {
       eventType,
       netid,
@@ -699,6 +716,8 @@ export const logEvent = async (params: LogEventParams): Promise<void> => {
     };
     if (listingId) eventPayload.listingId = listingId;
     if (fellowshipId) eventPayload.fellowshipId = fellowshipId;
+    if (entityType) eventPayload.entityType = entityType;
+    if (entityId) eventPayload.entityId = entityId;
 
     await AnalyticsEvent.create(eventPayload);
 
@@ -1433,6 +1452,115 @@ export const getAnalytics = async () => {
     },
   ]);
 
+  const researchEventTypes = [
+    AnalyticsEventType.RESEARCH_VIEW,
+    AnalyticsEventType.PATHWAY_SAVE,
+    AnalyticsEventType.WAYS_IN_CLICK,
+    AnalyticsEventType.CONTACT_ROUTE_CLICK,
+    AnalyticsEventType.SOURCE_LINK_CLICK,
+  ];
+  const researchStats = await AnalyticsEvent.aggregate([
+    {
+      $match: {
+        eventType: { $in: researchEventTypes },
+      },
+    },
+    {
+      $facet: {
+        byEventType: [
+          {
+            $group: {
+              _id: '$eventType',
+              total: { $sum: 1 },
+              last7Days: {
+                $sum: { $cond: [{ $gte: ['$timestamp', sevenDaysAgo] }, 1, 0] },
+              },
+              today: {
+                $sum: { $cond: [{ $gte: ['$timestamp', today] }, 1, 0] },
+              },
+            },
+          },
+          { $sort: { total: -1, _id: 1 } },
+          {
+            $project: {
+              _id: 0,
+              eventType: '$_id',
+              total: 1,
+              last7Days: 1,
+              today: 1,
+            },
+          },
+        ],
+        byEntityType: [
+          {
+            $match: {
+              entityType: { $exists: true, $ne: null },
+            },
+          },
+          {
+            $group: {
+              _id: { entityType: '$entityType', eventType: '$eventType' },
+              count: { $sum: 1 },
+            },
+          },
+          { $sort: { count: -1, '_id.entityType': 1, '_id.eventType': 1 } },
+          {
+            $project: {
+              _id: 0,
+              entityType: '$_id.entityType',
+              eventType: '$_id.eventType',
+              count: 1,
+            },
+          },
+        ],
+        byUserType: [
+          {
+            $group: {
+              _id: '$userType',
+              count: { $sum: 1 },
+            },
+          },
+          { $sort: { count: -1, _id: 1 } },
+          {
+            $project: {
+              _id: 0,
+              userType: '$_id',
+              count: 1,
+            },
+          },
+        ],
+        topEntities: [
+          {
+            $match: {
+              eventType: AnalyticsEventType.RESEARCH_VIEW,
+              timestamp: { $gte: thirtyDaysAgo },
+              entityType: { $exists: true, $ne: null },
+              entityId: { $exists: true, $ne: '' },
+            },
+          },
+          {
+            $group: {
+              _id: { entityType: '$entityType', entityId: '$entityId' },
+              views: { $sum: 1 },
+              uniqueViewers: { $addToSet: '$netid' },
+            },
+          },
+          {
+            $project: {
+              _id: 0,
+              entityType: '$_id.entityType',
+              entityId: '$_id.entityId',
+              views: 1,
+              uniqueViewers: { $size: '$uniqueViewers' },
+            },
+          },
+          { $sort: { views: -1, uniqueViewers: -1, entityType: 1, entityId: 1 } },
+          { $limit: 10 },
+        ],
+      },
+    },
+  ]);
+
   const listingStats = await getListingModel().aggregate([
     {
       $facet: {
@@ -1733,6 +1861,7 @@ export const getAnalytics = async () => {
   const engagement = engagementStats[0];
   const listings = listingStats[0];
   const users = userStats[0];
+  const research = researchStats[0];
   const researchEntities = researchEntityStats[0];
   const activeResearchEntityCount = researchEntities.overview[0]?.total || 0;
 
@@ -1797,6 +1926,12 @@ export const getAnalytics = async () => {
       avgViews: listings.viewsAndFavorites[0]?.avgViews || 0,
       avgFavorites: listings.viewsAndFavorites[0]?.avgFavorites || 0,
       viewsByDepartment: listings.viewsByDepartment || [],
+    },
+    research: {
+      byEventType: research.byEventType || [],
+      byEntityType: research.byEntityType || [],
+      byUserType: combineAnalyticsUserTypeCounts(research.byUserType || []),
+      topEntities: research.topEntities || [],
     },
     listings: {
       overview: listings.overview[0] || { total: 0, active: 0, archived: 0, unconfirmed: 0 },

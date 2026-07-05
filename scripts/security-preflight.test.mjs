@@ -2774,7 +2774,10 @@ test('profile read routes validate netid path params before controller work', ()
   );
 
   assert.match(routeSource, /import \{ isAuthenticated, isProfessor, validateNetid \} from '\.\.\/middleware\/index'/);
-  assert.match(routeSource, /router\.get\('\/:netid', isAuthenticated, validateNetid\('netid'\), getProfile\)/);
+  assert.match(
+    routeSource,
+    /router\.get\(\s*'\/:netid',\s*isAuthenticated,\s*validateNetid\('netid'\),[\s\S]*?getProfile,\s*\)/,
+  );
   assert.match(routeSource, /router\.get\('\/:netid\/publications', isAuthenticated, validateNetid\('netid'\), getPublications\)/);
   assert.match(routeSource, /router\.get\('\/:netid\/listings', isAuthenticated, validateNetid\('netid'\), getProfileListings\)/);
   assert.match(routeSource, /router\.get\('\/:netid\/courses', isAuthenticated, validateNetid\('netid'\), getProfileCourses\)/);

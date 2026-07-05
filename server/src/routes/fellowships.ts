@@ -7,6 +7,7 @@ import * as fellowshipController from '../controllers/fellowshipController';
 import { logEvent } from '../services/analyticsService';
 import { AnalyticsEventType } from '../models/index';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { logResearchEventOnSuccess } from '../services/researchAnalytics';
 
 const router = Router();
 
@@ -136,6 +137,7 @@ router.put(
   isAuthenticated,
   validateObjectId('id'),
   logFellowshipEvent(AnalyticsEventType.FELLOWSHIP_VIEW),
+  logResearchEventOnSuccess(AnalyticsEventType.RESEARCH_VIEW, 'fellowship'),
   fellowshipController.addViewToFellowship,
 );
 
@@ -144,6 +146,12 @@ router.put(
   isAuthenticated,
   validateObjectId('id'),
   logFellowshipEvent(AnalyticsEventType.FELLOWSHIP_FAVORITE),
+  logResearchEventOnSuccess(
+    AnalyticsEventType.PATHWAY_SAVE,
+    'fellowship',
+    (req) => req.params.id,
+    () => ({ action: 'save' }),
+  ),
   fellowshipController.addFavoriteToFellowship,
 );
 
@@ -152,6 +160,12 @@ router.put(
   isAuthenticated,
   validateObjectId('id'),
   logFellowshipEvent(AnalyticsEventType.FELLOWSHIP_UNFAVORITE),
+  logResearchEventOnSuccess(
+    AnalyticsEventType.PATHWAY_SAVE,
+    'fellowship',
+    (req) => req.params.id,
+    () => ({ action: 'unsave' }),
+  ),
   fellowshipController.removeFavoriteFromFellowship,
 );
 

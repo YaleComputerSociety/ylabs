@@ -8,6 +8,7 @@ import FellowshipSearchContext from '../../contexts/FellowshipSearchContext';
 import { safeHttpUrl, safeMailtoHref } from '../../utils/url';
 import { getFellowshipCycleStatus } from '../../utils/fellowshipCycle';
 import { entryModeLabel, programKindLabel } from '../../utils/programJourney';
+import { trackResearchEvent } from '../../utils/researchAnalytics';
 import FavoriteButton from '../shared/FavoriteButton';
 import LongText from '../shared/LongText';
 
@@ -75,6 +76,21 @@ const RichTextBlock = ({ text, className }: { text: string; className?: string }
   );
 };
 
+const trackFellowshipApplyClick = (fellowshipId: string, href: string) => {
+  trackResearchEvent({
+    eventType: 'source_link_click',
+    entityType: 'fellowship',
+    entityId: fellowshipId,
+    payload: { sourceCategory: 'external', url: href },
+  });
+  trackResearchEvent({
+    eventType: 'ways_in_click',
+    entityType: 'fellowship',
+    entityId: fellowshipId,
+    payload: { waysInKind: 'apply', label: 'Apply' },
+  });
+};
+
 const FellowshipModal = ({
   fellowship,
   isOpen,
@@ -124,6 +140,12 @@ const FellowshipModal = ({
         break;
     }
 
+    trackResearchEvent({
+      eventType: 'ways_in_click',
+      entityType: 'fellowship',
+      entityId: fellowship.id,
+      payload: { waysInKind: 'best_next_step', label: filterType },
+    });
     onClose();
     navigate('/programs');
   };
@@ -203,7 +225,10 @@ const FellowshipModal = ({
                     href={applicationHref}
                     target="_blank"
                     rel="noopener noreferrer"
-                    onClick={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      trackFellowshipApplyClick(fellowship.id, applicationHref);
+                    }}
                     className={iconActionClass}
                     aria-label={applicationActionLabel}
                     title={applicationActionLabel}
@@ -228,7 +253,15 @@ const FellowshipModal = ({
                 {contactEmailHref && (
                   <a
                     href={contactEmailHref}
-                    onClick={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      trackResearchEvent({
+                        eventType: 'contact_route_click',
+                        entityType: 'fellowship',
+                        entityId: fellowship.id,
+                        payload: { contactMethod: 'email' },
+                      });
+                    }}
                     className={iconActionClass}
                     title="Email contact"
                   >
@@ -370,6 +403,14 @@ const FellowshipModal = ({
                       {contactEmailHref && (
                         <a
                           href={contactEmailHref}
+                          onClick={() =>
+                            trackResearchEvent({
+                              eventType: 'contact_route_click',
+                              entityType: 'fellowship',
+                              entityId: fellowship.id,
+                              payload: { contactMethod: 'email' },
+                            })
+                          }
                           className="inline-flex min-h-[44px] max-w-full items-center gap-2 rounded-md px-2 text-sm text-blue-600 hover:text-blue-800 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
                         >
                           <svg
@@ -425,6 +466,16 @@ const FellowshipModal = ({
                           href={link.href}
                           target="_blank"
                           rel="noopener noreferrer"
+                          onClick={() => {
+                            if (link.href) {
+                              trackResearchEvent({
+                                eventType: 'source_link_click',
+                                entityType: 'fellowship',
+                                entityId: fellowship.id,
+                                payload: { sourceCategory: 'external', url: link.href },
+                              });
+                            }
+                          }}
                           className="inline-flex min-h-[44px] max-w-full items-center gap-2 rounded-md px-2 text-sm text-blue-600 hover:text-blue-800 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
                         >
                           <svg
@@ -648,6 +699,7 @@ const FellowshipModal = ({
                       href={applicationHref}
                       target="_blank"
                       rel="noopener noreferrer"
+                      onClick={() => trackFellowshipApplyClick(fellowship.id, applicationHref)}
                       className="inline-flex min-h-[44px] items-center rounded-md bg-blue-600 px-6 py-2.5 text-sm font-medium text-white transition-colors hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
                     >
                       {cycleStatus.category === 'open' || cycleStatus.category === 'closingSoon'

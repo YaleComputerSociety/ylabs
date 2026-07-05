@@ -65,6 +65,17 @@ export interface AnalyticsData {
       orphanedOpportunityIds: string[];
     };
   };
+  research: {
+    byEventType: Array<{ eventType: string; total: number; last7Days: number; today: number }>;
+    byEntityType: Array<{ entityType: string; eventType: string; count: number }>;
+    byUserType: Array<{ userType: string; count: number }>;
+    topEntities: Array<{
+      entityType: string;
+      entityId: string;
+      views: number;
+      uniqueViewers: number;
+    }>;
+  };
   listings: {
     overview: {
       total: number;
@@ -295,7 +306,7 @@ export type AnalyticsAction =
   | { type: 'FETCH_FAILURE'; payload: string };
 
 export const createInitialAnalyticsState = (
-  overrides: Partial<AnalyticsState> = {}
+  overrides: Partial<AnalyticsState> = {},
 ): AnalyticsState => ({
   data: null,
   isLoading: true,

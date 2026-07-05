@@ -5,6 +5,7 @@ import { FacultyProfile } from '../../types/types';
 import { getUniqueDepartmentLabels } from '../../utils/departmentNames';
 import { useConfig } from '../../hooks/useConfig';
 import { EXTERNAL_IMAGE_REFERRER_POLICY, safeHttpUrl } from '../../utils/url';
+import { trackResearchEvent } from '../../utils/researchAnalytics';
 
 interface ProfileHeaderProps {
   profile: FacultyProfile;
@@ -121,6 +122,14 @@ const ProfileHeader = ({ profile }: ProfileHeaderProps) => {
               href={websiteHref}
               target="_blank"
               rel="noopener noreferrer"
+              onClick={() =>
+                trackResearchEvent({
+                  eventType: 'source_link_click',
+                  entityType: 'profile',
+                  entityId: profile.netid,
+                  payload: { sourceCategory: 'profile', url: websiteHref },
+                })
+              }
               className={profileLinkClass}
             >
               Website
@@ -131,6 +140,14 @@ const ProfileHeader = ({ profile }: ProfileHeaderProps) => {
               href={orcidProfileHref}
               target="_blank"
               rel="noopener noreferrer"
+              onClick={() =>
+                trackResearchEvent({
+                  eventType: 'source_link_click',
+                  entityType: 'profile',
+                  entityId: profile.netid,
+                  payload: { sourceCategory: 'profile', url: orcidProfileHref },
+                })
+              }
               className={profileLinkClass}
               aria-label={`${fullName} ORCID profile`}
             >
@@ -143,6 +160,17 @@ const ProfileHeader = ({ profile }: ProfileHeaderProps) => {
               href={href}
               target="_blank"
               rel="noopener noreferrer"
+              onClick={() =>
+                trackResearchEvent({
+                  eventType: 'source_link_click',
+                  entityType: 'profile',
+                  entityId: profile.netid,
+                  payload: {
+                    sourceCategory: key === 'website' ? 'profile' : 'external',
+                    url: href,
+                  },
+                })
+              }
               className={`${profileLinkClass} capitalize`}
             >
               {key.replace(/_/g, ' ')}

@@ -49,6 +49,26 @@ const analyticsData: AnalyticsData = {
     avgFavorites: 0,
     viewsByDepartment: [],
   },
+  research: {
+    byEventType: [
+      { eventType: 'research_view', total: 12, last7Days: 5, today: 1 },
+      { eventType: 'pathway_save', total: 4, last7Days: 2, today: 0 },
+      { eventType: 'contact_route_click', total: 3, last7Days: 1, today: 0 },
+    ],
+    byEntityType: [
+      { entityType: 'profile', eventType: 'research_view', count: 7 },
+      { entityType: 'listing', eventType: 'pathway_save', count: 4 },
+    ],
+    byUserType: [{ userType: 'undergraduate', count: 6 }],
+    topEntities: [
+      {
+        entityType: 'profile',
+        entityId: 'fixture-professor',
+        views: 5,
+        uniqueViewers: 3,
+      },
+    ],
+  },
   listings: {
     overview: { total: 0, active: 0, archived: 0, unconfirmed: 0 },
     newListingsLast7Days: 0,
