@@ -39,12 +39,7 @@ export default function Search(props: SearchProps) {
     }
     setIsLoading(true);
     const url =
-      '/listings?dept=' +
-      selectedDepartments +
-      '&keywords=' +
-      keywords +
-      '&lname=' +
-      lastNamePI;
+      '/listings?dept=' + selectedDepartments + '&keywords=' + keywords + '&lname=' + lastNamePI;
     axios.get(url).then((response) => {
       const responseListings: Listing[] = response.data.map(function (elem: any) {
         return {

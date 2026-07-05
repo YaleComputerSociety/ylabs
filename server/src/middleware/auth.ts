@@ -70,12 +70,10 @@ export const canCreateListing = (
   }
 
   if (currentUser.userType !== 'admin' && !currentUser.profileVerified) {
-    return res
-      .status(403)
-      .json({
-        error:
-          'You must verify your profile before creating listings. Go to your account page to review and verify your profile.',
-      });
+    return res.status(403).json({
+      error:
+        'You must verify your profile before creating listings. Go to your account page to review and verify your profile.',
+    });
   }
 
   next();
