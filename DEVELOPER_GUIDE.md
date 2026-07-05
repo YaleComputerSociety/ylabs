@@ -212,6 +212,8 @@ Logged-out visitors use the public research discovery path instead:
 - The client sends public browse requests to `/api/research` and public detail requests to `/api/research/:slug`.
 - Public responses include only confirmed, unarchived listings and redact contact/private fields such as owner email, additional emails, owner/professor IDs, view counts, favorites, and audit fields.
 - Authenticated users opening a public detail modal also request `/api/research/:slug/contact` to load the full listing, including contact fields.
+- Revealing contact fields logs an `outreach_contact_reveal` analytics event with the listing, user, email channel, source, and contact count, but not the raw email addresses.
+- Authenticated email clicks in the public detail modal post to `/api/research/:slug/outreach` with `action: "email_click"`; the follow-up outcome prompt posts `action: "outcome"` with one of `emailed`, `will_contact_later`, or `not_a_fit`. These events store only privacy-safe metadata and never store contact addresses.
 - Public research search only allows `createdAt` and `updatedAt` sort fields and searches a contact-redacted field set.
 
 Listing CRUD in `listingService.ts` automatically syncs to Meilisearch after MongoDB writes.
@@ -258,6 +260,14 @@ The server initializes Sentry from `server/src/utils/errorTracking.ts` during st
 
 ---
 
+## Analytics
+
+Listing events are logged through route-level response interception in `server/src/routes/listings.ts`. Public research contact events are logged from the contact controller paths: contact detail reveal, email click attempts, and reported outreach outcomes. The admin analytics dashboard includes an Outreach Loop section with reveal/click/outcome totals, outcome breakdowns, top contacted listings, and recent outreach events.
+
+Outreach analytics intentionally avoid raw private contact data. Metadata is limited to channel, source, contact count, action, and the selected outcome.
+
+---
+
 ## API Routes
 
 All mount under `/api`.
@@ -265,7 +275,7 @@ All mount under `/api`.
 | Prefix            | Description                                                  | Auth                                             |
 | ----------------- | ------------------------------------------------------------ | ------------------------------------------------ |
 | `/listings`       | Listing CRUD and authenticated search                        | Varies                                           |
-| `/research`       | Public read-only listing discovery and shareable detail URLs | Public; `/research/:slug/contact` requires login |
+| `/research`       | Public listing discovery, contact reveal, and outreach events | Public; `/research/:slug/contact` and `/research/:slug/outreach` require login |
 | `/fellowships`    | Fellowship CRUD and search                                   | Varies                                           |
 | `/users`          | User CRUD                                                    | Yes                                              |
 | `/profiles`       | Faculty profiles                                             | Varies                                           |
