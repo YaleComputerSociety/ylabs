@@ -112,11 +112,15 @@ const ListingDetailModal = ({
 
     const firstElement = focusableElements[0];
     const lastElement = focusableElements[focusableElements.length - 1];
+    const activeElement = document.activeElement;
 
-    if (e.shiftKey && document.activeElement === firstElement) {
+    if (e.shiftKey && (activeElement === firstElement || activeElement === dialogRef.current)) {
       e.preventDefault();
       lastElement.focus();
-    } else if (!e.shiftKey && document.activeElement === lastElement) {
+    } else if (
+      !e.shiftKey &&
+      (activeElement === lastElement || activeElement === dialogRef.current)
+    ) {
       e.preventDefault();
       firstElement.focus();
     }

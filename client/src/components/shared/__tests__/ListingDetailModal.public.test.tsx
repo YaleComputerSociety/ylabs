@@ -225,4 +225,50 @@ describe('ListingDetailModal public discovery behavior', () => {
 
     expect(screen.getByRole('button', { name: /open listing/i })).toHaveFocus();
   });
+
+  it('keeps Tab focus inside the dialog from the dialog container boundary', async () => {
+    const user = userEvent.setup();
+
+    render(
+      <MemoryRouter>
+        <UserContext.Provider
+          value={{
+            isLoading: false,
+            isAuthenticated: false,
+            user: undefined,
+            checkContext: vi.fn(),
+          }}
+        >
+          <ConfigContext.Provider value={defaultConfigContext}>
+            <ListingDetailModal
+              isOpen
+              onClose={vi.fn()}
+              listing={{ ...listing, websites: ['example.com'] }}
+              isFavorite={false}
+              onToggleFavorite={vi.fn()}
+              onRequireAuth={vi.fn()}
+            />
+          </ConfigContext.Provider>
+        </UserContext.Provider>
+      </MemoryRouter>,
+    );
+
+    const dialog = screen.getByRole('dialog', { name: /ada lovelace/i });
+    const websiteLink = screen.getByRole('link', { name: /visit ada lovelace's website/i });
+    const focusableElements = Array.from(
+      dialog.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])',
+      ),
+    );
+    const lastFocusableElement = focusableElements[focusableElements.length - 1];
+
+    expect(dialog).toHaveFocus();
+
+    await user.keyboard('{Shift>}{Tab}{/Shift}');
+    expect(lastFocusableElement).toHaveFocus();
+
+    dialog.focus();
+    await user.tab();
+    expect(websiteLink).toHaveFocus();
+  });
 });

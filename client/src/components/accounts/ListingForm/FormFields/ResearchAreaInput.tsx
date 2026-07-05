@@ -45,15 +45,79 @@ const FieldSelectorModal = ({
   onClose,
   onSelectField,
 }: FieldSelectorModalProps) => {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const previouslyFocusedElement = useRef<HTMLElement | null>(null);
+
+  const getFocusableElements = () => {
+    if (!dialogRef.current) return [];
+    return Array.from(
+      dialogRef.current.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])',
+      ),
+    ).filter(
+      (element) =>
+        !element.hasAttribute('disabled') &&
+        element.getAttribute('aria-hidden') !== 'true' &&
+        element.tabIndex !== -1,
+    );
+  };
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    previouslyFocusedElement.current = document.activeElement as HTMLElement | null;
+    const focusableElements = getFocusableElements();
+    (focusableElements[0] || dialogRef.current)?.focus();
+
+    return () => {
+      previouslyFocusedElement.current?.focus?.();
+    };
+  }, [isOpen]);
+
+  const handleDialogKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === 'Escape') {
+      e.stopPropagation();
+      onClose();
+      return;
+    }
+
+    if (e.key !== 'Tab') return;
+
+    const focusableElements = getFocusableElements();
+    if (focusableElements.length === 0) {
+      e.preventDefault();
+      dialogRef.current?.focus();
+      return;
+    }
+
+    const firstElement = focusableElements[0];
+    const lastElement = focusableElements[focusableElements.length - 1];
+    const activeElement = document.activeElement;
+
+    if (e.shiftKey && (activeElement === firstElement || activeElement === dialogRef.current)) {
+      e.preventDefault();
+      lastElement.focus();
+    } else if (
+      !e.shiftKey &&
+      (activeElement === lastElement || activeElement === dialogRef.current)
+    ) {
+      e.preventDefault();
+      firstElement.focus();
+    }
+  };
+
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999]">
       <div
+        ref={dialogRef}
         className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 overflow-hidden"
         role="dialog"
         aria-modal="true"
         aria-labelledby="research-area-field-title"
+        tabIndex={-1}
+        onKeyDown={handleDialogKeyDown}
       >
         <div className="p-4 border-b border-gray-200">
           <h3 id="research-area-field-title" className="text-lg font-semibold text-gray-900">
