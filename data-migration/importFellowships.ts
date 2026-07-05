@@ -11,7 +11,7 @@ import {
   resolveCsvPath,
   summarizeValidation,
   type DataOpsOptions,
-  validateFellowshipDocuments,
+  validateAndFilterFellowshipDocuments,
   writeSummary,
 } from './dataOps';
 
@@ -145,10 +145,22 @@ export function transformFellowshipRow(row: FellowshipCSVRow) {
   };
 }
 
+function buildFellowshipImportStats(
+  fellowships: ReturnType<typeof transformFellowshipRow>[],
+): FellowshipImportStats {
+  return {
+    withYearOfStudy: fellowships.filter(f => f.yearOfStudy.length > 0).length,
+    withTermOfAward: fellowships.filter(f => f.termOfAward.length > 0).length,
+    withPurpose: fellowships.filter(f => f.purpose.length > 0).length,
+    withRegions: fellowships.filter(f => f.globalRegions.length > 0).length,
+    withCitizenship: fellowships.filter(f => f.citizenshipStatus.length > 0).length,
+    accepting: fellowships.filter(f => f.isAcceptingApplications).length,
+  };
+}
+
 function parseFellowshipCsv(csvPath: string): {
   rows: FellowshipCSVRow[];
-  validFellowships: ReturnType<typeof transformFellowshipRow>[];
-  stats: FellowshipImportStats;
+  fellowships: ReturnType<typeof transformFellowshipRow>[];
 } {
   const csvContent = fs.readFileSync(csvPath, 'utf-8');
   const rows: FellowshipCSVRow[] = parse(csvContent, {
@@ -157,18 +169,11 @@ function parseFellowshipCsv(csvPath: string): {
     relax_quotes: true,
     relax_column_count: true,
   });
-  const fellowships = rows.map(transformFellowshipRow);
-  const validFellowships = fellowships.filter(f => f.title && f.title !== 'Untitled Fellowship');
-  const stats: FellowshipImportStats = {
-    withYearOfStudy: validFellowships.filter(f => f.yearOfStudy.length > 0).length,
-    withTermOfAward: validFellowships.filter(f => f.termOfAward.length > 0).length,
-    withPurpose: validFellowships.filter(f => f.purpose.length > 0).length,
-    withRegions: validFellowships.filter(f => f.globalRegions.length > 0).length,
-    withCitizenship: validFellowships.filter(f => f.citizenshipStatus.length > 0).length,
-    accepting: validFellowships.filter(f => f.isAcceptingApplications).length,
-  };
 
-  return { rows, validFellowships, stats };
+  return {
+    rows,
+    fellowships: rows.map(transformFellowshipRow),
+  };
 }
 
 async function importFellowships(
@@ -184,11 +189,12 @@ async function importFellowships(
   console.log(`CSV Path: ${csvPath}`);
 
   console.log('Reading CSV file...');
-  const { rows, validFellowships, stats } = parseFellowshipCsv(csvPath);
+  const { rows, fellowships } = parseFellowshipCsv(csvPath);
   console.log(`Found ${rows.length} rows in CSV`);
+
+  const { validation, validFellowships } = validateAndFilterFellowshipDocuments(fellowships);
   console.log(`Valid fellowships to import: ${validFellowships.length}`);
 
-  const validation = validateFellowshipDocuments(validFellowships);
   const validationSummary = summarizeValidation(validation);
   console.log('\nValidation:');
   console.log(`  - Errors: ${validationSummary.errors}`);
@@ -199,6 +205,7 @@ async function importFellowships(
     console.warn(`  ... ${validation.warnings.length - 20} additional warnings omitted from console`);
   }
 
+  const stats = buildFellowshipImportStats(validFellowships);
   console.log('\nData statistics:');
   console.log(`  - With Year of Study: ${stats.withYearOfStudy}`);
   console.log(`  - With Term of Award: ${stats.withTermOfAward}`);
@@ -303,13 +310,13 @@ async function importFellowships(
 
 async function main(): Promise<void> {
   const options = parseDataOpsArgs(process.argv.slice(2));
-  assertSafeWrite(options, 'Fellowship import');
 
   const mongoUrl = process.env.MONGODBURL;
   if (!mongoUrl) {
     console.error('ERROR: MONGODBURL not set in server/.env');
     process.exit(1);
   }
+  assertSafeWrite(options, 'Fellowship import', { mongodbUrl: mongoUrl });
 
   await importFellowships(options, mongoUrl);
   console.log('\nImport command complete!\n');

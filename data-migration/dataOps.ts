@@ -19,7 +19,110 @@ export interface ValidationResult {
   warnings: string[];
 }
 
+export interface DataOpsDestinations {
+  mongodbUrl?: string;
+  meilisearchHost?: string;
+  meilisearchIndexPrefix?: string;
+}
+
 const VALID_TARGETS = new Set<DataOpsTarget>(['local', 'test', 'dev', 'beta', 'prod']);
+const TARGET_DATABASE_NAMES: Record<DataOpsTarget, string[]> = {
+  local: ['development', 'local', 'ylabs'],
+  test: ['test'],
+  dev: ['development', 'dev'],
+  beta: ['beta'],
+  prod: ['production', 'prod'],
+};
+
+function parseMongoDestination(url: string): { host: string; database: string } {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error('MONGODBURL is not a valid connection string');
+  }
+
+  const database = decodeURIComponent(parsed.pathname.replace(/^\/+/, '').split('/')[0] || '');
+  if (!database) {
+    throw new Error('MONGODBURL must include an explicit database name for write safety');
+  }
+
+  return {
+    host: parsed.hostname.toLowerCase(),
+    database: database.toLowerCase(),
+  };
+}
+
+function isLocalHost(host: string): boolean {
+  return host === 'localhost' || host === '127.0.0.1' || host === '::1';
+}
+
+function assertMongoTargetMatches(target: DataOpsTarget, mongodbUrl: string, operationName: string) {
+  const destination = parseMongoDestination(mongodbUrl);
+  const allowedNames = TARGET_DATABASE_NAMES[target];
+  const isAllowedDatabase = allowedNames.includes(destination.database);
+  const isLocalTarget = target === 'local' && isLocalHost(destination.host);
+
+  if (!isAllowedDatabase && !isLocalTarget) {
+    throw new Error(
+      `${operationName} target ${target} does not match MongoDB database "${destination.database}"`,
+    );
+  }
+}
+
+function assertMeilisearchTargetMatches(
+  target: DataOpsTarget,
+  meilisearchHost: string,
+  meilisearchIndexPrefix: string | undefined,
+  operationName: string,
+) {
+  let host: string;
+  try {
+    host = new URL(meilisearchHost).hostname.toLowerCase();
+  } catch {
+    throw new Error('MEILISEARCH_HOST is not a valid URL');
+  }
+
+  const prefix = meilisearchIndexPrefix || '';
+
+  if (target === 'local') {
+    if (!isLocalHost(host) || prefix) {
+      throw new Error(`${operationName} target local requires local Meilisearch with no index prefix`);
+    }
+    return;
+  }
+
+  if (target !== prefix) {
+    throw new Error(
+      `${operationName} target ${target} does not match Meilisearch index prefix "${prefix || '(unset)'}"`,
+    );
+  }
+}
+
+function assertDestinationMatchesTarget(
+  options: DataOpsOptions,
+  operationName: string,
+  destinations?: DataOpsDestinations,
+) {
+  if (!options.target) return;
+
+  if (!destinations?.mongodbUrl && !destinations?.meilisearchHost) {
+    throw new Error(`${operationName} writes require resolved destination metadata`);
+  }
+
+  if (destinations.mongodbUrl) {
+    assertMongoTargetMatches(options.target, destinations.mongodbUrl, operationName);
+  }
+
+  if (destinations.meilisearchHost) {
+    assertMeilisearchTargetMatches(
+      options.target,
+      destinations.meilisearchHost,
+      destinations.meilisearchIndexPrefix,
+      operationName,
+    );
+  }
+}
 
 function readFlagValue(argv: string[], index: number, flag: string): string {
   const value = argv[index + 1];
@@ -86,7 +189,11 @@ export function parseDataOpsArgs(argv: string[]): DataOpsOptions {
   return options;
 }
 
-export function assertSafeWrite(options: DataOpsOptions, operationName: string) {
+export function assertSafeWrite(
+  options: DataOpsOptions,
+  operationName: string,
+  destinations?: DataOpsDestinations,
+) {
   if (options.dryRun) return;
 
   if (!options.execute) {
@@ -102,6 +209,8 @@ export function assertSafeWrite(options: DataOpsOptions, operationName: string) 
       `${operationName} refuses prod writes without --allow-production --confirm-production`,
     );
   }
+
+  assertDestinationMatchesTarget(options, operationName, destinations);
 }
 
 export function resolveCsvPath(scriptDir: string, explicitPath?: string): string {
@@ -174,6 +283,15 @@ export function validateFellowshipDocuments(
   });
 
   return { errors, warnings };
+}
+
+export function validateAndFilterFellowshipDocuments<
+  T extends { title?: string; applicationLink?: string; description?: string },
+>(fellowships: T[]): { validation: ValidationResult; validFellowships: T[] } {
+  return {
+    validation: validateFellowshipDocuments(fellowships),
+    validFellowships: fellowships.filter(f => f.title && f.title !== 'Untitled Fellowship'),
+  };
 }
 
 export function toMeiliListingDocument(doc: Record<string, any>) {

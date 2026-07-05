@@ -5,6 +5,7 @@ import {
   maskConnectionString,
   parseDataOpsArgs,
   toMeiliListingDocument,
+  validateAndFilterFellowshipDocuments,
   validateFellowshipDocuments,
   validateMeiliListingDocuments,
 } from '../dataOps';
@@ -43,6 +44,21 @@ test('assertSafeWrite blocks ambiguous and production writes', () => {
     /refuses prod writes/,
   );
 
+  assert.throws(
+    () =>
+      assertSafeWrite(
+        parseDataOpsArgs([
+          '--execute',
+          '--target',
+          'prod',
+          '--allow-production',
+          '--confirm-production',
+        ]),
+        'test op',
+      ),
+    /resolved destination metadata/,
+  );
+
   assert.doesNotThrow(() =>
     assertSafeWrite(
       parseDataOpsArgs([
@@ -53,7 +69,36 @@ test('assertSafeWrite blocks ambiguous and production writes', () => {
         '--confirm-production',
       ]),
       'test op',
+      { mongodbUrl: 'mongodb+srv://user:password@example.mongodb.net/Production' },
     ),
+  );
+});
+
+test('assertSafeWrite requires target flags to match resolved destinations', () => {
+  assert.throws(
+    () =>
+      assertSafeWrite(parseDataOpsArgs(['--execute', '--target', 'dev']), 'test op', {
+        mongodbUrl: 'mongodb+srv://user:password@example.mongodb.net/Production',
+      }),
+    /target dev does not match MongoDB database "production"/,
+  );
+
+  assert.throws(
+    () =>
+      assertSafeWrite(parseDataOpsArgs(['--execute', '--target', 'dev']), 'test op', {
+        mongodbUrl: 'mongodb+srv://user:password@example.mongodb.net/Development',
+        meilisearchHost: 'https://meilisearch.internal',
+        meilisearchIndexPrefix: 'prod',
+      }),
+    /target dev does not match Meilisearch index prefix "prod"/,
+  );
+
+  assert.doesNotThrow(() =>
+    assertSafeWrite(parseDataOpsArgs(['--execute', '--target', 'dev']), 'test op', {
+      mongodbUrl: 'mongodb+srv://user:password@example.mongodb.net/Development',
+      meilisearchHost: 'https://meilisearch.internal',
+      meilisearchIndexPrefix: 'dev',
+    }),
   );
 });
 
@@ -68,6 +113,23 @@ test('validateFellowshipDocuments reports missing required artifacts and duplica
   assert(validation.warnings.some(warning => warning.includes('duplicate fellowship title')));
   assert(validation.warnings.some(warning => warning.includes('missing application link')));
   assert(validation.warnings.some(warning => warning.includes('missing description')));
+});
+
+test('validateAndFilterFellowshipDocuments reports missing titles before filtering import rows', () => {
+  const result = validateAndFilterFellowshipDocuments([
+    { title: 'Summer Research', applicationLink: 'https://example.test/apply', description: 'Apply' },
+    { title: 'Untitled Fellowship', applicationLink: 'https://example.test/blank' },
+    { title: '', applicationLink: 'https://example.test/missing' },
+  ]);
+
+  assert.deepEqual(result.validation.errors, [
+    'row 2: missing fellowship title',
+    'row 3: missing fellowship title',
+  ]);
+  assert.deepEqual(
+    result.validFellowships.map(fellowship => fellowship.title),
+    ['Summer Research'],
+  );
 });
 
 test('toMeiliListingDocument strips Mongo-only fields before indexing', () => {

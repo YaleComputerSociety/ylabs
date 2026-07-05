@@ -20,7 +20,6 @@ const MEILISEARCH_INDEX_PREFIX = process.env.MEILISEARCH_INDEX_PREFIX || '';
 
 async function migrateToMeilisearch() {
   const options = parseDataOpsArgs(process.argv.slice(2));
-  assertSafeWrite(options, 'Meilisearch listing migration');
 
   const { Meilisearch } = await (new Function('specifier', 'return import(specifier)')(
     'meilisearch',
@@ -31,6 +30,11 @@ async function migrateToMeilisearch() {
     console.error('ERROR: MONGODBURL not set in environment');
     process.exit(1);
   }
+  assertSafeWrite(options, 'Meilisearch listing migration', {
+    mongodbUrl: sourceUrl,
+    meilisearchHost: MEILISEARCH_HOST,
+    meilisearchIndexPrefix: MEILISEARCH_INDEX_PREFIX,
+  });
 
   console.log('\n=== Migrating Listings to Meilisearch ===\n');
   console.log(`Mode: ${options.dryRun ? 'DRY RUN (no Meilisearch writes)' : 'EXECUTE'}`);
