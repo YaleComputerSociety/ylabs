@@ -1,6 +1,6 @@
 import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
+import { Link, MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest';
 import SearchContext, { defaultSearchContext } from '../../contexts/SearchContext';
 import UserContext from '../../contexts/UserContext';
@@ -58,6 +58,8 @@ const LocationDisplay = () => {
 describe('Home public research detail route', () => {
   afterEach(() => {
     cleanup();
+    document.title = '';
+    document.head.innerHTML = '';
   });
 
   beforeEach(() => {
@@ -301,6 +303,59 @@ describe('Home public research detail route', () => {
     await waitFor(() => {
       expect(screen.getByTestId('location').textContent).toBe(
         '/research/public-research-507f1f77bcf86cd799439011?query=genomics',
+      );
+    });
+  });
+
+  it('restores default metadata when navigating away from public research routes', async () => {
+    render(
+      <MemoryRouter initialEntries={['/research']}>
+        <UserContext.Provider
+          value={{
+            isLoading: false,
+            isAuthenticated: false,
+            user: null,
+            checkContext: vi.fn(),
+          }}
+        >
+          <SearchContext.Provider
+            value={{
+              ...defaultSearchContext,
+              refreshListings: vi.fn(),
+              setQueryString: vi.fn(),
+            }}
+          >
+            <Routes>
+              <Route
+                path="/research"
+                element={
+                  <>
+                    <Link to="/fellowships">Fellowships</Link>
+                    <Home />
+                  </>
+                }
+              />
+              <Route path="/fellowships" element={<LocationDisplay />} />
+            </Routes>
+          </SearchContext.Provider>
+        </UserContext.Provider>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(document.title).toBe('YaleLabs Research');
+    });
+
+    fireEvent.click(screen.getByRole('link', { name: 'Fellowships' }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('location').textContent).toBe('/fellowships');
+      expect(document.title).toBe('YaleLabs');
+      expect(document.querySelector('meta[property="og:title"]')?.getAttribute('content')).toBe(
+        'YaleLabs',
+      );
+      expect(document.querySelector('meta[name="twitter:title"]')?.getAttribute('content')).toBe(
+        'YaleLabs',
       );
     });
   });

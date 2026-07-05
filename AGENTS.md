@@ -39,7 +39,7 @@ ylabs/
 │       ├── providers/        # Context providers with data fetching logic
 │       ├── hooks/            # Custom hooks (useConfig, useInfiniteScroll, useViewTracking)
 │       ├── types/            # TypeScript interfaces (Listing, Fellowship, FacultyProfile, User)
-│       └── utils/            # Helpers: axios instance, MUI theme, department names, research areas
+│       └── utils/            # Helpers: axios instance, MUI theme, department names, research areas, SEO metadata
 ├── server/                   # Express backend (port 4000)
 │   └── src/
 │       ├── index.ts          # Server startup entry point
@@ -51,7 +51,7 @@ ylabs/
 │       ├── models/           # Mongoose schemas (user, listing, listingClaimRequest, fellowship, analytics, department, researchArea)
 │       ├── middleware/        # Auth guards, validation, error handling
 │       ├── db/               # Multi-mode database connections
-│       ├── utils/            # smartTitle, errors, permissions (legacy), environment, meiliClient
+│       ├── utils/            # smartTitle, errors, permissions (legacy), environment, meiliClient, public research SEO
 │       └── scripts/          # One-off import/cleanup scripts
 └── data-migration/           # Standalone migration scripts (run with ts-node --transpile-only)
 ```
@@ -104,6 +104,8 @@ Current authenticated listing search flow:
 5. Results are returned with `totalCount` for pagination and a `degraded` boolean indicating whether fallback behavior was used
 
 Public research discovery uses the same degradation path through `/api/research`, but only returns confirmed, unarchived listings after redacting contact/private fields (`ownerEmail`, `emails`, owner/professor IDs, views, favorites, archived/confirmed/audit internals). Public responses keep sanitized `evidence` metadata for the listing detail evidence rail, limited to status/summary/confidence/timestamps and up to eight source records; source URLs are restricted to `http`/`https` and stripped of credentials, query strings, and fragments. Client routes `/research` and `/research/:slug` render the browse page without `PrivateRoute`; opening a card updates the URL to a shareable modal route. Authenticated users on those public routes additionally call `/api/research/:slug/contact` to retrieve the full listing with contact fields, while evidence remains sanitized through the public evidence allowlist. Public research search uses a contact-redacted searchable field set and only accepts `createdAt` or `updatedAt` sort fields.
+
+Public research share URLs expose SEO/social metadata. The built client shell has a generic metadata block in `client/index.html` bounded by `YL_SEO_META_START`/`YL_SEO_META_END`; production Express routes for `/research` and `/research/:slug` in `server/src/app.ts` replace that block with canonical, description, Open Graph, and Twitter card metadata from `server/src/utils/publicResearchSeo.ts`. Listing-specific metadata is derived only after loading a confirmed, unarchived listing and passing it through `redactPublicListing()`. `client/src/utils/seo.ts` mirrors the same head updates after SPA load for Vite development or static-only hosting and restores default YaleLabs metadata when users leave public research routes.
 
 The authenticated Find Labs page distinguishes an empty local/unfiltered dataset from an empty search result: no unfiltered listings shows "No research labs are available right now" with a `/fellowships` action, while active searches or filters show "No labs match your current search or filters."
 
@@ -188,7 +190,7 @@ Client-side tests run under **Vitest 3** with a `jsdom` environment. Config live
 
 Coverage focuses on pure reducer modules in `client/src/reducers/`, with matching test files in `client/src/reducers/__tests__/`. The pattern extracts state transitions out of providers/components (as `createInitial<Name>State()` + `<name>Reducer(state, action)`) so they can be tested without mounting React or mocking network. Side effects (axios, localStorage, timers) stay in the component that uses `useReducer`.
 
-Focused component accessibility tests cover research discovery/listing behavior outside the reducer pattern: `client/src/components/shared/__tests__/BrowseGrid.a11y.test.tsx` verifies keyboard-openable browse cards/list rows and separate favorite controls, `client/src/components/shared/__tests__/ListingDetailModal.public.test.tsx` covers public listing dialog naming, Escape close behavior, focus trapping/restoration, and redacted contact actions, and `client/src/components/accounts/ListingForm/FormFields/__tests__/ResearchAreaInput.a11y.test.tsx` covers listing-form research-area field selector dialog focus behavior. Focused HTTP handling tests cover rate-limit event parsing, the global rate-limit notifier, stable auth/rate-limit middleware payloads, and auth-state clearing on app-wide `401` events.
+Focused component accessibility tests cover research discovery/listing behavior outside the reducer pattern: `client/src/components/shared/__tests__/BrowseGrid.a11y.test.tsx` verifies keyboard-openable browse cards/list rows and separate favorite controls, `client/src/components/shared/__tests__/ListingDetailModal.public.test.tsx` covers public listing dialog naming, Escape close behavior, focus trapping/restoration, and redacted contact actions, and `client/src/components/accounts/ListingForm/FormFields/__tests__/ResearchAreaInput.a11y.test.tsx` covers listing-form research-area field selector dialog focus behavior. Public research SEO coverage lives in `client/src/utils/__tests__/seo.test.ts`, `client/src/pages/__tests__/home.publicResearch.test.tsx`, and `server/src/utils/__tests__/publicResearchSeo.test.ts`.
 
 Current reducers with test coverage (all in `client/src/reducers/`, tests in `client/src/reducers/__tests__/`):
 
@@ -286,12 +288,7 @@ All routes mount under `/api` in `app.ts`. Route files in `server/src/routes/`:
 
 Passport auth routes (CAS login/logout, dev-login) are mounted separately via `passportRoutes` before the main routes.
 
-Listing claim/correction workflow:
-
-- `POST /api/listings/:id/claim` creates a pending request. Body fields: `requestType` (`claim` or `correction`, default `correction`), required `message`, optional allowlisted `proposedChanges`, and optional `evidenceUrls`.
-- `GET /api/admin/listing-claims` lists requests with optional `status`, `requestType`, `listingId`, `page`, and `pageSize`.
-- `GET /api/admin/listing-claims/:id` reads one request.
-- `PUT /api/admin/listing-claims/:id` accepts `status` (`approved` or `rejected`) and optional `adminNotes`, then records `reviewedBy` and `reviewedAt`.
+Public HTML routes `/research` and `/research/:slug` are mounted separately in `server/src/app.ts` after static assets so shared research URLs can receive crawler-visible SEO metadata before the SPA hydrates.
 
 ## Authentication Flow
 
@@ -360,7 +357,7 @@ User → Yale CAS SSO → passport.ts findOrCreateUser
 
 | Issue                                    | Location                          | Status                                                                                                                                                                                                                          |
 | ---------------------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| No general server-side test suite        | `server/`                         | Focused Vitest coverage exists for auth middleware, listing claim request service behavior, error handling/tracking, and a focused Node test covers listing-search degradation; broader server coverage is not wired into CI. Client uses Vitest; reducer modules in `client/src/reducers/` and focused research/listing accessibility flows are covered. |
+| No general server-side test suite        | `server/`                         | Focused Vitest coverage exists for error handling/tracking, public research SEO, and a focused Node test covers listing-search degradation; broader server coverage is not wired into CI. Client uses Vitest; reducer modules in `client/src/reducers/` and focused research/listing accessibility flows are covered. |
 | ESLint/Prettier configured but not in CI | `eslint.config.js`, `.prettierrc` | Flat-config ESLint + Prettier set up at repo root. Currently reports ~15 errors / ~55 warnings across the codebase; not wired to CI until pre-existing violations are triaged. Run `yarn lint`, `yarn lint:fix`, `yarn format`. |
 | Console-only logging                     | Server                            | No structured logging (Winston/Pino)                                                                                                                                                                                            |
 
