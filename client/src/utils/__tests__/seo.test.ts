@@ -91,7 +91,9 @@ describe('research SEO client fallback', () => {
     const html = readFileSync('index.html', 'utf8');
 
     expect(html).toContain('<title>YaleLabs</title>');
-    expect(html).toContain('<meta name="description" content="Find research labs at Yale University" />');
+    expect(html).toContain(
+      '<meta name="description" content="Find research labs at Yale University" />',
+    );
     expect(html).toContain('<meta property="og:title" content="YaleLabs" />');
     expect(html).toContain(
       '<meta property="og:description" content="Find research labs at Yale University" />',
