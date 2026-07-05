@@ -60,6 +60,14 @@ export type CreateListingClaimRequestInput = {
   evidenceUrls?: unknown;
 };
 
+type ListingClaimSnapshot = {
+  title?: string;
+  ownerId?: string;
+  ownerEmail?: string;
+  ownerFirstName?: string;
+  ownerLastName?: string;
+};
+
 const normalizeRequestBody = (input: unknown): Record<string, unknown> => {
   if (!input || typeof input !== 'object' || Array.isArray(input)) return {};
   return input as Record<string, unknown>;
@@ -151,7 +159,10 @@ export const createListingClaimRequest = async (
     throw new BadRequestError('Message is required');
   }
 
-  const listing = await getListingModel().findById(listingId).select('-embedding').lean();
+  const listing = (await getListingModel()
+    .findById(listingId)
+    .select('-embedding')
+    .lean()) as ListingClaimSnapshot | null;
   if (!listing) {
     throw new NotFoundError(`Listing not found with ObjectId: ${listingId}`);
   }
