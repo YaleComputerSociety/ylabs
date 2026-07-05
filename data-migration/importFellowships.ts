@@ -2,26 +2,21 @@ import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
-import { fileURLToPath } from 'url';
 import { parse } from 'csv-parse/sync';
 import { fellowshipSchema } from '../server/src/models/fellowship';
 import {
-  assertScriptApplyAllowed,
-  type ScriptApplyGuardResult,
-} from '../server/src/scripts/scriptWriteGuards';
+  assertSafeWrite,
+  ensureReadableFile,
+  parseDataOpsArgs,
+  resolveCsvPath,
+  summarizeValidation,
+  type DataOpsOptions,
+  validateFellowshipDocuments,
+  writeSummary,
+} from './dataOps';
 
 // Load environment variables from server/.env
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, '../server/.env') });
-
-export interface FellowshipImportCliOptions {
-  apply: boolean;
-  confirmFellowshipImport?: boolean;
-  replaceExisting: boolean;
-  csvPath?: string;
-  output?: string;
-}
 
 interface FellowshipImportStats {
   withYearOfStudy: number;
@@ -36,13 +31,14 @@ interface FellowshipImportResult {
   csvPath: string;
   rowCount: number;
   validCount: number;
-  existingCount: number;
+  existingCount: number | null;
   deletedCount: number;
   insertedCount: number;
-  stats?: FellowshipImportStats;
+  finalCount: number | null;
+  stats: FellowshipImportStats;
 }
 
-// Top-level regions to extract (skip countries)
+// Top-level regions to extract, skipping countries.
 const TOP_LEVEL_REGIONS = [
   'Africa',
   'Asia',
@@ -53,29 +49,24 @@ const TOP_LEVEL_REGIONS = [
   'Oceania',
 ];
 
-// Parse semicolon-separated filter values into arrays
 function parseFilterValues(value: string | undefined): string[] {
   if (!value || !value.trim()) return [];
   return value.split(';').map(v => v.trim()).filter(Boolean);
 }
 
-// Extract top-level regions only (no countries)
 function parseRegions(value: string | undefined): string[] {
   const allValues = parseFilterValues(value);
   return allValues.filter(v => TOP_LEVEL_REGIONS.includes(v));
 }
 
-// Clean contact email (remove // prefix if present)
 function cleanEmail(email: string | undefined): string {
   if (!email) return '';
   return email.replace(/^\/\//, '').trim();
 }
 
-// Parse date string to Date object
 function parseDate(dateStr: string | undefined): Date | null {
   if (!dateStr || !dateStr.trim()) return null;
 
-  // Try to parse various date formats
   const parsed = new Date(dateStr);
   if (!isNaN(parsed.getTime())) {
     return parsed;
@@ -84,34 +75,24 @@ function parseDate(dateStr: string | undefined): Date | null {
   return null;
 }
 
-// Clean HTML/JavaScript from text content
 function cleanText(text: string | undefined): string {
   if (!text) return '';
 
-  // Remove common JavaScript artifacts
-  let cleaned = text
-    // Remove script tags and their content
+  return text
     .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-    // Remove style tags and their content
     .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-    // Remove HTML tags
     .replace(/<[^>]+>/g, ' ')
-    // Remove JavaScript code patterns
     .replace(/function\s*\([^)]*\)\s*\{[\s\S]*?\}/g, '')
     .replace(/var\s+\w+\s*=[\s\S]*?;/g, '')
     .replace(/document\.\w+/g, '')
     .replace(/window\.\w+/g, '')
-    // Remove CSS
     .replace(/\{[^}]*\}/g, '')
-    // Remove special characters and extra whitespace
     .replace(/&nbsp;/g, ' ')
     .replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/\s+/g, ' ')
     .trim();
-
-  return cleaned;
 }
 
 export interface FellowshipCSVRow {
@@ -164,118 +145,11 @@ export function transformFellowshipRow(row: FellowshipCSVRow) {
   };
 }
 
-export function parseFellowshipImportArgs(argv: string[]): FellowshipImportCliOptions {
-  const options: FellowshipImportCliOptions = {
-    apply: false,
-    confirmFellowshipImport: false,
-    replaceExisting: false,
-  };
-  const parseRequiredPath = (flag: '--csv' | '--output', value: string | undefined): string => {
-    const parsed = value?.trim();
-    if (!parsed || parsed.startsWith('--')) throw new Error(`${flag} requires a path`);
-    return parsed;
-  };
-
-  for (let i = 0; i < argv.length; i += 1) {
-    const arg = argv[i];
-    if (arg === '--apply' || arg === '--live') {
-      options.apply = true;
-      continue;
-    }
-    if (arg === '--dry-run') {
-      options.apply = false;
-      continue;
-    }
-    if (arg === '--replace-existing') {
-      options.replaceExisting = true;
-      continue;
-    }
-    if (arg === '--confirm-fellowship-import') {
-      options.confirmFellowshipImport = true;
-      continue;
-    }
-    if (arg.startsWith('--confirm-fellowship-import=')) {
-      throw new Error('--confirm-fellowship-import does not accept a value');
-    }
-    if (arg === '--csv') {
-      options.csvPath = parseRequiredPath('--csv', argv[i + 1]);
-      i += 1;
-      continue;
-    }
-    if (arg.startsWith('--csv=')) {
-      options.csvPath = parseRequiredPath('--csv', arg.slice('--csv='.length));
-      continue;
-    }
-    if (arg === '--output') {
-      options.output = parseRequiredPath('--output', argv[i + 1]);
-      i += 1;
-      continue;
-    }
-    if (arg.startsWith('--output=')) {
-      options.output = parseRequiredPath('--output', arg.slice('--output='.length));
-      continue;
-    }
-
-    throw new Error(`Unknown fellowship import argument: ${arg}`);
-  }
-
-  return options;
-}
-
-export function assertFellowshipImportApplyAllowed(args: {
-  apply: boolean;
-  confirmFellowshipImport?: boolean;
-  csvPath?: string;
-  mongoUrl?: string;
-  env?: NodeJS.ProcessEnv;
-}): ScriptApplyGuardResult {
-  if (args.apply && !args.csvPath) {
-    throw new Error('--csv is required when --apply is set for fellowship CSV import');
-  }
-  if (args.apply && !args.confirmFellowshipImport) {
-    throw new Error(
-      '--confirm-fellowship-import is required when --apply is set for fellowship CSV import',
-    );
-  }
-
-  return assertScriptApplyAllowed({
-    apply: args.apply,
-    scriptName: 'fellowship CSV import',
-    mongoUrl: args.mongoUrl,
-    env: args.env,
-  });
-}
-
-export function buildFellowshipImportOutput<T extends object>(
-  result: T,
-  metadata: {
-    generatedAt?: string;
-    environment?: string;
-    db?: string;
-    options: FellowshipImportCliOptions;
-  },
-): T & {
-  generatedAt: string;
-  environment?: string;
-  db?: string;
-  options: FellowshipImportCliOptions;
+function parseFellowshipCsv(csvPath: string): {
+  rows: FellowshipCSVRow[];
+  validFellowships: ReturnType<typeof transformFellowshipRow>[];
+  stats: FellowshipImportStats;
 } {
-  return {
-    generatedAt: metadata.generatedAt || new Date().toISOString(),
-    ...(metadata.environment ? { environment: metadata.environment } : {}),
-    ...(metadata.db ? { db: metadata.db } : {}),
-    options: metadata.options,
-    ...result,
-  };
-}
-
-function writeFellowshipImportOutput(result: unknown, output?: string): void {
-  if (!output) return;
-  fs.mkdirSync(path.dirname(output), { recursive: true });
-  fs.writeFileSync(output, `${JSON.stringify(result, null, 2)}\n`);
-}
-
-function parseFellowshipCsv(csvPath: string): { rows: FellowshipCSVRow[]; validFellowships: ReturnType<typeof transformFellowshipRow>[]; stats: FellowshipImportStats } {
   const csvContent = fs.readFileSync(csvPath, 'utf-8');
   const rows: FellowshipCSVRow[] = parse(csvContent, {
     columns: true,
@@ -297,23 +171,33 @@ function parseFellowshipCsv(csvPath: string): { rows: FellowshipCSVRow[]; validF
   return { rows, validFellowships, stats };
 }
 
-async function importFellowships(options: FellowshipImportCliOptions, mongoUrl: string): Promise<FellowshipImportResult> {
-  const csvPath = path.resolve(
-    options.csvPath || path.resolve(__dirname, '../web-scraper/fellowships/yale_fellowships.csv'),
-  );
-
-  if (!fs.existsSync(csvPath)) {
-    throw new Error(`CSV file not found at ${csvPath}`);
-  }
+async function importFellowships(
+  options: DataOpsOptions,
+  mongoUrl: string,
+): Promise<FellowshipImportResult> {
+  const csvPath = resolveCsvPath(__dirname, options.csvPath);
+  ensureReadableFile(csvPath, 'Fellowship CSV');
 
   console.log('\n=== Importing Fellowships from CSV ===\n');
+  console.log(`Mode: ${options.dryRun ? 'DRY RUN (no database writes)' : 'EXECUTE'}`);
+  console.log(`Target: ${options.target || '(not required for dry-run)'}`);
   console.log(`CSV Path: ${csvPath}`);
-  console.log(`Mode: ${options.apply ? 'APPLY' : 'DRY RUN'}`);
 
   console.log('Reading CSV file...');
   const { rows, validFellowships, stats } = parseFellowshipCsv(csvPath);
   console.log(`Found ${rows.length} rows in CSV`);
   console.log(`Valid fellowships to import: ${validFellowships.length}`);
+
+  const validation = validateFellowshipDocuments(validFellowships);
+  const validationSummary = summarizeValidation(validation);
+  console.log('\nValidation:');
+  console.log(`  - Errors: ${validationSummary.errors}`);
+  console.log(`  - Warnings: ${validationSummary.warnings}`);
+  validation.errors.forEach(error => console.error(`  ERROR: ${error}`));
+  validation.warnings.slice(0, 20).forEach(warning => console.warn(`  WARNING: ${warning}`));
+  if (validation.warnings.length > 20) {
+    console.warn(`  ... ${validation.warnings.length - 20} additional warnings omitted from console`);
+  }
 
   console.log('\nData statistics:');
   console.log(`  - With Year of Study: ${stats.withYearOfStudy}`);
@@ -323,6 +207,48 @@ async function importFellowships(options: FellowshipImportCliOptions, mongoUrl: 
   console.log(`  - With Citizenship: ${stats.withCitizenship}`);
   console.log(`  - Currently Accepting: ${stats.accepting}`);
 
+  const summary = {
+    mode: options.dryRun ? 'dry-run' : 'execute',
+    target: options.target || null,
+    csvPath,
+    inputRows: rows.length,
+    validFellowships: validFellowships.length,
+    statistics: stats,
+    validation: validationSummary,
+  };
+
+  writeSummary(options.summaryPath, summary);
+
+  if (validation.errors.length > 0) {
+    throw new Error('Fellowship CSV validation failed; fix errors before importing');
+  }
+
+  const sample = validFellowships[0];
+  if (sample) {
+    console.log('\nSample transformed fellowship:');
+    console.log(`  Title: ${sample.title}`);
+    console.log(`  Summary: ${sample.summary?.substring(0, 100)}...`);
+    console.log(`  Year of Study: ${sample.yearOfStudy?.join(', ')}`);
+    console.log(`  Term of Award: ${sample.termOfAward?.join(', ')}`);
+    console.log(`  Purpose: ${sample.purpose?.join(', ')}`);
+    console.log(`  Regions: ${sample.globalRegions?.join(', ')}`);
+    console.log(`  Citizenship: ${sample.citizenshipStatus?.join(', ')}`);
+  }
+
+  if (options.dryRun) {
+    console.log('\nDry run complete. No database writes were made.\n');
+    return {
+      csvPath,
+      rowCount: rows.length,
+      validCount: validFellowships.length,
+      existingCount: null,
+      deletedCount: 0,
+      insertedCount: 0,
+      finalCount: null,
+      stats,
+    };
+  }
+
   console.log('\nConnecting to MongoDB...');
   const connection = await mongoose.createConnection(mongoUrl).asPromise();
   try {
@@ -331,36 +257,34 @@ async function importFellowships(options: FellowshipImportCliOptions, mongoUrl: 
     console.log(`Existing fellowships in database: ${existingCount}`);
 
     let deletedCount = 0;
-    let insertedCount = 0;
-    if (options.apply) {
-      if (existingCount > 0 && !options.replaceExisting) {
+    if (existingCount > 0) {
+      if (!options.replaceExisting) {
         throw new Error(
-          'Apply mode found existing fellowships. Re-run with --replace-existing to acknowledge the delete-and-replace import.',
+          'Refusing to delete existing fellowships without --replace-existing. Run a dry run first.',
         );
       }
-      if (existingCount > 0) {
-        const deleteResult = await FellowshipModel.deleteMany({});
-        deletedCount = deleteResult.deletedCount || 0;
-        console.log(`Cleared existing fellowships: ${deletedCount}`);
-      }
-      const result = await FellowshipModel.insertMany(validFellowships, { ordered: false });
-      insertedCount = result.length;
-      console.log(`Successfully inserted ${insertedCount} fellowships`);
-    } else {
-      console.log('Dry run only; no fellowships were deleted or inserted.');
+
+      console.log('\nReplacing existing fellowships because --replace-existing was provided.');
+      const deleteResult = await FellowshipModel.deleteMany({});
+      deletedCount = deleteResult.deletedCount || 0;
+      console.log(`Cleared existing fellowships: ${deletedCount}`);
     }
 
-    const sample = validFellowships[0];
-    if (sample) {
-      console.log('\nSample transformed fellowship:');
-      console.log(`  Title: ${sample.title}`);
-      console.log(`  Summary: ${sample.summary?.substring(0, 100)}...`);
-      console.log(`  Year of Study: ${sample.yearOfStudy?.join(', ')}`);
-      console.log(`  Term of Award: ${sample.termOfAward?.join(', ')}`);
-      console.log(`  Purpose: ${sample.purpose?.join(', ')}`);
-      console.log(`  Regions: ${sample.globalRegions?.join(', ')}`);
-      console.log(`  Citizenship: ${sample.citizenshipStatus?.join(', ')}`);
-    }
+    console.log('Inserting fellowships...');
+    const result = await FellowshipModel.insertMany(validFellowships, { ordered: false });
+    const insertedCount = result.length;
+    console.log(`Successfully inserted ${insertedCount} fellowships`);
+
+    const finalCount = await FellowshipModel.countDocuments();
+    console.log(`Total fellowships in database: ${finalCount}`);
+
+    writeSummary(options.summaryPath, {
+      ...summary,
+      existingCount,
+      deletedCount,
+      insertedCount,
+      finalCount,
+    });
 
     return {
       csvPath,
@@ -369,6 +293,7 @@ async function importFellowships(options: FellowshipImportCliOptions, mongoUrl: 
       existingCount,
       deletedCount,
       insertedCount,
+      finalCount,
       stats,
     };
   } finally {
@@ -377,29 +302,20 @@ async function importFellowships(options: FellowshipImportCliOptions, mongoUrl: 
 }
 
 async function main(): Promise<void> {
-  const options = parseFellowshipImportArgs(process.argv.slice(2));
+  const options = parseDataOpsArgs(process.argv.slice(2));
+  assertSafeWrite(options, 'Fellowship import');
+
   const mongoUrl = process.env.MONGODBURL;
   if (!mongoUrl) {
     console.error('ERROR: MONGODBURL not set in server/.env');
     process.exit(1);
   }
-  const guard = assertFellowshipImportApplyAllowed({
-    apply: options.apply,
-    confirmFellowshipImport: options.confirmFellowshipImport,
-    csvPath: options.csvPath,
-    mongoUrl,
-  });
-  const result = await importFellowships(options, mongoUrl);
-  const output = buildFellowshipImportOutput(result, {
-    environment: guard.environment,
-    db: guard.dbLabel,
-    options,
-  });
-  writeFellowshipImportOutput(output, options.output);
+
+  await importFellowships(options, mongoUrl);
   console.log('\nImport command complete!\n');
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
+if (require.main === module) {
   main().catch(err => {
     console.error('Fatal error:', err);
     process.exit(1);
