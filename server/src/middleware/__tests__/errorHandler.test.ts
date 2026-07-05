@@ -1,8 +1,9 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Request, Response } from 'express';
 
 import { errorHandler } from '../errorHandler';
 import { captureServerError } from '../../utils/errorTracking';
+import { NotFoundError } from '../../utils/errors';
 
 vi.mock('../../utils/errorTracking', () => ({
   captureServerError: vi.fn(),
@@ -18,7 +19,11 @@ const createResponse = () => {
 };
 
 describe('errorHandler', () => {
-  it('captures errors before mapping them to responses', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('captures unexpected server errors after mapping them to responses', () => {
     const error = new Error('boom');
     const req = {
       method: 'GET',
@@ -31,12 +36,30 @@ describe('errorHandler', () => {
     errorHandler(error, req, res, vi.fn());
 
     expect(captureServerError).toHaveBeenCalledWith(error, req);
-    expect(captureServerError).toHaveBeenCalledBefore(res.status as any);
     expect(res.status).toHaveBeenCalledWith(500);
     expect(res.json).toHaveBeenCalledWith({
       error: 'Internal server error',
       message: undefined,
     });
+
+    consoleError.mockRestore();
+  });
+
+  it('does not capture expected operational errors', () => {
+    const error = new NotFoundError('missing');
+    const req = {
+      method: 'GET',
+      path: '/api/test',
+      originalUrl: '/api/test?debug=true',
+    } as Request;
+    const res = createResponse();
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    errorHandler(error, req, res, vi.fn());
+
+    expect(captureServerError).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.json).toHaveBeenCalledWith({ error: 'missing' });
 
     consoleError.mockRestore();
   });

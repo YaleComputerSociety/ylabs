@@ -47,7 +47,7 @@ export const captureServerError = (error: Error, req: Request) => {
     user: user?.netId ? { id: user.netId } : undefined,
     contexts: {
       request: {
-        url: req.originalUrl,
+        path: req.path,
         method: req.method,
       },
     },

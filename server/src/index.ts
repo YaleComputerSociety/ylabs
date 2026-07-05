@@ -1,16 +1,19 @@
 /**
  * Server entry point — connects to MongoDB and starts the Express server.
  */
-import app from './app';
 import dotenv from 'dotenv';
 import { initializeConnections, getApiMode } from './db/connections';
+import { initializeErrorTracking } from './utils/errorTracking';
 
 dotenv.config();
+initializeErrorTracking();
 
 const port = process.env.PORT || 4000;
 
 const startApp = async () => {
   try {
+    const { default: app } = await import('./app');
+
     await initializeConnections();
 
     const mode = getApiMode();
