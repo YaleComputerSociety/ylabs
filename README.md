@@ -32,7 +32,7 @@ yarn dev:client
 yarn dev:server
 ```
 
-Go to **http://localhost:3000**. Public research discovery is available at **http://localhost:3000/research**; the authenticated Find Labs page may show an empty state locally until the Development database has listings, and it links to fellowships when fellowship data is available. Use `http://localhost:4000/api/dev-login` to bypass CAS auth locally for authenticated actions.
+Go to **http://localhost:3000**. Public research discovery is available at **http://localhost:3000/research** with shareable URLs for search text, filters, sorting, quick filters, and detail modals; the authenticated Find Labs page may show an empty state locally until the Development database has listings, and it links to fellowships when fellowship data is available. Use `http://localhost:4000/api/dev-login` to bypass CAS auth locally for authenticated actions.
 
 ## Documentation
 

@@ -78,8 +78,10 @@ const Home = () => {
   } = state;
 
   useEffect(() => {
-    setQueryString('');
-  }, [setQueryString]);
+    if (!isResearchRoute) {
+      setQueryString('');
+    }
+  }, [isResearchRoute, setQueryString]);
 
   const requireLogin = () => {
     const returnUrl = window.location.origin + location.pathname + location.search;
@@ -239,7 +241,10 @@ const Home = () => {
     if (item.type === 'listing') {
       dispatch({ type: 'OPEN_DETAIL_MODAL', item: item.data });
       if (isResearchRoute) {
-        navigate(`/research/${item.data.id}`, { replace: false });
+        navigate(
+          { pathname: `/research/${item.data.id}`, search: location.search },
+          { replace: false },
+        );
       }
     }
   };
@@ -253,7 +258,7 @@ const Home = () => {
   const closeDetailModal = () => {
     dispatch({ type: 'CLOSE_DETAIL_MODAL' });
     if (slug) {
-      navigate('/research');
+      navigate({ pathname: '/research', search: location.search });
     }
   };
 

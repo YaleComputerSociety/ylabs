@@ -17,6 +17,8 @@ import { getMeiliIndex } from '../utils/meiliClient';
 import { getConfig } from '../services/configService';
 import { getListingModel } from '../db/connections';
 import { buildSafeSearchRegex } from '../utils/regex';
+import { logEvent } from '../services/analyticsService';
+import { AnalyticsEventType } from '../models/analytics';
 
 /**
  * Build robust filter match stage for MongoDB aggregation
@@ -739,6 +741,49 @@ export const getAuthenticatedPublicResearchBySlug = async (
       evidence: sanitizePublicEvidence((listing as any).evidence),
     },
   });
+};
+
+export const recordPublicResearchOutreach = async (request: Request, response: Response) => {
+  const id = getIdFromSlug(request.params.slug);
+  if (!id) {
+    return response.status(404).json({ error: 'Research listing not found' });
+  }
+
+  const listing = await getListingModel()
+    .findOne({ _id: id, archived: false, confirmed: true })
+    .select('ownerEmail emails')
+    .lean();
+
+  if (!listing) {
+    return response.status(404).json({ error: 'Research listing not found' });
+  }
+
+  const contactCount = [listing.ownerEmail, ...(listing.emails || [])].filter(Boolean).length;
+  const event = buildPublicResearchOutreachEvent({
+    action: request.body?.action,
+    outcome: request.body?.outcome,
+    source: request.body?.source,
+    contactCount,
+  });
+
+  if (!event) {
+    return response.status(400).json({ error: 'Invalid outreach event' });
+  }
+
+  const currentUser = request.user as { netId?: string; userType: string };
+  if (!currentUser?.netId) {
+    return response.status(401).json({ error: 'Authentication required' });
+  }
+
+  await logEvent({
+    eventType: event.eventType,
+    netid: currentUser.netId,
+    userType: currentUser.userType,
+    listingId: id,
+    metadata: event.metadata,
+  });
+
+  return response.status(204).send();
 };
 
 export const createListingForCurrentUser = async (request: Request, response: Response) => {

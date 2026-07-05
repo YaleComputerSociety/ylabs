@@ -209,6 +209,8 @@ Search uses **Meilisearch** with keyword search and hybrid mode (80% semantic, 2
 Logged-out visitors use the public research discovery path instead:
 
 - Client routes `/research` and `/research/:slug` render the listings browse page without the `PrivateRoute` guard.
+- The client mirrors public research search state into shareable URLs and restores it on page load and browser back/forward navigation. URL-backed state includes `query`, `departments`, `academicDisciplines`, `researchAreas`, the three `*Mode` filter operators, `sortBy`, `sortOrder`, and the client-only `quickFilter`.
+- Opening a public card preserves the current search params on `/research/:slug`; closing the modal returns to `/research` with the same params.
 - The client sends public browse requests to `/api/research` and public detail requests to `/api/research/:slug`.
 - Public responses include only confirmed, unarchived listings and redact contact/private fields such as owner email, additional emails, owner/professor IDs, view counts, favorites, and audit fields. They retain sanitized evidence metadata so the detail modal can show why a listing appears and which public sources support it.
 - Authenticated users opening a public detail modal also request `/api/research/:slug/contact` to load the full listing, including contact fields. Evidence metadata on this response is still sanitized through the public evidence allowlist.
@@ -260,6 +262,14 @@ The server initializes Sentry from `server/src/utils/errorTracking.ts` during st
 
 ---
 
+## Analytics
+
+Listing events are logged through route-level response interception in `server/src/routes/listings.ts`. Public research contact events are logged from the contact controller paths: contact detail reveal, email click attempts, and reported outreach outcomes. The admin analytics dashboard includes an Outreach Loop section with reveal/click/outcome totals, outcome breakdowns, top contacted listings, and recent outreach events.
+
+Outreach analytics intentionally avoid raw private contact data. Metadata is limited to channel, source, contact count, action, and the selected outcome.
+
+---
+
 ## API Routes
 
 All mount under `/api`.
@@ -267,7 +277,7 @@ All mount under `/api`.
 | Prefix            | Description                                                  | Auth                                             |
 | ----------------- | ------------------------------------------------------------ | ------------------------------------------------ |
 | `/listings`       | Listing CRUD and authenticated search                        | Varies                                           |
-| `/research`       | Public read-only listing discovery and shareable detail URLs | Public; `/research/:slug/contact` requires login |
+| `/research`       | Public listing discovery, contact reveal, and outreach events | Public; `/research/:slug/contact` and `/research/:slug/outreach` require login |
 | `/fellowships`    | Fellowship CRUD and search                                   | Varies                                           |
 | `/users`          | User CRUD                                                    | Yes                                              |
 | `/profiles`       | Faculty profiles                                             | Varies                                           |

@@ -16,6 +16,9 @@ export enum AnalyticsEventType {
   LISTING_ARCHIVE = 'listing_archive',
   LISTING_UNARCHIVE = 'listing_unarchive',
   PROFILE_UPDATE = 'profile_update',
+  OUTREACH_CONTACT_REVEAL = 'outreach_contact_reveal',
+  OUTREACH_CONTACT_ATTEMPT = 'outreach_contact_attempt',
+  OUTREACH_OUTCOME = 'outreach_outcome',
 }
 
 const analyticsEventSchema = new mongoose.Schema(

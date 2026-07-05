@@ -40,22 +40,7 @@ describe('SearchContextProvider public research route', () => {
   });
 
   it('uses the public search endpoint on research routes for authenticated users', async () => {
-    render(
-      <MemoryRouter initialEntries={['/research']}>
-        <UserContext.Provider
-          value={{
-            isLoading: false,
-            isAuthenticated: true,
-            user: { userType: 'student' } as any,
-            checkContext: vi.fn(),
-          }}
-        >
-          <SearchContextProvider>
-            <div />
-          </SearchContextProvider>
-        </UserContext.Provider>
-      </MemoryRouter>,
-    );
+    renderProvider('/research');
 
     await waitFor(() => {
       expect(mockedAxiosGet).toHaveBeenCalledWith(
