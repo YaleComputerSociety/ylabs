@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { readFileSync } from 'fs';
 import { applySeoMetadata, buildDefaultSeoMetadata, buildResearchSeoMetadata } from '../seo';
 
 describe('research SEO client fallback', () => {
@@ -80,6 +81,23 @@ describe('research SEO client fallback', () => {
     );
     expect(document.querySelector('meta[name="twitter:title"]')?.getAttribute('content')).toBe(
       'Yale Research',
+    );
+  });
+
+  it('keeps the static SPA shell metadata generic for non-research routes', () => {
+    const html = readFileSync('index.html', 'utf8');
+
+    expect(html).toContain('<title>Yale Research</title>');
+    expect(html).toContain(
+      '<meta name="description" content="Find research pathways, labs, programs, and evidence-backed next steps at Yale University" />',
+    );
+    expect(html).toContain('<meta property="og:title" content="Yale Research" />');
+    expect(html).toContain(
+      '<meta property="og:description" content="Find research pathways, labs, programs, and evidence-backed next steps at Yale University" />',
+    );
+    expect(html).toContain('<meta name="twitter:title" content="Yale Research" />');
+    expect(html).toContain(
+      '<meta name="twitter:description" content="Find research pathways, labs, programs, and evidence-backed next steps at Yale University" />',
     );
   });
 });
