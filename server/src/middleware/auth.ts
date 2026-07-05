@@ -124,15 +124,50 @@ export const canCreateListing = (
   }
 
   if (currentUser.userType !== 'admin' && !currentUser.profileVerified) {
-    return res
-      .status(403)
-      .json({
-        error:
-          'You must verify your profile before creating listings. Go to your account page to review and verify your profile.',
-      });
+    return res.status(403).json({
+      error:
+        'You must verify your profile before creating listings. Go to your account page to review and verify your profile.',
+    });
   }
 
   next();
+};
+
+/**
+ * Middleware to check if user can submit listing claim/correction requests.
+ * These requests create admin-review work items, so they are limited to
+ * confirmed faculty/staff/operator accounts rather than all authenticated users.
+ */
+export const canSubmitListingClaimRequest = (
+  req: express.Request,
+  res: express.Response,
+  next: express.NextFunction,
+) => {
+  const currentUser = req.user as AuthenticatedUser;
+
+  if (!hasAuthenticatedPrincipal(currentUser)) {
+    return sendAuthRequired(res);
+  }
+
+  if (!currentUser.userConfirmed) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+
+  if (currentUser.userType === 'admin') {
+    return hasAdminAuthority(currentUser)
+      .then((authorized) => {
+        if (authorized) return next();
+        return res.status(403).json({ error: 'Forbidden' });
+      })
+      .catch(next);
+  }
+
+  const allowedTypes = ['professor', 'faculty', 'staff'];
+  if (allowedTypes.includes(String(currentUser.userType ?? ''))) {
+    return next();
+  }
+
+  return res.status(403).json({ error: 'Forbidden' });
 };
 
 /**

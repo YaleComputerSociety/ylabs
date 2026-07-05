@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { NextFunction, Request, Response } from 'express';
 import { errorHandler, notFoundHandler } from '../errorHandler';
-import { NotFoundError, ObjectIdError } from '../../utils/errors';
+import { BadRequestError, NotFoundError, ObjectIdError } from '../../utils/errors';
 
 const ORIGINAL_ENV = { ...process.env };
 
@@ -144,6 +144,21 @@ describe('errorHandler', () => {
       error: 'Validation error',
       details: undefined,
     });
+  });
+
+  it('maps safe bad request errors to 400 responses', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const response = createResponse();
+
+    errorHandler(
+      new BadRequestError('Invalid request type'),
+      {} as Request,
+      response,
+      vi.fn() as unknown as NextFunction,
+    );
+
+    expect(response.status).toHaveBeenCalledWith(400);
+    expect(response.json).toHaveBeenCalledWith({ error: 'Invalid request type' });
   });
 
   it('does not leak internal messages in local test 500 responses', () => {

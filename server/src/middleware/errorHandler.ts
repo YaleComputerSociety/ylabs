@@ -2,7 +2,12 @@
  * Global error handling middleware for Express.
  */
 import { Request, Response, NextFunction } from 'express';
-import { NotFoundError, ObjectIdError, IncorrectPermissionsError } from '../utils/errors';
+import {
+  BadRequestError,
+  NotFoundError,
+  ObjectIdError,
+  IncorrectPermissionsError,
+} from '../utils/errors';
 import { sanitizeErrorForLog } from '../utils/logSanitizer';
 import { requiresDeployedRuntimeSecurity } from '../utils/environment';
 import { triggerReconnect } from '../db/connections';
@@ -38,6 +43,10 @@ export const errorHandler = (error: Error, req: Request, res: Response, next: Ne
 
   if (res.headersSent) {
     return next(error);
+  }
+
+  if (error instanceof BadRequestError) {
+    return res.status(error.status).json({ error: error.message });
   }
 
   if (error instanceof NotFoundError) {

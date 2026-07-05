@@ -4,7 +4,7 @@
 import mongoose from 'mongoose';
 import { ListingClaimRequest } from '../models/listingClaimRequest';
 import { getListingModel } from '../db/connections';
-import { NotFoundError, ObjectIdError } from '../utils/errors';
+import { BadRequestError, NotFoundError, ObjectIdError } from '../utils/errors';
 
 const REQUEST_TYPES = new Set(['claim', 'correction']);
 const REQUEST_STATUSES = new Set(['pending', 'approved', 'rejected']);
@@ -137,16 +137,12 @@ export const createListingClaimRequest = async (
 
   const requestType = input.requestType || 'correction';
   if (!REQUEST_TYPES.has(requestType)) {
-    const error: any = new Error('Invalid request type');
-    error.status = 400;
-    throw error;
+    throw new BadRequestError('Invalid request type');
   }
 
   const message = trimString(input.message);
   if (!message) {
-    const error: any = new Error('Message is required');
-    error.status = 400;
-    throw error;
+    throw new BadRequestError('Message is required');
   }
 
   const listing = await getListingModel().findById(listingId).select('-embedding').lean();
@@ -247,9 +243,7 @@ export const reviewListingClaimRequest = async (
   }
 
   if (!input.status || !REQUEST_STATUSES.has(input.status) || input.status === 'pending') {
-    const error: any = new Error('Status must be approved or rejected');
-    error.status = 400;
-    throw error;
+    throw new BadRequestError('Status must be approved or rejected');
   }
 
   const request = await ListingClaimRequest.findByIdAndUpdate(
