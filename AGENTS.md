@@ -20,6 +20,7 @@ The server follows a layered architecture: **Routes → Middleware → Controlle
 | Server          | Express 4, TypeScript 5.3, Passport.js 0.5 (CAS strategy), Mongoose 8                          |
 | Search          | Meilisearch 0.57 (hybrid search with OpenAI `text-embedding-3-small` embedder)                 |
 | Database        | MongoDB Atlas (single cluster, separate databases per environment)                             |
+| Error Tracking  | Sentry for client and server runtime exception reporting                                        |
 | Package Manager | Yarn 4 via Corepack                                                                            |
 | Tooling         | concurrently, nodemon, ts-node, cross-env                                                      |
 
@@ -67,7 +68,7 @@ ylabs/
 | `yarn clean:all`                        | Remove all node_modules directories                         |
 | `yarn --cwd client test`                | Run Vitest in watch mode                                    |
 | `yarn --cwd client test:ci`             | Run Vitest once (used by CI)                                |
-| `yarn --cwd server test`                | Run server-side Node test files                             |
+| `yarn --cwd server test`                | Run server Vitest tests once                                |
 | `yarn --cwd server test:search-degrade` | Run focused listing-search degradation tests                |
 
 Migration scripts run from `data-migration/` with `npx ts-node --transpile-only <script>.ts`.
@@ -135,7 +136,7 @@ The error handler middleware (`server/src/middleware/errorHandler.ts`) also maps
 - MongoDB duplicate key (code 11000) → 409
 - Everything else → 500
 
-Full error details are exposed in development; production responses are generic.
+Full error details are exposed in development; production responses are generic. Server-side unexpected errors are captured through Sentry when `SENTRY_DSN` is configured.
 
 The `asyncHandler` wrapper catches promise rejections in route handlers:
 
@@ -176,7 +177,7 @@ Analytics events have a 3-year TTL via MongoDB's `expireAfterSeconds` index.
 
 ## Testing
 
-Client-side tests run under **Vitest 3** with a `jsdom` environment. Config lives in the `test` block of `client/vite.config.js`; tests are discovered from `client/src/**/*.{test,spec}.{ts,tsx}`. Server tests run with Node's test runner via `tsx` (`yarn --cwd server test`), with a focused listing-search degradation script available as `yarn --cwd server test:search-degrade`.
+Client-side tests run under **Vitest 3** with a `jsdom` environment. Config lives in the `test` block of `client/vite.config.js`; tests are discovered from `client/src/**/*.{test,spec}.{ts,tsx}`. The server uses Vitest for focused middleware and utility tests (`yarn --cwd server test`) and has a focused Node test script for listing-search degradation (`yarn --cwd server test:search-degrade`), but no general server-side test suite is wired into CI.
 
 Coverage focuses on pure reducer modules in `client/src/reducers/`, with matching test files in `client/src/reducers/__tests__/`. The pattern extracts state transitions out of providers/components (as `createInitial<Name>State()` + `<name>Reducer(state, action)`) so they can be tested without mounting React or mocking network. Side effects (axios, localStorage, timers) stay in the component that uses `useReducer`.
 
@@ -314,13 +315,19 @@ User → Yale CAS SSO → passport.ts findOrCreateUser
 | `MEILISEARCH_HOST`         | No (default: `http://localhost:7700`) | Meilisearch instance URL                                                                                                                                         |
 | `MEILISEARCH_API_KEY`      | No                                    | Meilisearch API key                                                                                                                                              |
 | `MEILISEARCH_INDEX_PREFIX` | No                                    | Environment prefix for index names (e.g., `prod`, `beta`). When set, indexes become `{prefix}_listings`. Allows prod and beta to share one Meilisearch instance. |
+| `SENTRY_DSN`               | No                                    | Enables server-side Sentry error tracking when set                                                                                                                |
+| `SENTRY_ENVIRONMENT`       | No                                    | Sentry environment label; falls back to `NODE_ENV`                                                                                                                |
+| `SENTRY_RELEASE`           | No                                    | Sentry release identifier                                                                                                                                         |
 | `PORT`                     | No (default: 4000)                    | Server port                                                                                                                                                      |
 
 ### `client/.env`
 
-| Variable          | Required | Description                                     |
-| ----------------- | -------- | ----------------------------------------------- |
-| `VITE_APP_SERVER` | Yes      | Backend API URL (e.g., `http://localhost:4000`) |
+| Variable                   | Required | Description                                                |
+| -------------------------- | -------- | ---------------------------------------------------------- |
+| `VITE_APP_SERVER`          | Yes      | Backend API URL (e.g., `http://localhost:4000`)            |
+| `VITE_SENTRY_DSN`          | No       | Enables client-side Sentry error tracking when set         |
+| `VITE_SENTRY_ENVIRONMENT`  | No       | Sentry environment label; falls back to Vite mode          |
+| `VITE_SENTRY_RELEASE`      | No       | Sentry release identifier                                  |
 
 ## Sensitive Files
 
@@ -333,7 +340,7 @@ User → Yale CAS SSO → passport.ts findOrCreateUser
 
 | Issue                                    | Location                          | Status                                                                                                                                                                                                                          |
 | ---------------------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Limited server-side test coverage        | `server/`                         | Node tests cover focused server behavior, including listing-search degradation. Client uses Vitest; reducer modules in `client/src/reducers/` are covered.                                                                       |
+| No general server-side test suite        | `server/`                         | Focused Vitest coverage exists for error handling/tracking and a focused Node test covers listing-search degradation; broader server coverage is not wired into CI. Client uses Vitest; reducer modules in `client/src/reducers/` are covered. |
 | ESLint/Prettier configured but not in CI | `eslint.config.js`, `.prettierrc` | Flat-config ESLint + Prettier set up at repo root. Currently reports ~15 errors / ~55 warnings across the codebase; not wired to CI until pre-existing violations are triaged. Run `yarn lint`, `yarn lint:fix`, `yarn format`. |
 | Console-only logging                     | Server                            | No structured logging (Winston/Pino)                                                                                                                                                                                            |
 
@@ -366,6 +373,7 @@ User → Yale CAS SSO → passport.ts findOrCreateUser
 | CourseTable (`coursetable.com/api/catalog/public`) | Professor course data               | None                            | `courseTableService.ts`        |
 | Meilisearch                                        | Hybrid search (keyword + semantic)  | API key                         | `meiliClient.ts`               |
 | OpenAI                                             | Embeddings via Meilisearch embedder | API key (in Meilisearch config) | Configured in migration script |
+| Sentry                                             | Runtime error tracking              | DSN                             | `utils/errorTracking.ts`       |
 
 ## Maintenance
 
