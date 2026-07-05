@@ -163,6 +163,13 @@ router.post(
 router.get('/:id', isAuthenticated, validateObjectId('id'), listingController.getListingById);
 
 router.post(
+  '/:id/outreach',
+  isAuthenticated,
+  validateObjectId('id'),
+  listingController.recordListingOutreach,
+);
+
+router.post(
   '/:id/claim',
   isAuthenticated,
   canSubmitListingClaimRequest,
