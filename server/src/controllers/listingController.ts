@@ -53,9 +53,6 @@ const PUBLIC_LISTING_SEARCHABLE_FIELDS = [
 const PUBLIC_LISTING_SORT_FIELDS = new Set([
   'createdAt',
   'updatedAt',
-  'title',
-  'ownerFirstName',
-  'ownerLastName',
 ]);
 
 const getIdFromSlug = (slug: string): string | null => {

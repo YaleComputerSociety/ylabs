@@ -5,7 +5,8 @@ import { useContext, useRef, useState } from 'react';
 import SearchContext from '../../contexts/SearchContext';
 
 const NavbarSortDropdown = () => {
-  const { sortBy, setSortBy, sortDirection, onToggleSortDirection } = useContext(SearchContext);
+  const { sortBy, setSortBy, sortDirection, onToggleSortDirection, sortableKeys } =
+    useContext(SearchContext);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [focusedIndex, setFocusedIndex] = useState(-1);
 
@@ -15,10 +16,11 @@ const NavbarSortDropdown = () => {
   const sortOptions = [
     { value: 'default', label: 'Best Match' },
     { value: 'createdAt', label: 'Date Added' },
+    { value: 'updatedAt', label: 'Recently Updated' },
     { value: 'ownerLastName', label: 'Last Name' },
     { value: 'ownerFirstName', label: 'First Name' },
     { value: 'title', label: 'Lab Title' },
-  ];
+  ].filter((option) => sortableKeys.includes(option.value));
 
   const handleSelect = (value: string) => {
     setSortBy(value);

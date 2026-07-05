@@ -104,7 +104,10 @@ void describe('public research search inputs', () => {
 
   void it('allows only public-safe sort fields', () => {
     assert.equal(getPublicResearchSortBy('createdAt'), 'createdAt');
-    assert.equal(getPublicResearchSortBy('title'), 'title');
+    assert.equal(getPublicResearchSortBy('updatedAt'), 'updatedAt');
+    assert.equal(getPublicResearchSortBy('title'), undefined);
+    assert.equal(getPublicResearchSortBy('ownerFirstName'), undefined);
+    assert.equal(getPublicResearchSortBy('ownerLastName'), undefined);
     assert.equal(getPublicResearchSortBy('ownerEmail'), undefined);
     assert.equal(getPublicResearchSortBy('views'), undefined);
   });

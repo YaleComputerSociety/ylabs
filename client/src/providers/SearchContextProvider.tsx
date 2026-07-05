@@ -30,14 +30,17 @@ interface SearchContextProviderProps {
   children: ReactNode;
 }
 
+const LISTING_SORTABLE_KEYS = ['default', 'createdAt', 'ownerLastName', 'ownerFirstName', 'title'];
+const PUBLIC_RESEARCH_SORTABLE_KEYS = ['default', 'createdAt', 'updatedAt'];
+
 const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => {
   const pageSize = 20;
-  const sortableKeys = ['default', 'createdAt', 'ownerLastName', 'ownerFirstName', 'title'];
 
   const { isAuthenticated, isLoading: authLoading } = useContext(UserContext);
   const location = useLocation();
   const isResearchRoute =
     location.pathname === '/research' || location.pathname.startsWith('/research/');
+  const sortableKeys = isResearchRoute ? PUBLIC_RESEARCH_SORTABLE_KEYS : LISTING_SORTABLE_KEYS;
 
   const { departments, departmentCategories, researchAreas, isLoaded: configLoaded } = useConfig();
 
@@ -139,6 +142,12 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
   const onToggleSortDirection = useCallback(() => {
     dispatch({ type: 'TOGGLE_SORT_DIRECTION' });
   }, []);
+
+  useEffect(() => {
+    if (!sortableKeys.includes(sortBy)) {
+      dispatch({ type: 'SET_SORT_BY', payload: sortableKeys[0] });
+    }
+  }, [sortBy, sortableKeys]);
 
   // Keep latest filter values in a ref so handleSearch can remain stable.
   const filtersRef = useRef({
