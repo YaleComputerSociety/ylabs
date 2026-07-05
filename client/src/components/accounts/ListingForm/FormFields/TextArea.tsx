@@ -28,7 +28,7 @@ const TextArea = ({
 }: TextAreaProps) => {
   return (
     <div className="mb-4">
-      <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="description">
+      <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor={id}>
         {label}
         {required && <span className="text-red-500 ml-1">*</span>}
       </label>

@@ -1,5 +1,6 @@
 import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import ConfigContext, { defaultConfigContext } from '../../../contexts/ConfigContext';
@@ -80,13 +81,14 @@ const renderModal = (options: { isAuthenticated?: boolean; onRequireAuth?: () =>
   );
 
 describe('ListingDetailModal public discovery behavior', () => {
-  it('prompts login for inquiry instead of rendering redacted mail links', () => {
+  it('prompts login for inquiry instead of rendering redacted mail links', async () => {
+    const user = userEvent.setup();
     const onRequireAuth = vi.fn();
     renderModal({ onRequireAuth });
 
     expect(screen.queryByRole('link', { name: /@/ })).toBeNull();
 
-    fireEvent.click(screen.getByRole('button', { name: /sign in to inquire/i }));
+    await user.click(screen.getAllByRole('button', { name: /sign in to inquire/i })[0]);
 
     expect(onRequireAuth).toHaveBeenCalledTimes(1);
   });
@@ -96,5 +98,131 @@ describe('ListingDetailModal public discovery behavior', () => {
 
     expect(screen.queryByRole('link', { name: /@/ })).toBeNull();
     expect(screen.getByText(/contact details unavailable/i)).toBeTruthy();
+  });
+
+  it('renders as a named modal dialog and closes on Escape', () => {
+    const onClose = vi.fn();
+
+    render(
+      <MemoryRouter>
+        <UserContext.Provider
+          value={{
+            isLoading: false,
+            isAuthenticated: false,
+            user: undefined,
+            checkContext: vi.fn(),
+          }}
+        >
+          <ConfigContext.Provider value={defaultConfigContext}>
+            <ListingDetailModal
+              isOpen
+              onClose={onClose}
+              listing={{ ...listing, websites: ['example.com'] }}
+              isFavorite={false}
+              onToggleFavorite={vi.fn()}
+              onRequireAuth={vi.fn()}
+            />
+          </ConfigContext.Provider>
+        </UserContext.Provider>
+      </MemoryRouter>,
+    );
+
+    const dialog = screen.getByRole('dialog', { name: /ada lovelace/i });
+
+    expect(dialog).toHaveFocus();
+    expect(screen.getByRole('link', { name: /visit ada lovelace's website/i })).toHaveAttribute(
+      'href',
+      'https://example.com/',
+    );
+    expect(screen.getByRole('button', { name: /close listing details/i })).toBeTruthy();
+
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('restores focus to the opener when the dialog unmounts', () => {
+    const onClose = vi.fn();
+    const { rerender } = render(
+      <MemoryRouter>
+        <button type="button">Open listing</button>
+        <UserContext.Provider
+          value={{
+            isLoading: false,
+            isAuthenticated: false,
+            user: undefined,
+            checkContext: vi.fn(),
+          }}
+        >
+          <ConfigContext.Provider value={defaultConfigContext}>
+            <ListingDetailModal
+              isOpen={false}
+              onClose={onClose}
+              listing={listing}
+              isFavorite={false}
+              onToggleFavorite={vi.fn()}
+              onRequireAuth={vi.fn()}
+            />
+          </ConfigContext.Provider>
+        </UserContext.Provider>
+      </MemoryRouter>,
+    );
+
+    const opener = screen.getByRole('button', { name: /open listing/i });
+    opener.focus();
+
+    rerender(
+      <MemoryRouter>
+        <button type="button">Open listing</button>
+        <UserContext.Provider
+          value={{
+            isLoading: false,
+            isAuthenticated: false,
+            user: undefined,
+            checkContext: vi.fn(),
+          }}
+        >
+          <ConfigContext.Provider value={defaultConfigContext}>
+            <ListingDetailModal
+              isOpen
+              onClose={onClose}
+              listing={listing}
+              isFavorite={false}
+              onToggleFavorite={vi.fn()}
+              onRequireAuth={vi.fn()}
+            />
+          </ConfigContext.Provider>
+        </UserContext.Provider>
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole('dialog', { name: /ada lovelace/i })).toHaveFocus();
+
+    rerender(
+      <MemoryRouter>
+        <button type="button">Open listing</button>
+        <UserContext.Provider
+          value={{
+            isLoading: false,
+            isAuthenticated: false,
+            user: undefined,
+            checkContext: vi.fn(),
+          }}
+        >
+          <ConfigContext.Provider value={defaultConfigContext}>
+            <ListingDetailModal
+              isOpen={false}
+              onClose={onClose}
+              listing={listing}
+              isFavorite={false}
+              onToggleFavorite={vi.fn()}
+              onRequireAuth={vi.fn()}
+            />
+          </ConfigContext.Provider>
+        </UserContext.Provider>
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole('button', { name: /open listing/i })).toHaveFocus();
   });
 });
