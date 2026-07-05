@@ -55,6 +55,7 @@ export function userReducer(state: UserState, action: UserAction): UserState {
     case 'LOGOUT':
       return {
         ...state,
+        isLoading: false,
         isAuthenticated: false,
         user: undefined,
         authError: undefined,

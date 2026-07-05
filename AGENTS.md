@@ -143,7 +143,9 @@ The error handler middleware (`server/src/middleware/errorHandler.ts`) also maps
 
 Full error details are exposed in development; production responses are generic. Server-side unexpected errors are captured through Sentry when `SENTRY_DSN` is configured.
 
-Listing claim/correction validation failures use `BadRequestError`, so invalid request types, missing messages, and invalid admin review statuses return 400-level responses instead of falling through to 500s.
+The shared client Axios instance (`client/src/utils/axios.ts`) centralizes API response handling. It emits app-wide browser events for `401` responses so `UserContextProvider` clears auth state consistently, and for `429` responses so `HttpStatusNotifier` can show the server's rate-limit message and retry guidance.
+
+Auth guard missing-session responses use a stable JSON shape: `401` with `{ error: "Unauthorized", code: "AUTH_REQUIRED" }`. Rate-limit blocks use `server/src/middleware/rateLimitResponse.ts` to return `429` with `{ error, code: "RATE_LIMITED", retryAfterSeconds }` and a `Retry-After` header when reset metadata is available.
 
 The `asyncHandler` wrapper catches promise rejections in route handlers:
 
@@ -186,7 +188,7 @@ Client-side tests run under **Vitest 3** with a `jsdom` environment. Config live
 
 Coverage focuses on pure reducer modules in `client/src/reducers/`, with matching test files in `client/src/reducers/__tests__/`. The pattern extracts state transitions out of providers/components (as `createInitial<Name>State()` + `<name>Reducer(state, action)`) so they can be tested without mounting React or mocking network. Side effects (axios, localStorage, timers) stay in the component that uses `useReducer`.
 
-Focused component accessibility tests cover research discovery/listing behavior outside the reducer pattern: `client/src/components/shared/__tests__/BrowseGrid.a11y.test.tsx` verifies keyboard-openable browse cards/list rows and separate favorite controls, `client/src/components/shared/__tests__/ListingDetailModal.public.test.tsx` covers public listing dialog naming, Escape close behavior, focus trapping/restoration, and redacted contact actions, and `client/src/components/accounts/ListingForm/FormFields/__tests__/ResearchAreaInput.a11y.test.tsx` covers listing-form research-area field selector dialog focus behavior.
+Focused component accessibility tests cover research discovery/listing behavior outside the reducer pattern: `client/src/components/shared/__tests__/BrowseGrid.a11y.test.tsx` verifies keyboard-openable browse cards/list rows and separate favorite controls, `client/src/components/shared/__tests__/ListingDetailModal.public.test.tsx` covers public listing dialog naming, Escape close behavior, focus trapping/restoration, and redacted contact actions, and `client/src/components/accounts/ListingForm/FormFields/__tests__/ResearchAreaInput.a11y.test.tsx` covers listing-form research-area field selector dialog focus behavior. Focused HTTP handling tests cover rate-limit event parsing, the global rate-limit notifier, stable auth/rate-limit middleware payloads, and auth-state clearing on app-wide `401` events.
 
 Current reducers with test coverage (all in `client/src/reducers/`, tests in `client/src/reducers/__tests__/`):
 
@@ -234,6 +236,8 @@ Three rate limiters in `app.ts`, all keyed by authenticated user's `netId` with 
 
 All three limiters are skipped in CI, development, and test environments.
 
+When a limiter blocks a request, the server returns `429` with `code: "RATE_LIMITED"`, the limiter-specific message, `retryAfterSeconds` when available, and a matching `Retry-After` header. The client displays these responses through the app-wide `HttpStatusNotifier` snackbar.
+
 ## Auth Middleware
 
 Defined in `server/src/middleware/auth.ts`:
@@ -250,7 +254,7 @@ Defined in `server/src/middleware/auth.ts`:
 
 Client-side route guards: `PrivateRoute` (auth required, redirects unknown users when `unknownBlocked=true`), `AdminRoute` (admin only), `UnprivateRoute` (no auth required, for error pages). Public `/research` routes intentionally bypass `PrivateRoute`; favorites, contact actions, and other authenticated actions preserve the return path and send logged-out users to `/login`.
 
-`UserContext` exposes `authError` alongside `isLoading`, `isAuthenticated`, `user`, and `checkContext()`. `UserContextProvider` sets `authError` when the `/users/context` check fails, preserves the prior authenticated user if one exists, and relies on `/login` to show the retry UI instead of firing a global SweetAlert.
+`UserContext` exposes `authError` alongside `isLoading`, `isAuthenticated`, `user`, and `checkContext()`. `UserContextProvider` sets `authError` when the `/users/context` check fails, preserves the prior authenticated user if one exists, and relies on `/login` to show the retry UI instead of firing a global SweetAlert. It also listens for app-wide `401` events from the shared Axios client and dispatches `LOGOUT`, which clears loading, auth state, user data, and stale auth errors.
 
 ## Validation Middleware
 
