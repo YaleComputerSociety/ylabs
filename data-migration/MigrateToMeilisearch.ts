@@ -44,6 +44,9 @@ async function migrateToMeilisearch() {
       delete meiliDoc._id;
       delete meiliDoc.__v;
       delete meiliDoc.embedding; // Ensure legacy vectors aren't pushed
+      if (meiliDoc.evidence && typeof meiliDoc.evidence === 'object') {
+        delete meiliDoc.evidence.internalNotes;
+      }
       return meiliDoc;
     });
 
