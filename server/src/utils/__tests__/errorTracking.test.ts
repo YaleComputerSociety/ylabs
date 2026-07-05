@@ -1,12 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Request } from 'express';
 
-import { captureServerError, initializeErrorTracking } from '../errorTracking';
+import { captureServerError, captureStartupError, initializeErrorTracking } from '../errorTracking';
 import * as Sentry from '@sentry/node';
 
 vi.mock('@sentry/node', () => ({
   init: vi.fn(),
   captureException: vi.fn(),
+  flush: vi.fn(),
 }));
 
 describe('server errorTracking', () => {
@@ -62,5 +63,17 @@ describe('server errorTracking', () => {
         },
       },
     });
+  });
+
+  it('captures and flushes startup errors', async () => {
+    process.env.SENTRY_DSN = 'https://public@example.com/1';
+    vi.mocked(Sentry.flush).mockResolvedValue(true);
+
+    const error = new Error('startup failed');
+
+    await captureStartupError(error);
+
+    expect(Sentry.captureException).toHaveBeenCalledWith(error);
+    expect(Sentry.flush).toHaveBeenCalledWith(2000);
   });
 });
