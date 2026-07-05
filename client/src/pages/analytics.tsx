@@ -5,16 +5,11 @@ import { useEffect, useReducer } from 'react';
 import axios from '../utils/axios';
 import swal from 'sweetalert';
 import AdminPanel from '../components/admin/AdminPanel';
-import {
-  analyticsReducer,
-  createInitialAnalyticsState,
-} from '../reducers/analyticsReducer';
+import { analyticsReducer, createInitialAnalyticsState } from '../reducers/analyticsReducer';
 
 const Analytics = () => {
-  const [state, dispatch] = useReducer(
-    analyticsReducer,
-    undefined,
-    () => createInitialAnalyticsState()
+  const [state, dispatch] = useReducer(analyticsReducer, undefined, () =>
+    createInitialAnalyticsState(),
   );
   const { data, isLoading, lastUpdated } = state;
 
