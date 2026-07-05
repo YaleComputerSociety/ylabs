@@ -72,11 +72,8 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
   const currentPublicResearchUrl = isResearchRoute
     ? `${location.pathname}${location.search}`
     : null;
-  const [hydratedPublicResearchUrl, setHydratedPublicResearchUrl] = useState<string | null>(
-    null,
-  );
-  const urlStateReady =
-    !isResearchRoute || hydratedPublicResearchUrl === currentPublicResearchUrl;
+  const [hydratedPublicResearchUrl, setHydratedPublicResearchUrl] = useState<string | null>(null);
+  const urlStateReady = !isResearchRoute || hydratedPublicResearchUrl === currentPublicResearchUrl;
 
   const {
     queryString,
