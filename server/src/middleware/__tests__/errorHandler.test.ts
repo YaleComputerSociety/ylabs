@@ -3,7 +3,7 @@ import { Request, Response } from 'express';
 
 import { errorHandler } from '../errorHandler';
 import { captureServerError } from '../../utils/errorTracking';
-import { NotFoundError } from '../../utils/errors';
+import { BadRequestError, NotFoundError } from '../../utils/errors';
 
 vi.mock('../../utils/errorTracking', () => ({
   captureServerError: vi.fn(),
@@ -60,6 +60,25 @@ describe('errorHandler', () => {
     expect(captureServerError).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(404);
     expect(res.json).toHaveBeenCalledWith({ error: 'missing' });
+
+    consoleError.mockRestore();
+  });
+
+  it('maps bad request errors to 400 responses without capturing them', () => {
+    const error = new BadRequestError('Invalid request type');
+    const req = {
+      method: 'POST',
+      path: '/api/listings/507f1f77bcf86cd799439011/claim',
+      originalUrl: '/api/listings/507f1f77bcf86cd799439011/claim',
+    } as Request;
+    const res = createResponse();
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    errorHandler(error, req, res, vi.fn());
+
+    expect(captureServerError).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({ error: 'Invalid request type' });
 
     consoleError.mockRestore();
   });

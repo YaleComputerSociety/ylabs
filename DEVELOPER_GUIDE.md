@@ -6,7 +6,7 @@
 
 ## What Is This?
 
-Y/Labs is a **Yale research lab discovery platform**. Visitors can browse public research listings with supporting evidence/source metadata, students find labs and fellowships, professors create and manage listings, and admins oversee everything.
+Y/Labs is a **Yale research lab discovery platform**. Visitors can browse public research listings with supporting evidence/source metadata, students find labs and fellowships, trusted faculty/staff can submit listing claim or correction requests for admin review, professors create and manage listings, and admins oversee everything.
 
 ---
 
@@ -187,7 +187,7 @@ ylabs/
 │       ├── routes/           # Express routers
 │       ├── controllers/      # Request handlers
 │       ├── services/         # Business logic
-│       ├── models/           # Mongoose schemas
+│       ├── models/           # Mongoose schemas, including untrusted listing claim requests
 │       ├── middleware/        # Auth guards, validation, error handling
 │       ├── db/               # Database connections
 │       └── utils/            # smartTitle, errors, environment, meiliClient, error tracking
@@ -251,6 +251,7 @@ Client auth state is owned by `UserContextProvider` and `userReducer`. Failed au
 | `isAdmin`          | `userType === 'admin'`                                |
 | `isProfessor`      | `userType` in `['professor', 'faculty', 'admin']`     |
 | `canCreateListing` | professor/faculty + `profileVerified` (admins bypass) |
+| `canSubmitListingClaimRequest` | confirmed admin/professor/faculty/staff account |
 
 Missing-session responses from auth guards use a stable JSON shape: `401` with `{ error: "Unauthorized", code: "AUTH_REQUIRED" }`.
 
@@ -290,7 +291,7 @@ All mount under `/api`.
 
 | Prefix            | Description                                                  | Auth                                             |
 | ----------------- | ------------------------------------------------------------ | ------------------------------------------------ |
-| `/listings`       | Listing CRUD and authenticated search                        | Varies                                           |
+| `/listings`       | Listing CRUD, authenticated search, and listing claim/correction submission | Varies; `/:id/claim` requires a confirmed admin/professor/faculty/staff account |
 | `/research`       | Public listing discovery, contact reveal, and outreach events | Public; `/research/:slug/contact` and `/research/:slug/outreach` require login |
 | `/fellowships`    | Fellowship CRUD and search                                   | Varies                                           |
 | `/users`          | User CRUD                                                    | Yes                                              |
@@ -298,14 +299,22 @@ All mount under `/api`.
 | `/analytics`      | Analytics dashboards                                         | Admin                                            |
 | `/config`         | Departments + research areas                                 | No                                               |
 | `/research-areas` | Research area CRUD                                           | Admin for writes                                 |
-| `/admin`          | Admin operations                                             | Admin                                            |
+| `/admin`          | Admin operations, including listing claim/correction request review | Admin                                            |
 | `/seed`           | Dev seeding routes                                           | Dev mode only                                    |
+
+---
+
+### Listing Claim Requests
+
+Confirmed admin, professor, faculty, and staff accounts can submit untrusted claim/correction work items with `POST /api/listings/:id/claim`. The body accepts `requestType` (`claim` or `correction`, default `correction`), a required `message`, optional allowlisted `proposedChanges`, and optional `http`/`https` `evidenceUrls`; submissions are stored as `pending` records and do not mutate listings.
+
+Admins review these records through `GET /api/admin/listing-claims`, `GET /api/admin/listing-claims/:id`, and `PUT /api/admin/listing-claims/:id`. The list route accepts `status`, `requestType`, `listingId`, `page`, and `pageSize`; the review route accepts `status` (`approved` or `rejected`) and optional `adminNotes`, then records `reviewedBy` and `reviewedAt`.
 
 ---
 
 ## Testing
 
-Client-side tests run under **Vitest 3** with a `jsdom` environment. Configuration lives in the `test` block of [client/vite.config.js](client/vite.config.js), and [client/src/setupTests.ts](client/src/setupTests.ts) loads shared Testing Library matchers. The server uses Vitest for focused middleware and utility tests, plus a focused Node test script for listing-search degradation, but no general server-side test suite is wired into CI.
+Client-side tests run under **Vitest 3** with a `jsdom` environment. Configuration lives in the `test` block of [client/vite.config.js](client/vite.config.js), and [client/src/setupTests.ts](client/src/setupTests.ts) loads shared Testing Library matchers. The server uses Vitest for focused middleware, service, and utility tests, plus a focused Node test script for listing-search degradation, but no general server-side test suite is wired into CI.
 
 ### Running tests
 
@@ -315,7 +324,7 @@ yarn test        # watch mode — reruns on file changes
 yarn test:ci     # single run — used by CI
 
 cd ../server
-yarn test                 # focused middleware and utility coverage
+yarn test                 # focused middleware, service, and utility coverage
 yarn test:search-degrade  # listing-search fallback coverage
 ```
 
@@ -372,6 +381,8 @@ Public pages that should work for logged-out visitors must not use `PrivateRoute
 
 Listing evidence metadata lives under `listing.evidence` in MongoDB. Keep any analyst-only notes in `evidence.internalNotes`; that field is excluded by default from Mongoose query results, stripped from Meilisearch indexing, and never returned by public research endpoints.
 
+Listing claim/correction requests live in the `listingClaimRequests` collection. They snapshot requester and listing metadata, keep submitted proposed changes separate from canonical listings, and remain untrusted until an admin marks the request approved or rejected.
+
 ---
 
 ## Troubleshooting
@@ -384,3 +395,4 @@ Listing evidence metadata lives under `listing.evidence` in MongoDB. Keep any an
 | Meilisearch connection refused  | Start Docker container or check `MEILISEARCH_HOST` in `.env`                |
 | CORS errors                     | Add origin to `allowList` in `app.ts` or use dev mode                       |
 | "Forbidden" on listing creation | Professor needs `profileVerified: true`                                     |
+| "Forbidden" on listing claim/correction | User must be confirmed and have `admin`, `professor`, `faculty`, or `staff` type |

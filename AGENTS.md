@@ -2,7 +2,7 @@
 
 ## Architecture
 
-Monorepo with a React client and Express server communicating over REST. MongoDB Atlas is the primary data store. Meilisearch handles search (semantic + keyword) with an OpenAI embedder configured server-side. Yale CAS provides SSO authentication, while the public research discovery flow exposes redacted confirmed listings and public-safe evidence/source metadata to logged-out visitors.
+Monorepo with a React client and Express server communicating over REST. MongoDB Atlas is the primary data store. Meilisearch handles search (semantic + keyword) with an OpenAI embedder configured server-side. Yale CAS provides SSO authentication, while the public research discovery flow exposes redacted confirmed listings and public-safe evidence/source metadata to logged-out visitors. Confirmed faculty/staff/admin accounts can submit listing claim/correction requests as untrusted admin-review work items.
 
 ```
 React (Vite) → Express (Passport.js) → MongoDB Atlas + Meilisearch
@@ -47,8 +47,8 @@ ylabs/
 │       ├── passport.ts       # CAS auth strategy + user find-or-create cascade
 │       ├── routes/           # Express routers aggregated in routes/index.ts
 │       ├── controllers/      # Request handlers
-│       ├── services/         # Business logic (11 services)
-│       ├── models/           # Mongoose schemas (user, listing, fellowship, analytics, department, researchArea)
+│       ├── services/         # Business logic
+│       ├── models/           # Mongoose schemas (user, listing, listingClaimRequest, fellowship, analytics, department, researchArea)
 │       ├── middleware/        # Auth guards, validation, error handling
 │       ├── db/               # Multi-mode database connections
 │       ├── utils/            # smartTitle, errors, permissions (legacy), environment, meiliClient
@@ -89,6 +89,8 @@ MongoDB via Mongoose 8. All environments use `MONGODBURL` — the connection str
 
 Listing documents may include an `evidence` object with `status`, `summary`, `confidence`, generation/verification timestamps, public `sources`, and optional `internalNotes`. `internalNotes` is `select: false`, is removed before Meilisearch indexing, and is not exposed by public research responses.
 
+Listing claim/correction submissions are stored separately in the `listingClaimRequests` collection. They snapshot requester and listing metadata, store a message, allowlisted proposed changes, and sanitized `http`/`https` evidence URLs, and remain untrusted pending admin review.
+
 ## Search
 
 Search has migrated from MongoDB Atlas Vector Search to **Meilisearch**. The old `embeddingService.ts` (OpenAI client-side embedding generation + in-memory LRU cache) has been removed.
@@ -125,8 +127,9 @@ Meilisearch is a single Render Private Service shared by both beta and prod, iso
 
 ## Error Handling
 
-Three custom error classes in `server/src/utils/errors.ts`:
+Four custom error classes in `server/src/utils/errors.ts`:
 
+- `BadRequestError` → 400
 - `NotFoundError` → 404
 - `ObjectIdError` → 404
 - `IncorrectPermissionsError` → 403
@@ -181,7 +184,7 @@ Analytics events have a 3-year TTL via MongoDB's `expireAfterSeconds` index.
 
 ## Testing
 
-Client-side tests run under **Vitest 3** with a `jsdom` environment. Config lives in the `test` block of `client/vite.config.js`; tests are discovered from `client/src/**/*.{test,spec}.{ts,tsx}`. The server uses Vitest for focused middleware and utility tests (`yarn --cwd server test`) and has a focused Node test script for listing-search degradation (`yarn --cwd server test:search-degrade`), but no general server-side test suite is wired into CI.
+Client-side tests run under **Vitest 3** with a `jsdom` environment. Config lives in the `test` block of `client/vite.config.js`; tests are discovered from `client/src/**/*.{test,spec}.{ts,tsx}`. The server uses Vitest for focused middleware, service, and utility tests (`yarn --cwd server test`) and has a focused Node test script for listing-search degradation (`yarn --cwd server test:search-degrade`), but no general server-side test suite is wired into CI.
 
 Coverage focuses on pure reducer modules in `client/src/reducers/`, with matching test files in `client/src/reducers/__tests__/`. The pattern extracts state transitions out of providers/components (as `createInitial<Name>State()` + `<name>Reducer(state, action)`) so they can be tested without mounting React or mocking network. Side effects (axios, localStorage, timers) stay in the component that uses `useReducer`.
 
@@ -245,6 +248,7 @@ Defined in `server/src/middleware/auth.ts`:
 | `isAdmin`          | `userType === 'admin'`                                |
 | `isProfessor`      | `userType` in `['professor', 'faculty', 'admin']`     |
 | `canCreateListing` | professor/faculty + `profileVerified` (admins bypass) |
+| `canSubmitListingClaimRequest` | `userConfirmed` + admin/professor/faculty/staff |
 | `isTrustworthy`    | `userConfirmed` + admin/professor/faculty             |
 | `isConfirmed`      | `userConfirmed === true`                              |
 
@@ -269,7 +273,7 @@ All routes mount under `/api` in `app.ts`. Route files in `server/src/routes/`:
 
 | Prefix            | File               | Auth                                                  |
 | ----------------- | ------------------ | ----------------------------------------------------- |
-| `/listings`       | `listings.ts`      | Varies (authenticated search, mutations require auth) |
+| `/listings`       | `listings.ts`      | Varies; `POST /:id/claim` requires a confirmed admin/professor/faculty/staff account |
 | `/research`       | `research.ts`      | Public browse/detail; contact detail and outreach logging require auth |
 | `/fellowships`    | `fellowships.ts`   | Varies                                                |
 | `/users`          | `users.ts`         | Yes                                                   |
@@ -277,10 +281,17 @@ All routes mount under `/api` in `app.ts`. Route files in `server/src/routes/`:
 | `/analytics`      | `analytics.ts`     | Admin                                                 |
 | `/config`         | `config.ts`        | No                                                    |
 | `/research-areas` | `researchAreas.ts` | Admin for writes                                      |
-| `/admin`          | `admin.ts`         | Admin                                                 |
+| `/admin`          | `admin.ts`         | Admin; includes listing claim/correction review routes |
 | `/seed`           | `seed.ts`          | Dev mode only                                         |
 
 Passport auth routes (CAS login/logout, dev-login) are mounted separately via `passportRoutes` before the main routes.
+
+Listing claim/correction workflow:
+
+- `POST /api/listings/:id/claim` creates a pending request. Body fields: `requestType` (`claim` or `correction`, default `correction`), required `message`, optional allowlisted `proposedChanges`, and optional `evidenceUrls`.
+- `GET /api/admin/listing-claims` lists requests with optional `status`, `requestType`, `listingId`, `page`, and `pageSize`.
+- `GET /api/admin/listing-claims/:id` reads one request.
+- `PUT /api/admin/listing-claims/:id` accepts `status` (`approved` or `rejected`) and optional `adminNotes`, then records `reviewedBy` and `reviewedAt`.
 
 ## Authentication Flow
 
@@ -298,7 +309,7 @@ User → Yale CAS SSO → passport.ts findOrCreateUser
 | Element          | Convention                    | Examples                                        |
 | ---------------- | ----------------------------- | ----------------------------------------------- |
 | Services         | camelCase + "Service" suffix  | `listingService.ts`, `analyticsService.ts`      |
-| Models           | PascalCase exports            | `User`, `Listing`, `Fellowship`                 |
+| Models           | PascalCase exports            | `User`, `Listing`, `ListingClaimRequest`, `Fellowship` |
 | Controllers      | camelCase descriptive         | `createListingForCurrentUser`, `searchListings` |
 | Routes           | Resource-based files          | `listings.ts`, `users.ts`                       |
 | DB fields        | camelCase                     | `ownerPrimaryDepartment`, `primaryCategory`     |
@@ -349,7 +360,7 @@ User → Yale CAS SSO → passport.ts findOrCreateUser
 
 | Issue                                    | Location                          | Status                                                                                                                                                                                                                          |
 | ---------------------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| No general server-side test suite        | `server/`                         | Focused Vitest coverage exists for error handling/tracking and a focused Node test covers listing-search degradation; broader server coverage is not wired into CI. Client uses Vitest; reducer modules in `client/src/reducers/` and focused research/listing accessibility flows are covered. |
+| No general server-side test suite        | `server/`                         | Focused Vitest coverage exists for auth middleware, listing claim request service behavior, error handling/tracking, and a focused Node test covers listing-search degradation; broader server coverage is not wired into CI. Client uses Vitest; reducer modules in `client/src/reducers/` and focused research/listing accessibility flows are covered. |
 | ESLint/Prettier configured but not in CI | `eslint.config.js`, `.prettierrc` | Flat-config ESLint + Prettier set up at repo root. Currently reports ~15 errors / ~55 warnings across the codebase; not wired to CI until pre-existing violations are triaged. Run `yarn lint`, `yarn lint:fix`, `yarn format`. |
 | Console-only logging                     | Server                            | No structured logging (Winston/Pino)                                                                                                                                                                                            |
 
