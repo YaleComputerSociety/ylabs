@@ -10,11 +10,19 @@ import passport, { passportRoutes } from './passport';
 import routes from './routes/index';
 import cookieSession from 'cookie-session';
 import dotenv from 'dotenv';
+import { readFile } from 'fs/promises';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
 import { securityHeaders } from './middleware/securityHeaders';
 import { sanitizeMongo } from './middleware/sanitizeMongo';
+import { getListingModel } from './db/connections';
+import { redactPublicListing } from './controllers/listingController';
+import {
+  buildPublicResearchSeoMetadata,
+  injectSeoMetadata,
+  resolvePublicBaseUrl,
+} from './utils/publicResearchSeo';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -136,10 +144,54 @@ const app = express()
 
 app.use('/api', notFoundHandler);
 
-app.use(express.static(path.join(__dirname, '../../client/dist')));
+const clientDistPath = path.join(__dirname, '../../client/dist');
+const clientIndexPath = path.join(clientDistPath, 'index.html');
+
+const getIdFromResearchSlug = (slug?: string): string | null => {
+  const match = slug?.match(/[a-fA-F0-9]{24}/);
+  return match ? match[0] : null;
+};
+
+const sendPublicResearchIndex = async (
+  req: express.Request,
+  res: express.Response,
+  next: express.NextFunction,
+) => {
+  try {
+    const indexHtml = await readFile(clientIndexPath, 'utf8');
+    let listing = null;
+    const id = getIdFromResearchSlug(req.params.slug);
+
+    if (id) {
+      try {
+        const publicListing = await getListingModel()
+          .findOne({ _id: id, archived: false, confirmed: true })
+          .lean();
+        listing = publicListing ? redactPublicListing(publicListing) : null;
+      } catch (error) {
+        console.error('Unable to load public research SEO metadata:', error);
+      }
+    }
+
+    const metadata = buildPublicResearchSeoMetadata({
+      baseUrl: resolvePublicBaseUrl(req),
+      path: req.path,
+      listing,
+    });
+
+    res.type('html').send(injectSeoMetadata(indexHtml, metadata));
+  } catch (error) {
+    next(error);
+  }
+};
+
+app.use(express.static(clientDistPath));
+
+app.get('/research', sendPublicResearchIndex);
+app.get('/research/:slug', sendPublicResearchIndex);
 
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, '../../client/dist/index.html'));
+  res.sendFile(clientIndexPath);
 });
 
 app.use(errorHandler);

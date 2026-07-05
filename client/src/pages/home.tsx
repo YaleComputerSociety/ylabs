@@ -16,6 +16,7 @@ import { createListing } from '../utils/apiCleaner';
 import swal from 'sweetalert';
 import { getInstitutionAffiliation } from '../utils/institutionAffiliation';
 import { browsePageReducer, createInitialBrowsePageState } from '../reducers/browsePageReducer';
+import { applySeoMetadata, buildResearchSeoMetadata } from '../utils/seo';
 
 type ListingSearchCriteria = {
   queryString: string;
@@ -197,6 +198,18 @@ const Home = () => {
   };
   const emptyMessage = getListingEmptyMessage(listingSearchCriteria);
   const showFellowshipsEmptyAction = !hasListingSearchCriteria(listingSearchCriteria);
+
+  useEffect(() => {
+    if (!isResearchRoute) return;
+
+    applySeoMetadata(
+      buildResearchSeoMetadata({
+        origin: window.location.origin,
+        pathname: location.pathname,
+        listing: selectedListing,
+      }),
+    );
+  }, [isResearchRoute, location.pathname, selectedListing]);
 
   const updateFavorite = (listingId: string, favorite: boolean) => {
     if (!isAuthenticated) {
