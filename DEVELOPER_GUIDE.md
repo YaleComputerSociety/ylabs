@@ -323,6 +323,28 @@ The Meilisearch client (`server/src/utils/meiliClient.ts`) exports:
 
 ---
 
+## Analytics
+
+Analytics events are stored in MongoDB with a 3-year TTL.
+Route-level middleware logs successful server-observed events by wrapping `res.send` or `res.json`, so analytics stay outside controller and service business logic.
+
+Research-surface analytics cover the canonical research entities (`profile`, `listing`, and `fellowship`) and use these event types:
+
+| Event type | Meaning |
+|------------|---------|
+| `research_view` | A profile, listing, or fellowship detail surface opened |
+| `pathway_save` | A listing or fellowship was saved, unsaved, or re-staged |
+| `ways_in_click` | A best-next-step, apply, listings, courses, or similar action was clicked |
+| `contact_route_click` | A contact route such as email or phone was clicked |
+| `source_link_click` | A source link such as a lab site, publication, or application was clicked |
+
+Client-only interactions are sent to `POST /api/analytics/research` for authenticated users.
+Server-observed views and save/favorite actions are emitted from route middleware in listings, fellowships, profiles, and users.
+Research analytics sanitize payloads before persistence: contact clicks keep only a coarse `contactMethod`, source clicks keep only `sourceCategory` plus the bare hostname, and labels reject raw contact addresses or URL-like values.
+The admin analytics dashboard segments research engagement by event type, entity type, user type, and top viewed entities over the trailing 30 days.
+
+---
+
 ## Authentication
 
 ```
@@ -362,7 +384,7 @@ All mount under `/api`.
 | `/fellowships` | Compatibility alias around program/fellowship storage during migration | Varies |
 | `/users` | User CRUD | Yes |
 | `/profiles` | Faculty profiles | Varies |
-| `/analytics` | Analytics dashboards | Admin |
+| `/analytics` | Analytics dashboard + research event writes | Admin for dashboard, authenticated for research writes |
 | `/config` | Departments + research areas | No |
 | `/research-areas` | Research area CRUD | Admin for writes |
 | `/admin` | Admin operations | Admin |
