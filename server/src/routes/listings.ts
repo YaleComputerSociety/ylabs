@@ -4,6 +4,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import {
   isAuthenticated,
+  canSubmitListingClaimRequest,
   canCreateListing,
   validateObjectId,
   validatePagination,
@@ -107,6 +108,7 @@ router.get('/:id', isAuthenticated, validateObjectId('id'), listingController.ge
 router.post(
   '/:id/claim',
   isAuthenticated,
+  canSubmitListingClaimRequest,
   validateObjectId('id'),
   listingClaimRequestController.submitListingClaimRequest,
 );

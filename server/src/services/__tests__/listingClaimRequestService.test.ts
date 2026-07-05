@@ -8,6 +8,7 @@ import {
 } from '../listingClaimRequestService';
 import { getListingModel } from '../../db/connections';
 import { ListingClaimRequest } from '../../models/listingClaimRequest';
+import { BadRequestError } from '../../utils/errors';
 
 vi.mock('../../db/connections', () => ({
   getListingModel: vi.fn(),
@@ -119,6 +120,56 @@ describe('listingClaimRequestService', () => {
     );
   });
 
+  it('rejects unsupported request types with a 400-level error', async () => {
+    await expect(
+      createListingClaimRequest(
+        listingId,
+        { requestType: 'takeover', message: 'Please review this listing.' },
+        { netId: 'fac1' },
+      ),
+    ).rejects.toMatchObject({
+      message: 'Invalid request type',
+      status: 400,
+    });
+
+    await expect(
+      createListingClaimRequest(
+        listingId,
+        { requestType: 'takeover', message: 'Please review this listing.' },
+        { netId: 'fac1' },
+      ),
+    ).rejects.toBeInstanceOf(BadRequestError);
+    expect(getListingModel).not.toHaveBeenCalled();
+    expect(ListingClaimRequest.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects missing messages with a 400-level error', async () => {
+    await expect(
+      createListingClaimRequest(
+        listingId,
+        { requestType: 'correction', message: '   ' },
+        {
+          netId: 'fac1',
+        },
+      ),
+    ).rejects.toMatchObject({
+      message: 'Message is required',
+      status: 400,
+    });
+
+    await expect(
+      createListingClaimRequest(
+        listingId,
+        { requestType: 'correction', message: '   ' },
+        {
+          netId: 'fac1',
+        },
+      ),
+    ).rejects.toBeInstanceOf(BadRequestError);
+    expect(getListingModel).not.toHaveBeenCalled();
+    expect(ListingClaimRequest.create).not.toHaveBeenCalled();
+  });
+
   it('reviews a request by updating only request review metadata', async () => {
     const lean = vi.fn().mockResolvedValue({
       _id: requestId,
@@ -142,5 +193,25 @@ describe('listingClaimRequestService', () => {
       }),
       { new: true, runValidators: true },
     );
+  });
+
+  it('rejects invalid review statuses with a 400-level error', async () => {
+    await expect(
+      reviewListingClaimRequest(requestId, 'admin1', {
+        status: 'pending',
+        adminNotes: 'Cannot move back to pending.',
+      }),
+    ).rejects.toMatchObject({
+      message: 'Status must be approved or rejected',
+      status: 400,
+    });
+
+    await expect(
+      reviewListingClaimRequest(requestId, 'admin1', {
+        status: 'pending',
+        adminNotes: 'Cannot move back to pending.',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestError);
+    expect(ListingClaimRequest.findByIdAndUpdate).not.toHaveBeenCalled();
   });
 });
