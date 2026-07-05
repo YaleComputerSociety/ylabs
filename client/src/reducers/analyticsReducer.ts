@@ -59,6 +59,17 @@ export interface AnalyticsData {
       avgViews: number;
     }>;
   };
+  research: {
+    byEventType: Array<{ eventType: string; total: number; last7Days: number; today: number }>;
+    byEntityType: Array<{ entityType: string; eventType: string; count: number }>;
+    byUserType: Array<{ userType: string; count: number }>;
+    topEntities: Array<{
+      entityType: string;
+      entityId: string;
+      views: number;
+      uniqueViewers: number;
+    }>;
+  };
   listings: {
     overview: {
       total: number;

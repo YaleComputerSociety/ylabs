@@ -6,6 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import { Fellowship } from '../../types/types';
 import FellowshipSearchContext from '../../contexts/FellowshipSearchContext';
 import { ensureHttpPrefix, safeUrl } from '../../utils/url';
+import { trackResearchEvent } from '../../utils/researchAnalytics';
 import FavoriteButton from '../shared/FavoriteButton';
 
 interface FellowshipModalProps {
@@ -116,6 +117,12 @@ const FellowshipModal = ({
         break;
     }
 
+    trackResearchEvent({
+      eventType: 'ways_in_click',
+      entityType: 'fellowship',
+      entityId: fellowship.id,
+      payload: { waysInKind: 'best_next_step', label: filterType },
+    });
     onClose();
     navigate('/fellowships');
   };
@@ -185,7 +192,24 @@ const FellowshipModal = ({
                     href={ensureHttpPrefix(fellowship.applicationLink)}
                     target="_blank"
                     rel="noopener noreferrer"
-                    onClick={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      trackResearchEvent({
+                        eventType: 'source_link_click',
+                        entityType: 'fellowship',
+                        entityId: fellowship.id,
+                        payload: {
+                          sourceCategory: 'external',
+                          url: ensureHttpPrefix(fellowship.applicationLink),
+                        },
+                      });
+                      trackResearchEvent({
+                        eventType: 'ways_in_click',
+                        entityType: 'fellowship',
+                        entityId: fellowship.id,
+                        payload: { waysInKind: 'apply', label: 'Apply' },
+                      });
+                    }}
                     className="p-2 rounded-lg hover:bg-gray-100 transition-colors text-gray-500 hover:text-blue-600"
                     title="Apply"
                   >
@@ -209,7 +233,15 @@ const FellowshipModal = ({
                 {fellowship.contactEmail && (
                   <a
                     href={`mailto:${fellowship.contactEmail}`}
-                    onClick={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      trackResearchEvent({
+                        eventType: 'contact_route_click',
+                        entityType: 'fellowship',
+                        entityId: fellowship.id,
+                        payload: { contactMethod: 'email' },
+                      });
+                    }}
                     className="p-2 rounded-lg hover:bg-gray-100 transition-colors text-gray-500 hover:text-blue-600"
                     title="Email contact"
                   >
@@ -315,6 +347,14 @@ const FellowshipModal = ({
                       {fellowship.contactEmail && (
                         <a
                           href={`mailto:${fellowship.contactEmail}`}
+                          onClick={() =>
+                            trackResearchEvent({
+                              eventType: 'contact_route_click',
+                              entityType: 'fellowship',
+                              entityId: fellowship.id,
+                              payload: { contactMethod: 'email' },
+                            })
+                          }
                           className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800 hover:underline"
                         >
                           <svg
@@ -357,6 +397,17 @@ const FellowshipModal = ({
                           href={ensureHttpPrefix(link.url)}
                           target="_blank"
                           rel="noopener noreferrer"
+                          onClick={() =>
+                            trackResearchEvent({
+                              eventType: 'source_link_click',
+                              entityType: 'fellowship',
+                              entityId: fellowship.id,
+                              payload: {
+                                sourceCategory: 'external',
+                                url: ensureHttpPrefix(link.url),
+                              },
+                            })
+                          }
                           className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800 hover:underline"
                         >
                           <svg
@@ -551,6 +602,23 @@ const FellowshipModal = ({
                       href={ensureHttpPrefix(fellowship.applicationLink)}
                       target="_blank"
                       rel="noopener noreferrer"
+                      onClick={() => {
+                        trackResearchEvent({
+                          eventType: 'source_link_click',
+                          entityType: 'fellowship',
+                          entityId: fellowship.id,
+                          payload: {
+                            sourceCategory: 'external',
+                            url: ensureHttpPrefix(fellowship.applicationLink),
+                          },
+                        });
+                        trackResearchEvent({
+                          eventType: 'ways_in_click',
+                          entityType: 'fellowship',
+                          entityId: fellowship.id,
+                          payload: { waysInKind: 'apply', label: 'Apply' },
+                        });
+                      }}
                       className="inline-flex items-center px-6 py-2.5 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors text-sm"
                     >
                       Apply Now

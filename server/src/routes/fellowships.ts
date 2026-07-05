@@ -32,6 +32,12 @@ router.put(
   '/:id/addFavorite',
   isAuthenticated,
   validateObjectId('id'),
+  logResearchEventOnSuccess(
+    AnalyticsEventType.PATHWAY_SAVE,
+    'fellowship',
+    (req) => req.params.id,
+    () => ({ action: 'save' }),
+  ),
   fellowshipController.addFavoriteToFellowship,
 );
 
@@ -39,6 +45,12 @@ router.put(
   '/:id/removeFavorite',
   isAuthenticated,
   validateObjectId('id'),
+  logResearchEventOnSuccess(
+    AnalyticsEventType.PATHWAY_SAVE,
+    'fellowship',
+    (req) => req.params.id,
+    () => ({ action: 'unsave' }),
+  ),
   fellowshipController.removeFavoriteFromFellowship,
 );
 

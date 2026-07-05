@@ -9,6 +9,7 @@ import ConfigContext from '../../contexts/ConfigContext';
 import { getDepartmentAbbreviation } from '../../utils/departmentNames';
 import { ensureHttpPrefix } from '../../utils/url';
 import { getInstitutionAffiliation, getInstitutionLabel } from '../../utils/institutionAffiliation';
+import { trackResearchEvent } from '../../utils/researchAnalytics';
 import FavoriteButton from './FavoriteButton';
 
 interface ListingDetailModalProps {
@@ -128,7 +129,18 @@ const ListingDetailModal = ({
                     {listing.websites && listing.websites.length > 0 && (
                       <a
                         href={ensureHttpPrefix(listing.websites[0])}
-                        onClick={(e) => e.stopPropagation()}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          trackResearchEvent({
+                            eventType: 'source_link_click',
+                            entityType: 'listing',
+                            entityId: listing.id,
+                            payload: {
+                              sourceCategory: 'lab_website',
+                              url: ensureHttpPrefix(listing.websites[0]),
+                            },
+                          });
+                        }}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="p-2 rounded-lg hover:bg-gray-100 transition-colors text-gray-500 hover:text-blue-600"
@@ -153,7 +165,15 @@ const ListingDetailModal = ({
                     )}
                     <a
                       href={`mailto:${listing.ownerEmail}`}
-                      onClick={(e) => e.stopPropagation()}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        trackResearchEvent({
+                          eventType: 'contact_route_click',
+                          entityType: 'listing',
+                          entityId: listing.id,
+                          payload: { contactMethod: 'email' },
+                        });
+                      }}
                       className="p-2 rounded-lg hover:bg-gray-100 transition-colors text-gray-500 hover:text-blue-600"
                       title="Send email"
                     >
@@ -229,7 +249,15 @@ const ListingDetailModal = ({
                         {netid ? (
                           <Link
                             to={`/profile/${netid}`}
-                            onClick={onClose}
+                            onClick={() => {
+                              trackResearchEvent({
+                                eventType: 'ways_in_click',
+                                entityType: 'listing',
+                                entityId: listing.id,
+                                payload: { waysInKind: 'best_next_step', label: 'View profile' },
+                              });
+                              onClose();
+                            }}
                             className="text-sm text-blue-600 hover:text-blue-800 hover:underline font-medium"
                           >
                             {name}
@@ -257,7 +285,15 @@ const ListingDetailModal = ({
                           return (
                             <button
                               key={area}
-                              onClick={() => onNavigateToResearchArea(area)}
+                              onClick={() => {
+                                trackResearchEvent({
+                                  eventType: 'ways_in_click',
+                                  entityType: 'listing',
+                                  entityId: listing.id,
+                                  payload: { waysInKind: 'view_listings', label: 'Research area' },
+                                });
+                                onNavigateToResearchArea(area);
+                              }}
                               className={`${colors.bg} ${colors.text} text-xs rounded-md px-2 py-1 hover:ring-2 hover:ring-offset-1 cursor-pointer transition-all`}
                             >
                               {area}
@@ -308,7 +344,15 @@ const ListingDetailModal = ({
                           return (
                             <button
                               key={dept}
-                              onClick={() => onNavigateToDepartment(fullName)}
+                              onClick={() => {
+                                trackResearchEvent({
+                                  eventType: 'ways_in_click',
+                                  entityType: 'listing',
+                                  entityId: listing.id,
+                                  payload: { waysInKind: 'view_listings', label: 'Department' },
+                                });
+                                onNavigateToDepartment(fullName);
+                              }}
                               className="bg-gray-100 text-gray-700 text-xs rounded-md px-2 py-1 hover:bg-gray-200 hover:ring-2 hover:ring-gray-300 cursor-pointer transition-all"
                             >
                               {fullName}
@@ -337,6 +381,14 @@ const ListingDetailModal = ({
                       <a
                         key={i}
                         href={`mailto:${email}`}
+                        onClick={() =>
+                          trackResearchEvent({
+                            eventType: 'contact_route_click',
+                            entityType: 'listing',
+                            entityId: listing.id,
+                            payload: { contactMethod: 'email' },
+                          })
+                        }
                         className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800 hover:underline"
                       >
                         <svg
@@ -365,6 +417,17 @@ const ListingDetailModal = ({
                           href={ensureHttpPrefix(website)}
                           target="_blank"
                           rel="noopener noreferrer"
+                          onClick={() =>
+                            trackResearchEvent({
+                              eventType: 'source_link_click',
+                              entityType: 'listing',
+                              entityId: listing.id,
+                              payload: {
+                                sourceCategory: 'lab_website',
+                                url: ensureHttpPrefix(website),
+                              },
+                            })
+                          }
                           className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800 hover:underline"
                         >
                           <svg

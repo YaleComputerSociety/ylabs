@@ -88,6 +88,12 @@ const Analytics = () => {
     return typeMap[type] || type;
   };
 
+  const formatEventType = (type: string) =>
+    type
+      .split('_')
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
+
   return (
     <div className="container mx-auto px-4 py-8 max-w-7xl">
       <div className="flex justify-between items-center mb-8">
@@ -323,6 +329,87 @@ const Analytics = () => {
           </div>
         </section>
       )}
+
+      <section className="mb-10">
+        <h2 className="text-2xl font-bold mb-4 text-gray-800 border-b-2 border-blue-600 pb-2">
+          Research Engagement
+        </h2>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+          {data.research.byEventType.slice(0, 3).map((item) => (
+            <StatCard
+              key={item.eventType}
+              title={formatEventType(item.eventType)}
+              value={item.total}
+              subtitle={`${item.last7Days} last 7 days, ${item.today} today`}
+            />
+          ))}
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="bg-white rounded-lg shadow-md p-6 border border-gray-200">
+            <h3 className="text-lg font-semibold text-gray-700 mb-4">Events by Entity</h3>
+            <div className="space-y-2">
+              {data.research.byEntityType.length > 0 ? (
+                data.research.byEntityType.slice(0, 8).map((item) => (
+                  <div
+                    key={`${item.entityType}-${item.eventType}`}
+                    className="flex justify-between gap-3 text-sm"
+                  >
+                    <span className="text-gray-600 capitalize">
+                      {item.entityType} / {formatEventType(item.eventType)}
+                    </span>
+                    <span className="font-medium">{item.count}</span>
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-gray-500">No research events yet</p>
+              )}
+            </div>
+          </div>
+
+          <div className="bg-white rounded-lg shadow-md p-6 border border-gray-200">
+            <h3 className="text-lg font-semibold text-gray-700 mb-4">Research Users</h3>
+            <div className="space-y-2">
+              {data.research.byUserType.length > 0 ? (
+                data.research.byUserType.map((item) => (
+                  <div key={item.userType} className="flex justify-between text-sm">
+                    <span className="text-gray-600">{formatUserType(item.userType)}</span>
+                    <span className="font-medium">{item.count}</span>
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-gray-500">No research users yet</p>
+              )}
+            </div>
+          </div>
+
+          <div className="bg-white rounded-lg shadow-md p-6 border border-gray-200">
+            <h3 className="text-lg font-semibold text-gray-700 mb-4">
+              Top Research Entities (30 Days)
+            </h3>
+            <div className="space-y-2">
+              {data.research.topEntities.length > 0 ? (
+                data.research.topEntities.slice(0, 8).map((item) => (
+                  <div
+                    key={`${item.entityType}-${item.entityId}`}
+                    className="flex justify-between gap-3 text-sm"
+                  >
+                    <span className="text-gray-600 truncate">
+                      <span className="capitalize">{item.entityType}</span> {item.entityId}
+                    </span>
+                    <span className="font-medium whitespace-nowrap">
+                      {item.views} views / {item.uniqueViewers} users
+                    </span>
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-gray-500">No viewed entities yet</p>
+              )}
+            </div>
+          </div>
+        </div>
+      </section>
 
       <section className="mb-10">
         <h2 className="text-2xl font-bold mb-4 text-gray-800 border-b-2 border-blue-600 pb-2">

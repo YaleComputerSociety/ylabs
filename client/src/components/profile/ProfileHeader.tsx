@@ -2,6 +2,7 @@
  * Profile header with name, department, contact, and metrics.
  */
 import { FacultyProfile } from '../../types/types';
+import { trackResearchEvent } from '../../utils/researchAnalytics';
 import { safeUrl } from '../../utils/url';
 
 interface ProfileHeaderProps {
@@ -62,6 +63,14 @@ const ProfileHeader = ({ profile, onTabChange }: ProfileHeaderProps) => {
           {profile.email && (
             <a
               href={`mailto:${profile.email}`}
+              onClick={() =>
+                trackResearchEvent({
+                  eventType: 'contact_route_click',
+                  entityType: 'profile',
+                  entityId: profile.netid,
+                  payload: { contactMethod: 'email' },
+                })
+              }
               className="flex items-center gap-1.5 text-blue-600 hover:text-blue-800 hover:underline"
             >
               <svg
@@ -105,7 +114,15 @@ const ProfileHeader = ({ profile, onTabChange }: ProfileHeaderProps) => {
         <div className="flex flex-wrap items-center gap-4 mt-3">
           {profile.ownListings && profile.ownListings.length > 0 && (
             <button
-              onClick={() => onTabChange?.('listings')}
+              onClick={() => {
+                trackResearchEvent({
+                  eventType: 'ways_in_click',
+                  entityType: 'profile',
+                  entityId: profile.netid,
+                  payload: { waysInKind: 'view_listings', label: 'Profile listings' },
+                });
+                onTabChange?.('listings');
+              }}
               className="text-xs px-2 py-1 rounded-full bg-blue-50 text-blue-700 font-medium hover:bg-blue-100 transition-colors cursor-pointer"
             >
               {profile.ownListings.length} listing{profile.ownListings.length !== 1 ? 's' : ''}
@@ -123,6 +140,17 @@ const ProfileHeader = ({ profile, onTabChange }: ProfileHeaderProps) => {
                     href={href}
                     target="_blank"
                     rel="noopener noreferrer"
+                    onClick={() =>
+                      trackResearchEvent({
+                        eventType: 'source_link_click',
+                        entityType: 'profile',
+                        entityId: profile.netid,
+                        payload: {
+                          sourceCategory: key === 'website' ? 'profile' : 'external',
+                          url: href,
+                        },
+                      })
+                    }
                     className="text-xs px-2 py-1 rounded-full bg-gray-50 text-gray-600 font-medium hover:bg-gray-100 transition-colors capitalize"
                   >
                     {key.replace(/_/g, ' ')}

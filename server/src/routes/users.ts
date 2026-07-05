@@ -6,6 +6,7 @@ import { isAuthenticated } from '../middleware/index';
 import * as userController from '../controllers/userController';
 import { logEvent } from '../services/analyticsService';
 import { AnalyticsEventType } from '../models/index';
+import { emitResearchEvent } from '../services/researchAnalytics';
 
 const router = Router();
 
@@ -16,10 +17,9 @@ const logFavoriteEvent = (isFavorite: boolean) => {
     res.send = function (data: any) {
       if (res.statusCode >= 200 && res.statusCode < 300) {
         const currentUser = req.user as { netId?: string; userType: string };
-        if (currentUser?.netId && req.body.favListings) {
-          const listings = Array.isArray(req.body.favListings)
-            ? req.body.favListings
-            : [req.body.favListings];
+        const favListings = req.body?.data?.favListings ?? req.body?.favListings;
+        if (currentUser?.netId && favListings) {
+          const listings = Array.isArray(favListings) ? favListings : [favListings];
 
           listings.forEach((listingId: string) => {
             logEvent({
@@ -30,6 +30,43 @@ const logFavoriteEvent = (isFavorite: boolean) => {
               userType: currentUser.userType,
               listingId: listingId,
             }).catch((err) => console.error('Error logging favorite event:', err));
+            emitResearchEvent({
+              eventType: AnalyticsEventType.PATHWAY_SAVE,
+              entityType: 'listing',
+              entityId: listingId,
+              user: currentUser,
+              payload: { action: isFavorite ? 'save' : 'unsave' },
+            }).catch((err) => console.error('Error logging pathway save event:', err));
+          });
+        }
+      }
+
+      return originalSend(data);
+    };
+
+    next();
+  };
+};
+
+const logFellowshipFavoriteEvent = (isFavorite: boolean) => {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    const originalSend = res.send.bind(res);
+
+    res.send = function (data: any) {
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        const currentUser = req.user as { netId?: string; userType: string };
+        const favFellowships = req.body?.data?.favFellowships ?? req.body?.favFellowships;
+        if (currentUser?.netId && favFellowships) {
+          const fellowships = Array.isArray(favFellowships) ? favFellowships : [favFellowships];
+
+          fellowships.forEach((fellowshipId: string) => {
+            emitResearchEvent({
+              eventType: AnalyticsEventType.PATHWAY_SAVE,
+              entityType: 'fellowship',
+              entityId: fellowshipId,
+              user: currentUser,
+              payload: { action: isFavorite ? 'save' : 'unsave' },
+            }).catch((err) => console.error('Error logging fellowship pathway save event:', err));
           });
         }
       }
@@ -76,8 +113,18 @@ router.delete(
 
 router.get('/favFellowshipIds', isAuthenticated, userController.getFavFellowshipIds);
 router.get('/favFellowships', isAuthenticated, userController.getFavFellowships);
-router.put('/favFellowships', isAuthenticated, userController.addFavFellowships);
-router.delete('/favFellowships', isAuthenticated, userController.removeFavFellowships);
+router.put(
+  '/favFellowships',
+  isAuthenticated,
+  logFellowshipFavoriteEvent(true),
+  userController.addFavFellowships,
+);
+router.delete(
+  '/favFellowships',
+  isAuthenticated,
+  logFellowshipFavoriteEvent(false),
+  userController.removeFavFellowships,
+);
 
 router.get('/listings', isAuthenticated, userController.getUserListings);
 router.put('/', isAuthenticated, logProfileUpdateEvent, userController.updateCurrentUser);

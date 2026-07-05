@@ -4,6 +4,7 @@
 import { useReducer, useEffect } from 'react';
 import { Publication } from '../../types/types';
 import axios from '../../utils/axios';
+import { trackResearchEvent } from '../../utils/researchAnalytics';
 import { safeUrl } from '../../utils/url';
 import {
   PublicationsSortField,
@@ -140,6 +141,17 @@ const PublicationsTable = ({ netid }: PublicationsTableProps) => {
                         href={`https://doi.org/${pub.doi}`}
                         target="_blank"
                         rel="noopener noreferrer"
+                        onClick={() =>
+                          trackResearchEvent({
+                            eventType: 'source_link_click',
+                            entityType: 'profile',
+                            entityId: netid,
+                            payload: {
+                              sourceCategory: 'publication',
+                              url: `https://doi.org/${pub.doi}`,
+                            },
+                          })
+                        }
                         className="flex-shrink-0 text-blue-500 hover:text-blue-700"
                         title="Open DOI"
                       >
@@ -165,6 +177,17 @@ const PublicationsTable = ({ netid }: PublicationsTableProps) => {
                         href={safeUrl(pub.open_access_url)}
                         target="_blank"
                         rel="noopener noreferrer"
+                        onClick={() => {
+                          const href = safeUrl(pub.open_access_url);
+                          if (href) {
+                            trackResearchEvent({
+                              eventType: 'source_link_click',
+                              entityType: 'profile',
+                              entityId: netid,
+                              payload: { sourceCategory: 'publication', url: href },
+                            });
+                          }
+                        }}
                         className="flex-shrink-0 text-green-500 hover:text-green-700"
                         title="Open Access"
                       >
