@@ -20,9 +20,29 @@ import {
 } from '../reducers/browsePageReducer';
 import { createListing } from '../utils/apiCleaner';
 
+export const getListingEmptyMessage = (params: {
+  queryString: string;
+  selectedDepartments: string[];
+  selectedResearchAreas: string[];
+  selectedListingResearchAreas: string[];
+  quickFilter: string | null;
+}) => {
+  const hasSearchCriteria =
+    params.queryString.trim() !== '' ||
+    params.selectedDepartments.length > 0 ||
+    params.selectedResearchAreas.length > 0 ||
+    params.selectedListingResearchAreas.length > 0 ||
+    Boolean(params.quickFilter);
+
+  return hasSearchCriteria
+    ? 'No labs match your current search or filters'
+    : 'No research labs are available right now';
+};
+
 const Home = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const {
+    queryString,
     listings,
     isLoading,
     error: searchError,
@@ -32,8 +52,11 @@ const Home = () => {
     setQuickFilter,
     refreshListings,
     setQueryString,
+    selectedDepartments,
     setSelectedDepartments,
+    selectedResearchAreas,
     setSelectedResearchAreas,
+    selectedListingResearchAreas,
     setSelectedListingResearchAreas,
   } = useContext(SearchContext);
 
@@ -134,6 +157,14 @@ const Home = () => {
     filteredCount: filteredListings.length,
     totalRawCount: listings.length,
     quickFilterActive: !!quickFilter,
+  });
+
+  const emptyMessage = getListingEmptyMessage({
+    queryString,
+    selectedDepartments,
+    selectedResearchAreas,
+    selectedListingResearchAreas,
+    quickFilter,
   });
 
   const updateFavorite = (listingId: string, favorite: boolean) => {
@@ -313,7 +344,7 @@ const Home = () => {
         emptyMessage={
           searchError
             ? 'Posted-role search is unavailable. Use Yale Research for source-backed routes.'
-            : 'No results match the search criteria'
+            : emptyMessage
         }
         onLoadMore={() => {
           if (!isLoading && !searchExhausted) {
