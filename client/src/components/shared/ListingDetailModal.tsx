@@ -7,7 +7,7 @@ import { Listing } from '../../types/types';
 import UserContext from '../../contexts/UserContext';
 import ConfigContext from '../../contexts/ConfigContext';
 import { getDepartmentAbbreviation } from '../../utils/departmentNames';
-import { ensureHttpPrefix, safeRouteSegment } from '../../utils/url';
+import { ensureHttpPrefix, safeRouteSegment, safeUrl } from '../../utils/url';
 import { getInstitutionAffiliation, getInstitutionLabel } from '../../utils/institutionAffiliation';
 import FavoriteButton from './FavoriteButton';
 
@@ -20,6 +20,146 @@ interface ListingDetailModalProps {
   onNavigateToResearchArea?: (area: string) => void;
   onNavigateToDepartment?: (dept: string) => void;
 }
+
+const getSafeEvidenceUrl = (url: unknown): string => {
+  const href = safeUrl(url);
+  if (!href) return '';
+  try {
+    const parsed = new URL(href);
+    if (!['http:', 'https:'].includes(parsed.protocol)) return '';
+    parsed.username = '';
+    parsed.password = '';
+    parsed.search = '';
+    parsed.hash = '';
+    return parsed.toString();
+  } catch {
+    return '';
+  }
+};
+
+const getEvidenceHost = (url: string): string => {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '');
+  } catch {
+    return '';
+  }
+};
+
+const formatEvidenceDate = (date?: string): string => {
+  if (!date) return '';
+  const parsed = new Date(date);
+  if (Number.isNaN(parsed.getTime())) return '';
+  return parsed.toLocaleDateString();
+};
+
+const EvidenceRail = ({ evidence }: { evidence: Listing['evidence'] }) => {
+  const status = evidence?.status || 'unavailable';
+  const sources = (evidence?.sources || [])
+    .map((source) => {
+      const href = getSafeEvidenceUrl(source.url);
+      return {
+        ...source,
+        href,
+        displayLabel: source.label || (href ? getEvidenceHost(href) : 'Source material'),
+      };
+    })
+    .filter((source) => source.displayLabel || source.href);
+  const verifiedDate = formatEvidenceDate(evidence?.lastVerifiedAt || evidence?.generatedAt);
+
+  return (
+    <section className="border border-gray-200 rounded-lg p-4 bg-gray-50/60">
+      <div className="flex items-start justify-between gap-3 mb-3">
+        <div>
+          <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Evidence</h3>
+          {verifiedDate && <p className="text-xs text-gray-400 mt-1">Verified {verifiedDate}</p>}
+        </div>
+        {typeof evidence?.confidence === 'number' && (
+          <span className="text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-md px-2 py-1">
+            {Math.round(evidence.confidence * 100)}%
+          </span>
+        )}
+      </div>
+
+      {status === 'loading' ? (
+        <p className="text-sm text-gray-500">Checking evidence metadata...</p>
+      ) : status === 'error' ? (
+        <p className="text-sm text-red-600">Evidence metadata could not be loaded.</p>
+      ) : (
+        <>
+          {evidence?.summary && (
+            <p className="text-sm text-gray-700 leading-relaxed mb-3">{evidence.summary}</p>
+          )}
+
+          {sources.length > 0 ? (
+            <div className="space-y-3">
+              {sources.map((source, index) => {
+                const checkedDate = formatEvidenceDate(source.lastCheckedAt);
+                const content = (
+                  <>
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium text-gray-800 truncate">
+                        {source.displayLabel}
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        {[
+                          source.sourceType,
+                          source.href ? getEvidenceHost(source.href) : '',
+                          checkedDate,
+                        ]
+                          .filter(Boolean)
+                          .join(' · ')}
+                      </div>
+                    </div>
+                    {source.href && (
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className="flex-shrink-0 text-gray-400"
+                        aria-hidden="true"
+                      >
+                        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                        <polyline points="15 3 21 3 21 9" />
+                        <line x1="10" y1="14" x2="21" y2="3" />
+                      </svg>
+                    )}
+                  </>
+                );
+
+                return source.href ? (
+                  <a
+                    key={`${source.displayLabel}-${index}`}
+                    href={source.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-start justify-between gap-2 rounded-md bg-white border border-gray-200 px-3 py-2 hover:border-blue-200 hover:text-blue-700 transition-colors"
+                  >
+                    {content}
+                  </a>
+                ) : (
+                  <div
+                    key={`${source.displayLabel}-${index}`}
+                    className="flex items-start justify-between gap-2 rounded-md bg-white border border-gray-200 px-3 py-2"
+                  >
+                    {content}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="text-sm text-gray-500">No source metadata available yet.</p>
+          )}
+        </>
+      )}
+    </section>
+  );
+};
 
 const ListingDetailModal = ({
   isOpen,
@@ -420,6 +560,8 @@ const ListingDetailModal = ({
                     </div>
                   </div>
                 </section>
+
+                <EvidenceRail evidence={listing.evidence} />
               </div>
 
               <div className="col-span-1 md:col-span-2 space-y-6">

@@ -25,6 +25,20 @@ const PUBLIC_LISTING_MUTATION_FILTER = {
   confirmed: true,
 };
 
+const prepareListingForMeili = (doc: any) => {
+  const id = serializedDocumentId(doc._id) || serializedDocumentId(doc.id);
+  if (!id) return null;
+
+  const meiliDoc = { ...doc, id };
+  delete meiliDoc._id;
+  delete meiliDoc.__v;
+  delete meiliDoc.embedding;
+  if (meiliDoc.evidence && typeof meiliDoc.evidence === 'object') {
+    delete meiliDoc.evidence.internalNotes;
+  }
+  return meiliDoc;
+};
+
 export function normalizeListingObjectId(value: unknown): string | undefined {
   const id =
     typeof value === 'string'
@@ -450,11 +464,8 @@ export const createListing = async (data: any, owner: any) => {
 
   try {
     const doc = listing.toObject();
-    const id = serializedDocumentId(doc._id) || serializedDocumentId(doc.id);
-    if (id) {
-      const meiliDoc = { ...doc, id };
-      delete meiliDoc._id;
-      delete meiliDoc.__v;
+    const meiliDoc = prepareListingForMeili(doc);
+    if (meiliDoc) {
       const index = await getMeiliIndex('listings');
       await index.addDocuments([meiliDoc]);
     }
@@ -651,11 +662,8 @@ export const updateListing = async (
 
     try {
       const doc = listing.toObject();
-      const id = serializedDocumentId(doc._id) || serializedDocumentId(doc.id);
-      if (id) {
-        const meiliDoc = { ...doc, id };
-        delete meiliDoc._id;
-        delete meiliDoc.__v;
+      const meiliDoc = prepareListingForMeili(doc);
+      if (meiliDoc) {
         const index = await getMeiliIndex('listings');
         await index.updateDocuments([meiliDoc]);
       }
