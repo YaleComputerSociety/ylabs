@@ -4,13 +4,14 @@
 import PulseLoader from 'react-spinners/PulseLoader';
 import styled from 'styled-components';
 import { useContext } from 'react';
+import Button from '@mui/material/Button';
 
 import SignInButton from '../components/SignInButton';
 import UserContext from '../contexts/UserContext';
 import { Navigate } from 'react-router-dom';
 
 const Login = () => {
-  const { isLoading, isAuthenticated, user } = useContext(UserContext);
+  const { isLoading, isAuthenticated, user, authError, checkContext } = useContext(UserContext);
 
   const getRedirectPath = () => {
     if (user?.userType === 'professor') {
@@ -45,6 +46,15 @@ const Login = () => {
           <PulseLoader color="#66CCFF" size={10} />
         ) : isAuthenticated ? (
           <Navigate to={getRedirectPath()} replace />
+        ) : authError ? (
+          <>
+            <AuthError role="status">
+              {authError} Check your connection and try again before signing in.
+            </AuthError>
+            <Button variant="outlined" onClick={checkContext}>
+              Retry Connection
+            </Button>
+          </>
         ) : (
           <SignInButton />
         )}
@@ -77,7 +87,6 @@ const Description = styled.div`
     padding: 0 15px;
   }
 `;
-
 
 const TitleText = styled.h1`
   color: #000000;
@@ -118,6 +127,18 @@ const AuthContainer = styled.div`
   @media (max-width: 768px) {
     margin-top: 20px;
   }
+`;
+
+const AuthError = styled.p`
+  width: 100%;
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  background: #eff6ff;
+  color: #1e3a8a;
+  font-size: 14px;
+  line-height: 1.45;
 `;
 
 export default Login;
