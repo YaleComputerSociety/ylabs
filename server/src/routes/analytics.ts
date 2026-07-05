@@ -3,6 +3,7 @@
  */
 import { Request, Response, Router } from 'express';
 import { isAuthenticated, isAdmin } from '../middleware/auth';
+import { asyncHandler } from '../middleware/errorHandler';
 import {
   AnalyticsSortDirection,
   AnalyticsUserSort,
@@ -49,39 +50,43 @@ router.use(setPrivateAnalyticsCacheHeaders);
 
 class AnalyticsRequestError extends Error {}
 
-router.post('/research', isAuthenticated, async (request: Request, response: Response) => {
-  const { eventType, entityType, entityId, payload } = request.body || {};
+router.post(
+  '/research',
+  isAuthenticated,
+  asyncHandler(async (request: Request, response: Response) => {
+    const { eventType, entityType, entityId, payload } = request.body || {};
 
-  if (!isResearchEventType(eventType)) {
-    return response.status(400).json({ error: 'Invalid research analytics eventType' });
-  }
+    if (!isResearchEventType(eventType)) {
+      return response.status(400).json({ error: 'Invalid research analytics eventType' });
+    }
 
-  if (!isResearchEntityType(entityType)) {
-    return response.status(400).json({ error: 'Invalid research analytics entityType' });
-  }
+    if (!isResearchEntityType(entityType)) {
+      return response.status(400).json({ error: 'Invalid research analytics entityType' });
+    }
 
-  if (typeof entityId !== 'string' || entityId.trim() === '') {
-    return response.status(400).json({ error: 'Invalid research analytics entityId' });
-  }
+    if (typeof entityId !== 'string' || entityId.trim() === '') {
+      return response.status(400).json({ error: 'Invalid research analytics entityId' });
+    }
 
-  if (!(await researchEntityExists(entityType, entityId))) {
-    return response.status(404).json({ error: 'Research analytics entity not found' });
-  }
+    if (!(await researchEntityExists(entityType, entityId))) {
+      return response.status(404).json({ error: 'Research analytics entity not found' });
+    }
 
-  const emitted = await emitResearchEvent({
-    eventType,
-    entityType,
-    entityId,
-    payload,
-    user: request.user as { netId?: string; userType?: string },
-  });
+    const emitted = await emitResearchEvent({
+      eventType,
+      entityType,
+      entityId,
+      payload,
+      user: request.user as { netId?: string; userType?: string },
+    });
 
-  if (!emitted) {
-    return response.status(400).json({ error: 'Unable to record research analytics event' });
-  }
+    if (!emitted) {
+      return response.status(400).json({ error: 'Unable to record research analytics event' });
+    }
 
-  return response.status(202).json({ ok: true });
-});
+    return response.status(202).json({ ok: true });
+  }),
+);
 
 const parseAnalyticsRange = (range: unknown): AnalyticsDateRange => {
   if (range === 'all') {
