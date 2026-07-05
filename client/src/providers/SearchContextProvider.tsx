@@ -14,8 +14,9 @@ import {
   useRef,
   useContext,
   ReactNode,
+  useState,
 } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import axios from '../utils/axios';
 import swal from 'sweetalert';
 
@@ -25,6 +26,10 @@ import { Listing } from '../types/types';
 import { createListing } from '../utils/apiCleaner';
 import { useConfig } from '../hooks/useConfig';
 import { searchReducer, createInitialSearchState } from '../reducers/searchReducer';
+import {
+  parsePublicResearchUrlState,
+  serializePublicResearchUrlState,
+} from '../utils/publicResearchUrlState';
 
 interface SearchContextProviderProps {
   children: ReactNode;
@@ -38,6 +43,7 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
 
   const { isAuthenticated, isLoading: authLoading } = useContext(UserContext);
   const location = useLocation();
+  const navigate = useNavigate();
   const isResearchRoute =
     location.pathname === '/research' || location.pathname.startsWith('/research/');
   const sortableKeys = isResearchRoute ? PUBLIC_RESEARCH_SORTABLE_KEYS : LISTING_SORTABLE_KEYS;
@@ -62,6 +68,7 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
   const [state, dispatch] = useReducer(searchReducer, undefined, () =>
     createInitialSearchState({ sortBy: sortableKeys[0] }),
   );
+  const [urlStateReady, setUrlStateReady] = useState(!isResearchRoute);
 
   const {
     queryString,
@@ -85,6 +92,7 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
   } = state;
   const queryStringLoadedRef = useRef(false);
   const departmentsLoadedRef = useRef(false);
+  const lastSerializedPublicResearchUrlRef = useRef<string | null>(null);
 
   // Context setter API preserved for compatibility with existing call sites
   // (some pass a value, some pass an updater function).
@@ -149,6 +157,25 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
     }
   }, [sortBy, sortableKeys]);
 
+  useEffect(() => {
+    if (!isResearchRoute) {
+      setUrlStateReady(true);
+      lastSerializedPublicResearchUrlRef.current = null;
+      return;
+    }
+
+    const urlState = parsePublicResearchUrlState(location.search);
+    lastSerializedPublicResearchUrlRef.current = location.search;
+    dispatch({
+      type: 'HYDRATE_SEARCH_STATE',
+      payload: {
+        ...urlState,
+        page: 1,
+      },
+    });
+    setUrlStateReady(true);
+  }, [isResearchRoute, location.search]);
+
   // Keep latest filter values in a ref so handleSearch can remain stable.
   const filtersRef = useRef({
     queryString,
@@ -172,6 +199,51 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
     sortBy,
     sortOrder,
   };
+
+  useEffect(() => {
+    if (!isResearchRoute || !urlStateReady) return;
+
+    const nextSearch = serializePublicResearchUrlState({
+      queryString,
+      selectedDepartments,
+      selectedResearchAreas,
+      selectedListingResearchAreas,
+      departmentsFilterMode,
+      researchAreasFilterMode,
+      listingResearchAreasFilterMode,
+      sortBy,
+      sortOrder,
+      sortDirection,
+      quickFilter,
+    });
+
+    if (
+      nextSearch === location.search ||
+      nextSearch === lastSerializedPublicResearchUrlRef.current
+    ) {
+      return;
+    }
+
+    lastSerializedPublicResearchUrlRef.current = nextSearch;
+    navigate({ pathname: location.pathname, search: nextSearch }, { replace: true });
+  }, [
+    isResearchRoute,
+    urlStateReady,
+    queryString,
+    selectedDepartments,
+    selectedResearchAreas,
+    selectedListingResearchAreas,
+    departmentsFilterMode,
+    researchAreasFilterMode,
+    listingResearchAreasFilterMode,
+    sortBy,
+    sortOrder,
+    sortDirection,
+    quickFilter,
+    location.pathname,
+    location.search,
+    navigate,
+  ]);
 
   const handleSearch = useCallback(
     (searchPage: number) => {
@@ -241,6 +313,7 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
 
   useEffect(() => {
     if (
+      urlStateReady &&
       configLoaded &&
       !authLoading &&
       (isAuthenticated || isResearchRoute) &&
@@ -252,6 +325,7 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
     }
   }, [
     configLoaded,
+    urlStateReady,
     authLoading,
     isAuthenticated,
     isResearchRoute,
@@ -260,7 +334,8 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
   ]);
 
   useEffect(() => {
-    if (!configLoaded || authLoading || (!isAuthenticated && !isResearchRoute)) return;
+    if (!urlStateReady || !configLoaded || authLoading || (!isAuthenticated && !isResearchRoute))
+      return;
 
     const debounceTimeout = setTimeout(() => {
       if (queryStringLoadedRef.current) {
@@ -274,10 +349,19 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
     return () => {
       clearTimeout(debounceTimeout);
     };
-  }, [queryString, configLoaded, authLoading, isAuthenticated, isResearchRoute, handleSearch]);
+  }, [
+    queryString,
+    configLoaded,
+    urlStateReady,
+    authLoading,
+    isAuthenticated,
+    isResearchRoute,
+    handleSearch,
+  ]);
 
   useEffect(() => {
-    if (!configLoaded || authLoading || (!isAuthenticated && !isResearchRoute)) return;
+    if (!urlStateReady || !configLoaded || authLoading || (!isAuthenticated && !isResearchRoute))
+      return;
 
     if (departmentsLoadedRef.current) {
       dispatch({ type: 'SET_PAGE', payload: 1 });
@@ -295,6 +379,7 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
     sortBy,
     sortOrder,
     configLoaded,
+    urlStateReady,
     authLoading,
     isAuthenticated,
     isResearchRoute,
@@ -302,10 +387,24 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
   ]);
 
   useEffect(() => {
-    if (page > 1 && configLoaded && !authLoading && (isAuthenticated || isResearchRoute)) {
+    if (
+      page > 1 &&
+      urlStateReady &&
+      configLoaded &&
+      !authLoading &&
+      (isAuthenticated || isResearchRoute)
+    ) {
       handleSearch(page);
     }
-  }, [page, configLoaded, authLoading, isAuthenticated, isResearchRoute, handleSearch]);
+  }, [
+    page,
+    urlStateReady,
+    configLoaded,
+    authLoading,
+    isAuthenticated,
+    isResearchRoute,
+    handleSearch,
+  ]);
 
   return (
     <SearchContext.Provider
