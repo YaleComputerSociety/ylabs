@@ -113,6 +113,29 @@ void describe('public research search inputs', () => {
     assert.equal(getPublicResearchSortBy('ownerEmail'), undefined);
     assert.equal(getPublicResearchSortBy('views'), undefined);
   });
+
+  void it('keeps public filter fields and modes in the search inputs', async () => {
+    const result = await buildPublicResearchSearchInputs({
+      query: 'genomics',
+      departments: 'Computer Science||Biology',
+      researchAreas: 'Genomics,Artificial Intelligence',
+      departmentsMode: 'intersection',
+      academicDisciplinesMode: 'union',
+      researchAreasMode: 'intersection',
+      sortBy: 'updatedAt',
+      sortOrder: '-1',
+      page: '3',
+      pageSize: '20',
+    });
+
+    assert.equal(result.page, 3);
+    assert.equal(result.pageSize, 20);
+    assert.deepEqual(result.searchParams.sort, ['updatedAt:desc']);
+    assert.equal(result.mongoParams.departments, 'Computer Science||Biology');
+    assert.equal(result.mongoParams.researchAreas, 'Genomics,Artificial Intelligence');
+    assert.equal(result.mongoParams.departmentsMode, 'intersection');
+    assert.equal(result.mongoParams.researchAreasMode, 'intersection');
+  });
 });
 
 void describe('public research outreach analytics inputs', () => {

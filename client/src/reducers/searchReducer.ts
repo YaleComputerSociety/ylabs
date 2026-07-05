@@ -56,6 +56,7 @@ export type SearchAction =
   | { type: 'SET_PAGE'; payload: number | ((prev: number) => number) }
   | { type: 'SET_QUICK_FILTER'; payload: string | null }
   | { type: 'SET_FILTER_BAR_HEIGHT'; payload: number }
+  | { type: 'HYDRATE_SEARCH_STATE'; payload: Partial<SearchState> }
   | { type: 'SEARCH_REQUEST' }
   | {
       type: 'SEARCH_SUCCESS';
@@ -92,6 +93,9 @@ export const createInitialSearchState = (overrides: Partial<SearchState> = {}): 
 
 const resolve = <T>(payload: T | ((prev: T) => T), prev: T): T =>
   typeof payload === 'function' ? (payload as (prev: T) => T)(prev) : payload;
+
+const arrayEqual = (left: string[], right: string[]) =>
+  left.length === right.length && left.every((value, index) => value === right[index]);
 
 export function searchReducer(state: SearchState, action: SearchAction): SearchState {
   switch (action.type) {
@@ -157,6 +161,29 @@ export function searchReducer(state: SearchState, action: SearchAction): SearchS
 
     case 'SET_FILTER_BAR_HEIGHT':
       return { ...state, filterBarHeight: action.payload };
+
+    case 'HYDRATE_SEARCH_STATE': {
+      const next = { ...state, ...action.payload };
+      if (
+        action.payload.selectedDepartments &&
+        arrayEqual(action.payload.selectedDepartments, state.selectedDepartments)
+      ) {
+        next.selectedDepartments = state.selectedDepartments;
+      }
+      if (
+        action.payload.selectedResearchAreas &&
+        arrayEqual(action.payload.selectedResearchAreas, state.selectedResearchAreas)
+      ) {
+        next.selectedResearchAreas = state.selectedResearchAreas;
+      }
+      if (
+        action.payload.selectedListingResearchAreas &&
+        arrayEqual(action.payload.selectedListingResearchAreas, state.selectedListingResearchAreas)
+      ) {
+        next.selectedListingResearchAreas = state.selectedListingResearchAreas;
+      }
+      return next;
+    }
 
     case 'SEARCH_REQUEST':
       return { ...state, isLoading: true };

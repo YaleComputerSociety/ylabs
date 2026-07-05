@@ -209,12 +209,12 @@ Search uses **Meilisearch** with keyword search and hybrid mode (80% semantic, 2
 Logged-out visitors use the public research discovery path instead:
 
 - Client routes `/research` and `/research/:slug` render the listings browse page without the `PrivateRoute` guard.
+- The client mirrors public research search state into shareable URLs and restores it on page load and browser back/forward navigation. URL-backed state includes `query`, `departments`, `academicDisciplines`, `researchAreas`, the three `*Mode` filter operators, `sortBy`, `sortOrder`, and the client-only `quickFilter`.
+- Opening a public card preserves the current search params on `/research/:slug`; closing the modal returns to `/research` with the same params.
 - The client sends public browse requests to `/api/research` and public detail requests to `/api/research/:slug`.
 - Public responses include only confirmed, unarchived listings and redact contact/private fields such as owner email, additional emails, owner/professor IDs, view counts, favorites, and audit fields.
 - Authenticated users opening a public detail modal also request `/api/research/:slug/contact` to load the full listing, including contact fields.
-- Revealing contact fields logs an `outreach_contact_reveal` analytics event with the listing, user, email channel, source, and contact count, but not the raw email addresses.
-- Authenticated email clicks in the public detail modal post to `/api/research/:slug/outreach` with `action: "email_click"`; the follow-up outcome prompt posts `action: "outcome"` with one of `emailed`, `will_contact_later`, or `not_a_fit`. These events store only privacy-safe metadata and never store contact addresses.
-- Public research search only allows `createdAt` and `updatedAt` sort fields and searches a contact-redacted field set.
+- Public research search accepts the same public facet params used by the URL (`departments`, `academicDisciplines`, `researchAreas`, and `union`/`intersection` modes), only allows `createdAt` and `updatedAt` sort fields, rejects unknown query params, and searches a contact-redacted field set.
 
 Listing CRUD in `listingService.ts` automatically syncs to Meilisearch after MongoDB writes.
 
