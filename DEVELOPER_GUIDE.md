@@ -178,7 +178,7 @@ ylabs/
 │       ├── providers/        # Context providers with data fetching
 │       ├── hooks/            # Custom hooks
 │       ├── types/            # TypeScript interfaces
-│       └── utils/            # Helpers, axios instance, MUI theme, error tracking
+│       └── utils/            # Helpers, axios instance, MUI theme, error tracking, SEO metadata
 ├── server/                   # Express backend (port 4000)
 │   └── src/
 │       ├── index.ts          # Server entry point
@@ -190,7 +190,7 @@ ylabs/
 │       ├── models/           # Mongoose schemas
 │       ├── middleware/        # Auth guards, validation, error handling
 │       ├── db/               # Database connections
-│       └── utils/            # smartTitle, errors, environment, meiliClient, error tracking
+│       └── utils/            # smartTitle, errors, environment, meiliClient, error tracking, public research SEO
 └── data-migration/           # Standalone migration scripts
 ```
 
@@ -215,6 +215,13 @@ Logged-out visitors use the public research discovery path instead:
 - Public responses include only confirmed, unarchived listings and redact contact/private fields such as owner email, additional emails, owner/professor IDs, view counts, favorites, and audit fields. They retain sanitized evidence metadata so the detail modal can show why a listing appears and which public sources support it.
 - Authenticated users opening a public detail modal also request `/api/research/:slug/contact` to load the full listing, including contact fields. Evidence metadata on this response is still sanitized through the public evidence allowlist.
 - Public research search only allows `createdAt` and `updatedAt` sort fields and searches a contact-redacted field set.
+
+Public research share URLs also receive SEO/social metadata:
+
+- The built client shell contains a generic metadata block in `client/index.html` bounded by `YL_SEO_META_START` and `YL_SEO_META_END`.
+- In production-style server rendering, Express serves `/research` and `/research/:slug` outside `/api`, loads the built `index.html`, and replaces that block with canonical, description, Open Graph, and Twitter card metadata from `server/src/utils/publicResearchSeo.ts`.
+- Listing metadata is built only from the confirmed, unarchived listing after `redactPublicListing()` has removed private fields. If a listing cannot be loaded, the server falls back to generic YaleLabs Research metadata.
+- During Vite development or static-only hosting, `client/src/utils/seo.ts` applies the same metadata after React loads and restores the default site metadata when leaving public research routes.
 
 Listing detail modals render an evidence rail for listings, including an empty state when source metadata is unavailable. The public evidence payload supports `status`, `summary`, `confidence`, `generatedAt`, `lastVerifiedAt`, and up to eight sources with `label`, `url`, `sourceType`, `description`, and `lastCheckedAt`. Loading and error states are handled in the same rail. Public source URLs are limited to `http`/`https`; credentials, query strings, and fragments are removed before they are returned by the API or rendered by the client.
 
@@ -287,6 +294,8 @@ All mount under `/api`.
 | `/admin`          | Admin operations                                             | Admin                                            |
 | `/seed`           | Dev seeding routes                                           | Dev mode only                                    |
 
+The public HTML routes `/research` and `/research/:slug` are mounted separately in `server/src/app.ts` after static assets so shared research URLs can receive crawler-visible metadata before the SPA hydrates.
+
 ---
 
 ## Testing
@@ -305,13 +314,15 @@ yarn test                 # focused middleware and utility coverage
 yarn test:search-degrade  # listing-search fallback coverage
 ```
 
-Client tests are discovered from `client/src/**/*.{test,spec}.{ts,tsx}`. Server Vitest coverage currently includes error handling and error tracking utilities.
+Client tests are discovered from `client/src/**/*.{test,spec}.{ts,tsx}`. Server Vitest coverage currently includes error handling, error tracking, and public research SEO utilities.
 
 ### What is tested
 
 Pure reducer modules under [client/src/reducers/](client/src/reducers/) have unit-test coverage in [client/src/reducers/**tests**/](client/src/reducers/__tests__/). Each reducer file has a matching `*.test.ts`. The reducers back the auth, search, fellowship-search, config, listing-form, and account-tracking (kanban/notes) flows — extracting state transitions from providers/components into pure functions makes them testable without mounting React or mocking network.
 
 Focused component accessibility coverage also exists for the research discovery/listing flows: [BrowseGrid.a11y.test.tsx](client/src/components/shared/__tests__/BrowseGrid.a11y.test.tsx) verifies keyboard-openable browse cards/list rows and separate favorite controls, [ListingDetailModal.public.test.tsx](client/src/components/shared/__tests__/ListingDetailModal.public.test.tsx) covers the public listing dialog name, Escape close behavior, focus trapping/restoration, and redacted contact actions, and [ResearchAreaInput.a11y.test.tsx](client/src/components/accounts/ListingForm/FormFields/__tests__/ResearchAreaInput.a11y.test.tsx) covers the listing-form research-area field selector dialog focus behavior.
+
+Public research SEO coverage lives in [client/src/utils/__tests__/seo.test.ts](client/src/utils/__tests__/seo.test.ts), [client/src/pages/__tests__/home.publicResearch.test.tsx](client/src/pages/__tests__/home.publicResearch.test.tsx), and [server/src/utils/__tests__/publicResearchSeo.test.ts](server/src/utils/__tests__/publicResearchSeo.test.ts). These tests cover public-safe metadata construction, client head updates/restoration, and server injection into the built SPA shell.
 
 When adding a new reducer:
 
