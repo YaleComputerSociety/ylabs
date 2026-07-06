@@ -311,8 +311,6 @@ Client tests are discovered from `client/src/**/*.{test,spec}.{ts,tsx}`. Server 
 
 Pure reducer modules under [client/src/reducers/](client/src/reducers/) have unit-test coverage in [client/src/reducers/**tests**/](client/src/reducers/__tests__/). Each reducer file has a matching `*.test.ts`. The reducers back the auth, search, fellowship-search, config, listing-form, and account-tracking (kanban/notes) flows — extracting state transitions from providers/components into pure functions makes them testable without mounting React or mocking network.
 
-Focused component accessibility coverage also exists for the research discovery/listing flows: [BrowseGrid.a11y.test.tsx](client/src/components/shared/__tests__/BrowseGrid.a11y.test.tsx) verifies keyboard-openable browse cards/list rows and separate favorite controls, [ListingDetailModal.public.test.tsx](client/src/components/shared/__tests__/ListingDetailModal.public.test.tsx) covers the public listing dialog name, Escape close behavior, focus trapping/restoration, and redacted contact actions, and [ResearchAreaInput.a11y.test.tsx](client/src/components/accounts/ListingForm/FormFields/__tests__/ResearchAreaInput.a11y.test.tsx) covers the listing-form research-area field selector dialog focus behavior.
-
 When adding a new reducer:
 
 1. Place the reducer in [client/src/reducers/](client/src/reducers/) with an exported `createInitial<Name>State()` factory.

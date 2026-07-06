@@ -45,84 +45,13 @@ const FieldSelectorModal = ({
   onClose,
   onSelectField,
 }: FieldSelectorModalProps) => {
-  const dialogRef = useRef<HTMLDivElement>(null);
-  const previouslyFocusedElement = useRef<HTMLElement | null>(null);
-
-  const getFocusableElements = () => {
-    if (!dialogRef.current) return [];
-    return Array.from(
-      dialogRef.current.querySelectorAll<HTMLElement>(
-        'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])',
-      ),
-    ).filter(
-      (element) =>
-        !element.hasAttribute('disabled') &&
-        element.getAttribute('aria-hidden') !== 'true' &&
-        element.tabIndex !== -1,
-    );
-  };
-
-  useEffect(() => {
-    if (!isOpen) return;
-
-    previouslyFocusedElement.current = document.activeElement as HTMLElement | null;
-    const focusableElements = getFocusableElements();
-    (focusableElements[0] || dialogRef.current)?.focus();
-
-    return () => {
-      previouslyFocusedElement.current?.focus?.();
-    };
-  }, [isOpen]);
-
-  const handleDialogKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    if (e.key === 'Escape') {
-      e.stopPropagation();
-      onClose();
-      return;
-    }
-
-    if (e.key !== 'Tab') return;
-
-    const focusableElements = getFocusableElements();
-    if (focusableElements.length === 0) {
-      e.preventDefault();
-      dialogRef.current?.focus();
-      return;
-    }
-
-    const firstElement = focusableElements[0];
-    const lastElement = focusableElements[focusableElements.length - 1];
-    const activeElement = document.activeElement;
-
-    if (e.shiftKey && (activeElement === firstElement || activeElement === dialogRef.current)) {
-      e.preventDefault();
-      lastElement.focus();
-    } else if (
-      !e.shiftKey &&
-      (activeElement === lastElement || activeElement === dialogRef.current)
-    ) {
-      e.preventDefault();
-      firstElement.focus();
-    }
-  };
-
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999]">
-      <div
-        ref={dialogRef}
-        className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 overflow-hidden"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="research-area-field-title"
-        tabIndex={-1}
-        onKeyDown={handleDialogKeyDown}
-      >
+      <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 overflow-hidden">
         <div className="p-4 border-b border-gray-200">
-          <h3 id="research-area-field-title" className="text-lg font-semibold text-gray-900">
-            Add New Research Area
-          </h3>
+          <h3 className="text-lg font-semibold text-gray-900">Add New Research Area</h3>
           <p className="text-sm text-gray-600 mt-1">
             Select a field for "<span className="font-medium">{newAreaName}</span>"
           </p>
@@ -169,15 +98,16 @@ const ResearchAreaInput = ({
   onRemoveResearchArea,
   error,
 }: ResearchAreaInputProps) => {
-  const [state, dispatch] = useReducer(researchAreaInputReducer, undefined, () =>
-    createInitialResearchAreaInputState(),
+  const [state, dispatch] = useReducer(
+    researchAreaInputReducer,
+    undefined,
+    () => createInitialResearchAreaInputState(),
   );
   const { isDropdownOpen, searchTerm, focusedIndex, isModalOpen, pendingNewArea, isLoading } =
     state;
 
   const dropdownRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const inputId = 'listing-research-areas-input';
 
   const {
     researchAreas: allConfigAreas,
@@ -297,9 +227,7 @@ const ResearchAreaInput = ({
   if (configLoading) {
     return (
       <div className="mb-4">
-        <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor={inputId}>
-          Research Areas
-        </label>
+        <label className="block text-gray-700 text-sm font-bold mb-2">Research Areas</label>
         <div className="animate-pulse bg-gray-200 h-10 rounded"></div>
       </div>
     );
@@ -307,13 +235,10 @@ const ResearchAreaInput = ({
 
   return (
     <div className="mb-4" ref={dropdownRef}>
-      <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor={inputId}>
-        Research Areas
-      </label>
+      <label className="block text-gray-700 text-sm font-bold mb-2">Research Areas</label>
       <div className="relative">
         <div className="relative">
           <input
-            id={inputId}
             ref={inputRef}
             type="text"
             value={searchTerm}
@@ -350,8 +275,7 @@ const ResearchAreaInput = ({
             className="shadow appearance-none border rounded w-full py-2 px-3 pr-10 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500"
             placeholder="Search research areas..."
           />
-          <button
-            type="button"
+          <div
             className="absolute inset-y-0 right-0 flex items-center px-2 text-gray-700 cursor-pointer"
             onClick={() => {
               if (isDropdownOpen) {
@@ -371,17 +295,15 @@ const ResearchAreaInput = ({
                 }
               }
             }}
-            aria-label="Toggle research area options"
           >
             <svg
-              aria-hidden="true"
               className="fill-current h-4 w-4"
               xmlns="http://www.w3.org/2000/svg"
               viewBox="0 0 20 20"
             >
               <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" />
             </svg>
-          </button>
+          </div>
         </div>
 
         {isDropdownOpen && searchTerm.trim() && (
@@ -423,7 +345,6 @@ const ResearchAreaInput = ({
                 >
                   <div className="flex items-center text-blue-600">
                     <svg
-                      aria-hidden="true"
                       className="w-4 h-4 mr-2"
                       fill="none"
                       stroke="currentColor"
@@ -469,7 +390,6 @@ const ResearchAreaInput = ({
                   type="button"
                   onClick={() => onRemoveResearchArea(index)}
                   className="ml-2 text-gray-500 hover:text-gray-700"
-                  aria-label={`Remove ${area}`}
                 >
                   ×
                 </button>

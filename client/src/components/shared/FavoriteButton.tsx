@@ -12,13 +12,12 @@ interface FavoriteButtonProps {
 const FavoriteButton = React.memo(({ isFavorite, onToggle, size = 16 }: FavoriteButtonProps) => (
   <button
     onClick={onToggle}
-    className={`p-1 rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 ${
-      isFavorite ? 'text-blue-600' : 'text-gray-500 hover:text-blue-600'
+    className={`p-1 rounded-full transition-colors ${
+      isFavorite ? 'text-blue-600' : 'text-gray-300 hover:text-blue-600'
     }`}
     aria-label={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
   >
     <svg
-      aria-hidden="true"
       xmlns="http://www.w3.org/2000/svg"
       width={size}
       height={size}
