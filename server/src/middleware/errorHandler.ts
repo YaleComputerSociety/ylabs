@@ -6,6 +6,7 @@ import { NotFoundError, ObjectIdError, IncorrectPermissionsError } from '../util
 import { sanitizeErrorForLog } from '../utils/logSanitizer';
 import { requiresDeployedRuntimeSecurity } from '../utils/environment';
 import { triggerReconnect } from '../db/connections';
+import { captureServerError } from '../utils/errorTracking';
 
 const clientErrorStatus = (error: Error): number | null => {
   const status = (error as any).status ?? (error as any).statusCode;
@@ -80,6 +81,7 @@ export const errorHandler = (error: Error, req: Request, res: Response, next: Ne
     return res.status(503).json({ error: 'Service temporarily unavailable' });
   }
 
+  captureServerError(error, req);
   res.status(500).json({
     error: 'Internal server error',
     message: undefined,
