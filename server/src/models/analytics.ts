@@ -29,6 +29,7 @@ export enum AnalyticsEventType {
   WAYS_IN_CLICK = 'ways_in_click',
   CONTACT_ROUTE_CLICK = 'contact_route_click',
   SOURCE_LINK_CLICK = 'source_link_click',
+  OUTREACH_CONTACT_REVEAL = 'outreach_contact_reveal',
   OUTREACH_CONTACT_ATTEMPT = 'outreach_contact_attempt',
 }
 
