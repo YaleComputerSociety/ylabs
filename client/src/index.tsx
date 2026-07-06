@@ -8,6 +8,10 @@ import './index.css';
 import App from './App';
 import reportWebVitals from './reportWebVitals';
 import UserContextProvider from './providers/UserContextProvider';
+import ErrorBoundary from './components/ErrorBoundary';
+import { initializeErrorTracking } from './utils/errorTracking';
+
+initializeErrorTracking();
 
 const AgentationToolbar = import.meta.env.DEV
   ? React.lazy(async () => {
@@ -26,14 +30,16 @@ const root = createRoot(container);
 
 root.render(
   <React.StrictMode>
-    <UserContextProvider>
-      <App />
-      {AgentationToolbar ? (
-        <Suspense fallback={null}>
-          <AgentationToolbar />
-        </Suspense>
-      ) : null}
-    </UserContextProvider>
+    <ErrorBoundary>
+      <UserContextProvider>
+        <App />
+        {AgentationToolbar ? (
+          <Suspense fallback={null}>
+            <AgentationToolbar />
+          </Suspense>
+        ) : null}
+      </UserContextProvider>
+    </ErrorBoundary>
   </React.StrictMode>,
 );
 
