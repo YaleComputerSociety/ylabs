@@ -15,7 +15,7 @@ Y/Labs is a **Yale research lab discovery platform**. Visitors can browse public
 ```
 React (Vite) → Express (Passport.js) → MongoDB Atlas + Meilisearch
                     ↓
-            External APIs: Yale CAS, Yalies, Yale Directory, CourseTable, OpenAI (via Meilisearch), Sentry
+            External APIs: Yale CAS, Yalies, Yale Directory, CourseTable, OpenAI (via Meilisearch)
 ```
 
 The server follows: **Routes → Middleware → Controllers → Services → Models**
@@ -28,7 +28,6 @@ The server follows: **Routes → Middleware → Controllers → Services → Mod
 | Server          | Express 4, TypeScript, Passport.js (CAS strategy), Mongoose 8                            |
 | Search          | Meilisearch (hybrid search: keyword + semantic via OpenAI `text-embedding-3-small`)      |
 | Database        | MongoDB Atlas (single cluster, separate databases per environment)                       |
-| Error Tracking  | Sentry for client and server runtime exception reporting                                 |
 | Package Manager | Yarn 4 via Corepack                                                                      |
 
 ---
@@ -77,14 +76,12 @@ Your local `.env` should point to:
 - `MEILISEARCH_HOST` → `http://localhost:7700`
 - `MEILISEARCH_API_KEY` → your local master key (e.g., `testkey`)
 - No `MEILISEARCH_INDEX_PREFIX` (local uses bare `listings` index)
-- Leave `SENTRY_DSN` unset unless you want to test server-side error reporting locally
 
 For the client:
 
 ```bash
 # client/.env
 VITE_APP_SERVER=http://localhost:4000
-# Optional: VITE_SENTRY_DSN=...
 ```
 
 ### 3. Start local Meilisearch
@@ -144,7 +141,6 @@ If the client cannot reach the auth endpoint, `/login` shows an inline retry sta
 | `yarn clean:all`                        | Remove all node_modules                          |
 | `yarn --cwd client test`                | Run Vitest in watch mode                         |
 | `yarn --cwd client test:ci`             | Run Vitest once (used by CI)                     |
-| `yarn --cwd server test`                | Run server Vitest tests once                     |
 | `yarn --cwd server test:search-degrade` | Run the focused listing-search degradation tests |
 
 ### Migration Scripts
@@ -178,7 +174,7 @@ ylabs/
 │       ├── providers/        # Context providers with data fetching
 │       ├── hooks/            # Custom hooks
 │       ├── types/            # TypeScript interfaces
-│       └── utils/            # Helpers, axios instance, MUI theme, error tracking
+│       └── utils/            # Helpers, axios instance, MUI theme
 ├── server/                   # Express backend (port 4000)
 │   └── src/
 │       ├── index.ts          # Server entry point
@@ -190,7 +186,7 @@ ylabs/
 │       ├── models/           # Mongoose schemas
 │       ├── middleware/        # Auth guards, validation, error handling
 │       ├── db/               # Database connections
-│       └── utils/            # smartTitle, errors, environment, meiliClient, error tracking
+│       └── utils/            # smartTitle, errors, environment, meiliClient
 └── data-migration/           # Standalone migration scripts
 ```
 
@@ -250,14 +246,6 @@ Client auth state is owned by `UserContextProvider` and `userReducer`. Failed au
 
 ---
 
-## Error Handling
-
-The client root is wrapped in `ErrorBoundary`, which shows a recovery screen for unexpected render errors and reports them through `client/src/utils/errorTracking.ts` when `VITE_SENTRY_DSN` is configured.
-
-The server initializes Sentry from `server/src/utils/errorTracking.ts` during startup when `SENTRY_DSN` is configured. Startup failures and 500-level errors handled by `server/src/middleware/errorHandler.ts` are captured with environment and release tags when provided.
-
----
-
 ## API Routes
 
 All mount under `/api`.
@@ -279,7 +267,7 @@ All mount under `/api`.
 
 ## Testing
 
-Client-side tests run under **Vitest 3** with a `jsdom` environment. Configuration lives in the `test` block of [client/vite.config.js](client/vite.config.js), and [client/src/setupTests.ts](client/src/setupTests.ts) loads shared Testing Library matchers. The server uses Vitest for focused middleware and utility tests, plus a focused Node test script for listing-search degradation, but no general server-side test suite is wired into CI.
+Client-side tests run under **Vitest 3** with a `jsdom` environment. Configuration lives in the `test` block of [client/vite.config.js](client/vite.config.js). The server has a focused Node test script for listing-search degradation, but no general server-side test suite is wired into CI.
 
 ### Running tests
 
@@ -289,11 +277,10 @@ yarn test        # watch mode — reruns on file changes
 yarn test:ci     # single run — used by CI
 
 cd ../server
-yarn test                 # focused middleware and utility coverage
 yarn test:search-degrade  # listing-search fallback coverage
 ```
 
-Client tests are discovered from `client/src/**/*.{test,spec}.{ts,tsx}`. Server Vitest coverage currently includes error handling and error tracking utilities.
+Tests are discovered from `client/src/**/*.{test,spec}.{ts,tsx}`.
 
 ### What is tested
 

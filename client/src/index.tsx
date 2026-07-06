@@ -8,10 +8,6 @@ import './index.css';
 import App from './App';
 import reportWebVitals from './reportWebVitals';
 import UserContextProvider from './providers/UserContextProvider';
-import ErrorBoundary from './components/ErrorBoundary';
-import { initializeErrorTracking } from './utils/errorTracking';
-
-initializeErrorTracking();
 
 const container = document.getElementById('root');
 
@@ -23,11 +19,9 @@ const root = createRoot(container);
 
 root.render(
   <React.StrictMode>
-    <ErrorBoundary>
-      <UserContextProvider>
-        <App />
-      </UserContextProvider>
-    </ErrorBoundary>
+    <UserContextProvider>
+      <App />
+    </UserContextProvider>
   </React.StrictMode>,
 );
 
