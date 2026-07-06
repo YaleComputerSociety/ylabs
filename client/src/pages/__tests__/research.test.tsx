@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { StrictMode } from 'react';
-import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import Research, { __resetResearchPageSnapshotForTests } from '../research';
@@ -177,6 +177,11 @@ const BackButton = () => {
       Back to research
     </button>
   );
+};
+
+const LocationDisplay = () => {
+  const location = useLocation();
+  return <div data-testid="location">{`${location.pathname}${location.search}`}</div>;
 };
 
 const renderResearchWithDetailRoute = () =>
@@ -436,6 +441,84 @@ describe('Research page', () => {
       }),
       expect.any(Object),
     );
+  });
+
+  it('restores a shared query from the research URL', async () => {
+    mockSearchResponses((url, body) => {
+      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
+      return researchSearchResponse(
+        body.q === 'ancient DNA'
+          ? [
+              {
+                ...researchEntity,
+                _id: 'ancient-dna-1',
+                slug: 'ancient-dna-example',
+                name: 'Ancient DNA Example',
+                displayName: 'Ancient DNA Example',
+                researchAreas: ['Ancient DNA'],
+              },
+            ]
+          : [],
+      );
+    });
+
+    renderResearch(departments, ['/research?q=ancient%20DNA']);
+
+    await screen.findByRole('heading', { name: 'Ancient DNA Example' });
+    expect((screen.getByLabelText('Search Yale research') as HTMLInputElement).value).toBe(
+      'ancient DNA',
+    );
+    expect(mockedAxios.post).toHaveBeenLastCalledWith(
+      '/research/search',
+      expect.objectContaining({
+        q: 'ancient DNA',
+        filters: {},
+      }),
+      expect.any(Object),
+    );
+  });
+
+  it('writes submitted research searches into a shareable URL', async () => {
+    mockSearchResponses((url, body) => {
+      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
+      return researchSearchResponse(
+        body.q === 'quantum materials'
+          ? [
+              {
+                ...researchEntity,
+                _id: 'quantum-materials-1',
+                slug: 'quantum-materials-example',
+                name: 'Quantum Materials Example',
+                displayName: 'Quantum Materials Example',
+                researchAreas: ['Quantum materials'],
+              },
+            ]
+          : [],
+      );
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/research']}>
+        <ConfigContext.Provider
+          value={{
+            ...defaultConfigContext,
+            isLoading: false,
+            isLoaded: true,
+            departments,
+            departmentCategories: ['Computing & AI', 'Humanities & Arts', 'Life Sciences'],
+          }}
+        >
+          <LocationDisplay />
+          <Research />
+        </ConfigContext.Provider>
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('Try a starting point');
+    fireEvent.click(screen.getByRole('button', { name: 'Quantum materials' }));
+
+    await screen.findByRole('heading', { name: 'Quantum Materials Example' });
+    expect(screen.getByTestId('location').textContent).toBe('/research?q=quantum+materials');
   });
 
   it('returns to default research homes when clearing a quick-start search', async () => {
