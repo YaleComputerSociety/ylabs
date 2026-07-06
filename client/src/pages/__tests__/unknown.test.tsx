@@ -35,6 +35,9 @@ describe('Unknown', () => {
 
     expect(screen.getByRole('listbox', { name: 'Role at Yale options' })).toBeTruthy();
     expect(screen.getByRole('option', { name: 'Undergraduate Student' })).toBeTruthy();
+    expect(screen.getByRole('option', { name: 'Graduate Student' })).toBeTruthy();
+    expect(screen.getByRole('option', { name: 'Professor' })).toBeTruthy();
+    expect(screen.getByRole('option', { name: 'Faculty' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Continue to Yale Research' })).toBeTruthy();
     expect(screen.queryByText(/Yale Labs/i)).toBeNull();
   });
