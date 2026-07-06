@@ -59,6 +59,14 @@ export type ProfileEditorAction =
 const resolve = <T>(payload: T | ((prev: T) => T), prev: T): T =>
   typeof payload === 'function' ? (payload as (prev: T) => T)(prev) : payload;
 
+const PRIMARY_DEPT_REQUIRED = 'Primary Department is required.';
+const RESEARCH_INTEREST_REQUIRED = 'At least one Research Interest is required.';
+
+const withoutValidationError = (
+  validationErrors: string[],
+  errorToClear: string,
+): string[] => validationErrors.filter((error) => error !== errorToClear);
+
 export const createInitialProfileEditorState = (
   overrides: Partial<ProfileEditorState> = {},
 ): ProfileEditorState => ({
@@ -106,18 +114,33 @@ export function profileEditorReducer(
     case 'SET_IMAGE_URL':
       return { ...state, imageUrl: action.payload };
     case 'SET_PRIMARY_DEPT':
-      return { ...state, primaryDept: action.payload };
+      return {
+        ...state,
+        primaryDept: action.payload,
+        validationErrors: action.payload.trim()
+          ? withoutValidationError(state.validationErrors, PRIMARY_DEPT_REQUIRED)
+          : state.validationErrors,
+      };
     case 'CLEAR_PRIMARY_DEPT':
       return { ...state, primaryDept: '', primaryDeptSearch: '' };
     case 'SET_SECONDARY_DEPTS':
       return { ...state, secondaryDepts: resolve(action.payload, state.secondaryDepts) };
-    case 'SET_RESEARCH_INTERESTS':
-      return { ...state, researchInterests: resolve(action.payload, state.researchInterests) };
+    case 'SET_RESEARCH_INTERESTS': {
+      const researchInterests = resolve(action.payload, state.researchInterests);
+      return {
+        ...state,
+        researchInterests,
+        validationErrors:
+          researchInterests.length > 0
+            ? withoutValidationError(state.validationErrors, RESEARCH_INTEREST_REQUIRED)
+            : state.validationErrors,
+      };
+    }
 
     case 'SET_PRIMARY_DEPT_SEARCH':
       return { ...state, primaryDeptSearch: action.payload, focusedPrimaryIndex: -1 };
     case 'OPEN_PRIMARY_DROPDOWN':
-      return { ...state, isPrimaryDropdownOpen: true, primaryDeptSearch: '' };
+      return { ...state, isPrimaryDropdownOpen: true, primaryDeptSearch: state.primaryDept };
     case 'CLOSE_PRIMARY_DROPDOWN':
       return {
         ...state,
@@ -134,6 +157,7 @@ export function profileEditorReducer(
       return {
         ...state,
         primaryDept: action.payload,
+        validationErrors: withoutValidationError(state.validationErrors, PRIMARY_DEPT_REQUIRED),
         isPrimaryDropdownOpen: false,
         primaryDeptSearch: '',
         focusedPrimaryIndex: -1,

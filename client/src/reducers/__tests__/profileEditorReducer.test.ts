@@ -5,10 +5,10 @@ import { createInitialProfileEditorState, profileEditorReducer } from '../profil
 
 const makeProfile = (overrides: Partial<FacultyProfile> = {}): FacultyProfile =>
   ({
-    netid: 'abc123',
-    fname: 'Ada',
-    lname: 'Lovelace',
-    email: 'ada@yale.edu',
+    netid: 'fixture-profile',
+    fname: 'Test',
+    lname: 'Person',
+    email: 'profile@example.test',
     secondary_departments: [],
     departments: [],
     profile_urls: {},
@@ -17,7 +17,7 @@ const makeProfile = (overrides: Partial<FacultyProfile> = {}): FacultyProfile =>
     topics: [],
     bio: 'A short bio',
     primary_department: 'Computer Science',
-    image_url: 'https://example.com/avatar.png',
+    image_url: 'https://profile.example.test/avatar.png',
     profileVerified: true,
     ...overrides,
   }) as unknown as FacultyProfile;
@@ -44,7 +44,7 @@ describe('profileEditorReducer', () => {
           primary_department: 'CS',
           secondary_departments: ['Math'],
           research_interests: ['AI'],
-          image_url: 'https://img',
+          image_url: 'https://image.example.test/avatar',
         }),
       });
       expect(next.loading).toBe(false);
@@ -52,7 +52,7 @@ describe('profileEditorReducer', () => {
       expect(next.primaryDept).toBe('CS');
       expect(next.secondaryDepts).toEqual(['Math']);
       expect(next.researchInterests).toEqual(['AI']);
-      expect(next.imageUrl).toBe('https://img');
+      expect(next.imageUrl).toBe('https://image.example.test/avatar');
     });
 
     it('opens edit mode automatically for unverified profiles', () => {
@@ -109,6 +109,26 @@ describe('profileEditorReducer', () => {
         payload: (prev) => [...prev, 'ML'],
       });
       expect(next.researchInterests).toEqual(['AI', 'ML']);
+    });
+
+    it('clears resolved validation errors as required fields are repaired', () => {
+      const state = createInitialProfileEditorState({
+        validationErrors: [
+          'Primary Department is required.',
+          'At least one Research Interest is required.',
+        ],
+      });
+      const withDept = profileEditorReducer(state, {
+        type: 'SET_PRIMARY_DEPT',
+        payload: 'Computer Science',
+      });
+      expect(withDept.validationErrors).toEqual(['At least one Research Interest is required.']);
+
+      const withInterest = profileEditorReducer(withDept, {
+        type: 'SET_RESEARCH_INTERESTS',
+        payload: ['Machine Learning'],
+      });
+      expect(withInterest.validationErrors).toEqual([]);
     });
 
     it('CLEAR_PRIMARY_DEPT empties both dept and search', () => {

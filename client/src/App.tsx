@@ -4,9 +4,12 @@
 import PrivateRoute from './components/PrivateRoute';
 import UnprivateRoute from './components/UnprivateRoute';
 import AdminRoute from './components/AdminRoute';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import Home from './pages/home';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import RootRedirect from './pages/rootRedirect';
 import Fellowships from './pages/fellowships';
+import Research from './pages/research';
+import ResearchDetail from './pages/labDetail';
+import OpportunityDetail from './pages/opportunityDetail';
 import Login from './pages/login';
 import About from './pages/about';
 import Account from './pages/account';
@@ -22,10 +25,14 @@ import SearchContextProvider from './providers/SearchContextProvider';
 import FellowshipSearchContextProvider from './providers/FellowshipSearchContextProvider';
 import UIContextProvider from './providers/UIContextProvider';
 import ScrollToTop from './components/shared/ScrollToTop';
+import HttpStatusNotifier from './components/HttpStatusNotifier';
+
+const RetiredListingsRedirect = () => <Navigate to="/research" replace />;
+const RetiredFellowshipsRedirect = () => <Navigate to="/programs" replace />;
 
 const App = () => {
   return (
-    <Router>
+    <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <ScrollToTop />
       <ConfigContextProvider>
         <SearchContextProvider>
@@ -36,15 +43,45 @@ const App = () => {
                   <Navbar />
                 </div>
                 <div className="flex-grow overflow-y-auto flex flex-col" data-scroll-container>
+                  <HttpStatusNotifier />
                   <main className="flex-grow">
                     <Routes>
                       <Route
                         path="/"
-                        element={<PrivateRoute Component={Home} unknownBlocked={true} />}
+                        element={<PrivateRoute Component={RootRedirect} unknownBlocked={true} />}
+                      />
+                      <Route
+                        path="/listings"
+                        element={
+                          <PrivateRoute Component={RetiredListingsRedirect} unknownBlocked={true} />
+                        }
                       />
                       <Route
                         path="/fellowships"
+                        element={
+                          <PrivateRoute
+                            Component={RetiredFellowshipsRedirect}
+                            unknownBlocked={true}
+                          />
+                        }
+                      />
+                      <Route
+                        path="/programs"
                         element={<PrivateRoute Component={Fellowships} unknownBlocked={true} />}
+                      />
+                      <Route
+                        path="/research"
+                        element={<Research />}
+                      />
+                      <Route
+                        path="/research/:slug"
+                        element={<ResearchDetail />}
+                      />
+                      <Route
+                        path="/opportunities/:id"
+                        element={
+                          <PrivateRoute Component={OpportunityDetail} unknownBlocked={true} />
+                        }
                       />
                       <Route
                         path="/about"

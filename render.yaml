@@ -1,0 +1,128 @@
+# Render Blueprint — Yale Research production scraper cron jobs
+# ---------------------------------------------------------------------------
+# This blueprint declares ONLY the scheduled scraper cron jobs. The existing
+# web service (monorepo) and the Meilisearch private service are intentionally
+# NOT redefined here — they are managed in the Render dashboard. If you later
+# want a fully declarative blueprint, add them with their EXACT existing names,
+# otherwise Render will create duplicates.
+#
+# Secrets are NOT stored in this file. Create an Environment Group named
+# "ylabs-prod" in the Render dashboard holding the shared production secrets,
+# and these crons inherit them via `fromGroup`:
+#
+#   MONGODBURL              -> the PRODUCTION database connection string
+#   SESSION_SECRET          -> (not used by crons, but the group is shared)
+#   MEILISEARCH_HOST        -> http://<meili-private-service>:7700
+#   MEILISEARCH_API_KEY     -> Meilisearch master/admin key
+#   MEILISEARCH_INDEX_PREFIX-> prod
+#   OPENAI_API_KEY          -> required for the LLM extractor cron
+#   YALIES_API_KEY          -> required for the yale-directory scraper
+#
+# Each cron runs the production-hardened runner:
+#   yarn --cwd server scrape cron --source <name> --release
+# which requires SCRAPER_ENV=production + CONFIRM_PROD_SCRAPE=true (set below),
+# is distributed-job-locked (overlaps return skipped-lock-held, never double
+# write), and runs the full pipeline: scrape -> materialize -> visibility gate.
+#
+# Sources are chained with ";" (not "&&") so one source failing does not abort
+# the rest of the sweep. Each invocation is independently locked + isolated.
+#
+# Schedules are UTC and run 3x/year, aligned to the academic calendar:
+#   "0 H 1 1,3,8 *"  ->  Jan 1, Mar 1, Aug 1.
+# August catches new faculty / fall openings, January catches spring, March is a
+# mid-spring refresh. This data changes on a semester/hiring timescale, so
+# re-running more often mostly re-confirms an already-seeded corpus (and the
+# workPlanner skips unchanged entities anyway). The three crons are staggered by
+# hour so they don't overlap and failures stay isolated per group.
+#
+# If "recent publications" later becomes a surfaced, freshness-sensitive feature,
+# split the publication sources (openalex/orcid/crossref/arxiv/europe-pmc/pubmed)
+# into their own cron on a monthly/quarterly schedule. Until then they ride the
+# 3x/year sweep below.
+# ---------------------------------------------------------------------------
+
+services:
+  # --- Third-party publication/grant enrichment (HTTP/API, Node-safe) ---
+  - type: cron
+    name: ylabs-scrape-apis
+    runtime: node
+    plan: starter # pure Node HTTP/API — fits 512MB comfortably
+    schedule: "0 6 1 1,3,8 *" # Jan 1, Mar 1, Aug 1 @ 06:00 UTC
+    buildCommand: corepack enable && yarn install:all:immutable
+    startCommand: >-
+      yarn --cwd server scrape cron --source nih-reporter --release ;
+      yarn --cwd server scrape cron --source nsf-award-search --release ;
+      yarn --cwd server scrape cron --source openalex --release ;
+      yarn --cwd server scrape cron --source orcid --release ;
+      yarn --cwd server scrape cron --source europe-pmc --release ;
+      yarn --cwd server scrape cron --source pubmed --release ;
+      yarn --cwd server scrape cron --source crossref --release ;
+      yarn --cwd server scrape cron --source arxiv --release ;
+      yarn --cwd server scrape cron --source yale-directory --release
+    envVars:
+      - fromGroup: ylabs-prod
+      - key: NODE_ENV
+        value: production
+      - key: SCRAPER_ENV
+        value: production
+      - key: CONFIRM_PROD_SCRAPE
+        value: "true"
+
+  # --- Official discovery indexes + fellowship catalog (static HTML, Node-safe) ---
+  - type: cron
+    name: ylabs-scrape-indexes
+    runtime: node
+    plan: starter # static HTML parsing — fits 512MB comfortably
+    schedule: "0 8 1 1,3,8 *" # Jan 1, Mar 1, Aug 1 @ 08:00 UTC (after the API sweep)
+    buildCommand: corepack enable && yarn install:all:immutable
+    startCommand: >-
+      yarn --cwd server scrape cron --source centers-institutes-index --release ;
+      yarn --cwd server scrape cron --source ysm-atoz-index --release ;
+      yarn --cwd server scrape cron --source yse-centers-index --release ;
+      yarn --cwd server scrape cron --source yale-research-official --release ;
+      yarn --cwd server scrape cron --source department-undergrad-research --release ;
+      yarn --cwd server scrape cron --source undergrad-fellowships-recipients --release ;
+      yarn --cwd server scrape cron --source yale-college-fellowships-office --release ;
+      yarn --cwd server scrape cron --source official-profile-pi-backfill --release
+    envVars:
+      - fromGroup: ylabs-prod
+      - key: NODE_ENV
+        value: production
+      - key: SCRAPER_ENV
+        value: production
+      - key: CONFIRM_PROD_SCRAPE
+        value: "true"
+
+  # --- LLM extractors + JS-rendered roster (needs OPENAI_API_KEY) ---
+  #
+  # CAVEAT: `lab-microsite-undergrad-llm` and `dept-faculty-roster` use the
+  # Python/headless rendered-fetch path (server/src/scrapers/renderedFetch.ts ->
+  # scraplingBridge.py). A plain `runtime: node` cron container has no python3 /
+  # Scrapling / Chromium, so those two DEGRADE gracefully (JSON-endpoint and
+  # static parses still work; JS-rendered pages are skipped). To run them at
+  # full fidelity, switch this service to a Docker runtime whose image installs
+  # python3 + scrapling + a browser, and set SCRAPLING_PYTHON_COMMAND if needed.
+  # The other three LLM sources are HTTP + OpenAI only and run fine on Node.
+  - type: cron
+    name: ylabs-scrape-llm
+    runtime: node
+    # `standard` is only needed if you stand up a Docker/Python runtime so the
+    # browser (Scrapling/Chromium ~1GB) can run for the rendered sources below.
+    # On plain `runtime: node` those two degrade gracefully and `starter` is fine.
+    plan: standard
+    schedule: "0 10 1 1,3,8 *" # Jan 1, Mar 1, Aug 1 @ 10:00 UTC (after the index sweep)
+    buildCommand: corepack enable && yarn install:all:immutable
+    startCommand: >-
+      yarn --cwd server scrape cron --source lab-microsite-description-llm --release ;
+      yarn --cwd server scrape cron --source lab-microsite-undergrad-llm --release ;
+      yarn --cwd server scrape cron --source center-affiliation-llm --release ;
+      yarn --cwd server scrape cron --source student-decision-llm --release ;
+      yarn --cwd server scrape cron --source dept-faculty-roster --release
+    envVars:
+      - fromGroup: ylabs-prod
+      - key: NODE_ENV
+        value: production
+      - key: SCRAPER_ENV
+        value: production
+      - key: CONFIRM_PROD_SCRAPE
+        value: "true"

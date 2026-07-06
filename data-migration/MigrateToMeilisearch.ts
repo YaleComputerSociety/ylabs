@@ -11,7 +11,7 @@ const MEILISEARCH_INDEX_PREFIX = process.env.MEILISEARCH_INDEX_PREFIX || '';
 
 async function migrateToMeilisearch() {
   const { Meilisearch } = await import('meilisearch');
-  
+
   const meiliClient = new Meilisearch({
     host: MEILISEARCH_HOST,
     apiKey: MEILISEARCH_API_KEY,
@@ -50,14 +50,14 @@ async function migrateToMeilisearch() {
     const indexName = MEILISEARCH_INDEX_PREFIX ? `${MEILISEARCH_INDEX_PREFIX}_listings` : 'listings';
     console.log(`Configuring Meilisearch Index: ${indexName}...`);
     const index = meiliClient.index(indexName);
-    
+
     await index.updateFilterableAttributes([
       'departments',
       'researchAreas',
       'archived',
       'confirmed'
     ]);
-    
+
     await index.updateSortableAttributes([
       'createdAt',
       'updatedAt',

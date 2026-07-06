@@ -16,12 +16,12 @@ import {
   ReactNode,
 } from 'react';
 import axios from '../utils/axios';
-import swal from 'sweetalert';
 
 import SearchContext, { FilterMode } from '../contexts/SearchContext';
 import UserContext from '../contexts/UserContext';
 import { Listing } from '../types/types';
 import { createListing } from '../utils/apiCleaner';
+import { getUniqueDepartmentLabels } from '../utils/departmentNames';
 import { useConfig } from '../hooks/useConfig';
 import { searchReducer, createInitialSearchState } from '../reducers/searchReducer';
 
@@ -31,14 +31,21 @@ interface SearchContextProviderProps {
 
 const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => {
   const pageSize = 20;
-  const sortableKeys = ['default', 'createdAt', 'ownerLastName', 'ownerFirstName', 'title'];
+  const sortableKeys = ['default', 'title'];
 
   const { isAuthenticated, isLoading: authLoading } = useContext(UserContext);
+  const isListingsRoute = false;
 
   const { departments, departmentCategories, researchAreas, isLoaded: configLoaded } = useConfig();
 
   const allDepartments = useMemo(
-    () => departments.map((d) => d.displayName).sort((a, b) => a.localeCompare(b)),
+    () =>
+      getUniqueDepartmentLabels(
+        departments.map((d) => d.name || d.displayName),
+        departments,
+      ).sort((a, b) =>
+        a.localeCompare(b),
+      ),
     [departments],
   );
 
@@ -69,6 +76,7 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
     sortDirection,
     listings,
     isLoading,
+    error,
     searchExhausted,
     totalCount,
     page,
@@ -113,7 +121,7 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
   ) as React.Dispatch<React.SetStateAction<FilterMode>>;
 
   const setSortBy = useCallback((value: string) => {
-    dispatch({ type: 'SET_SORT_BY', payload: value });
+    dispatch({ type: 'SET_SORT_BY', payload: sortableKeys.includes(value) ? value : sortableKeys[0] });
   }, []);
 
   const setSortOrder = useCallback((value: number) => {
@@ -207,14 +215,12 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
           });
         })
         .catch((error) => {
-          console.error('Error loading listings:', error);
-          if (error?.response?.status !== 401) {
-            swal({
-              text: 'Unable to load listings. Please try again later.',
-              icon: 'warning',
-            });
-          }
-          dispatch({ type: 'SEARCH_FAILURE' });
+          console.error('Error loading listings.');
+          const message =
+            error?.response?.status === 401
+              ? 'Please sign in again to view saved search results.'
+              : 'Legacy listing search is unavailable. Research homes and pathways are still available.';
+          dispatch({ type: 'SEARCH_FAILURE', payload: message });
         });
     },
     [pageSize],
@@ -226,15 +232,28 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
   }, [handleSearch]);
 
   useEffect(() => {
-    if (configLoaded && !authLoading && isAuthenticated && !initialSearchDone) {
+    if (
+      isListingsRoute &&
+      configLoaded &&
+      !authLoading &&
+      isAuthenticated &&
+      !initialSearchDone
+    ) {
       dispatch({ type: 'SET_PAGE', payload: 1 });
       handleSearch(1);
       dispatch({ type: 'MARK_INITIAL_SEARCH_DONE' });
     }
-  }, [configLoaded, authLoading, isAuthenticated, initialSearchDone, handleSearch]);
+  }, [
+    isListingsRoute,
+    configLoaded,
+    authLoading,
+    isAuthenticated,
+    initialSearchDone,
+    handleSearch,
+  ]);
 
   useEffect(() => {
-    if (!configLoaded) return;
+    if (!isListingsRoute || !configLoaded) return;
 
     const debounceTimeout = setTimeout(() => {
       if (queryStringLoaded) {
@@ -247,10 +266,10 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
     return () => {
       clearTimeout(debounceTimeout);
     };
-  }, [queryString, configLoaded]);
+  }, [queryString, configLoaded, isListingsRoute]);
 
   useEffect(() => {
-    if (!configLoaded) return;
+    if (!isListingsRoute || !configLoaded) return;
 
     if (departmentsLoaded) {
       dispatch({ type: 'SET_PAGE', payload: 1 });
@@ -267,13 +286,14 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
     sortBy,
     sortOrder,
     configLoaded,
+    isListingsRoute,
   ]);
 
   useEffect(() => {
-    if (page > 1 && configLoaded) {
+    if (isListingsRoute && page > 1 && configLoaded) {
       handleSearch(page);
     }
-  }, [page, configLoaded]);
+  }, [page, configLoaded, isListingsRoute]);
 
   return (
     <SearchContext.Provider
@@ -301,6 +321,7 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
         onToggleSortDirection,
         listings,
         isLoading,
+        error,
         searchExhausted,
         totalCount,
         page,

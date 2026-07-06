@@ -38,8 +38,24 @@ jobs:
           yarn --cwd server install --immutable
           yarn --cwd client install --immutable
 
+      - name: Run server typecheck
+        run: npx tsc --noEmit -p server/tsconfig.json
+
+      - name: Run server tests
+        run: yarn --cwd server test
+
       - name: Run client tests
         run: yarn --cwd client test:ci
+
+
+      - name: Run deploy security preflight
+        run: yarn security:preflight
+
+      - name: Check moderate all-environment dependency advisories
+        run: |
+          yarn npm audit --recursive --severity moderate
+          yarn --cwd server npm audit --recursive --severity moderate
+          yarn --cwd client npm audit --recursive --severity moderate
 
       - name: Build server and client
         run: yarn build

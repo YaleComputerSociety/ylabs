@@ -1,8 +1,17 @@
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
+import fs from 'fs';
 import path from 'path';
-import { Listing } from '../server/src/models/listing';
+import { fileURLToPath } from 'url';
 import { Department } from '../server/src/models/department';
+import {
+  assertScriptApplyAllowed,
+  type ScriptApplyGuardResult,
+} from '../server/src/scripts/scriptWriteGuards';
+import { summarizeMongoUrl } from '../server/src/scrapers/scraperEnvironment';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Load environment variables from server/.env
 dotenv.config({ path: path.resolve(__dirname, '../server/.env') });
@@ -254,22 +263,155 @@ interface UnmappedLog {
   listingTitles: string[];
 }
 
-async function migrateDepartments(dryRun: boolean = true) {
+export interface DepartmentMigrationCliOptions {
+  apply: boolean;
+  confirmLegacyDepartmentMigration?: boolean;
+  output?: string;
+}
+
+export interface DepartmentMigrationResult {
+  validDepartmentCount: number;
+  listingCount: number;
+  mappedChangeCount: number;
+  listingsToUpdate: number;
+  appliedUpdates: number;
+  unmappedDepartmentCount: number;
+}
+
+export function parseDepartmentMigrationArgs(argv: string[]): DepartmentMigrationCliOptions {
+  const options: DepartmentMigrationCliOptions = {
+    apply: false,
+    confirmLegacyDepartmentMigration: false,
+  };
+  const parseRequiredOutputPath = (value: string | undefined): string => {
+    const output = value?.trim();
+    if (!output || output.startsWith('--')) throw new Error('--output requires a path');
+    return output;
+  };
+
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+    if (arg === '--apply' || arg === '--live') {
+      options.apply = true;
+      continue;
+    }
+    if (arg === '--dry-run') {
+      options.apply = false;
+      continue;
+    }
+    if (arg === '--confirm-legacy-department-migration') {
+      options.confirmLegacyDepartmentMigration = true;
+      continue;
+    }
+    if (arg.startsWith('--confirm-legacy-department-migration=')) {
+      throw new Error('--confirm-legacy-department-migration does not accept a value');
+    }
+    if (arg === '--output') {
+      options.output = parseRequiredOutputPath(argv[i + 1]);
+      i += 1;
+      continue;
+    }
+    if (arg.startsWith('--output=')) {
+      options.output = parseRequiredOutputPath(arg.slice('--output='.length));
+      continue;
+    }
+
+    throw new Error(`Unknown legacy department migration argument: ${arg}`);
+  }
+
+  return options;
+}
+
+export function assertDepartmentMigrationApplyAllowed(args: {
+  apply: boolean;
+  confirmLegacyDepartmentMigration?: boolean;
+  sourceMongoUrl?: string;
+  mongoUrl?: string;
+  env?: NodeJS.ProcessEnv;
+}): ScriptApplyGuardResult {
+  if (args.apply && !args.confirmLegacyDepartmentMigration) {
+    throw new Error(
+      '--confirm-legacy-department-migration is required when --apply is set for legacy department migration.',
+    );
+  }
+
+  if (
+    args.apply &&
+    args.sourceMongoUrl &&
+    args.mongoUrl &&
+    args.sourceMongoUrl.trim() === args.mongoUrl.trim()
+  ) {
+    throw new Error(
+      'legacy department migration source and target Mongo URLs must be different before apply mode can run.',
+    );
+  }
+
+  return assertScriptApplyAllowed({
+    apply: args.apply,
+    scriptName: 'legacy department migration',
+    mongoUrl: args.mongoUrl,
+    env: args.env,
+  });
+}
+
+export function buildDepartmentMigrationOutput<T extends object>(
+  result: T,
+  metadata: {
+    generatedAt?: string;
+    environment?: string;
+    sourceDb?: string;
+    targetDb?: string;
+    options: DepartmentMigrationCliOptions;
+  },
+): T & {
+  generatedAt: string;
+  environment?: string;
+  sourceDb?: string;
+  targetDb?: string;
+  options: DepartmentMigrationCliOptions;
+} {
+  return {
+    generatedAt: metadata.generatedAt || new Date().toISOString(),
+    ...(metadata.environment ? { environment: metadata.environment } : {}),
+    ...(metadata.sourceDb ? { sourceDb: metadata.sourceDb } : {}),
+    ...(metadata.targetDb ? { targetDb: metadata.targetDb } : {}),
+    options: metadata.options,
+    ...result,
+  };
+}
+
+export function writeDepartmentMigrationOutput(payload: object, outputPath?: string): void {
+  if (!outputPath) return;
+  fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+  fs.writeFileSync(outputPath, `${JSON.stringify(payload, null, 2)}\n`);
+}
+
+export async function migrateDepartments(
+  options = parseDepartmentMigrationArgs(process.argv.slice(2)),
+): Promise<ReturnType<typeof buildDepartmentMigrationOutput<DepartmentMigrationResult>>> {
   const sourceUrl = process.env.MONGODBURL;
   const targetUrl = process.env.MONGODBURL_MIGRATION;
+  const dryRun = !options.apply;
 
   if (!sourceUrl) {
-    console.error('ERROR: MONGODBURL (Production) not set in environment');
-    process.exit(1);
+    throw new Error('MONGODBURL (Production source) not set in environment');
   }
 
   if (!targetUrl) {
-    console.error('ERROR: MONGODBURL_MIGRATION (ProductionMigration) not set in environment');
-    process.exit(1);
+    throw new Error('MONGODBURL_MIGRATION (ProductionMigration target) not set in environment');
   }
 
+  const guard = assertDepartmentMigrationApplyAllowed({
+    apply: options.apply,
+    confirmLegacyDepartmentMigration: options.confirmLegacyDepartmentMigration,
+    sourceMongoUrl: sourceUrl,
+    mongoUrl: targetUrl,
+  });
+
   console.log('\n=== Department Migration (Manual Mappings Only) ===');
-  console.log(`Mode: ${dryRun ? 'DRY RUN (no changes will be made)' : 'LIVE (changes will be applied)'}\n`);
+  console.log(`Mode: ${dryRun ? 'DRY RUN (no changes will be made)' : 'LIVE (changes will be applied)'}`);
+  console.log(`Source: ${summarizeMongoUrl(sourceUrl)}`);
+  console.log(`Target: ${guard.dbLabel}\n`);
 
   const changeLogs: ChangeLog[] = [];
   const unmappedDepts: Map<string, UnmappedLog> = new Map();
@@ -278,7 +420,7 @@ async function migrateDepartments(dryRun: boolean = true) {
     // Connect to Production to get valid departments (for validation)
     console.log('Connecting to Production database to fetch departments...');
     const sourceConnection = await mongoose.createConnection(sourceUrl).asPromise();
-    const SourceDepartment = sourceConnection.model('departments', Department.schema);
+    const SourceDepartment = sourceConnection.model('Department', Department.schema, 'departments');
 
     const departments = await SourceDepartment.find({}).lean() as unknown as DepartmentDoc[];
     console.log(`Loaded ${departments.length} valid departments from Production`);
@@ -304,17 +446,23 @@ async function migrateDepartments(dryRun: boolean = true) {
     if (invalidMappings > 0) {
       console.error(`\nFound ${invalidMappings} invalid mappings. Please fix them before running migration.`);
       await sourceConnection.close();
-      process.exit(1);
+      throw new Error(`Found ${invalidMappings} invalid department mappings.`);
     }
     console.log('All manual mappings are valid!\n');
 
-    // Connect to ProductionMigration to update listings
+    // Connect to ProductionMigration to update legacy listings if that collection still exists.
     console.log('Connecting to ProductionMigration database...');
     const targetConnection = await mongoose.createConnection(targetUrl).asPromise();
-    const TargetListing = targetConnection.model('listings', Listing.schema);
+    const targetDb = targetConnection.db;
+    if (!targetDb) throw new Error('ProductionMigration database connection failed');
+    const listingCollectionExists =
+      (await targetDb.listCollections({ name: 'listings' }, { nameOnly: true }).toArray()).length >
+      0;
 
     // Fetch all listings
-    const listings = await TargetListing.find({}).lean();
+    const listings = listingCollectionExists
+      ? await targetDb.collection('listings').find({}).toArray()
+      : [];
     console.log(`Found ${listings.length} listings in ProductionMigration\n`);
 
     // Collect all unique department values
@@ -407,7 +555,7 @@ async function migrateDepartments(dryRun: boolean = true) {
 
       // Update the listing if there are changes
       if (hasChanges && !dryRun) {
-        await TargetListing.updateOne(
+        await targetDb.collection('listings').updateOne(
           { _id: listing._id },
           { $set: { departments: newDepartments } }
         );
@@ -479,22 +627,38 @@ async function migrateDepartments(dryRun: boolean = true) {
 
     if (dryRun && changeLogs.length > 0) {
       console.log('\n' + '='.repeat(80));
-      console.log('To apply these changes, run with --live flag:');
-      console.log('  npm run migrate:departments:live');
+      console.log('To apply these changes, pass --apply after reviewing the dry-run artifact:');
+      console.log('  yarn --cwd data-migration migrate:departments --apply --output /tmp/ylabs-department-migration-apply.json');
       console.log('='.repeat(80) + '\n');
     }
 
+    const output = buildDepartmentMigrationOutput(
+      {
+        validDepartmentCount: departments.length,
+        listingCount: listings.length,
+        mappedChangeCount: changeLogs.length,
+        listingsToUpdate,
+        appliedUpdates: dryRun ? 0 : listingsToUpdate,
+        unmappedDepartmentCount: unmappedDepts.size,
+      },
+      {
+        environment: guard.environment,
+        sourceDb: summarizeMongoUrl(sourceUrl),
+        targetDb: guard.dbLabel,
+        options,
+      },
+    );
+    writeDepartmentMigrationOutput(output, options.output);
+    if (options.output) console.log(`Wrote department migration report to ${options.output}`);
+    return output;
   } catch (error) {
-    console.error('Error during migration:', error);
-    process.exit(1);
+    throw error;
   }
 }
 
-// Main execution
-const args = process.argv.slice(2);
-const dryRun = !args.includes('--live');
-
-migrateDepartments(dryRun).catch(err => {
-  console.error('Fatal error:', err);
-  process.exit(1);
-});
+if (process.argv[1] && __filename === path.resolve(process.argv[1])) {
+  migrateDepartments().catch(err => {
+    console.error('Fatal error:', err);
+    process.exit(1);
+  });
+}

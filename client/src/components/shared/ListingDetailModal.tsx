@@ -7,7 +7,7 @@ import { Listing } from '../../types/types';
 import UserContext from '../../contexts/UserContext';
 import ConfigContext from '../../contexts/ConfigContext';
 import { getDepartmentAbbreviation } from '../../utils/departmentNames';
-import { ensureHttpPrefix } from '../../utils/url';
+import { ensureHttpPrefix, safeRouteSegment } from '../../utils/url';
 import { getInstitutionAffiliation, getInstitutionLabel } from '../../utils/institutionAffiliation';
 import FavoriteButton from './FavoriteButton';
 
@@ -228,7 +228,7 @@ const ListingDetailModal = ({
                         </div>
                         {netid ? (
                           <Link
-                            to={`/profile/${netid}`}
+                            to={`/profile/${safeRouteSegment(netid)}`}
                             onClick={onClose}
                             className="text-sm text-blue-600 hover:text-blue-800 hover:underline font-medium"
                           >

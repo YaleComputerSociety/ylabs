@@ -7,6 +7,8 @@ sample_updates.json
 notes.txt
 valid_departments_cpy.txt
 toFix.md
+__pycache__/
+*.pyc
 
 #Ignore node modules across full project
 node_modules/
@@ -57,10 +59,37 @@ yale-faculty-enricher/
 backup
 
 #General utility files
-to-do.txtnode_modules/
+to-do.txt
 server/node_modules/
 client/node_modules/
 
 **/.yarn/
 .yarn/
 *.yarn
+
+# Graphify shared repo-memory output
+graphify-out/cache/
+graphify-out/cost.json
+graphify-out/manifest.json
+graphify-out/.graphify_root
+graphify-out/.graphify_analysis.json
+graphify-out/.rebuild.lock
+graphify-out/.graphify_labels.json
+graphify-out/memory/
+
+# Local agent and browser-driver support files
+.codex/
+.gstack/
+.playwright-libs/
+tmp/
+.claude/
+.superpowers/
+
+# Transient agent execution and review artifacts
+docs/tasks/current-execution-plan.md
+docs/superpowers/
+docs/ux-screenshots/
+client/PROPOSAL.md
+
+fix.md
+due-diligence-review.md

@@ -9,9 +9,48 @@
 
 import mongoose from 'mongoose';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 
 import { User } from '../models/user';
+import { sanitizeLogValue } from '../utils/logSanitizer';
+
+const MAX_FACULTY_IMPORT_JSON_BYTES = 25 * 1024 * 1024;
+
+const hasPathPrefix = (target: string, root: string): boolean =>
+  target === root || target.startsWith(`${root}${path.sep}`);
+
+function resolveSafeFacultyImportJsonPath(value: string): string {
+  const resolved = path.resolve(value);
+  if (path.extname(resolved).toLowerCase() !== '.json') {
+    throw new Error('Faculty import input must be a .json file');
+  }
+
+  const repoRoot = path.resolve(__dirname, '../../..');
+  const tmpRoot = path.resolve(os.tmpdir());
+  const projectTmpRoot = path.resolve(repoRoot, 'tmp');
+  if (
+    !hasPathPrefix(resolved, repoRoot) &&
+    !hasPathPrefix(resolved, tmpRoot) &&
+    !hasPathPrefix(resolved, projectTmpRoot)
+  ) {
+    throw new Error('Faculty import input must be under the repo root, system temp, or ./tmp');
+  }
+
+  if (!fs.existsSync(resolved)) {
+    throw new Error(`Faculty import input not found: ${resolved}`);
+  }
+
+  const stat = fs.statSync(resolved);
+  if (!stat.isFile()) {
+    throw new Error('Faculty import input must be a file');
+  }
+  if (stat.size > MAX_FACULTY_IMPORT_JSON_BYTES) {
+    throw new Error('Faculty import input is too large');
+  }
+
+  return resolved;
+}
 
 /** Strip ALL-CAPS code prefix from department names (e.g., "SPHDPT Environmental Health Sciences (EHS)" -> "Environmental Health Sciences (EHS)") */
 function cleanPrimaryDepartment(dept: string): string {
@@ -167,17 +206,16 @@ interface RawFacultyEntry {
   name: string;
   first_name: string;
   last_name: string;
-  primary_department: string;
-  secondary_departments: string[];
+  primaryDepartment: string;
+  secondaryDepartments: string[];
   title: string;
   bio: string;
   email: string;
   phone: string;
-  image_url: string;
+  imageUrl: string;
   orcid: string | null;
-  openalex_id: string | null;
-  h_index: number | null;
-  profile_urls: Record<string, string>;
+  openAlexId: string | null;
+  profileUrls: Record<string, string>;
   publications: Array<{
     title: string;
     doi: string | null;
@@ -187,10 +225,10 @@ interface RawFacultyEntry {
     open_access_url: string | null;
     source: string;
   }>;
-  research_interests: string[];
+  researchInterests: string[];
   topics: string[];
   catalog_departments: string[];
-  data_sources: string[];
+  dataSources: string[];
 }
 
 async function importFaculty() {
@@ -200,14 +238,10 @@ async function importFaculty() {
     process.exit(1);
   }
 
-  const jsonPath =
+  const rawJsonPath =
     process.argv[2] ||
     path.resolve(__dirname, '../../../yale-faculty-enricher/enriched_faculty.json');
-
-  if (!fs.existsSync(jsonPath)) {
-    console.error(`Error: File not found: ${jsonPath}`);
-    process.exit(1);
-  }
+  const jsonPath = resolveSafeFacultyImportJsonPath(rawJsonPath);
 
   console.log(`Reading faculty data from: ${jsonPath}`);
   const raw: RawFacultyEntry[] = JSON.parse(fs.readFileSync(jsonPath, 'utf-8'));
@@ -233,8 +267,8 @@ async function importFaculty() {
         continue;
       }
 
-      const primaryDept = cleanPrimaryDepartment(entry.primary_department || '');
-      const secondaryDepts = cleanSecondaryDepartments(entry.secondary_departments || []);
+      const primaryDept = cleanPrimaryDepartment(entry.primaryDepartment || '');
+      const secondaryDepts = cleanSecondaryDepartments(entry.secondaryDepartments || []);
 
       const cleanedData: Record<string, any> = {
         fname: entry.first_name || entry.name?.split(' ')[0] || 'NA',
@@ -243,29 +277,28 @@ async function importFaculty() {
         title: entry.title || '',
         bio: entry.bio || '',
         phone: entry.phone || '',
-        primary_department: primaryDept,
-        secondary_departments: secondaryDepts,
+        primaryDepartment: primaryDept,
+        secondaryDepartments: secondaryDepts,
         departments: [primaryDept, ...secondaryDepts].filter(Boolean),
-        image_url: entry.image_url || '',
+        imageUrl: entry.imageUrl || '',
         orcid: entry.orcid || undefined,
-        openalex_id: entry.openalex_id || undefined,
-        h_index: entry.h_index || undefined,
-        profile_urls: entry.profile_urls || {},
+        openAlexId: entry.openAlexId || undefined,
+        profileUrls: entry.profileUrls || {},
         publications: (entry.publications || []).map((p) => ({
           title: p.title,
           doi: p.doi || undefined,
           year: p.year,
           venue: p.venue || '',
-          cited_by_count: p.cited_by_count || 0,
-          open_access_url: p.open_access_url || undefined,
+          citedByCount: p.cited_by_count || 0,
+          openAccessUrl: p.open_access_url || undefined,
           source: p.source || '',
         })),
-        research_interests: entry.research_interests || [],
+        researchInterests: entry.researchInterests || [],
         topics: entry.topics || [],
-        data_sources: entry.data_sources || [],
+        dataSources: entry.dataSources || [],
         userType: 'professor',
-        userConfirmed: true,
-        profileVerified: false,
+        adminApproved: true,
+        selfVerified: false,
       };
 
       for (const key of Object.keys(cleanedData)) {
@@ -302,7 +335,7 @@ async function importFaculty() {
           updated += err.result.nModified || 0;
           errors += err.writeErrors?.length || 0;
         } else {
-          console.error(`Batch error at offset ${i}:`, err.message);
+          console.error(`Batch error at offset ${i}:`, sanitizeLogValue(err));
           errors += batch.length;
         }
       }
@@ -324,12 +357,12 @@ async function importFaculty() {
   console.log(`Total:   ${raw.length}`);
 
   console.log('\n=== Verification ===');
-  const sphdptCount = await User.countDocuments({ primary_department: /^SPHDPT/i });
+  const sphdptCount = await User.countDocuments({ primaryDepartment: /^SPHDPT/i });
   const otherDeptCount = await User.countDocuments({
-    secondary_departments: 'Other Departments & Organizations',
+    secondaryDepartments: 'Other Departments & Organizations',
   });
   const divnityCount = await User.countDocuments({
-    $or: [{ primary_department: /Divnity/i }, { secondary_departments: /Divnity/i }],
+    $or: [{ primaryDepartment: /Divnity/i }, { secondaryDepartments: /Divnity/i }],
   });
 
   console.log(`Entries with SPHDPT prefix remaining: ${sphdptCount} (should be 0)`);
@@ -341,6 +374,6 @@ async function importFaculty() {
 }
 
 importFaculty().catch((err) => {
-  console.error('Fatal error:', err);
+  console.error('Fatal error:', sanitizeLogValue(err));
   process.exit(1);
 });

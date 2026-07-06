@@ -2,6 +2,45 @@
  * Authentication guards and role-based access control middleware.
  */
 import express from 'express';
+import {
+  allowsLegacyAdminUserType,
+  hasActiveAdminGrant,
+} from '../services/adminGrantService';
+
+const AUTH_NETID_RE = /^[A-Za-z0-9]{2,12}$/;
+
+type AuthenticatedUser = {
+  netId?: unknown;
+  netid?: unknown;
+  userType?: unknown;
+  userConfirmed?: boolean;
+  profileVerified?: boolean;
+};
+
+const normalizeAuthNetid = (value: unknown): string => {
+  const normalized = typeof value === 'string' ? value.trim() : '';
+  return AUTH_NETID_RE.test(normalized) ? normalized : '';
+};
+
+const requestNetid = (user: AuthenticatedUser | null | undefined): string =>
+  normalizeAuthNetid(user?.netId) || normalizeAuthNetid(user?.netid);
+
+const hasAuthenticatedPrincipal = (user: unknown): user is AuthenticatedUser =>
+  Boolean(user && typeof user === 'object' && requestNetid(user as AuthenticatedUser));
+
+const sendAuthRequired = (res: express.Response) =>
+  res.status(401).json({
+    error: 'Unauthorized',
+    code: 'AUTH_REQUIRED',
+  });
+
+const hasAdminAuthority = async (user: AuthenticatedUser): Promise<boolean> => {
+  const netid = requestNetid(user);
+  if (user.userType !== 'admin' || !netid) return false;
+  return hasActiveAdminGrant(netid).then(
+    (hasGrant) => hasGrant || allowsLegacyAdminUserType(),
+  );
+};
 
 /**
  * Middleware to check if user is authenticated
@@ -11,10 +50,10 @@ export const isAuthenticated = (
   res: express.Response,
   next: express.NextFunction,
 ) => {
-  if (req.user) {
+  if (hasAuthenticatedPrincipal(req.user)) {
     return next();
   }
-  res.status(401).json({ error: 'Unauthorized' });
+  return sendAuthRequired(res);
 };
 
 /**
@@ -25,16 +64,30 @@ export const isTrustworthy = (
   res: express.Response,
   next: express.NextFunction,
 ) => {
-  const user = req.user as { netId?: string; userType?: string; userConfirmed?: boolean };
+  const user = req.user as AuthenticatedUser;
 
-  if (
-    user &&
-    user.userConfirmed &&
-    (user.userType === 'admin' || user.userType === 'professor' || user.userType === 'faculty')
-  ) {
+  if (!hasAuthenticatedPrincipal(user)) {
+    return sendAuthRequired(res);
+  }
+
+  if (!user.userConfirmed) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+
+  if (user.userType === 'professor' || user.userType === 'faculty') {
     return next();
   }
-  res.status(403).json({ error: 'Forbidden' });
+
+  if (user.userType === 'admin') {
+    return hasAdminAuthority(user)
+      .then((authorized) => {
+        if (authorized) return next();
+        return res.status(403).json({ error: 'Forbidden' });
+      })
+      .catch(next);
+  }
+
+  return res.status(403).json({ error: 'Forbidden' });
 };
 
 /**
@@ -46,20 +99,28 @@ export const canCreateListing = (
   res: express.Response,
   next: express.NextFunction,
 ) => {
-  const currentUser = req.user as {
-    netId?: string;
-    userType?: string;
-    userConfirmed?: boolean;
-    profileVerified?: boolean;
-  };
+  const currentUser = req.user as AuthenticatedUser;
 
-  if (!currentUser) {
-    return res.status(401).json({ error: 'Unauthorized' });
+  if (!hasAuthenticatedPrincipal(currentUser)) {
+    return sendAuthRequired(res);
   }
 
-  const allowedTypes = ['admin', 'professor', 'faculty'];
-  if (!allowedTypes.includes(currentUser.userType ?? '')) {
+  if (currentUser.userType === 'admin') {
+    return hasAdminAuthority(currentUser)
+      .then((authorized) => {
+        if (authorized) return next();
+        return res.status(403).json({ error: 'Admin privileges required' });
+      })
+      .catch(next);
+  }
+
+  const allowedTypes = ['professor', 'faculty'];
+  if (!allowedTypes.includes(String(currentUser.userType ?? ''))) {
     return res.status(403).json({ error: 'User does not have permission to create listings' });
+  }
+
+  if (currentUser.userType !== 'admin' && currentUser.userConfirmed !== true) {
+    return res.status(403).json({ error: 'Account must be confirmed before creating listings' });
   }
 
   if (currentUser.userType !== 'admin' && !currentUser.profileVerified) {
@@ -82,17 +143,21 @@ export const isAdmin = (
   res: express.Response,
   next: express.NextFunction,
 ) => {
-  const currentUser = req.user as { netId?: string; userType?: string; userConfirmed?: boolean };
+  const currentUser = req.user as AuthenticatedUser;
 
-  if (!currentUser) {
-    return res.status(401).json({ error: 'Unauthorized' });
+  if (!hasAuthenticatedPrincipal(currentUser)) {
+    return sendAuthRequired(res);
   }
 
-  if (currentUser.userType !== 'admin') {
-    return res.status(403).json({ error: 'Admin privileges required' });
-  }
+  return hasActiveAdminGrant(requestNetid(currentUser))
+    .then((hasGrant) => {
+      if (hasGrant || (currentUser.userType === 'admin' && allowsLegacyAdminUserType())) {
+        return next();
+      }
 
-  next();
+      return res.status(403).json({ error: 'Admin privileges required' });
+    })
+    .catch(next);
 };
 
 /**
@@ -103,21 +168,29 @@ export const isProfessor = (
   res: express.Response,
   next: express.NextFunction,
 ) => {
-  const currentUser = req.user as { netId?: string; userType?: string; userConfirmed?: boolean };
+  const currentUser = req.user as AuthenticatedUser;
 
-  if (!currentUser) {
-    return res.status(401).json({ error: 'Unauthorized' });
+  if (!hasAuthenticatedPrincipal(currentUser)) {
+    return sendAuthRequired(res);
+  }
+
+  if (currentUser.userType === 'admin') {
+    return hasAdminAuthority(currentUser)
+      .then((authorized) => {
+        if (authorized) return next();
+        return res.status(403).json({ error: 'Admin privileges required' });
+      })
+      .catch(next);
   }
 
   if (
-    currentUser.userType !== 'professor' &&
-    currentUser.userType !== 'faculty' &&
-    currentUser.userType !== 'admin'
+    (currentUser.userType === 'professor' || currentUser.userType === 'faculty') &&
+    currentUser.userConfirmed === true
   ) {
-    return res.status(403).json({ error: 'Professor privileges required' });
+    return next();
   }
 
-  next();
+  return res.status(403).json({ error: 'Professor privileges required' });
 };
 
 /**
@@ -128,10 +201,10 @@ export const isConfirmed = (
   res: express.Response,
   next: express.NextFunction,
 ) => {
-  const currentUser = req.user as { netId?: string; userType?: string; userConfirmed?: boolean };
+  const currentUser = req.user as AuthenticatedUser;
 
-  if (!currentUser) {
-    return res.status(401).json({ error: 'Unauthorized' });
+  if (!hasAuthenticatedPrincipal(currentUser)) {
+    return sendAuthRequired(res);
   }
 
   if (!currentUser.userConfirmed) {

@@ -57,7 +57,7 @@ def find_publications_page(lab_url):
     soup = get_soup(lab_url)
     if not soup:
         return None
-    
+
     # look for nav links
     nav_links = soup.find_all("a", href=True)
 

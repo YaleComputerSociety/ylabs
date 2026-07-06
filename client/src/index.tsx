@@ -1,13 +1,20 @@
 /**
  * React application entry point with providers and router setup.
  */
-import React from 'react';
+import React, { Suspense } from 'react';
 import { createRoot } from 'react-dom/client';
 
 import './index.css';
 import App from './App';
 import reportWebVitals from './reportWebVitals';
 import UserContextProvider from './providers/UserContextProvider';
+
+const AgentationToolbar = import.meta.env.DEV
+  ? React.lazy(async () => {
+      const { Agentation } = await import('agentation');
+      return { default: Agentation };
+    })
+  : null;
 
 const container = document.getElementById('root');
 
@@ -21,6 +28,11 @@ root.render(
   <React.StrictMode>
     <UserContextProvider>
       <App />
+      {AgentationToolbar ? (
+        <Suspense fallback={null}>
+          <AgentationToolbar />
+        </Suspense>
+      ) : null}
     </UserContextProvider>
   </React.StrictMode>,
 );

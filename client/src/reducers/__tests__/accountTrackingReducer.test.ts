@@ -1,9 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  MAX_TRACKING_STORAGE_VALUE_LENGTH,
   accountTrackingReducer,
   createInitialAccountTrackingState,
   loadAccountTrackingFromStorage,
+  normalizeAccountTrackingStorageOwner,
+  persistAccountTrackingToStorage,
 } from '../accountTrackingReducer';
 
 describe('accountTrackingReducer', () => {
@@ -95,6 +98,33 @@ describe('accountTrackingReducer', () => {
       expect(next.labNotes.abc).toBe('Reached out on Monday');
     });
 
+    it('redacts direct contact details before storing lab notes', () => {
+      const state = createInitialAccountTrackingState();
+      const next = accountTrackingReducer(state, {
+        type: 'SET_LAB_NOTE',
+        listingId: 'abc',
+        value: 'Email ada@example.edu or call 203-555-1212',
+      });
+      expect(next.labNotes.abc).toBe('Email [email redacted] or call [phone redacted]');
+    });
+
+    it('bounds note length and rejects unsafe listing ids', () => {
+      const state = createInitialAccountTrackingState();
+      const unsafe = accountTrackingReducer(state, {
+        type: 'SET_LAB_NOTE',
+        listingId: '../bad',
+        value: 'unsafe',
+      });
+      expect(unsafe.labNotes).toEqual({});
+
+      const next = accountTrackingReducer(state, {
+        type: 'SET_LAB_NOTE',
+        listingId: 'abc',
+        value: 'a'.repeat(2500),
+      });
+      expect(next.labNotes.abc).toHaveLength(2000);
+    });
+
     it('toggling opens editing for a listing', () => {
       const state = createInitialAccountTrackingState();
       const next = accountTrackingReducer(state, {
@@ -169,6 +199,33 @@ describe('accountTrackingReducer', () => {
       });
       expect(next.fellowshipNotes.f1).toBe('check deadline');
     });
+
+    it('redacts direct contact details before storing fellowship notes', () => {
+      const state = createInitialAccountTrackingState();
+      const next = accountTrackingReducer(state, {
+        type: 'SET_FELLOWSHIP_NOTE',
+        fellowshipId: 'f1',
+        value: 'Ask grace@example.edu at (203) 555-0100',
+      });
+      expect(next.fellowshipNotes.f1).toBe('Ask [email redacted] at ([phone redacted]');
+    });
+
+    it('bounds fellowship note length and rejects unsafe fellowship ids', () => {
+      const state = createInitialAccountTrackingState();
+      const unsafe = accountTrackingReducer(state, {
+        type: 'SET_FELLOWSHIP_NOTE',
+        fellowshipId: '$bad',
+        value: 'unsafe',
+      });
+      expect(unsafe.fellowshipNotes).toEqual({});
+
+      const next = accountTrackingReducer(state, {
+        type: 'SET_FELLOWSHIP_NOTE',
+        fellowshipId: 'f1',
+        value: 'b'.repeat(2500),
+      });
+      expect(next.fellowshipNotes.f1).toHaveLength(2000);
+    });
   });
 
   describe('HYDRATE', () => {
@@ -179,6 +236,30 @@ describe('accountTrackingReducer', () => {
         payload: { fellowshipStage: { f1: 'applied' } },
       });
       expect(next.labNotes).toEqual({ abc: 'keep' });
+      expect(next.fellowshipStage).toEqual({ f1: 'applied' });
+    });
+
+    it('normalizes hydrated payload maps before merging into state', () => {
+      const state = createInitialAccountTrackingState({ labNotes: { abc: 'keep' } });
+      const next = accountTrackingReducer(state, {
+        type: 'HYDRATE',
+        payload: {
+          labNotes: {
+            abc: 'a'.repeat(2500),
+            '../bad': 'drop',
+          },
+          labStage: {
+            abc: 'interview',
+            badstage: 'rooted' as any,
+          },
+          fellowshipStage: {
+            f1: 'applied',
+            f2: 'rooted' as any,
+          },
+        },
+      });
+      expect(next.labNotes).toEqual({ abc: 'a'.repeat(2000) });
+      expect(next.labStage).toEqual({ abc: 'interview' });
       expect(next.fellowshipStage).toEqual({ f1: 'applied' });
     });
   });
@@ -206,6 +287,10 @@ describe('accountTrackingReducer', () => {
 });
 
 describe('loadAccountTrackingFromStorage', () => {
+  const legacyPrefix = ['y', 'labs'].join('');
+  const legacyKey = (key: string) => `${legacyPrefix}-${key}`;
+  const scopedKey = (key: string) => `yale-research-avery1-${key}`;
+
   const makeStorage = (data: Record<string, string>) => {
     const store: Record<string, string> = { ...data };
     return {
@@ -225,49 +310,157 @@ describe('loadAccountTrackingFromStorage', () => {
 
   it('returns defaults when storage is empty', () => {
     const storage = makeStorage({});
-    const state = loadAccountTrackingFromStorage(storage);
+    const state = loadAccountTrackingFromStorage(storage, 'avery1');
     expect(state.labStage).toEqual({});
     expect(state.fellowshipNotes).toEqual({});
   });
 
-  it('parses stored JSON for each key', () => {
+  it('parses stored stages and purges private note keys', () => {
     const storage = makeStorage({
-      'ylabs-lab-stages': JSON.stringify({ abc: 'emailed' }),
-      'ylabs-lab-notes': JSON.stringify({ abc: 'hi' }),
-      'ylabs-fellowship-stages': JSON.stringify({ f1: 'applied' }),
-      'ylabs-fellowship-notes': JSON.stringify({ f1: 'note' }),
+      [scopedKey('lab-stages')]: JSON.stringify({ abc: 'emailed' }),
+      [scopedKey('lab-notes')]: JSON.stringify({ abc: 'hi' }),
+      [scopedKey('fellowship-stages')]: JSON.stringify({ f1: 'applied' }),
+      [scopedKey('fellowship-notes')]: JSON.stringify({ f1: 'note' }),
     });
-    const state = loadAccountTrackingFromStorage(storage);
+    const state = loadAccountTrackingFromStorage(storage, 'avery1');
     expect(state.labStage).toEqual({ abc: 'emailed' });
-    expect(state.labNotes).toEqual({ abc: 'hi' });
+    expect(state.labNotes).toEqual({});
     expect(state.fellowshipStage).toEqual({ f1: 'applied' });
-    expect(state.fellowshipNotes).toEqual({ f1: 'note' });
+    expect(state.fellowshipNotes).toEqual({});
+    expect(storage.removeItem).toHaveBeenCalledWith(scopedKey('lab-notes'));
+    expect(storage.removeItem).toHaveBeenCalledWith(scopedKey('fellowship-notes'));
   });
 
-  it('migrates the legacy ylabs-emailed-labs list into labStage', () => {
+  it('normalizes untrusted stored maps before hydration', () => {
     const storage = makeStorage({
-      'ylabs-emailed-labs': JSON.stringify(['a', 'b']),
+      [scopedKey('lab-stages')]: JSON.stringify({
+        abc: 'emailed',
+        unsafeStage: 'rooted',
+        '../bad': 'interview',
+      }),
+      [scopedKey('lab-notes')]: JSON.stringify({
+        abc: 'a'.repeat(2500),
+        '$bad': 'drop',
+      }),
+      [scopedKey('fellowship-stages')]: JSON.stringify({
+        f1: 'applied',
+        f2: 'rooted',
+      }),
+      [scopedKey('fellowship-notes')]: JSON.stringify({
+        f1: 'b'.repeat(2500),
+        '$bad': 'drop',
+      }),
     });
-    const state = loadAccountTrackingFromStorage(storage);
-    expect(state.labStage).toEqual({ a: 'emailed', b: 'emailed' });
-    expect(storage.removeItem).toHaveBeenCalledWith('ylabs-emailed-labs');
+    const state = loadAccountTrackingFromStorage(storage, 'avery1');
+    expect(state.labStage).toEqual({ abc: 'emailed' });
+    expect(state.labNotes).toEqual({});
+    expect(state.fellowshipStage).toEqual({ f1: 'applied' });
+    expect(state.fellowshipNotes).toEqual({});
   });
 
-  it('prefers ylabs-lab-stages over the legacy key when both exist', () => {
+  it('drops hydrated notes instead of retaining private browser storage text', () => {
     const storage = makeStorage({
-      'ylabs-lab-stages': JSON.stringify({ abc: 'interview' }),
-      'ylabs-emailed-labs': JSON.stringify(['legacy']),
+      [scopedKey('lab-notes')]: JSON.stringify({
+        abc: 'Email ada@example.edu',
+      }),
+      [scopedKey('fellowship-notes')]: JSON.stringify({
+        f1: 'Call 203.555.1212',
+      }),
     });
-    const state = loadAccountTrackingFromStorage(storage);
+    const state = loadAccountTrackingFromStorage(storage, 'avery1');
+    expect(state.labNotes).toEqual({});
+    expect(state.fellowshipNotes).toEqual({});
+    expect(storage.removeItem).toHaveBeenCalledWith(scopedKey('lab-notes'));
+    expect(storage.removeItem).toHaveBeenCalledWith(scopedKey('fellowship-notes'));
+  });
+
+  it('removes legacy unscoped tracking without hydrating it into the current user', () => {
+    const storage = makeStorage({
+      [legacyKey('emailed-labs')]: JSON.stringify(['a', '../bad', 'b']),
+      'yale-research-fellowship-notes': JSON.stringify({ f1: 'previous user note' }),
+    });
+    const state = loadAccountTrackingFromStorage(storage, 'avery1');
+    expect(state.labStage).toEqual({});
+    expect(state.fellowshipNotes).toEqual({});
+    expect(storage.removeItem).toHaveBeenCalledWith(legacyKey('emailed-labs'));
+    expect(storage.removeItem).toHaveBeenCalledWith('yale-research-fellowship-notes');
+  });
+
+  it('uses owner-scoped current lab stages while deleting legacy keys', () => {
+    const storage = makeStorage({
+      [scopedKey('lab-stages')]: JSON.stringify({ abc: 'interview' }),
+      [legacyKey('emailed-labs')]: JSON.stringify(['legacy']),
+    });
+    const state = loadAccountTrackingFromStorage(storage, 'avery1');
     expect(state.labStage).toEqual({ abc: 'interview' });
-    // legacy key should NOT have been touched since we had the new one
-    expect(storage.removeItem).not.toHaveBeenCalled();
+    expect(storage.removeItem).toHaveBeenCalledWith(legacyKey('emailed-labs'));
   });
 
   it('falls back to empty object when stored JSON is malformed', () => {
-    const storage = makeStorage({ 'ylabs-lab-notes': 'not json' });
-    const state = loadAccountTrackingFromStorage(storage);
+    const storage = makeStorage({ [scopedKey('lab-notes')]: 'not json' });
+    const state = loadAccountTrackingFromStorage(storage, 'avery1');
     expect(state.labNotes).toEqual({});
+    expect(storage.removeItem).toHaveBeenCalledWith(scopedKey('lab-notes'));
     warn.mockRestore();
+  });
+
+  it('drops oversized storage values before parsing', () => {
+    const storage = makeStorage({
+      [scopedKey('lab-notes')]: 'x'.repeat(MAX_TRACKING_STORAGE_VALUE_LENGTH + 1),
+    });
+    const state = loadAccountTrackingFromStorage(storage, 'avery1');
+
+    expect(state.labNotes).toEqual({});
+    expect(storage.removeItem).toHaveBeenCalledWith(scopedKey('lab-notes'));
+  });
+});
+
+describe('persistAccountTrackingToStorage', () => {
+  it('normalizes account tracking storage owners', () => {
+    expect(normalizeAccountTrackingStorageOwner('Avery1')).toBe('avery1');
+    expect(normalizeAccountTrackingStorageOwner('../bad')).toBeUndefined();
+  });
+
+  it('caps serialized account tracking values before writing', () => {
+    const storage = {
+      setItem: vi.fn(),
+      removeItem: vi.fn(),
+    };
+
+    persistAccountTrackingToStorage(storage, 'fellowship-notes', {
+      safe: 'x'.repeat(MAX_TRACKING_STORAGE_VALUE_LENGTH + 1),
+    }, 'avery1');
+
+    expect(storage.setItem).not.toHaveBeenCalled();
+    expect(storage.removeItem).toHaveBeenCalledWith('yale-research-avery1-fellowship-notes');
+  });
+
+  it('removes private note keys instead of writing them to localStorage', () => {
+    const storage = {
+      setItem: vi.fn(),
+      removeItem: vi.fn(),
+    };
+
+    persistAccountTrackingToStorage(storage, 'fellowship-notes', { f1: 'private note' }, 'avery1');
+    persistAccountTrackingToStorage(storage, 'lab-notes', { lab1: 'private note' }, 'avery1');
+
+    expect(storage.setItem).not.toHaveBeenCalled();
+    expect(storage.removeItem).toHaveBeenCalledWith('yale-research-avery1-fellowship-notes');
+    expect(storage.removeItem).toHaveBeenCalledWith('yale-research-avery1-lab-notes');
+  });
+
+  it('writes bounded account tracking values with the canonical key prefix', () => {
+    const storage = {
+      setItem: vi.fn(),
+      removeItem: vi.fn(),
+    };
+
+    persistAccountTrackingToStorage(storage, 'fellowship-stages', { f1: 'applied' }, 'avery1');
+
+    expect(storage.setItem).toHaveBeenCalledWith(
+      'yale-research-avery1-fellowship-stages',
+      JSON.stringify({ f1: 'applied' }),
+    );
+    expect(storage.removeItem).not.toHaveBeenCalled();
   });
 });

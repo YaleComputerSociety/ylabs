@@ -26,6 +26,7 @@ export default function AnalyticsButton() {
         fontFamily: 'Inter',
         fontWeight: 450,
         fontSize: '14px',
+        minHeight: '44px',
         '&:hover': {
           backgroundColor: 'transparent',
           color: '#1876D1',

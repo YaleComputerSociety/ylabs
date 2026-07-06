@@ -8,6 +8,9 @@ import { useEffect, useRef, useMemo, useReducer, useCallback } from 'react';
 import { FacultyProfile } from '../../types/types';
 import axios from '../../utils/axios';
 import { useConfig } from '../../hooks/useConfig';
+import { clientErrorMessage } from '../../utils/clientErrorMessage';
+import { getUniqueDepartmentLabels } from '../../utils/departmentNames';
+import { EXTERNAL_IMAGE_REFERRER_POLICY, safeHttpUrl, safeRouteSegment } from '../../utils/url';
 import DepartmentInput from './ListingForm/FormFields/DepartmentInput';
 import ResearchAreaInput from './ListingForm/FormFields/ResearchAreaInput';
 import {
@@ -42,12 +45,17 @@ const ProfileEditor = ({ netid }: ProfileEditorProps) => {
 
   const { departments: allDepartmentsConfig, isLoading: configLoading } = useConfig();
   const departmentNames = useMemo(
-    () => allDepartmentsConfig.map((d) => d.displayName),
+    () =>
+      getUniqueDepartmentLabels(
+        allDepartmentsConfig.map((d) => d.name || d.displayName),
+        allDepartmentsConfig,
+      ),
     [allDepartmentsConfig],
   );
 
   const primaryDropdownRef = useRef<HTMLDivElement>(null);
   const primaryInputRef = useRef<HTMLInputElement>(null);
+  const validationSummaryRef = useRef<HTMLDivElement>(null);
 
   const filteredPrimaryDepts = useMemo(() => {
     const search = isPrimaryDropdownOpen ? primaryDeptSearch : '';
@@ -82,8 +90,8 @@ const ProfileEditor = ({ netid }: ProfileEditorProps) => {
         const p: FacultyProfile = res.data.profile;
         dispatch({ type: 'FETCH_SUCCESS', profile: p });
       })
-      .catch((err) => {
-        console.error(err);
+      .catch(() => {
+        console.error('Error loading profile editor data.');
         dispatch({ type: 'FETCH_FAILURE' });
       });
   }, [netid]);
@@ -98,6 +106,7 @@ const ProfileEditor = ({ netid }: ProfileEditorProps) => {
     if (researchInterests.length === 0) errors.push('At least one Research Interest is required.');
     if (errors.length > 0) {
       dispatch({ type: 'SAVE_VALIDATION_FAILED', errors });
+      window.setTimeout(() => validationSummaryRef.current?.focus(), 0);
       return;
     }
 
@@ -110,39 +119,33 @@ const ProfileEditor = ({ netid }: ProfileEditorProps) => {
         image_url: imageUrl.trim(),
       };
 
-      await axios.put('/profiles/me', data);
+      const saveRes = await axios.put('/profiles/me', data);
+      const savedProfile: FacultyProfile = {
+        ...(profile as FacultyProfile),
+        ...saveRes.data.profile,
+      };
 
       if (isUnverified) {
-        const verifyRes = await axios.put('/profiles/me/verify');
-        const updatedProfile: FacultyProfile = {
-          ...(profile as FacultyProfile),
-          ...verifyRes.data.profile,
-          profileVerified: true,
-        };
+        await axios.put('/profiles/me/verify');
         dispatch({
           type: 'SAVE_SUCCESS',
-          profile: updatedProfile,
-          message: { type: 'success', text: 'Profile verified! You can now create listings.' },
+          profile: { ...savedProfile, profileVerified: true },
+          message: { type: 'success', text: 'Profile verified. Students can now trust this profile.' },
         });
       } else {
-        const res = await axios.put('/profiles/me', data);
-        const updatedProfile: FacultyProfile = {
-          ...(profile as FacultyProfile),
-          ...res.data.profile,
-        };
         dispatch({
           type: 'SAVE_SUCCESS',
-          profile: updatedProfile,
+          profile: savedProfile,
           message: {
             type: 'success',
-            text: 'Profile updated. Department changes have been applied to your listings.',
+            text: 'Profile updated. Department changes have been applied to your research profile.',
           },
         });
       }
     } catch (err: any) {
       dispatch({
         type: 'SAVE_FAILURE',
-        message: { type: 'error', text: err.response?.data?.error || 'Failed to save profile.' },
+        message: { type: 'error', text: clientErrorMessage(err, 'Failed to save profile.') },
       });
     }
   };
@@ -204,11 +207,30 @@ const ProfileEditor = ({ netid }: ProfileEditorProps) => {
   const fullName = `${profile.fname} ${profile.lname}`;
   const initials =
     `${profile.fname?.charAt(0) || ''}${profile.lname?.charAt(0) || ''}`.toUpperCase();
+  const profileImageHref = safeHttpUrl(profile.image_url);
+  const primaryDeptError = validationErrors.includes('Primary Department is required.');
+  const researchInterestError = validationErrors.includes(
+    'At least one Research Interest is required.',
+  );
+  const readinessItems = [
+    { label: 'Department', complete: Boolean(primaryDept.trim()) },
+    { label: 'Research interests', complete: researchInterests.length > 0 },
+    { label: 'Bio', complete: Boolean(bio.trim()) },
+    { label: 'Profile photo', complete: Boolean(imageUrl.trim()) },
+  ];
+  const readinessCount = readinessItems.filter((item) => item.complete).length;
+  const readinessPercent = Math.round((readinessCount / readinessItems.length) * 100);
+  const bioId = `profile-bio-${netid}`;
+  const imageUrlId = `profile-image-url-${netid}`;
+  const primaryDeptId = `profile-primary-dept-${netid}`;
+  const primaryDeptListId = `profile-primary-dept-list-${netid}`;
+  const primaryDeptErrorId = `profile-primary-dept-error-${netid}`;
+  const researchInterestsErrorId = `profile-research-interests-error-${netid}`;
 
   return (
     <section className="mb-8">
       {isUnverified && (
-        <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg mb-6">
+        <div className="p-4 bg-amber-50 border border-amber-200 rounded-md mb-6">
           <p className="text-sm font-medium text-amber-800">
             Your faculty profile has been auto-populated from Yale directories and academic
             databases.
@@ -220,25 +242,29 @@ const ProfileEditor = ({ netid }: ProfileEditorProps) => {
         </div>
       )}
 
-      <div className="bg-white border border-gray-200 rounded-xl p-6">
-        <div className="flex items-start justify-between mb-4">
+      <div className="bg-[var(--yr-panel)] border border-[var(--yr-line)] rounded-md p-6">
+        <div className="flex flex-col gap-4 border-b border-[var(--yr-line)] pb-5 md:flex-row md:items-start md:justify-between">
           <div className="flex items-center gap-4">
-            {profile.image_url ? (
-              <img
-                src={profile.image_url}
-                alt={fullName}
-                className="w-16 h-16 rounded-xl object-cover"
-              />
+            {profileImageHref ? (
+                <img
+                  src={profileImageHref}
+                  alt={fullName}
+                  referrerPolicy={EXTERNAL_IMAGE_REFERRER_POLICY}
+                  className="w-16 h-16 rounded-md object-cover"
+                />
             ) : (
-              <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-blue-100 to-blue-200 flex items-center justify-center">
+              <div className="w-16 h-16 rounded-md bg-[var(--yr-blue-soft)] flex items-center justify-center">
                 <span className="text-xl font-bold text-blue-700">{initials}</span>
               </div>
             )}
             <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">
+                Public faculty profile
+              </p>
               <h3 className="text-lg font-bold text-gray-900">{fullName}</h3>
               {profile.title && <p className="text-sm text-gray-500">{profile.title}</p>}
               <a
-                href={`/profile/${netid}`}
+                href={`/profile/${safeRouteSegment(netid)}`}
                 className="text-xs text-blue-600 hover:underline mt-0.5 inline-block"
               >
                 View full profile
@@ -248,16 +274,48 @@ const ProfileEditor = ({ netid }: ProfileEditorProps) => {
           {!editing && (
             <button
               onClick={() => dispatch({ type: 'START_EDITING' })}
-              className="px-4 py-2 text-sm font-medium text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50 transition-colors"
+              className="min-h-[44px] px-4 py-2 text-sm font-medium text-blue-600 border border-blue-200 rounded-md hover:bg-[var(--yr-blue-soft)] transition-colors"
             >
               Edit Profile
             </button>
           )}
         </div>
 
+        <div className="border-b border-[var(--yr-line)] py-5">
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-gray-900">Profile readiness</p>
+              <p className="text-sm text-gray-500">
+                Students use these fields to judge fit before deciding whether to reach out.
+              </p>
+            </div>
+            <p className="text-sm font-semibold text-gray-700">
+              {readinessCount}/{readinessItems.length} complete
+            </p>
+          </div>
+          <div className="mt-3 h-2 overflow-hidden rounded-full bg-[var(--yr-panel-muted)]">
+            <div className="h-full bg-blue-600" style={{ width: `${readinessPercent}%` }} />
+          </div>
+          <ul className="mt-3 grid gap-2 text-xs text-gray-600 sm:grid-cols-2 lg:grid-cols-4">
+            {readinessItems.map((item) => (
+              <li key={item.label} className="flex items-center gap-2">
+                <span
+                  aria-hidden="true"
+                  className={`h-2 w-2 rounded-full ${
+                    item.complete ? 'bg-green-500' : 'bg-gray-300'
+                  }`}
+                />
+                <span className={item.complete ? 'text-gray-700' : 'text-gray-500'}>
+                  {item.label}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+
         {message && (
           <div
-            className={`p-3 rounded-lg mb-4 text-sm ${
+            className={`p-3 rounded-md my-4 text-sm ${
               message.type === 'success'
                 ? 'bg-green-50 text-green-700 border border-green-200'
                 : 'bg-red-50 text-red-700 border border-red-200'
@@ -268,7 +326,12 @@ const ProfileEditor = ({ netid }: ProfileEditorProps) => {
         )}
 
         {validationErrors.length > 0 && (
-          <div className="p-3 rounded-lg mb-4 text-sm bg-red-50 text-red-700 border border-red-200">
+          <div
+            ref={validationSummaryRef}
+            tabIndex={-1}
+            role="alert"
+            className="p-3 rounded-md my-4 text-sm bg-red-50 text-red-700 border border-red-200 focus:outline-none focus:ring-2 focus:ring-red-300"
+          >
             <ul className="list-disc list-inside space-y-0.5">
               {validationErrors.map((err, i) => (
                 <li key={i}>{err}</li>
@@ -280,34 +343,50 @@ const ProfileEditor = ({ netid }: ProfileEditorProps) => {
         {editing ? (
           <div className="space-y-4 mt-4">
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Bio</label>
+              <label htmlFor={bioId} className="block text-xs font-medium text-gray-600 mb-1">
+                Bio
+              </label>
               <textarea
+                id={bioId}
                 value={bio}
                 onChange={(e) => dispatch({ type: 'SET_BIO', payload: e.target.value })}
                 rows={4}
-                className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full text-sm border border-[var(--yr-line)] rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div ref={primaryDropdownRef}>
-                <label className="block text-xs font-medium text-gray-600 mb-1">
+                <label
+                  htmlFor={primaryDeptId}
+                  className="block text-xs font-medium text-gray-600 mb-1"
+                >
                   Primary Department <span className="text-red-500">*</span>
                 </label>
                 <div className="relative">
                   <input
+                    id={primaryDeptId}
                     ref={primaryInputRef}
                     type="text"
                     value={isPrimaryDropdownOpen ? primaryDeptSearch : primaryDept}
-                    onClick={() => dispatch({ type: 'OPEN_PRIMARY_DROPDOWN' })}
+                    onClick={() => {
+                      if (!isPrimaryDropdownOpen) dispatch({ type: 'OPEN_PRIMARY_DROPDOWN' });
+                    }}
                     onChange={(e) =>
                       dispatch({ type: 'SET_PRIMARY_DEPT_SEARCH', payload: e.target.value })
                     }
                     onKeyDown={handlePrimaryKeyDown}
-                    onFocus={() => dispatch({ type: 'OPEN_PRIMARY_DROPDOWN' })}
-                    readOnly={!isPrimaryDropdownOpen}
-                    className={`w-full text-sm border rounded-lg px-3 py-2 pr-8 focus:outline-none focus:ring-2 focus:ring-blue-500 truncate ${
-                      isUnverified && !primaryDept.trim() ? 'border-red-300' : 'border-gray-200'
+                    onFocus={() => {
+                      if (!isPrimaryDropdownOpen) dispatch({ type: 'OPEN_PRIMARY_DROPDOWN' });
+                    }}
+                    role="combobox"
+                    aria-expanded={isPrimaryDropdownOpen}
+                    aria-controls={primaryDeptListId}
+                    aria-autocomplete="list"
+                    aria-invalid={primaryDeptError || undefined}
+                    aria-describedby={primaryDeptError ? primaryDeptErrorId : undefined}
+                    className={`w-full text-sm border rounded-md px-3 py-2 pr-8 focus:outline-none focus:ring-2 focus:ring-blue-500 truncate ${
+                      primaryDeptError ? 'border-red-300' : 'border-[var(--yr-line)]'
                     } ${!isPrimaryDropdownOpen && primaryDept ? 'text-gray-900' : 'text-gray-700'}`}
                     placeholder="Select primary department..."
                   />
@@ -332,16 +411,16 @@ const ProfileEditor = ({ netid }: ProfileEditorProps) => {
                   </div>
 
                   {isPrimaryDropdownOpen && (
-                    <div className="absolute w-full bg-white rounded-lg z-10 shadow-lg border overflow-hidden mt-1 border-gray-300">
+                    <div className="absolute w-full bg-[var(--yr-panel)] rounded-lg z-10 shadow-lg border overflow-hidden mt-1 border-[var(--yr-line-strong)]">
                       {primaryDept && (
-                        <div className="px-3 py-2 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
+                        <div className="px-3 py-2 border-b border-[var(--yr-line)] bg-[var(--yr-panel-muted)] flex items-center justify-between">
                           <span className="text-sm text-gray-700">{primaryDept}</span>
                           <button
                             type="button"
                             onMouseDown={(e) => e.preventDefault()}
                             onClick={() => {
                               dispatch({ type: 'CLEAR_PRIMARY_DEPT' });
-                              primaryInputRef.current?.focus();
+                              dispatch({ type: 'CLOSE_PRIMARY_DROPDOWN' });
                             }}
                             className="text-xs text-red-500 hover:text-red-700"
                           >
@@ -349,16 +428,22 @@ const ProfileEditor = ({ netid }: ProfileEditorProps) => {
                           </button>
                         </div>
                       )}
-                      <ul className="max-h-[250px] p-1 overflow-y-auto">
+                      <ul
+                        id={primaryDeptListId}
+                        role="listbox"
+                        className="max-h-[250px] p-1 overflow-y-auto"
+                      >
                         {filteredPrimaryDepts.length > 0 ? (
                           filteredPrimaryDepts.map((dept, index) => (
                             <li
                               key={index}
+                              role="option"
+                              aria-selected={focusedPrimaryIndex === index}
                               onClick={() =>
                                 dispatch({ type: 'SELECT_PRIMARY_DEPT', payload: dept })
                               }
                               className={`p-2 cursor-pointer text-sm ${
-                                focusedPrimaryIndex === index ? 'bg-blue-100' : 'hover:bg-gray-100'
+                                focusedPrimaryIndex === index ? 'bg-[var(--yr-blue-soft)]' : 'hover:bg-[var(--yr-panel-muted)]'
                               }`}
                               onMouseDown={(e) => e.preventDefault()}
                             >
@@ -366,23 +451,31 @@ const ProfileEditor = ({ netid }: ProfileEditorProps) => {
                             </li>
                           ))
                         ) : (
-                          <li className="p-2 text-gray-500 text-sm">No departments found</li>
+                          <li className="p-2 text-gray-500 text-sm" role="option" aria-disabled>
+                            No departments found
+                          </li>
                         )}
                       </ul>
                     </div>
                   )}
                 </div>
+                {primaryDeptError && (
+                  <p id={primaryDeptErrorId} className="mt-1 text-xs text-red-600">
+                    Primary Department is required.
+                  </p>
+                )}
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">
+                <label htmlFor={imageUrlId} className="block text-xs font-medium text-gray-600 mb-1">
                   Profile Image URL
                 </label>
                 <input
+                  id={imageUrlId}
                   type="text"
                   value={imageUrl}
                   onChange={(e) => dispatch({ type: 'SET_IMAGE_URL', payload: e.target.value })}
-                  className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full text-sm border border-[var(--yr-line)] rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
             </div>
@@ -401,20 +494,30 @@ const ProfileEditor = ({ netid }: ProfileEditorProps) => {
               <label className="block text-xs font-medium text-gray-600 mb-1">
                 Research Interests <span className="text-red-500">*</span>
               </label>
-              <ResearchAreaInput
-                researchAreas={researchInterests}
-                onAddResearchArea={(area) => setResearchInterests((prev) => [...prev, area])}
-                onRemoveResearchArea={(index) =>
-                  setResearchInterests((prev) => prev.filter((_, i) => i !== index))
-                }
-              />
+              <div
+                aria-invalid={researchInterestError || undefined}
+                aria-describedby={researchInterestError ? researchInterestsErrorId : undefined}
+              >
+                <ResearchAreaInput
+                  researchAreas={researchInterests}
+                  onAddResearchArea={(area) => setResearchInterests((prev) => [...prev, area])}
+                  onRemoveResearchArea={(index) =>
+                    setResearchInterests((prev) => prev.filter((_, i) => i !== index))
+                  }
+                />
+              </div>
+              {researchInterestError && (
+                <p id={researchInterestsErrorId} className="mt-1 text-xs text-red-600">
+                  At least one Research Interest is required.
+                </p>
+              )}
             </div>
 
             <div className="flex gap-2 pt-2">
               <button
                 onClick={handleSave}
                 disabled={saving}
-                className={`px-4 py-2 text-white text-sm font-medium rounded-lg disabled:opacity-50 transition-colors ${
+                className={`min-h-[44px] px-4 py-2 text-white text-sm font-medium rounded-md disabled:opacity-50 transition-colors ${
                   isUnverified ? 'bg-amber-600 hover:bg-amber-700' : 'bg-blue-600 hover:bg-blue-700'
                 }`}
               >
@@ -424,7 +527,7 @@ const ProfileEditor = ({ netid }: ProfileEditorProps) => {
                 onClick={() => {
                   if (profile) dispatch({ type: 'CANCEL_EDITING', profile });
                 }}
-                className="px-4 py-2 text-sm font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                className="min-h-[44px] px-4 py-2 text-sm font-medium text-gray-600 border border-[var(--yr-line)] rounded-md hover:bg-[var(--yr-panel-muted)] transition-colors"
               >
                 Cancel
               </button>
