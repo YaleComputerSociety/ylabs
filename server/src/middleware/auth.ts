@@ -3,13 +3,6 @@
  */
 import express from 'express';
 
-const sendUnauthorized = (res: express.Response) => {
-  return res.status(401).json({
-    error: 'Unauthorized',
-    code: 'AUTH_REQUIRED',
-  });
-};
-
 /**
  * Middleware to check if user is authenticated
  */
@@ -21,7 +14,7 @@ export const isAuthenticated = (
   if (req.user) {
     return next();
   }
-  sendUnauthorized(res);
+  res.status(401).json({ error: 'Unauthorized' });
 };
 
 /**
@@ -61,7 +54,7 @@ export const canCreateListing = (
   };
 
   if (!currentUser) {
-    return sendUnauthorized(res);
+    return res.status(401).json({ error: 'Unauthorized' });
   }
 
   const allowedTypes = ['admin', 'professor', 'faculty'];
@@ -80,6 +73,30 @@ export const canCreateListing = (
 };
 
 /**
+ * Middleware to check if user can submit listing claim/correction requests.
+ * These requests create admin-review work items, so they are limited to
+ * confirmed faculty/staff/operator accounts rather than all authenticated users.
+ */
+export const canSubmitListingClaimRequest = (
+  req: express.Request,
+  res: express.Response,
+  next: express.NextFunction,
+) => {
+  const currentUser = req.user as { netId?: string; userType?: string; userConfirmed?: boolean };
+
+  if (!currentUser) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  const allowedTypes = ['admin', 'professor', 'faculty', 'staff'];
+  if (!currentUser.userConfirmed || !allowedTypes.includes(currentUser.userType ?? '')) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+
+  next();
+};
+
+/**
  * Middleware to check if user is an admin
  */
 export const isAdmin = (
@@ -90,7 +107,7 @@ export const isAdmin = (
   const currentUser = req.user as { netId?: string; userType?: string; userConfirmed?: boolean };
 
   if (!currentUser) {
-    return sendUnauthorized(res);
+    return res.status(401).json({ error: 'Unauthorized' });
   }
 
   if (currentUser.userType !== 'admin') {
@@ -111,7 +128,7 @@ export const isProfessor = (
   const currentUser = req.user as { netId?: string; userType?: string; userConfirmed?: boolean };
 
   if (!currentUser) {
-    return sendUnauthorized(res);
+    return res.status(401).json({ error: 'Unauthorized' });
   }
 
   if (
@@ -136,7 +153,7 @@ export const isConfirmed = (
   const currentUser = req.user as { netId?: string; userType?: string; userConfirmed?: boolean };
 
   if (!currentUser) {
-    return sendUnauthorized(res);
+    return res.status(401).json({ error: 'Unauthorized' });
   }
 
   if (!currentUser.userConfirmed) {

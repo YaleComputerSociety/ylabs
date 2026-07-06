@@ -15,7 +15,6 @@ import { fileURLToPath } from 'url';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
 import { securityHeaders } from './middleware/securityHeaders';
 import { sanitizeMongo } from './middleware/sanitizeMongo';
-import { createRateLimitHandler } from './middleware/rateLimitResponse';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -49,7 +48,7 @@ const apiLimiter = rateLimit({
   keyGenerator: getRateLimitKey,
   standardHeaders: true,
   legacyHeaders: false,
-  handler: createRateLimitHandler('Too many requests, please try again later.'),
+  message: { error: 'Too many requests, please try again later.' },
   skip: () => isCI() || isDevelopment() || isTest(),
 });
 
@@ -60,7 +59,7 @@ const writeLimiter = rateLimit({
   keyGenerator: getRateLimitKey,
   standardHeaders: true,
   legacyHeaders: false,
-  handler: createRateLimitHandler('Too many write requests, please try again later.'),
+  message: { error: 'Too many write requests, please try again later.' },
   skip: () => isCI() || isDevelopment() || isTest(),
 });
 
@@ -71,7 +70,7 @@ export const publicDiscoveryLimiter = rateLimit({
   keyGenerator: getRateLimitKey,
   standardHeaders: true,
   legacyHeaders: false,
-  handler: createRateLimitHandler('Too many discovery requests, please try again later.'),
+  message: { error: 'Too many discovery requests, please try again later.' },
   skip: () => isCI() || isDevelopment() || isTest(),
 });
 
