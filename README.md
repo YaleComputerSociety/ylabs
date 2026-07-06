@@ -1,6 +1,6 @@
 # YURA Research Database
 
-A research lab and fellowship discovery platform for Yale University, with public research browsing and authenticated tools for favorites, contact, and management.
+A research lab and fellowship discovery platform for Yale University.
 
 **Live:** [yalelabs.io](https://yalelabs.io/) · **Beta:** [ylabs-dev.onrender.com](https://ylabs-dev.onrender.com)
 
@@ -31,7 +31,7 @@ yarn dev:client
 yarn dev:server
 ```
 
-Go to **http://localhost:3000**. Public research discovery is available at **http://localhost:3000/research**; use `http://localhost:4000/api/dev-login` to bypass CAS auth locally for authenticated actions.
+Go to **http://localhost:3000**. Use `http://localhost:4000/api/dev-login` to bypass CAS auth locally.
 
 ## Documentation
 

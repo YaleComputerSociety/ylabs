@@ -6,7 +6,7 @@
 
 ## What Is This?
 
-Y/Labs is a **Yale research lab discovery platform**. Visitors can browse public research listings, students find labs and fellowships, professors create and manage listings, and admins oversee everything.
+Y/Labs is a **Yale research lab discovery platform**. Students find labs and fellowships, professors create and manage listings, admins oversee everything.
 
 ---
 
@@ -192,21 +192,13 @@ ylabs/
 
 ## Search
 
-Search uses **Meilisearch** with keyword search and hybrid mode (80% semantic, 20% keyword) for multi-word queries.
+Search uses **Meilisearch** with hybrid mode (80% semantic, 20% keyword).
 
 1. Client sends query + filters to `/api/listings/search`
 2. Controller builds Meilisearch filter strings from query params
-3. Multi-word queries use hybrid search with the Meilisearch-configured OpenAI embedder; single-word queries use keyword search to avoid semantic drift
+3. Hybrid search uses the Meilisearch-configured OpenAI embedder
 4. If hybrid search fails, the controller retries keyword-only Meilisearch; if Meilisearch is unavailable, it falls back to MongoDB filtering
 5. Results are returned with `totalCount` for pagination and a `degraded` boolean indicating whether fallback behavior was used
-
-Logged-out visitors use the public research discovery path instead:
-
-- Client routes `/research` and `/research/:slug` render the listings browse page without the `PrivateRoute` guard.
-- The client sends public browse requests to `/api/research` and public detail requests to `/api/research/:slug`.
-- Public responses include only confirmed, unarchived listings and redact contact/private fields such as owner email, additional emails, owner/professor IDs, view counts, favorites, and audit fields.
-- Authenticated users opening a public detail modal also request `/api/research/:slug/contact` to load the full listing, including contact fields.
-- Public research search only allows `createdAt` and `updatedAt` sort fields and searches a contact-redacted field set.
 
 Listing CRUD in `listingService.ts` automatically syncs to Meilisearch after MongoDB writes.
 
@@ -244,18 +236,17 @@ User → Yale CAS SSO → passport.ts findOrCreateUser
 
 All mount under `/api`.
 
-| Prefix            | Description                                             | Auth                                            |
-| ----------------- | ------------------------------------------------------- | ----------------------------------------------- |
-| `/listings`       | Listing CRUD and authenticated search                   | Varies                                          |
-| `/research`       | Public read-only listing discovery and shareable detail URLs | Public; `/research/:slug/contact` requires login |
-| `/fellowships`    | Fellowship CRUD and search                              | Varies                                          |
-| `/users`          | User CRUD                                               | Yes                                             |
-| `/profiles`       | Faculty profiles                                        | Varies                                          |
-| `/analytics`      | Analytics dashboards                                    | Admin                                           |
-| `/config`         | Departments + research areas                            | No                                              |
-| `/research-areas` | Research area CRUD                                      | Admin for writes                                |
-| `/admin`          | Admin operations                                        | Admin                                           |
-| `/seed`           | Dev seeding routes                                      | Dev mode only                                   |
+| Prefix            | Description                  | Auth             |
+| ----------------- | ---------------------------- | ---------------- |
+| `/listings`       | Listing CRUD and search      | Varies           |
+| `/fellowships`    | Fellowship CRUD and search   | Varies           |
+| `/users`          | User CRUD                    | Yes              |
+| `/profiles`       | Faculty profiles             | Varies           |
+| `/analytics`      | Analytics dashboards         | Admin            |
+| `/config`         | Departments + research areas | No               |
+| `/research-areas` | Research area CRUD           | Admin for writes |
+| `/admin`          | Admin operations             | Admin            |
+| `/seed`           | Dev seeding routes           | Dev mode only    |
 
 ---
 
@@ -313,8 +304,6 @@ The workflow also accepts `workflow_dispatch` so it can be run manually from the
 
 1. Page component in `client/src/pages/<page>.tsx`
 2. Route in `client/src/App.tsx` with appropriate guard (`PrivateRoute`, `AdminRoute`)
-
-Public pages that should work for logged-out visitors must not use `PrivateRoute`; protected actions from those pages should route users to `/login` and preserve the return path.
 
 ### Modifying a Schema
 

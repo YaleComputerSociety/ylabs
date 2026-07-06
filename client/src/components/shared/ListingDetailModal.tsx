@@ -17,7 +17,6 @@ interface ListingDetailModalProps {
   listing: Listing;
   isFavorite: boolean;
   onToggleFavorite: (e: React.MouseEvent) => void;
-  onRequireAuth?: () => void;
   onNavigateToResearchArea?: (area: string) => void;
   onNavigateToDepartment?: (dept: string) => void;
 }
@@ -28,13 +27,12 @@ const ListingDetailModal = ({
   listing,
   isFavorite,
   onToggleFavorite,
-  onRequireAuth,
   onNavigateToResearchArea,
   onNavigateToDepartment,
 }: ListingDetailModalProps) => {
   const isCreated = listing.id === 'create';
   const [restrictedStats, setRestrictedStats] = useState(true);
-  const { user, isAuthenticated } = useContext(UserContext);
+  const { user } = useContext(UserContext);
   const { getColorForResearchArea, getDepartmentByAbbr } = useContext(ConfigContext);
 
   const researchAreas =
@@ -43,8 +41,6 @@ const ListingDetailModal = ({
   const institutionCode = getInstitutionAffiliation(listing.departments);
   const institutionLabel = getInstitutionLabel(institutionCode);
   const professorName = `${listing.ownerFirstName} ${listing.ownerLastName}`;
-  const contactEmails = [listing.ownerEmail, ...(listing.emails || [])].filter(Boolean);
-  const canEmailContact = isAuthenticated && contactEmails.length > 0;
 
   const handleBackdropClick = (e: React.MouseEvent) => {
     if (e.target === e.currentTarget) onClose();
@@ -156,22 +152,10 @@ const ListingDetailModal = ({
                       </a>
                     )}
                     <a
-                      href={canEmailContact ? `mailto:${contactEmails[0]}` : undefined}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (!isAuthenticated) {
-                          e.preventDefault();
-                          onRequireAuth?.();
-                        }
-                      }}
+                      href={`mailto:${listing.ownerEmail}`}
+                      onClick={(e) => e.stopPropagation()}
                       className="p-2 rounded-lg hover:bg-gray-100 transition-colors text-gray-500 hover:text-blue-600"
-                      title={
-                        canEmailContact
-                          ? 'Send email'
-                          : isAuthenticated
-                            ? 'Contact details unavailable'
-                            : 'Sign in to inquire'
-                      }
+                      title="Send email"
                     >
                       <svg
                         xmlns="http://www.w3.org/2000/svg"
@@ -349,35 +333,10 @@ const ListingDetailModal = ({
                     Contact
                   </h3>
                   <div className="space-y-2">
-                    {canEmailContact ? (
-                      contactEmails.map((email, i) => (
-                        <a
-                          key={i}
-                          href={`mailto:${email}`}
-                          className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800 hover:underline"
-                        >
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            width="14"
-                            height="14"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            className="flex-shrink-0"
-                          >
-                            <rect x="2" y="4" width="20" height="16" rx="2" />
-                            <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
-                          </svg>
-                          <span className="truncate">{email}</span>
-                        </a>
-                      ))
-                    ) : !isAuthenticated ? (
-                      <button
-                        type="button"
-                        onClick={onRequireAuth}
+                    {[listing.ownerEmail, ...listing.emails].map((email, i) => (
+                      <a
+                        key={i}
+                        href={`mailto:${email}`}
                         className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800 hover:underline"
                       >
                         <svg
@@ -395,28 +354,9 @@ const ListingDetailModal = ({
                           <rect x="2" y="4" width="20" height="16" rx="2" />
                           <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
                         </svg>
-                        <span>Sign in to inquire</span>
-                      </button>
-                    ) : (
-                      <div className="flex items-center gap-2 text-sm text-gray-500">
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          width="14"
-                          height="14"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          className="flex-shrink-0"
-                        >
-                          <rect x="2" y="4" width="20" height="16" rx="2" />
-                          <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
-                        </svg>
-                        <span>Contact details unavailable</span>
-                      </div>
-                    )}
+                        <span className="truncate">{email}</span>
+                      </a>
+                    ))}
                     {listing.websites &&
                       listing.websites.length > 0 &&
                       listing.websites.map((website, i) => (

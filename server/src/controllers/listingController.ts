@@ -36,55 +36,6 @@ import { buildSafeSearchRegex } from '../utils/regex';
 const escapeMeiliFilterValue = (value: string): string =>
   value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 
-const PUBLIC_LISTING_SEARCHABLE_FIELDS = [
-  'title',
-  'description',
-  'applicantDescription',
-  'ownerFirstName',
-  'ownerLastName',
-  'ownerTitle',
-  'ownerPrimaryDepartment',
-  'professorNames',
-  'departments',
-  'researchAreas',
-  'keywords',
-];
-
-const PUBLIC_LISTING_SORT_FIELDS = new Set(['createdAt', 'updatedAt']);
-
-const getIdFromSlug = (slug: string): string | null => {
-  const match = slug.match(/[a-fA-F0-9]{24}/);
-  return match ? match[0] : null;
-};
-
-const redactPublicListing = (listing: any) => {
-  const source = typeof listing?.toObject === 'function' ? listing.toObject() : listing;
-  const redacted = { ...(source || {}) };
-  const rawId = redacted._id?.toString?.() || redacted.id;
-  delete redacted.__v;
-  delete redacted.ownerEmail;
-  delete redacted.emails;
-  delete redacted.views;
-  delete redacted.favorites;
-  delete redacted.archived;
-  delete redacted.confirmed;
-  delete redacted.audited;
-
-  return {
-    ...redacted,
-    _id: rawId,
-    id: rawId,
-    ownerId: undefined,
-    ownerEmail: undefined,
-    professorIds: [],
-    emails: [],
-    views: 0,
-    favorites: 0,
-    archived: false,
-    confirmed: true,
-  };
-};
-
 const buildRobustFilterMatch = async (params: {
   departments?: string;
   departmentsMode: string;
@@ -215,7 +166,6 @@ const buildMongoFilterMatch = async (params: {
   academicDisciplinesMode: string;
   researchAreas?: string;
   researchAreasMode: string;
-  searchableFields?: string[];
 }) => {
   const {
     query,
@@ -225,20 +175,6 @@ const buildMongoFilterMatch = async (params: {
     academicDisciplinesMode,
     researchAreas,
     researchAreasMode,
-    searchableFields = [
-      'title',
-      'description',
-      'applicantDescription',
-      'ownerFirstName',
-      'ownerLastName',
-      'ownerEmail',
-      'ownerTitle',
-      'ownerPrimaryDepartment',
-      'professorNames',
-      'departments',
-      'researchAreas',
-      'keywords',
-    ],
   } = params;
 
   const baseFilter: Record<string, any> = { archived: false, confirmed: true };
@@ -298,6 +234,21 @@ const buildMongoFilterMatch = async (params: {
 
   const trimmedQuery = (query || '').trim();
   if (trimmedQuery !== '') {
+    const searchableFields = [
+      'title',
+      'description',
+      'applicantDescription',
+      'ownerFirstName',
+      'ownerLastName',
+      'ownerEmail',
+      'ownerTitle',
+      'ownerPrimaryDepartment',
+      'professorNames',
+      'departments',
+      'researchAreas',
+      'keywords',
+    ];
+
     const queryConditions = trimmedQuery.split(/\s+/).map((term) => ({
       $or: searchableFields.map((field) => ({ [field]: buildSafeSearchRegex(term) })),
     }));
@@ -322,8 +273,6 @@ type MongoListingSearchParams = {
   researchAreasMode: string;
   limit: number;
   offset: number;
-  searchableFields?: string[];
-  defaultSort?: Record<string, 1 | -1>;
 };
 
 type ListingSearchEnvelope = {
@@ -341,14 +290,9 @@ export const searchListingsViaMongo = async (
   if (params.sortBy) {
     sort[params.sortBy] = params.sortOrder === '1' ? 1 : -1;
   } else if (!params.query || params.query.trim() === '') {
-    Object.assign(
-      sort,
-      params.defaultSort || {
-        browseRankScore: -1,
-        lastObservedAt: -1,
-        createdAt: -1,
-      },
-    );
+    sort.browseRankScore = -1;
+    sort.lastObservedAt = -1;
+    sort.createdAt = -1;
   } else {
     sort.updatedAt = -1;
   }
@@ -508,152 +452,6 @@ export const searchListings = async (request: Request, response: Response) => {
     console.error('Listing search failed:', error);
     return response.status(500).json({ error: 'Search failed', degraded: true });
   }
-};
-
-export const getPublicResearchSortBy = (sortBy: unknown): string | undefined => {
-  return typeof sortBy === 'string' && PUBLIC_LISTING_SORT_FIELDS.has(sortBy) ? sortBy : undefined;
-};
-
-export const buildPublicResearchSearchInputs = async (queryParams: Request['query']) => {
-  const {
-    query,
-    sortBy,
-    sortOrder,
-    departments,
-    academicDisciplines,
-    researchAreas,
-    departmentsMode = 'union',
-    academicDisciplinesMode = 'union',
-    researchAreasMode = 'union',
-    page = 1,
-    pageSize = 10,
-  } = queryParams;
-
-  const filterString = await buildRobustFilterMatch({
-    departments: departments as string,
-    departmentsMode: departmentsMode as string,
-    academicDisciplines: academicDisciplines as string,
-    academicDisciplinesMode: academicDisciplinesMode as string,
-    researchAreas: researchAreas as string,
-    researchAreasMode: researchAreasMode as string,
-  });
-
-  const limit = Number(pageSize);
-  const offset = (Number(page) - 1) * limit;
-  const publicSortBy = getPublicResearchSortBy(sortBy);
-  const sortConfig = [];
-  if (publicSortBy) {
-    const order = sortOrder === '1' ? 'asc' : 'desc';
-    sortConfig.push(`${publicSortBy}:${order}`);
-  } else if (!query || (query as string).trim() === '') {
-    sortConfig.push('createdAt:desc');
-  }
-
-  const searchParams: any = {
-    filter: filterString,
-    limit,
-    offset,
-  };
-
-  if (sortConfig.length > 0) {
-    searchParams.sort = sortConfig;
-  }
-
-  const trimmedQuery = ((query as string) || '').trim();
-  if (trimmedQuery !== '') {
-    searchParams.attributesToSearchOn = PUBLIC_LISTING_SEARCHABLE_FIELDS;
-  }
-
-  if (trimmedQuery !== '' && trimmedQuery.split(/\s+/).length > 1) {
-    searchParams.hybrid = {
-      semanticRatio: 0.8,
-      embedder: 'default',
-    };
-  }
-
-  const mongoParams = {
-    query: query as string,
-    sortBy: publicSortBy,
-    sortOrder: sortOrder as string,
-    departments: departments as string,
-    academicDisciplines: academicDisciplines as string,
-    researchAreas: researchAreas as string,
-    departmentsMode: departmentsMode as string,
-    academicDisciplinesMode: academicDisciplinesMode as string,
-    researchAreasMode: researchAreasMode as string,
-    limit,
-    offset,
-    searchableFields: PUBLIC_LISTING_SEARCHABLE_FIELDS,
-    defaultSort: { createdAt: -1 as const },
-  };
-
-  return {
-    query: (query as string) || '',
-    searchParams,
-    mongoParams,
-    page: Number(page),
-    pageSize: Number(pageSize),
-  };
-};
-
-export const searchPublicResearch = async (request: Request, response: Response) => {
-  try {
-    const publicSearch = await buildPublicResearchSearchInputs(request.query);
-
-    const searchResult = await searchListingsWithDegradation({
-      query: publicSearch.query,
-      searchParams: publicSearch.searchParams,
-      mongoParams: publicSearch.mongoParams,
-    });
-
-    return response.json({
-      results: searchResult.results.map((hit: any) => redactPublicListing(hit)),
-      totalCount: searchResult.totalCount,
-      page: publicSearch.page,
-      pageSize: publicSearch.pageSize,
-      degraded: searchResult.degraded,
-    });
-  } catch (error) {
-    console.error('Public research search failed:', error);
-    return response.status(500).json({ error: 'Search failed', degraded: true });
-  }
-};
-
-export const getPublicResearchBySlug = async (request: Request, response: Response) => {
-  const id = getIdFromSlug(request.params.slug);
-  if (!id) {
-    return response.status(404).json({ error: 'Research listing not found' });
-  }
-
-  const listing = await getListingModel()
-    .findOne({ _id: id, archived: false, confirmed: true })
-    .lean();
-
-  if (!listing) {
-    return response.status(404).json({ error: 'Research listing not found' });
-  }
-
-  return response.status(200).json({ listing: redactPublicListing(listing) });
-};
-
-export const getAuthenticatedPublicResearchBySlug = async (
-  request: Request,
-  response: Response,
-) => {
-  const id = getIdFromSlug(request.params.slug);
-  if (!id) {
-    return response.status(404).json({ error: 'Research listing not found' });
-  }
-
-  const listing = await getListingModel()
-    .findOne({ _id: id, archived: false, confirmed: true })
-    .lean();
-
-  if (!listing) {
-    return response.status(404).json({ error: 'Research listing not found' });
-  }
-
-  return response.status(200).json({ listing });
 };
 
 export const createListingForCurrentUser = async (request: Request, response: Response) => {
