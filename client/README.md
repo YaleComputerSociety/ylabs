@@ -2,8 +2,6 @@
 
 React 19 + TypeScript client built with Vite. The app talks to the Express API configured by `VITE_APP_SERVER` through the shared client in `src/utils/axios.ts`.
 
-Public research routes update the document title, canonical URL, description, Open Graph tags, and Twitter card tags from public-safe listing fields after the SPA loads. The production Express server also injects crawler-visible metadata into the built `index.html` for `/research` and `/research/:slug`; the client updater is the Vite/static-host fallback.
-
 ## Environment
 
 Create `client/.env` for local development:
