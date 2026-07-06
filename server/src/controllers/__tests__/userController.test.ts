@@ -915,6 +915,52 @@ describe('userController', () => {
     expect(res.body.user).not.toHaveProperty('updatedAt');
   });
 
+  it('lets unknown users bootstrap into any real non-admin account type without confirming them', async () => {
+    for (const userType of ['undergraduate', 'graduate', 'professor', 'faculty']) {
+      mocks.updateUser.mockResolvedValueOnce({
+        netid: 'unknown123',
+        fname: 'Ada',
+        lname: 'Lovelace',
+        email: 'ada@example.edu',
+        userType,
+        userConfirmed: false,
+        profileVerified: false,
+      });
+
+      const req = {
+        user: { netId: 'unknown123', userType: 'unknown', userConfirmed: false },
+        body: {
+          data: {
+            fname: 'Ada',
+            lname: 'Lovelace',
+            email: 'ada@example.edu',
+            userType,
+            userConfirmed: true,
+            profileVerified: true,
+          },
+        },
+      } as any;
+      const res = privateResponseDouble();
+      const next = vi.fn();
+
+      await updateCurrentUser(req, res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(mocks.updateUser).toHaveBeenLastCalledWith('unknown123', {
+        fname: 'Ada',
+        lname: 'Lovelace',
+        email: 'ada@example.edu',
+        userType,
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.body.user).toMatchObject({
+        userType,
+        userConfirmed: false,
+      });
+      expect(res.body.user).not.toHaveProperty('profileVerified', true);
+    }
+  });
+
   it('sanitizes self-edit profile URLs before persisting the current user', async () => {
     const profileUrls = Object.create(null);
     Object.assign(profileUrls, {
