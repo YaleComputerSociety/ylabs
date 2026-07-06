@@ -19,10 +19,12 @@ import {
   createInitialBrowsePageState,
 } from '../reducers/browsePageReducer';
 import { createListing } from '../utils/apiCleaner';
+import { getListingEmptyMessage, hasListingSearchCriteria } from '../utils/listingEmptyState';
 
 const Home = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const {
+    queryString,
     listings,
     isLoading,
     error: searchError,
@@ -32,8 +34,11 @@ const Home = () => {
     setQuickFilter,
     refreshListings,
     setQueryString,
+    selectedDepartments,
     setSelectedDepartments,
+    selectedResearchAreas,
     setSelectedResearchAreas,
+    selectedListingResearchAreas,
     setSelectedListingResearchAreas,
   } = useContext(SearchContext);
 
@@ -135,6 +140,16 @@ const Home = () => {
     totalRawCount: listings.length,
     quickFilterActive: !!quickFilter,
   });
+
+  const listingSearchCriteria = {
+    queryString,
+    selectedDepartments,
+    selectedResearchAreas,
+    selectedListingResearchAreas,
+    quickFilter,
+  };
+  const emptyMessage = getListingEmptyMessage(listingSearchCriteria);
+  const showFellowshipsEmptyAction = !hasListingSearchCriteria(listingSearchCriteria);
 
   const updateFavorite = (listingId: string, favorite: boolean) => {
     const prevFavListingsIds = favListingsIds;
@@ -313,7 +328,17 @@ const Home = () => {
         emptyMessage={
           searchError
             ? 'Posted-role search is unavailable. Use Yale Research for source-backed routes.'
-            : 'No results match the search criteria'
+            : emptyMessage
+        }
+        emptyAction={
+          showFellowshipsEmptyAction && !searchError ? (
+            <Link
+              to="/fellowships"
+              className="inline-flex items-center justify-center rounded-md border border-blue-600 px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50"
+            >
+              Browse fellowships
+            </Link>
+          ) : undefined
         }
         onLoadMore={() => {
           if (!isLoading && !searchExhausted) {

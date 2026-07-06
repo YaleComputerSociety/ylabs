@@ -25,6 +25,7 @@ interface BrowseGridProps {
   emptyMessage?: string;
   onLoadMore?: () => void;
   disableVirtualization?: boolean;
+  emptyAction?: React.ReactNode;
 }
 
 const BrowseGrid = ({
@@ -41,6 +42,7 @@ const BrowseGrid = ({
   emptyMessage = 'No results match the current filter',
   onLoadMore,
   disableVirtualization = false,
+  emptyAction,
 }: BrowseGridProps) => {
   const { viewMode } = useContext(UIContext);
   const isCompact = viewMode === 'compact';
@@ -59,10 +61,11 @@ const BrowseGrid = ({
     return (
       <div className="text-center py-8 text-gray-500">
         <p>{emptyMessage}</p>
+        {emptyAction && <div className="mt-3">{emptyAction}</div>}
         {quickFilter && onClearQuickFilter && (
           <button
             onClick={onClearQuickFilter}
-            className="mt-2 text-blue-600 hover:underline text-sm"
+            className="mt-3 text-blue-600 hover:underline text-sm"
           >
             Clear filter
           </button>
