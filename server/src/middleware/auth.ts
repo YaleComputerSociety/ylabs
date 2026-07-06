@@ -28,6 +28,12 @@ const requestNetid = (user: AuthenticatedUser | null | undefined): string =>
 const hasAuthenticatedPrincipal = (user: unknown): user is AuthenticatedUser =>
   Boolean(user && typeof user === 'object' && requestNetid(user as AuthenticatedUser));
 
+const sendAuthRequired = (res: express.Response) =>
+  res.status(401).json({
+    error: 'Unauthorized',
+    code: 'AUTH_REQUIRED',
+  });
+
 const hasAdminAuthority = async (user: AuthenticatedUser): Promise<boolean> => {
   const netid = requestNetid(user);
   if (user.userType !== 'admin' || !netid) return false;
@@ -47,7 +53,7 @@ export const isAuthenticated = (
   if (hasAuthenticatedPrincipal(req.user)) {
     return next();
   }
-  res.status(401).json({ error: 'Unauthorized' });
+  return sendAuthRequired(res);
 };
 
 /**
@@ -61,7 +67,7 @@ export const isTrustworthy = (
   const user = req.user as AuthenticatedUser;
 
   if (!hasAuthenticatedPrincipal(user)) {
-    return res.status(401).json({ error: 'Unauthorized' });
+    return sendAuthRequired(res);
   }
 
   if (!user.userConfirmed) {
@@ -96,7 +102,7 @@ export const canCreateListing = (
   const currentUser = req.user as AuthenticatedUser;
 
   if (!hasAuthenticatedPrincipal(currentUser)) {
-    return res.status(401).json({ error: 'Unauthorized' });
+    return sendAuthRequired(res);
   }
 
   if (currentUser.userType === 'admin') {
@@ -140,7 +146,7 @@ export const isAdmin = (
   const currentUser = req.user as AuthenticatedUser;
 
   if (!hasAuthenticatedPrincipal(currentUser)) {
-    return res.status(401).json({ error: 'Unauthorized' });
+    return sendAuthRequired(res);
   }
 
   return hasActiveAdminGrant(requestNetid(currentUser))
@@ -165,7 +171,7 @@ export const isProfessor = (
   const currentUser = req.user as AuthenticatedUser;
 
   if (!hasAuthenticatedPrincipal(currentUser)) {
-    return res.status(401).json({ error: 'Unauthorized' });
+    return sendAuthRequired(res);
   }
 
   if (currentUser.userType === 'admin') {
@@ -198,7 +204,7 @@ export const isConfirmed = (
   const currentUser = req.user as AuthenticatedUser;
 
   if (!hasAuthenticatedPrincipal(currentUser)) {
-    return res.status(401).json({ error: 'Unauthorized' });
+    return sendAuthRequired(res);
   }
 
   if (!currentUser.userConfirmed) {
