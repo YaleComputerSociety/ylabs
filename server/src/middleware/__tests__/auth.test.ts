@@ -143,7 +143,7 @@ describe('authenticated principal shape', () => {
 
     expect(next).not.toHaveBeenCalled();
     expect(res.statusCode).toBe(401);
-    expect(res.body).toEqual({ error: 'Unauthorized' });
+    expect(res.body).toEqual({ error: 'Unauthorized', code: 'AUTH_REQUIRED' });
   });
 
   it('rejects malformed admin principal shapes before grant lookup', async () => {
@@ -158,7 +158,7 @@ describe('authenticated principal shape', () => {
     expect(mockedHasActiveAdminGrant).not.toHaveBeenCalled();
     expect(next).not.toHaveBeenCalled();
     expect(res.statusCode).toBe(401);
-    expect(res.body).toEqual({ error: 'Unauthorized' });
+    expect(res.body).toEqual({ error: 'Unauthorized', code: 'AUTH_REQUIRED' });
   });
 
   it('rejects confirmed-route access without a primitive bounded NetID', () => {
@@ -170,7 +170,7 @@ describe('authenticated principal shape', () => {
 
     expect(next).not.toHaveBeenCalled();
     expect(res.statusCode).toBe(401);
-    expect(res.body).toEqual({ error: 'Unauthorized' });
+    expect(res.body).toEqual({ error: 'Unauthorized', code: 'AUTH_REQUIRED' });
   });
 });
 
