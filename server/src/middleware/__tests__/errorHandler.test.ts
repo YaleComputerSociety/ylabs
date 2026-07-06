@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { NextFunction, Request, Response } from 'express';
 import { errorHandler, notFoundHandler } from '../errorHandler';
 import { NotFoundError, ObjectIdError } from '../../utils/errors';
@@ -23,6 +23,10 @@ const createResponse = () => {
 };
 
 describe('errorHandler', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   afterEach(() => {
     process.env = { ...ORIGINAL_ENV };
     vi.restoreAllMocks();
