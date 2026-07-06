@@ -22,6 +22,11 @@ import {
   archiveFellowship,
   unarchiveFellowship,
 } from '../services/fellowshipService';
+import {
+  getAdminListingClaimRequest,
+  listAdminListingClaimRequests,
+  reviewAdminListingClaimRequest,
+} from '../controllers/listingClaimRequestController';
 import { adminUpdateProfile, cascadeDepartmentsToListings } from '../services/profileService';
 import { buildSafeSearchRegex } from '../utils/regex';
 import {
@@ -689,6 +694,10 @@ router.put(
     }
   },
 );
+
+router.get('/listing-claims', listAdminListingClaimRequests);
+router.get('/listing-claims/:id', validateObjectId('id'), getAdminListingClaimRequest);
+router.put('/listing-claims/:id', validateObjectId('id'), reviewAdminListingClaimRequest);
 
 router.get('/listings', async (req: Request, res: Response) => {
   try {

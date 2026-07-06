@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  canSubmitListingClaimRequest,
   canCreateListing,
   isAdmin,
   isAuthenticated,
@@ -262,5 +263,69 @@ describe('professor/faculty authority', () => {
 
     expect(professorGuard.next).toHaveBeenCalledTimes(1);
     expect(listingGuard.next).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('canSubmitListingClaimRequest', () => {
+  it.each([
+    ['student', { netId: 'student1', userType: 'student', userConfirmed: true }],
+    ['undergraduate', { netId: 'student1', userType: 'undergraduate', userConfirmed: true }],
+    ['unknown', { netId: 'unknown1', userType: 'unknown', userConfirmed: true }],
+    ['unconfirmed faculty', { netId: 'fac1', userType: 'faculty', userConfirmed: false }],
+  ])('rejects %s users from submitting listing claim requests', (_label, user) => {
+    const { res, next } = invokeSyncMiddleware(canSubmitListingClaimRequest, user);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.statusCode).toBe(403);
+    expect(res.body).toEqual({ error: 'Forbidden' });
+  });
+
+  it.each([
+    ['faculty', { netId: 'fac1', userType: 'faculty', userConfirmed: true }],
+    ['professor', { netId: 'prof1', userType: 'professor', userConfirmed: true }],
+    ['staff', { netId: 'staff1', userType: 'staff', userConfirmed: true }],
+  ])('allows confirmed %s users to submit listing claim requests', (_label, user) => {
+    const { res, next } = invokeSyncMiddleware(canSubmitListingClaimRequest, user);
+
+    expect(next).toHaveBeenCalledOnce();
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toBeUndefined();
+  });
+
+  it('allows active admin grants to submit listing claim requests', async () => {
+    mockedHasActiveAdminGrant.mockResolvedValue(true);
+
+    const { res, next } = await invokeIsAdminLike(canSubmitListingClaimRequest, {
+      netId: 'admin1',
+      userType: 'admin',
+      userConfirmed: true,
+    });
+
+    expect(mockedHasActiveAdminGrant).toHaveBeenCalledWith('admin1');
+    expect(next).toHaveBeenCalledOnce();
+    expect(res.statusCode).toBe(200);
+  });
+
+  it('rejects legacy admin userType without an active admin grant', async () => {
+    mockedHasActiveAdminGrant.mockResolvedValue(false);
+
+    const { res, next } = await invokeIsAdminLike(canSubmitListingClaimRequest, {
+      netId: 'legacy1',
+      userType: 'admin',
+      userConfirmed: true,
+    });
+
+    expect(mockedHasActiveAdminGrant).toHaveBeenCalledWith('legacy1');
+    expect(next).not.toHaveBeenCalled();
+    expect(res.statusCode).toBe(403);
+    expect(res.body).toEqual({ error: 'Forbidden' });
+  });
+
+  it('returns 401 when no authenticated user is present', () => {
+    const { res, next } = invokeSyncMiddleware(canSubmitListingClaimRequest, undefined);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.statusCode).toBe(401);
+    expect(res.body).toEqual({ error: 'Unauthorized', code: 'AUTH_REQUIRED' });
   });
 });
