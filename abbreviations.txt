@@ -1,0 +1,113 @@
+African American Studies:AFAM
+African Studies:AFST
+American Studies:AMST
+Anesthesiology:MEDANE
+Anthropology:ANTH
+Applied Mathematics:AMTH
+Applied Physics:APHY
+Archaeological Studies:ARCG
+Architecture:ARCH
+Art:ART
+Astronomy:ASTR
+Biological and Biomedical Sciences:BBS
+Biomedical Engineering:BME
+Black Studies:AFAM
+Biomedical Informatics and Data Science:BIDS
+Biostatistics:BIS
+Cell Biology:CBIO
+Cellular and Molecular Physiology:C&MP
+Chemical and Environmental Engineering:CEE
+Chemistry:CHEM
+Child Study Center
+Chronic Disease Epidemiology
+Classics
+Cognitive Science
+Comparative Literature
+Comparative Medicine
+Computational Biology and Bioinformatics
+Computer Science
+Dermatology
+Digital Ethics Center
+Early Modern Studies
+Earth and Planetary Sciences
+East Asian Languages and Literatures
+East Asian Studies
+Ecology and Evolutionary Biology
+Economics
+Electrical Engineering
+Emergency Medicine
+Engineering and Applied Science
+English
+Environmental Health Sciences
+Environmental Studies
+Epidemiology of Microbial Diseases
+Ethics, Politics and Economics
+Ethnicity, Race and Migration
+European and Russian Studies
+Experimental Pathology
+Film and Media Studies
+Forestry and Environmental Studies
+French
+Genetics
+Geology and Geophysics
+German
+Global Affairs
+Health Care Management
+Health Policy and Management
+Hellenic Studies
+History
+History of Art
+History of Medicine
+History of Science and Medicine
+Humanities
+Immunobiology
+Internal Medicine
+International and Development Economics
+Investigative Medicine
+Italian
+Judaic Studies
+Laboratory Medicine
+Latin American Studies
+Law
+Linguistics
+MCDB
+Management
+Mathematics
+Mechanical Engineering and Materials Science
+Medicine
+Medieval Studies
+Microbial Pathogenesis
+Microbiology
+Modern Middle East Studies
+Molecular Biophysics and Biochemistry
+Molecular, Cellular and Developmental Biology
+Music
+Near Eastern Langauges and Civilizations
+Neurology
+Neuroscience
+Neurosurgery
+Nursing
+Obstetrics, Gynecology and Reproductive Sciences
+Ophthalmology and Visual Science
+Orthopaedics and Rehabilitation
+Pathology
+Pediatrics
+Pharmacology
+Philosophy
+Physics
+Political Science
+Psychiatry
+Psychology
+Public Health
+Radiology and Biomedical Imaging
+Religious Studies
+Slavic Languages and Literatures
+Sociology
+South Asian Studies
+Spanish and Portuguese
+Statistics
+Surgery
+Theater Studies
+Therapeutic Radiology
+Urology
+Women’s, Gender, and Sexuality Studies
