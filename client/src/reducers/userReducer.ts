@@ -11,27 +11,25 @@ export interface UserState {
   isLoading: boolean;
   isAuthenticated: boolean;
   user?: User;
-  authError?: string;
 }
 
 export type UserAction =
   | { type: 'FETCH_START' }
   | { type: 'FETCH_SUCCESS'; payload: { isAuthenticated: boolean; user?: User } }
-  | { type: 'FETCH_FAILURE'; error?: string }
+  | { type: 'FETCH_FAILURE' }
   | { type: 'LOGOUT' };
 
 export const createInitialUserState = (overrides: Partial<UserState> = {}): UserState => ({
   isLoading: true,
   isAuthenticated: false,
   user: undefined,
-  authError: undefined,
   ...overrides,
 });
 
 export function userReducer(state: UserState, action: UserAction): UserState {
   switch (action.type) {
     case 'FETCH_START':
-      return { ...state, isLoading: true, authError: undefined };
+      return { ...state, isLoading: true };
 
     case 'FETCH_SUCCESS':
       return {
@@ -39,7 +37,6 @@ export function userReducer(state: UserState, action: UserAction): UserState {
         isLoading: false,
         isAuthenticated: action.payload.isAuthenticated,
         user: action.payload.isAuthenticated ? action.payload.user : undefined,
-        authError: undefined,
       };
 
     case 'FETCH_FAILURE':
@@ -48,8 +45,6 @@ export function userReducer(state: UserState, action: UserAction): UserState {
       return {
         ...state,
         isLoading: false,
-        authError:
-          action.error || 'Unable to check your Yale Labs session. Please try again in a moment.',
       };
 
     case 'LOGOUT':
@@ -57,7 +52,6 @@ export function userReducer(state: UserState, action: UserAction): UserState {
         ...state,
         isAuthenticated: false,
         user: undefined,
-        authError: undefined,
       };
 
     default:

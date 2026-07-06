@@ -2,7 +2,7 @@
  * Main listings browse page with search, filters, and grid/list view.
  */
 import { useReducer, useEffect, useContext, useMemo, useCallback } from 'react';
-import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import SearchContext from '../contexts/SearchContext';
 import UserContext from '../contexts/UserContext';
 import { useInfiniteScroll } from '../hooks/useInfiniteScroll';
@@ -17,30 +17,8 @@ import swal from 'sweetalert';
 import { getInstitutionAffiliation } from '../utils/institutionAffiliation';
 import { browsePageReducer, createInitialBrowsePageState } from '../reducers/browsePageReducer';
 
-type ListingSearchCriteria = {
-  queryString: string;
-  selectedDepartments: string[];
-  selectedResearchAreas: string[];
-  selectedListingResearchAreas: string[];
-  quickFilter: string | null;
-};
-
-export const hasListingSearchCriteria = (params: ListingSearchCriteria) =>
-  params.queryString.trim() !== '' ||
-  params.selectedDepartments.length > 0 ||
-  params.selectedResearchAreas.length > 0 ||
-  params.selectedListingResearchAreas.length > 0 ||
-  Boolean(params.quickFilter);
-
-export const getListingEmptyMessage = (params: ListingSearchCriteria) => {
-  return hasListingSearchCriteria(params)
-    ? 'No labs match your current search or filters'
-    : 'No research labs are available right now';
-};
-
 const Home = () => {
   const {
-    queryString,
     listings,
     isLoading,
     searchExhausted,
@@ -49,11 +27,8 @@ const Home = () => {
     setQuickFilter,
     refreshListings,
     setQueryString,
-    selectedDepartments,
     setSelectedDepartments,
-    selectedResearchAreas,
     setSelectedResearchAreas,
-    selectedListingResearchAreas,
     setSelectedListingResearchAreas,
   } = useContext(SearchContext);
 
@@ -186,16 +161,6 @@ const Home = () => {
     quickFilterActive: !!quickFilter,
   });
 
-  const listingSearchCriteria = {
-    queryString,
-    selectedDepartments,
-    selectedResearchAreas,
-    selectedListingResearchAreas,
-    quickFilter,
-  };
-  const emptyMessage = getListingEmptyMessage(listingSearchCriteria);
-  const showFellowshipsEmptyAction = !hasListingSearchCriteria(listingSearchCriteria);
-
   const updateFavorite = (listingId: string, favorite: boolean) => {
     if (!isAuthenticated) {
       requireLogin();
@@ -287,17 +252,7 @@ const Home = () => {
         searchExhausted={searchExhausted}
         quickFilter={quickFilter}
         onClearQuickFilter={() => setQuickFilter(null)}
-        emptyMessage={emptyMessage}
-        emptyAction={
-          showFellowshipsEmptyAction ? (
-            <Link
-              to="/fellowships"
-              className="inline-flex items-center justify-center rounded-md border border-blue-600 px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50"
-            >
-              Browse fellowships
-            </Link>
-          ) : undefined
-        }
+        emptyMessage="No results match the search criteria"
       />
 
       {selectedListing && (
