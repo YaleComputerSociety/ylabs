@@ -10,6 +10,7 @@ import passport, { passportRoutes } from './passport';
 import routes from './routes/index';
 import cookieSession from 'cookie-session';
 import dotenv from 'dotenv';
+import { readFile } from 'fs/promises';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
@@ -19,8 +20,16 @@ import { csrfOriginGuard } from './middleware/csrfOriginGuard';
 import { createCorsOriginHandler } from './middleware/corsOrigin';
 import { sessionCookieName } from './utils/sessionCookie';
 import { createRateLimitHandler } from './middleware/rateLimitResponse';
+import { getResearchGroupBySlug } from './services/researchGroupService';
+import {
+  buildPublicResearchSeoMetadata,
+  injectSeoMetadata,
+  resolvePublicBaseUrl,
+} from './utils/publicResearchSeo';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const clientDistPath = path.join(__dirname, '../../client/dist');
+const clientIndexPath = path.join(clientDistPath, 'index.html');
 const API_BODY_LIMIT = '64kb';
 const API_URLENCODED_PARAMETER_LIMIT = 100;
 const SAFE_RATE_LIMIT_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
@@ -308,6 +317,35 @@ const app = express()
 
 app.use('/api', notFoundHandler);
 
+const sendPublicResearchIndex = async (
+  req: express.Request,
+  res: express.Response,
+  next: express.NextFunction,
+) => {
+  try {
+    const indexHtml = await readFile(clientIndexPath, 'utf8');
+    let researchEntity = null;
+
+    if (req.params.slug) {
+      try {
+        researchEntity = await getResearchGroupBySlug(req.params.slug);
+      } catch (error) {
+        console.error('Unable to load public research SEO metadata:', error);
+      }
+    }
+
+    const metadata = buildPublicResearchSeoMetadata({
+      baseUrl: resolvePublicBaseUrl(req),
+      path: req.path,
+      researchEntity,
+    });
+
+    res.type('html').send(injectSeoMetadata(indexHtml, metadata));
+  } catch (error) {
+    next(error);
+  }
+};
+
 app.use(blockSourceMapAssetRequests);
 app.use(setOAuthCallbackAssetCacheHeaders);
 app.use(
@@ -318,12 +356,15 @@ app.use(
   }),
 );
 
+app.get('/research', sendPublicResearchIndex);
+app.get('/research/:slug', sendPublicResearchIndex);
+
 app.get('*', (req, res) => {
   if (!shouldServeSpaFallback(req)) {
     return sendStaticNotFound(res);
   }
 
-  res.sendFile(path.join(__dirname, '../../client/dist/index.html'));
+  res.sendFile(clientIndexPath);
 });
 
 app.use(errorHandler);
