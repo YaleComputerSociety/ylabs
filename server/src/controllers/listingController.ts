@@ -461,11 +461,6 @@ type ListingSearchEnvelope = {
   degraded: boolean;
 };
 
-type PublicResearchContactFields = {
-  ownerEmail?: string;
-  emails?: string[];
-};
-
 export const searchListingsViaMongo = async (
   params: MongoListingSearchParams,
 ): Promise<{ hits: any[]; totalCount: number }> => {
@@ -801,10 +796,10 @@ export const recordPublicResearchOutreach = async (request: Request, response: R
     return response.status(404).json({ error: 'Research listing not found' });
   }
 
-  const listing = (await getListingModel()
+  const listing = await getListingModel()
     .findOne({ _id: id, archived: false, confirmed: true })
     .select('ownerEmail emails')
-    .lean()) as PublicResearchContactFields | null;
+    .lean();
 
   if (!listing) {
     return response.status(404).json({ error: 'Research listing not found' });

@@ -1,6 +1,6 @@
 # YURA Research Database
 
-A research lab and fellowship discovery platform for Yale University, with public research browsing, evidence/source metadata on research details, authenticated tools for favorites and contact, trusted faculty/staff listing claim or correction requests, and admin management.
+A research lab and fellowship discovery platform for Yale University, with public research browsing, evidence/source metadata on research details, and authenticated tools for favorites, contact, and management.
 
 **Live:** [yalelabs.io](https://yalelabs.io/) · **Beta:** [ylabs-dev.onrender.com](https://ylabs-dev.onrender.com)
 
