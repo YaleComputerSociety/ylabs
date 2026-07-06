@@ -18,14 +18,7 @@ vi.mock('../../hooks/useInfiniteScroll', () => ({
 }));
 
 vi.mock('../../components/shared/BrowseGrid', () => ({
-  default: ({ items, onOpenModal }: any) =>
-    items?.length ? (
-      <button type="button" onClick={() => onOpenModal(items[0])}>
-        Open listing
-      </button>
-    ) : (
-      <div />
-    ),
+  default: () => <div />,
 }));
 
 vi.mock('../../components/shared/ListingDetailModal', () => ({
@@ -49,7 +42,7 @@ const mockedAxiosGet = vi.mocked(axios.get);
 
 const LocationDisplay = () => {
   const location = useLocation();
-  return <div data-testid="location">{`${location.pathname}${location.search}`}</div>;
+  return <div data-testid="location">{location.pathname}</div>;
 };
 
 describe('Home public research detail route', () => {
@@ -185,69 +178,6 @@ describe('Home public research detail route', () => {
     expect(setSelectedListingResearchAreas).toHaveBeenCalledWith(['Artificial Intelligence']);
     await waitFor(() => {
       expect(screen.getByTestId('location').textContent).toBe('/research');
-    });
-  });
-
-  it('preserves public search params when opening a research detail modal', async () => {
-    render(
-      <MemoryRouter initialEntries={['/research?query=genomics']}>
-        <UserContext.Provider
-          value={{
-            isLoading: false,
-            isAuthenticated: false,
-            user: null,
-            checkContext: vi.fn(),
-          }}
-        >
-          <SearchContext.Provider
-            value={{
-              ...defaultSearchContext,
-              listings: [
-                {
-                  id: 'public-research-507f1f77bcf86cd799439011',
-                  title: 'Public research listing',
-                  departments: [],
-                  researchAreas: [],
-                  createdAt: '',
-                  updatedAt: '',
-                  hiringStatus: 0,
-                } as any,
-              ],
-              refreshListings: vi.fn(),
-              setQueryString: vi.fn(),
-            }}
-          >
-            <Routes>
-              <Route
-                path="/research"
-                element={
-                  <>
-                    <LocationDisplay />
-                    <Home />
-                  </>
-                }
-              />
-              <Route
-                path="/research/:slug"
-                element={
-                  <>
-                    <LocationDisplay />
-                    <Home />
-                  </>
-                }
-              />
-            </Routes>
-          </SearchContext.Provider>
-        </UserContext.Provider>
-      </MemoryRouter>,
-    );
-
-    fireEvent.click(screen.getByRole('button', { name: 'Open listing' }));
-
-    await waitFor(() => {
-      expect(screen.getByTestId('location').textContent).toBe(
-        '/research/public-research-507f1f77bcf86cd799439011?query=genomics',
-      );
     });
   });
 });
