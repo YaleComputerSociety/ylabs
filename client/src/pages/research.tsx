@@ -68,6 +68,24 @@ const hasStructuredFilters = (filters: ResearchSearchFilters): boolean =>
     return value !== undefined && value !== null && value !== false;
   });
 
+const readSearchParamList = <T extends string>(
+  params: URLSearchParams,
+  key: string,
+  allowedValues: readonly T[],
+): T[] => {
+  const allowed = new Set(allowedValues);
+  const seen = new Set<T>();
+  return (params.get(key) || '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter((value): value is T => allowed.has(value as T))
+    .filter((value) => {
+      if (seen.has(value)) return false;
+      seen.add(value);
+      return true;
+    });
+};
+
 const emptyGroupedResults = (query: string): GroupedResearchResults =>
   buildGroupedSearchResults({
     query,
@@ -283,7 +301,7 @@ const scrollResearchViewportToTop = () => {
 };
 
 const Research = () => {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useContext(UserContext);
   const { departments } = useConfig();
   const isAdmin = user?.userType === 'admin';
@@ -305,13 +323,31 @@ const Research = () => {
     () => restoredSnapshotRef.current?.departmentSearch ?? null,
   );
   const [showWeakestProfilesFirst, setShowWeakestProfilesFirst] = useState(
-    () => restoredSnapshotRef.current?.showWeakestProfilesFirst ?? false,
+    () =>
+      restoredSnapshotRef.current?.showWeakestProfilesFirst ??
+      (isAdmin && searchParams.get('weak') === '1'),
   );
   const [qualityFilters, setQualityFilters] = useState<ResearchQualityFilter[]>(
-    () => restoredSnapshotRef.current?.qualityFilters ?? [],
+    () =>
+      restoredSnapshotRef.current?.qualityFilters ??
+      (isAdmin
+        ? readSearchParamList(
+            searchParams,
+            'quality',
+            QUALITY_FILTER_OPTIONS.map((option) => option.value),
+          )
+        : []),
   );
   const [trustTierFilters, setTrustTierFilters] = useState<ResearchTrustTierFilter[]>(
-    () => restoredSnapshotRef.current?.trustTierFilters ?? [],
+    () =>
+      restoredSnapshotRef.current?.trustTierFilters ??
+      (isAdmin
+        ? readSearchParamList(
+            searchParams,
+            'tier',
+            TRUST_TIER_FILTER_OPTIONS.map((option) => option.value),
+          )
+        : []),
   );
   const [groupedResults, setGroupedResults] = useState<GroupedResearchResults>(() =>
     restoredSnapshotRef.current?.groupedResults ?? emptyGroupedResults(''),
@@ -358,8 +394,44 @@ const Research = () => {
       ? `${pageSnapshotKey}|${String(isAdmin)}|${String(showWeakestProfilesFirst)}|${qualityFilters.join(',')}|${trustTierFilters.join(',')}`
       : null,
   );
+  const departmentSearchTargets = useMemo(
+    () => buildDepartmentSearchTargets(departments),
+    [departments],
+  );
+  const departmentSearchTargetByLabel = useMemo(
+    () =>
+      new Map(
+        departmentSearchTargets.map((target) => [target.label.toLowerCase(), target]),
+      ),
+    [departmentSearchTargets],
+  );
 
   useDocumentTitle('Yale Research');
+
+  const writeResearchSearchParams = (
+    nextState: {
+      query?: string;
+      departmentLabel?: string | null;
+      showWeakest?: boolean;
+      quality?: ResearchQualityFilter[];
+      trustTiers?: ResearchTrustTierFilter[];
+    },
+    options: { replace?: boolean } = {},
+  ) => {
+    const params = new URLSearchParams();
+    const nextQuery = (nextState.query || '').trim();
+    if (nextQuery) params.set('q', nextQuery);
+    const departmentLabel = (nextState.departmentLabel || '').trim();
+    if (departmentLabel) params.set('dept', departmentLabel);
+
+    if (isAdmin) {
+      if (nextState.showWeakest) params.set('weak', '1');
+      if (nextState.quality?.length) params.set('quality', nextState.quality.join(','));
+      if (nextState.trustTiers?.length) params.set('tier', nextState.trustTiers.join(','));
+    }
+
+    setSearchParams(params, { replace: Boolean(options.replace) });
+  };
 
   useEffect(() => () => {
     searchAbortRef.current?.abort();
@@ -432,6 +504,7 @@ const Research = () => {
       filters?: ResearchSearchFilters;
       hasFilterSelections?: boolean;
       departmentSearch?: DepartmentSearchTarget | null;
+      syncUrl?: boolean;
     } = {},
   ) => {
     defaultSearchAbortRef.current?.abort();
@@ -467,6 +540,15 @@ const Research = () => {
     setSearchLoading(true);
     setSearchError('');
     setGroupedResults(emptyGroupedResults(resultQueryLabel));
+    if (options.syncUrl !== false) {
+      writeResearchSearchParams({
+        query: trimmed,
+        departmentLabel: options.departmentSearch?.label,
+        showWeakest: showWeakestProfilesFirst,
+        quality: qualityFilters,
+        trustTiers: trustTierFilters,
+      });
+    }
 
     try {
       const researchEntitiesPage = await searchResearchEntities(
@@ -591,14 +673,40 @@ const Research = () => {
     setSearchLoading(false);
     setDefaultSearchExhausted(false);
     setDefaultSearchPage(1);
+    writeResearchSearchParams(
+      {
+        showWeakest: showWeakestProfilesFirst,
+        quality: qualityFilters,
+        trustTiers: trustTierFilters,
+      },
+      { replace: true },
+    );
     if (defaultResearchEntities.length === 0) {
       setDefaultSearchTotal(0);
       runDefaultResearchHomeSearch(1);
     }
   };
 
+  const hasSubmittedSearch = submittedQuery.trim().length > 0;
+
   useEffect(() => {
     const urlQuery = searchParams.get('q') || '';
+    const urlDepartmentLabel = searchParams.get('dept') || '';
+    const urlWeakestFirst = isAdmin && searchParams.get('weak') === '1';
+    const urlQualityFilters = isAdmin
+      ? readSearchParamList(
+          searchParams,
+          'quality',
+          QUALITY_FILTER_OPTIONS.map((option) => option.value),
+        )
+      : [];
+    const urlTrustTierFilters = isAdmin
+      ? readSearchParamList(
+          searchParams,
+          'tier',
+          TRUST_TIER_FILTER_OPTIONS.map((option) => option.value),
+        )
+      : [];
     const syncKey = `${pageSnapshotKey}|${String(isAdmin)}|${String(showWeakestProfilesFirst)}|${qualityFilters.join(',')}|${trustTierFilters.join(',')}`;
 
     if (restoredSnapshotSyncKeyRef.current === syncKey) {
@@ -606,8 +714,42 @@ const Research = () => {
       return;
     }
 
+    if (showWeakestProfilesFirst !== urlWeakestFirst) {
+      setShowWeakestProfilesFirst(urlWeakestFirst);
+      return;
+    }
+    if (qualityFilters.join(',') !== urlQualityFilters.join(',')) {
+      setQualityFilters(urlQualityFilters);
+      return;
+    }
+    if (trustTierFilters.join(',') !== urlTrustTierFilters.join(',')) {
+      setTrustTierFilters(urlTrustTierFilters);
+      return;
+    }
+
+    const urlDepartmentSearch = urlDepartmentLabel
+      ? departmentSearchTargetByLabel.get(urlDepartmentLabel.toLowerCase()) ?? null
+      : null;
+
+    if (urlDepartmentSearch) {
+      if (departmentSearch?.label === urlDepartmentSearch.label && hasSubmittedSearch) {
+        return;
+      }
+      runSearch(urlDepartmentSearch.label, {
+        searchQuery: '',
+        filters: { departments: urlDepartmentSearch.filters.departments },
+        hasFilterSelections: true,
+        departmentSearch: urlDepartmentSearch,
+        syncUrl: false,
+      });
+      return;
+    }
+
     if (urlQuery.trim()) {
-      runSearch(urlQuery);
+      if (!urlDepartmentLabel && submittedQuery === urlQuery.trim()) {
+        return;
+      }
+      runSearch(urlQuery, { syncUrl: false });
       return;
     }
 
@@ -627,7 +769,18 @@ const Research = () => {
     setDefaultSearchExhausted(false);
     setDefaultSearchPage(1);
     runDefaultResearchHomeSearch(1);
-  }, [searchParams, pageSnapshotKey, isAdmin, showWeakestProfilesFirst, qualityFilters, trustTierFilters]);
+  }, [
+    searchParams,
+    pageSnapshotKey,
+    isAdmin,
+    showWeakestProfilesFirst,
+    qualityFilters,
+    trustTierFilters,
+    departmentSearchTargetByLabel,
+    departmentSearch,
+    hasSubmittedSearch,
+    submittedQuery,
+  ]);
 
   useEffect(() => {
     researchPageSnapshot = {
@@ -674,8 +827,6 @@ const Research = () => {
     defaultSearchError,
   ]);
 
-  const hasSubmittedSearch = submittedQuery.trim().length > 0;
-
   useEffect(() => {
     if (hasSubmittedSearch || defaultSearchPage <= 1) return;
     runDefaultResearchHomeSearch(defaultSearchPage);
@@ -699,17 +850,6 @@ const Research = () => {
         papers: [],
       }),
     [defaultResearchEntities],
-  );
-  const departmentSearchTargets = useMemo(
-    () => buildDepartmentSearchTargets(departments),
-    [departments],
-  );
-  const departmentSearchTargetByLabel = useMemo(
-    () =>
-      new Map(
-        departmentSearchTargets.map((target) => [target.label.toLowerCase(), target]),
-      ),
-    [departmentSearchTargets],
   );
   const defaultSentinelRef = useInfiniteScroll({
     searchExhausted: hasSubmittedSearch || defaultSearchExhausted,
@@ -746,18 +886,50 @@ const Research = () => {
     runSearch(label);
   };
   const toggleQualityFilter = (filter: ResearchQualityFilter) => {
-    setQualityFilters((current) =>
-      current.includes(filter)
+    setQualityFilters((current) => {
+      const next = current.includes(filter)
         ? current.filter((value) => value !== filter)
-        : [...current, filter],
-    );
+        : [...current, filter];
+      writeResearchSearchParams(
+        {
+          showWeakest: showWeakestProfilesFirst,
+          quality: next,
+          trustTiers: trustTierFilters,
+        },
+        { replace: true },
+      );
+      return next;
+    });
   };
   const toggleTrustTierFilter = (filter: ResearchTrustTierFilter) => {
-    setTrustTierFilters((current) =>
-      current.includes(filter)
+    setTrustTierFilters((current) => {
+      const next = current.includes(filter)
         ? current.filter((value) => value !== filter)
-        : [...current, filter],
+        : [...current, filter];
+      writeResearchSearchParams(
+        {
+          showWeakest: showWeakestProfilesFirst,
+          quality: qualityFilters,
+          trustTiers: next,
+        },
+        { replace: true },
+      );
+      return next;
+    });
+  };
+  const setWeakestProfilesFirst = (value: boolean) => {
+    setShowWeakestProfilesFirst(value);
+    writeResearchSearchParams(
+      {
+        showWeakest: value,
+        quality: value ? qualityFilters : [],
+        trustTiers: trustTierFilters,
+      },
+      { replace: true },
     );
+    if (!value && qualityFilters.length > 0) {
+      setQualityFilters([]);
+    }
   };
 
   return (
@@ -851,7 +1023,7 @@ const Research = () => {
                   <input
                     type="checkbox"
                     checked={showWeakestProfilesFirst}
-                    onChange={(event) => setShowWeakestProfilesFirst(event.target.checked)}
+                    onChange={(event) => setWeakestProfilesFirst(event.target.checked)}
                     className="h-4 w-4 rounded border-[var(--yr-line-strong)] text-blue-700 focus:ring-blue-200"
                   />
                   <span>Show weakest profiles first</span>
