@@ -25,6 +25,7 @@ import SearchContextProvider from './providers/SearchContextProvider';
 import FellowshipSearchContextProvider from './providers/FellowshipSearchContextProvider';
 import UIContextProvider from './providers/UIContextProvider';
 import ScrollToTop from './components/shared/ScrollToTop';
+import HttpStatusNotifier from './components/HttpStatusNotifier';
 
 const RetiredListingsRedirect = () => <Navigate to="/research" replace />;
 const RetiredFellowshipsRedirect = () => <Navigate to="/programs" replace />;
@@ -42,6 +43,7 @@ const App = () => {
                   <Navbar />
                 </div>
                 <div className="flex-grow overflow-y-auto flex flex-col" data-scroll-container>
+                  <HttpStatusNotifier />
                   <main className="flex-grow">
                     <Routes>
                       <Route

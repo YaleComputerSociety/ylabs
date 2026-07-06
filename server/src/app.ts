@@ -18,6 +18,7 @@ import { sanitizeMongo } from './middleware/sanitizeMongo';
 import { csrfOriginGuard } from './middleware/csrfOriginGuard';
 import { createCorsOriginHandler } from './middleware/corsOrigin';
 import { sessionCookieName } from './utils/sessionCookie';
+import { createRateLimitHandler } from './middleware/rateLimitResponse';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const API_BODY_LIMIT = '64kb';
@@ -122,6 +123,7 @@ const apiLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests, please try again later.' },
+  handler: createRateLimitHandler('Too many requests, please try again later.'),
   skip: (req) => bypassRuntimeSecurity || isCasLoginCallback(req) || isPublicDiscoveryPath(req),
 });
 
@@ -133,6 +135,7 @@ const writeLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many write requests, please try again later.' },
+  handler: createRateLimitHandler('Too many write requests, please try again later.'),
   skip: () => bypassRuntimeSecurity,
 });
 
@@ -149,6 +152,7 @@ const publicDiscoveryLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many discovery requests, please try again later.' },
+  handler: createRateLimitHandler('Too many discovery requests, please try again later.'),
   skip: () => bypassRuntimeSecurity,
 });
 
