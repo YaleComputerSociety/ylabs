@@ -349,7 +349,7 @@ const sendPublicResearchIndex = async (
 app.use(blockSourceMapAssetRequests);
 app.use(setOAuthCallbackAssetCacheHeaders);
 app.use(
-  express.static(clientDistPath, {
+  express.static(path.join(__dirname, '../../client/dist'), {
     dotfiles: 'ignore',
     fallthrough: true,
     index: false,
