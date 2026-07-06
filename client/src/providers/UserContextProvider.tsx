@@ -29,8 +29,8 @@ const UserContextProvider = ({ children }: PropsWithChildren) => {
           });
         }
       })
-      .catch((error) => {
-        console.error('Auth check failed:', error);
+      .catch(() => {
+        console.error('Auth check failed.');
         dispatch({
           type: 'FETCH_FAILURE',
           error: 'Unable to reach Yale Labs right now. Please try again in a moment.',
