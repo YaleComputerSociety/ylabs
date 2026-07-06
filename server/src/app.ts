@@ -122,6 +122,7 @@ const apiLimiter = rateLimit({
   keyGenerator: getRateLimitKey,
   standardHeaders: true,
   legacyHeaders: false,
+  message: { error: 'Too many requests, please try again later.' },
   handler: createRateLimitHandler('Too many requests, please try again later.'),
   skip: (req) => bypassRuntimeSecurity || isCasLoginCallback(req) || isPublicDiscoveryPath(req),
 });
@@ -133,6 +134,7 @@ const writeLimiter = rateLimit({
   keyGenerator: getRateLimitKey,
   standardHeaders: true,
   legacyHeaders: false,
+  message: { error: 'Too many write requests, please try again later.' },
   handler: createRateLimitHandler('Too many write requests, please try again later.'),
   skip: () => bypassRuntimeSecurity,
 });
@@ -149,6 +151,7 @@ const publicDiscoveryLimiter = rateLimit({
   keyGenerator: getRateLimitKey,
   standardHeaders: true,
   legacyHeaders: false,
+  message: { error: 'Too many discovery requests, please try again later.' },
   handler: createRateLimitHandler('Too many discovery requests, please try again later.'),
   skip: () => bypassRuntimeSecurity,
 });
