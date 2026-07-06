@@ -11,7 +11,7 @@ const MEILISEARCH_INDEX_PREFIX = process.env.MEILISEARCH_INDEX_PREFIX || '';
 
 async function migrateToMeilisearch() {
   const { Meilisearch } = await import('meilisearch');
-
+  
   const meiliClient = new Meilisearch({
     host: MEILISEARCH_HOST,
     apiKey: MEILISEARCH_API_KEY,
@@ -44,38 +44,36 @@ async function migrateToMeilisearch() {
       delete meiliDoc._id;
       delete meiliDoc.__v;
       delete meiliDoc.embedding; // Ensure legacy vectors aren't pushed
-      if (meiliDoc.evidence && typeof meiliDoc.evidence === 'object') {
-        delete meiliDoc.evidence.internalNotes;
-      }
       return meiliDoc;
     });
 
-    const indexName = MEILISEARCH_INDEX_PREFIX
-      ? `${MEILISEARCH_INDEX_PREFIX}_listings`
-      : 'listings';
+    const indexName = MEILISEARCH_INDEX_PREFIX ? `${MEILISEARCH_INDEX_PREFIX}_listings` : 'listings';
     console.log(`Configuring Meilisearch Index: ${indexName}...`);
     const index = meiliClient.index(indexName);
-
+    
     await index.updateFilterableAttributes([
       'departments',
       'researchAreas',
       'archived',
-      'confirmed',
+      'confirmed'
+    ]);
+    
+    await index.updateSortableAttributes([
+      'createdAt',
+      'updatedAt',
+      'searchScore'
     ]);
 
-    await index.updateSortableAttributes(['createdAt', 'updatedAt', 'searchScore']);
-
     if (process.env.OPENAI_API_KEY) {
-      console.log('Configuring OpenAI Embedder native Meilisearch support...');
-      await index.updateEmbedders({
-        default: {
-          source: 'openAi',
-          apiKey: process.env.OPENAI_API_KEY,
-          model: 'text-embedding-3-small',
-          documentTemplate:
-            'Title: {{doc.title}}\nProfessors: {{doc.professorNames}}\nDescription: {{doc.description}}\nKeywords: {{doc.keywords}}',
-        },
-      });
+        console.log('Configuring OpenAI Embedder native Meilisearch support...');
+        await index.updateEmbedders({
+            default: {
+                source: 'openAi',
+                apiKey: process.env.OPENAI_API_KEY,
+                model: 'text-embedding-3-small',
+                documentTemplate: "Title: {{doc.title}}\nProfessors: {{doc.professorNames}}\nDescription: {{doc.description}}\nKeywords: {{doc.keywords}}",
+            }
+        });
     }
 
     console.log('Pushing to Meilisearch...');
@@ -98,7 +96,7 @@ async function migrateToMeilisearch() {
   }
 }
 
-migrateToMeilisearch().catch((err) => {
+migrateToMeilisearch().catch(err => {
   console.error('Fatal error:', err);
   process.exit(1);
 });

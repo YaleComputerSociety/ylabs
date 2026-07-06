@@ -4,7 +4,6 @@ import {
   buildPublicResearchOutreachEvent,
   buildPublicResearchSearchInputs,
   getPublicResearchSortBy,
-  redactPublicListing,
   searchListingsWithDegradation,
 } from './listingController';
 import { AnalyticsEventType } from '../models/analytics';
@@ -186,79 +185,5 @@ void describe('public research outreach analytics inputs', () => {
       null,
     );
     assert.equal(buildPublicResearchOutreachEvent({ action: 'download_contacts' }), null);
-  });
-});
-
-void describe('public listing redaction', () => {
-  void it('returns sanitized public evidence without private listing fields or raw source URLs', () => {
-    const redacted = redactPublicListing({
-      _id: { toString: () => '507f1f77bcf86cd799439011' },
-      title: 'Evidence-backed lab',
-      ownerEmail: 'private@yale.edu',
-      emails: ['private-list@yale.edu'],
-      ownerId: 'private-netid',
-      professorIds: ['private-prof'],
-      views: 42,
-      favorites: 9,
-      archived: false,
-      confirmed: true,
-      audited: true,
-      evidence: {
-        status: 'available',
-        summary: 'Matched from faculty profile and publication records.',
-        confidence: 0.83,
-        generatedAt: '2026-01-02T00:00:00.000Z',
-        lastVerifiedAt: '2026-02-03T00:00:00.000Z',
-        internalNotes: 'Do not expose this analyst note.',
-        apiKey: 'secret',
-        sources: [
-          {
-            label: 'OpenAlex work',
-            url: 'https://user:pass@example.edu/path?token=secret#private',
-            sourceType: 'publication',
-            description: 'Public publication metadata',
-            lastCheckedAt: '2026-02-01T00:00:00.000Z',
-          },
-          {
-            label: 'Unsafe script',
-            url: 'javascript:alert(1)',
-          },
-        ],
-      },
-    });
-
-    assert.equal(redacted.ownerEmail, undefined);
-    assert.deepEqual(redacted.emails, []);
-    assert.equal(redacted.ownerId, undefined);
-    assert.deepEqual(redacted.professorIds, []);
-    assert.equal(redacted.views, 0);
-    assert.equal(redacted.favorites, 0);
-    assert.equal(redacted.archived, false);
-    assert.equal(redacted.confirmed, true);
-    assert.equal(redacted.audited, undefined);
-    assert.equal(redacted.evidence.internalNotes, undefined);
-    assert.equal(redacted.evidence.apiKey, undefined);
-    assert.equal(redacted.evidence.status, 'available');
-    assert.equal(
-      redacted.evidence.summary,
-      'Matched from faculty profile and publication records.',
-    );
-    assert.equal(redacted.evidence.confidence, 0.83);
-    assert.equal(redacted.evidence.sources[0].url, 'https://example.edu/path');
-    assert.equal(redacted.evidence.sources[0].label, 'OpenAlex work');
-    assert.equal(redacted.evidence.sources[1].url, undefined);
-    assert.equal(redacted.evidence.sources[1].label, 'Unsafe script');
-  });
-
-  void it('normalizes missing evidence to an empty public rail payload', () => {
-    const redacted = redactPublicListing({
-      _id: '507f1f77bcf86cd799439011',
-      title: 'Lab without evidence',
-    });
-
-    assert.deepEqual(redacted.evidence, {
-      status: 'unavailable',
-      sources: [],
-    });
   });
 });

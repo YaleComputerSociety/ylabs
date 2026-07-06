@@ -106,89 +106,10 @@ export const buildPublicResearchOutreachEvent = (params: {
   };
 };
 
-const PUBLIC_EVIDENCE_SOURCE_LIMIT = 8;
-
-const toOptionalString = (value: unknown): string | undefined => {
-  if (typeof value !== 'string') return undefined;
-  const trimmed = value.trim();
-  return trimmed === '' ? undefined : trimmed;
-};
-
-const toIsoString = (value: unknown): string | undefined => {
-  if (!value) return undefined;
-  const date = value instanceof Date ? value : new Date(value as string);
-  return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
-};
-
-const sanitizePublicSourceUrl = (value: unknown): string | undefined => {
-  const raw = toOptionalString(value);
-  if (!raw) return undefined;
-  const withScheme = /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(raw) ? raw : `https://${raw}`;
-
-  try {
-    const parsed = new URL(withScheme);
-    if (!['http:', 'https:'].includes(parsed.protocol)) return undefined;
-    parsed.username = '';
-    parsed.password = '';
-    parsed.search = '';
-    parsed.hash = '';
-    return parsed.toString();
-  } catch {
-    return undefined;
-  }
-};
-
-export const sanitizePublicEvidence = (evidence: any) => {
-  if (!evidence || typeof evidence !== 'object') {
-    return {
-      status: 'unavailable',
-      sources: [],
-    };
-  }
-
-  const sources = Array.isArray(evidence.sources)
-    ? evidence.sources
-        .map((source: any) => {
-          const url = sanitizePublicSourceUrl(source?.url);
-          const label =
-            toOptionalString(source?.label) ||
-            toOptionalString(source?.title) ||
-            (url ? new URL(url).hostname.replace(/^www\./, '') : undefined);
-          if (!url && !label) return null;
-
-          return {
-            label,
-            url,
-            sourceType: toOptionalString(source?.sourceType),
-            description: toOptionalString(source?.description),
-            lastCheckedAt: toIsoString(source?.lastCheckedAt),
-          };
-        })
-        .filter(Boolean)
-        .slice(0, PUBLIC_EVIDENCE_SOURCE_LIMIT)
-    : [];
-
-  return {
-    status: toOptionalString(evidence.status) || (sources.length > 0 ? 'available' : 'unavailable'),
-    summary: toOptionalString(evidence.summary),
-    confidence:
-      typeof evidence.confidence === 'number' &&
-      Number.isFinite(evidence.confidence) &&
-      evidence.confidence >= 0 &&
-      evidence.confidence <= 1
-        ? evidence.confidence
-        : undefined,
-    generatedAt: toIsoString(evidence.generatedAt),
-    lastVerifiedAt: toIsoString(evidence.lastVerifiedAt),
-    sources,
-  };
-};
-
-export const redactPublicListing = (listing: any) => {
+const redactPublicListing = (listing: any) => {
   const source = typeof listing?.toObject === 'function' ? listing.toObject() : listing;
   const redacted = { ...(source || {}) };
   const rawId = redacted._id?.toString?.() || redacted.id;
-  const evidence = sanitizePublicEvidence(redacted.evidence);
   delete redacted.__v;
   delete redacted.ownerEmail;
   delete redacted.emails;
@@ -210,7 +131,6 @@ export const redactPublicListing = (listing: any) => {
     favorites: 0,
     archived: false,
     confirmed: true,
-    evidence,
   };
 };
 
@@ -782,12 +702,23 @@ export const getAuthenticatedPublicResearchBySlug = async (
     return response.status(404).json({ error: 'Research listing not found' });
   }
 
-  return response.status(200).json({
-    listing: {
-      ...listing,
-      evidence: sanitizePublicEvidence((listing as any).evidence),
-    },
-  });
+  const currentUser = request.user as { netId?: string; userType: string };
+  if (currentUser?.netId) {
+    const contactCount = [listing.ownerEmail, ...(listing.emails || [])].filter(Boolean).length;
+    logEvent({
+      eventType: AnalyticsEventType.OUTREACH_CONTACT_REVEAL,
+      netid: currentUser.netId,
+      userType: currentUser.userType,
+      listingId: id,
+      metadata: {
+        channel: 'email',
+        source: 'research_detail',
+        contactCount,
+      },
+    }).catch((error) => console.error('Error logging research contact reveal:', error));
+  }
+
+  return response.status(200).json({ listing });
 };
 
 export const recordPublicResearchOutreach = async (request: Request, response: Response) => {

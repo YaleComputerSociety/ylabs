@@ -1,19 +1,19 @@
 # YURA Research Database
 
-A research lab and fellowship discovery platform for Yale University, with public research browsing, evidence/source metadata on research details, and authenticated tools for favorites, contact, and management.
+A research lab and fellowship discovery platform for Yale University, with public research browsing and authenticated tools for favorites, contact, and management.
 
 **Live:** [yalelabs.io](https://yalelabs.io/) · **Beta:** [ylabs-dev.onrender.com](https://ylabs-dev.onrender.com)
 
 ## Tech Stack
 
-| Layer           | Tech                                                         |
-| --------------- | ------------------------------------------------------------ |
-| Client          | React 19, TypeScript, Vite, TailwindCSS, MUI                 |
-| Server          | Express 4, TypeScript, Passport.js (Yale CAS)                |
-| Database        | MongoDB Atlas (Mongoose 8)                                   |
-| Search          | Meilisearch (hybrid: keyword + semantic via OpenAI embedder) |
-| Error Tracking  | Sentry for client and server runtime exceptions              |
-| Package Manager | Yarn 4 via Corepack                                          |
+| Layer | Tech |
+|-------|------|
+| Client | React 19, TypeScript, Vite, TailwindCSS, MUI |
+| Server | Express 4, TypeScript, Passport.js (Yale CAS) |
+| Database | MongoDB Atlas (Mongoose 8) |
+| Search | Meilisearch (hybrid: keyword + semantic via OpenAI embedder) |
+| Error Tracking | Sentry for client and server runtime exceptions |
+| Package Manager | Yarn 4 via Corepack |
 
 ## Quick Start
 

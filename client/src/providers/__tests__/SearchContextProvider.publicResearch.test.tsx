@@ -123,11 +123,6 @@ const renderProvider = (
     </MemoryRouter>,
   );
 
-const EvidenceSummary = () => {
-  const { listings } = React.useContext(SearchContext);
-  return <div>{listings[0]?.evidence?.summary || ''}</div>;
-};
-
 describe('SearchContextProvider public research route', () => {
   beforeEach(() => {
     mockedAxiosGet.mockReset();
@@ -227,43 +222,5 @@ describe('SearchContextProvider public research route', () => {
         '?query=genomics&departments=Computer+Science&researchAreas=AI%2CGenomics&researchAreasMode=intersection&sortBy=updatedAt&sortOrder=-1&quickFilter=open',
       );
     });
-  });
-
-  it('preserves evidence metadata from public search results', async () => {
-    mockedAxiosGet.mockResolvedValue({
-      data: {
-        results: [
-          {
-            _id: '507f1f77bcf86cd799439011',
-            title: 'Public research listing',
-            evidence: {
-              status: 'available',
-              summary: 'Matched from public search metadata.',
-              sources: [{ label: 'Publication', url: 'https://example.edu/work' }],
-            },
-          },
-        ],
-        totalCount: 1,
-      },
-    });
-
-    render(
-      <MemoryRouter initialEntries={['/research']}>
-        <UserContext.Provider
-          value={{
-            isLoading: false,
-            isAuthenticated: false,
-            user: null,
-            checkContext: vi.fn(),
-          }}
-        >
-          <SearchContextProvider>
-            <EvidenceSummary />
-          </SearchContextProvider>
-        </UserContext.Provider>
-      </MemoryRouter>,
-    );
-
-    expect(await screen.findByText('Matched from public search metadata.')).toBeTruthy();
   });
 });

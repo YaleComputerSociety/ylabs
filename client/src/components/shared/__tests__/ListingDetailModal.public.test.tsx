@@ -45,7 +45,11 @@ const listing: Listing = {
 };
 
 const renderModal = (
-  options: { isAuthenticated?: boolean; onRequireAuth?: () => void; listing?: Listing } = {},
+  options: {
+    isAuthenticated?: boolean;
+    onRequireAuth?: () => void;
+    listingOverride?: Partial<Listing>;
+  } = {},
 ) =>
   render(
     <MemoryRouter>
@@ -79,7 +83,7 @@ const renderModal = (
           <ListingDetailModal
             isOpen
             onClose={vi.fn()}
-            listing={options.listing || listing}
+            listing={{ ...listing, ...options.listingOverride }}
             isFavorite={false}
             onToggleFavorite={vi.fn()}
             onRequireAuth={options.onRequireAuth}
@@ -112,82 +116,42 @@ describe('ListingDetailModal public discovery behavior', () => {
     expect(screen.getByText(/contact details unavailable/i)).toBeTruthy();
   });
 
-  it('shows an empty evidence state when public metadata is unavailable', () => {
-    renderModal();
-
-    expect(screen.getByText(/evidence/i)).toBeTruthy();
-    expect(screen.getByText(/no source metadata available yet/i)).toBeTruthy();
-  });
-
-  it('renders safe source links without showing raw private URL parts', () => {
+  it('records a privacy-safe contact attempt and outcome for authenticated email clicks', async () => {
+    postMock.mockResolvedValue({ data: {} });
     renderModal({
-      listing: {
-        ...listing,
-        evidence: {
-          status: 'available',
-          summary: 'Matched from public profile and publication records.',
-          confidence: 0.92,
-          lastVerifiedAt: '2026-02-03T00:00:00.000Z',
-          sources: [
-            {
-              label: 'OpenAlex work',
-              url: 'https://example.edu/path?token=secret#private',
-              sourceType: 'Publication',
-              lastCheckedAt: '2026-02-01T00:00:00.000Z',
-            },
-            {
-              label: 'Unsafe script',
-              url: 'javascript:alert(1)',
-            },
-          ],
-        },
+      isAuthenticated: true,
+      listingOverride: {
+        ownerEmail: 'ada@yale.edu',
+        emails: ['lab@yale.edu'],
       },
     });
 
-    const link = screen.getByRole('link', { name: /openalex work/i });
-    expect(link.getAttribute('href')).toBe('https://example.edu/path');
-    expect(link.getAttribute('rel')).toBe('noopener noreferrer');
-    expect(screen.getByText(/matched from public profile/i)).toBeTruthy();
-    expect(screen.getByText('92%')).toBeTruthy();
-    expect(screen.getByText(/example.edu/i)).toBeTruthy();
-    expect(screen.getByText(/unsafe script/i)).toBeTruthy();
-    expect(screen.queryByRole('link', { name: /unsafe script/i })).toBeNull();
-    expect(screen.queryByText(/token=secret/i)).toBeNull();
-  });
+    const emailLink = screen.getByRole('link', { name: /ada@yale.edu/i });
+    emailLink.addEventListener('click', (event) => event.preventDefault());
+    fireEvent.click(emailLink);
 
-  it('renders loading and error evidence states', () => {
-    const { rerender } = renderModal({
-      listing: {
-        ...listing,
-        evidence: { status: 'loading', sources: [] },
+    expect(postMock).toHaveBeenCalledWith(
+      '/research/507f1f77bcf86cd799439011/outreach',
+      {
+        action: 'email_click',
+        outcome: undefined,
+        source: 'listing_detail_modal',
       },
-    });
-
-    expect(screen.getByText(/checking evidence metadata/i)).toBeTruthy();
-
-    rerender(
-      <MemoryRouter>
-        <UserContext.Provider
-          value={{
-            isLoading: false,
-            isAuthenticated: false,
-            user: undefined,
-            checkContext: vi.fn(),
-          }}
-        >
-          <ConfigContext.Provider value={defaultConfigContext}>
-            <ListingDetailModal
-              isOpen
-              onClose={vi.fn()}
-              listing={{ ...listing, evidence: { status: 'error', sources: [] } }}
-              isFavorite={false}
-              onToggleFavorite={vi.fn()}
-            />
-          </ConfigContext.Provider>
-        </UserContext.Provider>
-      </MemoryRouter>,
+      { withCredentials: true },
     );
+    expect(JSON.stringify(postMock.mock.calls)).not.toContain('ada@yale.edu');
 
-    expect(screen.getByText(/evidence metadata could not be loaded/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /emailed/i }));
+
+    await screen.findByText(/outcome saved/i);
+    expect(postMock).toHaveBeenLastCalledWith(
+      '/research/507f1f77bcf86cd799439011/outreach',
+      {
+        action: 'outcome',
+        outcome: 'emailed',
+        source: 'listing_detail_modal',
+      },
+      { withCredentials: true },
+    );
   });
 });
