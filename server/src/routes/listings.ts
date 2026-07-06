@@ -4,11 +4,13 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import {
   isAuthenticated,
+  canSubmitListingClaimRequest,
   canCreateListing,
   validateObjectId,
   validatePagination,
 } from '../middleware/index';
 import * as listingController from '../controllers/listingController';
+import * as listingClaimRequestController from '../controllers/listingClaimRequestController';
 import { logEvent } from '../services/analyticsService';
 import { AnalyticsEventType } from '../models/index';
 import { sanitizeLogValue } from '../utils/logSanitizer';
@@ -159,6 +161,14 @@ router.post(
 );
 
 router.get('/:id', isAuthenticated, validateObjectId('id'), listingController.getListingById);
+
+router.post(
+  '/:id/claim',
+  isAuthenticated,
+  canSubmitListingClaimRequest,
+  validateObjectId('id'),
+  listingClaimRequestController.submitListingClaimRequest,
+);
 
 router.put(
   '/:id',
