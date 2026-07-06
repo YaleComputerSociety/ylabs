@@ -3,13 +3,6 @@
  */
 import express from 'express';
 
-const sendUnauthorized = (res: express.Response) => {
-  return res.status(401).json({
-    error: 'Unauthorized',
-    code: 'AUTH_REQUIRED',
-  });
-};
-
 /**
  * Middleware to check if user is authenticated
  */
@@ -21,7 +14,7 @@ export const isAuthenticated = (
   if (req.user) {
     return next();
   }
-  sendUnauthorized(res);
+  res.status(401).json({ error: 'Unauthorized' });
 };
 
 /**
@@ -61,7 +54,7 @@ export const canCreateListing = (
   };
 
   if (!currentUser) {
-    return sendUnauthorized(res);
+    return res.status(401).json({ error: 'Unauthorized' });
   }
 
   const allowedTypes = ['admin', 'professor', 'faculty'];
@@ -70,10 +63,12 @@ export const canCreateListing = (
   }
 
   if (currentUser.userType !== 'admin' && !currentUser.profileVerified) {
-    return res.status(403).json({
-      error:
-        'You must verify your profile before creating listings. Go to your account page to review and verify your profile.',
-    });
+    return res
+      .status(403)
+      .json({
+        error:
+          'You must verify your profile before creating listings. Go to your account page to review and verify your profile.',
+      });
   }
 
   next();
@@ -90,7 +85,7 @@ export const isAdmin = (
   const currentUser = req.user as { netId?: string; userType?: string; userConfirmed?: boolean };
 
   if (!currentUser) {
-    return sendUnauthorized(res);
+    return res.status(401).json({ error: 'Unauthorized' });
   }
 
   if (currentUser.userType !== 'admin') {
@@ -111,7 +106,7 @@ export const isProfessor = (
   const currentUser = req.user as { netId?: string; userType?: string; userConfirmed?: boolean };
 
   if (!currentUser) {
-    return sendUnauthorized(res);
+    return res.status(401).json({ error: 'Unauthorized' });
   }
 
   if (
@@ -136,7 +131,7 @@ export const isConfirmed = (
   const currentUser = req.user as { netId?: string; userType?: string; userConfirmed?: boolean };
 
   if (!currentUser) {
-    return sendUnauthorized(res);
+    return res.status(401).json({ error: 'Unauthorized' });
   }
 
   if (!currentUser.userConfirmed) {

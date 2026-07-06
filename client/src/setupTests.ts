@@ -1,10 +1,4 @@
 /**
- * Test environment setup for Vitest.
+ * Test environment setup for Jest.
  */
-import '@testing-library/jest-dom/vitest';
-import { cleanup } from '@testing-library/react';
-import { afterEach } from 'vitest';
-
-afterEach(() => {
-  cleanup();
-});
+import '@testing-library/jest-dom';

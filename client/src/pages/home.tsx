@@ -1,8 +1,7 @@
 /**
  * Main listings browse page with search, filters, and grid/list view.
  */
-import { useReducer, useEffect, useContext, useMemo, useCallback } from 'react';
-import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { useReducer, useEffect, useContext, useMemo } from 'react';
 import SearchContext from '../contexts/SearchContext';
 import UserContext from '../contexts/UserContext';
 import { useInfiniteScroll } from '../hooks/useInfiniteScroll';
@@ -12,36 +11,15 @@ import AdminListingEditModal from '../components/admin/AdminListingEditModal';
 import { BrowsableItem } from '../types/browsable';
 import { Listing } from '../types/types';
 import axios from '../utils/axios';
-import { createListing } from '../utils/apiCleaner';
 import swal from 'sweetalert';
 import { getInstitutionAffiliation } from '../utils/institutionAffiliation';
-import { browsePageReducer, createInitialBrowsePageState } from '../reducers/browsePageReducer';
-import { applySeoMetadata, buildDefaultSeoMetadata, buildResearchSeoMetadata } from '../utils/seo';
-
-type ListingSearchCriteria = {
-  queryString: string;
-  selectedDepartments: string[];
-  selectedResearchAreas: string[];
-  selectedListingResearchAreas: string[];
-  quickFilter: string | null;
-};
-
-export const hasListingSearchCriteria = (params: ListingSearchCriteria) =>
-  params.queryString.trim() !== '' ||
-  params.selectedDepartments.length > 0 ||
-  params.selectedResearchAreas.length > 0 ||
-  params.selectedListingResearchAreas.length > 0 ||
-  Boolean(params.quickFilter);
-
-export const getListingEmptyMessage = (params: ListingSearchCriteria) => {
-  return hasListingSearchCriteria(params)
-    ? 'No labs match your current search or filters'
-    : 'No research labs are available right now';
-};
+import {
+  browsePageReducer,
+  createInitialBrowsePageState,
+} from '../reducers/browsePageReducer';
 
 const Home = () => {
   const {
-    queryString,
     listings,
     isLoading,
     searchExhausted,
@@ -50,21 +28,13 @@ const Home = () => {
     setQuickFilter,
     refreshListings,
     setQueryString,
-    selectedDepartments,
     setSelectedDepartments,
-    selectedResearchAreas,
     setSelectedResearchAreas,
-    selectedListingResearchAreas,
     setSelectedListingResearchAreas,
   } = useContext(SearchContext);
 
-  const { user, isAuthenticated, isLoading: authLoading } = useContext(UserContext);
+  const { user } = useContext(UserContext);
   const isAdmin = user?.userType === 'admin';
-  const navigate = useNavigate();
-  const location = useLocation();
-  const { slug } = useParams();
-  const isResearchRoute =
-    location.pathname === '/research' || location.pathname.startsWith('/research/');
 
   const [state, dispatch] = useReducer(
     browsePageReducer<Listing>,
@@ -79,23 +49,10 @@ const Home = () => {
   } = state;
 
   useEffect(() => {
-    if (!isResearchRoute) {
-      setQueryString('');
-    }
-  }, [isResearchRoute, setQueryString]);
+    setQueryString('');
+  }, []);
 
-  const requireLogin = () => {
-    const returnUrl = window.location.origin + location.pathname + location.search;
-    localStorage.setItem('logoutReturnPath', returnUrl);
-    navigate('/login');
-  };
-
-  const reloadFavorites = useCallback(async () => {
-    if (!isAuthenticated) {
-      dispatch({ type: 'SET_FAVORITES', ids: [] });
-      return;
-    }
-
+  const reloadFavorites = async () => {
     axios
       .get('/users/favListingsIds', { withCredentials: true })
       .then((response) => {
@@ -106,53 +63,12 @@ const Home = () => {
         dispatch({ type: 'SET_FAVORITES', ids: [] });
         swal({ text: 'Could not load your favorite listings', icon: 'warning' });
       });
-  }, [isAuthenticated]);
+  };
 
   useEffect(() => {
     refreshListings();
-    if (!authLoading) {
-      reloadFavorites();
-    }
-  }, [authLoading, isAuthenticated, refreshListings, reloadFavorites]);
-
-  useEffect(() => {
-    if (!slug) return;
-    let cancelled = false;
-
-    axios
-      .get(`/research/${slug}`, { withCredentials: true })
-      .then(async (response) => {
-        if (cancelled) return;
-        let listing = response.data.listing;
-
-        if (isAuthenticated) {
-          try {
-            const authenticatedResponse = await axios.get(`/research/${slug}/contact`, {
-              withCredentials: true,
-            });
-            if (cancelled) return;
-            listing = authenticatedResponse.data.listing;
-          } catch (error) {
-            console.error('Error loading authenticated research listing details:', error);
-          }
-        }
-
-        dispatch({
-          type: 'OPEN_DETAIL_MODAL',
-          item: createListing(listing),
-        });
-      })
-      .catch((error) => {
-        if (cancelled) return;
-        console.error('Error loading research listing:', error);
-        swal({ text: 'Unable to load this research listing.', icon: 'warning' });
-        navigate('/research', { replace: true });
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [slug, navigate, isAuthenticated]);
+    reloadFavorites();
+  }, []);
 
   const filteredListings = useMemo(() => {
     if (quickFilter === 'open') {
@@ -189,53 +105,7 @@ const Home = () => {
     quickFilterActive: !!quickFilter,
   });
 
-  const listingSearchCriteria = {
-    queryString,
-    selectedDepartments,
-    selectedResearchAreas,
-    selectedListingResearchAreas,
-    quickFilter,
-  };
-  const emptyMessage = getListingEmptyMessage(listingSearchCriteria);
-  const showFellowshipsEmptyAction = !hasListingSearchCriteria(listingSearchCriteria);
-
-  useEffect(() => {
-    if (!isResearchRoute) {
-      applySeoMetadata(
-        buildDefaultSeoMetadata({
-          origin: window.location.origin,
-          pathname: location.pathname,
-        }),
-      );
-      return;
-    }
-
-    applySeoMetadata(
-      buildResearchSeoMetadata({
-        origin: window.location.origin,
-        pathname: location.pathname,
-        listing: selectedListing,
-      }),
-    );
-  }, [isResearchRoute, location.pathname, selectedListing]);
-
-  useEffect(() => {
-    return () => {
-      applySeoMetadata(
-        buildDefaultSeoMetadata({
-          origin: window.location.origin,
-          pathname: window.location.pathname,
-        }),
-      );
-    };
-  }, []);
-
   const updateFavorite = (listingId: string, favorite: boolean) => {
-    if (!isAuthenticated) {
-      requireLogin();
-      return;
-    }
-
     const prevFavListingsIds = favListingsIds;
 
     if (favorite) {
@@ -272,12 +142,6 @@ const Home = () => {
   const handleOpenModal = (item: BrowsableItem) => {
     if (item.type === 'listing') {
       dispatch({ type: 'OPEN_DETAIL_MODAL', item: item.data });
-      if (isResearchRoute) {
-        navigate(
-          { pathname: `/research/${item.data.id}`, search: location.search },
-          { replace: false },
-        );
-      }
     }
   };
 
@@ -287,19 +151,12 @@ const Home = () => {
     }
   };
 
-  const closeDetailModal = () => {
-    dispatch({ type: 'CLOSE_DETAIL_MODAL' });
-    if (slug) {
-      navigate({ pathname: '/research', search: location.search });
-    }
-  };
-
   const handleNavigateToResearchArea = (area: string) => {
     setQueryString('');
     setSelectedDepartments([]);
     setSelectedResearchAreas([]);
     setSelectedListingResearchAreas([area]);
-    closeDetailModal();
+    dispatch({ type: 'CLOSE_DETAIL_MODAL' });
   };
 
   const handleNavigateToDepartment = (dept: string) => {
@@ -307,7 +164,7 @@ const Home = () => {
     setSelectedDepartments([dept]);
     setSelectedResearchAreas([]);
     setSelectedListingResearchAreas([]);
-    closeDetailModal();
+    dispatch({ type: 'CLOSE_DETAIL_MODAL' });
   };
 
   return (
@@ -324,30 +181,21 @@ const Home = () => {
         searchExhausted={searchExhausted}
         quickFilter={quickFilter}
         onClearQuickFilter={() => setQuickFilter(null)}
-        emptyMessage={emptyMessage}
-        emptyAction={
-          showFellowshipsEmptyAction ? (
-            <Link
-              to="/fellowships"
-              className="inline-flex items-center justify-center rounded-md border border-blue-600 px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50"
-            >
-              Browse fellowships
-            </Link>
-          ) : undefined
-        }
+        emptyMessage="No results match the search criteria"
       />
 
       {selectedListing && (
         <ListingDetailModal
           isOpen={isModalOpen}
-          onClose={closeDetailModal}
+          onClose={() => {
+            dispatch({ type: 'CLOSE_DETAIL_MODAL' });
+          }}
           listing={selectedListing}
           isFavorite={favListingsIds.includes(selectedListing.id)}
           onToggleFavorite={(e) => {
             e.stopPropagation();
             updateFavorite(selectedListing.id, !favListingsIds.includes(selectedListing.id));
           }}
-          onRequireAuth={requireLogin}
           onNavigateToResearchArea={handleNavigateToResearchArea}
           onNavigateToDepartment={handleNavigateToDepartment}
         />

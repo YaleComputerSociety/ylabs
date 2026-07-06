@@ -1,33 +1,46 @@
-# Y/Labs Client
+# Getting Started with Create React App
 
-React 19 + TypeScript client built with Vite. The app talks to the Express API configured by `VITE_APP_SERVER` through the shared client in `src/utils/axios.ts`.
+This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
 
-Public research routes update the document title, canonical URL, description, Open Graph tags, and Twitter card tags from public-safe listing fields after the SPA loads. The production Express server also injects crawler-visible metadata into the built `index.html` for `/research` and `/research/:slug`; the client updater is the Vite/static-host fallback.
+## Available Scripts
 
-## Environment
+In the project directory, you can run:
 
-Create `client/.env` for local development:
+### `npm start`
 
-```bash
-VITE_APP_SERVER=http://localhost:4000
-# Optional Sentry client error tracking:
-# VITE_SENTRY_DSN=
-# VITE_SENTRY_ENVIRONMENT=development
-# VITE_SENTRY_RELEASE=
-```
+Runs the app in the development mode.\
+Open [http://localhost:3000](http://localhost:3000) to view it in the browser.
 
-When `VITE_SENTRY_DSN` is set, `src/utils/errorTracking.ts` initializes Sentry and the root `ErrorBoundary` reports unexpected render errors.
+The page will reload if you make edits.\
+You will also see any lint errors in the console.
 
-## API Handling
+### `npm test`
 
-Use `src/utils/axios.ts` for app API calls so base URL, credentials, and global HTTP handling stay consistent. The shared client emits app-wide events for `401` responses, which clear auth state through `UserContextProvider`, and for `429` responses, which display the server rate-limit message and retry guidance through `HttpStatusNotifier`.
+Launches the test runner in the interactive watch mode.\
+See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
 
-## Scripts
+### `npm run build`
 
-```bash
-yarn dev      # Vite dev server on port 3000
-yarn build    # Production build
-yarn preview  # Preview the production build
-yarn test     # Vitest watch mode
-yarn test:ci  # Single Vitest run
-```
+Builds the app for production to the `build` folder.\
+It correctly bundles React in production mode and optimizes the build for the best performance.
+
+The build is minified and the filenames include the hashes.\
+Your app is ready to be deployed!
+
+See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+
+### `npm run eject`
+
+**Note: this is a one-way operation. Once you `eject`, you can’t go back!**
+
+If you aren’t satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+
+Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you’re on your own.
+
+You don’t have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn’t feel obligated to use this feature. However we understand that this tool wouldn’t be useful if you couldn’t customize it when you are ready for it.
+
+## Learn More
+
+You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
+
+To learn React, check out the [React documentation](https://reactjs.org/).

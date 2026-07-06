@@ -22,7 +22,6 @@ import SearchContextProvider from './providers/SearchContextProvider';
 import FellowshipSearchContextProvider from './providers/FellowshipSearchContextProvider';
 import UIContextProvider from './providers/UIContextProvider';
 import ScrollToTop from './components/shared/ScrollToTop';
-import HttpStatusNotifier from './components/HttpStatusNotifier';
 
 const App = () => {
   return (
@@ -32,7 +31,6 @@ const App = () => {
         <SearchContextProvider>
           <FellowshipSearchContextProvider>
             <UIContextProvider>
-              <HttpStatusNotifier />
               <div className="flex flex-col h-full overflow-hidden">
                 <div className="flex-shrink-0 flex-grow-0">
                   <Navbar />
@@ -44,8 +42,6 @@ const App = () => {
                         path="/"
                         element={<PrivateRoute Component={Home} unknownBlocked={true} />}
                       />
-                      <Route path="/research" element={<Home />} />
-                      <Route path="/research/:slug" element={<Home />} />
                       <Route
                         path="/fellowships"
                         element={<PrivateRoute Component={Fellowships} unknownBlocked={true} />}

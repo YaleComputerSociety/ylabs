@@ -35,7 +35,6 @@ const ArrayInput = ({
 }: ArrayInputProps) => {
   const inputRef = useRef<HTMLInputElement>(null);
   const [showTooltip, setShowTooltip] = useState(false);
-  const inputId = `${label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-input`;
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && inputRef.current && inputRef.current.value.trim()) {
@@ -109,12 +108,7 @@ const ArrayInput = ({
           className={`${bgColor} ${textColor} px-2 py-1 rounded text-sm flex items-center`}
         >
           <span className="whitespace-nowrap">{item}</span>
-          <button
-            type="button"
-            onClick={() => removeItem(index)}
-            className={`ml-2 ${buttonColor}`}
-            aria-label={`Remove ${item}`}
-          >
+          <button type="button" onClick={() => removeItem(index)} className={`ml-2 ${buttonColor}`}>
             ×
           </button>
         </span>,
@@ -126,12 +120,9 @@ const ArrayInput = ({
 
   return (
     <div className="mb-4">
-      <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor={inputId}>
-        {label}
-      </label>
+      <label className="block text-gray-700 text-sm font-bold mb-2">{label}</label>
       <div className="flex">
         <input
-          id={inputId}
           type={type}
           ref={inputRef}
           placeholder={placeholder}

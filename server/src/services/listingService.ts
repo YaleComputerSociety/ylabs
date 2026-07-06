@@ -10,17 +10,6 @@ import { getListingModel } from '../db/connections';
 import { processListingTitle, isCustomTitle, generateSmartTitle } from '../utils/smartTitle';
 import * as itemOps from './itemOperations';
 
-const prepareListingForMeili = (doc: any) => {
-  const meiliDoc = { ...doc, id: doc._id.toString() };
-  delete meiliDoc._id;
-  delete meiliDoc.__v;
-  delete meiliDoc.embedding;
-  if (meiliDoc.evidence && typeof meiliDoc.evidence === 'object') {
-    delete meiliDoc.evidence.internalNotes;
-  }
-  return meiliDoc;
-};
-
 export const createListing = async (data: any, owner: any) => {
   if (!owner.netid || !owner.email || !owner.fname || !owner.lname) {
     throw new Error('Incomplete user data for owner');
@@ -85,7 +74,9 @@ export const createListing = async (data: any, owner: any) => {
 
   try {
     const doc = listing.toObject();
-    const meiliDoc = prepareListingForMeili(doc);
+    const meiliDoc = { ...doc, id: doc._id.toString() };
+    delete meiliDoc._id;
+    delete meiliDoc.__v;
     const index = await getMeiliIndex('listings');
     await index.addDocuments([meiliDoc]);
   } catch (error) {
@@ -236,7 +227,9 @@ export const updateListing = async (
 
     try {
       const doc = listing.toObject();
-      const meiliDoc = prepareListingForMeili(doc);
+      const meiliDoc = { ...doc, id: doc._id.toString() };
+      delete meiliDoc._id;
+      delete meiliDoc.__v;
       const index = await getMeiliIndex('listings');
       await index.updateDocuments([meiliDoc]);
     } catch (error) {

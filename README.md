@@ -1,19 +1,18 @@
 # YURA Research Database
 
-A research lab and fellowship discovery platform for Yale University, with public research browsing, evidence/source metadata on research details, authenticated tools for favorites and contact, trusted faculty/staff listing claim or correction requests, and admin management.
+A research lab and fellowship discovery platform for Yale University.
 
 **Live:** [yalelabs.io](https://yalelabs.io/) · **Beta:** [ylabs-dev.onrender.com](https://ylabs-dev.onrender.com)
 
 ## Tech Stack
 
-| Layer           | Tech                                                         |
-| --------------- | ------------------------------------------------------------ |
-| Client          | React 19, TypeScript, Vite, TailwindCSS, MUI                 |
-| Server          | Express 4, TypeScript, Passport.js (Yale CAS)                |
-| Database        | MongoDB Atlas (Mongoose 8)                                   |
-| Search          | Meilisearch (hybrid: keyword + semantic via OpenAI embedder) |
-| Error Tracking  | Sentry for client and server runtime exceptions              |
-| Package Manager | Yarn 4 via Corepack                                          |
+| Layer | Tech |
+|-------|------|
+| Client | React 19, TypeScript, Vite, TailwindCSS, MUI |
+| Server | Express 4, TypeScript, Passport.js (Yale CAS) |
+| Database | MongoDB Atlas (Mongoose 8) |
+| Search | Meilisearch (hybrid: keyword + semantic via OpenAI embedder) |
+| Package Manager | Yarn 4 via Corepack |
 
 ## Quick Start
 
@@ -32,7 +31,7 @@ yarn dev:client
 yarn dev:server
 ```
 
-Go to **http://localhost:3000**. Public research discovery is available at **http://localhost:3000/research** with shareable URLs for search text, filters, sorting, quick filters, detail modals, and SEO/social metadata; the authenticated Find Labs page may show an empty state locally until the Development database has listings, and it links to fellowships when fellowship data is available. Use `http://localhost:4000/api/dev-login` to bypass CAS auth locally for authenticated actions.
+Go to **http://localhost:3000**. Use `http://localhost:4000/api/dev-login` to bypass CAS auth locally.
 
 ## Documentation
 
