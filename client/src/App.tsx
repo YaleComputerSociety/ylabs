@@ -69,11 +69,11 @@ const App = () => {
                       />
                       <Route
                         path="/research"
-                        element={<PrivateRoute Component={Research} unknownBlocked={true} />}
+                        element={<Research />}
                       />
                       <Route
                         path="/research/:slug"
-                        element={<PrivateRoute Component={ResearchDetail} unknownBlocked={true} />}
+                        element={<ResearchDetail />}
                       />
                       <Route
                         path="/opportunities/:id"

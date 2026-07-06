@@ -255,6 +255,7 @@ export interface ResearchGroupSearchResult {
   estimatedTotalHits: number;
   page: number;
   pageSize: number;
+  degraded?: boolean;
 }
 
 const MAX_PAGE_SIZE = 100;
@@ -573,7 +574,23 @@ export async function searchResearchGroupsViaMeili(
       }
     }
   };
-  const searchResult = await searchWithFallbacks();
+  let searchResult: {
+    hits?: any[];
+    estimatedTotalHits?: number;
+  };
+  try {
+    searchResult = await searchWithFallbacks();
+  } catch (error) {
+    console.error('ResearchEntity Meilisearch failed; falling back to Mongo search:', error);
+    return searchResearchGroupsViaMongoFallback(
+      trimmedQuery,
+      safeFilters,
+      safePage,
+      safePageSize,
+      sort,
+      safeOptions,
+    );
+  }
   const { hits, estimatedTotalHits } = searchResult;
 
   const hitIds = (hits || [])
@@ -629,6 +646,128 @@ export async function searchResearchGroupsViaMeili(
     { includeOperatorFields: safeOptions.includeNonPublic },
   );
 }
+
+const researchEntitySearchText = (entity: any): string =>
+  [
+    entity.name,
+    entity.displayName,
+    entity.shortDescription,
+    entity.fullDescription,
+    ...(Array.isArray(entity.departments) ? entity.departments : []),
+    ...(Array.isArray(entity.researchAreas) ? entity.researchAreas : []),
+    ...(Array.isArray(entity.keywords) ? entity.keywords : []),
+    ...(Array.isArray(entity.schools) ? entity.schools : []),
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+
+const researchEntityMatchesQuery = (entity: any, query: string): boolean => {
+  if (!query) return true;
+  const terms = query
+    .toLowerCase()
+    .split(/\s+/)
+    .map((term) => term.trim())
+    .filter(Boolean);
+  if (terms.length === 0) return true;
+  const haystack = researchEntitySearchText(entity);
+  return terms.every((term) => haystack.includes(term));
+};
+
+const sortResearchEntitiesForMongoFallback = (
+  entities: any[],
+  query: string,
+  sort: ResearchGroupSearchSort,
+): any[] => {
+  const sorted = [...entities];
+  if (sort.sortBy) {
+    const direction = sort.sortOrder === 'asc' ? 1 : -1;
+    sorted.sort((a, b) => {
+      const aValue = a[sort.sortBy as string];
+      const bValue = b[sort.sortBy as string];
+      if (aValue instanceof Date || bValue instanceof Date) {
+        return direction * (new Date(aValue || 0).getTime() - new Date(bValue || 0).getTime());
+      }
+      return direction * String(aValue || '').localeCompare(String(bValue || ''));
+    });
+    return sorted;
+  }
+
+  if (!query) {
+    sorted.sort((a, b) => {
+      const rankDiff = Number(b.browseRankScore || 0) - Number(a.browseRankScore || 0);
+      if (rankDiff !== 0) return rankDiff;
+      return (
+        new Date(b.lastObservedAt || 0).getTime() -
+        new Date(a.lastObservedAt || 0).getTime()
+      );
+    });
+    return sorted;
+  }
+
+  sorted.sort((a, b) => {
+    const observedDiff =
+      new Date(b.lastObservedAt || 0).getTime() -
+      new Date(a.lastObservedAt || 0).getTime();
+    if (observedDiff !== 0) return observedDiff;
+    return String(a.displayName || a.name || '').localeCompare(String(b.displayName || b.name || ''));
+  });
+  return sorted;
+};
+
+const searchResearchGroupsViaMongoFallback = async (
+  query: string,
+  filters: ResearchGroupFilterInput,
+  page: number,
+  pageSize: number,
+  sort: ResearchGroupSearchSort,
+  options: ResearchGroupSearchOptions,
+): Promise<ResearchGroupSearchResult> => {
+  const safePage = Math.min(MAX_PAGE, Math.max(1, Math.floor(page) || 1));
+  const safePageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, Math.floor(pageSize) || 24));
+  const offset = (safePage - 1) * safePageSize;
+  const trimmedQuery = boundedResearchSearchQuery(query);
+  const candidates = await ResearchEntity.find(
+    mongoFilterFromResearchFilters(filters, options.includeNonPublic),
+  ).lean();
+  const visibleCandidates = (candidates as any[]).filter((entity) =>
+    researchEntityMatchesQuery(entity, trimmedQuery),
+  );
+  const sortedCandidates = sortResearchEntitiesForMongoFallback(
+    visibleCandidates,
+    trimmedQuery,
+    sort,
+  );
+  const pageEntities = sortedCandidates.slice(offset, offset + safePageSize);
+  const pageEntityIds = pageEntities.map((entity) => entity._id);
+  const activeListingGroupIds =
+    pageEntityIds.length > 0
+      ? await Listing.distinct('researchEntityId', {
+          researchEntityId: { $in: pageEntityIds },
+          archived: false,
+        })
+      : [];
+  const activeListingGroupIdSet = new Set(
+    activeListingGroupIds.map((id: any) => researchGroupDocumentId(id)).filter(Boolean),
+  );
+  const accessSummaries = await listAccessSummariesForResearchEntities(pageEntityIds);
+
+  return addResearchEntitySearchAliases(
+    {
+      hits: pageEntities.map((entity) => ({
+        ...entity,
+        _id: researchGroupDocumentId(entity._id),
+        hasActiveListing: activeListingGroupIdSet.has(researchGroupDocumentId(entity._id)),
+        accessSummary: accessSummaries.get(researchGroupDocumentId(entity._id)),
+      })),
+      estimatedTotalHits: sortedCandidates.length,
+      page: safePage,
+      pageSize: safePageSize,
+      degraded: true,
+    },
+    { includeOperatorFields: options.includeNonPublic },
+  ) as ResearchGroupSearchResult;
+};
 
 const PUBLIC_USER_FIELDS =
   'netid email fname lname imageUrl primaryDepartment title secondaryDepartments facultyMemberId profileUrls website websiteUrl';
