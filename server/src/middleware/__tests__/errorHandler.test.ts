@@ -2,6 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { NextFunction, Request, Response } from 'express';
 import { errorHandler, notFoundHandler } from '../errorHandler';
 import { BadRequestError, NotFoundError, ObjectIdError } from '../../utils/errors';
+import { captureServerError } from '../../utils/errorTracking';
+
+vi.mock('../../utils/errorTracking', () => ({
+  captureServerError: vi.fn(),
+}));
 
 const ORIGINAL_ENV = { ...process.env };
 
@@ -150,6 +155,7 @@ describe('errorHandler', () => {
 
     expect(response.status).toHaveBeenCalledWith(400);
     expect(response.json).toHaveBeenCalledWith({ error: 'Invalid request type' });
+    expect(captureServerError).not.toHaveBeenCalled();
   });
 
   it('does not leak internal messages in local test 500 responses', () => {
