@@ -4,10 +4,12 @@ import {
   assertSafeWrite,
   maskConnectionString,
   parseDataOpsArgs,
+  resolveSafeSummaryPath,
   toMeiliListingDocument,
   validateAndFilterFellowshipDocuments,
   validateFellowshipDocuments,
   validateMeiliListingDocuments,
+  writeSummary,
 } from '../dataOps';
 
 test('parseDataOpsArgs defaults to dry-run and accepts explicit output paths', () => {
@@ -22,6 +24,26 @@ test('parseDataOpsArgs defaults to dry-run and accepts explicit output paths', (
   assert.equal(options.execute, false);
   assert.match(options.csvPath || '', /fixtures\/fellowships\.csv$/);
   assert.match(options.summaryPath || '', /tmp\/summary\.json$/);
+});
+
+test('parseDataOpsArgs constrains summary output paths to safe JSON reports', () => {
+  assert.match(resolveSafeSummaryPath('./tmp/summary.json'), /tmp\/summary\.json$/);
+
+  assert.throws(
+    () => parseDataOpsArgs(['--summary', '/etc/summary.json']),
+    /--summary must write under .* or \.\/tmp/,
+  );
+  assert.throws(
+    () => parseDataOpsArgs(['--summary', './tmp/summary.txt']),
+    /--summary must point to a \.json report file/,
+  );
+});
+
+test('writeSummary validates paths before creating report directories', () => {
+  assert.throws(
+    () => writeSummary('/etc/data-ops-summary.json', { ok: true }),
+    /--summary must write under .* or \.\/tmp/,
+  );
 });
 
 test('parseDataOpsArgs requires a known target when executing', () => {

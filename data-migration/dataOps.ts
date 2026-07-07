@@ -1,4 +1,5 @@
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 
 export type DataOpsTarget = 'local' | 'test' | 'dev' | 'beta' | 'prod';
@@ -33,6 +34,32 @@ const TARGET_DATABASE_NAMES: Record<DataOpsTarget, string[]> = {
   beta: ['beta'],
   prod: ['production', 'prod'],
 };
+
+const hasPathPrefix = (target: string, root: string): boolean =>
+  target === root || target.startsWith(`${root}${path.sep}`);
+
+export function resolveSafeSummaryPath(value: string | undefined): string {
+  const summaryPath = value?.trim();
+  if (!summaryPath || summaryPath.startsWith('--')) {
+    throw new Error('--summary requires a path');
+  }
+  if (/[\u0000-\u001f\u007f]/.test(summaryPath)) {
+    throw new Error('--summary path contains invalid characters');
+  }
+
+  const resolved = path.resolve(summaryPath);
+  if (path.extname(resolved).toLowerCase() !== '.json') {
+    throw new Error('--summary must point to a .json report file');
+  }
+
+  const tmpRoot = path.resolve(os.tmpdir());
+  const projectTmpRoot = path.resolve(process.cwd(), 'tmp');
+  if (!hasPathPrefix(resolved, tmpRoot) && !hasPathPrefix(resolved, projectTmpRoot)) {
+    throw new Error(`--summary must write under ${tmpRoot} or ./tmp`);
+  }
+
+  return resolved;
+}
 
 function parseMongoDestination(url: string): { host: string; database: string } {
   let parsed: URL;
@@ -177,7 +204,7 @@ export function parseDataOpsArgs(argv: string[]): DataOpsOptions {
         break;
       }
       case '--summary': {
-        options.summaryPath = path.resolve(readFlagValue(argv, i, arg));
+        options.summaryPath = resolveSafeSummaryPath(readFlagValue(argv, i, arg));
         i += 1;
         break;
       }
@@ -248,8 +275,9 @@ export function summarizeValidation(result: ValidationResult) {
 
 export function writeSummary(summaryPath: string | undefined, summary: unknown) {
   if (!summaryPath) return;
-  fs.mkdirSync(path.dirname(summaryPath), { recursive: true });
-  fs.writeFileSync(summaryPath, `${JSON.stringify(summary, null, 2)}\n`, 'utf-8');
+  const safeSummaryPath = resolveSafeSummaryPath(summaryPath);
+  fs.mkdirSync(path.dirname(safeSummaryPath), { recursive: true });
+  fs.writeFileSync(safeSummaryPath, `${JSON.stringify(summary, null, 2)}\n`, 'utf-8');
 }
 
 export function validateFellowshipDocuments(
