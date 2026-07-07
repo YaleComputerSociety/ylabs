@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  AnalyticsData,
-  analyticsReducer,
-  createInitialAnalyticsState,
-} from '../analyticsReducer';
+import { AnalyticsData, analyticsReducer, createInitialAnalyticsState } from '../analyticsReducer';
 
 const sampleData: AnalyticsData = {
   visitors: {
@@ -21,6 +17,19 @@ const sampleData: AnalyticsData = {
     trendingListings: [],
     userActivity: { activeUsers: 4, avgEventsPerUser: 2.5 },
     mostActiveUsers: [],
+    outreach: {
+      summary: {
+        totalReveals: 3,
+        totalAttempts: 2,
+        totalOutcomes: 1,
+        revealsLast7Days: 3,
+        attemptsLast7Days: 2,
+        outcomesLast7Days: 1,
+      },
+      byOutcome: [{ outcome: 'emailed', count: 1, last7Days: 1 }],
+      topListings: [],
+      recentEvents: [],
+    },
     totalViewsFromCounters: 50,
     totalFavoritesFromCounters: 12,
     avgViews: 5,
