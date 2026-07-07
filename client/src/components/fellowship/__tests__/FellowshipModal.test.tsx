@@ -69,6 +69,7 @@ describe('FellowshipModal', () => {
   it('does not invite students to apply before a future application window opens', () => {
     renderModal(
       makeFellowship({
+        isAcceptingApplications: false,
         applicationOpenDate: futureDate(7),
         deadline: futureDate(30),
       }),

@@ -74,6 +74,22 @@ describe('fellowshipStatus', () => {
     expect(status.isApplicationWindowOpen).toBe(false);
   });
 
+  it('uses future application open dates for opening-soon status even when not currently accepting', () => {
+    const status = getFellowshipApplicationStatus(
+      makeFellowship({
+        isAcceptingApplications: false,
+        applicationOpenDate: '2026-04-10T12:00:00.000Z',
+        deadline: '2026-05-01T12:00:00.000Z',
+      }),
+      NOW,
+    );
+
+    expect(status.kind).toBe('notOpenYet');
+    expect(status.label).toBe('Opens soon');
+    expect(status.isCurrentlyRelevant).toBe(true);
+    expect(status.isApplicationWindowOpen).toBe(false);
+  });
+
   it('flags accepting opportunities with unknown deadlines for admin review', () => {
     const status = getFellowshipApplicationStatus(makeFellowship({ deadline: null }), NOW);
 
@@ -82,6 +98,22 @@ describe('fellowshipStatus', () => {
     expect(status.needsDateReview).toBe(true);
     expect(status.isCurrentlyRelevant).toBe(true);
     expect(status.isApplicationWindowOpen).toBe(true);
+  });
+
+  it('keeps not-accepting opportunities without future open dates closed', () => {
+    const status = getFellowshipApplicationStatus(
+      makeFellowship({
+        isAcceptingApplications: false,
+        applicationOpenDate: '2026-03-01T12:00:00.000Z',
+        deadline: '2026-05-01T12:00:00.000Z',
+      }),
+      NOW,
+    );
+
+    expect(status.kind).toBe('closed');
+    expect(status.label).toBe('Not accepting applications');
+    expect(status.isCurrentlyRelevant).toBe(false);
+    expect(status.isApplicationWindowOpen).toBe(false);
   });
 
   it('flags missing eligibility when neither text nor structured filters are present', () => {

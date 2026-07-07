@@ -123,6 +123,7 @@ describe('Fellowships grouping', () => {
         makeFellowship({
           id: 'future',
           title: 'Future Fellowship',
+          isAcceptingApplications: false,
           applicationOpenDate: futureDate(14),
           deadline: futureDate(90),
         }),
@@ -160,6 +161,7 @@ describe('Fellowships grouping', () => {
         makeFellowship({
           id: 'future',
           title: 'Future Fellowship',
+          isAcceptingApplications: false,
           applicationOpenDate: futureDate(14),
           deadline: futureDate(90),
         }),

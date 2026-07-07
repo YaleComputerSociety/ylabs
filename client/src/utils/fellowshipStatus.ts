@@ -79,8 +79,7 @@ export const getFellowshipApplicationStatus = (
   const openDate = parseDate(fellowship.applicationOpenDate);
   const deadline = parseDate(fellowship.deadline);
   const deadlinePassed = deadline ? deadline.getTime() < now.getTime() : false;
-  const notOpenYet =
-    fellowship.isAcceptingApplications && openDate ? openDate.getTime() > now.getTime() : false;
+  const notOpenYet = openDate ? openDate.getTime() > now.getTime() : false;
   const isApplicationWindowOpen =
     fellowship.isAcceptingApplications && !deadlinePassed && !notOpenYet;
   const daysUntilDeadline = deadline
@@ -115,6 +114,17 @@ export const getFellowshipApplicationStatus = (
     };
   }
 
+  if (notOpenYet) {
+    return {
+      ...base,
+      kind: 'notOpenYet',
+      label: 'Opens soon',
+      detail: `Applications open ${formatShortFellowshipDate(fellowship.applicationOpenDate)}`,
+      isCurrentlyRelevant: true,
+      isApplicationWindowOpen,
+    };
+  }
+
   if (!fellowship.isAcceptingApplications) {
     return {
       ...base,
@@ -124,17 +134,6 @@ export const getFellowshipApplicationStatus = (
         ? `Next deadline listed as ${formatShortFellowshipDate(fellowship.deadline)}`
         : 'Application timing has not been announced',
       isCurrentlyRelevant: false,
-      isApplicationWindowOpen,
-    };
-  }
-
-  if (notOpenYet) {
-    return {
-      ...base,
-      kind: 'notOpenYet',
-      label: 'Opens soon',
-      detail: `Applications open ${formatShortFellowshipDate(fellowship.applicationOpenDate)}`,
-      isCurrentlyRelevant: true,
       isApplicationWindowOpen,
     };
   }
