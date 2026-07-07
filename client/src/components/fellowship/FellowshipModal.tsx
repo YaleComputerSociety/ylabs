@@ -127,6 +127,16 @@ const FellowshipModal = ({
 
   const status = getFellowshipApplicationStatus(fellowship);
   const eligibilitySummary = getEligibilitySummary(fellowship);
+  const isApplicationWindowOpen = status.isApplicationWindowOpen;
+  const applicationActionLabel = isApplicationWindowOpen
+    ? 'Apply Now'
+    : status.kind === 'notOpenYet'
+      ? 'Track Opening Date'
+      : 'Visit Program Page';
+  const applicationActionWarning =
+    status.kind === 'notOpenYet'
+      ? 'Applications are not open yet. Check back when the application window opens or visit the program page for details.'
+      : 'This opportunity is not currently marked as open. Check the program page before starting an application.';
   const hasEligibilityFilters =
     fellowship.yearOfStudy.length > 0 ||
     fellowship.termOfAward.length > 0 ||
@@ -187,7 +197,7 @@ const FellowshipModal = ({
                     rel="noopener noreferrer"
                     onClick={(e) => e.stopPropagation()}
                     className="p-2 rounded-lg hover:bg-gray-100 transition-colors text-gray-500 hover:text-blue-600"
-                    title="Apply"
+                    title={applicationActionLabel}
                   >
                     <svg
                       xmlns="http://www.w3.org/2000/svg"
@@ -615,10 +625,9 @@ const FellowshipModal = ({
 
                 {fellowship.applicationLink && (
                   <div className="pt-4 border-t border-gray-100">
-                    {!status.isCurrentlyRelevant && (
+                    {!isApplicationWindowOpen && (
                       <p className="text-sm text-red-700 bg-red-50 border border-red-100 rounded-lg p-3 mb-3">
-                        This opportunity is not currently marked as open. Check the program page
-                        before starting an application.
+                        {applicationActionWarning}
                       </p>
                     )}
                     <a
@@ -626,12 +635,12 @@ const FellowshipModal = ({
                       target="_blank"
                       rel="noopener noreferrer"
                       className={`inline-flex items-center px-6 py-2.5 text-white font-medium rounded-lg transition-colors text-sm ${
-                        status.isCurrentlyRelevant
+                        isApplicationWindowOpen
                           ? 'bg-blue-600 hover:bg-blue-700'
                           : 'bg-gray-600 hover:bg-gray-700'
                       }`}
                     >
-                      {status.isCurrentlyRelevant ? 'Apply Now' : 'Visit Program Page'}
+                      {applicationActionLabel}
                       <svg
                         xmlns="http://www.w3.org/2000/svg"
                         width="16"
