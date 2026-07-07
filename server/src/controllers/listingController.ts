@@ -16,6 +16,8 @@ import {
 import { readUser } from '../services/userService';
 import { getMeiliIndex } from '../utils/meiliClient';
 import { getConfig } from '../services/configService';
+import { logEvent } from '../services/analyticsService';
+import { AnalyticsEventType } from '../models/analytics';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 import { sanitizeLogValue } from '../utils/logSanitizer';
@@ -261,6 +263,52 @@ const publicListingForAuthenticatedReader = (listing: any) => {
   };
 };
 
+const LISTING_OUTREACH_OUTCOMES = new Set(['emailed', 'will_contact_later', 'not_a_fit']);
+const LISTING_OUTREACH_ACTIONS = new Set(['email_click', 'outcome']);
+
+export const buildListingOutreachEvent = (params: {
+  action?: unknown;
+  outcome?: unknown;
+  source?: unknown;
+  contactCount?: number;
+}) => {
+  const action = typeof params.action === 'string' ? params.action : '';
+  if (!LISTING_OUTREACH_ACTIONS.has(action)) {
+    return null;
+  }
+
+  const source = typeof params.source === 'string' ? params.source.slice(0, 80) : 'listing_detail';
+  const baseMetadata = {
+    channel: 'email',
+    source,
+    contactCount: params.contactCount || 0,
+  };
+
+  if (action === 'email_click') {
+    return {
+      eventType: AnalyticsEventType.OUTREACH_CONTACT_ATTEMPT,
+      metadata: {
+        ...baseMetadata,
+        action,
+      },
+    };
+  }
+
+  const outcome = typeof params.outcome === 'string' ? params.outcome : '';
+  if (!LISTING_OUTREACH_OUTCOMES.has(outcome)) {
+    return null;
+  }
+
+  return {
+    eventType: AnalyticsEventType.OUTREACH_OUTCOME,
+    metadata: {
+      ...baseMetadata,
+      action,
+      outcome,
+    },
+  };
+};
+
 const sendListingError = (response: Response, error: any, fallbackMessage: string) => {
   const status = error?.status ?? error?.statusCode;
   if (Number.isInteger(status) && status >= 400 && status < 500) {
@@ -275,6 +323,40 @@ const sendListingError = (response: Response, error: any, fallbackMessage: strin
   }
 
   return response.status(500).json({ error: fallbackMessage });
+};
+
+export const recordListingOutreach = async (request: Request, response: Response) => {
+  try {
+    const listing = await readPublicListing(request.params.id);
+    const contactCount = [listing.ownerEmail, ...(listing.emails || [])].filter(Boolean).length;
+    const event = buildListingOutreachEvent({
+      action: request.body?.action,
+      outcome: request.body?.outcome,
+      source: request.body?.source,
+      contactCount,
+    });
+
+    if (!event) {
+      return response.status(400).json({ error: 'Invalid outreach event' });
+    }
+
+    const currentUser = request.user as { netId?: string; userType: string };
+    if (!currentUser?.netId) {
+      return response.status(401).json({ error: 'Authentication required' });
+    }
+
+    await logEvent({
+      eventType: event.eventType,
+      netid: currentUser.netId,
+      userType: currentUser.userType,
+      listingId: request.params.id,
+      metadata: event.metadata,
+    });
+
+    return response.status(204).send();
+  } catch (error: any) {
+    sendListingError(response, error, 'Failed to record outreach');
+  }
 };
 
 type MongoListingSearchParams = {
