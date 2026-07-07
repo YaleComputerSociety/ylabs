@@ -17,7 +17,7 @@ import { getFellowshipApplicationStatus } from '../utils/fellowshipStatus';
 function categorizeFellowship(f: Fellowship, now: Date): 'closingSoon' | 'open' | 'closed' {
   const status = getFellowshipApplicationStatus(f, now);
   if (status.kind === 'closingSoon') return 'closingSoon';
-  if (status.isCurrentlyRelevant) return 'open';
+  if (status.isApplicationWindowOpen) return 'open';
   return 'closed';
 }
 

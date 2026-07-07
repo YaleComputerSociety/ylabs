@@ -19,6 +19,7 @@ export interface FellowshipApplicationStatus {
   openDateLabel: string;
   daysUntilDeadline: number | null;
   isCurrentlyRelevant: boolean;
+  isApplicationWindowOpen: boolean;
   needsDateReview: boolean;
   needsEligibilityReview: boolean;
 }
@@ -78,6 +79,8 @@ export const getFellowshipApplicationStatus = (
   const deadlinePassed = deadline ? deadline.getTime() < now.getTime() : false;
   const notOpenYet =
     fellowship.isAcceptingApplications && openDate ? openDate.getTime() > now.getTime() : false;
+  const isApplicationWindowOpen =
+    fellowship.isAcceptingApplications && !deadlinePassed && !notOpenYet;
   const daysUntilDeadline = deadline
     ? Math.ceil((deadline.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
     : null;
@@ -104,6 +107,7 @@ export const getFellowshipApplicationStatus = (
       label: 'Deadline passed',
       detail: `Deadline passed ${formatShortFellowshipDate(fellowship.deadline)}`,
       isCurrentlyRelevant: false,
+      isApplicationWindowOpen,
     };
   }
 
@@ -116,6 +120,7 @@ export const getFellowshipApplicationStatus = (
         ? `Next deadline listed as ${formatShortFellowshipDate(fellowship.deadline)}`
         : 'Application timing has not been announced',
       isCurrentlyRelevant: false,
+      isApplicationWindowOpen,
     };
   }
 
@@ -126,6 +131,7 @@ export const getFellowshipApplicationStatus = (
       label: 'Opens soon',
       detail: `Applications open ${formatShortFellowshipDate(fellowship.applicationOpenDate)}`,
       isCurrentlyRelevant: true,
+      isApplicationWindowOpen,
     };
   }
 
@@ -136,6 +142,7 @@ export const getFellowshipApplicationStatus = (
       label: 'Timing not confirmed',
       detail: 'Applications may be open, but no deadline is listed',
       isCurrentlyRelevant: true,
+      isApplicationWindowOpen,
     };
   }
 
@@ -149,6 +156,7 @@ export const getFellowshipApplicationStatus = (
           ? 'Due today or tomorrow'
           : `${daysUntilDeadline} days left`,
       isCurrentlyRelevant: true,
+      isApplicationWindowOpen,
     };
   }
 
@@ -158,6 +166,7 @@ export const getFellowshipApplicationStatus = (
     label: 'Accepting applications',
     detail: `Due ${formatShortFellowshipDate(fellowship.deadline)}`,
     isCurrentlyRelevant: true,
+    isApplicationWindowOpen,
   };
 };
 

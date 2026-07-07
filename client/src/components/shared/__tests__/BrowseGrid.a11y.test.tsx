@@ -5,7 +5,8 @@ import { describe, expect, it, vi } from 'vitest';
 import ConfigContext, { defaultConfigContext } from '../../../contexts/ConfigContext';
 import UIContext, { defaultUIContext } from '../../../contexts/UIContext';
 import UserContext from '../../../contexts/UserContext';
-import { Listing } from '../../../types/types';
+import { BrowsableItem } from '../../../types/browsable';
+import { Fellowship, Listing } from '../../../types/types';
 import BrowseGrid from '../BrowseGrid';
 
 vi.mock('../../../hooks/useViewTracking', () => ({
@@ -41,7 +42,51 @@ const listing: Listing = {
   audited: false,
 };
 
-const renderGrid = (viewMode: 'card' | 'list', onOpenModal = vi.fn()) => {
+const futureDate = (days: number) => {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  return date.toISOString();
+};
+
+const makeFellowship = (overrides: Partial<Fellowship> = {}): Fellowship => ({
+  id: 'f-1',
+  title: 'Future fellowship',
+  competitionType: '',
+  summary: '',
+  description: 'Fellowship description',
+  applicationInformation: '',
+  eligibility: 'Open to Yale College students.',
+  restrictionsToUseOfAward: '',
+  additionalInformation: '',
+  links: [],
+  applicationLink: '',
+  awardAmount: '',
+  isAcceptingApplications: true,
+  applicationOpenDate: null,
+  deadline: futureDate(30),
+  contactName: '',
+  contactEmail: '',
+  contactPhone: '',
+  contactOffice: '',
+  yearOfStudy: ['Junior'],
+  termOfAward: [],
+  purpose: [],
+  globalRegions: [],
+  citizenshipStatus: [],
+  archived: false,
+  audited: false,
+  views: 0,
+  favorites: 0,
+  updatedAt: '2026-01-01T00:00:00.000Z',
+  createdAt: '2026-01-01T00:00:00.000Z',
+  ...overrides,
+});
+
+const renderGrid = (
+  viewMode: 'card' | 'list',
+  onOpenModal = vi.fn(),
+  items: BrowsableItem[] = [{ type: 'listing' as const, data: listing }],
+) => {
   render(
     <UserContext.Provider
       value={{
@@ -54,7 +99,7 @@ const renderGrid = (viewMode: 'card' | 'list', onOpenModal = vi.fn()) => {
       <ConfigContext.Provider value={defaultConfigContext}>
         <UIContext.Provider value={{ ...defaultUIContext, viewMode }}>
           <BrowseGrid
-            items={[{ type: 'listing', data: listing }]}
+            items={items}
             favIds={[]}
             onToggleFavorite={vi.fn()}
             onOpenModal={onOpenModal}
@@ -103,5 +148,35 @@ describe('BrowseGrid accessibility', () => {
 
     expect(onOpenModal).toHaveBeenCalledTimes(1);
     expect(screen.getByRole('button', { name: /add to favorites/i })).toBeTruthy();
+  });
+
+  it('shows a closed StatusBadge for future fellowship application windows', () => {
+    renderGrid('list', vi.fn(), [
+      {
+        type: 'fellowship',
+        data: makeFellowship({
+          applicationOpenDate: futureDate(7),
+          deadline: futureDate(30),
+        }),
+      },
+    ]);
+
+    expect(screen.getByText('Opens soon')).toBeInTheDocument();
+    expect(screen.getByText('Closed')).toBeInTheDocument();
+    expect(screen.queryByText(/^Open$/)).not.toBeInTheDocument();
+  });
+
+  it('shows an open StatusBadge for currently accepting fellowship windows', () => {
+    renderGrid('list', vi.fn(), [
+      {
+        type: 'fellowship',
+        data: makeFellowship({
+          applicationOpenDate: null,
+          deadline: futureDate(30),
+        }),
+      },
+    ]);
+
+    expect(screen.getByText('Open')).toBeInTheDocument();
   });
 });

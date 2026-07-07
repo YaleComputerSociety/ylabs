@@ -16,7 +16,7 @@ export function isItemOpen(item: BrowsableItem): boolean {
   if (item.type === 'listing') {
     return item.data.hiringStatus >= 0;
   }
-  return getFellowshipApplicationStatus(item.data).isCurrentlyRelevant;
+  return getFellowshipApplicationStatus(item.data).isApplicationWindowOpen;
 }
 
 interface TagInfo {

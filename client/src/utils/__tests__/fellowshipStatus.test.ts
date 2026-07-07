@@ -47,6 +47,7 @@ describe('fellowshipStatus', () => {
     expect(status.label).toBe('Closing soon');
     expect(status.detail).toBe('19 days left');
     expect(status.isCurrentlyRelevant).toBe(true);
+    expect(status.isApplicationWindowOpen).toBe(true);
   });
 
   it('does not present passed deadlines as open even when accepting is true', () => {
@@ -58,6 +59,7 @@ describe('fellowshipStatus', () => {
     expect(status.kind).toBe('deadlinePassed');
     expect(status.label).toBe('Deadline passed');
     expect(status.isCurrentlyRelevant).toBe(false);
+    expect(status.isApplicationWindowOpen).toBe(false);
   });
 
   it('distinguishes future application windows from closed opportunities', () => {
@@ -69,6 +71,7 @@ describe('fellowshipStatus', () => {
     expect(status.kind).toBe('notOpenYet');
     expect(status.label).toBe('Opens soon');
     expect(status.isCurrentlyRelevant).toBe(true);
+    expect(status.isApplicationWindowOpen).toBe(false);
   });
 
   it('flags accepting opportunities with unknown deadlines for admin review', () => {
@@ -78,6 +81,7 @@ describe('fellowshipStatus', () => {
     expect(status.label).toBe('Timing not confirmed');
     expect(status.needsDateReview).toBe(true);
     expect(status.isCurrentlyRelevant).toBe(true);
+    expect(status.isApplicationWindowOpen).toBe(true);
   });
 
   it('flags missing eligibility when neither text nor structured filters are present', () => {
