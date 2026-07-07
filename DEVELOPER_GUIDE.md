@@ -230,6 +230,16 @@ The Meilisearch client (`server/src/utils/meiliClient.ts`) exports:
 
 ---
 
+## Fellowships
+
+The authenticated `/fellowships` page derives the visible program state from each fellowship's `isAcceptingApplications`, `applicationOpenDate`, and `deadline` fields rather than showing the raw accepting flag alone. Fellowships are grouped as Closing Soon, Open, Opening Soon, or Closed; the Open quick filter includes only currently open applications, while Opening Soon programs remain visible in the default/recent views.
+
+Shared browse cards, list rows, and the fellowship detail modal use `client/src/utils/fellowshipStatus.ts` to show consistent status labels, deadline details, and urgent deadline styling. The same helper surfaces eligibility summaries from structured filters (`yearOfStudy`, `termOfAward`, `purpose`, `globalRegions`, `citizenshipStatus`) or the free-form `eligibility` field, with explicit warnings when no eligibility or deadline is available.
+
+Admin fellowship edit surfaces also preview the derived status and warn when a program is marked accepting applications without a deadline or lacks eligibility context, so stale or incomplete program records can be corrected before students rely on them.
+
+---
+
 ## Authentication
 
 ```
@@ -311,7 +321,7 @@ Client tests are discovered from `client/src/**/*.{test,spec}.{ts,tsx}`. Server 
 
 Pure reducer modules under [client/src/reducers/](client/src/reducers/) have unit-test coverage in [client/src/reducers/**tests**/](client/src/reducers/__tests__/). Each reducer file has a matching `*.test.ts`. The reducers back the auth, search, fellowship-search, config, listing-form, and account-tracking (kanban/notes) flows — extracting state transitions from providers/components into pure functions makes them testable without mounting React or mocking network.
 
-Focused component accessibility coverage also exists for the research discovery/listing flows: [BrowseGrid.a11y.test.tsx](client/src/components/shared/__tests__/BrowseGrid.a11y.test.tsx) verifies keyboard-openable browse cards/list rows and separate favorite controls, [ListingDetailModal.public.test.tsx](client/src/components/shared/__tests__/ListingDetailModal.public.test.tsx) covers the public listing dialog name, Escape close behavior, focus trapping/restoration, and redacted contact actions, and [ResearchAreaInput.a11y.test.tsx](client/src/components/accounts/ListingForm/FormFields/__tests__/ResearchAreaInput.a11y.test.tsx) covers the listing-form research-area field selector dialog focus behavior.
+Focused component and utility coverage also exists outside the reducer pattern: [BrowseGrid.a11y.test.tsx](client/src/components/shared/__tests__/BrowseGrid.a11y.test.tsx) verifies keyboard-openable browse cards/list rows, separate favorite controls, and fellowship status badges; [ListingDetailModal.public.test.tsx](client/src/components/shared/__tests__/ListingDetailModal.public.test.tsx) covers the public listing dialog name, Escape close behavior, focus trapping/restoration, and redacted contact actions; [ResearchAreaInput.a11y.test.tsx](client/src/components/accounts/ListingForm/FormFields/__tests__/ResearchAreaInput.a11y.test.tsx) covers the listing-form research-area field selector dialog focus behavior; [FellowshipModal.test.tsx](client/src/components/fellowship/__tests__/FellowshipModal.test.tsx), [fellowships.grouping.test.tsx](client/src/pages/__tests__/fellowships.grouping.test.tsx), [browsable.test.ts](client/src/types/__tests__/browsable.test.ts), and [fellowshipStatus.test.ts](client/src/utils/__tests__/fellowshipStatus.test.ts) cover fellowship timing, eligibility, status grouping, and shared browse metadata.
 
 When adding a new reducer:
 
