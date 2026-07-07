@@ -19,7 +19,7 @@ runtime research data is canonical `ResearchEntity` data. Related files include:
 - [`server/src/services/accessSummaryService.ts`](../server/src/services/accessSummaryService.ts)
 - [`server/src/services/pathwaySearchService.ts`](../server/src/services/pathwaySearchService.ts)
 - [`docs/scraper-audit-guide.md`](./scraper-audit-guide.md)
-- [`client/src/pages/labs.tsx`](../client/src/pages/labs.tsx)
+- [`client/src/pages/research.tsx`](../client/src/pages/research.tsx)
 - [`client/src/pages/labDetail.tsx`](../client/src/pages/labDetail.tsx)
 
 `ResearchEntity` is now the canonical runtime model and uses the `research_entities` collection. `server/src/models/researchGroup.ts` retains a reusable legacy-shaped schema for the canonical model, but no runtime `ResearchGroup` model should register `research_groups`.
@@ -234,11 +234,12 @@ Opportunity detail note: `/api/opportunities/:id` exposes explicit public state 
 
 ## Ways-In Projection
 
-The separate public practical-routes search endpoint and page are retired. `EntryPathway` rows still matter as internal ways-in evidence, saved planning context, and research-detail support, but they should be projected through Yale Research surfaces rather than split into a second student product.
+The separate public practical-routes search endpoint and page are retired. `EntryPathway` rows still matter as internal ways-in evidence, saved planning context, and research-detail support, but they should be projected through Yale Research surfaces as profile, evidence, source-route, and planning context rather than split into a second student product.
 
 Current behavior:
 
 - Research search and detail payloads can use pathway type, compensation, status, evidence strength, entity type, departments, research areas, active posted opportunity, and computed best-next-step category as enrichment.
+- Student-facing browse status should count matching research homes, people, and papers without exposing a separate ways-in count.
 - Join host `ResearchGroup` data as the current physical `ResearchEntity` backing.
 - Join active/rolling `PostedOpportunity` rows only when a real posted instance exists.
 - Join a small number of supporting `AccessSignal` rows as Evidence.
@@ -246,13 +247,13 @@ Current behavior:
 
 The same contact guardrail applies to public research detail payloads: unauthenticated/public detail responses should include only public route summaries and should not expose authenticated or admin-only scraped contact data.
 
-Contact-route ordering should prefer official applications, program/department/fellowship/course routes, and lab-manager routes before faculty-direct routes. Public ways-in cards or detail sections may link to route URLs, but they should not expose raw scraped emails.
+Contact-route ordering should prefer official applications, program/department/fellowship/course routes, and lab-manager routes before faculty-direct routes. Public cards or detail sections may link to guarded source-route URLs, but they should not expose raw scraped emails or imply yLabs has verified a reachable official outreach channel.
 
 Legacy active listings may still appear inside public research detail payloads for backwards compatibility, but those embedded listing summaries must be field allowlisted. Do not expose listing owner ids, creator ids, owner emails, collaborator emails, view counts, favorite counts, audit flags, or other authenticated/admin-oriented fields through `/api/research/:slug`.
 
 ## Saved Pathways
 
-Student workflow depth starts with saved ways in. User accounts can now store `favPathways` as references to `EntryPathway` records, and `/account` hydrates them through the same guarded pathway projection used by research surfaces.
+Student workflow depth starts with saved research plans. User accounts can now store `favPathways` as references to `EntryPathway` records, and `/account` hydrates them through the same guarded pathway projection used by research surfaces.
 
 First-slice behavior:
 
@@ -411,8 +412,8 @@ Examples:
 - credit formalization evidence -> Ask about credit after mentor/home fit
 - fellowship funding formalization evidence -> Ask about funding after mentor/home fit
 - structured mentor-matching fellowship -> Apply to structured research program
-- `PLAUSIBLE` + lab manager route -> Contact lab manager
-- `PLAUSIBLE` + faculty-only route -> Plan exploratory outreach
+- `PLAUSIBLE` + public lab-manager or source route -> Review source route
+- `PLAUSIBLE` + faculty-only route -> Review source context
 - `NO_EVIDENCE` -> Save or check back later
 
 The student-facing vocabulary for this section should usually be "Best Next Step", not `RecommendedNextStep`.
@@ -433,7 +434,7 @@ Implementation note: `GET /api/admin/access-review` returns research entities wi
 
 Use precise internal names in code and schema docs, but use warmer labels in the UI:
 
-- `EntryPathway` -> Ways In / ways toward a research home
+- `EntryPathway` -> planning context / ways toward a research home
 - `AccessSignal` -> Evidence
 - formalization metadata -> Ways to formalize
 - computed CTA / `RecommendedNextStep` -> Best Next Step

@@ -6,7 +6,7 @@ Yale Research makes the hidden undergraduate research ecosystem legible: where f
 
 The product is not a simple "find lab openings" job board. It should help Yale students discover and navigate real paths into research, including paths that are not formally posted.
 
-In product shorthand: Yale Research is research-home-first navigation. It helps students move from a topic, person, method, or question to a credible research home, inspect source-backed evidence, understand possible ways in, and choose the safest next step. Posted opportunities are only the active or time-bound posting subset. Course credit, paid RA work, fellowship funding, thesis advising, and volunteer arrangements are usually later formalization options after home/mentor fit, unless a structured program itself provides the entry route.
+In product shorthand: Yale Research is research-home-first navigation. It helps students move from a topic, person, method, or question to a credible research home, inspect source-backed evidence, review source and planning context, and choose the safest next step. Posted opportunities are only the active or time-bound posting subset. Course credit, paid RA work, fellowship funding, thesis advising, and volunteer arrangements are usually later formalization options after home/mentor fit, unless a structured program itself provides the entry route.
 
 ## Product Premise
 
@@ -34,9 +34,9 @@ Curiosity-first browsing of what exists:
 
 This surface should support exploration even when no active position is posted.
 
-### Ways In
+### Planning Context
 
-Practical context for how a student might participate, embedded inside Yale Research rather than split into a separate product surface:
+Practical context for how a student might evaluate a research home, embedded inside Yale Research rather than split into a separate product surface:
 
 - paid
 - credit-eligible after mentor/home fit
@@ -54,7 +54,7 @@ Practical context for how a student might participate, embedded inside Yale Rese
 - digital humanities
 - policy research
 
-This context should emphasize concrete next steps toward a plausible research home. "Ways in" is the student-facing umbrella for practical approaches such as official lab or faculty pages, recurring programs, internships, faculty/lab-manager contact, structured mentor-matching fellowships, and real posted openings. Course credit is not itself an entry pathway; it is a formalization option after the student has found a research home and mentor. Fellowship funding is usually also formalization after mentor/home fit, but a fellowship that matches students with mentors or runs a cohort research program can be a pathway in its own right. Only call something an open or posted opportunity when there is a real active or time-bound posting.
+This context should emphasize concrete source review and next-step planning toward a plausible research home. "Ways in" remains the internal and model-level umbrella for practical approaches such as official lab or faculty pages, recurring programs, internships, structured mentor-matching fellowships, and real posted openings, but beta student-facing browse and detail copy should not imply yLabs provides a reachable official outreach or inquiry channel. Course credit is not itself an entry pathway; it is a formalization option after the student has found a research home and mentor. Fellowship funding is usually also formalization after mentor/home fit, but a fellowship that matches students with mentors or runs a cohort research program can be a pathway in its own right. Only call something an open or posted opportunity when there is a real active or time-bound posting.
 
 ## Navigation Shape
 
@@ -62,15 +62,15 @@ Target surfaces:
 
 - `/`: authenticated default redirect to `/research`.
 - `/research`: explore research entities, even when no opening exists.
-- `/research/:slug`: show what the entity does, who is involved, evidence of undergraduate access, pathways, and contact routes.
+- `/research/:slug`: show what the entity does, who is involved, evidence of undergraduate access, source context, saved research-plan actions, and planning routes when they are supported.
 - `/opportunities/:id`: show real active/time-bound postings only. These must be backed by `PostedOpportunity`.
 - `/listings`: temporary legacy board for posted roles, preserved for old direct links and professor-created role workflows while the product migrates toward posted opportunities.
 
 The hard-pivot migration removes `/labs` as a runtime compatibility surface; `/research` is the canonical Explore Research route.
 
-Implementation note: the separate practical-routes page has been retired because it degraded the unified research-home experience. Ways-in evidence should now appear inside `/research` results and `/research/:slug` detail pages. `/opportunities/:id` has a first implementation for specific posted instances and should not render generic exploratory pathways.
+Implementation note: the separate practical-routes page has been retired because it degraded the unified research-home experience. Planning context derived from ways-in evidence should now appear inside `/research` results and `/research/:slug` detail pages without exposing a standalone public pathways search. `/opportunities/:id` has a first implementation for specific posted instances and should not render generic exploratory pathways.
 
-Implementation note: legacy listings now bridge into `PostedOpportunity` records. Public contact CTAs should prefer guarded route URLs and official channels over raw emails. Student-facing navigation should not present Listings as the primary product surface; use Research, Evidence, Best Next Step, and Posted Roles/Posted Opportunities language instead.
+Implementation note: legacy listings now bridge into `PostedOpportunity` records. Public CTAs should prefer official application URLs, source review, saved planning, and public source routes over raw emails or yLabs-hosted outreach promises. Student-facing navigation should not present Listings as the primary product surface; use Research, Evidence, Best Next Step, and Posted Roles/Posted Opportunities language instead.
 
 ## Entity Page Questions
 
@@ -95,24 +95,24 @@ CTA options should depend on the access evidence, route, and current next step:
 - Ask about credit after mentor/home fit
 - Find funding
 - Apply to structured research program
-- Contact lab manager
-- Contact faculty mentor
-- Contact program manager
-- Plan exploratory outreach
+- Review source route
+- Review source context
+- Save research plan
+- Plan questions to verify next
 - Save for thesis planning
 - Check back later
 
-Exploratory outreach should be specific and evidence-based. The product should not encourage students to spam faculty. Prefer official applications, program contacts, lab managers, or department routes when those exist.
+Exploratory planning should be specific and evidence-based. The product should not encourage students to spam faculty or imply that yLabs has verified an official outreach channel. Prefer official applications, public source routes, source review, saved planning, or check-back guidance when those are the supported actions.
 
 Student-facing labels should use warmer language than internal model names:
 
-- Ways In
+- Planning Context
 - Evidence
 - Best Next Step
 
 ## Saved Planning And Advising
 
-Saved ways in are private student planning space by default. They may include thesis ideas, outreach notes, funding cues, deadlines, and checklist progress, but exports should exclude private notes unless the student explicitly opts in.
+Saved research plans are private student planning space by default. They may include thesis ideas, planning notes, funding cues, deadlines, and checklist progress, but exports should exclude private notes unless the student explicitly opts in.
 
 Advising-oriented sharing should use source-backed pathway context and explicit visibility choices. It should help a student discuss options with an advisor, not create mass-email or broad outreach behavior.
 
