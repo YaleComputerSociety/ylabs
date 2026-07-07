@@ -63,7 +63,9 @@ export function useInfiniteScroll({
     // Re-check when loading transitions false with the sentinel already visible.
     if (!isLoading) {
       const rect = el.getBoundingClientRect();
-      const rootBottom = scrollRoot ? scrollRoot.getBoundingClientRect().bottom : window.innerHeight;
+      const rootBottom = scrollRoot
+        ? scrollRoot.getBoundingClientRect().bottom
+        : window.innerHeight;
       if (rect.top < rootBottom + 600) advance();
     }
 

@@ -298,7 +298,7 @@ const Fellowships = () => {
 
   useEffect(() => {
     setQueryString('');
-  }, []);
+  }, [setQueryString]);
 
   const reloadFavorites = async () => {
     axios
