@@ -23,9 +23,9 @@ Common options:
 Fellowship CSV refresh:
 
 ```sh
-yarn import:fellowships --csv ../web-scraper/fellowships/yale_fellowships.csv --summary ./tmp/fellowships-summary.json
-yarn import:fellowships:execute --target dev --csv ./fixtures/fellowships.csv --summary ./tmp/fellowships-import.json
-yarn import:fellowships:execute --target dev --replace-existing --csv ./fixtures/fellowships.csv
+npm run import:fellowships -- --csv ../web-scraper/fellowships/yale_fellowships.csv --summary ./tmp/fellowships-summary.json
+npm run import:fellowships:execute -- --target dev --csv ./fixtures/fellowships.csv --summary ./tmp/fellowships-import.json
+npm run import:fellowships:execute -- --target dev --replace-existing --csv ./fixtures/fellowships.csv
 ```
 
 The fellowship importer validates generated fellowship documents before connecting to MongoDB. If records already exist, execution refuses to delete them unless `--replace-existing` is supplied.
@@ -33,8 +33,8 @@ The fellowship importer validates generated fellowship documents before connecti
 Meilisearch listing refresh:
 
 ```sh
-yarn migrate:meilisearch --summary ./tmp/meili-listings-summary.json
-MEILISEARCH_INDEX_PREFIX=dev yarn migrate:meilisearch:execute --target dev --summary ./tmp/meili-listings-execute.json
+npm run migrate:meilisearch -- --summary ./tmp/meili-listings-summary.json
+MEILISEARCH_INDEX_PREFIX=dev npm run migrate:meilisearch:execute -- --target dev --summary ./tmp/meili-listings-execute.json
 ```
 
 The Meilisearch migration reads listings from `MONGODBURL`, strips Mongo-only fields and private evidence notes (`_id`, `__v`, `embedding`, `evidence.internalNotes`), validates the indexing payload, and writes only when `--execute --target ...` is present.

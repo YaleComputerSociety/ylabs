@@ -67,7 +67,9 @@ Models are Mongoose schemas with indexes.
 | `yarn --cwd server scrape <cmd>` | Scraper CLI. |
 | `yarn --cwd server gates:refresh` | Regenerate canonical gate scorecards. |
 
-Migration scripts run from `data-migration/` with `npx tsx --transpile-only <script>.ts`.
+Migration scripts run from `data-migration/`.
+Prefer package scripts when they exist, especially guarded scripts such as `npm --prefix data-migration run import:fellowships`, `npm --prefix data-migration run import:fellowships:execute`, `npm --prefix data-migration run migrate:meilisearch`, and `npm --prefix data-migration run migrate:meilisearch:execute`.
+Guarded execute runs require `--target local|test|dev|beta|prod`; production also requires `--allow-production --confirm-production`.
 
 Dev login bypass: `GET http://localhost:4000/api/dev-login` creates a test undergraduate session.
 Pass `?userType=admin|professor|faculty|graduate|unknown` for another dev account.

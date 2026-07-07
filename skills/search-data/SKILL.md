@@ -42,6 +42,8 @@ Rebuild scripts do full repopulation.
 |---------|--------|
 | `yarn --cwd server meili:rebuild-research-entities` | Rebuild the ResearchEntity index. |
 | `yarn --cwd server meili:rebuild-pathways` | Rebuild the Pathway index. |
+| `npm --prefix data-migration run migrate:meilisearch` | Dry-run validation for the legacy `listings` Meilisearch index payload only. |
+| `npm --prefix data-migration run migrate:meilisearch:execute -- --target <target>` | Execute the legacy `listings` Meilisearch refresh after target validation. |
 | `yarn --cwd server research-entity:migrate` | Run the ResearchEntity physical migration. |
 | `yarn --cwd server research-homes:backfill-browse-rank` | Recompute `browseRankScore`; apply requires `--confirm-browse-rank`. |
 
@@ -66,5 +68,6 @@ Admin "weakest profiles first" with `browseQuality: 'low-first'` is a separate M
 - Prefer first-class collections for pathways, opportunities, access signals, and contact routes.
 - If a schema change affects Research or Pathways search, update the relevant index config and rebuild path.
 - Add a migration script in `data-migration/` when existing data needs transformation.
-- Migration scripts run with `npx tsx --transpile-only <script>.ts`.
+- Prefer `data-migration/package.json` scripts over raw `tsx` commands when present.
+- Guarded data-migration scripts default to dry-run, accept `--summary ./tmp/<name>.json`, and require `--execute --target local|test|dev|beta|prod` before writes.
 - Verify index settings and sortable/filterable attributes when adding fields used for search, filtering, or ordering.

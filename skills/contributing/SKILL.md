@@ -35,7 +35,8 @@ Iterate on canonical product surfaces instead of creating student-facing version
 
 1. **Mongoose schema** in `server/src/models/<model>.ts`.
 2. **TypeScript interfaces** in `client/src/types/`.
-3. **Migration script** in `data-migration/` if existing data needs transformation (run with `npx tsx --transpile-only <script>.ts`).
+3. **Migration script** in `data-migration/` if existing data needs transformation.
+   Prefer package scripts with dry-run defaults, `--summary ./tmp/<name>.json`, and explicit `--execute --target ...` guards when they exist.
 4. If the model affects Research or Pathways search, update the relevant **Meilisearch** rebuild/index config and the release gate.
 
 ## General implementation rules
