@@ -1308,7 +1308,9 @@ const OFFICIAL_PROFILE_URL_KEYS = [
 const safeProfileUrlObject = (value: unknown): Record<string, string> => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
   return Object.fromEntries(
-    Object.entries(value as Record<string, unknown>).filter(([, url]) => publicHttpUrl(url)),
+    Object.entries(value as Record<string, unknown>).filter(
+      ([, url]) => publicHttpUrl(url),
+    ),
   ) as Record<string, string>;
 };
 
