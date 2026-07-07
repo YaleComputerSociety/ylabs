@@ -1,6 +1,7 @@
 import assert from 'assert/strict';
 import test from 'node:test';
 import {
+  assertExplicitCsvForExecute,
   assertSafeWrite,
   maskConnectionString,
   parseDataOpsArgs,
@@ -60,6 +61,34 @@ test('parseDataOpsArgs requires a known target when executing', () => {
   assert.equal(options.execute, true);
   assert.equal(options.target, 'dev');
   assert.equal(options.replaceExisting, true);
+});
+
+test('assertExplicitCsvForExecute keeps dry-run default CSV discovery but blocks execute fallback', () => {
+  assert.doesNotThrow(() =>
+    assertExplicitCsvForExecute(parseDataOpsArgs(['--dry-run']), 'Fellowship import'),
+  );
+
+  assert.throws(
+    () =>
+      assertExplicitCsvForExecute(
+        parseDataOpsArgs(['--execute', '--target', 'dev']),
+        'Fellowship import',
+      ),
+    /Fellowship import execute mode requires --csv with an explicit input file/,
+  );
+
+  assert.doesNotThrow(() =>
+    assertExplicitCsvForExecute(
+      parseDataOpsArgs([
+        '--execute',
+        '--target',
+        'dev',
+        '--csv',
+        './fixtures/fellowships.csv',
+      ]),
+      'Fellowship import',
+    ),
+  );
 });
 
 test('assertSafeWrite blocks ambiguous and production writes', () => {

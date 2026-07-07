@@ -3,8 +3,8 @@ import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
 import { parse } from 'csv-parse/sync';
-import { fellowshipSchema } from '../server/src/models/fellowship';
 import {
+  assertExplicitCsvForExecute,
   assertSafeWrite,
   ensureReadableFile,
   parseDataOpsArgs,
@@ -264,6 +264,7 @@ async function importFellowships(
   console.log('\nConnecting to MongoDB...');
   const connection = await mongoose.createConnection(mongoUrl).asPromise();
   try {
+    const { fellowshipSchema } = await import('../server/src/models/fellowship');
     const FellowshipModel = connection.model('Fellowship', fellowshipSchema, 'fellowships');
     const existingCount = await FellowshipModel.countDocuments();
     console.log(`Existing fellowships in database: ${existingCount}`);
@@ -315,6 +316,7 @@ async function importFellowships(
 
 async function main(): Promise<void> {
   const options = parseDataOpsArgs(process.argv.slice(2));
+  assertExplicitCsvForExecute(options, 'Fellowship import');
 
   const mongoUrl = process.env.MONGODBURL;
   if (!mongoUrl) {

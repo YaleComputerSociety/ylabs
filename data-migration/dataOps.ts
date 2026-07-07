@@ -246,6 +246,14 @@ export function assertSafeWrite(
   assertDestinationMatchesTarget(options, operationName, destinations);
 }
 
+export function assertExplicitCsvForExecute(options: DataOpsOptions, operationName: string) {
+  if (options.dryRun) return;
+
+  if (!options.csvPath) {
+    throw new Error(`${operationName} execute mode requires --csv with an explicit input file`);
+  }
+}
+
 export function resolveCsvPath(scriptDir: string, explicitPath?: string): string {
   return explicitPath || path.resolve(scriptDir, '../web-scraper/fellowships/yale_fellowships.csv');
 }
