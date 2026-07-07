@@ -67,6 +67,26 @@ describe('FavoritesManager', () => {
     });
   });
 
+  it('surfaces open saved programs as now-open planning cues', () => {
+    expect(
+      savedProgramDeadlineSummary(
+        [
+          {
+            _id: 'fellowship-1',
+            id: 'fellowship-1',
+            title: 'Open Research Award',
+            deadline: '2026-05-30T00:00:00.000Z',
+            isAcceptingApplications: true,
+          } as any,
+        ],
+        new Date('2026-05-22T15:00:00.000Z'),
+      ),
+    ).toMatchObject({
+      nextDeadlineDate: '2026-05-30T00:00:00.000Z',
+      nextDeadlineLabel: 'Open Research Award: Now open; due May 30, 2026',
+    });
+  });
+
   it('reports saved program count to the planning overview', async () => {
     const onSummaryChange = vi.fn();
     mockedAxios.get.mockImplementation((url: string) => {
@@ -79,6 +99,7 @@ describe('FavoritesManager', () => {
                 id: 'fellowship-1',
                 title: 'Summer Research Grant',
                 deadline: '2099-06-30T00:00:00.000Z',
+                isAcceptingApplications: true,
               },
             ],
           },
@@ -99,7 +120,7 @@ describe('FavoritesManager', () => {
       expect(onSummaryChange).toHaveBeenCalledWith({
         count: 1,
         nextDeadlineDate: '2099-06-30T00:00:00.000Z',
-        nextDeadlineLabel: 'Summer Research Grant: Due Jun 30, 2099',
+        nextDeadlineLabel: 'Summer Research Grant: Now open; due Jun 30, 2099',
       });
     });
   });
