@@ -1,16 +1,16 @@
 # Graph Report - 01KWXEHVS6WHB7SVC525VNJNDT  (2026-07-07)
 
 ## Corpus Check
-- 825 files · ~1,305,344 words
+- 825 files · ~1,305,459 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 11147 nodes · 21302 edges · 3120 communities (917 shown, 2203 thin omitted)
+- 11145 nodes · 21302 edges · 3117 communities (916 shown, 2201 thin omitted)
 - Extraction: 98% EXTRACTED · 2% INFERRED · 0% AMBIGUOUS · INFERRED: 450 edges (avg confidence: 0.62)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `d26a0d48`
+- Built from commit: `0df5a721`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -271,7 +271,6 @@
 - [[_COMMUNITY_MockBroadcastChannel|MockBroadcastChannel]]
 - [[_COMMUNITY_Product Context|Product Context]]
 - [[_COMMUNITY_1. Admin And Search Gates|1. Admin And Search Gates]]
-- [[_COMMUNITY_isOfficialYaleProfileUrlForUser|isOfficialYaleProfileUrlForUser]]
 - [[_COMMUNITY_resolutions|resolutions]]
 - [[_COMMUNITY_sourceReviewDecisionValidationLines|sourceReviewDecisionValidationLines]]
 - [[_COMMUNITY_summary|summary]]
@@ -956,7 +955,6 @@
 - [[_COMMUNITY_CI|CI]]
 - [[_COMMUNITY_Modifying a Schema|Modifying a Schema]]
 - [[_COMMUNITY_Product Model|Product Model]]
-- [[_COMMUNITY_codebash (curl httplocalhost7700health)|code:bash (curl http://localhost:7700/health)]]
 - [[_COMMUNITY_codebash (nvm install 20)|code:bash (nvm install 20)]]
 - [[_COMMUNITY_codeblock19 (ylabs)|code:block19 (ylabs/)]]
 - [[_COMMUNITY_Core Modeling Direction|Core Modeling Direction]]
@@ -2495,7 +2493,6 @@
 - [[_COMMUNITY_codebash (curl httplocalhost7700health)|code:bash (curl http://localhost:7700/health)]]
 - [[_COMMUNITY_codetxt (Usage Error Couldn't find the node_modules state file - run)|code:txt (Usage Error: Couldn't find the node_modules state file - run)]]
 - [[_COMMUNITY_codebash (nvm install 20)|code:bash (nvm install 20)]]
-- [[_COMMUNITY_codebash (nvm install 20)|code:bash (nvm install 20)]]
 - [[_COMMUNITY_codebash (yarn installall)|code:bash (yarn install:all)]]
 - [[_COMMUNITY_YLabs — Developer Guide|Y/Labs — Developer Guide]]
 
@@ -2526,7 +2523,7 @@
 ## Import Cycles
 - None detected.
 
-## Communities (3120 total, 2203 thin omitted)
+## Communities (3117 total, 2201 thin omitted)
 
 ### Community 0 - "Decisions"
 Cohesion: 0.11
@@ -2658,7 +2655,7 @@ Nodes (29): absolutize(), CenterConfig, CenterExtractor, CenterKind, CenterMembe
 
 ### Community 34 - "axios.ts"
 Cohesion: 0.03
-Nodes (58): mockedAxios, fellowship, CourseTableCourse, CourseTableSection(), CourseTableSectionProps, formatSeason(), ProfileListingsProps, sortOptions (+50 more)
+Nodes (62): mockedAxios, fellowship, CourseTableCourse, CourseTableSection(), CourseTableSectionProps, formatSeason(), sortOptions, defaultFellowshipSearchContext (+54 more)
 
 ### Community 35 - "nihReporterScraper.ts"
 Cohesion: 0.10
@@ -2685,8 +2682,8 @@ Cohesion: 0.09
 Nodes (30): AdminDepartments(), CATEGORY_COLORS, DEPARTMENT_CATEGORIES, DepartmentAction, DepartmentDoc, DepartmentState, EditDraft, INITIAL_NEW_DRAFT (+22 more)
 
 ### Community 42 - "types.tsx"
-Cohesion: 0.06
-Nodes (50): DepartmentInput(), DepartmentInputProps, ProfileEditor(), ProfileEditorProps, orcidHref(), ProfileHeader(), ProfileHeaderProps, profileLinkDedupeKey() (+42 more)
+Cohesion: 0.04
+Nodes (70): ListingEditor(), DepartmentInput(), DepartmentInputProps, ProfileEditor(), ProfileEditorProps, VennDiagramToggle(), VennDiagramToggleProps, orcidHref() (+62 more)
 
 ### Community 43 - "researchEntityCoverageAudit.ts"
 Cohesion: 0.13
@@ -2849,8 +2846,8 @@ Cohesion: 0.06
 Nodes (42): BetaRepairQueueGateArtifact, buildQueueSummaries(), buildReleaseQueueSummary(), buildSourceFreshness(), classifyOperatorQueueReason(), compactProgramSample(), compactResearchSample(), countByTier() (+34 more)
 
 ### Community 84 - "Listing"
-Cohesion: 0.05
-Nodes (49): ListingEditor(), VennDiagramToggle(), VennDiagramToggleProps, CombinedFilterDropdown(), CombinedFilterDropdownProps, FilterTabConfig, ListingDetailModal(), ListingDetailModalProps (+41 more)
+Cohesion: 0.13
+Nodes (21): ListingDetailModal(), ListingDetailModalProps, Home(), baseParams, BrowsePageAction, browsePageReducer(), BrowsePageState, createInitialBrowsePageState() (+13 more)
 
 ### Community 85 - "promoteAcceptedBetaCopy.ts"
 Cohesion: 0.11
@@ -2905,8 +2902,8 @@ Cohesion: 0.22
 Nodes (16): assertRebuildPathwaySearchIndexAllowed(), buildRebuildPathwaySearchIndexOutput(), main(), parsePositiveInteger(), parseRebuildPathwaySearchIndexArgs(), parseRequiredOutputPath(), RebuildPathwaySearchIndexCliOptions, writeRebuildPathwaySearchIndexOutput() (+8 more)
 
 ### Community 99 - "accessClaims.ts"
-Cohesion: 0.16
-Nodes (20): AccessSignalType, ContactRouteType, PostedOpportunityStatus, AccessArtifactCandidate, AccessArtifactType, buildClaimGateReport(), ClaimGateStatus, ClaimValidationBundleResult (+12 more)
+Cohesion: 0.09
+Nodes (36): AccessSignalType, ContactRouteType, PostedOpportunityStatus, buildClaimGateOutput(), ClaimGateCliOptions, ClaimGateCollection, consumeValue(), __dirname (+28 more)
 
 ### Community 100 - "dedupeUsersByIdentityCore.ts"
 Cohesion: 0.11
@@ -2949,16 +2946,16 @@ Cohesion: 0.15
 Nodes (24): applyRepairPlan(), archiveArtifact(), ARTIFACT_SPECS, ArtifactSpec, assertArchivedEntityArtifactRepairApplyAllowed(), buildRepairArchivedEntityArtifactsOutput(), collectionExists(), __filename (+16 more)
 
 ### Community 111 - "profileService.ts"
-Cohesion: 0.08
-Nodes (55): ADMIN_PROFILE_USER_TYPES, ADMIN_UPDATE_FIELDS, adminUpdateProfile(), ALLOWED_SELF_UPDATE_FIELDS, appointmentTitleCount(), boundedAdminProfileEmail(), boundedAdminProfileNumber(), boundedAdminProfileText() (+47 more)
+Cohesion: 0.12
+Nodes (24): appointmentTitleCount(), cleanPublicProfileBio(), clipPublicProfileBio(), degreeTokenCount(), hasPublicProfileEmail(), hasResearchDescriptionVerb(), isAffiliationOnlyResearchSummary(), isAppointmentListOnlyProfileBio() (+16 more)
 
 ### Community 113 - "AdminAccessReview.tsx"
 Cohesion: 0.05
 Nodes (46): AccessReviewCounts, AccessReviewDetail, AccessReviewEntitySummary, AccessSignal, AdminAccessReview(), ContactRoute, EntryPathway, evidenceIds() (+38 more)
 
 ### Community 115 - "researchAccessTypes.ts"
-Cohesion: 0.15
-Nodes (17): ContactRoute, contactRouteSchema, CompensationType, ContactPolicies, ContactPolicy, ContactRouteTypes, ContactRouteVisibilities, ContactRouteVisibility (+9 more)
+Cohesion: 0.14
+Nodes (19): ContactRoute, contactRouteSchema, CompensationType, ContactPolicies, ContactPolicy, ContactRouteTypes, ContactRouteVisibilities, ContactRouteVisibility (+11 more)
 
 ### Community 116 - "scripts"
 Cohesion: 0.06
@@ -3001,8 +2998,8 @@ Cohesion: 0.21
 Nodes (15): buildProfessorBioCoverageAuditOutput(), buildProfessorBioCoverageInputs(), idValue(), main(), parseInteger(), parseProfessorBioCoverageAuditArgs(), parseRequiredOutputPath(), ProfessorBioCoverageAuditCliOptions (+7 more)
 
 ### Community 129 - "normalizePublicProfile"
-Cohesion: 0.19
-Nodes (18): cleanProfileUrlsForPerson(), cleanPublicHttpUrl(), hasProfileDirectoryLabelContamination(), normalizePublicProfile(), officialYaleProfileUrlForUser(), PUBLIC_PROFILE_BASE_ARRAY_FIELDS, PUBLIC_PROFILE_BASE_TEXT_FIELDS, publicProfileBase() (+10 more)
+Cohesion: 0.27
+Nodes (12): hasProfileDirectoryLabelContamination(), normalizePublicProfile(), PUBLIC_PROFILE_BASE_ARRAY_FIELDS, PUBLIC_PROFILE_BASE_TEXT_FIELDS, publicProfileBase(), publicProfileImageUrl(), publicProfileResearchEntity(), publicProfileText() (+4 more)
 
 ### Community 131 - "launchReviewExceptions.ts"
 Cohesion: 0.15
@@ -3037,24 +3034,24 @@ Cohesion: 0.18
 Nodes (17): addFavoriteToFellowship(), addViewToFellowship(), boundedSearchQuery(), getFellowshipFilterOptions(), numericSearchParam(), parseFilter(), PUBLIC_FELLOWSHIP_SORT_FIELDS, publicFellowshipPage() (+9 more)
 
 ### Community 141 - "applicationRoutePathwayBackfillCore.ts"
-Cohesion: 0.11
-Nodes (38): EntryPathwayType, applicationRouteBackfillDerivationKey(), ApplicationRoutePathwayBackfillDeps, ApplicationRoutePathwayBackfillEntity, ApplicationRoutePathwayBackfillOptions, ApplicationRoutePathwayBackfillResult, ApplicationRoutePathwayBackfillRoute, backfillApplicationRoutePathways() (+30 more)
+Cohesion: 0.12
+Nodes (36): applicationRouteBackfillDerivationKey(), ApplicationRoutePathwayBackfillDeps, ApplicationRoutePathwayBackfillEntity, ApplicationRoutePathwayBackfillOptions, ApplicationRoutePathwayBackfillResult, ApplicationRoutePathwayBackfillRoute, backfillApplicationRoutePathways(), classifyApplicationRoutePathway() (+28 more)
 
 ### Community 142 - "cli.ts"
 Cohesion: 0.19
 Nodes (20): __dirname, __filename, main(), BOOLEAN_FLAGS, buildCronOutputPayload(), buildMaterializeOutputPayload(), buildScraperCliOutputPayload(), buildScraperCliPreflight() (+12 more)
 
 ### Community 143 - "claimGate.ts"
-Cohesion: 0.20
-Nodes (16): buildClaimGateOutput(), ClaimGateCliOptions, ClaimGateCollection, consumeValue(), __dirname, __filename, loadResearchAccessArtifacts(), main() (+8 more)
+Cohesion: 0.15
+Nodes (19): ADMIN_PROFILE_USER_TYPES, adminUpdateProfile(), boundedAdminProfileEmail(), boundedAdminProfileNumber(), boundedAdminProfileText(), boundedProfileString(), boundedProfileStringArray(), boundedProfileUrlKey() (+11 more)
 
 ### Community 144 - "ObservationInput"
 Cohesion: 0.14
 Nodes (20): CallCenterDirectorLLMFn, CandidateCenter, CenterDirector, CenterDirectorExtraction, CenterDirectorLLMExtractor, CenterDirectorLLMExtractorDeps, CenterFinderFn, defaultCallLLM() (+12 more)
 
 ### Community 145 - "FavoritesManager.tsx"
-Cohesion: 0.08
-Nodes (45): csvCell(), dateFormatter, deadlineEndOfUtcDay(), FavoritesManager(), FavoritesManagerProps, fellowshipToBrowsable(), savedProgramDeadlineSummary(), validDeadlineDate() (+37 more)
+Cohesion: 0.09
+Nodes (43): csvCell(), dateFormatter, deadlineEndOfUtcDay(), FavoritesManager(), FavoritesManagerProps, fellowshipToBrowsable(), savedProgramDeadlineSummary(), validDeadlineDate() (+35 more)
 
 ### Community 146 - "departmentGroundTruth.ts"
 Cohesion: 0.14
@@ -3213,8 +3210,8 @@ Cohesion: 0.08
 Nodes (37): publicSafeStudentVisibilityTiers, publicStudentVisibilityTiers, studentVisibilityFields, StudentVisibilityTier, studentVisibilityTiers, VisibilityReleaseQueueCollection, visibilityReleaseQueueCollections, visibilityReleaseQueueItemSchema (+29 more)
 
 ### Community 194 - "trustedLeadResearchHomeBioFallback"
-Cohesion: 0.21
-Nodes (13): capitalizeSentenceStart(), cleanResearchHomeSummaryForBio(), dedupeProfileResearchEntities(), entityNameMatchesUser(), isIndividualResearchEntity(), isLeadRole(), isUsefulResearchHomeBioSummary(), looksLikePersonOnlyResearchHomeName() (+5 more)
+Cohesion: 0.23
+Nodes (12): capitalizeSentenceStart(), cleanResearchHomeSummaryForBio(), dedupeProfileResearchEntities(), isIndividualResearchEntity(), isLeadRole(), isUsefulResearchHomeBioSummary(), looksLikePersonOnlyResearchHomeName(), publicResearchHomeName() (+4 more)
 
 ### Community 195 - "research.test.tsx"
 Cohesion: 0.09
@@ -3257,8 +3254,8 @@ Cohesion: 0.27
 Nodes (9): backfillV4Grants(), buildV4GrantBackfillOutput(), __dirname, __filename, normalizeAgency(), V4GrantBackfillResult, writeV4GrantBackfillOutput(), Grant (+1 more)
 
 ### Community 205 - "scholarlyLinkToPublicLink"
-Cohesion: 0.08
-Nodes (32): buildProfileResearchMembershipFilter(), cleanPublicSourceLabel(), cleanScholarlyTitle(), cleanUrl(), dateToIso(), hasInspectableOpenAlexDestination(), isDatasetLikeScholarlyLink(), isGeneratedOfficialProfilePublicationAnchor() (+24 more)
+Cohesion: 0.11
+Nodes (38): ADMIN_UPDATE_FIELDS, ALLOWED_SELF_UPDATE_FIELDS, cleanPublicHttpUrl(), cleanPublicSourceLabel(), cleanScholarlyTitle(), cleanUrl(), dateToIso(), GIVEN_NAME_ALIASES (+30 more)
 
 ### Community 206 - "AdminFacultyProfilesTable.tsx"
 Cohesion: 0.18
@@ -3321,8 +3318,8 @@ Cohesion: 0.13
 Nodes (23): researchScholarlyLinkSchema, buildPaperQualityAuditOutput(), __filename, main(), PaperQualityAuditCliOptions, parseNonNegativeInteger(), parsePaperQualityAuditArgs(), writePaperQualityAuditOutput() (+15 more)
 
 ### Community 224 - "listingFormReducer.ts"
-Cohesion: 0.31
-Nodes (7): createInitialListingFormState(), ListingFormAction, ListingFormErrors, listingFormReducer(), ListingFormState, researchAreasFromListing(), resolve()
+Cohesion: 0.24
+Nodes (8): buildProfileResearchMembershipFilter(), isOfficialProfileScholarlyLink(), loadProfileResearchEntities(), loadProfileScholarlyLinks(), orderProfileScholarlyLinks(), paperToScholarlyLink(), profileDocumentId(), userModelMock
 
 ### Community 226 - "paperAuthorshipPolicy.ts"
 Cohesion: 0.27
@@ -3432,10 +3429,6 @@ Nodes (23): isHttpUrl(), buildListingResearchEntityProfilePatch(), hasText(), is
 Cohesion: 0.18
 Nodes (11): CTA Vocabulary, Entity Page Questions, Explore Research, Navigation Shape, North Star, Primary Surfaces, Product Context, Product Premise (+3 more)
 
-### Community 272 - "isOfficialYaleProfileUrlForUser"
-Cohesion: 0.40
-Nodes (6): hasPersonScopedYaleDirectoryPath(), isLabOrResearchGroupUrl(), isOfficialYaleProfileUrlForUser(), isYaleHost(), parseProfileUrl(), pathSegments()
-
 ### Community 273 - "resolutions"
 Cohesion: 0.12
 Nodes (16): resolutions, axios, brace-expansion, braces, encoding-sniffer, form-data, glob, ip-address (+8 more)
@@ -3453,8 +3446,8 @@ Cohesion: 0.18
 Nodes (11): resolutions, brace-expansion, form-data, glob, ip-address, minimatch, picomatch, postcss (+3 more)
 
 ### Community 283 - "isLikelyPersonUrl"
-Cohesion: 0.25
-Nodes (16): initial(), allNameTokens(), allowsLastNameOnlyPersonUrl(), compoundLastNameMatchedTokens(), givenNameAliasMatches(), hasPartialCompoundLastNameProfilePath(), hasSurnameOnlyProfilePath(), isAmbiguousInitialLastProfileUrl() (+8 more)
+Cohesion: 0.13
+Nodes (27): initial(), allNameTokens(), allowsLastNameOnlyPersonUrl(), cleanProfileUrlsForPerson(), compoundLastNameMatchedTokens(), entityNameMatchesUser(), givenNameAliasMatches(), hasPartialCompoundLastNameProfilePath() (+19 more)
 
 ### Community 284 - "sanitizeMongo.ts"
 Cohesion: 0.40
@@ -3505,8 +3498,8 @@ Cohesion: 0.60
 Nodes (5): status(), blocked_reason(), fail(), is_blocked(), main()
 
 ### Community 304 - "ResearchHomeCard.tsx"
-Cohesion: 0.11
-Nodes (26): cleanResearchInterest(), ResearchInterests(), ResearchInterestsProps, SOURCE_CHROME_PATTERNS, splitCleanResearchInterest(), adminQualityLabels(), contextLabelClass(), countLabel() (+18 more)
+Cohesion: 0.07
+Nodes (39): cleanResearchInterest(), ResearchInterests(), ResearchInterestsProps, SOURCE_CHROME_PATTERNS, splitCleanResearchInterest(), adminQualityLabels(), contextLabelClass(), countLabel() (+31 more)
 
 ### Community 305 - "entityMaterializer.test.ts"
 Cohesion: 0.18
@@ -3649,21 +3642,21 @@ Cohesion: 0.06
 Nodes (34): AccessSignal, accessSignalSchema, EntryPathway, entryPathwaySchema, fieldProvenanceSchema, opennessSignalSchema, recordReviewSchema, recordReviewStatuses (+26 more)
 
 ## Knowledge Gaps
-- **4349 isolated node(s):** `name`, `version`, `private`, `node`, `@emotion/react` (+4344 more)
+- **4347 isolated node(s):** `name`, `version`, `private`, `node`, `@emotion/react` (+4342 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **2203 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **2201 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `sanitizeLogValue()` connect `sanitizeLogValue` to `departmentRosterScraper.ts`, `logSanitizer.ts`, `yaleCollegeFellowshipsOfficeScraper.ts`, `types.ts`, `entityMaterializer.ts`, `passport.ts`, `undergradFellowshipRecipientScraper.ts`, `duplicateEntityNameReview.ts`, `dedupeResearchEntitiesByPi.ts`, `admin.ts`, `profileDataQualityAudit.ts`, `centersInstitutesScraper.ts`, `nihReporterScraper.ts`, `arxivPreprintScraper.ts`, `userService.ts`, `backfillStudentVisibilityTiers.ts`, `researchEntityCoverageAudit.ts`, `sourceHealth.ts`, `repairOfficialProfilePublicationPointers.ts`, `officialProfilePiBackfillScraper.test.ts`, `listingService.ts`, `studentVisibilityRepairTargets.ts`, `runReport.ts`, `opportunityDetailService.ts`, `staleObservationConflictReview.ts`, `betaDataQuality.ts`, `listingController.ts`, `analyticsService.ts`, `entryPathwayService.ts`, `nsfAwardScraper.ts`, `fellowshipInputs.ts`, `scholarlyLinkSuppressionAudit.ts`, `labMicrositeUndergradLLMExtractor.ts`, `profileController.ts`, `analytics.ts`, `openAlexPaperScraper.ts`, `postedOpportunityService.ts`, `researchEntityMemberReferenceAudit.ts`, `configService.ts`, `promoteAcceptedBetaCopy.ts`, `paperAuthorshipAudit.ts`, `assertPublicHttpUrl`, `studentDecisionLLMExtractor.ts`, `BackfillV4StudentProfiles.ts`, `backfillProfileBiosFromOfficialUrls.ts`, `rebuildPathwaySearchIndex.ts`, `ScraperContext`, `officialProfilePiBackfillScraper.ts`, `ResearchGroupMember`, `repairArchivedEntityArtifacts.ts`, `pathwayQualityAudit.ts`, `backfillResearchHomeOfficialUrls.ts`, `betaSeedEnvironment.ts`, `profileBioCoverageAudit.ts`, `launchReviewExceptions.ts`, `dedupeUsersByIdentity.ts`, `fellowshipController.ts`, `applicationRoutePathwayBackfillCore.ts`, `cli.ts`, `claimGate.ts`, `ObservationInput`, `crossSourceObservationConflictReview.ts`, `migrateResearchEntities.ts`, `pathwayRelevanceReview.ts`, `researchQualitySearchReview.ts`, `migrateResearchEntityCollections.ts`, `researchGroupController.ts`, `launchTrustContract.ts`, `disambiguateSurnameLabNames.ts`, `repairDuplicateAccessSignals.ts`, `repairListingResearchEntityProfiles.ts`, `programController.ts`, `repairMismatchedPersonEmailsCore.ts`, `betaReadinessGate.ts`, `courseTableService.ts`, `cleanupLegacyMongoCollections.ts`, `seedSources.ts`, `index.ts`, `migrateMongoNaming.ts`, `resolveSafeJsonReportOutputPath`, `fellowships.ts`, `userEmailHygiene.ts`, `orcidWorksScraper.ts`, `serializedDocumentId`, `meiliSyncService.ts`, `repairProfileDescriptionBackfillConflicts.ts`, `clearBetaStudentAnalytics.ts`, `scraperIntegrityDuplicateReview.ts`, `departmentLeadRepairPlanCore.ts`, `auditResearchEntityRename.ts`, `betaRepairQueue.ts`, `backfillPostedOpportunitiesFromListings.ts`, `paperQualityService.ts`, `scraperIntegrityGate.ts`, `programs.ts`, `launchAcquisitionReport.ts`, `cronRunner.ts`, `listings.ts`, `backfillCenterDirectors.ts`, `obs`, `seed.ts`, `materializeFromRun`, `users.ts`, `refreshGateScorecards.ts`, `dedupeExploratoryContactPathways.ts`, `User`, `user.ts`, `errorHandler.ts`?**
+- **Why does `sanitizeLogValue()` connect `sanitizeLogValue` to `departmentRosterScraper.ts`, `logSanitizer.ts`, `yaleCollegeFellowshipsOfficeScraper.ts`, `types.ts`, `entityMaterializer.ts`, `passport.ts`, `undergradFellowshipRecipientScraper.ts`, `duplicateEntityNameReview.ts`, `dedupeResearchEntitiesByPi.ts`, `admin.ts`, `profileDataQualityAudit.ts`, `centersInstitutesScraper.ts`, `nihReporterScraper.ts`, `arxivPreprintScraper.ts`, `userService.ts`, `backfillStudentVisibilityTiers.ts`, `researchEntityCoverageAudit.ts`, `sourceHealth.ts`, `repairOfficialProfilePublicationPointers.ts`, `officialProfilePiBackfillScraper.test.ts`, `listingService.ts`, `studentVisibilityRepairTargets.ts`, `runReport.ts`, `opportunityDetailService.ts`, `staleObservationConflictReview.ts`, `betaDataQuality.ts`, `listingController.ts`, `analyticsService.ts`, `entryPathwayService.ts`, `nsfAwardScraper.ts`, `fellowshipInputs.ts`, `scholarlyLinkSuppressionAudit.ts`, `labMicrositeUndergradLLMExtractor.ts`, `profileController.ts`, `analytics.ts`, `openAlexPaperScraper.ts`, `postedOpportunityService.ts`, `researchEntityMemberReferenceAudit.ts`, `configService.ts`, `promoteAcceptedBetaCopy.ts`, `paperAuthorshipAudit.ts`, `assertPublicHttpUrl`, `studentDecisionLLMExtractor.ts`, `BackfillV4StudentProfiles.ts`, `backfillProfileBiosFromOfficialUrls.ts`, `rebuildPathwaySearchIndex.ts`, `accessClaims.ts`, `ScraperContext`, `officialProfilePiBackfillScraper.ts`, `ResearchGroupMember`, `repairArchivedEntityArtifacts.ts`, `pathwayQualityAudit.ts`, `backfillResearchHomeOfficialUrls.ts`, `betaSeedEnvironment.ts`, `profileBioCoverageAudit.ts`, `launchReviewExceptions.ts`, `dedupeUsersByIdentity.ts`, `fellowshipController.ts`, `applicationRoutePathwayBackfillCore.ts`, `cli.ts`, `ObservationInput`, `crossSourceObservationConflictReview.ts`, `migrateResearchEntities.ts`, `pathwayRelevanceReview.ts`, `researchQualitySearchReview.ts`, `migrateResearchEntityCollections.ts`, `researchGroupController.ts`, `launchTrustContract.ts`, `disambiguateSurnameLabNames.ts`, `repairDuplicateAccessSignals.ts`, `repairListingResearchEntityProfiles.ts`, `programController.ts`, `repairMismatchedPersonEmailsCore.ts`, `betaReadinessGate.ts`, `courseTableService.ts`, `cleanupLegacyMongoCollections.ts`, `seedSources.ts`, `index.ts`, `migrateMongoNaming.ts`, `resolveSafeJsonReportOutputPath`, `fellowships.ts`, `userEmailHygiene.ts`, `orcidWorksScraper.ts`, `serializedDocumentId`, `meiliSyncService.ts`, `repairProfileDescriptionBackfillConflicts.ts`, `clearBetaStudentAnalytics.ts`, `scraperIntegrityDuplicateReview.ts`, `departmentLeadRepairPlanCore.ts`, `auditResearchEntityRename.ts`, `betaRepairQueue.ts`, `backfillPostedOpportunitiesFromListings.ts`, `paperQualityService.ts`, `scraperIntegrityGate.ts`, `programs.ts`, `launchAcquisitionReport.ts`, `cronRunner.ts`, `listings.ts`, `backfillCenterDirectors.ts`, `obs`, `seed.ts`, `materializeFromRun`, `users.ts`, `refreshGateScorecards.ts`, `dedupeExploratoryContactPathways.ts`, `User`, `user.ts`, `errorHandler.ts`?**
   _High betweenness centrality (0.079) - this node is a cross-community bridge._
 - **Why does `field()` connect `dedupeUsersByIdentity.ts` to `normalizePublicProfile`, `logSanitizer.ts`, `ImportRootDataFiles.ts`, `safeHttpUrl`, `entityMaterializer.ts`, `types.ts`, `integrityGate.ts`, `crossSourceObservationConflictReview.ts`, `index.ts`, `arxivPreprintScraper.ts`, `sourceHealth.ts`, `redactDirectContactInfo`, `runReport.ts`, `User`, `betaDataQuality.ts`, `analyticsService.ts`, `acceptedInputsCore.ts`, `entryPathwayService.ts`, `labMicrositeUndergradLLMExtractor.ts`, `orcidWorksScraper.ts`, `AdminListingsTable.tsx`, `openAlexPaperScraper.ts`, `AdminFacultyProfilesTable.tsx`, `scraperIntegrityDuplicateReview.ts`, `promoteAcceptedBetaCopy.ts`, `AdminFellowshipsTable.tsx`, `ScraperContext`, `officialProfilePiBackfillScraper.ts`, `confidenceResolver.ts`, `buildStaleObservationConflictSummary`, `visibilityRepairQueueService.ts`?**
   _High betweenness centrality (0.050) - this node is a cross-community bridge._
 - **Why does `member()` connect `visibilityRepairQueueService.ts` to `profileBioCoverageAudit.ts`, `labDetail.tsx`, `centersInstitutesScraper.ts`, `departmentRosterScraper.ts`, `labDetail.ts`, `disambiguateSurnameLabNames.ts`, `researchGroupService.test.ts`, `research-detail-professor-audit.mjs`, `researchGroupService.ts`, `meiliSyncService.ts`, `v4MigrationUtils.ts`, `studentVisibilityTier.ts`, `researchQualitySearchReview.ts`, `researchEntitySearchIndexService.ts`?**
   _High betweenness centrality (0.042) - this node is a cross-community bridge._
 - **What connects `name`, `version`, `private` to the rest of the system?**
-  _4351 weakly-connected nodes found - possible documentation gaps or missing edges._
+  _4349 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `Decisions` be split into smaller, more focused modules?**
   _Cohesion score 0.10526315789473684 - nodes in this community are weakly interconnected._
 - **Should `labDetail.tsx` be split into smaller, more focused modules?**

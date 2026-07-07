@@ -276,7 +276,7 @@ Run them through the `data-migration` package scripts when available, so dry-run
 
 ```bash
 npm --prefix data-migration run import:fellowships -- --csv ../web-scraper/fellowships/yale_fellowships.csv --summary ./tmp/fellowships-summary.json
-npm --prefix data-migration run import:fellowships:execute -- --target dev --csv ./fixtures/fellowships.csv --summary ./tmp/fellowships-import.json
+npm --prefix data-migration run import:fellowships:execute -- --target dev --csv ../web-scraper/fellowships/yale_fellowships.csv --summary ./tmp/fellowships-import.json
 npm --prefix data-migration run migrate:meilisearch -- --summary ./tmp/meili-listings-summary.json
 MEILISEARCH_INDEX_PREFIX=dev npm --prefix data-migration run migrate:meilisearch:execute -- --target dev --summary ./tmp/meili-listings-execute.json
 ```
@@ -284,6 +284,7 @@ MEILISEARCH_INDEX_PREFIX=dev npm --prefix data-migration run migrate:meilisearch
 `import:fellowships` validates the CSV transform before MongoDB writes and refuses replacement unless execute mode also supplies `--replace-existing`.
 `migrate:meilisearch` refreshes only the legacy `listings` Meilisearch index; do not use it for current Research or Pathways indexes.
 Any write must use `--execute --target local|test|dev|beta|prod`, and production writes additionally require `--allow-production --confirm-production`.
+Summary paths must be `.json` files under `data-migration/tmp` or the system temp directory.
 
 ---
 

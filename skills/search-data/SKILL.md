@@ -69,5 +69,6 @@ Admin "weakest profiles first" with `browseQuality: 'low-first'` is a separate M
 - If a schema change affects Research or Pathways search, update the relevant index config and rebuild path.
 - Add a migration script in `data-migration/` when existing data needs transformation.
 - Prefer `data-migration/package.json` scripts over raw `tsx` commands when present.
-- Guarded data-migration scripts default to dry-run, accept `--summary ./tmp/<name>.json`, and require `--execute --target local|test|dev|beta|prod` before writes.
+- Guarded data-migration scripts default to dry-run, accept `--summary ./tmp/<name>.json` or a system-temp JSON path, and require `--execute --target local|test|dev|beta|prod` before writes.
+- Execute mode validates the target against the resolved MongoDB database and, for Meilisearch writes, the index prefix.
 - Verify index settings and sortable/filterable attributes when adding fields used for search, filtering, or ordering.
