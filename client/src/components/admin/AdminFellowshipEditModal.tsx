@@ -124,6 +124,8 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
     eligibility,
     yearOfStudy,
     termOfAward,
+    purpose,
+    globalRegions,
     citizenshipStatus,
   });
 

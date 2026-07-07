@@ -86,4 +86,34 @@ describe('FellowshipModal', () => {
     expect(screen.queryByText(/Applications are not open yet/i)).not.toBeInTheDocument();
     expect(screen.getByText('Apply Now').closest('a')).toHaveClass('bg-blue-600');
   });
+
+  it('does not show missing eligibility copy when purpose metadata is present', () => {
+    renderModal(
+      makeFellowship({
+        eligibility: '',
+        yearOfStudy: [],
+        purpose: ['Research'],
+      }),
+    );
+
+    expect(
+      screen.queryByText('Eligibility requirements have not been specified.'),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText('See the eligibility filters above for requirements.')).toBeInTheDocument();
+  });
+
+  it('does not show missing eligibility copy when region metadata is present', () => {
+    renderModal(
+      makeFellowship({
+        eligibility: '',
+        yearOfStudy: [],
+        globalRegions: ['Africa'],
+      }),
+    );
+
+    expect(
+      screen.queryByText('Eligibility requirements have not been specified.'),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText('See the eligibility filters above for requirements.')).toBeInTheDocument();
+  });
 });

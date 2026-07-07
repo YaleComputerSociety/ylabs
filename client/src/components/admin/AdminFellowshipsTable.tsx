@@ -588,6 +588,8 @@ const FellowshipEditModal = ({
     eligibility,
     yearOfStudy,
     termOfAward,
+    purpose,
+    globalRegions,
     citizenshipStatus,
   });
 

@@ -592,9 +592,13 @@ const FellowshipModal = ({
                       text={fellowship.eligibility}
                       className="text-sm text-gray-700 leading-relaxed"
                     />
-                  ) : (
+                  ) : status.needsEligibilityReview ? (
                     <p className="text-sm text-gray-500 bg-amber-50 border border-amber-100 rounded-lg p-4">
                       Eligibility requirements have not been specified.
+                    </p>
+                  ) : (
+                    <p className="text-sm text-gray-500 bg-slate-50 border border-slate-100 rounded-lg p-4">
+                      See the eligibility filters above for requirements.
                     </p>
                   )}
                 </section>
