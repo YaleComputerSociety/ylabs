@@ -359,6 +359,199 @@ export const recordListingOutreach = async (request: Request, response: Response
   }
 };
 
+type MongoListingSearchParams = {
+  query?: string;
+  sortBy?: string;
+  sortOrder?: string;
+  departments?: string;
+  academicDisciplines?: string;
+  researchAreas?: string;
+  departmentsMode: string;
+  academicDisciplinesMode: string;
+  researchAreasMode: string;
+  limit: number;
+  offset: number;
+};
+
+type ListingSearchEnvelope = {
+  results: any[];
+  totalCount: number;
+  degraded: boolean;
+};
+
+const buildMongoFilterMatch = async (params: MongoListingSearchParams) => {
+  const baseFilter: Record<string, any> = { archived: false, confirmed: true };
+  const crossFilterConditions: Record<string, any>[] = [];
+  const departmentList = splitBoundedListingSearchParam(params.departments, '||');
+  const disciplineList = splitBoundedListingSearchParam(params.academicDisciplines, '||');
+  const researchAreaList = splitBoundedListingSearchParam(params.researchAreas);
+
+  const useAndBetweenFilters =
+    (departmentList.length > 0 && params.departmentsMode === 'intersection') ||
+    (disciplineList.length > 0 && params.academicDisciplinesMode === 'intersection') ||
+    (researchAreaList.length > 0 && params.researchAreasMode === 'intersection');
+
+  if (departmentList.length > 0) {
+    crossFilterConditions.push(
+      params.departmentsMode === 'intersection'
+        ? { departments: { $all: departmentList } }
+        : { departments: { $in: departmentList } },
+    );
+  }
+
+  if (disciplineList.length > 0) {
+    const config = await getConfig();
+    const departmentsByDiscipline = disciplineList.map((discipline) =>
+      config.departments.list
+        .filter(
+          (dept: any) =>
+            dept.categories.includes(discipline) || dept.primaryCategory === discipline,
+        )
+        .map((dept: any) => dept.displayName),
+    );
+
+    const disciplineConditions = departmentsByDiscipline
+      .filter((departmentsForDiscipline) => departmentsForDiscipline.length > 0)
+      .map((departmentsForDiscipline) => ({ departments: { $in: departmentsForDiscipline } }));
+
+    if (disciplineConditions.length > 0) {
+      crossFilterConditions.push(
+        params.academicDisciplinesMode === 'intersection'
+          ? { $and: disciplineConditions }
+          : { $or: disciplineConditions },
+      );
+    }
+  }
+
+  if (researchAreaList.length > 0) {
+    crossFilterConditions.push(
+      params.researchAreasMode === 'intersection'
+        ? { researchAreas: { $all: researchAreaList } }
+        : { researchAreas: { $in: researchAreaList } },
+    );
+  }
+
+  if (crossFilterConditions.length > 0) {
+    baseFilter[useAndBetweenFilters ? '$and' : '$or'] = crossFilterConditions;
+  }
+
+  const trimmedQuery = boundedListingSearchQuery(params.query);
+  if (trimmedQuery !== '') {
+    const searchableFields = [
+      'title',
+      'description',
+      'applicantDescription',
+      'ownerFirstName',
+      'ownerLastName',
+      'ownerEmail',
+      'ownerTitle',
+      'ownerPrimaryDepartment',
+      'professorNames',
+      'departments',
+      'researchAreas',
+      'keywords',
+    ];
+
+    const queryConditions = trimmedQuery.split(/\s+/).map((term) => ({
+      $or: searchableFields.map((field) => ({ [field]: buildSafeSearchRegex(term) })),
+    }));
+
+    if (queryConditions.length > 0) {
+      baseFilter.$and = [...(baseFilter.$and || []), ...queryConditions];
+    }
+  }
+
+  return baseFilter;
+};
+
+export const searchListingsViaMongo = async (
+  params: MongoListingSearchParams,
+): Promise<{ hits: any[]; totalCount: number }> => {
+  const filter = await buildMongoFilterMatch(params);
+  const sort: Record<string, 1 | -1> = {};
+
+  if (params.sortBy) {
+    sort[listingSearchSortField(params.sortBy)] = params.sortOrder === '1' ? 1 : -1;
+  } else if (!params.query || boundedListingSearchQuery(params.query) === '') {
+    sort[DEFAULT_PUBLIC_LISTING_SORT_FIELD] = 1;
+  } else {
+    sort.updatedAt = -1;
+  }
+
+  const ListingModel = getListingModel();
+  const [hits, totalCount] = await Promise.all([
+    ListingModel.find(filter).sort(sort).skip(params.offset).limit(params.limit).lean(),
+    ListingModel.countDocuments(filter),
+  ]);
+
+  return {
+    hits: hits.map(publicListingForAuthenticatedReader),
+    totalCount,
+  };
+};
+
+export const searchListingsViaMeiliWithDegrade = async (
+  trimmedQuery: string,
+  searchParams: Record<string, any>,
+  getIndex = () => getMeiliIndex('listings'),
+) => {
+  const index = await getIndex();
+
+  try {
+    const result = await index.search(trimmedQuery, searchParams);
+    return { result, degraded: false };
+  } catch (error) {
+    if (!searchParams.hybrid) {
+      throw error;
+    }
+
+    console.error(
+      'Meilisearch hybrid search failed; retrying keyword-only search:',
+      sanitizeLogValue(error),
+    );
+    const keywordParams = { ...searchParams };
+    delete keywordParams.hybrid;
+    const result = await index.search(trimmedQuery, keywordParams);
+    return { result, degraded: true };
+  }
+};
+
+export const searchListingsWithDegradation = async (params: {
+  query: string;
+  searchParams: Record<string, any>;
+  mongoParams: MongoListingSearchParams;
+  getIndex?: () => Promise<{
+    search: (query: string, params: Record<string, any>) => Promise<any>;
+  }>;
+  mongoSearch?: typeof searchListingsViaMongo;
+}): Promise<ListingSearchEnvelope> => {
+  try {
+    const meiliResult = await searchListingsViaMeiliWithDegrade(
+      params.query,
+      params.searchParams,
+      params.getIndex,
+    );
+
+    return {
+      results: meiliResult.result.hits.map(publicListingForAuthenticatedReader),
+      totalCount: meiliResult.result.estimatedTotalHits,
+      degraded: meiliResult.degraded,
+    };
+  } catch (error) {
+    console.error(
+      'Meilisearch search failed; falling back to Mongo search:',
+      sanitizeLogValue(error),
+    );
+    const mongoResult = await (params.mongoSearch || searchListingsViaMongo)(params.mongoParams);
+
+    return {
+      results: mongoResult.hits,
+      totalCount: mongoResult.totalCount,
+      degraded: true,
+    };
+  }
+};
+
 export const searchListings = async (request: Request, response: Response) => {
   try {
     const {
