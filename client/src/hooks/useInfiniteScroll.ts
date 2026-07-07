@@ -20,23 +20,18 @@ export function useInfiniteScroll({
   isLoading,
   setPage,
   rootMargin = '600px',
-  filteredCount,
-  totalRawCount,
-  quickFilterActive,
 }: UseInfiniteScrollOptions) {
   const sentinelRef = useRef<HTMLDivElement>(null);
 
   const isLoadingRef = useRef(isLoading);
   const searchExhaustedRef = useRef(searchExhausted);
-  const filteredCountRef = useRef(filteredCount);
-  const totalRawCountRef = useRef(totalRawCount);
-  const quickFilterActiveRef = useRef(quickFilterActive);
 
-  useEffect(() => { isLoadingRef.current = isLoading; }, [isLoading]);
-  useEffect(() => { searchExhaustedRef.current = searchExhausted; }, [searchExhausted]);
-  useEffect(() => { filteredCountRef.current = filteredCount; }, [filteredCount]);
-  useEffect(() => { totalRawCountRef.current = totalRawCount; }, [totalRawCount]);
-  useEffect(() => { quickFilterActiveRef.current = quickFilterActive; }, [quickFilterActive]);
+  useEffect(() => {
+    isLoadingRef.current = isLoading;
+  }, [isLoading]);
+  useEffect(() => {
+    searchExhaustedRef.current = searchExhausted;
+  }, [searchExhausted]);
 
   useEffect(() => {
     if (searchExhausted) return;
@@ -47,15 +42,6 @@ export function useInfiniteScroll({
 
     const canAdvance = () => {
       if (isLoadingRef.current || searchExhaustedRef.current) return false;
-      if (
-        quickFilterActiveRef.current &&
-        filteredCountRef.current !== undefined &&
-        totalRawCountRef.current !== undefined &&
-        filteredCountRef.current === 0 &&
-        totalRawCountRef.current >= 60
-      ) {
-        return false;
-      }
       return true;
     };
 
@@ -81,7 +67,7 @@ export function useInfiniteScroll({
     }
 
     return () => observer.disconnect();
-  }, [searchExhausted, isLoading, setPage, rootMargin, filteredCount, totalRawCount, quickFilterActive]);
+  }, [searchExhausted, isLoading, setPage, rootMargin]);
 
   return sentinelRef;
 }
