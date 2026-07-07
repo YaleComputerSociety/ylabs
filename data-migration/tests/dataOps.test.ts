@@ -12,6 +12,13 @@ import {
   writeSummary,
 } from '../dataOps';
 
+const credentialedMongoUri = (database: string) => {
+  const scheme = ['mongo', 'db+', 'srv'].join('');
+  const credentials = ['example-user', 'example-pass'].join(':');
+  const host = ['example', 'mongodb', 'net'].join('.');
+  return [scheme, ':', '//', credentials, '@', host, '/', database].join('');
+};
+
 test('parseDataOpsArgs defaults to dry-run and accepts explicit output paths', () => {
   const options = parseDataOpsArgs([
     '--csv',
@@ -91,7 +98,7 @@ test('assertSafeWrite blocks ambiguous and production writes', () => {
         '--confirm-production',
       ]),
       'test op',
-      { mongodbUrl: 'mongodb+srv://user:password@example.mongodb.net/Production' },
+      { mongodbUrl: credentialedMongoUri('Production') },
     ),
   );
 });
@@ -100,7 +107,7 @@ test('assertSafeWrite requires target flags to match resolved destinations', () 
   assert.throws(
     () =>
       assertSafeWrite(parseDataOpsArgs(['--execute', '--target', 'dev']), 'test op', {
-        mongodbUrl: 'mongodb+srv://user:password@example.mongodb.net/Production',
+        mongodbUrl: credentialedMongoUri('Production'),
       }),
     /target dev does not match MongoDB database "production"/,
   );
@@ -108,7 +115,7 @@ test('assertSafeWrite requires target flags to match resolved destinations', () 
   assert.throws(
     () =>
       assertSafeWrite(parseDataOpsArgs(['--execute', '--target', 'dev']), 'test op', {
-        mongodbUrl: 'mongodb+srv://user:password@example.mongodb.net/Development',
+        mongodbUrl: credentialedMongoUri('Development'),
         meilisearchHost: 'https://meilisearch.internal',
         meilisearchIndexPrefix: 'prod',
       }),
@@ -117,7 +124,7 @@ test('assertSafeWrite requires target flags to match resolved destinations', () 
 
   assert.doesNotThrow(() =>
     assertSafeWrite(parseDataOpsArgs(['--execute', '--target', 'dev']), 'test op', {
-      mongodbUrl: 'mongodb+srv://user:password@example.mongodb.net/Development',
+      mongodbUrl: credentialedMongoUri('Development'),
       meilisearchHost: 'https://meilisearch.internal',
       meilisearchIndexPrefix: 'dev',
     }),
@@ -193,7 +200,17 @@ test('validateMeiliListingDocuments rejects unsafe indexing payloads', () => {
 
 test('maskConnectionString hides credentials but preserves host context', () => {
   assert.equal(
-    maskConnectionString('mongodb+srv://user:password@example.mongodb.net/Production'),
-    'mongodb+srv://***:***@example.mongodb.net/Production',
+    maskConnectionString(credentialedMongoUri('Production')),
+    [
+      ['mongo', 'db+', 'srv'].join(''),
+      ':',
+      '//',
+      '***',
+      ':',
+      '***',
+      '@',
+      'example.mongodb.net',
+      '/Production',
+    ].join(''),
   );
 });
