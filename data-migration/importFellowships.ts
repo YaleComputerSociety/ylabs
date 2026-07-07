@@ -51,12 +51,15 @@ const TOP_LEVEL_REGIONS = [
 
 function parseFilterValues(value: string | undefined): string[] {
   if (!value || !value.trim()) return [];
-  return value.split(';').map(v => v.trim()).filter(Boolean);
+  return value
+    .split(';')
+    .map((v) => v.trim())
+    .filter(Boolean);
 }
 
 function parseRegions(value: string | undefined): string[] {
   const allValues = parseFilterValues(value);
-  return allValues.filter(v => TOP_LEVEL_REGIONS.includes(v));
+  return allValues.filter((v) => TOP_LEVEL_REGIONS.includes(v));
 }
 
 function cleanEmail(email: string | undefined): string {
@@ -149,12 +152,12 @@ function buildFellowshipImportStats(
   fellowships: ReturnType<typeof transformFellowshipRow>[],
 ): FellowshipImportStats {
   return {
-    withYearOfStudy: fellowships.filter(f => f.yearOfStudy.length > 0).length,
-    withTermOfAward: fellowships.filter(f => f.termOfAward.length > 0).length,
-    withPurpose: fellowships.filter(f => f.purpose.length > 0).length,
-    withRegions: fellowships.filter(f => f.globalRegions.length > 0).length,
-    withCitizenship: fellowships.filter(f => f.citizenshipStatus.length > 0).length,
-    accepting: fellowships.filter(f => f.isAcceptingApplications).length,
+    withYearOfStudy: fellowships.filter((f) => f.yearOfStudy.length > 0).length,
+    withTermOfAward: fellowships.filter((f) => f.termOfAward.length > 0).length,
+    withPurpose: fellowships.filter((f) => f.purpose.length > 0).length,
+    withRegions: fellowships.filter((f) => f.globalRegions.length > 0).length,
+    withCitizenship: fellowships.filter((f) => f.citizenshipStatus.length > 0).length,
+    accepting: fellowships.filter((f) => f.isAcceptingApplications).length,
   };
 }
 
@@ -199,10 +202,12 @@ async function importFellowships(
   console.log('\nValidation:');
   console.log(`  - Errors: ${validationSummary.errors}`);
   console.log(`  - Warnings: ${validationSummary.warnings}`);
-  validation.errors.forEach(error => console.error(`  ERROR: ${error}`));
-  validation.warnings.slice(0, 20).forEach(warning => console.warn(`  WARNING: ${warning}`));
+  validation.errors.forEach((error) => console.error(`  ERROR: ${error}`));
+  validation.warnings.slice(0, 20).forEach((warning) => console.warn(`  WARNING: ${warning}`));
   if (validation.warnings.length > 20) {
-    console.warn(`  ... ${validation.warnings.length - 20} additional warnings omitted from console`);
+    console.warn(
+      `  ... ${validation.warnings.length - 20} additional warnings omitted from console`,
+    );
   }
 
   const stats = buildFellowshipImportStats(validFellowships);
@@ -323,7 +328,7 @@ async function main(): Promise<void> {
 }
 
 if (require.main === module) {
-  main().catch(err => {
+  main().catch((err) => {
     console.error('Fatal error:', err);
     process.exit(1);
   });

@@ -84,7 +84,11 @@ function isLocalHost(host: string): boolean {
   return host === 'localhost' || host === '127.0.0.1' || host === '::1';
 }
 
-function assertMongoTargetMatches(target: DataOpsTarget, mongodbUrl: string, operationName: string) {
+function assertMongoTargetMatches(
+  target: DataOpsTarget,
+  mongodbUrl: string,
+  operationName: string,
+) {
   const destination = parseMongoDestination(mongodbUrl);
   const allowedNames = TARGET_DATABASE_NAMES[target];
   const isAllowedDatabase = allowedNames.includes(destination.database);
@@ -114,7 +118,9 @@ function assertMeilisearchTargetMatches(
 
   if (target === 'local') {
     if (!isLocalHost(host) || prefix) {
-      throw new Error(`${operationName} target local requires local Meilisearch with no index prefix`);
+      throw new Error(
+        `${operationName} target local requires local Meilisearch with no index prefix`,
+      );
     }
     return;
   }
@@ -318,7 +324,7 @@ export function validateAndFilterFellowshipDocuments<
 >(fellowships: T[]): { validation: ValidationResult; validFellowships: T[] } {
   return {
     validation: validateFellowshipDocuments(fellowships),
-    validFellowships: fellowships.filter(f => f.title && f.title !== 'Untitled Fellowship'),
+    validFellowships: fellowships.filter((f) => f.title && f.title !== 'Untitled Fellowship'),
   };
 }
 

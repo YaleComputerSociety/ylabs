@@ -1,6 +1,7 @@
 ### Purpose of Data Migration
 
 Yale Labs has been collecting data over a somewhat long period of time. For this reason we have data from 2017 that is:
+
 - Either out of date
 - Not good enough
 
@@ -12,12 +13,12 @@ Run data refresh commands from this directory. Commands that were updated for sa
 
 Common options:
 
-| Option | Meaning |
-| --- | --- |
-| `--dry-run` | Validate inputs and print a summary without writing. This is the default for the npm commands below. |
-| `--execute` | Allow the script to write after safety checks pass. |
-| `--target local\|test\|dev\|beta\|prod` | Names the intended write target. Required with `--execute`. |
-| `--summary path/to/file.json` | Writes a JSON summary with row counts, validation results, and target metadata. |
+| Option                                    | Meaning                                                                                                                                  |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `--dry-run`                               | Validate inputs and print a summary without writing. This is the default for the npm commands below.                                     |
+| `--execute`                               | Allow the script to write after safety checks pass.                                                                                      |
+| `--target local\|test\|dev\|beta\|prod`   | Names the intended write target. Required with `--execute`.                                                                              |
+| `--summary path/to/file.json`             | Writes a JSON summary with row counts, validation results, and target metadata.                                                          |
 | `--allow-production --confirm-production` | Required together for any `--target prod` write. Do not use these from local automation without an explicit production runbook decision. |
 
 Fellowship CSV refresh:

@@ -126,20 +126,28 @@ test('assertSafeWrite requires target flags to match resolved destinations', () 
 
 test('validateFellowshipDocuments reports missing required artifacts and duplicates', () => {
   const validation = validateFellowshipDocuments([
-    { title: 'Summer Research', applicationLink: 'https://example.test/apply', description: 'Apply' },
+    {
+      title: 'Summer Research',
+      applicationLink: 'https://example.test/apply',
+      description: 'Apply',
+    },
     { title: 'Summer Research', applicationLink: '', description: '' },
     { title: 'Untitled Fellowship', applicationLink: 'https://example.test/other' },
   ]);
 
   assert.deepEqual(validation.errors, ['row 3: missing fellowship title']);
-  assert(validation.warnings.some(warning => warning.includes('duplicate fellowship title')));
-  assert(validation.warnings.some(warning => warning.includes('missing application link')));
-  assert(validation.warnings.some(warning => warning.includes('missing description')));
+  assert(validation.warnings.some((warning) => warning.includes('duplicate fellowship title')));
+  assert(validation.warnings.some((warning) => warning.includes('missing application link')));
+  assert(validation.warnings.some((warning) => warning.includes('missing description')));
 });
 
 test('validateAndFilterFellowshipDocuments reports missing titles before filtering import rows', () => {
   const result = validateAndFilterFellowshipDocuments([
-    { title: 'Summer Research', applicationLink: 'https://example.test/apply', description: 'Apply' },
+    {
+      title: 'Summer Research',
+      applicationLink: 'https://example.test/apply',
+      description: 'Apply',
+    },
     { title: 'Untitled Fellowship', applicationLink: 'https://example.test/blank' },
     { title: '', applicationLink: 'https://example.test/missing' },
   ]);
@@ -149,7 +157,7 @@ test('validateAndFilterFellowshipDocuments reports missing titles before filteri
     'row 3: missing fellowship title',
   ]);
   assert.deepEqual(
-    result.validFellowships.map(fellowship => fellowship.title),
+    result.validFellowships.map((fellowship) => fellowship.title),
     ['Summer Research'],
   );
 });
@@ -176,11 +184,11 @@ test('validateMeiliListingDocuments rejects unsafe indexing payloads', () => {
     { id: 12, description: 'missing title' },
   ]);
 
-  assert(validation.errors.some(error => error.includes('duplicate id "a"')));
-  assert(validation.errors.some(error => error.includes('missing string id')));
-  assert(validation.errors.some(error => error.includes('missing title')));
-  assert(validation.errors.some(error => error.includes('forbidden field "_id"')));
-  assert(validation.warnings.some(warning => warning.includes('missing description')));
+  assert(validation.errors.some((error) => error.includes('duplicate id "a"')));
+  assert(validation.errors.some((error) => error.includes('missing string id')));
+  assert(validation.errors.some((error) => error.includes('missing title')));
+  assert(validation.errors.some((error) => error.includes('forbidden field "_id"')));
+  assert(validation.warnings.some((warning) => warning.includes('missing description')));
 });
 
 test('maskConnectionString hides credentials but preserves host context', () => {
