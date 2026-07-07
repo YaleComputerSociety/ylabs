@@ -17,10 +17,10 @@ It strips low-value words such as `professor`, `lab`, and `research` when meanin
 
 ## Meilisearch indexes
 
-| Index | Service | Purpose |
-|-------|---------|---------|
-| `researchentities` | `researchEntitySearchIndexService.ts` | Yale Labs / Research search on `/research`. |
-| `pathways` | `pathwaySearchIndexService.ts` | Internal ways-in enrichment, saved planning, parity testing, and admin workflows. |
+| Index              | Service                               | Purpose                                                                           |
+| ------------------ | ------------------------------------- | --------------------------------------------------------------------------------- |
+| `researchentities` | `researchEntitySearchIndexService.ts` | Yale Labs / Research search on `/research`.                                       |
+| `pathways`         | `pathwaySearchIndexService.ts`        | Internal ways-in enrichment, saved planning, parity testing, and admin workflows. |
 
 The Meilisearch client lives in `server/src/utils/meiliClient.ts`.
 It lazy-loads and caches the connection.
@@ -28,12 +28,12 @@ Use `getMeiliIndex(name)` and `resolveIndexName(name)`.
 
 Relevant config:
 
-| Variable | Purpose |
-|----------|---------|
-| `MEILISEARCH_HOST` | Defaults to `http://localhost:7700`. |
-| `MEILISEARCH_API_KEY` | Meilisearch API key. |
+| Variable                   | Purpose                                                    |
+| -------------------------- | ---------------------------------------------------------- |
+| `MEILISEARCH_HOST`         | Defaults to `http://localhost:7700`.                       |
+| `MEILISEARCH_API_KEY`      | Meilisearch API key.                                       |
 | `MEILISEARCH_INDEX_PREFIX` | Optional environment prefix, e.g. `beta_researchentities`. |
-| `OPENAI_API_KEY` | Used by Meilisearch embedder config and LLM extractors. |
+| `OPENAI_API_KEY`           | Used by Meilisearch embedder config and LLM extractors.    |
 
 Documents sync via `meiliSyncService.ts` after upserts.
 Rebuild scripts do full repopulation.
@@ -42,11 +42,11 @@ Its settings also include curated synonyms and typo guards for short aliases suc
 
 ## Rebuild commands
 
-| Command | Effect |
-|---------|--------|
-| `yarn --cwd server meili:rebuild-research-entities` | Rebuild the ResearchEntity index. |
-| `yarn --cwd server meili:rebuild-pathways` | Rebuild the Pathway index. |
-| `yarn --cwd server research-entity:migrate` | Run the ResearchEntity physical migration. |
+| Command                                                 | Effect                                                               |
+| ------------------------------------------------------- | -------------------------------------------------------------------- |
+| `yarn --cwd server meili:rebuild-research-entities`     | Rebuild the ResearchEntity index.                                    |
+| `yarn --cwd server meili:rebuild-pathways`              | Rebuild the Pathway index.                                           |
+| `yarn --cwd server research-entity:migrate`             | Run the ResearchEntity physical migration.                           |
 | `yarn --cwd server research-homes:backfill-browse-rank` | Recompute `browseRankScore`; apply requires `--confirm-browse-rank`. |
 
 ## Default `/research` ordering

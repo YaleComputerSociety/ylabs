@@ -2062,7 +2062,7 @@ export async function getResearchGroupDetail(slug: string): Promise<{
       })
       .filter((entry): entry is [string, string] => Boolean(entry)),
   );
-  const members = dedupedMembersWithRows.map(({ row, ...member }) => {
+  const members = dedupedMembersWithRows.map(({ row: _row, ...member }) => {
     return {
       ...member,
       user: {

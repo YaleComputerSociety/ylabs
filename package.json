@@ -37,8 +37,8 @@
     "security:audit:production": "yarn npm audit --severity moderate --environment production && yarn --cwd server npm audit --severity moderate --environment production && yarn --cwd client npm audit --severity moderate --environment production",
     "security:preflight": "yarn security:policy && yarn security:secrets && yarn security:audit:production",
     "security:smoke:production": "node client/scripts/productionPromotionSmoke.mjs --api-base ${SMOKE_API_BASE:-https://yalelabs.io/api} --app-base ${SMOKE_APP_BASE:-https://yalelabs.io} --ui=false",
-    "lint": "eslint \"client/src/**/*.{ts,tsx}\" \"server/src/**/*.ts\"",
-    "lint:fix": "eslint --fix \"client/src/**/*.{ts,tsx}\" \"server/src/**/*.ts\"",
+    "lint": "eslint \"client/src/**/*.ts\" \"client/src/**/*.tsx\" \"server/src/**/*.ts\"",
+    "lint:fix": "eslint --fix \"client/src/**/*.ts\" \"client/src/**/*.tsx\" \"server/src/**/*.ts\"",
     "format": "prettier --write \"client/src/**/*.{ts,tsx,css}\" \"server/src/**/*.ts\"",
     "format:check": "prettier --check \"client/src/**/*.{ts,tsx,css}\" \"server/src/**/*.ts\""
   },
