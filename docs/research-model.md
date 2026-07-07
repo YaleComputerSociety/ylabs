@@ -19,7 +19,7 @@ runtime research data is canonical `ResearchEntity` data. Related files include:
 - [`server/src/services/accessSummaryService.ts`](../server/src/services/accessSummaryService.ts)
 - [`server/src/services/pathwaySearchService.ts`](../server/src/services/pathwaySearchService.ts)
 - [`docs/scraper-audit-guide.md`](./scraper-audit-guide.md)
-- [`client/src/pages/labs.tsx`](../client/src/pages/labs.tsx)
+- [`client/src/pages/research.tsx`](../client/src/pages/research.tsx)
 - [`client/src/pages/labDetail.tsx`](../client/src/pages/labDetail.tsx)
 
 `ResearchEntity` is now the canonical runtime model and uses the `research_entities` collection. `server/src/models/researchGroup.ts` retains a reusable legacy-shaped schema for the canonical model, but no runtime `ResearchGroup` model should register `research_groups`.
@@ -279,7 +279,8 @@ Scrapers should not directly assert product conclusions as final truth. They sho
 
 Operational retention note: observations remain append-only within a scraper run, but old superseded observations may be pruned by the compact-retention command after reports are captured. Active observations, recent observations, and observations from the latest retained runs per source should remain available for audit and materialization.
 
-Initial implementation note: `accessMaterializer.ts` derives first-class access rows from legacy `Observation`s while preserving the old scalar `ResearchGroup` fields for `/labs` compatibility. It intentionally ignores YSM/YSE index-only `acceptingUndergrads=true` observations as undergraduate-access evidence unless a source provides explicit undergrad participation evidence.
+Initial implementation note: `accessMaterializer.ts` derives first-class access rows from legacy `Observation`s while preserving transition-era scalar fields for canonical research payloads.
+It intentionally ignores YSM/YSE index-only `acceptingUndergrads=true` observations as undergraduate-access evidence unless a source provides explicit undergrad participation evidence.
 
 Signal examples:
 

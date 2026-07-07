@@ -44,11 +44,12 @@ The current app uses a quiet, operational UI: white backgrounds, gray text, Yale
 
 Current implementation anchors:
 
-- [`client/src/App.tsx`](../client/src/App.tsx): routes `/` as a redirect to `/research`, plus `/research`, `/research/:slug`, `/opportunities/:id`, `/fellowships`, and temporary legacy `/listings`.
-- [`client/src/components/Navbar.tsx`](../client/src/components/Navbar.tsx): primary navigation, including Research, Find Fellowships, and Dashboard.
-- [`client/src/pages/labs.tsx`](../client/src/pages/labs.tsx): `/research` browse page for labs, centers, programs, faculty research, and related groups.
+- [`client/src/App.tsx`](../client/src/App.tsx): routes `/` as a redirect to `/research`, plus `/research`, `/research/:slug`, `/opportunities/:id`, `/programs`, retired `/fellowships`, and retired `/listings`.
+- [`client/src/components/Navbar.tsx`](../client/src/components/Navbar.tsx): primary navigation, including Yale Research, Programs & Fellowships, and Dashboard.
+- [`client/src/pages/research.tsx`](../client/src/pages/research.tsx): `/research` browse page for labs, centers, programs, faculty research, and related groups.
+- [`client/src/pages/fellowships.tsx`](../client/src/pages/fellowships.tsx): `/programs` browse page for structured applications, recurring programs, open cycles, closing-soon deadlines, and next-cycle planning.
 - [`client/src/pages/labDetail.tsx`](../client/src/pages/labDetail.tsx): `/research/:slug` detail page.
-- [`client/src/pages/home.tsx`](../client/src/pages/home.tsx): temporary `/listings` legacy board for posted roles, not the primary app home.
+- [`client/src/pages/home.tsx`](../client/src/pages/home.tsx): legacy posted-role page retained in source while runtime navigation redirects Listings traffic to `/research`.
 - [`client/src/components/shared/BrowseCard.tsx`](../client/src/components/shared/BrowseCard.tsx): shared card treatment for listings, fellowships, and research groups.
 - [`client/src/components/labs/LabHeader.tsx`](../client/src/components/labs/LabHeader.tsx): research detail header and access verdict.
 - [`client/src/components/labs/LabInquireCard.tsx`](../client/src/components/labs/LabInquireCard.tsx): right-rail action/evidence card.
@@ -75,9 +76,10 @@ Research page language rule: `/research` should lead with research homes, eviden
 
 ### `/listings`
 
-Purpose: temporary compatibility surface for professor-created posted roles and old direct listing links.
+Purpose: retired compatibility route for old direct listing links.
 
-The page should answer: "Which specific posted roles exist right now?" It should not be the default student home or primary navigation item. Keep it available at `/listings` while professor workflows and saved listing behavior still depend on legacy APIs, but frame it as Posted Roles and point students back to Yale Research.
+The route should redirect students to `/research`.
+Specific posted opportunities should use `/opportunities/:id` rather than reviving a standalone Listings board.
 
 ### `/research/:slug`
 
@@ -106,6 +108,21 @@ Primary UX ingredients:
 
 Current gap: the detail page now presents pathways, evidence, best next step, and deduped sources before active opportunities. Research detail pages should keep the source-backed research summary above generated Student Decision / Best Next Step guidance, so faculty research pages do not read like posted openings. The next improvement should reduce duplication between the right-rail route CTA and the main Best Next Step CTA without hiding the action on mobile.
 
+### `/programs`
+
+Purpose: planning across structured programs, fellowships, internships, RA routes, mentor-matching experiences, funding-after-mentor records, likely next cycles, and archive/review records.
+
+The page should answer: "Which program or fellowship cycles can I act on now, which are closing soon, and which recurring opportunities should I prepare for next?"
+
+Primary UX ingredients:
+
+- Search by topic, program, deadline, or funding source.
+- Filter by journey, program kind, entry mode, legacy type, year, term, purpose, region, citizenship, and trust tier for admins.
+- Quick filters for Open Only, Closing Soon, Next Cycle, Structured, and Mentor First.
+- Result counts that reflect the active quick filter rather than the unfiltered server total.
+- Open Only and Closing Soon empty states that explain there are no current windows in the filtered set and point students toward Next Cycle when recurring opportunities exist.
+- Infinite scroll that continues while `/api/programs` results are not exhausted, because quick filters are applied locally after each server page loads.
+
 ## UX Principles
 
 - **Exploration before application**: a student may be curious before they know the right program, faculty member, method, or funding route.
@@ -126,8 +143,8 @@ Current gap: the detail page now presents pathways, evidence, best next step, an
 
 ## Open UX Questions
 
-- Should the home route `/` remain a listings board, or become a role-aware dashboard that points students toward Research, Fellowships, and saved plans?
-- Should `/fellowships` stay separate long term, or become a funding/formalization view with a dedicated fellowship detail experience?
+- Should the home route `/` keep redirecting to `/research`, or become a role-aware dashboard that points students toward Research, Programs & Fellowships, and saved plans?
+- Should `/programs` split funding-after-mentor records from structured application routes, or keep them together with stronger journey labels?
 - What is the right saved-workflow model: favorites, thesis planning list, outreach plan, funding plan, or multiple lists?
 - How much source evidence belongs on cards versus detail pages?
 - Should "Best Next Step" be shown as a single computed CTA or as a short ranked action list?

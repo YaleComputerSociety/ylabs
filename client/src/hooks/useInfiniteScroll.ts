@@ -1,7 +1,8 @@
 /**
  * Infinite scroll pagination driven by a single effect that reacts to the
  * sentinel via IntersectionObserver and re-checks eligibility when loading
- * state or filter bookkeeping changes.
+ * finishes. Local filters must not block pagination while the server can
+ * still return more pages.
  */
 import { useEffect, useRef } from 'react';
 

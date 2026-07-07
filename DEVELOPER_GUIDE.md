@@ -377,8 +377,8 @@ All mount under `/api`.
 
 | Prefix | Description | Auth |
 |--------|-------------|------|
-| `/research` | Yale Labs search/detail, including ways-in enrichment | Varies |
-| `/programs` | Programs & Fellowships browse/search and saved-program support | Varies |
+| `/research` | Yale Research search/detail, including ways-in enrichment | Varies |
+| `/programs` | Programs & Fellowships browse/search with local quick filters and saved-program support | Varies |
 | `/opportunities` | Real posted opportunity detail workflows | Varies |
 | `/listings` | Retired legacy API, returns `410 Gone` | Varies |
 | `/fellowships` | Compatibility alias around program/fellowship storage during migration | Varies |
@@ -465,5 +465,5 @@ Client `tsc --noEmit` is still not part of CI; the client has known pre-existing
 | Meilisearch connection refused | Start Docker container or check `MEILISEARCH_HOST` in `.env` |
 | CORS errors | Add origin to `allowList` in `app.ts` or use dev mode |
 | `/api/listings` returns `410` | Expected; Listings is retired. Use Research, Programs, or PostedOpportunity workflows. |
-| Retired practical-routes URL returns not found | Expected; public Pathways search is retired. Ways-in evidence appears inside Yale Labs, research detail, and Dashboard planning. |
+| Retired practical-routes URL returns not found | Expected; public Pathways search is retired. Ways-in evidence appears inside Yale Research, research detail, and Dashboard planning. |
 | A client needs pathway data | Use `/api/research/search`, research detail, or saved research-plan APIs. Standalone pathway search is not a public/client contract. |

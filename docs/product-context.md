@@ -63,14 +63,20 @@ Target surfaces:
 - `/`: authenticated default redirect to `/research`.
 - `/research`: explore research entities, even when no opening exists.
 - `/research/:slug`: show what the entity does, who is involved, evidence of undergraduate access, pathways, and contact routes.
+- `/programs`: plan structured programs and fellowships across open, closing-soon, and likely next-cycle application windows.
 - `/opportunities/:id`: show real active/time-bound postings only. These must be backed by `PostedOpportunity`.
-- `/listings`: temporary legacy board for posted roles, preserved for old direct links and professor-created role workflows while the product migrates toward posted opportunities.
+- `/listings`: retired legacy board for posted roles, redirected to `/research` while the product migrates toward posted opportunities.
 
 The hard-pivot migration removes `/labs` as a runtime compatibility surface; `/research` is the canonical Explore Research route.
 
 Implementation note: the separate practical-routes page has been retired because it degraded the unified research-home experience. Ways-in evidence should now appear inside `/research` results and `/research/:slug` detail pages. `/opportunities/:id` has a first implementation for specific posted instances and should not render generic exploratory pathways.
 
-Implementation note: legacy listings now bridge into `PostedOpportunity` records. Public contact CTAs should prefer guarded route URLs and official channels over raw emails. Student-facing navigation should not present Listings as the primary product surface; use Research, Evidence, Best Next Step, and Posted Roles/Posted Opportunities language instead.
+Implementation note: legacy listings now bridge into `PostedOpportunity` records.
+Public contact CTAs should prefer guarded route URLs and official channels over raw emails.
+Student-facing navigation should not present Listings as the primary product surface; use Research, Evidence, Best Next Step, and Posted Roles/Posted Opportunities language instead.
+
+Implementation note: `/programs` quick filters are applied locally to loaded `/api/programs` pages.
+The result counter should reflect the active quick filter, but infinite scroll should keep loading while server results are not exhausted so Open Only and Closing Soon do not stop early when the currently loaded page has zero local matches.
 
 ## Entity Page Questions
 

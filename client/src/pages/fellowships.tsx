@@ -1,5 +1,6 @@
 /**
- * Fellowships browse page with search, filters, and grid/list view.
+ * Programs & Fellowships browse page with search, local quick filters,
+ * application-cycle empty states, and grid/list view.
  */
 import { useReducer, useEffect, useContext, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
