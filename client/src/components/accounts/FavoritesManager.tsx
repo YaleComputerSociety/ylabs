@@ -81,6 +81,13 @@ export const savedProgramDeadlineSummary = (
   const next = upcoming[0];
   if (!next) return {};
 
+  if (next.fellowship.isAcceptingApplications) {
+    return {
+      nextDeadlineDate: next.fellowship.deadline || undefined,
+      nextDeadlineLabel: `${next.fellowship.title}: Now open; due ${dateFormatter.format(next.date)}`,
+    };
+  }
+
   return {
     nextDeadlineDate: next.fellowship.deadline || undefined,
     nextDeadlineLabel: `${next.fellowship.title}: Due ${dateFormatter.format(next.date)}`,

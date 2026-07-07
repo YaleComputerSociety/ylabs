@@ -55,6 +55,28 @@ export interface FellowshipFundingMatch {
 
 type FundingMatchesByPathway = Record<string, FellowshipFundingMatch[]>;
 
+interface SavedPlanExportItem {
+  title?: string;
+  researchEntity?: {
+    name?: string;
+  };
+  intent?: string;
+  stage?: string;
+  checklist?: Record<string, boolean>;
+  sourceLinks?: string[];
+  bestNextStepCategory?: string;
+  privateNote?: string;
+}
+
+interface SavedPlanExportPayload {
+  exportedAt?: string;
+  itemCount?: number;
+  privacy?: {
+    includesPrivateNotes?: boolean;
+  };
+  items?: SavedPlanExportItem[];
+}
+
 export interface DeadlineReminder {
   kind: 'posted-opportunity' | 'fellowship';
   label: string;
@@ -266,7 +288,7 @@ export const deadlineReminderForPathway = (
         }
       : null,
     ...matches.map((match) =>
-      match.deadline
+      match.deadline && match.strength !== 'weak_candidate'
         ? {
             kind: 'fellowship' as const,
             label: 'Fellowship deadline',
@@ -289,7 +311,9 @@ export const deadlineReminderForPathway = (
   const future = candidates
     .filter((candidate) => candidate.days >= 0)
     .sort((a, b) => a.days - b.days);
-  const selected = future[0] || candidates.sort((a, b) => b.date.getTime() - a.date.getTime())[0];
+  if (future.length === 0) return null;
+
+  const selected = future[0];
   const urgency = reminderUrgency(selected.days);
   const dueWord = urgency === 'overdue' ? 'Passed' : 'Due';
   const formattedDate = formatDeadline(selected.deadline);
@@ -325,6 +349,51 @@ const normalizePlanChecklist = (value: unknown): Record<string, boolean> => {
     }
   }
   return checklist;
+};
+
+const labelizeExportValue = (value?: string): string =>
+  labelize(value || '').replace(/\b\w/g, (letter) => letter.toUpperCase());
+
+const readableSavedPlanExport = (payload: SavedPlanExportPayload): string => {
+  const lines = [
+    '# Saved Research Plans',
+    '',
+    `Exported: ${payload.exportedAt ? formatDeadline(payload.exportedAt) : formatDeadline(new Date().toISOString())}`,
+    `Private notes: ${payload.privacy?.includesPrivateNotes ? 'included' : 'not included'}`,
+    `Plans: ${payload.itemCount ?? payload.items?.length ?? 0}`,
+    '',
+  ];
+
+  for (const [index, item] of (payload.items || []).entries()) {
+    const checkedItems = Object.entries(item.checklist || {})
+      .filter(([, checked]) => checked)
+      .map(([key]) => labelizeExportValue(key));
+
+    lines.push(
+      `## ${index + 1}. ${item.title || 'Saved research plan'}`,
+      '',
+      `Research home: ${item.researchEntity?.name || 'Unknown'}`,
+      `Intent: ${labelizeExportValue(item.intent)}`,
+      `Stage: ${labelizeExportValue(item.stage)}`,
+      `Next step: ${labelizeExportValue(item.bestNextStepCategory)}`,
+    );
+
+    if (item.privateNote) {
+      lines.push('', 'Private note:', item.privateNote);
+    }
+
+    if (checkedItems.length > 0) {
+      lines.push('', 'Completed checklist:', ...checkedItems.map((label) => `- ${label}`));
+    }
+
+    if ((item.sourceLinks || []).length > 0) {
+      lines.push('', 'Sources:', ...(item.sourceLinks || []).map((source) => `- ${source}`));
+    }
+
+    lines.push('');
+  }
+
+  return lines.join('\n');
 };
 
 const normalizeStoredPlan = (value: unknown): PathwayPlan | null => {
@@ -512,6 +581,7 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
   const [error, setError] = useState('');
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState('');
+  const [exportNotice, setExportNotice] = useState('');
   const [includePrivateNotesInExport, setIncludePrivateNotesInExport] = useState(false);
   const [showExportControls, setShowExportControls] = useState(false);
   const [expandedPlanIds, setExpandedPlanIds] = useState<Record<string, boolean>>({});
@@ -706,6 +776,7 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
   const exportSavedPathways = async () => {
     setExporting(true);
     setExportError('');
+    setExportNotice('');
     try {
       const response = includePrivateNotesInExport
         ? await axios.post(
@@ -716,19 +787,21 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
         : await axios.get('/users/savedResearchPlanDetails/export', {
             withCredentials: true,
           });
-      const blob = new Blob([JSON.stringify(response.data, null, 2)], {
-        type: 'application/json',
+      const payload = response.data as SavedPlanExportPayload;
+      const blob = new Blob([readableSavedPlanExport(payload)], {
+        type: 'text/markdown;charset=utf-8',
       });
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
       link.download = includePrivateNotesInExport
-        ? 'saved-research-plan-advising-share.json'
-        : 'saved-research-plans.json';
+        ? 'saved-research-plan-advising-share.md'
+        : 'saved-research-plans.md';
       document.body.appendChild(link);
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
+      setExportNotice('Advising export downloaded.');
     } catch {
       console.error('Error exporting saved research plans.');
       setExportError('Saved research plans could not be exported.');
@@ -785,6 +858,12 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
       {exportError && (
         <div className="mb-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
           {exportError}
+        </div>
+      )}
+
+      {exportNotice && (
+        <div className="mb-4 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+          {exportNotice}
         </div>
       )}
 
