@@ -532,6 +532,19 @@ const Analytics = () => {
 
   const selectedUserSummary: AnalyticsUserActivityRow | null =
     selectedUser?.user || userActivity.users.find((user) => user.netid === selectedNetid) || null;
+  const outreach = data.engagement.outreach || {
+    summary: {
+      totalReveals: 0,
+      totalAttempts: 0,
+      totalOutcomes: 0,
+      revealsLast7Days: 0,
+      attemptsLast7Days: 0,
+      outcomesLast7Days: 0,
+    },
+    byOutcome: [],
+    topListings: [],
+    recentEvents: [],
+  };
 
   const searchTotal = searchQuality?.totalSearches || 0;
   const searchZeroResults = searchQuality?.zeroResultSearches || 0;
@@ -1191,18 +1204,18 @@ const Analytics = () => {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
           <StatCard
             title="Email Contact Clicks"
-            value={data.engagement.outreach.summary.totalAttempts}
-            subtitle={`${data.engagement.outreach.summary.attemptsLast7Days} in last 7 days`}
+            value={outreach.summary.totalAttempts}
+            subtitle={`${outreach.summary.attemptsLast7Days} in last 7 days`}
           />
           <StatCard
             title="Reported Outcomes"
-            value={data.engagement.outreach.summary.totalOutcomes}
-            subtitle={`${data.engagement.outreach.summary.outcomesLast7Days} in last 7 days`}
+            value={outreach.summary.totalOutcomes}
+            subtitle={`${outreach.summary.outcomesLast7Days} in last 7 days`}
           />
           <StatCard
             title="Contact Details Revealed"
-            value={data.engagement.outreach.summary.totalReveals}
-            subtitle={`${data.engagement.outreach.summary.revealsLast7Days} in last 7 days`}
+            value={outreach.summary.totalReveals}
+            subtitle={`${outreach.summary.revealsLast7Days} in last 7 days`}
           />
         </div>
 
@@ -1210,8 +1223,8 @@ const Analytics = () => {
           <div className="bg-[var(--yr-panel)] rounded-lg shadow-md p-6 border border-[var(--yr-line)]">
             <h3 className="text-lg font-semibold text-gray-700 mb-4">Outcomes</h3>
             <div className="space-y-3">
-              {data.engagement.outreach.byOutcome.length > 0 ? (
-                data.engagement.outreach.byOutcome.map((item) => (
+              {outreach.byOutcome.length > 0 ? (
+                outreach.byOutcome.map((item) => (
                   <div key={item.outcome} className="flex justify-between">
                     <span className="text-gray-600">{formatOutcome(item.outcome)}</span>
                     <span className="font-bold text-lg">{item.count}</span>
@@ -1224,20 +1237,20 @@ const Analytics = () => {
           </div>
 
           <div className="bg-[var(--yr-panel)] rounded-lg shadow-md p-6 border border-[var(--yr-line)] lg:col-span-2">
-            <h3 className="text-lg font-semibold text-gray-700 mb-4">Top Outreach Listings</h3>
+            <h3 className="text-lg font-semibold text-gray-700 mb-4">Top Outreach Contacts</h3>
             <div className="overflow-x-auto">
               <table className="min-w-full">
                 <thead>
                   <tr className="border-b bg-[var(--yr-panel-muted)]">
-                    <th className="px-4 py-2 text-left font-semibold text-gray-700">Listing</th>
+                    <th className="px-4 py-2 text-left font-semibold text-gray-700">Contact</th>
                     <th className="px-4 py-2 text-right font-semibold text-gray-700">Attempts</th>
                     <th className="px-4 py-2 text-right font-semibold text-gray-700">Outcomes</th>
                     <th className="px-4 py-2 text-right font-semibold text-gray-700">Users</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {data.engagement.outreach.topListings.length > 0 ? (
-                    data.engagement.outreach.topListings.map((listing) => (
+                  {outreach.topListings.length > 0 ? (
+                    outreach.topListings.map((listing) => (
                       <tr key={listing.listingId} className="border-b hover:bg-[var(--yr-panel-muted)]">
                         <td className="py-3 px-4 text-gray-800">
                           <div className="font-medium">{listing.title || 'Unknown listing'}</div>
@@ -1264,7 +1277,7 @@ const Analytics = () => {
           </div>
         </div>
 
-        {data.engagement.outreach.recentEvents.length > 0 && (
+        {outreach.recentEvents.length > 0 && (
           <div className="mt-6 bg-[var(--yr-panel)] rounded-lg shadow-md p-6 border border-[var(--yr-line)]">
             <h3 className="text-lg font-semibold text-gray-700 mb-4">Recent Outreach Events</h3>
             <div className="overflow-x-auto">
@@ -1278,7 +1291,7 @@ const Analytics = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.engagement.outreach.recentEvents.map((event, index) => (
+                  {outreach.recentEvents.map((event, index) => (
                     <tr
                       key={`${event.listingId}-${event.timestamp}-${index}`}
                       className="border-b hover:bg-[var(--yr-panel-muted)]"
