@@ -6,7 +6,6 @@ import {
   archiveListing,
   createListing,
   deleteListing,
-  readAllListings,
   readListing,
   readPublicListing,
   unarchiveListing,
@@ -23,6 +22,8 @@ import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { serializedDocumentId } from '../utils/idSerialization';
+import { buildSafeSearchRegex } from '../utils/regex';
+import { getListingModel } from '../db/connections';
 
 /**
  * Build robust filter match stage for MongoDB aggregation
@@ -220,30 +221,6 @@ const normalizedPositiveInteger = (value: unknown, fallback: number, max: number
   return Math.min(max, Math.max(1, Math.floor(parsed)));
 };
 
-const listingIncludes = (listing: any, query: string): boolean => {
-  if (!query) return true;
-  const haystack = [
-    listing.title,
-    listing.description,
-    listing.ownerFirstName,
-    listing.ownerLastName,
-    ...(listing.departments || []),
-    ...(listing.researchAreas || []),
-    ...(listing.keywords || []),
-  ]
-    .filter(Boolean)
-    .join(' ')
-    .toLowerCase();
-  return haystack.includes(query.toLowerCase());
-};
-
-const matchesListFilter = (values: string[] = [], selected: string[], mode: string): boolean => {
-  if (selected.length === 0) return true;
-  const normalized = new Set(values.map((value) => value.toLowerCase()));
-  const checks = selected.map((value) => normalized.has(value.toLowerCase()));
-  return mode === 'intersection' ? checks.every(Boolean) : checks.some(Boolean);
-};
-
 const publicHttpUrl = (value: unknown): string | undefined => {
   if (typeof value !== 'string') return undefined;
   try {
@@ -438,65 +415,35 @@ export const searchListings = async (request: Request, response: Response) => {
       };
     }
 
-    const index = await getMeiliIndex('listings');
-    const { hits, estimatedTotalHits } = await index.search(trimmedQuery, searchParams);
-
-    // Map `id` back to `_id` for frontend backward compatibility
-    const results = hits.map(publicListingForAuthenticatedReader);
+    const mongoParams = {
+      query: trimmedQuery,
+      sortBy: listingSearchString(sortBy),
+      sortOrder: listingSearchString(sortOrder),
+      departments: listingSearchString(departments),
+      academicDisciplines: listingSearchString(academicDisciplines),
+      researchAreas: listingSearchString(researchAreas),
+      departmentsMode: departmentsMode as string,
+      academicDisciplinesMode: academicDisciplinesMode as string,
+      researchAreasMode: researchAreasMode as string,
+      limit,
+      offset,
+    };
+    const searchResult = await searchListingsWithDegradation({
+      query: trimmedQuery,
+      searchParams,
+      mongoParams,
+    });
 
     return response.json({
-      results,
-      totalCount: estimatedTotalHits,
+      results: searchResult.results,
+      totalCount: searchResult.totalCount,
       page: normalizedPage,
       pageSize: limit,
+      degraded: searchResult.degraded,
     });
   } catch (error: any) {
-    if (error?.cause?.code === 'index_not_found') {
-      const {
-        query = '',
-        departments,
-        researchAreas,
-        departmentsMode = 'union',
-        researchAreasMode = 'union',
-        page = 1,
-        pageSize = 10,
-      } = request.query;
-      const normalizedPage = normalizedPositiveInteger(page, 1, MAX_LISTING_SEARCH_PAGE);
-      const limit = normalizedPositiveInteger(pageSize, 10, MAX_LISTING_SEARCH_PAGE_SIZE);
-      const offset = (normalizedPage - 1) * limit;
-      const departmentList = splitBoundedListingSearchParam(departments, '||');
-      const researchAreaList = splitBoundedListingSearchParam(researchAreas);
-      const trimmedQuery = boundedListingSearchQuery(query);
-
-      const allListings = await readAllListings();
-      const filtered = allListings
-        .filter((listing: any) => listing.archived !== true && listing.confirmed === true)
-        .filter((listing: any) => listingIncludes(listing, trimmedQuery))
-        .filter((listing: any) =>
-          matchesListFilter(listing.departments || [], departmentList, departmentsMode as string),
-        )
-        .filter((listing: any) =>
-          matchesListFilter(listing.researchAreas || [], researchAreaList, researchAreasMode as string),
-        )
-        .sort(
-          (a: any, b: any) =>
-            new Date(a.expiresAt || 0).getTime() - new Date(b.expiresAt || 0).getTime() ||
-            String(a.title || '').localeCompare(String(b.title || '')),
-        );
-      const results = filtered
-        .slice(offset, offset + limit)
-        .map(publicListingForAuthenticatedReader);
-
-      return response.json({
-        results,
-        totalCount: filtered.length,
-        page: normalizedPage,
-        pageSize: limit,
-      });
-    }
-
-    console.error('Meilisearch search failed:', sanitizeLogValue(error));
-    return response.status(500).json({ error: 'Search failed' });
+    console.error('Listing search failed:', sanitizeLogValue(error));
+    return response.status(500).json({ error: 'Search failed', degraded: true });
   }
 };
 
