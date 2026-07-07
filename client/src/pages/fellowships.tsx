@@ -14,9 +14,13 @@ import axios from '../utils/axios';
 import { browsePageReducer, createInitialBrowsePageState } from '../reducers/browsePageReducer';
 import { getFellowshipApplicationStatus } from '../utils/fellowshipStatus';
 
-function categorizeFellowship(f: Fellowship, now: Date): 'closingSoon' | 'open' | 'closed' {
+function categorizeFellowship(
+  f: Fellowship,
+  now: Date,
+): 'closingSoon' | 'open' | 'openingSoon' | 'closed' {
   const status = getFellowshipApplicationStatus(f, now);
   if (status.kind === 'closingSoon') return 'closingSoon';
+  if (status.kind === 'notOpenYet') return 'openingSoon';
   if (status.isApplicationWindowOpen) return 'open';
   return 'closed';
 }
@@ -76,11 +80,12 @@ const Fellowships = () => {
     reloadFavorites();
   }, []);
 
-  const { closingSoon, open, closed } = useMemo(() => {
+  const { closingSoon, open, openingSoon, closed } = useMemo(() => {
     const now = new Date();
     const groups = {
       closingSoon: [] as Fellowship[],
       open: [] as Fellowship[],
+      openingSoon: [] as Fellowship[],
       closed: [] as Fellowship[],
     };
     for (const f of fellowships) {
@@ -110,11 +115,15 @@ const Fellowships = () => {
     [closingSoon, quickFilter],
   );
   const openItems = useMemo(() => toBrowsable(recentFilter(open)), [open, quickFilter]);
+  const openingSoonItems = useMemo(
+    () => toBrowsable(recentFilter(openingSoon)),
+    [openingSoon, quickFilter],
+  );
   const closedItems = useMemo(() => toBrowsable(recentFilter(closed)), [closed, quickFilter]);
 
-  const showSection = (section: 'closingSoon' | 'open' | 'closed') => {
+  const showSection = (section: 'closingSoon' | 'open' | 'openingSoon' | 'closed') => {
     if (quickFilter === null || quickFilter === 'recent') return true;
-    if (quickFilter === 'open') return section !== 'closed';
+    if (quickFilter === 'open') return section === 'closingSoon' || section === 'open';
     if (quickFilter === 'closingSoon') return section === 'closingSoon';
     return false;
   };
@@ -215,6 +224,25 @@ const Fellowships = () => {
                 onAdminEdit={isAdmin ? handleAdminEdit : undefined}
                 isLoading={false}
                 emptyMessage="No open fellowships"
+              />
+            </>
+          )}
+
+          {showSection('openingSoon') && openingSoonItems.length > 0 && (
+            <>
+              <SectionHeader
+                title="Opening Soon"
+                count={openingSoonItems.length}
+                color="bg-blue-500"
+              />
+              <BrowseGrid
+                items={openingSoonItems}
+                favIds={favFellowshipIds}
+                onToggleFavorite={handleToggleFavorite}
+                onOpenModal={handleOpenModal}
+                onAdminEdit={isAdmin ? handleAdminEdit : undefined}
+                isLoading={false}
+                emptyMessage="No opening-soon fellowships"
               />
             </>
           )}
