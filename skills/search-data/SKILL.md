@@ -12,6 +12,8 @@ All environments use `MONGODBURL`; the connection string determines whether the 
 Search runs on Meilisearch.
 The old client-side `embeddingService.ts` path was removed.
 Do not reintroduce client-side embedding calls for Research search.
+Research search normalizes student queries in `researchGroupService.searchResearchGroupsViaMeili`.
+It strips low-value words such as `professor`, `lab`, and `research` when meaningful terms remain, expands curated aliases for `ai`, `ml`, `nlp`, `cv`, `neuro`, and `psych`, and treats short alias queries as keyword-only searches over topic-oriented fields.
 
 ## Meilisearch indexes
 
@@ -35,6 +37,8 @@ Relevant config:
 
 Documents sync via `meiliSyncService.ts` after upserts.
 Rebuild scripts do full repopulation.
+The `researchentities` index prioritizes name, professor, research-area, keyword, and `studentSearchTerms` attributes before summary or description text.
+Its settings also include curated synonyms and typo guards for short aliases such as `ai`, `ml`, `nlp`, and `cv`, so rebuild or sync the index after changing alias or relevance settings.
 
 ## Rebuild commands
 

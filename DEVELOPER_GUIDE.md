@@ -24,7 +24,7 @@ The server follows: **Routes → Middleware → Controllers → Services → Mod
 |-------|-----------|
 | Client | React 19, TypeScript, Vite 6, React Router v6, MUI v7, styled-components, TailwindCSS v3 |
 | Server | Express 4, TypeScript, Passport.js (CAS strategy), Mongoose 8 |
-| Search | Meilisearch (hybrid search: keyword + semantic via OpenAI `text-embedding-3-small`) |
+| Search | Meilisearch (keyword plus semantic search via OpenAI `text-embedding-3-small` where appropriate) |
 | Database | MongoDB Atlas (single cluster, separate databases per environment) |
 | Package Manager | Yarn 4 via Corepack |
 
@@ -148,6 +148,7 @@ yarn meili:seed
 ```
 
 This rebuilds local Research and Pathways indexes from MongoDB. Use `--strategy=swap` for beta/production rebuilds that serve live traffic. Semantic Research search is release-gated separately: Meilisearch must report embedded `researchentities` documents before `RESEARCH_SEARCH_SEMANTIC=true` should be used for Beta or production.
+Research relevance also depends on `researchentities` settings and documents: topic/name/tag fields are searched before description text, student-topic aliases are indexed in `studentSearchTerms`, and short aliases such as `ai`, `ml`, `nlp`, and `cv` disable typo expansion and search only topic-oriented fields.
 
 When a `/research` browse has no search query, results are ordered "best first" by a precomputed `browseRankScore` (completeness of the profile plus strength-weighted undergraduate access signals), falling back to recency. After importing or migrating data, populate the score with `yarn --cwd server research-homes:backfill-browse-rank --apply --confirm-browse-rank` (it runs in dry-run by default); ongoing scrape/materialize runs keep it fresh automatically.
 
@@ -310,6 +311,7 @@ yale-research/
 Search uses **Meilisearch** for Research, with internal pathway enrichment and Mongo fallback where rollout safety requires it.
 
 1. Research discovery uses the `researchentities` index and should only run true semantic search when Meilisearch reports embedded ResearchEntity documents.
+   Student queries are normalized before search: low-value words such as `professor`, `lab`, and `research` are stripped when other terms remain, curated aliases expand `ai`, `ml`, `nlp`, `cv`, `neuro`, and `psych`, and short alias queries stay keyword-only so substring noise does not outrank true topic matches.
 2. `EntryPathway` data remains an internal action model for ways-in summaries, research detail, saved planning, admin review, and data-quality workflows. The public client should consume it through `/api/research/search`, not by calling a standalone Pathways endpoint.
 3. Pathway Meilisearch rebuilds remain useful for parity testing and future internal enrichment work; rollback remains `PATHWAY_SEARCH_BACKEND=mongo` where that service is used.
 4. Results carry evidence and next-step context rather than legacy listing claims.
