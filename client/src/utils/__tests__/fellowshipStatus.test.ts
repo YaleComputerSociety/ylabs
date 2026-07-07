@@ -89,11 +89,43 @@ describe('fellowshipStatus', () => {
       eligibility: '',
       yearOfStudy: [],
       termOfAward: [],
+      purpose: [],
+      globalRegions: [],
       citizenshipStatus: [],
     });
     const status = getFellowshipApplicationStatus(fellowship, NOW);
 
     expect(status.needsEligibilityReview).toBe(true);
     expect(getEligibilitySummary(fellowship)).toBe('Eligibility not specified');
+  });
+
+  it('counts purpose metadata as structured eligibility', () => {
+    const fellowship = makeFellowship({
+      eligibility: '',
+      yearOfStudy: [],
+      termOfAward: [],
+      purpose: ['Research'],
+      globalRegions: [],
+      citizenshipStatus: [],
+    });
+    const status = getFellowshipApplicationStatus(fellowship, NOW);
+
+    expect(status.needsEligibilityReview).toBe(false);
+    expect(getEligibilitySummary(fellowship)).toBe('Research');
+  });
+
+  it('counts global region metadata as structured eligibility', () => {
+    const fellowship = makeFellowship({
+      eligibility: '',
+      yearOfStudy: [],
+      termOfAward: [],
+      purpose: [],
+      globalRegions: ['Africa'],
+      citizenshipStatus: [],
+    });
+    const status = getFellowshipApplicationStatus(fellowship, NOW);
+
+    expect(status.needsEligibilityReview).toBe(false);
+    expect(getEligibilitySummary(fellowship)).toBe('Africa');
   });
 });

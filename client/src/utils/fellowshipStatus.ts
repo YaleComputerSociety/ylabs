@@ -70,6 +70,8 @@ export const getFellowshipApplicationStatus = (
     | 'eligibility'
     | 'yearOfStudy'
     | 'termOfAward'
+    | 'purpose'
+    | 'globalRegions'
     | 'citizenshipStatus'
   >,
   now = new Date(),
@@ -87,6 +89,8 @@ export const getFellowshipApplicationStatus = (
   const hasStructuredEligibility =
     (fellowship.yearOfStudy?.length || 0) > 0 ||
     (fellowship.termOfAward?.length || 0) > 0 ||
+    (fellowship.purpose?.length || 0) > 0 ||
+    (fellowship.globalRegions?.length || 0) > 0 ||
     (fellowship.citizenshipStatus?.length || 0) > 0;
   const needsEligibilityReview =
     !fellowship.eligibility?.trim() && !hasStructuredEligibility;
@@ -174,6 +178,8 @@ export const getEligibilitySummary = (fellowship: Fellowship): string => {
   const pieces = [
     ...(fellowship.yearOfStudy || []),
     ...(fellowship.termOfAward || []),
+    ...(fellowship.purpose || []),
+    ...(fellowship.globalRegions || []),
     ...(fellowship.citizenshipStatus || []),
   ];
 
