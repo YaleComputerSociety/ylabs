@@ -79,13 +79,7 @@ test('assertExplicitCsvForExecute keeps dry-run default CSV discovery but blocks
 
   assert.doesNotThrow(() =>
     assertExplicitCsvForExecute(
-      parseDataOpsArgs([
-        '--execute',
-        '--target',
-        'dev',
-        '--csv',
-        './fixtures/fellowships.csv',
-      ]),
+      parseDataOpsArgs(['--execute', '--target', 'dev', '--csv', './fixtures/fellowships.csv']),
       'Fellowship import',
     ),
   );
