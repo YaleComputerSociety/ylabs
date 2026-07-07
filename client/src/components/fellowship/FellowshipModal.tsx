@@ -297,9 +297,7 @@ const FellowshipModal = ({
                   </h3>
                   <div
                     className={`rounded-lg p-3 space-y-3 ${
-                      status.isCurrentlyRelevant
-                        ? 'bg-blue-50'
-                        : 'bg-red-50 border border-red-100'
+                      status.isCurrentlyRelevant ? 'bg-blue-50' : 'bg-red-50 border border-red-100'
                     }`}
                   >
                     <div>

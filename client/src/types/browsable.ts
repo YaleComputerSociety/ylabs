@@ -3,10 +3,7 @@
  */
 import { Listing, Fellowship } from './types';
 import { getDepartmentAbbreviation } from '../utils/departmentNames';
-import {
-  getFellowshipApplicationStatus,
-  URGENT_DEADLINE_DAYS,
-} from '../utils/fellowshipStatus';
+import { getFellowshipApplicationStatus, URGENT_DEADLINE_DAYS } from '../utils/fellowshipStatus';
 
 export type BrowsableItem =
   | { type: 'listing'; data: Listing }

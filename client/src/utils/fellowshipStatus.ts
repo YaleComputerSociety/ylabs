@@ -91,8 +91,7 @@ export const getFellowshipApplicationStatus = (
     (fellowship.purpose?.length || 0) > 0 ||
     (fellowship.globalRegions?.length || 0) > 0 ||
     (fellowship.citizenshipStatus?.length || 0) > 0;
-  const needsEligibilityReview =
-    !fellowship.eligibility?.trim() && !hasStructuredEligibility;
+  const needsEligibilityReview = !fellowship.eligibility?.trim() && !hasStructuredEligibility;
   const needsDateReview = fellowship.isAcceptingApplications && !deadline;
 
   const base = {
@@ -154,10 +153,7 @@ export const getFellowshipApplicationStatus = (
       ...base,
       kind: 'closingSoon',
       label: daysUntilDeadline <= 1 ? 'Due soon' : 'Closing soon',
-      detail:
-        daysUntilDeadline <= 1
-          ? 'Due today or tomorrow'
-          : `${daysUntilDeadline} days left`,
+      detail: daysUntilDeadline <= 1 ? 'Due today or tomorrow' : `${daysUntilDeadline} days left`,
       isCurrentlyRelevant: true,
       isApplicationWindowOpen,
     };

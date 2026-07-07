@@ -100,7 +100,9 @@ describe('FellowshipModal', () => {
     expect(
       screen.queryByText('Eligibility requirements have not been specified.'),
     ).not.toBeInTheDocument();
-    expect(screen.getByText('See the eligibility filters above for requirements.')).toBeInTheDocument();
+    expect(
+      screen.getByText('See the eligibility filters above for requirements.'),
+    ).toBeInTheDocument();
   });
 
   it('does not show missing eligibility copy when region metadata is present', () => {
@@ -115,6 +117,8 @@ describe('FellowshipModal', () => {
     expect(
       screen.queryByText('Eligibility requirements have not been specified.'),
     ).not.toBeInTheDocument();
-    expect(screen.getByText('See the eligibility filters above for requirements.')).toBeInTheDocument();
+    expect(
+      screen.getByText('See the eligibility filters above for requirements.'),
+    ).toBeInTheDocument();
   });
 });

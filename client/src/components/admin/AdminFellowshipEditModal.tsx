@@ -275,8 +275,8 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
                 />
                 {statusPreview.needsEligibilityReview && (
                   <p className="mt-1 text-xs text-amber-700">
-                    Add eligibility text or structured eligibility filters so users can tell
-                    whether this is relevant.
+                    Add eligibility text or structured eligibility filters so users can tell whether
+                    this is relevant.
                   </p>
                 )}
               </div>

@@ -1,7 +1,7 @@
 /**
  * Fellowships browse page with search, filters, and grid/list view.
  */
-import { useReducer, useEffect, useContext, useMemo } from 'react';
+import { useReducer, useEffect, useContext, useMemo, useCallback } from 'react';
 import FellowshipModal from '../components/fellowship/FellowshipModal';
 import AdminFellowshipEditModal from '../components/admin/AdminFellowshipEditModal';
 import FellowshipSearchContext from '../contexts/FellowshipSearchContext';
@@ -62,7 +62,7 @@ const Fellowships = () => {
 
   useEffect(() => {
     setQueryString('');
-  }, []);
+  }, [setQueryString]);
 
   const reloadFavorites = async () => {
     axios
@@ -103,23 +103,26 @@ const Fellowships = () => {
   const toBrowsable = (fs: Fellowship[]): BrowsableItem[] =>
     fs.map((f) => ({ type: 'fellowship' as const, data: f }));
 
-  const recentFilter = (fs: Fellowship[]) => {
-    if (quickFilter !== 'recent') return fs;
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    return fs.filter((f) => new Date(f.createdAt) >= thirtyDaysAgo);
-  };
+  const recentFilter = useCallback(
+    (fs: Fellowship[]) => {
+      if (quickFilter !== 'recent') return fs;
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      return fs.filter((f) => new Date(f.createdAt) >= thirtyDaysAgo);
+    },
+    [quickFilter],
+  );
 
   const closingSoonItems = useMemo(
     () => toBrowsable(recentFilter(closingSoon)),
-    [closingSoon, quickFilter],
+    [closingSoon, recentFilter],
   );
-  const openItems = useMemo(() => toBrowsable(recentFilter(open)), [open, quickFilter]);
+  const openItems = useMemo(() => toBrowsable(recentFilter(open)), [open, recentFilter]);
   const openingSoonItems = useMemo(
     () => toBrowsable(recentFilter(openingSoon)),
-    [openingSoon, quickFilter],
+    [openingSoon, recentFilter],
   );
-  const closedItems = useMemo(() => toBrowsable(recentFilter(closed)), [closed, quickFilter]);
+  const closedItems = useMemo(() => toBrowsable(recentFilter(closed)), [closed, recentFilter]);
 
   const showSection = (section: 'closingSoon' | 'open' | 'openingSoon' | 'closed') => {
     if (quickFilter === null || quickFilter === 'recent') return true;

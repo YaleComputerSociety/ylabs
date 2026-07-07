@@ -120,7 +120,7 @@ const AdminFellowshipsTable = () => {
       search ? 400 : 0,
     );
     return () => clearTimeout(debounce);
-  }, [fetchFellowships]);
+  }, [fetchFellowships, search]);
 
   const handleDelete = async (fellowship: AdminFellowship) => {
     const confirmed = await swal({
