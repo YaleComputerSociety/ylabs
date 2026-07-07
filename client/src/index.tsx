@@ -6,7 +6,6 @@ import { createRoot } from 'react-dom/client';
 
 import './index.css';
 import App from './App';
-import reportWebVitals from './reportWebVitals';
 import UserContextProvider from './providers/UserContextProvider';
 import ErrorBoundary from './components/ErrorBoundary';
 import { initializeErrorTracking } from './utils/errorTracking';
@@ -42,5 +41,3 @@ root.render(
     </ErrorBoundary>
   </React.StrictMode>,
 );
-
-reportWebVitals();
