@@ -6,6 +6,7 @@ import { Link } from 'react-router-dom';
 import { Listing } from '../../types/types';
 import UserContext from '../../contexts/UserContext';
 import ConfigContext from '../../contexts/ConfigContext';
+import axios from '../../utils/axios';
 import { getDepartmentAbbreviation } from '../../utils/departmentNames';
 import { ensureHttpPrefix, safeRouteSegment } from '../../utils/url';
 import { getInstitutionAffiliation, getInstitutionLabel } from '../../utils/institutionAffiliation';
@@ -17,6 +18,7 @@ interface ListingDetailModalProps {
   listing: Listing;
   isFavorite: boolean;
   onToggleFavorite: (e: React.MouseEvent) => void;
+  onRequireAuth?: () => void;
   onNavigateToResearchArea?: (area: string) => void;
   onNavigateToDepartment?: (dept: string) => void;
 }
@@ -27,12 +29,17 @@ const ListingDetailModal = ({
   listing,
   isFavorite,
   onToggleFavorite,
+  onRequireAuth,
   onNavigateToResearchArea,
   onNavigateToDepartment,
 }: ListingDetailModalProps) => {
   const isCreated = listing.id === 'create';
   const [restrictedStats, setRestrictedStats] = useState(true);
-  const { user } = useContext(UserContext);
+  const [outreachPrompt, setOutreachPrompt] = useState<{
+    status: 'idle' | 'saving' | 'saved' | 'error';
+    outcome?: string;
+  } | null>(null);
+  const { user, isAuthenticated } = useContext(UserContext);
   const { getColorForResearchArea, getDepartmentByAbbr } = useContext(ConfigContext);
 
   const researchAreas =
@@ -41,9 +48,52 @@ const ListingDetailModal = ({
   const institutionCode = getInstitutionAffiliation(listing.departments);
   const institutionLabel = getInstitutionLabel(institutionCode);
   const professorName = `${listing.ownerFirstName} ${listing.ownerLastName}`;
+  const contactEmails = [listing.ownerEmail, ...(listing.emails || [])].filter(Boolean);
+  const canEmailContact = isAuthenticated && contactEmails.length > 0;
 
   const handleBackdropClick = (e: React.MouseEvent) => {
     if (e.target === e.currentTarget) onClose();
+  };
+
+  const recordOutreach = async (action: 'email_click' | 'outcome', outcome?: string) => {
+    await axios.post(
+      `/listings/${listing.id}/outreach`,
+      {
+        action,
+        outcome,
+        source: 'listing_detail_modal',
+      },
+      { withCredentials: true },
+    );
+  };
+
+  const handleEmailClick = (e: React.MouseEvent, email?: string) => {
+    e.stopPropagation();
+    if (!email) {
+      e.preventDefault();
+      return;
+    }
+    if (!isAuthenticated) {
+      e.preventDefault();
+      onRequireAuth?.();
+      return;
+    }
+
+    setOutreachPrompt({ status: 'idle' });
+    recordOutreach('email_click').catch((error) => {
+      console.error('Error recording outreach contact attempt:', error);
+    });
+  };
+
+  const handleOutcome = async (outcome: string) => {
+    setOutreachPrompt({ status: 'saving', outcome });
+    try {
+      await recordOutreach('outcome', outcome);
+      setOutreachPrompt({ status: 'saved', outcome });
+    } catch (error) {
+      console.error('Error recording outreach outcome:', error);
+      setOutreachPrompt({ status: 'error', outcome });
+    }
   };
 
   useEffect(() => {
@@ -60,6 +110,10 @@ const ListingDetailModal = ({
       document.body.style.overflow = 'auto';
     };
   }, [isOpen]);
+
+  useEffect(() => {
+    setOutreachPrompt(null);
+  }, [listing.id, isOpen]);
 
   if (!isOpen || !listing) return null;
 
@@ -152,10 +206,16 @@ const ListingDetailModal = ({
                       </a>
                     )}
                     <a
-                      href={`mailto:${listing.ownerEmail}`}
-                      onClick={(e) => e.stopPropagation()}
+                      href={canEmailContact ? `mailto:${contactEmails[0]}` : undefined}
+                      onClick={(e) => handleEmailClick(e, contactEmails[0])}
                       className="p-2 rounded-lg hover:bg-gray-100 transition-colors text-gray-500 hover:text-blue-600"
-                      title="Send email"
+                      title={
+                        canEmailContact
+                          ? 'Send email'
+                          : isAuthenticated
+                            ? 'Contact details unavailable'
+                            : 'Sign in to inquire'
+                      }
                     >
                       <svg
                         xmlns="http://www.w3.org/2000/svg"
@@ -333,10 +393,36 @@ const ListingDetailModal = ({
                     Contact
                   </h3>
                   <div className="space-y-2">
-                    {[listing.ownerEmail, ...listing.emails].map((email, i) => (
-                      <a
-                        key={i}
-                        href={`mailto:${email}`}
+                    {canEmailContact ? (
+                      contactEmails.map((email, i) => (
+                        <a
+                          key={i}
+                          href={`mailto:${email}`}
+                          onClick={(e) => handleEmailClick(e, email)}
+                          className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800 hover:underline"
+                        >
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            width="14"
+                            height="14"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            className="flex-shrink-0"
+                          >
+                            <rect x="2" y="4" width="20" height="16" rx="2" />
+                            <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
+                          </svg>
+                          <span className="truncate">{email}</span>
+                        </a>
+                      ))
+                    ) : !isAuthenticated ? (
+                      <button
+                        type="button"
+                        onClick={onRequireAuth}
                         className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800 hover:underline"
                       >
                         <svg
@@ -354,9 +440,65 @@ const ListingDetailModal = ({
                           <rect x="2" y="4" width="20" height="16" rx="2" />
                           <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
                         </svg>
-                        <span className="truncate">{email}</span>
-                      </a>
-                    ))}
+                        <span>Sign in to inquire</span>
+                      </button>
+                    ) : (
+                      <div className="flex items-center gap-2 text-sm text-gray-500">
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          width="14"
+                          height="14"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          className="flex-shrink-0"
+                        >
+                          <rect x="2" y="4" width="20" height="16" rx="2" />
+                          <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
+                        </svg>
+                        <span>Contact details unavailable</span>
+                      </div>
+                    )}
+                    {outreachPrompt && (
+                      <div className="mt-3 rounded-lg border border-blue-100 bg-blue-50/70 p-3">
+                        <p className="text-xs font-medium text-blue-900 mb-2">
+                          What happened with this contact?
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          {[
+                            ['emailed', 'Emailed'],
+                            ['will_contact_later', 'Later'],
+                            ['not_a_fit', 'Not a fit'],
+                          ].map(([outcome, label]) => (
+                            <button
+                              key={outcome}
+                              type="button"
+                              onClick={() => handleOutcome(outcome)}
+                              disabled={outreachPrompt.status === 'saving'}
+                              className={`rounded-md border px-2.5 py-1 text-xs font-medium transition-colors ${
+                                outreachPrompt.outcome === outcome &&
+                                outreachPrompt.status === 'saved'
+                                  ? 'border-green-300 bg-green-50 text-green-700'
+                                  : 'border-blue-200 bg-white text-blue-700 hover:bg-blue-100'
+                              } disabled:cursor-not-allowed disabled:opacity-60`}
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                        {outreachPrompt.status === 'saved' && (
+                          <p className="mt-2 text-xs text-green-700">Outcome saved</p>
+                        )}
+                        {outreachPrompt.status === 'error' && (
+                          <p className="mt-2 text-xs text-red-600">
+                            Outcome could not be saved. Try again.
+                          </p>
+                        )}
+                      </div>
+                    )}
                     {listing.websites &&
                       listing.websites.length > 0 &&
                       listing.websites.map((website, i) => (
