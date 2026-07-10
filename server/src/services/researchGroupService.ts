@@ -28,6 +28,8 @@ import { AccessSignal } from '../models/accessSignal';
 import { ContactRoute } from '../models/contactRoute';
 import { EntryPathway } from '../models/entryPathway';
 import { PostedOpportunity } from '../models/postedOpportunity';
+import { StudentTracking } from '../models/studentTracking';
+import { StudentOutreach } from '../models/studentOutreach';
 import { getMeiliIndex } from '../utils/meiliClient';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 import {
@@ -63,6 +65,8 @@ import {
 import { publicStudentDecisionExplanation } from './studentDecisionExplanationService';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { serializedDocumentId } from '../utils/idSerialization';
+import { studentPathwayMongoMatch } from './studentAccessPublicationPolicy';
+import { isApprovedPublicContactRoute } from './studentAccessPublicationPolicy';
 
 const NON_LAB_CATEGORIES = new Set<string>([
   DepartmentCategory.SOCIAL_SCIENCES,
@@ -247,6 +251,7 @@ export interface ResearchGroupSearchResult {
   estimatedTotalHits: number;
   page: number;
   pageSize: number;
+  facetDistribution?: Record<string, Record<string, number>>;
   degraded?: boolean;
 }
 
@@ -602,6 +607,7 @@ export async function searchResearchGroupsViaMeili(
     filter: filterString,
     limit: safePageSize,
     offset,
+    facets: ['school', 'departments'],
   };
   if (sortConfig.length > 0) {
     searchParams.sort = sortConfig;
@@ -625,6 +631,7 @@ export async function searchResearchGroupsViaMeili(
   const searchWithFallbacks = async (): Promise<{
     hits?: any[];
     estimatedTotalHits?: number;
+    facetDistribution?: Record<string, Record<string, number>>;
   }> => {
     // Each attempt uses an immutable params object; degrading clones rather than
     // mutating, so already-issued calls keep the params they were sent.
@@ -656,6 +663,7 @@ export async function searchResearchGroupsViaMeili(
   let searchResult: {
     hits?: any[];
     estimatedTotalHits?: number;
+    facetDistribution?: Record<string, Record<string, number>>;
   };
   try {
     searchResult = await searchWithFallbacks();
@@ -670,7 +678,7 @@ export async function searchResearchGroupsViaMeili(
       safeOptions,
     );
   }
-  const { hits, estimatedTotalHits } = searchResult;
+  const { hits, estimatedTotalHits, facetDistribution } = searchResult;
 
   const hitIds = (hits || [])
     .map((hit: any) => hit.id || hit._id)
@@ -723,6 +731,7 @@ export async function searchResearchGroupsViaMeili(
       estimatedTotalHits: estimatedTotalHits ?? normalizedHits.length,
       page: safePage,
       pageSize: safePageSize,
+      facetDistribution,
     },
     { includeOperatorFields: safeOptions.includeNonPublic },
   );
@@ -772,6 +781,18 @@ const researchEntityMatchesQuery = (entity: any, query: string): boolean => {
     if (aliases) return aliases.some((alias) => haystackHasTerm(haystack, alias));
     return haystackHasTerm(haystack, token);
   });
+};
+
+const facetCounts = (entities: any[], field: string): Record<string, number> => {
+  const counts: Record<string, number> = {};
+  for (const entity of entities) {
+    const values = Array.isArray(entity?.[field]) ? entity[field] : [entity?.[field]];
+    for (const value of new Set(values)) {
+      if (typeof value !== 'string' || !value.trim()) continue;
+      counts[value] = (counts[value] || 0) + 1;
+    }
+  }
+  return counts;
 };
 
 const sortResearchEntitiesForMongoFallback = (
@@ -831,6 +852,10 @@ const searchResearchGroupsViaMongoFallback = async (
   const visibleCandidates = (candidates as any[]).filter((entity) =>
     researchEntityMatchesQuery(entity, trimmedQuery),
   );
+  const facetDistribution = {
+    school: facetCounts(visibleCandidates, 'school'),
+    departments: facetCounts(visibleCandidates, 'departments'),
+  };
   const sortedCandidates = sortResearchEntitiesForMongoFallback(
     visibleCandidates,
     trimmedQuery,
@@ -861,6 +886,7 @@ const searchResearchGroupsViaMongoFallback = async (
       estimatedTotalHits: sortedCandidates.length,
       page: safePage,
       pageSize: safePageSize,
+      facetDistribution,
       degraded: true,
     },
     { includeOperatorFields: options.includeNonPublic },
@@ -1454,6 +1480,7 @@ const publicContactRouteForResearchDetail = (route: any) => ({
   url: publicHttpUrl(route.url),
   sourceUrl: publicHttpUrl(route.sourceUrl),
   observedAt: route.observedAt,
+  reviewStatus: route.review?.status,
 });
 
 export function buildLeadPiOutreachContactRoute(
@@ -1927,6 +1954,62 @@ export const normalizeResearchDetailSlug = (value: unknown): string | undefined 
  * (PIs first), the most recent papers across all members, and the group's
  * non-archived listings.
  */
+export async function recordResearchEntityOutreach(
+  slug: string,
+  studentProfileId: unknown,
+): Promise<{ recorded: true; routeUrl: string }> {
+  const normalizedSlug = normalizeResearchDetailSlug(slug);
+  if (!normalizedSlug || !mongoose.isValidObjectId(studentProfileId)) {
+    throw new Error('INVALID_OUTREACH_REQUEST');
+  }
+
+  const entity = (await ResearchEntity.findOne({
+    slug: normalizedSlug,
+    archived: { $ne: true },
+    studentVisibilityTier: { $in: publicStudentVisibilityTiers },
+  })
+    .select('_id')
+    .lean()) as { _id: mongoose.Types.ObjectId } | null;
+  if (!entity) throw new Error('OUTREACH_ENTITY_NOT_FOUND');
+
+  const candidateRoutes = (await ContactRoute.find({
+    researchEntityId: entity._id,
+    archived: { $ne: true },
+    visibility: 'PUBLIC',
+    'review.status': 'approved',
+  })
+    .sort({ priority: 1, updatedAt: -1 })
+    .limit(MAX_PUBLIC_DETAIL_CONTACT_ROUTES)
+    .lean()) as Array<Record<string, any>>;
+  const route = candidateRoutes.find((candidate) =>
+    isApprovedPublicContactRoute(candidate as Record<string, any>),
+  );
+  if (!route?.url) throw new Error('NO_APPROVED_OUTREACH_ROUTE');
+
+  const now = new Date();
+  const tracking = await StudentTracking.findOneAndUpdate(
+    { studentProfileId, researchEntityId: entity._id },
+    {
+      $set: { stage: 'reached-out' },
+      $setOnInsert: { studentProfileId, researchEntityId: entity._id },
+      $push: { stageHistory: { stage: 'reached-out', timestamp: now } },
+    },
+    { upsert: true, new: true },
+  );
+
+  await StudentOutreach.create({
+    studentProfileId,
+    researchEntityId: entity._id,
+    trackingId: tracking._id,
+    reachedOutAt: now,
+    deliveryMethod: 'official-route',
+    emailGeneratedByPlatform: false,
+    templateVersion: 'official-route-v1',
+  });
+
+  return { recorded: true, routeUrl: route.url };
+}
+
 export async function getResearchGroupDetail(slug: string): Promise<{
   researchEntity: PublicResearchEntityDto;
   members: Array<{ user: any; role: string }>;
@@ -2147,7 +2230,11 @@ export async function getResearchGroupDetail(slug: string): Promise<{
       .sort({ updatedAt: -1 })
       .limit(MAX_PUBLIC_DETAIL_LISTINGS)
       .lean(),
-    EntryPathway.find({ researchEntityId: (group as any)._id, archived: false })
+    EntryPathway.find({
+      researchEntityId: (group as any)._id,
+      archived: false,
+      ...studentPathwayMongoMatch(),
+    })
       .sort({ updatedAt: -1 })
       .limit(MAX_PUBLIC_DETAIL_ENTRY_PATHWAYS)
       .lean(),
@@ -2160,8 +2247,9 @@ export async function getResearchGroupDetail(slug: string): Promise<{
         researchEntityId: (group as any)._id,
         archived: false,
         visibility: 'PUBLIC',
+        'review.status': 'approved',
       },
-      'routeType label url priority visibility contactPolicy rationale sourceUrl observedAt',
+      'routeType label url priority visibility contactPolicy rationale sourceUrl observedAt review',
     )
       .sort({ priority: 1 })
       .limit(MAX_PUBLIC_DETAIL_CONTACT_ROUTES)

@@ -46,4 +46,32 @@ describe('LabInquireModal', () => {
     expect(screen.queryByText('lab-contact@example.edu?bcc=attacker@example.test')).toBeNull();
     expect(container.querySelector('a[href^="mailto:"]')).toBeNull();
   });
+
+  it('offers an approved official route without rendering an email', () => {
+    const onOfficialRouteOpen = vi.fn();
+    render(
+      <LabInquireModal
+        isOpen
+        onClose={vi.fn()}
+        group={baseGroup}
+        members={[]}
+        contactRoutes={[{
+          routeType: 'PROGRAM_MANAGER',
+          label: 'Undergraduate research contact form',
+          url: 'https://research.yale.edu/contact',
+          sourceUrl: 'https://research.yale.edu/about',
+          reviewStatus: 'approved',
+          visibility: 'PUBLIC',
+          contactPolicy: 'OFFICIAL_ROUTE_PREFERRED',
+        }]}
+        onOfficialRouteOpen={onOfficialRouteOpen}
+      />,
+    );
+
+    const link = screen.getByRole('link', { name: 'Open approved route' });
+    expect(link.getAttribute('href')).toBe('https://research.yale.edu/contact');
+    link.click();
+    expect(onOfficialRouteOpen).toHaveBeenCalledOnce();
+    expect(document.querySelector('a[href^="mailto:"]')).toBeNull();
+  });
 });

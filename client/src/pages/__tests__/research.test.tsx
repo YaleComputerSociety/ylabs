@@ -36,7 +36,10 @@ const originalIntersectionObserver = window.IntersectionObserver;
 const originalGlobalIntersectionObserver = globalThis.IntersectionObserver;
 const originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
 
-const researchSearchResponse = (researchEntities: unknown[] = [], overrides: Record<string, unknown> = {}) => ({
+const researchSearchResponse = (
+  researchEntities: unknown[] = [],
+  overrides: Record<string, unknown> = {},
+) => ({
   data: {
     researchEntities,
     estimatedTotalHits: researchEntities.length,
@@ -72,8 +75,7 @@ const mockSearchResponses = (
         browseQuality?: string;
         qualityFilters?: string[];
       },
-    ) =>
-      Promise.resolve(resolver(url, body)),
+    ) => Promise.resolve(resolver(url, body)),
   );
 };
 
@@ -356,7 +358,9 @@ describe('Research page', () => {
     expect(container.textContent).not.toContain('Official Yale source found');
     expect(container.textContent).not.toContain('Source-backed profile context');
     const browseSection = screen.getByLabelText('Research homes to explore');
-    const browseHeadingRow = within(browseSection).getByText('Research homes to explore').parentElement;
+    const browseHeadingRow = within(browseSection).getByText(
+      'Research homes to explore',
+    ).parentElement;
     expect(browseHeadingRow?.parentElement?.className).toContain('w-full');
     expect(browseHeadingRow?.className).toContain('justify-between');
     expect(within(browseSection).queryByText('1 profile')).toBeNull();
@@ -364,8 +368,7 @@ describe('Research page', () => {
     expect(container.textContent).not.toContain('indexed profiles');
     const browseLayout = Array.from(browseSection.querySelectorAll('.grid')).find(
       (element) =>
-        element.className.includes('grid gap-5') &&
-        !element.className.includes('xl:grid-cols'),
+        element.className.includes('grid gap-5') && !element.className.includes('xl:grid-cols'),
     );
     const browseGrid = browseSection.querySelector('.grid.gap-3');
     expect(browseLayout?.className).toContain('grid gap-5');
@@ -409,7 +412,9 @@ describe('Research page', () => {
     expect(container.textContent).not.toContain('Grouped Search Results');
     expect(container.textContent).not.toContain('V1 fallback');
     expect(container.textContent).not.toContain('0 profiles');
-    expect((screen.getByRole('button', { name: 'Search' }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: 'Search' }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
   });
 
   it('submits quick-start prompts as research searches', async () => {
@@ -523,6 +528,77 @@ describe('Research page', () => {
 
     await screen.findByRole('heading', { name: 'Quantum Materials Example' });
     expect(screen.getByTestId('location').textContent).toBe('/research?q=quantum+materials');
+  });
+
+  it('filters search results by school, department, and undergraduate evidence in the URL', async () => {
+    mockSearchResponses((url) => {
+      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
+      return researchSearchResponse([researchEntity], {
+        facetDistribution: {
+          school: { 'Yale College': 8, 'School of Medicine': 4 },
+          departments: { 'Computer Science': 5, Neuroscience: 3 },
+        },
+      });
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/research?q=machine+learning']}>
+        <ConfigContext.Provider
+          value={{
+            ...defaultConfigContext,
+            isLoading: false,
+            isLoaded: true,
+            departments,
+            departmentCategories: ['Computing & AI', 'Humanities & Arts', 'Life Sciences'],
+          }}
+        >
+          <LocationDisplay />
+          <Research />
+        </ConfigContext.Provider>
+      </MemoryRouter>,
+    );
+
+    await screen.findByRole('heading', { name: 'AI Safety Lab' });
+    fireEvent.change(screen.getByLabelText('Filter by school'), {
+      target: { value: 'Yale College' },
+    });
+    await waitFor(() => {
+      expect(mockedAxios.post.mock.calls.at(-1)?.[1]).toEqual(
+        expect.objectContaining({ filters: { school: ['Yale College'] }, page: 1 }),
+      );
+    });
+
+    fireEvent.change(screen.getByLabelText('Filter by department'), {
+      target: { value: 'Computer Science' },
+    });
+    await waitFor(() => {
+      expect(mockedAxios.post.mock.calls.at(-1)?.[1]).toEqual(
+        expect.objectContaining({
+          filters: {
+            school: ['Yale College'],
+            departments: ['Computer Science'],
+          },
+          page: 1,
+        }),
+      );
+    });
+
+    fireEvent.click(screen.getByLabelText('Has undergraduate evidence'));
+    await waitFor(() => {
+      expect(mockedAxios.post.mock.calls.at(-1)?.[1]).toEqual(
+        expect.objectContaining({
+          filters: {
+            school: ['Yale College'],
+            departments: ['Computer Science'],
+            acceptanceLevel: 'verified-or-likely',
+          },
+          page: 1,
+        }),
+      );
+      expect(screen.getByTestId('location').textContent).toBe(
+        '/research?q=machine+learning&school=Yale+College&department=Computer+Science&undergrad=1',
+      );
+    });
   });
 
   it('returns to default research homes when clearing a quick-start search', async () => {
@@ -802,10 +878,10 @@ describe('Research page', () => {
 
     mockSearchResponses((url, body) => {
       if (url !== '/research/search') return unexpectedSearchEndpoint(url);
-      return researchSearchResponse(
-        body.page === 2 ? [nextResearchEntity] : [researchEntity],
-        { estimatedTotalHits: 25, page: body.page || 1 },
-      );
+      return researchSearchResponse(body.page === 2 ? [nextResearchEntity] : [researchEntity], {
+        estimatedTotalHits: 25,
+        page: body.page || 1,
+      });
     });
 
     renderResearch();
@@ -868,17 +944,15 @@ describe('Research page', () => {
       };
     }>();
 
-    mockedAxios.post.mockImplementation(
-      (url: string, body: { page?: number }) => {
-        if (url !== '/research/search') {
-          return Promise.reject(new Error(`Unexpected retired or unknown search endpoint: ${url}`));
-        }
-        if (body.page === 2) return nextPage.promise;
-        return Promise.resolve(
-          researchSearchResponse([researchEntity], { estimatedTotalHits: 25, page: 1 }),
-        );
-      },
-    );
+    mockedAxios.post.mockImplementation((url: string, body: { page?: number }) => {
+      if (url !== '/research/search') {
+        return Promise.reject(new Error(`Unexpected retired or unknown search endpoint: ${url}`));
+      }
+      if (body.page === 2) return nextPage.promise;
+      return Promise.resolve(
+        researchSearchResponse([researchEntity], { estimatedTotalHits: 25, page: 1 }),
+      );
+    });
 
     renderResearch();
 
@@ -957,10 +1031,10 @@ describe('Research page', () => {
 
     mockSearchResponses((url, body) => {
       if (url !== '/research/search') return unexpectedSearchEndpoint(url);
-      return researchSearchResponse(
-        body.page === 2 ? [nextResearchEntity] : firstPage,
-        { estimatedTotalHits: 24, page: body.page || 1 },
-      );
+      return researchSearchResponse(body.page === 2 ? [nextResearchEntity] : firstPage, {
+        estimatedTotalHits: 24,
+        page: body.page || 1,
+      });
     });
 
     renderResearch();
@@ -1023,10 +1097,10 @@ describe('Research page', () => {
 
     mockSearchResponses((url, body) => {
       if (url !== '/research/search') return unexpectedSearchEndpoint(url);
-      return researchSearchResponse(
-        body.page === 2 ? [nextResearchEntity] : [researchEntity],
-        { estimatedTotalHits: 25, page: body.page || 1 },
-      );
+      return researchSearchResponse(body.page === 2 ? [nextResearchEntity] : [researchEntity], {
+        estimatedTotalHits: 25,
+        page: body.page || 1,
+      });
     });
 
     renderResearch(departments, ['/research?q=protein+folding']);
@@ -1138,9 +1212,11 @@ describe('Research page', () => {
   it('reveals one research-home result stream with inline ways-in context after a search', async () => {
     mockSearchResponses((url, body) => {
       if (body.q === 'protein folding') {
-        return url === '/research/search'
-          ? researchSearchResponse([{ ...researchEntity, waysIn: [pathwayHit] }])
-          : unexpectedSearchEndpoint(url);
+        if (url === '/research/search') return researchSearchResponse([researchEntity]);
+        if (url === '/pathways/search') {
+          return { data: { hits: [pathwayHit], estimatedTotalHits: 1, page: 1, pageSize: 12 } };
+        }
+        return unexpectedSearchEndpoint(url);
       }
 
       return url === '/research/search' ? researchSearchResponse() : unexpectedSearchEndpoint(url);
@@ -1156,11 +1232,9 @@ describe('Research page', () => {
     await screen.findByText("Showing research matches for 'protein folding'");
 
     await waitFor(() => {
-      expect(screen.getByRole('status').textContent).toContain(
-        '1 research home, 1 contact',
-      );
+      expect(screen.getByRole('status').textContent).toContain('1 research home, 1 contact');
     });
-    expect(screen.getByRole('status').textContent).not.toContain('way in');
+    expect(screen.getAllByRole('status')[0].textContent).toContain('1 verified way in');
     expect(screen.queryByRole('link', { name: /Compare .*pathway/i })).toBeNull();
     expect(container.textContent).toContain('Research homes');
     expect(container.textContent).not.toContain('How to use this');
@@ -1179,8 +1253,10 @@ describe('Research page', () => {
     expect(container.textContent).toContain('Computer Science · Yale College');
     expect(container.textContent).not.toContain('Why it might fit');
     expect(container.textContent).not.toContain('Official Yale source found');
-    const searchSection = screen.getByLabelText('Search results');
-    const searchGrid = searchSection.querySelector('.grid.gap-3');
+    const researchHomesSection = screen
+      .getByRole('heading', { name: 'Research homes' })
+      .closest('section');
+    const searchGrid = researchHomesSection?.querySelector('.grid.gap-3');
     expect(searchGrid?.className).toContain('lg:grid-cols-2');
     expect(searchGrid?.className).toContain('2xl:grid-cols-[repeat(3,minmax(0,1fr))]');
     expect(searchGrid?.className).not.toContain('items-start');
@@ -1188,10 +1264,10 @@ describe('Research page', () => {
     expect(
       screen
         .getAllByRole('link', { name: 'AI Safety Lab' })
-      .some((link) => link.getAttribute('href') === '/research/ai-safety-lab'),
+        .some((link) => link.getAttribute('href') === '/research/ai-safety-lab'),
     ).toBe(true);
-    expect(container.textContent).toContain('Review source context');
-    expect(container.textContent).toContain('Source route');
+    expect(container.textContent).toContain('Verified ways in');
+    expect(screen.getByRole('link', { name: 'Review evidence' })).toBeTruthy();
     expect(container.textContent).not.toContain('Contact the program manager.');
 
     await waitFor(() => {
@@ -1255,12 +1331,13 @@ describe('Research page', () => {
 
     mockSearchResponses((url, body) => {
       if (body.q === 'machine learning') {
-        return url === '/research/search'
-          ? researchSearchResponse([
-              { ...researchEntity, waysIn: [postedPathway] },
-              nonMatchingEntity,
-            ])
-          : unexpectedSearchEndpoint(url);
+        if (url === '/research/search') {
+          return researchSearchResponse([researchEntity, nonMatchingEntity]);
+        }
+        if (url === '/pathways/search') {
+          return { data: { hits: [postedPathway], estimatedTotalHits: 1, page: 1, pageSize: 12 } };
+        }
+        return unexpectedSearchEndpoint(url);
       }
 
       return url === '/research/search' ? researchSearchResponse() : unexpectedSearchEndpoint(url);
@@ -1280,13 +1357,11 @@ describe('Research page', () => {
     expect(screen.queryByRole('button', { name: 'Thesis possible' })).toBeNull();
     expect(container.textContent).toContain('AI Safety Lab');
     expect(container.textContent).toContain('Archives Lab');
-    expect(container.textContent).toContain('Posted route');
+    expect(container.textContent).toContain('Verified ways in');
     expect(container.textContent).not.toContain('Open role');
     expect(container.textContent).not.toContain('Paid/funded');
     expect(container.textContent).not.toContain('Thesis fit');
-    expect(screen.getByRole('link', { name: 'View posted opportunity' }).getAttribute('href')).toBe(
-      '/opportunities/opportunity-1',
-    );
+    expect(screen.getByRole('link', { name: 'Review evidence' })).toBeTruthy();
     expect(container.textContent).not.toContain('Pathway Preview');
     expect(container.textContent).not.toContain('Compare pathways');
   });
@@ -1296,12 +1371,12 @@ describe('Research page', () => {
       if (body.q === 'machine learning') {
         return url === '/research/search'
           ? researchSearchResponse([
-            {
-              ...researchEntity,
-              contactName: '',
-              contactRole: '',
-            },
-          ])
+              {
+                ...researchEntity,
+                contactName: '',
+                contactRole: '',
+              },
+            ])
           : unexpectedSearchEndpoint(url);
       }
 
@@ -1330,25 +1405,25 @@ describe('Research page', () => {
       if (body.q === 'digital humanities') {
         return url === '/research/search'
           ? researchSearchResponse([
-            {
-              ...researchEntity,
-              _id: 'entity-2',
-              id: 'entity-2',
-              slug: 'digital-humanities-lab',
-              name: 'Yale Digital Humanities Lab',
-              displayName: 'Yale Digital Humanities Lab',
-              description: 'Computational text analysis and archive-centered research.',
-              departments: ['English'],
-              researchAreas: ['digital humanities'],
-              sourceUrls: ['https://example.yale.edu'],
-              searchMatch: {
-                mode: 'hybrid',
-                concepts: ['digital humanities'],
-                methods: ['computational text analysis'],
-                reason: 'Matches computational text analysis, digital humanities.',
+              {
+                ...researchEntity,
+                _id: 'entity-2',
+                id: 'entity-2',
+                slug: 'digital-humanities-lab',
+                name: 'Yale Digital Humanities Lab',
+                displayName: 'Yale Digital Humanities Lab',
+                description: 'Computational text analysis and archive-centered research.',
+                departments: ['English'],
+                researchAreas: ['digital humanities'],
+                sourceUrls: ['https://example.yale.edu'],
+                searchMatch: {
+                  mode: 'hybrid',
+                  concepts: ['digital humanities'],
+                  methods: ['computational text analysis'],
+                  reason: 'Matches computational text analysis, digital humanities.',
+                },
               },
-            },
-          ])
+            ])
           : unexpectedSearchEndpoint(url);
       }
 
@@ -1365,8 +1440,14 @@ describe('Research page', () => {
     expect(
       await screen.findByRole('heading', { name: 'Yale Digital Humanities Lab' }),
     ).toBeTruthy();
-    expect(screen.queryByText('Why this matches: Matches computational text analysis, digital humanities.')).toBeNull();
-    expect(screen.queryByText('Matches computational text analysis, digital humanities.')).toBeNull();
+    expect(
+      screen.queryByText(
+        'Why this matches: Matches computational text analysis, digital humanities.',
+      ),
+    ).toBeNull();
+    expect(
+      screen.queryByText('Matches computational text analysis, digital humanities.'),
+    ).toBeNull();
     expect(screen.getByRole('link', { name: 'Yale Digital Humanities Lab' })).toBeTruthy();
     expect(screen.getByRole('link', { name: 'View profile →' }).getAttribute('href')).toBe(
       '/research/digital-humanities-lab',
@@ -1417,5 +1498,4 @@ describe('Research page', () => {
     expect(await screen.findByRole('heading', { name: 'AI Safety Lab' })).toBeTruthy();
     expect(mockedAxios.post).toHaveBeenCalledTimes(initialSearchCalls);
   });
-
 });

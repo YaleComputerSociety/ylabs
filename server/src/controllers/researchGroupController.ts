@@ -9,6 +9,7 @@ import { NotFoundError } from '../utils/errors';
 import {
   getResearchGroupDetail,
   normalizeResearchDetailSlug,
+  recordResearchEntityOutreach,
   searchResearchGroupsViaMeili,
   type ResearchGroupQualityFilter,
   ResearchGroupSearchSort,
@@ -237,5 +238,28 @@ export const getResearchGroupBySlug = async (request: Request, response: Respons
     }
     console.error('ResearchEntity detail failed:', sanitizeLogValue(error));
     return response.status(500).json({ error: 'Failed to fetch research entity' });
+  }
+};
+
+export const recordResearchOutreach = async (request: Request, response: Response) => {
+  const currentUser = request.user as { studentProfileId?: unknown } | undefined;
+  if (!currentUser?.studentProfileId) {
+    return response.status(403).json({ error: 'A student profile is required' });
+  }
+  try {
+    await recordResearchEntityOutreach(request.params.slug, currentUser.studentProfileId);
+    return response.status(204).send();
+  } catch (error: any) {
+    if (error?.message === 'INVALID_OUTREACH_REQUEST') {
+      return response.status(400).json({ error: 'Invalid outreach request' });
+    }
+    if (error?.message === 'OUTREACH_ENTITY_NOT_FOUND') {
+      return response.status(404).json({ error: 'Research entity not found' });
+    }
+    if (error?.message === 'NO_APPROVED_OUTREACH_ROUTE') {
+      return response.status(409).json({ error: 'No approved outreach route is available' });
+    }
+    console.error('ResearchEntity outreach failed:', sanitizeLogValue(error));
+    return response.status(500).json({ error: 'Failed to record outreach' });
   }
 };
