@@ -4,7 +4,7 @@
 
 ## What Is This?
 
-Yale Research is a **Yale research discovery platform**. Students discover Yale research homes, evidence-backed ways in, structured programs/fellowships, and real posted opportunities when they exist. The product is not a listings board; the legacy Listings surface and public Pathways page are retired.
+Yale Research is a **Yale research discovery platform**. Students discover Yale research homes, source-backed evidence, planning context, structured programs/fellowships, and real posted opportunities when they exist. The product is not a listings board; the legacy Listings surface and public Pathways page are retired.
 
 ---
 
@@ -328,7 +328,7 @@ Search uses **Meilisearch** for Research, with internal pathway enrichment and M
 
 1. Research discovery uses the `researchentities` index and should only run true semantic search when Meilisearch reports embedded ResearchEntity documents.
    Student queries are normalized before search: low-value words such as `professor`, `lab`, and `research` are stripped when other terms remain, curated aliases expand `ai`, `ml`, `nlp`, `cv`, `neuro`, and `psych`, and short alias queries stay keyword-only so substring noise does not outrank true topic matches.
-2. `EntryPathway` data remains an internal action model for ways-in summaries, research detail, saved planning, admin review, and data-quality workflows. The public client should consume it through `/api/research/search`, not by calling a standalone Pathways endpoint.
+2. `EntryPathway` data remains an internal action model for planning summaries, research detail, saved planning, admin review, and data-quality workflows. The public client should consume it through `/api/research/search`, not by calling a standalone Pathways endpoint.
 3. Pathway Meilisearch rebuilds remain useful for parity testing and future internal enrichment work; rollback remains `PATHWAY_SEARCH_BACKEND=mongo` where that service is used.
 4. Results carry evidence and next-step context rather than legacy listing claims.
 
@@ -353,8 +353,8 @@ Research-surface analytics cover the canonical research entities (`profile`, `li
 | --------------------- | ------------------------------------------------------------------------- |
 | `research_view`       | A profile, listing, or fellowship detail surface opened                   |
 | `pathway_save`        | A listing or fellowship was saved, unsaved, or re-staged                  |
-| `ways_in_click`       | A best-next-step, apply, listings, courses, or similar action was clicked |
-| `contact_route_click` | A contact route such as email or phone was clicked                        |
+| `ways_in_click`       | A best-next-step, apply, planning, listings, courses, or similar action was clicked |
+| `contact_route_click` | A guarded route such as an official application or public source route was clicked |
 | `source_link_click`   | A source link such as a lab site, publication, or application was clicked |
 
 Client-only interactions are sent to `POST /api/analytics/research` for authenticated users.
@@ -396,7 +396,7 @@ All mount under `/api`.
 
 | Prefix            | Description                                                            | Auth                                                   |
 | ----------------- | ---------------------------------------------------------------------- | ------------------------------------------------------ |
-| `/research`       | Yale Labs search/detail, including ways-in enrichment                  | Varies                                                 |
+| `/research`       | Yale Research search/detail, including profile evidence and planning-context enrichment | Varies                                                 |
 | `/programs`       | Programs & Fellowships browse/search and saved-program support         | Varies                                                 |
 | `/opportunities`  | Real posted opportunity detail workflows                               | Varies                                                 |
 | `/listings`       | Retired legacy API, returns `410 Gone`                                 | Varies                                                 |
@@ -486,5 +486,5 @@ Client `tsc --noEmit` is still not part of CI; the client has known pre-existing
 | Meilisearch connection refused                 | Start Docker container or check `MEILISEARCH_HOST` in `.env`                                                                         |
 | CORS errors                                    | Add origin to `allowList` in `app.ts` or use dev mode                                                                                |
 | `/api/listings` returns `410`                  | Expected; Listings is retired. Use Research, Programs, or PostedOpportunity workflows.                                               |
-| Retired practical-routes URL returns not found | Expected; public Pathways search is retired. Ways-in evidence appears inside Yale Labs, research detail, and Dashboard planning.     |
+| Retired practical-routes URL returns not found | Expected; public Pathways search is retired. Planning context appears inside Yale Research, research detail, and Dashboard planning. |
 | A client needs pathway data                    | Use `/api/research/search`, research detail, or saved research-plan APIs. Standalone pathway search is not a public/client contract. |

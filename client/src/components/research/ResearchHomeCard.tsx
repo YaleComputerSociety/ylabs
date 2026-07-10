@@ -56,6 +56,17 @@ const titleCaseContactRole = (role?: string): string => {
   return formatTitleCaseLabel(trimmed);
 };
 
+const directoryFirstPathwayLabel = (label: string): string => {
+  if (label === 'Plan targeted outreach') return 'Review source context';
+  if (label === 'Contact program') return 'Review source route';
+  return label;
+};
+
+const directoryFirstBadgeLabel = (label: string): string => {
+  if (label === 'Contact route') return 'Source route';
+  return label;
+};
+
 const adminQualityLabels = (home: ResearchCluster): string[] => {
   const flags = new Set(
     home.entities.flatMap((entity) => entity.qualitySummary?.repairFlags || []),
@@ -112,7 +123,7 @@ const ResearchHomeCard = ({
   const mobileMoreCount = topicBadges.length - mobileTopicCap;
   const desktopMoreCount = topicBadges.length - desktopTopicCap;
   const nextStepLabel = home.pathways[0]
-    ? getPathwayActionLabel(home.pathways[0].bestNextStepCategory)
+    ? directoryFirstPathwayLabel(getPathwayActionLabel(home.pathways[0].bestNextStepCategory))
     : '';
   const contextLine = home.contextLine || buildResearchHomeContextLine(home.entities[0]);
   const description = sanitizeFacultyResearchCopy(home.description, home.entities[0]);
@@ -317,13 +328,13 @@ const ResearchHomeCard = ({
       )}
 
       {wayInBadges.length > 0 && (
-        <div className="mt-3 flex flex-wrap gap-1.5" aria-label="Ways in">
+        <div className="mt-3 flex flex-wrap gap-1.5" aria-label="Planning context">
           {wayInBadges.slice(0, isCompact ? 3 : undefined).map((badge) => (
             <span
               key={badge}
               className="yr-pill yr-pill-green min-h-0 rounded px-2 py-0.5"
             >
-              {badge}
+              {directoryFirstBadgeLabel(badge)}
             </span>
           ))}
         </div>
