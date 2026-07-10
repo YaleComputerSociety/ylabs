@@ -73,7 +73,7 @@ Do not add `/v1`, `/v2`, or similar student-facing route versions for normal pro
 ## 2026-05-11: Use Pathways As The Student Action Layer
 
 Student action should be modeled through source-backed pathways and access signals rather than a binary accepting-undergrads flag.
-Compatibility labels can exist during migration, but product language should move toward Ways In, Evidence, and Best Next Step.
+Compatibility labels can exist during migration, but product language should move toward Planning Context, Evidence, and Best Next Step.
 
 ## 2026-05-07: North Star Is Research Navigation
 

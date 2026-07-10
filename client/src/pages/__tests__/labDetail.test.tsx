@@ -105,7 +105,7 @@ describe('LabDetail page', () => {
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
     expect(
-      screen.getByText('Review the official profile first, then decide whether targeted outreach is appropriate.'),
+      screen.getByText('Review the official profile first, then use the source details to plan what to verify next.'),
     ).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Open official profile' }).getAttribute('href')).toBe(
       OFFICIAL_PROFILE_URL,
@@ -114,7 +114,7 @@ describe('LabDetail page', () => {
     expect(screen.getByText('Source-backed details')).toBeTruthy();
     expect(screen.getByText('Still missing')).toBeTruthy();
     expect(
-      screen.getByText('No action-ready or evidence-backed ways in are indexed yet.'),
+      screen.getByText('No indexed planning routes are attached yet.'),
     ).toBeTruthy();
     expect(screen.queryByText('Ways In')).toBeNull();
     expect(screen.queryByText('Evidence')).toBeNull();
@@ -232,7 +232,7 @@ describe('LabDetail page', () => {
 
     expect(screen.getByText('Ways to approach this lab')).toBeTruthy();
     expect(screen.getByText('Explore first')).toBeTruthy();
-    expect(screen.getByText('Send exploratory email')).toBeTruthy();
+    expect(screen.getByText('Review source instructions')).toBeTruthy();
   });
 
   it('renders program page wording instead of lab wording', async () => {
@@ -296,18 +296,18 @@ describe('LabDetail page', () => {
     expect(
       screen.getByText('Studies specific mechanisms of neurological disease in source-backed terms.'),
     ).toBeTruthy();
-    expect(screen.getByText('Plan careful exploratory outreach.')).toBeTruthy();
+    expect(screen.getByText('Plan from source-backed context.')).toBeTruthy();
     expect(
       screen.getByText(
-        'This profile has source-backed evidence that outreach may be plausible, but no active posted role is attached.',
+        'This profile has source-backed context for planning, but no active posted role is attached.',
       ),
     ).toBeTruthy();
     expect(screen.getByText('Why')).toBeTruthy();
     expect(screen.getByText('The access evidence points to an official profile route.')).toBeTruthy();
     expect(screen.getByText('What this page is')).toBeTruthy();
-    expect(screen.getByText('This page summarizes the research context and entry points, not a posted opening.')).toBeTruthy();
+    expect(screen.getByText('This page summarizes the research context and source evidence, not a posted opening.')).toBeTruthy();
     expect(container.textContent?.indexOf('Studies specific mechanisms')).toBeLessThan(
-      container.textContent?.indexOf('Plan careful exploratory outreach.'),
+      container.textContent?.indexOf('Plan from source-backed context.'),
     );
   });
 
@@ -426,14 +426,13 @@ describe('LabDetail page', () => {
 
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
-    // The standalone contact-route sidebar was retired; outreach guidance now
-    // lives in the Outreach section.
-    expect(screen.getByRole('heading', { name: 'Outreach' })).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Outreach' })).toBeNull();
     expect(screen.queryByRole('heading', { name: 'Contact route' })).toBeNull();
     expect(screen.queryByRole('heading', { name: 'Plan your next step' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Draft outreach email' })).toBeNull();
   });
 
-  it('offers a draft outreach email when a PI contact route has an email', async () => {
+  it('does not offer in-product outreach drafting when a PI contact route has an email', async () => {
     renderLabDetail({
       ...basePayload,
       contactRoutes: [
@@ -453,13 +452,12 @@ describe('LabDetail page', () => {
 
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
-    expect(screen.getByRole('heading', { name: 'Outreach' })).toBeTruthy();
-    fireEvent.click(screen.getAllByRole('button', { name: 'Draft outreach email' })[0]);
-
-    expect(screen.getByText('jordan.researcher@yale.edu')).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Outreach' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Draft outreach email' })).toBeNull();
+    expect(screen.queryByText('jordan.researcher@yale.edu')).toBeNull();
     expect(
-      screen.getByText(`Inquiry from a Yale undergraduate about research in ${DEFAULT_ENTITY_NAME}`),
-    ).toBeTruthy();
+      screen.queryByText(`Inquiry from a Yale undergraduate about research in ${DEFAULT_ENTITY_NAME}`),
+    ).toBeNull();
   });
 
   it('falls back to a source URL when no official website is available', async () => {
@@ -508,7 +506,9 @@ describe('LabDetail page', () => {
 
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
-    expect(screen.getAllByText('Contact the program manager through the listed route.')).toHaveLength(1);
+    expect(
+      screen.getAllByText('Review the listed route and verify whether it has current instructions.'),
+    ).toHaveLength(1);
     expect(screen.getByRole('link', { name: 'Open official route' }).getAttribute('href')).toBe(
       OFFICIAL_ROUTE_URL,
     );
@@ -1087,7 +1087,7 @@ describe('LabDetail page', () => {
     expect(screen.getByText('Profile status')).toBeTruthy();
     expect(screen.getByText('Source-backed details')).toBeTruthy();
     expect(
-      screen.getByText('No action-ready or evidence-backed ways in are indexed yet.'),
+      screen.getByText('No indexed planning routes are attached yet.'),
     ).toBeTruthy();
   });
 

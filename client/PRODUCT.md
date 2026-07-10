@@ -18,13 +18,13 @@ Secondary stakeholders: faculty, lab managers, program managers, advisors, YCS m
 - Understand the papers, people, labs, centers, institutes, and programs behind a topic.
 - Verify whether an author or professor is the correct person.
 - Find credible evidence that undergraduates can participate.
-- Decide the safest next step: apply, contact a program, contact a lab manager, plan outreach, save for thesis planning, or check back later.
+- Decide the safest next step: apply when an official route exists, review source context, save for planning, or check back later.
 
 ## Core Flows
 
 1. Topic exploration: query -> cluster -> papers -> people/entities -> pathway -> next step.
 2. Person lookup: search name -> compare identity candidates -> verify affiliation/source -> review research context -> act cautiously.
-3. Serendipitous discovery: cluster -> adjacent clusters -> under-discovered entities -> evidence and pathways.
+3. Serendipitous discovery: cluster -> adjacent clusters -> under-discovered entities -> evidence, sources, and planning context.
 
 ## Trust Constraints
 
@@ -46,4 +46,4 @@ Yale Research is not a marketing site, a complete public faculty directory, a so
 
 ## V1 Scope
 
-V1 should rebrand the shell, replace the homepage with topic-first search, refactor search results into clusters plus people/papers/entities/ways-in evidence, add identity-confidence cards, and reuse existing Research, Evidence, and Best Next Step infrastructure.
+V1 should rebrand the shell, replace the homepage with topic-first search, refactor search results into research profiles with people, papers, evidence, sources, and planning context, add identity-confidence cards, and reuse existing Research, Evidence, and Best Next Step infrastructure.

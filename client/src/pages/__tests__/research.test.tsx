@@ -349,6 +349,10 @@ describe('Research page', () => {
     expect(await screen.findByRole('heading', { name: 'AI Safety Lab' })).toBeTruthy();
     expect(container.textContent).not.toContain('Top profile preview');
     expect(container.textContent).toContain('Research homes to explore');
+    expect(container.textContent).toContain(
+      'Open a profile to review people, evidence, sources, and planning context.',
+    );
+    expect(container.textContent).not.toContain('possible ways in');
     expect(container.textContent).not.toContain('Official Yale source found');
     expect(container.textContent).not.toContain('Source-backed profile context');
     const browseSection = screen.getByLabelText('Research homes to explore');
@@ -584,7 +588,7 @@ describe('Research page', () => {
 
     await screen.findByRole('heading', { name: 'AI Safety Lab' });
 
-    expect(container.textContent).toContain('Best next step: Plan targeted outreach');
+    expect(container.textContent).toContain('Best next step: Review source context');
   });
 
   it('lets admins put weakest profiles first only for the default browse', async () => {
@@ -1153,9 +1157,10 @@ describe('Research page', () => {
 
     await waitFor(() => {
       expect(screen.getByRole('status').textContent).toContain(
-        '1 research home, 1 way in, 1 contact',
+        '1 research home, 1 contact',
       );
     });
+    expect(screen.getByRole('status').textContent).not.toContain('way in');
     expect(screen.queryByRole('link', { name: /Compare .*pathway/i })).toBeNull();
     expect(container.textContent).toContain('Research homes');
     expect(container.textContent).not.toContain('How to use this');
@@ -1185,8 +1190,8 @@ describe('Research page', () => {
         .getAllByRole('link', { name: 'AI Safety Lab' })
       .some((link) => link.getAttribute('href') === '/research/ai-safety-lab'),
     ).toBe(true);
-    expect(container.textContent).toContain('Plan targeted outreach');
-    expect(container.textContent).toContain('Contact route');
+    expect(container.textContent).toContain('Review source context');
+    expect(container.textContent).toContain('Source route');
     expect(container.textContent).not.toContain('Contact the program manager.');
 
     await waitFor(() => {

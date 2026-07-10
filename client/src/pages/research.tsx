@@ -210,21 +210,16 @@ const resultSummary = (
 ): string => {
   if (loading) return `Searching Yale Research for ${query}.`;
   const matchingHomeCount = results.clusters.length;
-  const wayInCount = results.clusters.reduce((sum, cluster) => sum + cluster.pathwayCount, 0);
   if (
     departmentGapLabel &&
     results.clusters.length === 0 &&
     matchingHomeCount === 0 &&
-    wayInCount === 0 &&
     results.people.length === 0 &&
     results.papers.length === 0
   ) {
     return `No indexed research homes yet for ${departmentGapLabel}.`;
   }
-  const parts = [
-    pluralize(matchingHomeCount, 'research home'),
-    pluralize(wayInCount, 'way in', 'ways in'),
-  ];
+  const parts = [pluralize(matchingHomeCount, 'research home')];
   if (results.people.length > 0) {
     parts.push(pluralize(results.people.length, 'contact', 'contacts'));
   }
@@ -1015,7 +1010,7 @@ const Research = () => {
               <div className="w-full">
                 <SectionHeading>Research homes to explore</SectionHeading>
                 <p className="text-sm text-gray-600">
-                  Open a profile to see people, evidence, sources, and possible ways in.
+                  Open a profile to review people, evidence, sources, and planning context.
                 </p>
               </div>
               {isAdmin && (

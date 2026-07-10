@@ -5,10 +5,9 @@
  *   - Resolve the slug from the URL and fetch the detail payload from
  *     `GET /api/research/:slug` via the labDetailReducer.
  *   - Compose the small presentational components in `components/labs/`.
- *   - Own the "Inquire" modal toggle (delegated to the reducer so the
- *     transitions are pure and testable).
+ *   - Own saved-plan interactions and profile detail state.
  *
- * No business logic lives in the layout components themselves — they take
+ * No business logic lives in the layout components themselves - they take
  * props and render. This keeps the page consistent with the
  * `pages/profile.tsx` pattern.
  */
@@ -23,7 +22,6 @@ import {
 import LabHeader from '../components/labs/LabHeader';
 import LabMembersList from '../components/labs/LabMembersList';
 import LabPapersList from '../components/labs/LabPapersList';
-import LabInquireModal from '../components/labs/LabInquireModal';
 import LongText from '../components/shared/LongText';
 import FirstSaveCallout from '../components/shared/FirstSaveCallout';
 import FavoriteButton from '../components/shared/FavoriteButton';
@@ -57,7 +55,6 @@ import {
   EvidenceItem,
   verdictLabel,
 } from '../utils/undergradAcceptance';
-import { resolveLabOutreachContact } from '../utils/labOutreachContact';
 import {
   approachHeadingLabel,
   decisionHeadingLabel,
@@ -258,6 +255,40 @@ const detailTopics = (group: any, limit = 6): string[] =>
     .filter((value) => !isGenericTopic(value))
     .slice(0, limit);
 
+const directoryFirstPlanningCopy = (value: string | undefined | null, group: any): string => {
+  if (!value) return '';
+  return sanitizeFacultyResearchCopy(value, group)
+    .replace(
+      'Plan careful exploratory outreach.',
+      'Plan from source-backed context.',
+    )
+    .replace(
+      'This profile has source-backed evidence that outreach may be plausible, but no active posted role is attached.',
+      'This profile has source-backed context for planning, but no active posted role is attached.',
+    )
+    .replace(
+      'Review the PI profile and lab site first, then decide whether targeted exploratory outreach is appropriate.',
+      'Review the PI profile and lab site first, then decide what source details you should verify next.',
+    )
+    .replace(
+      'Review the profile before outreach.',
+      'Review the profile and source details before planning next steps.',
+    )
+    .replace(
+      'Contact the program manager through the listed route.',
+      'Review the listed route and verify whether it has current instructions.',
+    )
+    .replace(
+      'Plan a specific outreach note that references the group’s work.',
+      'Plan notes that reference the group’s work before taking next steps.',
+    )
+    .replace(/targeted exploratory outreach is appropriate/gi, 'source details you should verify next')
+    .replace(/targeted outreach is appropriate/gi, 'source details you should verify next')
+    .replace(/outreach may be plausible/gi, 'planning context is available')
+    .replace(/before outreach/gi, 'before planning next steps')
+    .replace(/outreach note/gi, 'planning note');
+};
+
 const decisionNextStep = ({
   group,
   pathways,
@@ -269,16 +300,16 @@ const decisionNextStep = ({
 }): string => {
   const pathwayStep = pathways.find((item) => item.bestNextStep)?.bestNextStep;
   if (pathwayStep) {
-    return sanitizeFacultyResearchCopy(pathwayStep, group);
+    return directoryFirstPlanningCopy(pathwayStep, group);
   }
   const route = contactRoutes[0];
   if (route?.routeType === 'OFFICIAL_APPLICATION') {
     return 'Use the official application route, then verify timing and eligibility on the source page.';
   }
   if (route) {
-    return 'Review the official profile first, then decide whether targeted outreach is appropriate.';
+    return 'Review the official profile first, then use the source details to plan what to verify next.';
   }
-  return 'Review the official profile first, then decide whether targeted outreach is appropriate.';
+  return 'Review the official profile first, then use the source details to plan what to verify next.';
 };
 
 const reachOutStatus = ({
@@ -291,8 +322,8 @@ const reachOutStatus = ({
   contactRoutes: LabContactRoute[];
 }): string => {
   if (postedOpportunities.length > 0) return 'Posted route available';
-  if (pathways.length > 0 || contactRoutes.length > 0) return 'Reach-out possible, verify first';
-  return 'Verify before reaching out';
+  if (pathways.length > 0 || contactRoutes.length > 0) return 'Planning context available';
+  return 'Source review needed';
 };
 
 const ResearchPlanSaveButton = ({
@@ -560,6 +591,16 @@ const DecisionSummary = ({
     isFacultyResearchEntity(group) || (usesProfileSynthesis && isFacultyResearchFallback(group));
   const sourceBackedDescription = detailDescription(group);
   const studentDecisionExplanation = group.studentDecisionExplanation;
+  const displayStudentDecisionExplanation = studentDecisionExplanation
+    ? {
+        ...studentDecisionExplanation,
+        headline: directoryFirstPlanningCopy(studentDecisionExplanation.headline, group),
+        explanation: directoryFirstPlanningCopy(studentDecisionExplanation.explanation, group),
+        why: studentDecisionExplanation.why.map((item: string) =>
+          directoryFirstPlanningCopy(item, group),
+        ),
+      }
+    : null;
   const rawDescription =
     (usesProfileSynthesis ? group.profileSynthesisDescription : '') ||
     sourceBackedDescription ||
@@ -594,34 +635,34 @@ const DecisionSummary = ({
             text={description}
             className="mt-2 text-base leading-relaxed text-gray-800"
           />
-          {studentDecisionExplanation && (
+          {displayStudentDecisionExplanation && (
             <div className="mt-5 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] p-4">
               <SectionHeading>Student decision</SectionHeading>
               <h3 className="text-base font-semibold text-gray-950">
-                {studentDecisionExplanation.headline}
+                {displayStudentDecisionExplanation.headline}
               </h3>
               <p className="mt-2 text-base leading-relaxed text-gray-800">
-                {studentDecisionExplanation.explanation}
+                {displayStudentDecisionExplanation.explanation}
               </p>
-              {studentDecisionExplanation.why.length > 0 && (
+              {displayStudentDecisionExplanation.why.length > 0 && (
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-wider text-gray-600">
                     Why
                   </p>
                   <div className="mt-2">
-                    <BulletList items={studentDecisionExplanation.why} />
+                    <BulletList items={displayStudentDecisionExplanation.why} />
                   </div>
                 </div>
               )}
-              {studentDecisionExplanation.notThis && (
+              {displayStudentDecisionExplanation.notThis && (
                 <div className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] px-3 py-2">
                   <p className="text-xs font-semibold uppercase tracking-wider text-gray-600">
                     What this page is
                   </p>
                   <p className="mt-1 text-sm leading-relaxed text-gray-800">
-                    {studentDecisionExplanation.notThis === 'Not a posted opening.'
-                      ? 'This page summarizes the research context and entry points, not a posted opening.'
-                      : studentDecisionExplanation.notThis}
+                    {displayStudentDecisionExplanation.notThis === 'Not a posted opening.'
+                      ? 'This page summarizes the research context and source evidence, not a posted opening.'
+                      : displayStudentDecisionExplanation.notThis}
                   </p>
                 </div>
               )}
@@ -663,7 +704,7 @@ const DecisionSummary = ({
             </div>
             <div>
               <dt className="text-xs font-semibold uppercase tracking-wider text-gray-600">
-                Reach-out status
+                Planning status
               </dt>
               <dd className="mt-1 font-semibold text-gray-900">
                 {reachOutStatus({ postedOpportunities, pathways, contactRoutes })}
@@ -830,10 +871,10 @@ const WaysToApproachSection = ({
           </p>
         </article>
         <article className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4">
-          <h3 className="text-sm font-semibold text-gray-900">Send exploratory email</h3>
+          <h3 className="text-sm font-semibold text-gray-900">Review source instructions</h3>
           <p className="mt-2 text-sm leading-relaxed text-gray-700">
-            Best if the research area strongly matches your interests. Ask whether undergraduates
-            can get involved this semester or summer.
+            Best if the research area strongly matches your interests. Check whether the official
+            source names current undergraduate instructions, timing, or eligibility.
           </p>
           {pathway?.evidenceStrength && (
             <span className="mt-3 inline-flex rounded border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] px-2 py-1 text-xs text-gray-600">
@@ -859,76 +900,6 @@ const WaysToApproachSection = ({
             </Link>
           )}
         </article>
-      </div>
-    </section>
-  );
-};
-
-const OutreachSection = ({ group, onDraft }: { group: any; onDraft: () => void }) => {
-  const topics = detailTopics(group, 4);
-  const facultyResearch = isFacultyResearchEntity(group);
-  const structureLabel = researchStructureLabel(group);
-  const coursework = uniqueCompact(
-    [
-      ...compactDepartmentLabels(group.departments),
-      ...(topics.some((topic) => /comput|data|stat/i.test(topic)) ? ['Statistics and Computer Science'] : []),
-      ...(topics.some((topic) => /genetic|dna|biology/i.test(topic)) ? ['genetics or biology'] : []),
-    ],
-    4,
-  );
-
-  return (
-    <section className="rounded-lg border border-blue-100 bg-[var(--yr-blue-soft)]/50 p-5">
-      <SectionHeading>Outreach</SectionHeading>
-      <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_13rem]">
-        <div>
-          <h3 className="text-sm font-semibold text-gray-900">Outreach focus</h3>
-          <div className="mt-3 grid gap-4 md:grid-cols-2">
-            <div>
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-600">
-                Mention your interest in
-              </p>
-              <BulletList
-                items={[
-                  topics.length > 0
-                    ? 'One specific, best-fit topic listed above'
-                    : 'The research described on the official profile',
-                  'A specific question that shows you reviewed the official profile',
-                ]}
-              />
-            </div>
-            <div>
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-600">
-                Relevant preparation
-              </p>
-              <BulletList
-                items={
-                  coursework.length > 0
-                    ? coursework
-                    : [
-                        facultyResearch
-                          ? 'Coursework, projects, or reading connected to this research area'
-                          : `Coursework, projects, or reading connected to the ${structureLabel}`,
-                      ]
-                }
-              />
-            </div>
-          </div>
-          <p className="mt-4 rounded-md border border-blue-100 bg-[var(--yr-panel)] px-3 py-2 text-sm leading-relaxed text-gray-800">
-            {facultyResearch
-              ? 'Ask: "Are there any opportunities for undergraduates to get involved with this research area this semester or summer?"'
-              : `Ask: "Are there any opportunities for undergraduates to get involved with this ${structureLabel} this semester or summer?"`}
-          </p>
-        </div>
-        <div className="flex items-start md:justify-end">
-          <button
-            type="button"
-            onClick={onDraft}
-            className="inline-flex min-h-11 w-full items-center justify-center rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
-          >
-            Draft outreach email
-          </button>
-        </div>
       </div>
     </section>
   );
@@ -990,11 +961,6 @@ const SourcesSection = ({ sources }: { sources: ResearchDetailSource[] }) => {
 
 const PUBLIC_LEAD_ROLES = new Set(['pi', 'co-pi', 'director', 'co-director']);
 
-const hasPublicPlanningRoute = (contactRoutes: LabContactRoute[]): boolean =>
-  contactRoutes.some(
-    (route) => route.visibility === 'PUBLIC' && Boolean(route.url) && route.routeType !== 'FACULTY_PI',
-  );
-
 const hasSpecificWaysToApproach = (
   pathways: LabEntryPathway[],
   postedOpportunities: LabPostedOpportunity[],
@@ -1013,7 +979,7 @@ const LabDetail = () => {
     undefined,
     () => createInitialLabDetailState(),
   );
-  const { payload, loading, error, isInquireModalOpen } = state;
+  const { payload, loading, error } = state;
   const requestIdRef = useRef(0);
   const fetchAbortRef = useRef<AbortController | null>(null);
   const [showResearchPlanSavedCallout, setShowResearchPlanSavedCallout] = useState(false);
@@ -1130,7 +1096,7 @@ const LabDetail = () => {
   const showWaysToApproach = hasSpecificWaysToApproach(entryPathways, postedOpportunities);
   const missingSparseItems = [
     !hasResearchActivity ? 'Research activity links have not been attached yet.' : '',
-    !hasWaysIn ? 'No action-ready or evidence-backed ways in are indexed yet.' : '',
+    !hasWaysIn ? 'No indexed planning routes are attached yet.' : '',
     accessSignals.length === 0 ? 'Access evidence has not been attached yet.' : '',
   ].filter(Boolean);
   const sources = buildResearchDetailSources({
@@ -1156,8 +1122,6 @@ const LabDetail = () => {
   const primaryRecentWorkMemberName = primaryRecentWorkMember
     ? memberDisplayName(primaryRecentWorkMember)
     : 'the lead professor';
-  const hasOutreachContact = Boolean(resolveLabOutreachContact(group, members, contactRoutes));
-  const showOutreachSection = hasOutreachContact && !hasPublicPlanningRoute(contactRoutes);
   const primaryPathway = entryPathways[0];
   const isPrimaryPathwaySaved = primaryPathway
     ? savedResearchPlanIds.includes(primaryPathway._id)
@@ -1262,13 +1226,6 @@ const LabDetail = () => {
             />
           )}
 
-          {showOutreachSection && (
-            <OutreachSection
-              group={group}
-              onDraft={() => dispatch({ type: 'OPEN_INQUIRE_MODAL' })}
-            />
-          )}
-
           <ProfileStatusSection
             group={group}
             missingItems={missingSparseItems}
@@ -1285,13 +1242,6 @@ const LabDetail = () => {
         </div>
       </div>
 
-      <LabInquireModal
-        isOpen={isInquireModalOpen}
-        onClose={() => dispatch({ type: 'CLOSE_INQUIRE_MODAL' })}
-        group={group}
-        members={members}
-        contactRoutes={contactRoutes}
-      />
     </div>
   );
 };
