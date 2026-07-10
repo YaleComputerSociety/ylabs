@@ -1941,16 +1941,16 @@ export async function recordResearchEntityOutreach(
     throw new Error('INVALID_OUTREACH_REQUEST');
   }
 
-  const entity = await ResearchEntity.findOne({
+  const entity = (await ResearchEntity.findOne({
     slug: normalizedSlug,
     archived: { $ne: true },
     studentVisibilityTier: { $in: publicStudentVisibilityTiers },
   })
     .select('_id')
-    .lean();
+    .lean()) as { _id: mongoose.Types.ObjectId } | null;
   if (!entity) throw new Error('OUTREACH_ENTITY_NOT_FOUND');
 
-  const candidateRoutes = await ContactRoute.find({
+  const candidateRoutes = (await ContactRoute.find({
     researchEntityId: entity._id,
     archived: { $ne: true },
     visibility: 'PUBLIC',
@@ -1958,7 +1958,7 @@ export async function recordResearchEntityOutreach(
   })
     .sort({ priority: 1, updatedAt: -1 })
     .limit(MAX_PUBLIC_DETAIL_CONTACT_ROUTES)
-    .lean();
+    .lean()) as Array<Record<string, any>>;
   const route = candidateRoutes.find((candidate) =>
     isApprovedPublicContactRoute(candidate as Record<string, any>),
   );
