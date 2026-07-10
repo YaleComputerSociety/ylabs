@@ -119,6 +119,7 @@ import {
   dedupeSameNameLeadMembers,
   getResearchGroupDetail,
   listResearchEntityRelationshipPayload,
+  normalizeResearchSearchQuery,
   normalizeResearchGroupObjectId,
   publicMemberUserForRow,
   searchResearchGroupsViaMeili,
@@ -127,7 +128,7 @@ import {
 // One fully chainable query double: the service composes find().sort().limit()
 // .select().lean() in different orders per call site, so every helper returns
 // the same permissive chain to survive query-shape refactors.
-const queryResult = <T,>(value: T) => {
+const queryResult = <T>(value: T) => {
   const query: any = {
     lean: async () => value,
   };
@@ -137,15 +138,15 @@ const queryResult = <T,>(value: T) => {
   return query;
 };
 
-const leanResult = <T,>(value: T) => queryResult(value);
+const leanResult = <T>(value: T) => queryResult(value);
 
-const sortLeanResult = <T,>(value: T) => queryResult(value);
+const sortLeanResult = <T>(value: T) => queryResult(value);
 
-const sortLimitLeanResult = <T,>(value: T) => queryResult(value);
+const sortLimitLeanResult = <T>(value: T) => queryResult(value);
 
-const selectSortLimitLeanResult = <T,>(value: T) => queryResult(value);
+const selectSortLimitLeanResult = <T>(value: T) => queryResult(value);
 
-const selectLeanResult = <T,>(value: T) => queryResult(value);
+const selectLeanResult = <T>(value: T) => queryResult(value);
 
 beforeEach(() => {
   mocks.search.mockReset();
@@ -185,6 +186,19 @@ beforeEach(() => {
 });
 
 describe('searchResearchGroupsViaMeili', () => {
+  it('normalizes noisy student research queries before Meili search', () => {
+    expect(normalizeResearchSearchQuery(' Professor Zhong ')).toMatchObject({
+      query: 'zhong',
+      tokens: ['zhong'],
+      isShortAliasQuery: false,
+    });
+    expect(normalizeResearchSearchQuery('computer vision for medical imaging')).toMatchObject({
+      query: 'computer vision medical imaging',
+      tokens: ['computer', 'vision', 'medical', 'imaging'],
+      isShortAliasQuery: false,
+    });
+  });
+
   it('normalizes research group ObjectIds without arbitrary object coercion', () => {
     const entityId = '67d8928150621bcef434a1d5';
 
@@ -221,7 +235,8 @@ describe('searchResearchGroupsViaMeili', () => {
         ],
         estimatedTotalHits: 1,
       });
-    mocks.researchEntityFind.mockReturnValue(queryResult([
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult([
         {
           _id: entityId,
           slug: 'reilly-lab',
@@ -231,7 +246,8 @@ describe('searchResearchGroupsViaMeili', () => {
           researchAreas: [],
           sourceUrls: [],
         },
-      ]));
+      ]),
+    );
 
     const result = await searchResearchGroupsViaMeili('reilly', {}, 1, 1);
 
@@ -254,6 +270,86 @@ describe('searchResearchGroupsViaMeili', () => {
       pageSize: 1,
       researchEntities: [{ _id: 'reilly-lab', slug: 'reilly-lab', name: 'Reilly Lab' }],
     });
+  });
+
+  it('expands AI and restricts short alias searches to topic fields', async () => {
+    mocks.search.mockResolvedValueOnce({
+      hits: [],
+      estimatedTotalHits: 0,
+    });
+
+    await searchResearchGroupsViaMeili('AI', {}, 1, 24);
+
+    expect(mocks.search).toHaveBeenCalledWith(
+      'artificial intelligence machine learning deep learning ai',
+      expect.objectContaining({
+        attributesToSearchOn: ['studentSearchTerms', 'researchAreas', 'keywords', 'departments'],
+      }),
+    );
+    expect(mocks.search.mock.calls[0][1]).not.toHaveProperty('hybrid');
+  });
+
+  it('strips professor noise while preserving faculty surname searches', async () => {
+    const entityId = '67d8928150621bcef434a1d5';
+    mocks.search.mockResolvedValueOnce({
+      hits: [{ id: entityId, slug: 'zhong-lab', name: 'Zhong Lab' }],
+      estimatedTotalHits: 1,
+    });
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult([
+        {
+          _id: entityId,
+          slug: 'zhong-lab',
+          name: 'Zhong Lab',
+          leadProfessorNames: ['Professor Zhong'],
+          kind: 'lab',
+          departments: [],
+          researchAreas: [],
+          sourceUrls: [],
+        },
+      ]),
+    );
+
+    await searchResearchGroupsViaMeili('Professor Zhong', {}, 1, 24);
+
+    expect(mocks.search).toHaveBeenCalledWith(
+      'zhong',
+      expect.objectContaining({
+        hybrid: { semanticRatio: 0.8, embedder: 'default' },
+      }),
+    );
+  });
+
+  it('does not let short AI fallback matching resolve Ailong or airway substrings', async () => {
+    mocks.search.mockRejectedValueOnce(new Error('meili unavailable'));
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult([
+        {
+          _id: '67d8928150621bcef434a1d5',
+          slug: 'ailong-lab',
+          name: 'Ailong Lab',
+          shortDescription: 'Studies airway inflammation.',
+          departments: [],
+          researchAreas: [],
+          keywords: [],
+          sourceUrls: [],
+        },
+        {
+          _id: '67d8928150621bcef434a1d6',
+          slug: 'actual-ai-lab',
+          name: 'Actual AI Lab',
+          shortDescription: 'Builds artificial intelligence systems.',
+          departments: [],
+          researchAreas: ['Machine Learning'],
+          keywords: [],
+          sourceUrls: [],
+        },
+      ]),
+    );
+
+    const result = await searchResearchGroupsViaMeili('AI', {}, 1, 24);
+
+    expect(result.researchEntities).toEqual([expect.objectContaining({ slug: 'actual-ai-lab' })]);
   });
 
   it('drops object-shaped Meili hit ids before Mongo visibility filtering', async () => {
@@ -279,7 +375,8 @@ describe('searchResearchGroupsViaMeili', () => {
       ],
       estimatedTotalHits: 2,
     });
-    mocks.researchEntityFind.mockReturnValue(queryResult([
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult([
         {
           _id: entityId,
           slug: 'safe-lab',
@@ -290,7 +387,8 @@ describe('searchResearchGroupsViaMeili', () => {
           sourceUrls: [],
           studentVisibilityTier: 'student_ready',
         },
-      ]));
+      ]),
+    );
 
     await searchResearchGroupsViaMeili('', {}, 1, 24);
 
@@ -319,7 +417,8 @@ describe('searchResearchGroupsViaMeili', () => {
       ],
       estimatedTotalHits: 2,
     });
-    mocks.researchEntityFind.mockReturnValue(queryResult([
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult([
         {
           _id: currentEntityId,
           slug: 'current-lab',
@@ -329,7 +428,8 @@ describe('searchResearchGroupsViaMeili', () => {
           researchAreas: [],
           sourceUrls: [],
         },
-      ]));
+      ]),
+    );
 
     const result = await searchResearchGroupsViaMeili('', {}, 1, 2);
 
@@ -433,7 +533,8 @@ describe('searchResearchGroupsViaMeili', () => {
       hits: [{ id: reviewEntityId, slug: 'review-lab', name: 'Review Lab' }],
       estimatedTotalHits: 1,
     });
-    mocks.researchEntityFind.mockReturnValue(queryResult([
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult([
         {
           _id: reviewEntityId,
           slug: 'review-lab',
@@ -444,7 +545,8 @@ describe('searchResearchGroupsViaMeili', () => {
           sourceUrls: [],
           studentVisibilityTier: 'operator_review',
         },
-      ]));
+      ]),
+    );
 
     const result = await searchResearchGroupsViaMeili(
       '',
@@ -468,7 +570,8 @@ describe('searchResearchGroupsViaMeili', () => {
   it('sorts and filters admin default browse by weakest quality first', async () => {
     const strongEntityId = '67d8928150621bcef434a1d8';
     const weakEntityId = '67d8928150621bcef434a1d9';
-    mocks.researchEntityFind.mockReturnValue(queryResult([
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult([
         {
           _id: strongEntityId,
           slug: 'strong-lab',
@@ -487,8 +590,11 @@ describe('searchResearchGroupsViaMeili', () => {
           departments: [],
           researchAreas: [],
         },
-      ]));
-    mocks.researchGroupMemberFind.mockReturnValue(queryResult([{ researchEntityId: strongEntityId, role: 'pi', userId: 'user-1' }]));
+      ]),
+    );
+    mocks.researchGroupMemberFind.mockReturnValue(
+      queryResult([{ researchEntityId: strongEntityId, role: 'pi', userId: 'user-1' }]),
+    );
 
     const result = await searchResearchGroupsViaMeili(
       '',
@@ -1087,7 +1193,8 @@ describe('getResearchGroupDetail', () => {
         researchAreas: [],
         sourceUrls: ['https://music.yale.edu/people/david-lang'],
         description: '',
-        profileSynthesisDescription: "David Lang's lab studies how humans process complex sound patterns.",
+        profileSynthesisDescription:
+          "David Lang's lab studies how humans process complex sound patterns.",
         descriptionSource: 'PI_PROFILE_SYNTHESIS',
         studentVisibilityTier: 'student_ready',
       }),
@@ -1140,9 +1247,8 @@ describe('getResearchGroupDetail', () => {
         sourceUrls: ['https://music.yale.edu/people/david-lang'],
         descriptionSource: 'PI_PROFILE_SYNTHESIS',
         profileSynthesisDescription:
-          "This music has been performed by major music, dance, and theater organizations throughout the world, and in the most renowned concert halls and festivals in the United States and Europe.",
-      },
-      ),
+          'This music has been performed by major music, dance, and theater organizations throughout the world, and in the most renowned concert halls and festivals in the United States and Europe.',
+      }),
     );
     mocks.researchGroupMemberFind.mockReturnValue(
       leanResult([
@@ -1198,7 +1304,8 @@ describe('listResearchEntityRelationshipPayload', () => {
     const publicInstituteId = '67d8928150621bcef434a1d6';
     const reviewInstituteId = '67d8928150621bcef434a1d7';
 
-    mocks.researchEntityRelationshipFind.mockReturnValue(queryResult([
+    mocks.researchEntityRelationshipFind.mockReturnValue(
+      queryResult([
         {
           _id: 'rel-yqi',
           sourceResearchEntityId: publicInstituteId,
@@ -1219,8 +1326,10 @@ describe('listResearchEntityRelationshipPayload', () => {
           evidenceStrength: 'MODERATE',
           evidenceQuote: 'Held private operator note',
         },
-      ]));
-    mocks.researchEntityFind.mockReturnValue(queryResult([
+      ]),
+    );
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult([
         {
           _id: publicInstituteId,
           slug: 'center-yale-quantum-institute',
@@ -1239,7 +1348,8 @@ describe('listResearchEntityRelationshipPayload', () => {
           studentVisibilityTier: 'operator_review',
           archived: false,
         },
-      ]));
+      ]),
+    );
 
     const result = await listResearchEntityRelationshipPayload(currentEntityId);
 
