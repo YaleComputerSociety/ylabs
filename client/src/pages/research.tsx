@@ -1,6 +1,6 @@
 import { FormEvent, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { isCancel } from 'axios';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 
 import ResearchHomeCard from '../components/research/ResearchHomeCard';
 import InfiniteScrollLoadingDots from '../components/shared/InfiniteScrollLoadingDots';
@@ -21,7 +21,12 @@ import {
 } from '../types/researchEntity';
 import { getUniqueDepartmentLabels } from '../utils/departmentNames';
 import useDocumentTitle from '../hooks/useDocumentTitle';
-import type { PathwaySearchFilters, PathwaySearchHit } from '../types/pathway';
+import type {
+  PathwaySearchFilters,
+  PathwaySearchHit,
+  PathwaySearchResponse,
+} from '../types/pathway';
+import { safeHttpUrl, safeRouteSegment } from '../utils/url';
 
 interface DepartmentResearchHomeConfig {
   abbreviation?: string;
@@ -177,6 +182,19 @@ const searchResearchEntities = async (
   };
 };
 
+const searchStudentPathways = async (
+  q: string,
+  signal?: AbortSignal,
+  filters: ResearchSearchFilters = {},
+): Promise<PathwaySearchResponse> => {
+  const response = await axios.post<PathwaySearchResponse>(
+    '/pathways/search',
+    { q, page: 1, pageSize: 12, filters },
+    { signal },
+  );
+  return response.data;
+};
+
 const waysInFromResearchEntities = (researchEntities: ResearchEntity[]): PathwaySearchHit[] =>
   researchEntities.flatMap((entity) => (Array.isArray(entity.waysIn) ? entity.waysIn : []));
 
@@ -226,6 +244,9 @@ const resultSummary = (
   }
   if (results.papers.length > 0) {
     parts.push(`${pluralize(results.papers.length, 'paper')} via profiles`);
+  }
+  if (results.pathways.length > 0) {
+    parts.push(pluralize(results.pathways.length, 'verified way in', 'verified ways in'));
   }
   return parts.join(', ');
 };
@@ -570,24 +591,36 @@ const Research = () => {
     }
 
     try {
-      const researchEntitiesPage = await searchResearchEntities(
-        searchQuery.trim(),
-        24,
-        controller.signal,
-        filters,
-        1,
-        {
-          trustTierFilters: isAdmin ? trustTierFilters : [],
-          includeSuppressed: isAdmin && trustTierFilters.includes('suppressed'),
-        },
-      );
+      const [pathwayResult, researchEntitiesPage] = await Promise.all([
+        searchStudentPathways(searchQuery.trim(), controller.signal, filters)
+          .then((result) => ({ result, unavailable: false }))
+          .catch(() => ({
+            result: { hits: [], estimatedTotalHits: 0, page: 1, pageSize: 12 },
+            unavailable: true,
+          })),
+        searchResearchEntities(
+          searchQuery.trim(),
+          24,
+          controller.signal,
+          filters,
+          1,
+          {
+            trustTierFilters: isAdmin ? trustTierFilters : [],
+            includeSuppressed: isAdmin && trustTierFilters.includes('suppressed'),
+          },
+        ),
+      ]);
 
       if (requestId !== searchRequestIdRef.current || controller.signal.aborted) return;
 
       const researchEntities = researchEntitiesPage.researchEntities;
-      const pathways = waysInFromResearchEntities(researchEntities);
+      const pathways = pathwayResult.result.hits;
 
-      setSearchError('');
+      setSearchError(
+        pathwayResult.unavailable
+          ? 'Verified ways in are temporarily unavailable. Research profile results are still current.'
+          : '',
+      );
       setSearchResultResearchEntities(researchEntities);
       setSearchTotal(researchEntitiesPage.estimatedTotalHits);
       setFacetDistribution(researchEntitiesPage.facetDistribution);
@@ -644,11 +677,11 @@ const Research = () => {
 
       setSearchResultResearchEntities((current) => {
         const nextResearchEntities = [...current, ...visibleResearchEntities];
-        setGroupedResults(
+        setGroupedResults((currentResults) =>
           buildGroupedSearchResults({
             query: submittedQuery,
             researchEntities: nextResearchEntities,
-            pathways: waysInFromResearchEntities(nextResearchEntities),
+            pathways: currentResults.pathways,
             papers: [],
           }),
         );
@@ -1062,14 +1095,54 @@ const Research = () => {
     <div className="yr-page min-h-[calc(100vh-8rem)]">
       <div className="mx-auto w-full max-w-screen-2xl px-5 py-5 sm:py-8 lg:px-8">
         <div className="grid gap-5 sm:gap-6 2xl:grid-cols-[22rem_minmax(0,1fr)] 2xl:items-start 2xl:gap-8">
-          <header className="yr-panel rounded-md p-4 sm:p-6 2xl:sticky 2xl:top-6">
-            <p className="yr-kicker mb-3">Yale Research</p>
-            <h1 className="max-w-3xl text-2xl font-semibold leading-tight tracking-normal text-slate-950 sm:text-4xl">
-              Find a Yale lab that fits you.
-            </h1>
-            <p
-              id="research-search-context"
-              className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-600 sm:mt-3 sm:text-base"
+        <header className="yr-panel rounded-md p-4 sm:p-6 2xl:sticky 2xl:top-6">
+          <p className="yr-kicker mb-3">Yale Research</p>
+          <h1 className="max-w-3xl text-2xl font-semibold leading-tight tracking-normal text-slate-950 sm:text-4xl">
+            Find a Yale lab that fits you.
+          </h1>
+          <p
+            id="research-search-context"
+            className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-600 sm:mt-3 sm:text-base"
+          >
+            Search by interest, professor, course topic, method, or question. We&apos;ll help you
+            find relevant research profiles and verified ways in when the source evidence is strong enough.
+          </p>
+
+          <form onSubmit={onSubmit} className="mt-4 sm:mt-7">
+            <label htmlFor="research-search" className="mb-2 block text-sm font-semibold text-slate-950">
+              Search Yale research
+            </label>
+            <div className="flex flex-col gap-2 sm:flex-row 2xl:flex-col">
+              <input
+                id="research-search"
+                ref={searchInputRef}
+                type="search"
+                value={query}
+                onChange={(event) => {
+                  const nextQuery = event.target.value;
+                  setQuery(nextQuery);
+                  if (!nextQuery.trim() && hasSubmittedSearch) {
+                    resetSearch();
+                  }
+                }}
+                aria-describedby="research-search-context research-search-help"
+                placeholder="Type a topic, professor, lab, method, or research question"
+                className="min-h-12 min-w-0 flex-1 rounded-md border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-4 text-base text-slate-950 placeholder:text-slate-400 focus:border-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 sm:min-h-14"
+              />
+              <button
+                type="submit"
+                className="min-h-12 rounded-md bg-[var(--yr-blue)] px-6 text-sm font-semibold text-white hover:bg-blue-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 disabled:bg-slate-200 disabled:text-slate-700 sm:min-h-14"
+                disabled={searchDisabled}
+              >
+                {searchLoading ? 'Searching...' : 'Search'}
+              </button>
+            </div>
+            <p id="research-search-help" className="mt-2 text-sm text-slate-600">
+              {searchHelpText}
+            </p>
+            <div
+              className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center"
+              aria-label="Suggested research searches"
             >
               Search by interest, professor, course topic, method, or question. We&apos;ll help you
               find relevant research profiles and possible next steps.
@@ -1156,122 +1229,117 @@ const Research = () => {
                     </label>
                   )}
                 </div>
-                {defaultSearchError && (
-                  <div
-                    role="alert"
-                    className="mb-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
-                  >
-                    {defaultSearchError}
-                  </div>
-                )}
-                {isAdmin && showWeakestProfilesFirst && (
-                  <div
-                    className="yr-muted-surface mb-4 flex flex-wrap gap-2 rounded-md p-2"
-                    aria-label="Quality filters"
-                  >
-                    {QUALITY_FILTER_OPTIONS.map((option) => {
-                      const isActive = qualityFilters.includes(option.value);
-                      return (
-                        <button
-                          key={option.value}
-                          type="button"
-                          aria-pressed={isActive}
-                          onClick={() => toggleQualityFilter(option.value)}
-                          className={`min-h-10 rounded-md border px-3 py-1.5 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 ${
-                            isActive
-                              ? 'border-blue-700 bg-[var(--yr-panel)] text-blue-900'
-                              : 'border-[var(--yr-border-warm)] bg-transparent text-slate-700 hover:bg-[var(--yr-panel)]'
-                          }`}
-                        >
-                          {option.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-                {isAdmin && (
-                  <div
-                    className="mb-4 flex flex-wrap gap-2 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-2"
-                    aria-label="Trust tier filters"
-                  >
-                    {TRUST_TIER_FILTER_OPTIONS.map((option) => {
-                      const isActive = trustTierFilters.includes(option.value);
-                      return (
-                        <button
-                          key={option.value}
-                          type="button"
-                          aria-pressed={isActive}
-                          onClick={() => toggleTrustTierFilter(option.value)}
-                          className={`min-h-10 rounded-md border px-3 py-1.5 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 ${
-                            isActive
-                              ? 'border-slate-900 bg-slate-900 text-white'
-                              : 'border-[var(--yr-line)] bg-[var(--yr-panel)] text-slate-700 hover:bg-[var(--yr-panel-muted)]'
-                          }`}
-                        >
-                          {option.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-                {defaultSearchLoading && defaultGroupedResults.clusters.length === 0 ? (
-                  <div className="grid gap-3">
-                    {Array.from({ length: 3 }).map((_, index) => (
-                      <ClusterLoadingCard key={index} />
-                    ))}
-                  </div>
-                ) : defaultGroupedResults.clusters.length > 0 ? (
-                  <div className="grid gap-5">
-                    <div>
-                      <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-[repeat(3,minmax(0,1fr))]">
-                        {defaultGroupedResults.clusters.map((cluster) => (
-                          <ResearchHomeCard
-                            key={cluster.id}
-                            home={cluster}
-                            onSelect={exploreHome}
-                            variant="compact"
-                            showAdminQuality={isAdmin && showWeakestProfilesFirst}
-                          />
-                        ))}
-                      </div>
-                      {defaultSearchLoading && defaultGroupedResults.clusters.length > 0 && (
-                        <InfiniteScrollLoadingDots label="Loading more research homes" />
-                      )}
-                      {!defaultSearchExhausted && (
-                        <div ref={defaultSentinelRef} className="h-10 w-full" />
-                      )}
-                    </div>
-                  </div>
-                ) : (
-                  <EmptyGroup>
-                    No research homes match these filters. Try a broader topic, professor name, lab,
-                    method, or research question.
-                  </EmptyGroup>
-                )}
-              </section>
+              </div>
+            ) : (
+              <EmptyGroup>
+                No research homes match these filters. Try a broader topic, professor name, lab,
+                method, or research question.
+              </EmptyGroup>
+            )}
+          </section>
+        )}
+
+        {hasSubmittedSearch && (
+          <section aria-busy={searchLoading} aria-label="Search results">
+            <div className="yr-card rounded-md p-4 md:flex md:items-center md:justify-between md:gap-3">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-950">
+                  Showing research matches for &apos;{submittedQuery}&apos;
+                </h2>
+                <p
+                  role="status"
+                  aria-live="polite"
+                  aria-atomic="true"
+                  className="mt-1 text-sm text-slate-600"
+                >
+                  {resultSummary(
+                    activeResults,
+                    submittedQuery,
+                    searchLoading,
+                    departmentSearch?.label,
+                  )}
+                </p>
+              </div>
+            </div>
+
+            {searchError && (
+              <div
+                role={searchError.startsWith('Verified ways in') ? 'status' : 'alert'}
+                className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
+              >
+                {searchError}
+              </div>
             )}
 
-            {hasSubmittedSearch && (
-              <section aria-busy={searchLoading} aria-label="Search results">
-                <div className="yr-card rounded-md p-4 md:flex md:items-center md:justify-between md:gap-3">
-                  <div>
-                    <h2 className="text-lg font-semibold text-slate-950">
-                      Showing research matches for &apos;{submittedQuery}&apos;
-                    </h2>
-                    <p
-                      role="status"
-                      aria-live="polite"
-                      aria-atomic="true"
-                      className="mt-1 text-sm text-slate-600"
-                    >
-                      {resultSummary(
-                        activeResults,
-                        submittedQuery,
-                        searchLoading,
-                        departmentSearch?.label,
-                      )}
-                    </p>
-                  </div>
+            <section className="mt-5" aria-label="Verified ways in">
+              <SectionHeading>Verified ways in</SectionHeading>
+              {searchLoading && activeResults.pathways.length === 0 ? (
+                <ClusterLoadingCard />
+              ) : activeResults.pathways.length > 0 ? (
+                <div className="grid gap-3 lg:grid-cols-2">
+                  {activeResults.pathways.map((pathway) => {
+                    const sourceUrl = safeHttpUrl(
+                      pathway.evidence?.[0]?.sourceUrl || pathway.sourceUrls?.[0],
+                    );
+                    const entityName =
+                      pathway.researchEntity.displayName || pathway.researchEntity.name;
+                    return (
+                      <article
+                        key={pathway._id}
+                        className="yr-card rounded-md p-4"
+                      >
+                        <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-600">
+                          <span>{pathway.evidenceStrength.toLowerCase()} evidence</span>
+                          {typeof pathway.confidence === 'number' && (
+                            <span>{Math.round(pathway.confidence * 100)}% confidence</span>
+                          )}
+                        </div>
+                        <h3 className="mt-2 text-base font-semibold text-slate-950">
+                          {pathway.studentFacingLabel}
+                        </h3>
+                        <p className="mt-1 text-sm text-slate-700">{entityName}</p>
+                        {pathway.explanation && (
+                          <p className="mt-2 text-sm leading-relaxed text-slate-600">
+                            {pathway.explanation}
+                          </p>
+                        )}
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <Link
+                            to={`/research/${safeRouteSegment(pathway.researchEntity.slug)}`}
+                            className="inline-flex min-h-11 items-center rounded-md bg-[var(--yr-blue)] px-3 py-2 text-sm font-semibold text-white"
+                          >
+                            Open research profile
+                          </Link>
+                          {sourceUrl && (
+                            <a
+                              href={sourceUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex min-h-11 items-center rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-sm font-semibold text-slate-800"
+                            >
+                              Review evidence
+                            </a>
+                          )}
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              ) : (
+                <EmptyGroup>
+                  No pathways meet the current evidence and confidence standard for this search.
+                  Research profiles may still provide useful planning context.
+                </EmptyGroup>
+              )}
+            </section>
+
+            <section className="mt-5">
+              <SectionHeading>Research homes</SectionHeading>
+              {searchLoading && activeResults.clusters.length === 0 ? (
+                <div className="grid gap-3">
+                  {Array.from({ length: 3 }).map((_, index) => (
+                    <ClusterLoadingCard key={index} />
+                  ))}
                 </div>
 
                 <fieldset className="mt-3 border-0 p-0">
