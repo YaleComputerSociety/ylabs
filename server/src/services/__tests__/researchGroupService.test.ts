@@ -276,17 +276,26 @@ describe('searchResearchGroupsViaMeili', () => {
     mocks.search.mockResolvedValueOnce({
       hits: [],
       estimatedTotalHits: 0,
+      facetDistribution: {
+        school: { 'Yale College': 3 },
+        departments: { 'Computer Science': 2 },
+      },
     });
 
-    await searchResearchGroupsViaMeili('AI', {}, 1, 24);
+    const result = await searchResearchGroupsViaMeili('AI', {}, 1, 24);
 
     expect(mocks.search).toHaveBeenCalledWith(
       'artificial intelligence machine learning deep learning ai',
       expect.objectContaining({
         attributesToSearchOn: ['studentSearchTerms', 'researchAreas', 'keywords', 'departments'],
+        facets: ['school', 'departments'],
       }),
     );
     expect(mocks.search.mock.calls[0][1]).not.toHaveProperty('hybrid');
+    expect(result.facetDistribution).toEqual({
+      school: { 'Yale College': 3 },
+      departments: { 'Computer Science': 2 },
+    });
   });
 
   it('strips professor noise while preserving faculty surname searches', async () => {
