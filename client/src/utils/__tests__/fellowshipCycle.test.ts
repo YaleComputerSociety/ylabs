@@ -62,6 +62,20 @@ const baseFellowship = (overrides: Partial<Fellowship> = {}): Fellowship => ({
 const now = new Date('2026-05-14T00:00:00.000Z');
 
 describe('fellowshipCycle', () => {
+  it('classifies a future open date as opening soon even when not currently accepting', () => {
+    const status = getFellowshipCycleStatus(
+      baseFellowship({
+        isAcceptingApplications: false,
+        applicationOpenDate: '2026-06-01T12:00:00.000Z',
+        deadline: '2026-07-01T12:00:00.000Z',
+      }),
+      now,
+    );
+
+    expect(status.category).toBe('openingSoon');
+    expect(status.label).toBe('Opens Soon');
+  });
+
   it('classifies active fellowships as open or closing soon', () => {
     expect(
       getFellowshipCycleStatus(
