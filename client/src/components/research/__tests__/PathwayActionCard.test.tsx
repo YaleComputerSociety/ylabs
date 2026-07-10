@@ -80,8 +80,8 @@ describe('PathwayActionCard', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByText('Plan targeted outreach')).toBeTruthy();
-    expect(screen.getByText('Contact the program with a specific question.')).toBeTruthy();
+    expect(screen.getByText('Review source context')).toBeTruthy();
+    expect(screen.getByText('Review the program source and note any specific questions.')).toBeTruthy();
     expect(screen.queryByRole('link', { name: 'Open application' })).toBeNull();
   });
 

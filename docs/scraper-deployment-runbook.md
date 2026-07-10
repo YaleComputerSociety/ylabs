@@ -363,7 +363,7 @@ Run these checks against the production app and production API after copy/delta 
 - Research search returns real `research_entities` results for broad terms such as `machine learning`, `biology`, and `history`.
 - Research relevance smoke checks cover short/noisy student queries such as `AI`, `Professor Zhong`, and `computer vision for medical imaging` without substring-only matches dominating true topic or person matches.
 - A known research detail page renders sources, evidence, people, and pathways without legacy `/labs` or `/api/research-groups` dependencies.
-- Research detail and opportunity pages show evidence-backed Ways In without exposing raw non-public scraped contact data.
+- Research detail and opportunity pages show evidence-backed planning context without exposing raw non-public scraped contact data.
 - Opportunity detail renders a listing-bridged open posting and a scraper-derived closed or historical posting.
 - Pathways and Programs/Fellowships search require authentication when unauthenticated, and authenticated operator smoke checks show payloads without `operator_review` or `suppressed` records.
 - Unauthenticated admin/operator routes return `401`.

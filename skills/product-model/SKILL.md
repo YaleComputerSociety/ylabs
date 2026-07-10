@@ -14,10 +14,10 @@ Yale research includes labs, centers, institutes, faculty projects, digital huma
 ## Student-facing surfaces
 
 - **Explore Research**: curiosity-first browsing of labs, centers, faculty projects, institutes, archives, collections projects, and thesis-adviser-like research areas.
-- **Ways In**: practical evidence for plausible homes, including next-step route, methods, timing, compensation or funding possibility, thesis fit, beginner-friendly signals, hours per week when known, and constraints like Python, archival research, wet lab, or social-science data.
+- **Planning Context**: practical evidence for plausible homes, including next-step route, methods, timing, compensation or funding possibility, thesis fit, beginner-friendly signals, hours per week when known, and constraints like Python, archival research, wet lab, or social-science data.
 
-Keep Ways In embedded in Yale Research rather than spinning it into a separate product surface.
-Use warmer student-facing vocabulary such as "Ways In", "Evidence", and "Best Next Step" where appropriate.
+Keep Ways In as an internal model embedded in Yale Research rather than spinning it into a separate product surface.
+Use warmer student-facing vocabulary such as "Planning Context", "Evidence", and "Best Next Step" where appropriate.
 Iterate on canonical product surfaces such as `/research`, or use a non-URL feature flag.
 Do not create student-facing versioned routes like `/v1`, `/research-v2`, or similar for ordinary product iteration.
 
@@ -29,7 +29,7 @@ Entity pages should answer:
 - who might supervise undergrads day to day;
 - what methods it uses;
 - whether undergrads have participated before;
-- what plausible access evidence exists;
+- what plausible access evidence and source context exist;
 - what the student should do next;
 - how the relationship might later be formalized;
 - which source verifies the information.
