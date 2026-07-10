@@ -193,4 +193,5 @@ export interface ResearchGroupSearchResponse {
   estimatedTotalHits: number;
   page: number;
   pageSize: number;
+  facetDistribution?: Record<string, Record<string, number>>;
 }

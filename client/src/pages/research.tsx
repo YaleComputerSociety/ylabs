@@ -101,6 +101,7 @@ interface ResearchEntitySearchPage {
   estimatedTotalHits: number;
   page: number;
   pageSize: number;
+  facetDistribution: Record<string, Record<string, number>>;
 }
 
 interface ActiveResearchSearchRequest {
@@ -118,6 +119,10 @@ interface ResearchPageSnapshot {
   showWeakestProfilesFirst: boolean;
   qualityFilters: ResearchQualityFilter[];
   trustTierFilters: ResearchTrustTierFilter[];
+  selectedSchool: string;
+  selectedDepartment: string;
+  requireUndergradEvidence: boolean;
+  facetDistribution: Record<string, Record<string, number>>;
   groupedResults: GroupedResearchResults;
   searchResultResearchEntities: ResearchEntity[];
   searchPage: number;
@@ -173,6 +178,7 @@ const searchResearchEntities = async (
     estimatedTotalHits: normalized.estimatedTotalHits || 0,
     page: normalized.page || page,
     pageSize: normalized.pageSize || pageSize,
+    facetDistribution: normalized.facetDistribution || {},
   };
 };
 
@@ -199,9 +205,7 @@ const isResearchEntitySearchExhausted = (page: ResearchEntitySearchPage) =>
 
 const SectionHeading = ({ children }: { children: string }) => (
   <div className="mb-3 flex w-full items-center justify-between gap-3">
-    <h2 className="yr-kicker min-w-0 flex-1">
-      {children}
-    </h2>
+    <h2 className="yr-kicker min-w-0 flex-1">{children}</h2>
   </div>
 );
 
@@ -323,9 +327,7 @@ const Research = () => {
     researchPageSnapshot?.key === pageSnapshotKey && researchPageSnapshot.isAdmin === isAdmin
       ? researchPageSnapshot
       : null;
-  const restoredSnapshotRef = useRef<ResearchPageSnapshot | null>(
-    restorableSnapshot,
-  );
+  const restoredSnapshotRef = useRef<ResearchPageSnapshot | null>(restorableSnapshot);
   const [query, setQuery] = useState(
     () => restoredSnapshotRef.current?.query ?? searchParams.get('q') ?? '',
   );
@@ -362,14 +364,30 @@ const Research = () => {
           )
         : []),
   );
-  const [groupedResults, setGroupedResults] = useState<GroupedResearchResults>(() =>
-    restoredSnapshotRef.current?.groupedResults ?? emptyGroupedResults(''),
+  const [selectedSchool, setSelectedSchool] = useState(
+    () => restoredSnapshotRef.current?.selectedSchool ?? searchParams.get('school') ?? '',
   );
-  const [searchResultResearchEntities, setSearchResultResearchEntities] = useState<ResearchEntity[]>(
-    () => restoredSnapshotRef.current?.searchResultResearchEntities ?? [],
+  const [selectedDepartment, setSelectedDepartment] = useState(
+    () => restoredSnapshotRef.current?.selectedDepartment ?? searchParams.get('department') ?? '',
   );
+  const [requireUndergradEvidence, setRequireUndergradEvidence] = useState(
+    () =>
+      restoredSnapshotRef.current?.requireUndergradEvidence ??
+      searchParams.get('undergrad') === '1',
+  );
+  const [facetDistribution, setFacetDistribution] = useState<
+    Record<string, Record<string, number>>
+  >(() => restoredSnapshotRef.current?.facetDistribution ?? {});
+  const [groupedResults, setGroupedResults] = useState<GroupedResearchResults>(
+    () => restoredSnapshotRef.current?.groupedResults ?? emptyGroupedResults(''),
+  );
+  const [searchResultResearchEntities, setSearchResultResearchEntities] = useState<
+    ResearchEntity[]
+  >(() => restoredSnapshotRef.current?.searchResultResearchEntities ?? []);
   const [searchPage, setSearchPage] = useState(() => restoredSnapshotRef.current?.searchPage ?? 1);
-  const [searchTotal, setSearchTotal] = useState(() => restoredSnapshotRef.current?.searchTotal ?? 0);
+  const [searchTotal, setSearchTotal] = useState(
+    () => restoredSnapshotRef.current?.searchTotal ?? 0,
+  );
   const [searchExhausted, setSearchExhausted] = useState(
     () => restoredSnapshotRef.current?.searchExhausted ?? true,
   );
@@ -412,10 +430,7 @@ const Research = () => {
     [departments],
   );
   const departmentSearchTargetByLabel = useMemo(
-    () =>
-      new Map(
-        departmentSearchTargets.map((target) => [target.label.toLowerCase(), target]),
-      ),
+    () => new Map(departmentSearchTargets.map((target) => [target.label.toLowerCase(), target])),
     [departmentSearchTargets],
   );
 
@@ -428,6 +443,9 @@ const Research = () => {
       showWeakest?: boolean;
       quality?: ResearchQualityFilter[];
       trustTiers?: ResearchTrustTierFilter[];
+      school?: string;
+      department?: string;
+      requireUndergradEvidence?: boolean;
     },
     options: { replace?: boolean } = {},
   ) => {
@@ -436,6 +454,9 @@ const Research = () => {
     if (nextQuery) params.set('q', nextQuery);
     const departmentLabel = (nextState.departmentLabel || '').trim();
     if (departmentLabel) params.set('dept', departmentLabel);
+    if (nextState.school?.trim()) params.set('school', nextState.school.trim());
+    if (nextState.department?.trim()) params.set('department', nextState.department.trim());
+    if (nextState.requireUndergradEvidence) params.set('undergrad', '1');
 
     if (isAdmin) {
       if (nextState.showWeakest) params.set('weak', '1');
@@ -446,10 +467,13 @@ const Research = () => {
     setSearchParams(params, { replace: Boolean(options.replace) });
   };
 
-  useEffect(() => () => {
-    searchAbortRef.current?.abort();
-    defaultSearchAbortRef.current?.abort();
-  }, []);
+  useEffect(
+    () => () => {
+      searchAbortRef.current?.abort();
+      defaultSearchAbortRef.current?.abort();
+    },
+    [],
+  );
 
   useEffect(() => {
     if (isAdmin) return;
@@ -557,6 +581,9 @@ const Research = () => {
       writeResearchSearchParams({
         query: trimmed,
         departmentLabel: options.departmentSearch?.label,
+        school: filters.school?.[0],
+        department: filters.departments?.[0],
+        requireUndergradEvidence: filters.acceptanceLevel === 'verified-or-likely',
         showWeakest: showWeakestProfilesFirst,
         quality: qualityFilters,
         trustTiers: trustTierFilters,
@@ -596,6 +623,7 @@ const Research = () => {
       );
       setSearchResultResearchEntities(researchEntities);
       setSearchTotal(researchEntitiesPage.estimatedTotalHits);
+      setFacetDistribution(researchEntitiesPage.facetDistribution);
       setSearchExhausted(isResearchEntitySearchExhausted(researchEntitiesPage));
 
       setGroupedResults(
@@ -677,9 +705,23 @@ const Research = () => {
     }
   };
 
+  const studentSearchFilters = (
+    school = selectedSchool,
+    department = selectedDepartment,
+    undergradEvidence = requireUndergradEvidence,
+  ): ResearchSearchFilters => ({
+    ...(school ? { school: [school] } : {}),
+    ...(department ? { departments: [department] } : {}),
+    ...(undergradEvidence ? { acceptanceLevel: 'verified-or-likely' as const } : {}),
+  });
+
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    runSearch(query.trim());
+    const filters = studentSearchFilters();
+    runSearch(query.trim(), {
+      filters,
+      hasFilterSelections: hasStructuredFilters(filters),
+    });
   };
 
   const resetSearch = () => {
@@ -688,6 +730,10 @@ const Research = () => {
     setQuery('');
     setSubmittedQuery('');
     setDepartmentSearch(null);
+    setSelectedSchool('');
+    setSelectedDepartment('');
+    setRequireUndergradEvidence(false);
+    setFacetDistribution({});
     setGroupedResults(emptyGroupedResults(''));
     setSearchResultResearchEntities([]);
     setSearchPage(1);
@@ -717,6 +763,9 @@ const Research = () => {
   useEffect(() => {
     const urlQuery = searchParams.get('q') || '';
     const urlDepartmentLabel = searchParams.get('dept') || '';
+    const urlSchool = searchParams.get('school') || '';
+    const urlDepartment = searchParams.get('department') || '';
+    const urlRequiresUndergradEvidence = searchParams.get('undergrad') === '1';
     const urlWeakestFirst = isAdmin && searchParams.get('weak') === '1';
     const urlQualityFilters = isAdmin
       ? readSearchParamList(
@@ -751,9 +800,27 @@ const Research = () => {
       setTrustTierFilters(urlTrustTierFilters);
       return;
     }
+    if (selectedSchool !== urlSchool) {
+      setSelectedSchool(urlSchool);
+      return;
+    }
+    if (selectedDepartment !== urlDepartment) {
+      setSelectedDepartment(urlDepartment);
+      return;
+    }
+    if (requireUndergradEvidence !== urlRequiresUndergradEvidence) {
+      setRequireUndergradEvidence(urlRequiresUndergradEvidence);
+      return;
+    }
+
+    const studentFilters: ResearchSearchFilters = {
+      ...(urlSchool ? { school: [urlSchool] } : {}),
+      ...(urlDepartment ? { departments: [urlDepartment] } : {}),
+      ...(urlRequiresUndergradEvidence ? { acceptanceLevel: 'verified-or-likely' as const } : {}),
+    };
 
     const urlDepartmentSearch = urlDepartmentLabel
-      ? departmentSearchTargetByLabel.get(urlDepartmentLabel.toLowerCase()) ?? null
+      ? (departmentSearchTargetByLabel.get(urlDepartmentLabel.toLowerCase()) ?? null)
       : null;
 
     if (urlDepartmentSearch) {
@@ -771,10 +838,29 @@ const Research = () => {
     }
 
     if (urlQuery.trim()) {
-      if (!urlDepartmentLabel && submittedQuery === urlQuery.trim()) {
+      if (
+        !urlDepartmentLabel &&
+        submittedQuery === urlQuery.trim() &&
+        JSON.stringify(activeSearchRequest?.filters || {}) === JSON.stringify(studentFilters)
+      ) {
         return;
       }
-      runSearch(urlQuery, { syncUrl: false });
+      runSearch(urlQuery, { filters: studentFilters, syncUrl: false });
+      return;
+    }
+
+    if (hasStructuredFilters(studentFilters)) {
+      if (
+        submittedQuery === 'filtered research' &&
+        JSON.stringify(activeSearchRequest?.filters || {}) === JSON.stringify(studentFilters)
+      ) {
+        return;
+      }
+      runSearch('', {
+        filters: studentFilters,
+        hasFilterSelections: true,
+        syncUrl: false,
+      });
       return;
     }
 
@@ -801,10 +887,14 @@ const Research = () => {
     showWeakestProfilesFirst,
     qualityFilters,
     trustTierFilters,
+    selectedSchool,
+    selectedDepartment,
+    requireUndergradEvidence,
     departmentSearchTargetByLabel,
     departmentSearch,
     hasSubmittedSearch,
     submittedQuery,
+    activeSearchRequest,
   ]);
 
   useEffect(() => {
@@ -817,6 +907,10 @@ const Research = () => {
       showWeakestProfilesFirst,
       qualityFilters,
       trustTierFilters,
+      selectedSchool,
+      selectedDepartment,
+      requireUndergradEvidence,
+      facetDistribution,
       groupedResults,
       searchResultResearchEntities,
       searchPage,
@@ -838,6 +932,10 @@ const Research = () => {
     showWeakestProfilesFirst,
     qualityFilters,
     trustTierFilters,
+    selectedSchool,
+    selectedDepartment,
+    requireUndergradEvidence,
+    facetDistribution,
     groupedResults,
     searchResultResearchEntities,
     searchPage,
@@ -862,10 +960,7 @@ const Research = () => {
     runSearchResultsPage(searchPage);
   }, [activeSearchRequest, hasSubmittedSearch, searchPage]);
 
-  const activeResults = useMemo(
-    () => groupedResults,
-    [groupedResults],
-  );
+  const activeResults = useMemo(() => groupedResults, [groupedResults]);
   const defaultGroupedResults = useMemo(
     () =>
       buildGroupedSearchResults({
@@ -890,10 +985,49 @@ const Research = () => {
     totalRawCount: searchTotal,
     filteredCount: searchResultResearchEntities.length,
   });
-  const searchDisabled = searchLoading || query.trim().length === 0;
+  const hasStudentFacetSelection = Boolean(
+    selectedSchool || selectedDepartment || requireUndergradEvidence,
+  );
+  const searchDisabled = searchLoading || (query.trim().length === 0 && !hasStudentFacetSelection);
   const searchHelpText = query.trim()
     ? 'Press Enter or Search to see matching research homes.'
-    : 'Enter a topic or name to enable Search.';
+    : hasStudentFacetSelection
+      ? 'Search with the selected filters.'
+      : 'Enter a topic or name to enable Search.';
+  const schoolOptions = useMemo(
+    () =>
+      Array.from(
+        new Set([
+          ...Object.keys(facetDistribution.school || {}),
+          ...(selectedSchool ? [selectedSchool] : []),
+        ]),
+      ).sort((a, b) => a.localeCompare(b)),
+    [facetDistribution.school, selectedSchool],
+  );
+  const departmentOptions = useMemo(
+    () =>
+      Array.from(
+        new Set([
+          ...Object.keys(facetDistribution.departments || {}),
+          ...(selectedDepartment ? [selectedDepartment] : []),
+        ]),
+      ).sort((a, b) => a.localeCompare(b)),
+    [facetDistribution.departments, selectedDepartment],
+  );
+  const applyStudentFacets = (school: string, department: string, undergradEvidence: boolean) => {
+    setSelectedSchool(school);
+    setSelectedDepartment(department);
+    setRequireUndergradEvidence(undergradEvidence);
+    const filters = studentSearchFilters(school, department, undergradEvidence);
+    if (!query.trim() && !hasStructuredFilters(filters)) {
+      resetSearch();
+      return;
+    }
+    runSearch(query.trim(), {
+      filters,
+      hasFilterSelections: hasStructuredFilters(filters),
+    });
+  };
   const runDepartmentSearch = (target: DepartmentSearchTarget) =>
     runSearch(target.label, {
       searchQuery: '',
@@ -1010,133 +1144,90 @@ const Research = () => {
               className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center"
               aria-label="Suggested research searches"
             >
-              <span className="yr-kicker text-[0.7rem]">
-                Try a starting point
-              </span>
-              <div className="flex flex-wrap gap-2">
-                {QUICK_START_PROMPTS.map((prompt) => (
-                  <button
-                    key={prompt.query}
-                    type="button"
-                    onClick={() => {
-                      setQuery(prompt.query);
-                      runSearch(prompt.query);
-                    }}
-                    className="yr-pill yr-pill-blue min-h-[44px] rounded-md px-3 py-2 transition-colors hover:border-blue-300 hover:bg-[var(--yr-panel)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
-                  >
-                    {prompt.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </form>
+              Search by interest, professor, course topic, method, or question. We&apos;ll help you
+              find relevant research profiles and possible next steps.
+            </p>
 
-        </header>
+            <form onSubmit={onSubmit} className="mt-4 sm:mt-7">
+              <label
+                htmlFor="research-search"
+                className="mb-2 block text-sm font-semibold text-slate-950"
+              >
+                Search Yale research
+              </label>
+              <div className="flex flex-col gap-2 sm:flex-row 2xl:flex-col">
+                <input
+                  id="research-search"
+                  ref={searchInputRef}
+                  type="search"
+                  value={query}
+                  onChange={(event) => {
+                    const nextQuery = event.target.value;
+                    setQuery(nextQuery);
+                    if (!nextQuery.trim() && hasSubmittedSearch) {
+                      resetSearch();
+                    }
+                  }}
+                  aria-describedby="research-search-context research-search-help"
+                  placeholder="Type a topic, professor, lab, method, or research question"
+                  className="min-h-12 min-w-0 flex-1 rounded-md border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-4 text-base text-slate-950 placeholder:text-slate-400 focus:border-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 sm:min-h-14"
+                />
+                <button
+                  type="submit"
+                  className="min-h-12 rounded-md bg-[var(--yr-blue)] px-6 text-sm font-semibold text-white hover:bg-blue-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 disabled:bg-slate-200 disabled:text-slate-700 sm:min-h-14"
+                  disabled={searchDisabled}
+                >
+                  {searchLoading ? 'Searching...' : 'Search'}
+                </button>
+              </div>
+              <p id="research-search-help" className="mt-2 text-sm text-slate-600">
+                {searchHelpText}
+              </p>
+              <div
+                className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center"
+                aria-label="Suggested research searches"
+              >
+                <span className="yr-kicker text-[0.7rem]">Try a starting point</span>
+                <div className="flex flex-wrap gap-2">
+                  {QUICK_START_PROMPTS.map((prompt) => (
+                    <button
+                      key={prompt.query}
+                      type="button"
+                      onClick={() => {
+                        setQuery(prompt.query);
+                        runSearch(prompt.query);
+                      }}
+                      className="yr-pill yr-pill-blue min-h-[44px] rounded-md px-3 py-2 transition-colors hover:border-blue-300 hover:bg-[var(--yr-panel)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                    >
+                      {prompt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </form>
+          </header>
 
-        <div className="min-w-0">
-        {!hasSubmittedSearch && (
-          <section aria-busy={defaultSearchLoading} aria-label="Research homes to explore">
-            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-              <div className="w-full">
-                <SectionHeading>Research homes to explore</SectionHeading>
-                <p className="text-sm text-gray-600">
-                  Open a profile to review people, evidence, sources, and planning context.
-                </p>
-              </div>
-              {isAdmin && (
-                <label className="yr-card inline-flex min-h-11 shrink-0 items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-slate-700">
-                  <input
-                    type="checkbox"
-                    checked={showWeakestProfilesFirst}
-                    onChange={(event) => setWeakestProfilesFirst(event.target.checked)}
-                    className="h-4 w-4 rounded border-[var(--yr-line-strong)] text-blue-700 focus:ring-blue-200"
-                  />
-                  <span>Show weakest profiles first</span>
-                </label>
-              )}
-            </div>
-            {defaultSearchError && (
-              <div
-                role="alert"
-                className="mb-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
-              >
-                {defaultSearchError}
-              </div>
-            )}
-            {isAdmin && showWeakestProfilesFirst && (
-              <div
-                className="yr-muted-surface mb-4 flex flex-wrap gap-2 rounded-md p-2"
-                aria-label="Quality filters"
-              >
-                {QUALITY_FILTER_OPTIONS.map((option) => {
-                  const isActive = qualityFilters.includes(option.value);
-                  return (
-                    <button
-                      key={option.value}
-                      type="button"
-                      aria-pressed={isActive}
-                      onClick={() => toggleQualityFilter(option.value)}
-                      className={`min-h-10 rounded-md border px-3 py-1.5 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 ${
-                        isActive
-                          ? 'border-blue-700 bg-[var(--yr-panel)] text-blue-900'
-                          : 'border-[var(--yr-border-warm)] bg-transparent text-slate-700 hover:bg-[var(--yr-panel)]'
-                      }`}
-                    >
-                      {option.label}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-            {isAdmin && (
-              <div
-                className="mb-4 flex flex-wrap gap-2 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-2"
-                aria-label="Trust tier filters"
-              >
-                {TRUST_TIER_FILTER_OPTIONS.map((option) => {
-                  const isActive = trustTierFilters.includes(option.value);
-                  return (
-                    <button
-                      key={option.value}
-                      type="button"
-                      aria-pressed={isActive}
-                      onClick={() => toggleTrustTierFilter(option.value)}
-                      className={`min-h-10 rounded-md border px-3 py-1.5 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 ${
-                        isActive
-                          ? 'border-slate-900 bg-slate-900 text-white'
-                          : 'border-[var(--yr-line)] bg-[var(--yr-panel)] text-slate-700 hover:bg-[var(--yr-panel-muted)]'
-                      }`}
-                    >
-                      {option.label}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-            {defaultSearchLoading && defaultGroupedResults.clusters.length === 0 ? (
-              <div className="grid gap-3">
-                {Array.from({ length: 3 }).map((_, index) => (
-                  <ClusterLoadingCard key={index} />
-                ))}
-              </div>
-            ) : defaultGroupedResults.clusters.length > 0 ? (
-              <div className="grid gap-5">
-                <div>
-                  <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-[repeat(3,minmax(0,1fr))]">
-                    {defaultGroupedResults.clusters.map((cluster) => (
-                      <ResearchHomeCard
-                        key={cluster.id}
-                        home={cluster}
-                        onSelect={exploreHome}
-                        variant="compact"
-                        showAdminQuality={isAdmin && showWeakestProfilesFirst}
-                      />
-                    ))}
+          <div className="min-w-0">
+            {!hasSubmittedSearch && (
+              <section aria-busy={defaultSearchLoading} aria-label="Research homes to explore">
+                <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                  <div className="w-full">
+                    <SectionHeading>Research homes to explore</SectionHeading>
+                    <p className="text-sm text-gray-600">
+                      Open a profile to review people, evidence, sources, and planning context.
+                    </p>
                   </div>
-                  {defaultSearchLoading && defaultGroupedResults.clusters.length > 0 && (
-                    <InfiniteScrollLoadingDots label="Loading more research homes" />
+                  {isAdmin && (
+                    <label className="yr-card inline-flex min-h-11 shrink-0 items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={showWeakestProfilesFirst}
+                        onChange={(event) => setWeakestProfilesFirst(event.target.checked)}
+                        className="h-4 w-4 rounded border-[var(--yr-line-strong)] text-blue-700 focus:ring-blue-200"
+                      />
+                      <span>Show weakest profiles first</span>
+                    </label>
                   )}
-                  {!defaultSearchExhausted && <div ref={defaultSentinelRef} className="h-10 w-full" />}
                 </div>
               </div>
             ) : (
@@ -1250,46 +1341,139 @@ const Research = () => {
                     <ClusterLoadingCard key={index} />
                   ))}
                 </div>
-              ) : activeResults.clusters.length > 0 ? (
-                <>
-                  <div className="grid gap-5">
-                    <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-[repeat(3,minmax(0,1fr))]">
-                      {activeResults.clusters.map((cluster) => (
-                        <ResearchHomeCard
-                          key={cluster.id}
-                          home={cluster}
-                          onSelect={exploreHome}
-                          variant="compact"
-                        />
+
+                <fieldset className="mt-3 border-0 p-0">
+                  <legend className="sr-only">Narrow research results</legend>
+                  <div className="grid gap-4 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-3 sm:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto] xl:items-end">
+                    <label className="block text-sm font-medium text-slate-800">
+                      School
+                      <select
+                        aria-label="Filter by school"
+                        value={selectedSchool}
+                        onChange={(event) =>
+                          applyStudentFacets(
+                            event.target.value,
+                            selectedDepartment,
+                            requireUndergradEvidence,
+                          )
+                        }
+                        className="mt-1 min-h-11 w-full rounded-md border border-[var(--yr-line-strong)] bg-white px-3 text-sm text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                      >
+                        <option value="">All schools</option>
+                        {schoolOptions.map((school) => (
+                          <option key={school} value={school}>
+                            {school} ({facetDistribution.school?.[school] ?? searchTotal})
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="block text-sm font-medium text-slate-800">
+                      Department
+                      <select
+                        aria-label="Filter by department"
+                        value={selectedDepartment}
+                        onChange={(event) =>
+                          applyStudentFacets(
+                            selectedSchool,
+                            event.target.value,
+                            requireUndergradEvidence,
+                          )
+                        }
+                        className="mt-1 min-h-11 w-full rounded-md border border-[var(--yr-line-strong)] bg-white px-3 text-sm text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                      >
+                        <option value="">All departments</option>
+                        {departmentOptions.map((department) => (
+                          <option key={department} value={department}>
+                            {getUniqueDepartmentLabels([department], departments)[0] || department}{' '}
+                            ({facetDistribution.departments?.[department] ?? searchTotal})
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="inline-flex min-h-11 items-center gap-2 rounded-md border border-[var(--yr-line)] bg-white px-3 py-2 text-sm font-medium text-slate-800">
+                      <input
+                        type="checkbox"
+                        checked={requireUndergradEvidence}
+                        onChange={(event) =>
+                          applyStudentFacets(
+                            selectedSchool,
+                            selectedDepartment,
+                            event.target.checked,
+                          )
+                        }
+                        className="h-4 w-4 rounded border-[var(--yr-line-strong)] text-blue-700 focus:ring-blue-200"
+                      />
+                      Has undergraduate evidence
+                    </label>
+                    {hasStudentFacetSelection && (
+                      <button
+                        type="button"
+                        onClick={() => applyStudentFacets('', '', false)}
+                        className="min-h-11 rounded-md border border-[var(--yr-line-strong)] bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-[var(--yr-panel-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                      >
+                        Clear filters
+                      </button>
+                    )}
+                  </div>
+                </fieldset>
+
+                {searchError && (
+                  <div
+                    role="alert"
+                    className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
+                  >
+                    {searchError}
+                  </div>
+                )}
+
+                <section className="mt-5">
+                  <SectionHeading>Research homes</SectionHeading>
+                  {searchLoading && activeResults.clusters.length === 0 ? (
+                    <div className="grid gap-3">
+                      {Array.from({ length: 3 }).map((_, index) => (
+                        <ClusterLoadingCard key={index} />
                       ))}
                     </div>
-                  </div>
-                  {searchLoading && activeResults.clusters.length > 0 && (
-                    <InfiniteScrollLoadingDots label="Loading more research homes" />
+                  ) : activeResults.clusters.length > 0 ? (
+                    <>
+                      <div className="grid gap-5">
+                        <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-[repeat(3,minmax(0,1fr))]">
+                          {activeResults.clusters.map((cluster) => (
+                            <ResearchHomeCard
+                              key={cluster.id}
+                              home={cluster}
+                              onSelect={exploreHome}
+                              variant="compact"
+                            />
+                          ))}
+                        </div>
+                      </div>
+                      {searchLoading && activeResults.clusters.length > 0 && (
+                        <InfiniteScrollLoadingDots label="Loading more research homes" />
+                      )}
+                      {!searchExhausted && <div ref={searchSentinelRef} className="h-10 w-full" />}
+                    </>
+                  ) : (
+                    <EmptyGroup>
+                      {departmentSearch
+                        ? 'This is a data coverage gap, not proof that the department has no undergraduate research. Try a topic, method, professor, or adjacent department while this department is being seeded.'
+                        : 'No indexed research homes matched this search yet. Try a broader topic, related method, professor, or adjacent department while coverage improves.'}
+                    </EmptyGroup>
                   )}
-                  {!searchExhausted && <div ref={searchSentinelRef} className="h-10 w-full" />}
-                </>
-              ) : (
-                <EmptyGroup>
-                  {departmentSearch
-                    ? 'This is a data coverage gap, not proof that the department has no undergraduate research. Try a topic, method, professor, or adjacent department while this department is being seeded.'
-                    : 'No indexed research homes matched this search yet. Try a broader topic, related method, professor, or adjacent department while coverage improves.'}
-                </EmptyGroup>
-              )}
-            </section>
+                </section>
 
-            {activeResults.papers.length > 0 && (
-              <section className="mt-5">
-                <SectionHeading>Papers via profiles</SectionHeading>
-                <LabPapersList
-                  papers={activeResults.papers}
-                  emptyText="No related profile papers matched this search yet."
-                />
+                {activeResults.papers.length > 0 && (
+                  <section className="mt-5">
+                    <SectionHeading>Papers via profiles</SectionHeading>
+                    <LabPapersList
+                      papers={activeResults.papers}
+                      emptyText="No related profile papers matched this search yet."
+                    />
+                  </section>
+                )}
               </section>
             )}
-          </section>
-        )}
-        </div>
+          </div>
         </div>
       </div>
     </div>

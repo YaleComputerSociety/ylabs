@@ -251,6 +251,7 @@ export interface ResearchGroupSearchResult {
   estimatedTotalHits: number;
   page: number;
   pageSize: number;
+  facetDistribution?: Record<string, Record<string, number>>;
   degraded?: boolean;
 }
 
@@ -606,6 +607,7 @@ export async function searchResearchGroupsViaMeili(
     filter: filterString,
     limit: safePageSize,
     offset,
+    facets: ['school', 'departments'],
   };
   if (sortConfig.length > 0) {
     searchParams.sort = sortConfig;
@@ -629,6 +631,7 @@ export async function searchResearchGroupsViaMeili(
   const searchWithFallbacks = async (): Promise<{
     hits?: any[];
     estimatedTotalHits?: number;
+    facetDistribution?: Record<string, Record<string, number>>;
   }> => {
     // Each attempt uses an immutable params object; degrading clones rather than
     // mutating, so already-issued calls keep the params they were sent.
@@ -660,6 +663,7 @@ export async function searchResearchGroupsViaMeili(
   let searchResult: {
     hits?: any[];
     estimatedTotalHits?: number;
+    facetDistribution?: Record<string, Record<string, number>>;
   };
   try {
     searchResult = await searchWithFallbacks();
@@ -674,7 +678,7 @@ export async function searchResearchGroupsViaMeili(
       safeOptions,
     );
   }
-  const { hits, estimatedTotalHits } = searchResult;
+  const { hits, estimatedTotalHits, facetDistribution } = searchResult;
 
   const hitIds = (hits || [])
     .map((hit: any) => hit.id || hit._id)
@@ -727,6 +731,7 @@ export async function searchResearchGroupsViaMeili(
       estimatedTotalHits: estimatedTotalHits ?? normalizedHits.length,
       page: safePage,
       pageSize: safePageSize,
+      facetDistribution,
     },
     { includeOperatorFields: safeOptions.includeNonPublic },
   );
@@ -776,6 +781,18 @@ const researchEntityMatchesQuery = (entity: any, query: string): boolean => {
     if (aliases) return aliases.some((alias) => haystackHasTerm(haystack, alias));
     return haystackHasTerm(haystack, token);
   });
+};
+
+const facetCounts = (entities: any[], field: string): Record<string, number> => {
+  const counts: Record<string, number> = {};
+  for (const entity of entities) {
+    const values = Array.isArray(entity?.[field]) ? entity[field] : [entity?.[field]];
+    for (const value of new Set(values)) {
+      if (typeof value !== 'string' || !value.trim()) continue;
+      counts[value] = (counts[value] || 0) + 1;
+    }
+  }
+  return counts;
 };
 
 const sortResearchEntitiesForMongoFallback = (
@@ -835,6 +852,10 @@ const searchResearchGroupsViaMongoFallback = async (
   const visibleCandidates = (candidates as any[]).filter((entity) =>
     researchEntityMatchesQuery(entity, trimmedQuery),
   );
+  const facetDistribution = {
+    school: facetCounts(visibleCandidates, 'school'),
+    departments: facetCounts(visibleCandidates, 'departments'),
+  };
   const sortedCandidates = sortResearchEntitiesForMongoFallback(
     visibleCandidates,
     trimmedQuery,
@@ -865,6 +886,7 @@ const searchResearchGroupsViaMongoFallback = async (
       estimatedTotalHits: sortedCandidates.length,
       page: safePage,
       pageSize: safePageSize,
+      facetDistribution,
       degraded: true,
     },
     { includeOperatorFields: options.includeNonPublic },
