@@ -122,3 +122,10 @@ export const topicAliasesForSubjects = (subjects: string[]): string[] =>
     .flatMap((topic) => [topic.subject, ...topic.aliases])
     .map((value) => value.trim())
     .filter((value) => value.length >= 2);
+
+const escapeRegex = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+export const topicRegexForSubjects = (subjects: string[]): string => {
+  const aliases = topicAliasesForSubjects(subjects).map(escapeRegex);
+  return aliases.length > 0 ? `(?:^|[^a-z0-9])(?:${aliases.join('|')})(?:$|[^a-z0-9])` : '';
+};

@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { inferProgramSubjects, resolveTopicSubjects } from '../programTopicService';
+import {
+  inferProgramSubjects,
+  resolveTopicSubjects,
+  topicRegexForSubjects,
+} from '../programTopicService';
 
 describe('programTopicService', () => {
   it('normalizes short and long AI topic aliases to canonical subjects', () => {
@@ -7,6 +11,14 @@ describe('programTopicService', () => {
       'Artificial Intelligence',
       'Language and Text',
     ]);
+  });
+
+  it('keeps short aliases token-boundary aware in database facets', () => {
+    const pattern = new RegExp(topicRegexForSubjects(['Artificial Intelligence']), 'i');
+
+    expect(pattern.test('AI and machine learning research')).toBe(true);
+    expect(pattern.test('Application details are available')).toBe(false);
+    expect(pattern.test('Contact by email')).toBe(false);
   });
 
   it('infers subjects only from supported program text', () => {

@@ -114,6 +114,7 @@ describe('search engagement attribution', () => {
     expect(JSON.stringify(lookup)).toContain('$$searchNetid');
     expect(JSON.stringify(lookup)).toContain('amount":30');
     expect(JSON.stringify(pipeline)).toContain('nextSearchAt');
+    expect(JSON.stringify(pipeline)).toContain('$resultCount');
   });
 });
 

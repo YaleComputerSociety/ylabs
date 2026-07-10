@@ -23,6 +23,7 @@ import {
   PROGRAM_TOPIC_TAXONOMY,
   resolveTopicSubjects,
   topicAliasesForSubjects,
+  topicRegexForSubjects,
 } from './programTopicService';
 
 export interface FellowshipReadOptions {
@@ -55,7 +56,6 @@ const MAX_FELLOWSHIP_ID_READS = 100;
 const MAX_ADMIN_FELLOWSHIP_NUMBER = 1_000_000;
 const MONGO_OBJECT_ID_RE = /^[a-fA-F0-9]{24}$/;
 const POSITIVE_INTEGER_PARAM_RE = /^[1-9]\d*$/;
-const escapeSearchRegex = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const PROGRAM_CATEGORIES = new Set<string>(programCategories);
 const PROGRAM_KINDS = new Set<string>(programKinds);
 const PROGRAM_ENTRY_MODES = new Set<string>(programEntryModes);
@@ -697,8 +697,7 @@ export const searchFellowships = async (params: {
     filter.$text = { $search: searchTerms.join(' ') };
   }
   if (safeSubjects.length > 0) {
-    const subjectAliases = topicAliasesForSubjects(safeSubjects);
-    const subjectPattern = subjectAliases.map(escapeSearchRegex).join('|');
+    const subjectPattern = topicRegexForSubjects(safeSubjects);
     filter.$or = [
       'title',
       'competitionType',

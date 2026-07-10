@@ -872,7 +872,15 @@ export const getSearchQualityAnalytics = async (
                 $sum: { $cond: [{ $lte: ['$resultCount', 0] }, 1, 0] },
               },
               uniqueSearchers: { $addToSet: '$netid' },
-              engagedSearches: { $sum: { $cond: ['$hasAttributedAction', 1, 0] } },
+              engagedSearches: {
+                $sum: {
+                  $cond: [
+                    { $and: [{ $gt: ['$resultCount', 0] }, '$hasAttributedAction'] },
+                    1,
+                    0,
+                  ],
+                },
+              },
               returnedButIgnoredSearches: {
                 $sum: {
                   $cond: [
