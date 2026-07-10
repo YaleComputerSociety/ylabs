@@ -8,7 +8,7 @@ import { ResearchGroup } from '../../types/researchGroup';
 import { LabContactRoute, LabMember } from '../../types/labDetail';
 import { isFacultyResearchEntity } from '../../utils/researchEntityCopy';
 import { resolveLabOutreachContact } from '../../utils/labOutreachContact';
-import { safeMailtoHref } from '../../utils/url';
+import { safeHttpUrl, safeMailtoHref } from '../../utils/url';
 
 interface LabInquireModalProps {
   isOpen: boolean;
@@ -16,6 +16,7 @@ interface LabInquireModalProps {
   group: ResearchGroup;
   members: LabMember[];
   contactRoutes?: LabContactRoute[];
+  onOfficialRouteOpen?: () => void;
 }
 
 const LabInquireModal = ({
@@ -24,6 +25,7 @@ const LabInquireModal = ({
   group,
   members,
   contactRoutes = [],
+  onOfficialRouteOpen,
 }: LabInquireModalProps) => {
   if (!isOpen) return null;
 
@@ -38,6 +40,10 @@ const LabInquireModal = ({
       }.\n\nA bit about me:\n  - Year & major:\n  - Relevant coursework:\n  - Why this research home:\n\nWould you have time to chat in the next couple of weeks?\n\nThank you,\n`
     : '';
   const mailto = contact ? safeMailtoHref(contact.email, { subject, body }) : '';
+  const officialRoute = contactRoutes.find(
+    (route) => route.reviewStatus === 'approved' && safeHttpUrl(route.url),
+  );
+  const officialRouteUrl = safeHttpUrl(officialRoute?.url);
 
   const handleBackdropClick = (e: React.MouseEvent) => {
     if (e.target === e.currentTarget) onClose();
@@ -79,10 +85,27 @@ const LabInquireModal = ({
         </div>
 
         <div className="px-6 py-5 space-y-4">
-          {!contact ? (
+          {!contact ? officialRouteUrl ? (
+            <div className="space-y-3 text-sm text-gray-700">
+              <p>
+                Yale Research does not release a direct email for this profile. Use the approved
+                official route after reviewing its current instructions.
+              </p>
+              <div className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] p-3">
+                <p className="font-semibold text-gray-900">
+                  {officialRoute?.label || 'Official contact route'}
+                </p>
+                {officialRoute?.rationale && <p className="mt-1">{officialRoute.rationale}</p>}
+                <p className="mt-2 text-xs text-gray-600">
+                  Personalize your note with your year, relevant coursework, and a specific
+                  connection to this research before submitting it.
+                </p>
+              </div>
+            </div>
+          ) : (
             <p className="text-sm text-gray-700">
-              We don't have a public contact email for this research home yet. Try the website
-              or check back later.
+              No verified contact route is available yet. Administrators review official sources
+              before a route appears here.
             </p>
           ) : (
             <>
@@ -124,6 +147,20 @@ const LabInquireModal = ({
               className="px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-colors"
             >
               Open in email
+            </a>
+          )}
+          {!mailto && officialRouteUrl && (
+            <a
+              href={officialRouteUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={() => {
+                onOfficialRouteOpen?.();
+                onClose();
+              }}
+              className="px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              Open approved route
             </a>
           )}
         </div>

@@ -10,6 +10,12 @@ import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { getMeiliIndex } from '../utils/meiliClient';
 import { isPublicHttpUrl } from '../utils/urlSafety';
+import {
+  isStudentPublishablePathway,
+  STUDENT_PATHWAY_EVIDENCE_STRENGTHS,
+  STUDENT_PATHWAY_MIN_CONFIDENCE,
+  STUDENT_PATHWAY_STATUSES,
+} from './studentAccessPublicationPolicy';
 
 export const PATHWAY_SEARCH_INDEX_NAME = 'pathways';
 export const PATHWAY_SEARCH_INDEX_PRIMARY_KEY = 'id';
@@ -90,6 +96,7 @@ export interface PathwaySearchIndexDocument {
   publicContactPolicy?: string;
   evidence: PathwaySearchIndexEvidenceDocument[];
   evidenceSnippets: string[];
+  studentPublishable: boolean;
 }
 
 export type PathwaySearchIndexInput = Record<string, unknown>;
@@ -167,6 +174,7 @@ export const PATHWAY_SEARCH_INDEX_SETTINGS: PathwaySearchIndexSettings = {
     'postedOpportunityStatus',
     'publicContactRouteType',
     'publicContactPolicy',
+    'studentPublishable',
   ],
   sortableAttributes: [
     'confidence',
@@ -379,6 +387,10 @@ function buildPathwayMeiliFilter(filters: PathwaySearchInput['filters'] = {}): s
           .map((pathwayType) => `pathwayType != ${quoteFilterValue(pathwayType)}`)
           .join(' AND ');
   const parts = [
+    'studentPublishable = true',
+    anyFilter('status', [...STUDENT_PATHWAY_STATUSES]),
+    anyFilter('evidenceStrength', [...STUDENT_PATHWAY_EVIDENCE_STRENGTHS]),
+    `confidence >= ${STUDENT_PATHWAY_MIN_CONFIDENCE}`,
     anyFilter('pathwayId', filters.pathwayIds),
     anyFilter('entityId', filters.entityIds),
     anyFilter('entityStudentVisibilityTier', publicStudentVisibilityTiers),
@@ -526,6 +538,7 @@ export function buildPathwaySearchIndexDocument(
     publicContactPolicy: publicContactRoute?.contactPolicy,
     evidence: normalizedEvidence.evidence,
     evidenceSnippets: normalizedEvidence.snippets,
+    studentPublishable: isStudentPublishablePathway(record),
   };
 }
 

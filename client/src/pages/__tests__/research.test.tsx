@@ -1138,9 +1138,11 @@ describe('Research page', () => {
   it('reveals one research-home result stream with inline ways-in context after a search', async () => {
     mockSearchResponses((url, body) => {
       if (body.q === 'protein folding') {
-        return url === '/research/search'
-          ? researchSearchResponse([{ ...researchEntity, waysIn: [pathwayHit] }])
-          : unexpectedSearchEndpoint(url);
+        if (url === '/research/search') return researchSearchResponse([researchEntity]);
+        if (url === '/pathways/search') {
+          return { data: { hits: [pathwayHit], estimatedTotalHits: 1, page: 1, pageSize: 12 } };
+        }
+        return unexpectedSearchEndpoint(url);
       }
 
       return url === '/research/search' ? researchSearchResponse() : unexpectedSearchEndpoint(url);
@@ -1160,7 +1162,7 @@ describe('Research page', () => {
         '1 research home, 1 contact',
       );
     });
-    expect(screen.getByRole('status').textContent).not.toContain('way in');
+    expect(screen.getAllByRole('status')[0].textContent).toContain('1 verified way in');
     expect(screen.queryByRole('link', { name: /Compare .*pathway/i })).toBeNull();
     expect(container.textContent).toContain('Research homes');
     expect(container.textContent).not.toContain('How to use this');
@@ -1179,8 +1181,10 @@ describe('Research page', () => {
     expect(container.textContent).toContain('Computer Science · Yale College');
     expect(container.textContent).not.toContain('Why it might fit');
     expect(container.textContent).not.toContain('Official Yale source found');
-    const searchSection = screen.getByLabelText('Search results');
-    const searchGrid = searchSection.querySelector('.grid.gap-3');
+    const researchHomesSection = screen
+      .getByRole('heading', { name: 'Research homes' })
+      .closest('section');
+    const searchGrid = researchHomesSection?.querySelector('.grid.gap-3');
     expect(searchGrid?.className).toContain('lg:grid-cols-2');
     expect(searchGrid?.className).toContain('2xl:grid-cols-[repeat(3,minmax(0,1fr))]');
     expect(searchGrid?.className).not.toContain('items-start');
@@ -1190,8 +1194,8 @@ describe('Research page', () => {
         .getAllByRole('link', { name: 'AI Safety Lab' })
       .some((link) => link.getAttribute('href') === '/research/ai-safety-lab'),
     ).toBe(true);
-    expect(container.textContent).toContain('Review source context');
-    expect(container.textContent).toContain('Source route');
+    expect(container.textContent).toContain('Verified ways in');
+    expect(screen.getByRole('link', { name: 'Review evidence' })).toBeTruthy();
     expect(container.textContent).not.toContain('Contact the program manager.');
 
     await waitFor(() => {
@@ -1255,12 +1259,13 @@ describe('Research page', () => {
 
     mockSearchResponses((url, body) => {
       if (body.q === 'machine learning') {
-        return url === '/research/search'
-          ? researchSearchResponse([
-              { ...researchEntity, waysIn: [postedPathway] },
-              nonMatchingEntity,
-            ])
-          : unexpectedSearchEndpoint(url);
+        if (url === '/research/search') {
+          return researchSearchResponse([researchEntity, nonMatchingEntity]);
+        }
+        if (url === '/pathways/search') {
+          return { data: { hits: [postedPathway], estimatedTotalHits: 1, page: 1, pageSize: 12 } };
+        }
+        return unexpectedSearchEndpoint(url);
       }
 
       return url === '/research/search' ? researchSearchResponse() : unexpectedSearchEndpoint(url);
@@ -1280,13 +1285,11 @@ describe('Research page', () => {
     expect(screen.queryByRole('button', { name: 'Thesis possible' })).toBeNull();
     expect(container.textContent).toContain('AI Safety Lab');
     expect(container.textContent).toContain('Archives Lab');
-    expect(container.textContent).toContain('Posted route');
+    expect(container.textContent).toContain('Verified ways in');
     expect(container.textContent).not.toContain('Open role');
     expect(container.textContent).not.toContain('Paid/funded');
     expect(container.textContent).not.toContain('Thesis fit');
-    expect(screen.getByRole('link', { name: 'View posted opportunity' }).getAttribute('href')).toBe(
-      '/opportunities/opportunity-1',
-    );
+    expect(screen.getByRole('link', { name: 'Review evidence' })).toBeTruthy();
     expect(container.textContent).not.toContain('Pathway Preview');
     expect(container.textContent).not.toContain('Compare pathways');
   });
