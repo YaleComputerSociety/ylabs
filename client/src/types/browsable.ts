@@ -17,6 +17,7 @@ import {
   getFellowshipCycleStatus,
   getFellowshipDeadlineSubtitle,
 } from '../utils/fellowshipCycle';
+import { getFellowshipApplicationStatus } from '../utils/fellowshipStatus';
 import { entryModeLabel, programKindLabel } from '../utils/programJourney';
 
 export const DEPT_CAP = 3;
@@ -183,9 +184,7 @@ export function isItemOpen(item: BrowsableItem): boolean {
     );
     return verdict === 'verified-accepting' || verdict === 'likely-accepting';
   }
-  const { isAcceptingApplications, deadline } = item.data;
-  const deadlinePassed = deadline ? new Date(deadline) < new Date() : false;
-  return isAcceptingApplications && !deadlinePassed;
+  return getFellowshipApplicationStatus(item.data).isApplicationWindowOpen;
 }
 
 interface TagInfo {

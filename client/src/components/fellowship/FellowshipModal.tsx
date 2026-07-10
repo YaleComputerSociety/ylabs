@@ -7,6 +7,10 @@ import { Fellowship } from '../../types/types';
 import FellowshipSearchContext from '../../contexts/FellowshipSearchContext';
 import { safeHttpUrl, safeMailtoHref } from '../../utils/url';
 import { getFellowshipCycleStatus } from '../../utils/fellowshipCycle';
+import {
+  formatFellowshipDate,
+  getFellowshipApplicationStatus,
+} from '../../utils/fellowshipStatus';
 import { entryModeLabel, programKindLabel } from '../../utils/programJourney';
 import { trackResearchEvent } from '../../utils/researchAnalytics';
 import FavoriteButton from '../shared/FavoriteButton';
@@ -110,6 +114,7 @@ const FellowshipModal = ({
 
   if (!isOpen || !fellowship) return null;
   const cycleStatus = getFellowshipCycleStatus(fellowship);
+  const applicationStatus = getFellowshipApplicationStatus(fellowship);
 
   const handleFilterClick = (
     filterType: 'yearOfStudy' | 'termOfAward' | 'purpose' | 'globalRegions' | 'citizenshipStatus',
@@ -150,18 +155,6 @@ const FellowshipModal = ({
     navigate('/programs');
   };
 
-  const formatDate = (dateStr: string | null) => {
-    if (!dateStr) return 'Not specified';
-    const date = new Date(dateStr);
-    return date.toLocaleDateString('en-US', {
-      month: 'long',
-      day: 'numeric',
-      year: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-    });
-  };
-
   const hasContactInfo =
     fellowship.contactName ||
     fellowship.contactEmail ||
@@ -172,7 +165,7 @@ const FellowshipModal = ({
   const filterChipClass =
     'inline-flex min-h-[44px] items-center rounded-md px-3 py-2 text-xs transition-all hover:ring-2 hover:ring-offset-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200';
   const applicationActionLabel =
-    cycleStatus.category === 'open' || cycleStatus.category === 'closingSoon'
+    applicationStatus.isApplicationWindowOpen
       ? 'Apply'
       : 'Open source';
   const applicationHref = safeHttpUrl(fellowship.applicationLink);
@@ -367,6 +360,11 @@ const FellowshipModal = ({
                     Key Dates
                   </h3>
                   <div className="bg-[var(--yr-blue-soft)] rounded-lg p-3 space-y-3">
+                    <div>
+                      <span className="text-xs text-blue-600">Current Status</span>
+                      <p className="text-sm font-semibold text-blue-900">{applicationStatus.label}</p>
+                      <p className="text-xs text-blue-700">{applicationStatus.detail}</p>
+                    </div>
                     {cycleStatus.category === 'nextCycle' && (
                       <div className="rounded-md bg-[var(--yr-panel)]/70 border border-sky-100 px-2.5 py-2">
                         <p className="text-xs font-medium text-sky-800">
@@ -377,13 +375,13 @@ const FellowshipModal = ({
                     <div>
                       <span className="text-xs text-blue-600">Application Opens</span>
                       <p className="text-sm font-medium text-blue-900">
-                        {formatDate(fellowship.applicationOpenDate)}
+                        {formatFellowshipDate(fellowship.applicationOpenDate)}
                       </p>
                     </div>
                     <div>
                       <span className="text-xs text-blue-600">Deadline</span>
                       <p className="text-sm font-medium text-blue-900">
-                        {formatDate(fellowship.deadline)}
+                        {formatFellowshipDate(fellowship.deadline)}
                       </p>
                     </div>
                   </div>
@@ -669,6 +667,19 @@ const FellowshipModal = ({
                   </section>
                 )}
 
+                {!fellowship.eligibility && (
+                  <section>
+                    <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+                      Eligibility Requirements
+                    </h3>
+                    <p className="text-sm text-gray-700 leading-relaxed">
+                      {applicationStatus.needsEligibilityReview
+                        ? 'Eligibility requirements have not been specified.'
+                        : 'See the eligibility filters above for requirements.'}
+                    </p>
+                  </section>
+                )}
+
                 {fellowship.restrictionsToUseOfAward && (
                   <section>
                     <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
@@ -695,16 +706,29 @@ const FellowshipModal = ({
 
                 {applicationHref && (
                   <div className="pt-4 border-t border-[var(--yr-line)]">
+                    {!applicationStatus.isApplicationWindowOpen && (
+                      <p className="mb-3 rounded-lg border border-blue-100 bg-blue-50 p-3 text-sm text-blue-800">
+                        {applicationStatus.kind === 'notOpenYet'
+                          ? `Applications are not open yet. They open ${formatFellowshipDate(fellowship.applicationOpenDate)}.`
+                          : 'This application window is not currently open. Use the source to verify the next cycle.'}
+                      </p>
+                    )}
                     <a
                       href={applicationHref}
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={() => trackFellowshipApplyClick(fellowship.id, applicationHref)}
-                      className="inline-flex min-h-[44px] items-center rounded-md bg-blue-600 px-6 py-2.5 text-sm font-medium text-white transition-colors hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                      className={`inline-flex min-h-[44px] items-center rounded-md px-6 py-2.5 text-sm font-medium text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 ${
+                        applicationStatus.isApplicationWindowOpen
+                          ? 'bg-blue-600 hover:bg-blue-700'
+                          : 'bg-gray-600 hover:bg-gray-700'
+                      }`}
                     >
-                      {cycleStatus.category === 'open' || cycleStatus.category === 'closingSoon'
+                      {applicationStatus.isApplicationWindowOpen
                         ? 'Apply Now'
-                        : 'Open Fellowship Source'}
+                        : applicationStatus.kind === 'notOpenYet'
+                          ? 'Track Opening Date'
+                          : 'Open Fellowship Source'}
                       <svg
                         xmlns="http://www.w3.org/2000/svg"
                         width="16"
