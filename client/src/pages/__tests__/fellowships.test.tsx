@@ -78,6 +78,9 @@ class ResizeObserverMock {
 
 globalThis.ResizeObserver = ResizeObserverMock as any;
 
+const isoDaysFromNow = (days: number) =>
+  new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
+
 const baseFellowship = (overrides: Partial<Fellowship> = {}): Fellowship => ({
   id: 'f1',
   title: 'Summer Research Fellowship',
@@ -313,13 +316,13 @@ describe('Programs page', () => {
         id: 'closing',
         title: 'Closing Soon Fellowship',
         isAcceptingApplications: true,
-        deadline: '2026-05-30T00:00:00.000Z',
+        deadline: isoDaysFromNow(15),
       }),
       baseFellowship({
         id: 'open',
         title: 'Open Fellowship',
         isAcceptingApplications: true,
-        deadline: '2026-07-01T00:00:00.000Z',
+        deadline: isoDaysFromNow(60),
       }),
       baseFellowship({
         id: 'next-cycle',
@@ -329,7 +332,7 @@ describe('Programs page', () => {
         studentFacingCategory: 'Program record',
         requiresMentorBeforeApply: false,
         isAcceptingApplications: false,
-        deadline: '2026-05-01T00:00:00.000Z',
+        deadline: isoDaysFromNow(-30),
       }),
     ]);
 
@@ -338,7 +341,9 @@ describe('Programs page', () => {
     });
 
     expect(screen.getByRole('heading', { name: 'Programs & Fellowships' })).toBeTruthy();
-    expect(screen.getByText(/track structured applications, recurring research programs/i)).toBeTruthy();
+    expect(
+      screen.getByText(/track structured applications, recurring research programs/i),
+    ).toBeTruthy();
     expect(screen.getByText('Open now')).toBeTruthy();
     expect(screen.getByText('Closing soon')).toBeTruthy();
     expect(screen.getByText('Likely next cycle')).toBeTruthy();
@@ -390,13 +395,13 @@ describe('Programs page', () => {
         id: 'zeta',
         title: 'Zeta Open Fellowship',
         isAcceptingApplications: true,
-        deadline: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+        deadline: isoDaysFromNow(30),
       }),
       baseFellowship({
         id: 'alpha',
         title: 'Alpha Open Fellowship',
         isAcceptingApplications: true,
-        deadline: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString(),
+        deadline: isoDaysFromNow(60),
       }),
     ]);
 
@@ -418,13 +423,13 @@ describe('Programs page', () => {
         id: 'closing',
         title: 'Closing Soon Fellowship',
         isAcceptingApplications: true,
-        deadline: '2026-05-30T00:00:00.000Z',
+        deadline: isoDaysFromNow(15),
       }),
       baseFellowship({
         id: 'open',
         title: 'Open Fellowship',
         isAcceptingApplications: true,
-        deadline: '2026-07-01T00:00:00.000Z',
+        deadline: isoDaysFromNow(60),
       }),
       baseFellowship({
         id: 'next-cycle',
@@ -434,7 +439,7 @@ describe('Programs page', () => {
         studentFacingCategory: 'Program record',
         requiresMentorBeforeApply: false,
         isAcceptingApplications: false,
-        deadline: '2026-05-01T00:00:00.000Z',
+        deadline: isoDaysFromNow(-30),
       }),
     ]);
 
@@ -445,6 +450,59 @@ describe('Programs page', () => {
     expect(screen.getByText('Next Cycle Fellowship')).toBeTruthy();
   });
 
+  it('updates the results counter and shows next-cycle guidance when Open Only has no matches', async () => {
+    renderStatefulPage([
+      baseFellowship({
+        id: 'next-cycle',
+        title: 'Next Cycle Fellowship',
+        programKind: 'OTHER',
+        entryMode: 'UNKNOWN',
+        studentFacingCategory: 'Program record',
+        requiresMentorBeforeApply: false,
+        isAcceptingApplications: false,
+        deadline: isoDaysFromNow(-30),
+      }),
+    ]);
+
+    expect(screen.getByText('1 result')).toBeTruthy();
+
+    await userEvent.click(screen.getByRole('button', { name: /Open Only/i }));
+
+    expect(screen.getByText('0 results')).toBeTruthy();
+    expect(
+      screen.getByRole('heading', { name: 'No application windows are open right now' }),
+    ).toBeTruthy();
+    expect(screen.getByText(/Use Next Cycle to track recurring opportunities/i)).toBeTruthy();
+
+    await userEvent.click(screen.getByRole('button', { name: 'View Next Cycle' }));
+
+    expect(screen.getByText('Next Cycle Fellowship')).toBeTruthy();
+    expect(screen.getByText('1 result')).toBeTruthy();
+  });
+
+  it('updates the results counter and explains when no deadlines are closing soon', async () => {
+    renderStatefulPage([
+      baseFellowship({
+        id: 'next-cycle',
+        title: 'Next Cycle Fellowship',
+        programKind: 'OTHER',
+        entryMode: 'UNKNOWN',
+        studentFacingCategory: 'Program record',
+        requiresMentorBeforeApply: false,
+        isAcceptingApplications: false,
+        deadline: isoDaysFromNow(-30),
+      }),
+    ]);
+
+    await userEvent.click(screen.getByRole('button', { name: /Closing Soon/i }));
+
+    expect(screen.getByText('0 results')).toBeTruthy();
+    expect(
+      screen.getByRole('heading', { name: 'No application windows are closing soon' }),
+    ).toBeTruthy();
+    expect(screen.getByText(/due in the next 30 days/i)).toBeTruthy();
+  });
+
   it('shows the first-save callout with a dashboard next step', async () => {
     mockedAxios.put.mockResolvedValue({ data: {} });
     renderPage([
@@ -452,7 +510,7 @@ describe('Programs page', () => {
         id: 'open',
         title: 'Open Fellowship',
         isAcceptingApplications: true,
-        deadline: '2026-07-01T00:00:00.000Z',
+        deadline: isoDaysFromNow(60),
       }),
     ]);
 
@@ -475,7 +533,7 @@ describe('Programs page', () => {
         id: 'open',
         title: 'Open Fellowship',
         isAcceptingApplications: true,
-        deadline: '2026-07-01T00:00:00.000Z',
+        deadline: isoDaysFromNow(60),
       }),
     ]);
 
