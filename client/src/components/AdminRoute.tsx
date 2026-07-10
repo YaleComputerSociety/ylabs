@@ -1,35 +1,100 @@
 /**
  * Route guard that restricts access to admin users only.
  */
-import { Navigate, useLocation } from 'react-router-dom';
-import { useContext, FunctionComponent } from 'react';
+import { Navigate } from 'react-router-dom';
+import { useContext, FunctionComponent, useEffect } from 'react';
 import UserContext from '../contexts/UserContext';
+import { buildApiUrl } from '../utils/apiBaseUrl';
+import LoadingSpinner from './shared/LoadingSpinner';
+
+const MAX_LOCAL_ADMIN_REDIRECT_URL_LENGTH = 2048;
 
 interface AdminRouteProps {
   Component: FunctionComponent;
 }
 
-const AdminRoute = ({ Component }: AdminRouteProps) => {
-  const { user, isLoading, isAuthenticated } = useContext(UserContext);
-  const location = useLocation();
+const getSafeLocalAdminRedirectTarget = () => {
+  const fallback = window.location.origin;
+  if (window.location.href.length > MAX_LOCAL_ADMIN_REDIRECT_URL_LENGTH) {
+    return fallback;
+  }
 
-  if (isLoading) {
+  try {
+    const parsed = new URL(window.location.href);
+    return parsed.origin === window.location.origin ? parsed.toString() : fallback;
+  } catch {
+    return fallback;
+  }
+};
+
+const getLocalAdminDevLoginUrl = () => {
+  const isLocalDevHost =
+    window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+
+  if (!import.meta.env.DEV || !isLocalDevHost) {
     return null;
   }
 
-  if (!isAuthenticated) {
-    localStorage.setItem(
-      'logoutReturnPath',
-      window.location.origin + location.pathname + location.search,
+  return buildApiUrl(`/dev-login?userType=admin&redirect=${encodeURIComponent(
+    getSafeLocalAdminRedirectTarget(),
+  )}`);
+};
+
+const AdminRoute = ({ Component }: AdminRouteProps) => {
+  const { user, isLoading, isAuthenticated } = useContext(UserContext);
+  const localAdminDevLoginUrl = getLocalAdminDevLoginUrl();
+
+  useEffect(() => {
+    if (
+      !isLoading &&
+      localAdminDevLoginUrl &&
+      (!isAuthenticated || (user && user.userType !== 'admin'))
+    ) {
+      window.location.assign(localAdminDevLoginUrl);
+    }
+  }, [isAuthenticated, isLoading, localAdminDevLoginUrl, user]);
+
+  if (isLoading) {
+    return (
+      <div className="flex min-h-[50vh] items-center justify-center">
+        <LoadingSpinner size="lg" inline />
+      </div>
     );
+  }
+
+  if (!isAuthenticated) {
+    if (localAdminDevLoginUrl) {
+      return (
+        <div className="flex min-h-[50vh] items-center justify-center px-4 text-center text-gray-600">
+          Opening local admin session...
+        </div>
+      );
+    }
+
     return <Navigate to="/login" />;
   }
 
   if (user && user.userType === 'unknown') {
+    if (localAdminDevLoginUrl) {
+      return (
+        <div className="flex min-h-[50vh] items-center justify-center px-4 text-center text-gray-600">
+          Opening local admin session...
+        </div>
+      );
+    }
+
     return <Navigate to="/unknown" />;
   }
 
   if (user && user.userType !== 'admin') {
+    if (localAdminDevLoginUrl) {
+      return (
+        <div className="flex min-h-[50vh] items-center justify-center px-4 text-center text-gray-600">
+          Opening local admin session...
+        </div>
+      );
+    }
+
     return <Navigate to="/" />;
   }
 

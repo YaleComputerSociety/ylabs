@@ -3,7 +3,7 @@
  */
 import React, { useReducer, useRef, useEffect, useMemo } from 'react';
 import ReactDOM from 'react-dom';
-import axios from 'axios';
+import axios from '../../../../utils/axios';
 import { useConfig } from '../../../../hooks/useConfig';
 import {
   createInitialResearchAreaInputState,
@@ -35,7 +35,7 @@ const colorKeyToTailwind: Record<string, { bg: string; text: string; border: str
   teal: { bg: 'bg-teal-200', text: 'text-teal-800', border: 'border-teal-300' },
   orange: { bg: 'bg-orange-200', text: 'text-orange-800', border: 'border-orange-300' },
   indigo: { bg: 'bg-indigo-200', text: 'text-indigo-800', border: 'border-indigo-300' },
-  gray: { bg: 'bg-gray-200', text: 'text-gray-800', border: 'border-gray-300' },
+  gray: { bg: 'bg-[var(--yr-panel-muted)]', text: 'text-gray-800', border: 'border-[var(--yr-line-strong)]' },
 };
 
 const FieldSelectorModal = ({
@@ -45,84 +45,13 @@ const FieldSelectorModal = ({
   onClose,
   onSelectField,
 }: FieldSelectorModalProps) => {
-  const dialogRef = useRef<HTMLDivElement>(null);
-  const previouslyFocusedElement = useRef<HTMLElement | null>(null);
-
-  const getFocusableElements = () => {
-    if (!dialogRef.current) return [];
-    return Array.from(
-      dialogRef.current.querySelectorAll<HTMLElement>(
-        'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])',
-      ),
-    ).filter(
-      (element) =>
-        !element.hasAttribute('disabled') &&
-        element.getAttribute('aria-hidden') !== 'true' &&
-        element.tabIndex !== -1,
-    );
-  };
-
-  useEffect(() => {
-    if (!isOpen) return;
-
-    previouslyFocusedElement.current = document.activeElement as HTMLElement | null;
-    const focusableElements = getFocusableElements();
-    (focusableElements[0] || dialogRef.current)?.focus();
-
-    return () => {
-      previouslyFocusedElement.current?.focus?.();
-    };
-  }, [isOpen]);
-
-  const handleDialogKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    if (e.key === 'Escape') {
-      e.stopPropagation();
-      onClose();
-      return;
-    }
-
-    if (e.key !== 'Tab') return;
-
-    const focusableElements = getFocusableElements();
-    if (focusableElements.length === 0) {
-      e.preventDefault();
-      dialogRef.current?.focus();
-      return;
-    }
-
-    const firstElement = focusableElements[0];
-    const lastElement = focusableElements[focusableElements.length - 1];
-    const activeElement = document.activeElement;
-
-    if (e.shiftKey && (activeElement === firstElement || activeElement === dialogRef.current)) {
-      e.preventDefault();
-      lastElement.focus();
-    } else if (
-      !e.shiftKey &&
-      (activeElement === lastElement || activeElement === dialogRef.current)
-    ) {
-      e.preventDefault();
-      firstElement.focus();
-    }
-  };
-
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999]">
-      <div
-        ref={dialogRef}
-        className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 overflow-hidden"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="research-area-field-title"
-        tabIndex={-1}
-        onKeyDown={handleDialogKeyDown}
-      >
-        <div className="p-4 border-b border-gray-200">
-          <h3 id="research-area-field-title" className="text-lg font-semibold text-gray-900">
-            Add New Research Area
-          </h3>
+      <div className="bg-[var(--yr-panel)] rounded-lg shadow-xl max-w-md w-full mx-4 overflow-hidden">
+        <div className="p-4 border-b border-[var(--yr-line)]">
+          <h3 className="text-lg font-semibold text-gray-900">Add New Research Area</h3>
           <p className="text-sm text-gray-600 mt-1">
             Select a field for "<span className="font-medium">{newAreaName}</span>"
           </p>
@@ -149,11 +78,11 @@ const FieldSelectorModal = ({
           </div>
         </div>
 
-        <div className="p-4 border-t border-gray-200 bg-gray-50">
+        <div className="p-4 border-t border-[var(--yr-line)] bg-[var(--yr-panel-muted)]">
           <button
             type="button"
             onClick={onClose}
-            className="w-full px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+            className="w-full px-4 py-2 text-gray-700 bg-[var(--yr-panel)] border border-[var(--yr-line-strong)] rounded-lg hover:bg-[var(--yr-panel-muted)] transition-colors"
           >
             Cancel
           </button>
@@ -169,15 +98,16 @@ const ResearchAreaInput = ({
   onRemoveResearchArea,
   error,
 }: ResearchAreaInputProps) => {
-  const [state, dispatch] = useReducer(researchAreaInputReducer, undefined, () =>
-    createInitialResearchAreaInputState(),
+  const [state, dispatch] = useReducer(
+    researchAreaInputReducer,
+    undefined,
+    () => createInitialResearchAreaInputState(),
   );
   const { isDropdownOpen, searchTerm, focusedIndex, isModalOpen, pendingNewArea, isLoading } =
     state;
 
   const dropdownRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const inputId = 'listing-research-areas-input';
 
   const {
     researchAreas: allConfigAreas,
@@ -271,7 +201,7 @@ const ResearchAreaInput = ({
   const handleFieldSelect = async (fieldName: string) => {
     dispatch({ type: 'SUBMIT_START' });
     try {
-      const response = await axios.post('/api/research-areas', {
+      const response = await axios.post('/research-areas', {
         name: pendingNewArea,
         field: fieldName,
       });
@@ -284,7 +214,7 @@ const ResearchAreaInput = ({
       if (error.response?.status === 409) {
         onAddResearchArea(pendingNewArea);
       } else {
-        console.error('Error adding research area:', error);
+        console.error('Error adding research area.');
         alert('Failed to add research area. Please try again.');
       }
     } finally {
@@ -297,23 +227,18 @@ const ResearchAreaInput = ({
   if (configLoading) {
     return (
       <div className="mb-4">
-        <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor={inputId}>
-          Research Areas
-        </label>
-        <div className="animate-pulse bg-gray-200 h-10 rounded"></div>
+        <label className="block text-gray-700 text-sm font-bold mb-2">Research Areas</label>
+        <div className="animate-pulse bg-[var(--yr-panel-muted)] h-10 rounded"></div>
       </div>
     );
   }
 
   return (
     <div className="mb-4" ref={dropdownRef}>
-      <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor={inputId}>
-        Research Areas
-      </label>
+      <label className="block text-gray-700 text-sm font-bold mb-2">Research Areas</label>
       <div className="relative">
         <div className="relative">
           <input
-            id={inputId}
             ref={inputRef}
             type="text"
             value={searchTerm}
@@ -350,8 +275,7 @@ const ResearchAreaInput = ({
             className="shadow appearance-none border rounded w-full py-2 px-3 pr-10 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500"
             placeholder="Search research areas..."
           />
-          <button
-            type="button"
+          <div
             className="absolute inset-y-0 right-0 flex items-center px-2 text-gray-700 cursor-pointer"
             onClick={() => {
               if (isDropdownOpen) {
@@ -371,22 +295,20 @@ const ResearchAreaInput = ({
                 }
               }
             }}
-            aria-label="Toggle research area options"
           >
             <svg
-              aria-hidden="true"
               className="fill-current h-4 w-4"
               xmlns="http://www.w3.org/2000/svg"
               viewBox="0 0 20 20"
             >
               <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" />
             </svg>
-          </button>
+          </div>
         </div>
 
         {isDropdownOpen && searchTerm.trim() && (
           <div
-            className="absolute w-full bg-white rounded-lg z-10 shadow-lg border overflow-hidden mt-1 max-h-[300px] md:max-h-[350px] border-gray-300"
+            className="absolute w-full bg-[var(--yr-panel)] rounded-lg z-10 shadow-lg border overflow-hidden mt-1 max-h-[300px] md:max-h-[350px] border-[var(--yr-line-strong)]"
             tabIndex={-1}
           >
             <ul className="max-h-[350px] p-1 overflow-y-auto" tabIndex={-1}>
@@ -398,7 +320,7 @@ const ResearchAreaInput = ({
                         key={`${area.name}-${index}`}
                         onClick={() => handleSelectArea(area.name)}
                         className={`p-2 cursor-pointer flex items-center justify-between ${
-                          focusedIndex === index ? 'bg-blue-100' : 'hover:bg-gray-50'
+                          focusedIndex === index ? 'bg-blue-100' : 'hover:bg-[var(--yr-panel-muted)]'
                         }`}
                         tabIndex={-1}
                         onMouseDown={(e) => e.preventDefault()}
@@ -415,15 +337,14 @@ const ResearchAreaInput = ({
               {isNewArea && (
                 <li
                   onClick={handleAddNewArea}
-                  className={`p-2 cursor-pointer border-t border-gray-200 ${
-                    focusedIndex === filteredAreas.length ? 'bg-blue-100' : 'hover:bg-gray-50'
+                  className={`p-2 cursor-pointer border-t border-[var(--yr-line)] ${
+                    focusedIndex === filteredAreas.length ? 'bg-blue-100' : 'hover:bg-[var(--yr-panel-muted)]'
                   }`}
                   tabIndex={-1}
                   onMouseDown={(e) => e.preventDefault()}
                 >
                   <div className="flex items-center text-blue-600">
                     <svg
-                      aria-hidden="true"
                       className="w-4 h-4 mr-2"
                       fill="none"
                       stroke="currentColor"
@@ -469,7 +390,6 @@ const ResearchAreaInput = ({
                   type="button"
                   onClick={() => onRemoveResearchArea(index)}
                   className="ml-2 text-gray-500 hover:text-gray-700"
-                  aria-label={`Remove ${area}`}
                 >
                   ×
                 </button>
@@ -495,7 +415,7 @@ const ResearchAreaInput = ({
       {isLoading &&
         ReactDOM.createPortal(
           <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-[9999]">
-            <div className="bg-white rounded-lg p-4 shadow-xl">
+            <div className="bg-[var(--yr-panel)] rounded-lg p-4 shadow-xl">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
               <p className="mt-2 text-sm text-gray-600">Adding research area...</p>
             </div>

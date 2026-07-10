@@ -2,75 +2,99 @@
  * Global error handling middleware for Express.
  */
 import { Request, Response, NextFunction } from 'express';
-import { NotFoundError, ObjectIdError, IncorrectPermissionsError } from '../utils/errors';
+import {
+  BadRequestError,
+  NotFoundError,
+  ObjectIdError,
+  IncorrectPermissionsError,
+} from '../utils/errors';
+import { sanitizeErrorForLog } from '../utils/logSanitizer';
+import { requiresDeployedRuntimeSecurity } from '../utils/environment';
+import { triggerReconnect } from '../db/connections';
 import { captureServerError } from '../utils/errorTracking';
 
-type ErrorResponse = {
-  status: number;
-  body: Record<string, unknown>;
+const clientErrorStatus = (error: Error): number | null => {
+  const status = (error as any).status ?? (error as any).statusCode;
+  if (Number.isInteger(status) && status >= 400 && status < 500) {
+    return status;
+  }
+
+  return null;
 };
 
-const getErrorResponse = (error: Error): ErrorResponse => {
-  if (error instanceof NotFoundError) {
-    return { status: error.status, body: { error: error.message } };
-  }
-
-  if (error instanceof ObjectIdError) {
-    return { status: error.status, body: { error: error.message } };
-  }
-
-  if (error instanceof IncorrectPermissionsError) {
-    return {
-      status: error.status,
-      body: {
-        error: error.message,
-        incorrectPermissions: true,
-      },
-    };
-  }
-
-  if (error.name === 'ValidationError') {
-    return {
-      status: 400,
-      body: {
-        error: 'Validation error',
-        details: error.message,
-      },
-    };
-  }
-
-  if (error.name === 'CastError') {
-    return { status: 400, body: { error: 'Invalid ID format' } };
-  }
-
-  if (error.name === 'MongoServerError' && (error as any).code === 11000) {
-    return { status: 409, body: { error: 'Duplicate key error' } };
-  }
-
-  return {
-    status: 500,
-    body: {
-      error: 'Internal server error',
-      message: process.env.NODE_ENV === 'development' ? error.message : undefined,
-    },
-  };
+const publicClientErrorMessage = (status: number): string => {
+  if (status === 400) return 'Bad request';
+  if (status === 401) return 'Unauthorized';
+  if (status === 403) return 'Forbidden';
+  if (status === 404) return 'Not found';
+  if (status === 409) return 'Conflict';
+  return 'Request failed';
 };
 
 /**
  * Global error handler middleware
  * This should be added LAST in your middleware chain
  */
-export const errorHandler = (error: Error, req: Request, res: Response, _next: NextFunction) => {
-  console.error('Error:', error.message);
-  console.error('Stack:', error.stack);
-
-  const response = getErrorResponse(error);
-
-  if (response.status >= 500) {
-    captureServerError(error, req);
+export const errorHandler = (error: Error, req: Request, res: Response, next: NextFunction) => {
+  const sanitizedError = sanitizeErrorForLog(error);
+  console.error('Error:', sanitizedError.message);
+  if (!requiresDeployedRuntimeSecurity() && sanitizedError.stack) {
+    console.error('Stack:', sanitizedError.stack);
   }
 
-  res.status(response.status).json(response.body);
+  if (res.headersSent) {
+    return next(error);
+  }
+
+  if (error instanceof BadRequestError) {
+    return res.status(error.status).json({ error: error.message });
+  }
+
+  if (error instanceof NotFoundError) {
+    return res.status(error.status).json({ error: 'Not found' });
+  }
+
+  if (error instanceof ObjectIdError) {
+    return res.status(error.status).json({ error: 'Not found' });
+  }
+
+  if (error instanceof IncorrectPermissionsError) {
+    return res.status(error.status).json({
+      error: 'Incorrect permissions',
+      incorrectPermissions: true,
+    });
+  }
+
+  const status = clientErrorStatus(error);
+  if (status !== null) {
+    return res.status(status).json({ error: publicClientErrorMessage(status) });
+  }
+
+  if (error.name === 'ValidationError') {
+    return res.status(400).json({
+      error: 'Validation error',
+      details: undefined,
+    });
+  }
+
+  if (error.name === 'CastError') {
+    return res.status(400).json({ error: 'Invalid ID format' });
+  }
+
+  if (error.name === 'MongoServerError' && (error as any).code === 11000) {
+    return res.status(409).json({ error: 'Duplicate key error' });
+  }
+
+  if (error.name === 'MongoNotConnectedError') {
+    triggerReconnect();
+    return res.status(503).json({ error: 'Service temporarily unavailable' });
+  }
+
+  captureServerError(error, req);
+  res.status(500).json({
+    error: 'Internal server error',
+    message: undefined,
+  });
 };
 
 /**
@@ -80,7 +104,6 @@ export const errorHandler = (error: Error, req: Request, res: Response, _next: N
 export const notFoundHandler = (req: Request, res: Response, _next: NextFunction) => {
   res.status(404).json({
     error: 'Not found',
-    path: req.path,
   });
 };
 

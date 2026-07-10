@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { getListingEmptyMessage, hasListingSearchCriteria } from '../home';
+import { getListingEmptyMessage, hasListingSearchCriteria } from '../../utils/listingEmptyState';
 
 const baseParams = {
   queryString: '',

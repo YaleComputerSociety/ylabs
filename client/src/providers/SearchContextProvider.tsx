@@ -3,8 +3,7 @@
  *
  * State transitions live in reducers/searchReducer.ts so they are pure and
  * unit-testable. This component owns side effects (network, debounced effects)
- * public research URL hydration/sync, and maps the reducer state/dispatch onto
- * the existing SearchContext API.
+ * and maps the reducer state/dispatch onto the existing SearchContext API.
  */
 import {
   FC,
@@ -15,44 +14,38 @@ import {
   useRef,
   useContext,
   ReactNode,
-  useState,
 } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
 import axios from '../utils/axios';
-import swal from 'sweetalert';
 
 import SearchContext, { FilterMode } from '../contexts/SearchContext';
 import UserContext from '../contexts/UserContext';
 import { Listing } from '../types/types';
 import { createListing } from '../utils/apiCleaner';
+import { getUniqueDepartmentLabels } from '../utils/departmentNames';
 import { useConfig } from '../hooks/useConfig';
 import { searchReducer, createInitialSearchState } from '../reducers/searchReducer';
-import {
-  parsePublicResearchUrlState,
-  serializePublicResearchUrlState,
-} from '../utils/publicResearchUrlState';
 
 interface SearchContextProviderProps {
   children: ReactNode;
 }
 
-const LISTING_SORTABLE_KEYS = ['default', 'createdAt', 'ownerLastName', 'ownerFirstName', 'title'];
-const PUBLIC_RESEARCH_SORTABLE_KEYS = ['default', 'createdAt', 'updatedAt'];
-
 const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => {
   const pageSize = 20;
+  const sortableKeys = ['default', 'title'];
 
   const { isAuthenticated, isLoading: authLoading } = useContext(UserContext);
-  const location = useLocation();
-  const navigate = useNavigate();
-  const isResearchRoute =
-    location.pathname === '/research' || location.pathname.startsWith('/research/');
-  const sortableKeys = isResearchRoute ? PUBLIC_RESEARCH_SORTABLE_KEYS : LISTING_SORTABLE_KEYS;
+  const isListingsRoute = false;
 
   const { departments, departmentCategories, researchAreas, isLoaded: configLoaded } = useConfig();
 
   const allDepartments = useMemo(
-    () => departments.map((d) => d.displayName).sort((a, b) => a.localeCompare(b)),
+    () =>
+      getUniqueDepartmentLabels(
+        departments.map((d) => d.name || d.displayName),
+        departments,
+      ).sort((a, b) =>
+        a.localeCompare(b),
+      ),
     [departments],
   );
 
@@ -69,11 +62,6 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
   const [state, dispatch] = useReducer(searchReducer, undefined, () =>
     createInitialSearchState({ sortBy: sortableKeys[0] }),
   );
-  const currentPublicResearchUrl = isResearchRoute
-    ? `${location.pathname}${location.search}`
-    : null;
-  const [hydratedPublicResearchUrl, setHydratedPublicResearchUrl] = useState<string | null>(null);
-  const urlStateReady = !isResearchRoute || hydratedPublicResearchUrl === currentPublicResearchUrl;
 
   const {
     queryString,
@@ -88,16 +76,16 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
     sortDirection,
     listings,
     isLoading,
+    error,
     searchExhausted,
     totalCount,
     page,
     filterBarHeight,
     quickFilter,
+    queryStringLoaded,
+    departmentsLoaded,
     initialSearchDone,
   } = state;
-  const queryStringLoadedRef = useRef(false);
-  const departmentsLoadedRef = useRef(false);
-  const lastSerializedPublicResearchUrlRef = useRef<string | null>(null);
 
   // Context setter API preserved for compatibility with existing call sites
   // (some pass a value, some pass an updater function).
@@ -133,7 +121,7 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
   ) as React.Dispatch<React.SetStateAction<FilterMode>>;
 
   const setSortBy = useCallback((value: string) => {
-    dispatch({ type: 'SET_SORT_BY', payload: value });
+    dispatch({ type: 'SET_SORT_BY', payload: sortableKeys.includes(value) ? value : sortableKeys[0] });
   }, []);
 
   const setSortOrder = useCallback((value: number) => {
@@ -155,31 +143,6 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
   const onToggleSortDirection = useCallback(() => {
     dispatch({ type: 'TOGGLE_SORT_DIRECTION' });
   }, []);
-
-  useEffect(() => {
-    if (!sortableKeys.includes(sortBy)) {
-      dispatch({ type: 'SET_SORT_BY', payload: sortableKeys[0] });
-    }
-  }, [sortBy, sortableKeys]);
-
-  useEffect(() => {
-    if (!isResearchRoute) {
-      setHydratedPublicResearchUrl(null);
-      lastSerializedPublicResearchUrlRef.current = null;
-      return;
-    }
-
-    const urlState = parsePublicResearchUrlState(location.search);
-    lastSerializedPublicResearchUrlRef.current = serializePublicResearchUrlState(urlState);
-    dispatch({
-      type: 'HYDRATE_SEARCH_STATE',
-      payload: {
-        ...urlState,
-        page: 1,
-      },
-    });
-    setHydratedPublicResearchUrl(currentPublicResearchUrl);
-  }, [isResearchRoute, location.search, currentPublicResearchUrl]);
 
   // Keep latest filter values in a ref so handleSearch can remain stable.
   const filtersRef = useRef({
@@ -205,58 +168,12 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
     sortOrder,
   };
 
-  useEffect(() => {
-    if (!isResearchRoute || !urlStateReady) return;
-
-    const nextSearch = serializePublicResearchUrlState({
-      queryString,
-      selectedDepartments,
-      selectedResearchAreas,
-      selectedListingResearchAreas,
-      departmentsFilterMode,
-      researchAreasFilterMode,
-      listingResearchAreasFilterMode,
-      sortBy,
-      sortOrder,
-      sortDirection,
-      quickFilter,
-    });
-
-    if (
-      nextSearch === location.search ||
-      nextSearch === lastSerializedPublicResearchUrlRef.current
-    ) {
-      return;
-    }
-
-    lastSerializedPublicResearchUrlRef.current = nextSearch;
-    navigate({ pathname: location.pathname, search: nextSearch }, { replace: true });
-  }, [
-    isResearchRoute,
-    urlStateReady,
-    queryString,
-    selectedDepartments,
-    selectedResearchAreas,
-    selectedListingResearchAreas,
-    departmentsFilterMode,
-    researchAreasFilterMode,
-    listingResearchAreasFilterMode,
-    sortBy,
-    sortOrder,
-    sortDirection,
-    quickFilter,
-    location.pathname,
-    location.search,
-    navigate,
-  ]);
-
   const handleSearch = useCallback(
     (searchPage: number) => {
       const f = filtersRef.current;
       const formattedQuery = f.queryString.trim();
 
-      const endpoint = isResearchRoute ? '/research' : '/listings/search';
-      let url = `${endpoint}?query=${encodeURIComponent(formattedQuery)}&page=${searchPage}&pageSize=${pageSize}`;
+      let url = `/listings/search?query=${encodeURIComponent(formattedQuery)}&page=${searchPage}&pageSize=${pageSize}`;
 
       if (f.sortBy !== 'default') {
         url += `&sortBy=${f.sortBy}&sortOrder=${f.sortOrder}`;
@@ -298,32 +215,28 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
           });
         })
         .catch((error) => {
-          console.error('Error loading listings:', error);
-          if (error?.response?.status !== 401) {
-            swal({
-              text: 'Unable to load listings. Please try again later.',
-              icon: 'warning',
-            });
-          }
-          dispatch({ type: 'SEARCH_FAILURE' });
+          console.error('Error loading listings.');
+          const message =
+            error?.response?.status === 401
+              ? 'Please sign in again to view saved search results.'
+              : 'Legacy listing search is unavailable. Research homes and pathways are still available.';
+          dispatch({ type: 'SEARCH_FAILURE', payload: message });
         });
     },
-    [isResearchRoute, pageSize],
+    [pageSize],
   );
 
   const refreshListings = useCallback(() => {
-    if (!urlStateReady) return;
-
     dispatch({ type: 'SET_PAGE', payload: 1 });
     handleSearch(1);
-  }, [handleSearch, urlStateReady]);
+  }, [handleSearch]);
 
   useEffect(() => {
     if (
-      urlStateReady &&
+      isListingsRoute &&
       configLoaded &&
       !authLoading &&
-      (isAuthenticated || isResearchRoute) &&
+      isAuthenticated &&
       !initialSearchDone
     ) {
       dispatch({ type: 'SET_PAGE', payload: 1 });
@@ -331,50 +244,37 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
       dispatch({ type: 'MARK_INITIAL_SEARCH_DONE' });
     }
   }, [
+    isListingsRoute,
     configLoaded,
-    urlStateReady,
     authLoading,
     isAuthenticated,
-    isResearchRoute,
     initialSearchDone,
     handleSearch,
   ]);
 
   useEffect(() => {
-    if (!urlStateReady || !configLoaded || authLoading || (!isAuthenticated && !isResearchRoute))
-      return;
+    if (!isListingsRoute || !configLoaded) return;
 
     const debounceTimeout = setTimeout(() => {
-      if (queryStringLoadedRef.current) {
+      if (queryStringLoaded) {
         dispatch({ type: 'SET_PAGE', payload: 1 });
         handleSearch(1);
       }
-      queryStringLoadedRef.current = true;
       dispatch({ type: 'MARK_QUERY_STRING_LOADED' });
     }, 500);
 
     return () => {
       clearTimeout(debounceTimeout);
     };
-  }, [
-    queryString,
-    configLoaded,
-    urlStateReady,
-    authLoading,
-    isAuthenticated,
-    isResearchRoute,
-    handleSearch,
-  ]);
+  }, [queryString, configLoaded, isListingsRoute]);
 
   useEffect(() => {
-    if (!urlStateReady || !configLoaded || authLoading || (!isAuthenticated && !isResearchRoute))
-      return;
+    if (!isListingsRoute || !configLoaded) return;
 
-    if (departmentsLoadedRef.current) {
+    if (departmentsLoaded) {
       dispatch({ type: 'SET_PAGE', payload: 1 });
       handleSearch(1);
     }
-    departmentsLoadedRef.current = true;
     dispatch({ type: 'MARK_DEPARTMENTS_LOADED' });
   }, [
     selectedDepartments,
@@ -386,32 +286,14 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
     sortBy,
     sortOrder,
     configLoaded,
-    urlStateReady,
-    authLoading,
-    isAuthenticated,
-    isResearchRoute,
-    handleSearch,
+    isListingsRoute,
   ]);
 
   useEffect(() => {
-    if (
-      page > 1 &&
-      urlStateReady &&
-      configLoaded &&
-      !authLoading &&
-      (isAuthenticated || isResearchRoute)
-    ) {
+    if (isListingsRoute && page > 1 && configLoaded) {
       handleSearch(page);
     }
-  }, [
-    page,
-    urlStateReady,
-    configLoaded,
-    authLoading,
-    isAuthenticated,
-    isResearchRoute,
-    handleSearch,
-  ]);
+  }, [page, configLoaded, isListingsRoute]);
 
   return (
     <SearchContext.Provider
@@ -439,6 +321,7 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
         onToggleSortDirection,
         listings,
         isLoading,
+        error,
         searchExhausted,
         totalCount,
         page,

@@ -5,8 +5,7 @@ import { useContext, useRef, useState } from 'react';
 import SearchContext from '../../contexts/SearchContext';
 
 const NavbarSortDropdown = () => {
-  const { sortBy, setSortBy, sortDirection, onToggleSortDirection, sortableKeys } =
-    useContext(SearchContext);
+  const { sortBy, setSortBy, sortDirection, onToggleSortDirection } = useContext(SearchContext);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [focusedIndex, setFocusedIndex] = useState(-1);
 
@@ -15,12 +14,8 @@ const NavbarSortDropdown = () => {
 
   const sortOptions = [
     { value: 'default', label: 'Best Match' },
-    { value: 'createdAt', label: 'Date Added' },
-    { value: 'updatedAt', label: 'Recently Updated' },
-    { value: 'ownerLastName', label: 'Last Name' },
-    { value: 'ownerFirstName', label: 'First Name' },
     { value: 'title', label: 'Lab Title' },
-  ].filter((option) => sortableKeys.includes(option.value));
+  ];
 
   const handleSelect = (value: string) => {
     setSortBy(value);
@@ -59,7 +54,7 @@ const NavbarSortDropdown = () => {
 
   return (
     <div className="relative" ref={outerRef}>
-      <div className="flex items-center h-9 border border-gray-300 rounded-md bg-white text-sm overflow-hidden">
+      <div className="flex items-center h-9 border border-[var(--yr-line-strong)] rounded-md bg-[var(--yr-panel)] text-sm overflow-hidden">
         <button
           ref={buttonRef}
           onClick={() => setIsDropdownOpen(!isDropdownOpen)}
@@ -91,7 +86,7 @@ const NavbarSortDropdown = () => {
             <div className="w-px h-5 bg-gray-300" />
             <button
               onClick={onToggleSortDirection}
-              className="flex items-center justify-center h-full w-8 text-gray-500 hover:text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-inset transition-colors"
+              className="flex items-center justify-center h-full w-8 text-gray-500 hover:text-gray-700 hover:bg-[var(--yr-panel-muted)] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-inset transition-colors"
               aria-label={sortDirection === 'asc' ? 'Sort ascending' : 'Sort descending'}
               title={sortDirection === 'asc' ? 'Ascending' : 'Descending'}
             >
@@ -116,14 +111,14 @@ const NavbarSortDropdown = () => {
       </div>
 
       {isDropdownOpen && (
-        <div className="absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg border border-gray-300 overflow-hidden z-50 min-w-[160px]">
+        <div className="absolute left-0 top-full mt-1 bg-[var(--yr-panel)] rounded-lg shadow-lg border border-[var(--yr-line-strong)] overflow-hidden z-50 min-w-[160px]">
           <ul className="max-h-[250px] overflow-y-auto">
             {sortOptions.map((option, index) => (
               <li
                 key={option.value}
                 onClick={() => handleSelect(option.value)}
                 className={`px-3 py-2 cursor-pointer text-sm flex items-center justify-between ${
-                  focusedIndex === index ? 'bg-blue-100' : 'hover:bg-gray-100'
+                  focusedIndex === index ? 'bg-[var(--yr-blue-soft)]' : 'hover:bg-[var(--yr-panel-muted)]'
                 }`}
                 onMouseDown={(e) => e.preventDefault()}
               >

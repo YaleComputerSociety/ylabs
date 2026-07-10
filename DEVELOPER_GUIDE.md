@@ -1,12 +1,10 @@
-# Y/Labs — Developer Guide
+# Yale Research - Developer Guide
 
-> **Live site:** [yalelabs.io](https://yalelabs.io/) · **Beta:** [ylabs-dev.onrender.com](https://ylabs-dev.onrender.com)
-
----
+> **Live site:** [yalelabs.io](https://yalelabs.io/) · **Beta:** [ylabs-gr4v.onrender.com](https://ylabs-gr4v.onrender.com) · **Repo:** [YaleComputerSociety/ylabs](https://github.com/YaleComputerSociety/ylabs)
 
 ## What Is This?
 
-Y/Labs is a **Yale research lab discovery platform**. Visitors can browse public research listings with supporting evidence/source metadata, students find labs and fellowships, professors create and manage listings, and admins oversee everything.
+Yale Research is a **Yale research discovery platform**. Students discover Yale research homes, evidence-backed ways in, structured programs/fellowships, and real posted opportunities when they exist. The product is not a listings board; the legacy Listings surface and public Pathways page are retired.
 
 ---
 
@@ -15,21 +13,20 @@ Y/Labs is a **Yale research lab discovery platform**. Visitors can browse public
 ```
 React (Vite) → Express (Passport.js) → MongoDB Atlas + Meilisearch
                     ↓
-            External APIs: Yale CAS, Yalies, Yale Directory, CourseTable, OpenAI (via Meilisearch), Sentry
+            External APIs: Yale CAS, Yalies, Yale Directory, CourseTable, OpenAI (via Meilisearch)
 ```
 
 The server follows: **Routes → Middleware → Controllers → Services → Models**
 
 ### Tech Stack
 
-| Layer           | Technology                                                                               |
-| --------------- | ---------------------------------------------------------------------------------------- |
-| Client          | React 19, TypeScript, Vite 6, React Router v6, MUI v7, styled-components, TailwindCSS v3 |
-| Server          | Express 4, TypeScript, Passport.js (CAS strategy), Mongoose 8                            |
-| Search          | Meilisearch (hybrid search: keyword + semantic via OpenAI `text-embedding-3-small`)      |
-| Database        | MongoDB Atlas (single cluster, separate databases per environment)                       |
-| Error Tracking  | Sentry for client and server runtime exception reporting                                 |
-| Package Manager | Yarn 4 via Corepack                                                                      |
+| Layer           | Technology                                                                                       |
+| --------------- | ------------------------------------------------------------------------------------------------ |
+| Client          | React 19, TypeScript, Vite 6, React Router v6, MUI v7, styled-components, TailwindCSS v3         |
+| Server          | Express 4, TypeScript, Passport.js (CAS strategy), Mongoose 8                                    |
+| Search          | Meilisearch (keyword plus semantic search via OpenAI `text-embedding-3-small` where appropriate) |
+| Database        | MongoDB Atlas (single cluster, separate databases per environment)                               |
+| Package Manager | Yarn 4 via Corepack                                                                              |
 
 ---
 
@@ -37,11 +34,11 @@ The server follows: **Routes → Middleware → Controllers → Services → Mod
 
 Code flows **Local → Beta → Prod**. Beta is the staging gate.
 
-| Environment | Hosting            | MongoDB Database | Meilisearch                   | `MEILISEARCH_INDEX_PREFIX`  |
-| ----------- | ------------------ | ---------------- | ----------------------------- | --------------------------- |
-| Local       | localhost          | `Development`    | Docker (`localhost:7700`)     | _(unset)_ → bare `listings` |
-| Beta        | Render (free tier) | `Beta`           | Shared Render private service | `beta` → `beta_listings`    |
-| Prod        | Render (starter)   | `Production`     | Shared Render private service | `prod` → `prod_listings`    |
+| Environment | Hosting            | MongoDB Database | Meilisearch                   | `MEILISEARCH_INDEX_PREFIX`                         |
+| ----------- | ------------------ | ---------------- | ----------------------------- | -------------------------------------------------- |
+| Local       | localhost          | `Development`    | Docker (`localhost:7700`)     | _(unset)_ → bare `researchentities` / `pathways`   |
+| Beta        | Render (free tier) | `Beta`           | Shared Render private service | `beta` → `beta_researchentities` / `beta_pathways` |
+| Prod        | Render (starter)   | `Production`     | Shared Render private service | `prod` → `prod_researchentities` / `prod_pathways` |
 
 - MongoDB: one Atlas cluster, three databases. `MONGODBURL` points to the right one per environment.
 - Meilisearch: beta and prod share one Render private service, isolated by index prefixes. Local uses its own Docker container.
@@ -50,20 +47,60 @@ Code flows **Local → Beta → Prod**. Beta is the staging gate.
 
 ## Local Development Setup
 
+These instructions assume a Unix-like shell. Mac developers can run them in Terminal. Windows developers should run them inside WSL, with the repo stored in the Linux filesystem rather than `/mnt/c/...`.
+
 ### Prerequisites
 
-- Node.js ≥ 20.9.0
-- Corepack (ships with Node ≥ 16.9)
+- Node.js >= 20.9.0
+- Corepack, which ships with modern Node versions
+- Yarn 4, activated through Corepack
 - Docker Desktop (for local Meilisearch)
 
-### 1. Install dependencies
+### 1. Fresh machine setup
+
+On a brand new Unix/WSL environment, install the basic system packages first:
+
+```bash
+sudo apt update
+sudo apt install -y curl git ca-certificates build-essential python3 make g++
+```
+
+Use `nvm` for Node. Avoid `apt install nodejs`, which often installs an older Node version than this repo supports.
+
+```bash
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/master/install.sh | bash
+```
+
+Restart your shell, then install and select Node 20:
+
+```bash
+nvm install 20
+nvm use 20
+nvm alias default 20
+node -v
+npm -v
+```
+
+Enable Corepack and activate the Yarn version pinned by this repo:
 
 ```bash
 corepack enable
+corepack prepare yarn@4.6.0 --activate
+yarn -v
+```
+
+Expected versions:
+
+- `node` should be `v20.x` or newer.
+- `yarn` should be `4.6.0`.
+
+### 2. Install dependencies
+
+```bash
 yarn install:all
 ```
 
-### 2. Configure environment
+### 3. Configure environment
 
 Copy the example and fill in credentials:
 
@@ -76,100 +113,189 @@ Your local `.env` should point to:
 - `MONGODBURL` → the `Development` database on Atlas
 - `MEILISEARCH_HOST` → `http://localhost:7700`
 - `MEILISEARCH_API_KEY` → your local master key (e.g., `testkey`)
-- No `MEILISEARCH_INDEX_PREFIX` (local uses bare `listings` index)
-- Leave `SENTRY_DSN` unset unless you want to test server-side error reporting locally
+- No `MEILISEARCH_INDEX_PREFIX` (local uses bare `researchentities` and `pathways` indexes)
 
 For the client:
 
 ```bash
 # client/.env
 VITE_APP_SERVER=http://localhost:4000
-# Optional: VITE_SENTRY_DSN=...
 ```
 
-### 3. Start local Meilisearch
+Ask a project maintainer for the development MongoDB and API credentials. Do not commit `server/.env` or `client/.env`.
 
-Pull the latest Meilisearch image and start a container:
+### 4. Start local Meilisearch
+
+Start the local Docker Compose service:
 
 ```bash
-docker pull getmeili/meilisearch:latest
-docker run -d -p 7700:7700 \
-  -e MEILI_MASTER_KEY=testkey \
-  -v meili_data:/meili_data \
-  getmeili/meilisearch:latest
+yarn meili:up
 ```
 
 Verify it's running:
 
 ```bash
-curl http://localhost:7700/health
+yarn meili:health
 # Should return: {"status":"available"}
 ```
 
-Data persists in the `meili_data` volume — you only need to seed once.
+Data persists in the `meili_data` volume - you only need to seed once.
+The local Compose service uses `local_development_master_key`, matching `server/.env.example`.
 
-### 4. Seed Meilisearch
+On Windows, install Docker Desktop on Windows and enable WSL integration for your Linux distribution. Run the `docker` commands from inside WSL.
+
+### 5. Seed Meilisearch
 
 ```bash
-cd data-migration
-npx ts-node --transpile-only MigrateToMeilisearch.ts
+yarn meili:seed
 ```
 
-This reads listings from your `Development` MongoDB and pushes them to the local Meilisearch with the OpenAI embedder configured. Listing evidence is indexed with public-safe source metadata only; `evidence.internalNotes` is stripped before documents are sent to Meilisearch.
+This rebuilds local Research and Pathways indexes from MongoDB. Use `--strategy=swap` for beta/production rebuilds that serve live traffic. Semantic Research search is release-gated separately: Meilisearch must report embedded `researchentities` documents before `RESEARCH_SEARCH_SEMANTIC=true` should be used for Beta or production.
+Research relevance also depends on `researchentities` settings and documents: topic/name/tag fields are searched before description text, student-topic aliases are indexed in `studentSearchTerms`, and short aliases such as `ai`, `ml`, `nlp`, and `cv` disable typo expansion and search only topic-oriented fields.
 
-### 5. Start dev servers
+When a `/research` browse has no search query, results are ordered "best first" by a precomputed `browseRankScore` (completeness of the profile plus strength-weighted undergraduate access signals), falling back to recency. After importing or migrating data, populate the score with `yarn --cwd server research-homes:backfill-browse-rank --apply --confirm-browse-rank` (it runs in dry-run by default); ongoing scrape/materialize runs keep it fresh automatically.
+
+Organizational research homes (centers, institutes, initiatives, core facilities) have no single PI, so their scraped rosters list everyone as core faculty and the public "Principal Investigator" panel shows nothing. The `center-director-llm` scraper reads each home's official site and leadership pages, extracts the single named **director**, and the materializer resolves that name to a Yale user before promoting them to a director (lead) member. New scrape/materialize runs apply this automatically; to fill in the existing corpus run `yarn --cwd server research-homes:backfill-center-directors --apply --confirm-center-directors --limit <n>` (dry-run by default, lists eligible homes without calling the LLM; apply needs `OPENAI_API_KEY`).
+
+### 6. Start dev servers
 
 ```bash
 yarn dev:client    # Vite on port 3000
 yarn dev:server    # Express with nodemon on port 4000
 ```
 
+Run these in two separate terminals.
+
+### 7. Verify setup
+
+```bash
+curl http://localhost:7700/health
+npx tsc --noEmit -p server/tsconfig.json
+yarn --cwd server test
+yarn --cwd client test:ci
+```
+
+### Troubleshooting Yarn setup
+
+If `yarn install:all` fails with an error like:
+
+```txt
+Usage Error: Couldn't find the node_modules state file - running an install might help (findPackageLocation)
+```
+
+or if `yarn`/`corepack` is not found, first confirm you are using the `nvm` Node install rather than a system `apt` Node:
+
+```bash
+which node
+node -v
+which corepack
+```
+
+If `which node` prints `/usr/bin/node`, switch to the `nvm` Node:
+
+```bash
+nvm install 20
+nvm use 20
+nvm alias default 20
+corepack enable
+corepack prepare yarn@4.6.0 --activate
+yarn -v
+```
+
+Then run the root install before the all-workspaces helper:
+
+```bash
+yarn install
+yarn install:all
+```
+
 ### Dev login bypass
 
-Visit `http://localhost:4000/api/dev-login` to log in as a test user (`test123` / `student`) without CAS.
+Visit `http://localhost:4000/api/dev-login` to log in as a test user (`test123` / `undergraduate`) without CAS - `undergraduate` (not the legacy generic `student`) since that's what every real account in the database actually is. Use `?userType=admin` for the `devadmin` account, `?userType=professor` (or `faculty`) for the `devprofessor` account, `?userType=graduate` for the `devgraduate` account, or `?userType=unknown` for the `devunknown` account - the only way to trigger the `/unknown` onboarding-form experience locally, since it otherwise only shows up when a real CAS login's Yalies/Directory lookup can't classify the user. The `unknown` dev account is created with `userConfirmed: false` and `profileVerified: false` to match that real state; every other dev role is pre-confirmed. Dev login is allowed only when `NODE_ENV=development` and `SERVER_BASE_URL` points at localhost or loopback; the Mongo database name does not control this local-runtime check.
 
-If the client cannot reach the auth endpoint, `/login` shows an inline retry state and hides the Yale CAS sign-in link until the auth check succeeds.
+For request-level local testing, set `LOCAL_AUTH_BYPASS=true` in `server/.env`. In `development` or `test` only, protected `/api` requests without a session receive a dev admin user by default:
+
+```bash
+LOCAL_AUTH_BYPASS_NETID=devadmin
+LOCAL_AUTH_BYPASS_USER_TYPE=admin
+```
+
+Per-request overrides are available with `x-dev-netid` and `x-dev-user-type` headers. `/api/cas` and `/api/logout` are not bypassed, so leave `LOCAL_AUTH_BYPASS=false` or visit those routes directly when testing Yale CAS behavior.
+
+The auth flow's verbose tracing (per-request deserialization, the find-or-create source cascade, analytics-event confirmations) is off by default - set `AUTH_DEBUG=true` in `server/.env` to turn it on when debugging an auth issue. Genuine auth errors and anomalies log regardless of the flag.
 
 ---
 
 ## Common Commands
 
-| Command                                 | Description                                      |
-| --------------------------------------- | ------------------------------------------------ |
-| `yarn install:all`                      | Install deps in root + server + client           |
-| `yarn dev:client`                       | Vite dev server (port 3000)                      |
-| `yarn dev:server`                       | Express with nodemon (port 4000)                 |
-| `yarn build`                            | Full production build                            |
-| `yarn start`                            | Run both servers in production mode              |
-| `yarn clean:all`                        | Remove all node_modules                          |
-| `yarn --cwd client test`                | Run Vitest in watch mode                         |
-| `yarn --cwd client test:ci`             | Run Vitest once (used by CI)                     |
-| `yarn --cwd server test`                | Run server Vitest tests once                     |
-| `yarn --cwd server test:search-degrade` | Run the focused listing-search degradation tests |
+| Command                                                           | Description                                                                        |
+| ----------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `yarn install:all`                                                | Install deps in root + server + client                                             |
+| `yarn dev:client`                                                 | Vite dev server (port 3000)                                                        |
+| `yarn dev:server`                                                 | Express with nodemon (port 4000)                                                   |
+| `yarn build`                                                      | Full production build                                                              |
+| `yarn start`                                                      | Run both servers in production mode                                                |
+| `yarn clean:all`                                                  | Remove all node_modules                                                            |
+| `yarn --cwd client test`                                          | Run Vitest in watch mode                                                           |
+| `yarn --cwd client test:ci`                                       | Run Vitest once (used by CI)                                                       |
+| `yarn --cwd server test`                                          | Run server Vitest tests                                                            |
+| `npx tsc --noEmit -p server/tsconfig.json`                        | Server typecheck                                                                   |
+| `yarn --cwd server beta:readiness --confirm-beta-backup --strict` | Read-only Beta release gate                                                        |
+| `yarn --cwd server beta:data-quality --include-samples`           | Read-only Beta data-quality scorecard                                              |
+| `yarn --cwd server scraper:integrity-gate --include-samples`      | Read-only scraper materialization integrity gate                                   |
+| `SCRAPER_ENV=beta yarn --cwd server gates:refresh`                | Regenerate every canonical gate scorecard the operator board reads (single writer) |
 
-### Migration Scripts
+### Operator board Gate Status - keeping it honest and current
 
-Run from `data-migration/`:
+The admin operator board (the **Gate Status** panel at `/programs`) reads canonical gate scorecard
+JSON from fixed `/tmp` paths. It does not compute gates live; it shows whatever was last written
+there. Two rules keep it trustworthy:
+
+- **Honesty:** every gate card shows provenance (which DB, how long ago it was generated). A
+  scorecard older than `GATE_SCORECARD_MAX_AGE_HOURS` (default 3) is flagged **stale** and the gate
+  reads "rerun" rather than presenting a possibly-moved-on verdict as live.
+- **Freshness:** run `gates:refresh` to regenerate all canonical scorecards - it is the **only**
+  sanctioned writer of those paths. Ad-hoc audits should write to suffixed scratch files (e.g.
+  `--output /tmp/ylabs-...-scratch.json`), never the canonical paths, so the board never drifts.
+  To keep the board current automatically on a single instance, set `GATE_REFRESH_INTERVAL_MINUTES`
+  (the server then runs `gates:refresh` in-process on that cadence; `GATE_REFRESH_SKIP_HEAVY=true`
+  skips the slow data-quality audit). For multi-instance/production, drive refresh from an external
+  scheduler or persist scorecards to MongoDB.
+
+### Scraper And Data Scripts
+
+Use the server workspace scripts for current data flows:
 
 ```bash
-npx ts-node --transpile-only <script>.ts
+yarn scrape help
+yarn meili:seed
 ```
 
-| Script                    | Purpose                                 |
-| ------------------------- | --------------------------------------- |
-| `MigrateToMeilisearch.ts` | Populate Meilisearch index from MongoDB |
-| `seedDepartments.ts`      | Seed department taxonomy                |
-| `seedResearchAreas.ts`    | Seed research area taxonomy             |
+Historical `data-migration/` scripts remain for one-off migrations only.
+Run them through the `data-migration` package scripts when available, so dry-run defaults, target validation, and JSON summaries stay in place:
+
+```bash
+npm --prefix data-migration run import:fellowships -- --csv ../web-scraper/fellowships/yale_fellowships.csv --summary ./tmp/fellowships-summary.json
+npm --prefix data-migration run import:fellowships:execute -- --target dev --csv ../web-scraper/fellowships/yale_fellowships.csv --summary ./tmp/fellowships-import.json
+npm --prefix data-migration run migrate:meilisearch -- --summary ./tmp/meili-listings-summary.json
+MEILISEARCH_INDEX_PREFIX=dev npm --prefix data-migration run migrate:meilisearch:execute -- --target dev --summary ./tmp/meili-listings-execute.json
+```
+
+`import:fellowships` validates the CSV transform before MongoDB writes and refuses replacement unless execute mode also supplies `--replace-existing`.
+`migrate:meilisearch` refreshes only the legacy `listings` Meilisearch index; do not use it for current Research or Pathways indexes.
+Any write must use `--execute --target local|test|dev|beta|prod`, and production writes additionally require `--allow-production --confirm-production`.
+Summary paths must be `.json` files under `data-migration/tmp` or the system temp directory.
 
 ---
 
 ## Project Structure
 
 ```
-ylabs/
+yale-research/
 ├── package.json              # Root scripts: install:all, dev:client, dev:server, build, start
-├── DEVELOPER_GUIDE.md        # This file — developer guide
-├── CLAUDE.md                 # Agent-facing codebase context
+├── DEVELOPER_GUIDE.md        # This file - developer guide
+├── AGENTS.md                 # Compact agent-facing entry point
+├── skills/                   # On-demand agent skills for product, architecture, search, auth, scrapers, and workflow
 ├── client/                   # React frontend (Vite, port 3000)
 │   └── src/
 │       ├── pages/            # Route-level components
@@ -178,7 +304,7 @@ ylabs/
 │       ├── providers/        # Context providers with data fetching
 │       ├── hooks/            # Custom hooks
 │       ├── types/            # TypeScript interfaces
-│       └── utils/            # Helpers, axios instance, MUI theme, error tracking
+│       └── utils/            # Helpers, axios instance, MUI theme
 ├── server/                   # Express backend (port 4000)
 │   └── src/
 │       ├── index.ts          # Server entry point
@@ -190,7 +316,7 @@ ylabs/
 │       ├── models/           # Mongoose schemas
 │       ├── middleware/        # Auth guards, validation, error handling
 │       ├── db/               # Database connections
-│       └── utils/            # smartTitle, errors, environment, meiliClient, error tracking
+│       └── utils/            # smartTitle, errors, environment, meiliClient
 └── data-migration/           # Standalone migration scripts
 ```
 
@@ -198,45 +324,43 @@ ylabs/
 
 ## Search
 
-Search uses **Meilisearch** with keyword search and hybrid mode (80% semantic, 20% keyword) for multi-word queries.
+Search uses **Meilisearch** for Research, with internal pathway enrichment and Mongo fallback where rollout safety requires it.
 
-1. Client sends query + filters to `/api/listings/search`
-2. Controller builds Meilisearch filter strings from query params
-3. Multi-word queries use hybrid search with the Meilisearch-configured OpenAI embedder; single-word queries use keyword search to avoid semantic drift
-4. If hybrid search fails, the controller retries keyword-only Meilisearch; if Meilisearch is unavailable, it falls back to MongoDB filtering
-5. Results are returned with `totalCount` for pagination and a `degraded` boolean indicating whether fallback behavior was used
+1. Research discovery uses the `researchentities` index and should only run true semantic search when Meilisearch reports embedded ResearchEntity documents.
+   Student queries are normalized before search: low-value words such as `professor`, `lab`, and `research` are stripped when other terms remain, curated aliases expand `ai`, `ml`, `nlp`, `cv`, `neuro`, and `psych`, and short alias queries stay keyword-only so substring noise does not outrank true topic matches.
+2. `EntryPathway` data remains an internal action model for ways-in summaries, research detail, saved planning, admin review, and data-quality workflows. The public client should consume it through `/api/research/search`, not by calling a standalone Pathways endpoint.
+3. Pathway Meilisearch rebuilds remain useful for parity testing and future internal enrichment work; rollback remains `PATHWAY_SEARCH_BACKEND=mongo` where that service is used.
+4. Results carry evidence and next-step context rather than legacy listing claims.
 
-Logged-out visitors use the public research discovery path instead:
-
-- Client routes `/research` and `/research/:slug` render the listings browse page without the `PrivateRoute` guard.
-- The client mirrors public research search state into shareable URLs and restores it on page load and browser back/forward navigation. URL-backed state includes `query`, `departments`, `academicDisciplines`, `researchAreas`, the three `*Mode` filter operators, `sortBy`, `sortOrder`, and the client-only `quickFilter`.
-- Opening a public card preserves the current search params on `/research/:slug`; closing the modal returns to `/research` with the same params.
-- The client sends public browse requests to `/api/research` and public detail requests to `/api/research/:slug`.
-- Public responses include only confirmed, unarchived listings and redact contact/private fields such as owner email, additional emails, owner/professor IDs, view counts, favorites, and audit fields. They retain sanitized evidence metadata so the detail modal can show why a listing appears and which public sources support it.
-- Authenticated users opening a public detail modal also request `/api/research/:slug/contact` to load the full listing, including contact fields. Evidence metadata on this response is still sanitized through the public evidence allowlist.
-- Public research search only allows `createdAt` and `updatedAt` sort fields and searches a contact-redacted field set.
-
-Listing detail modals render an evidence rail for listings, including an empty state when source metadata is unavailable. The public evidence payload supports `status`, `summary`, `confidence`, `generatedAt`, `lastVerifiedAt`, and up to eight sources with `label`, `url`, `sourceType`, `description`, and `lastCheckedAt`. Loading and error states are handled in the same rail. Public source URLs are limited to `http`/`https`; credentials, query strings, and fragments are removed before they are returned by the API or rendered by the client.
-
-Listing CRUD in `listingService.ts` automatically syncs to Meilisearch after MongoDB writes. Indexed listing documents strip `_id`, `__v`, legacy `embedding`, and private `evidence.internalNotes` fields.
-
-On the authenticated Find Labs page, an empty unfiltered result set is treated as "no research labs are available right now" and includes a link to `/fellowships`; empty filtered/search results instead tell the user no labs match the current search or filters.
+Listing CRUD is retired and must not be used as the search sync path.
 
 The Meilisearch client (`server/src/utils/meiliClient.ts`) exports:
 
-- `getMeiliClient()` — lazy-loaded singleton
-- `getMeiliIndex(name)` — returns a prefixed index (e.g., `prod_listings`)
-- `resolveIndexName(name)` — pure function for prefix resolution
+- `getMeiliClient()` - lazy-loaded singleton
+- `getMeiliIndex(name)` - returns a prefixed index (e.g., `prod_researchentities`)
+- `resolveIndexName(name)` - pure function for prefix resolution
 
 ---
 
-## Fellowships
+## Analytics
 
-The authenticated `/fellowships` page derives the visible program state from each fellowship's `isAcceptingApplications`, `applicationOpenDate`, and `deadline` fields rather than showing the raw accepting flag alone. Fellowships are grouped as Closing Soon, Open, Opening Soon, or Closed; the Open quick filter includes only currently open applications, while Opening Soon programs remain visible in the default/recent views.
+Analytics events are stored in MongoDB with a 3-year TTL.
+Route-level middleware logs successful server-observed events by wrapping `res.send` or `res.json`, so analytics stay outside controller and service business logic.
 
-Shared browse cards, list rows, and the fellowship detail modal use `client/src/utils/fellowshipStatus.ts` to show consistent status labels, deadline details, and urgent deadline styling. The same helper surfaces eligibility summaries from structured filters (`yearOfStudy`, `termOfAward`, `purpose`, `globalRegions`, `citizenshipStatus`) or the free-form `eligibility` field, with explicit warnings when no eligibility or deadline is available.
+Research-surface analytics cover the canonical research entities (`profile`, `listing`, and `fellowship`) and use these event types:
 
-Admin fellowship edit surfaces also preview the derived status and warn when a program is marked accepting applications without a deadline or lacks eligibility context, so stale or incomplete program records can be corrected before students rely on them.
+| Event type            | Meaning                                                                   |
+| --------------------- | ------------------------------------------------------------------------- |
+| `research_view`       | A profile, listing, or fellowship detail surface opened                   |
+| `pathway_save`        | A listing or fellowship was saved, unsaved, or re-staged                  |
+| `ways_in_click`       | A best-next-step, apply, listings, courses, or similar action was clicked |
+| `contact_route_click` | A contact route such as email or phone was clicked                        |
+| `source_link_click`   | A source link such as a lab site, publication, or application was clicked |
+
+Client-only interactions are sent to `POST /api/analytics/research` for authenticated users.
+Server-observed views and save/favorite actions are emitted from route middleware in listings, fellowships, profiles, and users.
+Research analytics sanitize payloads before persistence: contact clicks keep only a coarse `contactMethod`, source clicks keep only `sourceCategory` plus the bare hostname, and labels reject raw contact addresses or URL-like values.
+The admin analytics dashboard segments research engagement by event type, entity type, user type, and top viewed entities over the trailing 30 days.
 
 ---
 
@@ -251,32 +375,18 @@ User → Yale CAS SSO → passport.ts findOrCreateUser
      → Create/Update User → cookie-session
 ```
 
-Client auth state is owned by `UserContextProvider` and `userReducer`. Failed auth refreshes set `authError` for inline UI, clear loading, and preserve any previously authenticated user so a transient outage does not blank the session; retrying `checkContext()` clears the stale error while the next auth check runs.
+The find-or-create cascade runs at login time only. Per-request session restore (`deserializeUser`) is a plain user read plus the admin-grant check - no user creation and no Yalies/Directory calls - so a hiccup in those external sources can't fail already-authenticated requests. The CAS login callback (`/api/cas`) is also exempt from the general API rate limiter: it's always unauthenticated, so it keys by IP, and many users behind one campus NAT egress IP could otherwise exhaust the shared budget and be locked out of login.
+
+The public browse surfaces (`/api/research`, `/api/opportunities`) follow the same principle: they are exempt from both the general and the write limiter (`POST /api/research/search` is a pure read despite its method) and are governed solely by `publicDiscoveryLimiter` (300 req / 15 min), sized for anonymous IP-keyed traffic - debounced search-as-you-type, filters, infinite scroll, and detail views, potentially from several users behind one NAT egress IP. The `PUT .../addView` view-telemetry routes are likewise exempt from the write limiter so ordinary browsing can't 429 a user's real mutations. Sessions last 30 days; the per-request admin-grant check is cached in-memory for 60s (invalidated immediately on grant/revoke). Public detail endpoints (research entity by slug, opportunity by id) and `/api/config` allow brief HTTP caching instead of the global `/api` no-store.
 
 ### Auth Middleware (`server/src/middleware/auth.ts`)
 
-| Middleware         | Check                                                 |
-| ------------------ | ----------------------------------------------------- |
-| `isAuthenticated`  | `req.user` exists                                     |
-| `isAdmin`          | `userType === 'admin'`                                |
-| `isProfessor`      | `userType` in `['professor', 'faculty', 'admin']`     |
-| `canCreateListing` | professor/faculty + `profileVerified` (admins bypass) |
-
----
-
-## Error Handling
-
-The client root is wrapped in `ErrorBoundary`, which shows a recovery screen for unexpected render errors and reports them through `client/src/utils/errorTracking.ts` when `VITE_SENTRY_DSN` is configured.
-
-The server initializes Sentry from `server/src/utils/errorTracking.ts` during startup when `SENTRY_DSN` is configured. Startup failures and 500-level errors handled by `server/src/middleware/errorHandler.ts` are captured with environment and release tags when provided.
-
----
-
-## Analytics
-
-Listing events are logged through route-level response interception in `server/src/routes/listings.ts`. Public research contact events are logged from the contact controller paths: contact detail reveal, email click attempts, and reported outreach outcomes. The admin analytics dashboard includes an Outreach Loop section with reveal/click/outcome totals, outcome breakdowns, top contacted listings, and recent outreach events.
-
-Outreach analytics intentionally avoid raw private contact data. Metadata is limited to channel, source, contact count, action, and the selected outcome.
+| Middleware        | Check                                                                                         |
+| ----------------- | --------------------------------------------------------------------------------------------- |
+| `localAuthBypass` | Optional local/test-only `req.user` injection when `LOCAL_AUTH_BYPASS=true`; skips CAS routes |
+| `isAuthenticated` | `req.user` exists                                                                             |
+| `isAdmin`         | `userType === 'admin'`                                                                        |
+| `isProfessor`     | `userType` in `['professor', 'faculty', 'admin']`                                             |
 
 ---
 
@@ -284,44 +394,41 @@ Outreach analytics intentionally avoid raw private contact data. Metadata is lim
 
 All mount under `/api`.
 
-| Prefix            | Description                                                  | Auth                                             |
-| ----------------- | ------------------------------------------------------------ | ------------------------------------------------ |
-| `/listings`       | Listing CRUD and authenticated search                        | Varies                                           |
-| `/research`       | Public listing discovery, contact reveal, and outreach events | Public; `/research/:slug/contact` and `/research/:slug/outreach` require login |
-| `/fellowships`    | Fellowship CRUD and search                                   | Varies                                           |
-| `/users`          | User CRUD                                                    | Yes                                              |
-| `/profiles`       | Faculty profiles                                             | Varies                                           |
-| `/analytics`      | Analytics dashboards                                         | Admin                                            |
-| `/config`         | Departments + research areas                                 | No                                               |
-| `/research-areas` | Research area CRUD                                           | Admin for writes                                 |
-| `/admin`          | Admin operations                                             | Admin                                            |
-| `/seed`           | Dev seeding routes                                           | Dev mode only                                    |
+| Prefix            | Description                                                            | Auth                                                   |
+| ----------------- | ---------------------------------------------------------------------- | ------------------------------------------------------ |
+| `/research`       | Yale Labs search/detail, including ways-in enrichment                  | Varies                                                 |
+| `/programs`       | Programs & Fellowships browse/search and saved-program support         | Varies                                                 |
+| `/opportunities`  | Real posted opportunity detail workflows                               | Varies                                                 |
+| `/listings`       | Retired legacy API, returns `410 Gone`                                 | Varies                                                 |
+| `/fellowships`    | Compatibility alias around program/fellowship storage during migration | Varies                                                 |
+| `/users`          | User CRUD                                                              | Yes                                                    |
+| `/profiles`       | Faculty profiles                                                       | Varies                                                 |
+| `/analytics`      | Analytics dashboard + research event writes                            | Admin for dashboard, authenticated for research writes |
+| `/config`         | Departments + research areas                                           | No                                                     |
+| `/research-areas` | Research area CRUD                                                     | Admin for writes                                       |
+| `/admin`          | Admin operations                                                       | Admin                                                  |
+| `/seed`           | Dev seeding routes                                                     | Dev mode only                                          |
 
 ---
 
 ## Testing
 
-Client-side tests run under **Vitest 3** with a `jsdom` environment. Configuration lives in the `test` block of [client/vite.config.js](client/vite.config.js), and [client/src/setupTests.ts](client/src/setupTests.ts) loads shared Testing Library matchers. The server uses Vitest for focused middleware and utility tests, plus a focused Node test script for listing-search degradation, but no general server-side test suite is wired into CI.
+Client-side tests run under **Vitest 3** with a `jsdom` environment. Server-side tests also run under **Vitest**.
 
 ### Running tests
 
 ```bash
-cd client
-yarn test        # watch mode — reruns on file changes
-yarn test:ci     # single run — used by CI
-
-cd ../server
-yarn test                 # focused middleware and utility coverage
-yarn test:search-degrade  # listing-search fallback coverage
+yarn --cwd client test        # watch mode - reruns on file changes
+yarn --cwd client test:ci     # single run - used by CI
+yarn --cwd server test        # server Vitest tests
+npx tsc --noEmit -p server/tsconfig.json
 ```
 
-Client tests are discovered from `client/src/**/*.{test,spec}.{ts,tsx}`. Server Vitest coverage currently includes error handling and error tracking utilities.
+Tests are discovered from `client/src/**/*.{test,spec}.{ts,tsx}`.
 
 ### What is tested
 
-Pure reducer modules under [client/src/reducers/](client/src/reducers/) have unit-test coverage in [client/src/reducers/**tests**/](client/src/reducers/__tests__/). Each reducer file has a matching `*.test.ts`. The reducers back the auth, search, fellowship-search, config, listing-form, and account-tracking (kanban/notes) flows — extracting state transitions from providers/components into pure functions makes them testable without mounting React or mocking network.
-
-Focused component and utility coverage also exists outside the reducer pattern: [BrowseGrid.a11y.test.tsx](client/src/components/shared/__tests__/BrowseGrid.a11y.test.tsx) verifies keyboard-openable browse cards/list rows, separate favorite controls, and fellowship status badges; [ListingDetailModal.public.test.tsx](client/src/components/shared/__tests__/ListingDetailModal.public.test.tsx) covers the public listing dialog name, Escape close behavior, focus trapping/restoration, and redacted contact actions; [ResearchAreaInput.a11y.test.tsx](client/src/components/accounts/ListingForm/FormFields/__tests__/ResearchAreaInput.a11y.test.tsx) covers the listing-form research-area field selector dialog focus behavior; [FellowshipModal.test.tsx](client/src/components/fellowship/__tests__/FellowshipModal.test.tsx), [fellowships.grouping.test.tsx](client/src/pages/__tests__/fellowships.grouping.test.tsx), [browsable.test.ts](client/src/types/__tests__/browsable.test.ts), and [fellowshipStatus.test.ts](client/src/utils/__tests__/fellowshipStatus.test.ts) cover fellowship timing, eligibility, status grouping, and shared browse metadata.
+Pure reducer modules under [client/src/reducers/](client/src/reducers/) have unit-test coverage in [client/src/reducers/**tests**/](client/src/reducers/__tests__/). Each reducer file has a matching `*.test.ts`. The reducers back the search, fellowship-search, config, listing-form, and account-tracking (kanban/notes) flows - extracting state transitions from providers/components into pure functions makes them testable without mounting React or mocking network.
 
 When adding a new reducer:
 
@@ -334,12 +441,15 @@ When adding a new reducer:
 Pull requests into `main` or `beta` trigger [.github/workflows/ci.yml](.github/workflows/ci.yml), which runs:
 
 1. `yarn install:all`
-2. `yarn --cwd client test:ci`
-3. `yarn build` (server + client)
+2. `npx tsc --noEmit -p server/tsconfig.json`
+3. `yarn --cwd server test`
+4. `yarn --cwd client test:ci`
+5. `yarn npm audit --severity high`
+6. `yarn build` (server + client)
 
 The workflow also accepts `workflow_dispatch` so it can be run manually from the Actions tab. Branch protection (configured in GitHub repo settings → Branches) requires this check to pass before merging.
 
-`tsc --noEmit` is **not** part of CI yet — the client has known pre-existing type errors that need a cleanup pass before strict type-checking can be enforced.
+Client `tsc --noEmit` is still not part of CI; the client has known pre-existing type errors that need a cleanup pass before strict type-checking can be enforced.
 
 ---
 
@@ -357,26 +467,24 @@ The workflow also accepts `workflow_dispatch` so it can be run manually from the
 1. Page component in `client/src/pages/<page>.tsx`
 2. Route in `client/src/App.tsx` with appropriate guard (`PrivateRoute`, `AdminRoute`)
 
-Public pages that should work for logged-out visitors must not use `PrivateRoute`; protected actions from those pages should route users to `/login` and preserve the return path.
-
 ### Modifying a Schema
 
 1. Mongoose schema in `server/src/models/<model>.ts`
 2. TypeScript interfaces in `client/src/types/`
-3. Migration script in `data-migration/` if existing data needs transformation
-4. If the model is `listing`, update Meilisearch index config if new fields need filtering/sorting
-
-Listing evidence metadata lives under `listing.evidence` in MongoDB. Keep any analyst-only notes in `evidence.internalNotes`; that field is excluded by default from Mongoose query results, stripped from Meilisearch indexing, and never returned by public research endpoints.
+3. Migration script in `data-migration/` if existing data needs transformation.
+   Prefer an existing package script with dry-run defaults, target validation, and a `--summary ./tmp/<name>.json` artifact for operator review.
+4. If the model affects Research or Pathways search, update the relevant Meilisearch rebuild/index config and release gate.
 
 ---
 
 ## Troubleshooting
 
-| Issue                           | Solution                                                                    |
-| ------------------------------- | --------------------------------------------------------------------------- |
-| CAS login not working locally   | Use dev-login: `http://localhost:4000/api/dev-login`                        |
-| Find Labs has no local results  | Seed Development listings or use the empty-state link to browse fellowships |
-| Search is degraded or stale     | Check Meilisearch is running: `curl http://localhost:7700/health`           |
-| Meilisearch connection refused  | Start Docker container or check `MEILISEARCH_HOST` in `.env`                |
-| CORS errors                     | Add origin to `allowList` in `app.ts` or use dev mode                       |
-| "Forbidden" on listing creation | Professor needs `profileVerified: true`                                     |
+| Issue                                          | Solution                                                                                                                             |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| CAS login not working locally                  | Use dev-login: `http://localhost:4000/api/dev-login`                                                                                 |
+| Search returns no results                      | Check Meilisearch is running: `curl http://localhost:7700/health`                                                                    |
+| Meilisearch connection refused                 | Start Docker container or check `MEILISEARCH_HOST` in `.env`                                                                         |
+| CORS errors                                    | Add origin to `allowList` in `app.ts` or use dev mode                                                                                |
+| `/api/listings` returns `410`                  | Expected; Listings is retired. Use Research, Programs, or PostedOpportunity workflows.                                               |
+| Retired practical-routes URL returns not found | Expected; public Pathways search is retired. Ways-in evidence appears inside Yale Labs, research detail, and Dashboard planning.     |
+| A client needs pathway data                    | Use `/api/research/search`, research detail, or saved research-plan APIs. Standalone pathway search is not a public/client contract. |

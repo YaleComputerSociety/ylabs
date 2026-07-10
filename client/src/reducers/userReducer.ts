@@ -49,7 +49,8 @@ export function userReducer(state: UserState, action: UserAction): UserState {
         ...state,
         isLoading: false,
         authError:
-          action.error || 'Unable to check your Yale Labs session. Please try again in a moment.',
+          action.error ||
+          'Unable to check your Yale Labs session. Please try again in a moment.',
       };
 
     case 'LOGOUT':

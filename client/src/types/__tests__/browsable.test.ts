@@ -1,105 +1,124 @@
 import { describe, expect, it } from 'vitest';
 
-import { Fellowship, Listing } from '../types';
-import { BrowsableItem, isItemOpen } from '../browsable';
+import {
+  getResearchEntityBestNextStep,
+  getResearchEntityPathwaySummary,
+  isItemOpen,
+  BrowsableItem,
+} from '../browsable';
+import { ResearchEntity } from '../researchEntity';
 
-const futureDate = (days: number) => {
-  const date = new Date();
-  date.setDate(date.getDate() + days);
-  return date.toISOString();
-};
-
-const makeListing = (overrides: Partial<Listing> = {}): Listing => ({
-  id: '507f1f77bcf86cd799439011',
-  ownerId: '',
-  ownerFirstName: 'Ada',
-  ownerLastName: 'Lovelace',
-  ownerEmail: '',
-  ownerTitle: 'Professor',
-  ownerPrimaryDepartment: 'Computer Science',
-  professorIds: [],
-  professorNames: [],
-  title: 'Computing lab',
-  departments: ['Computer Science'],
-  emails: [],
-  websites: [],
-  description: 'Research description',
-  applicantDescription: '',
-  keywords: [],
-  researchAreas: [],
-  established: '',
-  views: 0,
-  favorites: 0,
-  hiringStatus: 1,
-  archived: false,
-  updatedAt: '',
-  createdAt: '',
-  confirmed: true,
-  audited: false,
-  ...overrides,
-});
-
-const makeFellowship = (overrides: Partial<Fellowship> = {}): Fellowship => ({
-  id: 'f-1',
-  title: 'Fellowship',
-  competitionType: '',
-  summary: '',
+const researchEntity = (overrides: Partial<ResearchEntity> = {}): ResearchEntity => ({
+  _id: 'entity-1',
+  slug: 'entity-1',
+  name: 'Entity One',
+  kind: 'lab',
   description: '',
-  applicationInformation: '',
-  eligibility: 'Open to Yale College students.',
-  restrictionsToUseOfAward: '',
-  additionalInformation: '',
-  links: [],
-  applicationLink: '',
-  awardAmount: '',
-  isAcceptingApplications: true,
-  applicationOpenDate: null,
-  deadline: futureDate(30),
-  contactName: '',
+  websiteUrl: '',
+  location: '',
+  departments: [],
+  researchAreas: [],
+  school: '',
+  openness: 'open',
+  typicalUndergradRoles: [],
+  prerequisiteCourses: [],
+  creditOptions: [],
+  fundingPrograms: [],
   contactEmail: '',
-  contactPhone: '',
-  contactOffice: '',
-  yearOfStudy: ['Junior'],
-  termOfAward: [],
-  purpose: [],
-  globalRegions: [],
-  citizenshipStatus: [],
-  archived: false,
-  audited: false,
-  views: 0,
-  favorites: 0,
-  updatedAt: '',
-  createdAt: '',
+  contactName: '',
+  contactRole: '',
+  sourceUrls: [],
   ...overrides,
 });
 
-describe('isItemOpen', () => {
-  it('preserves listing hiring status behavior', () => {
-    expect(isItemOpen({ type: 'listing', data: makeListing({ hiringStatus: 0 }) })).toBe(true);
-    expect(isItemOpen({ type: 'listing', data: makeListing({ hiringStatus: -1 }) })).toBe(false);
-  });
-
-  it('does not treat future fellowship application windows as open', () => {
+describe('isItemOpen for research entities', () => {
+  it('does not treat legacy openness as evidence-backed availability', () => {
     const item: BrowsableItem = {
-      type: 'fellowship',
-      data: makeFellowship({
-        applicationOpenDate: futureDate(7),
-        deadline: futureDate(30),
-      }),
+      type: 'researchGroup',
+      data: researchEntity({ openness: 'open' }),
     };
 
     expect(isItemOpen(item)).toBe(false);
   });
 
-  it('treats currently accepting fellowship windows as open', () => {
+  it('uses accessSummary evidence for research availability', () => {
     const item: BrowsableItem = {
-      type: 'fellowship',
-      data: makeFellowship({
-        applicationOpenDate: null,
-        deadline: futureDate(30),
+      type: 'researchGroup',
+      data: researchEntity({
+        openness: 'unknown',
+        accessSummary: {
+          status: 'posted-opening',
+          confidence: 0.9,
+          evidence: [],
+          signalTypes: ['POSTED_OPENING'],
+          entryPathwayTypes: ['POSTED_ROLE'],
+          hasActivePostedOpportunity: true,
+          bestNextStep: 'Apply through the official posting.',
+        },
       }),
     };
 
     expect(isItemOpen(item)).toBe(true);
+  });
+});
+
+describe('research entity pathway card summaries', () => {
+  it('summarizes active posted opportunities first', () => {
+    expect(
+      getResearchEntityPathwaySummary(
+        researchEntity({
+          accessSummary: {
+            status: 'posted-opening',
+            confidence: 0.9,
+            evidence: [],
+            signalTypes: ['POSTED_OPENING'],
+            entryPathwayTypes: ['COURSE_CREDIT'],
+            hasActivePostedOpportunity: true,
+            bestNextStep: 'Apply',
+          },
+        }),
+      ),
+    ).toBe('Posted opening available');
+  });
+
+  it('summarizes non-posted pathway types without formalization-only evidence', () => {
+    expect(
+      getResearchEntityPathwaySummary(
+        researchEntity({
+          accessSummary: {
+            status: 'evidence-backed',
+            confidence: 0.7,
+            evidence: [],
+            signalTypes: [],
+            entryPathwayTypes: [
+              'COURSE_CREDIT',
+              'SENIOR_THESIS',
+              'EXPLORATORY_CONTACT',
+              'FELLOWSHIP_FUNDED_PROJECT',
+            ],
+            hasActivePostedOpportunity: false,
+            bestNextStep: 'Plan exploratory outreach.',
+          },
+        }),
+      ),
+    ).toBe('Exploratory contact');
+  });
+
+  it('hides placeholder next steps from cards', () => {
+    expect(
+      getResearchEntityBestNextStep(
+        researchEntity({
+          accessSummary: {
+            status: 'unknown',
+            confidence: 0,
+            evidence: [],
+            signalTypes: [],
+            entryPathwayTypes: [],
+            hasActivePostedOpportunity: false,
+            bestNextStep: 'Check back later',
+          },
+        }),
+      ),
+    ).toBeNull();
   });
 });

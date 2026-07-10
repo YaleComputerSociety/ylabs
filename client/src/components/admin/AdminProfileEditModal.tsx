@@ -3,6 +3,8 @@
  */
 import { useEffect, useReducer } from 'react';
 import axios from '../../utils/axios';
+import { clientErrorMessage } from '../../utils/clientErrorMessage';
+import { safeDoiUrl } from '../../utils/url';
 import {
   adminProfileEditReducer,
   createInitialAdminProfileEditState,
@@ -68,8 +70,8 @@ const AdminProfileEditModal = ({ profile, onClose, onSaved }: AdminProfileEditMo
       .then((res) => {
         dispatch({ type: 'FETCH_SUCCESS', profile: res.data.profile });
       })
-      .catch((err) => {
-        console.error(err);
+      .catch(() => {
+        console.error('Error loading admin profile.');
         dispatch({ type: 'FETCH_FAILURE' });
       });
   }, [profile.netid]);
@@ -104,8 +106,8 @@ const AdminProfileEditModal = ({ profile, onClose, onSaved }: AdminProfileEditMo
       });
       onSaved();
     } catch (err: any) {
-      console.error('Error saving profile:', err);
-      alert(err.response?.data?.error || 'Failed to save');
+      console.error('Error saving profile.');
+      alert(clientErrorMessage(err, 'Failed to save'));
     } finally {
       dispatch({ type: 'SAVE_END' });
     }
@@ -121,10 +123,10 @@ const AdminProfileEditModal = ({ profile, onClose, onSaved }: AdminProfileEditMo
       onClick={handleBackdropClick}
     >
       <div
-        className="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[85vh] flex flex-col overflow-hidden"
+        className="bg-[var(--yr-panel)] rounded-xl shadow-2xl w-full max-w-3xl max-h-[85vh] flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex-shrink-0 border-b border-gray-100 px-6 py-4 flex items-center justify-between">
+        <div className="flex-shrink-0 border-b border-[var(--yr-line)] px-6 py-4 flex items-center justify-between">
           <div>
             <h2 className="text-lg font-bold text-gray-900">
               Edit Profile: {profile.fname} {profile.lname}
@@ -133,7 +135,7 @@ const AdminProfileEditModal = ({ profile, onClose, onSaved }: AdminProfileEditMo
           </div>
           <button
             onClick={onClose}
-            className="p-2 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600"
+            className="p-2 rounded-lg hover:bg-[var(--yr-panel-muted)] text-gray-400 hover:text-gray-600"
           >
             <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path
@@ -160,7 +162,7 @@ const AdminProfileEditModal = ({ profile, onClose, onSaved }: AdminProfileEditMo
                     type="text"
                     value={fname}
                     onChange={(e) => dispatch({ type: 'SET_FNAME', payload: e.target.value })}
-                    className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full text-sm border border-[var(--yr-line)] rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
                 <div>
@@ -169,7 +171,7 @@ const AdminProfileEditModal = ({ profile, onClose, onSaved }: AdminProfileEditMo
                     type="text"
                     value={lname}
                     onChange={(e) => dispatch({ type: 'SET_LNAME', payload: e.target.value })}
-                    className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full text-sm border border-[var(--yr-line)] rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
               </div>
@@ -181,7 +183,7 @@ const AdminProfileEditModal = ({ profile, onClose, onSaved }: AdminProfileEditMo
                     type="email"
                     value={email}
                     onChange={(e) => dispatch({ type: 'SET_EMAIL', payload: e.target.value })}
-                    className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full text-sm border border-[var(--yr-line)] rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
                 <div>
@@ -190,7 +192,7 @@ const AdminProfileEditModal = ({ profile, onClose, onSaved }: AdminProfileEditMo
                     type="text"
                     value={phone}
                     onChange={(e) => dispatch({ type: 'SET_PHONE', payload: e.target.value })}
-                    className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full text-sm border border-[var(--yr-line)] rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
               </div>
@@ -201,7 +203,7 @@ const AdminProfileEditModal = ({ profile, onClose, onSaved }: AdminProfileEditMo
                   type="text"
                   value={title}
                   onChange={(e) => dispatch({ type: 'SET_TITLE', payload: e.target.value })}
-                  className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full text-sm border border-[var(--yr-line)] rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
 
@@ -211,7 +213,7 @@ const AdminProfileEditModal = ({ profile, onClose, onSaved }: AdminProfileEditMo
                   value={bio}
                   onChange={(e) => dispatch({ type: 'SET_BIO', payload: e.target.value })}
                   rows={4}
-                  className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full text-sm border border-[var(--yr-line)] rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
 
@@ -226,7 +228,7 @@ const AdminProfileEditModal = ({ profile, onClose, onSaved }: AdminProfileEditMo
                     onChange={(e) =>
                       dispatch({ type: 'SET_PRIMARY_DEPT', payload: e.target.value })
                     }
-                    className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full text-sm border border-[var(--yr-line)] rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
                 <div>
@@ -239,7 +241,7 @@ const AdminProfileEditModal = ({ profile, onClose, onSaved }: AdminProfileEditMo
                     onChange={(e) =>
                       dispatch({ type: 'SET_SECONDARY_DEPTS', payload: e.target.value })
                     }
-                    className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full text-sm border border-[var(--yr-line)] rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
               </div>
@@ -254,7 +256,7 @@ const AdminProfileEditModal = ({ profile, onClose, onSaved }: AdminProfileEditMo
                   onChange={(e) =>
                     dispatch({ type: 'SET_RESEARCH_INTERESTS', payload: e.target.value })
                   }
-                  className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full text-sm border border-[var(--yr-line)] rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
 
@@ -265,7 +267,7 @@ const AdminProfileEditModal = ({ profile, onClose, onSaved }: AdminProfileEditMo
                     type="number"
                     value={hIndex}
                     onChange={(e) => dispatch({ type: 'SET_H_INDEX', payload: e.target.value })}
-                    className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full text-sm border border-[var(--yr-line)] rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
                 <div>
@@ -274,7 +276,7 @@ const AdminProfileEditModal = ({ profile, onClose, onSaved }: AdminProfileEditMo
                     type="text"
                     value={orcid}
                     onChange={(e) => dispatch({ type: 'SET_ORCID', payload: e.target.value })}
-                    className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full text-sm border border-[var(--yr-line)] rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
                 <div>
@@ -283,7 +285,7 @@ const AdminProfileEditModal = ({ profile, onClose, onSaved }: AdminProfileEditMo
                     type="text"
                     value={imageUrl}
                     onChange={(e) => dispatch({ type: 'SET_IMAGE_URL', payload: e.target.value })}
-                    className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full text-sm border border-[var(--yr-line)] rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
               </div>
@@ -293,14 +295,14 @@ const AdminProfileEditModal = ({ profile, onClose, onSaved }: AdminProfileEditMo
                   <label className="block text-xs font-medium text-gray-600 mb-1">
                     Publications ({full.publications.length})
                   </label>
-                  <div className="max-h-[200px] overflow-y-auto border border-gray-200 rounded-lg p-3 space-y-2">
+                  <div className="max-h-[200px] overflow-y-auto border border-[var(--yr-line)] rounded-lg p-3 space-y-2">
                     {full.publications.slice(0, 50).map((pub, i) => (
                       <div key={i} className="text-xs text-gray-600 flex items-start gap-2">
                         <span className="text-gray-400 whitespace-nowrap">{pub.year || '—'}</span>
                         <span className="truncate">{pub.title}</span>
-                        {pub.doi && (
+                        {safeDoiUrl(pub.doi) && (
                           <a
-                            href={`https://doi.org/${pub.doi}`}
+                            href={safeDoiUrl(pub.doi)}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="text-blue-500 hover:underline whitespace-nowrap flex-shrink-0"
@@ -327,7 +329,7 @@ const AdminProfileEditModal = ({ profile, onClose, onSaved }: AdminProfileEditMo
                     onChange={(e) =>
                       dispatch({ type: 'SET_PROFILE_VERIFIED', payload: e.target.checked })
                     }
-                    className="rounded border-gray-300"
+                    className="rounded border-[var(--yr-line-strong)]"
                   />
                   Profile Verified
                 </label>
@@ -338,7 +340,7 @@ const AdminProfileEditModal = ({ profile, onClose, onSaved }: AdminProfileEditMo
                     onChange={(e) =>
                       dispatch({ type: 'SET_USER_CONFIRMED', payload: e.target.checked })
                     }
-                    className="rounded border-gray-300"
+                    className="rounded border-[var(--yr-line-strong)]"
                   />
                   Account Confirmed
                 </label>
@@ -347,11 +349,10 @@ const AdminProfileEditModal = ({ profile, onClose, onSaved }: AdminProfileEditMo
                   <select
                     value={userType}
                     onChange={(e) => dispatch({ type: 'SET_USER_TYPE', payload: e.target.value })}
-                    className="text-sm border border-gray-200 rounded-lg px-2 py-1"
+                    className="text-sm border border-[var(--yr-line)] rounded-lg px-2 py-1"
                   >
                     <option value="professor">Professor</option>
                     <option value="faculty">Faculty</option>
-                    <option value="admin">Admin</option>
                     <option value="graduate">Graduate</option>
                     <option value="undergraduate">Undergraduate</option>
                     <option value="unknown">Unknown</option>
@@ -362,10 +363,10 @@ const AdminProfileEditModal = ({ profile, onClose, onSaved }: AdminProfileEditMo
           )}
         </div>
 
-        <div className="flex-shrink-0 border-t border-gray-100 px-6 py-4 flex justify-end gap-2">
+        <div className="flex-shrink-0 border-t border-[var(--yr-line)] px-6 py-4 flex justify-end gap-2">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50"
+            className="px-4 py-2 text-sm font-medium text-gray-600 border border-[var(--yr-line)] rounded-lg hover:bg-[var(--yr-panel-muted)]"
           >
             Cancel
           </button>

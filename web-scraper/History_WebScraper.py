@@ -79,11 +79,11 @@ def extract_full_bio(profile_url):
 
     # Find the bio section - it's in a div with a label "Bio:"
     bio_parts = []
-    
+
     # Look for all field items in the main content area
     # The bio appears after the "Bio:" label in the field content
     labels = soup.find_all("div", class_="field-label")
-    
+
     for label in labels:
         if label.get_text(strip=True) == "Bio:":
             # Get the next sibling which should be the field-items div
@@ -102,7 +102,7 @@ def extract_full_bio(profile_url):
                     if text:
                         bio_parts.append(text)
                 break
-    
+
     # Also check for publications and awards if present
     publications = []
     for label in soup.find_all("strong"):
@@ -112,10 +112,10 @@ def extract_full_bio(profile_url):
                 items = parent.find_all("li")
                 for item in items:
                     publications.append(item.get_text(strip=True))
-    
+
     # Join bio parts
     bio_text = "\n\n".join(bio_parts) if bio_parts else None
-    
+
     return bio_text
 # Scrape all faculty
 def scrape_all():

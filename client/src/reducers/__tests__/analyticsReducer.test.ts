@@ -53,6 +53,19 @@ const sampleData: AnalyticsData = {
     newUsersToday: 0,
     newUsersTodayByType: [],
   },
+  researchEntities: {
+    overview: { active: 40, archived: 5, total: 45 },
+    byType: [{ entityType: 'LAB', count: 30 }],
+    byVisibilityTier: [{ tier: 'student_ready', count: 12 }],
+    byOpenness: [{ status: 'unknown', count: 25 }],
+    freshness: {
+      observedLast7Days: 8,
+      observedLast30Days: 20,
+      neverObserved: 4,
+      staleOver90Days: 6,
+    },
+    scholarly: { withRecentPapers: 18, withRecentGrants: 9 },
+  },
   timestamp: '2026-04-16T00:00:00.000Z',
 };
 

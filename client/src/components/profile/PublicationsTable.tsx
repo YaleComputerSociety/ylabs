@@ -4,7 +4,8 @@
 import { useReducer, useEffect } from 'react';
 import { Publication } from '../../types/types';
 import axios from '../../utils/axios';
-import { safeUrl } from '../../utils/url';
+import { safeDoiUrl, safeHttpUrl } from '../../utils/url';
+import { trackResearchEvent } from '../../utils/researchAnalytics';
 import {
   PublicationsSortField,
   createInitialPublicationsTableState,
@@ -51,8 +52,8 @@ const PublicationsTable = ({ netid }: PublicationsTableProps) => {
           totalPages: Math.ceil(fetchedTotal / pageSize),
         });
       })
-      .catch((err) => {
-        console.error(err);
+      .catch(() => {
+        console.error('Error loading profile publications.');
         dispatch({ type: 'FETCH_FAILURE' });
       });
   }, [netid, page, pageSize, sortBy, sortOrder]);
@@ -101,7 +102,7 @@ const PublicationsTable = ({ netid }: PublicationsTableProps) => {
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-gray-200">
+            <tr className="border-b border-[var(--yr-line)]">
               <th
                 className="text-left py-2 px-2 font-semibold text-gray-600 cursor-pointer hover:text-gray-900 whitespace-nowrap"
                 onClick={() => toggleSort('year')}
@@ -130,16 +131,27 @@ const PublicationsTable = ({ netid }: PublicationsTableProps) => {
           </thead>
           <tbody>
             {publications.map((pub, i) => (
-              <tr key={i} className="border-b border-gray-100 hover:bg-gray-50">
+              <tr key={i} className="border-b border-[var(--yr-line)] hover:bg-[var(--yr-panel-muted)]">
                 <td className="py-2 px-2 text-gray-500 whitespace-nowrap">{pub.year || '—'}</td>
                 <td className="py-2 px-2">
                   <div className="flex items-start gap-1.5">
                     <span className="text-gray-800">{pub.title}</span>
-                    {pub.doi && (
+                    {safeDoiUrl(pub.doi) && (
                       <a
-                        href={`https://doi.org/${pub.doi}`}
+                        href={safeDoiUrl(pub.doi)}
                         target="_blank"
                         rel="noopener noreferrer"
+                        onClick={() => {
+                          const href = safeDoiUrl(pub.doi);
+                          if (href) {
+                            trackResearchEvent({
+                              eventType: 'source_link_click',
+                              entityType: 'profile',
+                              entityId: netid,
+                              payload: { sourceCategory: 'publication', url: href },
+                            });
+                          }
+                        }}
                         className="flex-shrink-0 text-blue-500 hover:text-blue-700"
                         title="Open DOI"
                       >
@@ -160,11 +172,22 @@ const PublicationsTable = ({ netid }: PublicationsTableProps) => {
                         </svg>
                       </a>
                     )}
-                    {pub.open_access_url && !pub.doi && safeUrl(pub.open_access_url) && (
+                    {pub.open_access_url && !pub.doi && safeHttpUrl(pub.open_access_url) && (
                       <a
-                        href={safeUrl(pub.open_access_url)}
+                        href={safeHttpUrl(pub.open_access_url)}
                         target="_blank"
                         rel="noopener noreferrer"
+                        onClick={() => {
+                          const href = safeHttpUrl(pub.open_access_url);
+                          if (href) {
+                            trackResearchEvent({
+                              eventType: 'source_link_click',
+                              entityType: 'profile',
+                              entityId: netid,
+                              payload: { sourceCategory: 'publication', url: href },
+                            });
+                          }
+                        }}
                         className="flex-shrink-0 text-green-500 hover:text-green-700"
                         title="Open Access"
                       >
@@ -202,7 +225,7 @@ const PublicationsTable = ({ netid }: PublicationsTableProps) => {
           <button
             onClick={() => dispatch({ type: 'SET_PAGE', payload: Math.max(1, page - 1) })}
             disabled={page === 1}
-            className="px-3 py-1.5 text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+            className="px-3 py-1.5 text-sm rounded-lg border border-[var(--yr-line)] text-gray-600 hover:bg-[var(--yr-panel-muted)] disabled:opacity-40 disabled:cursor-not-allowed"
           >
             Previous
           </button>
@@ -212,7 +235,7 @@ const PublicationsTable = ({ netid }: PublicationsTableProps) => {
           <button
             onClick={() => dispatch({ type: 'SET_PAGE', payload: Math.min(totalPages, page + 1) })}
             disabled={page === totalPages}
-            className="px-3 py-1.5 text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+            className="px-3 py-1.5 text-sm rounded-lg border border-[var(--yr-line)] text-gray-600 hover:bg-[var(--yr-panel-muted)] disabled:opacity-40 disabled:cursor-not-allowed"
           >
             Next
           </button>

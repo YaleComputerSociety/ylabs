@@ -2,13 +2,22 @@
  * React context for fellowship search, filter, and sort state.
  */
 import { createContext } from 'react';
-import { Fellowship, FellowshipFilterOptions } from '../types/types';
+import { Fellowship, FellowshipFilterOptions, StudentVisibilityTier } from '../types/types';
+import { FellowshipQuickFilter } from '../reducers/fellowshipSearchReducer';
 
 export interface FellowshipSearchContextType {
   queryString: string;
   setQueryString: (query: string) => void;
 
   selectedYearOfStudy: string[];
+  selectedProgramCategory: string[];
+  selectedProgramKind: string[];
+  selectedEntryMode: string[];
+  selectedStudentFacingCategory: string[];
+  setSelectedProgramCategory: React.Dispatch<React.SetStateAction<string[]>>;
+  setSelectedProgramKind: React.Dispatch<React.SetStateAction<string[]>>;
+  setSelectedEntryMode: React.Dispatch<React.SetStateAction<string[]>>;
+  setSelectedStudentFacingCategory: React.Dispatch<React.SetStateAction<string[]>>;
   setSelectedYearOfStudy: React.Dispatch<React.SetStateAction<string[]>>;
   selectedTermOfAward: string[];
   setSelectedTermOfAward: React.Dispatch<React.SetStateAction<string[]>>;
@@ -18,6 +27,8 @@ export interface FellowshipSearchContextType {
   setSelectedRegions: React.Dispatch<React.SetStateAction<string[]>>;
   selectedCitizenship: string[];
   setSelectedCitizenship: React.Dispatch<React.SetStateAction<string[]>>;
+  selectedStudentVisibilityTier: StudentVisibilityTier[];
+  setSelectedStudentVisibilityTier: React.Dispatch<React.SetStateAction<StudentVisibilityTier[]>>;
 
   sortBy: string;
   setSortBy: (sortBy: string) => void;
@@ -41,8 +52,8 @@ export interface FellowshipSearchContextType {
 
   refreshFellowships: () => void;
 
-  quickFilter: 'open' | 'closingSoon' | 'recent' | null;
-  setQuickFilter: (filter: 'open' | 'closingSoon' | 'recent' | null) => void;
+  quickFilter: string | null;
+  setQuickFilter: (filter: FellowshipQuickFilter) => void;
 
   filterBarHeight: number;
   setFilterBarHeight: (height: number) => void;
@@ -52,6 +63,14 @@ export const defaultFellowshipSearchContext: FellowshipSearchContextType = {
   queryString: '',
   setQueryString: () => {},
   selectedYearOfStudy: [],
+  selectedProgramCategory: [],
+  selectedProgramKind: [],
+  selectedEntryMode: [],
+  selectedStudentFacingCategory: [],
+  setSelectedProgramCategory: () => {},
+  setSelectedProgramKind: () => {},
+  setSelectedEntryMode: () => {},
+  setSelectedStudentFacingCategory: () => {},
   setSelectedYearOfStudy: () => {},
   selectedTermOfAward: [],
   setSelectedTermOfAward: () => {},
@@ -61,6 +80,8 @@ export const defaultFellowshipSearchContext: FellowshipSearchContextType = {
   setSelectedRegions: () => {},
   selectedCitizenship: [],
   setSelectedCitizenship: () => {},
+  selectedStudentVisibilityTier: [],
+  setSelectedStudentVisibilityTier: () => {},
   sortBy: 'default',
   setSortBy: () => {},
   sortOrder: -1,
@@ -75,6 +96,10 @@ export const defaultFellowshipSearchContext: FellowshipSearchContextType = {
   pageSize: 20,
   total: 0,
   filterOptions: {
+    programCategory: [],
+    programKind: [],
+    entryMode: [],
+    studentFacingCategory: [],
     yearOfStudy: [],
     termOfAward: [],
     purpose: [],

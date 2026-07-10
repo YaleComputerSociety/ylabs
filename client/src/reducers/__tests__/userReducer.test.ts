@@ -4,10 +4,10 @@ import { User } from '../../types/types';
 import { createInitialUserState, userReducer } from '../userReducer';
 
 const sampleUser = {
-  netId: 'abc123',
-  fname: 'Ada',
-  lname: 'Lovelace',
-  email: 'ada@yale.edu',
+  netId: 'fixture-user',
+  fname: 'Test',
+  lname: 'Person',
+  email: 'person@example.test',
   userType: 'student',
 } as unknown as User;
 

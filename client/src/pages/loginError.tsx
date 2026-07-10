@@ -1,30 +1,38 @@
 /**
  * Login error page displayed on authentication failure.
  */
-import swal from 'sweetalert';
-import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+
+import SignInButton from '../components/SignInButton';
+import useDocumentTitle from '../hooks/useDocumentTitle';
 
 const LoginError = () => {
-  const [showError, setShowError] = useState(false);
-
-  useEffect(() => {
-    setTimeout(() => {
-      setShowError(true);
-    }, 500);
-  });
-
-  useEffect(() => {
-    if (showError) {
-      swal({
-        text: 'We were unable to process your login. Please try again or contact support if the issue persists.',
-        icon: 'warning',
-      }).then(() => {
-        window.location.href = '/login';
-      });
-    }
-  }, [showError]);
-
-  return null;
+  useDocumentTitle('Sign in error');
+  return (
+    <div className="yr-page min-h-[calc(100vh-8rem)]">
+      <div className="mx-auto flex w-full max-w-3xl flex-col items-center px-5 py-14 text-center sm:px-8 sm:py-20">
+        <div className="yr-panel rounded-md p-6">
+          <p className="yr-kicker">Yale CAS</p>
+          <h1 className="mt-3 text-3xl font-semibold leading-tight text-slate-950 sm:text-4xl">
+            We couldn't complete sign in
+          </h1>
+          <p className="mt-4 max-w-2xl text-base leading-relaxed text-slate-700 sm:text-lg">
+            Yale Research did not receive a valid CAS session. Try Yale CAS again, or return to
+            the research entry page and start from the surface you were opening.
+          </p>
+          <div className="mt-8 flex w-full max-w-md flex-col gap-3 sm:flex-row sm:justify-center">
+            <SignInButton label="Try Yale CAS again" />
+            <Link
+              to="/"
+              className="inline-flex min-h-[44px] items-center justify-center rounded-md border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-5 py-3 text-sm font-semibold text-slate-900 transition-colors hover:bg-[var(--yr-panel-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+            >
+              Return to Yale Research
+            </Link>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 };
 
 export default LoginError;

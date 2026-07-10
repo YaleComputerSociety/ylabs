@@ -38,7 +38,6 @@ const DepartmentInput = ({
 
   const deptDropdownRef = useRef<HTMLDivElement>(null);
   const deptInputRef = useRef<HTMLInputElement>(null);
-  const deptInputId = `${label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-input`;
 
   const filteredDepartments = availableDepartments.filter((dept) =>
     dept.toLowerCase().includes(deptSearchTerm.toLowerCase()),
@@ -94,25 +93,24 @@ const DepartmentInput = ({
   if (configLoading) {
     return (
       <div className="mb-4">
-        <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor={deptInputId}>
+        <label className="block text-gray-700 text-sm font-bold mb-2">
           {label}
           {required && <span className="text-red-500 ml-1">*</span>}
         </label>
-        <div className="animate-pulse bg-gray-200 h-10 rounded"></div>
+        <div className="animate-pulse bg-[var(--yr-panel-muted)] h-10 rounded"></div>
       </div>
     );
   }
 
   return (
     <div className="mb-4" ref={deptDropdownRef}>
-      <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor={deptInputId}>
+      <label className="block text-gray-700 text-sm font-bold mb-2">
         {label}
         {required && <span className="text-red-500 ml-1">*</span>}
       </label>
       <div className="relative">
         <div className="relative">
           <input
-            id={deptInputId}
             ref={deptInputRef}
             type="text"
             value={
@@ -138,8 +136,7 @@ const DepartmentInput = ({
             }`}
             placeholder="Add departments..."
           />
-          <button
-            type="button"
+          <div
             className="absolute inset-y-0 right-0 flex items-center px-2 text-gray-700 cursor-pointer"
             onClick={() => {
               if (isDeptDropdownOpen) {
@@ -151,26 +148,24 @@ const DepartmentInput = ({
                 }
               }
             }}
-            aria-label="Toggle department options"
           >
             <svg
-              aria-hidden="true"
               className="fill-current h-4 w-4"
               xmlns="http://www.w3.org/2000/svg"
               viewBox="0 0 20 20"
             >
               <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" />
             </svg>
-          </button>
+          </div>
         </div>
 
         {isDeptDropdownOpen && (
           <div
-            className="absolute w-full bg-white rounded-lg z-10 shadow-lg border overflow-hidden mt-1 border-gray-300"
+            className="absolute w-full bg-[var(--yr-panel)] rounded-lg z-10 shadow-lg border overflow-hidden mt-1 border-[var(--yr-line-strong)]"
             tabIndex={-1}
           >
             {departments.length > 0 && (
-              <div className="flex flex-wrap gap-2 p-2 border-b border-gray-200 bg-gray-50">
+              <div className="flex flex-wrap gap-2 p-2 border-b border-[var(--yr-line)] bg-[var(--yr-panel-muted)]">
                 {departments.map((department, index) => (
                   <span
                     key={index}
@@ -182,7 +177,6 @@ const DepartmentInput = ({
                       onMouseDown={(e) => e.preventDefault()}
                       onClick={() => onRemoveDepartment(index)}
                       className="ml-2 text-gray-500 hover:text-gray-700"
-                      aria-label={`Remove ${department}`}
                     >
                       ×
                     </button>
@@ -200,7 +194,7 @@ const DepartmentInput = ({
                       dispatch({ type: 'SET_SEARCH', payload: '' });
                     }}
                     className={`p-2 cursor-pointer ${
-                      focusedDeptIndex === index ? 'bg-blue-100' : 'hover:bg-gray-100'
+                      focusedDeptIndex === index ? 'bg-blue-100' : 'hover:bg-[var(--yr-panel-muted)]'
                     }`}
                     tabIndex={-1}
                     onMouseDown={(e) => e.preventDefault()}

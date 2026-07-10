@@ -33,6 +33,5 @@ export const createListing = (listing: any) => {
     updatedAt: listing.updatedAt || currentDate.toISOString(),
     createdAt: listing.createdAt || currentDate.toISOString(),
     confirmed: listing.confirmed === undefined ? true : listing.confirmed,
-    evidence: listing.evidence,
   };
 };

@@ -7,6 +7,7 @@ import {
   createListing,
   deleteListing,
   readListing,
+  readPublicListing,
   unarchiveListing,
   updateListing,
   getSkeletonListing,
@@ -15,10 +16,14 @@ import {
 import { readUser } from '../services/userService';
 import { getMeiliIndex } from '../utils/meiliClient';
 import { getConfig } from '../services/configService';
-import { getListingModel } from '../db/connections';
-import { buildSafeSearchRegex } from '../utils/regex';
 import { logEvent } from '../services/analyticsService';
 import { AnalyticsEventType } from '../models/analytics';
+import { redactDirectContactInfo } from '../utils/contactRedaction';
+import { isPublicHttpUrl } from '../utils/urlSafety';
+import { sanitizeLogValue } from '../utils/logSanitizer';
+import { serializedDocumentId } from '../utils/idSerialization';
+import { buildSafeSearchRegex } from '../utils/regex';
+import { getListingModel } from '../db/connections';
 
 /**
  * Build robust filter match stage for MongoDB aggregation
@@ -37,182 +42,6 @@ import { AnalyticsEventType } from '../models/analytics';
  */
 const escapeMeiliFilterValue = (value: string): string =>
   value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-
-const PUBLIC_LISTING_SEARCHABLE_FIELDS = [
-  'title',
-  'description',
-  'applicantDescription',
-  'ownerFirstName',
-  'ownerLastName',
-  'ownerTitle',
-  'ownerPrimaryDepartment',
-  'professorNames',
-  'departments',
-  'researchAreas',
-  'keywords',
-];
-
-const PUBLIC_LISTING_SORT_FIELDS = new Set(['createdAt', 'updatedAt']);
-
-const getIdFromSlug = (slug: string): string | null => {
-  const match = slug.match(/[a-fA-F0-9]{24}/);
-  return match ? match[0] : null;
-};
-
-const PUBLIC_RESEARCH_OUTREACH_OUTCOMES = new Set(['emailed', 'will_contact_later', 'not_a_fit']);
-
-const PUBLIC_RESEARCH_OUTREACH_ACTIONS = new Set(['email_click', 'outcome']);
-
-export const buildPublicResearchOutreachEvent = (params: {
-  action?: unknown;
-  outcome?: unknown;
-  source?: unknown;
-  contactCount?: number;
-}) => {
-  const action = typeof params.action === 'string' ? params.action : '';
-  if (!PUBLIC_RESEARCH_OUTREACH_ACTIONS.has(action)) {
-    return null;
-  }
-
-  const source = typeof params.source === 'string' ? params.source.slice(0, 80) : 'research_detail';
-  const baseMetadata = {
-    channel: 'email',
-    source,
-    contactCount: params.contactCount || 0,
-  };
-
-  if (action === 'email_click') {
-    return {
-      eventType: AnalyticsEventType.OUTREACH_CONTACT_ATTEMPT,
-      metadata: {
-        ...baseMetadata,
-        action,
-      },
-    };
-  }
-
-  const outcome = typeof params.outcome === 'string' ? params.outcome : '';
-  if (!PUBLIC_RESEARCH_OUTREACH_OUTCOMES.has(outcome)) {
-    return null;
-  }
-
-  return {
-    eventType: AnalyticsEventType.OUTREACH_OUTCOME,
-    metadata: {
-      ...baseMetadata,
-      action,
-      outcome,
-    },
-  };
-};
-
-const PUBLIC_EVIDENCE_SOURCE_LIMIT = 8;
-
-const toOptionalString = (value: unknown): string | undefined => {
-  if (typeof value !== 'string') return undefined;
-  const trimmed = value.trim();
-  return trimmed === '' ? undefined : trimmed;
-};
-
-const toIsoString = (value: unknown): string | undefined => {
-  if (!value) return undefined;
-  const date = value instanceof Date ? value : new Date(value as string);
-  return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
-};
-
-const sanitizePublicSourceUrl = (value: unknown): string | undefined => {
-  const raw = toOptionalString(value);
-  if (!raw) return undefined;
-  const withScheme = /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(raw) ? raw : `https://${raw}`;
-
-  try {
-    const parsed = new URL(withScheme);
-    if (!['http:', 'https:'].includes(parsed.protocol)) return undefined;
-    parsed.username = '';
-    parsed.password = '';
-    parsed.search = '';
-    parsed.hash = '';
-    return parsed.toString();
-  } catch {
-    return undefined;
-  }
-};
-
-export const sanitizePublicEvidence = (evidence: any) => {
-  if (!evidence || typeof evidence !== 'object') {
-    return {
-      status: 'unavailable',
-      sources: [],
-    };
-  }
-
-  const sources = Array.isArray(evidence.sources)
-    ? evidence.sources
-        .map((source: any) => {
-          const url = sanitizePublicSourceUrl(source?.url);
-          const label =
-            toOptionalString(source?.label) ||
-            toOptionalString(source?.title) ||
-            (url ? new URL(url).hostname.replace(/^www\./, '') : undefined);
-          if (!url && !label) return null;
-
-          return {
-            label,
-            url,
-            sourceType: toOptionalString(source?.sourceType),
-            description: toOptionalString(source?.description),
-            lastCheckedAt: toIsoString(source?.lastCheckedAt),
-          };
-        })
-        .filter(Boolean)
-        .slice(0, PUBLIC_EVIDENCE_SOURCE_LIMIT)
-    : [];
-
-  return {
-    status: toOptionalString(evidence.status) || (sources.length > 0 ? 'available' : 'unavailable'),
-    summary: toOptionalString(evidence.summary),
-    confidence:
-      typeof evidence.confidence === 'number' &&
-      Number.isFinite(evidence.confidence) &&
-      evidence.confidence >= 0 &&
-      evidence.confidence <= 1
-        ? evidence.confidence
-        : undefined,
-    generatedAt: toIsoString(evidence.generatedAt),
-    lastVerifiedAt: toIsoString(evidence.lastVerifiedAt),
-    sources,
-  };
-};
-
-export const redactPublicListing = (listing: any) => {
-  const source = typeof listing?.toObject === 'function' ? listing.toObject() : listing;
-  const redacted = { ...(source || {}) };
-  const rawId = redacted._id?.toString?.() || redacted.id;
-  const evidence = sanitizePublicEvidence(redacted.evidence);
-  delete redacted.__v;
-  delete redacted.ownerEmail;
-  delete redacted.emails;
-  delete redacted.views;
-  delete redacted.favorites;
-  delete redacted.archived;
-  delete redacted.confirmed;
-  delete redacted.audited;
-
-  return {
-    ...redacted,
-    _id: rawId,
-    id: rawId,
-    ownerId: undefined,
-    ownerEmail: undefined,
-    professorIds: [],
-    emails: [],
-    views: 0,
-    favorites: 0,
-    archived: false,
-    confirmed: true,
-    evidence,
-  };
-};
 
 const buildRobustFilterMatch = async (params: {
   departments?: string;
@@ -233,11 +62,11 @@ const buildRobustFilterMatch = async (params: {
 
   const filters: string[] = ['archived = false', 'confirmed = true'];
 
-  const departmentList = departments ? departments.split('||').filter((d) => d.trim()) : [];
+  const departmentList = splitBoundedListingSearchParam(departments, '||');
   const disciplineList = academicDisciplines
-    ? academicDisciplines.split('||').filter((d) => d.trim())
+    ? splitBoundedListingSearchParam(academicDisciplines, '||')
     : [];
-  const researchAreaList = researchAreas ? researchAreas.split(',').filter((r) => r.trim()) : [];
+  const researchAreaList = splitBoundedListingSearchParam(researchAreas);
 
   const hasFilters =
     departmentList.length > 0 || disciplineList.length > 0 || researchAreaList.length > 0;
@@ -328,62 +157,322 @@ const buildRobustFilterMatch = async (params: {
   return filters.join(' AND ');
 };
 
-const parseFilterList = (value: string | undefined, separator: RegExp | string): string[] =>
-  value
-    ? value
-        .split(separator)
-        .map((item) => item.trim())
-        .filter(Boolean)
+const LISTING_SEARCH_SORT_FIELDS = new Set([
+  'title',
+  'expiresAt',
+]);
+const DEFAULT_PUBLIC_LISTING_SORT_FIELD = 'expiresAt';
+const MAX_LISTING_SEARCH_PAGE = 1000;
+const MAX_LISTING_SEARCH_PAGE_SIZE = 100;
+const MAX_LISTING_SEARCH_QUERY_LENGTH = 512;
+const MAX_LISTING_SEARCH_FILTER_VALUES = 50;
+const MAX_LISTING_SEARCH_FILTER_VALUE_LENGTH = 120;
+const MAX_LISTING_SEARCH_PAGINATION_PARAM_LENGTH = 16;
+const MAX_PUBLIC_LISTING_URLS = 20;
+const POSITIVE_INTEGER_PARAM_RE = /^[1-9]\d*$/;
+
+const listingSearchString = (value: unknown): string => {
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) return listingSearchString(value[0]);
+  return '';
+};
+
+const boundedListingSearchQuery = (value: unknown): string =>
+  listingSearchString(value).trim().slice(0, MAX_LISTING_SEARCH_QUERY_LENGTH);
+
+const splitBoundedListingSearchParam = (value: unknown, separator = ','): string[] => {
+  const seen = new Set<string>();
+  const clean: string[] = [];
+
+  for (const item of listingSearchString(value).split(separator)) {
+    const boundedValue = item.trim().slice(0, MAX_LISTING_SEARCH_FILTER_VALUE_LENGTH);
+    if (!boundedValue || seen.has(boundedValue)) continue;
+    seen.add(boundedValue);
+    clean.push(boundedValue);
+    if (clean.length >= MAX_LISTING_SEARCH_FILTER_VALUES) break;
+  }
+
+  return clean;
+};
+
+const listingSearchSortField = (value: unknown): string =>
+  typeof value === 'string' && LISTING_SEARCH_SORT_FIELDS.has(value) ? value : DEFAULT_PUBLIC_LISTING_SORT_FIELD;
+
+const listingSearchSortOrder = (value: unknown): 'asc' | 'desc' => (value === '1' ? 'asc' : 'desc');
+
+const numericListingSearchParam = (value: unknown): number | undefined => {
+  if (value === undefined || value === null || value === '') return undefined;
+  if (typeof value !== 'string' && typeof value !== 'number') return undefined;
+  if (typeof value === 'number') {
+    return Number.isSafeInteger(value) && value > 0 ? value : undefined;
+  }
+
+  const raw = value.trim();
+  if (!raw || raw.length > MAX_LISTING_SEARCH_PAGINATION_PARAM_LENGTH) return undefined;
+  if (!POSITIVE_INTEGER_PARAM_RE.test(raw)) return undefined;
+
+  const parsed = Number(raw);
+  return Number.isSafeInteger(parsed) ? parsed : undefined;
+};
+
+const normalizedPositiveInteger = (value: unknown, fallback: number, max: number): number => {
+  const parsed = numericListingSearchParam(value);
+  if (parsed === undefined || !Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(1, Math.floor(parsed)));
+};
+
+const publicHttpUrl = (value: unknown): string | undefined => {
+  if (typeof value !== 'string') return undefined;
+  try {
+    if (!isPublicHttpUrl(value)) return undefined;
+    return value;
+  } catch {
+    return undefined;
+  }
+};
+
+const publicHttpUrls = (values: unknown): string[] =>
+  Array.isArray(values)
+    ? values.slice(0, MAX_PUBLIC_LISTING_URLS).flatMap((value) => publicHttpUrl(value) ?? [])
     : [];
 
-const buildMongoFilterMatch = async (params: {
-  query?: string;
-  departments?: string;
-  departmentsMode: string;
-  academicDisciplines?: string;
-  academicDisciplinesMode: string;
-  researchAreas?: string;
-  researchAreasMode: string;
-  searchableFields?: string[];
-}) => {
-  const {
-    query,
-    departments,
-    departmentsMode,
-    academicDisciplines,
-    academicDisciplinesMode,
-    researchAreas,
-    researchAreasMode,
-    searchableFields = [
-      'title',
-      'description',
-      'applicantDescription',
-      'ownerFirstName',
-      'ownerLastName',
-      'ownerEmail',
-      'ownerTitle',
-      'ownerPrimaryDepartment',
-      'professorNames',
-      'departments',
-      'researchAreas',
-      'keywords',
-    ],
-  } = params;
+const publicListingText = (value: unknown): string | undefined =>
+  typeof value === 'string' ? redactDirectContactInfo(value) : undefined;
 
+const publicListingTextArray = (values: unknown): string[] =>
+  Array.isArray(values) ? values.flatMap((value) => publicListingText(value) ?? []) : [];
+
+const PUBLIC_EVIDENCE_SOURCE_LIMIT = 8;
+
+const toOptionalString = (value: unknown): string | undefined => {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  return trimmed === '' ? undefined : trimmed;
+};
+
+const toIsoString = (value: unknown): string | undefined => {
+  if (!value) return undefined;
+  const date = value instanceof Date ? value : new Date(value as string);
+  return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
+};
+
+const sanitizePublicSourceUrl = (value: unknown): string | undefined => {
+  const raw = toOptionalString(value);
+  if (!raw) return undefined;
+  const withScheme = /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(raw) ? raw : `https://${raw}`;
+
+  try {
+    const parsed = new URL(withScheme);
+    if (!['http:', 'https:'].includes(parsed.protocol)) return undefined;
+    parsed.username = '';
+    parsed.password = '';
+    parsed.search = '';
+    parsed.hash = '';
+    return parsed.toString();
+  } catch {
+    return undefined;
+  }
+};
+
+export const sanitizePublicEvidence = (evidence: any) => {
+  if (!evidence || typeof evidence !== 'object') {
+    return {
+      status: 'unavailable',
+      sources: [],
+    };
+  }
+
+  const sources = Array.isArray(evidence.sources)
+    ? evidence.sources
+        .map((source: any) => {
+          const url = sanitizePublicSourceUrl(source?.url);
+          const label =
+            toOptionalString(source?.label) ||
+            toOptionalString(source?.title) ||
+            (url ? new URL(url).hostname.replace(/^www\./, '') : undefined);
+          if (!url && !label) return null;
+
+          return {
+            label,
+            url,
+            sourceType: toOptionalString(source?.sourceType),
+            description: toOptionalString(source?.description),
+            lastCheckedAt: toIsoString(source?.lastCheckedAt),
+          };
+        })
+        .filter(Boolean)
+        .slice(0, PUBLIC_EVIDENCE_SOURCE_LIMIT)
+    : [];
+
+  return {
+    status: toOptionalString(evidence.status) || (sources.length > 0 ? 'available' : 'unavailable'),
+    summary: toOptionalString(evidence.summary),
+    confidence:
+      typeof evidence.confidence === 'number' &&
+      Number.isFinite(evidence.confidence) &&
+      evidence.confidence >= 0 &&
+      evidence.confidence <= 1
+        ? evidence.confidence
+        : undefined,
+    generatedAt: toIsoString(evidence.generatedAt),
+    lastVerifiedAt: toIsoString(evidence.lastVerifiedAt),
+    sources,
+  };
+};
+
+const publicListingForAuthenticatedReader = (listing: any) => {
+  const id = serializedDocumentId(listing._id) || serializedDocumentId(listing.id) || '';
+  return {
+    _id: id,
+    id,
+    title: publicListingText(listing.title),
+    hiringStatus: publicListingText(listing.hiringStatus),
+    websites: publicHttpUrls(listing.websites),
+    description: publicListingText(listing.description),
+    applicantDescription: publicListingText(listing.applicantDescription),
+    researchAreas: publicListingTextArray(listing.researchAreas),
+    keywords: publicListingTextArray(listing.keywords),
+    established: listing.established,
+    departments: publicListingTextArray(listing.departments),
+    type: publicListingText(listing.type),
+    commitment: publicListingText(listing.commitment),
+    compensationType: publicListingText(listing.compensationType),
+    expiresAt: listing.expiresAt,
+    evidence: sanitizePublicEvidence(listing.evidence),
+  };
+};
+
+const LISTING_OUTREACH_OUTCOMES = new Set(['emailed', 'will_contact_later', 'not_a_fit']);
+const LISTING_OUTREACH_ACTIONS = new Set(['email_click', 'outcome']);
+
+export const buildListingOutreachEvent = (params: {
+  action?: unknown;
+  outcome?: unknown;
+  source?: unknown;
+  contactCount?: number;
+}) => {
+  const action = typeof params.action === 'string' ? params.action : '';
+  if (!LISTING_OUTREACH_ACTIONS.has(action)) {
+    return null;
+  }
+
+  const source = typeof params.source === 'string' ? params.source.slice(0, 80) : 'listing_detail';
+  const baseMetadata = {
+    channel: 'email',
+    source,
+    contactCount: params.contactCount || 0,
+  };
+
+  if (action === 'email_click') {
+    return {
+      eventType: AnalyticsEventType.OUTREACH_CONTACT_ATTEMPT,
+      metadata: {
+        ...baseMetadata,
+        action,
+      },
+    };
+  }
+
+  const outcome = typeof params.outcome === 'string' ? params.outcome : '';
+  if (!LISTING_OUTREACH_OUTCOMES.has(outcome)) {
+    return null;
+  }
+
+  return {
+    eventType: AnalyticsEventType.OUTREACH_OUTCOME,
+    metadata: {
+      ...baseMetadata,
+      action,
+      outcome,
+    },
+  };
+};
+
+const sendListingError = (response: Response, error: any, fallbackMessage: string) => {
+  const status = error?.status ?? error?.statusCode;
+  if (Number.isInteger(status) && status >= 400 && status < 500) {
+    const body =
+      status === 403
+        ? { error: 'Incorrect permissions', incorrectPermissions: true }
+        : { error: 'Listing not found' };
+    return response.status(status).json(body);
+  }
+  if (error?.name === 'ValidationError') {
+    return response.status(400).json({ error: 'Validation error' });
+  }
+
+  return response.status(500).json({ error: fallbackMessage });
+};
+
+export const recordListingOutreach = async (request: Request, response: Response) => {
+  try {
+    const listing = await readPublicListing(request.params.id);
+    const contactCount = [listing.ownerEmail, ...(listing.emails || [])].filter(Boolean).length;
+    const event = buildListingOutreachEvent({
+      action: request.body?.action,
+      outcome: request.body?.outcome,
+      source: request.body?.source,
+      contactCount,
+    });
+
+    if (!event) {
+      return response.status(400).json({ error: 'Invalid outreach event' });
+    }
+
+    const currentUser = request.user as { netId?: string; userType: string };
+    if (!currentUser?.netId) {
+      return response.status(401).json({ error: 'Authentication required' });
+    }
+
+    await logEvent({
+      eventType: event.eventType,
+      netid: currentUser.netId,
+      userType: currentUser.userType,
+      listingId: request.params.id,
+      metadata: event.metadata,
+    });
+
+    return response.status(204).send();
+  } catch (error: any) {
+    sendListingError(response, error, 'Failed to record outreach');
+  }
+};
+
+type MongoListingSearchParams = {
+  query?: string;
+  sortBy?: string;
+  sortOrder?: string;
+  departments?: string;
+  academicDisciplines?: string;
+  researchAreas?: string;
+  departmentsMode: string;
+  academicDisciplinesMode: string;
+  researchAreasMode: string;
+  limit: number;
+  offset: number;
+};
+
+type ListingSearchEnvelope = {
+  results: any[];
+  totalCount: number;
+  degraded: boolean;
+};
+
+const buildMongoFilterMatch = async (params: MongoListingSearchParams) => {
   const baseFilter: Record<string, any> = { archived: false, confirmed: true };
   const crossFilterConditions: Record<string, any>[] = [];
-  const departmentList = parseFilterList(departments, '||');
-  const disciplineList = parseFilterList(academicDisciplines, '||');
-  const researchAreaList = parseFilterList(researchAreas, ',');
+  const departmentList = splitBoundedListingSearchParam(params.departments, '||');
+  const disciplineList = splitBoundedListingSearchParam(params.academicDisciplines, '||');
+  const researchAreaList = splitBoundedListingSearchParam(params.researchAreas);
 
   const useAndBetweenFilters =
-    (departmentList.length > 0 && departmentsMode === 'intersection') ||
-    (disciplineList.length > 0 && academicDisciplinesMode === 'intersection') ||
-    (researchAreaList.length > 0 && researchAreasMode === 'intersection');
+    (departmentList.length > 0 && params.departmentsMode === 'intersection') ||
+    (disciplineList.length > 0 && params.academicDisciplinesMode === 'intersection') ||
+    (researchAreaList.length > 0 && params.researchAreasMode === 'intersection');
 
   if (departmentList.length > 0) {
     crossFilterConditions.push(
-      departmentsMode === 'intersection'
+      params.departmentsMode === 'intersection'
         ? { departments: { $all: departmentList } }
         : { departments: { $in: departmentList } },
     );
@@ -406,7 +495,7 @@ const buildMongoFilterMatch = async (params: {
 
     if (disciplineConditions.length > 0) {
       crossFilterConditions.push(
-        academicDisciplinesMode === 'intersection'
+        params.academicDisciplinesMode === 'intersection'
           ? { $and: disciplineConditions }
           : { $or: disciplineConditions },
       );
@@ -415,7 +504,7 @@ const buildMongoFilterMatch = async (params: {
 
   if (researchAreaList.length > 0) {
     crossFilterConditions.push(
-      researchAreasMode === 'intersection'
+      params.researchAreasMode === 'intersection'
         ? { researchAreas: { $all: researchAreaList } }
         : { researchAreas: { $in: researchAreaList } },
     );
@@ -425,8 +514,23 @@ const buildMongoFilterMatch = async (params: {
     baseFilter[useAndBetweenFilters ? '$and' : '$or'] = crossFilterConditions;
   }
 
-  const trimmedQuery = (query || '').trim();
+  const trimmedQuery = boundedListingSearchQuery(params.query);
   if (trimmedQuery !== '') {
+    const searchableFields = [
+      'title',
+      'description',
+      'applicantDescription',
+      'ownerFirstName',
+      'ownerLastName',
+      'ownerEmail',
+      'ownerTitle',
+      'ownerPrimaryDepartment',
+      'professorNames',
+      'departments',
+      'researchAreas',
+      'keywords',
+    ];
+
     const queryConditions = trimmedQuery.split(/\s+/).map((term) => ({
       $or: searchableFields.map((field) => ({ [field]: buildSafeSearchRegex(term) })),
     }));
@@ -439,28 +543,6 @@ const buildMongoFilterMatch = async (params: {
   return baseFilter;
 };
 
-type MongoListingSearchParams = {
-  query?: string;
-  sortBy?: string;
-  sortOrder?: string;
-  departments?: string;
-  academicDisciplines?: string;
-  researchAreas?: string;
-  departmentsMode: string;
-  academicDisciplinesMode: string;
-  researchAreasMode: string;
-  limit: number;
-  offset: number;
-  searchableFields?: string[];
-  defaultSort?: Record<string, 1 | -1>;
-};
-
-type ListingSearchEnvelope = {
-  results: any[];
-  totalCount: number;
-  degraded: boolean;
-};
-
 export const searchListingsViaMongo = async (
   params: MongoListingSearchParams,
 ): Promise<{ hits: any[]; totalCount: number }> => {
@@ -468,16 +550,9 @@ export const searchListingsViaMongo = async (
   const sort: Record<string, 1 | -1> = {};
 
   if (params.sortBy) {
-    sort[params.sortBy] = params.sortOrder === '1' ? 1 : -1;
-  } else if (!params.query || params.query.trim() === '') {
-    Object.assign(
-      sort,
-      params.defaultSort || {
-        browseRankScore: -1,
-        lastObservedAt: -1,
-        createdAt: -1,
-      },
-    );
+    sort[listingSearchSortField(params.sortBy)] = params.sortOrder === '1' ? 1 : -1;
+  } else if (!params.query || boundedListingSearchQuery(params.query) === '') {
+    sort[DEFAULT_PUBLIC_LISTING_SORT_FIELD] = 1;
   } else {
     sort.updatedAt = -1;
   }
@@ -489,30 +564,33 @@ export const searchListingsViaMongo = async (
   ]);
 
   return {
-    hits: hits.map((hit: any) => ({ ...hit, _id: hit._id.toString() })),
+    hits: hits.map(publicListingForAuthenticatedReader),
     totalCount,
   };
 };
 
 export const searchListingsViaMeiliWithDegrade = async (
-  query: string,
+  trimmedQuery: string,
   searchParams: Record<string, any>,
   getIndex = () => getMeiliIndex('listings'),
 ) => {
   const index = await getIndex();
 
   try {
-    const result = await index.search(query, searchParams);
+    const result = await index.search(trimmedQuery, searchParams);
     return { result, degraded: false };
   } catch (error) {
     if (!searchParams.hybrid) {
       throw error;
     }
 
-    console.error('Meilisearch hybrid search failed; retrying keyword-only search:', error);
+    console.error(
+      'Meilisearch hybrid search failed; retrying keyword-only search:',
+      sanitizeLogValue(error),
+    );
     const keywordParams = { ...searchParams };
     delete keywordParams.hybrid;
-    const result = await index.search(query, keywordParams);
+    const result = await index.search(trimmedQuery, keywordParams);
     return { result, degraded: true };
   }
 };
@@ -534,12 +612,15 @@ export const searchListingsWithDegradation = async (params: {
     );
 
     return {
-      results: meiliResult.result.hits.map((hit: any) => ({ ...hit, _id: hit.id })),
+      results: meiliResult.result.hits.map(publicListingForAuthenticatedReader),
       totalCount: meiliResult.result.estimatedTotalHits,
       degraded: meiliResult.degraded,
     };
   } catch (error) {
-    console.error('Meilisearch search failed; falling back to Mongo search:', error);
+    console.error(
+      'Meilisearch search failed; falling back to Mongo search:',
+      sanitizeLogValue(error),
+    );
     const mongoResult = await (params.mongoSearch || searchListingsViaMongo)(params.mongoParams);
 
     return {
@@ -566,6 +647,7 @@ export const searchListings = async (request: Request, response: Response) => {
       pageSize = 10,
     } = request.query;
 
+    const trimmedQuery = boundedListingSearchQuery(query);
     const filterString = await buildRobustFilterMatch({
       departments: departments as string,
       departmentsMode: departmentsMode as string,
@@ -575,16 +657,15 @@ export const searchListings = async (request: Request, response: Response) => {
       researchAreasMode: researchAreasMode as string,
     });
 
-    const limit = Number(pageSize);
-    const offset = (Number(page) - 1) * limit;
+    const normalizedPage = normalizedPositiveInteger(page, 1, MAX_LISTING_SEARCH_PAGE);
+    const limit = normalizedPositiveInteger(pageSize, 10, MAX_LISTING_SEARCH_PAGE_SIZE);
+    const offset = (normalizedPage - 1) * limit;
 
     const sortConfig = [];
     if (sortBy) {
-      const order = sortOrder === '1' ? 'asc' : 'desc';
-      sortConfig.push(`${sortBy}:${order}`);
-    } else if (!query || (query as string).trim() === '') {
-      // Just recent if no query
-      sortConfig.push(`createdAt:desc`);
+      sortConfig.push(`${listingSearchSortField(sortBy)}:${listingSearchSortOrder(sortOrder)}`);
+    } else if (trimmedQuery === '') {
+      sortConfig.push(`${DEFAULT_PUBLIC_LISTING_SORT_FIELD}:asc`);
     }
 
     const searchParams: any = {
@@ -599,7 +680,6 @@ export const searchListings = async (request: Request, response: Response) => {
 
     // Use hybrid search for multi-word queries; keyword-only for single-word queries
     // to avoid semantic drift (e.g. "startup" pulling in "early development" embryo docs).
-    const trimmedQuery = ((query as string) || '').trim();
     if (trimmedQuery !== '' && trimmedQuery.split(/\s+/).length > 1) {
       searchParams.hybrid = {
         semanticRatio: 0.8,
@@ -608,12 +688,12 @@ export const searchListings = async (request: Request, response: Response) => {
     }
 
     const mongoParams = {
-      query: query as string,
-      sortBy: sortBy as string,
-      sortOrder: sortOrder as string,
-      departments: departments as string,
-      academicDisciplines: academicDisciplines as string,
-      researchAreas: researchAreas as string,
+      query: trimmedQuery,
+      sortBy: listingSearchString(sortBy),
+      sortOrder: listingSearchString(sortOrder),
+      departments: listingSearchString(departments),
+      academicDisciplines: listingSearchString(academicDisciplines),
+      researchAreas: listingSearchString(researchAreas),
       departmentsMode: departmentsMode as string,
       academicDisciplinesMode: academicDisciplinesMode as string,
       researchAreasMode: researchAreasMode as string,
@@ -621,7 +701,7 @@ export const searchListings = async (request: Request, response: Response) => {
       offset,
     };
     const searchResult = await searchListingsWithDegradation({
-      query: (query as string) || '',
+      query: trimmedQuery,
       searchParams,
       mongoParams,
     });
@@ -629,208 +709,14 @@ export const searchListings = async (request: Request, response: Response) => {
     return response.json({
       results: searchResult.results,
       totalCount: searchResult.totalCount,
-      page: Number(page),
-      pageSize: Number(pageSize),
+      page: normalizedPage,
+      pageSize: limit,
       degraded: searchResult.degraded,
     });
-  } catch (error) {
-    console.error('Listing search failed:', error);
+  } catch (error: any) {
+    console.error('Listing search failed:', sanitizeLogValue(error));
     return response.status(500).json({ error: 'Search failed', degraded: true });
   }
-};
-
-export const getPublicResearchSortBy = (sortBy: unknown): string | undefined => {
-  return typeof sortBy === 'string' && PUBLIC_LISTING_SORT_FIELDS.has(sortBy) ? sortBy : undefined;
-};
-
-export const buildPublicResearchSearchInputs = async (queryParams: Request['query']) => {
-  const {
-    query,
-    sortBy,
-    sortOrder,
-    departments,
-    academicDisciplines,
-    researchAreas,
-    departmentsMode = 'union',
-    academicDisciplinesMode = 'union',
-    researchAreasMode = 'union',
-    page = 1,
-    pageSize = 10,
-  } = queryParams;
-
-  const filterString = await buildRobustFilterMatch({
-    departments: departments as string,
-    departmentsMode: departmentsMode as string,
-    academicDisciplines: academicDisciplines as string,
-    academicDisciplinesMode: academicDisciplinesMode as string,
-    researchAreas: researchAreas as string,
-    researchAreasMode: researchAreasMode as string,
-  });
-
-  const limit = Number(pageSize);
-  const offset = (Number(page) - 1) * limit;
-  const publicSortBy = getPublicResearchSortBy(sortBy);
-  const sortConfig = [];
-  if (publicSortBy) {
-    const order = sortOrder === '1' ? 'asc' : 'desc';
-    sortConfig.push(`${publicSortBy}:${order}`);
-  } else if (!query || (query as string).trim() === '') {
-    sortConfig.push('createdAt:desc');
-  }
-
-  const searchParams: any = {
-    filter: filterString,
-    limit,
-    offset,
-  };
-
-  if (sortConfig.length > 0) {
-    searchParams.sort = sortConfig;
-  }
-
-  const trimmedQuery = ((query as string) || '').trim();
-  if (trimmedQuery !== '') {
-    searchParams.attributesToSearchOn = PUBLIC_LISTING_SEARCHABLE_FIELDS;
-  }
-
-  if (trimmedQuery !== '' && trimmedQuery.split(/\s+/).length > 1) {
-    searchParams.hybrid = {
-      semanticRatio: 0.8,
-      embedder: 'default',
-    };
-  }
-
-  const mongoParams = {
-    query: query as string,
-    sortBy: publicSortBy,
-    sortOrder: sortOrder as string,
-    departments: departments as string,
-    academicDisciplines: academicDisciplines as string,
-    researchAreas: researchAreas as string,
-    departmentsMode: departmentsMode as string,
-    academicDisciplinesMode: academicDisciplinesMode as string,
-    researchAreasMode: researchAreasMode as string,
-    limit,
-    offset,
-    searchableFields: PUBLIC_LISTING_SEARCHABLE_FIELDS,
-    defaultSort: { createdAt: -1 as const },
-  };
-
-  return {
-    query: (query as string) || '',
-    searchParams,
-    mongoParams,
-    page: Number(page),
-    pageSize: Number(pageSize),
-  };
-};
-
-export const searchPublicResearch = async (request: Request, response: Response) => {
-  try {
-    const publicSearch = await buildPublicResearchSearchInputs(request.query);
-
-    const searchResult = await searchListingsWithDegradation({
-      query: publicSearch.query,
-      searchParams: publicSearch.searchParams,
-      mongoParams: publicSearch.mongoParams,
-    });
-
-    return response.json({
-      results: searchResult.results.map((hit: any) => redactPublicListing(hit)),
-      totalCount: searchResult.totalCount,
-      page: publicSearch.page,
-      pageSize: publicSearch.pageSize,
-      degraded: searchResult.degraded,
-    });
-  } catch (error) {
-    console.error('Public research search failed:', error);
-    return response.status(500).json({ error: 'Search failed', degraded: true });
-  }
-};
-
-export const getPublicResearchBySlug = async (request: Request, response: Response) => {
-  const id = getIdFromSlug(request.params.slug);
-  if (!id) {
-    return response.status(404).json({ error: 'Research listing not found' });
-  }
-
-  const listing = await getListingModel()
-    .findOne({ _id: id, archived: false, confirmed: true })
-    .lean();
-
-  if (!listing) {
-    return response.status(404).json({ error: 'Research listing not found' });
-  }
-
-  return response.status(200).json({ listing: redactPublicListing(listing) });
-};
-
-export const getAuthenticatedPublicResearchBySlug = async (
-  request: Request,
-  response: Response,
-) => {
-  const id = getIdFromSlug(request.params.slug);
-  if (!id) {
-    return response.status(404).json({ error: 'Research listing not found' });
-  }
-
-  const listing = await getListingModel()
-    .findOne({ _id: id, archived: false, confirmed: true })
-    .lean();
-
-  if (!listing) {
-    return response.status(404).json({ error: 'Research listing not found' });
-  }
-
-  return response.status(200).json({
-    listing: {
-      ...listing,
-      evidence: sanitizePublicEvidence((listing as any).evidence),
-    },
-  });
-};
-
-export const recordPublicResearchOutreach = async (request: Request, response: Response) => {
-  const id = getIdFromSlug(request.params.slug);
-  if (!id) {
-    return response.status(404).json({ error: 'Research listing not found' });
-  }
-
-  const listing = await getListingModel()
-    .findOne({ _id: id, archived: false, confirmed: true })
-    .select('ownerEmail emails')
-    .lean();
-
-  if (!listing) {
-    return response.status(404).json({ error: 'Research listing not found' });
-  }
-
-  const contactCount = [listing.ownerEmail, ...(listing.emails || [])].filter(Boolean).length;
-  const event = buildPublicResearchOutreachEvent({
-    action: request.body?.action,
-    outcome: request.body?.outcome,
-    source: request.body?.source,
-    contactCount,
-  });
-
-  if (!event) {
-    return response.status(400).json({ error: 'Invalid outreach event' });
-  }
-
-  const currentUser = request.user as { netId?: string; userType: string };
-  if (!currentUser?.netId) {
-    return response.status(401).json({ error: 'Authentication required' });
-  }
-
-  await logEvent({
-    eventType: event.eventType,
-    netid: currentUser.netId,
-    userType: currentUser.userType,
-    listingId: id,
-    metadata: event.metadata,
-  });
-
-  return response.status(204).send();
 };
 
 export const createListingForCurrentUser = async (request: Request, response: Response) => {
@@ -843,10 +729,10 @@ export const createListingForCurrentUser = async (request: Request, response: Re
 
     const user = await readUser(currentUser.netId);
     const listing = await createListing(request.body.data, user);
-    response.status(201).json({ listing });
-  } catch (error) {
-    console.log((error as Error).message);
-    response.status(400).json({ error: (error as Error).message });
+    response.status(201).json({ listing: publicListingForAuthenticatedReader(listing) });
+  } catch (error: any) {
+    console.error('Listing create failed:', sanitizeLogValue(error));
+    sendListingError(response, error, 'Failed to create listing');
   }
 };
 
@@ -859,16 +745,20 @@ export const getSkeletonListingForCurrentUser = async (request: Request, respons
     };
 
     const listing = await getSkeletonListing(currentUser.netId!);
-    response.status(201).json({ listing });
-  } catch (error) {
-    console.log((error as Error).message);
-    response.status(400).json({ error: (error as Error).message });
+    response.status(201).json({ listing: publicListingForAuthenticatedReader(listing) });
+  } catch (error: any) {
+    console.error('Listing skeleton failed:', sanitizeLogValue(error));
+    sendListingError(response, error, 'Failed to initialize listing');
   }
 };
 
 export const getListingById = async (request: Request, response: Response) => {
-  const listing = await readListing(request.params.id);
-  response.status(200).json({ listing });
+  try {
+    const listing = await readPublicListing(request.params.id);
+    response.status(200).json({ listing: publicListingForAuthenticatedReader(listing) });
+  } catch (error: any) {
+    sendListingError(response, error, 'Failed to fetch listing');
+  }
 };
 
 const LISTING_SELF_UPDATABLE_FIELDS = [
@@ -881,9 +771,6 @@ const LISTING_SELF_UPDATABLE_FIELDS = [
   'keywords',
   'established',
   'departments',
-  'emails',
-  'professorIds',
-  'professorNames',
 ] as const;
 
 const filterListingUpdate = (data: any): Record<string, any> => {
@@ -900,7 +787,7 @@ const filterListingUpdate = (data: any): Record<string, any> => {
 export const updateListingForCurrentUser = async (
   request: Request,
   response: Response,
-  next: NextFunction,
+  _next: NextFunction,
 ) => {
   try {
     const currentUser = request.user as {
@@ -911,45 +798,61 @@ export const updateListingForCurrentUser = async (
 
     const safeData = filterListingUpdate(request.body?.data);
     const listing = await updateListing(request.params.id, currentUser.netId!, safeData);
-    response.status(200).json({ listing });
-  } catch (error) {
-    next(error);
+    response.status(200).json({ listing: publicListingForAuthenticatedReader(listing) });
+  } catch (error: any) {
+    console.error('Listing update failed:', sanitizeLogValue(error));
+    sendListingError(response, error, 'Failed to update listing');
   }
 };
 
 export const archiveListingForCurrentUser = async (request: Request, response: Response) => {
-  const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
+  try {
+    const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
 
-  const listing = await archiveListing(request.params.id, currentUser.netId!);
-  response.status(200).json({ listing });
+    const listing = await archiveListing(request.params.id, currentUser.netId!);
+    response.status(200).json({ listing: publicListingForAuthenticatedReader(listing) });
+  } catch (error: any) {
+    console.error('Listing archive failed:', sanitizeLogValue(error));
+    sendListingError(response, error, 'Failed to archive listing');
+  }
 };
 
 export const unarchiveListingForCurrentUser = async (request: Request, response: Response) => {
-  const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
+  try {
+    const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
 
-  const listing = await unarchiveListing(request.params.id, currentUser.netId!);
-  response.status(200).json({ listing });
+    const listing = await unarchiveListing(request.params.id, currentUser.netId!);
+    response.status(200).json({ listing: publicListingForAuthenticatedReader(listing) });
+  } catch (error: any) {
+    console.error('Listing unarchive failed:', sanitizeLogValue(error));
+    sendListingError(response, error, 'Failed to unarchive listing');
+  }
 };
 
 export const addViewToListing = async (request: Request, response: Response) => {
-  const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
+  try {
+    const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
 
-  const listing = await addView(request.params.id, currentUser.netId!);
-  response.status(200).json({ listing });
+    const listing = await addView(request.params.id, currentUser.netId!);
+    response.status(200).json({ listing: publicListingForAuthenticatedReader(listing) });
+  } catch (error: any) {
+    sendListingError(response, error, 'Failed to update listing view count');
+  }
 };
 
 export const deleteListingForCurrentUser = async (request: Request, response: Response) => {
-  const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
+  try {
+    const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
 
-  const currentListing = await readListing(request.params.id);
-  if (currentUser.netId !== currentListing.ownerId) {
-    const error: any = new Error(
-      `User with id ${currentUser.netId} does not have permission to delete listing with id ${request.params.id}`,
-    );
-    error.status = 403;
-    throw error;
+    const currentListing = await readListing(request.params.id);
+    if (currentUser.netId !== currentListing.ownerId) {
+      return response.status(403).json({ error: 'Forbidden' });
+    }
+
+    const deletedListing = await deleteListing(request.params.id);
+    response.status(200).json({ deletedListing: publicListingForAuthenticatedReader(deletedListing) });
+  } catch (error: any) {
+    console.error('Listing delete failed:', sanitizeLogValue(error));
+    sendListingError(response, error, 'Failed to delete listing');
   }
-
-  const deletedListing = await deleteListing(request.params.id);
-  response.status(200).json({ deletedListing });
 };

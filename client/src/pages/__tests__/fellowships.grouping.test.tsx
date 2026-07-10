@@ -1,6 +1,7 @@
 import React from 'react';
 import { cleanup, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { MemoryRouter } from 'react-router-dom';
 
 import FellowshipSearchContext, {
   defaultFellowshipSearchContext,
@@ -8,6 +9,15 @@ import FellowshipSearchContext, {
 import UserContext from '../../contexts/UserContext';
 import { Fellowship } from '../../types/types';
 import Fellowships from '../fellowships';
+
+vi.stubGlobal(
+  'ResizeObserver',
+  class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  },
+);
 
 vi.mock('../../utils/axios', () => ({
   default: {
@@ -89,26 +99,28 @@ const renderFellowships = ({
   quickFilter?: 'open' | 'closingSoon' | 'recent' | null;
 }) =>
   render(
-    <UserContext.Provider
-      value={{
-        isLoading: false,
-        isAuthenticated: true,
-        user: { userType: 'student' } as any,
-        checkContext: vi.fn(),
-      }}
-    >
-      <FellowshipSearchContext.Provider
+    <MemoryRouter>
+      <UserContext.Provider
         value={{
-          ...defaultFellowshipSearchContext,
-          fellowships,
-          quickFilter,
-          setQueryString: vi.fn(),
-          refreshFellowships: vi.fn(),
+          isLoading: false,
+          isAuthenticated: true,
+          user: { userType: 'student' } as any,
+          checkContext: vi.fn(),
         }}
       >
-        <Fellowships />
-      </FellowshipSearchContext.Provider>
-    </UserContext.Provider>,
+        <FellowshipSearchContext.Provider
+          value={{
+            ...defaultFellowshipSearchContext,
+            fellowships,
+            quickFilter,
+            setQueryString: vi.fn(),
+            refreshFellowships: vi.fn(),
+          }}
+        >
+          <Fellowships />
+        </FellowshipSearchContext.Provider>
+      </UserContext.Provider>
+    </MemoryRouter>,
   );
 
 describe('Fellowships grouping', () => {
@@ -135,9 +147,9 @@ describe('Fellowships grouping', () => {
       ],
     });
 
-    const openHeader = screen.getByRole('heading', { name: 'Open' });
+    const openHeader = screen.getByRole('heading', { name: 'Apply Now' });
     const openingSoonHeader = screen.getByRole('heading', { name: 'Opening Soon' });
-    const closedHeader = screen.getByRole('heading', { name: 'Closed' });
+    const closedHeader = screen.getByRole('heading', { name: 'Archive / Review' });
     const openItem = screen.getByText('Open Fellowship');
     const futureItem = screen.getByText('Future Fellowship');
     const closedItem = screen.getByText('Closed Fellowship');
@@ -178,7 +190,7 @@ describe('Fellowships grouping', () => {
     ).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Opening Soon' })).not.toBeInTheDocument();
     expect(screen.queryByText('Future Fellowship')).not.toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: 'Closed' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Archive / Review' })).not.toBeInTheDocument();
     expect(screen.queryByText('Closed Fellowship')).not.toBeInTheDocument();
   });
 });

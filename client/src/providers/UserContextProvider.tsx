@@ -1,14 +1,14 @@
 /**
  * Provider component managing user authentication and session state.
  */
-import { FC, useCallback, useEffect, useReducer } from 'react';
+import { PropsWithChildren, useCallback, useEffect, useReducer } from 'react';
 
 import axios from '../utils/axios';
 import UserContext from '../contexts/UserContext';
 import { User } from '../types/types';
 import { createInitialUserState, userReducer } from '../reducers/userReducer';
 
-const UserContextProvider: FC = ({ children }) => {
+const UserContextProvider = ({ children }: PropsWithChildren) => {
   const [state, dispatch] = useReducer(userReducer, undefined, createInitialUserState);
   const { isLoading, isAuthenticated, user, authError } = state;
 
@@ -29,8 +29,8 @@ const UserContextProvider: FC = ({ children }) => {
           });
         }
       })
-      .catch((error) => {
-        console.error('Auth check failed:', error);
+      .catch(() => {
+        console.error('Auth check failed.');
         dispatch({
           type: 'FETCH_FAILURE',
           error: 'Unable to reach Yale Labs right now. Please try again in a moment.',

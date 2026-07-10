@@ -1,8 +1,8 @@
 /**
- * Main listings browse page with search, filters, and grid/list view.
+ * Legacy posted roles browse page with search, filters, and grid/list view.
  */
-import { useReducer, useEffect, useContext, useMemo, useCallback } from 'react';
-import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { useReducer, useEffect, useContext, useMemo } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import SearchContext from '../contexts/SearchContext';
 import UserContext from '../contexts/UserContext';
 import { useInfiniteScroll } from '../hooks/useInfiniteScroll';
@@ -12,37 +12,22 @@ import AdminListingEditModal from '../components/admin/AdminListingEditModal';
 import { BrowsableItem } from '../types/browsable';
 import { Listing } from '../types/types';
 import axios from '../utils/axios';
-import { createListing } from '../utils/apiCleaner';
 import swal from 'sweetalert';
 import { getInstitutionAffiliation } from '../utils/institutionAffiliation';
-import { browsePageReducer, createInitialBrowsePageState } from '../reducers/browsePageReducer';
-
-type ListingSearchCriteria = {
-  queryString: string;
-  selectedDepartments: string[];
-  selectedResearchAreas: string[];
-  selectedListingResearchAreas: string[];
-  quickFilter: string | null;
-};
-
-export const hasListingSearchCriteria = (params: ListingSearchCriteria) =>
-  params.queryString.trim() !== '' ||
-  params.selectedDepartments.length > 0 ||
-  params.selectedResearchAreas.length > 0 ||
-  params.selectedListingResearchAreas.length > 0 ||
-  Boolean(params.quickFilter);
-
-export const getListingEmptyMessage = (params: ListingSearchCriteria) => {
-  return hasListingSearchCriteria(params)
-    ? 'No labs match your current search or filters'
-    : 'No research labs are available right now';
-};
+import {
+  browsePageReducer,
+  createInitialBrowsePageState,
+} from '../reducers/browsePageReducer';
+import { createListing } from '../utils/apiCleaner';
+import { getListingEmptyMessage, hasListingSearchCriteria } from '../utils/listingEmptyState';
 
 const Home = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
   const {
     queryString,
     listings,
     isLoading,
+    error: searchError,
     searchExhausted,
     setPage,
     quickFilter,
@@ -57,13 +42,8 @@ const Home = () => {
     setSelectedListingResearchAreas,
   } = useContext(SearchContext);
 
-  const { user, isAuthenticated, isLoading: authLoading } = useContext(UserContext);
+  const { user } = useContext(UserContext);
   const isAdmin = user?.userType === 'admin';
-  const navigate = useNavigate();
-  const location = useLocation();
-  const { slug } = useParams();
-  const isResearchRoute =
-    location.pathname === '/research' || location.pathname.startsWith('/research/');
 
   const [state, dispatch] = useReducer(
     browsePageReducer<Listing>,
@@ -78,89 +58,51 @@ const Home = () => {
   } = state;
 
   useEffect(() => {
-    if (!isResearchRoute) {
-      setQueryString('');
-    }
-  }, [isResearchRoute, setQueryString]);
+    setQueryString('');
+  }, []);
 
-  const requireLogin = () => {
-    const returnUrl = window.location.origin + location.pathname + location.search;
-    localStorage.setItem('logoutReturnPath', returnUrl);
-    navigate('/login');
-  };
-
-  const reloadFavorites = useCallback(async () => {
-    if (!isAuthenticated) {
-      dispatch({ type: 'SET_FAVORITES', ids: [] });
-      return;
-    }
-
+  const reloadFavorites = async () => {
     axios
       .get('/users/favListingsIds', { withCredentials: true })
       .then((response) => {
         dispatch({ type: 'SET_FAVORITES', ids: response.data.favListingsIds });
       })
-      .catch((error) => {
-        console.error("Error fetching user's favorite listings:", error);
+      .catch(() => {
+        console.error("Error fetching user's favorite posted roles.");
         dispatch({ type: 'SET_FAVORITES', ids: [] });
-        swal({ text: 'Could not load your favorite listings', icon: 'warning' });
+        swal({ text: 'Could not load your favorite posted roles', icon: 'warning' });
       });
-  }, [isAuthenticated]);
+  };
 
   useEffect(() => {
     refreshListings();
-    if (!authLoading) {
-      reloadFavorites();
-    }
-  }, [authLoading, isAuthenticated, refreshListings, reloadFavorites]);
+    reloadFavorites();
+  }, []);
 
   useEffect(() => {
-    if (!slug) return;
-    let cancelled = false;
-
-    axios
-      .get(`/research/${slug}`, { withCredentials: true })
-      .then(async (response) => {
-        if (cancelled) return;
-        let listing = response.data.listing;
-
-        if (isAuthenticated) {
-          try {
-            const authenticatedResponse = await axios.get(`/research/${slug}/contact`, {
-              withCredentials: true,
-            });
-            if (cancelled) return;
-            listing = authenticatedResponse.data.listing;
-          } catch (error) {
-            console.error('Error loading authenticated research listing details:', error);
+    const listingId = searchParams.get('listing');
+    if (listingId && !isModalOpen && !selectedListing) {
+      axios
+        .get(`/listings/${listingId}`, { withCredentials: true })
+        .then((response) => {
+          if (response.data?.listing) {
+            const listing = createListing(response.data.listing);
+            dispatch({ type: 'OPEN_DETAIL_MODAL', item: listing });
           }
-        }
-
-        dispatch({
-          type: 'OPEN_DETAIL_MODAL',
-          item: createListing(listing),
+        })
+        .catch(() => {
+          console.error('Error fetching direct listing link.');
+          setSearchParams((params) => {
+            params.delete('listing');
+            return params;
+          });
         });
-      })
-      .catch((error) => {
-        if (cancelled) return;
-        console.error('Error loading research listing:', error);
-        swal({ text: 'Unable to load this research listing.', icon: 'warning' });
-        navigate('/research', { replace: true });
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [slug, navigate, isAuthenticated]);
+    }
+  }, [searchParams, isModalOpen, selectedListing, setSearchParams]);
 
   const filteredListings = useMemo(() => {
     if (quickFilter === 'open') {
       return listings.filter((l) => l.hiringStatus >= 0);
-    }
-    if (quickFilter === 'recent') {
-      const thirtyDaysAgo = new Date();
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-      return listings.filter((l) => new Date(l.createdAt) >= thirtyDaysAgo);
     }
     if (quickFilter === 'ysm') {
       return listings.filter((l) => getInstitutionAffiliation(l.departments || []) === 'YSM');
@@ -178,6 +120,17 @@ const Home = () => {
     () => filteredListings.map((l) => ({ type: 'listing' as const, data: l })),
     [filteredListings],
   );
+  const openListingCount = useMemo(
+    () => listings.filter((l) => l.hiringStatus >= 0).length,
+    [listings],
+  );
+  const roleBoardModes = [
+    { key: null, label: 'All roles', value: listings.length },
+    { key: 'open', label: 'Open', value: openListingCount },
+    { key: 'ysm', label: 'Medicine', value: listings.filter((l) => getInstitutionAffiliation(l.departments || []) === 'YSM').length },
+    { key: 'ysph', label: 'Public Health', value: listings.filter((l) => getInstitutionAffiliation(l.departments || []) === 'YSPH').length },
+    { key: 'yc', label: 'Yale College', value: listings.filter((l) => getInstitutionAffiliation(l.departments || []) === 'YC').length },
+  ];
 
   const sentinelRef = useInfiniteScroll({
     searchExhausted,
@@ -199,20 +152,15 @@ const Home = () => {
   const showFellowshipsEmptyAction = !hasListingSearchCriteria(listingSearchCriteria);
 
   const updateFavorite = (listingId: string, favorite: boolean) => {
-    if (!isAuthenticated) {
-      requireLogin();
-      return;
-    }
-
     const prevFavListingsIds = favListingsIds;
 
     if (favorite) {
       dispatch({ type: 'SET_FAVORITES', ids: [listingId, ...prevFavListingsIds] });
       axios
         .put('/users/favListings', { withCredentials: true, data: { favListings: [listingId] } })
-        .catch((error) => {
+        .catch(() => {
           dispatch({ type: 'SET_FAVORITES', ids: prevFavListingsIds });
-          console.error('Error favoriting listing:', error);
+          console.error('Error favoriting listing.');
           swal({ text: 'Unable to favorite listing', icon: 'warning' });
           reloadFavorites();
         });
@@ -223,9 +171,9 @@ const Home = () => {
       });
       axios
         .delete('/users/favListings', { withCredentials: true, data: { favListings: [listingId] } })
-        .catch((error) => {
+        .catch(() => {
           dispatch({ type: 'SET_FAVORITES', ids: prevFavListingsIds });
-          console.error('Error unfavoriting listing:', error);
+          console.error('Error unfavoriting listing.');
           swal({ text: 'Unable to unfavorite listing', icon: 'warning' });
           reloadFavorites();
         });
@@ -240,12 +188,10 @@ const Home = () => {
   const handleOpenModal = (item: BrowsableItem) => {
     if (item.type === 'listing') {
       dispatch({ type: 'OPEN_DETAIL_MODAL', item: item.data });
-      if (isResearchRoute) {
-        navigate(
-          { pathname: `/research/${item.data.id}`, search: location.search },
-          { replace: false },
-        );
-      }
+      setSearchParams((params) => {
+        params.set('listing', item.data.id);
+        return params;
+      });
     }
   };
 
@@ -255,19 +201,16 @@ const Home = () => {
     }
   };
 
-  const closeDetailModal = () => {
-    dispatch({ type: 'CLOSE_DETAIL_MODAL' });
-    if (slug) {
-      navigate({ pathname: '/research', search: location.search });
-    }
-  };
-
   const handleNavigateToResearchArea = (area: string) => {
     setQueryString('');
     setSelectedDepartments([]);
     setSelectedResearchAreas([]);
     setSelectedListingResearchAreas([area]);
-    closeDetailModal();
+    dispatch({ type: 'CLOSE_DETAIL_MODAL' });
+    setSearchParams((params) => {
+      params.delete('listing');
+      return params;
+    });
   };
 
   const handleNavigateToDepartment = (dept: string) => {
@@ -275,12 +218,102 @@ const Home = () => {
     setSelectedDepartments([dept]);
     setSelectedResearchAreas([]);
     setSelectedListingResearchAreas([]);
-    closeDetailModal();
+    dispatch({ type: 'CLOSE_DETAIL_MODAL' });
+    setSearchParams((params) => {
+      params.delete('listing');
+      return params;
+    });
   };
 
   return (
     <div className="mx-auto max-w-[1300px] px-6 w-full min-h-[calc(100vh-12rem)]">
       <div className="mt-4 md:mt-8" />
+      <section className="mb-5 rounded-lg border border-blue-100 bg-white px-4 py-4 shadow-sm">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-blue-700">
+              Legacy board
+            </p>
+            <h1 className="mt-1 text-2xl font-bold text-gray-950">Posted Roles</h1>
+            <p className="mt-1 max-w-3xl text-sm leading-relaxed text-gray-600">
+              Posted roles are now one part of Yale Research. Start with research homes
+              when you want to explore what exists, then use the evidence and next steps on each profile.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Link
+              to="/research"
+              className="inline-flex min-h-11 items-center rounded-md bg-blue-700 px-3 text-sm font-semibold text-white hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+            >
+              Explore research homes
+            </Link>
+          </div>
+        </div>
+      </section>
+      <section
+        aria-label="Posted role board controls"
+        className="mb-5 rounded-lg border border-slate-200 bg-slate-950 p-3 text-white shadow-sm"
+      >
+        <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_18rem]">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
+            {roleBoardModes.map((mode) => {
+              const active = quickFilter === mode.key || (!quickFilter && mode.key === null);
+              return (
+                <button
+                  key={mode.label}
+                  type="button"
+                  onClick={() => setQuickFilter(mode.key)}
+                  className={`min-h-14 rounded-md border px-3 py-2 text-left transition-colors focus:outline-none focus:ring-2 focus:ring-blue-300 ${
+                    active
+                      ? 'border-white bg-white text-slate-950'
+                      : 'border-white/15 bg-white/5 text-white hover:bg-white/10'
+                  }`}
+                >
+                  <span className="block text-[11px] font-semibold uppercase tracking-wider opacity-75">
+                    {mode.label}
+                  </span>
+                  <span className="mt-1 block text-lg font-semibold">{mode.value}</span>
+                </button>
+              );
+            })}
+          </div>
+          <div className="rounded-md border border-white/10 bg-white/5 px-3 py-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-300">
+              Board status
+            </p>
+            <p className="mt-2 text-sm leading-relaxed text-white">
+              {searchError
+                ? 'Posted-role search is unavailable; use Yale Research while the index is restored.'
+                : `${filteredListings.length} visible role${filteredListings.length === 1 ? '' : 's'} from ${listings.length} loaded.`}
+            </p>
+          </div>
+        </div>
+      </section>
+      {searchError && (
+        <div
+          role="status"
+          className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"
+        >
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p>{searchError}</p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={refreshListings}
+                className="min-h-11 rounded-md border border-amber-300 bg-white px-3 text-sm font-semibold text-amber-950 hover:bg-amber-100 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2"
+              >
+                Retry posted roles
+              </button>
+              <Link
+                to="/research"
+                className="inline-flex min-h-11 items-center rounded-md bg-amber-900 px-3 text-sm font-semibold text-white hover:bg-amber-950 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2"
+              >
+                Explore research homes
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
       <BrowseGrid
         items={items}
         favIds={favListingsIds}
@@ -292,9 +325,13 @@ const Home = () => {
         searchExhausted={searchExhausted}
         quickFilter={quickFilter}
         onClearQuickFilter={() => setQuickFilter(null)}
-        emptyMessage={emptyMessage}
+        emptyMessage={
+          searchError
+            ? 'Posted-role search is unavailable. Use Yale Research for source-backed routes.'
+            : emptyMessage
+        }
         emptyAction={
-          showFellowshipsEmptyAction ? (
+          showFellowshipsEmptyAction && !searchError ? (
             <Link
               to="/fellowships"
               className="inline-flex items-center justify-center rounded-md border border-blue-600 px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50"
@@ -303,19 +340,29 @@ const Home = () => {
             </Link>
           ) : undefined
         }
+        onLoadMore={() => {
+          if (!isLoading && !searchExhausted) {
+            setPage((prev) => prev + 1);
+          }
+        }}
       />
 
       {selectedListing && (
         <ListingDetailModal
           isOpen={isModalOpen}
-          onClose={closeDetailModal}
+          onClose={() => {
+            dispatch({ type: 'CLOSE_DETAIL_MODAL' });
+            setSearchParams((params) => {
+              params.delete('listing');
+              return params;
+            });
+          }}
           listing={selectedListing}
           isFavorite={favListingsIds.includes(selectedListing.id)}
           onToggleFavorite={(e) => {
             e.stopPropagation();
             updateFavorite(selectedListing.id, !favListingsIds.includes(selectedListing.id));
           }}
-          onRequireAuth={requireLogin}
           onNavigateToResearchArea={handleNavigateToResearchArea}
           onNavigateToDepartment={handleNavigateToDepartment}
         />

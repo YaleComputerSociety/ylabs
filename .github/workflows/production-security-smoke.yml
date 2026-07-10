@@ -1,0 +1,54 @@
+name: Production Security Smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      api_base:
+        description: Production API base URL
+        required: false
+        default: https://yalelabs.io/api
+      app_base:
+        description: Production app base URL
+        required: false
+        default: https://yalelabs.io
+      expect_commit:
+        description: Optional expected deployed commit prefix
+        required: false
+        default: ''
+  schedule:
+    - cron: '17 13 * * *'
+
+permissions:
+  contents: read
+
+jobs:
+  production-security-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 20
+
+      - name: Run production security smoke
+        env:
+          SMOKE_API_BASE: ${{ inputs.api_base || 'https://yalelabs.io/api' }}
+          SMOKE_APP_BASE: ${{ inputs.app_base || 'https://yalelabs.io' }}
+          SMOKE_EXPECT_COMMIT: ${{ inputs.expect_commit || github.sha }}
+        run: |
+          set +e
+          cmd=(yarn security:smoke:production)
+          if [ -n "$SMOKE_EXPECT_COMMIT" ]; then
+            cmd+=(--expect-commit "$SMOKE_EXPECT_COMMIT")
+          fi
+          "${cmd[@]}"
+          status=$?
+          if [ -f tmp/ui-smoke/production-promotion-smoke-report.json ]; then
+            cat tmp/ui-smoke/production-promotion-smoke-report.json
+          fi
+          exit "$status"

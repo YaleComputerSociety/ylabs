@@ -35,8 +35,17 @@ const CombinedFilterDropdown = ({ tabs }: CombinedFilterDropdownProps) => {
         setIsOpen(false);
       }
     };
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsOpen(false);
+      }
+    };
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
   }, []);
 
   const totalFilters = tabs.reduce((sum, tab) => sum + tab.selected.length, 0);
@@ -68,7 +77,7 @@ const CombinedFilterDropdown = ({ tabs }: CombinedFilterDropdownProps) => {
     <div className="relative" ref={dropdownRef}>
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center h-9 px-3 border border-gray-300 rounded-md bg-white text-sm hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 whitespace-nowrap"
+        className="flex min-h-[44px] items-center rounded-md border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-3 text-sm transition-colors hover:bg-[var(--yr-panel-muted)] focus:outline-none focus:ring-2 focus:ring-blue-500 whitespace-nowrap"
         style={{ color: '#374151' }}
       >
         <svg
@@ -101,16 +110,16 @@ const CombinedFilterDropdown = ({ tabs }: CombinedFilterDropdownProps) => {
       </button>
 
       {isOpen && (
-        <div className="absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden z-50 w-[340px]">
-          <div className="flex border-b border-gray-200 bg-gray-50 overflow-x-auto">
+        <div className="absolute left-0 top-full z-50 mt-1 w-[calc(100vw-2rem)] max-w-[340px] overflow-hidden rounded-lg border border-[var(--yr-line)] bg-[var(--yr-panel)] shadow-lg">
+          <div className="flex border-b border-[var(--yr-line)] bg-[var(--yr-panel-muted)] overflow-x-auto">
             {tabs.map((tab) => (
               <button
                 key={tab.key}
                 onClick={() => setActiveTabKey(tab.key)}
-                className={`flex-1 px-2 py-2.5 text-xs font-medium transition-colors relative whitespace-nowrap ${
+                className={`relative flex min-h-[44px] flex-1 items-center justify-center px-2 py-2.5 text-xs font-medium transition-colors whitespace-nowrap ${
                   activeTabKey === tab.key
-                    ? 'text-blue-600 bg-white border-b-2 border-blue-500 -mb-px'
-                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                    ? 'text-blue-600 bg-[var(--yr-panel)] border-b-2 border-blue-500 -mb-px'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-[var(--yr-panel-muted)]'
                 }`}
               >
                 <span>{tab.label}</span>
@@ -118,8 +127,8 @@ const CombinedFilterDropdown = ({ tabs }: CombinedFilterDropdownProps) => {
                   <span
                     className={`ml-1 text-xs px-1.5 py-0.5 rounded-full ${
                       activeTabKey === tab.key
-                        ? 'bg-blue-100 text-blue-700'
-                        : 'bg-gray-200 text-gray-600'
+                        ? 'bg-[var(--yr-blue-soft)] text-blue-700'
+                        : 'bg-[var(--yr-panel-muted)] text-gray-600'
                     }`}
                   >
                     {tab.selected.length}
@@ -142,7 +151,7 @@ const CombinedFilterDropdown = ({ tabs }: CombinedFilterDropdownProps) => {
                 value={getSearch(activeTab.key)}
                 onChange={(e) => setSearch(activeTab.key, e.target.value)}
                 placeholder={`Search ${activeTab.label.toLowerCase()}...`}
-                className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-[var(--yr-line)] rounded-md text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             )}
 
@@ -164,6 +173,9 @@ const CombinedFilterDropdown = ({ tabs }: CombinedFilterDropdownProps) => {
                 return (
                   <li
                     key={option}
+                    tabIndex={0}
+                    role="option"
+                    aria-selected={isSelected}
                     onClick={() => {
                       if (isSelected) {
                         activeTab.setSelected((prev) => prev.filter((v) => v !== option));
@@ -171,14 +183,24 @@ const CombinedFilterDropdown = ({ tabs }: CombinedFilterDropdownProps) => {
                         activeTab.setSelected((prev) => [...prev, option]);
                       }
                     }}
-                    className={`px-3 py-2 cursor-pointer text-sm rounded-md flex items-center gap-3 transition-colors ${
-                      isSelected ? 'bg-blue-50 text-blue-900' : 'hover:bg-gray-50 text-gray-700'
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        if (isSelected) {
+                          activeTab.setSelected((prev) => prev.filter((v) => v !== option));
+                        } else {
+                          activeTab.setSelected((prev) => [...prev, option]);
+                        }
+                      }
+                    }}
+                    className={`flex min-h-[44px] cursor-pointer items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-inset ${
+                      isSelected ? 'bg-[var(--yr-blue-soft)] text-blue-900' : 'hover:bg-[var(--yr-panel-muted)] text-gray-700'
                     }`}
                     onMouseDown={(e) => e.preventDefault()}
                   >
                     <div
                       className={`w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center transition-colors ${
-                        isSelected ? 'bg-blue-500 border-blue-500' : 'border-gray-300'
+                        isSelected ? 'bg-blue-500 border-blue-500' : 'border-[var(--yr-line-strong)]'
                       }`}
                     >
                       {isSelected && (
@@ -221,10 +243,10 @@ const CombinedFilterDropdown = ({ tabs }: CombinedFilterDropdownProps) => {
           </div>
 
           {totalFilters > 0 && (
-            <div className="border-t border-gray-200 px-3 py-2 bg-gray-50">
+            <div className="border-t border-[var(--yr-line)] px-3 py-2 bg-[var(--yr-panel-muted)]">
               <button
                 onClick={handleClearAll}
-                className="w-full text-sm text-gray-600 hover:text-gray-900 py-1.5 rounded-md hover:bg-gray-100 transition-colors"
+                className="w-full text-sm text-gray-600 hover:text-gray-900 py-1.5 rounded-md hover:bg-[var(--yr-panel-muted)] transition-colors"
                 onMouseDown={(e) => e.preventDefault()}
               >
                 Clear all filters ({totalFilters})

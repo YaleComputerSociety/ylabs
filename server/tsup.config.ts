@@ -6,7 +6,7 @@ export default defineConfig({
   target: 'node20',
   outDir: 'build',
   clean: true,
-  sourcemap: true,
+  sourcemap: false,
   splitting: false,
   bundle: true,
   external: [
@@ -14,7 +14,6 @@ export default defineConfig({
     'express',
     'passport',
     'passport-cas',
-    'passport-strategy',
     'cookie-session',
     'cors',
     'express-rate-limit',

@@ -1,5 +1,5 @@
 /**
- * Logo home button that navigates to the root page and reloads if already there.
+ * Logo home button that navigates to the primary research discovery page.
  */
 import Button from '@mui/material/Button';
 import { Link, useLocation } from 'react-router-dom';
@@ -8,7 +8,7 @@ const HomeButton = () => {
   const location = useLocation();
 
   const handleClick = (event: React.MouseEvent) => {
-    if (location.pathname === '/') {
+    if (location.pathname === '/research') {
       event.preventDefault();
       window.location.reload();
     }
@@ -17,27 +17,27 @@ const HomeButton = () => {
   return (
     <Button
       component={Link}
-      to="/"
+      to="/research"
       onClick={handleClick}
       disableRipple={true}
       sx={{
         '&:hover': { backgroundColor: 'transparent' },
+        textTransform: 'none',
         minWidth: 'auto',
-        padding: '6px 16px 6px 0px',
-        marginLeft: '-16px',
+        minHeight: '44px',
+        padding: { xs: '6px 10px 6px 0px', sm: '6px 16px 6px 0px' },
+        marginLeft: { xs: '-10px', sm: '-16px' },
       }}
     >
       <img
-        src="/assets/logos/paperclip.png"
-        alt="ylabs-logo"
+        src="/brand/yale-research-mark.svg"
+        alt=""
         className="mr-2"
-        style={{ width: '31.65px', height: '27px' }}
+        style={{ width: '32px', height: '32px' }}
       />
-      <img
-        src="/assets/logos/ylabs-blue.png"
-        alt="ylabs-logo"
-        style={{ width: '65.17px', height: '27px' }}
-      />
+      <span className="yr-wordmark text-xl text-[var(--yr-blue)] sm:text-[1.35rem]">
+        Yale Research
+      </span>
     </Button>
   );
 };
