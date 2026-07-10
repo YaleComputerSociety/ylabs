@@ -20,13 +20,13 @@ The server follows: **Routes → Middleware → Controllers → Services → Mod
 
 ### Tech Stack
 
-| Layer | Technology |
-|-------|-----------|
-| Client | React 19, TypeScript, Vite 6, React Router v6, MUI v7, styled-components, TailwindCSS v3 |
-| Server | Express 4, TypeScript, Passport.js (CAS strategy), Mongoose 8 |
-| Search | Meilisearch (hybrid search: keyword + semantic via OpenAI `text-embedding-3-small`) |
-| Database | MongoDB Atlas (single cluster, separate databases per environment) |
-| Package Manager | Yarn 4 via Corepack |
+| Layer           | Technology                                                                               |
+| --------------- | ---------------------------------------------------------------------------------------- |
+| Client          | React 19, TypeScript, Vite 6, React Router v6, MUI v7, styled-components, TailwindCSS v3 |
+| Server          | Express 4, TypeScript, Passport.js (CAS strategy), Mongoose 8                            |
+| Search          | Meilisearch (hybrid search: keyword + semantic via OpenAI `text-embedding-3-small`)      |
+| Database        | MongoDB Atlas (single cluster, separate databases per environment)                       |
+| Package Manager | Yarn 4 via Corepack                                                                      |
 
 ---
 
@@ -34,11 +34,11 @@ The server follows: **Routes → Middleware → Controllers → Services → Mod
 
 Code flows **Local → Beta → Prod**. Beta is the staging gate.
 
-| Environment | Hosting | MongoDB Database | Meilisearch | `MEILISEARCH_INDEX_PREFIX` |
-|-------------|---------|-----------------|-------------|---------------------------|
-| Local | localhost | `Development` | Docker (`localhost:7700`) | *(unset)* → bare `researchentities` / `pathways` |
-| Beta | Render (free tier) | `Beta` | Shared Render private service | `beta` → `beta_researchentities` / `beta_pathways` |
-| Prod | Render (starter) | `Production` | Shared Render private service | `prod` → `prod_researchentities` / `prod_pathways` |
+| Environment | Hosting            | MongoDB Database | Meilisearch                   | `MEILISEARCH_INDEX_PREFIX`                         |
+| ----------- | ------------------ | ---------------- | ----------------------------- | -------------------------------------------------- |
+| Local       | localhost          | `Development`    | Docker (`localhost:7700`)     | _(unset)_ → bare `researchentities` / `pathways`   |
+| Beta        | Render (free tier) | `Beta`           | Shared Render private service | `beta` → `beta_researchentities` / `beta_pathways` |
+| Prod        | Render (starter)   | `Production`     | Shared Render private service | `prod` → `prod_researchentities` / `prod_pathways` |
 
 - MongoDB: one Atlas cluster, three databases. `MONGODBURL` points to the right one per environment.
 - Meilisearch: beta and prod share one Render private service, isolated by index prefixes. Local uses its own Docker container.
@@ -109,12 +109,14 @@ cp server/.env.example server/.env
 ```
 
 Your local `.env` should point to:
+
 - `MONGODBURL` → the `Development` database on Atlas
 - `MEILISEARCH_HOST` → `http://localhost:7700`
 - `MEILISEARCH_API_KEY` → your local master key (e.g., `testkey`)
 - No `MEILISEARCH_INDEX_PREFIX` (local uses bare `researchentities` and `pathways` indexes)
 
 For the client:
+
 ```bash
 # client/.env
 VITE_APP_SERVER=http://localhost:4000
@@ -131,6 +133,7 @@ yarn meili:up
 ```
 
 Verify it's running:
+
 ```bash
 yarn meili:health
 # Should return: {"status":"available"}
@@ -224,22 +227,23 @@ The auth flow's verbose tracing (per-request deserialization, the find-or-create
 
 ## Common Commands
 
-| Command | Description |
-|---------|-------------|
-| `yarn install:all` | Install deps in root + server + client |
-| `yarn dev:client` | Vite dev server (port 3000) |
-| `yarn dev:server` | Express with nodemon (port 4000) |
-| `yarn build` | Full production build |
-| `yarn start` | Run both servers in production mode |
-| `yarn clean:all` | Remove all node_modules |
-| `yarn --cwd client test` | Run Vitest in watch mode |
-| `yarn --cwd client test:ci` | Run Vitest once (used by CI) |
-| `yarn --cwd server test` | Run server Vitest tests |
-| `npx tsc --noEmit -p server/tsconfig.json` | Server typecheck |
-| `yarn --cwd server beta:readiness --confirm-beta-backup --strict` | Read-only Beta release gate |
-| `yarn --cwd server beta:data-quality --include-samples` | Read-only Beta data-quality scorecard |
-| `yarn --cwd server scraper:integrity-gate --include-samples` | Read-only scraper materialization integrity gate |
-| `SCRAPER_ENV=beta yarn --cwd server gates:refresh` | Regenerate every canonical gate scorecard the operator board reads (single writer) |
+| Command                                                           | Description                                                                        |
+| ----------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `yarn install:all`                                                | Install deps in root + server + client                                             |
+| `yarn dev:client`                                                 | Vite dev server (port 3000)                                                        |
+| `yarn dev:server`                                                 | Express with nodemon (port 4000)                                                   |
+| `yarn build`                                                      | Full production build                                                              |
+| `yarn start`                                                      | Run both servers in production mode                                                |
+| `yarn clean:all`                                                  | Remove all node_modules                                                            |
+| `yarn --cwd client test`                                          | Run Vitest in watch mode                                                           |
+| `yarn --cwd client test:ci`                                       | Run Vitest once (used by CI)                                                       |
+| `yarn --cwd server test`                                          | Run server Vitest tests                                                            |
+| `npx tsc --noEmit -p server/tsconfig.json`                        | Server typecheck                                                                   |
+| `yarn --cwd server beta:readiness --confirm-beta-backup --strict` | Read-only Beta release gate                                                        |
+| `yarn --cwd server beta:data-quality --include-samples`           | Read-only Beta data-quality scorecard                                              |
+| `yarn --cwd server scraper:integrity-gate --include-samples`      | Read-only scraper materialization integrity gate                                   |
+| `SCRAPER_ENV=beta yarn --cwd server gates:refresh`                | Regenerate every canonical gate scorecard the operator board reads (single writer) |
+| `npm --prefix data-migration test`                                | Focused tests for guarded data migration helpers                                   |
 
 ### Operator board Gate Status - keeping it honest and current
 
@@ -267,7 +271,20 @@ yarn scrape help
 yarn meili:seed
 ```
 
-Historical `data-migration/` scripts remain for one-off migrations only. Do not use the old listing Meilisearch migration for current Research or Pathways indexes.
+Historical `data-migration/` scripts remain for one-off migrations only.
+Run them through the `data-migration` package scripts when available, so dry-run defaults, target validation, and JSON summaries stay in place:
+
+```bash
+npm --prefix data-migration run import:fellowships -- --csv ../web-scraper/fellowships/yale_fellowships.csv --summary ./tmp/fellowships-summary.json
+npm --prefix data-migration run import:fellowships:execute -- --target dev --csv ../web-scraper/fellowships/yale_fellowships.csv --summary ./tmp/fellowships-import.json
+npm --prefix data-migration run migrate:meilisearch -- --summary ./tmp/meili-listings-summary.json
+MEILISEARCH_INDEX_PREFIX=dev npm --prefix data-migration run migrate:meilisearch:execute -- --target dev --summary ./tmp/meili-listings-execute.json
+```
+
+`import:fellowships` validates the CSV transform before MongoDB writes and refuses replacement unless execute mode also supplies `--replace-existing`.
+`migrate:meilisearch` refreshes only the legacy `listings` Meilisearch index; do not use it for current Research or Pathways indexes.
+Any write must use `--execute --target local|test|dev|beta|prod`, and production writes additionally require `--allow-production --confirm-production`.
+Summary paths must be `.json` files under `data-migration/tmp` or the system temp directory.
 
 ---
 
@@ -317,6 +334,7 @@ Search uses **Meilisearch** for Research, with internal pathway enrichment and M
 Listing CRUD is retired and must not be used as the search sync path.
 
 The Meilisearch client (`server/src/utils/meiliClient.ts`) exports:
+
 - `getMeiliClient()` - lazy-loaded singleton
 - `getMeiliIndex(name)` - returns a prefixed index (e.g., `prod_researchentities`)
 - `resolveIndexName(name)` - pure function for prefix resolution
@@ -330,13 +348,13 @@ Route-level middleware logs successful server-observed events by wrapping `res.s
 
 Research-surface analytics cover the canonical research entities (`profile`, `listing`, and `fellowship`) and use these event types:
 
-| Event type | Meaning |
-|------------|---------|
-| `research_view` | A profile, listing, or fellowship detail surface opened |
-| `pathway_save` | A listing or fellowship was saved, unsaved, or re-staged |
-| `ways_in_click` | A best-next-step, apply, listings, courses, or similar action was clicked |
-| `contact_route_click` | A contact route such as email or phone was clicked |
-| `source_link_click` | A source link such as a lab site, publication, or application was clicked |
+| Event type            | Meaning                                                                   |
+| --------------------- | ------------------------------------------------------------------------- |
+| `research_view`       | A profile, listing, or fellowship detail surface opened                   |
+| `pathway_save`        | A listing or fellowship was saved, unsaved, or re-staged                  |
+| `ways_in_click`       | A best-next-step, apply, listings, courses, or similar action was clicked |
+| `contact_route_click` | A contact route such as email or phone was clicked                        |
+| `source_link_click`   | A source link such as a lab site, publication, or application was clicked |
 
 Client-only interactions are sent to `POST /api/analytics/research` for authenticated users.
 Server-observed views and save/favorite actions are emitted from route middleware in listings, fellowships, profiles, and users.
@@ -362,12 +380,12 @@ The public browse surfaces (`/api/research`, `/api/opportunities`) follow the sa
 
 ### Auth Middleware (`server/src/middleware/auth.ts`)
 
-| Middleware | Check |
-|------------|-------|
+| Middleware        | Check                                                                                         |
+| ----------------- | --------------------------------------------------------------------------------------------- |
 | `localAuthBypass` | Optional local/test-only `req.user` injection when `LOCAL_AUTH_BYPASS=true`; skips CAS routes |
-| `isAuthenticated` | `req.user` exists |
-| `isAdmin` | `userType === 'admin'` |
-| `isProfessor` | `userType` in `['professor', 'faculty', 'admin']` |
+| `isAuthenticated` | `req.user` exists                                                                             |
+| `isAdmin`         | `userType === 'admin'`                                                                        |
+| `isProfessor`     | `userType` in `['professor', 'faculty', 'admin']`                                             |
 
 ---
 
@@ -375,20 +393,20 @@ The public browse surfaces (`/api/research`, `/api/opportunities`) follow the sa
 
 All mount under `/api`.
 
-| Prefix | Description | Auth |
-|--------|-------------|------|
-| `/research` | Yale Labs search/detail, including ways-in enrichment | Varies |
-| `/programs` | Programs & Fellowships browse/search and saved-program support | Varies |
-| `/opportunities` | Real posted opportunity detail workflows | Varies |
-| `/listings` | Retired legacy API, returns `410 Gone` | Varies |
-| `/fellowships` | Compatibility alias around program/fellowship storage during migration | Varies |
-| `/users` | User CRUD | Yes |
-| `/profiles` | Faculty profiles | Varies |
-| `/analytics` | Analytics dashboard + research event writes | Admin for dashboard, authenticated for research writes |
-| `/config` | Departments + research areas | No |
-| `/research-areas` | Research area CRUD | Admin for writes |
-| `/admin` | Admin operations | Admin |
-| `/seed` | Dev seeding routes | Dev mode only |
+| Prefix            | Description                                                            | Auth                                                   |
+| ----------------- | ---------------------------------------------------------------------- | ------------------------------------------------------ |
+| `/research`       | Yale Labs search/detail, including ways-in enrichment                  | Varies                                                 |
+| `/programs`       | Programs & Fellowships browse/search and saved-program support         | Varies                                                 |
+| `/opportunities`  | Real posted opportunity detail workflows                               | Varies                                                 |
+| `/listings`       | Retired legacy API, returns `410 Gone`                                 | Varies                                                 |
+| `/fellowships`    | Compatibility alias around program/fellowship storage during migration | Varies                                                 |
+| `/users`          | User CRUD                                                              | Yes                                                    |
+| `/profiles`       | Faculty profiles                                                       | Varies                                                 |
+| `/analytics`      | Analytics dashboard + research event writes                            | Admin for dashboard, authenticated for research writes |
+| `/config`         | Departments + research areas                                           | No                                                     |
+| `/research-areas` | Research area CRUD                                                     | Admin for writes                                       |
+| `/admin`          | Admin operations                                                       | Admin                                                  |
+| `/seed`           | Dev seeding routes                                                     | Dev mode only                                          |
 
 ---
 
@@ -409,9 +427,10 @@ Tests are discovered from `client/src/**/*.{test,spec}.{ts,tsx}`.
 
 ### What is tested
 
-Pure reducer modules under [client/src/reducers/](client/src/reducers/) have unit-test coverage in [client/src/reducers/__tests__/](client/src/reducers/__tests__/). Each reducer file has a matching `*.test.ts`. The reducers back the search, fellowship-search, config, listing-form, and account-tracking (kanban/notes) flows - extracting state transitions from providers/components into pure functions makes them testable without mounting React or mocking network.
+Pure reducer modules under [client/src/reducers/](client/src/reducers/) have unit-test coverage in [client/src/reducers/\_\_tests\_\_/](client/src/reducers/__tests__/). Each reducer file has a matching `*.test.ts`. The reducers back the search, fellowship-search, config, listing-form, and account-tracking (kanban/notes) flows - extracting state transitions from providers/components into pure functions makes them testable without mounting React or mocking network.
 
 When adding a new reducer:
+
 1. Place the reducer in [client/src/reducers/](client/src/reducers/) with an exported `createInitial<Name>State()` factory.
 2. Add `client/src/reducers/__tests__/<name>.test.ts` covering each action type, the initial state, and a purity check (reducer does not mutate prior state).
 3. Import the reducer in the provider/component via `useReducer`; keep side effects (network, localStorage, timers) in the component, not the reducer.
@@ -451,19 +470,20 @@ Client `tsc --noEmit` is still not part of CI; the client has known pre-existing
 
 1. Mongoose schema in `server/src/models/<model>.ts`
 2. TypeScript interfaces in `client/src/types/`
-3. Migration script in `data-migration/` if existing data needs transformation
+3. Migration script in `data-migration/` if existing data needs transformation.
+   Prefer an existing package script with dry-run defaults, target validation, and a `--summary ./tmp/<name>.json` artifact for operator review.
 4. If the model affects Research or Pathways search, update the relevant Meilisearch rebuild/index config and release gate.
 
 ---
 
 ## Troubleshooting
 
-| Issue | Solution |
-|-------|----------|
-| CAS login not working locally | Use dev-login: `http://localhost:4000/api/dev-login` |
-| Search returns no results | Check Meilisearch is running: `curl http://localhost:7700/health` |
-| Meilisearch connection refused | Start Docker container or check `MEILISEARCH_HOST` in `.env` |
-| CORS errors | Add origin to `allowList` in `app.ts` or use dev mode |
-| `/api/listings` returns `410` | Expected; Listings is retired. Use Research, Programs, or PostedOpportunity workflows. |
-| Retired practical-routes URL returns not found | Expected; public Pathways search is retired. Ways-in evidence appears inside Yale Labs, research detail, and Dashboard planning. |
-| A client needs pathway data | Use `/api/research/search`, research detail, or saved research-plan APIs. Standalone pathway search is not a public/client contract. |
+| Issue                                          | Solution                                                                                                                             |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| CAS login not working locally                  | Use dev-login: `http://localhost:4000/api/dev-login`                                                                                 |
+| Search returns no results                      | Check Meilisearch is running: `curl http://localhost:7700/health`                                                                    |
+| Meilisearch connection refused                 | Start Docker container or check `MEILISEARCH_HOST` in `.env`                                                                         |
+| CORS errors                                    | Add origin to `allowList` in `app.ts` or use dev mode                                                                                |
+| `/api/listings` returns `410`                  | Expected; Listings is retired. Use Research, Programs, or PostedOpportunity workflows.                                               |
+| Retired practical-routes URL returns not found | Expected; public Pathways search is retired. Ways-in evidence appears inside Yale Labs, research detail, and Dashboard planning.     |
+| A client needs pathway data                    | Use `/api/research/search`, research detail, or saved research-plan APIs. Standalone pathway search is not a public/client contract. |
