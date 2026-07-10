@@ -6,7 +6,17 @@ import { useInfiniteScroll } from '../useInfiniteScroll';
 const originalIntersectionObserver = window.IntersectionObserver;
 const originalGlobalIntersectionObserver = globalThis.IntersectionObserver;
 
-const TestScroller = ({ onAdvance }: { onAdvance: () => void }) => {
+const TestScroller = ({
+  onAdvance,
+  filteredCount,
+  totalRawCount,
+  quickFilterActive,
+}: {
+  onAdvance: () => void;
+  filteredCount?: number;
+  totalRawCount?: number;
+  quickFilterActive?: boolean;
+}) => {
   const sentinelRef = useInfiniteScroll({
     searchExhausted: false,
     isLoading: false,
@@ -14,6 +24,9 @@ const TestScroller = ({ onAdvance }: { onAdvance: () => void }) => {
       if (typeof update === 'function') update(1);
       onAdvance();
     },
+    filteredCount,
+    totalRawCount,
+    quickFilterActive,
   });
 
   return (
@@ -66,6 +79,50 @@ describe('useInfiniteScroll', () => {
 
     await waitFor(() => {
       expect(observerRoot).toBe(container.querySelector('[data-scroll-container]'));
+    });
+  });
+
+  it('continues pagination when an active quick filter has zero loaded matches', async () => {
+    class MockIntersectionObserver {
+      constructor(callback: IntersectionObserverCallback) {
+        callback([{ isIntersecting: true } as IntersectionObserverEntry], this as any);
+      }
+
+      observe = vi.fn();
+      disconnect = vi.fn();
+      unobserve = vi.fn();
+      takeRecords = vi.fn(() => []);
+    }
+
+    window.IntersectionObserver =
+      MockIntersectionObserver as unknown as typeof IntersectionObserver;
+    globalThis.IntersectionObserver =
+      MockIntersectionObserver as unknown as typeof IntersectionObserver;
+    Element.prototype.getBoundingClientRect = vi.fn(() => ({
+      bottom: 0,
+      height: 1,
+      left: 0,
+      right: 1,
+      top: 0,
+      width: 1,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    }));
+
+    const onAdvance = vi.fn();
+
+    render(
+      <TestScroller
+        onAdvance={onAdvance}
+        filteredCount={0}
+        totalRawCount={60}
+        quickFilterActive
+      />,
+    );
+
+    await waitFor(() => {
+      expect(onAdvance).toHaveBeenCalled();
     });
   });
 });
