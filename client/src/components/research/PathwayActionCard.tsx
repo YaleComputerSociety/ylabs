@@ -26,6 +26,21 @@ const formatDate = (value?: string): string => {
   }).format(date);
 };
 
+const directoryFirstPathwayLabel = (label: string): string => {
+  if (label === 'Plan targeted outreach') return 'Review source context';
+  if (label === 'Contact program') return 'Review source route';
+  return label;
+};
+
+const directoryFirstNextStep = (label: string): string =>
+  label
+    .replace(
+      'Contact the program with a specific question.',
+      'Review the program source and note any specific questions.',
+    )
+    .replace(/outreach note/gi, 'planning note')
+    .replace(/targeted outreach/gi, 'source review');
+
 const PathwayActionCard = ({ pathway }: PathwayActionCardProps) => {
   const researchEntity = pathway.researchEntity;
   const researchEntityLabel =
@@ -33,8 +48,12 @@ const PathwayActionCard = ({ pathway }: PathwayActionCardProps) => {
   const researchEntityLink = researchEntity?.slug
     ? `/research/${safeRouteSegment(researchEntity.slug)}`
     : '/research';
-  const actionLabel = getPathwayActionLabel(pathway.bestNextStepCategory);
-  const nextStep = pathway.bestNextStep || pathway.studentFacingLabel || actionLabel;
+  const actionLabel = directoryFirstPathwayLabel(
+    getPathwayActionLabel(pathway.bestNextStepCategory),
+  );
+  const nextStep = directoryFirstNextStep(
+    pathway.bestNextStep || pathway.studentFacingLabel || actionLabel,
+  );
   const opportunityDeadline = formatDate(pathway.activePostedOpportunity?.deadline);
   const applicationUrl = safeHttpUrl(pathway.activePostedOpportunity?.applicationUrl);
 

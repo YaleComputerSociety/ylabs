@@ -35,15 +35,15 @@ Go to **http://localhost:3000**. Use `http://localhost:4000/api/dev-login` for a
 
 ## Product Surfaces
 
-- `/research`: Yale Research, the primary discovery surface for labs, centers, institutes, faculty projects, archives, collections projects, RA programs, and other research homes. Cards are enriched with compact ways-in evidence when it exists.
+- `/research`: Yale Research, the primary discovery surface for labs, centers, institutes, faculty projects, archives, collections projects, RA programs, and other research homes. Cards emphasize profiles, source-backed evidence, and planning context when it exists.
 - `/programs`: Programs & Fellowships, the structured application and planning surface for open cycles, closing-soon deadlines, likely next cycles, center internships, fellowships, and recurring research programs.
 - `/account`: Dashboard, the private saved-planning workspace for research plans, saved programs, notes, checklist context, and next deadlines.
-- `/research/:slug`: research-home detail pages with the student decision summary, evidence level, recommended next step, people, sources, and ways-in context.
+- `/research/:slug`: research-home detail pages with the student decision summary, evidence level, recommended next step, people, sources, and saved research-plan actions.
 - `/opportunities/:id`: detail pages for real active or time-bound posted opportunities only.
 
 The old Listings board and public Pathways page are retired. `/listings` redirects to `/research`; the standalone practical-routes URL is gone and should resolve as not found; `/fellowships` redirects to `/programs`. New work should use `ResearchEntity`, `EntryPathway`, `AccessSignal`, `ContactRoute`, and `PostedOpportunity` concepts instead of recreating listing-style flows.
 
-Backend compatibility remains narrower than the client surface: `POST /api/pathways/search` still powers Ways In infrastructure for research discovery, and `/api/fellowships` remains available only as a deprecated compatibility API with `/api/programs` as its successor.
+Backend compatibility remains narrower than the client surface: `POST /api/pathways/search` still powers internal planning infrastructure for research discovery, and `/api/fellowships` remains available only as a deprecated compatibility API with `/api/programs` as its successor.
 
 ## Release Posture
 

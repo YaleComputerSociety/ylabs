@@ -357,7 +357,7 @@ describe('ResearchHomeCard', () => {
     expect(container.textContent).toContain('Posted route');
     expect(container.textContent).not.toContain('Open role');
     expect(container.textContent).not.toContain('Paid/funded');
-    expect(container.textContent).toContain('Contact route');
+    expect(container.textContent).toContain('Source route');
     expect(container.textContent).toContain('Undergrad evidence');
     expect(screen.getByRole('link', { name: 'View posted opportunity' }).getAttribute('href')).toBe(
       '/opportunities/opportunity-1',
