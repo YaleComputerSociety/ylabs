@@ -32,7 +32,7 @@ const studentOutreachSchema = new mongoose.Schema(
     },
     deliveryMethod: {
       type: String,
-      enum: ['mailto', 'copy', 'platform-sent', 'external-self-reported'],
+      enum: ['mailto', 'copy', 'platform-sent', 'external-self-reported', 'official-route'],
       default: 'mailto',
     },
     emailGeneratedByPlatform: {

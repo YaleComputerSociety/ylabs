@@ -145,6 +145,7 @@ export interface LabContactRoute {
   contactPolicy?: string;
   rationale?: string;
   sourceUrl?: string;
+  reviewStatus?: string;
 }
 
 export interface LabPostedOpportunity {
