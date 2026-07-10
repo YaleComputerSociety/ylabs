@@ -11,6 +11,7 @@ import { publicStudentVisibilityTiers } from '../models/studentVisibility';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { isPublicHttpUrl } from '../utils/urlSafety';
+import { studentPathwayMongoMatch } from './studentAccessPublicationPolicy';
 
 export const pathwayBestNextStepCategories = [
   'apply',
@@ -330,6 +331,7 @@ function buildPathwayMatch(filters: PathwaySearchFilters): Record<string, unknow
 
   return compactMatch({
     archived: { $ne: true },
+    ...studentPathwayMongoMatch(),
     _id: hasPathwayIdFilter ? { $in: pathwayIds } : undefined,
     pathwayType,
     compensation:

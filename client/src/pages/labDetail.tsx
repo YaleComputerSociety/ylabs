@@ -22,6 +22,7 @@ import {
 import LabHeader from '../components/labs/LabHeader';
 import LabMembersList from '../components/labs/LabMembersList';
 import LabPapersList from '../components/labs/LabPapersList';
+import LabInquireModal from '../components/labs/LabInquireModal';
 import LongText from '../components/shared/LongText';
 import FirstSaveCallout from '../components/shared/FirstSaveCallout';
 import FavoriteButton from '../components/shared/FavoriteButton';
@@ -979,10 +980,11 @@ const LabDetail = () => {
     undefined,
     () => createInitialLabDetailState(),
   );
-  const { payload, loading, error } = state;
+  const { payload, loading, error, isInquireModalOpen } = state;
   const requestIdRef = useRef(0);
   const fetchAbortRef = useRef<AbortController | null>(null);
   const [showResearchPlanSavedCallout, setShowResearchPlanSavedCallout] = useState(false);
+  const [outreachRecordError, setOutreachRecordError] = useState('');
   const {
     favIds: savedResearchPlanIds,
     setFavorite: setSavedResearchPlanFavorite,
@@ -1113,6 +1115,9 @@ const LabDetail = () => {
     contactRoutes,
     group,
   );
+  const approvedOutreachRoute = contactRoutes.find(
+    (route) => route.reviewStatus === 'approved' && Boolean(safeHttpUrl(route.url)),
+  );
   const principalInvestigators = dedupeLeadMembers(members);
   const membersById = new Map(members.map((member) => [memberId(member), member]));
   const primaryRecentWorkMember =
@@ -1172,6 +1177,36 @@ const LabDetail = () => {
             hasActivePostedOpportunity={hasActivePostedOpportunity}
             leadProfessor={principalInvestigators[0]}
           />
+
+          <section className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4">
+            <SectionHeading>Contact options</SectionHeading>
+            {approvedOutreachRoute ? (
+              <>
+                <p className="text-sm leading-relaxed text-gray-700">
+                  An administrator reviewed this official route and its source. Direct email is
+                  withheld; review the current instructions before contacting the research home.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOutreachRecordError('');
+                    dispatch({ type: 'OPEN_INQUIRE_MODAL' });
+                  }}
+                  className="mt-3 inline-flex min-h-11 items-center rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                >
+                  Prepare inquiry
+                </button>
+              </>
+            ) : (
+              <p className="text-sm leading-relaxed text-gray-700">
+                No verified contact route is available yet. Administrators must approve an
+                official source before outreach is enabled.
+              </p>
+            )}
+            {outreachRecordError && (
+              <p role="alert" className="mt-2 text-sm text-amber-800">{outreachRecordError}</p>
+            )}
+          </section>
 
           <section>
             <SectionHeading>Principal Investigator</SectionHeading>
@@ -1241,6 +1276,23 @@ const LabDetail = () => {
           )}
         </div>
       </div>
+
+      <LabInquireModal
+        isOpen={isInquireModalOpen}
+        onClose={() => dispatch({ type: 'CLOSE_INQUIRE_MODAL' })}
+        group={group}
+        members={members}
+        contactRoutes={contactRoutes}
+        onOfficialRouteOpen={() => {
+          axios.post(`/research/${safeRouteSegment(slug || '')}/outreach`, {}).catch((err) => {
+            setOutreachRecordError(
+              err?.response?.status === 401 || err?.response?.status === 403
+                ? 'Sign in with a student profile to record this outreach attempt.'
+                : 'The official route opened, but this outreach attempt was not recorded.',
+            );
+          });
+        }}
+      />
 
     </div>
   );
