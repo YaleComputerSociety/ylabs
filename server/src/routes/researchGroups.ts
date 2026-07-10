@@ -9,7 +9,7 @@
  */
 import { Router, Request, Response, NextFunction } from 'express';
 import * as researchGroupController from '../controllers/researchGroupController';
-import { asyncHandler } from '../middleware/index';
+import { asyncHandler, isAuthenticated } from '../middleware/index';
 
 const router = Router();
 
@@ -24,6 +24,12 @@ function setPublicDetailCacheHeaders(_req: Request, res: Response, next: NextFun
 }
 
 router.post('/search', asyncHandler(researchGroupController.searchResearchGroups));
+
+router.post(
+  '/:slug/outreach',
+  isAuthenticated,
+  asyncHandler(researchGroupController.recordResearchOutreach),
+);
 
 router.get(
   '/:slug',

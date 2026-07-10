@@ -430,6 +430,20 @@ Admins need a way to inspect derived access records before deeper editorial work
 
 Implementation note: `GET /api/admin/access-review` returns research entities with counts of related `EntryPathway`, `AccessSignal`, `ContactRoute`, and `PostedOpportunity` rows. `GET /api/admin/access-review/:id` returns the full derived access bundle for one entity. `PUT /api/admin/access-review/:id/manual-locks` updates manually locked entity fields, and record-level review endpoints update per-record status/notes/locks. The admin UI can inspect source evidence, update review state, manage locks, and filter records by review/evidence/contact/archive gaps before Beta.
 
+### Student publication readiness
+
+The existing admin role owns publication review for contact routes through the access-review surface.
+No additional privileged role is required.
+Student outreach is enabled only when a `ContactRoute` is `PUBLIC`, has an admin review status of `approved`, uses a policy other than `UNKNOWN` or `NO_DIRECT_CONTACT`, and has both a safe public destination URL and a safe public source URL.
+The public detail payload continues to omit route email fields, and the outreach endpoint repeats the policy check before recording an attempt.
+
+Student pathway search uses a deterministic minimum quality bar.
+A pathway must be `ACTIVE` or `RECURRING`, have `DIRECT`, `STRONG`, or `MODERATE` evidence, have confidence of at least `0.70`, and cite at least one safe public HTTP source.
+This threshold excludes the large 0.50-confidence exploratory-contact population while retaining stronger volunteer, recurring, and source-backed pathways for review in search.
+
+Before enabling or promoting the differentiator in an environment, administrators should work the contact-route queue in `/admin/access-review`, confirm that qualifying pathway counts are nonzero, rebuild the pathway index with `yarn --cwd server meili:rebuild-pathways`, and smoke-test `/research` plus one approved profile route.
+An empty result is a valid fail-closed state and should not be interpreted as proof that no undergraduate route exists.
+
 ## Product Vocabulary
 
 Use precise internal names in code and schema docs, but use warmer labels in the UI:
