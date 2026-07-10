@@ -1,6 +1,15 @@
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import path from 'path';
+import {
+  assertSafeWrite,
+  maskConnectionString,
+  parseDataOpsArgs,
+  summarizeValidation,
+  toMeiliListingDocument,
+  validateMeiliListingDocuments,
+  writeSummary,
+} from './dataOps';
 
 // Load environment variables from server/.env
 dotenv.config({ path: path.resolve(__dirname, '../server/.env') });
@@ -10,27 +19,35 @@ const MEILISEARCH_API_KEY = process.env.MEILISEARCH_API_KEY;
 const MEILISEARCH_INDEX_PREFIX = process.env.MEILISEARCH_INDEX_PREFIX || '';
 
 async function migrateToMeilisearch() {
-  const { Meilisearch } = await import('meilisearch');
+  const options = parseDataOpsArgs(process.argv.slice(2));
 
-  const meiliClient = new Meilisearch({
-    host: MEILISEARCH_HOST,
-    apiKey: MEILISEARCH_API_KEY,
-  });
+  const { Meilisearch } = await (new Function('specifier', 'return import(specifier)')(
+    'meilisearch',
+  ) as Promise<{ Meilisearch: any }>);
 
   const sourceUrl = process.env.MONGODBURL;
   if (!sourceUrl) {
     console.error('ERROR: MONGODBURL not set in environment');
     process.exit(1);
   }
+  assertSafeWrite(options, 'Meilisearch listing migration', {
+    mongodbUrl: sourceUrl,
+    meilisearchHost: MEILISEARCH_HOST,
+    meilisearchIndexPrefix: MEILISEARCH_INDEX_PREFIX,
+  });
 
   console.log('\n=== Migrating Listings to Meilisearch ===\n');
+  console.log(`Mode: ${options.dryRun ? 'DRY RUN (no Meilisearch writes)' : 'EXECUTE'}`);
+  console.log(`Target: ${options.target || '(not required for dry-run)'}`);
+  console.log(`MongoDB source: ${maskConnectionString(sourceUrl)}`);
+  console.log(`Meilisearch host: ${MEILISEARCH_HOST}`);
 
   try {
     console.log('Connecting to MongoDB...');
     const sourceConnection = await mongoose.createConnection(sourceUrl).asPromise();
 
     console.log('Fetching listings from MongoDB...');
-    const listings = await sourceConnection.db.collection('listings').find({}).toArray();
+    const listings = await sourceConnection.collection('listings').find({}).toArray();
     console.log(`Found ${listings.length} listings.`);
 
     if (listings.length === 0) {
@@ -40,14 +57,56 @@ async function migrateToMeilisearch() {
     }
 
     const meiliDocs = listings.map((doc: any) => {
-      const meiliDoc = { ...doc, id: doc._id.toString() };
-      delete meiliDoc._id;
-      delete meiliDoc.__v;
-      delete meiliDoc.embedding; // Ensure legacy vectors aren't pushed
+      const meiliDoc = toMeiliListingDocument(doc);
+      if (meiliDoc.evidence && typeof meiliDoc.evidence === 'object') {
+        delete meiliDoc.evidence.internalNotes;
+      }
       return meiliDoc;
     });
+    const validation = validateMeiliListingDocuments(meiliDocs);
+    const validationSummary = summarizeValidation(validation);
+    console.log('\nValidation:');
+    console.log(`  - Errors: ${validationSummary.errors}`);
+    console.log(`  - Warnings: ${validationSummary.warnings}`);
+    validation.errors.forEach((error) => console.error(`  ERROR: ${error}`));
+    validation.warnings.slice(0, 20).forEach((warning) => console.warn(`  WARNING: ${warning}`));
+    if (validation.warnings.length > 20) {
+      console.warn(
+        `  ... ${validation.warnings.length - 20} additional warnings omitted from console`,
+      );
+    }
 
-    const indexName = MEILISEARCH_INDEX_PREFIX ? `${MEILISEARCH_INDEX_PREFIX}_listings` : 'listings';
+    const indexName = MEILISEARCH_INDEX_PREFIX
+      ? `${MEILISEARCH_INDEX_PREFIX}_listings`
+      : 'listings';
+    const summary = {
+      mode: options.dryRun ? 'dry-run' : 'execute',
+      target: options.target || null,
+      sourceCount: listings.length,
+      documentCount: meiliDocs.length,
+      indexName,
+      meilisearchHost: MEILISEARCH_HOST,
+      validation: validationSummary,
+      openAiEmbedderConfigured: Boolean(process.env.OPENAI_API_KEY),
+    };
+
+    writeSummary(options.summaryPath, summary);
+
+    if (validation.errors.length > 0) {
+      throw new Error('Meilisearch document validation failed; fix errors before indexing');
+    }
+
+    if (options.dryRun) {
+      console.log('\nDry run complete. No Meilisearch writes were made.\n');
+      await sourceConnection.close();
+      return;
+    }
+
+    const meiliClient = new Meilisearch({
+      host: MEILISEARCH_HOST,
+      apiKey: MEILISEARCH_API_KEY,
+    });
+
     console.log(`Configuring Meilisearch Index: ${indexName}...`);
     const index = meiliClient.index(indexName);
 
@@ -55,25 +114,22 @@ async function migrateToMeilisearch() {
       'departments',
       'researchAreas',
       'archived',
-      'confirmed'
+      'confirmed',
     ]);
 
-    await index.updateSortableAttributes([
-      'createdAt',
-      'updatedAt',
-      'searchScore'
-    ]);
+    await index.updateSortableAttributes(['createdAt', 'updatedAt', 'searchScore']);
 
     if (process.env.OPENAI_API_KEY) {
-        console.log('Configuring OpenAI Embedder native Meilisearch support...');
-        await index.updateEmbedders({
-            default: {
-                source: 'openAi',
-                apiKey: process.env.OPENAI_API_KEY,
-                model: 'text-embedding-3-small',
-                documentTemplate: "Title: {{doc.title}}\nProfessors: {{doc.professorNames}}\nDescription: {{doc.description}}\nKeywords: {{doc.keywords}}",
-            }
-        });
+      console.log('Configuring OpenAI Embedder native Meilisearch support...');
+      await index.updateEmbedders({
+        default: {
+          source: 'openAi',
+          apiKey: process.env.OPENAI_API_KEY,
+          model: 'text-embedding-3-small',
+          documentTemplate:
+            'Title: {{doc.title}}\nProfessors: {{doc.professorNames}}\nDescription: {{doc.description}}\nKeywords: {{doc.keywords}}',
+        },
+      });
     }
 
     console.log('Pushing to Meilisearch...');
@@ -87,6 +143,11 @@ async function migrateToMeilisearch() {
     }
 
     console.log(`Pushed documents. Meilisearch Task UID: ${completedTask.uid}`);
+    writeSummary(options.summaryPath, {
+      ...summary,
+      taskUid: completedTask.uid,
+      taskStatus: completedTask.status,
+    });
     console.log('\nMigration complete! Meilisearch confirmed the documents were indexed.\n');
 
     await sourceConnection.close();
@@ -96,7 +157,7 @@ async function migrateToMeilisearch() {
   }
 }
 
-migrateToMeilisearch().catch(err => {
+migrateToMeilisearch().catch((err) => {
   console.error('Fatal error:', err);
   process.exit(1);
 });

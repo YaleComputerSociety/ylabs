@@ -3,6 +3,32 @@
  */
 import mongoose from 'mongoose';
 
+const evidenceSourceSchema = new mongoose.Schema(
+  {
+    label: {
+      type: String,
+      required: false,
+    },
+    url: {
+      type: String,
+      required: false,
+    },
+    sourceType: {
+      type: String,
+      required: false,
+    },
+    description: {
+      type: String,
+      required: false,
+    },
+    lastCheckedAt: {
+      type: Date,
+      required: false,
+    },
+  },
+  { _id: false },
+);
+
 const listingSchema = new mongoose.Schema(
   {
     ownerId: {
@@ -126,6 +152,37 @@ const listingSchema = new mongoose.Schema(
     audited: {
       type: Boolean,
       default: false,
+    },
+    evidence: {
+      status: {
+        type: String,
+        required: false,
+      },
+      summary: {
+        type: String,
+        required: false,
+      },
+      confidence: {
+        type: Number,
+        required: false,
+      },
+      generatedAt: {
+        type: Date,
+        required: false,
+      },
+      lastVerifiedAt: {
+        type: Date,
+        required: false,
+      },
+      sources: {
+        type: [evidenceSourceSchema],
+        default: [],
+      },
+      internalNotes: {
+        type: String,
+        required: false,
+        select: false,
+      },
     },
     expiresAt: {
       type: Date,
