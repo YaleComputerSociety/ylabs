@@ -14,7 +14,6 @@ export default defineConfig({
     'express',
     'passport',
     'passport-cas',
-    'passport-strategy',
     'cookie-session',
     'cors',
     'express-rate-limit',

@@ -2,10 +2,16 @@
  * Global error handling middleware for Express.
  */
 import { Request, Response, NextFunction } from 'express';
-import { NotFoundError, ObjectIdError, IncorrectPermissionsError } from '../utils/errors';
+import {
+  BadRequestError,
+  NotFoundError,
+  ObjectIdError,
+  IncorrectPermissionsError,
+} from '../utils/errors';
 import { sanitizeErrorForLog } from '../utils/logSanitizer';
 import { requiresDeployedRuntimeSecurity } from '../utils/environment';
 import { triggerReconnect } from '../db/connections';
+import { captureServerError } from '../utils/errorTracking';
 
 const clientErrorStatus = (error: Error): number | null => {
   const status = (error as any).status ?? (error as any).statusCode;
@@ -38,6 +44,10 @@ export const errorHandler = (error: Error, req: Request, res: Response, next: Ne
 
   if (res.headersSent) {
     return next(error);
+  }
+
+  if (error instanceof BadRequestError) {
+    return res.status(error.status).json({ error: error.message });
   }
 
   if (error instanceof NotFoundError) {
@@ -80,6 +90,7 @@ export const errorHandler = (error: Error, req: Request, res: Response, next: Ne
     return res.status(503).json({ error: 'Service temporarily unavailable' });
   }
 
+  captureServerError(error, req);
   res.status(500).json({
     error: 'Internal server error',
     message: undefined,

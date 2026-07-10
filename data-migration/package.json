@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "Database seeding scripts for Yale Research",
   "scripts": {
-    "test": "node -r ts-node/register tests/dataOps.test.ts",
+    "test": "npx tsx tests/dataOps.test.ts",
     "seed:research-areas": "npx tsx seedResearchAreas.ts",
     "seed:departments": "npx tsx seedDepartments.ts",
     "seed:all": "npx tsx seedResearchAreas.ts && npx tsx seedDepartments.ts",

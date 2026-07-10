@@ -269,6 +269,22 @@ describe('saved research planning helpers', () => {
       sourceUrl: 'https://example.edu/fellowship/apply',
     });
   });
+
+  it('does not promote expired weak fellowship candidates into next-up reminders', () => {
+    const result = deadlineReminderForPathway(
+      pathway(),
+      [
+        fellowshipMatch({
+          title: 'Expired Weak Award',
+          strength: 'weak_candidate',
+          deadline: '2026-02-12T00:00:00.000Z',
+        }),
+      ],
+      new Date('2026-05-01T12:00:00.000Z'),
+    );
+
+    expect(result).toBeNull();
+  });
 });
 
 describe('SavedPathwaysSection advising export', () => {
@@ -343,7 +359,7 @@ describe('SavedPathwaysSection advising export', () => {
                 activePostedOpportunity: {
                   _id: 'posted-1',
                   title: 'Archive assistant',
-                  deadline: '2026-05-20T00:00:00.000Z',
+                  deadline: '2099-05-20T00:00:00.000Z',
                   applicationUrl: 'https://example.edu/apply',
                   status: 'OPEN',
                 },
@@ -406,10 +422,22 @@ describe('SavedPathwaysSection advising export', () => {
       if (url === '/users/savedResearchPlanDetails/export') {
         return Promise.resolve({
           data: {
+            exportedAt: '2026-05-13T12:00:00.000Z',
+            itemCount: 1,
             privacy: {
               includesPrivateNotes: false,
             },
-            items: [],
+            items: [
+              {
+                title: 'Explore archival climate records',
+                researchEntity: { name: 'Climate Archive' },
+                intent: 'outreach',
+                stage: 'researching',
+                checklist: { 'outreach-route': true },
+                sourceLinks: ['https://example.edu/pathway'],
+                bestNextStepCategory: 'plan-outreach',
+              },
+            ],
           },
         });
       }
@@ -419,10 +447,23 @@ describe('SavedPathwaysSection advising export', () => {
       if (url === '/users/savedResearchPlanDetails/export') {
         return Promise.resolve({
           data: {
+            exportedAt: '2026-05-13T12:00:00.000Z',
+            itemCount: 1,
             privacy: {
               includesPrivateNotes: data?.includePrivateNotes === true,
             },
-            items: [],
+            items: [
+              {
+                title: 'Explore archival climate records',
+                researchEntity: { name: 'Climate Archive' },
+                intent: 'outreach',
+                stage: 'researching',
+                checklist: { 'outreach-route': true },
+                sourceLinks: ['https://example.edu/pathway'],
+                bestNextStepCategory: 'plan-outreach',
+                privateNote: data?.includePrivateNotes ? 'Discuss with my advisor.' : undefined,
+              },
+            ],
           },
         });
       }
@@ -446,5 +487,62 @@ describe('SavedPathwaysSection advising export', () => {
         }),
       );
     });
+    expect(screen.getByText('Advising export downloaded.')).toBeTruthy();
+  });
+
+  it('downloads a readable advising markdown export instead of raw JSON', async () => {
+    const user = userEvent.setup();
+    let exportedBlob: Blob | null = null;
+    vi.mocked(window.URL.createObjectURL).mockImplementation((blob) => {
+      exportedBlob = blob as Blob;
+      return 'blob:saved-pathways';
+    });
+
+    mockedAxios.get.mockImplementation((url) => {
+      if (url === '/users/savedResearchPlans') {
+        return Promise.resolve({ data: { savedResearchPlans: [pathway()] } });
+      }
+      if (url === '/users/savedResearchPlanDetails') {
+        return Promise.resolve({ data: { savedResearchPlanDetails: {} } });
+      }
+      if (url === '/users/savedResearchPlanFundingMatches') {
+        return Promise.resolve({ data: { matchesByPathwayId: {} } });
+      }
+      if (url === '/users/savedResearchPlanDetails/export') {
+        return Promise.resolve({
+          data: {
+            exportedAt: '2026-05-13T12:00:00.000Z',
+            itemCount: 1,
+            privacy: { includesPrivateNotes: false },
+            items: [
+              {
+                title: 'Explore archival climate records',
+                researchEntity: { name: 'Climate Archive' },
+                intent: 'outreach',
+                stage: 'researching',
+                checklist: { 'outreach-route': true },
+                sourceLinks: ['https://example.edu/pathway'],
+                bestNextStepCategory: 'plan-outreach',
+              },
+            ],
+          },
+        });
+      }
+      return Promise.reject(new Error(`Unexpected URL: ${url}`));
+    });
+
+    render(createElement(MemoryRouter, null, createElement(SavedPathwaysSection)));
+
+    await screen.findByText('Explore archival climate records');
+    await user.click(screen.getByRole('button', { name: 'Advising export' }));
+    await user.click(screen.getByRole('button', { name: 'Export for advising' }));
+
+    await waitFor(() => expect(exportedBlob).not.toBeNull());
+    const text = await exportedBlob!.text();
+    expect(text).toContain('# Saved Research Plans');
+    expect(text).toContain('## 1. Explore archival climate records');
+    expect(text).toContain('Research home: Climate Archive');
+    expect(text).toContain('- https://example.edu/pathway');
+    expect(text.trim()).not.toMatch(/^{/);
   });
 });

@@ -43,21 +43,10 @@
     "format:check": "prettier --check \"client/src/**/*.{ts,tsx,css}\" \"server/src/**/*.ts\""
   },
   "dependencies": {
-    "axios": "^1.17.0",
     "concurrently": "^9.2.1",
-    "cookie-session": "^2.1.0",
-    "cors": "^2.8.5",
-    "cross": "^1.0.0",
-    "cross-env": "^10.1.0",
     "dotenv": "^16.3.1",
-    "env": "^0.0.2",
-    "express": "^4.22.2",
-    "express-session": "^1.17.2",
     "mongoose": "^8.24.0",
-    "openai": "^6.41.0",
-    "passport": "^0.7.0",
-    "passport-cas": "git+https://github.com/coursetable/passport-cas#79612f1fb25fea7d62a7c38701494411cf560201",
-    "passport-strategy": "^1.0.0"
+    "openai": "^6.41.0"
   },
   "resolutions": {
     "form-data": "4.0.6",
@@ -71,8 +60,6 @@
     "brace-expansion": "5.0.6"
   },
   "devDependencies": {
-    "@types/react": "^19.2.2",
-    "@types/react-dom": "^19.2.2",
     "eslint": "^9.18.0",
     "eslint-config-prettier": "^9.1.0",
     "eslint-plugin-react": "^7.37.4",

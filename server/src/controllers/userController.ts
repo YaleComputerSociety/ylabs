@@ -876,7 +876,12 @@ const SELF_UPDATABLE_FIELDS = [
   'profileUrls',
 ] as const;
 
-const ALLOWED_SELF_USER_TYPES = new Set(['undergraduate', 'graduate']);
+const ALLOWED_SELF_USER_TYPES = new Set([
+  'undergraduate',
+  'graduate',
+  'professor',
+  'faculty',
+]);
 
 // Identity fields can only be set during the unknown-user bootstrap flow,
 // then become admin-only to prevent impersonation of established accounts.
