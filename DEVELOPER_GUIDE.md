@@ -20,13 +20,13 @@ The server follows: **Routes → Middleware → Controllers → Services → Mod
 
 ### Tech Stack
 
-| Layer           | Technology                                                                               |
-| --------------- | ---------------------------------------------------------------------------------------- |
-| Client          | React 19, TypeScript, Vite 6, React Router v6, MUI v7, styled-components, TailwindCSS v3 |
-| Server          | Express 4, TypeScript, Passport.js (CAS strategy), Mongoose 8                            |
-| Search          | Meilisearch (hybrid search: keyword + semantic via OpenAI `text-embedding-3-small`)      |
-| Database        | MongoDB Atlas (single cluster, separate databases per environment)                       |
-| Package Manager | Yarn 4 via Corepack                                                                      |
+| Layer           | Technology                                                                                       |
+| --------------- | ------------------------------------------------------------------------------------------------ |
+| Client          | React 19, TypeScript, Vite 6, React Router v6, MUI v7, styled-components, TailwindCSS v3         |
+| Server          | Express 4, TypeScript, Passport.js (CAS strategy), Mongoose 8                                    |
+| Search          | Meilisearch (keyword plus semantic search via OpenAI `text-embedding-3-small` where appropriate) |
+| Database        | MongoDB Atlas (single cluster, separate databases per environment)                               |
+| Package Manager | Yarn 4 via Corepack                                                                              |
 
 ---
 
@@ -151,6 +151,7 @@ yarn meili:seed
 ```
 
 This rebuilds local Research and Pathways indexes from MongoDB. Use `--strategy=swap` for beta/production rebuilds that serve live traffic. Semantic Research search is release-gated separately: Meilisearch must report embedded `researchentities` documents before `RESEARCH_SEARCH_SEMANTIC=true` should be used for Beta or production.
+Research relevance also depends on `researchentities` settings and documents: topic/name/tag fields are searched before description text, student-topic aliases are indexed in `studentSearchTerms`, and short aliases such as `ai`, `ml`, `nlp`, and `cv` disable typo expansion and search only topic-oriented fields.
 
 When a `/research` browse has no search query, results are ordered "best first" by a precomputed `browseRankScore` (completeness of the profile plus strength-weighted undergraduate access signals), falling back to recency. After importing or migrating data, populate the score with `yarn --cwd server research-homes:backfill-browse-rank --apply --confirm-browse-rank` (it runs in dry-run by default); ongoing scrape/materialize runs keep it fresh automatically.
 
@@ -243,7 +244,6 @@ The auth flow's verbose tracing (per-request deserialization, the find-or-create
 | `yarn --cwd server beta:data-quality --include-samples`           | Read-only Beta data-quality scorecard                                              |
 | `yarn --cwd server scraper:integrity-gate --include-samples`      | Read-only scraper materialization integrity gate                                   |
 | `SCRAPER_ENV=beta yarn --cwd server gates:refresh`                | Regenerate every canonical gate scorecard the operator board reads (single writer) |
-| `npm --prefix data-migration test`                                | Focused tests for guarded data migration helpers                                   |
 
 ### Operator board Gate Status - keeping it honest and current
 
@@ -327,6 +327,7 @@ yale-research/
 Search uses **Meilisearch** for Research, with internal pathway enrichment and Mongo fallback where rollout safety requires it.
 
 1. Research discovery uses the `researchentities` index and should only run true semantic search when Meilisearch reports embedded ResearchEntity documents.
+   Student queries are normalized before search: low-value words such as `professor`, `lab`, and `research` are stripped when other terms remain, curated aliases expand `ai`, `ml`, `nlp`, `cv`, `neuro`, and `psych`, and short alias queries stay keyword-only so substring noise does not outrank true topic matches.
 2. `EntryPathway` data remains an internal action model for ways-in summaries, research detail, saved planning, admin review, and data-quality workflows. The public client should consume it through `/api/research/search`, not by calling a standalone Pathways endpoint.
 3. Pathway Meilisearch rebuilds remain useful for parity testing and future internal enrichment work; rollback remains `PATHWAY_SEARCH_BACKEND=mongo` where that service is used.
 4. Results carry evidence and next-step context rather than legacy listing claims.
@@ -427,7 +428,7 @@ Tests are discovered from `client/src/**/*.{test,spec}.{ts,tsx}`.
 
 ### What is tested
 
-Pure reducer modules under [client/src/reducers/](client/src/reducers/) have unit-test coverage in [client/src/reducers/\_\_tests\_\_/](client/src/reducers/__tests__/). Each reducer file has a matching `*.test.ts`. The reducers back the search, fellowship-search, config, listing-form, and account-tracking (kanban/notes) flows - extracting state transitions from providers/components into pure functions makes them testable without mounting React or mocking network.
+Pure reducer modules under [client/src/reducers/](client/src/reducers/) have unit-test coverage in [client/src/reducers/**tests**/](client/src/reducers/__tests__/). Each reducer file has a matching `*.test.ts`. The reducers back the search, fellowship-search, config, listing-form, and account-tracking (kanban/notes) flows - extracting state transitions from providers/components into pure functions makes them testable without mounting React or mocking network.
 
 When adding a new reducer:
 
