@@ -145,4 +145,42 @@ describe('FellowshipModal', () => {
     expect(screen.queryByText('program-contact@example.edu?bcc=attacker@example.test')).toBeNull();
     expect(container.querySelector('a[href^="mailto:"]')).toBeNull();
   });
+
+  it('does not invite students to apply before a future application window opens', () => {
+    renderModal({
+      isAcceptingApplications: false,
+      applicationOpenDate: '2026-06-01T12:00:00.000Z',
+      deadline: '2026-07-01T12:00:00.000Z',
+    });
+
+    expect(screen.getByText('Opens Soon')).toBeInTheDocument();
+    expect(screen.getByText(/Applications are not open yet/i)).toBeInTheDocument();
+    expect(screen.getByText('Track Opening Date').closest('a')).toHaveClass('bg-gray-600');
+    expect(screen.queryByText('Apply Now')).not.toBeInTheDocument();
+  });
+
+  it('uses Apply Now only while the application window is actually open', () => {
+    renderModal({
+      isAcceptingApplications: true,
+      applicationOpenDate: '2026-05-01T12:00:00.000Z',
+      deadline: '2026-07-01T12:00:00.000Z',
+    });
+
+    expect(screen.getByText('Apply Now').closest('a')).toHaveClass('bg-blue-600');
+    expect(screen.queryByText(/Applications are not open yet/i)).not.toBeInTheDocument();
+  });
+
+  it('does not show missing eligibility copy when structured region metadata is present', () => {
+    renderModal({
+      eligibility: '',
+      yearOfStudy: [],
+      termOfAward: [],
+      purpose: [],
+      globalRegions: ['Africa'],
+      citizenshipStatus: [],
+    });
+
+    expect(screen.queryByText('Eligibility requirements have not been specified.')).toBeNull();
+    expect(screen.getByText('See the eligibility filters above for requirements.')).toBeTruthy();
+  });
 });

@@ -183,6 +183,11 @@ const journeySections: Array<{
     description: 'Current program, internship, project, and fellowship application windows.',
   },
   {
+    key: 'openingSoon',
+    title: 'Opening Soon',
+    description: 'Programs and fellowships with announced future application opening dates.',
+  },
+  {
     key: 'structured',
     title: 'Structured Research Programs',
     description:
@@ -442,11 +447,13 @@ const Fellowships = () => {
     const cycleGroups = {
       closingSoon: [] as Fellowship[],
       open: [] as Fellowship[],
+      openingSoon: [] as Fellowship[],
       nextCycle: [] as Fellowship[],
       closed: [] as Fellowship[],
     };
     const groups: Record<ProgramJourneyCategory, Fellowship[]> = {
       applyNow: [],
+      openingSoon: [],
       structured: [],
       fundingAfterMentor: [],
       nextCycle: [],
@@ -469,6 +476,11 @@ const Fellowships = () => {
         sortDirection,
       );
       cycleGroups.open = sortFellowshipsForDisplay(cycleGroups.open, sortBy, sortDirection);
+      cycleGroups.openingSoon = sortFellowshipsForDisplay(
+        cycleGroups.openingSoon,
+        sortBy,
+        sortDirection,
+      );
       cycleGroups.nextCycle = sortFellowshipsForDisplay(
         cycleGroups.nextCycle,
         sortBy,
