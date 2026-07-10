@@ -271,7 +271,20 @@ yarn scrape help
 yarn meili:seed
 ```
 
-Historical `data-migration/` scripts remain for one-off migrations only. Do not use the old listing Meilisearch migration for current Research or Pathways indexes.
+Historical `data-migration/` scripts remain for one-off migrations only.
+Run them through the `data-migration` package scripts when available, so dry-run defaults, target validation, and JSON summaries stay in place:
+
+```bash
+npm --prefix data-migration run import:fellowships -- --csv ../web-scraper/fellowships/yale_fellowships.csv --summary ./tmp/fellowships-summary.json
+npm --prefix data-migration run import:fellowships:execute -- --target dev --csv ../web-scraper/fellowships/yale_fellowships.csv --summary ./tmp/fellowships-import.json
+npm --prefix data-migration run migrate:meilisearch -- --summary ./tmp/meili-listings-summary.json
+MEILISEARCH_INDEX_PREFIX=dev npm --prefix data-migration run migrate:meilisearch:execute -- --target dev --summary ./tmp/meili-listings-execute.json
+```
+
+`import:fellowships` validates the CSV transform before MongoDB writes and refuses replacement unless execute mode also supplies `--replace-existing`.
+`migrate:meilisearch` refreshes only the legacy `listings` Meilisearch index; do not use it for current Research or Pathways indexes.
+Any write must use `--execute --target local|test|dev|beta|prod`, and production writes additionally require `--allow-production --confirm-production`.
+Summary paths must be `.json` files under `data-migration/tmp` or the system temp directory.
 
 ---
 
@@ -458,7 +471,8 @@ Client `tsc --noEmit` is still not part of CI; the client has known pre-existing
 
 1. Mongoose schema in `server/src/models/<model>.ts`
 2. TypeScript interfaces in `client/src/types/`
-3. Migration script in `data-migration/` if existing data needs transformation
+3. Migration script in `data-migration/` if existing data needs transformation.
+   Prefer an existing package script with dry-run defaults, target validation, and a `--summary ./tmp/<name>.json` artifact for operator review.
 4. If the model affects Research or Pathways search, update the relevant Meilisearch rebuild/index config and release gate.
 
 ---
