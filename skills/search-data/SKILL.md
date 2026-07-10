@@ -12,13 +12,15 @@ All environments use `MONGODBURL`; the connection string determines whether the 
 Search runs on Meilisearch.
 The old client-side `embeddingService.ts` path was removed.
 Do not reintroduce client-side embedding calls for Research search.
+Research search normalizes student queries in `researchGroupService.searchResearchGroupsViaMeili`.
+It strips low-value words such as `professor`, `lab`, and `research` when meaningful terms remain, expands curated aliases for `ai`, `ml`, `nlp`, `cv`, `neuro`, and `psych`, and treats short alias queries as keyword-only searches over topic-oriented fields.
 
 ## Meilisearch indexes
 
-| Index | Service | Purpose |
-|-------|---------|---------|
-| `researchentities` | `researchEntitySearchIndexService.ts` | Yale Labs / Research search on `/research`. |
-| `pathways` | `pathwaySearchIndexService.ts` | Internal ways-in enrichment, saved planning, parity testing, and admin workflows. |
+| Index              | Service                               | Purpose                                                                           |
+| ------------------ | ------------------------------------- | --------------------------------------------------------------------------------- |
+| `researchentities` | `researchEntitySearchIndexService.ts` | Yale Labs / Research search on `/research`.                                       |
+| `pathways`         | `pathwaySearchIndexService.ts`        | Internal ways-in enrichment, saved planning, parity testing, and admin workflows. |
 
 The Meilisearch client lives in `server/src/utils/meiliClient.ts`.
 It lazy-loads and caches the connection.
@@ -26,23 +28,25 @@ Use `getMeiliIndex(name)` and `resolveIndexName(name)`.
 
 Relevant config:
 
-| Variable | Purpose |
-|----------|---------|
-| `MEILISEARCH_HOST` | Defaults to `http://localhost:7700`. |
-| `MEILISEARCH_API_KEY` | Meilisearch API key. |
+| Variable                   | Purpose                                                    |
+| -------------------------- | ---------------------------------------------------------- |
+| `MEILISEARCH_HOST`         | Defaults to `http://localhost:7700`.                       |
+| `MEILISEARCH_API_KEY`      | Meilisearch API key.                                       |
 | `MEILISEARCH_INDEX_PREFIX` | Optional environment prefix, e.g. `beta_researchentities`. |
-| `OPENAI_API_KEY` | Used by Meilisearch embedder config and LLM extractors. |
+| `OPENAI_API_KEY`           | Used by Meilisearch embedder config and LLM extractors.    |
 
 Documents sync via `meiliSyncService.ts` after upserts.
 Rebuild scripts do full repopulation.
+The `researchentities` index prioritizes name, professor, research-area, keyword, and `studentSearchTerms` attributes before summary or description text.
+Its settings also include curated synonyms and typo guards for short aliases such as `ai`, `ml`, `nlp`, and `cv`, so rebuild or sync the index after changing alias or relevance settings.
 
 ## Rebuild commands
 
-| Command | Effect |
-|---------|--------|
-| `yarn --cwd server meili:rebuild-research-entities` | Rebuild the ResearchEntity index. |
-| `yarn --cwd server meili:rebuild-pathways` | Rebuild the Pathway index. |
-| `yarn --cwd server research-entity:migrate` | Run the ResearchEntity physical migration. |
+| Command                                                 | Effect                                                               |
+| ------------------------------------------------------- | -------------------------------------------------------------------- |
+| `yarn --cwd server meili:rebuild-research-entities`     | Rebuild the ResearchEntity index.                                    |
+| `yarn --cwd server meili:rebuild-pathways`              | Rebuild the Pathway index.                                           |
+| `yarn --cwd server research-entity:migrate`             | Run the ResearchEntity physical migration.                           |
 | `yarn --cwd server research-homes:backfill-browse-rank` | Recompute `browseRankScore`; apply requires `--confirm-browse-rank`. |
 
 ## Default `/research` ordering

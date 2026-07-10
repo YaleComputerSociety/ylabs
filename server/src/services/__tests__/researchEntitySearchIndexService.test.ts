@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildResearchEntitySearchIndexDocument,
+  buildStudentSearchTerms,
   getResearchEntitySearchIndexSettings,
   RESEARCH_ENTITY_SEARCH_INDEX_NAME,
   RESEARCH_ENTITY_SEARCH_INDEX_PRIMARY_KEY,
@@ -18,12 +19,35 @@ describe('researchEntitySearchIndexService', () => {
       departments: ['Psychology'],
     });
 
-    expect(doc).toEqual({
+    expect(doc).toMatchObject({
       id: 'entity-1',
       name: 'Smith Lab',
       archived: false,
       departments: ['Psychology'],
     });
+    expect(doc).not.toHaveProperty('__v');
+    expect(doc).not.toHaveProperty('embedding');
+  });
+
+  it('adds curated student topic aliases to searchable index documents', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-ai',
+      name: 'Medical Imaging Group',
+      description: 'Uses artificial intelligence for diagnostic imaging.',
+      researchAreas: ['Computer Vision'],
+      archived: false,
+    });
+
+    expect(doc).toMatchObject({
+      id: 'entity-ai',
+      studentSearchTerms: expect.arrayContaining([
+        'ai',
+        'artificial intelligence',
+        'machine learning',
+        'computer vision',
+      ]),
+    });
+    expect(buildStudentSearchTerms({ name: 'Ailong Airway Lab' })).toEqual([]);
   });
 
   it('filters unsafe URLs and direct contact text from public research entity index documents', () => {
@@ -79,9 +103,36 @@ describe('researchEntitySearchIndexService', () => {
     expect(getResearchEntitySearchIndexSettings().searchableAttributes).toEqual(
       expect.arrayContaining(['leadProfessorNames', 'professorNames']),
     );
-    expect(getResearchEntitySearchIndexSettings().filterableAttributes).not.toContain(
-      'mutated',
+    expect(
+      getResearchEntitySearchIndexSettings().searchableAttributes.indexOf('keywords'),
+    ).toBeLessThan(
+      getResearchEntitySearchIndexSettings().searchableAttributes.indexOf('description'),
     );
+    expect(
+      getResearchEntitySearchIndexSettings().searchableAttributes.indexOf('researchAreas'),
+    ).toBeLessThan(
+      getResearchEntitySearchIndexSettings().searchableAttributes.indexOf('description'),
+    );
+    expect(getResearchEntitySearchIndexSettings().rankingRules).toEqual([
+      'words',
+      'proximity',
+      'attribute',
+      'exactness',
+      'typo',
+      'sort',
+    ]);
+    expect(getResearchEntitySearchIndexSettings().typoTolerance).toMatchObject({
+      minWordSizeForTypos: {
+        oneTypo: 5,
+        twoTypos: 9,
+      },
+      disableOnWords: expect.arrayContaining(['ai', 'ml', 'nlp', 'cv']),
+    });
+    expect(getResearchEntitySearchIndexSettings().synonyms).toMatchObject({
+      ai: expect.arrayContaining(['artificial intelligence', 'machine learning']),
+      cv: expect.arrayContaining(['computer vision']),
+    });
+    expect(getResearchEntitySearchIndexSettings().filterableAttributes).not.toContain('mutated');
     expect(getResearchEntitySearchIndexSettings().sortableAttributes).toEqual(
       expect.arrayContaining(['lastObservedAt', 'name', 'createdAt', 'updatedAt']),
     );

@@ -16,11 +16,12 @@ const RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS = {
     'displayName',
     'leadProfessorNames',
     'professorNames',
-    'description',
-    'summary',
-    'departments',
     'researchAreas',
     'keywords',
+    'studentSearchTerms',
+    'departments',
+    'summary',
+    'description',
     'school',
     'kind',
     'entityType',
@@ -42,6 +43,22 @@ const RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS = {
   ],
   sortableAttributes: ['browseRankScore', 'lastObservedAt', 'name', 'createdAt', 'updatedAt'],
   displayedAttributes: ['*'],
+  rankingRules: ['words', 'proximity', 'attribute', 'exactness', 'typo', 'sort'],
+  typoTolerance: {
+    minWordSizeForTypos: {
+      oneTypo: 5,
+      twoTypos: 9,
+    },
+    disableOnWords: ['ai', 'ml', 'nlp', 'cv'],
+  },
+  synonyms: {
+    ai: ['artificial intelligence', 'machine learning', 'deep learning'],
+    ml: ['machine learning', 'artificial intelligence', 'deep learning'],
+    nlp: ['natural language processing', 'computational linguistics'],
+    cv: ['computer vision', 'medical imaging', 'image analysis'],
+    neuro: ['neuroscience', 'neurology', 'neural', 'brain'],
+    psych: ['psychology', 'psychiatry', 'cognitive science', 'behavioral science'],
+  },
 };
 
 export interface ResearchEntitySearchIndexRebuildOptions {
@@ -49,9 +66,7 @@ export interface ResearchEntitySearchIndexRebuildOptions {
   clearExisting?: boolean;
   getIndex?: typeof getMeiliIndex;
   fetchPage?: (page: number, pageSize: number) => Promise<any[]>;
-  fetchMemberNames?: (
-    entityIds: unknown[],
-  ) => Promise<ResearchEntitySearchMemberNameMap>;
+  fetchMemberNames?: (entityIds: unknown[]) => Promise<ResearchEntitySearchMemberNameMap>;
 }
 
 export interface ResearchEntitySearchIndexRebuildResult {
@@ -68,10 +83,7 @@ export interface ResearchEntitySearchMemberNameFields {
   professorNames: string[];
 }
 
-export type ResearchEntitySearchMemberNameMap = Map<
-  string,
-  ResearchEntitySearchMemberNameFields
->;
+export type ResearchEntitySearchMemberNameMap = Map<string, ResearchEntitySearchMemberNameFields>;
 
 export function getResearchEntitySearchIndexSettings() {
   return {
@@ -79,6 +91,19 @@ export function getResearchEntitySearchIndexSettings() {
     filterableAttributes: [...RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS.filterableAttributes],
     sortableAttributes: [...RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS.sortableAttributes],
     displayedAttributes: [...RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS.displayedAttributes],
+    rankingRules: [...RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS.rankingRules],
+    typoTolerance: {
+      minWordSizeForTypos: {
+        ...RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS.typoTolerance.minWordSizeForTypos,
+      },
+      disableOnWords: [...RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS.typoTolerance.disableOnWords],
+    },
+    synonyms: Object.fromEntries(
+      Object.entries(RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS.synonyms).map(([key, values]) => [
+        key,
+        [...values],
+      ]),
+    ),
   };
 }
 
@@ -102,10 +127,26 @@ const SEARCH_INDEX_DIRECT_CONTACT_FIELDS = [
   'phone',
 ] as const;
 
-const SEARCH_INDEX_PERSON_NAME_FIELDS = [
-  'leadProfessorNames',
-  'professorNames',
-] as const;
+const SEARCH_INDEX_PERSON_NAME_FIELDS = ['leadProfessorNames', 'professorNames'] as const;
+
+const STUDENT_TOPIC_ALIASES: Record<string, string[]> = {
+  ai: ['ai', 'artificial intelligence', 'machine learning', 'deep learning'],
+  'artificial intelligence': ['ai', 'artificial intelligence', 'machine learning', 'deep learning'],
+  ml: ['ml', 'machine learning', 'artificial intelligence', 'deep learning'],
+  'machine learning': ['ml', 'machine learning', 'artificial intelligence', 'deep learning'],
+  nlp: ['nlp', 'natural language processing', 'computational linguistics'],
+  'natural language processing': [
+    'nlp',
+    'natural language processing',
+    'computational linguistics',
+  ],
+  cv: ['cv', 'computer vision', 'image analysis', 'visual recognition'],
+  'computer vision': ['cv', 'computer vision', 'image analysis', 'visual recognition'],
+  neuro: ['neuro', 'neuroscience', 'neurology', 'neural', 'brain'],
+  neuroscience: ['neuro', 'neuroscience', 'neurology', 'neural', 'brain'],
+  psych: ['psych', 'psychology', 'psychiatry', 'cognitive science', 'behavioral science'],
+  psychology: ['psych', 'psychology', 'psychiatry', 'cognitive science', 'behavioral science'],
+};
 
 const LEAD_PROFESSOR_MEMBER_ROLES = new Set([
   'pi',
@@ -179,8 +220,7 @@ const userDisplayName = (user: any): string =>
   cleanPersonName(user?.name);
 
 const facultyDisplayName = (faculty: any): string =>
-  cleanPersonName(faculty?.name) ||
-  personNameFromParts(faculty?.firstName, faculty?.lastName);
+  cleanPersonName(faculty?.name) || personNameFromParts(faculty?.firstName, faculty?.lastName);
 
 const memberDisplayName = (
   member: any,
@@ -195,10 +235,58 @@ const memberDisplayName = (
   if (userName) return userName;
 
   const facultyMemberId = serializedDocumentId(member?.facultyMemberId);
-  return facultyMemberId
-    ? facultyDisplayName(facultyMembersById.get(facultyMemberId))
-    : '';
+  return facultyMemberId ? facultyDisplayName(facultyMembersById.get(facultyMemberId)) : '';
 };
+
+const normalizedAliasHaystack = (values: unknown[]): string =>
+  values
+    .flatMap((value) => {
+      if (Array.isArray(value)) return value;
+      return value == null ? [] : [value];
+    })
+    .filter((value): value is string => typeof value === 'string')
+    .join(' ')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const addUniqueSearchTerm = (terms: string[], seen: Set<string>, term: string) => {
+  const cleaned = term.trim().replace(/\s+/g, ' ');
+  const key = cleaned.toLowerCase();
+  if (!cleaned || seen.has(key)) return;
+  seen.add(key);
+  terms.push(cleaned);
+};
+
+export function buildStudentSearchTerms(doc: any): string[] {
+  const haystack = normalizedAliasHaystack([
+    doc?.name,
+    doc?.displayName,
+    doc?.description,
+    doc?.summary,
+    doc?.shortDescription,
+    doc?.fullDescription,
+    doc?.departments,
+    doc?.researchAreas,
+    doc?.keywords,
+    doc?.kind,
+    doc?.entityType,
+  ]);
+  if (!haystack) return [];
+
+  const terms: string[] = [];
+  const seen = new Set<string>();
+  for (const [trigger, aliases] of Object.entries(STUDENT_TOPIC_ALIASES)) {
+    const triggerPattern = new RegExp(`(^|\\s)${trigger.replace(/\s+/g, '\\s+')}(\\s|$)`, 'i');
+    if (!triggerPattern.test(haystack)) continue;
+    for (const alias of aliases) {
+      addUniqueSearchTerm(terms, seen, alias);
+    }
+  }
+
+  return terms;
+}
 
 const emptyMemberNameFields = (): ResearchEntitySearchMemberNameFields => ({
   leadProfessorNames: [],
@@ -250,8 +338,7 @@ export async function fetchResearchEntitySearchMemberNames(
 
   for (const member of memberRows) {
     const entityId =
-      serializedDocumentId(member.researchEntityId) ||
-      serializedDocumentId(member.researchGroupId);
+      serializedDocumentId(member.researchEntityId) || serializedDocumentId(member.researchGroupId);
     if (!entityId) continue;
 
     const name = memberDisplayName(member, usersById, facultyMembersById);
@@ -281,9 +368,7 @@ const publicHttpUrl = (value: unknown): string | undefined => {
 };
 
 const publicHttpUrls = (value: unknown): string[] =>
-  Array.isArray(value)
-    ? value.flatMap((item) => publicHttpUrl(item) ?? [])
-    : [];
+  Array.isArray(value) ? value.flatMap((item) => publicHttpUrl(item) ?? []) : [];
 
 const sanitizeResearchEntityIndexDocument = (out: Record<string, any>) => {
   for (const field of SEARCH_INDEX_DIRECT_CONTACT_FIELDS) {
@@ -335,6 +420,10 @@ export function buildResearchEntitySearchIndexDocument(
     out.leadProfessorNames = memberNames.leadProfessorNames;
     out.professorNames = memberNames.professorNames;
   }
+  const studentSearchTerms = buildStudentSearchTerms(out);
+  if (studentSearchTerms.length > 0) {
+    out.studentSearchTerms = studentSearchTerms;
+  }
   delete out._id;
   delete out.__v;
   delete out.embedding;
@@ -362,9 +451,7 @@ export async function buildResearchEntitySearchIndexDocumentsWithMemberNames(
     entityIds: unknown[],
   ) => Promise<ResearchEntitySearchMemberNameMap> = fetchResearchEntitySearchMemberNames,
 ): Promise<Record<string, any>[]> {
-  const memberNamesByEntityId = await fetchMemberNames(
-    docs.map((doc) => doc?._id ?? doc?.id),
-  );
+  const memberNamesByEntityId = await fetchMemberNames(docs.map((doc) => doc?._id ?? doc?.id));
   return buildResearchEntitySearchIndexDocuments(docs, memberNamesByEntityId);
 }
 
