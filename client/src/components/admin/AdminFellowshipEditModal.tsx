@@ -13,6 +13,7 @@ import {
   adminFellowshipEditReducer,
   createInitialAdminFellowshipEditState,
 } from '../../reducers/adminFellowshipEditReducer';
+import { getFellowshipApplicationStatus } from '../../utils/fellowshipStatus';
 
 const TagInput = ({
   label,
@@ -117,6 +118,17 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
     citizenshipStatus,
     isSaving,
   } = state;
+  const statusPreview = getFellowshipApplicationStatus({
+    isAcceptingApplications,
+    applicationOpenDate: applicationOpenDate || null,
+    deadline: deadline || null,
+    eligibility,
+    yearOfStudy,
+    termOfAward,
+    purpose,
+    globalRegions,
+    citizenshipStatus,
+  });
 
   useEffect(() => {
     document.body.style.overflow = 'hidden';
@@ -262,6 +274,12 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
                   rows={2}
                   className="w-full border border-[var(--yr-line-strong)] rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
+                {statusPreview.needsEligibilityReview && (
+                  <p className="mt-1 text-xs text-amber-700">
+                    Add eligibility text or structured eligibility filters so users can tell whether
+                    this is relevant.
+                  </p>
+                )}
               </div>
             </div>
 
@@ -307,6 +325,22 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
                   onChange={(e) => dispatch({ type: 'SET_DEADLINE', payload: e.target.value })}
                   className="w-full border border-[var(--yr-line-strong)] rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
+              </div>
+
+              <div
+                className={`mb-3 rounded border p-2 text-xs ${
+                  statusPreview.isCurrentlyRelevant
+                    ? 'bg-blue-50 border-blue-100 text-blue-800'
+                    : 'bg-red-50 border-red-100 text-red-700'
+                }`}
+              >
+                <p className="font-semibold">{statusPreview.label}</p>
+                <p>{statusPreview.detail}</p>
+                {statusPreview.needsDateReview && (
+                  <p className="mt-1 text-amber-700">
+                    This is marked accepting applications without a deadline.
+                  </p>
+                )}
               </div>
 
               <div className="mb-3">

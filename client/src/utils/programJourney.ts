@@ -3,6 +3,7 @@ import { getFellowshipCycleStatus } from './fellowshipCycle';
 
 export type ProgramJourneyCategory =
   | 'applyNow'
+  | 'openingSoon'
   | 'structured'
   | 'fundingAfterMentor'
   | 'nextCycle'
@@ -38,6 +39,14 @@ export function getProgramJourneyStatus(
       category: 'applyNow',
       label: 'Apply now',
       description: 'Current application windows and deadlines.',
+    };
+  }
+
+  if (cycle.category === 'openingSoon') {
+    return {
+      category: 'openingSoon',
+      label: 'Opening Soon',
+      description: 'Upcoming application windows with announced opening dates.',
     };
   }
 

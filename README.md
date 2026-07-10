@@ -6,13 +6,13 @@ A research-discovery app for Yale students. It helps students find research home
 
 ## Tech Stack
 
-| Layer | Tech |
-|-------|------|
-| Client | React 19, TypeScript, Vite, TailwindCSS, MUI |
-| Server | Express 4, TypeScript, Passport.js (Yale CAS) |
-| Database | MongoDB Atlas (Mongoose 8) |
-| Search | Meilisearch (hybrid: keyword + semantic via OpenAI embedder) |
-| Package Manager | Yarn 4 via Corepack |
+| Layer           | Tech                                                                      |
+| --------------- | ------------------------------------------------------------------------- |
+| Client          | React 19, TypeScript, Vite, TailwindCSS, MUI                              |
+| Server          | Express 4, TypeScript, Passport.js (Yale CAS)                             |
+| Database        | MongoDB Atlas (Mongoose 8)                                                |
+| Search          | Meilisearch (keyword plus semantic via OpenAI embedder where appropriate) |
+| Package Manager | Yarn 4 via Corepack                                                       |
 
 ## Quick Start
 
@@ -48,6 +48,7 @@ Backend compatibility remains narrower than the client surface: `POST /api/pathw
 ## Release Posture
 
 Beta is live testing and the release gate. Production promotion requires a recent Beta data-quality run, scraper integrity gate, semantic Research search readiness when semantic search is enabled, backup/rollback confirmation, Meilisearch sync, and smoke tests.
+Research search relevance depends on the current `researchentities` index settings, including curated student-topic aliases and short-query typo guards, so rebuild or sync Meilisearch after changing ResearchEntity source data or index settings.
 
 Scrapers run as short-lived CLI or cron jobs outside the web service process. Do not add a separate always-on scraper server unless runtime limits, queueing, or operator-triggered job requirements make cron insufficient.
 
