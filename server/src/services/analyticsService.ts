@@ -1,11 +1,7 @@
 /**
  * Analytics event logging and aggregation service.
  */
-import {
-  AnalyticsEvent,
-  AnalyticsEventType,
-  RESEARCH_ENTITY_TYPES,
-} from '../models/analytics';
+import { AnalyticsEvent, AnalyticsEventType, RESEARCH_ENTITY_TYPES } from '../models/analytics';
 import { User, ResearchEntity } from '../models/index';
 import { getListingModel } from '../db/connections';
 import { Types, type PipelineStage } from 'mongoose';
@@ -72,10 +68,7 @@ const sanitizeAnalyticsMetadataKey = (key: string): string | undefined => {
   return trimmed;
 };
 
-const sanitizeAnalyticsMetadata = (
-  value: unknown,
-  depth = 0,
-): unknown => {
+const sanitizeAnalyticsMetadata = (value: unknown, depth = 0): unknown => {
   if (typeof value === 'string') return sanitizeAnalyticsText(value);
   if (typeof value === 'number') return Number.isFinite(value) ? value : undefined;
   if (typeof value === 'boolean' || value === null) return value;
@@ -222,6 +215,10 @@ export interface SearchQualityAnalytics {
   byQueryAndEntityType: SearchQualityQueryAnalytics[];
   topZeroResultQueries: SearchQualityQueryAnalytics[];
   topQueries: SearchQualityQueryAnalytics[];
+  engagedSearches: number;
+  returnedButIgnoredSearches: number;
+  engagementRate: number;
+  attributionWindowMinutes: number;
 }
 
 export interface SearchQuerySearcherAnalytics {
@@ -310,7 +307,10 @@ const appUserAccountMatch = (): PipelineStage.Match['$match'] => ({
 });
 
 export const normalizeAnalyticsUserTypeBucket = (userType?: string | null): string => {
-  const normalized = String(userType || 'unknown').trim().toLowerCase() || 'unknown';
+  const normalized =
+    String(userType || 'unknown')
+      .trim()
+      .toLowerCase() || 'unknown';
   return LEGACY_ACADEMIC_USER_TYPES.includes(normalized)
     ? CANONICAL_ACADEMIC_USER_TYPE
     : normalized;
@@ -370,7 +370,9 @@ const isFixtureNetid = (netid: string): boolean => {
   );
 };
 
-export const shouldSuppressBetaAnalyticsEvent = (params: Pick<LogEventParams, 'netid' | 'userType'>): boolean => {
+export const shouldSuppressBetaAnalyticsEvent = (
+  params: Pick<LogEventParams, 'netid' | 'userType'>,
+): boolean => {
   if (!isBetaRuntime()) {
     return false;
   }
@@ -379,7 +381,11 @@ export const shouldSuppressBetaAnalyticsEvent = (params: Pick<LogEventParams, 'n
     return false;
   }
 
-  return BETA_STUDENT_USER_TYPES.has(String(params.userType || '').trim().toLowerCase());
+  return BETA_STUDENT_USER_TYPES.has(
+    String(params.userType || '')
+      .trim()
+      .toLowerCase(),
+  );
 };
 
 const escapeRegex = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -649,7 +655,9 @@ export const getUserAnalytics = async (
   query: AnalyticsUsersQuery = {},
 ): Promise<AnalyticsUsersResult> => {
   const limit = clampLimit(query.limit, 50, 200);
-  const [result] = await AnalyticsEvent.aggregate(userSummaryPipeline(undefined, { ...query, limit }));
+  const [result] = await AnalyticsEvent.aggregate(
+    userSummaryPipeline(undefined, { ...query, limit }),
+  );
 
   return {
     users: result?.users ?? [],
@@ -766,6 +774,94 @@ export const getSearchQualityAnalytics = async (
       },
     },
     {
+      $lookup: {
+        from: 'analytics_events',
+        let: { searchNetid: '$netid', searchAt: '$timestamp' },
+        pipeline: [
+          {
+            $match: {
+              $expr: {
+                $and: [
+                  { $eq: ['$netid', '$$searchNetid'] },
+                  { $gt: ['$timestamp', '$$searchAt'] },
+                  {
+                    $lte: [
+                      '$timestamp',
+                      { $dateAdd: { startDate: '$$searchAt', unit: 'minute', amount: 30 } },
+                    ],
+                  },
+                  {
+                    $in: [
+                      '$eventType',
+                      [
+                        AnalyticsEventType.SEARCH,
+                        AnalyticsEventType.LISTING_VIEW,
+                        AnalyticsEventType.LISTING_FAVORITE,
+                        AnalyticsEventType.FELLOWSHIP_VIEW,
+                        AnalyticsEventType.FELLOWSHIP_FAVORITE,
+                        AnalyticsEventType.RESEARCH_VIEW,
+                        AnalyticsEventType.PATHWAY_SAVE,
+                      ],
+                    ],
+                  },
+                ],
+              },
+            },
+          },
+          { $sort: { timestamp: 1 } },
+        ],
+        as: 'attributionEvents',
+      },
+    },
+    {
+      $addFields: {
+        nextSearchAt: {
+          $min: {
+            $map: {
+              input: {
+                $filter: {
+                  input: '$attributionEvents',
+                  as: 'event',
+                  cond: { $eq: ['$$event.eventType', AnalyticsEventType.SEARCH] },
+                },
+              },
+              as: 'event',
+              in: '$$event.timestamp',
+            },
+          },
+        },
+      },
+    },
+    {
+      $addFields: {
+        hasAttributedAction: {
+          $gt: [
+            {
+              $size: {
+                $filter: {
+                  input: '$attributionEvents',
+                  as: 'event',
+                  cond: {
+                    $and: [
+                      { $ne: ['$$event.eventType', AnalyticsEventType.SEARCH] },
+                      {
+                        $or: [
+                          { $eq: [{ $type: '$nextSearchAt' }, 'missing'] },
+                          { $eq: ['$nextSearchAt', null] },
+                          { $lt: ['$$event.timestamp', '$nextSearchAt'] },
+                        ],
+                      },
+                    ],
+                  },
+                },
+              },
+            },
+            0,
+          ],
+        },
+      },
+    },
+    {
       $facet: {
         overall: [
           {
@@ -776,6 +872,16 @@ export const getSearchQualityAnalytics = async (
                 $sum: { $cond: [{ $lte: ['$resultCount', 0] }, 1, 0] },
               },
               uniqueSearchers: { $addToSet: '$netid' },
+              engagedSearches: { $sum: { $cond: ['$hasAttributedAction', 1, 0] } },
+              returnedButIgnoredSearches: {
+                $sum: {
+                  $cond: [
+                    { $and: [{ $gt: ['$resultCount', 0] }, { $not: ['$hasAttributedAction'] }] },
+                    1,
+                    0,
+                  ],
+                },
+              },
             },
           },
           {
@@ -784,6 +890,8 @@ export const getSearchQualityAnalytics = async (
               totalSearches: 1,
               zeroResultSearches: 1,
               uniqueSearchers: { $size: '$uniqueSearchers' },
+              engagedSearches: 1,
+              returnedButIgnoredSearches: 1,
             },
           },
         ],
@@ -824,8 +932,11 @@ export const getSearchQualityAnalytics = async (
     totalSearches: 0,
     zeroResultSearches: 0,
     uniqueSearchers: 0,
+    engagedSearches: 0,
+    returnedButIgnoredSearches: 0,
   };
-  const byQueryAndEntityType = (result?.byQueryAndEntityType ?? []) as SearchQualityQueryAnalytics[];
+  const byQueryAndEntityType = (result?.byQueryAndEntityType ??
+    []) as SearchQualityQueryAnalytics[];
   const topQueries = byQueryAndEntityType.slice(0, 10);
   const topZeroResultQueries = [...byQueryAndEntityType]
     .filter((query) => query.zeroResultSearches > 0)
@@ -848,6 +959,13 @@ export const getSearchQualityAnalytics = async (
     byQueryAndEntityType,
     topZeroResultQueries,
     topQueries,
+    engagedSearches: overall.engagedSearches,
+    returnedButIgnoredSearches: overall.returnedButIgnoredSearches,
+    engagementRate:
+      overall.totalSearches > 0
+        ? Number((overall.engagedSearches / overall.totalSearches).toFixed(4))
+        : 0,
+    attributionWindowMinutes: 30,
   };
 };
 
@@ -2064,7 +2182,9 @@ export const getAnalytics = async () => {
     .lean();
   const trendingListingsById = new Map(
     trendingListingsData
-      .map((listing: any) => [normalizeAnalyticsStoredObjectIdString(listing._id), listing] as const)
+      .map(
+        (listing: any) => [normalizeAnalyticsStoredObjectIdString(listing._id), listing] as const,
+      )
       .filter(([id]) => Boolean(id)),
   );
   const enrichedTrending = engagement.trendingListings.map((t: any) => {

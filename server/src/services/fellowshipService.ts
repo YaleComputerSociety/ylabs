@@ -18,6 +18,12 @@ import * as itemOps from './itemOperations';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { publicHttpUrl } from '../utils/urlSafety';
+import {
+  inferProgramSubjects,
+  PROGRAM_TOPIC_TAXONOMY,
+  resolveTopicSubjects,
+  topicAliasesForSubjects,
+} from './programTopicService';
 
 export interface FellowshipReadOptions {
   includeNonPublic?: boolean;
@@ -49,6 +55,7 @@ const MAX_FELLOWSHIP_ID_READS = 100;
 const MAX_ADMIN_FELLOWSHIP_NUMBER = 1_000_000;
 const MONGO_OBJECT_ID_RE = /^[a-fA-F0-9]{24}$/;
 const POSITIVE_INTEGER_PARAM_RE = /^[1-9]\d*$/;
+const escapeSearchRegex = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const PROGRAM_CATEGORIES = new Set<string>(programCategories);
 const PROGRAM_KINDS = new Set<string>(programKinds);
 const PROGRAM_ENTRY_MODES = new Set<string>(programEntryModes);
@@ -59,7 +66,9 @@ const normalizeFellowshipObjectId = (id: unknown): string | undefined => {
 };
 
 const publicFellowshipSortField = (value: unknown, includeNonPublic = false): string => {
-  const allowedFields = includeNonPublic ? OPERATOR_FELLOWSHIP_SORT_FIELDS : PUBLIC_FELLOWSHIP_SORT_FIELDS;
+  const allowedFields = includeNonPublic
+    ? OPERATOR_FELLOWSHIP_SORT_FIELDS
+    : PUBLIC_FELLOWSHIP_SORT_FIELDS;
   return typeof value === 'string' && allowedFields.has(value)
     ? value
     : DEFAULT_PUBLIC_FELLOWSHIP_SORT_FIELD;
@@ -80,7 +89,8 @@ const numericSearchParam = (value: unknown): number | undefined => {
   return Number.isSafeInteger(parsed) ? parsed : undefined;
 };
 
-const publicFellowshipSortOrder = (value: unknown): 1 | -1 => (numericSearchParam(value) === 1 ? 1 : -1);
+const publicFellowshipSortOrder = (value: unknown): 1 | -1 =>
+  numericSearchParam(value) === 1 ? 1 : -1;
 
 const boundedSearchQuery = (value: unknown): string => {
   if (typeof value !== 'string') return '';
@@ -105,9 +115,7 @@ const boundedSearchFilterValues = (values?: unknown[]): string[] => {
 };
 
 const publicFellowshipFilter = (options: FellowshipReadOptions = {}) =>
-  options.includeNonPublic
-    ? {}
-    : { studentVisibilityTier: { $in: publicStudentVisibilityTiers } };
+  options.includeNonPublic ? {} : { studentVisibilityTier: { $in: publicStudentVisibilityTiers } };
 
 const PUBLIC_FELLOWSHIP_TEXT_FIELDS = new Set([
   'compensationSummary',
@@ -198,9 +206,10 @@ const publicFellowshipLinks = (links: unknown): Array<{ label?: string; url: str
         const record = link as Record<string, unknown>;
         const url = publicHttpUrl(record.url);
         if (!url) return [];
-        const label = typeof record.label === 'string' && boundedPublicText(record.label)
-          ? redactDirectContactInfo(boundedPublicText(record.label))
-          : undefined;
+        const label =
+          typeof record.label === 'string' && boundedPublicText(record.label)
+            ? redactDirectContactInfo(boundedPublicText(record.label))
+            : undefined;
         return [{ ...(label ? { label } : {}), url }];
       })
     : [];
@@ -216,7 +225,9 @@ const adminFellowshipStringArray = (value: unknown): string[] | undefined => {
   });
 };
 
-const adminFellowshipLinks = (value: unknown): Array<{ label?: string; url: string }> | undefined =>
+const adminFellowshipLinks = (
+  value: unknown,
+): Array<{ label?: string; url: string }> | undefined =>
   Array.isArray(value) ? publicFellowshipLinks(value) : undefined;
 
 const adminFellowshipDate = (value: unknown): Date | undefined => {
@@ -229,7 +240,8 @@ const adminFellowshipNumber = (
   value: unknown,
   { min = 0, max = MAX_ADMIN_FELLOWSHIP_NUMBER }: { min?: number; max?: number } = {},
 ): number | undefined => {
-  const number = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
+  const number =
+    typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
   if (!Number.isFinite(number) || number < min || number > max) return undefined;
   return Math.trunc(number);
 };
@@ -246,19 +258,22 @@ const publicFellowshipField = (field: string, value: unknown): unknown => {
   }
 
   if (field === 'prepSteps' && Array.isArray(value)) {
-    return value.slice(0, MAX_PUBLIC_FELLOWSHIP_ARRAY_ITEMS).flatMap((item) =>
-      typeof item === 'string' ? [redactDirectContactInfo(boundedPublicText(item))] : [],
-    );
+    return value
+      .slice(0, MAX_PUBLIC_FELLOWSHIP_ARRAY_ITEMS)
+      .flatMap((item) =>
+        typeof item === 'string' ? [redactDirectContactInfo(boundedPublicText(item))] : [],
+      );
   }
 
   if (PUBLIC_FELLOWSHIP_PRIMITIVE_FIELDS.has(field)) {
     if (field === '_id') return serializedDocumentId(value);
     if (typeof value === 'string') return boundedPublicText(value);
-    if (typeof value === 'number' || typeof value === 'boolean' || value instanceof Date) return value;
+    if (typeof value === 'number' || typeof value === 'boolean' || value instanceof Date)
+      return value;
     if (Array.isArray(value)) {
-      return value.slice(0, MAX_PUBLIC_FELLOWSHIP_ARRAY_ITEMS).flatMap((item) =>
-        typeof item === 'string' ? [boundedPublicText(item)] : [],
-      );
+      return value
+        .slice(0, MAX_PUBLIC_FELLOWSHIP_ARRAY_ITEMS)
+        .flatMap((item) => (typeof item === 'string' ? [boundedPublicText(item)] : []));
     }
     return undefined;
   }
@@ -304,12 +319,10 @@ export const readFellowship = async (id: any, options: FellowshipReadOptions = {
 
 export const readFellowships = async (ids: any[], options: FellowshipReadOptions = {}) => {
   const validIds = Array.isArray(ids)
-    ? ids
-        .slice(0, MAX_FELLOWSHIP_ID_READS)
-        .flatMap((id) => {
-          const safeId = normalizeFellowshipObjectId(id);
-          return safeId ? [safeId] : [];
-        })
+    ? ids.slice(0, MAX_FELLOWSHIP_ID_READS).flatMap((id) => {
+        const safeId = normalizeFellowshipObjectId(id);
+        return safeId ? [safeId] : [];
+      })
     : [];
   if (validIds.length === 0) return [];
 
@@ -319,9 +332,7 @@ export const readFellowships = async (ids: any[], options: FellowshipReadOptions
     ...publicFellowshipFilter(options),
   });
   const rawFellowships = fellowships.map((fellowship: any) => fellowship.toObject());
-  return options.includeNonPublic
-    ? rawFellowships
-    : rawFellowships.map(publicFellowshipForStudent);
+  return options.includeNonPublic ? rawFellowships : rawFellowships.map(publicFellowshipForStudent);
 };
 
 export const readAllFellowships = async () => {
@@ -448,7 +459,15 @@ const filterFellowshipUpdate = (data: any): Record<string, any> => {
     }
   }
 
-  for (const field of ['prepSteps', 'yearOfStudy', 'termOfAward', 'purpose', 'globalRegions', 'citizenshipStatus', 'studentVisibilityReasons']) {
+  for (const field of [
+    'prepSteps',
+    'yearOfStudy',
+    'termOfAward',
+    'purpose',
+    'globalRegions',
+    'citizenshipStatus',
+    'studentVisibilityReasons',
+  ]) {
     if (field in update) {
       const values = adminFellowshipStringArray(update[field]);
       if (values !== undefined) update[field] = values;
@@ -480,7 +499,14 @@ const filterFellowshipUpdate = (data: any): Record<string, any> => {
     else delete update.hoursPerWeek;
   }
 
-  for (const field of ['applicationOpenDate', 'deadline', 'sourceLastVerifiedAt', 'sourceLastChangedAt', 'studentVisibilityComputedAt', 'studentVisibilityReviewedAt']) {
+  for (const field of [
+    'applicationOpenDate',
+    'deadline',
+    'sourceLastVerifiedAt',
+    'sourceLastChangedAt',
+    'studentVisibilityComputedAt',
+    'studentVisibilityReviewedAt',
+  ]) {
     if (field in update) {
       const date = adminFellowshipDate(update[field]);
       if (date !== undefined) update[field] = date;
@@ -488,11 +514,16 @@ const filterFellowshipUpdate = (data: any): Record<string, any> => {
     }
   }
 
-  for (const field of ['studentVisibilityTier', 'studentVisibilityComputedTier', 'studentVisibilityOverrideTier']) {
+  for (const field of [
+    'studentVisibilityTier',
+    'studentVisibilityComputedTier',
+    'studentVisibilityOverrideTier',
+  ]) {
     if (field in update && !isStudentVisibilityTier(update[field])) delete update[field];
   }
 
-  if ('programCategory' in update && !PROGRAM_CATEGORIES.has(update.programCategory)) delete update.programCategory;
+  if ('programCategory' in update && !PROGRAM_CATEGORIES.has(update.programCategory))
+    delete update.programCategory;
   if ('programKind' in update && !PROGRAM_KINDS.has(update.programKind)) delete update.programKind;
   if ('entryMode' in update && !PROGRAM_ENTRY_MODES.has(update.entryMode)) delete update.entryMode;
 
@@ -587,6 +618,7 @@ export const searchFellowships = async (params: {
   programKind?: string[];
   entryMode?: string[];
   studentFacingCategory?: string[];
+  subjects?: string[];
   requiresMentorBeforeApply?: boolean;
   mentorMatching?: boolean;
   undergraduateOnly?: boolean;
@@ -611,6 +643,7 @@ export const searchFellowships = async (params: {
     programKind = [],
     entryMode = [],
     studentFacingCategory = [],
+    subjects = [],
     requiresMentorBeforeApply,
     mentorMatching,
     undergraduateOnly,
@@ -630,9 +663,11 @@ export const searchFellowships = async (params: {
   const safeProgramKind = boundedSearchFilterValues(programKind);
   const safeEntryMode = boundedSearchFilterValues(entryMode);
   const safeStudentFacingCategory = boundedSearchFilterValues(studentFacingCategory);
-  const safeStudentVisibilityTier = boundedSearchFilterValues(studentVisibilityTier).filter(
-    isStudentVisibilityTier,
+  const safeSubjects = boundedSearchFilterValues(subjects).filter((subject) =>
+    PROGRAM_TOPIC_TAXONOMY.some((topic) => topic.subject === subject),
   );
+  const safeStudentVisibilityTier =
+    boundedSearchFilterValues(studentVisibilityTier).filter(isStudentVisibilityTier);
   const page = Math.min(
     MAX_SEARCH_PAGE,
     Math.max(1, Math.floor(numericSearchParam(requestedPage) || 1)),
@@ -655,8 +690,27 @@ export const searchFellowships = async (params: {
     filter.studentVisibilityTier = { $in: publicStudentVisibilityTiers };
   }
 
+  const querySubjects = resolveTopicSubjects([safeQuery]);
+  const queryTopicAliases = topicAliasesForSubjects(querySubjects);
   if (safeQuery) {
-    filter.$text = { $search: safeQuery };
+    const searchTerms = [safeQuery, ...queryTopicAliases].filter(Boolean);
+    filter.$text = { $search: searchTerms.join(' ') };
+  }
+  if (safeSubjects.length > 0) {
+    const subjectAliases = topicAliasesForSubjects(safeSubjects);
+    const subjectPattern = subjectAliases.map(escapeSearchRegex).join('|');
+    filter.$or = [
+      'title',
+      'competitionType',
+      'summary',
+      'description',
+      'applicationInformation',
+      'eligibility',
+      'restrictionsToUseOfAward',
+      'additionalInformation',
+      'purpose',
+      'studentFacingCategory',
+    ].map((field) => ({ [field]: { $regex: subjectPattern, $options: 'i' } }));
   }
 
   if (safeYearOfStudy.length > 0) {
@@ -703,7 +757,8 @@ export const searchFellowships = async (params: {
   if (safeQuery) {
     sortOptions.score = { $meta: 'textScore' };
   }
-  sortOptions[publicFellowshipSortField(sortBy, includeNonPublic)] = publicFellowshipSortOrder(sortOrder);
+  sortOptions[publicFellowshipSortField(sortBy, includeNonPublic)] =
+    publicFellowshipSortOrder(sortOrder);
 
   const skip = (page - 1) * pageSize;
 
@@ -719,7 +774,9 @@ export const searchFellowships = async (params: {
   ]);
 
   return {
-    fellowships: includeNonPublic ? fellowships : fellowships.map(publicFellowshipForStudent),
+    fellowships: (includeNonPublic ? fellowships : fellowships.map(publicFellowshipForStudent)).map(
+      (fellowship) => ({ ...fellowship, inferredSubjects: inferProgramSubjects(fellowship) }),
+    ),
     total,
     page,
     pageSize,
@@ -764,6 +821,7 @@ export const getFilterOptions = async () => {
     programKind: programKindOptions.filter(Boolean).sort(),
     entryMode: entryModeOptions.filter(Boolean).sort(),
     studentFacingCategory: studentFacingCategoryOptions.filter(Boolean).sort(),
+    subjects: PROGRAM_TOPIC_TAXONOMY.map((topic) => topic.subject),
   };
 };
 
