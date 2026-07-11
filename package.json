@@ -34,6 +34,7 @@
     "test:ci": "yarn --cwd client test:ci",
     "security:policy": "node --test scripts/security-preflight.test.mjs",
     "security:secrets": "node scripts/check-no-secrets.mjs",
+    "security:verify-yalies-rotation": "node scripts/verify-yalies-rotation.mjs",
     "security:audit:production": "yarn npm audit --severity moderate --environment production && yarn --cwd server npm audit --severity moderate --environment production && yarn --cwd client npm audit --severity moderate --environment production",
     "security:preflight": "yarn security:policy && yarn security:secrets && yarn security:audit:production",
     "security:smoke:production": "node client/scripts/productionPromotionSmoke.mjs --api-base ${SMOKE_API_BASE:-https://yalelabs.io/api} --app-base ${SMOKE_APP_BASE:-https://yalelabs.io} --ui=false",
