@@ -196,7 +196,6 @@ export default function Navbar() {
   const isAdmin = user?.userType === 'admin';
   const isProfessorUser = user?.userType === 'professor' || user?.userType === 'faculty';
   const isListingsPage = false;
-  const isHomePage = isListingsPage;
 
   const {
     selectedDepartments,

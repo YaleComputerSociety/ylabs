@@ -1426,25 +1426,6 @@ const expandedResearchAreasPublicBio = (user: Record<string, any>, rawBio: strin
   )}, based on Yale's official profile data.`;
 };
 
-const officialProfileResearchInterestTermsBio = (user: Record<string, any>): string => {
-  if (!hasOfficialYaleProfileUrl(user)) return '';
-  if (isLikelySameNameContaminatedProfile(user)) return '';
-
-  const terms = sanitizeProfileResearchTerms(user.researchInterests || user.research_interests || [])
-    .filter((term) => {
-      const normalized = normalizeNameToken(term);
-      if (normalized.length < 4) return false;
-      return !/^(?:u s|usa|uk|eu)$/.test(normalized);
-    })
-    .slice(0, 5);
-  const displayName = publicProfileDisplayName(user);
-  if (!displayName || terms.length < 2) return '';
-
-  return `${displayName}'s official Yale profile lists research interests in ${formatPublicBioList(
-    terms,
-  )}, based on Yale's official profile data.`;
-};
-
 export const cleanPublicProfileBio = (user: Record<string, any>): string => {
   const rawBioText = String(user.bio || '').trim();
   if (!rawBioText) return '';

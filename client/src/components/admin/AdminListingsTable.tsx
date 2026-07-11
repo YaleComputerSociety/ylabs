@@ -122,7 +122,7 @@ const AdminListingsTable = () => {
       search ? 400 : 0,
     );
     return () => clearTimeout(debounce);
-  }, [fetchListings]);
+  }, [fetchListings, search]);
 
   const handleDelete = async (listing: AdminListing) => {
     const confirmed = await swal({

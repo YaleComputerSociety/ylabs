@@ -151,7 +151,7 @@ export const getFellowshipFilterOptions = async (request: Request, response: Res
   try {
     const options = await getFilterOptions();
     response.status(200).json(options);
-  } catch (error: any) {
+  } catch {
     response.status(500).json({ error: 'Failed to fetch fellowship filters' });
   }
 };

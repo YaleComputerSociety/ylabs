@@ -6,7 +6,6 @@ import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import {
   buildLaunchAcquisitionReport,
-  type LaunchAcquisitionReport,
   type LaunchAcquisitionReportOptions,
 } from '../services/launchAcquisitionReportService';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
@@ -27,14 +26,6 @@ function parsePositiveInteger(value: string, flag: string): number {
     throw new Error(`${flag} must be a positive integer`);
   }
   return parsed;
-}
-
-function parseRequiredValue(value: string | undefined, flag: string, requirement: string): string {
-  const trimmed = value?.trim();
-  if (!trimmed || trimmed.startsWith('--')) {
-    throw new Error(`${flag} requires ${requirement}`);
-  }
-  return trimmed;
 }
 
 export function parseLaunchAcquisitionReportArgs(argv: string[]): LaunchAcquisitionReportCliOptions {
