@@ -213,6 +213,13 @@ router.delete(
 
 router.get('/savedProgramIds', isAuthenticated, userController.getSavedProgramIds);
 router.get('/savedPrograms', isAuthenticated, userController.getSavedPrograms);
+router.get('/savedProgramTracking', isAuthenticated, userController.getSavedProgramTracking);
+router.put(
+  '/savedProgramTracking/:programId',
+  isAuthenticated,
+  validateObjectId('programId'),
+  userController.updateSavedProgramTracking,
+);
 router.put(
   '/savedPrograms',
   isAuthenticated,

@@ -14,10 +14,7 @@ import {
   normalizeAccountTrackingStorageOwner,
   persistAccountTrackingToStorage,
 } from '../../reducers/accountTrackingReducer';
-import {
-  createInitialFavoritesState,
-  favoritesReducer,
-} from '../../reducers/favoritesReducer';
+import { createInitialFavoritesState, favoritesReducer } from '../../reducers/favoritesReducer';
 import { BrowsableItem } from '../../types/browsable';
 import { createFellowship } from '../../utils/createFellowship';
 import BrowseListItem from '../shared/BrowseListItem';
@@ -65,6 +62,15 @@ const csvCell = (cell: unknown): string => {
   return `"${neutralizedValue.replace(/"/g, '""')}"`;
 };
 
+type ProgramTrackingRecord = {
+  note: string;
+  stage: FellowshipStage;
+  revision: number;
+  updatedAt: string;
+};
+
+type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
+
 export const savedProgramDeadlineSummary = (
   fellowships: Fellowship[],
   now = new Date(),
@@ -101,58 +107,23 @@ const FavoritesManager = ({ variant = 'student', onSummaryChange }: FavoritesMan
   const [favState, favDispatch] = useReducer(favoritesReducer, undefined, () =>
     createInitialFavoritesState(),
   );
-  const {
-    favFellowships,
-    favFellowshipIds,
-  } = favState;
+  const { favFellowships, favFellowshipIds } = favState;
 
   const [tracking, trackingDispatch] = useReducer(accountTrackingReducer, undefined, () =>
     createInitialAccountTrackingState(),
   );
-  const {
-    fellowshipStage,
-    fellowshipNotes,
-    editingFellowshipNoteId,
-  } = tracking;
+  const { fellowshipStage, fellowshipNotes, editingFellowshipNoteId } = tracking;
 
   const [isLoading, setIsLoading] = useState(true);
   const [isFellowshipModalOpen, setIsFellowshipModalOpen] = useState(false);
   const [selectedFellowship, setSelectedFellowship] = useState<Fellowship | null>(null);
   const [showFellowshipExportMenu, setShowFellowshipExportMenu] = useState(false);
-  const [hydratedTrackingOwner, setHydratedTrackingOwner] = useState<string | undefined>(undefined);
+  const [saveStatuses, setSaveStatuses] = useState<Record<string, SaveStatus>>({});
   const fellowshipExportMenuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!trackingStorageOwner) {
-      setHydratedTrackingOwner(undefined);
-      return;
-    }
-    trackingDispatch({
-      type: 'HYDRATE',
-      payload: loadAccountTrackingFromStorage(localStorage, trackingStorageOwner),
-    });
-    setHydratedTrackingOwner(trackingStorageOwner);
-  }, [trackingStorageOwner]);
-
-  useEffect(() => {
-    if (!trackingStorageOwner || hydratedTrackingOwner !== trackingStorageOwner) return;
-    persistAccountTrackingToStorage(
-      localStorage,
-      'fellowship-stages',
-      fellowshipStage,
-      trackingStorageOwner,
-    );
-  }, [fellowshipStage, hydratedTrackingOwner, trackingStorageOwner]);
-
-  useEffect(() => {
-    if (!trackingStorageOwner || hydratedTrackingOwner !== trackingStorageOwner) return;
-    persistAccountTrackingToStorage(
-      localStorage,
-      'fellowship-notes',
-      fellowshipNotes,
-      trackingStorageOwner,
-    );
-  }, [fellowshipNotes, hydratedTrackingOwner, trackingStorageOwner]);
+  const trackingRecordsRef = useRef<Record<string, ProgramTrackingRecord>>({});
+  const noteTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const saveSequenceRef = useRef<Record<string, number>>({});
+  const saveQueueRef = useRef<Record<string, Promise<void>>>({});
 
   useEffect(() => {
     if (!showFellowshipExportMenu) return;
@@ -171,9 +142,43 @@ const FavoritesManager = ({ variant = 'student', onSummaryChange }: FavoritesMan
   const reloadFavorites = async () => {
     setIsLoading(true);
     try {
-      const response = await axios.get('/users/savedPrograms');
-      const rawFellowships = response.data.savedPrograms || [];
+      const [programResponse, trackingResponse] = await Promise.all([
+        axios.get('/users/savedPrograms'),
+        axios.get('/users/savedProgramTracking'),
+      ]);
+      const rawFellowships = programResponse.data.savedPrograms || [];
       const fellowships: Fellowship[] = rawFellowships.map((f: any) => createFellowship(f));
+      const serverTracking = (trackingResponse.data.savedProgramTracking || {}) as Record<
+        string,
+        ProgramTrackingRecord
+      >;
+      const cached = trackingStorageOwner
+        ? loadAccountTrackingFromStorage(localStorage, trackingStorageOwner)
+        : createInitialAccountTrackingState();
+      const mergedStage = { ...cached.fellowshipStage };
+      const notes: Record<string, string> = {};
+      for (const [programId, record] of Object.entries(serverTracking)) {
+        mergedStage[programId] = record.stage;
+        notes[programId] = record.note;
+      }
+      trackingRecordsRef.current = serverTracking;
+      trackingDispatch({
+        type: 'HYDRATE',
+        payload: { fellowshipStage: mergedStage, fellowshipNotes: notes },
+      });
+      for (const fellowship of fellowships) {
+        if (!serverTracking[fellowship.id] && cached.fellowshipStage[fellowship.id] === 'applied') {
+          void saveProgramTracking(fellowship.id, '', 'applied');
+        }
+      }
+      if (trackingStorageOwner) {
+        persistAccountTrackingToStorage(
+          localStorage,
+          'fellowship-stages',
+          mergedStage,
+          trackingStorageOwner,
+        );
+      }
       favDispatch({
         type: 'SET_FAV_FELLOWSHIPS',
         favFellowships: fellowships,
@@ -193,8 +198,8 @@ const FavoritesManager = ({ variant = 'student', onSummaryChange }: FavoritesMan
 
   useEffect(() => {
     reloadFavorites();
-
-  }, []);
+    return () => Object.values(noteTimersRef.current).forEach(clearTimeout);
+  }, [trackingStorageOwner]);
 
   const nextProgramDeadline = useMemo(
     () => savedProgramDeadlineSummary(favFellowships),
@@ -263,8 +268,70 @@ const FavoritesManager = ({ variant = 'student', onSummaryChange }: FavoritesMan
     }
   };
 
+  const saveProgramTracking = (fellowshipId: string, note: string, stage: FellowshipStage) => {
+    const sequence = (saveSequenceRef.current[fellowshipId] || 0) + 1;
+    saveSequenceRef.current[fellowshipId] = sequence;
+    setSaveStatuses((statuses) => ({ ...statuses, [fellowshipId]: 'saving' }));
+    const queued = (saveQueueRef.current[fellowshipId] || Promise.resolve())
+      .catch(() => undefined)
+      .then(async () => {
+        const current = trackingRecordsRef.current[fellowshipId];
+        try {
+          const response = await axios.put(`/users/savedProgramTracking/${fellowshipId}`, {
+            data: { tracking: { note, stage, revision: current?.revision || 0 } },
+          });
+          trackingRecordsRef.current[fellowshipId] = response.data.tracking;
+          if (saveSequenceRef.current[fellowshipId] !== sequence) return;
+          setSaveStatuses((statuses) => ({ ...statuses, [fellowshipId]: 'saved' }));
+          if (trackingStorageOwner) {
+            persistAccountTrackingToStorage(
+              localStorage,
+              'fellowship-stages',
+              { ...fellowshipStage, [fellowshipId]: stage },
+              trackingStorageOwner,
+            );
+          }
+        } catch (error: any) {
+          if (error?.response?.status === 409 && error.response.data?.current) {
+            const latest = error.response.data.current as ProgramTrackingRecord;
+            trackingRecordsRef.current[fellowshipId] = latest;
+            trackingDispatch({
+              type: 'HYDRATE',
+              payload: {
+                fellowshipStage: { ...fellowshipStage, [fellowshipId]: latest.stage },
+                fellowshipNotes: { ...fellowshipNotes, [fellowshipId]: latest.note },
+              },
+            });
+          }
+          if (saveSequenceRef.current[fellowshipId] === sequence) {
+            setSaveStatuses((statuses) => ({ ...statuses, [fellowshipId]: 'error' }));
+          }
+        }
+      });
+    saveQueueRef.current[fellowshipId] = queued;
+    return queued;
+  };
+
   const handleFellowshipStageChange = (fellowshipId: string, stage: FellowshipStage) => {
     trackingDispatch({ type: 'SET_FELLOWSHIP_STAGE', fellowshipId, stage });
+    void saveProgramTracking(fellowshipId, fellowshipNotes[fellowshipId] || '', stage);
+  };
+
+  const scheduleNoteSave = (fellowshipId: string, note: string) => {
+    clearTimeout(noteTimersRef.current[fellowshipId]);
+    setSaveStatuses((statuses) => ({ ...statuses, [fellowshipId]: 'idle' }));
+    noteTimersRef.current[fellowshipId] = setTimeout(() => {
+      void saveProgramTracking(fellowshipId, note, fellowshipStage[fellowshipId] || 'not_applied');
+    }, 700);
+  };
+
+  const flushNoteSave = (fellowshipId: string) => {
+    clearTimeout(noteTimersRef.current[fellowshipId]);
+    void saveProgramTracking(
+      fellowshipId,
+      fellowshipNotes[fellowshipId] || '',
+      fellowshipStage[fellowshipId] || 'not_applied',
+    );
   };
 
   const exportFellowshipsToCSV = () => {
@@ -290,16 +357,14 @@ const FavoritesManager = ({ variant = 'student', onSummaryChange }: FavoritesMan
       fellowship.deadline ? new Date(fellowship.deadline).toLocaleDateString() : 'No deadline',
       fellowship.awardAmount || '',
       fellowship.isAcceptingApplications ? 'Accepting' : 'Closed',
-      ...(
-        isProfessorVariant
-          ? []
-          : [
-              (fellowshipStage[fellowship.id] || 'not_applied') === 'applied'
-                ? 'Applied'
-                : 'Not Applied',
-              fellowshipNotes[fellowship.id] || '',
-            ]
-      ),
+      ...(isProfessorVariant
+        ? []
+        : [
+            (fellowshipStage[fellowship.id] || 'not_applied') === 'applied'
+              ? 'Applied'
+              : 'Not Applied',
+            fellowshipNotes[fellowship.id] || '',
+          ]),
       fellowship.applicationLink || '',
       fellowship.contactEmail || fellowship.contactName || '',
     ]);
@@ -340,16 +405,14 @@ const FavoritesManager = ({ variant = 'student', onSummaryChange }: FavoritesMan
       fellowship.deadline ? new Date(fellowship.deadline).toLocaleDateString() : 'No deadline',
       fellowship.awardAmount || '',
       fellowship.isAcceptingApplications ? 'Accepting' : 'Closed',
-      ...(
-        isProfessorVariant
-          ? []
-          : [
-              (fellowshipStage[fellowship.id] || 'not_applied') === 'applied'
-                ? 'Applied'
-                : 'Not Applied',
-              fellowshipNotes[fellowship.id] || '',
-            ]
-      ),
+      ...(isProfessorVariant
+        ? []
+        : [
+            (fellowshipStage[fellowship.id] || 'not_applied') === 'applied'
+              ? 'Applied'
+              : 'Not Applied',
+            fellowshipNotes[fellowship.id] || '',
+          ]),
       fellowship.applicationLink || '',
       fellowship.contactEmail || fellowship.contactName || '',
     ]);
@@ -402,12 +465,12 @@ const FavoritesManager = ({ variant = 'student', onSummaryChange }: FavoritesMan
         {favFellowships.length > 0 && (
           <div className="flex flex-wrap items-center gap-2 sm:justify-end">
             <div className="relative" ref={fellowshipExportMenuRef}>
-	              <button
-	                onClick={() => setShowFellowshipExportMenu(!showFellowshipExportMenu)}
-	                className="inline-flex min-h-[44px] items-center gap-1 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-xs font-semibold text-green-700 transition-colors hover:bg-green-100"
-	              >
-	                Export
-	              </button>
+              <button
+                onClick={() => setShowFellowshipExportMenu(!showFellowshipExportMenu)}
+                className="inline-flex min-h-[44px] items-center gap-1 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-xs font-semibold text-green-700 transition-colors hover:bg-green-100"
+              >
+                Export
+              </button>
               {showFellowshipExportMenu && (
                 <div className="absolute right-0 top-full mt-1 bg-[var(--yr-panel)] border border-[var(--yr-line)] rounded-md shadow-lg z-20 min-w-[180px]">
                   <button
@@ -415,7 +478,7 @@ const FavoritesManager = ({ variant = 'student', onSummaryChange }: FavoritesMan
                       exportFellowshipsToCSV();
                       setShowFellowshipExportMenu(false);
                     }}
-	                    className="min-h-[44px] w-full px-3 py-2 text-left text-sm hover:bg-[var(--yr-panel-muted)]"
+                    className="min-h-[44px] w-full px-3 py-2 text-left text-sm hover:bg-[var(--yr-panel-muted)]"
                   >
                     Export as CSV
                   </button>
@@ -424,7 +487,7 @@ const FavoritesManager = ({ variant = 'student', onSummaryChange }: FavoritesMan
                       exportFellowshipsToGoogleSheets();
                       setShowFellowshipExportMenu(false);
                     }}
-	                    className="min-h-[44px] w-full border-t border-[var(--yr-line)] px-3 py-2 text-left text-sm hover:bg-[var(--yr-panel-muted)]"
+                    className="min-h-[44px] w-full border-t border-[var(--yr-line)] px-3 py-2 text-left text-sm hover:bg-[var(--yr-panel-muted)]"
                   >
                     Open in Google Sheets
                   </button>
@@ -437,128 +500,146 @@ const FavoritesManager = ({ variant = 'student', onSummaryChange }: FavoritesMan
 
       {favFellowships.length > 0 ? (
         <ul>
-            {favFellowships.map((fellowship) => (
-              <li key={fellowship.id} className="mb-2">
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch">
-                  <div className="flex-1">
-                    <BrowseListItem
-                      item={fellowshipToBrowsable(fellowship)}
-                      isFavorite={favFellowshipIds.includes(fellowship.id)}
-                      onToggleFavorite={(event) => {
-                        event.stopPropagation();
-                        updateFellowshipFavorite(
-                          fellowship.id,
-                          !favFellowshipIds.includes(fellowship.id),
-                        );
-                      }}
-                      onOpenModal={() => openFellowshipModal(fellowship)}
-                    />
-                  </div>
-                  {!isProfessorVariant && (
-                    <div className="flex flex-row gap-1 sm:flex-col sm:justify-center">
-	                      <button
-	                        onClick={() =>
-	                          handleFellowshipStageChange(
-                            fellowship.id,
-                            (fellowshipStage[fellowship.id] || 'not_applied') === 'applied'
-                              ? 'not_applied'
-                              : 'applied',
-	                            )
-	                        }
-	                        aria-label={
-	                          (fellowshipStage[fellowship.id] || 'not_applied') === 'applied'
-	                            ? 'Mark as not applied'
-	                            : 'Mark as applied'
-	                        }
-	                        className={`inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded border p-2 transition-colors ${
-	                          (fellowshipStage[fellowship.id] || 'not_applied') === 'applied'
-	                            ? 'bg-green-50 border-green-300 text-green-600'
-	                            : 'border-[var(--yr-line)] text-gray-400 hover:text-gray-600 hover:border-[var(--yr-line-strong)]'
-                        }`}
-                        title={
-                          (fellowshipStage[fellowship.id] || 'not_applied') === 'applied'
-                            ? 'Mark as not applied'
-                            : 'Mark as applied'
-                        }
-                      >
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          width="16"
-                          height="16"
-                          viewBox="0 0 24 24"
-                          fill={
-                            (fellowshipStage[fellowship.id] || 'not_applied') === 'applied'
-                              ? 'currentColor'
-                              : 'none'
-                          }
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        >
-                          <polyline points="20 6 9 17 4 12" />
-                        </svg>
-                      </button>
-	                      <button
-	                        onClick={() =>
-	                          trackingDispatch({
-                            type: 'TOGGLE_EDITING_FELLOWSHIP_NOTE',
-	                            fellowshipId: fellowship.id,
-	                          })
-	                        }
-	                        aria-label="Add note"
-	                        className={`inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded border p-2 transition-colors ${
-	                          fellowshipNotes[fellowship.id]
-	                            ? 'bg-yellow-50 border-yellow-300 text-yellow-600'
-	                            : 'border-[var(--yr-line)] text-gray-400 hover:text-gray-600 hover:border-[var(--yr-line-strong)]'
-                        }`}
-                        title="Add note"
-                      >
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          width="16"
-                          height="16"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        >
-                          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                        </svg>
-                      </button>
-                    </div>
-                  )}
+          {favFellowships.map((fellowship) => (
+            <li key={fellowship.id} className="mb-2">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch">
+                <div className="flex-1">
+                  <BrowseListItem
+                    item={fellowshipToBrowsable(fellowship)}
+                    isFavorite={favFellowshipIds.includes(fellowship.id)}
+                    onToggleFavorite={(event) => {
+                      event.stopPropagation();
+                      updateFellowshipFavorite(
+                        fellowship.id,
+                        !favFellowshipIds.includes(fellowship.id),
+                      );
+                    }}
+                    onOpenModal={() => openFellowshipModal(fellowship)}
+                  />
                 </div>
-                {!isProfessorVariant && editingFellowshipNoteId === fellowship.id && (
-                  <div className="mt-1">
-                      <textarea
-                      aria-label={`Note for ${fellowship.title}`}
-                      value={fellowshipNotes[fellowship.id] || ''}
-                      onChange={(event) =>
+                {!isProfessorVariant && (
+                  <div className="flex flex-row gap-1 sm:flex-col sm:justify-center">
+                    <button
+                      onClick={() =>
+                        handleFellowshipStageChange(
+                          fellowship.id,
+                          (fellowshipStage[fellowship.id] || 'not_applied') === 'applied'
+                            ? 'not_applied'
+                            : 'applied',
+                        )
+                      }
+                      aria-label={
+                        (fellowshipStage[fellowship.id] || 'not_applied') === 'applied'
+                          ? 'Mark as not applied'
+                          : 'Mark as applied'
+                      }
+                      className={`inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded border p-2 transition-colors ${
+                        (fellowshipStage[fellowship.id] || 'not_applied') === 'applied'
+                          ? 'bg-green-50 border-green-300 text-green-600'
+                          : 'border-[var(--yr-line)] text-gray-400 hover:text-gray-600 hover:border-[var(--yr-line-strong)]'
+                      }`}
+                      title={
+                        (fellowshipStage[fellowship.id] || 'not_applied') === 'applied'
+                          ? 'Mark as not applied'
+                          : 'Mark as applied'
+                      }
+                    >
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="16"
+                        height="16"
+                        viewBox="0 0 24 24"
+                        fill={
+                          (fellowshipStage[fellowship.id] || 'not_applied') === 'applied'
+                            ? 'currentColor'
+                            : 'none'
+                        }
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={() =>
                         trackingDispatch({
-                          type: 'SET_FELLOWSHIP_NOTE',
+                          type: 'TOGGLE_EDITING_FELLOWSHIP_NOTE',
                           fellowshipId: fellowship.id,
-                          value: event.target.value,
                         })
                       }
-                      placeholder="Add a note about this program..."
-                      rows={2}
-                      className="w-full text-sm border border-[var(--yr-line)] rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                    />
+                      aria-label="Add note"
+                      className={`inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded border p-2 transition-colors ${
+                        fellowshipNotes[fellowship.id]
+                          ? 'bg-yellow-50 border-yellow-300 text-yellow-600'
+                          : 'border-[var(--yr-line)] text-gray-400 hover:text-gray-600 hover:border-[var(--yr-line-strong)]'
+                      }`}
+                      title="Add note"
+                    >
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="16"
+                        height="16"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                      </svg>
+                    </button>
                   </div>
                 )}
-                {!isProfessorVariant &&
-                  fellowshipNotes[fellowship.id] &&
-                  editingFellowshipNoteId !== fellowship.id && (
-                    <p className="text-xs text-gray-500 mt-0.5 ml-1 italic truncate">
-                      Note: {fellowshipNotes[fellowship.id]}
-                    </p>
-                  )}
-              </li>
-            ))}
+              </div>
+              {!isProfessorVariant && editingFellowshipNoteId === fellowship.id && (
+                <div className="mt-1">
+                  <textarea
+                    aria-label={`Note for ${fellowship.title}`}
+                    value={fellowshipNotes[fellowship.id] || ''}
+                    onChange={(event) => {
+                      trackingDispatch({
+                        type: 'SET_FELLOWSHIP_NOTE',
+                        fellowshipId: fellowship.id,
+                        value: event.target.value,
+                      });
+                      scheduleNoteSave(fellowship.id, event.target.value);
+                    }}
+                    onBlur={() => flushNoteSave(fellowship.id)}
+                    maxLength={2000}
+                    placeholder="Add a note about this program..."
+                    rows={2}
+                    className="w-full text-sm border border-[var(--yr-line)] rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                  <p
+                    className={`mt-1 text-xs ${
+                      saveStatuses[fellowship.id] === 'error' ? 'text-red-700' : 'text-gray-500'
+                    }`}
+                    role={saveStatuses[fellowship.id] === 'error' ? 'alert' : 'status'}
+                    aria-live="polite"
+                  >
+                    {saveStatuses[fellowship.id] === 'saving'
+                      ? 'Saving...'
+                      : saveStatuses[fellowship.id] === 'saved'
+                        ? 'Saved'
+                        : saveStatuses[fellowship.id] === 'error'
+                          ? 'Not saved. Check your connection or sign in again, then retry.'
+                          : ''}
+                  </p>
+                </div>
+              )}
+              {!isProfessorVariant &&
+                fellowshipNotes[fellowship.id] &&
+                editingFellowshipNoteId !== fellowship.id && (
+                  <p className="text-xs text-gray-500 mt-0.5 ml-1 italic truncate">
+                    Note: {fellowshipNotes[fellowship.id]}
+                  </p>
+                )}
+            </li>
+          ))}
         </ul>
       ) : (
         <div className="rounded-md border border-dashed border-[var(--yr-line-strong)] bg-[var(--yr-panel-muted)] p-5 text-center">
