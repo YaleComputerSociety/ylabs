@@ -177,7 +177,7 @@ describe('production promotion smoke core', () => {
 
   it('summarizes fail and warn check names for CLI output', () => {
     const report = createSmokeReport(parseSmokeConfig([], {}), new Date('2026-05-29T00:00:00.000Z'));
-    report.checks.push(
+    (report.checks as Array<{ name: string; status: string }>).push(
       { name: 'api.config.200', status: 'pass' },
       { name: 'api.opportunity.explicitPublicId', status: 'warn' },
       { name: 'api.admin.operatorBoard.requiresAuth', status: 'fail' },

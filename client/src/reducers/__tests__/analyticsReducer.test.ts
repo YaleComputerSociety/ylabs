@@ -36,6 +36,7 @@ const sampleData: AnalyticsData = {
     avgFavorites: 1.2,
     viewsByDepartment: [],
   },
+  research: { byEventType: [], byEntityType: [], byUserType: [], topEntities: [] },
   listings: {
     overview: { total: 10, active: 8, archived: 1, unconfirmed: 1 },
     newListingsLast7Days: 2,
