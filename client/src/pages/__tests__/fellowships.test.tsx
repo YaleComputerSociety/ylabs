@@ -140,7 +140,7 @@ const renderPage = (
 ) => {
   mockedAxios.get.mockResolvedValue({ data: { savedProgramIds: [] } });
 
-  const value = {
+  const value: FellowshipSearchContextType = {
     queryString: '',
     setQueryString: vi.fn(),
     selectedProgramCategory: [],
@@ -194,6 +194,8 @@ const renderPage = (
     filterBarHeight: 0,
     setFilterBarHeight: vi.fn(),
     ...overrides,
+    selectedSubjects: overrides.selectedSubjects ?? [],
+    setSelectedSubjects: overrides.setSelectedSubjects ?? vi.fn(),
   };
 
   return render(
@@ -247,6 +249,8 @@ const renderStatefulPage = (fellowships: Fellowship[]) => {
                 setSelectedEntryMode: vi.fn(),
                 selectedStudentFacingCategory: [],
                 setSelectedStudentFacingCategory: vi.fn(),
+                selectedSubjects: [],
+                setSelectedSubjects: vi.fn(),
                 selectedYearOfStudy: [],
                 setSelectedYearOfStudy: vi.fn(),
                 selectedTermOfAward: [],

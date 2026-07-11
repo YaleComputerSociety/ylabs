@@ -282,6 +282,7 @@ export type Publication = {
 
 export type FacultyProfile = {
   netid: string;
+  email?: string;
   fname: string;
   lname: string;
   title?: string;

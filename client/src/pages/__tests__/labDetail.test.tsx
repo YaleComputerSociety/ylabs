@@ -558,7 +558,6 @@ describe('LabDetail page', () => {
       ],
       accessSignals: [
         {
-          _id: 'signal-1',
           signalType: 'REACH_OUT_PLAUSIBLE',
           confidence: 'MEDIUM',
           sourceUrl: FACULTY_AFFILIATED_PROFILE_URL,
@@ -667,7 +666,6 @@ describe('LabDetail page', () => {
       ],
       accessSignals: [
         {
-          _id: 'signal-1',
           signalType: 'REACH_OUT_PLAUSIBLE',
           confidence: 'MEDIUM',
           confidenceScore: 0.7,
@@ -750,7 +748,6 @@ describe('LabDetail page', () => {
       ],
       accessSignals: [
         {
-          _id: 'signal-1',
           signalType: 'REACH_OUT_PLAUSIBLE',
           confidence: 'MEDIUM',
           sourceUrl: FACULTY_PROFILE_URL,
@@ -927,9 +924,6 @@ describe('LabDetail page', () => {
       },
       entityRelationships: [
         {
-          _id: 'rel-1',
-          sourceResearchEntityId: 'entity-1',
-          targetResearchEntityId: 'entity-2',
           relationshipType: 'MEMBER_RESEARCH_AREA',
           label: 'Faculty research area',
           evidenceStrength: 'MODERATE',
@@ -972,9 +966,6 @@ describe('LabDetail page', () => {
       },
       affiliatedRelationships: [
         {
-          _id: 'rel-2',
-          sourceResearchEntityId: 'entity-umbrella',
-          targetResearchEntityId: 'entity-1',
           relationshipType: 'MEMBER_RESEARCH_AREA',
           label: 'Faculty research area',
           evidenceStrength: 'MODERATE',
@@ -1057,7 +1048,6 @@ describe('LabDetail page', () => {
       },
       accessSignals: [
         {
-          _id: 'signal-1',
           signalType: 'REACH_OUT_PLAUSIBLE',
           confidence: 'MEDIUM',
           sourceUrl: OFFICIAL_PROFILE_URL,
@@ -1197,7 +1187,6 @@ describe('LabDetail page', () => {
           _id: 'profile-pub-1',
           relationshipBasis: 'identity_authorship',
           evidenceLabel: 'Authored by a listed professor',
-          userId: 'user-1',
           title: 'Example systems publication',
           url: EXAMPLE_SYSTEMS_DOI,
           destinationKind: 'DOI',
