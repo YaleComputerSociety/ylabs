@@ -131,6 +131,8 @@ test('operator scripts sanitize raw caught error messages before logging', () =>
     '../server/src/scripts/duplicateEntityNameReview.ts',
     '../server/src/scripts/importFaculty.ts',
     '../server/src/scripts/backfillProfileBiosFromOfficialUrls.ts',
+    '../server/src/scripts/pfr3ContactRouteReview.ts',
+    '../server/src/scripts/pfr3StudentOutreachReport.ts',
   ];
 
   for (const file of files) {
@@ -141,6 +143,21 @@ test('operator scripts sanitize raw caught error messages before logging', () =>
     assert.doesNotMatch(source, /console\.error\([^;\n]*\(error as Error\)\.message\)/);
     assert.doesNotMatch(source, /candidate\.netid[^;\n]*error/);
   }
+});
+
+test('PFR-3 rollout tooling stays aggregate-only and fail-closed', () => {
+  const core = fs.readFileSync(new URL('../server/src/scripts/pfr3RolloutCore.ts', import.meta.url), 'utf8');
+  const review = fs.readFileSync(new URL('../server/src/scripts/pfr3ContactRouteReview.ts', import.meta.url), 'utf8');
+  const outreach = fs.readFileSync(new URL('../server/src/scripts/pfr3StudentOutreachReport.ts', import.meta.url), 'utf8');
+  const rebuild = fs.readFileSync(new URL('../server/src/scripts/rebuildPathwaySearchIndex.ts', import.meta.url), 'utf8');
+  assert.match(core, /refuses a localhost Meilisearch target/);
+  assert.match(core, /PFR3_MEILI_RESTORE_POINT is required/);
+  assert.match(review, /review\.status.*\$ne: 'approved'/s);
+  assert.doesNotMatch(review, /\.update|\.save|findOneAnd/);
+  assert.match(outreach, /studentConsentedToAggregateUse: true/);
+  assert.match(outreach, /outcomeReportedAt/);
+  assert.doesNotMatch(outreach, /studentProfileId|researchEntityId|trackingId|reachedOutAt/);
+  assert.match(rebuild, /assertPathwayIndexRolloutTarget/);
 });
 
 
