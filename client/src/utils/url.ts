@@ -2,7 +2,11 @@
  * URL construction utilities for API endpoints.
  */
 const SAFE_URL_SCHEMES = new Set(['http:', 'https:', 'mailto:']);
-const UNSAFE_RAW_URL_CHAR_RE = /[\u0000-\u0020\u007f\\]/;
+const hasUnsafeRawUrlCharacter = (value: string): boolean =>
+  Array.from(value).some((character) => {
+    const code = character.charCodeAt(0);
+    return isAsciiControlCode(code) || code === 0x20 || character === '\\';
+  });
 const EMAIL_ADDRESS_PATTERN =
   /^[a-z0-9.!#$&'*+/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/i;
 const DOI_PATTERN = /^10\.\d{4,9}\/[a-z0-9._;()/:+-]+$/i;
@@ -90,7 +94,7 @@ export const safeUrl = (raw: unknown): string => {
   const trimmed = raw.trim();
   if (!trimmed) return '';
   if (trimmed.length > MAX_SAFE_URL_LENGTH) return '';
-  if (UNSAFE_RAW_URL_CHAR_RE.test(trimmed)) return '';
+  if (hasUnsafeRawUrlCharacter(trimmed)) return '';
   const withScheme = /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(trimmed) ? trimmed : `https://${trimmed}`;
   try {
     const parsed = new URL(withScheme);
@@ -126,7 +130,7 @@ export const safeImageSrc = (raw: unknown): string => {
   if (trimmed.length > MAX_SAFE_URL_LENGTH) return '';
 
   if (trimmed.startsWith('/') && !trimmed.startsWith('//')) {
-    if (/[\u0000-\u001f\u007f<>`"\\]/.test(trimmed)) return '';
+    if (containsAsciiControl(trimmed) || /[<>`"\\]/.test(trimmed)) return '';
     return trimmed;
   }
 
@@ -139,16 +143,28 @@ const safeUrlListValues = (values: unknown): unknown[] =>
   Array.isArray(values) ? values.slice(0, MAX_SAFE_URL_LIST_ITEMS) : [];
 
 export const safeUrlList = (values: unknown): string[] =>
-  Array.from(new Set(safeUrlListValues(values).map((value) => safeUrl(value)).filter(Boolean)));
+  Array.from(
+    new Set(
+      safeUrlListValues(values)
+        .map((value) => safeUrl(value))
+        .filter(Boolean),
+    ),
+  );
 
 export const safeHttpUrlList = (values: unknown): string[] =>
-  Array.from(new Set(safeUrlListValues(values).map((value) => safeHttpUrl(value)).filter(Boolean)));
+  Array.from(
+    new Set(
+      safeUrlListValues(values)
+        .map((value) => safeHttpUrl(value))
+        .filter(Boolean),
+    ),
+  );
 
 export const safeRouteSegment = (raw: unknown): string => {
   if (typeof raw !== 'string') return '';
   const trimmed = raw.trim();
   if (!trimmed || trimmed.length > MAX_SAFE_ROUTE_SEGMENT_LENGTH) return '';
-  if (/[\u0000-\u001f\u007f]/.test(trimmed)) return '';
+  if (containsAsciiControl(trimmed)) return '';
   if (trimmed === '.' || trimmed === '..') return '';
   if (/^%(?:2e)(?:%(?:2e))?$/i.test(trimmed)) return '';
   return encodeURIComponent(trimmed);
@@ -162,7 +178,10 @@ export const safeMailtoHref = (
   if (!email) return '';
 
   const query = new URLSearchParams();
-  if (typeof params.subject === 'string' && params.subject.length <= MAX_SAFE_MAILTO_SUBJECT_LENGTH) {
+  if (
+    typeof params.subject === 'string' &&
+    params.subject.length <= MAX_SAFE_MAILTO_SUBJECT_LENGTH
+  ) {
     query.set('subject', params.subject);
   }
   if (typeof params.body === 'string' && params.body.length <= MAX_SAFE_MAILTO_BODY_LENGTH) {
@@ -192,3 +211,4 @@ export const openSafeUrlInNewTab = (raw: unknown): Window | null => {
   if (opened) opened.opener = null;
   return opened;
 };
+import { containsAsciiControl, isAsciiControlCode } from './asciiControl';

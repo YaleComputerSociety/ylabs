@@ -6,6 +6,7 @@ import mongoose from 'mongoose';
 import http from 'http';
 import https from 'https';
 import { isPrivateAddress, isPublicHostname, ssrfSafeLookup } from '../utils/ssrfGuard';
+import { containsAsciiControl, replaceAsciiControls } from '../utils/asciiControl';
 // Re-exported for back-compat with existing imports/tests that reference these from this module.
 export { isPrivateAddress, isPublicHostname, ssrfSafeLookup };
 import { isAuthenticated, isAdmin, validateObjectId, validateNetid } from '../middleware/index';
@@ -64,8 +65,8 @@ router.use(setPrivateAdminCacheHeaders, isAuthenticated, isAdmin);
 export const MAX_ADMIN_URL_CHECK_URLS = 25;
 export const MAX_ADMIN_URL_CHECK_URL_LENGTH = 2048;
 export const ADMIN_URL_CHECK_TIMEOUT_MS = 10000;
-const ADMIN_URL_CHECK_DISPLAY_CONTROL_RE = /[\u0000-\u001f\u007f]/g;
-const ADMIN_URL_CHECK_UNSAFE_INPUT_RE = /[\u0000-\u001f\u007f\s\\]/;
+const hasUnsafeAdminUrlInput = (value: string): boolean =>
+  containsAsciiControl(value) || /[\s\\]/.test(value);
 const MAX_ADMIN_LIST_PAGE = 1000;
 const MAX_ADMIN_LIST_PAGE_SIZE = 100;
 const ADMIN_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
@@ -104,7 +105,9 @@ const adminProfilePublications = (value: unknown) =>
 
 export const adminProfileDto = (user: any, includePublications = false) => {
   const ownListings = Array.isArray(user?.ownListings) ? user.ownListings : [];
-  const secondaryDepartments = Array.isArray(user?.secondaryDepartments) ? user.secondaryDepartments : [];
+  const secondaryDepartments = Array.isArray(user?.secondaryDepartments)
+    ? user.secondaryDepartments
+    : [];
   const researchInterests = Array.isArray(user?.researchInterests) ? user.researchInterests : [];
   const topics = Array.isArray(user?.topics) ? user.topics : [];
   const profileUrls =
@@ -161,13 +164,11 @@ const adminPayloadId = (value: unknown): string => {
 
 const adminAccessReviewLockedFields = (value: unknown): string[] =>
   Array.isArray(value)
-    ? value
-        .slice(0, MAX_ADMIN_ACCESS_REVIEW_LOCKED_FIELDS)
-        .flatMap((field) => {
-          if (typeof field !== 'string') return [];
-          const text = field.trim().slice(0, MAX_ADMIN_ACCESS_REVIEW_LOCKED_FIELD_LENGTH);
-          return text ? [text] : [];
-        })
+    ? value.slice(0, MAX_ADMIN_ACCESS_REVIEW_LOCKED_FIELDS).flatMap((field) => {
+        if (typeof field !== 'string') return [];
+        const text = field.trim().slice(0, MAX_ADMIN_ACCESS_REVIEW_LOCKED_FIELD_LENGTH);
+        return text ? [text] : [];
+      })
     : [];
 
 export const adminAccessReviewRecordUpdateDto = (record: any) => {
@@ -216,27 +217,22 @@ const MAX_ADMIN_LISTING_ARRAY_ITEMS = 100;
 const adminListingText = (
   value: unknown,
   maxLength = MAX_ADMIN_LISTING_TEXT_LENGTH,
-): string | undefined =>
-  typeof value === 'string' ? value.trim().slice(0, maxLength) : undefined;
+): string | undefined => (typeof value === 'string' ? value.trim().slice(0, maxLength) : undefined);
 
 const adminListingTextArray = (value: unknown): string[] =>
   Array.isArray(value)
-    ? value
-        .slice(0, MAX_ADMIN_LISTING_ARRAY_ITEMS)
-        .flatMap((item) => {
-          const text = adminListingText(item, MAX_ADMIN_LISTING_SHORT_TEXT_LENGTH);
-          return text ? [text] : [];
-        })
+    ? value.slice(0, MAX_ADMIN_LISTING_ARRAY_ITEMS).flatMap((item) => {
+        const text = adminListingText(item, MAX_ADMIN_LISTING_SHORT_TEXT_LENGTH);
+        return text ? [text] : [];
+      })
     : [];
 
 const adminListingUrlArray = (value: unknown): string[] =>
   Array.isArray(value)
-    ? value
-        .slice(0, MAX_ADMIN_LISTING_ARRAY_ITEMS)
-        .flatMap((item) => {
-          const url = publicHttpUrl(item);
-          return url ? [url] : [];
-        })
+    ? value.slice(0, MAX_ADMIN_LISTING_ARRAY_ITEMS).flatMap((item) => {
+        const url = publicHttpUrl(item);
+        return url ? [url] : [];
+      })
     : [];
 
 const adminListingNumber = (value: unknown, fallback = 0): number => {
@@ -300,36 +296,30 @@ const MAX_ADMIN_FELLOWSHIP_LINKS = 100;
 const adminFellowshipText = (
   value: unknown,
   maxLength = MAX_ADMIN_FELLOWSHIP_TEXT_LENGTH,
-): string | undefined =>
-  typeof value === 'string' ? value.trim().slice(0, maxLength) : undefined;
+): string | undefined => (typeof value === 'string' ? value.trim().slice(0, maxLength) : undefined);
 
 const adminFellowshipStringArray = (value: unknown): string[] =>
   Array.isArray(value)
-    ? value
-        .slice(0, MAX_ADMIN_FELLOWSHIP_ARRAY_ITEMS)
-        .flatMap((item) => {
-          const text = adminFellowshipText(item, MAX_ADMIN_FELLOWSHIP_SHORT_TEXT_LENGTH);
-          return text ? [text] : [];
-        })
+    ? value.slice(0, MAX_ADMIN_FELLOWSHIP_ARRAY_ITEMS).flatMap((item) => {
+        const text = adminFellowshipText(item, MAX_ADMIN_FELLOWSHIP_SHORT_TEXT_LENGTH);
+        return text ? [text] : [];
+      })
     : [];
 
 const adminFellowshipLinks = (value: unknown): Array<{ label: string; url: string }> =>
   Array.isArray(value)
-    ? value
-        .slice(0, MAX_ADMIN_FELLOWSHIP_LINKS)
-        .flatMap((item) => {
-          if (!item || typeof item !== 'object') return [];
-          const record = item as Record<string, unknown>;
-          const url = publicHttpUrl(record.url);
-          if (!url) return [];
-          return [
-            {
-              label:
-                adminFellowshipText(record.label, MAX_ADMIN_FELLOWSHIP_SHORT_TEXT_LENGTH) || '',
-              url,
-            },
-          ];
-        })
+    ? value.slice(0, MAX_ADMIN_FELLOWSHIP_LINKS).flatMap((item) => {
+        if (!item || typeof item !== 'object') return [];
+        const record = item as Record<string, unknown>;
+        const url = publicHttpUrl(record.url);
+        if (!url) return [];
+        return [
+          {
+            label: adminFellowshipText(record.label, MAX_ADMIN_FELLOWSHIP_SHORT_TEXT_LENGTH) || '',
+            url,
+          },
+        ];
+      })
     : [];
 
 const adminFellowshipNumber = (value: unknown, fallback = 0): number => {
@@ -410,10 +400,7 @@ interface AdminUrlCheckResult {
 }
 
 const adminUrlCheckDisplayText = (value: string): string =>
-  value
-    .replace(ADMIN_URL_CHECK_DISPLAY_CONTROL_RE, '')
-    .trim()
-    .slice(0, MAX_ADMIN_URL_CHECK_URL_LENGTH);
+  replaceAsciiControls(value, '').trim().slice(0, MAX_ADMIN_URL_CHECK_URL_LENGTH);
 
 const adminUrlCheckDisplayUrl = (url: string, parsed?: URL): string => {
   const candidate = parsed
@@ -469,10 +456,7 @@ export const normalizeAdminPagination = (
 
   return {
     page: Math.min(MAX_ADMIN_LIST_PAGE, parseCompactPositiveInteger(page, 1)),
-    pageSize: Math.min(
-      MAX_ADMIN_LIST_PAGE_SIZE,
-      parseCompactPositiveInteger(pageSize, 25),
-    ),
+    pageSize: Math.min(MAX_ADMIN_LIST_PAGE_SIZE, parseCompactPositiveInteger(pageSize, 25)),
   };
 };
 
@@ -507,8 +491,12 @@ export const normalizeAdminTaxonomyLabel = (
     throw new Error(`Invalid ${fieldName}`);
   }
 
-  const normalized = value.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim();
-  if (!normalized || normalized.length > maxLength || redactDirectContactInfo(normalized) !== normalized) {
+  const normalized = replaceAsciiControls(value, ' ').replace(/\s+/g, ' ').trim();
+  if (
+    !normalized ||
+    normalized.length > maxLength ||
+    redactDirectContactInfo(normalized) !== normalized
+  ) {
     throw new Error(`Invalid ${fieldName}`);
   }
 
@@ -526,7 +514,8 @@ export const normalizeAdminDepartmentCategories = (
   value: unknown,
   fallbackPrimaryCategory?: DepartmentCategory,
 ): DepartmentCategory[] => {
-  const rawValues = value === undefined ? [fallbackPrimaryCategory] : Array.isArray(value) ? value : [value];
+  const rawValues =
+    value === undefined ? [fallbackPrimaryCategory] : Array.isArray(value) ? value : [value];
   if (rawValues.length === 0 || rawValues.length > MAX_ADMIN_DEPARTMENT_CATEGORIES) {
     throw new Error('Invalid department categories');
   }
@@ -540,11 +529,7 @@ export const normalizeAdminDepartmentCategories = (
   return categories;
 };
 
-const sendAdminGrantError = (
-  res: Response,
-  error: unknown,
-  fallbackMessage: string,
-) => {
+const sendAdminGrantError = (res: Response, error: unknown, fallbackMessage: string) => {
   const isValidationFailure = error instanceof AdminGrantValidationError;
   res.status(isValidationFailure ? 400 : 500).json({
     error: isValidationFailure ? 'Invalid admin grant request' : fallbackMessage,
@@ -638,20 +623,16 @@ router.get('/access-review', async (req: Request, res: Response) => {
   }
 });
 
-router.get(
-  '/access-review/:id',
-  validateObjectId('id'),
-  async (req: Request, res: Response) => {
-    try {
-      const result = await getAccessReviewEntity(req.params.id);
-      if (!result) return res.status(404).json({ error: 'Research entity not found' });
-      res.json(result);
-    } catch (error) {
-      console.error('Admin: Error fetching access review entity:', sanitizeLogValue(error));
-      res.status(500).json({ error: 'Failed to fetch access review entity' });
-    }
-  },
-);
+router.get('/access-review/:id', validateObjectId('id'), async (req: Request, res: Response) => {
+  try {
+    const result = await getAccessReviewEntity(req.params.id);
+    if (!result) return res.status(404).json({ error: 'Research entity not found' });
+    res.json(result);
+  } catch (error) {
+    console.error('Admin: Error fetching access review entity:', sanitizeLogValue(error));
+    res.status(500).json({ error: 'Failed to fetch access review entity' });
+  }
+});
 
 router.put(
   '/access-review/:id/manual-locks',
@@ -938,7 +919,11 @@ router.put('/research-areas/:id', validateObjectId('id'), async (req: Request, r
     const update: any = {};
 
     if (name !== undefined) {
-      update.name = normalizeAdminTaxonomyLabel(name, 'research area name', MAX_RESEARCH_AREA_NAME_LENGTH);
+      update.name = normalizeAdminTaxonomyLabel(
+        name,
+        'research area name',
+        MAX_RESEARCH_AREA_NAME_LENGTH,
+      );
     }
     if (field !== undefined) {
       if (!Object.values(ResearchField).includes(field)) {
@@ -1059,7 +1044,8 @@ router.put('/departments/:id', validateObjectId('id'), async (req: Request, res:
     if (displayName !== undefined) {
       update.displayName = normalizeAdminTaxonomyLabel(displayName, 'department display name');
     }
-    if (categories !== undefined) update.categories = normalizeAdminDepartmentCategories(categories);
+    if (categories !== undefined)
+      update.categories = normalizeAdminDepartmentCategories(categories);
     if (primaryCategory !== undefined) {
       const normalizedPrimaryCategory = normalizeAdminDepartmentCategory(primaryCategory);
       update.primaryCategory = normalizedPrimaryCategory;
@@ -1101,7 +1087,6 @@ router.delete('/departments/:id', validateObjectId('id'), async (req: Request, r
   }
 });
 
-
 const requestHead = (parsed: URL): Promise<{ status: number; reachable: boolean }> =>
   new Promise((resolve, reject) => {
     const client = parsed.protocol === 'https:' ? https : http;
@@ -1124,7 +1109,9 @@ const requestHead = (parsed: URL): Promise<{ status: number; reachable: boolean 
         response.resume();
         resolve({
           status: response.statusCode || 0,
-          reachable: Boolean(response.statusCode && response.statusCode >= 200 && response.statusCode < 300),
+          reachable: Boolean(
+            response.statusCode && response.statusCode >= 200 && response.statusCode < 300,
+          ),
         });
       },
     );
@@ -1142,7 +1129,7 @@ export const checkAdminUrlReachability = async (url: string): Promise<AdminUrlCh
   if (trimmedUrl.length === 0 || url.length > MAX_ADMIN_URL_CHECK_URL_LENGTH) {
     return { url: displayUrl, status: 0, reachable: false, error: 'URL too long' };
   }
-  if (ADMIN_URL_CHECK_UNSAFE_INPUT_RE.test(trimmedUrl)) {
+  if (hasUnsafeAdminUrlInput(trimmedUrl)) {
     return { url: displayUrl, status: 0, reachable: false, error: 'Invalid URL' };
   }
 
@@ -1211,7 +1198,7 @@ router.post('/check-urls', async (req: Request, res: Response) => {
       if (trimmed.length === 0 || trimmed.length > MAX_ADMIN_URL_CHECK_URL_LENGTH) {
         return res.status(400).json({ error: 'Each URL must be between 1 and 2048 characters' });
       }
-      if (ADMIN_URL_CHECK_UNSAFE_INPUT_RE.test(trimmed)) {
+      if (hasUnsafeAdminUrlInput(trimmed)) {
         return res.status(400).json({ error: 'Each URL must be a canonical HTTP(S) URL' });
       }
       normalizedInputs.push(trimmed);
