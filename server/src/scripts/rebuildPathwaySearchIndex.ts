@@ -13,6 +13,7 @@ import {
   resolveSafeJsonReportOutputPath,
   type ScriptApplyGuardResult,
 } from './scriptWriteGuards';
+import { assertPathwayIndexRolloutTarget } from './pfr3RolloutCore';
 
 export interface RebuildPathwaySearchIndexCliOptions {
   pageSize: number;
@@ -83,11 +84,13 @@ export function writeRebuildPathwaySearchIndexOutput(result: unknown, output?: s
   fs.writeFileSync(safeOutput, `${JSON.stringify(result, null, 2)}\n`);
 }
 
-export function assertRebuildPathwaySearchIndexAllowed(args: {
-  env?: NodeJS.ProcessEnv;
-  mongoUrl?: string;
-  confirmMeiliRebuild?: boolean;
-} = {}): ScriptApplyGuardResult {
+export function assertRebuildPathwaySearchIndexAllowed(
+  args: {
+    env?: NodeJS.ProcessEnv;
+    mongoUrl?: string;
+    confirmMeiliRebuild?: boolean;
+  } = {},
+): ScriptApplyGuardResult {
   if (!args.confirmMeiliRebuild) {
     throw new Error('--confirm-meili-rebuild is required when rebuilding Meilisearch indexes');
   }
@@ -124,6 +127,12 @@ async function main() {
   const guard = assertRebuildPathwaySearchIndexAllowed({
     confirmMeiliRebuild: options.confirmMeiliRebuild,
   });
+  const rollout = assertPathwayIndexRolloutTarget({
+    environment: guard.environment,
+    meiliHost: process.env.MEILISEARCH_HOST,
+    indexPrefix: process.env.MEILISEARCH_INDEX_PREFIX,
+    restorePoint: process.env.PFR3_MEILI_RESTORE_POINT,
+  });
   await initializeConnections();
 
   const result = await rebuildPathwaySearchIndex(
@@ -140,6 +149,7 @@ async function main() {
     db: mongoose.connection.db?.databaseName || mongoose.connection.name || guard.dbLabel,
     options,
   });
+  Object.assign(output, { rollout });
 
   console.log(JSON.stringify(output, null, 2));
   writeRebuildPathwaySearchIndexOutput(output, options.output);
