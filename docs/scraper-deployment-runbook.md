@@ -60,6 +60,12 @@ Source metadata
 
 The current system avoids most duplicate materialized entities through stable slugs, identifiers, derivation keys, and upserts. Observation rows are append-only during a run; identical observations can be superseded, and old superseded rows can be pruned by the compact-retention command after reports are captured. Use the WorkPlanner task before unattended recurring runs for expensive sources.
 
+### PFR-3 pathway evidence review
+
+Resolve no more than 25 salted queue handles at a time with `pfr3:pathway-evidence-review`. The command defaults to dry-run, requires an explicit `--target=beta|prod`, and writes the minimum necessary record and lineage fields only to a mode-0600 JSON path under the system or project `tmp` directory. Never attach that PRIVATE artifact to a PR, ticket, chat, or log.
+
+Decision files require a safe public HTTP source, quoted or summarized evidence, and operator rationale for each recency, source-repair, or new-source decision. The current command validates these decisions as `manual_only`: evidence must first be ingested by an approved scraper or observation workflow and then passed through normal access materialization. It never changes pathway status, evidence strength, confidence, or source fields directly. Execute mode additionally requires a matching target confirmation, backup/restore token, and a separate production confirmation; these guards do not make a manual-only decision writable.
+
 ## Environment Progression
 
 ### 1. Development Testing
