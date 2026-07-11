@@ -1,7 +1,7 @@
 /**
  * Detail modal for viewing full fellowship information.
  */
-import React, { useContext } from 'react';
+import React, { useContext, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Fellowship } from '../../types/types';
 import FellowshipSearchContext from '../../contexts/FellowshipSearchContext';
@@ -112,6 +112,75 @@ const FellowshipModal = ({
     setQueryString,
   } = useContext(FellowshipSearchContext);
 
+  const overlayRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  const returnFocusRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) return undefined;
+
+    returnFocusRef.current = document.activeElement as HTMLElement | null;
+    const inerted: Array<{ element: HTMLElement; inert: boolean; ariaHidden: string | null }> = [];
+    let branch: HTMLElement | null = overlayRef.current;
+
+    while (branch?.parentElement) {
+      Array.from(branch.parentElement.children).forEach((sibling) => {
+        if (sibling === branch || !(sibling instanceof HTMLElement)) return;
+        inerted.push({
+          element: sibling,
+          inert: sibling.inert,
+          ariaHidden: sibling.getAttribute('aria-hidden'),
+        });
+        sibling.inert = true;
+        sibling.setAttribute('aria-hidden', 'true');
+      });
+      branch = branch.parentElement;
+      if (branch === document.body) break;
+    }
+
+    titleRef.current?.focus();
+
+    return () => {
+      inerted.forEach(({ element, inert, ariaHidden }) => {
+        element.inert = inert;
+        if (ariaHidden === null) element.removeAttribute('aria-hidden');
+        else element.setAttribute('aria-hidden', ariaHidden);
+      });
+      returnFocusRef.current?.focus();
+    };
+  }, [isOpen]);
+
+  const handleDialogKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      onClose();
+      return;
+    }
+    if (event.key !== 'Tab' || !dialogRef.current) return;
+
+    const focusable = Array.from(
+      dialogRef.current.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ),
+    ).filter((element) => !element.hidden && element.getAttribute('aria-hidden') !== 'true');
+    if (focusable.length === 0) {
+      event.preventDefault();
+      titleRef.current?.focus();
+      return;
+    }
+
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && (document.activeElement === first || document.activeElement === titleRef.current)) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
+
   if (!isOpen || !fellowship) return null;
   const cycleStatus = getFellowshipCycleStatus(fellowship);
   const applicationStatus = getFellowshipApplicationStatus(fellowship);
@@ -176,14 +245,18 @@ const FellowshipModal = ({
 
   return (
     <div
+      ref={overlayRef}
       className="fixed inset-0 bg-black/60 z-[1200] flex items-center justify-center overflow-y-auto p-4 pt-20"
       onClick={onClose}
     >
       <div
+        ref={dialogRef}
         className="bg-[var(--yr-panel)] rounded-xl shadow-2xl w-full max-w-4xl h-[85vh] flex flex-col overflow-hidden"
         role="dialog"
         aria-modal="true"
         aria-labelledby="program-detail-title"
+        aria-describedby="program-detail-description"
+        onKeyDown={handleDialogKeyDown}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex-shrink-0 border-b border-[var(--yr-line)]">
@@ -207,9 +280,17 @@ const FellowshipModal = ({
                   </span>
                 </div>
 
-                <h2 id="program-detail-title" className="text-xl font-bold text-gray-900 leading-tight">
+                <h2
+                  ref={titleRef}
+                  id="program-detail-title"
+                  tabIndex={-1}
+                  className="text-xl font-bold text-gray-900 leading-tight focus:outline-none"
+                >
                   {fellowship.title}
                 </h2>
+                <p id="program-detail-description" className="sr-only">
+                  Program details, eligibility, deadlines, and application actions.
+                </p>
               </div>
 
               <div className="flex flex-shrink-0 flex-wrap items-center gap-1">
