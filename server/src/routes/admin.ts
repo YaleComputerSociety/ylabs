@@ -141,6 +141,7 @@ export const adminProfileDto = (user: any, includePublications = false) => {
     profile_urls: profileUrls,
     topics,
     profileVerified: user?.profileVerified === true,
+    profileVerificationRequestedAt: user?.profileVerificationRequestedAt,
     userType: user?.userType || 'professor',
     userConfirmed: user?.userConfirmed === true,
     ownListingCount: ownListings.length,

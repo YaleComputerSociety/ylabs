@@ -453,6 +453,8 @@ describe('profileController', () => {
         userType: 'professor',
         primaryDepartment: 'Computer Science',
         researchInterests: ['systems'],
+        bio: 'Systems research.',
+        imageUrl: 'https://faculty.yale.edu/profile.jpg',
       }),
     });
     mocks.userFindOneAndUpdate.mockReturnValue({

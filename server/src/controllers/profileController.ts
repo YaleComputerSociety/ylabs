@@ -289,8 +289,8 @@ export const updateProfile = async (req: Request, res: Response) => {
 };
 
 /**
- * PUT /profiles/me/verify — set profileVerified=true
- * Requires primaryDepartment and at least one research_interest.
+ * PUT /profiles/me/verify — request admin verification for a complete profile.
+ * Kept as a compatibility endpoint; profile saves request automatically.
  */
 export const verifyProfile = async (req: Request, res: Response) => {
   try {
@@ -305,7 +305,7 @@ export const verifyProfile = async (req: Request, res: Response) => {
     if (profile.userType !== 'professor' && profile.userType !== 'faculty') {
       return res
         .status(403)
-        .json({ error: 'Only faculty accounts can self-verify their profile.' });
+        .json({ error: 'Only faculty accounts can request profile verification.' });
     }
     if (!profile.primaryDepartment?.trim()) {
       return res.status(400).json({ error: 'Primary department is required for verification.' });
@@ -315,14 +315,21 @@ export const verifyProfile = async (req: Request, res: Response) => {
         .status(400)
         .json({ error: 'At least one research interest is required for verification.' });
     }
+    if (!profile.bio?.trim() || !profile.imageUrl?.trim()) {
+      return res.status(400).json({ error: 'Bio and profile image are required for verification.' });
+    }
 
     const user = await User.findOneAndUpdate(
-      { netid: currentUser.netId },
-      { profileVerified: true },
+      {
+        netid: currentUser.netId,
+        profileVerified: { $ne: true },
+        profileVerificationRequestedAt: { $exists: false },
+      },
+      { $set: { profileVerificationRequestedAt: new Date() } },
       { new: true },
     ).lean();
 
-    res.json({ profile: normalizePublicProfile(user as any) });
+    res.json({ profile: normalizePublicProfile((user || existing) as any) });
   } catch (error: any) {
     console.error('Profile: Error verifying profile:', sanitizeLogValue(error));
     sendProfileMutationError(res, error, 'Failed to verify profile');
