@@ -31,6 +31,7 @@ export type ResearchEntityRepairFlag =
   | 'profile_fallback_only'
   | 'missing_lead'
   | 'pi_identity_conflict'
+  | 'duplicate_risk'
   | 'missing_source_url';
 
 export interface ResearchEntityQualitySummary {
