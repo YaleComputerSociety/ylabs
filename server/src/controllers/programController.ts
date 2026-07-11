@@ -190,7 +190,7 @@ export const getProgramFilterOptions = async (_request: Request, response: Respo
   try {
     const options = await readProgramFilterOptions();
     response.status(200).json(options);
-  } catch (error: any) {
+  } catch {
     response.status(500).json({ error: 'Failed to fetch program filters' });
   }
 };

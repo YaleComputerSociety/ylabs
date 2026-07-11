@@ -154,7 +154,7 @@ export async function runGateRefresh(): Promise<FeederResult[]> {
     const startedAt = Date.now();
     process.stdout.write(`\n=== gates:refresh → ${feeder.gate} (${feeder.script}) → ${feeder.output} ===\n`);
     // Sequential by design: several feeders hit the same DB and Meili; avoid contention.
-    // eslint-disable-next-line no-await-in-loop
+
     const result = await runFeeder(feeder, startedAt);
     results.push(result);
     process.stdout.write(

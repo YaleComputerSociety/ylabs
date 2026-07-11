@@ -68,7 +68,7 @@ export function useSearchLifecycle({
     }, debounceMs);
 
     return () => clearTimeout(t);
-  }, [queryString, enabled, ready, debounceMs, setPage]);
+  }, [queryString, queryStringLoaded, enabled, ready, debounceMs, setPage, setQueryStringLoaded]);
 
   useEffect(() => {
     if (!enabled || !ready) return;

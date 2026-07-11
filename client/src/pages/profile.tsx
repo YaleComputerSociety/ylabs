@@ -7,7 +7,7 @@
  * stays as plain local state — each is single-concern and unrelated to the
  * fetch lifecycle, so the reducer indirection would obscure rather than clarify.
  */
-import { useState, useEffect, useContext, useReducer, type ReactNode } from 'react';
+import { useState, useEffect, useContext, useReducer, useCallback, type ReactNode } from 'react';
 import { Link, useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { FacultyProfile } from '../types/types';
 import UserContext from '../contexts/UserContext';
@@ -71,7 +71,7 @@ const Profile = () => {
   const bioText = profile?.bio || '';
   useDocumentTitle(profile ? `${profile.fname} ${profile.lname}` : 'Faculty profile');
 
-  const fetchProfile = () => {
+  const fetchProfile = useCallback(() => {
     if (!netid) return;
     dispatch({ type: 'FETCH_START' });
     axios
@@ -86,11 +86,11 @@ const Profile = () => {
           dispatch({ type: 'FETCH_FAILURE', payload: 'Failed to load profile.' });
         }
       });
-  };
+  }, [netid]);
 
   useEffect(() => {
     fetchProfile();
-  }, [netid]);
+  }, [netid, fetchProfile]);
 
   useEffect(() => {
     const nextTab = tabParam && VALID_TABS.includes(tabParam) ? tabParam : 'bio';
