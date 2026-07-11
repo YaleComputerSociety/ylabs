@@ -148,6 +148,7 @@ export type RecordFilter =
   | 'unreviewed'
   | 'missing-evidence'
   | 'guarded-contact'
+  | 'official-application'
   | 'archived';
 
 const RECORD_FILTERS: Array<{ value: RecordFilter; label: string }> = [
@@ -155,6 +156,7 @@ const RECORD_FILTERS: Array<{ value: RecordFilter; label: string }> = [
   { value: 'unreviewed', label: 'Unreviewed' },
   { value: 'missing-evidence', label: 'Missing evidence' },
   { value: 'guarded-contact', label: 'Guarded routes' },
+  { value: 'official-application', label: 'Official application routes' },
   { value: 'archived', label: 'Archived' },
 ];
 
@@ -179,7 +181,8 @@ export const hasRecordEvidence = (record: any) => {
   const sourceUrls = Array.isArray(record.sourceUrls) ? record.sourceUrls : [];
   return (
     (record.evidenceItems || []).length > 0 ||
-    evidenceIds(record.sourceEvidenceIds, record.sourceEvidenceId, record.observationId).length > 0 ||
+    evidenceIds(record.sourceEvidenceIds, record.sourceEvidenceId, record.observationId).length >
+      0 ||
     sourceUrls.some(hasSafeSourceUrl) ||
     hasSafeSourceUrl(record.sourceUrl)
   );
@@ -200,12 +203,37 @@ export const matchesRecordFilter = (
         recordType === 'contactRoute' &&
         (record.visibility !== 'PUBLIC' || record.contactPolicy === 'NO_DIRECT_CONTACT')
       );
+    case 'official-application':
+      return recordType === 'contactRoute' && isOfficialApplicationRoute(record);
     case 'archived':
       return record.archived === true || record.review?.status === 'archived_by_review';
     default:
       return true;
   }
 };
+
+export const isOfficialApplicationRoute = (record: Partial<ContactRoute>): boolean => {
+  const routeType = record.routeType?.toLowerCase() || '';
+  const label = `${record.label || ''} ${record.name || ''}`.toLowerCase();
+  return routeType.includes('application') || label.includes('official application');
+};
+
+export const orderContactRoutesForReview = (routes: ContactRoute[]): ContactRoute[] =>
+  [...routes].sort((left, right) => {
+    const priority =
+      Number(isOfficialApplicationRoute(right)) - Number(isOfficialApplicationRoute(left));
+    if (priority !== 0) return priority;
+    const leftUnreviewed = !left.review?.status || left.review.status === 'unreviewed';
+    const rightUnreviewed = !right.review?.status || right.review.status === 'unreviewed';
+    return Number(rightUnreviewed) - Number(leftUnreviewed);
+  });
+
+export const reviewProgress = (records: ReviewableRecord[]) => ({
+  reviewed: records.filter(
+    (record) => record.review?.status && record.review.status !== 'unreviewed',
+  ).length,
+  total: records.length,
+});
 
 const REVIEW_STATUSES: ReviewStatus[] = [
   'unreviewed',
@@ -265,16 +293,28 @@ const SourceLinks = ({
             {evidence.map((item) => {
               const sourceUrl = safeHttpUrl(item.sourceUrl);
               return (
-                <div key={item.observationId} className="rounded border border-[var(--yr-line)] bg-[var(--yr-panel)] p-2 text-xs text-gray-600">
+                <div
+                  key={item.observationId}
+                  className="rounded border border-[var(--yr-line)] bg-[var(--yr-panel)] p-2 text-xs text-gray-600"
+                >
                   <div className="flex flex-wrap gap-2">
-                    <span className="font-semibold text-gray-800">{item.sourceName || 'unknown source'}</span>
+                    <span className="font-semibold text-gray-800">
+                      {item.sourceName || 'unknown source'}
+                    </span>
                     <span>obs {item.observationId.slice(-6)}</span>
                     {item.scrapeRunId && <span>run {item.scrapeRunId.slice(-6)}</span>}
-                    {typeof item.confidence === 'number' && <span>{item.confidence.toFixed(2)} confidence</span>}
+                    {typeof item.confidence === 'number' && (
+                      <span>{item.confidence.toFixed(2)} confidence</span>
+                    )}
                     {item.observedAt && <span>{formatDate(item.observedAt)}</span>}
                   </div>
                   {sourceUrl && (
-                    <a href={sourceUrl} target="_blank" rel={EXTERNAL_LINK_REL} className="mt-1 inline-block text-blue-700 underline underline-offset-2">
+                    <a
+                      href={sourceUrl}
+                      target="_blank"
+                      rel={EXTERNAL_LINK_REL}
+                      className="mt-1 inline-block text-blue-700 underline underline-offset-2"
+                    >
                       Open source
                     </a>
                   )}
@@ -304,16 +344,31 @@ const RecordReviewControls = ({
   const [isSaving, setIsSaving] = useState(false);
 
   const save = async () => {
+    if (status !== 'unreviewed' && !note.trim()) {
+      swal({ text: 'Add a reviewer rationale before changing review status.', icon: 'warning' });
+      return;
+    }
+    const confirmed = await swal({
+      title: status === 'approved' ? 'Approve this record?' : 'Confirm review decision',
+      text: 'This updates one record only. Verify its source evidence before continuing.',
+      icon: 'warning',
+      buttons: ['Cancel', status === 'approved' ? 'Approve' : 'Save decision'],
+      dangerMode: status === 'approved',
+    });
+    if (!confirmed) return;
     setIsSaving(true);
     try {
-      const response = await axios.put(`/admin/access-review/records/${recordType}/${record._id}/review`, {
-        status,
-        lockedFields: lockedFields
-          .split(',')
-          .map((field) => field.trim())
-          .filter(Boolean),
-        note,
-      });
+      const response = await axios.put(
+        `/admin/access-review/records/${recordType}/${record._id}/review`,
+        {
+          status,
+          lockedFields: lockedFields
+            .split(',')
+            .map((field) => field.trim())
+            .filter(Boolean),
+          note,
+        },
+      );
       onSaved(response.data.record);
       swal({ text: 'Review saved', icon: 'success', timer: 1200 });
     } catch {
@@ -328,6 +383,7 @@ const RecordReviewControls = ({
     <div className="mt-3 rounded border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] p-3">
       <div className="grid gap-2 md:grid-cols-[180px_1fr_auto]">
         <select
+          aria-label="Review status"
           value={status}
           onChange={(event) => setStatus(event.target.value as ReviewStatus)}
           className="min-h-[44px] rounded border border-[var(--yr-line-strong)] px-2 py-1.5 text-xs"
@@ -339,6 +395,7 @@ const RecordReviewControls = ({
           ))}
         </select>
         <input
+          aria-label="Locked fields"
           type="text"
           value={lockedFields}
           onChange={(event) => setLockedFields(event.target.value)}
@@ -354,6 +411,7 @@ const RecordReviewControls = ({
         </button>
       </div>
       <textarea
+        aria-label="Reviewer rationale"
         value={note}
         onChange={(event) => setNote(event.target.value)}
         rows={2}
@@ -361,7 +419,9 @@ const RecordReviewControls = ({
         className="mt-2 min-h-[64px] w-full rounded border border-[var(--yr-line-strong)] px-2 py-1.5 text-xs"
       />
       {record.review?.reviewedAt && (
-        <p className="mt-1 text-[11px] text-gray-500">Last reviewed {formatDate(record.review.reviewedAt)}</p>
+        <p className="mt-1 text-[11px] text-gray-500">
+          Last reviewed {formatDate(record.review.reviewedAt)}
+        </p>
       )}
     </div>
   );
@@ -469,8 +529,10 @@ const AdminAccessReview = () => {
     const accessSignals = detail.accessSignals.filter((record) =>
       matchesRecordFilter(record, 'accessSignal', recordFilter),
     );
-    const contactRoutes = detail.contactRoutes.filter((record) =>
-      matchesRecordFilter(record, 'contactRoute', recordFilter),
+    const contactRoutes = orderContactRoutesForReview(
+      detail.contactRoutes.filter((record) =>
+        matchesRecordFilter(record, 'contactRoute', recordFilter),
+      ),
     );
     const postedOpportunities = detail.postedOpportunities.filter((record) =>
       matchesRecordFilter(record, 'postedOpportunity', recordFilter),
@@ -489,6 +551,22 @@ const AdminAccessReview = () => {
     };
   }, [detail, recordFilter]);
 
+  const progress = useMemo(() => {
+    if (!detail) return { reviewed: 0, total: 0 };
+    return reviewProgress([
+      ...detail.entryPathways,
+      ...detail.accessSignals,
+      ...detail.contactRoutes,
+      ...detail.postedOpportunities,
+    ]);
+  }, [detail]);
+
+  const selectAdjacentEntity = (offset: number) => {
+    const currentIndex = entities.findIndex((entity) => entity._id === selectedId);
+    const next = entities[currentIndex + offset];
+    if (next) setSelectedId(next._id);
+  };
+
   const saveManualLocks = async () => {
     if (!selectedId) return;
     const fields = manualLocksText
@@ -504,7 +582,9 @@ const AdminAccessReview = () => {
       const locked = response.data.group?.manuallyLockedFields || fields;
       setManualLocksText(locked.join(', '));
       setDetail((current) =>
-        current ? { ...current, group: { ...current.group, manuallyLockedFields: locked } } : current,
+        current
+          ? { ...current, group: { ...current.group, manuallyLockedFields: locked } }
+          : current,
       );
       setEntities((current) =>
         current.map((entity) =>
@@ -526,7 +606,7 @@ const AdminAccessReview = () => {
   ) => {
     setDetail((current) => {
       if (!current) return current;
-      const replace = <T extends ReviewableRecord,>(records: T[]): T[] =>
+      const replace = <T extends ReviewableRecord>(records: T[]): T[] =>
         records.map((item) => (item._id === record._id ? ({ ...item, ...record } as T) : item));
 
       switch (recordType) {
@@ -606,8 +686,20 @@ const AdminAccessReview = () => {
                 <button
                   key={entity._id}
                   onClick={() => setSelectedId(entity._id)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'ArrowDown') {
+                      event.preventDefault();
+                      selectAdjacentEntity(1);
+                    } else if (event.key === 'ArrowUp') {
+                      event.preventDefault();
+                      selectAdjacentEntity(-1);
+                    }
+                  }}
+                  aria-pressed={selectedId === entity._id}
                   className={`w-full text-left p-4 transition-colors ${
-                    selectedId === entity._id ? 'bg-[var(--yr-blue-soft)]' : 'hover:bg-[var(--yr-panel-muted)]'
+                    selectedId === entity._id
+                      ? 'bg-[var(--yr-blue-soft)]'
+                      : 'hover:bg-[var(--yr-panel-muted)]'
                   }`}
                 >
                   <div className="flex items-start justify-between gap-3">
@@ -633,7 +725,9 @@ const AdminAccessReview = () => {
                   )}
                 </button>
               ))}
-              {entities.length === 0 && <div className="p-4 text-sm text-gray-500">No entities found.</div>}
+              {entities.length === 0 && (
+                <div className="p-4 text-sm text-gray-500">No entities found.</div>
+              )}
             </div>
           )}
 
@@ -670,7 +764,10 @@ const AdminAccessReview = () => {
                   <p className="text-sm text-gray-500">{detail.group.slug}</p>
                   <div className="flex flex-wrap gap-2 mt-3">
                     {(detail.group.departments || []).slice(0, 4).map((department) => (
-                      <span key={department} className="text-xs bg-[var(--yr-panel-muted)] text-gray-700 rounded px-2 py-1">
+                      <span
+                        key={department}
+                        className="text-xs bg-[var(--yr-panel-muted)] text-gray-700 rounded px-2 py-1"
+                      >
                         {department}
                       </span>
                     ))}
@@ -686,8 +783,37 @@ const AdminAccessReview = () => {
                 </a>
               </div>
 
+              <nav
+                aria-label="Review queue navigation"
+                className="flex flex-wrap items-center justify-between gap-2 border-y border-[var(--yr-line)] py-3"
+              >
+                <button
+                  type="button"
+                  onClick={() => selectAdjacentEntity(-1)}
+                  disabled={entities.findIndex((entity) => entity._id === selectedId) <= 0}
+                  className="min-h-[44px] rounded border border-[var(--yr-line-strong)] px-3 text-sm disabled:opacity-40"
+                >
+                  Previous entity
+                </button>
+                <p role="status" className="text-sm font-medium text-gray-700">
+                  {progress.reviewed} of {progress.total} records reviewed
+                </p>
+                <button
+                  type="button"
+                  onClick={() => selectAdjacentEntity(1)}
+                  disabled={
+                    entities.findIndex((entity) => entity._id === selectedId) >= entities.length - 1
+                  }
+                  className="min-h-[44px] rounded border border-[var(--yr-line-strong)] px-3 text-sm disabled:opacity-40"
+                >
+                  Next entity
+                </button>
+              </nav>
+
               <div className="border border-[var(--yr-line)] rounded-lg p-4">
-                <label className="block text-sm font-semibold text-gray-900 mb-1">Manual Locks</label>
+                <label className="block text-sm font-semibold text-gray-900 mb-1">
+                  Manual Locks
+                </label>
                 <p className="text-xs text-gray-500 mb-3">
                   Comma-separated field names protected from scraper materialization.
                 </p>
@@ -718,10 +844,19 @@ const AdminAccessReview = () => {
                     </span>
                   </div>
                   <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
-                    <CountPill label="missing evidence" value={detail.reviewSummary.recordsMissingEvidence} />
+                    <CountPill
+                      label="missing evidence"
+                      value={detail.reviewSummary.recordsMissingEvidence}
+                    />
                     <CountPill label="archived" value={detail.reviewSummary.archivedRecords} />
-                    <CountPill label="guarded routes" value={detail.reviewSummary.guardedContactRoutes} />
-                    <CountPill label="public routes" value={detail.reviewSummary.publicContactRoutes} />
+                    <CountPill
+                      label="guarded routes"
+                      value={detail.reviewSummary.guardedContactRoutes}
+                    />
+                    <CountPill
+                      label="public routes"
+                      value={detail.reviewSummary.publicContactRoutes}
+                    />
                     <CountPill label="locks" value={detail.reviewSummary.manualLocks.length} />
                   </div>
                   <div className="mt-3">
@@ -773,9 +908,14 @@ const AdminAccessReview = () => {
                 <h4 className="text-lg font-bold text-gray-900 mb-3">Pathways</h4>
                 <div className="space-y-3">
                   {filteredRecords.entryPathways.map((pathway) => (
-                    <div key={pathway._id} className="border border-[var(--yr-line)] rounded-lg p-4">
+                    <div
+                      key={pathway._id}
+                      className="border border-[var(--yr-line)] rounded-lg p-4"
+                    >
                       <div className="flex flex-wrap items-center gap-2 mb-2">
-                        <span className="font-semibold text-gray-900">{pathway.studentFacingLabel}</span>
+                        <span className="font-semibold text-gray-900">
+                          {pathway.studentFacingLabel}
+                        </span>
                         <span className="text-xs bg-[var(--yr-blue-soft)] text-blue-700 rounded px-2 py-1">
                           {formatToken(pathway.pathwayType)}
                         </span>
@@ -783,18 +923,24 @@ const AdminAccessReview = () => {
                           {formatToken(pathway.status)}
                         </span>
                         {pathway.archived && (
-                          <span className="text-xs bg-amber-50 text-amber-700 rounded px-2 py-1">archived</span>
+                          <span className="text-xs bg-amber-50 text-amber-700 rounded px-2 py-1">
+                            archived
+                          </span>
                         )}
                       </div>
-                      <p className="text-sm text-gray-600">{pathway.explanation || 'No explanation recorded.'}</p>
+                      <p className="text-sm text-gray-600">
+                        {pathway.explanation || 'No explanation recorded.'}
+                      </p>
                       <p className="text-sm text-gray-800 mt-2">
                         <span className="font-semibold">Best next step:</span>{' '}
                         {pathway.bestNextStep || 'Not set'}
                       </p>
                       <p className="text-xs text-gray-500 mt-2">
                         Evidence: {formatToken(pathway.evidenceStrength)} · Confidence:{' '}
-                        {typeof pathway.confidence === 'number' ? pathway.confidence.toFixed(2) : 'unknown'} ·
-                        Compensation: {formatToken(pathway.compensation)}
+                        {typeof pathway.confidence === 'number'
+                          ? pathway.confidence.toFixed(2)
+                          : 'unknown'}{' '}
+                        · Compensation: {formatToken(pathway.compensation)}
                       </p>
                       <div className="mt-3">
                         <SourceLinks
@@ -810,7 +956,9 @@ const AdminAccessReview = () => {
                       />
                     </div>
                   ))}
-                  {filteredRecords.entryPathways.length === 0 && <EmptyState label="No derived pathways match this filter." />}
+                  {filteredRecords.entryPathways.length === 0 && (
+                    <EmptyState label="No derived pathways match this filter." />
+                  )}
                 </div>
               </div>
 
@@ -820,15 +968,21 @@ const AdminAccessReview = () => {
                   {filteredRecords.accessSignals.map((signal) => (
                     <div key={signal._id} className="border border-[var(--yr-line)] rounded-lg p-4">
                       <div className="flex flex-wrap items-center gap-2 mb-2">
-                        <span className="font-semibold text-gray-900">{formatToken(signal.signalType)}</span>
+                        <span className="font-semibold text-gray-900">
+                          {formatToken(signal.signalType)}
+                        </span>
                         <span className="text-xs bg-[var(--yr-panel-muted)] text-gray-700 rounded px-2 py-1">
                           {formatToken(signal.confidence)}
                         </span>
                         {signal.archived && (
-                          <span className="text-xs bg-amber-50 text-amber-700 rounded px-2 py-1">archived</span>
+                          <span className="text-xs bg-amber-50 text-amber-700 rounded px-2 py-1">
+                            archived
+                          </span>
                         )}
                       </div>
-                      {signal.excerpt && <p className="text-sm text-gray-700">"{signal.excerpt}"</p>}
+                      {signal.excerpt && (
+                        <p className="text-sm text-gray-700">"{signal.excerpt}"</p>
+                      )}
                       <p className="text-xs text-gray-500 mt-2">
                         Score:{' '}
                         {typeof signal.confidenceScore === 'number'
@@ -850,7 +1004,9 @@ const AdminAccessReview = () => {
                       />
                     </div>
                   ))}
-                  {filteredRecords.accessSignals.length === 0 && <EmptyState label="No derived access signals match this filter." />}
+                  {filteredRecords.accessSignals.length === 0 && (
+                    <EmptyState label="No derived access signals match this filter." />
+                  )}
                 </div>
               </div>
 
@@ -861,7 +1017,10 @@ const AdminAccessReview = () => {
                     <div key={route._id} className="border border-[var(--yr-line)] rounded-lg p-4">
                       <div className="flex flex-wrap items-center gap-2 mb-2">
                         <span className="font-semibold text-gray-900">
-                          {route.label || route.name || route.personName || formatToken(route.routeType)}
+                          {route.label ||
+                            route.name ||
+                            route.personName ||
+                            formatToken(route.routeType)}
                         </span>
                         <span className="text-xs bg-[var(--yr-panel-muted)] text-gray-700 rounded px-2 py-1">
                           {formatToken(route.visibility)}
@@ -870,15 +1029,18 @@ const AdminAccessReview = () => {
                           {formatToken(route.contactPolicy)}
                         </span>
                         {route.archived && (
-                          <span className="text-xs bg-amber-50 text-amber-700 rounded px-2 py-1">archived</span>
+                          <span className="text-xs bg-amber-50 text-amber-700 rounded px-2 py-1">
+                            archived
+                          </span>
                         )}
                       </div>
                       <p className="text-sm text-gray-600">
                         {route.role || formatToken(route.routeType)}
-                        {route.email ? ` · ${route.email}` : ''}
-                        {route.url ? ` · ${route.url}` : ''}
+                        {route.email || route.url ? ' · destination withheld' : ''}
                       </p>
-                      {route.rationale && <p className="text-sm text-gray-700 mt-2">{route.rationale}</p>}
+                      {route.rationale && (
+                        <p className="text-sm text-gray-700 mt-2">{route.rationale}</p>
+                      )}
                       <div className="mt-3">
                         <SourceLinks
                           urls={route.sourceUrl ? [route.sourceUrl] : []}
@@ -893,7 +1055,9 @@ const AdminAccessReview = () => {
                       />
                     </div>
                   ))}
-                  {filteredRecords.contactRoutes.length === 0 && <EmptyState label="No derived contact routes match this filter." />}
+                  {filteredRecords.contactRoutes.length === 0 && (
+                    <EmptyState label="No derived contact routes match this filter." />
+                  )}
                 </div>
               </div>
 
@@ -903,14 +1067,19 @@ const AdminAccessReview = () => {
                   {filteredRecords.postedOpportunities.map((opportunity) => {
                     const applicationUrl = safeHttpUrl(opportunity.applicationUrl);
                     return (
-                      <div key={opportunity._id} className="border border-[var(--yr-line)] rounded-lg p-4">
+                      <div
+                        key={opportunity._id}
+                        className="border border-[var(--yr-line)] rounded-lg p-4"
+                      >
                         <div className="flex flex-wrap items-center gap-2 mb-2">
                           <span className="font-semibold text-gray-900">{opportunity.title}</span>
                           <span className="text-xs bg-green-50 text-green-700 rounded px-2 py-1">
                             {formatToken(opportunity.status)}
                           </span>
                           {opportunity.archived && (
-                            <span className="text-xs bg-amber-50 text-amber-700 rounded px-2 py-1">archived</span>
+                            <span className="text-xs bg-amber-50 text-amber-700 rounded px-2 py-1">
+                              archived
+                            </span>
                           )}
                         </div>
                         <p className="text-sm text-gray-600">
