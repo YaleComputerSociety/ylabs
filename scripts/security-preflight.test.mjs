@@ -1808,6 +1808,17 @@ test('admin access-review evidence completeness only trusts safe source URLs', (
   assert.doesNotMatch(source, /Boolean\(record\.sourceUrl\)/);
 });
 
+test('admin access-review queue withholds direct contact destinations', () => {
+  const source = fs.readFileSync(
+    new URL('../client/src/components/admin/AdminAccessReview.tsx', import.meta.url),
+    'utf8',
+  );
+
+  assert.match(source, /route\.email \|\| route\.url \? ' · destination withheld' : ''/);
+  assert.doesNotMatch(source, /` · \$\{route\.email\}`/);
+  assert.doesNotMatch(source, /` · \$\{route\.url\}`/);
+});
+
 test('visibility release queue bounds admin query filters before Mongo work', () => {
   const source = fs.readFileSync(
     new URL('../server/src/services/studentVisibilityGateService.ts', import.meta.url),
