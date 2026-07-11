@@ -268,6 +268,8 @@ const Fellowships = () => {
     setSelectedTermOfAward,
     selectedPurpose,
     setSelectedPurpose,
+    selectedSubjects = [],
+    setSelectedSubjects = () => {},
     selectedRegions,
     setSelectedRegions,
     selectedCitizenship,
@@ -387,6 +389,13 @@ const Fellowships = () => {
       setSelected: setSelectedTermOfAward,
     },
     {
+      key: 'subjects',
+      label: 'Subject',
+      options: filterOptions.subjects || [],
+      selected: selectedSubjects,
+      setSelected: setSelectedSubjects,
+    },
+    {
       key: 'purpose',
       label: 'Purpose',
       options: filterOptions.purpose,
@@ -425,6 +434,7 @@ const Fellowships = () => {
     { label: 'Year', values: selectedYearOfStudy, clear: () => setSelectedYearOfStudy([]) },
     { label: 'Term', values: selectedTermOfAward, clear: () => setSelectedTermOfAward([]) },
     { label: 'Purpose', values: selectedPurpose, clear: () => setSelectedPurpose([]) },
+    { label: 'Subject', values: selectedSubjects, clear: () => setSelectedSubjects([]) },
     { label: 'Region', values: selectedRegions, clear: () => setSelectedRegions([]) },
     { label: 'Citizenship', values: selectedCitizenship, clear: () => setSelectedCitizenship([]) },
   ].filter((g) => g.values.length > 0);

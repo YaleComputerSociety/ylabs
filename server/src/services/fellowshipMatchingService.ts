@@ -6,6 +6,7 @@ import {
 } from './fellowshipApplicationCycleEvidenceService';
 import { getPathwaysByIds, type PathwaySearchHit } from './pathwaySearchService';
 import { serializedDocumentId } from '../utils/idSerialization';
+import { inferProgramSubjects, resolveTopicSubjects } from './programTopicService';
 
 const MAX_FELLOWSHIP_MATCH_TEXT_LENGTH = 5000;
 const MAX_FELLOWSHIP_MATCH_ARRAY_ITEMS = 50;
@@ -122,9 +123,7 @@ function matchStrength(
 }
 
 function hasFellowshipCompatibleEvidence(pathway: PathwaySearchHit): boolean {
-  return (pathway.evidence || []).some(
-    (item) => item.signalType === 'FELLOWSHIP_COMPATIBLE',
-  );
+  return (pathway.evidence || []).some((item) => item.signalType === 'FELLOWSHIP_COMPATIBLE');
 }
 
 export function scoreFellowshipForPathway(
@@ -147,7 +146,9 @@ export function scoreFellowshipForPathway(
 
   if (hasFellowshipCompatibleEvidence(pathway)) {
     score += 25;
-    reasons.push('Saved pathway has evidence that past student projects were fellowship-compatible.');
+    reasons.push(
+      'Saved pathway has evidence that past student projects were fellowship-compatible.',
+    );
   }
   if (['FELLOWSHIP', 'FELLOWSHIP_ELIGIBLE', 'STIPEND'].includes(pathway.compensation || '')) {
     score += 20;
@@ -167,6 +168,19 @@ export function scoreFellowshipForPathway(
   if (departmentMatches > 0) {
     score += Math.min(16, departmentMatches * 8);
     reasons.push('Fellowship text overlaps with the host department.');
+  }
+
+  const pathwaySubjects = resolveTopicSubjects([
+    ...(pathway.researchEntity?.researchAreas || []).slice(0, MAX_FELLOWSHIP_MATCH_ARRAY_ITEMS),
+    pathway.researchEntity?.name,
+    pathway.researchEntity?.displayName,
+    pathway.researchEntity?.kind,
+  ]);
+  const fellowshipSubjects = inferProgramSubjects(fellowship);
+  const topicMatches = pathwaySubjects.filter((subject) => fellowshipSubjects.includes(subject));
+  if (topicMatches.length > 0 && researchAreaMatches === 0) {
+    score += Math.min(36, topicMatches.length * 18);
+    reasons.push(`Topic match: ${topicMatches.join(', ')}.`);
   }
 
   if (
@@ -199,8 +213,12 @@ export function scoreFellowshipForPathway(
   } else if (applicationCycle.deadlineHasNotPassed === false) {
     if (applicationCycle.nextCycleSignal) {
       score -= 8;
-      reasons.push('Past deadline still provides evidence for a likely recurring application cycle.');
-      caveats.push('Current fellowship deadline appears to have passed; verify the next cycle before applying.');
+      reasons.push(
+        'Past deadline still provides evidence for a likely recurring application cycle.',
+      );
+      caveats.push(
+        'Current fellowship deadline appears to have passed; verify the next cycle before applying.',
+      );
     } else {
       score -= 20;
       caveats.push('Fellowship deadline appears to have passed.');
@@ -253,17 +271,17 @@ export async function matchFellowshipsForPathways(
     deps.fellowshipReader ||
     (async () => Fellowship.find({ archived: false }).sort({ deadline: 1, updatedAt: -1 }).lean());
 
-  const [pathways, fellowships] = await Promise.all([
-    pathwayReader(uniqueIds),
-    fellowshipReader(),
-  ]);
+  const [pathways, fellowships] = await Promise.all([pathwayReader(uniqueIds), fellowshipReader()]);
 
   const matchesByPathway: Record<string, FellowshipMatch[]> = {};
   for (const pathway of pathways) {
     const matches = fellowships
       .map((fellowship) => scoreFellowshipForPathway(pathway, fellowship))
       .filter((match): match is FellowshipMatch => !!match)
-      .sort((a, b) => b.score - a.score || String(a.deadline || '').localeCompare(String(b.deadline || '')))
+      .sort(
+        (a, b) =>
+          b.score - a.score || String(a.deadline || '').localeCompare(String(b.deadline || '')),
+      )
       .slice(0, 5);
     matchesByPathway[pathway._id] = matches;
   }
