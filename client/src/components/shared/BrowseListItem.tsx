@@ -106,7 +106,7 @@ const BrowseListItem = React.memo(({ item, isFavorite, onToggleFavorite, onOpenM
   return (
     <div
       className={`group bg-[var(--yr-panel)] rounded-md border ${isAudited ? 'border-green-400 ring-1 ring-green-200' : 'border-[var(--yr-line)]'} hover:border-blue-400 hover:shadow-sm transition-all duration-200 cursor-pointer ${isArchived ? 'opacity-75' : ''}`}
-      onClick={handleClick}
+      onClick={item.type === 'fellowship' ? undefined : handleClick}
     >
       <div className="p-4 grid grid-cols-12 gap-4 items-start">
         <div className={`col-span-12 ${isCompact ? 'md:col-span-10' : 'md:col-span-4'}`}>
@@ -151,8 +151,15 @@ const BrowseListItem = React.memo(({ item, isFavorite, onToggleFavorite, onOpenM
             </>
           ) : (
             <>
-              <h3 className="text-sm font-semibold text-gray-900 truncate">
-                {item.data.title}
+              <h3 className="text-sm font-semibold text-gray-900">
+                <button
+                  type="button"
+                  onClick={handleClick}
+                  className="block max-w-full truncate text-left hover:text-blue-700 focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                  aria-label={`View details for ${item.data.title}`}
+                >
+                  {item.data.title}
+                </button>
               </h3>
               <p className={`text-xs ${subtitleColor} truncate`}>
                 {subtitle}

@@ -72,6 +72,8 @@ const ActiveFilters = ({
                 return (
                   <button
                     key={option.value}
+                    type="button"
+                    aria-pressed={isActive}
                     onClick={() => onQuickFilterChange(isActive ? null : option.value)}
                     className={`
                     inline-flex min-h-[44px] items-center gap-1.5 rounded-md px-3 py-2 text-xs font-medium
@@ -111,7 +113,12 @@ const ActiveFilters = ({
               {isLoading && (
                 <div className="w-3 h-3 border-2 border-blue-200 border-t-blue-500 rounded-full animate-spin" />
               )}
-              <span className="text-xs text-gray-400 whitespace-nowrap">
+              <span
+                className="text-xs text-gray-400 whitespace-nowrap"
+                role="status"
+                aria-live="polite"
+                aria-atomic="true"
+              >
                 {totalCount} {totalCount === 1 ? 'result' : 'results'}
               </span>
             </div>

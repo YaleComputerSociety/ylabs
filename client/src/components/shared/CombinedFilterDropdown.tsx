@@ -76,6 +76,9 @@ const CombinedFilterDropdown = ({ tabs }: CombinedFilterDropdownProps) => {
   return (
     <div className="relative" ref={dropdownRef}>
       <button
+        type="button"
+        aria-expanded={isOpen}
+        aria-haspopup="dialog"
         onClick={() => setIsOpen(!isOpen)}
         className="flex min-h-[44px] items-center rounded-md border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-3 text-sm transition-colors hover:bg-[var(--yr-panel-muted)] focus:outline-none focus:ring-2 focus:ring-blue-500 whitespace-nowrap"
         style={{ color: '#374151' }}
@@ -115,6 +118,8 @@ const CombinedFilterDropdown = ({ tabs }: CombinedFilterDropdownProps) => {
             {tabs.map((tab) => (
               <button
                 key={tab.key}
+                type="button"
+                aria-pressed={activeTabKey === tab.key}
                 onClick={() => setActiveTabKey(tab.key)}
                 className={`relative flex min-h-[44px] flex-1 items-center justify-center px-2 py-2.5 text-xs font-medium transition-colors whitespace-nowrap ${
                   activeTabKey === tab.key
@@ -165,43 +170,34 @@ const CombinedFilterDropdown = ({ tabs }: CombinedFilterDropdownProps) => {
               </button>
             )}
 
-            <ul className="space-y-1 max-h-[220px] overflow-y-auto">
+            <fieldset className="space-y-1 max-h-[220px] overflow-y-auto">
+              <legend className="sr-only">{activeTab.label} filters</legend>
               {getFilteredOptions(activeTab).map((option) => {
                 const isSelected = activeTab.selected.includes(option);
                 const colors = activeTab.colorFn?.(option);
 
                 return (
-                  <li
+                  <label
                     key={option}
-                    tabIndex={0}
-                    role="option"
-                    aria-selected={isSelected}
-                    onClick={() => {
-                      if (isSelected) {
-                        activeTab.setSelected((prev) => prev.filter((v) => v !== option));
-                      } else {
-                        activeTab.setSelected((prev) => [...prev, option]);
-                      }
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        if (isSelected) {
-                          activeTab.setSelected((prev) => prev.filter((v) => v !== option));
-                        } else {
-                          activeTab.setSelected((prev) => [...prev, option]);
-                        }
-                      }
-                    }}
                     className={`flex min-h-[44px] cursor-pointer items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-inset ${
                       isSelected ? 'bg-[var(--yr-blue-soft)] text-blue-900' : 'hover:bg-[var(--yr-panel-muted)] text-gray-700'
                     }`}
-                    onMouseDown={(e) => e.preventDefault()}
                   >
-                    <div
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => {
+                        activeTab.setSelected((prev) =>
+                          isSelected ? prev.filter((v) => v !== option) : [...prev, option],
+                        );
+                      }}
+                      className="peer sr-only"
+                    />
+                    <span
                       className={`w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center transition-colors ${
                         isSelected ? 'bg-blue-500 border-blue-500' : 'border-[var(--yr-line-strong)]'
-                      }`}
+                      } peer-focus-visible:ring-2 peer-focus-visible:ring-blue-500 peer-focus-visible:ring-offset-2`}
+                      aria-hidden="true"
                     >
                       {isSelected && (
                         <svg
@@ -218,7 +214,7 @@ const CombinedFilterDropdown = ({ tabs }: CombinedFilterDropdownProps) => {
                           />
                         </svg>
                       )}
-                    </div>
+                    </span>
                     {colors ? (
                       <span
                         className={`${colors.bg} ${colors.text} text-xs rounded px-2 py-1 truncate`}
@@ -228,18 +224,18 @@ const CombinedFilterDropdown = ({ tabs }: CombinedFilterDropdownProps) => {
                     ) : (
                       <span className="truncate">{option}</span>
                     )}
-                  </li>
+                  </label>
                 );
               })}
               {getFilteredOptions(activeTab).length === 0 && (
-                <li className="px-3 py-2 text-sm text-gray-500">No options found</li>
+                <p className="px-3 py-2 text-sm text-gray-500">No options found</p>
               )}
               {activeTab.maxDisplay && activeTab.options.length > activeTab.maxDisplay && (
-                <li className="px-3 py-2 text-xs text-gray-400 text-center">
+                <p className="px-3 py-2 text-xs text-gray-400 text-center">
                   Showing first {activeTab.maxDisplay}. Type to search more...
-                </li>
+                </p>
               )}
-            </ul>
+            </fieldset>
           </div>
 
           {totalFilters > 0 && (
