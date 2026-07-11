@@ -91,3 +91,47 @@ test('selects tracked and untracked non-ignored files for scanning', () => {
     'graphify-out/graph.json',
   ]);
 });
+
+test('flags synthetic Yalies credentials without returning their values', () => {
+  const assignedCredential = ['synthetic', 'Yalies', 'Credential', '1234567890'].join('');
+  const bearerCredential = ['another', 'Synthetic', 'Bearer', '0987654321'].join('');
+  const findings = findSecretFindings([
+    {
+      path: 'operator.env',
+      content: `YALIES_API_KEY=${assignedCredential}`,
+    },
+    {
+      path: 'scratch/request.ts',
+      content: [
+        "const endpoint = 'https://api.yalies.io/v2/people';",
+        `const header = 'Bearer ${bearerCredential}';`,
+      ].join('\n'),
+    },
+  ]);
+
+  assert.deepEqual(
+    findings.map(({ path, line, rule }) => ({ path, line, rule })),
+    [
+      { path: 'operator.env', line: 1, rule: 'yalies-api-key-assignment' },
+      { path: 'scratch/request.ts', line: 2, rule: 'yalies-bearer-token' },
+    ],
+  );
+  assert.ok(!JSON.stringify(findings).includes(assignedCredential));
+  assert.ok(!JSON.stringify(findings).includes(bearerCredential));
+});
+
+test('allows Yalies environment references and bearer examples outside Yalies context', () => {
+  const genericBearer = ['generic', 'Bearer', 'Fixture', '1234567890'].join('');
+  const files = [
+    {
+      path: 'server/src/service.ts',
+      content: "const key = process.env.YALIES_API_KEY;\nAuthorization: `Bearer ${key}`;",
+    },
+    {
+      path: 'docs/oauth.md',
+      content: `Authorization: Bearer ${genericBearer}`,
+    },
+  ];
+
+  assert.deepEqual(findSecretFindings(files), []);
+});

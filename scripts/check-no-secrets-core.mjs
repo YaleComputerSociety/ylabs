@@ -25,6 +25,11 @@ const SECRET_RULES = [
   },
 ];
 
+const YALIES_API_HOST_RE = /\bapi\.yalies\.io\b/i;
+const YALIES_API_KEY_ASSIGNMENT_RE =
+  /\bYALIES_API_KEY\b\s*[=:]\s*["']?([A-Za-z0-9._~+/=-]{20,})/gi;
+const BEARER_TOKEN_RE = /\bBearer\s+([A-Za-z0-9._~+/=-]{20,})\b/gi;
+
 const PLACEHOLDER_PATTERNS = [
   /<redacted>/i,
   /<user>:<password>@<cluster>/i,
@@ -42,6 +47,31 @@ const lineNumberForIndex = (content, index) => content.slice(0, index).split('\n
 const isAllowedPlaceholder = (matchText) =>
   PLACEHOLDER_PATTERNS.some((pattern) => pattern.test(matchText));
 
+const yaliesCredentialFindings = (file) => {
+  const findings = [];
+  const patterns = [
+    { rule: 'yalies-api-key-assignment', pattern: YALIES_API_KEY_ASSIGNMENT_RE },
+    ...(YALIES_API_HOST_RE.test(file.content)
+      ? [{ rule: 'yalies-bearer-token', pattern: BEARER_TOKEN_RE }]
+      : []),
+  ];
+
+  for (const { rule, pattern } of patterns) {
+    pattern.lastIndex = 0;
+    for (const match of file.content.matchAll(pattern)) {
+      const credential = match[1] || '';
+      if (isAllowedPlaceholder(credential)) continue;
+      findings.push({
+        path: file.path,
+        line: lineNumberForIndex(file.content, match.index || 0),
+        rule,
+      });
+    }
+  }
+
+  return findings;
+};
+
 export function candidateSecretScanPaths(paths) {
   return Array.from(
     new Set(
@@ -57,6 +87,7 @@ export function findSecretFindings(files) {
   const findings = [];
 
   for (const file of files) {
+    findings.push(...yaliesCredentialFindings(file));
     for (const rule of SECRET_RULES) {
       rule.pattern.lastIndex = 0;
       for (const match of file.content.matchAll(rule.pattern)) {
