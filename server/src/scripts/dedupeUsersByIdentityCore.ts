@@ -294,7 +294,6 @@ function emailLooksPersonSpecific(identityValue: string, normalizedName: string)
   const givenNames = nameTokens.slice(0, -1);
   if (!tokens.length || !lastName || givenNames.length === 0) return false;
 
-  const tokenText = tokens.join(' ');
   const compactTokenText = tokens.join('');
   const reversedCompact = [lastName, ...givenNames].join('');
   const normalCompact = [...givenNames, lastName].join('');

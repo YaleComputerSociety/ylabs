@@ -415,7 +415,7 @@ async function runPlan(plan: BetaSeedPlan): Promise<BetaSeedRunResult> {
   const results: BetaSeedRunResult['results'] = [];
   for (const step of plan.steps) {
     // Sequential execution avoids DB and Meili contention during launch operations.
-    // eslint-disable-next-line no-await-in-loop
+
     const result = await runStep(step);
     results.push(result);
     if (!result.ok) break;

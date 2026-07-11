@@ -806,7 +806,7 @@ function summarizeReviewArtifactCommands(
 ): SourceHealthReviewArtifactStatus {
   const missingCommands = commands
     .filter((command) => !command.artifactAvailable)
-    .map(({ artifactAvailable, ...command }) => command);
+    .map(({ artifactAvailable: _artifactAvailable, ...command }) => command);
   return {
     total: commands.length,
     available: commands.length - missingCommands.length,

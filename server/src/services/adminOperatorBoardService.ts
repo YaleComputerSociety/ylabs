@@ -759,7 +759,7 @@ export function readPromotionCopyDryRunArtifact(
         ? parsed.collectionCategories.length
         : 0,
     };
-  } catch (error) {
+  } catch {
     return {
       artifactStatus: 'invalid',
       artifactPath: safeArtifactPath,
@@ -824,7 +824,7 @@ export function readBetaRepairQueueGateArtifact(
       ...summarizePatchSummaries(parsed.attempts),
       ...summarizeRepairSourceHosts(parsed.attempts),
     };
-  } catch (error) {
+  } catch {
     return {
       artifactStatus: 'invalid',
       artifactPath: safeArtifactPath,
@@ -1031,7 +1031,7 @@ export function readDataQualityGateArtifact(
         parsed?.hygiene?.emails?.suspiciousUserEmails,
       ),
     };
-  } catch (error) {
+  } catch {
     return {
       artifactStatus: 'invalid',
       artifactPath: safeArtifactPath,
@@ -1397,7 +1397,7 @@ export function readScraperIntegrityGateArtifact(
           ).map(betaTargetCommand)
         : [],
     };
-  } catch (error) {
+  } catch {
     return {
       artifactStatus: 'invalid',
       artifactPath: safeArtifactPath,
@@ -1572,7 +1572,7 @@ export function readLaunchTrustGateArtifact(
             .map(betaTargetCommand)
         : [],
     };
-  } catch (error) {
+  } catch {
     return {
       artifactStatus: 'invalid',
       artifactPath: safeArtifactPath,
@@ -1638,7 +1638,7 @@ export function readLaunchReviewExceptionsArtifact(
       invalidDecisionCount: Number(parsed.reviewDecisionValidation.invalidDecisionCount || 0),
       unreviewedPlanCount: Number(parsed.reviewDecisionValidation.unreviewedPlanCount || 0),
     };
-  } catch (error) {
+  } catch {
     return {
       artifactStatus: 'invalid',
       artifactPath: safeArtifactPath,
@@ -1774,7 +1774,7 @@ export function readLaunchAcquisitionGateArtifact(
       ),
       untrustedExternalRouteEvidence: groupCount(actionGroups, 'untrustedExternalRouteEvidence'),
     };
-  } catch (error) {
+  } catch {
     return {
       artifactStatus: 'invalid',
       artifactPath: safeArtifactPath,
