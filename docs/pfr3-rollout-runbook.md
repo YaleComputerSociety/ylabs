@@ -17,6 +17,18 @@ Do not bulk-approve.
 
 ## 2. Beta preflight and rebuild
 
+Before rebuilding, generate an aggregate-only readiness artifact:
+
+```bash
+yarn --cwd server pathway:quality-audit --sample-limit=0 --output=/tmp/ylabs-pfr3-pathway-quality.json
+```
+
+Review `studentPublishablePathways`, `publicationBlockers`, and
+`publicationBlockerCombinations`. These counts apply the same status, evidence,
+confidence, and source URL gates as publication. A status or evidence blocker is
+not permission to promote records: resolve it only from authoritative source
+evidence through the normal materialization and review workflows.
+
 Confirm the deployed Beta service has all of the following values from the deployment control plane:
 
 - `SCRAPER_ENV=beta`
