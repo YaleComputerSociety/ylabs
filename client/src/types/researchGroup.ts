@@ -122,6 +122,7 @@ export interface ResearchGroup {
   location: string;
   departments: string[];
   researchAreas: string[];
+  keywords?: string[];
   profileResearchAreas?: string[];
   researchAreaSource?: 'PI_PROFILE_FALLBACK';
   school: string;
@@ -178,6 +179,7 @@ export interface ResearchGroup {
   hasActiveListing?: boolean;
   accessSummary?: AccessSummary;
   studentDecisionExplanation?: StudentDecisionExplanation;
+  studentVisibilityTier?: 'student_ready' | 'limited_but_safe' | 'operator_review' | 'suppressed';
 }
 
 /**

@@ -425,7 +425,7 @@ const normalizedMemberIdentityPart = (value: unknown): string =>
     .trim();
 
 const leadMemberIdentityKey = (member: LabMember): string => {
-  const user = member.user as Record<string, unknown>;
+  const user = member.user;
   const stableId = normalizedMemberIdentityPart(user.netid || user._id);
   if (stableId) return `id:${stableId}`;
 

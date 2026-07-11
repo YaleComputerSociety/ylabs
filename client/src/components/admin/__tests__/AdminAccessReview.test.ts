@@ -6,6 +6,7 @@ import {
   orderContactRoutesForReview,
   reviewProgress,
 } from '../AdminAccessReview';
+type ContactRoute = Parameters<typeof orderContactRoutesForReview>[0][number];
 
 describe('AdminAccessReview record filters', () => {
   it('detects source evidence through evidence items, ids, source URLs, or source URL', () => {
@@ -51,12 +52,12 @@ describe('AdminAccessReview record filters', () => {
   });
 
   it('identifies and prioritizes official application routes without approving them', () => {
-    const general = {
+    const general: ContactRoute = {
       _id: 'general',
       routeType: 'GENERAL_CONTACT',
       review: { status: 'unreviewed' },
     };
-    const official = {
+    const official: ContactRoute = {
       _id: 'official',
       routeType: 'OFFICIAL_APPLICATION',
       review: { status: 'unreviewed' },
@@ -69,7 +70,7 @@ describe('AdminAccessReview record filters', () => {
       'official',
       'general',
     ]);
-    expect(official.review.status).toBe('unreviewed');
+    expect(official.review?.status).toBe('unreviewed');
   });
 
   it('reports explicit review progress and excludes untouched records', () => {

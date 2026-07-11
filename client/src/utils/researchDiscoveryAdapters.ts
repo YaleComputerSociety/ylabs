@@ -57,7 +57,12 @@ export interface ResearchHomeContextSummary {
 }
 
 export interface ResearchHomeEvidenceStatus {
-  label: 'Official Yale source found' | 'Evidence limited' | 'Needs review' | 'Publications found';
+  label:
+    | 'Official Yale source found'
+    | 'Evidence limited'
+    | 'Needs review'
+    | 'Publications found'
+    | 'Recent research activity';
   state: ResearchHomeEvidenceState;
 }
 
@@ -750,7 +755,7 @@ const identitiesFromResearchEntities = (
         const netid = parseProfileNetidFromEmail(entity.contactEmail);
         return {
           id: `${entity._id || entity.slug}-${entity.contactName}`,
-          name: entity.contactName,
+          name: entity.contactName || 'Unknown researcher',
           title: entity.contactRole || undefined,
           departments: entity.departments || [],
           affiliations: uniq([entity.school, kindLabel(entity.kind)]),

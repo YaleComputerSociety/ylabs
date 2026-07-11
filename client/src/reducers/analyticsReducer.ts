@@ -48,7 +48,7 @@ export interface AnalyticsData {
       avgEventsPerUser: number;
     };
     mostActiveUsers: Array<{ userId: string; userType: string; eventCount: number }>;
-    outreach: {
+    outreach?: {
       summary: {
         totalReveals: number;
         totalAttempts: number;

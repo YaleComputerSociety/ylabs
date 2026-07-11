@@ -152,14 +152,21 @@ export const principalInvestigatorLinkFromMemberUser = (
 };
 
 export const principalInvestigatorLinkFromResearchEntity = (
-  entity: Record<string, unknown> | undefined,
+  entity: object | undefined,
 ): PrincipalInvestigatorLink | undefined => {
   if (!entity) return undefined;
+  const values = entity as {
+    profileUrls?: unknown;
+    profile_urls?: unknown;
+    websiteUrl?: unknown;
+    website?: unknown;
+    sourceUrls?: unknown;
+  };
   return profileUrlFromCandidates([
-    ...profileUrlMapValues(entity.profileUrls),
-    ...profileUrlMapValues(entity.profile_urls),
-    entity.websiteUrl,
-    entity.website,
-    ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : []),
+    ...profileUrlMapValues(values.profileUrls),
+    ...profileUrlMapValues(values.profile_urls),
+    values.websiteUrl,
+    values.website,
+    ...(Array.isArray(values.sourceUrls) ? values.sourceUrls : []),
   ]);
 };

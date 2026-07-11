@@ -165,7 +165,6 @@ describe('ResearchHomeCard', () => {
                 ...researchHome().entities[0],
                 qualitySummary: {
                   descriptionState: 'missing',
-                  cardState: 'sparse',
                   leadState: 'lead_missing',
                   repairFlags: ['duplicate_risk', 'missing_description'],
                   score: 94,
