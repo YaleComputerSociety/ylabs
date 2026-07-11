@@ -8,6 +8,9 @@ Check this inventory before deleting or moving anything in this directory.
 | `check-no-secrets.mjs` | Root `security:secrets` script. |
 | `check-no-secrets-core.mjs` | Shared implementation for `check-no-secrets.mjs` and `check-no-secrets.test.mjs`. |
 | `check-no-secrets.test.mjs` | Node test coverage for the secret scanner. |
+| `verify-yalies-rotation.mjs` | Operator-only check that an old Yalies credential is rejected and its replacement succeeds; reads credentials from process environment and logs statuses only. |
+| `verify-yalies-rotation-core.mjs` | Testable fixed-endpoint implementation for Yalies credential verification. |
+| `verify-yalies-rotation.test.mjs` | Node test coverage for rotation verification and credential-safe request construction. |
 | `ensure-server-build-fresh.mjs` | Server `start` preflight in `server/package.json`. |
 | `research-detail-professor-audit.mjs` | Root `audit:research-detail-professors` script. |
 | `research-detail-professor-audit-core.mjs` | Shared helpers for the audit script and server-side tests. |
