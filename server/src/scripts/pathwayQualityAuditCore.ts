@@ -7,6 +7,7 @@ export interface PathwayQualityPathwayFact {
   derivationKey?: string;
   sourceUrls?: string[];
   sourceEvidenceIds?: string[];
+  confidence?: number;
 }
 
 export interface PathwayQualityRouteFact {
@@ -51,11 +52,14 @@ export interface PathwayQualityAuditResult {
     weakPathwaysNeedingEvidence: number;
     missingSourceUrls: number;
     missingSourceEvidenceIds: number;
+    studentPublishablePathways: number;
   };
   byType: Record<string, number>;
   byStatus: Record<string, number>;
   byEvidenceStrength: Record<string, number>;
   byDerivationPrefix: Record<string, number>;
+  publicationBlockers: Record<string, number>;
+  publicationBlockerCombinations: Record<string, number>;
   samples: {
     activeListingsWithoutPostedOpportunity: PathwayQualityListingFact[];
     routesWithoutLinkedPathway: PathwayQualityRouteFact[];
@@ -106,6 +110,26 @@ function take<T>(items: T[], limit: number): T[] {
   return items.slice(0, Math.max(0, limit));
 }
 
+function publicationBlockers(pathway: PathwayQualityPathwayFact): string[] {
+  const blockers: string[] = [];
+  if (!['ACTIVE', 'RECURRING'].includes(pathway.status || '')) blockers.push('status');
+  if (!['DIRECT', 'STRONG', 'MODERATE'].includes(pathway.evidenceStrength || '')) {
+    blockers.push('evidence_strength');
+  }
+  if (typeof pathway.confidence !== 'number' || pathway.confidence < 0.7) {
+    blockers.push('confidence');
+  }
+  const hasSafeSourceUrl = nonEmpty(pathway.sourceUrls).some((value) => {
+    try {
+      return isPublicHttpUrl(value);
+    } catch {
+      return false;
+    }
+  });
+  if (!hasSafeSourceUrl) blockers.push('source_url');
+  return blockers;
+}
+
 export function buildPathwayQualityAudit(
   input: PathwayQualityAuditInput,
 ): PathwayQualityAuditResult {
@@ -114,6 +138,8 @@ export function buildPathwayQualityAudit(
   const byStatus: Record<string, number> = {};
   const byEvidenceStrength: Record<string, number> = {};
   const byDerivationPrefix: Record<string, number> = {};
+  const publicationBlockerCounts: Record<string, number> = {};
+  const publicationBlockerCombinations: Record<string, number> = {};
   const contexts = contextMap(input.entityContexts);
 
   for (const pathway of input.pathways) {
@@ -121,6 +147,9 @@ export function buildPathwayQualityAudit(
     increment(byStatus, pathway.status);
     increment(byEvidenceStrength, pathway.evidenceStrength);
     increment(byDerivationPrefix, derivationPrefix(pathway.derivationKey));
+    const blockers = publicationBlockers(pathway);
+    for (const blocker of blockers) increment(publicationBlockerCounts, blocker);
+    increment(publicationBlockerCombinations, blockers.length ? blockers.join('+') : 'publishable');
   }
 
   const missingSourceUrls = input.pathways.filter(
@@ -161,11 +190,14 @@ export function buildPathwayQualityAudit(
       weakPathwaysNeedingEvidence: weakPathwaysNeedingEvidence.length,
       missingSourceUrls: missingSourceUrls.length,
       missingSourceEvidenceIds: missingSourceEvidenceIds.length,
+      studentPublishablePathways: publicationBlockerCombinations.publishable || 0,
     },
     byType,
     byStatus,
     byEvidenceStrength,
     byDerivationPrefix,
+    publicationBlockers: publicationBlockerCounts,
+    publicationBlockerCombinations,
     samples: {
       activeListingsWithoutPostedOpportunity: take(activeListingsWithoutPostedOpportunity, sampleLimit),
       routesWithoutLinkedPathway: take(routesWithoutLinkedPathway, sampleLimit),
@@ -175,3 +207,4 @@ export function buildPathwayQualityAudit(
     },
   };
 }
+import { isPublicHttpUrl } from '../utils/urlSafety';

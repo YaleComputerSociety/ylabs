@@ -185,7 +185,7 @@ async function main(): Promise<void> {
       archived: { $ne: true },
       status: { $nin: ['NOT_CURRENTLY_AVAILABLE', 'NO_EVIDENCE'] },
     })
-      .select('_id researchEntityId pathwayType status evidenceStrength derivationKey sourceUrls sourceEvidenceIds')
+      .select('_id researchEntityId pathwayType status evidenceStrength confidence derivationKey sourceUrls sourceEvidenceIds')
       .lean(),
     ContactRoute.find({ archived: { $ne: true }, routeType: 'OFFICIAL_APPLICATION' })
       .select('_id researchEntityId entryPathwayId routeType sourceUrl sourceEvidenceIds')
@@ -224,6 +224,7 @@ async function main(): Promise<void> {
     derivationKey: pathway.derivationKey,
     sourceUrls: strings(pathway.sourceUrls),
     sourceEvidenceIds: strings(pathway.sourceEvidenceIds),
+    confidence: typeof pathway.confidence === 'number' ? pathway.confidence : undefined,
   }));
   const routes: PathwayQualityRouteFact[] = (routeDocs as any[]).map((route) => ({
     id: stringId(route._id),
