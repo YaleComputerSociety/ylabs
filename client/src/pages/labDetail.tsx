@@ -11,14 +11,11 @@
  * props and render. This keeps the page consistent with the
  * `pages/profile.tsx` pattern.
  */
-import { useEffect, useReducer, useRef, useState } from 'react';
+import { useContext, useEffect, useReducer, useRef, useState } from 'react';
 import { isCancel } from 'axios';
 import { Link, useParams } from 'react-router-dom';
 import axios from '../utils/axios';
-import {
-  createInitialLabDetailState,
-  labDetailReducer,
-} from '../reducers/labDetailReducer';
+import { createInitialLabDetailState, labDetailReducer } from '../reducers/labDetailReducer';
 import LabHeader from '../components/labs/LabHeader';
 import LabMembersList from '../components/labs/LabMembersList';
 import LabPapersList from '../components/labs/LabPapersList';
@@ -51,11 +48,7 @@ import {
   getEvidenceSignalLabel,
   getEvidenceStrengthLabel,
 } from '../utils/researchDiscoveryAdapters';
-import {
-  computeAcceptanceVerdict,
-  EvidenceItem,
-  verdictLabel,
-} from '../utils/undergradAcceptance';
+import { computeAcceptanceVerdict, EvidenceItem, verdictLabel } from '../utils/undergradAcceptance';
 import {
   approachHeadingLabel,
   decisionHeadingLabel,
@@ -66,13 +59,13 @@ import {
   sanitizeFacultyResearchCopy,
 } from '../utils/researchEntityCopy';
 import { getUniqueDepartmentLabels } from '../utils/departmentNames';
+import UserContext from '../contexts/UserContext';
+import ListingClaimRequestPanel from '../components/faculty/ListingClaimRequestPanel';
 
 const FIRST_RESEARCH_PLAN_SAVE_KEY = 'yale-research.firstResearchPlanSave.v1';
 
 const SectionHeading = ({ children }: { children: React.ReactNode }) => (
-  <h2 className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-3">
-    {children}
-  </h2>
+  <h2 className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-3">{children}</h2>
 );
 
 const formatEntityKindTag = (kind?: string | null): string | undefined =>
@@ -86,11 +79,11 @@ const RelatedResearchEntitiesSection = ({
   relatedResearchEntities: ResearchEntity[];
 }) => {
   const relationshipByEntityKey = new Map(
-    relationships
-      .flatMap((relationship) => [
-        relationship.relatedResearchEntitySlug,
-        relationship.relatedResearchEntityId,
-      ].filter(Boolean).map((key) => [key, relationship] as const)),
+    relationships.flatMap((relationship) =>
+      [relationship.relatedResearchEntitySlug, relationship.relatedResearchEntityId]
+        .filter(Boolean)
+        .map((key) => [key, relationship] as const),
+    ),
   );
 
   return (
@@ -150,19 +143,20 @@ const AffiliatedResearchEntitiesSection = ({
       {affiliatedResearchEntities.map((entity) => {
         const content = (
           <>
-          <div className="flex flex-wrap gap-2">
-            {uniqueCompact([formatEntityKindTag(entity.kind), ...compactDepartmentLabels(entity.departments)], 3).map(
-              (tag) => (
+            <div className="flex flex-wrap gap-2">
+              {uniqueCompact(
+                [formatEntityKindTag(entity.kind), ...compactDepartmentLabels(entity.departments)],
+                3,
+              ).map((tag) => (
                 <span
                   key={tag}
                   className="rounded-full bg-[var(--yr-panel-muted)] px-2 py-1 text-xs font-medium text-gray-700"
                 >
                   {tag}
                 </span>
-              ),
-            )}
-          </div>
-          <h3 className="mt-3 text-sm font-semibold text-gray-900">{entity.name}</h3>
+              ))}
+            </div>
+            <h3 className="mt-3 text-sm font-semibold text-gray-900">{entity.name}</h3>
           </>
         );
         const className =
@@ -247,22 +241,14 @@ const isGenericTopic = (value: string): boolean =>
   /^yale faculty\b/i.test(value);
 
 const detailTopics = (group: any, limit = 6): string[] =>
-  uniqueCompact(
-    [
-      ...(group.researchAreas || []),
-    ],
-    limit * 2,
-  )
+  uniqueCompact([...(group.researchAreas || [])], limit * 2)
     .filter((value) => !isGenericTopic(value))
     .slice(0, limit);
 
 const directoryFirstPlanningCopy = (value: string | undefined | null, group: any): string => {
   if (!value) return '';
   return sanitizeFacultyResearchCopy(value, group)
-    .replace(
-      'Plan careful exploratory outreach.',
-      'Plan from source-backed context.',
-    )
+    .replace('Plan careful exploratory outreach.', 'Plan from source-backed context.')
     .replace(
       'This profile has source-backed evidence that outreach may be plausible, but no active posted role is attached.',
       'This profile has source-backed context for planning, but no active posted role is attached.',
@@ -283,7 +269,10 @@ const directoryFirstPlanningCopy = (value: string | undefined | null, group: any
       'Plan a specific outreach note that references the group’s work.',
       'Plan notes that reference the group’s work before taking next steps.',
     )
-    .replace(/targeted exploratory outreach is appropriate/gi, 'source details you should verify next')
+    .replace(
+      /targeted exploratory outreach is appropriate/gi,
+      'source details you should verify next',
+    )
     .replace(/targeted outreach is appropriate/gi, 'source details you should verify next')
     .replace(/outreach may be plausible/gi, 'planning context is available')
     .replace(/before outreach/gi, 'before planning next steps')
@@ -448,8 +437,7 @@ const dedupeLeadMembers = (members: LabMember[]): LabMember[] => {
     const current = byPerson.get(key);
     if (
       !current ||
-      (LEAD_ROLE_PRIORITY.get(member.role) ?? 99) <
-        (LEAD_ROLE_PRIORITY.get(current.role) ?? 99)
+      (LEAD_ROLE_PRIORITY.get(member.role) ?? 99) < (LEAD_ROLE_PRIORITY.get(current.role) ?? 99)
     ) {
       byPerson.set(key, member);
     }
@@ -632,10 +620,7 @@ const DecisionSummary = ({
               ? 'What this faculty research area covers'
               : decisionHeadingLabel(group)}
           </h2>
-          <LongText
-            text={description}
-            className="mt-2 text-base leading-relaxed text-gray-800"
-          />
+          <LongText text={description} className="mt-2 text-base leading-relaxed text-gray-800" />
           {displayStudentDecisionExplanation && (
             <div className="mt-5 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] p-4">
               <SectionHeading>Student decision</SectionHeading>
@@ -974,22 +959,19 @@ const hasSpecificWaysToApproach = (
   );
 
 const LabDetail = () => {
+  const { user } = useContext(UserContext);
   const { slug } = useParams<{ slug: string }>();
-  const [state, dispatch] = useReducer(
-    labDetailReducer,
-    undefined,
-    () => createInitialLabDetailState(),
+  const [state, dispatch] = useReducer(labDetailReducer, undefined, () =>
+    createInitialLabDetailState(),
   );
   const { payload, loading, error, isInquireModalOpen } = state;
   const requestIdRef = useRef(0);
   const fetchAbortRef = useRef<AbortController | null>(null);
   const [showResearchPlanSavedCallout, setShowResearchPlanSavedCallout] = useState(false);
   const [outreachRecordError, setOutreachRecordError] = useState('');
-  const {
-    favIds: savedResearchPlanIds,
-    setFavorite: setSavedResearchPlanFavorite,
-  } = useFavorites('researchPlans');
-  const documentTitleGroup = payload ? payload.group ?? payload.researchEntity : null;
+  const { favIds: savedResearchPlanIds, setFavorite: setSavedResearchPlanFavorite } =
+    useFavorites('researchPlans');
+  const documentTitleGroup = payload ? (payload.group ?? payload.researchEntity) : null;
   useDocumentTitle(
     documentTitleGroup?.displayName || documentTitleGroup?.name || 'Research profile',
   );
@@ -1058,6 +1040,7 @@ const LabDetail = () => {
     entryPathways = [],
     accessSignals = [],
     postedOpportunities = [],
+    activeListings = [],
     entityRelationships = [],
     relatedResearchEntities = [],
     affiliatedResearchEntities = [],
@@ -1089,7 +1072,9 @@ const LabDetail = () => {
   );
   const hasActivePostedOpportunity = postedOpportunities.length > 0;
   const hasDirectRelatedResearch =
-    directRelatedResearchLinks.length > 0 || recentPapers.length > 0 || recentArxivPreprints.length > 0;
+    directRelatedResearchLinks.length > 0 ||
+    recentPapers.length > 0 ||
+    recentArxivPreprints.length > 0;
   const hasMemberRecentWork = memberRecentWorkLinks.length > 0;
   const hasResearchActivity = hasDirectRelatedResearch || hasMemberRecentWork;
   const hasWaysIn = entryPathways.length > 0 || postedOpportunities.length > 0;
@@ -1131,6 +1116,10 @@ const LabDetail = () => {
   const isPrimaryPathwaySaved = primaryPathway
     ? savedResearchPlanIds.includes(primaryPathway._id)
     : false;
+  const canRequestListingReview =
+    Boolean(user?.userConfirmed) &&
+    ['professor', 'faculty', 'staff'].includes(user?.userType || '') &&
+    activeListings.length > 0;
 
   const handleToggleSavedResearchPlan = (pathwayId: string, shouldSave: boolean) => {
     setSavedResearchPlanFavorite(pathwayId, shouldSave);
@@ -1199,12 +1188,14 @@ const LabDetail = () => {
               </>
             ) : (
               <p className="text-sm leading-relaxed text-gray-700">
-                No verified contact route is available yet. Administrators must approve an
-                official source before outreach is enabled.
+                No verified contact route is available yet. Administrators must approve an official
+                source before outreach is enabled.
               </p>
             )}
             {outreachRecordError && (
-              <p role="alert" className="mt-2 text-sm text-amber-800">{outreachRecordError}</p>
+              <p role="alert" className="mt-2 text-sm text-amber-800">
+                {outreachRecordError}
+              </p>
             )}
           </section>
 
@@ -1223,7 +1214,9 @@ const LabDetail = () => {
                     : [...recentPapers, ...recentArxivPreprints]
                 }
                 emptyText="No scholarly links are attached to this research profile yet."
-                showPreprintMeta={directRelatedResearchLinks.length === 0 && recentPapers.length === 0}
+                showPreprintMeta={
+                  directRelatedResearchLinks.length === 0 && recentPapers.length === 0
+                }
               />
             </section>
           )}
@@ -1268,6 +1261,8 @@ const LabDetail = () => {
             fallbackSourceUrl={fallbackSourceUrl}
           />
 
+          {canRequestListingReview && <ListingClaimRequestPanel listing={activeListings[0]} />}
+
           {sources.length > 0 && (
             <section>
               <SectionHeading>Sources</SectionHeading>
@@ -1293,7 +1288,6 @@ const LabDetail = () => {
           });
         }}
       />
-
     </div>
   );
 };
