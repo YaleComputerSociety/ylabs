@@ -22,6 +22,27 @@ interface ProfileEditorProps {
   netid: string;
 }
 
+type EditableProfileFields = {
+  bio: string;
+  primaryDepartment: string;
+  secondaryDepartments: string[];
+  researchInterests: string[];
+  imageUrl: string;
+};
+
+const normalizedEditableFields = (profile: Record<string, any>): EditableProfileFields => ({
+  bio: String(profile.bio || '').trim(),
+  primaryDepartment: String(profile.primaryDepartment ?? profile.primary_department ?? '').trim(),
+  secondaryDepartments: profile.secondaryDepartments ?? profile.secondary_departments ?? [],
+  researchInterests: profile.researchInterests ?? profile.research_interests ?? [],
+  imageUrl: String(profile.imageUrl ?? profile.image_url ?? '').trim(),
+});
+
+export const profileSaveMatches = (
+  submitted: EditableProfileFields,
+  returned: Record<string, any>,
+): boolean => JSON.stringify(submitted) === JSON.stringify(normalizedEditableFields(returned));
+
 const ProfileEditor = ({ netid }: ProfileEditorProps) => {
   const [state, dispatch] = useReducer(profileEditorReducer, undefined, () =>
     createInitialProfileEditorState(),
@@ -104,6 +125,9 @@ const ProfileEditor = ({ netid }: ProfileEditorProps) => {
     const errors: string[] = [];
     if (!primaryDept.trim()) errors.push('Primary Department is required.');
     if (researchInterests.length === 0) errors.push('At least one Research Interest is required.');
+    if (imageUrl.trim() && !/^https:\/\//i.test(imageUrl.trim())) {
+      errors.push('Profile Image URL must use HTTPS.');
+    }
     if (errors.length > 0) {
       dispatch({ type: 'SAVE_VALIDATION_FAILED', errors });
       window.setTimeout(() => validationSummaryRef.current?.focus(), 0);
@@ -111,37 +135,40 @@ const ProfileEditor = ({ netid }: ProfileEditorProps) => {
     }
 
     try {
-      const data: any = {
-        bio,
-        primary_department: primaryDept.trim(),
-        secondary_departments: secondaryDepts,
-        research_interests: researchInterests,
-        image_url: imageUrl.trim(),
+      const data: EditableProfileFields = {
+        bio: bio.trim(),
+        primaryDepartment: primaryDept.trim(),
+        secondaryDepartments: secondaryDepts,
+        researchInterests,
+        imageUrl: imageUrl.trim(),
       };
 
       const saveRes = await axios.put('/profiles/me', data);
+      if (!saveRes.data?.profile || !profileSaveMatches(data, saveRes.data.profile)) {
+        dispatch({
+          type: 'SAVE_FAILURE',
+          message: {
+            type: 'error',
+            text: 'The server did not persist all profile fields. Please try again.',
+          },
+        });
+        return;
+      }
       const savedProfile: FacultyProfile = {
         ...(profile as FacultyProfile),
         ...saveRes.data.profile,
       };
 
-      if (isUnverified) {
-        await axios.put('/profiles/me/verify');
-        dispatch({
-          type: 'SAVE_SUCCESS',
-          profile: { ...savedProfile, profileVerified: true },
-          message: { type: 'success', text: 'Profile verified. Students can now trust this profile.' },
-        });
-      } else {
-        dispatch({
-          type: 'SAVE_SUCCESS',
-          profile: savedProfile,
-          message: {
-            type: 'success',
-            text: 'Profile updated. Department changes have been applied to your research profile.',
-          },
-        });
-      }
+      dispatch({
+        type: 'SAVE_SUCCESS',
+        profile: savedProfile,
+        message: {
+          type: 'success',
+          text: savedProfile.profileVerificationRequestedAt
+            ? 'Profile updated and submitted for administrator verification.'
+            : 'Profile updated. Department changes have been applied to your research profile.',
+        },
+      });
     } catch (err: any) {
       dispatch({
         type: 'SAVE_FAILURE',
@@ -236,8 +263,9 @@ const ProfileEditor = ({ netid }: ProfileEditorProps) => {
             databases.
           </p>
           <p className="text-xs text-amber-600 mt-0.5">
-            Please review your information below. A primary department and at least one research
-            interest are required to save and verify your profile.
+            {profile.profileVerificationRequestedAt
+              ? `Submitted for administrator verification on ${new Date(profile.profileVerificationRequestedAt).toLocaleString()}.`
+              : 'Complete all readiness fields to submit your profile for administrator verification.'}
           </p>
         </div>
       )}
