@@ -8,13 +8,14 @@ import { invalidateConfigCache } from '../services/configService';
 import { escapeRegex, buildSafeSearchRegex } from '../utils/regex';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
+import { replaceAsciiControls } from '../utils/asciiControl';
 
 const router = Router();
 const MAX_RESEARCH_AREA_NAME_LENGTH = 120;
 const MAX_RESEARCH_AREA_SEARCH_QUERY_LENGTH = 120;
 
 const normalizeResearchAreaLabel = (value: string): string =>
-  value.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim();
+  replaceAsciiControls(value, ' ').replace(/\s+/g, ' ').trim();
 
 const hasDirectContactInfo = (value: string): boolean => redactDirectContactInfo(value) !== value;
 
@@ -69,7 +70,9 @@ router.post('/', isAuthenticated, isProfessor, async (req: Request, res: Respons
     }
 
     if (hasDirectContactInfo(trimmedName)) {
-      return res.status(400).json({ message: 'Research area name cannot include contact information' });
+      return res
+        .status(400)
+        .json({ message: 'Research area name cannot include contact information' });
     }
 
     const existing = await ResearchArea.findOne({
